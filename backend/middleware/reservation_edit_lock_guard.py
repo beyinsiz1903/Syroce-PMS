@@ -22,6 +22,7 @@ from core.security import JWT_ALGORITHM, JWT_SECRET
 
 LOCK_HEADER = "X-Reservation-Lock-ID"
 _WRITE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+_LOCK_EXEMPT_RESERVATION_SUFFIXES = {"/transfer-to-cari"}
 
 # Reservation-detail UI mutation surfaces.  The /api prefix is optional so the
 # same guard works in direct-ASGI tests and behind the production API prefix.
@@ -36,6 +37,8 @@ def reservation_id_for_mutation(path: str, method: str) -> str | None:
     if method.upper() not in _WRITE_METHODS:
         return None
     if "/edit-lock" in path:
+        return None
+    if any(path.endswith(suffix) for suffix in _LOCK_EXEMPT_RESERVATION_SUFFIXES):
         return None
     for pattern in _RESERVATION_PATHS:
         match = pattern.match(path)

@@ -23,6 +23,7 @@ import io
 import logging
 import math
 import uuid
+from collections import defaultdict
 from datetime import UTC, date, datetime
 from datetime import date as _date
 from decimal import Decimal
@@ -32,6 +33,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from core.security import get_current_user
+from core.tenant_currency import get_tenant_currency
 from modules.pms_core.role_permission_service import require_op  # v92 DW
 
 logger = logging.getLogger(__name__)
@@ -106,6 +108,7 @@ DATA_SOURCES = {
             "notes": {"label": "Notlar", "type": "text"},
         },
         "date_field": "check_in",
+        "date_fields": ["check_in"],
     },
     "revenue": {
         "label": "Gelir",
@@ -123,7 +126,11 @@ DATA_SOURCES = {
             "voided": {"label": "İptal Edildi", "type": "boolean"},
             "posted_by": {"label": "İşlemi Yapan", "type": "text"},
         },
-        "date_field": "date",
+        # New postings carry ``business_date``; older records use date,
+        # charge_date, posted_at or created_at.  The builder normalizes all of
+        # them so it reconciles with the cashier and standard revenue reports.
+        "date_field": "business_date",
+        "date_fields": ["business_date", "charge_date", "date", "posted_at", "created_at"],
     },
     "guests": {
         "label": "Misafirler",
@@ -142,6 +149,7 @@ DATA_SOURCES = {
             "notes": {"label": "Notlar", "type": "text"},
         },
         "date_field": "created_at",
+        "date_fields": ["created_at"],
     },
     "rooms": {
         "label": "Odalar",
@@ -158,6 +166,7 @@ DATA_SOURCES = {
             "is_active": {"label": "Aktif", "type": "boolean"},
         },
         "date_field": None,
+        "date_fields": [],
     },
     "housekeeping": {
         "label": "Kat Hizmetleri",
@@ -174,6 +183,7 @@ DATA_SOURCES = {
             "notes": {"label": "Notlar", "type": "text"},
         },
         "date_field": "created_at",
+        "date_fields": ["created_at"],
     },
     "folios": {
         "label": "Foliolar",
@@ -192,6 +202,7 @@ DATA_SOURCES = {
             "payment_method": {"label": "Ödeme Yöntemi", "type": "text"},
         },
         "date_field": "created_at",
+        "date_fields": ["created_at"],
     },
 }
 
@@ -201,6 +212,9 @@ DATA_SOURCES = {
 # isimleri olabilir; bu sayede projection sessizce boş dönmez.
 SOURCE_FIELD_MAP: dict[str, dict[str, list[str]]] = {
     "reservations": {
+        "guest_name": ["guest_name", "primary_guest_name"],
+        "room_number": ["room_number", "room_no"],
+        "room_type": ["room_type", "room_type_name"],
         "source": ["booking_source", "source_channel", "source", "channel"],
         "rate_code": ["rate_plan", "rate_code"],
         "id_number": ["id_number", "national_id"],
@@ -220,23 +234,43 @@ SOURCE_FIELD_MAP: dict[str, dict[str, list[str]]] = {
         "max_occupancy": ["capacity", "max_occupancy"],
     },
     "revenue": {
-        "charge_type": ["charge_category", "charge_type"],
+        "description": ["description", "charge_name"],
+        "amount": ["amount", "charge_amount", "total"],
+        "charge_type": ["charge_category", "category", "charge_type"],
+        "date": ["business_date", "charge_date", "date", "posted_at", "created_at"],
+        "room_number": ["room_number", "room_no"],
     },
     "folios": {
         "total_charges": ["total_charges", "charges_total"],
         "total_payments": ["total_payments", "payments_total"],
+        "guest_name": ["guest_name", "primary_guest_name"],
+        "room_number": ["room_number", "room_no"],
     },
+    "housekeeping": {"room_number": ["room_number", "room_no"]},
 }
 
 # PII column keys per source (column-level masking when no PII access).
 PII_COLUMNS: dict[str, set[str]] = {
-    "reservations": {"id_number", "passport_number", "guest_email", "guest_phone"},
-    "guests": {"id_number", "email", "phone"},
+    "reservations": {"guest_name", "id_number", "passport_number", "guest_email", "guest_phone", "notes"},
+    "guests": {"name", "id_number", "email", "phone", "nationality", "notes", "total_revenue"},
     "folios": {"guest_name"},  # name itself is sensitive in some KVKK contexts
+}
+
+PII_COLUMN_FIELDS: dict[str, dict[str, str]] = {
+    "reservations": {
+        "guest_name": "name", "id_number": "identity", "passport_number": "identity",
+        "guest_email": "email", "guest_phone": "phone", "notes": "notes",
+    },
+    "guests": {
+        "name": "name", "id_number": "identity", "email": "email", "phone": "phone",
+        "nationality": "nationality", "notes": "notes", "total_revenue": "financial",
+    },
+    "folios": {"guest_name": "name"},
 }
 
 # Maximum allowed result rows per request (DoS guard).
 MAX_LIMIT = 5000
+MAX_SCAN_ROWS = 100000
 
 # Maximum columns for landscape PDF (above this, font shrinks).
 PDF_FIT_COLUMNS = 8
@@ -252,6 +286,16 @@ def _user_has_pii_access(user) -> bool:
         return True
     granted = getattr(user, "granted_permissions", None) or []
     return "view_guest_pii" in granted
+
+
+def _pii_is_masked(config: ReportConfig, has_pii: bool, visibility_policy: dict[str, str] | None = None) -> bool:
+    selected = set(config.columns) & PII_COLUMNS.get(config.data_source, set())
+    if not selected:
+        return False
+    if visibility_policy is None:
+        return not has_pii
+    fields = PII_COLUMN_FIELDS.get(config.data_source, {})
+    return any(visibility_policy.get(fields.get(column, ""), "full") != "full" for column in selected)
 
 
 def _mask_pii(value):
@@ -395,6 +439,19 @@ def _projection_fields(source_key: str, columns: list[str]) -> set[str]:
             fields.update({"check_in", "check_out", "nights"})
         if source_key == "guests" and col == "name":
             fields.update({"first_name", "last_name"})
+    # Relation keys are always projected.  Several canonical PMS records keep
+    # the display values only on the related entity (booking -> room/guest,
+    # folio/charge -> booking, housekeeping task -> room).
+    if source_key == "reservations":
+        fields.update({"id", "guest_id", "room_id", "primary_guest_name"})
+    elif source_key == "revenue":
+        fields.update({"id", "booking_id", "folio_id", "business_date", "charge_date", "posted_at", "created_at"})
+    elif source_key == "housekeeping":
+        fields.update({"id", "room_id", "created_at"})
+    elif source_key == "folios":
+        fields.update({"id", "booking_id", "guest_id", "room_id"})
+    for date_field in DATA_SOURCES.get(source_key, {}).get("date_fields", []):
+        fields.add(date_field)
     return fields
 
 
@@ -419,6 +476,12 @@ def _clean_value(v):
         return v.isoformat()
     if isinstance(v, date):
         return v.isoformat()
+    if isinstance(v, Decimal):
+        try:
+            as_float = float(v)
+            return as_float if math.isfinite(as_float) else str(v)
+        except (TypeError, ValueError, OverflowError):
+            return str(v)
     if isinstance(v, dict):
         return {k: _clean_value(val) for k, val in v.items()}
     if isinstance(v, list):
@@ -453,10 +516,205 @@ def _compose_guest_name(doc: dict) -> str | None:
     return composed or None
 
 
+def _date_part(value) -> str:
+    """Normalize BSON datetime/date and ISO strings to YYYY-MM-DD."""
+    if value in (None, ""):
+        return ""
+    if isinstance(value, datetime):
+        return value.date().isoformat()
+    if isinstance(value, date):
+        return value.isoformat()
+    return str(value).strip()[:10]
+
+
+def _effective_source_date(source_def: dict, doc: dict) -> str:
+    for field in source_def.get("date_fields") or [source_def.get("date_field")]:
+        if field and doc.get(field) not in (None, ""):
+            return _date_part(doc.get(field))
+    return ""
+
+
+def _within_requested_dates(config: ReportConfig, source_def: dict, doc: dict) -> bool:
+    if not (config.date_from or config.date_to) or not source_def.get("date_field"):
+        return True
+    value = _effective_source_date(source_def, doc)
+    if not value:
+        return False
+    date_from = _date_part(config.date_from)
+    date_to = _date_part(config.date_to)
+    return (not date_from or value >= date_from) and (not date_to or value <= date_to)
+
+
+def _report_value(source_key: str, source_def: dict, doc: dict, column: str):
+    if source_key == "reservations" and column == "nights":
+        return _compute_nights(doc)
+    if source_key == "guests" and column == "name":
+        return _compose_guest_name(doc)
+    if source_key == "revenue" and column == "date":
+        return _effective_source_date(source_def, doc)
+    for alias in _resolve_db_fields(source_key, column):
+        candidate = doc.get(alias)
+        if candidate not in (None, ""):
+            return candidate
+    return None
+
+
+def _matches_report_filter(source_key: str, source_def: dict, doc: dict, report_filter: ReportFilter) -> bool:
+    value = _report_value(source_key, source_def, doc, report_filter.field)
+    col_type = source_def.get("columns", {}).get(report_filter.field, {}).get("type")
+    expected = _coerce_value(report_filter.value, col_type)
+    comparable = _coerce_value(value, col_type)
+    operator = report_filter.operator
+    try:
+        if operator == "eq":
+            return comparable == expected
+        if operator == "ne":
+            return comparable != expected
+        if operator == "gt":
+            return comparable is not None and comparable > expected
+        if operator == "gte":
+            return comparable is not None and comparable >= expected
+        if operator == "lt":
+            return comparable is not None and comparable < expected
+        if operator == "lte":
+            return comparable is not None and comparable <= expected
+        if operator == "contains":
+            return str(expected).casefold() in str(comparable or "").casefold()
+        if operator == "in":
+            choices = expected if isinstance(expected, list) else [item.strip() for item in str(expected).split(",")]
+            return comparable in choices
+    except (TypeError, ValueError):
+        return False
+    return False
+
+
+async def _find_by_ids(collection, tenant_id: str, ids: set[str], projection: dict) -> dict[str, dict]:
+    clean_ids = [item for item in ids if item not in (None, "")]
+    if not clean_ids:
+        return {}
+    docs = await collection.find(
+        {"tenant_id": tenant_id, "id": {"$in": clean_ids}},
+        {"_id": 0, "id": 1, **projection},
+    ).to_list(len(clean_ids))
+    return {str(doc.get("id")): doc for doc in docs if doc.get("id") is not None}
+
+
+def _guest_name(guest: dict | None, booking: dict | None = None) -> str | None:
+    guest = guest or {}
+    booking = booking or {}
+    return _compose_guest_name(guest) or booking.get("guest_name") or booking.get("primary_guest_name")
+
+
+async def _enrich_report_docs(db, source_key: str, tenant_id: str, docs: list[dict]) -> list[dict]:
+    """Resolve PMS relations and recompute financial folio totals.
+
+    The operational screens use normalized room/guest/folio collections, while
+    old records may also contain denormalized snapshots.  Report Builder must
+    follow the same fallback order or two reports for the same hotel disagree.
+    """
+    if not docs:
+        return docs
+
+    booking_ids = {str(doc.get("booking_id")) for doc in docs if doc.get("booking_id")}
+    if source_key == "reservations":
+        booking_map = {str(doc.get("id")): doc for doc in docs if doc.get("id")}
+    else:
+        booking_map = await _find_by_ids(
+            db.bookings,
+            tenant_id,
+            booking_ids,
+            {
+                "guest_id": 1,
+                "guest_name": 1,
+                "primary_guest_name": 1,
+                "room_id": 1,
+                "room_number": 1,
+                "room_type": 1,
+                "check_in": 1,
+                "check_out": 1,
+            },
+        )
+
+    room_ids = {str(doc.get("room_id")) for doc in docs if doc.get("room_id")}
+    guest_ids = {str(doc.get("guest_id")) for doc in docs if doc.get("guest_id")}
+    for booking in booking_map.values():
+        if booking.get("room_id"):
+            room_ids.add(str(booking["room_id"]))
+        if booking.get("guest_id"):
+            guest_ids.add(str(booking["guest_id"]))
+
+    room_map = await _find_by_ids(
+        db.rooms,
+        tenant_id,
+        room_ids,
+        {"room_number": 1, "room_no": 1, "name": 1, "room_type": 1, "room_type_name": 1},
+    )
+    guest_map = await _find_by_ids(
+        db.guests,
+        tenant_id,
+        guest_ids,
+        {"name": 1, "full_name": 1, "first_name": 1, "last_name": 1},
+    )
+
+    for doc in docs:
+        booking = booking_map.get(str(doc.get("booking_id") or doc.get("id"))) or {}
+        room_id = doc.get("room_id") or booking.get("room_id")
+        room = room_map.get(str(room_id)) or {}
+        guest_id = doc.get("guest_id") or booking.get("guest_id")
+        guest = guest_map.get(str(guest_id)) or {}
+
+        if source_key in {"reservations", "revenue", "housekeeping", "folios"}:
+            doc["room_number"] = doc.get("room_number") or doc.get("room_no") or booking.get("room_number") or room.get("room_number") or room.get("room_no") or room.get("name")
+        if source_key == "reservations":
+            doc["guest_name"] = _guest_name(guest, doc)
+            doc["room_type"] = doc.get("room_type") or doc.get("room_type_name") or room.get("room_type") or room.get("room_type_name")
+        elif source_key == "folios":
+            doc["guest_name"] = _guest_name(guest, booking)
+            doc["check_in"] = doc.get("check_in") or booking.get("check_in")
+            doc["check_out"] = doc.get("check_out") or booking.get("check_out")
+
+    if source_key == "folios":
+        folio_ids = [str(doc.get("id")) for doc in docs if doc.get("id")]
+        charges = await db.folio_charges.find(
+            {"tenant_id": tenant_id, "folio_id": {"$in": folio_ids}, "voided": {"$ne": True}},
+            {"_id": 0, "folio_id": 1, "total": 1, "amount": 1},
+        ).to_list(None)
+        payments = await db.payments.find(
+            {
+                "tenant_id": tenant_id,
+                "folio_id": {"$in": folio_ids},
+                "voided": {"$ne": True},
+                "status": {"$nin": ["void", "voided", "failed", "cancelled", "rejected"]},
+            },
+            {"_id": 0, "folio_id": 1, "amount": 1, "payment_type": 1},
+        ).to_list(None)
+        charge_totals: dict[str, float] = defaultdict(float)
+        payment_totals: dict[str, float] = defaultdict(float)
+        for charge in charges:
+            charge_totals[str(charge.get("folio_id"))] += float(charge.get("total") or charge.get("amount") or 0)
+        for payment in payments:
+            amount = float(payment.get("amount") or 0)
+            if str(payment.get("payment_type") or "").lower() == "refund" and amount > 0:
+                amount = -amount
+            payment_totals[str(payment.get("folio_id"))] += amount
+        for doc in docs:
+            folio_id = str(doc.get("id"))
+            doc["total_charges"] = round(charge_totals[folio_id], 2)
+            doc["total_payments"] = round(payment_totals[folio_id], 2)
+            doc["balance"] = round(charge_totals[folio_id] - payment_totals[folio_id], 2)
+
+    return docs
+
+
 # ─── Fetch ──────────────────────────────────────────────────────────────
 
 
-async def fetch_report_data(config: ReportConfig, tenant_id: str, has_pii: bool) -> list:
+async def fetch_report_data(
+    config: ReportConfig,
+    tenant_id: str,
+    has_pii: bool,
+    visibility_policy: dict[str, str] | None = None,
+) -> list:
     db = get_db()
     source_def = DATA_SOURCES.get(config.data_source)
     if not source_def:
@@ -467,10 +725,45 @@ async def fetch_report_data(config: ReportConfig, tenant_id: str, has_pii: bool)
     for c in config.columns:
         if c not in cols_def:
             raise HTTPException(status_code=400, detail=f"Bilinmeyen sütun: {c}")
+    if not config.columns:
+        raise HTTPException(status_code=400, detail="En az bir sütun seçilmelidir")
+    date_from = _date_part(config.date_from)
+    date_to = _date_part(config.date_to)
+    try:
+        if date_from:
+            date.fromisoformat(date_from)
+        if date_to:
+            date.fromisoformat(date_to)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Tarih YYYY-MM-DD formatında olmalıdır") from exc
+    if date_from and date_to and date_from > date_to:
+        raise HTTPException(status_code=422, detail="Başlangıç tarihi bitiş tarihinden sonra olamaz")
+    allowed_operators = {"eq", "ne", "gt", "gte", "lt", "lte", "in", "contains"}
+    for report_filter in config.filters or []:
+        if report_filter.field not in cols_def:
+            raise HTTPException(status_code=422, detail=f"Bilinmeyen filtre alanı: {report_filter.field}")
+        if report_filter.operator not in allowed_operators:
+            raise HTTPException(status_code=422, detail=f"Geçersiz filtre işlemi: {report_filter.operator}")
+
+    pii_keys = PII_COLUMNS.get(config.data_source, set())
+    restricted_pii_keys = {
+        column for column in pii_keys
+        if (not has_pii and visibility_policy is None)
+        or (visibility_policy is not None and visibility_policy.get(PII_COLUMN_FIELDS.get(config.data_source, {}).get(column, ""), "full") != "full")
+    }
+    if restricted_pii_keys:
+        forbidden_filters = sorted({item.field for item in (config.filters or []) if item.field in restricted_pii_keys})
+        if forbidden_filters:
+            raise HTTPException(
+                status_code=403,
+                detail=f"PII yetkisi olmadan bu alanlarda filtreleme yapılamaz: {', '.join(forbidden_filters)}",
+            )
+        if config.sort_by in restricted_pii_keys:
+            raise HTTPException(status_code=403, detail="PII yetkisi olmadan bu alanda sıralama yapılamaz")
 
     # sort_by allow-list.
     sort_field_key = config.sort_by if config.sort_by in cols_def else None
-    sort_field_db = _resolve_db_field(config.data_source, sort_field_key) if sort_field_key else (source_def.get("date_field") or "_id")
+    sort_field_db = source_def.get("date_field") or "_id"
     sort_dir = -1 if (config.sort_order or "desc") == "desc" else 1
 
     # Limit cap.
@@ -482,37 +775,63 @@ async def fetch_report_data(config: ReportConfig, tenant_id: str, has_pii: bool)
     safe_limit = max(1, min(raw_limit, MAX_LIMIT))
 
     collection = db[source_def["collection"]]
-    query = build_mongo_filter(config, tenant_id)
+    # Date values are historically mixed (ISO string and BSON datetime) and
+    # revenue has multiple canonical date fields.  Query the tenant-scoped
+    # records with the other safe filters, then normalize dates in Python.
+    # This avoids Mongo's cross-BSON-type ordering producing silent omissions.
+    filter_config = config.model_copy(update={"date_from": None, "date_to": None, "filters": []})
+    query = build_mongo_filter(filter_config, tenant_id)
+    if config.data_source == "revenue":
+        query["voided"] = {"$ne": True}
     projection = build_projection(config.data_source, config.columns)
 
-    cursor = collection.find(query, projection).sort(sort_field_db, sort_dir).limit(safe_limit)
-    raw = await cursor.to_list(length=safe_limit)
+    cursor = collection.find(query, projection).sort(sort_field_db, sort_dir).limit(MAX_SCAN_ROWS + 1)
+    raw = await cursor.to_list(length=MAX_SCAN_ROWS + 1)
+    if len(raw) > MAX_SCAN_ROWS:
+        raise HTTPException(status_code=413, detail="Rapor tarama sınırını aşıyor; tarih aralığını daraltın")
+    if config.data_source == "revenue":
+        # Reservation-card extras are financially real before they are moved
+        # onto a folio.  Include them in custom revenue reports as well; the
+        # move operation deletes the source row, so this does not double count.
+        extra_raw = await db.extra_charges.find(query, projection).limit(MAX_SCAN_ROWS + 1).to_list(length=MAX_SCAN_ROWS + 1)
+        if len(extra_raw) > MAX_SCAN_ROWS:
+            raise HTTPException(status_code=413, detail="Ek ücret tarama sınırını aşıyor; tarih aralığını daraltın")
+        raw.extend(extra_raw)
+    raw = await _enrich_report_docs(db, config.data_source, tenant_id, raw)
+    raw = [doc for doc in raw if _within_requested_dates(config, source_def, doc)]
+    raw = [doc for doc in raw if all(_matches_report_filter(config.data_source, source_def, doc, item) for item in (config.filters or []))]
 
-    pii_keys = PII_COLUMNS.get(config.data_source, set())
+    if sort_field_key:
+
+        def _raw_sort_value(doc: dict):
+            value = _report_value(config.data_source, source_def, doc, sort_field_key)
+            if value is None:
+                return (1, "")
+            if isinstance(value, (int, float, Decimal)) and not isinstance(value, bool):
+                return (0, float(value))
+            return (0, str(value).casefold())
+
+        raw.sort(key=_raw_sort_value, reverse=sort_dir < 0)
 
     cleaned: list[dict] = []
     for doc in raw:
         row: dict = {}
         for col in config.columns:
-            # Compute virtual fields.
-            if config.data_source == "reservations" and col == "nights":
-                v = _compute_nights(doc)
-            elif config.data_source == "guests" and col == "name":
-                v = _compose_guest_name(doc)
-            else:
-                v = None
-                for alias in _resolve_db_fields(config.data_source, col):
-                    cand = doc.get(alias)
-                    if cand not in (None, ""):
-                        v = cand
-                        break
+            v = _report_value(config.data_source, source_def, doc, col)
             v = _clean_value(v)
-            if (not has_pii) and col in pii_keys:
-                v = _mask_pii(v)
+            if col in pii_keys:
+                if visibility_policy is not None:
+                    from security.guest_data_visibility import mask_guest_value
+
+                    field_key = PII_COLUMN_FIELDS.get(config.data_source, {}).get(col)
+                    if field_key:
+                        v = mask_guest_value(v, field_key, visibility_policy.get(field_key, "full"))
+                elif not has_pii:
+                    v = _mask_pii(v)
             row[col] = v
         cleaned.append(row)
 
-    return cleaned
+    return cleaned[:safe_limit]
 
 
 # ─── Endpoints ────────────────────────────────────────────────────────────
@@ -524,7 +843,9 @@ async def get_builder_config(
     _perm=Depends(require_op("view_reports")),
 ):
     """Rapor oluşturucu için mevcut veri kaynaklarını ve sütun tanımlarını döndürür."""
-    del current_user
+    tenant_id = getattr(current_user, "tenant_id", None)
+    from security.guest_data_visibility import guest_visibility_summary
+    currency_code, currency_symbol = await get_tenant_currency(tenant_id)
     sources = {}
     for key, src in DATA_SOURCES.items():
         sources[key] = {
@@ -533,7 +854,13 @@ async def get_builder_config(
             "date_field": src.get("date_field"),
             "pii_columns": sorted(PII_COLUMNS.get(key, set())),
         }
-    return {"data_sources": sources, "max_limit": MAX_LIMIT}
+    return {
+        "data_sources": sources,
+        "max_limit": MAX_LIMIT,
+        "currency_code": currency_code,
+        "currency_symbol": currency_symbol,
+        "privacy": guest_visibility_summary(current_user),
+    }
 
 
 @router.post("/generate")
@@ -547,8 +874,21 @@ async def generate_report(
     if not tenant_id:
         raise HTTPException(status_code=400, detail="Tenant bilgisi bulunamadı")
     has_pii = _user_has_pii_access(current_user)
+    from security.guest_data_visibility import user_guest_data_visibility
+    visibility_policy, policy_source = user_guest_data_visibility(current_user)
 
-    data = await fetch_report_data(config, tenant_id, has_pii)
+    try:
+        data = await fetch_report_data(config, tenant_id, has_pii, visibility_policy)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception(
+            "report_builder generation failed tenant=%s data_source=%s cols=%s",
+            tenant_id,
+            config.data_source,
+            config.columns,
+        )
+        raise HTTPException(status_code=500, detail="Rapor oluşturulamadı; işlem kayda alındı") from exc
 
     source_def = DATA_SOURCES.get(config.data_source, {})
     column_labels = {col: source_def.get("columns", {}).get(col, {}).get("label", col) for col in config.columns}
@@ -572,7 +912,8 @@ async def generate_report(
         "total_count": len(data),
         "column_labels": column_labels,
         "summary": summary,
-        "pii_masked": not has_pii,
+        "pii_masked": _pii_is_masked(config, has_pii, visibility_policy),
+        "privacy": {"policy_source": policy_source, "server_side_enforced": True},
         "generated_at": datetime.now(UTC).isoformat(),
     }
 
@@ -697,9 +1038,12 @@ async def export_report_excel(
     if not tenant_id:
         raise HTTPException(status_code=400, detail="Tenant bilgisi bulunamadı")
     has_pii = _user_has_pii_access(current_user)
+    from security.guest_data_visibility import user_guest_data_visibility
+    visibility_policy, _policy_source = user_guest_data_visibility(current_user)
 
     try:
-        return await _build_excel_response(config, tenant_id, has_pii)
+        _, currency_symbol = await get_tenant_currency(tenant_id)
+        return await _build_excel_response(config, tenant_id, has_pii, currency_symbol, visibility_policy)
     except HTTPException:
         raise
     except Exception:
@@ -712,12 +1056,18 @@ async def export_report_excel(
         raise HTTPException(status_code=500, detail="report_export_failed")
 
 
-async def _build_excel_response(config: "ReportConfig", tenant_id: str, has_pii: bool):
+async def _build_excel_response(
+    config: "ReportConfig",
+    tenant_id: str,
+    has_pii: bool,
+    currency_symbol: str = "₺",
+    visibility_policy: dict[str, str] | None = None,
+):
     from openpyxl import Workbook
     from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
     from openpyxl.utils import get_column_letter
 
-    data = await fetch_report_data(config, tenant_id, has_pii)
+    data = await fetch_report_data(config, tenant_id, has_pii, visibility_policy)
     source_def = DATA_SOURCES.get(config.data_source, {})
 
     wb = Workbook()
@@ -744,7 +1094,7 @@ async def _build_excel_response(config: "ReportConfig", tenant_id: str, has_pii:
         parts.append(f"Başlangıç: {config.date_from}")
     if config.date_to:
         parts.append(f"Bitiş: {config.date_to}")
-    if not has_pii:
+    if _pii_is_masked(config, has_pii, visibility_policy):
         parts.append("PII alanları maskelenmiştir")
     date_cell.value = " | ".join(parts) if parts else f"Oluşturma: {datetime.now(UTC).strftime('%Y-%m-%d %H:%M')}"
     date_cell.font = Font(size=10, italic=True, color="666666")
@@ -783,7 +1133,7 @@ async def _build_excel_response(config: "ReportConfig", tenant_id: str, has_pii:
 
             if col_type == "currency" and is_numeric:
                 cell.value = coerced
-                cell.number_format = "#,##0.00 ₺"
+                cell.number_format = f'#,##0.00 "{currency_symbol}"'
             elif col_type == "number" and is_numeric:
                 cell.value = coerced
                 cell.number_format = "#,##0"
@@ -829,7 +1179,7 @@ async def _build_excel_response(config: "ReportConfig", tenant_id: str, has_pii:
                     cell.font = Font(bold=True, size=11)
                     cell.border = Border(top=Side(style="double"))
                     if col_type == "currency":
-                        cell.number_format = "#,##0.00 ₺"
+                        cell.number_format = f'#,##0.00 "{currency_symbol}"'
 
     # Task #253 (tur-2): belt-and-suspenders save retry. If, despite the
     # _coerce_excel_value sanitization, openpyxl still raises (future seed
@@ -877,8 +1227,11 @@ async def export_report_pdf(
     if not tenant_id:
         raise HTTPException(status_code=400, detail="Tenant bilgisi bulunamadı")
     has_pii = _user_has_pii_access(current_user)
+    from security.guest_data_visibility import user_guest_data_visibility
+    visibility_policy, _policy_source = user_guest_data_visibility(current_user)
+    currency_code, currency_symbol = await get_tenant_currency(tenant_id)
 
-    data = await fetch_report_data(config, tenant_id, has_pii)
+    data = await fetch_report_data(config, tenant_id, has_pii, visibility_policy)
     source_def = DATA_SOURCES.get(config.data_source, {})
 
     headers = [source_def.get("columns", {}).get(col, {}).get("label", col) for col in config.columns]
@@ -905,7 +1258,7 @@ async def export_report_pdf(
             val = row.get(col_key, "")
             col_type = source_def.get("columns", {}).get(col_key, {}).get("type")
             if col_type == "currency" and isinstance(val, (int, float)) and not isinstance(val, bool):
-                display = f"₺{val:,.2f}"
+                display = f"{currency_symbol}{val:,.2f} {currency_code}"
             elif col_type == "boolean":
                 display = "Evet" if val else "Hayır"
             elif isinstance(val, list):
@@ -918,13 +1271,13 @@ async def export_report_pdf(
     header_cells = "".join(f'<th style="padding:8px;background:#0F172A;color:white;font-size:{header_size}px;text-align:left;border-bottom:2px solid #0d2137;">{_e(h)}</th>' for h in headers)
 
     date_info = ""
-    if config.date_from or config.date_to or not has_pii:
+    if config.date_from or config.date_to or _pii_is_masked(config, has_pii, visibility_policy):
         parts = []
         if config.date_from:
             parts.append(f"Başlangıç: {_e(config.date_from)}")
         if config.date_to:
             parts.append(f"Bitiş: {_e(config.date_to)}")
-        if not has_pii:
+        if _pii_is_masked(config, has_pii, visibility_policy):
             parts.append("<i>PII alanları maskelenmiştir</i>")
         date_info = f'<p style="color:#64748b;font-size:11px;margin:4px 0 12px;">{" | ".join(parts)}</p>'
 

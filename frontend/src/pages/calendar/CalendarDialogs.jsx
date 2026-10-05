@@ -5,47 +5,68 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Search, CheckCircle, AlertCircle, Clock, UserCheck, UserPlus } from "lucide-react";
+import { Search, CheckCircle, AlertCircle, Clock, Gift, UserCheck, UserPlus } from "lucide-react";
 import { getSegmentColor, getStatusColor, getStatusLabel } from "./calendarHelpers";
 import { alertDialog } from '@/lib/dialogs';
 import { useTranslation } from 'react-i18next';
 import { calculateOccupancyPrice, findOccupancyRule, nightsBetween } from '@/utils/occupancyPricing';
 import { deduplicateGuestSearchResults, maskGuestDocument } from './guestIdentity';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
+import { moneyInputProps, parseMoneyInput } from '@/lib/moneyInput';
 
 // New Booking Dialog
 export const NewBookingDialog = ({
   open, onOpenChange, newBooking, setNewBooking,
   selectedRoom, guests, rooms, onSubmit, minDate,
   occupancyPricingRules = {},
+  canRecordPrepayment = false,
 }) => {
   const { t } = useTranslation();
   const roomTypes = rooms ? [...new Set(rooms.map(r => r.room_type).filter(Boolean))] : [];
   const effectiveMinDate = minDate || new Date().toISOString().split('T')[0];
   const activeRoom = selectedRoom || (rooms || []).find(room => room.id === newBooking.room_id);
+  const currency = newBooking.currency || activeRoom?.currency || cachedTenantCurrency();
   const occupancyRule = useMemo(
     () => findOccupancyRule(occupancyPricingRules, activeRoom),
     [occupancyPricingRules, activeRoom],
   );
-  const occupancyQuote = useMemo(() => occupancyRule?.pricing_type === 'per_person'
+  const nights = Math.max(1, nightsBetween(newBooking.check_in, newBooking.check_out));
+  const priceInputMode = newBooking.price_input_mode || 'nightly';
+  const occupancyQuote = useMemo(() => (
+    occupancyRule?.pricing_type === 'per_person' && priceInputMode !== 'total'
+  )
     ? calculateOccupancyPrice({
         baseNightlyRate: newBooking.base_rate,
-        nights: nightsBetween(newBooking.check_in, newBooking.check_out),
+        nights,
         adults: Number(newBooking.adults || 1),
         childrenAges: newBooking.children_ages || [],
         rule: occupancyRule,
       })
     : null, [
       occupancyRule,
+      priceInputMode,
+      nights,
       newBooking.base_rate,
-      newBooking.check_in,
-      newBooking.check_out,
       newBooking.adults,
       newBooking.children_ages,
     ]);
 
+  const recalculateNightlyTotal = useCallback((draft) => {
+    if ((draft.price_input_mode || 'nightly') === 'total'
+      || (occupancyRule?.pricing_type === 'per_person' && !draft.manual_price_override)) {
+      return draft;
+    }
+    const rate = Number(draft.base_rate);
+    const draftNights = Math.max(1, nightsBetween(draft.check_in, draft.check_out));
+    return {
+      ...draft,
+      total_amount: draft.base_rate === '' || !Number.isFinite(rate) ? '' : rate * draftNights,
+    };
+  }, [occupancyRule]);
+
   useEffect(() => {
     setNewBooking(prev => {
-      if (!occupancyQuote) {
+      if (!occupancyQuote || prev.manual_price_override) {
         if (!prev.apply_occupancy_pricing) return prev;
         return { ...prev, apply_occupancy_pricing: false, pricing_rule_version: null };
       }
@@ -144,7 +165,7 @@ export const NewBookingDialog = ({
 
   return (
   <Dialog open={open} onOpenChange={onOpenChange}>
-    <DialogContent className="max-w-2xl">
+    <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
       <DialogHeader>
         <DialogTitle>{t('cm.pages_calendar_CalendarDialogs.hizli_rezervasyon')}</DialogTitle>
       </DialogHeader>
@@ -167,7 +188,7 @@ export const NewBookingDialog = ({
                 className="w-full border rounded-md p-2"
                 value={newBooking.room_type || ''}
                 onChange={(e) => {
-                  setNewBooking({...newBooking, room_type: e.target.value, room_id: ''});
+                  setNewBooking((current) => ({...current, room_type: e.target.value, room_id: ''}));
                 }}
                 data-testid="new-booking-room-type"
               >
@@ -183,12 +204,15 @@ export const NewBookingDialog = ({
                 onChange={(e) => {
                   const room = (rooms || []).find(item => item.id === e.target.value);
                   const baseRate = Number(room?.base_price || 0);
-                  setNewBooking({
-                    ...newBooking,
+                  setNewBooking((current) => ({
+                    ...current,
                     room_id: e.target.value,
                     base_rate: baseRate,
-                    total_amount: baseRate * Math.max(1, nightsBetween(newBooking.check_in, newBooking.check_out)),
-                  });
+                    total_amount: baseRate * Math.max(1, nightsBetween(current.check_in, current.check_out)),
+                    manual_price_override: true,
+                    apply_occupancy_pricing: false,
+                    pricing_rule_version: null,
+                  }));
                 }}
                 data-testid="new-booking-room-select"
               >
@@ -337,13 +361,15 @@ export const NewBookingDialog = ({
               min={effectiveMinDate}
               onChange={(e) => {
                 const newCi = e.target.value;
-                const updates = {...newBooking, check_in: newCi};
-                if (newCi && (!newBooking.check_out || newBooking.check_out <= newCi)) {
-                  const nextDay = new Date(newCi + 'T00:00:00');
-                  nextDay.setDate(nextDay.getDate() + 1);
-                  updates.check_out = nextDay.toISOString().split('T')[0];
-                }
-                setNewBooking(updates);
+                setNewBooking((current) => {
+                  const updates = {...current, check_in: newCi};
+                  if (newCi && (!current.check_out || current.check_out <= newCi)) {
+                    const nextDay = new Date(newCi + 'T00:00:00');
+                    nextDay.setDate(nextDay.getDate() + 1);
+                    updates.check_out = nextDay.toISOString().split('T')[0];
+                  }
+                  return recalculateNightlyTotal(updates);
+                });
               }}
               required
               data-testid="new-booking-checkin"
@@ -355,13 +381,13 @@ export const NewBookingDialog = ({
               type="date"
               value={newBooking.check_out}
               min={newBooking.check_in || effectiveMinDate}
-              onChange={(e) => setNewBooking({...newBooking, check_out: e.target.value})}
+              onChange={(e) => setNewBooking((current) => recalculateNightlyTotal({...current, check_out: e.target.value}))}
               required
               data-testid="new-booking-checkout"
             />
           </div>
         </div>
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
           <div>
             <Label>Yetiskin</Label>
             <Input
@@ -390,14 +416,59 @@ export const NewBookingDialog = ({
             />
           </div>
           <div>
-            <Label>{occupancyQuote ? 'Gecelik taban fiyat' : t('cm.pages_calendar_CalendarDialogs.toplam_tutar')}</Label>
+            <Label>Fiyat girişi</Label>
+            <select
+              className="w-full border rounded-md p-2"
+              value={priceInputMode}
+              onChange={(e) => {
+                const nextMode = e.target.value;
+                setNewBooking(prev => {
+                  const next = {
+                    ...prev,
+                    price_input_mode: nextMode,
+                    manual_price_override: nextMode !== 'total',
+                    apply_occupancy_pricing: false,
+                    pricing_rule_version: null,
+                  };
+                  return nextMode === 'nightly' ? recalculateNightlyTotal(next) : next;
+                });
+              }}
+              data-testid="new-booking-price-input-mode"
+            >
+              <option value="nightly">Gecelik fiyat</option>
+              <option value="total">Konaklama toplamı</option>
+            </select>
+          </div>
+          <div>
+            <Label>
+              {priceInputMode === 'total'
+                ? 'Konaklama toplamı'
+                : newBooking.manual_price_override ? 'Gecelik nihai fiyat' : 'Gecelik taban fiyat'}
+            </Label>
             <Input
-              type="number"
-              step="0.01"
-              value={occupancyQuote ? newBooking.base_rate : newBooking.total_amount}
-              onChange={(e) => setNewBooking(occupancyQuote
-                ? {...newBooking, base_rate: Number(e.target.value)}
-                : {...newBooking, total_amount: Number(e.target.value), base_rate: Number(e.target.value)})}
+              {...moneyInputProps}
+              placeholder="Örn. 150,74"
+              value={priceInputMode === 'total' ? newBooking.total_amount : newBooking.base_rate}
+              onChange={(e) => {
+                const input = e.target.value;
+                setNewBooking(prev => {
+                  if ((prev.price_input_mode || 'nightly') === 'total') {
+                    return {
+                      ...prev,
+                      total_amount: input,
+                      apply_occupancy_pricing: false,
+                    };
+                  }
+                  return recalculateNightlyTotal({
+                    ...prev,
+                    base_rate: input,
+                    manual_price_override: true,
+                    apply_occupancy_pricing: false,
+                    pricing_rule_version: null,
+                  });
+                });
+              }}
+              data-testid="new-booking-price-input"
             />
           </div>
         </div>
@@ -423,27 +494,170 @@ export const NewBookingDialog = ({
         )}
         {occupancyQuote && (
           <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900" data-testid="occupancy-price-breakdown">
-            <div className="font-semibold">Kişi bazlı fiyat özeti</div>
+            <div className="flex items-center justify-between gap-3">
+              <div className="font-semibold">
+                {newBooking.manual_price_override ? 'Kişi bazlı fiyat kuralı' : 'Kişi bazlı fiyat özeti'}
+              </div>
+              {newBooking.manual_price_override && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-7 border-blue-300 bg-white px-2 text-xs text-blue-800 hover:bg-blue-100"
+                  onClick={() => setNewBooking(prev => ({
+                    ...prev,
+                    manual_price_override: false,
+                    apply_occupancy_pricing: true,
+                    total_amount: occupancyQuote.totalAmount,
+                    pricing_rule_version: occupancyQuote.rule.pricing_version,
+                  }))}
+                  data-testid="apply-occupancy-price-rule"
+                >
+                  Kural fiyatını uygula
+                </Button>
+              )}
+            </div>
             <div className="mt-1">
               {occupancyQuote.rule.base_occupancy} yetişkin dahil
-              {occupancyQuote.extraAdults > 0 && ` · ${occupancyQuote.extraAdults} ek yetişkin × ₺${occupancyQuote.rule.extra_adult_rate.toLocaleString('tr-TR')}`}
+              {occupancyQuote.extraAdults > 0 && (
+                occupancyQuote.rule.extra_adult_rate_type === 'percentage'
+                  ? ` · ${occupancyQuote.extraAdults} ek yetişkin × %${occupancyQuote.rule.extra_adult_rate} (${formatCurrency(occupancyQuote.adultSupplement / occupancyQuote.extraAdults, currency)})`
+                  : ` · ${occupancyQuote.extraAdults} ek yetişkin × ${formatCurrency(occupancyQuote.rule.extra_adult_rate, currency)}`
+              )}
               {occupancyQuote.childBreakdown?.map((child, index) => (
                 <span key={`${child.age}-${index}`}>
-                  {` · ${child.age} yaş ${child.rate > 0 ? `₺${child.rate.toLocaleString('tr-TR')}` : 'ücretsiz'}`}
+                  {` · ${child.age} yaş ${child.rate > 0 ? formatCurrency(child.rate, currency) : 'ücretsiz'}`}
                 </span>
               ))}
             </div>
             <div className="mt-1 font-medium">
-              Gecelik ₺{occupancyQuote.nightlyTotal.toLocaleString('tr-TR')} · {occupancyQuote.nights} gece toplam ₺{occupancyQuote.totalAmount.toLocaleString('tr-TR')}
+              {newBooking.manual_price_override
+                ? `Elle girilen gecelik ${formatCurrency(newBooking.base_rate, currency)} · Kural önerisi ${formatCurrency(occupancyQuote.nightlyTotal, currency)}`
+                : `Gecelik ${formatCurrency(occupancyQuote.nightlyTotal, currency)} · ${occupancyQuote.nights} gece toplam ${formatCurrency(occupancyQuote.totalAmount, currency)}`}
             </div>
+            {newBooking.manual_price_override && (
+              <div className="mt-1 text-xs text-blue-700">
+                Elle girilen fiyat nihai fiyat olarak kaydedilir; kişi zammı ikinci kez eklenmez.
+              </div>
+            )}
           </div>
         )}
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3" data-testid="new-booking-complimentary">
+          <label className="flex items-center gap-2 text-sm font-semibold text-amber-950">
+            <input
+              type="checkbox"
+              checked={Boolean(newBooking.is_complimentary)}
+              onChange={(e) => setNewBooking({
+                ...newBooking,
+                is_complimentary: e.target.checked,
+                complimentary_scope: e.target.checked ? (newBooking.complimentary_scope || 'accommodation_only') : 'accommodation_only',
+                complimentary_reason: e.target.checked ? newBooking.complimentary_reason : '',
+                prepayment_enabled: e.target.checked ? false : newBooking.prepayment_enabled,
+                prepayment_amount: e.target.checked ? '' : newBooking.prepayment_amount,
+              })}
+              data-testid="new-booking-complimentary-toggle"
+            />
+            <Gift className="h-4 w-4" />
+            Komp rezervasyon
+          </label>
+          <p className="mt-1 text-xs text-amber-800">Gerçek satış değeri raporlama için korunur; misafire ücret yansıtılmaz.</p>
+          {newBooking.is_complimentary && (
+            <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div>
+                <Label>Komp kapsamı</Label>
+                <select
+                  className="w-full border rounded-md p-2 bg-white"
+                  value={newBooking.complimentary_scope || 'accommodation_only'}
+                  onChange={(e) => setNewBooking({ ...newBooking, complimentary_scope: e.target.value })}
+                  data-testid="new-booking-complimentary-scope"
+                >
+                  <option value="accommodation_only">Sadece Konaklama</option>
+                  <option value="full">Full Comp</option>
+                </select>
+                <p className="mt-1 text-[11px] text-amber-700">
+                  {newBooking.complimentary_scope === 'full'
+                    ? 'Konaklama ve sonradan eklenen tüm ekstra hizmetler ikramdır.'
+                    : 'Yalnızca oda/konaklama ikramdır; ekstra hizmetler ücretlidir.'}
+                </p>
+              </div>
+              <div>
+                <Label>Komp gerekçesi</Label>
+                <Input
+                  value={newBooking.complimentary_reason || ''}
+                  onChange={(e) => setNewBooking({ ...newBooking, complimentary_reason: e.target.value })}
+                  placeholder="Örn: Yönetim onayı / misafir memnuniyeti"
+                  minLength={3}
+                  maxLength={500}
+                  required
+                  data-testid="new-booking-complimentary-reason"
+                />
+              </div>
+            </div>
+          )}
+        </div>
+        <div className="rounded-lg border border-slate-200 bg-slate-50 p-3" data-testid="new-booking-prepayment">
+          <label className="flex items-center gap-2 text-sm font-semibold text-slate-800">
+            <input
+              type="checkbox"
+              checked={Boolean(newBooking.prepayment_enabled)}
+              onChange={(e) => setNewBooking({ ...newBooking, prepayment_enabled: e.target.checked })}
+              disabled={Boolean(newBooking.is_complimentary) || !canRecordPrepayment}
+              data-testid="new-booking-prepayment-toggle"
+            />
+            Ön ödeme alındı
+          </label>
+          <p className="mt-1 text-xs text-slate-500">
+            {newBooking.is_complimentary
+              ? 'Komp rezervasyonda ön ödeme alınmaz.'
+              : !canRecordPrepayment
+                ? 'Ön ödeme kaydı için “Ödeme al” yetkisi gerekir.'
+                : 'Kaydedildiğinde rezervasyonun folyosuna ön ödeme olarak işlenir.'}
+          </p>
+          {newBooking.prepayment_enabled && (
+            <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <div>
+                <Label>Ön ödeme tutarı</Label>
+                <Input
+                  {...moneyInputProps}
+                  placeholder="Örn. 150,74"
+                  value={newBooking.prepayment_amount}
+                  onChange={(e) => setNewBooking({ ...newBooking, prepayment_amount: e.target.value })}
+                  required
+                  data-testid="new-booking-prepayment-amount"
+                />
+              </div>
+              <div>
+                <Label>Ödeme yöntemi</Label>
+                <select
+                  className="w-full border rounded-md p-2"
+                  value={newBooking.prepayment_method}
+                  onChange={(e) => setNewBooking({ ...newBooking, prepayment_method: e.target.value })}
+                  data-testid="new-booking-prepayment-method"
+                >
+                  <option value="cash">Nakit</option>
+                  <option value="card">Kart</option>
+                  <option value="bank_transfer">Havale / EFT</option>
+                  <option value="online">Online ödeme</option>
+                </select>
+              </div>
+              <div>
+                <Label>Referans no (opsiyonel)</Label>
+                <Input
+                  value={newBooking.prepayment_reference}
+                  onChange={(e) => setNewBooking({ ...newBooking, prepayment_reference: e.target.value })}
+                  placeholder="Dekont / POS no"
+                  data-testid="new-booking-prepayment-reference"
+                />
+              </div>
+            </div>
+          )}
+        </div>
         <div>
           <Label>{t('cm.pages_calendar_CalendarDialogs.durum')}</Label>
           <select
             className="w-full border rounded-md p-2"
             value={newBooking.status}
-            onChange={(e) => setNewBooking({...newBooking, status: e.target.value})}
+            onChange={(e) => setNewBooking((current) => ({...current, status: e.target.value}))}
           >
             <option value="confirmed">{t('cm.pages_calendar_CalendarDialogs.onaylandi')}</option>
             <option value="guaranteed">Garantili</option>
@@ -526,7 +740,7 @@ const RoomChangePanel = ({ booking, onMoved, onClose }) => {
       room_change_reason: reason,
     };
     if (useNewPrice) {
-      const amount = parseFloat(newPrice);
+      const amount = parseMoneyInput(newPrice);
       if (Number.isNaN(amount) || amount < 0) { alertDialog({ message: 'Geçerli bir fiyat girin' }); return; }
       payload.total_amount = amount;
     }
@@ -831,56 +1045,63 @@ export const BookingDetailsDialog = ({
   );
 };
 
-// Room Move Reason Dialog
+// Confirm the exact dates and room before committing a drag operation.
+const MOVE_REASON_CODES = ['', 'Guest Request', 'Room Maintenance', 'Upgrade', 'Downgrade', 'Overbooking', 'VIP Guest', 'Room Issue', 'Operational', 'Other'];
 export const MoveReasonDialog = ({
   open, onOpenChange, moveData, moveReason, setMoveReason, onConfirmMove,
 }) => (
   <Dialog open={open} onOpenChange={onOpenChange}>
     <DialogContent>
       <DialogHeader>
-        <DialogTitle>Room Move - Reason Required</DialogTitle>
+        <DialogTitle>Rezervasyon taşımayı onayla</DialogTitle>
       </DialogHeader>
       {moveData && (
         <div className="space-y-4">
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <div className="text-sm text-blue-900">
-              <div className="font-semibold mb-2">Moving Booking:</div>
-              <div>Guest: <strong>{moveData.booking.guest_name}</strong></div>
-              <div>From: <strong>Room {moveData.oldRoom}</strong> -&gt; <strong>Room {moveData.newRoom}</strong></div>
-              <div>Dates: <strong>{moveData.newCheckIn}</strong> to <strong>{moveData.newCheckOut}</strong></div>
+            <div className="text-sm text-blue-900 space-y-2">
+              <div className="font-semibold">{moveData.booking.guest_name}</div>
+              <div className="grid grid-cols-[auto_1fr_1fr] gap-x-4 gap-y-2" data-testid="booking-move-summary">
+                <span>Oda</span><span>Önce: <strong>{moveData.oldRoom}</strong></span><span>Sonra: <strong>{moveData.newRoom}</strong></span>
+                <span>Giriş</span><span>Önce: <strong>{String(moveData.oldCheckIn).slice(0, 10)}</strong></span><span>Sonra: <strong>{moveData.newCheckIn}</strong></span>
+                <span>Çıkış</span><span>Önce: <strong>{String(moveData.oldCheckOut).slice(0, 10)}</strong></span><span>Sonra: <strong>{moveData.newCheckOut}</strong></span>
+              </div>
             </div>
           </div>
-          <div>
-            <Label>Reason for Move *</Label>
+          {moveData.requiresReason && <div>
+            <Label>Oda değişikliği nedeni *</Label>
             <select
+              aria-label="Oda değişikliği nedeni"
               className="w-full border rounded-md p-2 mb-2"
-              value={moveReason}
+              value={MOVE_REASON_CODES.includes(moveReason) ? moveReason : 'Other'}
               onChange={(e) => setMoveReason(e.target.value)}
             >
-              <option value="">Select reason...</option>
-              <option value="Guest Request">Guest Request</option>
-              <option value="Room Maintenance">Room Maintenance</option>
-              <option value="Upgrade">Room Upgrade</option>
-              <option value="Downgrade">Room Downgrade</option>
-              <option value="Overbooking">Overbooking Resolution</option>
-              <option value="VIP Guest">VIP Guest Priority</option>
-              <option value="Room Issue">Room Issue / Complaint</option>
-              <option value="Operational">Operational Reasons</option>
-              <option value="Other">Other</option>
+              <option value="">Neden seçin...</option>
+              <option value="Guest Request">Misafir talebi</option>
+              <option value="Room Maintenance">Oda bakımı</option>
+              <option value="Upgrade">Üst kategoriye geçiş</option>
+              <option value="Downgrade">Alt kategoriye geçiş</option>
+              <option value="Overbooking">Fazla rezervasyon</option>
+              <option value="VIP Guest">VIP misafir</option>
+              <option value="Room Issue">Oda sorunu / şikâyet</option>
+              <option value="Operational">Operasyonel neden</option>
+              <option value="Other">Diğer</option>
             </select>
-            {moveReason === 'Other' && (
-              <Input placeholder="Please specify..." onChange={(e) => setMoveReason(e.target.value)} />
+            {(moveReason === 'Other' || (moveReason && !MOVE_REASON_CODES.includes(moveReason))) && (
+              <Input
+                aria-label="Diğer oda değişikliği nedeni"
+                placeholder="Nedeni belirtin..."
+                value={moveReason === 'Other' ? '' : moveReason}
+                onChange={(e) => setMoveReason(e.target.value || 'Other')}
+              />
             )}
-          </div>
-          <div className="text-xs text-gray-600 bg-gray-50 p-3 rounded">
-            <strong>Note:</strong> This move will be recorded in the room move history.
-          </div>
+          </div>}
+          <p className="text-xs text-gray-600">Onayladığınız değişiklik rezervasyon geçmişine kaydedilir.</p>
           <div className="flex space-x-2">
-            <Button onClick={onConfirmMove} className="flex-1">Confirm Move</Button>
+            <Button onClick={onConfirmMove} className="flex-1">Taşımayı Onayla</Button>
             <Button variant="outline" onClick={() => {
               onOpenChange(false);
               setMoveReason('');
-            }}>Cancel</Button>
+            }}>Vazgeç</Button>
           </div>
         </div>
       )}
@@ -898,7 +1119,7 @@ export const FindRoomDialog = ({
 
   return (
   <Dialog open={open} onOpenChange={onOpenChange}>
-    <DialogContent className="max-w-3xl">
+    <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
       <DialogHeader>
         <DialogTitle>{t('cm.pages_calendar_CalendarDialogs.musaitlik_kontrolu')}</DialogTitle>
       </DialogHeader>
@@ -973,7 +1194,7 @@ export const FindRoomDialog = ({
                     <div className="text-sm text-gray-600 capitalize">
                       {room.room_type} - Kat {room.floor} - Kapasite: {room.capacity}
                     </div>
-                    <div className="text-sm font-semibold text-green-600">{(room.base_price || 0).toLocaleString('tr-TR')} TL/gece</div>
+                    <div className="text-sm font-semibold text-green-600">{formatCurrency(room.base_price || 0, room.currency || cachedTenantCurrency())}/gece</div>
                   </div>
                   <Button size="sm" onClick={() => onSelectRoom(room)}>Rezerve Et</Button>
                 </div>

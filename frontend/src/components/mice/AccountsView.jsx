@@ -9,12 +9,13 @@ import { Plus, Trash2, Briefcase, Check } from 'lucide-react';
 import { Field, Modal } from './_shared';
 import { confirmDialog } from '@/lib/dialogs';
 import { useTranslation } from 'react-i18next';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 
 const AccountsView = ({ accounts, reload }) => {
   const { t } = useTranslation();
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ name: '', tax_no: '', city: '', industry: 'corporate',
-                                     credit_limit: 0, payment_terms_days: 30 });
+                                     credit_limit: 0, currency: cachedTenantCurrency(), payment_terms_days: 30 });
   const [expandedId, setExpandedId] = useState(null);
   const [contactsCache, setContactsCache] = useState({});
   const [contactForm, setContactForm] = useState(null);
@@ -26,7 +27,7 @@ const AccountsView = ({ accounts, reload }) => {
       toast.success('Hesap oluşturuldu');
       setShowForm(false);
       setForm({ name: '', tax_no: '', city: '', industry: 'corporate',
-                credit_limit: 0, payment_terms_days: 30 });
+                credit_limit: 0, currency: cachedTenantCurrency(), payment_terms_days: 30 });
       await reload();
     } catch (err) { toast.error(err.response?.data?.detail || 'Hata'); }
   };
@@ -75,7 +76,7 @@ const AccountsView = ({ accounts, reload }) => {
                 <div className="font-semibold text-sm">{a.name}</div>
                 <div className="text-xs text-gray-500">
                   {a.tax_no && `VKN ${a.tax_no} • `}{a.city || ''} • {a.industry}
-                  {a.credit_limit > 0 && ` • Kredi limiti ₺${a.credit_limit.toLocaleString('tr-TR')}`}
+                  {a.credit_limit > 0 && ` • Kredi limiti ${formatCurrency(a.credit_limit, a.currency || cachedTenantCurrency())}`}
                 </div>
               </div>
               <Badge variant="outline" className="text-xs">
@@ -141,8 +142,10 @@ const AccountsView = ({ accounts, reload }) => {
               </Field>
               <Field label={t('cm.components_mice_AccountsView.vade_gun')}><Input type="number" value={form.payment_terms_days}
                 onChange={(e) => setForm({ ...form, payment_terms_days: +e.target.value })} /></Field>
-              <Field label="Kredi Limiti ₺"><Input type="number" value={form.credit_limit}
+              <Field label={`Kredi Limiti (${form.currency || cachedTenantCurrency()})`}><Input type="number" value={form.credit_limit}
                 onChange={(e) => setForm({ ...form, credit_limit: +e.target.value })} /></Field>
+              <Field label="Para Birimi"><Input required maxLength={3} value={form.currency}
+                onChange={(e) => setForm({ ...form, currency: e.target.value.toUpperCase() })} /></Field>
             </div>
             <div className="flex justify-end gap-2 pt-2">
               <Button type="button" variant="ghost" onClick={() => setShowForm(false)}>{t('cm.components_mice_AccountsView.iptal')}</Button>

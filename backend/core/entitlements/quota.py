@@ -18,6 +18,7 @@ _HR_ACTIVE_EMPLOYEES_METRIC = "active_employees"
 class QuotaExceededException(Exception):
     pass
 
+
 async def _ensure_quota_doc(
     tenant_id: str,
     module_key: str,
@@ -34,22 +35,11 @@ async def _ensure_quota_doc(
     _db = db_handle if db_handle is not None else db
     try:
         await _db.entitlement_quota_usage.update_one(
-            {
-                "tenant_id": tenant_id,
-                "module_key": module_key,
-                "metric": metric
-            },
-            {
-                "$setOnInsert": {
-                    "used": 0,
-                    "resources": [],
-                    "created_at": datetime.now(UTC)
-                }
-            },
-            upsert=True
+            {"tenant_id": tenant_id, "module_key": module_key, "metric": metric}, {"$setOnInsert": {"used": 0, "resources": [], "created_at": datetime.now(UTC)}}, upsert=True
         )
     except DuplicateKeyError:
         pass
+
 
 async def reserve_quota(tenant_id: str, module_key: str, metric: str, resource_id: str, limit: int, force: bool = False) -> dict:
     """
@@ -63,32 +53,15 @@ async def reserve_quota(tenant_id: str, module_key: str, metric: str, resource_i
     await _ensure_quota_doc(tenant_id, module_key, metric)
     now = datetime.now(UTC)
 
-    query = {
-        "tenant_id": tenant_id,
-        "module_key": module_key,
-        "metric": metric,
-        "resources": {"$ne": resource_id}
-    }
+    query = {"tenant_id": tenant_id, "module_key": module_key, "metric": metric, "resources": {"$ne": resource_id}}
     if not force:
         query["used"] = {"$lt": limit}
 
-    doc = await db.entitlement_quota_usage.find_one_and_update(
-        query,
-        {
-            "$inc": {"used": 1},
-            "$addToSet": {"resources": resource_id},
-            "$set": {"updated_at": now}
-        },
-        return_document=ReturnDocument.AFTER
-    )
+    doc = await db.entitlement_quota_usage.find_one_and_update(query, {"$inc": {"used": 1}, "$addToSet": {"resources": resource_id}, "$set": {"updated_at": now}}, return_document=ReturnDocument.AFTER)
 
     if not doc:
         # It failed. Let's check why.
-        current = await db.entitlement_quota_usage.find_one({
-            "tenant_id": tenant_id,
-            "module_key": module_key,
-            "metric": metric
-        })
+        current = await db.entitlement_quota_usage.find_one({"tenant_id": tenant_id, "module_key": module_key, "metric": metric})
         # If it's already in the list, it's an idempotent success
         if current and resource_id in current.get("resources", []):
             return current
@@ -97,6 +70,7 @@ async def reserve_quota(tenant_id: str, module_key: str, metric: str, resource_i
 
     return doc
 
+
 async def release_quota(tenant_id: str, module_key: str, metric: str, resource_id: str) -> None:
     """
     Atomically releases a quota slot.
@@ -104,22 +78,13 @@ async def release_quota(tenant_id: str, module_key: str, metric: str, resource_i
     """
     now = datetime.now(UTC)
     await db.entitlement_quota_usage.update_one(
-        {
-            "tenant_id": tenant_id,
-            "module_key": module_key,
-            "metric": metric,
-            "resources": resource_id,
-            "used": {"$gt": 0}
-        },
-        {
-            "$inc": {"used": -1},
-            "$pull": {"resources": resource_id},
-            "$set": {"updated_at": now}
-        }
+        {"tenant_id": tenant_id, "module_key": module_key, "metric": metric, "resources": resource_id, "used": {"$gt": 0}},
+        {"$inc": {"used": -1}, "$pull": {"resources": resource_id}, "$set": {"updated_at": now}},
     )
 
 
 # ── Bootstrap / Reconciliation ───────────────────────────────────────────────
+
 
 async def is_hr_quota_bootstrapped(tenant_id: str, *, db_handle: Any = None) -> bool:
     """Return True if the one-time bootstrap has already completed for this tenant.
@@ -129,11 +94,13 @@ async def is_hr_quota_bootstrapped(tenant_id: str, *, db_handle: Any = None) -> 
     Falls back to the global ``db`` when ``db_handle`` is None.
     """
     _db = db_handle if db_handle is not None else db
-    doc = await _db.entitlement_quota_bootstrap.find_one({
-        "tenant_id": tenant_id,
-        "module_key": _HR_MODULE,
-        "metric": _HR_ACTIVE_EMPLOYEES_METRIC,
-    })
+    doc = await _db.entitlement_quota_bootstrap.find_one(
+        {
+            "tenant_id": tenant_id,
+            "module_key": _HR_MODULE,
+            "metric": _HR_ACTIVE_EMPLOYEES_METRIC,
+        }
+    )
     return doc is not None
 
 

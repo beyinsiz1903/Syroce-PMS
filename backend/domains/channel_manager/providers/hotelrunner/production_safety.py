@@ -9,6 +9,7 @@ from infra.production_config import is_production_env
 
 ENABLE_HOTELRUNNER_PRODUCTION = "ENABLE_HOTELRUNNER_PRODUCTION"
 DISABLE_HOTELRUNNER_RESERVATION_SYNC = "DISABLE_HOTELRUNNER_RESERVATION_SYNC"
+DISABLE_HOTELRUNNER_RESERVATION_RECONCILIATION = "DISABLE_HOTELRUNNER_RESERVATION_RECONCILIATION"
 DISABLE_HOTELRUNNER_ARI_WRITE = "DISABLE_HOTELRUNNER_ARI_WRITE"
 
 HOTELRUNNER_PRODUCTION_DISABLED = "HOTELRUNNER_PRODUCTION_DISABLED"
@@ -35,6 +36,15 @@ def reservation_sync_block_reason() -> str:
     if is_disabled(DISABLE_HOTELRUNNER_RESERVATION_SYNC):
         return HOTELRUNNER_RESERVATION_SYNC_DISABLED
     return ""
+
+
+def reservation_reconciliation_disabled() -> bool:
+    """Whether existing HotelRunner bookings are read-only in PMS.
+
+    New undelivered reservations still use the normal inbound pipeline.  This
+    switch only suppresses reconciliation of records that PMS already owns.
+    """
+    return is_disabled(DISABLE_HOTELRUNNER_RESERVATION_RECONCILIATION)
 
 
 def ari_write_block_reason() -> str:

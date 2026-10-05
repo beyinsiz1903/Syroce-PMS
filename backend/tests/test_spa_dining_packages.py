@@ -8,18 +8,11 @@ Locks in regressions for:
 """
 from __future__ import annotations
 
-import sys
-import datetime as dt
-if not hasattr(dt, "UTC"):
-    dt.UTC = dt.timezone.utc
-
+from datetime import datetime
 from types import SimpleNamespace
-from typing import Any
+
 import pytest
-from datetime import datetime, timezone
-from datetime import timezone as dt_timezone
-UTC = dt_timezone.utc
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from routers import spa_dining_packages as spa_dining_router
@@ -141,6 +134,9 @@ class _FakeDB:
 def env(monkeypatch):
     fake_db = _FakeDB()
     monkeypatch.setattr(spa_dining_router, "get_system_db", lambda: fake_db)
+    async def _mock_tenant_currency(_tenant_id):
+        return "EUR", "€"
+    monkeypatch.setattr(spa_dining_router, "get_tenant_currency", _mock_tenant_currency)
 
     # Mock the SPA conflict checking from domains/spa/router.py
     async def _mock_check_spa_conflict(tenant_id, therapist_id, room_id, start, end, **kwargs):
@@ -182,6 +178,8 @@ def test_list_packages(env):
     data = r.json()
     assert len(data["packages"]) == 2
     assert data["packages"][0]["id"] == "pkg_zen_dine"
+    assert data["packages"][0]["currency"] == "EUR"
+    assert data["currency"] == "EUR"
 
 
 def test_create_package_booking_happy_path(env):
@@ -209,6 +207,7 @@ def test_create_package_booking_happy_path(env):
     spa_appt = list(env.db.spa_appointments.docs.values())[0]
     assert spa_appt["guest_name"] == "Alice Smith"
     assert spa_appt["starts_at"] == "2026-06-28T16:00:00+00:00"
+    assert spa_appt["currency"] == "EUR"
 
     # Verify Table Res created
     assert len(env.db.table_reservations.docs) == 1
@@ -225,6 +224,10 @@ def test_create_package_booking_happy_path(env):
     posting = list(env.db.folio_postings.docs.values())[0]
     assert posting["amount"] == 3200.0
     assert posting["reservation_id"] == _RESERVATION_ID
+    assert posting["currency"] == "EUR"
+
+    cross_booking = list(env.db.spa_dining_package_bookings.docs.values())[0]
+    assert cross_booking["currency"] == "EUR"
 
 
 def test_create_package_booking_fails_on_spa_conflict(env):

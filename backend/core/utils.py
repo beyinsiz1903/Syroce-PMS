@@ -34,11 +34,14 @@ async def calculate_folio_balance(folio_id: str, tenant_id: str) -> float:
       ödenmemiş folyoların kapatılmasına yol açıyordu.
     """
     ch_pipe = [
-        {"$match": {"folio_id": folio_id, "tenant_id": tenant_id, "voided": False}},
+        # Older ledger rows may not have a `voided` field. They are valid
+        # unless explicitly voided; matching only `False` silently drops
+        # those legitimate charges from AR and checkout balances.
+        {"$match": {"folio_id": folio_id, "tenant_id": tenant_id, "voided": {"$ne": True}}},
         {"$group": {"_id": None, "total": {"$sum": {"$ifNull": ["$total", "$amount"]}}}},
     ]
     pay_pipe = [
-        {"$match": {"folio_id": folio_id, "tenant_id": tenant_id, "voided": False}},
+        {"$match": {"folio_id": folio_id, "tenant_id": tenant_id, "voided": {"$ne": True}}},
         {"$group": {"_id": None, "total": {"$sum": "$amount"}}},
     ]
     ch_doc = await db.folio_charges.aggregate(ch_pipe).to_list(1)
@@ -272,6 +275,8 @@ async def night_audit_post_room_charges(tenant_id: str, date: str):
             "check_out": {"$gte": date},
         }
     ):
+        if booking.get("is_complimentary"):
+            continue
         folio = await db.folios.find_one(
             {
                 "booking_id": booking.get("id"),
@@ -289,26 +294,49 @@ async def night_audit_post_room_charges(tenant_id: str, date: str):
 
 
 async def night_audit_calculate_revenue(tenant_id: str, date: str):
-    """Calculate daily revenue breakdown"""
-    revenue = {"room_revenue": 0, "fnb_revenue": 0, "other_revenue": 0, "total_revenue": 0}
+    """Calculate posted daily revenue without combining unlike currencies."""
+    category_totals: dict[str, dict[str, float]] = {
+        "room_revenue": {},
+        "fnb_revenue": {},
+        "other_revenue": {},
+        "total_revenue": {},
+        "tax_revenue": {},
+    }
 
     async for charge in db.folio_charges.find(
         {
             "tenant_id": tenant_id,
-            "date": {"$gte": date, "$lt": (datetime.fromisoformat(date) + timedelta(days=1)).isoformat()},
+            "voided": {"$ne": True},
+            "$or": [
+                {"business_date": date},
+                {"business_date": {"$exists": False}, "date": {"$gte": date, "$lt": (datetime.fromisoformat(date) + timedelta(days=1)).isoformat()}},
+                {"business_date": None, "date": {"$gte": date, "$lt": (datetime.fromisoformat(date) + timedelta(days=1)).isoformat()}},
+            ],
         }
     ):
-        category = charge.get("charge_category")
-        amount = charge.get("total", 0)
-        if category == "room":
-            revenue["room_revenue"] += amount
-        elif category in ["food", "beverage"]:
-            revenue["fnb_revenue"] += amount
+        category = str(charge.get("charge_category") or charge.get("charge_type") or "other").lower()
+        amount = float(charge.get("total") or charge.get("amount") or 0)
+        tax_amount = float(charge.get("tax_amount") or 0)
+        currency = str(charge.get("currency") or "TRY").strip().upper() or "TRY"
+        if category in {"room", "accommodation", "room_charge"}:
+            bucket = "room_revenue"
+        elif category in {"food", "beverage", "fnb", "restaurant", "bar", "room_service"}:
+            bucket = "fnb_revenue"
         else:
-            revenue["other_revenue"] += amount
-        revenue["total_revenue"] += amount
+            bucket = "other_revenue"
+        category_totals[bucket][currency] = category_totals[bucket].get(currency, 0.0) + amount
+        category_totals["total_revenue"][currency] = category_totals["total_revenue"].get(currency, 0.0) + amount
+        category_totals["tax_revenue"][currency] = category_totals["tax_revenue"].get(currency, 0.0) + tax_amount
 
-    return {k: round(v, 2) for k, v in revenue.items()}
+    result: dict[str, object] = {}
+    for field, totals in category_totals.items():
+        rounded = {currency: round(amount, 2) for currency, amount in totals.items()}
+        values = [amount for amount in rounded.values() if amount != 0]
+        result[f"{field}_by_currency"] = rounded
+        result[field] = values[0] if len(values) == 1 else (0.0 if not values else None)
+    result["mixed_currency"] = len([amount for amount in category_totals["total_revenue"].values() if amount]) > 1
+    result["basis"] = "posted_folio_charges"
+    return result
 
 
 async def night_audit_recalculate_ar(tenant_id: str):

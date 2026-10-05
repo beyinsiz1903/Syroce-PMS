@@ -9,6 +9,8 @@ import os
 
 from common.context import OperationContext
 from common.result import ServiceResult
+from core.business_date_service import accounting_day_match
+from core.channel_room_charge_pricing import calculate_room_charge
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +38,23 @@ _FIN_AGG_MAX_MS = _env_int("FIN_AGG_MAX_TIME_MS", 8000)
 DEFAULT_VAT_RATE = 0.10
 
 
+def _currency(value) -> str:
+    return str(value or "TRY").strip().upper() or "TRY"
+
+
+def _add_currency(target: dict[str, float], currency, amount) -> None:
+    code = _currency(currency)
+    target[code] = round(target.get(code, 0.0) + float(amount or 0), 2)
+
+
+def _currency_delta(left: dict[str, float], right: dict[str, float]) -> dict[str, float]:
+    return {
+        code: round(left.get(code, 0.0) - right.get(code, 0.0), 2)
+        for code in sorted(set(left) | set(right))
+        if abs(left.get(code, 0.0) - right.get(code, 0.0)) >= 0.005
+    }
+
+
 class FinancialService:
     """Financial reporting and reconciliation for night audit."""
 
@@ -60,13 +79,16 @@ class FinancialService:
             {
                 "$match": {
                     "tenant_id": ctx.tenant_id,
-                    "date": business_date,
+                    # Room charges are posted after the business day closes;
+                    # their event timestamp is therefore the following day.
+                    # Financial reporting must use the accounting date.
+                    "business_date": business_date,
                     "voided": {"$ne": True},
                 }
             },
             {
                 "$group": {
-                    "_id": "$charge_category",
+                    "_id": {"category": "$charge_category", "currency": {"$ifNull": ["$currency", "TRY"]}},
                     "total_amount": {"$sum": "$amount"},
                     "total_tax": {"$sum": "$tax_amount"},
                     "total_with_tax": {"$sum": "$total"},
@@ -81,15 +103,20 @@ class FinancialService:
                 "$match": {
                     "tenant_id": ctx.tenant_id,
                     "status": {"$ne": "voided"},
-                    "$or": [
+                    **accounting_day_match(
+                        business_date,
                         {"date": business_date},
                         {"payment_date": business_date},
-                    ],
+                        {"processed_at": {"$regex": f"^{business_date}"}},
+                    ),
                 }
             },
             {
                 "$group": {
-                    "_id": "$payment_method",
+                    "_id": {
+                        "method": {"$ifNull": ["$payment_method", "$method"]},
+                        "currency": {"$ifNull": ["$currency", "TRY"]},
+                    },
                     "total_amount": {"$sum": "$amount"},
                     "count": {"$sum": 1},
                 }
@@ -110,7 +137,10 @@ class FinancialService:
             },
             {
                 "$group": {
-                    "_id": "$payments.payment_method",
+                    "_id": {
+                        "method": "$payments.payment_method",
+                        "currency": {"$ifNull": ["$payments.currency", {"$ifNull": ["$currency", "TRY"]}]},
+                    },
                     "total_amount": {"$sum": "$payments.amount"},
                     "count": {"$sum": 1},
                 }
@@ -122,14 +152,14 @@ class FinancialService:
             {
                 "$match": {
                     "tenant_id": ctx.tenant_id,
-                    "date": business_date,
+                    "business_date": business_date,
                     "voided": {"$ne": True},
                     "tax_breakdown": {"$exists": True},
                 }
             },
             {
                 "$group": {
-                    "_id": None,
+                    "_id": {"currency": {"$ifNull": ["$currency", "TRY"]}},
                     "total_vat": {"$sum": "$tax_breakdown.vat"},
                     "total_accommodation_tax": {"$sum": "$tax_breakdown.accommodation_tax"},
                 }
@@ -141,11 +171,19 @@ class FinancialService:
             {"$match": {"tenant_id": ctx.tenant_id, "status": "open"}},
             {
                 "$group": {
-                    "_id": None,
+                    "_id": {"currency": {"$ifNull": ["$currency", "TRY"]}},
                     "total_balance": {"$sum": "$balance"},
                     "positive_balance": {"$sum": {"$cond": [{"$gt": ["$balance", 0]}, "$balance", 0]}},
                     "negative_balance": {"$sum": {"$cond": [{"$lt": ["$balance", 0]}, "$balance", 0]}},
                     "count": {"$sum": 1},
+                    "folios": {
+                        "$push": {
+                            "folio_number": "$folio_number",
+                            "booking_id": "$booking_id",
+                            "balance": "$balance"
+                            ,"currency": {"$ifNull": ["$currency", "TRY"]}
+                        }
+                    }
                 }
             },
         ]
@@ -190,85 +228,127 @@ class FinancialService:
         tax_docs = _ok(tax_docs, [])
         open_balance_docs = _ok(open_balance_docs, [])
         audit_run = _ok(audit_run, None)
+        degraded_subqueries: list[str] = []
 
         # In-memory reduce
         revenue_by_category: dict = {}
         total_revenue = 0.0
         total_tax = 0.0
+        revenue_by_currency: dict[str, float] = {}
+        revenue_with_tax_by_currency: dict[str, float] = {}
+        tax_by_currency: dict[str, float] = {}
         total_charges_count = 0
         for doc in charge_docs:
-            cat = doc["_id"] or "other"
-            revenue_by_category[cat] = {
-                "amount": round(doc["total_amount"], 2),
-                "tax": round(doc["total_tax"], 2),
-                "total": round(doc["total_with_tax"], 2),
-                "count": doc["count"],
-            }
+            group_id = doc.get("_id")
+            cat = (group_id.get("category") if isinstance(group_id, dict) else group_id) or "other"
+            currency = _currency(group_id.get("currency") if isinstance(group_id, dict) else None)
+            entry = revenue_by_category.setdefault(cat, {"amount": 0.0, "tax": 0.0, "total": 0.0, "count": 0, "amount_by_currency": {}, "tax_by_currency": {}, "total_by_currency": {}})
+            entry["amount"] = round(entry["amount"] + doc["total_amount"], 2)
+            entry["tax"] = round(entry["tax"] + doc["total_tax"], 2)
+            entry["total"] = round(entry["total"] + doc["total_with_tax"], 2)
+            entry["count"] += doc["count"]
+            _add_currency(entry["amount_by_currency"], currency, doc["total_amount"])
+            _add_currency(entry["tax_by_currency"], currency, doc["total_tax"])
+            _add_currency(entry["total_by_currency"], currency, doc["total_with_tax"])
+            _add_currency(revenue_by_currency, currency, doc["total_amount"])
+            _add_currency(tax_by_currency, currency, doc["total_tax"])
+            _add_currency(revenue_with_tax_by_currency, currency, doc["total_with_tax"])
             total_revenue += doc["total_amount"]
             total_tax += doc["total_tax"]
             total_charges_count += doc["count"]
 
         payments_by_method: dict = {}
         total_payments = 0.0
+        payments_by_currency: dict[str, float] = {}
         total_payments_count = 0
         for doc in payment_docs:
-            method = doc["_id"] or "other"
-            payments_by_method[method] = {
-                "amount": round(doc["total_amount"], 2),
-                "count": doc["count"],
-            }
+            group_id = doc.get("_id")
+            method = (group_id.get("method") if isinstance(group_id, dict) else group_id) or "other"
+            currency = _currency(group_id.get("currency") if isinstance(group_id, dict) else None)
+            entry = payments_by_method.setdefault(method, {"amount": 0.0, "count": 0, "amount_by_currency": {}})
+            entry["amount"] = round(entry["amount"] + doc["total_amount"], 2)
+            entry["count"] += doc["count"]
+            _add_currency(entry["amount_by_currency"], currency, doc["total_amount"])
+            _add_currency(payments_by_currency, currency, doc["total_amount"])
             total_payments += doc["total_amount"]
             total_payments_count += doc["count"]
 
         for doc in folio_payment_docs:
-            method = doc["_id"] or "other"
-            if method in payments_by_method:
-                payments_by_method[method]["amount"] = round(payments_by_method[method]["amount"] + doc["total_amount"], 2)
-                payments_by_method[method]["count"] += doc["count"]
-            else:
-                payments_by_method[method] = {
-                    "amount": round(doc["total_amount"], 2),
-                    "count": doc["count"],
-                }
+            group_id = doc.get("_id")
+            method = (group_id.get("method") if isinstance(group_id, dict) else group_id) or "other"
+            currency = _currency(group_id.get("currency") if isinstance(group_id, dict) else None)
+            entry = payments_by_method.setdefault(method, {"amount": 0.0, "count": 0, "amount_by_currency": {}})
+            entry["amount"] = round(entry["amount"] + doc["total_amount"], 2)
+            entry["count"] += doc["count"]
+            _add_currency(entry["amount_by_currency"], currency, doc["total_amount"])
+            _add_currency(payments_by_currency, currency, doc["total_amount"])
             total_payments += doc["total_amount"]
             total_payments_count += doc["count"]
 
-        tax_breakdown = {"vat": 0.0, "accommodation_tax": 0.0}
+        tax_breakdown = {"vat": 0.0, "accommodation_tax": 0.0, "by_currency": {}}
         for doc in tax_docs:
-            tax_breakdown["vat"] = round(doc.get("total_vat", 0), 2)
-            tax_breakdown["accommodation_tax"] = round(doc.get("total_accommodation_tax", 0), 2)
+            group_id = doc.get("_id")
+            currency = _currency(group_id.get("currency") if isinstance(group_id, dict) else None)
+            vat = round(doc.get("total_vat", 0), 2)
+            accommodation = round(doc.get("total_accommodation_tax", 0), 2)
+            tax_breakdown["vat"] = round(tax_breakdown["vat"] + vat, 2)
+            tax_breakdown["accommodation_tax"] = round(tax_breakdown["accommodation_tax"] + accommodation, 2)
+            tax_breakdown["by_currency"][currency] = {"vat": vat, "accommodation_tax": accommodation}
 
         open_balance = {"total": 0.0, "receivable": 0.0, "overpayment": 0.0}
         open_folios_count = 0
+        open_folios_list = []
+        open_balance_by_currency: dict[str, dict[str, float]] = {}
         for doc in open_balance_docs:
-            open_balance["total"] = round(doc.get("total_balance", 0), 2)
-            open_balance["receivable"] = round(doc.get("positive_balance", 0), 2)
-            open_balance["overpayment"] = round(abs(doc.get("negative_balance", 0)), 2)
-            open_folios_count = doc.get("count", 0)
+            group_id = doc.get("_id")
+            currency = _currency(group_id.get("currency") if isinstance(group_id, dict) else None)
+            current = {"total": round(doc.get("total_balance", 0), 2), "receivable": round(doc.get("positive_balance", 0), 2), "overpayment": round(abs(doc.get("negative_balance", 0)), 2)}
+            open_balance_by_currency[currency] = current
+            for key in open_balance:
+                open_balance[key] = round(open_balance[key] + current[key], 2)
+            open_folios_count += doc.get("count", 0)
+            open_folios_list.extend(doc.get("folios", []))
+
+        # Enrich the list
+        try:
+            open_folios_list = await self._enrich_with_guest_room(ctx.tenant_id, open_folios_list)
+        except Exception as exc:
+            logger.warning("get_daily_financial_summary enrich_with_guest_room failed: %s", exc)
+            degraded_subqueries.append("open_folios_enrich")
+        for fol in open_folios_list:
+            fol["balance"] = round(fol.get("balance", 0), 2)
+
 
         return ServiceResult.success(
             {
                 "business_date": business_date,
                 "revenue": {
                     "total": round(total_revenue, 2),
+                    "total_by_currency": revenue_by_currency,
                     "total_with_tax": round(total_revenue + total_tax, 2),
+                    "total_with_tax_by_currency": revenue_with_tax_by_currency,
                     "by_category": revenue_by_category,
                     "charges_count": total_charges_count,
                 },
                 "tax": {
                     "total": round(total_tax, 2),
+                    "total_by_currency": tax_by_currency,
                     "breakdown": tax_breakdown,
                 },
                 "payments": {
                     "total": round(total_payments, 2),
+                    "total_by_currency": payments_by_currency,
                     "by_method": payments_by_method,
                     "payments_count": total_payments_count,
                 },
                 "open_folios": {
                     "count": open_folios_count,
                     "balance": open_balance,
+                    "balance_by_currency": open_balance_by_currency,
+                    "items": open_folios_list
                 },
                 "net_position": round(total_revenue + total_tax - total_payments, 2),
+                "net_position_by_currency": _currency_delta(revenue_with_tax_by_currency, payments_by_currency),
                 "audit_status": audit_run.get("status") if audit_run else "not_run",
             }
         )
@@ -301,7 +381,7 @@ class FinancialService:
                         "date": business_date,
                         "voided": {"$ne": True},
                     },
-                    {"_id": 0, "id": 1, "booking_id": 1, "charge_category": 1, "amount": 1, "tax_amount": 1, "total": 1, "description": 1},
+                    {"_id": 0, "id": 1, "booking_id": 1, "charge_category": 1, "amount": 1, "tax_amount": 1, "total": 1, "description": 1, "currency": 1},
                 ).max_time_ms(_FIN_AGG_MAX_MS),
                 1000,
             ),
@@ -310,9 +390,15 @@ class FinancialService:
                     {
                         "tenant_id": ctx.tenant_id,
                         "status": {"$ne": "voided"},
-                        "$or": [{"date": business_date}, {"payment_date": business_date}],
+                        **accounting_day_match(
+                            business_date,
+                            {"date": business_date},
+                            {"payment_date": business_date},
+                            {"processed_at": {"$regex": f"^{business_date}"}},
+                            {"created_at": {"$regex": f"^{business_date}"}},
+                        ),
                     },
-                    {"_id": 0, "id": 1, "booking_id": 1, "amount": 1, "payment_method": 1, "description": 1},
+                    {"_id": 0, "id": 1, "booking_id": 1, "amount": 1, "payment_method": 1, "description": 1, "currency": 1},
                 ).max_time_ms(_FIN_AGG_MAX_MS),
                 1000,
             ),
@@ -326,7 +412,7 @@ class FinancialService:
                             {"balance": {"$lt": -100}},
                         ],
                     },
-                    {"_id": 0, "id": 1, "folio_number": 1, "balance": 1, "booking_id": 1},
+                    {"_id": 0, "id": 1, "folio_number": 1, "balance": 1, "booking_id": 1, "currency": 1},
                 ).max_time_ms(_FIN_AGG_MAX_MS),
                 200,
             ),
@@ -350,6 +436,12 @@ class FinancialService:
 
         total_charges = sum(c.get("total", 0) for c in charges)
         total_payments_amount = sum(p.get("amount", 0) for p in payments)
+        charges_by_currency: dict[str, float] = {}
+        payments_by_currency: dict[str, float] = {}
+        for charge in charges:
+            _add_currency(charges_by_currency, charge.get("currency"), charge.get("total", 0))
+        for payment in payments:
+            _add_currency(payments_by_currency, payment.get("currency"), payment.get("amount", 0))
 
         # Discrepancy detection
         discrepancies = []
@@ -363,10 +455,11 @@ class FinancialService:
                     {
                         "type": "duplicate_charge",
                         "severity": "warning",
-                        "message": f"Olasi tekrar masraf: {c.get('description', 'N/A')} - {c.get('amount', 0)} TL",
+                        "message": f"Olası tekrar masraf: {c.get('description', 'N/A')}",
                         "entity_id": c.get("id"),
                         "booking_id": c.get("booking_id"),
                         "amount": c.get("amount", 0),
+                        "currency": _currency(c.get("currency")),
                     }
                 )
             seen_charges[key] = c
@@ -381,7 +474,7 @@ class FinancialService:
             try:
                 bookings_cursor = self._db.bookings.find(
                     {"id": {"$in": list(booking_ids)}, "tenant_id": ctx.tenant_id},
-                    {"_id": 0, "id": 1, "status": 1, "room_rate": 1, "rate": 1},
+                    {"_id": 0, "id": 1, "status": 1, "room_rate": 1, "rate": 1, "currency": 1},
                 ).max_time_ms(_FIN_AGG_MAX_MS)
                 async for b in bookings_cursor:
                     bid = b.get("id")
@@ -421,10 +514,11 @@ class FinancialService:
                         {
                             "type": "rate_discrepancy",
                             "severity": "warning",
-                            "message": f"Oran tutarsizligi: Beklenen {expected_rate} TL, Gercek {actual_rate} TL",
+                            "message": "Oda fiyatı rezervasyon fiyatıyla uyuşmuyor",
                             "booking_id": bid,
                             "expected": expected_rate,
                             "actual": actual_rate,
+                            "currency": _currency(rc.get("currency") or booking.get("currency")),
                         }
                     )
 
@@ -435,23 +529,62 @@ class FinancialService:
                     {
                         "type": "high_balance",
                         "severity": "error",
-                        "message": f"Yuksek bakiyeli folio: {f.get('folio_number')} - {f.get('balance', 0):.2f} TL",
+                        "message": f"Yüksek bakiyeli folyo: {f.get('folio_number')}",
                         "entity_id": f.get("id"),
                         "amount": f.get("balance", 0),
+                        "booking_id": f.get("booking_id"),
+                        "currency": _currency(f.get("currency")),
                     }
                 )
 
         variance = round(total_charges - total_payments_amount, 2)
 
+        # Enrich discrepancies with guest/room info
+        try:
+            discrepancies = await self._enrich_with_guest_room(ctx.tenant_id, discrepancies)
+        except Exception as exc:
+            logger.warning("payment_reconciliation enrich_with_guest_room failed: %s", exc)
+            degraded_subqueries.append("discrepancies_enrich")
+
+        # Modify the message to include guest name and room number!
+        for d in discrepancies:
+            if d.get("type") == "high_balance":
+                g = d.get("guest_name", "Misafir")
+                r = d.get("room_no", "Oda ?")
+                d["message"] = f"Yüksek bakiyeli folyo ({r} - {g})"
+            elif d.get("type") == "orphan_charge":
+                g = d.get("guest_name", "İsimsiz")
+                r = d.get("room_no", "?")
+                if g != "İsimsiz" or r != "?":
+                    d["message"] = f"Sahipsiz masraf ({r} - {g})"
+
+        # Enrich high balance folios as well.  This is presentation data, so a
+        # guest/room lookup failure must not turn an otherwise usable
+        # reconciliation into a 500 response (nor make the numbers look
+        # complete).  Keep the original folio records and expose the degraded
+        # source to the operator.
+        try:
+            high_balance_folios = await self._enrich_with_guest_room(
+                ctx.tenant_id, high_balance_folios
+            )
+        except Exception as exc:  # noqa: BLE001 — reconciliation stays readable
+            logger.warning(
+                "payment_reconciliation high_balance_enrich failed: %s", exc
+            )
+            degraded_subqueries.append("high_balance_folios_enrich")
+
         return ServiceResult.success(
             {
                 "business_date": business_date,
                 "charges_total": round(total_charges, 2),
+                "charges_by_currency": charges_by_currency,
                 "charges_count": len(charges),
                 "payments_total": round(total_payments_amount, 2),
+                "payments_by_currency": payments_by_currency,
                 "payments_count": len(payments),
                 "variance": variance,
-                "is_balanced": abs(variance) < 0.01,
+                "variance_by_currency": _currency_delta(charges_by_currency, payments_by_currency),
+                "is_balanced": not _currency_delta(charges_by_currency, payments_by_currency),
                 "discrepancies": discrepancies,
                 "discrepancy_count": len(discrepancies),
                 "high_balance_folios": high_balance_folios,
@@ -473,13 +606,13 @@ class FinancialService:
             {
                 "$match": {
                     "tenant_id": ctx.tenant_id,
-                    "date": {"$gte": start_date, "$lte": end_date},
+                    "business_date": {"$gte": start_date, "$lte": end_date},
                     "voided": {"$ne": True},
                 }
             },
             {
                 "$group": {
-                    "_id": {"date": "$date", "category": "$charge_category"},
+                    "_id": {"date": "$date", "category": "$charge_category", "currency": {"$ifNull": ["$currency", "TRY"]}},
                     "amount": {"$sum": "$amount"},
                     "tax": {"$sum": "$tax_amount"},
                     "total": {"$sum": "$total"},
@@ -493,6 +626,8 @@ class FinancialService:
         category_totals = {}
         grand_total_revenue = 0.0
         grand_total_tax = 0.0
+        grand_revenue_by_currency: dict[str, float] = {}
+        grand_tax_by_currency: dict[str, float] = {}
         degraded_subqueries: list[str] = []
 
         try:
@@ -507,22 +642,30 @@ class FinancialService:
         for doc in revenue_docs:
             date = doc["_id"]["date"]
             cat = doc["_id"]["category"] or "other"
+            currency = _currency(doc["_id"].get("currency"))
 
             if date not in daily_revenue:
-                daily_revenue[date] = {"date": date, "categories": {}, "total": 0.0, "tax": 0.0}
-            daily_revenue[date]["categories"][cat] = {
-                "amount": round(doc["amount"], 2),
-                "tax": round(doc["tax"], 2),
-                "count": doc["count"],
-            }
+                daily_revenue[date] = {"date": date, "categories": {}, "total": 0.0, "tax": 0.0, "total_by_currency": {}, "tax_by_currency": {}}
+            daily_cat = daily_revenue[date]["categories"].setdefault(cat, {"amount": 0.0, "tax": 0.0, "count": 0, "amount_by_currency": {}, "tax_by_currency": {}})
+            daily_cat["amount"] = round(daily_cat["amount"] + doc["amount"], 2)
+            daily_cat["tax"] = round(daily_cat["tax"] + doc["tax"], 2)
+            daily_cat["count"] += doc["count"]
+            _add_currency(daily_cat["amount_by_currency"], currency, doc["amount"])
+            _add_currency(daily_cat["tax_by_currency"], currency, doc["tax"])
+            _add_currency(daily_revenue[date]["total_by_currency"], currency, doc["amount"])
+            _add_currency(daily_revenue[date]["tax_by_currency"], currency, doc["tax"])
             daily_revenue[date]["total"] = round(daily_revenue[date]["total"] + doc["amount"], 2)
             daily_revenue[date]["tax"] = round(daily_revenue[date]["tax"] + doc["tax"], 2)
 
             if cat not in category_totals:
-                category_totals[cat] = {"amount": 0.0, "tax": 0.0, "count": 0}
+                category_totals[cat] = {"amount": 0.0, "tax": 0.0, "count": 0, "amount_by_currency": {}, "tax_by_currency": {}}
             category_totals[cat]["amount"] = round(category_totals[cat]["amount"] + doc["amount"], 2)
             category_totals[cat]["tax"] = round(category_totals[cat]["tax"] + doc["tax"], 2)
             category_totals[cat]["count"] += doc["count"]
+            _add_currency(category_totals[cat]["amount_by_currency"], currency, doc["amount"])
+            _add_currency(category_totals[cat]["tax_by_currency"], currency, doc["tax"])
+            _add_currency(grand_revenue_by_currency, currency, doc["amount"])
+            _add_currency(grand_tax_by_currency, currency, doc["tax"])
 
             grand_total_revenue += doc["amount"]
             grand_total_tax += doc["tax"]
@@ -536,12 +679,13 @@ class FinancialService:
                     "$or": [
                         {"date": {"$gte": start_date, "$lte": end_date}},
                         {"payment_date": {"$gte": start_date, "$lte": end_date}},
+                        {"processed_at": {"$gte": start_date, "$lte": f"{end_date}T99"}},
                     ],
                 }
             },
             {
                 "$group": {
-                    "_id": "$payment_method",
+                    "_id": {"method": {"$ifNull": ["$payment_method", "$method"]}, "currency": {"$ifNull": ["$currency", "TRY"]}},
                     "total": {"$sum": "$amount"},
                     "count": {"$sum": 1},
                 }
@@ -549,6 +693,7 @@ class FinancialService:
         ]
         payment_method_totals = {}
         grand_total_payments = 0.0
+        grand_payments_by_currency: dict[str, float] = {}
         try:
             payment_docs = await self._db.payments.aggregate(
                 payment_pipeline,
@@ -559,11 +704,14 @@ class FinancialService:
             degraded_subqueries.append("payments")
             payment_docs = []
         for doc in payment_docs:
-            method = doc["_id"] or "other"
-            payment_method_totals[method] = {
-                "amount": round(doc["total"], 2),
-                "count": doc["count"],
-            }
+            group_id = doc.get("_id")
+            method = (group_id.get("method") if isinstance(group_id, dict) else group_id) or "other"
+            currency = _currency(group_id.get("currency") if isinstance(group_id, dict) else None)
+            entry = payment_method_totals.setdefault(method, {"amount": 0.0, "count": 0, "amount_by_currency": {}})
+            entry["amount"] = round(entry["amount"] + doc["total"], 2)
+            entry["count"] += doc["count"]
+            _add_currency(entry["amount_by_currency"], currency, doc["total"])
+            _add_currency(grand_payments_by_currency, currency, doc["total"])
             grand_total_payments += doc["total"]
 
         # Audit runs in range
@@ -636,10 +784,17 @@ class FinancialService:
                 "end_date": end_date,
                 "summary": {
                     "total_revenue": round(grand_total_revenue, 2),
+                    "total_revenue_by_currency": grand_revenue_by_currency,
                     "total_tax": round(grand_total_tax, 2),
+                    "total_tax_by_currency": grand_tax_by_currency,
                     "total_with_tax": round(grand_total_revenue + grand_total_tax, 2),
                     "total_payments": round(grand_total_payments, 2),
+                    "total_payments_by_currency": grand_payments_by_currency,
                     "net_position": round(grand_total_revenue + grand_total_tax - grand_total_payments, 2),
+                    "net_position_by_currency": _currency_delta(
+                        {code: round(amount + grand_tax_by_currency.get(code, 0), 2) for code, amount in grand_revenue_by_currency.items()},
+                        grand_payments_by_currency,
+                    ),
                     "total_bookings": total_bookings,
                     "total_rooms": total_rooms,
                 },
@@ -819,63 +974,62 @@ class FinancialService:
             )
 
         async def _check4_rate():
-            # DB-level filter — Python truthy fallback semantiği:
-            # effective = room_rate if truthy else (rate if truthy else 0)
-            # issue iff effective <= 0. "Truthy" burada None/missing/0 değil.
-            # Örn: room_rate=0, rate=120 → effective=120 → NO issue (eski mantık).
-            q = {
-                "tenant_id": tid,
-                "status": "checked_in",
-                "$expr": {
-                    "$lte": [
-                        {
-                            "$cond": [
-                                # room_rate truthy mi?  (not null AND not 0)
-                                {
-                                    "$and": [
-                                        {"$ne": [{"$ifNull": ["$room_rate", None]}, None]},
-                                        {"$ne": ["$room_rate", 0]},
-                                    ]
-                                },
-                                "$room_rate",
-                                {
-                                    "$cond": [
-                                        # rate truthy mi?
-                                        {
-                                            "$and": [
-                                                {"$ne": [{"$ifNull": ["$rate", None]}, None]},
-                                                {"$ne": ["$rate", 0]},
-                                            ]
-                                        },
-                                        "$rate",
-                                        0,
-                                    ]
-                                },
-                            ]
-                        },
-                        0,
-                    ],
+            # Denetim, masraf motoruyla aynı fiyat doğruluk kaynağını kullanmalı.
+            # Yalnızca room_rate/rate alanına bakmak; total_amount, total_price
+            # veya daily_rates ile fiyatlanmış geçerli rezervasyonları yanlışlıkla
+            # "0 TL" gösteriyordu.
+            bookings = await self._db.bookings.find(
+                {
+                    "tenant_id": tid,
+                    "status": "checked_in",
+                    "is_complimentary": {"$ne": True},
                 },
-            }
-            return await asyncio.gather(
-                self._db.bookings.count_documents(q, maxTimeMS=_FIN_AGG_MAX_MS),
-                self._db.bookings.find(
-                    q,
+                {
+                    "_id": 0,
+                    "id": 1,
+                    "room_rate": 1,
+                    "rate": 1,
+                    "rate_per_night": 1,
+                    "base_rate": 1,
+                    "total_amount": 1,
+                    "provider_total_amount": 1,
+                    "total_price": 1,
+                    "pricing_tax_inclusive": 1,
+                    "source": 1,
+                    "origin": 1,
+                    "booking_source": 1,
+                    "created_by": 1,
+                    "check_in": 1,
+                    "check_out": 1,
+                    "guest_name": 1,
+                    "room_no": 1,
+                    "guest_id": 1,
+                    "room_id": 1,
+                },
+            ).max_time_ms(_FIN_AGG_MAX_MS).to_list(2000)
+            booking_ids = [booking["id"] for booking in bookings if booking.get("id")]
+            daily_rates: dict[str, float] = {}
+            if booking_ids:
+                async for daily_rate in self._db.daily_rates.find(
                     {
-                        "_id": 0,
-                        "id": 1,
-                        "room_rate": 1,
-                        "rate": 1,
-                        "guest_name": 1,
-                        "room_no": 1,
-                        "guest_id": 1,
-                        "room_id": 1,
+                        "tenant_id": tid,
+                        "booking_id": {"$in": booking_ids},
+                        "date": {"$gte": business_date, "$lt": business_date + "T99"},
                     },
+                    {"_id": 0, "booking_id": 1, "rate": 1},
+                ).sort([("updated_at", -1), ("id", -1)]).max_time_ms(_FIN_AGG_MAX_MS):
+                    daily_rates.setdefault(daily_rate["booking_id"], float(daily_rate.get("rate") or 0))
+            invalid = []
+            for booking in bookings:
+                pricing = calculate_room_charge(
+                    booking,
+                    business_date,
+                    explicit_daily_rate=daily_rates.get(booking.get("id")),
                 )
-                .limit(ITEM_LIMIT)
-                .max_time_ms(_FIN_AGG_MAX_MS)
-                .to_list(ITEM_LIMIT),
-            )
+                if pricing["total"] <= 0:
+                    booking["effective_rate"] = pricing["total"]
+                    invalid.append(booking)
+            return len(invalid), invalid[:ITEM_LIMIT]
 
         async def _check5_closed():
             closed_folios = (
@@ -986,7 +1140,7 @@ class FinancialService:
         rate_items = [
             {
                 "booking_id": b["id"],
-                "rate": b.get("room_rate") or b.get("rate") or 0,
+                "rate": b.get("effective_rate", 0),
                 "guest_name": b.get("guest_name"),
                 "room_no": b.get("room_no"),
                 "guest_id": b.get("guest_id"),

@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
+import { bookingSourceLabel } from '@/utils/bookingSource';
 
 const PickupPaceReport = () => {
   const { t } = useTranslation();
@@ -18,7 +19,7 @@ const PickupPaceReport = () => {
     } catch (e) {
       console.warn('Unable to read pickup_target_date from localStorage', e);
     
-      toast.error('İşlem başarısız oldu');
+      toast.error('İşlem şu anda gerçekleştirilemiyor. Lütfen bağlantınızı kontrol edip tekrar deneyin.');
     }
     return new Date().toISOString().slice(0, 10);
   });
@@ -33,7 +34,7 @@ const PickupPaceReport = () => {
     } catch (e) {
       console.warn('Unable to read pickup_group_only from localStorage', e);
     
-      toast.error('İşlem başarısız oldu');
+      toast.error('İşlem şu anda gerçekleştirilemiyor. Lütfen bağlantınızı kontrol edip tekrar deneyin.');
     }
     return false;
   });
@@ -122,7 +123,7 @@ const PickupPaceReport = () => {
                   } catch (err) {
                     console.warn('Unable to persist pickup_group_only', err);
                   
-      toast.error('İşlem başarısız oldu');
+      toast.error('İşlem şu anda gerçekleştirilemiyor. Lütfen bağlantınızı kontrol edip tekrar deneyin.');
     }
                 }}
               />
@@ -186,7 +187,7 @@ const PickupPaceReport = () => {
             return (
               <Card key={ch.channel}>
                 <CardContent className="py-3">
-                  <div className="text-xs text-gray-500">{ch.channel === 'direct' ? 'Direct' : ch.channel}</div>
+                  <div className="text-xs text-gray-500">{bookingSourceLabel({ channel: ch.channel })}</div>
                   <div className="text-lg font-semibold">{ch.bookings} bookings</div>
                   <div className="mt-1 h-1.5 bg-gray-200 rounded">
                     <div

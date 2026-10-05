@@ -9,8 +9,63 @@ import {
   normalizeOccupancyStatus,
   isBlockedRoomStatus,
   cellOccupancyStatus,
+  findCalendarConflicts,
   getCellOccupancyTint,
+  isRoomOccupiedOnDay,
+  getActiveBookingsForRoomOnDate,
+  getRoomBlockForDate,
+  normalizeRoomBlocksResponse,
+  getRoomTypeCapacityForDate,
 } from '../calendarHelpers';
+
+describe('normalizeRoomBlocksResponse', () => {
+  it('endpointin ham dizi yanıtını korur', () => {
+    const blocks = [{ id: 'block-1' }];
+    expect(normalizeRoomBlocksResponse(blocks)).toBe(blocks);
+  });
+
+  it('eski blocks zarfını destekler ve geçersiz yanıtta boş dizi döner', () => {
+    expect(normalizeRoomBlocksResponse({ blocks: [{ id: 'block-1' }] })).toEqual([{ id: 'block-1' }]);
+    expect(normalizeRoomBlocksResponse(undefined)).toEqual([]);
+  });
+});
+
+describe('room blocks', () => {
+  const blocks = [{
+    id: 'block-1', room_id: 'room-201', status: 'active',
+    start_date: '2026-09-20', end_date: '2026-10-01',
+  }];
+
+  it('başlangıçta bloklar, tekrar satışa açılma gününde engellemez', () => {
+    expect(getRoomBlockForDate('room-201', '2026-09-20', blocks)).toEqual(blocks[0]);
+    expect(getRoomBlockForDate('room-201', '2026-10-01', blocks)).toBeUndefined();
+  });
+});
+
+describe('sellable room-type capacity', () => {
+  const rooms = Array.from({ length: 7 }, (_, index) => ({ id: `r${index}`, status: 'available' }));
+  const block = { room_id: 'r0', status: 'active', start_date: '2026-09-20', end_date: '2026-10-01' };
+
+  it('subtracts the blocked room only during its half-open date range', () => {
+    expect(getRoomTypeCapacityForDate(rooms, '2026-09-19', [block]).sellable).toBe(7);
+    expect(getRoomTypeCapacityForDate(rooms, '2026-09-20', [block])).toEqual({ total: 7, blocked: 1, sellable: 6 });
+    expect(getRoomTypeCapacityForDate(rooms, '2026-09-30', [block]).sellable).toBe(6);
+    expect(getRoomTypeCapacityForDate(rooms, '2026-10-01', [block]).sellable).toBe(7);
+  });
+
+  it('ignores inactive, allow-sell and other room blocks without masking active blocks', () => {
+    const ignored = [{ ...block, allow_sell: true }, { ...block, status: 'cancelled' }, { ...block, room_id: 'other' }];
+    expect(getRoomTypeCapacityForDate(rooms, '2026-09-20', ignored).sellable).toBe(7);
+    expect(getRoomTypeCapacityForDate(rooms, '2026-09-20', [...ignored, block, block]).blocked).toBe(1);
+  });
+
+  it('supports open-ended blocks and unavailable room statuses without double subtraction', () => {
+    const unavailable = [{ ...rooms[0], status: 'out_of_order' }];
+    expect(getRoomTypeCapacityForDate(unavailable, '2026-09-20', [block])).toEqual({ total: 1, blocked: 1, sellable: 0 });
+    expect(getRoomTypeCapacityForDate(rooms, '2027-01-01', [{ ...block, end_date: null }]).sellable).toBe(6);
+    expect(getRoomTypeCapacityForDate([], '2026-09-20', [block]).sellable).toBe(0);
+  });
+});
 
 describe('normalizeOccupancyStatus', () => {
   it('bilinen değerleri normalize eder, boşluk/büyük-küçük harfe toleranslı', () => {
@@ -106,5 +161,81 @@ describe('getCellOccupancyTint', () => {
   it('bilinmeyen durumda boş string döner', () => {
     expect(getCellOccupancyTint('whatever')).toBe('');
     expect(getCellOccupancyTint()).toBe('');
+  });
+});
+
+describe('same-day room turnover', () => {
+  const checkedOutStay = {
+    id: 'old-stay',
+    room_id: 'room-103',
+    status: 'checked_out',
+    check_in: '2026-08-28T14:00:00',
+    check_out: '2026-08-29T12:00:00',
+  };
+
+  it('tamamlanmış çıkışı yeni rezervasyon için doluluk saymaz', () => {
+    expect(isRoomOccupiedOnDay('room-103', '2026-08-29', [checkedOutStay])).toBe(false);
+  });
+
+  it('aktif konaklamada çıkış günü zaten yarı-açık aralığın dışındadır', () => {
+    expect(isRoomOccupiedOnDay('room-103', '2026-08-28', [
+      { ...checkedOutStay, status: 'checked_in' },
+    ])).toBe(true);
+    expect(isRoomOccupiedOnDay('room-103', '2026-08-29', [
+      { ...checkedOutStay, status: 'checked_in' },
+    ])).toBe(false);
+  });
+
+  it('çıkış ve sonraki giriş saatleri örtüşse bile komşu geceleri çakışma saymaz', () => {
+    const room = { id: 'room-107', room_number: '107' };
+    const conflicts = findCalendarConflicts([
+      {
+        id: 'departing-stay', room_id: room.id, guest_name: 'Önceki Misafir', status: 'confirmed',
+        check_in: '2026-09-04T14:00:00+03:00', check_out: '2026-09-05T12:00:00+03:00',
+      },
+      {
+        id: 'arriving-stay', room_id: room.id, guest_name: 'Yeni Misafir', status: 'confirmed',
+        check_in: '2026-09-05T00:00:00+03:00', check_out: '2026-09-06T00:00:00+03:00',
+      },
+    ], [room]);
+
+    expect(conflicts).toEqual([]);
+  });
+
+  it('dolu hücreye bırakıldığında, çıkış yapan eski kaydı değil o geceki takas adayını seçer', () => {
+    const bookings = [
+      {
+        id: 'departing-stay', room_id: 'room-102', status: 'confirmed',
+        check_in: '2026-09-04T14:00:00+03:00', check_out: '2026-09-05T12:00:00+03:00',
+      },
+      {
+        id: 'arriving-stay', room_id: 'room-102', status: 'confirmed',
+        check_in: '2026-09-05T14:00:00+03:00', check_out: '2026-09-06T12:00:00+03:00',
+      },
+    ];
+
+    expect(getActiveBookingsForRoomOnDate('room-102', '2026-09-05', bookings))
+      .toEqual([bookings[1]]);
+  });
+
+  it('aynı geceyi paylaşan aktif rezervasyonları çakışma olarak raporlar', () => {
+    const room = { id: 'room-107', room_number: '107' };
+    const conflicts = findCalendarConflicts([
+      {
+        id: 'first-stay', room_id: room.id, guest_name: 'İlk Misafir', status: 'confirmed',
+        check_in: '2026-09-04T14:00:00+03:00', check_out: '2026-09-06T12:00:00+03:00',
+      },
+      {
+        id: 'second-stay', room_id: room.id, guest_name: 'İkinci Misafir', status: 'confirmed',
+        check_in: '2026-09-05T00:00:00+03:00', check_out: '2026-09-07T00:00:00+03:00',
+      },
+    ], [room]);
+
+    expect(conflicts).toHaveLength(1);
+    expect(conflicts[0]).toMatchObject({
+      room_id: room.id,
+      overlap_start: '2026-09-05',
+      overlap_end: '2026-09-06',
+    });
   });
 });

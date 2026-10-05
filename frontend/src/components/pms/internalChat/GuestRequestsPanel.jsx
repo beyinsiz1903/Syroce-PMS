@@ -24,9 +24,10 @@ const CATEGORY_TR = {
 function fmtTime(iso) {
   if (!iso) return '';
   try {
-    return new Date(iso).toLocaleString('tr-TR', {
-      day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
-    });
+    const date = new Date(iso);
+    const options = { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' };
+    if (date.getFullYear() !== new Date().getFullYear()) options.year = 'numeric';
+    return date.toLocaleString('tr-TR', options);
   } catch {
     return '';
   }
@@ -58,6 +59,7 @@ export default function GuestRequestsPanel({ onUnreadChange }) {
   const isMountedRef = useRef(true);
   const scrollRef = useRef(null);
   const selectedRoomIdRef = useRef(null);
+  const shouldStickToBottomRef = useRef(true);
 
   useEffect(() => {
     selectedRoomIdRef.current = selectedRoomId;
@@ -119,6 +121,7 @@ export default function GuestRequestsPanel({ onUnreadChange }) {
     setSelectedRoomNumber(th.room_number || '');
     setMessages([]);
     setReply('');
+    shouldStickToBottomRef.current = true;
     loadThread(th.room_id, { markRead: true });
   }, [loadThread]);
 
@@ -143,6 +146,7 @@ export default function GuestRequestsPanel({ onUnreadChange }) {
       setReply('');
       loadThread(selectedRoomId, { silent: true });
       loadThreads(true);
+      toast({ title: 'Yanıt misafire gönderildi' });
     } catch (err) {
       toast({
         title: 'Yanıt gönderilemedi',
@@ -185,7 +189,9 @@ export default function GuestRequestsPanel({ onUnreadChange }) {
   useEffect(() => {
     if (!scrollRef.current) return;
     const node = scrollRef.current;
-    requestAnimationFrame(() => { node.scrollTop = node.scrollHeight; });
+    if (shouldStickToBottomRef.current) {
+      requestAnimationFrame(() => { node.scrollTop = node.scrollHeight; });
+    }
   }, [messages]);
 
   if (selectedRoomId) {
@@ -200,6 +206,7 @@ export default function GuestRequestsPanel({ onUnreadChange }) {
             onClick={backToList}
             data-testid="button-gr-back"
             title="Listeye dön"
+            aria-label="Misafir talepleri listesine dön"
           >
             <ChevronLeft className="h-4 w-4" />
           </Button>
@@ -218,6 +225,7 @@ export default function GuestRequestsPanel({ onUnreadChange }) {
             disabled={loadingThread}
             data-testid="button-gr-refresh-thread"
             title="Yenile"
+            aria-label="Misafir talebi konuşmasını yenile"
           >
             <RefreshCw className={`h-4 w-4 ${loadingThread ? 'animate-spin' : ''}`} />
           </Button>
@@ -225,6 +233,10 @@ export default function GuestRequestsPanel({ onUnreadChange }) {
 
         <div
           ref={scrollRef}
+          onScroll={(event) => {
+            const node = event.currentTarget;
+            shouldStickToBottomRef.current = node.scrollHeight - node.scrollTop - node.clientHeight < 32;
+          }}
           className="flex-1 min-h-0 overflow-y-auto p-3 space-y-2"
           data-testid="gr-thread-messages"
         >
@@ -287,6 +299,7 @@ export default function GuestRequestsPanel({ onUnreadChange }) {
               className="h-9 w-9 shrink-0"
               data-testid="button-gr-send"
               title="Gönder"
+              aria-label="Misafir talebine yanıt gönder"
             >
               {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
             </Button>
@@ -311,6 +324,7 @@ export default function GuestRequestsPanel({ onUnreadChange }) {
           disabled={loadingThreads}
           data-testid="button-gr-refresh-list"
           title="Yenile"
+          aria-label="Misafir talepleri listesini yenile"
         >
           <RefreshCw className={`h-4 w-4 ${loadingThreads ? 'animate-spin' : ''}`} />
         </Button>

@@ -6,6 +6,19 @@ import { sectionNavItems } from '@/components/Layout';
 const visibleItemsFor = (group) => NAV_ITEMS.filter((item) => item.navGroup === group && !item.hidden);
 
 describe('professional super admin navigation', () => {
+  it('exposes Transfer & Otopark in the frontdesk guest services menu', () => {
+    const item = NAV_ITEMS.find(({ key }) => key === 'transfer_parking');
+
+    expect(item).toMatchObject({
+      label: 'Transfer & Otopark',
+      path: '/transfer-parking',
+      moduleKey: 'parking',
+      navGroup: 'frontdesk',
+      navSection: 'guest_services',
+    });
+    expect(item.hidden).not.toBe(true);
+  });
+
   it('keeps hotel-facing channel tools separate from super admin operations', () => {
     const systemItems = visibleItemsFor('system');
     const adminItems = visibleItemsFor('admin');
@@ -24,6 +37,41 @@ describe('professional super admin navigation', () => {
       'channel_ops',
       'integration_credentials',
     ]));
+  });
+
+  it('exposes the system health dashboard from super admin platform operations', () => {
+    const item = NAV_ITEMS.find(({ key }) => key === 'observability');
+
+    expect(item).toMatchObject({
+      label: 'Sistem Sağlığı',
+      path: '/observability',
+      navGroup: 'admin',
+      navSection: 'platform',
+      requireSuperAdmin: true,
+    });
+    expect(item.hidden).not.toBe(true);
+  });
+
+  it('exposes platform tools that were previously assigned to an undefined menu group', () => {
+    const expected = {
+      control_plane: 'platform',
+      runtime_cockpit: 'platform',
+      incident_panel: 'platform',
+      encryption_management: 'platform',
+      production_golive: 'platform',
+      integration_observability: 'platform',
+      data_model: 'platform',
+      infra_hardening: 'platform',
+      hrv2_ops: 'integrations',
+    };
+
+    for (const [key, navSection] of Object.entries(expected)) {
+      expect(NAV_ITEMS.find((candidate) => candidate.key === key)).toMatchObject({
+        navGroup: 'admin',
+        navSection,
+        requireSuperAdmin: true,
+      });
+    }
   });
 
   it('places every visible system and admin link under a named section', () => {

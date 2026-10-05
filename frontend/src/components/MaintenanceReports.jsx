@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { FileText, TrendingUp, TrendingDown, Calendar, DollarSign, Clock, CheckCircle, AlertTriangle, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 const MaintenanceReports = () => {
   const {
     t
@@ -175,15 +176,15 @@ const MaintenanceReports = () => {
             <div className="space-y-2">
               <div className="flex items-center justify-between p-2 bg-gray-50 rounded">
                 <span className="text-sm">{t('cm.components_MaintenanceReports.toplam_maliyet')}</span>
-                <span className="font-bold text-lg">₺{monthlyReport.costs.total.toLocaleString()}</span>
+                <span className="font-bold text-lg">{formatCurrency(monthlyReport.costs.total, monthlyReport.currency || cachedTenantCurrency())}</span>
               </div>
               <div className="flex items-center justify-between p-2 bg-gray-50 rounded text-sm">
                 <span>{t('cm.components_MaintenanceReports.parca_maliyeti')}</span>
-                <span className="font-medium">₺{monthlyReport.costs.parts.toLocaleString()}</span>
+                <span className="font-medium">{formatCurrency(monthlyReport.costs.parts, monthlyReport.currency || cachedTenantCurrency())}</span>
               </div>
               <div className="flex items-center justify-between p-2 bg-gray-50 rounded text-sm">
                 <span>{t('cm.components_MaintenanceReports.iscilik')}</span>
-                <span className="font-medium">₺{monthlyReport.costs.labor.toLocaleString()}</span>
+                <span className="font-medium">{formatCurrency(monthlyReport.costs.labor, monthlyReport.currency || cachedTenantCurrency())}</span>
               </div>
             </div>
           </CardContent>
@@ -208,7 +209,7 @@ const MaintenanceReports = () => {
                 </div>
                 <div className="text-xs text-gray-500 mt-1">
                   {data.completed} {t('cm.components_MaintenanceReports.tamamlandi')}
-                  {reportType === 'monthly' && data.cost > 0 && ` • ₺${data.cost.toFixed(0)}`}
+                  {reportType === 'monthly' && data.cost > 0 && ` • ${formatCurrency(data.cost, data.currency || monthlyReport.currency || cachedTenantCurrency(), { decimals: 0 })}`}
                 </div>
               </div>)}
           </div>

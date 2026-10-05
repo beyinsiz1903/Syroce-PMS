@@ -5,14 +5,17 @@ import { Phone, CheckCircle, UserPlus, RefreshCw } from 'lucide-react';
 export default function CallbackQueue({ onDial }) {
   const [callbacks, setCallbacks] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
   const fetchCallbacks = async () => {
     setLoading(true);
+    setError("");
     try {
       const res = await axios.get("/contact-center/callbacks");
       setCallbacks(res.data.callbacks || []);
     } catch (err) {
       console.error("Failed to fetch callbacks:", err);
+      setError("Geri arama talepleri yüklenemedi. Lütfen tekrar deneyin.");
     } finally {
       setLoading(false);
     }
@@ -28,6 +31,7 @@ export default function CallbackQueue({ onDial }) {
       fetchCallbacks();
     } catch (err) {
       console.error("Failed to assign callback:", err);
+      setError("Geri arama talebi atanamadı.");
     }
   };
 
@@ -37,6 +41,7 @@ export default function CallbackQueue({ onDial }) {
       fetchCallbacks();
     } catch (err) {
       console.error("Failed to complete callback:", err);
+      setError("Geri arama talebi tamamlanamadı.");
     }
   };
 
@@ -48,6 +53,8 @@ export default function CallbackQueue({ onDial }) {
           <RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} />
         </button>
       </div>
+
+      {error ? <p className="text-xs text-red-600" role="alert">{error}</p> : null}
 
       {callbacks.length === 0 ? (
         <p className="text-xs text-gray-500 italic text-center py-4">Bekleyen geri arama talebi bulunmamaktadır.</p>
@@ -80,7 +87,7 @@ export default function CallbackQueue({ onDial }) {
                   onClick={() => onDial(cb.phone, cb.id)}
                   className="flex-1 py-1 rounded bg-emerald-600 text-white hover:bg-emerald-700 font-medium flex items-center justify-center gap-1"
                 >
-                  <Phone className="w-3 h-3" /> Geri Ara
+                  <Phone className="w-3 h-3" /> Numarayı Hazırla
                 </button>
                 <button
                   onClick={() => completeCallback(cb.id, "solved")}

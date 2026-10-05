@@ -48,6 +48,7 @@ import {
   Home
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { formatCurrency as formatMoney, cachedTenantCurrency } from '@/lib/currency';
 
 const MobileFinance = ({ user }) => {
   const { t } = useTranslation();
@@ -156,8 +157,11 @@ const MobileFinance = ({ user }) => {
     }
   };
 
-  const formatCurrency = (amount) => {
-    return `₺${parseFloat(amount || 0).toFixed(2)}`;
+  const formatCurrency = (amount, currency = cachedTenantCurrency()) => formatMoney(amount, currency);
+  const formatBreakdown = (totals, fallbackAmount = 0, fallbackCurrency = cachedTenantCurrency()) => {
+    const entries = Object.entries(totals || {}).filter(([, amount]) => Math.abs(Number(amount || 0)) > 0.001);
+    if (!entries.length) return formatCurrency(fallbackAmount, fallbackCurrency);
+    return entries.map(([currency, amount]) => formatCurrency(amount, currency)).join(' · ');
   };
 
   const formatPercent = (value) => {
@@ -410,7 +414,7 @@ const MobileFinance = ({ user }) => {
                 <div>
                   <p className="text-xs text-green-600 font-medium">BUGÜN TAHSİLAT</p>
                   <p className="text-2xl font-bold text-green-700">
-                    {formatCurrency(dailyCollections?.total_collected || 0)}
+                    {formatBreakdown(dailyCollections?.totals_by_currency, dailyCollections?.total_collected || 0)}
                   </p>
                   <p className="text-xs text-green-600 mt-1">
                     {dailyCollections?.payment_count || 0} işlem
@@ -427,7 +431,7 @@ const MobileFinance = ({ user }) => {
                 <div>
                   <p className="text-xs text-blue-600 font-medium">AYLIK TAHSİLAT</p>
                   <p className="text-2xl font-bold text-blue-700">
-                    {formatCurrency(monthlyCollections?.total_collected || 0)}
+                    {formatBreakdown(monthlyCollections?.totals_by_currency, monthlyCollections?.total_collected || 0)}
                   </p>
                   <p className="text-xs text-blue-600 mt-1">
                     Oran: {formatPercent(monthlyCollections?.collection_rate || 0)}
@@ -444,7 +448,7 @@ const MobileFinance = ({ user }) => {
                 <div>
                   <p className="text-xs text-amber-600 font-medium">BEKLEYEN ALACAK</p>
                   <p className="text-2xl font-bold text-amber-700">
-                    {formatCurrency(pendingReceivables?.total_pending || 0)}
+                    {formatBreakdown(pendingReceivables?.totals_by_currency, pendingReceivables?.total_pending || 0)}
                   </p>
                   <p className="text-xs text-amber-600 mt-1">
                     {pendingReceivables?.receivables_count || 0} fatura
@@ -495,7 +499,7 @@ const MobileFinance = ({ user }) => {
                     )}
                   </div>
                   <div className="text-right">
-                    <p className="font-bold text-amber-700">{formatCurrency(receivable.balance)}</p>
+                    <p className="font-bold text-amber-700">{formatCurrency(receivable.balance, receivable.currency)}</p>
                     <Button
                       size="sm"
                       onClick={() => {
@@ -525,10 +529,10 @@ const MobileFinance = ({ user }) => {
             </CardHeader>
             <CardContent>
               <div className="space-y-2">
-                {Object.entries(dailyCollections.payment_methods).map(([method, amount]) => (
+                {Object.entries(dailyCollections.payment_methods_by_currency || {}).map(([method, totals]) => (
                   <div key={method} className="flex items-center justify-between p-2 bg-green-50 rounded-lg">
                     <span className="text-sm font-medium text-gray-700 capitalize">{method}</span>
-                    <span className="text-sm font-bold text-green-700">{formatCurrency(amount)}</span>
+                    <span className="text-sm font-bold text-green-700">{formatBreakdown(totals)}</span>
                   </div>
                 ))}
               </div>
@@ -656,7 +660,7 @@ const MobileFinance = ({ user }) => {
                     )}
                   </div>
                   <div className="text-right">
-                    <p className="font-bold text-indigo-700">{formatCurrency(bank.current_balance)}</p>
+                    <p className="font-bold text-indigo-700">{formatCurrency(bank.current_balance, bank.currency)}</p>
                     <p className="text-xs text-gray-500">{bank.currency}</p>
                   </div>
                 </div>

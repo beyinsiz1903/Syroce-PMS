@@ -434,13 +434,15 @@ async def void_invoice(invoice_id: str, current_user: User = Depends(get_current
     reversal = await _reverse_invoice_gl(tenant_id, inv, _actor_id(current_user))
     await db.ap_invoices.update_one(
         {"tenant_id": tenant_id, "id": invoice_id},
-        {"$set": {
-            "status": "void",
-            "updated_at": _now_iso(),
-            "voided_by": _actor_id(current_user),
-            "gl_reversal_entry_id": reversal.get("id") if reversal else None,
-            "gl_status": "reversed" if reversal else inv.get("gl_status"),
-        }},
+        {
+            "$set": {
+                "status": "void",
+                "updated_at": _now_iso(),
+                "voided_by": _actor_id(current_user),
+                "gl_reversal_entry_id": reversal.get("id") if reversal else None,
+                "gl_status": "reversed" if reversal else inv.get("gl_status"),
+            }
+        },
     )
     inv = await db.ap_invoices.find_one({"tenant_id": tenant_id, "id": invoice_id}, {"_id": 0})
     return {"invoice": inv}

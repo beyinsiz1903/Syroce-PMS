@@ -18,8 +18,8 @@ import { Send, RefreshCw, CheckCheck, Plus } from 'lucide-react';
 // yardımcı modüle çıkarıldı (visibility-aware polling, Socket.IO event
 // handler'ları, mesaj action factory'leri).
 import {
-  STAFF_ROLES,
   CONVERSATION_DEPARTMENT_FILTERS,
+  DEPARTMENTS,
   POLL_INTERVAL_MS,
   PRESENCE_REFRESH_INTERVAL_MS,
   TYPING_EMIT_THROTTLE_MS,
@@ -42,11 +42,16 @@ import {
 import { useTranslation } from 'react-i18next';
 
 
-const InternalChatTab = ({ currentUser }) => {
+const InternalChatTab = ({ currentUser, initialView = 'conversations' }) => {
   const { t } = useTranslation();
   const { toast } = useToast();
   // Keep the global bell counter in sync when this tab mutates read state.
-  const { decrementInternalUnread, markAllInternalRead } = useNotifications();
+  const {
+    decrementInternalUnread,
+    markAllInternalRead,
+    guestRequestsUnreadCount,
+    syncGuestRequestsUnread,
+  } = useNotifications();
   // Task #43: no explicit room — the server auto-enrols the socket in
   // tenant-scoped internal_chat / pms rooms at connect time based on the
   // JWT identity. Passing the legacy global 'pms' room here used to
@@ -59,7 +64,7 @@ const InternalChatTab = ({ currentUser }) => {
   // ACL ile çift korumalı). Erişim bilgisi mount'ta bir kez çekilir; rozet
   // sayacı panel tarafından bildirilir.
   const [canViewGuestRequests, setCanViewGuestRequests] = useState(false);
-  const [guestRequestsUnread, setGuestRequestsUnread] = useState(0);
+  const guestRequestsUnread = guestRequestsUnreadCount || 0;
 
   // "Acil" mesaj kanalı alıcıda alarm tetiklediği için ayrı bir izinle
   // korunuyor. Yetkisiz roller (front_desk, housekeeping, vb.) bu seçeneği
@@ -75,6 +80,7 @@ const InternalChatTab = ({ currentUser }) => {
   const [showUnreadOnly, setShowUnreadOnly] = useState(false);
 
   const [users, setUsers] = useState([]);
+  const [departments, setDepartments] = useState(DEPARTMENTS);
   const [usersLoaded, setUsersLoaded] = useState(false);
   const [usersAccessDenied, setUsersAccessDenied] = useState(false);
 
@@ -391,18 +397,22 @@ const InternalChatTab = ({ currentUser }) => {
 
   const loadUsers = useCallback(async () => {
     try {
-      const res = await axios.get('/admin/users', { params: { limit: 200 } });
+      const res = await axios.get('/messaging/internal/directory');
       if (!isMountedRef.current) return;
       const list = (res.data?.users || [])
-        .filter((u) => u.is_active !== false && STAFF_ROLES.has(u.role) && u.id !== currentUser?.id)
+        .filter((u) => u.id !== currentUser?.id)
         .map((u) => ({
           id: u.id,
           name: u.name || u.username || u.email || 'Kullanıcı',
           email: u.email || '',
           role: u.role,
+          department: u.department || 'General',
         }))
         .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'tr'));
       setUsers(list);
+      const directoryDepartments = (res.data?.departments || [])
+        .filter((department) => department?.value && department?.label);
+      setDepartments(directoryDepartments.length > 0 ? directoryDepartments : DEPARTMENTS);
       setUsersLoaded(true);
       setUsersAccessDenied(false);
     } catch (err) {
@@ -463,6 +473,9 @@ const InternalChatTab = ({ currentUser }) => {
   // Sekme arka plana geçince timer'lar duraklar, geri gelince hemen tetikler.
   useVisibilityAwarePoller(useCallback(() => loadInbox(true), [loadInbox]), { intervalMs: POLL_INTERVAL_MS });
   useVisibilityAwarePoller(useCallback(() => loadConversations(true), [loadConversations]), { intervalMs: POLL_INTERVAL_MS });
+  // HR yöneticisi yeni personel veya departman eklediğinde dizin, sayfa
+  // yenilenmeden güncellenir. Diyalog açılışında ayrıca anlık yenileriz.
+  useVisibilityAwarePoller(loadUsers, { intervalMs: 120000 });
   useVisibilityAwarePoller(
     useCallback(() => {
       if (selectedConvUserId) loadThread(selectedConvUserId, { silent: true, markRead: true });
@@ -517,11 +530,9 @@ const InternalChatTab = ({ currentUser }) => {
 
   const filteredUsers = useMemo(() => {
     const q = userSearch.trim().toLocaleLowerCase('tr');
-    const deptOption = CONVERSATION_DEPARTMENT_FILTERS.find((opt) => opt.value === userDeptFilter);
-    const allowedRoles = deptOption?.roles ? new Set(deptOption.roles) : null;
 
     const matches = users.filter((u) => {
-      if (allowedRoles && !allowedRoles.has(u.role || '')) return false;
+      if (userDeptFilter !== 'all' && u.department !== userDeptFilter) return false;
       if (onlineOnly && !onlineUsers.has(u.id)) return false;
       if (q) {
         const name = (u.name || '').toLocaleLowerCase('tr');
@@ -666,7 +677,21 @@ const InternalChatTab = ({ currentUser }) => {
     [messageText, priority, recipientType, toDepartment, toUserId, resetForm, loadInbox, toast],
   );
 
-  const [view, setView] = useState('conversations');
+  const [view, setView] = useState(initialView);
+
+  useEffect(() => {
+    if (initialView === 'guest_requests' && canViewGuestRequests) {
+      setView('guest_requests');
+    }
+  }, [initialView, canViewGuestRequests]);
+
+  useEffect(() => {
+    const openGuestRequests = () => {
+      if (canViewGuestRequests) setView('guest_requests');
+    };
+    window.addEventListener('syroce:open-guest-requests', openGuestRequests);
+    return () => window.removeEventListener('syroce:open-guest-requests', openGuestRequests);
+  }, [canViewGuestRequests]);
 
   return (
     <div className="flex flex-col h-full min-h-0 bg-background" data-testid="internal-chat-panel">
@@ -713,33 +738,37 @@ const InternalChatTab = ({ currentUser }) => {
         <>
           <div className="flex items-center gap-1.5 px-2.5 py-2 border-b shrink-0">
             <div className="flex items-center rounded-lg bg-muted p-0.5">
-              <button
-                type="button"
-                onClick={() => setView('conversations')}
-                data-testid="button-view-conversations"
-                className={`relative flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${view === 'conversations' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
-              >
-                Konuşmalar
-                {totalConversationUnread > 0 && (
-                  <span className="ml-0.5 inline-flex items-center justify-center rounded-full bg-red-500 px-1 py-0.5 text-[10px] font-semibold leading-none text-white min-w-[16px]">
-                    {totalConversationUnread > 99 ? '99+' : totalConversationUnread}
-                  </span>
-                )}
-              </button>
-              <button
-                type="button"
-                onClick={() => setView('inbox')}
-                data-testid="button-view-inbox"
-                className={`relative flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${view === 'inbox' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
-              >
-                Gelen Kutusu
-                {unreadCount > 0 && (
-                  <span className="ml-0.5 inline-flex items-center justify-center rounded-full bg-red-500 px-1 py-0.5 text-[10px] font-semibold leading-none text-white min-w-[16px]">
-                    {unreadCount > 99 ? '99+' : unreadCount}
-                  </span>
-                )}
-              </button>
-              {canViewGuestRequests && (
+              {initialView !== 'guest_requests' && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setView('conversations')}
+                    data-testid="button-view-conversations"
+                    className={`relative flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${view === 'conversations' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                  >
+                    Konuşmalar
+                    {totalConversationUnread > 0 && (
+                      <span className="ml-0.5 inline-flex items-center justify-center rounded-full bg-red-500 px-1 py-0.5 text-[10px] font-semibold leading-none text-white min-w-[16px]">
+                        {totalConversationUnread > 99 ? '99+' : totalConversationUnread}
+                      </span>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setView('inbox')}
+                    data-testid="button-view-inbox"
+                    className={`relative flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${view === 'inbox' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                  >
+                    Gelen Kutusu
+                    {unreadCount > 0 && (
+                      <span className="ml-0.5 inline-flex items-center justify-center rounded-full bg-red-500 px-1 py-0.5 text-[10px] font-semibold leading-none text-white min-w-[16px]">
+                        {unreadCount > 99 ? '99+' : unreadCount}
+                      </span>
+                    )}
+                  </button>
+                </>
+              )}
+              {initialView === 'guest_requests' && canViewGuestRequests && (
                 <button
                   type="button"
                   onClick={() => setView('guest_requests')}
@@ -781,6 +810,7 @@ const InternalChatTab = ({ currentUser }) => {
                     disabled={markingAllRead || unreadCount === 0}
                     data-testid="button-mark-all-read"
                     title={t('cm.components_pms_InternalChatTab.gelen_kutusundaki_tum_okunmamis_mesajlar')}
+                    aria-label="Tüm okunmamış mesajları okundu olarak işaretle"
                   >
                     <CheckCheck className={`h-4 w-4 ${markingAllRead ? 'animate-pulse' : ''}`} />
                   </Button>
@@ -793,6 +823,7 @@ const InternalChatTab = ({ currentUser }) => {
                     disabled={loadingInbox || loadingConversations}
                     data-testid="button-refresh-inbox"
                     title={t('cm.components_pms_InternalChatTab.yenile')}
+                    aria-label="Mesaj kutusunu yenile"
                   >
                     <RefreshCw className={`h-4 w-4 ${(loadingInbox || loadingConversations) ? 'animate-spin' : ''}`} />
                   </Button>
@@ -846,7 +877,7 @@ const InternalChatTab = ({ currentUser }) => {
                 handleReply={handleReply}
               />
             ) : (
-              <GuestRequestsPanel onUnreadChange={setGuestRequestsUnread} />
+              <GuestRequestsPanel onUnreadChange={syncGuestRequestsUnread} />
             )}
           </div>
         </>
@@ -877,6 +908,7 @@ const InternalChatTab = ({ currentUser }) => {
             setRecipientType={setRecipientType}
             toDepartment={toDepartment}
             setToDepartment={setToDepartment}
+            departments={departments}
             usersAccessDenied={usersAccessDenied}
             userSearch={userSearch}
             setUserSearch={setUserSearch}

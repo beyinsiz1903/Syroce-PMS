@@ -14,12 +14,7 @@ class InvoiceSyncRepository:
     @staticmethod
     async def find_by_business_key(tenant_id: str, invoice_id: str, provider: str, document_kind: str) -> InvoiceSync | None:
         db = get_db_for_tenant(tenant_id)
-        doc = await db.invoice_sync.find_one({
-            "tenant_id": tenant_id,
-            "invoice_id": invoice_id,
-            "provider": provider,
-            "document_kind": document_kind
-        })
+        doc = await db.invoice_sync.find_one({"tenant_id": tenant_id, "invoice_id": invoice_id, "provider": provider, "document_kind": document_kind})
         if not doc:
             return None
         return InvoiceSync.model_validate(doc)
@@ -40,12 +35,7 @@ class InvoiceSyncRepository:
             return sync_model, True
         except DuplicateKeyError as exc:
             # Check if it was our primary business key
-            existing = await InvoiceSyncRepository.find_by_business_key(
-                tenant_id,
-                sync_model.invoice_id,
-                sync_model.provider.value,
-                sync_model.document_kind.value
-            )
+            existing = await InvoiceSyncRepository.find_by_business_key(tenant_id, sync_model.invoice_id, sync_model.provider.value, sync_model.document_kind.value)
             if existing:
                 return existing, False
 
@@ -57,12 +47,7 @@ class InvoiceSyncRepository:
 
     @staticmethod
     async def compare_and_set_state(
-        tenant_id: str,
-        dispatch_id: str,
-        expected_state: InvoiceSyncState,
-        expected_version: int,
-        target_state: InvoiceSyncState,
-        update_fields: dict
+        tenant_id: str, dispatch_id: str, expected_state: InvoiceSyncState, expected_version: int, target_state: InvoiceSyncState, update_fields: dict
     ) -> InvoiceSync | None:
         """
         Atomically transition the state if expected_state and expected_version match.
@@ -76,17 +61,7 @@ class InvoiceSyncRepository:
         updates["updated_at"] = now
 
         result = await db.invoice_sync.find_one_and_update(
-            {
-                "id": dispatch_id,
-                "tenant_id": tenant_id,
-                "state": expected_state.value,
-                "version": expected_version
-            },
-            {
-                "$set": updates,
-                "$inc": {"version": 1}
-            },
-            return_document=ReturnDocument.AFTER
+            {"id": dispatch_id, "tenant_id": tenant_id, "state": expected_state.value, "version": expected_version}, {"$set": updates, "$inc": {"version": 1}}, return_document=ReturnDocument.AFTER
         )
         if not result:
             return None
@@ -109,7 +84,7 @@ class InvoiceSyncRepository:
         update_fields: dict,
         inc_fields: dict | None = None,
         expected_version: int | None = None,
-        lease_owner_id: str | None = None
+        lease_owner_id: str | None = None,
     ) -> bool:
         """
         Transitions the state of a dispatch record if it is in the current_state.
@@ -127,24 +102,14 @@ class InvoiceSyncRepository:
         if inc_fields:
             incs.update(inc_fields)
 
-        query = {
-            "id": dispatch_id,
-            "tenant_id": tenant_id,
-            "state": current_state.value
-        }
+        query = {"id": dispatch_id, "tenant_id": tenant_id, "state": current_state.value}
         if expected_version is not None:
             query["version"] = expected_version
         if lease_owner_id is not None:
             query["lease_owner"] = lease_owner_id
             query["lease_expires_at"] = {"$gt": now}
 
-        result = await db.invoice_sync.update_one(
-            query,
-            {
-                "$set": updates,
-                "$inc": incs
-            }
-        )
+        result = await db.invoice_sync.update_one(query, {"$set": updates, "$inc": incs})
         return result.modified_count > 0
 
     @staticmethod
@@ -156,7 +121,7 @@ class InvoiceSyncRepository:
         worker_id: str,
         target_state: InvoiceSyncState | None,
         update_fields: dict,
-        inc_fields: dict | None = None
+        inc_fields: dict | None = None,
     ) -> bool:
         """
         Transitions state and updates fields atomically, STRICTLY enforcing:
@@ -180,30 +145,14 @@ class InvoiceSyncRepository:
             incs.update(inc_fields)
 
         result = await db.invoice_sync.update_one(
-            {
-                "id": dispatch_id,
-                "tenant_id": tenant_id,
-                "state": current_state.value,
-                "version": expected_version,
-                "status_lease_owner": worker_id,
-                "status_lease_expires_at": {"$gt": now}
-            },
-            {
-                "$set": updates,
-                "$inc": incs
-            }
+            {"id": dispatch_id, "tenant_id": tenant_id, "state": current_state.value, "version": expected_version, "status_lease_owner": worker_id, "status_lease_expires_at": {"$gt": now}},
+            {"$set": updates, "$inc": incs},
         )
         return result.modified_count > 0
 
     @staticmethod
     async def transition_dispatch_state(
-        tenant_id: str,
-        dispatch_id: str,
-        expected_version: int,
-        worker_id: str,
-        target_state: InvoiceSyncState | None,
-        update_fields: dict,
-        inc_fields: dict | None = None
+        tenant_id: str, dispatch_id: str, expected_version: int, worker_id: str, target_state: InvoiceSyncState | None, update_fields: dict, inc_fields: dict | None = None
     ) -> bool:
         """
         Transitions state and updates fields atomically for dispatch, enforcing:
@@ -224,16 +173,6 @@ class InvoiceSyncRepository:
             incs.update(inc_fields)
 
         result = await db.invoice_sync.update_one(
-            {
-                "id": dispatch_id,
-                "tenant_id": tenant_id,
-                "version": expected_version,
-                "lease_owner": worker_id,
-                "lease_expires_at": {"$gt": now}
-            },
-            {
-                "$set": updates,
-                "$inc": incs
-            }
+            {"id": dispatch_id, "tenant_id": tenant_id, "version": expected_version, "lease_owner": worker_id, "lease_expires_at": {"$gt": now}}, {"$set": updates, "$inc": incs}
         )
         return result.modified_count > 0

@@ -1,11 +1,14 @@
 """Offline production gates for Exely provider access."""
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from domains.channel_manager.providers.exely import exely_pull_worker
 from domains.channel_manager.providers.exely.ari_delivery import deliver_exely_ari
 from domains.channel_manager.providers.exely.ari_publish import enqueue_exely_ari_update
+from domains.channel_manager.providers.exely.errors import ExelyValidationError
 from domains.channel_manager.providers.exely.exely_pull_worker import ExelyPullScheduler
 from domains.channel_manager.providers.exely.production_safety import (
     EXELY_ARI_WRITE_KILL_SWITCH_ACTIVE,
@@ -17,7 +20,12 @@ from domains.channel_manager.providers.exely.production_safety import (
     safe_runtime_state,
 )
 from domains.channel_manager.providers.exely.provider import ExelyProvider
-from domains.channel_manager.providers.exely.security import EXELY_PRODUCTION_HOST
+from domains.channel_manager.providers.exely.security import (
+    EXELY_PRODUCTION_HOST,
+    EXELY_TEST_ENDPOINT_URL,
+    validate_exely_endpoint,
+)
+from domains.channel_manager.providers.hotelrunner.schemas import ProviderResult
 
 pytestmark = pytest.mark.exely_failure_stress
 
@@ -97,6 +105,27 @@ def test_non_production_pilot_behavior_is_unchanged(monkeypatch):
     assert provider_io_block_reason() == ""
     assert reservation_sync_block_reason() == ""
     assert ari_write_block_reason() == ""
+
+
+def test_production_hosted_certification_allows_only_explicit_sandbox_connection(monkeypatch):
+    monkeypatch.setenv("APP_ENV", "production")
+
+    with pytest.raises(ExelyValidationError, match="Production requires"):
+        validate_exely_endpoint(EXELY_TEST_ENDPOINT_URL)
+
+    assert (
+        validate_exely_endpoint(EXELY_TEST_ENDPOINT_URL, connection_mode="sandbox")
+        == EXELY_TEST_ENDPOINT_URL
+    )
+
+    provider = ExelyProvider(
+        username="sandbox-user",
+        password="sandbox-password",
+        hotel_code="501694",
+        endpoint_url=EXELY_TEST_ENDPOINT_URL,
+        connection_mode="sandbox",
+    )
+    assert provider._transport._endpoint_url == EXELY_TEST_ENDPOINT_URL
 
 
 @pytest.mark.asyncio
@@ -246,6 +275,89 @@ async def test_direct_tenant_pull_blocks_before_provider_construction(monkeypatc
         "provider_write_count": 0,
     }
     provider_class.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_direct_tenant_pull_preserves_classified_provider_read_failure(monkeypatch):
+    scheduler = ExelyPullScheduler()
+    provider = AsyncMock()
+    provider.discover_rooms = AsyncMock()
+    provider.pull_reservations = AsyncMock(
+        return_value=ProviderResult(
+            success=False,
+            error="Provider rejected reservation read",
+            error_type="REJECTED",
+        )
+    )
+
+    with (
+        patch(
+            "domains.channel_manager.providers.exely.exely_pull_worker.ExelyProvider",
+            return_value=provider,
+        ),
+        patch(
+            "domains.channel_manager.providers.exely.exely_pull_worker.log_sync",
+            new=AsyncMock(),
+        ) as log_sync,
+    ):
+        result = await scheduler.pull_for_tenant(
+            tenant_id="synthetic-tenant",
+            username="synthetic-user",
+            password="synthetic-password",
+            hotel_code="synthetic-property",
+        )
+
+    assert result == {
+        "success": False,
+        "error": "REJECTED",
+        "provider_read_count": 1,
+        "provider_write_count": 0,
+    }
+    provider.discover_rooms.assert_not_awaited()
+    provider.pull_reservations.assert_awaited_once()
+    log_sync.assert_awaited_once_with("exely", "synthetic-tenant", "scheduled_pull", "failed", error="REJECTED")
+
+
+@pytest.mark.asyncio
+async def test_scheduler_persists_invalid_saved_connection_without_raising_or_calling_provider(monkeypatch, caplog):
+    """A bad saved endpoint/mode is actionable configuration, not an outage loop."""
+
+    connections = SimpleNamespace(
+        find=lambda *_args, **_kwargs: SimpleNamespace(
+            to_list=AsyncMock(
+                return_value=[
+                    {
+                        "tenant_id": "synthetic-tenant",
+                        "is_active": True,
+                        "auto_sync_reservations": True,
+                        "mode": "production",
+                    }
+                ]
+            )
+        ),
+        update_one=AsyncMock(),
+    )
+    monkeypatch.setattr(exely_pull_worker, "db", SimpleNamespace(exely_connections=connections))
+    scheduler = ExelyPullScheduler()
+    scheduler._acquire_tenant_lease = AsyncMock(return_value=True)
+
+    with (
+        patch(
+            "domains.channel_manager.providers.exely.exely_pull_worker.resolve_exely_credentials",
+            new=AsyncMock(side_effect=ExelyValidationError("Production requires the Exely production endpoint", field="endpoint_url")),
+        ),
+        patch("domains.channel_manager.providers.exely.exely_pull_worker.ExelyProvider") as provider_class,
+    ):
+        await scheduler._pull_all_tenants(5)
+
+    provider_class.assert_not_called()
+    connections.update_one.assert_awaited_once()
+    query, update = connections.update_one.await_args.args
+    assert query == {"tenant_id": "synthetic-tenant", "is_active": True}
+    assert update["$set"]["last_sync_status"] == "configuration_error"
+    assert update["$set"]["last_sync_error"] == "EXELY_CONNECTION_CONFIGURATION_INVALID"
+    assert "Production requires" not in caplog.text
+    assert "tenant_pull_blocked reason=EXELY_CONNECTION_CONFIGURATION_INVALID" in caplog.text
 
 
 def test_feature_flag_registry_contains_all_exely_production_gates():

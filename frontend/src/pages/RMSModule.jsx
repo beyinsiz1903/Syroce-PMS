@@ -29,6 +29,8 @@ import {
   Ban, Zap, ArrowUpRight, ArrowDownRight, Minus,
   RefreshCw, Loader2, AlertTriangle, Info, FlaskConical, BarChart3
 } from 'lucide-react';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
+import { confirmDialog } from '@/lib/dialogs';
 
 ChartJS.register(
   CategoryScale, LinearScale, PointElement, LineElement,
@@ -38,6 +40,17 @@ ChartJS.register(
 function fmt(val) {
   if (val == null) return '0';
   return Number(val).toLocaleString('tr-TR');
+}
+
+function confidenceLabel(value) {
+  return {
+    Yuksek: 'Yüksek',
+    High: 'Yüksek',
+    Orta: 'Orta',
+    Medium: 'Orta',
+    Dusuk: 'Düşük',
+    Low: 'Düşük',
+  }[value] || value;
 }
 
 function DeltaBadge({ current, previous }) {
@@ -92,6 +105,7 @@ function ChartEmpty({ label }) {
 }
 
 const RMSModule = ({ user, tenant, onLogout, embedded = false }) => {
+  const currency = tenant?.currency || cachedTenantCurrency();
   const { t } = useTranslation();
   const [kpis, setKpis] = useState(null);
   const [channels, setChannels] = useState([]);
@@ -205,8 +219,16 @@ const RMSModule = ({ user, tenant, onLogout, embedded = false }) => {
   };
 
   const handleApplyAll = async () => {
+    if (!await confirmDialog({
+      title: t('rmsModule.rec_apply_all_title', 'Bekleyen fiyat önerilerini uygula'),
+      message: t('rmsModule.rec_apply_all_confirm', {
+        count: recommendations.length,
+        defaultValue: `${recommendations.length} gün/oda tipi için fiyat takvimi güncellenecek. Devam etmek istiyor musunuz?`,
+      }),
+      confirmText: t('rmsModule.rec_apply_all_action', 'Fiyatları Uygula'),
+    })) return;
     try {
-      const res = await axios.post('/rms/apply-recommendations');
+      const res = await axios.post('/rms/apply-recommendations', { apply_confirmed: true });
       toast.success(res.data.message || t('rmsModule.apply_success'));
       loadData();
     } catch (e) {
@@ -283,7 +305,7 @@ const RMSModule = ({ user, tenant, onLogout, embedded = false }) => {
   const rtData = {
     labels: roomTypePerf.map(r => r.room_type),
     datasets: [{
-      label: 'Gelir (TRY)',
+      label: `Gelir (${currency})`,
       data: roomTypePerf.map(r => r.revenue),
       backgroundColor: 'rgba(14,165,233,0.7)', // sky-500
       borderRadius: 4,
@@ -299,8 +321,10 @@ const RMSModule = ({ user, tenant, onLogout, embedded = false }) => {
   // Show "—" instead of misleading 0 when there's literally no data.
   const dash = '—';
   const occVal = hasBookings ? `%${k.occupancy || 0}` : dash;
-  const adrVal = hasBookings ? `${fmt(k.adr)}` : dash;
-  const revparVal = hasBookings ? `${fmt(k.revpar)}` : dash;
+  // `formatCurrency` sayısal değer bekler. Yerelleştirilmiş "1.315" metnini
+  // yeniden Number'a çevirmek 1315 TL'yi 1,315 TL olarak gösteriyordu.
+  const adrVal = hasBookings ? Number(k.adr || 0) : dash;
+  const revparVal = hasBookings ? Number(k.revpar || 0) : dash;
   const cancelVal = hasBookings ? `%${k.cancel_rate || 0}` : dash;
 
   const headerActions = (
@@ -413,7 +437,7 @@ const RMSModule = ({ user, tenant, onLogout, embedded = false }) => {
           label={t('rmsModule.kpi_adr')}
           value={
             <span title={!hasBookings ? t('rmsModule.kpi_no_data') : undefined} data-testid="kpi-adr">
-              {adrVal}{hasBookings && <span className="text-sm font-normal"> TRY</span>}
+              {hasBookings ? formatCurrency(adrVal, currency) : adrVal}
             </span>
           }
           sub={hasBookings ? <DeltaBadge current={k.adr} previous={k.adr_prev} /> : null}
@@ -424,7 +448,7 @@ const RMSModule = ({ user, tenant, onLogout, embedded = false }) => {
           label={t('rmsModule.kpi_revpar')}
           value={
             <span title={!hasBookings ? t('rmsModule.kpi_no_data') : undefined} data-testid="kpi-revpar">
-              {revparVal}{hasBookings && <span className="text-sm font-normal"> TRY</span>}
+              {hasBookings ? formatCurrency(revparVal, currency) : revparVal}
             </span>
           }
           sub={hasBookings ? <DeltaBadge current={k.revpar} previous={k.revpar_prev} /> : null}
@@ -596,11 +620,11 @@ const RMSModule = ({ user, tenant, onLogout, embedded = false }) => {
                     const up = r.change_pct > 0;
                     const down = r.change_pct < 0;
                     return (
-                      <tr key={r.id} className="border-b last:border-0 hover:bg-slate-50/50">
-                        <td className="py-2">{r.date}</td>
+                      <tr key={r.id || `${r.date}-${r.room_type}`} className="border-b last:border-0 hover:bg-slate-50/50">
+                        <td className="py-2">{new Date(`${r.date}T00:00:00`).toLocaleDateString('tr-TR')}</td>
                         <td className="py-2">{r.room_type}</td>
-                        <td className="py-2">{fmt(r.current_rate)} TRY</td>
-                        <td className="py-2 font-semibold">{fmt(r.suggested_rate)} TRY</td>
+                        <td className="py-2">{formatCurrency(r.current_rate, r.currency || currency)}</td>
+                        <td className="py-2 font-semibold">{formatCurrency(r.suggested_rate, r.currency || currency)}</td>
                         <td className="py-2">
                           <span className={`inline-flex items-center gap-0.5 font-medium ${up ? 'text-emerald-600' : down ? 'text-red-500' : 'text-slate-400'}`}>
                             {up ? <ArrowUpRight className="w-3 h-3" /> : down ? <ArrowDownRight className="w-3 h-3" /> : <Minus className="w-3 h-3" />}
@@ -609,9 +633,9 @@ const RMSModule = ({ user, tenant, onLogout, embedded = false }) => {
                         </td>
                         <td className="py-2">%{r.occupancy}</td>
                         <td className="py-2">
-                          <Badge variant={r.confidence_level === 'Yüksek' ? 'default' : r.confidence_level === 'Orta' ? 'secondary' : 'outline'}
+                          <Badge variant={confidenceLabel(r.confidence_level) === 'Yüksek' ? 'default' : confidenceLabel(r.confidence_level) === 'Orta' ? 'secondary' : 'outline'}
                             className="text-xs">
-                            {r.confidence_level}
+                            {confidenceLabel(r.confidence_level)}
                           </Badge>
                         </td>
                       </tr>
@@ -658,7 +682,7 @@ const RMSModule = ({ user, tenant, onLogout, embedded = false }) => {
                       {ch.label}
                     </td>
                     <td className="py-2">{ch.bookings}</td>
-                    <td className="py-2 font-medium">{fmt(ch.revenue)} TRY</td>
+                    <td className="py-2 font-medium">{formatCurrency(ch.revenue, ch.currency || currency)}</td>
                     <td className="py-2">{ch.nights}</td>
                     <td className="py-2">
                       <div className="flex items-center gap-2">

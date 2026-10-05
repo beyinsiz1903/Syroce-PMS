@@ -23,6 +23,7 @@ import HRAttendanceTab from './HRAttendanceTab';
 import HRPayrollTab from './HRPayrollTab';
 import HRLeaveTab from './HRLeaveTab';
 import HRPerformanceTab from './HRPerformanceTab';
+import HRAdvancesTab from '@/components/hr/HRAdvancesTab';
 import HROvertimeTab from './HROvertimeTab';
 import HRRecruitmentTab from './HRRecruitmentTab';
 const LEAVE_TYPE_LABEL = {
@@ -172,7 +173,8 @@ const HRComplete = () => {
     email: '',
     phone: '',
     notes: '',
-    cv_url: ''
+    cv_url: '',
+    cv_file: null
   });
   const [savingApplicant, setSavingApplicant] = useState(false);
 
@@ -432,7 +434,8 @@ const HRComplete = () => {
         email: '',
         phone: '',
         notes: '',
-        cv_url: ''
+        cv_url: '',
+        cv_file: null
       });
     } catch (err) {
       toast.error('Adaylar yüklenemedi');
@@ -457,14 +460,29 @@ const HRComplete = () => {
     }
     try {
       setSavingApplicant(true);
-      await axios.post(`/hr/job-postings/${applicantsDialog.job.id}/applicants`, applicantForm);
-      toast.success('Aday eklendi');
+      const { cv_file, ...payload } = applicantForm;
+      const created = await axios.post(`/hr/job-postings/${applicantsDialog.job.id}/applicants`, payload);
+      let cvUploaded = true;
+      if (cv_file && created.data?.applicant?.id) {
+        const formData = new FormData();
+        formData.append('file', cv_file);
+        try {
+          await axios.post(`/hr/applicants/${created.data.applicant.id}/cv`, formData, {
+            headers: { 'Content-Type': 'multipart/form-data' }
+          });
+        } catch {
+          cvUploaded = false;
+        }
+      }
+      if (cvUploaded) toast.success('Aday eklendi');
+      else toast.warning('Aday eklendi; CV dosyası yüklenemedi. Aday kaydı tekrar oluşturulmadı.');
       setApplicantForm({
         name: '',
         email: '',
         phone: '',
         notes: '',
-        cv_url: ''
+        cv_url: '',
+        cv_file: null
       });
       refreshApplicants();
       loadJobs();
@@ -499,8 +517,12 @@ const HRComplete = () => {
       await axios.post(`/hr/job-posting/${jobId}/${action}`, {
         note: note || undefined
       });
+      // Karar sonrasında sayaçlar ve satır eylemleri, başarı bildirimiyle aynı
+      // anda yeni durumu göstermeli. Yenilemeyi beklemeden toast göstermek,
+      // kullanıcıya talep hâlâ "Onay Bekliyor"muş gibi görünen kısa bir ara
+      // durum bırakıyordu.
+      await loadJobs();
       toast.success(isApprove ? 'Talep onaylandı' : 'Talep reddedildi');
-      loadJobs();
     } catch (err) {
       toast.error(err.response?.data?.detail || 'İşlem başarısız');
     }
@@ -643,7 +665,9 @@ const HRComplete = () => {
       setSelectedRun(null);
       setRunRevisions([]);
     } catch (error) {
-      const msg = error.response?.status === 403 ? 'Bordro görüntüleme yetkiniz yok' : 'Önizleme alınamadı';
+      const msg = error.response?.status === 403
+        ? 'Bordro görüntüleme yetkiniz yok'
+        : error.response?.data?.detail || 'Önizleme alınamadı';
       toast.error(msg);
     }
   };
@@ -768,12 +792,12 @@ const HRComplete = () => {
       setCreatingLeave(true);
       await axios.post('/hr/leave-request', leaveForm);
       toast.success('İzin talebi oluşturuldu');
-      setLeaveForm({
-        ...leaveForm,
+      setLeaveForm(prev => ({
+        ...prev,
         start_date: '',
         end_date: '',
         reason: ''
-      });
+      }));
       leavePage.refresh();
     } catch (error) {
       const msg = error.response?.data?.detail || 'İzin talebi oluşturulamadı';
@@ -831,15 +855,15 @@ const HRComplete = () => {
         competency_scores: perfForm.competency_scores || {}
       });
       toast.success('Performans değerlendirmesi kaydedildi');
-      setPerfForm({
-        ...perfForm,
+      setPerfForm(prev => ({
+        ...prev,
         period: '',
         overall_score: '',
         strengths: '',
         improvement_areas: '',
         goals: '',
         competency_scores: {}
-      });
+      }));
       performancePage.refresh();
     } catch (error) {
       const msg = error.response?.data?.detail || 'Kaydedilemedi';
@@ -860,13 +884,13 @@ const HRComplete = () => {
       setCreatingJob(true);
       await axios.post('/hr/job-posting', jobForm);
       toast.success('İş ilanı yayınlandı');
-      setJobForm({
-        ...jobForm,
+      setJobForm(prev => ({
+        ...prev,
         title: '',
         location: '',
         salary_range: '',
         description: ''
-      });
+      }));
       loadJobs();
     } catch (error) {
       const msg = error.response?.data?.detail || 'Yayınlanamadı';
@@ -921,16 +945,19 @@ const HRComplete = () => {
         {t('cm.pages_HRComplete.yenile')}
       </Button>
     </>;
-  return <div className="p-2">
+  return <div className="p-2 syroce-hr-text">
       <PageHeader icon={Users} title={t('cm.pages_HRComplete.ik_yonetim_paketi')} subtitle={t('cm.pages_HRComplete.devam_takibi_bordro_izin_performans_ve_i')} actions={headerActions} />
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-6">
+        <TabsList className="grid w-full grid-cols-7">
           <TabsTrigger value="attendance" data-testid="tab-attendance">
             <Clock className="w-4 h-4 mr-2" />Devam
           </TabsTrigger>
           <TabsTrigger value="payroll" data-testid="tab-payroll">
             <DollarSign className="w-4 h-4 mr-2" />Bordro
+          </TabsTrigger>
+          <TabsTrigger value="advances" data-testid="tab-advances">
+            <DollarSign className="w-4 h-4 mr-2" />Avanslar
           </TabsTrigger>
           <TabsTrigger value="leave" data-testid="tab-leave">
             <Calendar className="w-4 h-4 mr-2" />{t('cm.pages_HRComplete.izin')}

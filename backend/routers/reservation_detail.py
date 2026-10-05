@@ -7,20 +7,37 @@ payment processing, cari transfers, room changes, and front office operations.
 import logging
 import uuid
 from datetime import UTC, date, datetime, timedelta
+from decimal import ROUND_HALF_UP, Decimal
+from typing import Literal
 
+from bson import ObjectId
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pymongo.errors import DuplicateKeyError
 
-from core.channel_room_charge_pricing import analyze_legacy_double_tax_charge
+from core.business_date_service import ensure_business_date_initialized, stamp_open_business_date
+from core.channel_room_charge_pricing import (
+    analyze_legacy_double_tax_charge,
+    is_channel_total_tax_inclusive,
+)
 from core.database import db
+from core.reservation_mutability import ensure_reservation_mutable, reservation_is_historical
 from core.security import get_current_user
+from domains.channel_manager.providers.hotelrunner_notes import resolve_legacy_hotelrunner_note
 from models.schemas import User, _ensure_hotel_context
+from models.schemas.bookings import BookingCreate
+from modules.pms_core.guest_identity import find_existing_guest_by_identity
 from modules.pms_core.role_permission_service import (
     RolePermissionService,
     require_op,  # v97 DW
 )
 from modules.pms_core.role_permission_service import require_module as require_module_v97  # v97 DW
+from modules.reservations.services.create_reservation_service import (
+    CreateReservationService,
+)
+from routers.finance.konaklama_vergisi_core import get_accommodation_tax_rate
+from security.field_encryption import get_field_encryption_service
+from shared_kernel.audit_helper import audit_log
 from shared_kernel.idempotency import claim_short_window_dedup, release_idempotency
 
 # Bug CP fix — shared role-permission enforcement for financial endpoints
@@ -29,13 +46,140 @@ logger = logging.getLogger(__name__)
 
 
 def _enforce_perm(role: str, op: str) -> None:
-    _rps.enforce_permission(role, op)
+    _rps.enforce_permission(getattr(role, "role", role), op, getattr(role, "granted_permissions", None))
 
 
 def _cari_balance(account: dict) -> float:
     """Resolve legacy cari balance fields without losing posted receivables."""
     values = [float(account.get(field) or 0) for field in ("balance", "current_balance") if field in account]
     return max(values, default=0.0)
+
+
+def _cari_account_lookup_filters(tenant_id: str, account_id: str) -> list[dict]:
+    """Support both current UUID records and legacy Mongo-backed cari records."""
+    raw_id = str(account_id or "").strip()
+    lookup_values: list[object] = [raw_id]
+    # Older cari imports stored otherwise identical identifiers as BSON numbers.
+    # The list API serializes every identifier as a string for the browser, so a
+    # transfer must restore the numeric candidate when looking the record up.
+    if raw_id.isdecimal():
+        lookup_values.append(int(raw_id))
+    filters = [{"tenant_id": tenant_id, field: value} for field in ("id", "account_id", "legacy_id", "_id") for value in lookup_values]
+    if ObjectId.is_valid(raw_id):
+        filters.append({"tenant_id": tenant_id, "_id": ObjectId(raw_id)})
+    return filters
+
+
+def _canonical_cari_account_id(account: dict) -> str:
+    return str(account.get("id") or account.get("account_id") or account.get("legacy_id") or account.get("_id") or "")
+
+
+def _canonical_cari_account_name(account: dict) -> str:
+    return str(account.get("name") or account.get("account_name") or account.get("company_name") or "Cari Hesap")
+
+
+def _cari_transfer_lookup_id(account: dict) -> str:
+    """Expose the persisted Mongo identity used by the transfer write path."""
+    return str(account.get("_id") or _canonical_cari_account_id(account))
+
+
+async def _find_cari_account(
+    tenant_id: str,
+    account_id: str,
+    *,
+    account_name: str | None = None,
+    session=None,
+):
+    """Return account, collection kind and its exact update filter."""
+    find_kwargs = {"session": session} if session is not None else {}
+    collections = (
+        (getattr(db, "cari_accounts", None), False),
+        (getattr(db, "city_ledger_accounts", None), True),
+    )
+    for collection, is_city_ledger in collections:
+        if collection is None:
+            continue
+        for query in _cari_account_lookup_filters(tenant_id, account_id):
+            account = await collection.find_one(query, **find_kwargs)
+            if account:
+                return account, is_city_ledger, query
+
+    # BSON UUID representation settings can make a value query miss even when
+    # the same persisted identity was serialized for the browser. On this
+    # fallback path, inspect only this tenant's small account set and compare
+    # the exact serialized identity exposed by ``list_cari_accounts``. Keep the
+    # original ``_id`` object for the subsequent atomic update.
+    raw_id = str(account_id or "").strip()
+    serialized_matches = []
+    for collection, is_city_ledger in collections:
+        find = getattr(collection, "find", None) if collection is not None else None
+        if find is None:
+            continue
+        cursor = find({"tenant_id": tenant_id}, **find_kwargs)
+        async for account in cursor:
+            identities = {
+                _cari_transfer_lookup_id(account),
+                _canonical_cari_account_id(account),
+            }
+            if raw_id in identities:
+                serialized_matches.append((account, is_city_ledger))
+
+    unique_serialized_matches = {}
+    for account, is_city_ledger in serialized_matches:
+        persisted_id = account.get("_id")
+        identity = (is_city_ledger, type(persisted_id).__name__, repr(persisted_id))
+        unique_serialized_matches[identity] = (account, is_city_ledger)
+    if len(unique_serialized_matches) == 1:
+        account, is_city_ledger = next(iter(unique_serialized_matches.values()))
+        return (
+            account,
+            is_city_ledger,
+            {
+                "tenant_id": tenant_id,
+                "_id": account.get("_id"),
+            },
+        )
+
+    # Some legacy city-ledger rows have had their public and persisted IDs
+    # regenerated independently. The account list still knows the row, but an
+    # ID round-trip can therefore miss it. Allow the UI to supply the exact
+    # displayed account name as a guarded fallback. Refuse ambiguous matches so
+    # a financial posting can never be routed to an arbitrary account.
+    normalized_name = str(account_name or "").strip()
+    if not normalized_name:
+        return None, False, None
+
+    matches = []
+    name_query = {
+        "tenant_id": tenant_id,
+        "$or": [
+            {"name": normalized_name},
+            {"account_name": normalized_name},
+            {"company_name": normalized_name},
+        ],
+    }
+    for collection, is_city_ledger in collections:
+        if collection is None:
+            continue
+        account = await collection.find_one(name_query, **find_kwargs)
+        if account:
+            matches.append((account, is_city_ledger))
+
+    unique_matches = {}
+    for account, is_city_ledger in matches:
+        identity = _cari_transfer_lookup_id(account)
+        unique_matches[identity] = (account, is_city_ledger)
+    if len(unique_matches) == 1:
+        account, is_city_ledger = next(iter(unique_matches.values()))
+        return (
+            account,
+            is_city_ledger,
+            {
+                "tenant_id": tenant_id,
+                "_id": account.get("_id"),
+            },
+        )
+    return None, False, None
 
 
 def _extra_charge_total(charge: dict) -> float:
@@ -47,14 +191,174 @@ def _extra_charge_total(charge: dict) -> float:
     return 0.0
 
 
-from models.schemas.bookings import BookingCreate
-from modules.reservations.services.create_reservation_service import (
-    CreateReservationService,
-)
-from security.field_encryption import get_field_encryption_service
+def _money_cents(value) -> int:
+    """Compare money values without float rounding noise."""
+    try:
+        return int(
+            (Decimal(str(value or 0)) * 100).quantize(
+                Decimal("1"),
+                rounding=ROUND_HALF_UP,
+            )
+        )
+    except (ValueError, TypeError, ArithmeticError):
+        return 0
+
+
+def _allocate_daily_rates(total: object, stay_dates: list[str]) -> dict[str, float]:
+    """Allocate a reservation total across nights without losing a cent.
+
+    Daily-rate rows are the source used by Night Audit for future room charges.
+    A rounded floating-point division can otherwise make their sum differ from
+    the reservation total (for example 100.01 / 3 becoming 33.34 each).
+    """
+    if not stay_dates:
+        return {}
+
+    nightly_cents, remainder = divmod(_money_cents(total), len(stay_dates))
+    return {
+        date_key: (nightly_cents + (1 if index < remainder else 0)) / 100
+        for index, date_key in enumerate(stay_dates)
+    }
+
+
+def _room_charge_rate_mismatches(
+    charges: list[dict],
+    expected_rates_by_date: dict[str, float],
+) -> list[dict]:
+    """Return posted room charges that no longer equal their nightly gross rate."""
+    mismatches: list[dict] = []
+    for charge in charges:
+        if charge.get("voided"):
+            continue
+        if charge.get("charge_category") != "room" and charge.get("charge_type") != "room_charge":
+            continue
+        charge_date = _reservation_calendar_date(charge.get("date"))
+        if charge_date is None:
+            continue
+        date_key = charge_date.isoformat()
+        expected = expected_rates_by_date.get(date_key)
+        if expected is None:
+            continue
+        observed = charge.get("total", charge.get("amount", 0))
+        if _money_cents(observed) != _money_cents(expected):
+            mismatches.append(
+                {
+                    "date": date_key,
+                    "charge_id": charge.get("id"),
+                    "expected_total": round(float(expected), 2),
+                    "posted_total": round(float(observed or 0), 2),
+                }
+            )
+    return mismatches
+
+
+async def _posted_room_charge_rate_mismatches(
+    tenant_id: str,
+    booking_id: str,
+    *,
+    expected_rates_by_date: dict[str, float] | None = None,
+    session=None,
+) -> list[dict]:
+    """Load the posted-room-rate invariant without blocking legacy rows.
+
+    Old reservations without any daily-rate rows cannot be compared safely.
+    Once daily rates exist, however, a room charge must equal the stored gross
+    rate before another payment may be accepted.
+    """
+    if not getattr(db, "daily_rates", None) or not getattr(db, "folio_charges", None):
+        return []
+    if expected_rates_by_date is None:
+        rate_rows = [
+            row
+            async for row in db.daily_rates.find(
+                {"tenant_id": tenant_id, "booking_id": booking_id},
+                {"_id": 0, "date": 1, "rate": 1},
+                **({"session": session} if session is not None else {}),
+            )
+        ]
+        expected_rates_by_date = {}
+        for row in rate_rows:
+            rate_date = _reservation_calendar_date(row.get("date"))
+            if rate_date is not None:
+                expected_rates_by_date[rate_date.isoformat()] = float(row.get("rate", 0) or 0)
+
+    if not expected_rates_by_date:
+        return []
+
+    charges = [
+        row
+        async for row in db.folio_charges.find(
+            {
+                "tenant_id": tenant_id,
+                "booking_id": booking_id,
+                "voided": {"$ne": True},
+                "$or": [{"charge_category": "room"}, {"charge_type": "room_charge"}],
+            },
+            {"_id": 0, "id": 1, "date": 1, "amount": 1, "total": 1, "charge_category": 1, "charge_type": 1},
+            **({"session": session} if session is not None else {}),
+        )
+    ]
+    return _room_charge_rate_mismatches(charges, expected_rates_by_date)
+
+
+async def _posted_accommodation_charge_total(tenant_id: str, booking_id: str) -> float:
+    """Return the guest-price components already posted to the folio.
+
+    Daily-rate rows can retain an older allocation after an in-stay price edit.
+    That allocation difference must remain auditable, but it must not block a
+    legitimate payment when the posted accommodation total still equals the
+    confirmed reservation total.
+    """
+    charges = [
+        row
+        async for row in db.folio_charges.find(
+            {
+                "tenant_id": tenant_id,
+                "booking_id": booking_id,
+                "voided": {"$ne": True},
+                "$or": [
+                    {"charge_category": {"$in": ["room", "tax", "city_tax"]}},
+                    {"charge_type": {"$in": ["room_charge", "tax"]}},
+                    {"konaklama_vergisi": True},
+                ],
+            },
+            {"_id": 0, "amount": 1, "total": 1},
+        )
+    ]
+    return round(
+        sum(float(charge.get("total", charge.get("amount", 0)) or 0) for charge in charges),
+        2,
+    )
+
 
 _create_reservation_service = CreateReservationService()
 _field_enc = get_field_encryption_service()
+
+
+def _is_automatic_accommodation_tax_charge(charge: dict) -> bool:
+    """Identify the system-generated konaklama vergisi folio line."""
+    # ``city_tax`` may also be chosen deliberately by an accountant.  Only
+    # the explicit marker written by ``post_konaklama_vergisi_to_folio`` is
+    # eligible for an automatic reversal.
+    return bool(charge.get("konaklama_vergisi"))
+
+
+def _redundant_automatic_accommodation_taxes(booking: dict, charges: list[dict]) -> list[dict]:
+    """Return auto-tax rows already included in the agreed guest price.
+
+    ``calculate_room_charge`` and checkout reconciliation persist
+    ``tax_inclusive=True``: each room-charge amount is already the agreed
+    guest-payable amount.  A reservation can be only partly posted before
+    checkout, so the posted room rows do not have to equal the full booking
+    total.  An older checkout path could still append a separate city-tax row
+    because that row did not carry a tax breakdown.  That row is neither a
+    new debt nor a tax that should be collected twice.
+    """
+    active_room_charges = [charge for charge in charges if not charge.get("voided") and (charge.get("charge_type") == "room_charge" or charge.get("charge_category") == "room")]
+    if not active_room_charges or not all(charge.get("tax_inclusive") is True for charge in active_room_charges):
+        return []
+
+    return [charge for charge in charges if not charge.get("voided") and _is_automatic_accommodation_tax_charge(charge) and float(charge.get("total", charge.get("amount", 0)) or 0) > 0]
 
 
 def _build_financial_summary(
@@ -64,10 +368,41 @@ def _build_financial_summary(
     extra_charges: list[dict],
     deposits: list[dict],
 ) -> dict:
-    """Build the reservation summary without counting posted room revenue twice."""
+    """Build reservation and currently-posted folio financial totals.
+
+    A stay can have only some of its nightly room charges posted while a night
+    audit is in progress.  Keep the operational folio balance separate from
+    the full reservation amount so the UI never makes a partially posted stay
+    look as though part of its confirmed price disappeared.
+    """
     active_charges = [charge for charge in charges if not charge.get("voided")]
     total_charges = sum(charge.get("total", charge.get("amount", 0)) for charge in active_charges)
-    total_payments = sum(payment.get("amount", 0) for payment in payments if not payment.get("voided"))
+    total_payments = sum(payment.get("amount", 0) for payment in payments if not payment.get("voided") and payment.get("method") != "discount")
+    prepayment_total = sum(
+        payment.get("amount", 0)
+        for payment in payments
+        if not payment.get("voided")
+        and payment.get("method") != "discount"
+        and str(payment.get("payment_type") or "").lower() == "prepayment"
+    )
+    total_discounts = sum(payment.get("amount", 0) for payment in payments if not payment.get("voided") and payment.get("method") == "discount")
+    complimentary_adjustment_total = sum(
+        payment.get("amount", 0)
+        for payment in payments
+        if not payment.get("voided")
+        and payment.get("method") == "discount"
+        and str(payment.get("payment_type") or "").lower() == "comp_adjustment"
+    )
+    # Closed Night Audit rows are immutable. A later commercial rate correction
+    # is recorded as a separate, auditable discount instead of rewriting room
+    # revenue from a closed business day.
+    rate_correction_total = sum(
+        payment.get("amount", 0)
+        for payment in payments
+        if not payment.get("voided")
+        and payment.get("method") == "discount"
+        and str(payment.get("payment_type") or "").lower() == "rate_correction"
+    )
     total_extra = sum(_extra_charge_total(charge) for charge in extra_charges if not charge.get("voided"))
     total_deposits = sum(
         max(
@@ -78,34 +413,173 @@ def _build_financial_summary(
         if deposit.get("status") != "refunded"
     )
 
-    room_charge_posted = any(charge.get("charge_type") == "room_charge" or charge.get("charge_category") == "room" for charge in active_charges)
+    room_charge_total = sum(charge.get("total", charge.get("amount", 0)) for charge in active_charges if charge.get("charge_type") == "room_charge" or charge.get("charge_category") == "room")
+    # Accommodation taxes are generated together with the nightly room
+    # charge.  They are not a receptionist-entered extra service, so they
+    # must participate in the same agreed-price reconciliation.  Otherwise a
+    # tax row created after a rate update is incorrectly presented as a new
+    # guest debt even when the confirmed reservation total was paid in full.
+    accommodation_tax_total = sum(
+        charge.get("total", charge.get("amount", 0))
+        for charge in active_charges
+        if (charge.get("charge_type") == "tax" or charge.get("charge_category") in {"tax", "city_tax"} or charge.get("konaklama_vergisi"))
+    )
+    reservation_price_component_total = room_charge_total + accommodation_tax_total
+    room_charge_posted = room_charge_total > 0
     unposted_room_total = 0 if room_charge_posted else booking.get("total_amount", 0)
-    balance = unposted_room_total + total_charges + total_extra - total_payments
+    balance = unposted_room_total + total_charges + total_extra - total_payments - total_discounts
+    folio_balance = total_charges + total_extra - total_payments - total_discounts
+    # The confirmed stay total remains collectible even before every night is
+    # posted to the folio.  ``max`` protects legacy bookings where the posted
+    # room charge is already larger than the booking total (for example when a
+    # separately-posted tax is excluded from the original total).
+    reservation_total_due = (
+        max(float(booking.get("total_amount", 0) or 0), float(reservation_price_component_total or 0))
+        + (total_charges - reservation_price_component_total)
+        + total_extra
+        - total_payments
+        - total_discounts
+    )
+    # Keep the commercial stay price and guest-added services separate in the
+    # API contract.  The old UI only had ``total_amount`` and ``total_charges``;
+    # once a restaurant/minibar row was posted it therefore looked as if the
+    # room price itself had changed.  ``additional_charge_total`` mirrors the
+    # exact non-accommodation component used by ``reservation_total_due`` and
+    # deliberately includes both folio-native rows and legacy booking-scoped
+    # ``extra_charges`` without counting either twice.
+    accommodation_total = max(
+        float(booking.get("total_amount", 0) or 0),
+        float(reservation_price_component_total or 0),
+    )
+    additional_charge_total = total_charges - reservation_price_component_total + total_extra
+    gross_total = accommodation_total + additional_charge_total
+    # A posted accommodation amount above the confirmed reservation total is
+    # a pricing reconciliation problem, not an amount the receptionist should
+    # collect.  This includes system-generated accommodation-tax rows.
+    booking_total = float(booking.get("total_amount", 0) or 0)
+    expected_dates: set[str] = set()
+    check_in = _reservation_calendar_date(booking.get("check_in"))
+    check_out = _reservation_calendar_date(booking.get("check_out"))
+    if check_in and check_out and check_out > check_in:
+        expected_dates = {
+            (check_in + timedelta(days=offset)).isoformat()
+            for offset in range((check_out - check_in).days)
+        }
+    posted_room_dates = {
+        parsed.isoformat()
+        for charge in active_charges
+        if charge.get("charge_type") == "room_charge" or charge.get("charge_category") == "room"
+        for parsed in [_reservation_calendar_date(charge.get("business_date") or charge.get("night_audit_date"))]
+        if parsed is not None
+    }
+    room_plan_fully_posted = bool(expected_dates) and posted_room_dates == expected_dates
+    # A historical Comp operation cannot rewrite room revenue already sealed
+    # by Night Audit.  It therefore creates a dedicated, audited discount for
+    # exactly those closed-night charges.  Compare the booking header against
+    # the *net* accommodation position; otherwise a correctly offset Comp stay
+    # is falsely flagged as a price/tahakkuk mismatch and checkout is blocked.
+    reconciled_reservation_price_component_total = max(
+        0.0,
+        float(reservation_price_component_total or 0)
+        - float(complimentary_adjustment_total or 0)
+        - float(rate_correction_total or 0),
+    )
+    raw_pricing_difference = reconciled_reservation_price_component_total - booking_total
+    # A higher booking header is only a mismatch once every stay night is
+    # posted; before then it is simply the unposted remainder of an active stay.
+    pricing_reconciliation_difference = round(
+        abs(raw_pricing_difference) if room_plan_fully_posted else max(0, raw_pricing_difference),
+        2,
+    )
+    pricing_reconciliation_direction = (
+        "posted_above_booking" if raw_pricing_difference > 0.01
+        else "booking_above_posted" if raw_pricing_difference < -0.01 and room_plan_fully_posted
+        else None
+    )
 
     return {
         "total_amount": booking.get("total_amount", 0),
         "total_charges": round(total_charges, 2),
         "total_payments": round(total_payments, 2),
+        "prepayment_total": round(prepayment_total, 2),
+        "other_payments_total": round(total_payments - prepayment_total, 2),
+        "total_discounts": round(total_discounts, 2),
+        "complimentary_adjustment_total": round(complimentary_adjustment_total, 2),
+        "rate_correction_total": round(rate_correction_total, 2),
         "total_extra": round(total_extra, 2),
+        "accommodation_total": round(accommodation_total, 2),
+        "additional_charge_total": round(additional_charge_total, 2),
+        "gross_total": round(gross_total, 2),
+        "accommodation_tax_total": round(accommodation_tax_total, 2),
         "total_deposits": round(total_deposits, 2),
         "balance": round(balance, 2),
+        "folio_balance": round(folio_balance, 2),
+        "unposted_room_amount": round(max(0, float(booking.get("total_amount", 0) or 0) - float(room_charge_total or 0)), 2),
+        "reservation_total_due": round(reservation_total_due, 2),
+        "pricing_reconciliation_required": pricing_reconciliation_difference > 0.01,
+        "pricing_reconciliation_difference": pricing_reconciliation_difference,
+        "pricing_reconciliation_direction": pricing_reconciliation_direction,
+        "room_plan_fully_posted": room_plan_fully_posted,
+        "pricing_reconciliation_target_total": round(reconciled_reservation_price_component_total, 2),
         "paid_amount": booking.get("paid_amount", 0),
     }
 
 
-def _build_channel_pricing_issue(booking: dict, charges: list[dict], payments: list[dict]) -> dict | None:
-    """Summarize only the exact, safely repairable legacy double-tax shape."""
+def _booking_or_folio_scope_query(
+    tenant_id: str,
+    booking_id: str,
+    folio_ids: list[str],
+) -> dict:
+    """Scope financial rows to a reservation, including legacy folio-only rows.
+
+    Older posting paths stored ``folio_id`` without also copying
+    ``booking_id``. A reservation detail must include both shapes.
+    """
+    selectors: list[dict] = [{"booking_id": booking_id}]
+    valid_folio_ids = [folio_id for folio_id in folio_ids if folio_id]
+    if valid_folio_ids:
+        selectors.append({"folio_id": {"$in": valid_folio_ids}})
+    return {"tenant_id": tenant_id, "$or": selectors}
+
+
+def _build_channel_pricing_issue(
+    booking: dict,
+    charges: list[dict],
+    payments: list[dict],
+    *,
+    accommodation_tax_rate: float,
+) -> dict | None:
+    """Summarize safely repairable automatic pricing overages."""
     issues = [
         issue
         for charge in charges
-        if (issue := analyze_legacy_double_tax_charge(booking, charge)) is not None
+        if (
+            issue := analyze_legacy_double_tax_charge(
+                booking,
+                charge,
+                accommodation_tax_rate=accommodation_tax_rate,
+            )
+        )
+        is not None
     ]
+    redundant_auto_taxes = _redundant_automatic_accommodation_taxes(booking, charges)
+    if redundant_auto_taxes:
+        overcharge = round(sum(float(charge.get("total", charge.get("amount", 0)) or 0) for charge in redundant_auto_taxes), 2)
+        return {
+            "code": "AUTOMATIC_ACCOMMODATION_TAX_DUPLICATE",
+            "charge_count": len(redundant_auto_taxes),
+            "observed_total": round(float(booking.get("total_amount", 0) or 0) + overcharge, 2),
+            "expected_total": round(float(booking.get("total_amount", 0) or 0), 2),
+            "overcharge": overcharge,
+            # This row was appended after the tax-inclusive room total. It is
+            # safe to reverse even after a payment; invoice protection is
+            # checked by the repair endpoint.
+            "repairable": True,
+            "blocked_reason": None,
+        }
     if not issues:
         return None
-    has_payments = any(
-        not payment.get("voided") and float(payment.get("amount", 0) or 0) > 0
-        for payment in payments
-    )
+    has_payments = any(not payment.get("voided") and float(payment.get("amount", 0) or 0) > 0 for payment in payments)
     return {
         "code": "CHANNEL_TOTAL_TAXED_TWICE",
         "charge_count": len(issues),
@@ -124,14 +598,30 @@ async def _reservation_outstanding_balance(
     session=None,
 ) -> float:
     """Return the same booking-scoped balance shown by reservation detail."""
-    query = {"booking_id": booking["id"], "tenant_id": tenant_id}
+    folios = [
+        folio
+        async for folio in db.folios.find(
+            {"booking_id": booking["id"], "tenant_id": tenant_id},
+            {"_id": 0, "id": 1},
+        )
+    ]
+    financial_query = _booking_or_folio_scope_query(
+        tenant_id,
+        booking["id"],
+        [folio.get("id") for folio in folios],
+    )
+    booking_query = {"booking_id": booking["id"], "tenant_id": tenant_id}
 
     async def collect(collection) -> list[dict]:
         kwargs = {"session": session} if session is not None else {}
-        return [document async for document in collection.find(query, {"_id": 0}, **kwargs)]
+        return [document async for document in collection.find(booking_query, {"_id": 0}, **kwargs)]
 
-    charges = await collect(db.folio_charges)
-    payments = await collect(db.payments)
+    async def collect_financial(collection) -> list[dict]:
+        kwargs = {"session": session} if session is not None else {}
+        return [document async for document in collection.find(financial_query, {"_id": 0}, **kwargs)]
+
+    charges = await collect_financial(db.folio_charges)
+    payments = await collect_financial(db.payments)
     extra_charges = await collect(db.extra_charges)
     deposits = await collect(db.deposits)
     summary = _build_financial_summary(
@@ -200,6 +690,65 @@ async def _refresh_cached_folio_balance(tenant_id: str, folio_id: str) -> float:
     return balance
 
 
+async def _ensure_reservation_folio(
+    tenant_id: str,
+    booking: dict,
+    *,
+    preferred_folio_id: str | None = None,
+    session=None,
+) -> dict:
+    """Resolve the reservation folio used by deposits and their refunds.
+
+    Deposits are payments, not room-price adjustments. They therefore need
+    the same concrete folio link as regular payments so folio history and the
+    cached outstanding balance stay in sync. ``preferred_folio_id`` keeps a
+    refund on the original folio even when that folio has since been closed.
+    """
+    query = {"tenant_id": tenant_id}
+    if preferred_folio_id:
+        query["id"] = preferred_folio_id
+    else:
+        query.update({"booking_id": booking["id"], "status": "open"})
+
+    kwargs = {"session": session} if session is not None else {}
+    folio = await db.folios.find_one(query, {"_id": 0}, **kwargs)
+    if folio:
+        return folio
+
+    # A legacy deposit may not have a folio_id. Reuse the reservation's open
+    # folio before creating one so the guest never gets parallel folios.
+    if preferred_folio_id:
+        folio = await db.folios.find_one(
+            {
+                "tenant_id": tenant_id,
+                "booking_id": booking["id"],
+                "status": "open",
+            },
+            {"_id": 0},
+            **kwargs,
+        )
+        if folio:
+            return folio
+
+    from core.utils import generate_folio_number
+
+    now = datetime.now(UTC).isoformat()
+    folio = {
+        "id": str(uuid.uuid4()),
+        "tenant_id": tenant_id,
+        "booking_id": booking["id"],
+        "folio_number": await generate_folio_number(tenant_id),
+        "folio_type": "guest",
+        "status": "open",
+        "guest_id": booking.get("guest_id"),
+        "balance": 0.0,
+        "created_at": now,
+        "updated_at": now,
+    }
+    await db.folios.insert_one({**folio}, **kwargs)
+    return folio
+
+
 # ── Group bookings cache (TTL 30s) ─────────────────────────────
 # /pms/group-bookings list endpoint'i her grup için bookings.find()
 # çağırıyordu (N+1). Single-query bucket pattern'a geçirdikten sonra
@@ -242,11 +791,15 @@ class PaymentRecord(BaseModel):
     payment_type: str = Field("interim", max_length=50)  # prepayment, deposit, interim, final
     reference: str | None = Field(None, max_length=200)
     notes: str | None = Field(None, max_length=2000)
+    currency: str | None = Field(None, min_length=3, max_length=3)
+    received_currency: str | None = Field(None, min_length=3, max_length=3)
+    received_amount: float | None = Field(None, gt=0, le=1e9)
+    exchange_rate: float | None = Field(None, gt=0, le=1e9)
 
 
 class ChannelPricingRepairRequest(BaseModel):
     reason: str = Field(
-        "Kanal toplamına mükerrer vergi eklenmesinin düzeltilmesi",
+        "Nihai rezervasyon tutarına mükerrer vergi eklenmesinin düzeltilmesi",
         min_length=10,
         max_length=500,
     )
@@ -255,6 +808,7 @@ class ChannelPricingRepairRequest(BaseModel):
 class CariTransfer(BaseModel):
     amount: float = Field(..., gt=0, le=1e9)
     cari_account_id: str
+    cari_account_name: str | None = Field(None, max_length=200)
     description: str | None = Field(None, max_length=2000)
 
 
@@ -282,6 +836,7 @@ class RoomChangeRequest(BaseModel):
     new_room_id: str
     reason: str
     transfer_folio: bool = True
+    extra_charge: float = Field(0.0, ge=0, le=1e9)
 
 
 class EarlyCheckinRequest(BaseModel):
@@ -301,13 +856,38 @@ class DepositRecord(BaseModel):
 
 
 class DailyRateEntry(BaseModel):
-    # Bug CP Round-3 — typed entries prevent untyped/negative rates bypassing override gate
+    # Zero is a valid daily value only for an already-authorised complimentary
+    # stay. The route below enforces that business rule after it loads the
+    # booking; keeping the schema at ``ge=0`` lets all nights in a comp stay
+    # be validated together instead of Pydantic returning one opaque error per
+    # night before the route can inspect the booking.
     date: str = Field(..., min_length=8, max_length=32)
-    rate: float = Field(..., gt=0, le=1e9)
+    rate: float = Field(..., ge=0, le=1e9)
 
 
 class DailyRateUpdate(BaseModel):
     rates: list[DailyRateEntry] = Field(..., min_length=1, max_length=400)
+
+
+class ComplimentaryReservationRequest(BaseModel):
+    """Audited complimentary scope for a reservation with no posted revenue."""
+
+    reason: str = Field(..., min_length=3, max_length=500)
+    scope: Literal["accommodation_only", "full"] = "accommodation_only"
+
+
+class ComplimentaryPlanRequest(BaseModel):
+    """Explicit comp treatment for active stays with open and closed nights."""
+
+    reason: str = Field(..., min_length=3, max_length=500)
+    mode: Literal["entire_stay", "open_nights", "closed_nights_adjustment"]
+
+
+class PostedStayRateCorrectionRequest(BaseModel):
+    """Target a commercial stay total without rewriting closed room charges."""
+
+    target_total: float = Field(..., ge=0, le=1e9)
+    reason: str = Field(..., min_length=3, max_length=500)
 
 
 class CariAccountCreate(BaseModel):
@@ -324,8 +904,17 @@ class CariAccountCreate(BaseModel):
 class ExtraChargeAdd(BaseModel):
     description: str = Field(..., min_length=1, max_length=500)
     category: str = Field("other", max_length=50)  # room, food, beverage, minibar, spa, laundry, other
-    amount: float = Field(..., gt=0, le=1e9)
+    # Zero-value rows represent a complimentary item. They remain auditable
+    # without creating revenue or changing the folio balance.
+    amount: float = Field(..., ge=0, le=1e9)
     quantity: float = Field(1.0, gt=0, le=1e6)
+    input_currency: str | None = Field(None, min_length=3, max_length=3)
+    # Booking-currency units produced by one input-currency unit.
+    exchange_rate: float | None = Field(None, gt=0, le=1e9)
+
+
+class ExtraChargeVoid(BaseModel):
+    reason: str = Field(..., min_length=3, max_length=500)
 
 
 class GuestUpdate(BaseModel):
@@ -334,6 +923,13 @@ class GuestUpdate(BaseModel):
     phone: str | None = None
     id_number: str | None = None
     nationality: str | None = None
+    id_type: str | None = None
+    date_of_birth: str | None = None
+    gender: str | None = None
+    address: str | None = None
+    city: str | None = None
+    country: str | None = None
+    notes: str | None = Field(None, max_length=2000)
     vip_status: bool | None = None
 
 
@@ -415,6 +1011,81 @@ def _reservation_calendar_date(value) -> date | None:
             return None
 
 
+def _room_charge_business_date(charge: dict) -> date | None:
+    """Resolve the accounting date from current and legacy room-charge rows."""
+    return _reservation_calendar_date(
+        charge.get("business_date")
+        or charge.get("night_audit_date")
+        or charge.get("date")
+    )
+
+
+def _daily_rate_cents(value) -> int:
+    """Convert a persisted monetary value to integer cents without float drift."""
+    try:
+        return int((Decimal(str(value or 0)) * 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+    except (ArithmeticError, ValueError):
+        return 0
+
+
+def _complete_daily_rates_for_stay(daily_rates: list[dict], booking: dict) -> list[dict]:
+    """Return exactly one rate row for every chargeable night in a stay.
+
+    Provider imports and older reservations can contain only part of a stay's
+    daily-rate plan.  Keep every existing night intact (closed business dates
+    may be immutable) and allocate the reservation total still unaccounted for
+    across only the missing nights.
+    """
+    check_in = _reservation_calendar_date(booking.get("check_in"))
+    check_out = _reservation_calendar_date(booking.get("check_out"))
+    if check_in is None or check_out is None or check_out <= check_in:
+        return daily_rates
+
+    expected_dates: list[date] = []
+    current = check_in
+    while current < check_out:
+        expected_dates.append(current)
+        current += timedelta(days=1)
+
+    rows_by_date: dict[date, dict] = {}
+    for row in daily_rates:
+        row_date = _reservation_calendar_date(row.get("date"))
+        if row_date in expected_dates and row_date not in rows_by_date:
+            rows_by_date[row_date] = row
+
+    missing_dates = [night for night in expected_dates if night not in rows_by_date]
+    if not missing_dates:
+        return [rows_by_date[night] for night in expected_dates]
+
+    target_cents = _daily_rate_cents(booking.get("total_amount"))
+    known_cents = sum(_daily_rate_cents(row.get("rate")) for row in rows_by_date.values())
+    remaining_cents = target_cents - known_cents
+    is_complimentary = bool(booking.get("is_complimentary"))
+
+    minimum_total = 0 if is_complimentary else len(missing_dates)
+    if remaining_cents >= minimum_total:
+        distributable_cents = remaining_cents
+    else:
+        fallback_cents = _daily_rate_cents(booking.get("base_rate"))
+        if fallback_cents <= 0 and rows_by_date:
+            fallback_cents = round(known_cents / len(rows_by_date))
+        if fallback_cents <= 0 and expected_dates:
+            fallback_cents = round(target_cents / len(expected_dates))
+        distributable_cents = max(fallback_cents, 0 if is_complimentary else 1) * len(missing_dates)
+
+    cents_per_night, remainder = divmod(distributable_cents, len(missing_dates))
+    for index, night in enumerate(missing_dates):
+        cents = cents_per_night + (1 if index < remainder else 0)
+        rows_by_date[night] = {
+            "date": night.isoformat(),
+            "rate": cents / 100,
+            "generated": True,
+            "generated_reason": "missing_daily_rate",
+        }
+
+    return [rows_by_date[night] for night in expected_dates]
+
+
 async def _log_activity(tenant_id: str, booking_id: str, action: str, actor: str, details: dict = None):
     """Log an activity for a reservation."""
     log_entry = {
@@ -428,6 +1099,35 @@ async def _log_activity(tenant_id: str, booking_id: str, action: str, actor: str
     }
     await db.reservation_activity_log.insert_one(log_entry)
     return log_entry
+
+
+def _audit_log_to_reservation_history_entry(audit_entry: dict) -> dict:
+    """Expose legacy reservation audit entries in the operator-facing timeline."""
+    metadata = audit_entry.get("metadata") or {}
+    return {
+        "id": f"audit:{audit_entry.get('id') or audit_entry.get('_id')}",
+        "action": metadata.get("activity_action") or audit_entry.get("action") or "reservation_modified",
+        "actor": metadata.get("actor_name") or metadata.get("channel") or "Sistem",
+        "details": {
+            **metadata,
+            "source": metadata.get("source") or "PMS denetim kaydı",
+            "correlation_id": audit_entry.get("correlation_id"),
+        },
+        "correlation_id": audit_entry.get("correlation_id"),
+        "created_at": audit_entry.get("timestamp") or audit_entry.get("created_at"),
+    }
+
+
+def _history_correlation_ids(history: list[dict]) -> set[str]:
+    return {
+        str(correlation_id)
+        for entry in history
+        for correlation_id in (
+            entry.get("correlation_id"),
+            (entry.get("details") or {}).get("correlation_id"),
+        )
+        if correlation_id
+    }
 
 
 # ── Endpoints ──
@@ -468,14 +1168,20 @@ async def get_reservation_full_detail(booking_id: str, current_user: User = Depe
         async for f in db.folios.find({"booking_id": booking_id, "tenant_id": tid}, {"_id": 0}):
             folios.append(f)
 
+        financial_query = _booking_or_folio_scope_query(
+            tid,
+            booking_id,
+            [folio.get("id") for folio in folios],
+        )
+
         # Charges per folio
         charges = []
-        async for c in db.folio_charges.find({"booking_id": booking_id, "tenant_id": tid}, {"_id": 0}):
+        async for c in db.folio_charges.find(financial_query, {"_id": 0}):
             charges.append(c)
 
         # Payments per folio
         payments = []
-        async for p in db.payments.find({"booking_id": booking_id, "tenant_id": tid}, {"_id": 0}):
+        async for p in db.payments.find(financial_query, {"_id": 0}):
             payments.append(p)
 
         # Extra charges
@@ -487,11 +1193,39 @@ async def get_reservation_full_detail(booking_id: str, current_user: User = Depe
         notes = []
         async for n in db.reservation_notes.find({"booking_id": booking_id, "tenant_id": tid}, {"_id": 0}).sort("created_at", -1):
             notes.append(n)
+        if not any(note.get("source") == "hotelrunner" for note in notes):
+            provider_note = await resolve_legacy_hotelrunner_note(
+                db,
+                tenant_id=tid,
+                booking=booking,
+            )
+            if provider_note and not any(str(note.get("content") or "").strip() == provider_note["content"] for note in notes):
+                notes.append(provider_note)
+                notes.sort(key=lambda note: str(note.get("created_at") or ""), reverse=True)
 
         # Activity log / history
         history = []
         async for h in db.reservation_activity_log.find({"booking_id": booking_id, "tenant_id": tid}, {"_id": 0}).sort("created_at", -1):
             history.append(h)
+
+        # Reservation changes were historically recorded in the immutable
+        # audit ledger but not copied to the detail timeline.  Surface those
+        # older entries too, without duplicating newly written activity rows.
+        activity_correlations = _history_correlation_ids(history)
+        async for audit_entry in db.audit_logs.find(
+            {
+                "tenant_id": tid,
+                "entity_type": "reservation",
+                "entity_id": booking_id,
+                "action": "reservation_modified",
+            },
+            {"_id": 0},
+        ).sort("timestamp", -1):
+            correlation_id = audit_entry.get("correlation_id")
+            if correlation_id and str(correlation_id) in activity_correlations:
+                continue
+            history.append(_audit_log_to_reservation_history_entry(audit_entry))
+        history.sort(key=lambda entry: str(entry.get("created_at") or ""), reverse=True)
 
         # Room move history
         room_moves = []
@@ -500,34 +1234,54 @@ async def get_reservation_full_detail(booking_id: str, current_user: User = Depe
 
         # Daily rates
         daily_rates = []
+        check_in_date = _reservation_calendar_date(booking.get("check_in"))
+        check_out_date = _reservation_calendar_date(booking.get("check_out"))
         async for dr in db.daily_rates.find({"booking_id": booking_id, "tenant_id": tid}, {"_id": 0}).sort("date", 1):
-            daily_rates.append(dr)
+            rate_date = _reservation_calendar_date(dr.get("date"))
+            if (
+                rate_date is not None
+                and check_in_date is not None
+                and check_out_date is not None
+                and check_in_date <= rate_date < check_out_date
+            ):
+                daily_rates.append(dr)
 
-        # If no daily rates exist, generate from booking
-        if not daily_rates and booking.get("check_in") and booking.get("check_out"):
-            ci = _reservation_calendar_date(booking["check_in"])
-            co = _reservation_calendar_date(booking["check_out"])
-            if ci is not None and co is not None:
-                nights = max((co - ci).days, 1)
-                nightly_rate = round(booking.get("total_amount", 0) / nights, 2) if nights > 0 else 0
-                current = ci
-                for _ in range(nights):
-                    daily_rates.append(
-                        {
-                            "date": current.isoformat(),
-                            "rate": nightly_rate,
-                            "generated": True,
-                        }
-                    )
-                    current = current + timedelta(days=1)
+        # Imported and legacy reservations may have a partially populated rate
+        # plan. Complete missing stay nights without changing persisted rows.
+        daily_rates = _complete_daily_rates_for_stay(daily_rates, booking)
 
         # Guests associated with this booking
         guests_list = []
         if guest:
             guests_list.append(guest)
         # Also check for additional guests
-        async for ag in db.booking_guests.find({"booking_id": booking_id, "tenant_id": tid}, {"_id": 0}):
-            guests_list.append(ag)
+        ag_links = await db.booking_guests.find(
+            {"booking_id": booking_id, "tenant_id": tid},
+            {"_id": 0},
+        ).to_list(100)
+        ag_ids = [link["guest_id"] for link in ag_links if link.get("guest_id") and link.get("guest_id") != booking.get("guest_id")]
+        if ag_ids:
+            async for ag in db.guests.find({"id": {"$in": ag_ids}, "tenant_id": tid}, {"_id": 0}):
+                # inject checkout_date from bg_link
+                for link in ag_links:
+                    if link.get("guest_id") == ag.get("id"):
+                        if link.get("checkout_date"):
+                            ag["checkout_date"] = link["checkout_date"]
+                        break
+                guests_list.append(ag)
+        # Older additional-guest records embedded the guest payload directly in
+        # booking_guests. Keep them readable while all new writes use guest_id.
+        known_guest_ids = {item.get("id") for item in guests_list if item.get("id")}
+        for link in ag_links:
+            if link.get("guest_id") or not link.get("name"):
+                continue
+            legacy_guest = {key: value for key, value in link.items() if key not in {"booking_id", "tenant_id"}}
+            legacy_id = legacy_guest.get("id")
+            if legacy_id and legacy_id in known_guest_ids:
+                continue
+            guests_list.append(legacy_guest)
+            if legacy_id:
+                known_guest_ids.add(legacy_id)
 
         # Company info
         company = None
@@ -544,8 +1298,20 @@ async def get_reservation_full_detail(booking_id: str, current_user: User = Depe
         async for dep in db.deposits.find({"booking_id": booking_id, "tenant_id": tid}, {"_id": 0}).sort("created_at", -1):
             deposits.append(dep)
 
+        business_date = await ensure_business_date_initialized(db, tid)
+        accommodation_tax_rate = await get_accommodation_tax_rate(
+            tid,
+            booking.get("check_in") or business_date["business_date"],
+        )
+        read_only = reservation_is_historical(booking, business_date["business_date"])
+
     summary = _build_financial_summary(booking, charges, payments, extra_charges, deposits)
-    summary["channel_pricing_issue"] = _build_channel_pricing_issue(booking, charges, payments)
+    summary["channel_pricing_issue"] = _build_channel_pricing_issue(
+        booking,
+        charges,
+        payments,
+        accommodation_tax_rate=accommodation_tax_rate,
+    )
 
     # Decrypt PII fields for authorized response (KVKK: only after auth/perm checks)
     try:
@@ -582,6 +1348,8 @@ async def get_reservation_full_detail(booking_id: str, current_user: User = Depe
         "communication_logs": communication_logs,
         "deposits": deposits,
         "summary": summary,
+        "read_only": read_only,
+        "business_date": business_date["business_date"],
     }
 
 
@@ -592,24 +1360,27 @@ async def repair_channel_pricing(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("void_charge")),
 ):
-    """Repair the exact legacy OTA gross-total double-tax posting in place.
+    """Repair an exact legacy gross-total double-tax posting in place.
 
     The reservation, provider reference, folio, and room-charge ID are kept.
     Only an unpaid/uninvoiced night-audit charge matching the deterministic
     double-tax signature can be corrected. The before value is retained on the
     charge and in both reservation and tamper-evident audit streams.
     """
-    _enforce_perm(current_user.role, "void_charge")
+    _enforce_perm(current_user, "void_charge")
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
     booking = await db.bookings.find_one(
         {"id": booking_id, "tenant_id": tid},
-        {"_id": 0, "id": 1},
+        {"_id": 0},
     )
     if not booking:
         raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
-
+    accommodation_tax_rate = await get_accommodation_tax_rate(
+        tid,
+        booking.get("check_in"),
+    )
     folios = [
         folio
         async for folio in db.folios.find(
@@ -639,14 +1410,21 @@ async def repair_channel_pricing(
         issues = [
             (charge, issue)
             for charge in charges
-            if (issue := analyze_legacy_double_tax_charge(locked_booking, charge)) is not None
+            if (
+                issue := analyze_legacy_double_tax_charge(
+                    locked_booking,
+                    charge,
+                    accommodation_tax_rate=accommodation_tax_rate,
+                )
+            )
+            is not None
         ]
         if not issues:
             return {
                 "success": True,
                 "already_repaired": True,
                 "booking_id": booking_id,
-                "message": "Kanal fiyatı zaten doğru",
+                "message": "Rezervasyon fiyatı zaten doğru",
             }
 
         folio_ids = sorted({str(issue["folio_id"]) for _, issue in issues if issue.get("folio_id")})
@@ -759,8 +1537,7 @@ async def repair_channel_pricing(
                 )
             ]
             balance = round(
-                sum(float(row.get("total", row.get("amount", 0)) or 0) for row in active_charges)
-                - sum(float(row.get("amount", 0) or 0) for row in active_payments),
+                sum(float(row.get("total", row.get("amount", 0)) or 0) for row in active_charges) - sum(float(row.get("amount", 0) or 0) for row in active_payments),
                 2,
             )
             await db.folios.update_one(
@@ -769,12 +1546,13 @@ async def repair_channel_pricing(
                 session=session,
             )
 
+        fallback_source = "channel_manager" if is_channel_total_tax_inclusive(locked_booking) else "manual"
         await db.bookings.update_one(
             {"id": booking_id, "tenant_id": tid},
             {
                 "$set": {
                     "pricing_tax_inclusive": True,
-                    "pricing_source": locked_booking.get("pricing_source") or "channel_manager",
+                    "pricing_source": locked_booking.get("pricing_source") or fallback_source,
                     "pricing_repaired_at": now,
                     "updated_at": now,
                 }
@@ -784,10 +1562,7 @@ async def repair_channel_pricing(
         audit_details = {
             "reason": data.reason,
             "repairs": repaired_rows,
-            "provider_reference": (
-                locked_booking.get("external_confirmation")
-                or locked_booking.get("external_reservation_id")
-            ),
+            "provider_reference": (locked_booking.get("external_confirmation") or locked_booking.get("external_reservation_id")),
         }
         await db.reservation_activity_log.insert_one(
             {
@@ -821,14 +1596,206 @@ async def repair_channel_pricing(
             "repaired_charges": repaired_rows,
             "total_reduction": round(sum(row["difference"] for row in repaired_rows), 2),
             "new_booking_balance": round(
-                sum(
-                    float(row.get("total", row.get("amount", 0)) or 0)
-                    for row in charges
-                    if not row.get("voided")
-                )
-                - sum(row["difference"] for row in repaired_rows),
+                sum(float(row.get("total", row.get("amount", 0)) or 0) for row in charges if not row.get("voided")) - sum(row["difference"] for row in repaired_rows),
                 2,
             ),
+        }
+
+    return await _run_reservation_financial_transaction(
+        tenant_id=tid,
+        booking_id=booking_id,
+        resources=resources,
+        callback=_repair,
+    )
+
+
+@router.post("/reservations/{booking_id}/repair-automatic-accommodation-tax")
+async def repair_automatic_accommodation_tax(
+    booking_id: str,
+    data: ChannelPricingRepairRequest,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("void_charge")),
+):
+    """Reverse only the duplicate auto-posted accommodation-tax row.
+
+    This is deliberately narrower than a price edit: it applies solely when
+    every posted room row is explicitly tax-inclusive and the system also
+    appended its own ``city_tax`` row.  The original row and the tax-posting
+    trace remain in the database for audit; the row is voided rather than
+    deleted.  An issued invoice is never altered automatically.
+    """
+    _enforce_perm(current_user, "void_charge")
+    _ensure_hotel_context(current_user)
+    tid = current_user.tenant_id
+
+    booking = await db.bookings.find_one(
+        {"id": booking_id, "tenant_id": tid},
+        {"_id": 0},
+    )
+    if not booking:
+        raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
+    folios = [
+        folio
+        async for folio in db.folios.find(
+            {"booking_id": booking_id, "tenant_id": tid},
+            {"_id": 0, "id": 1},
+        )
+    ]
+    resources = [("folio", folio["id"]) for folio in folios if folio.get("id")]
+
+    async def _repair(session):
+        locked_booking = await db.bookings.find_one(
+            {"id": booking_id, "tenant_id": tid},
+            {"_id": 0},
+            session=session,
+        )
+        if not locked_booking:
+            raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
+        charges = [
+            charge
+            async for charge in db.folio_charges.find(
+                {"booking_id": booking_id, "tenant_id": tid},
+                {"_id": 0},
+                session=session,
+            )
+        ]
+        duplicate_taxes = _redundant_automatic_accommodation_taxes(locked_booking, charges)
+        if not duplicate_taxes:
+            return {
+                "success": True,
+                "already_repaired": True,
+                "booking_id": booking_id,
+                "message": "Mükerrer otomatik konaklama vergisi bulunmuyor",
+            }
+
+        folio_ids = sorted({str(charge["folio_id"]) for charge in duplicate_taxes if charge.get("folio_id")})
+        issued_invoice = await db.invoices.find_one(
+            {
+                "tenant_id": tid,
+                "$or": [
+                    {"booking_id": booking_id},
+                    {"folio_id": {"$in": folio_ids}},
+                ],
+                "status": {"$nin": ["draft", "cancelled", "voided"]},
+            },
+            {"_id": 0, "id": 1},
+            session=session,
+        )
+        if issued_invoice:
+            raise HTTPException(
+                status_code=409,
+                detail="Faturalanmış rezervasyondaki vergi otomatik düzeltilemez; iade/düzeltme belgesi gerekir",
+            )
+
+        now = datetime.now(UTC).isoformat()
+        repaired_rows = []
+        for charge in duplicate_taxes:
+            charge_id = charge.get("id")
+            if not charge_id:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Vergi satırının kimliği eksik; finans onayı gerekir",
+                )
+            amount = round(float(charge.get("total", charge.get("amount", 0)) or 0), 2)
+            updated = await db.folio_charges.update_one(
+                {
+                    "id": charge_id,
+                    "tenant_id": tid,
+                    "booking_id": booking_id,
+                    "voided": {"$ne": True},
+                },
+                {
+                    "$set": {
+                        "voided": True,
+                        "voided_at": now,
+                        "voided_by": current_user.id,
+                        "void_reason": "tax_inclusive_booking_total",
+                        "void_note": data.reason,
+                    }
+                },
+                session=session,
+            )
+            if updated.modified_count != 1:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Vergi satırı eşzamanlı değişti; yenileyip tekrar deneyin",
+                )
+            await db.accommodation_tax_postings.update_many(
+                {"tenant_id": tid, "folio_id": charge.get("folio_id"), "charge_id": charge_id},
+                {
+                    "$set": {
+                        "reversed_at": now,
+                        "reversed_by": current_user.id,
+                        "reversal_reason": "tax_inclusive_booking_total",
+                    }
+                },
+                session=session,
+            )
+            repaired_rows.append({"charge_id": charge_id, "folio_id": charge.get("folio_id"), "difference": amount})
+
+        for folio_id in folio_ids:
+            active_charges = [
+                row
+                async for row in db.folio_charges.find(
+                    {"folio_id": folio_id, "tenant_id": tid, "voided": {"$ne": True}},
+                    {"_id": 0, "total": 1, "amount": 1},
+                    session=session,
+                )
+            ]
+            active_payments = [
+                row
+                async for row in db.payments.find(
+                    {"folio_id": folio_id, "tenant_id": tid, "voided": {"$ne": True}},
+                    {"_id": 0, "amount": 1},
+                    session=session,
+                )
+            ]
+            balance = round(
+                sum(float(row.get("total", row.get("amount", 0)) or 0) for row in active_charges) - sum(float(row.get("amount", 0) or 0) for row in active_payments),
+                2,
+            )
+            await db.folios.update_one(
+                {"id": folio_id, "tenant_id": tid},
+                {"$set": {"balance": balance, "updated_at": now}},
+                session=session,
+            )
+
+        audit_details = {
+            "reason": data.reason,
+            "repairs": repaired_rows,
+            "total_reduction": round(sum(row["difference"] for row in repaired_rows), 2),
+        }
+        await db.reservation_activity_log.insert_one(
+            {
+                "id": str(uuid.uuid4()),
+                "tenant_id": tid,
+                "booking_id": booking_id,
+                "action": "automatic_accommodation_tax_reversed",
+                "actor": current_user.name,
+                "details": audit_details,
+                "created_at": now,
+            },
+            session=session,
+        )
+        await db.pms_audit_trail.insert_one(
+            {
+                "id": str(uuid.uuid4()),
+                "tenant_id": tid,
+                "entity_type": "booking",
+                "entity_id": booking_id,
+                "action": "automatic_accommodation_tax_reversed",
+                "performed_by": current_user.id,
+                "metadata": audit_details,
+                "created_at": now,
+            },
+            session=session,
+        )
+        return {
+            "success": True,
+            "already_repaired": False,
+            "booking_id": booking_id,
+            "repaired_charges": repaired_rows,
+            "total_reduction": audit_details["total_reduction"],
         }
 
     return await _run_reservation_financial_transaction(
@@ -847,13 +1814,23 @@ async def record_payment(
     _perm=Depends(require_op("post_payment")),  # v97 DW
 ):
     """Record a payment on the reservation's folio."""
-    _enforce_perm(current_user.role, "post_payment")  # Bug CP fix
+    _enforce_perm(current_user, "post_payment")  # Bug CP fix
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
     booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tid}, {"_id": 0})
     if not booking:
         raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
+
+    pricing_mismatches = await _posted_room_charge_rate_mismatches(tid, booking_id)
+    if pricing_mismatches:
+        posted_accommodation_total = await _posted_accommodation_charge_total(tid, booking_id)
+        confirmed_total = float(booking.get("total_amount", 0) or 0)
+        if _money_cents(posted_accommodation_total) != _money_cents(confirmed_total):
+            raise HTTPException(
+                status_code=409,
+                detail="Oda tahakkuku ile günlük fiyat uyuşmuyor; finansal mutabakat tamamlanmadan ödeme alınamaz",
+            )
 
     # Task #184 — Idempotency: aynı (tenant_id, booking_id, reference) ile gelen
     # retry/double-click/network-replay isteği misafiri çift kreditlememeli.
@@ -874,6 +1851,16 @@ async def record_payment(
                 round(float(existing.get("amount") or 0), 2) != round(float(data.amount), 2)
                 or (existing.get("method") or "") != data.method
                 or (existing.get("payment_type") or "") != data.payment_type
+                or (
+                    data.received_currency
+                    and str(existing.get("received_currency") or existing.get("currency") or "TRY").upper()
+                    != str(data.received_currency).upper()
+                )
+                or (
+                    data.received_amount is not None
+                    and round(float(existing.get("received_amount") or existing.get("amount") or 0), 2)
+                    != round(float(data.received_amount), 2)
+                )
             ):
                 raise HTTPException(
                     status_code=409,
@@ -927,12 +1914,17 @@ async def record_payment(
             await release_idempotency(db, lock_id=auto_lock_id)
         raise
 
+    currency = str(booking.get("currency") or folio.get("currency") or "TRY").upper()
     payment = {
         "id": str(uuid.uuid4()),
         "tenant_id": tid,
         "folio_id": folio["id"],
         "booking_id": booking_id,
         "amount": data.amount,
+        "currency": currency,
+        "received_currency": str(data.received_currency or currency).upper(),
+        "received_amount": float(data.received_amount if data.received_amount is not None else data.amount),
+        "exchange_rate": float(data.exchange_rate if data.exchange_rate is not None else 1),
         "method": data.method,
         "payment_type": data.payment_type,
         "status": "paid",
@@ -942,6 +1934,16 @@ async def record_payment(
         "processed_at": datetime.now(UTC).isoformat(),
         "voided": False,
     }
+    await stamp_open_business_date(db, tid, payment)
+
+    # The reservation detail dialog is one of the main front-desk payment
+    # entry points.  Keep it on the same cashier contract as the dedicated
+    # folio endpoint: cash may not be posted without an open shift and every
+    # durable payment must have exactly one shift transaction.
+    from domains.pms.cashier_service import ensure_active_shift, record_cash_transaction
+
+    method_str = str(data.method or "").lower()
+    await ensure_active_shift(tid, method_str)
     try:
         await db.payments.insert_one({**payment})
     except Exception as exc:
@@ -961,6 +1963,32 @@ async def record_payment(
             await release_idempotency(db, lock_id=auto_lock_id)
         raise
 
+    is_cash = method_str == "cash"
+    actor_email = getattr(current_user, "email", None) or getattr(current_user, "id", None)
+    try:
+        await record_cash_transaction(
+            tenant_id=tid,
+            amount=data.amount,
+            method=method_str,
+            direction="in",
+            description=f"Rezervasyon ödemesi - {booking.get('reservation_number') or booking_id[:8]}",
+            txn_type="folio_payment",
+            ref_type="payment",
+            ref_id=payment["id"],
+            created_by=actor_email,
+            created_by_name=getattr(current_user, "name", None) or actor_email,
+            idempotency_key=f"payment:{payment['id']}",
+            require_open_shift=is_cash,
+        )
+    except HTTPException as exc:
+        if is_cash and exc.status_code == 409:
+            # The shift can close in the small interval between the pre-check
+            # and the atomic append.  Do not leave an orphan payment behind.
+            await db.payments.delete_one({"id": payment["id"], "tenant_id": tid})
+            if auto_lock_id:
+                await release_idempotency(db, lock_id=auto_lock_id)
+        raise
+
     # Update booking paid_amount
     new_paid = (booking.get("paid_amount", 0) or 0) + data.amount
     await db.bookings.update_one(
@@ -976,6 +2004,7 @@ async def record_payment(
         current_user.name,
         {
             "amount": data.amount,
+            "currency": currency,
             "method": data.method,
             "payment_type": data.payment_type,
         },
@@ -988,11 +2017,88 @@ async def record_payment(
         tid,
         booking_id,
         "payment_added",
-        {"payment_id": payment["id"], "amount": data.amount, "method": data.method, "payment_type": data.payment_type},
+        {"payment_id": payment["id"], "amount": data.amount, "currency": currency, "method": data.method, "payment_type": data.payment_type},
     )
 
     payment.pop("_id", None)
     return {"success": True, "payment": payment}
+
+
+@router.post("/reservations/{booking_id}/complete-pending-room-charge")
+async def complete_pending_room_charge(
+    booking_id: str,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v97("frontdesk")),
+):
+    """Repair a historical folio credit caused by a missing final room charge.
+
+    Normal checkout performs this automatically.  The endpoint is deliberately
+    limited to an already checked-out reservation so it cannot be used as a
+    substitute for nightly posting on an active stay.
+    """
+    _enforce_perm(current_user, "checkout")
+    _ensure_hotel_context(current_user)
+    tid = current_user.tenant_id
+    booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tid}, {"_id": 0})
+    if not booking:
+        raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
+    if booking.get("status") != "checked_out":
+        raise HTTPException(status_code=409, detail="Tahakkuk tamamlama yalnızca çıkışı yapılmış rezervasyonlarda kullanılabilir")
+
+    from core.folio_checkout_reconciliation import reconcile_unposted_room_charge
+
+    try:
+        result = await reconcile_unposted_room_charge(
+            db,
+            tenant_id=tid,
+            booking=booking,
+            posted_by=f"historical_checkout_repair:{current_user.name}",
+            allow_closed_folio=True,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    if result["posted"]:
+        await _log_activity(
+            tid,
+            booking_id,
+            "pending_room_charge_completed",
+            current_user.name,
+            {"amount": result["amount"], "charge_id": result["charge_id"]},
+        )
+    return {"success": True, **result}
+
+
+@router.get("/cari-transfer-resolution")
+async def diagnose_cari_transfer_resolution(
+    booking_id: str,
+    account_id: str,
+    account_name: str | None = None,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("post_payment")),
+):
+    """Read-only check for the identities required by a cari transfer."""
+    _enforce_perm(current_user, "post_payment")
+    _ensure_hotel_context(current_user)
+    tid = current_user.tenant_id
+
+    booking = await db.bookings.find_one(
+        {"id": booking_id, "tenant_id": tid},
+        {"_id": 0, "id": 1},
+    )
+    account, is_city_ledger, _ = await _find_cari_account(
+        tid,
+        account_id,
+        account_name=account_name,
+    )
+    return {
+        "booking_found": bool(booking),
+        "account_found": bool(account),
+        "account_collection": "city_ledger_accounts" if account and is_city_ledger else "cari_accounts" if account else None,
+        "canonical_account_id": _canonical_cari_account_id(account) if account else None,
+        "transfer_id": _cari_transfer_lookup_id(account) if account else None,
+        "persisted_id_type": type(account.get("_id")).__name__ if account else None,
+    }
 
 
 @router.post("/reservations/{booking_id}/transfer-to-cari")
@@ -1003,13 +2109,16 @@ async def transfer_to_cari(
     _perm=Depends(require_op("post_payment")),  # v97 DW
 ):
     """Transfer an amount from reservation folio to a cari (account receivable) account."""
-    _enforce_perm(current_user.role, "post_payment")  # Bug CP fix
+    _enforce_perm(current_user, "post_payment")  # Bug CP fix
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
     booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tid}, {"_id": 0})
     if not booking:
-        raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
+        raise HTTPException(
+            status_code=409,
+            detail="Cari aktarımı için rezervasyon başlangıçta bulunamadı",
+        )
 
     outstanding_balance = await _reservation_outstanding_balance(tid, booking)
     if outstanding_balance <= 0:
@@ -1017,13 +2126,16 @@ async def transfer_to_cari(
     if data.amount - outstanding_balance > 0.005:
         raise HTTPException(status_code=409, detail="Cari aktarım tutarı açık bakiyeyi aşamaz")
 
-    cari = await db.cari_accounts.find_one({"id": data.cari_account_id, "tenant_id": tid}, {"_id": 0})
-    is_city_ledger = False
+    cari, resolved_is_city_ledger, resolved_cari_filter = await _find_cari_account(
+        tid,
+        data.cari_account_id,
+        account_name=data.cari_account_name,
+    )
     if not cari:
-        cari = await db.city_ledger_accounts.find_one({"id": data.cari_account_id, "tenant_id": tid}, {"_id": 0})
-        is_city_ledger = True
-    if not cari:
-        raise HTTPException(status_code=404, detail="Cari hesap bulunamadı")
+        raise HTTPException(
+            status_code=409,
+            detail="Cari aktarımı için seçilen cari başlangıçta çözümlenemedi",
+        )
 
     folio = await db.folios.find_one(
         {"booking_id": booking_id, "tenant_id": tid, "status": "open"},
@@ -1051,30 +2163,37 @@ async def transfer_to_cari(
     now = datetime.now(UTC).isoformat()
     transaction_id = str(uuid.uuid4())
     payment_id = str(uuid.uuid4())
+    commit_stage = {"name": "transaction başlangıcı"}
 
     async def _commit(session):
+        commit_stage["name"] = "rezervasyon yeniden okuma"
         current_booking = await db.bookings.find_one(
             {"id": booking_id, "tenant_id": tid},
             {"_id": 0},
             session=session,
         )
         if not current_booking:
-            raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
+            raise HTTPException(
+                status_code=409,
+                detail="Cari aktarım transaction'ında rezervasyon yeniden okunamadı",
+            )
 
-        current_cari = await db.cari_accounts.find_one(
-            {"id": data.cari_account_id, "tenant_id": tid},
-            {"_id": 0},
+        commit_stage["name"] = "cari hesabı yeniden okuma"
+        current_is_city_ledger = resolved_is_city_ledger
+        current_cari_filter = resolved_cari_filter
+        current_cari_collection = db.city_ledger_accounts if current_is_city_ledger else db.cari_accounts
+        current_cari = await current_cari_collection.find_one(
+            current_cari_filter,
             session=session,
         )
         if not current_cari:
-            current_cari = await db.city_ledger_accounts.find_one(
-                {"id": data.cari_account_id, "tenant_id": tid},
-                {"_id": 0},
-                session=session,
+            raise HTTPException(
+                status_code=409,
+                detail="Cari aktarım transaction'ında çözümlenen cari yeniden okunamadı",
             )
-        if not current_cari:
-            raise HTTPException(status_code=404, detail="Cari hesap bulunamadı")
+        canonical_account_id = _canonical_cari_account_id(current_cari)
 
+        commit_stage["name"] = "açık bakiye doğrulama"
         current_outstanding = await _reservation_outstanding_balance(
             tid,
             current_booking,
@@ -1085,6 +2204,7 @@ async def transfer_to_cari(
         if data.amount - current_outstanding > 0.005:
             raise HTTPException(status_code=409, detail="Cari aktarım tutarı açık bakiyeyi aşamaz")
 
+        commit_stage["name"] = "folyo hazırlama"
         current_folio = await db.folios.find_one(
             {"booking_id": booking_id, "tenant_id": tid, "status": "open"},
             {"_id": 0},
@@ -1104,6 +2224,7 @@ async def transfer_to_cari(
             }
             await db.folios.insert_one({**current_folio}, session=session)
 
+        commit_stage["name"] = "cari hareketi oluşturma"
         transaction = {
             "id": transaction_id,
             "tenant_id": tid,
@@ -1114,14 +2235,15 @@ async def transfer_to_cari(
             "posted_by": current_user.name,
             "created_at": now,
         }
-        if is_city_ledger:
-            transaction["account_id"] = data.cari_account_id
+        if current_is_city_ledger:
+            transaction["account_id"] = canonical_account_id
             transaction["transaction_date"] = now
             await db.city_ledger_transactions.insert_one({**transaction}, session=session)
         else:
-            transaction["cari_account_id"] = data.cari_account_id
+            transaction["cari_account_id"] = canonical_account_id
             await db.cari_transactions.insert_one({**transaction}, session=session)
 
+        commit_stage["name"] = "folyo ödemesi oluşturma"
         payment = {
             "id": payment_id,
             "tenant_id": tid,
@@ -1132,25 +2254,27 @@ async def transfer_to_cari(
             "payment_type": "city_ledger_transfer",
             "status": "paid",
             "reference": f"cari-transfer:{transaction_id}",
-            "cari_account_id": data.cari_account_id,
+            "cari_account_id": canonical_account_id,
             "notes": data.description,
             "processed_by": current_user.name,
             "processed_at": now,
             "voided": False,
         }
+        await stamp_open_business_date(db, tid, payment)
         await db.payments.insert_one({**payment}, session=session)
 
-        if is_city_ledger:
-            new_cari_balance = current_cari.get("current_balance", 0.0) + data.amount
+        commit_stage["name"] = "cari bakiyesi güncelleme"
+        if current_is_city_ledger:
+            new_cari_balance = float(current_cari.get("current_balance", 0.0) or 0) + data.amount
             await db.city_ledger_accounts.update_one(
-                {"id": data.cari_account_id, "tenant_id": tid},
+                current_cari_filter,
                 {"$set": {"current_balance": new_cari_balance}},
                 session=session,
             )
         else:
             new_cari_balance = _cari_balance(current_cari) + data.amount
             await db.cari_accounts.update_one(
-                {"id": data.cari_account_id, "tenant_id": tid},
+                current_cari_filter,
                 {
                     "$set": {
                         "balance": new_cari_balance,
@@ -1160,7 +2284,8 @@ async def transfer_to_cari(
                 session=session,
             )
 
-        new_paid = (current_booking.get("paid_amount", 0) or 0) + data.amount
+        commit_stage["name"] = "rezervasyon ödenen tutarı güncelleme"
+        new_paid = float(current_booking.get("paid_amount", 0) or 0) + data.amount
         await db.bookings.update_one(
             {"id": booking_id, "tenant_id": tid},
             {"$set": {"paid_amount": round(new_paid, 2)}},
@@ -1174,7 +2299,9 @@ async def transfer_to_cari(
             "transaction": transaction,
             "payment": payment,
             "folio_id": current_folio["id"],
-            "cari_name": current_cari.get("name"),
+            "cari_account_id": canonical_account_id,
+            "cari_name": _canonical_cari_account_name(current_cari),
+            "remaining_balance": round(max(0.0, current_outstanding - data.amount), 2),
         }
 
     try:
@@ -1190,9 +2317,19 @@ async def transfer_to_cari(
             status_code=409,
             detail="Cari aktarımı eşzamanlı veya tekrarlanan işlem nedeniyle tamamlanamadı",
         ) from None
-    except Exception:
+    except HTTPException:
         await _release_dedup_safely(dedup_lock_id, operation="transfer_to_cari")
         raise
+    except Exception:
+        await _release_dedup_safely(dedup_lock_id, operation="transfer_to_cari")
+        logger.exception(
+            "cari transfer transaction failed",
+            extra={"stage": commit_stage["name"]},
+        )
+        raise HTTPException(
+            status_code=409,
+            detail=f"Cari aktarımı {commit_stage['name']} aşamasında tamamlanamadı",
+        ) from None
 
     await _run_post_commit_hook(
         lambda: _refresh_cached_folio_balance(tid, result["folio_id"]),
@@ -1208,7 +2345,7 @@ async def transfer_to_cari(
             {
                 "amount": data.amount,
                 "cari_account": result["cari_name"],
-                "cari_account_id": data.cari_account_id,
+                "cari_account_id": result["cari_account_id"],
             },
         ),
         operation="transfer_to_cari_activity",
@@ -1227,13 +2364,20 @@ async def record_agency_payment(
     _perm=Depends(require_op("post_payment")),  # v97 DW
 ):
     """Record a payment made by an agency."""
-    _enforce_perm(current_user.role, "post_payment")  # Bug CP fix
+    _enforce_perm(current_user, "post_payment")  # Bug CP fix
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
     booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tid}, {"_id": 0})
     if not booking:
         raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
+
+    pricing_mismatches = await _posted_room_charge_rate_mismatches(tid, booking_id)
+    if pricing_mismatches:
+        raise HTTPException(
+            status_code=409,
+            detail="Oda tahakkuku ile günlük fiyat uyuşmuyor; finansal mutabakat tamamlanmadan ödeme alınamaz",
+        )
 
     folio = await db.folios.find_one({"booking_id": booking_id, "tenant_id": tid, "status": "open"}, {"_id": 0})
     if not folio:
@@ -1269,6 +2413,7 @@ async def record_agency_payment(
         "processed_at": datetime.now(UTC).isoformat(),
         "voided": False,
     }
+    await stamp_open_business_date(db, tid, payment)
     await db.payments.insert_one({**payment})
 
     new_paid = (booking.get("paid_amount", 0) or 0) + data.amount
@@ -1300,7 +2445,7 @@ async def split_charge(
     _perm=Depends(require_op("post_charge")),  # v97 DW
 ):
     """Split a charge from one folio to another (e.g., transfer part of a meal to another room)."""
-    _enforce_perm(current_user.role, "split_folio")  # Bug CP fix
+    _enforce_perm(current_user, "split_folio")  # Bug CP fix
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
@@ -1433,7 +2578,7 @@ async def ensure_folio(
     motoru tarafından talep üzerine (yalnızca seçilenler) hedef folioya
     normalize edilip taşınır (bkz. FolioHardeningService.split_folio).
     """
-    _enforce_perm(current_user.role, "split_folio")  # Bug CP fix
+    _enforce_perm(current_user, "split_folio")  # Bug CP fix
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
@@ -1520,6 +2665,11 @@ async def add_reservation_note(
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
+    booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tid}, {"_id": 0})
+    if not booking:
+        raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
+    await ensure_reservation_mutable(db, tid, booking)
+
     note = {
         "id": str(uuid.uuid4()),
         "tenant_id": tid,
@@ -1553,13 +2703,14 @@ async def room_change(
     _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
 ):
     """Change the room for a reservation with full audit trail."""
-    _enforce_perm(current_user.role, "edit_booking")  # Bug CP Round-4
+    _enforce_perm(current_user, "edit_booking")  # Bug CP Round-4
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
     booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tid}, {"_id": 0})
     if not booking:
         raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
+    await ensure_reservation_mutable(db, tid, booking)
     if str(booking.get("status") or "").lower() not in {"pending", "confirmed", "guaranteed", "checked_in"}:
         raise HTTPException(status_code=409, detail="Bu rezervasyon mevcut durumunda oda değişikliğine uygun değil")
 
@@ -1569,6 +2720,9 @@ async def room_change(
 
     if not new_room:
         raise HTTPException(status_code=404, detail="Yeni oda bulunamadı")
+
+    full_comp = booking.get("is_complimentary") and booking.get("complimentary_scope") == "full"
+    effective_extra_charge = 0.0 if full_comp else round(data.extra_charge, 2)
 
     # Update booking
     await db.bookings.update_one(
@@ -1609,6 +2763,39 @@ async def room_change(
     }
     await db.room_move_history.insert_one({**move_record})
 
+    # An upgrade difference is accommodation revenue, not a generic extra.
+    # Post it to the guest folio so every financial report reads the same
+    # durable ledger row and checkout immediately sees the updated balance.
+    if data.extra_charge > 0:
+        folio = await _ensure_reservation_folio(tid, booking)
+        now = datetime.now(UTC).isoformat()
+        charge = {
+            "id": str(uuid.uuid4()),
+            "tenant_id": tid,
+            "folio_id": folio["id"],
+            "booking_id": booking_id,
+            "charge_category": "room",
+            "charge_type": "room_upgrade",
+            "description": f"Oda değişikliği fiyat farkı: {old_room.get('room_number') if old_room else '-'} → {new_room.get('room_number') or '-'}",
+            "quantity": 1,
+            "unit_price": effective_extra_charge,
+            "amount": effective_extra_charge,
+            "tax_rate": 0,
+            "tax_amount": 0,
+            "total": effective_extra_charge,
+            "is_complimentary": bool(full_comp),
+            "complimentary_original_amount": data.extra_charge if full_comp else None,
+            "posted_at": now,
+            "posted_by": current_user.name,
+            "voided": False,
+        }
+        await stamp_open_business_date(db, tid, charge)
+        await db.folio_charges.insert_one({**charge})
+        await _refresh_cached_folio_balance(tid, folio["id"])
+        if _gb_cache:
+            _gb_cache.invalidate_tenant_cache(tid, "folio_revenue_by_category_v2")
+            _gb_cache.invalidate_tenant_cache(tid, "reports_basic_dashboard_v2")
+
     await _log_activity(
         tid,
         booking_id,
@@ -1618,6 +2805,8 @@ async def room_change(
             "from_room": old_room.get("room_number") if old_room else None,
             "to_room": new_room.get("room_number"),
             "reason": data.reason,
+            "extra_charge": effective_extra_charge,
+            "complimentary_original_amount": data.extra_charge if full_comp else None,
         },
     )
 
@@ -1632,7 +2821,7 @@ async def room_change(
     )
 
     move_record.pop("_id", None)
-    return {"success": True, "move_record": move_record}
+    return {"success": True, "move_record": move_record, "extra_charge": effective_extra_charge}
 
 
 @router.post("/reservations/{booking_id}/early-checkin")
@@ -1643,9 +2832,14 @@ async def early_checkin(
     _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
 ):
     """Process early check-in with optional extra charge — atomic transaction."""
-    _enforce_perm(current_user.role, "checkin")  # Bug CP Round-4
+    _enforce_perm(current_user, "checkin")  # Bug CP Round-4
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
+
+    booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tid}, {"_id": 0})
+    if not booking:
+        raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
+    await ensure_reservation_mutable(db, tid, booking)
 
     from core.atomic_checkin_checkout import CheckInError, check_in_booking_atomic
 
@@ -1665,17 +2859,29 @@ async def early_checkin(
         raise HTTPException(status_code=400, detail=str(e))
 
     # Add extra charge if any (outside transaction — non-critical)
+    full_comp = booking.get("is_complimentary") and booking.get("complimentary_scope") == "full"
+    effective_extra_charge = 0.0 if full_comp else data.extra_charge
     if data.extra_charge > 0:
         charge = {
             "id": str(uuid.uuid4()),
             "tenant_id": tid,
             "booking_id": booking_id,
             "charge_name": "Erken Giriş Ücreti",
-            "charge_amount": data.extra_charge,
+            "charge_amount": effective_extra_charge,
+            "amount": effective_extra_charge,
+            "quantity": 1,
+            "total": effective_extra_charge,
             "category": "room",
+            "is_complimentary": bool(full_comp),
+            "complimentary_scope": "full" if full_comp else None,
+            "complimentary_original_amount": data.extra_charge if full_comp else None,
             "created_at": datetime.now(UTC).isoformat(),
         }
+        await stamp_open_business_date(db, tid, charge)
         await db.extra_charges.insert_one({**charge})
+        if _gb_cache:
+            _gb_cache.invalidate_tenant_cache(tid, "folio_revenue_by_category_v2")
+            _gb_cache.invalidate_tenant_cache(tid, "reports_basic_dashboard_v2")
 
     await _log_activity(
         tid,
@@ -1684,7 +2890,8 @@ async def early_checkin(
         current_user.name,
         {
             "checkin_time": data.checkin_time or result.get("checked_in_at"),
-            "extra_charge": data.extra_charge,
+            "extra_charge": effective_extra_charge,
+            "complimentary_original_amount": data.extra_charge if full_comp else None,
         },
     )
 
@@ -1695,7 +2902,7 @@ async def early_checkin(
         tid,
         booking_id,
         "checked_in",
-        {"early_checkin": True, "checkin_time": data.checkin_time or result.get("checked_in_at"), "extra_charge": data.extra_charge},
+        {"early_checkin": True, "checkin_time": data.checkin_time or result.get("checked_in_at"), "extra_charge": effective_extra_charge},
     )
 
     return {"success": True, "message": "Erken giriş yapıldı"}
@@ -1709,7 +2916,7 @@ async def late_checkout(
     _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
 ):
     """Process late check-out with optional extra charge."""
-    _enforce_perm(current_user.role, "checkout")  # Bug CP Round-4
+    _enforce_perm(current_user, "checkout")  # Bug CP Round-4
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
@@ -1718,6 +2925,7 @@ async def late_checkout(
         raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
     if str(booking.get("status") or "").lower() != "checked_in":
         raise HTTPException(status_code=409, detail="Geç çıkış yalnız içerideki rezervasyona uygulanabilir")
+    await ensure_reservation_mutable(db, tid, booking)
 
     updates = {"late_checkout": True}
     if data.checkout_time:
@@ -1725,17 +2933,29 @@ async def late_checkout(
 
     await db.bookings.update_one({"id": booking_id, "tenant_id": tid}, {"$set": updates})
 
+    full_comp = booking.get("is_complimentary") and booking.get("complimentary_scope") == "full"
+    effective_extra_charge = 0.0 if full_comp else data.extra_charge
     if data.extra_charge > 0:
         charge = {
             "id": str(uuid.uuid4()),
             "tenant_id": tid,
             "booking_id": booking_id,
             "charge_name": "Geç Çıkış Ücreti",
-            "charge_amount": data.extra_charge,
+            "charge_amount": effective_extra_charge,
+            "amount": effective_extra_charge,
+            "quantity": 1,
+            "total": effective_extra_charge,
             "category": "room",
+            "is_complimentary": bool(full_comp),
+            "complimentary_scope": "full" if full_comp else None,
+            "complimentary_original_amount": data.extra_charge if full_comp else None,
             "created_at": datetime.now(UTC).isoformat(),
         }
+        await stamp_open_business_date(db, tid, charge)
         await db.extra_charges.insert_one({**charge})
+        if _gb_cache:
+            _gb_cache.invalidate_tenant_cache(tid, "folio_revenue_by_category_v2")
+            _gb_cache.invalidate_tenant_cache(tid, "reports_basic_dashboard_v2")
 
     await _log_activity(
         tid,
@@ -1744,7 +2964,8 @@ async def late_checkout(
         current_user.name,
         {
             "checkout_time": data.checkout_time,
-            "extra_charge": data.extra_charge,
+            "extra_charge": effective_extra_charge,
+            "complimentary_original_amount": data.extra_charge if full_comp else None,
         },
     )
 
@@ -1755,7 +2976,7 @@ async def late_checkout(
         tid,
         booking_id,
         "late_checkout_approved",
-        {"checkout_time": data.checkout_time, "extra_charge": data.extra_charge},
+        {"checkout_time": data.checkout_time, "extra_charge": effective_extra_charge},
     )
 
     return {"success": True, "message": "Geç çıkış kaydedildi"}
@@ -1768,7 +2989,7 @@ async def mark_noshow(
     _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
 ):
     """Mark a reservation as no-show."""
-    _enforce_perm(current_user.role, "edit_booking")  # Bug CP Round-4
+    _enforce_perm(current_user, "edit_booking")  # Bug CP Round-4
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
@@ -1783,12 +3004,29 @@ async def mark_noshow(
         {"$set": {"status": "no_show", "no_show_at": datetime.now(UTC).isoformat()}},
     )
 
-    # Release the room
+    # Release the physical room only when this reservation still owns it.
+    # Historical corrections must never clear a room that has since been
+    # assigned to another in-house guest.
     if booking.get("room_id"):
         await db.rooms.update_one(
-            {"id": booking["room_id"], "tenant_id": tid},
+            {
+                "id": booking["room_id"],
+                "tenant_id": tid,
+                "current_booking_id": booking_id,
+            },
             {"$set": {"status": "available", "current_booking_id": None}},
         )
+
+    # Keep durable room-night availability aligned with this state transition.
+    from core.atomic_booking import release_booking_nights
+
+    try:
+        await release_booking_nights(tid, booking_id, reason="no_show")
+    except Exception as exc:
+        # The status write is already durable; make the transition retry-safe
+        # and surface the stale inventory lock to operations instead of asking
+        # the caller to retry a no-longer-eligible no-show action.
+        logger.exception("No-show room-night release failed booking=%s: %s", booking_id, exc)
 
     await _log_activity(tid, booking_id, "marked_noshow", current_user.name, {})
 
@@ -1803,13 +3041,14 @@ async def update_vip_status(
     _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
 ):
     """Toggle VIP status for the guest of a reservation."""
-    _enforce_perm(current_user.role, "edit_booking")  # Bug CP Round-4
+    _enforce_perm(current_user, "edit_booking")  # Bug CP Round-4
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
     booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tid}, {"_id": 0})
     if not booking:
         raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
+    await ensure_reservation_mutable(db, tid, booking)
 
     if booking.get("guest_id"):
         await db.guests.update_one(
@@ -1830,7 +3069,7 @@ async def record_deposit(
     _perm=Depends(require_op("post_payment")),  # v97 DW
 ):
     """Record a deposit payment."""
-    _enforce_perm(current_user.role, "post_payment")  # Bug CP Round-3
+    _enforce_perm(current_user, "post_payment")  # Bug CP Round-3
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
@@ -1843,11 +3082,16 @@ async def record_deposit(
             detail="Tamamlanmış veya iptal edilmiş rezervasyona depozito alınamaz",
         )
 
+    folio = await _ensure_reservation_folio(tid, booking)
+    currency = str(booking.get("currency") or folio.get("currency") or "TRY").upper()
+
     deposit = {
         "id": str(uuid.uuid4()),
         "tenant_id": tid,
         "booking_id": booking_id,
+        "folio_id": folio["id"],
         "amount": data.amount,
+        "currency": currency,
         "method": data.method,
         "reference": data.reference,
         "deposit_type": "deposit",
@@ -1861,10 +3105,11 @@ async def record_deposit(
     payment = {
         "id": str(uuid.uuid4()),
         "tenant_id": tid,
-        "folio_id": "",
+        "folio_id": folio["id"],
         "booking_id": booking_id,
         "deposit_id": deposit["id"],
         "amount": data.amount,
+        "currency": currency,
         "method": data.method,
         "payment_type": "deposit",
         "status": "paid",
@@ -1873,6 +3118,7 @@ async def record_deposit(
         "processed_at": datetime.now(UTC).isoformat(),
         "voided": False,
     }
+    await stamp_open_business_date(db, tid, payment)
     await db.payments.insert_one({**payment})
 
     new_paid = (booking.get("paid_amount", 0) or 0) + data.amount
@@ -1880,6 +3126,7 @@ async def record_deposit(
         {"id": booking_id, "tenant_id": tid},
         {"$set": {"paid_amount": round(new_paid, 2)}},
     )
+    await _refresh_cached_folio_balance(tid, folio["id"])
 
     await _log_activity(
         tid,
@@ -1899,7 +3146,7 @@ async def record_deposit(
         tid,
         booking_id,
         "payment_added",
-        {"payment_id": payment["id"], "amount": data.amount, "method": data.method, "payment_type": "deposit"},
+        {"payment_id": payment["id"], "amount": data.amount, "currency": currency, "method": data.method, "payment_type": "deposit"},
     )
 
     deposit.pop("_id", None)
@@ -1914,7 +3161,7 @@ async def add_extra_charge_detail(
     _perm=Depends(require_op("post_charge")),  # v97 DW
 ):
     """Add an extra charge to a reservation."""
-    _enforce_perm(current_user.role, "post_charge")  # Bug CP fix
+    _enforce_perm(current_user, "post_charge")  # Bug CP fix
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
@@ -1922,7 +3169,20 @@ async def add_extra_charge_detail(
     if not booking:
         raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
 
-    total = round(data.amount * data.quantity, 2)
+    booking_currency = str(booking.get("currency") or "TRY").upper()
+    if booking_currency == "TL":
+        booking_currency = "TRY"
+    input_currency = str(data.input_currency or booking_currency).upper()
+    if input_currency == "TL":
+        input_currency = "TRY"
+    exchange_rate = 1.0 if input_currency == booking_currency else data.exchange_rate
+    if exchange_rate is None:
+        raise HTTPException(status_code=422, detail="Farklı para birimi için geçerli kur zorunludur")
+    input_total = round(data.amount * data.quantity, 2)
+    requested_total = round(input_total * exchange_rate, 2)
+    full_comp = booking.get("is_complimentary") and booking.get("complimentary_scope") == "full"
+    total = 0.0 if full_comp else requested_total
+    is_complimentary = full_comp or total == 0
     charge = {
         "id": str(uuid.uuid4()),
         "tenant_id": tid,
@@ -1932,14 +3192,31 @@ async def add_extra_charge_detail(
         "category": data.category,
         "charge_category": data.category,
         "charge_amount": total,
-        "amount": data.amount,
+        "amount": 0.0 if full_comp else round(data.amount * exchange_rate, 2),
         "quantity": data.quantity,
         "total": total,
+        "currency": booking_currency,
+        "entered_amount": data.amount,
+        "entered_total": input_total,
+        "entered_currency": input_currency,
+        "exchange_rate": exchange_rate,
+        "is_complimentary": is_complimentary,
+        "complimentary_scope": "full" if full_comp else ("item" if is_complimentary else None),
+        "complimentary_original_amount": requested_total if full_comp else None,
         "posted_by": current_user.name,
         "created_at": datetime.now(UTC).isoformat(),
         "voided": False,
     }
+    # Report and cashier date filters are based on the hotel's open business
+    # date, not the server's UTC calendar day.  Without this stamp a charge
+    # posted after midnight (before night audit) disappears into the next
+    # day's reports.
+    await stamp_open_business_date(db, tid, charge)
     await db.extra_charges.insert_one({**charge})
+
+    if _gb_cache:
+        _gb_cache.invalidate_tenant_cache(tid, "folio_revenue_by_category_v2")
+        _gb_cache.invalidate_tenant_cache(tid, "reports_basic_dashboard_v2")
 
     await _log_activity(
         tid,
@@ -1950,6 +3227,7 @@ async def add_extra_charge_detail(
             "description": data.description,
             "amount": total,
             "category": data.category,
+            "is_complimentary": is_complimentary,
         },
     )
 
@@ -1967,6 +3245,955 @@ async def add_extra_charge_detail(
     return {"success": True, "charge": charge}
 
 
+@router.post("/reservations/{booking_id}/extra-charges/{charge_id}/void")
+async def void_reservation_extra_charge(
+    booking_id: str,
+    charge_id: str,
+    data: ExtraChargeVoid,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("void_charge")),
+):
+    """Auditably cancel a mistaken booking-scoped extra charge."""
+    _enforce_perm(current_user, "void_charge")
+    _ensure_hotel_context(current_user)
+    tid = current_user.tenant_id
+    charge = await db.extra_charges.find_one(
+        {"id": charge_id, "booking_id": booking_id, "tenant_id": tid, "voided": {"$ne": True}},
+        {"_id": 0},
+    )
+    if not charge:
+        raise HTTPException(status_code=404, detail="Ek ücret bulunamadı veya daha önce iptal edildi")
+
+    now = datetime.now(UTC).isoformat()
+    await db.extra_charges.update_one(
+        {"id": charge_id, "booking_id": booking_id, "tenant_id": tid, "voided": {"$ne": True}},
+        {"$set": {"voided": True, "void_reason": data.reason, "voided_by": current_user.id, "voided_at": now}},
+    )
+    if _gb_cache:
+        _gb_cache.invalidate_tenant_cache(tid, "folio_revenue_by_category_v2")
+        _gb_cache.invalidate_tenant_cache(tid, "reports_basic_dashboard_v2")
+
+    await _log_activity(
+        tid,
+        booking_id,
+        "extra_charge_voided",
+        current_user.name,
+        {"charge_id": charge_id, "amount": _extra_charge_total(charge), "reason": data.reason},
+    )
+    from routers.webhook_retry_service import schedule_emit_reservation_updated
+
+    schedule_emit_reservation_updated(
+        tid,
+        booking_id,
+        "charge_voided",
+        {"charge_id": charge_id, "amount": _extra_charge_total(charge), "reason": data.reason},
+    )
+    try:
+        from core.audit import log_audit_event
+
+        await log_audit_event(
+            tenant_id=tid,
+            user_id=current_user.id,
+            action="reservation_extra_charge_voided",
+            entity_type="extra_charge",
+            entity_id=charge_id,
+            details=f"Reservation extra charge voided: {data.reason}",
+            before_value={"voided": False, "amount": _extra_charge_total(charge), "currency": charge.get("currency")},
+            after_value={"voided": True, "void_reason": data.reason, "voided_by": current_user.id},
+            severity="warning",
+        )
+    except Exception:
+        logger.exception("audit log for reservation extra-charge void failed")
+    return {"success": True, "voided": True, "charge_id": charge_id}
+
+
+@router.post("/reservations/{booking_id}/apply-complimentary-plan")
+async def apply_reservation_complimentary_plan(
+    booking_id: str,
+    data: ComplimentaryPlanRequest,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("override_rate")),
+):
+    """Apply an explicit comp treatment without rewriting closed business days.
+
+    Open nights are changed at the rate-plan level because Night Audit has not
+    consumed them yet. Closed nights are immutable; when selected, their
+    already-posted room revenue is offset with an auditable folio discount.
+    """
+    _enforce_perm(current_user, "override_rate")
+    _ensure_hotel_context(current_user)
+    tid = current_user.tenant_id
+
+    booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tid}, {"_id": 0})
+    if not booking:
+        raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
+    await ensure_reservation_mutable(db, tid, booking)
+
+    check_in = _reservation_calendar_date(booking.get("check_in"))
+    check_out = _reservation_calendar_date(booking.get("check_out"))
+    if check_in is None or check_out is None or check_out <= check_in:
+        raise HTTPException(status_code=409, detail="Rezervasyonun geçerli bir konaklama aralığı yok")
+
+    business_state = await ensure_business_date_initialized(db, tid)
+    business_date = str(business_state["business_date"])[:10]
+    stay_dates = [
+        (check_in + timedelta(days=offset)).isoformat()
+        for offset in range((check_out - check_in).days)
+    ]
+    closed_dates = [rate_date for rate_date in stay_dates if rate_date < business_date]
+    open_dates = [rate_date for rate_date in stay_dates if rate_date >= business_date]
+    if data.mode == "open_nights" and not open_dates:
+        raise HTTPException(status_code=409, detail="Comp yapılabilecek açık veya kalan gece bulunmuyor")
+    if data.mode == "closed_nights_adjustment" and not closed_dates:
+        raise HTTPException(status_code=409, detail="Finansal düzeltme gerektiren kapanmış gece bulunmuyor")
+
+    folios = [
+        folio
+        async for folio in db.folios.find(
+            {"booking_id": booking_id, "tenant_id": tid},
+            {"_id": 0},
+        )
+    ]
+    folio_ids = [folio["id"] for folio in folios if folio.get("id")]
+    financial_query = _booking_or_folio_scope_query(tid, booking_id, folio_ids)
+
+    existing_rows = [
+        row
+        async for row in db.daily_rates.find(
+            {"booking_id": booking_id, "tenant_id": tid},
+            {"_id": 0, "date": 1, "rate": 1},
+        )
+    ]
+    existing_by_date: dict[str, dict] = {}
+    for row in existing_rows:
+        parsed = _reservation_calendar_date(row.get("date"))
+        if parsed is None:
+            raise HTTPException(status_code=409, detail="Geçersiz tarihli mevcut günlük fiyat kaydı bulundu; düzeltme gerekir")
+        date_key = parsed.isoformat()
+        if date_key in existing_by_date:
+            raise HTTPException(status_code=409, detail=f"{date_key} için yinelenen günlük fiyat kaydı bulundu; düzeltme gerekir")
+        existing_by_date[date_key] = row
+
+    original_total = round(float(booking.get("total_amount", 0) or 0), 2)
+    total_cents = _money_cents(original_total)
+    per_night_cents, remainder = divmod(total_cents, len(stay_dates))
+    rates_by_date: dict[str, float] = {}
+    original_daily_rates: list[dict] = []
+    for index, rate_date in enumerate(stay_dates):
+        fallback = (per_night_cents + (1 if index < remainder else 0)) / 100
+        rate = round(float(existing_by_date.get(rate_date, {}).get("rate", fallback) or 0), 2)
+        rates_by_date[rate_date] = rate
+        original_daily_rates.append({"date": rate_date, "rate": rate})
+
+    room_charges = [
+        charge
+        async for charge in db.folio_charges.find(
+            {
+                "tenant_id": tid,
+                "voided": {"$ne": True},
+                "$and": [
+                    {"$or": financial_query["$or"]},
+                    {"$or": [{"charge_category": "room"}, {"charge_type": "room_charge"}]},
+                ],
+            },
+            {"_id": 0},
+        )
+    ]
+    # Ownership scope and category alternatives live in separate $and arms so
+    # one $or can never overwrite the other in a Python dictionary.
+    correction_dates = closed_dates if data.mode in {"entire_stay", "closed_nights_adjustment"} else []
+    correction_date_set = set(correction_dates)
+    correction_charges = []
+    for charge in room_charges:
+        charge_date = _reservation_calendar_date(
+            charge.get("business_date") or charge.get("night_audit_date") or charge.get("date")
+        )
+        if charge_date and charge_date.isoformat() in correction_date_set:
+            correction_charges.append(charge)
+    correction_amount = round(
+        sum(max(0.0, float(charge.get("total", charge.get("amount", 0)) or 0)) for charge in correction_charges),
+        2,
+    )
+    if data.mode == "closed_nights_adjustment" and correction_amount <= 0:
+        raise HTTPException(
+            status_code=409,
+            detail="Kapanmış gecelere ait aktif oda tahakkuku bulunamadı; otomatik finansal düzeltme oluşturulamaz",
+        )
+
+    if correction_amount > 0:
+        invoice_query = {
+            "tenant_id": tid,
+            "status": {"$nin": ["draft", "cancelled", "voided"]},
+            "$or": [{"booking_id": booking_id}],
+        }
+        if folio_ids:
+            invoice_query["$or"].append({"folio_id": {"$in": folio_ids}})
+        if await db.invoices.find_one(invoice_query, {"_id": 0, "id": 1}):
+            raise HTTPException(
+                status_code=409,
+                detail="Kapanmış geceler faturalanmış; folyo indirimi yerine fatura iade/düzeltme belgesi oluşturulmalıdır",
+            )
+
+    zero_dates = set(open_dates if data.mode in {"entire_stay", "open_nights"} else [])
+    resulting_rates = {
+        rate_date: (0.0 if rate_date in zero_dates else rate)
+        for rate_date, rate in rates_by_date.items()
+    }
+    new_total = 0.0 if data.mode == "entire_stay" else round(sum(resulting_rates.values()), 2)
+    now = datetime.now(UTC).isoformat()
+    adjustment_reference = None
+    adjustment_created = False
+    affected_folio_id = None
+    existing_adjustment = None
+    if correction_amount > 0:
+        adjustment_reference = "COMP-" + uuid.uuid5(
+            uuid.NAMESPACE_URL,
+            f"{tid}:{booking_id}:{','.join(correction_dates)}",
+        ).hex
+        existing_adjustment = await db.payments.find_one(
+            {
+                "tenant_id": tid,
+                "booking_id": booking_id,
+                "reference": adjustment_reference,
+                "voided": False,
+            },
+            {"_id": 0},
+        )
+        if existing_adjustment and (
+            existing_adjustment.get("method") != "discount"
+            or existing_adjustment.get("payment_type") != "comp_adjustment"
+            or _money_cents(existing_adjustment.get("amount")) != _money_cents(correction_amount)
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail="Aynı geceler için farklı tutarlı bir Comp düzeltmesi zaten mevcut; finans ekibiyle mutabakat gerekir",
+            )
+
+    async with await db.client.start_session() as session:
+        async with session.start_transaction():
+            for rate_date in zero_dates:
+                existing = existing_by_date.get(rate_date, {})
+                try:
+                    await db.daily_rates.update_one(
+                        {
+                            "booking_id": booking_id,
+                            "tenant_id": tid,
+                            "date": existing.get("date", rate_date),
+                        },
+                        {
+                            "$set": {
+                                "date": rate_date,
+                                "rate": 0.0,
+                                "daily_rate_key": f"{booking_id}:{rate_date}",
+                                "is_complimentary": True,
+                                "complimentary_reason": data.reason.strip(),
+                                "updated_by": current_user.name,
+                                "updated_at": now,
+                            }
+                        },
+                        upsert=True,
+                        session=session,
+                    )
+                except DuplicateKeyError as exc:
+                    raise HTTPException(
+                        status_code=409,
+                        detail=f"{rate_date} için eşzamanlı Comp işlemi tespit edildi; ekranı yenileyip tekrar deneyin",
+                    ) from exc
+
+            if correction_amount > 0:
+                open_folio = next((folio for folio in folios if folio.get("status") == "open"), None)
+                folio = open_folio or (folios[0] if folios else None)
+                if folio is None:
+                    folio = await _ensure_reservation_folio(tid, booking, session=session)
+                affected_folio_id = folio["id"]
+                payment = {
+                    "id": str(uuid.uuid4()),
+                    "tenant_id": tid,
+                    "folio_id": affected_folio_id,
+                    "booking_id": booking_id,
+                    "amount": correction_amount,
+                    "currency": str(booking.get("currency") or folio.get("currency") or "TRY").upper(),
+                    "received_currency": str(booking.get("currency") or folio.get("currency") or "TRY").upper(),
+                    "received_amount": correction_amount,
+                    "exchange_rate": 1.0,
+                    "method": "discount",
+                    "payment_type": "comp_adjustment",
+                    "status": "paid",
+                    "reference": adjustment_reference,
+                    "description": "Comp finansal düzeltmesi",
+                    "notes": f"Comp finansal düzeltmesi: {data.reason.strip()}",
+                    "processed_by": current_user.name,
+                    "processed_at": now,
+                    "voided": False,
+                    "comp_dates": correction_dates,
+                    "comp_mode": data.mode,
+                }
+                await stamp_open_business_date(db, tid, payment)
+                upsert_result = await db.payments.update_one(
+                    {
+                        "tenant_id": tid,
+                        "booking_id": booking_id,
+                        "reference": adjustment_reference,
+                        "voided": False,
+                    },
+                    {"$setOnInsert": payment},
+                    upsert=True,
+                    session=session,
+                )
+                adjustment_created = upsert_result.upserted_id is not None
+
+            booking_fields = {
+                "total_amount": new_total,
+                "complimentary_mode": data.mode,
+                "complimentary_reason": data.reason.strip(),
+                "complimentary_by": current_user.name,
+                "complimentary_at": now,
+                "complimentary_original_total": booking.get("complimentary_original_total", original_total),
+                "is_complimentary": data.mode == "entire_stay",
+                "is_partially_complimentary": data.mode != "entire_stay",
+            }
+            await db.bookings.update_one(
+                {"id": booking_id, "tenant_id": tid},
+                {"$set": booking_fields},
+                session=session,
+            )
+
+    if affected_folio_id:
+        await _run_post_commit_hook(
+            lambda: _refresh_cached_folio_balance(tid, affected_folio_id),
+            operation="complimentary_financial_adjustment_balance_refresh",
+        )
+
+    await _log_activity(
+        tid,
+        booking_id,
+        "complimentary_plan_applied",
+        current_user.name,
+        {
+            "mode": data.mode,
+            "reason": data.reason.strip(),
+            "business_date": business_date,
+            "original_total": original_total,
+            "new_total": new_total,
+            "original_daily_rates": original_daily_rates,
+            "zeroed_dates": sorted(zero_dates),
+            "adjustment_dates": correction_dates,
+            "adjustment_amount": correction_amount,
+            "adjustment_reference": adjustment_reference,
+            "adjustment_created": adjustment_created,
+        },
+    )
+
+    return {
+        "success": True,
+        "booking_id": booking_id,
+        "mode": data.mode,
+        "new_total": new_total,
+        "zeroed_dates": sorted(zero_dates),
+        "adjustment_dates": correction_dates,
+        "adjustment_amount": correction_amount,
+        "adjustment_reference": adjustment_reference,
+        "adjustment_created": adjustment_created,
+    }
+
+
+@router.post("/reservations/{booking_id}/mark-complimentary")
+async def mark_reservation_complimentary(
+    booking_id: str,
+    data: ComplimentaryReservationRequest,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("override_rate")),
+):
+    """Comp a stay before room revenue, payment or invoice has been posted.
+
+    A complimentary stay is an audited commercial decision, not a payment.  We
+    therefore retain the original price and reason on the booking while zeroing
+    the *open* daily rates consumed by Night Audit.  Once financial documents
+    exist, finance must issue an explicit adjustment instead of rewriting them.
+    """
+    _enforce_perm(current_user, "override_rate")
+    _ensure_hotel_context(current_user)
+    tid = current_user.tenant_id
+
+    booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tid}, {"_id": 0})
+    if not booking:
+        raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
+
+    await ensure_reservation_mutable(db, tid, booking)
+
+    business_state = await ensure_business_date_initialized(db, tid)
+    current_business_date = str(business_state["business_date"])[:10]
+    check_in = _reservation_calendar_date(booking.get("check_in"))
+    check_out = _reservation_calendar_date(booking.get("check_out"))
+    if check_in is None or check_out is None or check_out <= check_in:
+        raise HTTPException(status_code=409, detail="Rezervasyonun geçerli bir konaklama aralığı yok")
+
+    stay_dates: list[str] = []
+    current = check_in
+    while current < check_out:
+        stay_dates.append(current.isoformat())
+        current += timedelta(days=1)
+
+    closed_dates = [rate_date for rate_date in stay_dates if rate_date < current_business_date]
+    if closed_dates:
+        raise HTTPException(
+            status_code=409,
+            detail="Night Audit ile kapanmış geceleri olan rezervasyon comp yapılamaz; finansal comp/indirim fişi gerekir",
+        )
+
+    folios = [
+        folio
+        async for folio in db.folios.find(
+            {"booking_id": booking_id, "tenant_id": tid},
+            {"_id": 0, "id": 1},
+        )
+    ]
+    folio_ids = [folio["id"] for folio in folios if folio.get("id")]
+    active_charge_query = {
+        **_booking_or_folio_scope_query(tid, booking_id, folio_ids),
+        "voided": {"$ne": True},
+    }
+    if data.scope == "accommodation_only":
+        active_charge_query["charge_category"] = "room"
+    active_room_charge = await db.folio_charges.find_one(
+        active_charge_query,
+        {"_id": 0, "id": 1},
+    )
+    if active_room_charge:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Tahakkuk edilmiş ücret bulunan rezervasyon Full Comp yapılamaz; finansal comp/indirim fişi gerekir"
+                if data.scope == "full"
+                else "Tahakkuk edilmiş oda ücreti bulunan rezervasyon comp yapılamaz; finansal comp/indirim fişi gerekir"
+            ),
+        )
+
+    payment_query = {
+        **_booking_or_folio_scope_query(tid, booking_id, folio_ids),
+        "voided": {"$ne": True},
+        "amount": {"$gt": 0},
+    }
+    active_payment = await db.payments.find_one(payment_query, {"_id": 0, "id": 1})
+    if active_payment:
+        raise HTTPException(
+            status_code=409,
+            detail="Ödeme alınmış rezervasyon comp yapılamaz; iade veya finansal comp/indirim fişi gerekir",
+        )
+
+    invoice_query = {
+        "tenant_id": tid,
+        "status": {"$nin": ["draft", "cancelled", "voided"]},
+        "$or": [{"booking_id": booking_id}],
+    }
+    if folio_ids:
+        invoice_query["$or"].append({"folio_id": {"$in": folio_ids}})
+    issued_invoice = await db.invoices.find_one(invoice_query, {"_id": 0, "id": 1})
+    if issued_invoice:
+        raise HTTPException(
+            status_code=409,
+            detail="Faturalanmış rezervasyon comp yapılamaz; iade/düzeltme belgesi gerekir",
+        )
+
+    existing_rows = [
+        row
+        async for row in db.daily_rates.find(
+            {"booking_id": booking_id, "tenant_id": tid},
+            {"_id": 0, "date": 1, "rate": 1},
+        )
+    ]
+    existing_by_date: dict[str, dict] = {}
+    for row in existing_rows:
+        row_date = _reservation_calendar_date(row.get("date"))
+        if row_date is None:
+            raise HTTPException(status_code=409, detail="Geçersiz tarihli mevcut günlük fiyat kaydı bulundu; düzeltme gerekir")
+        date_key = row_date.isoformat()
+        if date_key in existing_by_date:
+            raise HTTPException(status_code=409, detail=f"{date_key} için yinelenen günlük fiyat kaydı bulundu; düzeltme gerekir")
+        existing_by_date[date_key] = row
+
+    now = datetime.now(UTC).isoformat()
+    original_total = round(
+        float(booking.get("complimentary_original_total", booking.get("total_amount", 0)) or 0),
+        2,
+    )
+    fallback_rate = round(original_total / len(stay_dates), 2)
+    original_daily_rates = [
+        {
+            "date": rate_date,
+            "rate": round(float(existing_by_date.get(rate_date, {}).get("rate", fallback_rate) or 0), 2),
+        }
+        for rate_date in stay_dates
+    ]
+    full_comp_extras = []
+    if data.scope == "full":
+        full_comp_extras = [
+            row
+            async for row in db.extra_charges.find(
+                {"booking_id": booking_id, "tenant_id": tid, "voided": {"$ne": True}},
+                {"_id": 0},
+            )
+        ]
+    async with await db.client.start_session() as session:
+        async with session.start_transaction():
+            for rate_date in stay_dates:
+                existing = existing_by_date.get(rate_date, {})
+                try:
+                    await db.daily_rates.update_one(
+                        {
+                            "booking_id": booking_id,
+                            "tenant_id": tid,
+                            "date": existing.get("date", rate_date),
+                        },
+                        {
+                            "$set": {
+                                "date": rate_date,
+                                "rate": 0.0,
+                                "daily_rate_key": f"{booking_id}:{rate_date}",
+                                "is_complimentary": True,
+                                "complimentary_reason": data.reason.strip(),
+                                "updated_by": current_user.name,
+                                "updated_at": now,
+                            }
+                        },
+                        upsert=True,
+                        session=session,
+                    )
+                except DuplicateKeyError as exc:
+                    raise HTTPException(
+                        status_code=409,
+                        detail=f"{rate_date} için eşzamanlı günlük fiyat güncellemesi tespit edildi; lütfen yeniden deneyin",
+                    ) from exc
+
+            for charge in full_comp_extras:
+                original_charge_total = round(
+                    float(charge.get("total", charge.get("charge_amount", charge.get("amount", 0))) or 0),
+                    2,
+                )
+                await db.extra_charges.update_one(
+                    {"id": charge["id"], "booking_id": booking_id, "tenant_id": tid},
+                    {
+                        "$set": {
+                            "amount": 0.0,
+                            "charge_amount": 0.0,
+                            "total": 0.0,
+                            "is_complimentary": True,
+                            "complimentary_scope": "full",
+                            "complimentary_original_amount": charge.get("complimentary_original_amount", original_charge_total),
+                            "updated_by": current_user.name,
+                            "updated_at": now,
+                        }
+                    },
+                    session=session,
+                )
+
+            await db.bookings.update_one(
+                {"id": booking_id, "tenant_id": tid},
+                {
+                    "$set": {
+                        "total_amount": 0.0,
+                        "is_complimentary": True,
+                        "complimentary_scope": data.scope,
+                        "complimentary_reason": data.reason.strip(),
+                        "complimentary_by": current_user.name,
+                        "complimentary_at": now,
+                        "complimentary_original_total": booking.get("complimentary_original_total", original_total),
+                    }
+                },
+                session=session,
+            )
+
+    await _log_activity(
+        tid,
+        booking_id,
+        "reservation_marked_complimentary",
+        current_user.name,
+        {
+            "reason": data.reason.strip(),
+            "original_total": original_total,
+            "original_daily_rates": original_daily_rates,
+            "affected_nights": len(stay_dates),
+            "business_date": current_business_date,
+            "scope": data.scope,
+            "affected_extra_charges": len(full_comp_extras),
+        },
+    )
+
+    # Comp işlemi tamamlandıktan sonra folyo bakiyesini sıfırla.
+    # daily_rates ve extra_charges 0'landı; folio.balance önbelleği de
+    # güncellenmezse "Kalan tahsilat" eski değeri göstermeye devam eder.
+    for folio in folios:
+        folio_id = folio.get("id")
+        if folio_id:
+            try:
+                await _refresh_cached_folio_balance(tid, folio_id)
+            except Exception:
+                pass  # Bakiye yenileme başarısız olursa comp işlemi geri alınmaz
+
+    return {
+        "success": True,
+        "booking_id": booking_id,
+        "new_total": 0.0,
+        "original_total": original_total,
+        "affected_nights": len(stay_dates),
+        "scope": data.scope,
+        "affected_extra_charges": len(full_comp_extras),
+    }
+
+
+@router.post("/reservations/{booking_id}/reconcile-complimentary-total")
+async def reconcile_complimentary_total(
+    booking_id: str,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("override_rate")),
+):
+    """Repair a legacy comp stay whose booking total drifted above zero.
+
+    This does not alter posted financial history. If accommodation has been
+    posted, paid, or invoiced, the operator must use a financial adjustment.
+    """
+    _enforce_perm(current_user, "override_rate")
+    _ensure_hotel_context(current_user)
+    tid = current_user.tenant_id
+    booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tid}, {"_id": 0})
+    if not booking:
+        raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
+    await ensure_reservation_mutable(db, tid, booking)
+    if not booking.get("is_complimentary"):
+        raise HTTPException(status_code=409, detail="Bu rezervasyon comp değil")
+    old_total = round(float(booking.get("total_amount", 0) or 0), 2)
+    if old_total <= 0:
+        return {"success": True, "new_total": 0.0, "repaired": False}
+
+    check_in = _reservation_calendar_date(booking.get("check_in"))
+    check_out = _reservation_calendar_date(booking.get("check_out"))
+    if check_in is None or check_out is None or check_out <= check_in:
+        raise HTTPException(status_code=409, detail="Rezervasyonun geçerli konaklama tarihleri yok")
+    stay_dates = {(check_in + timedelta(days=day)).isoformat() for day in range((check_out - check_in).days)}
+    rate_rows = [
+        row
+        async for row in db.daily_rates.find(
+            {"booking_id": booking_id, "tenant_id": tid},
+            {"_id": 0, "date": 1, "rate": 1},
+        )
+    ]
+    if not rate_rows:
+        raise HTTPException(status_code=409, detail="Günlük fiyat kaydı yok; finans mutabakatı gerekir")
+    recorded_dates = set()
+    for row in rate_rows:
+        rate_date = _reservation_calendar_date(row.get("date"))
+        if rate_date is None or rate_date.isoformat() not in stay_dates or rate_date.isoformat() in recorded_dates or _money_cents(row.get("rate")) != 0:
+            raise HTTPException(status_code=409, detail="Günlük fiyatlar comp konaklamayla uyuşmuyor; finans mutabakatı gerekir")
+        recorded_dates.add(rate_date.isoformat())
+
+    folios = [
+        row
+        async for row in db.folios.find(
+            {"booking_id": booking_id, "tenant_id": tid},
+            {"_id": 0, "id": 1},
+        )
+    ]
+    folio_ids = [row["id"] for row in folios if row.get("id")]
+    financial_scope = _booking_or_folio_scope_query(tid, booking_id, folio_ids)
+    active_accommodation_charge = await db.folio_charges.find_one(
+        {
+            "$and": [
+                financial_scope,
+                {"voided": {"$ne": True}},
+                {
+                    "$or": [
+                        {"charge_category": {"$in": ["room", "tax", "city_tax"]}},
+                        {"charge_type": {"$in": ["room_charge", "tax"]}},
+                        {"konaklama_vergisi": True},
+                    ]
+                },
+            ]
+        },
+        {"_id": 0, "id": 1},
+    )
+    active_payment = await db.payments.find_one(
+        {"$and": [financial_scope, {"voided": {"$ne": True}}, {"amount": {"$gt": 0}}]},
+        {"_id": 0, "id": 1},
+    )
+    issued_invoice = await db.invoices.find_one(
+        {
+            "tenant_id": tid,
+            "status": {"$nin": ["draft", "cancelled", "voided"]},
+            "$or": [{"booking_id": booking_id}, {"folio_id": {"$in": folio_ids}}],
+        },
+        {"_id": 0, "id": 1},
+    )
+    if active_accommodation_charge or active_payment or issued_invoice:
+        raise HTTPException(status_code=409, detail="Tahakkuk, ödeme veya fatura var; finansal düzeltme fişi gerekir")
+
+    now = datetime.now(UTC).isoformat()
+    async with await db.client.start_session() as session:
+        async with session.start_transaction():
+            # Recheck inside the write snapshot so a financial posting made
+            # after the initial validation cannot be overlooked by this repair.
+            if (
+                await db.folio_charges.find_one(
+                    {
+                        "$and": [
+                            financial_scope,
+                            {"voided": {"$ne": True}},
+                            {
+                                "$or": [
+                                    {"charge_category": {"$in": ["room", "tax", "city_tax"]}},
+                                    {"charge_type": {"$in": ["room_charge", "tax"]}},
+                                    {"konaklama_vergisi": True},
+                                ]
+                            },
+                        ]
+                    },
+                    {"_id": 0, "id": 1},
+                    session=session,
+                )
+                or await db.payments.find_one(
+                    {"$and": [financial_scope, {"voided": {"$ne": True}}, {"amount": {"$gt": 0}}]},
+                    {"_id": 0, "id": 1},
+                    session=session,
+                )
+                or await db.invoices.find_one(
+                    {
+                        "tenant_id": tid,
+                        "status": {"$nin": ["draft", "cancelled", "voided"]},
+                        "$or": [{"booking_id": booking_id}, {"folio_id": {"$in": folio_ids}}],
+                    },
+                    {"_id": 0, "id": 1},
+                    session=session,
+                )
+            ):
+                raise HTTPException(status_code=409, detail="Finans kaydı değişti; finansal düzeltme fişi gerekir")
+            for rate_date in sorted(stay_dates - recorded_dates):
+                await db.daily_rates.update_one(
+                    {"booking_id": booking_id, "tenant_id": tid, "date": rate_date},
+                    {
+                        "$set": {
+                            "date": rate_date,
+                            "rate": 0.0,
+                            "daily_rate_key": f"{booking_id}:{rate_date}",
+                            "is_complimentary": True,
+                            "updated_by": current_user.name,
+                            "updated_at": now,
+                        }
+                    },
+                    upsert=True,
+                    session=session,
+                )
+            result = await db.bookings.update_one(
+                {"id": booking_id, "tenant_id": tid, "is_complimentary": True, "total_amount": booking.get("total_amount")},
+                {"$set": {"total_amount": 0.0}},
+                session=session,
+            )
+            if result.modified_count != 1:
+                raise HTTPException(status_code=409, detail="Rezervasyon değişti; yenileyip tekrar deneyin")
+
+    for folio_id in folio_ids:
+        await _refresh_cached_folio_balance(tid, folio_id)
+    await _log_activity(
+        tid,
+        booking_id,
+        "complimentary_total_reconciled",
+        current_user.name,
+        {"old_total": old_total, "new_total": 0.0, "missing_zero_rate_dates": sorted(stay_dates - recorded_dates)},
+    )
+    await audit_log(
+        actor_id=current_user.id,
+        tenant_id=tid,
+        property_id=tid,
+        entity_type="reservation",
+        entity_id=booking_id,
+        action="complimentary_total_reconciled",
+        metadata={"old_total": old_total, "new_total": 0.0, "actor_name": current_user.name},
+    )
+    return {"success": True, "new_total": 0.0, "repaired": True}
+
+
+@router.post("/reservations/{booking_id}/apply-posted-stay-rate-correction")
+async def apply_posted_stay_rate_correction(
+    booking_id: str,
+    data: PostedStayRateCorrectionRequest,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("override_rate")),
+):
+    """Offset a closed-night pricing error without rewriting Night Audit rows."""
+    _enforce_perm(current_user, "override_rate")
+    _ensure_hotel_context(current_user)
+    tid = current_user.tenant_id
+    booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tid}, {"_id": 0})
+    if not booking:
+        raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
+    check_in = _reservation_calendar_date(booking.get("check_in"))
+    check_out = _reservation_calendar_date(booking.get("check_out"))
+    if check_in is None or check_out is None or check_out <= check_in:
+        raise HTTPException(status_code=409, detail="Rezervasyonun geçerli konaklama tarihleri yok")
+    stay_dates = [(check_in + timedelta(days=offset)).isoformat() for offset in range((check_out - check_in).days)]
+    folios = [row async for row in db.folios.find({"booking_id": booking_id, "tenant_id": tid}, {"_id": 0, "id": 1, "status": 1, "currency": 1})]
+    folio_ids = [row.get("id") for row in folios if row.get("id")]
+    financial_scope = _booking_or_folio_scope_query(tid, booking_id, folio_ids)
+    room_charges = [row async for row in db.folio_charges.find(
+        {"$and": [financial_scope, {"voided": {"$ne": True}}, {"$or": [{"charge_type": "room_charge"}, {"charge_category": "room"}]}]},
+        {"_id": 0},
+    )]
+    charges_by_date: dict[str, float] = {}
+    for charge in room_charges:
+        charge_date = _room_charge_business_date(charge)
+        if charge_date is None:
+            raise HTTPException(status_code=409, detail="Tarihsiz oda tahakkuku var; manuel finans mutabakatı gerekir")
+        date_key = charge_date.isoformat()
+        if date_key in charges_by_date:
+            raise HTTPException(status_code=409, detail=f"{date_key} için birden fazla oda tahakkuku var; manuel finans mutabakatı gerekir")
+        charges_by_date[date_key] = round(float(charge.get("total", charge.get("amount", 0)) or 0), 2)
+    if set(charges_by_date) != set(stay_dates) or any(value <= 0 for value in charges_by_date.values()):
+        raise HTTPException(status_code=409, detail="Her konaklama gecesi için tek ve pozitif tahakkuk olmadan fiyat düzeltmesi yapılamaz")
+    invoice_query = {"tenant_id": tid, "status": {"$nin": ["draft", "cancelled", "voided"]}, "$or": [{"booking_id": booking_id}]}
+    if folio_ids:
+        invoice_query["$or"].append({"folio_id": {"$in": folio_ids}})
+    if await db.invoices.find_one(invoice_query, {"_id": 0, "id": 1}):
+        raise HTTPException(status_code=409, detail="Fatura düzenlenmiş; fiyat düzeltmesi için iade/düzeltme belgesi gerekir")
+    posted_total = round(sum(charges_by_date.values()), 2)
+    prior_corrections = [row async for row in db.payments.find(
+        {"$and": [financial_scope, {"voided": {"$ne": True}}, {"method": "discount"}, {"payment_type": "rate_correction"}]},
+        {"_id": 0, "amount": 1},
+    )]
+    already_corrected = round(sum(float(row.get("amount", 0) or 0) for row in prior_corrections), 2)
+    effective_total = round(posted_total - already_corrected, 2)
+    target_total = round(float(data.target_total), 2)
+    if target_total >= effective_total - 0.01:
+        raise HTTPException(status_code=422, detail="Hedef tutar mevcut net tahakkuktan düşük olmalıdır; artırma için günlük fiyatı düzeltin")
+    correction_amount = round(effective_total - target_total, 2)
+    reference = "RATE-CORR-" + uuid.uuid5(uuid.NAMESPACE_URL, f"{tid}:{booking_id}:{target_total}").hex
+    existing = await db.payments.find_one({"tenant_id": tid, "booking_id": booking_id, "reference": reference, "voided": False}, {"_id": 0, "id": 1})
+    if existing:
+        return {"success": True, "already_applied": True, "target_total": target_total, "adjustment_amount": correction_amount}
+    now = datetime.now(UTC).isoformat()
+    folio = next((row for row in folios if row.get("status") == "open"), None)
+    if folio is None:
+        raise HTTPException(status_code=409, detail="Açık misafir folyası bulunamadı; fiyat düzeltmesi yapılamaz")
+    payment = {
+        "id": str(uuid.uuid4()), "tenant_id": tid, "folio_id": folio["id"], "booking_id": booking_id,
+        "amount": correction_amount, "currency": str(booking.get("currency") or folio.get("currency") or "TRY").upper(),
+        "received_currency": str(booking.get("currency") or folio.get("currency") or "TRY").upper(), "received_amount": correction_amount,
+        "exchange_rate": 1.0, "method": "discount", "payment_type": "rate_correction", "status": "paid", "reference": reference,
+        "description": "Kapanmış gece fiyat düzeltmesi", "notes": data.reason.strip(), "processed_by": current_user.name,
+        "processed_at": now, "voided": False, "posted_stay_total": posted_total, "target_total": target_total, "affected_dates": stay_dates,
+    }
+    await stamp_open_business_date(db, tid, payment)
+    async with await db.client.start_session() as session:
+        async with session.start_transaction():
+            await db.payments.insert_one(payment, session=session)
+            result = await db.bookings.update_one(
+                {"id": booking_id, "tenant_id": tid},
+                {"$set": {"total_amount": target_total, "financial_rate_correction_at": now, "financial_rate_correction_by": current_user.name, "financial_rate_correction_reason": data.reason.strip()}},
+                session=session,
+            )
+            if result.modified_count != 1:
+                raise HTTPException(status_code=409, detail="Rezervasyon değişti; ekranı yenileyip tekrar deneyin")
+    await _refresh_cached_folio_balance(tid, folio["id"])
+    metadata = {"posted_total": posted_total, "target_total": target_total, "adjustment_amount": correction_amount, "reason": data.reason.strip(), "reference": reference, "affected_dates": stay_dates}
+    await _log_activity(tid, booking_id, "posted_stay_rate_correction_applied", current_user.name, metadata)
+    await audit_log(actor_id=current_user.id, tenant_id=tid, property_id=tid, entity_type="reservation", entity_id=booking_id, action="posted_stay_rate_correction_applied", metadata=metadata)
+    return {"success": True, "target_total": target_total, "adjustment_amount": correction_amount, "reference": reference}
+
+
+@router.post("/reservations/{booking_id}/reconcile-posted-stay-total")
+async def reconcile_posted_stay_total(
+    booking_id: str,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("override_rate")),
+):
+    """Align stale booking price metadata with a fully posted nightly folio.
+
+    The audited folio rows are the source of truth and are never rewritten.
+    This repair is deliberately unavailable for partial or ambiguous postings.
+    """
+    _enforce_perm(current_user, "override_rate")
+    _ensure_hotel_context(current_user)
+    tid = current_user.tenant_id
+    booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tid}, {"_id": 0})
+    if not booking:
+        raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
+    check_in = _reservation_calendar_date(booking.get("check_in"))
+    check_out = _reservation_calendar_date(booking.get("check_out"))
+    if check_in is None or check_out is None or check_out <= check_in:
+        raise HTTPException(status_code=409, detail="Rezervasyonun geçerli konaklama tarihleri yok")
+    stay_dates = [(check_in + timedelta(days=offset)).isoformat() for offset in range((check_out - check_in).days)]
+    folios = [row async for row in db.folios.find({"booking_id": booking_id, "tenant_id": tid}, {"_id": 0, "id": 1})]
+    financial_scope = _booking_or_folio_scope_query(tid, booking_id, [row.get("id") for row in folios])
+    existing_rate_correction = await db.payments.find_one(
+        {
+            "$and": [
+                financial_scope,
+                {"voided": {"$ne": True}},
+                {"method": "discount"},
+                {"payment_type": "rate_correction"},
+            ]
+        },
+        {"_id": 0, "id": 1},
+    )
+    if existing_rate_correction:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Bu rezervasyonda onaylı bir fiyat düzeltmesi var. Eşitleme "
+                "işlemi bu düzeltmeyi geri alabileceği için uygulanamaz."
+            ),
+        )
+    room_charges = [
+        row async for row in db.folio_charges.find(
+            {
+                "$and": [
+                    financial_scope,
+                    {"voided": {"$ne": True}},
+                    {"$or": [{"charge_type": "room_charge"}, {"charge_category": "room"}]},
+                ],
+            },
+            {"_id": 0},
+        )
+    ]
+    rates_by_date: dict[str, float] = {}
+    for charge in room_charges:
+        charge_date = _room_charge_business_date(charge)
+        if charge_date is None:
+            raise HTTPException(status_code=409, detail="Tarihsiz oda tahakkuku var; manuel finans mutabakatı gerekir")
+        date_key = charge_date.isoformat()
+        if date_key in rates_by_date:
+            raise HTTPException(status_code=409, detail=f"{date_key} için birden fazla oda tahakkuku var; manuel finans mutabakatı gerekir")
+        rates_by_date[date_key] = round(float(charge.get("total", charge.get("amount", 0)) or 0), 2)
+    if set(rates_by_date) != set(stay_dates) or any(value <= 0 for value in rates_by_date.values()):
+        raise HTTPException(status_code=409, detail="Her konaklama gecesi için tek ve pozitif bir tahakkuk bulunmadan otomatik mutabakat yapılamaz")
+
+    old_total = round(float(booking.get("total_amount", 0) or 0), 2)
+    new_total = round(sum(rates_by_date.values()), 2)
+    now = datetime.now(UTC).isoformat()
+    async with await db.client.start_session() as session:
+        async with session.start_transaction():
+            result = await db.bookings.update_one(
+                {"id": booking_id, "tenant_id": tid, "total_amount": booking.get("total_amount")},
+                {"$set": {"total_amount": new_total, "base_rate": rates_by_date[stay_dates[-1]], "rate_per_night": rates_by_date[stay_dates[-1]], "updated_at": now}},
+                session=session,
+            )
+            if result.modified_count != 1 and old_total != new_total:
+                raise HTTPException(status_code=409, detail="Rezervasyon değişti; yenileyip tekrar deneyin")
+            await db.daily_rates.delete_many({"booking_id": booking_id, "tenant_id": tid}, session=session)
+            await db.daily_rates.insert_many(
+                [
+                    {
+                        "id": str(uuid.uuid4()), "booking_id": booking_id, "tenant_id": tid,
+                        "date": date_key, "rate": rates_by_date[date_key],
+                        "daily_rate_key": f"{booking_id}:{date_key}", "updated_at": now,
+                        "updated_by": current_user.name,
+                    }
+                    for date_key in stay_dates
+                ],
+                session=session,
+            )
+    await _log_activity(tid, booking_id, "posted_stay_total_reconciled", current_user.name, {"old_total": old_total, "new_total": new_total, "daily_rates": rates_by_date})
+    await audit_log(actor_id=current_user.id, tenant_id=tid, property_id=tid, entity_type="reservation", entity_id=booking_id, action="posted_stay_total_reconciled", metadata={"old_total": old_total, "new_total": new_total, "actor_name": current_user.name})
+    return {"success": True, "old_total": old_total, "new_total": new_total, "daily_rates": rates_by_date}
+
+
 @router.put("/reservations/{booking_id}/daily-rates")
 async def update_daily_rates(
     booking_id: str,
@@ -1975,44 +4202,339 @@ async def update_daily_rates(
     _perm=Depends(require_op("override_rate")),  # v97 DW
 ):
     """Update daily rates for a reservation. Requires override_rate permission."""
-    _enforce_perm(current_user.role, "override_rate")  # Bug CP Round-3 — mirror rate-override-panel gate
+    _enforce_perm(current_user, "override_rate")  # Bug CP Round-3 — mirror rate-override-panel gate
     _ensure_hotel_context(current_user)
+
     tid = current_user.tenant_id
 
-    booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tid}, {"_id": 0})
-    if not booking:
-        raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
+    from core.security import _is_super_admin
+    from core.tenant_db import get_system_db, tenant_context
 
-    for rate_entry in data.rates:
-        await db.daily_rates.update_one(
-            {"booking_id": booking_id, "tenant_id": tid, "date": rate_entry.date},
+    if _is_super_admin(current_user):
+        # Super admin: use system db (no tenant scoping) to find which tenant this booking belongs to
+        sys_db = get_system_db()
+        lookup = await sys_db.bookings.find_one({"id": booking_id}, {"tenant_id": 1})
+        if lookup:
+            tid = lookup.get("tenant_id", current_user.tenant_id)
+
+    is_cross_tenant_update = tid != current_user.tenant_id
+    new_total = 0.0
+    with tenant_context(tid):
+        booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tid}, {"_id": 0})
+        if not booking:
+            raise HTTPException(status_code=400, detail="Rezervasyon bulunamadı.")
+
+        await ensure_reservation_mutable(db, tid, booking)
+
+        if booking.get("is_complimentary") and any(rate.rate != 0 for rate in data.rates):
+            raise HTTPException(
+                status_code=422,
+                detail="Comp rezervasyonun günlük konaklama fiyatları sıfır olmalıdır",
+            )
+        if not booking.get("is_complimentary") and any(rate.rate <= 0 for rate in data.rates):
+            raise HTTPException(
+                status_code=422,
+                detail="Günlük fiyat yalnızca comp rezervasyonlarda sıfır olabilir",
+            )
+
+        business_state = await ensure_business_date_initialized(db, tid)
+        current_business_date = str(business_state["business_date"])[:10]
+        check_in = _reservation_calendar_date(booking.get("check_in"))
+        check_out = _reservation_calendar_date(booking.get("check_out"))
+        if check_in is None or check_out is None or check_out <= check_in:
+            raise HTTPException(status_code=409, detail="Rezervasyonun geçerli bir konaklama aralığı yok")
+
+        stay_dates: list[str] = []
+        current = check_in
+        while current < check_out:
+            stay_dates.append(current.isoformat())
+            current += timedelta(days=1)
+
+        submitted_rates: dict[str, float] = {}
+        for rate_entry in data.rates:
+            rate_date = _reservation_calendar_date(rate_entry.date)
+            if rate_date is None:
+                raise HTTPException(status_code=422, detail=f"Geçersiz günlük fiyat tarihi: {rate_entry.date}")
+            date_key = rate_date.isoformat()
+            if date_key in submitted_rates:
+                raise HTTPException(status_code=422, detail=f"{date_key} için birden fazla günlük fiyat gönderildi")
+            submitted_rates[date_key] = round(float(rate_entry.rate), 2)
+
+        expected_dates = set(stay_dates)
+        if set(submitted_rates) != expected_dates:
+            missing = sorted(expected_dates - set(submitted_rates))
+            outside = sorted(set(submitted_rates) - expected_dates)
+            detail = "Günlük fiyatlar check-in dahil, check-out hariç her geceyi tam olarak bir kez içermelidir"
+            if missing:
+                detail += f". Eksik: {', '.join(missing)}"
+            if outside:
+                detail += f". Aralık dışı: {', '.join(outside)}"
+            raise HTTPException(status_code=422, detail=detail)
+
+        existing_rate_rows = [
+            row
+            async for row in db.daily_rates.find(
+                {"booking_id": booking_id, "tenant_id": tid},
+                {"_id": 0, "date": 1, "rate": 1},
+            )
+        ]
+        existing_rates: dict[str, dict] = {}
+        for row in existing_rate_rows:
+            rate_date = _reservation_calendar_date(row.get("date"))
+            if rate_date is None:
+                raise HTTPException(status_code=409, detail="Geçersiz tarihli mevcut günlük fiyat kaydı bulundu; düzeltme gerekir")
+            date_key = rate_date.isoformat()
+            if date_key in existing_rates:
+                raise HTTPException(status_code=409, detail=f"{date_key} için yinelenen günlük fiyat kaydı bulundu; düzeltme gerekir")
+            existing_rates[date_key] = row
+
+        # Bug Fix: If daily_rates are missing in DB, they were generated on-the-fly for the frontend.
+        # We must recreate them here to allow the frontend to submit the locked unchanged rates without triggering a 409.
+        if not existing_rates:
+            generated_rates = _allocate_daily_rates(booking.get("total_amount", 0), stay_dates)
+            existing_rates = {
+                date_key: {"date": date_key, "rate": rate}
+                for date_key, rate in generated_rates.items()
+            }
+
+        for rate_date, rate in submitted_rates.items():
+            if rate_date < current_business_date:
+                existing = existing_rates.get(rate_date)
+                if existing is None or _money_cents(existing.get("rate")) != _money_cents(rate):
+                    raise HTTPException(
+                        status_code=409,
+                        detail=(f"{rate_date} iş günü Night Audit ile kapatıldığı için oda fiyatı değiştirilemez"),
+                    )
+
+        # Sync an already-posted room charge only. Future nights must remain
+        # unposted: Night Audit reads daily_rates and posts them exactly once.
+        # Night-Audit-closed days (rate_date < current_business_date) are skipped —
+        # their charges are historical records and must not be modified.
+        folio = await db.folios.find_one(
+            {"booking_id": booking_id, "tenant_id": tid, "folio_type": "guest", "status": "open"},
+            {"_id": 0, "id": 1},
+        )
+        rate_changed_dates = {rate_date for rate_date, rate in submitted_rates.items() if _money_cents(existing_rates.get(rate_date, {}).get("rate")) != _money_cents(rate)}
+        posted_rate_mismatches = await _posted_room_charge_rate_mismatches(
+            tid,
+            booking_id,
+            expected_rates_by_date=submitted_rates,
+        )
+        mismatched_dates = {row["date"] for row in posted_rate_mismatches}
+        historical_mismatches = sorted(date_key for date_key in mismatched_dates if date_key < current_business_date)
+        if historical_mismatches:
+            raise HTTPException(
+                status_code=409,
+                detail=(f"Night Audit ile kapanmış oda tahakkuku günlük fiyatla uyuşmuyor; manuel finans mutabakatı gerekir ({', '.join(historical_mismatches)})"),
+            )
+
+        # A prepayment is not a reason to freeze an authorised rate override:
+        # the payment remains intact and the reservation's remaining balance
+        # is derived again from the new accommodation total. An issued invoice
+        # is immutable and still requires a separate credit/correction flow.
+        active_payment = None
+        if folio and (rate_changed_dates or mismatched_dates):
+            active_payment = await db.payments.find_one(
+                {"tenant_id": tid, "folio_id": folio["id"], "voided": {"$ne": True}, "amount": {"$gt": 0}},
+                {"_id": 0, "id": 1},
+            )
+            issued_invoice = await db.invoices.find_one(
+                {"tenant_id": tid, "folio_id": folio["id"], "status": {"$nin": ["draft", "cancelled", "voided"]}},
+                {"_id": 0, "id": 1},
+            )
+            if issued_invoice:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Düzenlenmiş faturası bulunan rezervasyonun fiyatı değiştirilemez; önce fatura iptal/düzeltme işlemi yapılmalıdır",
+                )
+
+        affected_folio_ids: set[str] = set()
+
+        # Resolve tax rates once — same approach as Night Audit service.
+        from core.channel_room_charge_pricing import calculate_room_charge
+
+        accommodation_tax_rate = await get_accommodation_tax_rate(tid, booking.get("check_in"))
+
+        async with await db.client.start_session() as session:
+            async with session.start_transaction():
+                for rate_date, rate in submitted_rates.items():
+                    existing = existing_rates.get(rate_date, {})
+                    try:
+                        await db.daily_rates.update_one(
+                            {"booking_id": booking_id, "tenant_id": tid, "date": existing.get("date", rate_date)},
+                            {
+                                "$set": {
+                                    "date": rate_date,
+                                    "rate": rate,
+                                    # Partial unique index: new/touched rows are
+                                    # protected without making a rollout fail on
+                                    # an as-yet-unremediated legacy duplicate.
+                                    "daily_rate_key": f"{booking_id}:{rate_date}",
+                                    "updated_by": current_user.name,
+                                    "updated_at": datetime.now(UTC).isoformat(),
+                                }
+                            },
+                            upsert=True,
+                            session=session,
+                        )
+                    except DuplicateKeyError as exc:
+                        raise HTTPException(
+                            status_code=409,
+                            detail=f"{rate_date} için eşzamanlı günlük fiyat güncellemesi tespit edildi; lütfen yeniden deneyin",
+                        ) from exc
+
+                # The departure date is not a chargeable night. Remove legacy
+                # checkout-day/out-of-range rows whenever the rate plan is
+                # saved so they cannot inflate later totals.
+                await db.daily_rates.delete_many(
+                    {
+                        "booking_id": booking_id,
+                        "tenant_id": tid,
+                        "date": {"$nin": list(submitted_rates)},
+                    },
+                    session=session,
+                )
+
+                # Recalculate total
+                new_total = round(sum(submitted_rates.values()), 2)
+                await db.bookings.update_one(
+                    {"id": booking_id, "tenant_id": tid},
+                    {"$set": {"total_amount": new_total}},
+                    session=session,
+                )
+
+                for rate_date, rate in submitted_rates.items():
+                    if rate_date < current_business_date:
+                        # Closed by Night Audit — do not touch folio charges for this day.
+                        continue
+
+                    if rate_date not in rate_changed_dates and rate_date not in mismatched_dates:
+                        # Amount unchanged — nothing to sync.
+                        continue
+
+                    # Find active room charges for this booking on this date
+                    existing_room_charges = [
+                        c
+                        async for c in db.folio_charges.find(
+                            {
+                                "booking_id": booking_id,
+                                "tenant_id": tid,
+                                "charge_category": "room",
+                                "voided": {"$ne": True},
+                                "date": {"$gte": rate_date, "$lt": rate_date + "T99"},
+                            },
+                            {"_id": 0},
+                            session=session,
+                        )
+                    ]
+
+                    if not existing_room_charges:
+                        continue
+                    if len(existing_room_charges) != 1:
+                        raise HTTPException(status_code=409, detail=f"{rate_date} için birden fazla aktif oda folyo satırı bulundu; manuel düzeltme gerekir")
+                    if not folio or existing_room_charges[0].get("folio_id") != folio["id"]:
+                        raise HTTPException(status_code=409, detail=f"{rate_date} oda ücreti açık misafir folyasında değil; manuel düzeltme gerekir")
+
+                    old_charge = existing_room_charges[0]
+                    await db.folio_charges.update_one(
+                        {"id": old_charge["id"], "tenant_id": tid, "voided": {"$ne": True}},
+                        {
+                            "$set": {
+                                "voided": True,
+                                "voided_at": datetime.now(UTC).isoformat(),
+                                "voided_by": current_user.name,
+                                "void_reason": f"Günlük fiyat güncellendi: {old_charge.get('total', old_charge.get('amount', 0))} TL → {rate} TL",
+                            }
+                        },
+                        session=session,
+                    )
+                    single_night_booking = {
+                        **booking,
+                        "total_amount": rate,
+                        "provider_total_amount": None,
+                        "total_price": None,
+                        "check_in": rate_date,
+                        "check_out": rate_date,  # same day → nights=1 inside _nightly_gross
+                    }
+                    pricing = calculate_room_charge(
+                        single_night_booking,
+                        rate_date,
+                        vat_rate=0.10,
+                        accommodation_tax_rate=accommodation_tax_rate,
+                    )
+                    if _money_cents(pricing["total"]) != _money_cents(rate):
+                        raise HTTPException(
+                            status_code=409,
+                            detail=f"{rate_date} için oda tahakkuku günlük fiyatla mutabık oluşturulamadı",
+                        )
+                    new_charge = {
+                        "id": str(uuid.uuid4()),
+                        "tenant_id": tid,
+                        "folio_id": old_charge["folio_id"],
+                        "booking_id": booking_id,
+                        "charge_category": "room",
+                        "description": old_charge.get("description") or f"Room charge - {rate_date}",
+                        "date": old_charge.get("date") or rate_date,
+                        "quantity": 1,
+                        "unit_price": pricing["unit_price"],
+                        "amount": pricing["amount"],
+                        "tax_rate": pricing["tax_rate"],
+                        "tax_amount": pricing["tax_amount"],
+                        "total": pricing["total"],
+                        "tax_breakdown": pricing["tax_breakdown"],
+                        "tax_inclusive": pricing["tax_inclusive"],
+                        "posted_at": datetime.now(UTC).isoformat(),
+                        "posted_by": current_user.name,
+                        "reposted_from_charge_id": old_charge["id"],
+                        "voided": False,
+                    }
+                    for field in ("business_date", "night_audit_date", "charge_type", "audit_id"):
+                        if old_charge.get(field) is not None:
+                            new_charge[field] = old_charge[field]
+                    try:
+                        await db.folio_charges.insert_one(new_charge, session=session)
+                    except DuplicateKeyError as exc:
+                        raise HTTPException(
+                            status_code=409,
+                            detail=f"{rate_date} oda tahakkuku başka bir işlem tarafından güncellendi; ekranı yenileyip tekrar deneyin",
+                        ) from exc
+                    affected_folio_ids.add(old_charge["folio_id"])
+
+        # Recalculate folio balance for all affected folios (must be outside transaction to see committed charges)
+        for folio_id in affected_folio_ids:
+            await _refresh_cached_folio_balance(tid, folio_id)
+
+        await _log_activity(
+            tid,
+            booking_id,
+            "daily_rates_updated",
+            current_user.name,
             {
-                "$set": {
-                    "rate": rate_entry.rate,
-                    "updated_by": current_user.name,
-                    "updated_at": datetime.now(UTC).isoformat(),
-                }
+                "rates_count": len(submitted_rates),
+                "business_date": current_business_date,
+                "folio_charges_synced": len(affected_folio_ids) > 0,
+                "prepayment_preserved": bool(active_payment),
+                "cross_tenant_update": is_cross_tenant_update,
+                "original_actor_tenant": current_user.tenant_id,
             },
-            upsert=True,
         )
 
-    # Recalculate total
-    new_total = sum(r.rate for r in data.rates)
-    if new_total > 0:
-        await db.bookings.update_one(
-            {"id": booking_id, "tenant_id": tid},
-            {"$set": {"total_amount": round(new_total, 2)}},
-        )
-
-    await _log_activity(
-        tid,
-        booking_id,
-        "daily_rates_updated",
-        current_user.name,
-        {
-            "rates_count": len(data.rates),
-        },
-    )
+    if is_cross_tenant_update:
+        with tenant_context(current_user.tenant_id):
+            await db.audit_logs.insert_one(
+                {
+                    "event_type": "super_admin_cross_tenant_daily_rates_updated",
+                    "actor_id": current_user.id,
+                    "actor_name": current_user.name,
+                    "actor_tenant_id": current_user.tenant_id,
+                    "target_tenant_id": tid,
+                    "resource": f"booking:{booking_id}",
+                    "rates_count": len(submitted_rates),
+                    "new_total": new_total,
+                    "tenant_id": current_user.tenant_id,
+                    "created_at": datetime.now(UTC).isoformat(),
+                }
+            )
 
     return {"success": True, "new_total": round(new_total, 2)}
 
@@ -2025,13 +4547,14 @@ async def update_reservation_guest(
     _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
 ):
     """Update guest information for a reservation."""
-    _enforce_perm(current_user.role, "edit_booking")  # Bug CP Round-4
+    _enforce_perm(current_user, "edit_booking")  # Bug CP Round-4
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
     booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tid}, {"_id": 0})
     if not booking:
         raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
+    await ensure_reservation_mutable(db, tid, booking)
 
     if not booking.get("guest_id"):
         raise HTTPException(status_code=400, detail="Misafir bilgisi bulunamadı")
@@ -2048,6 +4571,11 @@ async def update_reservation_guest(
         )
         from security.search_normalize import normalized_set_for_update
 
+        existing_guest = await db.guests.find_one(
+            {"id": booking["guest_id"], "tenant_id": tid},
+            {"_id": 0},
+        )
+
         # Search companions are computed from the PLAINTEXT update BEFORE
         # encryption — name fields are NOT encrypted. name_lower keeps renames
         # prefix-searchable.
@@ -2055,11 +4583,7 @@ async def update_reservation_guest(
         # Combined _ng_name must reflect ALL name fields, not just the changed
         # subset, or a name-only edit drops first/last-name infix trigrams.
         if any(f in updates for f in NGRAM_SOURCE_FIELDS.get("guests", [])):
-            _g = await db.guests.find_one(
-                {"id": booking["guest_id"], "tenant_id": tid},
-                {"_id": 0, "name": 1, "first_name": 1, "last_name": 1},
-            )
-            _norm.update(ngram_set_for_update_merged(_g, updates, collection="guests"))
+            _norm.update(ngram_set_for_update_merged(existing_guest, updates, collection="guests"))
         # KVKK: encrypt PII fields at rest (email / phone / id_number) and write
         # their `_hash_<field>` blind-index tokens. Without this, editing a guest
         # from the reservation screen stored PII as PLAINTEXT and left encrypted
@@ -2068,14 +4592,54 @@ async def update_reservation_guest(
         _plain_name = updates.get("name")
         updates = _encrypt_guest(updates)
         updates.update(_norm)
-        await db.guests.update_one({"id": booking["guest_id"], "tenant_id": tid}, {"$set": updates})
 
-        if _plain_name is not None:
-            _bnorm = normalized_set_for_update({"guest_name": _plain_name}, collection="bookings")
+        # Detay ekranındaki düzenleme rezervasyona aittir. Aynı CRM misafir
+        # kaydı birden fazla rezervasyona bağlıysa onu yerinde güncellemek,
+        # diğer odadaki misafirin de adını/iletişimini değiştiriyordu. Bu
+        # durumda yalnızca bu rezervasyon için bir kopya oluşturup ilişkiyi
+        # yeni kayda taşıyoruz; diğer rezervasyonların misafiri değişmez.
+        shared_guest_booking = await db.bookings.find_one(
+            {
+                "tenant_id": tid,
+                "guest_id": booking["guest_id"],
+                "id": {"$ne": booking_id},
+                "status": {"$nin": ["cancelled", "no_show"]},
+            },
+            {"_id": 0, "id": 1},
+        )
+        if shared_guest_booking and existing_guest:
+            isolated_guest_id = str(uuid.uuid4())
+            isolated_guest = {
+                **existing_guest,
+                **updates,
+                "id": isolated_guest_id,
+                "tenant_id": tid,
+                "created_at": datetime.now(UTC).isoformat(),
+                "updated_at": datetime.now(UTC).isoformat(),
+                "source": "reservation_guest_edit",
+            }
+            await db.guests.insert_one(isolated_guest)
+            booking_updates = {"guest_id": isolated_guest_id}
+            if _plain_name is not None:
+                booking_updates.update(
+                    {
+                        "guest_name": _plain_name,
+                        **normalized_set_for_update({"guest_name": _plain_name}, collection="bookings"),
+                    }
+                )
             await db.bookings.update_one(
                 {"id": booking_id, "tenant_id": tid},
-                {"$set": {"guest_name": _plain_name, **_bnorm}},
+                {"$set": booking_updates},
             )
+        else:
+            await db.guests.update_one({"id": booking["guest_id"], "tenant_id": tid}, {"$set": updates})
+
+            if _plain_name is not None:
+                _bnorm = normalized_set_for_update({"guest_name": _plain_name}, collection="bookings")
+                await db.bookings.update_one(
+                    {"id": booking_id, "tenant_id": tid},
+                    {"$set": {"guest_name": _plain_name, **_bnorm}},
+                )
 
     await _log_activity(tid, booking_id, "guest_updated", current_user.name, {"fields": _logged_fields})
 
@@ -2092,22 +4656,39 @@ async def list_cari_accounts(current_user: User = Depends(get_current_user)):
     tid = current_user.tenant_id
 
     accounts = []
+    seen_account_ids = set()
     # Eski cari_accounts koleksiyonu
-    async for acc in db.cari_accounts.find({"tenant_id": tid}, {"_id": 0}).sort("name", 1):
-        accounts.append(acc)
+    async for acc in db.cari_accounts.find({"tenant_id": tid}).sort("name", 1):
+        account_id = _canonical_cari_account_id(acc)
+        if not account_id or account_id in seen_account_ids:
+            continue
+        seen_account_ids.add(account_id)
+        normalized = {key: value for key, value in acc.items() if key != "_id"}
+        normalized["id"] = account_id
+        normalized["transfer_id"] = _cari_transfer_lookup_id(acc)
+        normalized["name"] = _canonical_cari_account_name(acc)
+        normalized["balance"] = _cari_balance(acc)
+        accounts.append(normalized)
 
     # City Ledger hesaplarını da ekle (folyo dropdown'ında görünsün)
-    async for acc in db.city_ledger_accounts.find({"tenant_id": tid, "is_active": {"$ne": False}}, {"_id": 0}).sort("account_name", 1):
+    async for acc in db.city_ledger_accounts.find({"tenant_id": tid, "is_active": {"$ne": False}}).sort("account_name", 1):
+        account_id = _canonical_cari_account_id(acc)
+        if not account_id or account_id in seen_account_ids:
+            continue
+        seen_account_ids.add(account_id)
         # cari_accounts formatıyla uyumlu hale getir
-        accounts.append({
-            "id": acc.get("id"),
-            "name": acc.get("account_name"),
-            "company_name": acc.get("company_name"),
-            "account_type": "city_ledger",
-            "balance": acc.get("current_balance", 0),
-            "credit_limit": acc.get("credit_limit", 0),
-            "tenant_id": tid,
-        })
+        accounts.append(
+            {
+                "id": account_id,
+                "transfer_id": _cari_transfer_lookup_id(acc),
+                "name": _canonical_cari_account_name(acc),
+                "company_name": acc.get("company_name"),
+                "account_type": "city_ledger",
+                "balance": acc.get("current_balance", 0),
+                "credit_limit": acc.get("credit_limit", 0),
+                "tenant_id": tid,
+            }
+        )
 
     return {"accounts": accounts}
 
@@ -2119,7 +4700,7 @@ async def create_cari_account(
     _perm=Depends(require_op("post_payment")),  # v97 DW
 ):
     """Create a new cari account."""
-    _enforce_perm(current_user.role, "post_payment")  # Bug CP Round-4 — financial setup
+    _enforce_perm(current_user, "post_payment")  # Bug CP Round-4 — financial setup
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
@@ -2176,7 +4757,7 @@ async def reconcile_cari_account(
     _perm=Depends(require_op("post_payment")),  # v97 DW
 ):
     """Reconcile (mahsuplaştır) a cari account - record a payment/offset."""
-    _enforce_perm(current_user.role, "post_payment")  # Bug CP Round-4
+    _enforce_perm(current_user, "post_payment")  # Bug CP Round-4
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
@@ -2224,7 +4805,7 @@ async def transfer_cari_to_agency(
     _perm=Depends(require_op("post_payment")),  # v97 DW
 ):
     """Transfer cari balance to an agency cari account."""
-    _enforce_perm(current_user.role, "post_payment")  # Bug CP Round-4
+    _enforce_perm(current_user, "post_payment")  # Bug CP Round-4
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
@@ -2369,7 +4950,7 @@ async def create_group_booking(
          placeholder e-posta ile açılır, sonra standart rezervasyon
          servisi (`CreateReservationService`) çağrılır.
     """
-    _enforce_perm(current_user.role, "create_booking")  # Bug CP Round-4
+    _enforce_perm(current_user, "create_booking")  # Bug CP Round-4
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
@@ -2402,16 +4983,26 @@ async def create_group_booking(
     # Mevcut booking_ids'i tenant kapsamında doğrula
     valid_existing_ids: list[str] = []
     if data.booking_ids:
-        existing_docs = db.bookings.find(
-            {"id": {"$in": list(set(data.booking_ids))}, "tenant_id": tid},
-            {"id": 1},
-        )
-        valid_existing_ids = [d["id"] async for d in existing_docs]
+        existing_docs = [
+            document
+            async for document in db.bookings.find(
+                {"id": {"$in": list(set(data.booking_ids))}, "tenant_id": tid},
+                {"_id": 0, "id": 1, "status": 1, "check_out": 1},
+            )
+        ]
+        valid_existing_ids = [document["id"] for document in existing_docs]
         missing = set(data.booking_ids) - set(valid_existing_ids)
         if missing:
             raise HTTPException(
                 status_code=404,
                 detail=f"Bu rezervasyonlar bulunamadı veya yetkiniz yok: {', '.join(list(missing)[:3])}",
+            )
+        business_date = await ensure_business_date_initialized(db, tid)
+        historical_ids = [document["id"] for document in existing_docs if reservation_is_historical(document, business_date["business_date"])]
+        if historical_ids:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Geçmiş rezervasyonlar gruba eklenemez: {', '.join(historical_ids[:3])}",
             )
 
     if not data.new_bookings and not valid_existing_ids:
@@ -2595,7 +5186,7 @@ async def add_room_to_group(
     _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
 ):
     """Add a booking/room to a group."""
-    _enforce_perm(current_user.role, "create_booking")  # Bug CP Round-4
+    _enforce_perm(current_user, "create_booking")  # Bug CP Round-4
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
@@ -2606,6 +5197,7 @@ async def add_room_to_group(
     booking = await db.bookings.find_one({"id": data.booking_id, "tenant_id": tid}, {"_id": 0})
     if not booking:
         raise HTTPException(status_code=404, detail="Rezervasyon bulunamadi")
+    await ensure_reservation_mutable(db, tid, booking)
 
     existing_ids = group.get("booking_ids", [])
     if data.booking_id not in existing_ids:
@@ -2630,7 +5222,7 @@ async def group_check_in_all(
     _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
 ):
     """Check-in all reservations in a group — each via atomic transaction."""
-    _enforce_perm(current_user.role, "checkin")  # Bug CP Round-4
+    _enforce_perm(current_user, "checkin")  # Bug CP Round-4
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
@@ -2641,9 +5233,21 @@ async def group_check_in_all(
     from core.atomic_checkin_checkout import CheckInError, check_in_booking_atomic
     from routers.webhook_retry_service import schedule_emit_reservation_updated
 
+    group_booking_ids = list(group.get("booking_ids", []))
+    group_bookings = {
+        item["id"]: item
+        async for item in db.bookings.find(
+            {"id": {"$in": group_booking_ids}, "tenant_id": tid},
+            {"_id": 0, "id": 1, "status": 1, "check_out": 1},
+        )
+    }
+    business_date = await ensure_business_date_initialized(db, tid)
     checked_in = 0
     errors = []
-    for bid in group.get("booking_ids", []):
+    for bid in group_booking_ids:
+        if reservation_is_historical(group_bookings.get(bid, {}), business_date["business_date"]):
+            errors.append({"booking_id": bid, "error": "Geçmiş rezervasyon salt okunurdur"})
+            continue
         try:
             await check_in_booking_atomic(
                 booking_id=bid,
@@ -2668,7 +5272,7 @@ async def group_check_out_all(
     _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
 ):
     """Check-out all reservations in a group — each via atomic transaction."""
-    _enforce_perm(current_user.role, "checkout")  # Bug CP Round-4
+    _enforce_perm(current_user, "checkout")  # Bug CP Round-4
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
@@ -2679,9 +5283,21 @@ async def group_check_out_all(
     from core.atomic_checkin_checkout import CheckOutError, check_out_booking_atomic
     from routers.webhook_retry_service import schedule_emit_reservation_updated
 
+    group_booking_ids = list(group.get("booking_ids", []))
+    group_bookings = {
+        item["id"]: item
+        async for item in db.bookings.find(
+            {"id": {"$in": group_booking_ids}, "tenant_id": tid},
+            {"_id": 0, "id": 1, "status": 1, "check_out": 1},
+        )
+    }
+    business_date = await ensure_business_date_initialized(db, tid)
     checked_out = 0
     errors = []
-    for bid in group.get("booking_ids", []):
+    for bid in group_booking_ids:
+        if reservation_is_historical(group_bookings.get(bid, {}), business_date["business_date"]):
+            errors.append({"booking_id": bid, "error": "Geçmiş rezervasyon salt okunurdur"})
+            continue
         try:
             await check_out_booking_atomic(
                 booking_id=bid,
@@ -2786,7 +5402,7 @@ async def refund_deposit(
     _perm=Depends(require_op("post_payment")),  # v97 DW
 ):
     """Refund a deposit."""
-    _enforce_perm(current_user.role, "post_payment")  # Bug CP Round-3 — refund treated as payment-class mutation
+    _enforce_perm(current_user, "post_payment")  # Bug CP Round-3 — refund treated as payment-class mutation
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
@@ -2865,13 +5481,28 @@ async def refund_deposit(
                 detail="Iade tutari kalan depozito bakiyesinden buyuk olamaz",
             )
 
+        folio = await _ensure_reservation_folio(
+            tid,
+            current_booking,
+            preferred_folio_id=current_deposit.get("folio_id"),
+            session=session,
+        )
+        currency = str(
+            current_deposit.get("currency")
+            or current_booking.get("currency")
+            or folio.get("currency")
+            or "TRY"
+        ).upper()
+
         refund = {
             "id": refund_id,
             "payment_id": payment_id,
+            "folio_id": folio["id"],
             "tenant_id": tid,
             "booking_id": booking_id,
             "deposit_id": data.deposit_id,
             "refund_amount": data.refund_amount,
+            "currency": currency,
             "refund_method": data.refund_method,
             "reason": data.reason,
             "status": "refunded",
@@ -2883,11 +5514,12 @@ async def refund_deposit(
         payment = {
             "id": payment_id,
             "tenant_id": tid,
-            "folio_id": "",
+            "folio_id": folio["id"],
             "booking_id": booking_id,
             "deposit_id": data.deposit_id,
             "deposit_refund_id": refund_id,
             "amount": -round(data.refund_amount, 2),
+            "currency": currency,
             "method": data.refund_method,
             "payment_type": "refund",
             "status": "refunded",
@@ -2897,6 +5529,7 @@ async def refund_deposit(
             "processed_at": now,
             "voided": False,
         }
+        await stamp_open_business_date(db, tid, payment)
         await db.payments.insert_one({**payment}, session=session)
 
         refunded_total = round(current_refunded + data.refund_amount, 2)
@@ -2952,6 +5585,11 @@ async def refund_deposit(
         raise
 
     await _run_post_commit_hook(
+        lambda: _refresh_cached_folio_balance(tid, result["payment"]["folio_id"]),
+        operation="refund_deposit_folio_balance",
+    )
+
+    await _run_post_commit_hook(
         lambda: _log_activity(
             tid,
             booking_id,
@@ -2960,6 +5598,7 @@ async def refund_deposit(
             {
                 "deposit_id": data.deposit_id,
                 "refund_amount": data.refund_amount,
+                "currency": result["payment"]["currency"],
             },
         ),
         operation="refund_deposit_activity",
@@ -2975,6 +5614,7 @@ async def refund_deposit(
             {
                 "payment_id": result["payment"]["id"],
                 "amount": data.refund_amount,
+                "currency": result["payment"]["currency"],
                 "method": data.refund_method,
                 "payment_type": "refund",
             },
@@ -2993,13 +5633,237 @@ async def list_all_deposits(current_user: User = Depends(get_current_user)):
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
-    deposits = []
-    async for d in db.deposits.find({"tenant_id": tid}, {"_id": 0}).sort("created_at", -1):
-        # Enrich with booking info
-        booking = await db.bookings.find_one({"id": d.get("booking_id"), "tenant_id": tid}, {"_id": 0, "guest_name": 1, "room_number": 1, "check_in": 1, "check_out": 1})
-        if booking:
-            d["guest_name"] = booking.get("guest_name")
-            d["room_number"] = booking.get("room_number")
-        deposits.append(d)
+    from core.guest_name_utils import canonical_guest_name, display_guest_name
+
+    deposits = await db.deposits.find({"tenant_id": tid}, {"_id": 0}).sort("created_at", -1).to_list(5000)
+    booking_ids = list({d.get("booking_id") for d in deposits if d.get("booking_id")})
+    bookings = await db.bookings.find(
+        {"id": {"$in": booking_ids}, "tenant_id": tid},
+        {"_id": 0, "id": 1, "guest_id": 1, "guest_name": 1, "room_number": 1, "check_in": 1, "check_out": 1, "currency": 1},
+    ).to_list(len(booking_ids) or 1)
+    bookings_by_id = {booking.get("id"): booking for booking in bookings}
+
+    guest_ids = list({booking.get("guest_id") for booking in bookings if booking.get("guest_id")})
+    guests = await db.guests.find(
+        {"id": {"$in": guest_ids}, "tenant_id": tid},
+        {"_id": 0, "id": 1, "name": 1, "full_name": 1, "first_name": 1, "last_name": 1},
+    ).to_list(len(guest_ids) or 1)
+    guests_by_id = {guest.get("id"): guest for guest in guests}
+
+    for deposit in deposits:
+        booking = bookings_by_id.get(deposit.get("booking_id"))
+        if not booking:
+            deposit["guest_name"] = display_guest_name(deposit.get("guest_name"), None)
+            deposit["currency"] = str(deposit.get("currency") or "TRY").upper()
+            continue
+
+        guest_id = booking.get("guest_id")
+        guest_name = canonical_guest_name(guests_by_id.get(guest_id)) or booking.get("guest_name")
+        deposit["guest_name"] = display_guest_name(guest_name, guest_id)
+        deposit["room_number"] = booking.get("room_number")
+        # Legacy deposit rows did not persist currency. Enrich them from
+        # their reservation so foreign-currency deposits are never shown
+        # or aggregated as TRY.
+        deposit["currency"] = str(deposit.get("currency") or booking.get("currency") or "TRY").upper()
 
     return {"deposits": deposits}
+
+
+class ReservationGuestCreate(BaseModel):
+    """Guest fields accepted when linking another occupant to a reservation."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(..., min_length=2, max_length=200)
+    email: str = Field("", max_length=320)
+    phone: str = Field("", max_length=40)
+    id_type: str = Field("tc_kimlik", max_length=40)
+    id_number: str = Field("", max_length=80)
+    nationality: str = Field("TR", max_length=80)
+    date_of_birth: str = Field("", max_length=20)
+    gender: str = Field("", max_length=40)
+    address: str = Field("", max_length=1000)
+    city: str = Field("", max_length=160)
+    country: str = Field("", max_length=160)
+    notes: str = Field("", max_length=2000)
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, value: str) -> str:
+        cleaned = " ".join(value.strip().split())
+        if len(cleaned) < 2:
+            raise ValueError("Misafir adı en az 2 karakter olmalıdır")
+        return cleaned
+
+    @field_validator(
+        "email",
+        "phone",
+        "id_type",
+        "id_number",
+        "nationality",
+        "date_of_birth",
+        "gender",
+        "address",
+        "city",
+        "country",
+        "notes",
+    )
+    @classmethod
+    def strip_text(cls, value: str) -> str:
+        return value.strip()
+
+
+@router.post("/reservations/{booking_id}/guests")
+async def add_reservation_guest(
+    booking_id: str,
+    data: ReservationGuestCreate,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v97("frontdesk")),
+):
+    _enforce_perm(current_user, "edit_booking")
+    _ensure_hotel_context(current_user)
+    tid = current_user.tenant_id
+
+    booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tid}, {"_id": 0})
+    if not booking:
+        raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
+    await ensure_reservation_mutable(db, tid, booking)
+
+    from routers.pms_guests import _encrypt_guest
+
+    candidate = data.model_dump()
+    if candidate.get("id_type") == "passport" and candidate.get("id_number"):
+        candidate["passport_number"] = candidate["id_number"]
+
+    existing_guest = await find_existing_guest_by_identity(db.guests, tid, candidate)
+    created = existing_guest is None
+    if existing_guest:
+        guest_id = existing_guest["id"]
+    else:
+        guest_id = f"GST-{uuid.uuid4().hex[:8].upper()}"
+        guest = {
+            **candidate,
+            "id": guest_id,
+            "tenant_id": tid,
+            "created_at": datetime.now(UTC).isoformat(),
+            "total_stays": 0,
+            "total_spend": 0.0,
+        }
+        from security.search_normalize import normalized_set_for_update
+
+        normalized = normalized_set_for_update(guest, collection="guests")
+        guest = _encrypt_guest(guest)
+        guest.update(normalized)
+        await db.guests.insert_one(guest)
+
+    already_linked = guest_id == booking.get("guest_id") or bool(
+        await db.booking_guests.find_one(
+            {"tenant_id": tid, "booking_id": booking_id, "guest_id": guest_id},
+            {"_id": 0, "id": 1},
+        )
+    )
+    if already_linked:
+        return {
+            "status": "ok",
+            "guest_id": guest_id,
+            "created": created,
+            "linked": False,
+            "already_linked": True,
+        }
+
+    await db.booking_guests.insert_one(
+        {
+            "id": f"BG-{uuid.uuid4().hex[:8].upper()}",
+            "tenant_id": tid,
+            "booking_id": booking_id,
+            "guest_id": guest_id,
+            "created_at": datetime.now(UTC).isoformat(),
+        }
+    )
+
+    # Oda zaten giriş yaptıysa sonradan eklenen kişi de ayrı bir yasal KBS
+    # kaydıdır. Ana rezervasyonun daha önce bildirilmiş olması bu misafiri
+    # kapsamaz; kişi bazlı kuyruk anahtarıyla otomatik bildirimi başlat.
+    if booking.get("status") == "checked_in":
+        from core.kbs_auto_enqueue import auto_enqueue_kbs
+
+        await auto_enqueue_kbs(
+            tid,
+            booking_id,
+            action="checkin",
+            actor=f"user:reservation_guest_added:{current_user.id}",
+            target_guest_id=guest_id,
+        )
+
+    return {
+        "status": "ok",
+        "guest_id": guest_id,
+        "created": created,
+        "linked": True,
+        "already_linked": False,
+    }
+
+
+@router.delete("/reservations/{booking_id}/guests/{guest_id}")
+async def unlink_reservation_guest(
+    booking_id: str,
+    guest_id: str,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v97("frontdesk")),
+):
+    _enforce_perm(current_user, "edit_booking")
+    tid = current_user.tenant_id
+    booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tid}, {"_id": 0})
+    if not booking:
+        raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
+    await ensure_reservation_mutable(db, tid, booking)
+
+    if guest_id == booking.get("guest_id"):
+        await db.bookings.update_one({"id": booking_id, "tenant_id": tid}, {"$set": {"guest_id": None}})
+    else:
+        await db.booking_guests.delete_many({"booking_id": booking_id, "tenant_id": tid, "guest_id": guest_id})
+    return {"status": "ok"}
+
+
+@router.post(
+    "/{booking_id}/guests/{guest_id}/checkout",
+    response_model=dict,
+    summary="Checkout a specific guest",
+    description="Marks a specific guest as checked out and enqueues a KBS checkout job.",
+)
+async def checkout_reservation_guest(
+    booking_id: str,
+    guest_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    tenant_id = current_user.tenant_id
+
+    # Ana misafir mi kontrol et
+    booking = await db.bookings.find_one({"tenant_id": tenant_id, "id": booking_id}, {"_id": 0, "guest_id": 1, "status": 1})
+    if not booking:
+        raise HTTPException(status_code=404, detail="Reservation not found")
+
+    if booking.get("guest_id") == guest_id:
+        raise HTTPException(status_code=400, detail="Ana misafir erken çıkış yapamaz. Tüm rezervasyonu çıkış yapmalısınız.")
+
+    # Ekstra misafir kontrolü
+    bg = await db.booking_guests.find_one({"tenant_id": tenant_id, "booking_id": booking_id, "guest_id": guest_id})
+    if not bg:
+        raise HTTPException(status_code=404, detail="Guest is not linked to this reservation")
+
+    if bg.get("checkout_date"):
+        raise HTTPException(status_code=400, detail="Misafir zaten çıkış yapmış")
+
+    from datetime import UTC, datetime
+
+    now_iso = datetime.now(UTC).isoformat()
+
+    await db.booking_guests.update_one({"tenant_id": tenant_id, "booking_id": booking_id, "guest_id": guest_id}, {"$set": {"checkout_date": now_iso}})
+
+    # KBS Queue
+    if booking.get("status") in ("checked_in", "checked_out"):
+        from core.kbs_auto_enqueue import auto_enqueue_kbs
+
+        await auto_enqueue_kbs(tenant_id, booking_id, action="checkout", actor="user:manual_guest_checkout", target_guest_id=guest_id)
+
+    return {"status": "ok", "checkout_date": now_iso}

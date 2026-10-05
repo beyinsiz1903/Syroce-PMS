@@ -23,6 +23,7 @@ from core.security import (
     get_current_user,
     security,
 )
+from core.tenant_currency import get_tenant_currency
 from modules.pms_core.role_permission_service import require_module  # v89 DW
 from modules.pms_core.role_permission_service import require_module as require_module_v92  # v92 DW
 
@@ -475,6 +476,7 @@ async def get_active_orders(
     Filters by status and outlet, calculates preparation time and delayed orders
     """
     current_user = await get_current_user(credentials)
+    tenant_currency, _ = await get_tenant_currency(current_user.tenant_id)
 
     # Build query
     query = {
@@ -523,6 +525,7 @@ async def get_active_orders(
                 # reads grand_total). Additive; legacy docs without it stay absent
                 # so the client falls back to total_amount.
                 "grand_total": order.get("grand_total"),
+                "currency": str(order.get("currency") or tenant_currency).upper(),
                 "time_elapsed_minutes": int(time_elapsed),
                 "is_delayed": is_delayed,
                 "created_at": order.get("created_at"),
@@ -541,6 +544,7 @@ async def get_order_details(order_id: str, credentials: HTTPAuthorizationCredent
     Including items, notes, timing, and guest information
     """
     current_user = await get_current_user(credentials)
+    tenant_currency, _ = await get_tenant_currency(current_user.tenant_id)
 
     order = await db.pos_orders.find_one({"id": order_id, "tenant_id": current_user.tenant_id})
 
@@ -584,6 +588,8 @@ async def get_order_details(order_id: str, credentials: HTTPAuthorizationCredent
         "subtotal": order.get("subtotal", 0),
         "tax_amount": order.get("tax_amount", 0),
         "total_amount": order.get("total_amount", 0),
+        "grand_total": order.get("grand_total"),
+        "currency": str(order.get("currency") or tenant_currency).upper(),
         "payment_status": order.get("payment_status", "unpaid"),
         "server_name": order.get("server_name", ""),
         "notes": order.get("notes", ""),
@@ -609,37 +615,62 @@ async def update_order_status(
     """
     current_user = await get_current_user(credentials)
 
-    # Validate status
     valid_statuses = ["pending", "preparing", "ready", "served", "cancelled"]
     if request.status not in valid_statuses:
-        raise HTTPException(status_code=400, detail=f"Invalid status. Must be one of: {', '.join(valid_statuses)}")
+        raise HTTPException(status_code=422, detail="Geçersiz sipariş durumu")
 
     # Get order
     order = await db.pos_orders.find_one({"id": order_id, "tenant_id": current_user.tenant_id})
 
     if not order:
-        raise HTTPException(status_code=404, detail="Order not found")
+        raise HTTPException(status_code=404, detail="Sipariş bulunamadı")
+
+    current_status = order.get("status", "pending")
+    if request.status == current_status:
+        return {
+            "message": "Sipariş durumu zaten güncel",
+            "order_id": order_id,
+            "new_status": current_status,
+            "updated_at": order.get("updated_at"),
+            "idempotent": True,
+        }
+
+    allowed_transitions = {
+        "pending": {"preparing", "cancelled"},
+        "preparing": {"ready", "cancelled"},
+        "ready": {"served"},
+        "served": set(),
+        "cancelled": set(),
+    }
+    if request.status not in allowed_transitions.get(current_status, set()):
+        raise HTTPException(
+            status_code=409,
+            detail=f"Sipariş {current_status} durumundan {request.status} durumuna geçirilemez.",
+        )
 
     # Add to status history
-    status_history = order.get("status_history", [])
-    status_history.append(
-        {
-            "from_status": order.get("status", "pending"),
-            "to_status": request.status,
-            "changed_by": current_user.username,
-            "changed_by_role": current_user.role,
-            "notes": request.notes,
-            "timestamp": datetime.now(UTC).isoformat(),
-        }
-    )
+    now = datetime.now(UTC).isoformat()
+    history_entry = {
+        "from_status": current_status,
+        "to_status": request.status,
+        "changed_by": current_user.username,
+        "changed_by_role": current_user.role,
+        "notes": request.notes,
+        "timestamp": now,
+    }
 
     # Update order
-    await db.pos_orders.update_one(
-        {"id": order_id, "tenant_id": current_user.tenant_id},
-        {"$set": {"status": request.status, "status_history": status_history, "updated_at": datetime.now(UTC).isoformat(), "updated_by": current_user.username}},
+    result = await db.pos_orders.update_one(
+        {"id": order_id, "tenant_id": current_user.tenant_id, "status": current_status},
+        {
+            "$set": {"status": request.status, "updated_at": now, "updated_by": current_user.username},
+            "$push": {"status_history": history_entry},
+        },
     )
+    if result.modified_count != 1:
+        raise HTTPException(status_code=409, detail="Sipariş başka bir kullanıcı tarafından güncellendi. Listeyi yenileyip tekrar deneyin.")
 
-    return {"message": "Order status updated successfully", "order_id": order_id, "new_status": request.status, "updated_at": datetime.now(UTC).isoformat()}
+    return {"message": "Sipariş durumu güncellendi", "order_id": order_id, "new_status": request.status, "updated_at": now}
 
 
 # ── GET /pos/mobile/order-history ──
@@ -658,6 +689,7 @@ async def get_order_history(
     Filters: date range, outlet, server, status
     """
     current_user = await get_current_user(credentials)
+    tenant_currency, _ = await get_tenant_currency(current_user.tenant_id)
 
     # Build query
     query = {"tenant_id": current_user.tenant_id}
@@ -695,6 +727,8 @@ async def get_order_history(
                 "guest_name": order.get("guest_name", "Walk-in"),
                 "items_count": len(order.get("order_items", [])),
                 "total_amount": order.get("total_amount", 0),
+                "grand_total": order.get("grand_total"),
+                "currency": str(order.get("currency") or tenant_currency).upper(),
                 "server_name": order.get("server_name", ""),
                 "created_at": order.get("created_at"),
                 "payment_status": order.get("payment_status", "unpaid"),

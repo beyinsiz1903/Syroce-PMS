@@ -4,10 +4,11 @@ Tests all new infrastructure components: Redis cluster, distributed locks,
 worker queues, secrets manager, backup manager, cloud observability,
 horizontal scaling, and WebSocket adapter.
 """
-import pytest
+import asyncio
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
+import pytest
 
 # ── Redis Cluster Manager Tests ────────────────────────────────────
 
@@ -114,14 +115,15 @@ class TestWorkerQueueManager:
         assert failures[-1]["error"] == "some error"
 
     def test_stuck_candidates(self):
-        from infra.worker_queue import WorkerQueueManager
         from datetime import timedelta
+
+        from infra.worker_queue import WorkerQueueManager
         mgr = WorkerQueueManager()
         mgr.record_task_start("stuck_task", "id3", "default")
         # Manually backdate the started_at
         for entry in mgr._task_history:
             if entry["task_id"] == "id3":
-                old_time = datetime.now(timezone.utc) - timedelta(seconds=600)
+                old_time = datetime.now(UTC) - timedelta(seconds=600)
                 entry["started_at"] = old_time.isoformat()
         stuck = mgr.get_stuck_task_candidates(timeout_sec=300)
         assert len(stuck) >= 1
@@ -198,6 +200,24 @@ class TestBackupManager:
         assert result["backup_type"] == "test"
         # Either simulated (no mongodump) or completed
         assert result["status"] in ("simulated", "completed", "failed")
+
+    @pytest.mark.asyncio
+    async def test_missing_mongodump_is_failure_in_production(self, monkeypatch, tmp_path):
+        from infra.backup_manager import BackupManager
+
+        monkeypatch.setenv("ENVIRONMENT", "production")
+        monkeypatch.setenv("BACKUP_PATH", str(tmp_path))
+        mgr = BackupManager()
+
+        async def missing_binary(*args, **kwargs):
+            raise FileNotFoundError("mongodump")
+
+        monkeypatch.setattr(asyncio, "create_subprocess_exec", missing_binary)
+        result = await mgr.create_backup("scheduled")
+
+        assert result["status"] == "failed"
+        assert mgr.get_status()["last_successful"] is None
+        assert mgr.get_status()["metrics"]["failed_backups"] == 1
 
 
 # ── Cloud Observability Tests ──────────────────────────────────────
@@ -380,6 +400,7 @@ class TestWSRedisAdapter:
         listener — and must NOT be re-delivered on A (loopback guard).
         """
         import asyncio
+
         from infra.ws_redis_adapter import WebSocketRedisAdapter
 
         # Shared in-memory bus mimicking Redis pub/sub between two instances.
@@ -615,6 +636,7 @@ class TestWSRedisAdapter:
         """
         import asyncio
         import json
+
         from infra.ws_redis_adapter import WebSocketRedisAdapter
 
         pubsubs: list = []
@@ -750,6 +772,7 @@ class TestWSRedisAdapter:
         no-op because ``self._pubsub`` is briefly ``None``.
         """
         import asyncio
+
         from infra.ws_redis_adapter import WebSocketRedisAdapter
 
         pubsubs: list = []
@@ -857,6 +880,7 @@ class TestWSRedisAdapter:
         must reach a client connected to instance B that has subscribed to
         the same tenant-scoped room."""
         import asyncio
+
         from infra.ws_redis_adapter import WebSocketRedisAdapter
 
         queues: dict[str, list[asyncio.Queue]] = {}

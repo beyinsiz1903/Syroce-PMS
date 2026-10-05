@@ -186,6 +186,35 @@ describe('RoomRequestPage', () => {
     await waitFor(() => expect(screen.getByText("Hello")).toBeInTheDocument(), { timeout: 3000 });
   });
 
+  it('sends a guest follow-up with the booking-scoped session header', async () => {
+    axios.get.mockImplementation((url) => {
+      if (url.includes('/thread')) return Promise.resolve({ data: { messages: [{ id: "m1", body: "Otel yanıtı", sender_type: "staff", created_at: "2026-01-01T10:00:00Z" }] } });
+      if (url.includes('/catalogue')) return Promise.reject({ response: { status: 404 } });
+      if (url.includes('/room-qr/tenant1/room1')) return Promise.resolve({ data: mockMeta });
+      return Promise.reject({ response: { status: 404 } });
+    });
+    axios.post.mockImplementation((url) => {
+      if (url.includes('/thread/message')) return Promise.resolve({ data: { success: true } });
+      return Promise.resolve({ data: { session_token: "guest123" } });
+    });
+
+    renderComponent();
+    await waitFor(() => expect(screen.getByText("Otel yanıtı")).toBeInTheDocument());
+
+    fireEvent.change(screen.getByTestId('input-guest-reply'), {
+      target: { value: 'Teşekkür ederim' },
+    });
+    fireEvent.click(screen.getByTestId('button-guest-send'));
+
+    await waitFor(() => {
+      expect(axios.post).toHaveBeenCalledWith(
+        '/public/room-qr/tenant1/room1/thread/message',
+        { body: 'Teşekkür ederim' },
+        { headers: { 'X-Guest-Session': 'guest123' } },
+      );
+    });
+  });
+
   // Valid Catalogue Scenarios
   const setupCatalogue = () => {
     axios.get.mockImplementation((url) => {
@@ -236,6 +265,16 @@ describe('RoomRequestPage', () => {
     expect(screen.getByText('Odanız için temizlik hizmeti talep edin.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Talebe ekle' })).toBeInTheDocument();
     expect(screen.queryByText('housekeeping.room_cleaning')).not.toBeInTheDocument();
+  });
+
+  it('labels time controls instead of rendering an unexplained blank field', async () => {
+    setupCatalogue();
+    await waitFor(() => screen.getByTestId("dept-rooms"));
+    fireEvent.click(screen.getByTestId("dept-rooms"));
+
+    const timeInput = await screen.findByLabelText("Select time");
+    expect(timeInput).toHaveAttribute("type", "time");
+    expect(timeInput).toHaveAttribute("step", "900");
   });
 
   it('quantity default/min/max and exact payload', async () => {

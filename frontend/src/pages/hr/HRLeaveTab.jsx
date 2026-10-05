@@ -95,45 +95,45 @@ export default function HRLeaveTab({ leaveCounts, loadLeaveBalances, staffPage, 
                 <form onSubmit={submitLeave} className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
                   <div>
                     <Label className="text-xs">Personel</Label>
-                    <select value={leaveForm.staff_id} onChange={e => setLeaveForm({
-              ...leaveForm,
+                    <select value={leaveForm.staff_id} onChange={e => setLeaveForm(prev => ({
+              ...prev,
               staff_id: e.target.value
-            })} className="w-full rounded-md border border-input px-3 py-2 text-sm" data-testid="select-leave-staff">
+            }))} className="w-full rounded-md border border-input px-3 py-2 text-sm" data-testid="select-leave-staff">
                       <option value="">{t('cm.pages_HRComplete.secin')}</option>
                       {staffDropdown.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                     </select>
                   </div>
                   <div>
                     <Label className="text-xs">{t('cm.pages_HRComplete.izin_turu')}</Label>
-                    <select value={leaveForm.leave_type} onChange={e => setLeaveForm({
-              ...leaveForm,
+                    <select value={leaveForm.leave_type} onChange={e => setLeaveForm(prev => ({
+              ...prev,
               leave_type: e.target.value
-            })} className="w-full rounded-md border border-input px-3 py-2 text-sm">
+            }))} className="w-full rounded-md border border-input px-3 py-2 text-sm">
                       {Object.entries(LEAVE_TYPE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                     </select>
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                     <div>
                       <Label className="text-xs">{t('cm.pages_HRComplete.baslangic')}</Label>
-                      <Input type="date" value={leaveForm.start_date} onChange={e => setLeaveForm({
-                ...leaveForm,
+                      <Input type="date" value={leaveForm.start_date} onChange={e => setLeaveForm(prev => ({
+                ...prev,
                 start_date: e.target.value
-              })} />
+              }))} data-testid="leave-start-date" />
                     </div>
                     <div>
                       <Label className="text-xs">{t('cm.pages_HRComplete.bitis')}</Label>
-                      <Input type="date" value={leaveForm.end_date} onChange={e => setLeaveForm({
-                ...leaveForm,
+                      <Input type="date" value={leaveForm.end_date} onChange={e => setLeaveForm(prev => ({
+                ...prev,
                 end_date: e.target.value
-              })} />
+              }))} data-testid="leave-end-date" />
                     </div>
                   </div>
                   <div className="md:col-span-2 lg:col-span-3">
                     <Label className="text-xs">{t('cm.pages_HRComplete.aciklama')}</Label>
-                    <Textarea rows={2} value={leaveForm.reason} onChange={e => setLeaveForm({
-              ...leaveForm,
+                    <Textarea rows={2} value={leaveForm.reason} onChange={e => setLeaveForm(prev => ({
+              ...prev,
               reason: e.target.value
-            })} placeholder={t('cm.pages_HRComplete.istege_bagli')} />
+            }))} placeholder={t('cm.pages_HRComplete.istege_bagli')} />
                   </div>
                   <div className="md:col-span-2 lg:col-span-3 flex justify-end">
                     <Button type="submit" disabled={creatingLeave} data-testid="btn-submit-leave">

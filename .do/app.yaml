@@ -131,8 +131,12 @@ envs:
   - key: MESSAGING_MODE
     value: sandbox         # gercek SMS/WhatsApp icin "live" + saglayici key
     scope: RUN_TIME
-  - key: BACKUP_ENABLED
-    value: "true"
+  # Tier bilgisi tek başına backup kanıtı değildir. Atlas konsolunda
+  # doğruladıktan sonra ATLAS_CLOUD_BACKUP_ENABLED=true ve
+  # ATLAS_PITR_ENABLED=true değerlerini de panelde tanımlayın. Readiness,
+  # Atlas Admin API ile taze snapshot görmeden production'da PASS vermez.
+  - key: ATLAS_TIER
+    value: M10
     scope: RUN_TIME
   - key: SENTRY_ENVIRONMENT
     value: production
@@ -187,7 +191,9 @@ envs:
   #     CC_RECORDING_S3_ACCESS_KEY_ID / CC_RECORDING_S3_SECRET_ACCESS_KEY
   #     CC_RECORDING_RETENTION_DAYS (varsayilan 90). worker+beat de gorur.
   #   AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY  (S3 offsite yedek)
-  #   ATLAS_API_PUBLIC_KEY / ATLAS_API_PRIVATE_KEY (Atlas yonetilen yedek)
+  #   ATLAS_API_PUBLIC_KEY / ATLAS_API_PRIVATE_KEY (Atlas snapshot dogrulama)
+  #   ATLAS_PROJECT_ID / ATLAS_CLUSTER_NAME
+  #   ATLAS_CLOUD_BACKUP_ENABLED / ATLAS_PITR_ENABLED (console ile ayni olmali)
   #   VAPID_PRIVATE_KEY (web push)
   #   AFSADAKAT_ADMIN_TOKEN
   # ═══════════════════════════════════════════════════════════════════

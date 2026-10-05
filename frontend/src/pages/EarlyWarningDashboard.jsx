@@ -189,7 +189,7 @@ export default function EarlyWarningDashboard({ user, tenant, onLogout }) {
     <div className="space-y-4 p-4 md:p-6 max-w-7xl mx-auto">
       <PageHeader
         icon={Radar}
-        title={t('cm.pages_EarlyWarningDashboard.erken_uyari_motoru')}
+        title={<span className="flex items-center gap-3">{t('cm.pages_EarlyWarningDashboard.erken_uyari_motoru')} {tenant && <span className="px-3 py-1 bg-indigo-50 text-indigo-700 text-sm font-semibold rounded-full border border-indigo-200">🏨 {tenant.name}</span>}</span>}
         subtitle={t('cm.pages_EarlyWarningDashboard.tahmini_uyarilar_trend_analizi_ve_motor_')}
         actions={
           <div className="flex items-center gap-2">

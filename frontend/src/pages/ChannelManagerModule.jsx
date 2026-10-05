@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
@@ -24,6 +25,7 @@ import {
 } from 'lucide-react';
 
 const ChannelManagerModule = ({ user, tenant, onLogout }) => {
+  const navigate = useNavigate();
   const { t, i18n } = useTranslation();
   const [activeTab, setActiveTab] = useState('connections');
   
@@ -643,13 +645,20 @@ const ChannelManagerModule = ({ user, tenant, onLogout }) => {
                             <p className="text-sm text-gray-600">
                               Type: {conn.channel_type.replace('_', '.')}
                             </p>
+                            {conn.is_legacy_connection && (
+                              <p className="text-xs text-amber-700 mt-1">
+                                Mevcut HotelRunner entegrasyonu · Salt okunur
+                              </p>
+                            )}
                           </div>
                         </div>
                         <div className="flex items-center space-x-4">
                           {getStatusBadge(conn.status)}
-                          <Button variant="outline" size="sm">
-                            <Settings className="w-4 h-4" />
-                          </Button>
+                          {!conn.is_read_only && (
+                            <Button variant="outline" size="sm">
+                              <Settings className="w-4 h-4" />
+                            </Button>
+                          )}
                         </div>
                       </div>
                     ))}
@@ -679,7 +688,7 @@ const ChannelManagerModule = ({ user, tenant, onLogout }) => {
                   </p>
                   <Button
                     className="bg-blue-600 hover:bg-blue-700 text-white"
-                    onClick={() => window.location.href = '/mapping-manager'}
+                    onClick={() => navigate('/mapping-manager')}
                     data-testid="go-to-mapping-manager"
                   >
                     <Settings className="w-4 h-4 mr-2" />
@@ -710,7 +719,7 @@ const ChannelManagerModule = ({ user, tenant, onLogout }) => {
                   </p>
                   <Button
                     className="bg-amber-600 hover:bg-amber-700 text-white"
-                    onClick={() => window.location.href = '/unified-rate-manager'}
+                    onClick={() => navigate('/unified-rate-manager')}
                     data-testid="go-to-rate-manager"
                   >
                     <Settings className="w-4 h-4 mr-2" />
@@ -834,7 +843,7 @@ const ChannelManagerModule = ({ user, tenant, onLogout }) => {
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => window.location.href = '/reservation-lineage'}
+                      onClick={() => navigate('/reservation-lineage')}
                       data-testid="go-to-lineage"
                     >
                       Lineage & Geçmiş

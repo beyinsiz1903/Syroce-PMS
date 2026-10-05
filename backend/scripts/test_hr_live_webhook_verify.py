@@ -7,12 +7,14 @@ from dotenv import load_dotenv
 load_dotenv(override=False)
 sys.path.append("/app")
 
+
 async def main():
     print("==================================================")
     print("HOTELRUNNER LIVE WEBHOOK VERIFICATION REPORT")
     print("==================================================")
 
     from core import database
+
     db = database._raw_db
 
     # Check reservations created/modified in the last 2 hours from HR
@@ -20,10 +22,7 @@ async def main():
 
     # We assume reservation model has fields like `hr_number` or `provider_reservation_id`
     # and `status` (created, modified, cancelled)
-    query = {
-        "channel": "hotelrunner",
-        "updated_at": {"$gte": time_limit}
-    }
+    query = {"channel": "hotelrunner", "updated_at": {"$gte": time_limit}}
 
     docs = await db.reservations.find(query).sort("updated_at", -1).to_list(20)
 
@@ -43,6 +42,7 @@ async def main():
 
     print("==================================================")
     print("If Create, Modify, and Cancel statuses are visible above, Phase B is PASS.")
+
 
 if __name__ == "__main__":
     asyncio.run(main())

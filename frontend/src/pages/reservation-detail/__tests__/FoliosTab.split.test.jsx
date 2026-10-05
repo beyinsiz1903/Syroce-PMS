@@ -37,7 +37,7 @@ vi.mock('axios', () => ({
   },
 }));
 
-import { FoliosTab } from '@/pages/reservation-detail/FoliosTab';
+import { FoliosTab, calculateReceivedCurrency, parseReceivedCurrency, summarizeReceivedPayments } from '@/pages/reservation-detail/FoliosTab';
 
 const booking = { id: 'bk-1', guest_name: 'Ada Lovelace', room_number: '101' };
 const summary = { total_amount: 100, total_charges: 100, total_payments: 0, balance: 100 };
@@ -90,9 +90,63 @@ beforeEach(() => {
   toast.success.mockReset();
 });
 
+describe('kur çevirici', () => {
+  it('rezervasyon ve tahsilat para birimleri arasında çapraz kur hesaplar', () => {
+    const rates = { EUR: 50, USD: 40, TL: 1, TRY: 1 };
+
+    expect(calculateReceivedCurrency(100, 'EUR', 'TL', rates)).toEqual({ rate: 50, amount: 5000 });
+    expect(calculateReceivedCurrency(100, 'EUR', 'USD', rates)).toEqual({ rate: 1.25, amount: 125 });
+    expect(calculateReceivedCurrency(4000, 'TL', 'USD', rates)).toEqual({ rate: 0.025, amount: 100 });
+    expect(calculateReceivedCurrency(100, 'EUR', 'EUR', rates)).toEqual({ rate: 1, amount: 100 });
+  });
+
+  it('döviz çevirici notundan alınan döviz tutarını ayrıştırır', () => {
+    expect(parseReceivedCurrency('[Döviz Çevirici] 145.45 EUR = 165.71 USD. Kur: 1 EUR = 1.1393 USD'))
+      .toEqual({ amount: 165.71, currency: 'USD' });
+  });
+
+  it('yapılandırılmış tahsilat dövizini eski nottan önce kullanır', () => {
+    expect(parseReceivedCurrency('bozuk eski not', {
+      received_amount: 165.71,
+      received_currency: 'USD',
+    })).toEqual({ amount: 165.71, currency: 'USD' });
+  });
+
+  it('peşin tahsilat özetinde gerçekten alınan dövizi kullanır', () => {
+    expect(summarizeReceivedPayments([
+      { amount: 121.21, notes: '[Döviz Çevirici] 121.21 EUR = 138.10 USD. Kur: 1 EUR = 1.1393 USD' },
+    ], 121.21, 'EUR')).toEqual([{ amount: 138.1, currency: 'USD' }]);
+  });
+
+  it('kurlar asenkron geldikten sonra EUR bakiyenin TL karşılığını otomatik doldurur', async () => {
+    axiosGet.mockResolvedValueOnce({ data: { rates: { EUR: 50, USD: 40, TL: 1, TRY: 1 } } });
+    render(<FoliosTab {...singleFolioProps({
+      booking: { ...booking, currency: 'EUR' },
+      summary: { ...summary, reservation_total_due: 145.45, balance: 145.45 },
+    })} />);
+
+    fireEvent.click(screen.getByTestId('btn-odeme-al'));
+    const panel = screen.getByTestId('payment-form');
+    fireEvent.click(within(panel).getByRole('checkbox', { name: /Farklı Döviz ile Hesapla/ }));
+
+    await waitFor(() => expect(axiosGet).toHaveBeenCalledWith('/exchange-rates', { timeout: 10000 }));
+    expect(await within(panel).findByTestId('currency-conversion-summary')).toHaveTextContent('145.45 EUR = 7272.50 TL');
+  });
+});
+
 afterEach(() => cleanup());
 
 describe('FoliosTab — Folyo Böl akışı (Task #419)', () => {
+  it('çıkış yapılmış kartta mutasyonları gizler, görüntüleme ve yazdırmayı açık tutar', () => {
+    render(<FoliosTab {...singleFolioProps({ readOnly: true })} />);
+
+    expect(screen.queryByTestId('btn-odeme-al')).toBeNull();
+    expect(screen.queryByTestId('btn-cariye-aktar')).toBeNull();
+    expect(screen.queryByTestId('btn-folyo-bol')).toBeNull();
+    expect(screen.getByTestId('btn-folyo-yazdir')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Faturayı Görüntüle/i })).toBeInTheDocument();
+  });
+
   it('btn-folyo-bol görünür ve tıklayınca split-folio-panel açılır', () => {
     render(<FoliosTab {...singleFolioProps()} />);
 
@@ -305,6 +359,67 @@ describe('FoliosTab — Folyo Böl akışı (Task #419)', () => {
 });
 
 describe('FoliosTab — sade ödeme akışı', () => {
+  it('işlem geçmişinde muhasebe tutarı yanında alınan dövizi gösterir ve iptali işaretler', () => {
+    render(<FoliosTab {...singleFolioProps({
+      booking: { ...booking, currency: 'EUR' },
+      payments: [
+        {
+          id: 'fx-payment',
+          amount: 145.45,
+          method: 'cash',
+          notes: '[Döviz Çevirici] 145.45 EUR = 165.71 USD. Kur: 1 EUR = 1.1393 USD',
+        },
+        {
+          id: 'voided-payment',
+          amount: 8085.25,
+          method: 'cash',
+          notes: '[Döviz Çevirici] 8085.25 TL tahsil edildi. Kur: 1.0000',
+          voided: true,
+        },
+      ],
+    })} />);
+
+    expect(screen.getByTestId('received-currency-fx-payment')).toHaveTextContent('Alınan: 165,71 USD');
+    expect(screen.getByText('İPTAL')).toBeInTheDocument();
+  });
+
+  it('konaklama, ekstralar ve ön ödemeyi ayrı ve anlaşılır gösterir', () => {
+    render(
+      <FoliosTab
+        {...singleFolioProps({
+          charges: [
+            { id: 'room', charge_type: 'room_charge', charge_category: 'room', description: 'Oda Ücreti', total: 100 },
+            { id: 'meal', charge_type: 'restaurant', charge_category: 'food_beverage', description: 'Akşam Yemeği', total: 30 },
+          ],
+          extra_charges: [
+            { id: 'minibar', charge_name: 'Minibar', category: 'Minibar', total: 20 },
+          ],
+          payments: [
+            { id: 'prepay', amount: 40, payment_type: 'prepayment', method: 'card', notes: 'Rezervasyon ön ödemesi' },
+          ],
+          summary: {
+            total_amount: 100,
+            accommodation_total: 100,
+            additional_charge_total: 50,
+            gross_total: 150,
+            total_payments: 40,
+            prepayment_total: 40,
+            reservation_total_due: 110,
+            balance: 110,
+          },
+        })}
+      />,
+    );
+
+    expect(screen.getAllByText('Konaklama').length).toBeGreaterThan(0);
+    expect(screen.getByText('Ekstralar')).toBeInTheDocument();
+    expect(screen.getByText('Genel Toplam')).toBeInTheDocument();
+    expect(screen.getByTestId('prepayment-summary')).toHaveTextContent('Ön ödeme alındı');
+    expect(screen.getByText('Akşam Yemeği')).toBeInTheDocument();
+    expect(screen.getByText('Yiyecek & İçecek')).toBeInTheDocument();
+    expect(screen.getAllByText('Ön ödeme').length).toBeGreaterThan(0);
+  });
+
   it('ödeme tipini kullanıcıya seçtirmez ve tam bakiye ödemesini otomatik final kaydeder', async () => {
     render(<FoliosTab {...singleFolioProps()} />);
 
@@ -322,10 +437,35 @@ describe('FoliosTab — sade ödeme akışı', () => {
       '/pms/reservations/bk-1/record-payment',
       {
         amount: 100,
+        currency: 'TRY',
+        exchange_rate: 1,
         method: 'cash',
         payment_type: 'final',
+        received_amount: 100,
+        received_currency: 'TRY',
         reference: '',
       },
+    ));
+  });
+
+  it('Ödeme Al tutarında Türkçe ondalık ayıracıyla girilen değeri aynen kaydeder', async () => {
+    render(<FoliosTab {...singleFolioProps()} />);
+
+    fireEvent.click(screen.getByTestId('btn-odeme-al'));
+    const panel = screen.getByTestId('payment-form');
+    const amountInput = within(panel).getByDisplayValue('100');
+
+    fireEvent.change(amountInput, { target: { value: '150,74' } });
+    expect(amountInput).toHaveValue('150,74');
+
+    fireEvent.click(within(panel).getAllByRole('button')[0]);
+
+    await waitFor(() => expect(axiosPost).toHaveBeenCalledWith(
+      '/pms/reservations/bk-1/record-payment',
+      expect.objectContaining({
+        amount: 150.74,
+        payment_type: 'final',
+      }),
     ));
   });
 });

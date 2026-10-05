@@ -16,7 +16,7 @@ import certifi
 from motor.motor_asyncio import AsyncIOMotorClient
 
 STAGING_URL = os.environ.get("STAGING_MONGO_URL", "")
-STAGING_DB  = os.environ.get("STAGING_DB_NAME", "")
+STAGING_DB = os.environ.get("STAGING_DB_NAME", "")
 
 if not STAGING_URL or not STAGING_DB:
     print("ERROR: STAGING_MONGO_URL and STAGING_DB_NAME must be set.")
@@ -40,9 +40,7 @@ async def main():
     # ── provider_secrets ──────────────────────────────────────────────────
     # Migration reads: doc["encrypted_payload"] (dict containing per-field ciphertexts)
     ps_total = await db["provider_secrets"].count_documents({})
-    ps_with_payload = await db["provider_secrets"].count_documents(
-        {"encrypted_payload": {"$exists": True, "$ne": {}}}
-    )
+    ps_with_payload = await db["provider_secrets"].count_documents({"encrypted_payload": {"$exists": True, "$ne": {}}})
     print(f"provider_secrets:")
     print(f"  total                   : {ps_total}")
     print(f"  has encrypted_payload   : {ps_with_payload}")
@@ -50,16 +48,20 @@ async def main():
     # ── credential_vault ──────────────────────────────────────────────────
     # Migration reads: doc["credential_encrypted"] OR doc["credential_value_encoded"]
     # Only active records are scanned.
-    cv_total  = await db["credential_vault"].count_documents({})
+    cv_total = await db["credential_vault"].count_documents({})
     cv_active = await db["credential_vault"].count_documents({"status": "active"})
-    cv_with_encrypted = await db["credential_vault"].count_documents({
-        "status": "active",
-        "credential_encrypted": {"$exists": True, "$ne": ""},
-    })
-    cv_with_encoded = await db["credential_vault"].count_documents({
-        "status": "active",
-        "credential_value_encoded": {"$exists": True, "$ne": ""},
-    })
+    cv_with_encrypted = await db["credential_vault"].count_documents(
+        {
+            "status": "active",
+            "credential_encrypted": {"$exists": True, "$ne": ""},
+        }
+    )
+    cv_with_encoded = await db["credential_vault"].count_documents(
+        {
+            "status": "active",
+            "credential_value_encoded": {"$exists": True, "$ne": ""},
+        }
+    )
     print()
     print(f"credential_vault:")
     print(f"  total                   : {cv_total}")
@@ -69,10 +71,8 @@ async def main():
 
     # ── _dev_secrets ──────────────────────────────────────────────────────
     # Migration reads: doc["encrypted_payload"] (same as provider_secrets)
-    dev_total        = await db["_dev_secrets"].count_documents({})
-    dev_with_payload = await db["_dev_secrets"].count_documents(
-        {"encrypted_payload": {"$exists": True, "$ne": ""}}
-    )
+    dev_total = await db["_dev_secrets"].count_documents({})
+    dev_with_payload = await db["_dev_secrets"].count_documents({"encrypted_payload": {"$exists": True, "$ne": ""}})
     print()
     print(f"_dev_secrets:")
     print(f"  total                   : {dev_total}")

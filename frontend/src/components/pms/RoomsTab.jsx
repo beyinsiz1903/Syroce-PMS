@@ -9,11 +9,34 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
-import { BedDouble, User, LogIn, LogOut, CreditCard, AlertTriangle, SprayCan, ExternalLink, Banknote, Building2, Wallet, Plus, CalendarPlus, Search, UserCheck, UserPlus, Calendar, Clock, AlertOctagon, UserCircle2 } from 'lucide-react';
+import { Checkbox } from '@/components/ui/checkbox';
+import { BedDouble, User, LogIn, LogOut, CreditCard, AlertTriangle, SprayCan, ExternalLink, Banknote, Building2, Wallet, Plus, CalendarPlus, Search, UserCheck, UserPlus, Calendar, Clock, AlertOctagon, UserCircle2, Wrench } from 'lucide-react';
 import BookingConflictDialog from '@/components/pms/BookingConflictDialog';
+import RoomBlockDialog from '@/components/pms/RoomBlockDialog';
 import { parseBookingConflict } from '@/lib/bookingConflict';
 import { classifyGuestPayment } from '@/utils/paymentClassification';
 import { deduplicateGuestSearchResults, maskGuestDocument } from '@/pages/calendar/guestIdentity';
+import { getRoomBlockForDate, normalizeRoomBlocksResponse } from '@/pages/calendar/calendarHelpers';
+import { bookingFinancials } from '@/lib/bookingFinancials';
+import { formatCurrency } from '@/lib/currency';
+import { moneyInputProps, parseMoneyInput } from '@/lib/moneyInput';
+
+export const formatCleaningDuration = (minutes) => {
+  const roundedMinutes = Math.round(Number(minutes));
+  if (!Number.isFinite(roundedMinutes) || roundedMinutes < 0) return null;
+
+  if (roundedMinutes >= 24 * 60) {
+    return `${Math.floor(roundedMinutes / (24 * 60))} gün`;
+  }
+
+  if (roundedMinutes >= 60) {
+    const hours = Math.floor(roundedMinutes / 60);
+    const remainder = roundedMinutes % 60;
+    return remainder ? `${hours} sa ${remainder} dk` : `${hours} sa`;
+  }
+
+  return `${roundedMinutes} dk`;
+};
 
 const RoomsTab = ({
   rooms,
@@ -29,6 +52,7 @@ const RoomsTab = ({
 }) => {
   const { t } = useTranslation();
   const [typeFilter, setTypeFilter] = useState('all');
+  const [sortMode, setSortMode] = useState('number');
   const [viewFilter, setViewFilter] = useState('all');
   const [amenityFilter, setAmenityFilter] = useState('all');
 
@@ -71,6 +95,13 @@ const RoomsTab = ({
   const [paymentMethod, setPaymentMethod] = useState('cash');
   const [paymentLoading, setPaymentLoading] = useState(false);
 
+  // Currency Converter state
+  const [useCurrencyConverter, setUseCurrencyConverter] = useState(false);
+  const [foreignCurrency, setForeignCurrency] = useState('TL');
+  const [foreignAmount, setForeignAmount] = useState('');
+  const [exchangeRate, setExchangeRate] = useState('');
+  const [tcmbRates, setTcmbRates] = useState({});
+
   // Quick reservation dialog state
   const [quickResDialog, setQuickResDialog] = useState(false);
   const [quickResRoom, setQuickResRoom] = useState(null);
@@ -79,6 +110,11 @@ const RoomsTab = ({
     check_in: '', check_out: '', total_amount: '',
   });
   const [quickResLoading, setQuickResLoading] = useState(false);
+  const [markingCleanRoomId, setMarkingCleanRoomId] = useState(null);
+  const [roomBlockDialog, setRoomBlockDialog] = useState(false);
+  const [roomToBlock, setRoomToBlock] = useState(null);
+  const [roomBlocks, setRoomBlocks] = useState([]);
+  const [roomContextMenu, setRoomContextMenu] = useState(null);
 
   // Guest search state
   const [guestSearchQuery, setGuestSearchQuery] = useState('');
@@ -96,6 +132,40 @@ const RoomsTab = ({
     return d.toISOString().split('T')[0];
   }, [today]);
 
+  const loadRoomBlocks = useCallback(async () => {
+    try {
+      const response = await axios.get('/pms/room-blocks?status=active');
+      setRoomBlocks(normalizeRoomBlocksResponse(response.data));
+    } catch {
+      // A temporary block-read failure must not make an operational room card
+      // look blocked indefinitely; the next refresh retries the request.
+      setRoomBlocks([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadRoomBlocks();
+  }, [loadRoomBlocks]);
+
+  // Odalar ekranındaki kartlar da takvimdeki gibi operasyonel hızlı işlemler
+  // sunar. Scroll veya sayfa tıklaması menüyü güvenle kapatır.
+  useEffect(() => {
+    const close = () => setRoomContextMenu(null);
+    window.addEventListener('click', close);
+    window.addEventListener('scroll', close, true);
+    return () => {
+      window.removeEventListener('click', close);
+      window.removeEventListener('scroll', close, true);
+    };
+  }, []);
+
+  const handleRoomBlockChanged = useCallback(async () => {
+    await Promise.all([
+      loadRoomBlocks(),
+      Promise.resolve(onDataRefresh?.()),
+    ]);
+  }, [loadRoomBlocks, onDataRefresh]);
+
   // Build a map of room_number -> current guest info from active bookings
   const roomGuestMap = useMemo(() => {
     const map = {};
@@ -106,7 +176,7 @@ const RoomsTab = ({
       const ci = (b.check_in || '').slice(0, 10);
       const co = (b.check_out || '').slice(0, 10);
       if (ci <= today && co > today) {
-        const balance = Math.max(0, (b.total_amount || 0) - (b.paid_amount || 0));
+        const financials = bookingFinancials(b);
         // Determine guest category
         let category = 'pending_checkin'; // confirmed/guaranteed but not checked in
         if (b.status === 'checked_in') {
@@ -119,9 +189,10 @@ const RoomsTab = ({
           check_in: ci,
           check_out: co,
           status: b.status,
-          total_amount: b.total_amount || 0,
-          paid_amount: b.paid_amount || 0,
-          balance: Math.round(balance * 100) / 100,
+          total_amount: financials.total,
+          paid_amount: financials.paid,
+          balance: financials.balance,
+          currency: financials.currency,
           isCheckInToday: ci === today,
           isCheckOutToday: co === today,
           category,
@@ -129,7 +200,7 @@ const RoomsTab = ({
       }
       // Also handle check-out today for checked_in guests whose co == today
       if (b.status === 'checked_in' && co === today && !map[String(b.room_number)]) {
-        const balance = Math.max(0, (b.total_amount || 0) - (b.paid_amount || 0));
+        const financials = bookingFinancials(b);
         map[String(b.room_number)] = {
           booking_id: b.id,
           guest_id: b.guest_id,
@@ -137,9 +208,10 @@ const RoomsTab = ({
           check_in: ci,
           check_out: co,
           status: b.status,
-          total_amount: b.total_amount || 0,
-          paid_amount: b.paid_amount || 0,
-          balance: Math.round(balance * 100) / 100,
+          total_amount: financials.total,
+          paid_amount: financials.paid,
+          balance: financials.balance,
+          currency: financials.currency,
           isCheckInToday: ci === today,
           isCheckOutToday: true,
           category: 'departing_today',
@@ -150,13 +222,26 @@ const RoomsTab = ({
   }, [bookings, today, tomorrow]);
 
   const filteredRooms = useMemo(() => {
-    return rooms.filter(r => {
+    let result = rooms.filter(r => {
       if (typeFilter !== 'all' && r.room_type !== typeFilter) return false;
       if (viewFilter !== 'all' && r.view !== viewFilter) return false;
       if (amenityFilter !== 'all' && !(r.amenities || []).includes(amenityFilter)) return false;
       return true;
     });
-  }, [rooms, typeFilter, viewFilter, amenityFilter]);
+    result.sort((a, b) => {
+      if (sortMode === 'type') {
+        const typeCmp = (a.room_type || '').localeCompare(b.room_type || '');
+        if (typeCmp !== 0) return typeCmp;
+      }
+      const numA = parseInt(a.room_number, 10);
+      const numB = parseInt(b.room_number, 10);
+      if (!isNaN(numA) && !isNaN(numB)) {
+        if (numA !== numB) return numA - numB;
+      }
+      return String(a.room_number).localeCompare(String(b.room_number));
+    });
+    return result;
+  }, [rooms, typeFilter, viewFilter, amenityFilter, sortMode]);
 
   const allTypes = [...new Set(rooms.map(r => r.room_type).filter(Boolean))];
   const allViews = [...new Set(rooms.map(r => r.view).filter(Boolean))];
@@ -213,6 +298,41 @@ const RoomsTab = ({
     }
   }, [handleCheckIn]);
 
+  // Fiziksel oda hazırlığı ile rezervasyon uygunluğu farklı kavramlardır.
+  // Operatör kirli odayı tek tıkla temiz/boş duruma alabilir; bu işlem
+  // herhangi bir rezervasyon ya da check-in kaydını değiştirmez.
+  const handleMarkRoomClean = useCallback(async (event, room) => {
+    event.stopPropagation();
+    setMarkingCleanRoomId(room.id);
+    try {
+      await axios.put(`/housekeeping/room/${room.id}/status`, null, {
+        params: { new_status: 'available' },
+      });
+      toast.success(`Oda ${room.room_number} temiz olarak işaretlendi`);
+      onDataRefresh?.();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Oda durumu güncellenemedi');
+    } finally {
+      setMarkingCleanRoomId(null);
+    }
+  }, [onDataRefresh]);
+
+  const handleRoomHousekeepingStatus = useCallback(async (room, newStatus) => {
+    setRoomContextMenu(null);
+    setMarkingCleanRoomId(room.id);
+    try {
+      await axios.put(`/housekeeping/room/${room.id}/status`, null, {
+        params: { new_status: newStatus },
+      });
+      toast.success(`Oda ${room.room_number} ${newStatus === 'dirty' ? 'kirli' : 'temiz'} olarak işaretlendi`);
+      await Promise.resolve(onDataRefresh?.());
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Oda durumu güncellenemedi');
+    } finally {
+      setMarkingCleanRoomId(null);
+    }
+  }, [onDataRefresh]);
+
   // Handle checkout with balance check
   const handleCheckOutClick = useCallback(async (e, guestInfo) => {
     e.stopPropagation();
@@ -227,27 +347,69 @@ const RoomsTab = ({
   // Open quick payment dialog
   const handlePaymentClick = useCallback((e, guestInfo) => {
     e.stopPropagation();
+    if (!guestInfo?.booking_id) {
+      toast.error('Rezervasyon bilgisi yüklenemedi. Sayfayı yenileyip tekrar deneyin.');
+      return;
+    }
     setPaymentTarget(guestInfo);
     setPaymentAmount(guestInfo.balance > 0 ? String(guestInfo.balance) : '');
     setPaymentMethod('cash');
     setPaymentDialog(true);
   }, []);
 
-  // Submit quick payment
-  const handleQuickPayment = useCallback(async () => {
+  const fetchExchangeRates = async () => {
+    try {
+      const res = await axios.get('/exchange-rates', { timeout: 10000 });
+      if (res.data?.rates) {
+        setTcmbRates(res.data.rates);
+      }
+    } catch (e) {
+      console.error('Failed to fetch exchange rates', e);
+    }
+  };
+
+  useEffect(() => {
+    if (useCurrencyConverter && Object.keys(tcmbRates).length === 0) {
+      fetchExchangeRates();
+    }
+  }, [useCurrencyConverter, tcmbRates]);
+
+  // Record payment
+  const handlePaymentSubmit = useCallback(async () => {
     if (!paymentTarget) return;
-    const amount = parseFloat(paymentAmount);
+    if (!paymentTarget.booking_id) {
+      toast.error('Rezervasyon bilgisi bulunamadı. Lütfen sayfayı yenileyip tekrar deneyin.');
+      return;
+    }
+    const amount = parseMoneyInput(paymentAmount);
     if (!amount || amount <= 0) {
       toast.error('Lutfen geçerli bir tutar giriniz');
       return;
     }
     setPaymentLoading(true);
     try {
-      await axios.post(`/pms/reservations/${paymentTarget.booking_id}/record-payment`, {
+      const payload = {
         amount,
         method: paymentMethod,
         payment_type: classifyGuestPayment(amount, paymentTarget.balance),
-      });
+        currency: String(paymentTarget.currency || 'TRY').toUpperCase() === 'TL' ? 'TRY' : String(paymentTarget.currency || 'TRY').toUpperCase(),
+      };
+      
+      if (useCurrencyConverter && foreignAmount && exchangeRate) {
+        payload.received_currency = String(foreignCurrency || 'TRY').toUpperCase() === 'TL' ? 'TRY' : String(foreignCurrency || 'TRY').toUpperCase();
+        payload.received_amount = parseMoneyInput(foreignAmount);
+        payload.exchange_rate = parseMoneyInput(exchangeRate);
+        payload.notes = `[Döviz Çevirici] ${foreignAmount} ${foreignCurrency} tahsil edildi. Kur: ${exchangeRate}`;
+      } else {
+        payload.received_currency = payload.currency;
+        payload.received_amount = amount;
+        payload.exchange_rate = 1;
+      }
+
+      // Keep the room-card payment flow on the canonical folio endpoint.  The
+      // former reservations/{id}/record-payment route was retired, so using it
+      // here caused a misleading 404 after the operator confirmed a payment.
+      await axios.post(`/frontdesk/folio/${paymentTarget.booking_id}/payment`, payload);
       toast.success(`${amount.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ödeme başarıyla alindi`);
       setPaymentDialog(false);
       setPaymentTarget(null);
@@ -257,7 +419,7 @@ const RoomsTab = ({
     } finally {
       setPaymentLoading(false);
     }
-  }, [paymentTarget, paymentAmount, paymentMethod, onDataRefresh]);
+  }, [paymentTarget, paymentAmount, paymentMethod, onDataRefresh, useCurrencyConverter, foreignAmount, foreignCurrency, exchangeRate]);
 
   // Open quick reservation dialog for an empty room
   const handleQuickResOpen = useCallback((e, room) => {
@@ -339,7 +501,7 @@ const RoomsTab = ({
     if (!guest_name.trim()) { toast.error('Misafir adi giriniz'); return; }
     if (!check_in || !check_out) { toast.error('Tarih seciniz'); return; }
     if (check_in >= check_out) { toast.error('Çıkış tarihi giristen sonra olmalidir'); return; }
-    const amount = parseFloat(total_amount);
+    const amount = parseMoneyInput(total_amount);
     if (!amount || amount <= 0) { toast.error('Geçerli bir fiyat giriniz'); return; }
 
     setQuickResLoading(true);
@@ -393,6 +555,14 @@ const RoomsTab = ({
 
       {/* Filtreler — kompakt, sticky değil ama hizalı */}
       <div className="flex gap-2 flex-wrap items-center bg-white border border-slate-200 rounded-lg p-2.5">
+        <Select value={sortMode} onValueChange={setSortMode}>
+          <SelectTrigger className="w-40 h-9"><SelectValue placeholder="Sıralama" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="number">Oda No'ya Göre</SelectItem>
+            <SelectItem value="type">Oda Tipine Göre</SelectItem>
+          </SelectContent>
+        </Select>
+        <div className="w-px h-6 bg-slate-200 mx-1"></div>
         <Select value={typeFilter} onValueChange={setTypeFilter}>
           <SelectTrigger className="w-40 h-9"><SelectValue placeholder={t('pms.roomType')} /></SelectTrigger>
           <SelectContent>
@@ -444,15 +614,19 @@ const RoomsTab = ({
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
         {filteredRooms.map(room => {
           const guestInfo = roomGuestMap[String(room.room_number)];
+          const roomBlock = getRoomBlockForDate(room.id, today, roomBlocks);
           const showCheckIn = guestInfo && guestInfo.isCheckInToday && (guestInfo.status === 'confirmed' || guestInfo.status === 'guaranteed');
           const showCheckOut = guestInfo && guestInfo.isCheckOutToday && guestInfo.status === 'checked_in';
           const hasBalance = guestInfo && guestInfo.balance > 0.01;
           const isOccupied = guestInfo && guestInfo.status === 'checked_in';
           const cat = guestInfo?.category;
-          const cardExtra = cat ? categoryStyles[cat] : (room.status === 'dirty' || room.status === 'cleaning') ? 'border-l-4 border-l-amber-400' : '';
+          const cardExtra = roomBlock ? 'border-l-4 border-l-slate-500 bg-slate-100/70' : cat ? categoryStyles[cat] : (room.status === 'dirty' || room.status === 'cleaning') ? 'border-l-4 border-l-amber-400' : '';
           const catLabel = cat ? categoryLabels[cat] : null;
           const guestBg = cat ? guestSectionStyles[cat] : 'bg-slate-50 border-slate-200';
           const gText = cat ? guestTextStyles[cat] : { icon: 'text-slate-600', name: 'text-slate-800', date: 'text-slate-500', link: 'text-slate-400', hoverBg: 'hover:bg-slate-100' };
+          // Kirli/temizleniyor olması gelecekteki rezervasyonu engellemez;
+          // yalnızca check-in sırasında oda hazır olmalıdır.
+          const canCreateReservation = !guestInfo && !roomBlock && ['available', 'inspected', 'dirty', 'cleaning'].includes(room.status);
 
           const statusColors = {
             available: 'bg-emerald-100 text-emerald-800 border-emerald-200',
@@ -471,15 +645,37 @@ const RoomsTab = ({
           return (
             <Card
               key={room.id}
-              className={`hover:shadow-md transition-all ${cardExtra}`}
+              className={`hover:shadow-md transition-all h-full flex flex-col ${cardExtra}`}
               data-testid={`room-card-${room.room_number}`}
+              onContextMenu={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                setRoomContextMenu({
+                  room,
+                  roomBlock,
+                  canCreateReservation,
+                  isOccupied,
+                  x: Math.min(event.clientX, window.innerWidth - 224),
+                  y: Math.min(event.clientY, window.innerHeight - 280),
+                });
+              }}
             >
-              <CardContent className="p-3">
+              <CardContent className="p-3 flex flex-col flex-1">
                 <div className="flex justify-between items-start mb-2 gap-2">
                   <span className="text-lg font-bold shrink-0 leading-none" style={{ fontFamily: 'Manrope' }}>{room.room_number}</span>
                   <div className="flex flex-wrap justify-end gap-1">
+                    {roomBlock && <Badge className="text-[10px] px-1.5 py-0 h-4 min-h-[16px] leading-tight shrink-0 whitespace-nowrap border bg-slate-200 text-slate-800 border-slate-300">Satışa kapalı</Badge>}
                     {catLabel && <Badge className={`text-[10px] px-1.5 py-0 h-4 min-h-[16px] leading-tight shrink-0 whitespace-nowrap border ${catLabel.cls}`}>{catLabel.text}</Badge>}
-                    <Badge className={`text-[10px] px-1.5 py-0 h-4 min-h-[16px] leading-tight shrink-0 whitespace-nowrap border ${statusColors[room.status] || 'bg-slate-100 text-slate-700 border-slate-200'}`}>{statusLabelsTr[room.status] || room.status}</Badge>
+                    {room.status === 'dirty' ? <button
+                      type="button"
+                      className={`text-[10px] px-1.5 py-0 h-4 min-h-[16px] leading-tight shrink-0 whitespace-nowrap border rounded-md ${statusColors.dirty} hover:bg-amber-200 disabled:opacity-60`}
+                      onClick={event => handleMarkRoomClean(event, room)}
+                      disabled={markingCleanRoomId === room.id}
+                      title="Temiz olarak işaretle"
+                      data-testid={`mark-room-clean-${room.room_number}`}
+                    >
+                      {markingCleanRoomId === room.id ? 'Güncelleniyor…' : 'Kirli · Temiz yap'}
+                    </button> : <Badge className={`text-[10px] px-1.5 py-0 h-4 min-h-[16px] leading-tight shrink-0 whitespace-nowrap border ${statusColors[room.status] || 'bg-slate-100 text-slate-700 border-slate-200'}`}>{statusLabelsTr[room.status] || room.status}</Badge>}
                   </div>
                 </div>
                 <p className="text-sm text-slate-600">{room.room_type}</p>
@@ -488,14 +684,19 @@ const RoomsTab = ({
                 {/* Live cleaning indicator for dirty/cleaning rooms */}
                 {(room.status === 'dirty' || room.status === 'cleaning') && (() => {
                   const hk = room.housekeeping || {};
-                  const isInProgress = hk.state === 'in_progress';
+                  // Room state is the operational source of truth. A delayed
+                  // housekeeping-task sync must not make one card say both
+                  // “Temizleniyor” and “Temizlik bekliyor”.
+                  const isInProgress = room.status === 'cleaning' || hk.state === 'in_progress';
                   const estimated = hk.estimated_minutes;
                   const elapsed = hk.elapsed_minutes;
+                  const elapsedLabel = formatCleaningDuration(elapsed);
+                  const isStaleCleaning = isInProgress && Number(elapsed) >= 24 * 60;
                   const remaining = (estimated != null && elapsed != null)
                     ? Math.max(0, Math.round(estimated - elapsed))
                     : null;
                   const progressPct = hk.progress_pct;
-                  const showSeparate = isInProgress && elapsed != null && remaining != null;
+                  const showSeparate = isInProgress && elapsedLabel != null && remaining != null;
                   const sizeLabel = !isInProgress && estimated != null
                     ? `~${estimated} dk`
                     : null;
@@ -507,8 +708,11 @@ const RoomsTab = ({
                           {isInProgress ? 'Temizleniyor' : 'Temizlik bekliyor'}
                         </span>
                         {showSeparate ? (
-                          <span className="font-medium tabular-nums">
-                            {Math.round(elapsed)} / {estimated} dk
+                          <span
+                            className="font-medium tabular-nums"
+                            aria-label={isStaleCleaning ? `Temizlik görevi ${elapsedLabel}dır açık` : undefined}
+                          >
+                            {isStaleCleaning ? `${elapsedLabel} açık` : `${elapsedLabel} / ${estimated} dk`}
                           </span>
                         ) : sizeLabel && (
                           <span className="font-medium">{sizeLabel}</span>
@@ -530,7 +734,7 @@ const RoomsTab = ({
                       )}
                       {isInProgress && progressPct != null && progressPct >= 100 && (
                         <div className="text-[10px] text-rose-700 mt-0.5 flex items-center gap-1">
-                          <AlertOctagon className="w-3 h-3" /> Süreyi aştı
+                          <AlertOctagon className="w-3 h-3" /> {isStaleCleaning ? '24 saati aşan görev' : 'Süreyi aştı'}
                         </div>
                       )}
                       {isInProgress && remaining != null && progressPct != null && progressPct < 100 && (
@@ -580,7 +784,7 @@ const RoomsTab = ({
                       <div className="flex items-center gap-1 mt-1" data-testid={`room-balance-${room.room_number}`}>
                         <AlertTriangle className="w-3 h-3 text-amber-600" />
                         <span className="text-[11px] font-semibold text-amber-700">
-                          Bakiye: {guestInfo.balance.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
+                          Bakiye: {formatCurrency(guestInfo.balance, guestInfo.currency, { decimals: 2 })}
                         </span>
                       </div>
                     )}
@@ -625,29 +829,117 @@ const RoomsTab = ({
                   </div>
                 )}
 
-                {room.base_price && <p className="text-sm font-semibold mt-1">{room.base_price}</p>}
-                <div className="flex gap-1 mt-2 flex-wrap">
-                  {room.view && <Badge variant="outline" className="text-[10px]">{room.view}</Badge>}
-                  {room.bed_type && <Badge variant="outline" className="text-[10px]"><BedDouble className="w-3 h-3 mr-0.5" />{room.bed_type}</Badge>}
-                </div>
+                
+                <div className="mt-auto pt-2">
+                  <div className="flex gap-1 flex-wrap">
+                    {room.view && <Badge variant="outline" className="text-[10px]">{room.view}</Badge>}
+                    {room.bed_type && <Badge variant="outline" className="text-[10px]"><BedDouble className="w-3 h-3 mr-0.5" />{room.bed_type}</Badge>}
+                  </div>
 
-                {/* Boş oda için hızlı rezervasyon */}
-                {!guestInfo && room.status === 'available' && (
+                  {/* Boş oda için hızlı rezervasyon */}
+                  {canCreateReservation && (
+                    <Button
+                      size="sm"
+                      className="w-full mt-2 h-8 text-xs bg-amber-600 hover:bg-amber-700 text-white"
+                      onClick={(e) => handleQuickResOpen(e, room)}
+                      data-testid={`quick-res-btn-${room.room_number}`}
+                    >
+                      <Plus className="w-3.5 h-3.5 mr-1" />
+                      Rezervasyon Yap
+                    </Button>
+                  )}
                   <Button
                     size="sm"
-                    className="w-full mt-2 h-8 text-xs bg-amber-600 hover:bg-amber-700 text-white"
-                    onClick={(e) => handleQuickResOpen(e, room)}
-                    data-testid={`quick-res-btn-${room.room_number}`}
+                    variant="outline"
+                    className="w-full mt-2 h-8 text-xs border-rose-200 text-rose-700 hover:bg-rose-50"
+                    onClick={(e) => { e.stopPropagation(); setRoomToBlock(room); setRoomBlockDialog(true); }}
+                    data-testid={`room-block-btn-${room.room_number}`}
                   >
-                    <Plus className="w-3.5 h-3.5 mr-1" />
-                    Rezervasyon Yap
+                    <Wrench className="w-3.5 h-3.5 mr-1" />
+                    Arıza / Blokla
                   </Button>
-                )}
+                </div>
               </CardContent>
             </Card>
           );
         })}
       </div>
+
+      {roomContextMenu && (
+        <div
+          role="menu"
+          aria-label="Oda hızlı işlemleri"
+          className="fixed z-[100] w-56 overflow-hidden rounded-lg border border-slate-200 bg-white py-1 shadow-xl"
+          style={{ left: `${roomContextMenu.x}px`, top: `${roomContextMenu.y}px` }}
+          onClick={(event) => event.stopPropagation()}
+        >
+          <div className="border-b border-slate-100 px-3 py-2 text-xs text-slate-500">
+            <span className="block font-semibold text-slate-700">Oda {roomContextMenu.room.room_number}</span>
+            {roomContextMenu.room.room_type}
+          </div>
+          {roomContextMenu.canCreateReservation && (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setRoomContextMenu(null);
+                setQuickResRoom(roomContextMenu.room);
+                setQuickResDialog(true);
+              }}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+            >
+              <Plus className="h-4 w-4 text-amber-600" /> Rezervasyon oluştur
+            </button>
+          )}
+          {!roomContextMenu.isOccupied && roomContextMenu.room.status !== 'dirty' && roomContextMenu.room.status !== 'cleaning' && (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => handleRoomHousekeepingStatus(roomContextMenu.room, 'dirty')}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-amber-800 hover:bg-amber-50"
+            >
+              <SprayCan className="h-4 w-4" /> Kirli olarak işaretle
+            </button>
+          )}
+          {!roomContextMenu.isOccupied && ['dirty', 'cleaning'].includes(roomContextMenu.room.status) && (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => handleRoomHousekeepingStatus(roomContextMenu.room, 'available')}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-emerald-700 hover:bg-emerald-50"
+            >
+              <UserCheck className="h-4 w-4" /> Temiz / hazır olarak işaretle
+            </button>
+          )}
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              const selectedRoom = roomContextMenu.room;
+              setRoomContextMenu(null);
+              setRoomToBlock(selectedRoom);
+              setRoomBlockDialog(true);
+            }}
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+          >
+            <Wrench className="h-4 w-4 text-rose-600" /> Odayı blokla / arıza bildir
+          </button>
+          {roomContextMenu.roomBlock && (
+            <div className="mx-3 mb-2 rounded bg-amber-50 px-2 py-1.5 text-xs text-amber-800">
+              Aktif blok: {roomContextMenu.roomBlock.reason || roomContextMenu.roomBlock.type}
+            </div>
+          )}
+        </div>
+      )}
+
+      <RoomBlockDialog
+        open={roomBlockDialog}
+        onOpenChange={setRoomBlockDialog}
+        rooms={rooms}
+        defaultRoomId={roomToBlock?.id || ''}
+        businessDate={today}
+        onChanged={handleRoomBlockChanged}
+      />
 
       {/* Checkout Balance Warning Dialog */}
       <Dialog open={checkoutDialog} onOpenChange={(o) => !o && setCheckoutDialog(false)}>
@@ -655,10 +947,10 @@ const RoomsTab = ({
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-amber-700">
               <AlertTriangle className="w-5 h-5" />
-              Açık Bakiye Uyarisi
+              Açık Bakiye Uyarısı
             </DialogTitle>
             <DialogDescription>
-              Misafirin açık bakiyesi bulunmaktadir
+              Misafirin açık bakiyesi bulunmaktadır
             </DialogDescription>
           </DialogHeader>
           {checkoutBooking && (
@@ -668,20 +960,20 @@ const RoomsTab = ({
                 <div className="mt-2 space-y-1 text-sm">
                   <div className="flex justify-between">
                     <span className="text-gray-600">Toplam Tutar:</span>
-                    <span className="font-medium">{checkoutBooking.total_amount.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}</span>
+                    <span className="font-medium">{formatCurrency(checkoutBooking.total_amount, checkoutBooking.currency, { decimals: 2 })}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-600">Odenen:</span>
-                    <span className="font-medium text-green-700">{checkoutBooking.paid_amount.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}</span>
+                    <span className="text-gray-600">Ödenen:</span>
+                    <span className="font-medium text-green-700">{formatCurrency(checkoutBooking.paid_amount, checkoutBooking.currency, { decimals: 2 })}</span>
                   </div>
                   <div className="flex justify-between border-t pt-1">
                     <span className="text-amber-800 font-semibold">Kalan Bakiye:</span>
-                    <span className="font-bold text-amber-800">{checkoutBooking.balance.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}</span>
+                    <span className="font-bold text-amber-800">{formatCurrency(checkoutBooking.balance, checkoutBooking.currency, { decimals: 2 })}</span>
                   </div>
                 </div>
               </div>
               <p className="text-sm text-gray-600">
-                Bakiyeyi sifirlamadan check-out yapilamaz. Lutfen once ödeme aliniz.
+                Bakiye sıfırlanmadan çıkış yapılamaz. Lütfen önce ödeme alınız.
               </p>
               <div className="flex gap-2">
                 <Button
@@ -733,7 +1025,7 @@ const RoomsTab = ({
                 // For now, force check-in to dirty room with clean flag
                 // In future: reassign room via API
                 handleCheckIn?.(dirtyRoomInfo.guestInfo.booking_id, true);
-                toast.info(`Alternatif oda ${altRoom.room_number} onerisi not edildi`);
+                toast.info(`Alternatif oda ${altRoom.room_number} önerisi not edildi`);
               }}
               onCancel={() => setDirtyRoomDialog(false)}
             />
@@ -743,7 +1035,7 @@ const RoomsTab = ({
 
       {/* Quick Payment Dialog */}
       <Dialog open={paymentDialog} onOpenChange={(o) => !o && setPaymentDialog(false)}>
-        <DialogContent className="max-w-sm">
+        <DialogContent className="max-w-sm max-h-[90vh] overflow-y-auto overflow-x-hidden">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Wallet className="w-5 h-5 text-amber-600" />
@@ -761,29 +1053,38 @@ const RoomsTab = ({
                 <div className="mt-2 space-y-1 text-sm">
                   <div className="flex justify-between">
                     <span className="text-gray-600">Toplam Tutar:</span>
-                    <span className="font-medium">{paymentTarget.total_amount.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}</span>
+                    <span className="font-medium">{formatCurrency(paymentTarget.total_amount, paymentTarget.currency, { decimals: 2 })}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-600">Odenen:</span>
-                    <span className="font-medium text-green-700">{paymentTarget.paid_amount.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}</span>
+                    <span className="text-gray-600">Ödenen:</span>
+                    <span className="font-medium text-green-700">{formatCurrency(paymentTarget.paid_amount, paymentTarget.currency, { decimals: 2 })}</span>
                   </div>
                   <div className="flex justify-between border-t pt-1">
                     <span className="text-sky-800 font-semibold">Kalan Bakiye:</span>
-                    <span className="font-bold text-sky-800">{paymentTarget.balance.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}</span>
+                    <span className="font-bold text-sky-800">{formatCurrency(paymentTarget.balance, paymentTarget.currency, { decimals: 2 })}</span>
                   </div>
                 </div>
               </div>
 
               {/* Payment amount */}
               <div>
-                <Label className="text-sm font-medium">Ödeme Tutari</Label>
+                <Label className="text-sm font-medium">Ödeme Tutarı ({paymentTarget.currency})</Label>
                 <div className="flex gap-2 mt-1">
                   <Input
-                    type="number"
-                    step="0.01"
-                    min="0"
+                    {...moneyInputProps}
+                    placeholder="Örn. 150,74"
                     value={paymentAmount}
-                    onChange={(e) => setPaymentAmount(e.target.value)}
+                    onChange={(e) => {
+                      setPaymentAmount(e.target.value);
+                      if (useCurrencyConverter && exchangeRate) {
+                        const baseAmt = parseMoneyInput(e.target.value);
+                        if (!isNaN(baseAmt)) {
+                          setForeignAmount((baseAmt * parseMoneyInput(exchangeRate)).toFixed(2));
+                        } else {
+                          setForeignAmount('');
+                        }
+                      }
+                    }}
                     placeholder="0.00"
                     className="flex-1"
                     data-testid="quick-payment-amount"
@@ -793,13 +1094,115 @@ const RoomsTab = ({
                       variant="outline"
                       size="sm"
                       className="text-xs whitespace-nowrap"
-                      onClick={() => setPaymentAmount(String(paymentTarget.balance))}
+                      onClick={() => {
+                        setPaymentAmount(String(paymentTarget.balance));
+                        if (useCurrencyConverter && exchangeRate) {
+                          setForeignAmount((paymentTarget.balance * parseMoneyInput(exchangeRate)).toFixed(2));
+                        }
+                      }}
                       data-testid="quick-payment-fill-balance"
                     >
                       Tamamini Al
                     </Button>
                   )}
                 </div>
+              </div>
+
+              {/* Currency Converter */}
+              <div className="mt-4 border-t pt-3 border-slate-100">
+                <div className="flex items-center space-x-2">
+                  <Checkbox 
+                    id="useConverter" 
+                    checked={useCurrencyConverter} 
+                    onCheckedChange={(checked) => {
+                      setUseCurrencyConverter(checked);
+                      if (checked && foreignCurrency && tcmbRates[foreignCurrency]) {
+                        const newRate = exchangeRate || tcmbRates[foreignCurrency].toFixed(4);
+                        if (!exchangeRate) setExchangeRate(newRate);
+                        
+                        const baseAmt = parseMoneyInput(paymentAmount) || (paymentTarget ? paymentTarget.balance : 0);
+                        if (baseAmt > 0) {
+                          setForeignAmount((baseAmt * parseMoneyInput(newRate)).toFixed(2));
+                          if (!paymentAmount) setPaymentAmount(String(baseAmt));
+                        }
+                      }
+                    }} 
+                  />
+                  <label htmlFor="useConverter" className="text-sm font-medium text-slate-700 cursor-pointer">
+                    Farklı Döviz ile Hesapla (Kur Çevirici)
+                  </label>
+                </div>
+                
+                {useCurrencyConverter && (
+                  <div className="bg-slate-50 border border-slate-200 rounded p-3 mt-3 space-y-3">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <Label className="text-xs">Alınan Döviz Cinsi</Label>
+                        <Select 
+                          value={foreignCurrency} 
+                          onValueChange={(val) => {
+                            setForeignCurrency(val);
+                            if (tcmbRates[val]) {
+                              const newRate = tcmbRates[val].toFixed(4);
+                              setExchangeRate(newRate);
+                              
+                              const baseAmt = parseMoneyInput(paymentAmount) || (paymentTarget ? paymentTarget.balance : 0);
+                              if (baseAmt > 0) {
+                              setForeignAmount((baseAmt * parseMoneyInput(newRate)).toFixed(2));
+                                if (!paymentAmount) setPaymentAmount(String(baseAmt));
+                              }
+                            }
+                          }}
+                        >
+                          <SelectTrigger className="mt-1 h-8 text-sm"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="TL">TL (Türk Lirası)</SelectItem>
+                            <SelectItem value="USD">USD (Dolar)</SelectItem>
+                            <SelectItem value="EUR">EUR (Euro)</SelectItem>
+                            <SelectItem value="GBP">GBP (Sterlin)</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div>
+                        <Label className="text-xs">
+                          Kur {tcmbRates[foreignCurrency] ? <span className="text-[10px] text-green-600 ml-1">(TCMB: {tcmbRates[foreignCurrency].toFixed(4)})</span> : null}
+                        </Label>
+                        <Input
+                          {...moneyInputProps} placeholder="Örn: 35,00"
+                          className="mt-1 h-8 text-sm"
+                          value={exchangeRate}
+                          onChange={(e) => {
+                             setExchangeRate(e.target.value);
+                             const rate = parseMoneyInput(e.target.value);
+                             const baseAmt = parseMoneyInput(paymentAmount);
+                             if (rate > 0 && !isNaN(baseAmt)) {
+                                 setForeignAmount((baseAmt * rate).toFixed(2));
+                             }
+                          }}
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <Label className="text-xs">Misafirden Alınan Tutar</Label>
+                      <Input
+                        {...moneyInputProps} placeholder="Örn: 7.500,00"
+                        className="mt-1 h-8 text-sm"
+                        value={foreignAmount}
+                        onChange={(e) => {
+                            setForeignAmount(e.target.value);
+                            const famt = parseMoneyInput(e.target.value);
+                            const rate = parseMoneyInput(exchangeRate);
+                            if (rate > 0 && famt > 0) {
+                                setPaymentAmount((famt / rate).toFixed(2));
+                            }
+                        }}
+                      />
+                    </div>
+                    <p className="text-[11px] text-slate-500 italic">
+                      Hesaplanan tutar otomatik olarak "{paymentTarget.currency}" kutusuna yansıtılır. İşlem açıklamasına kur notu düşülür.
+                    </p>
+                  </div>
+                )}
               </div>
 
               {/* Payment method */}
@@ -839,8 +1242,8 @@ const RoomsTab = ({
               {/* Onay */}
               <Button
                 className="w-full bg-amber-600 hover:bg-amber-700 text-white"
-                onClick={handleQuickPayment}
-                disabled={paymentLoading || !paymentAmount || parseFloat(paymentAmount) <= 0}
+                onClick={handlePaymentSubmit}
+                disabled={paymentLoading || !paymentAmount || parseMoneyInput(paymentAmount) <= 0}
                 data-testid="quick-payment-submit"
               >
                 {paymentLoading ? (
@@ -862,7 +1265,7 @@ const RoomsTab = ({
 
       {/* Quick Reservation Dialog */}
       <Dialog open={quickResDialog} onOpenChange={(o) => { if (!o) { setQuickResDialog(false); setShowGuestDropdown(false); } }}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto overflow-x-hidden">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <CalendarPlus className="w-5 h-5 text-amber-600" />
@@ -1023,9 +1426,8 @@ const RoomsTab = ({
               <div>
                 <Label className="text-sm font-medium">Toplam Fiyat *</Label>
                 <Input
-                  type="number"
-                  step="0.01"
-                  min="0"
+                  {...moneyInputProps}
+                  placeholder="Örn. 150,74"
                   value={quickResForm.total_amount}
                   onChange={(e) => setQuickResForm(f => ({ ...f, total_amount: e.target.value }))}
                   placeholder="0.00"
@@ -1061,6 +1463,11 @@ const RoomsTab = ({
           conflict={bookingConflict}
           open={!!bookingConflict}
           onClose={() => setBookingConflict(null)}
+          onPickAlternative={(room) => {
+            setQuickResRoom(room);
+            setBookingConflict(null);
+            toast.info(`Oda ${room.room_number} seçildi. Rezervasyonu yeniden onaylayın.`);
+          }}
         />
       )}
     </div>

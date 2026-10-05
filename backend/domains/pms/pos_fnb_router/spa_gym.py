@@ -4,6 +4,7 @@ spa_gym.py
 SPA & Gym management endpoints mapped to the POS subsystem.
 Includes resources (therapists, cabins), memberships, and reservations.
 """
+
 import uuid
 from datetime import UTC, datetime
 
@@ -20,10 +21,12 @@ router = APIRouter(tags=["pos_spa_gym"])
 
 # --- Models ---
 
+
 class SpaResourceCreateRequest(BaseModel):
     name: str
     type: str  # e.g., 'therapist', 'cabin', 'trainer'
     status: str = "active"
+
 
 class SpaMembershipCreateRequest(BaseModel):
     guest_name: str
@@ -32,6 +35,7 @@ class SpaMembershipCreateRequest(BaseModel):
     end_date: str
     price: float
     status: str = "active"
+
 
 class SpaReservationCreateRequest(BaseModel):
     guest_name: str
@@ -46,12 +50,10 @@ class SpaReservationCreateRequest(BaseModel):
 
 # --- Resources ---
 
+
 @router.get("/pos/spa/resources")
 async def get_spa_resources(
-    resource_type: str | None = None,
-    credentials: HTTPAuthorizationCredentials = Depends(security),
-    current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v92("pos"))
+    resource_type: str | None = None, credentials: HTTPAuthorizationCredentials = Depends(security), current_user: User = Depends(get_current_user), _perm=Depends(require_module_v92("pos"))
 ):
     """List SPA/Gym resources (therapists, cabins, etc.)"""
     query = {"tenant_id": current_user.tenant_id}
@@ -61,21 +63,12 @@ async def get_spa_resources(
     resources = await db.pos_spa_resources.find(query, {"_id": 0}).to_list(100)
     return resources
 
+
 @router.post("/pos/spa/resources")
 async def create_spa_resource(
-    req: SpaResourceCreateRequest,
-    credentials: HTTPAuthorizationCredentials = Depends(security),
-    current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v92("pos"))
+    req: SpaResourceCreateRequest, credentials: HTTPAuthorizationCredentials = Depends(security), current_user: User = Depends(get_current_user), _perm=Depends(require_module_v92("pos"))
 ):
-    doc = {
-        "id": str(uuid.uuid4()),
-        "tenant_id": current_user.tenant_id,
-        "name": req.name,
-        "type": req.type,
-        "status": req.status,
-        "created_at": datetime.now(UTC).isoformat()
-    }
+    doc = {"id": str(uuid.uuid4()), "tenant_id": current_user.tenant_id, "name": req.name, "type": req.type, "status": req.status, "created_at": datetime.now(UTC).isoformat()}
     await db.pos_spa_resources.insert_one(doc)
     doc.pop("_id", None)
     return doc
@@ -83,12 +76,10 @@ async def create_spa_resource(
 
 # --- Memberships ---
 
+
 @router.get("/pos/spa/memberships")
 async def get_spa_memberships(
-    status: str | None = None,
-    credentials: HTTPAuthorizationCredentials = Depends(security),
-    current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v92("pos"))
+    status: str | None = None, credentials: HTTPAuthorizationCredentials = Depends(security), current_user: User = Depends(get_current_user), _perm=Depends(require_module_v92("pos"))
 ):
     query = {"tenant_id": current_user.tenant_id}
     if status:
@@ -97,12 +88,10 @@ async def get_spa_memberships(
     memberships = await db.pos_spa_memberships.find(query, {"_id": 0}).to_list(100)
     return memberships
 
+
 @router.post("/pos/spa/memberships")
 async def create_spa_membership(
-    req: SpaMembershipCreateRequest,
-    credentials: HTTPAuthorizationCredentials = Depends(security),
-    current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v92("pos"))
+    req: SpaMembershipCreateRequest, credentials: HTTPAuthorizationCredentials = Depends(security), current_user: User = Depends(get_current_user), _perm=Depends(require_module_v92("pos"))
 ):
     doc = {
         "id": str(uuid.uuid4()),
@@ -113,7 +102,7 @@ async def create_spa_membership(
         "end_date": req.end_date,
         "price": req.price,
         "status": req.status,
-        "created_at": datetime.now(UTC).isoformat()
+        "created_at": datetime.now(UTC).isoformat(),
     }
     await db.pos_spa_memberships.insert_one(doc)
     doc.pop("_id", None)
@@ -122,12 +111,10 @@ async def create_spa_membership(
 
 # --- Reservations ---
 
+
 @router.get("/pos/spa/reservations")
 async def get_spa_reservations(
-    res_date: str | None = None,
-    credentials: HTTPAuthorizationCredentials = Depends(security),
-    current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v92("pos"))
+    res_date: str | None = None, credentials: HTTPAuthorizationCredentials = Depends(security), current_user: User = Depends(get_current_user), _perm=Depends(require_module_v92("pos"))
 ):
     query = {"tenant_id": current_user.tenant_id}
     if res_date:
@@ -136,22 +123,15 @@ async def get_spa_reservations(
     reservations = await db.pos_spa_reservations.find(query, {"_id": 0}).sort("res_time", 1).to_list(200)
     return reservations
 
+
 @router.post("/pos/spa/reservations")
 async def create_spa_reservation(
-    req: SpaReservationCreateRequest,
-    credentials: HTTPAuthorizationCredentials = Depends(security),
-    current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v92("pos"))
+    req: SpaReservationCreateRequest, credentials: HTTPAuthorizationCredentials = Depends(security), current_user: User = Depends(get_current_user), _perm=Depends(require_module_v92("pos"))
 ):
     """Create a SPA reservation, ensuring the therapist or cabin isn't double-booked."""
 
     # Double-booking check
-    conflict_query = {
-        "tenant_id": current_user.tenant_id,
-        "res_date": req.res_date,
-        "res_time": req.res_time,
-        "status": {"$in": ["confirmed", "in_progress"]}
-    }
+    conflict_query = {"tenant_id": current_user.tenant_id, "res_date": req.res_date, "res_time": req.res_time, "status": {"$in": ["confirmed", "in_progress"]}}
 
     if req.therapist_id or req.cabin_id:
         or_conditions = []
@@ -178,12 +158,13 @@ async def create_spa_reservation(
         "notes": req.notes,
         "status": "confirmed",
         "created_at": datetime.now(UTC).isoformat(),
-        "created_by": current_user.id
+        "created_by": current_user.id,
     }
 
     await db.pos_spa_reservations.insert_one(doc)
     doc.pop("_id", None)
     return doc
+
 
 @router.put("/pos/spa/reservations/{reservation_id}/status")
 async def update_spa_reservation_status(
@@ -191,16 +172,14 @@ async def update_spa_reservation_status(
     status: str,  # 'in_progress', 'completed', 'cancelled', 'no_show'
     credentials: HTTPAuthorizationCredentials = Depends(security),
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v92("pos"))
+    _perm=Depends(require_module_v92("pos")),
 ):
     valid_statuses = ["confirmed", "in_progress", "completed", "cancelled", "no_show"]
     if status not in valid_statuses:
         raise HTTPException(status_code=400, detail="Geçersiz durum")
 
     updated = await db.pos_spa_reservations.find_one_and_update(
-        {"tenant_id": current_user.tenant_id, "id": reservation_id},
-        {"$set": {"status": status, "updated_at": datetime.now(UTC).isoformat()}},
-        return_document=True
+        {"tenant_id": current_user.tenant_id, "id": reservation_id}, {"$set": {"status": status, "updated_at": datetime.now(UTC).isoformat()}}, return_document=True
     )
 
     if not updated:
@@ -209,34 +188,28 @@ async def update_spa_reservation_status(
     updated.pop("_id", None)
     return updated
 
+
 @router.post("/pos/spa/reservations/{reservation_id}/charge")
 async def charge_spa_reservation(
     reservation_id: str,
     folio_id: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security),
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v92("pos"))
+    _perm=Depends(require_module_v92("pos")),
 ):
     """
     Charges a completed SPA reservation to a folio, simulating POS Folio transfer.
     """
-    reservation = await db.pos_spa_reservations.find_one({
-        "tenant_id": current_user.tenant_id,
-        "id": reservation_id
-    })
+    reservation = await db.pos_spa_reservations.find_one({"tenant_id": current_user.tenant_id, "id": reservation_id})
 
     if not reservation:
         raise HTTPException(status_code=404, detail="SPA rezervasyonu bulunamadı")
 
     if reservation.get("status") != "completed":
         # Automatically complete it before charging
-        await db.pos_spa_reservations.update_one(
-            {"id": reservation_id},
-            {"$set": {"status": "completed", "charged": True}}
-        )
+        await db.pos_spa_reservations.update_one({"id": reservation_id}, {"$set": {"status": "completed", "charged": True}})
 
     # In a real system, we'd look up the `service_item_id` in `pos_menu_items`
     # and call `postOrderToFolio` or directly write a transaction.
     # For now, mark it charged.
     return {"success": True, "message": "SPA hizmet bedeli yansıtıldı.", "folio_id": folio_id}
-

@@ -6,11 +6,17 @@
 ## Context
 
 The Syroce PMS test suite has accumulated ~1,400+ tests across multiple development phases.
-Current state as of 2026-03-23 (post-quarantine restoration):
-- **391+ CI-gated tests passing** (T0 + T1)
+Current state as of 2026-09-09 (post-quarantine inventory audit):
+- **6,600+ tests collected by the complete offline CI gate**
 - **70+ tests restored** from quarantine (stale dates, stale room locks, stale fixtures)
-- **~37 tests remaining in quarantine** (controlled tech debt)
-- **0 CI failures**
+- **0 active quarantine manifest entries**
+- **0 duplicate test files retained under `tests/_quarantine/`**
+
+The previous “~37 remaining” figure was stale documentation. The filesystem
+still contained seven historical copies with 72 test functions, but each had a
+maintained counterpart under `tests/`. Those copies were not additional test
+coverage and were excluded by pytest discovery. They were removed in September
+2026 so the repository no longer presents archived duplicates as active debt.
 
 ## Decision
 
@@ -61,15 +67,12 @@ A test exits quarantine when:
 5. Monthly review: attempt to fix/delete quarantined tests
 ```
 
-### Error Categories (current quarantine: ~37 tests)
+### Current Quarantine Inventory
 
-| Category | Count | Action |
-|----------|-------|--------|
-| Stale fixtures (rate_manager seed data) | 10 | Needs room_type seed, fixable |
-| Changed API (endpoint schema/behavior) | 10 | Rewrite assertions against current API |
-| Changed implementation (checkout, timeline, crypto v2) | 13 | Fix after feature completion |
-| External dependency (live HotelRunner API) | 3 | Mock or skip in CI |
-| Meta-test (references restored file) | 1 | Update assertion |
+The active inventory is empty. Any future entry must include a current pytest
+node ID, owner, reason, entry date, and expiry date in
+`tests/_quarantine/quarantine_manifest.py`. A copied test file without a
+manifest entry is a policy failure, not an accepted quarantine.
 
 ### Restored from Quarantine (2026-03-23)
 
@@ -86,4 +89,5 @@ A test exits quarantine when:
 - CI pipeline remains fast and reliable (only T0+T1 run)
 - No "green washing" — failing tests are visible in quarantine, not silenced
 - Monthly triage prevents quarantine from becoming a dumping ground
+- Historical copies live in git history, not in pytest-discoverable directories
 - New features MUST add T0 battle tests before merge

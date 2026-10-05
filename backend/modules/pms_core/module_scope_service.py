@@ -18,7 +18,7 @@ import re
 from collections.abc import Mapping
 from typing import Any
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 
 from core.security import get_current_user
 
@@ -32,12 +32,15 @@ MODULE_SCOPES = frozenset(
         "hr",
         "invoice",
         "maintenance",
+        "multi_property",
         "pos",
         "procurement",
         "reports",
         "sales",
         "stock",
         "tasks",
+        "night_audit",
+        "contact_center",
     }
 )
 
@@ -46,12 +49,15 @@ MODULE_SCOPES = frozenset(
 ROLE_DEFAULT_MODULE_SCOPES: dict[str, frozenset[str]] = {
     "admin": MODULE_SCOPES,
     "supervisor": MODULE_SCOPES,
-    "front_desk": frozenset({"frontdesk"}),
+    "front_desk": frozenset({"frontdesk", "cashier", "night_audit", "contact_center"}),
     "housekeeping": frozenset({"housekeeping", "tasks"}),
     "sales": frozenset({"sales", "reports"}),
-    "finance": frozenset({"cashier", "finance", "invoice", "reports"}),
+    # Finance consumes finalized payroll and its accounting export. HR write
+    # operations remain protected independently by manage_hr.
+    "finance": frozenset({"cashier", "finance", "hr", "invoice", "reports", "night_audit"}),
     "procurement": frozenset({"procurement", "stock"}),
     "staff": frozenset(),
+    "call_center_agent": frozenset({"contact_center"}),
 }
 
 _SCOPE_PATTERN = re.compile(r"^[a-z][a-z0-9_]{1,63}$")
@@ -131,7 +137,31 @@ def has_module_scope(user: Any, scope: str) -> bool:
     return "*" in granted or normalized in granted
 
 
-def require_module_scope(scope: str):
+def _is_hr_profile_read(request: Request) -> bool:
+    """Identify the read-only HR profile route handled by record-level RBAC.
+
+    The HR router is protected as a whole at mount time.  Employees deliberately
+    have no ``hr`` module scope, but ``GET /api/hr/staff/{own-user-id}/profile``
+    is their self-service entry point. A linked ``staff_members`` record has a
+    different id from the login user, so identity cannot be decided at this layer.
+    The endpoint's tenant, user-id/e-mail and department checks remain the single
+    record-level authority. Keep the routing exception exact and read-only; other
+    methods and HR endpoints still require the normal module scope.
+    """
+    if request.method.upper() != "GET":
+        return False
+
+    prefix = "/api/hr/staff/"
+    suffix = "/profile"
+    path = request.url.path.rstrip("/")
+    if not path.startswith(prefix) or not path.endswith(suffix):
+        return False
+
+    requested_id = path[len(prefix) : -len(suffix)]
+    return bool(requested_id and "/" not in requested_id)
+
+
+def require_module_scope(scope: str, *, allow_hr_profile_read: bool = False):
     """Build a FastAPI dependency that enforces one module scope.
 
     Router migrations can use ``Depends(require_module_scope("frontdesk"))``.
@@ -140,8 +170,10 @@ def require_module_scope(scope: str):
     """
     normalized = normalize_module_scope(scope)
 
-    async def dependency(current_user: Any = Depends(get_current_user)) -> Any:
+    async def dependency(request: Request, current_user: Any = Depends(get_current_user)) -> Any:
         if not has_module_scope(current_user, normalized):
+            if allow_hr_profile_read and normalized == "hr" and _is_hr_profile_read(request):
+                return current_user
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="MODULE_ACCESS_DENIED",

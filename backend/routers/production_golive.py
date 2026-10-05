@@ -109,9 +109,11 @@ async def get_golive_summary(
     worker_data = worker_queue_manager.get_worker_summary()
 
     # Backup status
+    from infra.atlas_backup_check import resolve_backup_check
     from infra.backup_manager import backup_manager
 
-    backup_data = backup_manager.get_status()
+    backup_data, backup_score = resolve_backup_check(backup_manager.get_status())
+    backup_data["readiness_score"] = backup_score
 
     # Observability
     from infra.cloud_observability import cloud_metrics, otel_tracer, sentry_integration
@@ -563,14 +565,19 @@ async def observability_key_metrics(current_user: User = Depends(get_current_use
 
 @router.get("/backup/validation")
 async def backup_validation(current_user: User = Depends(get_current_user)):
+    from infra.atlas_backup_check import resolve_backup_check
     from infra.backup_manager import backup_manager
 
     status = backup_manager.get_status()
+    resolved, score = resolve_backup_check(status)
     history = backup_manager.get_history(5)
-    last_backup = history[0] if history else None
+    last_backup = history[-1] if history else None
     return {
         "enabled": status.get("enabled", False),
-        "status": status,
+        "status": resolved,
+        "readiness_score": score,
+        "ready": score >= 1.0,
+        "local_status": status,
         "history": history,
         "last_backup": last_backup,
         "rpo_target": "24h",

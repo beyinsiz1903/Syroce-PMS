@@ -443,7 +443,7 @@ def test_scheduler_lock_error_is_rate_limited_and_redacted(monkeypatch):
     error_log = Mock()
     debug_log = Mock()
     clock = iter([100.0, 101.0, 1001.0])
-    monkeypatch.setattr(sync_scheduler.time, "monotonic", lambda: next(clock))
+    monkeypatch.setattr(sync_scheduler, "monotonic", lambda: next(clock))
     monkeypatch.setattr(sync_scheduler.logger, "error", error_log)
     monkeypatch.setattr(sync_scheduler.logger, "debug", debug_log)
 

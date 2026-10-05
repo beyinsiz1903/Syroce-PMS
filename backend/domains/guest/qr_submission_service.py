@@ -3,6 +3,7 @@ import logging
 import secrets
 import string
 import uuid
+from decimal import Decimal
 
 from fastapi import HTTPException
 from pymongo import ReturnDocument
@@ -24,6 +25,7 @@ raw_db = None
 def _db_for_tenant(tenant_id: str):
     return raw_db if raw_db is not None else get_db_for_tenant(tenant_id)
 
+
 def generate_public_reference(prefix="REQ"):
     chars = string.ascii_uppercase + string.digits
     suffix = "".join(secrets.choice(chars) for _ in range(8))
@@ -41,7 +43,86 @@ def _build_ledger_upsert_update(ledger_doc: dict, updated_at):
     return {"$setOnInsert": insert_doc, "$set": {"updated_at": updated_at}}
 
 
-async def handle_structured_submission(tenant_id: str, property_id: str, room_id: str, booking_id: str, session_id: str, room_number: str, payload: StructuredRequestSubmit, guest_name: str | None, guest_phone: str | None):
+def _room_charge_for_item(catalogue_item: dict, validated_value: dict) -> dict | None:
+    """Build an immutable, server-calculated room-charge snapshot.
+
+    Browser values only select a catalogue item and (when permitted) a
+    quantity.  Currency and price are never accepted from the guest.
+    """
+    if not catalogue_item.get("room_charge_enabled"):
+        return None
+    quantity = int(validated_value.get("quantity", 1))
+    unit_minor = int(catalogue_item.get("unit_price_minor") or 0)
+    currency = str(catalogue_item.get("currency") or "").upper()
+    if quantity < 1 or unit_minor < 1 or not currency:
+        raise HTTPException(status_code=503, detail="Oda servisi fiyatı şu anda kullanılamıyor")
+    return {
+        "unit_price_minor": unit_minor,
+        "quantity": quantity,
+        "total_minor": unit_minor * quantity,
+        "currency": currency,
+        "folio_category": catalogue_item.get("folio_category") or "room_service",
+    }
+
+
+async def _post_room_service_charges(tenant_id: str, tenant_db, booking_id: str, submission_group_id: str, prepared_items: list[dict]):
+    """Post confirmed QR menu items once to the active guest folio.
+
+    The folio service recognizes ``external_reference`` so an interrupted
+    request/retry converges to the original financial line rather than
+    duplicating it.
+    """
+    chargeable = [item for item in prepared_items if item.get("room_charge")]
+    if not chargeable:
+        return []
+
+    folio = await tenant_db["folios"].find_one(
+        {"tenant_id": tenant_id, "booking_id": booking_id, "status": "open"},
+        {"_id": 0},
+    )
+    if not folio:
+        raise HTTPException(status_code=409, detail="Açık oda folyosu bulunamadı; sipariş kaydedilmedi")
+
+    from modules.pms_core.folio_hardening_service import FolioHardeningService
+
+    posted = []
+    for item in chargeable:
+        room_charge = item["room_charge"]
+        reference = f"qr-room-service:{submission_group_id}:{item['service_code']}"
+        amount = Decimal(room_charge["unit_price_minor"]) / Decimal(100)
+        result = await FolioHardeningService().post_charge(
+            tenant_id=tenant_id,
+            folio_id=folio["id"],
+            booking_id=booking_id,
+            charge_data={
+                "category": room_charge["folio_category"],
+                "description": f"[QR Oda Servisi] {item['title']}",
+                "amount": float(amount),
+                "quantity": room_charge["quantity"],
+                "tax_rate": 0,
+                "department": "room_service",
+                "currency": room_charge["currency"],
+                "external_reference": reference,
+            },
+            posted_by="guest-qr-room-service",
+        )
+        if not result.get("success"):
+            raise HTTPException(status_code=409, detail="Oda hesabına yazılamadı; sipariş kaydedilmedi")
+        charge_id = (result.get("charge") or {}).get("id")
+        if not charge_id:
+            raise HTTPException(status_code=503, detail="Oda hesabı kaydı doğrulanamadı")
+        posted.append({"service_code": item["service_code"], "folio_charge_id": charge_id, **room_charge})
+
+    await tenant_db["guest_service_submissions"].update_one(
+        {"tenant_id": tenant_id, "property_id": prepared_items[0]["property_id"], "booking_id": booking_id, "submission_group_id": submission_group_id},
+        {"$set": {"room_charge_status": "posted", "room_charge_lines": posted, "updated_at": _utc_now()}},
+    )
+    return posted
+
+
+async def handle_structured_submission(
+    tenant_id: str, property_id: str, room_id: str, booking_id: str, session_id: str, room_number: str, payload: StructuredRequestSubmit, guest_name: str | None, guest_phone: str | None
+):
     tenant_db = _db_for_tenant(tenant_id)
     seen_codes = set()
     for it in payload.items:
@@ -49,15 +130,10 @@ async def handle_structured_submission(tenant_id: str, property_id: str, room_id
             raise HTTPException(status_code=422, detail="Geçersiz girdi")
         seen_codes.add(it.service_code)
 
-    fingerprint = compute_payload_fingerprint(payload.language, payload.items)
+    fingerprint = compute_payload_fingerprint(payload.language, payload.items, payload.confirm_room_charge)
 
     # 1. Lookup existing ledger
-    ledger = await tenant_db["guest_service_submissions"].find_one({
-        "tenant_id": tenant_id,
-        "property_id": property_id,
-        "booking_id": booking_id,
-        "idempotency_key": payload.idempotency_key
-    })
+    ledger = await tenant_db["guest_service_submissions"].find_one({"tenant_id": tenant_id, "property_id": property_id, "booking_id": booking_id, "idempotency_key": payload.idempotency_key})
 
     if ledger:
         if ledger.get("payload_fingerprint") != fingerprint:
@@ -86,7 +162,6 @@ async def handle_structured_submission(tenant_id: str, property_id: str, room_id
 
         prepared_items = []
         expected_codes = []
-
 
         for it in payload.items:
             cat_item = services_map.get(it.service_code)
@@ -122,18 +197,14 @@ async def handle_structured_submission(tenant_id: str, property_id: str, room_id
                 # Mask schema error
                 raise HTTPException(status_code=422, detail="Geçersiz girdi")
 
+            room_charge = _room_charge_for_item(cat_item, validated_val)
+            if room_charge and not payload.confirm_room_charge:
+                raise HTTPException(status_code=422, detail="Oda hesabına yazma onayı gerekli")
+
             cat, dept = map_legacy_routing(cat_item["service_code"], cat_item["department_code"])
             title_label = cat_item.get("labels", {}).get(payload.language) or cat_item.get("labels", {}).get("tr", cat_item["service_code"])
 
-            desc = generate_deterministic_description(
-                input_type,
-                validated_val,
-                it.note,
-                cat_item.get("labels"),
-                cat_item.get("input_config", {}),
-                payload.language,
-                prop_lang
-            )
+            desc = generate_deterministic_description(input_type, validated_val, it.note, cat_item.get("labels"), cat_item.get("input_config", {}), payload.language, prop_lang)
 
             req_ref = generate_public_reference("REQ")
             req_id = str(uuid.uuid4())
@@ -141,6 +212,7 @@ async def handle_structured_submission(tenant_id: str, property_id: str, room_id
             doc = {
                 "_id": req_id,
                 "tenant_id": tenant_id,
+                "property_id": property_id,
                 "room_id": room_id,
                 "room_number": room_number,
                 "category": cat,
@@ -178,12 +250,15 @@ async def handle_structured_submission(tenant_id: str, property_id: str, room_id
                     "charge_warning_snapshot": cat_item.get("charge_warning"),
                     "catalogue_version": cat_item.get("version", 1),
                     "catalogue_mode": mode,
-                    "timezone_snapshot": prop_tz
-                }
+                    "timezone_snapshot": prop_tz,
+                },
             }
+            if room_charge:
+                doc["room_charge"] = room_charge
+                doc["catalogue_snapshot"]["room_charge_snapshot"] = room_charge
 
             if input_type in ("time", "datetime", "date") and "time_value" in val_obj:
-                 doc["catalogue_snapshot"]["submitted_local_time"] = val_obj["time_value"]
+                doc["catalogue_snapshot"]["submitted_local_time"] = val_obj["time_value"]
             if input_type in ("time", "datetime"):
                 if "submitted_local_time" in validated_val:
                     doc["catalogue_snapshot"]["submitted_local_time"] = validated_val["submitted_local_time"]
@@ -197,7 +272,6 @@ async def handle_structured_submission(tenant_id: str, property_id: str, room_id
             prepared_items.append(doc)
             expected_codes.append(it.service_code)
 
-
         ledger_doc = {
             "tenant_id": tenant_id,
             "property_id": property_id,
@@ -209,26 +283,22 @@ async def handle_structured_submission(tenant_id: str, property_id: str, room_id
             "status": "pending",
             "expected_service_codes": expected_codes,
             "prepared_items": prepared_items,
-
             "attempt_count": 0,
             "last_error_code": None,
             "created_at": now_utc,
             "updated_at": now_utc,
-            "completed_at": None
+            "completed_at": None,
+            "room_charge_consent": payload.confirm_room_charge,
+            "room_charge_status": "not_required",
         }
 
         # 3. Write Ledger
         try:
             res = await tenant_db["guest_service_submissions"].find_one_and_update(
-                {
-                    "tenant_id": tenant_id,
-                    "property_id": property_id,
-                    "booking_id": booking_id,
-                    "idempotency_key": payload.idempotency_key
-                },
+                {"tenant_id": tenant_id, "property_id": property_id, "booking_id": booking_id, "idempotency_key": payload.idempotency_key},
                 _build_ledger_upsert_update(ledger_doc, _utc_now()),
                 upsert=True,
-                return_document=ReturnDocument.AFTER
+                return_document=ReturnDocument.AFTER,
             )
             if res.get("payload_fingerprint") != fingerprint:
                 raise HTTPException(status_code=409, detail="Talep işleme alınamadı")
@@ -240,12 +310,7 @@ async def handle_structured_submission(tenant_id: str, property_id: str, room_id
                 raise HTTPException(status_code=503, detail="Sistem hatası")
         except DuplicateKeyError:
             for _ in range(5):
-                res = await tenant_db["guest_service_submissions"].find_one({
-                    "tenant_id": tenant_id,
-                    "property_id": property_id,
-                    "booking_id": booking_id,
-                    "idempotency_key": payload.idempotency_key
-                })
+                res = await tenant_db["guest_service_submissions"].find_one({"tenant_id": tenant_id, "property_id": property_id, "booking_id": booking_id, "idempotency_key": payload.idempotency_key})
                 if res:
                     break
                 await asyncio.sleep(0.05)
@@ -262,13 +327,7 @@ async def handle_structured_submission(tenant_id: str, property_id: str, room_id
                 raise HTTPException(status_code=503, detail="Sistem hatası")
 
     upd_res = await tenant_db["guest_service_submissions"].update_one(
-        {
-            "tenant_id": tenant_id,
-            "property_id": property_id,
-            "booking_id": booking_id,
-            "submission_group_id": submission_group_id
-        },
-        {"$inc": {"attempt_count": 1}, "$set": {"updated_at": _utc_now()}}
+        {"tenant_id": tenant_id, "property_id": property_id, "booking_id": booking_id, "submission_group_id": submission_group_id}, {"$inc": {"attempt_count": 1}, "$set": {"updated_at": _utc_now()}}
     )
     if upd_res.matched_count != 1:
         raise HTTPException(status_code=503, detail="Sistem hatası")
@@ -300,18 +359,15 @@ async def handle_structured_submission(tenant_id: str, property_id: str, room_id
                             "property_id": property_id,
                             "booking_id": booking_id,
                             "submission_group_id": submission_group_id,
-                            "prepared_items.service_code": item_doc["service_code"]
+                            "prepared_items.service_code": item_doc["service_code"],
                         },
-                        {"$set": {"prepared_items.$.request_reference": new_ref, "updated_at": _utc_now()}}
+                        {"$set": {"prepared_items.$.request_reference": new_ref, "updated_at": _utc_now()}},
                     )
                     if upd_res.matched_count != 1:
                         raise HTTPException(status_code=503, detail="Sistem hatası")
-                    reread = await tenant_db["guest_service_submissions"].find_one({
-                        "tenant_id": tenant_id,
-                        "property_id": property_id,
-                        "booking_id": booking_id,
-                        "submission_group_id": submission_group_id
-                    })
+                    reread = await tenant_db["guest_service_submissions"].find_one(
+                        {"tenant_id": tenant_id, "property_id": property_id, "booking_id": booking_id, "submission_group_id": submission_group_id}
+                    )
                     if not reread:
                         raise HTTPException(status_code=503, detail="Sistem hatası")
                     found = False
@@ -337,54 +393,37 @@ async def handle_structured_submission(tenant_id: str, property_id: str, room_id
     # 5. Convergence check
     expected_set = {it["service_code"] for it in prepared_items}
     expected_pairs = {(it["service_code"], it.get("request_reference")) for it in prepared_items}
-    actual_docs = await tenant_db["qr_requests"].find({
-        "tenant_id": tenant_id,
-        "submission_group_id": submission_group_id
-    }).to_list(None)
+    actual_docs = await tenant_db["qr_requests"].find({"tenant_id": tenant_id, "submission_group_id": submission_group_id}).to_list(None)
     actual_set = {d["service_code"] for d in actual_docs}
     actual_pairs = {(d["service_code"], d.get("request_reference")) for d in actual_docs}
 
-    if (
-        expected_set == actual_set and
-        len(actual_docs) == len(prepared_items) and
-        len(actual_docs) == len(actual_set) and
-        expected_pairs == actual_pairs
-    ):
+    if expected_set == actual_set and len(actual_docs) == len(prepared_items) and len(actual_docs) == len(actual_set) and expected_pairs == actual_pairs:
+        try:
+            posted_room_charges = await _post_room_service_charges(
+                tenant_id, tenant_db, booking_id, submission_group_id, prepared_items
+            )
+        except HTTPException:
+            raise
         upd_res = await tenant_db["guest_service_submissions"].update_one(
-            {
-                "tenant_id": tenant_id,
-                "property_id": property_id,
-                "booking_id": booking_id,
-                "submission_group_id": submission_group_id
-            },
-            {"$set": {"status": "completed", "completed_at": _utc_now(), "updated_at": _utc_now()}}
+            {"tenant_id": tenant_id, "property_id": property_id, "booking_id": booking_id, "submission_group_id": submission_group_id},
+            {"$set": {"status": "completed", "completed_at": _utc_now(), "updated_at": _utc_now()}},
         )
 
         if upd_res.matched_count == 1:
-            reread = await tenant_db["guest_service_submissions"].find_one({
-                "tenant_id": tenant_id,
-                "property_id": property_id,
-                "booking_id": booking_id,
-                "submission_group_id": submission_group_id
-            })
+            reread = await tenant_db["guest_service_submissions"].find_one({"tenant_id": tenant_id, "property_id": property_id, "booking_id": booking_id, "submission_group_id": submission_group_id})
             if reread and reread.get("status") == "completed" and reread.get("completed_at"):
                 # Always derive public refs from winning ledger
                 final_refs = []
                 for itm in reread.get("prepared_items", []):
-                    final_refs.append({
-                        "service_code": itm["service_code"],
-                        "request_reference": itm["request_reference"]
-                    })
+                    final_refs.append({"service_code": itm["service_code"], "request_reference": itm["request_reference"]})
 
                 return {
                     "success": True,
                     "submission_reference": submission_reference,
                     "request_references": final_refs,
-                    "stats": {
-                        "created": created_count,
-                        "replayed": replayed_count
-                    },
-                    "docs_to_emit": docs_to_emit
+                    "stats": {"created": created_count, "replayed": replayed_count},
+                    "room_charge_lines": posted_room_charges,
+                    "docs_to_emit": docs_to_emit,
                 }
 
         logger.error("Ledger completion update failed: group=ledger_completion_failure")
@@ -392,13 +431,8 @@ async def handle_structured_submission(tenant_id: str, property_id: str, room_id
     else:
         # Items are missing. Leave as pending, update last_error_code
         await tenant_db["guest_service_submissions"].update_one(
-            {
-                "tenant_id": tenant_id,
-                "property_id": property_id,
-                "booking_id": booking_id,
-                "submission_group_id": submission_group_id
-            },
-            {"$set": {"status": "pending", "last_error_code": "CONVERGENCE_MISS", "updated_at": _utc_now()}}
+            {"tenant_id": tenant_id, "property_id": property_id, "booking_id": booking_id, "submission_group_id": submission_group_id},
+            {"$set": {"status": "pending", "last_error_code": "CONVERGENCE_MISS", "updated_at": _utc_now()}},
         )
         logger.error("Ledger convergence failed: group=ledger_convergence_miss")
         raise HTTPException(status_code=503, detail="Talep işleme alınamadı, eksik kayıtlar var.")

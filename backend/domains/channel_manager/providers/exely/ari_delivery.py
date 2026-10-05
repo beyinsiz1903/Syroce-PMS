@@ -34,7 +34,10 @@ STATE_WARNING_SUCCESS = "warning_success"
 SUPPORTED_OPERATIONS = frozenset(
     {
         "availability",
+        "availability_batch",
         "rate",
+        "rate_batch",
+        "restriction_batch",
         "stop_sell",
         "min_los",
         "min_los_arrival",
@@ -151,10 +154,10 @@ async def deliver_exely_ari(
     try:
         provider_result = await provider.push_ari_operation(
             operation=operation,
-            room_type_code=normalized["room_type_code"],
-            rate_plan_code=normalized["rate_plan_code"],
-            start_date=normalized["start_date"],
-            end_date=normalized["end_date"],
+            room_type_code=normalized.get("room_type_code", ""),
+            rate_plan_code=normalized.get("rate_plan_code", ""),
+            start_date=normalized.get("start_date", ""),
+            end_date=normalized.get("end_date", ""),
             value=normalized["value"],
             currency=normalized.get("currency", "TRY"),
         )
@@ -198,9 +201,9 @@ async def deliver_exely_ari(
     else:
         state = STATE_REJECTED
         result_class = "RATE_LIMITED" if "RATELIMIT" in error_type else "DEFINITIVE_REJECTION"
-    error_code = f"EXELY_ARI_{error_type}"
-    await _finish(identity, owner_token, state, error_code, result_class)
-    return _result(False, state, error_code, result_class, provider_write_count, identity)
+    error_code = "EXELY_ARI_UNCONFIRMED_WARNING_783" if "783" in warning_codes else f"EXELY_ARI_{error_type}"
+    await _finish(identity, owner_token, state, error_code, result_class, warning_codes=warning_codes)
+    return _result(False, state, error_code, result_class, provider_write_count, identity, warning_codes)
 
 
 async def reconcile_pending_exely_ari(tenant_id: str, *, limit: int = 50) -> dict[str, Any]:
@@ -224,7 +227,52 @@ async def reconcile_pending_exely_ari(tenant_id: str, *, limit: int = 50) -> dic
 def _validate_update(operation: str, update: dict[str, Any]) -> str:
     if operation not in SUPPORTED_OPERATIONS:
         return "EXELY_ARI_OPERATION_UNSUPPORTED"
-    for field in ("tenant_id", "property_id", "room_type_code", "rate_plan_code", "start_date", "end_date"):
+    for field in ("tenant_id", "property_id"):
+        if not str(update.get(field) or "").strip():
+            return f"EXELY_ARI_{field.upper()}_MISSING"
+    if operation in {"availability_batch", "rate_batch", "restriction_batch"}:
+        messages = update.get("value")
+        if not isinstance(messages, list) or not messages or len(messages) > 200:
+            return "EXELY_ARI_BATCH_INVALID"
+        for message in messages:
+            if not isinstance(message, dict):
+                return "EXELY_ARI_BATCH_INVALID"
+            for field in ("room_type_code", "rate_plan_code", "start_date", "end_date"):
+                if not str(message.get(field) or "").strip():
+                    return f"EXELY_ARI_{field.upper()}_MISSING"
+            try:
+                start = datetime.strptime(str(message["start_date"]), "%Y-%m-%d").date()
+                end = datetime.strptime(str(message["end_date"]), "%Y-%m-%d").date()
+            except (TypeError, ValueError):
+                return "EXELY_ARI_DATE_FORMAT_INVALID"
+            if end < start:
+                return "EXELY_ARI_DATE_RANGE_INVALID"
+            if operation == "availability_batch":
+                availability = message.get("availability")
+                if isinstance(availability, bool) or not isinstance(availability, int) or not 0 <= availability <= 999:
+                    return "EXELY_ARI_AVAILABILITY_INVALID"
+            elif operation == "rate_batch":
+                try:
+                    amount = Decimal(str(message.get("rate_amount")))
+                except (InvalidOperation, TypeError, ValueError):
+                    return "EXELY_ARI_RATE_INVALID"
+                if not amount.is_finite() or amount < 0:
+                    return "EXELY_ARI_RATE_INVALID"
+                if not re.fullmatch(r"[A-Z]{3}", str(message.get("currency") or "")):
+                    return "EXELY_ARI_CURRENCY_INVALID"
+            else:
+                restriction = str(message.get("operation") or "")
+                value = message.get("value")
+                if restriction not in {"stop_sell", "min_los", "min_los_arrival", "max_los", "cta", "ctd"}:
+                    return "EXELY_ARI_RESTRICTION_INVALID"
+                if restriction in {"stop_sell", "cta", "ctd"}:
+                    if not isinstance(value, bool):
+                        return f"EXELY_ARI_{restriction.upper()}_INVALID"
+                elif isinstance(value, bool) or not isinstance(value, int) or value < 1:
+                    return f"EXELY_ARI_{restriction.upper()}_INVALID"
+        return ""
+
+    for field in ("room_type_code", "rate_plan_code", "start_date", "end_date"):
         if not str(update.get(field) or "").strip():
             return f"EXELY_ARI_{field.upper()}_MISSING"
     try:
@@ -289,10 +337,10 @@ async def _prepare_delivery(identity: str, owner: str, operation: str, update: d
         "tenant_id": update["tenant_id"],
         "property_id": update["property_id"],
         "operation": operation,
-        "room_type_code": update["room_type_code"],
-        "rate_plan_code": update["rate_plan_code"],
-        "start_date": update["start_date"],
-        "end_date": update["end_date"],
+        "room_type_code": update.get("room_type_code", ""),
+        "rate_plan_code": update.get("rate_plan_code", ""),
+        "start_date": update.get("start_date", ""),
+        "end_date": update.get("end_date", ""),
         "payload_fingerprint": _payload_fingerprint(operation, update),
         "active_fingerprint": _payload_fingerprint(operation, update),
         "state": STATE_PREPARED,

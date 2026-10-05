@@ -26,7 +26,6 @@ function PIIStrictModeDashboard({
   const [policy, setPolicy] = useState(null);
   const [loading, setLoading] = useState(true);
   const [toggling, setToggling] = useState(false);
-  const token = localStorage.getItem("token") || sessionStorage.getItem("token");
   const headers = {};
   const fetchAll = useCallback(async () => {
     setLoading(true);
@@ -42,13 +41,16 @@ function PIIStrictModeDashboard({
       }), axios.get(`/security/pii-strict-mode/policy`, {
         headers
       })]);
+      const results = [cfgRes, sumRes, violRes, encRes, polRes];
       if (cfgRes.status === "fulfilled") setConfig(cfgRes.value.data.config);
       if (sumRes.status === "fulfilled") setSummary(sumRes.value.data.summary);
       if (violRes.status === "fulfilled") setViolations(violRes.value.data.items || []);
       if (encRes.status === "fulfilled") setEncStatus(encRes.value.data.collections);
       if (polRes.status === "fulfilled") setPolicy(polRes.value.data.policy);
+      const failed = results.filter(result => result.status === "rejected").length;
+      if (failed > 0) toast.error(`${failed} güvenlik veri grubu yüklenemedi`);
     } catch {
-      toast.error("Veriler yuklenirken hata olustu");
+      toast.error("Veriler yüklenirken hata oluştu");
     } finally {
       setLoading(false);
     }
@@ -66,10 +68,10 @@ function PIIStrictModeDashboard({
         headers
       });
       setConfig(res.data.config);
-      toast.success(enabled ? "Strict Mode AKTIF edildi" : "Strict Mode DEVRE DIŞI bırakıldı");
+      toast.success(enabled ? "Zorunlu PII maskeleme etkinleştirildi" : "Zorunlu PII maskeleme devre dışı bırakıldı");
       fetchAll();
     } catch {
-      toast.error("Degisiklik kaydedilemedi");
+      toast.error("Değişiklik kaydedilemedi");
     } finally {
       setToggling(false);
     }
@@ -93,10 +95,10 @@ function PIIStrictModeDashboard({
                   </div>}
                 <div>
                   <h2 className="text-lg font-semibold">
-                    Strict Mode: {isEnabled ? "AKTIF" : "DEVRE DISI"}
+                    Zorunlu PII Maskeleme: {isEnabled ? "AKTİF" : "DEVRE DIŞI"}
                   </h2>
                   <p className="text-sm text-slate-400 mt-1">
-                    {isEnabled ? "Tüm API yanıtlarinda PII alanlari otomatik olarak maskeleniyor." : "PII maskeleme endpoint bazinda uygulaniyor. Global zorlama kapalı."}
+                    {isEnabled ? "Tüm API yanıtlarında PII alanları otomatik olarak maskeleniyor." : "PII maskeleme servis bazında uygulanıyor. Sistem genelinde zorunlu maskeleme kapalı."}
                   </p>
                   {config?.updated_at && <p className="text-xs text-slate-500 mt-1">
                       {t('cm.pages_PIIStrictModeDashboard.son_guncelleme')} {new Date(config.updated_at).toLocaleString("tr-TR")} — {config.updated_by}
@@ -113,10 +115,10 @@ function PIIStrictModeDashboard({
 
         {/* Stats Row */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <StatCard icon={<FileWarning className="w-5 h-5 text-red-400" />} label="Ihlal (24s)" value={summary?.total_violations ?? 0} color={summary?.total_violations > 0 ? "red" : "emerald"} />
-          <StatCard icon={<Route className="w-5 h-5 text-blue-400" />} label="Etkilenen Path" value={summary?.unique_paths ?? 0} color="blue" />
-          <StatCard icon={<Users className="w-5 h-5 text-indigo-400" />} label="Etkilenen Kullanici" value={summary?.unique_users ?? 0} color="purple" />
-          <StatCard icon={<Lock className="w-5 h-5 text-emerald-400" />} label="Whitelist Yol" value={summary?.whitelisted_paths ?? 0} color="emerald" />
+          <StatCard icon={<FileWarning className="w-5 h-5 text-red-400" />} label="İhlal (24 saat)" value={summary?.total_violations ?? 0} color={summary?.total_violations > 0 ? "red" : "emerald"} />
+          <StatCard icon={<Route className="w-5 h-5 text-blue-400" />} label="Etkilenen Servis Yolu" value={summary?.unique_paths ?? 0} color="blue" />
+          <StatCard icon={<Users className="w-5 h-5 text-indigo-400" />} label="Etkilenen Kullanıcı" value={summary?.unique_users ?? 0} color="purple" />
+          <StatCard icon={<Lock className="w-5 h-5 text-emerald-400" />} label="Muaf Servis Yolu" value={summary?.whitelisted_paths ?? 0} color="emerald" />
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -125,7 +127,7 @@ function PIIStrictModeDashboard({
             <CardHeader className="pb-3">
               <CardTitle className="text-base flex items-center gap-2">
                 <Database className="w-4 h-4 text-cyan-400" />
-                Sifreleme Kapsami
+                Şifreleme Kapsamı
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -158,7 +160,7 @@ function PIIStrictModeDashboard({
             <CardHeader className="pb-3">
               <CardTitle className="text-base flex items-center gap-2">
                 <Eye className="w-4 h-4 text-amber-400" />
-                PII Politikasi
+                PII Politikası
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -186,7 +188,7 @@ function PIIStrictModeDashboard({
           <CardHeader className="pb-3">
             <CardTitle className="text-base flex items-center gap-2">
               <Unlock className="w-4 h-4 text-slate-400" />
-              Muaf Tutulan Yollar (Whitelist)
+              Maskelemeden Muaf Tutulan Servis Yolları
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -213,7 +215,7 @@ function PIIStrictModeDashboard({
                     <div className="flex items-center gap-3">
                       {v.event_type === "pii_violation" ? <EyeOff className="w-4 h-4 text-red-400 shrink-0" /> : <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />}
                       <div>
-                        <span className="text-slate-200">{v.event_type === "strict_mode_toggled" ? v.enabled ? "Strict Mode AKTIF" : "Strict Mode DEVRE DISI" : v.path}</span>
+                        <span className="text-slate-200">{v.event_type === "strict_mode_toggled" ? v.enabled ? "Zorunlu maskeleme etkinleştirildi" : "Zorunlu maskeleme devre dışı bırakıldı" : v.path}</span>
                         {v.pii_fields_found?.length > 0 && <p className="text-xs text-slate-500">{v.pii_fields_found.join(", ")}</p>}
                       </div>
                     </div>
@@ -235,7 +237,7 @@ function PIIStrictModeDashboard({
             <CardHeader className="pb-3">
               <CardTitle className="text-base flex items-center gap-2">
                 <ShieldAlert className="w-4 h-4 text-amber-400" />
-                En Sik Tetiklenen PII Alanlari
+                En Sık Tetiklenen PII Alanları
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -258,7 +260,7 @@ function PIIStrictModeDashboard({
             </Button>
             <div className="flex items-center gap-3">
               <Shield className="w-6 h-6 text-emerald-400" />
-              <h1 className="text-xl font-semibold">PII Strict Mode</h1>
+              <h1 className="text-xl font-semibold">PII Maskeleme Yönetimi</h1>
             </div>
           </div>
           <div className="flex items-center gap-4">

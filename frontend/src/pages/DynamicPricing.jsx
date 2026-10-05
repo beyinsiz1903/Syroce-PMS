@@ -10,22 +10,30 @@ import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import AITabs from '@/components/AITabs';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
+import { confirmDialog } from '@/lib/dialogs';
 
 const DynamicPricing = ({ user, tenant, onLogout, embedded }) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [recommendation, setRecommendation] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState('');
   const [roomType, setRoomType] = useState('Standard');
   const [targetDate, setTargetDate] = useState(new Date().toISOString().split('T')[0]);
+  const pricingCurrency = recommendation?.currency || tenant?.currency || cachedTenantCurrency();
+  const money = amount => formatCurrency(amount, pricingCurrency);
 
   const loadRecommendation = useCallback(async () => {
     setLoading(true);
+    setLoadError('');
     try {
       const response = await axios.get(`/pricing/ai-recommendation?room_type=${roomType}&target_date=${targetDate}`);
       setRecommendation(response.data);
-    } catch (error) {
+    } catch {
       console.error('Pricing recommendation yüklenemedi');
+      setRecommendation(null);
+      setLoadError('Fiyat önerisi yüklenemedi. Herhangi bir fiyat değişikliği yapılmadı.');
     } finally {
       setLoading(false);
     }
@@ -36,6 +44,10 @@ const DynamicPricing = ({ user, tenant, onLogout, embedded }) => {
   }, [loadRecommendation]);
 
   const handleUpdateRate = async () => {
+    const confirmed = await confirmDialog({
+      message: `${roomType} oda tipi için ${targetDate} tarihindeki fiyat ${money(recommendation.recommended_price)} olarak kaydedilsin mi?`
+    });
+    if (!confirmed) return;
     try {
       const resp = await axios.post('/rms/update-rate', {
         room_type: roomType,
@@ -46,15 +58,21 @@ const DynamicPricing = ({ user, tenant, onLogout, embedded }) => {
       if (data.success === false) {
         toast.error(data.message || 'Fiyat uygulanamadı. Lütfen alanları kontrol edin.');
       } else if (data.pushed) {
-        toast.success(`Fiyat güncellendi: €${recommendation.recommended_price} kanallara gönderildi.`);
+        toast.success(`Fiyat güncellendi: ${money(recommendation.recommended_price)} kanallara gönderildi.`);
       } else {
-        toast.info(data.message || `Fiyat €${recommendation.recommended_price} yerel olarak kaydedildi. Gerçek OTA dağıtımı için Toplu Fiyat/Envanter ekranını kullanın.`);
+        toast.info(data.message || `Fiyat ${money(recommendation.recommended_price)} yerel olarak kaydedildi. Gerçek OTA dağıtımı için Toplu Fiyat/Envanter ekranını kullanın.`);
       }
       loadRecommendation();
-    } catch (error) {
+    } catch {
       toast.error('Fiyat uygulanamadı. Lütfen tekrar deneyin veya kanal yapılandırmasını kontrol edin.');
     }
   };
+  const translateRule = rule => String(rule || '')
+    .replace('Dusuk doluluk', 'Düşük doluluk')
+    .replace('talep carpani', 'talep çarpanı')
+    .replace('Yaklasan tarih', 'Yaklaşan tarih')
+    .replace('aciliyet', 'yakın tarih')
+    .replace('rakip ayari uygulanmadi', 'rakip ayarı uygulanmadı');
 
   return (
     <MaybeLayout embedded={embedded} user={user} tenant={tenant} onLogout={onLogout} currentModule="ai_revenue_autopilot">
@@ -108,6 +126,13 @@ const DynamicPricing = ({ user, tenant, onLogout, embedded }) => {
             <div className="animate-spin w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full"></div>
             <p className="text-sm font-medium">Hesaplanıyor...</p>
           </div>
+        ) : loadError ? (
+          <Card className="border-red-200 bg-red-50/40">
+            <CardContent className="p-6 text-center">
+              <p className="text-sm text-red-800 mb-3">{loadError}</p>
+              <Button variant="outline" size="sm" onClick={loadRecommendation}>Tekrar Dene</Button>
+            </CardContent>
+          </Card>
         ) : recommendation && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             
@@ -146,17 +171,17 @@ const DynamicPricing = ({ user, tenant, onLogout, embedded }) => {
                       <div className="text-center md:text-left">
                         <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Önerilen Fiyat</p>
                         <p className="text-2xl font-bold text-slate-800 tracking-tight">
-                          €{recommendation.recommended_price}
+                          {money(recommendation.recommended_price)}
                         </p>
                         <div className="flex items-center justify-center md:justify-start gap-4 mt-3 text-xs">
                           <div>
                             <span className="text-slate-400">Taban: </span>
-                            <span className="font-medium text-slate-700">€{recommendation.min_price}</span>
+                            <span className="font-medium text-slate-700">{money(recommendation.min_price)}</span>
                           </div>
                           <div className="w-px h-4 bg-slate-200"></div>
                           <div>
                             <span className="text-slate-400">Tavan: </span>
-                            <span className="font-medium text-slate-700">€{recommendation.max_price}</span>
+                            <span className="font-medium text-slate-700">{money(recommendation.max_price)}</span>
                           </div>
                         </div>
                       </div>
@@ -164,7 +189,7 @@ const DynamicPricing = ({ user, tenant, onLogout, embedded }) => {
                       <div className="flex gap-4 w-full md:w-auto">
                         <div className="flex-1 md:w-28 bg-slate-50 p-4 rounded-lg border border-slate-100 text-center">
                           <p className="text-xs font-medium text-slate-500 mb-1">Mevcut</p>
-                          <p className="text-xl font-semibold text-slate-800">€{recommendation.current_price}</p>
+                          <p className="text-xl font-semibold text-slate-800">{money(recommendation.current_price)}</p>
                         </div>
                         <div className={`flex-1 md:w-28 p-4 rounded-lg border text-center ${
                           recommendation.price_change_pct > 0 ? 'bg-emerald-50 border-emerald-100' : 'bg-red-50 border-red-100'
@@ -204,7 +229,7 @@ const DynamicPricing = ({ user, tenant, onLogout, embedded }) => {
                       {recommendation.applied_rules.map((rule, idx) => (
                         <li key={idx} className="flex items-start gap-2 text-sm text-slate-600">
                           <ChevronRight className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
-                          <span>{rule}</span>
+                          <span>{translateRule(rule)}</span>
                         </li>
                       ))}
                     </ul>
@@ -236,7 +261,7 @@ const DynamicPricing = ({ user, tenant, onLogout, embedded }) => {
                           recommendation.demand_level === 'medium' ? 'bg-blue-100 text-blue-700' :
                           'bg-emerald-100 text-emerald-700'
                         }`}>
-                          {recommendation.demand_level}
+                          {({ very_high: 'Çok yüksek', high: 'Yüksek', medium: 'Orta', low: 'Düşük' })[recommendation.demand_level] || recommendation.demand_level}
                         </Badge>
                       </div>
                     </div>
@@ -258,12 +283,12 @@ const DynamicPricing = ({ user, tenant, onLogout, embedded }) => {
                             <span className="w-1.5 h-1.5 rounded-full bg-slate-300"></span>
                             {name}
                           </span>
-                          <span className="text-sm font-medium text-slate-900">€{price}</span>
+                          <span className="text-sm font-medium text-slate-900">{money(price)}</span>
                         </div>
                       ))}
                       <div className="flex items-center justify-between pt-3 mt-1 border-t border-slate-100">
                         <span className="text-sm font-semibold text-slate-700">Pazar Ortalaması</span>
-                        <span className="text-base font-bold text-slate-900">€{recommendation.competitor_data.average}</span>
+                        <span className="text-base font-bold text-slate-900">{money(recommendation.competitor_data.average)}</span>
                       </div>
                     </div>
                   ) : (

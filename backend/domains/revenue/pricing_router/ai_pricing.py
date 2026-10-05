@@ -365,6 +365,7 @@ async def auto_publish_rates_based_on_forecast(
     end_date: str,
     strategy: str = "revenue_optimization",  # occupancy_maximization, revenue_optimization, balanced
     dry_run: bool = True,  # fail-closed: default suppresses ALL writes + outbox
+    publish_confirmed: bool = False,
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_rates")),  # v99 DW
 ):
@@ -382,11 +383,37 @@ async def auto_publish_rates_based_on_forecast(
       * ``dry_run=False`` → persist each recommended rate to
         ``ai_pricing_publications`` (tenant-scoped upsert) AND enqueue one
         ``RATE_UPDATED`` outbox event per date for downstream channel delivery.
+        Bu yol, hem ``dry_run=False`` hem de açık ``publish_confirmed=True``
+        istemeden çalışmaz; istemci tarafındaki bir etiket veya varsayılan
+        parametre kalıcı fiyat değişikliğine dönüşemez.
 
     The pricing algorithm itself is identical in both modes; the flag only
     gates the side effects (persistence + outbox), so the stress suite can
     hard-assert "dry_run ⇒ zero writes ⇒ external_calls=[]".
     """
+    # Publishing is a financially material, externally visible action. Reject
+    # before any database read so accidental/direct API use cannot even compute
+    # a result that looks published, let alone produce writes or outbox events.
+    if not dry_run and not publish_confirmed:
+        return {
+            "success": False,
+            "confirmation_required": True,
+            "dry_run": False,
+            "start_date": start_date,
+            "end_date": end_date,
+            "strategy": strategy,
+            "rates_published": 0,
+            "rates_persisted": 0,
+            "outbox_events_emitted": 0,
+            "published_rates": [],
+            "avg_rate": 0,
+            "message": (
+                "Fiyatları yayınlamak için açık onay gerekir. Önce dry-run "
+                "önizlemesini inceleyin, ardından publish_confirmed=true ile "
+                "ayrı yayınlama akışını başlatın."
+            ),
+        }
+
     # Get demand forecast
     forecasts = []
     async for forecast in db.demand_forecasts.find({"tenant_id": current_user.tenant_id, "date": {"$gte": start_date, "$lte": end_date}}).sort("date", 1):

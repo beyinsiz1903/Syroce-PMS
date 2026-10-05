@@ -454,9 +454,7 @@ class InvoiceLifecycleService:
             worker_id,
             state=InvoiceLifecycleActionState.PROVIDER_PENDING,
             error_code=error_code,
-            next_attempt_at=datetime.now(UTC) + timedelta(
-                seconds=_get_next_poll_delay(action.verification_attempt_count)
-            ),
+            next_attempt_at=datetime.now(UTC) + timedelta(seconds=_get_next_poll_delay(action.verification_attempt_count)),
             verification_attempt_count=next_count,
         )
 

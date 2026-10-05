@@ -6,7 +6,10 @@ from unittest.mock import AsyncMock
 import pytest
 from fastapi import HTTPException
 
-from modules.reservations.services.update_reservation_service import UpdateReservationService
+from modules.reservations.services.update_reservation_service import (
+    UpdateReservationService,
+    _operator_room_conflict_message,
+)
 
 TENANT = "tenant-date-guard"
 
@@ -25,6 +28,23 @@ def _booking(status="confirmed"):
 def _service(settings=None):
     repo = SimpleNamespace(get_calendar_settings_for_tenant=AsyncMock(return_value=settings or {"business_date": "2026-08-29", "timezone": "Europe/Istanbul"}))
     return UpdateReservationService(repository=repo), repo
+
+
+@pytest.mark.asyncio
+async def test_complimentary_booking_rejects_positive_total_on_stay_edit():
+    service, _ = _service()
+    booking = {**_booking("checked_in"), "is_complimentary": True, "total_amount": 0}
+
+    with pytest.raises(HTTPException) as exc:
+        await service._build_update_data(
+            tenant_id=TENANT,
+            booking_id=booking["id"],
+            existing_booking=booking,
+            booking_data={"check_out": "2026-08-31T12:00:00+03:00", "total_amount": 2000},
+        )
+
+    assert exc.value.status_code == 422
+    assert "Comp rezervasyona" in exc.value.detail
 
 
 @pytest.mark.asyncio
@@ -92,3 +112,11 @@ async def test_checked_out_dates_are_immutable():
 
     assert exc.value.status_code == 409
     assert "Cikis yapilmis" in exc.value.detail
+
+
+def test_room_conflict_message_never_exposes_internal_room_or_booking_ids():
+    message = _operator_room_conflict_message("booking")
+
+    assert "Hedef oda" in message
+    assert "kartının üzerine bırakın" in message
+    assert "07401ba8" not in message

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'sonner';
@@ -49,11 +49,15 @@ const GuestJourney = ({ user, tenant, onLogout }) => {
   const [filterCat, setFilterCat] = useState('');
   const [filterRoom, setFilterRoom] = useState('');
   const [showCreate, setShowCreate] = useState(false);
+  const latestLoadRequest = useRef(0);
   const [form, setForm] = useState({
     room_number: '', guest_name: '', nps_score: 9, feedback: '',
   });
 
   const loadAll = useCallback(async () => {
+    const requestId = latestLoadRequest.current + 1;
+    latestLoadRequest.current = requestId;
+    setLoading(true);
     try {
       const [scoreRes, recentRes, roomRes] = await Promise.all([
         axios.get(`/nps/score?days=${days}`),
@@ -62,14 +66,19 @@ const GuestJourney = ({ user, tenant, onLogout }) => {
           (filterRoom ? `&room_number=${encodeURIComponent(filterRoom)}` : '')),
         axios.get(`/nps/by-room?days=${days}`),
       ]);
+      // Filtreler hızlıca değiştirildiğinde önceki isteğin yanıtı daha geç
+      // gelebilir. Eski yanıtın ekrandaki yeni filtre sonucunu ezmesine izin
+      // verme.
+      if (requestId !== latestLoadRequest.current) return;
       setNpsData(scoreRes.data);
       setRecent(recentRes.data?.items || []);
       setByRoom(roomRes.data?.rooms || []);
     } catch (err) {
+      if (requestId !== latestLoadRequest.current) return;
       console.error('NPS yüklenemedi', err);
       toast.error('Veriler yüklenemedi');
     } finally {
-      setLoading(false);
+      if (requestId === latestLoadRequest.current) setLoading(false);
     }
   }, [days, filterCat, filterRoom]);
 
@@ -123,7 +132,7 @@ const GuestJourney = ({ user, tenant, onLogout }) => {
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <Button variant="outline" size="icon" onClick={() => navigate('/')} className="hover:bg-indigo-50">
+            <Button variant="outline" size="icon" aria-label="Kontrol paneline dön" onClick={() => navigate('/')} className="hover:bg-indigo-50">
               <Home className="w-5 h-5" />
             </Button>
             <div>
@@ -136,6 +145,7 @@ const GuestJourney = ({ user, tenant, onLogout }) => {
               value={days}
               onChange={e => setDays(Number(e.target.value))}
               className="h-9 border rounded-md px-3 text-sm bg-white"
+              aria-label="NPS rapor dönemi"
               data-testid="period-select"
             >
               {PERIOD_OPTIONS.map(o => <option key={o.v} value={o.v}>{o.l}</option>)}
@@ -169,10 +179,20 @@ const GuestJourney = ({ user, tenant, onLogout }) => {
             const value = npsData?.[cat === 'promoter' ? 'promoters' : cat === 'passive' ? 'passives' : 'detractors'] ?? 0;
             return (
               <Card
-                key={cat}
-                className={`cursor-pointer transition-all ${filterCat === cat ? 'ring-2 ring-indigo-400' : 'hover:shadow-md'}`}
-                onClick={() => setFilterCat(filterCat === cat ? '' : cat)}
-                data-testid={`cat-card-${cat}`}
+              key={cat}
+              className={`cursor-pointer transition-all ${filterCat === cat ? 'ring-2 ring-indigo-400' : 'hover:shadow-md'}`}
+              onClick={() => setFilterCat(filterCat === cat ? '' : cat)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  setFilterCat(filterCat === cat ? '' : cat);
+                }
+              }}
+              role="button"
+              tabIndex={0}
+              aria-pressed={filterCat === cat}
+              aria-label={`${meta.label} yorumlarını ${filterCat === cat ? 'gizle' : 'filtrele'}`}
+              data-testid={`cat-card-${cat}`}
               >
                 <CardContent className="pt-5 pb-4 text-center">
                   <meta.Icon className={`w-9 h-9 mx-auto mb-1 ${cat === 'promoter' ? 'text-emerald-500' : cat === 'passive' ? 'text-amber-500' : 'text-red-500'}`} />
@@ -259,14 +279,14 @@ const GuestJourney = ({ user, tenant, onLogout }) => {
               </div>
               <div className="flex items-center gap-2 text-xs">
                 {filterCat && (
-                  <Badge className={`${CATEGORY_BADGE[filterCat].cls} cursor-pointer`} onClick={() => setFilterCat('')}>
+                  <button type="button" className={`${CATEGORY_BADGE[filterCat].cls} cursor-pointer rounded-full px-2 py-0.5`} onClick={() => setFilterCat('')} aria-label={`${CATEGORY_BADGE[filterCat].label} filtresini kaldır`}>
                     {CATEGORY_BADGE[filterCat].label} 
-                  </Badge>
+                  </button>
                 )}
                 {filterRoom && (
-                  <Badge className="bg-blue-100 text-blue-700 border-blue-200 cursor-pointer" onClick={() => setFilterRoom('')}>
+                  <button type="button" className="bg-blue-100 text-blue-700 border-blue-200 cursor-pointer rounded-full px-2 py-0.5" onClick={() => setFilterRoom('')} aria-label={`Oda ${filterRoom} filtresini kaldır`}>
                     Oda {filterRoom} 
-                  </Badge>
+                  </button>
                 )}
               </div>
             </div>
@@ -311,6 +331,7 @@ const GuestJourney = ({ user, tenant, onLogout }) => {
                       <Button
                         variant="ghost" size="icon" className="h-8 w-8 text-gray-400 hover:text-red-600"
                         onClick={() => handleDelete(s.id)}
+                        aria-label={`${s.guest_name || 'Misafir'} yorumunu sil`}
                         data-testid={`delete-${s.id}`}
                         title="Yorumu sil"
                       >
@@ -333,8 +354,9 @@ const GuestJourney = ({ user, tenant, onLogout }) => {
             <div className="space-y-3">
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <Label className="text-xs">Oda No</Label>
+                  <Label className="text-xs" htmlFor="nps-room-number">Oda No</Label>
                   <Input
+                    id="nps-room-number"
                     value={form.room_number}
                     onChange={e => setForm(f => ({ ...f, room_number: e.target.value }))}
                     placeholder="örn. 305"
@@ -342,8 +364,9 @@ const GuestJourney = ({ user, tenant, onLogout }) => {
                   />
                 </div>
                 <div>
-                  <Label className="text-xs">Misafir Adı (opsiyonel)</Label>
+                  <Label className="text-xs" htmlFor="nps-guest-name">Misafir Adı (opsiyonel)</Label>
                   <Input
+                    id="nps-guest-name"
                     value={form.guest_name}
                     onChange={e => setForm(f => ({ ...f, guest_name: e.target.value }))}
                     placeholder="Ad Soyad"
@@ -360,6 +383,7 @@ const GuestJourney = ({ user, tenant, onLogout }) => {
                   </span>
                 </Label>
                 <input
+                  aria-label="Net tavsiye puanı"
                   type="range" min="0" max="10" step="1"
                   value={form.nps_score}
                   onChange={e => setForm(f => ({ ...f, nps_score: Number(e.target.value) }))}
@@ -372,8 +396,9 @@ const GuestJourney = ({ user, tenant, onLogout }) => {
               </div>
 
               <div>
-                <Label className="text-xs">Yorum</Label>
+                <Label className="text-xs" htmlFor="nps-feedback">Yorum</Label>
                 <textarea
+                  id="nps-feedback"
                   rows={4}
                   value={form.feedback}
                   onChange={e => setForm(f => ({ ...f, feedback: e.target.value }))}

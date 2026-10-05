@@ -16,8 +16,10 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import { confirmDialog, promptDialog } from '@/lib/dialogs';
 import { deptLabel, positionLabel, employmentTypeLabel, EMPLOYMENT_TYPE_OPTIONS } from '@/lib/hrLabels';
 import UserProvisionDialog from '@/components/UserProvisionDialog';
+import SalaryAgreementFields from '@/components/hr/SalaryAgreementFields';
 import { FixedSizeList } from 'react-window';
 import { ModuleLoadError } from '@/components/shared/ModuleAvailabilityState';
+import { hasGrantedPermission, hasRole } from '@/utils/authRoles';
 
 // ── Virtualized staff table ───────────────────────────────────────────────
 const SM_ROW_H = 52;
@@ -27,7 +29,7 @@ const SM_MIN_W = 890;
 const SmStaffRow = React.memo(function SmStaffRow({ data, index, style }) {
   const {
     filtered, equipmentByStaff, warningsByStaff, trainingsByStaff,
-    navigate, openEdit, offboardStaff, t,
+    navigate, openEdit, offboardStaff, canManageHR, t,
   } = data;
   const s = filtered[index];
   if (!s) return null;
@@ -91,23 +93,28 @@ const SmStaffRow = React.memo(function SmStaffRow({ data, index, style }) {
         <Button size="sm" variant="ghost" onClick={() => navigate(`/staff/${s.id}`)} title={t('cm.pages_StaffManagement.profil')} className="h-7 w-7 p-0">
           <ExternalLink className="w-3.5 h-3.5" />
         </Button>
-        <Button size="sm" variant="ghost" onClick={() => openEdit(s)} title="D\u00fczenle" className="h-7 w-7 p-0">
-          <Pencil className="w-3.5 h-3.5" />
-        </Button>
-        <Button size="sm" variant="ghost" onClick={() => offboardStaff(s)}
-          title={t('cm.pages_StaffManagement.i_\u015Ften_ayr\u0131l\u0131\u015F_silmez_pasifle\u015F')}
-          className="h-7 w-7 p-0 text-rose-600 hover:text-rose-700 hover:bg-rose-50">
-          <UserMinus className="w-3.5 h-3.5" />
-        </Button>
+        {canManageHR && <>
+          <Button size="sm" variant="ghost" onClick={() => openEdit(s)} title="D\u00fczenle" className="h-7 w-7 p-0">
+            <Pencil className="w-3.5 h-3.5" />
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => offboardStaff(s)}
+            title={t('cm.pages_StaffManagement.i_\u015Ften_ayr\u0131l\u0131\u015F_silmez_pasifle\u015F')}
+            className="h-7 w-7 p-0 text-rose-600 hover:text-rose-700 hover:bg-rose-50">
+            <UserMinus className="w-3.5 h-3.5" />
+          </Button>
+        </>}
       </div>
     </div>
   );
 });
 
 const EMPTY_STAFF = {
+  salary_agreement: null,
   name: '',
   email: '',
   phone: '',
+  national_id: '',
+  iban: '',
   department: '',
   position: '',
   hire_date: '',
@@ -116,10 +123,14 @@ const EMPTY_STAFF = {
   monthly_hours: '',
   annual_leave_entitlement: 14
 };
-const StaffManagement = () => {
+const StaffManagement = ({ user }) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { getLimit } = useEntitlements();
+  const canManageHR = !user
+    || hasRole(user, 'admin', 'supervisor')
+    || hasGrantedPermission(user, 'manage_hr');
+  const canProvisionUsers = !user || hasRole(user, 'admin');
   const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState(null);
   const [staff, setStaff] = useState([]);
@@ -164,6 +175,15 @@ const StaffManagement = () => {
     id: null
   });
   const [savingStaff, setSavingStaff] = useState(false);
+  // Form alanları özellikle hızlı girişte peş peşe değişebilir. Önceki render'ın
+  // state kopyasıyla güncellemek, React toplu güncelleme yaptığında başka bir
+  // alanın değerini geri alabiliyordu.
+  const updateStaffField = useCallback((field, value) => {
+    setStaffDialog(current => ({
+      ...current,
+      form: { ...current.form, [field]: value }
+    }));
+  }, []);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [newDept, setNewDept] = useState({
     name: '',
@@ -343,9 +363,12 @@ const StaffManagement = () => {
       id: s.id,
       derived: s.derived_from === 'users',
       form: {
+        salary_agreement: s.salary_agreement || null,
         name: s.name || '',
         email: s.email || '',
         phone: s.phone || '',
+        national_id: s.national_id || '',
+        iban: s.iban || '',
         department: s.department || '',
         position: s.position || '',
         hire_date: s.hire_date || '',
@@ -366,6 +389,7 @@ const StaffManagement = () => {
     const f = staffDialog.form;
     if (!f.name?.trim()) {
       toast.error('İsim zorunludur');
+      submitLockRef.current = false;
       return;
     }
     let payload;
@@ -379,7 +403,10 @@ const StaffManagement = () => {
     } else {
       payload = {
         ...f,
-        hourly_rate: f.hourly_rate === '' ? undefined : Number(f.hourly_rate),
+        national_id: f.national_id ? f.national_id.replace(/\D/g, '') : undefined,
+        iban: f.iban ? f.iban.replace(/\s/g, '').toUpperCase() : undefined,
+        hire_date: f.hire_date || undefined,
+        hourly_rate: f.salary_agreement || f.hourly_rate === '' ? undefined : Number(f.hourly_rate),
         monthly_hours: f.monthly_hours === '' ? undefined : Number(f.monthly_hours),
         annual_leave_entitlement: Number(f.annual_leave_entitlement) || 14
       };
@@ -398,7 +425,7 @@ const StaffManagement = () => {
         toast.success('Personel eklendi');
       } else {
         await axios.put(`/hr/staff/${staffDialog.id}`, payload);
-        toast.success('İletişim bilgileri güncellendi');
+        toast.success('Personel bilgileri güncellendi');
       }
       setStaffDialog({
         open: false,
@@ -528,16 +555,17 @@ const StaffManagement = () => {
         <ExternalLink className="w-4 h-4 mr-1.5" />{t("cm.pages_StaffManagement.i_k_paneli")}</Button>
       <Button variant="outline" size="sm" onClick={() => navigate('/hr/shifts')} className="rounded-lg shadow-sm border-slate-200 hover:bg-slate-50 text-slate-600">
         <Calendar className="w-4 h-4 mr-1.5" />{t("cm.pages_StaffManagement.vardiya_plan\u0131")}</Button>
-      <Button variant="outline" size="sm" onClick={() => setSettingsOpen(true)} className="rounded-lg shadow-sm border-slate-200 hover:bg-slate-50 text-slate-600">
+      {canManageHR && <Button variant="outline" size="sm" onClick={() => setSettingsOpen(true)} className="rounded-lg shadow-sm border-slate-200 hover:bg-slate-50 text-slate-600">
         <Building2 className="w-4 h-4 mr-1.5" />{t("cm.pages_StaffManagement.departman_pozisyon")}</Button>
+      }
       <Button variant="outline" size="sm" onClick={loadAll} disabled={refreshing} className="rounded-lg shadow-sm border-slate-200 hover:bg-slate-50 text-slate-600">
         <RefreshCw className={`w-4 h-4 mr-1.5 ${refreshing ? 'animate-spin' : ''}`} />{t("cm.pages_StaffManagement.yenile")}</Button>
-      <div className="border-l border-slate-200 h-6 mx-1"></div>
-      <UserProvisionDialog departments={departments} onCreated={loadAll} disabled={isLimitReached} />
-      <Button size="sm" onClick={openCreate} disabled={isLimitReached} data-testid="btn-add-staff" className="rounded-lg shadow-sm bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-700 hover:to-emerald-700 text-white border-0">
+      {(canProvisionUsers || canManageHR) && <div className="border-l border-slate-200 h-6 mx-1"></div>}
+      {canProvisionUsers && <UserProvisionDialog departments={departments} onCreated={loadAll} disabled={isLimitReached} />}
+      {canManageHR && <Button size="sm" onClick={openCreate} disabled={isLimitReached} data-testid="btn-add-staff" className="rounded-lg shadow-sm bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-700 hover:to-emerald-700 text-white border-0">
         <UserPlus className="w-4 h-4 mr-1.5" />{t("cm.pages_StaffManagement.yeni_personel_girissiz")}
-      </Button>
-      {isLimitReached && (
+      </Button>}
+      {canManageHR && isLimitReached && (
         <span className="text-xs text-rose-600 flex items-center ml-2 bg-rose-50 px-2 py-1 rounded border border-rose-200">
           <AlertTriangle className="w-3 h-3 mr-1" />
           Personel limiti ({employeeLimit}) dolu
@@ -547,8 +575,8 @@ const StaffManagement = () => {
   // itemData for react-window SmStaffRow (navigate/handlers are stable across renders)
   const staffRowData = useMemo(() => ({
     filtered, equipmentByStaff, warningsByStaff, trainingsByStaff,
-    navigate, openEdit, offboardStaff, t,
-  }), [filtered, equipmentByStaff, warningsByStaff, trainingsByStaff, navigate, openEdit, offboardStaff, t]);
+    navigate, openEdit, offboardStaff, canManageHR, t,
+  }), [filtered, equipmentByStaff, warningsByStaff, trainingsByStaff, navigate, openEdit, offboardStaff, canManageHR, t]);
 
   if (loadError) {
     return <div className="p-2">
@@ -713,9 +741,9 @@ const StaffManagement = () => {
                 </div>
                 <h3 className="text-sm font-semibold text-slate-900 mb-1">{staff.length === 0 ? 'Henüz personel eklenmemiş' : 'Arama sonucu bulunamadı'}</h3>
                 <p className="text-xs text-slate-500 mb-6">{staff.length === 0 ? 'Personel yönetimini kullanmaya başlamak için ilk personeli ekleyin.' : 'Farklı arama kriterleri deneyin.'}</p>
-                {staff.length === 0 && <Button onClick={openCreate} disabled={isLimitReached} data-testid="btn-add-staff" className="rounded-lg shadow-sm bg-slate-900 text-white hover:bg-slate-800">
+                {canManageHR && staff.length === 0 && <Button onClick={openCreate} disabled={isLimitReached} data-testid="btn-add-staff" className="rounded-lg shadow-sm bg-slate-900 text-white hover:bg-slate-800">
                     <UserPlus className="w-4 h-4 mr-1.5" />{t("cm.pages_StaffManagement.i_lk_personeli_ekle")}</Button>}
-                {isLimitReached && staff.length === 0 && (
+                {canManageHR && isLimitReached && staff.length === 0 && (
                     <div className="text-xs text-rose-600 mt-2 flex items-center justify-center bg-rose-50 px-2 py-1.5 rounded border border-rose-200 max-w-xs mx-auto">
                       <AlertTriangle className="w-3 h-3 mr-1" />
                       Mevcut paketinizin personel limiti doludur.
@@ -748,7 +776,7 @@ const StaffManagement = () => {
           setStaffDialog({ ...staffDialog, open: false });
         }
       }}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-h-[calc(100vh-2rem)] max-w-2xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
               {staffDialog.mode === 'create' ? 'Yeni Personel Ekle' : staffDialog.derived ? 'İletişim Bilgilerini Düzenle' : 'Personeli Düzenle'}
@@ -758,43 +786,35 @@ const StaffManagement = () => {
           <form onSubmit={submitStaff} className="grid gap-3 md:grid-cols-2">
             <div className="md:col-span-2">
               <Label className="text-xs">{t("cm.pages_StaffManagement.ad_soyad")}</Label>
-              <Input required value={staffDialog.form.name} onChange={e => setStaffDialog({
-              ...staffDialog,
-              form: {
-                ...staffDialog.form,
-                name: e.target.value
-              }
-            })} />
+              <Input required value={staffDialog.form.name} onChange={e => updateStaffField('name', e.target.value)} />
             </div>
             <div>
               <Label className="text-xs">{t("cm.pages_StaffManagement.e_posta")}</Label>
-              <Input type="email" value={staffDialog.form.email} onChange={e => setStaffDialog({
-              ...staffDialog,
-              form: {
-                ...staffDialog.form,
-                email: e.target.value
-              }
-            })} />
+              <Input type="email" value={staffDialog.form.email} onChange={e => updateStaffField('email', e.target.value)} />
             </div>
             <div>
               <Label className="text-xs">{t("cm.pages_StaffManagement.telefon")}</Label>
-              <Input value={staffDialog.form.phone} onChange={e => setStaffDialog({
-              ...staffDialog,
-              form: {
-                ...staffDialog.form,
-                phone: e.target.value
-              }
-            })} />
+              <Input value={staffDialog.form.phone} onChange={e => updateStaffField('phone', e.target.value)} />
             </div>
+            {!staffDialog.derived && <>
+              <div>
+                <Label className="text-xs">T.C. Kimlik Numarası</Label>
+                <Input inputMode="numeric" autoComplete="off" maxLength={11}
+                  value={staffDialog.form.national_id}
+                  onChange={e => updateStaffField('national_id', e.target.value.replace(/\D/g, '').slice(0, 11))}
+                  placeholder="11 haneli" />
+              </div>
+              <div>
+                <Label className="text-xs">IBAN</Label>
+                <Input autoComplete="off" maxLength={42}
+                  value={staffDialog.form.iban}
+                  onChange={e => updateStaffField('iban', e.target.value.toUpperCase())}
+                  placeholder="TR00 0000 0000 0000 0000 0000 00" />
+              </div>
+            </>}
             <div>
               <Label className="text-xs">{t("cm.pages_StaffManagement.departman")}</Label>
-              <select value={staffDialog.form.department} disabled={staffDialog.mode === 'edit' && staffDialog.derived} onChange={e => setStaffDialog({
-              ...staffDialog,
-              form: {
-                ...staffDialog.form,
-                department: e.target.value
-              }
-            })} className="w-full rounded-md border border-input px-3 py-2 text-sm disabled:opacity-60 disabled:cursor-not-allowed">
+              <select value={staffDialog.form.department} disabled={staffDialog.mode === 'edit' && staffDialog.derived} onChange={e => updateStaffField('department', e.target.value)} className="w-full rounded-md border border-input px-3 py-2 text-sm disabled:opacity-60 disabled:cursor-not-allowed">
                 <option value="">{t("cm.pages_StaffManagement._se\xE7in")}</option>
                 {departments.map(d => <option key={d.id} value={d.code || d.name}>{d.name}</option>)}
                 {departments.length === 0 && <>
@@ -808,36 +828,18 @@ const StaffManagement = () => {
             </div>
             <div>
               <Label className="text-xs">{t("cm.pages_StaffManagement.pozisyon")}</Label>
-              <Input list="positions-list" value={staffDialog.form.position} disabled={staffDialog.mode === 'edit' && staffDialog.derived} onChange={e => setStaffDialog({
-              ...staffDialog,
-              form: {
-                ...staffDialog.form,
-                position: e.target.value
-              }
-            })} />
+              <Input list="positions-list" value={staffDialog.form.position} disabled={staffDialog.mode === 'edit' && staffDialog.derived} onChange={e => updateStaffField('position', e.target.value)} />
               <datalist id="positions-list">
                 {positions.map(p => <option key={p.id} value={p.title} />)}
               </datalist>
             </div>
             <div>
               <Label className="text-xs">{t("cm.pages_StaffManagement.i_\u015Fe_giri\u015F")}</Label>
-              <Input type="date" value={staffDialog.form.hire_date} disabled={staffDialog.mode === 'edit' && staffDialog.derived} onChange={e => setStaffDialog({
-              ...staffDialog,
-              form: {
-                ...staffDialog.form,
-                hire_date: e.target.value
-              }
-            })} />
+              <Input type="date" value={staffDialog.form.hire_date} disabled={staffDialog.mode === 'edit' && staffDialog.derived} onChange={e => updateStaffField('hire_date', e.target.value)} />
             </div>
             <div>
               <Label className="text-xs">{t("cm.pages_StaffManagement.\xE7al\u0131\u015Fma_\u015Fekli")}</Label>
-              <select value={staffDialog.form.employment_type} disabled={staffDialog.mode === 'edit' && staffDialog.derived} onChange={e => setStaffDialog({
-              ...staffDialog,
-              form: {
-                ...staffDialog.form,
-                employment_type: e.target.value
-              }
-            })} className="w-full rounded-md border border-input px-3 py-2 text-sm disabled:opacity-60 disabled:cursor-not-allowed">
+              <select value={staffDialog.form.employment_type} disabled={staffDialog.mode === 'edit' && staffDialog.derived} onChange={e => updateStaffField('employment_type', e.target.value)} className="w-full rounded-md border border-input px-3 py-2 text-sm disabled:opacity-60 disabled:cursor-not-allowed">
                 <option value="full_time">{t("cm.pages_StaffManagement.tam_zamanl\u0131")}</option>
                 <option value="part_time">{t("cm.pages_StaffManagement.yar\u0131_zamanl\u0131")}</option>
                 <option value="seasonal">{t("cm.pages_StaffManagement.sezonluk")}</option>
@@ -845,36 +847,22 @@ const StaffManagement = () => {
                 <option value="intern">{t("cm.pages_StaffManagement.stajyer")}</option>
               </select>
             </div>
+            {!staffDialog.form.salary_agreement && <>
             <div>
               <Label className="text-xs">{t("cm.pages_StaffManagement.saatlik_\xFCcret_try_br\xFCt")}</Label>
-              <Input type="number" step="0.01" min="0" value={staffDialog.form.hourly_rate} placeholder={t("cm.pages_StaffManagement.bo\u015F_b\u0131rak\u0131rsan\u0131z_140_asgari")} disabled={staffDialog.mode === 'edit' && staffDialog.derived} onChange={e => setStaffDialog({
-              ...staffDialog,
-              form: {
-                ...staffDialog.form,
-                hourly_rate: e.target.value
-              }
-            })} />
+              <Input type="number" step="0.01" min="0" value={staffDialog.form.hourly_rate} placeholder={t("cm.pages_StaffManagement.bo\u015F_b\u0131rak\u0131rsan\u0131z_140_asgari")} disabled={staffDialog.mode === 'edit' && staffDialog.derived} onChange={e => updateStaffField('hourly_rate', e.target.value)} />
             </div>
             <div>
               <Label className="text-xs">{t("cm.pages_StaffManagement.ayl\u0131k_standart_saat")}</Label>
-              <Input type="number" step="1" min="0" value={staffDialog.form.monthly_hours} placeholder={t("cm.pages_StaffManagement.varsay\u0131lan_195")} disabled={staffDialog.mode === 'edit' && staffDialog.derived} onChange={e => setStaffDialog({
-              ...staffDialog,
-              form: {
-                ...staffDialog.form,
-                monthly_hours: e.target.value
-              }
-            })} />
+              <Input type="number" step="1" min="0" value={staffDialog.form.monthly_hours} placeholder={t("cm.pages_StaffManagement.varsay\u0131lan_195")} disabled={staffDialog.mode === 'edit' && staffDialog.derived} onChange={e => updateStaffField('monthly_hours', e.target.value)} />
             </div>
+            </>}
             <div>
               <Label className="text-xs">{t("cm.pages_StaffManagement.y\u0131ll\u0131k_i_zin_hakk\u0131_g\xFCn")}</Label>
-              <Input type="number" min="0" max="365" value={staffDialog.form.annual_leave_entitlement} disabled={staffDialog.mode === 'edit' && staffDialog.derived} onChange={e => setStaffDialog({
-              ...staffDialog,
-              form: {
-                ...staffDialog.form,
-                annual_leave_entitlement: e.target.value
-              }
-            })} />
+              <Input type="number" min="0" max="365" value={staffDialog.form.annual_leave_entitlement} disabled={staffDialog.mode === 'edit' && staffDialog.derived} onChange={e => updateStaffField('annual_leave_entitlement', e.target.value)} />
             </div>
+            {!staffDialog.derived && <SalaryAgreementFields value={staffDialog.form.salary_agreement}
+              onChange={value => updateStaffField('salary_agreement', value)} />}
             <DialogFooter className="md:col-span-2">
               <Button type="button" variant="outline" onClick={() => {
                 submitLockRef.current = false;

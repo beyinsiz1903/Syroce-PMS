@@ -230,7 +230,7 @@ class SandboxSimulationEngine:
     ) -> dict[str, Any] | None:
         """Get a specific simulation result."""
         with tenant_context(tenant_id):
-                return await db[SANDBOX_RESULTS].find_one(
+            return await db[SANDBOX_RESULTS].find_one(
                 {"tenant_id": tenant_id, "run_id": run_id},
                 {"_id": 0, "_persist": 0},
             )

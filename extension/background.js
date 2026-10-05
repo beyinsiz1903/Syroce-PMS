@@ -29,6 +29,9 @@ const DEFAULT_REFERENCE_KEYS = [
   "kbs_reference", "reference", "reference_no", "referans", "ref", "id"
 ];
 const SEND_TIMEOUT_MS = 30000;
+const JANDARMA_SOAP_ENDPOINT = "https://vatandas.jandarma.gov.tr/KBS_Tesis_Servis/SrvShsYtkTml.svc";
+const JANDARMA_SESSION_PASSWORD_KEY = "jandarmaWebServicePassword";
+const JANDARMA_PERSISTENT_PASSWORD_KEY = "jandarmaPersistentWebServicePassword";
 
 function randHex(n) {
   const a = new Uint8Array(n);
@@ -84,6 +87,16 @@ async function getProfile(authority) {
   return all[normalizeAuthority(authority)];
 }
 
+async function getJandarmaWebServicePassword() {
+  const session = await chrome.storage.session.get(JANDARMA_SESSION_PASSWORD_KEY);
+  if (session[JANDARMA_SESSION_PASSWORD_KEY]) return session[JANDARMA_SESSION_PASSWORD_KEY];
+  // Persistent storage is opt-in from the extension's options page.  It is
+  // intentionally device-local and never sent to Syroce; it is only placed in
+  // the official Jandarma SOAP request when a notification is dispatched.
+  const local = await chrome.storage.local.get(JANDARMA_PERSISTENT_PASSWORD_KEY);
+  return local[JANDARMA_PERSISTENT_PASSWORD_KEY] || "";
+}
+
 async function getInstallId() {
   let { kbsInstallId } = await chrome.storage.local.get("kbsInstallId");
   if (!kbsInstallId) {
@@ -103,7 +116,8 @@ function configState(profile, hasSessionPassword = false) {
   if (profile.mode === "egm-session") return "configured";
   if (profile.mode === "jandarma-soap") {
     if (!profile.liveConfirmed) return "confirmation_required";
-    if (!/^\d{11}$/.test(profile.userTc) || !/^\d{6}$/.test(profile.facilityCode)) return "unconfigured";
+    if (!/^\d{11}$/.test(profile.userTc) || !/^\d{1,19}$/.test(profile.facilityCode)) return "unconfigured";
+    if (profile.endpoint !== JANDARMA_SOAP_ENDPOINT) return "endpoint_invalid";
     return hasSessionPassword ? "configured" : "password_required";
   }
   if (!profile.endpoint) return "unconfigured";
@@ -113,7 +127,7 @@ function configState(profile, hasSessionPassword = false) {
 
 async function allStates() {
   const all = await getAllConfig();
-  const { jandarmaWebServicePassword } = await chrome.storage.session.get("jandarmaWebServicePassword");
+  const jandarmaWebServicePassword = await getJandarmaWebServicePassword();
   const states = {};
   for (const a of AUTHORITIES) states[a] = configState(all[a], a === "jandarma" && Boolean(jandarmaWebServicePassword));
   return states;
@@ -152,19 +166,48 @@ function extractReference(text, cfg) {
   return "";
 }
 
-function validBody(body) {
-  if (!body || typeof body !== "object") return false;
-  if (!body.guest_name) return false;
-  if (!body.id_number && !body.passport_number) return false;
-  if (!body.check_in) return false;
-  return true;
+function payloadMissingFields(body) {
+  if (!body || typeof body !== "object") return ["body"];
+  const missing = [];
+  const action = body.action;
+  if (!['checkin', 'checkout'].includes(action)) return ["action"];
+  const nationality = String(body.nationality || "").trim().toLocaleUpperCase("tr-TR");
+  const turkish = ["", "TC", "TR", "TUR", "TURKIYE", "TÜRKİYE", "TURKEY"].includes(nationality);
+  const foreignIdentityCard = ["foreign_identity_card", "foreign_id", "yabanci_kimlik", "yabanci_kimlik_karti", "ykn"]
+    .includes(String(body.id_type || "").trim().toLowerCase());
+  if (foreignIdentityCard && !nationality) missing.push("nationality");
+  if (turkish || foreignIdentityCard) {
+    if (!/^\d{11}$/.test(String(body.id_number || ""))) missing.push("id_number");
+  } else if (!String(body.passport_number || "").trim()) {
+    missing.push("passport_number");
+  }
+  if (action === "checkin") {
+    if (!body.room_number) missing.push("room_number");
+    if (!body.check_in) missing.push("check_in");
+    if (!turkish && !foreignIdentityCard) {
+      if (!body.guest_name) missing.push("guest_name");
+      if (!body.birth_date) missing.push("birth_date");
+      if (!body.gender) missing.push("gender");
+    }
+  } else if (!body.check_out) {
+    missing.push("check_out");
+  }
+  return missing;
 }
 
 async function sendToKbs(body, authority) {
   const auth = normalizeAuthority(authority);
   const cfg = await getProfile(auth);
-  const { jandarmaWebServicePassword } = await chrome.storage.session.get("jandarmaWebServicePassword");
+  const jandarmaWebServicePassword = await getJandarmaWebServicePassword();
   const state = configState(cfg, Boolean(jandarmaWebServicePassword));
+
+  // Test modu dahil, eksik operasyon verisini "basarili prova" gibi gosterme.
+  // Backend ayni kontrolu yapsa da eski kuyruk kayitlari veya farkli istemciler
+  // eklentiye ulasabilir; kurum cagrisi oncesi son savunma burada.
+  const missing = payloadMissingFields(body);
+  if (missing.length) {
+    return { ok: false, error: `payload_incomplete: ${missing.join(", ")}` };
+  }
 
   if (state === "test") {
     return { ok: true, reference: "TEST-" + randHex(16), test: true };
@@ -201,7 +244,13 @@ async function sendToKbs(body, authority) {
       if (!parsed.ok) return parsed;
       // The official response has no transaction id. Record a local receipt only
       // after Basarili=true/code=100; never present it as an official reference.
-      return { ok: true, reference: `JANDARMA-${request.method}-${Date.now()}`, officialReference: false };
+      return {
+        ok: true,
+        reference: `JANDARMA-${request.method}-${Date.now()}`,
+        officialReference: false,
+        responseCode: parsed.code,
+        responseMessage: parsed.message,
+      };
     } catch (e) {
       return { ok: false, error: "network: " + (e && e.message ? e.message : String(e)) };
     } finally {
@@ -222,10 +271,6 @@ async function sendToKbs(body, authority) {
   if (url.protocol !== "https:" || !isAllowedHost(url.hostname, auth)) {
     return { ok: false, error: "endpoint_not_allowed" };
   }
-  if (!validBody(body)) {
-    return { ok: false, error: "payload_incomplete" };
-  }
-
   const mapped = applyFieldMap(body, cfg.fieldMap);
   const init = { method: "POST", headers: {} };
   if (cfg.mode === "cookie") init.credentials = "include";
@@ -270,6 +315,40 @@ async function sendToKbs(body, authority) {
   return { ok: true, reference };
 }
 
+async function testJandarmaConnection() {
+  const cfg = await getProfile("jandarma");
+  const jandarmaWebServicePassword = await getJandarmaWebServicePassword();
+  const state = configState(cfg, Boolean(jandarmaWebServicePassword));
+  if (state !== "configured") return { ok: false, error: state };
+  let request;
+  try {
+    request = SyroceJandarmaSoap.buildConnectionTest({
+      userTc: cfg.userTc,
+      facilityCode: cfg.facilityCode,
+      password: jandarmaWebServicePassword,
+    });
+  } catch (e) {
+    return { ok: false, error: e && e.message ? e.message : String(e) };
+  }
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), SEND_TIMEOUT_MS);
+  try {
+    const resp = await fetch(JANDARMA_SOAP_ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "text/xml; charset=utf-8", SOAPAction: `"${request.soapAction}"` },
+      body: request.envelope,
+      signal: ctrl.signal,
+    });
+    const responseText = await resp.text();
+    if (!resp.ok) return { ok: false, error: `HTTP ${resp.status}: ${responseText.slice(0, 300)}` };
+    return SyroceJandarmaSoap.parseResponse(responseText, request.method);
+  } catch (e) {
+    return { ok: false, error: "network: " + (e && e.message ? e.message : String(e)) };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function egmError(error) {
   const message = typeof error === "string"
     ? error
@@ -306,7 +385,6 @@ async function egmRequest(path, payload, method = "POST") {
 }
 
 async function sendToEgmSession(body) {
-  if (!validBody(body)) return { ok: false, error: "payload_incomplete" };
   try {
     if (body.action === "checkout") {
       const filters = {};
@@ -342,8 +420,11 @@ async function sendToEgmSession(body) {
 }
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  // Yalnizca kendi content script'lerimiz (sekme baglamli) kabul edilir.
-  if (!sender || sender.id !== chrome.runtime.id || !sender.tab) {
+  // Kendi content script'lerimiz ve yalnız bağlantı testi için kendi options
+  // sayfamız kabul edilir. Dış extension/page mesajları fail-closed kalır.
+  const optionsUrl = chrome.runtime.getURL ? chrome.runtime.getURL("options.html") : "";
+  const fromOptions = Boolean(sender && sender.url && sender.url === optionsUrl);
+  if (!sender || sender.id !== chrome.runtime.id || (!sender.tab && !fromOptions)) {
     sendResponse({ ok: false, error: "forbidden" });
     return false;
   }
@@ -373,6 +454,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       const result = await sendToKbs(msg.body, msg.authority);
       sendResponse(result);
     })();
+    return true;
+  }
+
+  if (msg.type === "KBS_TEST_JANDARMA_CONNECTION" && fromOptions) {
+    testJandarmaConnection().then(sendResponse);
     return true;
   }
 

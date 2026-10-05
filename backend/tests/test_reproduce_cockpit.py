@@ -11,7 +11,7 @@ async def test_reproduce_cockpit_401():
             "/api/auth/login",
             json={"email": "demo@hotel.com", "password": "demo123"}
         )
-        assert login_resp.status_code == 200
+        assert login_resp.status_code == 200, f"Login failed: {login_resp.status_code} {login_resp.text}"
         token = login_resp.json()["access_token"]
         
         # 2. Call cockpit
@@ -19,6 +19,4 @@ async def test_reproduce_cockpit_401():
             "/api/lockdown/runtime/cockpit",
             headers={"Authorization": f"Bearer {token}"}
         )
-        print("STATUS:", resp.status_code)
-        print("BODY:", resp.text)
-        assert resp.status_code == 200
+        assert resp.status_code == 200, f"Cockpit failed: {resp.status_code} {resp.text}"

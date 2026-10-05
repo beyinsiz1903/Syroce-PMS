@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
+import { roomLabel as displayRoomLabel } from '@/utils/displayIdentifiers';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -39,7 +40,7 @@ const PRIORITY_COLORS = {
 const STATUS_ICONS = { pending: AlertCircle, in_progress: Clock, completed: CheckCircle };
 const STATUS_COLORS = { pending: 'text-amber-500', in_progress: 'text-blue-500', completed: 'text-green-500' };
 
-const StaffTaskManager = () => {
+const StaffTaskManager = ({ currentUser }) => {
   const { t } = useTranslation();
   const ts = useCallback((k) => t(`pmsComponents.staff.${k}`), [t]);
 
@@ -49,7 +50,15 @@ const StaffTaskManager = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [filterPriority, setFilterPriority] = useState('all');
+  const [filterSource, setFilterSource] = useState(() => {
+    if (typeof window === 'undefined') return 'all';
+    return new URLSearchParams(window.location.search).get('source') === 'guest_qr'
+      ? 'guest_qr'
+      : 'all';
+  });
   const [taskToDelete, setTaskToDelete] = useState(null);
+  const [taskToComplete, setTaskToComplete] = useState(null);
+  const [resolutionNote, setResolutionNote] = useState('');
   const [cleanupConfirmOpen, setCleanupConfirmOpen] = useState(false);
   const emptyForm = {
     task_type: 'maintenance', department: 'engineering', title: '', room_id: '',
@@ -96,13 +105,42 @@ const StaffTaskManager = () => {
     }
   };
 
-  const updateTaskStatus = async (taskId, newStatus) => {
+  const updateTaskStatus = async (taskOrId, newStatus) => {
+    const task = typeof taskOrId === 'string'
+      ? tasks.find((item) => item.id === taskOrId)
+      : taskOrId;
+    const taskId = task?.id || taskOrId;
     try {
-      await axios.put(`/pms/staff-tasks/${taskId}`, { status: newStatus });
+      const payload = { status: newStatus };
+      if (task?.source === 'guest_qr' && newStatus === 'in_progress' && !task.assigned_to) {
+        payload.assigned_to = currentUser?.name || currentUser?.email || 'Personel';
+      }
+      await axios.put(`/pms/staff-tasks/${taskId}`, payload);
       toast.success(newStatus === 'completed' ? ts('taskCompleted') : ts('taskStarted'));
       loadTasks();
     } catch {
       toast.error(ts('updateError'));
+    }
+  };
+
+  const completeGuestRequest = async () => {
+    const note = resolutionNote.trim();
+    if (note.length < 3) {
+      toast.error('Misafire iletilecek sonuç bilgisini yazın');
+      return;
+    }
+    try {
+      await axios.put(`/pms/staff-tasks/${taskToComplete.id}`, {
+        status: 'completed',
+        resolution_note: note,
+        assigned_to: taskToComplete.assigned_to || currentUser?.name || currentUser?.email || 'Personel',
+      });
+      toast.success('Talep tamamlandı ve sonuç misafire iletildi');
+      setTaskToComplete(null);
+      setResolutionNote('');
+      loadTasks();
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || ts('updateError'));
     }
   };
 
@@ -120,9 +158,12 @@ const StaffTaskManager = () => {
   const filtered = tasks.filter(t => {
     if (filterStatus !== 'all' && t.status !== filterStatus) return false;
     if (filterPriority !== 'all' && t.priority !== filterPriority) return false;
+    if (filterSource === 'guest_qr' && t.source !== 'guest_qr') return false;
+    if (filterSource === 'manual' && t.source === 'guest_qr') return false;
     if (searchTerm) {
       const s = searchTerm.toLowerCase();
-      return (t.description || '').toLowerCase().includes(s)
+      return (t.title || '').toLowerCase().includes(s)
+        || (t.description || '').toLowerCase().includes(s)
         || (t.room_number || t.room_id || '').toString().toLowerCase().includes(s)
         || (t.assigned_to || '').toLowerCase().includes(s);
     }
@@ -159,34 +200,66 @@ const StaffTaskManager = () => {
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Card className="bg-gray-50 border-gray-200 cursor-pointer" onClick={() => setFilterStatus('all')}>
+        <button
+          type="button"
+          className="rounded-lg text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2"
+          onClick={() => setFilterStatus('all')}
+          aria-label={`${ts('total')} görevleri filtrele`}
+          aria-pressed={filterStatus === 'all'}
+        >
+        <Card className="bg-gray-50 border-gray-200 cursor-pointer">
           <CardContent className="p-4 text-center">
             <ClipboardList className="w-5 h-5 mx-auto mb-1 text-gray-600" />
             <p className="text-xs text-gray-500">{ts('total')}</p>
             <p className="text-2xl font-bold text-gray-700">{counts.total}</p>
           </CardContent>
         </Card>
-        <Card className="bg-amber-50 border-amber-200 cursor-pointer" onClick={() => setFilterStatus('pending')}>
+        </button>
+        <button
+          type="button"
+          className="rounded-lg text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2"
+          onClick={() => setFilterStatus('pending')}
+          aria-label={`${ts('pending')} görevleri filtrele`}
+          aria-pressed={filterStatus === 'pending'}
+        >
+        <Card className="bg-amber-50 border-amber-200 cursor-pointer">
           <CardContent className="p-4 text-center">
             <AlertCircle className="w-5 h-5 mx-auto mb-1 text-amber-500" />
             <p className="text-xs text-amber-600">{ts('pending')}</p>
             <p className="text-2xl font-bold text-amber-700">{counts.pending}</p>
           </CardContent>
         </Card>
-        <Card className="bg-blue-50 border-blue-200 cursor-pointer" onClick={() => setFilterStatus('in_progress')}>
+        </button>
+        <button
+          type="button"
+          className="rounded-lg text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2"
+          onClick={() => setFilterStatus('in_progress')}
+          aria-label={`${ts('inProgress')} görevleri filtrele`}
+          aria-pressed={filterStatus === 'in_progress'}
+        >
+        <Card className="bg-blue-50 border-blue-200 cursor-pointer">
           <CardContent className="p-4 text-center">
             <Clock className="w-5 h-5 mx-auto mb-1 text-blue-500" />
             <p className="text-xs text-blue-600">{ts('inProgress')}</p>
             <p className="text-2xl font-bold text-blue-700">{counts.in_progress}</p>
           </CardContent>
         </Card>
-        <Card className="bg-green-50 border-green-200 cursor-pointer" onClick={() => setFilterStatus('completed')}>
+        </button>
+        <button
+          type="button"
+          className="rounded-lg text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2"
+          onClick={() => setFilterStatus('completed')}
+          aria-label={`${ts('completed')} görevleri filtrele`}
+          aria-pressed={filterStatus === 'completed'}
+        >
+        <Card className="bg-green-50 border-green-200 cursor-pointer">
           <CardContent className="p-4 text-center">
             <CheckCircle className="w-5 h-5 mx-auto mb-1 text-green-500" />
             <p className="text-xs text-green-600">{ts('completed')}</p>
             <p className="text-2xl font-bold text-green-700">{counts.completed}</p>
           </CardContent>
         </Card>
+        </button>
       </div>
 
       <div className="flex flex-wrap gap-3 items-center">
@@ -217,6 +290,16 @@ const StaffTaskManager = () => {
             ))}
           </SelectContent>
         </Select>
+        <Select value={filterSource} onValueChange={setFilterSource}>
+          <SelectTrigger className="w-[170px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Tüm Kaynaklar</SelectItem>
+            <SelectItem value="guest_qr">Misafir QR</SelectItem>
+            <SelectItem value="manual">Manuel Görev</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       {filtered.length === 0 ? (
@@ -237,20 +320,25 @@ const StaffTaskManager = () => {
             const prColor = PRIORITY_COLORS[task.priority] || PRIORITY_COLORS.normal;
             const dash = '—';
             const taskTitle = (task.title || '').trim() || dash;
-            const roomLabel = (task.room_number || task.room_id || dash);
+            const roomLabel = displayRoomLabel(task, dash);
             const descLabel = (task.description || '').trim() || dash;
             const assignedLabel = (task.assigned_to || '').trim() || dash;
             return (
               <Card key={task.id} className="hover:shadow-lg transition">
                 <CardHeader className="pb-2">
-                  <div className="flex justify-between items-start">
+                    <div className="flex justify-between items-start">
                     <div className="flex items-center gap-2 min-w-0">
                       <StIcon className={`w-5 h-5 ${stColor} shrink-0`} />
                       <CardTitle className="text-base truncate" title={taskTitle}>{ttIcon} {taskTitle}</CardTitle>
                     </div>
                     <Badge variant="outline" className={prColor}>{ts(task.priority)}</Badge>
+                    </div>
+                  <div className="mt-1 flex items-center gap-2">
+                    <p className="text-xs text-gray-500">{ttLabel}</p>
+                    {task.source === 'guest_qr' && (
+                      <Badge variant="outline" className="border-violet-200 bg-violet-50 text-violet-700">Misafir QR</Badge>
+                    )}
                   </div>
-                  <p className="text-xs text-gray-500 mt-1">{ttLabel}</p>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-2">
@@ -277,15 +365,23 @@ const StaffTaskManager = () => {
                     )}
                     <div className="flex gap-2 mt-3 pt-2 border-t">
                       {task.status === 'pending' && (
-                        <Button size="sm" onClick={() => updateTaskStatus(task.id, 'in_progress')}>{ts('start')}</Button>
+                        <Button size="sm" onClick={() => updateTaskStatus(task, 'in_progress')}>{ts('start')}</Button>
                       )}
                       {task.status === 'in_progress' && (
-                        <Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={() => updateTaskStatus(task.id, 'completed')}>{ts('complete')}</Button>
+                        <Button
+                          size="sm"
+                          className="bg-green-600 hover:bg-green-700"
+                          onClick={() => task.source === 'guest_qr'
+                            ? setTaskToComplete(task)
+                            : updateTaskStatus(task, 'completed')}
+                        >
+                          {ts('complete')}
+                        </Button>
                       )}
                       {task.status === 'completed' && (
                         <Badge className="bg-green-100 text-green-700">{ts('completed')}</Badge>
                       )}
-                      <Button
+                      {task.source !== 'guest_qr' && <Button
                         size="sm"
                         variant="ghost"
                         className="ml-auto text-red-500 hover:text-red-700"
@@ -293,7 +389,7 @@ const StaffTaskManager = () => {
                         onClick={() => setTaskToDelete(task)}
                       >
                         <Trash2 className="w-3.5 h-3.5" />
-                      </Button>
+                      </Button>}
                     </div>
                   </div>
                 </CardContent>
@@ -395,6 +491,39 @@ const StaffTaskManager = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog open={Boolean(taskToComplete)} onOpenChange={(open) => {
+        if (!open) {
+          setTaskToComplete(null);
+          setResolutionNote('');
+        }
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Misafir talebini sonuçlandır</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="rounded-lg border bg-slate-50 p-3 text-sm">
+              <div className="font-semibold">Oda {displayRoomLabel(taskToComplete)}</div>
+              <div className="text-slate-600">{taskToComplete?.title}</div>
+            </div>
+            <div>
+              <Label>Çözüm / misafire gönderilecek bilgi *</Label>
+              <Textarea
+                value={resolutionNote}
+                onChange={(event) => setResolutionNote(event.target.value)}
+                rows={4}
+                maxLength={2000}
+                placeholder="Örn. Talep edilen havlular odaya teslim edildi."
+              />
+              <p className="mt-1 text-xs text-slate-500">Bu açıklama görev geçmişine kaydedilir ve misafirin QR mesajlaşmasında görünür.</p>
+            </div>
+            <Button className="w-full bg-green-600 hover:bg-green-700" onClick={completeGuestRequest}>
+              Tamamla ve misafire bildir
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <AlertDialog open={cleanupConfirmOpen} onOpenChange={setCleanupConfirmOpen}>
         <AlertDialogContent>

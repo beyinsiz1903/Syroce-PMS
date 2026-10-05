@@ -1,22 +1,26 @@
-import React, { memo, useState, useMemo, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { memo, useRef, useState, useMemo, useCallback } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
+import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { TableLoadingSkeleton } from '@/utils/lazyLoad';
 import {
   Calendar, Users, TrendingUp, LogIn, LogOut, Star,
-  AlertTriangle, Clock, UserPlus, CheckSquare, Printer, CheckCircle2, XCircle,
-  ChevronDown, ChevronUp, CalendarDays
+  AlertTriangle, Clock, UserPlus, CheckSquare, Printer, XCircle,
+  ChevronDown, ChevronUp, CreditCard, Loader2
 } from 'lucide-react';
 import { printRegistrationCard } from '@/components/pms/PrintTemplates';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
+import { isMoneyInput, moneyInputProps, parseMoneyInput } from '@/lib/moneyInput';
+import { bookingSourceLabel } from '@/utils/bookingSource';
 
 import { confirmDialog } from '@/lib/dialogs';
 const FrontdeskTab = ({
@@ -41,44 +45,46 @@ const FrontdeskTab = ({
   const { t } = useTranslation();
   const navigate = useNavigate();
   const tf = useCallback((k, opts) => t(`pmsComponents.frontdesk.${k}`, opts), [t]);
-  const [showWalkIn, setShowWalkIn] = useState(false);
   const [showGroupCheckin, setShowGroupCheckin] = useState(false);
-  const [walkInForm, setWalkInForm] = useState({ guest_name: '', phone: '', email: '', id_number: '', room_number: '', nights: 1, rate: 0 });
-  const [walkInSubmitting, setWalkInSubmitting] = useState(false);
   const [groupCheckinIds, setGroupCheckinIds] = useState(new Set());
+  const [checkoutInProgress, setCheckoutInProgress] = useState(null);
+  const [quickPaymentBooking, setQuickPaymentBooking] = useState(null);
+  const [quickPaymentAmount, setQuickPaymentAmount] = useState('');
+  const [quickPaymentMethod, setQuickPaymentMethod] = useState('card');
+  const [quickPaymentCariAccounts, setQuickPaymentCariAccounts] = useState([]);
+  const [quickPaymentCariAccountId, setQuickPaymentCariAccountId] = useState('');
+  const [quickPaymentCariLoading, setQuickPaymentCariLoading] = useState(false);
+  const [quickPaymentInProgress, setQuickPaymentInProgress] = useState(false);
+  const [quickPaymentError, setQuickPaymentError] = useState('');
+  const [quickPaymentBalanceOverrides, setQuickPaymentBalanceOverrides] = useState({});
+  const quickPaymentSubmittingRef = useRef(false);
   // Which top KPI card is currently expanded to show guest names: null | 'arrivals' | 'departures' | 'inhouse'
   const [expandedKpi, setExpandedKpi] = useState(null);
   const toggleKpi = useCallback((key) => {
     setExpandedKpi(prev => (prev === key ? null : key));
   }, []);
 
-  // Live preview: lookup room by typed room_number
-  const matchedRoom = useMemo(() => {
-    const rn = (walkInForm.room_number || '').trim();
-    if (!rn) return null;
-    return rooms.find(r => String(r.room_number) === rn) || null;
-  }, [walkInForm.room_number, rooms]);
+  const effectiveBookingBalance = useCallback((booking) => {
+    const sourceBalance = Math.max(0, Number(booking?.balance) || 0);
+    const override = booking?.id ? quickPaymentBalanceOverrides[booking.id] : null;
+    if (!override) return sourceBalance;
 
-  const isRoomBookable = matchedRoom && ['available', 'inspected'].includes(matchedRoom.status);
-
-  // Quick-pick: first 6 currently bookable rooms
-  const availableRoomQuickPicks = useMemo(() => {
-    return rooms
-      .filter(r => ['available', 'inspected'].includes(r.status))
-      .slice(0, 6);
-  }, [rooms]);
+    // Stop applying the optimistic value as soon as refreshed API data changes.
+    if (Math.abs(sourceBalance - override.sourceBalance) > 0.005) return sourceBalance;
+    return Math.max(0, Number(override.remainingBalance) || 0);
+  }, [quickPaymentBalanceOverrides]);
 
   // Today's financial pulse (computed client-side from already-loaded data)
   const financialPulse = useMemo(() => {
     const sumNum = (arr, key) => arr.reduce((acc, b) => acc + (Number(b?.[key]) || 0), 0);
     const expectedRevenue = sumNum(arrivals, 'total_amount');
-    const expectedCollections = sumNum(departures, 'balance');
-    const inhouseOutstanding = sumNum(inhouse, 'balance');
+    const expectedCollections = departures.reduce((acc, booking) => acc + effectiveBookingBalance(booking), 0);
+    const inhouseOutstanding = inhouse.reduce((acc, booking) => acc + effectiveBookingBalance(booking), 0);
     const occRooms = rooms.filter(r => ['occupied', 'reserved'].includes(r.status)).length;
     const totalRooms = rooms.length || 0;
     const occupancyPct = totalRooms > 0 ? Math.round((occRooms / totalRooms) * 100) : 0;
     return { expectedRevenue, expectedCollections, inhouseOutstanding, occupancyPct, occRooms, totalRooms };
-  }, [arrivals, departures, inhouse, rooms]);
+  }, [arrivals, departures, effectiveBookingBalance, inhouse, rooms]);
 
   // VIP & special-request alerts: scan today's arrivals + in-house
   const guestById = useMemo(() => {
@@ -113,66 +119,21 @@ const FrontdeskTab = ({
     return items.slice(0, 12); // cap to prevent overflow
   }, [arrivals, inhouse, guestById, tf]);
 
-  const formatMoney = (n) => {
-    const v = Number(n) || 0;
-    return v.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 });
-  };
+  const formatMoney = useCallback((value) => (
+    formatCurrency(value, cachedTenantCurrency(), { decimals: 2 })
+  ), []);
 
-  const resetWalkInForm = () => {
-    setWalkInForm({ guest_name: '', phone: '', email: '', id_number: '', room_number: '', nights: 1, rate: 0 });
-  };
-
-  const handleWalkInSubmit = async () => {
-    if (!walkInForm.guest_name?.trim()) { toast.error(tf('walkInGuestRequired')); return; }
-    if (!walkInForm.room_number?.trim()) { toast.error(tf('walkInRoomRequired')); return; }
-    if (!walkInForm.rate || walkInForm.rate <= 0) { toast.error(tf('walkInRateRequired')); return; }
-    if (!matchedRoom) { toast.error(tf('walkInRoomNotFound', { roomNo: walkInForm.room_number })); return; }
-    if (!isRoomBookable) {
-      toast.error(tf('walkInRoomNotAvailable', { roomNo: matchedRoom.room_number, status: matchedRoom.status }));
-      return;
-    }
-
-    setWalkInSubmitting(true);
-    try {
-      const payload = {
-        guest_name: walkInForm.guest_name.trim(),
-        guest_phone: walkInForm.phone?.trim() || '',
-        guest_email: walkInForm.email?.trim() || null,
-        guest_id_number: walkInForm.id_number?.trim() || null,
-        room_id: matchedRoom.id,
-        nights: Math.max(1, parseInt(walkInForm.nights) || 1),
-        adults: 1,
-        children: 0,
-        rate_per_night: parseFloat(walkInForm.rate) || 0,
-      };
-      const res = await axios.post('/frontdesk/walk-in-booking', payload);
-      const data = res.data || {};
-      toast.success(tf('walkInSuccess', {
-        roomNo: data.room_number || matchedRoom.room_number,
-        guest: walkInForm.guest_name.trim(),
-      }));
-      resetWalkInForm();
-      setShowWalkIn(false);
-      // Refresh both front desk data and the rooms/bookings list so the new check-in is visible everywhere
-      try { await Promise.all([loadFrontDeskData?.(), loadData?.()]); } catch (_) { /* non-fatal */ }
-    } catch (err) {
-      const msg = err?.response?.data?.detail || err?.message || tf('walkInBookingFailed');
-      toast.error(typeof msg === 'string' ? msg : tf('walkInBookingFailed'));
-    } finally {
-      setWalkInSubmitting(false);
-    }
-  };
+  const formatBookingChannel = bookingSourceLabel;
 
   const today = useMemo(() => new Date().toISOString().split('T')[0], []);
 
   const overstays = useMemo(() => {
-    if (!bookings) return [];
-    return bookings.filter(b => {
+    return (inhouse || []).filter(b => {
       if (b.status !== 'checked_in') return false;
       const co = (b.check_out || '').slice(0, 10);
       return co && co < today;
     });
-  }, [bookings, today]);
+  }, [inhouse, today]);
 
   const noShows = useMemo(() => {
     if (!bookings) return [];
@@ -203,6 +164,152 @@ const FrontdeskTab = ({
     setGroupCheckinIds(new Set());
     setShowGroupCheckin(false);
   };
+
+  const requestCheckout = useCallback(async (booking) => {
+    if (!booking?.id || checkoutInProgress) return;
+
+    const balance = effectiveBookingBalance(booking);
+    if (balance > 0.01) {
+      setReservationDetailId?.(booking.id);
+      toast.warning(`${tf('balance')}: ${formatMoney(balance)} · ${tf('collectFirst')}`);
+      return;
+    }
+
+    const guestName = booking.guest_name || booking.guest?.name || tf('guest');
+    const confirmed = await confirmDialog({
+      message: `${guestName} için çıkış işlemini onaylıyor musunuz?`,
+      variant: 'default',
+    });
+    if (!confirmed) return;
+
+    setCheckoutInProgress(booking.id);
+    try {
+      await handleCheckOut(booking.id);
+    } finally {
+      setCheckoutInProgress(null);
+    }
+  }, [checkoutInProgress, effectiveBookingBalance, formatMoney, handleCheckOut, setReservationDetailId, t, tf]);
+
+  const openQuickPayment = useCallback((booking) => {
+    const balance = effectiveBookingBalance(booking);
+    if (!booking?.id || balance <= 0.01) return;
+    setQuickPaymentBooking(booking);
+    setQuickPaymentAmount(balance.toFixed(2));
+    setQuickPaymentMethod('card');
+    setQuickPaymentCariAccountId('');
+    setQuickPaymentError('');
+  }, [effectiveBookingBalance]);
+
+  const closeQuickPayment = useCallback(() => {
+    if (quickPaymentSubmittingRef.current) return;
+    setQuickPaymentBooking(null);
+    setQuickPaymentAmount('');
+    setQuickPaymentMethod('card');
+    setQuickPaymentCariAccountId('');
+    setQuickPaymentError('');
+  }, []);
+
+  const handleQuickPaymentMethodChange = useCallback(async (method) => {
+    setQuickPaymentError('');
+    setQuickPaymentMethod(method);
+    setQuickPaymentCariAccountId('');
+    if (method !== 'city_ledger') return;
+
+    setQuickPaymentCariLoading(true);
+    try {
+      const response = await axios.get('/pms/cari-accounts');
+      const accounts = Array.isArray(response.data?.accounts) ? response.data.accounts : [];
+      setQuickPaymentCariAccounts(accounts);
+      if (accounts.length === 1) setQuickPaymentCariAccountId(accounts[0].id);
+    } catch (error) {
+      setQuickPaymentCariAccounts([]);
+      toast.error('Cari hesaplar yüklenemedi. Lütfen tekrar deneyin.');
+    } finally {
+      setQuickPaymentCariLoading(false);
+    }
+  }, []);
+
+  const submitQuickPayment = useCallback(async () => {
+    if (!quickPaymentBooking?.id || quickPaymentSubmittingRef.current) return;
+    const amount = parseMoneyInput(quickPaymentAmount);
+    const balance = effectiveBookingBalance(quickPaymentBooking);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      toast.error('Ödeme tutarı sıfırdan büyük olmalı.');
+      return;
+    }
+    if (amount > balance + 0.01) {
+      toast.error('Ödeme tutarı kalan bakiyeyi aşamaz.');
+      return;
+    }
+    const isCariTransfer = quickPaymentMethod === 'city_ledger';
+    if (isCariTransfer && !quickPaymentCariAccountId) {
+      toast.error('Aktarım yapılacak cari hesabı seçin.');
+      return;
+    }
+
+    quickPaymentSubmittingRef.current = true;
+    setQuickPaymentInProgress(true);
+    setQuickPaymentError('');
+    const idempotencyKey = window.crypto?.randomUUID?.()
+      || `frontdesk-payment-${quickPaymentBooking.id}-${Date.now()}-${Math.random()}`;
+    try {
+      let response;
+      if (isCariTransfer) {
+        const selectedCariAccount = quickPaymentCariAccounts.find(
+          (account) => (account.transfer_id || account.id) === quickPaymentCariAccountId,
+        );
+        response = await axios.post(`/pms/reservations/${quickPaymentBooking.id}/transfer-to-cari`, {
+          amount,
+          cari_account_id: quickPaymentCariAccountId,
+          cari_account_name: selectedCariAccount?.name || selectedCariAccount?.account_name || null,
+          description: 'Ön büro hızlı cari aktarım',
+        }, {
+          headers: { 'Idempotency-Key': idempotencyKey },
+        });
+        toast.success(`Bakiye cari hesaba aktarıldı: ${formatMoney(amount)}`);
+      } else {
+        response = await axios.post(`/frontdesk/folio/${quickPaymentBooking.id}/payment`, {
+          amount,
+          method: quickPaymentMethod,
+          payment_type: amount >= balance - 0.01 ? 'final' : 'interim',
+          reference: null,
+          notes: 'Ön büro hızlı tahsilat',
+        }, {
+          headers: { 'Idempotency-Key': idempotencyKey },
+        });
+        toast.success(`Ödeme folyoya işlendi: ${formatMoney(amount)}`);
+      }
+      const apiRemaining = Number(response?.data?.remaining_balance);
+      const remainingBalance = Number.isFinite(apiRemaining)
+        ? Math.max(0, apiRemaining)
+        : Math.max(0, balance - amount);
+      setQuickPaymentBalanceOverrides((previous) => ({
+        ...previous,
+        [quickPaymentBooking.id]: {
+          sourceBalance: Math.max(0, Number(quickPaymentBooking.balance) || 0),
+          remainingBalance,
+        },
+      }));
+      setQuickPaymentBooking(null);
+      setQuickPaymentAmount('');
+      setQuickPaymentMethod('card');
+      setQuickPaymentCariAccountId('');
+      await Promise.allSettled([
+        loadFrontDeskData ? Promise.resolve().then(loadFrontDeskData) : Promise.resolve(),
+        loadData ? Promise.resolve().then(loadData) : Promise.resolve(),
+      ]);
+    } catch (error) {
+      const detail = error?.response?.data?.detail;
+      const message = typeof detail === 'string'
+        ? detail
+        : detail?.message || 'Ödeme folyoya işlenemedi. Lütfen tekrar deneyin.';
+      setQuickPaymentError(message);
+      toast.error(message);
+    } finally {
+      quickPaymentSubmittingRef.current = false;
+      setQuickPaymentInProgress(false);
+    }
+  }, [effectiveBookingBalance, formatMoney, loadData, loadFrontDeskData, quickPaymentAmount, quickPaymentBooking, quickPaymentCariAccountId, quickPaymentCariAccounts, quickPaymentMethod, t]);
 
   if (loading) {
     return (
@@ -366,7 +473,7 @@ const FrontdeskTab = ({
                     const guestName = b.guest?.name || b.guest_name || tf('guest');
                     const roomNo = b.room?.room_number || b.room_number || '-';
                     const isVip = !!(b.guest?.vip_status || b.vip_status);
-                    const balance = Number(b.balance) || 0;
+                    const balance = effectiveBookingBalance(b);
                     return (
                       <button
                         key={b.id}
@@ -395,7 +502,7 @@ const FrontdeskTab = ({
                           )}
                           {balance > 0 && (
                             <Badge variant="outline" className="text-[9px] border-red-300 text-red-700 ml-auto">
-                              {tf('balance')}: {balance.toFixed(2)} {t('pmsComponents.common.currency')}
+                              {tf('balance')}: {formatMoney(balance)}
                             </Badge>
                           )}
                         </div>
@@ -421,21 +528,21 @@ const FrontdeskTab = ({
             <div className="rounded-md bg-emerald-50 border border-emerald-100 p-3">
               <p className="text-[11px] text-emerald-700 font-medium">{tf('expectedRevenueToday')}</p>
               <p className="text-xl font-bold text-emerald-800 mt-1">
-                {formatMoney(financialPulse.expectedRevenue)} <span className="text-[11px] font-normal">{t('pmsComponents.common.currency')}</span>
+                {formatMoney(financialPulse.expectedRevenue)}
               </p>
               <p className="text-[10px] text-emerald-600 mt-0.5">{tf('fromArrivals', { count: arrivals.length })}</p>
             </div>
             <div className="rounded-md bg-amber-50 border border-amber-100 p-3">
               <p className="text-[11px] text-amber-700 font-medium">{tf('expectedCollectionsToday')}</p>
               <p className="text-xl font-bold text-amber-800 mt-1">
-                {formatMoney(financialPulse.expectedCollections)} <span className="text-[11px] font-normal">{t('pmsComponents.common.currency')}</span>
+                {formatMoney(financialPulse.expectedCollections)}
               </p>
               <p className="text-[10px] text-amber-600 mt-0.5">{tf('fromDepartures', { count: departures.length })}</p>
             </div>
             <div className="rounded-md bg-rose-50 border border-rose-100 p-3">
               <p className="text-[11px] text-rose-700 font-medium">{tf('inhouseOutstanding')}</p>
               <p className="text-xl font-bold text-rose-800 mt-1">
-                {formatMoney(financialPulse.inhouseOutstanding)} <span className="text-[11px] font-normal">{t('pmsComponents.common.currency')}</span>
+                {formatMoney(financialPulse.inhouseOutstanding)}
               </p>
               <p className="text-[10px] text-rose-600 mt-0.5">{tf('inhouseGuestsCount', { count: inhouse.length })}</p>
             </div>
@@ -508,7 +615,7 @@ const FrontdeskTab = ({
       )}
 
       <div className="flex gap-2">
-        <Button variant="outline" size="sm" onClick={() => setShowWalkIn(true)}>
+        <Button variant="outline" size="sm" onClick={() => navigate('/walkin')} data-testid="open-walkin-workflow">
           <UserPlus className="w-4 h-4 mr-1" /> {tf('walkIn')}
         </Button>
         {groupArrivals.length > 0 && (
@@ -516,9 +623,6 @@ const FrontdeskTab = ({
             <CheckSquare className="w-4 h-4 mr-1" /> {tf('batchCheckin')} ({groupArrivals.length})
           </Button>
         )}
-        <Button variant="outline" size="sm" onClick={() => navigate('/activities')}>
-          <CalendarDays className="w-4 h-4 mr-1" /> {tf('activities', { defaultValue: 'Aktiviteler' })}
-        </Button>
       </div>
 
       {overstays.length > 0 && (
@@ -537,9 +641,32 @@ const FrontdeskTab = ({
                     <span className="text-gray-500 ml-2">{tf('room')} {b.room_number}</span>
                     <span className="text-red-500 ml-2">{tf('plannedCheckout')}: {b.check_out?.slice(0, 10)}</span>
                   </div>
-                  <Button size="sm" variant="outline" className="h-6 text-xs border-red-300 text-red-700" onClick={() => handleCheckOut(b.id)}>
-                    <LogOut className="w-3 h-3 mr-1" /> {tf('checkout')}
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    {effectiveBookingBalance(b) > 0.01 && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="h-7 text-xs border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                        onClick={() => openQuickPayment(b)}
+                        data-testid={`overstay-payment-${b.id}`}
+                      >
+                        <CreditCard className="w-3 h-3 mr-1" /> Ödeme Al
+                      </Button>
+                    )}
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-xs border-red-300 text-red-700"
+                      onClick={() => requestCheckout(b)}
+                      disabled={checkoutInProgress === b.id}
+                      data-testid={`overstay-checkout-${b.id}`}
+                    >
+                      <LogOut className="w-3 h-3 mr-1" />
+                      {checkoutInProgress === b.id ? 'İşleniyor…' : tf('checkout')}
+                    </Button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -664,6 +791,7 @@ const FrontdeskTab = ({
           {arrivals.map((booking) => {
             const isDirty = booking.room?.status === 'dirty' || booking.room?.status === 'cleaning';
             const isVip = booking.guest?.vip_status;
+            const balance = effectiveBookingBalance(booking);
             return (
               <Card key={booking.id} className={`transition-all hover:shadow-md ${isDirty ? 'border-l-4 border-l-amber-400' : ''} ${isVip ? 'ring-1 ring-indigo-200' : ''}`}
                 data-testid={`arrival-card-${booking.id}`}>
@@ -682,9 +810,9 @@ const FrontdeskTab = ({
                             <Calendar className="w-3 h-3" /> {tf('roomDirty')}
                           </span>
                         )}
-                        {booking.balance > 0 && (
+                        {balance > 0.01 && (
                           <span className="inline-flex items-center gap-1 text-[11px] bg-red-50 border border-red-200 text-red-700 rounded-md px-2 py-0.5">
-                            {tf('balance')}: {booking.balance?.toFixed(2)} {t('pmsComponents.common.currency')}
+                            {tf('balance')}: {formatMoney(balance)}
                           </span>
                         )}
                       </div>
@@ -719,7 +847,8 @@ const FrontdeskTab = ({
             <div className="text-center py-8 text-slate-400 text-sm">{tf('noDeparturesToday')}</div>
           )}
           {departures.map((booking) => {
-            const hasBalance = booking.balance > 0;
+            const balance = effectiveBookingBalance(booking);
+            const hasBalance = balance > 0.01;
             return (
               <Card key={booking.id} className={`transition-all hover:shadow-md ${hasBalance ? 'border-l-4 border-l-red-400' : 'border-l-4 border-l-emerald-400'}`}
                 data-testid={`departure-card-${booking.id}`}>
@@ -731,18 +860,27 @@ const FrontdeskTab = ({
                       <div className="text-xs text-slate-400 mt-0.5">{tf('checkout')}: {new Date(booking.check_out).toLocaleDateString()}</div>
                       {hasBalance && (
                         <div className="mt-2 inline-flex items-center gap-1 text-[11px] bg-red-50 border border-red-200 text-red-700 rounded-md px-2 py-0.5">
-                          <span className="font-semibold">{tf('balance')}: {booking.balance?.toFixed(2)} {t('pmsComponents.common.currency')}</span>
+                          <span className="font-semibold">{tf('balance')}: {formatMoney(balance)}</span>
                           — {tf('collectFirst')}
                         </div>
                       )}
                     </div>
                     <div className="flex flex-col gap-1.5 flex-shrink-0">
                       <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => loadFolio(booking.id)}>{tf('folio')}</Button>
-                      <Button size="sm"
+                      {hasBalance && (
+                        <Button type="button" size="sm" variant="outline"
+                          className="h-8 text-xs border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                          onClick={() => openQuickPayment(booking)}
+                          data-testid={`departure-payment-${booking.id}`}>
+                          <CreditCard className="w-4 h-4 mr-1.5" /> Ödeme Al
+                        </Button>
+                      )}
+                      <Button type="button" size="sm"
                         className={`h-9 ${hasBalance ? 'bg-slate-300 text-slate-500 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 text-white'}`}
-                        onClick={() => handleCheckOut(booking.id)} disabled={hasBalance}
+                        onClick={() => requestCheckout(booking)} disabled={hasBalance || checkoutInProgress === booking.id}
                         data-testid={`checkout-${booking.id}`}>
-                        <LogOut className="w-4 h-4 mr-1.5" /> {tf('checkout')}
+                        <LogOut className="w-4 h-4 mr-1.5" />
+                        {checkoutInProgress === booking.id ? 'İşleniyor…' : tf('checkout')}
                       </Button>
                     </div>
                   </div>
@@ -777,94 +915,120 @@ const FrontdeskTab = ({
         </TabsContent>
       </Tabs>
 
-      <Dialog open={showWalkIn} onOpenChange={(open) => {
-        if (!open && walkInSubmitting) return; // prevent closing mid-submit
-        setShowWalkIn(open);
-        if (!open) resetWalkInForm();
-      }}>
-        <DialogContent>
+      <Dialog open={!!quickPaymentBooking} onOpenChange={(open) => !open && closeQuickPayment()}>
+        <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><UserPlus className="w-5 h-5" /> {tf('walkInTitle')}</DialogTitle>
+            <DialogTitle>Hızlı Ödeme Al</DialogTitle>
           </DialogHeader>
-          <div className="space-y-3 py-2">
-            <p className="text-xs text-gray-500 -mt-1">{tf('walkInIntro')}</p>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <div><Label>{tf('guestName')}</Label><Input value={walkInForm.guest_name} onChange={e => setWalkInForm(p => ({ ...p, guest_name: e.target.value }))} /></div>
-              <div><Label>{t('pmsComponents.guests.phone')}</Label><Input value={walkInForm.phone} onChange={e => setWalkInForm(p => ({ ...p, phone: e.target.value }))} /></div>
-              <div><Label>{tf('emailOptional')}</Label><Input type="email" value={walkInForm.email} onChange={e => setWalkInForm(p => ({ ...p, email: e.target.value }))} placeholder="ornek@mail.com" /></div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div><Label>{tf('idPassport')}</Label><Input value={walkInForm.id_number} onChange={e => setWalkInForm(p => ({ ...p, id_number: e.target.value }))} /></div>
-              <div>
-                <Label>{tf('roomNo')}</Label>
-                <Input value={walkInForm.room_number} onChange={e => setWalkInForm(p => ({ ...p, room_number: e.target.value }))} placeholder={tf('roomNoPlaceholder')} />
-                {walkInForm.room_number?.trim() && (
-                  matchedRoom ? (
-                    isRoomBookable ? (
-                      <p className="text-[11px] text-emerald-700 mt-1 flex items-center gap-1">
-                        <CheckCircle2 className="w-3 h-3" />
-                        {tf('roomBookable', { type: matchedRoom.room_type || '-', floor: matchedRoom.floor ?? '-' })}
-                      </p>
-                    ) : (
-                      <p className="text-[11px] text-red-700 mt-1 flex items-center gap-1">
-                        <XCircle className="w-3 h-3" />
-                        {tf('roomBlocked', { status: matchedRoom.status })}
-                      </p>
-                    )
-                  ) : (
-                    <p className="text-[11px] text-amber-700 mt-1 flex items-center gap-1">
-                      <AlertTriangle className="w-3 h-3" /> {tf('roomNotFoundHint')}
-                    </p>
-                  )
-                )}
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div><Label>{tf('nights')}</Label><Input type="number" min="1" value={walkInForm.nights} onChange={e => setWalkInForm(p => ({ ...p, nights: parseInt(e.target.value) || 1 }))} /></div>
-              <div><Label>{tf('nightlyRate')}</Label><Input type="number" value={walkInForm.rate} onChange={e => setWalkInForm(p => ({ ...p, rate: parseFloat(e.target.value) || 0 }))} /></div>
-            </div>
-
-            {availableRoomQuickPicks.length > 0 && (
-              <div className="rounded-md border border-emerald-100 bg-emerald-50/60 p-2">
-                <p className="text-[11px] text-emerald-800 mb-1 font-medium">{tf('quickPickAvailable')}</p>
-                <div className="flex flex-wrap gap-1">
-                  {availableRoomQuickPicks.map(r => (
-                    <button
-                      key={r.id}
-                      type="button"
-                      onClick={() => setWalkInForm(p => ({
-                        ...p,
-                        room_number: String(r.room_number),
-                        rate: p.rate || r.base_price || r.price || 0,
-                      }))}
-                      className="px-2 py-0.5 rounded border border-emerald-300 bg-white text-[11px] text-emerald-800 hover:bg-emerald-100"
-                    >
-                      {r.room_number} · {r.room_type || '-'}
-                    </button>
-                  ))}
+          {quickPaymentBooking && (
+            <div className="space-y-4">
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <div className="font-semibold text-slate-900">
+                  {quickPaymentBooking.guest_name || quickPaymentBooking.guest?.name || tf('guest')}
+                </div>
+                <div className="mt-1 flex items-center justify-between text-sm text-slate-600">
+                  <span>{tf('room')} {quickPaymentBooking.room_number || quickPaymentBooking.room?.room_number || '-'}</span>
+                  <span className="font-semibold text-red-700">
+                    {tf('balance')}: {formatMoney(effectiveBookingBalance(quickPaymentBooking))}
+                  </span>
+                </div>
+                <div className="mt-2 flex items-center gap-2 border-t border-slate-200 pt-2 text-sm">
+                  <span className="text-slate-500">Rezervasyon kanalı</span>
+                  <Badge
+                    variant="outline"
+                    className="ml-auto border-sky-200 bg-sky-50 text-sky-800"
+                    data-testid="frontdesk-quick-payment-channel"
+                  >
+                    {formatBookingChannel(quickPaymentBooking)}
+                  </Badge>
                 </div>
               </div>
-            )}
-
-            <div className="rounded-md border bg-gray-50 p-2 text-[11px] text-gray-600">
-              {tf('walkInWhatHappens')}
+              <div className="space-y-2">
+                <Label htmlFor="frontdesk-quick-payment-amount">Tutar</Label>
+                <Input
+                  id="frontdesk-quick-payment-amount"
+                  data-testid="frontdesk-quick-payment-amount"
+                  {...moneyInputProps}
+                  aria-describedby="frontdesk-quick-payment-amount-help"
+                  placeholder="Örn. 150,74"
+                  value={quickPaymentAmount}
+                  onChange={(event) => {
+                    if (isMoneyInput(event.target.value)) setQuickPaymentAmount(event.target.value);
+                  }}
+                  disabled={quickPaymentInProgress}
+                />
+                <p id="frontdesk-quick-payment-amount-help" className="text-xs text-slate-500">
+                  Virgül veya nokta ile en fazla iki ondalık basamak girebilirsiniz.
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Label>Tahsilat / Aktarım Yöntemi</Label>
+                <Select value={quickPaymentMethod} onValueChange={handleQuickPaymentMethodChange} disabled={quickPaymentInProgress}>
+                  <SelectTrigger data-testid="frontdesk-quick-payment-method">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="card">Kredi / Banka Kartı</SelectItem>
+                    <SelectItem value="cash">Nakit</SelectItem>
+                    <SelectItem value="bank_transfer">Havale / EFT</SelectItem>
+                    <SelectItem value="city_ledger">Cari Hesaba Aktar</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              {quickPaymentMethod === 'city_ledger' && (
+                <div className="space-y-2">
+                  <Label>Cari Hesap</Label>
+                  <Select
+                    value={quickPaymentCariAccountId}
+                    onValueChange={setQuickPaymentCariAccountId}
+                    disabled={quickPaymentInProgress || quickPaymentCariLoading}
+                  >
+                    <SelectTrigger data-testid="frontdesk-quick-payment-cari-account">
+                      <SelectValue placeholder={quickPaymentCariLoading ? 'Cari hesaplar yükleniyor…' : 'Cari hesap seçin'} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {quickPaymentCariAccounts.map((account) => (
+                        <SelectItem key={account.id} value={account.transfer_id || account.id}>
+                          {account.name || account.title || account.account_name || account.id}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {!quickPaymentCariLoading && quickPaymentCariAccounts.length === 0 && (
+                    <p className="text-xs text-amber-700">Aktarım için önce Cari Hesaplar ekranında aktif bir cari oluşturun.</p>
+                  )}
+                  <p className="text-xs text-slate-500">
+                    Rezervasyon kanalı: <span className="font-medium text-slate-700">{formatBookingChannel(quickPaymentBooking)}</span>. İlgili acente carisini seçin.
+                  </p>
+                </div>
+              )}
+              <p className="text-xs text-slate-500">
+                {quickPaymentMethod === 'city_ledger'
+                  ? 'Tutar misafirin folyosunu kapatır ve seçilen cari hesabın borcuna tek işlem olarak yansır.'
+                  : 'Ödeme doğrudan misafirin açık folyosuna işlenir. Bakiye kapandığında çıkış butonu otomatik olarak kullanılabilir hâle gelir.'}
+              </p>
+              {quickPaymentError && (
+                <p role="alert" data-testid="frontdesk-quick-payment-error" className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                  {quickPaymentError}
+                </p>
+              )}
+              <div className="flex justify-end gap-2 border-t pt-4">
+                <Button type="button" variant="outline" onClick={closeQuickPayment} disabled={quickPaymentInProgress}>
+                  Vazgeç
+                </Button>
+                <Button
+                  type="button"
+                  onClick={submitQuickPayment}
+                  disabled={quickPaymentInProgress || !Number.isFinite(parseMoneyInput(quickPaymentAmount)) || parseMoneyInput(quickPaymentAmount) <= 0 || (quickPaymentMethod === 'city_ledger' && !quickPaymentCariAccountId)}
+                  data-testid="frontdesk-quick-payment-submit"
+                  className="bg-emerald-600 text-white hover:bg-emerald-700"
+                >
+                  {quickPaymentInProgress ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CreditCard className="mr-2 h-4 w-4" />}
+                  {quickPaymentInProgress ? 'İşleniyor…' : quickPaymentMethod === 'city_ledger' ? 'Cari Hesaba Aktar' : 'Ödemeyi Folyoya İşle'}
+                </Button>
+              </div>
             </div>
-
-            <Button
-              className="w-full bg-emerald-600 hover:bg-emerald-700"
-              onClick={handleWalkInSubmit}
-              disabled={
-                walkInSubmitting ||
-                !walkInForm.guest_name?.trim() ||
-                !walkInForm.room_number?.trim() ||
-                !walkInForm.rate || walkInForm.rate <= 0 ||
-                !isRoomBookable
-              }
-            >
-              <LogIn className="w-4 h-4 mr-2" />
-              {walkInSubmitting ? tf('walkInProcessing') : tf('quickCheckin')}
-            </Button>
-          </div>
+          )}
         </DialogContent>
       </Dialog>
 

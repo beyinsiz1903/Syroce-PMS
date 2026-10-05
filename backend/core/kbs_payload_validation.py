@@ -1,23 +1,17 @@
 """KBS payload validation helpers.
 
-Polise gönderilecek misafir bilgisinin enqueue zamanında eksiksiz olduğunu
-doğrular. Eksikse iş kuyruğa girmesin diye `validate_kbs_payload()` çağrılır.
+Giriş ve çıkışın resmî KBS sözleşmeleri aynı alanları istemez. Özellikle
+Jandarma SOAP çıkışı yalnız kimlik/belge ile gerçek çıkış zamanını taşır;
+oda, ad ve giriş zamanı istemek geçerli bir bildirimi PMS içinde engeller.
 
-Kurallar (EGM/Jandarma KBS minimum şeması):
-  * `guest_name`               — boş olamaz
-  * `nationality == "TC"`      → `id_number` 11 hane (numeric)
-  * `nationality != "TC"`      → `passport_number`, `gender`, `birth_place`
-                                  ve `birth_date` boş olamaz
-  * `check_in` / `check_out`   — boş olamaz
-
-Yardımcı: `validate_or_raise()` 422 HTTPException fırlatır (router için).
+Bu modül her iki taşıyıcının ortak asgari şartlarını action bazında doğrular.
+Taşıyıcıya özgü enum/eşleme kontrolleri kurum çağrısından hemen önce adapter
+tarafında fail-closed yapılır.
 """
 
 from __future__ import annotations
 
 from fastapi import HTTPException
-
-REQUIRED_BASE_FIELDS = ("guest_name", "check_in", "check_out")
 
 
 def _norm(v: object) -> str:
@@ -29,16 +23,38 @@ def _is_turkish_nationality(value: object) -> bool:
     return normalized in {"", "TC", "TR", "TUR", "TURKIYE"}
 
 
-def validate_kbs_payload(snapshot: dict) -> tuple[bool, list[str]]:
+def _is_foreign_identity_card(value: object) -> bool:
+    normalized = _norm(value).lower().replace("-", "_").replace(" ", "_")
+    return normalized in {
+        "foreign_identity_card",
+        "foreign_id",
+        "yabanci_kimlik",
+        "yabanci_kimlik_karti",
+        "ykn",
+    }
+
+
+def validate_kbs_payload(snapshot: dict, action: str = "checkin") -> tuple[bool, list[str]]:
     """Return (ok, missing_fields). Missing list boşsa payload uygundur."""
     missing: list[str] = []
-    for field in REQUIRED_BASE_FIELDS:
+    if action not in {"checkin", "checkout"}:
+        return False, ["action_invalid"]
+
+    required = ("room_number", "check_in") if action == "checkin" else ("check_out",)
+    for field in required:
         if not _norm(snapshot.get(field)):
             missing.append(field)
 
     nationality = snapshot.get("nationality")
+    id_type = snapshot.get("id_type")
     id_number = _norm(snapshot.get("id_number"))
     passport_number = _norm(snapshot.get("passport_number"))
+    foreign_identity_card = _is_foreign_identity_card(id_type)
+
+    # YKN belgesi kişinin yabancı olduğunu gösterir; KBS formundaki uyruk
+    # ayrıca kaydedilmeden bildirim eksik kalır.
+    if foreign_identity_card and not _norm(nationality):
+        missing.append("nationality")
 
     if _is_turkish_nationality(nationality):
         if not id_number:
@@ -46,21 +62,34 @@ def validate_kbs_payload(snapshot: dict) -> tuple[bool, list[str]]:
         elif not (id_number.isdigit() and len(id_number) == 11):
             missing.append("id_number_invalid")
     else:
-        if not _norm(snapshot.get("birth_date")):
-            missing.append("birth_date")
-        if not passport_number:
+        # Türkiye'de verilen yabancı kimlik numarası (YKN) taşıyan kişiler
+        # pasaportla değil, KBS'deki "YKN olan Yabancı" akışıyla bildirilir.
+        # Belge türü açıkça YKN ise 11 haneli kimlik numarası zorunludur;
+        # diğer yabancı belgelerde pasaport kuralı korunur.
+        if foreign_identity_card:
+            if not id_number:
+                missing.append("id_number")
+            elif not (id_number.isdigit() and len(id_number) == 11):
+                missing.append("id_number_invalid")
+        elif not passport_number:
             missing.append("passport_number")
-        if not _norm(snapshot.get("gender")):
-            missing.append("gender")
-        if not _norm(snapshot.get("birth_place")):
-            missing.append("birth_place")
+        # Jandarma'nin "YKN olan Yabanci" servisi kimlik numarasi, oda ve
+        # giris zamaniyla calisir. Dogum tarihi/cinsiyet/ad yalnız pasaportlu
+        # yabanci bildiriminde kurum sozlesmesinin zorunlu alanlaridir.
+        if action == "checkin" and not foreign_identity_card:
+            if not _norm(snapshot.get("guest_name")):
+                missing.append("guest_name")
+            if not _norm(snapshot.get("birth_date")):
+                missing.append("birth_date")
+            if not _norm(snapshot.get("gender")):
+                missing.append("gender")
 
     return (len(missing) == 0, missing)
 
 
-def validate_or_raise(snapshot: dict) -> None:
+def validate_or_raise(snapshot: dict, action: str = "checkin") -> None:
     """Geçersizse 422 fırlat. Geçerliyse no-op."""
-    ok, missing = validate_kbs_payload(snapshot)
+    ok, missing = validate_kbs_payload(snapshot, action)
     if not ok:
         raise HTTPException(
             status_code=422,

@@ -265,6 +265,53 @@ async def test_durable_result_requires_pms_readback(
 
 
 @pytest.mark.asyncio
+async def test_durable_result_recovers_room_after_legacy_hold_release(monkeypatch):
+    durable = {
+        "id": "durable-booking",
+        "status": "confirmed",
+        "room_id": None,
+        "room_type": "Suite",
+        "property_id": "property",
+        "check_in": "2026-10-10",
+        "check_out": "2026-10-11",
+    }
+    bookings = _Collection(find_one=lambda *_args, **_kwargs: dict(durable))
+    fake_db = SimpleNamespace(
+        bookings=bookings,
+        imported_reservations=_Collection(find_one=lambda *_args, **_kwargs: None),
+    )
+    monkeypatch.setattr(sync_engine, "db", fake_db)
+    monkeypatch.setattr(sync_engine, "sync_reservation_update", AsyncMock(return_value=True))
+    monkeypatch.setattr(
+        "domains.channel_manager.providers.unmatched_hold.release_unmatched_reservation_hold",
+        AsyncMock(
+            return_value={
+                "booking_id": "legacy-hold",
+                "released": True,
+                "room_id": "room-208",
+                "room_number": "208",
+            }
+        ),
+    )
+    recover = AsyncMock(return_value=({**durable, "room_id": "room-208"}, {"id": "room-208"}))
+    monkeypatch.setattr(
+        "core.room_auto_assignment.assign_pending_booking_with_auto_assignment",
+        recover,
+    )
+
+    durability = await sync_engine._ensure_durable_pms_result(
+        "tenant",
+        _reservation(state="modified"),
+        SimpleNamespace(status="processed", decision="update"),
+        is_cancellation=False,
+    )
+
+    assert durability == sync_engine._PMS_DURABLE
+    recover.assert_awaited_once()
+    assert recover.await_args.kwargs["booking_doc"]["preferred_room_number"] == "208"
+
+
+@pytest.mark.asyncio
 async def test_mapping_fix_replay_produces_one_booking_and_one_ack(monkeypatch):
     from core import import_bridge_service
 

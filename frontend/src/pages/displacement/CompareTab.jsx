@@ -7,7 +7,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Plus, Trash2, RefreshCw, GitCompare } from 'lucide-react';
-import { fmt, fmtPct, tomorrow, dayAfter } from './helpers';
+import { fmtPct, tomorrow, dayAfter } from './helpers';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 const CompareTab = ({
   user,
   tenant,
@@ -33,6 +34,8 @@ const CompareTab = ({
     commission: 5
   }]);
   const [result, setResult] = useState(null);
+  const currency = result?.currency || tenant?.currency || cachedTenantCurrency();
+  const money = value => formatCurrency(value, currency);
   const [loading, setLoading] = useState(false);
   const addScenario = () => {
     if (scenarios.length >= 5) return;
@@ -114,7 +117,7 @@ const CompareTab = ({
                   <Input value={sc.name} onChange={e => updateScenario(i, 'name', e.target.value)} />
                 </div>
                 <div className="w-28">
-                  <Label className="text-xs">{t('displacement.rate', 'Rate (₺)')}</Label>
+                  <Label className="text-xs">{t('displacement.rate', `Rate (${currency})`)}</Label>
                   <Input type="number" min={0} value={sc.rate} onChange={e => updateScenario(i, 'rate', e.target.value)} />
                 </div>
                 <div className="w-28">
@@ -125,7 +128,14 @@ const CompareTab = ({
                   <Label className="text-xs">{t('displacement.commShort', 'Comm%')}</Label>
                   <Input type="number" min={0} max={100} value={sc.commission} onChange={e => updateScenario(i, 'commission', e.target.value)} />
                 </div>
-                {scenarios.length > 1 && <Button size="icon" variant="ghost" onClick={() => removeScenario(i)} className="text-red-500">
+                {scenarios.length > 1 && <Button
+                  size="icon"
+                  variant="ghost"
+                  onClick={() => removeScenario(i)}
+                  className="text-red-500"
+                  aria-label={`${sc.name || `${t('displacement.scenario', 'Senaryo')} ${i + 1}`} senaryosunu sil`}
+                  title={t('displacement.removeScenario', 'Senaryoyu sil')}
+                >
                     <Trash2 className="w-4 h-4" />
                   </Button>}
               </div>)}
@@ -167,24 +177,24 @@ const CompareTab = ({
                     <div className="space-y-2 text-sm">
                       <div className="flex justify-between">
                         <span className="text-gray-500">{t('displacement.rate', 'Rate')}</span>
-                        <span className="font-medium">₺{fmt(sc.proposed_rate)}</span>
+                        <span className="font-medium">{money(sc.proposed_rate)}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-gray-500">{t('displacement.proposedRevenue', 'Proposed')}</span>
-                        <span className="font-medium text-blue-600">₺{fmt(sc.total_proposed)}</span>
+                        <span className="font-medium text-blue-600">{money(sc.total_proposed)}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-gray-500">{t('displacement.displaced', 'Displaced')}</span>
-                        <span className="font-medium text-red-600">₺{fmt(sc.total_displaced)}</span>
+                        <span className="font-medium text-red-600">{money(sc.total_displaced)}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-gray-500">{t('displacement.ancillaryRevenue', 'Ancillary')}</span>
-                        <span className="font-medium text-indigo-600">₺{fmt(sc.total_ancillary)}</span>
+                        <span className="font-medium text-indigo-600">{money(sc.total_ancillary)}</span>
                       </div>
                       <div className="border-t pt-2 flex justify-between">
                         <span className="font-semibold">{t('displacement.net', 'Net')}</span>
                         <span className={`font-bold ${sc.net_displacement >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                          ₺{fmt(sc.net_displacement)}
+                          {money(sc.net_displacement)}
                         </span>
                       </div>
                       <div className="flex justify-between text-xs">

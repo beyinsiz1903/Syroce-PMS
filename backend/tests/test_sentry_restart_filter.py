@@ -328,6 +328,15 @@ class TestHotelRunnerObsRateLimit:
             {"logentry": {"message": self._OBS_429}}
         ) is True
 
+    def test_detects_current_structured_observability_template(self):
+        msg = (
+            "[HR-OBS] FAILURE type=HotelRunnerRateLimitError "
+            "conn_fp=abc path=/api/channel-manager/bulk-grid-update status=429"
+        )
+        assert _is_hotelrunner_obs_rate_limited(
+            {"logentry": {"message": msg}}
+        ) is True
+
     def test_detected_from_exception_value(self):
         assert _is_hotelrunner_obs_rate_limited(
             {"exception": {"values": [{"value": self._OBS_429}]}}

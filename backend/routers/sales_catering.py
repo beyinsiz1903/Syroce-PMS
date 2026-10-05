@@ -24,6 +24,7 @@ from core.database import db
 from core.entitlements.enforcement import require_feature
 from core.security import get_current_user
 from core.spa_mice_authz import require_catalog, require_mice_ops
+from core.tenant_currency import get_tenant_currency
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_op  # v95 DW
 
@@ -41,6 +42,24 @@ _NOT_LEAD = {"$ne": "lead"}
 
 
 _indexes_ready = False
+
+
+def _normalize_currency(value: str | None, fallback: str) -> str:
+    code = str(value or fallback).strip().upper()
+    if len(code) != 3 or not code.isascii() or not code.isalpha():
+        raise HTTPException(422, "Para birimi 3 harfli bir kod olmalıdır (örn. TRY, EUR, USD)")
+    return code
+
+
+async def _tenant_currency_code(tenant_id: str) -> str:
+    code, _symbol = await get_tenant_currency(tenant_id)
+    return _normalize_currency(code, "TRY")
+
+
+async def _currency_payload(payload: BaseModel, tenant_id: str) -> dict[str, Any]:
+    data = payload.model_dump()
+    data["currency"] = _normalize_currency(data.get("currency"), await _tenant_currency_code(tenant_id))
+    return data
 
 
 async def _ensure_indexes() -> None:
@@ -79,7 +98,7 @@ class OpportunityIn(BaseModel):
     expected_end: str | None = None
     pax: int = Field(0, ge=0)
     estimated_value: float = Field(0, ge=0)
-    currency: str = "TRY"
+    currency: str | None = Field(None, min_length=3, max_length=3, pattern=r"^[A-Za-z]{3}$")
     probability: int = Field(50, ge=0, le=100)
     source: str | None = None  # referral, website, repeat, cold...
     owner: str | None = None  # user id of sales rep
@@ -119,7 +138,7 @@ class PackageIn(BaseModel):
     max_pax: int = Field(0, ge=0)
     base_price: float = Field(0, ge=0)
     per_pax_price: float = Field(0, ge=0)
-    currency: str = "TRY"
+    currency: str | None = Field(None, min_length=3, max_length=3, pattern=r"^[A-Za-z]{3}$")
     items: list[PackageItemIn] = Field(default_factory=list)
     active: bool = True
 
@@ -142,7 +161,11 @@ async def list_opportunities(
         q["account_id"] = account_id
 
     cursor = db.mice_opportunities.find(q, {"_id": 0}).sort("created_at", -1).limit(limit)
-    return {"opportunities": [o async for o in cursor]}
+    opportunities = [o async for o in cursor]
+    tenant_currency = await _tenant_currency_code(current_user.tenant_id)
+    for opportunity in opportunities:
+        opportunity["currency"] = _normalize_currency(opportunity.get("currency"), tenant_currency)
+    return {"opportunities": opportunities}
 
 
 @router.post("/opportunities", status_code=201, dependencies=[Depends(require_feature("mice", "proposals_contracts"))])
@@ -163,7 +186,7 @@ async def create_opportunity(
         "created_at": now,
         "updated_at": now,
         "created_by": getattr(current_user, "id", None),
-        **payload.model_dump(),
+        **await _currency_payload(payload, current_user.tenant_id),
     }
     await db.mice_opportunities.insert_one(doc.copy())
     return doc
@@ -174,6 +197,7 @@ async def get_opportunity(opp_id: str, current_user: User = Depends(get_current_
     o = await db.mice_opportunities.find_one({"_kind": _NOT_LEAD, "id": opp_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
     if not o:
         raise HTTPException(404, "Opportunity not found")
+    o["currency"] = _normalize_currency(o.get("currency"), await _tenant_currency_code(current_user.tenant_id))
     acts = (
         await db.mice_opportunity_activities.find(
             {"_kind": _NOT_LEAD, "opportunity_id": opp_id, "tenant_id": current_user.tenant_id},
@@ -196,7 +220,7 @@ async def update_opportunity(
     require_mice_ops(current_user)
     res = await db.mice_opportunities.update_one(
         {"_kind": _NOT_LEAD, "id": opp_id, "tenant_id": current_user.tenant_id},
-        {"$set": {**payload.model_dump(), "updated_at": datetime.now(UTC).isoformat()}},
+        {"$set": {**await _currency_payload(payload, current_user.tenant_id), "updated_at": datetime.now(UTC).isoformat()}},
     )
     if res.matched_count == 0:
         raise HTTPException(404, "Opportunity not found")
@@ -321,11 +345,15 @@ async def add_activity(
 # ── Pipeline summary ─────────────────────────────────────────────
 @router.get("/pipeline", dependencies=[Depends(require_feature("mice", "proposals_contracts"))])
 async def pipeline_summary(current_user: User = Depends(get_current_user)):
+    tenant_currency = await _tenant_currency_code(current_user.tenant_id)
     pipeline = [
         {"$match": {"_kind": _NOT_LEAD, "tenant_id": current_user.tenant_id}},
         {
             "$group": {
-                "_id": "$stage",
+                "_id": {
+                    "stage": "$stage",
+                    "currency": {"$toUpper": {"$ifNull": ["$currency", tenant_currency]}},
+                },
                 "count": {"$sum": 1},
                 "total_value": {"$sum": {"$ifNull": ["$estimated_value", 0]}},
                 "weighted_value": {
@@ -343,12 +371,23 @@ async def pipeline_summary(current_user: User = Depends(get_current_user)):
     cursor = db.mice_opportunities.aggregate(pipeline)
     by_stage: dict[str, dict[str, Any]] = {}
     async for row in cursor:
-        by_stage[row.pop("_id") or "unknown"] = {
-            "count": row.get("count", 0),
-            "total_value": round(row.get("total_value", 0), 2),
-            "weighted_value": round(row.get("weighted_value", 0), 2),
-            "total_pax": row.get("total_pax", 0),
-        }
+        group = row.pop("_id") or {}
+        stage = group.get("stage") if isinstance(group, dict) else group
+        currency = _normalize_currency(group.get("currency") if isinstance(group, dict) else None, tenant_currency)
+        bucket = by_stage.setdefault(stage or "unknown", {
+            "count": 0, "total_value": 0, "weighted_value": 0, "total_pax": 0,
+            "total_value_by_currency": {}, "weighted_value_by_currency": {},
+        })
+        total = round(row.get("total_value", 0), 2)
+        weighted = round(row.get("weighted_value", 0), 2)
+        bucket["count"] += row.get("count", 0)
+        bucket["total_pax"] += row.get("total_pax", 0)
+        bucket["total_value_by_currency"][currency] = total
+        bucket["weighted_value_by_currency"][currency] = weighted
+        # Preserve scalar compatibility for the tenant's configured base bucket.
+        if currency == tenant_currency:
+            bucket["total_value"] = total
+            bucket["weighted_value"] = weighted
 
     stages = [
         {
@@ -360,6 +399,8 @@ async def pipeline_summary(current_user: User = Depends(get_current_user)):
                     "total_value": 0,
                     "weighted_value": 0,
                     "total_pax": 0,
+                    "total_value_by_currency": {},
+                    "weighted_value_by_currency": {},
                 },
             ),
         }
@@ -373,12 +414,27 @@ async def pipeline_summary(current_user: User = Depends(get_current_user)):
     closed = won_value + lost_value
     win_rate = round((won_value / closed) * 100, 2) if closed > 0 else 0
 
+    def sum_breakdown(field: str, selected: set[str]) -> dict[str, float]:
+        result: dict[str, float] = {}
+        for stage in stages:
+            if stage["stage"] not in selected:
+                continue
+            for currency, amount in stage.get(field, {}).items():
+                result[currency] = round(result.get(currency, 0) + amount, 2)
+        return result
+
+    open_stages = set(STAGES) - {"won", "lost"}
+
     return {
         "stages": stages,
         "open_value": round(open_value, 2),
         "weighted_open_value": round(weighted_open, 2),
         "won_value": round(won_value, 2),
         "lost_value": round(lost_value, 2),
+        "open_value_by_currency": sum_breakdown("total_value_by_currency", open_stages),
+        "weighted_open_value_by_currency": sum_breakdown("weighted_value_by_currency", open_stages),
+        "won_value_by_currency": sum_breakdown("total_value_by_currency", {"won"}),
+        "lost_value_by_currency": sum_breakdown("total_value_by_currency", {"lost"}),
         "win_rate_pct": win_rate,
     }
 
@@ -399,7 +455,11 @@ async def list_packages(
     if active_only:
         q["active"] = True
     cursor = db.mice_packages.find(q, {"_id": 0}).sort("name", 1)
-    return {"packages": [p async for p in cursor]}
+    packages = [p async for p in cursor]
+    tenant_currency = await _tenant_currency_code(current_user.tenant_id)
+    for package in packages:
+        package["currency"] = _normalize_currency(package.get("currency"), tenant_currency)
+    return {"packages": packages}
 
 
 @router.post("/packages", status_code=201)
@@ -418,7 +478,7 @@ async def create_package(
         "tenant_id": current_user.tenant_id,
         "created_at": now,
         "updated_at": now,
-        **payload.model_dump(),
+        **await _currency_payload(payload, current_user.tenant_id),
     }
     await db.mice_packages.insert_one(doc.copy())
     return doc
@@ -436,7 +496,7 @@ async def update_package(
         raise HTTPException(400, f"Invalid type. One of: {PACKAGE_TYPES}")
     res = await db.mice_packages.update_one(
         {"id": pkg_id, "tenant_id": current_user.tenant_id},
-        {"$set": {**payload.model_dump(), "updated_at": datetime.now(UTC).isoformat()}},
+        {"$set": {**await _currency_payload(payload, current_user.tenant_id), "updated_at": datetime.now(UTC).isoformat()}},
     )
     if res.matched_count == 0:
         raise HTTPException(404, "Package not found")
@@ -477,7 +537,7 @@ async def quote_package(
         "package_id": pkg_id,
         "package_name": pkg.get("name"),
         "pax": pax,
-        "currency": pkg.get("currency", "TRY"),
+        "currency": _normalize_currency(pkg.get("currency"), await _tenant_currency_code(current_user.tenant_id)),
         "breakdown": {
             "base_price": round(base, 2),
             "per_pax_total": round(per_pax * pax, 2),

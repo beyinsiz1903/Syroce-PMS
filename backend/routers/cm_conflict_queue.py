@@ -40,6 +40,8 @@ from pymongo.errors import DuplicateKeyError
 
 from core.atomic_booking import _night_dates, _timeline_event
 from core.database import db
+from core.helpers import create_audit_log
+from core.room_auto_assignment import assign_pending_booking_with_auto_assignment
 from core.security import get_current_user
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_op
@@ -50,6 +52,15 @@ router = APIRouter(prefix="/api/channel-manager/conflict-queue", tags=["channel-
 PENDING_QUERY: dict[str, Any] = {
     "allocation_source": "pending_assignment",
     "room_id": None,
+    "status": {"$in": ["confirmed", "guaranteed", "pending"]},
+}
+
+# Legacy imports created before ``allocation_source`` became mandatory can be
+# roomless duplicates without the ``pending_assignment`` marker.  Reconciliation
+# may inspect those rows, but still requires an exact external OTA identity and
+# a room-assigned checked-in/out authoritative stay before changing anything.
+LEGACY_DUPLICATE_CANDIDATE_QUERY: dict[str, Any] = {
+    "room_id": {"$in": [None, ""]},
     "status": {"$in": ["confirmed", "guaranteed", "pending"]},
 }
 
@@ -82,14 +93,84 @@ async def _serialize_pending_booking(booking: dict[str, Any]) -> dict[str, Any]:
         "room_type": booking.get("room_type"),
         "channel": booking.get("channel") or booking.get("source"),
         "external_confirmation": booking.get("external_confirmation"),
+        "external_reservation_id": booking.get("external_reservation_id"),
         "total_amount": booking.get("total_amount"),
         "currency": booking.get("currency"),
         "status": booking.get("status"),
         "adults": booking.get("adults"),
         "children": booking.get("children"),
         "special_requests": booking.get("special_requests"),
+        "allocation_source": booking.get("allocation_source"),
+        "auto_assignment_reason": booking.get("auto_assignment_reason"),
         "created_at": booking.get("created_at"),
     }
+
+
+def _external_booking_ids(booking: dict[str, Any]) -> list[str]:
+    """Return stable OTA identities from current and legacy booking shapes."""
+    source = booking.get("source")
+    source = source if isinstance(source, dict) else {}
+    values = (
+        booking.get("external_reservation_id"),
+        booking.get("external_confirmation"),
+        booking.get("ota_confirmation"),
+        booking.get("agency_reservation_number"),
+        booking.get("provider_reservation_id"),
+        source.get("external_reservation_id"),
+        source.get("external_confirmation"),
+        source.get("reservation_id"),
+        source.get("external_id"),
+        source.get("provider_reservation_id"),
+    )
+    return list(dict.fromkeys(str(value).strip() for value in values if str(value or "").strip()))
+
+
+async def _find_completed_duplicate(tenant_id: str, pending: dict[str, Any]) -> dict[str, Any] | None:
+    """Find an authoritative stay for a legacy unassigned OTA duplicate.
+
+    Deliberately requires an exact external identifier and a room-assigned
+    authoritative stay. The authoritative row may still be a future confirmed
+    reservation; waiting for check-in left exact OTA duplicates visible until
+    arrival. Guest names/dates are not used because providers may correct either
+    while the external reservation identity remains stable.
+    """
+    external_ids = _external_booking_ids(pending)
+    if not external_ids:
+        return None
+
+    identity_clauses: list[dict[str, Any]] = []
+    for external_id in external_ids:
+        identity_clauses.extend(
+            [
+                {"external_reservation_id": external_id},
+                {"external_confirmation": external_id},
+                {"ota_confirmation": external_id},
+                {"agency_reservation_number": external_id},
+                {"provider_reservation_id": external_id},
+                {"source.external_reservation_id": external_id},
+                {"source.external_confirmation": external_id},
+                {"source.reservation_id": external_id},
+                {"source.external_id": external_id},
+                {"source.provider_reservation_id": external_id},
+            ]
+        )
+
+    cursor = (
+        db.bookings.find(
+            {
+                "tenant_id": tenant_id,
+                "id": {"$ne": pending.get("id")},
+                "room_id": {"$nin": [None, ""]},
+                "status": {"$in": ["confirmed", "guaranteed", "pending", "checked_in", "checked_out"]},
+                "$or": identity_clauses,
+            },
+            {"_id": 0, "id": 1, "room_id": 1, "status": 1},
+        )
+        .sort("updated_at", -1)
+        .limit(1)
+    )
+    matches = await cursor.to_list(1)
+    return matches[0] if matches else None
 
 
 async def _claim_room_for_pending_booking(
@@ -246,7 +327,9 @@ async def list_conflict_queue(
     _perm=Depends(require_op("edit_booking")),
 ):
     """List bookings awaiting room assignment (OTA conflict fallbacks)."""
-    q = {**PENDING_QUERY, "tenant_id": current_user.tenant_id}
+    q = {**PENDING_QUERY}
+    if current_user.role != "super_admin" or getattr(current_user, "is_impersonating", False):
+        q["tenant_id"] = current_user.tenant_id
     cursor = db.bookings.find(q, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit)
     rows = [await _serialize_pending_booking(b) for b in await cursor.to_list(limit)]
     total = await db.bookings.count_documents(q)
@@ -259,7 +342,9 @@ async def conflict_queue_count(
     _perm=Depends(require_op("edit_booking")),
 ):
     """Lightweight count for KPI badges."""
-    q = {**PENDING_QUERY, "tenant_id": current_user.tenant_id}
+    q = {**PENDING_QUERY}
+    if current_user.role != "super_admin" or getattr(current_user, "is_impersonating", False):
+        q["tenant_id"] = current_user.tenant_id
     total = await db.bookings.count_documents(q)
     return {"count": total}
 
@@ -270,9 +355,114 @@ async def conflict_queue_stats(
     _perm=Depends(require_op("edit_booking")),
 ):
     """Alias for /count — returns pending conflict queue stats for frontend KPI widgets."""
-    q = {**PENDING_QUERY, "tenant_id": current_user.tenant_id}
+    q = {**PENDING_QUERY}
+    if current_user.role != "super_admin" or getattr(current_user, "is_impersonating", False):
+        q["tenant_id"] = current_user.tenant_id
     total = await db.bookings.count_documents(q)
     return {"count": total, "total": total, "status": "ok"}
+
+
+@router.post("/reconcile-legacy-duplicates")
+async def reconcile_legacy_duplicates(
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("edit_booking")),
+):
+    """Retire old unassigned rows whose real stay already exists.
+
+    The HotelRunner legacy-hold fix prevents new duplicates, but rows created
+    before that fix remain in the conflict queue.  This repair is intentionally
+    conservative: it only reconciles an exact OTA external-id match when the
+    authoritative booking has a room and the exact same external OTA identity.
+    """
+    tenant_id = current_user.tenant_id
+    pending_query = {**LEGACY_DUPLICATE_CANDIDATE_QUERY, "tenant_id": tenant_id}
+    pending_rows = await db.bookings.find(pending_query, {"_id": 0}).limit(200).to_list(200)
+    reconciled: list[dict[str, str]] = []
+    now_iso = datetime.now(UTC).isoformat()
+
+    for pending in pending_rows:
+        authoritative = await _find_completed_duplicate(tenant_id, pending)
+        if not authoritative:
+            continue
+
+        booking_id = str(pending.get("id") or "")
+        authoritative_id = str(authoritative.get("id") or "")
+        if not booking_id or not authoritative_id:
+            continue
+
+        result = await db.bookings.update_one(
+            {**LEGACY_DUPLICATE_CANDIDATE_QUERY, "tenant_id": tenant_id, "id": booking_id},
+            {
+                "$set": {
+                    "status": "cancelled",
+                    "allocation_source": "legacy_duplicate_reconciled",
+                    "duplicate_of_booking_id": authoritative_id,
+                    "duplicate_reconciled_at": now_iso,
+                    "duplicate_reconciled_by": current_user.id,
+                    "cancellation_reason": "legacy_ota_duplicate",
+                    "updated_at": now_iso,
+                }
+            },
+        )
+        if result.modified_count != 1:
+            continue
+
+        # A pending row should not own locks, but clean up defensively in case
+        # an older importer left partial state behind.
+        await db.room_night_locks.delete_many({"tenant_id": tenant_id, "booking_id": booking_id})
+        reconciled.append({"booking_id": booking_id, "duplicate_of_booking_id": authoritative_id})
+
+        try:
+            await create_audit_log(
+                tenant_id=tenant_id,
+                user=current_user,
+                action="LEGACY_OTA_DUPLICATE_RECONCILED",
+                entity_type="booking",
+                entity_id=booking_id,
+                changes={"duplicate_of_booking_id": authoritative_id, "previous_status": pending.get("status")},
+            )
+        except Exception as exc:
+            logger.warning("Duplicate reconciliation audit failed (booking=%s): %s", booking_id, exc)
+
+    return {"ok": True, "reconciled": reconciled, "count": len(reconciled)}
+
+
+@router.post("/auto-assign-available")
+async def auto_assign_available_pending_bookings(
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("edit_booking")),
+):
+    """Retry safe room assignment for pending OTA bookings.
+
+    Availability can change after the original import (cancellation, room move,
+    or stale hold cleanup). The shared assignment service validates room type,
+    blocks and every room-night lock atomically, so opening the operational
+    queue can recover now-available stays without risking overbooking.
+    """
+    tenant_id = current_user.tenant_id
+    pending_rows = await db.bookings.find(
+        {**PENDING_QUERY, "tenant_id": tenant_id},
+        {"_id": 0},
+    ).limit(200).to_list(200)
+    assigned: list[dict[str, str]] = []
+
+    for booking in pending_rows:
+        updated, room = await assign_pending_booking_with_auto_assignment(
+            database=db,
+            tenant_id=tenant_id,
+            booking_doc=booking,
+        )
+        if not room:
+            continue
+        assigned.append(
+            {
+                "booking_id": str(updated.get("id") or booking.get("id") or ""),
+                "room_id": str(room.get("id") or ""),
+                "room_number": str(room.get("room_number") or room.get("name") or ""),
+            }
+        )
+
+    return {"ok": True, "assigned": assigned, "count": len(assigned)}
 
 
 @router.post("/{booking_id}/resolve")

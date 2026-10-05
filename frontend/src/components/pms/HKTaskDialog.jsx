@@ -15,8 +15,8 @@ const HKTaskDialog = ({ open, onClose, rooms, newHKTask, setNewHKTask, onSubmit,
           <div>
             <Label>{t('common.room')}</Label>
             <Select value={newHKTask.room_id} onValueChange={(v) => setNewHKTask({...newHKTask, room_id: v})}>
-              <SelectTrigger><SelectValue placeholder="Select room" /></SelectTrigger>
-              <SelectContent>{rooms.map(r => <SelectItem key={r.id} value={r.id}>Room {r.room_number}</SelectItem>)}</SelectContent>
+              <SelectTrigger><SelectValue placeholder="Oda seçin" /></SelectTrigger>
+              <SelectContent>{rooms.map(r => <SelectItem key={r.id} value={r.id}>Oda {r.room_number}</SelectItem>)}</SelectContent>
             </Select>
           </div>
           <div>
@@ -43,7 +43,7 @@ const HKTaskDialog = ({ open, onClose, rooms, newHKTask, setNewHKTask, onSubmit,
             </Select>
           </div>
           <div><Label>{t('common.notes')}</Label><Textarea value={newHKTask.notes} onChange={(e) => setNewHKTask({...newHKTask, notes: e.target.value})} /></div>
-          <Button type="submit" className="w-full" disabled={loading}>{loading ? 'Olusturuluyor...' : t('common.create')}</Button>
+          <Button type="submit" className="w-full" disabled={loading}>{loading ? 'Oluşturuluyor...' : t('common.create')}</Button>
         </form>
       </DialogContent>
     </Dialog>

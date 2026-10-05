@@ -4,9 +4,11 @@ import math
 import re
 import uuid
 from datetime import UTC, datetime
+from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from pydantic import BaseModel, Field
 from pymongo.errors import DuplicateKeyError
 
 try:
@@ -16,6 +18,7 @@ try:
 except ImportError:
     Workbook = None
 
+from core.business_date_service import stamp_open_business_date
 from core.database import db
 from core.security import get_current_user
 from domains.pms.night_audit_module import CityLedgerAccount
@@ -26,7 +29,7 @@ _role_perm = RolePermissionService()
 
 def _enforce(role: str, op: str):
     """Bug CT (v59) — Cashiering/AR endpoint'leri için RBAC zorunlu."""
-    _role_perm.enforce_permission(role, op)
+    _role_perm.enforce_permission(getattr(role, "role", role), op, getattr(role, "granted_permissions", None))
 
 
 from models.schemas import (
@@ -52,11 +55,149 @@ folio_balance_read_service = FolioBalanceReadService()
 open_folio_service = OpenFolioService()
 
 
+class CityLedgerPaymentAllocation(BaseModel):
+    """A payment amount explicitly settled against one reservation's AR item."""
+
+    booking_id: str = Field(min_length=1, max_length=200)
+    amount: float = Field(gt=0, le=1_000_000_000)
+
+
+def _as_finite_money(value: object, *, default: float = 0.0) -> float:
+    try:
+        amount = float(value)
+    except (TypeError, ValueError):
+        return default
+    return amount if math.isfinite(amount) else default
+
+
+def _normalize_currency(value: object, fallback: str = "TRY") -> str:
+    code = str(value or fallback).strip().upper()
+    return code if len(code) == 3 and code.isalpha() else fallback
+
+
+def _city_ledger_booking_label(booking: dict | None, booking_id: str) -> dict:
+    """Keep the city-ledger source item readable even for a deleted legacy booking."""
+    booking = booking or {}
+    room_number = booking.get("room_number") or booking.get("room_no") or "Atanmamış"
+    guest_name = booking.get("guest_name") or booking.get("primary_guest_name") or "Misafir bilgisi yok"
+    return {
+        "booking_id": booking_id,
+        "room_number": str(room_number),
+        "guest_name": guest_name,
+        "check_in": booking.get("check_in") or booking.get("check_in_date"),
+        "check_out": booking.get("check_out") or booking.get("check_out_date"),
+        "booking_status": booking.get("status"),
+    }
+
+
+async def _city_ledger_booking_items(tenant_id: str, account_id: str) -> tuple[list[dict], dict]:
+    """Return room/reservation open items and clearly separate legacy unallocated money.
+
+    A city-ledger charge created by ``transfer_to_cari`` or direct billing stores
+    its ``booking_id``.  New payments may store a list of allocations.  Older
+    generic payments intentionally remain visible as *unallocated* instead of
+    being guessed against a room; guessing would silently settle the wrong room.
+    """
+    transactions = await db.city_ledger_transactions.find(
+        {"tenant_id": tenant_id, "account_id": account_id},
+        {"_id": 0},
+    ).to_list(None)
+
+    items_by_booking: dict[str, dict] = {}
+    allocated_payment_total = 0.0
+    all_payment_total = 0.0
+    adjustment_total = 0.0
+
+    for transaction in transactions:
+        if transaction.get("status") not in {None, "completed"}:
+            continue
+        transaction_type = transaction.get("transaction_type")
+        amount = round(_as_finite_money(transaction.get("amount")), 2)
+        if amount <= 0:
+            continue
+
+        if transaction_type == "charge" and transaction.get("booking_id"):
+            booking_id = str(transaction["booking_id"])
+            item = items_by_booking.setdefault(
+                booking_id,
+                {
+                    "booking_id": booking_id,
+                    "charged_amount": 0.0,
+                    "allocated_payment_amount": 0.0,
+                    "source_transactions": [],
+                },
+            )
+            item["charged_amount"] += amount
+            item["source_transactions"].append(
+                {
+                    "transaction_id": transaction.get("id"),
+                    "date": transaction.get("transaction_date") or transaction.get("created_at"),
+                    "description": transaction.get("description"),
+                    "amount": amount,
+                    "reference_number": transaction.get("reference_number"),
+                }
+            )
+        elif transaction_type == "payment":
+            all_payment_total += amount
+            for allocation in transaction.get("allocations") or []:
+                booking_id = str(allocation.get("booking_id") or "").strip()
+                allocated_amount = round(_as_finite_money(allocation.get("amount")), 2)
+                if not booking_id or allocated_amount <= 0:
+                    continue
+                item = items_by_booking.setdefault(
+                    booking_id,
+                    {
+                        "booking_id": booking_id,
+                        "charged_amount": 0.0,
+                        "allocated_payment_amount": 0.0,
+                        "source_transactions": [],
+                    },
+                )
+                item["allocated_payment_amount"] += allocated_amount
+                allocated_payment_total += allocated_amount
+        elif transaction_type == "adjustment":
+            adjustment_total += amount
+
+    booking_ids = list(items_by_booking)
+    bookings_by_id: dict[str, dict] = {}
+    if booking_ids:
+        bookings = await db.bookings.find(
+            {"tenant_id": tenant_id, "id": {"$in": booking_ids}},
+            {"_id": 0},
+        ).to_list(len(booking_ids))
+        bookings_by_id = {str(booking.get("id")): booking for booking in bookings if booking.get("id")}
+
+    items: list[dict] = []
+    for booking_id, item in items_by_booking.items():
+        charged_amount = round(item["charged_amount"], 2)
+        allocated_amount = round(item["allocated_payment_amount"], 2)
+        open_amount = round(max(0.0, charged_amount - allocated_amount), 2)
+        if charged_amount <= 0 and allocated_amount <= 0:
+            continue
+        items.append(
+            {
+                **_city_ledger_booking_label(bookings_by_id.get(booking_id), booking_id),
+                "charged_amount": charged_amount,
+                "allocated_payment_amount": allocated_amount,
+                "open_amount": open_amount,
+                "source_transactions": item["source_transactions"],
+            }
+        )
+
+    items.sort(key=lambda item: (item.get("check_in") or "", item["booking_id"]), reverse=True)
+    return items, {
+        "room_open_total": round(sum(item["open_amount"] for item in items), 2),
+        "allocated_payment_total": round(allocated_payment_total, 2),
+        "unallocated_payment_total": round(max(0.0, all_payment_total - allocated_payment_total), 2),
+        "adjustment_total": round(adjustment_total, 2),
+    }
+
+
 @router.post("/cashiering/city-ledger")
 async def create_city_ledger_account(account_data: dict, credentials: HTTPAuthorizationCredentials = Depends(security)):
     """Create a new city ledger account for direct billing"""
     current_user = await get_current_user(credentials)
-    _enforce(current_user.role, "manage_city_ledger")  # Bug CT
+    _enforce(current_user, "manage_city_ledger")  # Bug CT
 
     account_name = str(account_data.get("account_name") or "").strip()
     company_name = str(account_data.get("company_name") or "").strip()
@@ -73,11 +214,12 @@ async def create_city_ledger_account(account_data: dict, credentials: HTTPAuthor
     if payment_terms < 0 or payment_terms > 3650:
         raise HTTPException(status_code=400, detail="Payment terms must be between 0 and 3650 days")
 
+    duplicate_conditions = [{"account_name": {"$regex": f"^{re.escape(account_name)}$", "$options": "i"}}]
+    source_company_id = str(account_data.get("source_company_id") or "").strip()
+    if source_company_id:
+        duplicate_conditions.append({"source_company_id": source_company_id})
     duplicate = await db.city_ledger_accounts.find_one(
-        {
-            "tenant_id": current_user.tenant_id,
-            "account_name": {"$regex": f"^{re.escape(account_name)}$", "$options": "i"},
-        },
+        {"tenant_id": current_user.tenant_id, "$or": duplicate_conditions},
         {"_id": 1},
     )
     if duplicate:
@@ -87,10 +229,17 @@ async def create_city_ledger_account(account_data: dict, credentials: HTTPAuthor
         tenant_id=current_user.tenant_id,
         account_name=account_name,
         company_name=company_name,
+        source_company_id=source_company_id or None,
         contact_person=account_data.get("contact_person"),
         email=account_data.get("email"),
         phone=account_data.get("phone"),
         address=account_data.get("address"),
+        tax_number=account_data.get("tax_number"),
+        tax_office=account_data.get("tax_office"),
+        billing_address=account_data.get("billing_address"),
+        billing_city=account_data.get("billing_city"),
+        billing_postal_code=account_data.get("billing_postal_code"),
+        billing_country=account_data.get("billing_country"),
         credit_limit=credit_limit,
         payment_terms=payment_terms,
     )
@@ -105,17 +254,71 @@ async def create_city_ledger_account(account_data: dict, credentials: HTTPAuthor
     return {"success": True, "account_id": account.id, "account_name": account.account_name, "credit_limit": account.credit_limit}
 
 
+@router.get("/cashiering/city-ledger-candidates")
+async def get_city_ledger_candidates(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    """List tenant companies that do not yet have a city-ledger account."""
+    current_user = await get_current_user(credentials)
+    _enforce(current_user, "view_city_ledger")
+
+    tenant_id = current_user.tenant_id
+    companies = await db.companies.find({"tenant_id": tenant_id}).to_list(None)
+    accounts = await db.city_ledger_accounts.find(
+        {"tenant_id": tenant_id},
+        {"_id": 0, "source_company_id": 1, "account_name": 1, "company_name": 1, "tax_number": 1},
+    ).to_list(None)
+
+    linked_ids = {str(account.get("source_company_id")) for account in accounts if account.get("source_company_id")}
+    linked_names = {
+        str(value).strip().casefold()
+        for account in accounts
+        for value in (account.get("account_name"), account.get("company_name"))
+        if str(value or "").strip()
+    }
+    linked_tax_numbers = {
+        str(account.get("tax_number")).strip()
+        for account in accounts
+        if str(account.get("tax_number") or "").strip()
+    }
+
+    candidates = []
+    for company in companies:
+        company_id = str(company.get("id") or company.get("_id") or "")
+        company_name = str(company.get("name") or "").strip()
+        tax_number = str(company.get("tax_number") or "").strip()
+        if not company_id or not company_name:
+            continue
+        if company_id in linked_ids or company_name.casefold() in linked_names or (tax_number and tax_number in linked_tax_numbers):
+            continue
+        candidates.append(
+            {
+                "source_company_id": company_id,
+                "account_name": company_name,
+                "company_name": company_name,
+                "contact_person": company.get("contact_person"),
+                "email": company.get("contact_email"),
+                "phone": company.get("contact_phone"),
+                "tax_number": company.get("tax_number"),
+                "billing_address": company.get("billing_address"),
+                "payment_terms": company.get("payment_terms"),
+                "status": getattr(company.get("status"), "value", company.get("status")),
+            }
+        )
+
+    candidates.sort(key=lambda item: item["company_name"].casefold())
+    return {"candidates": candidates, "total_count": len(candidates)}
+
+
 @router.get("/cashiering/city-ledger")
 async def get_city_ledger_accounts(is_active: bool = True, credentials: HTTPAuthorizationCredentials = Depends(security)):
     """Get all city ledger accounts"""
     current_user = await get_current_user(credentials)
-    _enforce(current_user.role, "view_city_ledger")  # Bug CT
+    _enforce(current_user, "view_city_ledger")  # Bug CT
 
     query = {"tenant_id": current_user.tenant_id}
     if is_active is not None:
         query["is_active"] = is_active
 
-    accounts = await db.city_ledger_accounts.find(query, {"_id": 0}).to_list(1000)
+    accounts = await db.city_ledger_accounts.find(query, {"_id": 0}).to_list(None)
 
     return {"accounts": accounts, "total_count": len(accounts)}
 
@@ -124,7 +327,7 @@ async def get_city_ledger_accounts(is_active: bool = True, credentials: HTTPAuth
 async def process_split_payment(booking_id: str, payments: list[dict], credentials: HTTPAuthorizationCredentials = Depends(security)):
     """Process split payment (multiple payment methods for one bill)"""
     current_user = await get_current_user(credentials)
-    _enforce(current_user.role, "post_payment")  # Bug CT
+    _enforce(current_user, "post_payment")  # Bug CT
 
     # Get booking
     booking = await db.bookings.find_one({"id": booking_id, "tenant_id": current_user.tenant_id})
@@ -151,6 +354,7 @@ async def process_split_payment(booking_id: str, payments: list[dict], credentia
             "processed_at": datetime.now(UTC).isoformat(),
             "processed_by": current_user.name,
         }
+        await stamp_open_business_date(db, current_user.tenant_id, payment_record)
         await db.payments.insert_one(payment_record)
         payment_records.append(payment_record)
 
@@ -164,14 +368,14 @@ async def process_split_payment(booking_id: str, payments: list[dict], credentia
 async def get_ar_aging_report(credentials: HTTPAuthorizationCredentials = Depends(security)):
     """Get Accounts Receivable aging report (30/60/90 days)"""
     current_user = await get_current_user(credentials)
-    _enforce(current_user.role, "view_ar_aging")  # Bug CT
+    _enforce(current_user, "view_ar_aging")  # Bug CT
 
     today = datetime.now(UTC)
 
     aging_buckets = {"current": [], "30_days": [], "60_days": [], "90_plus": []}
 
     # Get all city ledger accounts with balance
-    accounts = await db.city_ledger_accounts.find({"tenant_id": current_user.tenant_id, "current_balance": {"$gt": 0}}, {"_id": 0}).to_list(1000)
+    accounts = await db.city_ledger_accounts.find({"tenant_id": current_user.tenant_id, "current_balance": {"$gt": 0}}, {"_id": 0}).to_list(None)
 
     for account in accounts:
         # Get oldest transaction
@@ -191,7 +395,13 @@ async def get_ar_aging_report(credentials: HTTPAuthorizationCredentials = Depend
 
             days_old = (today - transaction_date).days
 
-            aging_entry = {"account_id": account["id"], "account_name": account["account_name"], "balance": account["current_balance"], "days_old": days_old}
+            aging_entry = {
+                "account_id": account["id"],
+                "account_name": account["account_name"],
+                "balance": account["current_balance"],
+                "currency": _normalize_currency(account.get("currency")),
+                "days_old": days_old,
+            }
 
             if days_old <= 30:
                 aging_buckets["current"].append(aging_entry)
@@ -212,14 +422,33 @@ async def get_ar_aging_report(credentials: HTTPAuthorizationCredentials = Depend
 
     totals["total"] = sum(totals.values())
 
-    return {"aging_buckets": aging_buckets, "totals": totals, "generated_at": today.isoformat()}
+    totals_by_currency: dict[str, dict[str, float]] = {}
+    for bucket, entries in aging_buckets.items():
+        bucket_totals: dict[str, float] = {}
+        for entry in entries:
+            code = entry["currency"]
+            bucket_totals[code] = bucket_totals.get(code, 0) + _as_finite_money(entry.get("balance"))
+        totals_by_currency[bucket] = {code: round(amount, 2) for code, amount in sorted(bucket_totals.items())}
+
+    all_totals: dict[str, float] = {}
+    for bucket_totals in totals_by_currency.values():
+        for code, amount in bucket_totals.items():
+            all_totals[code] = all_totals.get(code, 0) + amount
+    totals_by_currency["total"] = {code: round(amount, 2) for code, amount in sorted(all_totals.items())}
+
+    return {
+        "aging_buckets": aging_buckets,
+        "totals": totals,
+        "totals_by_currency": totals_by_currency,
+        "generated_at": today.isoformat(),
+    }
 
 
 @router.post("/cashiering/credit-limit")
 async def set_credit_limit(account_id: str, credit_limit: float, credentials: HTTPAuthorizationCredentials = Depends(security)):
     """Set credit limit for city ledger account"""
     current_user = await get_current_user(credentials)
-    _enforce(current_user.role, "manage_credit_limit")  # Bug CT
+    _enforce(current_user, "manage_credit_limit")  # Bug CT
 
     result = await db.city_ledger_accounts.update_one({"id": account_id, "tenant_id": current_user.tenant_id}, {"$set": {"credit_limit": credit_limit}})
 
@@ -233,7 +462,7 @@ async def set_credit_limit(account_id: str, credit_limit: float, credentials: HT
 async def get_credit_limit(account_id: str, credentials: HTTPAuthorizationCredentials = Depends(security)):
     """Get credit limit and current balance for account"""
     current_user = await get_current_user(credentials)
-    _enforce(current_user.role, "view_credit_limit")  # Bug CT
+    _enforce(current_user, "view_credit_limit")  # Bug CT
 
     account = await db.city_ledger_accounts.find_one({"id": account_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
 
@@ -263,7 +492,7 @@ async def post_to_city_ledger(
 ):
     """Post charge to city ledger (direct billing)"""
     current_user = await get_current_user(credentials)
-    _enforce(current_user.role, "post_direct_bill")  # Bug CT
+    _enforce(current_user, "post_direct_bill")  # Bug CT
 
     if not math.isfinite(amount) or amount <= 0:
         raise HTTPException(status_code=400, detail="Direct bill amount must be a finite positive amount")
@@ -385,13 +614,54 @@ async def post_to_city_ledger(
 async def get_outstanding_balances(credentials: HTTPAuthorizationCredentials = Depends(security)):
     """Get all city ledger accounts with outstanding balances"""
     current_user = await get_current_user(credentials)
-    _enforce(current_user.role, "view_outstanding_balance")  # Bug CT
+    _enforce(current_user, "view_outstanding_balance")  # Bug CT
 
-    accounts = await db.city_ledger_accounts.find({"tenant_id": current_user.tenant_id, "current_balance": {"$gt": 0}}, {"_id": 0}).sort("current_balance", -1).to_list(1000)
+    accounts = await db.city_ledger_accounts.find({"tenant_id": current_user.tenant_id, "current_balance": {"$gt": 0}}, {"_id": 0}).sort("current_balance", -1).to_list(None)
 
     total_outstanding = sum(a["current_balance"] for a in accounts)
 
     return {"accounts": accounts, "total_accounts": len(accounts), "total_outstanding": round(total_outstanding, 2)}
+
+
+@router.get("/cashiering/city-ledger/{account_id}/open-items")
+async def get_city_ledger_open_items(
+    account_id: str,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+):
+    """Show which reservation rooms make up an account's city-ledger balance.
+
+    Only source transactions that are explicitly linked to a booking are shown
+    as room items.  Legacy generic payments and write-offs are reported
+    separately so an operator can reconcile them without falsely assigning
+    them to a room.
+    """
+    current_user = await get_current_user(credentials)
+    _enforce(current_user, "view_city_ledger_transactions")
+
+    account = await db.city_ledger_accounts.find_one(
+        {"id": account_id, "tenant_id": current_user.tenant_id},
+        {"_id": 0},
+    )
+    if not account:
+        raise HTTPException(status_code=404, detail="Cari hesap bulunamadı")
+
+    items, totals = await _city_ledger_booking_items(current_user.tenant_id, account_id)
+    account_balance = round(_as_finite_money(account.get("current_balance")), 2)
+    tracked_balance = round(
+        totals["room_open_total"] - totals["unallocated_payment_total"] - totals["adjustment_total"],
+        2,
+    )
+    return {
+        "account_id": account_id,
+        "account_name": account.get("account_name"),
+        "items": items,
+        "summary": {
+            **totals,
+            "account_balance": account_balance,
+            "tracked_balance": tracked_balance,
+            "balance_difference": round(account_balance - tracked_balance, 2),
+        },
+    }
 
 
 @router.post("/cashiering/city-ledger-payment")
@@ -401,11 +671,15 @@ async def post_city_ledger_payment(
     payment_method: str,
     reference: str | None = None,
     idempotency_key: str | None = None,
+    # ``embed=True`` keeps the HTTP contract explicit: {"allocations": [...]}.
+    # The rest of this legacy endpoint remains query parameters for backwards
+    # compatibility with existing payment clients.
+    allocations: Annotated[list[CityLedgerPaymentAllocation] | None, Body(embed=True)] = None,
     credentials: HTTPAuthorizationCredentials = Depends(security),
 ):
-    """Post payment to city ledger account"""
+    """Post a general or reservation-allocated payment to a city ledger account."""
     current_user = await get_current_user(credentials)
-    _enforce(current_user.role, "post_city_ledger_payment")  # Bug CT
+    _enforce(current_user, "post_city_ledger_payment")  # Bug CT
 
     if not math.isfinite(amount) or amount <= 0:
         raise HTTPException(status_code=400, detail="Payment amount must be a finite positive amount")
@@ -432,6 +706,31 @@ async def post_city_ledger_payment(
     if amount > current_balance:
         raise HTTPException(status_code=409, detail="Payment amount exceeds outstanding balance")
 
+    normalized_allocations: list[dict] = []
+    if allocations:
+        allocation_total = 0.0
+        allocation_booking_ids: set[str] = set()
+        for allocation in allocations:
+            booking_id = allocation.booking_id.strip()
+            allocation_amount = round(float(allocation.amount), 2)
+            if booking_id in allocation_booking_ids:
+                raise HTTPException(status_code=400, detail="Aynı rezervasyon ödeme dağıtımında birden fazla kez seçilemez")
+            allocation_booking_ids.add(booking_id)
+            allocation_total += allocation_amount
+            normalized_allocations.append({"booking_id": booking_id, "amount": allocation_amount})
+
+        if round(allocation_total, 2) != round(amount, 2):
+            raise HTTPException(status_code=400, detail="Oda dağıtım toplamı ödeme tutarına eşit olmalıdır")
+
+        items, _ = await _city_ledger_booking_items(current_user.tenant_id, account_id)
+        open_by_booking = {item["booking_id"]: item["open_amount"] for item in items}
+        for allocation in normalized_allocations:
+            available = open_by_booking.get(allocation["booking_id"])
+            if available is None:
+                raise HTTPException(status_code=409, detail="Seçilen rezervasyon bu carinin açık oda bakiyesinde bulunamadı")
+            if allocation["amount"] - available > 0.005:
+                raise HTTPException(status_code=409, detail="Bir odaya ayrılan tahsilat o odanın açık bakiyesini aşamaz")
+
     transaction_mongo_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"city-ledger-payment:{current_user.tenant_id}:{account_id}:{request_key}"))
     existing = await db.city_ledger_transactions.find_one({"_id": transaction_mongo_id, "tenant_id": current_user.tenant_id})
     if existing:
@@ -443,6 +742,7 @@ async def post_city_ledger_payment(
                 "account_name": account["account_name"],
                 "amount_paid": existing["amount"],
                 "new_balance": existing["new_balance"],
+                "allocations": existing.get("allocations", []),
             }
         raise HTTPException(status_code=409, detail="Payment is already being processed")
 
@@ -457,6 +757,10 @@ async def post_city_ledger_payment(
     )
     transaction_doc = transaction.model_dump()
     transaction_doc.update({"_id": transaction_mongo_id, "idempotency_key": request_key, "status": "pending"})
+    if normalized_allocations:
+        transaction_doc["allocations"] = normalized_allocations
+        if len(normalized_allocations) == 1:
+            transaction_doc["booking_id"] = normalized_allocations[0]["booking_id"]
     try:
         await db.city_ledger_transactions.insert_one(transaction_doc)
     except DuplicateKeyError as exc:
@@ -497,6 +801,7 @@ async def post_city_ledger_payment(
         "account_name": account["account_name"],
         "amount_paid": amount,
         "new_balance": new_balance,
+        "allocations": normalized_allocations,
     }
 
 
@@ -504,9 +809,19 @@ async def post_city_ledger_payment(
 async def get_city_ledger_transactions(account_id: str, limit: int = 100, credentials: HTTPAuthorizationCredentials = Depends(security)):
     """Get transaction history for city ledger account"""
     current_user = await get_current_user(credentials)
-    _enforce(current_user.role, "view_city_ledger_transactions")  # Bug CT
+    _enforce(current_user, "view_city_ledger_transactions")  # Bug CT
 
+    account = await db.city_ledger_accounts.find_one(
+        {"id": account_id, "tenant_id": current_user.tenant_id},
+        {"_id": 0, "currency": 1, "current_balance": 1},
+    )
+    if not account:
+        raise HTTPException(status_code=404, detail="Account not found")
+
+    account_currency = _normalize_currency(account.get("currency"))
     transactions = await db.city_ledger_transactions.find({"account_id": account_id, "tenant_id": current_user.tenant_id}, {"_id": 0}).sort("transaction_date", -1).limit(limit).to_list(limit)
+    for transaction in transactions:
+        transaction["currency"] = _normalize_currency(transaction.get("currency"), account_currency)
 
     charges = sum(t["amount"] for t in transactions if t["transaction_type"] == "charge")
     payments = sum(t["amount"] for t in transactions if t["transaction_type"] == "payment")
@@ -514,7 +829,13 @@ async def get_city_ledger_transactions(account_id: str, limit: int = 100, creden
     return {
         "account_id": account_id,
         "transactions": transactions,
-        "summary": {"total_charges": round(charges, 2), "total_payments": round(payments, 2), "current_balance": round(charges - payments, 2), "transaction_count": len(transactions)},
+        "summary": {
+            "total_charges": round(charges, 2),
+            "total_payments": round(payments, 2),
+            "current_balance": round(_as_finite_money(account.get("current_balance"), default=charges - payments), 2),
+            "currency": account_currency,
+            "transaction_count": len(transactions),
+        },
     }
 
 
@@ -536,7 +857,7 @@ async def post_city_ledger_adjustment(
       - other        : diğer
     """
     current_user = await get_current_user(credentials)
-    _enforce(current_user.role, "post_city_ledger_payment")  # same permission as payment
+    _enforce(current_user, "post_city_ledger_payment")  # same permission as payment
 
     if amount <= 0:
         raise HTTPException(status_code=400, detail="Ayarlama tutarı sıfırdan büyük olmalıdır")
@@ -545,9 +866,7 @@ async def post_city_ledger_adjustment(
     if adjustment_type not in valid_types:
         raise HTTPException(status_code=400, detail=f"Geçersiz ayarlama tipi. Geçerli değerler: {valid_types}")
 
-    account = await db.city_ledger_accounts.find_one(
-        {"id": account_id, "tenant_id": current_user.tenant_id}, {"_id": 0}
-    )
+    account = await db.city_ledger_accounts.find_one({"id": account_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
     if not account:
         raise HTTPException(status_code=404, detail="Cari hesap bulunamadı")
 
@@ -557,7 +876,7 @@ async def post_city_ledger_adjustment(
     if amount > current_balance + 0.005:
         raise HTTPException(status_code=409, detail="Ayarlama tutarı mevcut bakiyeyi aşamaz")
 
-    request_key = idempotency_key or f"adj:{current_user.tenant_id}:{account_id}:{round(amount,2)}"
+    request_key = idempotency_key or f"adj:{current_user.tenant_id}:{account_id}:{round(amount, 2)}"
     now = datetime.now(UTC).isoformat()
 
     transaction_doc = {

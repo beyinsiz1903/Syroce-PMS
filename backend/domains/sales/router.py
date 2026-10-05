@@ -11,6 +11,7 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, Depends, HTTPException
 
 from core.database import db
+from core.helpers import create_audit_log
 from core.security import get_current_user
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_module as require_module_v97  # v97 DW
@@ -39,6 +40,42 @@ LEAD_KIND = "lead"
 ACTIVITY_KIND = "lead_activity"
 
 
+def _now() -> str:
+    return datetime.now(UTC).isoformat()
+
+
+def _follow_up_iso(value: object) -> str | None:
+    """Normalize a browser follow-up value to an unambiguous UTC timestamp."""
+    if value in (None, ""):
+        return None
+    if not isinstance(value, str):
+        raise HTTPException(status_code=400, detail="Takip tarihi geçersiz")
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Takip tarihi geçersiz") from exc
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC).isoformat()
+
+
+def _active_lead_query(tenant_id: str, **extra: object) -> dict:
+    return {"_kind": LEAD_KIND, "tenant_id": tenant_id, "deleted_at": {"$exists": False}, **extra}
+
+
+def _open_follow_up_query(tenant_id: str, activity_id: str | None = None) -> dict:
+    """Build the tenant-scoped selector for a follow-up that is still open."""
+    query: dict = {
+        "_kind": ACTIVITY_KIND,
+        "tenant_id": tenant_id,
+        "follow_up_at": {"$nin": [None, ""]},
+        "follow_up_completed_at": {"$exists": False},
+    }
+    if activity_id:
+        query["id"] = activity_id
+    return query
+
+
 # ── Sales CRM & Lead Management ────────────────────────────────────
 
 
@@ -53,13 +90,20 @@ async def create_lead(
     contact_email = lead_data.get("contact_email") or lead_data.get("email")
     if not contact_name or not contact_email:
         raise HTTPException(status_code=400, detail="contact_name ve contact_email zorunlu")
+    normalized_email = str(contact_email).strip().lower()
+    duplicate = await db.mice_opportunities.find_one(
+        _active_lead_query(current_user.tenant_id, contact_email_lower=normalized_email, status={"$nin": ["won", "lost"]}),
+        {"_id": 0, "id": 1},
+    )
+    if duplicate:
+        raise HTTPException(status_code=409, detail="Bu e-posta için açık bir lead zaten var")
     lead = {
         "_kind": LEAD_KIND,
         "id": str(uuid.uuid4()),
         "tenant_id": current_user.tenant_id,
         "company_name": lead_data.get("company_name"),
         "contact_name": contact_name,
-        "contact_email": contact_email,
+        "contact_email": normalized_email,
         "contact_phone": lead_data.get("contact_phone") or lead_data.get("phone"),
         "source": lead_data.get("source") or lead_data.get("lead_source", "website"),
         "status": "new",
@@ -70,13 +114,14 @@ async def create_lead(
         "assigned_to": lead_data.get("assigned_to", current_user.id),
         "lead_score": 50,
         "notes": lead_data.get("notes"),
-        "created_at": datetime.now(UTC).isoformat(),
-        "updated_at": datetime.now(UTC).isoformat(),
+        "created_at": _now(),
+        "updated_at": _now(),
     }
     from security.search_normalize import apply_collection_normalized_fields
 
     apply_collection_normalized_fields(lead, collection="mice_opportunities")
     await db.mice_opportunities.insert_one(lead)
+    await create_audit_log(current_user.tenant_id, current_user, "sales_lead_created", "sales_lead", lead["id"], {"source": lead["source"]})
     return {"success": True, "message": "Lead basariyla olusturuldu", "lead_id": lead["id"]}
 
 
@@ -85,10 +130,10 @@ async def get_leads(
     status: str | None = None,
     q: str | None = None,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v97("frontdesk")),  # GET'lere de yetki kontrolü
+    _perm=Depends(require_module_v97("sales")),  # GET'lere de yetki kontrolü
 ):
     """Lead'leri listele (status filtresi + isim/şirket/e-posta arama)."""
-    query: dict = {"_kind": LEAD_KIND, "tenant_id": current_user.tenant_id}
+    query: dict = _active_lead_query(current_user.tenant_id)
     if status and status in LEAD_STAGES:
         query["status"] = status
     if q:
@@ -107,11 +152,11 @@ async def get_leads(
 @router.get("/sales/funnel")
 async def get_sales_funnel(
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v97("frontdesk")),  # GET'e de yetki kontrolü
+    _perm=Depends(require_module_v97("sales")),  # GET'e de yetki kontrolü
 ):
     """Satis hunisi metrikleri — tek aggregation ile (eski 7 sorgu yerine)."""
     pipeline = [
-        {"$match": {"_kind": LEAD_KIND, "tenant_id": current_user.tenant_id}},
+        {"$match": _active_lead_query(current_user.tenant_id)},
         {"$group": {"_id": "$status", "count": {"$sum": 1}}},
     ]
     rows = await db.mice_opportunities.aggregate(pipeline).to_list(50)
@@ -132,10 +177,10 @@ async def get_sales_funnel(
 async def get_lead_detail(
     lead_id: str,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v97("frontdesk")),
+    _perm=Depends(require_module_v97("sales")),
 ):
     """Tek lead + son aktiviteler."""
-    lead = await db.mice_opportunities.find_one({"_kind": LEAD_KIND, "id": lead_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
+    lead = await db.mice_opportunities.find_one(_active_lead_query(current_user.tenant_id, id=lead_id), {"_id": 0})
     if not lead:
         raise HTTPException(status_code=404, detail="Lead bulunamadı")
     activities = (
@@ -161,11 +206,11 @@ async def update_lead_stage(
     if new_status not in LEAD_STAGES:
         raise HTTPException(status_code=400, detail=f"Geçersiz aşama: {new_status}")
     res = await db.mice_opportunities.update_one(
-        {"_kind": LEAD_KIND, "id": lead_id, "tenant_id": current_user.tenant_id},
+        _active_lead_query(current_user.tenant_id, id=lead_id),
         {
             "$set": {
                 "status": new_status,
-                "updated_at": datetime.now(UTC).isoformat(),
+                "updated_at": _now(),
                 "updated_by": current_user.id,
             }
         },
@@ -183,9 +228,10 @@ async def update_lead_stage(
             "subject": f"Aşama: {new_status}",
             "description": (payload or {}).get("note"),
             "created_by": current_user.id,
-            "created_at": datetime.now(UTC).isoformat(),
+            "created_at": _now(),
         }
     )
+    await create_audit_log(current_user.tenant_id, current_user, "sales_lead_stage_changed", "sales_lead", lead_id, {"status": new_status})
     return {"success": True, "lead_id": lead_id, "status": new_status}
 
 
@@ -195,12 +241,15 @@ async def delete_lead(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_sales")),
 ):
-    """Lead sil (ve bağlı aktiviteleri)."""
-    res = await db.mice_opportunities.delete_one({"_kind": LEAD_KIND, "id": lead_id, "tenant_id": current_user.tenant_id})
-    if res.deleted_count == 0:
+    """Lead'i geri getirilebilir şekilde arşivle; satış denetim izi korunur."""
+    res = await db.mice_opportunities.update_one(
+        _active_lead_query(current_user.tenant_id, id=lead_id),
+        {"$set": {"deleted_at": _now(), "deleted_by": current_user.id, "updated_at": _now()}},
+    )
+    if res.matched_count == 0:
         raise HTTPException(status_code=404, detail="Lead bulunamadı")
-    await db.mice_opportunity_activities.delete_many({"_kind": ACTIVITY_KIND, "tenant_id": current_user.tenant_id, "lead_id": lead_id})
-    return {"success": True, "lead_id": lead_id}
+    await create_audit_log(current_user.tenant_id, current_user, "sales_lead_archived", "sales_lead", lead_id)
+    return {"success": True, "lead_id": lead_id, "archived": True}
 
 
 @router.post("/sales/activity")
@@ -216,7 +265,7 @@ async def log_sales_activity(
     if not activity_data.get("lead_id") or not activity_data.get("subject"):
         raise HTTPException(status_code=400, detail="lead_id ve subject zorunlu")
     # Lead'in bu tenant'a ait olduğunu doğrula.
-    owns = await db.mice_opportunities.count_documents({"_kind": LEAD_KIND, "id": activity_data["lead_id"], "tenant_id": current_user.tenant_id})
+    owns = await db.mice_opportunities.count_documents(_active_lead_query(current_user.tenant_id, id=activity_data["lead_id"]))
     if owns == 0:
         raise HTTPException(status_code=404, detail="Lead bulunamadı")
     activity = {
@@ -227,9 +276,9 @@ async def log_sales_activity(
         "activity_type": a_type,
         "subject": activity_data["subject"],
         "description": activity_data.get("description"),
-        "follow_up_at": activity_data.get("follow_up_at"),
+        "follow_up_at": _follow_up_iso(activity_data.get("follow_up_at")),
         "created_by": current_user.id,
-        "created_at": datetime.now(UTC).isoformat(),
+        "created_at": _now(),
     }
     await db.mice_opportunity_activities.insert_one(activity)
     await db.mice_opportunities.update_one(
@@ -238,9 +287,92 @@ async def log_sales_activity(
             "id": activity_data["lead_id"],
             "tenant_id": current_user.tenant_id,
         },
-        {"$set": {"last_contacted_at": datetime.now(UTC).isoformat()}},
+        {"$set": {"last_contacted_at": _now(), "updated_at": _now()}},
     )
+    await create_audit_log(current_user.tenant_id, current_user, "sales_lead_activity_logged", "sales_lead", activity_data["lead_id"], {"activity_type": a_type, "follow_up_at": activity["follow_up_at"]})
     return {"success": True, "message": "Aktivite kaydedildi", "activity_id": activity["id"]}
+
+
+@router.post("/sales/activity/{activity_id}/complete")
+async def complete_sales_follow_up(
+    activity_id: str,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),
+):
+    """Mark one scheduled sales follow-up complete without deleting its audit trail."""
+    completed_at = _now()
+    result = await db.mice_opportunity_activities.update_one(
+        _open_follow_up_query(current_user.tenant_id, activity_id),
+        {"$set": {"follow_up_completed_at": completed_at, "follow_up_completed_by": current_user.id}},
+    )
+    if result.matched_count:
+        activity = await db.mice_opportunity_activities.find_one(
+            {"_kind": ACTIVITY_KIND, "tenant_id": current_user.tenant_id, "id": activity_id},
+            {"_id": 0, "lead_id": 1},
+        )
+        # The update selector and tenant scope guarantee a document exists;
+        # retain the defensive branch for adapters with eventual reads.
+        lead_id = activity.get("lead_id") if activity else None
+        await create_audit_log(
+            current_user.tenant_id,
+            current_user,
+            "sales_follow_up_completed",
+            "sales_activity",
+            activity_id,
+            {"lead_id": lead_id},
+        )
+        return {"success": True, "activity_id": activity_id, "completed_at": completed_at, "idempotent": False}
+
+    # Two operators can complete the same task together. The second request
+    # is a safe replay, not an error, but a non-follow-up/foreign ID remains
+    # invisible or invalid.
+    activity = await db.mice_opportunity_activities.find_one(
+        {"_kind": ACTIVITY_KIND, "tenant_id": current_user.tenant_id, "id": activity_id},
+        {"_id": 0, "follow_up_at": 1, "follow_up_completed_at": 1},
+    )
+    if not activity:
+        raise HTTPException(status_code=404, detail="Takip kaydı bulunamadı")
+    if activity.get("follow_up_completed_at"):
+        return {
+            "success": True,
+            "activity_id": activity_id,
+            "completed_at": activity["follow_up_completed_at"],
+            "idempotent": True,
+        }
+    raise HTTPException(status_code=409, detail="Bu aktivite için planlanmış açık takip yok")
+
+
+@router.get("/sales/attention")
+async def get_sales_attention(
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v97("sales")),
+):
+    """Open sales follow-ups, separated into overdue and upcoming without fake counts."""
+    active_leads = await db.mice_opportunities.find(
+        _active_lead_query(current_user.tenant_id, status={"$nin": ["won", "lost"]}),
+        {"_id": 0, "id": 1, "contact_name": 1, "company_name": 1, "status": 1},
+    ).to_list(500)
+    lead_by_id = {lead["id"]: lead for lead in active_leads}
+    if not lead_by_id:
+        return {"overdue": [], "upcoming": [], "data_available": False}
+    follow_up_query = _open_follow_up_query(current_user.tenant_id)
+    follow_up_query["lead_id"] = {"$in": list(lead_by_id)}
+    rows = await db.mice_opportunity_activities.find(
+        follow_up_query,
+        {"_id": 0, "id": 1, "lead_id": 1, "subject": 1, "activity_type": 1, "follow_up_at": 1},
+    ).sort("follow_up_at", 1).to_list(500)
+    now = datetime.now(UTC)
+    overdue, upcoming = [], []
+    for row in rows:
+        try:
+            due = datetime.fromisoformat(str(row["follow_up_at"]).replace("Z", "+00:00"))
+            if due.tzinfo is None:
+                due = due.replace(tzinfo=UTC)
+        except (KeyError, TypeError, ValueError):
+            continue
+        item = {**row, "lead": lead_by_id[row["lead_id"]]}
+        (overdue if due < now else upcoming).append(item)
+    return {"overdue": overdue[:50], "upcoming": upcoming[:50], "data_available": bool(rows)}
 
 
 # ── Marketing Automation ────────────────────────────────────────────
@@ -253,24 +385,41 @@ async def create_campaign(
     _perm=Depends(require_op("manage_sales")),  # v98 DW
 ):
     """Pazarlama kampanyasi olustur"""
+    required = {field: str(campaign_data.get(field) or "").strip() for field in ("name", "subject", "message")}
+    missing = [field for field, value in required.items() if not value]
+    if missing:
+        raise HTTPException(status_code=400, detail=f"{', '.join(missing)} zorunlu")
+    now = _now()
     campaign = {
         "id": str(uuid.uuid4()),
         "tenant_id": current_user.tenant_id,
-        "name": campaign_data["name"],
-        "subject": campaign_data["subject"],
-        "message": campaign_data["message"],
+        "name": required["name"],
+        "subject": required["subject"],
+        "message": required["message"],
         "segment": campaign_data.get("segment", "all"),
         "status": "draft",
         "sent_count": 0,
         "created_by": current_user.id,
-        "created_at": datetime.now(UTC).isoformat(),
+        "created_at": now,
+        "updated_at": now,
     }
     await db.marketing_campaigns.insert_one(campaign)
+    await create_audit_log(
+        current_user.tenant_id,
+        current_user,
+        "marketing_campaign_created",
+        "marketing_campaign",
+        campaign["id"],
+        {"segment": campaign["segment"]},
+    )
     return {"success": True, "message": "Kampanya olusturuldu", "campaign_id": campaign["id"]}
 
 
 @router.get("/marketing/segments")
-async def get_customer_segments(current_user: User = Depends(get_current_user)):
+async def get_customer_segments(
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),
+):
     """Musteri segmentleri"""
     vip_count = await db.guests.count_documents({"tenant_id": current_user.tenant_id, "tags": "vip"})
     total = await db.guests.count_documents({"tenant_id": current_user.tenant_id})

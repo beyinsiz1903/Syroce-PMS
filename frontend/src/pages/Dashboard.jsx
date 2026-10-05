@@ -1,5 +1,6 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { lazy, Suspense, useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef } from 'react';
 import axios from 'axios';
+import { canAccessPath } from '@/utils/moduleAccess';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -8,9 +9,45 @@ import { Badge } from '@/components/ui/badge';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Hotel, FileText, TrendingUp, TrendingDown, Minus, Award, ShoppingCart, Users, BedDouble, Calendar, Package, Shield, Sparkles, Bot, Star, Building, Gift, UserCheck, MessageCircle, Target, Instagram, Zap, Monitor, ArrowRight } from 'lucide-react';
 import CommandCenter from '@/components/CommandCenter';
+import ProductState from '@/components/shared/ProductState';
 import { runIdle } from '@/lib/idle';
 import { useCurrency } from '@/context/CurrencyContext';
-import { LineChart, Line, BarChart, Bar, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+
+const DashboardAnalytics = lazy(() => import('@/components/DashboardAnalytics'));
+
+// Dashboard cards are shortcuts to product modules, not a second catalogue.
+// Keep their entitlement key explicit: an unknown/missing key must never turn
+// into a visible upsell or a route that the hotel did not select.
+const DASHBOARD_MODULE_KEYS = {
+  '/pms': ['pms'],
+  '/invoices': ['invoices', 'invoices_basic'],
+  '/rms': ['revenue_management'],
+  '/cost-management': ['cost_management'],
+  '/housekeeping': ['housekeeping', 'housekeeping_advanced'],
+  '/pos': ['pos_basic', 'pos_fnb'],
+  '/features': ['pms'],
+  '/loyalty': ['loyalty_program'],
+  '/marketplace': ['marketplace'],
+  '/hotel-inventory': ['pms'],
+  '/flash-report': ['reports', 'basic_reporting'],
+  '/group-sales': ['group_sales'],
+  '/sales-crm': ['sales_crm'],
+  '/service-recovery': ['guest_advanced'],
+  '/spa-wellness': ['spa'],
+  '/ai-chatbot': ['ai', 'ai_chatbot'],
+  '/dynamic-pricing': ['ai', 'ai_pricing'],
+  '/app/multi-property': ['multi_property'],
+  '/staff-management': ['hr'],
+  '/guest-journey': ['guests', 'guest_advanced'],
+  '/arrival-list': ['pms'],
+  '/ai-whatsapp-concierge': ['ai', 'ai_whatsapp'],
+  '/predictive-analytics': ['ai', 'ai_predictive'],
+  '/social-media-radar': ['ai', 'ai_social_radar'],
+  '/revenue-autopilot': ['ai', 'ai_revenue_autopilot'],
+  '/hr-complete': ['hr'],
+  '/fnb-complete': ['pos_basic', 'pos_fnb'],
+  '/kitchen-display': ['pos_fnb'],
+};
 
 // Hafif inline SVG sparkline — recharts overhead yok, 4 KPI kartına uygun.
 const Sparkline = ({
@@ -55,6 +92,7 @@ const dashboardCache = {
   stats: null,
   aiBriefing: null,
   timestamp: null,
+  tenantKey: null,
   CACHE_DURATION: 30000 // 30 seconds
 };
 const Dashboard = ({
@@ -69,16 +107,21 @@ const Dashboard = ({
     i18n
   } = useTranslation();
   const {
-    format: fmtMoney
+    format: fmtMoney,
+    symbol: currencySymbol
   } = useCurrency();
-  const [stats, setStats] = useState(dashboardCache.stats);
-  const [loading, setLoading] = useState(!dashboardCache.stats);
-  const [aiBriefing, setAiBriefing] = useState(dashboardCache.aiBriefing);
+  const tenantCacheKey = tenant?.id || tenant?._id || tenant?.tenant_id || user?.tenant_id || 'unknown';
+  const isCurrentTenantCache = dashboardCache.tenantKey === tenantCacheKey;
+  const activeTenantKeyRef = useRef(tenantCacheKey);
+  activeTenantKeyRef.current = tenantCacheKey;
+  const [stats, setStats] = useState(() => isCurrentTenantCache ? dashboardCache.stats : null);
+  const [loading, setLoading] = useState(() => !(isCurrentTenantCache && dashboardCache.stats));
+  const [aiBriefing, setAiBriefing] = useState(() => isCurrentTenantCache ? dashboardCache.aiBriefing : null);
   const [loadingAI, setLoadingAI] = useState(false);
   const [occupancyData, setOccupancyData] = useState([]);
   const [revenueData, setRevenueData] = useState([]);
   const [trendData, setTrendData] = useState([]);
-  const [heatmapData, setHeatmapData] = useState([]);
+  const [analyticsReady, setAnalyticsReady] = useState(false);
   const plan = tenant?.subscription_plan || tenant?.plan || tenant?.subscription_tier || "core_small_hotel";
   const isLite = plan === "pms_lite";
 
@@ -87,22 +130,37 @@ const Dashboard = ({
   // render kararı `isLite` flag'ine göre tüm hook'lar deklare edildikten
   // sonra alınır.
 
-  const loadAIBriefing = useCallback(async () => {
+  // Süperadmin tesis değiştirdiğinde önceki tesisin KPI veya yapay zekâ özeti
+  // hiç görünmemeli. Layout effect bu state'i tarayıcı boyamadan sıfırlar;
+  // böylece hızlı çalışma alanı geçişinde kısa bir veri sızıntısı oluşmaz.
+  useLayoutEffect(() => {
+    const cacheMatchesTenant = dashboardCache.tenantKey === tenantCacheKey;
+    setStats(cacheMatchesTenant ? dashboardCache.stats : null);
+    setAiBriefing(cacheMatchesTenant ? dashboardCache.aiBriefing : null);
+    setOccupancyData([]);
+    setRevenueData([]);
+    setTrendData([]);
+    setAnalyticsReady(false);
+    setLoading(!(cacheMatchesTenant && dashboardCache.stats));
+  }, [tenantCacheKey]);
+
+  const loadAIBriefing = useCallback(async (requestTenantKey) => {
     setLoadingAI(true);
     try {
       const response = await axios.get(`/ai/dashboard/briefing?lang=${i18n.language}`);
       const data = response.data;
+      if (activeTenantKeyRef.current !== requestTenantKey) return;
       setAiBriefing(data);
-      dashboardCache.aiBriefing = data;
+      if (dashboardCache.tenantKey === requestTenantKey) dashboardCache.aiBriefing = data;
     } catch (error) {
       console.error('Failed to load AI briefing:', error);
       // Fail silently - AI features are optional
     } finally {
-      setLoadingAI(false);
+      if (activeTenantKeyRef.current === requestTenantKey) setLoadingAI(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, []);
-  const loadChartData = useCallback(async () => {
+  const loadChartData = useCallback(async (requestTenantKey) => {
     const endpoints = [{
       url: '/analytics/occupancy-trend?days=30',
       key: 'trend',
@@ -115,12 +173,9 @@ const Dashboard = ({
       url: '/analytics/booking-trends?days=30',
       key: 'trend',
       set: setTrendData
-    }, {
-      url: '/rms/demand-heatmap?days=30',
-      key: 'heatmap',
-      set: setHeatmapData
     }];
     const results = await Promise.allSettled(endpoints.map(e => axios.get(e.url)));
+    if (activeTenantKeyRef.current !== requestTenantKey) return;
     results.forEach((res, i) => {
       const {
         key,
@@ -135,7 +190,7 @@ const Dashboard = ({
       }
     });
   }, []);
-  const loadDashboardStats = useCallback(async () => {
+  const loadDashboardStats = useCallback(async (requestTenantKey) => {
     try {
       // Use Promise.all for parallel requests - faster!
       const [pmsResponse, invoiceResponse] = await Promise.all([axios.get('/pms/dashboard').catch(() => ({
@@ -147,13 +202,15 @@ const Dashboard = ({
         pms: pmsResponse.data || {},
         invoices: invoiceResponse.data || {}
       };
+      if (activeTenantKeyRef.current !== requestTenantKey) return;
       setStats(statsData);
       dashboardCache.stats = statsData;
       dashboardCache.timestamp = Date.now();
+      dashboardCache.tenantKey = requestTenantKey;
     } catch (error) {
       console.error('Failed to load stats:', error);
     } finally {
-      setLoading(false);
+      if (activeTenantKeyRef.current === requestTenantKey) setLoading(false);
     }
   }, []);
   const renderAIBriefingText = briefing => {
@@ -217,36 +274,32 @@ const Dashboard = ({
   };
   useEffect(() => {
     const now = Date.now();
-    const isCacheValid = dashboardCache.timestamp && now - dashboardCache.timestamp < dashboardCache.CACHE_DURATION;
+    const isCacheValid = dashboardCache.tenantKey === tenantCacheKey && dashboardCache.timestamp && now - dashboardCache.timestamp < dashboardCache.CACHE_DURATION;
     let cancelIdle = () => {};
     if (!isCacheValid) {
       // KPI'lar (PMS dashboard + invoice stats) ana ekranın görsel iskeleti
-      // — hemen yüklensin. AI briefing ve grafik verileri (4 chart endpoint)
+      // — hemen yüklensin. AI briefing ve grafik verileri
       // ikincil; idle'a alınınca KPI'lar saniyeler önce ekrana basılır.
-      loadDashboardStats();
-      cancelIdle = runIdle(() => {
-        loadAIBriefing();
-        loadChartData();
-      }, {
-        timeout: 4000
-      });
+      loadDashboardStats(tenantCacheKey);
     }
+    // Grafikler sunucu tarafında önbelleğe alınmış KPI verisinden bağımsızdır.
+    // Her mount'ta idle slotunda istenir; böylece sıcak dashboard'da boş grafik
+    // bırakılmaz, ama ilk ekran ağ ve CPU kaynaklarıyla yarışmaz.
+    cancelIdle = runIdle(() => {
+      loadAIBriefing(tenantCacheKey);
+      loadChartData(tenantCacheKey);
+      setAnalyticsReady(true);
+    }, {
+      timeout: 4000
+    });
 
-    // Prefetch commonly used routes in background
-    const prefetchRoutes = () => {
-      const routes = ['/pms/dashboard', '/invoices/stats'];
-      routes.forEach(route => {
-        const link = document.createElement('link');
-        link.rel = 'prefetch';
-        link.href = route;
-        document.head.appendChild(link);
-      });
-    };
-
-    // Prefetch after 2 seconds
-    const timer = setTimeout(prefetchRoutes, 2000);
-    return () => clearTimeout(timer);
-  }, [loadDashboardStats, loadAIBriefing, loadChartData]);
+    // API base URL'si /api olduğundan, burada document'a eklenen
+    // "/pms/dashboard" ve "/invoices/stats" linkleri API önbelleğini
+    // ısıtmıyordu. Bunun yerine SPA rotası olarak istenip gereksiz iki ağ
+    // isteği ve yanıt işleme maliyeti çıkarıyordu. KPI isteği zaten axios
+    // önbelleği üzerinden bu verileri yüklediği için ek bir prefetch yok.
+    return () => cancelIdle();
+  }, [tenantCacheKey, loadDashboardStats, loadAIBriefing, loadChartData]);
   const visibleModules = useMemo(() => [{
     title: t('nav.pms'),
     description: t('dashboard.propertyManagement'),
@@ -470,44 +523,18 @@ const Dashboard = ({
     category: 'core'
   }], [t, stats]);
 
-  // Backend modül yetkilerine göre kartları filtrele
+  // Dashboard always reflects the selected hotel's effective module set.
+  // Platform privilege may still allow an administrator to navigate to a
+  // diagnostic route, but it must not make an unpurchased module look active.
   const isSuperAdmin = user?.role === 'super_admin' || Array.isArray(user?.roles) && user.roles.includes('super_admin');
   const filteredModules = useMemo(() => {
-    if (!modules) return visibleModules;
-    // Super admin: tüm modülleri (add-on'lar dahil) göster.
-    if (isSuperAdmin) return visibleModules;
-    return visibleModules.filter(m => {
-      // PMS & mobil
-      if (m.path === '/pms') return modules.pms !== false;
-      if (m.path === '/mobile' || m.path?.startsWith('/mobile/')) return modules.pms_mobile !== false;
-
-      // Add-on modules — sold separately, default OFF for all plans
-      if (m.path === '/spa-wellness') return modules.spa === true;
-      if (m.path === '/app/mice') return modules.mice === true;
-
-      // Raporlar
-      if (m.path === '/reports' || m.path === '/flash-report') return modules.reports !== false;
-
-      // Faturalar & finans
-      if (m.path === '/invoices' || m.path === '/efatura' || m.path === '/e-fatura' || m.path === '/pending-ar' || m.path === '/cost-management') {
-        return modules.invoices !== false;
-      }
-
-      // AI alt modülleri
-      if (m.path === '/ai-chatbot') return modules.ai_chatbot !== false;
-      if (m.path === '/dynamic-pricing') return modules.ai_pricing !== false;
-      if (m.path === '/ai-whatsapp-concierge') return modules.ai_whatsapp !== false;
-      if (m.path === '/predictive-analytics') return modules.ai_predictive !== false;
-      if (m.path === '/revenue-autopilot') return modules.ai_revenue_autopilot !== false;
-      if (m.path === '/social-media-radar') return modules.ai_social_radar !== false;
-
-      // AI kategorisi genel fallback: ana ai kapalıysa gizle
-      if (m.category === 'ai' || m.path === '/ai-pms') return modules.ai !== false;
-
-      // Diğer modüller şimdilik her zaman görünür
-      return true;
+    const accessibleModules = visibleModules.filter(m => canAccessPath(user, m.path));
+    if (!modules || Object.keys(modules).length === 0) return [];
+    return accessibleModules.filter(m => {
+      const requiredKeys = DASHBOARD_MODULE_KEYS[m.path];
+      return Array.isArray(requiredKeys) && requiredKeys.every((key) => modules[key] === true);
     });
-  }, [visibleModules, modules, isSuperAdmin]);
+  }, [visibleModules, modules, user]);
 
   // Kategorilere göre modülleri grupla
   const categorizedModules = useMemo(() => {
@@ -569,7 +596,7 @@ const Dashboard = ({
           <p className="text-sm md:text-base text-gray-600 dark:text-slate-300">{tenant?.property_name || 'Hotel Management System'}</p>
         </div>
 
-        {loading ? <div className="text-center py-12" role="status" aria-live="polite" aria-label="Veriler yükleniyor">{t('common.loading')}</div> : <>
+        {loading ? <ProductState state="loading" moduleName={t('dashboard.title', { defaultValue: 'Kontrol paneli' })} compact showDashboardLink={false} /> : <>
             {/* AI Daily Briefing Card */}
             {aiBriefing && <Card className="bg-gradient-to-br from-slate-900 via-slate-800 to-amber-700 text-white mb-4 border-0 shadow-lg" role="region" aria-label="Yapay zeka günlük brifing">
                 <CardHeader className="p-4">
@@ -696,7 +723,7 @@ const Dashboard = ({
               </div>;
         })()}
 
-            <Card className="overflow-hidden border-0 bg-[linear-gradient(135deg,#0f172a_0%,#1e293b_50%,#b45309_100%)] text-white shadow-lg" data-testid="migration-observability-dashboard-card">
+            {isSuperAdmin && <Card className="overflow-hidden border-0 bg-[linear-gradient(135deg,#0f172a_0%,#1e293b_50%,#b45309_100%)] text-white shadow-lg" data-testid="migration-observability-dashboard-card">
               <CardContent className="grid gap-5 p-6 md:grid-cols-[1.15fr_0.85fr] md:p-7">
                 <div className="space-y-3">
                   <Badge className="w-fit bg-white/15 text-white hover:bg-white/15" data-testid="migration-observability-dashboard-badge">Migration Observability</Badge>
@@ -725,185 +752,14 @@ const Dashboard = ({
                   </Button>
                 </div>
               </CardContent>
-            </Card>
+            </Card>}
 
             {/* Modules Grid - Categorized with Accordion */}
 
 
-            {/* Analytics & Charts Section */}
-            <div className="space-y-4">
-              <h2 className="text-xl md:text-2xl font-bold" style={{
-            fontFamily: 'Space Grotesk'
-          }}>
-                {t('dashboard.analyticsInsights')}
-              </h2>
-              
-              {/* Occupancy & Revenue Charts */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                {/* Occupancy Trend */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-lg">{t("dashboard.occupancyTrend")}</CardTitle>
-                    <CardDescription>{t("dashboard.dailyOccupancy")}</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <ResponsiveContainer width="100%" height={250}>
-                      <AreaChart data={occupancyData}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="var(--dash-chart-grid, #ccc)" />
-                        <XAxis dataKey="date" tick={{
-                      fontSize: 10,
-                      fill: 'var(--dash-chart-axis, #666)'
-                    }} tickFormatter={value => new Date(value).getDate()} />
-                        <YAxis tick={{
-                      fontSize: 10,
-                      fill: 'var(--dash-chart-axis, #666)'
-                    }} />
-                        <Tooltip labelFormatter={value => new Date(value).toLocaleDateString()} formatter={value => `${(typeof value === 'number' ? value : 0).toFixed(1)}%`} />
-                        <Area type="monotone" dataKey="occupancy_rate" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.3} name={t('dashboard.chartOccupancy')} />
-                      </AreaChart>
-                    </ResponsiveContainer>
-                  </CardContent>
-                </Card>
-
-                {/* Revenue Trend */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-lg">{t("dashboard.revenueTrend")}</CardTitle>
-                    <CardDescription>{t("dashboard.dailyRevenue")}</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <ResponsiveContainer width="100%" height={250}>
-                      <BarChart data={revenueData}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="var(--dash-chart-grid, #ccc)" />
-                        <XAxis dataKey="date" tick={{
-                      fontSize: 10,
-                      fill: 'var(--dash-chart-axis, #666)'
-                    }} tickFormatter={value => new Date(value).getDate()} />
-                        <YAxis tick={{
-                      fontSize: 10,
-                      fill: 'var(--dash-chart-axis, #666)'
-                    }} />
-                        <Tooltip labelFormatter={value => new Date(value).toLocaleDateString()} formatter={value => `$${(typeof value === 'number' ? value : 0).toFixed(0)}`} />
-                        <Legend wrapperStyle={{
-                      fontSize: '12px'
-                    }} />
-                        <Bar dataKey="room_revenue" fill="#10b981" name={t('dashboard.chartRoom')} />
-                        <Bar dataKey="fnb_revenue" fill="#f59e0b" name={t('dashboard.chartFnB')} />
-                        <Bar dataKey="other_revenue" fill="#6366f1" name={t('dashboard.chartOther')} />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </CardContent>
-                </Card>
-              </div>
-
-              {/* Booking Trends & ADR */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                {/* Booking Trends */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-lg">{t('dashboard.bookingTrends')}</CardTitle>
-                    <CardDescription>{t("dashboard.dailyBookings")}</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <ResponsiveContainer width="100%" height={250}>
-                      <LineChart data={trendData}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="var(--dash-chart-grid, #ccc)" />
-                        <XAxis dataKey="date" tick={{
-                      fontSize: 10,
-                      fill: 'var(--dash-chart-axis, #666)'
-                    }} tickFormatter={value => new Date(value).getDate()} />
-                        <YAxis yAxisId="left" tick={{
-                      fontSize: 10,
-                      fill: 'var(--dash-chart-axis, #666)'
-                    }} />
-                        <YAxis yAxisId="right" orientation="right" tick={{
-                      fontSize: 10,
-                      fill: 'var(--dash-chart-axis, #666)'
-                    }} />
-                        <Tooltip labelFormatter={value => new Date(value).toLocaleDateString()} />
-                        <Legend wrapperStyle={{
-                      fontSize: '12px'
-                    }} />
-                        <Line yAxisId="left" type="monotone" dataKey="bookings" stroke="#8b5cf6" strokeWidth={2} name={t('dashboard.chartBookings')} />
-                        <Line yAxisId="right" type="monotone" dataKey="adr" stroke="#10b981" strokeWidth={2} name="ADR ($)" />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </CardContent>
-                </Card>
-
-                {/* RevPAR & Performance */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-lg">{t('dashboard.revPARPerformance')}</CardTitle>
-                    <CardDescription>{t('dashboard.revPARDesc')}</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <ResponsiveContainer width="100%" height={250}>
-                      <AreaChart data={trendData}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="var(--dash-chart-grid, #ccc)" />
-                        <XAxis dataKey="date" tick={{
-                      fontSize: 10,
-                      fill: 'var(--dash-chart-axis, #666)'
-                    }} tickFormatter={value => new Date(value).getDate()} />
-                        <YAxis tick={{
-                      fontSize: 10,
-                      fill: 'var(--dash-chart-axis, #666)'
-                    }} />
-                        <Tooltip labelFormatter={value => new Date(value).toLocaleDateString()} formatter={value => `$${(typeof value === 'number' ? value : 0).toFixed(2)}`} />
-                        <Area type="monotone" dataKey="revpar" stroke="#f59e0b" fill="#f59e0b" fillOpacity={0.4} name="RevPAR" />
-                      </AreaChart>
-                    </ResponsiveContainer>
-                  </CardContent>
-                </Card>
-              </div>
-
-              {/* Occupancy Heatmap */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-lg">{t('dashboard.heatmap30Day')}</CardTitle>
-                  <CardDescription>{t('dashboard.heatmapDesc')}</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="grid grid-cols-10 gap-1">
-                    {occupancyData.slice(0, 30).map((day, index) => {
-                  const rawRate = typeof day.occupancy_rate === 'number' ? day.occupancy_rate : 0;
-                  const rate = Math.min(Math.max(rawRate, 0), 100);
-                  const color = rate >= 90 ? 'bg-red-600' : rate >= 80 ? 'bg-amber-500' : rate >= 70 ? 'bg-yellow-500' : rate >= 60 ? 'bg-green-500' : rate >= 50 ? 'bg-blue-500' : 'bg-gray-300';
-                  return <div key={day.id || index} className={`${color} rounded p-2 text-center text-white text-xs font-semibold cursor-pointer hover:scale-110 transition-transform`} title={rawRate > 100 ? `${new Date(day.date).toLocaleDateString()}: %${rate.toFixed(1)} (ham: %${rawRate.toFixed(1)} — overbooking)` : `${new Date(day.date).toLocaleDateString()}: %${rate.toFixed(1)} doluluk`}>
-                          {new Date(day.date).getDate()}
-                          <div className="text-[10px]">{rate.toFixed(0)}%</div>
-                        </div>;
-                })}
-                  </div>
-                  <div className="flex justify-center gap-4 mt-4 text-xs">
-                    <div className="flex items-center gap-1">
-                      <div className="w-3 h-3 bg-gray-300 rounded"></div>
-                      <span>&lt;50%</span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <div className="w-3 h-3 bg-blue-500 rounded"></div>
-                      <span>50-60%</span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <div className="w-3 h-3 bg-green-500 rounded"></div>
-                      <span>60-70%</span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <div className="w-3 h-3 bg-yellow-500 rounded"></div>
-                      <span>70-80%</span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <div className="w-3 h-3 bg-amber-500 rounded"></div>
-                      <span>80-90%</span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <div className="w-3 h-3 bg-red-600 rounded"></div>
-                      <span>&gt;90%</span>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
+            {analyticsReady && <Suspense fallback={<div className="h-24" aria-hidden="true" />}>
+                <DashboardAnalytics occupancyData={occupancyData} revenueData={revenueData} trendData={trendData} formatMoney={fmtMoney} currencySymbol={currencySymbol} />
+              </Suspense>}
 
             <div className="space-y-4">
               <h2 className="text-xl md:text-2xl font-bold mb-4" style={{
@@ -1039,13 +895,13 @@ const DashboardLite = ({
         <div className="rounded-2xl border border-slate-200 bg-white dark:bg-card p-4">
           <div className="text-sm font-semibold text-slate-900">{t('dashboard.quickActions')}</div>
           <div className="mt-3 flex flex-wrap gap-2">
-            <Button size="sm" className="bg-amber-600 hover:bg-amber-700 text-white" onClick={() => window.location.assign("/app/pms#frontdesk")}>
+            <Button size="sm" className="bg-amber-600 hover:bg-amber-700 text-white" onClick={() => navigate("/app/pms#frontdesk")}>
               {t('dashboard.newReservation')}
             </Button>
-            <Button size="sm" variant="outline" className="border-slate-300" onClick={() => window.location.assign("/app/reservation-calendar")}>
+            <Button size="sm" variant="outline" className="border-slate-300" onClick={() => navigate("/app/reservation-calendar")}>
               {t('dashboard.openCalendar')}
             </Button>
-            <Button size="sm" variant="outline" className="border-slate-300" onClick={() => window.location.assign("/app/pms#frontdesk")}>
+            <Button size="sm" variant="outline" className="border-slate-300" onClick={() => navigate("/app/pms#frontdesk")}>
               {t('dashboard.reservations')}
             </Button>
           </div>

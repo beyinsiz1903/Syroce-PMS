@@ -345,7 +345,10 @@ _HOTELRUNNER_OBS_RATE_LIMIT_DROP_COUNT = 0
 # HotelRunnerRateLimitError type AND the literal ``(429)`` status the client
 # embeds in the message, so the predicate is anchored to the real 429 path and
 # cannot swallow a same-typed error that lacks the status token.
-_HOTELRUNNER_OBS_RATE_LIMIT_RE = re.compile(r"\[HR-OBS\] FAILURE HotelRunnerRateLimitError:.*Rate limit exceeded \(429\)")
+_HOTELRUNNER_OBS_RATE_LIMIT_RE = re.compile(
+    r"\[HR-OBS\] FAILURE (?:type=)?HotelRunnerRateLimitError.*(?:\(429\)|\bstatus=429\b|\bhttp_status=429\b)",
+    re.IGNORECASE,
+)
 
 
 def _is_hotelrunner_obs_rate_limited(event: dict) -> bool:

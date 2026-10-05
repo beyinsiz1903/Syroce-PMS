@@ -10,8 +10,9 @@ import pytest
 
 from domains.channel_manager.providers import common_ingest
 from domains.channel_manager.providers.exely import exely_webhook_router
+from domains.channel_manager.providers.exely import observability as exely_observability
 from domains.channel_manager.providers.exely.client import ExelySoapTransport
-from domains.channel_manager.providers.exely.errors import ExelyParseError, ExelyPayloadError, ExelyValidationError
+from domains.channel_manager.providers.exely.errors import ExelyParseError, ExelyPayloadError, ExelyTemporaryError, ExelyValidationError
 from domains.channel_manager.providers.exely.observability import persist_outbound_log
 from domains.channel_manager.providers.exely.response_parser import parse_read_rs
 from domains.channel_manager.providers.exely.security import (
@@ -151,6 +152,71 @@ async def test_secrets_manager_credentials_are_resolved_without_plaintext_fallba
     vault_lookup.assert_not_awaited()
 
 
+@pytest.mark.asyncio
+async def test_active_connection_hotel_code_overrides_stale_vault_scope(monkeypatch):
+    class _StalePropertySecretsManager:
+        async def get_provider_credentials(self, *args, **kwargs):
+            return {
+                "username": "synthetic-vault-user",
+                "password": "synthetic-vault-password",
+                "hotel_code": "old-test-property",
+                "endpoint_url": EXELY_TEST_ENDPOINT_URL,
+            }
+
+    monkeypatch.setattr(
+        "domains.channel_manager.providers.exely.security.get_secrets_manager",
+        lambda: _StalePropertySecretsManager(),
+    )
+    monkeypatch.setattr(
+        "domains.channel_manager.providers.exely.security.get_decrypted_credentials",
+        AsyncMock(return_value=None),
+    )
+
+    result = await resolve_exely_credentials(
+        "synthetic-tenant",
+        {"hotel_code": "501694", "mode": "sandbox"},
+        actor="offline-test",
+    )
+
+    assert result is not None
+    assert result["hotel_code"] == "501694"
+    assert result["_credential_source"] == "secrets_manager"
+
+
+@pytest.mark.asyncio
+async def test_active_connection_endpoint_overrides_stale_vault_endpoint(monkeypatch):
+    class _StaleEndpointSecretsManager:
+        async def get_provider_credentials(self, *args, **kwargs):
+            return {
+                "username": "synthetic-vault-user",
+                "password": "synthetic-vault-password",
+                "hotel_code": "501694",
+                "endpoint_url": "https://pmsconnect.prod.hopenapi.com/api/PMSConnect.svc",
+            }
+
+    monkeypatch.setattr(
+        "domains.channel_manager.providers.exely.security.get_secrets_manager",
+        lambda: _StaleEndpointSecretsManager(),
+    )
+    monkeypatch.setattr(
+        "domains.channel_manager.providers.exely.security.get_decrypted_credentials",
+        AsyncMock(return_value=None),
+    )
+
+    result = await resolve_exely_credentials(
+        "synthetic-tenant",
+        {
+            "hotel_code": "501694",
+            "mode": "sandbox",
+            "endpoint_url": EXELY_TEST_ENDPOINT_URL,
+        },
+        actor="offline-test",
+    )
+
+    assert result is not None
+    assert result["endpoint_url"] == EXELY_TEST_ENDPOINT_URL
+
+
 def test_http_error_does_not_retain_provider_body():
     response = httpx.Response(400, text="guest@example.test Password=synthetic-provider-password")
 
@@ -160,6 +226,96 @@ def test_http_error_does_not_retain_provider_body():
     rendered = str(exc_info.value)
     assert "guest@example.test" not in rendered
     assert "synthetic-provider-password" not in rendered
+
+
+@pytest.mark.asyncio
+async def test_transport_retries_transient_dns_denial_but_keeps_ssrf_denial_permanent(monkeypatch):
+    from integrations.xchange.safety import EgressDenied
+
+    async def _dns_denied(*_args, **_kwargs):
+        raise EgressDenied("dns failure: temporary failure")
+
+    monkeypatch.setattr("integrations.xchange.safety.safe_post_async", _dns_denied)
+    transport = ExelySoapTransport(EXELY_TEST_ENDPOINT_URL)
+    with pytest.raises(ExelyTemporaryError):
+        await transport.send_soap("<OTA/>", "OTA_HotelAvailRQ")
+
+    async def _ssrf_denied(*_args, **_kwargs):
+        raise EgressDenied("egress to private address blocked")
+
+    monkeypatch.setattr("integrations.xchange.safety.safe_post_async", _ssrf_denied)
+    with pytest.raises(ExelyPayloadError):
+        await transport.send_soap("<OTA/>", "OTA_HotelAvailRQ")
+
+
+def test_exely_observability_demotes_retryable_failures_and_resets_after_success(caplog):
+    exely_observability.reset_metrics()
+    caplog.set_level(logging.WARNING, logger="exely.observability")
+    for _ in range(4):
+        exely_observability.record_provider_failure(
+            error_type="ExelyTemporaryError",
+            message="synthetic temporary failure",
+            connection_id="synthetic-connection",
+            soap_action="OTA_HotelAvailRQ",
+            recoverable=True,
+        )
+    records = [record for record in caplog.records if record.name == "exely.observability"]
+    assert all(record.levelno == logging.WARNING for record in records)
+    assert all("RETRYABLE_FAILURE" in record.getMessage() for record in records)
+
+    exely_observability.record_provider_call(
+        soap_action="OTA_HotelAvailRQ",
+        duration_ms=1,
+        success=True,
+        connection_id="synthetic-connection",
+    )
+    exely_observability.record_provider_failure(
+        error_type="ExelyTemporaryError",
+        message="synthetic temporary failure",
+        connection_id="synthetic-connection",
+        soap_action="OTA_HotelAvailRQ",
+        recoverable=True,
+    )
+    assert "streak=1" in caplog.records[-1].getMessage()
+
+
+def test_exely_observability_keeps_failure_streaks_separate_by_operation(caplog):
+    exely_observability.reset_metrics()
+    caplog.set_level(logging.WARNING, logger="exely.observability")
+
+    for _ in range(4):
+        exely_observability.record_provider_failure(
+            error_type="ExelyTemporaryError",
+            message="synthetic temporary failure",
+            connection_id="synthetic-connection",
+            soap_action="OTA_HotelAvailRQ",
+            recoverable=True,
+        )
+
+    exely_observability.record_provider_failure(
+        error_type="ExelyTemporaryError",
+        message="synthetic temporary failure",
+        connection_id="synthetic-connection",
+        soap_action="OTA_ReadRQ",
+        recoverable=True,
+    )
+
+    assert "action=OTA_ReadRQ streak=1" in caplog.records[-1].getMessage()
+    assert caplog.records[-1].levelno == logging.WARNING
+
+
+def test_exely_observability_keeps_permanent_failures_as_errors(caplog):
+    exely_observability.reset_metrics()
+    caplog.set_level(logging.WARNING, logger="exely.observability")
+    exely_observability.record_provider_failure(
+        error_type="ExelyPayloadError",
+        message="synthetic blocked endpoint",
+        connection_id="synthetic-connection",
+        soap_action="OTA_HotelAvailRQ",
+        recoverable=False,
+    )
+    assert caplog.records[-1].levelno == logging.ERROR
+    assert "[EXELY-OBS] FAILURE" in caplog.records[-1].getMessage()
 
 
 @pytest.mark.asyncio

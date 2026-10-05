@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import InternalChatWidget from '@/components/InternalChatWidget';
 
 vi.mock('@/context/NotificationContext', () => ({
-  useNotifications: () => ({ internalUnreadCount: 0 }),
+  useNotifications: () => ({ internalUnreadCount: 0, guestRequestsUnreadCount: 0 }),
 }));
 
 vi.mock('@/components/pms/InternalChatTab', () => ({
@@ -30,5 +30,13 @@ describe('InternalChatWidget positioning', () => {
     expect(screen.getByRole('dialog', { name: 'Personel Mesajlaşması' })).toHaveClass(
       'safe-fixed-bottom-chat',
     );
+  });
+
+  it('opens the guest-request workspace with its own accessible title', () => {
+    render(<InternalChatWidget user={{ id: 'operator' }} hideLauncher />);
+
+    fireEvent(window, new CustomEvent('syroce:open-guest-requests'));
+
+    expect(screen.getByRole('dialog', { name: 'Misafir Talepleri' })).toBeInTheDocument();
   });
 });

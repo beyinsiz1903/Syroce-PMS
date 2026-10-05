@@ -11,6 +11,7 @@ from datetime import UTC, datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException
 
 from common.context import OperationContext
+from core.business_date_service import accounting_day_match
 from core.security import (
     get_current_user,
 )
@@ -18,6 +19,7 @@ from core.tenant_db import get_system_db
 from domains.pms.night_audit_service import night_audit_service
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_op
+from modules.pms_core.stay_night_metrics import load_stay_night_metrics
 
 logger = logging.getLogger(__name__)
 
@@ -154,9 +156,22 @@ async def get_maintenance_prediction_logs(
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-async def _sum_payments(db, tid: str, start: str, end: str, by_method: bool = False):
+async def _sum_payments(db, tid: str, business_date: str, start: str, end: str, by_method: bool = False):
     pipeline = [
-        {"$match": {"tenant_id": tid, "payment_date": {"$gte": start, "$lt": end}}},
+        {
+            "$match": {
+                "tenant_id": tid,
+                "voided": {"$ne": True},
+                "status": {"$nin": ["void", "voided", "failed", "cancelled", "rejected"]},
+                "payment_method": {"$nin": ["discount", "complimentary", "correction", "city_ledger", "ar"]},
+                **accounting_day_match(
+                    business_date,
+                    {"payment_date": {"$gte": start, "$lt": end}},
+                    {"processed_at": {"$gte": start, "$lt": end}},
+                    {"created_at": {"$gte": start, "$lt": end}},
+                ),
+            }
+        },
     ]
     if by_method:
         pipeline.append(
@@ -173,11 +188,22 @@ async def _sum_payments(db, tid: str, start: str, end: str, by_method: bool = Fa
     return await db.payments.aggregate(pipeline).to_list(50)
 
 
-async def _sum_charges(db, tid: str, start: str, end: str):
+async def _sum_charges(db, tid: str, business_date: str, start: str, end: str):
     """Folio_charges'dan kategori bazlı gelir."""
     return await db.folio_charges.aggregate(
         [
-            {"$match": {"tenant_id": tid, "posted_at": {"$gte": start, "$lt": end}}},
+            {
+                "$match": {
+                    "tenant_id": tid,
+                    "voided": {"$ne": True},
+                    **accounting_day_match(
+                        business_date,
+                        {"posted_at": {"$gte": start, "$lt": end}},
+                        {"date": {"$gte": start, "$lt": end}},
+                        {"created_at": {"$gte": start, "$lt": end}},
+                    ),
+                }
+            },
             {
                 "$group": {
                     "_id": {"$ifNull": ["$category", "other"]},
@@ -187,6 +213,58 @@ async def _sum_charges(db, tid: str, start: str, end: str):
             },
         ]
     ).to_list(50)
+
+
+ROOM_REVENUE_CATEGORIES = {"rooms", "room", "accommodation", "room_charge"}
+FNB_REVENUE_CATEGORIES = {"fnb", "food", "beverage", "restaurant", "bar", "minibar", "room_service"}
+
+
+def _daily_revenue_summary(metric_rows: list[dict], charges_by_cat: list[dict]) -> dict:
+    """Reconcile posted folio revenue with the accrued occupied-room value.
+
+    A current business day normally has no room posting until Night Audit. In
+    that window, showing zero ADR/RevPAR is false; occupied-room accrual is the
+    operational source of truth. Non-room folio charges remain posted values.
+    """
+    posted_by_category: dict[str, float] = {}
+    for row in charges_by_cat:
+        category = str(row.get("_id") or "other").strip().lower()
+        posted_by_category[category] = round(posted_by_category.get(category, 0) + float(row.get("total") or 0), 2)
+
+    posted_rooms = round(sum(value for key, value in posted_by_category.items() if key in ROOM_REVENUE_CATEGORIES), 2)
+    occupied_room_nights = sum(int(row.get("occupied_rooms") or 0) for row in metric_rows)
+    # ADR measures the achieved rate of *sold* room nights. Complimentary
+    # stays consume inventory and therefore belong in occupancy, but their
+    # zero-priced nights must not dilute ADR.  ``stay_night_metrics`` exposes
+    # this denominator separately so every daily financial report can use the
+    # same commercial definition.
+    sold_room_nights = sum(int(row.get("sold_rooms") or 0) for row in metric_rows)
+    available_room_nights = sum(int(row.get("total_rooms") or 0) for row in metric_rows)
+    accrued_rooms = round(sum(float(row.get("revenue") or 0) for row in metric_rows), 2)
+    has_posting_gap = occupied_room_nights > 0 and posted_rooms == 0
+    rooms = accrued_rooms if has_posting_gap else posted_rooms
+    source = "accrued" if has_posting_gap else "posted"
+
+    fnb = round(sum(value for key, value in posted_by_category.items() if key in FNB_REVENUE_CATEGORIES), 2)
+    non_room_by_category = {
+        key: value
+        for key, value in posted_by_category.items()
+        if key not in ROOM_REVENUE_CATEGORIES
+    }
+    other = round(sum(value for key, value in non_room_by_category.items() if key not in FNB_REVENUE_CATEGORIES), 2)
+    return {
+        "rooms": rooms,
+        "posted_rooms": posted_rooms,
+        "accrued_rooms": accrued_rooms,
+        "room_revenue_source": source,
+        "posting_pending": has_posting_gap,
+        "fnb": fnb,
+        "other": other,
+        "by_category": non_room_by_category,
+        "total": round(rooms + fnb + other, 2),
+        "adr": round(rooms / sold_room_nights, 2) if sold_room_nights else 0.0,
+        "revpar": round(rooms / available_room_nights, 2) if available_room_nights else 0.0,
+    }
 
 
 @router.get("/trial-balance")
@@ -239,6 +317,7 @@ async def trial_balance(
         deposit_balance_doc,
         open_folios_count,
         last_audit,
+        stay_metrics,
     ) = await asyncio.gather(
         db.rooms.count_documents({"tenant_id": tid}),
         db.rooms.count_documents({"tenant_id": tid, "status": "occupied"}),
@@ -265,8 +344,8 @@ async def trial_balance(
                 "status": "no_show",
             }
         ),
-        _sum_payments(db, tid, day_start, day_end, by_method=True),
-        _sum_charges(db, tid, day_start, day_end),
+        _sum_payments(db, tid, today, day_start, day_end, by_method=True),
+        _sum_charges(db, tid, today, day_start, day_end),
         db.bookings.aggregate(
             [
                 {"$match": {"tenant_id": tid, "status": "checked_out", "ar_balance": {"$gt": 0}}},
@@ -284,17 +363,11 @@ async def trial_balance(
             {"tenant_id": tid},
             sort=[("created_at", -1)],
         ),
+        load_stay_night_metrics(db, tid, d.date(), d.date(), actual_only=True),
     )
 
-    # Revenue: folio_charges kategori dağılımından, business-date doğru
-    rev_by_cat: dict[str, float] = {}
-    for c in charges_by_cat:
-        rev_by_cat[c["_id"] or "other"] = round(c["total"] or 0, 2)
-    rooms_rev = rev_by_cat.get("rooms", 0) + rev_by_cat.get("room", 0) + rev_by_cat.get("accommodation", 0)
-    fnb_rev = rev_by_cat.get("fnb", 0) + rev_by_cat.get("food", 0) + rev_by_cat.get("beverage", 0)
-    excl = ("rooms", "room", "accommodation", "fnb", "food", "beverage")
-    other_rev = sum(v for k, v in rev_by_cat.items() if k not in excl)
-    total_revenue = rooms_rev + fnb_rev + other_rev
+    revenue = _daily_revenue_summary(stay_metrics, charges_by_cat)
+    total_revenue = revenue["total"]
 
     # Payment özeti
     pay_by_method: dict[str, dict] = {}
@@ -305,17 +378,19 @@ async def trial_balance(
         total_payments += p["total"] or 0
 
     # Doluluk: bugün → canlı status; başka gün → in-house booking sayısı
-    occupied = occupied_now if is_today else in_house_count
-    occupancy_basis = "live_room_status" if is_today else "booking_span"
+    metric = stay_metrics[0] if stay_metrics else {}
+    occupied = int(metric.get("occupied_rooms", occupied_now if is_today else in_house_count) or 0)
+    report_total_rooms = int(metric.get("total_rooms", total_rooms) or 0)
+    occupancy_basis = "actual_stay_nights"
 
-    if total_rooms > 0:
-        occ_pct = round(occupied / total_rooms * 100, 1)
-        revpar = round(rooms_rev / total_rooms, 2)
+    if report_total_rooms > 0:
+        occ_pct = round(occupied / report_total_rooms * 100, 1)
+        revpar = revenue["revpar"]
     else:
         occ_pct = 0.0
         revpar = 0.0
-    adr = round(rooms_rev / occupied, 2) if occupied > 0 else 0.0
-    available = max(0, total_rooms - occupied - out_of_order) if total_rooms > 0 else 0
+    adr = revenue["adr"]
+    available = max(0, report_total_rooms - occupied - out_of_order) if report_total_rooms > 0 else 0
 
     in_balance = abs(total_revenue - total_payments) < 0.01
 
@@ -332,7 +407,7 @@ async def trial_balance(
         "date": today,
         "generated_at": datetime.now(UTC).isoformat(),
         "occupancy": {
-            "total_rooms": total_rooms,
+            "total_rooms": report_total_rooms,
             "occupied": occupied,
             "out_of_order": out_of_order,
             "available": available,
@@ -346,11 +421,7 @@ async def trial_balance(
             "in_house": in_house_count,
         },
         "revenue": {
-            "rooms": round(rooms_rev, 2),
-            "fnb": round(fnb_rev, 2),
-            "other": round(other_rev, 2),
-            "by_category": rev_by_cat,
-            "total": round(total_revenue, 2),
+            **revenue,
             "adr": adr,
             "revpar": revpar,
         },

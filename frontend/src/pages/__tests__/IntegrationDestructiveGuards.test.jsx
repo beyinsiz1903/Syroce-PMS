@@ -103,7 +103,10 @@ const hotelRunnerResponse = (url) => {
 const exelyResponse = (url) => {
   if (url.endsWith('/connection')) return {
     connected: true,
-    connection: { property_name: 'Demo Hotel', currency: 'TRY' },
+    connection: { property_name: 'Demo Hotel', currency: 'TRY', ari_write_enabled: false },
+  };
+  if (url.endsWith('/sync/status')) return {
+    production_safety: { ari_write_allowed: true },
   };
   if (url.endsWith('/room-mappings')) return {
     mappings: [{
@@ -142,7 +145,7 @@ describe('integration destructive action guards', () => {
     await waitFor(() => expect(confirmDialog).toHaveBeenCalledTimes(1));
     expect(axiosDelete).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByTestId('tab-mappings'));
+    const hrTab = screen.getByTestId('tab-mappings'); fireEvent.pointerDown(hrTab); fireEvent.mouseDown(hrTab); fireEvent.click(hrTab);
     fireEvent.click(await screen.findByTestId('delete-mapping-STD'));
     await waitFor(() => expect(confirmDialog).toHaveBeenCalledTimes(2));
     expect(axiosDelete).not.toHaveBeenCalled();
@@ -162,7 +165,7 @@ describe('integration destructive action guards', () => {
   it('does not enable HotelRunner live writes without explicit confirmation', async () => {
     render(<HotelRunnerIntegration user={{}} tenant={{}} />);
 
-    fireEvent.click(await screen.findByTestId('hr-enable-live-write-btn'));
+    const hrBtn = await screen.findByTestId('hr-enable-live-write-btn'); await waitFor(() => expect(hrBtn).not.toBeDisabled()); fireEvent.click(hrBtn);
 
     await waitFor(() => expect(confirmDialog).toHaveBeenCalledTimes(1));
     expect(axiosPost).not.toHaveBeenCalledWith(
@@ -196,10 +199,23 @@ describe('integration destructive action guards', () => {
     await waitFor(() => expect(confirmDialog).toHaveBeenCalledTimes(2));
     expect(axiosPatch).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByTestId('exely-tab-mappings'));
+    const exelyTab = screen.getByTestId('exely-tab-mappings'); fireEvent.pointerDown(exelyTab); fireEvent.mouseDown(exelyTab); fireEvent.click(exelyTab);
     fireEvent.click(await screen.findByTestId('exely-delete-mapping-0'));
     await waitFor(() => expect(confirmDialog).toHaveBeenCalledTimes(3));
     expect(axiosDelete).not.toHaveBeenCalled();
+  });
+
+  it('does not enable Exely tenant ARI writes without explicit confirmation', async () => {
+    render(<ExelyIntegration user={{}} tenant={{}} />);
+
+    const toggle = await screen.findByTestId('exely-ari-write-toggle'); await waitFor(() => expect(toggle).not.toBeDisabled()); fireEvent.click(toggle);
+
+    await waitFor(() => expect(confirmDialog).toHaveBeenCalledTimes(1));
+    expect(axiosPost).not.toHaveBeenCalledWith(
+      expect.stringContaining('/ari-write'),
+      expect.anything(),
+      expect.anything(),
+    );
   });
 
   it('does not delete a generic channel mapping without confirmation', async () => {

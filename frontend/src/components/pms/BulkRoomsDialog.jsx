@@ -173,31 +173,31 @@ const BulkRoomsDialog = ({ open, onClose, onRoomsCreated, user }) => {
       <DialogContent className="max-w-3xl">
         <DialogHeader>
           <DialogTitle>{t('pms.bulkAddRooms')}</DialogTitle>
-          <DialogDescription>Range, template veya CSV ile toplu oda ekleme — işlem öncesi oluşturulacak odalar önizlenir ve onay gerekir.</DialogDescription>
+          <DialogDescription>Numara aralığı, şablon veya CSV ile toplu oda ekleyin. İşlemden önce odalar önizlenir ve onayınız istenir.</DialogDescription>
         </DialogHeader>
 
         <Tabs value={bulkRoomTab} onValueChange={(v) => { setBulkRoomTab(v); setConfirmed(false); }} className="w-full">
           <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="range">Range</TabsTrigger>
-            <TabsTrigger value="template">Template</TabsTrigger>
-            <TabsTrigger value="csv">CSV Import</TabsTrigger>
+            <TabsTrigger value="range">Numara Aralığı</TabsTrigger>
+            <TabsTrigger value="template">Şablon</TabsTrigger>
+            <TabsTrigger value="csv">CSV İçe Aktar</TabsTrigger>
           </TabsList>
 
           <TabsContent value="range" className="pt-4">
             <form onSubmit={handleBulkCreateRange} className="space-y-4">
               <div className="grid grid-cols-3 gap-3">
-                <div><Label>Prefix</Label><Input value={bulkRange.prefix} onChange={(e) => { setBulkRange(p => ({...p, prefix: e.target.value})); resetConfirmOnChange(); }} placeholder="A" /></div>
-                <div><Label>Start</Label><Input type="number" value={bulkRange.start_number} onChange={(e) => { setBulkRange(p => ({...p, start_number: parseInt(e.target.value)})); resetConfirmOnChange(); }} /></div>
-                <div><Label>End</Label><Input type="number" value={bulkRange.end_number} onChange={(e) => { setBulkRange(p => ({...p, end_number: parseInt(e.target.value)})); resetConfirmOnChange(); }} /></div>
+                <div><Label>Ön Ek</Label><Input value={bulkRange.prefix} onChange={(e) => { setBulkRange(p => ({...p, prefix: e.target.value})); resetConfirmOnChange(); }} placeholder="A" /></div>
+                <div><Label>Başlangıç</Label><Input type="number" value={bulkRange.start_number} onChange={(e) => { setBulkRange(p => ({...p, start_number: parseInt(e.target.value)})); resetConfirmOnChange(); }} /></div>
+                <div><Label>Bitiş</Label><Input type="number" value={bulkRange.end_number} onChange={(e) => { setBulkRange(p => ({...p, end_number: parseInt(e.target.value)})); resetConfirmOnChange(); }} /></div>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <RoomTypeInput value={bulkRange.room_type} onChange={(v) => { setBulkRange(p => ({...p, room_type: v})); resetConfirmOnChange(); }} testId="bulk-range-room-type" idPrefix="bulk-range-room-type" />
-                <div><Label>Floor</Label><Input type="number" value={bulkRange.floor} onChange={(e) => { setBulkRange(p => ({...p, floor: parseInt(e.target.value)})); resetConfirmOnChange(); }} /></div>
+                <div><Label>Kat</Label><Input type="number" value={bulkRange.floor} onChange={(e) => { setBulkRange(p => ({...p, floor: parseInt(e.target.value)})); resetConfirmOnChange(); }} /></div>
               </div>
               <div className="grid grid-cols-3 gap-3">
-                <div><Label>Capacity</Label><Input type="number" value={bulkRange.capacity} onChange={(e) => { setBulkRange(p => ({...p, capacity: parseInt(e.target.value)})); resetConfirmOnChange(); }} /></div>
-                <div><Label>Base Price</Label><Input type="number" step="0.01" value={bulkRange.base_price} onChange={(e) => { setBulkRange(p => ({...p, base_price: parseFloat(e.target.value)})); resetConfirmOnChange(); }} /></div>
-                <div><Label>View</Label><Input value={bulkRange.view} onChange={(e) => { setBulkRange(p => ({...p, view: e.target.value})); resetConfirmOnChange(); }} placeholder="sea/city" /></div>
+                <div><Label>Kapasite</Label><Input type="number" value={bulkRange.capacity} onChange={(e) => { setBulkRange(p => ({...p, capacity: parseInt(e.target.value)})); resetConfirmOnChange(); }} /></div>
+                <div><Label>Taban Fiyat</Label><Input type="number" step="0.01" value={bulkRange.base_price} onChange={(e) => { setBulkRange(p => ({...p, base_price: parseFloat(e.target.value)})); resetConfirmOnChange(); }} /></div>
+                <div><Label>Manzara</Label><Input value={bulkRange.view} onChange={(e) => { setBulkRange(p => ({...p, view: e.target.value})); resetConfirmOnChange(); }} placeholder="deniz/şehir" /></div>
               </div>
               <BedTypeSelect value={bulkRange.bed_type} onChange={(v) => { setBulkRange(p => ({...p, bed_type: v})); resetConfirmOnChange(); }} testId="bulk-range-bed-type" />
 
@@ -214,18 +214,18 @@ const BulkRoomsDialog = ({ open, onClose, onRoomsCreated, user }) => {
           <TabsContent value="template" className="pt-4">
             <form onSubmit={handleBulkCreateTemplate} className="space-y-4">
               <div className="grid grid-cols-3 gap-3">
-                <div><Label>Prefix</Label><Input value={bulkTemplate.prefix} onChange={(e) => { setBulkTemplate(p => ({...p, prefix: e.target.value})); resetConfirmOnChange(); }} placeholder="B" /></div>
-                <div><Label>Start</Label><Input type="number" value={bulkTemplate.start_number} onChange={(e) => { setBulkTemplate(p => ({...p, start_number: parseInt(e.target.value)})); resetConfirmOnChange(); }} /></div>
-                <div><Label>Count</Label><Input type="number" value={bulkTemplate.count} onChange={(e) => { setBulkTemplate(p => ({...p, count: parseInt(e.target.value)})); resetConfirmOnChange(); }} /></div>
+                <div><Label>Ön Ek</Label><Input value={bulkTemplate.prefix} onChange={(e) => { setBulkTemplate(p => ({...p, prefix: e.target.value})); resetConfirmOnChange(); }} placeholder="B" /></div>
+                <div><Label>Başlangıç</Label><Input type="number" value={bulkTemplate.start_number} onChange={(e) => { setBulkTemplate(p => ({...p, start_number: parseInt(e.target.value)})); resetConfirmOnChange(); }} /></div>
+                <div><Label>Adet</Label><Input type="number" value={bulkTemplate.count} onChange={(e) => { setBulkTemplate(p => ({...p, count: parseInt(e.target.value)})); resetConfirmOnChange(); }} /></div>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <RoomTypeInput value={bulkTemplate.room_type} onChange={(v) => { setBulkTemplate(p => ({...p, room_type: v})); resetConfirmOnChange(); }} testId="bulk-template-room-type" idPrefix="bulk-template-room-type" />
-                <div><Label>Floor</Label><Input type="number" value={bulkTemplate.floor} onChange={(e) => { setBulkTemplate(p => ({...p, floor: parseInt(e.target.value)})); resetConfirmOnChange(); }} /></div>
+                <div><Label>Kat</Label><Input type="number" value={bulkTemplate.floor} onChange={(e) => { setBulkTemplate(p => ({...p, floor: parseInt(e.target.value)})); resetConfirmOnChange(); }} /></div>
               </div>
               <div className="grid grid-cols-3 gap-3">
-                <div><Label>Capacity</Label><Input type="number" value={bulkTemplate.capacity} onChange={(e) => { setBulkTemplate(p => ({...p, capacity: parseInt(e.target.value)})); resetConfirmOnChange(); }} /></div>
-                <div><Label>Base Price</Label><Input type="number" step="0.01" value={bulkTemplate.base_price} onChange={(e) => { setBulkTemplate(p => ({...p, base_price: parseFloat(e.target.value)})); resetConfirmOnChange(); }} /></div>
-                <div><Label>View</Label><Input value={bulkTemplate.view} onChange={(e) => { setBulkTemplate(p => ({...p, view: e.target.value})); resetConfirmOnChange(); }} placeholder="sea/city" /></div>
+                <div><Label>Kapasite</Label><Input type="number" value={bulkTemplate.capacity} onChange={(e) => { setBulkTemplate(p => ({...p, capacity: parseInt(e.target.value)})); resetConfirmOnChange(); }} /></div>
+                <div><Label>Taban Fiyat</Label><Input type="number" step="0.01" value={bulkTemplate.base_price} onChange={(e) => { setBulkTemplate(p => ({...p, base_price: parseFloat(e.target.value)})); resetConfirmOnChange(); }} /></div>
+                <div><Label>Manzara</Label><Input value={bulkTemplate.view} onChange={(e) => { setBulkTemplate(p => ({...p, view: e.target.value})); resetConfirmOnChange(); }} placeholder="deniz/şehir" /></div>
               </div>
               <BedTypeSelect value={bulkTemplate.bed_type} onChange={(v) => { setBulkTemplate(p => ({...p, bed_type: v})); resetConfirmOnChange(); }} testId="bulk-template-bed-type" />
 
@@ -242,12 +242,12 @@ const BulkRoomsDialog = ({ open, onClose, onRoomsCreated, user }) => {
           <TabsContent value="csv" className="pt-4">
             <form onSubmit={handleBulkImportCsv} className="space-y-4">
               <div className="text-sm text-gray-600">
-                CSV columns: <span className="font-mono text-xs">room_number, room_type, floor, capacity, base_price, view, bed_type, amenities</span>
+                CSV sütunları: <span className="font-mono text-xs">room_number, room_type, floor, capacity, base_price, view, bed_type, amenities</span>
               </div>
               <Button type="button" variant="outline" onClick={downloadRoomsCsvTemplate}>
                 <Download className="w-4 h-4 mr-2" />CSV Template
               </Button>
-              <div><Label>CSV File</Label><Input type="file" accept=".csv,text/csv" onChange={(e) => { setBulkCsvFile(e.target.files?.[0] || null); resetConfirmOnChange(); }} /></div>
+              <div><Label>CSV Dosyası</Label><Input type="file" accept=".csv,text/csv" onChange={(e) => { setBulkCsvFile(e.target.files?.[0] || null); resetConfirmOnChange(); }} /></div>
 
               {bulkCsvFile && (
                 <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
@@ -264,7 +264,7 @@ const BulkRoomsDialog = ({ open, onClose, onRoomsCreated, user }) => {
 
               <div className="flex justify-end gap-2 pt-2">
                 <Button type="button" variant="outline" onClick={handleClose}>{t('common.close')}</Button>
-                <Button type="submit" disabled={!bulkCsvFile || !confirmed || submitting}>{submitting ? 'İçe aktarılıyor…' : 'Import'}</Button>
+                <Button type="submit" disabled={!bulkCsvFile || !confirmed || submitting}>{submitting ? 'İçe aktarılıyor…' : 'İçe Aktar'}</Button>
               </div>
             </form>
           </TabsContent>

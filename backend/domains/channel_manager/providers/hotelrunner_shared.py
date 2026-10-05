@@ -227,10 +227,7 @@ async def _persist_and_process(
             identity["provider_event_id"],
         )
         if existing:
-            if (
-                existing.get("processing_status") == "failed"
-                and existing.get("decision_result") != "pending_mapping"
-            ):
+            if existing.get("processing_status") == "failed" and existing.get("decision_result") != "pending_mapping":
                 replay_event = await repo.claim_failed_provider_event_for_replay(
                     tenant_id,
                     "hotelrunner",

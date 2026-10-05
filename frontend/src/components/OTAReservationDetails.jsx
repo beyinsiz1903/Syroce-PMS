@@ -7,6 +7,7 @@ import { Textarea } from './ui/textarea';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Building2, CreditCard, Users, DollarSign, Plus, Link2 } from 'lucide-react';
+import { bookingSourceLabel } from '@/utils/bookingSource';
 const OTAReservationDetails = ({
   bookingId
 }) => {
@@ -99,7 +100,7 @@ const OTAReservationDetails = ({
               {details.source_of_booking?.toUpperCase()}
             </Badge>
             {details.ota_channel && <span className="text-sm text-gray-600">
-                Channel: {details.ota_channel}
+                Channel: {bookingSourceLabel({ ota_channel: details.ota_channel })}
               </span>}
             {details.ota_confirmation && <span className="text-sm text-gray-600">
                 Confirmation: {details.ota_confirmation}

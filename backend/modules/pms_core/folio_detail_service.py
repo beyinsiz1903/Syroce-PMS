@@ -4,9 +4,55 @@ tax breakdown per line, city ledger history, invoice association, audit trail,
 supervisor override and void reason visibility.
 """
 
+import re
 from datetime import date, datetime
 
 from core.database import db
+
+_FX_RECEIPT_RE = re.compile(
+    r"\[Döviz Çevirici\]\s*[\d.,]+\s+[A-Z]{3}\s*=\s*([\d.,]+)\s+([A-Z]{3}).*?Kur:\s*1\s+[A-Z]{3}\s*=\s*([\d.,]+)",
+    re.IGNORECASE,
+)
+_LEGACY_RECEIPT_ONLY_RE = re.compile(
+    r"\[Döviz Çevirici\]\s*([\d.,]+)\s+([A-Z]{2,3})\s+tahsil edildi\.\s*Kur:\s*([\d.,]+)",
+    re.IGNORECASE,
+)
+
+
+def _normalize_currency(value, fallback="TRY") -> str:
+    code = str(value or fallback).upper()
+    return "TRY" if code in {"TL", "TRL"} else code
+
+
+def _enrich_payment_currency(payment: dict, ledger_currency: str) -> dict:
+    enriched = {**payment, "currency": _normalize_currency(payment.get("currency"), ledger_currency)}
+    if enriched.get("received_currency") and enriched.get("received_amount") is not None:
+        enriched["received_currency"] = _normalize_currency(enriched["received_currency"])
+        enriched["exchange_rate"] = float(enriched.get("exchange_rate") or 1)
+        return enriched
+    match = _FX_RECEIPT_RE.search(str(enriched.get("notes") or ""))
+    if match:
+        try:
+            enriched["received_amount"] = float(match.group(1).replace(",", "."))
+            enriched["received_currency"] = _normalize_currency(match.group(2))
+            enriched["exchange_rate"] = float(match.group(3).replace(",", "."))
+            return enriched
+        except ValueError:
+            pass
+    legacy_match = _LEGACY_RECEIPT_ONLY_RE.search(str(enriched.get("notes") or ""))
+    if legacy_match:
+        try:
+            enriched["received_amount"] = float(legacy_match.group(1).replace(",", "."))
+            enriched["received_currency"] = _normalize_currency(legacy_match.group(2))
+            enriched["exchange_rate"] = float(legacy_match.group(3).replace(",", "."))
+            enriched["legacy_received_only"] = True
+            return enriched
+        except ValueError:
+            pass
+    enriched["received_amount"] = float(enriched.get("amount") or 0)
+    enriched["received_currency"] = enriched["currency"]
+    enriched["exchange_rate"] = float(enriched.get("exchange_rate") or 1)
+    return enriched
 
 
 def _ts_sort_key(value) -> str:
@@ -35,11 +81,25 @@ class FolioDetailService:
         if not folio:
             return {"success": False, "error": "Folio not found"}
 
+        booking = await db.bookings.find_one(
+            {"id": folio.get("booking_id"), "tenant_id": tenant_id},
+            {"_id": 0, "currency": 1},
+        )
+
         # Get all charges (including voided for visibility)
         charges = await db.folio_charges.find({"folio_id": folio_id, "tenant_id": tenant_id}, {"_id": 0}).sort("date", 1).to_list(1000)
 
         # Get all payments (including voided)
         payments = await db.payments.find({"folio_id": folio_id, "tenant_id": tenant_id}, {"_id": 0}).sort("processed_at", 1).to_list(1000)
+
+        ledger_currency = _normalize_currency(
+            (booking or {}).get("currency")
+            or folio.get("currency")
+            or next((charge.get("currency") for charge in charges if charge.get("currency")), None)
+        )
+        folio = {**folio, "currency": ledger_currency}
+        charges = [{**charge, "currency": _normalize_currency(charge.get("currency"), ledger_currency)} for charge in charges]
+        payments = [_enrich_payment_currency(payment, ledger_currency) for payment in payments]
 
         # Build timeline with running balance
         timeline = self._build_timeline(charges, payments)
@@ -92,6 +152,7 @@ class FolioDetailService:
                 "total_charges": total_charges,
                 "total_payments": total_payments,
                 "balance": balance,
+                "currency": ledger_currency,
                 "charge_count": len(active_charges),
                 "payment_count": len(active_payments),
                 "voided_charges": len([c for c in charges if c.get("voided")]),
@@ -147,6 +208,7 @@ class FolioDetailService:
                     "description": c.get("description", ""),
                     "category": c.get("charge_category", "other"),
                     "amount": amount,
+                    "currency": _normalize_currency(c.get("currency")),
                     "tax_amount": c.get("tax_amount", 0),
                     "voided": c.get("voided", False),
                     "void_reason": c.get("void_reason"),
@@ -165,6 +227,12 @@ class FolioDetailService:
                     "description": f"{p.get('method', 'cash').upper()} - {p.get('notes', '')}".strip(" -"),
                     "category": p.get("method", "cash"),
                     "amount": p.get("amount", 0),
+                    "currency": _normalize_currency(p.get("currency")),
+                    "received_amount": p.get("received_amount"),
+                    "received_currency": _normalize_currency(p.get("received_currency"), p.get("currency")),
+                    "exchange_rate": p.get("exchange_rate"),
+                    "display_amount": p.get("received_amount") if p.get("legacy_received_only") else p.get("amount", 0),
+                    "display_currency": p.get("received_currency") if p.get("legacy_received_only") else _normalize_currency(p.get("currency")),
                     "voided": p.get("voided", False),
                     "void_reason": p.get("void_reason"),
                     "voided_by": p.get("voided_by"),

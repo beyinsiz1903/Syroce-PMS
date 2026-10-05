@@ -95,7 +95,7 @@ describe('FolioViewDialog — empty/loading/picker states', () => {
     expect(screen.getByTestId('folio-picker')).toBeInTheDocument();
     expect(screen.getByText(/F-001/)).toBeInTheDocument();
     expect(screen.getByText(/F-002/)).toBeInTheDocument();
-    expect(screen.getByText(/250\.50/)).toBeInTheDocument();
+    expect(screen.getByText(/250,50/)).toBeInTheDocument();
 
     // F-002'ye tıkla → onPickFolio('f2') çağrılmalı
     fireEvent.click(screen.getByText(/F-002/).closest('button'));
@@ -140,7 +140,7 @@ describe('FolioViewDialog — empty/loading/picker states', () => {
     expect(screen.queryByTestId('folio-picker')).toBeNull();
     // Misafir adı + bakiye + folio numarası görünmeli
     expect(screen.getByText('Ali Yılmaz')).toBeInTheDocument();
-    expect(screen.getByText(/1500\.00/)).toBeInTheDocument();
+    expect(screen.getByText(/1\.500,00/)).toBeInTheDocument();
     expect(screen.getByText(/F-100/)).toBeInTheDocument();
   });
 

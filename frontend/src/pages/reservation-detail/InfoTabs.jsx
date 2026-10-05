@@ -7,8 +7,8 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Pencil, Check, Globe, Phone, Star, Building2, Users, X, Mail, CreditCard, Loader2, ScanLine, Crown, AlertTriangle, ShieldAlert, Cake, Repeat, BedDouble, CalendarDays, UserCircle2, CalendarClock, Clock, Moon, Wallet, StickyNote, Tag, CheckCircle2, Activity } from 'lucide-react';
-import { fmtDate, fmtDateTime, fmtTL, Avatar, EmptyState, translateValue, translateView, SectionHeader, StatCard, InfoLine } from './helpers';
+import { Pencil, Check, Globe, Phone, Star, Building2, Users, X, Mail, CreditCard, Loader2, ScanLine, Crown, AlertTriangle, ShieldAlert, Cake, Repeat, BedDouble, CalendarDays, UserCircle2, CalendarClock, Clock, Moon, Wallet, StickyNote, Tag, CheckCircle2, Activity , UserPlus, LogOut} from 'lucide-react';
+import { fmtDate, fmtDateTime, fmtTL, fmtCurrency, Avatar, EmptyState, translateValue, translateView, SectionHeader, StatCard, InfoLine, reservationNights } from './helpers';
 import QuickIdScanDialog from '@/components/QuickIdScanDialog';
 import api from '@/api/axios';
 const ALERT_LEVEL_BG = {
@@ -58,11 +58,31 @@ const ACTIVITY_LABELS = {
   communication_logged: 'İletişim kaydedildi',
   group_checkin: 'Grup giriş',
   group_checkout: 'Grup çıkış',
+  stay_dates_updated: 'Konaklama tarihleri güncellendi',
+  complimentary_total_reconciled: 'Comp konaklama tutarı düzeltildi',
+  reservation_modified: 'Rezervasyon güncellendi',
   checked_in: 'Giriş yapıldı',
   checked_out: 'Çıkış yapıldı',
   confirmed: 'Onaylandı'
 };
 const activityLabel = a => ACTIVITY_LABELS[a] || (a ? String(a).replace(/_/g, ' ') : 'İşlem');
+const changeLabel = field => ({
+  check_in: 'Giriş', check_out: 'Çıkış', total_amount: 'Toplam tutar', room_number: 'Oda',
+  status: 'Durum', adults: 'Yetişkin', children: 'Çocuk', guests_count: 'Konuk sayısı',
+  rate_plan: 'Tarife planı', special_requests: 'Özel istekler',
+}[field] || field.replace(/_/g, ' '));
+const compactChangeSummary = details => {
+  const changes = details?.changes || {};
+  const entries = Object.entries(changes).filter(([field]) => field !== 'room_id');
+  if (!entries.length) return details?.source || '';
+  const [field, value] = entries[0];
+  const from = field.includes('date') || field === 'check_in' || field === 'check_out'
+    ? fmtDate(value?.from) : value?.from;
+  const to = field.includes('date') || field === 'check_in' || field === 'check_out'
+    ? fmtDate(value?.to) : value?.to;
+  if (field === 'special_requests') return 'Özel istekler güncellendi';
+  return `${changeLabel(field)}: ${from ?? '-'} → ${to ?? '-'}`;
+};
 export function GeneralInfoTab({
   booking,
   guest,
@@ -74,8 +94,12 @@ export function GeneralInfoTab({
   summary,
   payments,
   deposits,
-  onSwitchTab
+  onSwitchTab,
+  onStayEdit,
+  canEditStay = false,
+  readOnly = false,
 }) {
+  const currency = booking?.currency || "TL";
   const {
     t
   } = useTranslation();
@@ -99,10 +123,10 @@ export function GeneralInfoTab({
       setEditing(false);
       onGuestUpdate?.();
     } catch (e) {
-      toast.error('Hata: ' + (e.response?.data?.detail || e.message));
+      toast.error('İşlem Hatası: ' + (e.response?.data?.detail || e.message));
     }
   };
-  const nights = booking?.check_in && booking?.check_out ? Math.max(1, Math.ceil((new Date(booking.check_out) - new Date(booking.check_in)) / (1000 * 60 * 60 * 24))) : 1;
+  const nights = booking?.check_in && booking?.check_out ? Math.max(1, reservationNights(booking.check_in, booking.check_out)) : 1;
   const balance = summary?.balance || 0;
   const hasOpenBalance = balance > 0;
   const lastPayment = (payments || []).filter(p => !p.voided).slice(-1)[0];
@@ -146,7 +170,19 @@ export function GeneralInfoTab({
 
         {/* Bölüm 1: Konaklama Bilgileri */}
         <section className="space-y-3">
-          <SectionHeader icon={CalendarDays} title="Konaklama Bilgileri" />
+          <div className="flex items-center justify-between gap-3">
+            <SectionHeader icon={CalendarDays} title="Konaklama Bilgileri" />
+            {canEditStay && <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={onStayEdit}
+              className="h-8 shrink-0 text-xs"
+              data-testid="edit-stay-dates"
+            >
+              <Pencil className="w-3.5 h-3.5 mr-1.5" /> Tarihleri Düzenle
+            </Button>}
+          </div>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             <StatCard icon={CalendarDays} label="Giriş Tarihi" value={fmtDate(booking?.check_in)} sub={booking?.check_in_time || booking?.checkin_time || '14:00'} tone="emerald" />
             <StatCard icon={CalendarClock} label="Çıkış Tarihi" value={fmtDate(booking?.check_out)} sub={booking?.check_out_time || booking?.checkout_time || '12:00'} tone="amber" />
@@ -210,13 +246,13 @@ export function GeneralInfoTab({
             <SectionHeader icon={Wallet} title="Ödeme Bilgileri" />
             <div className="border border-slate-200 rounded-xl bg-white px-4 py-2 shadow-sm grid grid-cols-1 sm:grid-cols-2 sm:gap-x-6">
               <InfoLine label="Ödeme Durumu" value={<span className={hasOpenBalance ? 'text-rose-600' : 'text-emerald-600'}>{hasOpenBalance ? 'Ödeme bekleniyor' : 'Ödeme tamamlandı'}</span>} />
-              <InfoLine label="Para Birimi" value="TL" />
-              <InfoLine label="Toplam Tutar" value={`${fmtTL(summary.total_amount)} TL`} />
-              <InfoLine label="Ödenen" value={`${fmtTL(summary.total_payments)} TL`} />
-              <InfoLine label="Kalan Bakiye" value={<span className={`font-semibold ${hasOpenBalance ? 'text-rose-600' : 'text-emerald-600'}`}>{fmtTL(balance)} TL</span>} />
+              <InfoLine label="Para Birimi" value={currency} />
+              <InfoLine label="Toplam Tutar" value={`${fmtCurrency(summary.total_amount, currency)}`} />
+              <InfoLine label="Ödenen" value={`${fmtCurrency(summary.total_payments, currency)}`} />
+              <InfoLine label="Kalan Bakiye" value={<span className={`font-semibold ${hasOpenBalance ? 'text-rose-600' : 'text-emerald-600'}`}>{fmtCurrency(balance, currency)}</span>} />
               {lastPayment?.method && <InfoLine label="Ödeme Yöntemi" value={PAYMENT_METHOD_LABELS[String(lastPayment.method).toLowerCase()] || lastPayment.method} />}
               {hasDeposit && <InfoLine label="Depozito Durumu" value={depositAmt > 0 ? 'Depozito alındı' : 'Depozito alınmadı'} />}
-              {depositAmt > 0 && <InfoLine label="Depozito Tutarı" value={`${fmtTL(depositAmt)} TL`} />}
+              {depositAmt > 0 && <InfoLine label="Depozito Tutarı" value={`${fmtCurrency(depositAmt, currency)}`} />}
             </div>
           </section>}
       </div>
@@ -224,7 +260,7 @@ export function GeneralInfoTab({
         <div className="border border-slate-200 rounded-xl bg-white p-4 space-y-3 shadow-sm">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Misafir & İletişim</span>
-            <Button variant="ghost" size="sm" onClick={() => setEditing(!editing)} className="h-7 px-2">
+            <Button variant="ghost" size="sm" onClick={() => setEditing(!editing)} disabled={readOnly} title={readOnly ? 'Geçmiş rezervasyonlar salt okunurdur' : undefined} className="h-7 px-2">
               <Pencil className="w-3 h-3 mr-1" /> {editing ? 'İptal' : 'Düzenle'}
             </Button>
           </div>
@@ -375,6 +411,7 @@ export function GeneralInfoTab({
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="text-xs font-medium text-slate-800">{activityLabel(h.action)}</div>
+                    {compactChangeSummary(h.details) && <div className="text-[10px] text-slate-500 truncate">{compactChangeSummary(h.details)}</div>}
                     <div className="text-[10px] text-slate-400">{h.created_at ? fmtDateTime(h.created_at) : ''}{h.actor ? ` · ${h.actor}` : ''}</div>
                   </div>
                 </div>)}
@@ -391,6 +428,9 @@ export function GeneralInfoTab({
 const ID_TYPES = [{
   code: 'tc_kimlik',
   label: 'TC Kimlik'
+}, {
+  code: 'foreign_identity_card',
+  label: 'Yabancı Kimlik Kartı (YKN)'
 }, {
   code: 'passport',
   label: 'Pasaport'
@@ -409,20 +449,38 @@ function isQuickIdEnabled() {
     return true;
   }
 }
+const NEW_GUEST_SCAN_ID = '__new_guest__';
+const emptyGuestForm = () => ({
+  name: '',
+  email: '',
+  phone: '',
+  nationality: 'TR',
+  id_type: 'tc_kimlik',
+  id_number: '',
+  date_of_birth: '',
+  gender: '',
+  address: '',
+  city: '',
+  country: '',
+  notes: ''
+});
 export function GuestsTab({
   guests,
   booking,
-  onRefresh
+  onRefresh,
+  readOnly = false,
 }) {
   const quickIdOn = isQuickIdEnabled();
   const [editingId, setEditingId] = useState(null);
+  const [addingGuest, setAddingGuest] = useState(false);
   const [form, setForm] = useState({});
   const [saving, setSaving] = useState(false);
   const [scanGuestId, setScanGuestId] = useState(null);
+  const [addingFromScan, setAddingFromScan] = useState(false);
   const startEdit = g => {
     setEditingId(g.id);
     setForm({
-      name: g.name || '',
+      name: g.name || (g.first_name ? `${g.first_name} ${g.last_name || ''}`.trim() : ''),
       email: g.email || '',
       phone: g.phone || '',
       id_type: g.id_type || 'tc_kimlik',
@@ -443,15 +501,32 @@ export function GuestsTab({
   const mapIdType = dt => {
     if (!dt) return 'tc_kimlik';
     const s = String(dt).toLowerCase();
+    if (s.includes('foreign') || s.includes('yabancı') || s.includes('yabanci') || s === 'ykn') return 'foreign_identity_card';
     if (s.includes('passport') || s.includes('pasaport')) return 'passport';
     if (s.includes('driv') || s.includes('ehliyet')) return 'driving_license';
     if (s.includes('tc') || s.includes('kimlik') || s.includes('national')) return 'tc_kimlik';
     return 'other';
   };
+  const mapGender = gender => {
+    const value = String(gender || '').trim().toLocaleLowerCase('tr-TR');
+    if (['m', 'male', 'erkek'].includes(value)) return 'male';
+    if (['f', 'female', 'kadın', 'kadin'].includes(value)) return 'female';
+    return value ? 'other' : '';
+  };
+  const guestFormFromDocument = doc => ({
+    ...emptyGuestForm(),
+    name: [doc.first_name, doc.last_name].filter(Boolean).join(' ').trim(),
+    id_number: doc.id_number || doc.document_number || '',
+    id_type: mapIdType(doc.document_type),
+    nationality: doc.nationality || 'TR',
+    date_of_birth: doc.birth_date || '',
+    gender: mapGender(doc.gender),
+    address: doc.address || ''
+  });
   const applyExtractedData = (g, doc) => {
     const fullName = [doc.first_name, doc.last_name].filter(Boolean).join(' ').trim();
     const prev = editingId === g.id ? form : {
-      name: g.name || '',
+      name: g.name || (g.first_name ? `${g.first_name} ${g.last_name || ''}`.trim() : ''),
       email: g.email || '',
       phone: g.phone || '',
       id_type: g.id_type || 'tc_kimlik',
@@ -471,7 +546,8 @@ export function GuestsTab({
       id_type: mapIdType(doc.document_type) || prev.id_type,
       nationality: doc.nationality || prev.nationality,
       date_of_birth: doc.birth_date || prev.date_of_birth,
-      gender: doc.gender || prev.gender
+      gender: mapGender(doc.gender) || prev.gender,
+      address: doc.address || prev.address
     };
     setEditingId(g.id);
     setForm(next);
@@ -486,45 +562,141 @@ export function GuestsTab({
           email: form.email || undefined,
           phone: form.phone || undefined,
           id_number: form.id_number || undefined,
-          nationality: form.nationality || undefined
+          nationality: form.nationality || undefined,
+          id_type: form.id_type || undefined,
+          date_of_birth: form.date_of_birth || undefined,
+          gender: form.gender || undefined,
+          address: form.address || undefined,
+          city: form.city || undefined,
+          country: form.country || undefined,
+          notes: form.notes || undefined,
         });
+      } else {
+        await axios.put(`/pms/guests/${guestId}`, form);
       }
-      await axios.put(`/pms/guests/${guestId}`, form);
       toast.success('Misafir bilgileri güncellendi');
       cancelEdit();
       onRefresh?.();
     } catch (e) {
-      toast.error('Hata: ' + (e.response?.data?.detail || e.message));
+      toast.error('İşlem Hatası: ' + (e.response?.data?.detail || e.message));
     }
     setSaving(false);
   };
   return <div data-testid="guests-tab" className="space-y-3">
+      <div className="flex flex-wrap justify-end gap-2 mb-2">
+        {quickIdOn && <Button variant="outline" size="sm" disabled={readOnly} title={readOnly ? 'Geçmiş rezervasyonlar salt okunurdur' : undefined} onClick={() => {
+          setAddingGuest(false);
+          setAddingFromScan(false);
+          setEditingId(null);
+          setScanGuestId(NEW_GUEST_SCAN_ID);
+        }} className="bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100" data-testid="btn-scan-new-guest"><ScanLine className="w-4 h-4 mr-2" /> Kimlikten Misafir Ekle</Button>}
+        <Button variant="outline" size="sm" disabled={readOnly} title={readOnly ? 'Geçmiş rezervasyonlar salt okunurdur' : undefined} onClick={() => {
+          setForm(emptyGuestForm());
+          setAddingGuest(true);
+          setAddingFromScan(false);
+          setEditingId(null);
+        }}><UserPlus className="w-4 h-4 mr-2" /> Misafir Ekle</Button>
+      </div>
+      {addingGuest && (
+        <div className="border rounded-lg bg-gray-50 p-4 space-y-3 mb-4">
+          <h4 className="text-sm font-semibold mb-2">{addingFromScan ? 'Kimlikten Yeni Misafir Ekle' : 'Yeni Misafir Ekle'}</h4>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div><Label className="text-xs">Ad Soyad</Label><Input value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} className="h-8 text-sm" /></div>
+            <div><Label className="text-xs">Uyruk</Label><Input value={form.nationality} onChange={e => setForm(p => ({ ...p, nationality: e.target.value }))} placeholder="TR" className="h-8 text-sm" /></div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div><Label className="text-xs">Kimlik Tipi</Label><Select value={form.id_type} onValueChange={v => setForm(p => ({ ...p, id_type: v }))}><SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Seçiniz" /></SelectTrigger><SelectContent className="z-[70]">{ID_TYPES.map(t => <SelectItem key={t.code} value={t.code}>{t.label}</SelectItem>)}</SelectContent></Select></div>
+            <div><Label className="text-xs">Kimlik / Pasaport No</Label><Input value={form.id_number} onChange={e => setForm(p => ({ ...p, id_number: e.target.value }))} className="h-8 text-sm" /></div>
+            <div><Label className="text-xs">Doğum Tarihi</Label><Input type="date" value={form.date_of_birth} onChange={e => setForm(p => ({ ...p, date_of_birth: e.target.value }))} className="h-8 text-sm" /></div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div><Label className="text-xs">Cinsiyet</Label><Select value={form.gender || ''} onValueChange={v => setForm(p => ({ ...p, gender: v }))}><SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Seçiniz" /></SelectTrigger><SelectContent className="z-[70]"><SelectItem value="male">Erkek</SelectItem><SelectItem value="female">Kadın</SelectItem><SelectItem value="other">Diğer</SelectItem></SelectContent></Select></div>
+            <div><Label className="text-xs">Şehir</Label><Input value={form.city || ''} onChange={e => setForm(p => ({ ...p, city: e.target.value }))} className="h-8 text-sm" /></div>
+            <div><Label className="text-xs">Ülke</Label><Input value={form.country || ''} onChange={e => setForm(p => ({ ...p, country: e.target.value }))} className="h-8 text-sm" /></div>
+          </div>
+          <div><Label className="text-xs">Adres</Label><Input value={form.address || ''} onChange={e => setForm(p => ({ ...p, address: e.target.value }))} className="h-8 text-sm" /></div>
+          <div className="flex gap-2 pt-1">
+            <Button size="sm" onClick={async () => {
+              setSaving(true);
+              try {
+                const payload = Object.fromEntries(
+                  Object.entries(form).map(([key, value]) => [key, typeof value === 'string' ? value.trim() : value]),
+                );
+                const response = await axios.post(`/pms/reservations/${booking.id}/guests`, payload);
+                toast.success(response.data?.already_linked
+                  ? 'Bu misafir rezervasyonda zaten kayıtlı'
+                  : response.data?.created
+                    ? 'Yeni misafir odaya eklendi'
+                    : 'Mevcut misafir odaya eklendi');
+                setAddingGuest(false);
+                setAddingFromScan(false);
+                setForm({});
+                onRefresh?.();
+              } catch (e) { toast.error('İşlem Hatası: ' + (e.response?.data?.detail || e.message)); }
+              setSaving(false);
+            }} disabled={saving || !form.name?.trim()} className="h-8">{saving ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Check className="w-3 h-3 mr-1" />} Ekle</Button>
+            <Button size="sm" variant="outline" onClick={() => { setAddingGuest(false); setAddingFromScan(false); }} className="h-8">İptal</Button>
+          </div>
+        </div>
+      )}
+      
       {!guests || guests.length === 0 ? <EmptyState icon={Users} text="Kayıtlı misafir bulunamadı" /> : guests.map((g, i) => {
       const isPrimary = i === 0;
       const isEditing = editingId === g.id;
       return <div key={g.id || i} className="border rounded-lg overflow-hidden">
               <div className="p-4 flex items-center gap-4">
-                <Avatar name={g.name} size="lg" />
+                <Avatar name={g.name || (g.first_name ? `${g.first_name} ${g.last_name || ''}`.trim() : '')} size="lg" />
                 <div className="flex-1">
-                  <div className="text-sm font-semibold">{g.name}</div>
+                  <div className="text-sm font-semibold">{g.name || (g.first_name ? `${g.first_name} ${g.last_name || ''}`.trim() : 'İsimsiz Misafir')}</div>
                   <div className="text-xs text-gray-500 flex items-center gap-3 mt-0.5">
                     {g.email && <span className="flex items-center gap-1"><Mail className="w-3 h-3" />{g.email}</span>}
                     {g.phone && <span className="flex items-center gap-1"><Phone className="w-3 h-3" />{g.phone}</span>}
                     {g.nationality && <span className="flex items-center gap-1"><Globe className="w-3 h-3" />{g.nationality}</span>}
-                    {g.id_number && <span className="flex items-center gap-1"><CreditCard className="w-3 h-3" />{g.id_type === 'passport' ? 'Pasaport' : 'Kimlik'}: {g.id_number}</span>}
+                    {g.id_number && <span className="flex items-center gap-1"><CreditCard className="w-3 h-3" />{g.id_type === 'passport' ? 'Pasaport' : g.id_type === 'foreign_identity_card' ? 'YKN' : 'Kimlik'}: {g.id_number}</span>}
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  {g.vip_status && <Badge className="bg-amber-100 text-amber-700">VIP</Badge>}
+                                    {g.vip_status && <Badge className="bg-amber-100 text-amber-700">VIP</Badge>}
                   {isPrimary && <Badge className="bg-blue-100 text-blue-700">Ana Misafir</Badge>}
-                  {quickIdOn && <Button variant="outline" size="sm" className="h-8 px-2 bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100" onClick={() => setScanGuestId(g.id)} data-testid={`btn-scan-id-${g.id}`}>
+                  {g.checkout_date && <Badge className="bg-rose-100 text-rose-700">Ayrıldı</Badge>}
+                  {quickIdOn && <Button variant="outline" size="sm" disabled={readOnly || g.checkout_date} className="h-8 px-2 bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100" onClick={() => setScanGuestId(g.id)} data-testid={`btn-scan-id-${g.id}`}>
                       <ScanLine className="w-3.5 h-3.5" />
                       <span className="ml-1 text-xs">Kimlik Tara</span>
                     </Button>}
-                  <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => isEditing ? cancelEdit() : startEdit(g)}>
+                  <Button variant="ghost" size="sm" disabled={readOnly || g.checkout_date} className="h-8 px-2" onClick={() => isEditing ? cancelEdit() : startEdit(g)}>
                     {isEditing ? <X className="w-3.5 h-3.5" /> : <Pencil className="w-3.5 h-3.5" />}
                     <span className="ml-1 text-xs">{isEditing ? 'İptal' : 'Düzenle'}</span>
                   </Button>
+                  {!isEditing && (
+                    <Button variant="ghost" size="sm" disabled={readOnly} className="h-8 px-2 text-rose-600 hover:text-rose-700 hover:bg-rose-50" onClick={async () => {
+                      if (!window.confirm('Bu misafiri odadan tamamen SİLMEK istediğinize emin misiniz?')) return;
+                      try {
+                        await axios.delete(`/pms/reservations/${booking.id}/guests/${g.id}`);
+                        toast.success('Misafir odadan çıkarıldı');
+                        onRefresh?.();
+                      } catch (e) {
+                        toast.error('Silinemedi: ' + (e.response?.data?.detail || e.message));
+                      }
+                    }}>
+                      <X className="w-3.5 h-3.5" />
+                      <span className="ml-1 text-xs">Çıkar</span>
+                    </Button>
+                  )}
+                  {!isEditing && !isPrimary && !g.checkout_date && booking.status === 'checked_in' && (
+                    <Button variant="ghost" size="sm" disabled={readOnly} className="h-8 px-2 text-amber-600 hover:text-amber-700 hover:bg-amber-50" onClick={async () => {
+                      if (!window.confirm('Bu misafiri odadan ÇIKIŞ YAPMAK (erken çıkış) istediğinize emin misiniz? Bu işlem KBSye bildirilecektir.')) return;
+                      try {
+                        await axios.post(`/pms/reservations/${booking.id}/guests/${g.id}/checkout`);
+                        toast.success('Misafir çıkışı yapıldı');
+                        onRefresh?.();
+                      } catch (e) {
+                        toast.error('Çıkış yapılamadı: ' + (e.response?.data?.detail || e.message));
+                      }
+                    }}>
+                      <LogOut className="w-3.5 h-3.5" />
+                      <span className="ml-1 text-xs">Çıkış Yap</span>
+                    </Button>
+                  )}
                 </div>
               </div>
 
@@ -613,6 +785,14 @@ export function GuestsTab({
             </div>;
     })}
       <QuickIdScanDialog open={!!scanGuestId} onClose={() => setScanGuestId(null)} onExtracted={doc => {
+      if (scanGuestId === NEW_GUEST_SCAN_ID) {
+        setForm(guestFormFromDocument(doc));
+        setAddingGuest(true);
+        setAddingFromScan(true);
+        setEditingId(null);
+        setScanGuestId(null);
+        return;
+      }
       const g = guests?.find(x => x.id === scanGuestId);
       if (g) applyExtractedData(g, doc);
     }} />

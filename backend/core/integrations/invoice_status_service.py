@@ -57,10 +57,9 @@ class InvoiceStatusService:
                     "reconciliation_required": True,
                     "reconciliation_reason": "STATUS_TIMEOUT_24H",
                     "next_status_check_at": None,
-                }
+                },
             )
             return
-
 
         # If missing uuid
         if not record.provider_document_id:
@@ -72,11 +71,12 @@ class InvoiceStatusService:
                     "reconciliation_required": True,
                     "reconciliation_reason": "MISSING_PROVIDER_DOCUMENT_ID",
                     "next_status_check_at": None,
-                }
+                },
             )
             return
 
         import uuid
+
         try:
             normalized_uuid = str(uuid.UUID(record.provider_document_id))
         except (ValueError, TypeError):
@@ -88,7 +88,7 @@ class InvoiceStatusService:
                     "reconciliation_required": True,
                     "reconciliation_reason": "INVALID_PROVIDER_UUID",
                     "next_status_check_at": None,
-                }
+                },
             )
             return
 
@@ -106,7 +106,7 @@ class InvoiceStatusService:
                 {
                     "next_status_check_at": now + timedelta(minutes=15),
                     "status_poll_error_message": "Missing tenant API key",
-                }
+                },
             )
             return
 
@@ -195,7 +195,7 @@ class InvoiceStatusService:
             update_fields = {
                 "last_status_check_at": now,
                 "status_poll_error_code": e.provider_code or str(e.http_status),
-                "status_poll_error_message": "Nilvera API error during status check", # Sanitize!
+                "status_poll_error_message": "Nilvera API error during status check",  # Sanitize!
             }
 
             if e.http_status in (401, 403):
@@ -237,5 +237,5 @@ class InvoiceStatusService:
                     "next_status_check_at": next_check,
                     "status_poll_retryable": True,
                     "status_poll_error_message": "Internal error during status check",
-                }
+                },
             )

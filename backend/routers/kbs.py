@@ -35,7 +35,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
 
+from core.audit import log_audit_event
+from core.business_date_service import ensure_business_date_initialized
 from core.database import db
+from core.kbs_payload_builder import build_kbs_payload_snapshot, resolve_booking_room_number
 from core.kbs_payload_validation import validate_kbs_payload
 from core.security import get_current_user
 from core.tenant_db import tenant_context
@@ -212,19 +215,60 @@ async def kbs_guest_list(
     if not tenant_id:
         raise HTTPException(403, "Kullanıcının bir oteli (tenant_id) yok")
 
-    target_date = date or datetime.now(UTC).strftime("%Y-%m-%d")
+    if date:
+        target_date = date
+    else:
+        business_date = await ensure_business_date_initialized(db, tenant_id)
+        target_date = business_date["business_date"]
     status_filter = [status] if status else ["checked_in", "confirmed", "guaranteed"]
+    start_of_day = target_date + "T00:00:00"
+    end_of_day = target_date + "T23:59:59"
+
+    booking_windows: list[dict] = []
+    if "checked_in" in status_filter:
+        # A guest who remains in-house belongs to the current PMS business day
+        # even when the original arrival happened on an earlier calendar day.
+        booking_windows.append(
+            {
+                "status": "checked_in",
+                "check_in": {"$lte": end_of_day},
+                "check_out": {"$gte": start_of_day},
+            }
+        )
+    arrival_statuses = [item for item in status_filter if item != "checked_in"]
+    if arrival_statuses:
+        booking_windows.append(
+            {
+                "status": {"$in": arrival_statuses},
+                "check_in": {"$gte": start_of_day, "$lte": end_of_day},
+            }
+        )
+    if status is None:
+        # A delivery remains operational history even after the guest checks
+        # out. Keep reports completed on the selected PMS business date in
+        # the Sent tab; otherwise the successful record disappears while an
+        # older failed queue attempt can still be visible.
+        booking_windows.append(
+            {
+                "kbs_reported": True,
+                "kbs_test": {"$ne": True},
+                "kbs_reported_at": {"$gte": start_of_day, "$lte": end_of_day},
+            }
+        )
+        booking_windows.append(
+            {
+                "kbs_checkout_reported": True,
+                "kbs_checkout_test": {"$ne": True},
+                "kbs_checkout_reported_at": {"$gte": start_of_day, "$lte": end_of_day},
+            }
+        )
 
     with tenant_context(tenant_id):
         bookings = (
             await db.bookings.find(
                 {
                     "tenant_id": tenant_id,
-                    "status": {"$in": status_filter},
-                    "check_in": {
-                        "$gte": target_date + "T00:00:00",
-                        "$lte": target_date + "T23:59:59",
-                    },
+                    "$or": booking_windows,
                 },
                 {
                     "_id": 0,
@@ -233,6 +277,7 @@ async def kbs_guest_list(
                     "guest_name": 1,
                     "guest_email": 1,
                     "guest_phone": 1,
+                    "room_id": 1,
                     "room_number": 1,
                     "check_in": 1,
                     "check_out": 1,
@@ -240,35 +285,159 @@ async def kbs_guest_list(
                     "children": 1,
                     "status": 1,
                     "confirmation_code": 1,
+                    "kbs_reported": 1,
+                    "kbs_reported_at": 1,
+                    "kbs_reference": 1,
+                    "kbs_test": 1,
+                    "kbs_checkout_reported": 1,
+                    "kbs_checkout_reported_at": 1,
+                    "kbs_checkout_reference": 1,
+                    "kbs_checkout_test": 1,
                 },
             )
             .sort("check_in", 1)
             .to_list(limit)
         )
 
+        booking_ids = [b["id"] for b in bookings]
+        booking_guest_links: list[dict] = []
+        booking_guests_collection = getattr(db, "booking_guests", None)
+        if booking_ids and booking_guests_collection is not None:
+            booking_guest_links = await booking_guests_collection.find(
+                {
+                    "tenant_id": tenant_id,
+                    "booking_id": {"$in": booking_ids},
+                },
+                {"_id": 0, "booking_id": 1, "guest_id": 1, "checkout_date": 1},
+            ).to_list(limit * 10)
+        links_by_booking: dict[str, list[dict]] = {}
+        for link in booking_guest_links:
+            if link.get("guest_id"):
+                links_by_booking.setdefault(str(link.get("booking_id")), []).append(link)
+
         guest_ids = [b.get("guest_id") for b in bookings if b.get("guest_id")]
+        guest_ids.extend(link.get("guest_id") for link in booking_guest_links if link.get("guest_id"))
+        guest_ids = list(dict.fromkeys(guest_ids))
         guest_map: dict[str, dict] = {}
         if guest_ids:
             from security.encrypted_lookup import decrypt_guest_doc
 
             async for g in db.guests.find(
                 {"tenant_id": tenant_id, "id": {"$in": guest_ids}},
-                {"_id": 0, "id": 1, "nationality": 1, "id_number": 1, "passport_number": 1, "birth_date": 1, "gender": 1, "address": 1, "father_name": 1, "mother_name": 1, "birth_place": 1},
+                {
+                    "_id": 0,
+                    "id": 1,
+                    "name": 1,
+                    "full_name": 1,
+                    "first_name": 1,
+                    "last_name": 1,
+                    "nationality": 1,
+                    "id_type": 1,
+                    "id_number": 1,
+                    "passport_number": 1,
+                    "birth_date": 1,
+                    "date_of_birth": 1,
+                    "gender": 1,
+                    "address": 1,
+                    "father_name": 1,
+                    "mother_name": 1,
+                    "birth_place": 1,
+                },
             ):
                 guest_map[g["id"]] = decrypt_guest_doc(g)
 
+        queue_rows = []
+        if booking_ids:
+            queue_rows = await db.kbs_reports.find(
+                {
+                    "_kind": QUEUE_KIND,
+                    "tenant_id": tenant_id,
+                    "booking_id": {"$in": booking_ids},
+                    "status": "done",
+                    "kbs_test": {"$ne": True},
+                },
+                {"_id": 0},
+            ).sort("completed_at", -1).to_list(limit * 10)
+        receipts: dict[tuple[str, str, str], dict] = {}
+        for job in queue_rows:
+            key = (str(job.get("booking_id")), str(job.get("guest_id")), str(job.get("action")))
+            receipts.setdefault(key, job)
+
+        delivery_rows: list[dict] = []
         for b in bookings:
-            g = guest_map.get(b.get("guest_id"), {})
-            b["nationality"] = g.get("nationality", "")
-            b["id_number"] = g.get("id_number", "")
-            b["passport_number"] = g.get("passport_number", "")
-            b["birth_date"] = g.get("birth_date", "")
-            b["gender"] = g.get("gender", "")
-            b["address"] = g.get("address", "")
-            b["father_name"] = g.get("father_name", "")
-            b["mother_name"] = g.get("mother_name", "")
-            b["birth_place"] = g.get("birth_place", "")
-            b["kbs_ready"] = bool((g.get("id_number") or g.get("passport_number")) and g.get("birth_date") and g.get("nationality"))
+            b["room_number"] = await resolve_booking_room_number(db, tenant_id, b)
+            occupants = [(b.get("guest_id"), None)]
+            occupants.extend(
+                (link.get("guest_id"), link)
+                for link in links_by_booking.get(str(b["id"]), [])
+                if link.get("guest_id") != b.get("guest_id")
+            )
+            for guest_id, guest_link in occupants:
+                if not guest_id:
+                    continue
+                row = dict(b)
+                g = guest_map.get(guest_id, {})
+                row["guest_id"] = guest_id
+                if guest_id != b.get("guest_id"):
+                    row["guest_name"] = str(g.get("name") or g.get("full_name") or "").strip() or " ".join(
+                        part for part in (str(g.get("first_name") or "").strip(), str(g.get("last_name") or "").strip()) if part
+                    )
+                    if guest_link and guest_link.get("checkout_date"):
+                        row["check_out"] = guest_link["checkout_date"]
+                row["nationality"] = g.get("nationality", "")
+                row["id_type"] = g.get("id_type", "")
+                row["id_number"] = g.get("id_number", "")
+                row["passport_number"] = g.get("passport_number", "")
+                row["birth_date"] = g.get("birth_date") or g.get("date_of_birth", "")
+                row["gender"] = g.get("gender", "")
+                row["address"] = g.get("address", "")
+                row["father_name"] = g.get("father_name", "")
+                row["mother_name"] = g.get("mother_name", "")
+                row["birth_place"] = g.get("birth_place", "")
+            # KBS ekraninin sekmeleri kalici teslimat kaydini esas alir.
+            # Queue `done` durumu tek basina yeterli degildir (test/legacy
+            # kayitlari olabilir); production complete akisi booking uzerine
+            # kbs_reported bayragini yazar.
+                checkin_receipt = receipts.get((str(b["id"]), str(guest_id), "checkin"))
+                checkout_receipt = receipts.get((str(b["id"]), str(guest_id), "checkout"))
+                is_primary = guest_id == b.get("guest_id")
+                is_reported = bool(checkin_receipt) or (
+                    is_primary and bool(b.get("kbs_reported")) and not bool(b.get("kbs_test"))
+                )
+                is_checkout_reported = bool(checkout_receipt) or (
+                    is_primary and bool(b.get("kbs_checkout_reported")) and not bool(b.get("kbs_checkout_test"))
+                )
+                ready, _missing = validate_kbs_payload(row)
+            # A checked-out booking may have been selected solely by the
+            # checkout delivery window. Do not invent a pending check-in row
+            # for it; only active arrivals/in-house stays or a durable
+            # production check-in receipt belong in the check-in list.
+                include_checkin = b.get("status") in status_filter or is_reported
+                if include_checkin:
+                    checkin_row = dict(row)
+                    checkin_row["id"] = b["id"] if is_primary else f"{b['id']}:{guest_id}"
+                    checkin_row["booking_id"] = b["id"]
+                    checkin_row["kbs_action"] = "checkin"
+                    checkin_row["kbs_status"] = "sent" if is_reported else "pending"
+                    checkin_row["kbs_sent_at"] = (checkin_receipt or {}).get("completed_at") or (b.get("kbs_reported_at") if is_primary else None)
+                    checkin_row["kbs_reference"] = (checkin_receipt or {}).get("kbs_reference") or (b.get("kbs_reference") if is_primary else None)
+                    checkin_row["kbs_ready"] = ready
+                    delivery_rows.append(checkin_row)
+
+                if is_checkout_reported:
+                    checkout_row = dict(row)
+                    checkout_row["id"] = (
+                        f"{b['id']}:checkout" if is_primary else f"{b['id']}:{guest_id}:checkout"
+                    )
+                    checkout_row["booking_id"] = b["id"]
+                    checkout_row["kbs_action"] = "checkout"
+                    checkout_row["kbs_status"] = "sent"
+                    checkout_row["kbs_sent_at"] = (checkout_receipt or {}).get("completed_at") or (b.get("kbs_checkout_reported_at") if is_primary else None)
+                    checkout_row["kbs_reference"] = (checkout_receipt or {}).get("kbs_reference") or (b.get("kbs_checkout_reference") if is_primary else None)
+                    checkout_row["kbs_ready"] = ready
+                    delivery_rows.append(checkout_row)
+
+        bookings = delivery_rows
 
         reports = (
             await db.kbs_reports.find(
@@ -446,77 +615,67 @@ def _scrub(doc: dict | None) -> dict | None:
     return doc
 
 
-async def _build_payload_snapshot(tenant_id: str, booking_id: str) -> tuple[dict, dict, dict]:
+async def _build_payload_snapshot(
+    tenant_id: str,
+    booking_id: str,
+    target_guest_id: str | None = None,
+) -> tuple[dict, dict, dict]:
     """booking + guest verisini birleştirip snapshot çıkarır.
 
     Returns: (booking, guest, snapshot)
     Raises: HTTPException(404) if booking bulunamazsa.
     """
-    booking = await db.bookings.find_one(
-        {"tenant_id": tenant_id, "id": booking_id},
-        {
-            "_id": 0,
-            "id": 1,
-            "guest_id": 1,
-            "guest_name": 1,
-            "guest_email": 1,
-            "guest_phone": 1,
-            "room_number": 1,
-            "check_in": 1,
-            "check_out": 1,
-            "adults": 1,
-            "children": 1,
-            "status": 1,
-            "confirmation_code": 1,
-            "guest_nationality": 1,
-        },
+    booking, guest, snapshot = await build_kbs_payload_snapshot(
+        db, tenant_id, booking_id, target_guest_id
     )
     if not booking:
         raise HTTPException(404, f"Rezervasyon bulunamadı: {booking_id}")
-
-    guest = {}
-    if booking.get("guest_id"):
-        from security.encrypted_lookup import decrypt_guest_doc
-
-        guest = (
-            decrypt_guest_doc(
-                await db.guests.find_one(
-                    {"tenant_id": tenant_id, "id": booking["guest_id"]},
-                    {
-                        "_id": 0,
-                        "id": 1,
-                        "nationality": 1,
-                        "id_number": 1,
-                        "passport_number": 1,
-                        "birth_date": 1,
-                        "gender": 1,
-                        "address": 1,
-                        "father_name": 1,
-                        "mother_name": 1,
-                        "birth_place": 1,
-                    },
-                )
-            )
-            or {}
-        )
-
-    snapshot = {
-        "guest_name": booking.get("guest_name", ""),
-        "phone": booking.get("guest_phone", ""),
-        "room_number": booking.get("room_number", ""),
-        "check_in": booking.get("check_in", ""),
-        "check_out": booking.get("check_out", ""),
-        "nationality": guest.get("nationality") or booking.get("guest_nationality") or "",
-        "id_number": guest.get("id_number", ""),
-        "passport_number": guest.get("passport_number", ""),
-        "birth_date": guest.get("birth_date", ""),
-        "gender": guest.get("gender", ""),
-        "father_name": guest.get("father_name", ""),
-        "mother_name": guest.get("mother_name", ""),
-        "birth_place": guest.get("birth_place", ""),
-        "address": guest.get("address", ""),
-    }
     return booking, guest, snapshot
+
+
+def _is_permanent_kbs_error(error: str) -> bool:
+    """Return True for errors that cannot heal through automatic retry.
+
+    Network errors and server faults remain retryable. Input, identity,
+    credential/configuration and HTTP 4xx failures require operator action;
+    retrying them only sends the same rejected legal notification repeatedly.
+    """
+    normalized = str(error or "").strip().lower()
+    if not normalized:
+        return False
+    permanent_prefixes = (
+        "jandarma_girdihatasi",
+        "jandarma_yetkihatasi",
+        "jandarma_kullanicihatasi",
+        "payload_incomplete",
+        "unconfigured",
+        "password_required",
+        "confirmation_required",
+        "endpoint_invalid",
+        "endpoint_not_allowed",
+        "bad_body",
+        "invalid_",
+        "missing_",
+        "unsupported_",
+        "foreign_guest_name_requires_surname",
+    )
+    if normalized.startswith(permanent_prefixes):
+        return True
+    if normalized.startswith("http 4"):
+        return True
+    # Jandarma'nın bu iki yanıtı ağ/aralıklı servis hatası değildir. Aynı
+    # payload'u beş kez tekrar göndermek yasal bildirimi düzeltmez; biri zaten
+    # kurumda açık kaydın bulunduğunu, diğeri ise taşınan bir alanın kurumun
+    # şemasına sığmadığını bildirir. Operatör, güncel veriyi rehydrate eden
+    # bilinçli yeniden deneme ile devam edebilir.
+    return any(
+        marker in normalized
+        for marker in (
+            "müşteri tesiste zaten kayıtlı",
+            "musteri tesiste zaten kayitli",
+            "string or binary data would be truncated",
+        )
+    )
 
 
 # --- 1) Enqueue ---------------------------------------------
@@ -524,6 +683,7 @@ async def _build_payload_snapshot(tenant_id: str, booking_id: str) -> tuple[dict
 
 class KBSQueueEnqueue(BaseModel):
     booking_id: str = Field(..., min_length=1)
+    guest_id: str | None = Field(None, min_length=1)
     action: str = Field("checkin", pattern="^(checkin|checkout)$")
     force: bool = False
     max_attempts: int = Field(DEFAULT_MAX_ATTEMPTS, ge=1, le=20)
@@ -556,7 +716,7 @@ async def kbs_queue_enqueue(
         claim = await claim_idempotency(
             db,
             tenant_id=tenant_id,
-            scope=f"kbs:queue:{data.booking_id}:{data.action}",
+            scope=f"kbs:queue:{data.booking_id}:{data.guest_id or 'primary'}:{data.action}",
             idempotency_key=idem_key,
         )
         if claim["status"] == "replay":
@@ -567,18 +727,59 @@ async def kbs_queue_enqueue(
 
     try:
         with tenant_context(tenant_id):
+            booking, guest, snapshot = await _build_payload_snapshot(
+                tenant_id, data.booking_id, data.guest_id
+            )
+            effective_guest_id = data.guest_id or booking.get("guest_id")
             if not data.force:
                 existing = await db.kbs_reports.find_one(
                     {
                         "_kind": QUEUE_KIND,
                         "tenant_id": tenant_id,
                         "booking_id": data.booking_id,
+                        "guest_id": effective_guest_id,
                         "action": data.action,
                         "status": {"$in": ["pending", "in_progress"]},
                     },
                     {"_id": 0},
                 )
                 if existing:
+                    # Pending isleri guncel rezervasyon/oda/kimlik verisiyle
+                    # yeniden hydrate et. Boylece daha once eksik snapshot ile
+                    # backoff'a giren is, kullanici tekrar Gonder dediginde ayni
+                    # bozuk payload'i kullanmaz.
+                    ok, missing = validate_kbs_payload(snapshot, data.action)
+                    if not ok:
+                        raise HTTPException(
+                            status_code=422,
+                            detail={
+                                "error": "kbs_payload_incomplete",
+                                "missing_fields": missing,
+                                "message": ("KBS bildirimi için zorunlu alanlar eksik: " + ", ".join(missing)),
+                            },
+                        )
+                    if existing.get("status") == "pending":
+                        refreshed_at = _iso(_now())
+                        await db.kbs_reports.update_one(
+                            {
+                                "_kind": QUEUE_KIND,
+                                "tenant_id": tenant_id,
+                                "id": existing["id"],
+                                "status": "pending",
+                            },
+                            {
+                                "$set": {
+                                    "payload": snapshot,
+                                    "next_retry_at": None,
+                                    "last_error": None,
+                                    "updated_at": refreshed_at,
+                                }
+                            },
+                        )
+                        existing["payload"] = snapshot
+                        existing["next_retry_at"] = None
+                        existing["last_error"] = None
+                        existing["updated_at"] = refreshed_at
                     response = {"job": existing, "created": False}
                     if idem_lock_id:
                         await complete_idempotency(
@@ -588,12 +789,10 @@ async def kbs_queue_enqueue(
                         )
                     return response
 
-            booking, guest, snapshot = await _build_payload_snapshot(tenant_id, data.booking_id)
-
             # Madde 7: enqueue zamanında payload tamlığı kontrolü.
             # force=true → bypass (eksik bilgiyle bilinçli kuyruğa atma).
             if not data.force:
-                ok, missing = validate_kbs_payload(snapshot)
+                ok, missing = validate_kbs_payload(snapshot, data.action)
                 if not ok:
                     raise HTTPException(
                         status_code=422,
@@ -610,14 +809,14 @@ async def kbs_queue_enqueue(
                 "id": _uuid(),
                 "tenant_id": tenant_id,
                 "booking_id": data.booking_id,
-                "guest_id": booking.get("guest_id"),
+                "guest_id": effective_guest_id,
                 "action": data.action,
                 "status": "pending",
                 # Atomik tekillik kilidi (partial unique index ile birlikte):
                 # open jobs (pending/in_progress) için set; closed (done/dead)
                 # geçişlerinde unset edilir → aynı booking+action için aynı anda
                 # en fazla 1 açık iş garanti.
-                "_open_lock": f"{tenant_id}:{data.booking_id}:{data.action}",
+                "_open_lock": f"{tenant_id}:{data.booking_id}:{effective_guest_id or 'primary'}:{data.action}",
                 "attempts": 0,
                 "max_attempts": data.max_attempts,
                 "worker_id": None,
@@ -644,7 +843,7 @@ async def kbs_queue_enqueue(
                         {
                             "_kind": QUEUE_KIND,
                             "tenant_id": tenant_id,
-                            "_open_lock": f"{tenant_id}:{data.booking_id}:{data.action}",
+                            "_open_lock": f"{tenant_id}:{data.booking_id}:{effective_guest_id or 'primary'}:{data.action}",
                         },
                         {"_id": 0},
                     )
@@ -656,6 +855,7 @@ async def kbs_queue_enqueue(
                                 "_kind": QUEUE_KIND,
                                 "tenant_id": tenant_id,
                                 "booking_id": data.booking_id,
+                                "guest_id": effective_guest_id,
                                 "action": data.action,
                                 "status": {"$in": ["pending", "in_progress"]},
                             },
@@ -771,9 +971,116 @@ async def kbs_queue_list(
     with tenant_context(tenant_id):
         jobs = await db.kbs_reports.find(q, {"_id": 0}).sort("created_at", -1).to_list(limit)
 
+        # Durable production receipts are authoritative for each action.
+        # Obsolete pending/failed/dead copies must not reappear after refresh.
+        delivery_booking_ids = list({job.get("booking_id") for job in jobs if job.get("booking_id")})
+        delivered_checkins: set[str] = set()
+        delivered_checkouts: set[str] = set()
+        if delivery_booking_ids:
+            async for booking in db.bookings.find(
+                {
+                    "tenant_id": tenant_id,
+                    "id": {"$in": delivery_booking_ids},
+                },
+                {
+                    "_id": 0,
+                    "id": 1,
+                    "kbs_reported": 1,
+                    "kbs_test": 1,
+                    "kbs_checkout_reported": 1,
+                    "kbs_checkout_test": 1,
+                },
+            ):
+                booking_key = str(booking.get("id") or "")
+                if booking.get("kbs_reported") and not booking.get("kbs_test"):
+                    delivered_checkins.add(booking_key)
+                if booking.get("kbs_checkout_reported") and not booking.get("kbs_checkout_test"):
+                    delivered_checkouts.add(booking_key)
+        jobs = [
+            job
+            for job in jobs
+            if not (
+                ((job.get("action") or "checkin") == "checkin" and str(job.get("booking_id") or "") in delivered_checkins)
+                or (job.get("action") == "checkout" and str(job.get("booking_id") or "") in delivered_checkouts)
+            )
+        ]
+
         # Tüm statüler için sayım (status bar)
         pipeline = [
             {"$match": {"_kind": QUEUE_KIND, "tenant_id": tenant_id}},
+            {
+                "$lookup": {
+                    "from": "bookings",
+                    "let": {
+                        "booking_id": "$booking_id",
+                        "job_tenant_id": "$tenant_id",
+                    },
+                    "pipeline": [
+                        {
+                            "$match": {
+                                "$expr": {
+                                    "$and": [
+                                        {"$eq": ["$id", "$$booking_id"]},
+                                        {"$eq": ["$tenant_id", "$$job_tenant_id"]},
+                                    ]
+                                }
+                            }
+                        },
+                        {
+                            "$project": {
+                                "_id": 0,
+                                "kbs_reported": 1,
+                                "kbs_test": 1,
+                                "kbs_checkout_reported": 1,
+                                "kbs_checkout_test": 1,
+                            }
+                        },
+                    ],
+                    "as": "delivery_booking",
+                }
+            },
+            {"$set": {"delivery_booking": {"$arrayElemAt": ["$delivery_booking", 0]}}},
+            {
+                "$match": {
+                    "$expr": {
+                        "$not": [
+                            {
+                                "$or": [
+                                    {
+                                        "$and": [
+                                            {
+                                                "$eq": [
+                                                    {"$ifNull": ["$action", "checkin"]},
+                                                    "checkin",
+                                                ]
+                                            },
+                                            {"$eq": ["$delivery_booking.kbs_reported", True]},
+                                            {"$ne": ["$delivery_booking.kbs_test", True]},
+                                        ]
+                                    },
+                                    {
+                                        "$and": [
+                                            {"$eq": ["$action", "checkout"]},
+                                            {
+                                                "$eq": [
+                                                    "$delivery_booking.kbs_checkout_reported",
+                                                    True,
+                                                ]
+                                            },
+                                            {
+                                                "$ne": [
+                                                    "$delivery_booking.kbs_checkout_test",
+                                                    True,
+                                                ]
+                                            },
+                                        ]
+                                    },
+                                ]
+                            }
+                        ]
+                    }
+                }
+            },
             {"$group": {"_id": "$status", "count": {"$sum": 1}}},
         ]
         stats = dict.fromkeys(QUEUE_STATUSES, 0)
@@ -785,6 +1092,49 @@ async def kbs_queue_list(
         "jobs": jobs,
         "total": len(jobs),
         "stats": stats,
+    }
+
+
+@router.delete("/queue")
+async def kbs_queue_clear(
+    confirm: str = Query(..., description="KBS_KUYRUGUNU_TEMIZLE"),
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_settings")),
+):
+    """Otelin işlem kuyruğunu sıfırlar; resmi gönderim geçmişini korur."""
+    tenant_id = current_user.tenant_id
+    if not tenant_id:
+        raise HTTPException(403, "Kullanıcının bir oteli (tenant_id) yok")
+    if confirm != "KBS_KUYRUGUNU_TEMIZLE":
+        raise HTTPException(400, "KBS kuyruğunu temizlemek için onay metni geçersiz")
+
+    queue_filter = {"_kind": QUEUE_KIND, "tenant_id": tenant_id}
+    with tenant_context(tenant_id):
+        status_rows = await db.kbs_reports.aggregate(
+            [
+                {"$match": queue_filter},
+                {"$group": {"_id": "$status", "count": {"$sum": 1}}},
+            ]
+        ).to_list(None)
+        result = await db.kbs_reports.delete_many(queue_filter)
+
+    removed_by_status = {str(row.get("_id") or "unknown"): row.get("count", 0) for row in status_rows}
+    await log_audit_event(
+        tenant_id=tenant_id,
+        user_id=str(getattr(current_user, "id", None) or getattr(current_user, "email", "unknown")),
+        action="kbs.queue.clear",
+        entity_type="kbs_queue",
+        entity_id=tenant_id,
+        details=f"KBS işlem kuyruğu sıfırlandı: {result.deleted_count} kayıt silindi; resmi bildirim geçmişi korundu.",
+        before_value={"count": result.deleted_count, "by_status": removed_by_status},
+        after_value={"count": 0},
+        db=db,
+        severity="warning",
+    )
+    return {
+        "deleted_count": result.deleted_count,
+        "deleted_by_status": removed_by_status,
+        "official_history_preserved": True,
     }
 
 
@@ -853,6 +1203,51 @@ async def kbs_queue_claim(
     }
 
     with tenant_context(tenant_id):
+        # Her claim'de snapshot'i yeniden kur: bekleme/backoff sirasinda oda
+        # degismis veya eski bir is oda numarasi olmadan olusmus olabilir.
+        claimable = await db.kbs_reports.find_one(
+            query,
+            {"_id": 0, "booking_id": 1, "guest_id": 1, "action": 1},
+        )
+        if claimable:
+            _booking, _guest, fresh_snapshot = await _build_payload_snapshot(
+                tenant_id,
+                claimable["booking_id"],
+                claimable.get("guest_id"),
+            )
+            ok, missing = validate_kbs_payload(
+                fresh_snapshot,
+                claimable.get("action") or "checkin",
+            )
+            if not ok:
+                validation_error = "kbs_payload_incomplete: " + ", ".join(missing)
+                dead_result = await db.kbs_reports.update_one(
+                    query,
+                    {
+                        "$set": {
+                            "status": "dead",
+                            "worker_id": None,
+                            "leased_until": None,
+                            "next_retry_at": None,
+                            "failed_at": _iso(now),
+                            "updated_at": _iso(now),
+                            "last_error": validation_error,
+                            "payload": fresh_snapshot,
+                        },
+                        "$unset": {"_open_lock": ""},
+                    },
+                )
+                if dead_result.modified_count:
+                    raise HTTPException(
+                        status_code=422,
+                        detail={
+                            "error": "kbs_payload_incomplete",
+                            "missing_fields": missing,
+                            "message": ("KBS bildirimi için zorunlu alanlar eksik: " + ", ".join(missing)),
+                        },
+                    )
+            update["$set"]["payload"] = fresh_snapshot
+
         # find_one_and_update'da return_document=AFTER yok ise sonuç eski hâl olabilir;
         # motor 3.x sürümünde ReturnDocument.AFTER lazım. Burada güvenli yol: update,
         # sonra fresh fetch.
@@ -917,6 +1312,10 @@ async def kbs_queue_claim(
 class KBSQueueComplete(BaseModel):
     worker_id: str = Field(..., min_length=1)
     kbs_reference: str = Field(..., min_length=1, max_length=200)
+    authority: str | None = Field(None, pattern="^(polis|jandarma)$")
+    official_reference: bool | None = None
+    authority_response_code: str = Field("", max_length=100)
+    authority_response_message: str = Field("", max_length=500)
     notes: str = ""
 
 
@@ -931,8 +1330,8 @@ async def kbs_queue_complete(
     """Worker başarıyla bildirdi: in_progress → done.
 
     Sadece claim'i alan worker tamamlayabilir (worker_id eşleşmeli).
-    Side-effect: bookings.kbs_reported = true; legacy uyumluluk için
-    kbs_reports'a tek-misafir özet kaydı yazılır.
+    Side-effect: action'a özel kalıcı teslimat alanları booking'e yazılır;
+    legacy uyumluluk için kbs_reports'a tek-misafir özet kaydı eklenir.
 
     Header `Idempotency-Key` ile aynı çağrı retry edilebilir (replay).
     `KBS_TEST_MODE=1` env iken kbs_reference "TEST-" prefix'i şart;
@@ -945,6 +1344,11 @@ async def kbs_queue_complete(
     # Madde 8: test mode — TEST- prefix zorunlu, prod referans kaçışını engeller.
     test_mode = _kbs_test_mode()
     is_test_ref = data.kbs_reference.startswith("TEST-")
+    if is_test_ref and not test_mode:
+        raise HTTPException(
+            422,
+            "TEST referansı production KBS teslimatı olarak kabul edilemez",
+        )
     if test_mode and not is_test_ref:
         raise HTTPException(
             422,
@@ -1003,6 +1407,10 @@ async def kbs_queue_complete(
                         "completed_at": _iso(now),
                         "updated_at": _iso(now),
                         "kbs_test": is_test_ref,
+                        "authority": data.authority,
+                        "official_reference": data.official_reference,
+                        "authority_response_code": data.authority_response_code,
+                        "authority_response_message": data.authority_response_message,
                         "notes": (job.get("notes") or "") + (("\n" + data.notes) if data.notes else ""),
                     },
                     # Closed state: _open_lock'u kaldır → aynı booking+action için
@@ -1016,18 +1424,39 @@ async def kbs_queue_complete(
                     409,
                     "İş aralıkta değişti, complete uygulanamadı (lease expired olabilir)",
                 )
-            # Booking üzerine bayrak
-            booking_update = {
-                "kbs_reported": True,
-                "kbs_reported_at": _iso(now),
-                "kbs_reference": data.kbs_reference,
-            }
-            if is_test_ref:
-                booking_update["kbs_test"] = True
-            await db.bookings.update_one(
-                {"tenant_id": tenant_id, "id": job["booking_id"]},
-                {"$set": booking_update},
-            )
+            # Check-in and check-out are independent legal notifications.
+            # Never overwrite the check-in receipt when checkout completes.
+            action = job.get("action") or "checkin"
+            if action == "checkout":
+                booking_update = {
+                    "kbs_checkout_reported": True,
+                    "kbs_checkout_reported_at": _iso(now),
+                    "kbs_checkout_status": "sent",
+                    "kbs_checkout_sent_at": _iso(now),
+                    "kbs_checkout_reference": data.kbs_reference,
+                    "kbs_checkout_test": is_test_ref,
+                    "kbs_checkout_authority": data.authority,
+                    "kbs_checkout_reference_official": data.official_reference,
+                    "kbs_checkout_response_code": data.authority_response_code,
+                    "kbs_checkout_response_message": data.authority_response_message,
+                }
+            else:
+                booking_update = {
+                    "kbs_reported": True,
+                    "kbs_reported_at": _iso(now),
+                    "kbs_status": "sent",
+                    "kbs_sent_at": _iso(now),
+                    "kbs_reference": data.kbs_reference,
+                    "kbs_test": is_test_ref,
+                    "kbs_authority": data.authority,
+                    "kbs_reference_official": data.official_reference,
+                    "kbs_response_code": data.authority_response_code,
+                    "kbs_response_message": data.authority_response_message,
+                }
+            booking_query = {"tenant_id": tenant_id, "id": job["booking_id"]}
+            if job.get("guest_id"):
+                booking_query["guest_id"] = job["guest_id"]
+            await db.bookings.update_one(booking_query, {"$set": booking_update})
             # Legacy uyumluluk: kbs_reports'a özet ekle (_kind=report)
             report_id = _uuid()
             await db.kbs_reports.insert_one(
@@ -1039,7 +1468,13 @@ async def kbs_queue_complete(
                     "status": "submitted",
                     "guest_count": 1,
                     "guest_ids": [job["booking_id"]],
+                    "booking_id": job["booking_id"],
+                    "action": action,
                     "submission_reference": data.kbs_reference,
+                    "authority": data.authority,
+                    "official_reference": data.official_reference,
+                    "authority_response_code": data.authority_response_code,
+                    "authority_response_message": data.authority_response_message,
                     "notes": data.notes or "via queue",
                     "submitted_by": f"worker:{data.worker_id}",
                     "submitted_by_email": current_user.email,
@@ -1149,7 +1584,8 @@ async def kbs_queue_fail(
 
             attempts = job.get("attempts", 0)
             max_attempts = job.get("max_attempts", DEFAULT_MAX_ATTEMPTS)
-            will_retry = data.retry and attempts < max_attempts
+            permanent_error = _is_permanent_kbs_error(data.error)
+            will_retry = data.retry and not permanent_error and attempts < max_attempts
             next_retry_at = None
 
             if will_retry:
@@ -1208,6 +1644,7 @@ async def kbs_queue_fail(
             "job": job,
             "will_retry": will_retry,
             "next_retry_at": next_retry_at,
+            "permanent_error": permanent_error,
         }
         if idem_lock_id:
             await complete_idempotency(
@@ -1340,6 +1777,7 @@ async def kbs_queue_requeue(
         pass
 
     return {"ok": True, "job": updated}
+
 
 # Maximum stream lifetime. Forces a clean reconnect every ~6 hours
 # even on perfectly healthy connections so long-running agents

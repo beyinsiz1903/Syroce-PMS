@@ -1,5 +1,5 @@
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from fastapi import HTTPException
@@ -39,6 +39,152 @@ def collections(monkeypatch):
         ),
     )
     return accounts, transactions, bookings
+
+
+class _Cursor:
+    def __init__(self, rows):
+        self.rows = rows
+        self.limits = []
+
+    async def to_list(self, limit):
+        self.limits.append(limit)
+        return self.rows
+
+    def sort(self, *_args):
+        return self
+
+    def limit(self, *_args):
+        return self
+
+
+@pytest.mark.asyncio
+async def test_ar_aging_keeps_currency_totals_separate(user, monkeypatch):
+    accounts = SimpleNamespace(
+        find=Mock(
+            return_value=_Cursor(
+                [
+                    {"id": "try-account", "account_name": "TRY Cari", "current_balance": 100.0, "currency": "TRY"},
+                    {"id": "eur-account", "account_name": "EUR Cari", "current_balance": 25.0, "currency": "eur"},
+                ]
+            )
+        )
+    )
+    transactions = SimpleNamespace(
+        find_one=AsyncMock(
+            return_value={"transaction_date": "2026-09-01T00:00:00+00:00"}
+        )
+    )
+    monkeypatch.setattr(
+        cashiering,
+        "db",
+        SimpleNamespace(city_ledger_accounts=accounts, city_ledger_transactions=transactions),
+    )
+
+    result = await cashiering.get_ar_aging_report(credentials=None)
+
+    assert result["totals_by_currency"]["total"] == {"EUR": 25.0, "TRY": 100.0}
+    entries = [entry for values in result["aging_buckets"].values() for entry in values]
+    assert {entry["currency"] for entry in entries} == {"EUR", "TRY"}
+
+
+@pytest.mark.asyncio
+async def test_city_ledger_statement_uses_account_currency_and_stored_balance(user, monkeypatch):
+    accounts = SimpleNamespace(
+        find_one=AsyncMock(return_value={"currency": "usd", "current_balance": 40.0})
+    )
+    transactions = SimpleNamespace(
+        find=Mock(
+            return_value=_Cursor(
+                [
+                    {"id": "charge-1", "transaction_type": "charge", "amount": 100.0},
+                    {"id": "payment-1", "transaction_type": "payment", "amount": 25.0},
+                ]
+            )
+        )
+    )
+    monkeypatch.setattr(
+        cashiering,
+        "db",
+        SimpleNamespace(city_ledger_accounts=accounts, city_ledger_transactions=transactions),
+    )
+
+    result = await cashiering.get_city_ledger_transactions("account-1", credentials=None)
+
+    assert result["summary"] == {
+        "total_charges": 100.0,
+        "total_payments": 25.0,
+        "current_balance": 40.0,
+        "currency": "USD",
+        "transaction_count": 2,
+    }
+    assert [transaction["currency"] for transaction in result["transactions"]] == ["USD", "USD"]
+
+
+@pytest.mark.asyncio
+async def test_city_ledger_candidates_are_tenant_scoped_and_exclude_linked_companies(user, monkeypatch):
+    company_find = Mock(
+        return_value=_Cursor(
+            [
+                {"id": "company-new", "name": "Yeni Acente", "contact_email": "new@example.com", "payment_terms": "45"},
+                {"id": "company-linked", "name": "Bağlı Acente"},
+                {"id": "company-name-match", "name": "Mevcut Cari"},
+            ]
+        )
+    )
+    companies = SimpleNamespace(find=company_find)
+    accounts = SimpleNamespace(
+        find=lambda query, projection: _Cursor(
+            [
+                {"source_company_id": "company-linked", "account_name": "Bağlı Acente"},
+                {"account_name": "Mevcut Cari"},
+            ]
+        )
+    )
+    monkeypatch.setattr(cashiering, "db", SimpleNamespace(companies=companies, city_ledger_accounts=accounts))
+
+    result = await cashiering.get_city_ledger_candidates(credentials=None)
+
+    assert result == {
+        "candidates": [
+            {
+                "source_company_id": "company-new",
+                "account_name": "Yeni Acente",
+                "company_name": "Yeni Acente",
+                "contact_person": None,
+                "email": "new@example.com",
+                "phone": None,
+                "tax_number": None,
+                "billing_address": None,
+                "payment_terms": "45",
+                "status": None,
+            }
+        ],
+        "total_count": 1,
+    }
+    assert company_find.call_args.args[0] == {"tenant_id": "tenant-a"}
+
+
+@pytest.mark.asyncio
+async def test_city_ledger_views_never_silently_cap_financial_rows(user, monkeypatch):
+    company_cursor = _Cursor([])
+    account_cursor = _Cursor([])
+    transaction_cursor = _Cursor([])
+    monkeypatch.setattr(
+        cashiering,
+        "db",
+        SimpleNamespace(
+            companies=SimpleNamespace(find=lambda *_args, **_kwargs: company_cursor),
+            city_ledger_accounts=SimpleNamespace(find=lambda *_args, **_kwargs: account_cursor),
+            city_ledger_transactions=SimpleNamespace(find=lambda *_args, **_kwargs: transaction_cursor),
+        ),
+    )
+
+    await cashiering.get_city_ledger_candidates(credentials=None)
+    await cashiering._city_ledger_booking_items("tenant-a", "account-a")
+
+    assert company_cursor.limits == [None]
+    assert account_cursor.limits == [None]
+    assert transaction_cursor.limits == [None]
 
 
 @pytest.mark.asyncio
@@ -121,6 +267,147 @@ async def test_payment_updates_balance_once_and_replays_idempotently(user, colle
     assert replay["replayed"] is True
     transactions.insert_one.assert_awaited_once()
     accounts.update_one.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_room_allocated_payment_is_persisted_against_the_selected_booking(user, collections, monkeypatch):
+    accounts, transactions, _ = collections
+    accounts.find_one.return_value = {
+        "id": "account-1",
+        "tenant_id": "tenant-a",
+        "account_name": "Demo",
+        "current_balance": 10.0,
+    }
+    accounts.update_one.return_value = SimpleNamespace(modified_count=1)
+    monkeypatch.setattr(
+        cashiering,
+        "_city_ledger_booking_items",
+        AsyncMock(
+            return_value=(
+                [{"booking_id": "booking-101", "open_amount": 4.0}],
+                {"room_open_total": 4.0},
+            )
+        ),
+    )
+
+    result = await cashiering.post_city_ledger_payment(
+        account_id="account-1",
+        amount=4.0,
+        payment_method="bank_transfer",
+        idempotency_key="room-payment-1",
+        allocations=[cashiering.CityLedgerPaymentAllocation(booking_id="booking-101", amount=4.0)],
+        credentials=None,
+    )
+
+    stored = transactions.insert_one.await_args.args[0]
+    assert stored["allocations"] == [{"booking_id": "booking-101", "amount": 4.0}]
+    assert stored["booking_id"] == "booking-101"
+    assert result["allocations"] == [{"booking_id": "booking-101", "amount": 4.0}]
+
+
+@pytest.mark.asyncio
+async def test_room_allocated_payment_rejects_an_amount_above_that_rooms_open_balance(user, collections, monkeypatch):
+    accounts, transactions, _ = collections
+    accounts.find_one.return_value = {
+        "id": "account-1",
+        "tenant_id": "tenant-a",
+        "account_name": "Demo",
+        "current_balance": 10.0,
+    }
+    monkeypatch.setattr(
+        cashiering,
+        "_city_ledger_booking_items",
+        AsyncMock(return_value=([{"booking_id": "booking-101", "open_amount": 3.99}], {})),
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        await cashiering.post_city_ledger_payment(
+            account_id="account-1",
+            amount=4.0,
+            payment_method="bank_transfer",
+            idempotency_key="room-payment-too-large",
+            allocations=[cashiering.CityLedgerPaymentAllocation(booking_id="booking-101", amount=4.0)],
+            credentials=None,
+        )
+
+    assert exc.value.status_code == 409
+    assert transactions.insert_one.await_count == 0
+
+
+@pytest.mark.asyncio
+async def test_room_allocated_payment_requires_allocations_to_equal_the_payment_total(user, collections):
+    accounts, transactions, _ = collections
+    accounts.find_one.return_value = {
+        "id": "account-1",
+        "tenant_id": "tenant-a",
+        "account_name": "Demo",
+        "current_balance": 10.0,
+    }
+
+    with pytest.raises(HTTPException) as exc:
+        await cashiering.post_city_ledger_payment(
+            account_id="account-1",
+            amount=4.0,
+            payment_method="bank_transfer",
+            idempotency_key="room-payment-mismatch",
+            allocations=[cashiering.CityLedgerPaymentAllocation(booking_id="booking-101", amount=3.0)],
+            credentials=None,
+        )
+
+    assert exc.value.status_code == 400
+    assert transactions.insert_one.await_count == 0
+
+
+@pytest.mark.asyncio
+async def test_room_open_items_keep_legacy_unallocated_payments_separate(monkeypatch):
+    class Cursor:
+        def __init__(self, rows):
+            self.rows = rows
+
+        async def to_list(self, _limit):
+            return self.rows
+
+    class Collection:
+        def __init__(self, rows):
+            self.rows = rows
+
+        def find(self, *_args, **_kwargs):
+            return Cursor(self.rows)
+
+    monkeypatch.setattr(
+        cashiering,
+        "db",
+        SimpleNamespace(
+            city_ledger_transactions=Collection(
+                [
+                    {"transaction_type": "charge", "booking_id": "booking-101", "amount": 100, "status": "completed"},
+                    {"transaction_type": "charge", "booking_id": "booking-102", "amount": 50},
+                    {"transaction_type": "payment", "amount": 40, "allocations": [{"booking_id": "booking-101", "amount": 40}]},
+                    {"transaction_type": "payment", "amount": 10},
+                    {"transaction_type": "adjustment", "amount": 5},
+                ]
+            ),
+            bookings=Collection(
+                [
+                    {"id": "booking-101", "room_number": "101", "guest_name": "Ayşe"},
+                    {"id": "booking-102", "room_number": "102", "guest_name": "Mehmet"},
+                ]
+            ),
+        ),
+    )
+
+    items, summary = await cashiering._city_ledger_booking_items("tenant-a", "account-1")
+    items_by_booking = {item["booking_id"]: item for item in items}
+
+    assert items_by_booking["booking-101"]["open_amount"] == 60.0
+    assert items_by_booking["booking-101"]["room_number"] == "101"
+    assert items_by_booking["booking-102"]["open_amount"] == 50.0
+    assert summary == {
+        "room_open_total": 110.0,
+        "allocated_payment_total": 40.0,
+        "unallocated_payment_total": 10.0,
+        "adjustment_total": 5.0,
+    }
 
 
 @pytest.mark.asyncio

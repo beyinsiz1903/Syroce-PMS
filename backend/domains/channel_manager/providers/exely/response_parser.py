@@ -207,25 +207,32 @@ def _parse_hotel_reservation(hr_el) -> dict[str, Any] | None:
         elif uid_type == "16":
             res["booking_source_id"] = uid_id
 
-    # Guest info from ResGuest -> Profiles
+    # Keep room guests keyed by RPH; the last guest is not the booking contact.
+    guests_by_rph = {}
     for guest in hr_el.iter(_ns("ResGuest")):
+        guest_info = {}
         for profile in guest.iter(_ns("Profile")):
             pname = profile.find(f".//{_ns('PersonName')}")
             if pname is not None:
-                res["guest_firstname"] = _text(pname.find(_ns("GivenName")))
-                res["guest_lastname"] = _text(pname.find(_ns("Surname")))
-                res["guest_name"] = f"{res.get('guest_firstname', '')} {res.get('guest_lastname', '')}".strip()
+                guest_info["guest_firstname"] = _text(pname.find(_ns("GivenName")))
+                guest_info["guest_lastname"] = _text(pname.find(_ns("Surname")))
+                guest_info["guest_name"] = f"{guest_info.get('guest_firstname', '')} {guest_info.get('guest_lastname', '')}".strip()
 
             email_el = profile.find(f".//{_ns('Email')}")
-            res["guest_email"] = _text(email_el)
+            guest_info["guest_email"] = _text(email_el)
 
             phone_el = profile.find(f".//{_ns('Telephone')}")
-            res["guest_phone"] = _attr(phone_el, "PhoneNumber")
+            guest_info["guest_phone"] = _attr(phone_el, "PhoneNumber")
 
             address_el = profile.find(f".//{_ns('Address')}")
             if address_el is not None:
-                res["guest_country"] = _text(address_el.find(_ns("CountryName")))
-                res["guest_city"] = _text(address_el.find(_ns("CityName")))
+                guest_info["guest_country"] = _text(address_el.find(_ns("CountryName")))
+                guest_info["guest_city"] = _text(address_el.find(_ns("CityName")))
+        rph = _attr(guest, "ResGuestRPH")
+        if rph:
+            guests_by_rph[rph] = guest_info
+        if "guest_name" not in res or _attr(guest, "PrimaryIndicator").lower() == "true":
+            res.update(guest_info)
 
     # Room stays
     rooms = []
@@ -248,11 +255,20 @@ def _parse_hotel_reservation(hr_el) -> dict[str, Any] | None:
             room["room_type_code"] = room.get("room_type_code") or _attr(rr, "RoomTypeCode")
             room["rate_plan_code"] = room.get("rate_plan_code") or _attr(rr, "RatePlanCode")
 
-            for rate in rr.iter(_ns("Rate")):
+            rates = list(rr.iter(_ns("Rate")))
+            # PMSConnect sends dated RoomRate/Total, without nested Rate nodes.
+            if not rates and rr.find(_ns("Total")) is not None:
+                rates = [rr]
+            for rate in rates:
+                amount_node = rate.find(_ns("Total"))
+                if amount_node is None:
+                    amount_node = rate.find(_ns("Base"))
+                if amount_node is None:
+                    amount_node = rate
                 daily_rates.append(
                     {
-                        "date": _attr(rate, "EffectiveDate", ""),
-                        "amount": _safe_float(_attr(rate, "AmountAfterTax", _attr(rate, "AmountBeforeTax", "0"))),
+                        "date": _attr(rate, "EffectiveDate", _attr(rr, "EffectiveDate", "")),
+                        "amount": _safe_float(_attr(amount_node, "AmountAfterTax", _attr(amount_node, "AmountBeforeTax", "0"))),
                     }
                 )
 
@@ -263,16 +279,21 @@ def _parse_hotel_reservation(hr_el) -> dict[str, Any] | None:
         children = 0
         for gc in room_stay.iter(_ns("GuestCount")):
             age_code = _attr(gc, "AgeQualifyingCode")
-            count = int(_attr(gc, "Count", "0"))
-            if age_code == "10":
-                adults = count
+            raw_count = _attr(gc, "Count", "0")
+            count = int(raw_count) if raw_count.strip() and raw_count.strip().isdigit() else 0
+
+            if age_code in {"10", "AdultBed"}:
+                adults += count
             elif age_code == "8":
-                children = count
+                children += count
+            guest_info = guests_by_rph.get(_attr(gc, "ResGuestRPH"))
+            if guest_info and not room.get("guest_name"):
+                room.update(guest_info)
         room["adults"] = adults
         room["children"] = children
 
         # Total
-        for total_el in room_stay.iter(_ns("Total")):
+        for total_el in room_stay.findall(_ns("Total")):
             room["amount"] = _safe_float(_attr(total_el, "AmountAfterTax", "0"))
             room["currency"] = _attr(total_el, "CurrencyCode", "TRY")
 
@@ -300,10 +321,26 @@ def _parse_hotel_reservation(hr_el) -> dict[str, Any] | None:
             res["total"] = _safe_float(_attr(total_el, "AmountAfterTax", "0"))
             res["currency"] = _attr(total_el, "CurrencyCode", res.get("currency", "TRY"))
 
-        # Special requests / comments
-        for comment in global_info.iter(_ns("Comment")):
-            text_el = comment.find(_ns("Text"))
-            res["notes"] = _text(text_el)
+        # Reservation comments must not be overwritten by Guarantee/Comments.
+        comments = global_info.findall(f"{_ns('Comments')}/{_ns('Comment')}")
+        res["notes"] = "\n".join(
+            text for comment in comments
+            if (text := _text(comment.find(_ns("Text"))))
+        )
+        for comment in global_info.findall(f"{_ns('Guarantee')}/{_ns('Comments')}/{_ns('Comment')}"):
+            if _attr(comment, "Name") == "PaymentMethodName":
+                res["payment_method"] = _text(comment.find(_ns("Text")))
+
+        # PMSConnect supplies the booking contact separately from room guests.
+        customer = global_info.find(f"{_ns('Profiles')}/{_ns('ProfileInfo')}/{_ns('Profile')}/{_ns('Customer')}")
+        if customer is not None:
+            pname = customer.find(_ns("PersonName"))
+            if pname is not None:
+                res["guest_firstname"] = _text(pname.find(_ns("GivenName")))
+                res["guest_lastname"] = _text(pname.find(_ns("Surname")))
+                res["guest_name"] = f"{res['guest_firstname']} {res['guest_lastname']}".strip()
+            res["guest_phone"] = _attr(customer.find(_ns("Telephone")), "PhoneNumber")
+            res["guest_email"] = _text(customer.find(_ns("Email")))
 
     # Channel from Source
     for source in hr_el.iter(_ns("Source")):
@@ -425,6 +462,16 @@ def parse_ari_update_rs(xml_bytes: bytes) -> dict[str, Any]:
     outcome = _explicit_success(body, error="ARI response did not contain explicit Success")
     if not outcome["success"]:
         return outcome
+    # Exely returned warning 783 with HTTP 200 and <Success/> in the pilot
+    # while leaving availability unchanged.  Treat it as an unconfirmed write,
+    # regardless of the provider-specific meaning of this warning code.
+    if "783" in outcome.get("warning_codes", []):
+        return {
+            **outcome,
+            "success": False,
+            "result_class": REJECTED,
+            "error": "Provider warning 783: availability update not confirmed",
+        }
     return {**outcome, "message": "ARI update explicitly confirmed"}
 
 

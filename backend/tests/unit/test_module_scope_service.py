@@ -34,6 +34,12 @@ def test_legacy_user_without_explicit_scopes_uses_conservative_role_defaults():
     assert has_module_scope(user, "housekeeping") is False
 
 
+def test_legacy_finance_can_reach_read_only_hr_payroll():
+    user = {"role": "finance"}
+    assert has_module_scope(user, "hr") is True
+    assert "hr" in effective_module_scopes(user)
+
+
 def test_unknown_or_malformed_stored_scope_fails_closed():
     user = {"role": "staff", "module_scopes": ["invoice", "not-a-real-module", 42]}
     assert has_module_scope(user, "invoice") is True

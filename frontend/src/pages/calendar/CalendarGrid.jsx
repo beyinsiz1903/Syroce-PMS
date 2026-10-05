@@ -1,30 +1,106 @@
-import React, { useState, useMemo } from "react";
-import { Calendar as CalendarIcon, Plus, ChevronDown, ChevronRight } from "lucide-react";
+import React, { useEffect, useState, useMemo, useRef } from "react";
+import { Calendar as CalendarIcon, Plus, ChevronDown, ChevronRight, Wrench, ExternalLink } from "lucide-react";
 import {
-  toDateStringUTC, isBookingOnDate, isBookingStart, isWeekend, isToday, isPastDate,
+  toDateStringUTC, checkoutAfterCalendarNight, isBookingOnDate, isBookingStart, isWeekend, isToday, isPastDate,
   formatDateWithDay, getBookingForRoomOnDate, getRoomBlockForDate,
   isBlockStart, calculateBlockSpan, calculateBookingSpan,
-  getBookingStatusColor, getBookingStatus, getSourceColor,
+  getSourceColor,
   getUnassignedBookingsForType, computeUnassignedLanes,
   getUnassignedUrgency,
-  isBlockedRoomStatus, cellOccupancyStatus, getCellOccupancyTint,
+  isRoomBlockedForSaleOnDate, getRoomTypeCapacityForDate, cellOccupancyStatus, getCellOccupancyTint,
 } from "./calendarHelpers";
 import { useTranslation } from 'react-i18next';
 import OccupancyBand from "./OccupancyBand";
 import { compactGuestName, formatGuestName } from './roomTypeMatching';
+import { CALENDAR_DAY_WIDTH } from './bookingDragPlacement';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 
-// Readable grid constants. The old 72×38 cells made names and channel data
-// difficult to scan on a reception desk display.
-const CELL_W = 84;
-const CELL_CLS = 'w-[84px]';
-const LABEL_CLS = 'w-36';
-const CELL_H = 48;
-const BOOKING_H = 40;
+// A full guest name must remain legible even for a one-night stay.  A slightly
+// wider day column with a two-line title is a better trade-off than anonymous
+// looking cards; narrower screens keep the existing horizontal scroll.
+const CELL_W = CALENDAR_DAY_WIDTH;
+const CELL_CLS = 'w-[104px]';
+const LABEL_CLS = 'w-52';
+const CELL_H = 60;
+const BOOKING_H = 54;
 const LANE_H = 40;
-const LANE_BAR_H = 44;
+const LANE_BAR_H = 58;
+export const LARGE_PROPERTY_ROOM_THRESHOLD = 80;
+export const CALENDAR_ROW_OVERSCAN = 8;
+const ESTIMATED_ROOM_ROW_HEIGHT = 64;
+
+export const getVirtualRoomWindow = ({ roomCount, offset, scrollTop, viewportHeight, enabled }) => {
+  if (!enabled) return { start: 0, end: roomCount };
+  const relativeTop = Math.max(0, scrollTop - offset);
+  const start = Math.max(0, Math.floor(relativeTop / ESTIMATED_ROOM_ROW_HEIGHT) - CALENDAR_ROW_OVERSCAN);
+  const end = Math.min(roomCount, Math.ceil((relativeTop + viewportHeight) / ESTIMATED_ROOM_ROW_HEIGHT) + CALENDAR_ROW_OVERSCAN);
+  return { start, end: Math.max(start, end) };
+};
+
+const cardDateFormatter = new Intl.DateTimeFormat('tr-TR', { day: 'numeric', month: 'short' });
+
+const formatCardDate = (value) => {
+  try {
+    return cardDateFormatter.format(new Date(value));
+  } catch {
+    return '';
+  }
+};
+
+export const getReservationCardPresentation = (booking) => {
+  const guestName = formatGuestName(booking?.guest_name) || 'Misafir';
+  const source = getSourceColor(booking || {});
+  const paxCount = Number(booking?.adults || 0) + Number(booking?.children || 0);
+  const normalizedStatus = String(booking?.status || '').toLowerCase();
+  const statusLabel = normalizedStatus === 'checked_in'
+    ? 'Otelde'
+    : normalizedStatus === 'checked_out'
+      ? 'Çıkış yapıldı · oda boş'
+      : 'Giriş bekliyor';
+  const stayRange = `${formatCardDate(booking?.check_in)} – ${formatCardDate(booking?.check_out)}`;
+  const checkoutAvailability = `Çıkış günü (${formatCardDate(booking?.check_out)}) oda yeniden satılabilir`;
+
+  return {
+    guestName,
+    sourceLabel: source.label,
+    paxCount,
+    statusLabel,
+    stayRange,
+    checkoutAvailability,
+    ariaLabel: `${guestName}, ${statusLabel}, ${source.label}${paxCount ? `, ${paxCount} kişi` : ''}, ${stayRange}. ${checkoutAvailability}.`,
+  };
+};
+
+export const getReservationCardSurface = (booking) => {
+  const status = String(booking?.status || '').toLowerCase();
+  if (status === 'checked_in') return { background: '#ecfdf5', border: '#10b981', text: '#064e3b', muted: '#047857' };
+  if (status === 'checked_out') return { background: '#fff1f2', border: '#f43f5e', text: '#881337', muted: '#be123c' };
+  return { background: '#eff6ff', border: '#3b82f6', text: '#172554', muted: '#1d4ed8' };
+};
 
 export const clearCalendarTextSelection = () => {
   window.getSelection?.()?.removeAllRanges();
+};
+
+export const normalizeRoomTypeKey = (value) => String(value || 'standard').trim().toLocaleLowerCase('tr-TR');
+
+export const formatRoomTypeLabel = (value) => {
+  const normalized = normalizeRoomTypeKey(value);
+  return normalized.charAt(0).toLocaleUpperCase('tr-TR') + normalized.slice(1);
+};
+
+export const formatCalendarMonthRange = (dateRange) => {
+  if (!dateRange?.length) return '';
+  const first = dateRange[0];
+  const last = dateRange[dateRange.length - 1];
+  const month = (date) => date.toLocaleDateString('tr-TR', { month: 'long' }).toLocaleUpperCase('tr-TR');
+  const firstMonth = month(first);
+  const lastMonth = month(last);
+  const firstYear = first.getFullYear();
+  const lastYear = last.getFullYear();
+  if (firstMonth === lastMonth && firstYear === lastYear) return `${firstMonth} ${firstYear}`;
+  if (firstYear === lastYear) return `${firstMonth} — ${lastMonth} ${lastYear}`;
+  return `${firstMonth} ${firstYear} — ${lastMonth} ${lastYear}`;
 };
 
 const CalendarGrid = ({
@@ -37,7 +113,7 @@ const CalendarGrid = ({
   businessDate,
   conflicts,
   draggingBooking,
-  dragOverCell,
+  resizingBooking,
   showDeluxePanel,
   groupColorMap,
   setGroupColorMap,
@@ -49,16 +125,128 @@ const CalendarGrid = ({
   onCellMouseEnter,
   dragSelect,
   onDragStart,
+  onResizeStart,
+  onResizePointerStart,
+  onResizePointerCommit,
   onDragOver,
   onDragLeave,
   onDrop,
   onDragEnd,
+  onBookingClick,
   onBookingDoubleClick,
+  onBookingIntent,
+  onOpenRoomBlock,
   showOccupancyBand = false,
   dailyRates = {},
+  showPrices = true,
+  onPerformanceSample,
 }) => {
   const { t } = useTranslation();
   const [collapsedTypes, setCollapsedTypes] = useState(() => new Set());
+  const [contextMenu, setContextMenu] = useState(null);
+  const [, setPointerResize] = useState(null);
+  const pointerResizeRef = useRef(null);
+  const suppressCardClickUntilRef = useRef(0);
+  const bookingClickTimerRef = useRef(null);
+  const bookingWorkspaceOpenRef = useRef({ bookingId: null, openedAt: 0 });
+  const renderStartedAt = typeof performance !== 'undefined' ? performance.now() : 0;
+  const [scrollWindow, setScrollWindow] = useState({ top: 0, height: 800 });
+  const scrollFrameRef = useRef(null);
+
+  const startBookingDrag = (event, booking, date) => {
+    suppressCardClickUntilRef.current = Date.now() + 350;
+    onDragStart(event, booking, date);
+  };
+
+  const openBookingQuickPanel = (booking) => {
+    if (Date.now() < suppressCardClickUntilRef.current) return;
+    window.clearTimeout(bookingClickTimerRef.current);
+    bookingClickTimerRef.current = window.setTimeout(() => onBookingClick?.(booking), 220);
+  };
+
+  const openBookingWorkspace = (event, booking) => {
+    event.stopPropagation();
+    event.preventDefault();
+    window.clearTimeout(bookingClickTimerRef.current);
+    bookingClickTimerRef.current = null;
+    const now = Date.now();
+    const previous = bookingWorkspaceOpenRef.current;
+    if (previous.bookingId === booking.id && now - previous.openedAt < 600) return;
+    bookingWorkspaceOpenRef.current = { bookingId: booking.id, openedAt: now };
+    onBookingDoubleClick?.(booking);
+  };
+
+  const handleBookingMouseDown = (event, booking) => {
+    onBookingIntent?.(booking);
+    // A reservation card is also natively draggable. Even a tiny pointer
+    // movement can make the browser suppress `dblclick`; the second mouse-down
+    // still arrives, so open here and deduplicate the later dblclick event.
+    if (event.button === 0 && event.detail >= 2) openBookingWorkspace(event, booking);
+  };
+
+  const pointerDate = (event) => {
+    const target = document.elementFromPoint?.(event.clientX, event.clientY);
+    const cell = target?.closest?.('[data-calendar-date]');
+    return cell?.dataset.calendarDate || '';
+  };
+
+  useEffect(() => {
+    const close = () => setContextMenu(null);
+    window.addEventListener('click', close);
+    window.addEventListener('scroll', close, true);
+    return () => { window.removeEventListener('click', close); window.removeEventListener('scroll', close, true); };
+  }, []);
+
+  useEffect(() => () => window.clearTimeout(bookingClickTimerRef.current), []);
+
+  useEffect(() => () => {
+    if (scrollFrameRef.current !== null) window.cancelAnimationFrame(scrollFrameRef.current);
+  }, []);
+
+  const openContextMenu = (event, payload) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setContextMenu({
+      ...payload,
+      x: Math.min(event.clientX, window.innerWidth - 220),
+      y: Math.min(event.clientY, window.innerHeight - 180),
+    });
+  };
+
+  const completePointerResize = (event) => {
+    const activeResize = pointerResizeRef.current;
+    if (!activeResize) return;
+    const targetDate = pointerDate(event) || activeResize.targetDate;
+    const { booking } = activeResize;
+    pointerResizeRef.current = null;
+    setPointerResize(null);
+    if (targetDate) onResizePointerCommit?.(booking, new Date(`${targetDate}T00:00:00Z`));
+  };
+
+  const updatePointerResize = (event) => {
+    const activeResize = pointerResizeRef.current;
+    if (!activeResize) return;
+    const targetDate = pointerDate(event);
+    if (!targetDate || targetDate === activeResize.targetDate) return;
+
+    // Do not make React re-render every room and day while the pointer moves.
+    // The board has hundreds of cells; mutating just the active card makes the
+    // resize preview follow the cursor immediately, like HotelRunner.
+    activeResize.targetDate = targetDate;
+    const previewCheckOut = checkoutAfterCalendarNight(targetDate);
+    const span = calculateBookingSpan(
+      { ...activeResize.booking, check_out: previewCheckOut },
+      currentDate,
+      daysToShow,
+    );
+    const card = document.querySelector(`[data-booking-id="${String(activeResize.booking.id)}"]`);
+    if (card && span > 0) card.style.width = `${span * CELL_W - 4}px`;
+  };
+
+  const cancelPointerResize = () => {
+    pointerResizeRef.current = null;
+    setPointerResize(null);
+  };
 
   const toggleType = (type) => {
     setCollapsedTypes((prev) => {
@@ -126,6 +314,15 @@ const CalendarGrid = ({
     return map;
   }, [bookings, rangeStartStr, rangeEndStr]);
 
+  // Text, source and lifecycle labels are shared by assigned and unassigned
+  // cards. Calculate them once per booking update instead of on every room
+  // row and interaction render.
+  const bookingPresentationById = useMemo(() => {
+    const map = new Map();
+    bookings.forEach((booking) => map.set(booking.id, getReservationCardPresentation(booking)));
+    return map;
+  }, [bookings]);
+
   const getGroupColor = (booking) => {
     if (!booking || !booking.group_booking_id) return '#2563eb';
     const groupId = booking.group_booking_id;
@@ -141,13 +338,36 @@ const CalendarGrid = ({
     return color;
   };
 
-  // Group rooms by type
-  const groupedRooms = rooms.reduce((acc, room) => {
-    const type = room.room_type || 'standard';
-    if (!acc[type]) acc[type] = [];
-    acc[type].push(room);
-    return acc;
-  }, {});
+  // Build room lookups once. The room-type summary used to scan every booking
+  // and every room for every visible day, which made 14/30-day navigation feel
+  // heavier as the property filled up.
+  const { groupedRooms, roomById } = useMemo(() => {
+    const groups = {};
+    const byId = new Map();
+    rooms.forEach((room) => {
+      const type = normalizeRoomTypeKey(room.room_type);
+      if (!groups[type]) groups[type] = [];
+      groups[type].push(room);
+      byId.set(room.id, room);
+    });
+    return { groupedRooms: groups, roomById: byId };
+  }, [rooms]);
+
+  const occupiedByTypeAndDate = useMemo(() => {
+    const counts = new Map();
+    bookings.forEach((booking) => {
+      if (['cancelled', 'checked_out', 'no_show'].includes(booking.status)) return;
+      const room = booking.room_id ? roomById.get(booking.room_id) : null;
+      const type = normalizeRoomTypeKey(room?.room_type || booking.room_type || booking.room_type_id || '');
+      if (!type) return;
+      dateRange.forEach((date) => {
+        if (!isBookingOnDate(booking, date)) return;
+        const key = `${type}|${toDateStringUTC(date)}`;
+        counts.set(key, (counts.get(key) || 0) + 1);
+      });
+    });
+    return counts;
+  }, [bookings, dateRange, roomById]);
 
   const roomTypeOrder = ['suite', 'deluxe', 'superior', 'standard', 'economy'];
   const sortedTypes = Object.keys(groupedRooms).sort((a, b) => {
@@ -158,16 +378,68 @@ const CalendarGrid = ({
     if (bIndex === -1) return -1;
     return aIndex - bIndex;
   });
+  const virtualRowsEnabled = rooms.length >= LARGE_PROPERTY_ROOM_THRESHOLD;
+  const typeVirtualWindows = useMemo(() => {
+    let offset = 0;
+    const windows = new Map();
+    sortedTypes.forEach((roomType) => {
+      const typeRooms = groupedRooms[roomType] || [];
+      // Room-type title and any unassigned lane stay materialized so users can
+      // still discover collapsed and incoming work while room rows are virtual.
+      offset += 60;
+      const unassigned = getUnassignedBookingsForType(roomType, bookings, dateRange);
+      if (unassigned.length) {
+        const { maxLane } = computeUnassignedLanes(unassigned);
+        offset += (maxLane + 1) * LANE_H + 6;
+      }
+      const window = getVirtualRoomWindow({
+        roomCount: typeRooms.length,
+        offset,
+        scrollTop: scrollWindow.top,
+        viewportHeight: scrollWindow.height,
+        enabled: virtualRowsEnabled && !collapsedTypes.has(roomType),
+      });
+      windows.set(roomType, window);
+      offset += typeRooms.length * ESTIMATED_ROOM_ROW_HEIGHT;
+    });
+    return windows;
+  }, [bookings, collapsedTypes, dateRange, groupedRooms, scrollWindow.height, scrollWindow.top, sortedTypes, virtualRowsEnabled]);
+
+  useEffect(() => {
+    if (!onPerformanceSample || !renderStartedAt) return;
+    onPerformanceSample({
+      roomCount: rooms.length,
+      renderedRoomRows: [...typeVirtualWindows.values()].reduce((sum, window) => sum + window.end - window.start, 0),
+      virtualized: virtualRowsEnabled,
+      renderMs: Math.max(0, Math.round(performance.now() - renderStartedAt)),
+    });
+  }, [onPerformanceSample, renderStartedAt, rooms.length, typeVirtualWindows, virtualRowsEnabled]);
+
+  const handleScroll = (event) => {
+    const target = event.currentTarget;
+    if (scrollFrameRef.current !== null) window.cancelAnimationFrame(scrollFrameRef.current);
+    const schedule = window.requestAnimationFrame || ((callback) => window.setTimeout(callback, 0));
+    scrollFrameRef.current = schedule(() => {
+      setScrollWindow((previous) => {
+        const next = { top: target.scrollTop, height: target.clientHeight || previous.height };
+        return Math.abs(next.top - previous.top) < 24 && next.height === previous.height ? previous : next;
+      });
+    });
+  };
 
   return (
     <div
-      className="bg-white rounded-xl border border-slate-200 shadow-sm relative flex flex-col h-full overflow-hidden select-none"
+      className="relative flex h-full flex-col overflow-hidden border-y border-slate-200 bg-white shadow-[0_8px_30px_rgba(15,23,42,0.05)] select-none"
       data-testid="calendar-grid"
+      data-large-property-mode={virtualRowsEnabled ? 'virtualized' : 'standard'}
       onPointerDown={clearCalendarTextSelection}
+      onPointerMove={updatePointerResize}
+      onPointerUp={completePointerResize}
+      onPointerCancel={cancelPointerResize}
     >
       {/* Date Header Row - STICKY */}
-      <div className="overflow-auto flex-1">
-        <div className="min-w-max pb-12">
+      <div className="overflow-auto flex-1" onScroll={handleScroll} data-testid="calendar-scroll-viewport">
+        <div className="min-w-max">
           {showOccupancyBand && (
             <OccupancyBand
               dateRange={dateRange}
@@ -177,15 +449,15 @@ const CalendarGrid = ({
               roomsCount={Array.isArray(rooms) ? rooms.length : 0}
             />
           )}
-          <div className="sticky top-0 z-40 bg-white border-b border-gray-300">
+          <div className="sticky top-0 z-40 bg-white border-b border-slate-300">
           <div className="flex">
-            <div className={`${LABEL_CLS} sticky left-0 z-50 flex-shrink-0 border-r border-slate-200 bg-slate-50`}></div>
+            <div className={`${LABEL_CLS} sticky left-0 z-50 flex-shrink-0 border-r border-slate-300 bg-slate-50`}></div>
             <div className="flex-1 text-center text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500 py-1.5 bg-slate-50">
-              {dateRange.length > 0 && dateRange[Math.floor(dateRange.length / 2)].toLocaleDateString('tr-TR', { month: 'long', year: 'numeric' })}
+              {formatCalendarMonthRange(dateRange)}
             </div>
           </div>
           <div className="flex bg-white shadow-[0_2px_6px_rgba(15,23,42,0.06)]">
-            <div className={`${LABEL_CLS} sticky left-0 z-50 flex-shrink-0 px-3 py-2 border-r border-slate-200 bg-white text-[11px] text-slate-500 font-semibold flex items-end`}>
+            <div className={`${LABEL_CLS} sticky left-0 z-50 flex-shrink-0 px-3 py-2 border-r border-slate-300 bg-white text-[11px] text-slate-500 font-semibold flex items-end`}>
               <button
                 type="button"
                 onClick={() => {
@@ -216,15 +488,20 @@ const CalendarGrid = ({
               return (
                 <div
                   key={idx}
-                  className={`${CELL_CLS} flex-shrink-0 py-2 border-r text-center ${
-                    today ? 'bg-blue-100 border-blue-300 shadow-[inset_0_3px_0_#2563eb]' : past ? 'bg-slate-100 border-slate-200' : weekend ? 'bg-amber-50 border-amber-200' : 'bg-white border-slate-200'
+                  className={`${CELL_CLS} flex-shrink-0 py-1.5 border-r text-center ${
+                    today ? 'bg-blue-50 border-blue-400 shadow-[inset_0_3px_0_#2563eb]' : past || weekend ? 'bg-slate-50 border-slate-300' : 'bg-white border-slate-300'
                   }`}
                   data-testid={`date-header-${dayNum}`}
                 >
-                  <div className={`text-[10px] font-bold uppercase tracking-wide ${today ? 'text-blue-700' : past ? 'text-slate-400' : 'text-slate-500'}`}>
+                  <div
+                    lang="tr"
+                    translate="no"
+                    title={date.toLocaleDateString('tr-TR', { weekday: 'long' })}
+                    className={`notranslate text-[10px] font-bold uppercase tracking-wide ${today ? 'text-blue-700' : past ? 'text-slate-400' : 'text-slate-500'}`}
+                  >
                     {dayName}
                   </div>
-                  <div className={`text-[18px] font-extrabold leading-tight ${today ? 'text-blue-700' : past ? 'text-slate-400' : 'text-slate-900'}`}>
+                  <div className={`text-[17px] font-extrabold leading-tight ${today ? 'text-blue-700' : past ? 'text-slate-400' : 'text-slate-900'}`}>
                     {dayNum}
                   </div>
                 </div>
@@ -247,13 +524,13 @@ const CalendarGrid = ({
               return (
                 <div key={roomType}>
                   {/* Room Type Header */}
-                  <div className="bg-gradient-to-r from-slate-100 to-blue-50 border-b border-blue-200" data-testid="room-type-row">
+                  <div className="border-y border-slate-200 bg-slate-50" data-testid="room-type-row">
                     <div className="flex">
-                      <div className={`${LABEL_CLS} sticky left-0 z-30 flex-shrink-0 px-3 py-2 border-r border-blue-200 bg-slate-100 flex items-center`}>
+                      <div className={`${LABEL_CLS} sticky left-0 z-30 flex-shrink-0 px-3 py-1.5 border-r border-slate-300 bg-slate-50 flex items-center`}>
                         <button
                           type="button"
                           onClick={() => toggleType(roomType)}
-                          className="flex items-center gap-1.5 font-extrabold text-[13px] text-slate-900 tracking-tight hover:text-blue-700 select-none"
+                          className="flex items-center gap-1.5 font-extrabold text-[13px] text-slate-900 tracking-tight transition-colors hover:text-blue-700 select-none"
                           data-testid={`room-type-${roomType}`}
                           title={collapsedTypes.has(roomType) ? 'Aç' : 'Daralt'}
                         >
@@ -262,52 +539,42 @@ const CalendarGrid = ({
                           ) : (
                             <ChevronDown className="w-3 h-3" />
                           )}
-                          <span>{roomType}</span>
+                          <span>{formatRoomTypeLabel(roomType)}</span>
                         </button>
                       </div>
                       {dateRange.map((date, idx) => {
                         const weekend = isWeekend(date);
                         const past = isPastDate(date);
-                        // Count assigned bookings for this room type
-                        const assignedBookings = bookings.filter(b => {
-                          if (b.status === 'cancelled' || b.status === 'checked_out' || b.status === 'no_show') return false;
-                          const room = rooms.find(r => r.id === b.room_id);
-                          if (!room || (room.room_type || 'standard') !== roomType) return false;
-                          return isBookingOnDate(b, date);
-                        });
-                        // Count unassigned bookings for this room type on this date
-                        const rtLower = roomType.toLowerCase();
-                        const unassignedOnDate = bookings.filter(b => {
-                          if (b.status === 'cancelled' || b.status === 'checked_out' || b.status === 'no_show') return false;
-                          if (b.room_id) return false;
-                          const bType = (b.room_type || '').toLowerCase();
-                          const bTypeId = (b.room_type_id || '').toLowerCase();
-                          if (bType !== rtLower && bTypeId !== rtLower) return false;
-                          return isBookingOnDate(b, date);
-                        });
-                        const occupiedCount = assignedBookings.length + unassignedOnDate.length;
-                        const totalTypeRooms = typeRooms.length;
-                        const isFull = occupiedCount >= totalTypeRooms;
                         const dayKey = toDateStringUTC(date);
-                        const configuredRate = dailyRates[`${roomType}|${dayKey}`];
+                        const occupiedCount = occupiedByTypeAndDate.get(`${roomType.toLowerCase()}|${dayKey}`) || 0;
+                        const capacity = getRoomTypeCapacityForDate(typeRooms, date, roomBlocks);
+                        const totalTypeRooms = capacity.sellable;
+                        const isFull = occupiedCount >= totalTypeRooms;
+                        const sourceRoomType = typeRooms[0]?.room_type || roomType;
+                        const configuredRate = dailyRates[`${sourceRoomType}|${dayKey}`] ?? dailyRates[`${roomType}|${dayKey}`];
                         const displayRate = configuredRate ?? typeRooms[0]?.base_price ?? 0;
 
                         return (
                           <div
                             key={idx}
-                            className={`${CELL_CLS} flex-shrink-0 px-0.5 py-1 border-r text-center text-[9px] ${
-                              past ? 'bg-gray-100/70 border-gray-200' : weekend ? 'bg-blue-100/50 border-blue-200' : 'bg-blue-50/80 border-blue-200'
+                          className={`${CELL_CLS} flex-shrink-0 px-0.5 py-1 border-r text-center text-[9px] ${
+                              past || weekend ? 'bg-slate-100 border-slate-300' : 'bg-slate-50 border-slate-300'
                             }`}
                           >
-                            <div className={`text-[10px] font-bold truncate ${past ? 'text-gray-400' : 'text-gray-800'}`}>
-                              {displayRate > 0 ? `${displayRate.toLocaleString('tr-TR')} TL` : '-'}
-                            </div>
-                            <div className="flex items-center justify-center gap-0.5 mt-0.5">
+                            {showPrices && <div className={`text-[10px] font-bold truncate ${past ? 'text-gray-400' : 'text-gray-800'}`}>
+                              {displayRate > 0 ? formatCurrency(displayRate, typeRooms[0]?.currency || cachedTenantCurrency(), { decimals: 0 }) : '-'}
+                            </div>}
+                            <div className="flex items-center justify-center gap-0.5 mt-0.5"
+                              title={`${occupiedCount} rezervasyon / ${totalTypeRooms} satılabilir oda · ${capacity.blocked} bloklu · ${capacity.total} toplam`}
+                            >
                               <div className={`w-1.5 h-1.5 rounded-full ${isFull ? 'bg-red-500' : occupiedCount > 0 ? 'bg-amber-500' : 'bg-green-500'}`}></div>
                               <span className={`text-[8px] font-bold ${isFull ? 'text-red-600' : occupiedCount > 0 ? 'text-amber-600' : 'text-green-700'}`}>
                                 {occupiedCount}/{totalTypeRooms}
                               </span>
                             </div>
+                            {capacity.blocked > 0 && (
+                              <div className="text-[9px] font-semibold text-slate-600">{capacity.blocked} bloklu</div>
+                            )}
                           </div>
                         );
                       })}
@@ -320,8 +587,8 @@ const CalendarGrid = ({
                     const { lanes, maxLane } = computeUnassignedLanes(unassignedForType);
                     const rowHeight = (maxLane + 1) * LANE_H + 6;
                     return (
-                      <div className="flex border-b border-slate-200 bg-slate-50/30" style={{ contentVisibility: 'auto', containIntrinsicSize: `100% ${rowHeight}px` }}>
-                        <div className={`${LABEL_CLS} sticky left-0 z-30 flex-shrink-0 px-3 py-2 border-r border-gray-200 bg-slate-50/80`} style={{ height: `${rowHeight}px` }}>
+                      <div className="flex border-b border-slate-300 bg-slate-50/30" style={{ contentVisibility: 'auto', containIntrinsicSize: `100% ${rowHeight}px` }}>
+                        <div className={`${LABEL_CLS} sticky left-0 z-30 flex-shrink-0 px-3 py-2 border-r border-slate-300 bg-slate-50/80`} style={{ height: `${rowHeight}px` }}>
                           <div className="flex items-center gap-1">
                             <div className="w-2 h-2 bg-slate-400 rounded-full"></div>
                             <div className="font-bold text-[9px] text-slate-700">{t('cm.pages_calendar_CalendarGrid.atanmamis')}</div>
@@ -337,7 +604,7 @@ const CalendarGrid = ({
                               <div
                                 key={idx}
                                 className={`${CELL_CLS} flex-shrink-0 border-r border-b relative ${
-                                  weekend ? 'bg-blue-50/30 border-blue-100' : 'bg-blue-50/10 border-blue-100'
+                                  weekend ? 'bg-blue-50/30 border-blue-200' : 'bg-blue-50/10 border-blue-200'
                                 } ${isToday(date) ? 'bg-blue-50/40' : ''}`}
                                 style={{ height: `${rowHeight}px`, minHeight: `${rowHeight}px` }}
                               />
@@ -355,8 +622,9 @@ const CalendarGrid = ({
                             const endIdx = visibleEndIdx >= 0 ? visibleEndIdx : dateRange.length;
                             const span = Math.max(endIdx - startIdx, 1);
                             const urgency = getUnassignedUrgency(booking);
-                            const statusColor = getBookingStatusColor(booking);
-                            const fullGuestName = formatGuestName(booking.guest_name) || 'Misafir';
+                            const cardSurface = getReservationCardSurface(booking);
+                            const presentation = bookingPresentationById.get(booking.id) || getReservationCardPresentation(booking);
+                            const fullGuestName = presentation.guestName;
                             const displayGuestName = compactGuestName(fullGuestName, span === 1 ? 10 : 20);
                             return (
                               <div
@@ -365,28 +633,36 @@ const CalendarGrid = ({
                                 tabIndex={0}
                                 role="button"
                                 aria-label={`${fullGuestName}, ${urgency.label}, atanmamış — odaya sürükleyin`}
-                                onDragStart={(e) => onDragStart(e, booking)}
+                                onDragStart={(e) => startBookingDrag(e, booking, dateRange[startIdx])}
                                 onDragEnd={onDragEnd}
-                                onDoubleClick={() => onBookingDoubleClick(booking)}
-                                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onBookingDoubleClick(booking); } }}
-                                className="absolute rounded text-[10px] text-white shadow-sm hover:shadow-lg hover:-translate-y-px transition-all cursor-move z-20 border-2 outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
+                                onMouseDown={(e) => handleBookingMouseDown(e, booking)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openBookingQuickPanel(booking);
+                                }}
+                                onDoubleClick={(e) => openBookingWorkspace(e, booking)}
+                                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openBookingQuickPanel(booking); } }}
+                                className="absolute transform-gpu rounded-lg text-[10px] shadow-sm hover:shadow-lg hover:-translate-y-px transition-[transform,box-shadow,opacity] duration-150 cursor-move z-20 border outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
                                 style={{
                                   left: `${startIdx * CELL_W + 2}px`,
                                   top: `${lane * LANE_H + 3}px`,
                                   width: `${span * CELL_W - 4}px`,
                                   height: `${LANE_H - 6}px`,
-                                  backgroundColor: statusColor.bg,
-                                  borderColor: statusColor.border,
+                                  backgroundColor: cardSurface.background,
+                                  borderColor: `${cardSurface.border}66`,
+                                  borderLeft: `4px solid ${cardSurface.border}`,
                                 }}
                                 data-testid={`unassigned-booking-${booking.id}`}
                                 title={`${fullGuestName} — ${urgency.label} — Odaya sürükleyin`}
                               >
                                 <div className="flex h-full overflow-hidden">
-                                  <div className="px-1 py-0.5 flex-1 min-w-0 flex items-center gap-1">
+                                  <div className="px-2 py-1 flex-1 min-w-0 flex items-center gap-1.5">
+                                    <span className="h-1.5 w-1.5 shrink-0 rounded-full shadow-sm" style={{ backgroundColor: cardSurface.border }} aria-hidden="true" />
                                     <div className="min-w-0 flex-1">
-                                      <div className="font-extrabold text-[10px] text-white truncate leading-tight">
+                                      <div className="font-extrabold text-[10px] truncate leading-tight" style={{ color: cardSurface.text }}>
                                         {displayGuestName}
                                       </div>
+                                      {span > 1 && <div className="truncate text-[8px] font-medium" style={{ color: cardSurface.muted }}>Oda bekliyor · {presentation.sourceLabel}</div>}
                                     </div>
                                     <span className="sr-only">{urgency.label}</span>
                                   </div>
@@ -400,7 +676,12 @@ const CalendarGrid = ({
                   })()}
 
                   {/* Rooms of this type */}
-                  {!collapsedTypes.has(roomType) && typeRooms.map((room) => {
+                  {!collapsedTypes.has(roomType) && (() => {
+                    const virtualWindow = typeVirtualWindows.get(roomType) || { start: 0, end: typeRooms.length };
+                    const visibleRooms = typeRooms.slice(virtualWindow.start, virtualWindow.end);
+                    return <>
+                      {virtualWindow.start > 0 && <div aria-hidden="true" data-testid="calendar-virtual-top-spacer" style={{ height: `${virtualWindow.start * ESTIMATED_ROOM_ROW_HEIGHT}px` }} />}
+                      {visibleRooms.map((room) => {
                     const refTodayStr = businessDate || toDateStringUTC(new Date());
                     const isActiveOn = (b, dStr) => {
                       const ci = toDateStringUTC(b.check_in);
@@ -415,14 +696,14 @@ const CalendarGrid = ({
                     const laneCount = maxLane + 1;
                     const rowHeight = Math.max(CELL_H, laneCount * LANE_BAR_H + 4);
                     const hasBookingToday = roomBookings.some(b => isActiveOn(b, refTodayStr) && b.status !== 'checked_out');
-                    const roomBlockedStatus = isBlockedRoomStatus(room.status);
+                    const roomBlockedStatus = isRoomBlockedForSaleOnDate(room, refTodayStr, roomBlocks);
                     // Satır göstergesi nokta rengi, hücre tinti ile aynı önceliği izler:
                     // OOO/OOS (blocked, gri) > bugün dolu (occupied, kırmızı) > boş (yeşil).
                     const roomDotStatus = roomBlockedStatus ? 'blocked' : hasBookingToday ? 'occupied' : 'free';
                     const roomDotColor = roomDotStatus === 'blocked' ? 'bg-slate-400' : roomDotStatus === 'occupied' ? 'bg-red-500' : 'bg-green-500';
                     return (
-                      <div key={room.id} className="flex border-b border-slate-200 hover:bg-blue-50/50 transition-colors" data-testid="room-row" style={{ contentVisibility: 'auto', containIntrinsicSize: `100% ${rowHeight}px` }}>
-                        <div className={`${LABEL_CLS} sticky left-0 z-30 flex-shrink-0 px-3 py-1 border-r border-slate-200 bg-white flex items-center shadow-[3px_0_8px_rgba(15,23,42,0.05)]`} style={{ height: `${rowHeight}px` }}>
+                      <div key={room.id} className={`flex border-b border-slate-300 ${draggingBooking ? '' : 'hover:bg-slate-50/70 transition-colors'}`} data-testid="room-row" style={{ contentVisibility: 'auto', containIntrinsicSize: `100% ${rowHeight}px` }}>
+                        <div className={`${LABEL_CLS} sticky left-0 z-30 flex-shrink-0 px-4 py-1 border-r border-slate-300 bg-white flex items-center`} style={{ height: `${rowHeight}px` }}>
                           <div className="flex items-center gap-2">
                             <div
                               className={`w-2.5 h-2.5 rounded-full ring-2 ring-white shadow-sm ${roomDotColor}`}
@@ -439,14 +720,10 @@ const CalendarGrid = ({
                           {/* Arka plan hücreleri: blok, drag-over, tıkla-oluştur, boş gösterge */}
                           {dateRange.map((date, idx) => {
                             const dStr = toDateStringUTC(date);
-                            const covered = roomBookings.some(b => isActiveOn(b, dStr));
+                            const covered = roomBookings.some(b => isActiveOn(b, dStr) && b.status !== 'checked_out');
                             const roomBlock = getRoomBlockForDate(room.id, date, roomBlocks);
                             const bBlockIsStart = roomBlock && isBlockStart(roomBlock, date);
-                            const isDragOver = dragOverCell?.roomId === room.id &&
-                              new Date(dragOverCell.date).toDateString() === date.toDateString();
                             const past = isPastDate(date);
-                            const blockedForSell = !!roomBlock && roomBlock.allow_sell === false;
-                            const invalidDrop = isDragOver && blockedForSell;
                             const canCreate = !covered && !roomBlock && !past;
                             // Dolu/blok/boş hücre tinti — roomOccupancyStatus ile aynı
                             // öncelik (OOO/OOS önde, sonra occupied > blocked > free).
@@ -457,7 +734,9 @@ const CalendarGrid = ({
                               blocked: !!roomBlock,
                               roomStatus: room.status,
                             });
-                            const occTint = getCellOccupancyTint(occStatus);
+                            // HotelRunner benzeri nötr oda-board görünümü için boş
+                            // odalar beyaz kalır; yalnız dolu/bloklu hücre vurgulanır.
+                            const occTint = occStatus === 'free' ? '' : getCellOccupancyTint(occStatus);
                             // Tut-surukle cok-gece secimi: yalnizca ayni odadaki bos
                             // hucreler vurgulanir; aradaki dolu/bloklu hucreler haric.
                             const inDragSel = !!dragSelect && dragSelect.roomId === room.id && canCreate && (() => {
@@ -469,20 +748,22 @@ const CalendarGrid = ({
                             return (
                               <div
                                 key={idx}
-                                className={`${CELL_CLS} flex-shrink-0 border-r border-slate-200 relative transition-colors group/cell select-none ${
+                                className={`${CELL_CLS} flex-shrink-0 border-r border-slate-300 relative transition-colors group/cell select-none ${
                                   canCreate ? 'cursor-pointer' : 'cursor-default'
                                 } ${
-                                  past ? 'bg-slate-100/80' : isToday(date) ? 'bg-blue-100/70 dark:bg-blue-950/70' : isWeekend(date) ? 'bg-amber-50/70 dark:bg-amber-950/70' : 'bg-white hover:bg-blue-50/50'
+                                  past ? 'bg-slate-50' : isToday(date) ? 'bg-blue-50/70 dark:bg-blue-950/70' : isWeekend(date) ? 'bg-slate-50 dark:bg-slate-900/40' : draggingBooking ? 'bg-white' : 'bg-white hover:bg-slate-50/70'
                                 } ${roomBlock ? 'bg-gray-100/60 border-dashed' : ''} ${
                                   inDragSel ? 'bg-indigo-100/70 ring-2 ring-inset ring-indigo-400 z-10' : ''
                                 }`}
                                 style={{ height: `${rowHeight}px`, minHeight: `${rowHeight}px`, overflow: 'visible' }}
                                 onClick={() => !covered && !roomBlock && onCellClick(room.id, date)}
+                                onContextMenu={(event) => openContextMenu(event, { kind: 'cell', room, date, covered, roomBlock })}
                                 onMouseDown={canCreate ? (e) => { if (e.button === 0) { e.preventDefault(); onCellMouseDown?.(room.id, date); } } : undefined}
                                 onMouseEnter={canCreate ? () => onCellMouseEnter?.(room.id, date) : undefined}
                                 onDragOver={(e) => onDragOver(e, room.id, date)}
                                 onDragLeave={onDragLeave}
                                 onDrop={(e) => onDrop(e, room.id, date)}
+                                data-calendar-date={dStr}
                                 data-testid={`calendar-cell-${room.room_number}-${toDateStringUTC(date)}`}
                                 title={roomBlock ? `${roomBlock.type.toUpperCase()}: ${roomBlock.reason}` : ''}
                               >
@@ -516,21 +797,8 @@ const CalendarGrid = ({
                                   </div>
                                 )}
 
-                                {/* Drop target preview (visual only) — valid=emerald, invalid=soft red */}
-                                {isDragOver && (
-                                  <div
-                                    data-testid="calendar-drop-target"
-                                    aria-hidden="true"
-                                    className={`absolute inset-0 z-10 pointer-events-none rounded-sm ${
-                                      invalidDrop
-                                        ? 'bg-red-100/50 ring-2 ring-inset ring-red-400'
-                                        : 'bg-emerald-100/50 ring-2 ring-inset ring-emerald-400'
-                                    }`}
-                                  />
-                                )}
-
                                 {/* Empty cell hover affordance — only on valid, non-past cells */}
-                                {canCreate && (
+                                {canCreate && !draggingBooking && (
                                   <div
                                     className="absolute inset-0 flex items-center justify-center opacity-0 group-hover/cell:opacity-100 transition-opacity pointer-events-none"
                                     data-testid="calendar-empty-cell"
@@ -560,55 +828,93 @@ const CalendarGrid = ({
                             // ilk kolona kenetle (eskiden böyleleri hiç görünmüyordu).
                             if (startIdx < 0 && checkInStr < rangeStartStr && checkOutStr > rangeStartStr) startIdx = 0;
                             if (startIdx < 0) return null;
-                            const span = calculateBookingSpan(booking, currentDate, daysToShow);
+                            // The card's left edge is derived from `dateRange`. Its width must
+                            // use that exact same visible range as well. `currentDate` may lag
+                            // behind the rendered range after navigation/timezone normalization;
+                            // mixing the two made a stay ending on Friday visually occupy the
+                            // Friday checkout column.
+                            const span = calculateBookingSpan(booking, dateRange[0] || currentDate, dateRange.length);
                             if (span <= 0) return null;
                             const lane = lanes[booking.id] || 0;
-                            const statusColor = getBookingStatusColor(booking, refTodayStr);
+                            const cardSurface = getReservationCardSurface(booking);
                             const conflictInfo = getConflictInfo(room.id, booking);
                             const arrivalInView = startIdx >= 0 && checkInStr === toDateStringUTC(dateRange[startIdx]);
-                            const fullGuestName = formatGuestName(booking.guest_name) || 'Misafir';
+                            const presentation = bookingPresentationById.get(booking.id) || getReservationCardPresentation(booking);
+                            const fullGuestName = presentation.guestName;
                             const conflictTitle = conflictInfo
                               ? `⚠ Çakışma: Bu oda ${formatConflictRange(conflictInfo.overlap_start, conflictInfo.overlap_end)} tarihlerinde iki rezervasyona sahip (${conflictInfo.guest1 || 'Misafir'} ↔ ${conflictInfo.guest2 || 'Misafir'}). Lütfen birini başka odaya taşıyın.`
-                              : fullGuestName;
+                              : `${fullGuestName} · ${presentation.checkoutAvailability}`;
                             const isDragging = draggingBooking?.id === booking.id;
-                            const paxCount = (booking.adults || 0) + (booking.children || 0);
-                            const fmtCardDate = (d) => { try { return new Date(d).toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' }); } catch { return ''; } };
-                            const displayGuestName = compactGuestName(fullGuestName, span === 1 ? 10 : span === 2 ? 18 : 40);
-                            const cardAria = `${fullGuestName}, ${getSourceColor(booking).label}${paxCount ? `, ${paxCount} kişi` : ''}, ${fmtCardDate(booking.check_in)} – ${fmtCardDate(booking.check_out)}`;
+                            const isResizing = resizingBooking?.id === booking.id;
+                            const previewSpan = span;
+                            const resizeAllowed = !['checked_out', 'cancelled', 'no_show'].includes(String(booking.status || '').toLowerCase())
+                              && checkOutStr <= rangeEndStr;
+                            const displayGuestName = fullGuestName;
                             return (
                               <div
                                 key={booking.id}
                                 draggable
                                 tabIndex={0}
                                 role="button"
-                                aria-label={cardAria}
-                                onDragStart={(e) => onDragStart(e, booking)}
+                                aria-label={presentation.ariaLabel}
+                                onDragStart={(e) => startBookingDrag(e, booking, dateRange[startIdx])}
                                 onDragEnd={onDragEnd}
-                                onDoubleClick={() => onBookingDoubleClick(booking)}
-                                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onBookingDoubleClick(booking); } }}
-                                className={`absolute rounded-lg text-white text-[10px] transition-all cursor-move z-20 group outline-none border border-white/25 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 ${
-                                  isDragging
-                                    ? 'opacity-90 ring-2 ring-blue-300 shadow-xl scale-[1.02] z-30'
-                                    : 'shadow-[0_2px_5px_rgba(15,23,42,0.24)] hover:shadow-lg hover:-translate-y-px hover:z-30'
-                                } ${conflictInfo ? 'ring-2 ring-red-500 animate-pulse' : ''} ${showDeluxePanel && isGroupBooking(booking.id) ? 'ring-2 ring-amber-400' : ''}`}
+                                onMouseDown={(e) => handleBookingMouseDown(e, booking)}
+                                // Reservation cards sit above the date cells.  Without their
+                                // own drop handlers, dropping directly on an occupied card never
+                                // reaches the underlying cell, so an intended room swap appears
+                                // to do nothing.
+                                onDragOver={(e) => {
+                                  e.stopPropagation();
+                                  onDragOver(e, room.id, dateRange[startIdx]);
+                                }}
+                                onDragLeave={(e) => {
+                                  e.stopPropagation();
+                                  onDragLeave(e);
+                                }}
+                                onDrop={(e) => {
+                                  // The card sits inside a calendar cell.  Do not let the
+                                  // same drop bubble to that cell: the second handler does
+                                  // not know the target booking and would turn a swap into a
+                                  // regular (and correctly rejected) room move.
+                                  e.stopPropagation();
+                                  onDrop(e, room.id, dateRange[startIdx], booking.id);
+                                }}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openBookingQuickPanel(booking);
+                                }}
+                                onDoubleClick={(e) => openBookingWorkspace(e, booking)}
+                                onContextMenu={(event) => openContextMenu(event, { kind: 'booking', room, booking })}
+                                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openBookingQuickPanel(booking); } }}
+                                className={`absolute transform-gpu overflow-hidden rounded-lg text-[10px] cursor-move z-20 group outline-none border transition-[transform,box-shadow,opacity] duration-150 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 ${
+                                  isDragging || isResizing
+                                    ? 'opacity-40 scale-[0.985] shadow-sm z-30'
+                                    : 'shadow-[0_2px_6px_rgba(15,23,42,0.2)] hover:z-30 hover:-translate-y-px hover:shadow-[0_8px_18px_rgba(15,23,42,0.25)]'
+                                } ${isResizing ? 'pointer-events-none' : ''} ${conflictInfo ? 'ring-2 ring-red-500 animate-pulse' : ''} ${showDeluxePanel && isGroupBooking(booking.id) ? 'ring-2 ring-amber-400' : ''}`}
                                 style={{
                                   left: `${startIdx * CELL_W + 2}px`,
                                   top: `${lane * LANE_BAR_H + 2}px`,
-                                  width: `${span * CELL_W - 4}px`,
+                                  width: `${previewSpan * CELL_W - 4}px`,
                                   height: `${BOOKING_H}px`,
-                                  backgroundColor: statusColor.bg,
-                                  borderLeft: `4px solid ${statusColor.border}`,
+                                  backgroundColor: cardSurface.background,
+                                  borderColor: `${cardSurface.border}55`,
+                                  borderLeft: `4px solid ${cardSurface.border}`,
                                 }}
+                                data-booking-id={booking.id}
                                 data-testid={isDragging ? 'reservation-card-dragging' : `booking-bar-${booking.id}`}
                                 title={conflictTitle}
                               >
-                                <div className="px-2 py-1 relative overflow-hidden" style={{ height: `${BOOKING_H}px` }}>
-                                  <div className="font-extrabold text-[12px] truncate pr-4 text-white leading-tight drop-shadow-sm">
+                                <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-white/80" aria-hidden="true" />
+                                <div className="px-2 py-1.5 pr-6 relative overflow-hidden" style={{ height: `${BOOKING_H}px` }}>
+                                  <div className="font-extrabold text-[12px] leading-[13px] whitespace-normal break-words max-h-[26px] overflow-hidden" style={{ color: cardSurface.text }}>
                                     {displayGuestName}
                                   </div>
-                                  <div className="text-[9px] text-white/90 truncate flex items-center gap-1 leading-tight mt-0.5">
-                                    <span className="font-semibold">{getSourceColor(booking).label}</span>
-                                    {(booking.adults || booking.children) ? <span className="opacity-80">· {(booking.adults || 0) + (booking.children || 0)} ks</span> : null}
+                                  <div className="text-[9px] truncate flex items-center gap-1 leading-tight mt-1" style={{ color: cardSurface.muted }}>
+                                    <span className="h-1.5 w-1.5 shrink-0 rounded-full shadow-sm" style={{ backgroundColor: cardSurface.border }} aria-hidden="true" />
+                                    <span className="font-semibold truncate">{presentation.sourceLabel}</span>
+                                    {presentation.paxCount ? <span className="shrink-0 opacity-80">· {presentation.paxCount} kişi</span> : null}
+                                    {span > 1 && <span className="ml-auto truncate rounded-full bg-white/70 px-1.5 py-0.5 text-[8px] font-semibold shadow-sm ring-1 ring-black/5" title={presentation.checkoutAvailability}>{presentation.statusLabel}</span>}
                                   </div>
                                   <div className="absolute top-0.5 right-0.5 flex flex-col space-y-0.5 items-end">
                                     {showDeluxePanel && isGroupBooking(booking.id) && (
@@ -617,9 +923,7 @@ const CalendarGrid = ({
                                       </div>
                                     )}
                                     {arrivalInView && (
-                                      <div className="flex space-x-0.5">
-                                        <div className="bg-white text-green-600 rounded-full w-3.5 h-3.5 flex items-center justify-center text-[8px] font-bold" title="Giriş günü">A</div>
-                                      </div>
+                                      <div className="h-2 w-2 rounded-full border border-white bg-blue-500 shadow-sm" title="Giriş günü" aria-label="Giriş günü" />
                                     )}
                                   </div>
                                 </div>
@@ -631,19 +935,120 @@ const CalendarGrid = ({
                                     !!
                                   </div>
                                 )}
+                                {resizeAllowed && (
+                                  <div
+                                    draggable
+                                    role="separator"
+                                    aria-orientation="vertical"
+                                    aria-label={`${fullGuestName} konaklama süresini değiştir`}
+                                    title="Konaklamayı uzat veya kısalt"
+                                    data-testid={`booking-resize-handle-${booking.id}`}
+                                    onDragStart={(e) => { e.stopPropagation(); onResizeStart?.(e, booking); }}
+                                    onDragEnd={(e) => { e.stopPropagation(); onDragEnd?.(); }}
+                                    onPointerDown={(e) => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      e.currentTarget.setPointerCapture?.(e.pointerId);
+                                      pointerResizeRef.current = { booking, targetDate: '' };
+                                      setPointerResize({ id: booking.id });
+                                      onResizePointerStart?.(booking);
+                                    }}
+                                    onClick={(e) => e.stopPropagation()}
+                                    onDoubleClick={(e) => e.stopPropagation()}
+                                    className="absolute right-0 top-0 z-40 h-full w-4 cursor-ew-resize touch-none rounded-r-lg border-l border-slate-300/50 bg-transparent opacity-40 transition-colors hover:bg-slate-900/10 hover:opacity-100 focus-visible:bg-slate-900/10 focus-visible:opacity-100 after:absolute after:right-1.5 after:top-1/2 after:h-5 after:w-0.5 after:-translate-y-1/2 after:rounded-full after:bg-slate-500/70"
+                                  />
+                                )}
                               </div>
                             );
                           })}
                         </div>
                       </div>
                     );
-                  })}
+                      })}
+                      {virtualWindow.end < typeRooms.length && <div aria-hidden="true" data-testid="calendar-virtual-bottom-spacer" style={{ height: `${(typeRooms.length - virtualWindow.end) * ESTIMATED_ROOM_ROW_HEIGHT}px` }} />}
+                    </>;
+                  })()}
                 </div>
               );
             })
           )}
         </div>
       </div>
+      {contextMenu && (
+        <div
+          role="menu"
+          aria-label="Takvim hızlı işlemleri"
+          className="fixed z-[100] w-56 overflow-hidden rounded-lg border border-slate-200 bg-white py-1 shadow-xl"
+          style={{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }}
+          onClick={(event) => event.stopPropagation()}
+        >
+          {contextMenu.kind === 'cell' ? (
+            <>
+              <div className="border-b border-slate-100 px-3 py-2 text-xs text-slate-500">
+                <span className="font-semibold text-slate-700">Oda {contextMenu.room.room_number}</span>
+                <span className="block">{formatDateWithDay(contextMenu.date).dayNum} {formatDateWithDay(contextMenu.date).dayName}</span>
+              </div>
+              <button
+                type="button"
+                role="menuitem"
+                disabled={contextMenu.covered || contextMenu.roomBlock || isPastDate(contextMenu.date)}
+                onClick={() => {
+                  onCellClick(contextMenu.room.id, contextMenu.date);
+                  setContextMenu(null);
+                }}
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
+              >
+                <Plus className="h-4 w-4 text-amber-600" /> Rezervasyon oluştur
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  onOpenRoomBlock?.(contextMenu.room);
+                  setContextMenu(null);
+                }}
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+              >
+                <Wrench className="h-4 w-4 text-rose-600" /> Odayı blokla / arıza bildir
+              </button>
+              {contextMenu.roomBlock && (
+                <div className="mx-3 mb-2 rounded bg-amber-50 px-2 py-1.5 text-xs text-amber-800">
+                  Aktif blok: {contextMenu.roomBlock.reason || contextMenu.roomBlock.type}
+                </div>
+              )}
+            </>
+          ) : (
+            <>
+              <div className="border-b border-slate-100 px-3 py-2 text-xs text-slate-500">
+                <span className="block font-semibold text-slate-700">{formatGuestName(contextMenu.booking.guest_name) || 'Misafir'}</span>
+                Oda {contextMenu.room.room_number}
+              </div>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  onBookingDoubleClick(contextMenu.booking);
+                  setContextMenu(null);
+                }}
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+              >
+                <ExternalLink className="h-4 w-4 text-blue-600" /> Rezervasyonu aç
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  onOpenRoomBlock?.(contextMenu.room);
+                  setContextMenu(null);
+                }}
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+              >
+                <Wrench className="h-4 w-4 text-rose-600" /> Bu odayı blokla / arıza bildir
+              </button>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 };

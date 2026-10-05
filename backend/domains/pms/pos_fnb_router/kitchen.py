@@ -24,6 +24,8 @@ from core.security import (
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_module as require_module_v99  # v99 DW
 
+from .kitchen_numbering import next_kitchen_order_number as _shared_next_kitchen_order_number
+
 try:
     from websocket_server import broadcast_kitchen_orders
 except Exception:  # pragma: no cover
@@ -42,14 +44,8 @@ async def _get_active_kitchen_orders(tenant_id: str, statuses: list[str] | None 
 
 
 async def _next_kitchen_order_number(tenant_id: str) -> int:
-    last_order = await db.kitchen_orders.find({"tenant_id": tenant_id}).sort("order_number", -1).limit(1).to_list(1)
-    if not last_order:
-        return 1
-    raw = last_order[0].get("order_number", 0)
-    try:
-        return int(raw) + 1
-    except (TypeError, ValueError):
-        return 1
+    """Compatibility seam for tests and callers of the split legacy router."""
+    return await _shared_next_kitchen_order_number(tenant_id)
 
 
 async def _broadcast_kitchen_queue(tenant_id: str) -> None:
@@ -629,17 +625,44 @@ async def update_kitchen_order_status_v2(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_module_v99("pos")),
 ):
+    allowed_transitions = {
+        "pending": {"pending", "preparing"},
+        "preparing": {"preparing", "ready"},
+        "ready": {"ready", "served"},
+        "served": {"served"},
+        "cancelled": {"cancelled"},
+        "voided": {"voided"},
+    }
+    if status not in {"pending", "preparing", "ready", "served", "cancelled", "voided"}:
+        raise HTTPException(status_code=422, detail="Geçersiz mutfak siparişi durumu")
+    existing = await db.kitchen_orders.find_one(
+        {"tenant_id": current_user.tenant_id, "id": order_id},
+        {"_id": 0, "status": 1},
+    )
+    if not existing:
+        raise HTTPException(status_code=404, detail="Sipariş bulunamadı")
+
+    current_status = existing.get("status") or "pending"
+    if current_status == status:
+        return {"success": True, "order_id": order_id, "status": status, "idempotent": True}
+    if status not in allowed_transitions.get(current_status, set()):
+        raise HTTPException(
+            status_code=409,
+            detail=f"Sipariş '{current_status}' durumundan '{status}' durumuna geçirilemez",
+        )
     update_data = {"status": status}
     if status == "preparing":
         update_data["started_at"] = datetime.now(UTC).isoformat()
-    if status in ["ready", "served"]:
+    if status == "ready":
         update_data["ready_at"] = datetime.now(UTC).isoformat()
+    if status == "served":
+        update_data["served_at"] = datetime.now(UTC).isoformat()
     result = await db.kitchen_orders.update_one(
-        {"tenant_id": current_user.tenant_id, "id": order_id},
+        {"tenant_id": current_user.tenant_id, "id": order_id, "status": current_status},
         {"$set": update_data},
     )
-    if result.modified_count == 0:
-        raise HTTPException(status_code=404, detail="Order not found")
+    if getattr(result, "matched_count", getattr(result, "modified_count", 0)) == 0:
+        raise HTTPException(status_code=409, detail="Sipariş durumu başka bir kullanıcı tarafından değiştirildi")
     await _broadcast_kitchen_queue(current_user.tenant_id)
     return {"success": True, "order_id": order_id, "status": status}
 

@@ -62,6 +62,9 @@ class Permission(str, Enum):
     MANAGE_USERS = "manage_users"
     MANAGE_ROOMS = "manage_rooms"
     SYSTEM_SETTINGS = "system_settings"
+    # Running day-end is an operational front-desk responsibility, distinct
+    # from broad system configuration access.
+    RUN_NIGHT_AUDIT = "run_night_audit"
 
     # Internal messaging permissions
     SEND_URGENT_MESSAGE = "send_urgent_message"
@@ -124,6 +127,7 @@ class PaymentMethod(str, Enum):
     CARD = "card"
     BANK_TRANSFER = "bank_transfer"
     ONLINE = "online"
+    DISCOUNT = "discount"
 
 
 class ChargeType(str, Enum):
@@ -518,6 +522,7 @@ ROLE_PERMISSIONS = {
         # v2 HR: supervisor düzeyi HR okuma + master data yönetimi yapabilir.
         Permission.VIEW_HR,
         Permission.MANAGE_HR,
+        Permission.RUN_NIGHT_AUDIT,
         # Contact Center: supervisor konuşmaları görür ve yönetir.
         Permission.VIEW_CONTACT_CENTER,
         Permission.MANAGE_CONTACT_CENTER,
@@ -533,7 +538,12 @@ ROLE_PERMISSIONS = {
         Permission.POST_PAYMENT,
         Permission.VIEW_COMPANIES,
         Permission.VIEW_HK_BOARD,
+        # Front desk owns the sellability decision at reception.  This allows
+        # OOS/OOO block operations while preserving the dedicated operation
+        # guard (and can still be revoked per user by an admin).
+        Permission.UPDATE_ROOM_STATUS,
         Permission.VIEW_REPORTS,
+        Permission.RUN_NIGHT_AUDIT,
         # Contact Center: resepsiyon (receptionist) küçük otellerde
         # konuşmaları görür ve yönetir.
         Permission.VIEW_CONTACT_CENTER,

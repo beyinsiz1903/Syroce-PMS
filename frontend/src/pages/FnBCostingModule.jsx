@@ -1,6 +1,9 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { RefreshCw, FileText, Wallet, CheckCircle, AlertCircle, TrendingUp, TrendingDown, BookOpen, BarChart } from 'lucide-react';
 import axios from 'axios';
+import { formatCurrency, cachedTenantCurrency } from '@/lib/currency';
+
+const money = (amount) => formatCurrency(amount, cachedTenantCurrency());
 
 const isoDay = (date) => [
   date.getFullYear(),
@@ -135,11 +138,11 @@ export default function FnBCostingModule() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="bg-white border rounded-lg p-5 shadow-sm">
               <div className="text-sm text-gray-500 mb-1">Teorik Maliyet (Sistem)</div>
-              <div className="text-2xl font-bold text-gray-900">{variance.theoretical_cost?.toLocaleString('tr-TR')} ₺</div>
+              <div className="text-2xl font-bold text-gray-900">{money(variance.theoretical_cost)}</div>
             </div>
             <div className="bg-white border rounded-lg p-5 shadow-sm">
               <div className="text-sm text-gray-500 mb-1">Gerçekleşen Maliyet (Sayım)</div>
-              <div className="text-2xl font-bold text-gray-900">{variance.actual_cost?.toLocaleString('tr-TR')} ₺</div>
+              <div className="text-2xl font-bold text-gray-900">{money(variance.actual_cost)}</div>
             </div>
             <div className={`border rounded-lg p-5 shadow-sm ${variance.variance_amount > 0 ? 'bg-red-50 border-red-200' : 'bg-green-50 border-green-200'}`}>
               <div className={`text-sm mb-1 ${variance.variance_amount > 0 ? 'text-red-600' : 'text-green-600'}`}>
@@ -147,7 +150,7 @@ export default function FnBCostingModule() {
               </div>
               <div className={`text-2xl font-bold flex items-center gap-2 ${variance.variance_amount > 0 ? 'text-red-700' : 'text-green-700'}`}>
                 {variance.variance_amount > 0 ? <TrendingUp className="w-6 h-6" /> : <TrendingDown className="w-6 h-6" />}
-                {Math.abs(variance.variance_amount).toLocaleString('tr-TR')} ₺
+                {money(Math.abs(variance.variance_amount))}
               </div>
             </div>
           </div>
@@ -188,7 +191,7 @@ export default function FnBCostingModule() {
                         </span>
                       </td>
                       <td className={`p-3 text-right font-medium ${item.cost_impact > 0 ? 'text-red-600' : 'text-green-600'}`}>
-                        {item.cost_impact > 0 ? '+' : ''}{item.cost_impact?.toLocaleString('tr-TR')} ₺
+                        {item.cost_impact > 0 ? '+' : ''}{money(item.cost_impact)}
                       </td>
                     </tr>
                   ))}
@@ -245,7 +248,7 @@ export default function FnBCostingModule() {
             <div className="p-4">
               <p className="mb-4 text-sm text-gray-700">
                 Seçili döneme ({variance.start} - {variance.end}) ait gerçekleşen F&B maliyeti 
-                <strong> {variance.actual_cost?.toLocaleString('tr-TR')} ₺</strong>.
+                <strong> {money(variance.actual_cost)}</strong>.
                 Bu tutarı Genel Muhasebe sistemine (Satılan Malın Maliyeti / 740 & 150) aktarmak istiyor musunuz?
               </p>
               <div className="bg-indigo-50 border border-indigo-200 text-indigo-800 p-3 rounded text-sm flex gap-2">

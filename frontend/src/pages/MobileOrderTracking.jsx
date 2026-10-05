@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { canUpdateMobileOrderStatus } from '@/utils/mobilePermissions';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 
 const MobileOrderTracking = ({ user }) => {
   const { t } = useTranslation();
@@ -80,7 +81,7 @@ const MobileOrderTracking = ({ user }) => {
     try {
       await axios.put(`/pos/mobile/order/${orderId}/status`, {
         status: newStatus,
-        notes: `Status updated to ${newStatus}`
+        notes: `Sipariş durumu ${getStatusLabel(newStatus)} olarak güncellendi`
       });
       
       toast.success(`Sipariş durumu: ${getStatusLabel(newStatus)}`);
@@ -92,7 +93,7 @@ const MobileOrderTracking = ({ user }) => {
       }
     } catch (error) {
       console.error('Failed to update status:', error);
-      toast.error('Durum güncellenemedi');
+      toast.error(error?.response?.data?.detail || 'Durum güncellenemedi');
     }
   };
 
@@ -191,7 +192,7 @@ const MobileOrderTracking = ({ user }) => {
       <div className="bg-gradient-to-r from-amber-600 to-red-600 text-white p-4 sticky top-0 z-10 shadow-lg">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
-            <button aria-label="Geri" title="Geri" onClick={() => navigate(-1)} className="p-2 hover:bg-white/20 rounded-lg transition">
+            <button aria-label="Geri" title="Geri" onClick={() => navigate('/mobile/fnb')} className="p-2 hover:bg-white/20 rounded-lg transition">
               <ArrowLeft className="h-5 w-5" />
             </button>
             <div>
@@ -316,7 +317,7 @@ const MobileOrderTracking = ({ user }) => {
 
                 <div className="flex justify-between items-center mt-3 pt-3 border-t">
                   <div className="text-lg font-bold text-amber-600">
-                    ₺{order.total_amount.toFixed(2)}
+                    {formatCurrency(order.grand_total ?? order.total_amount, order.currency || cachedTenantCurrency())}
                   </div>
                   
                   {canUpdateMobileOrderStatus(user, order.status) && getNextStatus(order.status) && (
@@ -383,7 +384,7 @@ const MobileOrderTracking = ({ user }) => {
                       <div>
                         <div className="font-medium">{item.item_name}</div>
                         <div className="text-sm text-gray-500">
-                          {item.quantity} x ₺{item.unit_price.toFixed(2)}
+                          {item.quantity} x {formatCurrency(item.unit_price, item.currency || selectedOrder.currency || cachedTenantCurrency())}
                         </div>
                         {item.special_instructions && (
                           <div className="text-xs text-amber-600 mt-1">
@@ -391,7 +392,7 @@ const MobileOrderTracking = ({ user }) => {
                           </div>
                         )}
                       </div>
-                      <div className="font-semibold">₺{item.total_price.toFixed(2)}</div>
+                      <div className="font-semibold">{formatCurrency(item.total_price, item.currency || selectedOrder.currency || cachedTenantCurrency())}</div>
                     </div>
                   ))}
                 </div>
@@ -409,15 +410,15 @@ const MobileOrderTracking = ({ user }) => {
               <div className="space-y-1 border-t pt-2">
                 <div className="flex justify-between text-sm">
                   <span>Ara Toplam</span>
-                  <span>₺{selectedOrder.subtotal?.toFixed(2)}</span>
+                  <span>{formatCurrency(selectedOrder.subtotal, selectedOrder.currency || cachedTenantCurrency())}</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span>KDV</span>
-                  <span>₺{selectedOrder.tax_amount?.toFixed(2)}</span>
+                  <span>{formatCurrency(selectedOrder.tax_amount, selectedOrder.currency || cachedTenantCurrency())}</span>
                 </div>
                 <div className="flex justify-between font-bold text-lg">
                   <span>Toplam</span>
-                  <span className="text-amber-600">₺{selectedOrder.total_amount.toFixed(2)}</span>
+                  <span className="text-amber-600">{formatCurrency(selectedOrder.grand_total ?? selectedOrder.total_amount, selectedOrder.currency || cachedTenantCurrency())}</span>
                 </div>
               </div>
 
@@ -503,7 +504,7 @@ const MobileOrderTracking = ({ user }) => {
                 </div>
                 <div className="flex justify-between text-sm">
                   <span>{order.items_count} ürün</span>
-                  <span className="font-semibold">₺{order.total_amount.toFixed(2)}</span>
+                  <span className="font-semibold">{formatCurrency(order.grand_total ?? order.total_amount, order.currency || cachedTenantCurrency())}</span>
                 </div>
               </div>
             ))}

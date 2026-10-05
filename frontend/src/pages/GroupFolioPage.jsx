@@ -11,10 +11,16 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Merge, Users, DollarSign, FileText, Check, AlertTriangle, RefreshCw, ArrowRight, Lock, Search, ChevronDown, ChevronRight, CreditCard, Banknote, TrendingUp, Layers, Clock } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { formatCurrency, cachedTenantCurrency } from '@/lib/currency';
 const API = "";
-const fmtTL = (v, locale = 'tr-TR') => (v || 0).toLocaleString(locale, {
-  minimumFractionDigits: 2
-});
+const fmtTL = (v, locale = 'tr-TR') => Number(v || 0).toLocaleString(locale, { minimumFractionDigits: 2 });
+const fmtMoney = (v, currency) => formatCurrency(v, currency || cachedTenantCurrency());
+const fmtBreakdown = (totals, fallback, currency) => {
+  const entries = Object.entries(totals || {}).filter(([, amount]) => Math.abs(Number(amount || 0)) > 0.001);
+  return entries.length
+    ? entries.map(([code, amount]) => fmtMoney(amount, code)).join(' · ')
+    : fmtMoney(fallback, currency);
+};
 
 // ─── Summary Stats Card ────────────────────────────
 const StatCard = ({
@@ -63,24 +69,28 @@ const BookingFolioDetail = ({
     type: 'charge',
     desc: c.description || c.category || 'Masraf',
     amount: c.total || c.amount || 0,
+    currency: c.currency || detail.currency,
     date: c.created_at,
     voided: c.voided
   })), ...(detail.folios || []).map(f => ({
     type: f.type === 'payment' ? 'payment' : 'folio',
     desc: f.description || f.category || 'Folio',
     amount: f.amount || 0,
+    currency: f.currency || detail.currency,
     date: f.created_at,
     voided: f.voided
   })), ...(detail.extra_charges || []).map(ec => ({
     type: 'extra',
     desc: ec.description || ec.category || 'Ekstra',
     amount: ec.charge_amount || ec.amount || 0,
+    currency: ec.currency || detail.currency,
     date: ec.created_at,
     voided: ec.voided
   })), ...(detail.payments || []).map(p => ({
     type: 'payment',
     desc: `${p.method || 'Ödeme'} - ${p.reference || ''}`.trim(),
     amount: -(p.amount || 0),
+    currency: p.currency || detail.currency,
     date: p.created_at,
     voided: p.voided
   }))].sort((a, b) => (a.date || '').localeCompare(b.date || ''));
@@ -104,7 +114,7 @@ const BookingFolioDetail = ({
             {item.date ? item.date.slice(0, 10) : '-'}
           </span>
           <span className={`text-right font-medium whitespace-nowrap ${item.amount < 0 ? 'text-emerald-600' : 'text-gray-700'}`}>
-            {item.amount < 0 ? '-' : ''}{fmtTL(Math.abs(item.amount))} TL
+            {item.amount < 0 ? '-' : ''}{fmtMoney(Math.abs(item.amount), item.currency || detail.currency)}
           </span>
         </div>)}
     </div>;
@@ -267,7 +277,7 @@ const GroupFolioPage = ({
         reference: bulkRef,
         distribution: bulkDistribution
       });
-      toast.success(`${res.data?.payments_count || 0} rezervasyona toplam ${fmtTL(res.data?.total_distributed || 0)} TL dağıtıldı`);
+      toast.success(`${res.data?.payments_count || 0} rezervasyona toplam ${fmtMoney(res.data?.total_distributed || 0, res.data?.currency)} dağıtıldı`);
       setShowBulkPayment(false);
       setBulkAmount('');
       setBulkRef('');
@@ -302,7 +312,7 @@ const GroupFolioPage = ({
         {summary && <div className="grid grid-cols-2 md:grid-cols-4 gap-3" data-testid="summary-stats">
             <StatCard icon={Users} label={t('cm.pages_GroupFolioPage.toplam_grup')} value={summary.total_groups} sub={`${summary.active_groups} aktif`} color="bg-violet-100 text-violet-600" />
             <StatCard icon={FileText} label={t('cm.pages_GroupFolioPage.toplam_rez')} value={summary.total_bookings} color="bg-blue-100 text-blue-600" />
-            <StatCard icon={DollarSign} label={t('cm.pages_GroupFolioPage.toplam_bakiye')} value={`${fmtTL(summary.total_balance)} TL`} color={summary.total_balance > 0 ? 'bg-red-100 text-red-600' : 'bg-emerald-100 text-emerald-600'} />
+            <StatCard icon={DollarSign} label={t('cm.pages_GroupFolioPage.toplam_bakiye')} value={fmtBreakdown(summary.totals_by_currency, summary.total_balance, summary.currency)} color={summary.total_balance > 0 ? 'bg-red-100 text-red-600' : 'bg-emerald-100 text-emerald-600'} />
             <StatCard icon={Merge} label="Birlestirmeler" value={summary.merge_operations} sub={`${summary.merged_folios} folio`} color="bg-amber-100 text-amber-600" />
           </div>}
 
@@ -414,16 +424,16 @@ const GroupFolioPage = ({
                                 <div className="grid grid-cols-3 gap-4 text-center">
                                   <div>
                                     <div className="text-[11px] text-gray-500">Konaklama</div>
-                                    <div className="text-sm font-semibold">{fmtTL(b.accommodation_total)} TL</div>
+                                    <div className="text-sm font-semibold">{fmtMoney(b.accommodation_total, b.currency || groupDetail.currency)}</div>
                                   </div>
                                   <div>
                                     <div className="text-[11px] text-gray-500">{t('cm.pages_GroupFolioPage.odeme')}</div>
-                                    <div className="text-sm font-semibold text-emerald-600">{fmtTL(b.payments)} TL</div>
+                                    <div className="text-sm font-semibold text-emerald-600">{fmtMoney(b.payments, b.currency || groupDetail.currency)}</div>
                                   </div>
                                   <div>
                                     <div className="text-[11px] text-gray-500">{t('cm.pages_GroupFolioPage.bakiye')}</div>
                                     <div className={`text-sm font-bold ${b.balance > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
-                                      {fmtTL(b.balance)} TL
+                                      {fmtMoney(b.balance, b.currency || groupDetail.currency)}
                                     </div>
                                   </div>
                                 </div>
@@ -460,7 +470,7 @@ const GroupFolioPage = ({
                     <div className="flex items-center justify-between">
                       <span className="font-semibold text-violet-700">{t('cm.pages_GroupFolioPage.grup_toplam_bakiye')}</span>
                       <span className={`text-xl font-bold ${groupBalance > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
-                        {fmtTL(groupBalance)} TL
+                        {fmtMoney(groupBalance, groupDetail.currency)}
                       </span>
                     </div>
                   </CardContent>
@@ -504,7 +514,7 @@ const GroupFolioPage = ({
                 <Label>{t('cm.pages_GroupFolioPage.ana_rezervasyon_master_folio')}</Label>
                 <select value={masterBookingId} onChange={e => setMasterBookingId(e.target.value)} className="w-full border rounded-md px-3 py-2 text-sm mt-1" data-testid="master-booking-select">
                   {(groupDetail?.bookings || []).filter(b => !b.folio_merged_to).map(b => <option key={b.booking_id} value={b.booking_id}>
-                      {t('cm.pages_GroupFolioPage.oda_e4b47')} {b.room_number} - {b.guest_name} {t('cm.pages_GroupFolioPage.bakiye_e34be')} {fmtTL(b.balance)} TL)
+                      {t('cm.pages_GroupFolioPage.oda_e4b47')} {b.room_number} - {b.guest_name} {t('cm.pages_GroupFolioPage.bakiye_e34be')} {fmtMoney(b.balance, b.currency || groupDetail.currency)})
                     </option>)}
                 </select>
               </div>
@@ -513,7 +523,7 @@ const GroupFolioPage = ({
                 <div className="font-medium mb-2">{t('cm.pages_GroupFolioPage.birlestirilecek_foliolar')}</div>
                 {(groupDetail?.bookings || []).filter(b => b.booking_id !== masterBookingId && !b.folio_merged_to).map(b => <div key={b.booking_id} className="flex items-center gap-2 py-1">
                     <ArrowRight className="w-3 h-3 text-violet-500" />
-                    {t('cm.pages_GroupFolioPage.oda_e4b47')} {b.room_number} - {b.guest_name} ({fmtTL(b.balance)} TL)
+                    {t('cm.pages_GroupFolioPage.oda_e4b47')} {b.room_number} - {b.guest_name} ({fmtMoney(b.balance, b.currency || groupDetail.currency)})
                   </div>)}
               </div>
 
@@ -548,7 +558,7 @@ const GroupFolioPage = ({
                 <Label>{t('cm.pages_GroupFolioPage.rezervasyon')}</Label>
                 <select value={paymentBookingId} onChange={e => setPaymentBookingId(e.target.value)} className="w-full border rounded-md px-3 py-2 text-sm mt-1" data-testid="payment-booking-select">
                   {(groupDetail?.bookings || []).filter(b => !b.folio_merged_to).map(b => <option key={b.booking_id} value={b.booking_id}>
-                      {t('cm.pages_GroupFolioPage.oda_e4b47')} {b.room_number} - {b.guest_name} {t('cm.pages_GroupFolioPage.bakiye_e34be')} {fmtTL(b.balance)} TL)
+                      {t('cm.pages_GroupFolioPage.oda_e4b47')} {b.room_number} - {b.guest_name} {t('cm.pages_GroupFolioPage.bakiye_e34be')} {fmtMoney(b.balance, b.currency || groupDetail.currency)})
                     </option>)}
                 </select>
               </div>
@@ -605,7 +615,7 @@ const GroupFolioPage = ({
                 <div className="font-medium mb-1">Grup: {selectedGroup?.group_name}</div>
                 <div className="flex gap-4 text-xs">
                   <span>{unmergedCount} aktif rezervasyon</span>
-                  <span>{t('cm.pages_GroupFolioPage.toplam_bakiye_69741')} <strong>{fmtTL(groupBalance)} TL</strong></span>
+                  <span>{t('cm.pages_GroupFolioPage.toplam_bakiye_69741')} <strong>{fmtMoney(groupBalance, groupDetail.currency)}</strong></span>
                 </div>
               </div>
 
@@ -613,7 +623,7 @@ const GroupFolioPage = ({
                 <Label>{t('cm.pages_GroupFolioPage.toplam_tutar_tl')}</Label>
                 <Input type="number" min="0" step="0.01" value={bulkAmount} onChange={e => setBulkAmount(e.target.value)} placeholder={groupBalance > 0 ? fmtTL(groupBalance) : '0.00'} className="mt-1" data-testid="bulk-amount-input" />
                 {groupBalance > 0 && <Button variant="link" size="sm" className="text-xs text-blue-600 p-0 h-auto mt-1" onClick={() => setBulkAmount(String(groupBalance > 0 ? groupBalance : 0))} data-testid="fill-balance-btn">
-                    {t('cm.pages_GroupFolioPage.bakiye_tutarini_doldur')}{fmtTL(groupBalance)} TL)
+                    {t('cm.pages_GroupFolioPage.bakiye_tutarini_doldur')}{fmtMoney(groupBalance, groupDetail.currency)})
                   </Button>}
               </div>
 
@@ -667,7 +677,7 @@ const GroupFolioPage = ({
                 }
                 return <div key={b.booking_id} className="flex items-center justify-between text-sm py-1 border-b border-gray-100 last:border-0">
                         <span className="text-gray-600">{t('cm.pages_GroupFolioPage.oda_e4b47')} {b.room_number} - {b.guest_name}</span>
-                        <span className="font-medium text-emerald-600">{fmtTL(share)} TL</span>
+                        <span className="font-medium text-emerald-600">{fmtMoney(share, groupDetail.currency)}</span>
                       </div>;
               })}
                 </div>}

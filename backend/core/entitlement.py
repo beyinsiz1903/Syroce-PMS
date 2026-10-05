@@ -160,6 +160,7 @@ async def _is_super_admin_user(user_id: str) -> bool:
         return cached[0]
     try:
         from core.tenant_db import get_system_db
+
         # Legacy user docs may key by "user_id" instead of "id".
         doc = await get_system_db().users.find_one(
             {"$or": [{"id": user_id}, {"user_id": user_id}]},

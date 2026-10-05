@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
@@ -9,6 +10,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Shield } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import LanguageSelector from '@/components/LanguageSelector';
+import {
+  isTransientLoginGatewayError,
+  postLoginWithGatewayRetry,
+} from '@/lib/authLoginResilience';
 
 // Marka diline (LandingPage) uygun ortak alan/etiket sinifleri.
 const fieldClass =
@@ -34,6 +39,7 @@ const CtaButton = ({ className = '', children, ...props }) => (
 
 const AuthPage = ({ onLogin }) => {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
 
@@ -81,7 +87,7 @@ const AuthPage = ({ onLogin }) => {
         email: String(hotelLoginData.email || '').trim().toLowerCase(),
         password: hotelLoginData.password,
       };
-      const response = await axios.post('/auth/login', payload);
+      const response = await postLoginWithGatewayRetry(axios, payload);
       if (response.data?.requires_2fa) {
         setTwoFAChallenge({
           challenge_token: response.data.challenge_token,
@@ -94,11 +100,13 @@ const AuthPage = ({ onLogin }) => {
       onLogin(response.data.access_token, response.data.user, response.data.tenant, response.data.refresh_token);
       if (response.data?.user?.requires_password_change) {
         toast.info('Devam etmek icin sifrenizi degistirmelisiniz.');
-        setTimeout(() => { window.location.href = '/profile'; }, 300);
+        navigate('/profile', { replace: true });
         return;
       }
     } catch (error) {
-      const errorMessage = error.response?.data?.detail || error.message || t('auth.loginFailed');
+      const errorMessage = isTransientLoginGatewayError(error)
+        ? 'Sunucu geçici olarak yanıt veremiyor. Lütfen birkaç saniye sonra tekrar deneyin.'
+        : error.response?.data?.detail || error.message || t('auth.loginFailed');
       toast.error(errorMessage);
     } finally {
       setLoading(false);
@@ -117,7 +125,7 @@ const AuthPage = ({ onLogin }) => {
       onLogin(r.data.access_token, r.data.user, r.data.tenant, r.data.refresh_token);
       if (r.data?.user?.requires_password_change) {
         toast.info('Devam etmek icin sifrenizi degistirmelisiniz.');
-        setTimeout(() => { window.location.href = '/profile'; }, 300);
+        navigate('/profile', { replace: true });
         return;
       }
     } catch (err) {
@@ -190,9 +198,6 @@ const AuthPage = ({ onLogin }) => {
       toast.success(t('auth.accountCreated'));
       onLogin(response.data.access_token, response.data.user, response.data.tenant, response.data.refresh_token);
 
-      setTimeout(() => {
-        window.location.href = '/';
-      }, 500);
     } catch (error) {
       toast.error(error.response?.data?.detail || t('auth.verificationFailed'));
     } finally {

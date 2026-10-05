@@ -24,8 +24,8 @@ const DisplacementAnalysis = ({ user, tenant, onLogout, embedded = false }) => {
       <div className="max-w-7xl mx-auto px-4 py-6 space-y-6">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">{t('displacement.title', 'Displacement Analysis')}</h1>
-            <p className="text-sm text-gray-500 mt-1">{t('displacement.subtitle', 'Evaluate group bookings against transient displacement to maximize revenue')}</p>
+            <h1 className="text-2xl font-bold text-gray-900">{t('displacement.title', 'Grup Talebi ve Gelir Kaybı Analizi')}</h1>
+            <p className="text-sm text-gray-500 mt-1">{t('displacement.subtitle', 'Grup rezervasyonlarını bireysel rezervasyon geliriyle karşılaştırın')}</p>
           </div>
         </div>
 

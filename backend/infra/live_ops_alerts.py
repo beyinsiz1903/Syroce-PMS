@@ -50,7 +50,7 @@ ALERT_DEFINITIONS = {
     "backup_readiness_failure": {
         "severity": AlertSeverity.HIGH,
         "description": "Backup system not ready for production",
-        "runbook": "Enable BACKUP_ENABLED=true. Verify mongodump availability. Check backup path permissions.",
+        "runbook": "Verify Atlas Cloud Backup/PITR plus a fresh snapshot, or verify mongodump and durable offsite storage.",
         "cooldown_sec": 3600,
     },
     "config_blocker": {

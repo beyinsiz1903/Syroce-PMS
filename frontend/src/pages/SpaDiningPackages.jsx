@@ -9,9 +9,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import MaybeLayout from '@/components/MaybeLayout';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 
 const SpaDiningPackages = ({ user, tenant, onLogout, embedded = false }) => {
   const { t } = useTranslation();
+  const currency = tenant?.currency || cachedTenantCurrency();
   const [loading, setLoading] = useState(false);
   const [packages, setPackages] = useState([]);
   const [bookings, setBookings] = useState([]);
@@ -43,7 +45,7 @@ const SpaDiningPackages = ({ user, tenant, onLogout, embedded = false }) => {
         axios.get('/spa-dining/bookings')
       ]);
       setPackages(pkgRes.data.packages || []);
-      setBookings(pkgRes.data.bookings || bkRes.data.bookings || []);
+      setBookings(bkRes.data.bookings || []);
       if (pkgRes.data.packages?.length > 0) {
         setFormData(prev => ({ ...prev, package_id: pkgRes.data.packages[0].id }));
       }
@@ -132,7 +134,7 @@ const SpaDiningPackages = ({ user, tenant, onLogout, embedded = false }) => {
                       className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       {packages.map(pkg => (
-                        <option key={pkg.id} value={pkg.id}>{pkg.name} ({pkg.price} ₺)</option>
+                        <option key={pkg.id} value={pkg.id}>{pkg.name} ({formatCurrency(pkg.price, pkg.currency || currency)})</option>
                       ))}
                     </select>
                   </div>
@@ -204,6 +206,9 @@ const SpaDiningPackages = ({ user, tenant, onLogout, embedded = false }) => {
                             <Utensils className="w-4 h-4 text-amber-500" /> Restoran: {new Date(booking.dining_start).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
                           </div>
                         </div>
+                        <div className="mt-3 text-right font-bold text-indigo-700">
+                          {formatCurrency(booking.total_price, booking.currency || currency)}
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -216,7 +221,7 @@ const SpaDiningPackages = ({ user, tenant, onLogout, embedded = false }) => {
                 <div key={pkg.id} className="border rounded-xl p-4 bg-gradient-to-br from-indigo-50 to-pink-50 relative overflow-hidden">
                   <h4 className="font-bold text-gray-900 mb-1">{pkg.name}</h4>
                   <p className="text-xs text-gray-600 mb-3 line-clamp-2">{pkg.description}</p>
-                  <div className="text-lg font-extrabold text-indigo-700">{pkg.price} ₺</div>
+                  <div className="text-lg font-extrabold text-indigo-700">{formatCurrency(pkg.price, pkg.currency || currency)}</div>
                   <Sparkles className="w-16 h-16 text-white absolute -bottom-4 -right-4 opacity-50" />
                 </div>
               ))}

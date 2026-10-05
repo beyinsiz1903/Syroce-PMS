@@ -20,7 +20,6 @@ import {
   ChefHat, GlassWater, Coffee as CafeIcon, Sparkles, Bed, UtensilsCrossed,
   Loader2,
 } from 'lucide-react';
-import { useTranslation } from 'react-i18next';
 import { useEntitlements } from '@/context/EntitlementContext';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
 
@@ -53,7 +52,6 @@ const blankForm = {
 
 /* ── component ── */
 const POSOutletManagement = ({ onChange }) => {
-  const { t } = useTranslation();
   const [outlets,     setOutlets]    = useState([]);
   const [loading,     setLoading]    = useState(true);
   const [dialogOpen,  setDialogOpen] = useState(false);
@@ -96,8 +94,13 @@ const POSOutletManagement = ({ onChange }) => {
   };
 
   const submit = async () => {
+    const capacity = form.capacity === '' ? null : Number(form.capacity);
     if (!form.outlet_name.trim() || !form.location.trim()) {
       toast.error('Ad ve konum zorunlu');
+      return;
+    }
+    if (capacity != null && (!Number.isInteger(capacity) || capacity < 1)) {
+      toast.error('Kapasite en az 1 kişi olmalıdır');
       return;
     }
     try {
@@ -106,7 +109,7 @@ const POSOutletManagement = ({ onChange }) => {
         outlet_name:   form.outlet_name.trim(),
         outlet_type:   form.outlet_type,
         location:      form.location.trim(),
-        capacity:      form.capacity ? Number(form.capacity) : null,
+        capacity,
         opening_hours: form.opening_hours.trim() || null,
       };
       if (editing) {
@@ -181,7 +184,7 @@ const POSOutletManagement = ({ onChange }) => {
         <div>
           <Label className="text-sm font-medium">Kapasite (kişi)</Label>
           <Input
-            type="number"
+            type="number" min="1" step="1" inputMode="numeric"
             value={form.capacity}
             onChange={(e) => setForm({ ...form, capacity: e.target.value })}
             placeholder="40"
@@ -234,7 +237,7 @@ const POSOutletManagement = ({ onChange }) => {
                 </TooltipTrigger>
                 {outlets.length >= (getLimit("pos_fnb", "outlets") || 1) && (
                   <TooltipContent side="top" className="bg-slate-800 text-white text-xs">
-                    Maksimum outlet limitine ({getLimit("pos_fnb", "outlets") || 1}) ulaştınız. Lütfen planınızı yükseltin.
+                    Planınızdaki satış noktası sınırına ({getLimit("pos_fnb", "outlets") || 1}) ulaştınız.
                   </TooltipContent>
                 )}
               </Tooltip>
@@ -271,7 +274,7 @@ const POSOutletManagement = ({ onChange }) => {
           </div>
           <p className="font-semibold text-gray-700">Henüz satış noktası yok</p>
           <p className="text-sm text-gray-400 mt-1">
-            "Yeni Satış Noktası" ile ilk kasanizi oluşturun
+            “Yeni Satış Noktası” ile ilk kasanızı oluşturun
           </p>
         </div>
       ) : (

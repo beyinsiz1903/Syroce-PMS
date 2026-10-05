@@ -46,6 +46,16 @@ DEFAULT_DEPARTMENTS = [
         created_at=_NOW,
         updated_at=_NOW,
     ),
+    GuestServiceDepartment(
+        tenant_id="default",
+        property_id="default",
+        department_code="fnb",
+        labels={"en": "Room Service", "tr": "Oda Servisi", "de": "Zimmerservice", "ru": "Обслуживание в номере", "ar": "خدمة الغرف"},
+        icon="utensils",
+        display_order=4,
+        created_at=_NOW,
+        updated_at=_NOW,
+    ),
 ]
 
 DEFAULT_SERVICES = [
@@ -120,7 +130,6 @@ DEFAULT_SERVICES = [
         created_at=_NOW,
         updated_at=_NOW,
     ),
-
     # Technical
     GuestServiceItem(
         tenant_id="default",
@@ -206,7 +215,6 @@ DEFAULT_SERVICES = [
         created_at=_NOW,
         updated_at=_NOW,
     ),
-
     # Reception
     GuestServiceItem(
         tenant_id="default",
@@ -264,7 +272,30 @@ DEFAULT_SERVICES = [
         created_at=_NOW,
         updated_at=_NOW,
     ),
+    # Honest F&B fallback. Properties can replace this with priced products
+    # from the QR management screen; until then guests can still reach the
+    # correct team without displaying invented products or prices.
+    GuestServiceItem(
+        tenant_id="default",
+        property_id="default",
+        department_code="fnb",
+        service_code="fnb.request_menu",
+        labels={"en": "Request the room service menu", "tr": "Oda servisi menüsünü iste"},
+        description={
+            "en": "The hotel team will send the current menu and service hours.",
+            "tr": "Otel ekibi güncel menüyü ve servis saatlerini paylaşır.",
+        },
+        icon="utensils",
+        input_type=InputType.one_tap,
+        input_config=EmptyConfig(),
+        auto_priority=AutoPriority.normal,
+        estimated_minutes=10,
+        display_order=1,
+        created_at=_NOW,
+        updated_at=_NOW,
+    ),
 ]
+
 
 def get_default_catalogue() -> dict:
     """Returns a deep copy of the default catalogue components."""
@@ -273,4 +304,3 @@ def get_default_catalogue() -> dict:
         "departments": [d.model_dump() for d in DEFAULT_DEPARTMENTS],
         "services": [s.model_dump() for s in DEFAULT_SERVICES],
     }
-

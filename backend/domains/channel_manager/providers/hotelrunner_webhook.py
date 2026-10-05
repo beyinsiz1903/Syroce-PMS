@@ -70,19 +70,23 @@ async def _process_webhook_batch(
                 try:
                     logger.info(f"[DIAG] [{req_id}] persistence_start")
                     await _persist_and_process(tenant_id, property_id, sub_res, event_type, source_ip)
-                    logger.info(f"[DIAG] [{req_id}] persistence_success elapsed_ms={(time.time() - t_persist_start)*1000:.2f}")
+                    logger.info(f"[DIAG] [{req_id}] persistence_success elapsed_ms={(time.time() - t_persist_start) * 1000:.2f}")
                 except Exception as e:
-                    logger.info(f"[DIAG] [{req_id}] persistence_failure exception_class={e.__class__.__name__} elapsed_ms={(time.time() - t_persist_start)*1000:.2f}")
+                    logger.info(f"[DIAG] [{req_id}] persistence_failure exception_class={e.__class__.__name__} elapsed_ms={(time.time() - t_persist_start) * 1000:.2f}")
                     from core.masking import fingerprint_id
+
                     masked_tenant = fingerprint_id(tenant_id)
                     masked_prop = fingerprint_id(property_id) if property_id else "none"
-                    logger.error(f"[WEBHOOK] [{req_id}] Error processing sub-reservation event={event_type} exception_class={e.__class__.__name__} elapsed_ms={(time.time() - t_persist_start)*1000:.2f} tenant_fp={masked_tenant} prop_fp={masked_prop}")
+                    logger.error(
+                        f"[WEBHOOK] [{req_id}] Error processing sub-reservation event={event_type} exception_class={e.__class__.__name__} elapsed_ms={(time.time() - t_persist_start) * 1000:.2f} tenant_fp={masked_tenant} prop_fp={masked_prop}"
+                    )
         except Exception as e:
             from core.masking import fingerprint_id
+
             masked_tenant = fingerprint_id(tenant_id)
             masked_prop = fingerprint_id(property_id) if property_id else "none"
             logger.error(f"[WEBHOOK] [{req_id}] Error processing batch event={event_type} exception_class={e.__class__.__name__} tenant_fp={masked_tenant} prop_fp={masked_prop}")
-    logger.info(f"[DIAG] [{req_id}] batch_end total_elapsed_ms={(time.time() - t_batch_start)*1000:.2f}")
+    logger.info(f"[DIAG] [{req_id}] batch_end total_elapsed_ms={(time.time() - t_batch_start) * 1000:.2f}")
 
 
 def _detect_event_type(body: dict) -> str:
@@ -214,6 +218,7 @@ async def unified_callback(
                 res["status"] = "cancelled"
 
     from core.masking import fingerprint_id
+
     masked_tenant = fingerprint_id(tenant_id)
     logger.info(
         "[CALLBACK] Received event_type=%s count=%d tenant_fp=%s",
@@ -234,10 +239,10 @@ async def unified_callback(
         req_id,
     )
     request.state.hr_diag["dispatch_end"] = time.time()
-    logger.info(f"[DIAG] [{req_id}] background_task_enqueue_ms={(request.state.hr_diag['dispatch_end'] - t_enqueue_start)*1000:.2f}")
+    logger.info(f"[DIAG] [{req_id}] background_task_enqueue_ms={(request.state.hr_diag['dispatch_end'] - t_enqueue_start) * 1000:.2f}")
 
     total_duration = time.time() - request.state.hr_diag.get("request_received", time.time())
-    logger.info(f"[DIAG] [{req_id}] Final response status 200, total duration {total_duration*1000:.2f}ms")
+    logger.info(f"[DIAG] [{req_id}] Final response status 200, total duration {total_duration * 1000:.2f}ms")
 
     return {"status": "ok"}
 
@@ -282,10 +287,10 @@ async def webhook_reservations(
         req_id,
     )
     request.state.hr_diag["dispatch_end"] = time.time()
-    logger.info(f"[DIAG] [{req_id}] background_task_enqueue_ms={(request.state.hr_diag['dispatch_end'] - t_enqueue_start)*1000:.2f}")
+    logger.info(f"[DIAG] [{req_id}] background_task_enqueue_ms={(request.state.hr_diag['dispatch_end'] - t_enqueue_start) * 1000:.2f}")
 
     total_duration = time.time() - request.state.hr_diag.get("request_received", time.time())
-    logger.info(f"[DIAG] [{req_id}] Final response status 200, total duration {total_duration*1000:.2f}ms")
+    logger.info(f"[DIAG] [{req_id}] Final response status 200, total duration {total_duration * 1000:.2f}ms")
 
     return {
         "status": "accepted",

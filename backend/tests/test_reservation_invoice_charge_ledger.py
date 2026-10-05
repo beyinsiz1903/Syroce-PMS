@@ -159,6 +159,36 @@ async def test_invoice_charge_list_uses_durable_charge_collections(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_invoice_charge_list_does_not_double_count_posted_room_charges(monkeypatch):
+    database = _fake_db()
+    database.folio_charges.rows.insert(
+        0,
+        {
+            "id": "nightly-room-charge-a",
+            "booking_id": "booking-a",
+            "tenant_id": "tenant-a",
+            "description": "Room charge - 2026-08-15",
+            "charge_amount": 100.0,
+            "charge_category": "room",
+            "charge_type": "room_charge",
+            "created_at": "2026-08-15T23:59:00Z",
+            "voided": False,
+        },
+    )
+    monkeypatch.setattr(invoices, "db", database)
+
+    result = await invoices.get_invoice_charges("booking-a", current_user=_user())
+
+    assert [item["id"] for item in result["charges"]] == [
+        "nightly-room-charge-a",
+        "folio-charge-a",
+        "extra-charge-a",
+    ]
+    assert sum(item["amount"] for item in result["charges"]) == 120.0
+    assert all(item["id"] != "accommodation" for item in result["charges"])
+
+
+@pytest.mark.asyncio
 async def test_generated_invoice_total_matches_selected_durable_charges(monkeypatch):
     database = _fake_db()
     monkeypatch.setattr(invoices, "db", database)

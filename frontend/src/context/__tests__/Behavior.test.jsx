@@ -994,6 +994,30 @@ describe('Frontend Behavior Tests', () => {
           expect(screen.getByText('Plaka Tanıma')).toBeInTheDocument();
           expect(screen.getByText('Analiz')).toBeInTheDocument();
       });
+
+      fireEvent.click(screen.getByRole('tab', { name: 'Vale' }));
+      expect(await screen.findByText('Vale Kaydı Aç')).toBeInTheDocument();
+  });
+
+  it('TransferParkingPage: zero quota disables resource creation', async () => {
+      axios.get.mockImplementation((url) => {
+          if (url === '/subscription/current') return Promise.resolve({ data: {
+              modules: {}, entitlements: { parking: { editions: [], limits: {
+                  transfer_vehicles: 0, parking_spots: 0,
+              }, features: [] } },
+          } });
+          if (url === '/transfer-parking/resources') return Promise.resolve({ data: { resources: [] } });
+          if (url === '/transfer-parking/bookings') return Promise.resolve({ data: { bookings: [] } });
+          if (url === '/transfer-parking/late-charges') return Promise.resolve({ data: { late_charges: [] } });
+          return Promise.resolve({ data: {} });
+      });
+
+      render(<MemoryRouter><EntitlementProvider currentTenantId="t1" isSuperAdmin={false}>
+          <TransferParkingPage />
+      </EntitlementProvider></MemoryRouter>);
+      fireEvent.click(await screen.findByRole('tab', { name: /Kaynaklar/i }));
+      const button = await screen.findByText('Limit Doldu');
+      expect(button.closest('button')).toBeDisabled();
   });
 
   // ─── HR Ek Frontend Testleri ────────────────────────────────────────────────

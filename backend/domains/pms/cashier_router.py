@@ -1,11 +1,13 @@
 import asyncio
 import logging
+import re
 import time
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Body, Depends, Header, HTTPException, Request
 
+from core.business_date_service import ensure_business_date_initialized, stamp_open_business_date
 from core.database import db
 from core.folio_ledger_service import FolioLedgerService
 from core.security import get_current_user
@@ -24,6 +26,11 @@ _ledger = FolioLedgerService()
 _SHIFT_INDEX_LOCK = asyncio.Lock()
 _SHIFT_INDEX_CREATED = False
 _SHIFT_INDEX_LAST_ATTEMPT = 0.0
+
+_FX_RECEIPT_RE = re.compile(
+    r"\[Döviz Çevirici\]\s*[\d.,]+\s+[A-Z]{3}\s*=\s*([\d.,]+)\s+([A-Z]{3})",
+    re.IGNORECASE,
+)
 _SHIFT_INDEX_RETRY_BACKOFF_SEC = 60.0
 
 
@@ -115,15 +122,19 @@ async def get_current_shift(
     _perm=Depends(require_op("view_finance_reports")),
 ):
     await _ensure_shift_indexes()
+    from domains.pms.cashier_service import reconcile_open_shift_payments, summarize_shift_transactions
+
+    await reconcile_open_shift_payments(current_user.tenant_id)
     shift = await db.cashier_shifts.find_one({"tenant_id": current_user.tenant_id, "status": "open"}, sort=[("opened_at", -1)])
     if shift:
         shift["id"] = str(shift.pop("_id"))
         # Embedded transactions array (Atlas 500-koleksiyon limiti pattern'i)
         txns = list(shift.pop("transactions", []) or [])
+        summary = summarize_shift_transactions(txns)
         # En yeni önce
         txns.sort(key=lambda t: t.get("created_at") or "", reverse=True)
-        return {"shift": shift, "transactions": txns[:200]}
-    return {"shift": None, "transactions": []}
+        return {"shift": shift, "transactions": txns[:200], "summary": summary}
+    return {"shift": None, "transactions": [], "summary": None}
 
 
 @router.post("/cashier/open-shift")
@@ -152,6 +163,7 @@ async def open_shift(
         "opened_by_name": current_user.name if hasattr(current_user, "name") else current_user.email,
         "denominations": body.get("denomination_counts", body.get("denominations", {})),
     }
+    await stamp_open_business_date(db, current_user.tenant_id, doc)
     try:
         await db.cashier_shifts.insert_one(doc)
     except Exception as e:
@@ -169,13 +181,21 @@ async def close_shift(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("post_payment")),  # v94 DW
 ):
+    from domains.pms.cashier_service import reconcile_open_shift_payments
+
+    await reconcile_open_shift_payments(current_user.tenant_id)
     shift = await db.cashier_shifts.find_one({"tenant_id": current_user.tenant_id, "status": "open"})
     if not shift:
         raise HTTPException(status_code=404, detail="Acik vardiya bulunamadi")
     now = datetime.utcnow()
     counted_amount = _safe_float(body.get("counted_amount", 0))
-    expected = shift.get("opening_amount", 0) + shift.get("cash_in", 0) - shift.get("cash_out", 0)
+    expected = (
+        _safe_float(shift.get("opening_amount", 0))
+        + _safe_float(shift.get("cash_in", 0))
+        - _safe_float(shift.get("cash_out", 0))
+    )
     difference = counted_amount - expected
+    close_business_date = (await ensure_business_date_initialized(db, current_user.tenant_id))["business_date"]
     await db.cashier_shifts.update_one(
         {"_id": shift["_id"], "tenant_id": current_user.tenant_id},
         {
@@ -188,6 +208,7 @@ async def close_shift(
                 "closing_denominations": body.get("denomination_counts", body.get("denominations", {})),
                 "closed_by": current_user.email,
                 "closed_by_name": current_user.name if hasattr(current_user, "name") else current_user.email,
+                "closed_business_date": close_business_date,
             }
         },
     )
@@ -271,9 +292,24 @@ async def handover_shift(
         # operator stays in their existing budget — never a hard error.
         pass
 
+    # Only mutate/recover financial state after the receiving operator has
+    # successfully authenticated.  Then reload the shift so the handover uses
+    # the authoritative repaired counters.
+    from domains.pms.cashier_service import reconcile_open_shift_payments
+
+    await reconcile_open_shift_payments(current_user.tenant_id)
+    shift = await db.cashier_shifts.find_one({"tenant_id": current_user.tenant_id, "status": "open"})
+    if not shift:
+        raise HTTPException(status_code=409, detail="Vardiya doğrulama sırasında kapandı/devredildi")
+
     target_name = target_user.get("name") or target_user.get("full_name") or target_email
     now = datetime.utcnow()
-    expected = shift.get("opening_amount", 0) + shift.get("cash_in", 0) - shift.get("cash_out", 0)
+    expected = (
+        _safe_float(shift.get("opening_amount", 0))
+        + _safe_float(shift.get("cash_in", 0))
+        - _safe_float(shift.get("cash_out", 0))
+    )
+    handover_business_date = (await ensure_business_date_initialized(db, current_user.tenant_id))["business_date"]
 
     await db.cashier_shifts.update_one(
         {"_id": shift["_id"], "tenant_id": current_user.tenant_id},
@@ -290,6 +326,7 @@ async def handover_shift(
                 "handover_to_name": target_name,
                 "handover_at": now.isoformat(),
                 "handover_note": body.get("note", ""),
+                "closed_business_date": handover_business_date,
             }
         },
     )
@@ -309,6 +346,7 @@ async def handover_shift(
         "handover_from_email": current_user.email,
         "handover_from_name": current_user.name if hasattr(current_user, "name") else current_user.email,
     }
+    await stamp_open_business_date(db, current_user.tenant_id, new_doc)
     await db.cashier_shifts.insert_one(new_doc)
     new_doc["id"] = new_doc.pop("_id")
     return {
@@ -488,6 +526,187 @@ async def manual_transaction(
     return {"ok": True, "transaction": txn}
 
 
+@router.post("/cashier/currency-exchange")
+async def currency_exchange(
+    body: dict = Body(...),
+    current_user: User = Depends(get_current_user),
+    idempotency_key: str | None = Header(default=None, alias="X-Idempotency-Key"),
+    _perm=Depends(require_op("post_payment")),
+):
+    """Convert physically received foreign cash to TRY without rewriting the payment."""
+    tenant_id = current_user.tenant_id
+    booking_id = str(body.get("booking_id") or "").strip()
+    source_currency = str(body.get("source_currency") or "").strip().upper()
+    source_amount = round(_safe_float(body.get("source_amount")), 2)
+    rate = round(_safe_float(body.get("rate")), 6)
+    note = str(body.get("note") or "").strip()[:500] or None
+    if not booking_id:
+        raise HTTPException(status_code=400, detail="Rezervasyon zorunludur")
+    if source_currency not in {"USD", "EUR", "GBP", "CHF"}:
+        raise HTTPException(status_code=400, detail="Desteklenmeyen kaynak döviz")
+    if source_amount <= 0 or rate <= 0:
+        raise HTTPException(status_code=400, detail="Tutar ve kur 0'dan büyük olmalı")
+
+    booking = await db.bookings.find_one(
+        {"tenant_id": tenant_id, "id": booking_id},
+        {"_id": 0, "id": 1, "reservation_number": 1, "room_number": 1, "guest_name": 1},
+    )
+    if not booking:
+        raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
+
+    if idempotency_key:
+        existing = await db.currency_exchanges.find_one(
+            {"tenant_id": tenant_id, "idempotency_key": idempotency_key},
+            {"_id": 0},
+        )
+        if existing:
+            return {"ok": True, "exchange": existing, "idempotent": True}
+
+    payments = await db.payments.find(
+        {"tenant_id": tenant_id, "booking_id": booking_id, "voided": {"$ne": True}},
+        {"_id": 0, "notes": 1, "received_amount": 1, "received_currency": 1},
+    ).to_list(None)
+    received_total = 0.0
+    for payment in payments:
+        if payment.get("received_currency") and str(payment["received_currency"]).upper() == source_currency:
+            received_total += _safe_float(payment.get("received_amount"))
+            continue
+        match = _FX_RECEIPT_RE.search(str(payment.get("notes") or ""))
+        if match and match.group(2).upper() == source_currency:
+            received_total += _safe_float(match.group(1).replace(",", "."))
+    exchanged_rows = await db.currency_exchanges.find(
+        {
+            "tenant_id": tenant_id,
+            "booking_id": booking_id,
+            "source_currency": source_currency,
+            "status": "posted",
+        },
+        {"_id": 0, "source_amount": 1},
+    ).to_list(None)
+    exchanged_total = sum(_safe_float(row.get("source_amount")) for row in exchanged_rows)
+    available = round(received_total - exchanged_total, 2)
+    if source_amount > available + 0.001:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Bozdurulabilir {source_currency} bakiyesi {available:.2f}",
+        )
+
+    shift = await db.cashier_shifts.find_one({"tenant_id": tenant_id, "status": "open"})
+    if not shift:
+        raise HTTPException(status_code=409, detail="Aktif kasa vardiyası yok. Önce 'Vardiya Aç' işlemini yapın.")
+
+    target_amount = round(source_amount * rate, 2)
+    exchange_id = str(uuid.uuid4())
+    now = datetime.utcnow().isoformat()
+    actor_email = getattr(current_user, "email", None) or getattr(current_user, "username", None) or "system"
+    common = {
+        "exchange_id": exchange_id,
+        "booking_id": booking_id,
+        "room_number": booking.get("room_number"),
+        "source_currency": source_currency,
+        "source_amount": source_amount,
+        "target_currency": "TRY",
+        "target_amount": target_amount,
+        "fx_rate": rate,
+    }
+    out_txn = {
+        "id": str(uuid.uuid4()),
+        "amount": target_amount,
+        "method": "cash",
+        "direction": "out",
+        "type": "currency_exchange_out",
+        "description": f"Döviz bozdurma: {source_amount:.2f} {source_currency} çıkış",
+        "ref_type": "currency_exchange",
+        "ref_id": exchange_id,
+        "created_at": now,
+        "timestamp": now,
+        "created_by": actor_email,
+        "created_by_name": getattr(current_user, "name", None) or actor_email,
+        "idempotency_key": f"{idempotency_key}:out" if idempotency_key else None,
+        "currency": source_currency,
+        "original_amount": source_amount,
+        **common,
+    }
+    in_txn = {
+        "id": str(uuid.uuid4()),
+        "amount": target_amount,
+        "method": "cash",
+        "direction": "in",
+        "type": "currency_exchange_in",
+        "description": f"Döviz bozdurma: {target_amount:.2f} TRY giriş",
+        "ref_type": "currency_exchange",
+        "ref_id": exchange_id,
+        "created_at": now,
+        "timestamp": now,
+        "created_by": actor_email,
+        "created_by_name": getattr(current_user, "name", None) or actor_email,
+        "idempotency_key": f"{idempotency_key}:in" if idempotency_key else None,
+        "currency": "TRY",
+        "original_amount": target_amount,
+        **common,
+    }
+    await stamp_open_business_date(db, tenant_id, out_txn)
+    in_txn["business_date"] = out_txn.get("business_date")
+    exchange = {
+        "id": exchange_id,
+        "tenant_id": tenant_id,
+        "booking_id": booking_id,
+        "reservation_number": booking.get("reservation_number"),
+        "room_number": booking.get("room_number"),
+        "guest_name": booking.get("guest_name"),
+        "source_currency": source_currency,
+        "source_amount": source_amount,
+        "target_currency": "TRY",
+        "target_amount": target_amount,
+        "rate": rate,
+        "note": note,
+        "status": "posted",
+        "business_date": out_txn.get("business_date"),
+        "created_at": now,
+        "created_by": actor_email,
+        "idempotency_key": idempotency_key,
+    }
+
+    shift_filter = {"_id": shift["_id"], "tenant_id": tenant_id, "status": "open"}
+    if idempotency_key:
+        shift_filter["transactions.idempotency_key"] = {"$nin": [f"{idempotency_key}:out", f"{idempotency_key}:in"]}
+    result = await db.cashier_shifts.update_one(
+        shift_filter,
+        {
+            "$push": {"transactions": {"$each": [out_txn, in_txn]}},
+            "$inc": {"cash_out": target_amount, "cash_in": target_amount},
+        },
+    )
+    if result.matched_count != 1:
+        if idempotency_key:
+            existing = await db.currency_exchanges.find_one(
+                {"tenant_id": tenant_id, "idempotency_key": idempotency_key},
+                {"_id": 0},
+            )
+            if existing:
+                return {"ok": True, "exchange": existing, "idempotent": True}
+        raise HTTPException(status_code=409, detail="Kasa vardiyası değişti veya işlem daha önce kaydedildi")
+    try:
+        await db.currency_exchanges.insert_one({**exchange})
+    except Exception:
+        logger.exception("currency exchange audit insert failed exchange=%s", exchange_id)
+        raise HTTPException(status_code=500, detail="Kasa hareketi oluştu ancak döviz işlem kaydı yazılamadı; yöneticiyi bilgilendirin")
+    return {"ok": True, "exchange": exchange}
+
+
+@router.get("/cashier/currency-exchanges")
+async def list_currency_exchanges(
+    booking_id: str,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("post_payment")),
+):
+    rows = await db.currency_exchanges.find(
+        {"tenant_id": current_user.tenant_id, "booking_id": str(booking_id), "status": "posted"},
+        {"_id": 0},
+    ).sort("created_at", -1).to_list(1000)
+    return {"exchanges": rows}
+
+
 @router.post("/cashier/bank-deposit")
 async def bank_deposit(
     body: dict = Body(...),
@@ -555,10 +774,11 @@ async def period_report(
     Aralıkta opened_at olan tüm vardiyaların toplu özetini döner.
     Varsayılan: son 7 gün.
     """
+    open_business_date = (await ensure_business_date_initialized(db, current_user.tenant_id))["business_date"]
     if not end_date:
-        end_date = datetime.now(UTC).date().isoformat()
+        end_date = open_business_date
     if not start_date:
-        start_date = (datetime.now(UTC).date() - timedelta(days=7)).isoformat()
+        start_date = (datetime.fromisoformat(end_date).date() - timedelta(days=7)).isoformat()
     try:
         s_dt = datetime.fromisoformat(start_date)
         e_dt = datetime.fromisoformat(end_date)
@@ -610,11 +830,25 @@ async def period_report(
             return False
         return s_iso <= ts <= e_iso
 
+    def _txn_in_range(txn: dict) -> bool:
+        accounting_day = str(txn.get("business_date") or "")[:10]
+        if accounting_day:
+            return start_date <= accounting_day <= end_date
+        return _in_range(txn.get("created_at") or txn.get("timestamp"))
+
+    def _shift_open_in_range(shift: dict) -> bool:
+        accounting_day = str(shift.get("business_date") or "")[:10]
+        return start_date <= accounting_day <= end_date if accounting_day else _in_range(shift.get("opened_at"))
+
+    def _shift_close_in_range(shift: dict) -> bool:
+        accounting_day = str(shift.get("closed_business_date") or "")[:10]
+        return start_date <= accounting_day <= end_date if accounting_day else _in_range(shift.get("closed_at"))
+
     async for s in cursor:
         # Vardiya tx'lerinden aralıkta olanları filtrele
         all_txns = s.get("transactions") or []
-        txns_in_range = [t for t in all_txns if _in_range(t.get("created_at") or t.get("timestamp"))]
-        if not txns_in_range and not _in_range(s.get("opened_at")):
+        txns_in_range = [t for t in all_txns if _txn_in_range(t)]
+        if not txns_in_range and not _shift_open_in_range(s):
             # Vardiyanın hiçbir tx'i aralıkta değil ve açılışı da değilse atla
             continue
 
@@ -627,7 +861,7 @@ async def period_report(
         # Vardiya bazlı toplamları (opening/closing) yalnızca opened_at aralık
         # içindeyse dahil et — yoksa önceki dönemden devreden vardiyanın açılışı
         # bu döneme yanlışlıkla eklenir.
-        opening_in = float(s.get("opening_amount") or 0) if _in_range(s.get("opened_at")) else 0.0
+        opening_in = float(s.get("opening_amount") or 0) if _shift_open_in_range(s) else 0.0
         # cash_in/cash_out yalnız aralıktaki nakit tx'lerden hesapla
         c_in = sum(float(t.get("amount") or 0) for t in txns_in_range if (t.get("method") == "cash") and (t.get("direction") == "in"))
         c_out = sum(float(t.get("amount") or 0) for t in txns_in_range if (t.get("method") == "cash") and (t.get("direction") == "out"))
@@ -636,9 +870,9 @@ async def period_report(
         totals["cash_out_total"] += c_out
         totals["expected_total"] += opening_in + c_in - c_out
         # closing/difference yalnız closed_at aralıktaysa dahil
-        if s.get("closing_amount") is not None and _in_range(s.get("closed_at")):
+        if s.get("closing_amount") is not None and _shift_close_in_range(s):
             totals["closing_total"] += float(s.get("closing_amount") or 0)
-        if s.get("difference") is not None and _in_range(s.get("closed_at")):
+        if s.get("difference") is not None and _shift_close_in_range(s):
             totals["difference_total"] += float(s.get("difference") or 0)
 
         cashier_key = s.get("cashier_email") or s.get("cashier_name") or "?"
@@ -694,7 +928,7 @@ async def period_report(
                 "status": s.get("status"),
                 "opened_at": s.get("opened_at"),
                 "closed_at": s.get("closed_at"),
-                "opening_in_period": _in_range(s.get("opened_at")),
+                "opening_in_period": _shift_open_in_range(s),
                 "opening_amount": float(s.get("opening_amount") or 0),
                 "cash_in_period": c_in,
                 "cash_out_period": c_out,

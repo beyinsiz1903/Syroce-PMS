@@ -124,3 +124,15 @@ async def get_health_history(hours: int = Query(24, ge=1, le=168), limit: int = 
     from modules.observability.service_health import service_health
 
     return await service_health.get_health_history(hours, limit)
+
+
+@router.get("/performance-budgets")
+async def get_performance_budgets(
+    hours: int = Query(1, ge=1, le=24),
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),
+):
+    """Evaluate the main operational screens against explicit p95/error budgets."""
+    from modules.observability.performance_budget_service import PerformanceBudgetService
+
+    return await PerformanceBudgetService().get_snapshot(current_user.tenant_id, hours)

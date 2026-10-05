@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { User } from 'lucide-react';
+import { COUNTRIES } from '@/lib/countries';
 
 const GuestInfoDialog = ({ open, onClose, selectedGuest, setSelectedGuest, onSaved }) => {
   const { t } = useTranslation();
@@ -33,21 +34,21 @@ const GuestInfoDialog = ({ open, onClose, selectedGuest, setSelectedGuest, onSav
             {t('guest.guestProfile')}
           </DialogTitle>
           <DialogDescription>
-            View and update guest personal and identification details
+            Misafirin kişisel, iletişim ve kimlik bilgilerini görüntüleyip güncelleyin.
           </DialogDescription>
         </DialogHeader>
         
         {selectedGuest && (
           <div className="space-y-6">
             <div className="space-y-4">
-              <h3 className="text-lg font-semibold border-b pb-2">Personal Information</h3>
-              <div className="grid grid-cols-2 gap-4">
+              <h3 className="text-lg font-semibold border-b pb-2">Kişisel Bilgiler</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <Label>{t('common.name')}</Label>
                   <Input 
                     value={selectedGuest.name || ''} 
                     onChange={(e) => setSelectedGuest({...selectedGuest, name: e.target.value})}
-                    placeholder="Full Name"
+                    placeholder="Ad soyad"
                   />
                 </div>
                 <div>
@@ -77,23 +78,24 @@ const GuestInfoDialog = ({ open, onClose, selectedGuest, setSelectedGuest, onSav
                 </div>
                 <div>
                   <Label>{t('guest.nationality')}</Label>
-                  <Input 
-                    value={selectedGuest.nationality || ''} 
-                    onChange={(e) => setSelectedGuest({...selectedGuest, nationality: e.target.value})}
-                    placeholder="TR"
-                  />
+                  <Select value={selectedGuest.nationality || ''} onValueChange={(val) => setSelectedGuest({...selectedGuest, nationality: val})}>
+                    <SelectTrigger><SelectValue placeholder="TR" /></SelectTrigger>
+                    <SelectContent>
+                      {COUNTRIES.map(c => <SelectItem key={c.code} value={c.code}>{c.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div>
-                  <Label>Gender</Label>
+                  <Label>Cinsiyet</Label>
                   <Select 
                     value={selectedGuest.gender || ''} 
                     onValueChange={(v) => setSelectedGuest({...selectedGuest, gender: v})}
                   >
-                    <SelectTrigger><SelectValue placeholder="Select gender" /></SelectTrigger>
+                    <SelectTrigger><SelectValue placeholder="Cinsiyet seçin" /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="male">Male</SelectItem>
-                      <SelectItem value="female">Female</SelectItem>
-                      <SelectItem value="other">Other</SelectItem>
+                      <SelectItem value="male">Erkek</SelectItem>
+                      <SelectItem value="female">Kadın</SelectItem>
+                      <SelectItem value="other">Diğer</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -101,19 +103,20 @@ const GuestInfoDialog = ({ open, onClose, selectedGuest, setSelectedGuest, onSav
             </div>
 
             <div className="space-y-4">
-              <h3 className="text-lg font-semibold border-b pb-2">Identification Details</h3>
-              <div className="grid grid-cols-2 gap-4">
+              <h3 className="text-lg font-semibold border-b pb-2">Kimlik Bilgileri</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <Label>ID Type</Label>
+                  <Label>Kimlik Türü</Label>
                   <Select 
                     value={selectedGuest.id_type || 'passport'} 
                     onValueChange={(v) => setSelectedGuest({...selectedGuest, id_type: v})}
                   >
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="passport">Passport</SelectItem>
-                      <SelectItem value="national_id">National ID</SelectItem>
-                      <SelectItem value="drivers_license">Driver&apos;s License</SelectItem>
+                      <SelectItem value="passport">Pasaport</SelectItem>
+                      <SelectItem value="national_id">T.C. Kimlik Kartı</SelectItem>
+                      <SelectItem value="foreign_identity_card">Yabancı Kimlik Kartı (YKN)</SelectItem>
+                      <SelectItem value="drivers_license">Sürücü Belgesi</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -122,11 +125,11 @@ const GuestInfoDialog = ({ open, onClose, selectedGuest, setSelectedGuest, onSav
                   <Input 
                     value={selectedGuest.id_number || ''} 
                     onChange={(e) => setSelectedGuest({...selectedGuest, id_number: e.target.value})}
-                    placeholder="ID/Passport Number"
+                    placeholder="Kimlik veya pasaport numarası"
                   />
                 </div>
                 <div>
-                  <Label>Issue Date</Label>
+                  <Label>Veriliş Tarihi</Label>
                   <Input 
                     type="date"
                     value={selectedGuest.id_issue_date?.split('T')[0] || ''} 
@@ -134,7 +137,7 @@ const GuestInfoDialog = ({ open, onClose, selectedGuest, setSelectedGuest, onSav
                   />
                 </div>
                 <div>
-                  <Label>Expiry Date</Label>
+                  <Label>Geçerlilik Tarihi</Label>
                   <Input 
                     type="date"
                     value={selectedGuest.id_expiry_date?.split('T')[0] || ''} 
@@ -142,11 +145,11 @@ const GuestInfoDialog = ({ open, onClose, selectedGuest, setSelectedGuest, onSav
                   />
                 </div>
                 <div className="col-span-2">
-                  <Label>Issuing Authority</Label>
+                  <Label>Veren Makam</Label>
                   <Input 
                     value={selectedGuest.id_issuing_authority || ''} 
                     onChange={(e) => setSelectedGuest({...selectedGuest, id_issuing_authority: e.target.value})}
-                    placeholder="e.g., Ministry of Interior"
+                    placeholder="Örn. İçişleri Bakanlığı"
                   />
                 </div>
               </div>
@@ -154,37 +157,37 @@ const GuestInfoDialog = ({ open, onClose, selectedGuest, setSelectedGuest, onSav
 
             <div className="space-y-4">
               <h3 className="text-lg font-semibold border-b pb-2">{t('common.address')}</h3>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="col-span-2">
-                  <Label>Street Address</Label>
+                  <Label>Açık Adres</Label>
                   <Input 
                     value={selectedGuest.address || ''} 
                     onChange={(e) => setSelectedGuest({...selectedGuest, address: e.target.value})}
-                    placeholder="Street address"
+                    placeholder="Mahalle, cadde, sokak ve kapı numarası"
                   />
                 </div>
                 <div>
-                  <Label>City</Label>
+                  <Label>Şehir</Label>
                   <Input 
                     value={selectedGuest.city || ''} 
                     onChange={(e) => setSelectedGuest({...selectedGuest, city: e.target.value})}
-                    placeholder="City"
+                    placeholder="Şehir"
                   />
                 </div>
                 <div>
-                  <Label>Postal Code</Label>
+                  <Label>Posta Kodu</Label>
                   <Input 
                     value={selectedGuest.postal_code || ''} 
                     onChange={(e) => setSelectedGuest({...selectedGuest, postal_code: e.target.value})}
-                    placeholder="Postal code"
+                    placeholder="Posta kodu"
                   />
                 </div>
                 <div>
-                  <Label>Country</Label>
+                  <Label>Ülke</Label>
                   <Input 
                     value={selectedGuest.country || ''} 
                     onChange={(e) => setSelectedGuest({...selectedGuest, country: e.target.value})}
-                    placeholder="Country"
+                    placeholder="Ülke"
                   />
                 </div>
               </div>
@@ -195,7 +198,7 @@ const GuestInfoDialog = ({ open, onClose, selectedGuest, setSelectedGuest, onSav
               <Textarea 
                 value={selectedGuest.notes || ''} 
                 onChange={(e) => setSelectedGuest({...selectedGuest, notes: e.target.value})}
-                placeholder="Additional notes about the guest..."
+                placeholder="Misafirle ilgili ek notlar..."
                 rows={3}
               />
             </div>

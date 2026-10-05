@@ -108,25 +108,38 @@ async def test_daily_summary_combines_revenue_payments_tax_balances_and_audit_st
     assert result.ok is True
     assert result.data["revenue"] == {
         "total": 1050.12,
+        "total_by_currency": {"TRY": 1050.12},
         "total_with_tax": 1155.14,
+        "total_with_tax_by_currency": {"TRY": 1155.14},
         "by_category": {
-            "room": {"amount": 1000.12, "tax": 100.01, "total": 1100.14, "count": 2},
-            "other": {"amount": 50.0, "tax": 5.0, "total": 55.0, "count": 1},
+            "room": {"amount": 1000.12, "tax": 100.01, "total": 1100.14, "count": 2, "amount_by_currency": {"TRY": 1000.12}, "tax_by_currency": {"TRY": 100.01}, "total_by_currency": {"TRY": 1100.14}},
+            "other": {"amount": 50.0, "tax": 5.0, "total": 55.0, "count": 1, "amount_by_currency": {"TRY": 50.0}, "tax_by_currency": {"TRY": 5.0}, "total_by_currency": {"TRY": 55.0}},
         },
         "charges_count": 3,
     }
+
+    daily_charge_match = charges.aggregate.call_args_list[0].args[0][0]["$match"]
+    daily_payment_pipeline = payments.aggregate.call_args.args[0]
+    assert daily_charge_match["business_date"] == "2026-08-25"
+    payment_match = daily_payment_pipeline[0]["$match"]
+    assert payment_match["$or"][0] == {"business_date": "2026-08-25"}
+    legacy_date_match = payment_match["$or"][1]["$and"][1]["$or"]
+    assert {"processed_at": {"$regex": "^2026-08-25"}} in legacy_date_match
+    assert daily_payment_pipeline[1]["$group"]["_id"]["method"] == {"$ifNull": ["$payment_method", "$method"]}
     assert result.data["payments"] == {
         "total": 550.0,
+        "total_by_currency": {"TRY": 550.0},
         "by_method": {
-            "card": {"amount": 500.0, "count": 2},
-            "other": {"amount": 50.0, "count": 1},
+            "card": {"amount": 500.0, "count": 2, "amount_by_currency": {"TRY": 500.0}},
+            "other": {"amount": 50.0, "count": 1, "amount_by_currency": {"TRY": 50.0}},
         },
         "payments_count": 3,
     }
-    assert result.data["tax"]["breakdown"] == {"vat": 82.34, "accommodation_tax": 22.67}
+    assert result.data["tax"]["breakdown"] == {"vat": 82.34, "accommodation_tax": 22.67, "by_currency": {"TRY": {"vat": 82.34, "accommodation_tax": 22.67}}}
     assert result.data["open_folios"] == {
         "count": 3,
-        "balance": {"total": 300.0, "receivable": 350.0, "overpayment": 50.0},
+        "balance": {"total": 300.0, "receivable": 350.0, "overpayment": 50.0}, "items": [],
+        "balance_by_currency": {"TRY": {"total": 300.0, "receivable": 350.0, "overpayment": 50.0}},
     }
     assert result.data["net_position"] == 605.14
     assert result.data["audit_status"] == "completed"
@@ -155,23 +168,26 @@ async def test_daily_summary_degrades_each_failed_subquery_to_safe_defaults():
 @pytest.mark.asyncio
 async def test_payment_reconciliation_detects_duplicate_orphan_rate_and_high_balance_issues():
     charges = [
-        {"id": "charge-1", "booking_id": "booking-1", "charge_category": "room", "amount": 100.0, "total": 110.0, "description": "Room"},
-        {"id": "charge-2", "booking_id": "booking-1", "charge_category": "room", "amount": 100.0, "total": 110.0, "description": "Room"},
-        {"id": "charge-3", "booking_id": "booking-missing", "charge_category": "minibar", "amount": 50.0, "total": 50.0},
+        {"id": "charge-1", "booking_id": "booking-1", "charge_category": "room", "amount": 100.0, "total": 110.0, "description": "Room", "currency": "TRY"},
+        {"id": "charge-2", "booking_id": "booking-1", "charge_category": "room", "amount": 100.0, "total": 110.0, "description": "Room", "currency": "TRY"},
+        {"id": "charge-3", "booking_id": "booking-missing", "charge_category": "minibar", "amount": 50.0, "total": 50.0, "currency": "USD"},
     ]
     folio_charges = _find_collection(AsyncCursor(charges))
-    payments = _find_collection(AsyncCursor([{"id": "payment-1", "amount": 200.0}]))
+    payments = _find_collection(AsyncCursor([{"id": "payment-1", "amount": 200.0, "currency": "TRY"}]))
     folios = _find_collection(
         AsyncCursor([{"id": "folio-1", "folio_number": "F-1", "balance": 1500.0}])
     )
     bookings = _find_collection(
-        AsyncCursor([{"id": "booking-1", "room_rate": 120.0, "status": "checked_in"}])
+        AsyncCursor([{"id": "booking-1", "room_rate": 120.0, "status": "checked_in"}]),
+        AsyncCursor([{"id": "booking-1", "guest_id": "g1", "guest_name": "Test Guest", "room_id": "r1", "room_no": "101"}])
     )
     database = SimpleNamespace(
         folio_charges=folio_charges,
         payments=payments,
         folios=folios,
         bookings=bookings,
+        guests=_find_collection(AsyncCursor([])),
+        rooms=_find_collection(AsyncCursor([])),
     )
 
     result = await _service(database).get_payment_reconciliation(_ctx(), "2026-08-25")
@@ -180,6 +196,9 @@ async def test_payment_reconciliation_detects_duplicate_orphan_rate_and_high_bal
     assert result.data["charges_total"] == 270.0
     assert result.data["payments_total"] == 200.0
     assert result.data["variance"] == 70.0
+    assert result.data["charges_by_currency"] == {"TRY": 220.0, "USD": 50.0}
+    assert result.data["payments_by_currency"] == {"TRY": 200.0}
+    assert result.data["variance_by_currency"] == {"TRY": 20.0, "USD": 50.0}
     assert result.data["is_balanced"] is False
     issue_types = {item["type"] for item in result.data["discrepancies"]}
     assert issue_types == {"duplicate_charge", "orphan_charge", "rate_discrepancy", "high_balance"}
@@ -215,14 +234,41 @@ async def test_payment_reconciliation_reports_booking_enrichment_failure():
         ),
         payments=_find_collection(AsyncCursor()),
         folios=_find_collection(AsyncCursor()),
-        bookings=_find_collection(AsyncCursor(error=RuntimeError("booking lookup failed"))),
+        bookings=_find_collection(AsyncCursor(error=RuntimeError("booking lookup failed")), AsyncCursor(error=RuntimeError("booking lookup failed"))),
+        guests=_find_collection(AsyncCursor([])),
+        rooms=_find_collection(AsyncCursor([])),
     )
 
     result = await _service(database).get_payment_reconciliation(_ctx(), "2026-08-25")
 
     assert result.data["degraded"] is True
-    assert result.data["degraded_subqueries"] == ["bookings_enrich"]
+    assert set(result.data["degraded_subqueries"]) == {"bookings_enrich", "discrepancies_enrich"}
     assert result.data["discrepancies"][0]["type"] == "orphan_charge"
+
+
+@pytest.mark.asyncio
+async def test_payment_reconciliation_keeps_folio_data_when_high_balance_enrichment_fails():
+    """A guest/room display lookup must not hide financial reconciliation data."""
+    database = SimpleNamespace(
+        folio_charges=_find_collection(AsyncCursor()),
+        payments=_find_collection(AsyncCursor()),
+        folios=_find_collection(
+            AsyncCursor([{"id": "folio-1", "folio_number": "F-1", "balance": 1500.0}])
+        ),
+        bookings=_find_collection(AsyncCursor()),
+    )
+    service = _service(database)
+    service._enrich_with_guest_room = AsyncMock(
+        side_effect=[[], RuntimeError("guest lookup unavailable")]
+    )
+
+    result = await service.get_payment_reconciliation(_ctx(), "2026-08-25")
+
+    assert result.ok is True
+    assert result.data["high_balance_count"] == 1
+    assert result.data["high_balance_folios"][0]["folio_number"] == "F-1"
+    assert result.data["degraded"] is True
+    assert result.data["degraded_subqueries"] == ["high_balance_folios_enrich"]
 
 
 @pytest.mark.asyncio
@@ -253,18 +299,32 @@ async def test_financial_report_aggregates_revenue_payments_audits_and_occupancy
     assert result.ok is True
     assert result.data["summary"] == {
         "total_revenue": 150.0,
+        "total_revenue_by_currency": {"TRY": 150.0},
         "total_tax": 15.0,
+        "total_tax_by_currency": {"TRY": 15.0},
         "total_with_tax": 165.0,
         "total_payments": 80.0,
+        "total_payments_by_currency": {"TRY": 80.0},
         "net_position": 85.0,
+        "net_position_by_currency": {"TRY": 85.0},
         "total_bookings": 4,
         "total_rooms": 10,
     }
-    assert result.data["revenue_by_category"]["room"] == {"amount": 100.0, "tax": 10.0, "count": 1}
-    assert result.data["revenue_by_category"]["other"] == {"amount": 50.0, "tax": 5.0, "count": 2}
+    assert result.data["revenue_by_category"]["room"]["amount_by_currency"] == {"TRY": 100.0}
+    assert result.data["revenue_by_category"]["other"]["amount_by_currency"] == {"TRY": 50.0}
     assert len(result.data["revenue_by_date"]) == 2
-    assert result.data["payments_by_method"] == {"cash": {"amount": 80.0, "count": 1}}
+    assert result.data["payments_by_method"] == {"cash": {"amount": 80.0, "count": 1, "amount_by_currency": {"TRY": 80.0}}}
     assert result.data["degraded"] is False
+
+    # Room charges are accounted by business date, while front-desk payments
+    # are timestamped when processed.  Both fields must remain in the report
+    # query; otherwise a completed night audit can misleadingly show zero.
+    charge_match = database.folio_charges.aggregate.call_args.args[0][0]["$match"]
+    payment_pipeline = database.payments.aggregate.call_args.args[0]
+    payment_match = payment_pipeline[0]["$match"]
+    assert charge_match["business_date"] == {"$gte": "2026-08-24", "$lte": "2026-08-25"}
+    assert {"processed_at": {"$gte": "2026-08-24", "$lte": "2026-08-25T99"}} in payment_match["$or"]
+    assert payment_pipeline[1]["$group"]["_id"]["method"] == {"$ifNull": ["$payment_method", "$method"]}
 
 
 @pytest.mark.asyncio
@@ -399,6 +459,7 @@ async def test_integrity_check_surfaces_each_operational_issue_and_audit_mismatc
     folio_charges.count_documents = AsyncMock(side_effect=[1, 1, 1])
     database = SimpleNamespace(
         bookings=bookings,
+        daily_rates=_find_collection(AsyncCursor()),
         folios=folios,
         folio_charges=folio_charges,
         night_audit_runs=SimpleNamespace(
@@ -421,4 +482,8 @@ async def test_integrity_check_surfaces_each_operational_issue_and_audit_mismatc
     assert checks["closed_folio_charges"]["status"] == "error"
     assert checks["audit_charge_count"]["status"] == "error"
     assert result.data["summary"]["overall_status"] == "fail"
+    assert any(
+        call.args[0].get("is_complimentary") == {"$ne": True}
+        for call in bookings.find.call_args_list
+    )
     service._enrich_with_guest_room.assert_awaited_once()

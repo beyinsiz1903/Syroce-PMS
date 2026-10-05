@@ -291,6 +291,7 @@ MODULE_DEFAULTS: dict[str, bool] = {
     "rate_management": True,
     "booking_engine": True,
     "guest_advanced": True,
+    "agency_requests": True,
     "revenue_management": True,
     "multi_property": True,
     "group_sales": True,
@@ -321,7 +322,10 @@ def get_tenant_modules(tenant_doc: dict[str, Any]) -> dict[str, bool]:
     """Merge stored tenant modules with tier-based defaults."""
     from domains.admin.subscription_models import get_plan_default_modules
 
-    tier = (tenant_doc.get("subscription_tier") or "basic").lower()
+    # `pms_lite` predates the commercial tier names. It is a real, narrower
+    # plan, so its explicit plan must win over a legacy/default tier value.
+    plan = (tenant_doc.get("subscription_plan") or tenant_doc.get("plan") or "").lower()
+    tier = "pms_lite" if plan == "pms_lite" else (tenant_doc.get("subscription_tier") or "basic").lower()
     if tier == "pro":
         tier = "professional"
     if tier == "ultra":
@@ -473,7 +477,7 @@ def require_module(module_name: str):
                 )
         if not modules.get(module_name, False):
             if module_name == "academy":
-                pass # Local testing bypass for academy module
+                pass  # Local testing bypass for academy module
             else:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
@@ -481,6 +485,12 @@ def require_module(module_name: str):
                 )
 
     return dependency
+
+
+async def require_finance(current_user: User = Depends(get_current_user)) -> User:
+    if current_user.role not in [UserRole.ADMIN, UserRole.SUPER_ADMIN, UserRole.FINANCE]:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Bu islemi sadece yonetici veya finans kullanicilari yapabilir")
+    return current_user
 
 
 async def require_admin(current_user: User = Depends(get_current_user)) -> User:

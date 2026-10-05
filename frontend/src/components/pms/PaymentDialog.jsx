@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import axios from 'axios';
 import { toast } from 'sonner';
@@ -13,15 +13,32 @@ import {
   classifyGuestPayment,
   guestPaymentClassificationLabel,
 } from '@/utils/paymentClassification';
+import { bookingFinancials } from '@/lib/bookingFinancials';
+import { formatCurrency } from '@/lib/currency';
 
 const PaymentDialog = ({ open, onClose, selectedBooking, paymentForm, setPaymentForm, onPaymentDone }) => {
   const { t } = useTranslation();
   const [submitting, setSubmitting] = useState(false);
+  const [folios, setFolios] = useState([]);
   const submittingRef = useRef(false);
 
-  const balance = selectedBooking
-    ? Math.max(0, (selectedBooking.total_amount || 0) - (selectedBooking.paid_amount || 0))
-    : 0;
+  useEffect(() => {
+    let active = true;
+    if (!open || !selectedBooking?.id) {
+      setFolios([]);
+      return () => { active = false; };
+    }
+    axios.get(`/folio/booking/${selectedBooking.id}`)
+      .then(({ data }) => { if (active) setFolios(Array.isArray(data) ? data : []); })
+      .catch(() => { if (active) setFolios([]); });
+    return () => { active = false; };
+  }, [open, selectedBooking?.id]);
+
+  const financials = useMemo(
+    () => bookingFinancials(selectedBooking || {}, folios),
+    [selectedBooking, folios],
+  );
+  const balance = Math.max(0, financials.balance);
   const isPartialPayment = paymentForm.amount > 0 && paymentForm.amount < balance;
   const isOverPayment = paymentForm.amount > balance && balance > 0;
 
@@ -51,7 +68,7 @@ const PaymentDialog = ({ open, onClose, selectedBooking, paymentForm, setPayment
         setPaymentForm({ amount: 0, method: 'card', payment_type: 'interim', reference: '', notes: '' });
         onPaymentDone?.();
       } else {
-        toast.error('No folio found for this booking');
+        toast.error('Bu rezervasyon için folyo bulunamadı');
       }
     } catch (error) {
       toast.error(t('messages.error.saveFailed'));
@@ -67,7 +84,7 @@ const PaymentDialog = ({ open, onClose, selectedBooking, paymentForm, setPayment
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle style={{ fontFamily: 'Manrope' }}>{t('folio.postPayment')}</DialogTitle>
-          <DialogDescription>Record payment for this booking</DialogDescription>
+          <DialogDescription>Rezervasyon tahsilatını kaydedin</DialogDescription>
         </DialogHeader>
         
         {selectedBooking && (
@@ -77,15 +94,15 @@ const PaymentDialog = ({ open, onClose, selectedBooking, paymentForm, setPayment
               <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 space-y-2" data-testid="payment-intelligence">
                 <div className="flex justify-between text-xs">
                   <span className="text-slate-500">Toplam</span>
-                  <span className="font-medium">{(selectedBooking.total_amount || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })} TL</span>
+                  <span className="font-medium">{formatCurrency(financials.total, financials.currency, { decimals: 2 })}</span>
                 </div>
                 <div className="flex justify-between text-xs">
-                  <span className="text-slate-500">Odenen</span>
-                  <span className="font-medium text-emerald-600">{(selectedBooking.paid_amount || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })} TL</span>
+                  <span className="text-slate-500">Ödenen</span>
+                  <span className="font-medium text-emerald-600">{formatCurrency(financials.paid, financials.currency, { decimals: 2 })}</span>
                 </div>
                 <div className="flex justify-between text-xs border-t pt-1.5">
                   <span className="text-slate-700 font-semibold">Kalan</span>
-                  <span className="font-bold text-red-600">{balance.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} TL</span>
+                  <span className="font-bold text-red-600">{formatCurrency(balance, financials.currency, { decimals: 2 })}</span>
                 </div>
                 {/* Quick fill button */}
                 <Button
@@ -96,7 +113,7 @@ const PaymentDialog = ({ open, onClose, selectedBooking, paymentForm, setPayment
                   data-testid="payment-fill-balance"
                 >
                   <Lightbulb className="w-3 h-3 mr-1" />
-                  Tüm bakiyeyi al: {balance.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} TL
+                  Tüm bakiyeyi al: {formatCurrency(balance, financials.currency, { decimals: 2 })}
                 </Button>
               </div>
             )}
@@ -106,7 +123,7 @@ const PaymentDialog = ({ open, onClose, selectedBooking, paymentForm, setPayment
               <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-md px-3 py-2" data-testid="payment-partial-warning">
                 <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
                 <p className="text-xs text-amber-700">
-                  Kismi ödeme. Kalan bakiye: {(balance - paymentForm.amount).toLocaleString('tr-TR', { minimumFractionDigits: 2 })} TL
+                  Kısmi ödeme. Kalan bakiye: {formatCurrency(balance - paymentForm.amount, financials.currency, { decimals: 2 })}
                 </p>
               </div>
             )}
@@ -126,7 +143,7 @@ const PaymentDialog = ({ open, onClose, selectedBooking, paymentForm, setPayment
                   <SelectItem value="cash">{t('folio.cash')}</SelectItem>
                   <SelectItem value="card">{t('folio.card')}</SelectItem>
                   <SelectItem value="bank_transfer">{t('folio.bankTransfer')}</SelectItem>
-                  <SelectItem value="cheque">Cheque</SelectItem>
+                  <SelectItem value="cheque">Çek</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -137,17 +154,17 @@ const PaymentDialog = ({ open, onClose, selectedBooking, paymentForm, setPayment
               <div className="mt-0.5">İşlem türü tutara göre otomatik belirlenir. Depozito işlemleri Depozito ekranından yapılır.</div>
             </div>
             <div>
-              <Label>Reference</Label>
+              <Label>Referans</Label>
               <Input value={paymentForm.reference}
                 onChange={(e) => setPaymentForm({...paymentForm, reference: e.target.value})}
-                placeholder="Transaction reference"
+                placeholder="İşlem referansı"
                 data-testid="payment-reference-input" />
             </div>
             <div>
               <Label>{t('common.notes')}</Label>
               <Textarea value={paymentForm.notes}
                 onChange={(e) => setPaymentForm({...paymentForm, notes: e.target.value})}
-                placeholder="Payment notes..." rows={2}
+                placeholder="Ödeme notları..." rows={2}
                 data-testid="payment-notes-input" />
             </div>
             <div className="flex justify-end gap-2 pt-4 border-t">

@@ -31,8 +31,10 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator
 
+from core.atomic_booking import create_booking_atomic
 from core.database import db
 from core.security import get_current_user
+from core.tenant_currency import get_tenant_currency
 from core.tenant_db import get_system_db
 from modules.pms_core.role_permission_service import require_op
 
@@ -54,8 +56,10 @@ async def upsell_products(
     q: dict[str, Any] = {"tenant_id": current_user.tenant_id, "is_active": {"$ne": False}}
     if category:
         q["category"] = category
+    tenant_currency, _ = await get_tenant_currency(current_user.tenant_id)
     items: list[dict] = []
     async for p in db.upsell_products.find(q, {"_id": 0}).limit(200):
+        p["currency"] = str(p.get("currency") or tenant_currency).upper()
         items.append(p)
     return {"products": items, "total": len(items)}
 
@@ -64,30 +68,21 @@ async def upsell_products(
 # CENTRAL OFFICE (multi-property HQ view)
 # ─────────────────────────────────────────────────────────────────────
 async def _central_chain_properties(current_user) -> list[dict]:
-    tenant_id = current_user.tenant_id
-    own = await _system_db.tenants.find_one(
-        {"$or": [{"tenant_id": tenant_id}, {"id": tenant_id}]},
-        {"_id": 0, "chain_id": 1, "tenant_id": 1, "id": 1, "hotel_name": 1, "name": 1, "is_chain_headquarters": 1},
+    from modules.pms_core.chain_access import resolve_chain_properties, tenant_id_from_document
+
+    _own, tenants = await resolve_chain_properties(
+        current_user,
+        require_headquarters=True,
+        system_db=_system_db,
     )
-    chain_id = (own or {}).get("chain_id")
-    if chain_id:
-        role = getattr(getattr(current_user, "role", None), "value", getattr(current_user, "role", None))
-        is_hq = bool(getattr(current_user, "is_chain_headquarters", False) or (own or {}).get("is_chain_headquarters"))
-        if role != "super_admin" and not is_hq:
-            raise HTTPException(403, "Zincir geneli merkezi ofis görünümü yalnız merkez tesis kullanıcılarına açıktır")
-        tenants = await _system_db.tenants.find(
-            {"chain_id": chain_id},
-            {"_id": 0, "tenant_id": 1, "id": 1, "hotel_name": 1, "name": 1},
-        ).to_list(500)
-    else:
-        tenants = [own or {"id": tenant_id, "name": tenant_id}]
     return [
         {
-            "tenant_id": tenant.get("tenant_id") or tenant.get("id"),
-            "property_name": tenant.get("hotel_name") or tenant.get("name") or tenant.get("tenant_id") or tenant.get("id"),
+            "tenant_id": tenant_id_from_document(tenant),
+            "property_name": tenant.get("property_name") or tenant.get("hotel_name") or tenant.get("name") or tenant_id_from_document(tenant),
+            "currency": str(tenant.get("currency") or tenant.get("default_currency") or "TRY").upper(),
         }
         for tenant in tenants
-        if tenant.get("tenant_id") or tenant.get("id")
+        if tenant_id_from_document(tenant)
     ]
 
 
@@ -104,12 +99,17 @@ async def _central_property_metrics(property_doc: dict, period_start: str, perio
                 {"date": {"$gte": period_start, "$lt": period_end}},
             ],
         },
-        {"_id": 0, "total": 1, "amount": 1},
+        {"_id": 0, "total": 1, "amount": 1, "currency": 1, "currency_code": 1},
     ).to_list(100000)
-    revenue = round(sum(float(row.get("total", row.get("amount", 0)) or 0) for row in charges), 2)
-    today_checkins = await _system_db.bookings.count_documents(
-        {"tenant_id": tenant_id, "check_in": today, "status": {"$ne": "cancelled"}}
-    )
+    revenue_by_currency: dict[str, float] = {}
+    for row in charges:
+        currency = str(row.get("currency") or row.get("currency_code") or property_doc.get("currency") or "TRY").upper()
+        if currency == "TL":
+            currency = "TRY"
+        amount = float(row.get("total", row.get("amount", 0)) or 0)
+        revenue_by_currency[currency] = round(revenue_by_currency.get(currency, 0.0) + amount, 2)
+    revenue = round(sum(revenue_by_currency.values()), 2)
+    today_checkins = await _system_db.bookings.count_documents({"tenant_id": tenant_id, "check_in": today, "status": {"$ne": "cancelled"}})
     total_guests = await _system_db.guests.count_documents({"tenant_id": tenant_id})
     total_rooms = len(rooms)
     return {
@@ -122,7 +122,24 @@ async def _central_property_metrics(property_doc: dict, period_start: str, perio
         "today_checkins": today_checkins,
         "total_guests": total_guests,
         "total_revenue": revenue,
+        "total_revenue_by_currency": revenue_by_currency,
     }
+
+
+def _central_revenue_totals(rows: list[dict]) -> dict[str, float]:
+    totals: dict[str, float] = {}
+    for row in rows:
+        for currency, amount in (row.get("total_revenue_by_currency") or {}).items():
+            code = str(currency or "TRY").upper()
+            totals[code] = round(totals.get(code, 0.0) + float(amount or 0), 2)
+    return totals
+
+
+def _single_currency_total(totals: dict[str, float]) -> float | None:
+    non_zero = [float(amount) for amount in totals.values() if float(amount or 0) != 0]
+    if len(non_zero) > 1:
+        return None
+    return round(non_zero[0], 2) if non_zero else 0.0
 
 
 @router.get("/central-office/dashboard")
@@ -132,12 +149,11 @@ async def central_office_dashboard(current_user=Depends(get_current_user), _perm
     month_start = now.date().replace(day=1).isoformat()
     tomorrow = (now.date() + timedelta(days=1)).isoformat()
     properties = await _central_chain_properties(current_user)
-    breakdown = await asyncio.gather(
-        *(_central_property_metrics(property_doc, month_start, tomorrow, today) for property_doc in properties)
-    )
+    breakdown = await asyncio.gather(*(_central_property_metrics(property_doc, month_start, tomorrow, today) for property_doc in properties))
     total_rooms = sum(row["total_rooms"] for row in breakdown)
     occupied = sum(row["occupied_rooms"] for row in breakdown)
-    total_revenue = round(sum(row["total_revenue"] for row in breakdown), 2)
+    total_revenue_by_currency = _central_revenue_totals(breakdown)
+    total_revenue = _single_currency_total(total_revenue_by_currency)
     return {
         "properties": breakdown,
         "property_breakdown": breakdown,
@@ -151,6 +167,7 @@ async def central_office_dashboard(current_user=Depends(get_current_user), _perm
         "total_properties": len(breakdown),
         "kpis": {
             "total_revenue_mtd": total_revenue,
+            "total_revenue_mtd_by_currency": total_revenue_by_currency,
             "average_occupancy": round((occupied / total_rooms) * 100, 2) if total_rooms else 0.0,
         },
     }
@@ -162,12 +179,8 @@ async def central_office_alerts(current_user=Depends(get_current_user), _perm=De
     alerts = []
     for property_doc in properties:
         tenant_id = property_doc["tenant_id"]
-        failed_night = await _system_db.night_audit_runs.count_documents(
-            {"tenant_id": tenant_id, "gl_bridge_status": "failed"}
-        )
-        failed_pos = await _system_db.pos_transactions.count_documents(
-            {"tenant_id": tenant_id, "gl_bridge_status": "failed"}
-        )
+        failed_night = await _system_db.night_audit_runs.count_documents({"tenant_id": tenant_id, "gl_bridge_status": "failed"})
+        failed_pos = await _system_db.pos_transactions.count_documents({"tenant_id": tenant_id, "gl_bridge_status": "failed"})
         if failed_night or failed_pos:
             alerts.append(
                 {
@@ -199,11 +212,13 @@ async def central_office_revenue(current_user=Depends(get_current_user), _perm=D
     end = (now.date() + timedelta(days=1)).isoformat()
     properties = await _central_chain_properties(current_user)
     rows = await asyncio.gather(*(_central_property_metrics(row, start, end, today) for row in properties))
-    total = round(sum(row["total_revenue"] for row in rows), 2)
+    totals_by_currency = _central_revenue_totals(rows)
+    total = _single_currency_total(totals_by_currency)
     return {
         "properties": rows,
         "total_chain_revenue": total,
-        "totals": {"revenue": total},
+        "total_chain_revenue_by_currency": totals_by_currency,
+        "totals": {"revenue": total, "revenue_by_currency": totals_by_currency},
         "period": {"start": start, "end": today},
     }
 
@@ -300,7 +315,69 @@ async def hotel_booking_request_approve(
     req = await db.agency_booking_requests.find_one({"request_id": request_id, "tenant_id": current_user.tenant_id})
     if not req:
         raise HTTPException(status_code=404, detail="Talep bulunamadi")
+    if req.get("status") == "approved" and req.get("booking_id"):
+        return {"approved": True, "request_id": request_id, "booking_id": req.get("booking_id"), "message": "Zaten onaylanmis"}
     now = datetime.now(UTC).isoformat()
+    # Rezervasyonu oluştur
+    booking_id = str(uuid.uuid4())
+    booking_doc = {
+        "id": booking_id,
+        "tenant_id": current_user.tenant_id,
+        "guest_name": req.get("customer_name"),
+        "guest_email": req.get("customer_email"),
+        "guest_phone": req.get("customer_phone"),
+        "check_in": req.get("check_in"),
+        "check_out": req.get("check_out"),
+        "nights": req.get("nights", 1),
+        "adults": req.get("adults", 1),
+        "children": req.get("children", 0),
+        "total_amount": float(req.get("total_price", 0)),
+        "total_price": float(req.get("total_price", 0)),
+        "currency": req.get("currency", "TRY"),
+        "status": "confirmed",
+        "channel": "agency",
+        "agency_id": req.get("agency_id"),
+        "room_type_id": req.get("room_type_id"),
+        "created_at": now,
+        "updated_at": now,
+    }
+    # Rezervasyonu oluştur
+    try:
+        await create_booking_atomic(tenant_id=current_user.tenant_id, booking_doc=booking_doc)
+    except Exception as e:
+        if "Conflict" in str(e) or "already booked" in str(e):
+            raise HTTPException(status_code=409, detail=f"Oda müsait değil: {e}")
+        raise HTTPException(status_code=500, detail=f"Rezervasyon oluşturulamadı: {e}")
+    folio_id = str(uuid.uuid4())
+    folio_doc = {
+        "id": folio_id,
+        "tenant_id": current_user.tenant_id,
+        "booking_id": booking_id,
+        "folio_number": f"F-{datetime.now(UTC).year}-{uuid.uuid4().hex[:5].upper()}",
+        "folio_type": "guest",
+        "guest_id": None,
+        "status": "open",
+        "balance": float(req.get("total_price", 0)),
+        "total": float(req.get("total_price", 0)),
+        "room_charge": float(req.get("total_price", 0)),
+        "currency": req.get("currency", "TRY"),
+        "created_at": now,
+    }
+    await db.folios.insert_one(folio_doc)
+
+    await db.audit_logs.insert_one(
+        {
+            "id": str(uuid.uuid4()),
+            "tenant_id": current_user.tenant_id,
+            "action": "CREATE_BOOKING",
+            "entity": "booking",
+            "entity_id": booking_id,
+            "actor_id": current_user.id,
+            "created_at": now,
+            "details": {"source": "agency_request", "request_id": request_id},
+        }
+    )
+
     await db.agency_booking_requests.update_one(
         {"request_id": request_id, "tenant_id": current_user.tenant_id},
         {
@@ -309,10 +386,11 @@ async def hotel_booking_request_approve(
                 "approved_at": now,
                 "approved_by": current_user.id,
                 "updated_at": now,
+                "booking_id": booking_id,
             }
         },
     )
-    return {"approved": True, "request_id": request_id}
+    return {"approved": True, "request_id": request_id, "booking_id": booking_id}
 
 
 class BookingRequestRejectBody(BaseModel):
@@ -340,6 +418,8 @@ async def hotel_booking_request_reject(
     req = await db.agency_booking_requests.find_one({"request_id": request_id, "tenant_id": current_user.tenant_id})
     if not req:
         raise HTTPException(status_code=404, detail="Talep bulunamadi")
+    if req.get("status") == "approved" and req.get("booking_id"):
+        return {"approved": True, "request_id": request_id, "booking_id": req.get("booking_id"), "message": "Zaten onaylanmis"}
     now = datetime.now(UTC).isoformat()
     await db.agency_booking_requests.update_one(
         {"request_id": request_id, "tenant_id": current_user.tenant_id},
@@ -386,8 +466,19 @@ async def media_list(
 #                            Move to routers/pms_bookings.py.
 class GuestInfoPatch(BaseModel):
     guest_name: str | None = None
+    guest_first_name: str | None = None
+    guest_last_name: str | None = None
     guest_phone: str | None = None
     guest_email: str | None = None
+    guest_id_number: str | None = None
+    guest_id_type: str | None = None
+    guest_nationality: str | None = None
+    guest_birth_date: str | None = None
+    guest_gender: str | None = None
+    guest_birth_place: str | None = None
+    guest_address: str | None = None
+    guest_document_expiry_date: str | None = None
+    guest_document_issue_date: str | None = None
     notes: str | None = None
     special_requests: str | None = None
     arrival_time: str | None = None
@@ -403,9 +494,50 @@ async def patch_booking_guest_info(
     booking = await db.bookings.find_one({"id": booking_id, "tenant_id": current_user.tenant_id})
     if not booking:
         raise HTTPException(status_code=404, detail="Rezervasyon bulunamadi")
-    update = {k: v for k, v in body.dict().items() if v is not None}
+    update = {k: v for k, v in body.model_dump().items() if v is not None}
     if not update:
         return {"updated": False, "id": booking_id}
+    if not update.get("guest_name") and (update.get("guest_first_name") or update.get("guest_last_name")):
+        update["guest_name"] = " ".join(value.strip() for value in (update.get("guest_first_name", ""), update.get("guest_last_name", "")) if value and value.strip())
     update["updated_at"] = datetime.now(UTC).isoformat()
-    await db.bookings.update_one({"id": booking_id, "tenant_id": current_user.tenant_id}, {"$set": update})
+    from security.field_encryption import get_field_encryption_service
+
+    booking_update = get_field_encryption_service().encrypt_document(update.copy(), collection="bookings")
+    await db.bookings.update_one(
+        {"id": booking_id, "tenant_id": current_user.tenant_id},
+        {"$set": booking_update},
+    )
+
+    # Keep the linked guest profile in sync. Quick-ID is an OCR adapter; PMS is
+    # the single source of truth and receives the durable PII record.
+    guest_id = booking.get("guest_id")
+    if guest_id:
+        guest_update = {
+            "name": update.get("guest_name"),
+            "first_name": update.get("guest_first_name"),
+            "last_name": update.get("guest_last_name"),
+            "id_number": update.get("guest_id_number"),
+            "id_type": update.get("guest_id_type"),
+            "nationality": update.get("guest_nationality"),
+            "date_of_birth": update.get("guest_birth_date"),
+            "birth_date": update.get("guest_birth_date"),
+            "gender": update.get("guest_gender"),
+            "birth_place": update.get("guest_birth_place"),
+            "address": update.get("guest_address"),
+            "document_expiry_date": update.get("guest_document_expiry_date"),
+            "document_issue_date": update.get("guest_document_issue_date"),
+            "scanned_via_quick_id": True,
+        }
+        guest_update = {key: value for key, value in guest_update.items() if value is not None}
+        existing_guest = await db.guests.find_one(
+            {"id": guest_id, "tenant_id": current_user.tenant_id},
+            {"_id": 0},
+        )
+        if existing_guest and guest_update:
+            from security.guest_write import encrypt_guest_update
+
+            await db.guests.update_one(
+                {"id": guest_id, "tenant_id": current_user.tenant_id},
+                {"$set": encrypt_guest_update(guest_update, existing=existing_guest)},
+            )
     return {"updated": True, "id": booking_id, **update}

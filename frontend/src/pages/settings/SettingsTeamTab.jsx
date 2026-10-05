@@ -19,11 +19,13 @@ import BulkRoomsDialog from '@/components/pms/BulkRoomsDialog';
 import { useCurrency } from '@/context/CurrencyContext';
 import { formatCurrency } from '@/lib/currency';
 import { confirmDialog } from '@/lib/dialogs';
+import { Link } from 'react-router-dom';
 
 export default function SettingsTeamTab({ Users, team, UserCheck, teamMeta, Shield, Crown, setActiveTab, setNewMember, setShowAddModal, teamLoading, getRoleLabel, isSameUser, handleUpdateRole, handleRemoveMember, isAdmin, grLoading, grSettings, toggleGuestRequestRole, saveGuestRequestSettings, grSaving }) {
     const { t } = useTranslation();
     return (
         <TabsContent value="team" className="space-y-6">
+            {isAdmin && <Button asChild variant="outline"><Link to="/admin/otel-kullanicilari">Kullanıcıya özel modül ve sayfa yetkilerini düzenle</Link></Button>}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <KpiCard icon={Users} label="Toplam Üye" value={team.length} intent="default" className="shadow-sm rounded-xl border-slate-200" />
               <KpiCard icon={UserCheck} label="Max Kullanıcı" value={teamMeta.max_users === 999 ? '∞' : teamMeta.max_users} intent="info" className="shadow-sm rounded-xl border-slate-200" />
@@ -99,7 +101,7 @@ export default function SettingsTeamTab({ Users, team, UserCheck, teamMeta, Shie
                                   {allowedForSelect.map(r => <SelectItem key={r} value={r} className="text-[13px] font-medium focus:bg-slate-50">{getRoleLabel(r).label}</SelectItem>)}
                                 </SelectContent>
                               </Select>}
-                            {!isMe && member.role !== 'super_admin' && <Button variant="ghost" size="icon" className="text-rose-400 hover:text-rose-600 hover:bg-rose-50 h-9 w-9 rounded-lg transition-colors" onClick={() => handleRemoveMember(member.id, member.name)}>
+                            {!isMe && member.role !== 'super_admin' && <Button variant="ghost" size="icon" className="text-rose-400 hover:text-rose-600 hover:bg-rose-50 h-9 w-9 rounded-lg transition-colors" onClick={() => handleRemoveMember(member.id, member.name)} aria-label={`${member.name} kullanıcısını sil`}>
                                 <Trash2 className="w-4 h-4" />
                               </Button>}
                           </div>

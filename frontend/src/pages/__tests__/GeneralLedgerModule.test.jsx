@@ -1,13 +1,21 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
   collectIntegrationAccountCodes,
+  describeIncomeTotals,
+  downloadBlob,
+  formatVoucherHistoryEntry,
+  formatSettlementAmount,
   formatAccountMapping,
   getJournalValidationError,
   GL_ENDPOINTS,
+  isForeignCurrency,
+  markReversedJournalEntries,
   mergeAccountBalances,
+  normalizeAccountCode,
   normalizeTrialBalance,
   parseAccountMapping,
+  shouldFetchAccountsForTab,
   toJournalPayload,
   toVoucherPayload,
   voucherActionNames,
@@ -40,6 +48,8 @@ describe('GeneralLedgerModule persistent GL contract', () => {
       fxRevalue: '/gl/fx/revalue',
       chainConsolidated: '/gl/chain/consolidated',
       intercompanyRules: '/gl/chain/intercompany-rules',
+      chainTransfers: '/platform/multi-property/transfers',
+      chainTransferSettlements: '/platform/multi-property/transfer-settlements',
       eledgerSettings: '/gl/e-ledger/settings',
       eledgerPreflight: '/gl/e-ledger/preflight',
       eledgerSourcePackage: '/gl/e-ledger/source-package',
@@ -50,6 +60,11 @@ describe('GeneralLedgerModule persistent GL contract', () => {
       apGLMapping: '/ap/gl-mapping',
       fixedAssetGLMapping: '/fixed-assets/gl-mapping',
     });
+  });
+
+  it('keeps chain settlements in their original currency', () => {
+    expect(formatSettlementAmount(1000, 'TRY')).toContain('₺');
+    expect(formatSettlementAmount(250, 'EUR')).toContain('€');
   });
 
   it('does not expose a direct-post or client idempotency bypass in voucher payloads', () => {
@@ -89,12 +104,41 @@ describe('GeneralLedgerModule persistent GL contract', () => {
     });
   });
 
+  it('uses the account code when a picker supplies a code-and-name label', () => {
+    expect(normalizeAccountCode(' 100 Kasa ')).toBe('100');
+    expect(toVoucherPayload({
+      date: '2026-08-13',
+      type: 'Mahsup',
+      description: 'Hesap seçimi',
+      lines: [
+        { account_code: '100 Kasa', debit: 10, credit: 0, description: '' },
+        { account_code: '320 Satıcılar', debit: 0, credit: 10, description: '' },
+      ],
+    }).lines.map((line) => line.account_code)).toEqual(['100', '320']);
+  });
+
   it('exposes only the valid actions for each voucher state', () => {
     expect(voucherActionNames('draft')).toEqual(['edit', 'submit', 'cancel']);
     expect(voucherActionNames('submitted')).toEqual(['approve', 'reject']);
     expect(voucherActionNames('approved')).toEqual(['post']);
     expect(voucherActionNames('rejected')).toEqual(['edit', 'cancel']);
     expect(voucherActionNames('posted')).toEqual([]);
+  });
+
+  it('renders persisted voucher workflow events in concise local form', () => {
+    expect(formatVoucherHistoryEntry({
+      at: '2026-09-06T10:15:30+00:00',
+      by: 'approver-1',
+      action: 'post_failed',
+      reason: 'Hesap planında yok: 999',
+    })).toContain('Yevmiyeye işleme başarısız oldu');
+    expect(formatVoucherHistoryEntry({
+      at: '2026-09-06T10:15:30+00:00',
+      by: 'approver-1',
+      action: 'post_failed',
+      reason: 'Hesap planında yok: 999',
+    })).toContain('Gerekçe: Hesap planında yok: 999');
+    expect(formatVoucherHistoryEntry({ action: 'created', by: 'approver-1' })).not.toContain('approver-1');
   });
 
   it('keeps the journal save action disabled until the form is valid', () => {
@@ -122,6 +166,24 @@ describe('GeneralLedgerModule persistent GL contract', () => {
     expect(payload.lines[1]).not.toHaveProperty('currency');
   });
 
+  it('treats the ledger currency as a base amount, not a foreign-currency entry', () => {
+    const journal = {
+      date: '2026-09-03',
+      type: 'Mahsup',
+      description: 'TRY kasa fişi',
+      lines: [
+        { account_code: '100', debit: 1250, credit: 0, currency: 'TRY', foreign_amount: '', exchange_rate: '' },
+        { account_code: '600', debit: 0, credit: 1250, currency: '', foreign_amount: '', exchange_rate: '' },
+      ],
+    };
+
+    expect(isForeignCurrency('TRY')).toBe(false);
+    expect(getJournalValidationError(journal)).toBe('');
+    expect(toVoucherPayload(journal).lines[0]).toEqual({
+      account_code: '100', debit: 1250, credit: 0, memo: null,
+    });
+  });
+
   it('normalizes the persistent trial-balance response for the table', () => {
     expect(normalizeTrialBalance({
       rows: [{
@@ -144,6 +206,20 @@ describe('GeneralLedgerModule persistent GL contract', () => {
       }],
       totals: { total_debit: 100, total_credit: 100, balanced: true },
     });
+  });
+
+  it('marks legacy source journals as reversed from their linked contra entry', () => {
+    expect(markReversedJournalEntries([
+      { id: 'entry-1', source: 'manual_voucher' },
+      { id: 'entry-2', source: 'reversal', reverses_entry_id: 'entry-1' },
+      { id: 'entry-3', source: 'reversal', source_ref: 'entry-4' },
+      { id: 'entry-4', source: 'manual_voucher' },
+    ])).toMatchObject([
+      { id: 'entry-1', reversal_status: 'reversed' },
+      { id: 'entry-2', source: 'reversal' },
+      { id: 'entry-3', source: 'reversal' },
+      { id: 'entry-4', reversal_status: 'reversed' },
+    ]);
   });
 
   it('derives current account balances from the durable trial balance', () => {
@@ -182,5 +258,41 @@ describe('GeneralLedgerModule persistent GL contract', () => {
       { expense_account_code: '770', input_vat_account_code: '191' },
       { accumulated_depreciation_account_code: '257' },
     )).toEqual(['153', '191', '257', '391', '391.20', '770']);
+  });
+
+  it('loads the account plan before validating integration mappings', () => {
+    expect(shouldFetchAccountsForTab('integrations')).toBe(true);
+    expect(shouldFetchAccountsForTab('trial-balance')).toBe(false);
+  });
+
+  it('explains negative expense activity as a reversal without changing its sign', () => {
+    expect(describeIncomeTotals({ expenses: -116262.5, net_income: 116263.51 })).toEqual({
+      expenses: -116262.5,
+      netIncome: 116263.51,
+      expenseLabel: 'Net Gider İptali',
+      netLabel: 'Net Dönem Kârı',
+      hasExpenseReversal: true,
+    });
+  });
+
+  it('attaches a blob download before clicking and revokes it asynchronously', () => {
+    vi.useFakeTimers();
+    const createObjectURL = vi.fn(() => 'blob:report');
+    const revokeObjectURL = vi.fn();
+    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: createObjectURL });
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: revokeObjectURL });
+    const click = vi.spyOn(window.HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+
+    const blob = new Blob(['report']);
+    downloadBlob(blob, 'mizan.xlsx');
+
+    expect(createObjectURL).toHaveBeenCalledWith(blob);
+    expect(click).toHaveBeenCalledOnce();
+    expect(revokeObjectURL).not.toHaveBeenCalled();
+    vi.runAllTimers();
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:report');
+
+    click.mockRestore();
+    vi.useRealTimers();
   });
 });

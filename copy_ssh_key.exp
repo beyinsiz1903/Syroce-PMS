@@ -1,0 +1,21 @@
+#!/usr/bin/expect -f
+
+set timeout 30
+set ip "165.245.222.21"
+set password "Muratİlayda2026Cengizhan"
+
+spawn ssh-copy-id -o StrictHostKeyChecking=no root@$ip
+
+expect {
+    "password:" {
+        send "$password\r"
+        exp_continue
+    }
+    "Number of key(s) added:" {
+        puts "Key added successfully."
+    }
+    timeout {
+        puts "Timeout waiting for ssh-copy-id."
+        exit 1
+    }
+}

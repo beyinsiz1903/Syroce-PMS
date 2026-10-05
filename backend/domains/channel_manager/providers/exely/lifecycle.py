@@ -12,6 +12,8 @@ from pymongo.errors import DuplicateKeyError
 
 from core.database import db
 
+from .mapping_codes import inbound_mapping_query
+
 logger = logging.getLogger("exely.lifecycle")
 
 RECEIVED = "RECEIVED"
@@ -66,11 +68,7 @@ async def _mapping_status(tenant_id: str, rooms: list[dict[str, Any]]) -> tuple[
         if not rate_code:
             return False, "RATE_PLAN_CODE_MISSING"
         mapping = await db.exely_room_mappings.find_one(
-            {
-                "tenant_id": tenant_id,
-                "exely_room_code": room_code,
-                "exely_rate_plan_code": rate_code,
-            },
+            inbound_mapping_query(tenant_id, room_code, rate_code),
             {"_id": 0, "pms_room_type": 1},
         )
         if not mapping or not mapping.get("pms_room_type"):

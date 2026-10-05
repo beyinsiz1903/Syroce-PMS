@@ -1,18 +1,21 @@
 import React, { useState, useEffect, useLayoutEffect, useMemo, useRef, Suspense } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'sonner';
 import Layout from '@/components/Layout';
+import ProductState from '@/components/shared/ProductState';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { X, Calendar as CalendarIcon, User, MapPin, ArrowRight, Ban, ChevronDown } from 'lucide-react';
+import { X, Calendar as CalendarIcon, User, MapPin, ArrowRight, Ban, ChevronDown, Loader2 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { resetUnassignedListScroll } from './calendar/unassignedPanel';
 import { lazyWithPreload } from '@/routes/lazyWithPreload';
+import { runIdle } from '@/lib/idle';
 import { useCalendarRealtime } from './calendar/useCalendarRealtime';
 import { findOccupancyRule } from '@/utils/occupancyPricing';
+import { bookingSourceLabel } from '@/utils/bookingSource';
 
 import {
   CalendarHeader,
@@ -23,20 +26,37 @@ import {
   MoveReasonDialog,
   FindRoomDialog,
   isBookingOnDate,
+  getActiveBookingsForRoomOnDate,
+  findCalendarConflicts,
   toDateStringUTC,
   getDateRange,
   getSegmentColor,
   getStatusLabel,
   getRateTypeInfo,
+  getCalendarRoomNightRate,
+  getCalendarStayTotal,
   getUnassignedUrgency,
+  applyBookingOperation,
   sortByUrgency,
   roomOccupancyStatus,
   buildCalendarRateLookup,
+  validateStayResize,
+  normalizeRoomBlocksResponse,
+  applyRoomSwap,
 } from './calendar';
 import { useTranslation } from 'react-i18next';
+import { roomLabel } from '@/utils/displayIdentifiers';
+import RoomBlockDialog from '@/components/pms/RoomBlockDialog';
 
 import { parseBookingConflict } from '@/lib/bookingConflict';
 import { getRoomBlockForDate } from './calendar/calendarHelpers';
+import { bookingDragGrip, bookingDropCheckIn } from './calendar/bookingDragPlacement';
+import { mergeQuickPanelDetail, primaryQuickPanelFolio } from './calendar/quickPanel';
+import { recordInitialPrepayment } from './calendar/prepayment';
+import { hasRole } from '@/utils/authRoles';
+import { reservationEditLockManager } from '@/lib/reservationEditLockManager';
+import { cachedTenantCurrency } from '@/lib/currency';
+import { parseMoneyInput } from '@/lib/moneyInput';
 import {
   applyCalendarViewPreference,
   CALENDAR_VIEW_PREFERENCES_KEY,
@@ -53,6 +73,11 @@ const ReservationSidebar = lazyWithPreload(() => import('@/components/Reservatio
 const FolioDetailView = lazyWithPreload(() => import('@/pages/FolioDetailView'));
 const ReservationDetailModal = lazyWithPreload(() => import('@/pages/ReservationDetailModal'));
 const BookingConflictDialog = lazyWithPreload(() => import('@/components/pms/BookingConflictDialog'));
+
+const preloadReservationDetailModal = () => {
+  const pending = ReservationDetailModal.preload?.();
+  pending?.catch?.(() => {});
+};
 
 // ── Unassigned panel constants & virtualized row ──────────────────────────
 const UA_BORDER = {
@@ -80,6 +105,13 @@ const UnassignedCard = React.memo(function UnassignedCard({ data, index, style }
   const badgeColor = UA_BADGE[urgency.level] || 'bg-blue-100 text-blue-700';
   const sameTypeRooms = rooms.filter(r => roomMatchesBookingType(r, booking));
   const matchingRooms = sameTypeRooms.filter(r => roomIsFreeForBooking(r, booking, bookings));
+  const blockingBookings = sameTypeRooms.flatMap(room => bookings.filter(other => (
+    other.room_id === room.id
+    && other.id !== booking.id
+    && !['cancelled', 'checked_out', 'no_show'].includes(other.status)
+    && new Date(other.check_in) < new Date(booking.check_out)
+    && new Date(other.check_out) > new Date(booking.check_in)
+  )).map(other => ({ room, booking: other })));
   const guestCount = Number(booking.adults || 0) + Number(booking.children || 0);
   const currency = booking.currency || 'TRY';
   const formattedAmount = new Intl.NumberFormat('tr-TR', {
@@ -125,7 +157,7 @@ const UnassignedCard = React.memo(function UnassignedCard({ data, index, style }
             <span className="font-medium text-gray-700">{formattedAmount}</span>
           )}
           {guestCount > 0 && <span>{guestCount} misafir</span>}
-          {booking.channel && <span className="capitalize">{booking.channel}</span>}
+          {(booking.channel || booking.source_channel || booking.ota_channel) && <span>{bookingSourceLabel(booking)}</span>}
         </div>
         {externalId && (
           <p className="mt-1 text-[10px] text-gray-400 truncate" title={externalId}>Rezervasyon: {externalId}</p>
@@ -147,8 +179,12 @@ const UnassignedCard = React.memo(function UnassignedCard({ data, index, style }
               <span className="text-[10px] text-green-600 font-medium">{matchingRooms.length} {t('cm.pages_ReservationCalendar.musait_873fb')}</span>
             </div>
           ) : (
-            <span className="text-[10px] text-red-500 font-medium">
-              {sameTypeRooms.length === 0 ? 'Oda tipi eşleşmesi bulunamadı' : 'Bu tarihlerde uygun oda yok'}
+            <span className="text-[10px] text-red-500 font-medium" title={blockingBookings.map(item => `${item.room.room_number}: ${item.booking.guest_name || 'başka rezervasyon'}`).join(', ')}>
+              {sameTypeRooms.length === 0
+                ? 'Oda tipi eşleşmesi bulunamadı'
+                : blockingBookings.length > 0
+                  ? `${blockingBookings.map(item => item.room.room_number).filter(Boolean).join(', ')} numaralı oda başka rezervasyonla çakışıyor`
+                  : 'Oda müsaitliği oda-gece kilidi nedeniyle doğrulanamadı'}
             </span>
           )}
           <button
@@ -167,6 +203,11 @@ const UnassignedCard = React.memo(function UnassignedCard({ data, index, style }
 });
 
 const DEBUG_ROOMS = false;
+// Guests and companies are reference data for labels/forms. They do not affect
+// room availability, blocks or prices, so a short in-memory cache prevents two
+// large downloads on every date navigation without making sellable inventory
+// stale.
+const CALENDAR_REFERENCE_DATA_TTL_MS = 60_000;
 // YYYY-MM-DD string'e UTC-guvenli gun ekle (tut-surukle cok-gece secimi icin)
 const addDaysToDateStr = (dStr, n) => {
   const d = new Date(`${dStr}T00:00:00Z`);
@@ -174,13 +215,59 @@ const addDaysToDateStr = (dStr, n) => {
   return d.toISOString().split('T')[0];
 };
 
+const newBookingDraft = (overrides = {}) => ({
+  guest_id: '', guest_name: '', guest_email: '', guest_phone: '', guest_id_number: '',
+  room_id: '', check_in: '', check_out: '',
+  guests_count: 2, adults: 2, children: 0, children_ages: [],
+  total_amount: 0, base_rate: 0, price_input_mode: 'nightly',
+  // Calendar and manually entered prices are final guest-facing prices.
+  // Occupancy pricing is opt-in so an already quoted rate is never increased again.
+  manual_price_override: true,
+  prepayment_enabled: false, prepayment_amount: '', prepayment_method: 'cash', prepayment_reference: '',
+  is_complimentary: false, complimentary_scope: 'accommodation_only', complimentary_reason: '',
+  apply_occupancy_pricing: false, status: 'confirmed',
+  ...overrides,
+});
+
+const buildGroupBookingsSummary = (rawBookings, guests = []) => {
+  const groupMap = new Map();
+  rawBookings.forEach((booking) => {
+    if (!booking.group_booking_id) return;
+    if (!groupMap.has(booking.group_booking_id)) groupMap.set(booking.group_booking_id, []);
+    groupMap.get(booking.group_booking_id).push(booking);
+  });
+  return Array.from(groupMap.entries()).map(([groupId, groupItems]) => {
+    const master = groupItems[0];
+    return {
+      group_booking_id: groupId,
+      totalRooms: groupItems.length,
+      totalAmount: groupItems.reduce((sum, item) => sum + (item.total_amount || 0), 0),
+      master,
+      bookings: groupItems,
+      guest_name: master.guest_name || guests.find((guest) => guest.id === master.guest_id)?.name || 'Group Guest',
+    };
+  });
+};
+
 const ReservationCalendar = ({ user, tenant, onLogout }) => {
   const { t, i18n } = useTranslation();
+  const effectivePermissions = user?.effective_permissions || [];
+  const canCreateBooking = effectivePermissions.includes('create_booking');
+  const canRecordPrepayment = hasRole(user, 'admin')
+    || effectivePermissions.includes('post_payment')
+    || (user?.granted_permissions || []).includes('post_payment');
+  const canManageRooms = effectivePermissions.includes('update_room_status');
+  const canSyncChannels = effectivePermissions.includes('manage_system_settings');
   const navigate = useNavigate();
+  const location = useLocation();
 
   // Core state
   const [rooms, setRooms] = useState([]);
   const [bookings, setBookings] = useState([]);
+  const bookingsRef = useRef(bookings);
+  bookingsRef.current = bookings;
+  const referenceDataRef = useRef({ loadedAt: 0, guests: null, companies: null });
+  const calendarDataLoadedRef = useRef(false);
   const [guests, setGuests] = useState([]);
   const [companies, setCompanies] = useState([]);
   const [roomBlocks, setRoomBlocks] = useState([]);
@@ -191,9 +278,11 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
     d.setDate(d.getDate() - 3);
     return d;
   });
+  const calendarDateTouchedRef = useRef(false);
   const [daysToShow, setDaysToShow] = useState(14);
   const [calendarMeta, setCalendarMeta] = useState({});
   const [hotelBusinessDate, setHotelBusinessDate] = useState(null);
+  const [businessDateReady, setBusinessDateReady] = useState(false);
   const [viewPreferences, setViewPreferences] = useState(readCalendarViewPreferences);
 
   // UI State
@@ -201,18 +290,38 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   const [selectedDate, setSelectedDate] = useState(null);
   const [selectedBooking, setSelectedBooking] = useState(null);
   const [selectedBookingFolio, setSelectedBookingFolio] = useState(null);
+  const quickPanelBookingRef = useRef(null);
+  const quickPanelDetailCacheRef = useRef(new Map());
   const [bookingConflict, setBookingConflict] = useState(null);
   const [showSidebar, setShowSidebar] = useState(false);
   const [showNewBookingDialog, setShowNewBookingDialog] = useState(false);
+  const [showRoomBlockDialog, setShowRoomBlockDialog] = useState(false);
+  const [roomToBlock, setRoomToBlock] = useState(null);
   const [showDetailsDialog, setShowDetailsDialog] = useState(false);
   const [showFindRoomDialog, setShowFindRoomDialog] = useState(false);
   const [showMoveReasonDialog, setShowMoveReasonDialog] = useState(false);
+  const [swapData, setSwapData] = useState(null);
+  const [swapReason, setSwapReason] = useState('Oda takası');
+  const [swapSubmitting, setSwapSubmitting] = useState(false);
   const [showFolioPanel, setShowFolioPanel] = useState(false);
   const [folioPanelId, setFolioPanelId] = useState(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [detailModalBookingId, setDetailModalBookingId] = useState(null);
+
+  // Bildirim merkezi rezervasyon hedefini route state ile iletir. Modal
+  // açıldıktan sonra state'i temizliyoruz; geri/ileri gezinmede aynı kayıt
+  // tekrar açılmaz.
+  useEffect(() => {
+    const bookingId = location.state?.openBookingId;
+    if (!bookingId) return;
+    setDetailModalBookingId(bookingId);
+    setShowDetailModal(true);
+    navigate(location.pathname, { replace: true, state: {} });
+  }, [location.pathname, location.state, navigate]);
   const [showUnassignedPanel, setShowUnassignedPanel] = useState(false);
   const [unassignedFilter, setUnassignedFilter] = useState('all');
+  const [allUnassignedBookings, setAllUnassignedBookings] = useState([]);
+  const [allUnassignedLoading, setAllUnassignedLoading] = useState(false);
   const unassignedListRef = useRef(null);
 
   // A previously scrolled drawer can keep its old offset when it is reopened or
@@ -228,7 +337,68 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
     resetScroll();
     const frameId = window.requestAnimationFrame(resetScroll);
     return () => window.cancelAnimationFrame(frameId);
-  }, [showUnassignedPanel, unassignedFilter, bookings]);
+  }, [showUnassignedPanel, unassignedFilter, allUnassignedBookings]);
+
+  // Atanmamış panel açıldığında tarih bağımsız tüm atanmamışları çek
+  useEffect(() => {
+    if (!showUnassignedPanel) return;
+    let cancelled = false;
+    const reconciledBookingIds = new Set();
+    const autoAssignedBookingIds = new Set();
+    setAllUnassignedLoading(true);
+    // Older HotelRunner imports could leave a second, roomless row behind even
+    // though the real reservation had already checked in/out. Reconcile only
+    // exact external-id matches before presenting the operational queue.
+    axios.post('/api/channel-manager/conflict-queue/reconcile-legacy-duplicates')
+      .then(res => {
+        const count = Number(res.data?.count || 0);
+        (res.data?.reconciled || []).forEach(item => reconciledBookingIds.add(item.booking_id));
+        if (!cancelled && count > 0) {
+          toast.success(`${count} mükerrer OTA rezervasyonu güvenle temizlendi`);
+          setBookings(current => current.map(item => (
+            reconciledBookingIds.has(item.id)
+              ? { ...item, status: 'cancelled', allocation_source: 'legacy_duplicate_reconciled' }
+              : item
+          )));
+        }
+      })
+      .catch(() => null)
+      .then(() => axios.post('/api/channel-manager/conflict-queue/auto-assign-available'))
+      .then(res => {
+        const count = Number(res.data?.count || 0);
+        (res.data?.assigned || []).forEach(item => autoAssignedBookingIds.add(item.booking_id));
+        if (!cancelled && count > 0) {
+          toast.success(`${count} rezervasyona güncel müsaitlikten oda atandı`);
+          const assignments = new Map((res.data?.assigned || []).map(item => [item.booking_id, item]));
+          setBookings(current => current.map(item => {
+            const assignment = assignments.get(item.id);
+            return assignment ? { ...item, room_id: assignment.room_id, room_number: assignment.room_number } : item;
+          }));
+        }
+      })
+      .catch(() => null)
+      .then(() => axios.get('/api/channel-manager/conflict-queue?limit=200'))
+      .then(res => {
+        if (!cancelled) {
+          // conflict-queue API'si + takvimde görünen ama room_id'siz diğerleri
+          const apiItems = res.data?.items || [];
+          // Takvimde görünüp henüz API'de olmayan pendingleri de dahil et
+          const calendarPending = bookingsRef.current.filter(b => !reconciledBookingIds.has(b.id) && !autoAssignedBookingIds.has(b.id) && !b.room_id && b.status !== 'cancelled' && b.status !== 'checked_out' && b.status !== 'no_show');
+          const apiIds = new Set(apiItems.map(b => b.id));
+          const merged = [...apiItems, ...calendarPending.filter(b => !apiIds.has(b.id))];
+          setAllUnassignedBookings(merged);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          // Fallback: sadece takvimde görünenleri göster
+          setAllUnassignedBookings(bookingsRef.current.filter(b => !reconciledBookingIds.has(b.id) && !autoAssignedBookingIds.has(b.id) && !b.room_id && b.status !== 'cancelled' && b.status !== 'checked_out' && b.status !== 'no_show'));
+        }
+      })
+      .finally(() => { if (!cancelled) setAllUnassignedLoading(false); });
+    return () => { cancelled = true; };
+  }, [showUnassignedPanel]);
+
 
   // No-Show Reason Dialog
   const [showNoShowDialog, setShowNoShowDialog] = useState(false);
@@ -238,7 +408,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
 
   // Drag & Drop
   const [draggingBooking, setDraggingBooking] = useState(null);
-  const [dragOverCell, setDragOverCell] = useState(null);
+  const [resizingBooking, setResizingBooking] = useState(null);
   const [moveData, setMoveData] = useState(null);
   const [moveReason, setMoveReason] = useState('');
 
@@ -255,14 +425,11 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   const [groupColorMap, setGroupColorMap] = useState({});
 
   // New booking form
-  const [newBooking, setNewBooking] = useState({
-    guest_id: '', guest_name: '', guest_email: '', guest_phone: '', guest_id_number: '',
-    room_id: '', check_in: '', check_out: '',
-    guests_count: 2, adults: 2, children: 0, children_ages: [],
-    total_amount: 0, base_rate: 0, status: 'confirmed'
-  });
+  const [newBooking, setNewBooking] = useState(newBookingDraft);
   const [occupancyPricingRules, setOccupancyPricingRules] = useState({});
   const [calendarRates, setCalendarRates] = useState({});
+  const [calendarSafetyError, setCalendarSafetyError] = useState(null);
+  const [calendarRateError, setCalendarRateError] = useState(null);
 
   // Find room
   const [findRoomCriteria, setFindRoomCriteria] = useState({
@@ -275,6 +442,19 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   const [showConflictsModal, setShowConflictsModal] = useState(false);
 
   const dateRange = getDateRange(currentDate, daysToShow);
+  const calendarPerformanceRef = useRef(null);
+
+  const recordCalendarPerformance = (sample) => {
+    const previous = calendarPerformanceRef.current;
+    // Keep the signal low-volume: scrolling may render many windows, but the
+    // latest materially different view is what operators need to inspect.
+    if (previous
+      && previous.roomCount === sample.roomCount
+      && previous.renderedRoomRows === sample.renderedRoomRows
+      && previous.virtualized === sample.virtualized) return;
+    calendarPerformanceRef.current = sample;
+    window.dispatchEvent(new CustomEvent('syroce:calendar-performance', { detail: sample }));
+  };
 
   useEffect(() => {
     document.body.classList.add('syroce-dense-workspace');
@@ -295,11 +475,12 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   // Race-safe + debounced: hızlı ok navigasyonunda her tıklama fetch tetiklemez,
   // 250 ms hareketsizlik beklenir → sadece son tarih için tek fetch atılır.
   // cleanup hem timer'ı hem aktif fetch'i iptal eder (eski response state'i ezmesin).
-  // İlk yüklemede gecikme olmasın diye bookings boşken (ilk render) anında çağırılır.
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
+  // İlk yüklemede gecikme olmasın diye yalnızca veri henüz hiç yüklenmemişken
+  // anında çağırılır. Boş tesis de geçerli bir yüklenmiş durumdur.
   useEffect(() => {
+    if (!businessDateReady) return undefined;
     let cancelled = false;
-    const isInitial = bookings.length === 0;
+    const isInitial = !calendarDataLoadedRef.current;
     const delay = isInitial ? 0 : 250;
     const timer = setTimeout(() => {
       if (!cancelled) loadCalendarData(() => cancelled);
@@ -308,25 +489,41 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [currentDate, daysToShow]);
+  // `loadCalendarData` intentionally stays outside useCallback: it reads the
+  // latest operational state and the timer above owns cancellation.
+  }, [businessDateReady, currentDate, daysToShow]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fetch hotel business date once on mount
   useEffect(() => {
     axios.get('/night-audit/business-date')
       .then(res => {
         const bd = res.data?.business_date;
-        if (bd) setHotelBusinessDate(bd);
+        if (bd) {
+          setHotelBusinessDate(bd);
+          if (!calendarDateTouchedRef.current) {
+            const operationalDate = new Date(`${bd}T00:00:00`);
+            operationalDate.setDate(operationalDate.getDate() - 3);
+            setCurrentDate(operationalDate);
+          }
+        }
       })
       .catch(() => {
         // Fallback: use today if business date endpoint fails
         setHotelBusinessDate(new Date().toISOString().split('T')[0]);
+      })
+      .finally(() => {
+        // Takvim, başlangıç tarihini PMS iş gününe göre belirler. Bu istek
+        // çözülmeden yükleme başlatmak iki farklı tarih aralığı için paralel
+        // ve birincisi boşa giden ağır istekler üretiyordu.
+        setBusinessDateReady(true);
       });
   }, []);
 
   const loadCalendarData = async (isCancelled = () => false) => {
-    // İlk yüklemede full-screen spinner; sonraki fetch'lerde mevcut takvimi
-    // koru (boş ekran flash yok). bookings.length === 0 = ilk yükleme.
-    const isInitialLoad = bookings.length === 0;
+    // An empty hotel is a valid loaded state.  Using bookings.length here made
+    // every navigation look like a first load for zero-booking properties,
+    // repeatedly hiding the calendar behind a full-screen spinner.
+    const isInitialLoad = !calendarDataLoadedRef.current;
     if (isInitialLoad) setLoading(true);
     try {
       const startDate = new Date(currentDate);
@@ -334,14 +531,22 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
       const endDate = new Date(currentDate);
       endDate.setDate(endDate.getDate() + daysToShow + 7);
 
-      const [roomsRes, bookingsRes, guestsRes, companiesRes, blocksRes, pricingRes, rateGridRes] = await Promise.all([
+      const cachedReferenceData = referenceDataRef.current;
+      const useCachedReferenceData = cachedReferenceData.guests && cachedReferenceData.companies
+        && Date.now() - cachedReferenceData.loadedAt < CALENDAR_REFERENCE_DATA_TTL_MS;
+
+      // Rooms, stays, blocks and rates determine the sellable calendar. Guest
+      // and company pick-lists can be large and are only needed when opening a
+      // form, so do not block the first calendar paint on them.
+      const [roomsRes, bookingsRes, blocksRes, calendarRatesRes] = await Promise.all([
         axios.get('/pms/rooms'),
         axios.get(`/pms/bookings?start_date=${startDate.toISOString().split('T')[0]}&end_date=${endDate.toISOString().split('T')[0]}&limit=500`),
-        axios.get('/pms/guests').catch(() => ({ data: [] })),
-        axios.get('/companies').catch(() => ({ data: [] })),
-        axios.get('/pms/room-blocks?status=active').catch(() => ({ data: { blocks: [] } })),
-        axios.get('/channel-manager/unified-rate-manager/pricing-settings').catch(() => ({ data: { rules: {} } })),
-        axios.get(`/channel-manager/unified-rate-manager/grid?start_date=${startDate.toISOString().split('T')[0]}&end_date=${endDate.toISOString().split('T')[0]}`).catch(() => ({ data: { grid: [] } }))
+        // Blok verisi satılabilirliği belirler. Bir hata asla "blok yok"
+        // anlamına gelmemeli; bu istek özellikle kritik tutulur.
+        axios.get('/pms/room-blocks?status=active'),
+        axios.get(`/pms/calendar/rates?start_date=${startDate.toISOString().split('T')[0]}&end_date=${endDate.toISOString().split('T')[0]}`)
+          .then((response) => ({ ...response, rateLoadError: null }))
+          .catch((error) => ({ data: null, rateLoadError: error }))
       ]);
 
       // Race guard: bu fetch tamamlanırken kullanıcı yeni navigasyon yaptıysa
@@ -356,35 +561,52 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
       });
       setRooms(roomsRes.data || []);
       setBookings(bookingsRes.data || []);
-      setGuests(guestsRes.data || []);
-      setCompanies(companiesRes.data || []);
-      setRoomBlocks(blocksRes.data.blocks || []);
-      setOccupancyPricingRules(pricingRes.data?.rules || {});
-      setCalendarRates(buildCalendarRateLookup(rateGridRes.data?.grid || []));
+      calendarDataLoadedRef.current = true;
+      setRoomBlocks(normalizeRoomBlocksResponse(blocksRes.data));
+      setCalendarSafetyError(null);
+      if (calendarRatesRes.rateLoadError) {
+        setCalendarRateError('Güncel takvim fiyatları yüklenemedi. Fiyat hücreleri doğrulanana kadar işlem yapmayın.');
+      } else {
+        setCalendarRateError(null);
+        setOccupancyPricingRules(calendarRatesRes.data?.rules || {});
+        setCalendarRates(buildCalendarRateLookup(calendarRatesRes.data?.grid || []));
+      }
 
-      // Build group bookings summary
       const rawBookings = bookingsRes.data || [];
-      const groupMap = new Map();
-      rawBookings.forEach(b => {
-        if (!b.group_booking_id) return;
-        if (!groupMap.has(b.group_booking_id)) groupMap.set(b.group_booking_id, []);
-        groupMap.get(b.group_booking_id).push(b);
-      });
-      const groupSummary = Array.from(groupMap.entries()).map(([groupId, groupItems]) => {
-        const master = groupItems[0];
-        return {
-          group_booking_id: groupId,
-          totalRooms: groupItems.length,
-          totalAmount: groupItems.reduce((sum, x) => sum + (x.total_amount || 0), 0),
-          master,
-          bookings: groupItems,
-          guest_name: master.guest_name || guestsRes.data.find(g => g.id === master.guest_id)?.name || 'Group Guest'
-        };
-      });
-      setGroupBookings(groupSummary);
+      const cachedGuests = useCachedReferenceData ? cachedReferenceData.guests : [];
+      if (useCachedReferenceData) {
+        setGuests(cachedReferenceData.guests);
+        setCompanies(cachedReferenceData.companies);
+      }
+      setGroupBookings(buildGroupBookingsSummary(rawBookings, cachedGuests));
+
+      if (!useCachedReferenceData) {
+        // Guest/company pick-lists can be substantially larger than the
+        // visible stay window. Let the room grid commit and accept input first;
+        // this is intentionally scheduled after a paint/idle opportunity.
+        // isCancelled keeps a rapid date change from warming stale data.
+        runIdle(() => {
+          if (isCancelled()) return;
+          void Promise.all([
+            axios.get('/pms/guests').catch(() => ({ data: [] })),
+            axios.get('/companies').catch(() => ({ data: [] })),
+          ]).then(([guestsRes, companiesRes]) => {
+            if (isCancelled()) return;
+            const guestsData = guestsRes.data || [];
+            const companiesData = companiesRes.data || [];
+            referenceDataRef.current = { loadedAt: Date.now(), guests: guestsData, companies: companiesData };
+            setGuests(guestsData);
+            setCompanies(companiesData);
+            // Upgrade group labels once the reference lookup arrives without a
+            // second calendar request.
+            setGroupBookings(buildGroupBookingsSummary(rawBookings, guestsData));
+          });
+        }, { timeout: 4000 });
+      }
     } catch (error) {
       console.error('Takvim verileri yüklenemedi:', error);
-      toast.error('Takvim verileri yüklenemedi');
+      setCalendarSafetyError('Oda blokları veya takvim verileri yüklenemedi. Müsaitlik güvenilir değildir; yeniden deneyin.');
+      toast.error('Takvim verileri yüklenemedi; müsaitlik gösterimi güvenli değil');
     } finally {
       setLoading(false);
     }
@@ -403,7 +625,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   const handleSyncReservations = async () => {
     setSyncing(true);
     try {
-      let totalImported = 0, totalCancelled = 0, synced = false, failedConnectors = 0;
+      let totalImported = 0, totalCancelled = 0, synced = false, failedConnectors = 0, availabilitySynced = 0;
 
       try {
         const exelyRes = await axios.post('/channel-manager/exely/sync/reservations/pull');
@@ -428,15 +650,31 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
             totalImported += result.data?.imported || result.data?.new || 0;
             totalCancelled += result.data?.cancelled || 0;
             synced = true;
-          } catch (e) { failedConnectors++; console.warn(`Sync failed for connector ${conn.id}:`, e); }
+          } catch (e) { failedConnectors++; console.warn(`Reservation pull failed for connector ${conn.id}:`, e); }
+
+          // Availability is an outbound safety action.  It must still run if
+          // the provider has no new reservation payload (or its pull endpoint
+          // is temporarily unavailable), otherwise a full PMS calendar could
+          // stay sellable on the OTA.
+          try {
+            await axios.post('/channel-manager/v2/sync/inventory', {
+              connector_id: conn.id,
+              date_start: sDate.toISOString().split('T')[0],
+              date_end: eDate.toISOString().split('T')[0],
+              force: true,
+              reason: 'Calendar OTA Sync — canonical inventory reconciliation',
+            });
+            availabilitySynced++;
+            synced = true;
+          } catch (e) { failedConnectors++; console.warn(`Inventory push failed for connector ${conn.id}:`, e); }
         }
       } catch (e) { if (e.response?.status !== 404) console.warn('v2 connector sync error:', e); }
 
       if (!synced && failedConnectors === 0) { toast.info('Aktif kanal bağlantısı bulunamadı'); setSyncing(false); return; }
       if (synced && (totalImported > 0 || totalCancelled > 0)) {
-        toast.success(`Senkronizasyon tamamlandi: ${totalImported} yeni, ${totalCancelled} iptal`);
+        toast.success(`Senkronizasyon tamamlandı: ${totalImported} yeni, ${totalCancelled} iptal, ${availabilitySynced} kanal müsaitliği güncellendi`);
       } else if (synced) {
-        toast.info('Yeni rezervasyon değişikliği bulunamadı');
+        toast.info(`${availabilitySynced} kanalın müsaitliği takvim envanteriyle eşitlendi`);
       }
       if (failedConnectors > 0) {
         toast.error(`${failedConnectors} kanal senkronize edilemedi`);
@@ -469,42 +707,10 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   // overlap check then runs only on each room's small subset, instead of
   // the previous O(rooms × bookings²) double scan that re-ran on every
   // booking change. Result memoized so no setState/re-render churn.
-  const conflicts = useMemo(() => {
-    if (!bookings.length || !rooms.length) return [];
-    const SKIPPED = new Set(['cancelled', 'checked_out', 'no_show']);
-    const byRoom = new Map();
-    for (const b of bookings) {
-      if (SKIPPED.has(b.status) || !b.room_id) continue;
-      let arr = byRoom.get(b.room_id);
-      if (!arr) { arr = []; byRoom.set(b.room_id, arr); }
-      arr.push(b);
-    }
-    const out = [];
-    for (const room of rooms) {
-      const roomBookings = byRoom.get(room.id);
-      if (!roomBookings || roomBookings.length < 2) continue;
-      for (let i = 0; i < roomBookings.length; i++) {
-        const b1 = roomBookings[i];
-        const s1 = new Date(b1.check_in).getTime();
-        const e1 = new Date(b1.check_out).getTime();
-        for (let j = i + 1; j < roomBookings.length; j++) {
-          const b2 = roomBookings[j];
-          const s2 = new Date(b2.check_in).getTime();
-          const e2 = new Date(b2.check_out).getTime();
-          if (s1 < e2 && s2 < e1) {
-            out.push({
-              type: 'overbooking', room_id: room.id, room_number: room.room_number,
-              booking1_id: b1.id, booking2_id: b2.id,
-              guest1: b1.guest_name, guest2: b2.guest_name,
-              overlap_start: new Date(s1 > s2 ? s1 : s2),
-              overlap_end: new Date(e1 < e2 ? e1 : e2)
-            });
-          }
-        }
-      }
-    }
-    return out;
-  }, [bookings, rooms]);
+  const conflicts = useMemo(
+    () => findCalendarConflicts(bookings, rooms),
+    [bookings, rooms],
+  );
 
   // ─── Occupancy ─────────────────────────────────────────────
   const getOccupancyForDate = (date) => {
@@ -542,15 +748,16 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
     const checkInDate = new Date(date);
     const checkOutDate = new Date(date);
     checkOutDate.setDate(checkOutDate.getDate() + 1);
-    setNewBooking({
-      guest_id: '', guest_name: '', guest_email: '', guest_phone: '', guest_id_number: '', room_id: roomId,
-      check_in: checkInDate.toISOString().split('T')[0],
-      check_out: checkOutDate.toISOString().split('T')[0],
-      guests_count: 2, adults: 2, children: 0, children_ages: [],
-      total_amount: room.base_price || 100, base_rate: room.base_price || 100,
-      apply_occupancy_pricing: findOccupancyRule(occupancyPricingRules, room)?.pricing_type === 'per_person',
-      status: 'confirmed'
-    });
+    const checkIn = checkInDate.toISOString().split('T')[0];
+    const checkOut = checkOutDate.toISOString().split('T')[0];
+    const nightlyRate = getCalendarRoomNightRate(calendarRates, room, checkIn, room.base_price || 100);
+    setNewBooking(newBookingDraft({
+      room_id: roomId,
+      check_in: checkIn,
+      check_out: checkOut,
+      total_amount: getCalendarStayTotal(calendarRates, room, checkIn, checkOut, room.base_price || 100),
+      base_rate: nightlyRate,
+    }));
     setShowNewBookingDialog(true);
   };
 
@@ -561,7 +768,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   const isRoomNightAvailable = (roomId, dStr) => {
     const occupied = bookings.some(b =>
       b.room_id === roomId &&
-      b.status !== 'cancelled' && b.status !== 'no_show' &&
+      b.status !== 'cancelled' && b.status !== 'no_show' && b.status !== 'checked_out' &&
       toDateStringUTC(b.check_in) <= dStr && toDateStringUTC(b.check_out) > dStr
     );
     if (occupied) return false;
@@ -596,21 +803,18 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
     }
     const checkIn = lo;
     const checkOut = addDaysToDateStr(lastFree, 1);
-    const nights = Math.max(1, Math.round(
-      (new Date(`${checkOut}T00:00:00Z`) - new Date(`${checkIn}T00:00:00Z`)) / 86400000
-    ));
     if (lastFree < hi) toast.info('Seçim dolu/bloklu geceye kadar kısaltıldı');
 
     setSelectedRoom(room);
     setSelectedDate(new Date(`${checkIn}T00:00:00Z`));
-    setNewBooking({
-      guest_id: '', guest_name: '', guest_email: '', guest_phone: '', guest_id_number: '', room_id: sel.roomId,
-      check_in: checkIn, check_out: checkOut,
-      guests_count: 2, adults: 2, children: 0, children_ages: [],
-      total_amount: (room.base_price || 100) * nights, base_rate: room.base_price || 100,
-      apply_occupancy_pricing: findOccupancyRule(occupancyPricingRules, room)?.pricing_type === 'per_person',
-      status: 'confirmed'
-    });
+    const nightlyRate = getCalendarRoomNightRate(calendarRates, room, checkIn, room.base_price || 100);
+    setNewBooking(newBookingDraft({
+      room_id: sel.roomId,
+      check_in: checkIn,
+      check_out: checkOut,
+      total_amount: getCalendarStayTotal(calendarRates, room, checkIn, checkOut, room.base_price || 100),
+      base_rate: nightlyRate,
+    }));
     setShowNewBookingDialog(true);
   };
 
@@ -650,8 +854,72 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   }, []);
 
   const handleBookingDoubleClick = async (booking) => {
+    quickPanelBookingRef.current = null;
+    setShowSidebar(false);
+    const previousBookingId = detailModalBookingId;
+    if (previousBookingId && previousBookingId !== booking.id) {
+      // Release the previous reservation immediately. The DOM monitor remains
+      // only as a crash/network fallback; operators should not wait 15 seconds
+      // while moving between cards.
+      await reservationEditLockManager?.releaseCurrent(previousBookingId);
+    }
     setDetailModalBookingId(booking.id);
     setShowDetailModal(true);
+  };
+
+  const handleBookingClick = (booking) => {
+    quickPanelBookingRef.current = booking.id;
+    setSelectedBooking(booking);
+    setShowSidebar(true);
+
+    const cached = quickPanelDetailCacheRef.current.get(booking.id);
+    if (cached && cached !== 'loading') {
+      setSelectedBooking(cached.booking);
+      setSelectedBookingFolio(cached.folio);
+      return;
+    }
+    setSelectedBookingFolio(null);
+    if (cached === 'loading') return;
+
+    // The calendar payload intentionally stays compact and can contain masked
+    // contact fields. Fetch the canonical detail once, then reuse it for later
+    // panel opens. This also supplies the folio summary without a second call.
+    quickPanelDetailCacheRef.current.set(booking.id, 'loading');
+    axios.get(`/pms/reservations/${booking.id}/full-detail`)
+      .then((response) => {
+        const payload = {
+          booking: mergeQuickPanelDetail(booking, response.data),
+          folio: primaryQuickPanelFolio(response.data),
+        };
+        quickPanelDetailCacheRef.current.set(booking.id, payload);
+        if (quickPanelBookingRef.current === booking.id) {
+          setSelectedBooking(payload.booking);
+          setSelectedBookingFolio(payload.folio);
+        }
+      })
+      .catch(() => {
+        quickPanelDetailCacheRef.current.delete(booking.id);
+        if (quickPanelBookingRef.current === booking.id) setSelectedBookingFolio(null);
+      });
+  };
+
+  const closeReservationDetail = () => {
+    const closingBookingId = detailModalBookingId;
+    setShowDetailModal(false);
+    setDetailModalBookingId(null);
+    void reservationEditLockManager?.releaseCurrent(closingBookingId);
+    loadCalendarData();
+  };
+
+  const handleReservationOperationComplete = ({ bookingId, operation }) => {
+    const operationResult = { bookingId, operation };
+    // The mutation already succeeded. Reflect it immediately so the operator
+    // never waits for a full calendar round-trip to see the lifecycle color.
+    setBookings((current) => applyBookingOperation(current, operationResult));
+    setAllUnassignedBookings((current) => applyBookingOperation(current, operationResult)
+      .filter((booking) => !['checked_out', 'no_show', 'cancelled'].includes(booking.status)));
+    // Reconcile in the background with the server as the source of truth.
+    void loadCalendarData();
   };
 
   const handleCreateBooking = async (e) => {
@@ -663,6 +931,37 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
     const minDate = hotelBusinessDate && hotelBusinessDate < localToday ? hotelBusinessDate : localToday;
     if (newBooking.check_in < minDate) {
       toast.error(`Geçmiş tarihe rezervasyon yapilamaz (minimum: ${minDate})`);
+      return;
+    }
+
+    const prepaymentAmount = newBooking.prepayment_enabled ? parseMoneyInput(newBooking.prepayment_amount) : 0;
+    const totalAmount = parseMoneyInput(newBooking.total_amount);
+    const isComplimentary = Boolean(newBooking.is_complimentary);
+    const nights = Math.max(1, Math.round(
+      (new Date(`${newBooking.check_out}T00:00:00Z`) - new Date(`${newBooking.check_in}T00:00:00Z`)) / 86400000,
+    ));
+    if (!Number.isFinite(totalAmount) || totalAmount < 0) {
+      toast.error('Geçerli bir konaklama toplamı girin');
+      return;
+    }
+    if (isComplimentary && newBooking.complimentary_reason.trim().length < 3) {
+      toast.error('Komp gerekçesi en az 3 karakter olmalı');
+      return;
+    }
+    if (isComplimentary && newBooking.prepayment_enabled) {
+      toast.error('Komp rezervasyonda ön ödeme alınamaz');
+      return;
+    }
+    if (newBooking.prepayment_enabled && (!Number.isFinite(prepaymentAmount) || prepaymentAmount <= 0)) {
+      toast.error('Ön ödeme tutarı sıfırdan büyük olmalı');
+      return;
+    }
+    if (newBooking.prepayment_enabled && !canRecordPrepayment) {
+      toast.error('Ön ödeme kaydetmek için “Ödeme al” yetkisi gerekir');
+      return;
+    }
+    if (prepaymentAmount > totalAmount) {
+      toast.error('Ön ödeme, konaklama toplamından büyük olamaz');
       return;
     }
 
@@ -686,12 +985,61 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
     if (!guestId) { toast.error('Lutfen bir misafir seçin veya yeni misafir ekleyin'); return; }
     try {
       const idempotencyKey = globalThis.crypto?.randomUUID?.() || `booking-create-${Date.now()}-${Math.random()}`;
-      await axios.post('/pms/bookings', { ...newBooking, guest_id: guestId }, {
+      const {
+        price_input_mode: priceInputMode,
+        prepayment_enabled: _prepaymentEnabled,
+        prepayment_amount: _prepaymentAmount,
+        prepayment_method: _prepaymentMethod,
+        prepayment_reference: _prepaymentReference,
+        manual_price_override: _manualPriceOverride,
+        ...bookingFields
+      } = newBooking;
+      const bookingPayload = {
+        ...bookingFields,
+        guest_id: guestId,
+        total_amount: totalAmount,
+        // Total fiyat girildiğinde de raporlama için efektif gecelik tutarı saklanır.
+        base_rate: priceInputMode === 'total' ? totalAmount / nights : parseMoneyInput(bookingFields.base_rate || 0),
+        apply_occupancy_pricing: priceInputMode !== 'total' && Boolean(bookingFields.apply_occupancy_pricing),
+      };
+      const response = await axios.post('/pms/bookings', bookingPayload, {
         headers: { 'Idempotency-Key': idempotencyKey },
       });
-      toast.success('Rezervasyon başarıyla oluşturuldu!');
+      let prepaymentError = null;
+      if (prepaymentAmount > 0) {
+        try {
+          await recordInitialPrepayment({
+            client: axios,
+            bookingId: response.data.id,
+            amount: prepaymentAmount,
+            method: newBooking.prepayment_method,
+            reference: newBooking.prepayment_reference,
+            currency: response.data.currency || bookingPayload.currency || cachedTenantCurrency(),
+            idempotencyKey,
+          });
+        } catch (paymentError) {
+          prepaymentError = paymentError;
+        }
+      }
       setShowNewBookingDialog(false);
       loadCalendarData();
+      if (prepaymentError) {
+        const detail = prepaymentError.response?.data?.detail;
+        setDetailModalBookingId(response.data.id);
+        setShowDetailModal(true);
+        toast.error(
+          `Rezervasyon oluşturuldu ancak ön ödeme kaydedilemedi. ${typeof detail === 'string' ? detail : prepaymentError.message || 'Ödeme / Folyo ekranından tekrar kaydedin.'}`,
+          { duration: 15000 },
+        );
+      } else {
+        toast.success(
+          isComplimentary
+            ? `${newBooking.complimentary_scope === 'full' ? 'Full Comp' : 'Sadece Konaklama'} rezervasyon oluşturuldu!`
+            : prepaymentAmount > 0
+              ? 'Rezervasyon ve ön ödeme başarıyla kaydedildi!'
+              : 'Rezervasyon başarıyla oluşturuldu!',
+        );
+      }
     } catch (error) {
       console.log('CREATE_BOOKING_ERROR_CAUGHT', {
         status: error?.response?.status,
@@ -711,17 +1059,200 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   };
 
   // ─── Drag & Drop ───────────────────────────────────────────
-  const handleDragStart = (e, booking) => {
-    setDraggingBooking(booking);
+  const handleDragStart = (e, booking, dragAnchorDate = booking.check_in) => {
+    setResizingBooking(null);
+    const sourceLeft = e.currentTarget.getBoundingClientRect().left;
+    const grip = bookingDragGrip({
+      bookingCheckIn: booking.check_in,
+      visibleStart: dragAnchorDate,
+      sourceLeft,
+      clientX: e.clientX,
+    });
+    setDraggingBooking({ ...booking, _dragGrip: grip });
     e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', String(booking.id));
+    // Preserve the full booking bar and the precise point the user grabbed.
+    // The browser moves this image without re-rendering the whole calendar.
+    e.dataTransfer.setDragImage?.(e.currentTarget, grip.gripPx, e.clientY - e.currentTarget.getBoundingClientRect().top);
   };
-  const handleDragOver = (e, roomId, date) => {
+  const handleResizeStart = (e, booking) => {
+    setDraggingBooking(null);
+    setResizingBooking(booking);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', `resize:${booking.id}`);
+  };
+  const handleResizePointerStart = (booking) => {
+    setDraggingBooking(null);
+    setResizingBooking(booking);
+  };
+  const handleResizePointerCommit = async (booking, targetDate) => {
+    setResizingBooking(null);
+    await handleStayResize(booking, targetDate);
+  };
+  const handleDragOver = (e) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
-    setDragOverCell({ roomId, date: date.toISOString() });
   };
-  const handleDragLeave = () => { setDragOverCell(null); };
-  const handleDragEnd = () => { setDraggingBooking(null); setDragOverCell(null); };
+  const handleDragLeave = () => {};
+  const handleDragEnd = () => { setDraggingBooking(null); setResizingBooking(null); };
+
+  const handleStayResize = async (booking, targetDate) => {
+    const localToday = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0];
+    const minimumCheckout = hotelBusinessDate && hotelBusinessDate > localToday ? hotelBusinessDate : localToday;
+    const result = validateStayResize(booking, targetDate, minimumCheckout);
+    if (result.unchanged) return;
+    if (!result.ok) {
+      toast.error(result.error);
+      return;
+    }
+
+    if (result.extending) {
+      const addedNight = new Date(`${toDateStringUTC(booking.check_out)}T00:00:00Z`);
+      const newCheckOut = new Date(`${result.newCheckOut}T00:00:00Z`);
+      while (addedNight < newCheckOut) {
+        const roomBlock = getRoomBlockForDate(booking.room_id, addedNight, roomBlocks);
+        if (roomBlock && !roomBlock.allow_sell) {
+          toast.error(`Konaklama uzatılamadı: ${toDateStringUTC(addedNight)} tarihinde oda ${roomBlock.reason || 'bloklu'}`);
+          return;
+        }
+        addedNight.setUTCDate(addedNight.getUTCDate() + 1);
+      }
+    }
+
+    // Update the board before the durable-rate lookup and write complete. The
+    // old flow waited for three network round trips, so an extension appeared
+    // to "catch up" after the user released the handle. Keep the exact daily
+    // rate reconciliation below; this is only the immediate visual response.
+    const currentCheckIn = toDateStringUTC(booking.check_in);
+    const currentCheckOut = toDateStringUTC(booking.check_out);
+    const currentNights = Math.max(1, Math.round(
+      (new Date(`${currentCheckOut}T00:00:00Z`) - new Date(`${currentCheckIn}T00:00:00Z`)) / 86400000,
+    ));
+    const isComplimentary = Boolean(booking.is_complimentary);
+    const currentTotal = Number(booking.total_amount || 0);
+    const roomForPreview = rooms.find(r => r.id === booking.room_id) || {};
+    const roomTypeForPreview = booking.room_type || roomForPreview.room_type || roomForPreview.type;
+    let previewTotal = currentTotal;
+    if (isComplimentary) {
+      previewTotal = 0;
+    } else if (result.extending) {
+      let cursor = new Date(`${currentCheckOut}T00:00:00Z`);
+      const newCheckOut = new Date(`${result.newCheckOut}T00:00:00Z`);
+      while (cursor < newCheckOut) {
+        const date = toDateStringUTC(cursor);
+        const publishedRate = Number(calendarRates[`${roomTypeForPreview}|${date}`]);
+        previewTotal += Number.isFinite(publishedRate) && publishedRate > 0
+          ? publishedRate
+          : Number(roomForPreview.base_price || booking.base_rate || (currentTotal / currentNights));
+        cursor.setUTCDate(cursor.getUTCDate() + 1);
+      }
+    } else {
+      const newNights = Math.max(1, Math.round(
+        (new Date(`${result.newCheckOut}T00:00:00Z`) - new Date(`${currentCheckIn}T00:00:00Z`)) / 86400000,
+      ));
+      previewTotal = Math.max(0, (currentTotal / currentNights) * newNights);
+    }
+    const optimisticBooking = {
+      ...booking,
+      check_out: result.newCheckOut,
+      total_amount: Math.round(previewTotal * 100) / 100,
+    };
+    setBookings(current => current.map(item => item.id === booking.id ? optimisticBooking : item));
+
+    try {
+      const oldCheckInDate = new Date(`${toDateStringUTC(booking.check_in)}T00:00:00Z`);
+      const oldCheckOutDate = new Date(`${toDateStringUTC(booking.check_out)}T00:00:00Z`);
+      const newCheckOutDate = new Date(`${result.newCheckOut}T00:00:00Z`);
+
+      // The calendar list does not include the persisted daily-rate plan.
+      // Read it before changing the stay so a shorten keeps the original
+      // nights' prices, and an extension adds only the newly sold nights.
+      // This prevents Night Audit from pricing a stay with stale rates after
+      // the booking total has changed.
+      const detailResponse = await axios.get(`/pms/reservations/${booking.id}/full-detail`);
+      const storedDailyRates = detailResponse.data?.daily_rates || [];
+      const rateByDate = new Map(
+        storedDailyRates.map(rate => [
+          String(rate.date || '').slice(0, 10),
+          Number(rate.rate),
+        ]),
+      );
+      const lastPersistedRate = [...rateByDate.entries()]
+        .filter(([, rate]) => Number.isFinite(rate) && rate >= 0)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .at(-1)?.[1];
+
+      const oldNights = Math.max(1, Math.round((oldCheckOutDate - oldCheckInDate) / 86400000));
+      const impliedDailyRate = Number(booking.total_amount || 0) / oldNights;
+      
+      const room = rooms.find(r => r.id === booking.room_id) || {};
+      const roomType = booking.room_type || room.room_type || room.type;
+      
+      const nextDailyRates = [];
+      let cursor = new Date(oldCheckInDate);
+      while (cursor < oldCheckOutDate) {
+        const date = toDateStringUTC(cursor);
+        const storedRate = rateByDate.get(date);
+        nextDailyRates.push({
+          date,
+          rate: Number.isFinite(storedRate) ? storedRate : impliedDailyRate,
+        });
+        cursor.setUTCDate(cursor.getUTCDate() + 1);
+      }
+
+      if (result.extending) {
+        let cur = new Date(oldCheckOutDate);
+        while (cur < newCheckOutDate) {
+          const dStr = toDateStringUTC(cur);
+          const rate = isComplimentary
+            ? 0
+            : (() => {
+                const published = Number(calendarRates[`${roomType}|${dStr}`]);
+                if (Number.isFinite(published) && published > 0) return published;
+                // A reservation can carry stale base-rate metadata after daily
+                // prices were edited. Extend with the persisted stay plan,
+                // never with that stale value (the 2,500 -> 5,000 regression).
+                if (Number.isFinite(lastPersistedRate) && lastPersistedRate >= 0) return lastPersistedRate;
+                if (Number.isFinite(impliedDailyRate) && impliedDailyRate >= 0) return impliedDailyRate;
+                return Number(room.base_price || booking.base_rate || 0);
+              })();
+          nextDailyRates.push({ date: dStr, rate: Number(rate) });
+          cur.setUTCDate(cur.getUTCDate() + 1);
+        }
+      } else {
+        const newCheckoutDate = toDateStringUTC(newCheckOutDate);
+        nextDailyRates.splice(0, nextDailyRates.length, ...nextDailyRates.filter(rate => rate.date < newCheckoutDate));
+      }
+
+    const newTotalAmount = isComplimentary
+      ? 0
+      : Math.round(nextDailyRates.reduce((sum, rate) => sum + rate.rate, 0) * 100) / 100;
+
+      const currency = booking.currency || cachedTenantCurrency();
+
+      const idempotencyKey = globalThis.crypto?.randomUUID?.() || `booking-resize-${Date.now()}-${Math.random()}`;
+      await axios.put(`/pms/bookings/${booking.id}`, {
+        check_out: result.newCheckOut,
+        total_amount: newTotalAmount,
+      }, { headers: { 'Idempotency-Key': idempotencyKey } });
+      await axios.put(`/pms/reservations/${booking.id}/daily-rates`, {
+        rates: nextDailyRates,
+      });
+      const action = result.extending ? 'uzatıldı' : 'kısaltıldı';
+      toast.success(`Konaklama ${result.newCheckOut} tarihine ${action}. Yeni tutar: ${newTotalAmount.toLocaleString('tr-TR')} ${currency}.`);
+      loadCalendarData();
+    } catch (error) {
+      // The optimistic board update is only kept when persistence succeeds.
+      setBookings(current => current.map(item => item.id === booking.id ? booking : item));
+      const conflict = parseBookingConflict(error);
+      if (conflict) {
+        setBookingConflict(conflict);
+        return;
+      }
+      const detail = error.response?.data?.detail;
+      toast.error(typeof detail === 'string' ? detail : (detail?.message || 'Konaklama süresi değiştirilemedi'));
+    }
+  };
 
   const handleAssignRoom = async (booking, newRoomId) => {
     try {
@@ -741,6 +1272,14 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   const executeRoomMove = async (data, reason) => {
     if (!data?.booking) return false;
 
+    // Give immediate feedback after confirmation. The server remains the source
+    // of truth; restore the original card if validation or persistence fails.
+    setBookings(current => current.map(item => item.id === data.booking.id
+      ? { ...item, room_id: data.newRoomId, check_in: data.newCheckIn, check_out: data.newCheckOut }
+      : item));
+    setShowMoveReasonDialog(false);
+    setMoveReason('');
+    setMoveData(null);
     try {
       const idempotencyKey = globalThis.crypto?.randomUUID?.() || `booking-move-${Date.now()}-${Math.random()}`;
       await axios.put(`/pms/bookings/${data.booking.id}`, {
@@ -749,57 +1288,113 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
         check_out: data.newCheckOut
       }, { headers: { 'Idempotency-Key': idempotencyKey } });
 
-      await axios.post('/pms/room-move-history', {
+      void axios.post('/pms/room-move-history', {
         booking_id: data.booking.id,
         old_room: data.oldRoom, new_room: data.newRoom,
         old_check_in: data.oldCheckIn, new_check_in: data.newCheckIn,
         reason, moved_by: user?.name || user?.email || 'System',
         timestamp: new Date().toISOString()
-      }).catch(() => { /* history logging best-effort, silent on failure */ });
+      }).catch((historyError) => {
+        console.error('Room move history error:', historyError);
+      });
 
-      toast.success(`Rezervasyon ${data.newRoom} numarali odaya tasindi!`);
-      setShowMoveReasonDialog(false);
-      setMoveReason('');
-      setMoveData(null);
+      toast.success(`Rezervasyon ${data.newRoom} numaralı odaya taşındı (${data.newCheckIn} – ${data.newCheckOut}).`);
       loadCalendarData();
       return true;
     } catch (error) {
-      toast.error('Rezervasyon taşınamadı');
+      setBookings(current => current.map(item => item.id === data.booking.id ? data.booking : item));
+      const detail = error.response?.data?.detail;
+      toast.error(
+        typeof detail === 'string'
+          ? detail
+          : (detail?.message || 'Rezervasyon taşınamadı')
+      );
       console.error('Move booking error:', error);
       return false;
     }
   };
 
-  const handleDrop = async (e, newRoomId, newDate) => {
-    e.preventDefault();
-    setDragOverCell(null);
-    if (!draggingBooking) return;
-
-    const roomBlock = getRoomBlockForDate(newRoomId, newDate, roomBlocks);
-    if (roomBlock && !roomBlock.allow_sell) {
-      toast.error(`Cannot move booking: Room is ${roomBlock.type.replace('_', ' ')} (${roomBlock.reason})`);
-      setDraggingBooking(null);
+  const executeRoomSwap = async () => {
+    if (!swapData || !swapReason.trim()) {
+      toast.error('Oda takası için neden belirtin');
       return;
     }
+    const pendingSwap = swapData;
+    // Reflect both room assignments immediately. A failed request restores
+    // the original booking objects, so the optimistic UI cannot conceal an
+    // unsuccessful swap.
+    setBookings(current => applyRoomSwap(current, pendingSwap.source, pendingSwap.target));
+    setSwapSubmitting(true);
+    let swapPersisted = false;
+    try {
+      const idempotencyKey = globalThis.crypto?.randomUUID?.() || `booking-room-swap-${Date.now()}`;
+      await axios.post(`/pms/bookings/${swapData.source.id}/swap-room`, {
+        target_booking_id: swapData.target.id,
+        reason: swapReason.trim(),
+      }, { headers: { 'Idempotency-Key': idempotencyKey } });
+      swapPersisted = true;
+      toast.success(`${swapData.sourceRoom?.room_number} ve ${swapData.targetRoom?.room_number} odalarındaki rezervasyonlar takas edildi.`);
+      setSwapData(null);
+      setSwapReason('Oda takası');
+      await loadCalendarData();
+    } catch (error) {
+      if (!swapPersisted) {
+        setBookings(current => current.map(item => {
+          if (item.id === pendingSwap.source.id) return pendingSwap.source;
+          if (item.id === pendingSwap.target.id) return pendingSwap.target;
+          return item;
+        }));
+      }
+      const detail = error.response?.data?.detail;
+      toast.error(typeof detail === 'string' ? detail : (detail?.message || 'Oda takası yapılamadı'));
+    } finally {
+      setSwapSubmitting(false);
+    }
+  };
+
+  const handleDrop = async (e, newRoomId, newDate, targetBookingId = null) => {
+    e.preventDefault();
+    if (resizingBooking) {
+      const booking = resizingBooking;
+      setResizingBooking(null);
+      await handleStayResize(booking, newDate);
+      return;
+    }
+    if (!draggingBooking) return;
 
     if (!draggingBooking.room_id) {
+      const blocked = getRoomBlockForDate(newRoomId, newDate, roomBlocks);
+      if (blocked && !blocked.allow_sell) {
+        toast.error(`Oda atanamadı: ${toDateStringUTC(newDate)} tarihinde oda ${blocked.reason || 'bloklu'}`);
+        setDraggingBooking(null);
+        return;
+      }
       setDraggingBooking(null);
       await handleAssignRoom(draggingBooking, newRoomId);
       return;
     }
 
     const oldRoomId = draggingBooking.room_id;
-    const oldDate = new Date(draggingBooking.check_in);
-    if (oldRoomId === newRoomId && oldDate.toDateString() === newDate.toDateString()) {
+    const oldDateStr = toDateStringUTC(draggingBooking.check_in);
+    const newCheckIn = bookingDropCheckIn({
+      targetStart: newDate,
+      targetLeft: e.currentTarget.getBoundingClientRect().left,
+      clientX: e.clientX,
+      gripPx: draggingBooking._dragGrip.gripPx,
+      visibleOffsetDays: draggingBooking._dragGrip.visibleOffsetDays,
+    });
+    const targetDateStr = toDateStringUTC(newCheckIn);
+    if (oldRoomId === newRoomId && oldDateStr === targetDateStr) {
       setDraggingBooking(null);
       return;
     }
 
-    const targetDateStr = newDate.toISOString().split('T')[0];
-    const oldDateStr = oldDate.toISOString().split('T')[0];
     const localToday = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0];
     const minDate = hotelBusinessDate && hotelBusinessDate < localToday ? hotelBusinessDate : localToday;
-    if (targetDateStr < minDate) {
+    // A checked-in guest may change rooms without changing the original
+    // (necessarily past) arrival date. Only newly selected dates need the
+    // no-past-date guard.
+    if (targetDateStr !== oldDateStr && targetDateStr < minDate) {
       toast.error(`Geçmiş tarihe rezervasyon taşınamaz (minimum: ${minDate})`);
       setDraggingBooking(null);
       return;
@@ -816,9 +1411,20 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
     }
 
     const daysDiff = Math.ceil((new Date(draggingBooking.check_out) - new Date(draggingBooking.check_in)) / (1000 * 60 * 60 * 24));
-    const newCheckIn = new Date(newDate);
-    const newCheckOut = new Date(newDate);
-    newCheckOut.setDate(newCheckOut.getDate() + daysDiff);
+    const newCheckOut = new Date(newCheckIn);
+    newCheckOut.setUTCDate(newCheckOut.getUTCDate() + daysDiff);
+
+    // A drop is valid only when the whole stay fits. Checking merely the
+    // cell under the pointer let a multi-night reservation start in a valid
+    // cell and silently overlap a block on a following night.
+    for (let cursor = new Date(newCheckIn); cursor < newCheckOut; cursor.setUTCDate(cursor.getUTCDate() + 1)) {
+      const blocked = getRoomBlockForDate(newRoomId, cursor, roomBlocks);
+      if (blocked && !blocked.allow_sell) {
+        toast.error(`Rezervasyon taşınamadı: ${toDateStringUTC(cursor)} tarihinde oda ${blocked.reason || 'bloklu'}`);
+        setDraggingBooking(null);
+        return;
+      }
+    }
 
     const oldRoom = rooms.find(r => r.id === oldRoomId);
     const newRoom = rooms.find(r => r.id === newRoomId);
@@ -827,14 +1433,49 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
       booking: draggingBooking,
       oldRoom: oldRoom?.room_number, newRoom: newRoom?.room_number,
       oldCheckIn: draggingBooking.check_in,
+      oldCheckOut: draggingBooking.check_out,
       newCheckIn: newCheckIn.toISOString().split('T')[0],
       newCheckOut: newCheckOut.toISOString().split('T')[0],
-      newRoomId
+      newRoomId,
+      requiresReason: roomMoveRequiresReason(oldRoom, newRoom),
     };
+
+    // ── Oda Takası Algılama ──────────────────────────────────────────────────
+    // Kullanıcı rezervasyonu dolu bir odanın herhangi bir gecesine bırakırsa
+    // bu bir oda takası niyetidir. Tarihlerin aynı olması şartı kaldırıldı:
+    // 1-gecelik → 3-gecelik takası da aynı diyalogla onaylanır.
+    // Hedef hücreyi kaplayan aktif rezervasyon bul (sürüklenen dahil değil).
+    const targetBooking = targetBookingId && targetBookingId !== draggingBooking.id
+      ? bookings.find(candidate => candidate.id === targetBookingId)
+      : null;
+    const targetBookings = targetBooking
+      ? [targetBooking]
+      : getActiveBookingsForRoomOnDate(newRoomId, newDate, bookings)
+        .filter(candidate => candidate.id !== draggingBooking.id);
     setDraggingBooking(null);
 
-    if (!roomMoveRequiresReason(oldRoom, newRoom)) {
-      await executeRoomMove(nextMoveData, 'Aynı oda tipi içinde taşıma');
+    if (targetBookings.length === 1) {
+      // Takas: iki rezervasyon birbirinin odasına geçer, tarihleri korunur.
+      setSwapData({
+        source: draggingBooking,
+        target: targetBookings[0],
+        sourceRoom: oldRoom,
+        targetRoom: newRoom,
+      });
+      setSwapReason('Oda takası');
+      return;
+    }
+    if (targetBookings.length > 1) {
+      toast.error('Hedef odada birden fazla çakışan rezervasyon var; takas için rezervasyonu ayrıntıdan seçin.');
+      return;
+    }
+
+    if (!roomIsFreeForBooking(newRoom, {
+      ...draggingBooking,
+      check_in: nextMoveData.newCheckIn,
+      check_out: nextMoveData.newCheckOut,
+    }, bookings)) {
+      toast.error('Hedef odada yeni konaklama tarihleriyle çakışan başka bir rezervasyon var.');
       return;
     }
 
@@ -843,14 +1484,14 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   };
 
   const handleConfirmMove = async () => {
-    if (!moveReason.trim()) { toast.error('Please provide a reason for the room move'); return; }
-    await executeRoomMove(moveData, moveReason.trim());
+    if (moveData?.requiresReason && (!moveReason.trim() || moveReason === 'Other')) { toast.error('Oda değişikliği için neden belirtin'); return; }
+    await executeRoomMove(moveData, moveReason.trim() || 'Takvim üzerinden oda/tarih taşıma');
   };
 
   // ─── Find Room ─────────────────────────────────────────────
   const handleFindRoom = async () => {
     if (!findRoomCriteria.check_in || !findRoomCriteria.check_out) {
-      toast.error('Please select check-in and check-out dates');
+      toast.error('Lütfen giriş ve çıkış tarihlerini seçin');
       return;
     }
     try {
@@ -892,7 +1533,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
         setFolioPanelId(folioRes.data[0].id);
         setShowFolioPanel(true);
       } else {
-        toast.info('Bu rezervasyon için henüz folyo olusturulmamis');
+        toast.info('Bu rezervasyon için henüz folyo oluşturulmamış');
       }
     } catch (error) {
       toast.error('Folyo yüklenemedi');
@@ -930,6 +1571,14 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
     }
   };
 
+  const hasCheckedInGuestInRoomSwap = Boolean(
+    swapData
+      && (
+        ['checked_in', 'in_house'].includes(swapData.source?.status)
+        || ['checked_in', 'in_house'].includes(swapData.target?.status)
+      )
+  );
+
   // ─── No-Show Handler ────────────────────────────────────────
   const handleNoShowConfirm = async () => {
     if (!noShowBookingId) return;
@@ -963,24 +1612,48 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   // Ok tuşları gün-gün ilerler (kullanıcı kontrolü). Daha büyük adım için
   // "Tarihe Git" picker'ı kullanılabilir.
   const navigatePrevious = () => {
+    calendarDateTouchedRef.current = true;
     const nd = new Date(currentDate);
     nd.setDate(nd.getDate() - 1);
     setCurrentDate(nd);
   };
   const navigateNext = () => {
+    calendarDateTouchedRef.current = true;
     const nd = new Date(currentDate);
     nd.setDate(nd.getDate() + 1);
     setCurrentDate(nd);
   };
-  const goToDate = (date) => { setCurrentDate(date); };
+  const goToDate = (date) => {
+    calendarDateTouchedRef.current = true;
+    setCurrentDate(date);
+  };
+  const goToOperationalToday = () => {
+    calendarDateTouchedRef.current = true;
+    const target = hotelBusinessDate ? new Date(`${hotelBusinessDate}T00:00:00`) : new Date();
+    target.setDate(target.getDate() - 3);
+    setCurrentDate(target);
+  };
 
   // ─── Loading State ─────────────────────────────────────────
   if (loading) {
     return (
       <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="reservation_calendar" fullWidth>
-        <div className="flex items-center justify-center h-screen">
-          <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-600"></div>
-        </div>
+        <ProductState state="loading" moduleName="Rezervasyon takvimi" showDashboardLink={false} />
+      </Layout>
+    );
+  }
+
+  if (calendarSafetyError && rooms.length === 0) {
+    return (
+      <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="calendar" fullWidth>
+        <ProductState
+          state="error"
+          moduleName="Rezervasyon takvimi"
+          title="Takvim güvenli olarak yüklenemedi"
+          description={calendarSafetyError}
+          onRetry={() => loadCalendarData()}
+          showDashboardLink={false}
+        />
       </Layout>
     );
   }
@@ -988,9 +1661,9 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   // ─── Render ────────────────────────────────────────────────
   return (
     <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="calendar" fullWidth>
-      <div className="flex flex-col h-[calc(100vh-72px)] overflow-hidden -mb-28 bg-slate-50" role="main" aria-label="Rezervasyon takvimi">
+      <div className="flex flex-col h-[calc(100vh-72px)] overflow-hidden -mb-28 bg-white" role="main" aria-label="Rezervasyon takvimi">
         <div
-          className="flex-none px-4 py-3 bg-white border-b border-slate-200 shadow-sm space-y-3"
+          className="flex-none border-b border-slate-200 bg-slate-50 px-5 py-2.5"
           data-testid="calendar-sticky-header"
           role="toolbar"
           aria-label="Takvim kontrol araçları"
@@ -1005,29 +1678,46 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
           onNavigatePrevious={navigatePrevious}
           onNavigateNext={navigateNext}
           onGoToDate={goToDate}
+          onGoToToday={goToOperationalToday}
+          businessDate={hotelBusinessDate}
           onSyncReservations={handleSyncReservations}
           onShowFindRoomDialog={() => setShowFindRoomDialog(true)}
           onShowNewBookingDialog={() => {
+            if (calendarSafetyError) {
+              toast.error('Oda blokları doğrulanmadan rezervasyon oluşturulamaz. Önce takvimi yenileyin.');
+              return;
+            }
             setSelectedRoom(null);
-            setNewBooking({
-              guest_id: '', guest_name: '', guest_email: '', guest_phone: '', guest_id_number: '',
-              room_id: '', check_in: '', check_out: '',
-              guests_count: 2, adults: 2, children: 0, children_ages: [],
-              total_amount: 0, base_rate: 0, status: 'confirmed'
-            });
+            setNewBooking(newBookingDraft());
             setShowNewBookingDialog(true);
+          }}
+          onShowRoomBlockDialog={() => {
+            if (calendarSafetyError) {
+              toast.error('Takvim verisi doğrulanmadan oda bloğu değiştirilemez. Önce takvimi yenileyin.');
+              return;
+            }
+            setRoomToBlock(null);
+            setShowRoomBlockDialog(true);
           }}
           onShowUnassigned={() => setShowUnassignedPanel(true)}
           onShowConflicts={() => setShowConflictsModal(true)}
           viewPreferences={viewPreferences}
           onViewPreferenceChange={updateViewPreference}
+          canCreateBooking={canCreateBooking}
+          canManageRooms={canManageRooms}
+          canSyncChannels={canSyncChannels}
         />
         </div>
 
-        <div className="flex-1 flex flex-col min-h-0 px-4 pb-4 pt-3 gap-3">
+        <div className="flex-1 flex flex-col min-h-0">
+        {(calendarSafetyError || calendarRateError) && (
+          <div className="flex-none border-b border-red-200 bg-red-50 px-5 py-2 text-sm text-red-800" role="alert">
+            {calendarSafetyError || calendarRateError}
+          </div>
+        )}
         {/* Compact Legend */}
         <div
-          className={`flex-none bg-white border border-slate-200 rounded-xl shadow-sm ${viewPreferences.compactMode ? 'px-3 py-1.5' : 'px-4 py-2'}`}
+          className={`flex-none border-b border-slate-200 bg-white ${viewPreferences.compactMode ? 'px-5 py-1.5' : 'px-5 py-2'}`}
           data-testid="calendar-legend"
           role="region"
           aria-label="Renk kodu lejantı"
@@ -1064,7 +1754,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
           </div>
         </div>
 
-        <div className="flex-1 min-h-0 overflow-hidden">
+        <div className={`flex-1 min-h-0 overflow-hidden animate-in fade-in duration-200 ${calendarSafetyError ? 'pointer-events-none opacity-60' : ''}`} aria-disabled={Boolean(calendarSafetyError)}>
         <CalendarGrid
           rooms={rooms}
           bookings={bookings}
@@ -1075,7 +1765,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
           businessDate={hotelBusinessDate}
           conflicts={conflicts}
           draggingBooking={draggingBooking}
-          dragOverCell={dragOverCell}
+          resizingBooking={resizingBooking}
           showDeluxePanel={showDeluxePanel}
           groupColorMap={groupColorMap}
           setGroupColorMap={setGroupColorMap}
@@ -1086,13 +1776,24 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
           onCellMouseEnter={handleCellMouseEnter}
           dragSelect={dragSelect}
           onDragStart={handleDragStart}
+          onResizeStart={handleResizeStart}
+          onResizePointerStart={handleResizePointerStart}
+          onResizePointerCommit={handleResizePointerCommit}
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
           onDragEnd={handleDragEnd}
+          onBookingClick={handleBookingClick}
           onBookingDoubleClick={handleBookingDoubleClick}
+          onBookingIntent={preloadReservationDetailModal}
+          onOpenRoomBlock={(room) => {
+            setRoomToBlock(room);
+            setShowRoomBlockDialog(true);
+          }}
           showOccupancyBand={viewPreferences.showOccupancy && !viewPreferences.operationMode}
           dailyRates={calendarRates}
+          showPrices={viewPreferences.showPrices}
+          onPerformanceSample={recordCalendarPerformance}
         />
         </div>
         {viewPreferences.showTimeline && !viewPreferences.operationMode && (
@@ -1116,8 +1817,17 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
         guests={guests}
         rooms={rooms}
         occupancyPricingRules={occupancyPricingRules}
+        canRecordPrepayment={canRecordPrepayment}
         onSubmit={handleCreateBooking}
         minDate={(() => { const t = new Date().toISOString().split('T')[0]; return hotelBusinessDate && hotelBusinessDate < t ? hotelBusinessDate : t; })()}
+      />
+      <RoomBlockDialog
+        open={showRoomBlockDialog}
+        onOpenChange={setShowRoomBlockDialog}
+        rooms={rooms}
+        defaultRoomId={roomToBlock?.id || ''}
+        businessDate={hotelBusinessDate || toDateStringUTC(currentDate)}
+        onChanged={loadCalendarData}
       />
 
       <Dialog open={showConflictsModal} onOpenChange={setShowConflictsModal}>
@@ -1149,7 +1859,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
                   <div key={idx} className="border border-red-200 rounded-lg p-3 bg-red-50/50" data-testid={`conflict-row-${idx}`}>
                     <div className="flex items-center justify-between mb-2">
                       <div className="font-semibold text-sm text-red-700">
-                        {t('cm.pages_ReservationCalendar.oda')} {c.room_number || c.room_id}
+                        {t('cm.pages_ReservationCalendar.oda')} {roomLabel(c)}
                       </div>
                       <div className="text-xs text-gray-600">
                         {t('cm.pages_ReservationCalendar.cakisma')} {fmt(c.overlap_start)} – {fmt(c.overlap_end)}
@@ -1213,6 +1923,72 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
         onConfirmMove={handleConfirmMove}
       />
 
+      <Dialog open={Boolean(swapData)} onOpenChange={(open) => {
+        if (!open && !swapSubmitting) {
+          setSwapData(null);
+          setSwapReason('Oda takası');
+        }
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Rezervasyon odalarını takas et</DialogTitle>
+          </DialogHeader>
+          {swapData && (
+            <div className="space-y-4">
+              <p className="text-sm text-slate-600">
+                {hasCheckedInGuestInRoomSwap
+                  ? 'Giriş yapılmış misafir yeni odaya tek işlemde taşınır; diğer rezervasyon eski odaya atanır. Oda durum etiketleri takası engellemez; doluluk ve temizlik durumu işlem sonunda güncellenir. Folyo, ödeme, tarih ve fiyat bilgileri kendi rezervasyonlarında kalır.'
+                  : 'Bu işlem iki rezervasyonun oda atamalarını ve tüm oda-gece kilitlerini tek işlemde değiştirir. Tarihler ve fiyatlar değişmez.'}
+              </p>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="rounded-lg border border-blue-200 bg-blue-50 p-3">
+                  <div className="text-xs font-semibold text-blue-700">{swapData.sourceRoom?.room_number} → {swapData.targetRoom?.room_number}</div>
+                  <div className="mt-1 font-medium text-slate-900">{formatGuestName(swapData.source.guest_name) || 'Misafir'}</div>
+                  <div className="text-xs text-slate-600">{swapData.source.check_in} → {swapData.source.check_out}</div>
+                  <div className="text-xs text-blue-600 font-medium mt-0.5">
+                    {Math.max(1, Math.round((new Date(swapData.source.check_out) - new Date(swapData.source.check_in)) / 86400000))} gece
+                  </div>
+                </div>
+                <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+                  <div className="text-xs font-semibold text-emerald-700">{swapData.targetRoom?.room_number} → {swapData.sourceRoom?.room_number}</div>
+                  <div className="mt-1 font-medium text-slate-900">{formatGuestName(swapData.target.guest_name) || 'Misafir'}</div>
+                  <div className="text-xs text-slate-600">{swapData.target.check_in} → {swapData.target.check_out}</div>
+                  <div className="text-xs text-emerald-600 font-medium mt-0.5">
+                    {Math.max(1, Math.round((new Date(swapData.target.check_out) - new Date(swapData.target.check_in)) / 86400000))} gece
+                  </div>
+                </div>
+              </div>
+              {(() => {
+                const srcNights = Math.round((new Date(swapData.source.check_out) - new Date(swapData.source.check_in)) / 86400000);
+                const tgtNights = Math.round((new Date(swapData.target.check_out) - new Date(swapData.target.check_in)) / 86400000);
+                return srcNights !== tgtNights ? (
+                  <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+                    ⚠ Farklı gece sayısı: Her rezervasyon kendi tarihleriyle diğerinin odasına taşınır. Fiyatlar ve tarihler değişmez.
+                  </p>
+                ) : null;
+              })()}
+              <div>
+                <Label htmlFor="room-swap-reason">Takas nedeni</Label>
+                <input
+                  id="room-swap-reason"
+                  className="mt-1 w-full rounded-md border px-3 py-2"
+                  value={swapReason}
+                  onChange={(event) => setSwapReason(event.target.value)}
+                  maxLength={500}
+                  disabled={swapSubmitting}
+                />
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSwapData(null)} disabled={swapSubmitting}>Vazgeç</Button>
+            <Button onClick={executeRoomSwap} disabled={swapSubmitting || !swapReason.trim()}>
+              {swapSubmitting ? 'Takas ediliyor…' : 'Oda takasını onayla'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <FindRoomDialog
         open={showFindRoomDialog}
         onOpenChange={setShowFindRoomDialog}
@@ -1229,22 +2005,24 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
 
       {/* Reservation Details Sidebar */}
       {showSidebar && (
-        <>
-          <div className="fixed inset-0 bg-black bg-opacity-50 z-40" onClick={() => setShowSidebar(false)}></div>
+        <Suspense fallback={null}>
           <ReservationSidebar
             booking={selectedBooking}
             folio={selectedBookingFolio}
             room={rooms.find(r => r.id === selectedBooking?.room_id)}
-            onClose={() => setShowSidebar(false)}
+            onClose={() => { quickPanelBookingRef.current = null; setShowSidebar(false); }}
             getSegmentColor={getSegmentColor}
             getStatusLabel={getStatusLabel}
             getRateTypeInfo={getRateTypeInfo}
             onViewFolio={handleViewFolio}
-            onEditReservation={handleEditReservation}
+            onOpenWorkspace={handleBookingDoubleClick}
             onSendConfirmation={handleSendConfirmation}
-            onDataRefresh={loadCalendarData}
+            onDataRefresh={() => {
+              if (selectedBooking?.id) quickPanelDetailCacheRef.current.delete(selectedBooking.id);
+              loadCalendarData();
+            }}
           />
-        </>
+        </Suspense>
       )}
 
       {/* Inline Folio Panel */}
@@ -1273,16 +2051,18 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
       {showDetailModal && detailModalBookingId && (
         <Suspense fallback={<div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50"><div className="bg-white rounded-xl p-6 text-gray-500">{t('cm.pages_ReservationCalendar.yukleniyor_4deb0')}</div></div>}>
           <ReservationDetailModal
+            key={detailModalBookingId}
             bookingId={detailModalBookingId}
-            onClose={() => { setShowDetailModal(false); setDetailModalBookingId(null); loadCalendarData(); }}
+            onClose={closeReservationDetail}
             allBookings={bookings}
+            onOperationComplete={handleReservationOperationComplete}
           />
         </Suspense>
       )}
 
       {/* Unassigned Bookings Panel — Enhanced with urgency + quick assign */}
       {showUnassignedPanel && (() => {
-        const allUnassigned = bookings.filter(b => !b.room_id && b.status !== 'cancelled' && b.status !== 'checked_out' && b.status !== 'no_show');
+        const allUnassigned = allUnassignedBookings;
         const overdueList = allUnassigned.filter(b => getUnassignedUrgency(b).level === 'overdue');
         const todayList = allUnassigned.filter(b => getUnassignedUrgency(b).level === 'today');
         const tomorrowList = allUnassigned.filter(b => getUnassignedUrgency(b).level === 'tomorrow');
@@ -1312,7 +2092,9 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
                     </div>
                     <div>
                       <h3 className="font-semibold text-gray-800 text-sm" data-testid="unassigned-panel-title">{t('cm.pages_ReservationCalendar.atanmamis_rezervasyonlar')}</h3>
-                      <p className="text-xs text-gray-500">{allUnassigned.length} aktif rezervasyon</p>
+                      <p className="text-xs text-gray-500">
+                        {allUnassignedLoading ? 'Yükleniyor...' : `${allUnassigned.length} rezervasyon · Tüm tarihler`}
+                      </p>
                     </div>
                   </div>
                   <Button variant="ghost" size="sm" onClick={() => { setShowUnassignedPanel(false); setUnassignedFilter('all'); }} className="h-8 w-8 p-0" data-testid="close-unassigned-panel-btn">
@@ -1364,6 +2146,17 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
               {/* Natural scrolling prevents the first card from being clipped by
                   a viewport/header height mismatch and keeps variable metadata visible. */}
               {(() => {
+                if (allUnassignedLoading) {
+                  return (
+                    <div className="min-h-[50vh] flex items-center justify-center" role="status">
+                      <div className="text-center py-12 text-gray-500">
+                        <Loader2 className="w-8 h-8 mx-auto mb-3 animate-spin text-blue-600" />
+                        <p className="text-sm font-medium">Atanmamış rezervasyonlar doğrulanıyor</p>
+                        <p className="text-xs mt-1">Mükerrer kayıtlar ve güncel oda müsaitliği kontrol ediliyor.</p>
+                      </div>
+                    </div>
+                  );
+                }
                 if (sorted.length === 0) {
                   return (
                   <div className="min-h-[50vh] flex items-center justify-center">
@@ -1388,6 +2181,8 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
                         headers: { 'Idempotency-Key': idempotencyKey },
                       });
                       toast.success(`${guestName || 'Misafir'} odaya atandı`);
+                      // Anlık güncelleme: listeden kaldır
+                      setAllUnassignedBookings(prev => prev.filter(b => b.id !== bookingId));
                       loadCalendarData();
                     } catch (err) {
                       toast.error(err.response?.data?.detail || 'Atama başarısız');
@@ -1423,7 +2218,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-base">
               <Ban className="w-4 h-4 text-amber-600" />
-              No-Show Sebebi
+              Gelmeme sebebi
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
@@ -1446,7 +2241,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
           </div>
           <DialogFooter className="gap-2">
             <Button variant="outline" size="sm" onClick={() => { setShowNoShowDialog(false); setNoShowBookingId(null); }} data-testid="noshow-cancel-btn">
-              Vazgec
+              Vazgeç
             </Button>
             <Button
               size="sm"
@@ -1455,7 +2250,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
               disabled={noShowProcessing}
               data-testid="noshow-confirm-btn"
             >
-              {noShowProcessing ? 'Isleniyor...' : 'No-Show Onayla'}
+              {noShowProcessing ? 'İşleniyor…' : 'Gelmeme olarak işaretle'}
             </Button>
           </DialogFooter>
         </DialogContent>

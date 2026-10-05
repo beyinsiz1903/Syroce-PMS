@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { roomLabel } from '@/utils/displayIdentifiers';
 const API_URL = import.meta.env.VITE_BACKEND_URL || '';
 const AIHousekeepingBoard = () => {
   const [schedule, setSchedule] = useState(null);
@@ -100,7 +101,7 @@ const AIHousekeepingBoard = () => {
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {assignment.tasks.slice(0, 10).map((task, tidx) => <span key={tidx} className={`px-3 py-1 rounded-full text-sm ${task.type === 'checkout' ? 'bg-red-100 text-red-800' : 'bg-blue-100 text-blue-800'}`}>
-                      Room {task.room_id.slice(0, 4)}
+                      Oda {roomLabel(task)}
                     </span>)}
                   {assignment.tasks.length > 10 && <span className="px-3 py-1 rounded-full text-sm bg-gray-100 text-gray-800">
                       +{assignment.tasks.length - 10} more

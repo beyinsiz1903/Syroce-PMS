@@ -82,7 +82,7 @@ const MessagingTemplates = () => {
       setSelectedTemplate(null);
       setSendData({ recipient: '', variables: {} });
     } catch (error) {
-      toast.error('Mesaj gönderilemedi');
+      toast.error('İletişim mesajı gönderilemedi.');
     }
   };
 

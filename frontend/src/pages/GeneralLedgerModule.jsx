@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -7,7 +8,9 @@ import { Tabs, TabsContent } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { useCurrency } from '@/context/CurrencyContext';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
+import { accountingQueueStatusLabel, ledgerAccountTypeLabel } from '@/lib/accountingLabels';
+import { localIsoDate, useBusinessDate } from '@/hooks/useBusinessDate';
 import AccountingSetupWizard from '@/pages/accounting/AccountingSetupWizard';
 import { AccountLedgerView } from '@/pages/accounting/AccountLedgerView';
 import { GeneralLedgerNavigation } from '@/pages/accounting/GeneralLedgerNavigation';
@@ -39,6 +42,8 @@ export const GL_ENDPOINTS = {
   fxRevalue: '/gl/fx/revalue',
   chainConsolidated: '/gl/chain/consolidated',
   intercompanyRules: '/gl/chain/intercompany-rules',
+  chainTransfers: '/platform/multi-property/transfers',
+  chainTransferSettlements: '/platform/multi-property/transfer-settlements',
   eledgerSettings: '/gl/e-ledger/settings',
   eledgerPreflight: '/gl/e-ledger/preflight',
   eledgerSourcePackage: '/gl/e-ledger/source-package',
@@ -146,6 +151,10 @@ export const collectIntegrationAccountCodes = (nilvera = {}, ap = {}, fixedAsset
   return [...new Set(candidates.map((value) => String(value || '').trim()).filter(Boolean))].sort();
 };
 
+export const shouldFetchAccountsForTab = (tab) => (
+  ['overview', 'setup', 'accounts', 'account-ledger', 'integrations'].includes(tab)
+);
+
 const VOUCHER_TYPE_BY_LABEL = {
   Mahsup: 'mahsup',
   Tahsilat: 'tahsil',
@@ -154,16 +163,27 @@ const VOUCHER_TYPE_BY_LABEL = {
   Kapanış: 'kapanis',
 };
 
-export const toVoucherPayload = (journal) => ({
+export const isForeignCurrency = (currency, baseCurrency = 'TRY') => {
+  const normalized = String(currency || '').trim().toUpperCase();
+  return Boolean(normalized) && normalized !== String(baseCurrency || 'TRY').trim().toUpperCase();
+};
+
+// Account pickers commonly render labels such as "100 Kasa". The API, however,
+// must always receive the immutable chart-of-accounts code rather than that
+// presentation label. Keeping this at the payload boundary also protects older
+// screens and pasted values.
+export const normalizeAccountCode = (value) => String(value || '').trim().split(/\s+/)[0] || '';
+
+export const toVoucherPayload = (journal, baseCurrency = 'TRY') => ({
   date: journal.date,
   memo: journal.description.trim(),
   voucher_type: VOUCHER_TYPE_BY_LABEL[journal.type] || 'mahsup',
   lines: journal.lines.map((line) => ({
-    account_code: line.account_code.trim(),
+    account_code: normalizeAccountCode(line.account_code),
     debit: Number(line.debit) || 0,
     credit: Number(line.credit) || 0,
     memo: line.description?.trim() || null,
-    ...(line.currency ? {
+    ...(isForeignCurrency(line.currency, baseCurrency) ? {
       currency: line.currency.trim().toUpperCase(),
       foreign_amount: Number(line.foreign_amount),
       exchange_rate: Number(line.exchange_rate),
@@ -175,7 +195,7 @@ export const toVoucherPayload = (journal) => ({
 // voucher payload and can no longer bypass the approval lifecycle.
 export const toJournalPayload = toVoucherPayload;
 
-export const getJournalValidationError = (journal) => {
+export const getJournalValidationError = (journal, baseCurrency = 'TRY') => {
   const lines = journal.lines || [];
   const totalDebit = lines.reduce((sum, line) => sum + (Number(line.debit) || 0), 0);
   const totalCredit = lines.reduce((sum, line) => sum + (Number(line.credit) || 0), 0);
@@ -186,7 +206,7 @@ export const getJournalValidationError = (journal) => {
   if (lines.some((line) => (Number(line.debit) > 0) === (Number(line.credit) > 0))) {
     return 'Her satırda yalnızca borç veya alacak tutarı olmalıdır.';
   }
-  if (lines.some((line) => line.currency && (!Number(line.foreign_amount) || !Number(line.exchange_rate)))) {
+  if (lines.some((line) => isForeignCurrency(line.currency, baseCurrency) && (!Number(line.foreign_amount) || !Number(line.exchange_rate)))) {
     return 'Dövizli satırlarda yabancı tutar ve kur zorunludur.';
   }
   return '';
@@ -197,8 +217,7 @@ const newRequestKey = () => {
   return `manual-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 };
 
-const emptyJournal = () => ({
-  date: new Date().toISOString().split('T')[0],
+const emptyJournal = (businessDate = localIsoDate()) => ({
   type: 'Mahsup',
   description: '',
   idempotency_key: newRequestKey(),
@@ -225,6 +244,40 @@ export const voucherActionNames = (status) => ({
   posting: ['post'],
   rejected: ['edit', 'cancel'],
 }[status] || []);
+
+const VOUCHER_HISTORY_ACTION_LABELS = {
+  created: 'Taslak oluşturuldu',
+  updated: 'Taslak güncellendi',
+  submitted: 'İncelemeye gönderildi',
+  approved: 'Onaylandı',
+  rejected: 'Reddedildi',
+  cancelled: 'İptal edildi',
+  posting: 'Yevmiyeye işleme başlatıldı',
+  posted: 'Yevmiyeye işlendi',
+  post_failed: 'Yevmiyeye işleme başarısız oldu',
+};
+
+// Voucher actions are already persisted by the API. Keep the audit trail
+// legible in the operational screen: the actor's immutable id remains in the
+// server audit log, while this list shows the action, local time and reason.
+export const formatVoucherHistoryEntry = (entry = {}) => {
+  const action = VOUCHER_HISTORY_ACTION_LABELS[entry.action] || entry.action || 'İşlem kaydı';
+  let occurredAt = '';
+  if (entry.at) {
+    const parsed = new Date(entry.at);
+    occurredAt = Number.isNaN(parsed.valueOf())
+      ? String(entry.at).replace('T', ' ').replace(/\.\d+(?=(Z|[+-]\d\d:\d\d)$)/, '')
+      : new Intl.DateTimeFormat('tr-TR', {
+        day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
+      }).format(parsed);
+  }
+  const details = [
+    occurredAt,
+    entry.reason ? `Gerekçe: ${entry.reason}` : '',
+    entry.entry_no ? `Yevmiye: ${entry.entry_no}` : '',
+  ].filter(Boolean);
+  return [action, ...details].join(' · ');
+};
 
 const VOUCHER_LABEL_BY_TYPE = {
   mahsup: 'Mahsup',
@@ -266,6 +319,46 @@ export const normalizeTrialBalance = (data = {}) => ({
   },
 });
 
+export const describeIncomeTotals = (totals = {}) => {
+  const expenses = Number(totals.expenses) || 0;
+  const netIncome = Number(totals.net_income) || 0;
+  return {
+    expenses,
+    netIncome,
+    expenseLabel: expenses < 0 ? 'Net Gider İptali' : 'Toplam Gider',
+    netLabel: netIncome < 0 ? 'Net Dönem Zararı' : 'Net Dönem Kârı',
+    hasExpenseReversal: expenses < 0,
+  };
+};
+
+export const downloadBlob = (blob, filename) => {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  globalThis.setTimeout(() => URL.revokeObjectURL(url), 0);
+};
+
+// Older reversal rows predate `reversal_status` on the source entry. The
+// linked contra entry remains authoritative, so derive the display state from
+// that immutable relationship while loading the journal list.
+export const markReversedJournalEntries = (entries = []) => {
+  const reversedSourceIds = new Set(
+    entries
+      .filter((entry) => entry.source === 'reversal')
+      .map((entry) => entry.reverses_entry_id || entry.source_ref)
+      .filter(Boolean),
+  );
+  return entries.map((entry) => (
+    reversedSourceIds.has(entry.id) && entry.reversal_status !== 'reversed'
+      ? { ...entry, reversal_status: 'reversed' }
+      : entry
+  ));
+};
+
 export const mergeAccountBalances = (accounts = [], trialBalance = {}) => {
   const balances = new Map(
     (trialBalance.rows || []).map((row) => [
@@ -278,8 +371,18 @@ export const mergeAccountBalances = (accounts = [], trialBalance = {}) => {
 
 const GL_TABS = ['overview', 'journals', 'account-ledger', 'accounts', 'trial-balance', 'statements', 'periods', 'workspace', 'integrations', 'setup'];
 
+export const formatSettlementAmount = (amount, currency) => formatCurrency(
+  Number(amount) || 0,
+  String(currency || 'TRY').toUpperCase(),
+  { decimals: 2, compactDecimals: false },
+);
+
 const GeneralLedgerModule = () => {
-  const { amount: fmtMoney } = useCurrency();
+  const { t } = useTranslation();
+  const businessDate = useBusinessDate();
+  const businessDateDefaults = useRef(localIsoDate());
+  const [ledgerCurrency, setLedgerCurrency] = useState(() => cachedTenantCurrency());
+  const fmtMoney = (value) => formatCurrency(value, ledgerCurrency, { decimals: 2, compactDecimals: false });
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedTab = searchParams.get('tab');
@@ -293,11 +396,17 @@ const GeneralLedgerModule = () => {
   const [trialBalance, setTrialBalance] = useState({ lines: [], totals: {} });
   const [initializingAccounts, setInitializingAccounts] = useState(false);
   const [periods, setPeriods] = useState([]);
-  const [periodYear, setPeriodYear] = useState(new Date().getFullYear());
+  const [periodYear, setPeriodYear] = useState(() => Number(localIsoDate().slice(0, 4)));
   const [periodBusy, setPeriodBusy] = useState('');
   const [yearEndStatus, setYearEndStatus] = useState(null);
   const [periodActionDialog, setPeriodActionDialog] = useState(null);
   const [periodActionReason, setPeriodActionReason] = useState('');
+  const [voucherActionDialog, setVoucherActionDialog] = useState(null);
+  const [voucherActionReason, setVoucherActionReason] = useState('');
+  const [voucherActionError, setVoucherActionError] = useState('');
+  const [reversalDialog, setReversalDialog] = useState(null);
+  const [reversalReason, setReversalReason] = useState('');
+  const [reversalDate, setReversalDate] = useState(businessDate);
   const [journalSaving, setJournalSaving] = useState(false);
   const [voucherBusy, setVoucherBusy] = useState('');
   const [editingVoucher, setEditingVoucher] = useState(null);
@@ -306,23 +415,40 @@ const GeneralLedgerModule = () => {
   const [statements, setStatements] = useState({ income: null, balance: null });
   const [comparison, setComparison] = useState({ income: null, balance: null });
   const [chainFinance, setChainFinance] = useState(null);
+  const [chainTransfers, setChainTransfers] = useState([]);
+  const [settlementForms, setSettlementForms] = useState({});
+  const [settlementBusy, setSettlementBusy] = useState('');
   const [intercompany, setIntercompany] = useState({ rules: [], properties: [], can_manage: false });
   const [intercompanyForm, setIntercompanyForm] = useState({ name: '', kind: 'balance', tenant_a_id: '', account_a_code: '', tenant_b_id: '', account_b_code: '' });
   const [intercompanyBusy, setIntercompanyBusy] = useState(false);
-  const [eledgerPeriod, setEledgerPeriod] = useState(new Date().toISOString().slice(0, 7));
+  const [eledgerPeriod, setEledgerPeriod] = useState(() => localIsoDate().slice(0, 7));
   const [eledgerSettings, setEledgerSettings] = useState({ taxpayer_id: '', legal_name: '', source_application: 'Syroce PMS', source_application_version: '', software_approval_reference: '' });
   const [eledgerPreflight, setEledgerPreflight] = useState(null);
   const [eledgerBusy, setEledgerBusy] = useState('');
-  const [fxForm, setFxForm] = useState({ date: new Date().toISOString().split('T')[0], currency: 'USD', closing_rate: '' });
+  const [fxForm, setFxForm] = useState(() => ({ date: localIsoDate(), currency: 'USD', closing_rate: '' }));
   const [fxBusy, setFxBusy] = useState(false);
   const [workspace, setWorkspace] = useState({ aging: null, expenseBudget: null, revenueBudget: null, assets: [] });
+  const [workspaceFailures, setWorkspaceFailures] = useState([]);
   const [operationalBridge, setOperationalBridge] = useState(null);
   const [operationalBusy, setOperationalBusy] = useState(false);
   const [nilveraGL, setNilveraGL] = useState({ settings: DEFAULT_NILVERA_GL_SETTINGS, queue: [], counts: {} });
   const [nilveraMappingText, setNilveraMappingText] = useState(EMPTY_NILVERA_MAPPING_TEXT);
   const [apGLMapping, setApGLMapping] = useState(DEFAULT_AP_GL_MAPPING);
   const [fixedAssetGLMapping, setFixedAssetGLMapping] = useState(DEFAULT_FIXED_ASSET_GL_MAPPING);
+  const [integrationFailures, setIntegrationFailures] = useState([]);
   const [integrationBusy, setIntegrationBusy] = useState('');
+  const [overviewLoaded, setOverviewLoaded] = useState({
+    accounts: false,
+    vouchers: false,
+    trialBalance: false,
+    periods: false,
+  });
+  const [overviewFailed, setOverviewFailed] = useState({
+    accounts: false,
+    vouchers: false,
+    trialBalance: false,
+    periods: false,
+  });
 
   const handleTabChange = (value) => {
     setActiveTab(value);
@@ -336,16 +462,48 @@ const GeneralLedgerModule = () => {
   }, [requestedTab]);
   
   // New Journal Entry State
-  const [newJournal, setNewJournal] = useState(emptyJournal);
+  const [newJournal, setNewJournal] = useState(() => emptyJournal());
+
+  useEffect(() => {
+    let active = true;
+    axios.get(GL_ENDPOINTS.setup)
+      .then(({ data }) => {
+        const currency = String(data?.profile?.currency || '').trim().toUpperCase();
+        if (active && /^[A-Z]{3}$/.test(currency)) setLedgerCurrency(currency);
+      })
+      .catch(() => {});
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    setNewJournal((current) => {
+      const hasEntry = current.description.trim()
+        || current.lines.some((line) => line.account_code || Number(line.debit) || Number(line.credit));
+      return hasEntry ? current : { ...current, date: businessDate };
+    });
+  }, [businessDate]);
+
+  useEffect(() => {
+    const previousDefault = businessDateDefaults.current;
+    if (businessDate === previousDefault) return;
+    setPeriodYear((current) => current === Number(previousDefault.slice(0, 4)) ? Number(businessDate.slice(0, 4)) : current);
+    setEledgerPeriod((current) => current === previousDefault.slice(0, 7) ? businessDate.slice(0, 7) : current);
+    setFxForm((current) => current.date === previousDefault ? { ...current, date: businessDate } : current);
+    businessDateDefaults.current = businessDate;
+  }, [businessDate]);
 
   const fetchAccounts = async () => {
+    setOverviewFailed((current) => ({ ...current, accounts: false, trialBalance: false }));
     try {
       const [accountsRes, balanceRes] = await Promise.all([
         axios.get(GL_ENDPOINTS.accounts),
         axios.get(GL_ENDPOINTS.trialBalance),
       ]);
       setAccounts(mergeAccountBalances(accountsRes.data?.accounts || [], balanceRes.data));
+      setTrialBalance(normalizeTrialBalance(balanceRes.data));
+      setOverviewLoaded((current) => ({ ...current, accounts: true, trialBalance: true }));
     } catch {
+      setOverviewFailed((current) => ({ ...current, accounts: true, trialBalance: true }));
       toast.error('Hesap planı yüklenemedi.');
     }
   };
@@ -364,56 +522,75 @@ const GeneralLedgerModule = () => {
   };
 
   const fetchJournals = async () => {
+    setOverviewFailed((current) => ({ ...current, vouchers: false }));
     try {
       const [journalRes, voucherRes, auditRes, integrityRes] = await Promise.all([
         axios.get(GL_ENDPOINTS.journal, { params: { limit: 1000 } }),
         axios.get(GL_ENDPOINTS.vouchers),
-        axios.get(GL_ENDPOINTS.sequenceAudit, { params: { fiscal_year: new Date().getFullYear() } }),
-        axios.get(GL_ENDPOINTS.integrityAudit, { params: { fiscal_year: new Date().getFullYear() } }),
+        axios.get(GL_ENDPOINTS.sequenceAudit, { params: { fiscal_year: Number(businessDate.slice(0, 4)) } }),
+        axios.get(GL_ENDPOINTS.integrityAudit, { params: { fiscal_year: Number(businessDate.slice(0, 4)) } }),
       ]);
-      setJournals(journalRes.data?.entries || []);
+      setJournals(markReversedJournalEntries(journalRes.data?.entries || []));
       setVouchers(voucherRes.data?.vouchers || []);
       setSequenceAudit(auditRes.data || null);
       setIntegrityAudit(integrityRes.data || null);
+      setOverviewLoaded((current) => ({ ...current, vouchers: true }));
     } catch {
+      setOverviewFailed((current) => ({ ...current, vouchers: true }));
       toast.error('Yevmiye fişleri yüklenemedi.');
     }
   };
 
   const fetchTrialBalance = async () => {
+    setOverviewFailed((current) => ({ ...current, trialBalance: false }));
     try {
       const res = await axios.get(GL_ENDPOINTS.trialBalance);
       setTrialBalance(normalizeTrialBalance(res.data));
+      setOverviewLoaded((current) => ({ ...current, trialBalance: true }));
     } catch {
+      setOverviewFailed((current) => ({ ...current, trialBalance: true }));
       toast.error('Mizan yüklenemedi.');
     }
   };
 
   const fetchPeriods = async () => {
-    try {
-      const [periodRes, yearEndRes] = await Promise.all([
-        axios.get(GL_ENDPOINTS.periods, { params: { fiscal_year: periodYear } }),
-        axios.get(`${GL_ENDPOINTS.yearEnd}/${periodYear}`),
-      ]);
+    setOverviewFailed((current) => ({ ...current, periods: false }));
+    const [periodResult, yearEndResult] = await Promise.allSettled([
+      axios.get(GL_ENDPOINTS.periods, { params: { fiscal_year: periodYear } }),
+      axios.get(`${GL_ENDPOINTS.yearEnd}/${periodYear}`),
+    ]);
+    if (periodResult.status === 'fulfilled') {
+      const periodRes = periodResult.value;
       setPeriods(periodRes.data?.periods || []);
-      setYearEndStatus(yearEndRes.data || null);
-    } catch {
+      setOverviewLoaded((current) => ({ ...current, periods: true }));
+    } else {
+      setPeriods([]);
+      setOverviewFailed((current) => ({ ...current, periods: true }));
       toast.error('Mali dönemler yüklenemedi.');
+    }
+    if (yearEndResult.status === 'fulfilled') {
+      setYearEndStatus(yearEndResult.value.data || null);
+    } else {
+      setYearEndStatus(null);
+      toast.error('Yıl sonu durumu yüklenemedi; dönem listesi kullanılmaya devam edebilir.');
     }
   };
 
   const fetchStatements = async () => {
-    const today = new Date().toISOString().split('T')[0];
+    const today = businessDate;
     const start = `${today.slice(0, 4)}-01-01`;
     const previousYear = Number(today.slice(0, 4)) - 1;
     const previousStart = `${previousYear}-01-01`;
     const previousEnd = `${previousYear}${today.slice(4)}`;
     try {
-      const [incomeRes, balanceRes, chainRes, rulesRes, eledgerSettingsRes, eledgerPreflightRes] = await Promise.all([
+      const [incomeRes, balanceRes, chainRes, rulesRes, transfersRes, eledgerSettingsRes, eledgerPreflightRes] = await Promise.all([
         axios.get(GL_ENDPOINTS.comparativeIncome, { params: { start, end: today, comparison_start: previousStart, comparison_end: previousEnd } }),
         axios.get(GL_ENDPOINTS.comparativeBalance, { params: { as_of: today, comparison_as_of: previousEnd } }),
         axios.get(GL_ENDPOINTS.chainConsolidated, { params: { start, end: today, as_of: today } }),
         axios.get(GL_ENDPOINTS.intercompanyRules),
+        // A hotel outside a chain, or a non-headquarters finance user, may not
+        // access the chain trail.  That must not make its own statements fail.
+        axios.get(GL_ENDPOINTS.chainTransfers, { params: { limit: 100 } }).catch(() => ({ data: { transfers: [] } })),
         axios.get(GL_ENDPOINTS.eledgerSettings),
         axios.get(GL_ENDPOINTS.eledgerPreflight, { params: { period: eledgerPeriod } }),
       ]);
@@ -421,6 +598,7 @@ const GeneralLedgerModule = () => {
       setComparison({ income: incomeRes.data, balance: balanceRes.data });
       setChainFinance(chainRes.data || null);
       setIntercompany(rulesRes.data || { rules: [], properties: [], can_manage: false });
+      setChainTransfers(transfersRes.data?.transfers || []);
       if (eledgerSettingsRes.data?.settings) {
         setEledgerSettings({
           taxpayer_id: '', legal_name: '', source_application: 'Syroce PMS', source_application_version: '', software_approval_reference: '',
@@ -451,6 +629,28 @@ const GeneralLedgerModule = () => {
       toast.error(error.response?.data?.detail || 'Kur değerlemesi yapılamadı.');
     } finally {
       setFxBusy(false);
+    }
+  };
+
+  const reconcileTransferSettlement = async (settlementId) => {
+    const form = settlementForms[settlementId] || {};
+    if (!String(form.reference || '').trim()) {
+      toast.error('Banka dekontu, netleştirme veya mahsup fişi referansını girin.');
+      return;
+    }
+    setSettlementBusy(settlementId);
+    try {
+      await axios.post(`${GL_ENDPOINTS.chainTransferSettlements}/${settlementId}/reconcile`, {
+        method: form.method || 'bank_transfer',
+        reference: form.reference.trim(),
+        note: String(form.note || '').trim() || null,
+      });
+      toast.success('Zincir içi mahsuplaşma mutabakatı kapatıldı.');
+      await fetchStatements();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Mahsuplaşma kapatılamadı.');
+    } finally {
+      setSettlementBusy('');
     }
   };
 
@@ -531,12 +731,7 @@ const GeneralLedgerModule = () => {
         params: { period: eledgerPeriod },
         responseType: 'blob',
       });
-      const url = URL.createObjectURL(response.data);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `syroce-eledger-source-${eledgerPeriod}.zip`;
-      link.click();
-      URL.revokeObjectURL(url);
+      downloadBlob(response.data, `syroce-eledger-source-${eledgerPeriod}.zip`);
       toast.success('Kaynak paket indirildi; mali mühür veya GİB gönderimi yapılmadı.');
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Kaynak paket indirilemedi.');
@@ -547,41 +742,41 @@ const GeneralLedgerModule = () => {
 
   const downloadReport = async (report, format) => {
     try {
-      const today = new Date().toISOString().split('T')[0];
+      const today = businessDate;
       const response = await axios.get(GL_ENDPOINTS.exportReport, {
         params: { report, format, as_of: today, start: `${today.slice(0, 4)}-01-01`, end: today },
         responseType: 'blob',
       });
-      const url = URL.createObjectURL(response.data);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `gl-${report}-${today}.${format}`;
-      link.click();
-      URL.revokeObjectURL(url);
-    } catch {
-      toast.error('Rapor indirilemedi.');
+      downloadBlob(response.data, `gl-${report}-${today}.${format}`);
+      toast.success('Rapor indirildi.');
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Rapor indirilemedi.');
     }
   };
 
   const fetchWorkspace = async () => {
-    const period = new Date().toISOString().slice(0, 7);
-    try {
-      const [agingRes, expenseRes, revenueRes, assetsRes, operationalRes] = await Promise.all([
+    const period = businessDate.slice(0, 7);
+    const labels = ['Tedarikçi borçları', 'Gider bütçesi', 'Gelir bütçesi', 'Sabit kıymetler', 'PMS/POS köprüsü'];
+    const results = await Promise.allSettled([
         axios.get('/ap/aging'),
         axios.get('/budget/vs-actual', { params: { period, kind: 'expense' } }),
         axios.get('/budget/vs-actual', { params: { period, kind: 'revenue' } }),
         axios.get('/fixed-assets/assets'),
         axios.get(GL_ENDPOINTS.operationalStatus),
-      ]);
-      setWorkspace({
-        aging: agingRes.data,
-        expenseBudget: expenseRes.data,
-        revenueBudget: revenueRes.data,
-        assets: assetsRes.data?.assets || [],
-      });
-      setOperationalBridge(operationalRes.data || null);
-    } catch {
-      toast.error('Muhasebe alt defterleri yüklenemedi.');
+    ]);
+    const failures = results.flatMap((result, index) => result.status === 'rejected' ? [labels[index]] : []);
+    setWorkspaceFailures(failures);
+    setWorkspace((current) => ({
+      aging: results[0].status === 'fulfilled' ? results[0].value.data : current.aging,
+      expenseBudget: results[1].status === 'fulfilled' ? results[1].value.data : current.expenseBudget,
+      revenueBudget: results[2].status === 'fulfilled' ? results[2].value.data : current.revenueBudget,
+      assets: results[3].status === 'fulfilled' ? results[3].value.data?.assets || [] : current.assets,
+    }));
+    if (results[4].status === 'fulfilled') {
+      setOperationalBridge(results[4].value.data || null);
+    }
+    if (failures.length) {
+      toast.error(`Bazı alt defterler yüklenemedi: ${failures.join(', ')}`);
     }
   };
 
@@ -610,30 +805,33 @@ const GeneralLedgerModule = () => {
   };
 
   const fetchAccountingIntegrations = async () => {
-    try {
-      const [nilveraSettingsRes, nilveraQueueRes, apRes, fixedAssetRes] = await Promise.all([
+    const labels = ['Nilvera ayarları', 'Nilvera kuyruğu', 'Tedarikçi eşlemesi', 'Amortisman eşlemesi'];
+    const results = await Promise.allSettled([
         axios.get(GL_ENDPOINTS.nilveraSettings),
         axios.get(GL_ENDPOINTS.nilveraQueue),
         axios.get(GL_ENDPOINTS.apGLMapping),
         axios.get(GL_ENDPOINTS.fixedAssetGLMapping),
-      ]);
+    ]);
+    const failures = results.flatMap((result, index) => result.status === 'rejected' ? [labels[index]] : []);
+    setIntegrationFailures(failures);
+    if (results[0].status === 'fulfilled') {
+      const nilveraSettingsRes = results[0].value;
       const settings = { ...DEFAULT_NILVERA_GL_SETTINGS, ...(nilveraSettingsRes.data?.settings || {}) };
-      setNilveraGL({
-        settings,
-        queue: nilveraQueueRes.data?.items || [],
-        counts: nilveraQueueRes.data?.counts || {},
-      });
+      setNilveraGL((current) => ({ ...current, settings }));
       setNilveraMappingText({
         incoming_other_tax_accounts_by_code: formatAccountMapping(settings.incoming_other_tax_accounts_by_code),
         incoming_deduction_accounts_by_code: formatAccountMapping(settings.incoming_deduction_accounts_by_code),
         outgoing_vat_accounts_by_rate: formatAccountMapping(settings.outgoing_vat_accounts_by_rate),
         outgoing_accommodation_tax_accounts_by_rate: formatAccountMapping(settings.outgoing_accommodation_tax_accounts_by_rate),
       });
-      setApGLMapping({ ...DEFAULT_AP_GL_MAPPING, ...(apRes.data?.mapping || {}) });
-      setFixedAssetGLMapping({ ...DEFAULT_FIXED_ASSET_GL_MAPPING, ...(fixedAssetRes.data?.mapping || {}) });
-    } catch {
-      toast.error('Muhasebe entegrasyon ayarları yüklenemedi.');
     }
+    if (results[1].status === 'fulfilled') {
+      const nilveraQueueRes = results[1].value;
+      setNilveraGL((current) => ({ ...current, queue: nilveraQueueRes.data?.items || [], counts: nilveraQueueRes.data?.counts || {} }));
+    }
+    if (results[2].status === 'fulfilled') setApGLMapping({ ...DEFAULT_AP_GL_MAPPING, ...(results[2].value.data?.mapping || {}) });
+    if (results[3].status === 'fulfilled') setFixedAssetGLMapping({ ...DEFAULT_FIXED_ASSET_GL_MAPPING, ...(results[3].value.data?.mapping || {}) });
+    if (failures.length) toast.error(`Bazı entegrasyon ayarları yüklenemedi: ${failures.join(', ')}`);
   };
 
   const saveNilveraGL = async () => {
@@ -771,16 +969,13 @@ const GeneralLedgerModule = () => {
   };
 
   useEffect(() => {
+    if (shouldFetchAccountsForTab(activeTab)) fetchAccounts();
     if (activeTab === 'overview') {
-      fetchAccounts();
       fetchJournals();
       fetchPeriods();
     }
-    if (activeTab === 'setup') fetchAccounts();
-    if (activeTab === 'accounts') fetchAccounts();
     if (activeTab === 'journals') fetchJournals();
     if (activeTab === 'account-ledger') {
-      fetchAccounts();
       fetchJournals();
     }
     if (activeTab === 'trial-balance') fetchTrialBalance();
@@ -789,7 +984,7 @@ const GeneralLedgerModule = () => {
     if (activeTab === 'workspace') fetchWorkspace();
     if (activeTab === 'integrations') fetchAccountingIntegrations();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, periodYear]);
+  }, [activeTab, businessDate, periodYear]);
 
   const handleAddJournalLine = () => {
     setNewJournal(prev => ({
@@ -800,6 +995,7 @@ const GeneralLedgerModule = () => {
 
   const handleLineChange = (index, field, value) => {
     const updated = [...newJournal.lines];
+    if (field === 'account_code') value = normalizeAccountCode(value);
     if (field === 'debit' || field === 'credit') {
       value = parseFloat(value) || 0;
       // You can only have debit OR credit
@@ -811,7 +1007,7 @@ const GeneralLedgerModule = () => {
   };
 
   const handleSubmitJournal = async () => {
-    const validationError = getJournalValidationError(newJournal);
+    const validationError = getJournalValidationError(newJournal, ledgerCurrency);
     if (validationError) {
       toast.error(validationError);
       return;
@@ -821,19 +1017,23 @@ const GeneralLedgerModule = () => {
     try {
       if (editingVoucher) {
         await axios.put(`${GL_ENDPOINTS.vouchers}/${editingVoucher.id}`, {
-          ...toVoucherPayload(newJournal),
+          ...toVoucherPayload(newJournal, ledgerCurrency),
           version: editingVoucher.version,
         });
         toast.success('Taslak fiş güncellendi. Değişiklik geçmişi korundu.');
       } else {
-        await axios.post(GL_ENDPOINTS.vouchers, toVoucherPayload(newJournal));
+        await axios.post(GL_ENDPOINTS.vouchers, toVoucherPayload(newJournal, ledgerCurrency));
         toast.success('Taslak fiş oluşturuldu. Yevmiyeye geçmesi için inceleme ve onay gerekir.');
       }
-      setNewJournal(emptyJournal());
+      setNewJournal(emptyJournal(businessDate));
       setEditingVoucher(null);
       await fetchJournals();
     } catch (e) {
-      toast.error(e.response?.data?.detail || 'Taslak fiş oluşturulurken hata oluştu.');
+      const detail = e.response?.data?.detail;
+      const message = Array.isArray(detail)
+        ? detail.map((item) => item.msg || String(item)).join(' ')
+        : detail;
+      toast.error(message || 'Taslak fiş oluşturulurken hata oluştu.');
     } finally {
       setJournalSaving(false);
     }
@@ -845,7 +1045,7 @@ const GeneralLedgerModule = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const runVoucherAction = async (voucher, action) => {
+  const runVoucherAction = async (voucher, action, reason = '') => {
     const labels = {
       submit: 'incelemeye gönderme',
       approve: 'onaylama',
@@ -853,13 +1053,9 @@ const GeneralLedgerModule = () => {
       cancel: 'iptal',
       post: 'yevmiye kaydı',
     };
-    let reason;
-    if (action !== 'post') {
-      reason = window.prompt(`${labels[action]} gerekçesi:`);
-      if (!reason || reason.trim().length < 3) return;
-    }
     const busyKey = `${voucher.id}:${action}`;
     setVoucherBusy(busyKey);
+    setVoucherActionError('');
     try {
       await axios.post(
         `${GL_ENDPOINTS.vouchers}/${voucher.id}/${action}`,
@@ -867,34 +1063,82 @@ const GeneralLedgerModule = () => {
       );
       toast.success(action === 'post' ? 'Onaylı fiş yevmiyeye işlendi.' : `Fiş ${labels[action]} adımını tamamladı.`);
       await fetchJournals();
+      return true;
     } catch (error) {
-      toast.error(error.response?.data?.detail || `Fiş ${labels[action]} işlemi tamamlanamadı.`);
+      const message = error.response?.data?.detail || `Fiş ${labels[action]} işlemi tamamlanamadı.`;
+      setVoucherActionError(message);
+      toast.error(message);
+      return false;
     } finally {
       setVoucherBusy('');
     }
   };
 
-  const reverseJournal = async (journal) => {
-    const reason = window.prompt('Ters kayıt gerekçesi:');
-    if (!reason || reason.trim().length < 3) return;
-    const reversalDate = window.prompt('Ters kayıt tarihi (YYYY-MM-DD):', new Date().toISOString().split('T')[0]);
-    if (!reversalDate) return;
+  const requestVoucherAction = async (voucher, action) => {
+    if (action === 'post') {
+      await runVoucherAction(voucher, action);
+      return;
+    }
+    setVoucherActionReason('');
+    setVoucherActionError('');
+    setVoucherActionDialog({ voucher, action });
+  };
+
+  const confirmVoucherAction = async () => {
+    const reason = voucherActionReason.trim();
+    if (reason.length < 3) {
+      const message = 'Gerekçe en az 3 karakter olmalıdır.';
+      setVoucherActionError(message);
+      toast.error(message);
+      return;
+    }
+    if (await runVoucherAction(voucherActionDialog.voucher, voucherActionDialog.action, reason)) {
+      setVoucherActionDialog(null);
+      setVoucherActionReason('');
+    }
+  };
+
+  const requestJournalReversal = (journal) => {
+    setReversalReason('');
+    setReversalDate(journal?.date && journal.date > businessDate ? journal.date : businessDate);
+    setReversalDialog({ journal });
+  };
+
+  const reverseJournal = async (journal, reason, date) => {
     const key = reversalKeys.current[journal.id] || newRequestKey();
     reversalKeys.current[journal.id] = key;
     setReversalBusy(journal.id);
     try {
       await axios.post(`${GL_ENDPOINTS.journal}/${journal.id}/reverse`, {
-        date: reversalDate,
+        date,
         reason: reason.trim(),
         idempotency_key: key,
       });
       delete reversalKeys.current[journal.id];
       toast.success('Bağlı ters kayıt fişi oluşturuldu.');
       await fetchJournals();
+      return true;
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Ters kayıt oluşturulamadı.');
+      return false;
     } finally {
       setReversalBusy('');
+    }
+  };
+
+  const confirmJournalReversal = async () => {
+    const reason = reversalReason.trim();
+    if (reason.length < 3) {
+      toast.error('Gerekçe en az 3 karakter olmalıdır.');
+      return;
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(reversalDate)) {
+      toast.error('Ters kayıt tarihi YYYY-MM-DD biçiminde olmalıdır.');
+      return;
+    }
+    if (await reverseJournal(reversalDialog.journal, reason, reversalDate)) {
+      setReversalDialog(null);
+      setReversalReason('');
     }
   };
 
@@ -907,7 +1151,9 @@ const GeneralLedgerModule = () => {
     apGLMapping,
     fixedAssetGLMapping,
   ).filter((code) => !knownAccountCodes.has(code));
-  const journalValidationError = getJournalValidationError(newJournal);
+  const workspaceUnavailable = (label) => workspaceFailures.includes(label);
+  const journalValidationError = getJournalValidationError(newJournal, ledgerCurrency);
+  const incomePresentation = describeIncomeTotals(statements.income?.totals);
 
   return (
     <div className="p-4 sm:p-6 max-w-7xl mx-auto overflow-x-hidden">
@@ -926,6 +1172,8 @@ const GeneralLedgerModule = () => {
             vouchers={vouchers}
             trialBalance={trialBalance}
             periods={periods}
+            loaded={overviewLoaded}
+            failed={overviewFailed}
             onSelect={handleTabChange}
           />
         </TabsContent>
@@ -963,7 +1211,7 @@ const GeneralLedgerModule = () => {
                     <tr key={acc.code} className="border-b last:border-0 hover:bg-gray-50">
                       <td className="p-3 font-medium text-blue-600">{acc.code}</td>
                       <td className="p-3 text-gray-800">{acc.name}</td>
-                      <td className="p-3 text-gray-500">{acc.type}</td>
+                      <td className="p-3 text-gray-500">{ledgerAccountTypeLabel(t, acc.type)}</td>
                       <td className="p-3 text-xs text-slate-600">{acc.monetary ? 'Parasal' : acc.normal_balance === 'credit' && acc.type === 'asset' ? 'Ters bakiye' : 'Standart'}</td>
                       <td className="p-3 text-right font-medium">
                         {acc.balance !== 0 ? fmtMoney(Math.abs(acc.balance)) : '-'}
@@ -1031,8 +1279,8 @@ const GeneralLedgerModule = () => {
                           <th className="p-2 text-left w-20">Döviz</th>
                           <th className="p-2 text-right w-28">Yabancı Tutar</th>
                           <th className="p-2 text-right w-24">Kur</th>
-                          <th className="p-2 text-right w-32">Borç (₺)</th>
-                          <th className="p-2 text-right w-32">Alacak (₺)</th>
+                          <th className="p-2 text-right w-32">Borç ({ledgerCurrency})</th>
+                          <th className="p-2 text-right w-32">Alacak ({ledgerCurrency})</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -1051,8 +1299,8 @@ const GeneralLedgerModule = () => {
                       <tfoot className="bg-gray-50 font-bold">
                         <tr>
                           <td colSpan="5" className="p-2 text-right">TOPLAM:</td>
-                          <td className="p-2 text-right text-red-600">{newJournal.lines.reduce((a, b) => a + (parseFloat(b.debit)||0), 0).toFixed(2)}</td>
-                          <td className="p-2 text-right text-green-600">{newJournal.lines.reduce((a, b) => a + (parseFloat(b.credit)||0), 0).toFixed(2)}</td>
+                          <td className="p-2 text-right text-red-600">{fmtMoney(newJournal.lines.reduce((a, b) => a + (parseFloat(b.debit)||0), 0))}</td>
+                          <td className="p-2 text-right text-green-600">{fmtMoney(newJournal.lines.reduce((a, b) => a + (parseFloat(b.credit)||0), 0))}</td>
                         </tr>
                       </tfoot>
                     </table>
@@ -1060,7 +1308,7 @@ const GeneralLedgerModule = () => {
                   <div className="flex flex-wrap justify-between gap-3 mt-4">
                     <Button variant="outline" onClick={handleAddJournalLine}><Plus className="w-4 h-4 mr-2" /> Satır Ekle</Button>
                     <div className="flex gap-2">
-                      {editingVoucher && <Button variant="ghost" onClick={() => { setEditingVoucher(null); setNewJournal(emptyJournal()); }}>Düzenlemeyi İptal Et</Button>}
+                      {editingVoucher && <Button variant="ghost" onClick={() => { setEditingVoucher(null); setNewJournal(emptyJournal(businessDate)); }}>Düzenlemeyi İptal Et</Button>}
                       <Button onClick={handleSubmitJournal} disabled={journalSaving || !!journalValidationError} title={journalValidationError || undefined} className="bg-blue-600 hover:bg-blue-700 text-white"><Save className="w-4 h-4 mr-2" /> {journalSaving ? 'Kaydediliyor...' : editingVoucher ? 'Taslağı Güncelle' : 'Taslak Oluştur'}</Button>
                     </div>
                   </div>
@@ -1115,26 +1363,37 @@ const GeneralLedgerModule = () => {
                           <span className={`shrink-0 rounded-full px-2 py-1 text-[11px] font-semibold ${status.className}`}>{status.label}</span>
                         </div>
                         {voucher.rejection_reason && <p className="mt-2 text-xs text-red-700">Ret: {voucher.rejection_reason}</p>}
+                        {voucher.last_post_error && <p className="mt-2 text-xs text-red-700">Yevmiye hatası: {voucher.last_post_error}</p>}
                         {voucher.journal_entry_no && <p className="mt-2 text-xs text-emerald-700">Yevmiye: {voucher.journal_entry_no}</p>}
+                        <details className="mt-3 rounded border border-slate-100 bg-slate-50 px-2 py-1.5 text-xs text-slate-600">
+                          <summary className="cursor-pointer font-medium text-slate-700">Geçmiş ({(voucher.history || []).length})</summary>
+                          {(voucher.history || []).length > 0 ? (
+                            <ol className="mt-2 space-y-1 border-l border-slate-200 pl-3" aria-label={`${voucher.voucher_no} işlem geçmişi`}>
+                              {voucher.history.map((entry, index) => (
+                                <li key={`${entry.at || 'history'}-${entry.action || 'action'}-${index}`}>{formatVoucherHistoryEntry(entry)}</li>
+                              ))}
+                            </ol>
+                          ) : <p className="mt-2">Geçmiş kaydı bulunmuyor.</p>}
+                        </details>
                         {voucherActionNames(voucher.status).length > 0 && (
                           <div className="mt-3 flex flex-wrap gap-2">
                             {voucherActionNames(voucher.status).includes('edit') && (
                               <Button size="sm" variant="outline" disabled={!!voucherBusy} onClick={() => editVoucher(voucher)}>Düzenle</Button>
                             )}
                             {voucherActionNames(voucher.status).includes('submit') && (
-                              <Button size="sm" variant="outline" disabled={!!voucherBusy} onClick={() => runVoucherAction(voucher, 'submit')}><Send className="mr-1.5 h-3.5 w-3.5" /> İncelemeye Gönder</Button>
+                              <Button size="sm" variant="outline" disabled={!!voucherBusy} onClick={() => requestVoucherAction(voucher, 'submit')}><Send className="mr-1.5 h-3.5 w-3.5" /> İncelemeye Gönder</Button>
                             )}
                             {voucherActionNames(voucher.status).includes('approve') && (
-                              <Button size="sm" disabled={!!voucherBusy} onClick={() => runVoucherAction(voucher, 'approve')}><CheckCircle2 className="mr-1.5 h-3.5 w-3.5" /> Onayla</Button>
+                              <Button size="sm" disabled={!!voucherBusy} onClick={() => requestVoucherAction(voucher, 'approve')}><CheckCircle2 className="mr-1.5 h-3.5 w-3.5" /> Onayla</Button>
                             )}
                             {voucherActionNames(voucher.status).includes('reject') && (
-                              <Button size="sm" variant="outline" disabled={!!voucherBusy} onClick={() => runVoucherAction(voucher, 'reject')}><XCircle className="mr-1.5 h-3.5 w-3.5" /> Reddet</Button>
+                              <Button size="sm" variant="outline" disabled={!!voucherBusy} onClick={() => requestVoucherAction(voucher, 'reject')}><XCircle className="mr-1.5 h-3.5 w-3.5" /> Reddet</Button>
                             )}
                             {voucherActionNames(voucher.status).includes('post') && (
-                              <Button size="sm" disabled={!!voucherBusy} onClick={() => runVoucherAction(voucher, 'post')}><Save className="mr-1.5 h-3.5 w-3.5" /> Yevmiyeye İşle</Button>
+                              <Button size="sm" disabled={!!voucherBusy} onClick={() => requestVoucherAction(voucher, 'post')}><Save className="mr-1.5 h-3.5 w-3.5" /> Yevmiyeye İşle</Button>
                             )}
                             {voucherActionNames(voucher.status).includes('cancel') && (
-                              <Button size="sm" variant="ghost" disabled={!!voucherBusy} onClick={() => runVoucherAction(voucher, 'cancel')}>İptal Et</Button>
+                              <Button size="sm" variant="ghost" disabled={!!voucherBusy} onClick={() => requestVoucherAction(voucher, 'cancel')}>İptal Et</Button>
                             )}
                           </div>
                         )}
@@ -1161,7 +1420,7 @@ const GeneralLedgerModule = () => {
                       <p className="text-sm text-gray-600 truncate">{j.memo}</p>
                       {j.reversal_status === 'reversed' && <p className="text-xs text-amber-700 mt-2">Bu fiş için ters kayıt oluşturuldu.</p>}
                       {j.source !== 'reversal' && j.reversal_status !== 'reversed' && (
-                        <Button size="sm" variant="outline" className="w-full mt-3" disabled={reversalBusy === j.id} onClick={() => reverseJournal(j)}>
+                        <Button size="sm" variant="outline" className="w-full mt-3" disabled={reversalBusy === j.id} onClick={() => requestJournalReversal(j)}>
                           <RotateCcw className="w-3.5 h-3.5 mr-1.5" /> {reversalBusy === j.id ? 'Oluşturuluyor...' : 'Ters Kayıt Oluştur'}
                         </Button>
                       )}
@@ -1322,8 +1581,9 @@ const GeneralLedgerModule = () => {
                 {(statements.income?.revenue || []).map((row) => <div key={row.account_code} className="flex justify-between text-sm"><span>{row.account_code} · {row.account_name}</span><span className="font-medium">{fmtMoney(row.amount)}</span></div>)}
                 <div className="border-t pt-2 flex justify-between font-semibold text-emerald-700"><span>Toplam Gelir</span><span>{fmtMoney(statements.income?.totals?.revenue || 0)} <small>({comparison.income?.variance?.revenue?.percent ?? '—'}%)</small></span></div>
                 {(statements.income?.expenses || []).map((row) => <div key={row.account_code} className="flex justify-between text-sm"><span>{row.account_code} · {row.account_name}</span><span className="font-medium">{fmtMoney(row.amount)}</span></div>)}
-                <div className="border-t pt-2 flex justify-between font-semibold text-red-700"><span>Toplam Gider</span><span>{fmtMoney(statements.income?.totals?.expenses || 0)} <small>({comparison.income?.variance?.expenses?.percent ?? '—'}%)</small></span></div>
-                <div className="rounded-lg bg-slate-900 text-white p-3 flex justify-between font-bold"><span>Net Dönem Kârı / Zararı</span><span>{fmtMoney(statements.income?.totals?.net_income || 0)} <small>({comparison.income?.variance?.net_income?.percent ?? '—'}%)</small></span></div>
+                <div className="border-t pt-2 flex justify-between font-semibold text-red-700"><span>{incomePresentation.expenseLabel}</span><span>{fmtMoney(incomePresentation.expenses)} <small>({comparison.income?.variance?.expenses?.percent ?? '—'}%)</small></span></div>
+                {incomePresentation.hasExpenseReversal && <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800">Negatif gider, gider hesaplarındaki ters kayıtların dönem giderlerinden fazla olduğunu gösterir.</p>}
+                <div className="rounded-lg bg-slate-900 text-white p-3 flex justify-between font-bold"><span>{incomePresentation.netLabel}</span><span>{fmtMoney(incomePresentation.netIncome)} <small>({comparison.income?.variance?.net_income?.percent ?? '—'}%)</small></span></div>
                 <p className="text-xs text-slate-500">Parantez içindeki oranlar önceki yılın aynı dönemine göre değişimi gösterir.</p>
               </CardContent>
             </Card>
@@ -1421,6 +1681,120 @@ const GeneralLedgerModule = () => {
               </CardContent>
             </Card>
           )}
+          {chainTransfers.length > 0 && (
+            <Card className="mt-5">
+              <CardHeader>
+                <CardTitle>Zincir İçi Rezervasyon ve Mahsuplaşma Takibi</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <p className="text-sm text-slate-600">
+                  Rezervasyonu gönderen, hizmeti verecek tesis ve tahsilatı elinde tutan tesis ayrı gösterilir.
+                  Açık kayıtlar banka transferi veya grup içi netleştirme sonrasında muhasebe tarafından kapatılmalıdır.
+                </p>
+                {chainTransfers.map((transfer) => {
+                  const settlement = transfer.settlement;
+                  const lines = settlement?.currency_lines || [];
+                  const isOpen = settlement?.status === 'open';
+                  return (
+                    <div key={transfer.id} className="rounded-lg border p-3 text-sm">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="font-semibold">
+                            {transfer.source_property_name || transfer.source_property}
+                            {' → '}
+                            {transfer.target_property_name || transfer.target_property}
+                          </p>
+                          <p className="text-xs text-slate-500 mt-1">
+                            {transfer.guest_name || 'Misafir adı yok'} · Kaynak rezervasyon {transfer.source_booking_id || transfer.booking_id}
+                            {' · '}Hedef rezervasyon {transfer.target_booking_id}
+                          </p>
+                          <p className="mt-1 text-xs font-medium text-slate-700">
+                            Transfer belgesi: {transfer.transfer_reference || settlement?.transfer_reference || transfer.id}
+                          </p>
+                          {transfer.reason && <p className="text-xs text-slate-600 mt-1">Aktarım gerekçesi: {transfer.reason}</p>}
+                        </div>
+                        <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${isOpen ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'}`}>
+                          {!settlement ? 'Mahsuplaşma gerekmedi' : isOpen ? 'Mutabakat bekliyor' : 'Mutabakat tamamlandı'}
+                        </span>
+                      </div>
+                      {settlement && (
+                        <div className="mt-3 rounded-md bg-slate-50 p-3">
+                          <div className="grid gap-2 md:grid-cols-3">
+                            <div>
+                              <p className="text-xs text-slate-500">Tahsilatı alan tesis</p>
+                              <p className="font-medium">{transfer.source_property_name || settlement.source_property_name}</p>
+                              <p className="text-xs text-slate-600">Hedef tesise borçlu</p>
+                            </div>
+                            <div>
+                              <p className="text-xs text-slate-500">Hizmeti verecek tesis</p>
+                              <p className="font-medium">{transfer.target_property_name || settlement.target_property_name}</p>
+                              <p className="text-xs text-slate-600">Kaynak tesisten alacaklı</p>
+                            </div>
+                            <div>
+                              <p className="text-xs text-slate-500">Mahsuplaşma tutarı</p>
+                              {lines.map((line) => (
+                                <p key={line.currency} className="font-semibold">{formatSettlementAmount(line.amount, line.currency)}</p>
+                              ))}
+                            </div>
+                          </div>
+                          <p className="text-xs text-amber-700 mt-2">
+                            Bu kayıt tahsilatı hedef tesise ödeme gibi göstermez; finansal mutabakat tamamlanana kadar açık borç/alacak olarak izlenir. Aynı transfer belgesini iki tesisin folyo, faaliyet ve muhasebe kayıtlarında arayın.
+                          </p>
+                          {isOpen ? (
+                            <div className="mt-3 grid gap-2 border-t pt-3 md:grid-cols-4">
+                              <select
+                                aria-label="Mutabakat yöntemi"
+                                className="rounded-md border bg-white px-3 py-2 text-xs"
+                                value={settlementForms[settlement.id]?.method || 'bank_transfer'}
+                                onChange={(event) => setSettlementForms((current) => ({
+                                  ...current,
+                                  [settlement.id]: { ...current[settlement.id], method: event.target.value },
+                                }))}
+                              >
+                                <option value="bank_transfer">Banka transferi</option>
+                                <option value="intercompany_netting">Grup içi netleştirme</option>
+                                <option value="manual_journal">Mahsup fişi</option>
+                              </select>
+                              <Input
+                                aria-label="Mutabakat referansı"
+                                placeholder="Dekont / fiş referansı"
+                                value={settlementForms[settlement.id]?.reference || ''}
+                                onChange={(event) => setSettlementForms((current) => ({
+                                  ...current,
+                                  [settlement.id]: { ...current[settlement.id], reference: event.target.value },
+                                }))}
+                              />
+                              <Input
+                                aria-label="Mutabakat notu"
+                                placeholder="Açıklama (isteğe bağlı)"
+                                value={settlementForms[settlement.id]?.note || ''}
+                                onChange={(event) => setSettlementForms((current) => ({
+                                  ...current,
+                                  [settlement.id]: { ...current[settlement.id], note: event.target.value },
+                                }))}
+                              />
+                              <Button
+                                disabled={settlementBusy === settlement.id}
+                                onClick={() => reconcileTransferSettlement(settlement.id)}
+                              >
+                                {settlementBusy === settlement.id ? 'Kapatılıyor...' : 'Mutabakatı Kapat'}
+                              </Button>
+                            </div>
+                          ) : settlement.reconciliation?.reference ? (
+                            <p className="mt-2 border-t pt-2 text-xs text-emerald-700">
+                              {settlement.reconciliation.reference} referansıyla {settlement.reconciliation.reconciled_at
+                                ? new Date(settlement.reconciliation.reconciled_at).toLocaleString('tr-TR')
+                                : 'kapatıldı'}.
+                            </p>
+                          ) : null}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </CardContent>
+            </Card>
+          )}
           <Card className="mt-5">
             <CardHeader><CardTitle>e-Defter Hazırlık ve Kaynak Paketi</CardTitle></CardHeader>
             <CardContent className="space-y-4">
@@ -1461,17 +1835,27 @@ const GeneralLedgerModule = () => {
         </TabsContent>
 
         <TabsContent value="workspace">
+          {workspaceFailures.length > 0 && (
+            <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800" role="alert">
+              Verisi alınamayan alanlar: <strong>{workspaceFailures.join(', ')}</strong>. Bu alanlarda sıfır değer gösterilmez ve işlem başlatılmaz.
+            </div>
+          )}
           <div className="grid md:grid-cols-2 lg:grid-cols-5 gap-4">
-            <Card><CardContent className="pt-6"><Landmark className="w-7 h-7 text-amber-600 mb-3" /><p className="text-sm text-slate-500">Tedarikçi Borçları</p><p className="text-2xl font-bold">{fmtMoney(workspace.aging?.total_outstanding || 0)}</p><p className="text-xs text-slate-500 mt-2">90+ gün: {fmtMoney(workspace.aging?.buckets?.d90_plus || 0)}</p></CardContent></Card>
-            <Card><CardContent className="pt-6"><TrendingUp className="w-7 h-7 text-red-600 mb-3" /><p className="text-sm text-slate-500">Gider Bütçesi · Bu Ay</p><p className="text-2xl font-bold">{fmtMoney(workspace.expenseBudget?.totals?.actual || 0)}</p><p className="text-xs text-slate-500 mt-2">Bütçe: {fmtMoney(workspace.expenseBudget?.totals?.budget || 0)}</p></CardContent></Card>
-            <Card><CardContent className="pt-6"><TrendingUp className="w-7 h-7 text-emerald-600 mb-3" /><p className="text-sm text-slate-500">Gelir Bütçesi · Bu Ay</p><p className="text-2xl font-bold">{fmtMoney(workspace.revenueBudget?.totals?.actual || 0)}</p><p className="text-xs text-slate-500 mt-2">Bütçe: {fmtMoney(workspace.revenueBudget?.totals?.budget || 0)}</p></CardContent></Card>
-            <Card><CardContent className="pt-6"><PackageOpen className="w-7 h-7 text-indigo-600 mb-3" /><p className="text-sm text-slate-500">Sabit Kıymetler</p><p className="text-2xl font-bold">{workspace.assets.length}</p><p className="text-xs text-slate-500 mt-2">Net defter değeri: {fmtMoney(workspace.assets.reduce((sum, item) => sum + (Number(item.book_value) || 0), 0))}</p></CardContent></Card>
-            <Card><CardContent className="pt-6"><Landmark className={`w-7 h-7 mb-3 ${operationalBridge?.healthy ? 'text-emerald-600' : 'text-amber-600'}`} /><p className="text-sm text-slate-500">PMS/POS Muhasebe Köprüsü</p><p className="text-lg font-bold">{operationalBridge?.healthy ? 'Sağlıklı' : operationalBridge?.configured ? 'İnceleme Gerekli' : 'Kapalı'}</p><p className="text-xs text-slate-500 mt-2">Gece: {operationalBridge?.failed?.night_audit || 0} · POS: {operationalBridge?.failed?.pos || 0} hata</p>{!operationalBridge?.configured && <Button size="sm" className="w-full mt-3" onClick={enableOperationalBridge} disabled={operationalBusy}>{operationalBusy ? 'Açılıyor...' : 'Standart Eşlemeyle Aç'}</Button>}</CardContent></Card>
+            <Card><CardContent className="pt-6"><Landmark className="w-7 h-7 text-amber-600 mb-3" /><p className="text-sm text-slate-500">Tedarikçi Borçları</p>{workspaceUnavailable('Tedarikçi borçları') ? <p className="font-semibold text-red-700">Veri alınamadı</p> : <><p className="text-2xl font-bold">{fmtMoney(workspace.aging?.total_outstanding || 0)}</p><p className="text-xs text-slate-500 mt-2">90+ gün: {fmtMoney(workspace.aging?.buckets?.d90_plus || 0)}</p></>}</CardContent></Card>
+            <Card><CardContent className="pt-6"><TrendingUp className="w-7 h-7 text-red-600 mb-3" /><p className="text-sm text-slate-500">Gider Bütçesi · Bu Ay</p>{workspaceUnavailable('Gider bütçesi') ? <p className="font-semibold text-red-700">Veri alınamadı</p> : <><p className="text-2xl font-bold">{fmtMoney(workspace.expenseBudget?.totals?.actual || 0)}</p><p className="text-xs text-slate-500 mt-2">Bütçe: {fmtMoney(workspace.expenseBudget?.totals?.budget || 0)}</p></>}</CardContent></Card>
+            <Card><CardContent className="pt-6"><TrendingUp className="w-7 h-7 text-emerald-600 mb-3" /><p className="text-sm text-slate-500">Gelir Bütçesi · Bu Ay</p>{workspaceUnavailable('Gelir bütçesi') ? <p className="font-semibold text-red-700">Veri alınamadı</p> : <><p className="text-2xl font-bold">{fmtMoney(workspace.revenueBudget?.totals?.actual || 0)}</p><p className="text-xs text-slate-500 mt-2">Bütçe: {fmtMoney(workspace.revenueBudget?.totals?.budget || 0)}</p></>}</CardContent></Card>
+            <Card><CardContent className="pt-6"><PackageOpen className="w-7 h-7 text-indigo-600 mb-3" /><p className="text-sm text-slate-500">Sabit Kıymetler</p>{workspaceUnavailable('Sabit kıymetler') ? <p className="font-semibold text-red-700">Veri alınamadı</p> : <><p className="text-2xl font-bold">{workspace.assets.length}</p><p className="text-xs text-slate-500 mt-2">Net defter değeri: {fmtMoney(workspace.assets.reduce((sum, item) => sum + (Number(item.book_value) || 0), 0))}</p></>}</CardContent></Card>
+            <Card><CardContent className="pt-6"><Landmark className={`w-7 h-7 mb-3 ${operationalBridge?.healthy ? 'text-emerald-600' : 'text-amber-600'}`} /><p className="text-sm text-slate-500">PMS/POS Muhasebe Köprüsü</p>{workspaceUnavailable('PMS/POS köprüsü') ? <p className="font-semibold text-red-700">Veri alınamadı</p> : <><p className="text-lg font-bold">{operationalBridge?.healthy ? 'Sağlıklı' : operationalBridge?.configured ? 'İnceleme Gerekli' : 'Kapalı'}</p><p className="text-xs text-slate-500 mt-2">Gece: {operationalBridge?.failed?.night_audit || 0} · POS: {operationalBridge?.failed?.pos || 0} hata</p>{!operationalBridge?.configured && <Button size="sm" className="w-full mt-3" onClick={enableOperationalBridge} disabled={operationalBusy}>{operationalBusy ? 'Açılıyor...' : 'Standart Eşlemeyle Aç'}</Button>}</>}</CardContent></Card>
           </div>
           <p className="text-xs text-slate-500 mt-4">Bu özetler AP, bütçe ve sabit kıymet alt defterlerindeki gerçek tenant verisinden okunur; örnek/sabit rakam kullanılmaz.</p>
         </TabsContent>
 
         <TabsContent value="integrations" className="space-y-5">
+          {integrationFailures.length > 0 && (
+            <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800" role="alert">
+              Yüklenemeyen ayarlar: <strong>{integrationFailures.join(', ')}</strong>. İlgili ayarlar doğrulanmadan kaydetme işlemi kapatıldı.
+            </div>
+          )}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2"><Cable className="w-5 h-5 text-blue-600" /> Nilvera → Genel Muhasebe</CardTitle>
@@ -1580,7 +1964,7 @@ const GeneralLedgerModule = () => {
                   </div>
                 </div>
               </div>
-              <Button onClick={saveNilveraGL} disabled={integrationBusy === 'nilvera-settings'}>
+              <Button onClick={saveNilveraGL} disabled={integrationBusy === 'nilvera-settings' || integrationFailures.includes('Nilvera ayarları')}>
                 <Save className="w-4 h-4 mr-2" /> {integrationBusy === 'nilvera-settings' ? 'Kaydediliyor...' : 'Nilvera Muhasebe Eşlemesini Kaydet'}
               </Button>
 
@@ -1595,7 +1979,7 @@ const GeneralLedgerModule = () => {
                       <div>
                         <p className="font-medium">{item.direction === 'incoming' ? 'Alış' : 'Satış'} · {item.invoice_id}</p>
                         <p className={`text-xs ${item.status === 'blocked' ? 'text-red-700' : item.status === 'posted' || item.status === 'reversed' ? 'text-emerald-700' : 'text-amber-700'}`}>
-                          {item.status}{item.error_detail ? ` · ${item.error_detail}` : ''}
+                          {accountingQueueStatusLabel(t, item.status)}{item.error_detail ? ` · ${item.error_detail}` : ''}
                         </p>
                       </div>
                       {item.operation === 'post' && ['pending', 'blocked'].includes(item.status) && (
@@ -1625,7 +2009,7 @@ const GeneralLedgerModule = () => {
                   <Input value={apGLMapping.bank_account_code} onChange={(event) => setApGLMapping({ ...apGLMapping, bank_account_code: event.target.value })} placeholder="Banka (102)" />
                   <Input value={apGLMapping.cash_account_code} onChange={(event) => setApGLMapping({ ...apGLMapping, cash_account_code: event.target.value })} placeholder="Kasa (100)" />
                 </div>
-                <Button variant="outline" onClick={saveAPGLMapping} disabled={integrationBusy === 'ap'}>{integrationBusy === 'ap' ? 'Kaydediliyor...' : 'AP Eşlemesini Kaydet'}</Button>
+                <Button variant="outline" onClick={saveAPGLMapping} disabled={integrationBusy === 'ap' || integrationFailures.includes('Tedarikçi eşlemesi')}>{integrationBusy === 'ap' ? 'Kaydediliyor...' : 'AP Eşlemesini Kaydet'}</Button>
               </CardContent>
             </Card>
             <Card>
@@ -1638,7 +2022,7 @@ const GeneralLedgerModule = () => {
                   <Input value={fixedAssetGLMapping.depreciation_expense_account_code} onChange={(event) => setFixedAssetGLMapping({ ...fixedAssetGLMapping, depreciation_expense_account_code: event.target.value })} placeholder="Amortisman Gideri (770)" />
                   <Input value={fixedAssetGLMapping.accumulated_depreciation_account_code} onChange={(event) => setFixedAssetGLMapping({ ...fixedAssetGLMapping, accumulated_depreciation_account_code: event.target.value })} placeholder="Birikmiş Amortisman (257)" />
                 </div>
-                <Button variant="outline" onClick={saveFixedAssetGLMapping} disabled={integrationBusy === 'fixed-assets'}>{integrationBusy === 'fixed-assets' ? 'Kaydediliyor...' : 'Amortisman Eşlemesini Kaydet'}</Button>
+                <Button variant="outline" onClick={saveFixedAssetGLMapping} disabled={integrationBusy === 'fixed-assets' || integrationFailures.includes('Amortisman eşlemesi')}>{integrationBusy === 'fixed-assets' ? 'Kaydediliyor...' : 'Amortisman Eşlemesini Kaydet'}</Button>
               </CardContent>
             </Card>
           </div>
@@ -1689,6 +2073,66 @@ const GeneralLedgerModule = () => {
             <Button onClick={confirmPeriodAction} disabled={Boolean(periodBusy) || periodActionReason.trim().length < 3}>
               {periodBusy ? 'İşleniyor...' : periodActionDialog?.action === 'reopen' ? 'Yeniden Aç' : 'Kapat ve Onayla'}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(voucherActionDialog)}
+        onOpenChange={(open) => {
+          if (!open && !voucherBusy) {
+            setVoucherActionDialog(null);
+            setVoucherActionReason('');
+            setVoucherActionError('');
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md" data-testid="gl-voucher-action-dialog">
+          <DialogHeader>
+            <DialogTitle>Fiş İşlemini Onayla</DialogTitle>
+            <DialogDescription>
+              {voucherActionDialog?.voucher?.voucher_no} için {voucherActionDialog?.action === 'submit' ? 'incelemeye gönderme' : voucherActionDialog?.action === 'approve' ? 'onaylama' : voucherActionDialog?.action === 'reject' ? 'reddetme' : 'iptal'} gerekçesini yazın.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <label className="text-sm font-medium" htmlFor="gl-voucher-action-reason">Gerekçe</label>
+            <Input id="gl-voucher-action-reason" autoFocus value={voucherActionReason} onChange={(event) => setVoucherActionReason(event.target.value)} placeholder="En az 3 karakter" disabled={Boolean(voucherBusy)} />
+            {voucherActionError && <p className="text-sm text-red-700" role="alert">{voucherActionError}</p>}
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setVoucherActionDialog(null)} disabled={Boolean(voucherBusy)}>Vazgeç</Button>
+            <Button onClick={confirmVoucherAction} disabled={Boolean(voucherBusy) || voucherActionReason.trim().length < 3}>{voucherBusy ? 'İşleniyor...' : 'Onayla'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(reversalDialog)}
+        onOpenChange={(open) => {
+          if (!open && !reversalBusy) {
+            setReversalDialog(null);
+            setReversalReason('');
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md" data-testid="gl-reversal-dialog">
+          <DialogHeader>
+            <DialogTitle>Ters Kayıt Oluştur</DialogTitle>
+            <DialogDescription>{reversalDialog?.journal?.entry_no || 'Yevmiye kaydı'} için bağlı ters kayıt oluşturulur.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-2">
+              <label className="text-sm font-medium" htmlFor="gl-reversal-reason">Gerekçe</label>
+              <Input id="gl-reversal-reason" autoFocus value={reversalReason} onChange={(event) => setReversalReason(event.target.value)} placeholder="En az 3 karakter" disabled={Boolean(reversalBusy)} />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium" htmlFor="gl-reversal-date">Ters kayıt tarihi</label>
+              <Input id="gl-reversal-date" type="date" min={reversalDialog?.journal?.date || undefined} value={reversalDate} onChange={(event) => setReversalDate(event.target.value)} disabled={Boolean(reversalBusy)} />
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setReversalDialog(null)} disabled={Boolean(reversalBusy)}>Vazgeç</Button>
+            <Button onClick={confirmJournalReversal} disabled={Boolean(reversalBusy) || reversalReason.trim().length < 3}>{reversalBusy ? 'Oluşturuluyor...' : 'Ters Kayıt Oluştur'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

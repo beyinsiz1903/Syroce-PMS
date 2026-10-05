@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import {
   Calendar as CalendarIcon, ChevronLeft, ChevronRight,
-  Plus, RefreshCw, Loader2, AlertTriangle, SlidersHorizontal, MoreHorizontal
+  Plus, RefreshCw, Loader2, AlertTriangle, SlidersHorizontal, MoreHorizontal, Wrench
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -27,13 +27,19 @@ const CalendarHeader = ({
   onNavigatePrevious,
   onNavigateNext,
   onGoToDate,
+  onGoToToday,
   onSyncReservations,
   onShowFindRoomDialog,
   onShowNewBookingDialog,
+  onShowRoomBlockDialog,
   onShowUnassigned,
   onShowConflicts,
   viewPreferences,
   onViewPreferenceChange,
+  businessDate = null,
+  canCreateBooking = false,
+  canManageRooms = false,
+  canSyncChannels = false,
 }) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -42,6 +48,19 @@ const CalendarHeader = ({
   const overdueCount = unassignedList.filter(b => getUnassignedUrgency(b).level === 'overdue').length;
   const todayCount = unassignedList.filter(b => getUnassignedUrgency(b).level === 'today').length;
   const hasUrgent = overdueCount > 0 || todayCount > 0;
+  const localToday = new Date();
+  const localTodayKey = [
+    localToday.getFullYear(),
+    String(localToday.getMonth() + 1).padStart(2, '0'),
+    String(localToday.getDate()).padStart(2, '0'),
+  ].join('-');
+  const isBusinessDateDifferent = Boolean(businessDate && businessDate !== localTodayKey);
+  const todayNavigationLabel = isBusinessDateDifferent
+    ? 'PMS İş Günü'
+    : t('cm.pages_calendar_CalendarHeader.bugun_01475');
+  const todayNavigationDescription = isBusinessDateDifferent
+    ? `PMS iş günü çevresine git (${new Date(`${businessDate}T00:00:00`).toLocaleDateString('tr-TR')})`
+    : 'Bugüne git';
   // Native date picker — popover yok. "Tarihe Git" butonu hidden input'un
   // showPicker()'ını tetikler; tarayıcının kendi takvimi açılır, ←/→ ile
   // ay içinde gezilebilir, dış tıklama veya Esc ile kapanır (browser yönetir).
@@ -119,7 +138,7 @@ const CalendarHeader = ({
             </span>
           </button>
 
-          <Button
+          {canCreateBooking && <Button
             type="button"
             onClick={onShowNewBookingDialog}
             size="icon"
@@ -128,7 +147,7 @@ const CalendarHeader = ({
             aria-label={t('cm.pages_calendar_CalendarHeader.rezervasyon_ekle')}
           >
             <Plus className="h-4 w-4" />
-          </Button>
+          </Button>}
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -150,10 +169,13 @@ const CalendarHeader = ({
               <DropdownMenuItem onSelect={onShowFindRoomDialog}>
                 <SlidersHorizontal /> {t('cm.pages_calendar_CalendarHeader.genel_bakis')}
               </DropdownMenuItem>
-              <DropdownMenuItem onSelect={onSyncReservations} disabled={syncing}>
+              {canManageRooms && <DropdownMenuItem onSelect={onShowRoomBlockDialog} data-testid="mobile-calendar-room-block">
+                <Wrench /> Odayı blokla / arıza bildir
+              </DropdownMenuItem>}
+              {canSyncChannels && <DropdownMenuItem onSelect={onSyncReservations} disabled={syncing}>
                 {syncing ? <Loader2 className="animate-spin" /> : <RefreshCw />}
-                {syncing ? 'Senkronize ediliyor…' : 'OTA senkronizasyonu'}
-              </DropdownMenuItem>
+                {syncing ? 'Kanallar eşitleniyor…' : 'Kanalları eşitle'}
+              </DropdownMenuItem>}
               <DropdownMenuSeparator />
               <DropdownMenuLabel>Gün aralığı</DropdownMenuLabel>
               {[7, 14, 30].map((dayCount) => (
@@ -195,8 +217,16 @@ const CalendarHeader = ({
           <Button variant="outline" size="icon" onClick={onNavigatePrevious} className="h-9 w-9" data-testid="mobile-calendar-nav-prev" aria-label="Önceki tarih aralığı">
             <ChevronLeft className="h-4 w-4" />
           </Button>
-          <Button variant="outline" size="sm" onClick={() => onGoToDate(new Date())} className="h-9 flex-1 text-xs font-semibold" data-testid="mobile-calendar-nav-today">
-            {t('cm.pages_calendar_CalendarHeader.bugun_01475')}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onGoToToday}
+            className="h-9 flex-1 text-xs font-semibold"
+            data-testid="mobile-calendar-nav-today"
+            title={todayNavigationDescription}
+            aria-label={todayNavigationDescription}
+          >
+            {todayNavigationLabel}
           </Button>
           <Button variant="outline" size="icon" onClick={onNavigateNext} className="h-9 w-9" data-testid="mobile-calendar-nav-next" aria-label="Sonraki tarih aralığı">
             <ChevronRight className="h-4 w-4" />
@@ -231,7 +261,7 @@ const CalendarHeader = ({
       </div>
 
       <div
-        className={`hidden items-center md:flex ${compactMode ? 'flex-nowrap gap-2' : 'flex-wrap gap-x-4 gap-y-3'}`}
+        className={`hidden items-center rounded-xl border border-slate-200 bg-white/95 px-2.5 shadow-sm backdrop-blur md:flex ${compactMode ? 'flex-nowrap gap-2' : 'flex-wrap gap-x-4 gap-y-3 py-1'}`}
         data-testid="reservation-toolbar"
       >
       {/* ─── LEFT GROUP: title + date range + alert chips ─── */}
@@ -248,10 +278,10 @@ const CalendarHeader = ({
           </span>
           <span className="flex flex-col leading-tight text-left min-w-0">
             <span className={`${compactMode ? 'text-base' : 'text-lg'} font-extrabold text-slate-900 group-hover:text-amber-600 transition-colors`}>
-              Rezervasyonlar
+              Oda Takvimi
             </span>
-            {dateRangeLabel && !compactMode && (
-              <span className="text-xs text-gray-500 font-medium truncate" data-testid="toolbar-date-range">
+            {dateRangeLabel && (
+              <span className={`${compactMode ? 'max-w-36 text-[10px]' : 'text-xs'} truncate font-medium text-slate-500`} data-testid="toolbar-date-range">
                 {dateRangeLabel}
               </span>
             )}
@@ -296,28 +326,32 @@ const CalendarHeader = ({
           variant="outline"
           size="sm"
           onClick={onNavigatePrevious}
-          className="h-8 w-8 p-0"
+          className="h-8 w-8 p-0 transition-transform hover:-translate-x-0.5"
           data-testid="calendar-nav-prev"
-          title="Önceki"
+          title="Önceki tarih aralığı"
+          aria-label="Önceki tarih aralığı"
         >
           <ChevronLeft className="w-4 h-4" />
         </Button>
         <Button
           variant="outline"
           size="sm"
-          onClick={() => onGoToDate(new Date())}
+          onClick={onGoToToday}
           className="h-8 px-3 text-xs font-medium"
           data-testid="calendar-nav-today"
+          title={todayNavigationDescription}
+          aria-label={todayNavigationDescription}
         >
-          {t('cm.pages_calendar_CalendarHeader.bugun_01475')}
+          {todayNavigationLabel}
         </Button>
         <Button
           variant="outline"
           size="sm"
           onClick={onNavigateNext}
-          className="h-8 w-8 p-0"
+          className="h-8 w-8 p-0 transition-transform hover:translate-x-0.5"
           data-testid="calendar-nav-next"
-          title="Sonraki"
+          title="Sonraki tarih aralığı"
+          aria-label="Sonraki tarih aralığı"
         >
           <ChevronRight className="w-4 h-4" />
         </Button>
@@ -337,23 +371,25 @@ const CalendarHeader = ({
 
       {/* ─── RIGHT GROUP: sync / view / overview / status / primary CTA ─── */}
       <div className={`items-center ml-auto ${compactMode ? 'flex flex-nowrap gap-1.5' : 'flex flex-wrap gap-2'}`}>
-        <Button
+        {canSyncChannels && <Button
           variant="outline"
           size="sm"
           onClick={onSyncReservations}
           disabled={syncing}
           data-testid="ota-sync-button"
           className="text-xs h-8"
+          aria-label={syncing ? 'Kanallar eşitleniyor' : 'Satış kanallarını eşitle'}
         >
           {syncing ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5 mr-1" />}
-          <span className={compactMode ? 'hidden xl:inline' : ''}>{syncing ? 'Senkronize...' : 'OTA Sync'}</span>
-        </Button>
+          <span className={compactMode ? 'hidden xl:inline' : ''}>{syncing ? 'Eşitleniyor…' : 'Kanalları eşitle'}</span>
+        </Button>}
 
         <select
           className="border border-gray-300 rounded-md px-2 text-xs h-8 bg-white"
           value={daysToShow}
           onChange={(e) => setDaysToShow(Number(e.target.value))}
           data-testid="reservation-view-range-select"
+          aria-label="Takvimde gösterilecek gün sayısı"
         >
           <option value={7}>7 Gün</option>
           <option value={14}>14 Gün</option>
@@ -366,19 +402,21 @@ const CalendarHeader = ({
           onClick={onShowFindRoomDialog}
           className="text-xs h-8"
           data-testid="find-room-btn"
+          aria-label="Müsait oda ara"
         >
-          {t('cm.pages_calendar_CalendarHeader.genel_bakis')}
+          Müsait oda ara
         </Button>
-
-        <div className="flex items-center gap-1.5">
-          {!compactMode && <span className="text-xs text-gray-600 whitespace-nowrap">{t('cm.pages_calendar_CalendarHeader.rezervasyon_durumu')}</span>}
-          <select
-            className="border border-gray-300 rounded-md px-2 text-xs h-8 bg-white"
-            data-testid="reservation-status-filter"
-          >
-            <option>Hepsi</option>
-          </select>
-        </div>
+        {canManageRooms && <Button
+          variant="outline"
+          size="sm"
+          onClick={onShowRoomBlockDialog}
+          className="h-8 border-rose-200 text-xs text-rose-700 hover:bg-rose-50"
+          data-testid="calendar-room-block-button"
+          aria-label="Odayı blokla veya arıza bildir"
+        >
+          <Wrench className="mr-1 h-3.5 w-3.5" />
+          <span className={compactMode ? 'hidden 2xl:inline' : ''}>Odayı Blokla</span>
+        </Button>}
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -404,6 +442,13 @@ const CalendarHeader = ({
             >
               Kompakt araç çubuğu
             </DropdownMenuCheckboxItem>
+            <DropdownMenuCheckboxItem
+              checked={Boolean(viewPreferences?.showPrices)}
+              onCheckedChange={(checked) => onViewPreferenceChange?.('showPrices', checked)}
+              data-testid="calendar-price-visibility-toggle"
+            >
+              Günlük fiyatları göster
+            </DropdownMenuCheckboxItem>
             <DropdownMenuSeparator />
             <DropdownMenuCheckboxItem
               checked={Boolean(viewPreferences?.showOccupancy)}
@@ -427,14 +472,14 @@ const CalendarHeader = ({
           </DropdownMenuContent>
         </DropdownMenu>
 
-        <Button
+        {canCreateBooking && <Button
           onClick={onShowNewBookingDialog}
-          className="bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white text-xs h-9 px-4 font-bold shadow-sm hover:shadow-md"
+          className="bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white text-xs h-9 px-4 font-bold shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md active:translate-y-0"
           data-testid="add-reservation-button"
         >
           <Plus className="w-3.5 h-3.5 mr-1" />
           {t('cm.pages_calendar_CalendarHeader.rezervasyon_ekle')}
-        </Button>
+        </Button>}
       </div>
       </div>
     </>

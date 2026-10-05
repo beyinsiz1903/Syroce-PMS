@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 vendors_col = _raw_db["mp_vendors"]
 products_col = _raw_db["mp_products"]
 orders_col = _raw_db["mp_orders"]
+contracts_col = _raw_db["mp_vendor_contracts"]
 
 
 async def ensure_indexes() -> None:
@@ -36,5 +37,9 @@ async def ensure_indexes() -> None:
         await orders_col.create_index("vendor_id", name="idx_order_vendor")
         await orders_col.create_index("status", name="idx_order_status")
         await orders_col.create_index("created_at", name="idx_order_created")
+        await contracts_col.create_index([("vendor_id", 1), ("hotel_tenant_id", 1)], unique=True, name="uniq_vendor_hotel_contract")
+        await contracts_col.create_index("hotel_tenant_id", name="idx_contract_hotel")
+        await contracts_col.create_index("status", name="idx_contract_status")
+
     except Exception:
         logger.warning("supplies_market: index creation failed", exc_info=True)

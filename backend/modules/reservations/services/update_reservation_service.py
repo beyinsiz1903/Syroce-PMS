@@ -8,6 +8,8 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import HTTPException, Request, status
 
+from core.database import db
+from core.reservation_mutability import ensure_reservation_mutable
 from modules.reservations.events import RESERVATION_MODIFIED_EVENT
 from modules.reservations.repository import ReservationsRepository
 from shared_kernel.audit_helper import audit_log
@@ -23,6 +25,25 @@ DEFAULT_EMPTY_FIELDS = {
     "hold_status": "none",
     "allocation_source": "manual",
 }
+
+
+def _reservation_activity_action(changes: dict[str, dict[str, Any]]) -> str:
+    """Choose an operator-facing label for a structured reservation change."""
+    if {"check_in", "check_out"} & set(changes):
+        return "stay_dates_updated"
+    return "reservation_modified"
+
+
+def _operator_room_conflict_message(conflict_type: str) -> str:
+    """Return a safe, actionable message without exposing internal IDs."""
+    if conflict_type == "ooo":
+        return "Hedef oda arıza nedeniyle kullanım dışı. Başka bir oda seçin."
+    if conflict_type == "oos":
+        return "Hedef oda servis dışı. Başka bir oda seçin."
+    if conflict_type == "maintenance":
+        return "Hedef oda bakımda. Başka bir oda seçin."
+    return "Hedef oda seçilen gece için başka bir rezervasyonla dolu. İki rezervasyonu karşılıklı değiştirmek için kartı doğrudan diğer rezervasyon kartının üzerine bırakın."
+
 
 ALLOWED_FIELDS = {
     "room_id",
@@ -94,6 +115,12 @@ class UpdateReservationService:
             existing_booking = await self.repository.get_booking_for_tenant(tenant_context.tenant_id, booking_id)
             if not existing_booking:
                 raise HTTPException(status_code=404, detail="Booking not found")
+
+            await ensure_reservation_mutable(
+                db,
+                tenant_context.tenant_id,
+                existing_booking,
+            )
 
             await self._validate_date_changes(
                 tenant_id=tenant_context.tenant_id,
@@ -186,7 +213,7 @@ class UpdateReservationService:
                     except BookingConflictError as exc:
                         raise HTTPException(
                             status_code=status.HTTP_409_CONFLICT,
-                            detail=str(exc),
+                            detail=_operator_room_conflict_message(exc.conflict_type),
                         ) from exc
 
             async def restore_original_allocation() -> None:
@@ -283,6 +310,15 @@ class UpdateReservationService:
             }
 
             if changes:
+                activity_action = _reservation_activity_action(changes)
+                activity_details = {
+                    "changed_fields": list(changes.keys()),
+                    "changes": changes,
+                    "source": "PMS",
+                    "correlation_id": correlation_id,
+                    "actor_id": current_user.id,
+                    "actor_role": tenant_context.role,
+                }
                 event_envelope = build_event_envelope(
                     event_type=RESERVATION_MODIFIED_EVENT,
                     tenant_id=tenant_context.tenant_id,
@@ -323,11 +359,31 @@ class UpdateReservationService:
                     action="reservation_modified",
                     correlation_id=correlation_id,
                     metadata={
+                        "activity_action": activity_action,
                         "changed_fields": list(changes.keys()),
                         "changes": changes,
                         "room_id": updated_booking.get("room_id"),
                         "guest_id": updated_booking.get("guest_id"),
+                        "source": "PMS",
+                        "actor_name": current_user.name,
+                        "actor_role": tenant_context.role,
                     },
+                )
+
+                # The full-detail screen reads reservation_activity_log.  Keep
+                # this operator-facing timeline in sync with the immutable
+                # audit log, including the exact before/after values.
+                await db.reservation_activity_log.insert_one(
+                    {
+                        "id": str(uuid.uuid4()),
+                        "tenant_id": tenant_context.tenant_id,
+                        "booking_id": booking_id,
+                        "action": activity_action,
+                        "actor": current_user.name,
+                        "details": activity_details,
+                        "correlation_id": correlation_id,
+                        "created_at": event_envelope["timestamp"],
+                    }
                 )
 
                 # Af-sadakat marketplace integration: outbound olay (best-effort)
@@ -454,6 +510,17 @@ class UpdateReservationService:
         booking_data: dict[str, Any],
     ) -> dict[str, Any]:
         update_data: dict[str, Any] = {}
+
+        if existing_booking.get("is_complimentary") and "total_amount" in booking_data:
+            try:
+                requested_total = float(booking_data["total_amount"])
+            except (TypeError, ValueError) as exc:
+                raise HTTPException(status_code=422, detail="Geçersiz rezervasyon tutarı") from exc
+            if requested_total != 0:
+                raise HTTPException(
+                    status_code=422,
+                    detail="Comp rezervasyona konaklama ücreti yazılamaz; önce comp durumunu kaldırın",
+                )
 
         if "guest_id" in booking_data and booking_data["guest_id"] != existing_booking.get("guest_id"):
             guest = await self.repository.get_guest_for_tenant(tenant_id, booking_data["guest_id"])

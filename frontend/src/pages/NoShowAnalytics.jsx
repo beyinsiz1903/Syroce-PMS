@@ -12,6 +12,12 @@ import {
   ToggleLeft, ToggleRight, RefreshCw, Target, Zap, BarChart3
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { toast } from 'sonner';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
+import { bookingSourceLabel } from '@/utils/bookingSource';
+
+const money = (amount, currency) => formatCurrency(amount, currency || cachedTenantCurrency());
+const channelName = (channel) => bookingSourceLabel({ channel });
 
 /* ─── Color maps ───────────────────────────────────────── */
 const CHANNEL_COLORS = {
@@ -31,7 +37,7 @@ const RISK_STYLES = {
 
 const CONFIDENCE_ICONS = { low: '', medium: '', high: '' };
 
-const WEEKDAY_SHORT = ['Pzt', 'Sal', 'Car', 'Per', 'Cum', 'Cmt', 'Paz'];
+const WEEKDAY_SHORT = ['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz'];
 
 /* ─── Data quality banner ──────────────────────────────── */
 const DataQualityBanner = ({ dq }) => {
@@ -53,16 +59,24 @@ const ChannelLossTab = ({ period }) => {
   const { t, i18n } = useTranslation();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
-  useEffect(() => {
+  const load = useCallback(() => {
     setLoading(true);
+    setError('');
     axios.get(`/pms/channel-loss-analytics?days=${period}`)
       .then(r => setData(r.data))
-      .catch(e => console.error(e))
+      .catch(e => {
+        console.error(e);
+        setData(null);
+        setError('Kanal kaybı verileri yüklenemedi. Lütfen yeniden deneyin.');
+      })
       .finally(() => setLoading(false));
   }, [period]);
+  useEffect(() => { load(); }, [load]);
 
   if (loading) return <Loader />;
+  if (error) return <ErrorState message={error} onRetry={load} />;
   if (!data) return <Empty />;
 
   const maxLoss = Math.max(...(data.channels?.map(c => c.total_loss) || [1]), 1);
@@ -76,14 +90,14 @@ const ChannelLossTab = ({ period }) => {
         <Card className="border-l-4 border-l-red-500" data-testid="ch-total-loss">
           <CardContent className="pt-4 pb-3">
             <p className="text-xs font-medium text-gray-500 uppercase">{t('cm.pages_NoShowAnalytics.toplam_kayip')}</p>
-            <p className="text-2xl font-bold text-red-600 mt-1">{data.total_loss?.toLocaleString(i18n.language)} TL</p>
+            <p className="text-2xl font-bold text-red-600 mt-1">{money(data.total_loss, data.currency)}</p>
             <p className="text-xs text-gray-400 mt-1">{data.total_no_shows} no-show</p>
           </CardContent>
         </Card>
         <Card className="border-l-4 border-l-amber-500" data-testid="ch-worst-channel">
           <CardContent className="pt-4 pb-3">
             <p className="text-xs font-medium text-gray-500 uppercase">{t('cm.pages_NoShowAnalytics.en_kotu_kanal')}</p>
-            <p className="text-2xl font-bold text-gray-900 mt-1 capitalize">{data.top3_worst?.[0]?.channel || '-'}</p>
+            <p className="text-2xl font-bold text-gray-900 mt-1">{data.top3_worst?.[0]?.channel ? channelName(data.top3_worst[0].channel) : '-'}</p>
             <p className="text-xs text-gray-400 mt-1">{data.top3_worst?.[0]?.total_loss?.toLocaleString(i18n.language)} {t('cm.pages_NoShowAnalytics.tl_kayip')}</p>
           </CardContent>
         </Card>
@@ -101,7 +115,7 @@ const ChannelLossTab = ({ period }) => {
         <CardHeader className="pb-2">
           <div className="flex items-center gap-2">
             <Flame className="w-4 h-4 text-red-500" />
-            <CardTitle className="text-sm font-semibold text-gray-700">Top 3 En Riskli Kanal</CardTitle>
+            <CardTitle className="text-sm font-semibold text-gray-700">En Riskli 3 Kanal</CardTitle>
           </div>
         </CardHeader>
         <CardContent>
@@ -114,11 +128,11 @@ const ChannelLossTab = ({ period }) => {
                     <Badge className={`text-xs font-bold ${clr.bar} text-white`}>#{i + 1}</Badge>
                     <span className="text-xs text-gray-500">{ch.no_show_rate}% oran</span>
                   </div>
-                  <p className={`text-lg font-bold capitalize ${clr.text}`}>{ch.channel}</p>
+                  <p className={`text-lg font-bold ${clr.text}`}>{channelName(ch.channel)}</p>
                   <div className="mt-2 space-y-1 text-xs text-gray-600">
                     <div className="flex justify-between"><span>No-show</span><span className="font-semibold">{ch.no_show_count}</span></div>
-                    <div className="flex justify-between"><span>{t('cm.pages_NoShowAnalytics.toplam_kayip_e38cc')}</span><span className="font-semibold text-red-600">-{ch.total_loss?.toLocaleString(i18n.language)} TL</span></div>
-                    <div className="flex justify-between"><span>{t('cm.pages_NoShowAnalytics.ort_kayip')}</span><span className="font-semibold">{ch.avg_loss?.toLocaleString(i18n.language)} TL</span></div>
+                    <div className="flex justify-between"><span>{t('cm.pages_NoShowAnalytics.toplam_kayip_e38cc')}</span><span className="font-semibold text-red-600">-{money(ch.total_loss, ch.currency || data.currency)}</span></div>
+                    <div className="flex justify-between"><span>{t('cm.pages_NoShowAnalytics.ort_kayip')}</span><span className="font-semibold">{money(ch.avg_loss, ch.currency || data.currency)}</span></div>
                   </div>
                 </div>
               );
@@ -151,12 +165,12 @@ const ChannelLossTab = ({ period }) => {
                     <td className="py-2.5 pr-3 capitalize font-medium">
                       <div className="flex items-center gap-2">
                         <div className={`w-2.5 h-2.5 rounded-full ${getChColor(ch.channel).bar}`} />
-                        {ch.channel}
+                        {channelName(ch.channel)}
                       </div>
                     </td>
                     <td className="py-2.5 pr-3 text-right font-semibold">{ch.no_show_count}</td>
-                    <td className="py-2.5 pr-3 text-right text-red-600 font-semibold">-{ch.total_loss?.toLocaleString(i18n.language)} TL</td>
-                    <td className="py-2.5 pr-3 text-right">{ch.avg_loss?.toLocaleString(i18n.language)} TL</td>
+                    <td className="py-2.5 pr-3 text-right text-red-600 font-semibold">-{money(ch.total_loss, ch.currency || data.currency)}</td>
+                    <td className="py-2.5 pr-3 text-right">{money(ch.avg_loss, ch.currency || data.currency)}</td>
                     <td className="py-2.5 pr-3 text-right">
                       <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${ch.no_show_rate > 10 ? 'bg-red-100 text-red-700' : ch.no_show_rate > 5 ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'}`}>
                         {ch.no_show_rate}%
@@ -229,16 +243,24 @@ const OverbookingHeatmapTab = ({ period }) => {
   const { t, i18n } = useTranslation();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
-  useEffect(() => {
+  const load = useCallback(() => {
     setLoading(true);
+    setError('');
     axios.get(`/pms/overbooking-heatmap?days=${period}`)
       .then(r => setData(r.data))
-      .catch(e => console.error(e))
+      .catch(e => {
+        console.error(e);
+        setData(null);
+        setError('Fazla satış risk haritası yüklenemedi. Lütfen yeniden deneyin.');
+      })
       .finally(() => setLoading(false));
   }, [period]);
+  useEffect(() => { load(); }, [load]);
 
   if (loading) return <Loader />;
+  if (error) return <ErrorState message={error} onRetry={load} />;
   if (!data) return <Empty />;
 
   const maxOB = Math.max(...(data.heatmap?.map(h => h.overbooking_count) || [0]), 1);
@@ -269,7 +291,7 @@ const OverbookingHeatmapTab = ({ period }) => {
         <Card className="border-l-4 border-l-amber-500" data-testid="ob-loss">
           <CardContent className="pt-4 pb-3">
             <p className="text-xs font-medium text-gray-500 uppercase">{t('cm.pages_NoShowAnalytics.overbooking_kaybi')}</p>
-            <p className="text-2xl font-bold text-amber-600 mt-1">{data.total_loss?.toLocaleString(i18n.language)} TL</p>
+            <p className="text-2xl font-bold text-amber-600 mt-1">{money(data.total_loss, data.currency)}</p>
           </CardContent>
         </Card>
         <Card className="border-l-4 border-l-blue-500" data-testid="ob-peak-day">
@@ -303,7 +325,7 @@ const OverbookingHeatmapTab = ({ period }) => {
                     <div className="absolute -top-12 left-1/2 -translate-x-1/2 hidden group-hover:block bg-gray-800 text-white text-[10px] px-2 py-1.5 rounded whitespace-nowrap z-20">
                       <div>{d.date}</div>
                       <div>OB: {d.overbooking_count} {t('cm.pages_NoShowAnalytics.toplam_ns')} {d.total_noshow}</div>
-                      <div>Kayip: {d.loss?.toLocaleString(i18n.language)} TL</div>
+                      <div>Kayıp: {money(d.loss, d.currency || data.currency)}</div>
                     </div>
                   </div>
                 ))}
@@ -403,7 +425,7 @@ const OverbookingHeatmapTab = ({ period }) => {
                 const clr = getChColor(ch.channel);
                 return (
                   <div key={ch.channel} className={`rounded-lg border p-3 ${clr.light} min-w-[120px]`} data-testid={`ob-ch-${i}`}>
-                    <p className={`text-sm font-medium capitalize ${clr.text}`}>{ch.channel}</p>
+                    <p className={`text-sm font-medium ${clr.text}`}>{channelName(ch.channel)}</p>
                     <p className="text-xl font-bold text-gray-900 mt-1">{ch.count}</p>
                     <p className="text-[10px] text-gray-400">overbooking</p>
                   </div>
@@ -427,6 +449,7 @@ const RuleEngineTab = () => {
   const [alerts, setAlerts] = useState([]);
   const [metrics, setMetrics] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [evaluating, setEvaluating] = useState(false);
   const [form, setForm] = useState({
@@ -438,6 +461,7 @@ const RuleEngineTab = () => {
 
   const load = useCallback(async () => {
     setLoading(true);
+    setError('');
     try {
       const [rRes, hRes] = await Promise.all([
         axios.get('/pms/alert-rules'),
@@ -445,7 +469,12 @@ const RuleEngineTab = () => {
       ]);
       setRules(rRes.data.rules || []);
       setHistory(hRes.data.history || []);
-    } catch (e) { console.error(e); }
+    } catch (e) {
+      console.error(e);
+      setRules([]);
+      setHistory([]);
+      setError('Kural motoru verileri yüklenemedi. Lütfen yeniden deneyin.');
+    }
     setLoading(false);
   }, []);
 
@@ -462,15 +491,24 @@ const RuleEngineTab = () => {
       setShowForm(false);
       setForm({ rule_name: '', rule_type: 'overbooking_high', condition_metric: 'overbooking_count', condition_operator: 'gt', condition_value: '', action_suggestion: '', channel_filter: '' });
       load();
-    } catch (e) { console.error(e); }
+    } catch (e) {
+      console.error(e);
+      toast.error('Kural kaydedilemedi. Lütfen yeniden deneyin.');
+    }
   };
 
   const deleteRule = async (id) => {
-    try { await axios.delete(`/pms/alert-rules/${id}`); load(); } catch (e) { console.error(e); }
+    try { await axios.delete(`/pms/alert-rules/${id}`); load(); } catch (e) {
+      console.error(e);
+      toast.error('Kural silinemedi. Lütfen yeniden deneyin.');
+    }
   };
 
   const toggleRule = async (id) => {
-    try { await axios.patch(`/pms/alert-rules/${id}/toggle`); load(); } catch (e) { console.error(e); }
+    try { await axios.patch(`/pms/alert-rules/${id}/toggle`); load(); } catch (e) {
+      console.error(e);
+      toast.error('Kuralın durumu değiştirilemedi. Lütfen yeniden deneyin.');
+    }
   };
 
   const evaluate = async () => {
@@ -480,21 +518,25 @@ const RuleEngineTab = () => {
       setAlerts(res.data.alerts || []);
       setMetrics(res.data.metrics || null);
       load(); // Refresh history
-    } catch (e) { console.error(e); }
+    } catch (e) {
+      console.error(e);
+      toast.error('Kurallar değerlendirilemedi. Lütfen yeniden deneyin.');
+    }
     setEvaluating(false);
   };
 
   if (loading) return <Loader />;
+  if (error) return <ErrorState message={error} onRetry={load} />;
 
   const METRIC_OPTIONS = [
-    { value: 'overbooking_count', label: 'Overbooking Sayısı' },
+    { value: 'overbooking_count', label: 'Fazla Satış Sayısı' },
     { value: 'noshow_count', label: 'No-Show Sayısı' },
     { value: 'noshow_rate', label: 'No-Show Oranı (%)' },
   ];
 
   const ACTION_PRESETS = [
-    { value: 'rate_dusur', label: 'Rate Düşür' },
-    { value: 'prepaid_zorunlu', label: 'Prepaid Zorunlu' },
+    { value: 'rate_dusur', label: 'Fiyatı Düşür' },
+    { value: 'prepaid_zorunlu', label: 'Ön Ödemeyi Zorunlu Yap' },
     { value: 'kanal_kapat', label: 'Kanalı Kapat' },
     { value: 'manuel_inceleme', label: 'Manuel İnceleme' },
   ];
@@ -600,7 +642,7 @@ const RuleEngineTab = () => {
           <CardHeader className="pb-2">
             <div className="flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 text-red-500" />
-              <CardTitle className="text-sm font-semibold text-red-700">Tetiklenen Alertler ({alerts.length})</CardTitle>
+              <CardTitle className="text-sm font-semibold text-red-700">Tetiklenen Uyarılar ({alerts.length})</CardTitle>
             </div>
           </CardHeader>
           <CardContent>
@@ -609,7 +651,7 @@ const RuleEngineTab = () => {
                 <div key={a.id} className="p-3 bg-red-50 border border-red-200 rounded-lg" data-testid={`alert-item-${i}`}>
                   <div className="flex items-center justify-between">
                     <p className="text-sm font-medium text-red-800">{a.rule_name}</p>
-                    <Badge variant="destructive" className="text-xs">ALERT</Badge>
+                    <Badge variant="destructive" className="text-xs">UYARI</Badge>
                   </div>
                   <p className="text-xs text-red-600 mt-1">
                     Metrik: {a.metric_value} {t('cm.pages_NoShowAnalytics.esik')} {a.threshold}{t('cm.pages_NoShowAnalytics.oneri')} <strong>{a.action_suggestion}</strong>
@@ -662,17 +704,25 @@ const PredictionTab = () => {
   const { t, i18n } = useTranslation();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [daysAhead, setDaysAhead] = useState('7');
 
-  useEffect(() => {
+  const load = useCallback(() => {
     setLoading(true);
+    setError('');
     axios.get(`/pms/noshow-prediction?days_ahead=${daysAhead}`)
       .then(r => setData(r.data))
-      .catch(e => console.error(e))
+      .catch(e => {
+        console.error(e);
+        setData(null);
+        setError('No-show tahminleri yüklenemedi. Lütfen yeniden deneyin.');
+      })
       .finally(() => setLoading(false));
   }, [daysAhead]);
+  useEffect(() => { load(); }, [load]);
 
   if (loading) return <Loader />;
+  if (error) return <ErrorState message={error} onRetry={load} />;
   if (!data) return <Empty />;
 
   return (
@@ -715,7 +765,7 @@ const PredictionTab = () => {
         <Card className="border-l-4 border-l-indigo-500" data-testid="pred-potential-loss">
           <CardContent className="pt-4 pb-3">
             <p className="text-xs font-medium text-gray-500 uppercase">{t('cm.pages_NoShowAnalytics.potansiyel_kayip')}</p>
-            <p className="text-2xl font-bold text-indigo-600 mt-1">{data.summary?.potential_loss?.toLocaleString(i18n.language) || 0} TL</p>
+            <p className="text-2xl font-bold text-indigo-600 mt-1">{money(data.summary?.potential_loss, data.summary?.currency || data.currency)}</p>
           </CardContent>
         </Card>
       </div>
@@ -754,10 +804,10 @@ const PredictionTab = () => {
                           </span>
                         </td>
                         <td className="py-2.5 pr-3 font-medium text-gray-800">{p.guest_name}</td>
-                        <td className="py-2.5 pr-3 capitalize text-gray-600">{p.channel}</td>
+                        <td className="py-2.5 pr-3 text-gray-600">{channelName(p.channel)}</td>
                         <td className="py-2.5 pr-3 text-gray-600">{p.check_in}</td>
                         <td className="py-2.5 pr-3 text-gray-600">{p.room_type}</td>
-                        <td className="py-2.5 pr-3 text-right font-medium">{p.total_amount?.toLocaleString(i18n.language)} TL</td>
+                        <td className="py-2.5 pr-3 text-right font-medium">{money(p.total_amount, p.currency || data.currency)}</td>
                         <td className="py-2.5 text-right">
                           <div className="flex items-center justify-end gap-2">
                             <div className="w-12 h-2 bg-gray-200 rounded-full overflow-hidden">
@@ -789,7 +839,7 @@ const PredictionTab = () => {
               <div className="space-y-2">
                 {Object.entries(data.historical_rates.by_channel || {}).sort((a, b) => b[1] - a[1]).map(([ch, rate], i) => (
                   <div key={ch} className="flex items-center gap-3" data-testid={`hist-ch-${i}`}>
-                    <div className="w-16 text-xs font-medium text-gray-700 capitalize truncate">{ch}</div>
+                    <div className="w-20 text-xs font-medium text-gray-700 truncate">{channelName(ch)}</div>
                     <div className="flex-1 h-5 bg-gray-100 rounded relative overflow-hidden">
                       <div className={`h-full rounded ${getChColor(ch).bar}`} style={{ width: `${Math.min(rate * 3, 100)}%` }} />
                     </div>
@@ -833,13 +883,22 @@ const Loader = () => (
   </div>
 );
 const Empty = () => <p className="text-sm text-gray-400 py-6 text-center">Veri yok</p>;
+const ErrorState = ({ message, onRetry }) => (
+  <div className="flex flex-col items-center justify-center gap-3 py-12 text-center">
+    <AlertTriangle className="h-8 w-8 text-red-500" />
+    <p className="max-w-md text-sm text-red-700">{message}</p>
+    <Button type="button" variant="outline" size="sm" onClick={onRetry}>
+      <RefreshCw className="mr-2 h-4 w-4" /> Yeniden dene
+    </Button>
+  </div>
+);
 
 /* ─────────────────────────────────────────────────────────
    MAIN PAGE
    ───────────────────────────────────────────────────────── */
 const TABS = [
   { id: 'channel', label: 'Kanal Kaybı', icon: BarChart3, color: 'text-blue-600' },
-  { id: 'heatmap', label: 'Overbooking Haritası', icon: Flame, color: 'text-red-600' },
+  { id: 'heatmap', label: 'Fazla Satış Haritası', icon: Flame, color: 'text-red-600' },
   { id: 'rules', label: 'Kural Motoru', icon: Shield, color: 'text-amber-600' },
   { id: 'prediction', label: 'Tahmin', icon: Brain, color: 'text-indigo-600' },
 ];
@@ -859,7 +918,7 @@ const NoShowAnalytics = ({ user, tenant, onLogout, embedded = false }) => {
               <Ban className="w-5 h-5 text-white" />
             </div>
             <div>
-              <h1 className="text-xl font-bold text-gray-900">No-Show & Gelir Analitik</h1>
+              <h1 className="text-xl font-bold text-gray-900">No-Show ve Gelir Analitiği</h1>
               <p className="text-sm text-gray-500">{t('cm.pages_NoShowAnalytics.kanal_kaybi_overbooking_haritasi_kuralla')}</p>
             </div>
           </div>

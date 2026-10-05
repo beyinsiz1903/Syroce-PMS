@@ -14,6 +14,8 @@ from typing import Any
 from .security import safe_fingerprint
 
 logger = logging.getLogger("exely.observability")
+_RECOVERABLE_FAILURE_THRESHOLD = 5
+_recoverable_failure_streaks: dict[str, int] = {}
 
 _metrics = {
     "success_count": 0,
@@ -27,6 +29,11 @@ _metrics = {
     "last_error_at": None,
     "last_error_type": None,
 }
+
+
+def _failure_streak_key(connection_id: str, soap_action: str) -> str:
+    """Keep unrelated provider operations from inflating one outage streak."""
+    return f"{safe_fingerprint(connection_id)}:{soap_action or '-'}"
 
 
 def record_provider_call(
@@ -45,6 +52,7 @@ def record_provider_call(
     if success:
         _metrics["success_count"] += 1
         _metrics["last_success_at"] = now
+        _recoverable_failure_streaks.pop(_failure_streak_key(connection_id, soap_action), None)
     else:
         _metrics["error_count"] += 1
         _metrics["last_error_at"] = now
@@ -66,6 +74,7 @@ def record_provider_failure(
     message: str,
     connection_id: str = "",
     soap_action: str = "",
+    recoverable: bool = False,
 ) -> None:
     _metrics["error_count"] += 1
     _metrics["last_error_at"] = datetime.now(UTC).isoformat()
@@ -78,12 +87,29 @@ def record_provider_failure(
     elif "soapfault" in error_type.lower() or "soap_fault" in error_type.lower():
         _metrics["soap_fault_count"] += 1
 
-    logger.error(
-        "[EXELY-OBS] FAILURE type=%s conn=%s action=%s",
-        error_type,
-        safe_fingerprint(connection_id),
-        soap_action,
-    )
+    connection_key = safe_fingerprint(connection_id)
+    streak_key = _failure_streak_key(connection_id, soap_action)
+    if recoverable:
+        streak = _recoverable_failure_streaks.get(streak_key, 0) + 1
+        _recoverable_failure_streaks[streak_key] = streak
+        if streak < _RECOVERABLE_FAILURE_THRESHOLD:
+            logger.warning(
+                "[EXELY-OBS] RETRYABLE_FAILURE type=%s conn=%s action=%s streak=%d",
+                error_type,
+                connection_key,
+                soap_action,
+                streak,
+            )
+            return
+        logger.error(
+            "[EXELY-OBS] SUSTAINED_RETRYABLE_FAILURE type=%s conn=%s action=%s streak=%d",
+            error_type,
+            connection_key,
+            soap_action,
+            streak,
+        )
+        return
+    logger.error("[EXELY-OBS] FAILURE type=%s conn=%s action=%s", error_type, connection_key, soap_action)
 
 
 def get_provider_health() -> dict[str, Any]:
@@ -107,6 +133,7 @@ def get_provider_health() -> dict[str, Any]:
 
 
 def reset_metrics() -> None:
+    _recoverable_failure_streaks.clear()
     for key in _metrics:
         if isinstance(_metrics[key], int):
             _metrics[key] = 0

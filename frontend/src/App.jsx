@@ -8,12 +8,12 @@ import PlanRouteGuard from "@/components/PlanRouteGuard";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClient } from "@/lib/queryClient";
 import usePushNotifications from "@/hooks/usePushNotifications";
+import useUserAccessRefresh from "@/hooks/useUserAccessRefresh";
 import { NotificationProvider, notifyAuthChanged } from "@/context/NotificationContext";
-import InternalChatWidget from "@/components/InternalChatWidget";
-import CommunicationCenter from "@/components/CommunicationCenter";
 import { CurrencyProvider } from "@/context/CurrencyContext";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { ModuleAvailabilityState } from "@/components/shared/ModuleAvailabilityState";
+import ProductState from "@/components/shared/ProductState";
 import { Toaster } from "@/components/ui/sonner";
 import DialogHost from "@/components/DialogHost";
 import OfflineStatusBar from "@/components/OfflineStatusBar";
@@ -27,12 +27,27 @@ import {
 } from "@/routes/ProtectedRoute";
 import { registerRoutes } from "@/routes/preload";
 import { EntitlementProvider } from "@/context/EntitlementContext";
-import { prefetchHeavyModules } from "@/lib/prefetch";
+import { scheduleHeavyModulePrefetch } from "@/lib/prefetch";
 import { websocket } from "@/lib/websocket";
 import {
   ADMIN_TENANT_CONTEXT_KEY,
+  ADMIN_TENANT_SESSION_EVENT,
   reconcileAdminTenantContext,
 } from "@/lib/adminTenantContext";
+import { resolvePostLoginDestination } from "@/lib/postLoginWorkspace";
+import RouteRumReporter from "@/components/RouteRumReporter";
+import AppNavigationBridge from "@/components/AppNavigationBridge";
+import { navigateInternal } from "@/lib/appNavigation";
+import { recordSessionEvent } from "@/lib/sessionTelemetry";
+import {
+  blockTabAfterExternalSessionChange,
+  clearAuthScopedSessionStorage,
+  clearTabAuthScope,
+  isForeignIdentityForTab,
+  isTabAuthBlocked,
+  readSharedAuthUser,
+  rememberTabAuthSubject,
+} from "@/lib/authSessionScope";
 
 // Sesli softphone (Contact Center Faz 2) — yalnızca personel için, lazy.
 // Twilio Voice SDK + mikrofon izni operatör "Aktifleştir"e basınca yüklenir.
@@ -42,6 +57,12 @@ const Softphone = lazy(() => import("@/components/contact-center/Softphone"));
 const SelfCheckinPage = lazy(() => import("@/pages/SelfCheckin"));
 const DigitalKeyPage = lazy(() => import("@/pages/DigitalKey"));
 const SupplierAuthPage = lazy(() => import("@/pages/SupplierAuthPage"));
+// İletişim launcher'ları ilk ekranın kritik parçası değildir: bildirim ve
+// okunmamış sayaçları NotificationProvider tarafından zaten tutulur. Bu iki
+// UI kabuğunu ilk paint ve dashboard verisi sakinleşene kadar ayırmak, login
+// sonrası gereksiz modül/ikon indirmesini kritik ağ yolundan çıkarır.
+const InternalChatWidget = lazy(() => import("@/components/InternalChatWidget"));
+const CommunicationCenter = lazy(() => import("@/components/CommunicationCenter"));
 
 function SelfCheckinRoute() {
   const { bookingId } = useParams();
@@ -65,6 +86,48 @@ function RouteAwareCommunicationCenter({ user }) {
   return isGuestRoomService ? null : <CommunicationCenter user={user} />;
 }
 
+function DeferredCommunicationTools({ user }) {
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    if (!user) {
+      setReady(false);
+      return undefined;
+    }
+
+    // İlk dashboard route + kimlik istekleri önce bitsin. Idle callback varsa
+    // ana iş parçacığı boşaldığında çalışır; timeout eski Safari'lerde güvenli
+    // bir fallback'tir.
+    const mount = () => setReady(true);
+    const timer = window.setTimeout(() => {
+      if (typeof window.requestIdleCallback === "function") {
+        window.requestIdleCallback(mount, { timeout: 4000 });
+      } else {
+        mount();
+      }
+    }, 1500);
+
+    return () => window.clearTimeout(timer);
+  }, [user]);
+
+  if (!ready) return null;
+
+  return (
+    <Suspense fallback={null}>
+      <RouteAwareCommunicationCenter user={user} />
+      <InternalChatWidget user={user} hideLauncher />
+    </Suspense>
+  );
+}
+
+// Legacy bookmarks are kept working, but must converge on one workspace URL.
+// Keeping the current query and hash is important for report section links and
+// deep-linked settings tabs.
+function CanonicalRedirect({ to }) {
+  const location = useLocation();
+  return <Navigate replace to={{ pathname: to, search: location.search, hash: location.hash }} />;
+}
+
 function notifyServiceWorkerAuthChanged() {
   // SW v1.1.0+ AUTH_CHANGED mesajına karşılık tüm `hotel-pms-*` cache'leri
   // siler. Login/logout/clearAuthStorage akışlarından çağrılır → cross-user
@@ -84,14 +147,18 @@ function clearAuthStorage() {
   localStorage.removeItem("user");
   localStorage.removeItem("tenant");
   localStorage.removeItem("modules");
+  localStorage.removeItem("entitlements");
   localStorage.removeItem(ADMIN_TENANT_CONTEXT_KEY);
   clearAxiosCache();
   // SessionStorage cache'leri de sil — aynı tab'da hesap değişiminde
   // önceki kullanıcının notification/business-date verisi sızmasın.
-  try {
-    sessionStorage.removeItem("notif_cache_v1");
-    sessionStorage.removeItem("pms_bd_cache_v1");
-  } catch { /* ignore */ }
+  clearAuthScopedSessionStorage();
+  notifyServiceWorkerAuthChanged();
+}
+
+function clearAccessCaches() {
+  clearAxiosCache();
+  queryClient.clear();
   notifyServiceWorkerAuthChanged();
 }
 
@@ -103,8 +170,15 @@ function App() {
   const [loading, setLoading] = useState(true);
 
   usePushNotifications(isAuthenticated ? user : null);
+  useUserAccessRefresh(isAuthenticated ? user : null, setUser, clearAccessCaches);
 
   useEffect(() => {
+    if (isTabAuthBlocked()) {
+      // A different identity was established in another same-browser tab.
+      // Do not silently adopt it. The user must explicitly authenticate here.
+      setLoading(false);
+      return undefined;
+    }
     const hasAuthCookieSession = localStorage.getItem("token_ts") !== null;
     const storedUser = localStorage.getItem("user");
     const storedTenant = localStorage.getItem("tenant");
@@ -116,8 +190,21 @@ function App() {
     // session alive until logout, account revocation, or refresh rejection.
     if (hasAuthCookieSession && storedUser) {
       axios.get("/auth/me")
-        .then(async (meResponse) => {
+        .then((meResponse) => {
           const freshUser = meResponse.data;
+          if (isForeignIdentityForTab(freshUser)) {
+            // Never repaint an existing workspace as another hotel/user. This
+            // is intentionally local to this tab; the new session must remain
+            // valid in the tab/device where it was explicitly established.
+            blockTabAfterExternalSessionChange();
+            clearAccessCaches();
+            delete axios.defaults.headers.common["Authorization"];
+            setUser(null);
+            setTenant(null);
+            setModules(null);
+            setIsAuthenticated(false);
+            return;
+          }
           let parsedTenant = null;
           if (storedTenant && storedTenant !== "null") {
             try { parsedTenant = JSON.parse(storedTenant); } catch { /* ignore parse error */ }
@@ -126,37 +213,60 @@ function App() {
           if (storedModules) {
             try { parsedModules = JSON.parse(storedModules); } catch { /* ignore parse error */ }
           }
-          let subscriptionContext = null;
+          const applyAuthenticatedSnapshot = (nextTenant, nextModules) => {
+            const recoveredTenant = nextTenant || parsedTenant;
+            const recoveredModules = nextModules || parsedModules || recoveredTenant?.modules || null;
+            const reconciled = reconcileAdminTenantContext(freshUser, recoveredTenant, recoveredModules);
+            const reconciledTenant = reconciled.tenant
+              ? (reconciled.modules ? { ...reconciled.tenant, modules: reconciled.modules } : reconciled.tenant)
+              : null;
+            localStorage.setItem("user", JSON.stringify(reconciled.user));
+            localStorage.setItem("tenant", reconciledTenant ? JSON.stringify(reconciledTenant) : "null");
+            if (reconciled.modules) localStorage.setItem("modules", JSON.stringify(reconciled.modules));
+            setUser(reconciled.user);
+            setModules(reconciled.modules);
+            setTenant(reconciledTenant);
+            setIsAuthenticated(true);
+            rememberTabAuthSubject(reconciled.user);
+          };
+
+          // Identity is the only blocking authentication check. Waiting for
+          // subscription data here left the application as a blank spinner
+          // after login even when this browser had a valid tenant snapshot.
+          // Render the verified user's workspace immediately, then reconcile
+          // package and module metadata in the background.
+          applyAuthenticatedSnapshot(parsedTenant, parsedModules);
+          recordSessionEvent("restore");
+          scheduleHeavyModulePrefetch();
+
           if (freshUser?.tenant_id) {
-            try {
-              const subscriptionResponse = await axios.get("/subscription/current");
-              subscriptionContext = subscriptionResponse?.data || null;
-            } catch {
-              // Session verification succeeded. A temporary subscription read
-              // failure must not log the user out; the last verified local
-              // snapshot remains the safe fallback.
-            }
+            void axios.get("/subscription/current")
+              .then((subscriptionResponse) => {
+                const subscriptionContext = subscriptionResponse?.data || null;
+                applyAuthenticatedSnapshot(
+                  subscriptionContext?.tenant || parsedTenant,
+                  subscriptionContext?.modules || parsedModules,
+                );
+              })
+              .catch(() => {
+                // EntitlementContext independently refreshes this data. A
+                // delayed or unavailable subscription response must not make
+                // the already verified first screen wait or disappear.
+              });
           }
-          const serverTenant = subscriptionContext?.tenant || null;
-          const serverModules = subscriptionContext?.modules || null;
-          const recoveredTenant = serverTenant || parsedTenant;
-          const recoveredModules = serverModules || parsedModules || recoveredTenant?.modules || null;
-          const reconciled = reconcileAdminTenantContext(freshUser, recoveredTenant, recoveredModules);
-          const reconciledTenant = reconciled.tenant
-            ? (reconciled.modules ? { ...reconciled.tenant, modules: reconciled.modules } : reconciled.tenant)
-            : null;
-          localStorage.setItem("user", JSON.stringify(reconciled.user));
-          localStorage.setItem("tenant", reconciledTenant ? JSON.stringify(reconciledTenant) : "null");
-          if (reconciled.modules) localStorage.setItem("modules", JSON.stringify(reconciled.modules));
-          setUser(reconciled.user);
-          setModules(reconciled.modules);
-          setTenant(reconciledTenant);
-          setIsAuthenticated(true);
-          prefetchHeavyModules();
         })
         .catch((error) => {
+          if (error?._sessionContextRestored) {
+            // The auth interceptor has already restored the super-admin's
+            // origin session and initiated navigation to its tenant list.
+            // Do not clear the freshly restored local session because the
+            // original request happened to be a 401 from the expired
+            // short-lived workspace context.
+            return;
+          }
+          const sessionVerificationTransient = Boolean(error?._sessionVerificationTransient);
           const status = error?.response?.status;
-          if (status === 401) {
+          if (status === 401 && !sessionVerificationTransient) {
             clearAuthStorage();
             setIsAuthenticated(false);
             return;
@@ -165,9 +275,18 @@ function App() {
           // A deployment restart or a short network outage must not turn
           // into an implicit logout. Keep the last verified local identity;
           // API authorization remains enforced by the server and the global
-          // interceptor will still hard-logout on a definitive 401.
+          // interceptor will still hard-logout on a definitive 401. This also
+          // covers a 401 whose refresh retry could not be verified.
           try {
             const cachedUser = JSON.parse(storedUser);
+            // Network fallback is safe only for the identity already verified
+            // by this tab. A localStorage snapshot belongs to all tabs and is
+            // never enough to establish a different account here.
+            if (isForeignIdentityForTab(cachedUser)) {
+              blockTabAfterExternalSessionChange();
+              setIsAuthenticated(false);
+              return;
+            }
             const cachedTenant = storedTenant && storedTenant !== "null"
               ? JSON.parse(storedTenant)
               : null;
@@ -189,6 +308,45 @@ function App() {
       if (hasAuthCookieSession || localStorage.getItem("token")) clearAuthStorage();
       setLoading(false);
     }
+  }, []);
+
+  useEffect(() => {
+    const authKeys = new Set(["user", "tenant", "modules", "token_ts", "refresh_token", "token", ADMIN_TENANT_CONTEXT_KEY]);
+    const onStorage = (event) => {
+      if (!authKeys.has(event.key)) return;
+      const sharedUser = readSharedAuthUser();
+      if (!sharedUser) {
+        // An explicit logout in another tab belongs to this browser session.
+        // Clear only this tab's in-memory state; the tab that initiated
+        // logout already owns the shared-storage cleanup.
+        clearTabAuthScope();
+        clearAccessCaches();
+        delete axios.defaults.headers.common["Authorization"];
+        setUser(null);
+        setTenant(null);
+        setModules(null);
+        setIsAuthenticated(false);
+        try { websocket.disconnect?.(); } catch { /* noop */ }
+        notifyAuthChanged();
+        return;
+      }
+      if (!isForeignIdentityForTab(sharedUser)) return;
+
+      // `storage` is emitted in every *other* tab. A login, logout or
+      // super-admin property switch elsewhere must close this tab's in-memory
+      // workspace, never turn it into that other user's workspace.
+      blockTabAfterExternalSessionChange();
+      clearAccessCaches();
+      delete axios.defaults.headers.common["Authorization"];
+      setUser(null);
+      setTenant(null);
+      setModules(null);
+      setIsAuthenticated(false);
+      try { websocket.disconnect?.(); } catch { /* noop */ }
+      notifyAuthChanged();
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
   }, []);
 
   useEffect(() => {
@@ -216,6 +374,22 @@ function App() {
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
   }, [isAuthenticated]);
+
+  useEffect(() => {
+    const applyTenantSession = (event) => {
+      const next = event?.detail;
+      if (!next?.user || !next?.tenant) return;
+      const nextModules = next.modules || next.tenant.modules || {};
+      setUser(next.user);
+      setModules(nextModules);
+      setTenant({ ...next.tenant, modules: nextModules });
+      clearAccessCaches();
+      try { websocket.reconnectWithFreshAuth?.(); } catch { /* non-fatal */ }
+      notifyAuthChanged();
+    };
+    window.addEventListener(ADMIN_TENANT_SESSION_EVENT, applyTenantSession);
+    return () => window.removeEventListener(ADMIN_TENANT_SESSION_EVENT, applyTenantSession);
+  }, []);
 
   const handleLogin = async (token, userData, tenantData, refreshToken) => {
     // clearAuthStorage() içinden notifyServiceWorkerAuthChanged() çağrılıyor
@@ -249,6 +423,7 @@ function App() {
       if (me?.data) canonicalUser = me.data;
     } catch { /* fallback: login response */ }
     localStorage.setItem("user", JSON.stringify(canonicalUser));
+    rememberTabAuthSubject(canonicalUser);
 
     const fetchModules = async () => {
       try {
@@ -261,8 +436,9 @@ function App() {
     setUser(canonicalUser);
     setTenant(tenantData);
     setIsAuthenticated(true);
+    recordSessionEvent("login");
     fetchModules();
-    prefetchHeavyModules();
+    scheduleHeavyModulePrefetch();
 
     // Reconnect the realtime socket so the new JWT is sent during the
     // socket.io handshake and the user joins their tenant-scoped rooms
@@ -276,30 +452,21 @@ function App() {
     // the cached identity and rewire its socket subscription + unread fetch.
     notifyAuthChanged();
 
-    // ── Auto-redirect to Onboarding Wizard ───────────────────────
-    // For tenant admins on a fresh setup (not dismissed, fewer than
-    // 3 steps complete), land them on the wizard instead of the
-    // dashboard. A deep-link in postLoginRedirect always wins.
-    const ADMIN_ROLES = new Set([
-      "super_admin", "platform_admin", "admin", "owner",
-    ]);
-    const role = (canonicalUser?.role || "").toLowerCase();
-    const isTenantAdmin = ADMIN_ROLES.has(role) && !!canonicalUser?.tenant_id;
-    const hasDeepLink = !!sessionStorage.getItem("postLoginRedirect");
-    if (isTenantAdmin && !hasDeepLink) {
-      try {
-        const r = await axios.get("/onboarding/progress");
-        const d = r?.data || {};
-        if (d.dismissed === false && (d.completed ?? 0) < 3) {
-          sessionStorage.setItem("postLoginRedirect", "/app/onboarding");
-        }
-      } catch { /* non-fatal */ }
-    }
+    // ── Post-login workspace routing ──────────────────────────────
+    // A central chain manager chooses the hotel workspace before entering PMS.
+    // The backend endpoint only returns siblings after verifying chain scope.
+    // An explicit deep-link always wins over this default landing page.
+    const resolvedLanding = await resolvePostLoginDestination({
+      api: axios,
+      user: canonicalUser,
+      existingRedirect: sessionStorage.getItem("postLoginRedirect"),
+    });
+    if (resolvedLanding) sessionStorage.setItem("postLoginRedirect", resolvedLanding);
 
     const redirectAfterLogin = sessionStorage.getItem("postLoginRedirect");
     if (redirectAfterLogin) {
       sessionStorage.removeItem("postLoginRedirect");
-      window.location.assign(redirectAfterLogin);
+      navigateInternal(redirectAfterLogin, { replace: true });
     }
   };
 
@@ -312,6 +479,7 @@ function App() {
       axios.post("/auth/logout", refreshToken ? { refresh_token: refreshToken } : {})
         .catch(() => { /* non-fatal: local clear yine de uygulanır */ });
     } catch { /* ignore */ }
+    recordSessionEvent("logout");
     clearAuthStorage();
     try { sessionStorage.clear(); } catch { /* ignore */ }
     delete axios.defaults.headers.common["Authorization"];
@@ -324,7 +492,7 @@ function App() {
     // for the page reload below).
     notifyAuthChanged();
     try { websocket.disconnect?.(); } catch { /* noop */ }
-    window.location.replace("/auth");
+    navigateInternal("/auth", { replace: true });
   };
 
   const hasFeature = (key) => {
@@ -342,11 +510,12 @@ function App() {
 
   if (loading) {
     return (
-      <div className="loading-screen flex items-center justify-center h-screen bg-background text-foreground">
-        <div className="text-center">
-          <div className="spinner mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-4 border-muted border-t-primary" />
-          <p className="text-muted-foreground">Yukleniyor...</p>
-        </div>
+      <div className="loading-screen bg-background text-foreground">
+        <ProductState
+          state="loading"
+          moduleName="Oturum"
+          showDashboardLink={false}
+        />
       </div>
     );
   }
@@ -355,7 +524,7 @@ function App() {
   if (isAuthenticated && user?.role === "guest") {
     return (
       <NotificationProvider>
-        <CurrencyProvider isAuthenticated={isAuthenticated}>
+        <CurrencyProvider key={tenant?.id || tenant?._id || 'guest'} isAuthenticated={isAuthenticated}>
         <QueryClientProvider client={queryClient}>
           <div className="App">
             <Toaster position="top-right" />
@@ -397,7 +566,7 @@ function App() {
   return (
     <EntitlementProvider currentTenantId={tenant?.id} isSuperAdmin={isPlatformSuperAdmin}>
       <NotificationProvider>
-      <CurrencyProvider isAuthenticated={isAuthenticated}>
+      <CurrencyProvider key={tenant?.id || tenant?._id || 'anonymous'} isAuthenticated={isAuthenticated}>
       <QueryClientProvider client={queryClient}>
         <div className="App">
           <Toaster position="top-right" />
@@ -405,6 +574,8 @@ function App() {
           {isAuthenticated && <OfflineStatusBar />}
           <BrowserRouter>
             <SimulationProvider>
+              <AppNavigationBridge />
+              <RouteRumReporter />
               <SimulationOverlay />
               <ErrorBoundary>
               <PlanRouteGuard tenant={tenant} user={user}>
@@ -421,7 +592,9 @@ function App() {
                     let element;
 
                     if (rc.type === "redirect") {
-                      element = <Navigate to={rc.to} replace />;
+                      element = rc.preserveLocation
+                        ? <CanonicalRedirect to={rc.to} />
+                        : <Navigate to={rc.to} replace />;
                     } else if (rc.type === "public") {
                       element = <Suspense fallback={<LoadingFallback />}><rc.component {...(rc.props || {})} /></Suspense>;
                     } else if (rc.type === "memory") {
@@ -438,14 +611,12 @@ function App() {
                         />
                       );
                     } else if (rc.type === "module") {
-                      const uRoles = (user?.roles || []).map(r => r.toLowerCase());
-                      const uRole = (user?.role || "").toLowerCase();
-                      const isSuperAdmin = uRoles.includes("super_admin") || uRole === "super_admin" || uRole === "demo_manager_readonly";
                       element = (
                         <ModuleGuardedRoute
                           isAuthenticated={isAuthenticated}
                           moduleKey={rc.moduleKey}
                           strict={rc.strict}
+                          allowedRoles={rc.allowedRoles}
                           element={<rc.component {...rc.props} />}
                           wrapLayout={rc.wrapLayout}
                           layoutModule={rc.layoutModule}
@@ -487,7 +658,7 @@ function App() {
                         element = (
                           <ProtectedRoute
                             isAuthenticated={isAuthenticated}
-                            element={<ModuleAvailabilityState reason="disabled" />}
+                            element={<ModuleAvailabilityState reason="forbidden" />}
                             wrapLayout
                             layoutModule="dashboard"
                             user={user}
@@ -525,9 +696,8 @@ function App() {
               </PlanRouteGuard>
             </ErrorBoundary>
             </SimulationProvider>
-            {isAuthenticated && user && <RouteAwareCommunicationCenter user={user} />}
+            {isAuthenticated && user && <DeferredCommunicationTools user={user} />}
           </BrowserRouter>
-          {isAuthenticated && user && <InternalChatWidget user={user} hideLauncher />}
           {isAuthenticated && user && (
             <Suspense fallback={null}>
               <Softphone user={user} hideLauncher />

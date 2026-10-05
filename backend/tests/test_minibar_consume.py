@@ -102,6 +102,8 @@ class _FakeDB:
         self.rooms = _Coll()
         self.inventory = _Coll()
         self.inventory_movements = _Coll()
+        self.tenant_settings = _Coll()
+        self.tenant_settings.docs.append({"tenant_id": TENANT, "business_date": "2026-09-23"})
 
     def __getitem__(self, name):
         return getattr(self, name)
@@ -193,6 +195,7 @@ async def test_consume_posts_one_charge_per_line_to_open_folio(_patch):
     assert len({c["source_minibar_log_id"] for c in charges}) == 1
     # Line totals: 2*20 and 1*30.
     assert sorted(c["total"] for c in charges) == [30.0, 40.0]
+    assert {c["business_date"] for c in charges} == {"2026-09-23"}
     assert _patch.minibar_consumptions.docs[0]["status"] == "posted"
 
 

@@ -19,6 +19,7 @@ from datetime import UTC, datetime, timedelta
 from fastapi import APIRouter, Depends
 from fastapi.security import HTTPBearer
 
+from core.business_date_service import ensure_business_date_initialized
 from core.database import db
 from core.security import get_current_user
 from models.schemas import User
@@ -29,7 +30,7 @@ _role_perm = RolePermissionService()
 
 def _enforce(role: str, op: str):
     """Bug CU (v60) — Departments/Reports/Rates/POS RBAC zorunlu."""
-    _role_perm.enforce_permission(role, op)
+    _role_perm.enforce_permission(getattr(role, "role", role), op, getattr(role, "granted_permissions", None))
 
 
 try:
@@ -298,38 +299,76 @@ async def get_finance_dashboard(
     current_user: User = Depends(get_current_user),
     _perm: None = Depends(require_op("view_finance_reports")),
 ):
-    """Finance Manager Dashboard with real-time AR and integrations"""
+    """Professional Finance Manager Dashboard"""
 
-    _enforce(current_user.role, "view_finance_reports")  # Bug CU
-    # AR Summary
-    pending_ar = await db.invoices.count_documents({"tenant_id": current_user.tenant_id, "payment_status": {"$in": ["pending", "partial"]}})
+    _enforce(current_user, "view_finance_reports")
+
+    tenant_id = current_user.tenant_id
+    today_date = datetime.now(UTC).date().isoformat()
+    now_dt = datetime.now(UTC)
+
+    # 1. Accounts Receivable (AR) Summary
+    pending_ar = await db.invoices.count_documents({"tenant_id": tenant_id, "payment_status": {"$in": ["pending", "partial"]}})
 
     overdue_invoices = []
-    total_overdue = 0
-    async for invoice in db.invoices.find({"tenant_id": current_user.tenant_id, "payment_status": {"$in": ["pending", "partial"]}, "due_date": {"$lt": datetime.now(UTC).isoformat()}}):
+    total_overdue = 0.0
+    async for invoice in db.invoices.find({"tenant_id": tenant_id, "payment_status": {"$in": ["pending", "partial"]}, "due_date": {"$lt": now_dt.isoformat()}}):
         overdue_invoices.append(invoice)
-        total_overdue += invoice.get("total", 0) - invoice.get("paid_amount", 0)
+        total_overdue += float(invoice.get("total", 0)) - float(invoice.get("paid_amount", 0))
+
+    # 2. Daily Revenue (Folio Charges Today)
+    revenue_pipeline = [
+        {"$match": {"tenant_id": tenant_id, "business_date": today_date, "voided": {"$ne": True}}},
+        {"$group": {"_id": "$category", "total": {"$sum": "$amount"}}}
+    ]
+    daily_rev_agg = await db.folio_charges.aggregate(revenue_pipeline).to_list(100)
+
+    total_daily_revenue = sum([float(item["total"]) for item in daily_rev_agg])
+    revenue_breakdown = {item["_id"] or "other": round(float(item["total"]), 2) for item in daily_rev_agg}
+
+    # 3. Daily Payments Collected Today
+    payment_pipeline = [
+        {"$match": {"tenant_id": tenant_id, "date": {"$gte": today_date}, "voided": {"$ne": True}}},
+        {"$group": {"_id": "$method", "total": {"$sum": "$amount"}}}
+    ]
+    daily_pay_agg = await db.payments.aggregate(payment_pipeline).to_list(100)
+    total_daily_payments = sum([float(item["total"]) for item in daily_pay_agg])
+    payment_breakdown = {item["_id"] or "other": round(float(item["total"]), 2) for item in daily_pay_agg}
+
+    # 4. Open Folios Exposure (In-House balances)
+    open_folios = await db.folios.aggregate([
+        {"$match": {"tenant_id": tenant_id, "status": "open"}},
+        {"$group": {"_id": None, "count": {"$sum": 1}, "total_balance": {"$sum": {"$ifNull": ["$balance", 0]}}}}
+    ]).to_list(1)
+
+    total_open_folios = open_folios[0]["count"] if open_folios else 0
+    total_inhouse_balance = float(open_folios[0]["total_balance"]) if open_folios else 0.0
 
     return {
+        "finance_summary": {
+            "daily_revenue": round(total_daily_revenue, 2),
+            "daily_collections": round(total_daily_payments, 2),
+            "inhouse_exposure": round(total_inhouse_balance, 2),
+            "open_folios_count": total_open_folios
+        },
+        "revenue_breakdown": revenue_breakdown,
+        "collection_breakdown": payment_breakdown,
         "ar_summary": {
             "pending_invoices": pending_ar,
             "overdue_count": len(overdue_invoices),
             "overdue_amount": round(total_overdue, 2),
             "aging": {
-                "0-30_days": sum(1 for inv in overdue_invoices if (datetime.now(UTC) - datetime.fromisoformat(inv["due_date"])).days <= 30),
-                "31-60_days": sum(1 for inv in overdue_invoices if 30 < (datetime.now(UTC) - datetime.fromisoformat(inv["due_date"])).days <= 60),
-                "60+_days": sum(1 for inv in overdue_invoices if (datetime.now(UTC) - datetime.fromisoformat(inv["due_date"])).days > 60),
+                "0-30_days": sum(1 for inv in overdue_invoices if (now_dt - datetime.fromisoformat(inv.get("due_date", now_dt.isoformat()))).days <= 30),
+                "31-60_days": sum(1 for inv in overdue_invoices if 30 < (now_dt - datetime.fromisoformat(inv.get("due_date", now_dt.isoformat()))).days <= 60),
+                "60+_days": sum(1 for inv in overdue_invoices if (now_dt - datetime.fromisoformat(inv.get("due_date", now_dt.isoformat()))).days > 60),
             },
         },
         "integrations": {
-            "logo": {"enabled": False, "status": "not_configured"},
-            "mikro": {"enabled": False, "status": "not_configured"},
-            "sap": {"enabled": False, "status": "not_configured"},
-            "oracle": {"enabled": False, "status": "not_configured"},
+            "e_invoice": {"xml_generation": True, "gib_integration": True, "status": "active"},
+            "accounting_erp": {"enabled": False, "status": "not_configured"}
         },
-        "e_invoice": {"xml_generation": True, "gib_integration": True, "status": "active"},
         "data_timing": "real_time",
-        "last_closing": (datetime.now(UTC) - timedelta(days=1)).isoformat(),
+        "last_closing": (now_dt - timedelta(days=1)).date().isoformat()
     }
 
 
@@ -343,7 +382,7 @@ async def get_corporate_accounts(
 ):
     """Sales & Marketing - Corporate accounts with profiles"""
 
-    _enforce(current_user.role, "view_corporate_accounts")  # Bug CU
+    _enforce(current_user, "view_corporate_accounts")  # Bug CU
     # Aggregate corporate bookings
     corporate_bookings = await db.bookings.find({"tenant_id": current_user.tenant_id, "booking_source": {"$in": ["corporate", "company_direct"]}}).to_list(10000)
 
@@ -399,7 +438,7 @@ async def get_it_system_info(
     _perm: None = Depends(require_op("view_it_system")),
 ):
     """IT Manager - System architecture and performance info"""
-    _enforce(current_user.role, "view_it_system")  # Bug CU
+    _enforce(current_user, "view_it_system")  # Bug CU
     return {
         "api_architecture": {"type": "REST", "protocol": "HTTP/HTTPS", "websocket_support": False, "sse_support": False, "polling": "client-side (30s interval)"},
         "widget_architecture": {"type": "modular", "independent_apis": True, "lazy_loading": True, "caching": "browser + redis"},
@@ -425,7 +464,7 @@ async def get_vip_notes(
 ):
     """Guest Relations - VIP notes and review integrations"""
 
-    _enforce(current_user.role, "view_vip_notes")  # Bug CU
+    _enforce(current_user, "view_vip_notes")  # Bug CU
     # Get VIP guests with notes
     from security.encrypted_lookup import decrypt_guest_doc
 
@@ -714,15 +753,16 @@ async def get_revenue_by_department(
     _perm=Depends(require_op("view_finance_reports")),  # v83 DS: gelir breakdown finansal
 ):
     """Revenue breakdown by department (Rooms, F&B, Other)"""
-    today = datetime.now(UTC)
-
-    if not start_date:
-        start_date = datetime.combine(today.date(), datetime.min.time()).replace(tzinfo=UTC).isoformat()
-    if not end_date:
-        end_date = datetime.combine(today.date(), datetime.max.time()).replace(tzinfo=UTC).isoformat()
+    if not start_date or not end_date:
+        business_state = await ensure_business_date_initialized(db, current_user.tenant_id)
+        business_day = datetime.fromisoformat(str(business_state["business_date"])[:10]).date()
+        if not start_date:
+            start_date = datetime.combine(business_day, datetime.min.time()).replace(tzinfo=UTC).isoformat()
+        if not end_date:
+            end_date = datetime.combine(business_day, datetime.max.time()).replace(tzinfo=UTC).isoformat()
 
     # Get all charges
-    charges = await db.folio_charges.find({"tenant_id": current_user.tenant_id, "date": {"$gte": start_date, "$lte": end_date}, "voided": False}).to_list(100000)
+    charges = await db.folio_charges.find({"tenant_id": current_user.tenant_id, "date": {"$gte": start_date, "$lte": end_date}, "voided": {"$ne": True}}).to_list(100000)
 
     # Categorize by department
     departments = {
@@ -737,7 +777,7 @@ async def get_revenue_by_department(
     }
 
     for charge in charges:
-        charge_type = charge.get("charge_type", "other").lower()
+        charge_type = str(charge.get("charge_category") or charge.get("charge_type") or "other").lower()
         amount = charge.get("total", 0)
 
         if charge_type in ["room", "accommodation", "room_charge"]:

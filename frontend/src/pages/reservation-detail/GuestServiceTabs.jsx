@@ -8,7 +8,7 @@ import {
   Mail, MessageSquare, Phone, Plus, Send, Loader2,
   Clock, CreditCard, Home, History
 } from 'lucide-react';
-import { API, fmtTs, EmptyState, FormField, SelectField } from './helpers';
+import { API, fmtCurrency, fmtDate, fmtTs, EmptyState, FormField, SelectField } from './helpers';
 import { useTranslation } from 'react-i18next';
 
 export function CommunicationTab({ booking, onRefresh, communicationLogs }) {
@@ -26,7 +26,7 @@ export function CommunicationTab({ booking, onRefresh, communicationLogs }) {
     try {
       await axios.post(`/pms/reservations/${booking.id}/communication`, form);
       toast.success('İletişim kaydedildi'); setShowForm(false); setForm({ channel: 'email', direction: 'outbound', subject: '', content: '', recipient: '' }); onRefresh?.();
-    } catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
+    } catch (e) { toast.error('İşlem Hatası: ' + (e.response?.data?.detail || e.message)); }
     setLoading(false);
   };
 
@@ -108,7 +108,7 @@ export function NotesTab({ notes, booking, onRefresh }) {
     try {
       await axios.post(`/pms/reservations/${booking.id}/add-note`, { content, note_type: noteType });
       toast.success('Not eklendi'); setContent(''); onRefresh?.();
-    } catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
+    } catch (e) { toast.error('İşlem Hatası: ' + (e.response?.data?.detail || e.message)); }
     setLoading(false);
   };
 
@@ -128,7 +128,14 @@ export function NotesTab({ notes, booking, onRefresh }) {
           notes.map((n, i) => (
             <div key={n.id || i} className="border rounded-lg p-3 space-y-1">
               <div className="flex items-center justify-between">
-                <Badge className={`${typeColors[n.note_type] || typeColors.general} text-xs`}>{typeLabels[n.note_type] || 'Genel'}</Badge>
+                <div className="flex items-center gap-2">
+                  <Badge className={`${typeColors[n.note_type] || typeColors.general} text-xs`}>{typeLabels[n.note_type] || 'Genel'}</Badge>
+                  {n.source === 'hotelrunner' && (
+                    <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-700 text-xs">
+                      HotelRunner / Acente
+                    </Badge>
+                  )}
+                </div>
                 <span className="text-xs text-gray-400">{fmtTs(n.created_at)}</span>
               </div>
               <p className="text-sm text-gray-700">{n.content}</p>
@@ -141,7 +148,7 @@ export function NotesTab({ notes, booking, onRefresh }) {
   );
 }
 
-export function HistoryTab({ history, roomMoves }) {
+export function HistoryTab({ history, roomMoves, currency = 'TRY' }) {
   const { t } = useTranslation();
   const allEvents = [
     ...(history || []).map(h => ({ ...h, _src: 'activity' })),
@@ -155,6 +162,8 @@ export function HistoryTab({ history, roomMoves }) {
     vip_status_changed: 'VIP durumu', deposit_recorded: 'Depozito', deposit_refunded: 'Depozito iade',
     extra_charge_added: 'Ekstra ücret', daily_rates_updated: 'Fiyat güncelleme', guest_updated: 'Misafir güncelleme',
     communication_logged: 'İletişim', group_checkin: 'Grup giriş', group_checkout: 'Grup çıkış',
+    stay_dates_updated: 'Konaklama tarihleri güncellendi', reservation_modified: 'Rezervasyon güncellendi',
+    complimentary_total_reconciled: 'Comp konaklama tutarı düzeltildi',
   };
   const colors = {
     payment_recorded: 'bg-emerald-100 text-emerald-700', transferred_to_cari: 'bg-amber-100 text-amber-700',
@@ -163,6 +172,18 @@ export function HistoryTab({ history, roomMoves }) {
     late_checkout: 'bg-teal-100 text-teal-700', marked_noshow: 'bg-red-100 text-red-700',
     deposit_recorded: 'bg-blue-100 text-blue-700', deposit_refunded: 'bg-red-100 text-red-700',
   };
+  const fieldLabels = {
+    check_in: 'Giriş tarihi', check_out: 'Çıkış tarihi', total_amount: 'Toplam tutar',
+    room_number: 'Oda', status: 'Durum', adults: 'Yetişkin', children: 'Çocuk',
+    guests_count: 'Konuk sayısı', rate_plan: 'Tarife planı', special_requests: 'Özel istekler',
+  };
+  const formatChangeValue = (field, value) => {
+    if (value === null || value === undefined || value === '') return '-';
+    if (field === 'check_in' || field === 'check_out') return fmtDate(value);
+    if (field === 'total_amount') return fmtCurrency(Number(value), currency);
+    return String(value);
+  };
+  const visibleChanges = details => Object.entries(details?.changes || {}).filter(([field]) => field !== 'room_id');
 
   return (
     <div data-testid="history-tab" className="space-y-3">
@@ -184,11 +205,24 @@ export function HistoryTab({ history, roomMoves }) {
                   <span className="text-xs text-gray-400">{fmtTs(ev.created_at)}</span>
                 </div>
                 {ev.actor && <div className="text-xs text-gray-500">Yapan: {ev.actor}</div>}
+                {ev.details?.source && <div className="text-xs text-gray-500">Kaynak: {ev.details.source}{ev.details.channel ? ` · ${ev.details.channel}` : ''}</div>}
+                {visibleChanges(ev.details).length > 0 && (
+                  <div className="mt-2 space-y-1 rounded bg-slate-50 px-2 py-1.5 text-xs text-slate-700">
+                    {visibleChanges(ev.details).map(([field, value]) => (
+                      <div key={field}>
+                        <span className="font-medium">{fieldLabels[field] || field.replace(/_/g, ' ')}:</span>{' '}
+                        {field === 'special_requests'
+                          ? 'güncellendi'
+                          : `${formatChangeValue(field, value?.from)} → ${formatChangeValue(field, value?.to)}`}
+                      </div>
+                    ))}
+                  </div>
+                )}
                 {ev.details && Object.keys(ev.details).length > 0 && (
                   <div className="mt-1 text-xs text-gray-500 flex flex-wrap gap-2">
                     {ev.details.from_room && <span>{t('cm.pages_reservationdetail_GuestServiceTabs.eski')} {ev.details.from_room}</span>}
                     {ev.details.to_room && <span>{t('cm.pages_reservationdetail_GuestServiceTabs.yeni')} {ev.details.to_room}</span>}
-                    {ev.details.amount && <span>{t('cm.pages_reservationdetail_GuestServiceTabs.tutar')} {ev.details.amount} TL</span>}
+                    {ev.details.amount && <span>{t('cm.pages_reservationdetail_GuestServiceTabs.tutar')} {fmtCurrency(ev.details.amount, ev.details.currency || currency)}</span>}
                     {ev.details.method && <span>Yontem: {ev.details.method}</span>}
                     {ev.details.reason && <span>Sebep: {ev.details.reason}</span>}
                     {ev.details.cari_account && <span>Cari: {ev.details.cari_account}</span>}

@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import IdPhotoViewerButton from '@/components/IdPhotoViewerButton';
 import { performCheckin } from '@/utils/offlineCheckin';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 const API_URL = import.meta.env.VITE_BACKEND_URL || '';
 const EnhancedFrontDesk = () => {
   const {
@@ -229,7 +230,7 @@ const EnhancedFrontDesk = () => {
                     adults: booking.adults,
                     children: booking.children
                   })}</div>
-                    <div>${booking.total_amount}</div>
+                    <div>{formatCurrency(booking.total_amount, booking.currency || booking.currency_code || cachedTenantCurrency())}</div>
                   </div>
                 </div>
                 <div className="flex flex-col gap-2">

@@ -22,6 +22,7 @@ from modules.pms_core.role_permission_service import require_op  # v92 DW
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["Sales / CRM"])
+public_leads_router = APIRouter(prefix="/api", tags=["Public Leads"])
 
 
 from domains.sales.schemas import (  # noqa: E402
@@ -288,7 +289,7 @@ async def update_lead_stage(
 # ========== PMS LITE MARKETING LEADS ==========
 
 
-@router.post("/leads")
+@public_leads_router.post("/leads")
 async def create_public_pms_lite_lead(request: PmsLiteLeadCreateRequest, user_agent: str | None = Header(None), x_forwarded_for: str | None = Header(None)):
     """Public endpoint for PMS Lite landing leads (no auth).
 
@@ -403,7 +404,7 @@ async def _persist_public_lead(
     return {"ok": True, "lead_id": lead_uuid, "deduped": False}
 
 
-@router.post("/leads/contact")
+@public_leads_router.post("/leads/contact")
 async def create_public_marketing_lead(
     request: MarketingContactLeadRequest,
     user_agent: str | None = Header(None),
@@ -441,7 +442,7 @@ async def create_public_marketing_lead(
     )
 
 
-@router.post("/leads/supplier")
+@public_leads_router.post("/leads/supplier")
 async def create_public_supplier_lead(
     request: SupplierLeadRequest,
     user_agent: str | None = Header(None),

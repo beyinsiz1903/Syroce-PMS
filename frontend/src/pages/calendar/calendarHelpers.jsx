@@ -15,12 +15,135 @@ export const toDateStringUTC = (value) => {
   return `${year}-${month}-${day}`;
 };
 
+// The room-block endpoint deliberately returns a JSON array.  Older callers
+// also accepted a { blocks: [...] } envelope, so keep one normalization point
+// for both shapes instead of silently replacing a valid array with [].
+export const normalizeRoomBlocksResponse = (data) => (
+  Array.isArray(data) ? data : data?.blocks || []
+);
+
+// Apply both sides of a confirmed room swap in one immutable state update.
+// The API remains authoritative, but the board should not require a manual
+// browser refresh before showing the result.
+export const applyRoomSwap = (bookings = [], sourceBooking, targetBooking) => {
+  if (!sourceBooking?.id || !targetBooking?.id) return bookings;
+  return bookings.map((booking) => {
+    if (booking.id === sourceBooking.id) {
+      return { ...booking, room_id: targetBooking.room_id };
+    }
+    if (booking.id === targetBooking.id) {
+      return { ...booking, room_id: sourceBooking.room_id };
+    }
+    return booking;
+  });
+};
+
+// A resize handle is dropped on the final occupied night. Checkout remains
+// exclusive, so the persisted checkout date is the following calendar day.
+export const checkoutAfterCalendarNight = (value) => {
+  const day = toDateStringUTC(value);
+  const parsed = new Date(`${day}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) return '';
+  parsed.setUTCDate(parsed.getUTCDate() + 1);
+  return toDateStringUTC(parsed);
+};
+
+export const validateStayResize = (booking, targetNight, minimumCheckout = '') => {
+  const status = String(booking?.status || '').toLowerCase();
+  if (['checked_out', 'cancelled', 'no_show'].includes(status)) {
+    return { ok: false, error: 'Tamamlanmış veya iptal edilmiş rezervasyonların tarihleri değiştirilemez.' };
+  }
+
+  const checkIn = toDateStringUTC(booking?.check_in);
+  const currentCheckOut = toDateStringUTC(booking?.check_out);
+  const newCheckOut = checkoutAfterCalendarNight(targetNight);
+  if (!checkIn || !newCheckOut || newCheckOut <= checkIn) {
+    return { ok: false, error: 'Çıkış tarihi giriş tarihinden sonra olmalıdır.' };
+  }
+  if (minimumCheckout && newCheckOut < minimumCheckout) {
+    return { ok: false, error: `Çıkış tarihi ${minimumCheckout} tarihinden önce olamaz.` };
+  }
+  if (newCheckOut === currentCheckOut) return { ok: false, unchanged: true };
+  return { ok: true, newCheckOut, extending: newCheckOut > currentCheckOut };
+};
+
 // Check if booking overlaps with date
 export const isBookingOnDate = (booking, date) => {
   const dayStr = toDateStringUTC(date);
   const checkIn = toDateStringUTC(booking.check_in);
   const checkOut = toDateStringUTC(booking.check_out);
   return dayStr >= checkIn && dayStr < checkOut;
+};
+
+// Hedef hücreye bırakılan bir rezervasyon için yalnızca o gece gerçekten
+// konaklayan aktif kayıtlar takas adayıdır. Özellikle aynı gün çıkış yapan
+// önceki kayıt, saat bilgisi öğlene kadar sürse bile sonraki gecenin oda
+// takasını engellememelidir.
+export const ACTIVE_ROOM_BOOKING_STATUSES = new Set([
+  'confirmed',
+  'guaranteed',
+  'checked_in',
+  'pending',
+]);
+
+export const getActiveBookingsForRoomOnDate = (roomId, date, bookings = []) => (
+  bookings.filter((booking) => (
+    booking.room_id === roomId
+    && ACTIVE_ROOM_BOOKING_STATUSES.has(String(booking.status || '').toLowerCase())
+    && isBookingOnDate(booking, date)
+  ))
+);
+
+// Find genuine room conflicts using hotel-night dates, not arrival/departure
+// clock times. A stay is the half-open interval [check_in_date, check_out_date):
+// its checkout day is therefore available for the next guest's check-in.
+// This mirrors the backend's atomic booking guard and the calendar cell logic.
+export const findCalendarConflicts = (bookings = [], rooms = []) => {
+  if (!bookings.length || !rooms.length) return [];
+
+  const skippedStatuses = new Set(['cancelled', 'checked_out', 'no_show']);
+  const bookingsByRoom = new Map();
+  for (const booking of bookings) {
+    if (skippedStatuses.has(booking.status) || !booking.room_id) continue;
+    const roomBookings = bookingsByRoom.get(booking.room_id) || [];
+    roomBookings.push(booking);
+    bookingsByRoom.set(booking.room_id, roomBookings);
+  }
+
+  const conflicts = [];
+  for (const room of rooms) {
+    const roomBookings = bookingsByRoom.get(room.id);
+    if (!roomBookings || roomBookings.length < 2) continue;
+
+    for (let i = 0; i < roomBookings.length; i++) {
+      const booking1 = roomBookings[i];
+      const start1 = toDateStringUTC(booking1.check_in);
+      const end1 = toDateStringUTC(booking1.check_out);
+      if (!start1 || !end1 || start1 >= end1) continue;
+
+      for (let j = i + 1; j < roomBookings.length; j++) {
+        const booking2 = roomBookings[j];
+        const start2 = toDateStringUTC(booking2.check_in);
+        const end2 = toDateStringUTC(booking2.check_out);
+        if (!start2 || !end2 || start2 >= end2) continue;
+
+        if (start1 < end2 && start2 < end1) {
+          conflicts.push({
+            type: 'overbooking',
+            room_id: room.id,
+            room_number: room.room_number,
+            booking1_id: booking1.id,
+            booking2_id: booking2.id,
+            guest1: booking1.guest_name,
+            guest2: booking2.guest_name,
+            overlap_start: start1 > start2 ? start1 : start2,
+            overlap_end: end1 < end2 ? end1 : end2,
+          });
+        }
+      }
+    }
+  }
+  return conflicts;
 };
 
 // Check if booking starts on this date
@@ -140,11 +263,29 @@ export const getRoomBlockForDate = (roomId, date, roomBlocks) => {
     if (block.room_id !== roomId || block.status !== 'active') return false;
     const blockStart = toDateStringUTC(block.start_date);
     const blockEnd = block.end_date ? toDateStringUTC(block.end_date) : '9999-12-31';
-    return dayStr >= blockStart && dayStr <= blockEnd;
+    // Room blocks use the same half-open date interval as bookings and
+    // room-night locks: [start_date, end_date).  This keeps a block released
+    // for the date selected as "tekrar satışa açılma" in the UI.
+    return dayStr >= blockStart && dayStr < blockEnd;
   });
 };
 
 // Check if block starts on this date
+export const isRoomBlockedForSaleOnDate = (room, date, roomBlocks = []) => {
+  const day = toDateStringUTC(date);
+  return isBlockedRoomStatus(room.status) || roomBlocks.some(block => (
+    block.room_id === room.id && block.status === 'active' && !block.allow_sell
+    && day >= toDateStringUTC(block.start_date)
+    && (!block.end_date || day < toDateStringUTC(block.end_date))
+  ));
+};
+
+export const getRoomTypeCapacityForDate = (rooms, date, roomBlocks = []) => {
+  // Count rooms, not block records: overlapping blocks consume one room only.
+  const blocked = rooms.filter(room => isRoomBlockedForSaleOnDate(room, date, roomBlocks)).length;
+  return { total: rooms.length, blocked, sellable: rooms.length - blocked };
+};
+
 export const isBlockStart = (block, date) => {
   return toDateStringUTC(date) === toDateStringUTC(block.start_date);
 };
@@ -243,6 +384,35 @@ export const buildCalendarRateLookup = (grid = []) => {
   return lookup;
 };
 
+// Resolve the same published selling rate that the room board shows for a
+// concrete room-night. A room's base_price is only a fallback when the rate
+// grid has no value for that date.
+export const getCalendarRoomNightRate = (dailyRates = {}, room = {}, date, fallback = 0) => {
+  const roomType = room?.room_type || room?.room_type_name || '';
+  const configured = Number(dailyRates[`${roomType}|${toDateStringUTC(date)}`]);
+  if (Number.isFinite(configured) && configured > 0) return configured;
+
+  const baseRate = Number(room?.base_price);
+  if (Number.isFinite(baseRate) && baseRate > 0) return baseRate;
+  return fallback;
+};
+
+// Sum published nightly rates across a stay. This lets a multi-night quick
+// booking follow the visible room-board prices when individual dates differ.
+export const getCalendarStayTotal = (dailyRates = {}, room = {}, checkIn, checkOut, fallback = 0) => {
+  const start = toDateStringUTC(checkIn);
+  const end = toDateStringUTC(checkOut);
+  if (!start || !end || start >= end) return 0;
+
+  const cursor = new Date(`${start}T00:00:00Z`);
+  let total = 0;
+  while (toDateStringUTC(cursor) < end) {
+    total += getCalendarRoomNightRate(dailyRates, room, cursor, fallback);
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return total;
+};
+
 // Booking arrival/stayover/departure status
 export const getBookingStatus = (booking, date) => {
   const dayStr = toDateStringUTC(date);
@@ -257,11 +427,11 @@ export const getBookingStatus = (booking, date) => {
 // Status label
 export const getStatusLabel = (status) => {
   const labels = {
-    confirmed: 'Confirmed',
-    checked_in: 'In-House',
+    confirmed: 'Onaylandı',
+    checked_in: 'Otelde',
     checked_out: 'Çıkış Yapıldı',
-    cancelled: 'Cancelled',
-    guaranteed: 'Guaranteed'
+    cancelled: 'İptal Edildi',
+    guaranteed: 'Garantili'
   };
   return labels[status] || status;
 };
@@ -290,9 +460,28 @@ export const getBookingStatusColor = (booking) => {
   return { bg: '#2563eb', border: '#1d4ed8' };
 };
 
+export const applyBookingOperation = (bookings, { bookingId, operation }, timestamp = new Date().toISOString()) => (
+  bookings.map((booking) => {
+    if (booking.id !== bookingId) return booking;
+    if (operation === 'checked_in') {
+      return { ...booking, status: 'checked_in', checked_in_at: booking.checked_in_at || timestamp };
+    }
+    if (operation === 'checked_out') {
+      return { ...booking, status: 'checked_out', checked_out_at: booking.checked_out_at || timestamp };
+    }
+    if (operation === 'no_show') return { ...booking, status: 'no_show' };
+    if (operation === 'cancelled') return { ...booking, status: 'cancelled' };
+    return booking;
+  })
+);
+
 // Source-based booking card color mapping (legacy, kept for compatibility)
 export const getSourceColor = (booking) => {
   const channel = (booking.ota_channel || booking.source_channel || booking.channel || booking.source || '').toLowerCase();
+  if ((channel === 'agency' || booking.agency_id) && booking.agency_name) {
+    return { bg: '#0F766E', border: '#115E59', label: booking.agency_name };
+  }
+  if (channel === 'agency') return { bg: '#0F766E', border: '#115E59', label: 'Acente' };
   if (channel.includes('expedia')) return { bg: '#F97316', border: '#EA580C', label: 'Expedia' };
   if (channel.includes('booking')) return { bg: '#1D4ED8', border: '#1E40AF', label: 'Booking.com' };
   if (channel.includes('tatilbudur')) return { bg: '#2563EB', border: '#1D4ED8', label: 'Tatilbudur.com' };
@@ -301,6 +490,11 @@ export const getSourceColor = (booking) => {
   if (channel.includes('hotels')) return { bg: '#BE123C', border: '#9F1239', label: 'Hotels.com' };
   if (channel.includes('online')) return { bg: '#2563EB', border: '#1D4ED8', label: 'Online' };
   if (channel.includes('setur')) return { bg: '#0D9488', border: '#0F766E', label: 'Setur' };
+  if (channel.includes('etstur') || channel === 'ets') return { bg: '#0891B2', border: '#0E7490', label: 'Etstur' };
+  if (channel.includes('odamax')) return { bg: '#F59E0B', border: '#D97706', label: 'Odamax' };
+  if (channel.includes('tatilsepeti')) return { bg: '#EF4444', border: '#DC2626', label: 'Tatilsepeti' };
+  if (channel.includes('jolly')) return { bg: '#8B5CF6', border: '#7C3AED', label: 'Jolly' };
+  if (channel.includes('hotelrunner')) return { bg: '#3B82F6', border: '#2563EB', label: 'HotelRunner' };
   if (channel === 'direct' || channel === 'phone' || channel === 'walk_in' || channel === 'walk-in') return { bg: '#374151', border: '#1F2937', label: 'Kesin' };
   return { bg: '#374151', border: '#1F2937', label: 'Kesin' };
 };

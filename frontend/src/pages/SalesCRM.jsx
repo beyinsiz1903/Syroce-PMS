@@ -13,9 +13,10 @@ import {
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter,
 } from '@/components/ui/dialog';
-import { Mail, Phone, Trash2, Activity, RefreshCw, Users, Search } from 'lucide-react';
+import { Mail, Phone, Trash2, Activity, CalendarClock, RefreshCw, Users, Search } from 'lucide-react';
 import EmptyState from '@/components/EmptyState';
 import { useTranslation } from 'react-i18next';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 
 const STAGES = [
   { key: 'new',           label: 'Yeni',       color: 'bg-gray-500' },
@@ -38,15 +39,23 @@ const ACTIVITY_LABEL = Object.fromEntries(
   ACTIVITY_TYPES.map((a) => [a.key, a.label]),
 );
 
-const fmtTL = (v) =>
-  Number(v || 0).toLocaleString('tr-TR', {
-    style: 'currency', currency: 'TRY', maximumFractionDigits: 0,
-  });
+// Keep the optional follow-up separate when it is empty. This preserves the
+// API's distinction between "no follow-up planned" and a scheduled task.
+export const buildActivityPayload = (leadId, draft) => ({
+  lead_id: leadId,
+  activity_type: draft.activity_type,
+  subject: draft.subject,
+  description: draft.description,
+  ...(draft.follow_up_at ? { follow_up_at: draft.follow_up_at } : {}),
+});
 
 const SalesCRM = ({ user, tenant, onLogout }) => {
   const { t } = useTranslation();
+  const crmCurrency = tenant?.currency || cachedTenantCurrency();
+  const fmtTL = (value, currency = crmCurrency) => formatCurrency(value, currency, { decimals: 0 });
   const [leads, setLeads] = useState([]);
   const [funnel, setFunnel] = useState(null);
+  const [attention, setAttention] = useState({ overdue: [], upcoming: [] });
   const [loadingList, setLoadingList] = useState(true);
   const [statusFilter, setStatusFilter] = useState('all');
   const [search, setSearch] = useState('');
@@ -67,9 +76,10 @@ const SalesCRM = ({ user, tenant, onLogout }) => {
   const [detail, setDetail] = useState(null); // { lead, activities }
   const [stageSaving, setStageSaving] = useState(false);
   const [actDraft, setActDraft] = useState({
-    activity_type: 'call', subject: '', description: '',
+    activity_type: 'call', subject: '', description: '', follow_up_at: '',
   });
   const [actSaving, setActSaving] = useState(false);
+  const [completingFollowUpId, setCompletingFollowUpId] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   // ── Listeleme ──
@@ -99,10 +109,14 @@ const SalesCRM = ({ user, tenant, onLogout }) => {
 
   const loadFunnel = useCallback(async () => {
     try {
-      const r = await axios.get('/sales/funnel');
-      setFunnel(r.data || null);
+      const [funnelResult, attentionResult] = await Promise.all([
+        axios.get('/sales/funnel'), axios.get('/sales/attention'),
+      ]);
+      setFunnel(funnelResult.data || null);
+      setAttention(attentionResult.data || { overdue: [], upcoming: [] });
     } catch (e) {
       setFunnel(null);
+      setAttention({ overdue: [], upcoming: [] });
     }
   }, []);
 
@@ -178,19 +192,28 @@ const SalesCRM = ({ user, tenant, onLogout }) => {
     }
     setActSaving(true);
     try {
-      await axios.post('/sales/activity', {
-        lead_id: detail.lead.id,
-        activity_type: actDraft.activity_type,
-        subject: actDraft.subject,
-        description: actDraft.description,
-      });
+      await axios.post('/sales/activity', buildActivityPayload(detail.lead.id, actDraft));
       toast.success('Aktivite kaydedildi');
-      setActDraft({ activity_type: 'call', subject: '', description: '' });
-      await openDetail(detail.lead.id);
+      setActDraft({ activity_type: 'call', subject: '', description: '', follow_up_at: '' });
+      await Promise.all([openDetail(detail.lead.id), loadFunnel()]);
     } catch (err) {
       toast.error(err?.response?.data?.detail || 'Aktivite kaydedilemedi');
     } finally {
       setActSaving(false);
+    }
+  };
+
+  const completeFollowUp = async (activityId) => {
+    if (!detail?.lead || !activityId) return;
+    setCompletingFollowUpId(activityId);
+    try {
+      const result = await axios.post(`/sales/activity/${activityId}/complete`);
+      toast.success(result.data?.idempotent ? 'Takip zaten tamamlanmış' : 'Takip tamamlandı');
+      await Promise.all([openDetail(detail.lead.id), loadFunnel()]);
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || 'Takip tamamlanamadı');
+    } finally {
+      setCompletingFollowUpId(null);
     }
   };
 
@@ -199,7 +222,7 @@ const SalesCRM = ({ user, tenant, onLogout }) => {
     if (!detail?.lead) return;
     try {
       await axios.delete(`/sales/leads/${detail.lead.id}`);
-      toast.success('Lead silindi');
+      toast.success('Lead arşivlendi');
       setConfirmDelete(false);
       setDetailOpen(false);
       setDetail(null);
@@ -378,18 +401,29 @@ const SalesCRM = ({ user, tenant, onLogout }) => {
           </Card>
         )}
 
+        {(attention.overdue.length > 0 || attention.upcoming.length > 0) && (
+          <Card className="mb-6">
+            <CardHeader className="pb-3"><CardTitle className="flex items-center gap-2 text-base"><CalendarClock className="h-4 w-4" />Satış takip kuyruğu</CardTitle></CardHeader>
+            <CardContent className="grid gap-4 md:grid-cols-2">
+              <FollowUpList title="Geciken takipler" items={attention.overdue} tone="text-red-700" onOpen={openDetail} empty="Gecikmiş takip yok." />
+              <FollowUpList title="Yaklaşan takipler" items={attention.upcoming} tone="text-amber-700" onOpen={openDetail} empty="Planlanmış yaklaşan takip yok." />
+            </CardContent>
+          </Card>
+        )}
+
         {/* Filtreler */}
         <div className="flex flex-wrap gap-3 mb-4">
           <div className="flex-1 min-w-[200px]">
             <Input
               placeholder={t('cm.pages_SalesCRM.ara_kisi_sirket_veya_e_posta')}
+              aria-label={t('cm.pages_SalesCRM.ara_kisi_sirket_veya_e_posta')}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
           <div className="w-44">
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger><SelectValue placeholder={t('cm.pages_SalesCRM.asama')} /></SelectTrigger>
+              <SelectTrigger aria-label={t('cm.pages_SalesCRM.asama')}><SelectValue placeholder={t('cm.pages_SalesCRM.asama')} /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">{t('cm.pages_SalesCRM.tum_asamalar')}</SelectItem>
                 {STAGES.map((s) => (
@@ -527,7 +561,7 @@ const SalesCRM = ({ user, tenant, onLogout }) => {
                       onValueChange={changeStage}
                       disabled={stageSaving}
                     >
-                      <SelectTrigger className="w-56"><SelectValue /></SelectTrigger>
+                      <SelectTrigger className="w-56" aria-label="Lead aşaması"><SelectValue /></SelectTrigger>
                       <SelectContent>
                         {STAGES.map((s) => (
                           <SelectItem key={s.key} value={s.key}>{s.label}</SelectItem>
@@ -546,7 +580,7 @@ const SalesCRM = ({ user, tenant, onLogout }) => {
                       value={actDraft.activity_type}
                       onValueChange={(v) => setActDraft({ ...actDraft, activity_type: v })}
                     >
-                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectTrigger aria-label="Aktivite türü"><SelectValue /></SelectTrigger>
                       <SelectContent>
                         {ACTIVITY_TYPES.map((a) => (
                           <SelectItem key={a.key} value={a.key}>{a.label}</SelectItem>
@@ -556,6 +590,7 @@ const SalesCRM = ({ user, tenant, onLogout }) => {
                     <Input
                       className="col-span-2"
                       placeholder="Konu"
+                      aria-label="Aktivite konusu"
                       value={actDraft.subject}
                       onChange={(e) => setActDraft({ ...actDraft, subject: e.target.value })}
                       required
@@ -564,9 +599,19 @@ const SalesCRM = ({ user, tenant, onLogout }) => {
                   <Textarea
                     rows={2}
                     placeholder={t('cm.pages_SalesCRM.aciklama_opsiyonel')}
+                    aria-label="Aktivite açıklaması"
                     value={actDraft.description}
                     onChange={(e) => setActDraft({ ...actDraft, description: e.target.value })}
                   />
+                  <div>
+                    <Label>Takip zamanı <span className="font-normal text-gray-500">(isteğe bağlı)</span></Label>
+                    <Input
+                      type="datetime-local"
+                      aria-label="Takip zamanı"
+                      value={actDraft.follow_up_at}
+                      onChange={(e) => setActDraft({ ...actDraft, follow_up_at: e.target.value })}
+                    />
+                  </div>
                   <Button type="submit" size="sm" disabled={actSaving}>
                     {actSaving ? 'Kaydediliyor…' : 'Aktivite Kaydet'}
                   </Button>
@@ -576,7 +621,7 @@ const SalesCRM = ({ user, tenant, onLogout }) => {
                 <div className="border-t pt-3">
                   <div className="flex items-center gap-2 mb-2">
                     <Activity className="w-4 h-4 text-gray-500" />
-                    <h4 className="text-sm font-semibold">{t('cm.pages_SalesCRM.aktivite_gecmisi')}{detail.activities.length})</h4>
+                    <h4 className="text-sm font-semibold">{t('cm.pages_SalesCRM.aktivite_gecmisi')} ({detail.activities.length})</h4>
                   </div>
                   {detail.activities.length === 0 ? (
                     <p className="text-xs text-gray-500">{t('cm.pages_SalesCRM.henuz_aktivite_yok')}</p>
@@ -594,6 +639,27 @@ const SalesCRM = ({ user, tenant, onLogout }) => {
                           </div>
                           {a.description && (
                             <p className="text-xs text-gray-600 mt-0.5">{a.description}</p>
+                          )}
+                          {a.follow_up_at && (
+                            <div className="mt-1 flex flex-wrap items-center gap-2">
+                              <p className={`text-xs font-medium ${a.follow_up_completed_at ? 'text-green-700' : 'text-amber-700'}`}>
+                                {a.follow_up_completed_at
+                                  ? `Takip tamamlandı: ${new Date(a.follow_up_completed_at).toLocaleString('tr-TR')}`
+                                  : `Takip: ${new Date(a.follow_up_at).toLocaleString('tr-TR')}`}
+                              </p>
+                              {!a.follow_up_completed_at && (
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-6 px-2 text-xs"
+                                  onClick={() => completeFollowUp(a.id)}
+                                  disabled={completingFollowUpId === a.id}
+                                >
+                                  {completingFollowUpId === a.id ? 'Tamamlanıyor…' : 'Tamamla'}
+                                </Button>
+                              )}
+                            </div>
                           )}
                         </li>
                       ))}
@@ -622,7 +688,7 @@ const SalesCRM = ({ user, tenant, onLogout }) => {
               <DialogTitle>Lead silinsin mi?</DialogTitle>
             </DialogHeader>
             <p className="text-sm text-gray-600">
-              {t('cm.pages_SalesCRM.bu_islem_geri_alinamaz_bagli_tum_aktivit')}
+              Lead listelerden kaldırılır; satış ve denetim geçmişi korunur.
             </p>
             <DialogFooter className="mt-3 gap-2">
               <Button variant="outline" onClick={() => setConfirmDelete(false)}>{t('cm.pages_SalesCRM.vazgec')}</Button>
@@ -636,3 +702,23 @@ const SalesCRM = ({ user, tenant, onLogout }) => {
 };
 
 export default SalesCRM;
+
+function FollowUpList({ title, items, tone, onOpen, empty }) {
+  return (
+    <section aria-label={title}>
+      <h3 className={`mb-2 text-sm font-semibold ${tone}`}>{title} ({items.length})</h3>
+      {items.length === 0 ? <p className="text-sm text-gray-500">{empty}</p> : (
+        <ul className="space-y-2">
+          {items.slice(0, 5).map((item) => (
+            <li key={item.id}>
+              <button type="button" onClick={() => onOpen(item.lead.id)} className="w-full rounded-md border p-2 text-left text-sm hover:bg-muted">
+                <span className="block font-medium">{item.lead.contact_name || item.lead.company_name || 'İsimsiz lead'} · {item.subject}</span>
+                <span className="text-xs text-gray-500">{new Date(item.follow_up_at).toLocaleString('tr-TR')}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}

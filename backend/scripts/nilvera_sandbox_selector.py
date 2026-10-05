@@ -10,12 +10,8 @@ INCOMING_ANSWER_TARGET = f"{SANDBOX_FILE}::test_sandbox_incoming_commercial_invo
 INCOMING_ANSWER_DISCOVERY_TARGET = f"{SANDBOX_FILE}::test_sandbox_discover_incoming_commercial_invoice_answer_candidate"
 INCOMING_FIXTURE_TARGET = f"{SANDBOX_FILE}::test_sandbox_prepare_incoming_commercial_invoice_fixture"
 RECONCILIATION_TARGET = f"{SANDBOX_FILE}::test_sandbox_reconcile_incoming_commercial_invoice_fixture"
-CREATE_RETURN_DISCOVERY_TARGET = (
-    f"{CREATE_RETURN_DISCOVERY_FILE}::test_sandbox_create_return_contract_discovery_v2"
-)
-CREATE_RETURN_RECONCILIATION_TARGET = (
-    f"{CREATE_RETURN_RECONCILIATION_FILE}::test_sandbox_reconcile_create_return_historical_ambiguity"
-)
+CREATE_RETURN_DISCOVERY_TARGET = f"{CREATE_RETURN_DISCOVERY_FILE}::test_sandbox_create_return_contract_discovery_v2"
+CREATE_RETURN_RECONCILIATION_TARGET = f"{CREATE_RETURN_RECONCILIATION_FILE}::test_sandbox_reconcile_create_return_historical_ambiguity"
 PREFLIGHT_TARGET = f"{SANDBOX_FILE}::test_sandbox_incoming_fixture_accounts_preflight"
 
 

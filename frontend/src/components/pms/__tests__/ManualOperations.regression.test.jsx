@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 
 import BookingDialog from '@/components/pms/BookingDialog';
 import FolioDialog from '@/components/pms/FolioDialog';
@@ -8,13 +8,14 @@ import FrontdeskTab from '@/components/pms/FrontdeskTab';
 import { normalizeSearchResults } from '@/components/GlobalSearch';
 import { Tabs } from '@/components/ui/tabs';
 
-const { post, confirmDialog } = vi.hoisted(() => ({
+const { get, post, confirmDialog } = vi.hoisted(() => ({
+  get: vi.fn(),
   post: vi.fn(),
   confirmDialog: vi.fn(),
 }));
 
 vi.mock('axios', () => ({
-  default: { get: vi.fn(), post },
+  default: { get, post },
 }));
 
 vi.mock('@/lib/dialogs', () => ({ confirmDialog }));
@@ -37,6 +38,8 @@ afterEach(() => cleanup());
 
 describe('PMS manually discovered operation regressions', () => {
   beforeEach(() => {
+    get.mockReset();
+    get.mockResolvedValue({ data: {} });
     post.mockReset();
     post.mockResolvedValue({ data: {} });
     confirmDialog.mockReset();
@@ -87,6 +90,44 @@ describe('PMS manually discovered operation regressions', () => {
 
     expect(booking.check_in).toBe('2026-08-13');
     expect(booking.check_out).toBe('2026-08-14');
+  });
+
+  it('shows the reservation currency instead of silently forcing tenant currency', () => {
+    const booking = {
+      guest_id: '', check_in: '', check_out: '', adults: 1, children: 0,
+      children_ages: [], guests_count: 1, channel: 'direct', company_id: '',
+      currency: 'USD', rate_type: '', market_segment: '', cancellation_policy: '',
+      billing_address: '', billing_tax_number: '', billing_contact_person: '',
+      override_reason: '',
+    };
+
+    render(
+      <BookingDialog
+        open
+        onClose={() => {}}
+        guests={[]}
+        rooms={[]}
+        companies={[]}
+        ratePlans={[]}
+        packages={[]}
+        newBooking={booking}
+        setNewBooking={() => {}}
+        multiRoomBooking={[]}
+        handleCreateBooking={() => {}}
+        handleCompanySelect={() => {}}
+        handleContractedRateSelect={() => {}}
+        handleChildrenChange={() => {}}
+        handleChildAgeChange={() => {}}
+        addRoomToMultiBooking={() => {}}
+        removeRoomFromMultiBooking={() => {}}
+        updateMultiRoomField={() => {}}
+        updateMultiRoomChildrenAges={() => {}}
+        updateMultiRoomChildAge={() => {}}
+        setOpenDialog={() => {}}
+      />,
+    );
+
+    expect(screen.getByTestId('booking-dialog-currency')).toHaveTextContent('USD');
   });
 
   it('renders one age input per child without dereferencing placeholder values', () => {
@@ -220,6 +261,220 @@ describe('PMS manually discovered operation regressions', () => {
 
     fireEvent.click(screen.getByTestId('kpi-noshow'));
     expect(screen.getByRole('button', { name: 'Kapat' })).toBeInTheDocument();
+  });
+
+  it('guards overstay checkout, confirms once and locks the destructive action while pending', async () => {
+    let resolveCheckout;
+    const handleCheckOut = vi.fn(() => new Promise((resolve) => { resolveCheckout = resolve; }));
+    render(
+      <MemoryRouter>
+        <Tabs defaultValue="frontdesk">
+          <FrontdeskTab
+            arrivals={[]}
+            departures={[]}
+            inhouse={[{
+              id: 'booking-overstay', status: 'checked_in', balance: 0,
+              check_in: '2026-08-10', check_out: '2026-08-11',
+              guest_name: 'TEST GUEST', room_number: '105',
+            }]}
+            bookings={[]}
+            rooms={[]}
+            guests={[]}
+            handleCheckIn={() => {}}
+            handleCheckOut={handleCheckOut}
+            loadFolio={() => {}}
+            loading={false}
+          />
+        </Tabs>
+      </MemoryRouter>,
+    );
+
+    const button = screen.getByTestId('overstay-checkout-booking-overstay');
+    fireEvent.click(button);
+    await waitFor(() => expect(confirmDialog).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(handleCheckOut).toHaveBeenCalledWith('booking-overstay'));
+    expect(button).toBeDisabled();
+
+    fireEvent.click(button);
+    expect(handleCheckOut).toHaveBeenCalledTimes(1);
+    resolveCheckout(true);
+    await waitFor(() => expect(button).not.toBeDisabled());
+  });
+
+  it('opens the reservation instead of checking out an overstay with an open balance', async () => {
+    const handleCheckOut = vi.fn();
+    const setReservationDetailId = vi.fn();
+    render(
+      <MemoryRouter>
+        <Tabs defaultValue="frontdesk">
+          <FrontdeskTab
+            arrivals={[]}
+            departures={[]}
+            inhouse={[{
+              id: 'booking-balance', status: 'checked_in', balance: 125,
+              check_in: '2026-08-10', check_out: '2026-08-11',
+              guest_name: 'BALANCE GUEST', room_number: '105',
+            }]}
+            bookings={[]}
+            rooms={[]}
+            guests={[]}
+            handleCheckIn={() => {}}
+            handleCheckOut={handleCheckOut}
+            loadFolio={() => {}}
+            setReservationDetailId={setReservationDetailId}
+            loading={false}
+          />
+        </Tabs>
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByTestId('overstay-payment-booking-balance')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('overstay-checkout-booking-balance'));
+    expect(setReservationDetailId).toHaveBeenCalledWith('booking-balance');
+    expect(handleCheckOut).not.toHaveBeenCalled();
+    expect(confirmDialog).not.toHaveBeenCalled();
+  });
+
+  it('posts a simple quick payment to the guest folio and refreshes the front desk', async () => {
+    const loadFrontDeskData = vi.fn().mockResolvedValue(undefined);
+    const loadData = vi.fn().mockResolvedValue(undefined);
+    render(
+      <MemoryRouter>
+        <Tabs defaultValue="frontdesk">
+          <FrontdeskTab
+            arrivals={[]}
+            departures={[{
+              id: 'booking-payment', status: 'checked_in', balance: 125,
+              check_in: '2026-08-30', check_out: '2026-08-31',
+              guest_name: 'PAYMENT GUEST', room_number: '105',
+            }]}
+            inhouse={[]}
+            bookings={[]}
+            rooms={[]}
+            guests={[]}
+            handleCheckIn={() => {}}
+            handleCheckOut={() => {}}
+            loadFolio={() => {}}
+            loadFrontDeskData={loadFrontDeskData}
+            loadData={loadData}
+            loading={false}
+          />
+        </Tabs>
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getByTestId('departure-payment-booking-payment'));
+    expect(screen.getByRole('heading', { name: 'Hızlı Ödeme Al' })).toBeInTheDocument();
+    expect(screen.getByTestId('frontdesk-quick-payment-amount')).toHaveValue('125.00');
+    expect(screen.queryByText('Ara Ödeme')).not.toBeInTheDocument();
+    expect(screen.queryByText('Final Ödeme')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('frontdesk-quick-payment-submit'));
+
+    await waitFor(() => expect(post).toHaveBeenCalledWith(
+      '/frontdesk/folio/booking-payment/payment',
+      {
+        amount: 125,
+        method: 'card',
+        payment_type: 'final',
+        reference: null,
+        notes: 'Ön büro hızlı tahsilat',
+      },
+      expect.objectContaining({ headers: expect.objectContaining({ 'Idempotency-Key': expect.any(String) }) }),
+    ));
+    await waitFor(() => expect(loadFrontDeskData).toHaveBeenCalledTimes(1));
+    expect(loadData).toHaveBeenCalledTimes(1);
+    await waitFor(() => {
+      expect(screen.queryByTestId('departure-payment-booking-payment')).not.toBeInTheDocument();
+    });
+  });
+
+  it('transfers the quick-payment balance to the selected existing cari account', async () => {
+    get.mockResolvedValue({
+      data: { accounts: [{ id: 'legacy-cari-1', transfer_id: 'mongo-cari-1', name: 'Kurumsal Cari' }] },
+    });
+    const loadFrontDeskData = vi.fn().mockResolvedValue(undefined);
+    const loadData = vi.fn().mockResolvedValue(undefined);
+    render(
+      <MemoryRouter>
+        <Tabs defaultValue="frontdesk">
+          <FrontdeskTab
+            arrivals={[]}
+            departures={[{
+              id: 'booking-cari', status: 'checked_in', balance: 250,
+              check_in: '2026-08-30', check_out: '2026-08-31',
+              guest_name: 'CARI GUEST', room_number: '107', channel: 'expedia',
+            }]}
+            inhouse={[]}
+            bookings={[]}
+            rooms={[]}
+            guests={[]}
+            handleCheckIn={() => {}}
+            handleCheckOut={() => {}}
+            loadFolio={() => {}}
+            loadFrontDeskData={loadFrontDeskData}
+            loadData={loadData}
+            loading={false}
+          />
+        </Tabs>
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getByTestId('departure-payment-booking-cari'));
+    expect(screen.getByTestId('frontdesk-quick-payment-channel')).toHaveTextContent('Expedia');
+    fireEvent.click(screen.getByTestId('frontdesk-quick-payment-method'));
+    fireEvent.click(screen.getByText('Cari Hesaba Aktar'));
+
+    await waitFor(() => expect(get).toHaveBeenCalledWith('/pms/cari-accounts'));
+    await waitFor(() => expect(screen.getByTestId('frontdesk-quick-payment-cari-account')).toBeEnabled());
+    fireEvent.click(screen.getByTestId('frontdesk-quick-payment-cari-account'));
+    fireEvent.click(screen.getAllByText('Kurumsal Cari').at(-1));
+    fireEvent.click(screen.getByTestId('frontdesk-quick-payment-submit'));
+
+    await waitFor(() => expect(post).toHaveBeenCalledWith(
+      '/pms/reservations/booking-cari/transfer-to-cari',
+      {
+        amount: 250,
+        cari_account_id: 'mongo-cari-1',
+        cari_account_name: 'Kurumsal Cari',
+        description: 'Ön büro hızlı cari aktarım',
+      },
+      expect.objectContaining({ headers: expect.objectContaining({ 'Idempotency-Key': expect.any(String) }) }),
+    ));
+    await waitFor(() => expect(loadFrontDeskData).toHaveBeenCalledTimes(1));
+    expect(loadData).toHaveBeenCalledTimes(1);
+    await waitFor(() => {
+      expect(screen.queryByTestId('departure-payment-booking-cari')).not.toBeInTheDocument();
+    });
+  });
+
+  it('opens the full walk-in workflow from the front desk quick action', () => {
+    render(
+      <MemoryRouter initialEntries={['/pms']}>
+        <Routes>
+          <Route path="/pms" element={(
+            <Tabs defaultValue="frontdesk">
+              <FrontdeskTab
+                arrivals={[]}
+                departures={[]}
+                inhouse={[]}
+                bookings={[]}
+                rooms={[]}
+                guests={[]}
+                handleCheckIn={() => {}}
+                handleCheckOut={() => {}}
+                loadFolio={() => {}}
+                loading={false}
+              />
+            </Tabs>
+          )} />
+          <Route path="/walkin" element={<div>walk-in-workflow</div>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getByTestId('open-walkin-workflow'));
+    expect(screen.getByText('walk-in-workflow')).toBeInTheDocument();
   });
 
   it('normalizes both list and paginated search response shapes', () => {

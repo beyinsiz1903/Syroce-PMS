@@ -17,6 +17,7 @@ from pydantic import BaseModel
 
 from core.database import db
 from core.security import get_current_user, security
+from modules.pms_core.role_permission_service import require_op
 
 # Perf: GM mobil "kritik sorunlar" widget'i en güncel `limit` kadar overbooking
 # gösterir. Aday confirmed-booking taraması check_in<=yarın olan TÜM kayıtları
@@ -118,7 +119,11 @@ router = APIRouter(prefix="/api", tags=["mobile"])
 
 # ── GET /dashboard/mobile/critical-issues ──
 @router.get("/dashboard/mobile/critical-issues")
-async def get_critical_issues_mobile(limit: int = 5, credentials: HTTPAuthorizationCredentials = Depends(security)):
+async def get_critical_issues_mobile(
+    limit: int = 5,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_op("view_executive_reports")),
+):
     """Get recent critical issues for GM mobile dashboard"""
     current_user = await get_current_user(credentials)
 
@@ -183,7 +188,11 @@ async def get_critical_issues_mobile(limit: int = 5, credentials: HTTPAuthorizat
 
 # ── GET /dashboard/mobile/recent-complaints ──
 @router.get("/dashboard/mobile/recent-complaints")
-async def get_recent_complaints_mobile(limit: int = 5, credentials: HTTPAuthorizationCredentials = Depends(security)):
+async def get_recent_complaints_mobile(
+    limit: int = 5,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_op("view_executive_reports")),
+):
     """Get recent guest complaints for GM mobile dashboard"""
     current_user = await get_current_user(credentials)
 

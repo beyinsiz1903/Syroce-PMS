@@ -30,7 +30,9 @@ from core.security import (
     get_current_user,
     hash_password,
     invalidate_user_doc_cache,
+    is_session_revoked,
     revoke_jti,
+    revoke_session,
     verify_password,
 )
 from core.tenant_db import clear_tenant_context, get_system_db, set_tenant_context
@@ -67,6 +69,42 @@ except ImportError:
 db = get_system_db()
 
 router = APIRouter(prefix="/api", tags=["auth"])
+
+
+_SECURITY_EVENT_DETAILS = {
+    "login_failed": "Başarısız oturum açma denemesi",
+    "password_change": "Parola değiştirildi",
+    "user_created": "Kullanıcı oluşturuldu",
+    "user_deleted": "Kullanıcı silindi",
+    "role_change": "Kullanıcı yetkileri değiştirildi",
+    "token_refresh": "Oturum güvenle yenilendi",
+}
+
+
+def _mask_security_actor(value: str | None) -> str | None:
+    """Güvenlik özetinde kişisel veriyi açmadan aktörü belirt."""
+    if not value:
+        return None
+    value = str(value).strip()
+    if not value or value.startswith("SYR1:"):
+        return "Korunan kullanıcı"
+    if "@" in value:
+        local, domain = value.rsplit("@", 1)
+        if local and domain:
+            return f"{local[0]}***@{domain}"
+    return "Korunan kullanıcı"
+
+
+def _safe_security_event(event: dict) -> dict:
+    """Audit belgesini güvenlik ekranı için sınırlı ve hassas verisiz hale getir."""
+    action = str(event.get("action") or "")
+    return {
+        "id": event.get("id"),
+        "action": action,
+        "timestamp": event.get("timestamp"),
+        "user_email": _mask_security_actor(event.get("user_email")),
+        "details": _SECURITY_EVENT_DETAILS.get(action, "Güvenlik olayı kaydedildi"),
+    }
 
 
 # Bug AS fix — lazy unique+TTL index on consumed_jtis (idempotent, fail-closed)
@@ -191,7 +229,7 @@ async def make_me_super_admin(setup_password: str, current_user: User = Depends(
     invalidate_user_doc_cache(current_user.id)
 
     if result.modified_count == 0:
-        raise HTTPException(status_code=400, detail="Role güncellenemedi veya zaten super_admin")
+        raise HTTPException(status_code=400, detail="Kullanıcı yetkisi güncellenemedi (Hedef kullanıcı zaten en üst düzey yetkiye sahip olabilir).")
 
     return {"success": True, "message": "Artık super_admin'siniz! Lütfen logout yapıp tekrar giriş yapın.", "email": current_user.email, "user_id": current_user.id}
 
@@ -279,8 +317,11 @@ def _build_token_response(user: User, tenant, response: Response = None) -> Toke
     Centralising this prevents path drift (e.g. a 2FA-verified login
     silently degrading to a refresh-less response).
     """
-    access = create_token(user.id, user.tenant_id)
-    refresh, _ = create_refresh_token(user.id, user.tenant_id)
+    # One login == one device session. Both token types carry the same sid so
+    # a normal logout closes only this browser, never another computer.
+    session_id = __import__("secrets").token_urlsafe(24)
+    access = create_token(user.id, user.tenant_id, session_id=session_id)
+    refresh, _ = create_refresh_token(user.id, user.tenant_id, session_id=session_id)
 
     if response:
         response.set_cookie(
@@ -345,7 +386,7 @@ async def register_tenant(data: TenantRegister, request: Request, response: Resp
         # throttle above (1 req / 10 min) which stops bulk inventory scans
         # regardless of response shape. The 400 status is preserved for
         # frontend backward compatibility.
-        raise HTTPException(status_code=400, detail="Bu bilgilerle kayıt yapılamadı")
+        raise HTTPException(status_code=400, detail="Kayıt işlemi başarısız. Lütfen bilgilerinizi kontrol edip tekrar deneyin.")
 
     # Decide username (explicit > derived from email)
     username = (data.username or _derive_username(data.email)).strip().lower()
@@ -400,7 +441,7 @@ async def register_guest(data: GuestRegister, request: Request, response: Respon
 
     existing = await db.users.find_one(build_user_email_query(data.email))
     if existing:
-        raise HTTPException(status_code=400, detail="Bu bilgilerle kayıt yapılamadı")
+        raise HTTPException(status_code=400, detail="Kayıt işlemi başarısız. Lütfen bilgilerinizi kontrol edip tekrar deneyin.")
 
     user = User(tenant_id=None, email=data.email, name=data.name, role=UserRole.GUEST, phone=data.phone)
     user_dict = user.model_dump()
@@ -413,6 +454,12 @@ async def register_guest(data: GuestRegister, request: Request, response: Respon
     await db.notification_preferences.insert_one(prefs.model_dump())
 
     return _build_token_response(user, None, response)
+
+
+def _is_marketplace_identity(user_doc: dict) -> bool:
+    role = getattr(user_doc.get("role"), "value", user_doc.get("role"))
+    roles = [getattr(item, "value", item) for item in (user_doc.get("roles") or [])]
+    return role == "marketplace_agent" or "marketplace_agent" in roles
 
 
 @router.post("/auth/login", response_model=TokenResponse)
@@ -481,7 +528,7 @@ async def login(data: UserLogin, request: Request, response: Response):
         cache_seed = f"em:{data.email}|p:{data.password}"
         identity_label = data.email
     else:
-        raise HTTPException(status_code=400, detail="Otel ID + kullanıcı adı veya e-posta gereklidir")
+        raise HTTPException(status_code=400, detail="Lütfen Otel ID, kullanıcı adı veya e-posta alanlarını eksiksiz doldurun.")
 
     cache_key = f"login:{_hl.sha256(cache_seed.encode()).hexdigest()[:24]}"
     cached = _login_cache.get(cache_key)
@@ -502,11 +549,17 @@ async def login(data: UserLogin, request: Request, response: Response):
             cached_at = float(cached.get("cached_at") or 0)
             if cached_uid:
                 u = await db.users.find_one(
-                     {"id": cached_uid},
-                     {"_id": 0, "two_factor_enabled": 1, "tokens_invalid_before": 1},
+                    {"id": cached_uid},
+                    {"_id": 0, "two_factor_enabled": 1, "tokens_invalid_before": 1, "is_active": 1},
                 )
                 _watermark = float((u or {}).get("tokens_invalid_before") or 0)
-                if u and u.get("two_factor_enabled"):
+                if not u or u.get("is_active") is False:
+                    # Never mint a fresh token from a cached successful login
+                    # after the account was disabled or removed.
+                    _login_cache.set(cache_key, None, ttl=1)
+                    # fall through to the full path, which returns the
+                    # canonical inactive/invalid-credential response.
+                elif u.get("two_factor_enabled"):
                     _login_cache.set(cache_key, None, ttl=1)  # evict
                     # fall through to full login path → challenge flow
                 elif _watermark and cached_at < _watermark:
@@ -619,6 +672,31 @@ async def login(data: UserLogin, request: Request, response: Response):
             }
         )
         await _record_failure_and_raise(401, "Otel ID, kullanıcı adı veya şifre hatalı")
+
+    if user_doc.get("is_active") is False:
+        await _safe_audit(
+            {
+                "id": str(__import__("uuid").uuid4()),
+                "tenant_id": user_doc.get("tenant_id"),
+                "user_email": identity_label,
+                "action": "login_failed",
+                "resource_type": "auth",
+                "details": "Account disabled",
+                "timestamp": datetime.now(UTC).isoformat(),
+            }
+        )
+        await _record_failure_and_raise(401, "Kullanıcı hesabınız askıya alınmıştır. Lütfen sistem yöneticisi ile iletişime geçin.")
+
+    if _is_marketplace_identity(user_doc):
+        # Marketplace identities deliberately share the global users store,
+        # but they are not PMS tenant users and cannot be parsed by the PMS
+        # UserRole model. A valid agency password entered on the hotel login
+        # page must therefore fail as a controlled portal-boundary response,
+        # not bubble up as a Pydantic ValidationError / HTTP 500.
+        raise HTTPException(
+            status_code=403,
+            detail="Acente hesapları Acente Portalı üzerinden giriş yapmalıdır.",
+        )
 
     user_data = {k: v for k, v in user_doc.items() if k not in ["password", "hashed_password", "password_hash"]}
     user = User(**user_data)
@@ -771,14 +849,14 @@ async def verify_2fa_login(payload: TwoFAVerifyIn, request: Request, response: R
     try:
         decoded = _jwt.decode(payload.challenge_token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
     except _jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Doğrulama süresi doldu, tekrar giriş yapın")
+        raise HTTPException(status_code=401, detail="Oturum süreniz doldu. Lütfen yeniden giriş yapın.")
     except _jwt.InvalidTokenError:
-        raise HTTPException(status_code=401, detail="Geçersiz doğrulama belirteci")
+        raise HTTPException(status_code=401, detail="Güvenlik oturumu (Token) geçersiz veya süresi dolmuş.")
     if decoded.get("purpose") != "2fa_challenge":
-        raise HTTPException(status_code=401, detail="Yanlış belirteç türü")
+        raise HTTPException(status_code=401, detail="Geçersiz oturum anahtarı türü tespit edildi.")
     jti = decoded.get("jti")
     if not jti:
-        raise HTTPException(status_code=401, detail="Geçersiz doğrulama belirteci")
+        raise HTTPException(status_code=401, detail="Güvenlik oturumu (Token) geçersiz veya süresi dolmuş.")
 
     _user_id_for_throttle = decoded.get("user_id")
     _user_throttle_key = f"user:{_user_id_for_throttle}" if _user_id_for_throttle else None
@@ -813,7 +891,7 @@ async def verify_2fa_login(payload: TwoFAVerifyIn, request: Request, response: R
             }
         )
     except DuplicateKeyError:
-        raise HTTPException(status_code=401, detail="Doğrulama belirteci zaten kullanıldı")
+        raise HTTPException(status_code=401, detail="Bu güvenlik oturumu (Token) daha önce kullanılmış.")
 
     user_id = decoded.get("user_id")
 
@@ -835,6 +913,7 @@ async def verify_2fa_login(payload: TwoFAVerifyIn, request: Request, response: R
         else:
             try:
                 import math
+
                 f_iat = float(ch_iat)
                 f_ib = float(invalid_before)
                 if math.isnan(f_iat) or math.isinf(f_iat) or math.isnan(f_ib) or math.isinf(f_ib):
@@ -856,7 +935,7 @@ async def verify_2fa_login(payload: TwoFAVerifyIn, request: Request, response: R
             )
             raise HTTPException(
                 status_code=401,
-                detail="Şifre değişti - lütfen yeniden giriş yapın",
+                detail="Hesap şifreniz güncellendi. Lütfen yeni şifrenizle tekrar giriş yapın.",
             )
 
     user_doc = decrypt_user_doc(user_doc)
@@ -1153,14 +1232,17 @@ async def change_password(
 
 
 def _decode_bearer_payload(request: Request) -> dict:
-    """Decode the bearer token attached to the request, no exp check needed
-    here (already validated upstream by get_current_user)."""
+    """Decode the current access token after dependency validation.
+
+    Header wins during an account switch; cookie fallback covers ordinary
+    HttpOnly-cookie sessions after a page reload.
+    """
     import jwt as _jwt
 
     auth = request.headers.get("authorization") or ""
-    if not auth.lower().startswith("bearer "):
+    token = auth.split(" ", 1)[1].strip() if auth.lower().startswith("bearer ") else request.cookies.get("access_token")
+    if not token:
         return {}
-    token = auth.split(" ", 1)[1].strip()
     try:
         return _jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
     except Exception:
@@ -1184,7 +1266,7 @@ def _enforce_refresh_invariants(user_doc: dict, payload: dict, *, kind: str) -> 
     # `is_active=False` → fully locked out. Treat as if the user does not
     # exist for token-issuance purposes.
     if user_doc.get("is_active") is False:
-        raise HTTPException(status_code=401, detail="Hesap devre dışı")
+        raise HTTPException(status_code=401, detail="Kullanıcı hesabınız askıya alınmıştır. Lütfen sistem yöneticisi ile iletişime geçin.")
 
     # Mass-revocation watermark. Tokens minted before the watermark
     # (including refresh tokens issued from the *previous* password) must
@@ -1196,10 +1278,11 @@ def _enforce_refresh_invariants(user_doc: dict, payload: dict, *, kind: str) -> 
         if not iat:
             raise HTTPException(
                 status_code=401,
-                detail="Şifre değişti - lütfen yeniden giriş yapın",
+                detail="Hesap şifreniz güncellendi. Lütfen yeni şifrenizle tekrar giriş yapın.",
             )
         try:
             import math
+
             f_iat = float(iat)
             f_ib = float(invalid_before)
             if math.isnan(f_iat) or math.isinf(f_iat) or math.isnan(f_ib) or math.isinf(f_ib):
@@ -1207,12 +1290,12 @@ def _enforce_refresh_invariants(user_doc: dict, payload: dict, *, kind: str) -> 
         except (TypeError, ValueError):
             raise HTTPException(
                 status_code=401,
-                detail="Şifre değişti - lütfen yeniden giriş yapın",
+                detail="Hesap şifreniz güncellendi. Lütfen yeni şifrenizle tekrar giriş yapın.",
             )
         if f_iat < f_ib:
             raise HTTPException(
                 status_code=401,
-                detail="Şifre değişti - lütfen yeniden giriş yapın",
+                detail="Hesap şifreniz güncellendi. Lütfen yeni şifrenizle tekrar giriş yapın.",
             )
 
     # Defence-in-depth: token's tenant_id must match the user record. A
@@ -1227,7 +1310,7 @@ def _enforce_refresh_invariants(user_doc: dict, payload: dict, *, kind: str) -> 
             jwt_tenant,
             doc_tenant,
         )
-        raise HTTPException(status_code=401, detail="Token-tenant uyuşmuyor")
+        raise HTTPException(status_code=401, detail="Oturum bilgileri ile seçili tesis bilgileri uyuşmuyor.")
 
 
 @router.post("/auth/refresh-token")
@@ -1265,6 +1348,7 @@ async def refresh_token(request: Request, response: Response, body: dict | None 
     user_email: str = ""
     old_jti: str | None = None
     old_exp: int | None = None
+    session_id: str | None = None
     rotation_kind: str = "access"
 
     payload = None
@@ -1304,11 +1388,15 @@ async def refresh_token(request: Request, response: Response, body: dict | None 
     tenant_id = payload.get("tenant_id")
     old_jti = payload.get("jti")
     old_exp = payload.get("exp")
+    session_id = payload.get("sid")
     if not user_id or not tenant_id:
         raise HTTPException(status_code=401, detail="Malformed refresh token" if rotation_kind == "refresh" else "Malformed access token")
 
     set_tenant_context(tenant_id)
     try:
+        if session_id and await is_session_revoked(session_id):
+            raise HTTPException(status_code=401, detail="Oturum kapatıldı. Lütfen tekrar giriş yapın.")
+
         # Resolve user (no Depends → tolerates missing/expired access token).
         user_doc = await db.users.find_one({"id": user_id}, {"_id": 0})
         if not user_doc:
@@ -1338,10 +1426,14 @@ async def refresh_token(request: Request, response: Response, body: dict | None 
             if not won:
                 raise HTTPException(status_code=401, detail="Refresh replay rejected — please login again")
 
-        new_access = create_token(user_id, tenant_id)
+        # Rotation keeps the login's device-session id. A legacy token gets a
+        # single new family id during migration. A refresh must never create
+        # a second family that survives device logout.
+        session_id = session_id or __import__("secrets").token_urlsafe(24)
+        new_access = create_token(user_id, tenant_id, session_id=session_id)
         new_refresh: str | None = None
         if rotation_kind == "refresh":
-            new_refresh, _ = create_refresh_token(user_id, tenant_id)
+            new_refresh, _ = create_refresh_token(user_id, tenant_id, session_id=session_id)
 
         # Audit log
         await db.audit_logs.insert_one(
@@ -1394,6 +1486,7 @@ async def refresh_token(request: Request, response: Response, body: dict | None 
 
     return resp_data
 
+
 @router.post("/auth/logout")
 async def logout(
     request: Request,
@@ -1432,34 +1525,25 @@ async def logout(
             logger.error("logout: revoke_jti raised: %s", e)
             raise HTTPException(status_code=503, detail="Logout failed, please retry")
 
-    # F8U P0 fix — mass-revoke watermark. Even when the client does NOT
-    # submit its refresh_token in the body, /auth/logout MUST invalidate
-    # ALL outstanding tokens for this user — otherwise a stolen refresh
-    # token survives the explicit logout and can be exchanged for fresh
-    # access tokens. We bump `tokens_invalid_before` to now+1s so every
-    # access AND refresh token whose `iat` precedes this moment is
-    # rejected by `get_current_user` (access) and `_enforce_refresh_invariants`
-    # (refresh). Trade-off: this terminates the user's other live sessions
-    # too — acceptable single-button-logout semantics for a staff PMS
-    # (matches typical enterprise behaviour; matches threat_model.md
-    # § Spoofing "enforce revocation/invalid-before semantics").
-    # Fail-closed: a watermark write failure means we cannot guarantee
-    # refresh-token revocation. Match the access-token revocation contract
-    # above (503 on failure) so the client never sees a 2xx that doesn't
-    # actually invalidate the session.
-    try:
-        invalid_before_ts = datetime.now(UTC).timestamp()
-        await db.users.update_one(
-            {"id": current_user.id},
-            {"$set": {"tokens_invalid_before": invalid_before_ts}},
-        )
+    # Close this login's complete token family. Previous behaviour updated a
+    # user-wide watermark here, which logged the employee out on every other
+    # computer and made independent hotel workstations affect one another.
+    # Password changes / administrative force-logout continue to use the
+    # user-wide watermark; ordinary logout is deliberately device-scoped.
+    session_id = payload.get("sid")
+    if session_id:
         try:
-            invalidate_user_doc_cache(current_user.id)
-        except Exception:
-            pass
-    except Exception as e:
-        logger.error("logout: watermark update failed: %s", e)
-        raise HTTPException(status_code=503, detail="Logout failed, please retry")
+            session_exp = int(datetime.now(UTC).timestamp()) + REFRESH_TOKEN_EXPIRATION_DAYS * 86400
+            await revoke_session(
+                session_id,
+                session_exp,
+                user_id=current_user.id,
+                tenant_id=current_user.tenant_id,
+                reason="logout",
+            )
+        except Exception as e:
+            logger.error("logout: session revoke failed: %s", e)
+            raise HTTPException(status_code=503, detail="Logout failed, please retry")
 
     # V3: revoke the submitted refresh token if any.
     refresh_jti: str | None = None
@@ -1498,7 +1582,11 @@ async def logout(
             "user_email": current_user.email,
             "action": "logout",
             "resource_type": "auth",
-            "details": (f"Logout (jti={jti or 'legacy'}" + (f", refresh_jti={refresh_jti}" if refresh_jti else "") + ")"),
+            "details": (
+                f"Device logout (sid={session_id or 'legacy'}, jti={jti or 'legacy'}"
+                + (f", refresh_jti={refresh_jti}" if refresh_jti else "")
+                + ")"
+            ),
             "ip_address": "",
             "timestamp": datetime.now(UTC).isoformat(),
         }
@@ -1598,7 +1686,9 @@ async def get_security_summary(
             "slow_requests": apm_summary.get("slow_request_count", 0),
         },
         "rate_limits": rate_limit_stats,
-        "recent_events": security_events[:20],
+        # Audit belgeleri JTI, ham ayrıntı veya şifreli kişisel veri içerebilir.
+        # Güvenlik özeti yalnızca bu ekranın ihtiyaç duyduğu güvenli görünümü döndürür.
+        "recent_events": [_safe_security_event(event) for event in security_events[:20]],
         "timestamp": now.isoformat(),
     }
 
@@ -2044,7 +2134,7 @@ async def reset_password(data: ResetPasswordRequest, request: Request):
     )
 
     if not reset:
-        raise HTTPException(status_code=400, detail="Geçersiz veya kullanılmış sıfırlama kodu")
+        raise HTTPException(status_code=400, detail="Şifre sıfırlama bağlantısı geçersiz veya daha önce kullanılmış.")
 
     # Kod süresi dolmuş mu kontrol et
     expires_at = reset["expires_at"]
@@ -2071,7 +2161,7 @@ async def reset_password(data: ResetPasswordRequest, request: Request):
             await db.password_reset_codes.update_one({"_id": reset["_id"]}, {"$set": {"used": True, "used_at": datetime.now(UTC), "failed_attempts": new_count}})
             raise HTTPException(status_code=400, detail="Çok fazla hatalı deneme. Lütfen yeni sıfırlama kodu isteyin.")
         await db.password_reset_codes.update_one({"_id": reset["_id"]}, {"$inc": {"failed_attempts": 1}})
-        raise HTTPException(status_code=400, detail="Geçersiz veya kullanılmış sıfırlama kodu")
+        raise HTTPException(status_code=400, detail="Şifre sıfırlama bağlantısı geçersiz veya daha önce kullanılmış.")
 
     # Kullanıcıyı bul
     user = await db.users.find_one(build_user_email_query(data.email))

@@ -4,6 +4,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Loader2, Check } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { moneyInputProps } from '@/lib/moneyInput';
 
 export const API = "";
 
@@ -17,6 +18,24 @@ export const fmtDateTime = (d) => {
 };
 export const fmtTs = (d) => (d || '').toString().slice(0, 16).replace('T', ' ');
 export const fmtTL = (v) => (v || 0).toLocaleString('tr-TR');
+export const fmtCurrency = (v, currency) => {
+  const code = (currency || 'TL').toUpperCase();
+  const c = code === 'TRY' ? 'TL' : code;
+  return `${(v || 0).toLocaleString('tr-TR')} ${c}`;
+};
+
+// Rezervasyon geceleri saat farkından değil takvim günlerinden hesaplanır.
+// Böylece 14:00 giriş / 12:00 çıkış gibi normal otel saatleri bir geceyi
+// yanlışlıkla eksiltmez veya artırmaz.
+export const reservationNights = (checkIn, checkOut) => {
+  const start = String(checkIn || '').slice(0, 10);
+  const end = String(checkOut || '').slice(0, 10);
+  if (!start || !end) return 0;
+  const startMs = Date.parse(`${start}T00:00:00Z`);
+  const endMs = Date.parse(`${end}T00:00:00Z`);
+  const nights = Math.round((endMs - startMs) / 86400000);
+  return Number.isFinite(nights) ? Math.max(0, nights) : 0;
+};
 
 export function statusLabel(s) {
   return s === 'checked_in' ? 'Giriş Yapıldı'
@@ -122,17 +141,18 @@ export function EmptyState({ icon: Icon, text }) {
   return <div className="text-center py-8 text-gray-400"><Icon className="w-8 h-8 mx-auto mb-2 opacity-50" /><p className="text-sm">{text}</p></div>;
 }
 
-export function SummaryCard({ label, value, color }) {
+export function SummaryCard({ label, value, color, currency }) {
   return (
     <div className={`bg-${color}-50 border border-${color}-200 rounded-lg p-3 text-center`}>
       <div className={`text-xs text-${color}-600 font-medium`}>{label}</div>
-      <div className={`text-lg font-bold text-${color}-800`}>{fmtTL(value)} TL</div>
+      <div className={`text-lg font-bold text-${color}-800`}>{fmtCurrency(value, currency)}</div>
     </div>
   );
 }
 
-export function FormField({ label, value, onChange, type = 'text', placeholder = '' }) {
-  return <div><Label className="text-xs">{label}</Label><Input type={type} value={value} onChange={e => onChange(e.target.value)} className="h-8 text-sm" placeholder={placeholder} /></div>;
+export function FormField({ label, value, onChange, type = 'text', placeholder = '', inputMode, hint }) {
+  const isMoney = type === 'money';
+  return <div><Label className="text-xs">{label}</Label><Input {...(isMoney ? moneyInputProps : { type, inputMode })} value={value} onChange={e => onChange(e.target.value)} className="h-8 text-sm" placeholder={placeholder || (isMoney ? 'Örn. 150,74' : '')} />{hint && <p className="mt-1 text-xs text-slate-500">{hint}</p>}</div>;
 }
 
 export function SelectField({ label, value, onChange, options }) {

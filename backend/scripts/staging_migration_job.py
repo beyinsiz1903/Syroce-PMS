@@ -107,14 +107,9 @@ def _preflight() -> dict:
         errors.append("STAGING_DB_NAME is not set.")
     else:
         if staging_db in PRODUCTION_FORBIDDEN_DB_NAMES:
-            errors.append(
-                f"STAGING_DB_NAME='{staging_db}' is a FORBIDDEN production database name."
-            )
+            errors.append(f"STAGING_DB_NAME='{staging_db}' is a FORBIDDEN production database name.")
         if not any(kw in staging_db.lower() for kw in STAGING_SAFE_KEYWORDS):
-            errors.append(
-                f"STAGING_DB_NAME='{staging_db}' must contain one of: "
-                f"{STAGING_SAFE_KEYWORDS}. This is a safety guard."
-            )
+            errors.append(f"STAGING_DB_NAME='{staging_db}' must contain one of: {STAGING_SAFE_KEYWORDS}. This is a safety guard.")
 
     # --- Existing production key (becomes PREVIOUS in-process) ---
     old_key = os.environ.get("CM_MASTER_KEY_CURRENT", "")
@@ -124,29 +119,20 @@ def _preflight() -> dict:
     # CM_KEY_VERSION_CURRENT preferred; fall back to CM_KEY_VERSION
     old_version = os.environ.get("CM_KEY_VERSION_CURRENT") or os.environ.get("CM_KEY_VERSION", "")
     if not old_version:
-        errors.append(
-            "Neither CM_KEY_VERSION_CURRENT nor CM_KEY_VERSION is set. "
-            "Cannot determine the existing key version."
-        )
+        errors.append("Neither CM_KEY_VERSION_CURRENT nor CM_KEY_VERSION is set. Cannot determine the existing key version.")
 
     # --- New staging key ---
     new_key = os.environ.get("STAGING_NEW_MASTER_KEY", "")
     if not new_key:
         errors.append("STAGING_NEW_MASTER_KEY is not set.")
     elif len(new_key.encode("utf-8")) < MIN_KEY_BYTES:
-        errors.append(
-            f"STAGING_NEW_MASTER_KEY is too short "
-            f"({len(new_key.encode('utf-8'))} bytes, minimum {MIN_KEY_BYTES})."
-        )
+        errors.append(f"STAGING_NEW_MASTER_KEY is too short ({len(new_key.encode('utf-8'))} bytes, minimum {MIN_KEY_BYTES}).")
 
     new_version = os.environ.get("STAGING_NEW_KEY_VERSION", "")
     if not new_version:
         errors.append("STAGING_NEW_KEY_VERSION is not set.")
     elif old_version and new_version == old_version:
-        errors.append(
-            f"STAGING_NEW_KEY_VERSION='{new_version}' must differ from "
-            f"the existing version='{old_version}'."
-        )
+        errors.append(f"STAGING_NEW_KEY_VERSION='{new_version}' must differ from the existing version='{old_version}'.")
 
     # --- CRYPTO_V2_ENABLED ---
     if os.environ.get("CRYPTO_V2_ENABLED", "").lower() != "true":
@@ -453,12 +439,7 @@ async def main_async(cfg: dict, run_migration: bool) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description=(
-            "Staging migration rehearsal — Option A in-process key rotation. "
-            "Targets STAGING_MONGO_URL only. Never touches production DB."
-        )
-    )
+    parser = argparse.ArgumentParser(description=("Staging migration rehearsal — Option A in-process key rotation. Targets STAGING_MONGO_URL only. Never touches production DB."))
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument(
         "--dry-run",

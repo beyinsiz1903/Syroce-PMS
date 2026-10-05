@@ -10,7 +10,7 @@ export default function PrivacyPolicy() {
           <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/></svg>
           <h1 className="text-3xl font-bold text-gray-900">Gizlilik Politikasi / Privacy Policy</h1>
         </div>
-        <p className="text-sm text-gray-500 mb-8">Son güncelleme / Last updated: 25 Subat 2026</p>
+        <p className="text-sm text-gray-500 mb-8">Son güncelleme / Last updated: 12 Eylül 2026</p>
 
         <div className="space-y-8 text-gray-700 leading-relaxed">
           <section>
@@ -28,6 +28,7 @@ export default function PrivacyPolicy() {
               <li><strong>Misafir Bilgileri / Guest Info:</strong> Misafir adi, iletişim bilgileri, kimlik numarası, konaklama geçmişi</li>
               <li><strong>Finansal Veriler / Financial Data:</strong> Fatura bilgileri, ödeme kayitlari, folio detayları</li>
               <li><strong>Kullanim Verileri / Usage Data:</strong> Uygulama kullanım istatistikleri, cihaz bilgileri, IP adresi</li>
+              <li><strong>Demo Talepleri / Demo Requests:</strong> Ad soyad, işletme, telefon, e-posta, mesaj ve varsa kampanya kaynağı (UTM) ile ziyaret edilen açılış sayfası</li>
             </ul>
           </section>
 
@@ -87,8 +88,8 @@ export default function PrivacyPolicy() {
 
           <section>
             <h2 className="text-xl font-semibold text-gray-900 mb-3">8. Cerezler / Cookies</h2>
-            <p>Uygulamamiz, oturum yönetimi için gerekli cerezleri kullanir. Analitik veya ucuncu taraf cerezleri kullanilmaz.</p>
-            <p className="mt-1">Our app uses essential cookies for session management. No analytics or third-party cookies are used.</p>
+            <p>Oturum için gerekli çerezler kullanılabilir. Pazarlama sayfalarında Google ölçüm etiketi yalnızca analitik çerez tercihini kabul ettiğinizde yüklenir; reddettiğinizde yüklenmez. Tercihiniz tarayıcınızın yerel depolamasında saklanır. Demo formu bu tercihten bağımsız çalışır.</p>
+            <p className="mt-1">Essential session cookies may be used. On marketing pages, the Google measurement tag is loaded only after you accept optional analytics. The demo form remains available if you decline.</p>
           </section>
 
           <section>

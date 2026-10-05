@@ -9,6 +9,7 @@ from celery import Celery
 from celery.schedules import crontab
 from dotenv import load_dotenv
 
+from core.celery_runtime_role import should_import_task_implementations
 from redis_ssl import (
     celery_ssl_conf,
     normalize_redis_url_for_redis_py,
@@ -139,6 +140,16 @@ celery_app.conf.update(
         "kbs-nightly-sweep-dispatch": {
             "task": "celery_tasks.kbs_nightly_sweep_dispatch_task",
             "schedule": crontab(minute="*"),
+        },
+        # TGA v6 automatic reporting. The task evaluates each hotel's local
+        # configured hour and uses a per-local-day atomic claim.
+        "tga-automatic-submission": {
+            "task": "celery_tasks.tga_automatic_submission_task",
+            "schedule": crontab(minute=10),
+        },
+        "tga-monthly-v6-retry": {
+            "task": "celery_tasks.tga_monthly_v6_retry_task",
+            "schedule": crontab(minute="*/5"),
         },
         # Contact Center Faz 2 (Task #648) — çağrı kaydı retention sweep.
         # Her gün 02:30'da süresi dolan (CC_RECORDING_RETENTION_DAYS) kayıtları
@@ -284,13 +295,16 @@ celery_app.conf.update(
     },
 )
 
-# Import tasks directly (celery_tasks is a module, not a package)
-try:
-    import celery_tasks  # noqa: F401
-except ImportError as e:
-    import logging
+# Workers must register executable task bodies.  Beat only sends the static
+# task names declared above, so importing the complete task graph there wastes
+# memory and makes its health probe contend with the scheduler.
+if should_import_task_implementations():
+    try:
+        import celery_tasks  # noqa: F401
+    except ImportError as e:
+        import logging
 
-    logging.getLogger(__name__).warning(f"celery_tasks import failed: {e}")
+        logging.getLogger(__name__).warning(f"celery_tasks import failed: {e}")
 
 if __name__ == "__main__":
     celery_app.start()

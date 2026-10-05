@@ -7,6 +7,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import MaybeLayout from '@/components/MaybeLayout';
 import axios from 'axios';
 import { useTranslation } from 'react-i18next';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
+import { confirmDialog } from '@/lib/dialogs';
 const BACKEND = "";
 const headers = {};
 export default function CentralPricingManager({
@@ -18,6 +20,7 @@ export default function CentralPricingManager({
   const {
     t
   } = useTranslation();
+  const currency = tenant?.currency || cachedTenantCurrency();
   const [activeTab, setActiveTab] = useState('rates');
   const [rates, setRates] = useState(null);
   const [templates, setTemplates] = useState([]);
@@ -32,8 +35,10 @@ export default function CentralPricingManager({
   const [templateForm, setTemplateForm] = useState({ name: '', description: '', room_type: 'Standard', rate: '' });
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
+  const [loadError, setLoadError] = useState('');
   const fetchData = useCallback(async () => {
     setLoading(true);
+    setLoadError('');
     try {
       const [ratesRes, templatesRes, historyRes] = await Promise.all([axios.get(`/central-pricing/rates`, {
         headers
@@ -47,6 +52,10 @@ export default function CentralPricingManager({
       setHistory(historyRes.data.history || []);
     } catch (e) {
       console.error(e);
+      setLoadError('Merkezi fiyat verileri yüklenemedi. Eski veriler gösterilmiyor.');
+      setRates(null);
+      setTemplates([]);
+      setHistory([]);
     }
     setLoading(false);
   }, []);
@@ -59,6 +68,10 @@ export default function CentralPricingManager({
       setMessage('Geçerli fiyat ve değişiklik nedeni zorunludur.');
       return;
     }
+    const confirmed = await confirmDialog({
+      message: `${bulkForm.room_type} oda tipi için zincirdeki tüm otellere uygulanacak fiyat kararını oluşturmak istiyor musunuz?\n\nDeğer: ${bulkForm.new_rate} (${bulkForm.adjustment_type})\nBaşlangıç: ${bulkForm.effective_from}`
+    });
+    if (!confirmed) return;
     try {
       const res = await axios.post(`/central-pricing/bulk-update`, {
         ...bulkForm,
@@ -82,7 +95,7 @@ export default function CentralPricingManager({
         name: templateForm.name,
         description: templateForm.description,
         rates: { [templateForm.room_type]: Number(templateForm.rate) },
-        currency: 'TRY'
+        currency
       }, { headers });
       setTemplateForm({ name: '', description: '', room_type: 'Standard', rate: '' });
       setMessage('Fiyat şablonu kaydedildi.');
@@ -104,6 +117,7 @@ export default function CentralPricingManager({
         </div>
 
         {message && <div className="p-3 bg-blue-50 rounded-lg text-blue-700">{message}</div>}
+        {loadError && <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-800" role="alert">{loadError}</div>}
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList>
@@ -117,13 +131,15 @@ export default function CentralPricingManager({
             {rates?.properties?.map((prop, i) => <Card key={i}>
                 <CardHeader>
                   <CardTitle className="text-lg">{prop.property_name}</CardTitle>
+                  {prop.data_quality_warnings > 0 && <CardDescription className="text-amber-700">{prop.data_quality_warnings} oda tipi kaydında tanım veya fiyat eksiği var.</CardDescription>}
                 </CardHeader>
                 <CardContent>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                    {prop.room_rates?.map((rt, j) => <div key={j} className="p-3 border rounded">
+                    {prop.room_rates?.map((rt, j) => <div key={j} className={`p-3 border rounded ${rt.data_quality !== 'ok' ? 'border-amber-300 bg-amber-50' : ''}`}>
                         <p className="font-medium">{rt.room_type}</p>
-                        <p className="text-2xl font-bold">{rt.base_rate?.toLocaleString('tr-TR')} TRY</p>
+                        <p className="text-2xl font-bold">{rt.data_quality === 'ok' ? formatCurrency(rt.base_rate, rt.currency || currency) : 'Kontrol gerekli'}</p>
                         <p className="text-sm text-gray-500">{rt.count} oda</p>
+                        {rt.data_quality === 'unresolved_room_type' && <p className="text-xs text-amber-800 mt-1">Oda tipi eşleştirmesi gerekli</p>}
                       </div>)}
                     {(!prop.room_rates || prop.room_rates.length === 0) && <p className="text-gray-400 col-span-4">Fiyat bilgisi bulunamadı</p>}
                   </div>
@@ -147,7 +163,7 @@ export default function CentralPricingManager({
                   })} />
                   </div>
                   <div>
-                    <label className="text-sm font-medium">Yeni Fiyat (TRY)</label>
+                    <label className="text-sm font-medium">Yeni Fiyat ({currency})</label>
                     <Input type="number" value={bulkForm.new_rate} onChange={e => setBulkForm({
                     ...bulkForm,
                     new_rate: e.target.value
@@ -189,7 +205,7 @@ export default function CentralPricingManager({
                   <Input value={templateForm.name} onChange={e => setTemplateForm({ ...templateForm, name: e.target.value })} placeholder="Şablon adı" />
                   <Input value={templateForm.description} onChange={e => setTemplateForm({ ...templateForm, description: e.target.value })} placeholder="Açıklama" />
                   <Input value={templateForm.room_type} onChange={e => setTemplateForm({ ...templateForm, room_type: e.target.value })} placeholder="Oda tipi" />
-                  <Input type="number" min="0" value={templateForm.rate} onChange={e => setTemplateForm({ ...templateForm, rate: e.target.value })} placeholder="Fiyat (TRY)" />
+                  <Input type="number" min="0" value={templateForm.rate} onChange={e => setTemplateForm({ ...templateForm, rate: e.target.value })} placeholder={`Fiyat (${currency})`} />
                   <div className="md:col-span-2 flex justify-end"><Button onClick={handleTemplateCreate}>Şablon Oluştur</Button></div>
                 </div>
                 {templates.length === 0 ? <p className="text-center py-8 text-gray-400">Henüz şablon oluşturulmamış</p> : <div className="space-y-3">
@@ -197,7 +213,7 @@ export default function CentralPricingManager({
                         <p className="font-medium">{t.name}</p>
                         <p className="text-sm text-gray-500">{t.description}</p>
                         <div className="flex gap-2 mt-2">
-                          {t.rates && Object.entries(t.rates).map(([k, v]) => <Badge key={k}>{k}: {v} TRY</Badge>)}
+                          {t.rates && Object.entries(t.rates).map(([k, v]) => <Badge key={k}>{k}: {formatCurrency(v, t.currency || currency)}</Badge>)}
                         </div>
                       </div>)}
                   </div>}

@@ -23,6 +23,14 @@ def build_audit_entry(
         "entity_type": entity_type,
         "entity_id": entity_id,
         "action": action,
+        # Canonical timeline fields.  Keep the legacy names above because
+        # older consumers still read them, but every new record must also be
+        # discoverable by the central audit screen.
+        "target_type": entity_type,
+        "target_id": entity_id,
+        "operation_name": action,
+        "result_status": "success",
+        "severity": "info",
         "metadata": metadata or {},
         "correlation_id": correlation_id,
         "timestamp": datetime.now(UTC).isoformat(),
@@ -38,6 +46,7 @@ async def audit_log(
     metadata: dict[str, Any] | None = None,
     property_id: str | None = None,
     correlation_id: str | None = None,
+    session=None,
 ) -> dict[str, Any]:
     entry = build_audit_entry(
         actor_id=actor_id,
@@ -49,5 +58,14 @@ async def audit_log(
         property_id=property_id,
         correlation_id=correlation_id,
     )
-    await db.audit_logs.insert_one(entry)
+    if session:
+        # A transaction must not bypass chain linking. The chain state and the
+        # entry are committed together on the same Mongo client/session.
+        from core.audit_chain import append_audit_log
+
+        await append_audit_log(db, entry, session=session)
+    else:
+        from core.audit_chain import append_audit_log
+
+        await append_audit_log(db, entry)
     return entry

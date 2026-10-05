@@ -94,6 +94,7 @@ class _Database:
                     "guest_id": "guest-1",
                     "room_id": "room-1",
                     "total_amount": 2500,
+                    "currency": "EUR",
                 },
                 {
                     "id": "booking-1",
@@ -170,6 +171,7 @@ async def test_group_folio_enriches_guest_and_room_with_tenant_scoped_bulk_queri
     assert rows[0]["folio_charges"] == 500
     assert rows[0]["payments"] == 250
     assert rows[0]["balance"] == 2750
+    assert rows[0]["currency"] == "EUR"
     assert all(
         collection.find_calls == 1
         for collection in (

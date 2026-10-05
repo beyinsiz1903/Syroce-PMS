@@ -5,9 +5,12 @@ import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { TabsContent } from '@/components/ui/tabs';
 import { Moon, Play, Clock, CheckCircle2, XCircle, AlertTriangle, RefreshCw, Calendar, FileText, ChevronDown, ChevronUp, DollarSign, Users, Building2, BarChart3, Eye, Loader2, Shield, Info, Timer, Settings2, Zap, RotateCcw, TrendingUp, CreditCard, ShieldCheck, Scale, Receipt, PieChart, ArrowUpDown, Banknote, AlertOctagon, Search } from 'lucide-react';
+import { formatCurrencyBreakdown } from '@/lib/reportCurrency';
 
 export default function OverviewTab(props) {
+  const { canRunAudit = false, canManageSchedule = false } = props;
   const { SeverityBadge, StatusBadge, exceptions, expandedRun, handleAbortRun, handleQuickToggleSchedule, handleResumeRun, history, historyTotal, lastRun, loading, runActionId, schedule, scheduleStatus, setShowScheduleDialog, t, toggleExpand } = props;
+  const runMoney = (run, field) => formatCurrencyBreakdown(run?.[`${field}_by_currency`], run?.[field], run?.currency || 'TRY');
   return (
     <TabsContent value="overview" className="space-y-4 mt-4">
       {/* Automatic Scheduling Card */}
@@ -20,16 +23,16 @@ export default function OverviewTab(props) {
             </CardTitle>
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-2">
-                <Switch
+                {canManageSchedule && <Switch
                   data-testid="schedule-toggle"
                   checked={schedule.enabled}
                   onCheckedChange={handleQuickToggleSchedule}
-                />
+                />}
                 <span className={`text-xs font-medium ${schedule.enabled ? "text-emerald-600" : "text-gray-400"}`}>
                   {schedule.enabled ? "Aktif" : "Devre Dışı"}
                 </span>
               </div>
-              <Button
+              {canManageSchedule && <Button
                 data-testid="schedule-settings-btn"
                 variant="outline"
                 size="sm"
@@ -37,7 +40,7 @@ export default function OverviewTab(props) {
               >
                 <Settings2 className="w-3.5 h-3.5 mr-1" />
                 Ayarlar
-              </Button>
+              </Button>}
             </div>
           </div>
         </CardHeader>
@@ -54,15 +57,18 @@ export default function OverviewTab(props) {
                 <p className="text-xs text-gray-500">{schedule.timezone || "Europe/Istanbul"}</p>
               </div>
             </div>
-            <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
-              <div className={`rounded-lg p-2 ${
+              <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+                <div className={`rounded-lg p-2 ${
                 scheduleStatus?.last_auto_run_status === "completed" ? "bg-emerald-100"
-                  : scheduleStatus?.last_auto_run_status === "failed" ? "bg-red-100" : "bg-gray-100"
+                  : scheduleStatus?.last_auto_run_status === "failed" ? "bg-red-100"
+                  : scheduleStatus?.last_auto_run_status === "blocked" ? "bg-amber-100" : "bg-gray-100"
               }`}>
                 {scheduleStatus?.last_auto_run_status === "completed" ? (
                   <CheckCircle2 className="w-4 h-4 text-emerald-600" />
                 ) : scheduleStatus?.last_auto_run_status === "failed" ? (
                   <XCircle className="w-4 h-4 text-red-600" />
+                ) : scheduleStatus?.last_auto_run_status === "blocked" ? (
+                  <AlertTriangle className="w-4 h-4 text-amber-600" />
                 ) : (
                   <Clock className="w-4 h-4 text-gray-400" />
                 )}
@@ -80,25 +86,16 @@ export default function OverviewTab(props) {
               <div className="rounded-lg p-2 bg-blue-100">
                 <Zap className="w-4 h-4 text-blue-600" />
               </div>
-              <div>
-                <div className="flex flex-wrap gap-1">
-                  {schedule.auto_retry && (
+                <div>
+                  <div className="flex flex-wrap gap-1">
                     <Badge className="bg-blue-50 text-blue-700 border border-blue-200 text-[10px]">
-                      Otomatik Yeniden Deneme
+                      Altyapı hatasında en fazla 2 yeniden deneme
                     </Badge>
-                  )}
-                  {schedule.skip_validations && (
-                    <Badge className="bg-amber-50 text-amber-700 border border-amber-200 text-[10px]">
-                      {t('cm.components_nightaudit_tabs_OverviewTab.dogrulama_atla')}
+                    <Badge className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px]">
+                      Doğrulamalar zorunlu
                     </Badge>
-                  )}
-                  {!schedule.auto_retry && !schedule.skip_validations && (
-                    <Badge className="bg-gray-50 text-gray-500 border border-gray-200 text-[10px]">
-                      Standart Ayarlar
-                    </Badge>
-                  )}
-                </div>
-                <p className="text-xs text-gray-500 mt-0.5">{t('cm.components_nightaudit_tabs_OverviewTab.ozellikler')}</p>
+                  </div>
+                <p className="text-xs text-gray-500 mt-0.5">Platform güvenlik politikası</p>
               </div>
             </div>
           </div>
@@ -113,6 +110,8 @@ export default function OverviewTab(props) {
                         <CheckCircle2 className="w-3 h-3 text-emerald-500" />
                       ) : log.status === "failed" ? (
                         <XCircle className="w-3 h-3 text-red-500" />
+                      ) : log.status === "blocked" ? (
+                        <AlertTriangle className="w-3 h-3 text-amber-500" />
                       ) : (
                         <Loader2 className="w-3 h-3 text-blue-500 animate-spin" />
                       )}
@@ -147,7 +146,7 @@ export default function OverviewTab(props) {
           <CardContent>
             <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 text-sm">
               <div>
-                <span className="text-gray-500 text-xs">Is Gunu</span>
+                <span className="text-gray-500 text-xs">İş Günü</span>
                 <p className="font-semibold">{lastRun.business_date}</p>
               </div>
               <div>
@@ -160,11 +159,15 @@ export default function OverviewTab(props) {
               </div>
               <div>
                 <span className="text-gray-500 text-xs">{t('cm.components_nightaudit_tabs_OverviewTab.oda_geliri')}</span>
-                <p className="font-semibold">{lastRun.total_room_revenue?.toFixed(2)} TL</p>
+                <p className="font-semibold">{runMoney(lastRun, 'total_room_revenue')}</p>
+              </div>
+              <div>
+                <span className="text-gray-500 text-xs">Tahsilat</span>
+                <p className="font-semibold text-emerald-600">{runMoney(lastRun, 'total_payments_amount')}</p>
               </div>
               <div>
                 <span className="text-gray-500 text-xs">Vergi</span>
-                <p className="font-semibold">{lastRun.total_tax_amount?.toFixed(2)} TL</p>
+                <p className="font-semibold">{runMoney(lastRun, 'total_tax_amount')}</p>
               </div>
               <div>
                 <span className="text-gray-500 text-xs">{t('cm.components_nightaudit_tabs_OverviewTab.sure')}</span>
@@ -247,7 +250,7 @@ export default function OverviewTab(props) {
                         <div className="hidden md:flex items-center gap-4 text-xs text-gray-500">
                           <span>{run.rooms_processed} oda</span>
                           <span>{run.charges_posted} masraf</span>
-                          <span>{run.total_room_revenue?.toFixed(0)} TL</span>
+                          <span>{runMoney(run, 'total_room_revenue')}</span>
                           {run.exceptions_count > 0 && (
                             <Badge className="bg-amber-50 text-amber-700 border border-amber-200 text-[11px]">
                               {run.exceptions_count} istisna
@@ -259,14 +262,18 @@ export default function OverviewTab(props) {
                     </div>
                     {isExpanded && (
                       <div className="border-t bg-gray-50/50 px-4 py-3 space-y-3">
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-sm">
                           <div>
                             <span className="text-gray-500 text-xs">{t('cm.components_nightaudit_tabs_OverviewTab.oda_geliri_e569c')}</span>
-                            <p className="font-semibold">{run.total_room_revenue?.toFixed(2)} TL</p>
+                            <p className="font-semibold">{runMoney(run, 'total_room_revenue')}</p>
+                          </div>
+                          <div>
+                            <span className="text-gray-500 text-xs">Tahsilat</span>
+                            <p className="font-semibold text-emerald-600">{runMoney(run, 'total_payments_amount')}</p>
                           </div>
                           <div>
                             <span className="text-gray-500 text-xs">Vergi</span>
-                            <p className="font-semibold">{run.total_tax_amount?.toFixed(2)} TL</p>
+                            <p className="font-semibold">{runMoney(run, 'total_tax_amount')}</p>
                           </div>
                           <div>
                             <span className="text-gray-500 text-xs">No-Show</span>
@@ -309,7 +316,7 @@ export default function OverviewTab(props) {
                         ) : (
                           <p className="text-xs text-gray-400">{t('cm.components_nightaudit_tabs_OverviewTab.istisnalar_yukleniyor')}</p>
                         )}
-                        {['blocked', 'failed', 'partial_recovery_required'].includes(run.status) && (
+                        {canRunAudit && ['blocked', 'failed', 'partial_recovery_required'].includes(run.status) && (
                           <div className="flex justify-end gap-2 border-t pt-3">
                             {!run.is_dry_run && (
                               <Button

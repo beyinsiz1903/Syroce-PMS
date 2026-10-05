@@ -111,6 +111,7 @@ describe("Softphone frontend user gesture flow", () => {
     // But no getUserMedia has been called
     expect(mockGetUserMedia).not.toHaveBeenCalled();
     expect(mockDevice).not.toHaveBeenCalled();
+    expect(axios.post).not.toHaveBeenCalled();
   });
 
   it("requests microphone permission and resumes AudioContext only after online-button click", async () => {
@@ -583,4 +584,3 @@ describe("Softphone frontend user gesture flow", () => {
     expect(mockRegister).toHaveBeenCalledTimes(2);
   });
 });
-

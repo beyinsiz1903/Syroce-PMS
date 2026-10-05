@@ -18,7 +18,7 @@ const FindRoomDialog = ({ open, onClose, findRoomCriteria = {}, setFindRoomCrite
 
   const handleSearch = async () => {
     if (!findRoomCriteria.check_in || !findRoomCriteria.check_out) {
-      toast.error('Please select check-in and check-out dates');
+      toast.error('Giriş ve çıkış tarihlerini seçin');
       return;
     }
     setLoading(true);
@@ -122,7 +122,7 @@ const FindRoomDialog = ({ open, onClose, findRoomCriteria = {}, setFindRoomCrite
                         </div>
                         <Button size="sm" className="w-full mt-2" onClick={() => {
                           onRoomSelected(room);
-                          toast.success(`Room ${room.room_number} selected`);
+                          toast.success(`Oda ${room.room_number} seçildi`);
                         }}>
                           Select This Room
                         </Button>

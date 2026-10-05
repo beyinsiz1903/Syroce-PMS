@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { KpiCard } from '@/components/ui/kpi-card';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 
 // Sprint A palette: indigo / sky / emerald / rose / amber / slate. Gradient yok.
 const COLOR = {
@@ -136,7 +137,7 @@ export default function RevenueMLPanel() {
 
       {/* Summary KPIs — Sprint A standardı */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <KpiCard icon={DollarSign} intent="danger" label="Riskli Rez. Geliri" value={`${(data?.cancellation_risk?.total_at_risk_revenue || 0).toLocaleString('tr-TR')} TL`} />
+        <KpiCard icon={DollarSign} intent="danger" label="Riskli Rez. Geliri" value={formatCurrency(data?.cancellation_risk?.total_at_risk_revenue, data?.cancellation_risk?.currency || cachedTenantCurrency())} />
         <KpiCard icon={Target} intent="success" label={t('cm.pages_RevenueMLPanel.fiyat_opt_firsati')} value={priceOpt.length} />
         <KpiCard icon={TrendingUp} intent="info" label={t('cm.pages_RevenueMLPanel.yuksek_talep_gunu')} value={`${data?.summary?.high_demand_days_next_14 || 0}/14`} />
         <KpiCard icon={AlertTriangle} intent="warning" label={t('cm.pages_RevenueMLPanel.riskli_rez_sayisi')} value={data?.cancellation_risk?.at_risk_count || 0} />
@@ -189,12 +190,12 @@ export default function RevenueMLPanel() {
                   <div className="flex items-center gap-3 text-right">
                     <div>
                       <div className="text-xs text-slate-500">Mevcut</div>
-                      <div className="text-sm font-medium text-slate-800">{pp.current_avg_price} TL</div>
+                      <div className="text-sm font-medium text-slate-800">{formatCurrency(pp.current_avg_price, pp.currency || cachedTenantCurrency())}</div>
                     </div>
                     <ChevronRight className="w-4 h-4 text-slate-400" />
                     <div>
                       <div className="text-xs text-slate-500">{t('cm.pages_RevenueMLPanel.onerilen')}</div>
-                      <div className="text-sm font-bold text-emerald-700">{pp.suggested_price} TL</div>
+                      <div className="text-sm font-bold text-emerald-700">{formatCurrency(pp.suggested_price, pp.currency || cachedTenantCurrency())}</div>
                     </div>
                     <ActionBadge action={pp.action} />
                   </div>
@@ -260,7 +261,7 @@ export default function RevenueMLPanel() {
                     <td className="py-2 text-slate-700">{b.check_in?.slice(0, 10)}</td>
                     <td className="py-2 text-slate-700">{b.source || 'direct'}</td>
                     <td className="py-2 text-right text-slate-800">
-                      {(b.total_amount || 0).toLocaleString('tr-TR')} TL
+                      {formatCurrency(b.total_amount, b.currency || cachedTenantCurrency())}
                     </td>
                     <td className="py-2 text-right">
                       <Badge variant={b.risk_level === 'high' ? 'destructive' : 'secondary'}>

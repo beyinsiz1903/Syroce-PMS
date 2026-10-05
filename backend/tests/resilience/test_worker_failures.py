@@ -148,8 +148,23 @@ class TestAtomicClaim:
         await db.outbox_events.insert_one(event)
 
         from core.outbox_worker import OutboxWorker
-        worker1 = OutboxWorker(poll_interval=0, batch_size=1, processing_timeout=120)
-        worker2 = OutboxWorker(poll_interval=0, batch_size=1, processing_timeout=120)
+        # Scope both workers to the fixture tenant. Other suites may leave
+        # legitimate retryable events in the shared integration database;
+        # those must not become false winners in this same-event race.
+        worker1 = OutboxWorker(
+            poll_interval=0,
+            batch_size=1,
+            processing_timeout=120,
+            tenant_id=tenant_id,
+            database=db,
+        )
+        worker2 = OutboxWorker(
+            poll_interval=0,
+            batch_size=1,
+            processing_timeout=120,
+            tenant_id=tenant_id,
+            database=db,
+        )
 
         # Race: both try to claim at the same time
         results = await asyncio.gather(

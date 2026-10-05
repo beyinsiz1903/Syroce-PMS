@@ -13,6 +13,7 @@ import { ArrowLeft, Wrench, AlertTriangle, CheckCircle, Clock, TrendingUp, Refre
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useTranslation } from 'react-i18next';
+import { roomLabel } from '@/utils/displayIdentifiers';
 import MobileMaintenanceNewTaskModal from './MobileMaintenanceNewTaskModal';
 import MobileMaintenanceAssetHistoryModal from './MobileMaintenanceAssetHistoryModal';
 import MobileMaintenancePartsInventoryModal from './MobileMaintenancePartsInventoryModal';
@@ -462,7 +463,7 @@ const MobileMaintenance = ({
                         <p className="font-bold text-gray-900">{task.title}</p>
                         <p className="text-sm text-gray-600">{task.description}</p>
                         {task.room_id && <p className="text-xs text-gray-500 mt-1">
-                            Oda: {task.room_number || task.room_id}
+                            Oda: {roomLabel(task)}
                           </p>}
                       </div>
                       <Badge className={getPriorityColor(task.priority)}>
@@ -474,7 +475,7 @@ const MobileMaintenance = ({
                         <Badge className={getStatusColor(task.status)}>
                           {task.status}
                         </Badge>
-                        {task.room_id && <Button size="sm" variant="outline" onClick={() => loadAssetHistory(task.room_id, task.room_number || task.room_id)}>
+                        {task.room_id && <Button size="sm" variant="outline" onClick={() => loadAssetHistory(task.room_id, roomLabel(task))}>
                             <History className="w-3 h-3" />
                           </Button>}
                       </div>
@@ -502,7 +503,7 @@ const MobileMaintenance = ({
                       <p className="text-sm text-gray-600">{task.description}</p>
                       <div className="flex items-center space-x-2 mt-1">
                         {task.room_id && <span className="text-xs text-gray-500">
-                            Oda: {task.room_number || task.room_id}
+                            Oda: {roomLabel(task)}
                           </span>}
                         {task.assigned_to && <span className="text-xs text-gray-500">
                             • Atanan: {task.assigned_to}

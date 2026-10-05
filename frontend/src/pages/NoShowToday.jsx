@@ -18,6 +18,9 @@ import {
 } from 'lucide-react';
 import { confirmDialog } from '@/lib/dialogs';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
+import { formatCurrencyBreakdown } from '@/lib/reportCurrency';
 
 const localISODate = (d) => {
   const y = d.getFullYear();
@@ -26,8 +29,63 @@ const localISODate = (d) => {
   return `${y}-${m}-${day}`;
 };
 
-const fmtTRY = (v) =>
-  new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY' }).format(Number(v || 0));
+const fmtMoney = (value, currency) => formatCurrency(value || 0, currency || cachedTenantCurrency());
+
+const moneyBreakdown = (rows, amountGetter) => rows.reduce((totals, row) => {
+  const currency = String(row?.currency || cachedTenantCurrency()).toUpperCase();
+  totals[currency] = (totals[currency] || 0) + Number(amountGetter(row) || 0);
+  return totals;
+}, {});
+
+export const safeText = (value, fallback = '') => {
+  if (typeof value === 'string' || typeof value === 'number') return String(value);
+  if (!value || typeof value !== 'object') return fallback;
+  for (const key of ['label', 'name', 'display_name', 'provider', 'channel', 'value']) {
+    if (typeof value[key] === 'string' || typeof value[key] === 'number') return String(value[key]);
+  }
+  return fallback;
+};
+
+const safeNumber = (value, fallback = 0) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+export const arrivalSourceLabel = (booking) => {
+  const source = booking?.source;
+  const raw = safeText(source)
+    || safeText(booking?.source_channel)
+    || safeText(booking?.channel)
+    || safeText(booking?.provider);
+  if (!raw) return 'Doğrudan';
+  if (raw.toLowerCase() === 'direct') return 'Doğrudan';
+  return raw;
+};
+
+export const normalizeArrival = (booking) => {
+  const raw = booking && typeof booking === 'object' ? booking : {};
+  return {
+    ...raw,
+    id: safeText(raw.id),
+    guest_name: safeText(raw.guest_name),
+    guest_phone: safeText(raw.guest_phone),
+    phone: safeText(raw.phone),
+    room_number: safeText(raw.room_number),
+    confirmation_number: safeText(raw.confirmation_number),
+    status: safeText(raw.status),
+    source: arrivalSourceLabel(raw),
+    estimated_arrival_time: safeText(raw.estimated_arrival_time),
+    check_in: safeText(raw.check_in),
+    check_out: safeText(raw.check_out),
+    notes: safeText(raw.notes),
+    adults: safeNumber(raw.adults, 1),
+    children: safeNumber(raw.children),
+    total_amount: safeNumber(raw.total_amount),
+    first_night_amount: safeNumber(raw.first_night_amount),
+    deposit_amount: safeNumber(raw.deposit_amount),
+    currency: safeText(raw.currency, cachedTenantCurrency()).toUpperCase(),
+  };
+};
 
 // tel:/sms: URI'larında XSS önlemek için telefonu sadece rakam ve + ile sınırla
 const sanitizePhone = (raw) => (raw ? String(raw).replace(/[^\d+]/g, '') : '');
@@ -65,8 +123,9 @@ const PRIMARY_LABEL = (b) =>
   b.confirmation_number || (b.id || '').substring(0, 8).toUpperCase();
 
 const NoShowToday = () => {
-  const { t, i18n } = useTranslation();
-  const [date, setDate] = useState(() => localISODate(new Date()));
+  const { t } = useTranslation();
+  const navigate = useNavigate();
+  const [date, setDate] = useState('');
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [busyId, setBusyId] = useState(null);
@@ -86,14 +145,27 @@ const NoShowToday = () => {
     return () => clearInterval(t);
   }, []);
 
+  useEffect(() => {
+    let active = true;
+    axios.get('/night-audit/business-date')
+      .then((res) => {
+        if (active) setDate(res.data?.business_date || localISODate(new Date()));
+      })
+      .catch(() => {
+        if (active) setDate(localISODate(new Date()));
+      });
+    return () => { active = false; };
+  }, []);
+
   const load = useCallback(async () => {
+    if (!date) return;
     setLoading(true);
     setSelected(new Set());
     try {
       const res = await axios.get(`/pms/arrivals?start_date=${date}&end_date=${date}&limit=500`);
-      const list = res.data?.bookings || [];
+      const list = Array.isArray(res.data?.bookings) ? res.data.bookings.map(normalizeArrival) : [];
       const pending = list.filter((b) =>
-        ['confirmed', 'guaranteed', 'pending'].includes((b.status || '').toLowerCase()),
+        ['confirmed', 'guaranteed'].includes(b.status.toLowerCase()),
       );
       setItems(pending);
     } catch (e) {
@@ -113,11 +185,11 @@ const NoShowToday = () => {
     let arr = items.filter((b) => {
       const st = (b.status || '').toLowerCase();
       if (statusFilter !== 'all' && st !== statusFilter) return false;
-      if (otaOnly && !(b.source && b.source !== 'direct')) return false;
+      if (otaOnly && b.source.toLowerCase() === 'doğrudan') return false;
       if (!q) return true;
       return String(b.room_number || '').includes(search)
-        || (b.guest_name || '').toLowerCase().includes(q)
-        || (b.confirmation_number || '').toLowerCase().includes(q);
+        || b.guest_name.toLowerCase().includes(q)
+        || b.confirmation_number.toLowerCase().includes(q);
     });
     arr = [...arr].sort((a, b) => {
       const ea = a.estimated_arrival_time || '14:00';
@@ -127,7 +199,7 @@ const NoShowToday = () => {
     return arr;
   }, [items, search, statusFilter, otaOnly, tick]);
 
-  const totalLoss = items.reduce((s, b) => s + (b.total_amount || 0), 0);
+  const pendingValueByCurrency = moneyBreakdown(items, (booking) => booking.total_amount);
   const guaranteedCount = items.filter((b) => (b.status || '').toLowerCase() === 'guaranteed').length;
   const overdueCount = items.filter((b) => {
     const m = minutesPastETA(date, b.estimated_arrival_time);
@@ -167,9 +239,11 @@ const NoShowToday = () => {
   const bulkNoShow = async () => {
     if (selected.size === 0) return;
     const list = visible.filter((b) => selected.has(b.id));
-    const totalPen = list.reduce((s, b) => s + estimatedPenalty(b), 0);
+    const totalPenByCurrency = moneyBreakdown(list, estimatedPenalty);
+    const hasPenalty = Object.values(totalPenByCurrency).some((amount) => Number(amount) !== 0);
+    const totalPenText = formatCurrencyBreakdown(totalPenByCurrency, 0, cachedTenantCurrency());
     const ok = await confirmDialog({
-      message: `${list.length} rezervasyon no-show işaretlensin mi?` + (totalPen > 0 ? `\nToplam tahmini ceza: ${fmtTRY(totalPen)} folio'ya post edilecek.` : ''),
+      message: `${list.length} rezervasyon no-show işaretlensin mi?` + (hasPenalty ? `\nGarantili rezervasyonların tahmini risk tutarı: ${totalPenText}.` : ''),
       variant: 'danger',
     });
     if (!ok) return;
@@ -199,20 +273,38 @@ const NoShowToday = () => {
     <div className="p-4 md:p-6 space-y-5 max-w-6xl mx-auto">
       <PageHeader
         icon={UserX}
-        title={t('cm.pages_NoShowToday.bekleyen_no_show_adaylari')}
-        subtitle={t('cm.pages_NoShowToday.bugun_gelmesi_gereken_ama_henuz_check_in')}
+        title="Bekleyen Varışlar ve No-Show Kontrolü"
+        subtitle="PMS iş gününde gelmesi beklenen rezervasyonları doğrulayın; iletişim kontrolünden sonra no-show işlemini uygulayın."
         actions={
-          <Button variant="outline" size="sm" onClick={load} disabled={loading}>
-            <RefreshCw className={`w-4 h-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} /> {t('cm.pages_NoShowToday.yenile')}
-          </Button>
+          <>
+            <Button variant="outline" size="sm" onClick={() => navigate('/app/reservation-calendar')}>
+              <Calendar className="w-4 h-4 mr-1.5" /> Rezervasyon Takvimi
+            </Button>
+            <Button variant="outline" size="sm" onClick={load} disabled={loading || !date}>
+              <RefreshCw className={`w-4 h-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} /> {t('cm.pages_NoShowToday.yenile')}
+            </Button>
+          </>
         }
       />
+
+      <Card className="border-sky-200 bg-sky-50/70">
+        <CardContent className="py-4 flex items-start gap-3">
+          <AlertTriangle className="w-5 h-5 text-sky-700 mt-0.5 shrink-0" />
+          <div>
+            <p className="font-semibold text-slate-900">Günlük ön büro kontrolü</p>
+            <p className="text-sm text-slate-600 mt-0.5">
+              No-show işlemi rezervasyonu kalıcı statüye taşır, oda envanterini serbest bırakır ve denetim kaydı oluşturur.
+              Ücret veya ceza gerekiyorsa otel politikasına göre folyo ekranından ayrıca işlenmelidir.
+            </p>
+          </div>
+        </CardContent>
+      </Card>
 
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
         <KpiCard icon={Calendar} label={t('cm.pages_NoShowToday.bekleyen_varis')} value={items.length} intent="info" />
         <KpiCard icon={AlertTriangle} label="Garantili Bekleyen" value={guaranteedCount} intent="warning" highlight={guaranteedCount > 0} />
         <KpiCard icon={Clock} label={t('cm.pages_NoShowToday.eta_60dk_gecen')} value={overdueCount} intent="danger" highlight={overdueCount > 0} />
-        <KpiCard icon={UserX} label={t('cm.pages_NoShowToday.potansiyel_kayip')} value={fmtTRY(totalLoss)} intent="danger" />
+        <KpiCard icon={UserX} label="Bekleyen Rez. Tutarı" value={formatCurrencyBreakdown(pendingValueByCurrency, 0, cachedTenantCurrency())} intent="neutral" />
       </div>
 
       {/* Filtre çubuğu */}
@@ -238,7 +330,6 @@ const NoShowToday = () => {
                 <option value="all">{t('cm.pages_NoShowToday.tumu')}</option>
                 <option value="guaranteed">Garantili</option>
                 <option value="confirmed">{t('cm.pages_NoShowToday.onayli')}</option>
-                <option value="pending">{t('cm.pages_NoShowToday.beklemede')}</option>
               </select>
             </div>
             <label className="inline-flex items-center gap-2 text-sm text-slate-700 h-9 cursor-pointer">
@@ -325,7 +416,7 @@ const NoShowToday = () => {
                               ETA +{overdueMin}dk
                             </StatusBadge>
                           )}
-                          {b.source && b.source !== 'direct' && (
+                          {b.source !== 'Doğrudan' && (
                             <StatusBadge intent="info">{b.source}</StatusBadge>
                           )}
                           {phone && (
@@ -352,12 +443,12 @@ const NoShowToday = () => {
                           </div>
                           <div>
                             <p className="text-slate-500 text-xs">{t('cm.pages_NoShowToday.tutar')}</p>
-                            <p className="font-semibold">{fmtTRY(b.total_amount)}</p>
+                            <p className="font-semibold">{fmtMoney(b.total_amount, b.currency)}</p>
                           </div>
                           <div>
                             <p className="text-slate-500 text-xs">Ceza (tahmini)</p>
                             <p className={`font-semibold ${penalty > 0 ? 'text-rose-700' : 'text-slate-400'}`}>
-                              {penalty > 0 ? fmtTRY(penalty) : '—'}
+                              {penalty > 0 ? fmtMoney(penalty, b.currency) : '—'}
                             </p>
                           </div>
                         </div>
@@ -406,19 +497,19 @@ const NoShowToday = () => {
                 <div className="flex justify-between"><span className="text-slate-500">{t('cm.pages_NoShowToday.oda_e4b47')}</span><strong>{confirmTarget.room_number || '—'}</strong></div>
                 <div className="flex justify-between"><span className="text-slate-500">{t('cm.pages_NoShowToday.statu_ee6e2')}</span><strong>{STATUS_TR[(confirmTarget.status || '').toLowerCase()] || confirmTarget.status}</strong></div>
                 <div className="flex justify-between"><span className="text-slate-500">ETA</span><strong>{confirmTarget.estimated_arrival_time || '14:00'}</strong></div>
-                <div className="flex justify-between"><span className="text-slate-500">{t('cm.pages_NoShowToday.toplam_tutar')}</span><strong>{fmtTRY(confirmTarget.total_amount)}</strong></div>
+                <div className="flex justify-between"><span className="text-slate-500">{t('cm.pages_NoShowToday.toplam_tutar')}</span><strong>{fmtMoney(confirmTarget.total_amount, confirmTarget.currency)}</strong></div>
               </div>
               {estimatedPenalty(confirmTarget) > 0 ? (
                 <div className="bg-rose-50 border border-rose-200 p-3 rounded-md text-sm">
-                  <strong className="text-rose-700">{t('cm.pages_NoShowToday.ceza_onizlemesi')}</strong>{' '}
-                  {fmtTRY(estimatedPenalty(confirmTarget))} {t('cm.pages_NoShowToday.folio_ya_no_show_cezasi_olarak_post_edil')}
+                  <strong className="text-rose-700">Tahmini risk tutarı:</strong>{' '}
+                  {fmtMoney(estimatedPenalty(confirmTarget), confirmTarget.currency)}
                   <p className="text-xs text-slate-600 mt-1">
-                    Hesaplama: {confirmTarget.first_night_amount ? 'ilk gece tutarı' : confirmTarget.deposit_amount ? 'depozit tutarı' : 'toplam rezervasyon tutarı'}{t('cm.pages_NoShowToday.otelinizin_politikasina_gore_degisebilir')}
+                    Bu bir bilgilendirme tahminidir. Otomatik ücret oluşturulmaz; gerekiyorsa folyo ekranından otel politikasına göre ayrıca işleyin.
                   </p>
                 </div>
               ) : (
                 <div className="bg-slate-50 border border-slate-200 p-3 rounded-md text-xs text-slate-600">
-                  {t('cm.pages_NoShowToday.ceza_yok_rezervasyon_garantili_degil_vey')}
+                  Otomatik ücret oluşturulmaz. Gerekli ücretleri otel politikasına göre folyo ekranından işleyin.
                 </div>
               )}
             </div>
@@ -449,10 +540,10 @@ const NoShowToday = () => {
                 <div><span className="text-slate-500">{t('cm.pages_NoShowToday.giris')}</span> <strong>{(detail.check_in || '').slice(0, 10)}</strong></div>
                 <div><span className="text-slate-500">{t('cm.pages_NoShowToday.cikis')}</span> <strong>{(detail.check_out || '').slice(0, 10)}</strong></div>
                 <div><span className="text-slate-500">{t('cm.pages_NoShowToday.konuk_e5c88')}</span> <strong>{detail.adults || 1}/{detail.children || 0}</strong></div>
-                <div><span className="text-slate-500">{t('cm.pages_NoShowToday.tutar_64d2c')}</span> <strong>{fmtTRY(detail.total_amount)}</strong></div>
+                <div><span className="text-slate-500">{t('cm.pages_NoShowToday.tutar_64d2c')}</span> <strong>{fmtMoney(detail.total_amount, detail.currency)}</strong></div>
                 {detail.source && <div><span className="text-slate-500">Kanal:</span> <strong>{detail.source}</strong></div>}
                 {detail.deposit_amount > 0 && (
-                  <div><span className="text-slate-500">Depozit:</span> <strong>{fmtTRY(detail.deposit_amount)}</strong></div>
+                  <div><span className="text-slate-500">Depozit:</span> <strong>{fmtMoney(detail.deposit_amount, detail.currency)}</strong></div>
                 )}
                 {(detail.guest_phone || detail.phone) && (
                   <div className="col-span-2 flex items-center gap-2">

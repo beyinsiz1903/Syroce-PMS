@@ -8,6 +8,8 @@ import { Moon, PlayCircle, CheckCircle, AlertTriangle, Clock, TrendingUp, Calend
 
 import { alertDialog } from '@/lib/dialogs';
 import { useTranslation } from 'react-i18next';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
+import { formatCurrencyBreakdown } from '@/lib/reportCurrency';
 // Helper to get yesterday in YYYY-MM-DD format
 const getDefaultAuditDate = () => {
   const d = new Date();
@@ -17,6 +19,7 @@ const getDefaultAuditDate = () => {
 
 const NightAuditModule = () => {
   const { t } = useTranslation();
+  const money = (value, currency) => formatCurrency(value, currency || cachedTenantCurrency());
   const [auditDate, setAuditDate] = useState(getDefaultAuditDate);
   const [status, setStatus] = useState(null);
   const [report, setReport] = useState(null);
@@ -235,7 +238,7 @@ const NightAuditModule = () => {
               <div className="text-xs text-gray-500 mb-1">{t('cm.components_NightAuditModule.toplam_gelir')}</div>
               <div className="text-xl font-semibold">
                 {currentAudit?.total_revenue != null
-                  ? `€${currentAudit.total_revenue.toFixed(2)}`
+                  ? formatCurrencyBreakdown(currentAudit.total_revenue_by_currency, currentAudit.total_revenue, currentAudit.currency || cachedTenantCurrency())
                   : '-'}
               </div>
             </div>
@@ -262,7 +265,7 @@ const NightAuditModule = () => {
                   <span className="font-medium">Statistikler:</span>{' '}
                   {startResult.statistics && (
                     <>
-                      Odalar: {startResult.statistics.total_rooms} | Doluluk: {startResult.statistics.occupancy_pct}{t('cm.components_NightAuditModule.toplam_gelir_bd4d6')}{startResult.statistics.total_revenue}
+                      Odalar: {startResult.statistics.total_rooms} | Doluluk: {startResult.statistics.occupancy_pct}{t('cm.components_NightAuditModule.toplam_gelir_bd4d6')}{formatCurrencyBreakdown(startResult.statistics.total_revenue_by_currency, startResult.statistics.total_revenue)}
                     </>
                   )}
                 </div>
@@ -288,8 +291,8 @@ const NightAuditModule = () => {
               {autoPostingResult && (
                 <div className="mt-2 text-xs text-gray-600">
                   <span className="font-medium">{t('cm.components_NightAuditModule.sonuc')}</span>{' '}
-                  {autoPostingResult.posted_count} rezervasyon, toplam €
-                  {autoPostingResult.total_amount_posted}
+                  {autoPostingResult.posted_count} rezervasyon, toplam{' '}
+                  {formatCurrencyBreakdown(autoPostingResult.total_amount_posted_by_currency, autoPostingResult.total_amount_posted, autoPostingResult.currency || cachedTenantCurrency())}
                 </div>
               )}
             </div>
@@ -322,8 +325,8 @@ const NightAuditModule = () => {
               {noShowResult && (
                 <div className="mt-2 text-xs text-gray-600">
                   <span className="font-medium">{t('cm.components_NightAuditModule.sonuc_5e347')}</span>{' '}
-                  {noShowResult.no_shows_processed} rezervasyon, toplam €
-                  {noShowResult.total_no_show_charges}
+                  {noShowResult.no_shows_processed} rezervasyon, toplam{' '}
+                  {formatCurrencyBreakdown(noShowResult.total_no_show_charges_by_currency, noShowResult.total_no_show_charges, noShowResult.currency || cachedTenantCurrency())}
                 </div>
               )}
             </div>
@@ -391,7 +394,7 @@ const NightAuditModule = () => {
                       <td className="py-2 pr-4 capitalize">{row._id}</td>
                       <td className="py-2 pr-4 text-right">{row.count}</td>
                       <td className="py-2 pr-4 text-right">
-                        €{row.revenue?.toFixed ? row.revenue.toFixed(2) : row.revenue}
+                        {money(row.revenue, row.currency)}
                       </td>
                     </tr>
                   ))}

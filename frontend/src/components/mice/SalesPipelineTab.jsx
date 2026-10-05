@@ -10,6 +10,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { alertDialog, confirmDialog } from '@/lib/dialogs';
 import { useTranslation } from 'react-i18next';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
+import { formatCurrencyBreakdown } from '@/lib/reportCurrency';
 
 const STAGES = [
   { key: 'lead',       label: 'Lead',      cls: 'bg-slate-100 text-slate-700' },
@@ -24,7 +26,7 @@ const STAGE_BY_KEY = Object.fromEntries(STAGES.map(s => [s.key, s]));
 const blank = {
   title: '', account_id: '', event_type: 'wedding',
   expected_start: '', expected_end: '', pax: 0,
-  estimated_value: 0, currency: 'TRY', probability: 50,
+  estimated_value: 0, currency: cachedTenantCurrency(), probability: 50,
   source: '', notes: '',
 };
 
@@ -79,14 +81,14 @@ export default function SalesPipelineTab({ accounts = [] }) {
       });
       setTransitionFor(null); setReason('');
       await load();
-    } catch (e) { await alertDialog({ message: 'Hata: ' + (e.response?.data?.detail || e.message) }); }
+    } catch (e) { await alertDialog({ message: 'İşlem Hatası: ' + (e.response?.data?.detail || e.message) }); }
   };
 
   const submitActivity = async () => {
     try {
       await axios.post(`/mice/sales/opportunities/${activityFor.id}/activities`, activity);
       setActivityFor(null); setActivity({ type: 'call', subject: '', body: '', outcome: 'positive' });
-    } catch (e) { await alertDialog({ message: 'Hata: ' + (e.response?.data?.detail || e.message) }); }
+    } catch (e) { await alertDialog({ message: 'İşlem Hatası: ' + (e.response?.data?.detail || e.message) }); }
   };
 
   const remove = async (id) => {
@@ -95,7 +97,7 @@ export default function SalesPipelineTab({ accounts = [] }) {
     catch (e) { await alertDialog({ message: e.response?.data?.detail || e.message }); }
   };
 
-  const fmtCurrency = (v) => `₺${Number(v || 0).toLocaleString('tr-TR')}`;
+  const fmtCurrency = (value, currency = cachedTenantCurrency()) => formatCurrency(value, currency);
 
   return (
     <div className="space-y-4">
@@ -110,7 +112,7 @@ export default function SalesPipelineTab({ accounts = [] }) {
                 <CardContent className="p-3">
                   <Badge className={meta.cls}>{meta.label}</Badge>
                   <div className="text-2xl font-bold mt-1">{s.count}</div>
-                  <div className="text-xs text-gray-500">{fmtCurrency(s.total_value)}</div>
+                  <div className="text-xs text-gray-500">{formatCurrencyBreakdown(s.total_value_by_currency || {}) || fmtCurrency(s.total_value)}</div>
                 </CardContent>
               </Card>
             );
@@ -122,15 +124,15 @@ export default function SalesPipelineTab({ accounts = [] }) {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <Card><CardContent className="p-3">
             <div className="text-xs text-gray-500">{t('cm.components_mice_SalesPipelineTab.acik_pipeline')}</div>
-            <div className="text-xl font-bold text-emerald-600">{fmtCurrency(pipeline.open_value)}</div>
+            <div className="text-xl font-bold text-emerald-600">{formatCurrencyBreakdown(pipeline.open_value_by_currency || {}) || fmtCurrency(pipeline.open_value)}</div>
           </CardContent></Card>
           <Card><CardContent className="p-3">
             <div className="text-xs text-gray-500">{t('cm.components_mice_SalesPipelineTab.olasilik_agirlikli')}</div>
-            <div className="text-xl font-bold text-blue-600">{fmtCurrency(pipeline.weighted_open_value)}</div>
+            <div className="text-xl font-bold text-blue-600">{formatCurrencyBreakdown(pipeline.weighted_open_value_by_currency || {}) || fmtCurrency(pipeline.weighted_open_value)}</div>
           </CardContent></Card>
           <Card><CardContent className="p-3">
             <div className="text-xs text-gray-500">{t('cm.components_mice_SalesPipelineTab.kazanilan')}</div>
-            <div className="text-xl font-bold text-violet-600">{fmtCurrency(pipeline.won_value)}</div>
+            <div className="text-xl font-bold text-violet-600">{formatCurrencyBreakdown(pipeline.won_value_by_currency || {}) || fmtCurrency(pipeline.won_value)}</div>
           </CardContent></Card>
           <Card><CardContent className="p-3">
             <div className="text-xs text-gray-500">{t('cm.components_mice_SalesPipelineTab.kazanma_orani')}</div>
@@ -179,7 +181,7 @@ export default function SalesPipelineTab({ accounts = [] }) {
                     <td className="p-2">{o.event_type || '-'}</td>
                     <td className="p-2 font-mono text-xs">{o.expected_start || '-'}{o.expected_end && ` → ${o.expected_end}`}</td>
                     <td className="p-2 text-right">{o.pax || 0}</td>
-                    <td className="p-2 text-right">{fmtCurrency(o.estimated_value)}</td>
+                    <td className="p-2 text-right">{fmtCurrency(o.estimated_value, o.currency)}</td>
                     <td className="p-2 text-center">{o.probability}%</td>
                     <td className="p-2"><Badge className={meta.cls}>{meta.label}</Badge></td>
                     <td className="p-2 text-right whitespace-nowrap">
@@ -254,6 +256,11 @@ export default function SalesPipelineTab({ accounts = [] }) {
               <Label>{t('cm.components_mice_SalesPipelineTab.tahmini_tutar')}</Label>
               <Input type="number" value={form.estimated_value}
                      onChange={(e) => setForm({ ...form, estimated_value: e.target.value })} />
+            </div>
+            <div>
+              <Label>Para Birimi</Label>
+              <Input required maxLength={3} value={form.currency || cachedTenantCurrency()}
+                     onChange={(e) => setForm({ ...form, currency: e.target.value.toUpperCase() })} />
             </div>
             <div>
               <Label>{t('cm.components_mice_SalesPipelineTab.olasilik')}</Label>

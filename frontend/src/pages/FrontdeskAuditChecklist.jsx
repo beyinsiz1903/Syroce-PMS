@@ -8,6 +8,9 @@ import { PageHeader } from "@/components/ui/page-header";
 import { KpiCard } from "@/components/ui/kpi-card";
 import { Calendar, AlertTriangle, CheckCircle, RefreshCw, Users, FileText, LogOut, DoorOpen } from "lucide-react";
 import { useTranslation } from 'react-i18next';
+import { folioLabel, reservationLabel } from '@/utils/displayIdentifiers';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
+import { formatCurrencyBreakdown } from '@/lib/reportCurrency';
 
 const FrontdeskAuditChecklist = ({ user, tenant, onLogout }) => {
   const { t } = useTranslation();
@@ -31,6 +34,7 @@ const FrontdeskAuditChecklist = ({ user, tenant, onLogout }) => {
   }, []);
 
   const summary = data?.summary || {};
+  const money = (value, currency) => formatCurrency(value, currency || tenant?.currency || cachedTenantCurrency());
 
   return (
     <>
@@ -70,13 +74,9 @@ const FrontdeskAuditChecklist = ({ user, tenant, onLogout }) => {
             intent="neutral"
             label="Açık Folio'lar"
             value={summary.open_folio_count ?? "-"}
-            sub={`Toplam Bakiye: €${
-              summary.total_open_balance != null
-                ? summary.total_open_balance.toFixed
-                  ? summary.total_open_balance.toFixed(2)
-                  : summary.total_open_balance
-                : "-"
-            }`}
+            sub={`Toplam Bakiye: ${summary.total_open_balance != null
+              ? formatCurrencyBreakdown(summary.total_open_balance_by_currency, summary.total_open_balance, summary.currency || tenant?.currency || cachedTenantCurrency())
+              : "-"}`}
           />
           <KpiCard
             icon={AlertTriangle}
@@ -128,7 +128,7 @@ const FrontdeskAuditChecklist = ({ user, tenant, onLogout }) => {
                     <tbody>
                       {data.unchecked_in_arrivals.map((a) => (
                         <tr key={a.booking_id} className="border-b last:border-0 hover:bg-gray-50">
-                          <td className="py-2 pr-3 font-mono text-[11px]">{a.reservation_number || a.booking_id}</td>
+                          <td className="py-2 pr-3 text-[11px]">{reservationLabel(a)}</td>
                           <td className="py-2 pr-3">{a.guest_name}</td>
                           <td className="py-2 pr-3">{a.room_number || "-"}</td>
                           <td className="py-2 pr-3">
@@ -188,11 +188,11 @@ const FrontdeskAuditChecklist = ({ user, tenant, onLogout }) => {
                     <tbody>
                       {data.open_folios.map((f) => (
                         <tr key={f.folio_id} className="border-b last:border-0 hover:bg-gray-50">
-                          <td className="py-2 pr-3 font-mono text-[11px]">{f.folio_number || f.folio_id}</td>
+                          <td className="py-2 pr-3 text-[11px]">{folioLabel(f)}</td>
                           <td className="py-2 pr-3 text-[11px] capitalize">{f.folio_type}</td>
                           <td className="py-2 pr-3">{f.owner_name || "-"}</td>
                           <td className="py-2 pr-3 text-right">
-                            €{f.balance != null ? f.balance.toFixed ? f.balance.toFixed(2) : f.balance : "-"}
+                            {f.balance != null ? money(f.balance, f.currency) : "-"}
                           </td>
                           <td className="py-2 pr-3 text-[11px]">
                             {f.created_at ? new Date(f.created_at).toLocaleDateString("tr-TR") : "-"}
@@ -236,10 +236,10 @@ const FrontdeskAuditChecklist = ({ user, tenant, onLogout }) => {
                     <tbody>
                       {data.unbalanced_folios.map((f) => (
                         <tr key={f.folio_id} className="border-b last:border-0 hover:bg-gray-50">
-                          <td className="py-2 pr-3 font-mono text-[11px]">{f.folio_number || f.folio_id}</td>
+                          <td className="py-2 pr-3 text-[11px]">{folioLabel(f)}</td>
                           <td className="py-2 pr-3">{f.owner_name || "-"}</td>
                           <td className="py-2 pr-3 text-right">
-                            €{f.balance != null ? f.balance.toFixed ? f.balance.toFixed(2) : f.balance : "-"}
+                            {f.balance != null ? money(f.balance, f.currency) : "-"}
                           </td>
                           <td className="py-2 pr-3 text-right">{f.days_open ?? "-"}</td>
                         </tr>
@@ -282,14 +282,14 @@ const FrontdeskAuditChecklist = ({ user, tenant, onLogout }) => {
                     <tbody>
                       {data.overdue_departures.map((o) => (
                         <tr key={o.booking_id} className="border-b last:border-0 hover:bg-gray-50">
-                          <td className="py-2 pr-3 font-mono text-[11px]">{o.reservation_number || o.booking_id}</td>
+                          <td className="py-2 pr-3 text-[11px]">{reservationLabel(o)}</td>
                           <td className="py-2 pr-3">{o.guest_name || "-"}</td>
                           <td className="py-2 pr-3">{o.room_number || "-"}</td>
                           <td className="py-2 pr-3 text-[11px]">
                             {o.check_out ? new Date(o.check_out).toLocaleString("tr-TR") : "-"}
                           </td>
                           <td className="py-2 pr-3 text-right">
-                            €{o.balance != null ? o.balance.toFixed ? o.balance.toFixed(2) : o.balance : "-"}
+                            {o.balance != null ? money(o.balance, o.currency) : "-"}
                           </td>
                         </tr>
                       ))}

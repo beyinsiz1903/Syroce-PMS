@@ -10,6 +10,7 @@ from core.database import db
 from core.security import get_current_user, security
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_op
+from modules.pms_core.stay_night_metrics import load_stay_night_metrics
 
 from ._common import (
     PingTestRequest,
@@ -38,36 +39,24 @@ async def get_7day_trend(
         days = [today - timedelta(days=i) for i in range(6, -1, -1)]
         tenant_id = current_user.tenant_id
 
+        stay_metrics = await load_stay_night_metrics(db, tenant_id, days[0], days[-1])
+        stay_by_date = {row["date"]: row for row in stay_metrics}
+
         async def _day_metrics(date):
             date_str = date.isoformat()
             arrivals_q = db.bookings.count_documents({"check_in": date_str, "tenant_id": tenant_id})
             departures_q = db.bookings.count_documents({"check_out": date_str, "tenant_id": tenant_id})
-            occupancy_q = db.bookings.count_documents(
-                {
-                    "check_in": {"$lte": date_str},
-                    "check_out": {"$gt": date_str},
-                    "status": "checked_in",
-                    "tenant_id": tenant_id,
-                }
-            )
-            daily_bookings_q = db.bookings.find(
-                {
-                    "check_in": {"$lte": date_str},
-                    "check_out": {"$gt": date_str},
-                    "status": {"$in": ["checked_in", "checked_out"]},
-                    "tenant_id": tenant_id,
-                },
-                {"_id": 0, "total_amount": 1},
-            ).to_list(500)
-            arrivals, departures, occupancy, daily_bookings = await _asyncio.gather(arrivals_q, departures_q, occupancy_q, daily_bookings_q)
-            daily_revenue = sum(b.get("total_amount", 0) for b in daily_bookings)
+            arrivals, departures = await _asyncio.gather(arrivals_q, departures_q)
+            stay = stay_by_date[date_str]
             return {
                 "date": date_str,
                 "day_name": date.strftime("%a"),
                 "arrivals": arrivals,
                 "departures": departures,
-                "occupancy": occupancy,
-                "revenue": round(daily_revenue, 2),
+                "occupancy": stay["occupied_rooms"],
+                "revenue": stay["revenue"],
+                "adr": stay["adr"],
+                "revpar": stay["revpar"],
             }
 
         trend_data = await _asyncio.gather(*(_day_metrics(d) for d in days))
@@ -194,45 +183,9 @@ async def get_occupancy_trend(days: int = 30, credentials: HTTPAuthorizationCred
     """Get occupancy trend for the last N days"""
     current_user = await get_current_user(credentials)
 
-    end_date = datetime.now(UTC)
-    start_date = end_date - timedelta(days=days)
-
-    # Get all bookings in date range.
-    # Whitelist: yalnızca odayı GERÇEKTEN işgal eden (veya etmiş) statüler.
-    # no_show/cancelled/pending → odayı işgal etmez, doluluk hesabına dahil değildir.
-    bookings = await db.bookings.find(
-        {
-            "tenant_id": current_user.tenant_id,
-            "status": {"$in": ["confirmed", "guaranteed", "checked_in", "checked_out"]},
-            "$and": [{"check_out": {"$gt": start_date.isoformat()}}, {"check_in": {"$lt": end_date.isoformat()}}],
-        }
-    ).to_list(length=10000)
-
-    # Get total rooms
-    total_rooms = await db.rooms.count_documents({"tenant_id": current_user.tenant_id})
-
-    # Calculate daily occupancy
-    trend_data = []
-    current = start_date
-
-    while current <= end_date:
-        # Count rooms occupied on this date
-        occupied = 0
-        for booking in bookings:
-            check_in = datetime.fromisoformat(booking["check_in"].replace("Z", "+00:00"))
-            check_out = datetime.fromisoformat(booking["check_out"].replace("Z", "+00:00"))
-
-            if check_in.date() <= current.date() < check_out.date():
-                occupied += 1
-
-        raw_rate = (occupied / total_rooms * 100) if total_rooms > 0 else 0
-        occupancy_rate = min(raw_rate, 100.0)
-
-        trend_data.append(
-            {"date": current.strftime("%Y-%m-%d"), "occupancy_rate": round(occupancy_rate, 2), "occupancy_rate_raw": round(raw_rate, 2), "occupied_rooms": occupied, "total_rooms": total_rooms}
-        )
-
-        current += timedelta(days=1)
+    end_date = datetime.now(UTC).date()
+    start_date = end_date - timedelta(days=max(days - 1, 0))
+    trend_data = await load_stay_night_metrics(db, current_user.tenant_id, start_date, end_date)
 
     return {"success": True, "days": days, "trend": trend_data, "average_occupancy": round(sum(d["occupancy_rate"] for d in trend_data) / len(trend_data), 2) if trend_data else 0}
 
@@ -273,45 +226,18 @@ async def get_revenue_trend(days: int = 30, credentials: HTTPAuthorizationCreden
 @sub_router.get("/analytics/booking-trends")
 @cached(ttl=300, key_prefix="analytics_booking_trends")  # v95 — 5 min cache
 async def get_booking_trends(days: int = 30, credentials: HTTPAuthorizationCredentials = Depends(security)):
-    """Get booking trends for the last N days.
-
-    v95 — Replaced O(N×D) Python loop with single Mongo aggregation pipeline.
-    Was: fetch up to 10k bookings, parse ISO date for each × 30 iterations (~14k ops on 469 docs).
-    Now: $group on $substr(created_at, 0, 10) — server-side, single round-trip.
-    """
+    """Get canonical stay-night, ADR and RevPAR trends for the last N days."""
     current_user = await get_current_user(credentials)
 
-    end_date = datetime.now(UTC)
-    start_date = end_date - timedelta(days=days)
-
-    # Aggregation: count bookings per day server-side.
-    # created_at is stored as ISO string ("YYYY-MM-DDTHH:MM:SS"), so $substr 0..10 = date.
-    pipeline = [
-        {
-            "$match": {
-                "tenant_id": current_user.tenant_id,
-                "created_at": {
-                    "$gte": start_date.isoformat(),
-                    "$lte": end_date.isoformat(),
-                },
-            }
-        },
-        {"$project": {"_id": 0, "date": {"$substrCP": ["$created_at", 0, 10]}}},
-        {"$group": {"_id": "$date", "count": {"$sum": 1}}},
-    ]
-    counts: dict[str, int] = {}
-    async for row in db.bookings.aggregate(pipeline):
-        counts[row["_id"]] = row["count"]
-
-    # Densify: emit a row for every day in range (zero-fill missing).
-    trend_data = []
-    current = start_date
-    while current <= end_date:
-        date_str = current.strftime("%Y-%m-%d")
-        trend_data.append({"date": date_str, "bookings": counts.get(date_str, 0)})
-        current += timedelta(days=1)
-
-    total_bookings = sum(d["bookings"] for d in trend_data)
-    average_daily = round(total_bookings / len(trend_data), 2) if trend_data else 0
-
-    return {"success": True, "days": days, "trend": trend_data, "total_bookings": total_bookings, "average_daily_bookings": average_daily}
+    end_date = datetime.now(UTC).date()
+    start_date = end_date - timedelta(days=max(days - 1, 0))
+    metrics = await load_stay_night_metrics(db, current_user.tenant_id, start_date, end_date)
+    trend_data = [{**row, "bookings": row["occupied_rooms"]} for row in metrics]
+    total_room_nights = sum(row["occupied_rooms"] for row in metrics)
+    return {
+        "success": True,
+        "days": days,
+        "trend": trend_data,
+        "total_room_nights": total_room_nights,
+        "average_daily_occupied_rooms": round(total_room_nights / len(metrics), 2) if metrics else 0,
+    }

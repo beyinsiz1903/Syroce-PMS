@@ -143,7 +143,7 @@ from datetime import UTC
 
 from starlette.middleware.cors import CORSMiddleware
 
-  # noqa: E402
+# noqa: E402
 
 _cors_raw = os.environ.get("CORS_ORIGINS", "")
 _cors_origins = [o.strip() for o in _cors_raw.split(",") if o.strip()] if _cors_raw else []
@@ -313,27 +313,27 @@ from fastapi.responses import JSONResponse
 try:
     from domains.channel_manager.providers.exely.errors import ExelyError
 
-
-
     @app.exception_handler(ExelyError)
     async def exely_error_handler(request: Request, exc: ExelyError):
         return JSONResponse(status_code=502, content={"detail": f"Exely provider error: {exc.message}"})
 except ImportError:
     pass
 
+
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     import logging
     import uuid
+
     error_id = str(uuid.uuid4())
-    logging.getLogger("uvicorn.error").error(
-        f"Unhandled application exception [error_id={error_id}] method={request.method} path={request.url.path}"
-    )
+    logging.getLogger("uvicorn.error").error(f"Unhandled application exception [error_id={error_id}] method={request.method} path={request.url.path}")
     from fastapi.responses import JSONResponse
+
     return JSONResponse(
         status_code=500,
         content={"detail": "Internal Server Error"},
     )
+
 
 # ── 422 validation handler: NaN/Infinity input echo'sunu temizle ───────
 # Pydantic 422 hatalarında payload input'u response'a yansıtılır;
@@ -812,6 +812,13 @@ from startup import on_shutdown, on_startup  # noqa: E402
 
 @register_startup
 async def _startup():
+    # Atlas' async resolver may yield an EAI_AGAIN Future during a transient
+    # DNS flap.  The database driver retries it, but asyncio otherwise emits an
+    # unowned ERROR-level event for each attempt.  Preserve every non-DNS error
+    # and escalate a sustained resolver outage; only one-off retries are demoted.
+    from core.asyncio_exception_guard import TransientAsyncioDnsGuard
+
+    TransientAsyncioDnsGuard().install()
     await on_startup(app)
     try:
         from routers.integration_credentials import load_credentials_to_env
@@ -956,6 +963,34 @@ async def _startup():
                 "EXELY_WHITELIST_AUDIT_ERROR type=%s — startup audit failed; readiness check still active.",
                 type(_exely_exc).__name__,
             )
+
+
+@register_startup
+async def _start_observability_trace_flush():
+    """Share request traces across uvicorn workers without blocking startup."""
+    import asyncio
+
+    from modules.observability.distributed_tracing import tracing
+
+    app.state.observability_trace_flush_task = asyncio.create_task(
+        tracing.run_flush_loop(),
+        name="observability-trace-flush",
+    )
+
+
+@register_shutdown
+async def _stop_observability_trace_flush():
+    import asyncio
+    from contextlib import suppress
+
+    from modules.observability.distributed_tracing import tracing
+
+    task = getattr(app.state, "observability_trace_flush_task", None)
+    if task:
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
+    await tracing.flush_to_db()
 
 
 @register_shutdown

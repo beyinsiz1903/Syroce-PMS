@@ -15,6 +15,7 @@ from core.crypto.service import get_crypto_service
 PROD_URL = os.environ.get("PROD_MONGO_URL") or os.environ.get("MONGO_URL")
 PROD_DB = os.environ.get("PROD_DB_NAME") or os.environ.get("DB_NAME")
 
+
 async def analyze_collection(db, svc, collection_name: str, doc_generator, val_extractor, aad_extractor):
     print(f"\n==================================================")
     print(f"DIAGNOSTIC: {collection_name}")
@@ -56,13 +57,7 @@ async def main():
     print("==================================================")
     print("RUNTIME ENV CHECK")
     print("==================================================")
-    keys = [
-        "CM_MASTER_KEY_CURRENT",
-        "CM_MASTER_KEY_PREVIOUS",
-        "CM_KEY_VERSION",
-        "CM_KEY_VERSION_CURRENT",
-        "CM_KEY_VERSION_PREVIOUS"
-    ]
+    keys = ["CM_MASTER_KEY_CURRENT", "CM_MASTER_KEY_PREVIOUS", "CM_KEY_VERSION", "CM_KEY_VERSION_CURRENT", "CM_KEY_VERSION_PREVIOUS"]
     for k in keys:
         val = os.environ.get(k)
         if val:
@@ -105,10 +100,12 @@ async def main():
         return await coll.find({"status": "active"}).to_list(None)
 
     await analyze_collection(
-        db, svc, "credential_vault",
+        db,
+        svc,
+        "credential_vault",
         get_cv_docs,
         lambda d: d.get("credential_encrypted") or d.get("credential_value_encoded"),
-        lambda d: AADContext(tenant_id=d.get("tenant_id"), integration_id="cv", context_type="credential") if d.get("tenant_id") else None
+        lambda d: AADContext(tenant_id=d.get("tenant_id"), integration_id="cv", context_type="credential") if d.get("tenant_id") else None,
     )
 
     # 2. provider_secrets
@@ -116,10 +113,12 @@ async def main():
         return await coll.find({}).to_list(None)
 
     await analyze_collection(
-        db, svc, "provider_secrets",
+        db,
+        svc,
+        "provider_secrets",
         get_ps_docs,
         lambda d: d.get("credentials_encrypted") or d.get("token_encrypted"),
-        lambda d: AADContext(tenant_id=d.get("tenant_id"), integration_id="ps", context_type="credential") if d.get("tenant_id") else None
+        lambda d: AADContext(tenant_id=d.get("tenant_id"), integration_id="ps", context_type="credential") if d.get("tenant_id") else None,
     )
 
     # 3. _dev_secrets
@@ -137,12 +136,7 @@ async def main():
             context_type="secret",
         )
 
-    await analyze_collection(
-        db, svc, "_dev_secrets",
-        get_ds_docs,
-        lambda d: d.get("encrypted_payload"),
-        extract_ds_aad
-    )
+    await analyze_collection(db, svc, "_dev_secrets", get_ds_docs, lambda d: d.get("encrypted_payload"), extract_ds_aad)
 
     print("\n==================================================")
     print("BACKUP DISCOVERY")
@@ -155,6 +149,7 @@ async def main():
         print("No migration_backup_*.json files found in the current directory.")
 
     client.close()
+
 
 if __name__ == "__main__":
     asyncio.run(main())

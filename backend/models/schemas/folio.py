@@ -97,6 +97,10 @@ class PaymentCreate(BaseModel):
     payment_type: PaymentType
     reference: str | None = Field(None, max_length=200)
     notes: str | None = Field(None, max_length=2000)
+    currency: str | None = Field(None, min_length=3, max_length=3)
+    received_currency: str | None = Field(None, min_length=3, max_length=3)
+    received_amount: float | None = Field(None, gt=0, le=1e9)
+    exchange_rate: float | None = Field(None, gt=0, le=1e9)
 
 
 class Payment(BaseModel):
@@ -106,6 +110,10 @@ class Payment(BaseModel):
     folio_id: str
     booking_id: str
     amount: float
+    currency: str = "TRY"
+    received_currency: str | None = None
+    received_amount: float | None = None
+    exchange_rate: float | None = None
     method: PaymentMethod
     payment_type: PaymentType
     status: PaymentStatus = PaymentStatus.PAID

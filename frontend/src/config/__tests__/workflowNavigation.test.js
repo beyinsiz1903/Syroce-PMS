@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { sectionNavItems } from '@/components/Layout';
-import { NAV_GROUP_SECTIONS, NAV_ITEMS } from '@/config/navItems';
+import { NAV_GROUPS, NAV_GROUP_SECTIONS, NAV_ITEMS } from '@/config/navItems';
 import { SUPPLEMENTAL_MODULE_NAV_ITEMS } from '@/utils/moduleAccess';
 
 const item = (key) => NAV_ITEMS.find((candidate) => candidate.key === key);
@@ -12,9 +12,11 @@ describe('workflow-oriented hotel navigation', () => {
       navGroup: 'frontdesk',
       navSection: 'guest_services',
     });
-    expect(item('connecting_rooms')).toMatchObject({
+    expect(item('connecting_rooms')).toMatchObject({ hidden: true, group: 'settings' });
+    expect(item('walkin')).toMatchObject({
+      hidden: true,
       navGroup: 'frontdesk',
-      navSection: 'room_management',
+      path: '/walkin',
     });
   });
 
@@ -23,6 +25,11 @@ describe('workflow-oriented hotel navigation', () => {
     expect(item('lost_found').navSection).toBe('guest_requests');
     expect(item('room_qr_requests').navSection).toBe('guest_requests');
     expect(item('operational_events').navSection).toBe('incidents');
+    expect(item('activity_scheduler')).toMatchObject({
+      navGroup: 'operations',
+      navSection: 'wellness',
+      path: '/activities',
+    });
     expect(SUPPLEMENTAL_MODULE_NAV_ITEMS.find(({ key }) => key === 'tasks_workspace'))
       .toMatchObject({ navGroup: 'operations', navSection: 'daily' });
   });
@@ -49,5 +56,16 @@ describe('workflow-oriented hotel navigation', () => {
       expect(configuredItems.every((candidate) => allowedSections.has(candidate.navSection))).toBe(true);
       expect(sectionNavItems(group, configuredItems).some(({ id }) => id === 'other')).toBe(false);
     }
+  });
+
+  it('does not assign visible links to a navigation group that cannot render', () => {
+    const knownGroups = new Set(NAV_GROUPS.map(({ id }) => id));
+    const invalidItems = NAV_ITEMS.filter((candidate) => (
+      !candidate.hidden
+      && candidate.navGroup
+      && !knownGroups.has(candidate.navGroup)
+    ));
+
+    expect(invalidItems).toEqual([]);
   });
 });

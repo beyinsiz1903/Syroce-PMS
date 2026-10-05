@@ -1,17 +1,4 @@
-"""
-AI daily briefing — metric correctness after the rooms count_documents change
-=============================================================================
-
-``get_daily_briefing`` powers the executive dashboard. It used to materialise
-the full ``rooms`` collection just to take ``len(rooms)``; that was switched to
-``db.rooms.count_documents(...)`` (same virtual-room-excluding filter) to avoid
-pulling room documents into the single shared event loop on every cache miss.
-
-This test pins the metric semantics so the refactor (and future edits) cannot
-silently drift: ``total_rooms`` must come from the count query, and the
-occupancy / check-in / check-out / invoice / revenue numbers must match the
-hand-computed expectations for a controlled dataset.
-"""
+"""AI daily briefing consumes the canonical PMS operational snapshot."""
 import types
 from datetime import date, timedelta
 
@@ -72,11 +59,34 @@ async def test_daily_briefing_metrics_use_room_count(monkeypatch):
         {"status": "pending", "total": 500, "invoice_date": today_s},
         {"status": "paid", "total": 300, "invoice_date": today_s},
         {"status": "paid", "total": 999, "invoice_date": "2000-01-15"},  # old, out of month
+        {"status": "paid", "total": 111, "invoice_date": (today + timedelta(days=40)).isoformat()},  # future month
     ]
     tenant = {"property_name": "Test Hotel"}
 
     fake_db = _FakeDB(rooms_count=42, bookings=bookings, invoices=invoices, tenant=tenant)
     monkeypatch.setattr(endpoints, "db", fake_db)
+
+    async def _snapshot(tenant_id, **_kwargs):
+        assert tenant_id == "t1"
+        return {
+            "snapshot_id": "snapshot-1",
+            "as_of": f"{today_s}T08:00:00+00:00",
+            "business_date": today_s,
+            "calendar_date": today_s,
+            "inventory_scope": "active_non_virtual_rooms",
+            "total_rooms": 42,
+            "occupied_rooms": 2,
+            "available_rooms": 40,
+            "occupancy_rate": 4.76,
+            "today_checkins": 1,
+            "today_checkouts": 1,
+            "total_guests": 2,
+            "in_house_stays": 1,
+            "unassigned_occupied_stays": 0,
+            "room_status": {"occupied": 2, "available": 40},
+        }
+
+    monkeypatch.setattr(endpoints, "build_operational_snapshot", _snapshot)
     monkeypatch.setattr(
         endpoints, "get_ai_service", lambda: types.SimpleNamespace(llm_enabled=False)
     )
@@ -91,17 +101,8 @@ async def test_daily_briefing_metrics_use_room_count(monkeypatch):
         lang="en", current_user=user, _perm=None
     )
 
-    # The room count MUST be derived from count_documents using the same
-    # tenant-scoped, virtual-room-excluding filter the dashboard KPI cards use
-    # — not a len() over an unfiltered/over-broad fetch.
-    rooms_filter = fake_db.rooms.last_count_filter
-    assert rooms_filter is not None
-    assert rooms_filter["tenant_id"] == "t1"
-    assert {"is_virtual": False} in rooms_filter["$or"]
-    assert {"is_virtual": {"$exists": False}} in rooms_filter["$or"]
-
     m = result["metrics"]
-    assert m["total_rooms"] == 42           # from count_documents, not len(rooms)
+    assert m["total_rooms"] == 42           # from the shared operational snapshot
     assert m["occupied_rooms"] == 2         # b1 + b2
     assert m["confirmed_bookings"] == 2     # b2 + b3
     assert m["today_checkins"] == 1         # b2
@@ -111,6 +112,9 @@ async def test_daily_briefing_metrics_use_room_count(monkeypatch):
     assert m["occupancy_rate"] == 4.8       # round(2/42*100, 1)
     assert m["currency"] == "TRY"
     assert m["currency_symbol"] == "\u20ba"
+    assert m["snapshot_id"] == "snapshot-1"
+    assert result["business_date"] == today_s
+    assert result["inventory_scope"] == "active_non_virtual_rooms"
 
     assert result["ai_powered"] is False
     for key in ("summary", "text", "briefing", "insights", "metrics"):
@@ -129,6 +133,18 @@ async def test_daily_briefing_revenue_fallback_from_bookings(monkeypatch):
     ]
     fake_db = _FakeDB(rooms_count=10, bookings=bookings, invoices=[], tenant={"property_name": "H"})
     monkeypatch.setattr(endpoints, "db", fake_db)
+
+    async def _snapshot(_tenant_id, **_kwargs):
+        return {
+            "snapshot_id": "snapshot-2", "as_of": f"{today_s}T08:00:00+00:00",
+            "business_date": today_s, "calendar_date": today_s,
+            "inventory_scope": "active_non_virtual_rooms", "total_rooms": 10,
+            "occupied_rooms": 0, "available_rooms": 10, "occupancy_rate": 0,
+            "today_checkins": 1, "today_checkouts": 0, "total_guests": 0,
+            "in_house_stays": 0, "unassigned_occupied_stays": 0, "room_status": {"available": 10},
+        }
+
+    monkeypatch.setattr(endpoints, "build_operational_snapshot", _snapshot)
     monkeypatch.setattr(
         endpoints, "get_ai_service", lambda: types.SimpleNamespace(llm_enabled=False)
     )

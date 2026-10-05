@@ -7,10 +7,6 @@ Room blocks directly affect availability calculations.
 Any bug here can cause overbooking or inventory drift.
 
 Routes:
-  GET   /pms/room-blocks
-  POST  /pms/room-blocks
-  PATCH /pms/room-blocks/{block_id}
-  POST  /pms/room-blocks/{block_id}/cancel
   GET   /pms/rooms/availability
 
 Dependencies:
@@ -21,24 +17,17 @@ Dependencies:
 """
 
 import asyncio
-import uuid
-from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Request
 
 from core.database import db
 from core.security import get_current_user
+from domains.channel_manager.unified_rate_manager_router import (
+    get_pricing_settings,
+    get_unified_grid,
+)
 from models.schemas import User
-from modules.pms_core.role_permission_service import require_module as require_module_v101  # v101 DW
-
-try:
-    from domains.pms.room_block_models import RoomBlockCreate
-except ImportError:
-    RoomBlockCreate = None
-
 from modules.inventory.services.availability_read_service import AvailabilityReadService
-from modules.inventory.services.create_room_block_service import CreateRoomBlockService
-from modules.inventory.services.release_room_block_service import ReleaseRoomBlockService
 from shared_kernel.shadow_metrics import compare_availability_payloads, run_shadow_compare
 
 try:
@@ -54,114 +43,28 @@ except ImportError:
 
 router = APIRouter(prefix="/api", tags=["pms-availability"])
 
-create_room_block_service = CreateRoomBlockService()
-release_room_block_service = ReleaseRoomBlockService()
 availability_read_service = AvailabilityReadService()
 
 
-# ═══════════════════════════════════════════════════════════════════
-# Room Blocks (mutation paths that affect availability)
-# ═══════════════════════════════════════════════════════════════════
-
-
-@router.get("/pms/room-blocks")
-async def get_room_blocks(room_id: str | None = None, status: str | None = None, from_date: str | None = None, to_date: str | None = None, current_user: User = Depends(get_current_user)):
-    """Get room blocks with optional filters"""
-    query = {"tenant_id": current_user.tenant_id}
-
-    if room_id:
-        query["room_id"] = room_id
-
-    if status:
-        query["status"] = status
-
-    if from_date or to_date:
-        date_query = {}
-        if from_date:
-            date_query["$gte"] = from_date
-        if to_date:
-            date_query["$lte"] = to_date
-        query["start_date"] = date_query
-
-    blocks = await db.room_blocks.find(query, {"_id": 0}).to_list(1000)
-
-    # Filter expired blocks
-    today = datetime.now(UTC).date().isoformat()
-    for block in blocks:
-        if block.get("end_date") and block["end_date"] < today and block["status"] == "active":
-            # Auto-expire
-            await db.room_blocks.update_one({"id": block["id"]}, {"$set": {"status": "expired"}})
-            block["status"] = "expired"
-
-    return blocks
-
-
-@router.post("/pms/room-blocks")
-async def create_room_block(
-    block_data: dict,
-    request: Request,
+@router.get("/pms/calendar/rates")
+async def get_calendar_rates(
+    start_date: str | None = None,
+    end_date: str | None = None,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
 ):
-    payload = RoomBlockCreate(**block_data)
-    return await create_room_block_service.create(payload, current_user, request)
+    """Read-only rate data required by the PMS reservation calendar.
 
-
-@router.patch("/pms/room-blocks/{block_id}")
-async def update_room_block(
-    block_id: str,
-    updates: dict,
-    current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
-):
-    """Update a room block"""
-    existing = await db.room_blocks.find_one({"tenant_id": current_user.tenant_id, "id": block_id})
-
-    if not existing:
-        raise HTTPException(404, "Block not found")
-
-    # Only allow updates to active blocks
-    if existing["status"] != "active":
-        raise HTTPException(400, "Cannot update cancelled or expired blocks")
-
-    update_data = {}
-    allowed_fields = ["reason", "details", "start_date", "end_date", "allow_sell"]
-
-    for field in allowed_fields:
-        if field in updates:
-            update_data[field] = updates[field]
-
-    if update_data:
-        await db.room_blocks.update_one({"id": block_id}, {"$set": update_data})
-
-        # Audit log
-        await db.audit_logs.insert_one(
-            {
-                "id": str(uuid.uuid4()),
-                "tenant_id": current_user.tenant_id,
-                "action": "room_block_updated",
-                "entity_type": "room_block",
-                "entity_id": block_id,
-                "user": current_user.name,
-                "timestamp": datetime.now(UTC).isoformat(),
-                "details": update_data,
-            }
-        )
-
-    updated = await db.room_blocks.find_one({"id": block_id}, {"_id": 0})
-    return updated
-
-
-@router.post("/pms/room-blocks/{block_id}/cancel")
-async def cancel_room_block(
-    block_id: str,
-    request: Request,
-    reason: str | None = None,
-    current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
-):
-    """Release a room block through the semantic inventory service."""
-    return await release_room_block_service.release(block_id, current_user, request, reason=reason)
+    This deliberately exposes only the two read models needed to render the
+    calendar.  Front-desk users must see the same published rates as admins,
+    without receiving Channel Manager configuration or write access.
+    """
+    grid = await get_unified_grid(
+        start_date=start_date,
+        end_date=end_date,
+        current_user=current_user,
+    )
+    pricing = await get_pricing_settings(current_user=current_user)
+    return {"grid": grid.get("grid", []), "rules": pricing.get("rules", {})}
 
 
 # ═══════════════════════════════════════════════════════════════════

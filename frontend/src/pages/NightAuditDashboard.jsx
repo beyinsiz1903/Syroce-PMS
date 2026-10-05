@@ -13,8 +13,8 @@ import { KpiCard } from "@/components/ui/kpi-card";
 import {
   Moon, Play, Clock, CheckCircle2, XCircle, AlertTriangle,
   RefreshCw, Calendar, FileText, ChevronDown, ChevronUp,
-  DollarSign, Users, Building2, BarChart3, Eye, Loader2,
-  Shield, Info, Timer, Settings2, Zap, RotateCcw,
+  Users, Building2, BarChart3, Eye, Loader2,
+  Shield, Info, Timer, Settings2, Zap,
   TrendingUp, CreditCard, ShieldCheck, Scale, Receipt,
   PieChart, ArrowUpDown, Banknote, AlertOctagon, Search
 } from "lucide-react";
@@ -22,6 +22,8 @@ import { toast } from "sonner";
 import { confirmDialog } from "@/lib/dialogs";
 import { emitBusinessDateChanged } from "@/lib/businessDateEvents";
 import { buildBusinessDateOriginCopy } from "@/lib/businessDateOriginCopy";
+import { cachedTenantCurrency, formatCurrency } from "@/lib/currency";
+import { formatCurrencyBreakdown } from "@/lib/reportCurrency";
 import {
   NIGHT_AUDIT_RUN_TIMEOUT_MS,
   confirmsNightAuditAdvance,
@@ -39,6 +41,8 @@ import ReconciliationTab from '@/components/night-audit/tabs/ReconciliationTab';
 import IntegrityTab from '@/components/night-audit/tabs/IntegrityTab';
 import ReportTab from '@/components/night-audit/tabs/ReportTab';
 const NightAuditDashboard = ({ user, tenant, onLogout }) => {
+  const canManageSchedule = ['admin', 'super_admin'].includes(user?.role);
+  const canRunAudit = user?.role === 'super_admin' || (user?.effective_permissions || []).includes('run_night_audit');
   const { t, i18n } = useTranslation();
   const [businessDate, setBusinessDate] = useState(null);
   const [previousDate, setPreviousDate] = useState(null);
@@ -52,6 +56,7 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
   const [showRunDialog, setShowRunDialog] = useState(false);
   const [showScheduleDialog, setShowScheduleDialog] = useState(false);
   const [blockedRunDetail, setBlockedRunDetail] = useState(null);
+  const [simulationResult, setSimulationResult] = useState(null);
   const [runActionId, setRunActionId] = useState(null);
   const [previewData, setPreviewData] = useState(null);
   const [prepRefreshKey, setPrepRefreshKey] = useState(0);
@@ -60,6 +65,7 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
   const [financialSummary, setFinancialSummary] = useState(null);
   const [reconciliation, setReconciliation] = useState(null);
   const [integrityCheck, setIntegrityCheck] = useState(null);
+  const [reportingDate, setReportingDate] = useState(null);
   const [financialReport, setFinancialReport] = useState(null);
   const [finLoading, setFinLoading] = useState(false);
   const [reportDates, setReportDates] = useState({ start: "", end: "" });
@@ -84,6 +90,9 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
   const businessDateOriginCopy = businessDateMeta?.is_initialized
     ? buildBusinessDateOriginCopy(businessDateMeta, user)
     : null;
+  const tenantCurrency = tenant?.currency || cachedTenantCurrency();
+  const money = (amount, currency = tenantCurrency) => formatCurrency(amount || 0, currency, { decimals: 2 });
+  const moneyBreakdown = (breakdown, amount = 0) => formatCurrencyBreakdown(breakdown, amount, tenantCurrency);
 
   const fetchBusinessDate = useCallback(async () => {
     try {
@@ -118,8 +127,10 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
       }));
       setHistory(normalizedRuns);
       setHistoryTotal(res.data.total || 0);
+      return normalizedRuns;
     } catch (err) {
       console.error("History fetch failed:", err);
+      return [];
     }
   }, []);
 
@@ -206,14 +217,19 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
   const loadAll = useCallback(async () => {
     setLoading(true);
     initialLoadRef.current = true; // skip the businessDate effect after this
-    await Promise.all([
+    const [, runs] = await Promise.all([
       fetchBusinessDate(),
       fetchHistory(),
       fetchSchedule(),
       fetchScheduleStatus(),
-      fetchFinancialSummary(),
-      fetchReconciliation(),
-      fetchIntegrityCheck(),
+    ]);
+    const latestCompletedRun = runs.find((run) => !run.is_dry_run && run.status?.startsWith("completed"));
+    const financeDate = latestCompletedRun?.business_date || null;
+    setReportingDate(financeDate);
+    await Promise.all([
+      fetchFinancialSummary(financeDate),
+      fetchReconciliation(financeDate),
+      fetchIntegrityCheck(financeDate),
     ]);
     setLoading(false);
   }, [fetchBusinessDate, fetchHistory, fetchSchedule, fetchScheduleStatus, fetchFinancialSummary, fetchReconciliation, fetchIntegrityCheck]);
@@ -228,12 +244,12 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
       initialLoadRef.current = false;
       return;
     }
-    if (businessDate) {
+    if (businessDate && !reportingDate) {
       fetchFinancialSummary(businessDate);
       fetchReconciliation(businessDate);
       fetchIntegrityCheck(businessDate);
     }
-  }, [businessDate, fetchFinancialSummary, fetchReconciliation, fetchIntegrityCheck]);
+  }, [businessDate, reportingDate, fetchFinancialSummary, fetchReconciliation, fetchIntegrityCheck]);
 
   const handleRunAudit = async () => {
     setRunning(true);
@@ -253,12 +269,17 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
       const postedChargeCount = result.charges_posted ?? result.run?.processed_count ?? 0;
       toast.success(
         runOptions.dry_run
-          ? `Simülasyon tamamlandı: ${result.rooms_processed} oda işlendi`
+          ? `Simülasyon tamamlandı: ${result.would_post ?? postedChargeCount} işlem öngörüldü`
           : `Gece denetimi tamamlandı: ${postedChargeCount} masraf kaydedildi`
       );
       setShowRunDialog(false);
       setRunOptions({ force_rerun: false, skip_validations: false, dry_run: false, reason: "" });
-      await loadAll();
+      if (result.dry_run) {
+        setSimulationResult(result);
+        await fetchHistory();
+      } else {
+        await loadAll();
+      }
       setPrepRefreshKey((k) => k + 1);
     } catch (err) {
       if (isNightAuditTimeout(err)) {
@@ -422,11 +443,17 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
   const lastRun = history.length > 0 ? history[0] : null;
   const todayCompleted = lastRun?.business_date === businessDate && lastRun?.status?.startsWith("completed");
 
-  // Engelleyici sorun varken ve "Doğrulamaları Atla" seçili değilken
-  // backend hem gerçek çalıştırmayı hem de simülasyonu (doğrulama kapısı
-  // simülasyondan önce çalışır) BLOCKED ile reddeder. Buton bu durumda
-  // görsel olarak da kilitli olmalı.
-  const runBlocked = (previewData?.blockers?.length > 0) && !runOptions.skip_validations;
+  // Final close never bypasses blockers. A dry run remains available so the
+  // operator can inspect the result without posting or advancing the date.
+  const businessDateCatchupRequired = Number(previewData?.date_drift_days || 0) > 1;
+  const runBlocked = ((previewData?.blockers?.length > 0) || businessDateCatchupRequired) && !runOptions.dry_run;
+  const openRunDialog = (options = {}) => {
+    setRunOptions((current) => ({
+      ...current,
+      dry_run: options.dryRun ?? current.dry_run,
+    }));
+    setShowRunDialog(true);
+  };
 
   const ctx = {
     t,
@@ -437,11 +464,12 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
     showRunDialog, setShowRunDialog, showScheduleDialog, setShowScheduleDialog,
     activeTab, setActiveTab, runOptions, setRunOptions,
     financialSummary, reconciliation, integrityCheck, financialReport, finLoading,
+    reportingDate,
     reportDates, setReportDates,
     fetchBusinessDate, fetchHistory, fetchExceptions, fetchSchedule, fetchScheduleStatus,
     fetchFinancialSummary, fetchReconciliation, fetchIntegrityCheck, fetchFinancialReport,
     handleRunAudit, handleSaveSchedule, handleQuickToggleSchedule,
-    handleResumeRun, handleAbortRun, runActionId,
+    handleResumeRun, handleAbortRun, runActionId, canRunAudit, canManageSchedule,
     onOpenRun: async (runId) => {
       setActiveTab("overview");
       setExpandedRun(runId);
@@ -473,19 +501,38 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
                 <RefreshCw className={`w-4 h-4 mr-1.5 ${loading ? "animate-spin" : ""}`} />
                 Yenile
               </Button>
-              <Button
+              {canRunAudit && <Button
                 data-testid="run-audit-btn"
                 size="sm"
-                onClick={() => setShowRunDialog(true)}
+                onClick={() => openRunDialog({ dryRun: businessDateCatchupRequired })}
                 disabled={running}
               >
                 <Play className="w-4 h-4 mr-1.5" />
-                Denetim Başlat
-              </Button>
+                {businessDateCatchupRequired ? "Simülasyon Başlat" : "Denetim Başlat"}
+              </Button>}
             </>
           }
         />
         <h1 data-testid="night-audit-title" className="sr-only">Gece Denetimi</h1>
+
+        {businessDateCatchupRequired && (
+          <Card
+            className="border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950"
+            data-testid="business-date-catchup-banner"
+            role="alert"
+          >
+            <CardContent className="flex items-start gap-3 py-3">
+              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" />
+              <div className="text-sm text-amber-950 dark:text-amber-100">
+                <p className="font-semibold">Canlı gün sonu beklemede</p>
+                <p className="mt-0.5 text-xs">
+                  PMS iş günü takvimden {previewData.date_drift_days} gün geride.
+                  Günleri kontrollü olarak kapatmadan finansal kayıt oluşturulamaz; yalnızca simülasyon başlatabilirsiniz.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {blockedRunDetail && (
           <Card className="border-rose-300 bg-rose-50 dark:border-rose-800 dark:bg-rose-950" data-testid="blocked-run-details">
@@ -505,7 +552,7 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
                     </p>
                   )}
                 </div>
-                {blockedRunDetail.runId && (
+                {canRunAudit && blockedRunDetail.runId && (
                   <div className="flex gap-2 shrink-0">
                     {!blockedRunDetail.isDryRun && (
                       <Button
@@ -532,7 +579,7 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
         )}
 
         {/* Business Date & Summary Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
           <KpiCard
             icon={Calendar}
             intent="info"
@@ -548,11 +595,18 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
             sub={todayCompleted ? "Bugün tamamlandı" : "Bugün bekliyor"}
           />
           <KpiCard
-            icon={DollarSign}
+            icon={Banknote}
             intent="info"
             label="Son Oda Geliri"
-            value={lastRun ? `${lastRun.total_room_revenue?.toFixed(2) || "0.00"} TL` : "-"}
-            sub={lastRun ? `Vergi: ${lastRun.total_tax_amount?.toFixed(2) || "0.00"} TL` : undefined}
+            value={lastRun ? moneyBreakdown(lastRun.total_room_revenue_by_currency, lastRun.total_room_revenue) : "-"}
+            sub={lastRun ? `Vergi: ${moneyBreakdown(lastRun.total_tax_amount_by_currency, lastRun.total_tax_amount)}` : undefined}
+          />
+          <KpiCard
+            icon={CreditCard}
+            intent="success"
+            label="Son Tahsilat"
+            value={lastRun ? moneyBreakdown(lastRun.total_payments_by_currency, lastRun.total_payments_amount) : "-"}
+            sub="Kasaya Giren Net Tutar"
           />
           <KpiCard
             icon={Users}
@@ -619,7 +673,8 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
           {/* ═══ Preparation Tab ═══ */}
           <TabsContent value="preparation" className="space-y-4 mt-4">
             <PreparationTab
-              onStartRun={() => setShowRunDialog(true)}
+              canRunAudit={canRunAudit}
+              onStartRun={openRunDialog}
               onPreviewLoaded={handlePreviewLoaded}
               onOpenRun={ctx.onOpenRun}
               refreshKey={prepRefreshKey}
@@ -653,7 +708,7 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
         </Tabs>
 
         {/* Schedule Settings Dialog */}
-        <Dialog open={showScheduleDialog} onOpenChange={setShowScheduleDialog}>
+        <Dialog open={canManageSchedule && showScheduleDialog} onOpenChange={setShowScheduleDialog}>
           <DialogContent className="max-w-md">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
@@ -724,63 +779,12 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
                 </select>
               </div>
 
-              {/* Options */}
-              <div className="space-y-2">
-                <label className="flex items-center justify-between p-2 rounded-lg hover:bg-gray-50 cursor-pointer">
-                  <div className="flex items-center gap-2">
-                    <RotateCcw className="w-4 h-4 text-blue-500" />
-                    <div>
-                      <p className="text-sm font-medium text-gray-800">Otomatik Yeniden Deneme</p>
-                      <p className="text-xs text-gray-500">Başarısız olursa tekrar dener</p>
-                    </div>
-                  </div>
-                  <Switch
-                    data-testid="schedule-auto-retry-switch"
-                    checked={schedule.auto_retry}
-                    onCheckedChange={(checked) => setSchedule({ ...schedule, auto_retry: checked })}
-                  />
-                </label>
-
-                {schedule.auto_retry && (
-                  <div className="ml-8">
-                    <label className="text-xs text-gray-600 mb-1 block">Maks. Deneme Sayısı</label>
-                    <select
-                      data-testid="schedule-max-retries-select"
-                      value={schedule.max_retries}
-                      onChange={(e) => setSchedule({ ...schedule, max_retries: parseInt(e.target.value) })}
-                      className="border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-white"
-                    >
-                      {[1, 2, 3, 5].map((n) => (
-                        <option key={n} value={n}>{n}</option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-
-                <label className="flex items-center justify-between p-2 rounded-lg hover:bg-gray-50 cursor-pointer">
-                  <div className="flex items-center gap-2">
-                    <AlertTriangle className="w-4 h-4 text-amber-500" />
-                    <div>
-                      <p className="text-sm font-medium text-gray-800">Doğrulamaları Atla</p>
-                      <p className="text-xs text-gray-500">Ön kontrolleri atlayarak çalıştır</p>
-                    </div>
-                  </div>
-                  <Switch
-                    data-testid="schedule-skip-validations-switch"
-                    checked={schedule.skip_validations}
-                    onCheckedChange={(checked) => setSchedule({ ...schedule, skip_validations: checked })}
-                  />
-                </label>
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
+                <p className="font-medium text-slate-800">Sabit güvenlik politikası</p>
+                <p className="mt-1">
+                  Zamanlanmış gün sonu doğrulamaları atlayamaz. Beklenmedik altyapı hatalarında sistem en fazla iki kez yeniden dener; iş günü gerideyse işlem engellenir ve kayda alınır.
+                </p>
               </div>
-
-              {schedule.skip_validations && (
-                <div className="p-2 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2">
-                  <AlertTriangle className="w-4 h-4 text-red-500 mt-0.5 flex-shrink-0" />
-                  <p className="text-xs text-red-700">
-                    Otomatik çalıştırmada doğrulama atlama veri tutarsızlıklarına yol açabilir.
-                  </p>
-                </div>
-              )}
 
               <div className="flex justify-end gap-2 pt-2">
                 <Button variant="outline" onClick={() => setShowScheduleDialog(false)} disabled={scheduleLoading}>
@@ -810,7 +814,7 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
         </Dialog>
 
         {/* Run Audit Dialog */}
-        <Dialog open={showRunDialog} onOpenChange={setShowRunDialog}>
+        <Dialog open={canRunAudit && showRunDialog} onOpenChange={setShowRunDialog}>
           <DialogContent className="max-w-md">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
@@ -836,6 +840,18 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
                 </p>
               </div>
 
+              {businessDateCatchupRequired && (
+                <div className="p-3 bg-amber-50 border border-amber-300 rounded-lg flex items-start gap-2" data-testid="catchup-required-warning">
+                  <AlertTriangle className="w-4 h-4 text-amber-700 mt-0.5 flex-shrink-0" />
+                  <div className="text-xs text-amber-900">
+                    <p className="font-semibold">Kontrollü gün kapatma gerekli</p>
+                    <p className="mt-0.5">
+                      PMS iş günü takvimden {previewData.date_drift_days} gün geride. Canlı gün sonu kapalıdır; yalnızca simülasyon çalıştırabilirsiniz.
+                    </p>
+                  </div>
+                </div>
+              )}
+
               {/* Engelleyici uyarısı */}
               {previewData && (previewData.blockers?.length > 0) && !runOptions.skip_validations && (
                 <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg flex items-start gap-2" data-testid="modal-blockers-warn">
@@ -843,7 +859,7 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
                   <div className="text-xs text-rose-800">
                     <p className="font-medium">{previewData.blockers.length} engelleyici sorun var</p>
                     <p className="mt-0.5">
-                      Hazırlık sekmesinden çözmeden başlatma engellenecek. Acil durumda &quot;Doğrulamaları Atla&quot; seçeneğini kullanabilirsiniz.
+                      Hazırlık sekmesinden çözmeden canlı gün sonu başlatılamaz. Etki yaratmadan incelemek için simülasyon kullanın.
                     </p>
                     <button
                       type="button"
@@ -872,34 +888,6 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
                   </div>
                 </label>
 
-                <label className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 cursor-pointer">
-                  <input
-                    data-testid="force-rerun-checkbox"
-                    type="checkbox"
-                    checked={runOptions.force_rerun}
-                    onChange={(e) => setRunOptions({ ...runOptions, force_rerun: e.target.checked })}
-                    className="w-4 h-4 rounded border-gray-300 text-amber-600"
-                  />
-                  <div>
-                    <p className="text-sm font-medium text-gray-800">Tekrar Çalıştır</p>
-                    <p className="text-xs text-gray-500">Daha önce tamamlanmış olsa bile tekrar çalıştır</p>
-                  </div>
-                </label>
-
-                <label className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 cursor-pointer">
-                  <input
-                    data-testid="skip-validations-checkbox"
-                    type="checkbox"
-                    checked={runOptions.skip_validations}
-                    onChange={(e) => setRunOptions({ ...runOptions, skip_validations: e.target.checked })}
-                    className="w-4 h-4 rounded border-gray-300 text-red-600"
-                  />
-                  <div>
-                    <p className="text-sm font-medium text-gray-800">Doğrulamaları Atla</p>
-                    <p className="text-xs text-gray-500">Ön kontrolleri atlayarak çalıştır (dikkatli kullanın)</p>
-                  </div>
-                </label>
-
                 <div>
                   <label className="text-xs text-gray-600 mb-1 block">Açıklama (opsiyonel)</label>
                   <input
@@ -913,18 +901,11 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
                 </div>
               </div>
 
-              {runOptions.skip_validations && (
-                <div className="p-2 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2">
-                  <AlertTriangle className="w-4 h-4 text-red-500 mt-0.5 flex-shrink-0" />
-                  <p className="text-xs text-red-700">
-                    Doğrulama atlama sadece acil durumlarda kullanılmalıdır. Ön kontrolsüz denetim veri tutarsızlıklarına neden olabilir.
-                  </p>
-                </div>
-              )}
-
               {runBlocked && (
                 <p className="text-xs text-rose-700 pt-1" data-testid="run-blocked-hint">
-                  Engelleyici sorunlar çözülmeden denetim başlatılamaz. Hazırlık sekmesinden çözün veya &quot;Doğrulamaları Atla&quot; seçeneğini işaretleyin.
+                  {businessDateCatchupRequired
+                    ? "PMS iş günü takvimden geride. Kontrollü kapatma planı oluşturun; burada yalnızca simülasyon çalıştırılabilir."
+                    : "Engelleyici sorunlar çözülmeden canlı gün sonu başlatılamaz. Hazırlık sekmesinden çözün veya yalnızca simülasyon çalıştırın."}
                 </p>
               )}
 
@@ -936,7 +917,7 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
                   data-testid="confirm-run-btn"
                   onClick={handleRunAudit}
                   disabled={running || runBlocked}
-                  title={runBlocked ? 'Engelleyici sorunlar var. Önce Hazırlık sekmesinden çözün ya da "Doğrulamaları Atla" seçeneğini işaretleyin.' : undefined}
+                  title={runBlocked ? 'Engelleyici sorunlar var. Önce Hazırlık sekmesinden çözün veya simülasyon çalıştırın.' : undefined}
                   className="bg-indigo-600 hover:bg-indigo-700 text-white"
                 >
                   {running ? (
@@ -958,6 +939,108 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
                 </Button>
               </div>
             </div>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={Boolean(simulationResult)} onOpenChange={(open) => !open && setSimulationResult(null)}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Eye className="w-5 h-5 text-indigo-600" />
+                Gece Denetimi Simülasyon Sonucu
+              </DialogTitle>
+              <DialogDescription>
+                Bu sonuç yalnızca tahmindir; folyo, rezervasyon, oda ve iş günü değiştirilmedi.
+              </DialogDescription>
+            </DialogHeader>
+            {simulationResult && (
+              <div className="space-y-4" data-testid="simulation-result-dialog">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <div className="rounded-lg border p-3">
+                    <p className="text-xs text-gray-500">Oda adayı</p>
+                    <p className="text-xl font-semibold">{simulationResult.rooms_processed ?? 0}</p>
+                  </div>
+                  <div className="rounded-lg border p-3">
+                    <p className="text-xs text-gray-500">Yazılacak masraf</p>
+                    <p className="text-xl font-semibold">{simulationResult.charges_posted ?? 0}</p>
+                  </div>
+                  <div className="rounded-lg border p-3">
+                    <p className="text-xs text-gray-500">No-show adayı</p>
+                    <p className="text-xl font-semibold">{simulationResult.no_shows_processed ?? 0}</p>
+                  </div>
+                  <div className="rounded-lg border p-3">
+                    <p className="text-xs text-gray-500">Atlanacak işlem</p>
+                    <p className="text-xl font-semibold">{simulationResult.would_skip ?? 0}</p>
+                  </div>
+                </div>
+                <div className="rounded-lg border bg-indigo-50 p-3">
+                  <div className="flex justify-between text-sm">
+                    <span>Tahmini oda geliri</span>
+                    <strong>{moneyBreakdown(simulationResult.total_room_revenue_by_currency, simulationResult.total_room_revenue)}</strong>
+                  </div>
+                  <div className="flex justify-between text-sm mt-1">
+                    <span>Tahmini vergi</span>
+                    <strong>{moneyBreakdown(simulationResult.total_tax_amount_by_currency, simulationResult.total_tax_amount)}</strong>
+                  </div>
+                  <div className="flex justify-between text-sm mt-2 pt-2 border-t border-indigo-200">
+                    <span>Toplam tahmini folyo etkisi</span>
+                    <strong>{moneyBreakdown(simulationResult.projected_total_by_currency, simulationResult.projected_total)}</strong>
+                  </div>
+                </div>
+                {simulationResult.blockers?.length > 0 && (
+                  <div className="rounded-lg border border-rose-200 bg-rose-50 p-3">
+                    <p className="text-sm font-semibold text-rose-800 mb-2">
+                      Canlı gün sonunu engelleyen sorunlar ({simulationResult.blockers.length})
+                    </p>
+                    <ul className="list-disc pl-5 space-y-1 text-xs text-rose-800">
+                      {simulationResult.blockers.map((blocker, index) => <li key={`${index}-${blocker}`}>{blocker}</li>)}
+                    </ul>
+                  </div>
+                )}
+                {simulationResult.warnings?.length > 0 && (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+                    <p className="text-sm font-semibold text-amber-800 mb-2">Uyarılar ({simulationResult.warnings.length})</p>
+                    <ul className="list-disc pl-5 space-y-1 text-xs text-amber-800">
+                      {simulationResult.warnings.map((warning, index) => <li key={`${index}-${warning}`}>{warning}</li>)}
+                    </ul>
+                  </div>
+                )}
+                {simulationResult.candidate_details?.length > 0 && (
+                  <div className="rounded-lg border overflow-hidden">
+                    <div className="bg-gray-50 px-3 py-2 text-sm font-semibold text-gray-800">
+                      İşlem planı ({simulationResult.candidate_details.length})
+                    </div>
+                    <div className="divide-y max-h-64 overflow-y-auto">
+                      {simulationResult.candidate_details.map((item, index) => (
+                        <div key={`${item.booking_id}-${index}`} className="grid grid-cols-[1fr_auto] gap-3 px-3 py-2 text-xs">
+                          <div className="min-w-0">
+                            <p className="font-medium text-gray-800">
+                              {item.room_no ? `Oda ${item.room_no}` : item.room_id ? "Oda kaydı mevcut" : "Oda atanmamış"} · Rezervasyon {item.booking_id || "-"}
+                            </p>
+                            <p className={item.status === "skipped" ? "text-amber-700" : "text-gray-500"}>
+                              {item.status === "skipped"
+                                ? ({
+                                    complimentary_accommodation: "Ücretsiz konaklama olduğu için atlanacak",
+                                    zero_or_missing_rate: "Oda fiyatı sıfır veya eksik olduğu için atlanacak",
+                                    no_open_folio: "Açık misafir folyosu olmadığı için atlanacak",
+                                    already_posted_for_business_date: "Bu iş günü için masraf daha önce işlendiği için atlanacak",
+                                  }[item.reason] || `Atlanacak: ${item.reason || "neden belirtilmedi"}`)
+                                : item.posting_type === "no_show" ? "No-show masrafı yazılacak" : "Oda masrafı yazılacak"}
+                            </p>
+                          </div>
+                          <strong className="whitespace-nowrap text-gray-900">
+                            {money(item.total, item.currency)}
+                          </strong>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <div className="flex justify-end">
+                  <Button onClick={() => setSimulationResult(null)}>Kapat</Button>
+                </div>
+              </div>
+            )}
           </DialogContent>
         </Dialog>
       </div>

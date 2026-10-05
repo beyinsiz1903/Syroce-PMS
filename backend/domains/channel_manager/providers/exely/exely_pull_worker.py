@@ -5,14 +5,19 @@ Scheduled pull via OTA_ReadRQ → common ingest pipeline.
 
 import asyncio
 import logging
+import uuid
 from datetime import UTC, datetime
 from typing import Any
+
+from pymongo import ReturnDocument
+from pymongo.errors import DuplicateKeyError
 
 from core.database import db
 from core.tenant_db import clear_tenant_context, set_tenant_context
 from core.transient_db_guard import TransientFailureTracker, is_transient_db_error
 from domains.channel_manager.providers.common_ingest import ingest_reservation, log_sync
 from domains.channel_manager.providers.exely.auto_import import auto_import_pending
+from domains.channel_manager.providers.exely.errors import ExelyValidationError
 from domains.channel_manager.providers.exely.normalizer import normalize_reservation
 from domains.channel_manager.providers.exely.production_safety import reservation_sync_block_reason
 from domains.channel_manager.providers.exely.provider import ExelyProvider
@@ -41,6 +46,38 @@ def _record_scheduler_error(exc: BaseException, key: str, context: str) -> None:
     logger.error("[EXELY-PULL] %s failed exception_class=%s", context, type(exc).__name__)
 
 
+async def _record_configuration_error(tenant_id: str, error: ExelyValidationError) -> None:
+    """Expose invalid connection routing without turning each scheduler tick into an outage.
+
+    A validation failure happens before any provider request.  Retrying it once a
+    minute cannot recover it; it needs an operator to correct the saved mode or
+    endpoint.  Persist only a stable, non-secret error code so the connection
+    status API can surface the action required, and keep the scheduler alive for
+    every other tenant.
+    """
+    error_code = "EXELY_CONNECTION_CONFIGURATION_INVALID"
+    try:
+        await db.exely_connections.update_one(
+            {"tenant_id": tenant_id, "is_active": True},
+            {
+                "$set": {
+                    "last_sync_status": "configuration_error",
+                    "last_sync_error": error_code,
+                    "last_sync_error_at": datetime.now(UTC).isoformat(),
+                }
+            },
+        )
+    except Exception as exc:
+        _record_scheduler_error(exc, safe_fingerprint(tenant_id), "configuration_error_persist")
+        return
+    logger.warning(
+        "[EXELY-PULL] tenant_pull_blocked reason=%s field=%s tenant=%s",
+        error_code,
+        error.field or "unspecified",
+        safe_fingerprint(tenant_id),
+    )
+
+
 class ExelyPullScheduler:
     """
     Cursor-based scheduled reservation pull from Exely.
@@ -50,6 +87,8 @@ class ExelyPullScheduler:
     def __init__(self):
         self._running = False
         self._task = None
+        self._interval_seconds = 60
+        self._lease_owner = str(uuid.uuid4())
 
     async def start(self, interval_seconds: int = 60, safety_window_minutes: int = 5):
         if self._running:
@@ -60,6 +99,7 @@ class ExelyPullScheduler:
             logger.warning("[EXELY-PULL] Scheduler blocked reason=%s", runtime_block)
             return False
         self._running = True
+        self._interval_seconds = interval_seconds
         self._task = asyncio.create_task(self._run_loop(interval_seconds, safety_window_minutes))
         logger.info(f"[EXELY-PULL] Scheduler started: every {interval_seconds}s")
         return True
@@ -86,18 +126,6 @@ class ExelyPullScheduler:
                 _transient_tracker.reset(TransientFailureTracker.OUTER_LOOP_KEY)
             await asyncio.sleep(interval_seconds)
 
-    async def _heartbeat(self, provider: ExelyProvider, tenant_id: str):
-        """Send a room discovery request to keep the connection alive in Exely."""
-        try:
-            from datetime import datetime, timedelta
-
-            tomorrow = (datetime.now(UTC) + timedelta(days=1)).strftime("%Y-%m-%d")
-            week = (datetime.now(UTC) + timedelta(days=7)).strftime("%Y-%m-%d")
-            result = await provider.discover_rooms(tomorrow, week)
-            logger.info("[EXELY-PULL] operation=heartbeat success=%s", result.success)
-        except Exception as exc:
-            logger.warning("[EXELY-PULL] operation=heartbeat success=false exception_class=%s", type(exc).__name__)
-
     async def _pull_all_tenants(self, safety_window_minutes: int):
         runtime_block = reservation_sync_block_reason()
         if runtime_block:
@@ -116,6 +144,9 @@ class ExelyPullScheduler:
             active_keys.append(key)
             try:
                 set_tenant_context(tenant_id)
+                if not await self._acquire_tenant_lease(tenant_id):
+                    logger.info("[EXELY-PULL] tenant_tick_skipped reason=lease_held tenant=%s", key)
+                    continue
                 creds = await resolve_exely_credentials(
                     tenant_id,
                     conn,
@@ -134,19 +165,77 @@ class ExelyPullScheduler:
                     password=creds["password"],
                     hotel_code=creds["hotel_code"],
                     endpoint_url=creds["endpoint_url"],
+                    connection_mode=conn.get("mode", ""),
                     safety_window_minutes=safety_window_minutes,
                 )
+            except ExelyValidationError as exc:
+                await _record_configuration_error(tenant_id, exc)
+                # This is a saved-connection defect, not a transient provider
+                # or database outage.  Do not carry a transient failure streak
+                # into a later, unrelated connection problem.
+                _transient_tracker.reset(key)
             except Exception as e:
                 # Preserve transient streak tracking without serializing exception details.
                 _record_scheduler_error(e, key, "tenant_pull")
             else:
                 _transient_tracker.reset(key)
+                if conn.get("last_sync_status") == "configuration_error":
+                    await db.exely_connections.update_one(
+                        {"tenant_id": tenant_id, "is_active": True},
+                        {
+                            "$unset": {
+                                "last_sync_status": "",
+                                "last_sync_error": "",
+                                "last_sync_error_at": "",
+                            }
+                        },
+                    )
             finally:
                 clear_tenant_context()
 
         # Memory hygiene over long uptimes with tenant churn — drop streak
         # counters for connections no longer active (OUTER_LOOP_KEY preserved).
         _transient_tracker.prune(active_keys)
+
+    async def _acquire_tenant_lease(self, tenant_id: str) -> bool:
+        """Ensure only one application replica pulls a tenant per interval.
+
+        The lease deliberately remains held until its expiry. Releasing it as
+        soon as a pull completes would let a second replica perform the same
+        tick and consume Exely's request quota twice.
+        """
+        now = datetime.now(UTC)
+        lease_seconds = max(60, int(self._interval_seconds * 0.9))
+        expires_at = now.timestamp() + lease_seconds
+        query = {
+            "tenant_id": tenant_id,
+            "$or": [
+                {"lease_expires_at": {"$lte": now.timestamp()}},
+                {"owner_token": self._lease_owner},
+                {"lease_expires_at": {"$exists": False}},
+            ],
+        }
+        update = {
+            "$set": {
+                "tenant_id": tenant_id,
+                "owner_token": self._lease_owner,
+                "lease_expires_at": expires_at,
+                "updated_at": now.isoformat(),
+            }
+        }
+        try:
+            lease = await db.exely_scheduler_leases.find_one_and_update(
+                query,
+                update,
+                upsert=True,
+                return_document=ReturnDocument.AFTER,
+            )
+        except DuplicateKeyError:
+            return False
+        except Exception as exc:
+            _record_scheduler_error(exc, safe_fingerprint(tenant_id), "lease_acquire")
+            return False
+        return bool(lease and lease.get("owner_token") == self._lease_owner)
 
     async def pull_for_tenant(
         self,
@@ -155,6 +244,8 @@ class ExelyPullScheduler:
         password: str,
         hotel_code: str,
         endpoint_url: str = "",
+        connection_mode: str = "",
+        safety_window_minutes: int = 5,
     ) -> dict[str, Any]:
         runtime_block = reservation_sync_block_reason()
         if runtime_block:
@@ -176,18 +267,27 @@ class ExelyPullScheduler:
         }
         if endpoint_url:
             provider_kwargs["endpoint_url"] = endpoint_url
+        if connection_mode:
+            provider_kwargs["connection_mode"] = connection_mode
         provider = ExelyProvider(**provider_kwargs)
-
-        # Heartbeat: keep connection alive in Exely
-        await self._heartbeat(provider, tenant_id)
 
         pull_start = datetime.now(UTC)
 
         result = await provider.pull_reservations()
 
         if not result.success:
-            await log_sync(PROVIDER, tenant_id, "scheduled_pull", "failed", error=result.error_type)
-            return {"success": False, "error": result.error_type}
+            # Keep the provider's classified failure available to the manual
+            # endpoint.  Collapsing this to a generic 502 made an
+            # authentication, SOAP-contract, rate-limit, and provider-side
+            # failure indistinguishable to the operator.
+            error_code = str(result.error_type or "EXELY_PROVIDER_READ_FAILED")
+            await log_sync(PROVIDER, tenant_id, "scheduled_pull", "failed", error=error_code)
+            return {
+                "success": False,
+                "error": error_code,
+                "provider_read_count": 1,
+                "provider_write_count": 0,
+            }
 
         reservations = (result.data or {}).get("reservations", [])
         processed = 0

@@ -1,12 +1,20 @@
 import { useState, useEffect, useMemo, useCallback, useRef, Suspense, memo } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
+import { getCheckoutErrorMessage, normalizeCheckoutResponse } from '@/utils/pmsCheckout';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
+import {
+  RESERVATION_EDIT_LOCK_HEADER,
+  reservationEditLockManager,
+} from '@/lib/reservationEditLockManager';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { lazyWithPreload as lazy } from '@/routes/lazyWithPreload';
 import Layout from '@/components/Layout';
 import GlobalSearch from '@/components/GlobalSearch';
+import { canAccessPmsTab } from '@/utils/moduleAccess';
 import { calculateOccupancyPrice, findOccupancyRule, nightsBetween } from '@/utils/occupancyPricing';
+import { calculateBookingStats } from '@/lib/bookingStats';
 // Tur 5: Bundle code-split — tab içerikleri ve büyük dialog'lar lazy.
 // İlk yüklemede sadece varsayılan 'frontdesk' tab'ı indirilir; kullanıcı
 // diğer sekmelere geçince ilgili chunk talep üzerine yüklenir.
@@ -35,9 +43,12 @@ const ReservationDetailModal = lazy(() => import('@/pages/ReservationDetailModal
 import LeadTimeCurve from '@/components/LeadTimeCurve';
 import RevenueDashboard from '@/components/RevenueDashboard';
 import AIActivityLog from '@/components/AIActivityLog';
-import StaffTaskManager from '@/components/StaffTaskManager';
-import FeedbackSystem from '@/components/FeedbackSystem';
-import AllotmentGrid from '@/components/AllotmentGrid';
+// These are independent operational workspaces, not front-desk dependencies.
+// Keep them outside the PMS shell so the default tab does not parse their
+// tables, form logic and network clients before the operator asks for them.
+const StaffTaskManager = lazy(() => import('@/components/StaffTaskManager'));
+const FeedbackSystem = lazy(() => import('@/components/FeedbackSystem'));
+const AllotmentGrid = lazy(() => import('@/components/AllotmentGrid'));
 import GroupRevenueByCompany from '@/components/GroupRevenueByCompany';
 import PickupPaceReport from '@/components/PickupPaceReport';
 import BookingDetailDialog from '@/components/pms/BookingDetailDialog';
@@ -94,6 +105,8 @@ const PMSModule = ({ user, tenant, onLogout }) => {
     tenant?.subscription_tier ||
     'core_small_hotel';
   const isLite = plan === 'pms_lite';
+  const effectivePermissions = user?.effective_permissions || [];
+  const canCreateBooking = effectivePermissions.includes('create_booking');
 
   const { data: setup } = useSetupStatus({ enabled: isLite });
   const roomsCount = setup?.rooms_count ?? 0;
@@ -153,6 +166,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
   const [selectedGuest360, setSelectedGuest360] = useState(null);
   const [guest360Data, setGuest360Data] = useState(null);
   const [loadingGuest360, setLoadingGuest360] = useState(false);
+  const [guest360InitialSection, setGuest360InitialSection] = useState('profile');
   const [selectedBookingDetail, setSelectedBookingDetail] = useState(null);
   const [reservationDetailId, setReservationDetailId] = useState(null);
   const [guestTag, setGuestTag] = useState('');
@@ -211,19 +225,15 @@ const PMSModule = ({ user, tenant, onLogout }) => {
 
   const visibleTabs = useMemo(() => {
     const base = isLite ? ALL_TABS.filter((tab) => LITE_TABS.has(tab.key)) : ALL_TABS;
-    return base.filter((tab) => isPmsSubTabEnabled(tab.key));
+    return base.filter((tab) => isPmsSubTabEnabled(tab.key) && canAccessPmsTab(user, tab.key));
   // eslint-disable-next-line react-hooks/exhaustive-deps -- ALL_TABS / LITE_TABS modül scope sabitleri
-  }, [isLite, isPmsSubTabEnabled]);
+  }, [isLite, isPmsSubTabEnabled, user]);
 
   const validTabKeys = useMemo(() => new Set(visibleTabs.map((t) => t.key)), [visibleTabs]);
 
   const [activeTab, setActiveTab] = useState(() => {
-    const hash = window.location.hash.replace('#', '');
-    const validKeys = isLite
-      ? new Set(ALL_TABS.filter((t) => LITE_TABS.has(t.key)).map((t) => t.key))
-      : new Set(ALL_TABS.map((t) => t.key));
-    if (hash && validKeys.has(hash)) return hash;
-    return 'frontdesk';
+    const requested = new URLSearchParams(window.location.search).get('tab') || window.location.hash.replace('#', '');
+    return validTabKeys.has(requested) ? requested : visibleTabs[0]?.key || '';
   });
 
   // Active-only mount (perf fix): önceki sticky-lazy `visitedTabs` modeli
@@ -239,23 +249,21 @@ const PMSModule = ({ user, tenant, onLogout }) => {
     const onHashChange = () => {
       const hash = window.location.hash.replace('#', '');
       if (hash && !validTabKeys.has(hash)) {
-        setActiveTab('frontdesk');
-        window.location.hash = 'frontdesk';
+        setActiveTab(visibleTabs[0]?.key || '');
         return;
       }
-      setActiveTab(hash || 'frontdesk');
+      setActiveTab(hash || visibleTabs[0]?.key || '');
     };
     window.addEventListener('hashchange', onHashChange);
     return () => window.removeEventListener('hashchange', onHashChange);
-  }, [validTabKeys]);
+  }, [validTabKeys, visibleTabs]);
 
   useEffect(() => {
     const hash = window.location.hash.replace('#', '');
-    if (hash && !validTabKeys.has(hash)) {
-      setActiveTab('frontdesk');
-      window.location.hash = 'frontdesk';
+    if (!validTabKeys.has(activeTab)) {
+      setActiveTab(visibleTabs[0]?.key || '');
     }
-  }, [validTabKeys]);
+  }, [validTabKeys, visibleTabs, activeTab]);
 
   useEffect(() => {
     if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') return;
@@ -346,7 +354,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
     total_amount: 0, base_rate: 0, channel: 'direct', company_id: '',
     contracted_rate: '', rate_type: '', market_segment: '',
     cancellation_policy: '', billing_address: '', billing_tax_number: '',
-    billing_contact_person: '', override_reason: ''
+    billing_contact_person: '', override_reason: '', currency: cachedTenantCurrency()
   });
 
   const [multiRoomBooking, setMultiRoomBooking] = useState([
@@ -399,12 +407,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
   });
 
   const bookingStats = useMemo(() => {
-    const total = bookings.length;
-    const confirmed = bookings.filter(b => b.status === 'confirmed').length;
-    const checkedIn = bookings.filter(b => b.status === 'checked_in').length;
-    const totalRevenue = bookings.reduce((sum, b) => sum + (b.total_amount || 0), 0);
-    const avgAdr = total > 0 ? totalRevenue / total : 0;
-    return { total, confirmed, checkedIn, totalRevenue, avgAdr };
+    return calculateBookingStats(bookings);
   }, [bookings]);
 
   const [newCharge, setNewCharge] = useState({ charge_type: 'food', description: '', amount: 0, quantity: 1 });
@@ -453,8 +456,10 @@ const PMSModule = ({ user, tenant, onLogout }) => {
 
   const [hasLoadedFrontdesk, setHasLoadedFrontdesk] = useState(false);
   const [hasLoadedHousekeeping, setHasLoadedHousekeeping] = useState(false);
+  const [hasLoadedAllBookings, setHasLoadedAllBookings] = useState(false);
   const [ratePlans, setRatePlans] = useState([]);
   const [packages, setPackages] = useState([]);
+  const rateDataRequestRef = useRef(0);
 
   // Initial load: kritik verileri (rooms/guests/bookings/companies) hemen çek;
   // ikincil veriler (audit log + channel manager pending items) initial paint
@@ -487,15 +492,39 @@ const PMSModule = ({ user, tenant, onLogout }) => {
   }, [hasLoadedFrontdesk, hasLoadedHousekeeping]);
 
   useEffect(() => {
+    if (!validTabKeys.has(activeTab)) return;
     if (activeTab === 'frontdesk' && !hasLoadedFrontdesk) { loadFrontDeskData(); setHasLoadedFrontdesk(true); }
     else if (activeTab === 'housekeeping' && !hasLoadedHousekeeping) { loadHousekeepingData(); setHasLoadedHousekeeping(true); }
+    else if (activeTab === 'bookings' && !hasLoadedAllBookings) {
+      const loadEveryBooking = async () => {
+        const allRows = [];
+        const pageSize = 1000;
+        for (let offset = 0; ; offset += pageSize) {
+          const response = await axios.get(`/pms/bookings?limit=${pageSize}&offset=${offset}&full_history=true`, { timeout: 30000 });
+          const payload = response?.data;
+          const rows = Array.isArray(payload) ? payload : (payload?.bookings || []);
+          allRows.push(...rows);
+          if (rows.length < pageSize) break;
+        }
+        return allRows;
+      };
+      loadEveryBooking()
+        .then((rows) => {
+          setBookings(rows);
+          setHasLoadedAllBookings(true);
+        })
+        .catch((error) => {
+          console.error('Tüm rezervasyonlar yüklenemedi:', error);
+          toast.error('Tüm rezervasyonlar yüklenemedi; tarih aralığındaki kayıtlar gösteriliyor');
+        });
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
-  }, [activeTab, hasLoadedFrontdesk, hasLoadedHousekeeping]);
+  }, [activeTab, hasLoadedFrontdesk, hasLoadedHousekeeping, hasLoadedAllBookings]);
 
   const loadData = async (businessDateOverride = null) => {
     try {
       let operationalDate = businessDateOverride || businessDate;
-      if (!operationalDate) {
+      if (!operationalDate && (user?.effective_permissions || []).includes('view_bookings')) {
         const businessDateResponse = await axios.get('/night-audit/business-date', { timeout: 15000 });
         operationalDate = businessDateResponse?.data?.business_date;
         if (operationalDate) setBusinessDate(operationalDate);
@@ -530,7 +559,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
       setRooms(roomsRes?.data || []); setGuests(guestsRes?.data || []);
       setBookings(bookingsRes?.data || []); setCompanies(companiesRes?.data || []);
       setOccupancyPricingRules(pricingRes?.data?.rules || {});
-    } catch (error) { toast.error('Failed to load data'); console.error('PMS data load error:', error);
+    } catch (error) { toast.error('PMS verileri yüklenemedi'); console.error('PMS data load error:', error);
     } finally { setLoading(false); }
   };
 
@@ -551,8 +580,8 @@ const PMSModule = ({ user, tenant, onLogout }) => {
           : setTimeout(fn, 1500);
       idle(() => loadAIInsights());
     } catch (error) {
-      const msg = error?.response?.data?.detail || error.message || 'Failed to load front desk data';
-      setFdError(msg); toast.error('Failed to load front desk data');
+      const msg = error?.response?.data?.detail || error.message || 'Ön büro verileri yüklenemedi';
+      setFdError(msg); toast.error('Ön büro verileri yüklenemedi');
     } finally { setFdLoading(false); }
   };
 
@@ -589,18 +618,34 @@ const PMSModule = ({ user, tenant, onLogout }) => {
           setArrivalRooms(arrivalsRes.data.arrival_rooms || []); setRoomBlocks(blocksRes.data.blocks || []);
         } catch (error) { console.error('Failed to load additional housekeeping data:', error); toast.error('Ek kat hizmetleri verileri yüklenemedi'); }
       }, 500);
-    } catch (error) { toast.error('Failed to load housekeeping data');
+    } catch (error) { toast.error('Kat hizmetleri verileri yüklenemedi');
     } finally { setHkLoading(false); }
   };
 
   const loadRateData = async (channel, companyId, stayDate) => {
+    const requestId = ++rateDataRequestRef.current;
     try {
       const params = {};
       if (channel) params.channel = channel; if (companyId) params.company_id = companyId; if (stayDate) params.stay_date = stayDate;
       const [rpRes, pkgRes] = await Promise.all([axios.get('/rates/rate-plans', { params }), axios.get('/rates/packages')]);
+      if (requestId !== rateDataRequestRef.current) return;
       setRatePlans(rpRes.data || []); setPackages(pkgRes.data || []);
-    } catch (error) { console.error('Failed to load rate plans/packages', error); toast.error('Failed to load rate plans'); }
+    } catch (error) {
+      if (requestId !== rateDataRequestRef.current) return;
+      console.error('Failed to load rate plans/packages', error); toast.error('Fiyat planları yüklenemedi');
+    }
   };
+
+  // Fiyat planı ve paket seçenekleri kayıt düğmesine basıldıktan sonra değil,
+  // rezervasyon formu açılır açılmaz ve fiyat bağlamı değiştiğinde hazır olmalı.
+  // Gönderim yalnızca bu görünüm verisini yenilemek için beklemez; backend
+  // fiyatı yine işlem anında doğrular. Eski yanıtların yeni bağlamı ezmesini
+  // request id ile engelleriz.
+  useEffect(() => {
+    if (openDialog !== 'booking') return;
+    loadRateData(newBooking.channel, newBooking.company_id, newBooking.check_in);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openDialog, newBooking.channel, newBooking.company_id, newBooking.check_in]);
 
   const loadAuditLogs = async () => {
     try { const response = await axios.get('/audit-logs?limit=20'); setAuditLogs(response.data.logs || []);
@@ -622,14 +667,14 @@ const PMSModule = ({ user, tenant, onLogout }) => {
   const handleImportOTA = async (otaId) => {
     try {
       const response = await axios.post(`/channel-manager/import-reservation/${otaId}`);
-      toast.success(`${response.data.message} - Room ${response.data.room_number}`);
+      toast.success(`${response.data.message} · Oda ${response.data.room_number}`);
       loadChannelManagerData(); loadData();
-    } catch (error) { toast.error(error.response?.data?.detail || 'Failed to import reservation'); }
+    } catch (error) { toast.error(error.response?.data?.detail || 'Rezervasyon içe aktarılamadı'); }
   };
 
   const handleApplyRMSSuggestion = async (suggestionId) => {
     try { const response = await axios.post(`/rms/apply-suggestion/${suggestionId}`); toast.success(response.data.message); loadChannelManagerData();
-    } catch (error) { toast.error(error.response?.data?.detail || 'Failed to apply suggestion'); }
+    } catch (error) { toast.error(error.response?.data?.detail || 'Öneri uygulanamadı'); }
   };
 
   const handleGenerateRMSSuggestions = async () => {
@@ -638,37 +683,82 @@ const PMSModule = ({ user, tenant, onLogout }) => {
       const nextWeek = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
       const response = await axios.post(`/rms/generate-suggestions?start_date=${today}&end_date=${nextWeek}`);
       toast.success(response.data.message); loadChannelManagerData();
-    } catch (error) { toast.error('Failed to generate suggestions'); }
+    } catch (error) { toast.error('Öneriler oluşturulamadı'); }
   };
 
   const handleCheckIn = async (bookingId, forceClean = false) => {
+    const currentLock = reservationEditLockManager?.getCurrent?.();
+    const shouldReleaseLock = !(
+      String(currentLock?.bookingId || '') === String(bookingId)
+      && currentLock?.status === 'acquired'
+    );
     try {
+      const lock = await reservationEditLockManager?.acquire?.(bookingId);
+      if (!lock || lock.status !== 'acquired') {
+        throw new Error('Rezervasyon düzenleme kilidi alınamadı. Lütfen tekrar deneyin.');
+      }
       const params = new URLSearchParams({ create_folio: 'true' });
       if (forceClean) params.append('force_clean', 'true');
-      const response = await axios.post(`/frontdesk/checkin/${bookingId}?${params}`);
-      toast.success(`${response.data.message} - Room ${response.data.room_number}`);
+      const response = await axios.post(
+        `/frontdesk/checkin/${bookingId}?${params}`,
+        null,
+        { headers: { [RESERVATION_EDIT_LOCK_HEADER]: lock.lockId } },
+      );
+      toast.success(`${response.data.message} · Oda ${response.data.room_number}`);
       await Promise.all([loadData(), loadFrontDeskData()]);
-    } catch (error) { toast.error(error.response?.data?.detail || 'Check-in failed'); }
+    } catch (error) {
+      toast.error(getCheckoutErrorMessage(error, 'Giriş yapılamadı'));
+    } finally {
+      if (shouldReleaseLock) await reservationEditLockManager?.releaseCurrent?.();
+    }
   };
 
   const handleCheckOut = async (bookingId) => {
+    const currentLock = reservationEditLockManager?.getCurrent?.();
+    const shouldReleaseLock = !(
+      String(currentLock?.bookingId || '') === String(bookingId)
+      && currentLock?.status === 'acquired'
+    );
     try {
-      const response = await axios.post(`/frontdesk/checkout/${bookingId}?auto_close_folios=true`);
-      if (response.data.total_balance > 0.01) toast.warning(`Open balance on check-out: ${response.data.total_balance.toFixed(2)} ₺`);
-      else toast.success(`${response.data.message} - ${response.data.folios_closed} folios closed`);
-      await Promise.all([loadData(), loadFrontDeskData(), loadHousekeepingData()]);
-    } catch (error) { toast.error(error.response?.data?.detail || 'Check-out failed'); }
+      const lock = await reservationEditLockManager?.acquire?.(bookingId);
+      if (!lock || lock.status !== 'acquired') {
+        throw new Error('Rezervasyon düzenleme kilidi alınamadı. Lütfen tekrar deneyin.');
+      }
+      const response = await axios.post(
+        `/frontdesk/checkout/${bookingId}?auto_close_folios=true`,
+        null,
+        { headers: { [RESERVATION_EDIT_LOCK_HEADER]: lock.lockId } },
+      );
+      const result = normalizeCheckoutResponse(response);
+      if (result.totalBalance > 0.01) {
+        toast.warning(`Çıkışta açık bakiye: ${formatCurrency(result.totalBalance, result.currency || cachedTenantCurrency())}`);
+      } else {
+        toast.success(result.foliosClosed > 0
+          ? `${result.message} · ${result.foliosClosed} folyo kapatıldı`
+          : result.message);
+      }
+
+      // Çıkış sunucuda tamamlandıktan sonra yardımcı ekranlardan biri geçici olarak
+      // yenilenemese bile başarılı işlemi hata/boş ekran gibi göstermeyelim.
+      await Promise.allSettled([loadData(), loadFrontDeskData(), loadHousekeepingData()]);
+      return true;
+    } catch (error) {
+      toast.error(getCheckoutErrorMessage(error));
+      return false;
+    } finally {
+      if (shouldReleaseLock) await reservationEditLockManager?.releaseCurrent?.();
+    }
   };
 
   const loadFolio = async (bookingId) => {
     try { const response = await axios.get(`/frontdesk/folio/${bookingId}`); setFolio(response.data); setSelectedBooking(bookingId); setOpenDialog('folio');
-    } catch (error) { toast.error('Failed to load folio'); }
+    } catch (error) { toast.error('Folyo yüklenemedi'); }
   };
 
   const handleCreateHKTask = async (e) => {
     e.preventDefault();
-    try { await axios.post('/housekeeping/tasks', newHKTask); toast.success('Task created'); setOpenDialog(null); loadHousekeepingData(); setNewHKTask({ room_id: '', task_type: 'cleaning', priority: 'normal', notes: '' });
-    } catch (error) { toast.error('Failed to create task'); }
+    try { await axios.post('/housekeeping/tasks', newHKTask); toast.success('Görev oluşturuldu'); setOpenDialog(null); loadHousekeepingData(); setNewHKTask({ room_id: '', task_type: 'cleaning', priority: 'normal', notes: '' });
+    } catch (error) { toast.error('Görev oluşturulamadı'); }
   };
 
   const handleAssignHKTask = async (taskId, userId) => {
@@ -680,18 +770,21 @@ const PMSModule = ({ user, tenant, onLogout }) => {
   };
 
   const handleUpdateHKTask = async (taskId, status) => {
-    try { await axios.put(`/housekeeping/tasks/${taskId}`, null, { params: { status } }); toast.success('Task updated'); loadHousekeepingData(); loadData();
-    } catch (error) { toast.error('Failed to update task'); }
+    try { await axios.put(`/housekeeping/tasks/${taskId}`, null, { params: { status } }); toast.success('Görev güncellendi'); loadHousekeepingData(); loadData();
+    } catch (error) { toast.error('Görev güncellenemedi'); }
   };
 
   const handleCreateCompany = async (e) => {
     e.preventDefault();
     try {
-      const response = await axios.post('/companies', newCompany);
-      toast.success('Company created successfully'); setOpenDialog(null); loadData();
-      const company = response.data; handleCompanySelect(company.id);
+      await axios.post('/companies', newCompany);
+      // Quick-created companies intentionally start pending, so they cannot be
+      // attached to a reservation until their approval is complete.
+      toast.success('Şirket oluşturuldu; onaylandıktan sonra rezervasyona bağlayabilirsiniz.');
+      setOpenDialog('booking');
+      loadData();
       setNewCompany({ name: '', corporate_code: '', tax_number: '', billing_address: '', contact_person: '', contact_email: '', contact_phone: '', contracted_rate: '', default_rate_type: '', default_market_segment: '', default_cancellation_policy: '', payment_terms: '', status: 'pending' });
-    } catch (error) { toast.error('Failed to create company'); }
+    } catch (error) { toast.error('Şirket oluşturulamadı'); }
   };
 
   const handleCompanySelect = (companyId) => {
@@ -737,12 +830,11 @@ const PMSModule = ({ user, tenant, onLogout }) => {
 
   const handleCreateBooking = async (e, inlineGuestName) => {
     e?.preventDefault();
-    if (newBooking.base_rate > 0 && newBooking.base_rate !== newBooking.total_amount && !newBooking.override_reason) { toast.error('Please provide a reason for rate override'); return; }
-    if (!newBooking.guest_id && !inlineGuestName) { toast.error('Please select guest or type a guest name'); return; }
-    if (!newBooking.check_in || !newBooking.check_out) { toast.error('Please select check-in and check-out dates'); return; }
-    await loadRateData(newBooking.channel, newBooking.company_id, newBooking.check_in);
-    if (!multiRoomBooking || multiRoomBooking.length === 0) { toast.error('Please add at least one room'); return; }
-    if (multiRoomBooking.find(r => !r.room_id)) { toast.error('Please select room for each line'); return; }
+    if (newBooking.base_rate > 0 && newBooking.base_rate !== newBooking.total_amount && !newBooking.override_reason) { toast.error('Fiyat değişikliği için açıklama girin'); return; }
+    if (!newBooking.guest_id && !inlineGuestName) { toast.error('Misafir seçin veya misafir adını yazın'); return; }
+    if (!newBooking.check_in || !newBooking.check_out) { toast.error('Giriş ve çıkış tarihlerini seçin'); return; }
+    if (!multiRoomBooking || multiRoomBooking.length === 0) { toast.error('En az bir oda ekleyin'); return; }
+    if (multiRoomBooking.find(r => !r.room_id)) { toast.error('Her satır için oda seçin'); return; }
     try {
       const roomsPayload = multiRoomBooking.map(room => ({
         room_id: room.room_id, adults: room.adults, children: room.children, children_ages: room.children_ages || [],
@@ -753,7 +845,8 @@ const PMSModule = ({ user, tenant, onLogout }) => {
       }));
       const payload = {
         arrival_date: newBooking.check_in, departure_date: newBooking.check_out,
-        rooms: roomsPayload, company_id: newBooking.company_id || null, channel: newBooking.channel || 'direct'
+        rooms: roomsPayload, company_id: newBooking.company_id || null, channel: newBooking.channel || 'direct',
+        currency: newBooking.currency || cachedTenantCurrency()
       };
       if (newBooking.guest_id) {
         payload.guest_id = newBooking.guest_id;
@@ -761,14 +854,14 @@ const PMSModule = ({ user, tenant, onLogout }) => {
         payload.guest = { name: inlineGuestName, phone: '' };
       }
       await axios.post('/pms/bookings/multi-room', payload);
-      toast.success('Booking created successfully'); setOpenDialog(null); loadData(); setSelectedCompany(null);
-      setNewBooking({ guest_id: '', room_id: '', check_in: '', check_out: '', adults: 1, children: 0, children_ages: [], guests_count: 1, total_amount: 0, base_rate: 0, channel: 'direct', company_id: '', contracted_rate: '', rate_type: '', market_segment: '', cancellation_policy: '', billing_address: '', billing_tax_number: '', billing_contact_person: '', override_reason: '' });
+      toast.success('Rezervasyon oluşturuldu'); setOpenDialog(null); loadData(); setSelectedCompany(null);
+      setNewBooking({ guest_id: '', room_id: '', check_in: '', check_out: '', adults: 1, children: 0, children_ages: [], guests_count: 1, total_amount: 0, base_rate: 0, channel: 'direct', company_id: '', contracted_rate: '', rate_type: '', market_segment: '', cancellation_policy: '', billing_address: '', billing_tax_number: '', billing_contact_person: '', override_reason: '', currency: cachedTenantCurrency() });
       setMultiRoomBooking([{ room_id: '', adults: 1, children: 0, children_ages: [], total_amount: 0, base_rate: 0, rate_plan: '', package_code: null }]);
     } catch (error) {
       const conflict = parseBookingConflict(error);
       if (conflict) { setBookingConflict(conflict); return; }
       const detail = error.response?.data?.detail;
-      toast.error(typeof detail === 'string' ? detail : (detail?.message || 'Failed to create booking'));
+      toast.error(typeof detail === 'string' ? detail : (detail?.message || 'Rezervasyon oluşturulamadı'));
     }
   };
 
@@ -812,22 +905,22 @@ const PMSModule = ({ user, tenant, onLogout }) => {
     try {
       const response = await axios.get(`/folio/${folioId}`);
       setSelectedFolio(response.data.folio); setFolioCharges(response.data.charges || []); setFolioPayments(response.data.payments || []);
-    } catch (error) { toast.error('Failed to load folio details'); }
+    } catch (error) { toast.error('Folyo ayrıntıları yüklenemedi'); }
   };
 
   const updateRoomStatus = async (roomId, newStatus) => {
-    try { await axios.put(`/pms/rooms/${roomId}`, { status: newStatus }); toast.success('Room status updated'); loadData(); loadHousekeepingData();
-    } catch (error) { toast.error('Failed to update status'); }
+    try { await axios.put(`/pms/rooms/${roomId}`, { status: newStatus }); toast.success('Oda durumu güncellendi'); loadData(); loadHousekeepingData();
+    } catch (error) { toast.error('Oda durumu güncellenemedi'); }
   };
 
   const quickUpdateRoomStatus = async (roomId, newStatus) => {
     try { const response = await axios.put(`/housekeeping/room/${roomId}/status?new_status=${newStatus}`); toast.success(response.data.message); loadHousekeepingData(); loadData();
-    } catch (error) { toast.error(error.response?.data?.detail || 'Failed to update status'); }
+    } catch (error) { toast.error(error.response?.data?.detail || 'Oda durumu güncellenemedi'); }
   };
 
   const createRoomBlock = async () => {
-    if (!selectedRoom) { toast.error('Please select a room'); return; }
-    if (!newRoomBlock.reason || !newRoomBlock.start_date) { toast.error('Please fill in all required fields'); return; }
+    if (!selectedRoom) { toast.error('Bir oda seçin'); return; }
+    if (!newRoomBlock.reason || !newRoomBlock.start_date) { toast.error('Zorunlu alanları doldurun'); return; }
     try {
       const idempotencyKey = window.crypto?.randomUUID?.() || `room-block-create-${Date.now()}-${Math.random()}`;
       const response = await axios.post('/pms/room-blocks', { room_id: selectedRoom.id, ...newRoomBlock }, { headers: { 'Idempotency-Key': idempotencyKey } });
@@ -835,36 +928,37 @@ const PMSModule = ({ user, tenant, onLogout }) => {
       toast.success(response.data.message); setOpenDialog(null); setSelectedRoom(null);
       setNewRoomBlock({ type: 'out_of_order', reason: '', details: '', start_date: '', end_date: '', allow_sell: false });
       loadHousekeepingData(); loadData();
-    } catch (error) { toast.error(error.response?.data?.detail || 'Failed to create room block'); }
+    } catch (error) { toast.error(error.response?.data?.detail || 'Oda blokajı oluşturulamadı'); }
   };
 
   const cancelRoomBlock = async (blockId) => {
     try {
       const idempotencyKey = window.crypto?.randomUUID?.() || `room-block-release-${Date.now()}-${Math.random()}`;
       await axios.post(`/pms/room-blocks/${blockId}/cancel`, null, { headers: { 'Idempotency-Key': idempotencyKey } });
-      toast.success('Room block cancelled'); loadHousekeepingData(); loadData();
-    } catch (error) { toast.error(error.response?.data?.detail || 'Failed to cancel block'); }
+      toast.success('Oda blokajı kaldırıldı'); loadHousekeepingData(); loadData();
+    } catch (error) { toast.error(error.response?.data?.detail || 'Oda blokajı kaldırılamadı'); }
   };
 
-  const loadGuest360 = async (guestId) => {
+  const loadGuest360 = async (guestId, initialSection = 'profile') => {
     setLoadingGuest360(true);
+    setGuest360InitialSection(initialSection);
     try { const response = await axios.get(`/crm/guest/${guestId}`, { timeout: 15000 }); setGuest360Data(response.data); setOpenDialog('guest360');
     } catch (error) {
-      if (error.code === 'ECONNABORTED') toast.error('Request timeout - Guest profile has too much data.');
-      else toast.error(error.response?.data?.detail || 'Failed to load guest profile');
+      if (error.code === 'ECONNABORTED') toast.error('İstek zaman aşımına uğradı; misafir profilinde çok fazla veri bulunuyor.');
+      else toast.error(error.response?.data?.detail || 'Misafir profili yüklenemedi');
     } finally { setLoadingGuest360(false); }
   };
 
   const addGuestTag = async () => {
     if (!guestTag || !selectedGuest360) return;
-    try { await axios.post(`/crm/guest/add-tag?guest_id=${selectedGuest360}&tag=${guestTag}`); toast.success('Tag added'); setGuestTag(''); loadGuest360(selectedGuest360);
-    } catch (error) { toast.error('Failed to add tag'); }
+    try { await axios.post(`/crm/guest/add-tag?guest_id=${selectedGuest360}&tag=${guestTag}`); toast.success('Etiket eklendi'); setGuestTag(''); loadGuest360(selectedGuest360);
+    } catch (error) { toast.error('Etiket eklenemedi'); }
   };
 
   const addGuestNote = async () => {
     if (!guestNote || !selectedGuest360) return;
-    try { await axios.post(`/crm/guest/note?guest_id=${selectedGuest360}&note=${guestNote}`); toast.success('Note added'); setGuestNote(''); loadGuest360(selectedGuest360);
-    } catch (error) { toast.error('Failed to add note'); }
+    try { await axios.post(`/crm/guest/note?guest_id=${selectedGuest360}&note=${guestNote}`); toast.success('Not eklendi'); setGuestNote(''); loadGuest360(selectedGuest360);
+    } catch (error) { toast.error('Not eklenemedi'); }
   };
 
   if (loading) {
@@ -890,7 +984,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
             <p className="text-gray-600">{t('pms.subtitle')}</p>
           </div>
           <div className="w-96">
-            <GlobalSearch onSelectResult={(result) => {
+            <GlobalSearch user={user} onSelectResult={(result) => {
               if (result.type === 'page' && result.data?.path) {
                 navigate(result.data.path);
                 toast.info(result.data.label || result.data.path);
@@ -899,7 +993,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
               const typeTabMap = { guest: 'frontdesk', booking: 'frontdesk', room: 'rooms', company: 'frontdesk', housekeeping: 'housekeeping' };
               const tab = typeTabMap[result.type] || 'frontdesk';
               setActiveTab(tab); window.location.hash = tab;
-              toast.info(`${result.data.name || result.data.room_number || result.data.id} - redirected to ${tab}`);
+              toast.info(`${result.data.name || result.data.room_number || result.data.id} · ilgili ekran açıldı`);
             }} />
           </div>
         </div>
@@ -914,18 +1008,18 @@ const PMSModule = ({ user, tenant, onLogout }) => {
                     {t('pms.quickActions', 'Hızlı İşlemler')}
                   </div>
                   <div className="flex flex-col gap-1.5">
-                    <Button size="sm" variant="outline" className="justify-start bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700" onClick={() => setOpenDialog('booking')}>
+                    {validTabKeys.has('bookings') && canCreateBooking && <Button size="sm" variant="outline" className="justify-start bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700" onClick={() => setOpenDialog('booking')}>
                       <Plus className="w-4 h-4 mr-2.5 text-slate-500" />{t('pms.newBooking', 'Yeni Rezervasyon')}
-                    </Button>
-                    <Button size="sm" variant="outline" className="justify-start bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700" onClick={() => setOpenDialog('guest')}>
+                    </Button>}
+                    {validTabKeys.has('guests') && canCreateBooking && <Button size="sm" variant="outline" className="justify-start bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700" onClick={() => setOpenDialog('guest')}>
                       <UserPlus className="w-4 h-4 mr-2.5 text-slate-500" />{t('pms.newGuest', 'Yeni Misafir')}
-                    </Button>
-                    <Button size="sm" variant="outline" className="justify-start bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700" onClick={async () => {
+                    </Button>}
+                    {validTabKeys.has('reports') && <Button size="sm" variant="outline" className="justify-start bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700" onClick={async () => {
                       try { const response = await axios.get('/reports/daily-flash'); if (response.data) { toast.success('Flash rapor hazır'); setActiveTab('reports'); } else { toast.info('Flash rapor verisi yok'); }
                       } catch (error) { toast.error('Rapor oluşturulamadı'); }
                     }}>
                       <FileText className="w-4 h-4 mr-2.5 text-slate-500" />{t('pms.flashReport', 'Flash Rapor')}
-                    </Button>
+                    </Button>}
                     <Button size="sm" variant="outline" className="justify-start bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700" onClick={() => loadData()}>
                       <RefreshCw className="w-4 h-4 mr-2.5 text-slate-500" />{t('common.refresh', 'Yenile')}
                     </Button>
@@ -966,7 +1060,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
               re-mount sırasında anında geri hidrate eder. Önceki "sticky-mount
               + forceMount" modeli ziyaret edilmiş tüm panelleri arka planda
               canlı tuttuğu için tab geçişi yavaşlıyordu. */}
-          <Suspense fallback={<div className="p-6 text-sm text-slate-500">Yükleniyor…</div>}>
+          {validTabKeys.has(activeTab) && <Suspense fallback={<div className="p-6 text-sm text-slate-500">Yükleniyor…</div>}>
           {activeTab === 'frontdesk' && (
             <FrontdeskTab t={t} arrivals={arrivals} departures={departures} inhouse={inhouse} bookings={bookings} rooms={rooms} guests={guests} aiPrediction={aiPrediction} aiPatterns={aiPatterns} handleCheckIn={handleCheckIn} handleCheckOut={handleCheckOut} loadFolio={loadFolio} loadFrontDeskData={loadFrontDeskData} loadData={loadData} loading={fdLoading} error={fdError} tenant={tenant} setReservationDetailId={setReservationDetailId} />
           )}
@@ -994,14 +1088,14 @@ const PMSModule = ({ user, tenant, onLogout }) => {
           {activeTab === 'tasks' && <TabsContent value="tasks" className="space-y-4"><StaffTaskManager /></TabsContent>}
           {activeTab === 'feedback' && <TabsContent value="feedback" className="space-y-4"><FeedbackSystem /></TabsContent>}
           {activeTab === 'allotment' && <TabsContent value="allotment" className="space-y-4"><AllotmentGrid /></TabsContent>}
-          {activeTab === 'pos' && <TabsContent value="pos" className="space-y-4"><POSTab /></TabsContent>}
+          {activeTab === 'pos' && <TabsContent value="pos" className="space-y-4"><POSTab businessDate={businessDate} /></TabsContent>}
           {activeTab === 'laundry' && <TabsContent value="laundry" className="space-y-4"><LaundryTab /></TabsContent>}
           {activeTab === 'concierge' && <TabsContent value="concierge" className="space-y-4"><ConciergeDesk /></TabsContent>}
           {activeTab === 'revenue' && <TabsContent value="revenue" className="space-y-4"><RevenueControls rooms={rooms} /></TabsContent>}
-          {activeTab === 'manager_report' && <TabsContent value="manager_report" className="space-y-4"><ManagerDailyReport rooms={rooms} bookings={bookings} arrivals={arrivals} departures={departures} inhouse={inhouse} /></TabsContent>}
-          {activeTab === 'kbs' && <TabsContent value="kbs" className="space-y-4"><KBSNotification bookings={bookings} guests={guests} /></TabsContent>}
+          {activeTab === 'manager_report' && <TabsContent value="manager_report" className="space-y-4"><ManagerDailyReport businessDate={businessDate} rooms={rooms} bookings={bookings} /></TabsContent>}
+          {activeTab === 'kbs' && <TabsContent value="kbs" className="space-y-4"><KBSNotification tenantId={tenant?.id || tenant?._id || tenant?.tenant_id} bookings={bookings} guests={guests} /></TabsContent>}
           {activeTab === 'kvkk' && <TabsContent value="kvkk" className="space-y-4"><KVKKManager /></TabsContent>}
-          </Suspense>
+          </Suspense>}
             </div>
           </div>
         </Tabs>
@@ -1032,7 +1126,14 @@ const PMSModule = ({ user, tenant, onLogout }) => {
         <RoomBlockCreateDialog open={openDialog === 'roomblock'} onClose={() => { setOpenDialog(null); setSelectedRoom(null); }} rooms={rooms} selectedRoom={selectedRoom} setSelectedRoom={setSelectedRoom} newRoomBlock={newRoomBlock} setNewRoomBlock={setNewRoomBlock} onSubmit={createRoomBlock} />
         <RoomBlockViewDialog open={openDialog === 'roomblock-view'} onClose={() => setOpenDialog(null)} roomBlocks={roomBlocks} onCancel={cancelRoomBlock} />
         <FindRoomDialog open={openDialog === 'findroom'} onClose={() => setOpenDialog(null)} criteria={findRoomCriteria} setCriteria={setFindRoomCriteria} />
-        <PaymentDialog open={openDialog === 'payment'} onClose={() => setOpenDialog(null)} paymentForm={paymentForm} setPaymentForm={setPaymentForm} bookingId={selectedBooking} onPaymentSuccess={() => { loadData(); loadFrontDeskData(); }} />
+        <PaymentDialog
+          open={openDialog === 'payment'}
+          onClose={() => setOpenDialog(null)}
+          paymentForm={paymentForm}
+          setPaymentForm={setPaymentForm}
+          selectedBooking={bookings.find((booking) => booking.id === selectedBooking) || null}
+          onPaymentDone={() => { loadData(); loadFrontDeskData(); }}
+        />
 
         {selectedBookingDetail && (
           <BookingDetailDialog
@@ -1063,6 +1164,10 @@ const PMSModule = ({ user, tenant, onLogout }) => {
               open={openDialog === 'guest360'}
               onClose={() => { setOpenDialog(null); setGuest360Data(null); }}
               guest360Data={guest360Data}
+              loadingGuest360={loadingGuest360}
+              selectedGuest360={selectedGuest360}
+              loadGuest360={loadGuest360}
+              initialSection={guest360InitialSection}
               guestTag={guestTag}
               setGuestTag={setGuestTag}
               guestNote={guestNote}

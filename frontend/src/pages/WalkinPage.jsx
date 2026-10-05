@@ -8,12 +8,28 @@ import { Label } from '@/components/ui/label';
 import { Loader2, UserPlus, Bed, CheckCircle2, ChevronRight, ChevronLeft, ChevronDown, ChevronUp } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
+import { moneyInputProps, parseMoneyInput } from '@/lib/moneyInput';
 
 const STEPS = [
   { n: 1, label: 'Misafir' },
   { n: 2, label: 'Oda & Süre' },
   { n: 3, label: 'Tutar & Onay' },
 ];
+
+export const clampWalkinNights = (value) => Math.min(14, Math.max(1, Number.parseInt(value, 10) || 1));
+
+export const validateWalkinCheckin = ({ adults, children, totalAmount, paymentAmount, paymentMethod }) => {
+  if (!Number.isInteger(Number(adults)) || Number(adults) < 1) return 'Yetişkin sayısı en az 1 olmalı';
+  if (!Number.isInteger(Number(children)) || Number(children) < 0) return 'Çocuk sayısı negatif olamaz';
+  const total = parseMoneyInput(totalAmount);
+  const paid = parseMoneyInput(paymentAmount);
+  if (!Number.isFinite(total) || total <= 0) return 'Tutar gerekli';
+  if (!Number.isFinite(paid) || paid < 0) return 'Ödenen tutar negatif olamaz';
+  if (paid > total + 0.001) return 'Ödenen tutar toplam tutarı aşamaz';
+  if (paymentMethod === 'none' && paid > 0) return 'Ödeme yöntemi seçin veya ödenen tutarı sıfırlayın';
+  return null;
+};
 
 function Stepper({ step }) {
   const { t, i18n } = useTranslation();
@@ -44,7 +60,7 @@ function Stepper({ step }) {
   );
 }
 
-function RoomGroup({ type, rooms, selectedId, onSelect, nights, defaultOpen }) {
+function RoomGroup({ type, rooms, selectedId, onSelect, nights, defaultOpen, currency }) {
   const { t, i18n } = useTranslation();
   const [open, setOpen] = useState(defaultOpen);
   return (
@@ -81,14 +97,14 @@ function RoomGroup({ type, rooms, selectedId, onSelect, nights, defaultOpen }) {
                 <div className="text-[11px] text-slate-500">{r.room_type || '-'}</div>
                 {rate > 0 ? (
                   <div className="text-sm mt-1.5 text-slate-700">
-                    <span className="font-semibold text-slate-900">{rate.toLocaleString(i18n.language)} ₺</span>
+                    <span className="font-semibold text-slate-900">{formatCurrency(rate, r.currency || currency, { locale: i18n.language })}</span>
                     <span className="text-xs text-slate-500"> / gece</span>
                   </div>
                 ) : (
                   <div className="text-[11px] text-amber-700 mt-1.5">{t('cm.pages_WalkinPage.fiyat_sonraki_adimda_girilecek')}</div>
                 )}
                 {sel && nights > 1 && rate > 0 && (
-                  <div className="text-[11px] text-slate-500 mt-0.5">{t('cm.pages_WalkinPage.toplam')} {(rate * nights).toLocaleString(i18n.language)} ₺</div>
+                  <div className="text-[11px] text-slate-500 mt-0.5">{t('cm.pages_WalkinPage.toplam')} {formatCurrency(rate * nights, r.currency || currency, { locale: i18n.language })}</div>
                 )}
               </button>
             );
@@ -102,6 +118,7 @@ function RoomGroup({ type, rooms, selectedId, onSelect, nights, defaultOpen }) {
 export default function WalkinPage({ user, tenant, onLogout }) {
   const { t, i18n } = useTranslation();
   const nav = useNavigate();
+  const currency = tenant?.currency || cachedTenantCurrency();
   const [step, setStep] = useState(1);
   const [done, setDone] = useState(false);
   const [nights, setNights] = useState(1);
@@ -144,14 +161,21 @@ export default function WalkinPage({ user, tenant, onLogout }) {
   const submit = async () => {
     if (!form.guest_name.trim()) return toast.error('Misafir adı gerekli');
     if (!form.room_id) return toast.error('Oda seçin');
-    if (!(form.total_amount > 0)) return toast.error('Tutar gerekli');
+    const validationError = validateWalkinCheckin({
+      adults: form.adults,
+      children: form.children,
+      totalAmount: form.total_amount,
+      paymentAmount: form.payment_amount,
+      paymentMethod: form.payment_method,
+    });
+    if (validationError) return toast.error(validationError);
     setSubmitting(true);
     try {
-      const { data } = await api.post('/pms/walkin/checkin', { ...form, nights });
+      const { data } = await api.post('/pms/walkin/checkin', { ...form, total_amount: parseMoneyInput(form.total_amount), payment_amount: parseMoneyInput(form.payment_amount), nights });
       toast.success(`Check-in tamam — Oda ${data.room_number}`);
       setDone(true);
       setTimeout(() => nav(`/reservations/${data.booking_id}`), 1200);
-    } catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
+    } catch (e) { toast.error('İşlem Hatası: ' + (e.response?.data?.detail || e.message)); }
     finally { setSubmitting(false); }
   };
 
@@ -167,13 +191,22 @@ export default function WalkinPage({ user, tenant, onLogout }) {
 
   const goBack = () => setStep(s => Math.max(1, s - 1));
 
+  const changeNights = (value) => {
+    const nextNights = clampWalkinNights(value);
+    if (nextNights === nights) return;
+    // Müsaitlik gece sayısına bağlıdır. Önceki seçimi ve fiyatı taşımak,
+    // artık müsait olmayan bir odayla hatalı check-in oluşturabilir.
+    setNights(nextNights);
+    setForm((current) => ({ ...current, room_id: '', total_amount: 0 }));
+  };
+
   // Sticky özet metni
   const summaryText = (() => {
     const parts = [];
     if (form.guest_name) parts.push(form.guest_name);
     if (selectedRoom) parts.push(`Oda ${selectedRoom.room_number}`);
     if (selectedRoom) parts.push(`${nights} gece`);
-    if (form.total_amount > 0) parts.push(`${form.total_amount.toLocaleString(i18n.language)} ₺`);
+    if (form.total_amount > 0) parts.push(formatCurrency(form.total_amount, selectedRoom?.currency || currency, { locale: i18n.language }));
     return parts.join(' · ') || 'Henüz seçim yok';
   })();
 
@@ -248,7 +281,7 @@ export default function WalkinPage({ user, tenant, onLogout }) {
                   <div className="flex items-center gap-2">
                     <Label className="text-xs">{t('cm.pages_WalkinPage.gece_sayisi')}</Label>
                     <Input type="number" min={1} max={14} value={nights}
-                      onChange={e => setNights(Math.max(1, parseInt(e.target.value || '1')))}
+                      onChange={e => changeNights(e.target.value)}
                       className="h-8 w-20" />
                     <Button size="sm" variant="outline" onClick={() => loadRooms(nights)} disabled={loadingRooms} className="border-slate-300">
                       {loadingRooms ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Yenile'}
@@ -271,6 +304,7 @@ export default function WalkinPage({ user, tenant, onLogout }) {
                         selectedId={form.room_id}
                         onSelect={(r) => setForm({ ...form, room_id: r.id, total_amount: (r.rate || 0) * nights })}
                         nights={nights}
+                        currency={currency}
                         defaultOpen={idx === 0}
                       />
                     ))}
@@ -286,11 +320,11 @@ export default function WalkinPage({ user, tenant, onLogout }) {
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                   <div>
                     <Label className="text-xs">{t('cm.pages_WalkinPage.toplam_tutar')} <span className="text-rose-500">*</span></Label>
-                    <Input type="number" value={form.total_amount} onChange={e => setForm({ ...form, total_amount: parseFloat(e.target.value || '0') })} className="h-9" />
+                    <Input {...moneyInputProps} placeholder="Örn. 150,74" value={form.total_amount} onChange={e => setForm({ ...form, total_amount: e.target.value })} className="h-9" />
                   </div>
                   <div>
                     <Label className="text-xs">{t('cm.pages_WalkinPage.simdi_odenen')}</Label>
-                    <Input type="number" value={form.payment_amount} onChange={e => setForm({ ...form, payment_amount: parseFloat(e.target.value || '0') })} className="h-9" />
+                    <Input {...moneyInputProps} placeholder="Örn. 150,74" value={form.payment_amount} onChange={e => setForm({ ...form, payment_amount: e.target.value })} className="h-9" />
                   </div>
                   <div className="md:col-span-2">
                     <Label className="text-xs">{t('cm.pages_WalkinPage.odeme_turu')}</Label>
@@ -313,7 +347,7 @@ export default function WalkinPage({ user, tenant, onLogout }) {
                     <div className="mt-1 text-amber-800">
                       {form.guest_name} {t('cm.pages_WalkinPage.oda_062cb')} {selectedRoom.room_number} ({selectedRoom.room_type || '-'}) · {nights} gece · {form.adults}+{form.children} {t('cm.pages_WalkinPage.kisi')}
                     </div>
-                    <div className="mt-1 font-semibold text-amber-900">{t('cm.pages_WalkinPage.toplam_68af4')} {form.total_amount.toLocaleString(i18n.language)} ₺</div>
+                    <div className="mt-1 font-semibold text-amber-900">{t('cm.pages_WalkinPage.toplam_68af4')} {formatCurrency(form.total_amount, selectedRoom?.currency || currency, { locale: i18n.language })}</div>
                   </div>
                 )}
               </Card>
@@ -325,7 +359,7 @@ export default function WalkinPage({ user, tenant, onLogout }) {
         {!done && (
           <div className="fixed bottom-0 left-0 right-0 z-20 bg-white border-t border-slate-200 px-4 py-3 md:pl-64">
             <div className="max-w-5xl mx-auto flex items-center justify-between gap-2">
-              <Button variant="outline" onClick={step === 1 ? () => nav('/pms') : goBack} className="border-slate-300">
+              <Button variant="outline" onClick={step === 1 ? () => nav('/pms#frontdesk') : goBack} className="border-slate-300">
                 {step === 1 ? 'İptal' : (<><ChevronLeft className="w-4 h-4 mr-1" /> Geri</>)}
               </Button>
               {step < 3 ? (
@@ -335,7 +369,7 @@ export default function WalkinPage({ user, tenant, onLogout }) {
               ) : (
                 <Button onClick={submit} disabled={submitting} className="bg-amber-600 hover:bg-amber-700 text-white" data-testid="walkin-submit">
                   {submitting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <CheckCircle2 className="w-4 h-4 mr-2" />}
-                  Check-in Tamamla {form.total_amount > 0 && `(${form.total_amount.toLocaleString(i18n.language)} ₺)`}
+                  Check-in Tamamla {form.total_amount > 0 && `(${formatCurrency(form.total_amount, selectedRoom?.currency || currency, { locale: i18n.language })})`}
                 </Button>
               )}
             </div>

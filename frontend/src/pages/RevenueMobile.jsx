@@ -19,6 +19,8 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { formatCurrency as formatMoney, cachedTenantCurrency } from '@/lib/currency';
+import { bookingSourceLabel } from '@/utils/bookingSource';
 
 const RevenueMobile = ({ user }) => {
   const { t } = useTranslation();
@@ -101,9 +103,7 @@ const RevenueMobile = ({ user }) => {
     return 'text-gray-600';
   };
 
-  const formatCurrency = (amount) => {
-    return new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY' }).format(amount);
-  };
+  const formatCurrency = (amount, currency) => formatMoney(amount, currency || cachedTenantCurrency());
 
   if (loading) {
     return (
@@ -326,7 +326,7 @@ const RevenueMobile = ({ user }) => {
                   <CardContent className="p-4">
                     <div className="flex justify-between items-start mb-3">
                       <div>
-                        <div className="font-bold text-lg capitalize">{channel.channel}</div>
+                        <div className="font-bold text-lg">{bookingSourceLabel({ channel: channel.channel })}</div>
                         <div className="text-sm text-gray-600">
                           {channel.bookings_count} rezervasyon • {channel.room_nights} gece
                         </div>
@@ -521,7 +521,7 @@ const RevenueMobile = ({ user }) => {
                   {cancellationData?.by_channel?.map(channel => (
                     <div key={channel.channel} className="p-3 bg-gray-50 rounded">
                       <div className="flex justify-between items-start mb-2">
-                        <div className="font-semibold capitalize">{channel.channel}</div>
+                        <div className="font-semibold">{bookingSourceLabel({ channel: channel.channel })}</div>
                         <Badge variant="outline">{channel.rate}%</Badge>
                       </div>
                       <div className="grid grid-cols-3 gap-2 text-sm">

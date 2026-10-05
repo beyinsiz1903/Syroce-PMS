@@ -16,4 +16,5 @@ async def main():
     extra = await db.extra_charges.find({"booking_id": "RES-347624"}).to_list(100)
     print("Extra charges:", extra)
 
+
 asyncio.run(main())

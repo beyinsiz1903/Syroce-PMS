@@ -44,9 +44,8 @@
 #    secrets/SES (core/secrets, core/crypto, core/email, infra/secrets_manager)
 #  - resend: transactional e-mail; stripe/iyzipay: payment SDKs
 #  - openai/litellm/google-*: AI provider calls used by 'analytics' tasks
-# NOTE (litellm): integrations.txt pins litellm==1.80.0 ONLY for an openai-1.x
-# compatible dep tree; it is overridden --no-deps to litellm>=1.84.0 in
-# worker/Dockerfile (IDENTICAL to backend/Dockerfile) to clear CVE-2026-49468.
+# NOTE (litellm): integrations.txt is the single source of truth for the
+# tested LiteLLM/OpenAI pair.  Worker and API images must install it unchanged.
 # NOTE (Twilio): SMS/WhatsApp transport (twilio) is NOT pinned anywhere in the
 # repo and has no live transport yet (fail-closed 503); not packaged here.
 # No version conflicts vs base/worker/ml/reports (mirrors all.txt's tested set).

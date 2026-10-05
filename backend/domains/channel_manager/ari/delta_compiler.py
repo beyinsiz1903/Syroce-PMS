@@ -78,6 +78,10 @@ def compile_delta_exely(change_set: dict) -> ARIDelta:
             raise ValueError("Exely restriction operation must be explicit")
         exely_payload["operation"] = operation
         exely_payload["value"] = payload.get(operation)
+    if payload.get("force_resend_token"):
+        # Included in the outbound hash only. The provider adapter deliberately
+        # sends the same protocol payload, while a manual resend is not skipped.
+        exely_payload["force_resend_token"] = payload["force_resend_token"]
 
     return ARIDelta(
         provider="exely",

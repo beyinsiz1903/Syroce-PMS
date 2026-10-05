@@ -49,6 +49,14 @@ function getLocalizedText(value, lang, fallback = "") {
   return fallback;
 }
 
+function formatRoomCharge(minor, currency, lang) {
+  try {
+    return new Intl.NumberFormat(LOCALE[lang] || "tr-TR", { style: "currency", currency }).format((Number(minor) || 0) / 100);
+  } catch {
+    return `${((Number(minor) || 0) / 100).toFixed(2)} ${currency}`;
+  }
+}
+
 function GuestThread({ tenantId, roomId, token, t, lang, rtl, accent, alwaysShow }) {
   const [messages, setMessages] = useState([]);
   const [loaded, setLoaded] = useState(false);
@@ -187,7 +195,7 @@ function ServiceInput({ service, cartItem, onChange, t, accent, lang, experience
       <Button 
         variant={isSelected ? "default" : "outline"}
         onClick={() => isSelected ? onChange(null) : onChange({ value: {} })}
-        className="w-full mt-3 min-h-[46px] rounded-xl font-semibold"
+        className="mt-3 min-h-[44px] w-auto self-end rounded-xl px-5 font-semibold"
         style={isSelected ? { background: accent } : { color: accent, borderColor: `${accent}66`, background: `${accent}08` }}
       >
         {isSelected ? experience.serviceAdded : experience.serviceAdd}
@@ -348,8 +356,13 @@ function ServiceInput({ service, cartItem, onChange, t, accent, lang, experience
     }
 
     return (
-      <div className="mt-2 flex flex-col gap-2">
-        <Input 
+      <div className="mt-3 flex flex-col gap-2">
+        <Label htmlFor={`guest-service-${service.service_code}`} className="text-xs font-semibold text-slate-600">
+          {type === "time" ? experience.selectTime : type === "date" ? t.date : t.datetime}
+        </Label>
+        <Input
+          id={`guest-service-${service.service_code}`}
+          aria-label={type === "time" ? experience.selectTime : type === "date" ? t.date : t.datetime}
           type={inputType}
           value={val}
           min={min}
@@ -376,7 +389,7 @@ function ServiceInput({ service, cartItem, onChange, t, accent, lang, experience
             
             onChange({ value: { [key]: selectedVal } });
           }}
-          className="min-h-[44px]"
+          className="min-h-[46px] w-full rounded-xl bg-white text-base sm:max-w-xs"
         />
         {cartItem && (
           <Button variant="ghost" size="sm" onClick={() => onChange(null)} className="text-red-500 self-start p-0 h-auto min-h-[44px]">
@@ -433,6 +446,7 @@ export default function RoomRequestPage() {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
   const [submittedItems, setSubmittedItems] = useState([]);
+  const [roomChargeConsent, setRoomChargeConsent] = useState(false);
   const submitGuard = useRef(false);
 
   const loadData = useCallback(async () => {
@@ -582,7 +596,7 @@ export default function RoomRequestPage() {
     setSubmitError("");
 
     let key, payload;
-    if (cartState.snapshot) {
+    if (cartState.snapshot && cartState.snapshot.payload?.confirm_room_charge === roomChargeConsent) {
       key = cartState.snapshot.key;
       payload = cartState.snapshot.payload;
     } else {
@@ -590,6 +604,7 @@ export default function RoomRequestPage() {
       payload = {
         language: lang,
         idempotency_key: key,
+        confirm_room_charge: roomChargeConsent,
         items: cartState.cart.map(c => {
            const obj = { service_code: c.service_code };
            if (c.value && Object.keys(c.value).length > 0) obj.value = c.value;
@@ -608,6 +623,7 @@ export default function RoomRequestPage() {
         headers: { "X-Guest-Session": guestSession }
       });
       cartState.clearCart();
+      setRoomChargeConsent(false);
       setSubmittedItems(readableItems);
       setView("success");
     } catch (e) {
@@ -645,6 +661,7 @@ export default function RoomRequestPage() {
     setLegacyPriority("normal");
     setSubmitError("");
     setSubmittedItems([]);
+    setRoomChargeConsent(false);
     if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -862,7 +879,7 @@ export default function RoomRequestPage() {
               <CardTitle className="text-[1.35rem] font-semibold leading-tight tracking-tight">{experience.pickTitle}</CardTitle>
               <p className="pt-1 text-sm leading-6 text-slate-500">{experience.pickHint}</p>
             </CardHeader>
-            <CardContent className="grid grid-cols-1 gap-3 px-4 pb-5 sm:grid-cols-3 sm:px-6">
+            <CardContent className="grid grid-cols-1 gap-3 px-4 pb-5 min-[420px]:grid-cols-2 sm:grid-cols-3 sm:px-6">
               {catalogueData.departments.map(dept => {
                 const Icon = ICONS[dept.icon] || MessageSquare;
                 const deptDescriptions = DEPT_DESCRIPTIONS[lang] || DEPT_DESCRIPTIONS.en;
@@ -871,17 +888,17 @@ export default function RoomRequestPage() {
                   <button
                     key={dept.department_code}
                     onClick={() => { setSelectedDeptCode(dept.department_code); setView("services"); }}
-                    className="group flex min-h-[76px] w-full items-center gap-4 rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-[0_8px_24px_-22px_rgba(15,23,42,0.8)] transition hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md active:translate-y-0 sm:min-h-[156px] sm:flex-col sm:justify-center sm:text-center"
+                    className="group flex min-h-[76px] w-full items-center gap-3 rounded-2xl border border-slate-200 bg-white p-3.5 text-left shadow-[0_8px_24px_-22px_rgba(15,23,42,0.8)] transition hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md active:translate-y-0 min-[420px]:min-h-[132px] min-[420px]:flex-col min-[420px]:justify-center min-[420px]:text-center sm:min-h-[148px]"
                     data-testid={`dept-${dept.department_code}`}
                   >
                     <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl transition-transform group-hover:scale-105 sm:h-14 sm:w-14" style={{ background: `${accent}12`, color: accent }}>
                       <Icon className="h-6 w-6 sm:h-7 sm:w-7" />
                     </div>
-                    <span className="min-w-0 flex-1 sm:flex-none">
+                    <span className="min-w-0 flex-1 min-[420px]:flex-none">
                       <span className="block text-[15px] font-semibold text-slate-900">{getLabel(dept, lang, dept.department_code)}</span>
-                      <span className="mt-0.5 block text-xs leading-5 text-slate-500 sm:hidden">{description}</span>
+                      <span className="mt-0.5 block text-xs leading-5 text-slate-500 min-[420px]:line-clamp-2">{description}</span>
                     </span>
-                    <ChevronRight className={`h-5 w-5 shrink-0 text-slate-300 sm:hidden ${rtl ? "rotate-180" : ""}`} />
+                    <ChevronRight className={`h-5 w-5 shrink-0 text-slate-300 min-[420px]:hidden ${rtl ? "rotate-180" : ""}`} />
                   </button>
                 );
               })}
@@ -929,6 +946,16 @@ export default function RoomRequestPage() {
                            <p className="mt-2 inline-block rounded-full bg-amber-50 px-2 py-1 text-[11px] font-medium text-amber-700">
                              {chargeWarning}
                            </p>
+                        )}
+                        {service.room_charge_enabled && service.currency && (
+                          <p className="mt-2 text-sm font-semibold text-slate-900" data-testid={`room-service-price-${service.service_code}`}>
+                            {formatRoomCharge(service.unit_price_minor, service.currency, lang)}
+                          </p>
+                        )}
+                        {Number(service.estimated_minutes) > 0 && (
+                          <p className="mt-1.5 text-[11px] font-medium text-slate-500">
+                            {experience.estimatedTime}: {service.estimated_minutes} {experience.minutes}
+                          </p>
                         )}
                       </div>
                     </div>
@@ -1008,7 +1035,27 @@ export default function RoomRequestPage() {
                     </div>
                   )}
 
-                  <Button onClick={submitStructured} disabled={submitting || cartState.cart.length === 0} className="mt-4 min-h-[48px] w-full rounded-xl font-semibold text-white" style={{ background: accent }} data-testid="button-structured-submit">
+                  {cartState.hasRoomCharge && (
+                    <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4" data-testid="room-charge-consent">
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <p className="font-semibold text-emerald-950">{t.roomChargeTitle}</p>
+                          <p className="mt-1 text-sm text-emerald-800">{t.roomChargeDescription}</p>
+                          <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-sm font-bold text-emerald-900">
+                            {Object.entries(cartState.roomChargeTotals).map(([currency, total]) => (
+                              <span key={currency}>{formatRoomCharge(total, currency, lang)}</span>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                      <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-xl bg-white/70 p-3 text-sm text-slate-800">
+                        <input type="checkbox" checked={roomChargeConsent} onChange={(e) => { setRoomChargeConsent(e.target.checked); cartState.clearSnapshot(); }} className="mt-0.5 h-4 w-4" />
+                        <span>{t.roomChargeConsent}</span>
+                      </label>
+                    </div>
+                  )}
+
+                  <Button onClick={submitStructured} disabled={submitting || cartState.cart.length === 0 || (cartState.hasRoomCharge && !roomChargeConsent)} className="mt-4 min-h-[48px] w-full rounded-xl font-semibold text-white" style={{ background: accent }} data-testid="button-structured-submit">
                     {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}{submitting ? t.sending : t.submit}
                   </Button>
                 </div>
@@ -1026,6 +1073,7 @@ export default function RoomRequestPage() {
              <div className="flex flex-col">
                <span className="font-semibold text-slate-800">{cartState.totalItems} {t.items}</span>
                {cartState.hasChargeable && <span className="text-xs text-amber-600 flex items-center gap-1"><AlertTriangle className="w-3 h-3"/> Ücretli</span>}
+               {cartState.hasRoomCharge && <span className="text-xs font-medium text-emerald-700">{Object.entries(cartState.roomChargeTotals).map(([currency, total]) => formatRoomCharge(total, currency, lang)).join(" · ")}</span>}
              </div>
              <Button onClick={() => setView("review")} className="min-h-[48px] flex-1 rounded-xl font-semibold text-white" style={{ background: accent }}>
                {t.reviewReq}

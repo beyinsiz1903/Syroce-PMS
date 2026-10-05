@@ -255,6 +255,18 @@ class FrontdeskServiceV2:
                 "INVALID_STATUS",
             )
 
+        try:
+            from core.folio_checkout_reconciliation import reconcile_unposted_room_charge
+
+            await reconcile_unposted_room_charge(
+                self._db,
+                tenant_id=ctx.tenant_id,
+                booking=booking,
+                posted_by=f"checkout:{ctx.actor_id}",
+            )
+        except ValueError as exc:
+            return ServiceResult.fail(str(exc), "ROOM_CHARGE_RECONCILIATION_FAILED")
+
         # ── Auto-post Konaklama Vergisi (Türkiye) ──────────────────────
         # Tenant config'inde `auto_post=True` ise checkout sırasında, balance
         # kontrolünden ÖNCE konaklama vergisini folio'ya idempotent olarak
@@ -434,18 +446,11 @@ class FrontdeskServiceV2:
         room_id = booking.get("room_id")
 
         async def _txn(session):
-            res = await self._db.room_night_locks.delete_many(
-                {"booking_id": booking_id, "tenant_id": ctx.tenant_id},
-                session=session
-            )
+            res = await self._db.room_night_locks.delete_many({"booking_id": booking_id, "tenant_id": ctx.tenant_id}, session=session)
             logger.info("Checkout RNL release booking=%s deleted_count=%s", booking_id, res.deleted_count)
 
             booking_result = await self._db.bookings.update_one(
-                {
-                    "id": booking_id,
-                    "tenant_id": ctx.tenant_id,
-                    "status": "checked_in"
-                },
+                {"id": booking_id, "tenant_id": ctx.tenant_id, "status": "checked_in"},
                 {
                     "$set": {
                         "status": "checked_out",
@@ -455,7 +460,7 @@ class FrontdeskServiceV2:
                         "checkout_reason": reason,
                     }
                 },
-                session=session
+                session=session,
             )
             if booking_result.matched_count != 1:
                 raise CheckOutError("Booking disappeared or already checked out during checkout")
@@ -468,11 +473,12 @@ class FrontdeskServiceV2:
                             "status": "dirty",
                             "current_booking_id": None,
                             "housekeeping_status": "dirty",
+                            "hk_status": "dirty",
                             "housekeeping_updated_at": checked_out_at.isoformat(),
                             "housekeeping_updated_by": f"System (Check-out by {ctx.actor_id})",
                         }
                     },
-                    session=session
+                    session=session,
                 )
                 if room_result.matched_count != 1:
                     raise CheckOutError("Room disappeared during checkout")
@@ -486,7 +492,7 @@ class FrontdeskServiceV2:
                         "status": {"$nin": ["cancelled"]},
                     },
                     {"_id": 0, "id": 1},
-                    session=session
+                    session=session,
                 )
                 if not existing_hk:
                     hk_task = {
@@ -1077,7 +1083,8 @@ class FrontdeskServiceV2:
             from cache_manager import cache as _cache
 
             if _cache:
-                _cache.invalidate_tenant_cache(ctx.tenant_id, "folio_revenue_by_category")
+                _cache.invalidate_tenant_cache(ctx.tenant_id, "folio_revenue_by_category_v2")
+                _cache.invalidate_tenant_cache(ctx.tenant_id, "reports_basic_dashboard_v2")
         except ImportError:
             pass
 

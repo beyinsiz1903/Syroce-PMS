@@ -10,6 +10,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/ai/knowledge", tags=["AI Knowledge Base"])
 
+
 @router.get("")
 async def list_documents(current_user: User = Depends(get_current_user)):
     """List all documents currently in the knowledge base"""
@@ -25,11 +26,9 @@ async def list_documents(current_user: User = Depends(get_current_user)):
         logger.error(f"Error listing KB documents: {e}")
         raise HTTPException(status_code=500, detail="Failed to list documents")
 
+
 @router.post("/upload")
-async def upload_document(
-    file: UploadFile = File(...),
-    current_user: User = Depends(get_current_user)
-):
+async def upload_document(file: UploadFile = File(...), current_user: User = Depends(get_current_user)):
     """Upload a new document (PDF or text) to the knowledge base"""
     try:
         kb = get_knowledge_base()
@@ -41,6 +40,7 @@ async def upload_document(
 
         if file.filename.endswith(".pdf"):
             import pypdf
+
             pdf = pypdf.PdfReader(file.file)
             for page in pdf.pages:
                 text = page.extract_text()
@@ -64,6 +64,7 @@ async def upload_document(
     except Exception as e:
         logger.error(f"Error uploading KB document: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to process document: {str(e)}")
+
 
 @router.delete("/{source_name}")
 async def delete_document(source_name: str, current_user: User = Depends(get_current_user)):

@@ -20,6 +20,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from datetime import date as dt_date
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from pymongo import ReadPreference
 from pymongo.errors import DuplicateKeyError
@@ -37,6 +38,8 @@ STALE_THRESHOLD_SECONDS = 900  # 15 min without heartbeat = stale
 DEFAULT_PROPERTY = "default"
 DEFAULT_CURRENCY = "TRY"
 VAT_RATE = 0.10
+# Yalnız config okunamazsa kullanılacak yasal genel oran. Tenant'ın tarihli
+# ayarı normal akışta tek doğruluk kaynağıdır.
 ACCOMMODATION_TAX_RATE = 0.02
 
 # Status
@@ -73,6 +76,16 @@ def _next_date(d: str) -> str:
     return (dt_date.fromisoformat(d) + timedelta(days=1)).isoformat()
 
 
+def _money_breakdown(items: list[dict], field: str) -> dict[str, float]:
+    totals: dict[str, float] = {}
+    for item in items:
+        currency = str(item.get("currency") or DEFAULT_CURRENCY).strip().upper()
+        if len(currency) != 3 or not currency.isalpha():
+            currency = DEFAULT_CURRENCY
+        totals[currency] = totals.get(currency, 0.0) + float(item.get(field) or 0)
+    return {code: round(amount, 2) for code, amount in sorted(totals.items()) if round(amount, 2) != 0}
+
+
 def _normalize_booking_date(value: Any) -> dt_date | None:
     """Normalize date-only and ISO timestamp booking fields without string ordering."""
     if isinstance(value, datetime):
@@ -95,6 +108,8 @@ def _partition_due_bookings(
     bookings: list[dict[str, Any]],
     field_name: str,
     business_date: str,
+    *,
+    include_business_date: bool = True,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     target_date = dt_date.fromisoformat(business_date)
     due: list[dict[str, Any]] = []
@@ -103,7 +118,7 @@ def _partition_due_bookings(
         normalized = _normalize_booking_date(booking.get(field_name))
         if normalized is None:
             invalid.append(booking)
-        elif normalized <= target_date:
+        elif normalized < target_date or (include_business_date and normalized == target_date):
             due.append(booking)
     return due, invalid
 
@@ -182,6 +197,28 @@ async def _load_bookings_for_date_check(
 
 async def ensure_night_audit_indexes():
     """Create all required indexes for the hardened night audit."""
+    # The original room-charge dedup index also covered voided correction
+    # rows.  A legitimate rate correction voids the old charge and posts its
+    # replacement with the same booking/date/type tuple, so that definition
+    # incorrectly raised E11000.  Upgrade the index in place: only active
+    # charges participate in duplicate prevention, while the full correction
+    # history remains available in the ledger.
+    charge_dedup_name = "idx_folio_charges_na_dedup"
+    charge_dedup_filter = {
+        "business_date": {"$exists": True},
+        "charge_type": {"$exists": True},
+        "voided": False,
+    }
+    try:
+        charge_indexes = await db.folio_charges.index_information()
+        current_dedup = charge_indexes.get(charge_dedup_name)
+        if current_dedup and current_dedup.get("partialFilterExpression") != charge_dedup_filter:
+            await db.folio_charges.drop_index(charge_dedup_name)
+            logger.info("Upgrading %s to active-charge-only deduplication", charge_dedup_name)
+    except Exception as e:
+        if "index not found" not in str(e).lower() and "ns not found" not in str(e).lower():
+            logger.warning("Could not inspect/upgrade %s: %s", charge_dedup_name, e)
+
     idx_defs = [
         (
             "night_audit_runs",
@@ -216,8 +253,8 @@ async def ensure_night_audit_indexes():
         (
             "folio_charges",
             [("tenant_id", 1), ("booking_id", 1), ("business_date", 1), ("charge_type", 1)],
-            "idx_folio_charges_na_dedup",
-            {"unique": True, "partialFilterExpression": {"business_date": {"$exists": True}, "charge_type": {"$exists": True}}},
+            charge_dedup_name,
+            {"unique": True, "partialFilterExpression": charge_dedup_filter},
         ),
         (
             # Run-level concurrency lock for the pms-core night audit engine:
@@ -315,6 +352,37 @@ async def start_night_audit(
         bd = business_date
     else:
         bd = (await ensure_business_date_initialized(db, tenant_id))["business_date"]
+
+    # This guard lives in the engine (rather than only in the HTTP router) so
+    # manual requests and Celery's scheduled path have identical date-close
+    # safety. A final close of the local calendar's current day would advance
+    # the PMS date early; a dry run is the only safe same-day operation.
+    if not dry_run:
+        schedule_collection = getattr(db, "night_audit_schedules", None)
+        schedule = (
+            await schedule_collection.find_one(
+                {"tenant_id": tenant_id},
+                {"_id": 0, "timezone": 1},
+            )
+            if schedule_collection is not None
+            else None
+        )
+        timezone_name = (schedule or {}).get("timezone") or "Europe/Istanbul"
+        try:
+            local_today = datetime.now(ZoneInfo(timezone_name)).date().isoformat()
+        except Exception:  # invalid legacy timezone must not make a close unsafe
+            local_today = datetime.now(ZoneInfo("Europe/Istanbul")).date().isoformat()
+        if bd >= local_today:
+            return {
+                "success": False,
+                "code": "BUSINESS_DATE_NOT_READY",
+                "error": (
+                    f"Açık iş günü {bd}. Bugünün günü kapanmadan canlı denetim çalıştırılamaz; "
+                    "simülasyon kullanın veya yerel tarih bir sonraki güne geçtiğinde tekrar deneyin."
+                ),
+                "current_business_date": bd,
+                "local_calendar_date": local_today,
+            }
     actor = actor or {}
     run_id = str(uuid.uuid4())
     now = _now_iso()
@@ -415,26 +483,33 @@ async def _execute_pipeline(
 ) -> dict:
     """Execute the full night audit pipeline for a run."""
 
+    simulation_blockers: list[str] = []
+    simulation_warnings: list[str] = []
+
     # ── Stage: Validate ──
     if not skip_validations:
         try:
             validation = await _validate_preconditions(tenant_id, prop_id, bd)
             if validation["blocking_errors"]:
+                simulation_blockers = validation["blocking_errors"]
+                simulation_warnings = validation["warnings"]
                 await db.night_audit_runs.update_one(
                     {"id": run_id},
                     {
                         "$set": {
-                            "status": S_BLOCKED,
+                            "status": S_RUNNING if dry_run else S_BLOCKED,
                             "stage": ST_VALIDATING,
                             "errors": validation["blocking_errors"],
                             "warnings": validation["warnings"],
                             "updated_at": _now_iso(),
-                            "completed_at": _now_iso(),
+                            "completed_at": None if dry_run else _now_iso(),
                         }
                     },
                 )
-                return {"success": False, "error": "Pre-audit validation failed", "code": "VALIDATION_BLOCKED", "run_id": run_id, "blockers": validation["blocking_errors"]}
+                if not dry_run:
+                    return {"success": False, "error": "Pre-audit validation failed", "code": "VALIDATION_BLOCKED", "run_id": run_id, "blockers": validation["blocking_errors"]}
             if validation["warnings"]:
+                simulation_warnings = validation["warnings"]
                 await db.night_audit_runs.update_one(
                     {"id": run_id},
                     {"$set": {"warnings": validation["warnings"]}},
@@ -462,13 +537,34 @@ async def _execute_pipeline(
 
     # ── Dry run: aday seti olusturuldu, gercek post yapilmadan ozet don ──
     if dry_run:
-        # Pending item'lari bilgi amacli sayalim, ama folio'lara yazmayalim.
-        pending = await db.night_audit_run_items.count_documents(
-            {"run_id": run_id, "status": IS_PENDING},
-        )
-        skipped = await db.night_audit_run_items.count_documents(
-            {"run_id": run_id, "status": IS_SKIPPED},
-        )
+        # Simülasyon, canlı denetimle aynı aday ve fiyat hesaplarını kullanır;
+        # folyo/rezervasyon/oda veya iş günü üzerinde hiçbir değişiklik yapmaz.
+        # Operatöre yalnızca adet değil, beklenen finansal etkiyi de döndür.
+        items = await db.night_audit_run_items.find(
+            {"run_id": run_id},
+            {"_id": 0},
+        ).to_list(20_000)
+        pending_items = [item for item in items if item.get("status") == IS_PENDING]
+        skipped_items = [item for item in items if item.get("status") == IS_SKIPPED]
+        room_items = [item for item in pending_items if item.get("posting_type") == "room_charge"]
+        no_show_items = [item for item in pending_items if item.get("posting_type") == "no_show"]
+        pending = len(pending_items)
+        skipped = len(skipped_items)
+        projected_room_revenue = round(sum(float(item.get("amount") or 0) for item in room_items), 2)
+        projected_tax = round(sum(float(item.get("tax_amount") or 0) for item in room_items), 2)
+        projected_total = round(sum(float(item.get("total") or 0) for item in pending_items), 2)
+        projected_room_revenue_by_currency = _money_breakdown(room_items, "amount")
+        projected_tax_by_currency = _money_breakdown(room_items, "tax_amount")
+        projected_total_by_currency = _money_breakdown(pending_items, "total")
+        room_ids = list({item.get("room_id") for item in items if item.get("room_id")})
+        room_docs = await db.rooms.find(
+            {"tenant_id": tenant_id, "id": {"$in": room_ids}},
+            {"_id": 0, "id": 1, "room_number": 1, "room_no": 1},
+        ).to_list(len(room_ids) or 1)
+        room_numbers = {
+            room["id"]: room.get("room_number") or room.get("room_no")
+            for room in room_docs
+        }
         await db.night_audit_runs.update_one(
             {"id": run_id},
             {
@@ -478,13 +574,50 @@ async def _execute_pipeline(
                     "processed_count": 0,
                     "failed_count": 0,
                     "skipped_count": skipped,
+                    "total_room_revenue_by_currency": projected_room_revenue_by_currency,
+                    "total_tax_amount_by_currency": projected_tax_by_currency,
+                    "projected_total_by_currency": projected_total_by_currency,
                     "completed_at": _now_iso(),
                     "updated_at": _now_iso(),
                 }
             },
         )
         run = await db.night_audit_runs.find_one({"id": run_id}, {"_id": 0})
-        return {"success": True, "dry_run": True, "would_post": pending, "would_skip": skipped, "run": run}
+        return {
+            "success": True,
+            "dry_run": True,
+            "business_date": bd,
+            "status": "dry_run_completed",
+            "rooms_processed": len([item for item in items if item.get("posting_type") == "room_charge"]),
+            "charges_posted": len(room_items),
+            "no_shows_processed": len(no_show_items),
+            "total_room_revenue": projected_room_revenue,
+            "total_room_revenue_by_currency": projected_room_revenue_by_currency,
+            "total_tax_amount": projected_tax,
+            "total_tax_amount_by_currency": projected_tax_by_currency,
+            "projected_total": projected_total,
+            "projected_total_by_currency": projected_total_by_currency,
+            "would_post": pending,
+            "would_skip": skipped,
+            "candidate_details": [
+                {
+                    "booking_id": item.get("booking_id"),
+                    "room_id": item.get("room_id"),
+                    "room_no": room_numbers.get(item.get("room_id")),
+                    "posting_type": item.get("posting_type"),
+                    "status": item.get("status"),
+                    "reason": item.get("reason"),
+                    "amount": round(float(item.get("amount") or 0), 2),
+                    "tax_amount": round(float(item.get("tax_amount") or 0), 2),
+                    "total": round(float(item.get("total") or 0), 2),
+                    "currency": item.get("currency") or DEFAULT_CURRENCY,
+                }
+                for item in items
+            ],
+            "blockers": simulation_blockers,
+            "warnings": simulation_warnings,
+            "run": run,
+        }
 
     # ── Stage: Post charges ──
     return await _posting_and_close(run_id, tenant_id, bd)
@@ -578,6 +711,11 @@ async def _posting_and_close(run_id: str, tenant_id: str, bd: str) -> dict:
         return {"success": False, "error": str(e), "code": "DATE_ROLL_ERROR", "run_id": run_id}
 
     # ── Complete ──
+    posted_items = await db.night_audit_run_items.find(
+        {"run_id": run_id, "status": IS_POSTED},
+        {"_id": 0, "posting_type": 1, "amount": 1, "tax_amount": 1, "total": 1, "currency": 1},
+    ).to_list(20_000)
+    posted_room_items = [item for item in posted_items if item.get("posting_type") == "room_charge"]
     await db.night_audit_runs.update_one(
         {"id": run_id},
         {
@@ -586,6 +724,9 @@ async def _posting_and_close(run_id: str, tenant_id: str, bd: str) -> dict:
                 "stage": ST_COMPLETED,
                 "completed_at": _now_iso(),
                 "updated_at": _now_iso(),
+                "total_room_revenue_by_currency": _money_breakdown(posted_room_items, "amount"),
+                "total_tax_amount_by_currency": _money_breakdown(posted_room_items, "tax_amount"),
+                "projected_total_by_currency": _money_breakdown(posted_items, "total"),
             }
         },
     )
@@ -720,21 +861,19 @@ async def _validate_preconditions(
         checked_in_for_dates,
         "check_out",
         bd,
+        # The checkout date is a departure boundary, not an occupied night.
+        # A guest whose checkout is the business date must already be checked
+        # out (or extended) before that date can be closed.
+        include_business_date=True,
     )
     if overdue_checkouts:
         blocking.append(f"{len(overdue_checkouts)} rezervasyonun cikis tarihi gectigi halde hala 'checked-in'. Gece denetiminden once cikis yapin veya konaklamayi uzatin.")
     if invalid_checkouts:
         blocking.append(f"{len(invalid_checkouts)} checked-in rezervasyonda gecerli cikis tarihi yok. Gece denetiminden once rezervasyon tarihlerini duzeltin.")
     if invalid_stays:
-        blocking.append(
-            f"{len(invalid_stays)} checked-in rezervasyonda gecerli konaklama tarih araligi yok. "
-            "Gece denetiminden once giris/cikis tarihlerini duzeltin."
-        )
+        blocking.append(f"{len(invalid_stays)} checked-in rezervasyonda gecerli konaklama tarih araligi yok. Gece denetiminden once giris/cikis tarihlerini duzeltin.")
     if future_stays:
-        warnings.append(
-            f"{len(future_stays)} checked-in rezervasyonun giris tarihi is gununden sonra; "
-            "bu rezervasyonlar oda masrafi adaylarina dahil edilmedi."
-        )
+        warnings.append(f"{len(future_stays)} checked-in rezervasyonun giris tarihi is gununden sonra; bu rezervasyonlar oda masrafi adaylarina dahil edilmedi.")
 
     # 5. BLOCKING: pending arrivals (confirmed/guaranteed but never checked in by audit time)
     # Otomatik no-show yerine personel karari bekleyelim. 'Dogrulamalari Atla'
@@ -794,6 +933,19 @@ async def _build_candidate_set(
     now = _now_iso()
     items: list[dict] = []
 
+    try:
+        from routers.finance.konaklama_vergisi_core import get_accommodation_tax_rate
+
+        accommodation_tax_rate = float(await get_accommodation_tax_rate(tenant_id, bd))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "hardened night audit tax config unavailable tenant=%s date=%s: %s",
+            tenant_id,
+            bd,
+            exc,
+        )
+        accommodation_tax_rate = ACCOMMODATION_TAX_RATE
+
     # ── Room charges for checked-in stayover guests ──
     # N+1 fix: tum bookings'i once topla, sonra folio + folio_charges idempotency icin tek sorgu
     all_checked_in = await db.bookings.find(
@@ -817,6 +969,8 @@ async def _build_candidate_set(
             "check_out": 1,
             "guest_name": 1,
             "currency": 1,
+            "is_complimentary": 1,
+            "complimentary_scope": 1,
         },
     ).to_list(5000)
     bookings_list, _future, _ended, _invalid = _partition_stays_for_business_date(
@@ -835,12 +989,26 @@ async def _build_candidate_set(
 
     all_booking_ids = [b["id"] for b in bookings_list]
     already_posted_set: set = set()
+    daily_rates_by_booking: dict = {}
     if all_booking_ids:
         async for c in db.folio_charges.find(
             {"tenant_id": tenant_id, "booking_id": {"$in": all_booking_ids}, "business_date": bd, "charge_type": "room_charge"},
             {"_id": 0, "booking_id": 1},
         ):
             already_posted_set.add(c["booking_id"])
+
+        async for r in db.daily_rates.find(
+            {
+                "booking_id": {"$in": all_booking_ids},
+                "tenant_id": tenant_id,
+                "date": {"$gte": bd, "$lt": bd + "T99"},
+            },
+            {"_id": 0, "booking_id": 1, "rate": 1},
+        ).sort([("updated_at", -1), ("id", -1), ("_id", -1)]):
+            # The daily-rate endpoint rejects duplicates. If legacy data still
+            # has them, use the most recently updated record deterministically
+            # rather than depending on Mongo's natural cursor order.
+            daily_rates_by_booking.setdefault(r["booking_id"], float(r["rate"]))
 
     for booking in bookings_list:
         booking_id = booking["id"]
@@ -849,7 +1017,8 @@ async def _build_candidate_set(
             booking,
             bd,
             vat_rate=VAT_RATE,
-            accommodation_tax_rate=ACCOMMODATION_TAX_RATE,
+            accommodation_tax_rate=accommodation_tax_rate,
+            explicit_daily_rate=daily_rates_by_booking.get(booking_id),
         )
         rate = pricing["amount"]
 
@@ -859,7 +1028,10 @@ async def _build_candidate_set(
         # Determine item status
         item_status = IS_PENDING
         reason = None
-        if rate <= 0:
+        if booking.get("is_complimentary"):
+            item_status = IS_SKIPPED
+            reason = "complimentary_accommodation"
+        elif rate <= 0:
             item_status = IS_SKIPPED
             reason = "zero_or_missing_rate"
         elif not folio_id:
@@ -887,6 +1059,7 @@ async def _build_candidate_set(
                 "posting_date": bd,
                 "amount": rate,
                 "tax_amount": pricing["tax_amount"],
+                "tax_rate": pricing["tax_rate"],
                 "total": total,
                 "tax_breakdown": {"vat": vat, "accommodation_tax": acc_tax},
                 "tax_inclusive": pricing["tax_inclusive"],
@@ -1037,7 +1210,10 @@ async def _post_room_charge_item(tenant_id: str, item: dict, run_id: str) -> boo
                     "unit_price": item["amount"],
                     "quantity": 1,
                     "amount": item["amount"],
-                    "tax_rate": round((VAT_RATE + ACCOMMODATION_TAX_RATE) * 100, 1),
+                    "tax_rate": item.get(
+                        "tax_rate",
+                        round((VAT_RATE + ACCOMMODATION_TAX_RATE) * 100, 1),
+                    ),
                     "tax_amount": item["tax_amount"],
                     "tax_breakdown": item.get("tax_breakdown", {}),
                     "tax_inclusive": bool(item.get("tax_inclusive")),
@@ -1254,10 +1430,13 @@ async def _reconcile(run_id: str) -> dict[str, Any]:
 async def _roll_business_date(tenant_id: str, current_bd: str, run_id: str):
     """Advance the business date. Only called after successful reconciliation."""
     next_bd = _next_date(current_bd)
-    run = await db.night_audit_runs.find_one(
-        {"tenant_id": tenant_id, "id": run_id},
-        {"_id": 0, "trigger_source": 1, "started_by": 1},
-    ) or {}
+    run = (
+        await db.night_audit_runs.find_one(
+            {"tenant_id": tenant_id, "id": run_id},
+            {"_id": 0, "trigger_source": 1, "started_by": 1},
+        )
+        or {}
+    )
     actor = run.get("started_by") or {}
     await db.tenant_settings.update_one(
         {"tenant_id": tenant_id},
@@ -1628,6 +1807,7 @@ async def build_audit_preview(tenant_id: str, property_id: str | None = None) ->
         checked_in_for_dates,
         "check_out",
         bd,
+        include_business_date=True,
     )
     if overdue_bookings:
         blockers.append(
@@ -1656,10 +1836,7 @@ async def build_audit_preview(tenant_id: str, property_id: str | None = None) ->
             {
                 "category": "future_checked_in_stays",
                 "label": "Gelecek tarihli check-in kaydi",
-                "message": (
-                    f"{len(future_stays)} check-in rezervasyonun giris tarihi is gununden sonra. "
-                    "Bu kayitlar bugunun oda masrafina dahil edilmeyecek."
-                ),
+                "message": (f"{len(future_stays)} check-in rezervasyonun giris tarihi is gununden sonra. Bu kayitlar bugunun oda masrafina dahil edilmeyecek."),
                 "count": len(future_stays),
                 "items": await _sample_classified_bookings(tenant_id, future_stays),
                 "action": "edit_booking",
@@ -1750,21 +1927,19 @@ async def build_audit_preview(tenant_id: str, property_id: str | None = None) ->
     except Exception:
         pass
 
-    # 8) Oda durumlari ozeti
-    rooms_pipeline = [
-        {"$match": {"tenant_id": tenant_id}},
-        {"$group": {"_id": "$status", "count": {"$sum": 1}}},
-    ]
-    room_status_counts: dict[str, int] = {}
-    try:
-        async for row in db.rooms.aggregate(rooms_pipeline):
-            room_status_counts[(row.get("_id") or "unknown").lower()] = row["count"]
-    except Exception:
-        pass
-    rooms_total = sum(room_status_counts.values())
+    # 8) Oda ve hareket özeti. Dashboard/AI/Night Audit aynı açık iş günü,
+    # aktif envanter ve rezervasyon-overlap sözleşmesini kullanır.
+    from modules.pms_core.operational_snapshot_service import build_operational_snapshot
+
+    operational = await build_operational_snapshot(
+        tenant_id,
+        business_date=bd,
+        database=db,
+    )
+    room_status_counts = operational["room_status"]
     rooms_summary = {
-        "total": rooms_total,
-        "occupied": room_status_counts.get("occupied", 0),
+        "total": operational["total_rooms"],
+        "occupied": operational["occupied_rooms"],
         "available": room_status_counts.get("available", 0) + room_status_counts.get("clean", 0),
         "dirty": room_status_counts.get("dirty", 0),
         "out_of_order": room_status_counts.get("out_of_order", 0) + room_status_counts.get("ooo", 0),
@@ -1772,21 +1947,9 @@ async def build_audit_preview(tenant_id: str, property_id: str | None = None) ->
     }
 
     # 9) Misafir hareketleri ozeti
-    in_house = await db.bookings.count_documents({"tenant_id": tenant_id, "status": "checked_in"})
-    arriving_today = await db.bookings.count_documents(
-        {
-            "tenant_id": tenant_id,
-            "status": {"$in": ["confirmed", "guaranteed"]},
-            "check_in": bd,
-        }
-    )
-    departing_today = await db.bookings.count_documents(
-        {
-            "tenant_id": tenant_id,
-            "status": "checked_in",
-            "check_out": bd,
-        }
-    )
+    in_house = operational["in_house_stays"]
+    arriving_today = operational["today_checkins"]
+    departing_today = operational["today_checkouts"]
     cancellations_today = await db.bookings.count_documents(
         {
             "tenant_id": tenant_id,

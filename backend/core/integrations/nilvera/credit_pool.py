@@ -195,7 +195,9 @@ async def list_events(*, tenant_id: str | None = None, limit: int = 100) -> list
     return [_clean(x) for x in docs]
 
 
-async def _audit(db, *, event_type: str, amount: int, actor_id: str | None = None, tenant_id: str | None = None, source_lot_id: str | None = None, tenant_lot_id: str | None = None, reference: str | None = None) -> None:
+async def _audit(
+    db, *, event_type: str, amount: int, actor_id: str | None = None, tenant_id: str | None = None, source_lot_id: str | None = None, tenant_lot_id: str | None = None, reference: str | None = None
+) -> None:
     await db.nilvera_credit_events.insert_one(
         {
             "id": str(uuid.uuid4()),

@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { confirmDialog } from '@/lib/dialogs';
+import { getMessagingReadiness } from '@/lib/messagingReadiness';
 import { useTranslation } from 'react-i18next';
 
 // ── HTTP wrappers — use the globally configured axios instance (axiosConfig.js)
@@ -93,15 +94,13 @@ const CATEGORY_LABELS = {
 };
 
 // ── Health → 3-state badge (Bug #7) ─────────────────────────────────────
-function ConnectionBadge({ provider }) {
-  const { t, i18n } = useTranslation();
-  if (!provider) {
-    return <StatusBadge intent="neutral" icon={AlertTriangle}>{t('cm.pages_MessagingDashboard.yapilandirilmamis')}</StatusBadge>;
-  }
-  const h = provider.health_status;
-  if (h === 'healthy') return <StatusBadge intent="success" icon={CheckCircle2}>{t('cm.pages_MessagingDashboard.bagli')}</StatusBadge>;
-  if (h === 'unknown' || h == null) return <StatusBadge intent="warning" icon={Clock}>Test Edilmedi</StatusBadge>;
-  return <StatusBadge intent="danger" icon={XCircle}>{t('cm.pages_MessagingDashboard.baglanti_yok')}</StatusBadge>;
+function ConnectionBadge({ provider, channel }) {
+  const readiness = getMessagingReadiness(provider, channel);
+  const Icon = readiness.state === 'ready' ? CheckCircle2
+    : readiness.state === 'connection_error' ? XCircle
+      : readiness.state === 'verification_required' || readiness.state === 'sandbox' ? Clock
+        : AlertTriangle;
+  return <StatusBadge intent={readiness.intent} icon={Icon}>{readiness.label}</StatusBadge>;
 }
 
 // ════════════════════════════════════════════════
@@ -121,6 +120,7 @@ function SettingsTab({ onChanged }) {
     webhook_verify_token: '', app_secret: '',
     is_sandbox: true, enabled: true,
   });
+  const whatsappReadiness = getMessagingReadiness(settings?.whatsapp, 'whatsapp');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -215,8 +215,7 @@ function SettingsTab({ onChanged }) {
               <h3 className="text-lg font-semibold text-slate-900">{t('cm.pages_MessagingDashboard.e_posta_smtp_ayarlari')}</h3>
             </div>
             <div className="flex items-center gap-2">
-              <ConnectionBadge provider={settings?.email} />
-              {settings?.email?.is_sandbox && <StatusBadge intent="warning">Sandbox</StatusBadge>}
+              <ConnectionBadge provider={settings?.email} channel="email" />
             </div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -288,9 +287,19 @@ function SettingsTab({ onChanged }) {
               <h3 className="text-lg font-semibold text-slate-900">{t('cm.pages_MessagingDashboard.whatsapp_business_api_ayarlari')}</h3>
             </div>
             <div className="flex items-center gap-2">
-              <ConnectionBadge provider={settings?.whatsapp} />
-              {settings?.whatsapp?.is_sandbox && <StatusBadge intent="warning">Sandbox</StatusBadge>}
+              <ConnectionBadge provider={settings?.whatsapp} channel="whatsapp" />
             </div>
+          </div>
+          <div
+            className={`mb-4 rounded-lg border px-3 py-2 text-sm ${whatsappReadiness.intent === 'success'
+              ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+              : whatsappReadiness.intent === 'danger'
+                ? 'border-rose-200 bg-rose-50 text-rose-800'
+                : 'border-amber-200 bg-amber-50 text-amber-900'}`}
+            role="status"
+          >
+            <span className="font-medium">{whatsappReadiness.label}:</span>{' '}
+            {whatsappReadiness.description}
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
@@ -340,7 +349,7 @@ function SettingsTab({ onChanged }) {
             </Button>
           </div>
           <p className="text-xs text-slate-500 mt-2">
-            {t('cm.pages_MessagingDashboard.meta_business_panelinden_token_phone_num')}
+            Meta Business panelinden erişim belirtecini ve Phone Number ID bilgisini alın. Ayarları kaydetmek üretim gönderimini tek başına açmaz; deneme modunu kapatıp bağlantı testinin başarılı olduğunu doğrulayın.
           </p>
         </CardContent>
       </Card>
@@ -1457,16 +1466,6 @@ export default function MessagingDashboard() {
   const { t, i18n } = useTranslation();
   const [refreshKey, setRefreshKey] = useState(0);
   const refresh = useCallback(() => setRefreshKey((k) => k + 1), []);
-
-  useEffect(() => {
-    // Auto-seed demo data on first load (only when truly empty)
-    (async () => {
-      const r = await safe(() => get('/messaging-center/delivery-logs?limit=1'));
-      if (r.ok && (!r.data.logs || r.data.logs.length === 0)) {
-        await safe(() => post('/messaging-center/seed-demo', {}));
-      }
-    })();
-  }, []);
 
   return (
     <div data-testid="messaging-dashboard" className="p-4 lg:p-6 max-w-7xl mx-auto" key={refreshKey}>

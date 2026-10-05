@@ -29,7 +29,6 @@ class DisplacementEngine:
         )
         return max(count, 1)
 
-
     async def _get_period_occupancy(self, tenant_id: str, check_in: str, check_out: str) -> dict:
         bookings = await db.bookings.find(
             {
@@ -38,7 +37,7 @@ class DisplacementEngine:
                 "check_out": {"$gt": check_in},
                 "status": {"$in": ["confirmed", "guaranteed", "checked_in"]},
             },
-            {"check_in": 1, "check_out": 1}
+            {"check_in": 1, "check_out": 1},
         ).to_list(None)
 
         blocks = await db.room_blocks.find(
@@ -48,10 +47,11 @@ class DisplacementEngine:
                 "start_date": {"$lt": check_out},
                 "$or": [{"end_date": None}, {"end_date": {"$gt": check_in}}],
             },
-            {"start_date": 1, "end_date": 1}
+            {"start_date": 1, "end_date": 1},
         ).to_list(None)
 
         from datetime import date, timedelta
+
         ci = date.fromisoformat(check_in)
         co = date.fromisoformat(check_out)
         num_nights = (co - ci).days
@@ -95,13 +95,7 @@ class DisplacementEngine:
                     "date": {"$gte": cutoff},
                 }
             },
-            {
-                "$group": {
-                    "_id": None,
-                    "avg_amount": {"$avg": "$amount"},
-                    "count": {"$sum": 1}
-                }
-            }
+            {"$group": {"_id": None, "avg_amount": {"$avg": "$amount"}, "count": {"$sum": 1}}},
         ]
         results = await db.folio_charges.aggregate(pipeline).to_list(1)
         if not results or results[0].get("count", 0) == 0:
@@ -229,6 +223,7 @@ class DisplacementEngine:
             cancel_rate = await self._get_cancellation_rate(tenant_id)
 
             import asyncio as _asyncio
+
             days = [ci + timedelta(days=i) for i in range(num_nights)]
             occ_results = await _asyncio.gather(*[self._get_day_occupancy(tenant_id, d.isoformat()) for d in days])
             occ_cache = {d.isoformat(): occ for d, occ in zip(days, occ_results)}
@@ -445,6 +440,7 @@ class DisplacementEngine:
         cancel_rate = await self._get_cancellation_rate(tenant_id)
 
         import asyncio as _asyncio
+
         days = [ci + timedelta(days=i) for i in range(num_nights)]
         occ_results = await _asyncio.gather(*[self._get_day_occupancy(tenant_id, d.isoformat()) for d in days])
         occ_cache = {d.isoformat(): occ for d, occ in zip(days, occ_results)}

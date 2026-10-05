@@ -71,6 +71,7 @@ class InventorySyncService:
         date_start: str,
         date_end: str,
         room_type_ids: list[str] | None = None,
+        force: bool = False,
         triggered_by: str = "system",
         trigger_reason: str = "",
         actor_id: str | None = None,
@@ -91,7 +92,14 @@ class InventorySyncService:
         await self._audit_job(job, AuditAction.SYNC_JOB_STARTED, actor_id)
 
         try:
-            return await self._execute_inventory_pipeline(job, connector, date_start, date_end, room_type_ids)
+            return await self._execute_inventory_pipeline(
+                job,
+                connector,
+                date_start,
+                date_end,
+                room_type_ids,
+                force=force,
+            )
         except Exception as e:
             return await self._handle_job_failure(job, e)
 
@@ -251,6 +259,7 @@ class InventorySyncService:
         date_start: str,
         date_end: str,
         room_type_ids: list[str] | None,
+        force: bool = False,
     ) -> dict[str, Any]:
         """Full pipeline: detect → coalesce → batch → dispatch → finalize."""
         pipeline_start = time.monotonic()
@@ -277,6 +286,7 @@ class InventorySyncService:
             date_end,
             room_type_ids,
             room_lookup,
+            force=force,
         )
 
         if not changes:
@@ -626,6 +636,7 @@ class InventorySyncService:
         date_end: str,
         room_type_ids: list[str] | None,
         room_lookup: dict[str, str],
+        force: bool = False,
     ) -> list[dict[str, Any]]:
         """Detect inventory changes using room_type_inventory as authoritative truth.
 
@@ -723,7 +734,10 @@ class InventorySyncService:
                 }
 
                 # Availability delta (from authoritative view)
-                if last_available is None or current_available != last_available:
+                # An operator-requested OTA sync repairs a stale remote channel
+                # even when our local snapshot says the same value.  This is
+                # essential after a legacy/direct write bypassed snapshots.
+                if force or last_available is None or current_available != last_available:
                     changes.append(
                         {
                             **base_change,

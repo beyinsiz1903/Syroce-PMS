@@ -62,7 +62,7 @@ const MessagingModuleAdvanced = () => {
     } catch (error) {
       console.error('Error sending message:', error);
       alertDialog({
-        message: 'Mesaj gönderilemedi'
+        message: 'İletişim mesajı gönderilemedi.'
       });
     } finally {
       setLoading(false);

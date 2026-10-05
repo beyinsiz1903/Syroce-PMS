@@ -235,3 +235,47 @@ async def test_reconciliation_cannot_cross_tenants(database, monkeypatch):
         await open_banking.reconcile_transaction(request, current_user=_user("tenant-b"), _perm=None)
 
     assert exc.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_reconciliation_rejects_currency_mismatch_before_claim(database, monkeypatch):
+    database.bank_transactions.documents[0]["currency"] = "USD"
+    database.invoices.documents[0]["currency"] = "EUR"
+    monkeypatch.setattr(
+        open_banking,
+        "post_journal_entry",
+        lambda *args, **kwargs: pytest.fail("GL must not be called"),
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        await open_banking.reconcile_transaction(
+            open_banking.ReconcileRequest(transaction_id="transaction-1", invoice_id="invoice-1"),
+            current_user=_user(),
+            _perm=None,
+        )
+
+    assert exc.value.status_code == 409
+    assert "USD" in exc.value.detail
+    assert "EUR" in exc.value.detail
+    assert database.bank_transactions.documents[0]["status"] == "unmatched"
+
+
+@pytest.mark.asyncio
+async def test_reconciliation_rejects_foreign_currency_without_accounting_rate(database, monkeypatch):
+    database.bank_transactions.documents[0]["currency"] = "USD"
+    database.invoices.documents[0]["currency"] = "USD"
+    monkeypatch.setattr(
+        open_banking,
+        "post_journal_entry",
+        lambda *args, **kwargs: pytest.fail("GL must not be called"),
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        await open_banking.reconcile_transaction(
+            open_banking.ReconcileRequest(transaction_id="transaction-1", invoice_id="invoice-1"),
+            current_user=_user(),
+            _perm=None,
+        )
+
+    assert exc.value.status_code == 409
+    assert "muhasebe kuru" in exc.value.detail

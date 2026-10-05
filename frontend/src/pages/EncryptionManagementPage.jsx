@@ -41,6 +41,26 @@ const keyTypeIcons = {
   api: Settings,
   pii: Database
 };
+const keyStateLabels = {
+  active: 'Aktif',
+  pending_rotation: 'Rotasyon bekliyor',
+  retired: 'Kullanımdan kaldırıldı',
+  revoked: 'İptal edildi'
+};
+const jobStateLabels = {
+  pending: 'Başlatılmayı bekliyor',
+  running: 'Çalışıyor',
+  paused: 'Duraklatıldı',
+  completed: 'Tamamlandı',
+  failed: 'Başarısız',
+  cancelled: 'İptal edildi'
+};
+const collectionLabels = {
+  guests: 'Misafirler',
+  bookings: 'Rezervasyonlar',
+  reservations: 'Konaklamalar',
+  users: 'Kullanıcılar'
+};
 export default function EncryptionManagementPage({
   user,
   tenant,
@@ -160,10 +180,10 @@ export default function EncryptionManagementPage({
       }, {
         headers: {}
       });
-      toast.success('Rotasyon tamamlandi');
+      toast.success('Rotasyon tamamlandı');
       fetchDashboard();
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Rotasyon tamamlanamadi');
+      toast.error(error.response?.data?.detail || 'Rotasyon tamamlanamadı');
     }
   };
   const handleCancelRotation = async keyId => {
@@ -182,7 +202,7 @@ export default function EncryptionManagementPage({
   };
   const handleEmergencyRevoke = async () => {
     if (!selectedKey || revokeReason.length < 10) {
-      toast.error('Lutfen detaylı bir sebep girin (min 10 karakter)');
+      toast.error('Lütfen en az 10 karakterlik ayrıntılı bir sebep girin');
       return;
     }
     try {
@@ -208,7 +228,7 @@ export default function EncryptionManagementPage({
       const response = await axios.post(`/ops/encryption/reencryption/create`, jobForm, {
         headers: {}
       });
-      toast.success(`Is oluşturuldu: ${response.data.job_id}`);
+      toast.success(`İş oluşturuldu: ${response.data.job_id}`);
       setShowJobDialog(false);
       setJobForm({
         key_id: '',
@@ -218,7 +238,7 @@ export default function EncryptionManagementPage({
       });
       fetchDashboard();
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Is oluşturulamadı');
+      toast.error(error.response?.data?.detail || 'İş oluşturulamadı');
     }
   };
   const handleJobAction = async (jobId, action) => {
@@ -228,7 +248,7 @@ export default function EncryptionManagementPage({
       }, {
         headers: {}
       });
-      toast.success(`Is ${action === 'start' ? 'başlatıldı' : action === 'pause' ? 'durduruldu' : 'iptal edildi'}`);
+      toast.success(`İş ${action === 'start' ? 'başlatıldı' : action === 'pause' ? 'duraklatıldı' : 'iptal edildi'}`);
       fetchDashboard();
     } catch (error) {
       toast.error(error.response?.data?.detail || 'İşlem başarısız');
@@ -255,9 +275,10 @@ export default function EncryptionManagementPage({
             <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
               <Key className="h-6 w-6 text-emerald-400" />
               Şifreleme Yönetimi
+              {tenant && <span className="ml-3 px-3 py-1 bg-indigo-50 text-indigo-700 text-sm font-semibold rounded-full border border-indigo-200">🏨 {tenant.name}</span>}
             </h1>
             <p className="text-gray-600 mt-1">
-              Anahtar yaşam döngüsü, rotasyon ve yeniden sifreleme işlemleri
+              Anahtar yaşam döngüsü, rotasyon ve yeniden şifreleme işlemleri
             </p>
           </div>
           <div className="flex gap-2">
@@ -265,12 +286,20 @@ export default function EncryptionManagementPage({
               <Key className="h-4 w-4 mr-2" />
               Yeni Anahtar
             </Button>
-            <Button onClick={() => setShowJobDialog(true)} variant="outline" className="border-gray-200" data-testid="create-job-btn">
+            <Button onClick={() => setShowJobDialog(true)} variant="outline" className="border-gray-200" data-testid="create-job-btn" disabled={keys.length === 0} title={keys.length === 0 ? 'Önce bir şifreleme anahtarı kaydedin' : undefined}>
               <RefreshCw className="h-4 w-4 mr-2" />
-              Re-encryption Job
+              Yeniden Şifreleme İşlemi
             </Button>
           </div>
         </div>
+
+        {keys.length === 0 && <div data-testid="encryption-readiness-warning" className="flex items-start gap-3 rounded-lg border border-amber-300 bg-amber-50 p-4 text-amber-900">
+            <AlertTriangle className="h-5 w-5 shrink-0 mt-0.5" />
+            <div>
+              <p className="font-semibold">Şifreleme anahtarı kayıt defteri henüz yapılandırılmamış</p>
+              <p className="text-sm mt-1">Bu ekran anahtar yaşam döngüsünü yönetir; “0 aktif anahtar” verilerin şifrelenmediği anlamına tek başına gelmez. Yeniden şifreleme işi oluşturmak için önce kullanılan anahtar kimliğini kayıt defterine ekleyin.</p>
+            </div>
+          </div>}
 
         {/* Summary Cards */}
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
@@ -364,7 +393,7 @@ export default function EncryptionManagementPage({
             {overdueKeys.map(key => <div key={key.key_id} className="flex items-center gap-3 p-3 rounded-lg bg-red-500/10 border border-red-500/30">
                 <AlertOctagon className="h-5 w-5 text-red-400" />
                 <span className="text-red-300">
-                  <strong>{key.key_id}</strong> rotasyonu {key.days_overdue} gun gecikti
+                  <strong>{key.key_id}</strong> rotasyonu {key.days_overdue} gün gecikti
                 </span>
                 <Button size="sm" className="ml-auto bg-red-600 hover:bg-red-700" onClick={() => handleInitiateRotation(key.key_id)}>
                   Rotasyon Başlat
@@ -373,7 +402,7 @@ export default function EncryptionManagementPage({
             {warningKeys.map(key => <div key={key.key_id} className="flex items-center gap-3 p-3 rounded-lg bg-amber-500/10 border border-amber-500/30">
                 <AlertTriangle className="h-5 w-5 text-amber-400" />
                 <span className="text-amber-300">
-                  <strong>{key.key_id}</strong> rotasyonuna {key.days_until_due} gun kaldi
+                  <strong>{key.key_id}</strong> rotasyonuna {key.days_until_due} gün kaldı
                 </span>
               </div>)}
           </div>}
@@ -391,7 +420,7 @@ export default function EncryptionManagementPage({
               Yeniden Şifreleme
             </TabsTrigger>
             <TabsTrigger value="audit" className="data-[state=active]:bg-gray-50">
-              Denetim Gunlugu
+              Denetim Günlüğü
             </TabsTrigger>
           </TabsList>
 
@@ -419,7 +448,7 @@ export default function EncryptionManagementPage({
                             </div>
                           </div>
                           <Badge className={stateColors[key.state]}>
-                            {key.state}
+                            {keyStateLabels[key.state] || key.state}
                           </Badge>
                         </div>;
                   })}
@@ -441,11 +470,11 @@ export default function EncryptionManagementPage({
                     {jobs.filter(j => j.state === 'running').map(job => <div key={job.job_id} className="p-3 rounded-lg bg-white">
                         <div className="flex items-center justify-between mb-2">
                           <p className="text-slate-900 font-medium">{job.job_id}</p>
-                          <Badge className={jobStateColors[job.state]}>{job.state}</Badge>
+                          <Badge className={jobStateColors[job.state]}>{jobStateLabels[job.state] || job.state}</Badge>
                         </div>
                         <Progress value={job.progress_percent || 0} className="h-2" />
                         <p className="text-xs text-gray-600 mt-1">
-                          {job.processed_documents || 0} / {job.total_documents || 0} dokuman
+                          {job.processed_documents || 0} / {job.total_documents || 0} belge
                         </p>
                       </div>)}
                     {jobs.filter(j => j.state === 'running').length === 0 && <p className="text-gray-600 text-center py-4">Çalışan iş yok</p>}
@@ -461,7 +490,7 @@ export default function EncryptionManagementPage({
               <CardHeader>
                 <CardTitle className="text-slate-900">Tüm Anahtarlar</CardTitle>
                 <CardDescription className="text-gray-600">
-                  Kayıtlı sifreleme anahtarlari ve durumlari
+                  Kayıtlı şifreleme anahtarları ve durumları
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -480,15 +509,15 @@ export default function EncryptionManagementPage({
                             <p className="text-sm text-gray-600">{key.description || `Tip: ${key.key_type}`}</p>
                             <div className="flex items-center gap-4 mt-1 text-xs text-gray-600">
                               <span>v{key.version}</span>
-                              {key.provider && <span>Provider: {key.provider}</span>}
+                              {key.provider && <span>Sağlayıcı: {key.provider}</span>}
                               {daysUntil !== null && <span className={daysUntil < 0 ? 'text-red-400' : daysUntil < 14 ? 'text-amber-400' : ''}>
-                                  Rotasyon: {daysUntil < 0 ? `${Math.abs(daysUntil)} gun gecikti` : `${daysUntil} gun`}
+                                  Rotasyon: {daysUntil < 0 ? `${Math.abs(daysUntil)} gün gecikti` : `${daysUntil} gün`}
                                 </span>}
                             </div>
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
-                          <Badge className={stateColors[key.state]}>{key.state}</Badge>
+                          <Badge className={stateColors[key.state]}>{keyStateLabels[key.state] || key.state}</Badge>
                           
                           {key.state === 'active' && <>
                               <Button size="sm" variant="outline" className="border-gray-200" onClick={() => handleInitiateRotation(key.key_id)}>
@@ -516,7 +545,7 @@ export default function EncryptionManagementPage({
                         </div>
                       </div>;
                 })}
-                  {keys.length === 0 && <p className="text-gray-600 text-center py-8">Henüz anahtar kaydedilmemis</p>}
+                  {keys.length === 0 && <p className="text-gray-600 text-center py-8">Henüz anahtar kaydedilmemiş</p>}
                 </div>
               </CardContent>
             </Card>
@@ -528,7 +557,7 @@ export default function EncryptionManagementPage({
               <CardHeader>
                 <CardTitle className="text-slate-900">Yeniden Şifreleme İşleri</CardTitle>
                 <CardDescription className="text-gray-600">
-                  Anahtar rotasyonu sonrasi veri migrasyonu isleri
+                  Anahtar rotasyonu sonrası veri taşıma işleri
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -539,14 +568,14 @@ export default function EncryptionManagementPage({
                           <p className="text-slate-900 font-medium">{job.job_id}</p>
                           <p className="text-sm text-gray-600">{job.description || `Key: ${job.key_id}`}</p>
                         </div>
-                        <Badge className={jobStateColors[job.state]}>{job.state}</Badge>
+                        <Badge className={jobStateColors[job.state]}>{jobStateLabels[job.state] || job.state}</Badge>
                       </div>
                       
                       <Progress value={job.progress_percent || 0} className="h-2 mb-2" />
                       
                       <div className="flex items-center justify-between text-sm">
                         <span className="text-gray-600">
-                          {job.processed_documents || 0} / {job.total_documents || 0} dokuman 
+                          {job.processed_documents || 0} / {job.total_documents || 0} belge
                           ({job.progress_percent?.toFixed(1) || 0}%)
                         </span>
                         {job.failed_documents > 0 && <span className="text-red-400">{job.failed_documents} başarısız</span>}
@@ -567,7 +596,7 @@ export default function EncryptionManagementPage({
                           </Button>}
                       </div>
                     </div>)}
-                  {jobs.length === 0 && <p className="text-gray-600 text-center py-8">Henüz is olusturulmamis</p>}
+                  {jobs.length === 0 && <p className="text-gray-600 text-center py-8">Henüz yeniden şifreleme işi oluşturulmamış</p>}
                 </div>
               </CardContent>
             </Card>
@@ -581,7 +610,7 @@ export default function EncryptionManagementPage({
                 <CardHeader>
                   <CardTitle className="text-slate-900 flex items-center gap-2">
                     <History className="h-5 w-5 text-emerald-400" />
-                    Anahtar Islemleri
+                    Anahtar İşlemleri
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
@@ -607,7 +636,7 @@ export default function EncryptionManagementPage({
                 <CardHeader>
                   <CardTitle className="text-slate-900 flex items-center gap-2">
                     <History className="h-5 w-5 text-blue-400" />
-                    Is Islemleri
+                    İş İşlemleri
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
@@ -637,16 +666,16 @@ export default function EncryptionManagementPage({
             <DialogHeader>
               <DialogTitle className="text-slate-900">Yeni Anahtar Kaydet</DialogTitle>
               <DialogDescription className="text-gray-600">
-                Yeni bir sifreleme anahtari kaydedin
+                Yeni bir şifreleme anahtarı kaydedin. Anahtarın kendisini değil, güvenli anahtar sağlayıcısındaki kimliğini girin.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4">
               <div className="space-y-2">
-                <Label className="text-gray-700">Anahtar ID</Label>
+                <Label className="text-gray-700">Anahtar Kimliği</Label>
                 <Input value={registerForm.key_id} onChange={e => setRegisterForm({
                 ...registerForm,
                 key_id: e.target.value
-              })} placeholder="ornek: master-key-v2" className="bg-white border-gray-200 text-slate-900" />
+              })} placeholder="Örnek: master-key-v2" className="bg-white border-gray-200 text-slate-900" />
               </div>
               <div className="space-y-2">
                 <Label className="text-gray-700">Tip</Label>
@@ -662,7 +691,7 @@ export default function EncryptionManagementPage({
                     <SelectItem value="connector">Connector (Bağlantı)</SelectItem>
                     <SelectItem value="webhook">Webhook</SelectItem>
                     <SelectItem value="api">API</SelectItem>
-                    <SelectItem value="pii">PII (Kisisel Veri)</SelectItem>
+                    <SelectItem value="pii">Kişisel veri</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -671,10 +700,10 @@ export default function EncryptionManagementPage({
                 <Input value={registerForm.description} onChange={e => setRegisterForm({
                 ...registerForm,
                 description: e.target.value
-              })} placeholder="Anahtar aciklamasi" className="bg-white border-gray-200 text-slate-900" />
+              })} placeholder="Anahtar açıklaması" className="bg-white border-gray-200 text-slate-900" />
               </div>
               <div className="space-y-2">
-                <Label className="text-gray-700">Rotasyon Suresi (gun)</Label>
+                <Label className="text-gray-700">Rotasyon süresi (gün)</Label>
                 <Input type="number" value={registerForm.rotation_policy_days} onChange={e => setRegisterForm({
                 ...registerForm,
                 rotation_policy_days: parseInt(e.target.value) || 90
@@ -698,10 +727,10 @@ export default function EncryptionManagementPage({
             <DialogHeader>
               <DialogTitle className="text-red-400 flex items-center gap-2">
                 <AlertOctagon className="h-5 w-5" />
-                Acil Anahtar Iptali
+                Acil Anahtar İptali
               </DialogTitle>
               <DialogDescription className="text-gray-600">
-                Bu işlem geri alınamaz. Anahtar hemen kullanilmaz hale gelir.
+                Bu işlem geri alınamaz. Anahtar hemen kullanılamaz hâle gelir.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4">
@@ -711,12 +740,12 @@ export default function EncryptionManagementPage({
               </div>
               <div className="space-y-2">
                 <Label className="text-gray-700">İptal Sebebi (min 10 karakter)</Label>
-                <Textarea value={revokeReason} onChange={e => setRevokeReason(e.target.value)} placeholder="Anahtarin neden iptal edildigini aciklayin..." className="bg-white border-gray-200 text-slate-900" rows={3} />
+                <Textarea value={revokeReason} onChange={e => setRevokeReason(e.target.value)} placeholder="Anahtarın neden iptal edildiğini açıklayın..." className="bg-white border-gray-200 text-slate-900" rows={3} />
               </div>
             </div>
             <DialogFooter>
               <DialogClose asChild>
-                <Button variant="outline" className="border-gray-200">Vazgec</Button>
+                <Button variant="outline" className="border-gray-200">Vazgeç</Button>
               </DialogClose>
               <Button onClick={handleEmergencyRevoke} className="bg-red-600 hover:bg-red-700" disabled={revokeReason.length < 10}>
                 <AlertOctagon className="h-4 w-4 mr-2" />
@@ -730,14 +759,14 @@ export default function EncryptionManagementPage({
         <Dialog open={showJobDialog} onOpenChange={setShowJobDialog}>
           <DialogContent className="bg-gray-50 border-gray-200">
             <DialogHeader>
-              <DialogTitle className="text-slate-900">Yeniden Şifreleme Isi Olustur</DialogTitle>
+              <DialogTitle className="text-slate-900">Yeniden Şifreleme İşi Oluştur</DialogTitle>
               <DialogDescription className="text-gray-600">
-                Veri migrasyonu için yeni bir is oluşturun
+                Anahtar rotasyonu sonrasında verileri yeni anahtara taşımak için bir iş oluşturun
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4">
               <div className="space-y-2">
-                <Label className="text-gray-700">Anahtar ID</Label>
+                <Label className="text-gray-700">Anahtar Kimliği</Label>
                 <Select value={jobForm.key_id} onValueChange={v => setJobForm({
                 ...jobForm,
                 key_id: v
@@ -760,12 +789,12 @@ export default function EncryptionManagementPage({
                     collections: cols
                   });
                 }}>
-                      {col}
+                      {collectionLabels[col] || col}
                     </Badge>)}
                 </div>
               </div>
               <div className="space-y-2">
-                <Label className="text-gray-700">Batch Boyutu</Label>
+                <Label className="text-gray-700">İşlem grubu boyutu</Label>
                 <Input type="number" value={jobForm.batch_size} onChange={e => setJobForm({
                 ...jobForm,
                 batch_size: parseInt(e.target.value) || 100
@@ -776,7 +805,7 @@ export default function EncryptionManagementPage({
                 <Input value={jobForm.description} onChange={e => setJobForm({
                 ...jobForm,
                 description: e.target.value
-              })} placeholder="Is aciklamasi" className="bg-white border-gray-200 text-slate-900" />
+              })} placeholder="İş açıklaması" className="bg-white border-gray-200 text-slate-900" />
               </div>
             </div>
             <DialogFooter>
@@ -784,7 +813,7 @@ export default function EncryptionManagementPage({
                 <Button variant="outline" className="border-gray-200">İptal</Button>
               </DialogClose>
               <Button onClick={handleCreateJob} className="bg-blue-600 hover:bg-blue-700" disabled={!jobForm.key_id || jobForm.collections.length === 0}>
-                Olustur
+                Oluştur
               </Button>
             </DialogFooter>
           </DialogContent>

@@ -22,6 +22,21 @@ import { useHRPagination } from '@/hooks/useHRPagination';
 
 export default function HRRecruitmentTab({ jobItems, submitJob, jobForm, setJobForm, parseInt, creatingJob, openApplicants, decideJob, closeJob, applicantsDialog, setApplicantsDialog, submitApplicant, applicantForm, setApplicantForm, savingApplicant, setApplicantStatus }) {
     const { t } = useTranslation();
+    const downloadApplicantCv = async (applicant) => {
+      try {
+        const response = await axios.get(`/hr/applicant-cvs/${applicant.cv_document_id}/download`, { responseType: 'blob' });
+        const url = window.URL.createObjectURL(new Blob([response.data], { type: applicant.cv_content_type }));
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = applicant.cv_filename || 'aday-cv';
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.URL.revokeObjectURL(url);
+      } catch (error) {
+        toast.error(error.response?.status === 403 ? 'CV dosyasını görüntüleme yetkiniz yok' : 'CV dosyası indirilemedi');
+      }
+    };
     return (
         <TabsContent value="recruitment" className="mt-4">
           <div className="space-y-4">
@@ -53,31 +68,31 @@ export default function HRRecruitmentTab({ jobItems, submitJob, jobForm, setJobF
                 <form onSubmit={submitJob} className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
                   <div>
                     <Label className="text-xs">Pozisyon *</Label>
-                    <Input required value={jobForm.title} onChange={e => setJobForm({
-              ...jobForm,
+                    <Input required value={jobForm.title} onChange={e => setJobForm(prev => ({
+              ...prev,
               title: e.target.value
-            })} placeholder="Resepsiyonist" />
+            }))} placeholder="Resepsiyonist" />
                   </div>
                   <div>
                     <Label className="text-xs">Departman *</Label>
-                    <Input required value={jobForm.department} onChange={e => setJobForm({
-              ...jobForm,
+                    <Input required value={jobForm.department} onChange={e => setJobForm(prev => ({
+              ...prev,
               department: e.target.value
-            })} placeholder="front_desk" />
+            }))} placeholder="front_desk" />
                   </div>
                   <div>
                     <Label className="text-xs">İhtiyaç Sayısı (kişi)</Label>
-                    <Input type="number" min="1" max="50" value={jobForm.headcount_needed} onChange={e => setJobForm({
-              ...jobForm,
+                    <Input type="number" min="1" max="50" value={jobForm.headcount_needed} onChange={e => setJobForm(prev => ({
+              ...prev,
               headcount_needed: parseInt(e.target.value) || 1
-            })} />
+            }))} />
                   </div>
                   <div>
                     <Label className="text-xs">Aciliyet</Label>
-                    <select value={jobForm.urgency} onChange={e => setJobForm({
-              ...jobForm,
+                    <select value={jobForm.urgency} onChange={e => setJobForm(prev => ({
+              ...prev,
               urgency: e.target.value
-            })} className="w-full rounded-md border border-input px-3 py-2 text-sm">
+            }))} className="w-full rounded-md border border-input px-3 py-2 text-sm">
                       <option value="low">Düşük</option>
                       <option value="normal">Normal</option>
                       <option value="high">Yüksek</option>
@@ -86,10 +101,10 @@ export default function HRRecruitmentTab({ jobItems, submitJob, jobForm, setJobF
                   </div>
                   <div>
                     <Label className="text-xs">Çalışma Şekli</Label>
-                    <select value={jobForm.employment_type} onChange={e => setJobForm({
-              ...jobForm,
+                    <select value={jobForm.employment_type} onChange={e => setJobForm(prev => ({
+              ...prev,
               employment_type: e.target.value
-            })} className="w-full rounded-md border border-input px-3 py-2 text-sm">
+            }))} className="w-full rounded-md border border-input px-3 py-2 text-sm">
                       <option value="full_time">Tam Zamanlı</option>
                       <option value="part_time">Yarı Zamanlı</option>
                       <option value="seasonal">Sezonluk</option>
@@ -99,38 +114,38 @@ export default function HRRecruitmentTab({ jobItems, submitJob, jobForm, setJobF
                   </div>
                   <div>
                     <Label className="text-xs">İhtiyaç Tarihi</Label>
-                    <Input type="date" value={jobForm.needed_by} onChange={e => setJobForm({
-              ...jobForm,
+                    <Input type="date" value={jobForm.needed_by} onChange={e => setJobForm(prev => ({
+              ...prev,
               needed_by: e.target.value
-            })} />
+            }))} data-testid="job-needed-by" />
                   </div>
                   <div>
                     <Label className="text-xs">Ücret Aralığı (öneri)</Label>
-                    <Input value={jobForm.salary_range} onChange={e => setJobForm({
-              ...jobForm,
+                    <Input value={jobForm.salary_range} onChange={e => setJobForm(prev => ({
+              ...prev,
               salary_range: e.target.value
-            })} placeholder="22.000 – 30.000 TL" />
+            }))} placeholder="22.000 – 30.000 TL" />
                   </div>
                   <div>
                     <Label className="text-xs">Lokasyon</Label>
-                    <Input value={jobForm.location} onChange={e => setJobForm({
-              ...jobForm,
+                    <Input value={jobForm.location} onChange={e => setJobForm(prev => ({
+              ...prev,
               location: e.target.value
-            })} />
+            }))} />
                   </div>
                   <div className="md:col-span-2 lg:col-span-3">
                     <Label className="text-xs">Gerekçe (HR'a not)</Label>
-                    <Textarea rows={2} value={jobForm.justification} onChange={e => setJobForm({
-              ...jobForm,
+                    <Textarea rows={2} value={jobForm.justification} onChange={e => setJobForm(prev => ({
+              ...prev,
               justification: e.target.value
-            })} placeholder="Örn: yaz sezonu için ek personel; mevcut kadronun yetersizliği vb." />
+            }))} placeholder="Örn: yaz sezonu için ek personel; mevcut kadronun yetersizliği vb." />
                   </div>
                   <div className="md:col-span-2 lg:col-span-3">
                     <Label className="text-xs">Pozisyon Açıklaması</Label>
-                    <Textarea rows={3} value={jobForm.description} onChange={e => setJobForm({
-              ...jobForm,
+                    <Textarea rows={3} value={jobForm.description} onChange={e => setJobForm(prev => ({
+              ...prev,
               description: e.target.value
-            })} placeholder="Sorumluluklar, beklentiler, gerekli niteliklere dair detaylar" />
+            }))} placeholder="Sorumluluklar, beklentiler, gerekli niteliklere dair detaylar" />
                   </div>
                   <div className="md:col-span-2 lg:col-span-3 flex justify-end">
                     <Button type="submit" disabled={creatingJob}>
@@ -249,27 +264,34 @@ export default function HRRecruitmentTab({ jobItems, submitJob, jobForm, setJobF
                 <div className="md:col-span-2 text-sm font-medium flex items-center gap-2">
                   <UserPlus className="w-4 h-4" />Yeni Aday Ekle
                 </div>
-                <Input placeholder="Ad Soyad *" value={applicantForm.name} onChange={e => setApplicantForm({
-          ...applicantForm,
+                <Input placeholder="Ad Soyad *" value={applicantForm.name} onChange={e => setApplicantForm(prev => ({
+          ...prev,
           name: e.target.value
-        })} />
-                <Input placeholder="E-posta" type="email" value={applicantForm.email} onChange={e => setApplicantForm({
-          ...applicantForm,
+        }))} />
+                <Input placeholder="E-posta" type="email" value={applicantForm.email} onChange={e => setApplicantForm(prev => ({
+          ...prev,
           email: e.target.value
-        })} />
-                <Input placeholder="Telefon" value={applicantForm.phone} onChange={e => setApplicantForm({
-          ...applicantForm,
+        }))} />
+                <Input placeholder="Telefon" value={applicantForm.phone} onChange={e => setApplicantForm(prev => ({
+          ...prev,
           phone: e.target.value
-        })} />
-                <Input placeholder="CV URL (opsiyonel)" value={applicantForm.cv_url} onChange={e => setApplicantForm({
-          ...applicantForm,
+        }))} />
+                <Input placeholder="CV URL (opsiyonel)" value={applicantForm.cv_url} onChange={e => setApplicantForm(prev => ({
+          ...prev,
           cv_url: e.target.value
-        })} />
+        }))} />
                 <div className="md:col-span-2">
-                  <Textarea rows={2} placeholder="Notlar (deneyim, görüşme izlenimi, vb.)" value={applicantForm.notes} onChange={e => setApplicantForm({
-            ...applicantForm,
+                  <Label className="text-xs">CV Dosyası (PDF/Word/JPEG/PNG, en fazla 5 MB)</Label>
+                  <Input type="file" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp" onChange={e => setApplicantForm(prev => ({
+                    ...prev,
+                    cv_file: e.target.files?.[0] || null
+                  }))} />
+                </div>
+                <div className="md:col-span-2">
+                  <Textarea rows={2} placeholder="Notlar (deneyim, görüşme izlenimi, vb.)" value={applicantForm.notes} onChange={e => setApplicantForm(prev => ({
+            ...prev,
             notes: e.target.value
-          })} />
+          }))} />
                 </div>
                 <div className="md:col-span-2 flex justify-end">
                   <Button type="submit" size="sm" disabled={savingApplicant}>
@@ -294,6 +316,9 @@ export default function HRRecruitmentTab({ jobItems, submitJob, jobForm, setJobF
                           {a.cv_url && <a href={a.cv_url} target="_blank" rel="noreferrer" className="text-xs text-sky-600 hover:underline">
                               <ExternalLink className="w-3 h-3 inline mr-0.5" />CV
                             </a>}
+                          {a.cv_document_id && <Button type="button" size="sm" variant="link" className="h-auto p-0 text-xs" onClick={() => downloadApplicantCv(a)}>
+                              <Download className="w-3 h-3 mr-0.5" />CV Dosyasını İndir
+                            </Button>}
                         </div>
                         <div className="flex flex-col items-end gap-1">
                           <select value={a.status || 'new'} onChange={e => setApplicantStatus(a.id, e.target.value)} className="text-xs rounded border border-input px-2 py-1">

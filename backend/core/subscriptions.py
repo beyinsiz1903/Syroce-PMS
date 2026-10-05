@@ -133,6 +133,7 @@ async def ensure_indexes() -> None:
 
         # Entitlement Quota Deduplication & Index
         from core.entitlements.indexes import ensure_entitlement_indexes
+
         await ensure_entitlement_indexes(db)
 
     except Exception:

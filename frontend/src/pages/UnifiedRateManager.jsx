@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { confirmDialog } from '@/lib/dialogs';
@@ -18,21 +18,31 @@ import { useTranslation } from 'react-i18next';
 const UNIFIED_PREFIX = '/channel-manager/unified-rate-manager';
 
 export const confirmUnifiedRateMutation = ({ roomCount, dateFrom, dateTo }) => confirmDialog({
-  title: 'Kanal güncellemesini onayla',
-  message: `${roomCount} oda tipi için ${dateFrom} - ${dateTo} tarihleri arasındaki yerel kayıtlar güncellenecek ve kanal yöneticisine teslimat başlatılacak. Kuyruğa alınması provider tarafından uygulandığı anlamına gelmez. Devam edilsin mi?`,
+  title: 'Fiyat ve müsaitlik güncellemesini onayla',
+  message: `${roomCount} oda tipi için ${dateFrom} - ${dateTo} tarihleri arasındaki yerel kayıtlar güncellenecek; seçilen acentelere ve bağlı kanallara iletim başlatılacak. Devam edilsin mi?`,
   confirmText: 'Güncellemeyi Başlat',
   cancelText: 'Vazgeç',
   variant: 'danger'
 });
 
 export const getUnifiedRateDeliveryFeedback = data => {
+  if (data?.provider === 'agency' && data?.agency_push_count > 0) {
+    return { level: 'success', message: `${data.saved || 0} kayıt güncellendi ve ${data.agency_push_count} acenteye anında iletildi.` };
+  }
   if (data?.provider_verified === true) {
-    return { level: 'success', message: `${data.saved || 0} kayıt güncellendi ve provider teslimatı doğrulandı.` };
+    return { level: 'success', message: `${data.saved || 0} kayıt güncellendi ve kanal sağlayıcısına teslimat doğrulandı.` };
   }
   if (data?.provider_delivery_state === 'SCHEDULED' || data?.provider_delivery_state === 'QUEUED' || data?.provider_delivery_state === 'PENDING') {
-    return { level: 'warning', message: `${data.saved || 0} yerel kayıt güncellendi; provider teslimatı henüz doğrulanmadı.` };
+    return { level: 'warning', message: `${data.saved || 0} yerel kayıt güncellendi; kanal sağlayıcısına teslimat henüz doğrulanmadı.` };
   }
-  return { level: 'warning', message: `${data?.saved || 0} yerel kayıt güncellendi; provider teslimatı yapılmadı.` };
+  if (data?.provider_delivery_state === 'PARTIAL') {
+    return { level: 'error', message: `${data?.saved || 0} yerel kayıt güncellendi; kanal sağlayıcısına teslimat kısmen tamamlandı. İşlem günlüğünü kontrol edin.` };
+  }
+  const providerError = data?.provider_error_codes?.[0];
+  if (providerError) {
+    return { level: 'error', message: `${data?.saved || 0} yerel kayıt güncellendi; kanal sağlayıcısına teslimat başarısız: ${providerError}` };
+  }
+  return { level: 'warning', message: `${data?.saved || 0} yerel kayıt güncellendi; kanal sağlayıcısına teslimat yapılmadı.` };
 };
 const UnifiedRateManager = ({
   user,
@@ -42,12 +52,14 @@ const UnifiedRateManager = ({
 }) => {
   const { t, i18n } = useTranslation();
   const [loading, setLoading] = useState(false);
+  const [initialGridSettled, setInitialGridSettled] = useState(false);
   const [saving, setSaving] = useState(false);
   const [activeView, setActiveView] = useState('bulk');
   const [mobileBulkStep, setMobileBulkStep] = useState(1);
 
   // Provider detection
   const [provider, setProvider] = useState(null);
+  const [providerConfigurationError, setProviderConfigurationError] = useState(null);
   const [detecting, setDetecting] = useState(true);
 
   // Grid data
@@ -60,9 +72,11 @@ const UnifiedRateManager = ({
   const [pushProviders, setPushProviders] = useState([]);
   const [activeChannels, setActiveChannels] = useState([]);
   const [activeChannelsStale, setActiveChannelsStale] = useState(false);
+  const [selectedChannelCodes, setSelectedChannelCodes] = useState(new Set());
 
   // Agencies
   const [agencies, setAgencies] = useState([]);
+  const [agenciesLoading, setAgenciesLoading] = useState(false);
   const [selectedAgencies, setSelectedAgencies] = useState(new Set());
   const [agencyPanelOpen, setAgencyPanelOpen] = useState(true);
   const [agencyOverrides, setAgencyOverrides] = useState({});
@@ -75,6 +89,11 @@ const UnifiedRateManager = ({
     RUB: '\u20BD'
   };
   const currencySymbol = CURRENCY_SYMBOLS[currency] || currency;
+  const pushModeGroups = useMemo(() => pushProviders.reduce((groups, item) => {
+    const mode = item.mode || 'inactive';
+    groups[mode] = (groups[mode] || 0) + 1;
+    return groups;
+  }, {}), [pushProviders]);
 
   // Bulk update state
   const [selections, setSelections] = useState({});
@@ -100,7 +119,10 @@ const UnifiedRateManager = ({
     d.setDate(d.getDate() + 13);
     return d.toISOString().slice(0, 10);
   });
-  const headers = {};
+  // Date navigation may start a second grid request before the first one
+  // completes. Only the newest response may update availability or rates.
+  const gridRequestRef = useRef(0);
+  const headers = useMemo(() => ({}), []);
 
   // Fetch circuit breaker status (CM-Hardening Stop-Sale Circuit Breaker, May 2026)
   const fetchBreakers = useCallback(async () => {
@@ -115,12 +137,13 @@ const UnifiedRateManager = ({
       // silent — admin-level endpoint, not all roles can read
       console.warn('[UnifiedRateManager] fetchBreakers skipped (likely insufficient role):', e?.response?.status);
     }
-  }, []);
+  }, [headers]);
   useEffect(() => {
+    if (!provider || !initialGridSettled) return undefined;
     fetchBreakers();
     const id = setInterval(fetchBreakers, 30000);
     return () => clearInterval(id);
-  }, [fetchBreakers]);
+  }, [fetchBreakers, initialGridSettled, provider]);
 
   // Lookup helper: current provider's breaker state ('closed' | 'half_open' | 'open')
   const activeBreaker = useMemo(() => breakers.find(b => b.provider === provider) || null, [breakers, provider]);
@@ -137,8 +160,9 @@ const UnifiedRateManager = ({
           headers
         });
         setProvider(data.provider || null);
+        setProviderConfigurationError(data.configuration_error || null);
       } catch {
-        toast.error('Kanal saglayici tespit edilemedi');
+        toast.error('Kanal sağlayıcısı tespit edilemedi');
       }
       setDetecting(false);
     };
@@ -149,13 +173,15 @@ const UnifiedRateManager = ({
   // Fetch grid
   const fetchGrid = useCallback(async () => {
     if (!provider) return;
+    const requestId = ++gridRequestRef.current;
     setLoading(true);
     try {
       const {
         data
-      } = await axios.get(`${UNIFIED_PREFIX}/grid?start_date=${startDate}&end_date=${endDate}&provider=${provider}`, {
+      } = await axios.get(`${UNIFIED_PREFIX}/grid?start_date=${startDate}&end_date=${endDate}&provider=${encodeURIComponent(provider)}`, {
         headers
       });
+      if (requestId !== gridRequestRef.current) return;
       setGrid(data.grid || []);
       setRoomTypes(data.room_types || []);
       setRatePlans(data.rate_plans || []);
@@ -163,9 +189,13 @@ const UnifiedRateManager = ({
       if (data.occupancy_pricing_rules) setOccupancyPricingRules(data.occupancy_pricing_rules);
       if (data.currency) setCurrency(data.currency);
     } catch {
-      toast.error('Veriler yüklenemedi');
+      if (requestId === gridRequestRef.current) toast.error('Veriler yüklenemedi');
+    } finally {
+      if (requestId === gridRequestRef.current) {
+        setLoading(false);
+        setInitialGridSettled(true);
+      }
     }
-    setLoading(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, [startDate, endDate, provider]);
   useEffect(() => {
@@ -174,27 +204,30 @@ const UnifiedRateManager = ({
 
   // Fetch push providers
   useEffect(() => {
-    if (!provider) return;
+    if (!provider || !initialGridSettled) return;
     axios.get(`${UNIFIED_PREFIX}/push-providers`, {
       headers
     }).then(res => setPushProviders(res.data?.providers || [])).catch(e => {
-      console.warn('[UnifiedRateManager] fetchPushProviders failed (non-critical):', e?.response?.status ?? e?.message); toast.error('Bildirim saglayicilar yuklenemedi');
+      console.warn('[UnifiedRateManager] fetchPushProviders failed (non-critical):', e?.response?.status ?? e?.message); toast.error('Bildirim sağlayıcıları yüklenemedi');
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
-  }, [provider]);
+  }, [initialGridSettled, provider]);
 
   // HotelRunner's /infos/channels response is the complete catalogue, not the
   // hotel's active destinations. The connections overview exposes only the
   // provider-verified connected_channels list.
   useEffect(() => {
-    if (provider !== 'hotelrunner') {
+    if (!initialGridSettled || provider !== 'hotelrunner') {
       setActiveChannels([]);
       setActiveChannelsStale(false);
       return;
     }
     axios.get('/channel-manager/connections/overview', { headers }).then(res => {
       const hotelrunner = (res.data?.providers || []).find(item => item.provider === 'hotelrunner');
-      setActiveChannels(Array.isArray(hotelrunner?.channels) ? hotelrunner.channels : []);
+      const channels = Array.isArray(hotelrunner?.channels) ? hotelrunner.channels : [];
+      setActiveChannels(channels);
+      const validCodes = new Set(channels.map(channel => String(channel?.code || '').trim()).filter(Boolean));
+      setSelectedChannelCodes(previous => new Set([...previous].filter(code => validCodes.has(code))));
       setActiveChannelsStale(hotelrunner?.channels_stale === true);
     }).catch(error => {
       console.warn('[UnifiedRateManager] active HotelRunner channels unavailable:', error?.response?.status ?? error?.message);
@@ -202,17 +235,19 @@ const UnifiedRateManager = ({
       setActiveChannelsStale(true);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- cookie auth headers are stable for this mounted view
-  }, [provider]);
+  }, [initialGridSettled, provider]);
 
   // Fetch agencies
   useEffect(() => {
+    if (!initialGridSettled) return;
+    setAgenciesLoading(true);
     axios.get(`${UNIFIED_PREFIX}/agencies`, {
       headers
     }).then(res => setAgencies(res.data?.agencies || [])).catch(e => {
-      console.warn('[UnifiedRateManager] fetchAgencies failed (non-critical):', e?.response?.status ?? e?.message); toast.error('Acenteler yuklenemedi');
-    });
+      console.warn('[UnifiedRateManager] fetchAgencies failed (non-critical):', e?.response?.status ?? e?.message);
+    }).finally(() => setAgenciesLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
-  }, []);
+  }, [initialGridSettled]);
 
   // Room type tree
   const roomTypeTree = useMemo(() => {
@@ -236,6 +271,7 @@ const UnifiedRateManager = ({
     rate: '',
     availability: '',
     min_stay: '',
+    min_los_arrival: '',
     max_stay: '',
     stop_sell: false,
     cta: false,
@@ -429,6 +465,17 @@ const UnifiedRateManager = ({
       setSelectedAgencies(new Set(agencies.map(a => a.id)));
     }
   };
+  const toggleChannel = channelCode => {
+    setSelectedChannelCodes(previous => {
+      const next = new Set(previous);
+      if (next.has(channelCode)) next.delete(channelCode);else next.add(channelCode);
+      return next;
+    });
+  };
+  const toggleAllChannels = () => {
+    const codes = activeChannels.map(channel => String(channel?.code || '').trim()).filter(Boolean);
+    setSelectedChannelCodes(previous => previous.size === codes.length ? new Set() : new Set(codes));
+  };
 
   // Save agency override
   const saveAgencyOverride = async (agencyId, roomTypeCode, overrideType, value) => {
@@ -497,11 +544,16 @@ const UnifiedRateManager = ({
       toast.error('Lutfen tarih araligi seçin');
       return;
     }
+    if (!allDays && selectedDays.size === 0) {
+      toast.error('Lütfen en az bir gün seçin');
+      return;
+    }
     const selectedRoomCodes = Object.keys(selections);
+    const hasValue = value => value !== null && value !== undefined && value !== '';
     const hasAnyValue = selectedRoomCodes.some(rtCode => {
       const rv = roomValues[rtCode];
       if (!rv) return false;
-      return enabledFields.has('rate') && rv.rate || enabledFields.has('availability') && rv.availability || enabledFields.has('min_stay') && rv.min_stay || enabledFields.has('max_stay') && rv.max_stay || enabledFields.has('stop_sell') && rv.stop_sell || enabledFields.has('cta') && rv.cta || enabledFields.has('ctd') && rv.ctd;
+      return enabledFields.has('rate') && hasValue(rv.rate) || enabledFields.has('availability') && hasValue(rv.availability) || enabledFields.has('min_stay') && hasValue(rv.min_stay) || enabledFields.has('min_los_arrival') && hasValue(rv.min_los_arrival) || enabledFields.has('max_stay') && hasValue(rv.max_stay) || enabledFields.has('stop_sell') && typeof rv.stop_sell === 'boolean' || enabledFields.has('cta') && typeof rv.cta === 'boolean' || enabledFields.has('ctd') && typeof rv.ctd === 'boolean';
     });
     if (!hasAnyValue) {
       toast.error('Lutfen en az bir oda tipi için değer girin');
@@ -519,10 +571,11 @@ const UnifiedRateManager = ({
         return {
           room_type_code: rtCode,
           rate_plan_codes: Array.from(selections[rtCode]),
-          rate: enabledFields.has('rate') && rv.rate ? parseFloat(rv.rate) : null,
-          availability: enabledFields.has('availability') && rv.availability ? parseInt(rv.availability) : null,
-          min_stay: enabledFields.has('min_stay') && rv.min_stay ? parseInt(rv.min_stay) : null,
-          max_stay: enabledFields.has('max_stay') && rv.max_stay ? parseInt(rv.max_stay) : null,
+          rate: enabledFields.has('rate') && hasValue(rv.rate) ? parseFloat(rv.rate) : null,
+          availability: enabledFields.has('availability') && hasValue(rv.availability) ? parseInt(rv.availability) : null,
+          min_stay: enabledFields.has('min_stay') && hasValue(rv.min_stay) ? parseInt(rv.min_stay) : null,
+          min_los_arrival: enabledFields.has('min_los_arrival') && hasValue(rv.min_los_arrival) ? parseInt(rv.min_los_arrival) : null,
+          max_stay: enabledFields.has('max_stay') && hasValue(rv.max_stay) ? parseInt(rv.max_stay) : null,
           stop_sell: enabledFields.has('stop_sell') ? rv.stop_sell : null,
           cta: enabledFields.has('cta') ? rv.cta : null,
           ctd: enabledFields.has('ctd') ? rv.ctd : null
@@ -532,13 +585,13 @@ const UnifiedRateManager = ({
       const {
         data
       } = await axios.post(`${UNIFIED_PREFIX}/bulk-grid-update`, {
-        provider,
         per_room_values: perRoomValues,
         start_date: dateFrom,
         end_date: dateTo,
         selected_days: allDays ? null : Array.from(selectedDays),
         update_fields: Array.from(enabledFields),
-        agency_ids: agencyIds
+        agency_ids: agencyIds,
+        channel_codes: Array.from(selectedChannelCodes),
       }, {
         headers
       });
@@ -554,7 +607,8 @@ const UnifiedRateManager = ({
     } catch (e) {
       const detail = e.response?.data?.detail;
       const safeCode = typeof detail === 'object' && typeof detail?.error_code === 'string' ? detail.error_code : null;
-      toast.error(safeCode ? `Güncelleme engellendi: ${safeCode}` : 'Güncelleme hatası');
+      const detailStr = typeof detail === 'string' ? detail : null;
+      toast.error(safeCode ? `Güncelleme engellendi: ${safeCode}` : detailStr || 'Güncelleme hatası', { duration: 8000 });
     }
     setSaving(false);
   };
@@ -611,7 +665,7 @@ const UnifiedRateManager = ({
   }
   const formatDate = ds => {
     const d = new Date(ds + 'T00:00:00');
-    const dayNames = ['Paz', 'Pzt', 'Sal', 'Car', 'Per', 'Cum', 'Cmt'];
+    const dayNames = ['Paz', 'Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt'];
     return {
       day: d.getDate(),
       month: d.toLocaleDateString('tr-TR', {
@@ -637,7 +691,7 @@ const UnifiedRateManager = ({
     inactive: {
       className: 'bg-slate-400 text-white',
       icon: null,
-      label: 'Inaktif'
+      label: 'Pasif'
     },
     read_only: {
       className: 'bg-sky-500 text-white',
@@ -649,17 +703,27 @@ const UnifiedRateManager = ({
     return <MaybeLayout embedded={embedded} user={user} tenant={tenant} onLogout={onLogout} currentModule="unified_rate_manager">
         <div className="flex items-center justify-center min-h-[400px]" data-testid="unified-rate-loading">
           <Loader2 className="w-8 h-8 animate-spin text-zinc-400" />
-          <span className="ml-3 text-zinc-500">Kanal saglayici tespit ediliyor...</span>
+          <span className="ml-3 text-zinc-500">Kanal sağlayıcısı tespit ediliyor...</span>
         </div>
       </MaybeLayout>;
   }
   if (!provider) {
+    const providerErrorCopy = providerConfigurationError === 'multiple_active_providers' ? {
+      title: 'Kanal yöneticisi seçimi gerekli',
+      description: 'Bu otelde birden fazla aktif entegrasyon var. Süperadmin ekranından otelin kullanacağı kanal yöneticisini seçin.'
+    } : providerConfigurationError === 'connection_missing' ? {
+      title: 'Seçilen kanal bağlantısı aktif değil',
+      description: 'Süperadmin tarafından seçilen entegrasyonun bağlantısını tamamlayın veya otel için doğru kanal yöneticisini seçin.'
+    } : {
+      title: t('cm.pages_UnifiedRateManager.aktif_kanal_saglayici_bulunamadi'),
+      description: t('cm.pages_UnifiedRateManager.fiyat_ve_musaitlik_yonetimi_icin_once_bi')
+    };
     return <MaybeLayout embedded={embedded} user={user} tenant={tenant} onLogout={onLogout} currentModule="unified_rate_manager">
         <div className="flex flex-col items-center justify-center min-h-[400px] gap-4" data-testid="unified-rate-no-provider">
           <Building2 className="w-16 h-16 text-zinc-300" />
-          <h2 className="text-xl font-semibold text-zinc-600">{t('cm.pages_UnifiedRateManager.aktif_kanal_saglayici_bulunamadi')}</h2>
+          <h2 className="text-xl font-semibold text-zinc-600">{providerErrorCopy.title}</h2>
           <p className="text-sm text-zinc-500 text-center max-w-md">
-            {t('cm.pages_UnifiedRateManager.fiyat_ve_musaitlik_yonetimi_icin_once_bi')}
+            {providerErrorCopy.description}
           </p>
         </div>
       </MaybeLayout>;
@@ -679,11 +743,11 @@ const UnifiedRateManager = ({
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2" data-testid="unified-push-provider-badges">
-            {pushProviders.length > 0 ? pushProviders.map(p => {
-            const cfg = modeConfig[p.mode] || modeConfig.inactive;
-            return <Badge key={p.slug} className={cfg.className} data-testid={`unified-push-badge-${p.slug}`}>
+            {pushProviders.length > 0 ? Object.entries(pushModeGroups).map(([mode, count]) => {
+            const cfg = modeConfig[mode] || modeConfig.inactive;
+            return <Badge key={mode} className={cfg.className} data-testid={`unified-push-badge-${mode}`}>
                   {cfg.icon}
-                  Kanal: {cfg.label}
+                  {count > 1 ? `${count} kanal bağlantısı` : 'Kanal bağlantısı'}: {cfg.label}
                 </Badge>;
           }) : <Badge className="bg-zinc-600 text-white" data-testid="unified-push-badge-default">
                 Kanal Yöneticisi
@@ -722,12 +786,12 @@ const UnifiedRateManager = ({
                   <CalendarDays className="mr-1 h-4 w-4" /> <span className="sm:hidden">Takvim</span><span className="hidden sm:inline">Takvim Görünümü</span>
                 </TabsTrigger>
                 <TabsTrigger value="stop-sale" className="px-1 text-[11px] sm:px-3 sm:text-sm" data-testid="unified-stop-sale-tab">
-                  <Ban className="mr-1 h-4 w-4" /> Stop Sale
+                  <Ban className="mr-1 h-4 w-4" /> Satışı Durdur
                 </TabsTrigger>
               </TabsList>
 
               <TabsContent value="bulk" className="mt-4">
-                <BulkUpdatePanel roomTypeTree={roomTypeTree} roomTypes={roomTypes} ratePlans={ratePlans} enabledFields={enabledFields} toggleField={toggleField} dateFrom={dateFrom} setDateFrom={setDateFrom} dateTo={dateTo} setDateTo={setDateTo} allDays={allDays} selectedDays={selectedDays} toggleDay={toggleDay} toggleAllDays={toggleAllDays} selections={selections} toggleRoomType={toggleRoomType} toggleAllRoomTypes={toggleAllRoomTypes} toggleRatePlan={toggleRatePlan} isRoomTypeSelected={isRoomTypeSelected} isRoomTypeFullySelected={isRoomTypeFullySelected} isRatePlanSelected={isRatePlanSelected} roomValues={roomValues} updateRoomValue={updateRoomValue} getDefaultValues={getDefaultValues} applyToAllSelected={applyToAllSelected} expandedRoomTypes={expandedRoomTypes} toggleExpanded={toggleExpanded} pricingSettings={pricingSettings} occupancyPricingRules={occupancyPricingRules} saveOccupancyPricingRule={saveOccupancyPricingRule} getPricingLabel={getPricingLabel} togglePricingType={togglePricingType} currencySymbol={currencySymbol} currency={currency} totalSelectedRoomTypes={totalSelectedRoomTypes} totalSelectedPlans={totalSelectedPlans} saving={saving} handleBulkUpdate={handleBulkUpdate} handleReset={handleReset} loading={loading} activeChannels={activeChannels} activeChannelsStale={activeChannelsStale} channelProvider={provider} mobileStep={mobileBulkStep} setMobileStep={setMobileBulkStep} />
+                <BulkUpdatePanel roomTypeTree={roomTypeTree} roomTypes={roomTypes} ratePlans={ratePlans} enabledFields={enabledFields} toggleField={toggleField} dateFrom={dateFrom} setDateFrom={setDateFrom} dateTo={dateTo} setDateTo={setDateTo} allDays={allDays} selectedDays={selectedDays} toggleDay={toggleDay} toggleAllDays={toggleAllDays} selections={selections} toggleRoomType={toggleRoomType} toggleAllRoomTypes={toggleAllRoomTypes} toggleRatePlan={toggleRatePlan} isRoomTypeSelected={isRoomTypeSelected} isRoomTypeFullySelected={isRoomTypeFullySelected} isRatePlanSelected={isRatePlanSelected} roomValues={roomValues} updateRoomValue={updateRoomValue} getDefaultValues={getDefaultValues} applyToAllSelected={applyToAllSelected} expandedRoomTypes={expandedRoomTypes} toggleExpanded={toggleExpanded} pricingSettings={pricingSettings} occupancyPricingRules={occupancyPricingRules} saveOccupancyPricingRule={saveOccupancyPricingRule} getPricingLabel={getPricingLabel} togglePricingType={togglePricingType} currencySymbol={currencySymbol} currency={currency} totalSelectedRoomTypes={totalSelectedRoomTypes} totalSelectedPlans={totalSelectedPlans} saving={saving} handleBulkUpdate={handleBulkUpdate} handleReset={handleReset} loading={loading} activeChannels={activeChannels} activeChannelsStale={activeChannelsStale} selectedChannelCodes={selectedChannelCodes} toggleChannel={toggleChannel} toggleAllChannels={toggleAllChannels} channelProvider={provider} mobileStep={mobileBulkStep} setMobileStep={setMobileBulkStep} />
               </TabsContent>
 
               <TabsContent value="grid" className="mt-4">
@@ -747,7 +811,7 @@ const UnifiedRateManager = ({
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-sm font-semibold text-zinc-700 flex items-center gap-1.5">
                     <Building2 className="w-4 h-4" />
-                    Acentelere Ilet
+                    Acentelere İlet
                   </CardTitle>
                   <button onClick={() => setAgencyPanelOpen(p => !p)} className="text-zinc-400 hover:text-zinc-600" data-testid="agency-panel-toggle">
                     {agencyPanelOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
@@ -756,13 +820,15 @@ const UnifiedRateManager = ({
               </CardHeader>
 
               {agencyPanelOpen && <CardContent className="px-4 pb-4 space-y-3">
-                  {agencies.length === 0 ? <p className="text-xs text-zinc-400 text-center py-3">
+                  {agenciesLoading ? <p className="text-xs text-zinc-400 text-center py-3" data-testid="agency-panel-loading">
+                      Acenteler yükleniyor...
+                    </p> : agencies.length === 0 ? <p className="text-xs text-zinc-400 text-center py-3">
                       {t('cm.pages_UnifiedRateManager.henuz_aktif_acente_tanimlanmamis')}
                     </p> : <>
                       {/* Select all */}
                       <label className="flex items-center gap-2 cursor-pointer text-xs font-medium text-zinc-600 pb-1 border-b border-zinc-100" data-testid="agency-select-all">
                         <Checkbox checked={selectedAgencies.size === agencies.length && agencies.length > 0} onCheckedChange={toggleAllAgencies} />
-                        Tumunu Sec ({agencies.length})
+                        Tümünü Seç ({agencies.length})
                       </label>
 
                       {/* Agency list */}
@@ -783,7 +849,7 @@ const UnifiedRateManager = ({
                             {selectedAgencies.has(agency.id) && <div className="ml-6 mt-1 flex gap-1">
                                 {editingOverride === agency.id ? <AgencyOverrideEditor agency={agency} roomTypes={roomTypes} onSave={saveAgencyOverride} onCancel={() => setEditingOverride(null)} onDelete={() => deleteAgencyOverride(agency.id)} currencySymbol={currencySymbol} /> : <button onClick={() => setEditingOverride(agency.id)} className="text-[10px] text-sky-600 hover:text-sky-800 flex items-center gap-0.5" data-testid={`agency-override-btn-${agency.id}`}>
                                     <Settings2 className="w-3 h-3" />
-                                    {agency.has_custom_rates ? 'Özel fiyat düzenle' : 'Özel fiyat tanimla'}
+                                    {agency.has_custom_rates ? 'Özel fiyat düzenle' : 'Özel fiyat tanımla'}
                                   </button>}
                               </div>}
                           </div>)}

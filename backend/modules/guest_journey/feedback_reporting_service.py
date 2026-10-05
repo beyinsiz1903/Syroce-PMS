@@ -282,10 +282,10 @@ async def compute_nps_score(tenant_id: str, days: int = 30) -> dict[str, Any]:
             "nps_eligible": True,
             "responded_at": {"$gte": start},
         }
-        surveys = await db.feedback_entries.find(query, {"_id": 0, "category": 1}).to_list(5000)
+        surveys = await db.feedback_entries.find(query, {"_id": 0, "category": 1}).to_list(None)
     else:
         query = {"tenant_id": tenant_id, "responded_at": {"$gte": start}}
-        surveys = await db.nps_surveys.find(query, {"_id": 0, "category": 1}).to_list(5000)
+        surveys = await db.nps_surveys.find(query, {"_id": 0, "category": 1}).to_list(None)
 
     return _score_from_categories(surveys, days)
 
@@ -454,11 +454,11 @@ async def verify_parity(tenant_id: str, days: int = 30) -> dict[str, Any]:
     legacy_cats = await db.nps_surveys.find(
         {"tenant_id": tenant_id, "responded_at": {"$gte": start}},
         {"_id": 0, "category": 1},
-    ).to_list(5000)
+    ).to_list(None)
     unified_cats = await db.feedback_entries.find(
         {"tenant_id": tenant_id, "nps_eligible": True, "responded_at": {"$gte": start}},
         {"_id": 0, "category": 1},
-    ).to_list(5000)
+    ).to_list(None)
 
     legacy = _score_from_categories(legacy_cats, days)
     unified = _score_from_categories(unified_cats, days)

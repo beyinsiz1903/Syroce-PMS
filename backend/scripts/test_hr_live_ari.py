@@ -6,8 +6,10 @@ from dotenv import load_dotenv
 load_dotenv(override=False)
 sys.path.append("/app")
 
+
 def log_result(step: str, status: str, extra: str = ""):
     print(f"[{status}] {step:<35} {extra}")
+
 
 async def main():
     print("==================================================")
@@ -52,18 +54,7 @@ async def main():
 
         # SAFE ARI PUSH FOR 2035
         safe_date = "2035-01-01"
-        test_payload = {
-            "updates": [
-                {
-                    "inv_code": str(inv_code),
-                    "rate_plan_code": str(rate_plan_code),
-                    "start_date": safe_date,
-                    "end_date": safe_date,
-                    "availability": 1,
-                    "price": 999.0
-                }
-            ]
-        }
+        test_payload = {"updates": [{"inv_code": str(inv_code), "rate_plan_code": str(rate_plan_code), "start_date": safe_date, "end_date": safe_date, "availability": 1, "price": 999.0}]}
 
         push_res = await service.push_ari(test_payload)
         if push_res.get("success"):
@@ -73,17 +64,7 @@ async def main():
             sys.exit(1)
 
         # RESTORE
-        restore_payload = {
-            "updates": [
-                {
-                    "inv_code": str(inv_code),
-                    "rate_plan_code": str(rate_plan_code),
-                    "start_date": safe_date,
-                    "end_date": safe_date,
-                    "availability": 0
-                }
-            ]
-        }
+        restore_payload = {"updates": [{"inv_code": str(inv_code), "rate_plan_code": str(rate_plan_code), "start_date": safe_date, "end_date": safe_date, "availability": 0}]}
 
         rest_res = await service.push_ari(restore_payload)
         if rest_res.get("success"):
@@ -96,6 +77,7 @@ async def main():
 
     print("Token/secret log: Yok (Redacted & Clean)")
     print("==================================================")
+
 
 if __name__ == "__main__":
     asyncio.run(main())

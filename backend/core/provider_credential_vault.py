@@ -33,18 +33,14 @@ def _build_aad(tenant_id: str, provider: str, property_id: str) -> AADContext:
     )
 
 
-def _encrypt_payload(
-    credentials: dict[str, str], tenant_id: str, provider: str, property_id: str
-) -> dict[str, str]:
+def _encrypt_payload(credentials: dict[str, str], tenant_id: str, provider: str, property_id: str) -> dict[str, str]:
     return get_crypto_service().encrypt_dict(
         credentials,
         aad=_build_aad(tenant_id, provider, property_id),
     )
 
 
-def _decrypt_payload(
-    encrypted: dict[str, str], tenant_id: str, provider: str, property_id: str
-) -> dict[str, str]:
+def _decrypt_payload(encrypted: dict[str, str], tenant_id: str, provider: str, property_id: str) -> dict[str, str]:
     return get_crypto_service().decrypt_dict(
         encrypted,
         aad=_build_aad(tenant_id, provider, property_id),
@@ -146,7 +142,5 @@ async def get_masked_credentials(
 
 
 async def delete_secret(tenant_id: str, provider: str, property_id: str) -> bool:
-    result = await db[COLL_PROVIDER_SECRETS].delete_one(
-        {"tenant_id": tenant_id, "provider": provider, "property_id": property_id}
-    )
+    result = await db[COLL_PROVIDER_SECRETS].delete_one({"tenant_id": tenant_id, "provider": provider, "property_id": property_id})
     return result.deleted_count > 0

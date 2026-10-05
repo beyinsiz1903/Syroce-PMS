@@ -144,10 +144,31 @@ async def update_wake_up_call(
 
     updates["updated_at"] = datetime.now(UTC).isoformat()
 
-    result = await db.wake_up_calls.update_one({"id": call_id, "tenant_id": tid}, {"$set": updates})
+    update_operation: dict = {"$set": updates}
+    schedule_changed = data.wake_time is not None or data.wake_date is not None
+    if schedule_changed:
+        # Erteleme veya saat değişikliğinde çağrının yeni zamanında tekrar
+        # uyarı üretebilmesi için önceki alarm damgasını temizle.
+        update_operation["$unset"] = {"alert_fired_at": ""}
+
+    result = await db.wake_up_calls.update_one(
+        {"id": call_id, "tenant_id": tid},
+        update_operation,
+    )
 
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Wake-up call bulunamadi")
+
+    if schedule_changed:
+        # Önceki zaman dilimine ait bildirim artık geçersizdir. Yeni saat
+        # geldiğinde idempotent alarm akışı temiz bir bildirim oluşturur.
+        await db.notifications.delete_many(
+            {
+                "tenant_id": tid,
+                "source_type": "wake_up_call",
+                "source_id": call_id,
+            }
+        )
 
     updated = await db.wake_up_calls.find_one({"id": call_id}, {"_id": 0})
     return {"success": True, "call": updated}

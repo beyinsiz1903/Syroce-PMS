@@ -39,6 +39,13 @@ async def ensure_performance_indexes():
         # `idx_booking_overlap_check` (tenant_id, room_id, status, check_in,
         # check_out) prefix'i ile tamamen kapsanıyor. Kaldırıldı.
         ("guests", [("tenant_id", 1), ("vip", 1)], "idx_guest_vip", {}),
+                # Global Ops Visibility (Superadmin)
+        ("ops_events", [("severity", 1), ("created_at", -1)], "idx_ops_global_sev_created", {}),
+        ("ops_events", [("created_at", -1)], "idx_ops_global_created", {}),
+        ("webhook_deliveries", [("status", 1), ("created_at", -1)], "idx_wh_global_status_created", {}),
+        ("webhook_deliveries", [("created_at", -1)], "idx_wh_global_created", {}),
+        ("webhook_dlq", [("status", 1), ("created_at", -1)], "idx_wh_dlq_global_status_created", {}),
+
         ("folios", [("tenant_id", 1), ("status", 1), ("balance", 1)], "idx_folio_status_balance", {}),
         ("folios", [("tenant_id", 1), ("folio_type", 1), ("status", 1)], "idx_folio_type_status", {}),
         ("users", [("tenant_id", 1), ("email", 1)], "idx_user_email", {}),
@@ -46,6 +53,15 @@ async def ensure_performance_indexes():
         ("folio_charges", [("tenant_id", 1), ("folio_id", 1), ("voided", 1)], "idx_charge_tenant_folio", {}),
         ("folio_charges", [("tenant_id", 1), ("voided", 1), ("date", 1)], "idx_charge_voided_date", {}),
         ("folio_charges", [("tenant_id", 1), ("charge_category", 1), ("date", 1)], "idx_charge_category_date", {}),
+        # A booking may have only one persisted rate for each stay night.
+        # Legacy rows without `daily_rate_key` remain readable during staged
+        # remediation; all new or edited rows are race-safe immediately.
+        (
+            "daily_rates",
+            [("tenant_id", 1), ("daily_rate_key", 1)],
+            "ux_daily_rates_tenant_stay_night",
+            {"unique": True, "partialFilterExpression": {"daily_rate_key": {"$type": "string"}}},
+        ),
         ("housekeeping_tasks", [("tenant_id", 1), ("status", 1), ("assigned_to", 1)], "idx_hk_status_assigned", {}),
         ("housekeeping_tasks", [("tenant_id", 1), ("completed_at", -1)], "idx_hk_completed", {}),
         ("payments", [("tenant_id", 1), ("folio_id", 1), ("voided", 1)], "idx_payment_tenant_folio", {}),
@@ -72,6 +88,24 @@ async def ensure_performance_indexes():
         ("audit_logs", [("tenant_id", 1), ("action", 1), ("timestamp", -1)], "idx_audit_log_action", {}),
         ("tenants", [("chain_id", 1), ("parent_tenant_id", 1)], "idx_tenant_chain", {}),
         (
+            "reservation_transfers",
+            [("source_property", 1), ("target_property", 1), ("transferred_at", -1)],
+            "idx_reservation_transfer_chain_timeline",
+            {},
+        ),
+        (
+            "chain_transfer_settlements",
+            [("transfer_id", 1)],
+            "ux_chain_transfer_settlement_transfer",
+            {"unique": True},
+        ),
+        (
+            "chain_transfer_settlements",
+            [("chain_id", 1), ("status", 1), ("created_at", -1)],
+            "idx_chain_transfer_settlement_status",
+            {},
+        ),
+        (
             "gl_intercompany_rules",
             [("chain_id", 1), ("pair_key", 1)],
             "idx_gl_intercompany_chain_pair",
@@ -84,10 +118,32 @@ async def ensure_performance_indexes():
         ("gl_nilvera_queue", [("tenant_id", 1), ("status", 1), ("created_at", -1)], "idx_gl_nilvera_queue_status", {}),
         ("gl_vouchers", [("tenant_id", 1), ("id", 1)], "ux_gl_vouchers_tenant_id", {"unique": True}),
         ("gl_vouchers", [("tenant_id", 1), ("voucher_no", 1)], "ux_gl_vouchers_tenant_no", {"unique": True}),
-        ("gl_vouchers", [("tenant_id", 1), ("setup_idempotency_key", 1)], "ux_gl_vouchers_setup_idem", {"unique": True, "sparse": True}),
+        # A sparse unique index still indexes explicit ``null`` values.  Old
+        # voucher rows carry that value, so they can make startup index builds
+        # fail even though only a real setup idempotency key must be unique.
+        (
+            "gl_vouchers",
+            [("tenant_id", 1), ("setup_idempotency_key", 1)],
+            "ux_gl_vouchers_setup_idem",
+            {
+                "unique": True,
+                "partialFilterExpression": {"setup_idempotency_key": {"$type": "string"}},
+            },
+        ),
         ("gl_vouchers", [("tenant_id", 1), ("status", 1), ("updated_at", -1)], "idx_gl_vouchers_work_queue", {}),
         ("gl_journal_entries", [("tenant_id", 1), ("entry_no", 1)], "ux_gl_journal_entry_no", {"unique": True}),
-        ("gl_journal_entries", [("tenant_id", 1), ("fiscal_year", 1), ("posting_sequence", 1)], "ux_gl_journal_sequence", {"unique": True}),
+        (
+            "gl_journal_entries",
+            [("tenant_id", 1), ("fiscal_year", 1), ("posting_sequence", 1)],
+            "ux_gl_journal_sequence",
+            {
+                "unique": True,
+                "partialFilterExpression": {
+                    "fiscal_year": {"$type": "number"},
+                    "posting_sequence": {"$type": "number"},
+                },
+            },
+        ),
         ("ap_gl_mapping", [("tenant_id", 1)], "idx_ap_gl_mapping_tenant", {"unique": True}),
         ("fixed_asset_gl_mapping", [("tenant_id", 1)], "idx_fixed_asset_gl_mapping_tenant", {"unique": True}),
         ("hotelrunner_connections", [("tenant_id", 1), ("status", 1)], "idx_hr_status", {}),
@@ -408,6 +464,14 @@ async def ensure_performance_indexes():
             {"unique": True, "partialFilterExpression": {"idempotency_key": {"$type": "string"}}},
         ),
         ("idempotency_cache", [("expires_at", 1)], "ttl_idempotency_cache", {"expireAfterSeconds": 0}),
+        # Multi-worker request tracing. Workers flush every 30 seconds and the
+        # dashboard reads a rolling time window across all processes.
+        ("observability_traces", [("completed_at", -1)], "idx_observability_completed_at", {}),
+        ("kbs_alerts", [("kind", 1), ("created_at", -1)], "idx_kbs_alert_kind_created", {}),
+        ("room_night_locks", [("lock_type", 1), ("hold_expires_at", 1)], "idx_hold_expiry_sweep", {}),
+        ("ari_change_sets", [("status", 1), ("tenant_id", 1)], "idx_ari_pending_tenant", {}),
+        ("observability_traces", [("started_at_iso", -1)], "idx_observability_started_at", {}),
+        ("observability_traces", [("expires_at", 1)], "ttl_observability_traces", {"expireAfterSeconds": 0}),
         # Agency v1 Adim 3 — HMAC replay-cache (Karar 2). `_id = "{key_id}:{nonce}"`
         # zaten otomatik unique → ayni nonce ikinci insert DuplicateKeyError verir
         # (replay race-free); ek unique index GEREKMEZ. Tek index: expires_at TTL.
@@ -436,6 +500,50 @@ async def ensure_performance_indexes():
             "ux_agency_booking_external_active",
             {"unique": True, "partialFilterExpression": {"agency_external_active": {"$type": "string"}}},
         ),
+
+        # HR Indexes
+        ("attendance_records", [("tenant_id", 1), ("clock_in", -1)], "idx_hr_attendance_clockin", {}),
+        ("leave_requests", [("tenant_id", 1), ("created_at", -1)], "idx_hr_leave_created", {}),
+        ("payroll_runs", [("tenant_id", 1), ("created_at", -1)], "idx_hr_payroll_created", {}),
+        ("payroll_runs", [("tenant_id", 1), ("period_month", -1)], "idx_hr_payroll_period", {}),
+
+        # SPA Indexes
+        ("spa_appointments", [("tenant_id", 1), ("starts_at", 1)], "idx_spa_appointments_start", {}),
+        ("spa_waitlist", [("tenant_id", 1), ("created_at", 1)], "idx_spa_waitlist_created", {}),
+
+        # Accounting / Finance Indexes
+        ("gl_journal_entries", [("tenant_id", 1), ("date", 1), ("posting_sequence", 1)], "idx_gl_journal_date_seq", {}),
+        ("expenses", [("tenant_id", 1), ("date", -1)], "idx_accounting_expenses_date", {}),
+        ("accounting_invoices", [("tenant_id", 1), ("issue_date", -1)], "idx_accounting_invoices_issue", {}),
+        ("cash_flow", [("tenant_id", 1), ("date", -1)], "idx_accounting_cashflow_date", {}),
+
+        # Core / POS / Transactions (Cross-module)
+        ("transactions", [("tenant_id", 1), ("created_at", -1)], "idx_transactions_tenant_created", {}),
+        ("transactions", [("tenant_id", 1), ("category", 1), ("transaction_date", -1)], "idx_transactions_category_date", {}),
+
+        # POS Transactions date indexes for GL router
+        ("pos_transactions", [("tenant_id", 1), ("transaction_date", 1)], "idx_pos_txn_trans_date", {}),
+        ("pos_transactions", [("tenant_id", 1), ("closed_at", 1)], "idx_pos_txn_closed_at", {}),
+        ("pos_transactions", [("tenant_id", 1), ("created_at", 1)], "idx_pos_txn_created_at", {}),
+
+        ("shift_schedules", [("tenant_id", 1), ("shift_date", 1)], "idx_hr_shift_date", {}),
+        ("performance_reviews", [("tenant_id", 1), ("reviewed_at", -1)], "idx_hr_perf_review", {}),
+
+        # Channel Manager & Revenue Indexes
+        ("channel_rates", [("tenant_id", 1), ("date", 1)], "idx_channel_rates_date", {}),
+        ("bookings", [("tenant_id", 1), ("check_in", 1)], "idx_booking_tenant_checkin", {}),
+        ("bookings", [("tenant_id", 1), ("check_out", 1)], "idx_booking_tenant_checkout", {}),
+        ("rate_campaigns", [("tenant_id", 1), ("starts_on", -1)], "idx_rate_campaigns_starts", {}),
+        ("discount_codes", [("tenant_id", 1), ("code", 1)], "idx_discount_codes_code", {}),
+        ("promotional_rates", [("tenant_id", 1), ("starts_on", -1)], "idx_promotional_rates_starts", {}),
+
+        # Guest & Loyalty Indexes
+        ("loyalty_transactions", [("tenant_id", 1), ("guest_id", 1), ("created_at", -1)], "idx_loyalty_tx_guest_created", {}),
+        ("room_service_orders", [("tenant_id", 1), ("ordered_at", -1)], "idx_rso_ordered_at", {}),
+
+        # Kitchen & F&B Reports Indexes
+        ("kitchen_orders", [("tenant_id", 1), ("order_number", -1)], "idx_ko_tenant_orderno", {}),
+        ("kitchen_orders", [("tenant_id", 1), ("status", 1), ("priority", -1), ("ordered_at", 1)], "idx_ko_status_prio", {}),
     ]
     # ── Migration Cleanup for contact_center_calls ──
     try:

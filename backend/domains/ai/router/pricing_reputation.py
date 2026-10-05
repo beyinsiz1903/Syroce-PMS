@@ -301,9 +301,7 @@ async def ingest_reputation_review(
     if body.rating > body.rating_scale:
         raise HTTPException(422, "Puan, puan ölçeğinden büyük olamaz")
     if body.external_id:
-        duplicate = await db.external_reviews.find_one(
-            {"tenant_id": current_user.tenant_id, "platform": body.platform.lower(), "external_id": body.external_id}
-        )
+        duplicate = await db.external_reviews.find_one({"tenant_id": current_user.tenant_id, "platform": body.platform.lower(), "external_id": body.external_id})
         if duplicate:
             raise HTTPException(409, "Bu dış değerlendirme zaten kayıtlı")
     now = datetime.now(UTC).isoformat()

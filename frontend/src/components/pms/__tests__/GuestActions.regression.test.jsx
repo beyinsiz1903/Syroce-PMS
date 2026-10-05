@@ -89,6 +89,14 @@ describe('PMS guest action regressions', () => {
     expect(props.setOpenDialog).toHaveBeenCalledWith('booking');
   });
 
+  it('opens the guest stay history from the guest card', () => {
+    const props = renderGuests();
+    fireEvent.click(screen.getByTestId('guest-history-btn-guest-primary'));
+
+    expect(props.setSelectedGuest360).toHaveBeenCalledWith('guest-primary');
+    expect(props.loadGuest360).toHaveBeenCalledWith('guest-primary', 'history');
+  });
+
   it('persists guest preferences before reporting success', async () => {
     const props = renderGuests();
     fireEvent.click(screen.getAllByRole('button', { name: 'Tercihler' })[0]);

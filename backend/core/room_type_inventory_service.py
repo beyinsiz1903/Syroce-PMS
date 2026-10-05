@@ -29,6 +29,11 @@ from core.tenant_db import get_system_db, tenant_context
 
 logger = logging.getLogger("core.room_type_inventory")
 
+# Keep the worker's wait seam local to this module. Tests can replace this
+# callable without mutating ``asyncio.sleep`` process-wide (which would also
+# turn unrelated Redis/event-bus listeners into busy loops).
+_worker_sleep = asyncio.sleep
+
 # Transient Atlas/network errors that the worker should treat as
 # "retry next tick" instead of Sentry-level errors. Atlas occasionally drops
 # the primary connection mid-reconciliation (No Primary / SSL handshake timeout
@@ -126,6 +131,8 @@ async def ensure_room_type_inventory_indexes() -> None:
 async def compute_room_type_inventory(
     tenant_id: str,
     date: str,
+    *,
+    room_groups: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     """
     Compute room-type inventory for a single date by aggregating room_night_locks.
@@ -138,11 +145,17 @@ async def compute_room_type_inventory(
 
     # Step 1: Count active rooms per type for this tenant
     room_type_pipeline = [
-        {"$match": {"tenant_id": tenant_id, "is_active": True}},
+        # Older room documents predate the is_active field.  They are live
+        # inventory unless they were explicitly disabled; excluding them makes
+        # a reservation's room-night lock invisible to channel availability.
+        # Virtual rooms are routing placeholders, not physical sellable
+        # inventory.  They must never be published to a channel manager.
+        {"$match": {"tenant_id": tenant_id, "is_active": {"$ne": False}, "is_virtual": {"$ne": True}}},
         {"$group": {"_id": "$room_type", "count": {"$sum": 1}, "room_ids": {"$push": "$id"}}},
     ]
-    with tenant_context(tenant_id):
-        room_groups = await db.rooms.aggregate(room_type_pipeline).to_list(200)
+    if room_groups is None:
+        with tenant_context(tenant_id):
+            room_groups = await db.rooms.aggregate(room_type_pipeline).to_list(200)
 
     # Build room_id → room_type lookup for this tenant
     room_id_to_type: dict[str, str] = {}
@@ -231,19 +244,30 @@ async def reconcile_date_range(
     drift_count = 0
     drifts = []
 
+    # One operation-local snapshot, not a cross-request availability cache.
+    # Night locks are still read fresh for each day; booking guards are unchanged.
+    with tenant_context(tenant_id):
+        room_groups = await db.rooms.aggregate(
+            [
+                {"$match": {"tenant_id": tenant_id, "is_active": {"$ne": False}, "is_virtual": {"$ne": True}}},
+                {"$group": {"_id": "$room_type", "count": {"$sum": 1}, "room_ids": {"$push": "$id"}}},
+            ]
+        ).to_list(200)
+
     current = start
     while current <= end:
         date_str = current.isoformat()
-        inventory = await compute_room_type_inventory(tenant_id, date_str)
+        inventory = await compute_room_type_inventory(tenant_id, date_str, room_groups=room_groups)
+        with tenant_context(tenant_id):
+            existing_items = await db.room_type_inventory.find(
+                {"tenant_id": tenant_id, "date": date_str},
+                {"_id": 0, "room_type": 1, "sellable": 1},
+            ).to_list(200)
+        existing_by_type = {row["room_type"]: row for row in existing_items}
 
         for item in inventory:
             # Check for drift against existing record
-            from core.tenant_db import tenant_context
-            with tenant_context(tenant_id):
-                    existing = await db.room_type_inventory.find_one(
-                    {"tenant_id": tenant_id, "room_type": item["room_type"], "date": date_str},
-                    {"_id": 0, "sellable": 1, "locked_booking": 1},
-                    )
+            existing = existing_by_type.get(item["room_type"])
             if existing and existing.get("sellable") != item["sellable"]:
                 drift_count += 1
                 drifts.append(
@@ -257,11 +281,11 @@ async def reconcile_date_range(
 
             # Upsert
             with tenant_context(tenant_id):
-                    await db.room_type_inventory.update_one(
+                await db.room_type_inventory.update_one(
                     {"tenant_id": tenant_id, "room_type": item["room_type"], "date": date_str},
                     {"$set": item},
                     upsert=True,
-                    )
+                )
             types_processed += 1
 
         dates_processed += 1
@@ -312,7 +336,7 @@ async def get_room_type_inventory(
         query["room_type"] = room_type
 
     with tenant_context(tenant_id):
-            results = await db.room_type_inventory.find(query, {"_id": 0}).to_list(200)
+        results = await db.room_type_inventory.find(query, {"_id": 0}).to_list(200)
 
     if not results:
         # Compute on-the-fly if materialized view is empty
@@ -321,11 +345,11 @@ async def get_room_type_inventory(
         for item in results:
             try:
                 with tenant_context(tenant_id):
-                        await db.room_type_inventory.update_one(
+                    await db.room_type_inventory.update_one(
                         {"tenant_id": tenant_id, "room_type": item["room_type"], "date": date},
                         {"$set": item},
                         upsert=True,
-                        )
+                    )
             except Exception:
                 pass
 
@@ -348,13 +372,13 @@ async def get_inventory_summary(
     end = datetime.fromisoformat(end_date).date()
 
     with tenant_context(tenant_id):
-            all_items = await db.room_type_inventory.find(
+        all_items = await db.room_type_inventory.find(
             {
-            "tenant_id": tenant_id,
-            "date": {"$gte": start.isoformat(), "$lte": end.isoformat()},
+                "tenant_id": tenant_id,
+                "date": {"$gte": start.isoformat(), "$lte": end.isoformat()},
             },
             {"_id": 0},
-            ).to_list(5000)
+        ).to_list(5000)
 
     # Aggregate by room type
     type_summary: dict[str, dict[str, Any]] = {}
@@ -444,7 +468,7 @@ class RoomTypeInventoryWorker:
                         )
                 else:
                     logger.error("RoomTypeInventoryWorker error: %s", e)
-            await asyncio.sleep(self._interval)
+            await _worker_sleep(self._interval)
 
     async def _run_once(self) -> None:
         """Run reconciliation for all tenants, today + 30 days."""

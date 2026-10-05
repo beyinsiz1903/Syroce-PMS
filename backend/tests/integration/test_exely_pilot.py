@@ -15,6 +15,8 @@ from typing import Any
 from urllib.parse import urlsplit
 
 import pytest
+from defusedxml import ElementTree as safe_ET
+from lxml import etree
 
 from core.database import db
 from core.tenant_db import tenant_context
@@ -38,12 +40,13 @@ from domains.channel_manager.providers.exely.pilot_import import (
     replay_failed_reservation_durably,
 )
 from domains.channel_manager.providers.exely.provider import ExelyProvider
+from domains.channel_manager.providers.exely.response_parser import parse_read_rs
 from domains.channel_manager.providers.exely.security import (
     EXELY_TEST_ENDPOINT_URL,
     validate_exely_endpoint,
 )
 from domains.channel_manager.providers.exely.snapshot_adapter import ExelySnapshotAdapter
-from domains.channel_manager.providers.exely.soap_builder import get_soap_action_uri
+from domains.channel_manager.providers.exely.soap_builder import build_read_rq, get_soap_action_uri
 
 pytestmark = [
     pytest.mark.asyncio,
@@ -53,12 +56,50 @@ pytestmark = [
 
 logger = logging.getLogger("exely.pilot")
 
-_PROVIDER_READ_OPERATIONS = frozenset({"discovery", "inventory_read", "reservation_read"})
+_PROVIDER_READ_OPERATIONS = frozenset({"discovery", "inventory_read", "reservation_read", "reservation_read_legacy_probe", "reservation_read_exact_probe"})
 _READ_OPERATIONS = frozenset({*_PROVIDER_READ_OPERATIONS, "reservation_import", "reservation_replay"})
-_ARI_OPERATIONS = frozenset({"availability", "rate", "stop_sell", "min_los", "min_los_arrival"})
+_SINGLE_ARI_OPERATIONS = frozenset({"availability", "rate", "stop_sell", "min_los", "min_los_arrival"})
+_BATCH_ARI_OPERATIONS = frozenset({"availability_batch", "forced_availability_batch"})
+_ARI_OPERATIONS = frozenset({*_SINGLE_ARI_OPERATIONS, *_BATCH_ARI_OPERATIONS})
 _WRITE_OPERATIONS = frozenset({*_ARI_OPERATIONS, "reservation_ack"})
 _SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
+_BOOKING_NUMBER_PATTERN = re.compile(r"^[0-9]{8}-[0-9]+-[0-9]+$")
 _CURRENCY_PATTERN = re.compile(r"^[A-Z]{3}$")
+_OTA_NS = "http://www.opentravel.org/OTA/2003/05"
+
+
+def _read_response_structure(xml_bytes: bytes) -> dict[str, Any]:
+    """Classify reservation XML structure without retaining payload or identifiers."""
+    try:
+        root = safe_ET.fromstring(xml_bytes)
+    except Exception:
+        return {"read_response_shape": "MALFORMED"}
+
+    body = root.find("{http://schemas.xmlsoap.org/soap/envelope/}Body")
+    if body is None:
+        return {"read_response_shape": "NO_SOAP_BODY"}
+    children = list(body)
+    if not children:
+        return {"read_response_shape": "EMPTY_SOAP_BODY"}
+
+    response = children[0]
+    response_name = response.tag.rsplit("}", 1)[-1]
+    shape = response_name if response_name in {"OTA_ReadRS", "OTA_ResRetrieveRS"} else "OTHER"
+    all_reservations = sum(
+        element.tag.rsplit("}", 1)[-1] == "HotelReservation" for element in response.iter()
+    )
+    canonical_reservations = sum(
+        element.tag == f"{{{_OTA_NS}}}HotelReservation" for element in response.iter()
+    )
+
+    def count_class(count: int) -> str:
+        return "ZERO" if count == 0 else "ONE" if count == 1 else "MULTIPLE"
+
+    return {
+        "read_response_shape": shape,
+        "raw_reservation_count_class": count_class(all_reservations),
+        "canonical_reservation_count_class": count_class(canonical_reservations),
+    }
 
 
 class PilotSafetyError(RuntimeError):
@@ -74,6 +115,8 @@ class PilotSettings:
     correlation_label: str
     tenant_id: str = field(repr=False)
     test_date: date | None = None
+    date_from: date | None = None
+    date_to: date | None = None
     availability: int | None = None
     rate: Decimal | None = None
     currency: str = "USD"
@@ -84,9 +127,11 @@ class PilotSettings:
     password: str = field(default="", repr=False)
     hotel_code: str = field(default="", repr=False)
     room_type_code: str = field(default="", repr=False)
+    room_type_codes: tuple[str, ...] = field(default_factory=tuple, repr=False)
     rate_plan_code: str = field(default="", repr=False)
     pms_room_type: str = field(default="", repr=False)
     hmac_key: str = field(default="", repr=False)
+    reservation_id: str = field(default="", repr=False)
 
 
 class PilotTransportGuard:
@@ -96,7 +141,7 @@ class PilotTransportGuard:
         self._transport = provider._transport
         self._original_send = self._transport.send_soap
         self._write_approved = settings.operation in _WRITE_OPERATIONS
-        if settings.operation in {"reservation_read", "reservation_import"}:
+        if settings.operation in {"reservation_read", "reservation_read_legacy_probe", "reservation_read_exact_probe", "reservation_import"}:
             self._allowed_read_action = get_soap_action_uri("OTA_ReadRQ")
         elif settings.operation in {*_PROVIDER_READ_OPERATIONS, *_ARI_OPERATIONS}:
             self._allowed_read_action = get_soap_action_uri("OTA_HotelAvailRQ")
@@ -106,6 +151,7 @@ class PilotTransportGuard:
         self.read_count = 0
         self.write_count = 0
         self.last_exception_class = ""
+        self.read_structure: dict[str, Any] = {}
         self._transport.send_soap = self._guarded_send
 
     @staticmethod
@@ -137,11 +183,14 @@ class PilotTransportGuard:
             raise PilotSafetyError("BLOCKED_UNEXPECTED_SOAP_ACTION")
 
         try:
-            return await self._original_send(
+            response = await self._original_send(
                 xml_body,
                 soap_action,
                 correlation_id=correlation_id,
             )
+            if soap_action == get_soap_action_uri("OTA_ReadRQ"):
+                self.read_structure = _read_response_structure(response)
+            return response
         except Exception as exc:
             self.last_exception_class = type(exc).__name__
             raise
@@ -254,7 +303,7 @@ def _load_settings() -> PilotSettings:
     ).hexdigest()[:12]
 
     values: dict[str, Any] = {}
-    if operation in {*_ARI_OPERATIONS, "inventory_read"}:
+    if operation in {*_SINGLE_ARI_OPERATIONS, "inventory_read", "discovery", "reservation_read_legacy_probe"}:
         raw_date = _required_env("EXELY_PILOT_TEST_DATE")
         try:
             test_date = date.fromisoformat(raw_date)
@@ -265,7 +314,25 @@ def _load_settings() -> PilotSettings:
             raise PilotSafetyError("BLOCKED_UNSAFE_PILOT_TEST_DATE")
         values["test_date"] = test_date
 
-    if operation == "availability":
+    if operation in _BATCH_ARI_OPERATIONS:
+        try:
+            date_from = date.fromisoformat(_required_env("EXELY_PILOT_DATE_FROM"))
+            date_to = date.fromisoformat(_required_env("EXELY_PILOT_DATE_TO"))
+        except ValueError as exc:
+            raise PilotSafetyError("BLOCKED_INVALID_PILOT_DATE_RANGE") from exc
+        today = datetime.now(UTC).date()
+        days_ahead = (date_from - today).days
+        horizon_days = (date_to - today).days
+        period_days = (date_to - date_from).days + 1
+        if days_ahead < 1 or period_days < 1 or period_days > 730:
+            raise PilotSafetyError("BLOCKED_UNSAFE_PILOT_DATE_RANGE")
+        if operation == "availability_batch" and horizon_days < 365:
+            raise PilotSafetyError("BLOCKED_UNSAFE_PILOT_DATE_RANGE")
+        if operation == "forced_availability_batch" and period_days > 31:
+            raise PilotSafetyError("BLOCKED_UNSAFE_FORCED_PILOT_DATE_RANGE")
+        values.update({"date_from": date_from, "date_to": date_to})
+
+    if operation in {"availability", *_BATCH_ARI_OPERATIONS}:
         values["availability"] = _parse_int("EXELY_PILOT_AVAILABILITY", minimum=0, maximum=20)
     elif operation == "rate":
         try:
@@ -288,16 +355,33 @@ def _load_settings() -> PilotSettings:
         if os.environ.get("EXELY_PILOT_ACK_DURABLE_PMS_ATTESTED") != "true":
             raise PilotSafetyError("BLOCKED_DURABLE_PMS_RESULT_NOT_ATTESTED")
 
-    if operation in {*_ARI_OPERATIONS, "inventory_read", "reservation_import", "reservation_replay", "reservation_ack"}:
+    room_type_codes: tuple[str, ...] = ()
+    if operation in {*_BATCH_ARI_OPERATIONS, "discovery"}:
+        room_type_codes = (
+            _required_env("EXELY_PILOT_STANDARD_ROOM_TYPE_CODE"),
+            _required_env("EXELY_PILOT_DELUXE_ROOM_TYPE_CODE"),
+        )
+        if len(set(room_type_codes)) != 2:
+            raise PilotSafetyError("BLOCKED_DUPLICATE_PILOT_ROOM_MAPPING")
+        room_type_code = ""
+        rate_plan_code = _required_env("EXELY_PILOT_BASE_RATE_PLAN_CODE")
+    elif operation in {*_ARI_OPERATIONS, "inventory_read", "reservation_import", "reservation_replay", "reservation_ack"}:
         room_type_code = _required_env("EXELY_PILOT_ROOM_TYPE_CODE")
         rate_plan_code = _required_env("EXELY_PILOT_RATE_PLAN_CODE")
-    elif operation == "discovery":
-        room_type_code = os.environ.get("EXELY_PILOT_ROOM_TYPE_CODE", "").strip()
-        rate_plan_code = os.environ.get("EXELY_PILOT_RATE_PLAN_CODE", "").strip()
     else:
         room_type_code = ""
         rate_plan_code = ""
     hotel_code = _required_env("EXELY_PILOT_HOTEL_CODE")
+    expected_hotel_code = _required_env("EXELY_PILOT_EXPECTED_HOTEL_CODE")
+    if not hmac.compare_digest(hotel_code, expected_hotel_code):
+        raise PilotSafetyError("BLOCKED_PILOT_HOTEL_CODE_MISMATCH")
+    if operation == "reservation_read_exact_probe":
+        reservation_id = _required_env("EXELY_PILOT_RESERVATION_ID")
+        if not _BOOKING_NUMBER_PATTERN.fullmatch(reservation_id):
+            raise PilotSafetyError("BLOCKED_INVALID_PILOT_RESERVATION_ID")
+        if not hmac.compare_digest(reservation_id.split("-")[1], hotel_code):
+            raise PilotSafetyError("BLOCKED_PILOT_RESERVATION_HOTEL_MISMATCH")
+        values["reservation_id"] = reservation_id
     tenant_id = (
         "exely-pilot-"
         + hmac.new(
@@ -318,6 +402,7 @@ def _load_settings() -> PilotSettings:
         password=_required_env("EXELY_PILOT_PASSWORD"),
         hotel_code=hotel_code,
         room_type_code=room_type_code,
+        room_type_codes=room_type_codes,
         rate_plan_code=rate_plan_code,
         pms_room_type=pms_room_type,
         hmac_key=hmac_key,
@@ -348,6 +433,7 @@ def _record_safe_metadata(record_property, metadata: dict[str, Any]) -> None:
         "exact_head_match",
         "exception_class",
         "match_count_class",
+        "message_count",
         "local_pms_write_count",
         "lineage_match",
         "operation",
@@ -356,6 +442,9 @@ def _record_safe_metadata(record_property, metadata: dict[str, Any]) -> None:
         "provider_read_count",
         "provider_write_count",
         "read_count",
+        "read_response_shape",
+        "raw_reservation_count_class",
+        "canonical_reservation_count_class",
         "result",
         "room_match",
         "rate_plan_match",
@@ -405,7 +494,13 @@ async def _discover_mapping(
         "capability_match": False,
         "provider_write_count": 0,
     }
-    result = await provider.discover_rooms()
+    if settings.test_date is not None:
+        result = await provider.discover_rooms(
+            checkin=settings.test_date.isoformat(),
+            checkout=(settings.test_date + timedelta(days=1)).isoformat(),
+        )
+    else:
+        result = await provider.discover_rooms()
     if not result.success or not isinstance(result.data, dict):
         metadata["provider_status_class"] = result.error_type or "MALFORMED"
         _fail_safe(record_property, "BLOCKED_READONLY_DISCOVERY_FAILED", metadata)
@@ -417,12 +512,22 @@ async def _discover_mapping(
         _fail_safe(record_property, "BLOCKED_READONLY_DISCOVERY_RESPONSE_INVALID", metadata)
     room_candidates = [item for item in rooms if isinstance(item, dict) and item.get("code")]
     rate_candidates = [item for item in rates if isinstance(item, dict) and item.get("code")]
-    room_matches = [item for item in room_candidates if hmac.compare_digest(str(item["code"]), settings.room_type_code)] if settings.room_type_code else room_candidates
+    expected_room_codes = settings.room_type_codes or ((settings.room_type_code,) if settings.room_type_code else ())
+    room_matches = [
+        item
+        for item in room_candidates
+        if not expected_room_codes or any(hmac.compare_digest(str(item["code"]), code) for code in expected_room_codes)
+    ]
     rate_matches = [item for item in rate_candidates if hmac.compare_digest(str(item["code"]), settings.rate_plan_code)] if settings.rate_plan_code else rate_candidates
-    metadata["room_match"] = len(room_matches) == 1 if settings.room_type_code else bool(room_matches)
+    metadata["room_match"] = (
+        all(sum(hmac.compare_digest(str(item["code"]), code) for item in room_candidates) == 1 for code in expected_room_codes)
+        if expected_room_codes
+        else bool(room_matches)
+    )
     metadata["rate_plan_match"] = len(rate_matches) == 1 if settings.rate_plan_code else bool(rate_matches)
     metadata["capability_match"] = metadata["room_match"] and metadata["rate_plan_match"]
-    metadata["match_count_class"] = "ZERO" if not room_matches or not rate_matches else "ONE" if len(room_matches) == 1 and len(rate_matches) == 1 else "MULTIPLE"
+    expected_match_count = len(expected_room_codes) or 1
+    metadata["match_count_class"] = "ZERO" if not room_matches or not rate_matches else "ONE" if len(room_matches) == expected_match_count and len(rate_matches) == 1 else "MULTIPLE"
     if not metadata["capability_match"]:
         _fail_safe(record_property, "BLOCKED_PILOT_MAPPING_NOT_DISCOVERED", metadata)
     metadata["provider_status_class"] = str(result.metadata.get("provider_status_class") or "SUCCESS")
@@ -467,6 +572,84 @@ async def _read_reservations(
     if require_exactly_one and not metadata["version_match"]:
         _fail_safe(record_property, "BLOCKED_RESERVATION_VERSION_MISSING", metadata)
     return metadata, valid[0] if len(valid) == 1 else None
+
+
+async def _read_reservations_legacy_probe(provider: ExelyProvider, settings: PilotSettings) -> dict[str, Any]:
+    """Probe the pre-August version/date shape, covering booking and stay dates."""
+    if settings.test_date is None:
+        raise PilotSafetyError("BLOCKED_LEGACY_PROBE_DATE_MISSING")
+    envelope = etree.fromstring(build_read_rq(settings.username, settings.password, settings.hotel_code).encode())
+    request = envelope.find(f".//{{{_OTA_NS}}}OTA_ReadRQ")
+    selection = envelope.find(f".//{{{_OTA_NS}}}SelectionCriteria")
+    if request is None or selection is None:
+        raise PilotSafetyError("BLOCKED_LEGACY_PROBE_REQUEST_SHAPE_INVALID")
+    request.set("Version", "1.0")
+    today = datetime.now(UTC).date()
+    selection.set("Start", (today - timedelta(days=7)).isoformat())
+    selection.set("End", settings.test_date.isoformat())
+
+    raw = await provider._send_read(
+        etree.tostring(envelope, xml_declaration=True, encoding="UTF-8", pretty_print=True).decode(),
+        get_soap_action_uri("OTA_ReadRQ"),
+        operation="reservation_read",
+    )
+    result = parse_read_rs(raw)
+    if not result.get("success"):
+        raise PilotSafetyError("BLOCKED_LEGACY_PROBE_READ_FAILED")
+    count = result.get("count", 0)
+    return {
+        "correlation_label": settings.correlation_label,
+        "operation": settings.operation,
+        "exact_head_match": True,
+        "pilot_account_attested": True,
+        "account_match": True,
+        "provider_status_class": result.get("result_class", "MALFORMED"),
+        "match_count_class": "ZERO" if count == 0 else "ONE" if count == 1 else "MULTIPLE",
+        "version_match": True,
+    }
+
+
+async def _read_reservations_exact_probe(provider: ExelyProvider, settings: PilotSettings) -> dict[str, Any]:
+    """Read one WSDL-addressed booking by UniqueID without import or ACK."""
+    envelope = etree.fromstring(build_read_rq(settings.username, settings.password, settings.hotel_code).encode())
+    read_requests = envelope.find(f".//{{{_OTA_NS}}}ReadRequests")
+    hotel_read = envelope.find(f".//{{{_OTA_NS}}}HotelReadRequest")
+    if read_requests is None or hotel_read is None or not settings.reservation_id:
+        raise PilotSafetyError("BLOCKED_EXACT_PROBE_REQUEST_SHAPE_INVALID")
+    read_requests.remove(hotel_read)
+    read_request = etree.SubElement(read_requests, f"{{{_OTA_NS}}}ReadRequest")
+    etree.SubElement(read_request, f"{{{_OTA_NS}}}UniqueID", attrib={"Type": "14", "ID": settings.reservation_id})
+
+    raw = await provider._send_read(
+        etree.tostring(envelope, xml_declaration=True, encoding="UTF-8", pretty_print=True).decode(),
+        get_soap_action_uri("OTA_ReadRQ"),
+        operation="reservation_read",
+    )
+    result = parse_read_rs(raw)
+    if not result.get("success"):
+        numeric_codes = [
+            code for code in result.get("provider_codes", [])
+            if isinstance(code, str) and re.fullmatch(r"-?[0-9]{1,5}", code)
+        ]
+        code_class = numeric_codes[0] if numeric_codes else "NO_NUMERIC_CODE"
+        raise PilotSafetyError(f"BLOCKED_EXACT_PROBE_READ_FAILED:{code_class}")
+    reservations = result.get("reservations")
+    if not isinstance(reservations, list):
+        raise PilotSafetyError("BLOCKED_EXACT_PROBE_RESPONSE_INVALID")
+    match_count = sum(
+        isinstance(item, dict) and hmac.compare_digest(str(item.get("reservation_id") or ""), settings.reservation_id)
+        for item in reservations
+    )
+    return {
+        "correlation_label": settings.correlation_label,
+        "operation": settings.operation,
+        "exact_head_match": True,
+        "pilot_account_attested": True,
+        "account_match": True,
+        "provider_status_class": result.get("result_class", "MALFORMED"),
+        "match_count_class": "ZERO" if match_count == 0 else "ONE" if match_count == 1 else "MULTIPLE",
+        "version_match": True,
+    }
 
 
 async def _read_inventory(
@@ -579,6 +762,10 @@ async def test_exely_pilot_readonly(record_property):
             metadata = await _discover_mapping(provider, settings, record_property)
         elif settings.operation == "inventory_read":
             metadata = await _read_inventory(provider, settings, record_property)
+        elif settings.operation == "reservation_read_legacy_probe":
+            metadata = await _read_reservations_legacy_probe(provider, settings)
+        elif settings.operation == "reservation_read_exact_probe":
+            metadata = await _read_reservations_exact_probe(provider, settings)
         else:
             metadata, _ = await _read_reservations(
                 provider,
@@ -587,6 +774,8 @@ async def test_exely_pilot_readonly(record_property):
                 require_exactly_one=False,
             )
         metadata.update({"read_count": guard.read_count, "provider_write_count": guard.write_count})
+        if settings.operation in {"reservation_read", "reservation_read_legacy_probe", "reservation_read_exact_probe"}:
+            metadata.update(guard.read_structure)
         if guard.write_count != 0:
             _fail_safe(record_property, "FAIL_READONLY_PROVIDER_WRITE_DETECTED", metadata)
         if guard.read_count != 1:
@@ -767,37 +956,70 @@ async def test_exely_pilot_single_write(record_property):
     try:
         if settings.operation in _ARI_OPERATIONS:
             metadata.update(await _discover_mapping(provider, settings, record_property))
-            await db[COLL_EXELY_ARI_DELIVERIES].delete_many({"tenant_id": tenant_id})
-            update = {
-                "property_id": settings.hotel_code,
-                "room_type_code": settings.room_type_code,
-                "rate_plan_code": settings.rate_plan_code,
-                "start_date": settings.test_date.isoformat(),
-                "end_date": settings.test_date.isoformat(),
-                "value": _ari_value(settings),
-                "currency": settings.currency,
-                "operation_identity": f"pilot:{settings.correlation_label}",
-            }
-            result = await deliver_exely_ari(
-                tenant_id,
-                settings.operation,
-                update,
-                provider=provider,
-                write_enabled=True,
-            )
-            reconciliation = await reconcile_pending_exely_ari(tenant_id, limit=1)
+            if settings.operation in _BATCH_ARI_OPERATIONS:
+                if settings.date_from is None or settings.date_to is None or settings.availability is None:
+                    _fail_safe(record_property, "BLOCKED_BATCH_CONFIGURATION_MISSING", metadata)
+                messages = [
+                    {
+                        "room_type_code": room_type_code,
+                        "rate_plan_code": settings.rate_plan_code,
+                        "start_date": settings.date_from.isoformat(),
+                        "end_date": settings.date_to.isoformat(),
+                        "availability": settings.availability,
+                    }
+                    for room_type_code in settings.room_type_codes
+                ]
+                result = await provider.push_ari_operation(
+                    operation="availability_batch",
+                    room_type_code="",
+                    rate_plan_code="",
+                    start_date="",
+                    end_date="",
+                    value=messages,
+                    currency=settings.currency,
+                )
+                delivery_state = "CONFIRMED" if result.success else "FAILED"
+                provider_status_class = str(result.metadata.get("provider_status_class") or result.error_type or "MALFORMED")
+                provider_write_count = int(result.metadata.get("provider_write_count") or 0)
+                metadata["message_count"] = int(result.metadata.get("message_count") or 0)
+                if metadata["message_count"] != len(settings.room_type_codes):
+                    _fail_safe(record_property, "BLOCKED_BATCH_MESSAGE_COUNT_INVALID", metadata)
+                reconciliation = {"pending": 0, "provider_write_count": 0}
+            else:
+                await db[COLL_EXELY_ARI_DELIVERIES].delete_many({"tenant_id": tenant_id})
+                update = {
+                    "property_id": settings.hotel_code,
+                    "room_type_code": settings.room_type_code,
+                    "rate_plan_code": settings.rate_plan_code,
+                    "start_date": settings.test_date.isoformat(),
+                    "end_date": settings.test_date.isoformat(),
+                    "value": _ari_value(settings),
+                    "currency": settings.currency,
+                    "operation_identity": f"pilot:{settings.correlation_label}",
+                }
+                result = await deliver_exely_ari(
+                    tenant_id,
+                    settings.operation,
+                    update,
+                    provider=provider,
+                    write_enabled=True,
+                )
+                reconciliation = await reconcile_pending_exely_ari(tenant_id, limit=1)
+                delivery_state = result.state
+                provider_status_class = result.provider_status_class
+                provider_write_count = result.provider_write_count
             metadata.update(
                 {
-                    "delivery_state": result.state,
-                    "provider_status_class": result.provider_status_class,
+                    "delivery_state": delivery_state,
+                    "provider_status_class": provider_status_class,
                     "provider_write_count": guard.write_count,
                     "read_count": guard.read_count,
                 }
             )
-            if guard.write_count != 1 or result.provider_write_count != 1:
+            if guard.write_count != 1 or provider_write_count != 1:
                 _fail_safe(record_property, "FAIL_PROVIDER_WRITE_COUNT_INVALID", metadata)
-            if not result.success or result.state not in {STATE_CONFIRMED, STATE_WARNING_SUCCESS}:
-                _fail_safe(record_property, f"BLOCKED_ARI_{result.state.upper()}", metadata)
+            if not result.success or delivery_state not in {STATE_CONFIRMED, STATE_WARNING_SUCCESS, "CONFIRMED"}:
+                _fail_safe(record_property, f"BLOCKED_ARI_{delivery_state.upper()}", metadata)
             if reconciliation.get("pending") != 0 or reconciliation.get("provider_write_count") != 0:
                 _fail_safe(record_property, "BLOCKED_ARI_RECONCILIATION_PENDING", metadata)
         else:

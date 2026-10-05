@@ -37,6 +37,7 @@ import useMediaCapture from '@/hooks/useMediaCapture';
 import { useTranslation } from 'react-i18next';
 
 import { confirmDialog } from '@/lib/dialogs';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 const MobileFrontDesk = ({ user }) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -479,7 +480,7 @@ const MobileFrontDesk = ({ user }) => {
                 const fee = res.data?.no_show_fee;
                 toast.success(
                   fee > 0
-                    ? `No-show işlendi • ücret: ${fee} TL`
+                    ? `No-show işlendi • ücret: ${formatCurrency(fee, target.currency || cachedTenantCurrency())}`
                     : 'No-show işlendi'
                 );
                 loadData?.();
@@ -674,7 +675,7 @@ const MobileFrontDesk = ({ user }) => {
                       <p className="font-bold text-gray-900">{booking.guest_name || 'Misafir'}</p>
                       <p className="text-sm text-gray-600">Oda {booking.room_number || 'N/A'}</p>
                       <p className="text-xs text-gray-500">
-                        {booking.guests_count || 1} kişi • ₺{booking.total_amount || 0}
+                        {booking.guests_count || 1} kişi • {formatCurrency(booking.total_amount, booking.currency || cachedTenantCurrency())}
                       </p>
                     </div>
                     <div className="flex flex-col items-end space-y-2">
@@ -770,7 +771,7 @@ const MobileFrontDesk = ({ user }) => {
                   <p>Oda: {booking.room_number || 'TBA'}</p>
                   <p>Giriş: {booking.check_in ? new Date(booking.check_in).toLocaleDateString('tr-TR') : 'N/A'}</p>
                   <p>Çıkış: {booking.check_out ? new Date(booking.check_out).toLocaleDateString('tr-TR') : 'N/A'}</p>
-                  <p>Tutar: ₺{booking.total_amount || 0}</p>
+                  <p>Tutar: {formatCurrency(booking.total_amount, booking.currency || cachedTenantCurrency())}</p>
                 </div>
               </div>
             ))}
@@ -900,20 +901,20 @@ const MobileFrontDesk = ({ user }) => {
                       {calculatedFees.early_checkin_fee > 0 && (
                         <div className="mb-2">
                           <p className="text-sm text-gray-700">Erken Check-in:</p>
-                          <p className="text-lg font-bold text-green-700">₺{calculatedFees.early_checkin_fee}</p>
+                          <p className="text-lg font-bold text-green-700">{formatCurrency(calculatedFees.early_checkin_fee, calculatedFees.currency || selectedBookingForFee?.currency || cachedTenantCurrency())}</p>
                           <p className="text-xs text-gray-600">{calculatedFees.early_checkin_reason}</p>
                         </div>
                       )}
                       {calculatedFees.late_checkout_fee > 0 && (
                         <div className="mb-2">
                           <p className="text-sm text-gray-700">Geç Check-out:</p>
-                          <p className="text-lg font-bold text-green-700">₺{calculatedFees.late_checkout_fee}</p>
+                          <p className="text-lg font-bold text-green-700">{formatCurrency(calculatedFees.late_checkout_fee, calculatedFees.currency || selectedBookingForFee?.currency || cachedTenantCurrency())}</p>
                           <p className="text-xs text-gray-600">{calculatedFees.late_checkout_reason}</p>
                         </div>
                       )}
                       <div className="border-t pt-2 mt-2">
                         <p className="text-sm text-gray-700">Toplam Ek Ücret:</p>
-                        <p className="text-2xl font-bold text-green-700">₺{calculatedFees.total_additional_fees}</p>
+                        <p className="text-2xl font-bold text-green-700">{formatCurrency(calculatedFees.total_additional_fees, calculatedFees.currency || selectedBookingForFee?.currency || cachedTenantCurrency())}</p>
                       </div>
                     </CardContent>
                   </Card>
@@ -1110,7 +1111,7 @@ const MobileFrontDesk = ({ user }) => {
                             <p className="text-xs text-gray-500">{room.bed_type} • {room.floor}. Kat</p>
                           </div>
                           <div className="text-right">
-                            <p className="text-xl font-bold text-green-600">₺{room.base_rate}</p>
+                            <p className="text-xl font-bold text-green-600">{formatCurrency(room.base_rate, room.currency || cachedTenantCurrency())}</p>
                             <Badge className="bg-green-500">{t("housekeeping.available")}</Badge>
                           </div>
                         </div>

@@ -7,8 +7,8 @@ of reservations for all active tenants.
 
 import asyncio
 import logging
-import time
 from datetime import UTC, datetime
+from time import monotonic
 from typing import Any
 
 from core.database import db
@@ -17,6 +17,7 @@ from domains.channel_manager.providers.hotelrunner.credentials import (
     resolve_hotelrunner_credentials,
 )
 from domains.channel_manager.providers.hotelrunner.production_safety import (
+    reservation_reconciliation_disabled,
     reservation_sync_block_reason,
 )
 from domains.channel_manager.providers.sync_engine import (
@@ -42,7 +43,7 @@ class ReservationPullScheduler:
         self._suppressed_lock_errors = 0
 
     def _record_lock_acquisition_failure(self, error: Exception) -> None:
-        now = time.monotonic()
+        now = monotonic()
         if self._last_lock_error_log_at is None or now - self._last_lock_error_log_at >= self._lock_error_log_interval:
             logger.error(
                 "[PULL] Distributed lock acquisition failed; skipping cycle to prevent split-brain exception_class=%s suppressed=%d",
@@ -280,9 +281,7 @@ class ReservationPullScheduler:
         from domains.channel_manager.providers.hotelrunner.mapping_bridge import backfill_hotelrunner_mappings
 
         await backfill_hotelrunner_mappings(tenant_id)
-        prior_cursor = await db.hotelrunner_pull_cursors.find_one(
-            {"tenant_id": tenant_id}, {"_id": 0, "last_pull_at": 1}
-        )
+        prior_cursor = await db.hotelrunner_pull_cursors.find_one({"tenant_id": tenant_id}, {"_id": 0, "last_pull_at": 1})
 
         phase_a_result = await run_phase_a(tenant_id, provider, safety_window_minutes, is_manual)
         if not phase_a_result["success"]:
@@ -302,7 +301,12 @@ class ReservationPullScheduler:
         if all_reservations or total_pages > 1:
             self._consecutive_rate_limits = 0
 
-        mod_processed = await run_phase_a5(tenant_id, provider, safety_window_minutes)
+        reconciliation_disabled = reservation_reconciliation_disabled()
+        if reconciliation_disabled:
+            logger.info("[PULL] Existing reservation reconciliation disabled; processing new deliveries only")
+            mod_processed = 0
+        else:
+            mod_processed = await run_phase_a5(tenant_id, provider, safety_window_minutes)
 
         individual_updated = 0
         if mod_processed > 0:
@@ -316,7 +320,9 @@ class ReservationPullScheduler:
 
         catchup_imported = 0
         catchup_updated = 0
-        if self._consecutive_rate_limits > 0:
+        if reconciliation_disabled:
+            run_b = False
+        elif self._consecutive_rate_limits > 0:
             run_b = False
             logger.info("[PULL] Skipping Phase B — rate limit backoff active (consecutive: %d)", self._consecutive_rate_limits)
         else:

@@ -13,7 +13,7 @@ import { API } from './helpers';
 
 import { confirmDialog } from '@/lib/dialogs';
 import { useTranslation } from 'react-i18next';
-export function OnlinePaymentTab({ booking, onRefresh }) {
+export function OnlinePaymentTab({ booking, onRefresh, readOnly = false }) {
   const { t } = useTranslation();
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -69,6 +69,7 @@ export function OnlinePaymentTab({ booking, onRefresh }) {
   };
 
   const handleStore = async () => {
+    if (readOnly) return;
     if (!form.card_holder || !form.card_number || !form.expiry) {
       toast.error('Kart sahibi, kart numarası ve son kullanım tarihi zorunludur');
       return;
@@ -88,6 +89,7 @@ export function OnlinePaymentTab({ booking, onRefresh }) {
   };
 
   const handleDelete = async () => {
+    if (readOnly) return;
     if (!await confirmDialog({ message: 'Kart bilgileri kalıcı olarak silinecek. Emin misiniz?', variant: 'danger' })) return;
     setDeleting(true);
     try {
@@ -123,7 +125,7 @@ export function OnlinePaymentTab({ booking, onRefresh }) {
           <CreditCard className="w-5 h-5 text-indigo-600" />
           <h3 className="text-sm font-semibold text-gray-800">{t('cm.pages_reservationdetail_OnlinePaymentTab.online_odeme_sanal_kart')}</h3>
         </div>
-        {!hasCard && !showAddForm && (
+        {!readOnly && !hasCard && !showAddForm && (
           <Button
             size="sm"
             onClick={() => setShowAddForm(true)}
@@ -144,7 +146,7 @@ export function OnlinePaymentTab({ booking, onRefresh }) {
       </div>
 
       {/* Add Card Form */}
-      {showAddForm && !hasCard && (
+      {!readOnly && showAddForm && !hasCard && (
         <div className="border-2 border-dashed border-indigo-200 rounded-lg p-4 bg-indigo-50/30 space-y-3" data-testid="vcc-add-form">
           <div className="text-sm font-semibold text-indigo-800">{t('cm.pages_reservationdetail_OnlinePaymentTab.yeni_kart_bilgisi_ekle')}</div>
           <div className="grid grid-cols-2 gap-3">
@@ -324,7 +326,7 @@ export function OnlinePaymentTab({ booking, onRefresh }) {
                   {t('cm.pages_reservationdetail_OnlinePaymentTab.kart_bilgilerini_goruntule')}{remaining} hak)
                 </Button>
               )}
-              <Button
+              {!readOnly && <Button
                 size="sm"
                 variant="outline"
                 onClick={handleDelete}
@@ -335,7 +337,7 @@ export function OnlinePaymentTab({ booking, onRefresh }) {
                 title="Sanal kartı sil"
               >
                 {deleting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
-              </Button>
+              </Button>}
             </div>
           </div>
         </div>

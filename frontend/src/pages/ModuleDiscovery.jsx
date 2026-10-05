@@ -19,6 +19,8 @@ import {
   Globe,
 } from "lucide-react";
 import { NAV_ITEMS } from "@/config/navItems";
+import { canAccessPath, canAccessNavItem } from '@/utils/moduleAccess';
+import { useEntitlements } from '@/context/EntitlementContext';
 import { getRouteConfigs } from "@/routes/routeDefinitions";
 import { useTranslation } from 'react-i18next';
 
@@ -30,6 +32,7 @@ import { useTranslation } from 'react-i18next';
  */
 export default function ModuleDiscovery({ user, tenant, onLogout }) {
   const { t } = useTranslation();
+  const { hasModule } = useEntitlements();
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("hidden"); // hidden | all | visible
 
@@ -50,12 +53,16 @@ export default function ModuleDiscovery({ user, tenant, onLogout }) {
           r.type !== "redirect" &&
           !r.path.includes(":") &&
           r.path !== "*" &&
-          r.path !== "/",
+          r.path !== "/" &&
+          r.type !== "public" &&
+          (!r.requireSuperAdmin || user?.role === 'super_admin') &&
+          (!r.moduleKey || hasModule(r.moduleKey)) &&
+          canAccessPath(user, r.path),
       );
     } catch {
       return [];
     }
-  }, [user, tenant]);
+  }, [user, tenant, hasModule]);
 
   const navByPath = useMemo(() => {
     const m = new Map();
@@ -66,7 +73,7 @@ export default function ModuleDiscovery({ user, tenant, onLogout }) {
   }, []);
 
   const rows = useMemo(() => {
-    return allRoutes.map((r) => {
+    return allRoutes.filter(r => !navByPath.has(r.path) || canAccessNavItem(user, navByPath.get(r.path))).map((r) => {
       const navItem = navByPath.get(r.path);
       const inNav = !!navItem;
       return {
@@ -79,7 +86,7 @@ export default function ModuleDiscovery({ user, tenant, onLogout }) {
         segment: (r.path.split("/").filter(Boolean)[0] || "root").toLowerCase(),
       };
     });
-  }, [allRoutes, navByPath]);
+  }, [allRoutes, navByPath, user]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -120,7 +127,7 @@ export default function ModuleDiscovery({ user, tenant, onLogout }) {
     <div className="p-4 md:p-6 space-y-4 max-w-7xl mx-auto">
       <PageHeader
         icon={Compass}
-        title={t('cm.pages_ModuleDiscovery.modul_kesfi')}
+        title={<span className="flex items-center gap-3">{t('cm.pages_ModuleDiscovery.modul_kesfi')} {tenant && <span className="px-3 py-1 bg-indigo-50 text-indigo-700 text-sm font-semibold rounded-full border border-indigo-200">🏨 {tenant.name}</span>}</span>}
         subtitle={t('cm.pages_ModuleDiscovery.tanimli_tum_rotalar_ve_sidebar_gorunurlu')}
       />
 

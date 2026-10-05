@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from core.database import db
 from core.security import get_current_user
+from core.tenant_currency import get_tenant_currency
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_op
 
@@ -24,6 +25,11 @@ router = APIRouter(prefix="/api/pms", tags=["pms"])
 
 CHARGE_TYPES = ("flat", "percent_of_nightly", "percent_of_total", "free")
 DAY_END_HOUR = 24.0  # son kuralın inclusive bitişi (23:00–23:59 dahil)
+
+
+def _currency_code(value: object, fallback: str = "TRY") -> str:
+    code = str(value or fallback or "TRY").strip().upper()
+    return "TRY" if code == "TL" else code
 
 
 class PricingRule(BaseModel):
@@ -113,6 +119,7 @@ async def get_pricing(current_user: User = Depends(get_current_user)):
     if not cfg:
         cfg = _default_config()
         meta = {"is_default": True}
+    tenant_currency, _ = await get_tenant_currency(current_user.tenant_id)
     return {
         **cfg,
         "_meta": {
@@ -120,6 +127,7 @@ async def get_pricing(current_user: User = Depends(get_current_user)):
             "updated_at": meta.get("updated_at"),
             "updated_by": meta.get("updated_by"),
             "is_default": meta.get("is_default", False),
+            "currency": _currency_code(tenant_currency),
         },
     }
 
@@ -184,7 +192,15 @@ async def update_pricing(
     except Exception:
         pass
 
-    return {**cfg, "_meta": {"tenant_id": current_user.tenant_id, **meta}}
+    tenant_currency, _ = await get_tenant_currency(current_user.tenant_id)
+    return {
+        **cfg,
+        "_meta": {
+            "tenant_id": current_user.tenant_id,
+            "currency": _currency_code(tenant_currency),
+            **meta,
+        },
+    }
 
 
 class CalcRequest(BaseModel):
@@ -202,6 +218,9 @@ async def calculate(payload: CalcRequest, current_user: User = Depends(get_curre
     if not booking:
         raise HTTPException(404, "Rezervasyon bulunamadı")
 
+    tenant_currency, _ = await get_tenant_currency(current_user.tenant_id)
+    booking_currency = _currency_code(booking.get("currency"), tenant_currency)
+
     settings = await db.tenant_settings.find_one({"tenant_id": current_user.tenant_id}, {"_id": 0}) or {}
     cfg = settings.get("early_late_pricing") or _default_config()
     rules = cfg.get(payload.direction, [])
@@ -213,7 +232,7 @@ async def calculate(payload: CalcRequest, current_user: User = Depends(get_curre
             "reason": "Standart saat aralığında — ek ücret yok",
             "rule": None,
             "actual_hour": payload.actual_hour,
-            "currency": booking.get("currency", "TRY"),
+            "currency": booking_currency,
         }
 
     nights = max(int(booking.get("nights") or 1), 1)
@@ -239,7 +258,7 @@ async def calculate(payload: CalcRequest, current_user: User = Depends(get_curre
     return {
         "applicable": True,
         "amount": amount,
-        "currency": booking.get("currency", "TRY"),
+        "currency": booking_currency,
         "rule": rule,
         "actual_hour": payload.actual_hour,
         "nightly_rate": round(nightly, 2),

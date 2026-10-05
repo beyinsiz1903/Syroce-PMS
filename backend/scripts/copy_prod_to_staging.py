@@ -10,6 +10,7 @@ PROD_DB = os.environ.get("PROD_DB_NAME")
 STAGING_URL = os.environ.get("STAGING_MONGO_URL")
 STAGING_DB = os.environ.get("STAGING_DB_NAME")
 
+
 async def copy_collection(prod_db, staging_db, coll_name):
     print(f"Copying {coll_name}...")
     docs = await prod_db[coll_name].find({}).to_list(None)
@@ -19,6 +20,7 @@ async def copy_collection(prod_db, staging_db, coll_name):
     await staging_db[coll_name].drop()
     await staging_db[coll_name].insert_many(docs)
     print(f"  Copied {len(docs)} documents to {coll_name}.")
+
 
 async def main():
     if not all([PROD_URL, PROD_DB, STAGING_URL, STAGING_DB]):
@@ -44,6 +46,7 @@ async def main():
     prod_client.close()
     staging_client.close()
     print("Copy complete.")
+
 
 if __name__ == "__main__":
     asyncio.run(main())

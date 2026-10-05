@@ -17,12 +17,13 @@ export function executiveOpsRoutes({ p, pm }) {
     { path: "/app/academy-report", ...pm(AcademyReport, "academy"), wrapLayout: true, layoutModule: "academy" },
     { path: "/app/academy-manage", ...pm(AcademyManage, "academy"), wrapLayout: true, layoutModule: "academy" },
     { path: "/app/mevzuat-raporlari", ...pm(MevzuatRaporlari, "basic_reporting"), wrapLayout: true, layoutModule: "mevzuat-raporlari" },
-    { path: "/executive", ...pm(ExecutiveDashboard, "gm_dashboards") },
+    { path: "/executive", ...pm(ExecutiveDashboard, "gm_dashboards"), wrapLayout: true, layoutModule: "gm_dashboards" },
     { path: "/gm/enhanced", type: "redirect", to: "/executive" },
     { path: "/gm-classic", type: "redirect", to: "/app/dashboard" },
 
     // ── Ops & Phases ───────────────────────────────────
     { path: "/audit-timeline", ...p(AuditTimelinePage, {}), wrapLayout: true, layoutModule: "audit-timeline" },
+    { path: "/app/audit-logs", type: "redirect", to: "/audit-timeline" },
     { path: "/urgent-message-report", ...p(UrgentMessageReportPage, {}), wrapLayout: true, layoutModule: "urgent-message-report" },
     { path: "/recalled-messages-report", ...p(RecalledMessagesReportPage, {}), wrapLayout: true, layoutModule: "recalled_messages_report" },
     { path: "/id-photo-view-report", ...p(IdPhotoViewReportPage, {}), wrapLayout: true, layoutModule: "id-photo-view-report" },

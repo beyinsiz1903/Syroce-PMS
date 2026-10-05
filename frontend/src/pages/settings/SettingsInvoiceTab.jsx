@@ -119,6 +119,36 @@ export default function SettingsInvoiceTab({ loadInvoiceSettings, invoiceLoading
                       </div>
                     </div>
 
+                    <div className="rounded-lg border border-slate-200 bg-slate-50 p-4" data-testid="invoice-tax-policy">
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <p className="text-sm font-semibold text-slate-900">Fatura vergi politikası</p>
+                          <p className="mt-1 text-xs leading-5 text-slate-600">
+                            KDV tek bir genel oranla değil, her fatura kaleminin hizmet türüne göre hesaplanır.
+                          </p>
+                        </div>
+                        <Receipt className="h-5 w-5 shrink-0 text-slate-500" />
+                      </div>
+                      <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                        <div className="rounded-md border bg-white p-3">
+                          <p className="text-xs text-slate-500">Konaklama</p>
+                          <p className="mt-1 font-semibold text-slate-900">%10 KDV</p>
+                        </div>
+                        <div className="rounded-md border bg-white p-3">
+                          <p className="text-xs text-slate-500">Yiyecek / alkolsüz içecek</p>
+                          <p className="mt-1 font-semibold text-slate-900">%10 KDV</p>
+                        </div>
+                        <div className="rounded-md border bg-white p-3">
+                          <p className="text-xs text-slate-500">Alkollü içecek / genel</p>
+                          <p className="mt-1 font-semibold text-slate-900">%20 KDV</p>
+                        </div>
+                      </div>
+                      <p className="mt-3 text-xs leading-5 text-slate-600">
+                        Konaklama vergisi KDV değildir; ayrı satırda gösterilir ve KDV matrahına eklenmez.
+                        Oran ve yürürlük tarihini <a href="/app/konaklama-vergisi" className="ml-1 font-medium text-indigo-700 hover:underline">Konaklama Vergisi</a> ekranından yönetin.
+                      </p>
+                    </div>
+
                     {/* Currency — sistem geneli etki taşıdığı için warning kasıtlı amber */}
                     <div className="rounded-md border border-amber-200 bg-amber-50 p-4">
                       <Label className="text-amber-900 font-semibold">Para Birimi (Tüm Sistem)</Label>

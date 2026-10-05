@@ -93,4 +93,5 @@ class F2CreateReturnModelsMigration(Migration):
                         logger.error(f"Failed to drop index {idx_name} on {coll_name} in V007: {e}")
                         raise
 
+
 MIGRATION = F2CreateReturnModelsMigration()

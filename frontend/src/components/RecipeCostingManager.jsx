@@ -17,6 +17,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
 import { Plus, CookingPot, Flame, Timer, UtensilsCrossed, Percent, DollarSign, TrendingUp } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 
 const categoryOptions = [
   'appetizer',
@@ -36,6 +37,8 @@ const categoryLabels = {
 
 const RecipeCostingManager = () => {
   const { t } = useTranslation();
+  const currency = cachedTenantCurrency();
+  const money = amount => formatCurrency(amount, currency, { decimals: 2 });
   const [recipes, setRecipes] = useState([]);
   const [ingredients, setIngredients] = useState([]);
   const [selectedRecipe, setSelectedRecipe] = useState(null);
@@ -208,7 +211,7 @@ const RecipeCostingManager = () => {
         <Card className="bg-gradient-to-r from-blue-50 to-blue-100 border-blue-200">
           <CardContent className="p-4">
             <p className="text-xs text-blue-600 font-semibold tracking-wide uppercase">Ortalama Gıda Maliyeti</p>
-            <p className="text-3xl font-bold text-blue-900 mt-1">₺{stats.avg_cost.toFixed(2)}</p>
+            <p className="text-3xl font-bold text-blue-900 mt-1">{money(stats.avg_cost)}</p>
           </CardContent>
         </Card>
         <Card className="bg-gradient-to-r from-indigo-50 to-indigo-100 border-indigo-200">
@@ -286,7 +289,7 @@ const RecipeCostingManager = () => {
                       />
                     </div>
                     <div>
-                      <Label className="font-medium text-gray-700">Satış Fiyatı (₺)</Label>
+                      <Label className="font-medium text-gray-700">Satış Fiyatı ({currency})</Label>
                       <Input
                         className="mt-1"
                         type="number"
@@ -342,7 +345,7 @@ const RecipeCostingManager = () => {
                                     <option value="">Seçiniz...</option>
                                     {ingredients.map((ing) => (
                                       <option key={ing.id} value={ing.id}>
-                                        {ing.name} (₺{ing.unit_cost.toFixed(2)} / {ing.unit})
+                                        {ing.name} ({money(ing.unit_cost)} / {ing.unit})
                                       </option>
                                     ))}
                                   </select>
@@ -379,7 +382,7 @@ const RecipeCostingManager = () => {
                                   <div>
                                     <Label className="text-[10px] text-gray-400 uppercase tracking-wide">Satır Maliyeti</Label>
                                     <p className="text-sm font-bold text-gray-900">
-                                      ₺{lineCost.toFixed(2)}
+                                      {money(lineCost)}
                                     </p>
                                   </div>
                                   {form.ingredients.length > 1 && (
@@ -445,7 +448,7 @@ const RecipeCostingManager = () => {
                     </Badge>
                   </div>
                   <div className="flex items-center justify-between text-xs">
-                    <span className="text-gray-500 font-medium">Maliyet: <span className="text-gray-800">₺{recipe.total_cost?.toFixed(2) || '0.00'}</span></span>
+                    <span className="text-gray-500 font-medium">Maliyet: <span className="text-gray-800">{money(recipe.total_cost)}</span></span>
                     <span className={`font-bold ${recipe.gp_percentage > 60 ? 'text-emerald-600' : recipe.gp_percentage > 40 ? 'text-amber-600' : 'text-red-500'}`}>
                       Marj: %{recipe.gp_percentage || 0}
                     </span>
@@ -482,13 +485,13 @@ const RecipeCostingManager = () => {
                   <div className="rounded-xl border border-blue-100 bg-gradient-to-br from-blue-50 to-indigo-50 p-4">
                     <p className="text-xs font-semibold text-blue-600 uppercase tracking-wide flex items-center gap-1.5"><TrendingUp className="w-3.5 h-3.5"/> Gıda Maliyeti</p>
                     <p className="text-3xl font-extrabold text-blue-700 mt-2">
-                      ₺{selectedRecipe.total_cost?.toFixed(2)}
+                      {money(selectedRecipe.total_cost)}
                     </p>
                   </div>
                   <div className="rounded-xl border border-amber-100 bg-gradient-to-br from-amber-50 to-amber-50 p-4">
                     <p className="text-xs font-semibold text-amber-600 uppercase tracking-wide flex items-center gap-1.5"><DollarSign className="w-3.5 h-3.5"/> Satış Fiyatı</p>
                     <p className="text-3xl font-extrabold text-amber-700 mt-2">
-                      ₺{selectedRecipe.selling_price?.toFixed(2)}
+                      {money(selectedRecipe.selling_price)}
                     </p>
                   </div>
                 </div>
@@ -539,12 +542,12 @@ const RecipeCostingManager = () => {
                         <div>
                           <p className="font-bold text-gray-900 text-base">{line.ingredient_name}</p>
                           <p className="text-xs text-gray-500 mt-0.5 font-medium">
-                            Kullanım: <span className="text-gray-700">{line.quantity} {line.unit}</span> <span className="mx-1 text-gray-300">•</span> Birim Fiyat: <span className="text-gray-700">₺{line.unit_cost} / {line.unit}</span>
+                            Kullanım: <span className="text-gray-700">{line.quantity} {line.unit}</span> <span className="mx-1 text-gray-300">•</span> Birim Fiyat: <span className="text-gray-700">{money(line.unit_cost)} / {line.unit}</span>
                           </p>
                         </div>
                         <div className="text-right mt-2 md:mt-0">
                           <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide">Maliyet</p>
-                          <p className="text-lg font-bold text-gray-900">₺{line.line_cost?.toFixed(2)}</p>
+                          <p className="text-lg font-bold text-gray-900">{money(line.line_cost)}</p>
                         </div>
                       </div>
                     ))}

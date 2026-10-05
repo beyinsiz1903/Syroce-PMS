@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import PropertySwitcher from '@/components/PropertySwitcher';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 import {
   ArrowLeft,
   TrendingUp,
@@ -24,7 +25,7 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
-const ExecutiveDashboard = ({ user }) => {
+const ExecutiveDashboard = ({ user, embedded = false }) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
 
@@ -113,7 +114,7 @@ const ExecutiveDashboard = ({ user }) => {
 
   if (loading && !refreshing) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-indigo-900 to-slate-900 flex items-center justify-center">
+      <div className={`${embedded ? 'min-h-[40vh] rounded-xl' : 'min-h-screen'} bg-gradient-to-br from-slate-900 via-indigo-900 to-slate-900 flex items-center justify-center`}>
         <div className="text-center text-white">
           <RefreshCw className="h-12 w-12 animate-spin mx-auto mb-4" />
           <p>Dashboard yükleniyor...</p>
@@ -123,14 +124,14 @@ const ExecutiveDashboard = ({ user }) => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-indigo-900 to-slate-900 pb-20">
+    <div className={`${embedded ? 'min-h-[calc(100vh-8rem)] rounded-xl overflow-hidden' : 'min-h-screen'} bg-gradient-to-br from-slate-900 via-indigo-900 to-slate-900 pb-20`}>
       {/* Header */}
-      <div className="bg-black/30 backdrop-blur-sm text-white p-4 sticky top-0 z-10 shadow-lg border-b border-white/10">
+      <div className={`bg-black/30 backdrop-blur-sm text-white p-4 shadow-lg border-b border-white/10 ${embedded ? '' : 'sticky top-0 z-10'}`}>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <button onClick={() => navigate(-1)} className="p-2 hover:bg-white/10 rounded-lg transition">
+            {!embedded && <button aria-label="Geri" onClick={() => navigate(-1)} className="p-2 hover:bg-white/10 rounded-lg transition">
               <ArrowLeft className="h-5 w-5" />
-            </button>
+            </button>}
             <div>
               <h1 className="text-xl font-bold">{t('reports.executiveReport')}</h1>
               <p className="text-gray-300 text-sm">
@@ -407,7 +408,7 @@ const ExecutiveDashboard = ({ user }) => {
                         <div>
                           <div className="text-gray-300 mb-1">{t("finance.revenue")}</div>
                           <div className="text-2xl font-bold text-emerald-400">
-                            ₺{(dailySummary.summary.revenue / 1000).toFixed(0)}K
+                            {formatCurrency(dailySummary.summary.revenue, dailySummary.currency || cachedTenantCurrency(), { maximumFractionDigits: 0 })}
                           </div>
                         </div>
                       </div>
@@ -429,7 +430,7 @@ const ExecutiveDashboard = ({ user }) => {
                           <div className="flex justify-between">
                             <span className="text-gray-300">Ort. Rezervasyon Geliri:</span>
                             <span className="text-blue-400">
-                              ₺{dailySummary.highlights.avg_revenue_per_booking.toFixed(0)}
+                              {formatCurrency(dailySummary.highlights.avg_revenue_per_booking, dailySummary.currency || cachedTenantCurrency(), { maximumFractionDigits: 0 })}
                             </span>
                           </div>
                         </div>
@@ -498,7 +499,7 @@ const ExecutiveDashboard = ({ user }) => {
                             <div className="flex justify-between">
                               <span className="text-[11px]">Otel</span>
                               <span className="font-semibold">
-                                ₺{compSetSummary.hotel.adr.toFixed(0)}
+                                {formatCurrency(compSetSummary.hotel.adr, compSetSummary.currency || cachedTenantCurrency(), { maximumFractionDigits: 0 })}
                               </span>
                             </div>
                             <div className="flex justify-between text-gray-300">
@@ -506,7 +507,7 @@ const ExecutiveDashboard = ({ user }) => {
                               <span>
                                 {compSetSummary.data_available === false
                                   ? '—'
-                                  : `₺${compSetSummary.comp_set.adr.toFixed(0)}`}
+                                  : formatCurrency(compSetSummary.comp_set.adr, compSetSummary.currency || cachedTenantCurrency(), { maximumFractionDigits: 0 })}
                               </span>
                             </div>
                             <div className="flex justify-between text-[11px] mt-1">
@@ -534,7 +535,7 @@ const ExecutiveDashboard = ({ user }) => {
                             <div className="flex justify-between">
                               <span className="text-[11px]">Otel</span>
                               <span className="font-semibold">
-                                ₺{compSetSummary.hotel.revpar.toFixed(0)}
+                                {formatCurrency(compSetSummary.hotel.revpar, compSetSummary.currency || cachedTenantCurrency(), { maximumFractionDigits: 0 })}
                               </span>
                             </div>
                             <div className="flex justify-between text-gray-300">
@@ -542,7 +543,7 @@ const ExecutiveDashboard = ({ user }) => {
                               <span>
                                 {compSetSummary.data_available === false
                                   ? '—'
-                                  : `₺${compSetSummary.comp_set.revpar.toFixed(0)}`}
+                                  : formatCurrency(compSetSummary.comp_set.revpar, compSetSummary.currency || cachedTenantCurrency(), { maximumFractionDigits: 0 })}
                               </span>
                             </div>
                             <div className="flex justify-between text-[11px] mt-1">
@@ -662,13 +663,13 @@ const ExecutiveDashboard = ({ user }) => {
                         <div>
                           <div className="text-gray-300 mb-1">Toplam Gelir (Bütçe)</div>
                           <div className="text-lg font-bold">
-                            ₺{(budgetOverview.totals.rev_target / 1000).toFixed(0)}K
+                            {formatCurrency(budgetOverview.totals.rev_target, budgetOverview.currency || cachedTenantCurrency(), { maximumFractionDigits: 0 })}
                           </div>
                         </div>
                         <div>
                           <div className="text-gray-300 mb-1">Toplam Gelir (Gerçekleşen)</div>
                           <div className="text-lg font-bold text-emerald-400">
-                            ₺{(budgetOverview.totals.rev_actual / 1000).toFixed(0)}K
+                            {formatCurrency(budgetOverview.totals.rev_actual, budgetOverview.currency || cachedTenantCurrency(), { maximumFractionDigits: 0 })}
                           </div>
                         </div>
                         <div>
@@ -692,7 +693,7 @@ const ExecutiveDashboard = ({ user }) => {
                             </span>
                             <span className="text-gray-400"> / </span>
                             <span className="text-blue-300">
-                              ₺{budgetOverview.totals.adr_actual.toFixed(0)}
+                              {formatCurrency(budgetOverview.totals.adr_actual, budgetOverview.currency || cachedTenantCurrency(), { maximumFractionDigits: 0 })}
                             </span>
                           </div>
                         </div>
@@ -728,24 +729,24 @@ const ExecutiveDashboard = ({ user }) => {
                                   {m.occ_actual.toFixed(1)}%
                                 </td>
                                 <td className="px-3 py-1.5 text-right text-gray-300">
-                                  ₺{m.adr_target.toFixed(0)}
+                                  {formatCurrency(m.adr_target, m.currency || budgetOverview.currency || cachedTenantCurrency(), { maximumFractionDigits: 0 })}
                                 </td>
                                 <td
                                   className={`px-3 py-1.5 text-right ${
                                     m.adr_actual >= m.adr_target ? 'text-emerald-300' : 'text-red-300'
                                   }`}
                                 >
-                                  ₺{m.adr_actual.toFixed(0)}
+                                  {formatCurrency(m.adr_actual, m.currency || budgetOverview.currency || cachedTenantCurrency(), { maximumFractionDigits: 0 })}
                                 </td>
                                 <td className="px-3 py-1.5 text-right text-gray-300">
-                                  ₺{(m.rev_target / 1000).toFixed(0)}K
+                                  {formatCurrency(m.rev_target, m.currency || budgetOverview.currency || cachedTenantCurrency(), { maximumFractionDigits: 0 })}
                                 </td>
                                 <td
                                   className={`px-3 py-1.5 text-right ${
                                     m.rev_actual >= m.rev_target ? 'text-emerald-300' : 'text-red-300'
                                   }`}
                                 >
-                                  ₺{(m.rev_actual / 1000).toFixed(0)}K
+                                  {formatCurrency(m.rev_actual, m.currency || budgetOverview.currency || cachedTenantCurrency(), { maximumFractionDigits: 0 })}
                                 </td>
                               </tr>
                             ))}

@@ -64,7 +64,7 @@ const STATUS_INTENT = {
     icon: RotateCcw
   },
   mock: {
-    label: "Mock (SMTP yok)",
+    label: "Simülasyon (E-posta Testi)",
     intent: "neutral",
     icon: Info
   }
@@ -398,7 +398,7 @@ export default function ReportScheduler() {
                       <div className="flex items-center gap-1 shrink-0">
                         <Tooltip>
                           <TooltipTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleSendNow(s._id)} disabled={!!actionLoading[s._id]}>
+                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleSendNow(s._id)} disabled={!!actionLoading[s._id]} aria-label={`${s.name} raporunu şimdi gönder`}>
                               {actionLoading[s._id] === "send" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                             </Button>
                           </TooltipTrigger>
@@ -406,7 +406,7 @@ export default function ReportScheduler() {
                         </Tooltip>
                         <Tooltip>
                           <TooltipTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleToggle(s._id)} disabled={!!actionLoading[s._id]}>
+                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleToggle(s._id)} disabled={!!actionLoading[s._id]} aria-label={`${s.name} zamanlamasını ${s.is_active ? 'duraklat' : 'etkinleştir'}`}>
                               {s.is_active ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
                             </Button>
                           </TooltipTrigger>
@@ -414,7 +414,7 @@ export default function ReportScheduler() {
                         </Tooltip>
                         <Tooltip>
                           <TooltipTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(s)}>
+                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(s)} aria-label={`${s.name} zamanlamasını düzenle`}>
                               <Edit className="h-4 w-4" />
                             </Button>
                           </TooltipTrigger>
@@ -422,7 +422,7 @@ export default function ReportScheduler() {
                         </Tooltip>
                         <Tooltip>
                           <TooltipTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8 text-rose-600 hover:text-rose-700" onClick={() => handleDelete(s._id)} disabled={!!actionLoading[s._id]}>
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-rose-600 hover:text-rose-700" onClick={() => handleDelete(s._id)} disabled={!!actionLoading[s._id]} aria-label={`${s.name} zamanlamasını sil`}>
                               <Trash2 className="h-4 w-4" />
                             </Button>
                           </TooltipTrigger>
@@ -446,7 +446,7 @@ export default function ReportScheduler() {
                 <SelectItem value="sent">{t('cm.pages_ReportScheduler.gonderildi_ed666')}</SelectItem>
                 <SelectItem value="failed">{t('cm.pages_ReportScheduler.basarisiz_3260d')}</SelectItem>
                 <SelectItem value="partial">{t('cm.pages_ReportScheduler.kismi')}</SelectItem>
-                <SelectItem value="mock">Mock (SMTP yok)</SelectItem>
+                <SelectItem value="mock">Simülasyon (E-posta Testi)</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -489,7 +489,7 @@ export default function ReportScheduler() {
                             <div className="flex items-center justify-end gap-1">
                               <Tooltip>
                                 <TooltipTrigger asChild>
-                                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openDetail(h)}>
+                                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openDetail(h)} aria-label={`${h.schedule_name} gönderim detayını görüntüle`}>
                                     <Eye className="h-3.5 w-3.5" />
                                   </Button>
                                 </TooltipTrigger>
@@ -497,7 +497,7 @@ export default function ReportScheduler() {
                               </Tooltip>
                               {h.status === "failed" && <Tooltip>
                                   <TooltipTrigger asChild>
-                                    <Button variant="ghost" size="icon" className="h-7 w-7 text-amber-600" onClick={() => handleRetry(h._id)} disabled={!!actionLoading[h._id]}>
+                                    <Button variant="ghost" size="icon" className="h-7 w-7 text-amber-600" onClick={() => handleRetry(h._id)} disabled={!!actionLoading[h._id]} aria-label={`${h.schedule_name} gönderimini tekrar dene`}>
                                       {actionLoading[h._id] === "retry" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
                                     </Button>
                                   </TooltipTrigger>
@@ -656,7 +656,7 @@ export default function ReportScheduler() {
               {detailEntry.delivery_details && <div className="bg-slate-50 rounded p-3 text-xs space-y-1">
                   <div>{t('cm.pages_ReportScheduler.gonderilen_08803')} {detailEntry.delivery_details.sent_count || 0}</div>
                   <div>{t('cm.pages_ReportScheduler.basarisiz_bda18')} {detailEntry.delivery_details.failed_count || 0}</div>
-                  {detailEntry.delivery_details.mock_count > 0 && <div className="text-slate-600">Mock (SMTP yok): {detailEntry.delivery_details.mock_count}</div>}
+                  {detailEntry.delivery_details.mock_count > 0 && <div className="text-slate-600">Simülasyon (E-posta Testi): {detailEntry.delivery_details.mock_count}</div>}
                   {detailEntry.delivery_details.attachment_count > 0 && <div>{t('cm.pages_ReportScheduler.ek_dosya_sayisi')} {detailEntry.delivery_details.attachment_count}</div>}
                   {(detailEntry.delivery_details.failed_recipients || []).length > 0 && <div className="text-rose-600 break-all">
                       {t('cm.pages_ReportScheduler.basarisiz_alicilar')} {detailEntry.delivery_details.failed_recipients.join(", ")}

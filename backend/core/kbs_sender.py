@@ -70,6 +70,7 @@ def _build_request_body(payload: dict, action: str) -> dict:
         "action": action,  # "checkin" | "checkout"
         "guest_name": payload.get("guest_name", ""),
         "nationality": payload.get("nationality", "TC"),
+        "id_type": payload.get("id_type", ""),
         "id_number": payload.get("id_number", ""),
         "passport_number": payload.get("passport_number", ""),
         "birth_date": payload.get("birth_date", ""),

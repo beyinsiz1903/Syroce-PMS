@@ -6,6 +6,7 @@ import { Plus, Trash2 } from 'lucide-react';
 import { Field, Modal } from '../_shared';
 import OperationsPanel from '../OperationsPanel';
 import { STATUS, SETUPS, EVENT_TYPES, EVENT_TYPE_LABELS, AGENDA_KINDS } from './constants';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 const EventFormModal = ({
   editing,
   form,
@@ -99,6 +100,12 @@ const EventFormModal = ({
               ...form,
               expected_pax: +e.target.value
             })} /></Field>
+            <Field label="Para Birimi">
+              <Input required maxLength={3} value={form.currency || cachedTenantCurrency()} onChange={e => setForm({
+                ...form,
+                currency: e.target.value.toUpperCase()
+              })} />
+            </Field>
             <Field label="PMS Rezervasyon ID"><Input value={form.reservation_id} onChange={e => setForm({
               ...form,
               reservation_id: e.target.value
@@ -188,7 +195,7 @@ const EventFormModal = ({
                 <Input className="col-span-1 text-xs" type="number" placeholder="Adet" value={r.quantity} onChange={e => setRes(i, {
               quantity: +e.target.value
             })} />
-                <Input className="col-span-2 text-xs" type="number" placeholder="Birim ₺" value={r.unit_price} onChange={e => setRes(i, {
+                <Input className="col-span-2 text-xs" type="number" placeholder={`Birim ${form.currency || cachedTenantCurrency()}`} value={r.unit_price} onChange={e => setRes(i, {
               unit_price: +e.target.value
             })} />
                 <Button type="button" size="sm" variant="ghost" className="col-span-1" onClick={() => rmRes(i)}><Trash2 className="w-3 h-3" /></Button>
@@ -240,7 +247,7 @@ const EventFormModal = ({
         <TabsContent value="payment" className="space-y-2 max-h-[60vh] overflow-y-auto pr-1">
           <div className="flex items-center justify-between mb-2">
             <Label className="text-sm font-semibold">
-              Ödeme Takvimi ({form.payment_schedule.length} satır, toplam ₺{psTotal.toLocaleString('tr-TR')})
+              Ödeme Takvimi ({form.payment_schedule.length} satır, toplam {formatCurrency(psTotal, form.currency || cachedTenantCurrency())})
             </Label>
             <Button type="button" size="sm" variant="outline" onClick={addPs}>
               <Plus className="w-3 h-3 mr-1" /> Taksit Ekle
@@ -256,7 +263,7 @@ const EventFormModal = ({
               <Input className="col-span-4 text-xs" placeholder="Etiket (Depozito %30)" value={p.label} onChange={e => setPs(i, {
             label: e.target.value
           })} required />
-              <Input className="col-span-3 text-xs" type="number" placeholder="Tutar ₺" value={p.amount} onChange={e => setPs(i, {
+              <Input className="col-span-3 text-xs" type="number" placeholder={`Tutar ${form.currency || cachedTenantCurrency()}`} value={p.amount} onChange={e => setPs(i, {
             amount: +e.target.value
           })} required />
               <label className="col-span-1 text-xs text-center flex items-center gap-1">

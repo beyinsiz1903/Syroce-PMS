@@ -10,6 +10,7 @@ import { DAYS, UPDATE_FIELDS } from './constants';
 import { ChannelList } from './ChannelList';
 import { useTranslation } from 'react-i18next';
 import { normalizeOccupancyRule } from '@/utils/occupancyPricing';
+import { toast } from 'sonner';
 
 export const BulkUpdatePanel = ({
   roomTypeTree, roomTypes, ratePlans, enabledFields, toggleField,
@@ -22,7 +23,7 @@ export const BulkUpdatePanel = ({
   pricingSettings, occupancyPricingRules, saveOccupancyPricingRule, getPricingLabel, togglePricingType, currencySymbol, currency,
   totalSelectedRoomTypes, totalSelectedPlans,
   saving, handleBulkUpdate, handleReset, loading,
-  activeChannels, activeChannelsStale, channelProvider,
+  activeChannels, activeChannelsStale, selectedChannelCodes, toggleChannel, toggleAllChannels, channelProvider,
   mobileStep = 1, setMobileStep,
 }) => {
   const { t } = useTranslation();
@@ -62,11 +63,11 @@ export const BulkUpdatePanel = ({
         <Card>
           <CardHeader className="pb-2 pt-4 px-4">
             <CardTitle className="text-sm font-semibold text-gray-700">
-              Neleri guncellemek istiyorsunuz?
+              Neleri güncellemek istiyorsunuz?
             </CardTitle>
           </CardHeader>
           <CardContent className="px-4 pb-4 space-y-2">
-            {UPDATE_FIELDS.map(f => (
+            {UPDATE_FIELDS.filter(f => !f.providers || f.providers.includes(channelProvider)).map(f => (
               <label key={f.key} className="flex items-center gap-2 cursor-pointer text-sm" data-testid={`field-${f.key}`}>
                 <Checkbox
                   checked={enabledFields.has(f.key)}
@@ -87,11 +88,11 @@ export const BulkUpdatePanel = ({
           </CardHeader>
           <CardContent className="px-4 pb-4 space-y-2">
             <div>
-              <Label className="text-xs text-gray-500">Baslangic</Label>
+              <Label className="text-xs text-gray-500">Başlangıç</Label>
               <Input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="mt-1 h-8 text-sm" data-testid="bulk-date-from" />
             </div>
             <div>
-              <Label className="text-xs text-gray-500">Bitis</Label>
+              <Label className="text-xs text-gray-500">Bitiş</Label>
               <Input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="mt-1 h-8 text-sm" data-testid="bulk-date-to" />
             </div>
           </CardContent>
@@ -100,7 +101,7 @@ export const BulkUpdatePanel = ({
         {/* Day Selection */}
         <Card>
           <CardHeader className="pb-2 pt-4 px-4">
-            <CardTitle className="text-sm font-semibold text-gray-700">Gun</CardTitle>
+            <CardTitle className="text-sm font-semibold text-gray-700">Gün</CardTitle>
           </CardHeader>
           <CardContent className="px-4 pb-4 space-y-1.5">
             <label className="flex items-center gap-2 cursor-pointer text-sm font-medium" data-testid="day-all">
@@ -120,11 +121,11 @@ export const BulkUpdatePanel = ({
         <div className="hidden gap-2 lg:flex">
           <Button className="flex-1 bg-amber-600 hover:bg-amber-700 text-white" onClick={handleBulkUpdate} disabled={saving} data-testid="bulk-update-btn">
             {saving ? <Loader2 className="w-4 h-4 animate-spin mr-1.5" /> : <Save className="w-4 h-4 mr-1.5" />}
-            Guncelle
+            Güncelle
           </Button>
           <Button variant="outline" onClick={handleReset} data-testid="bulk-reset-btn">
             <RotateCcw className="w-4 h-4 mr-1" />
-            Sifirla
+            Sıfırla
           </Button>
         </div>
       </div>
@@ -136,7 +137,7 @@ export const BulkUpdatePanel = ({
             <div className="flex items-center justify-between">
               <CardTitle className="text-sm font-semibold text-gray-700">{t('cm.pages_ratemanager_BulkUpdatePanel.oda_adi')}</CardTitle>
               <button onClick={toggleAllRoomTypes} className="text-xs text-blue-600 hover:underline" data-testid="select-all-rooms">
-                {roomTypes.length > 0 && roomTypes.every(rt => isRoomTypeFullySelected(rt.code)) ? 'Tumunu kaldir' : 'Tumunu sec'}
+                {roomTypes.length > 0 && roomTypes.every(rt => isRoomTypeFullySelected(rt.code)) ? 'Tümünü kaldır' : 'Tümünü seç'}
               </button>
             </div>
           </CardHeader>
@@ -170,7 +171,7 @@ export const BulkUpdatePanel = ({
             <CardTitle className="text-sm font-semibold text-gray-700">Kanallar</CardTitle>
           </CardHeader>
           <CardContent className="px-4 pb-4">
-            <ChannelList channels={activeChannels} stale={activeChannelsStale} provider={channelProvider} />
+            <ChannelList channels={activeChannels} stale={activeChannelsStale} selectedChannelCodes={selectedChannelCodes} onToggle={toggleChannel} onToggleAll={toggleAllChannels} provider={channelProvider} />
           </CardContent>
         </Card>
       </div>
@@ -186,7 +187,7 @@ export const BulkUpdatePanel = ({
             <Badge variant="outline" className="bg-white">{totalSelectedPlans} plan</Badge>
             <Badge variant="outline" className="bg-white">{enabledFields.size} alan</Badge>
             <Badge variant="outline" className="bg-white">{dateFrom} → {dateTo}</Badge>
-            {!allDays && <Badge variant="outline" className="bg-white">{selectedDays.size} gun</Badge>}
+            {!allDays && <Badge variant="outline" className="bg-white">{selectedDays.size} gün</Badge>}
           </div>
         </CardContent>
       </Card>
@@ -227,17 +228,17 @@ export const BulkUpdatePanel = ({
 };
 
 const gridColTemplate = (enabledFields) =>
-  `minmax(220px, 1fr)${enabledFields.has('rate') ? ' 150px' : ''}${enabledFields.has('availability') ? ' 130px' : ''}${enabledFields.has('min_stay') ? ' 150px' : ''}${enabledFields.has('max_stay') ? ' 150px' : ''}${enabledFields.has('stop_sell') ? ' 100px' : ''}${enabledFields.has('cta') ? ' 80px' : ''}${enabledFields.has('ctd') ? ' 80px' : ''}`;
+  `minmax(220px, 1fr)${enabledFields.has('rate') ? ' 150px' : ''}${enabledFields.has('availability') ? ' 130px' : ''}${enabledFields.has('min_stay') ? ' 150px' : ''}${enabledFields.has('min_los_arrival') ? ' 180px' : ''}${enabledFields.has('max_stay') ? ' 150px' : ''}${enabledFields.has('stop_sell') ? ' 100px' : ''}${enabledFields.has('cta') ? ' 80px' : ''}${enabledFields.has('ctd') ? ' 80px' : ''}`;
 
 const ApplyAllButton = ({ field, value, applyToAllSelected, totalSelectedRoomTypes }) => {
   const { t } = useTranslation();
-  if (totalSelectedRoomTypes < 2 || !value) return null;
+  if (totalSelectedRoomTypes < 2 || value === null || value === undefined || value === '') return null;
   return (
     <button
       type="button"
       onClick={(e) => { e.stopPropagation(); applyToAllSelected(field, value); }}
       className="text-amber-500 hover:text-amber-700 p-0.5 transition-colors flex-shrink-0"
-      title="Tumune uygula"
+      title="Tümüne uygula"
       data-testid={`apply-all-${field}`}
     >
       <CopyCheck className="w-3.5 h-3.5" />
@@ -263,6 +264,7 @@ const RoomTypeList = ({
         {enabledFields.has('rate') && <span className="flex items-center gap-1">{currencySymbol} Fiyat</span>}
         {enabledFields.has('availability') && <span className="flex items-center gap-1"><Home className="w-3 h-3" /> Musaitlik</span>}
         {enabledFields.has('min_stay') && <span className="flex items-center gap-1"><Moon className="w-3 h-3" /> Min. konaklama</span>}
+        {enabledFields.has('min_los_arrival') && <span className="flex items-center gap-1"><Moon className="w-3 h-3" /> Varış bazlı min.</span>}
         {enabledFields.has('max_stay') && <span className="flex items-center gap-1"><Moon className="w-3 h-3" /> Max. konaklama</span>}
         {enabledFields.has('stop_sell') && <span>{t('cm.pages_ratemanager_BulkUpdatePanel.satis_durdur')}</span>}
         {enabledFields.has('cta') && <span>CTA</span>}
@@ -332,6 +334,13 @@ const RoomTypeList = ({
                   <ApplyAllButton field="min_stay" value={rv.min_stay} applyToAllSelected={applyToAllSelected} totalSelectedRoomTypes={totalSelectedRoomTypes} />
                 </div>
               )}
+              {enabledFields.has('min_los_arrival') && (
+                <div className="flex items-center gap-1">
+                  <Moon className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                  <Input type="number" min="1" placeholder="Varış bazlı min." value={rv.min_los_arrival} onChange={e => updateRoomValue(rt.code, 'min_los_arrival', e.target.value)} className="h-8 text-sm" data-testid={`min-los-arrival-input-${rt.code}`} />
+                  <ApplyAllButton field="min_los_arrival" value={rv.min_los_arrival} applyToAllSelected={applyToAllSelected} totalSelectedRoomTypes={totalSelectedRoomTypes} />
+                </div>
+              )}
               {enabledFields.has('max_stay') && (
                 <div className="flex items-center gap-1">
                   <Moon className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
@@ -393,6 +402,7 @@ const RoomTypeList = ({
                 {enabledFields.has('rate') && <div className="text-xs text-gray-400 italic">{rv.rate ? `Ana Fiyat: ${rv.rate} ${currency}` : '\u2014'}</div>}
                 {enabledFields.has('availability') && <div className="text-xs text-gray-400 italic">{rv.availability ? rv.availability : '\u2014'}</div>}
                 {enabledFields.has('min_stay') && <div className="text-xs text-gray-400 italic">{rv.min_stay ? rv.min_stay : '\u2014'}</div>}
+                {enabledFields.has('min_los_arrival') && <div className="text-xs text-gray-400 italic">{rv.min_los_arrival ? rv.min_los_arrival : '\u2014'}</div>}
                 {enabledFields.has('max_stay') && <div className="text-xs text-gray-400 italic">{rv.max_stay ? rv.max_stay : '\u2014'}</div>}
                 {enabledFields.has('stop_sell') && <div />}
                 {enabledFields.has('cta') && <div />}
@@ -412,6 +422,7 @@ export const OccupancyPricingEditor = ({ roomType, open, onToggle, rule, onSave,
   const initial = {
     base_occupancy: normalizedRule.base_occupancy,
     extra_adult_rate: normalizedRule.extra_adult_rate,
+    extra_adult_rate_type: normalizedRule.extra_adult_rate_type,
     child_age_bands: normalizedRule.child_age_bands,
     max_occupancy: normalizedRule.max_occupancy ?? '',
     provider_pricing_verified: Boolean(rule?.provider_pricing_verified),
@@ -464,13 +475,13 @@ export const OccupancyPricingEditor = ({ roomType, open, onToggle, rule, onSave,
   }) && expectedAge === 18;
   const base = Number(currentBaseRate || 0);
   const exampleGuests = Number(draft.base_occupancy) + 1;
-  const exampleNightly = base + Number(draft.extra_adult_rate || 0);
+  const exampleNightly = base + (draft.extra_adult_rate_type === 'percentage' ? (base * Number(draft.extra_adult_rate || 0) / 100) : Number(draft.extra_adult_rate || 0));
 
   return (
     <div className="border-t border-amber-100 bg-amber-50/40 px-4 py-2" data-testid={`occupancy-pricing-${roomType.code}`}>
       <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
         <span className="text-gray-600">
-          {draft.base_occupancy} yetişkin dahil · Ek yetişkin {currencySymbol}{Number(draft.extra_adult_rate || 0).toLocaleString('tr-TR')}/gece
+          {draft.base_occupancy} yetişkin dahil · Ek yetişkin {draft.extra_adult_rate_type === 'percentage' ? `%${draft.extra_adult_rate}` : `${currencySymbol}${Number(draft.extra_adult_rate || 0).toLocaleString('tr-TR')}`}/gece
         </span>
         <button type="button" onClick={onToggle} className="font-medium text-amber-700 hover:underline">
           {open ? 'Kuralı kapat' : 'Kuralı düzenle'}
@@ -480,7 +491,27 @@ export const OccupancyPricingEditor = ({ roomType, open, onToggle, rule, onSave,
         <div className="mt-3 rounded-lg border border-amber-200 bg-white p-3">
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <RuleNumber label="Fiyata dahil yetişkin" value={draft.base_occupancy} min={1} max={20} onChange={v => update('base_occupancy', v)} />
-            <RuleNumber label="Ek yetişkin / gece" value={draft.extra_adult_rate} min={0} step="0.01" onChange={v => update('extra_adult_rate', v)} />
+            <div>
+              <Label className="text-[11px] text-gray-600">Ek yetişkin / gece</Label>
+              <div className="flex mt-1">
+                <select
+                  value={draft.extra_adult_rate_type}
+                  onChange={e => update('extra_adult_rate_type', e.target.value)}
+                  className="h-8 rounded-l-md border border-r-0 border-slate-300 bg-white px-2 text-sm focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
+                >
+                  <option value="fixed">{currencySymbol}</option>
+                  <option value="percentage">%</option>
+                </select>
+                <Input
+                  type="number"
+                  value={draft.extra_adult_rate}
+                  min={0}
+                  step="0.01"
+                  onChange={e => update('extra_adult_rate', e.target.value)}
+                  className="h-8 rounded-l-none text-sm focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
+                />
+              </div>
+            </div>
             <RuleNumber label="Maksimum kişi" value={draft.max_occupancy} min={draft.base_occupancy} max={50} optional onChange={v => update('max_occupancy', v)} />
           </div>
           <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3" data-testid={`child-age-bands-${roomType.code}`}>
@@ -581,6 +612,7 @@ export const OccupancyPricingEditor = ({ roomType, open, onToggle, rule, onSave,
                     ...draft,
                     base_occupancy: Number(draft.base_occupancy),
                     extra_adult_rate: Number(draft.extra_adult_rate),
+                    extra_adult_rate_type: draft.extra_adult_rate_type,
                     extra_child_rate: Number(fixedBand?.value || 0),
                     child_free_age_max: Number(freeBand?.max_age || 0),
                     child_age_bands: sortedBands.map(band => ({
@@ -591,6 +623,10 @@ export const OccupancyPricingEditor = ({ roomType, open, onToggle, rule, onSave,
                     })),
                     max_occupancy: draft.max_occupancy === '' ? null : Number(draft.max_occupancy),
                   });
+                  toast.success('Kural başarıyla kaydedildi');
+                  onToggle();
+                } catch (err) {
+                  toast.error(err?.response?.data?.detail || 'Kural kaydedilirken bir hata oluştu');
                 } finally {
                   setSubmitting(false);
                 }

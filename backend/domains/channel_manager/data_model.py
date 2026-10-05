@@ -431,6 +431,7 @@ class ReservationLineage(BaseModel):
     guest_name: str = ""
     guest_email: str = ""
     guest_phone: str = ""
+    provider_note: str = ""
 
     # Stay summary
     arrival_date: str = ""
@@ -494,6 +495,7 @@ class ReservationLineage(BaseModel):
             "total_amount": canonical_data.get("total_amount", 0.0),
             "status": canonical_data.get("status", ""),
             "guest_email": canonical_data.get("guest_email", ""),
+            "provider_note": canonical_data.get("provider_note", ""),
         }
         raw = json.dumps(key_fields, sort_keys=True, default=str)
         return hashlib.sha256(raw.encode()).hexdigest()[:16]

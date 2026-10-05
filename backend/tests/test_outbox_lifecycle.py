@@ -1,18 +1,30 @@
-import os
 import asyncio
+import os
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
-if os.environ.get("CI") or os.environ.get("GITHUB_ACTIONS"):
-    pytest.skip("Motor event loop conflict in CI", allow_module_level=True)
 
 from core.tenant_db import get_system_db
 from shared_kernel.migration_observability import MigrationObservabilityService
 from shared_kernel.outbox_lifecycle import OutboxLifecycleWorker
 
+if os.environ.get("CI") or os.environ.get("GITHUB_ACTIONS"):
+    pytest.skip("Motor event loop conflict in CI", allow_module_level=True)
+
 
 TEST_LOOP = asyncio.new_event_loop()
+
+
+@pytest.fixture(autouse=True)
+async def stop_global_lifecycle_worker_for_isolation():
+    """The full-suite server starts this worker; lifecycle tests own their worker."""
+    from shared_kernel.outbox_lifecycle import outbox_lifecycle_worker
+
+    task = getattr(outbox_lifecycle_worker, "_task", None)
+    if task is not None and not task.done():
+        await outbox_lifecycle_worker.stop()
+    yield
 
 
 def run_async(coro):
@@ -20,7 +32,7 @@ def run_async(coro):
 
 
 def _build_event(*, tenant_id: str, event_type: str, status: str = "pending", payload=None, created_at=None, retry_count: int = 0):
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     event_id = str(uuid.uuid4())
     return {
         "event_id": event_id,
@@ -39,10 +51,10 @@ def _build_event(*, tenant_id: str, event_type: str, status: str = "pending", pa
 def test_outbox_worker_processes_pending_event_to_processed():
     async def _run():
         tenant_id = f"tenant-{uuid.uuid4()}"
-        event = _build_event(tenant_id=tenant_id, event_type="reservation.created.v1")
+        event = _build_event(tenant_id=tenant_id, event_type="test.success.v1")
         await get_system_db().outbox_events.insert_one(event)
 
-        worker = OutboxLifecycleWorker(batch_size=1, poll_interval_seconds=0.01, backoff_base_seconds=0.01, drain_pause_seconds=0)
+        worker = OutboxLifecycleWorker(batch_size=1, poll_interval_seconds=0.01, backoff_base_seconds=0.01, drain_pause_seconds=0, event_types=["test.success.v1"])
         try:
             await worker.process_batch(limit=1)
             stored = await get_system_db().outbox_events.find_one({"event_id": event["event_id"]}, {"_id": 0})
@@ -61,12 +73,12 @@ def test_outbox_worker_retries_then_parks_forced_failure():
         tenant_id = f"tenant-{uuid.uuid4()}"
         event = _build_event(
             tenant_id=tenant_id,
-            event_type="folio.opened.v1",
+            event_type="test.forced_failure.v1",
             payload={"force_fail": True, "force_fail_message": "boom"},
         )
         await get_system_db().outbox_events.insert_one(event)
 
-        worker = OutboxLifecycleWorker(batch_size=1, poll_interval_seconds=0.01, backoff_base_seconds=0, drain_pause_seconds=0, max_retries=3)
+        worker = OutboxLifecycleWorker(batch_size=1, poll_interval_seconds=0.01, backoff_base_seconds=0, drain_pause_seconds=0, max_retries=3, event_types=["test.forced_failure.v1"])
         try:
             await worker.process_batch(limit=1)
             await worker.process_batch(limit=1)
@@ -86,7 +98,7 @@ def test_outbox_worker_retries_then_parks_forced_failure():
 def test_migration_observability_exposes_lifecycle_counts_and_ages():
     async def _run():
         tenant_id = f"tenant-{uuid.uuid4()}"
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         docs = [
             _build_event(
                 tenant_id=tenant_id,

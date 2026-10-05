@@ -1,8 +1,8 @@
 import axios from 'axios';
 import { toast } from 'sonner';
 
-export const RESERVATION_EDIT_LOCK_LEASE_SECONDS = 120;
-export const RESERVATION_EDIT_LOCK_HEARTBEAT_SECONDS = 30;
+export const RESERVATION_EDIT_LOCK_LEASE_SECONDS = 60;
+export const RESERVATION_EDIT_LOCK_HEARTBEAT_SECONDS = 20;
 export const RESERVATION_EDIT_LOCK_HEADER = 'X-Reservation-Lock-ID';
 
 const VIEW_RELEASE_GRACE_MS = 15000;
@@ -24,6 +24,9 @@ export const reservationIdFromProtectedMutation = (url, method) => {
   if (!['post', 'put', 'patch', 'delete'].includes(normalizedMethod)) return null;
   const raw = String(url || '');
   if (raw.includes('/edit-lock')) return null;
+  // This front-desk financial action owns transaction/resource locks and
+  // idempotency; it is not an edit made from the reservation-detail view.
+  if (raw.split(/[?#]/, 1)[0].endsWith('/transfer-to-cari')) return null;
   return raw.match(RESERVATION_MUTATION_RE)?.[1]
     || raw.match(FRONTDESK_MUTATION_RE)?.[1]
     || null;
@@ -42,6 +45,10 @@ const lockError = (message) => {
   error.isReservationEditLockError = true;
   return error;
 };
+
+export const reservationEditLockReleaseUrl = (bookingId) => (
+  `/api/pms/reservations/${encodeURIComponent(bookingId)}/edit-lock/release`
+);
 
 function createManager() {
   let current = null;
@@ -64,22 +71,45 @@ function createManager() {
     if (current) current.lastViewActivityAt = Date.now();
   };
 
-  const releaseCurrent = async () => {
+  const releaseCurrent = async (expectedBookingId = null) => {
+    // A delayed close from an older modal must never release the lock that a
+    // newer reservation view has just acquired.
+    if (expectedBookingId && current?.bookingId !== expectedBookingId) return false;
     const owned = current;
     current = null;
     acquirePromise = null;
     clearHeartbeat();
     clearViewMonitor();
-    if (!owned?.bookingId || !owned?.lockId || owned.status !== 'acquired') return;
+    if (!owned?.bookingId || !owned?.lockId || owned.status !== 'acquired') return false;
 
     try {
       await axios.delete(`/pms/reservations/${owned.bookingId}/edit-lock`, {
         data: { lock_id: owned.lockId },
         __skipReservationEditLock: true,
       });
+      return true;
     } catch (_error) {
       // Lease expiry is the safety net for abrupt navigation/network loss.
+      return false;
     }
+  };
+
+  const releaseOnPageExit = () => {
+    const owned = current;
+    current = null;
+    acquirePromise = null;
+    clearHeartbeat();
+    clearViewMonitor();
+    if (!owned?.bookingId || !owned?.lockId || owned.status !== 'acquired') return false;
+
+    const body = JSON.stringify({ lock_id: owned.lockId });
+    if (typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
+      return navigator.sendBeacon(
+        reservationEditLockReleaseUrl(owned.bookingId),
+        new Blob([body], { type: 'application/json' }),
+      );
+    }
+    return false;
   };
 
   const startViewMonitor = () => {
@@ -220,17 +250,16 @@ function createManager() {
   }) : null;
 
   if (typeof window !== 'undefined') {
-    window.addEventListener('beforeunload', () => {
-      clearHeartbeat();
-      clearViewMonitor();
-      // Do not attempt an unreliable async unlock during unload. The 120 s
-      // server lease is intentionally the crash/tab-close safety net.
-    });
+    // pagehide is reliable on Safari/iOS and also covers back-forward cache.
+    // beforeunload remains as a fallback; releaseOnPageExit is idempotent.
+    window.addEventListener('pagehide', releaseOnPageExit);
+    window.addEventListener('beforeunload', releaseOnPageExit);
   }
 
   return {
     acquire,
     releaseCurrent,
+    releaseOnPageExit,
     getCurrent: () => current,
     interceptorId,
   };

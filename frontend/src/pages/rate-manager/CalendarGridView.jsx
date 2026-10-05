@@ -51,7 +51,15 @@ export const CalendarGridView = ({
         </Select>
 
         <div className="flex items-center gap-1 ml-auto">
-          <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => shiftDates(-7)} data-testid="prev-week-btn">
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-8 w-8"
+            onClick={() => shiftDates(-7)}
+            data-testid="prev-week-btn"
+            aria-label="Önceki hafta"
+            title="Önceki hafta"
+          >
             <ChevronLeft className="w-4 h-4" />
           </Button>
           <Button variant="outline" size="sm" className="h-8 text-xs"
@@ -63,7 +71,15 @@ export const CalendarGridView = ({
             data-testid="today-btn">
             <Calendar className="w-3 h-3 mr-1" /> Bugün
           </Button>
-          <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => shiftDates(7)} data-testid="next-week-btn">
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-8 w-8"
+            onClick={() => shiftDates(7)}
+            data-testid="next-week-btn"
+            aria-label="Sonraki hafta"
+            title="Sonraki hafta"
+          >
             <ChevronRight className="w-4 h-4" />
           </Button>
         </div>

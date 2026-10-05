@@ -152,6 +152,7 @@ KNOWN_FLAGS: tuple[tuple[str, str, bool], ...] = (
     ("DISABLE_EXELY_RESERVATION_SYNC", "disable", False),
     ("DISABLE_EXELY_ARI_WRITE", "disable", False),
     ("DISABLE_HOTELRUNNER_RESERVATION_SYNC", "disable", False),
+    ("DISABLE_HOTELRUNNER_RESERVATION_RECONCILIATION", "disable", False),
     ("DISABLE_HOTELRUNNER_ARI_WRITE", "disable", False),
     ("DISABLE_AUTH_THROTTLE", "guard", False),
 )

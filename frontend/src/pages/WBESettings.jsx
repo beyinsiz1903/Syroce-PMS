@@ -1,103 +1,106 @@
-import { useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Copy, ExternalLink, Code } from "lucide-react";
-import { toast } from "sonner";
+import { useMemo } from 'react';
+import { CheckCircle2, Code, Copy, ExternalLink, Hotel, Link2, ShieldCheck, TriangleAlert } from 'lucide-react';
+import { toast } from 'sonner';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 
-export default function WBESettings() {
-  const baseUrl = typeof window !== "undefined" ? window.location.origin : "https://pms.syroce.com";
-  const tenantId = "demo-hotel-123";
-  const wbeUrl = `${baseUrl}/wbe/${tenantId}`;
-  
-  const iframeCode = `<iframe src="${wbeUrl}" width="100%" height="800" frameborder="0" style="border: none; max-width: 1200px; margin: 0 auto; display: block; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);"></iframe>`;
+const copyToClipboard = async (text, message) => {
+  try {
+    await navigator.clipboard.writeText(text);
+    toast.success(message || 'Kopyalandı');
+  } catch {
+    toast.error('Kopyalama başarısız oldu. Tarayıcı pano iznini kontrol edin.');
+  }
+};
 
-  const copyToClipboard = (text, message) => {
-    navigator.clipboard.writeText(text).then(() => {
-      toast.success(message || "Kopyalandı!");
-    }).catch(() => {
-      toast.error("Kopyalama başarısız oldu.");
-    });
-  };
+export default function WBESettings({ tenant }) {
+  const tenantId = tenant?.id || tenant?.tenant_id || '';
+  const propertyName = tenant?.property_name || tenant?.name || 'Oteliniz';
+  const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'https://pms.syroce.com';
+  const wbeUrl = tenantId ? `${baseUrl}/wbe/${encodeURIComponent(tenantId)}` : '';
+  const iframeCode = wbeUrl
+    ? `<iframe src="${wbeUrl}" title="${propertyName} rezervasyon" width="100%" height="800" loading="lazy" frameborder="0" style="border:0;max-width:1200px;margin:0 auto;display:block;border-radius:12px"></iframe>`
+    : '';
+
+  const readiness = useMemo(() => [
+    { label: 'Otel hesabı ve güvenli bağlantı', ready: Boolean(tenantId) },
+    { label: 'Otel adı ve marka bilgisi', ready: Boolean(tenant?.property_name || tenant?.name) },
+    { label: 'Rezervasyon motoru lisansı', ready: tenant?.modules?.booking_engine !== false },
+  ], [tenant, tenantId]);
+  const ready = readiness.every((item) => item.ready);
 
   return (
-    <div className="p-6 max-w-5xl mx-auto space-y-6">
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight text-slate-900">Web Rezervasyon Motoru (WBE)</h1>
-          <p className="text-slate-500 mt-2">Otelinize ait online rezervasyon modülünün entegrasyon ayarları.</p>
+    <main className="mx-auto max-w-6xl space-y-6 p-4 md:p-6" data-testid="wbe-settings">
+      <header className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm md:flex-row md:items-center md:justify-between md:p-6">
+        <div className="flex items-start gap-4">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-white"><Hotel className="h-5 w-5" /></div>
+          <div>
+            <h1 className="text-2xl font-bold text-slate-950">Web Rezervasyon Motoru</h1>
+            <p className="mt-1 text-sm text-slate-600">{propertyName} için doğrudan rezervasyon bağlantısı ve web sitesi kurulumu.</p>
+          </div>
         </div>
-      </div>
+        <span className={`inline-flex w-fit items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold ${ready ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-800'}`}>
+          {ready ? <CheckCircle2 className="h-4 w-4" /> : <TriangleAlert className="h-4 w-4" />}
+          {ready ? 'Yayına hazır' : 'Kurulum bilgisi eksik'}
+        </span>
+      </header>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card>
+      <section className="grid gap-4 md:grid-cols-3" aria-label="Kurulum durumu">
+        {readiness.map((item) => (
+          <div key={item.label} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-4 text-sm shadow-sm">
+            {item.ready ? <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-600" /> : <TriangleAlert className="h-5 w-5 shrink-0 text-amber-600" />}
+            <span className="font-medium text-slate-800">{item.label}</span>
+          </div>
+        ))}
+      </section>
+
+      {!tenantId && <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">Otel kimliği oturumdan alınamadığı için bağlantı üretilemedi. Otel çalışma alanına geçip sayfayı yenileyin.</div>}
+
+      <section className="grid gap-6 lg:grid-cols-2">
+        <Card className="border-slate-200 shadow-sm">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <ExternalLink className="w-5 h-5 text-indigo-600" /> 
-              Direkt Bağlantı (Link)
-            </CardTitle>
-            <CardDescription>Misafirlerinizi bu linke yönlendirerek doğrudan rezervasyon alabilirsiniz (Örn: Sosyal medya veya e-posta imzanız).</CardDescription>
+            <CardTitle className="flex items-center gap-2 text-base"><Link2 className="h-5 w-5" /> Doğrudan rezervasyon bağlantısı</CardTitle>
+            <CardDescription>Sosyal medya, e-posta, Google işletme profili veya otel web sitesindeki “Rezervasyon Yap” düğmesinde kullanın.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <Label>WBE URL'niz</Label>
-              <div className="flex items-center gap-2">
-                <Input readOnly value={wbeUrl} className="bg-slate-50" />
-                <Button variant="outline" size="icon" onClick={() => copyToClipboard(wbeUrl, "Link kopyalandı!")}>
-                  <Copy className="w-4 h-4" />
-                </Button>
+              <Label htmlFor="wbe-url">Otelin rezervasyon adresi</Label>
+              <div className="flex gap-2">
+                <Input id="wbe-url" readOnly value={wbeUrl} placeholder="Otel kimliği bekleniyor" className="bg-slate-50" />
+                <Button variant="outline" size="icon" disabled={!wbeUrl} onClick={() => copyToClipboard(wbeUrl, 'Rezervasyon bağlantısı kopyalandı')} aria-label="Rezervasyon bağlantısını kopyala"><Copy className="h-4 w-4" /></Button>
               </div>
             </div>
-            <div className="pt-2">
-              <Button asChild className="w-full bg-indigo-600 hover:bg-indigo-700">
-                <a href={wbeUrl} target="_blank" rel="noreferrer">Sayfayı Görüntüle <ExternalLink className="w-4 h-4 ml-2" /></a>
-              </Button>
-            </div>
+            <Button className="w-full" disabled={!ready || !wbeUrl} asChild={Boolean(ready && wbeUrl)}>
+              {ready && wbeUrl ? <a href={wbeUrl} target="_blank" rel="noreferrer">Canlı sayfayı aç<ExternalLink className="ml-2 h-4 w-4" /></a> : <span>Kurulum tamamlanınca açılacak</span>}
+            </Button>
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="border-slate-200 shadow-sm">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Code className="w-5 h-5 text-indigo-600" />
-              Web Sitesi Entegrasyonu (iframe)
-            </CardTitle>
-            <CardDescription>Otelinize ait web sitesine (WordPress, Wix vb.) bu kodu yapıştırarak motoru doğrudan sitenizde gösterebilirsiniz.</CardDescription>
+            <CardTitle className="flex items-center gap-2 text-base"><Code className="h-5 w-5" /> Web sitesine yerleştir</CardTitle>
+            <CardDescription>WordPress, Wix veya özel web sitenize erişilebilir ve mobil uyumlu rezervasyon alanı ekleyin.</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label>iframe Kodu</Label>
-              <div className="relative">
-                <textarea 
-                  readOnly 
-                  value={iframeCode} 
-                  className="w-full h-32 p-3 text-sm font-mono bg-slate-900 text-green-400 rounded-md outline-none resize-none"
-                />
-                <Button 
-                  size="sm"
-                  variant="secondary"
-                  className="absolute top-2 right-2 h-8"
-                  onClick={() => copyToClipboard(iframeCode, "iframe kodu kopyalandı!")}
-                >
-                  <Copy className="w-4 h-4 mr-1" /> Kopyala
-                </Button>
-              </div>
+          <CardContent className="space-y-3">
+            <Label htmlFor="wbe-iframe">Yerleştirme kodu</Label>
+            <div className="relative">
+              <textarea id="wbe-iframe" readOnly value={iframeCode} placeholder="Otel kimliği bekleniyor" className="h-36 w-full resize-none rounded-lg bg-slate-950 p-3 pr-24 font-mono text-xs text-emerald-300 outline-none" />
+              <Button size="sm" variant="secondary" disabled={!iframeCode} className="absolute right-2 top-2" onClick={() => copyToClipboard(iframeCode, 'Yerleştirme kodu kopyalandı')}><Copy className="mr-1 h-4 w-4" /> Kopyala</Button>
             </div>
           </CardContent>
         </Card>
-      </div>
+      </section>
 
-      <Card className="border-indigo-100 bg-indigo-50">
-        <CardHeader>
-          <CardTitle className="text-lg text-indigo-900">Nasıl Çalışır?</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-2 text-indigo-800 text-sm">
-          <p>1. WBE linki üzerinden misafirleriniz müsait oda ve fiyatları görüntüleyebilir.</p>
-          <p>2. Seçilen odalar için misafir bilgileri girildikten sonra sistemde otomatik olarak bir <b>Ön Rezervasyon (Pending)</b> oluşturulur.</p>
-          <p>3. Gelen rezervasyon PMS üzerinden "Bekleyen Rezervasyonlar" veya takvim üzerinde görüntülenir ve tarafınızdan onaylandığında kesinleşir.</p>
+      <Card className="border-slate-200 bg-slate-50 shadow-none">
+        <CardHeader><CardTitle className="flex items-center gap-2 text-base"><ShieldCheck className="h-5 w-5 text-slate-700" /> Rezervasyon akışı</CardTitle></CardHeader>
+        <CardContent className="grid gap-3 text-sm text-slate-700 md:grid-cols-3">
+          <p><strong className="block text-slate-950">1. Gerçek müsaitlik</strong>Misafir seçtiği tarihler için satılabilir oda tiplerini ve fiyatları görür.</p>
+          <p><strong className="block text-slate-950">2. Güvenli talep</strong>Misafir bilgileri ve konaklama tercihi otelin kendi PMS kaydına aktarılır.</p>
+          <p><strong className="block text-slate-950">3. Ön büro takibi</strong>Rezervasyon takvimde görünür; ekip onay, ödeme ve misafir iletişimini tamamlar.</p>
         </CardContent>
       </Card>
-    </div>
+    </main>
   );
 }

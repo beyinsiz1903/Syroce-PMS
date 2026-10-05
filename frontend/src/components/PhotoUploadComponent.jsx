@@ -121,6 +121,8 @@ const PhotoUploadComponent = ({
                     setPhoto(null);
                     setPreview(null);
                   }}
+                  aria-label="Seçilen fotoğrafı kaldır"
+                  title="Fotoğrafı kaldır"
                 >
                   <X className="w-4 h-4" />
                 </Button>

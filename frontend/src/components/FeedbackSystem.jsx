@@ -206,12 +206,12 @@ const FeedbackSystem = () => {
   }, [internal, external, surveys, department]);
 
   const stats = useMemo(() => {
-    const all = combined.filter(c => typeof c.rating === 'number' && c.rating > 0);
-    if (all.length === 0) return { avg: 0, total: 0, sat: 0, breakdown: {} };
-    const avg = all.reduce((s, r) => s + r.rating, 0) / all.length;
-    const sat = (all.filter(r => r.rating >= 4).length / all.length) * 100;
     const breakdown = { internal: 0, external: 0, survey: 0, department: 0 };
     combined.forEach(c => { breakdown[c._source] = (breakdown[c._source] || 0) + 1; });
+    const all = combined.filter(c => typeof c.rating === 'number' && c.rating > 0);
+    if (all.length === 0) return { avg: 0, total: combined.length, sat: 0, breakdown };
+    const avg = all.reduce((s, r) => s + r.rating, 0) / all.length;
+    const sat = (all.filter(r => r.rating >= 4).length / all.length) * 100;
     return { avg: avg.toFixed(1), total: combined.length, sat: sat.toFixed(0), breakdown };
   }, [combined]);
 
@@ -286,12 +286,12 @@ const FeedbackSystem = () => {
       </div>
 
       <Tabs value={view} onValueChange={setView}>
-        <TabsList className="grid grid-cols-5 w-full max-w-3xl">
-          <TabsTrigger value="all">{t('cm.components_FeedbackSystem.tumu')}{combined.length})</TabsTrigger>
-          <TabsTrigger value="internal">{t('cm.components_FeedbackSystem.otel_ici_6653c')}{stats.breakdown.internal || 0})</TabsTrigger>
-          <TabsTrigger value="external">{t('cm.components_FeedbackSystem.dis_platform')}{stats.breakdown.external || 0})</TabsTrigger>
-          <TabsTrigger value="survey">Anket ({stats.breakdown.survey || 0})</TabsTrigger>
-          <TabsTrigger value="department">Departman ({stats.breakdown.department || 0})</TabsTrigger>
+        <TabsList className="flex w-full max-w-3xl justify-start overflow-x-auto">
+          <TabsTrigger className="shrink-0" value="all">{t('cm.components_FeedbackSystem.tumu')} ({combined.length})</TabsTrigger>
+          <TabsTrigger className="shrink-0" value="internal">{t('cm.components_FeedbackSystem.otel_ici_6653c')} ({stats.breakdown.internal || 0})</TabsTrigger>
+          <TabsTrigger className="shrink-0" value="external">{t('cm.components_FeedbackSystem.dis_platform')} ({stats.breakdown.external || 0})</TabsTrigger>
+          <TabsTrigger className="shrink-0" value="survey">Anket ({stats.breakdown.survey || 0})</TabsTrigger>
+          <TabsTrigger className="shrink-0" value="department">Departman ({stats.breakdown.department || 0})</TabsTrigger>
         </TabsList>
 
         <TabsContent value={view} className="mt-4">

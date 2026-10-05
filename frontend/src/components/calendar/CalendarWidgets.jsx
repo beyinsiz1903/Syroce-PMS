@@ -1,5 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useTranslation } from 'react-i18next';
+import { cachedTenantCurrency } from '@/lib/currency';
+import { formatCurrencyBreakdown } from '@/lib/reportCurrency';
 export function OccupancyChart({
   dateRange,
   bookings,
@@ -96,9 +98,11 @@ export function CalendarStats({
   const occupancyPct = rooms.length > 0 ? Math.round(todayBookings.length / rooms.length * 100) : 0;
   const todayRevenue = todayBookings.reduce((sum, b) => {
     const nights = Math.max(1, Math.ceil((new Date(b.check_out) - new Date(b.check_in)) / 86400000));
-    return sum + (b.total_amount || 0) / nights;
-  }, 0);
-  const adr = todayBookings.length > 0 ? Math.round(todayRevenue / todayBookings.length) : 0;
+    const currency = String(b.currency || cachedTenantCurrency()).toUpperCase();
+    sum[currency] = (sum[currency] || 0) + (b.total_amount || 0) / nights;
+    return sum;
+  }, {});
+  const adr = Object.fromEntries(Object.entries(todayRevenue).map(([currency, amount]) => [currency, todayBookings.length > 0 ? amount / todayBookings.length : 0]));
   return <div className="grid grid-cols-4 gap-3 mb-3" data-testid="calendar-stats">
       <Card className="bg-white border shadow-sm">
         <CardContent className="p-3 text-center">
@@ -115,13 +119,13 @@ export function CalendarStats({
       <Card className="bg-white border shadow-sm">
         <CardContent className="p-3 text-center">
           <div className="text-xs text-gray-500 font-medium">{t('cm.components_calendar_CalendarWidgets.ort_gunluk_gelir')}</div>
-          <div className="text-lg font-bold text-emerald-600">{adr.toLocaleString('tr-TR')} TL</div>
+          <div className="text-lg font-bold text-emerald-600">{formatCurrencyBreakdown(adr)}</div>
         </CardContent>
       </Card>
       <Card className="bg-white border shadow-sm">
         <CardContent className="p-3 text-center">
           <div className="text-xs text-gray-500 font-medium">{t('cm.components_calendar_CalendarWidgets.toplam_rev')}</div>
-          <div className="text-lg font-bold text-blue-600">{Math.round(todayRevenue).toLocaleString('tr-TR')} TL</div>
+          <div className="text-lg font-bold text-blue-600">{formatCurrencyBreakdown(todayRevenue)}</div>
         </CardContent>
       </Card>
     </div>;

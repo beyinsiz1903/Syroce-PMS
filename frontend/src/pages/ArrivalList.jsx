@@ -14,6 +14,7 @@ import QuickIdScanDialog from '@/components/QuickIdScanDialog';
 import IdPhotoViewerButton from '@/components/IdPhotoViewerButton';
 
 import { confirmDialog } from '@/lib/dialogs';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 const ArrivalList = ({ user, tenant, onLogout }) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -32,13 +33,16 @@ const ArrivalList = ({ user, tenant, onLogout }) => {
       if (doc.document_type) patch.guest_id_type = doc.document_type;
       if (doc.nationality) patch.guest_nationality = doc.nationality;
       if (doc.birth_date) patch.guest_birth_date = doc.birth_date;
-      await axios.patch(`/bookings/${bookingId}/guest-info`, patch).catch((err) => {
-        console.error('Guest info patch failed:', err);
-      });
+      if (doc.gender) patch.guest_gender = doc.gender;
+      if (doc.birth_place) patch.guest_birth_place = doc.birth_place;
+      if (doc.address) patch.guest_address = doc.address;
+      if (doc.expiry_date) patch.guest_document_expiry_date = doc.expiry_date;
+      if (doc.issue_date) patch.guest_document_issue_date = doc.issue_date;
+      await axios.patch(`/bookings/${bookingId}/guest-info`, patch);
       toast.success('Kimlik bilgileri rezervasyona aktarıldı');
       loadTodayArrivals();
     } catch (e) {
-      toast.warning('Bilgiler aktarılamadı, manuel güncelleyebilirsiniz');
+      toast.error(e.response?.data?.detail || 'Kimlik bilgileri rezervasyona aktarılamadı');
     }
   };
 
@@ -141,6 +145,8 @@ const ArrivalList = ({ user, tenant, onLogout }) => {
   };
 
   const assignRoom = async (bookingId) => {
+    if (busyId) return;
+    setBusyId(bookingId);
     try {
       // Auto-assign based on preferences
       await axios.post(`/bookings/${bookingId}/assign-room`);
@@ -148,6 +154,8 @@ const ArrivalList = ({ user, tenant, onLogout }) => {
       loadTodayArrivals();
     } catch (error) {
       toast.error('Oda atanamadı');
+    } finally {
+      setBusyId(null);
     }
   };
 
@@ -282,12 +290,13 @@ const ArrivalList = ({ user, tenant, onLogout }) => {
               <CardContent className="pt-4">
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-2">
-                      <h3 className="text-lg font-bold">Booking #{booking.id.substring(0, 8).toUpperCase()}</h3>
+                    <div className="flex items-center gap-2 mb-1">
+                      <h3 className="text-lg font-bold">{booking.guest_name || 'Misafir Bilgisi Eksik'}</h3>
                       {getVIPBadge(booking)}
                       {getGroupBadge(booking)}
                       {getOnlineCheckinBadge(booking)}
                     </div>
+                    <div className="text-xs text-gray-500 mb-2">Rezervasyon #{booking.id.substring(0, 8).toUpperCase()}</div>
                     
                     <div className="grid grid-cols-3 gap-4 text-sm">
                       <div>
@@ -337,10 +346,11 @@ const ArrivalList = ({ user, tenant, onLogout }) => {
                       <Button 
                         size="sm" 
                         onClick={() => assignRoom(booking.id)}
+                        disabled={busyId === booking.id}
                         className="mb-3"
                       >
                         <BedDouble className="w-4 h-4 mr-2" />
-                        Oda Ata
+                        {busyId === booking.id ? 'Atanıyor…' : 'Oda Ata'}
                       </Button>
                     )}
                     {(booking.status || '').toLowerCase() !== 'checked_in' && (
@@ -373,7 +383,7 @@ const ArrivalList = ({ user, tenant, onLogout }) => {
                         </Button>
                       </div>
                     )}
-                    <p className="text-lg font-semibold">€{booking.total_amount}</p>
+                    <p className="text-lg font-semibold">{formatCurrency(booking.total_amount, booking.currency || tenant?.currency || cachedTenantCurrency())}</p>
                   </div>
                 </div>
               </CardContent>

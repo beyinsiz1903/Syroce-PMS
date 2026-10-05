@@ -368,6 +368,7 @@ Token almak icin `/api/auth/login` endpoint'ini kullanin.
         upload_dir.mkdir(parents=True, exist_ok=True)
     except (PermissionError, OSError) as e:
         import logging
+
         logging.getLogger(__name__).warning("Upload dir creation failed (%s): %s", upload_dir, e)
 
     # ── Frontend SPA static serving (combined deployment) ───────────
@@ -411,7 +412,12 @@ Token almak icin `/api/auth/login` endpoint'ini kullanin.
         async def _spa_404_handler(request: _Request, exc: _StarletteHTTPException):
             path = request.url.path
             if path.startswith(_SPA_PROTECTED_PREFIXES):
-                return _JR({"detail": "Not Found"}, status_code=404)
+                # Keep unmatched API routes generic, but preserve the explicit
+                # authenticated transfer error so front-desk failures are
+                # actionable instead of being flattened to "Not Found".
+                is_cari_transfer = path.startswith("/api/pms/reservations/") and path.endswith("/transfer-to-cari")
+                detail = exc.detail if is_cari_transfer else "Not Found"
+                return _JR({"detail": detail}, status_code=404)
             candidate = frontend_build / path.lstrip("/")
             if path != "/" and candidate.is_file():
                 return _FR(str(candidate))

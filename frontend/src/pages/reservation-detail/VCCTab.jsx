@@ -17,7 +17,8 @@ function formatCardNumber(num) {
 }
 export function VCCTab({
   booking,
-  onRefresh
+  onRefresh,
+  readOnly = false,
 }) {
   const {
     t
@@ -70,6 +71,7 @@ export function VCCTab({
     };
   }, [revealed]);
   const handleStore = async () => {
+    if (readOnly) return;
     if (!form.card_holder || !form.card_number || !form.expiry) {
       toast.error('Kart sahibi, numara ve son kullanma zorunludur');
       return;
@@ -163,7 +165,7 @@ export function VCCTab({
             <div className="text-sm text-gray-600 mb-4">
               {t('cm.pages_reservationdetail_VCCTab.bu_rezervasyon_icin_kayitli_sanal_kart_y')}
             </div>
-            {!showForm ? <Button onClick={() => setShowForm(true)} variant="outline">
+            {readOnly ? <p className="text-xs text-slate-500">Tamamlanmış rezervasyona yeni kart eklenemez.</p> : !showForm ? <Button onClick={() => setShowForm(true)} variant="outline">
                 <Plus className="w-4 h-4 mr-2" /> {t('cm.pages_reservationdetail_VCCTab.manuel_kart_ekle')}
               </Button> : <div className="text-left space-y-3 max-w-md mx-auto">
                 <div>
@@ -271,9 +273,9 @@ export function VCCTab({
 
             {/* Actions */}
             <div className="flex gap-2 justify-end flex-wrap">
-              <Button variant="destructive" size="sm" onClick={() => setShowDelete(true)} disabled={busy}>
+              {!readOnly && <Button variant="destructive" size="sm" onClick={() => setShowDelete(true)} disabled={busy}>
                 <Trash2 className="w-4 h-4 mr-2" /> {t('cm.pages_reservationdetail_VCCTab.sil')}
-              </Button>
+              </Button>}
               <Button onClick={() => setShowConfirm(true)} disabled={busy || locked || remaining === 0} size="sm">
                 {locked || remaining === 0 ? <>
                     <EyeOff className="w-4 h-4 mr-2" /> {t('cm.pages_reservationdetail_VCCTab.goruntulenemez')}

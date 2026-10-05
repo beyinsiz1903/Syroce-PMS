@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from pymongo.errors import PyMongoError
 
-from api.routes.incoming_invoice_integrations import require_admin, router
+from api.routes.incoming_invoice_integrations import require_finance, router
 from core.integrations.invoice_return_service import ReturnActionReservationResult
 from core.tenant_db import TENANT_SCOPED_COLLECTIONS
 from models.schemas.incoming_invoice import IncomingInvoiceProviderStatus
@@ -24,7 +24,7 @@ def _admin_user():
     return SimpleNamespace(id="admin-id", tenant_id="tenant-id")
 
 
-app.dependency_overrides[require_admin] = _admin_user
+app.dependency_overrides[require_finance] = _admin_user
 
 
 def test_return_persistence_collections_are_tenant_scoped():

@@ -9,12 +9,15 @@ A single transient Atlas drop in the middle of the loop must NOT 500 the
 whole endpoint — the wrapper retries each call up to 4 times with
 exponential backoff before propagating.
 """
+import asyncio
 from types import SimpleNamespace
 
 import pytest
 from pymongo.errors import AutoReconnect, NetworkTimeout, ServerSelectionTimeoutError
 
 from domains.admin.router import stress as stress_mod
+
+_REAL_ASYNCIO_SLEEP = asyncio.sleep
 
 
 class _FlakyColl:
@@ -45,7 +48,12 @@ class _AlwaysFailColl:
 def _fast_sleep(monkeypatch):
     async def _no_sleep(_):
         return None
-    monkeypatch.setattr(stress_mod.asyncio, "sleep", _no_sleep)
+    monkeypatch.setattr(stress_mod, "_retry_sleep", _no_sleep)
+
+
+def test_fast_sleep_is_scoped_to_retry_helper():
+    """Retry tests must not replace asyncio.sleep for the shared test loop."""
+    assert asyncio.sleep is _REAL_ASYNCIO_SLEEP
 
 
 async def test_retry_succeeds_after_transient_autoreconnect():
@@ -105,7 +113,7 @@ async def test_retry_backoff_schedule_locked(monkeypatch):
     async def _record_sleep(delay):
         sleeps.append(delay)
 
-    monkeypatch.setattr(stress_mod.asyncio, "sleep", _record_sleep)
+    monkeypatch.setattr(stress_mod, "_retry_sleep", _record_sleep)
     col = _FlakyColl(fail_times=3, exc=AutoReconnect("flap"))
     await stress_mod._delete_many_with_retry(col, {}, col_name="invoices")
     assert sleeps == [0.25, 0.5, 1.0]

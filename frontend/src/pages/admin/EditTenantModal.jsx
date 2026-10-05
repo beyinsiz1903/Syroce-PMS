@@ -37,19 +37,10 @@ const EditTenantModal = ({ open, onOpenChange, tenant, onSuccess }) => {
         description: tenant.description || '',
         total_rooms: tenant.total_rooms || '',
       });
-      // Initial module map: copy from tenant.modules. For ANY sub-tab key
-      // (anything containing a dot, e.g. `pms.frontdesk`, `channels.dashboard`,
-      // `reports.excel`) not yet in the map, default to true so existing
-      // tenants keep all sub-tabs visible (backward compatible with the
-      // hub-side gating which treats missing keys as "enabled").
-      const baseModules = { ...(tenant.modules || {}) };
-      MODULE_GROUPS.forEach((group) => {
-        group.items.forEach((item) => {
-          if (item.key in baseModules) return;
-          if (item.key.includes('.')) baseModules[item.key] = true;
-        });
-      });
-      setModulesMap(baseModules);
+      // Do not materialize missing sub-module switches as enabled. Doing so
+      // turned a harmless edit of an old hotel into an accidental rollout of
+      // PMS/RMS/channel/report screens the hotel never selected.
+      setModulesMap({ ...(tenant.modules || {}) });
       setChannelProvider(tenant.channel_manager_provider || '');
       setError(null);
       setActiveTab('info');

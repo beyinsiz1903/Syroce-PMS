@@ -17,11 +17,13 @@ logger = logging.getLogger(__name__)
 
 class CASFailedError(Exception):
     """Raised when CAS or transaction validation fails."""
+
     pass
 
 
 class PreconditionFailedError(Exception):
     """Raised when MongoDB transaction support is missing or another precondition fails."""
+
     pass
 
 
@@ -31,11 +33,7 @@ class ReturnAllocationRequest(BaseModel):
     return_action_id: str
 
 
-async def allocate_return_quantities(
-    tenant_id: str,
-    source_incoming_invoice_id: str,
-    allocations: Sequence[ReturnAllocationRequest]
-) -> list[InvoiceReturnAllocation]:
+async def allocate_return_quantities(tenant_id: str, source_incoming_invoice_id: str, allocations: Sequence[ReturnAllocationRequest]) -> list[InvoiceReturnAllocation]:
     """
     Atomically allocates return quantities from invoice balances.
     Must be run in a MongoDB transaction. If transactions are not supported,
@@ -49,9 +47,7 @@ async def allocate_return_quantities(
         async with await core.database.client.start_session() as session:
             try:
                 async with session.start_transaction():
-                    return await _allocate_within_transaction(
-                        db, session, tenant_id, source_incoming_invoice_id, allocations
-                    )
+                    return await _allocate_within_transaction(db, session, tenant_id, source_incoming_invoice_id, allocations)
             except pymongo.errors.OperationFailure as exc:
                 # Code 20 (IllegalOperation) or similar often means standalone server
                 if "Transaction" in str(exc) or exc.code in (20, 246):
@@ -65,11 +61,7 @@ async def allocate_return_quantities(
 
 
 async def _allocate_within_transaction(
-    db: AsyncIOMotorDatabase,
-    session: AsyncIOMotorClientSession,
-    tenant_id: str,
-    source_incoming_invoice_id: str,
-    allocations: Sequence[ReturnAllocationRequest]
+    db: AsyncIOMotorDatabase, session: AsyncIOMotorClientSession, tenant_id: str, source_incoming_invoice_id: str, allocations: Sequence[ReturnAllocationRequest]
 ) -> list[InvoiceReturnAllocation]:
     now = datetime.now(UTC)
     results: list[InvoiceReturnAllocation] = []
@@ -77,12 +69,7 @@ async def _allocate_within_transaction(
     for alloc_req in allocations:
         # 1. Fetch balance document
         balance_doc = await db.invoice_return_balances.find_one(
-            {
-                "tenant_id": tenant_id,
-                "source_incoming_invoice_id": source_incoming_invoice_id,
-                "source_line_id": alloc_req.source_line_id
-            },
-            session=session
+            {"tenant_id": tenant_id, "source_incoming_invoice_id": source_incoming_invoice_id, "source_line_id": alloc_req.source_line_id}, session=session
         )
 
         if not balance_doc:
@@ -93,26 +80,13 @@ async def _allocate_within_transaction(
         # 2. Check quantities
         total_used = balance.reserved_quantity + balance.confirmed_quantity
         if total_used + alloc_req.quantity > balance.original_quantity:
-            raise CASFailedError(
-                f"Insufficient quantity for line {alloc_req.source_line_id}. "
-                f"Requested: {alloc_req.quantity}, Available: {balance.original_quantity - total_used}"
-            )
+            raise CASFailedError(f"Insufficient quantity for line {alloc_req.source_line_id}. Requested: {alloc_req.quantity}, Available: {balance.original_quantity - total_used}")
 
         # 3. Update balance (CAS update with version)
         update_res = await db.invoice_return_balances.update_one(
-            {
-                "tenant_id": tenant_id,
-                "source_incoming_invoice_id": source_incoming_invoice_id,
-                "source_line_id": alloc_req.source_line_id,
-                "version": balance.version
-            },
-            {
-                "$set": {
-                    "reserved_quantity": str(balance.reserved_quantity + alloc_req.quantity),
-                    "version": balance.version + 1
-                }
-            },
-            session=session
+            {"tenant_id": tenant_id, "source_incoming_invoice_id": source_incoming_invoice_id, "source_line_id": alloc_req.source_line_id, "version": balance.version},
+            {"$set": {"reserved_quantity": str(balance.reserved_quantity + alloc_req.quantity), "version": balance.version + 1}},
+            session=session,
         )
 
         if update_res.modified_count != 1:
@@ -128,23 +102,16 @@ async def _allocate_within_transaction(
             quantity=alloc_req.quantity,
             state=ReturnAllocationState.RESERVED,
             created_at=now,
-            updated_at=now
+            updated_at=now,
         )
 
-        await db.invoice_return_allocations.insert_one(
-            allocation.model_dump(mode="json"),
-            session=session
-        )
+        await db.invoice_return_allocations.insert_one(allocation.model_dump(mode="json"), session=session)
         results.append(allocation)
 
     return results
 
 
-async def update_allocation_state(
-    tenant_id: str,
-    allocation_id: str,
-    new_state: ReturnAllocationState
-) -> InvoiceReturnAllocation | None:
+async def update_allocation_state(tenant_id: str, allocation_id: str, new_state: ReturnAllocationState) -> InvoiceReturnAllocation | None:
     """
     Updates the state of an allocation. If moving to CONFIRMED or RELEASED,
     adjusts the balance accordingly.
@@ -153,10 +120,7 @@ async def update_allocation_state(
 
     async with await core.database.client.start_session() as session:
         async with session.start_transaction():
-            alloc_doc = await db.invoice_return_allocations.find_one(
-                {"tenant_id": tenant_id, "id": allocation_id},
-                session=session
-            )
+            alloc_doc = await db.invoice_return_allocations.find_one({"tenant_id": tenant_id, "id": allocation_id}, session=session)
             if not alloc_doc:
                 return None
 
@@ -169,11 +133,7 @@ async def update_allocation_state(
             now = datetime.now(UTC)
 
             # Update allocation state
-            await db.invoice_return_allocations.update_one(
-                {"tenant_id": tenant_id, "id": allocation_id},
-                {"$set": {"state": new_state, "updated_at": now}},
-                session=session
-            )
+            await db.invoice_return_allocations.update_one({"tenant_id": tenant_id, "id": allocation_id}, {"$set": {"state": new_state, "updated_at": now}}, session=session)
             allocation.state = new_state
             allocation.updated_at = now
 
@@ -184,50 +144,29 @@ async def update_allocation_state(
                 ReturnAllocationState.RECONCILIATION_REQUIRED,
             ):
                 balance_doc = await db.invoice_return_balances.find_one(
-                    {
-                        "tenant_id": tenant_id,
-                        "source_incoming_invoice_id": allocation.source_incoming_invoice_id,
-                        "source_line_id": allocation.source_line_id
-                    },
-                    session=session
+                    {"tenant_id": tenant_id, "source_incoming_invoice_id": allocation.source_incoming_invoice_id, "source_line_id": allocation.source_line_id}, session=session
                 )
                 if balance_doc:
                     bal = InvoiceReturnBalance(**balance_doc)
                     update_res = None
                     if new_state == ReturnAllocationState.CONFIRMED:
                         update_res = await db.invoice_return_balances.update_one(
-                            {
-                                "tenant_id": tenant_id,
-                                "source_incoming_invoice_id": allocation.source_incoming_invoice_id,
-                                "source_line_id": allocation.source_line_id,
-                                "version": bal.version
-                            },
+                            {"tenant_id": tenant_id, "source_incoming_invoice_id": allocation.source_incoming_invoice_id, "source_line_id": allocation.source_line_id, "version": bal.version},
                             {
                                 "$set": {
                                     "reserved_quantity": str(bal.reserved_quantity - allocation.quantity),
                                     "confirmed_quantity": str(bal.confirmed_quantity + allocation.quantity),
                                     "version": bal.version + 1,
-                                    "updated_at": now
+                                    "updated_at": now,
                                 }
                             },
-                            session=session
+                            session=session,
                         )
                     elif new_state == ReturnAllocationState.RELEASED:
                         update_res = await db.invoice_return_balances.update_one(
-                            {
-                                "tenant_id": tenant_id,
-                                "source_incoming_invoice_id": allocation.source_incoming_invoice_id,
-                                "source_line_id": allocation.source_line_id,
-                                "version": bal.version
-                            },
-                            {
-                                "$set": {
-                                    "reserved_quantity": str(bal.reserved_quantity - allocation.quantity),
-                                    "version": bal.version + 1,
-                                    "updated_at": now
-                                }
-                            },
-                            session=session
+                            {"tenant_id": tenant_id, "source_incoming_invoice_id": allocation.source_incoming_invoice_id, "source_line_id": allocation.source_line_id, "version": bal.version},
+                            {"$set": {"reserved_quantity": str(bal.reserved_quantity - allocation.quantity), "version": bal.version + 1, "updated_at": now}},
+                            session=session,
                         )
 
                     if update_res and update_res.modified_count != 1:

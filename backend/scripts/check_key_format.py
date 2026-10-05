@@ -17,5 +17,6 @@ def check_key(name):
     if length != stripped_length:
         print(f"  -> WARNING: {name} contains leading or trailing whitespace!")
 
+
 check_key("CM_MASTER_KEY_CURRENT")
 check_key("CM_MASTER_KEY_PREVIOUS")

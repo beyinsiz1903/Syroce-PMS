@@ -85,7 +85,7 @@ async def _build_complaint_management(current_user) -> dict:
         .limit(20)
         .to_list(20),
         db.feedback.find(
-            {"tenant_id": tid, "rating": {"$lte": 2}},
+            {"tenant_id": tid, "method": {"$ne": "discount"}, "rating": {"$lte": 2}},
             {"_id": 0, "category": 1},
         ).to_list(10000),
         db.feedback.find(
@@ -223,7 +223,7 @@ async def _compute_period_metrics(tid: str, date, total_rooms: int) -> dict:
         ),
         db.payments.aggregate(
             [
-                {"$match": {"tenant_id": tid, "payment_date": {"$gte": date_iso, "$lt": next_iso}}},
+                {"$match": {"tenant_id": tid, "method": {"$ne": "discount"}, "payment_date": {"$gte": date_iso, "$lt": next_iso}}},
                 {"$group": {"_id": None, "t": {"$sum": "$amount"}}},
             ]
         ).to_list(1),
@@ -306,7 +306,7 @@ async def get_enhanced_snapshot(credentials: HTTPAuthorizationCredentials = Depe
         room_status_rows,
         channel_rows,
     ) = await asyncio.gather(
-        db.rooms.count_documents({"tenant_id": tid}),
+        db.rooms.count_documents({"tenant_id": tid, "method": {"$ne": "discount"}}),
         db.maintenance_tasks.count_documents(
             {
                 "tenant_id": tid,

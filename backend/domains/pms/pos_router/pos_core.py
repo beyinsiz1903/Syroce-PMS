@@ -9,16 +9,20 @@ Domain Router: POS & F&B
 
 Extracted from legacy_routes.py — Point of Sale, F&B operations, kitchen, transactions.
 """
+import asyncio
+import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel
 
 from core.database import db
 from core.security import get_current_user, security
 from models.schemas import User
+
+logger = logging.getLogger(__name__)
 
 # ============= POS / F&B ENDPOINTS =============
 
@@ -39,17 +43,24 @@ async def _query_pos_transactions(
 ) -> list[dict]:
     """Canonical POS transaction query.
 
-    Reads from pos_menu_transactions (same source as /pos/z-report and
-    /pos/void-transactions). Falls back to legacy collections (transactions,
-    pos_orders) so older data still surfaces.
+    Finalized payments live in ``pos_transactions``. Older integrations wrote
+    to ``pos_menu_transactions`` or the shared ``transactions`` collection.
+    ``pos_orders`` is an operational order source, not a payment ledger, but is
+    retained as a last-resort legacy fallback when no finalized transaction for
+    that order exists. Read every source and de-duplicate by transaction and
+    order identity so the same check cannot be counted twice.
     """
-    base_q: dict[str, Any] = {"tenant_id": tenant_id}
+    common_q: dict[str, Any] = {"tenant_id": tenant_id}
     if outlet_id:
-        base_q["outlet_id"] = outlet_id
+        common_q["outlet_id"] = outlet_id
     if booking_id:
-        base_q["booking_id"] = booking_id
+        common_q["booking_id"] = booking_id
+
+    legacy_q = dict(common_q)
+    order_q = dict(common_q)
     if date:
-        base_q["transaction_date"] = date
+        legacy_q["transaction_date"] = date
+        order_q["business_date"] = date
     elif start_date or end_date:
         rng: dict[str, Any] = {}
         if start_date:
@@ -57,20 +68,47 @@ async def _query_pos_transactions(
         if end_date:
             rng["$lte"] = end_date
         if rng:
-            base_q["transaction_date"] = rng
+            legacy_q["transaction_date"] = rng
+            order_q["business_date"] = dict(rng)
 
-    try:
-        rows = await db.pos_menu_transactions.find(base_q, {"_id": 0}).sort("created_at", -1).to_list(limit)
-        if rows:
-            return rows
-        # Legacy fallback #1: db.transactions
-        rows = await db.transactions.find(base_q, {"_id": 0}).sort("created_at", -1).to_list(limit)
-        if rows:
-            return rows
-        # Legacy fallback #2: db.pos_orders
-        return await db.pos_orders.find(base_q, {"_id": 0}).sort("created_at", -1).to_list(limit)
-    except Exception:
-        return []
+    tx_q = dict(legacy_q)
+    tx_q["$or"] = [{"category": "pos"}, {"_closure_source": "pos_menu_transactions"}]
+
+    source_rows = await asyncio.gather(
+        db.pos_transactions.find(legacy_q, {"_id": 0}).sort("created_at", -1).to_list(limit),
+        db.pos_menu_transactions.find(legacy_q, {"_id": 0}).sort("created_at", -1).to_list(limit),
+        db.transactions.find(tx_q, {"_id": 0}).sort("created_at", -1).to_list(limit),
+        db.pos_orders.find(order_q, {"_id": 0}).sort("created_at", -1).to_list(limit),
+    )
+
+    financial_rows = [*source_rows[0], *source_rows[1], *source_rows[2]]
+    settled_order_ids = {
+        str(row.get("order_id"))
+        for row in financial_rows
+        if row.get("order_id")
+    }
+    merged: list[dict] = []
+    seen_ids: set[str] = set()
+    financial_order_source: dict[str, int] = {}
+    for source_index, rows in enumerate(source_rows):
+        is_order_source = source_index == 3
+        for row in rows:
+            row_id = str(row.get("id") or row.get("transaction_id") or "")
+            order_id = str(row.get("order_id") or (row_id if is_order_source else ""))
+            if is_order_source and order_id and order_id in settled_order_ids:
+                continue
+            if not is_order_source and order_id:
+                prior_source = financial_order_source.get(order_id)
+                if prior_source is not None and prior_source != source_index:
+                    continue
+                financial_order_source.setdefault(order_id, source_index)
+            if row_id and row_id in seen_ids:
+                continue
+            if row_id:
+                seen_ids.add(row_id)
+            merged.append(row)
+    merged.sort(key=lambda row: str(row.get("created_at") or ""), reverse=True)
+    return merged[:limit]
 
 
 async def get_anomaly_detection(credentials: HTTPAuthorizationCredentials = Depends(security)):
@@ -253,15 +291,80 @@ router = APIRouter(prefix="/api", tags=["pos-fnb"])
 
 # ── GET /pos/daily-summary ──
 @router.get("/pos/daily-summary")
-async def get_pos_daily_summary(date: str = None, current_user: User = Depends(get_current_user)):
-    """Get daily POS summary"""
-    try:
-        transactions = await db.transactions.find({"tenant_id": current_user.tenant_id, "type": {"$in": ["fnb_charge", "room_charge"]}}, {"_id": 0}).to_list(1000)
+async def get_pos_daily_summary(
+    date: str | None = None,
+    outlet_id: str | None = None,
+    current_user: User = Depends(get_current_user),
+):
+    """Return the selected business day's canonical POS summary.
 
-        total_sales = sum(t.get("amount", 0) for t in transactions)
-        return {"total_sales": total_sales, "transaction_count": len(transactions), "average_transaction": total_sales / len(transactions) if transactions else 0}
-    except Exception:
-        return {"total_sales": 0, "transaction_count": 0, "average_transaction": 0}
+    The previous implementation ignored ``date`` and read every historical
+    legacy transaction, so the mobile screen labelled the lifetime total as
+    "today".  Keep this endpoint aligned with Z reports and transaction lists
+    by using their shared canonical query and optional outlet filter.
+    """
+    if not date:
+        settings = await db.tenant_settings.find_one(
+            {"tenant_id": current_user.tenant_id},
+            {"_id": 0, "business_date": 1},
+        )
+        date = str((settings or {}).get("business_date") or datetime.now(UTC).date().isoformat())
+
+    transactions = await _query_pos_transactions(
+        current_user.tenant_id,
+        limit=5000,
+        outlet_id=outlet_id,
+        date=date,
+    )
+    void_statuses = {"void", "voided", "cancelled", "canceled"}
+    open_statuses = {"pending", "preparing", "ready", "open", "draft"}
+    completed = [
+        row for row in transactions
+        if str(row.get("status") or "").lower() not in void_statuses | open_statuses
+    ]
+    total_sales = round(sum(float(row.get("total_amount", 0) or 0) for row in completed), 2)
+    count = len(completed)
+    item_totals: dict[str, dict[str, Any]] = {}
+    for row in completed:
+        for item in row.get("order_items") or row.get("items") or []:
+            name = str(item.get("item_name") or item.get("name") or "").strip()
+            if not name:
+                continue
+            quantity = float(item.get("quantity", 1) or 0)
+            line_total = item.get("total")
+            if line_total is None:
+                line_total = item.get("total_price")
+            if line_total is None:
+                unit_price = item.get("unit_price")
+                if unit_price is None:
+                    unit_price = item.get("price", 0)
+                line_total = float(unit_price or 0) * quantity
+
+            key = name.casefold()
+            aggregate = item_totals.setdefault(
+                key,
+                {"name": name, "quantity": 0.0, "revenue": 0.0},
+            )
+            aggregate["quantity"] += quantity
+            aggregate["revenue"] += float(line_total or 0)
+
+    top_items = sorted(
+        item_totals.values(),
+        key=lambda item: (-item["quantity"], -item["revenue"], item["name"].casefold()),
+    )[:5]
+    for item in top_items:
+        quantity = item["quantity"]
+        item["quantity"] = int(quantity) if quantity.is_integer() else round(quantity, 2)
+        item["revenue"] = round(item["revenue"], 2)
+
+    return {
+        "date": date,
+        "outlet_id": outlet_id,
+        "total_sales": total_sales,
+        "transaction_count": count,
+        "average_transaction": round(total_sales / count, 2) if count else 0,
+        "top_items": top_items,
+    }
 
 
 # ── GET /pos/transactions ──
@@ -328,22 +431,34 @@ async def get_z_report(
 ):
     """Z raporu — gun sonu (gercek hesaplama).
 
-    Kaynak: pos_menu_transactions. Gecerli tarih (date) veya bugun.
-    Sahte oranlar yerine gercek odeme/kategori dagilimi.
+    Kaynak: kesinleşmiş POS tahsilatları ve uyumlu eski kayıtlar. Geçerli
+    tarih (date) veya tesis iş günü kullanılır. Sahte oranlar yerine gerçek
+    ödeme/kategori dağılımı döndürülür.
     """
     try:
-        report_date = date or datetime.now(UTC).date().isoformat()
-        query = {
-            "tenant_id": current_user.tenant_id,
-            "transaction_date": report_date,
-        }
-        if outlet_id:
-            query["outlet_id"] = outlet_id
+        if date:
+            report_date = date
+        else:
+            settings = await db.tenant_settings.find_one(
+                {"tenant_id": current_user.tenant_id},
+                {"_id": 0, "business_date": 1},
+            )
+            report_date = str((settings or {}).get("business_date") or datetime.now(UTC).date().isoformat())
 
-        all_tx = await db.pos_menu_transactions.find(query, {"_id": 0}).to_list(5000)
+        all_tx = await _query_pos_transactions(
+            current_user.tenant_id,
+            limit=5000,
+            outlet_id=outlet_id,
+            date=report_date,
+        )
 
-        valid_tx = [t for t in all_tx if t.get("status") != "void"]
-        void_tx = [t for t in all_tx if t.get("status") == "void"]
+        void_statuses = {"void", "voided", "cancelled", "canceled"}
+        open_statuses = {"pending", "preparing", "ready", "open", "draft"}
+        valid_tx = [
+            t for t in all_tx
+            if str(t.get("status") or "").lower() not in void_statuses | open_statuses
+        ]
+        void_tx = [t for t in all_tx if str(t.get("status") or "").lower() in void_statuses]
 
         gross_sales = sum(float(t.get("total_amount", 0) or 0) for t in valid_tx)
         discounts = sum(float(t.get("discount_amount", 0) or 0) for t in valid_tx)
@@ -351,19 +466,33 @@ async def get_z_report(
         refunds = sum(float(t.get("total_amount", 0) or 0) for t in void_tx)
         net_sales = max(gross_sales - discounts, 0)
 
-        # Odeme yontemi dagilimi (gercek)
+        # Odeme yontemi dagilimi (gercek). Karma odemelerde toplam tutari
+        # "mixed" kovasina atmak yerine kasada tahsil edilen parcalari koru.
         payment_methods: dict[str, float] = {}
         for t in valid_tx:
-            pm = t.get("payment_method") or "unknown"
-            payment_methods[pm] = payment_methods.get(pm, 0) + float(t.get("total_amount", 0) or 0)
+            breakdown = t.get("payment_breakdown") or []
+            if breakdown:
+                for part in breakdown:
+                    pm = str(part.get("method") or "unknown").strip().lower()
+                    payment_methods[pm] = payment_methods.get(pm, 0) + float(part.get("amount", 0) or 0)
+            else:
+                pm = str(t.get("payment_method") or "unknown").strip().lower()
+                payment_methods[pm] = payment_methods.get(pm, 0) + float(t.get("total_amount", 0) or 0)
 
         # Kategori dagilimi (gercek — items[].category)
         category_sales: dict[str, float] = {}
         for t in valid_tx:
-            for item in t.get("items") or []:
+            for item in t.get("items") or t.get("order_items") or []:
                 cat = item.get("category") or "other"
-                line_total = float(item.get("price", 0) or 0) * float(item.get("quantity", 1) or 1)
-                category_sales[cat] = category_sales.get(cat, 0) + line_total
+                line_total = item.get("total")
+                if line_total is None:
+                    line_total = item.get("total_price")
+                if line_total is None:
+                    unit_price = item.get("price")
+                    if unit_price is None:
+                        unit_price = item.get("unit_price", 0)
+                    line_total = float(unit_price or 0) * float(item.get("quantity", 1) or 1)
+                category_sales[cat] = category_sales.get(cat, 0) + float(line_total or 0)
 
         # Outlet dagilimi
         outlet_breakdown: dict[str, float] = {}
@@ -385,14 +514,14 @@ async def get_z_report(
             "category_sales": {k: round(v, 2) for k, v in category_sales.items()},
             "outlet_breakdown": {k: round(v, 2) for k, v in outlet_breakdown.items()},
         }
-    except Exception as e:
-        return {
-            "report_date": date,
-            "gross_sales": 0,
-            "net_sales": 0,
-            "transaction_count": 0,
-            "error": str(e),
-        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("POS Z report failed tenant=%s date=%s outlet=%s", current_user.tenant_id, date, outlet_id)
+        raise HTTPException(
+            status_code=503,
+            detail="POS raporu şu anda hesaplanamıyor; sıfır satış olarak kaydedilmedi.",
+        ) from exc
 
 
 # ── GET /pos/void-transactions ──
@@ -404,100 +533,25 @@ async def get_void_transactions(
     outlet_id: str | None = None,
     current_user: User = Depends(get_current_user),
 ):
-    """Voided POS transactions, filtered by date/outlet — sourced from
-    pos_menu_transactions so it stays consistent with /pos/z-report."""
+    """Voided POS transactions from every supported POS write path."""
     try:
-        query: dict[str, Any] = {
-            "tenant_id": current_user.tenant_id,
-            "status": "void",
-        }
-        if outlet_id:
-            query["outlet_id"] = outlet_id
-        if date:
-            query["transaction_date"] = date
-        elif start_date or end_date:
-            range_q: dict[str, Any] = {}
-            if start_date:
-                range_q["$gte"] = start_date
-            if end_date:
-                range_q["$lte"] = end_date
-            if range_q:
-                query["transaction_date"] = range_q
-
-        voids = await db.pos_menu_transactions.find(query, {"_id": 0}).to_list(500)
-        if not voids:
-            # Legacy fallback for older data in db.transactions
-            legacy_q = dict(query)
-            voids = await db.transactions.find(legacy_q, {"_id": 0}).to_list(500)
-        return {"void_transactions": voids, "count": len(voids)}
-    except Exception:
-        return {"void_transactions": [], "count": 0}
-
-
-# ── GET /pos/z-report ──
-@router.get("/pos/z-report")
-async def get_z_report_detailed(date: str | None = None, outlet_id: str | None = None, credentials: HTTPAuthorizationCredentials = Depends(security)):
-    """Get Z report (end of day report) for POS"""
-    current_user = await get_current_user(credentials)
-
-    if date:
-        target_date = datetime.fromisoformat(date)
-    else:
-        target_date = datetime.now(UTC)
-
-    start_of_day = target_date.replace(hour=0, minute=0, second=0)
-    end_of_day = target_date.replace(hour=23, minute=59, second=59)
-
-    query = {"tenant_id": current_user.tenant_id, "created_at": {"$gte": start_of_day, "$lte": end_of_day}}
-
-    if outlet_id:
-        query["outlet_id"] = outlet_id
-
-    # Get all transactions
-    total_sales = 0
-    total_tax = 0
-    transaction_count = 0
-    payment_methods = {}
-    voided_amount = 0
-
-    async for transaction in db.pos_transactions.find(query):
-        if transaction.get("status") == "voided":
-            voided_amount += transaction.get("total_amount", 0)
-            continue
-
-        total_sales += transaction.get("total_amount", 0)
-        total_tax += transaction.get("tax_amount", 0)
-        transaction_count += 1
-
-        payment_method = transaction.get("payment_method", "cash")
-        payment_methods[payment_method] = payment_methods.get(payment_method, 0) + transaction.get("total_amount", 0)
-
-    # Get category breakdown
-    category_sales = {}
-    async for order in db.pos_orders.find(query):
-        for item in order.get("items", []):
-            category = item.get("category", "other")
-            category_sales[category] = category_sales.get(category, 0) + item.get("total", 0)
-
-    # Calculate net sales
-    net_sales = total_sales - voided_amount
-
-    return {
-        "date": target_date.date().isoformat(),
-        "outlet_id": outlet_id,
-        "report_type": "z_report",
-        "summary": {
-            "gross_sales": total_sales,
-            "voided_amount": voided_amount,
-            "net_sales": net_sales,
-            "total_tax": total_tax,
-            "transaction_count": transaction_count,
-            "average_transaction": net_sales / transaction_count if transaction_count > 0 else 0,
-        },
-        "payment_methods": payment_methods,
-        "category_sales": category_sales,
-        "generated_at": datetime.now(UTC).isoformat(),
-    }
+        rows = await _query_pos_transactions(
+            current_user.tenant_id,
+            limit=500,
+            outlet_id=outlet_id,
+            date=date,
+            start_date=start_date,
+            end_date=end_date,
+        )
+    except Exception as exc:
+        logger.exception("POS void report failed tenant=%s date=%s outlet=%s", current_user.tenant_id, date, outlet_id)
+        raise HTTPException(
+            status_code=503,
+            detail="POS iptal kayıtları şu anda hesaplanamıyor.",
+        ) from exc
+    void_statuses = {"void", "voided", "cancelled", "canceled"}
+    voids = [row for row in rows if str(row.get("status") or "").lower() in void_statuses]
+    return {"void_transactions": voids, "count": len(voids)}
 
 
 # ── GET /pos/void-report ──

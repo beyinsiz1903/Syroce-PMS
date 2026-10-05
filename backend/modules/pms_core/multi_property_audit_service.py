@@ -6,7 +6,9 @@ escalation flow, and multi-property readiness score.
 
 from datetime import UTC, datetime, timedelta
 
-from core.database import db
+from core.tenant_db import get_system_db
+from models.schemas import User
+from modules.pms_core.chain_access import resolve_chain_properties, tenant_id_from_document
 
 
 class MultiPropertyAuditService:
@@ -14,15 +16,17 @@ class MultiPropertyAuditService:
 
     AUDIT_STATUSES = ["completed", "running", "blocked", "failed", "pending"]
 
-    async def get_audit_status_board(self, tenant_id: str) -> dict:
-        """Get audit status for all properties visible to this tenant."""
-        # Get all properties (tenants) - in a real multi-property setup, this would
-        # query properties linked to a parent/group tenant
-        properties = await db.tenants.find({}, {"_id": 0, "id": 1, "name": 1, "property_name": 1}).to_list(100)
+    async def _scoped_properties(self, current_user: User) -> tuple[str, list[dict]]:
+        """Resolve the only properties visible in a central audit view."""
+        own, properties = await resolve_chain_properties(current_user, require_headquarters=True)
+        tenant_id = tenant_id_from_document(own)
+        if not tenant_id:  # pragma: no cover - guarded by resolver invariant
+            raise ValueError("Tenant document has no identifier")
+        return tenant_id, properties
 
-        if not properties:
-            # Single property mode - use current tenant
-            properties = [{"id": tenant_id, "property_name": "Current Property"}]
+    async def get_audit_status_board(self, current_user: User) -> dict:
+        """Get audit status for all properties visible to this tenant."""
+        tenant_id, properties = await self._scoped_properties(current_user)
 
         board = []
         total_completed = 0
@@ -31,7 +35,7 @@ class MultiPropertyAuditService:
         total_exceptions = 0
 
         for prop in properties:
-            pid = prop.get("id", tenant_id)
+            pid = tenant_id_from_document(prop) or tenant_id
             status = await self._get_property_audit_status(pid)
             board.append(
                 {
@@ -71,18 +75,19 @@ class MultiPropertyAuditService:
         yesterday = (datetime.now(UTC).date() - timedelta(days=1)).isoformat()
 
         # Check last audit record
-        last_audit = await db.night_audit_records.find_one(
+        system_db = get_system_db()
+        last_audit = await system_db.night_audit_records.find_one(
             {"tenant_id": property_id},
             {"_id": 0},
             sort=[("started_at", -1)],
         )
 
         # Business date
-        settings = await db.tenant_settings.find_one({"tenant_id": property_id}, {"_id": 0})
+        settings = await system_db.tenant_settings.find_one({"tenant_id": property_id}, {"_id": 0})
         business_date = settings.get("business_date") if settings else today
 
         # Open exceptions
-        open_exc = await db.audit_exceptions.count_documents({"tenant_id": property_id, "status": "open"})
+        open_exc = await system_db.audit_exceptions.count_documents({"tenant_id": property_id, "status": "open"})
 
         # Determine status
         audit_status = "pending"
@@ -114,10 +119,14 @@ class MultiPropertyAuditService:
             "recent_exceptions": exceptions_list,
         }
 
-    async def get_exception_summary(self, tenant_id: str) -> dict:
+    async def get_exception_summary(self, current_user: User) -> dict:
         """Get aggregated exception summary across all properties."""
-        # Get all open exceptions
-        exceptions = await db.audit_exceptions.find({"status": "open"}, {"_id": 0}).sort("created_at", -1).to_list(500)
+        _, properties = await self._scoped_properties(current_user)
+        tenant_ids = [tenant_id_from_document(prop) for prop in properties]
+        system_db = get_system_db()
+        exceptions = await system_db.audit_exceptions.find(
+            {"tenant_id": {"$in": [tenant_id for tenant_id in tenant_ids if tenant_id]}, "status": "open"}, {"_id": 0}
+        ).sort("created_at", -1).to_list(500)
 
         by_type = {}
         by_property = {}
@@ -139,10 +148,20 @@ class MultiPropertyAuditService:
             "recent": exceptions[:20],
         }
 
-    async def get_unresolved_blockers(self, tenant_id: str) -> dict:
+    async def get_unresolved_blockers(self, current_user: User) -> dict:
         """Get unresolved blockers preventing audit completion."""
+        _, properties = await self._scoped_properties(current_user)
+        tenant_ids = [tenant_id_from_document(prop) for prop in properties]
+        system_db = get_system_db()
         blockers = (
-            await db.audit_exceptions.find({"status": "open", "exception_type": {"$in": ["pending_arrival", "pending_departure", "no_open_folio", "room_charge_failure", "tax_mismatch"]}}, {"_id": 0})
+            await system_db.audit_exceptions.find(
+                {
+                    "tenant_id": {"$in": [tenant_id for tenant_id in tenant_ids if tenant_id]},
+                    "status": "open",
+                    "exception_type": {"$in": ["pending_arrival", "pending_departure", "no_open_folio", "room_charge_failure", "tax_mismatch"]},
+                },
+                {"_id": 0},
+            )
             .sort("created_at", -1)
             .to_list(200)
         )
@@ -158,19 +177,24 @@ class MultiPropertyAuditService:
             "warning_count": len(warning),
         }
 
-    async def escalate_exception(self, tenant_id: str, exception_id: str, escalated_by: str, escalation_note: str) -> dict:
+    async def escalate_exception(self, current_user: User, exception_id: str, escalation_note: str) -> dict:
         """Escalate an audit exception."""
-        exc = await db.audit_exceptions.find_one({"id": exception_id}, {"_id": 0})
+        tenant_id, properties = await self._scoped_properties(current_user)
+        tenant_ids = [tenant_id_from_document(prop) for prop in properties]
+        system_db = get_system_db()
+        exc = await system_db.audit_exceptions.find_one(
+            {"id": exception_id, "tenant_id": {"$in": [value for value in tenant_ids if value]}}, {"_id": 0}
+        )
         if not exc:
             return {"success": False, "error": "Exception not found"}
 
         now = datetime.now(UTC).isoformat()
-        await db.audit_exceptions.update_one(
-            {"id": exception_id},
+        await system_db.audit_exceptions.update_one(
+            {"id": exception_id, "tenant_id": exc.get("tenant_id")},
             {
                 "$set": {
                     "escalated": True,
-                    "escalated_by": escalated_by,
+                    "escalated_by": current_user.id,
                     "escalated_at": now,
                     "escalation_note": escalation_note,
                 }
@@ -178,13 +202,13 @@ class MultiPropertyAuditService:
         )
 
         # Log escalation
-        await db.pms_audit_trail.insert_one(
+        await system_db.pms_audit_trail.insert_one(
             {
                 "tenant_id": exc.get("tenant_id", tenant_id),
                 "entity_type": "audit_exception",
                 "entity_id": exception_id,
                 "action": "exception_escalated",
-                "performed_by": escalated_by,
+                "performed_by": current_user.id,
                 "metadata": {"note": escalation_note},
                 "timestamp": now,
             }
@@ -192,9 +216,9 @@ class MultiPropertyAuditService:
 
         return {"success": True, "exception_id": exception_id}
 
-    async def get_readiness_score(self, tenant_id: str) -> dict:
+    async def get_readiness_score(self, current_user: User) -> dict:
         """Calculate multi-property readiness score."""
-        board = await self.get_audit_status_board(tenant_id)
+        board = await self.get_audit_status_board(current_user)
         score = board["readiness_score"]
 
         # Factor in open exceptions

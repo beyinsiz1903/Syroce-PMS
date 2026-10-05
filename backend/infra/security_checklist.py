@@ -86,16 +86,16 @@ class SecurityChecklistValidator:
     def check_credential_masking(self) -> dict[str, Any]:
         """Verify credential masking module is available and functional."""
         try:
-            from modules.security_hardening.data_masking import mask_sensitive_data
+            from modules.security_hardening.data_masking import data_masking
 
             test_data = {"credit_card": "4111111111111111", "name": "Test User"}
-            masked = mask_sensitive_data(test_data) if callable(mask_sensitive_data) else test_data
-            masking_works = masked != test_data or True
+            masked = data_masking.mask_dict(test_data)
+            masking_works = masked.get("credit_card") != test_data["credit_card"]
             return {
                 "check": "credential_masking",
                 "module_available": True,
                 "masking_functional": masking_works,
-                "pass": True,
+                "pass": masking_works,
             }
         except ImportError:
             return {
@@ -105,7 +105,13 @@ class SecurityChecklistValidator:
                 "note": "data_masking module not found",
             }
         except Exception as e:
-            return {"check": "credential_masking", "pass": True, "note": str(e)}
+            return {
+                "check": "credential_masking",
+                "module_available": True,
+                "masking_functional": False,
+                "pass": False,
+                "note": f"check error: {str(e)}",
+            }
 
     def check_secret_leakage(self) -> dict[str, Any]:
         """Scan for potential secret leakage in environment."""
@@ -139,12 +145,13 @@ class SecurityChecklistValidator:
     def check_rate_limiting(self) -> dict[str, Any]:
         """Check if rate limiting middleware is configured."""
         try:
-            from rate_limiter import RateLimiter  # noqa: F401
+            from security.rate_limiter import tenant_rate_limiter
 
             return {
                 "check": "rate_limiting",
                 "module_available": True,
-                "pass": True,
+                "limiter_configured": tenant_rate_limiter is not None,
+                "pass": tenant_rate_limiter is not None,
             }
         except ImportError:
             return {
@@ -152,6 +159,14 @@ class SecurityChecklistValidator:
                 "module_available": False,
                 "pass": False,
                 "note": "rate_limiter module not found",
+            }
+        except Exception as e:
+            return {
+                "check": "rate_limiting",
+                "module_available": True,
+                "limiter_configured": False,
+                "pass": False,
+                "note": f"check error: {str(e)}",
             }
 
     def check_admin_protection(self) -> dict[str, Any]:
@@ -171,18 +186,33 @@ class SecurityChecklistValidator:
     def check_sensitive_log_filtering(self) -> dict[str, Any]:
         """Check if sensitive data is filtered from logs."""
         try:
-            from modules.security_hardening.data_masking import mask_sensitive_data  # noqa: F401
+            from security.log_sanitizer import sanitize_string
+
+            # Keep this intentionally non-production-looking so secret scanners
+            # do not mistake the self-test fixture for a leaked credential.
+            sample_secret = "token=go_live_sanitizer_fixture"
+            filtered = sanitize_string(sample_secret)
+            filtering_works = filtered != sample_secret
 
             return {
                 "check": "log_filtering",
-                "masking_module_available": True,
-                "pass": True,
+                "sanitizer_available": True,
+                "filtering_functional": filtering_works,
+                "pass": filtering_works,
             }
         except ImportError:
             return {
                 "check": "log_filtering",
                 "masking_module_available": False,
                 "pass": False,
+            }
+        except Exception as e:
+            return {
+                "check": "log_filtering",
+                "sanitizer_available": True,
+                "filtering_functional": False,
+                "pass": False,
+                "note": f"check error: {str(e)}",
             }
 
     async def run_full_checklist(self) -> dict[str, Any]:

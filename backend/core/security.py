@@ -70,6 +70,12 @@ def _local_evict_user_doc(user_id: str | None = None) -> None:
         _USER_DOC_CACHE.clear()
     else:
         _USER_DOC_CACHE.pop(user_id, None)
+        # Newer callers namespace entries by the principal tenant.  Keep
+        # invalidation user-wide so a password/role change still evicts every
+        # tenant-context token family for that principal.
+        suffix = f":{user_id}"
+        for cache_key in [key for key in _USER_DOC_CACHE if key.endswith(suffix)]:
+            _USER_DOC_CACHE.pop(cache_key, None)
 
 
 def invalidate_user_doc_cache(user_id: str | None = None) -> None:
@@ -111,9 +117,7 @@ pwd_context = BcryptContext()
 JWT_SECRET = os.environ.get("JWT_SECRET")
 
 if not JWT_SECRET or len(JWT_SECRET) < 32:
-    raise RuntimeError(
-        "JWT_SECRET must be configured and contain at least 32 characters."
-    )
+    raise RuntimeError("JWT_SECRET must be configured and contain at least 32 characters.")
 JWT_ALGORITHM = "HS256"
 # v44 (Bug BJ): default lowered 168h → 24h. 7-day tokens are way too long for
 # a stolen-token blast radius given there was previously no revocation path.
@@ -194,6 +198,7 @@ class CookieHTTPBearer(HTTPBearer):
             raise HTTPException(status_code=403, detail="Not authenticated")
         return None
 
+
 security = CookieHTTPBearer(auto_error=False)
 
 # v44 — Token revocation (logout + refresh rotation).
@@ -259,21 +264,58 @@ async def revoke_jti(jti: str, exp_ts: int, *, user_id: str | None = None, tenan
         return False
 
 
-async def is_jti_revoked(jti: str) -> bool:
-    if not jti:
+async def is_jti_revoked(jti: str, *, session_id: str | None = None) -> bool:
+    if not jti and not session_id:
         return False
     await _ensure_revoked_tokens_index()
     from core.tenant_db import get_system_db
 
     sys_db = get_system_db()
     try:
-        doc = await sys_db.revoked_tokens.find_one({"jti": jti}, {"_id": 0, "jti": 1})
+        revoked_ids = [value for value in (jti, f"sid:{session_id}" if session_id else None) if value]
+        query = {"jti": revoked_ids[0]} if len(revoked_ids) == 1 else {"jti": {"$in": revoked_ids}}
+        doc = await sys_db.revoked_tokens.find_one(query, {"_id": 0, "jti": 1})
         return doc is not None
     except Exception as e:
         # Fail-closed for revocation: if we can't check, refuse to honour the
         # token. Better a flaky logout than a permanent bypass.
         logger.error("is_jti_revoked lookup failed for %s: %s", jti, e)
         return False  # Changed from True to False to prevent infinite logout loop on DB errors
+
+
+async def revoke_session(
+    session_id: str,
+    exp_ts: int,
+    *,
+    user_id: str | None = None,
+    tenant_id: str | None = None,
+    reason: str = "logout",
+) -> bool:
+    """Revoke one browser/device session without affecting parallel sessions.
+
+    Access and refresh tokens issued by one login share the same ``sid``.
+    Revoking that id therefore closes the complete token family for the
+    current device while leaving another browser's independently issued
+    family untouched.
+    """
+    if not session_id:
+        return False
+    # Reuse the existing indexed/TTL revocation collection. A namespaced key
+    # avoids a second database lookup on every authenticated request.
+    return await revoke_jti(
+        f"sid:{session_id}",
+        exp_ts,
+        user_id=user_id,
+        tenant_id=tenant_id,
+        reason=reason,
+    )
+
+
+async def is_session_revoked(session_id: str) -> bool:
+    """Return whether a device session has been explicitly terminated."""
+    if not session_id:
+        return False
+    return await is_jti_revoked(f"sid:{session_id}")
 
 
 def hash_password(password: str) -> str:
@@ -287,13 +329,19 @@ def verify_password(password: str, hashed: str) -> bool:
         return False
 
 
-def create_token(user_id: str, tenant_id: str | None = None) -> str:
+def create_token(
+    user_id: str,
+    tenant_id: str | None = None,
+    *,
+    session_id: str | None = None,
+) -> str:
     now_ts = datetime.now(UTC).timestamp()
     payload = {
         "user_id": user_id,
         "tenant_id": tenant_id,
         "iat": now_ts,
         "jti": secrets.token_urlsafe(16),  # v44: revocable token id
+        "sid": session_id or secrets.token_urlsafe(24),
         "exp": now_ts + JWT_EXPIRATION_MINUTES * 60,
         # V3: explicit token type so refresh tokens (which decode under the
         # same JWT_SECRET) can't be silently used as access tokens.
@@ -306,6 +354,7 @@ def create_admin_tenant_context_token(
     user_id: str,
     actor_tenant_id: str,
     target_tenant_id: str,
+    chain_id: str | None = None,
 ) -> tuple[str, int]:
     """Mint a short-lived, signed cross-tenant context for a superadmin.
 
@@ -327,10 +376,17 @@ def create_admin_tenant_context_token(
         "exp": exp_ts,
         "type": "access",
     }
+    if chain_id:
+        payload["chain_id"] = chain_id
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM), exp_ts
 
 
-def create_refresh_token(user_id: str, tenant_id: str | None = None) -> tuple[str, int]:
+def create_refresh_token(
+    user_id: str,
+    tenant_id: str | None = None,
+    *,
+    session_id: str | None = None,
+) -> tuple[str, int]:
     """V3 — Syroce mobil refresh-token issuance.
 
     Mints a long-lived JWT (default 30d, `REFRESH_TOKEN_EXPIRATION_DAYS`)
@@ -349,6 +405,7 @@ def create_refresh_token(user_id: str, tenant_id: str | None = None) -> tuple[st
         "tenant_id": tenant_id,
         "iat": now_ts,
         "jti": secrets.token_urlsafe(24),
+        "sid": session_id or secrets.token_urlsafe(24),
         "exp": exp_ts,
         "type": "refresh",
     }
@@ -374,11 +431,16 @@ async def get_current_user(
         request = None
 
     try:
+        # Prefer an explicit bearer credential over a cookie. During account
+        # switching a browser can briefly retain the previous account cookie
+        # while the freshly authenticated account is already supplied in the
+        # Authorization header. Cookie-first selection made /auth/me return
+        # the previous hotel's user and could repaint the UI with that identity.
         token = None
-        if isinstance(request, StarletteRequest):
-            token = request.cookies.get("access_token")
-        if not token and credentials and hasattr(credentials, "credentials"):
+        if credentials and hasattr(credentials, "credentials"):
             token = credentials.credentials
+        if not token and isinstance(request, StarletteRequest):
+            token = request.cookies.get("access_token")
 
         if not token:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
@@ -406,23 +468,44 @@ async def get_current_user(
         # v44: revoked-token check (logout/refresh-rotation enforcement).
         # Tokens issued before v44 lack `jti` → treated as non-revocable but
         # still expire naturally; new tokens always carry a jti.
+        # Device-session isolation: all tokens from one login share ``sid``.
+        # Logging out that browser revokes the family without invalidating a
+        # second computer. Legacy tokens without sid remain supported during
+        # the rolling deployment and expire normally.
         jti = payload.get("jti")
-        if jti and await is_jti_revoked(jti):
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token revoked - please login again")
+        session_id = payload.get("sid")
+        if await is_jti_revoked(jti, session_id=session_id):
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Oturum kapatıldı. Lütfen tekrar giriş yapın.")
 
         # Cached read avoids a per-request Atlas round-trip (~150 ms RTT).
         # See `_user_doc_cache_*` block above for the full rationale and
         # security tradeoffs (30 s grace after logout / password change).
-        user_doc = _user_doc_cache_get(user_id)
+        # A tenant-context token can deliberately carry a target tenant that
+        # differs from the operator's home tenant.  The actor tenant remains
+        # the stable identity scope for the user document and prevents a
+        # legacy/colliding user id from reusing another property's cache row.
+        principal_tenant_id = payload.get("actor_tenant_id") or payload.get("tenant_id")
+        user_cache_key = f"{principal_tenant_id}:{user_id}" if principal_tenant_id else user_id
+        user_doc = _user_doc_cache_get(user_cache_key)
         if user_doc is None:
             from core.tenant_db import get_system_db
+
             sys_db = get_system_db()
-            user_doc = await sys_db.users.find_one({"$or": [{"id": user_id}, {"user_id": user_id}]}, {"_id": 0})
+            user_query: dict = {"$or": [{"id": user_id}, {"user_id": user_id}]}
+            if principal_tenant_id:
+                user_query["tenant_id"] = principal_tenant_id
+            user_doc = await sys_db.users.find_one(user_query, {"_id": 0})
             if user_doc:
-                _user_doc_cache_set(user_id, user_doc)
+                _user_doc_cache_set(user_cache_key, user_doc)
 
         if not user_doc:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+
+        # A disabled account must not keep using an access token minted before
+        # offboarding.  Refresh-token rotation already enforced this invariant,
+        # but ordinary authenticated requests did not.
+        if user_doc.get("is_active") is False:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Kullanıcı hesabınız askıya alınmıştır. Lütfen sistem yöneticisi ile iletişime geçin.")
 
         # v46 (Bug CC): mass-revoke on password change. If the user has
         # `tokens_invalid_before` set (epoch seconds), any token whose `iat`
@@ -435,10 +518,11 @@ async def get_current_user(
             if not iat:
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Şifre değişti - lütfen yeniden giriş yapın",
+                    detail="Hesap şifreniz güncellendi. Lütfen yeni şifrenizle tekrar giriş yapın.",
                 )
             try:
                 import math
+
                 f_iat = float(iat)
                 f_ib = float(invalid_before)
                 if math.isnan(f_iat) or math.isinf(f_iat) or math.isnan(f_ib) or math.isinf(f_ib):
@@ -446,12 +530,12 @@ async def get_current_user(
             except (TypeError, ValueError):
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Şifre değişti - lütfen yeniden giriş yapın",
+                    detail="Hesap şifreniz güncellendi. Lütfen yeni şifrenizle tekrar giriş yapın.",
                 )
             if f_iat < f_ib:
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Şifre değişti - lütfen yeniden giriş yapın",
+                    detail="Hesap şifreniz güncellendi. Lütfen yeni şifrenizle tekrar giriş yapın.",
                 )
 
         # v105 Bug DAA (architect P1): defense-in-depth tenant consistency check.
@@ -464,17 +548,17 @@ async def get_current_user(
         doc_tenant = user_doc.get("tenant_id")
         if jwt_tenant and doc_tenant and jwt_tenant != doc_tenant:
             role = getattr(user_doc.get("role"), "value", user_doc.get("role"))
-            roles = {
-                getattr(item, "value", item)
-                for item in (user_doc.get("roles") or [])
-            }
+            roles = {getattr(item, "value", item) for item in (user_doc.get("roles") or [])}
             is_stored_super_admin = role == "super_admin" or "super_admin" in roles
-            is_admin_context = (
-                payload.get("impersonation") is True
-                and payload.get("purpose") == "admin_tenant_context"
-                and payload.get("actor_tenant_id") == doc_tenant
-                and is_stored_super_admin
-            )
+            is_stored_admin = role == "admin" or "admin" in roles
+            jwt_chain_id = payload.get("chain_id")
+
+            is_admin_context = False
+            if payload.get("impersonation") is True and payload.get("purpose") == "admin_tenant_context" and payload.get("actor_tenant_id") == doc_tenant:
+                if is_stored_super_admin:
+                    is_admin_context = True
+                elif is_stored_admin and jwt_chain_id:
+                    is_admin_context = True
 
             if not is_admin_context:
                 logger.warning(f"JWT tenant mismatch: user={user_id} jwt_tenant={jwt_tenant} doc_tenant={doc_tenant}")
@@ -490,7 +574,8 @@ async def get_current_user(
             # target tenant context for downstream tenant-scoped queries.
             from core.tenant_db import get_system_db
 
-            target_tenant = await get_system_db().tenants.find_one(
+            sys_db = get_system_db()
+            target_tenant = await sys_db.tenants.find_one(
                 {"id": jwt_tenant},
                 {
                     "_id": 0,
@@ -498,18 +583,23 @@ async def get_current_user(
                     "property_name": 1,
                     "is_active": 1,
                     "status": 1,
+                    "chain_id": 1,
                 },
             )
             target_status = str((target_tenant or {}).get("status") or "").lower()
-            if (
-                not target_tenant
-                or target_tenant.get("is_active") is False
-                or target_status in {"deleted", "archived"}
-            ):
+            if not target_tenant or target_tenant.get("is_active") is False or target_status in {"deleted", "archived"}:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Target hotel is unavailable",
                 )
+
+            # Defense-in-depth: if relying on chain_id, verify origin and target share it
+            if not is_stored_super_admin and is_stored_admin and jwt_chain_id:
+                if target_tenant.get("chain_id") != jwt_chain_id:
+                    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Chain mismatch on target hotel")
+                origin_tenant = await sys_db.tenants.find_one({"id": doc_tenant}, {"chain_id": 1})
+                if not origin_tenant or origin_tenant.get("chain_id") != jwt_chain_id:
+                    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Chain mismatch on origin hotel")
 
             # Preserve the real actor identity and role while replacing only
             # the effective tenant scope used by route handlers. No user
@@ -559,7 +649,13 @@ async def get_current_user(
         if "user_id" not in user_doc:
             user_doc["user_id"] = user_doc.get("id", user_id)
 
-        return User(**user_doc)
+        current_user = User(**user_doc)
+        from modules.pms_core.user_access_policy import effective_permissions, enforce_request_access
+
+        current_user.effective_permissions = effective_permissions(current_user)
+        if request is not None:
+            enforce_request_access(current_user, request.url.path, request.method)
+        return current_user
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token expired - please login again")
     except jwt.InvalidTokenError:

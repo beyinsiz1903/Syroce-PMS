@@ -5,6 +5,7 @@ Folio & Billing Hardening Service - Charge posting, payment, refund, split, void
 import uuid
 from datetime import UTC, datetime
 
+from core.business_date_service import stamp_open_business_date
 from core.database import db
 
 
@@ -20,6 +21,17 @@ class FolioHardeningService:
             return {"success": False, "error": "Folio not found"}
         if folio.get("status") != "open":
             return {"success": False, "error": f"Folio is {folio.get('status')}, cannot post charges"}
+
+        # A public QR retry must never create a second financial line. This is
+        # deliberately useful to every caller, not just room service.
+        external_reference = charge_data.get("external_reference")
+        if external_reference:
+            existing = await db.folio_charges.find_one(
+                {"tenant_id": tenant_id, "folio_id": folio_id, "external_reference": external_reference},
+                {"_id": 0},
+            )
+            if existing:
+                return {"success": True, "charge": existing, "replayed": True}
 
         amount = charge_data.get("amount", 0)
         quantity = charge_data.get("quantity", 1.0)
@@ -45,6 +57,8 @@ class FolioHardeningService:
             "tax_amount": tax_amount,
             "total": total,
             "department": charge_data.get("department"),
+            "currency": charge_data.get("currency") or folio.get("currency") or "TRY",
+            "external_reference": external_reference,
             "posted_by": posted_by,
             "date": now.isoformat(),
             "voided": False,
@@ -62,7 +76,8 @@ class FolioHardeningService:
             from cache_manager import cache as _cache
 
             if _cache:
-                _cache.invalidate_tenant_cache(tenant_id, "folio_revenue_by_category")
+                _cache.invalidate_tenant_cache(tenant_id, "folio_revenue_by_category_v2")
+                _cache.invalidate_tenant_cache(tenant_id, "reports_basic_dashboard_v2")
         except ImportError:
             pass
 
@@ -83,6 +98,12 @@ class FolioHardeningService:
         if amount <= 0:
             return {"success": False, "error": "Payment amount must be positive"}
 
+        booking = await db.bookings.find_one(
+            {"id": booking_id, "tenant_id": tenant_id},
+            {"_id": 0, "currency": 1},
+        )
+        ledger_currency = str(payment_data.get("currency") or (booking or {}).get("currency") or folio.get("currency") or "TRY").upper()
+
         payment_id = str(uuid.uuid4())
         now = datetime.now(UTC)
 
@@ -92,6 +113,10 @@ class FolioHardeningService:
             "folio_id": folio_id,
             "booking_id": booking_id,
             "amount": amount,
+            "currency": ledger_currency,
+            "received_currency": str(payment_data.get("received_currency") or ledger_currency).upper(),
+            "received_amount": float(payment_data.get("received_amount") if payment_data.get("received_amount") is not None else amount),
+            "exchange_rate": float(payment_data.get("exchange_rate") if payment_data.get("exchange_rate") is not None else 1),
             "method": payment_data.get("method", "cash"),
             "payment_type": payment_data.get("payment_type", "final"),
             "status": "paid",
@@ -102,10 +127,19 @@ class FolioHardeningService:
             "voided": False,
         }
 
+        await stamp_open_business_date(db, tenant_id, payment_doc)
         await db.payments.insert_one(payment_doc)
         await self._recalculate_folio_balance(tenant_id, folio_id)
 
         await self._log_audit(tenant_id, "payment", payment_id, "payment_posted", processed_by, {"folio_id": folio_id, "amount": amount, "method": payment_data.get("method")})
+
+        try:
+            from cache_manager import cache as _cache
+
+            if _cache:
+                _cache.invalidate_tenant_cache(tenant_id, "reports_basic_dashboard_v2")
+        except ImportError:
+            pass
 
         payment_doc.pop("_id", None)
         return {"success": True, "payment": payment_doc}
@@ -142,10 +176,19 @@ class FolioHardeningService:
             "voided": False,
         }
 
+        await stamp_open_business_date(db, tenant_id, refund_doc)
         await db.payments.insert_one(refund_doc)
         await self._recalculate_folio_balance(tenant_id, folio_id)
 
         await self._log_audit(tenant_id, "refund", refund_id, "refund_posted", processed_by, {"folio_id": folio_id, "amount": amount, "reason": reason})
+
+        try:
+            from cache_manager import cache as _cache
+
+            if _cache:
+                _cache.invalidate_tenant_cache(tenant_id, "reports_basic_dashboard_v2")
+        except ImportError:
+            pass
 
         refund_doc.pop("_id", None)
         return {"success": True, "refund": refund_doc}
@@ -179,7 +222,8 @@ class FolioHardeningService:
             from cache_manager import cache as _cache
 
             if _cache:
-                _cache.invalidate_tenant_cache(tenant_id, "folio_revenue_by_category")
+                _cache.invalidate_tenant_cache(tenant_id, "folio_revenue_by_category_v2")
+                _cache.invalidate_tenant_cache(tenant_id, "reports_basic_dashboard_v2")
         except ImportError:
             pass
 

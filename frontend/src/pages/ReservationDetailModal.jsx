@@ -4,15 +4,19 @@ import { toast } from 'sonner';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import {
   X, Calendar, DollarSign, FileText, Users, Receipt,
   History, MessageSquare, Star, AlertTriangle,
   LogIn, LogOut, Repeat2, Shield, Mail, Loader2, CreditCard,
   ChevronDown, DoorOpen, Globe, Clock, Layers, Eye, BedDouble,
+  ArrowLeftRight, Pencil, Plus, CheckCircle2,
 } from 'lucide-react';
 
-import { API, fmtTL, fmtDateTime, statusLabel, translateValue, translateView, bookingRef, Avatar } from './reservation-detail/helpers';
+import { API, fmtTL, fmtCurrency, fmtDate, fmtDateTime, statusLabel, translateView, bookingRef, Avatar, reservationNights } from './reservation-detail/helpers';
 import { GeneralInfoTab, GuestsTab } from './reservation-detail/InfoTabs';
 import { FoliosTab } from './reservation-detail/FoliosTab';
 import { DailyRatesTab, ExtraChargesTab } from './reservation-detail/PricingTabs';
@@ -27,6 +31,9 @@ import IdPhotoViewerButton from '@/components/IdPhotoViewerButton';
 import { confirmDialog } from '@/lib/dialogs';
 import { performCheckout } from '@/utils/offlineCheckout';
 import { useTranslation } from 'react-i18next';
+import { buildCalendarRateLookup, toDateStringUTC } from './calendar/calendarHelpers';
+import { reservationEditLockManager } from '@/lib/reservationEditLockManager';
+import { bookingSourceLabel } from '@/utils/bookingSource';
 
 // Statü için pill rengi (sıkı palet: amber/emerald/rose/slate)
 const STATUS_PILL = {
@@ -48,6 +55,48 @@ const isRetryableDetailError = (error) => {
 };
 
 const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+const dateInputValue = (value) => String(value || '').slice(0, 10);
+const utcDateFromInput = (value) => {
+  const [year, month, day] = dateInputValue(value).split('-').map(Number);
+  if (!year || !month || !day) return null;
+  return new Date(Date.UTC(year, month - 1, day));
+};
+export const nightsBetweenDates = (checkIn, checkOut) => {
+  const start = utcDateFromInput(checkIn);
+  const end = utcDateFromInput(checkOut);
+  if (!start || !end) return 0;
+  return Math.max(0, Math.round((end - start) / 86_400_000));
+};
+export const checkoutFromNightCount = (checkIn, nightCount) => {
+  const start = utcDateFromInput(checkIn);
+  const nights = Number(nightCount);
+  if (!start || !Number.isInteger(nights) || nights < 1) return '';
+  start.setUTCDate(start.getUTCDate() + nights);
+  return start.toISOString().slice(0, 10);
+};
+
+const localDateValue = () => {
+  const now = new Date();
+  const offset = now.getTimezoneOffset() * 60_000;
+  return new Date(now.getTime() - offset).toISOString().slice(0, 10);
+};
+
+export const isEarlyCheckoutDate = (checkOut, businessDate) => {
+  const plannedCheckout = dateInputValue(checkOut);
+  const activeBusinessDate = dateInputValue(businessDate) || localDateValue();
+  return Boolean(plannedCheckout && activeBusinessDate && plannedCheckout > activeBusinessDate);
+};
+
+const stayDates = (checkIn, checkOut) => {
+  const dates = [];
+  const cursor = new Date(`${checkIn}T00:00:00Z`);
+  const end = new Date(`${checkOut}T00:00:00Z`);
+  while (cursor < end) {
+    dates.push(toDateStringUTC(cursor));
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return dates;
+};
 
 export default function ReservationDetailModal({ bookingId, onClose, allBookings, onOperationComplete }) {
   const { t } = useTranslation();
@@ -58,7 +107,40 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
   const [offlineFallback, setOfflineFallback] = useState(null);
   const [loadError, setLoadError] = useState(null);
   const [pricingRepairing, setPricingRepairing] = useState(false);
+  const [stayEditorOpen, setStayEditorOpen] = useState(false);
+  const [stayForm, setStayForm] = useState({ checkIn: '', checkOut: '', nights: 1 });
+  const [staySaving, setStaySaving] = useState(false);
+  const [propertyTransferOpen, setPropertyTransferOpen] = useState(false);
+  const [propertyTransferLoading, setPropertyTransferLoading] = useState(false);
+  const [propertyTransferSaving, setPropertyTransferSaving] = useState(false);
+  const [propertyTransferOptions, setPropertyTransferOptions] = useState([]);
+  const [propertyTransferForm, setPropertyTransferForm] = useState({ targetPropertyId: '', roomType: '', reason: '', financialHandling: 'reject' });
+  const [checkoutSubmitting, setCheckoutSubmitting] = useState(false);
   const loadGenerationRef = useRef(0);
+  const tabsListRef = useRef(null);
+  const openedAtRef = useRef(Date.now());
+
+  useEffect(() => {
+    openedAtRef.current = Date.now();
+    // A rapid second click intended for the calendar card can land on the
+    // newly mounted modal and leave its entire text visibly selected.
+    const clearSelection = () => window.getSelection?.()?.removeAllRanges?.();
+    clearSelection();
+    const frame = window.requestAnimationFrame(clearSelection);
+    return () => window.cancelAnimationFrame(frame);
+  }, [bookingId]);
+
+  const handleClose = useCallback(() => {
+    // Normal close is deterministic; the 15-second DOM monitor is reserved
+    // for abrupt/unexpected view loss only.
+    void reservationEditLockManager?.releaseCurrent(bookingId);
+    onClose?.();
+  }, [bookingId, onClose]);
+
+  useEffect(() => {
+    const active = tabsListRef.current?.querySelector(`[data-reservation-tab="${activeTab}"]`);
+    active?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+  }, [activeTab]);
 
   // allBookings kimliği her render değişebilir → loadData dep'ine koymak yerine
   // ref ile oku (full-detail re-fetch döngüsünü önler).
@@ -117,10 +199,9 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
     return () => { loadGenerationRef.current += 1; };
   }, [loadData]);
 
-  const finishOperation = useCallback(async (operation) => {
+  const finishOperation = useCallback(async (operation, operationBookingId = bookingId) => {
     if (typeof onOperationComplete === 'function') {
-      await onOperationComplete({ bookingId, operation });
-      return;
+      await onOperationComplete({ bookingId: operationBookingId, operation });
     }
     await loadData();
   }, [bookingId, loadData, onOperationComplete]);
@@ -128,46 +209,56 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
   const action = async (url, body = {}, msg = 'İşlem tamamlandı', operation = null) => {
     try {
       await axios.post(`${API}${url}`, body);
-      toast.success(msg);
+      if (msg) toast.success(msg);
       if (operation) await finishOperation(operation);
       else await loadData();
     }
-    catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
+    catch (e) { toast.error('İşlem Hatası: ' + (e.response?.data?.detail || e.message)); }
   };
 
   const repairChannelPricing = async () => {
     const issue = data?.summary?.channel_pricing_issue;
     if (!issue?.repairable || pricingRepairing) return;
+    const isDuplicateAutomaticTax = issue.code === 'AUTOMATIC_ACCOMMODATION_TAX_DUPLICATE';
     const confirmed = await confirmDialog({
-      title: 'Kanal fiyatını düzelt',
-      message: `${fmtTL(issue.observed_total)} TL olan hatalı folyo bakiyesi, acenteden gelen ${fmtTL(issue.expected_total)} TL toplamla eşitlenecek. Rezervasyon ve acente referansı korunacak. Devam edilsin mi?`,
-      confirmText: 'Güvenli şekilde düzelt',
+      title: isDuplicateAutomaticTax ? 'Mükerrer konaklama vergisini düzelt' : 'Rezervasyon fiyatını düzelt',
+      message: isDuplicateAutomaticTax
+        ? `Vergi dahil ${fmtCurrency(issue.expected_total, currency)} rezervasyona ${fmtCurrency(issue.overcharge, currency)} otomatik konaklama vergisi ikinci kez eklenmiş. Bu sistem satırı terslenecek; rezervasyon ve ödeme kaydı korunacak. Devam edilsin mi?`
+        : `${fmtCurrency(issue.observed_total, currency)} olan hatalı folyo bakiyesi, girilen veya kanaldan teyit edilen ${fmtCurrency(issue.expected_total, currency)} nihai rezervasyon toplamıyla eşitlenecek. Rezervasyon kaydı korunacak. Devam edilsin mi?`,
+      confirmText: isDuplicateAutomaticTax ? 'Mükerrer vergiyi düzelt' : 'Güvenli şekilde düzelt',
     });
     if (!confirmed) return;
 
     setPricingRepairing(true);
     try {
-      const response = await axios.post(`/pms/reservations/${bookingId}/repair-channel-pricing`, {
-        reason: 'Kanal toplamına mükerrer vergi eklenmesinin düzeltilmesi',
-      });
+      const response = await axios.post(
+        `/pms/reservations/${bookingId}/${isDuplicateAutomaticTax ? 'repair-automatic-accommodation-tax' : 'repair-channel-pricing'}`,
+        {
+          reason: isDuplicateAutomaticTax
+            ? 'Vergi dahil rezervasyona ikinci kez eklenen otomatik konaklama vergisinin terslenmesi'
+            : 'Vergi dahil nihai rezervasyon tutarına mükerrer vergi eklenmesinin düzeltilmesi',
+        },
+      );
       const reduction = response.data?.total_reduction;
       toast.success(
         response.data?.already_repaired
-          ? 'Kanal fiyatı zaten doğru'
-          : `Folyo düzeltildi${typeof reduction === 'number' ? `: ${fmtTL(reduction)} TL mükerrer tutar kaldırıldı` : ''}`,
+          ? 'Rezervasyon fiyatı zaten doğru'
+          : `${isDuplicateAutomaticTax ? 'Mükerrer konaklama vergisi kaldırıldı' : 'Folyo düzeltildi'}${typeof reduction === 'number' ? `: ${fmtCurrency(reduction, currency)}` : ''}`,
       );
       await loadData();
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Kanal fiyatı düzeltilemedi');
+      toast.error(error.response?.data?.detail || 'Rezervasyon fiyatı düzeltilemedi');
     } finally {
       setPricingRepairing(false);
     }
   };
 
   const bookingStatus = String(data?.booking?.status || '').toLowerCase();
-  const canCheckIn = ['pending', 'confirmed', 'guaranteed'].includes(bookingStatus);
-  const canLateCheckout = bookingStatus === 'checked_in';
-  const canChangeRoom = ['pending', 'confirmed', 'guaranteed', 'checked_in'].includes(bookingStatus);
+  const readOnly = Boolean(data?.read_only);
+  const isEarlyCheckout = isEarlyCheckoutDate(data?.booking?.check_out, data?.business_date);
+  const canCheckIn = !readOnly && ['pending', 'confirmed', 'guaranteed'].includes(bookingStatus);
+  const canLateCheckout = !readOnly && bookingStatus === 'checked_in';
+  const canChangeRoom = !readOnly && ['pending', 'confirmed', 'guaranteed', 'checked_in'].includes(bookingStatus);
   const canCancel = ['pending', 'confirmed', 'guaranteed'].includes(bookingStatus);
 
   if (loading) return (
@@ -184,13 +275,13 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
     const fbStatus = fb.status || 'pending';
     const isOffline = loadError?.isOffline;
     return (
-      <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+      <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4" onClick={handleClose}>
         <div className="bg-white rounded-2xl w-full max-w-md shadow-xl" onClick={(e) => e.stopPropagation()}>
           <div className="flex items-center justify-between px-5 py-3 border-b">
             <h2 className="text-slate-800 font-semibold text-base">
               {isOffline ? 'Rezervasyon (çevrimdışı)' : 'Rezervasyon özeti'}
             </h2>
-            <button onClick={onClose} aria-label="Kapat" className="text-slate-400 hover:text-slate-600">
+            <button onClick={handleClose} aria-label="Kapat" className="text-slate-400 hover:text-slate-600">
               <X className="w-5 h-5" />
             </button>
           </div>
@@ -225,7 +316,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
             </div>
           </div>
           <div className="flex justify-end gap-2 px-5 py-3 border-t">
-            <Button variant="outline" onClick={onClose}>Kapat</Button>
+            <Button variant="outline" onClick={handleClose}>Kapat</Button>
             <Button onClick={loadData} data-testid="retry-reservation-detail">Tekrar dene</Button>
           </div>
         </div>
@@ -243,7 +334,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
           Rezervasyonda herhangi bir değişiklik yapılmadı.
         </p>
         <div className="flex justify-center gap-2 mt-5">
-          <Button variant="outline" onClick={onClose}>Kapat</Button>
+          <Button variant="outline" onClick={handleClose}>Kapat</Button>
           <Button onClick={loadData} data-testid="retry-reservation-detail">Tekrar dene</Button>
         </div>
       </div>
@@ -251,14 +342,196 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
   );
 
   const { booking, guest, room, company, folios, charges, payments, extra_charges, notes, history, room_moves, daily_rates, guests, summary, communication_logs, deposits } = data;
+  const currency = booking?.currency || "TL";
 
   // rawBalance: bakiye guard'ına HAM geçilir (undefined/null kalmalı → util
   // bilinmeyeni "açık" sayıp çevrimdışı kuyruğa ALMASIN). balance yalnız görüntü.
   const rawBalance = summary?.balance;
   const balance = Number(rawBalance) || 0;
-  const hasOpenBalance = balance > 0.01;
+  const pricingReconciliationRequired = Boolean(summary?.pricing_reconciliation_required);
+  const pricingReconciliationDifference = Number(summary?.pricing_reconciliation_difference) || 0;
+  const hasOpenBalance = balance > 0.01 && !pricingReconciliationRequired;
+  const reservationTotalDue = Number(summary?.reservation_total_due ?? rawBalance) || 0;
+  const hasReservationAmountDue = reservationTotalDue > 0.01 && !pricingReconciliationRequired;
+  const unpostedRoomAmount = Number(summary?.unposted_room_amount) || 0;
+  const hasAllocatedPrepayment = unpostedRoomAmount > 0.01 && !hasReservationAmountDue && balance < -0.01;
+  const displayedFolioBalance = hasAllocatedPrepayment ? 0 : balance;
+  const accommodationTotal = Number(summary?.accommodation_total ?? summary?.total_amount) || 0;
+  const additionalChargeTotal = Number(summary?.additional_charge_total ?? summary?.total_extra) || 0;
+  const grossTotal = Number(summary?.gross_total) || (accommodationTotal + additionalChargeTotal);
+  const prepaymentTotal = Number(summary?.prepayment_total) || 0;
   const channelPricingIssue = summary?.channel_pricing_issue;
   const hasRoomAssignment = Boolean(booking?.room_id && room?.id);
+  const canEditStayDates = !readOnly && ['pending', 'confirmed', 'guaranteed', 'checked_in'].includes(bookingStatus);
+  const checkedInStay = bookingStatus === 'checked_in';
+
+  const openStayEditor = () => {
+    const checkIn = dateInputValue(booking?.check_in);
+    const checkOut = dateInputValue(booking?.check_out);
+    setStayForm({
+      checkIn,
+      checkOut,
+      nights: Math.max(1, nightsBetweenDates(checkIn, checkOut)),
+    });
+    setStayEditorOpen(true);
+  };
+
+  const openPropertyTransfer = async () => {
+    setPropertyTransferOpen(true);
+    setPropertyTransferLoading(true);
+    setPropertyTransferOptions([]);
+    setPropertyTransferForm({ targetPropertyId: '', roomType: '', reason: '', financialHandling: 'reject' });
+    try {
+      const response = await axios.post('/platform/multi-property/search-availability', {
+        check_in: dateInputValue(booking?.check_in),
+        check_out: dateInputValue(booking?.check_out),
+        guests: guestCount,
+      });
+      const properties = response.data?.properties || [];
+      setPropertyTransferOptions(properties);
+      if (properties.length > 0) {
+        const first = properties[0];
+        const currentRoomType = booking?.room_type || room?.room_type;
+        const preferredRoomType = first.room_types?.includes(currentRoomType)
+          ? currentRoomType
+          : (first.room_types?.[0] || '');
+        setPropertyTransferForm({ targetPropertyId: first.property_id, roomType: preferredRoomType, reason: '', financialHandling: 'reject' });
+      }
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Zincir otellerinin müsaitliği alınamadı');
+    } finally {
+      setPropertyTransferLoading(false);
+    }
+  };
+
+  const savePropertyTransfer = async () => {
+    if (!propertyTransferForm.targetPropertyId || !propertyTransferForm.roomType) {
+      toast.error('Hedef tesis ve oda tipi seçilmelidir');
+      return;
+    }
+    if (propertyTransferForm.reason.trim().length < 3) {
+      toast.error('Tesis değişikliği nedeni yazılmalıdır');
+      return;
+    }
+    setPropertyTransferSaving(true);
+    try {
+      const response = await axios.post('/platform/multi-property/transfer-reservation', {
+        booking_id: booking.id,
+        target_property_id: propertyTransferForm.targetPropertyId,
+        target_room_type: propertyTransferForm.roomType,
+        reason: propertyTransferForm.reason.trim(),
+        financial_handling: propertyTransferForm.financialHandling,
+      });
+      const targetName = response.data?.target_property_name || 'hedef tesis';
+      const roomNumber = response.data?.target_room_number;
+      const settlementMessage = response.data?.settlement_id ? ' · Mahsuplaşma kaydı oluşturuldu' : '';
+      toast.success(`Rezervasyon ${targetName}${roomNumber ? ` · Oda ${roomNumber}` : ''} tesisine aktarıldı${settlementMessage}`);
+      setPropertyTransferOpen(false);
+      if (typeof onOperationComplete === 'function') {
+        await onOperationComplete({ bookingId: booking.id, operation: 'property_transferred' });
+      }
+      handleClose();
+    } catch (error) {
+      const detail = error.response?.data?.detail;
+      toast.error(typeof detail === 'string' ? detail : detail?.message || 'Tesis değişikliği tamamlanamadı');
+    } finally {
+      setPropertyTransferSaving(false);
+    }
+  };
+
+  const saveStayDates = async () => {
+    const checkIn = dateInputValue(stayForm.checkIn);
+    const checkOut = dateInputValue(stayForm.checkOut);
+    const currentCheckIn = dateInputValue(booking?.check_in);
+    const currentCheckOut = dateInputValue(booking?.check_out);
+
+    if (!checkIn || !checkOut || checkOut <= checkIn) {
+      toast.error('Çıkış tarihi giriş tarihinden sonra olmalıdır');
+      return;
+    }
+    if (checkedInStay && checkIn !== currentCheckIn) {
+      toast.error('Giriş yapılmış rezervasyonda giriş tarihi değiştirilemez');
+      return;
+    }
+    if (checkIn === currentCheckIn && checkOut === currentCheckOut) {
+      setStayEditorOpen(false);
+      return;
+    }
+
+    const oldNights = Math.max(1, stayDates(currentCheckIn, currentCheckOut).length);
+    const impliedNightlyRate = Number(booking?.total_amount || 0) / oldNights;
+    const existingRates = new Map((daily_rates || []).map((rate) => [
+      dateInputValue(rate?.date), Number(rate?.rate),
+    ]));
+
+    setStaySaving(true);
+    try {
+      // Retain the agreed rate for nights already on the reservation.  Only
+      // newly added nights are read from the same published rate grid shown
+      // on the room board, so an extension never silently uses a stale total.
+      const isComplimentary = Boolean(booking?.is_complimentary);
+      let publishedRates = {};
+      if (!isComplimentary) {
+        try {
+          const rateGrid = await axios.get(
+            `/channel-manager/unified-rate-manager/grid?start_date=${checkIn}&end_date=${checkOut}`,
+          );
+          publishedRates = buildCalendarRateLookup(rateGrid.data?.grid || []);
+        } catch {
+          // The booking may still be changed safely with its agreed/base rate
+          // when the display-only rate grid is temporarily unavailable.
+        }
+      }
+
+      const roomForPricing = {
+        ...room,
+        room_type: booking?.room_type || room?.room_type || room?.room_type_name || room?.type,
+        base_price: room?.base_price || booking?.base_rate || impliedNightlyRate,
+      };
+      const rates = stayDates(checkIn, checkOut).map((date) => {
+        const persistedRate = existingRates.get(date);
+        const configuredRate = Number(publishedRates[`${roomForPricing.room_type}|${date}`]);
+        const fallback = Number(roomForPricing.base_price || impliedNightlyRate || 0);
+        return {
+          date,
+          rate: isComplimentary
+            ? 0
+            : Number.isFinite(persistedRate) && persistedRate > 0
+              ? persistedRate
+              : Number.isFinite(configuredRate) && configuredRate > 0
+                ? configuredRate
+                : fallback,
+        };
+      });
+      if (!isComplimentary && rates.some((rate) => !Number.isFinite(rate.rate) || rate.rate <= 0)) {
+        toast.error('Her gece için geçerli bir fiyat bulunamadı; tarih değişikliği kaydedilmedi');
+        return;
+      }
+      const totalAmount = Math.round(rates.reduce((sum, rate) => sum + rate.rate, 0) * 100) / 100;
+      const idempotencyKey = globalThis.crypto?.randomUUID?.() || `stay-dates-${Date.now()}-${Math.random()}`;
+
+      await axios.put(`/pms/bookings/${booking.id}`, {
+        check_in: checkIn,
+        check_out: checkOut,
+        total_amount: totalAmount,
+      }, { headers: { 'Idempotency-Key': idempotencyKey } });
+      await axios.put(`/pms/reservations/${booking.id}/daily-rates`, { rates });
+
+      toast.success('Konaklama tarihleri ve günlük fiyatlar güncellendi');
+      setStayEditorOpen(false);
+      await finishOperation('stay_dates_updated');
+      if (typeof onOperationComplete === 'function') await loadData();
+    } catch (error) {
+      const detail = error?.response?.data?.detail;
+      toast.error(typeof detail === 'string' ? detail : (detail?.message || 'Konaklama tarihleri güncellenemedi'));
+      // The second write can be blocked by a financial/audit safeguard after
+      // the date change has succeeded.  Always reload the durable state rather
+      // than leave the modal showing a stale stay or folio total.
+      await loadData();
+    } finally {
+      setStaySaving(false);
+    }
+  };
 
   // Birincil sekmeler — günlük kullanımda en sık ihtiyaç duyulanlar
   const primaryTabs = [
@@ -274,8 +547,10 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
   const moreTabs = [
     { id: 'vcc', label: 'Sanal Kart', icon: Shield },
     { id: 'daily_rates', label: 'Günlük Fiyatlar', icon: Calendar },
-    { id: 'room_change', label: 'Oda Değiştir', icon: Repeat2 },
-    { id: 'cancel', label: 'İptal Et', icon: AlertTriangle },
+    ...(!readOnly ? [
+      { id: 'room_change', label: 'Oda Değiştir', icon: Repeat2 },
+      { id: 'cancel', label: 'İptal Et', icon: AlertTriangle },
+    ] : []),
     { id: 'voucher', label: 'Voucher', icon: FileText },
     { id: 'deposits', label: `Depozito${deposits?.length ? ` (${deposits.length})` : ''}`, icon: Shield },
     { id: 'communication', label: `İletişim${communication_logs?.length ? ` (${communication_logs.length})` : ''}`, icon: Mail },
@@ -284,19 +559,32 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
   const activeMore = moreTabs.find(t => t.id === activeTab);
 
   const refLabel = bookingRef(booking);
-  const channelLabel = translateValue(booking?.source_channel || booking?.channel) || 'Doğrudan';
+  const channelLabel = bookingSourceLabel(booking);
   const guestName = guest?.name || booking?.guest_name || 'Misafir';
+  const stayNights = Math.max(1, reservationNights(booking?.check_in, booking?.check_out));
+  const headerDateRange = `${fmtDate(booking?.check_in)} — ${fmtDate(booking?.check_out)}`;
+  const guestCount = Number(booking?.guests_count || 0) || Number(booking?.adults || 0) + Number(booking?.children || 0) || 1;
 
   return (
-    <div className="fixed inset-0 z-[60]" data-testid="reservation-detail-modal">
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
-      <div className="absolute inset-2 md:inset-4 lg:inset-6 bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden">
-        {/* Header — sade, marka rengiyle */}
-        <div className="flex items-center justify-between px-6 py-3 border-b border-slate-200 bg-white">
-          <div className="flex items-center gap-3 min-w-0">
+    <div
+      className="fixed inset-0 z-[60]"
+      data-testid="reservation-detail-modal"
+      onMouseDownCapture={(event) => {
+        const interactive = event.target.closest?.('input, textarea, select, button, a, [role="button"]');
+        if (!interactive && Date.now() - openedAtRef.current < 450) {
+          event.preventDefault();
+          window.getSelection?.()?.removeAllRanges?.();
+        }
+      }}
+    >
+      <div className="absolute inset-0 bg-slate-950/45 backdrop-blur-[2px]" />
+      <div className="absolute inset-2 md:inset-4 lg:inset-6 bg-white rounded-2xl border border-white/70 shadow-[0_24px_80px_rgba(15,23,42,0.28)] flex flex-col overflow-hidden">
+        {/* Sabit çalışma alanı başlığı: kimlik, operasyon ve konaklama özeti tek bakışta. */}
+        <div className="flex min-h-16 items-center justify-between gap-4 border-b border-slate-200 bg-white px-5 py-2.5 lg:px-6">
+          <div className="flex min-w-0 flex-1 items-center gap-3">
             <div className="flex items-baseline gap-2 min-w-0">
-              <h2 className="text-slate-800 font-semibold text-base whitespace-nowrap">{t('cm.pages_ReservationDetailModal.rezervasyon')}</h2>
-              <span className="text-amber-700 font-mono text-sm tracking-wide truncate">{refLabel}</span>
+              <h2 className="whitespace-nowrap text-[15px] font-bold text-slate-950">{t('cm.pages_ReservationDetailModal.rezervasyon')}</h2>
+              <span className="truncate font-mono text-sm font-semibold tracking-wide text-blue-700">{refLabel}</span>
             </div>
             <Badge className={`text-[11px] h-5 px-2 ${STATUS_PILL[booking?.status] || STATUS_PILL.pending}`}>
               {statusLabel(booking?.status)}
@@ -304,29 +592,53 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
             {booking?.group_booking_id && (
               <Badge className="bg-amber-50 text-amber-700 border border-amber-200 text-[11px] h-5 px-2">Grup</Badge>
             )}
-            {hasOpenBalance && (
-              <Badge className="bg-rose-50 text-rose-700 border border-rose-200 text-[11px] h-5 px-2 hidden md:inline-flex">
-                <AlertTriangle className="w-3 h-3 mr-1" /> {t('cm.pages_ReservationDetailModal.bakiye')} {fmtTL(balance)} TL
+            {booking?.source_property_name && (
+              <Badge className="bg-sky-50 text-sky-800 border border-sky-200 text-[11px] h-5 px-2 hidden md:inline-flex" data-testid="transfer-origin-badge">
+                <Repeat2 className="w-3 h-3 mr-1" /> {booking.source_property_name} tesisinden geldi
               </Badge>
             )}
+            {pricingReconciliationRequired ? (
+              <Badge className="bg-amber-50 text-amber-800 border border-amber-300 text-[11px] h-5 px-2 hidden md:inline-flex">
+                <AlertTriangle className="w-3 h-3 mr-1" /> Fiyat / tahakkuk mutabakatı gerekli
+              </Badge>
+            ) : hasReservationAmountDue && (
+              <Badge className="bg-rose-50 text-rose-700 border border-rose-200 text-[11px] h-5 px-2 hidden md:inline-flex">
+                <AlertTriangle className="w-3 h-3 mr-1" /> Kalan tahsilat: {fmtCurrency(reservationTotalDue, currency)}
+              </Badge>
+            )}
+            {readOnly && (
+              <Badge className="bg-slate-100 text-slate-700 border border-slate-300 text-[11px] h-5 px-2 hidden md:inline-flex">
+                Salt okunur
+              </Badge>
+            )}
+            <div className="hidden min-w-0 items-center gap-3 border-l border-slate-200 pl-3 xl:flex" data-testid="reservation-header-summary">
+              <span className="max-w-44 truncate text-sm font-semibold text-slate-800" title={guestName}>{guestName}</span>
+              <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-xs font-medium text-slate-600">
+                <BedDouble className="h-3.5 w-3.5 text-blue-600" /> Oda {room?.room_number || '—'}
+              </span>
+              <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-xs font-medium text-slate-600">
+                <Calendar className="h-3.5 w-3.5 text-blue-600" /> {headerDateRange}
+              </span>
+            </div>
           </div>
           <button
-            onClick={onClose}
-            className="text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-full p-2 transition-colors"
+            onClick={handleClose}
+            className="shrink-0 rounded-xl p-2.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
             data-testid="close-reservation-detail"
             aria-label={t('cm.pages_ReservationDetailModal.kapat')}
           ><X className="w-5 h-5" /></button>
         </div>
 
-        <div className="flex flex-1 overflow-hidden">
+        <div className="flex flex-1 flex-col overflow-hidden md:flex-row">
           {/* Sol panel — sticky footer'lı */}
-          <aside className="w-72 border-r bg-slate-50 flex-shrink-0 flex flex-col">
+          <aside className="flex max-h-[42%] w-full flex-shrink-0 flex-col border-b bg-white md:max-h-none md:w-72 md:border-b-0 md:border-r md:border-slate-200">
             <div className="flex-1 overflow-y-auto px-4 pt-4 pb-2 space-y-4">
               {/* Misafir başlığı */}
-              <div className="flex flex-col items-center text-center gap-2">
+              <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50/70 p-3 text-left">
                 <Avatar name={guestName} size="xl" />
                 <div className="min-w-0 w-full">
-                  <div className="font-semibold text-slate-800 text-sm truncate" title={guestName}>{guestName}</div>
+                  <div className="truncate text-sm font-bold text-slate-900" title={guestName}>{guestName}</div>
+                  <div className="mt-0.5 truncate text-[11px] font-medium text-slate-500">{channelLabel} · {guestCount} misafir</div>
                   {guest?.vip_status && (
                     <Badge className="mt-1 bg-amber-100 text-amber-700 border-amber-200 text-[10px] h-4 px-1.5">
                       <Star className="w-2.5 h-2.5 mr-0.5" /> VIP
@@ -337,26 +649,70 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
 
               {/* Fiyat & Bakiye — bakiye vurgulu */}
               <div className={`rounded-xl p-4 space-y-3 shadow-sm ${
-                hasOpenBalance ? 'bg-rose-50 border-2 border-rose-200' : 'bg-white border border-slate-200'
+                pricingReconciliationRequired ? 'bg-amber-50 border-2 border-amber-300' : hasReservationAmountDue ? 'bg-rose-50 border-2 border-rose-200' : 'bg-white border border-slate-200'
               }`} data-testid="financial-summary-card">
                 <div>
-                  <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">{t('cm.pages_ReservationDetailModal.bakiye_33769')}</p>
-                  <div className={`text-2xl font-bold leading-tight ${hasOpenBalance ? 'text-rose-700' : 'text-emerald-600'}`}>{fmtTL(balance)} TL</div>
-                  <p className="text-[11px] text-slate-500">{hasOpenBalance ? 'Kalan bakiye' : 'Bakiye kapalı'}</p>
+                  <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">{pricingReconciliationRequired ? 'Fiyat / tahakkuk farkı' : 'Kalan tahsilat'}</p>
+                  <div className={`text-2xl font-bold leading-tight ${pricingReconciliationRequired ? 'text-amber-800' : hasReservationAmountDue ? 'text-rose-700' : 'text-emerald-600'}`}>{fmtCurrency(pricingReconciliationRequired ? pricingReconciliationDifference : reservationTotalDue, currency)}</div>
+                  <p className="text-[11px] text-slate-500">{pricingReconciliationRequired ? 'Tahsilat alınmamalı; fiyat ve tahakkuk düzeltilmeli' : hasReservationAmountDue ? 'Rezervasyon toplamından kalan' : 'Tahsilat tamamlandı'}</p>
                 </div>
-                <div className={`pt-3 border-t space-y-1.5 ${hasOpenBalance ? 'border-rose-200' : 'border-slate-200'}`}>
+                <div className={`pt-3 border-t space-y-1.5 ${hasReservationAmountDue ? 'border-rose-200' : 'border-slate-200'}`}>
                   <div className="flex justify-between text-xs">
-                    <span className="text-slate-500">{t('cm.pages_ReservationDetailModal.toplam')}</span>
-                    <span className="font-semibold text-slate-800">{fmtTL(summary?.total_amount)} TL</span>
+                    <span className="text-slate-500">Konaklama</span>
+                    <span className="font-semibold text-slate-800">{fmtCurrency(accommodationTotal, currency)}</span>
                   </div>
+                  {additionalChargeTotal > 0 && (
+                    <div className="flex justify-between text-xs" data-testid="additional-charge-total">
+                      <span className="text-slate-500">Ekstralar</span>
+                      <span className="font-semibold text-amber-700">+{fmtCurrency(additionalChargeTotal, currency)}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between border-t border-slate-200 pt-1.5 text-xs" data-testid="gross-total">
+                    <span className="font-medium text-slate-600">Genel toplam</span>
+                    <span className="font-semibold text-slate-900">{fmtCurrency(grossTotal, currency)}</span>
+                  </div>
+                  {pricingReconciliationRequired && (
+                    <div className="rounded-md bg-amber-100/70 px-2 py-1.5 text-[11px] leading-4 text-amber-900" data-testid="pricing-reconciliation-alert">
+                      Aktif oda tahakkukları, onaylı rezervasyon toplamını {fmtCurrency(pricingReconciliationDifference, currency)} aşıyor. Ödeme yerine finansal mutabakat yapın.
+                    </div>
+                  )}
+                  {(summary?.total_discounts || 0) > 0 && (
+                    <div className="flex justify-between text-xs" data-testid="total-discounts">
+                      <span className="text-slate-500">{(summary?.complimentary_adjustment_total || 0) > 0 ? 'Comp indirimi' : (summary?.rate_correction_total || 0) > 0 ? 'Fiyat düzeltmesi' : 'İndirim'}</span>
+                      <span className="font-semibold text-rose-600">-{fmtCurrency(summary.total_discounts, currency)}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between text-xs">
-                    <span className="text-slate-500">{t('cm.pages_ReservationDetailModal.odenen')}</span>
-                    <span className="font-semibold text-emerald-600">{fmtTL(summary?.total_payments)} TL</span>
+                    <span className="text-slate-500">Toplam tahsilat</span>
+                    <span className="font-semibold text-emerald-600">{fmtCurrency(summary?.total_payments, currency)}</span>
                   </div>
+                  {prepaymentTotal > 0 && (
+                    <div className="flex justify-between rounded bg-emerald-100/70 px-1.5 py-1 text-xs" data-testid="prepayment-total">
+                      <span className="font-medium text-emerald-800">Ön ödeme</span>
+                      <span className="font-semibold text-emerald-700">{fmtCurrency(prepaymentTotal, currency)}</span>
+                    </div>
+                  )}
+                  {unpostedRoomAmount > 0.01 && (
+                    <>
+                      <div className="flex justify-between text-xs">
+                        <span className="text-slate-500">Folyo bakiyesi</span>
+                        <span className="font-semibold text-amber-700">{fmtCurrency(displayedFolioBalance, currency)}</span>
+                      </div>
+                      <div className="flex justify-between text-xs" data-testid="unposted-room-amount">
+                        <span className="text-slate-500">Tahakkuk bekleyen konaklama</span>
+                        <span className="font-semibold text-slate-700">{fmtCurrency(unpostedRoomAmount, currency)}</span>
+                      </div>
+                      {hasAllocatedPrepayment && (
+                        <div className="text-[11px] leading-4 text-emerald-700">
+                          Peşin tahsilat, bekleyen konaklama bedeline ayrıldı.
+                        </div>
+                      )}
+                    </>
+                  )}
                   {(summary?.total_deposits || 0) > 0 && (
                     <div className="flex justify-between text-xs">
                       <span className="text-slate-500">Depozito</span>
-                      <span className="font-semibold text-sky-600">{fmtTL(summary?.total_deposits)} TL</span>
+                      <span className="font-semibold text-sky-600">{fmtCurrency(summary?.total_deposits, currency)}</span>
                     </div>
                   )}
                 </div>
@@ -365,9 +721,13 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                     <div className="flex items-start gap-2">
                       <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
                       <div className="min-w-0">
-                        <p className="text-[11px] font-semibold text-amber-800">Kanal toplamına vergi tekrar eklenmiş</p>
+                        <p className="text-[11px] font-semibold text-amber-800">
+                          {channelPricingIssue.code === 'AUTOMATIC_ACCOMMODATION_TAX_DUPLICATE'
+                            ? 'Otomatik konaklama vergisi ikinci kez eklenmiş'
+                            : 'Nihai rezervasyon tutarına vergi tekrar eklenmiş'}
+                        </p>
                         <p className="mt-0.5 text-[10px] leading-4 text-amber-700">
-                          Doğru toplam {fmtTL(channelPricingIssue.expected_total)} TL. Mükerrer tutar {fmtTL(channelPricingIssue.overcharge)} TL.
+                          Doğru toplam {fmtCurrency(channelPricingIssue.expected_total, currency)}. Mükerrer tutar {fmtCurrency(channelPricingIssue.overcharge, currency)}.
                         </p>
                       </div>
                     </div>
@@ -375,12 +735,14 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                       type="button"
                       size="sm"
                       onClick={repairChannelPricing}
-                      disabled={!channelPricingIssue.repairable || pricingRepairing}
+                      disabled={readOnly || !channelPricingIssue.repairable || pricingRepairing}
                       className="mt-2 h-7 w-full bg-amber-600 px-2 text-[11px] text-white hover:bg-amber-700"
                       data-testid="repair-channel-pricing"
                     >
                       {pricingRepairing ? <Loader2 className="mr-1.5 h-3 w-3 animate-spin" /> : <Repeat2 className="mr-1.5 h-3 w-3" />}
-                      {channelPricingIssue.repairable ? 'Kanal fiyatıyla eşitle' : 'Finans onayı gerekli'}
+                      {channelPricingIssue.repairable
+                        ? (channelPricingIssue.code === 'AUTOMATIC_ACCOMMODATION_TAX_DUPLICATE' ? 'Mükerrer vergiyi düzelt' : 'Nihai fiyata düzelt')
+                        : 'Finans onayı gerekli'}
                     </Button>
                   </div>
                 )}
@@ -425,7 +787,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                 {(() => {
                   const ci = booking?.check_in ? new Date(booking.check_in) : null;
                   const co = booking?.check_out ? new Date(booking.check_out) : null;
-                  const nights = ci && co ? Math.max(1, Math.ceil((co - ci) / 86400000)) : 0;
+                  const nights = ci && co ? Math.max(1, reservationNights(booking?.check_in, booking?.check_out)) : 0;
                   const fmt = (d) => d ? d.toLocaleDateString('tr-TR', { day: '2-digit', month: 'short' }) : '—';
                   const dow = (d) => d ? d.toLocaleDateString('tr-TR', { weekday: 'short' }) : '';
                   return (
@@ -472,7 +834,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                   className="w-full h-8 text-xs justify-start bg-white text-slate-700 border-slate-300 hover:bg-slate-50"
                 />
                 {canCheckIn && (
-                  <Button size="sm" variant="outline" onClick={() => action(`/pms/reservations/${bookingId}/early-checkin`, { extra_charge: 0 }, 'Erken giriş yapıldı')} className="w-full h-8 text-xs justify-start bg-white border-slate-300 hover:bg-slate-50" data-testid="btn-early-checkin">
+                  <Button size="sm" variant="outline" onClick={() => action(`/pms/reservations/${bookingId}/early-checkin`, { extra_charge: 0 }, null)} className="w-full h-8 text-xs justify-start bg-white border-slate-300 hover:bg-slate-50" data-testid="btn-early-checkin">
                     <LogIn className="w-3 h-3 mr-2" /> {t('cm.pages_ReservationDetailModal.erken_giris')}
                   </Button>
                 )}
@@ -486,10 +848,10 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                     <DoorOpen className="w-3 h-3 mr-2" /> Oda Değiştir
                   </Button>
                 )}
-                <Button size="sm" variant="outline" onClick={() => setActiveTab('notes')} className="w-full h-8 text-xs justify-start bg-white border-slate-300 hover:bg-slate-50">
+                <Button size="sm" variant="outline" disabled={readOnly} onClick={() => setActiveTab('notes')} className="w-full h-8 text-xs justify-start bg-white border-slate-300 hover:bg-slate-50">
                   <FileText className="w-3 h-3 mr-2" /> Not Ekle
                 </Button>
-                <Button size="sm" variant="outline" onClick={async () => {
+                <Button size="sm" variant="outline" disabled={readOnly} onClick={async () => {
                   const vip = data?.guest?.vip_status || false;
                   try {
                     await axios.put(`/pms/reservations/${bookingId}/vip-status?vip=${!vip}`);
@@ -520,7 +882,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                 {hasOpenBalance ? (
                   <div className="flex items-center gap-1.5 bg-rose-50 border border-rose-200 rounded-md px-2 py-1.5" data-testid="ops-payment-alert">
                     <AlertTriangle className="w-3 h-3 text-rose-500 flex-shrink-0" />
-                    <span className="text-[11px] text-rose-700 font-medium">{t('cm.pages_ReservationDetailModal.odeme_bekleniyor')} {fmtTL(balance)} TL</span>
+                    <span className="text-[11px] text-rose-700 font-medium">{t('cm.pages_ReservationDetailModal.odeme_bekleniyor')} {fmtCurrency(balance, currency)}</span>
                   </div>
                 ) : (
                   <div className="flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 rounded-md px-2 py-1.5" data-testid="ops-payment-ok">
@@ -562,7 +924,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
             </div>
 
             {/* Sticky footer — birincil eylem (Giriş/Çıkış) hep görünür */}
-            {(booking?.status === 'confirmed' || booking?.status === 'guaranteed') && (
+            {!readOnly && (booking?.status === 'confirmed' || booking?.status === 'guaranteed') && (
               <div className="border-t bg-white px-4 py-3 shadow-[0_-4px_12px_rgba(0,0,0,0.04)]">
                 <Button
                   size="sm"
@@ -589,29 +951,50 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                 </Button>
               </div>
             )}
-            {booking?.status === 'checked_in' && (
+            {!readOnly && booking?.status === 'checked_in' && (
               <div className="border-t bg-white px-4 py-3 shadow-[0_-4px_12px_rgba(0,0,0,0.04)]">
                 <Button
                   size="sm"
+                  disabled={checkoutSubmitting}
                   onClick={async () => {
+                    if (checkoutSubmitting) return;
+                    if (pricingReconciliationRequired) {
+                      setActiveTab('daily_rates');
+                      toast.warning('Fiyat ve tahakkuk farkı düzeltilmeden çıkış yapılamaz. Bu tutarı misafirden tahsil etmeyin.');
+                      return;
+                    }
                     if (hasOpenBalance) {
                       setActiveTab('folios');
                       toast.warning(
-                        `Çıkış için önce ${balance.toLocaleString('tr-TR', {
+                        `Çıkış için önce folyo bakiyesini (${balance.toLocaleString('tr-TR', {
                           minimumFractionDigits: 2,
                           maximumFractionDigits: 2,
-                        })} TL bakiyeyi kapatın.`,
+                        })} ${currency}) kapatın.`,
                       );
                       return;
                     }
-                    if (!await confirmDialog({ message: 'Çıkış yapılsın mı?', variant: 'danger' })) return;
+                    const checkoutConfirmed = await confirmDialog({
+                      title: isEarlyCheckout ? 'Erken çıkışı onaylayın' : 'Çıkışı onaylayın',
+                      message: isEarlyCheckout
+                        ? `Misafirin planlanan çıkış tarihi ${fmtDateTime(data?.booking?.check_out).split(' ')[0]}. Erken çıkış yapmak istediğinize emin misiniz?`
+                        : 'Misafirin çıkışını yapmak istediğinize emin misiniz?',
+                      confirmText: isEarlyCheckout ? 'Evet, erken çıkış yap' : 'Evet, çıkış yap',
+                      variant: 'danger',
+                    });
+                    if (!checkoutConfirmed) return;
+                    setCheckoutSubmitting(true);
                     try {
+                      // Mutasyonlarda ekranda gösterilen kısa RES-... referansını
+                      // veya liste state'indeki eski kimliği değil, full-detail
+                      // yanıtının kanonik rezervasyon kimliğini kullan. Böylece
+                      // detayı açılan kayıt ile çıkış yapılan kayıt aynıdır.
+                      const checkoutBookingId = data?.booking?.id || bookingId;
                       // Bakiye summary'den biliniyor → açık bakiye ASLA çevrimdışı
                       // kuyruğa alınmaz (ödeme çevrimdışı olamaz). Sıfır bakiye +
                       // ağ hatası → kuyruğa alınır; backend yine 402 ile guard eder.
-                      const result = await performCheckout(bookingId, {
+                      const result = await performCheckout(checkoutBookingId, {
                         balance: rawBalance,
-                        onlineRequest: () => axios.post(`/frontdesk/checkout/${bookingId}?auto_close_folios=true`),
+                        onlineRequest: () => axios.post(`/pms/reservations/${checkoutBookingId}/checkout?auto_close_folios=true`),
                       });
                       if (result.blocked) {
                         toast.error('Açık bakiye var. Çıkış için lütfen önce ödeme alınız.');
@@ -621,29 +1004,34 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                         toast.success('Çevrimdışı: çıkış kuyruğa alındı, internet gelince tamamlanacak');
                         return;
                       }
+                      if (result.alreadyCheckedOut) {
+                        toast.success('Çıkış daha önce tamamlanmış; ekran güncellendi');
+                      }
                       const total = result.data?.total_balance;
                       if (typeof total === 'number' && total > 0.01) {
                         toast.warning(`Açık bakiye ile çıkış yapıldı: ${total.toFixed(2)}`);
-                      } else {
-                        toast.success('Çıkış yapıldı');
                       }
-                      await finishOperation('checked_out');
+                      await finishOperation('checked_out', checkoutBookingId);
                     } catch (e) {
                       const detail = e.response?.data?.detail || e.message;
                       if (e.response?.status === 402) {
                         toast.error(`Açık bakiye var: ${detail}. Lütfen önce ödeme alınız.`);
                       } else {
-                        toast.error('Hata: ' + detail);
+                        toast.error('İşlem Hatası: ' + detail);
                       }
+                    } finally {
+                      setCheckoutSubmitting(false);
                     }
                   }}
                   className="w-full h-10 bg-amber-600 hover:bg-amber-700 text-white font-medium shadow-sm"
                   data-testid="btn-checkout"
                 >
-                  {hasOpenBalance ? (
-                    <><CreditCard className="w-4 h-4 mr-2" /> Önce ödemeyi tamamlayın</>
+                  {pricingReconciliationRequired ? (
+                    <><AlertTriangle className="w-4 h-4 mr-2" /> Önce fiyat / tahakkuk mutabakatını tamamlayın</>
+                  ) : hasOpenBalance ? (
+                    <><CreditCard className="w-4 h-4 mr-2" /> Önce folio bakiyesini tamamlayın</>
                   ) : (
-                    <><LogOut className="w-4 h-4 mr-2" /> {t('cm.pages_ReservationDetailModal.cikis_yap')}</>
+                    <>{checkoutSubmitting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <LogOut className="w-4 h-4 mr-2" />} {checkoutSubmitting ? 'Çıkış kaydediliyor…' : (isEarlyCheckout ? 'Erken Çıkış Yap' : t('cm.pages_ReservationDetailModal.cikis_yap'))}</>
                   )}
                 </Button>
               </div>
@@ -651,14 +1039,15 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
           </aside>
 
           {/* Ana içerik */}
-          <div className="flex-1 overflow-y-auto bg-white">
+          <div className="flex-1 overflow-y-auto bg-slate-50/40">
             <Tabs value={activeTab} onValueChange={setActiveTab} className="h-full flex flex-col">
-              <TabsList className="border-b rounded-none h-auto p-0 bg-white flex-shrink-0 justify-start gap-0 overflow-x-auto sticky top-0 z-10">
+              <TabsList ref={tabsListRef} className="border-b border-slate-200 rounded-none h-auto p-0 bg-white flex-shrink-0 justify-start gap-0 overflow-x-auto sticky top-0 z-20">
                 {primaryTabs.map(tab => (
                   <TabsTrigger
                     key={tab.id}
                     value={tab.id}
-                    className="rounded-none border-b-2 border-transparent data-[state=active]:border-amber-600 data-[state=active]:text-amber-700 data-[state=active]:bg-amber-50/40 data-[state=active]:shadow-none px-4 py-2.5 text-xs font-medium text-slate-500 hover:text-slate-800 hover:bg-slate-50 transition-colors whitespace-nowrap"
+                    data-reservation-tab={tab.id}
+                    className="rounded-none border-b-2 border-transparent data-[state=active]:border-blue-600 data-[state=active]:text-blue-700 data-[state=active]:bg-blue-50/50 data-[state=active]:shadow-none px-4 py-3 text-xs font-semibold text-slate-500 hover:text-slate-900 hover:bg-slate-50 transition-colors whitespace-nowrap"
                   >
                     <tab.icon className="w-3.5 h-3.5 mr-1.5" />{tab.label}
                   </TabsTrigger>
@@ -669,7 +1058,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                     <button
                       type="button"
                       className={`rounded-none border-b-2 px-4 py-2.5 text-xs font-medium hover:text-slate-800 hover:bg-slate-50 transition-colors whitespace-nowrap inline-flex items-center ${
-                        activeMore ? 'border-amber-600 text-amber-700 bg-amber-50/40' : 'border-transparent text-slate-500'
+                        activeMore ? 'border-blue-600 text-blue-700 bg-blue-50/50' : 'border-transparent text-slate-500'
                       }`}
                     >
                       {activeMore ? (<><activeMore.icon className="w-3.5 h-3.5 mr-1.5" />{activeMore.label}</>) : (<>Daha Fazla</>)}
@@ -689,27 +1078,230 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                   </DropdownMenuContent>
                 </DropdownMenu>
               </TabsList>
-              <div className="flex-1 overflow-y-auto p-6">
-                <TabsContent value="general" className="mt-0"><GeneralInfoTab booking={booking} guest={guest} room={room} company={company} onGuestUpdate={loadData} notes={notes} history={history} summary={summary} payments={payments} deposits={deposits} onSwitchTab={setActiveTab} /></TabsContent>
-                <TabsContent value="guests" className="mt-0"><GuestsTab guests={guests} booking={booking} onRefresh={loadData} /></TabsContent>
-                <TabsContent value="online_payment" className="mt-0"><OnlinePaymentTab booking={booking} onRefresh={loadData} /></TabsContent>
-                <TabsContent value="vcc" className="mt-0"><VCCTab booking={booking} onRefresh={loadData} /></TabsContent>
-                <TabsContent value="folios" className="mt-0"><FoliosTab folios={folios} charges={charges} payments={payments} extra_charges={extra_charges} summary={summary} booking={booking} guest={guest} room={room} onRefresh={loadData} onSwitchTab={setActiveTab} /></TabsContent>
-                <TabsContent value="daily_rates" className="mt-0"><DailyRatesTab dailyRates={daily_rates} booking={booking} onRefresh={loadData} /></TabsContent>
-                <TabsContent value="extras" className="mt-0"><ExtraChargesTab extra_charges={extra_charges} charges={charges} booking={booking} onRefresh={loadData} allBookings={allBookings} /></TabsContent>
+              {activeTab === 'general' && (
+                <div className="border-b border-slate-200 bg-white px-4 py-3 sm:px-6" data-testid="reservation-workspace-overview">
+                  <div className="mb-3 grid gap-2 lg:grid-cols-2">
+                    <div className="flex items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50/70 px-3 py-2.5">
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white"><CheckCircle2 className="h-4 w-4" /></span>
+                      <div className="min-w-0"><p className="text-xs font-bold text-emerald-900">{booking?.status === 'checked_out' ? 'Konaklama tamamlandı' : booking?.status === 'checked_in' ? 'Konaklama devam ediyor' : 'Giriş bekleniyor'}</p><p className="truncate text-[11px] text-emerald-700">{stayNights} gece · {guestCount} misafir · Oda {room?.room_number || 'atanmadı'}</p></div>
+                    </div>
+                    <div className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 ${hasOpenBalance ? 'border-rose-200 bg-rose-50/70' : 'border-emerald-200 bg-emerald-50/70'}`}>
+                      <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-white ${hasOpenBalance ? 'bg-rose-600' : 'bg-emerald-600'}`}>{hasOpenBalance ? <CreditCard className="h-4 w-4" /> : <Shield className="h-4 w-4" />}</span>
+                      <div className="min-w-0"><p className={`text-xs font-bold ${hasOpenBalance ? 'text-rose-900' : 'text-emerald-900'}`}>{hasOpenBalance ? `Kalan tahsilat ${fmtCurrency(balance, currency)}` : 'Ödeme tamamlandı'}</p><p className={`truncate text-[11px] ${hasOpenBalance ? 'text-rose-700' : 'text-emerald-700'}`}>{hasOpenBalance ? 'Çıkıştan önce folyo bakiyesini kapatın' : 'Rezervasyonun tahsilat bakiyesi kapalı'}</p></div>
+                    </div>
+                  </div>
+                  {!readOnly && (
+                    <div className="flex flex-wrap gap-2" aria-label="Hızlı işlemler">
+                      <Button type="button" size="sm" variant="outline" className="h-9 bg-white text-xs" aria-label="Hızlı işlem: odayı değiştir" onClick={() => setActiveTab('room_change')} data-testid="workspace-room-change"><ArrowLeftRight className="mr-1.5 h-3.5 w-3.5 text-blue-600" />Odayı Değiştir</Button>
+                      {canCancel && <Button type="button" size="sm" variant="outline" className="h-9 bg-white text-xs" aria-label="Hızlı işlem: tesisi değiştir" onClick={openPropertyTransfer} data-testid="workspace-property-transfer"><Globe className="mr-1.5 h-3.5 w-3.5 text-blue-600" />Tesisi Değiştir</Button>}
+                      {canEditStayDates && <Button type="button" size="sm" variant="outline" className="h-9 bg-white text-xs" aria-label="Hızlı işlem: tarihleri düzenle" onClick={openStayEditor} data-testid="workspace-stay-edit"><Pencil className="mr-1.5 h-3.5 w-3.5 text-blue-600" />Tarihleri Düzenle</Button>}
+                      <Button type="button" size="sm" variant="outline" className="h-9 bg-white text-xs" aria-label="Hızlı işlem: ödeme ve folyo" onClick={() => setActiveTab('folios')} data-testid="workspace-folios"><CreditCard className="mr-1.5 h-3.5 w-3.5 text-blue-600" />Ödeme / Folyo</Button>
+                      <Button type="button" size="sm" variant="outline" className="h-9 bg-white text-xs" aria-label="Hızlı işlem: ek ücret" onClick={() => setActiveTab('extras')} data-testid="workspace-extras"><Plus className="mr-1.5 h-3.5 w-3.5 text-blue-600" />Ek Ücret Ekle</Button>
+                      <Button type="button" size="sm" variant="outline" className="h-9 bg-white text-xs" aria-label="Hızlı işlem: notlar" onClick={() => setActiveTab('notes')} data-testid="workspace-notes"><MessageSquare className="mr-1.5 h-3.5 w-3.5 text-blue-600" />Not Ekle</Button>
+                    </div>
+                  )}
+                </div>
+              )}
+              <div className="flex-1 overflow-y-auto p-4 sm:p-5 lg:p-6">
+                <TabsContent value="general" className="mt-0"><GeneralInfoTab booking={booking} guest={guest} room={room} company={company} onGuestUpdate={loadData} notes={notes} history={history} summary={summary} payments={payments} deposits={deposits} onSwitchTab={setActiveTab} onStayEdit={openStayEditor} canEditStay={canEditStayDates} readOnly={readOnly} /></TabsContent>
+                <TabsContent value="guests" className="mt-0"><GuestsTab guests={guests} booking={booking} onRefresh={loadData} readOnly={readOnly} /></TabsContent>
+                <TabsContent value="online_payment" className="mt-0"><OnlinePaymentTab booking={booking} onRefresh={loadData} readOnly={readOnly} /></TabsContent>
+                <TabsContent value="vcc" className="mt-0"><VCCTab booking={booking} onRefresh={loadData} readOnly={readOnly} /></TabsContent>
+                <TabsContent value="folios" className="mt-0"><FoliosTab folios={folios} charges={charges} payments={payments} extra_charges={extra_charges} summary={summary} booking={booking} guest={guest} room={room} onRefresh={loadData} onSwitchTab={setActiveTab} readOnly={readOnly} /></TabsContent>
+                <TabsContent value="daily_rates" className="mt-0"><DailyRatesTab dailyRates={daily_rates} booking={booking} summary={summary} onRefresh={loadData} readOnly={readOnly} businessDate={data?.business_date} /></TabsContent>
+                <TabsContent value="extras" className="mt-0"><ExtraChargesTab extra_charges={extra_charges} charges={charges} booking={booking} onRefresh={loadData} allBookings={allBookings} readOnly={readOnly} /></TabsContent>
                 <TabsContent value="room_change" className="mt-0"><RoomChangeTab booking={booking} room={room} roomMoves={room_moves} onRefresh={loadData} /></TabsContent>
-                <TabsContent value="cancel" className="mt-0"><CancelTab booking={booking} bookingId={bookingId} onRefresh={loadData} onClose={onClose} /></TabsContent>
+                <TabsContent value="cancel" className="mt-0"><CancelTab booking={booking} bookingId={bookingId} onRefresh={loadData} onClose={handleClose} /></TabsContent>
                 <TabsContent value="voucher" className="mt-0"><VoucherTab booking={booking} bookingId={bookingId} /></TabsContent>
                 <TabsContent value="invoice" className="mt-0"><InvoiceTab booking={booking} bookingId={bookingId} /></TabsContent>
                 <TabsContent value="deposits" className="mt-0"><DepositsTab deposits={deposits} booking={booking} onRefresh={loadData} /></TabsContent>
                 <TabsContent value="communication" className="mt-0"><CommunicationTab booking={booking} onRefresh={loadData} communicationLogs={communication_logs} /></TabsContent>
                 <TabsContent value="notes" className="mt-0"><NotesTab notes={notes} booking={booking} onRefresh={loadData} /></TabsContent>
-                <TabsContent value="history" className="mt-0"><HistoryTab history={history} roomMoves={room_moves} /></TabsContent>
+                <TabsContent value="history" className="mt-0"><HistoryTab history={history} roomMoves={room_moves} currency={booking?.currency} /></TabsContent>
               </div>
             </Tabs>
           </div>
         </div>
       </div>
+
+      <Dialog open={stayEditorOpen} onOpenChange={(open) => { if (!staySaving) setStayEditorOpen(open); }}>
+        <DialogContent
+          className="z-[80] sm:max-w-md"
+          overlayClassName="z-[70]"
+          data-testid="stay-date-editor"
+        >
+          <DialogHeader>
+            <DialogTitle>Konaklama tarihlerini düzenle</DialogTitle>
+            <DialogDescription>
+              Oda uygunluğu kontrol edilir; eklenen geceler takvimdeki yayınlanmış fiyatla hesaplanır.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="stay-check-in">Giriş tarihi</Label>
+              <Input
+                id="stay-check-in"
+                type="date"
+                value={stayForm.checkIn}
+                disabled={staySaving || checkedInStay}
+                onChange={(event) => setStayForm((current) => {
+                  const checkIn = event.target.value;
+                  return {
+                    ...current,
+                    checkIn,
+                    checkOut: checkoutFromNightCount(checkIn, Number(current.nights) || 1),
+                  };
+                })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="stay-check-out">Çıkış tarihi</Label>
+              <Input
+                id="stay-check-out"
+                type="date"
+                min={stayForm.checkIn || undefined}
+                value={stayForm.checkOut}
+                disabled={staySaving}
+                onChange={(event) => setStayForm((current) => {
+                  const checkOut = event.target.value;
+                  const nights = nightsBetweenDates(current.checkIn, checkOut);
+                  return { ...current, checkOut, nights: nights > 0 ? nights : current.nights };
+                })}
+              />
+            </div>
+            <div className="space-y-2 sm:col-span-2">
+              <Label htmlFor="stay-night-count">Gece sayısı</Label>
+              <div className="flex items-center gap-3">
+                <Input
+                  id="stay-night-count"
+                  data-testid="stay-night-count"
+                  type="number"
+                  inputMode="numeric"
+                  min="1"
+                  max="3650"
+                  step="1"
+                  value={stayForm.nights}
+                  disabled={staySaving}
+                  onChange={(event) => {
+                    const nights = Number(event.target.value);
+                    setStayForm((current) => ({
+                      ...current,
+                      nights: event.target.value,
+                      checkOut: Number.isInteger(nights) && nights > 0
+                        ? checkoutFromNightCount(current.checkIn, nights)
+                        : current.checkOut,
+                    }));
+                  }}
+                  className="max-w-32"
+                />
+                <p className="text-xs text-slate-500">Gece sayısını değiştirdiğinizde çıkış tarihi otomatik hesaplanır.</p>
+              </div>
+            </div>
+          </div>
+          {checkedInStay && <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+            Giriş yapılmış rezervasyonda yalnızca çıkış tarihi güncellenebilir.
+          </p>}
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button type="button" variant="outline" onClick={() => setStayEditorOpen(false)} disabled={staySaving}>Vazgeç</Button>
+            <Button type="button" onClick={saveStayDates} disabled={staySaving} data-testid="save-stay-dates">
+              {staySaving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />} Kaydet
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={propertyTransferOpen} onOpenChange={(open) => { if (!propertyTransferSaving) setPropertyTransferOpen(open); }}>
+        <DialogContent className="z-[80] sm:max-w-lg" overlayClassName="z-[70]" data-testid="property-transfer-dialog">
+          <DialogHeader>
+            <DialogTitle>Rezervasyonu zincirdeki başka tesise aktar</DialogTitle>
+            <DialogDescription>
+              Hedef tesiste yeni rezervasyon ve oda kilidi güvenli biçimde oluşturulur. Kaynak rezervasyon transfer kaydıyla kapatılır.
+            </DialogDescription>
+          </DialogHeader>
+          {propertyTransferLoading ? (
+            <div className="flex items-center justify-center gap-2 py-10 text-sm text-slate-500"><Loader2 className="h-4 w-4 animate-spin" />Zincir müsaitliği kontrol ediliyor</div>
+          ) : propertyTransferOptions.length === 0 ? (
+            <div className="rounded-lg border border-dashed p-6 text-center text-sm text-slate-500">
+              Bu tarihlerde aktarım yapılabilecek zincir oteli bulunamadı.
+            </div>
+          ) : (
+            <div className="space-y-4 py-2">
+              <div className="space-y-2">
+                <Label htmlFor="property-transfer-target">Hedef tesis</Label>
+                <select
+                  id="property-transfer-target"
+                  className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm"
+                  value={propertyTransferForm.targetPropertyId}
+                  disabled={propertyTransferSaving}
+                  onChange={(event) => {
+                    const property = propertyTransferOptions.find((item) => item.property_id === event.target.value);
+                    const currentRoomType = booking?.room_type || room?.room_type;
+                    const roomType = property?.room_types?.includes(currentRoomType)
+                      ? currentRoomType
+                      : (property?.room_types?.[0] || '');
+                    setPropertyTransferForm((current) => ({ ...current, targetPropertyId: event.target.value, roomType }));
+                  }}
+                >
+                  {propertyTransferOptions.map((property) => (
+                    <option key={property.property_id} value={property.property_id}>
+                      {property.property_name} · {property.available_rooms} müsait oda
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="property-transfer-room-type">Oda tipi</Label>
+                <select
+                  id="property-transfer-room-type"
+                  className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm"
+                  value={propertyTransferForm.roomType}
+                  disabled={propertyTransferSaving}
+                  onChange={(event) => setPropertyTransferForm((current) => ({ ...current, roomType: event.target.value }))}
+                >
+                  {(propertyTransferOptions.find((item) => item.property_id === propertyTransferForm.targetPropertyId)?.room_types || []).map((roomType) => (
+                    <option key={roomType} value={roomType}>{roomType}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="property-transfer-reason">Değişiklik nedeni</Label>
+                <Input
+                  id="property-transfer-reason"
+                  value={propertyTransferForm.reason}
+                  disabled={propertyTransferSaving}
+                  placeholder="Örn. misafir talebi veya tesis operasyonu"
+                  onChange={(event) => setPropertyTransferForm((current) => ({ ...current, reason: event.target.value }))}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="property-transfer-finance">Kaynak tesiste tahsilat varsa</Label>
+                <select
+                  id="property-transfer-finance"
+                  className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm"
+                  value={propertyTransferForm.financialHandling}
+                  disabled={propertyTransferSaving}
+                  onChange={(event) => setPropertyTransferForm((current) => ({ ...current, financialHandling: event.target.value }))}
+                >
+                  <option value="reject">Transferi durdur; önce iade/düzeltme yap</option>
+                  <option value="retain_and_settle">Tahsilatı kaynakta tut; zincir içi mahsuplaşma oluştur</option>
+                </select>
+                <p className="text-xs leading-5 text-slate-500">
+                  Mahsuplaşma seçilirse nakit ilk tesiste kalır; hizmeti verecek hedef tesis için aynı transfer numarasıyla alacak/borç mutabakatı açılır.
+                </p>
+              </div>
+              <p className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800">
+                Hedef tesise bildirim gider; kaynak tesis, hedef tesis, transfer nedeni ve varsa mahsuplaşma rezervasyon geçmişine kaydedilir.
+              </p>
+            </div>
+          )}
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button type="button" variant="outline" onClick={() => setPropertyTransferOpen(false)} disabled={propertyTransferSaving}>Vazgeç</Button>
+            <Button type="button" onClick={savePropertyTransfer} disabled={propertyTransferSaving || propertyTransferLoading || propertyTransferOptions.length === 0} data-testid="confirm-property-transfer">
+              {propertyTransferSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Tesise aktar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <GuestAlertModal
         guestId={guest?.id || booking?.guest_id}
@@ -720,9 +1312,9 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
           setCheckinAlertOpen(false);
           try {
             await axios.post(`/frontdesk/checkin/${bookingId}?create_folio=true&force_clean=true`);
-            toast.success('Giriş yapıldı');
+            
             await finishOperation('checked_in');
-          } catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
+          } catch (e) { toast.error('İşlem Hatası: ' + (e.response?.data?.detail || e.message)); }
         }}
       />
     </div>

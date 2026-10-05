@@ -31,10 +31,16 @@ describe('rate-manager/constants', () => {
       expect(keys).toContain('availability');
       expect(keys).toContain('rate');
       expect(keys).toContain('min_stay');
+      expect(keys).toContain('min_los_arrival');
       expect(keys).toContain('max_stay');
       expect(keys).toContain('cta');
       expect(keys).toContain('ctd');
       expect(keys).toContain('stop_sell');
+    });
+
+    it('shows arrival-based minimum stay only for Exely', () => {
+      const field = UPDATE_FIELDS.find((item) => item.key === 'min_los_arrival');
+      expect(field.providers).toEqual(['exely']);
     });
 
     it('each field has key and label', () => {

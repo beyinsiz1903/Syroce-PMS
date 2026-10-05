@@ -14,6 +14,7 @@ Pins the contract of core.pos_folio_consumer:
   * drain_pending_pos_charges applies queued posted events for a folio inline
     and marks them processed.
 """
+
 from __future__ import annotations
 
 import copy
@@ -24,7 +25,6 @@ from pymongo.errors import DuplicateKeyError
 
 from core import pos_folio_consumer as cons
 from core.outbox_service import POS_CHARGE_POSTED, POS_CHARGE_REVERSED
-
 
 # ---------------------------------------------------------------------------
 # In-memory fakes
@@ -161,6 +161,10 @@ class _FakeDB:
         self.payments = _Coll()
         self.pos_late_charges = _Coll()
         self.outbox_events = _Coll()
+        self.tenant_settings = _Coll()
+        self.tenant_settings.docs.append(
+            {"tenant_id": "tenant-A", "business_date": "2026-09-23"}
+        )
 
     def __getitem__(self, name):
         return getattr(self, name)
@@ -240,6 +244,7 @@ async def test_posted_inserts_charge_and_recalcs_balance(_patch):
     assert ok, msg
     assert _patch.folio_charges.insert_calls == 1
     assert len(_patch.folio_charges.docs) == 1
+    assert _patch.folio_charges.docs[0]["business_date"] == "2026-09-23"
     # balance recalculated from ledger (100 charge - 0 payment).
     assert _patch.folios.docs[0]["balance"] == 100.0
 
@@ -251,6 +256,21 @@ async def test_posted_balance_nets_payments(_patch):
         "amount": 30.0, "voided": False,
     })
     await cons.handle_ic_pos_event(_posted_event())
+    assert _patch.folios.docs[0]["balance"] == 70.0
+
+
+async def test_recalc_includes_legacy_ledger_rows_without_voided_flag(_patch):
+    _seed_open_folio(_patch)
+    _patch.folio_charges.docs.append(
+        {"id": "C1", "tenant_id": "tenant-A", "folio_id": "F1", "total": 100.0}
+    )
+    _patch.payments.docs.append(
+        {"id": "P1", "tenant_id": "tenant-A", "folio_id": "F1", "amount": 30.0}
+    )
+
+    balance = await cons._recalc_folio_balance(_patch, "tenant-A", "F1")
+
+    assert balance == 70.0
     assert _patch.folios.docs[0]["balance"] == 70.0
 
 

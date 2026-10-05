@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
-import ReservationDetailModal from '@/pages/ReservationDetailModal';
+import ReservationDetailModal, { isEarlyCheckoutDate } from '@/pages/ReservationDetailModal';
 
 const { get, post, confirmDialog, axiosMock } = vi.hoisted(() => {
   const get = vi.fn();
@@ -51,16 +51,104 @@ const detail = {
 };
 
 describe('ReservationDetailModal operation URLs', () => {
+  it('detects a checkout scheduled after the active PMS business date', () => {
+    expect(isEarlyCheckoutDate('2026-09-27', '2026-09-26')).toBe(true);
+    expect(isEarlyCheckoutDate('2026-09-26', '2026-09-26')).toBe(false);
+    expect(isEarlyCheckoutDate('2026-09-25', '2026-09-26')).toBe(false);
+  });
+
   beforeEach(() => {
     get.mockReset();
     get.mockResolvedValue({ data: detail });
     post.mockReset();
     post.mockResolvedValue({ data: { success: true } });
+    axiosMock.put.mockReset();
+    axiosMock.put.mockResolvedValue({ data: { success: true } });
     confirmDialog.mockReset();
     confirmDialog.mockResolvedValue(true);
   });
 
   afterEach(() => cleanup());
+
+  it('sol kartta konaklama, ekstralar, genel toplam ve ön ödemeyi ayrı gösterir', async () => {
+    get.mockResolvedValue({
+      data: {
+        ...detail,
+        booking: { ...detail.booking, total_amount: 1000 },
+        summary: {
+          balance: 950,
+          reservation_total_due: 950,
+          total_amount: 1000,
+          accommodation_total: 1000,
+          additional_charge_total: 150,
+          gross_total: 1150,
+          total_payments: 200,
+          prepayment_total: 200,
+        },
+      },
+    });
+
+    render(<ReservationDetailModal bookingId="booking-test" onClose={() => {}} allBookings={[]} />);
+
+    expect(await screen.findByTestId('financial-summary-card')).toBeInTheDocument();
+    expect(screen.getByTestId('additional-charge-total')).toHaveTextContent('Ekstralar');
+    expect(screen.getByTestId('gross-total')).toHaveTextContent('Genel toplam');
+    expect(screen.getByTestId('prepayment-total')).toHaveTextContent('Ön ödeme');
+  });
+
+  it('keeps the redesigned workspace shortcuts connected to the existing operation tabs', async () => {
+    render(<ReservationDetailModal bookingId="booking-test" onClose={() => {}} allBookings={[]} />);
+
+    expect(await screen.findByTestId('reservation-workspace-overview')).toBeInTheDocument();
+    expect(screen.getByTestId('workspace-stay-edit')).toBeInTheDocument();
+    expect(screen.getByTestId('workspace-extras')).toBeInTheDocument();
+    expect(screen.getByTestId('workspace-room-change')).toBeInTheDocument();
+    expect(screen.getByTestId('workspace-notes')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('workspace-folios'));
+    expect(await screen.findByTestId('folios-tab')).toBeInTheDocument();
+  });
+
+  it('transfers an eligible reservation directly to an available sibling property', async () => {
+    post.mockImplementation((url) => {
+      if (url === '/platform/multi-property/search-availability') {
+        return Promise.resolve({ data: { properties: [{
+          property_id: 'hotel-fethiye',
+          property_name: 'Fethiye Oteli',
+          available_rooms: 4,
+          room_types: ['Standard', 'Deluxe'],
+        }] } });
+      }
+      if (url === '/platform/multi-property/transfer-reservation') {
+        return Promise.resolve({ data: {
+          success: true,
+          target_property_name: 'Fethiye Oteli',
+          target_room_number: '204',
+        } });
+      }
+      return Promise.resolve({ data: { success: true } });
+    });
+
+    render(<ReservationDetailModal bookingId="booking-test" onClose={() => {}} allBookings={[]} />);
+
+    fireEvent.click(await screen.findByTestId('workspace-property-transfer'));
+    expect(await screen.findByTestId('property-transfer-dialog')).toBeInTheDocument();
+    expect(await screen.findByRole('option', { name: /Fethiye Oteli/ })).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Değişiklik nedeni'), { target: { value: 'Misafir talebi' } });
+    fireEvent.change(screen.getByLabelText('Kaynak tesiste tahsilat varsa'), { target: { value: 'retain_and_settle' } });
+    fireEvent.click(screen.getByTestId('confirm-property-transfer'));
+
+    await waitFor(() => expect(post).toHaveBeenCalledWith(
+      '/platform/multi-property/transfer-reservation',
+      {
+        booking_id: 'booking-test',
+        target_property_id: 'hotel-fethiye',
+        target_room_type: 'Standard',
+        reason: 'Misafir talebi',
+        financial_handling: 'retain_and_settle',
+      },
+    ));
+  });
 
   it('sends no-show to the single /api-prefixed axios base path', async () => {
     render(<ReservationDetailModal bookingId="booking-test" onClose={() => {}} allBookings={[]} />);
@@ -125,6 +213,107 @@ describe('ReservationDetailModal operation URLs', () => {
     expect(screen.queryByTestId('btn-late-checkout')).not.toBeInTheDocument();
   });
 
+  it('updates stay dates with an idempotent booking write and complete daily-rate plan', async () => {
+    get.mockImplementation((url) => {
+      if (url.includes('/unified-rate-manager/grid')) {
+        return Promise.resolve({
+          data: {
+            grid: [{
+              pms_room_type: 'Standard',
+              dates: [
+                { date: '2026-08-13', rate: 200 },
+                { date: '2026-08-14', rate: 250 },
+              ],
+            }],
+          },
+        });
+      }
+      return Promise.resolve({
+        data: {
+          ...detail,
+          booking: { ...detail.booking, total_amount: 200 },
+          daily_rates: [{ date: '2026-08-13', rate: 200 }],
+        },
+      });
+    });
+
+    render(<ReservationDetailModal bookingId="booking-test" onClose={() => {}} allBookings={[]} />);
+
+    fireEvent.click(await screen.findByTestId('edit-stay-dates'));
+    expect(screen.getByTestId('stay-date-editor')).toHaveClass('z-[80]');
+    fireEvent.change(screen.getByLabelText('Çıkış tarihi'), { target: { value: '2026-08-15' } });
+    fireEvent.click(screen.getByTestId('save-stay-dates'));
+
+    await waitFor(() => expect(axiosMock.put).toHaveBeenNthCalledWith(
+      1,
+      '/pms/bookings/booking-test',
+      {
+        check_in: '2026-08-13',
+        check_out: '2026-08-15',
+        total_amount: 450,
+      },
+      { headers: { 'Idempotency-Key': expect.any(String) } },
+    ));
+    await waitFor(() => expect(axiosMock.put).toHaveBeenNthCalledWith(
+      2,
+      '/pms/reservations/booking-test/daily-rates',
+      {
+        rates: [
+          { date: '2026-08-13', rate: 200 },
+          { date: '2026-08-14', rate: 250 },
+        ],
+      },
+    ));
+  });
+
+  it('gece sayısı değişince çıkış tarihini otomatik hesaplar ve elle seçilen tarihten geceyi günceller', async () => {
+    render(<ReservationDetailModal bookingId="booking-test" onClose={() => {}} allBookings={[]} />);
+
+    fireEvent.click(await screen.findByTestId('edit-stay-dates'));
+    const nightInput = screen.getByTestId('stay-night-count');
+    const checkoutInput = screen.getByLabelText('Çıkış tarihi');
+
+    expect(nightInput).toHaveValue(1);
+    fireEvent.change(nightInput, { target: { value: '4' } });
+    expect(checkoutInput).toHaveValue('2026-08-17');
+
+    fireEvent.change(checkoutInput, { target: { value: '2026-08-16' } });
+    expect(nightInput).toHaveValue(3);
+  });
+
+  it('keeps a complimentary stay free when its checkout date changes', async () => {
+    get.mockImplementation((url) => {
+      if (url.includes('/unified-rate-manager/grid')) {
+        return Promise.resolve({ data: { grid: [{ pms_room_type: 'Standard', dates: [{ date: '2026-08-14', rate: 2000 }] }] } });
+      }
+      return Promise.resolve({
+        data: {
+          ...detail,
+          booking: { ...detail.booking, total_amount: 2000, is_complimentary: true, status: 'checked_in' },
+          daily_rates: [{ date: '2026-08-13', rate: 0 }],
+        },
+      });
+    });
+
+    render(<ReservationDetailModal bookingId="booking-test" onClose={() => {}} allBookings={[]} />);
+    fireEvent.click(await screen.findByTestId('edit-stay-dates'));
+    fireEvent.change(screen.getByLabelText('Çıkış tarihi'), { target: { value: '2026-08-15' } });
+    fireEvent.click(screen.getByTestId('save-stay-dates'));
+
+    await waitFor(() => expect(axiosMock.put).toHaveBeenNthCalledWith(
+      1,
+      '/pms/bookings/booking-test',
+      { check_in: '2026-08-13', check_out: '2026-08-15', total_amount: 0 },
+      { headers: { 'Idempotency-Key': expect.any(String) } },
+    ));
+    expect(axiosMock.put).toHaveBeenNthCalledWith(
+      2,
+      '/pms/reservations/booking-test/daily-rates',
+      { rates: [{ date: '2026-08-13', rate: 0 }, { date: '2026-08-14', rate: 0 }] },
+    );
+    expect(get).not.toHaveBeenCalledWith(expect.stringContaining('/unified-rate-manager/grid'));
+  });
+
   it('shows late checkout but hides arrival and cancellation actions after check-in', async () => {
     get.mockResolvedValueOnce({
       data: { ...detail, booking: { ...detail.booking, status: 'checked_in' } },
@@ -156,10 +345,68 @@ describe('ReservationDetailModal operation URLs', () => {
     fireEvent.click(await screen.findByTestId('btn-checkout'));
 
     await waitFor(() => expect(post).toHaveBeenCalledWith(
-      '/frontdesk/checkout/booking-test?auto_close_folios=true',
+      '/pms/reservations/booking-test/checkout?auto_close_folios=true',
     ));
     await waitFor(() => expect(onOperationComplete).toHaveBeenCalledWith({
       bookingId: 'booking-test',
+      operation: 'checked_out',
+    }));
+  });
+
+  it('labels a future departure as early checkout and requires explicit confirmation', async () => {
+    confirmDialog.mockResolvedValueOnce(false);
+    get.mockResolvedValueOnce({
+      data: {
+        ...detail,
+        business_date: '2026-09-26',
+        booking: {
+          ...detail.booking,
+          status: 'checked_in',
+          check_in: '2026-09-26',
+          check_out: '2026-09-27',
+        },
+      },
+    });
+
+    render(<ReservationDetailModal bookingId="booking-test" onClose={() => {}} allBookings={[]} />);
+
+    const checkoutButton = await screen.findByTestId('btn-checkout');
+    expect(checkoutButton).toHaveTextContent('Erken Çıkış Yap');
+    fireEvent.click(checkoutButton);
+
+    await waitFor(() => expect(confirmDialog).toHaveBeenCalledWith(expect.objectContaining({
+      title: 'Erken çıkışı onaylayın',
+      message: expect.stringContaining('Erken çıkış yapmak istediğinize emin misiniz?'),
+      confirmText: 'Evet, erken çıkış yap',
+    })));
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it('uses the canonical full-detail booking id for check-out', async () => {
+    const onOperationComplete = vi.fn();
+    get.mockResolvedValueOnce({
+      data: {
+        ...detail,
+        booking: { ...detail.booking, id: 'canonical-booking-id', status: 'checked_in' },
+      },
+    });
+
+    render(
+      <ReservationDetailModal
+        bookingId="stale-list-reference"
+        onClose={() => {}}
+        onOperationComplete={onOperationComplete}
+        allBookings={[]}
+      />,
+    );
+
+    fireEvent.click(await screen.findByTestId('btn-checkout'));
+
+    await waitFor(() => expect(post).toHaveBeenCalledWith(
+      '/pms/reservations/canonical-booking-id/checkout?auto_close_folios=true',
+    ));
+    await waitFor(() => expect(onOperationComplete).toHaveBeenCalledWith({
+      bookingId: 'canonical-booking-id',
       operation: 'checked_out',
     }));
   });
@@ -176,12 +423,85 @@ describe('ReservationDetailModal operation URLs', () => {
     render(<ReservationDetailModal bookingId="booking-test" onClose={() => {}} allBookings={[]} />);
 
     const paymentButton = await screen.findByTestId('btn-checkout');
-    expect(paymentButton).toHaveTextContent('Önce ödemeyi tamamlayın');
+    expect(paymentButton).toHaveTextContent('Önce folio bakiyesini tamamlayın');
     fireEvent.click(paymentButton);
 
     expect(confirmDialog).not.toHaveBeenCalled();
     expect(post).not.toHaveBeenCalled();
     expect(screen.getByRole('tab', { name: 'Folyolar' })).toHaveAttribute('data-state', 'active');
+  });
+
+  it('distinguishes the full reservation balance from a partially posted folio', async () => {
+    get.mockResolvedValueOnce({
+      data: {
+        ...detail,
+        booking: { ...detail.booking, status: 'checked_in', check_in: '2026-09-01T14:00:00+03:00', check_out: '2026-09-04T12:00:00+03:00' },
+        summary: {
+          ...detail.summary,
+          balance: 5833.34,
+          total_amount: 7500,
+          reservation_total_due: 7500,
+          unposted_room_amount: 1666.66,
+        },
+      },
+    });
+
+    render(<ReservationDetailModal bookingId="booking-test" onClose={() => {}} allBookings={[]} />);
+
+    expect(await screen.findByTestId('financial-summary-card')).toHaveTextContent('7.500 TL');
+    expect(screen.getByTestId('unposted-room-amount')).toHaveTextContent('1.666,66 TL');
+    expect(screen.getAllByText('3 gece')).toHaveLength(2);
+  });
+
+  it('does not present a system pricing difference as remaining collection', async () => {
+    get.mockResolvedValueOnce({
+      data: {
+        ...detail,
+        booking: { ...detail.booking, status: 'checked_in', total_amount: 7500 },
+        summary: {
+          ...detail.summary,
+          total_amount: 7500,
+          total_payments: 7500,
+          balance: 15.03,
+          reservation_total_due: 15.03,
+          pricing_reconciliation_required: true,
+          pricing_reconciliation_difference: 15.03,
+        },
+      },
+    });
+
+    render(<ReservationDetailModal bookingId="booking-test" onClose={() => {}} allBookings={[]} />);
+
+    expect(await screen.findByTestId('pricing-reconciliation-alert')).toHaveTextContent('15,03 TL');
+    expect(screen.getByTestId('financial-summary-card')).toHaveTextContent('Fiyat / tahakkuk farkı');
+    expect(screen.queryByText('Rezervasyon toplamından kalan')).not.toBeInTheDocument();
+  });
+
+  it('shows a reconciled historical Comp adjustment without blocking checkout', async () => {
+    get.mockResolvedValueOnce({
+      data: {
+        ...detail,
+        booking: { ...detail.booking, status: 'checked_in', total_amount: 0, is_complimentary: true },
+        summary: {
+          ...detail.summary,
+          balance: 0,
+          reservation_total_due: 0,
+          accommodation_total: 4800,
+          gross_total: 4800,
+          total_discounts: 4800,
+          complimentary_adjustment_total: 4800,
+          pricing_reconciliation_required: false,
+          pricing_reconciliation_difference: 0,
+        },
+      },
+    });
+
+    render(<ReservationDetailModal bookingId="booking-test" onClose={() => {}} allBookings={[]} />);
+
+    expect(await screen.findByTestId('financial-summary-card')).toHaveTextContent('Comp indirimi');
+    expect(screen.getByTestId('financial-summary-card')).toHaveTextContent('Tahsilat tamamlandı');
+    expect(screen.queryByTestId('pricing-reconciliation-alert')).not.toBeInTheDocument();
+    expect(screen.getByTestId('btn-checkout')).not.toHaveTextContent('mutabakat');
   });
 
   it('repairs an unpaid double-taxed channel charge without cancelling the booking', async () => {
@@ -210,13 +530,48 @@ describe('ReservationDetailModal operation URLs', () => {
     fireEvent.click(await screen.findByTestId('repair-channel-pricing'));
 
     await waitFor(() => expect(confirmDialog).toHaveBeenCalledWith(expect.objectContaining({
-      title: 'Kanal fiyatını düzelt',
+      title: 'Rezervasyon fiyatını düzelt',
     })));
     await waitFor(() => expect(post).toHaveBeenCalledWith(
       '/pms/reservations/booking-test/repair-channel-pricing',
-      { reason: 'Kanal toplamına mükerrer vergi eklenmesinin düzeltilmesi' },
+      { reason: 'Vergi dahil nihai rezervasyon tutarına mükerrer vergi eklenmesinin düzeltilmesi' },
     ));
     expect(post).not.toHaveBeenCalledWith(expect.stringContaining('cancel'), expect.anything());
+  });
+
+  it('reverses an auto-posted tax separately from a fully paid reservation', async () => {
+    get.mockResolvedValue({
+      data: {
+        ...detail,
+        booking: { ...detail.booking, status: 'checked_in', total_amount: 7500 },
+        summary: {
+          ...detail.summary,
+          balance: 15.03,
+          total_amount: 7500,
+          total_payments: 7500,
+          channel_pricing_issue: {
+            code: 'AUTOMATIC_ACCOMMODATION_TAX_DUPLICATE',
+            observed_total: 7515.03,
+            expected_total: 7500,
+            overcharge: 15.03,
+            repairable: true,
+          },
+        },
+      },
+    });
+    post.mockResolvedValueOnce({ data: { success: true, total_reduction: 15.03 } });
+
+    render(<ReservationDetailModal bookingId="booking-test" onClose={() => {}} allBookings={[]} />);
+
+    fireEvent.click(await screen.findByTestId('repair-channel-pricing'));
+
+    await waitFor(() => expect(confirmDialog).toHaveBeenCalledWith(expect.objectContaining({
+      title: 'Mükerrer konaklama vergisini düzelt',
+    })));
+    await waitFor(() => expect(post).toHaveBeenCalledWith(
+      '/pms/reservations/booking-test/repair-automatic-accommodation-tax',
+      { reason: 'Vergi dahil rezervasyona ikinci kez eklenen otomatik konaklama vergisinin terslenmesi' },
+    ));
   });
 
   it('hides all lifecycle mutations for a checked-out booking', async () => {
@@ -232,6 +587,22 @@ describe('ReservationDetailModal operation URLs', () => {
     expect(screen.queryByTestId('btn-room-change')).not.toBeInTheDocument();
     expect(screen.queryByTestId('btn-mark-noshow')).not.toBeInTheDocument();
     expect(screen.queryByTestId('btn-cancel-reservation')).not.toBeInTheDocument();
+  });
+
+  it('keeps a historical legacy reservation read-only but allows resolving pending status', async () => {
+    get.mockResolvedValueOnce({
+      data: { ...detail, read_only: true },
+    });
+
+    render(<ReservationDetailModal bookingId="booking-test" onClose={() => {}} allBookings={[]} />);
+
+    expect(await screen.findByText('Salt okunur')).toBeInTheDocument();
+    expect(screen.queryByTestId('btn-checkin')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('btn-early-checkin')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('btn-room-change')).not.toBeInTheDocument();
+    expect(screen.getByTestId('btn-mark-noshow')).toBeInTheDocument();
+    expect(screen.getByTestId('btn-cancel-reservation')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Not Ekle' })).toBeDisabled();
   });
 
   it('retries transient detail failures and keeps a safe calendar summary visible', async () => {

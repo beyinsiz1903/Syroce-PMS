@@ -107,9 +107,10 @@ async def get_unified_feed(
     names = _assignee_names(current_user)
 
     notif_query: dict[str, Any] = {
+        "tenant_id": current_user.tenant_id,
         "$or": [
             {"user_id": current_user.id},
-            {"tenant_id": current_user.tenant_id, "user_id": None},
+            {"user_id": None},
         ]
     }
     if unread_only:
@@ -196,9 +197,10 @@ async def mark_feed_item_read(
         result = await db.notifications.update_one(
             {
                 "id": request.id,
+                "tenant_id": current_user.tenant_id,
                 "$or": [
                     {"user_id": current_user.id},
-                    {"tenant_id": current_user.tenant_id},
+                    {"user_id": None},
                 ],
             },
             {"$set": {"read": True, "read_at": now}},
@@ -330,9 +332,10 @@ async def get_today_digest(
     names = _assignee_names(current_user)
     notif_unread = await db.notifications.count_documents(
         {
+            "tenant_id": current_user.tenant_id,
             "$or": [
                 {"user_id": current_user.id},
-                {"tenant_id": current_user.tenant_id, "user_id": None},
+                {"user_id": None},
             ],
             "read": False,
         }
@@ -359,6 +362,21 @@ async def get_today_digest(
         pending_approvals += await db.proc_purchase_requests.count_documents({"tenant_id": current_user.tenant_id, "status": "submitted"})
 
     urgent_tasks = [t for t in tasks if t.get("priority") in ("urgent", "high")]
+
+    response = {
+        "date": datetime.now(UTC).date().isoformat(),
+        "open_tasks": len(tasks),
+        "urgent_tasks": len(urgent_tasks),
+        "unread_feed": notif_unread + alert_unread,
+        "pending_approvals": pending_approvals,
+        "tasks_preview": tasks[:5],
+    }
+
+    # Hotel-wide operational figures are an executive snapshot, not part of a
+    # staff member's personal work queue. Gate both their calculation and
+    # serialization so regular staff neither receive nor trigger these queries.
+    if not _can(current_user, "view_executive_reports"):
+        return response
 
     # ── HUB "Bugün" operasyon KPI'ları (Task #507) ──────────────────────────
     # Doluluk / giriş / çıkış / açık arıza, GM snapshot'ı (dashboard_router/gm.py
@@ -421,13 +439,8 @@ async def get_today_digest(
     occupancy_pct = round((occupied_rooms / total_rooms * 100) if total_rooms > 0 else 0, 1)
     hotel_name = (tenant_doc or {}).get("property_name") or None
 
-    return {
-        "date": today_iso,
-        "open_tasks": len(tasks),
-        "urgent_tasks": len(urgent_tasks),
-        "unread_feed": notif_unread + alert_unread,
-        "pending_approvals": pending_approvals,
-        "tasks_preview": tasks[:5],
+    response.update(
+        {
         "occupancy_pct": occupancy_pct,
         "occupied_rooms": occupied_rooms,
         "total_rooms": total_rooms,
@@ -435,7 +448,9 @@ async def get_today_digest(
         "check_outs": check_outs,
         "open_faults": open_faults,
         "hotel_name": hotel_name,
-    }
+        }
+    )
+    return response
 
 
 # ── 4. "Onaylarım" — unified approvals (finance + HR) ───────────────────────

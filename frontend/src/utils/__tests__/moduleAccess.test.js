@@ -32,11 +32,25 @@ describe('moduleAccess', () => {
     expect(hasAnyModuleAccess(user, moduleScopesForPath('/app/ai'))).toBe(true);
   });
 
+  it('recognizes super-admin roles supplied in the roles list', () => {
+    const user = { role: 'operator', roles: ['super_admin'], module_scopes: [] };
+
+    expect(hasModuleAccess(user, 'frontdesk')).toBe(true);
+    expect(hasAnyModuleAccess(user, moduleScopesForPath('/app/reservation-calendar'))).toBe(true);
+  });
+
+  it('lets legacy finance users reach read-only HR payroll', () => {
+    const finance = { role: 'finance' };
+    expect(hasModuleAccess(finance, 'hr')).toBe(true);
+    expect(hasAnyModuleAccess(finance, moduleScopesForPath('/hr'))).toBe(true);
+  });
+
   it('maps protected routes to the expected user module scope', () => {
     expect(moduleScopesForPath('/app/procurement')).toEqual(['procurement']);
     expect(moduleScopesForPath('/maintenance/work-orders')).toEqual(['maintenance']);
     expect(moduleScopesForPath('/app/cashier')).toEqual(['cashier']);
     expect(moduleScopesForPath('/app/tasks')).toEqual(['tasks']);
+    expect(moduleScopesForPath('/agency-requests')).toEqual(['frontdesk']);
     expect(moduleScopesForPath('/app/dashboard')).toEqual([]);
   });
 
@@ -53,6 +67,7 @@ describe('moduleAccess', () => {
   it('maps navigation items and PMS tabs to user scopes', () => {
     expect(moduleScopesForNavItem({ key: 'invoices', path: '/app/invoices' })).toEqual(['invoice']);
     expect(moduleScopesForNavItem({ key: 'shift_handover', path: '/shift-handover', moduleKey: 'pms' })).toEqual(['frontdesk']);
+    expect(moduleScopesForNavItem({ key: 'agency_requests', path: '/agency-requests', moduleKey: 'agency_requests' })).toEqual(['frontdesk']);
     expect(moduleScopesForPmsTab('housekeeping')).toEqual(['housekeeping']);
     expect(moduleScopesForPmsTab('cashier')).toEqual(['cashier']);
     expect(moduleScopesForPmsTab('unknown-tab')).toEqual(['frontdesk']);

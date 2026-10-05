@@ -14,6 +14,7 @@ from .errors import ExelyValidationError
 
 PROVIDER = "exely"
 EXELY_TEST_ENDPOINT_URL = "https://pmsconnect.test.hopenapi.com/api/PMSConnect.svc"
+EXELY_PRODUCTION_ENDPOINT_URL = "https://pmsconnect.prod.hopenapi.com/api/PMSConnect.svc"
 EXELY_TEST_HOST = "pmsconnect.test.hopenapi.com"
 EXELY_PRODUCTION_HOST = "pmsconnect.prod.hopenapi.com"
 EXELY_ALLOWED_HOSTS = frozenset({EXELY_TEST_HOST, EXELY_PRODUCTION_HOST})
@@ -41,7 +42,7 @@ def exely_connection_projection() -> dict[str, int]:
     return {"_id": 0}
 
 
-def validate_exely_endpoint(endpoint_url: str) -> str:
+def validate_exely_endpoint(endpoint_url: str, *, connection_mode: str = "") -> str:
     """Validate an Exely endpoint without resolving or contacting the host."""
     try:
         parsed = urlsplit(str(endpoint_url or ""))
@@ -58,7 +59,12 @@ def validate_exely_endpoint(endpoint_url: str) -> str:
         raise ExelyValidationError("Exely endpoint port is not allowed", field="endpoint_url")
     if hostname not in EXELY_ALLOWED_HOSTS:
         raise ExelyValidationError("Exely endpoint host is not allowed", field="endpoint_url")
-    if is_exely_production() and hostname != EXELY_PRODUCTION_HOST:
+    # A production-hosted PMS may operate an explicitly sandbox-scoped Exely
+    # connection during provider certification. This exception only permits
+    # the allowlisted Exely test host; production still refuses arbitrary
+    # endpoints and plaintext credentials remain unavailable below.
+    sandbox_connection = str(connection_mode or "").strip().lower() == "sandbox"
+    if is_exely_production() and hostname != EXELY_PRODUCTION_HOST and not (sandbox_connection and hostname == EXELY_TEST_HOST):
         raise ExelyValidationError("Production requires the Exely production endpoint", field="endpoint_url")
     if (parsed.path or "").rstrip("/").lower() != EXELY_ENDPOINT_PATH:
         raise ExelyValidationError("Exely endpoint path is not allowed", field="endpoint_url")
@@ -87,11 +93,21 @@ async def get_decrypted_credentials(
 def _normalize_credentials(credentials: dict[str, Any], connection: dict[str, Any]) -> dict[str, str] | None:
     username = str(credentials.get("username") or "")
     password = str(credentials.get("password") or "")
-    hotel_code = str(credentials.get("hotel_code") or connection.get("hotel_code") or "")
-    endpoint_url = str(credentials.get("endpoint_url") or connection.get("endpoint_url") or EXELY_TEST_ENDPOINT_URL)
+    # The active connection selects the property. Vault payloads can outlive a
+    # property reassignment and may still contain the previous hotel code; if
+    # that stale value wins, reads and ARI writes silently target another
+    # Exely test property while the UI displays the new one. The vault remains
+    # authoritative for secrets, but never for routing scope.
+    hotel_code = str(connection.get("hotel_code") or credentials.get("hotel_code") or "")
+    connection_mode = str(connection.get("mode") or "").strip().lower()
+    default_endpoint = EXELY_TEST_ENDPOINT_URL if connection_mode == "sandbox" else EXELY_PRODUCTION_ENDPOINT_URL
+    # Endpoint and mode are connection routing state, just like hotel_code.
+    # Prefer the active connection so a stale vault record cannot redirect a
+    # certification connection to production (or the reverse).
+    endpoint_url = str(connection.get("endpoint_url") or credentials.get("endpoint_url") or default_endpoint)
     if not username or not password or not hotel_code:
         return None
-    validate_exely_endpoint(endpoint_url)
+    validate_exely_endpoint(endpoint_url, connection_mode=connection_mode)
     return {
         "username": username,
         "password": password,
@@ -136,7 +152,9 @@ async def resolve_exely_credentials(
             normalized["_credential_source"] = "encrypted_vault"
             return normalized
 
-    if is_exely_production():
+    from infra.feature_flags import is_enabled
+
+    if is_exely_production() and not is_enabled("ALLOW_PLAINTEXT_CREDENTIALS"):
         return None
 
     normalized = _normalize_credentials(connection, connection)

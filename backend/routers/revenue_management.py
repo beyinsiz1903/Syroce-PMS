@@ -7,7 +7,7 @@ from datetime import UTC, datetime, timedelta
 from datetime import date as date_cls
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from cache_manager import cached
 from core.security import get_current_user
@@ -21,7 +21,7 @@ engine = RevenueManagementEngine()
 
 class ApplyRateRequest(BaseModel):
     target_date: str
-    new_rate: float
+    new_rate: float = Field(gt=0, le=10_000_000)
 
 
 # ── DEMAND ANALYSIS ──
@@ -140,4 +140,12 @@ async def api_apply_rate(
     _perm=Depends(require_op("manage_rates")),  # v99 DW
 ):
     """Apply a rate suggestion for a specific date."""
+    try:
+        target = date_cls.fromisoformat(req.target_date)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Geçerli bir hedef tarih girin") from exc
+    if target < datetime.now(UTC).date():
+        raise HTTPException(status_code=422, detail="Geçmiş tarih için fiyat uygulanamaz")
+    if req.new_rate <= 0:
+        raise HTTPException(status_code=422, detail="Fiyat sıfırdan büyük olmalıdır")
     return await engine.apply_rate_suggestion(current_user.tenant_id, req.target_date, req.new_rate, current_user.id)

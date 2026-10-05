@@ -5,6 +5,8 @@ import { useTranslation } from 'react-i18next';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 import { NAV_ITEMS } from '@/config/navItems';
+import { canAccessNavItem, canAccessPmsTab } from '@/utils/moduleAccess';
+import { useEntitlements } from '@/context/EntitlementContext';
 
 const trLower = (s) => (s || '').toLocaleLowerCase('tr');
 
@@ -14,7 +16,8 @@ export const normalizeSearchResults = (data, collectionKey) => {
   return [];
 };
 
-const GlobalSearch = ({ onSelectResult }) => {
+const GlobalSearch = ({ onSelectResult, user }) => {
+  const { hasModule } = useEntitlements();
   const { t } = useTranslation();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState({ guests: [], bookings: [], rooms: [] });
@@ -24,14 +27,15 @@ const GlobalSearch = ({ onSelectResult }) => {
   const searchablePages = useMemo(
     () =>
       (NAV_ITEMS || [])
-        .filter((item) => item && item.path && item.label)
+        .filter((item) => item && item.path && item.label && canAccessNavItem(user, item)
+          && (!item.moduleKey || hasModule(item.moduleKey)))
         .map((item) => ({
           key: item.key,
           path: item.path,
           label: t(`navKeys.${item.key}`, item.label),
           rawLabel: item.label,
         })),
-    [t]
+    [t, user, hasModule]
   );
 
   const pageMatches = useMemo(() => {
@@ -61,9 +65,9 @@ const GlobalSearch = ({ onSelectResult }) => {
       setLoading(true);
       try {
         const [guestsRes, bookingsRes, roomsRes] = await Promise.all([
-          axios.get(`/pms/guests/search?q=${encodeURIComponent(query)}&limit=3`).catch(() => ({ data: [] })),
-          axios.get(`/pms/bookings?search=${encodeURIComponent(query)}&limit=3`).catch(() => ({ data: [] })),
-          axios.get(`/pms/rooms?search=${encodeURIComponent(query)}&limit=3`).catch(() => ({ data: [] }))
+          canAccessPmsTab(user, 'guests') ? axios.get(`/pms/guests/search?q=${encodeURIComponent(query)}&limit=3`).catch(() => ({ data: [] })) : { data: [] },
+          canAccessPmsTab(user, 'bookings') ? axios.get(`/pms/bookings?search=${encodeURIComponent(query)}&limit=3`).catch(() => ({ data: [] })) : { data: [] },
+          canAccessPmsTab(user, 'rooms') ? axios.get(`/pms/rooms?search=${encodeURIComponent(query)}&limit=3`).catch(() => ({ data: [] })) : { data: [] }
         ]);
 
         setResults({
@@ -79,7 +83,7 @@ const GlobalSearch = ({ onSelectResult }) => {
     }, 300);
 
     return () => clearTimeout(searchTimeout);
-  }, [query]);
+  }, [query, user]);
 
   const totalResults =
     results.guests.length + results.bookings.length + results.rooms.length + pageMatches.length;

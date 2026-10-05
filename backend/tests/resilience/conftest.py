@@ -154,13 +154,14 @@ def secret_access_control():
 
 
 @pytest.fixture
-def outbox_worker():
+def outbox_worker(db):
     from core.outbox_worker import OutboxWorker
     return OutboxWorker(
         poll_interval=0.1,
         batch_size=5,
         processing_timeout=2,  # Short timeout for tests
         drain_pause=0,
+        database=db,
     )
 
 

@@ -453,19 +453,23 @@ alerting için bu alanı yüzeye çıkar.
    seçin. Uç varsayılan olarak resmi
    `https://vatandas.jandarma.gov.tr/KBS_Tesis_Servis/SrvShsYtkTml.svc`
    adresidir.
-4. Yetkili kişinin 11 haneli T.C. numarası ile 6 haneli tesis kodunu yalnız
-   otel bilgisayarında girin. Web servis şifresi `chrome.storage.session`
+4. Yetkili kişinin 11 haneli T.C. numarası ile KBS portalında gösterilen
+   sayısal tesis kodunu yalnız otel bilgisayarında girin. Canlı WSDL `TssKod`
+   alanını `xs:long` olarak tanımlar; PMS sabit 6 hane varsaymaz. Web servis şifresi `chrome.storage.session`
    içinde tutulur; tarayıcı kapanınca silinir ve yeniden girilmesi gerekir.
-5. Canlı kayıt onayını işaretleyip kaydedin. Önce sentetik rezervasyonlarla
-   **Test** modunu doğrulayın; canlı modda deneme amacıyla gerçek kişi kaydı
-   oluşturmayın.
+5. Canlı kayıt onayını işaretleyip kaydedin. **Jandarma bağlantısını doğrula**
+   düğmesi, misafir kaydı oluşturmadan resmî `ParametreListele` metoduyla
+   T.C./tesis kodu/şifre/sabit IP eşleşmesini sınar. Canlı modda deneme
+   amacıyla gerçek kişi kaydı oluşturmayın.
 
 Eklenti, resmi WSDL'deki `MusteriKimlikNoGiris`, `MusteriKimlikNoCikis`,
 `MusteriYabanciGiris` ve `MusteriYabanciCikis` metotlarını kullanır. Yalnız
 `Basarili=true` ve başarı kodu `100/Basarili` döndüğünde PMS işi tamamlanır.
 Jandarma cevabı ayrı bir işlem numarası vermediği için PMS'deki
 `JANDARMA-...` değeri **yerel teslim makbuzudur**, resmi referans numarası
-değildir. Hata kodu ve mesajı yeniden deneme kaydına yazılır.
+değildir. Kurumun başarı kodu/mesajı ve seçilen makam ayrıca denetim kaydına
+yazılır. Giriş ve çıkış ayrı resmî sözleşmelerle doğrulanır; çıkış işi ad,
+oda veya giriş tarihi eksik diye engellenmez.
 
 ### Çalıştırma
 
@@ -482,16 +486,11 @@ değildir. Hata kodu ve mesajı yeniden deneme kaydına yazılır.
 > Polis hem Jandarma'ya bildirim gereken (nadir) durumda, ilgili makamı seçip
 > kuyruğu boşalt, sonra diğer makama geçip tekrar gönder.
 
-> **UYARI (test modu tuzağı):** Bir makam profili Options'ta **gerçek uç ile
+> **UYARI (test modu):** Bir makam profili Options'ta **gerçek uç ile
 > yapılandırılmadığında varsayılan olarak "Test" modundadır** ve rozet **"Test
-> modu"** (amber) gösterir. Bu durumda **otomatik gönderim açıksa** kuyruktaki
-> gerçek bildirimler o makama **gönderilmiş gibi** işaretlenir ama gerçekte
-> gönderim YOKTUR — referanslar `TEST-` ile başlar ve kayıt `kbs_test=true`
-> taşır. Yeni seçtiğiniz bir makamda (örn. ilk kez Jandarma) **rozet "Test
-> modu" iken otomatik gönderimi AÇMAYIN**; önce Options'ta o makamın gerçek
-> ucunu girip rozetin **"Bağlı"** olmasını bekleyin. Kayıtların gerçekten
-> gönderilip gönderilmediğini KBS referansının `TEST-` ile başlayıp
-> başlamadığından doğrulayın.
+> modu"** (amber) gösterir. `TEST-` sonucu production teslimatı sayılmaz;
+> kuyruk işi başarısız/test olarak kalır. Yine de gerçek operasyon sırasında
+> otomatik gönderimi açmadan önce seçili makamın rozetini **Bağlı** yapın.
 
 ### Backend eşleştirmesi (ÖNEMLİ)
 
@@ -524,7 +523,8 @@ KBS_AUTO_ENQUEUE=1       # check-in/out anında kuyruğa otomatik ekleme açık
   seçeneklerinde yeni web servis şifresini tekrar girip kaydedin.
 - **`jandarma_YetkiHatasi`:** Yetkili T.C./tesis kodu/şifreyi yerelde kontrol
   edin ve özellikle portalda kayıtlı IP ile otelin anlık dış IP'sinin aynı
-  olduğundan emin olun.
+  olduğundan emin olun. Options'taki **Jandarma bağlantısını doğrula** düğmesi
+  bu dört koşulu gerçek misafir kaydı oluşturmadan sınar.
 - **`unsupported_foreign_country`:** PMS'deki uyruk değeri resmi Jandarma enum
   adıyla eşleşmiyordur. Gerçek gönderim yapmadan önce uyruk verisini düzeltin;
   iş kuyrukta kalır ve sahte başarı üretilmez.

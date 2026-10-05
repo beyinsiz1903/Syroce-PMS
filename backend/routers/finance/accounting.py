@@ -1,9 +1,11 @@
 """Auto-split from finance.py — section: accounting."""
 
 import asyncio
+import logging
+import math
 import re as _re
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from enum import Enum
 from typing import Any
 
@@ -21,6 +23,7 @@ except ImportError:
 from core.database import db
 from core.sanitize import sanitize_plaintext
 from core.security import get_current_user
+from core.tenant_currency import get_tenant_currency
 from domains.accounting.models_legacy import AccountingInvoice, AccountingInvoiceItem, AdditionalTax
 from models.enums import PaymentStatus
 from models.schemas import (
@@ -52,6 +55,148 @@ router = APIRouter()
 security = HTTPBearer()
 folio_balance_read_service = FolioBalanceReadService()
 open_folio_service = OpenFolioService()
+logger = logging.getLogger(__name__)
+
+ACCOMMODATION_VAT_RATE = 10.0
+FOOD_SERVICE_VAT_RATE = 10.0
+GENERAL_VAT_RATE = 20.0
+SUPPORTED_ACCOUNTING_CURRENCIES = {"TRY", "EUR", "USD", "GBP"}
+
+
+def _accounting_currency(value: object, fallback: str = "TRY") -> str:
+    code = str(value or fallback).strip().upper()
+    if code == "TL":
+        code = "TRY"
+    if code not in SUPPORTED_ACCOUNTING_CURRENCIES:
+        raise ValueError(f"Unsupported currency: {code}")
+    return code
+
+
+def _report_date_bounds(start_date: str, end_date: str) -> tuple[str, str]:
+    """Return inclusive ISO-day bounds for records persisted as ISO strings.
+
+    A bare end date sorts *before* every timestamp on that day (for example,
+    ``2026-10-02`` precedes ``2026-10-02T10:00:00``).  Reports must therefore
+    query through the last representable instant of the requested final day.
+    """
+    try:
+        start = date.fromisoformat(start_date)
+        end = date.fromisoformat(end_date)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail="Tarih YYYY-MM-DD formatında olmalıdır.") from exc
+    if end < start:
+        raise HTTPException(status_code=422, detail="Bitiş tarihi başlangıç tarihinden önce olamaz.")
+    return f"{start.isoformat()}T00:00:00", f"{end.isoformat()}T23:59:59.999999"
+
+
+def _withholding_fraction(value: object) -> float:
+    """Parse a Turkish withholding ratio such as ``7/10`` safely."""
+    try:
+        numerator_text, denominator_text = str(value).strip().split("/")
+        numerator = int(numerator_text.strip())
+        denominator = int(denominator_text.strip())
+    except (AttributeError, TypeError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail="Tevkifat oranı 7/10 formatında olmalıdır.") from exc
+    if denominator <= 0 or numerator < 0 or numerator > denominator:
+        raise HTTPException(status_code=422, detail="Tevkifat oranı 0 ile 100% arasında olmalıdır.")
+    return numerator / denominator
+
+
+def _invoice_currency_terms(
+    requested_currency: object,
+    requested_exchange_rate: object,
+    tenant_currency: str,
+) -> tuple[str, float]:
+    """Resolve one invoice currency without silently inventing an FX rate."""
+    base_currency = _accounting_currency(tenant_currency)
+    currency = _accounting_currency(requested_currency, base_currency)
+    if currency == base_currency:
+        return currency, 1.0
+    try:
+        exchange_rate = float(requested_exchange_rate)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            f"{currency} fatura için 1 {currency} = kaç {base_currency} olduğu girilmelidir"
+        ) from exc
+    if not math.isfinite(exchange_rate) or exchange_rate <= 0:
+        raise ValueError("Fatura döviz kuru sıfırdan büyük olmalıdır")
+    return currency, exchange_rate
+
+
+def _currency_totals(records, amount_field: str, fallback_currency: str, predicate=None) -> dict[str, float]:
+    totals: dict[str, float] = {}
+    for record in records:
+        if predicate is not None and not predicate(record):
+            continue
+        currency = _accounting_currency(record.get("currency"), fallback_currency)
+        totals[currency] = totals.get(currency, 0) + float(record.get(amount_field, 0) or 0)
+    return {currency: round(amount, 2) for currency, amount in totals.items()}
+
+
+def _charge_vat_rate(charge: dict[str, Any], accommodation_vat_rate: float = ACCOMMODATION_VAT_RATE) -> float:
+    """Resolve VAT without treating accommodation tax as VAT.
+
+    Turkish PMS folios can contain both VAT and the separate accommodation
+    tax. Room ``tax_rate`` is therefore a combined informational rate and must
+    not be copied into a fiscal invoice's VAT field.
+    """
+    category = str(charge.get("charge_category") or "other").lower()
+    if category == "city_tax" or charge.get("konaklama_vergisi"):
+        return 0.0
+    if category == "room":
+        return float(accommodation_vat_rate)
+
+    explicit = charge.get("vat_rate")
+    if explicit is not None:
+        return float(explicit)
+
+    if category in {"food", "food_beverage", "beverage", "minibar"}:
+        text = f"{charge.get('description', '')} {charge.get('subcategory', '')}".lower()
+        alcoholic_markers = ("alkol", "alcohol", "wine", "şarap", "sarap", "bira", "beer", "viski", "whisky")
+        return GENERAL_VAT_RATE if any(marker in text for marker in alcoholic_markers) else FOOD_SERVICE_VAT_RATE
+    return float(charge.get("tax_rate") or GENERAL_VAT_RATE)
+
+
+def folio_charge_to_invoice_items(
+    charge: dict[str, Any],
+    accommodation_vat_rate: float = ACCOMMODATION_VAT_RATE,
+) -> list[dict[str, Any]]:
+    """Convert one folio charge to fiscal lines while preserving its total."""
+    category = str(charge.get("charge_category") or "other").lower()
+    description = charge.get("description") or "Otel hizmeti"
+    amount = round(float(charge.get("amount") or charge.get("unit_price") or 0.0), 2)
+    vat_rate = _charge_vat_rate(charge, accommodation_vat_rate)
+    item = {
+        "description": description,
+        "category": category,
+        "quantity": 1,
+        "unit_price": amount,
+        "vat_rate": vat_rate,
+        "total": round(amount * (1 + vat_rate / 100.0), 2),
+    }
+    if category != "room":
+        return [item]
+
+    breakdown = charge.get("tax_breakdown") or {}
+    accommodation_tax = round(float(breakdown.get("accommodation_tax") or 0.0), 2)
+    if accommodation_tax <= 0:
+        recorded_total = round(float(charge.get("total") or 0.0), 2)
+        accommodation_tax = max(round(recorded_total - item["total"], 2), 0.0)
+    if accommodation_tax <= 0:
+        return [item]
+
+    return [
+        item,
+        {
+            "description": "Konaklama Vergisi",
+            "category": "city_tax",
+            "tax_type": "accommodation_tax",
+            "quantity": 1,
+            "unit_price": accommodation_tax,
+            "vat_rate": 0.0,
+            "total": accommodation_tax,
+        },
+    ]
 
 
 class InvoiceType(str, Enum):
@@ -85,6 +230,7 @@ class Supplier(BaseModel):
     phone: str | None = None
     address: str | None = None
     account_balance: float = 0.0
+    account_balance_by_currency: dict[str, float] = Field(default_factory=dict)
     category: str = "general"
     notes: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
@@ -113,9 +259,10 @@ class Expense(BaseModel):
     category: ExpenseCategory
     description: str
     amount: float
-    vat_rate: float = 18.0
+    vat_rate: float = 20.0
     vat_amount: float = 0.0
     total_amount: float
+    currency: str = "TRY"
     date: datetime
     payment_status: PaymentStatus = PaymentStatus.PENDING
     payment_method: str | None = None
@@ -135,6 +282,7 @@ class InventoryItem(BaseModel):
     unit: str
     quantity: float = 0.0
     unit_cost: float = 0.0
+    currency: str = "TRY"
     reorder_level: float = 0.0
     supplier_id: str | None = None
     location: str | None = None
@@ -191,10 +339,10 @@ class BulkStockTransferRequest(BaseModel):
 
 
 class SupplierCreateRequest(BaseModel):
-    name: str
+    name: str = Field(min_length=2, max_length=200)
     tax_office: str | None = None
     tax_number: str | None = None
-    email: str | None = None
+    email: EmailStr | None = None
     phone: str | None = None
     address: str | None = None
     category: str = "general"
@@ -219,6 +367,12 @@ class ExpenseCreateRequest(BaseModel):
     payment_method: str | None = None
     receipt_url: str | None = None
     notes: str | None = None
+    currency: str | None = None
+
+    @field_validator("currency")
+    @classmethod
+    def validate_currency(cls, value):
+        return _accounting_currency(value) if value else None
 
 
 class InventoryItemCreateRequest(BaseModel):
@@ -232,6 +386,12 @@ class InventoryItemCreateRequest(BaseModel):
     supplier_id: str | None = None
     location: str | None = None
     notes: str | None = None
+    currency: str | None = None
+
+    @field_validator("currency")
+    @classmethod
+    def validate_currency(cls, value):
+        return _accounting_currency(value) if value else None
 
 
 def _norm(v):
@@ -241,6 +401,17 @@ def _norm(v):
     if isinstance(v, str) and v.strip().lower() in ("", "none"):
         return None
     return v
+
+
+def _invalidate_accounting_caches(tenant_id: str, *prefixes: str) -> None:
+    """Cache invalidation must never turn an already persisted record into a 500."""
+    if not cache:
+        return
+    try:
+        for prefix in prefixes:
+            cache.invalidate_tenant_cache(tenant_id, prefix)
+    except Exception:
+        logger.warning("Accounting cache invalidation failed", exc_info=True)
 
 
 @router.post("/accounting/suppliers")
@@ -259,10 +430,12 @@ async def create_supplier(
         address=sanitize_plaintext(payload.address, max_length=500) if payload.address else None,
         category=payload.category or "general",
     )
-    supplier_dict = supplier.model_dump()
-    supplier_dict["created_at"] = supplier_dict["created_at"].isoformat()
+    supplier_dict = supplier.model_dump(mode="json")
     await db.suppliers.insert_one(supplier_dict)
-    return supplier
+    persisted = await db.suppliers.find_one({"id": supplier.id, "tenant_id": current_user.tenant_id}, {"_id": 0})
+    if not persisted:
+        raise HTTPException(status_code=500, detail="Tedarikçi kaydı doğrulanamadı")
+    return persisted
 
 
 @router.get("/accounting/suppliers")
@@ -278,7 +451,21 @@ async def update_supplier(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_finance_reports")),  # v94 DW
 ):
-    await db.suppliers.update_one({"id": supplier_id, "tenant_id": current_user.tenant_id}, {"$set": updates})
+    editable_fields = {
+        "name", "tax_office", "tax_number", "email", "phone", "address", "category", "notes",
+    }
+    if not updates or set(updates) - editable_fields:
+        raise HTTPException(status_code=422, detail="Tedarikçinin korunan alanları değiştirilemez")
+    patch = dict(updates)
+    for field, max_length in (("name", 200), ("tax_office", 200), ("tax_number", 50), ("address", 500), ("notes", 1000)):
+        if field in patch:
+            patch[field] = sanitize_plaintext(str(patch[field]), max_length=max_length) if patch[field] else None
+    result = await db.suppliers.update_one(
+        {"id": supplier_id, "tenant_id": current_user.tenant_id},
+        {"$set": patch},
+    )
+    if result.matched_count != 1:
+        raise HTTPException(status_code=404, detail="Tedarikçi bulunamadı")
     supplier = await db.suppliers.find_one({"id": supplier_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
     return supplier
 
@@ -301,6 +488,7 @@ async def create_bank_account(
     account_dict = bank_account.model_dump()
     account_dict["created_at"] = account_dict["created_at"].isoformat()
     await db.bank_accounts.insert_one(account_dict)
+    _invalidate_accounting_caches(current_user.tenant_id, "accounting_dashboard", "report_balance_sheet")
     return bank_account
 
 
@@ -317,8 +505,25 @@ async def update_bank_account(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_finance_reports")),  # v94 DW
 ):
-    await db.bank_accounts.update_one({"id": account_id, "tenant_id": current_user.tenant_id}, {"$set": updates})
+    # Balances and currency are accounting facts.  They must only be changed
+    # by reconciled bank movements, never through a generic profile edit.
+    editable_fields = {"name", "bank_name", "account_number", "iban", "is_active"}
+    if not updates or set(updates) - editable_fields:
+        raise HTTPException(status_code=422, detail="Banka hesabının korunan mali alanları değiştirilemez")
+    patch = dict(updates)
+    for field, max_length in (("name", 200), ("bank_name", 200), ("account_number", 80), ("iban", 50)):
+        if field in patch:
+            patch[field] = sanitize_plaintext(str(patch[field]), max_length=max_length) if patch[field] else None
+    if "is_active" in patch and not isinstance(patch["is_active"], bool):
+        raise HTTPException(status_code=422, detail="Hesap durumu doğru/yanlış olmalıdır")
+    result = await db.bank_accounts.update_one(
+        {"id": account_id, "tenant_id": current_user.tenant_id},
+        {"$set": patch},
+    )
+    if result.matched_count != 1:
+        raise HTTPException(status_code=404, detail="Banka hesabı bulunamadı")
     account = await db.bank_accounts.find_one({"id": account_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
+    _invalidate_accounting_caches(current_user.tenant_id, "accounting_dashboard", "report_balance_sheet")
     return account
 
 
@@ -328,6 +533,8 @@ async def create_expense(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_finance_reports")),  # v94 DW
 ):
+    tenant_currency, _ = await get_tenant_currency(current_user.tenant_id)
+    currency = _accounting_currency(payload.currency, tenant_currency)
     count = await db.expenses.count_documents({"tenant_id": current_user.tenant_id})
     expense_number = f"EXP-{count + 1:05d}"
 
@@ -346,6 +553,7 @@ async def create_expense(
         vat_rate=payload.vat_rate,
         vat_amount=vat_amount,
         total_amount=total_amount,
+        currency=currency,
         date=datetime.fromisoformat(payload.date),
         payment_method=_norm(payload.payment_method),
         receipt_url=_norm(payload.receipt_url),
@@ -353,32 +561,55 @@ async def create_expense(
         created_by=current_user.name,
     )
 
-    expense_dict = expense.model_dump()
-    expense_dict["date"] = expense_dict["date"].isoformat()
-    expense_dict["created_at"] = expense_dict["created_at"].isoformat()
+    expense_dict = expense.model_dump(mode="json")
     await db.expenses.insert_one(expense_dict)
 
     if supplier_id:
+        supplier = await db.suppliers.find_one(
+            {"id": supplier_id, "tenant_id": current_user.tenant_id},
+            {"_id": 0, "account_balance": 1, "account_balance_by_currency": 1},
+        )
+        if supplier and not supplier.get("account_balance_by_currency") and float(supplier.get("account_balance", 0) or 0) != 0:
+            await db.suppliers.update_one(
+                {"id": supplier_id, "tenant_id": current_user.tenant_id},
+                {"$set": {f"account_balance_by_currency.{tenant_currency}": float(supplier["account_balance"])}},
+            )
+        balance_updates = {f"account_balance_by_currency.{currency}": total_amount}
+        # Preserve the legacy scalar only for the hotel's accounting currency;
+        # foreign nominal amounts must never be added to it.
+        if currency == tenant_currency:
+            balance_updates["account_balance"] = total_amount
         await db.suppliers.update_one(
             {"id": supplier_id, "tenant_id": current_user.tenant_id},
-            {"$inc": {"account_balance": total_amount}},
+            {"$inc": balance_updates},
         )
 
-    cash_flow = CashFlow(
-        tenant_id=current_user.tenant_id,
-        transaction_type="expense",
-        category=payload.category,
-        amount=total_amount,
-        description=expense.description,
-        reference_id=expense.id,
-        reference_type="expense",
-        date=datetime.fromisoformat(payload.date),
-        created_by=current_user.name,
+    # An expense is an accrual until it is paid.  Recording it in cash flow at
+    # creation would overstate cash outflows and make AP look like a payment.
+    if expense.payment_status == PaymentStatus.PAID:
+        cash_flow = CashFlow(
+            tenant_id=current_user.tenant_id,
+            transaction_type="expense",
+            category=payload.category,
+            amount=total_amount,
+            currency=currency,
+            description=expense.description,
+            reference_id=expense.id,
+            reference_type="expense",
+            date=datetime.fromisoformat(payload.date),
+            created_by=current_user.name,
+        )
+        cf_dict = cash_flow.model_dump()
+        cf_dict["date"] = cf_dict["date"].isoformat()
+        cf_dict["created_at"] = cf_dict["created_at"].isoformat()
+        await db.cash_flow.insert_one(cf_dict)
+
+    _invalidate_accounting_caches(
+        current_user.tenant_id,
+        "accounting_dashboard",
+        "report_profit_loss",
+        "report_balance_sheet",
     )
-    cf_dict = cash_flow.model_dump()
-    cf_dict["date"] = cf_dict["date"].isoformat()
-    cf_dict["created_at"] = cf_dict["created_at"].isoformat()
-    await db.cash_flow.insert_one(cf_dict)
 
     return expense
 
@@ -400,10 +631,154 @@ async def update_expense(
     expense_id: str,
     updates: dict[str, Any],
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_finance_reports")),  # v94 DW
+    _perm=Depends(require_op("post_charge")),
 ):
-    await db.expenses.update_one({"id": expense_id, "tenant_id": current_user.tenant_id}, {"$set": updates})
+    editable_fields = {
+        "supplier_id",
+        "category",
+        "description",
+        "amount",
+        "vat_rate",
+        "date",
+        "payment_status",
+        "payment_method",
+        "receipt_url",
+        "notes",
+        "currency",
+    }
+    unsupported_fields = set(updates) - editable_fields
+    if unsupported_fields:
+        raise HTTPException(status_code=422, detail="Giderin korunan alanları değiştirilemez")
+
+    current = await db.expenses.find_one(
+        {"id": expense_id, "tenant_id": current_user.tenant_id},
+        {"_id": 0},
+    )
+    if not current:
+        raise HTTPException(status_code=404, detail="Gider bulunamadı")
+
+    patch = dict(updates)
+    if "supplier_id" in patch:
+        patch["supplier_id"] = _norm(patch["supplier_id"])
+    if "payment_status" in patch:
+        try:
+            patch["payment_status"] = PaymentStatus(str(patch["payment_status"]).lower()).value
+        except ValueError as exc:
+            allowed = ", ".join(status.value for status in PaymentStatus)
+            raise HTTPException(status_code=422, detail=f"Geçersiz ödeme durumu. Geçerli değerler: {allowed}") from exc
+    if "category" in patch:
+        try:
+            patch["category"] = ExpenseCategory(str(patch["category"]).lower()).value
+        except ValueError as exc:
+            allowed = ", ".join(category.value for category in ExpenseCategory)
+            raise HTTPException(status_code=422, detail=f"Geçersiz gider kategorisi. Geçerli değerler: {allowed}") from exc
+    if "date" in patch:
+        try:
+            patch["date"] = datetime.fromisoformat(str(patch["date"])).isoformat()
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=422, detail="Gider tarihi geçerli ISO tarih formatında olmalıdır") from exc
+    if "description" in patch:
+        patch["description"] = sanitize_plaintext(str(patch["description"]), max_length=500)
+    if "notes" in patch:
+        patch["notes"] = sanitize_plaintext(str(patch["notes"]), max_length=1000) if patch["notes"] else None
+    if "currency" in patch:
+        try:
+            patch["currency"] = _accounting_currency(patch["currency"], current.get("currency") or "TRY")
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if "amount" in patch or "vat_rate" in patch:
+        try:
+            amount = float(patch.get("amount", current.get("amount", 0)))
+            vat_rate = float(patch.get("vat_rate", current.get("vat_rate", 0)))
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=422, detail="Tutar ve KDV oranı sayısal olmalıdır") from exc
+        if not math.isfinite(amount) or amount < 0 or not math.isfinite(vat_rate) or not 0 <= vat_rate <= 100:
+            raise HTTPException(status_code=422, detail="Tutar negatif olamaz; KDV oranı 0 ile 100 arasında olmalıdır")
+        patch.update(
+            {
+                "amount": round(amount, 2),
+                "vat_rate": round(vat_rate, 2),
+                "vat_amount": round(amount * vat_rate / 100, 2),
+                "total_amount": round(amount * (1 + vat_rate / 100), 2),
+            }
+        )
+
+    result = await db.expenses.update_one(
+        {"id": expense_id, "tenant_id": current_user.tenant_id},
+        {"$set": patch},
+    )
+    if result.matched_count != 1:
+        raise HTTPException(status_code=404, detail="Gider bulunamadı")
     expense = await db.expenses.find_one({"id": expense_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
+    expense_for_cash_flow = {**current, **patch}
+    old_supplier_id = _norm(current.get("supplier_id"))
+    new_supplier_id = _norm(expense_for_cash_flow.get("supplier_id"))
+    old_currency = _accounting_currency(current.get("currency"), "TRY")
+    new_currency = _accounting_currency(expense_for_cash_flow.get("currency"), old_currency)
+    old_total = float(current.get("total_amount") or 0)
+    new_total = float(expense_for_cash_flow.get("total_amount") or 0)
+    if old_supplier_id or new_supplier_id:
+        tenant_currency, _ = await get_tenant_currency(current_user.tenant_id)
+
+        async def apply_supplier_delta(supplier_id: str | None, currency: str, amount: float) -> None:
+            if not supplier_id or not amount:
+                return
+            increments = {f"account_balance_by_currency.{currency}": round(amount, 2)}
+            if currency == tenant_currency:
+                increments["account_balance"] = round(amount, 2)
+            await db.suppliers.update_one(
+                {"id": supplier_id, "tenant_id": current_user.tenant_id},
+                {"$inc": increments},
+            )
+
+        if old_supplier_id == new_supplier_id and old_currency == new_currency:
+            await apply_supplier_delta(new_supplier_id, new_currency, new_total - old_total)
+        else:
+            await apply_supplier_delta(old_supplier_id, old_currency, -old_total)
+            await apply_supplier_delta(new_supplier_id, new_currency, new_total)
+
+    cash_flow_filter = {
+        "tenant_id": current_user.tenant_id,
+        "reference_type": "expense",
+        "reference_id": expense_id,
+    }
+    cash_flow_patch = {
+        "transaction_type": "expense",
+        "category": expense_for_cash_flow.get("category"),
+        "amount": float(expense_for_cash_flow.get("total_amount") or 0),
+        "currency": expense_for_cash_flow.get("currency") or "TRY",
+        "description": expense_for_cash_flow.get("description"),
+        "date": expense_for_cash_flow.get("date"),
+    }
+    payment_status = expense_for_cash_flow.get("payment_status", PaymentStatus.PENDING)
+    if isinstance(payment_status, PaymentStatus):
+        payment_status = payment_status.value
+    payment_status = str(payment_status).lower()
+    if payment_status == PaymentStatus.PAID.value:
+        await db.cash_flow.update_one(
+            cash_flow_filter,
+            {
+                "$set": cash_flow_patch,
+                "$setOnInsert": {
+                    "tenant_id": current_user.tenant_id,
+                    "reference_type": "expense",
+                    "reference_id": expense_id,
+                    "created_by": getattr(current_user, "name", None),
+                    "created_at": datetime.now(UTC).isoformat(),
+                },
+            },
+            upsert=True,
+        )
+    else:
+        # Remove entries written by older versions while the expense is unpaid,
+        # partial, or refunded; these are AP states, not cash movements.
+        await db.cash_flow.delete_one(cash_flow_filter)
+    _invalidate_accounting_caches(
+        current_user.tenant_id,
+        "accounting_dashboard",
+        "report_profit_loss",
+        "report_balance_sheet",
+    )
     return expense
 
 
@@ -413,6 +788,8 @@ async def create_inventory_item(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_finance_reports")),  # v94 DW
 ):
+    tenant_currency, _ = await get_tenant_currency(current_user.tenant_id)
+    currency = _accounting_currency(payload.currency, tenant_currency)
     item = InventoryItem(
         tenant_id=current_user.tenant_id,
         name=sanitize_plaintext(payload.name, max_length=200),
@@ -421,6 +798,7 @@ async def create_inventory_item(
         unit=payload.unit,
         quantity=payload.quantity,
         unit_cost=payload.unit_cost,
+        currency=currency,
         reorder_level=payload.reorder_level,
         supplier_id=_norm(payload.supplier_id),
         location=sanitize_plaintext(payload.location, max_length=200) if payload.location else None,
@@ -429,6 +807,7 @@ async def create_inventory_item(
     item_dict = item.model_dump()
     item_dict["created_at"] = item_dict["created_at"].isoformat()
     await db.inventory_items.insert_one(item_dict)
+    _invalidate_accounting_caches(current_user.tenant_id, "report_balance_sheet")
     return item
 
 
@@ -436,10 +815,23 @@ async def create_inventory_item(
 async def get_inventory(current_user: User = Depends(get_current_user)):
     items = await db.inventory_items.find({"tenant_id": current_user.tenant_id}, {"_id": 0}).to_list(1000)
 
+    tenant_currency, _ = await get_tenant_currency(current_user.tenant_id)
+    valued_items = [
+        {**item, "inventory_value": float(item.get("quantity", 0) or 0) * float(item.get("unit_cost", 0) or 0)}
+        for item in items
+    ]
+    total_value_by_currency = _currency_totals(valued_items, "inventory_value", tenant_currency)
+
     # Get low stock items
     low_stock = [item for item in items if item["quantity"] <= item["reorder_level"]]
 
-    return {"items": items, "low_stock_count": len(low_stock), "total_value": sum(item["quantity"] * item["unit_cost"] for item in items)}
+    return {
+        "items": items,
+        "low_stock_count": len(low_stock),
+        "total_value": round(total_value_by_currency.get(tenant_currency, 0), 2),
+        "total_value_by_currency": {code: round(value, 2) for code, value in total_value_by_currency.items()},
+        "currency": tenant_currency,
+    }
 
 
 @router.post("/accounting/inventory/movement")
@@ -503,6 +895,8 @@ async def create_stock_movement(
     movement_dict = movement.model_dump()
     movement_dict["created_at"] = movement_dict["created_at"].isoformat()
     await db.stock_movements.insert_one(movement_dict)
+
+    _invalidate_accounting_caches(current_user.tenant_id, "report_balance_sheet")
 
     return movement
 
@@ -1062,6 +1456,14 @@ def _normalize_customer_tax_number(v: str | None) -> str | None:
     return v
 
 
+def _normalize_accounting_invoice_due_date(v: str) -> str:
+    """Return a canonical invoice due date before the route parses it."""
+    try:
+        return date.fromisoformat(v.strip()).isoformat()
+    except (AttributeError, TypeError, ValueError) as exc:
+        raise ValueError("due_date geçerli bir tarih olmalıdır (YYYY-MM-DD)") from exc
+
+
 class AccountingInvoiceCreateRequest(BaseModel):
     invoice_type: str
     customer_name: str
@@ -1069,15 +1471,44 @@ class AccountingInvoiceCreateRequest(BaseModel):
     customer_tax_office: str | None = None
     customer_tax_number: str | None = None
     customer_address: str | None = None
-    items: list[dict[str, Any]] = []
+    # Existing integrations may open an invoice draft before adding its lines.
+    # The UI requires a line on final creation, but the API remains backward compatible.
+    items: list[dict[str, Any]] = Field(default_factory=list)
     due_date: str
     booking_id: str | None = None
     notes: str | None = None
+    currency: str | None = None
+    exchange_rate: float | None = Field(default=None, gt=0)
+
+    @field_validator("invoice_type")
+    @classmethod
+    def _validate_invoice_type(cls, value: str) -> str:
+        # ``standard`` was used by older clients for a normal sales invoice.
+        # Normalize it at the API boundary so reports never have to guess what
+        # an arbitrary document type means.
+        normalized = str(value or "").strip().lower().replace("-", "_")
+        aliases = {"standard": InvoiceType.SALES.value, "einvoice": InvoiceType.E_INVOICE.value, "earchive": InvoiceType.E_ARCHIVE.value}
+        normalized = aliases.get(normalized, normalized)
+        try:
+            return InvoiceType(normalized).value
+        except ValueError as exc:
+            allowed = ", ".join(invoice_type.value for invoice_type in InvoiceType)
+            raise ValueError(f"invoice_type geçerli bir belge türü olmalıdır: {allowed}") from exc
 
     @field_validator("customer_tax_number")
     @classmethod
     def _validate_customer_tax_number(cls, v: str | None) -> str | None:
         return _normalize_customer_tax_number(v)
+
+    @field_validator("due_date")
+    @classmethod
+    def _validate_due_date(cls, v: str) -> str:
+        return _normalize_accounting_invoice_due_date(v)
+
+    @field_validator("currency")
+    @classmethod
+    def _validate_currency(cls, v: str | None) -> str | None:
+        return _accounting_currency(v) if v else None
 
 
 @router.post("/accounting/invoices")
@@ -1087,6 +1518,16 @@ async def create_accounting_invoice(
     _perm=Depends(require_op("post_charge")),  # v94 DW
 ):
     # Models are now imported at the top of the file
+
+    tenant_currency, _ = await get_tenant_currency(current_user.tenant_id)
+    try:
+        invoice_currency, exchange_rate = _invoice_currency_terms(
+            request.currency,
+            request.exchange_rate,
+            tenant_currency,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     count = await db.accounting_invoices.count_documents({"tenant_id": current_user.tenant_id})
     invoice_number = f"INV-{datetime.now().year}-{count + 1:05d}"
@@ -1102,33 +1543,27 @@ async def create_accounting_invoice(
         additional_taxes = []
         if "additional_taxes" in item_data and item_data["additional_taxes"]:
             for tax_data in item_data["additional_taxes"]:
-                additional_taxes.append(AdditionalTax(**tax_data))
+                try:
+                    additional_taxes.append(AdditionalTax(**tax_data))
+                except (TypeError, ValueError) as exc:
+                    raise HTTPException(status_code=422, detail=f"Ek vergi geçersiz: {exc}") from exc
 
         # Create item with parsed additional taxes
         item_dict = {k: v for k, v in item_data.items() if k != "additional_taxes"}
         item_dict["additional_taxes"] = additional_taxes
 
-        # Auto-compute vat_amount/total if client did not send (avoid 5xx)
+        # Financial line amounts are server-owned.  Never accept a client
+        # supplied VAT or total: those fields would otherwise allow an invoice
+        # whose displayed rate and booked amount disagree.
         try:
             _qty = float(item_dict.get("quantity", 0) or 0)
             _up = float(item_dict.get("unit_price", 0) or 0)
             _vrate = float(item_dict.get("vat_rate", 0) or 0)
         except (TypeError, ValueError):
             raise HTTPException(status_code=422, detail="quantity/unit_price/vat_rate sayisal olmali")
-        _line_net = _qty * _up
-        if "vat_amount" not in item_dict or item_dict.get("vat_amount") in (None, ""):
-            item_dict["vat_amount"] = round(_line_net * (_vrate / 100.0), 2)
-        try:
-            _vat_amount_num = float(item_dict.get("vat_amount", 0) or 0)
-        except (TypeError, ValueError):
-            raise HTTPException(status_code=422, detail="vat_amount sayisal olmali")
-        if "total" not in item_dict or item_dict.get("total") in (None, ""):
-            item_dict["total"] = round(_line_net + _vat_amount_num, 2)
-        else:
-            try:
-                item_dict["total"] = float(item_dict["total"])
-            except (TypeError, ValueError):
-                raise HTTPException(status_code=422, detail="total sayisal olmali")
+        _line_net = round(_qty * _up, 2)
+        item_dict["vat_amount"] = round(_line_net * (_vrate / 100.0), 2)
+        item_dict["total"] = round(_line_net + item_dict["vat_amount"], 2)
 
         try:
             item = AccountingInvoiceItem(**item_dict)
@@ -1146,12 +1581,9 @@ async def create_accounting_invoice(
                     # Withholding tax is deducted from VAT
                     # Calculate based on withholding rate (e.g., "7/10" = 70%)
                     if tax.withholding_rate:
-                        rate_parts = tax.withholding_rate.split("/")
-                        if len(rate_parts) == 2:
-                            rate_percent = (int(rate_parts[0]) / int(rate_parts[1])) * 100
-                            withholding_amount = item.vat_amount * (rate_percent / 100)
-                            vat_withholding += withholding_amount
-                            tax.calculated_amount = withholding_amount
+                        withholding_amount = round(item.vat_amount * _withholding_fraction(tax.withholding_rate), 2)
+                        vat_withholding += withholding_amount
+                        tax.calculated_amount = withholding_amount
                 else:
                     # Other taxes (ÖTV, accommodation, etc.)
                     if tax.is_percentage and tax.rate:
@@ -1179,43 +1611,29 @@ async def create_accounting_invoice(
         vat_withholding=vat_withholding,
         total_additional_taxes=total_additional_taxes,
         total=total,
+        currency=invoice_currency,
+        base_currency=tenant_currency,
+        exchange_rate=exchange_rate,
+        subtotal_base=round(subtotal * exchange_rate, 2),
+        total_vat_base=round(total_vat * exchange_rate, 2),
+        total_base=round(total * exchange_rate, 2),
         due_date=datetime.fromisoformat(request.due_date),
         booking_id=request.booking_id,
         notes=request.notes,
         created_by=current_user.name,
     )
 
-    invoice_dict = invoice.model_dump()
-    invoice_dict["issue_date"] = invoice_dict["issue_date"].isoformat()
-    invoice_dict["due_date"] = invoice_dict["due_date"].isoformat()
-    invoice_dict["created_at"] = invoice_dict["created_at"].isoformat()
+    invoice_dict = invoice.model_dump(mode="json")
     await db.accounting_invoices.insert_one(invoice_dict)
 
-    # Create cash flow entry
-    # CashFlow model imported at top
-    cash_flow = CashFlow(
-        tenant_id=current_user.tenant_id,
-        transaction_type="income",
-        category="room_revenue" if request.booking_id else "other_services",
-        amount=total,
-        description=f"Invoice {invoice_number}",
-        reference_id=invoice.id,
-        reference_type="invoice",
-        date=datetime.now(UTC),
-        created_by=current_user.name,
-    )
-    cf_dict = cash_flow.model_dump()
-    cf_dict["date"] = cf_dict["date"].isoformat()
-    cf_dict["created_at"] = cf_dict["created_at"].isoformat()
-    await db.cash_flow.insert_one(cf_dict)
-
     # v95.1 — list cache + dashboard cache invalidasyon
-    if cache:
-        cache.invalidate_tenant_cache(current_user.tenant_id, "accounting_invoices_list")
-        try:
-            cache.delete_pattern(f"cache:{current_user.tenant_id}:accounting_dashboard:*")
-        except Exception:
-            pass
+    _invalidate_accounting_caches(
+        current_user.tenant_id,
+        "accounting_invoices_list",
+        "accounting_dashboard",
+        "report_profit_loss",
+        "report_balance_sheet",
+    )
 
     return invoice
 
@@ -1255,8 +1673,32 @@ async def update_accounting_invoice(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("post_charge")),  # v94 DW
 ):
+    editable_fields = {
+        "status",
+        "payment_date",
+        "customer_name",
+        "customer_email",
+        "customer_tax_office",
+        "customer_tax_number",
+        "customer_address",
+        "due_date",
+        "notes",
+    }
+    if set(updates) - editable_fields:
+        raise HTTPException(status_code=422, detail="Faturanın mali ve tesis alanları değiştirilemez")
+    if "status" in updates:
+        try:
+            updates["status"] = PaymentStatus(str(updates["status"])).value
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail="Geçersiz fatura durumu") from exc
     if "status" in updates and updates["status"] == "paid" and "payment_date" not in updates:
         updates["payment_date"] = datetime.now(UTC).isoformat()
+
+    if "due_date" in updates:
+        try:
+            updates["due_date"] = _normalize_accounting_invoice_due_date(str(updates["due_date"]))
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     for f in ("customer_name", "customer_tax_office", "customer_address", "customer_tax_number"):
         if f in updates and isinstance(updates[f], str):
@@ -1276,17 +1718,41 @@ async def update_accounting_invoice(
     if upd.matched_count == 0:
         raise HTTPException(status_code=404, detail="Accounting invoice not found")
     invoice = await db.accounting_invoices.find_one(tenant_filter, {"_id": 0})
+    cash_flow_filter = {
+        "tenant_id": current_user.tenant_id,
+        "reference_type": "invoice",
+        "reference_id": invoice_id,
+    }
+    if invoice and invoice.get("status") == PaymentStatus.PAID.value:
+        await db.cash_flow.update_one(
+            cash_flow_filter,
+            {
+                "$set": {
+                    "transaction_type": "income",
+                    "category": "room_revenue" if invoice.get("booking_id") else "other_services",
+                    "amount": float(invoice.get("total") or 0),
+                    "currency": invoice.get("currency") or "TRY",
+                    "description": f"Invoice {invoice.get('invoice_number') or invoice_id}",
+                    "date": invoice.get("payment_date") or datetime.now(UTC).isoformat(),
+                },
+                "$setOnInsert": {
+                    **cash_flow_filter,
+                    "created_by": getattr(current_user, "name", None),
+                    "created_at": datetime.now(UTC).isoformat(),
+                },
+            },
+            upsert=True,
+        )
+    else:
+        await db.cash_flow.delete_one(cash_flow_filter)
 
-    # Drop the dashboard + invoices list cache so the UI reflects the change.
-    # cached() builds keys as "cache:{tenant_id}:{key_prefix}:{hash}".
-    try:
-        from cache_manager import cache as _cache
-
-        if _cache:
-            _cache.invalidate_tenant_cache(current_user.tenant_id, "accounting_invoices_list")
-            _cache.delete_pattern(f"cache:{current_user.tenant_id}:accounting_dashboard:*")
-    except Exception:
-        pass
+    _invalidate_accounting_caches(
+        current_user.tenant_id,
+        "accounting_invoices_list",
+        "accounting_dashboard",
+        "report_profit_loss",
+        "report_balance_sheet",
+    )
 
     # Render-time scrub for legacy XML/HTML residues from old test seeds.
     if invoice:
@@ -1300,18 +1766,45 @@ async def update_accounting_invoice(
 @router.get("/accounting/cash-flow")
 async def get_cash_flow(start_date: str | None = None, end_date: str | None = None, transaction_type: str | None = None, current_user: User = Depends(get_current_user)):
     query = {"tenant_id": current_user.tenant_id}
-    if start_date and end_date:
-        query["date"] = {"$gte": start_date, "$lte": end_date}
+    if start_date or end_date:
+        if not start_date or not end_date:
+            raise HTTPException(status_code=422, detail="Başlangıç ve bitiş tarihi birlikte verilmelidir.")
+        start_bound, end_bound = _report_date_bounds(start_date, end_date)
+        query["date"] = {"$gte": start_bound, "$lte": end_bound}
     if transaction_type:
         query["transaction_type"] = transaction_type
 
-    flows = await db.cash_flow.find(query, {"_id": 0}).sort("date", -1).to_list(1000)
+    flows = await db.cash_flow.find(query, {"_id": 0}).sort("date", -1).to_list(None)
+    tenant_currency, _ = await get_tenant_currency(current_user.tenant_id)
+    income_by_currency: dict[str, float] = {}
+    expense_by_currency: dict[str, float] = {}
+    for flow in flows:
+        currency = _accounting_currency(flow.get("currency"), tenant_currency)
+        flow["currency"] = currency
+        amount = float(flow.get("amount", 0) or 0)
+        target = income_by_currency if flow.get("transaction_type") == "income" else expense_by_currency
+        target[currency] = target.get(currency, 0) + amount
 
-    total_income = sum(f["amount"] for f in flows if f["transaction_type"] == "income")
-    total_expense = sum(f["amount"] for f in flows if f["transaction_type"] == "expense")
-    net_cash_flow = total_income - total_expense
+    currencies = set(income_by_currency) | set(expense_by_currency)
+    net_by_currency = {
+        code: round(income_by_currency.get(code, 0) - expense_by_currency.get(code, 0), 2)
+        for code in currencies
+    }
+    income_by_currency = {code: round(value, 2) for code, value in income_by_currency.items()}
+    expense_by_currency = {code: round(value, 2) for code, value in expense_by_currency.items()}
 
-    return {"transactions": flows, "total_income": total_income, "total_expense": total_expense, "net_cash_flow": net_cash_flow}
+    return {
+        "transactions": flows,
+        # Legacy scalars now describe only the tenant currency, not an invalid
+        # sum of unrelated nominal currencies.
+        "total_income": income_by_currency.get(tenant_currency, 0),
+        "total_expense": expense_by_currency.get(tenant_currency, 0),
+        "net_cash_flow": net_by_currency.get(tenant_currency, 0),
+        "total_income_by_currency": income_by_currency,
+        "total_expense_by_currency": expense_by_currency,
+        "net_cash_flow_by_currency": net_by_currency,
+        "currency": tenant_currency,
+    }
 
 
 @router.get("/accounting/reports/profit-loss")
@@ -1330,38 +1823,91 @@ async def get_profit_loss_report(
         start_date = (_d.today() - _td(days=30)).isoformat()
     if not end_date:
         end_date = _d.today().isoformat()
-    # Get all income
-    invoices = await db.accounting_invoices.find({"tenant_id": current_user.tenant_id, "status": "paid", "issue_date": {"$gte": start_date, "$lte": end_date}}, {"_id": 0}).to_list(1000)
+    start_bound, end_bound = _report_date_bounds(start_date, end_date)
+    # Only paid sales documents are realised revenue in this cash-basis view.
+    # A paid purchase or proforma must never become hotel income.
+    invoices = await db.accounting_invoices.find(
+        {
+            "tenant_id": current_user.tenant_id,
+            "status": "paid",
+            "invoice_type": {"$nin": [InvoiceType.PROFORMA.value, InvoiceType.PURCHASE.value]},
+            "issue_date": {"$gte": start_bound, "$lte": end_bound},
+        },
+        {"_id": 0},
+    ).to_list(None)
 
     # Get all expenses
-    expenses = await db.expenses.find({"tenant_id": current_user.tenant_id, "date": {"$gte": start_date, "$lte": end_date}}, {"_id": 0}).to_list(1000)
+    expenses = await db.expenses.find({"tenant_id": current_user.tenant_id, "date": {"$gte": start_bound, "$lte": end_bound}}, {"_id": 0}).to_list(None)
 
-    total_revenue = sum(inv["total"] for inv in invoices)
-    total_expenses = sum(exp["total_amount"] for exp in expenses)
-    gross_profit = total_revenue - total_expenses
-    profit_margin = (gross_profit / total_revenue * 100) if total_revenue > 0 else 0
+    from core.tenant_currency import get_tenant_currency
+
+    tenant_currency, _ = await get_tenant_currency(current_user.tenant_id)
+
+    def _currency_totals(records, amount_field):
+        totals: dict[str, float] = {}
+        for record in records:
+            code = str(record.get("currency") or tenant_currency).upper()
+            totals[code] = totals.get(code, 0) + float(record.get(amount_field, 0) or 0)
+        return {code: round(amount, 2) for code, amount in sorted(totals.items())}
+
+    total_revenue_by_currency = _currency_totals(invoices, "total")
+    total_expenses_by_currency = _currency_totals(expenses, "total_amount")
+    gross_profit_by_currency = {
+        code: round(total_revenue_by_currency.get(code, 0) - total_expenses_by_currency.get(code, 0), 2)
+        for code in sorted(set(total_revenue_by_currency) | set(total_expenses_by_currency))
+    }
+    profit_margin_by_currency = {
+        code: round((gross_profit_by_currency[code] / revenue * 100), 2) if revenue > 0 else 0
+        for code, revenue in total_revenue_by_currency.items()
+    }
+
+    report_currencies = set(total_revenue_by_currency) | set(total_expenses_by_currency)
+    mixed_currency = len(report_currencies) > 1
+    if mixed_currency:
+        total_revenue = total_expenses = gross_profit = profit_margin = None
+    else:
+        only_currency = next(iter(report_currencies), tenant_currency)
+        total_revenue = total_revenue_by_currency.get(only_currency, 0)
+        total_expenses = total_expenses_by_currency.get(only_currency, 0)
+        gross_profit = round(total_revenue - total_expenses, 2)
+        profit_margin = round((gross_profit / total_revenue * 100), 2) if total_revenue > 0 else 0
 
     # Revenue breakdown
     revenue_by_category = {}
+    revenue_by_category_currency: dict[str, dict[str, float]] = {}
     for inv in invoices:
         for item in inv["items"]:
             desc = item["description"]
             revenue_by_category[desc] = revenue_by_category.get(desc, 0) + item["total"]
+            code = str(inv.get("currency") or tenant_currency).upper()
+            category_totals = revenue_by_category_currency.setdefault(desc, {})
+            category_totals[code] = round(category_totals.get(code, 0) + float(item.get("total", 0) or 0), 2)
 
     # Expense breakdown
     expense_by_category = {}
+    expense_by_category_currency: dict[str, dict[str, float]] = {}
     for exp in expenses:
         cat = exp["category"]
         expense_by_category[cat] = expense_by_category.get(cat, 0) + exp["total_amount"]
+        code = str(exp.get("currency") or tenant_currency).upper()
+        category_totals = expense_by_category_currency.setdefault(cat, {})
+        category_totals[code] = round(category_totals.get(code, 0) + float(exp.get("total_amount", 0) or 0), 2)
 
     return {
         "period": {"start": start_date, "end": end_date},
-        "total_revenue": round(total_revenue, 2),
-        "total_expenses": round(total_expenses, 2),
-        "gross_profit": round(gross_profit, 2),
-        "profit_margin": round(profit_margin, 2),
+        "total_revenue": total_revenue,
+        "total_expenses": total_expenses,
+        "gross_profit": gross_profit,
+        "profit_margin": profit_margin,
         "revenue_breakdown": revenue_by_category,
         "expense_breakdown": expense_by_category,
+        "total_revenue_by_currency": total_revenue_by_currency,
+        "total_expenses_by_currency": total_expenses_by_currency,
+        "gross_profit_by_currency": gross_profit_by_currency,
+        "profit_margin_by_currency": profit_margin_by_currency,
+        "revenue_breakdown_by_currency": revenue_by_category_currency,
+        "expense_breakdown_by_currency": expense_by_category_currency,
+        "mixed_currency": mixed_currency,
     }
 
 
@@ -1375,19 +1921,59 @@ async def get_vat_report(start_date: str | None = None, end_date: str | None = N
         start_date = (_d.today() - _td(days=30)).isoformat()
     if not end_date:
         end_date = _d.today().isoformat()
+    start_bound, end_bound = _report_date_bounds(start_date, end_date)
     # Sales VAT (collected)
-    invoices = await db.accounting_invoices.find({"tenant_id": current_user.tenant_id, "issue_date": {"$gte": start_date, "$lte": end_date}}, {"_id": 0}).to_list(1000)
+    # Proforma and purchase invoices are not output VAT.  A proforma is only
+    # an offer, while a purchase invoice belongs to input VAT through AP.
+    invoices = await db.accounting_invoices.find(
+        {
+            "tenant_id": current_user.tenant_id,
+            "invoice_type": {"$nin": [InvoiceType.PROFORMA.value, InvoiceType.PURCHASE.value]},
+            "issue_date": {"$gte": start_bound, "$lte": end_bound},
+        },
+        {"_id": 0},
+    ).to_list(None)
 
-    sales_vat = sum(inv["total_vat"] for inv in invoices)
+    from core.tenant_currency import get_tenant_currency
+
+    tenant_currency, _ = await get_tenant_currency(current_user.tenant_id)
+
+    def _vat_totals(records, field):
+        totals: dict[str, float] = {}
+        for record in records:
+            code = str(record.get("currency") or tenant_currency).upper()
+            totals[code] = totals.get(code, 0) + float(record.get(field, 0) or 0)
+        return {code: round(amount, 2) for code, amount in sorted(totals.items())}
 
     # Purchase VAT (paid)
-    expenses = await db.expenses.find({"tenant_id": current_user.tenant_id, "date": {"$gte": start_date, "$lte": end_date}}, {"_id": 0}).to_list(1000)
+    expenses = await db.expenses.find({"tenant_id": current_user.tenant_id, "date": {"$gte": start_bound, "$lte": end_bound}}, {"_id": 0}).to_list(None)
 
-    purchase_vat = sum(exp["vat_amount"] for exp in expenses)
+    sales_vat_by_currency = _vat_totals(invoices, "total_vat")
+    purchase_vat_by_currency = _vat_totals(expenses, "vat_amount")
+    vat_payable_by_currency = {
+        code: round(sales_vat_by_currency.get(code, 0) - purchase_vat_by_currency.get(code, 0), 2)
+        for code in sorted(set(sales_vat_by_currency) | set(purchase_vat_by_currency))
+    }
+    report_currencies = set(sales_vat_by_currency) | set(purchase_vat_by_currency)
+    mixed_currency = len(report_currencies) > 1
+    if mixed_currency:
+        sales_vat = purchase_vat = vat_payable = None
+    else:
+        only_currency = next(iter(report_currencies), tenant_currency)
+        sales_vat = sales_vat_by_currency.get(only_currency, 0)
+        purchase_vat = purchase_vat_by_currency.get(only_currency, 0)
+        vat_payable = round(sales_vat - purchase_vat, 2)
 
-    vat_payable = sales_vat - purchase_vat
-
-    return {"period": {"start": start_date, "end": end_date}, "sales_vat": round(sales_vat, 2), "purchase_vat": round(purchase_vat, 2), "vat_payable": round(vat_payable, 2)}
+    return {
+        "period": {"start": start_date, "end": end_date},
+        "sales_vat": sales_vat,
+        "purchase_vat": purchase_vat,
+        "vat_payable": vat_payable,
+        "sales_vat_by_currency": sales_vat_by_currency,
+        "purchase_vat_by_currency": purchase_vat_by_currency,
+        "vat_payable_by_currency": vat_payable_by_currency,
+        "mixed_currency": mixed_currency,
+    }
 
 
 @router.get("/accounting/reports/balance-sheet")
@@ -1397,6 +1983,22 @@ async def get_balance_sheet(
     _perm=Depends(require_op("view_finance_reports")),  # v70 Bug DG
 ):
     tenant_id = current_user.tenant_id
+    from core.tenant_currency import get_tenant_currency
+
+    tenant_currency, _ = await get_tenant_currency(tenant_id)
+
+    async def _group_currency(collection, match, amount_expression):
+        pipeline = [
+            {"$match": match},
+            {
+                "$group": {
+                    "_id": {"$toUpper": {"$ifNull": ["$currency", tenant_currency]}},
+                    "total": {"$sum": amount_expression},
+                }
+            },
+        ]
+        rows = await collection.aggregate(pipeline).to_list(100)
+        return {str(row.get("_id") or tenant_currency).upper(): round(float(row.get("total") or 0), 2) for row in rows}
 
     async def _sum_cash():
         pipeline = [
@@ -1458,15 +2060,50 @@ async def get_balance_sheet(
 
     total_cash, total_inventory, total_receivables, total_payables = await asyncio.gather(_sum_cash(), _sum_inventory(), _sum_receivables(), _sum_payables())
 
+    cash_by_currency, receivables_by_currency = await asyncio.gather(
+        _group_currency(db.bank_accounts, {"tenant_id": tenant_id}, {"$ifNull": ["$balance", 0]}),
+        _group_currency(
+            db.accounting_invoices,
+            {"tenant_id": tenant_id, "status": {"$in": ["pending", "partial"]}},
+            {"$ifNull": ["$total", 0]},
+        ),
+    )
+    inventory_by_currency = {tenant_currency: round(total_inventory, 2)} if total_inventory else {}
+    payables_by_currency = {tenant_currency: round(total_payables, 2)} if total_payables else {}
+    asset_codes = set(cash_by_currency) | set(inventory_by_currency) | set(receivables_by_currency)
+    total_assets_by_currency = {
+        code: round(cash_by_currency.get(code, 0) + inventory_by_currency.get(code, 0) + receivables_by_currency.get(code, 0), 2)
+        for code in sorted(asset_codes)
+    }
+    equity_codes = asset_codes | set(payables_by_currency)
+    total_equity_by_currency = {
+        code: round(total_assets_by_currency.get(code, 0) - payables_by_currency.get(code, 0), 2)
+        for code in sorted(equity_codes)
+    }
+
     total_assets = total_cash + total_inventory + total_receivables
 
     # Equity
     total_equity = total_assets - total_payables
 
     return {
-        "assets": {"cash": round(total_cash, 2), "inventory": round(total_inventory, 2), "receivables": round(total_receivables, 2), "total": round(total_assets, 2)},
-        "liabilities": {"payables": round(total_payables, 2), "total": round(total_payables, 2)},
-        "equity": {"total": round(total_equity, 2)},
+        "assets": {
+            "cash": round(total_cash, 2),
+            "inventory": round(total_inventory, 2),
+            "receivables": round(total_receivables, 2),
+            "total": round(total_assets, 2),
+            "cash_by_currency": cash_by_currency,
+            "inventory_by_currency": inventory_by_currency,
+            "receivables_by_currency": receivables_by_currency,
+            "total_by_currency": total_assets_by_currency,
+        },
+        "liabilities": {
+            "payables": round(total_payables, 2),
+            "total": round(total_payables, 2),
+            "payables_by_currency": payables_by_currency,
+            "total_by_currency": payables_by_currency,
+        },
+        "equity": {"total": round(total_equity, 2), "total_by_currency": total_equity_by_currency},
     }
 
 
@@ -1482,26 +2119,46 @@ async def get_accounting_dashboard(
     month_start = today.replace(day=1, hour=0, minute=0, second=0).isoformat()
     month_end = today.isoformat()
 
-    invoices = await db.accounting_invoices.find({"tenant_id": current_user.tenant_id, "issue_date": {"$gte": month_start, "$lte": month_end}}, {"_id": 0}).to_list(1000)
+    # Keep dashboard income/receivable figures aligned with the report ledger:
+    # purchase and proforma documents are never hotel sales.
+    invoices = await db.accounting_invoices.find(
+        {
+            "tenant_id": current_user.tenant_id,
+            "invoice_type": {"$nin": [InvoiceType.PROFORMA.value, InvoiceType.PURCHASE.value]},
+            "issue_date": {"$gte": month_start, "$lte": month_end},
+        },
+        {"_id": 0},
+    ).to_list(None)
 
-    expenses = await db.expenses.find({"tenant_id": current_user.tenant_id, "date": {"$gte": month_start, "$lte": month_end}}, {"_id": 0}).to_list(1000)
+    expenses = await db.expenses.find({"tenant_id": current_user.tenant_id, "date": {"$gte": month_start, "$lte": month_end}}, {"_id": 0}).to_list(None)
 
-    collected_income = sum(inv.get("total", 0) for inv in invoices if inv.get("status") == "paid")
-    accrued_revenue = sum(inv.get("total", 0) for inv in invoices)
-    pending_amount = sum(inv.get("total", 0) for inv in invoices if inv.get("status") in ("pending", "partial"))
-    overdue_amount = sum(inv.get("total", 0) for inv in invoices if inv.get("status") == "overdue")
-    total_expenses = sum(exp.get("amount", 0) for exp in expenses)
+    # Never combine nominal amounts from different currencies.  Keep the legacy
+    # scalar fields for older clients, and expose currency-safe breakdowns for
+    # current clients.
+    cur_code, cur_symbol = await get_tenant_currency(current_user.tenant_id)
+
+    collected_by_currency = _currency_totals(invoices, "total", cur_code, lambda inv: inv.get("status") == "paid")
+    accrued_by_currency = _currency_totals(invoices, "total", cur_code)
+    pending_by_currency = _currency_totals(invoices, "total", cur_code, lambda inv: inv.get("status") in ("pending", "partial"))
+    overdue_by_currency = _currency_totals(invoices, "total", cur_code, lambda inv: inv.get("status") == "overdue")
+    expenses_by_currency = _currency_totals(expenses, "total_amount", cur_code)
+
+    collected_income = collected_by_currency.get(cur_code, 0)
+    accrued_revenue = accrued_by_currency.get(cur_code, 0)
+    pending_amount = pending_by_currency.get(cur_code, 0)
+    overdue_amount = overdue_by_currency.get(cur_code, 0)
+    total_expenses = expenses_by_currency.get(cur_code, 0)
+    net_income_by_currency = {
+        code: round(collected_by_currency.get(code, 0) - expenses_by_currency.get(code, 0), 2)
+        for code in set(collected_by_currency) | set(expenses_by_currency)
+    }
     pending_invoices = len([inv for inv in invoices if inv.get("status") == "pending"])
     overdue_invoices = len([inv for inv in invoices if inv.get("status") == "overdue"])
 
     # Get bank balances
-    bank_accounts = await db.bank_accounts.find({"tenant_id": current_user.tenant_id}, {"_id": 0}).to_list(1000)
-    total_bank_balance = sum(acc["balance"] for acc in bank_accounts)
-
-    # Tenant currency for display.
-    from core.tenant_currency import get_tenant_currency
-
-    cur_code, cur_symbol = await get_tenant_currency(current_user.tenant_id)
+    bank_accounts = await db.bank_accounts.find({"tenant_id": current_user.tenant_id}, {"_id": 0}).to_list(None)
+    bank_balance_by_currency = _currency_totals(bank_accounts, "balance", cur_code)
+    total_bank_balance = bank_balance_by_currency.get(cur_code, 0)
 
     return {
         # Backward-compat field (paid invoices only).
@@ -1516,6 +2173,13 @@ async def get_accounting_dashboard(
         "pending_invoices": pending_invoices,
         "overdue_invoices": overdue_invoices,
         "total_bank_balance": round(total_bank_balance, 2),
+        "collected_income_by_currency": collected_by_currency,
+        "accrued_revenue_by_currency": accrued_by_currency,
+        "pending_amount_by_currency": pending_by_currency,
+        "overdue_amount_by_currency": overdue_by_currency,
+        "monthly_expenses_by_currency": expenses_by_currency,
+        "net_income_by_currency": net_income_by_currency,
+        "bank_balance_by_currency": bank_balance_by_currency,
         "currency": cur_code,
         "currency_symbol": cur_symbol,
     }
@@ -1635,7 +2299,7 @@ async def create_multi_currency_invoice(
     total_vat = 0
     for item in request.items:
         item_total = item.get("quantity", 0) * item.get("unit_price", 0)
-        vat_rate = item.get("vat_rate", 18) / 100
+        vat_rate = item.get("vat_rate", GENERAL_VAT_RATE) / 100
         item["vat_amount"] = round(item_total * vat_rate, 2)
         total_vat += item["vat_amount"]
 
@@ -1730,10 +2394,16 @@ async def generate_invoice_from_folio(
         )
 
     # Convert charges to invoice items
+    hotel_settings = await db.hotel_settings.find_one(
+        {"tenant_id": current_user.tenant_id},
+        {"_id": 0, "default_accommodation_vat_rate": 1},
+    ) or {}
+    accommodation_vat_rate = float(
+        hotel_settings.get("default_accommodation_vat_rate", ACCOMMODATION_VAT_RATE)
+    )
     invoice_items = []
     for charge in charges:
-        item = {"description": charge.get("description", "Hotel Charge"), "quantity": 1, "unit_price": charge.get("amount", 0), "vat_rate": charge.get("vat_rate", 18), "total": charge.get("total", 0)}
-        invoice_items.append(item)
+        invoice_items.extend(folio_charge_to_invoice_items(charge, accommodation_vat_rate))
 
     # Resolve customer info. Walk-in / check-in store the guest's name on the
     # GUEST document (booking carries only guest_id), so fall back through

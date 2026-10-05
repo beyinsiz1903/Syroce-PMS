@@ -702,28 +702,42 @@ def _assignment_state(assignment: dict[str, Any], progress: dict[str, Any] | Non
     return "assigned"
 
 
-async def ensure_role_assignments(
-    tenant_id: str, user_id: str, role: str, *, assigned_by: str = "system"
-) -> None:
+async def ensure_role_assignments(tenant_id: str, user_id: str, role: str, *, assigned_by: str = "system") -> None:
     """Materialise the role curriculum so never-started staff remain reportable."""
     now = datetime.now(UTC)
     for course in await list_courses_for(tenant_id, role):
         await _db().academy_assignments.update_one(
             {"tenant_id": tenant_id, "user_id": user_id, "course_id": course["id"]},
-            {"$setOnInsert": {
-                "id": str(uuid.uuid4()), "tenant_id": tenant_id, "user_id": user_id,
-                "course_id": course["id"], "source": "role_path", "required": True,
-                "priority": "normal", "assigned_by": assigned_by, "assigned_at": now,
-                "due_at": now + timedelta(days=30), "created_at": now,
-            }},
+            {
+                "$setOnInsert": {
+                    "id": str(uuid.uuid4()),
+                    "tenant_id": tenant_id,
+                    "user_id": user_id,
+                    "course_id": course["id"],
+                    "source": "role_path",
+                    "required": True,
+                    "priority": "normal",
+                    "assigned_by": assigned_by,
+                    "assigned_at": now,
+                    "due_at": now + timedelta(days=30),
+                    "created_at": now,
+                }
+            },
             upsert=True,
         )
 
 
 async def assign_course(
-    tenant_id: str, user_id: str, course_id: str, *, assigned_by: str,
-    source: str = "manager", required: bool = True, priority: str = "normal",
-    due_at: datetime | None = None, reason: str | None = None,
+    tenant_id: str,
+    user_id: str,
+    course_id: str,
+    *,
+    assigned_by: str,
+    source: str = "manager",
+    required: bool = True,
+    priority: str = "normal",
+    due_at: datetime | None = None,
+    reason: str | None = None,
     reference_id: str | None = None,
 ) -> dict[str, Any]:
     if source not in ASSIGNMENT_SOURCES:
@@ -732,26 +746,32 @@ async def assign_course(
         raise ValueError("Gecersiz oncelik")
     now = datetime.now(UTC)
     row = {
-        "id": str(uuid.uuid4()), "tenant_id": tenant_id, "user_id": user_id,
-        "course_id": course_id, "source": source, "required": bool(required),
-        "priority": priority, "assigned_by": assigned_by, "assigned_at": now,
+        "id": str(uuid.uuid4()),
+        "tenant_id": tenant_id,
+        "user_id": user_id,
+        "course_id": course_id,
+        "source": source,
+        "required": bool(required),
+        "priority": priority,
+        "assigned_by": assigned_by,
+        "assigned_at": now,
         "due_at": due_at or (now + timedelta(days=14 if source == "warning" else 30)),
         "reason": (reason or "").strip()[:500] or None,
         "reference_id": (reference_id or "").strip()[:128] or None,
-        "created_at": now, "updated_at": now,
+        "created_at": now,
+        "updated_at": now,
     }
     await _db().academy_assignments.update_one(
         {"tenant_id": tenant_id, "user_id": user_id, "course_id": course_id},
-        {"$set": row}, upsert=True,
+        {"$set": row},
+        upsert=True,
     )
     return row
 
 
 async def get_learning_plan(tenant_id: str, user_id: str, role: str) -> dict[str, Any]:
     await ensure_role_assignments(tenant_id, user_id, role)
-    assignments = await _db().academy_assignments.find(
-        {"tenant_id": tenant_id, "user_id": user_id}, {"_id": 0}
-    ).sort("due_at", 1).to_list(500)
+    assignments = await _db().academy_assignments.find({"tenant_id": tenant_id, "user_id": user_id}, {"_id": 0}).sort("due_at", 1).to_list(500)
     progress = await get_all_progress(tenant_id, user_id)
     now = datetime.now(UTC)
     items: list[dict[str, Any]] = []
@@ -772,13 +792,18 @@ async def get_learning_plan(tenant_id: str, user_id: str, role: str) -> dict[str
         items.append(item)
     required_items = [i for i in items if i["assignment"].get("required")]
     completed = [i for i in required_items if i["assignment"]["status"] == "completed"]
-    return {"summary": {
-        "assigned": len(items), "required": len(required_items), "completed": len(completed),
-        "overdue": sum(i["assignment"]["status"] == "overdue" for i in required_items),
-        "compliance_rate": int(round(len(completed) / len(required_items) * 100)) if required_items else 100,
-        "earned_points": sum(i["points"] for i in items if i["progress"]["passed"]),
-        "possible_points": sum(i["points"] for i in required_items),
-    }, "items": items}
+    return {
+        "summary": {
+            "assigned": len(items),
+            "required": len(required_items),
+            "completed": len(completed),
+            "overdue": sum(i["assignment"]["status"] == "overdue" for i in required_items),
+            "compliance_rate": int(round(len(completed) / len(required_items) * 100)) if required_items else 100,
+            "earned_points": sum(i["points"] for i in items if i["progress"]["passed"]),
+            "possible_points": sum(i["points"] for i in required_items),
+        },
+        "items": items,
+    }
 
 
 async def mark_lesson_complete(
@@ -1013,9 +1038,7 @@ async def get_tenant_report(tenant_id: str) -> dict[str, Any]:
         {"_id": 0},
     ).to_list(5000)
     cert_set = {(c["user_id"], c["course_id"]) for c in cert_rows}
-    assignment_rows = await db.academy_assignments.find(
-        {"tenant_id": tenant_id}, {"_id": 0}
-    ).to_list(10000)
+    assignment_rows = await db.academy_assignments.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(10000)
 
     # Resolve user display info (tenant-scoped).
     user_ids = {p["user_id"] for p in progress_rows} | {a["user_id"] for a in assignment_rows}

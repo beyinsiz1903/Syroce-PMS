@@ -5,6 +5,7 @@ export const DEFAULT_CALENDAR_VIEW_PREFERENCES = Object.freeze({
   compactMode: true,
   showOccupancy: false,
   showTimeline: false,
+  showPrices: true,
 });
 
 export const readCalendarViewPreferences = (storage = globalThis.localStorage) => {
@@ -27,4 +28,3 @@ export const applyCalendarViewPreference = (previous, key, value) => {
   }
   return next;
 };
-

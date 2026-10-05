@@ -694,6 +694,54 @@
     "invoiceDate": "Invoice Date",
     "paymentMethod": "Payment Method",
     "generateEInvoice": "Generate E-Invoice",
+    "recordExpense": "Record Expense",
+    "salaries": "Salaries",
+    "utilities": "Utilities",
+    "supplies": "Supplies",
+    "maintenance": "Maintenance",
+    "marketing": "Marketing",
+    "rent": "Rent",
+    "insurance": "Insurance",
+    "taxes": "Taxes",
+    "amountExclVAT": "Amount (excluding VAT)",
+    "currency": "Currency",
+    "supplierOptional": "Supplier (optional)",
+    "selectSupplier": "Select supplier",
+    "totalInclVAT": "Total including VAT",
+    "addSupplier": "Add Supplier",
+    "taxOffice": "Tax Office",
+    "addBankAccount": "Add Bank Account",
+    "accountName": "Account Name",
+    "bankName": "Bank Name",
+    "accountNumber": "Account Number",
+    "openingBalance": "Opening Balance",
+    "addInventoryItem": "Add Inventory Item",
+    "itemName": "Item Name",
+    "unit": "Unit",
+    "reorderLevel": "Reorder Level",
+    "inventoryCategories": {
+      "supplies": "Supplies",
+      "amenity": "Guest Amenity",
+      "food": "Food",
+      "beverage": "Beverage",
+      "linen": "Linen",
+      "cleaning": "Cleaning",
+      "maintenance": "Maintenance",
+      "stationery": "Stationery",
+      "electronics": "Electronics",
+      "uniform": "Uniform",
+      "general": "General",
+      "other": "Other"
+    },
+    "inventoryUnits": {
+      "piece": "Piece",
+      "bottle": "Bottle",
+      "kilogram": "Kilogram",
+      "liter": "Liter",
+      "pack": "Pack",
+      "box": "Box",
+      "set": "Set"
+    },
     "actions": {
       "addAccount": "Add Account",
       "addExpense": "Add Expense",
@@ -764,11 +812,22 @@
     },
     "tabs": {
       "banks": "Banks",
+      "incoming": "Incoming e-Invoices",
       "expenses": "Expenses",
       "inventory": "Inventory",
       "invoices": "Invoices",
       "reports": "Reports",
       "suppliers": "Suppliers"
+    },
+    "incoming": {
+      "title": "Incoming e-Invoices",
+      "description": "Manage incoming e-invoices from your integrator (Nilvera) here.",
+      "sync": "Sync",
+      "fetchError": "Error fetching incoming invoices.",
+      "syncSuccess": "Synchronization completed.",
+      "syncError": "Synchronization failed.",
+      "answerSuccess": "Invoice response successfully submitted.",
+      "answerError": "Failed to submit invoice response."
     },
     "efatura": {
       "pending": "E-Fatura: Kuyrukta",
@@ -1332,7 +1391,9 @@
       "manager": "Manager",
       "gm": "General Manager",
       "staff": "Staff",
-      "super_admin": "Super Admin"
+      "super_admin": "Super Admin",
+      "agency_admin": "Agency Admin",
+      "agency_agent": "Agency Agent"
     },
     "teamTitle": "Team Members",
     "subscriptionTitle": "Subscription Plan",
@@ -1425,7 +1486,27 @@
     "accountsReceivable": "Accounts Receivable",
     "accountsPayable": "Accounts Payable",
     "reconciliation": "Bank Reconciliation",
-    "aging": "Aging Report"
+    "aging": "Aging Report",
+    "transactionTypes": {
+      "charge": "Charge",
+      "payment": "Payment",
+      "adjustment": "Adjustment",
+      "refund": "Refund"
+    },
+    "ledgerAccountTypes": {
+      "asset": "Asset",
+      "liability": "Liability",
+      "equity": "Equity",
+      "revenue": "Revenue",
+      "expense": "Expense"
+    },
+    "accountingQueueStatuses": {
+      "pending": "Pending",
+      "blocked": "Blocked",
+      "posted": "Posted",
+      "reversed": "Reversed",
+      "failed": "Failed"
+    }
   },
   "sales": {
     "title": "Sales CRM",
@@ -1772,7 +1853,8 @@
     "tokenRefreshFailed": "Token refresh failed",
     "loadFailed": "Security data could not be loaded",
     "securityWarning": "Security Warning: High number of failed login attempts detected",
-    "systemSecure": "System Secure: All security controls are active",
+    "systemSecure": "No unusual sign-in volume detected in the last 24 hours",
+    "loginActivityNormal": "No unusual sign-in volume detected in the last 24 hours",
     "lastUpdate": "Last update",
     "failedLogins24h": "Failed Logins (24h)",
     "successfulLogins24h": "Successful Logins (24h)",
@@ -1784,7 +1866,8 @@
     "requestsPerMin": "Requests/min",
     "avgResponse": "Avg. Response",
     "slowRequests": "Slow Requests",
-    "securityControls": "Security Controls",
+    "securityControls": "Application Security Policies",
+    "policyLayer": "Policy",
     "gzipCompression": "GZip Compression",
     "jwtValidation": "JWT Token Validation",
     "inputSanitization": "Input Sanitization",
@@ -3839,6 +3922,7 @@
     "rec_pending": "{{count}} pending",
     "rec_generate": "Generate",
     "rec_apply_all": "Apply All ({{count}})",
+    "rec_apply_all_confirm": "Apply {{count}} pricing recommendations to future selling rates? This action changes future prices.",
     "rec_empty": "No pending recommendations. Click \"Generate\" to create new ones.",
     "rec_col_date": "Date",
     "rec_col_room_type": "Room Type",
@@ -9877,6 +9961,29 @@
       "action": "İlk Lead'i Oluştur",
       "noResultsTitle": "Eşleşen lead bulunamadı",
       "noResultsDesc": "Arama veya aşama filtrenizi değiştirerek tekrar deneyin."
+    }
+  },
+  "uiQuality": {
+    "emptyState": {
+      "defaultTitle": "Nothing to show yet",
+      "defaultDescription": "Adjust your filters or create the first record to get started.",
+      "comingSoon": "Coming soon",
+      "setupRequired": "Setup required"
+    },
+    "states": {
+      "empty": { "title": "Nothing to show yet", "description": "Adjust your filters or create the first record to get started." },
+      "forbidden": { "title": "You do not have access to this screen", "description": "Your role or user-specific access does not allow this screen. Ask your hotel administrator for access." },
+      "setup": { "title": "Setup required", "description": "This module is not enabled for your property or its connection is not complete. Check your plan, module and integration settings." },
+      "error": { "title": "Data cannot be loaded right now", "description": "Your existing records were not affected. Try again once the connection is restored." },
+      "throttled": { "title": "Request limit reached", "description": "Too many requests were sent. Wait briefly and try again." },
+      "staleVersion": { "title": "The latest application version could not be loaded", "description": "The files on this page do not match the current version. Reloading may discard unsaved forms and selections." }
+    },
+    "actions": {
+      "retry": "Try again",
+      "retryAgain": "Retry",
+      "loadLatestVersion": "Load latest version",
+      "continue": "Continue",
+      "backToDashboard": "Back to dashboard"
     }
   }
 }

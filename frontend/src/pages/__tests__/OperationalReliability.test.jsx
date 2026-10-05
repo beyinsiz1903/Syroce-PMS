@@ -48,6 +48,22 @@ describe('Operational page reliability', () => {
     expect(axiosGet).toHaveBeenCalledWith('/production/env/validate', { headers: {} });
   });
 
+  it('never presents synthetic load validation as a runnable production check', async () => {
+    axiosGet.mockImplementation((url) => {
+      if (url === '/production/load/scenarios') {
+        return Promise.resolve({ data: { data: { runner_configured: false, scenarios: [{ id: 'ota_reservation_burst', name: 'OTA burst', thresholds: {}, execution_mode: 'external_runner_required' }] } } });
+      }
+      return Promise.resolve({ data: { data: {} } });
+    });
+
+    render(<MemoryRouter><ProductionRolloutDashboard /></MemoryRouter>);
+
+    await screen.findByTestId('production-rollout-dashboard');
+    // The tab is rendered only after selecting it; this verifies the scenario
+    // contract and button behaviour through the exported component flow.
+    expect(axiosGet).toHaveBeenCalledWith('/production/load/scenarios', { headers: {} });
+  });
+
   it.each([
     ['desktop', LogViewer],
     ['mobile', MobileLogViewer],

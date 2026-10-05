@@ -12,9 +12,13 @@ on:
           - discovery
           - inventory_read
           - reservation_read
+          - reservation_read_legacy_probe
+          - reservation_read_exact_probe
           - reservation_import
           - reservation_replay
           - availability
+          - availability_batch
+          - forced_availability_batch
           - rate
           - stop_sell
           - min_los
@@ -28,6 +32,10 @@ on:
       approved_head_sha:
         description: Exact 40-character commit SHA approved for this run
         required: true
+        type: string
+      reservation_id:
+        description: Test booking number for exact read-only probe only
+        required: false
         type: string
 
 permissions:
@@ -43,7 +51,7 @@ env:
 jobs:
   exely-pilot:
     name: Run Exely PMSConnect Pilot
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment: exely-pilot
     concurrency:
       group: exely-pilot
@@ -89,13 +97,13 @@ jobs:
             exit 1
           fi
           case "${PILOT_OPERATION}" in
-            discovery|inventory_read|reservation_read|reservation_import|reservation_replay)
+            discovery|inventory_read|reservation_read|reservation_read_legacy_probe|reservation_read_exact_probe|reservation_import|reservation_replay)
               if [ "${CONFIRM_PROVIDER_WRITE}" = "true" ]; then
                 echo "::error::BLOCKED_READONLY_WRITE_CONFLICT"
                 exit 1
               fi
               ;;
-            availability|rate|stop_sell|min_los|min_los_arrival|reservation_ack)
+            availability|availability_batch|forced_availability_batch|rate|stop_sell|min_los|min_los_arrival|reservation_ack)
               if [ "${GITHUB_RUN_ATTEMPT}" != "1" ]; then
                 echo "::error::BLOCKED_MUTATION_RERUN"
                 exit 1
@@ -180,7 +188,7 @@ jobs:
           verify_completed_workflow "frontend-quality.yml"
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
@@ -201,13 +209,17 @@ jobs:
           GITHUB_SHA: ${{ github.sha }}
           EXELY_PILOT_ENDPOINT_URL: https://pmsconnect.test.hopenapi.com/api/PMSConnect.svc
           EXELY_PILOT_OPERATION: ${{ inputs.operation }}
+          EXELY_PILOT_RESERVATION_ID: ${{ inputs.reservation_id }}
           EXELY_PILOT_WRITE_APPROVED: ${{ inputs.confirm_provider_write }}
           EXELY_PILOT_APPROVED_HEAD: ${{ inputs.approved_head_sha }}
           EXELY_PILOT_RUN_ID: ${{ github.run_id }}
           EXELY_PILOT_RUN_ATTEMPT: ${{ github.run_attempt }}
           EXELY_PILOT_ACCOUNT_CONFIRMED: ${{ vars.EXELY_PILOT_ACCOUNT_CONFIRMED }}
+          EXELY_PILOT_EXPECTED_HOTEL_CODE: ${{ vars.EXELY_PILOT_EXPECTED_HOTEL_CODE }}
           EXELY_PILOT_CREDENTIAL_SCOPE: ${{ vars.EXELY_PILOT_CREDENTIAL_SCOPE }}
           EXELY_PILOT_TEST_DATE: ${{ vars.EXELY_PILOT_TEST_DATE }}
+          EXELY_PILOT_DATE_FROM: ${{ vars.EXELY_PILOT_DATE_FROM }}
+          EXELY_PILOT_DATE_TO: ${{ vars.EXELY_PILOT_DATE_TO }}
           EXELY_PILOT_AVAILABILITY: ${{ vars.EXELY_PILOT_AVAILABILITY }}
           EXELY_PILOT_RATE: ${{ vars.EXELY_PILOT_RATE }}
           EXELY_PILOT_CURRENCY: ${{ vars.EXELY_PILOT_CURRENCY }}
@@ -219,11 +231,14 @@ jobs:
           EXELY_PILOT_HOTEL_CODE: ${{ secrets.EXELY_PILOT_HOTEL_CODE }}
           EXELY_PILOT_ROOM_TYPE_CODE: ${{ secrets.EXELY_PILOT_ROOM_TYPE_CODE }}
           EXELY_PILOT_RATE_PLAN_CODE: ${{ secrets.EXELY_PILOT_RATE_PLAN_CODE }}
+          EXELY_PILOT_STANDARD_ROOM_TYPE_CODE: ${{ vars.EXELY_PILOT_STANDARD_ROOM_TYPE_CODE }}
+          EXELY_PILOT_DELUXE_ROOM_TYPE_CODE: ${{ vars.EXELY_PILOT_DELUXE_ROOM_TYPE_CODE }}
+          EXELY_PILOT_BASE_RATE_PLAN_CODE: ${{ vars.EXELY_PILOT_BASE_RATE_PLAN_CODE }}
           EXELY_PILOT_HMAC_KEY: ${{ secrets.EXELY_PILOT_HMAC_KEY }}
         run: |
           cd backend
           case "${EXELY_PILOT_OPERATION}" in
-            discovery|inventory_read|reservation_read)
+            discovery|inventory_read|reservation_read|reservation_read_legacy_probe|reservation_read_exact_probe)
               target="tests/integration/test_exely_pilot.py::test_exely_pilot_readonly"
               ;;
             *)
@@ -250,6 +265,7 @@ jobs:
           EXELY_PILOT_RUN_ID: ${{ github.run_id }}
           EXELY_PILOT_RUN_ATTEMPT: ${{ github.run_attempt }}
           EXELY_PILOT_ACCOUNT_CONFIRMED: ${{ vars.EXELY_PILOT_ACCOUNT_CONFIRMED }}
+          EXELY_PILOT_EXPECTED_HOTEL_CODE: ${{ vars.EXELY_PILOT_EXPECTED_HOTEL_CODE }}
           EXELY_PILOT_CREDENTIAL_SCOPE: ${{ vars.EXELY_PILOT_CREDENTIAL_SCOPE }}
           EXELY_PILOT_DB_SCOPE: ${{ vars.EXELY_PILOT_DB_SCOPE }}
           EXELY_PILOT_PERSISTENT_DB_ATTESTED: ${{ vars.EXELY_PILOT_PERSISTENT_DB_ATTESTED }}
@@ -287,6 +303,7 @@ jobs:
           EXELY_PILOT_RUN_ID: ${{ github.run_id }}
           EXELY_PILOT_RUN_ATTEMPT: ${{ github.run_attempt }}
           EXELY_PILOT_ACCOUNT_CONFIRMED: ${{ vars.EXELY_PILOT_ACCOUNT_CONFIRMED }}
+          EXELY_PILOT_EXPECTED_HOTEL_CODE: ${{ vars.EXELY_PILOT_EXPECTED_HOTEL_CODE }}
           EXELY_PILOT_CREDENTIAL_SCOPE: ${{ vars.EXELY_PILOT_CREDENTIAL_SCOPE }}
           EXELY_PILOT_DB_SCOPE: ${{ vars.EXELY_PILOT_DB_SCOPE }}
           EXELY_PILOT_PERSISTENT_DB_ATTESTED: ${{ vars.EXELY_PILOT_PERSISTENT_DB_ATTESTED }}
@@ -305,8 +322,9 @@ jobs:
 
       - name: Upload safe pilot test results
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
+          retention-days: 1
           name: exely-pilot-results
           path: backend/exely-pilot-results.xml
           if-no-files-found: ignore

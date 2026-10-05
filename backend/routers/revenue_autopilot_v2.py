@@ -87,11 +87,7 @@ class AutopilotPolicyUpdate(BaseModel):
 
     @model_validator(mode="after")
     def validate_threshold_order(self):
-        if (
-            self.confidence_threshold_auto is not None
-            and self.confidence_threshold_queue is not None
-            and self.confidence_threshold_queue > self.confidence_threshold_auto
-        ):
+        if self.confidence_threshold_auto is not None and self.confidence_threshold_queue is not None and self.confidence_threshold_queue > self.confidence_threshold_auto:
             raise ValueError("Kuyruk güven eşiği otomatik uygulama eşiğinden yüksek olamaz")
         return self
 

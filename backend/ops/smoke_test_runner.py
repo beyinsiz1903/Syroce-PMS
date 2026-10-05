@@ -50,10 +50,7 @@ SMOKE_TESTS = [
         "name": "Auth: Login Flow",
         "method": "POST",
         "path": "/api/auth/login",
-        "body": {
-            "email": os.environ.get("DEMO_EMAIL", "demo@hotel.com"),
-            "password": os.environ.get("DEMO_PASSWORD", "demo123")
-        },
+        "body": {"email": os.environ.get("DEMO_EMAIL", "demo@hotel.com"), "password": os.environ.get("DEMO_PASSWORD", "demo123")},
         "expected_status": 200,
         "critical": True,
         "auth_required": False,

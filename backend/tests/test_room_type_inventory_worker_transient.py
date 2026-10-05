@@ -12,7 +12,6 @@ handshake timeout, connection closed) as transient: log them at WARNING
 logic errors must still surface as ERROR.
 """
 import logging
-from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
@@ -167,7 +166,7 @@ async def test_loop_transient_error_demoted_to_warning(monkeypatch, caplog):
         return None
 
     monkeypatch.setattr(worker, "_run_once", _run_once)
-    monkeypatch.setattr(svc.asyncio, "sleep", _no_sleep)
+    monkeypatch.setattr(svc, "_worker_sleep", _no_sleep)
 
     await worker._loop()
 
@@ -196,7 +195,7 @@ async def test_loop_non_transient_error_stays_at_error_level(monkeypatch, caplog
         return None
 
     monkeypatch.setattr(worker, "_run_once", _run_once)
-    monkeypatch.setattr(svc.asyncio, "sleep", _no_sleep)
+    monkeypatch.setattr(svc, "_worker_sleep", _no_sleep)
 
     await worker._loop()
 
@@ -297,7 +296,7 @@ async def test_loop_streak_escalates_to_error(monkeypatch, caplog):
         return None
 
     monkeypatch.setattr(worker, "_run_once", _run_once)
-    monkeypatch.setattr(svc.asyncio, "sleep", _no_sleep)
+    monkeypatch.setattr(svc, "_worker_sleep", _no_sleep)
 
     await worker._loop()
 

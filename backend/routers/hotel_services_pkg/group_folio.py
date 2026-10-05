@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, Depends, HTTPException
 from pymongo.errors import DuplicateKeyError
 
+from core.business_date_service import stamp_open_business_date
 from core.database import db
 from core.security import get_current_user
 from models.schemas import User, _ensure_hotel_context
@@ -120,6 +121,7 @@ async def _load_group_booking_rows(tenant_id: str, booking_ids: list[str]) -> li
                 "folio_charges": folio_total,
                 "payments": payment_total,
                 "balance": accommodation_total + folio_total - payment_total,
+                "currency": str(booking.get("currency") or "TRY").upper(),
                 "folio_merged_to": booking.get("folio_merged_to"),
             }
         )
@@ -336,6 +338,7 @@ async def get_group_folio_status(
     bookings_data = await _load_group_booking_rows(tid, group.get("booking_ids", []))
     for row in bookings_data:
         row.pop("booking", None)
+    group_currencies = {row.get("currency") or "TRY" for row in bookings_data}
 
     # Check merge logs
     merge_logs = []
@@ -346,6 +349,7 @@ async def get_group_folio_status(
         "group": group,
         "bookings": bookings_data,
         "merge_logs": merge_logs,
+        "currency": next(iter(group_currencies), "TRY") if len(group_currencies) == 1 else None,
     }
 
 
@@ -394,6 +398,7 @@ async def get_group_booking_folio_detail(
         "check_out": booking.get("check_out"),
         "status": booking.get("status", "confirmed"),
         "total_amount": booking.get("total_amount", 0),
+        "currency": str(booking.get("currency") or "TRY").upper(),
         "charges": charges,
         "folios": folios,
         "payments": payments,
@@ -420,12 +425,14 @@ async def record_group_payment(
         "tenant_id": tid,
         "booking_id": data.booking_id,
         "amount": data.amount,
+        "currency": str(booking.get("currency") or "TRY").upper(),
         "method": data.method,
         "payment_type": "group_payment",
         "reference": data.reference or f"Grup odeme - {data.group_id[:8]}",
         "recorded_by": current_user.name,
         "created_at": datetime.now(UTC).isoformat(),
     }
+    await stamp_open_business_date(db, tid, payment)
     await db.payments.insert_one(payment)
     payment.pop("_id", None)
 
@@ -451,6 +458,14 @@ async def record_group_bulk_payment(
 
     if not active_bookings:
         raise HTTPException(status_code=400, detail="Aktif rezervasyon bulunamadi")
+
+    currencies = {str(row.get("currency") or "TRY").upper() for row in active_bookings}
+    if len(currencies) != 1:
+        raise HTTPException(
+            status_code=409,
+            detail="Farklı para birimindeki grup folyolarına tek toplu ödeme dağıtılamaz.",
+        )
+    group_currency = next(iter(currencies))
 
     # Calculate distribution
     total_positive_balance = sum(max(b["balance"], 0) for b in active_bookings)
@@ -486,12 +501,14 @@ async def record_group_bulk_payment(
             "tenant_id": tid,
             "booking_id": ab["booking_id"],
             "amount": share,
+            "currency": group_currency,
             "method": data.method,
             "payment_type": "group_bulk_payment",
             "reference": data.reference or f"Toplu grup odeme - Oda {ab['room_number']}",
             "recorded_by": current_user.name,
             "created_at": datetime.now(UTC).isoformat(),
         }
+        await stamp_open_business_date(db, tid, payment)
         await db.payments.insert_one(payment)
         payment.pop("_id", None)
         payments_created.append({**payment, "guest_name": ab["guest_name"]})
@@ -501,6 +518,7 @@ async def record_group_bulk_payment(
         "success": True,
         "total_distributed": round(data.total_amount - remaining, 2),
         "payments_count": len(payments_created),
+        "currency": group_currency,
         "payments": payments_created,
     }
 
@@ -552,7 +570,7 @@ async def get_group_folio_summary(
     bookings_map: dict[str, dict] = {}
     async for b in db.bookings.find(
         {"id": {"$in": unique_booking_ids}, "tenant_id": tid},
-        {"_id": 0, "id": 1, "total_amount": 1, "folio_merged_to": 1},
+        {"_id": 0, "id": 1, "total_amount": 1, "folio_merged_to": 1, "currency": 1},
     ):
         bookings_map[b["id"]] = b
 
@@ -581,6 +599,7 @@ async def get_group_folio_summary(
         payment_totals[doc["_id"]] = doc.get("total") or 0
 
     total_balance = 0.0
+    totals_by_currency: dict[str, float] = {}
     merged_count = 0
     for bid in all_booking_ids:
         booking = bookings_map.get(bid)
@@ -588,7 +607,10 @@ async def get_group_folio_summary(
             continue
         if booking.get("folio_merged_to"):
             merged_count += 1
-        total_balance += (booking.get("total_amount") or 0) + folio_totals.get(bid, 0) - payment_totals.get(bid, 0)
+        balance = (booking.get("total_amount") or 0) + folio_totals.get(bid, 0) - payment_totals.get(bid, 0)
+        total_balance += balance
+        currency = str(booking.get("currency") or "TRY").upper()
+        totals_by_currency[currency] = totals_by_currency.get(currency, 0) + balance
 
     merge_log_count = await db.folio_merge_logs.count_documents({"tenant_id": tid})
 
@@ -597,6 +619,8 @@ async def get_group_folio_summary(
         "active_groups": active_groups,
         "total_bookings": total_bookings,
         "total_balance": total_balance,
+        "currency": next(iter(totals_by_currency), "TRY") if len(totals_by_currency) == 1 else None,
+        "totals_by_currency": {key: round(value, 2) for key, value in totals_by_currency.items()},
         "merged_folios": merged_count,
         "merge_operations": merge_log_count,
     }

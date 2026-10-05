@@ -68,6 +68,33 @@ def _redact_connection_secrets(conn: dict) -> dict:
     return conn
 
 
+def _legacy_hotelrunner_connection_projection(connection: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Expose an active legacy HotelRunner connection in the old CM list.
+
+    Reservation ingestion still uses ``hotelrunner_connections`` for existing
+    properties.  The older Channel Manager screen, however, read only the
+    newer generic ``channel_connections`` collection and consequently told
+    those properties that no connection existed.  This projection is strictly
+    display-only: it contains no credential material and must not be treated
+    as a new connector record by write endpoints.
+    """
+    if not isinstance(connection, dict) or not connection.get("is_active"):
+        return None
+
+    legacy_id = str(connection.get("id") or connection.get("connection_id") or "hotelrunner")
+    return {
+        "id": f"legacy-hotelrunner-{legacy_id}",
+        "channel_type": "hotelrunner",
+        "channel_name": connection.get("property_name") or "HotelRunner",
+        "property_id": connection.get("hr_id") or connection.get("property_id") or "",
+        "status": "active",
+        "is_legacy_connection": True,
+        "is_read_only": True,
+        "sync_reservations": bool(connection.get("auto_sync_reservations")),
+        "sync_rate_availability": bool(connection.get("auto_sync_availability")),
+    }
+
+
 class ChannelConnectionCreate(BaseModel):
     channel_name: str
     channel_type: str = "ota"
@@ -94,8 +121,22 @@ async def get_channel_connections(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_finance_reports")),  # v86 DV: channel config (hassas API anahtarları)
 ):
-    """Get all channel connections (secrets redacted — defense-in-depth)."""
+    """Get all channel connections (secrets redacted — defense-in-depth).
+
+    Also projects an active legacy HotelRunner integration so the retained
+    legacy CM UI cannot falsely claim that an importing property is offline.
+    """
     connections = await db.channel_connections.find({"tenant_id": current_user.tenant_id}, {"_id": 0}).to_list(100)
+    legacy_hotelrunner = await db.hotelrunner_connections.find_one(
+        {"tenant_id": current_user.tenant_id, "is_active": True},
+        {"_id": 0, "token": 0, "credentials_ref": 0},
+    )
+    legacy_projection = _legacy_hotelrunner_connection_projection(legacy_hotelrunner)
+    if legacy_projection and not any(
+        str(connection.get("channel_type", "")).casefold() == "hotelrunner"
+        for connection in connections
+    ):
+        connections.append(legacy_projection)
     connections = [_redact_connection_secrets(c) for c in connections]
     return {"connections": connections, "count": len(connections)}
 

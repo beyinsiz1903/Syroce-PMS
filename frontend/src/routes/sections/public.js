@@ -1,12 +1,14 @@
 import {
-  LandingPage, RoomRequestPage, PublicReviewPage, PrivacyPolicy,
+  LandingPage, HotelPmsLandingPage, RoomRequestPage, PublicReviewPage, PrivacyPolicy,
   PmsLiteLanding, AgencyPortalDashboard, B2BApiDocs, SimpleAdminPanel,
   ResetPasswordPage, PreCheckinPage, CertificateVerifyPage, WebBookingEngine,
+  AgencyBookingWidget,
 } from "./lazyPages";
 
 export function publicRoutes({ pa }) {
   return [
     { path: "/landing", type: "public", component: LandingPage },
+    { path: "/otel-programi", type: "public", component: HotelPmsLandingPage },
     { path: "/g/room/:tenantId/:roomId", type: "public", component: RoomRequestPage },
     { path: "/g/:hotelSlug/room/:tenantId/:roomId", type: "public", component: RoomRequestPage },
     { path: "/review/:token", type: "public", component: PublicReviewPage },
@@ -14,6 +16,8 @@ export function publicRoutes({ pa }) {
     { path: "/gizlilik", type: "public", component: PrivacyPolicy },
     { path: "/pms-lite", type: "public", component: PmsLiteLanding },
     { path: "/agency-portal", type: "public", component: AgencyPortalDashboard },
+    { path: "/acente-girisi", type: "public", component: AgencyPortalDashboard },
+    { path: "/agency-widget", type: "public", component: AgencyBookingWidget },
     // Public URL namespace, but admin-protected docs route (intentional —
     // mirrors original behavior; URL grouping rather than auth grouping).
     { path: "/b2b/docs", ...pa(B2BApiDocs) },

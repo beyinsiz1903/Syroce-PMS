@@ -180,10 +180,7 @@ async def get_callback_readiness(current_user: User = Depends(get_current_user))
     credentials = credentials or {}
     stored_hr_id = str(credentials.get("hr_id") or "")
     credentials_configured = bool(credentials.get("token")) and stored_hr_id == hr_id
-    legacy_path_secret_configured = bool(
-        credentials.get("callback_secret")
-        or os.environ.get("HOTELRUNNER_CALLBACK_SECRET")
-    )
+    legacy_path_secret_configured = bool(credentials.get("callback_secret") or os.environ.get("HOTELRUNNER_CALLBACK_SECRET"))
     callback_path = "/api/channel-manager/hotelrunner/callback"
     public_base = (os.environ.get("PUBLIC_APP_URL") or "").strip().rstrip("/")
     callback_url = f"{public_base}{callback_path}" if public_base else callback_path

@@ -18,6 +18,7 @@ import {
   Landmark, CalendarRange, KeyRound
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { formatCurrency } from '@/lib/currency';
 
 const DIFF_THRESHOLD = 50;
 const CURRENCIES = [
@@ -29,6 +30,7 @@ const CURRENCIES = [
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
 const monthAgoIso = () => { const d = new Date(); d.setDate(d.getDate() - 30); return d.toISOString().slice(0, 10); };
+const formatTry = value => formatCurrency(value, 'TRY', { decimals: 2 });
 
 const CashierTab = () => {
   const { t } = useTranslation();
@@ -36,6 +38,7 @@ const CashierTab = () => {
   const [shift, setShift] = useState(null);
   const [shiftHistory, setShiftHistory] = useState([]);
   const [transactions, setTransactions] = useState([]);
+  const [shiftSummary, setShiftSummary] = useState(null);
   const [loading, setLoading] = useState(false);
   const [showOpenDialog, setShowOpenDialog] = useState(false);
   const [showCloseDialog, setShowCloseDialog] = useState(false);
@@ -120,9 +123,11 @@ const CashierTab = () => {
       const res = await axios.get('/cashier/current-shift');
       setShift(res.data.shift || null);
       setTransactions(res.data.transactions || []);
+      setShiftSummary(res.data.summary || null);
     } catch (err) {
       setShift(null);
       setTransactions([]);
+      setShiftSummary(null);
       if (err?.response?.status !== 404) {
         toast.error('Kasa vardiyası yüklenemedi');
       }
@@ -146,7 +151,7 @@ const CashierTab = () => {
       setShowOpenDialog(false);
       setOpeningAmount('');
       loadShift();
-    } catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
+    } catch (e) { toast.error('İşlem Hatası: ' + (e.response?.data?.detail || e.message)); }
     setLoading(false);
   };
   const openShift = () => requirePin('Vardiya açmadan önce PIN doğrulayın', doOpenShift);
@@ -170,7 +175,7 @@ const CashierTab = () => {
       setClosingNote('');
       loadShift();
       loadHistory();
-    } catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
+    } catch (e) { toast.error('İşlem Hatası: ' + (e.response?.data?.detail || e.message)); }
     setLoading(false);
   };
   const closeShift = () => {
@@ -198,7 +203,7 @@ const CashierTab = () => {
       setHandoverTarget({ email: '', password: '', note: '' });
       loadShift();
       loadHistory();
-    } catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
+    } catch (e) { toast.error('İşlem Hatası: ' + (e.response?.data?.detail || e.message)); }
     setLoading(false);
   };
 
@@ -233,7 +238,7 @@ const CashierTab = () => {
       setShowPaidOutDialog(false);
       setManualTxn({ amount: '', method: 'cash', description: '', currency: 'TRY', fx_rate: '1' });
       loadShift();
-    } catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
+    } catch (e) { toast.error('İşlem Hatası: ' + (e.response?.data?.detail || e.message)); }
     setLoading(false);
   };
 
@@ -259,7 +264,7 @@ const CashierTab = () => {
       setShowBankDepositDialog(false);
       setBankDeposit({ amount: '', bank_name: '', account_no: '', reference: '', note: '' });
       loadShift();
-    } catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
+    } catch (e) { toast.error('İşlem Hatası: ' + (e.response?.data?.detail || e.message)); }
     setLoading(false);
   };
 
@@ -290,23 +295,23 @@ const CashierTab = () => {
     lines.push('');
     lines.push(['TOPLAMLAR'].map(escape).join(','));
     lines.push(['Vardiya sayisi', t.shift_count || 0].map(escape).join(','));
-    lines.push(['Acilis toplam', (t.opening_total || 0).toFixed(2)].map(escape).join(','));
-    lines.push(['Nakit giris', (t.cash_in_total || 0).toFixed(2)].map(escape).join(','));
-    lines.push(['Nakit cikis', (t.cash_out_total || 0).toFixed(2)].map(escape).join(','));
-    lines.push(['Beklenen', (t.expected_total || 0).toFixed(2)].map(escape).join(','));
-    lines.push(['Sayilan kapanis', (t.closing_total || 0).toFixed(2)].map(escape).join(','));
-    lines.push(['Fark', (t.difference_total || 0).toFixed(2)].map(escape).join(','));
+    lines.push(['Acilis toplam (TRY)', (t.opening_total || 0).toFixed(2)].map(escape).join(','));
+    lines.push(['Nakit giris (TRY)', (t.cash_in_total || 0).toFixed(2)].map(escape).join(','));
+    lines.push(['Nakit cikis (TRY)', (t.cash_out_total || 0).toFixed(2)].map(escape).join(','));
+    lines.push(['Beklenen (TRY)', (t.expected_total || 0).toFixed(2)].map(escape).join(','));
+    lines.push(['Sayilan kapanis (TRY)', (t.closing_total || 0).toFixed(2)].map(escape).join(','));
+    lines.push(['Fark (TRY)', (t.difference_total || 0).toFixed(2)].map(escape).join(','));
     lines.push(['Islem sayisi', t.transaction_count || 0].map(escape).join(','));
     lines.push('');
-    lines.push(['YONTEM BAZINDA', 'Giris', 'Cikis', 'Net', 'Adet'].map(escape).join(','));
+    lines.push(['YONTEM BAZINDA', 'Giris (TRY)', 'Cikis (TRY)', 'Net (TRY)', 'Adet'].map(escape).join(','));
     Object.entries(periodData.by_method || {}).forEach(([m, v]) =>
       lines.push([m, (v.in || 0).toFixed(2), (v.out || 0).toFixed(2), (v.net || 0).toFixed(2), v.count || 0].map(escape).join(',')));
     lines.push('');
-    lines.push(['TIP BAZINDA', 'Giris', 'Cikis', 'Adet'].map(escape).join(','));
+    lines.push(['TIP BAZINDA', 'Giris (TRY)', 'Cikis (TRY)', 'Adet'].map(escape).join(','));
     Object.entries(periodData.by_type || {}).forEach(([ty, v]) =>
       lines.push([ty, (v.in || 0).toFixed(2), (v.out || 0).toFixed(2), v.count || 0].map(escape).join(',')));
     lines.push('');
-    lines.push(['KASIYER BAZINDA', 'Vardiya', 'Nakit Giris', 'Nakit Cikis', 'Islem'].map(escape).join(','));
+    lines.push(['KASIYER BAZINDA', 'Vardiya', 'Nakit Giris (TRY)', 'Nakit Cikis (TRY)', 'Islem'].map(escape).join(','));
     Object.entries(periodData.by_cashier || {}).forEach(([k, v]) =>
       lines.push([v.name || k, v.shift_count || 0, (v.cash_in || 0).toFixed(2), (v.cash_out || 0).toFixed(2), v.transaction_count || 0].map(escape).join(',')));
     lines.push('');
@@ -348,13 +353,30 @@ const CashierTab = () => {
     setReportLoading(false);
   };
 
-  const cashInTotal = transactions.filter(t => t.direction === 'in' && t.method === 'cash').reduce((s, t) => s + (t.amount || 0), 0);
-  const cashOutTotal = transactions.filter(t => t.direction === 'out' && t.method === 'cash').reduce((s, t) => s + (t.amount || 0), 0);
-  const cardCount = transactions.filter(t => t.method === 'card').length;
-  const cardTotal = transactions.filter(t => t.method === 'card').reduce((s, t) => s + (t.amount || 0), 0);
+  // The API intentionally returns only the latest 200 detail rows, while the
+  // shift counters cover the complete shift.  Never calculate handover from a
+  // truncated list; fall back to rows only for legacy responses.
+  const cashInTotal = shift && Number.isFinite(Number(shift.cash_in))
+    ? Number(shift.cash_in)
+    : transactions.filter(t => t.direction === 'in' && t.method === 'cash').reduce((s, t) => s + (t.amount || 0), 0);
+  const cashOutTotal = shift && Number.isFinite(Number(shift.cash_out))
+    ? Number(shift.cash_out)
+    : transactions.filter(t => t.direction === 'out' && t.method === 'cash').reduce((s, t) => s + (t.amount || 0), 0);
+  const methodSummary = (method) => shiftSummary?.methods?.[method] || null;
+  const methodFallback = (method) => {
+    const rows = transactions.filter(t => t.method === method);
+    const incoming = rows.filter(t => t.direction === 'in').reduce((s, t) => s + Number(t.amount || 0), 0);
+    const outgoing = rows.filter(t => t.direction === 'out').reduce((s, t) => s + Number(t.amount || 0), 0);
+    return { count: rows.length, in: incoming, out: outgoing, net: incoming - outgoing };
+  };
+  const cardSummary = methodSummary('card') || methodFallback('card');
+  const bankSummary = methodSummary('bank_transfer') || methodFallback('bank_transfer');
+  const onlineSummary = methodSummary('online') || methodFallback('online');
   const countedTotal = calcTotal(closingCounts);
   const expectedCash = shift ? (shift.opening_amount || 0) + cashInTotal - cashOutTotal : 0;
   const difference = countedTotal - expectedCash;
+  const shiftBusinessDate = String(shift?.business_date || shift?.opened_at || '').slice(0, 10);
+  const staleShift = Boolean(shiftBusinessDate && shiftBusinessDate < todayIso());
 
   const txnTypeLabel = (type) => {
     const map = {
@@ -388,7 +410,7 @@ const CashierTab = () => {
 
   const exportTransactionsCsv = () => {
     if (!filteredTransactions.length) { toast.error('Dışa aktarılacak işlem yok'); return; }
-    const header = ['Saat', 'Tip', 'Yon', 'Yontem', 'Aciklama', 'Tutar', 'Kullanici', 'Ref'];
+    const header = ['Saat', 'Tip', 'Yon', 'Yontem', 'Aciklama', 'Tutar', 'Para Birimi', 'Kullanici', 'Ref'];
     const escape = (v) => {
       let s = (v ?? '').toString();
       // Formula injection guard — Excel/Sheets formula triggers
@@ -403,6 +425,7 @@ const CashierTab = () => {
       methodLabel(t.method),
       t.description || '',
       (t.amount || 0).toFixed(2),
+      t.currency || 'TRY',
       t.created_by_name || '',
       t.ref_id || '',
     ].map(escape).join(','));
@@ -455,11 +478,7 @@ const CashierTab = () => {
           <Wallet className="w-6 h-6" /> {t('cm.components_pms_CashierTab.kasa_yonetimi')}
         </h2>
         <div className="flex gap-2 flex-wrap">
-          {!shift ? (
-            <Button onClick={() => setShowOpenDialog(true)} className="bg-emerald-600 hover:bg-emerald-700">
-              <LogIn className="w-4 h-4 mr-2" /> {t('cm.components_pms_CashierTab.vardiya_ac')}
-            </Button>
-          ) : (
+          {shift ? (
             <>
               <Button onClick={() => setShowCashInDialog(true)} variant="outline" className="border-emerald-300 text-emerald-700 hover:bg-emerald-50">
                 <Plus className="w-4 h-4 mr-2" /> {t('cm.components_pms_CashierTab.nakit_giris')}
@@ -480,12 +499,12 @@ const CashierTab = () => {
                 <LogOut className="w-4 h-4 mr-2" /> {t('cm.components_pms_CashierTab.vardiya_kapat')}
               </Button>
             </>
-          )}
+          ) : null}
           <Button onClick={() => setShowPeriodReportDialog(true)} variant="outline" className="border-slate-300 text-slate-700 hover:bg-slate-50">
             <CalendarRange className="w-4 h-4 mr-2" /> {t('cm.components_pms_CashierTab.donem_raporu')}
           </Button>
-          <Button onClick={() => navigate('/folio-routing')} variant="outline" className="border-indigo-300 text-indigo-700 hover:bg-indigo-50">
-            <ArrowRightLeft className="w-4 h-4 mr-2" /> {t('cm.components_pms_CashierTab.folio_yonlendirme')}
+          <Button onClick={() => navigate('/folio-routing')} variant="outline" className="border-slate-300 text-slate-700 hover:bg-slate-50">
+            <ArrowRightLeft className="w-4 h-4 mr-2" /> Folyo Kuralları
           </Button>
           <Button variant="outline" onClick={() => { loadShift(); loadHistory(); }}>
             <RefreshCw className="w-4 h-4 mr-2" /> {t('cm.components_pms_CashierTab.yenile')}
@@ -516,36 +535,60 @@ const CashierTab = () => {
             </CardContent>
           </Card>
 
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+          {staleShift && (
+            <div className="flex items-start gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+              <div>
+                <p className="font-semibold">Vardiya {shiftBusinessDate} tarihinden beri açık</p>
+                <p className="text-amber-800">Aşağıdaki tutarlar bugünü değil, vardiyanın açıldığı andan bugüne kadar kaydedilen işlemleri kapsar. Günlük mutabakat için vardiyayı kapatıp yeni vardiya açın.</p>
+              </div>
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-3">
             <Card className="bg-emerald-50 border-emerald-200">
               <CardContent className="p-3">
                 <p className="text-xs text-emerald-600">{t('cm.components_pms_CashierTab.acilis_tutari')}</p>
-                <p className="text-lg font-bold text-emerald-700">{(shift.opening_amount || 0).toFixed(2)} TL</p>
+                <p className="text-lg font-bold text-emerald-700">{formatTry(shift.opening_amount)}</p>
               </CardContent>
             </Card>
             <Card className="bg-blue-50 border-blue-200">
               <CardContent className="p-3">
                 <p className="text-xs text-blue-600">{t('cm.components_pms_CashierTab.nakit_giris_f1615')}</p>
-                <p className="text-lg font-bold text-blue-700">{cashInTotal.toFixed(2)} TL</p>
+                <p className="text-lg font-bold text-blue-700">{formatTry(cashInTotal)}</p>
               </CardContent>
             </Card>
             <Card className="bg-amber-50 border-amber-200">
               <CardContent className="p-3">
                 <p className="text-xs text-amber-600">{t('cm.components_pms_CashierTab.nakit_cikis')}</p>
-                <p className="text-lg font-bold text-amber-700">{cashOutTotal.toFixed(2)} TL</p>
+                <p className="text-lg font-bold text-amber-700">{formatTry(cashOutTotal)}</p>
               </CardContent>
             </Card>
             <Card className="bg-indigo-50 border-indigo-200">
               <CardContent className="p-3">
-                <p className="text-xs text-indigo-600">{t('cm.components_pms_CashierTab.kredi_karti')}</p>
-                <p className="text-lg font-bold text-indigo-700">{cardTotal.toFixed(2)} TL</p>
-                <p className="text-[10px] text-indigo-500">{cardCount} {t('cm.components_pms_CashierTab.islem')}</p>
+                <p className="text-xs text-indigo-600">Kart (Net)</p>
+                <p className="text-lg font-bold text-indigo-700">{formatTry(cardSummary.net)}</p>
+                <p className="text-[10px] text-indigo-500">{cardSummary.count} {t('cm.components_pms_CashierTab.islem')}</p>
+              </CardContent>
+            </Card>
+            <Card className="bg-cyan-50 border-cyan-200">
+              <CardContent className="p-3">
+                <p className="text-xs text-cyan-700">Havale (Net)</p>
+                <p className="text-lg font-bold text-cyan-800">{formatTry(bankSummary.net)}</p>
+                <p className="text-[10px] text-cyan-600">{bankSummary.count} {t('cm.components_pms_CashierTab.islem')}</p>
+              </CardContent>
+            </Card>
+            <Card className="bg-violet-50 border-violet-200">
+              <CardContent className="p-3">
+                <p className="text-xs text-violet-700">Online (Net)</p>
+                <p className="text-lg font-bold text-violet-800">{formatTry(onlineSummary.net)}</p>
+                <p className="text-[10px] text-violet-600">{onlineSummary.count} {t('cm.components_pms_CashierTab.islem')}</p>
               </CardContent>
             </Card>
             <Card className="bg-gray-50 border-gray-200">
               <CardContent className="p-3">
-                <p className="text-xs text-gray-600">Beklenen Kasa</p>
-                <p className="text-lg font-bold text-gray-800">{expectedCash.toFixed(2)} TL</p>
+                <p className="text-xs text-gray-600">Beklenen Nakit</p>
+                <p className="text-lg font-bold text-gray-800">{formatTry(expectedCash)}</p>
               </CardContent>
             </Card>
           </div>
@@ -554,7 +597,7 @@ const CashierTab = () => {
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between flex-wrap gap-2">
                 <CardTitle className="text-sm flex items-center gap-2">
-                  <Receipt className="w-4 h-4" /> {t('cm.components_pms_CashierTab.vardiya_islemleri')}{filteredTransactions.length}/{transactions.length})
+                  <Receipt className="w-4 h-4" /> {t('cm.components_pms_CashierTab.vardiya_islemleri')} ({filteredTransactions.length}/{transactions.length})
                 </CardTitle>
                 <div className="flex gap-2 items-center flex-wrap">
                   <div className="relative">
@@ -602,7 +645,7 @@ const CashierTab = () => {
                       <div className="flex items-center gap-3">
                         <span className="text-gray-400">{(t.timestamp || t.created_at || '').slice(11, 16)}</span>
                         <span className={`font-medium ${t.direction === 'in' ? 'text-emerald-600' : 'text-red-600'}`}>
-                          {t.direction === 'in' ? '+' : '-'}{(t.amount || 0).toFixed(2)} TL
+                          {t.direction === 'in' ? '+' : '-'}{formatTry(t.amount)}
                         </span>
                       </div>
                     </div>
@@ -613,14 +656,34 @@ const CashierTab = () => {
           </Card>
         </>
       ) : (
-        <Card className="border-dashed border-2 border-gray-300">
-          <CardContent className="py-12 text-center">
-            <Wallet className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-            <p className="text-gray-500 text-lg mb-2">{t('cm.components_pms_CashierTab.aktif_vardiya_yok')}</p>
-            <p className="text-gray-400 text-sm mb-4">{t('cm.components_pms_CashierTab.islem_yapabilmek_icin_vardiya_acmaniz_ge')}</p>
+        <Card className="border-slate-200 bg-gradient-to-br from-white to-slate-50">
+          <CardContent className="py-10">
+            <div className="mx-auto max-w-3xl text-center">
+              <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700">
+                <Wallet className="h-6 w-6" />
+              </div>
+              <p className="text-lg font-semibold text-slate-900">{t('cm.components_pms_CashierTab.aktif_vardiya_yok')}</p>
+              <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-slate-600">
+                Vardiya; nakit tahsilat, iade ve kasa hareketlerini işlemi yapan kullanıcıyla eşleştirir. Kart ve online ödemeler raporda izlenir, fiziksel kasa bakiyesini yalnızca nakit hareketleri etkiler.
+              </p>
+              <div className="my-6 grid gap-3 text-left sm:grid-cols-3">
+                <div className="rounded-lg border bg-white p-3">
+                  <p className="text-xs font-semibold text-slate-900">1. Açılış tutarı</p>
+                  <p className="mt-1 text-xs leading-5 text-slate-500">Kasada fiilen bulunan nakdi girin.</p>
+                </div>
+                <div className="rounded-lg border bg-white p-3">
+                  <p className="text-xs font-semibold text-slate-900">2. Denetlenebilir hareket</p>
+                  <p className="mt-1 text-xs leading-5 text-slate-500">Tahsilat ve kasa hareketleri vardiyaya bağlanır.</p>
+                </div>
+                <div className="rounded-lg border bg-white p-3">
+                  <p className="text-xs font-semibold text-slate-900">3. Sayım ve fark</p>
+                  <p className="mt-1 text-xs leading-5 text-slate-500">Kapanışta beklenen ve sayılan tutar karşılaştırılır.</p>
+                </div>
+              </div>
             <Button onClick={() => setShowOpenDialog(true)} className="bg-emerald-600 hover:bg-emerald-700">
               <LogIn className="w-4 h-4 mr-2" /> {t('cm.components_pms_CashierTab.vardiya_ac_4889c')}
             </Button>
+            </div>
           </CardContent>
         </Card>
       )}
@@ -630,6 +693,7 @@ const CashierTab = () => {
           <CardTitle className="text-sm flex items-center gap-2">
             <Clock className="w-4 h-4" /> {t('cm.components_pms_CashierTab.gecmis_vardiyalar')}
           </CardTitle>
+          <p className="text-xs text-slate-500">Kapalı vardiyaların açılış, kapanış, fark ve Z raporu kayıtları burada saklanır.</p>
         </CardHeader>
         <CardContent>
           {shiftHistory.length === 0 ? (
@@ -651,12 +715,12 @@ const CashierTab = () => {
                     </div>
                     <div className="flex items-center gap-4">
                       <div className="text-right">
-                        <p className="text-gray-500">{t('cm.components_pms_CashierTab.acilis')} {(s.opening_amount || 0).toFixed(2)}</p>
-                        <p className="text-gray-500">{t('cm.components_pms_CashierTab.kapanis')} {(s.closing_amount || 0).toFixed(2)}</p>
+                        <p className="text-gray-500">{t('cm.components_pms_CashierTab.acilis')} {formatTry(s.opening_amount)}</p>
+                        <p className="text-gray-500">{t('cm.components_pms_CashierTab.kapanis')} {formatTry(s.closing_amount)}</p>
                       </div>
                       {s.difference != null && (
                         <Badge className={Math.abs(s.difference) < 0.01 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}>
-                          {Math.abs(s.difference) < 0.01 ? 'Tam' : `Fark: ${s.difference.toFixed(2)}`}
+                          {Math.abs(s.difference) < 0.01 ? 'Tam' : `Fark: ${formatTry(s.difference)}`}
                         </Badge>
                       )}
                       {s.status !== 'open' && (
@@ -718,15 +782,15 @@ const CashierTab = () => {
             <div className="bg-gray-50 rounded-lg p-3 space-y-1">
               <div className="flex justify-between text-sm">
                 <span className="text-gray-600">{t('cm.components_pms_CashierTab.sayilan_tutar')}</span>
-                <span className="font-bold">{countedTotal.toFixed(2)} TL</span>
+                <span className="font-bold">{formatTry(countedTotal)}</span>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-gray-600">{t('cm.components_pms_CashierTab.beklenen_tutar')}</span>
-                <span className="font-bold">{expectedCash.toFixed(2)} TL</span>
+                <span className="font-bold">{formatTry(expectedCash)}</span>
               </div>
               <div className={`flex justify-between text-sm pt-1 border-t ${Math.abs(difference) < 0.01 ? 'text-emerald-600' : 'text-red-600'}`}>
                 <span>Fark:</span>
-                <span className="font-bold">{difference.toFixed(2)} TL</span>
+                <span className="font-bold">{formatTry(difference)}</span>
               </div>
             </div>
             {Math.abs(difference) >= DIFF_THRESHOLD && (
@@ -768,7 +832,7 @@ const CashierTab = () => {
             <div className="bg-gray-50 rounded-lg p-3">
               <div className="flex justify-between text-sm">
                 <span className="text-gray-600">Mevcut Kasa:</span>
-                <span className="font-bold">{expectedCash.toFixed(2)} TL</span>
+                <span className="font-bold">{formatTry(expectedCash)}</span>
               </div>
             </div>
             <div className="border rounded-lg p-4 space-y-3">
@@ -821,7 +885,7 @@ const CashierTab = () => {
                 <Label>Kur (1 {manualTxn.currency} = ? TL) *</Label>
                 <Input type="number" step="0.0001" value={manualTxn.fx_rate} onChange={e => setManualTxn(p => ({ ...p, fx_rate: e.target.value }))} placeholder={t('cm.components_pms_CashierTab.orn_32_50')} />
                 {parseFloat(manualTxn.amount) > 0 && parseFloat(manualTxn.fx_rate) > 0 && (
-                  <p className="text-[11px] text-gray-500 mt-1">{t('cm.components_pms_CashierTab.tl_karsiligi')} <strong>{(parseFloat(manualTxn.amount) * parseFloat(manualTxn.fx_rate)).toFixed(2)} TL</strong></p>
+                  <p className="text-[11px] text-gray-500 mt-1">{t('cm.components_pms_CashierTab.tl_karsiligi')} <strong>{formatTry(parseFloat(manualTxn.amount) * parseFloat(manualTxn.fx_rate))}</strong></p>
                 )}
               </div>
             )}
@@ -876,7 +940,7 @@ const CashierTab = () => {
                 <Label>Kur (1 {manualTxn.currency} = ? TL) *</Label>
                 <Input type="number" step="0.0001" value={manualTxn.fx_rate} onChange={e => setManualTxn(p => ({ ...p, fx_rate: e.target.value }))} placeholder={t('cm.components_pms_CashierTab.orn_32_50_1bd02')} />
                 {parseFloat(manualTxn.amount) > 0 && parseFloat(manualTxn.fx_rate) > 0 && (
-                  <p className="text-[11px] text-gray-500 mt-1">{t('cm.components_pms_CashierTab.tl_karsiligi_a59f8')} <strong>{(parseFloat(manualTxn.amount) * parseFloat(manualTxn.fx_rate)).toFixed(2)} TL</strong></p>
+                  <p className="text-[11px] text-gray-500 mt-1">{t('cm.components_pms_CashierTab.tl_karsiligi_a59f8')} <strong>{formatTry(parseFloat(manualTxn.amount) * parseFloat(manualTxn.fx_rate))}</strong></p>
                 )}
               </div>
             )}
@@ -924,19 +988,19 @@ const CashierTab = () => {
               <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                 <div className="p-3 rounded bg-emerald-50 border border-emerald-200">
                   <p className="text-[10px] text-emerald-600 uppercase">{t('cm.components_pms_CashierTab.acilis_3245e')}</p>
-                  <p className="text-base font-bold text-emerald-700">{(reportData.opening_amount || 0).toFixed(2)} TL</p>
+                  <p className="text-base font-bold text-emerald-700">{formatTry(reportData.opening_amount)}</p>
                 </div>
                 <div className="p-3 rounded bg-blue-50 border border-blue-200">
                   <p className="text-[10px] text-blue-600 uppercase">{t('cm.components_pms_CashierTab.nakit_giris_f1615')}</p>
-                  <p className="text-base font-bold text-blue-700">{(reportData.cash_in || 0).toFixed(2)} TL</p>
+                  <p className="text-base font-bold text-blue-700">{formatTry(reportData.cash_in)}</p>
                 </div>
                 <div className="p-3 rounded bg-amber-50 border border-amber-200">
                   <p className="text-[10px] text-amber-600 uppercase">{t('cm.components_pms_CashierTab.nakit_cikis_a878e')}</p>
-                  <p className="text-base font-bold text-amber-700">{(reportData.cash_out || 0).toFixed(2)} TL</p>
+                  <p className="text-base font-bold text-amber-700">{formatTry(reportData.cash_out)}</p>
                 </div>
                 <div className="p-3 rounded bg-gray-100 border border-gray-300">
                   <p className="text-[10px] text-gray-600 uppercase">Beklenen</p>
-                  <p className="text-base font-bold text-gray-800">{(reportData.expected_amount || 0).toFixed(2)} TL</p>
+                  <p className="text-base font-bold text-gray-800">{formatTry(reportData.expected_amount)}</p>
                 </div>
               </div>
 
@@ -944,12 +1008,12 @@ const CashierTab = () => {
                 <div className="grid grid-cols-2 gap-2">
                   <div className="p-3 rounded bg-indigo-50 border border-indigo-200">
                     <p className="text-[10px] text-indigo-600 uppercase">{t('cm.components_pms_CashierTab.sayilan_kapanis')}</p>
-                    <p className="text-base font-bold text-indigo-700">{(reportData.closing_amount || 0).toFixed(2)} TL</p>
+                    <p className="text-base font-bold text-indigo-700">{formatTry(reportData.closing_amount)}</p>
                   </div>
                   <div className={`p-3 rounded border ${Math.abs(reportData.difference || 0) < 0.01 ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200'}`}>
                     <p className={`text-[10px] uppercase ${Math.abs(reportData.difference || 0) < 0.01 ? 'text-emerald-600' : 'text-red-600'}`}>Fark</p>
                     <p className={`text-base font-bold ${Math.abs(reportData.difference || 0) < 0.01 ? 'text-emerald-700' : 'text-red-700'}`}>
-                      {(reportData.difference || 0).toFixed(2)} TL
+                      {formatTry(reportData.difference)}
                     </p>
                   </div>
                 </div>
@@ -974,9 +1038,9 @@ const CashierTab = () => {
                       ) : Object.entries(reportData.by_method).map(([m, v]) => (
                         <tr key={m} className="border-t">
                           <td className="px-3 py-2">{methodLabel(m)}</td>
-                          <td className="px-3 py-2 text-right text-emerald-600">{(v.in || 0).toFixed(2)}</td>
-                          <td className="px-3 py-2 text-right text-red-600">{(v.out || 0).toFixed(2)}</td>
-                          <td className="px-3 py-2 text-right font-medium">{(v.net || 0).toFixed(2)}</td>
+                          <td className="px-3 py-2 text-right text-emerald-600">{formatTry(v.in)}</td>
+                          <td className="px-3 py-2 text-right text-red-600">{formatTry(v.out)}</td>
+                          <td className="px-3 py-2 text-right font-medium">{formatTry(v.net)}</td>
                           <td className="px-3 py-2 text-right text-gray-500">{v.count || 0}</td>
                         </tr>
                       ))}
@@ -1003,8 +1067,8 @@ const CashierTab = () => {
                       ) : Object.entries(reportData.by_type).map(([ty, v]) => (
                         <tr key={ty} className="border-t">
                           <td className="px-3 py-2">{txnTypeLabel(ty)}</td>
-                          <td className="px-3 py-2 text-right text-emerald-600">{(v.in || 0).toFixed(2)}</td>
-                          <td className="px-3 py-2 text-right text-red-600">{(v.out || 0).toFixed(2)}</td>
+                          <td className="px-3 py-2 text-right text-emerald-600">{formatTry(v.in)}</td>
+                          <td className="px-3 py-2 text-right text-red-600">{formatTry(v.out)}</td>
                           <td className="px-3 py-2 text-right text-gray-500">{v.count || 0}</td>
                         </tr>
                       ))}
@@ -1110,27 +1174,27 @@ const CashierTab = () => {
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                   <div className="p-3 rounded bg-emerald-50 border border-emerald-200">
                     <p className="text-[10px] text-emerald-600 uppercase">{t('cm.components_pms_CashierTab.acilis_toplam')}</p>
-                    <p className="text-base font-bold text-emerald-700">{(periodData.totals?.opening_total || 0).toFixed(2)} TL</p>
+                    <p className="text-base font-bold text-emerald-700">{formatTry(periodData.totals?.opening_total)}</p>
                   </div>
                   <div className="p-3 rounded bg-blue-50 border border-blue-200">
                     <p className="text-[10px] text-blue-600 uppercase">{t('cm.components_pms_CashierTab.nakit_giris_f1615')}</p>
-                    <p className="text-base font-bold text-blue-700">{(periodData.totals?.cash_in_total || 0).toFixed(2)} TL</p>
+                    <p className="text-base font-bold text-blue-700">{formatTry(periodData.totals?.cash_in_total)}</p>
                   </div>
                   <div className="p-3 rounded bg-amber-50 border border-amber-200">
                     <p className="text-[10px] text-amber-600 uppercase">{t('cm.components_pms_CashierTab.nakit_cikis_a878e')}</p>
-                    <p className="text-base font-bold text-amber-700">{(periodData.totals?.cash_out_total || 0).toFixed(2)} TL</p>
+                    <p className="text-base font-bold text-amber-700">{formatTry(periodData.totals?.cash_out_total)}</p>
                   </div>
                   <div className="p-3 rounded bg-gray-100 border border-gray-300">
                     <p className="text-[10px] text-gray-600 uppercase">Beklenen</p>
-                    <p className="text-base font-bold text-gray-800">{(periodData.totals?.expected_total || 0).toFixed(2)} TL</p>
+                    <p className="text-base font-bold text-gray-800">{formatTry(periodData.totals?.expected_total)}</p>
                   </div>
                   <div className="p-3 rounded bg-indigo-50 border border-indigo-200">
                     <p className="text-[10px] text-indigo-600 uppercase">{t('cm.components_pms_CashierTab.sayilan')}</p>
-                    <p className="text-base font-bold text-indigo-700">{(periodData.totals?.closing_total || 0).toFixed(2)} TL</p>
+                    <p className="text-base font-bold text-indigo-700">{formatTry(periodData.totals?.closing_total)}</p>
                   </div>
                   <div className={`p-3 rounded border ${Math.abs(periodData.totals?.difference_total || 0) < 0.01 ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200'}`}>
                     <p className={`text-[10px] uppercase ${Math.abs(periodData.totals?.difference_total || 0) < 0.01 ? 'text-emerald-600' : 'text-red-600'}`}>{t('cm.components_pms_CashierTab.fark_toplam')}</p>
-                    <p className={`text-base font-bold ${Math.abs(periodData.totals?.difference_total || 0) < 0.01 ? 'text-emerald-700' : 'text-red-700'}`}>{(periodData.totals?.difference_total || 0).toFixed(2)} TL</p>
+                    <p className={`text-base font-bold ${Math.abs(periodData.totals?.difference_total || 0) < 0.01 ? 'text-emerald-700' : 'text-red-700'}`}>{formatTry(periodData.totals?.difference_total)}</p>
                   </div>
                   <div className="p-3 rounded bg-slate-50 border border-slate-200">
                     <p className="text-[10px] text-slate-600 uppercase">{t('cm.components_pms_CashierTab.islem_792e7')}</p>
@@ -1155,9 +1219,9 @@ const CashierTab = () => {
                         ) : Object.entries(periodData.by_method).map(([m, v]) => (
                           <tr key={m} className="border-t">
                             <td className="px-3 py-2">{methodLabel(m)}</td>
-                            <td className="px-3 py-2 text-right text-emerald-600">{(v.in || 0).toFixed(2)}</td>
-                            <td className="px-3 py-2 text-right text-red-600">{(v.out || 0).toFixed(2)}</td>
-                            <td className="px-3 py-2 text-right font-medium">{(v.net || 0).toFixed(2)}</td>
+                            <td className="px-3 py-2 text-right text-emerald-600">{formatTry(v.in)}</td>
+                            <td className="px-3 py-2 text-right text-red-600">{formatTry(v.out)}</td>
+                            <td className="px-3 py-2 text-right font-medium">{formatTry(v.net)}</td>
                             <td className="px-3 py-2 text-right text-gray-500">{v.count || 0}</td>
                           </tr>
                         ))}
@@ -1179,8 +1243,8 @@ const CashierTab = () => {
                         ) : Object.entries(periodData.by_type).map(([ty, v]) => (
                           <tr key={ty} className="border-t">
                             <td className="px-3 py-2">{txnTypeLabel(ty)}</td>
-                            <td className="px-3 py-2 text-right text-emerald-600">{(v.in || 0).toFixed(2)}</td>
-                            <td className="px-3 py-2 text-right text-red-600">{(v.out || 0).toFixed(2)}</td>
+                            <td className="px-3 py-2 text-right text-emerald-600">{formatTry(v.in)}</td>
+                            <td className="px-3 py-2 text-right text-red-600">{formatTry(v.out)}</td>
                             <td className="px-3 py-2 text-right text-gray-500">{v.count || 0}</td>
                           </tr>
                         ))}
@@ -1203,8 +1267,8 @@ const CashierTab = () => {
                           <tr key={k} className="border-t">
                             <td className="px-3 py-2">{v.name || k}</td>
                             <td className="px-3 py-2 text-right">{v.shift_count || 0}</td>
-                            <td className="px-3 py-2 text-right text-emerald-600">{(v.cash_in || 0).toFixed(2)}</td>
-                            <td className="px-3 py-2 text-right text-red-600">{(v.cash_out || 0).toFixed(2)}</td>
+                            <td className="px-3 py-2 text-right text-emerald-600">{formatTry(v.cash_in)}</td>
+                            <td className="px-3 py-2 text-right text-red-600">{formatTry(v.cash_out)}</td>
                             <td className="px-3 py-2 text-right text-gray-500">{v.transaction_count || 0}</td>
                           </tr>
                         ))}
@@ -1226,10 +1290,10 @@ const CashierTab = () => {
                         ) : Object.entries(periodData.by_currency).map(([cur, v]) => (
                           <tr key={cur} className="border-t">
                             <td className="px-3 py-2 font-medium">{cur}</td>
-                            <td className="px-3 py-2 text-right text-emerald-600">{(v.in_try || 0).toFixed(2)}</td>
-                            <td className="px-3 py-2 text-right text-red-600">{(v.out_try || 0).toFixed(2)}</td>
-                            <td className="px-3 py-2 text-right text-gray-600">{(v.in_original || 0).toFixed(2)}</td>
-                            <td className="px-3 py-2 text-right text-gray-600">{(v.out_original || 0).toFixed(2)}</td>
+                            <td className="px-3 py-2 text-right text-emerald-600">{formatTry(v.in_try)}</td>
+                            <td className="px-3 py-2 text-right text-red-600">{formatTry(v.out_try)}</td>
+                            <td className="px-3 py-2 text-right text-gray-600">{formatCurrency(v.in_original, cur, { decimals: 2 })}</td>
+                            <td className="px-3 py-2 text-right text-gray-600">{formatCurrency(v.out_original, cur, { decimals: 2 })}</td>
                             <td className="px-3 py-2 text-right text-gray-500">{v.count || 0}</td>
                           </tr>
                         ))}

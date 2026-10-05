@@ -7,7 +7,8 @@ import { Label } from './ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { ShoppingCart, UtensilsCrossed, Plus, Minus, History, Check } from 'lucide-react';
 import { alertDialog } from '@/lib/dialogs';
-import { formatAmount } from '@/lib/currency';
+import { formatCurrency, cachedTenantCurrency } from '@/lib/currency';
+const money = (amount, currency) => formatCurrency(amount, currency || cachedTenantCurrency());
 const POSEnhancements = () => {
   const [activeTab, setActiveTab] = useState('order'); // order, history
   const [menuItems, setMenuItems] = useState([]);
@@ -224,7 +225,7 @@ const POSEnhancements = () => {
                             </Badge>
                           </div>
                           <div className="text-lg font-bold text-blue-600">
-                            {formatAmount(item.unit_price)} TL
+                            {money(item.unit_price, item.currency)}
                           </div>
                         </div>
                         <Button size="sm" className="w-full mt-3">
@@ -266,7 +267,7 @@ const POSEnhancements = () => {
                         {cart.map((item, idx) => <div key={idx} className="flex items-center justify-between p-2 bg-gray-50 rounded">
                             <div className="flex-1">
                               <div className="font-medium text-sm">{item.item_name}</div>
-                              <div className="text-xs text-gray-600">{formatAmount(item.unit_price)} TL / adet</div>
+                              <div className="text-xs text-gray-600">{money(item.unit_price, item.currency)} / adet</div>
                             </div>
                             <div className="flex items-center gap-2">
                               <Button size="sm" variant="outline" onClick={() => updateQuantity(item.item_id, -1)}>
@@ -278,7 +279,7 @@ const POSEnhancements = () => {
                               </Button>
                             </div>
                             <div className="ml-2 font-semibold w-20 text-right">
-                              {formatAmount(item.unit_price * item.quantity)} TL
+                              {money(item.unit_price * item.quantity, item.currency)}
                             </div>
                           </div>)}
                       </div>}
@@ -288,15 +289,15 @@ const POSEnhancements = () => {
                       <div className="border-t pt-4 space-y-2">
                         <div className="flex justify-between text-sm">
                           <span>Ara Toplam:</span>
-                          <span>{formatAmount(subtotal)} TL</span>
+                          <span>{money(subtotal)}</span>
                         </div>
                         <div className="flex justify-between text-sm">
                           <span>KDV (%18):</span>
-                          <span>{formatAmount(tax)} TL</span>
+                          <span>{money(tax)}</span>
                         </div>
                         <div className="flex justify-between font-bold text-lg border-t pt-2">
                           <span>Toplam:</span>
-                          <span className="text-blue-600">{formatAmount(total)} TL</span>
+                          <span className="text-blue-600">{money(total)}</span>
                         </div>
                       </div>
 
@@ -339,13 +340,13 @@ const POSEnhancements = () => {
                         <div className="space-y-1">
                           {order.order_items?.map((item, itemIdx) => <div key={itemIdx} className="flex justify-between text-sm">
                               <span>{item.item_name} x {item.quantity}</span>
-                              <span>{formatAmount(item.total_price)} TL</span>
+                              <span>{money(item.total_price, item.currency)}</span>
                             </div>)}
                         </div>
 
                         <div className="border-t pt-2 flex justify-between font-semibold">
                           <span>Toplam:</span>
-                          <span className="text-blue-600">{formatAmount(order.total_amount)} TL</span>
+                          <span className="text-blue-600">{money(order.total_amount, order.currency)}</span>
                         </div>
 
                         {order.folio_id && <div className="mt-2">

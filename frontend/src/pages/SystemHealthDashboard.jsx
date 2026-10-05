@@ -42,7 +42,11 @@ const STATUS_META = {
     intent: "neutral"
   },
   unknown: {
-    label: "Bilinmiyor",
+    label: "Veri bekleniyor",
+    intent: "neutral"
+  },
+  atlas_unknown_tier: {
+    label: "Katman doğrulanmadı",
     intent: "neutral"
   }
 };
@@ -52,6 +56,19 @@ function HealthBadge({
   const { t, i18n } = useTranslation();
   const m = STATUS_META[(status || "").toLowerCase()] || STATUS_META.unknown;
   return <StatusBadge intent={m.intent}>{m.label}</StatusBadge>;
+}
+// Individual health endpoints are permission-scoped and may be unavailable.
+// Missing evidence must remain visible instead of looking like a pass.
+function healthPercent(value) {
+  if (value === null || value === undefined || value === "") return "Veri bekleniyor";
+  return Number.isFinite(Number(value)) ? `${Number(value)}%` : "Veri bekleniyor";
+}
+function syncActivity(syncStats) {
+  if (!syncStats) return "Veri bekleniyor";
+  return syncStats.last_sync ? "Aktif" : "Henüz senkron yok";
+}
+function knownHealthStatus(status) {
+  return status || "unknown";
 }
 const SEVERITY_META = {
   critical: {
@@ -311,13 +328,13 @@ function GMPropertyView({
         <MetricCard testId="gm-metric-cm" icon={Wifi} title="Kanal senkronu" value={cmStatus?.health || "—"} sub={`${cmStatus?.active_connections || 0} aktif`} />
         <MetricCard testId="gm-metric-drift" icon={AlertTriangle} title={t('cm.pages_SystemHealthDashboard.sapma_sorunlari')} value={driftActive} sub={driftActive > 0 ? "İnceleme gerekli" : "Senkron"} />
         <MetricCard testId="gm-metric-alerts" icon={AlertTriangle} title="Alarmlar" value={alertCount} sub={criticalAlerts > 0 ? `${criticalAlerts} kritik` : "Temiz"} />
-        <MetricCard testId="gm-metric-recon" icon={CheckCircle2} title="Mutabakat" value={cmStatus?.reconciliation?.status || "OK"} sub={cmStatus?.reconciliation?.unresolved_issues > 0 ? `${cmStatus.reconciliation.unresolved_issues} sorun` : "Çözüldü"} />
+        <MetricCard testId="gm-metric-recon" icon={CheckCircle2} title="Mutabakat" value={cmStatus?.reconciliation?.status || "Veri bekleniyor"} sub={cmStatus?.reconciliation?.unresolved_issues > 0 ? `${cmStatus.reconciliation.unresolved_issues} sorun` : cmStatus?.reconciliation ? "Çözüldü" : "Ölçüm alınamadı"} />
       </div>
 
       <PanelCard testId="gm-panel-cm" title={t('cm.pages_SystemHealthDashboard.kanal_yoneticisi_tesis')} icon={Wifi} status={cmStatus?.health} permissionGated>
         <div className="space-y-2 text-xs">
-          <DataRow label="Senkron durumu" value={cmStatus?.sync_stats?.last_sync ? "Aktif" : "Boşta"} />
-          <DataRow label={t('cm.pages_SystemHealthDashboard.senkron_basari_orani')} value={`${cmStatus?.sync_stats?.success_rate ?? 100}%`} />
+          <DataRow label="Senkron durumu" value={syncActivity(cmStatus?.sync_stats)} />
+          <DataRow label={t('cm.pages_SystemHealthDashboard.senkron_basari_orani')} value={healthPercent(cmStatus?.sync_stats?.success_rate)} />
           <DataRow label={t('cm.pages_SystemHealthDashboard.sapma_sorunlari_d7fbf')} value={driftActive} valueClass={driftActive > 0 ? "text-amber-700" : "text-slate-900"} />
           <DataRow label={t('cm.pages_SystemHealthDashboard.saglayicilar')} value={`${cmStatus?.providers?.healthy || 0} / ${cmStatus?.providers?.total || 0}`} />
         </div>
@@ -371,12 +388,12 @@ function AdminTenantView(props) {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <PanelCard testId="admin-panel-cm" title={t('cm.pages_SystemHealthDashboard.kanal_yoneticisi_53252')} icon={Wifi} status={cmStatus?.health} onAction={canTrigger ? triggerDriftScan : undefined} actionLabel="Sapma taraması" actionLoading={driftScanLoading}>
           <div className="space-y-2 text-xs">
-            <DataRow label="Senkron durumu" value={cmStatus?.sync_stats?.last_sync ? "Aktif" : "Boşta"} />
+            <DataRow label="Senkron durumu" value={syncActivity(cmStatus?.sync_stats)} />
             <DataRow label={t('cm.pages_SystemHealthDashboard.sapma_sorunlari_d7fbf')} value={cmStatus?.drift?.active_drifts || 0} />
-            <DataRow label={t('cm.pages_SystemHealthDashboard.senkron_basari_orani_c9fa3')} value={`${cmStatus?.sync_stats?.success_rate ?? 100}%`} />
+            <DataRow label={t('cm.pages_SystemHealthDashboard.senkron_basari_orani_c9fa3')} value={healthPercent(cmStatus?.sync_stats?.success_rate)} />
             <div className="flex justify-between text-slate-600">
               <span>Mutabakat</span>
-              <HealthBadge status={cmStatus?.reconciliation?.status || "ok"} />
+              <HealthBadge status={knownHealthStatus(cmStatus?.reconciliation?.status)} />
             </div>
             <DataRow label={t('cm.pages_SystemHealthDashboard.saglayicilar_b696f')} value={`${cmStatus?.providers?.healthy || 0} / ${cmStatus?.providers?.total || 0}`} />
             {cmStatus?.sync_stats?.sync_lag_seconds != null && <DataRow label="Senkron gecikmesi" value={`${Math.round(cmStatus.sync_stats.sync_lag_seconds / 60)}dk`} />}
@@ -397,18 +414,18 @@ function AdminTenantView(props) {
             <DataRow label="Dead-letter" value={queueHealth?.dead_letter?.total || 0} />
             <div className="flex justify-between text-slate-600">
               <span>{t('cm.pages_SystemHealthDashboard.isciler')}</span>
-              <HealthBadge status={queueHealth?.worker_heartbeat?.responding ? "active" : "critical"} />
+              <HealthBadge status={queueHealth?.worker_heartbeat ? queueHealth.worker_heartbeat.responding ? "active" : "critical" : "unknown"} />
             </div>
           </div>
         </PanelCard>
 
-        <PanelCard testId="admin-panel-security" title={t('cm.pages_SystemHealthDashboard.guvenlik_runtime')} icon={Shield} status={secAudit?.severity === "critical" ? "critical" : secAudit?.severity === "warning" ? "degraded" : "active"}>
+        <PanelCard testId="admin-panel-security" title={t('cm.pages_SystemHealthDashboard.guvenlik_runtime')} icon={Shield} status={secAudit ? secAudit.severity === "critical" ? "critical" : secAudit.severity === "warning" ? "degraded" : "active" : "unknown"}>
           <div className="space-y-2 text-xs">
             <DataRow label="Denetim skoru" value={`${secAudit?.completeness_score ?? "—"}%`} />
             <DataRow label={t('cm.pages_SystemHealthDashboard.denetim_aciklari')} value={secAudit?.gaps_found || 0} valueClass={(secAudit?.gaps_found || 0) > 0 ? "text-amber-700" : "text-slate-900"} />
-            <div className="flex justify-between text-slate-600"><span>{t('cm.pages_SystemHealthDashboard.hiz_sinirlama')}</span><HealthBadge status={rateLimit?.enforcement || "active"} /></div>
+            <div className="flex justify-between text-slate-600"><span>{t('cm.pages_SystemHealthDashboard.hiz_sinirlama')}</span><HealthBadge status={knownHealthStatus(rateLimit?.enforcement)} /></div>
             {rateLimit?.burst_detected && <DataRow label="Patlama tespit" value="Evet" valueClass="text-rose-700" />}
-            <div className="flex justify-between text-slate-600"><span>{t('cm.pages_SystemHealthDashboard.kiraci_izolasyonu')}</span><HealthBadge status={tenantGuard?.enforcement || "active"} /></div>
+            <div className="flex justify-between text-slate-600"><span>{t('cm.pages_SystemHealthDashboard.kiraci_izolasyonu')}</span><HealthBadge status={knownHealthStatus(tenantGuard?.enforcement)} /></div>
             <DataRow label={t('cm.pages_SystemHealthDashboard.ihlaller')} value={tenantGuard?.total_violations || 0} valueClass={(tenantGuard?.total_violations || 0) > 0 ? "text-rose-700" : "text-slate-900"} />
             <DataRow label="Log sanitizasyonu" value={logSanit?.all_patterns_working ? "Tamam" : "Sorun"} />
           </div>
@@ -436,7 +453,7 @@ function AdminTenantView(props) {
           </h2>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
             <MetricCard testId="admin-audit-drift" icon={Eye} title={t('cm.pages_SystemHealthDashboard.sapma_taramasi')} value={auditMetrics.drift?.scans_count ?? 0} sub={`${auditMetrics.drift?.total_drifts ?? 0} sapma`} />
-            <MetricCard testId="admin-audit-recon" icon={CheckCircle2} title={t('cm.pages_SystemHealthDashboard.mutabakat_basarisi')} value={`${auditMetrics.reconciliation?.success_rate ?? 100}%`} sub={`${auditMetrics.reconciliation?.total_runs ?? 0} koşu`} />
+            <MetricCard testId="admin-audit-recon" icon={CheckCircle2} title={t('cm.pages_SystemHealthDashboard.mutabakat_basarisi')} value={healthPercent(auditMetrics.reconciliation?.success_rate)} sub={`${auditMetrics.reconciliation?.total_runs ?? 0} koşu`} />
             <MetricCard testId="admin-audit-backlog" icon={Database} title="Kuyruk birikimi" value={auditMetrics.queue?.current_pending ?? 0} sub={`${auditMetrics.queue?.current_stuck ?? 0} takılı`} />
             <MetricCard testId="admin-audit-violations" icon={Shield} title={t('cm.pages_SystemHealthDashboard.ihlaller_92982')} value={auditMetrics.security?.violations_period ?? 0} sub="Son 24 saat" />
             <MetricCard testId="admin-audit-dl" icon={XCircle} title="Dead-letter" value={auditMetrics.dead_letter?.total ?? 0} sub={`+${auditMetrics.dead_letter?.new_in_period ?? 0} yeni`} />
@@ -483,10 +500,10 @@ function SuperadminGlobalView(props) {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <PanelCard testId="sa-panel-cm" title={t('cm.pages_SystemHealthDashboard.kanal_yoneticisi_global')} icon={Wifi} status={cmStatus?.health} onAction={canTrigger ? triggerDriftScan : undefined} actionLabel="Sapma taraması" actionLoading={driftScanLoading}>
           <div className="space-y-2 text-xs">
-            <DataRow label="Senkron durumu" value={cmStatus?.sync_stats?.last_sync ? "Aktif" : "Boşta"} />
+            <DataRow label="Senkron durumu" value={syncActivity(cmStatus?.sync_stats)} />
             <DataRow label={t('cm.pages_SystemHealthDashboard.sapma_sorunlari_d7fbf')} value={cmStatus?.drift?.active_drifts || 0} />
-            <DataRow label={t('cm.pages_SystemHealthDashboard.senkron_basari_orani_c9fa3')} value={`${cmStatus?.sync_stats?.success_rate ?? 100}%`} />
-            <div className="flex justify-between text-slate-600"><span>Mutabakat</span><HealthBadge status={cmStatus?.reconciliation?.status || "ok"} /></div>
+            <DataRow label={t('cm.pages_SystemHealthDashboard.senkron_basari_orani_c9fa3')} value={healthPercent(cmStatus?.sync_stats?.success_rate)} />
+            <div className="flex justify-between text-slate-600"><span>Mutabakat</span><HealthBadge status={knownHealthStatus(cmStatus?.reconciliation?.status)} /></div>
             <DataRow label={t('cm.pages_SystemHealthDashboard.saglayicilar_b696f')} value={`${cmStatus?.providers?.healthy || 0} / ${cmStatus?.providers?.total || 0}`} />
             {cmStatus?.sync_stats?.sync_lag_seconds != null && <DataRow label="Senkron gecikmesi" value={`${Math.round(cmStatus.sync_stats.sync_lag_seconds / 60)}dk`} />}
             {canTrigger && <Button data-testid="sa-run-recon-btn" variant="outline" size="sm" onClick={triggerRecon} disabled={reconLoading} className="w-full mt-2">
@@ -506,18 +523,18 @@ function SuperadminGlobalView(props) {
             <DataRow label="Dead-letter" value={queueHealth?.dead_letter?.total || 0} />
             <div className="flex justify-between text-slate-600">
               <span>{t('cm.pages_SystemHealthDashboard.isciler_19594')}</span>
-              <HealthBadge status={queueHealth?.worker_heartbeat?.responding ? "active" : "critical"} />
+              <HealthBadge status={queueHealth?.worker_heartbeat ? queueHealth.worker_heartbeat.responding ? "active" : "critical" : "unknown"} />
             </div>
           </div>
         </PanelCard>
 
-        <PanelCard testId="sa-panel-security" title={t('cm.pages_SystemHealthDashboard.guvenlik_durusu_global')} icon={Shield} status={secAudit?.severity === "critical" ? "critical" : secAudit?.severity === "warning" ? "degraded" : "active"}>
+        <PanelCard testId="sa-panel-security" title={t('cm.pages_SystemHealthDashboard.guvenlik_durusu_global')} icon={Shield} status={secAudit ? secAudit.severity === "critical" ? "critical" : secAudit.severity === "warning" ? "degraded" : "active" : "unknown"}>
           <div className="space-y-2 text-xs">
             <DataRow label="Denetim skoru" value={`${secAudit?.completeness_score ?? "—"}%`} />
             <DataRow label={t('cm.pages_SystemHealthDashboard.denetim_aciklari_6bd7a')} value={secAudit?.gaps_found || 0} valueClass={(secAudit?.gaps_found || 0) > 0 ? "text-amber-700" : "text-slate-900"} />
-            <div className="flex justify-between text-slate-600"><span>{t('cm.pages_SystemHealthDashboard.hiz_sinirlama_50ab4')}</span><HealthBadge status={rateLimit?.enforcement || "active"} /></div>
+            <div className="flex justify-between text-slate-600"><span>{t('cm.pages_SystemHealthDashboard.hiz_sinirlama_50ab4')}</span><HealthBadge status={knownHealthStatus(rateLimit?.enforcement)} /></div>
             {rateLimit?.burst_detected && <DataRow label="Patlama tespit" value="Evet" valueClass="text-rose-700" />}
-            <div className="flex justify-between text-slate-600"><span>{t('cm.pages_SystemHealthDashboard.kiraci_izolasyonu_740eb')}</span><HealthBadge status={tenantGuard?.enforcement || "active"} /></div>
+            <div className="flex justify-between text-slate-600"><span>{t('cm.pages_SystemHealthDashboard.kiraci_izolasyonu_740eb')}</span><HealthBadge status={knownHealthStatus(tenantGuard?.enforcement)} /></div>
             <DataRow label={t('cm.pages_SystemHealthDashboard.capraz_kiraci_ihlaller')} value={tenantGuard?.total_violations || 0} valueClass={(tenantGuard?.total_violations || 0) > 0 ? "text-rose-700" : "text-slate-900"} />
             <DataRow label="Log sanitizasyonu" value={logSanit?.all_patterns_working ? "Tamam" : "Sorun"} />
           </div>
@@ -545,7 +562,7 @@ function SuperadminGlobalView(props) {
           </h2>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
             <MetricCard testId="sa-audit-drift" icon={Eye} title={t('cm.pages_SystemHealthDashboard.sapma_taramasi_d7f10')} value={auditMetrics.drift?.scans_count ?? 0} sub={`${auditMetrics.drift?.total_drifts ?? 0} sapma`} />
-            <MetricCard testId="sa-audit-recon" icon={CheckCircle2} title={t('cm.pages_SystemHealthDashboard.mutabakat_basarisi_5f3f5')} value={`${auditMetrics.reconciliation?.success_rate ?? 100}%`} sub={`${auditMetrics.reconciliation?.total_runs ?? 0} koşu`} />
+            <MetricCard testId="sa-audit-recon" icon={CheckCircle2} title={t('cm.pages_SystemHealthDashboard.mutabakat_basarisi_5f3f5')} value={healthPercent(auditMetrics.reconciliation?.success_rate)} sub={`${auditMetrics.reconciliation?.total_runs ?? 0} koşu`} />
             <MetricCard testId="sa-audit-backlog" icon={Database} title="Kuyruk birikimi" value={auditMetrics.queue?.current_pending ?? 0} sub={`${auditMetrics.queue?.current_stuck ?? 0} takılı`} />
             <MetricCard testId="sa-audit-violations" icon={Shield} title={t('cm.pages_SystemHealthDashboard.ihlaller_92982')} value={auditMetrics.security?.violations_period ?? 0} sub="Son 24 saat" />
             <MetricCard testId="sa-audit-dl" icon={XCircle} title="Dead-letter" value={auditMetrics.dead_letter?.total ?? 0} sub={`+${auditMetrics.dead_letter?.new_in_period ?? 0} yeni`} />
@@ -558,7 +575,7 @@ function SuperadminGlobalView(props) {
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
             {metrics.sync && <MetricCard testId="sa-rt-sync" icon={Clock} title="Senkron gecikmesi" value={`${metrics.sync.lag_seconds ?? 0}sn`} />}
             {metrics.drift && <MetricCard testId="sa-rt-drift" icon={AlertTriangle} title={t('cm.pages_SystemHealthDashboard.aktif_sapmalar')} value={metrics.drift.active_count ?? 0} />}
-            {metrics.reconciliation && <MetricCard testId="sa-rt-recon" icon={CheckCircle2} title={t('cm.pages_SystemHealthDashboard.mutabakat_orani')} value={`${metrics.reconciliation.success_rate ?? 100}%`} />}
+            {metrics.reconciliation && <MetricCard testId="sa-rt-recon" icon={CheckCircle2} title={t('cm.pages_SystemHealthDashboard.mutabakat_orani')} value={healthPercent(metrics.reconciliation.success_rate)} />}
             {metrics.queue && <MetricCard testId="sa-rt-queue" icon={Database} title="Kuyruk" value={metrics.queue.backlog ?? 0} />}
             {metrics.security && <MetricCard testId="sa-rt-sec" icon={Shield} title={t('cm.pages_SystemHealthDashboard.ihlaller_92982')} value={metrics.security.violations ?? 0} />}
           </div>
@@ -883,7 +900,6 @@ export default function SystemHealthDashboard({
 
   // KPI top-row özet (P1 #4)
   const overallStatus = (normalizedOverview?.overall_status || "unknown").toLowerCase();
-  const overallMeta = STATUS_META[overallStatus] || STATUS_META.unknown;
   const cmHealth = (cmStatus?.health || "unknown").toLowerCase();
   const qHealth = (queueHealth?.health || "unknown").toLowerCase();
   const alertCount = alerts?.count || 0;
@@ -924,7 +940,7 @@ export default function SystemHealthDashboard({
           </div>} />
 
       {/* Genel durum şeridi */}
-      {normalizedOverview && <div data-testid="normalized-overview-bar" className={`p-3 rounded-lg border flex items-center gap-3 ${overallStatus === "critical" ? "bg-rose-50 border-rose-200" : overallStatus === "degraded" ? "bg-amber-50 border-amber-200" : "bg-emerald-50 border-emerald-200"}`}>
+      {normalizedOverview && <div data-testid="normalized-overview-bar" className={`p-3 rounded-lg border flex items-center gap-3 ${overallStatus === "critical" ? "bg-rose-50 border-rose-200" : overallStatus === "degraded" || overallStatus === "warning" ? "bg-amber-50 border-amber-200" : overallStatus === "healthy" || overallStatus === "ok" ? "bg-emerald-50 border-emerald-200" : "bg-slate-50 border-slate-200"}`}>
           <Activity className="w-4 h-4 text-slate-700" />
           <span className="text-sm font-medium text-slate-900">Genel:</span>
           <HealthBadge status={overallStatus} />
@@ -981,6 +997,7 @@ export default function SystemHealthDashboard({
       {!loading && pilotReadiness && (() => {
       const checks = pilotReadiness.checks || {};
       const verdict = (pilotReadiness.verdict || "unknown").toUpperCase();
+      const verdictLabel = verdict === "UNKNOWN" ? "Veri bekleniyor" : verdict;
       const verdictIntent = verdict === "PASS" ? "success" : verdict === "REVIEW" ? "warning" : verdict === "FAIL" ? "danger" : "neutral";
       const ox = checks.cm_outbox || {};
       const cb = checks.cm_circuit_breakers || {};
@@ -1007,10 +1024,10 @@ export default function SystemHealthDashboard({
               </div>
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-              <KpiCard icon={CheckCircle2} label="Readiness" value={verdict} sub={typeof pilotReadiness.score === "number" ? `Skor ${(pilotReadiness.score * 100).toFixed(0)}/100` : "—"} intent={verdictIntent} />
+              <KpiCard icon={CheckCircle2} label="Readiness" value={verdictLabel} sub={typeof pilotReadiness.score === "number" ? `Skor ${(pilotReadiness.score * 100).toFixed(0)}/100` : "Henüz değerlendirilmedi"} intent={verdictIntent} />
               <KpiCard icon={Database} label="CM Outbox" value={ox.backlog ?? 0} sub={ox.failed > 0 ? `${ox.failed} failed` : ox.oldest_seconds != null ? `En eski ${Math.round(ox.oldest_seconds)}s` : "Temiz"} intent={oxIntent} />
               <KpiCard icon={Network} label="Circuit Breakers" value={`${cb.open ?? 0} / ${cb.total ?? 0}`} sub={cb.half_open > 0 ? `${cb.half_open} half-open` : "OPEN / Toplam"} intent={cbIntent} />
-              <KpiCard icon={Server} label="Atlas Backup" value={bk.status === "atlas_managed" ? "Atlas Managed" : STATUS_META[bk.status]?.label || bk.status || "—"} sub={bk.tier ? `Tier ${bk.tier}` : "Yedek durumu"} intent={bkIntent} />
+              <KpiCard icon={Server} label="Atlas Backup" value={bk.status === "atlas_managed" ? "Atlas yönetimli" : STATUS_META[bk.status]?.label || "Veri bekleniyor"} sub={bk.tier ? `Katman ${bk.tier}` : "Yedek katmanı doğrulanmadı"} intent={bkIntent} />
               <KpiCard icon={Eye} label="Observability" value={sentryActive && otelActive ? "Sentry + OTel" : sentryActive ? "Sentry" : otelActive ? "OTel" : "Pasif"} sub={sentryActive || otelActive ? "Aktif" : "Yapılandırma eksik"} intent={obIntent} />
             </div>
           </div>;
@@ -1018,7 +1035,7 @@ export default function SystemHealthDashboard({
 
       {/* KPI satırı — Sprint A KpiCard intent palette */}
       {!loading && <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-          <KpiCard icon={Wifi} label={t('cm.pages_SystemHealthDashboard.kanal_yoneticisi_53252')} value={overallMeta.label === "Bilinmiyor" ? "—" : STATUS_META[cmHealth]?.label || cmHealth} sub={`${cmStatus?.active_connections || 0} bağlantı`} intent={kpiIntent(cmHealth)} />
+          <KpiCard icon={Wifi} label={t('cm.pages_SystemHealthDashboard.kanal_yoneticisi_53252')} value={STATUS_META[cmHealth]?.label || "Veri bekleniyor"} sub={`${cmStatus?.active_connections || 0} bağlantı`} intent={kpiIntent(cmHealth)} />
           <KpiCard icon={Database} label={t('cm.pages_SystemHealthDashboard.kuyruk_sagligi_2d447')} value={STATUS_META[qHealth]?.label || qHealth} sub={`${queueHealth?.pending || 0} bekleyen`} intent={kpiIntent(qHealth)} />
           <KpiCard icon={AlertTriangle} label="Alarmlar" value={alertCount} sub={criticalAlerts > 0 ? `${criticalAlerts} kritik` : "Temiz"} intent={criticalAlerts > 0 ? "danger" : alertCount > 0 ? "warning" : "success"} />
           <KpiCard icon={Shield} label={t('cm.pages_SystemHealthDashboard.izolasyon_ihlalleri')} value={violations} sub="Çapraz-kiracı" intent={violations > 0 ? "danger" : "success"} />

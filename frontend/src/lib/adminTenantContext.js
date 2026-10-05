@@ -1,6 +1,8 @@
 import axios from 'axios';
+import { clearAuthScopedSessionStorage } from '@/lib/authSessionScope';
 
 export const ADMIN_TENANT_CONTEXT_KEY = 'admin_tenant_context';
+export const ADMIN_TENANT_SESSION_EVENT = 'syroce:admin-tenant-session-changed';
 
 function safeParse(value) {
   if (!value) return null;
@@ -24,19 +26,15 @@ function notifyAuthChanged() {
 
 function clearTenantCaches() {
   localStorage.removeItem('entitlements');
-  try {
-    sessionStorage.removeItem('notif_cache_v1');
-    sessionStorage.removeItem('pms_bd_cache_v1');
-  } catch {
-    // Storage can be unavailable in hardened/private browser modes.
-  }
+  clearAuthScopedSessionStorage();
   notifyAuthChanged();
 }
 
 function persistSession({ user, tenant, modules, accessToken }) {
+  const resolvedModules = modules || tenant?.modules || {};
   localStorage.setItem('user', JSON.stringify(user));
   localStorage.setItem('tenant', JSON.stringify(tenant));
-  localStorage.setItem('modules', JSON.stringify(modules || tenant?.modules || {}));
+  localStorage.setItem('modules', JSON.stringify(resolvedModules));
   localStorage.setItem('token_ts', String(Date.now()));
 
   if (accessToken) {
@@ -46,6 +44,11 @@ function persistSession({ user, tenant, modules, accessToken }) {
     }
   }
   clearTenantCaches();
+  // The server response already contains the complete, authorized workspace.
+  // Publish it so providers can re-scope without a full application reload.
+  window.dispatchEvent(new CustomEvent(ADMIN_TENANT_SESSION_EVENT, {
+    detail: { user, tenant, modules: resolvedModules },
+  }));
 }
 
 export function persistEnteredTenantContext(payload) {

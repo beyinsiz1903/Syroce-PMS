@@ -1,15 +1,15 @@
 import { useTheme } from "next-themes"
 import { Toaster as Sonner, toast } from "sonner"
 
-const Toaster = ({
-  ...props
-}) => {
+const Toaster = ({ style, offset = "5rem", ...props }) => {
   const { theme = "system" } = useTheme()
 
   return (
     <Sonner
       theme={theme}
       className="toaster group"
+      offset={offset}
+      style={{ zIndex: 99999, ...style }}
       toastOptions={{
         classNames: {
           toast:

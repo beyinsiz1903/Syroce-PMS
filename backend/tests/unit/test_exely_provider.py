@@ -298,10 +298,11 @@ class TestExelyObservability:
 # ── SOAP Builder ─────────────────────────────────────────────────────
 
 from domains.channel_manager.providers.exely.soap_builder import (
-    build_read_rq,
+    build_ari_update_rq,
+    build_availability_batch_rq,
     build_hotel_avail_rq,
     build_notif_report_rq,
-    build_ari_update_rq,
+    build_read_rq,
 )
 
 
@@ -347,6 +348,39 @@ class TestSoapBuilder:
         xml = build_ari_update_rq("u", "p", "H1", "DBL", "BAR", "2025-07-01", "2025-07-10", availability=5)
         assert "OTA_HotelAvailNotifRQ" in xml
         assert "BookingLimit" in xml
+
+    def test_build_availability_batch_combines_rooms_and_full_period(self):
+        from lxml import etree
+
+        xml = build_availability_batch_rq(
+            "u",
+            "p",
+            "501694",
+            [
+                {
+                    "room_type_code": "5003299",
+                    "rate_plan_code": "10009740",
+                    "start_date": "2026-10-20",
+                    "end_date": "2027-09-30",
+                    "availability": 8,
+                },
+                {
+                    "room_type_code": "5003300",
+                    "rate_plan_code": "10009740",
+                    "start_date": "2026-10-20",
+                    "end_date": "2027-09-30",
+                    "availability": 8,
+                },
+            ],
+        )
+        root = etree.fromstring(xml.encode())
+        messages = root.xpath("//*[local-name()='AvailStatusMessage']")
+        assert len(messages) == 2
+        assert {item.get("BookingLimit") for item in messages} == {"8"}
+        controls = root.xpath("//*[local-name()='StatusApplicationControl']")
+        assert {item.get("InvTypeCode") for item in controls} == {"5003299", "5003300"}
+        assert {item.get("Start") for item in controls} == {"2026-10-20"}
+        assert {item.get("End") for item in controls} == {"2027-09-30"}
 
     def test_build_ari_update_with_rate_param_ignored(self):
         """rate_amount param is accepted but not included in avail XML — rates go via build_rate_amount_notif_rq."""

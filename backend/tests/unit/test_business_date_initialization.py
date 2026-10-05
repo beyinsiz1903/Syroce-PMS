@@ -1,11 +1,17 @@
-from datetime import date
+from datetime import UTC, date, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import HTTPException
 
-from core.business_date_service import ensure_business_date_initialized
+from core.business_date_service import (
+    _local_calendar_date,
+    accounting_day_match,
+    accounting_period_match,
+    ensure_business_date_initialized,
+    stamp_open_business_date,
+)
 from domains.pms.night_audit.schemas import RunNightAuditRequest
 
 
@@ -23,6 +29,13 @@ def _db(*, settings_reads, latest_run=None, bookings=None):
         night_audit_runs=night_audit_runs,
         bookings=booking_collection,
     )
+
+
+def test_default_hotel_timezone_advances_calendar_day_at_local_midnight():
+    instant = datetime(2026, 9, 23, 21, 30, tzinfo=UTC)
+
+    assert _local_calendar_date("Europe/Istanbul", now=instant) == date(2026, 9, 24)
+    assert _local_calendar_date("UTC", now=instant) == date(2026, 9, 23)
 
 
 @pytest.mark.asyncio
@@ -119,6 +132,56 @@ async def test_clean_tenant_starts_on_first_operational_use_day():
 
 
 @pytest.mark.asyncio
+async def test_financial_record_uses_open_pms_day_after_calendar_midnight():
+    document = {"processed_at": "2026-08-25T00:15:00+03:00"}
+
+    with patch(
+        "core.business_date_service.ensure_business_date_initialized",
+        new=AsyncMock(return_value={"business_date": "2026-08-24"}),
+    ):
+        result = await stamp_open_business_date(SimpleNamespace(), "t1", document)
+
+    assert result == "2026-08-24"
+    assert document["business_date"] == "2026-08-24"
+
+
+@pytest.mark.asyncio
+async def test_explicit_financial_business_date_is_preserved():
+    document = {"business_date": "2026-08-23T12:00:00+03:00"}
+    resolver = AsyncMock()
+
+    with patch("core.business_date_service.ensure_business_date_initialized", new=resolver):
+        result = await stamp_open_business_date(SimpleNamespace(), "t1", document)
+
+    assert result == "2026-08-23"
+    assert document["business_date"] == "2026-08-23"
+    resolver.assert_not_awaited()
+
+
+def test_accounting_day_match_does_not_fallback_for_stamped_records():
+    result = accounting_day_match(
+        "2026-08-24",
+        {"processed_at": {"$gte": "2026-08-24T00:00:00", "$lt": "2026-08-25T00:00:00"}},
+    )
+
+    assert result["$or"][0] == {"business_date": "2026-08-24"}
+    legacy_branch = result["$or"][1]["$and"]
+    assert {"business_date": {"$exists": False}} in legacy_branch[0]["$or"]
+    assert legacy_branch[1]["$or"][0]["processed_at"]["$gte"] == "2026-08-24T00:00:00"
+
+
+def test_accounting_period_match_keeps_legacy_fallback_separate():
+    result = accounting_period_match(
+        "2026-08-01",
+        "2026-08-31",
+        {"processed_at": {"$gte": "2026-08-01T00:00:00", "$lt": "2026-09-01T00:00:00"}},
+    )
+
+    assert result["$or"][0] == {"business_date": {"$gte": "2026-08-01", "$lte": "2026-08-31"}}
+    assert result["$or"][1]["$and"][0]["$or"][0] == {"business_date": {"$exists": False}}
+
+
+@pytest.mark.asyncio
 async def test_run_endpoint_rejects_stale_client_business_date():
     from domains.pms.night_audit.router import run_night_audit
 
@@ -144,4 +207,28 @@ async def test_run_endpoint_rejects_stale_client_business_date():
     assert exc.value.status_code == 409
     assert exc.value.detail["code"] == "BUSINESS_DATE_MISMATCH"
     assert exc.value.detail["current_business_date"] == "2026-08-22"
+    start_mock.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_run_endpoint_blocks_large_business_date_backlog():
+    from domains.pms.night_audit.router import run_night_audit
+
+    user = SimpleNamespace(id="user-1", tenant_id="tenant-1", role="admin", email="manager@example.com")
+    request = RunNightAuditRequest(business_date="2000-01-01")
+    start_mock = AsyncMock()
+
+    with (
+        patch(
+            "core.business_date_service.ensure_business_date_initialized",
+            new=AsyncMock(return_value={"business_date": "2000-01-01"}),
+        ),
+        patch("core.night_audit_hardened.start_night_audit", new=start_mock),
+    ):
+        with pytest.raises(HTTPException) as exc:
+            await run_night_audit(request, current_user=user, _perm=None)
+
+    assert exc.value.status_code == 409
+    assert exc.value.detail["code"] == "BUSINESS_DATE_CATCHUP_REQUIRED"
+    assert exc.value.detail["backlog_days"] > 1
     start_mock.assert_not_awaited()

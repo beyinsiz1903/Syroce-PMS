@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import api from '@/api/axios';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -13,6 +13,7 @@ import { toast } from 'sonner';
 
 import { confirmDialog } from '@/lib/dialogs';
 import { useTranslation } from 'react-i18next';
+import { localIsoDate, useBusinessDate } from '@/hooks/useBusinessDate';
 
 const SHIFTS = [
   { v: 'morning',   l: 'Sabah (07:00–15:00)' },
@@ -25,16 +26,18 @@ const PRIORITIES = [
   { v: 'high',   l: 'Acil',   cls: 'bg-rose-100 text-rose-800 border-rose-200' },
 ];
 
-const today = () => new Date().toISOString().slice(0, 10);
+export const isSameShiftTransfer = (shift, toShift) => Boolean(shift && toShift && shift === toShift);
 
 export default function ShiftHandoverPage({ user, tenant, onLogout }) {
   const { t, i18n } = useTranslation();
+  const localToday = useRef(localIsoDate()).current;
+  const operationalBusinessDate = useBusinessDate();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [statusFilter, setStatusFilter] = useState('open');
-  const [businessDate, setBusinessDate] = useState(today());
+  const [businessDate, setBusinessDate] = useState(localToday);
   const [form, setForm] = useState({
-    business_date: today(),
+    business_date: localToday,
     shift: 'afternoon',
     to_shift: 'night',
     priority: 'normal',
@@ -43,6 +46,17 @@ export default function ShiftHandoverPage({ user, tenant, onLogout }) {
     related_booking_id: '',
   });
   const [creating, setCreating] = useState(false);
+
+  // Vardiya notları, tarayıcının UTC gününe değil Night Audit'in yönettiği
+  // PMS iş gününe yazılmalıdır. Kullanıcı tarihi elle değiştirdiyse seçim
+  // korunur.
+  useEffect(() => {
+    if (!operationalBusinessDate || operationalBusinessDate === localToday) return;
+    setBusinessDate((current) => current === localToday ? operationalBusinessDate : current);
+    setForm((current) => current.business_date === localToday
+      ? { ...current, business_date: operationalBusinessDate }
+      : current);
+  }, [localToday, operationalBusinessDate]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -60,6 +74,10 @@ export default function ShiftHandoverPage({ user, tenant, onLogout }) {
 
   const create = async () => {
     if (!form.note.trim()) { toast.error('Not boş olamaz'); return; }
+    if (isSameShiftTransfer(form.shift, form.to_shift)) {
+      toast.error('Devreden ve devralan vardiya aynı olamaz');
+      return;
+    }
     setCreating(true);
     try {
       const payload = { ...form };
@@ -68,7 +86,7 @@ export default function ShiftHandoverPage({ user, tenant, onLogout }) {
       toast.success('Devir notu eklendi');
       setForm(p => ({ ...p, note: '', related_room: '', related_booking_id: '' }));
       load();
-    } catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
+    } catch (e) { toast.error('İşlem Hatası: ' + (e.response?.data?.detail || e.message)); }
     finally { setCreating(false); }
   };
 
@@ -77,7 +95,7 @@ export default function ShiftHandoverPage({ user, tenant, onLogout }) {
       await api.patch(`/pms/shift-handover/${id}/acknowledge`, {});
       toast.success('Devir notu onaylandı');
       load();
-    } catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
+    } catch (e) { toast.error('İşlem Hatası: ' + (e.response?.data?.detail || e.message)); }
   };
 
   const remove = async (id) => {
@@ -86,7 +104,7 @@ export default function ShiftHandoverPage({ user, tenant, onLogout }) {
       await api.delete(`/pms/shift-handover/${id}`);
       toast.success('Silindi');
       load();
-    } catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
+    } catch (e) { toast.error('İşlem Hatası: ' + (e.response?.data?.detail || e.message)); }
   };
 
   const prioMeta = (p) => PRIORITIES.find(x => x.v === p) || PRIORITIES[1];
@@ -233,7 +251,14 @@ export default function ShiftHandoverPage({ user, tenant, onLogout }) {
                           <Check className="w-3.5 h-3.5 mr-1" /> {t('cm.pages_ShiftHandoverPage.onayla')}
                         </Button>
                       )}
-                      <Button size="sm" variant="ghost" onClick={() => remove(it.id)} className="h-8 text-rose-600 hover:text-rose-700 hover:bg-rose-50">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => remove(it.id)}
+                        className="h-8 text-rose-600 hover:text-rose-700 hover:bg-rose-50"
+                        aria-label="Devir notunu sil"
+                        title="Devir notunu sil"
+                      >
                         <Trash2 className="w-3.5 h-3.5" />
                       </Button>
                     </div>

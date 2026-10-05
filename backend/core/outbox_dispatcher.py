@@ -117,6 +117,59 @@ async def dispatch_outbox_event(event: dict[str, Any]) -> tuple[bool, str]:
         jobs_created = result.get("sync_jobs_created", 0)
         jobs = result.get("jobs", [])
 
+        # Provider integrations created before cm_connectors live in the
+        # provider-specific connection collections. A generic CM job is not a
+        # substitute for that provider-specific delivery: in particular the
+        # generic inventory engine currently has no Exely dispatcher.  Running
+        # only when ``jobs_created == 0`` silently acknowledged a booking when
+        # an unrelated/generic connector existed, while no Exely ARI event was
+        # ever published.  Keep both paths: the generic job serves its own
+        # connector and this durable path serves legacy provider connections.
+        if cm_event_name in {
+            "booking_created",
+            "booking_modified",
+            "booking_cancelled",
+            "booking_no_show",
+        }:
+            from domains.channel_manager.availability_auto_sync import (
+                sync_availability_from_durable_event,
+            )
+
+            room_id = cm_payload.get("room_id", "")
+            check_in = cm_payload.get("check_in") or cm_payload.get("date_start", "")
+            check_out = cm_payload.get("check_out") or cm_payload.get("date_end", "")
+            if not room_id or not check_in or not check_out:
+                return False, "permanent: booking availability payload is incomplete"
+
+            legacy_result = await sync_availability_from_durable_event(
+                tenant_id=tenant_id,
+                room_id=room_id,
+                check_in=check_in,
+                check_out=check_out,
+            )
+            configured = int(legacy_result.get("configured_providers", 0))
+            queued = int(legacy_result.get("queued_operations", 0))
+            legacy_errors = legacy_result.get("errors", [])
+            if legacy_errors:
+                detail = "; ".join(str(item) for item in legacy_errors) or "no operations accepted"
+                # A legacy tenant can have both provider-specific connections.
+                # Do not replay an entire booking event (and duplicate a
+                # successful Exely push) merely because another provider was
+                # not configured to accept this room type.  A zero-queue
+                # result is still retried below.
+                if queued:
+                    logger.warning(
+                        "Legacy channel availability partially queued: queued=%d errors=%s",
+                        queued,
+                        detail,
+                    )
+                    return True, f"Dispatched: {queued} legacy availability operations queued; partial: {detail[:400]}"
+                return False, f"retryable: legacy channel availability sync failed: {detail[:400]}"
+            if configured and queued == 0:
+                return False, "retryable: legacy channel availability sync accepted no operations"
+            if configured:
+                return True, f"Dispatched: {queued} legacy availability operations queued"
+
         # Check if any jobs had errors
         errors = [j for j in jobs if "error" in j]
         if errors and not any("job_id" in j for j in jobs):

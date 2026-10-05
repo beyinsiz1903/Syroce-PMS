@@ -154,9 +154,13 @@ async def test_worker_cancellation_stops_inflight_mutation():
 async def test_heartbeat_fails_closed(monkeypatch, failure):
     lock_lost = asyncio.Event()
     extend = AsyncMock(side_effect=failure if failure else None, return_value=False)
+    real_sleep = asyncio.sleep
 
     async def no_wait(_seconds):
-        return None
+        # ``pipeline.asyncio`` is the process-wide asyncio module.  Keep the
+        # heartbeat immediate without starving pytest's event loop/timeout
+        # machinery while that module attribute is monkeypatched.
+        await real_sleep(0)
 
     monkeypatch.setattr(pipeline, "_extend_reservation_lock", extend)
     monkeypatch.setattr(pipeline.asyncio, "sleep", no_wait)

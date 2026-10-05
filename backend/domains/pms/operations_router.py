@@ -5,6 +5,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException
 
 from core.database import db
 from core.security import get_current_user
+from core.tenant_currency import get_tenant_currency
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_module as require_module_v97  # v97 DW
 from modules.pms_core.role_permission_service import require_module as require_module_v100  # v100 DW
@@ -42,6 +43,11 @@ _VALID_CONCIERGE_TYPES = {
 }
 _VALID_CONCIERGE_STATUSES = {"pending", "in_progress", "completed", "cancelled", "confirmed"}
 _VALID_PRIORITIES = {"normal", "high", "vip"}
+
+
+def _normalize_currency(value: object, fallback: str = "TRY") -> str:
+    code = str(value or fallback or "TRY").strip().upper()
+    return "TRY" if code == "TL" else code[:8]
 
 
 async def _lookup_active_booking_for_room(tenant_id: str, room_number: str) -> dict | None:
@@ -124,8 +130,10 @@ async def get_concierge_requests(
         db.concierge_requests.count_documents(query),
         _agg(),
     )
+    tenant_currency, _ = await get_tenant_currency(current_user.tenant_id)
     for d in docs:
         d["id"] = str(d.pop("_id"))
+        d["currency"] = _normalize_currency(d.get("currency"), tenant_currency)
     counts = {"total": total, "pending": 0, "in_progress": 0, "completed": 0, "cancelled": 0}
     # Aggregate başarısızsa count_documents'tan gelen `total`'ı koru (regression guard).
     if agg_rows is not _AGG_FAIL:
@@ -159,7 +167,8 @@ async def create_concierge_request(
     amount = _safe_float(body.get("amount", 0), 0.0)
     if amount < 0:
         raise HTTPException(status_code=400, detail="Tutar negatif olamaz")
-    currency = (body.get("currency") or "TRY").upper()[:8] or "TRY"
+    tenant_currency, _ = await get_tenant_currency(current_user.tenant_id)
+    currency = _normalize_currency(body.get("currency"), tenant_currency)
     charge_to_folio = bool(body.get("charge_to_folio") or False)
 
     # Cross-check active booking for the room (auto-fill missing guest/booking/folio)
@@ -226,6 +235,8 @@ async def _post_charge_to_folio(tenant_id: str, request_doc: dict, user_email: s
     try:
         from domains.pms.folio.services.folio_service import FolioService
 
+        tenant_currency, _ = await get_tenant_currency(tenant_id)
+
         type_label = (request_doc.get("type") or "other").replace("_", " ").title()
         details = request_doc.get("details") or ""
         description = f"Concierge — {type_label}"
@@ -236,7 +247,7 @@ async def _post_charge_to_folio(tenant_id: str, request_doc: dict, user_email: s
             folio_id,
             {
                 "amount": amount,
-                "currency": request_doc.get("currency") or "TRY",
+                "currency": _normalize_currency(request_doc.get("currency"), tenant_currency),
                 "description": description,
                 "category": "concierge",
                 "source": "concierge_request",
@@ -285,7 +296,8 @@ async def update_concierge_request(
             if value < 0:
                 raise HTTPException(status_code=400, detail="Tutar negatif olamaz")
         elif field == "currency":
-            value = (value or "TRY").upper()[:8] or "TRY"
+            tenant_currency, _ = await get_tenant_currency(current_user.tenant_id)
+            value = _normalize_currency(value, tenant_currency)
         elif field == "charge_to_folio":
             value = bool(value)
         update_set[field] = value
@@ -394,23 +406,17 @@ async def send_kbs_notification(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
 ):
-    now = datetime.utcnow()
-    booking_id = body.get("booking_id")
-    kbs_ref = str(uuid.uuid4())[:8].upper()
-    doc = {
-        "_id": str(uuid.uuid4()),
-        "tenant_id": current_user.tenant_id,
-        "booking_id": booking_id,
-        "kbs_reference": kbs_ref,
-        "status": "sent",
-        "sent_at": now.isoformat(),
-        "sent_by": current_user.email,
-        "guest_data": body.get("guest_data", {}),
-    }
-    await db.kbs_notifications.insert_one(doc)
-    if booking_id:
-        await db.bookings.update_one({"_id": booking_id, "tenant_id": current_user.tenant_id}, {"$set": {"kbs_status": "sent", "kbs_sent_at": now.isoformat(), "kbs_reference": kbs_ref}})
-    return {"status": "sent", "kbs_reference": kbs_ref, "sent_at": now.isoformat()}
+    """Retired endpoint that used to manufacture a local success reference.
+
+    A KBS notification may only be marked successful after the browser extension
+    has delivered the queue job and the authority has accepted it.  Keeping this
+    route fail-closed also protects older cached frontends from creating false
+    audit records.
+    """
+    raise HTTPException(
+        status_code=410,
+        detail="Bu eski KBS gönderim yolu resmî teslimatı doğrulamaz. /api/kbs/queue akışını kullanın.",
+    )
 
 
 @router.post("/kbs/send-batch")
@@ -419,31 +425,11 @@ async def send_kbs_batch(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
 ):
-    now = datetime.utcnow()
-    booking_ids = body.get("booking_ids", [])
-    results = []
-    for bid in booking_ids:
-        kbs_ref = str(uuid.uuid4())[:8].upper()
-        doc = {
-            "_id": str(uuid.uuid4()),
-            "tenant_id": current_user.tenant_id,
-            "booking_id": bid,
-            "kbs_reference": kbs_ref,
-            "status": "sent",
-            "sent_at": now.isoformat(),
-            "sent_by": current_user.email,
-        }
-        try:
-            await db.kbs_notifications.insert_one(doc)
-            await db.bookings.update_one({"_id": bid, "tenant_id": current_user.tenant_id}, {"$set": {"kbs_status": "sent", "kbs_sent_at": now.isoformat(), "kbs_reference": kbs_ref}})
-        except Exception:
-            import logging
-
-            logging.getLogger(__name__).exception("KBS batch send failed for booking %s", bid)
-            results.append({"booking_id": bid, "status": "error"})
-            continue
-        results.append({"booking_id": bid, "kbs_reference": kbs_ref})
-    return {"status": "sent", "count": len(results), "results": results, "sent_at": now.isoformat()}
+    """Fail closed; batch delivery is queue + extension only."""
+    raise HTTPException(
+        status_code=410,
+        detail="Bu eski toplu KBS gönderim yolu resmî teslimatı doğrulamaz. /api/kbs/queue akışını kullanın.",
+    )
 
 
 @router.get("/kbs/history")
@@ -640,8 +626,12 @@ async def update_guest_preferences(
         update_fields["vip_level"] = body["vip_level"]
     if "id_number" in body:
         update_fields["id_number"] = body["id_number"]
+    if "id_type" in body:
+        update_fields["id_type"] = str(body["id_type"] or "").strip().lower()
     if "birth_date" in body:
         update_fields["birth_date"] = body["birth_date"]
+    if "nationality" in body:
+        update_fields["nationality"] = str(body["nationality"] or "").strip().upper()
     update_fields["preferences_updated_at"] = datetime.now(UTC).isoformat()
 
     # Encrypt PII (id_number) + _hash_ token before persistence. No name field
@@ -892,11 +882,58 @@ async def dayuse_auto_checkout(
 ):
     now = datetime.utcnow()
     today = now.strftime("%Y-%m-%d")
-    result = await db.bookings.update_many(
+    due_bookings = await db.bookings.find(
         {"tenant_id": current_user.tenant_id, "booking_type": "day_use", "status": "checked_in", "check_out": {"$lte": now.isoformat()}},
-        {"$set": {"status": "checked_out", "actual_check_out": now.isoformat(), "auto_checkout": True}},
-    )
-    return {"checked_out_count": result.modified_count, "date": today}
+        {"_id": 0, "id": 1, "room_id": 1, "room_number": 1},
+    ).to_list(1000)
+    checked_out_count = 0
+    for booking in due_bookings:
+        result = await db.bookings.update_one(
+            {"tenant_id": current_user.tenant_id, "id": booking["id"], "status": "checked_in"},
+            {"$set": {"status": "checked_out", "checked_out_at": now.isoformat(), "actual_check_out": now.isoformat(), "auto_checkout": True}},
+        )
+        if result.modified_count != 1:
+            continue
+        checked_out_count += 1
+        if booking.get("room_id"):
+            await db.rooms.update_one(
+                {"tenant_id": current_user.tenant_id, "id": booking["room_id"]},
+                {
+                    "$set": {
+                        "status": "dirty",
+                        "current_booking_id": None,
+                        "housekeeping_status": "dirty",
+                        "hk_status": "dirty",
+                        "housekeeping_updated_at": now.isoformat(),
+                        "housekeeping_updated_by": "system:dayuse-auto-checkout",
+                    }
+                },
+            )
+            await db.housekeeping_tasks.update_one(
+                {
+                    "tenant_id": current_user.tenant_id,
+                    "booking_id": booking["id"],
+                    "task_type": "checkout_cleaning",
+                    "status": {"$nin": ["cancelled"]},
+                },
+                {
+                    "$setOnInsert": {
+                        "id": str(uuid.uuid4()),
+                        "tenant_id": current_user.tenant_id,
+                        "booking_id": booking["id"],
+                        "room_id": booking["room_id"],
+                        "room_number": booking.get("room_number"),
+                        "task_type": "checkout_cleaning",
+                        "priority": "high",
+                        "status": "pending",
+                        "notes": "Day-use auto checkout - departure clean required",
+                        "created_at": now.isoformat(),
+                        "created_by": "system",
+                    }
+                },
+                upsert=True,
+            )
+    return {"checked_out_count": checked_out_count, "date": today}
 
 
 @router.get("/pms/loyalty/tiers")

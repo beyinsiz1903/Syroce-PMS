@@ -47,7 +47,8 @@ export default function IntegrityTab(props) {
   const {
     IntegrityBadge,
     StatCard,
-    integrityCheck
+    integrityCheck,
+    reportingDate,
   } = props;
   const navigate = useNavigate();
   const [modalCheck, setModalCheck] = useState(null);
@@ -66,10 +67,13 @@ export default function IntegrityTab(props) {
   };
   return <TabsContent value="integrity" className="space-y-4 mt-4">
       {integrityCheck ? <>
+          <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">
+            <strong>Kontrol iş günü:</strong> {integrityCheck.business_date || reportingDate || '-'} · Uyarı satırlarına tıklayarak etkilenen kayıtları açabilirsiniz
+          </div>
           {/* Summary */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <StatCard icon={ShieldCheck} label={t('cm.components_nightaudit_tabs_IntegrityTab.toplam_kontrol')} value={integrityCheck.summary?.total || 0} color="text-indigo-600" />
-            <StatCard icon={CheckCircle2} label="Gecen" value={integrityCheck.summary?.passed || 0} color="text-emerald-600" />
+            <StatCard icon={CheckCircle2} label="Geçen" value={integrityCheck.summary?.passed || 0} color="text-emerald-600" />
             <StatCard icon={AlertTriangle} label={t('cm.components_nightaudit_tabs_IntegrityTab.uyari')} value={integrityCheck.summary?.warnings || 0} color="text-amber-600" />
             <StatCard icon={XCircle} label={t('cm.components_nightaudit_tabs_IntegrityTab.basarisiz')} value={integrityCheck.summary?.failures || 0} color="text-red-600" />
           </div>
@@ -80,10 +84,10 @@ export default function IntegrityTab(props) {
               {integrityCheck.summary?.overall_status === "pass" ? <ShieldCheck className="w-6 h-6 text-emerald-600" /> : integrityCheck.summary?.overall_status === "warning" ? <AlertTriangle className="w-6 h-6 text-amber-600" /> : <XCircle className="w-6 h-6 text-red-600" />}
               <div>
                 <p className="text-sm font-bold text-gray-900">
-                  {integrityCheck.summary?.overall_status === "pass" ? "Finansal Bütünlük Kontrolu Gecti" : integrityCheck.summary?.overall_status === "warning" ? "Uyarilarla Gecti" : "Bütünlük Sorunlari Tespit Edildi"}
+                  {integrityCheck.summary?.overall_status === "pass" ? "Finansal bütünlük kontrolü geçti" : integrityCheck.summary?.overall_status === "warning" ? "Uyarılarla geçti" : "Bütünlük sorunları tespit edildi"}
                 </p>
                 <p className="text-xs text-gray-600">
-                  {integrityCheck.business_date} tarihli kontrol sonuclari
+                  {integrityCheck.business_date} tarihli kontrol sonuçları
                 </p>
               </div>
             </div>
@@ -94,7 +98,7 @@ export default function IntegrityTab(props) {
             <CardHeader className="pb-2">
               <CardTitle className="text-sm flex items-center gap-2">
                 <Shield className="w-4 h-4 text-indigo-500" />
-                Kontrol Detaylari
+                Kontrol Detayları
               </CardTitle>
             </CardHeader>
             <CardContent>

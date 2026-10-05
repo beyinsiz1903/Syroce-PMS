@@ -23,6 +23,7 @@ from fastapi.security import HTTPBearer
 
 from core.atomic_booking import BookingConflictError, assign_room_atomic
 from core.database import db
+from core.reservation_mutability import ensure_reservation_mutable
 from core.security import get_current_user
 from models.schemas import User
 from modules.pms_core.role_permission_service import RolePermissionService
@@ -33,7 +34,7 @@ _role_perm = RolePermissionService()
 
 def _enforce(role: str, op: str):
     """Bug CU (v60) — Departments/Reports/Rates/POS RBAC zorunlu."""
-    _role_perm.enforce_permission(role, op)
+    _role_perm.enforce_permission(getattr(role, "role", role), op, getattr(role, "granted_permissions", None))
 
 
 try:
@@ -98,6 +99,7 @@ async def assign_room_to_booking(
 
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
+    await ensure_reservation_mutable(db, current_user.tenant_id, booking)
 
     # Get room
     room = await db.rooms.find_one({"id": room_id, "tenant_id": current_user.tenant_id})
@@ -158,17 +160,42 @@ async def assign_room_to_booking(
 
 
 # ── GET /bookings/{booking_id}/available-rooms ──
+def _parse_availability_datetime(value, field_name: str) -> datetime:
+    """Parse booking/query datetimes without weakening the turnover boundary."""
+    if isinstance(value, datetime):
+        return value
+    if not value:
+        raise HTTPException(status_code=400, detail=f"{field_name} is required")
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid {field_name}") from exc
+
+
+def _resolve_availability_window(booking: dict, requested_check_in=None, requested_check_out=None):
+    """Use the attempted reservation window when the conflict dialog supplies it."""
+    check_in = _parse_availability_datetime(requested_check_in or booking.get("check_in"), "check_in")
+    check_out = _parse_availability_datetime(requested_check_out or booking.get("check_out"), "check_out")
+    if check_out <= check_in:
+        raise HTTPException(status_code=400, detail="check_out must be after check_in")
+    return check_in, check_out
+
+
 @router.get("/bookings/{booking_id}/available-rooms")
 @cached(ttl=120, key_prefix="booking_available_rooms")  # Cache for 2 min
-async def get_available_rooms_for_booking(booking_id: str, current_user: User = Depends(get_current_user)):
-    """Get list of available rooms for a specific booking"""
+async def get_available_rooms_for_booking(
+    booking_id: str,
+    check_in: str | None = None,
+    check_out: str | None = None,
+    current_user: User = Depends(get_current_user),
+):
+    """Get rooms available in the attempted half-open stay window [in, out)."""
     booking = await db.bookings.find_one({"id": booking_id, "tenant_id": current_user.tenant_id})
 
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
 
-    check_in = datetime.fromisoformat(booking.get("check_in"))
-    check_out = datetime.fromisoformat(booking.get("check_out"))
+    check_in, check_out = _resolve_availability_window(booking, check_in, check_out)
     requested_type = booking.get("room_type", "standard")
 
     # Fetch all real rooms (skip "V-..." virtual no-show placeholder rooms).
@@ -191,10 +218,11 @@ async def get_available_rooms_for_booking(booking_id: str, current_user: User = 
             "tenant_id": current_user.tenant_id,
             "id": {"$ne": booking_id},
             "status": {"$in": ["confirmed", "guaranteed", "checked_in"]},
-            "$or": [
-                {"check_in": {"$lte": check_in.isoformat()}, "check_out": {"$gt": check_in.isoformat()}},
-                {"check_in": {"$lt": check_out.isoformat()}, "check_out": {"$gte": check_out.isoformat()}},
-            ],
+            # Half-open interval overlap: [existing_in, existing_out) intersects
+            # [requested_in, requested_out).  Equality at the boundary is free,
+            # so a room checking out today can receive a new arrival today.
+            "check_in": {"$lt": check_out.isoformat()},
+            "check_out": {"$gt": check_in.isoformat()},
         },
         {"room_id": 1},
     )
@@ -236,7 +264,7 @@ async def get_available_rooms_for_booking(booking_id: str, current_user: User = 
 @router.post("/bookings/walk-in-quick")
 async def create_walk_in_booking(data: dict, http_request: Request, current_user: User = Depends(get_current_user)):
     """Quick walk-in booking creation"""
-    _enforce(current_user.role, "walk_in")  # Bug CU
+    _enforce(current_user, "walk_in")  # Bug CU
 
     # Idempotency-Key request-replay (additive: no-op without the header).
     guard, replay = await begin_idempotency(
@@ -271,6 +299,15 @@ async def create_walk_in_booking(data: dict, http_request: Request, current_user
                     "name": data["guest_name"],
                     "phone": data["guest_phone"],
                     "email": data.get("guest_email"),
+                    "id_number": data.get("guest_id_number", ""),
+                    "id_type": data.get("guest_id_type", ""),
+                    "nationality": data.get("guest_nationality", ""),
+                    "birth_date": data.get("guest_birth_date", ""),
+                    "date_of_birth": data.get("guest_birth_date", ""),
+                    "gender": data.get("guest_gender", ""),
+                    "birth_place": data.get("guest_birth_place", ""),
+                    "document_expiry_date": data.get("guest_document_expiry_date", ""),
+                    "scanned_via_quick_id": bool(data.get("guest_id_number")),
                     "created_at": datetime.now(UTC).isoformat(),
                 }
             )
@@ -302,7 +339,7 @@ async def create_walk_in_booking(data: dict, http_request: Request, current_user
                 "status": "confirmed",
                 "source": "walk-in",
                 "created_at": datetime.now(UTC).isoformat(),
-            }
+            },
         )
     except BookingConflictError as e:
         # Atomic insert failed -> no booking persisted -> safe to release.

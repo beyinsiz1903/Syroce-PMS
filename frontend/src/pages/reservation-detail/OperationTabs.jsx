@@ -5,17 +5,18 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Loader2, Home, Repeat2, AlertTriangle } from 'lucide-react';
-import { API, fmtTL, fmtTs } from './helpers';
+import { API, fmtCurrency, fmtTs, reservationNights } from './helpers';
 
 import { confirmDialog } from '@/lib/dialogs';
 import { useTranslation } from 'react-i18next';
 export function RoomChangeTab({ booking, room, roomMoves, onRefresh }) {
+  const currency = booking?.currency || "TL";
   const { t } = useTranslation();
   const [roomTypes, setRoomTypes] = useState([]);
   const [selectedType, setSelectedType] = useState('');
   const [selectedRoomId, setSelectedRoomId] = useState('');
   const [reason, setReason] = useState('');
-  const [pricingOption, setPricingOption] = useState('current');
+  const [pricingOption, setPricingOption] = useState('');
   const [customPrice, setCustomPrice] = useState('');
   const [loading, setLoading] = useState(false);
   const [loadingRooms, setLoadingRooms] = useState(false);
@@ -36,20 +37,29 @@ export function RoomChangeTab({ booking, room, roomMoves, onRefresh }) {
 
   const currentRoomType = room?.room_type || '';
   const selectedTypeData = roomTypes.find(rt => rt.type === selectedType);
-  const isUpgrade = selectedTypeData && currentRoomType && selectedTypeData.base_price > (room?.base_price || 0);
-  const priceDiff = selectedTypeData ? (selectedTypeData.base_price - (room?.base_price || 0)) : 0;
+  const nights = Math.max(1, reservationNights(booking?.check_in, booking?.check_out));
+  const currentNightlyPrice = Number(booking?.total_amount || 0) / nights;
+  const selectedNightlyPrice = Number(selectedTypeData?.base_price || 0);
+  const isDifferentRoomType = Boolean(selectedType && currentRoomType && selectedType !== currentRoomType);
+  const isUpgrade = isDifferentRoomType && selectedNightlyPrice > currentNightlyPrice;
+  const priceDiffPerNight = Math.max(0, selectedNightlyPrice - currentNightlyPrice);
+  const suggestedTotalDifference = Math.round(priceDiffPerNight * nights * 100) / 100;
 
   const handleChange = async () => {
     if (!selectedRoomId || !reason) { toast.error('Oda ve sebep seçimi zorunlu'); return; }
+    if (isDifferentRoomType && !pricingOption) { toast.error('Yeni oda için fiyat uygulamasını seçin'); return; }
+    if (pricingOption === 'custom' && (!Number.isFinite(Number(customPrice)) || Number(customPrice) < 0)) {
+      toast.error('Geçerli bir toplam fiyat farkı girin'); return;
+    }
     setLoading(true);
     try {
-      const extraCharge = pricingOption === 'upgrade' ? Math.max(0, priceDiff) : pricingOption === 'custom' ? parseFloat(customPrice) || 0 : 0;
+      const extraCharge = pricingOption === 'upgrade' ? suggestedTotalDifference : pricingOption === 'custom' ? Number(customPrice) : 0;
       await axios.post(`/pms/reservations/${booking.id}/room-change`, {
         new_room_id: selectedRoomId, reason, transfer_folio: true, extra_charge: extraCharge
       });
       toast.success('Oda değiştirildi');
-      setSelectedRoomId(''); setSelectedType(''); setReason(''); onRefresh?.();
-    } catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
+      setSelectedRoomId(''); setSelectedType(''); setReason(''); setPricingOption(''); setCustomPrice(''); onRefresh?.();
+    } catch (e) { toast.error('İşlem Hatası: ' + (e.response?.data?.detail || e.message)); }
     setLoading(false);
   };
 
@@ -61,7 +71,7 @@ export function RoomChangeTab({ booking, room, roomMoves, onRefresh }) {
           <div className="w-10 h-10 bg-blue-600 text-white rounded-lg flex items-center justify-center font-bold">{booking?.room_number || '-'}</div>
           <div>
             <div className="text-sm font-semibold">{room?.room_type || 'Oda'} - {booking?.room_number || '-'}</div>
-            <div className="text-xs text-gray-500">Kat: {room?.floor || '-'} | Fiyat: {fmtTL(room?.base_price)} TL/gece</div>
+            <div className="text-xs text-gray-500">Kat: {room?.floor || '-'} | Fiyat: {fmtCurrency(room?.base_price, currency)}/gece</div>
           </div>
         </div>
       </div>
@@ -75,11 +85,11 @@ export function RoomChangeTab({ booking, room, roomMoves, onRefresh }) {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label className="text-xs">{t('cm.pages_reservationdetail_OperationTabs.oda_tipi')}</Label>
-                <select value={selectedType} onChange={e => { setSelectedType(e.target.value); setSelectedRoomId(''); }} className="w-full h-8 text-sm border rounded-md px-2 bg-white" data-testid="room-change-type-select">
+                <select value={selectedType} onChange={e => { setSelectedType(e.target.value); setSelectedRoomId(''); setPricingOption(''); setCustomPrice(''); }} className="w-full h-8 text-sm border rounded-md px-2 bg-white" data-testid="room-change-type-select">
                   <option value="">{t('cm.pages_reservationdetail_OperationTabs.oda_tipi_seciniz')}</option>
                   {roomTypes.map(rt => (
                     <option key={rt.type} value={rt.type}>
-                      {rt.type} ({rt.rooms.filter(r => r.is_available && r.id !== booking?.room_id).length} {t('cm.pages_reservationdetail_OperationTabs.musait')} {fmtTL(rt.base_price)} TL
+                      {rt.type} ({rt.rooms.filter(r => r.is_available && r.id !== booking?.room_id).length} {t('cm.pages_reservationdetail_OperationTabs.musait')} {fmtCurrency(rt.base_price, currency)}
                     </option>
                   ))}
                 </select>
@@ -98,9 +108,11 @@ export function RoomChangeTab({ booking, room, roomMoves, onRefresh }) {
               </div>
             </div>
 
-            {isUpgrade && selectedType && (
+            {isDifferentRoomType && selectedType && (
               <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-2">
-                <div className="text-xs font-semibold text-amber-800">{t('cm.pages_reservationdetail_OperationTabs.ust_kategori_oda_fiyat_farki')} {fmtTL(priceDiff)} TL/gece</div>
+                <div className="text-xs font-semibold text-amber-800">
+                  {isUpgrade ? 'Üst kategori oda seçildi' : 'Farklı oda kategorisi seçildi'} — yeni fiyat nasıl uygulansın?
+                </div>
                 <div className="flex gap-3">
                   <label className="flex items-center gap-1.5 text-xs cursor-pointer">
                     <input type="radio" name="pricing" value="current" checked={pricingOption === 'current'} onChange={e => setPricingOption(e.target.value)} />
@@ -108,7 +120,7 @@ export function RoomChangeTab({ booking, room, roomMoves, onRefresh }) {
                   </label>
                   <label className="flex items-center gap-1.5 text-xs cursor-pointer">
                     <input type="radio" name="pricing" value="upgrade" checked={pricingOption === 'upgrade'} onChange={e => setPricingOption(e.target.value)} />
-                    {t('cm.pages_reservationdetail_OperationTabs.guncel_fiyat_farki')}{fmtTL(priceDiff)} TL)
+                    Önerilen toplam farkı uygula ({fmtCurrency(suggestedTotalDifference, currency)})
                   </label>
                   <label className="flex items-center gap-1.5 text-xs cursor-pointer">
                     <input type="radio" name="pricing" value="custom" checked={pricingOption === 'custom'} onChange={e => setPricingOption(e.target.value)} />
@@ -116,14 +128,15 @@ export function RoomChangeTab({ booking, room, roomMoves, onRefresh }) {
                   </label>
                 </div>
                 {pricingOption === 'custom' && (
-                  <Input type="number" value={customPrice} onChange={e => setCustomPrice(e.target.value)} placeholder={t('cm.pages_reservationdetail_OperationTabs.ek_ucret_tl')} className="h-8 text-sm w-40" />
+                  <Input type="number" min="0" step="0.01" value={customPrice} onChange={e => setCustomPrice(e.target.value)} placeholder="Toplam fiyat farkı" className="h-8 text-sm w-40" />
                 )}
+                <p className="text-xs text-amber-700">Seçilen fark oda geliri olarak misafir folyosuna işlenir ve gelir raporlarında görünür.</p>
               </div>
             )}
 
             <div>
               <Label className="text-xs">{t('cm.pages_reservationdetail_OperationTabs.degisiklik_sebebi')}</Label>
-              <select value={reason} onChange={e => setReason(e.target.value)} className="w-full h-8 text-sm border rounded-md px-2 bg-white">
+              <select value={reason} onChange={e => setReason(e.target.value)} className="w-full h-8 text-sm border rounded-md px-2 bg-white" data-testid="room-change-reason-select">
                 <option value="">{t('cm.pages_reservationdetail_OperationTabs.sebep_seciniz')}</option>
                 <option value="Misafir isteği">{t('cm.pages_reservationdetail_OperationTabs.misafir_istegi')}</option>
                 <option value="Teknik arıza">{t('cm.pages_reservationdetail_OperationTabs.teknik_ariza')}</option>
@@ -135,7 +148,7 @@ export function RoomChangeTab({ booking, room, roomMoves, onRefresh }) {
             </div>
           </>
         )}
-        <Button size="sm" onClick={handleChange} disabled={loading || !selectedRoomId || !reason} className="bg-indigo-600 hover:bg-indigo-700 text-white h-8 text-xs" data-testid="room-change-submit-btn">
+        <Button size="sm" onClick={handleChange} disabled={loading || !selectedRoomId || !reason || (isDifferentRoomType && !pricingOption)} className="bg-indigo-600 hover:bg-indigo-700 text-white h-8 text-xs" data-testid="room-change-submit-btn">
           {loading ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Repeat2 className="w-3 h-3 mr-1" />} {t('cm.pages_reservationdetail_OperationTabs.oda_degistir')}
         </Button>
       </div>
@@ -159,6 +172,7 @@ export function RoomChangeTab({ booking, room, roomMoves, onRefresh }) {
 }
 
 export function CancelTab({ booking, bookingId, onRefresh, onClose }) {
+  const currency = booking?.currency || "TL";
   const { t } = useTranslation();
   const [reason, setReason] = useState('');
   const [cancelType, setCancelType] = useState('guest_request');
@@ -173,8 +187,9 @@ export function CancelTab({ booking, bookingId, onRefresh, onClose }) {
     payment_issue: 'Ödeme Sorunu', other: 'Diğer'
   };
 
-  const nights = booking ? Math.max(1, Math.ceil((new Date(booking.check_out) - new Date(booking.check_in)) / (1000 * 60 * 60 * 24))) : 1;
+  const nights = booking ? Math.max(1, reservationNights(booking.check_in, booking.check_out)) : 1;
   const nightlyRate = booking ? (booking.total_amount || 0) / nights : 0;
+  const isMarketplaceAgency = booking?.channel === 'marketplace' || booking?.source_channel === 'marketplace' || booking?.marketplace_agency_id;
 
   useEffect(() => {
     if (noshowChargeType === 'per_night') setNoshowAmount(String(Math.round(nightlyRate)));
@@ -186,14 +201,31 @@ export function CancelTab({ booking, bookingId, onRefresh, onClose }) {
     if (!await confirmDialog({ message: applyNoshow ? 'No-show olarak iptal edilsin mi?' : 'Rezervasyon iptal edilsin mi?', variant: 'danger' })) return;
     setLoading(true);
     try {
-      await axios.post(`/pms/reservations/${bookingId}/cancel`, {
-        reason, cancel_type: cancelType, apply_noshow: applyNoshow,
-        noshow_charge_type: applyNoshow ? noshowChargeType : null,
-        noshow_charge_amount: applyNoshow ? parseFloat(noshowAmount) || 0 : null,
-      });
+      if (isMarketplaceAgency) {
+        await axios.post(`/marketplace/v1/hotel/reservations/${bookingId}/cancellation-proposals`, { reason: `${cancelTypes[cancelType]}: ${reason}` });
+        toast.success('İptal önerisi acenteye iletildi; rezervasyon acente kabul edene kadar korunacak');
+        onRefresh?.();
+        setLoading(false);
+        return;
+      } else if (applyNoshow) {
+        await axios.post('/pms-core/no-show', { booking_id: bookingId });
+        if (noshowChargeType && parseFloat(noshowAmount) > 0) {
+          await axios.post(`/pms/reservations/${bookingId}/add-extra-charge`, {
+            description: `No-Show Ücreti (${noshowChargeType})`,
+            amount: parseFloat(noshowAmount),
+            category: 'other',
+            quantity: 1
+          });
+        }
+      } else {
+        await axios.post('/pms-core/cancel', {
+          booking_id: bookingId,
+          reason: reason
+        });
+      }
       toast.success(applyNoshow ? 'No-show olarak işaretlendi' : 'Rezervasyon iptal edildi');
       onRefresh?.();
-    } catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
+    } catch (e) { toast.error('İşlem Hatası: ' + (e.response?.data?.detail || e.message)); }
     setLoading(false);
   };
 
@@ -201,6 +233,7 @@ export function CancelTab({ booking, bookingId, onRefresh, onClose }) {
     <div data-testid="cancel-tab" className="space-y-4 max-w-lg">
       <div className="bg-red-50 border border-red-200 rounded-lg p-4">
         <div className="text-sm font-semibold text-red-800 mb-3">{t('cm.pages_reservationdetail_OperationTabs.rezervasyon_iptali')}</div>
+        {isMarketplaceAgency && <div className="mb-3 rounded-md border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900">Bu rezervasyon acente kanalıyla geldi. İşlem rezervasyonu tek taraflı iptal etmez; gerekçeli öneri acenteye gönderilir ve yalnız acente kabul ederse uygulanır.</div>}
         <div className="space-y-3">
           <div>
             <Label className="text-xs">{t('cm.pages_reservationdetail_OperationTabs.iptal_nedeni')}</Label>
@@ -213,24 +246,24 @@ export function CancelTab({ booking, bookingId, onRefresh, onClose }) {
             <textarea value={reason} onChange={e => setReason(e.target.value)} className="w-full h-16 text-sm border rounded-md p-2 resize-none bg-white" placeholder={t('cm.pages_reservationdetail_OperationTabs.iptal_aciklamasi')} data-testid="cancel-reason-input" />
           </div>
 
-          <div className="border-t pt-3">
+          {!isMarketplaceAgency && <div className="border-t pt-3">
             <label className="flex items-center gap-2 cursor-pointer">
               <input type="checkbox" checked={applyNoshow} onChange={e => setApplyNoshow(e.target.checked)} className="rounded" data-testid="noshow-checkbox" />
               <span className="text-sm font-medium text-red-700">No-Show Uygula</span>
             </label>
-          </div>
+          </div>}
 
-          {applyNoshow && (
+          {applyNoshow && !isMarketplaceAgency && (
             <div className="bg-white border rounded-lg p-3 space-y-2">
               <div className="text-xs font-semibold text-gray-700">{t('cm.pages_reservationdetail_OperationTabs.no_show_ucreti')}</div>
               <div className="flex gap-2">
                 <label className="flex items-center gap-1.5 text-xs cursor-pointer">
                   <input type="radio" name="noshowType" value="per_night" checked={noshowChargeType === 'per_night'} onChange={e => setNoshowChargeType(e.target.value)} />
-                  1 Gecelik ({fmtTL(Math.round(nightlyRate))} TL)
+                  1 Gecelik ({fmtCurrency(Math.round(nightlyRate), currency)})
                 </label>
                 <label className="flex items-center gap-1.5 text-xs cursor-pointer">
                   <input type="radio" name="noshowType" value="full_stay" checked={noshowChargeType === 'full_stay'} onChange={e => setNoshowChargeType(e.target.value)} />
-                  {t('cm.pages_reservationdetail_OperationTabs.tum_konaklama')}{fmtTL(booking?.total_amount)} TL)
+                  {t('cm.pages_reservationdetail_OperationTabs.tum_konaklama')}{fmtCurrency(booking?.total_amount, currency)})
                 </label>
                 <label className="flex items-center gap-1.5 text-xs cursor-pointer">
                   <input type="radio" name="noshowType" value="custom" checked={noshowChargeType === 'custom'} onChange={e => setNoshowChargeType(e.target.value)} />
@@ -243,7 +276,7 @@ export function CancelTab({ booking, bookingId, onRefresh, onClose }) {
 
           <Button onClick={handleCancel} disabled={loading || !reason} className="bg-red-600 hover:bg-red-700 text-white h-9 text-sm w-full" data-testid="cancel-submit-btn">
             {loading ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <AlertTriangle className="w-4 h-4 mr-1" />}
-            {applyNoshow ? 'No-Show Olarak İptal Et' : 'Rezervasyonu İptal Et'}
+            {isMarketplaceAgency ? 'İptal Önerisini Acenteye Gönder' : applyNoshow ? 'No-Show Olarak İptal Et' : 'Rezervasyonu İptal Et'}
           </Button>
         </div>
       </div>

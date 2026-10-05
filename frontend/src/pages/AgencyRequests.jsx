@@ -29,6 +29,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
 
 import { confirmDialog } from '@/lib/dialogs';
+import { formatCurrency } from '@/lib/currency';
 
 // Pydantic 422 detail array geldiğinde (`[{loc, msg, type}, ...]`)
 // `toast.error(detail)` "[object Object]" basıyordu — burada güvenli
@@ -57,6 +58,9 @@ const AgencyRequests = () => {
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
+  const [marketplaceNegotiations, setMarketplaceNegotiations] = useState([]);
+  const [negotiationDecision, setNegotiationDecision] = useState(null);
+  const [negotiationNote, setNegotiationNote] = useState('');
 
   useEffect(() => {
     loadRequests();
@@ -67,8 +71,12 @@ const AgencyRequests = () => {
     try {
       setLoading(true);
       const params = filterStatus !== 'all' ? { status: filterStatus } : {};
-      const response = await axios.get('/hotel/booking-requests', { params });
+      const [response, negotiationResponse] = await Promise.all([
+        axios.get('/hotel/booking-requests', { params }),
+        axios.get('/marketplace/v1/hotel/negotiations').catch(() => ({ data: { items: [] } })),
+      ]);
       setRequests(response.data.items || []);
+      setMarketplaceNegotiations(negotiationResponse.data.items || []);
     } catch (error) {
       console.error('Failed to load agency requests:', error);
       toast.error('Acenta talepleri yüklenemedi');
@@ -174,6 +182,27 @@ const AgencyRequests = () => {
     const co = new Date(checkOut);
     return Math.ceil((co - ci) / (1000 * 60 * 60 * 24));
   };
+  const openNegotiationDecision = (item, accept) => {
+    setNegotiationDecision({ item, accept });
+    setNegotiationNote('');
+  };
+  const decideMarketplaceNegotiation = async () => {
+    const { item, accept } = negotiationDecision;
+    const responseNote = negotiationNote.trim();
+    if (!accept && responseNote.length < 5) return toast.error('Reddetme gerekçesi en az 5 karakter olmalıdır');
+    try {
+      setActionLoading(true);
+      await axios.post(`/marketplace/v1/hotel/negotiations/${item.id}/decision`, { accept, response_note: responseNote });
+      const isCancellation = item.type === 'agency_cancellation';
+      toast.success(accept
+        ? (isCancellation ? 'Karşılıklı iptal tamamlandı; kontenjan yeniden satışa açıldı' : 'Değişiklik uygulandı ve oda müsaitliği yeniden kilitlendi')
+        : (isCancellation ? 'İptal talebi reddedildi; rezervasyon ve kontenjan korundu' : 'Değişiklik reddedildi; mevcut rezervasyon korundu'));
+      setNegotiationDecision(null);
+      setNegotiationNote('');
+      await loadRequests();
+    } catch (error) { toast.error(extractErrorMessage(error, 'Karşılıklı işlem yanıtı kaydedilemedi')); }
+    finally { setActionLoading(false); }
+  };
 
   const pendingRequests = requests.filter(r => ['submitted', 'hotel_review'].includes(r.status));
 
@@ -181,7 +210,7 @@ const AgencyRequests = () => {
     <div className="p-6 max-w-7xl mx-auto">
       {/* Header */}
       <div className="mb-8">
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
           <div>
             <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-3">
               <Building2 className="w-8 h-8 text-blue-600" />
@@ -222,6 +251,13 @@ const AgencyRequests = () => {
       </div>
 
       {/* Loading */}
+      {marketplaceNegotiations.length > 0 && <div className="mb-6 space-y-3">
+        <h2 className="text-lg font-semibold text-gray-900">Acente ile Karşılıklı İşlemler</h2>
+        {marketplaceNegotiations.map(item => <div key={item.id} className="bg-white rounded-lg border border-amber-200 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div><div className="font-semibold">{item.confirmation_code} · {item.guest_name}</div><div className="text-sm text-gray-600 mt-1">{item.type === 'agency_modification' ? `Değişiklik talebi: ${item.requested?.check_in} – ${item.requested?.check_out} · ${item.requested?.room_type}` : `İptal önerisi: ${item.reason}`}</div><div className="text-xs text-gray-500 mt-1">{item.reason} · Tek taraflı uygulanmaz.</div></div>
+          <div className="flex items-center gap-2">{item.status === 'awaiting_hotel' && <><Button size="sm" variant="outline" disabled={actionLoading} onClick={() => openNegotiationDecision(item, false)}>Reddet</Button><Button size="sm" disabled={actionLoading} onClick={() => openNegotiationDecision(item, true)}>Onayla</Button></>}{getStatusBadge(['awaiting_agency', 'awaiting_hotel'].includes(item.status) ? 'hotel_review' : item.status === 'accepted' ? 'approved' : 'rejected')}</div>
+        </div>)}
+      </div>}
       {loading && (
         <div className="flex items-center justify-center py-12">
           <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
@@ -253,7 +289,7 @@ const AgencyRequests = () => {
               onClick={() => setSelectedRequest(request)}
             >
               {/* Status Badge */}
-              <div className="flex items-center justify-between mb-4">
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
                 {getStatusBadge(request.status)}
                 <span className="text-xs text-gray-500">
                   {formatDateTime(request.created_at)}
@@ -283,7 +319,7 @@ const AgencyRequests = () => {
                 
                 <div className="flex items-center gap-2 text-sm">
                   <Bed className="w-4 h-4 text-gray-400" />
-                  <span className="text-gray-700">{request.room_type_id}</span>
+                  <span className="text-gray-700">{request.room_type_name || 'Oda tipi bilgisi yok'}</span>
                 </div>
 
                 <div className="flex items-center gap-2 text-sm">
@@ -300,19 +336,19 @@ const AgencyRequests = () => {
                 <div className="flex justify-between items-center mb-1">
                   <span className="text-sm text-gray-600">Toplam Tutar:</span>
                   <span className="text-lg font-bold text-gray-900">
-                    {request.total_price.toLocaleString('tr-TR')} {request.currency}
+                    {formatCurrency(request.total_price, request.currency || 'TRY')}
                   </span>
                 </div>
                 <div className="flex justify-between items-center text-xs">
                   <span className="text-gray-500">Komisyon (%{request.commission_pct}):</span>
                   <span className="text-red-600 font-semibold">
-                    -{request.commission_amount.toLocaleString('tr-TR')} {request.currency}
+                    -{formatCurrency(request.commission_amount, request.currency || 'TRY')}
                   </span>
                 </div>
                 <div className="flex justify-between items-center text-xs mt-1 pt-1 border-t">
                   <span className="text-gray-700 font-medium">Net Tutar:</span>
                   <span className="text-green-600 font-bold">
-                    {request.net_to_hotel.toLocaleString('tr-TR')} {request.currency}
+                    {formatCurrency(request.net_to_hotel, request.currency || 'TRY')}
                   </span>
                 </div>
               </div>
@@ -361,7 +397,7 @@ const AgencyRequests = () => {
                 {getStatusBadge(selectedRequest.status)}
               </DialogTitle>
               <DialogDescription>
-                Talep ID: {selectedRequest.request_id.substring(0, 8)}...
+                Talep tarihi: {formatDateTime(selectedRequest.created_at || selectedRequest.requested_at)}
               </DialogDescription>
             </DialogHeader>
 
@@ -390,7 +426,7 @@ const AgencyRequests = () => {
               {/* Booking Details */}
               <div className="bg-blue-50 rounded-lg p-4">
                 <h3 className="font-semibold text-gray-900 mb-3">Rezervasyon Detayları</h3>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div>
                     <p className="text-xs text-gray-600 mb-1">Giriş Tarihi</p>
                     <p className="font-medium">{formatDate(selectedRequest.check_in)}</p>
@@ -412,11 +448,11 @@ const AgencyRequests = () => {
                   </div>
                   <div>
                     <p className="text-xs text-gray-600 mb-1">Oda Tipi</p>
-                    <p className="font-medium">{selectedRequest.room_type_id}</p>
+                    <p className="font-medium">{selectedRequest.room_type_name || 'Oda tipi bilgisi yok'}</p>
                   </div>
                   <div>
                     <p className="text-xs text-gray-600 mb-1">Fiyat Planı</p>
-                    <p className="font-medium">{selectedRequest.rate_plan_id}</p>
+                    <p className="font-medium">{selectedRequest.rate_plan_name || 'Fiyat planı bilgisi yok'}</p>
                   </div>
                 </div>
               </div>
@@ -428,25 +464,25 @@ const AgencyRequests = () => {
                   <div className="flex justify-between">
                     <span className="text-gray-600">Gecelik Fiyat:</span>
                     <span className="font-medium">
-                      {selectedRequest.price_per_night.toLocaleString('tr-TR')} {selectedRequest.currency}
+                      {formatCurrency(selectedRequest.price_per_night, selectedRequest.currency || 'TRY')}
                     </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600">Toplam ({selectedRequest.nights} gece):</span>
                     <span className="font-medium">
-                      {selectedRequest.total_price.toLocaleString('tr-TR')} {selectedRequest.currency}
+                      {formatCurrency(selectedRequest.total_price, selectedRequest.currency || 'TRY')}
                     </span>
                   </div>
                   <div className="flex justify-between text-sm border-t pt-2">
                     <span className="text-red-600">Acenta Komisyonu (%{selectedRequest.commission_pct}):</span>
                     <span className="text-red-600 font-semibold">
-                      -{selectedRequest.commission_amount.toLocaleString('tr-TR')} {selectedRequest.currency}
+                      -{formatCurrency(selectedRequest.commission_amount, selectedRequest.currency || 'TRY')}
                     </span>
                   </div>
                   <div className="flex justify-between text-lg font-bold border-t pt-2">
                     <span className="text-green-700">Net Otel Geliri:</span>
                     <span className="text-green-700">
-                      {selectedRequest.net_to_hotel.toLocaleString('tr-TR')} {selectedRequest.currency}
+                      {formatCurrency(selectedRequest.net_to_hotel, selectedRequest.currency || 'TRY')}
                     </span>
                   </div>
                 </div>
@@ -455,29 +491,29 @@ const AgencyRequests = () => {
               {/* Availability & Restrictions Snapshot */}
               <div className="bg-indigo-50 rounded-lg p-4">
                 <h3 className="font-semibold text-gray-900 mb-3">Talep Anındaki Durum</h3>
-                <div className="grid grid-cols-2 gap-4 text-sm">
+                <div className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
                   <div>
                     <p className="text-gray-600">Müsait Oda:</p>
                     <p className="font-medium">
-                      {selectedRequest.availability_at_request.available_rooms} oda
+                      {selectedRequest.availability_at_request?.available_rooms ?? '—'} oda
                     </p>
                   </div>
                   <div>
                     <p className="text-gray-600">Kontrol Zamanı:</p>
                     <p className="font-medium text-xs">
-                      {formatDateTime(selectedRequest.availability_at_request.checked_at)}
+                      {formatDateTime(selectedRequest.availability_at_request?.checked_at)}
                     </p>
                   </div>
                   <div>
                     <p className="text-gray-600">Min Konaklama:</p>
                     <p className="font-medium">
-                      {selectedRequest.restrictions_snapshot.min_stay} gece
+                      {selectedRequest.restrictions_snapshot?.min_stay ?? '—'} gece
                     </p>
                   </div>
                   <div>
                     <p className="text-gray-600">Satış Durumu:</p>
-                    <p className={`font-medium ${selectedRequest.restrictions_snapshot.stop_sell ? 'text-red-600' : 'text-green-600'}`}>
-                      {selectedRequest.restrictions_snapshot.stop_sell ? 'Satışa Kapalı' : 'Satışta'}
+                    <p className={`font-medium ${selectedRequest.restrictions_snapshot?.stop_sell ? 'text-red-600' : 'text-green-600'}`}>
+                      {selectedRequest.restrictions_snapshot?.stop_sell ? 'Satışa Kapalı' : 'Satışta'}
                     </p>
                   </div>
                 </div>
@@ -518,7 +554,7 @@ const AgencyRequests = () => {
                 <div className="bg-green-50 rounded-lg p-4 border border-green-200">
                   <h3 className="font-semibold text-green-900 mb-2">Oluşturulan Rezervasyon</h3>
                   <p className="text-sm text-green-800">
-                    Rezervasyon ID: {selectedRequest.booking_id.substring(0, 12)}...
+                    Rezervasyon oluşturuldu.
                   </p>
                   <Button
                     size="sm"
@@ -620,6 +656,47 @@ const AgencyRequests = () => {
               ) : (
                 'Reddet'
               )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(negotiationDecision)} onOpenChange={open => !open && !actionLoading && setNegotiationDecision(null)}>
+        <DialogContent data-testid="marketplace-negotiation-decision-dialog">
+          <DialogHeader>
+            <DialogTitle>
+              {negotiationDecision?.accept ? 'Karşılıklı işlemi onayla' : 'Karşılıklı işlemi reddet'}
+            </DialogTitle>
+            <DialogDescription>
+              {negotiationDecision?.item?.type === 'agency_cancellation'
+                ? (negotiationDecision?.accept
+                  ? 'Onaylandığında rezervasyon iptal edilir ve oda kontenjanı yeniden satışa açılır.'
+                  : 'Reddedildiğinde rezervasyon ve mevcut oda kontenjanı korunur.')
+                : (negotiationDecision?.accept
+                  ? 'Onaylandığında rezervasyon değişikliği uygulanır ve müsaitlik yeniden doğrulanır.'
+                  : 'Reddedildiğinde mevcut rezervasyon korunur.')}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <Textarea
+              value={negotiationNote}
+              onChange={event => setNegotiationNote(event.target.value)}
+              placeholder={negotiationDecision?.accept ? 'Onay notu (isteğe bağlı)' : 'Reddetme gerekçesi (en az 5 karakter)'}
+              rows={4}
+              maxLength={500}
+              data-testid="marketplace-negotiation-note"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setNegotiationDecision(null)} disabled={actionLoading}>Vazgeç</Button>
+            <Button
+              variant={negotiationDecision?.accept ? 'default' : 'destructive'}
+              onClick={decideMarketplaceNegotiation}
+              disabled={actionLoading || (!negotiationDecision?.accept && negotiationNote.trim().length < 5)}
+              data-testid="submit-marketplace-negotiation-decision"
+            >
+              {actionLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+              {negotiationDecision?.accept ? 'Onayla' : 'Reddet'}
             </Button>
           </DialogFooter>
         </DialogContent>

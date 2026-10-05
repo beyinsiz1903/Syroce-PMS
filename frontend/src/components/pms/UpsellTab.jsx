@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Label } from '@/components/ui/label';
 import { TrendingUp, Search, CheckCircle, XCircle, RefreshCw, Sparkles, ArrowUpRight, Clock, Car, LogIn, LogOut, BedDouble, BarChart3, DollarSign, Target, Percent, Building2, Settings as SettingsIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { cachedTenantCurrency, currencySymbol, formatCurrency } from '@/lib/currency';
 const PRICE_FIELDS = [{
   key: 'late_checkout',
   label: 'Geç Check-out',
@@ -25,7 +26,7 @@ const PRICE_FIELDS = [{
 }];
 const TYPE_LABELS = {
   room_upgrade: {
-    label: 'Oda Yukseltme',
+    label: 'Oda Yükseltme',
     icon: ArrowUpRight,
     color: 'bg-blue-100 text-blue-800'
   },
@@ -35,7 +36,7 @@ const TYPE_LABELS = {
     color: 'bg-green-100 text-green-800'
   },
   late_checkout: {
-    label: 'Gec Check-out',
+    label: 'Geç Check-out',
     icon: LogOut,
     color: 'bg-indigo-100 text-indigo-800'
   },
@@ -71,6 +72,8 @@ const UpsellTab = ({
   const {
     t
   } = useTranslation();
+  const currency = cachedTenantCurrency();
+  const money = value => formatCurrency(value, currency, { decimals: 0 });
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedBooking, setSelectedBooking] = useState(null);
   const [offers, setOffers] = useState([]);
@@ -83,6 +86,7 @@ const UpsellTab = ({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
+  const selectionRequestRef = useRef(0);
   const [priceDefaults, setPriceDefaults] = useState({});
   const [priceForm, setPriceForm] = useState({
     late_checkout: '',
@@ -161,45 +165,77 @@ const UpsellTab = ({
     if (!term) return true;
     return (b.guest_name || '').toLowerCase().includes(term) || (b.id || '').toLowerCase().includes(term) || (b.room_number || '').toString().includes(term);
   });
+  const bookingId = booking => booking?.id || booking?.booking_id || booking?.reservation_id || '';
+  const bookingReferences = booking => [...new Set([
+    booking?.id,
+    booking?.booking_id,
+    booking?.reservation_id,
+    booking?.booking_number,
+    booking?.channel_booking_id,
+    booking?.external_id,
+    booking?.external_reservation_id,
+  ].filter(Boolean).map(String))];
+  const roomLabel = booking => booking?.room_number || 'Atanmamış';
+  const generateOffers = async booking => {
+    const references = bookingReferences(booking);
+    if (references.length === 0) throw new Error('Rezervasyon kimliği bulunamadı');
+    let lastError;
+    for (const reference of references) {
+      try {
+        return await axios.post(`/ai/upsell/generate?booking_id=${encodeURIComponent(reference)}`, {}, {
+          timeout: 10000
+        });
+      } catch (error) {
+        lastError = error;
+        if (error.response?.status !== 404) throw error;
+      }
+    }
+    throw lastError;
+  };
   const selectBooking = async booking => {
+    const id = bookingId(booking);
+    if (!id) {
+      toast.error('Bu rezervasyonun geçerli kimliği bulunamadı');
+      return;
+    }
+    const requestId = ++selectionRequestRef.current;
     setSelectedBooking(booking);
+    setOffers([]);
     setLoading(true);
     try {
-      const existing = allOffers.filter(o => o.booking_id === booking.id);
+      const existing = allOffers.filter(o => o.booking_id === id);
       if (existing.length > 0) {
-        setOffers(existing);
-        setLoading(false);
+        if (selectionRequestRef.current === requestId) setOffers(existing);
         return;
       }
-      const res = await axios.post(`/ai/upsell/generate?booking_id=${booking.id}`, {}, {
-        timeout: 10000
-      });
+      const res = await generateOffers(booking);
+      if (selectionRequestRef.current !== requestId) return;
       setOffers(res.data.offers || []);
-      toast.success(`${res.data.total_offers} teklif uretildi`);
+      toast.success(`${res.data.total_offers} teklif üretildi`);
       loadAllOffers();
       loadInsights();
     } catch (err) {
+      if (selectionRequestRef.current !== requestId) return;
       if (err.response?.status === 404) {
-        toast.error('Rezervasyon bulunamadı');
+        toast.error(err.response?.data?.detail || 'Rezervasyon bulunamadı');
       } else {
-        toast.error(err.response?.data?.detail || 'Teklif uretme başarısız');
+        toast.error(err.response?.data?.detail || 'Teklif üretilemedi');
       }
+    } finally {
+      if (selectionRequestRef.current === requestId) setLoading(false);
     }
-    setLoading(false);
   };
   const regenerateOffers = async () => {
     if (!selectedBooking) return;
     setLoading(true);
     try {
-      const res = await axios.post(`/ai/upsell/generate?booking_id=${selectedBooking.id}`, {}, {
-        timeout: 10000
-      });
+      const res = await generateOffers(selectedBooking);
       setOffers(res.data.offers || []);
-      toast.success(`${res.data.total_offers} yeni teklif uretildi`);
+      toast.success(`${res.data.total_offers} yeni teklif üretildi`);
       loadAllOffers();
       loadInsights();
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'Teklif uretme başarısız');
+      toast.error(err.response?.data?.detail || 'Teklif üretilemedi');
     }
     setLoading(false);
   };
@@ -260,9 +296,9 @@ const UpsellTab = ({
                   ...prev,
                   [f.key]: e.target.value
                 }))} placeholder={def != null ? `Varsayılan: ${def}` : ''} data-testid={`input-upsell-price-${f.key}`} />
-                      <span className="text-sm text-gray-500">TL</span>
+                      <span className="text-sm text-gray-500">{currencySymbol(currency)}</span>
                     </div>
-                    {def != null && <p className="text-xs text-gray-400">{t('cm.components_pms_UpsellTab.sistem_varsayilani')} {def} TL</p>}
+                    {def != null && <p className="text-xs text-gray-400">{t('cm.components_pms_UpsellTab.sistem_varsayilani')} {money(def)}</p>}
                   </div>;
           })}
             </div>}
@@ -292,7 +328,7 @@ const UpsellTab = ({
               <div className="flex items-center gap-2 text-sm text-gray-500 mb-1">
                 <DollarSign className="w-4 h-4" /> ADR
               </div>
-              <p className="text-2xl font-bold">{kpis.adr?.toFixed(0)} TL</p>
+              <p className="text-2xl font-bold">{money(kpis.adr)}</p>
               <p className="text-xs text-gray-400">{t('cm.components_pms_UpsellTab.ortalama_gunluk_fiyat')}</p>
             </CardContent>
           </Card>
@@ -301,7 +337,7 @@ const UpsellTab = ({
               <div className="flex items-center gap-2 text-sm text-gray-500 mb-1">
                 <BarChart3 className="w-4 h-4" /> RevPAR
               </div>
-              <p className="text-2xl font-bold">{kpis.revpar?.toFixed(0)} TL</p>
+              <p className="text-2xl font-bold">{money(kpis.revpar)}</p>
               <p className="text-xs text-gray-400">{t('cm.components_pms_UpsellTab.oda_basina_gelir')}</p>
             </CardContent>
           </Card>
@@ -310,7 +346,7 @@ const UpsellTab = ({
               <div className="flex items-center gap-2 text-sm text-gray-500 mb-1">
                 <TrendingUp className="w-4 h-4" /> Upsell Geliri
               </div>
-              <p className="text-2xl font-bold">{(upsellSummary?.revenue || 0).toFixed(0)} TL</p>
+              <p className="text-2xl font-bold">{money(upsellSummary?.revenue)}</p>
               <p className="text-xs text-gray-400">
                 {upsellSummary?.accepted || 0} kabul / {upsellSummary?.total || 0} toplam
               </p>
@@ -329,11 +365,11 @@ const UpsellTab = ({
           <CardContent className="space-y-3">
             <Input placeholder={t('cm.components_pms_UpsellTab.misafir_adi_oda_no_veya_rez_id')} value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="text-sm" />
             <div className="max-h-[400px] overflow-y-auto space-y-2">
-              {filteredBookings.length === 0 ? <p className="text-sm text-gray-400 text-center py-4">{t('cm.components_pms_UpsellTab.aktif_rezervasyon_bulunamadi')}</p> : filteredBookings.slice(0, 20).map(b => <div key={b.id} onClick={() => selectBooking(b)} className={`border rounded-lg p-3 cursor-pointer transition-all hover:border-blue-400 hover:bg-blue-50/50 ${selectedBooking?.id === b.id ? 'border-blue-500 bg-blue-50' : ''}`}>
+              {filteredBookings.length === 0 ? <p className="text-sm text-gray-400 text-center py-4">{t('cm.components_pms_UpsellTab.aktif_rezervasyon_bulunamadi')}</p> : filteredBookings.slice(0, 20).map(b => <div key={bookingId(b)} onClick={() => selectBooking(b)} className={`border rounded-lg p-3 cursor-pointer transition-all hover:border-blue-400 hover:bg-blue-50/50 ${bookingId(selectedBooking) === bookingId(b) ? 'border-blue-500 bg-blue-50' : ''}`}>
                     <div className="flex justify-between items-start">
                       <div>
                         <p className="font-medium text-sm">{b.guest_name || 'Misafir'}</p>
-                        <p className="text-xs text-gray-500">{t('cm.components_pms_UpsellTab.oda')} {b.room_number} - {b.room_type}</p>
+                        <p className="text-xs text-gray-500">{t('cm.components_pms_UpsellTab.oda')} {roomLabel(b)}{b.room_type ? ` - ${b.room_type}` : ''}</p>
                       </div>
                       <Badge variant="outline" className="text-xs">
                         {b.status === 'checked_in' ? 'Konaklama' : 'Onaylanmış'}
@@ -357,20 +393,20 @@ const UpsellTab = ({
                   <Sparkles className="w-4 h-4 text-amber-500" /> Upsell Teklifleri
                 </CardTitle>
                 <CardDescription>
-                  {selectedBooking ? `${selectedBooking.guest_name} - Oda ${selectedBooking.room_number}` : 'Sol taraftan bir rezervasyon seçin'}
+                  {selectedBooking ? `${selectedBooking.guest_name || 'Misafir'} - Oda ${roomLabel(selectedBooking)}` : 'Sol taraftan bir rezervasyon seçin'}
                 </CardDescription>
               </div>
               {selectedBooking && <Button variant="outline" size="sm" onClick={regenerateOffers} disabled={loading} className="h-7 text-xs">
-                  <Sparkles className="w-3 h-3 mr-1" /> Yeniden Uret
+                  <Sparkles className="w-3 h-3 mr-1" /> Yeniden Üret
                 </Button>}
               {loading && <RefreshCw className="w-4 h-4 animate-spin text-blue-500" />}
             </div>
           </CardHeader>
           <CardContent>
-            {!selectedBooking && offers.length === 0 ? <div className="text-center py-12 text-gray-400">
+            {(!selectedBooking || (!loading && offers.length === 0)) ? <div className="text-center py-12 text-gray-400">
                 <Sparkles className="w-12 h-12 mx-auto mb-3 opacity-30" />
-                <p className="font-medium">{t('cm.components_pms_UpsellTab.henuz_teklif_yok')}</p>
-                <p className="text-sm">Bir rezervasyon sectiginizde AI otomatik teklif uretecek</p>
+                <p className="font-medium">{selectedBooking ? 'Bu rezervasyon için teklif bulunamadı' : t('cm.components_pms_UpsellTab.henuz_teklif_yok')}</p>
+                <p className="text-sm">{selectedBooking ? 'Teklifleri yeniden üretmeyi deneyebilirsiniz.' : 'Bir rezervasyon seçtiğinizde teklifler otomatik üretilecek.'}</p>
               </div> : <div className="space-y-3">
                 {offers.map(offer => {
               const typeInfo = TYPE_LABELS[offer.type] || {
@@ -387,7 +423,7 @@ const UpsellTab = ({
                           <span className="font-medium text-sm">{typeInfo.label}</span>
                           <Badge className={`text-xs ${typeInfo.color}`}>{offer.type}</Badge>
                         </div>
-                        <span className="font-bold text-lg">{offer.price?.toFixed(0)} TL</span>
+                        <span className="font-bold text-lg">{money(offer.price)}</span>
                       </div>
                       <div className="text-sm text-gray-600 mb-2">
                         {offer.current_item && <span>{offer.current_item} → </span>}
@@ -396,7 +432,7 @@ const UpsellTab = ({
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3 text-xs text-gray-400">
                           <span className="flex items-center gap-1">
-                            <Target className="w-3 h-3" /> %{(offer.confidence * 100).toFixed(0)} guven
+                            <Target className="w-3 h-3" /> %{(offer.confidence * 100).toFixed(0)} güven
                           </span>
                           <span className="flex items-center gap-1">
                             <Clock className="w-3 h-3" /> {offer.valid_until?.slice(0, 10)}
@@ -433,7 +469,7 @@ const UpsellTab = ({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Tumu ({offerSummary?.total || 0})</SelectItem>
+                  <SelectItem value="all">Tümü ({offerSummary?.total || 0})</SelectItem>
                   <SelectItem value="pending">Bekleyen ({offerSummary?.pending || 0})</SelectItem>
                   <SelectItem value="accepted">Kabul ({offerSummary?.accepted || 0})</SelectItem>
                   <SelectItem value="rejected">Red ({offerSummary?.rejected || 0})</SelectItem>
@@ -451,10 +487,10 @@ const UpsellTab = ({
               return <div key={offer.id} className="flex items-center justify-between border rounded-lg px-3 py-2">
                       <div className="flex items-center gap-2 min-w-0">
                         <Badge className={`text-xs shrink-0 ${typeInfo.color}`}>{typeInfo.label}</Badge>
-                        <span className="text-xs text-gray-500 truncate">{offer.booking_id?.slice(0, 8)}...</span>
+                        <span className="text-xs text-gray-500 truncate">{offer.guest_name || offer.room_number || 'Rezervasyon teklifi'}</span>
                       </div>
                       <div className="flex items-center gap-3">
-                        <span className="text-sm font-medium">{offer.price?.toFixed(0)} TL</span>
+                        <span className="text-sm font-medium">{money(offer.price)}</span>
                         <Badge variant={offer.status === 'accepted' ? 'default' : offer.status === 'rejected' ? 'secondary' : 'outline'} className="text-xs">
                           {offer.status === 'accepted' ? 'Kabul' : offer.status === 'rejected' ? 'Red' : 'Bekliyor'}
                         </Badge>
@@ -470,7 +506,7 @@ const UpsellTab = ({
             <CardTitle className="text-base flex items-center gap-2">
               <Building2 className="w-4 h-4" /> Gelir Analizi
             </CardTitle>
-            <CardDescription>Gercek verilere dayali oneriler</CardDescription>
+            <CardDescription>Gerçek verilere dayalı öneriler</CardDescription>
           </CardHeader>
           <CardContent>
             {!revenueInsights?.insights?.length ? <p className="text-sm text-gray-400 text-center py-6">{t('cm.components_pms_UpsellTab.analiz_icin_yeterli_veri_yok')}</p> : <div className="space-y-3">

@@ -106,7 +106,7 @@ async def test_get_room_types_returns_data():
 async def test_sellable_equals_physical_unlocked():
     """For a date with no locks, sellable == physical_total."""
     headers, _ = await get_auth()
-    far_future = (datetime.now(timezone.utc).date() + timedelta(days=365)).isoformat()
+    far_future = "2042-01-01"
     async with httpx.AsyncClient(timeout=15) as c:
         resp = await c.get(
             f"{API_URL}/api/inventory/room-types",

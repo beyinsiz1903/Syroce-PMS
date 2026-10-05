@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import axios from 'axios';
 import { toast }          from 'sonner';
 import { confirmDialog }  from '@/lib/dialogs';
+import { formatCurrency, cachedTenantCurrency } from '@/lib/currency';
 import {
   ArrowLeft, RefreshCw, Clock, BedDouble, Coffee,
   CheckCircle2, ChefHat, Truck, XCircle, Wifi, WifiOff,
@@ -107,7 +108,7 @@ function OrderCard({ order, now, t, onAdvance, onCancel, isUpdating }) {
                 <span className="font-bold text-gray-900">{item.quantity || 1}×</span> {item.name}
               </span>
               <span className="text-gray-500 tabular-nums">
-                {Number((item.price || 0) * (item.quantity || 1)).toFixed(2)} ₺
+                {formatCurrency((item.price || 0) * (item.quantity || 1), item.currency || cachedTenantCurrency())}
               </span>
             </div>
           ))}
@@ -118,7 +119,7 @@ function OrderCard({ order, now, t, onAdvance, onCancel, isUpdating }) {
           )}
           <div className="flex items-center justify-between pt-2 mt-1 border-t border-gray-200 font-semibold text-sm">
             <span className="text-gray-700">{t('staffRoomService.total', 'Toplam')}</span>
-            <span className="text-gray-900 tabular-nums">{total.toFixed(2)} ₺</span>
+            <span className="text-gray-900 tabular-nums">{formatCurrency(total, order.currency || cachedTenantCurrency())}</span>
           </div>
         </div>
 
@@ -160,6 +161,7 @@ const StaffRoomServiceOrders = () => {
   const [updating,   setUpdating]   = useState(() => new Set());
   const [wsConn,     setWsConn]     = useState(false);
   const [now,        setNow]        = useState(Date.now());
+  const [loadError,  setLoadError]  = useState(false);
   const wsRef              = useRef(null);
   const reconnectTimerRef  = useRef(null);
   const closedByUnmountRef = useRef(false);
@@ -168,12 +170,16 @@ const StaffRoomServiceOrders = () => {
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 30000); return () => clearInterval(t); }, []);
 
   /* load */
-  const loadOrders = useCallback(async () => {
+  const loadOrders = useCallback(async ({ silent = false } = {}) => {
     setRefreshing(true);
     try {
       const res = await axios.get('/guest/staff/room-service-orders');
       setOrders(Array.isArray(res.data?.orders) ? res.data.orders : []);
-    } catch { toast.error(t('staffRoomService.loadError', 'Siparişler yüklenemedi')); }
+      setLoadError(false);
+    } catch {
+      setLoadError(true);
+      if (!silent) toast.error(t('staffRoomService.loadError', 'Siparişler yüklenemedi'));
+    }
     finally  { setLoading(false); setRefreshing(false); }
   }, [t]);
 
@@ -222,7 +228,7 @@ const StaffRoomServiceOrders = () => {
   /* polling fallback */
   useEffect(() => {
     loadOrders();
-    const iv = setInterval(() => { if (!wsConn) loadOrders(); }, 15000);
+    const iv = setInterval(() => { if (!wsConn) loadOrders({ silent: true }); }, 15000);
     return () => clearInterval(iv);
   }, [loadOrders, wsConn]);
 
@@ -282,9 +288,9 @@ const StaffRoomServiceOrders = () => {
             <div className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full border ${wsConn ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-gray-100 text-gray-500 border-gray-200'}`}
               data-testid="ws-status-badge">
               {wsConn ? <Wifi className="w-3.5 h-3.5" /> : <WifiOff className="w-3.5 h-3.5" />}
-              {wsConn ? t('staffRoomService.live', 'Canlı') : t('staffRoomService.polling', 'Yoklama')}
+              {wsConn ? t('staffRoomService.live', 'Canlı') : '15 sn’de yenileniyor'}
             </div>
-            <button onClick={loadOrders} data-testid="refresh-orders"
+            <button onClick={() => loadOrders()} data-testid="refresh-orders"
               className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-gray-200 bg-white text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors">
               <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
               {t('common.refresh', 'Yenile')}
@@ -312,6 +318,15 @@ const StaffRoomServiceOrders = () => {
           <div className="flex flex-col items-center justify-center py-20 gap-3">
             <Loader2 className="w-10 h-10 animate-spin text-amber-500" />
             <p className="text-gray-400 text-sm">{t('common.loading', 'Yükleniyor…')}</p>
+          </div>
+        ) : loadError && orders.length === 0 ? (
+          <div className="rounded-2xl border-2 border-dashed border-amber-200 bg-white py-20 text-center">
+            <WifiOff className="w-10 h-10 text-amber-500 mx-auto mb-3" />
+            <p className="font-semibold text-gray-700">Siparişler alınamadı</p>
+            <p className="text-sm text-gray-400 mt-1 mb-4">Bağlantınızı kontrol edip yeniden deneyin.</p>
+            <button onClick={() => loadOrders()} className="px-4 py-2 rounded-xl bg-gray-900 text-white text-sm font-semibold">
+              Yeniden Dene
+            </button>
           </div>
         ) : orders.length === 0 ? (
           <div className="rounded-2xl border-2 border-dashed border-gray-200 bg-white py-20 text-center">

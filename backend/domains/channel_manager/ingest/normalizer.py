@@ -10,6 +10,7 @@ import json
 from typing import Any
 
 from domains.channel_manager.ingest.hotelrunner_pricing import hotelrunner_guest_total
+from domains.channel_manager.providers.hotelrunner_notes import extract_hotelrunner_note
 
 
 def _safe_str(v: Any) -> str:
@@ -24,6 +25,7 @@ def _safe_str(v: Any) -> str:
 def empty_canonical() -> dict[str, Any]:
     return {
         "external_reservation_id": "",
+        "agency_reservation_number": "",
         "provider": "",
         "guest_name": "",
         "guest_email": "",
@@ -41,6 +43,7 @@ def empty_canonical() -> dict[str, Any]:
         "provider_last_modified_at": "",
         "source_system": "",
         "source_payload_ref": "",
+        "provider_note": "",
     }
 
 
@@ -115,6 +118,7 @@ def normalize_hotelrunner(payload: dict[str, Any]) -> dict[str, Any]:
 
     return {
         "external_reservation_id": _safe_str(payload.get("hr_number", "")),
+        "agency_reservation_number": _safe_str(payload.get("provider_number") or payload.get("confirmation_number") or payload.get("channel_reservation_number") or payload.get("hr_number", "")),
         "provider": "hotelrunner",
         "guest_name": f"{first} {last}".strip(),
         "guest_email": email,
@@ -135,6 +139,7 @@ def normalize_hotelrunner(payload: dict[str, Any]) -> dict[str, Any]:
         "provider_last_modified_at": last_mod,
         "source_system": _safe_str(payload.get("channel") or payload.get("channel_display", "")),
         "source_payload_ref": _safe_str(payload.get("hr_number", "")),
+        "provider_note": extract_hotelrunner_note(payload),
     }
 
 
@@ -271,6 +276,7 @@ def compute_canonical_hash(canonical: dict[str, Any]) -> str:
         "total_amount": canonical.get("total_amount", 0.0),
         "status": canonical.get("status", ""),
         "guest_email": canonical.get("guest_email", ""),
+        "provider_note": canonical.get("provider_note", ""),
     }
     raw = json.dumps(key_fields, sort_keys=True, default=str)
     return hashlib.sha256(raw.encode()).hexdigest()[:16]

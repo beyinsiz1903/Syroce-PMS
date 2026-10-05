@@ -407,11 +407,7 @@ async def _live_activation_snapshot(tenant_id: str) -> dict[str, Any]:
             "sync_restrictions": 1,
         },
     ).to_list(200)
-    pms_room_types = {
-        value
-        for value in await db.rooms.distinct("room_type", {"tenant_id": tenant_id})
-        if value
-    }
+    pms_room_types = {value for value in await db.rooms.distinct("room_type", {"tenant_id": tenant_id}) if value}
 
     inventories_by_pms: dict[str, set[str]] = {}
     disabled_scopes = 0
@@ -420,18 +416,11 @@ async def _live_activation_snapshot(tenant_id: str) -> dict[str, Any]:
         inventory = str(mapping.get("hr_inv_code") or "").strip()
         if pms_type and inventory:
             inventories_by_pms.setdefault(pms_type, set()).add(inventory)
-        if not all(
-            mapping.get(field, False)
-            for field in ("sync_availability", "sync_price", "sync_restrictions")
-        ):
+        if not all(mapping.get(field, False) for field in ("sync_availability", "sync_price", "sync_restrictions")):
             disabled_scopes += 1
 
     missing_room_types = sorted(pms_room_types - set(inventories_by_pms))
-    ambiguous_room_types = sorted(
-        room_type
-        for room_type, inventory_codes in inventories_by_pms.items()
-        if len(inventory_codes) != 1
-    )
+    ambiguous_room_types = sorted(room_type for room_type, inventory_codes in inventories_by_pms.items() if len(inventory_codes) != 1)
     mapping_ready = bool(pms_room_types) and not missing_room_types and not ambiguous_room_types and disabled_scopes == 0
 
     queued_count = await db.outbox_events.count_documents(
@@ -463,13 +452,7 @@ async def _live_activation_snapshot(tenant_id: str) -> dict[str, Any]:
         "write_criteria": criteria,
         "runtime": runtime,
         "feature_flags": flags,
-        "ready_to_activate": bool(
-            production_connection
-            and mapping_ready
-            and queued_count == 0
-            and criteria.get("all_criteria_met", False)
-            and runtime.get("ari_write_allowed", False)
-        ),
+        "ready_to_activate": bool(production_connection and mapping_ready and queued_count == 0 and criteria.get("all_criteria_met", False) and runtime.get("ari_write_allowed", False)),
     }
 
 
@@ -539,11 +522,7 @@ async def enable_live_ari(
         # Best-effort rollback keeps the canonical flag collection fail-closed.
         await set_flags(
             tenant_id,
-            {
-                key: previous_flags.get(key)
-                for key in updates
-                if key in previous_flags
-            },
+            {key: previous_flags.get(key) for key in updates if key in previous_flags},
         )
         raise
 

@@ -104,6 +104,23 @@ class TestCreateRoomBlockBridge:
         assert second.status_code == 200, second.text
         assert first.json()['block']['id'] == second.json()['block']['id']
 
+    def test_repeated_submit_with_new_key_reuses_matching_active_block(self):
+        room, start_date, end_date = self._pick_available_room()
+        payload = self._build_payload(room['id'], start_date, end_date)
+
+        first = self.session.post(
+            f'{BASE_URL}/api/pms/room-blocks', json=payload,
+            headers={'Authorization': f'Bearer {self.token}', 'Idempotency-Key': f'idem-{uuid.uuid4()}'},
+        )
+        second = self.session.post(
+            f'{BASE_URL}/api/pms/room-blocks', json=payload,
+            headers={'Authorization': f'Bearer {self.token}', 'Idempotency-Key': f'idem-{uuid.uuid4()}'},
+        )
+
+        assert first.status_code == 200, first.text
+        assert second.status_code == 200, second.text
+        assert first.json()['block']['id'] == second.json()['block']['id']
+
     def test_missing_idempotency_key_rejected(self):
         room, start_date, end_date = self._pick_available_room()
         payload = self._build_payload(room['id'], start_date, end_date)

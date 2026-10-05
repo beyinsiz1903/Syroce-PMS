@@ -761,10 +761,12 @@ async def _authenticate_ws_token(token: str | None) -> dict | None:
     if not user_id or not jwt_tenant:
         return None
 
-    # jti revocation parity with HTTP path.
+    # jti + device-session revocation parity with the HTTP path.  A logout
+    # revokes the whole browser session family, not merely its access token.
     jti = payload.get("jti")
+    session_id = payload.get("sid")
     try:
-        if jti and await is_jti_revoked(jti):
+        if jti and await is_jti_revoked(jti, session_id=session_id):
             return None
     except Exception as e:
         logging.getLogger(__name__).warning("room-service WS jti check failed: %s", e)
@@ -772,14 +774,19 @@ async def _authenticate_ws_token(token: str | None) -> dict | None:
 
     # User-doc lookup (cached) — guards deleted users + tenant mismatch.
     try:
-        user_doc = _user_doc_cache_get(user_id)
+        principal_tenant_id = payload.get("actor_tenant_id") or jwt_tenant
+        user_cache_key = f"{principal_tenant_id}:{user_id}"
+        user_doc = _user_doc_cache_get(user_cache_key)
         if user_doc is None:
             user_doc = await db.users.find_one(
-                {"$or": [{"id": user_id}, {"user_id": user_id}]},
+                {
+                    "$or": [{"id": user_id}, {"user_id": user_id}],
+                    "tenant_id": principal_tenant_id,
+                },
                 {"_id": 0, "id": 1, "user_id": 1, "role": 1, "tenant_id": 1, "email": 1, "tokens_invalid_before": 1},
             )
             if user_doc:
-                _user_doc_cache_set(user_id, user_doc)
+                _user_doc_cache_set(user_cache_key, user_doc)
     except Exception as e:
         logging.getLogger(__name__).warning("room-service WS user lookup failed: %s", e)
         return None
@@ -804,6 +811,7 @@ async def _authenticate_ws_token(token: str | None) -> dict | None:
             return None
         try:
             import math
+
             f_iat = float(iat)
             f_ib = float(invalid_before)
             if math.isnan(f_iat) or math.isinf(f_iat) or math.isnan(f_ib) or math.isinf(f_ib):

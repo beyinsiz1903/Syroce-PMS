@@ -54,9 +54,7 @@ RESET_ENV_GATE = "ALLOW_PRE_PILOT_RESET"
 SEED_ENV_GATE = "ALLOW_MODULE_RBAC_SEED"
 SUPER_ADMIN_ROLE = "super_admin"
 _PLAN_DIGEST_PATTERN = re.compile(r"^[a-f0-9]{64}$")
-_EMAIL_DOMAIN_PATTERN = re.compile(
-    r"^(?=.{3,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$"
-)
+_EMAIL_DOMAIN_PATTERN = re.compile(r"^(?=.{3,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$")
 
 
 @dataclass(frozen=True)
@@ -472,22 +470,14 @@ async def _selected_tenant_ids(
     super_admins: Sequence[Mapping[str, Any]],
 ) -> tuple[str, ...]:
     explicit = _normalize_ids(args.tenant_id or [])
-    protected_tenants = {
-        str(admin.get("tenant_id")).strip()
-        for admin in super_admins
-        if _non_empty(str(admin.get("tenant_id") or ""))
-    }
+    protected_tenants = {str(admin.get("tenant_id")).strip() for admin in super_admins if _non_empty(str(admin.get("tenant_id") or ""))}
 
     if args.all_non_super_admin_tenants:
         tenants = await _cursor_to_list(
             db.tenants.find({}, {"_id": 0, "id": 1}),
             limit=100_000,
         )
-        selected = {
-            str(item.get("id")).strip()
-            for item in tenants
-            if _non_empty(str(item.get("id") or ""))
-        }
+        selected = {str(item.get("id")).strip() for item in tenants if _non_empty(str(item.get("id") or ""))}
         selected.difference_update(protected_tenants)
         selected.update(explicit)
     else:
@@ -537,9 +527,7 @@ async def build_reset_plan(db: Any, args: argparse.Namespace) -> dict[str, Any]:
         raise PrePilotSafetyError("BLOCKED_NO_ACTIVE_SUPER_ADMIN")
 
     expected_email = (args.expected_super_admin_email or "").strip().lower()
-    if args.execute and expected_email not in {
-        str(admin.get("email") or "").strip().lower() for admin in super_admins
-    }:
+    if args.execute and expected_email not in {str(admin.get("email") or "").strip().lower() for admin in super_admins}:
         raise PrePilotSafetyError("BLOCKED_EXPECTED_SUPER_ADMIN_NOT_FOUND")
 
     tenant_ids = await _selected_tenant_ids(db, args, super_admins)
@@ -551,11 +539,7 @@ async def build_reset_plan(db: Any, args: argparse.Namespace) -> dict[str, Any]:
         db.users.find(user_filter, {"_id": 0, "id": 1}),
         limit=100_000,
     )
-    user_ids = _normalize_ids(
-        str(item.get("id") or "")
-        for item in user_documents
-        if item.get("id")
-    )
+    user_ids = _normalize_ids(str(item.get("id") or "") for item in user_documents if item.get("id"))
 
     collection_rows: list[dict[str, Any]] = []
     for spec in _collection_specs(args):
@@ -592,11 +576,7 @@ async def build_reset_plan(db: Any, args: argparse.Namespace) -> dict[str, Any]:
         )
 
     user_count = await db.users.count_documents(user_filter)
-    tenant_count = (
-        await db.tenants.count_documents({"id": {"$in": list(tenant_ids)}})
-        if tenant_ids
-        else 0
-    )
+    tenant_count = await db.tenants.count_documents({"id": {"$in": list(tenant_ids)}}) if tenant_ids else 0
 
     plan: dict[str, Any] = {
         "operation": "pre_pilot_reset",
@@ -604,9 +584,7 @@ async def build_reset_plan(db: Any, args: argparse.Namespace) -> dict[str, Any]:
         "database": getattr(db, "name", None),
         "generated_at": _utc_now().isoformat(),
         "active_super_admin_count": len(super_admins),
-        "protected_super_admin_ids": sorted(
-            str(admin.get("id")) for admin in super_admins if admin.get("id")
-        ),
+        "protected_super_admin_ids": sorted(str(admin.get("id")) for admin in super_admins if admin.get("id")),
         "selected_tenant_ids": list(tenant_ids),
         "selected_user_ids": list(user_ids),
         "users": {"count": int(user_count), "filter": user_filter},
@@ -691,9 +669,7 @@ async def execute_reset(
         raise PrePilotSafetyError("CRITICAL_SUPER_ADMIN_POSTCONDITION_FAILED")
 
     remaining_users = await db.users.count_documents(plan["users"]["filter"])
-    remaining_tenants = (
-        await db.tenants.count_documents(tenant_filter) if tenant_filter else 0
-    )
+    remaining_tenants = await db.tenants.count_documents(tenant_filter) if tenant_filter else 0
     if remaining_users or remaining_tenants:
         raise PrePilotSafetyError("CRITICAL_RESET_POSTCONDITION_FAILED")
 
@@ -732,11 +708,7 @@ async def build_seed_plan(db: Any, args: argparse.Namespace) -> dict[str, Any]:
         )
         state = "missing"
         if collision:
-            state = (
-                "existing_module_user"
-                if collision.get("is_internal_test_user") is True
-                else "collision"
-            )
+            state = "existing_module_user" if collision.get("is_internal_test_user") is True else "collision"
         rows.append(
             {
                 "slug": spec.slug,
@@ -864,9 +836,7 @@ def _write_report(path: str | None, payload: Any) -> None:
 
 
 def _base_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        description="Syroce fail-closed pre-pilot reset utility"
-    )
+    parser = argparse.ArgumentParser(description="Syroce fail-closed pre-pilot reset utility")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     reset = subparsers.add_parser(

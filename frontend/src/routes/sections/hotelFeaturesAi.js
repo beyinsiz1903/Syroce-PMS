@@ -16,10 +16,21 @@ export function hotelFeaturesAiRoutes({ p, pm }) {
     { path: "/service-recovery", ...p(ServiceRecovery), wrapLayout: true },
     { path: "/spa-wellness", ...pm(SpaWellness, "spa", undefined, { strict: true }), wrapLayout: true, layoutModule: "spa" },
     { path: "/spa-dining-packages", ...pm(SpaDiningPackages, "spa", undefined, { strict: false }), wrapLayout: true, layoutModule: "spa" },
-    { path: "/app/multi-property", ...p(MultiProperty) },
+    { path: "/app/multi-property", ...p(MultiProperty), wrapLayout: true, layoutModule: "multi-property" },
     { path: "/multi-property", type: "redirect", to: "/app/multi-property" },
     { path: "/staff-management", ...pm(StaffManagement, "hr", undefined, { strict: true }), wrapLayout: true, layoutModule: "hr" },
-    { path: "/staff/:id", ...pm(StaffProfile, "hr", undefined, { strict: true }), wrapLayout: true, layoutModule: "hr" },
+    // Staff self-service must remain reachable for a signed-in employee even
+    // when the tenant does not expose the full HR module to that role. The
+    // profile APIs enforce tenant + object-level self access, so keep the
+    // management entry points module-gated and let the backend authorize this
+    // detail route.
+    {
+      path: "/staff/:id",
+      ...p(StaffProfile),
+      wrapLayout: true,
+      layoutModule: "hr",
+      skipModuleScopeBoundary: true,
+    },
     { path: "/hr/shifts", ...pm(ShiftPlannerPage, "hr", undefined, { strict: true }), wrapLayout: true, layoutModule: "hr" },
     { path: "/hr-complete", type: "redirect", to: "/hr?tab=suite" },
     { path: "/hr", ...pm(HRHub, "hr", undefined, { strict: true }), wrapLayout: true, layoutModule: "hr" },

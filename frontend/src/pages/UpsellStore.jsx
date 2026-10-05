@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { TrendingUp, Star, Clock, Utensils, Dumbbell, Wifi } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 const UpsellStore = ({
   bookingId
 }) => {
@@ -32,6 +33,7 @@ const UpsellStore = ({
           title: p.name,
           description: p.description,
           price: p.price,
+          currency: p.currency,
           type: p.category,
           image_url: p.image_url,
           popular: p.popular,
@@ -66,7 +68,8 @@ const UpsellStore = ({
       await axios.post(`/guest/purchase-upsell/${bookingId}`, {
         offer_id: offer.id,
         offer_type: offer.type,
-        amount: offer.price
+        amount: offer.price,
+        offer_name: offer.title,
       });
       toast.success(`${offer.title} added to your booking!`);
       loadOffers();
@@ -152,8 +155,8 @@ const UpsellStore = ({
                     </div>
                   </div>
                   <div className="text-right">
-                    <div className="text-2xl font-bold text-blue-600">${offer.price}</div>
-                    {offer.original_price && offer.original_price > offer.price && <div className="text-sm text-gray-500 line-through">${offer.original_price}</div>}
+                    <div className="text-2xl font-bold text-blue-600">{formatCurrency(offer.price, offer.currency || cachedTenantCurrency())}</div>
+                    {offer.original_price && offer.original_price > offer.price && <div className="text-sm text-gray-500 line-through">{formatCurrency(offer.original_price, offer.currency || cachedTenantCurrency())}</div>}
                   </div>
                 </div>
 

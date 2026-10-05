@@ -8,14 +8,14 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { RefreshCw, TrendingUp, Hotel, DollarSign, BarChart3, LogIn, LogOut, Home } from 'lucide-react';
 import { ResponsiveContainer, BarChart, Bar, ComposedChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, AreaChart, Area } from 'recharts';
 import { useTranslation } from 'react-i18next';
+import ReservationReportsTab from './ReservationReportsTab';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
+import { formatCurrencyBreakdown } from '@/lib/reportCurrency';
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'];
-const fmtCurrency = n => {
-  if (n == null) return '₺0';
-  return `₺${Number(n).toLocaleString('tr-TR', {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0
-  })}`;
-};
+const fmtCurrency = (n, currency = cachedTenantCurrency()) => formatCurrency(n, currency, {
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 0
+});
 const ReportsTab = () => {
   const {
     t
@@ -101,32 +101,23 @@ const ReportsTab = () => {
     other: 'Diğer',
     unknown: 'Belirsiz'
   };
-  const revenueByType = revenue?.revenue_by_type || {};
-  const revenueRaw = Object.entries(revenueByType).map(([key, val]) => ({
-    name: REVENUE_TYPE_LABELS[key] || key,
-    value: typeof val === 'number' ? val : 0
-  })).filter(d => d.value > 0);
-  const revenueTotal = revenueRaw.reduce((sum, d) => sum + d.value, 0);
-  // Toplamın %1'inden küçük dilimleri "Diğer" altında topla → etiket çakışmasını önler.
-  const revenueBreakdownData = (() => {
-    if (revenueTotal === 0) return [];
-    const significant = [];
-    let smallSum = 0;
-    revenueRaw.forEach(d => {
-      if (d.value / revenueTotal >= 0.01) {
-        significant.push(d);
-      } else {
-        smallSum += d.value;
-      }
-    });
-    if (smallSum > 0) {
-      significant.push({
-        name: 'Diğer',
-        value: smallSum
-      });
-    }
-    return significant.sort((a, b) => b.value - a.value);
-  })();
+  const revenueByTypeCurrency = revenue?.revenue_by_type_currency || {};
+  const revenueRaw = Object.entries(revenueByTypeCurrency).flatMap(([key, totals]) =>
+    Object.entries(totals || {}).map(([currency, value]) => ({
+      name: `${REVENUE_TYPE_LABELS[key] || key} (${currency})`,
+      value: typeof value === 'number' ? value : 0,
+      currency
+    }))
+  ).filter(d => d.value > 0);
+  // Farklı para birimlerinin oranları karşılaştırılamaz. Her döviz kendi
+  // dağılım grafiğinde kalır; hiçbir aşamada EUR ile TRY toplanmaz.
+  const revenueBreakdowns = Object.entries(revenueRaw.reduce((groups, row) => {
+    (groups[row.currency] ||= []).push(row);
+    return groups;
+  }, {})).map(([currency, rows]) => ({
+    currency,
+    rows: rows.sort((a, b) => b.value - a.value)
+  }));
   const marketSegments = marketSegment?.market_segments || {};
   const mktData = Object.entries(marketSegments).map(([key, val]) => ({
     name: key === 'other' ? 'Diger' : key === 'corporate' ? 'Kurumsal' : key === 'ota' ? 'OTA' : key === 'direct' ? 'Direkt' : key,
@@ -167,7 +158,7 @@ const ReportsTab = () => {
             <div className="flex items-center gap-2 text-sm text-gray-500 mb-1">
               <DollarSign className="w-4 h-4" /> ADR
             </div>
-            <p className="text-2xl font-bold">{revenue ? fmtCurrency(adr) : '...'}</p>
+            <p className="text-2xl font-bold">{revenue ? formatCurrencyBreakdown(revenue.adr_by_currency, adr) : '...'}</p>
             <p className="text-xs text-gray-400">{t('cm.components_pms_ReportsTab.ortalama_gunluk_oda_fiyati')}</p>
           </CardContent>
         </Card>
@@ -176,7 +167,7 @@ const ReportsTab = () => {
             <div className="flex items-center gap-2 text-sm text-gray-500 mb-1">
               <TrendingUp className="w-4 h-4" /> RevPAR
             </div>
-            <p className="text-2xl font-bold">{revenue ? fmtCurrency(revpar) : '...'}</p>
+            <p className="text-2xl font-bold">{revenue ? formatCurrencyBreakdown(revenue.rev_par_by_currency, revpar) : '...'}</p>
             <p className="text-xs text-gray-400">{t('cm.components_pms_ReportsTab.oda_basina_gelir')}</p>
           </CardContent>
         </Card>
@@ -185,8 +176,8 @@ const ReportsTab = () => {
             <div className="flex items-center gap-2 text-sm text-gray-500 mb-1">
               <BarChart3 className="w-4 h-4" /> {t('cm.components_pms_ReportsTab.toplam_gelir')}
             </div>
-            <p className="text-2xl font-bold">{revenue ? fmtCurrency(totalRevenue) : '...'}</p>
-            <p className="text-xs text-gray-400">Bu ay — {revenue?.bookings_count ?? 0} rezervasyon</p>
+            <p className="text-2xl font-bold">{revenue ? formatCurrencyBreakdown(revenue.total_revenue_by_currency, totalRevenue) : '...'}</p>
+            <p className="text-xs text-gray-400">Folyoya işlenen · Bu ay {revenue?.bookings_count ?? 0} rezervasyon</p>
           </CardContent>
         </Card>
       </div>
@@ -196,6 +187,7 @@ const ReportsTab = () => {
           <TabsTrigger value="overview">{t('cm.components_pms_ReportsTab.gunluk_ozet')}</TabsTrigger>
           <TabsTrigger value="forecast">Tahmin ({forecast.length + forecast30.length > 0 ? '7/30 Gun' : '-'})</TabsTrigger>
           <TabsTrigger value="market">Pazar Segmenti</TabsTrigger>
+          <TabsTrigger value="reservations">Rezervasyon Analizi</TabsTrigger>
           <TabsTrigger value="housekeeping">Kat Hizmetleri</TabsTrigger>
         </TabsList>
 
@@ -238,19 +230,19 @@ const ReportsTab = () => {
               <CardContent>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   <div className="border rounded-lg p-3 text-center">
-                    <p className="text-lg font-bold">{fmtCurrency(flashRev.room_revenue)}</p>
+                    <p className="text-lg font-bold">{formatCurrencyBreakdown(flashRev.room_revenue_by_currency, flashRev.room_revenue)}</p>
                     <p className="text-xs text-gray-500">{t('cm.components_pms_ReportsTab.oda_geliri')}</p>
                   </div>
                   <div className="border rounded-lg p-3 text-center">
-                    <p className="text-lg font-bold">{fmtCurrency(flashRev.fb_revenue)}</p>
+                    <p className="text-lg font-bold">{formatCurrencyBreakdown(flashRev.fb_revenue_by_currency, flashRev.fb_revenue)}</p>
                     <p className="text-xs text-gray-500">F&B Geliri</p>
                   </div>
                   <div className="border rounded-lg p-3 text-center">
-                    <p className="text-lg font-bold">{fmtCurrency(flashRev.other_revenue)}</p>
+                    <p className="text-lg font-bold">{formatCurrencyBreakdown(flashRev.other_revenue_by_currency, flashRev.other_revenue)}</p>
                     <p className="text-xs text-gray-500">Diger Gelir</p>
                   </div>
                   <div className="border rounded-lg p-3 text-center bg-gray-50">
-                    <p className="text-lg font-bold">{fmtCurrency(flashRev.total_revenue)}</p>
+                    <p className="text-lg font-bold">{formatCurrencyBreakdown(flashRev.total_revenue_by_currency, flashRev.total_revenue)}</p>
                     <p className="text-xs text-gray-500">{t('cm.components_pms_ReportsTab.toplam')}</p>
                   </div>
                 </div>
@@ -263,7 +255,7 @@ const ReportsTab = () => {
                 <CardDescription>{dailySummary.date}</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="grid grid-cols-3 md:grid-cols-5 gap-4 text-center">
+                <div className="grid grid-cols-3 md:grid-cols-7 gap-4 text-center">
                   <div>
                     <p className="text-lg font-bold">{dailySummary.arrivals}</p>
                     <p className="text-xs text-gray-500">{t('cm.components_pms_ReportsTab.giris_1ffbd')}</p>
@@ -281,41 +273,54 @@ const ReportsTab = () => {
                     <p className="text-xs text-gray-500">Doluluk</p>
                   </div>
                   <div>
-                    <p className="text-lg font-bold">{fmtCurrency(dailySummary.daily_revenue)}</p>
-                    <p className="text-xs text-gray-500">{t('cm.components_pms_ReportsTab.gunluk_gelir')}</p>
+                    <p className="text-lg font-bold">{formatCurrencyBreakdown(dailySummary.gross_posted_revenue_by_currency, dailySummary.daily_revenue)}</p>
+                    <p className="text-xs text-gray-500">Brüt Folyo Geliri</p>
+                  </div>
+                  <div>
+                    <p className="text-lg font-bold text-rose-700">− {formatCurrencyBreakdown(dailySummary.revenue_adjustments_by_currency, 0)}</p>
+                    <p className="text-xs text-gray-500">Fiyat Düzeltmesi</p>
+                  </div>
+                  <div>
+                    <p className="text-lg font-bold text-emerald-700">{formatCurrencyBreakdown(dailySummary.daily_revenue_by_currency, dailySummary.daily_revenue)}</p>
+                    <p className="text-xs text-gray-500">Net Folyo Geliri</p>
                   </div>
                 </div>
               </CardContent>
             </Card>}
 
-          {revenueBreakdownData.length > 0 && <Card>
+          {revenueBreakdowns.length > 0 && <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="text-base">{t('cm.components_pms_ReportsTab.gelir_dagilimi')}</CardTitle>
                 <CardDescription>{t('cm.components_pms_ReportsTab.gelir_kaynagina_gore_dagilim')}</CardDescription>
               </CardHeader>
               <CardContent>
-                <ResponsiveContainer width="100%" height={340}>
-                  <PieChart margin={{
+                <div className="grid gap-4 lg:grid-cols-2">
+                {revenueBreakdowns.map(({ currency, rows }) => <div key={currency}>
+                  <p className="mb-2 text-center text-sm font-semibold text-gray-600">{currency} gelir dağılımı</p>
+                  <ResponsiveContainer width="100%" height={320}>
+                    <PieChart margin={{
                 top: 10,
                 right: 20,
                 bottom: 10,
                 left: 20
               }}>
-                    <Pie data={revenueBreakdownData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={45} outerRadius={90} paddingAngle={2} labelLine={false} label={({
+                    <Pie data={rows} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={45} outerRadius={90} paddingAngle={2} labelLine={false} label={({
                   percent
                 }) => {
                   const pct = percent * 100;
                   // Sadece %5+ dilimlerin üzerine yüzde yaz; küçükler Legend'da görünür.
                   return pct >= 5 ? `%${pct.toFixed(0)}` : '';
                 }}>
-                      {revenueBreakdownData.map((_, i) => <Cell key={_.id || i} fill={COLORS[i % COLORS.length]} />)}
+                      {rows.map((_, i) => <Cell key={_.id || i} fill={COLORS[i % COLORS.length]} />)}
                     </Pie>
-                    <Tooltip formatter={(v, name) => [fmtCurrency(v), name]} separator=": " />
+                    <Tooltip formatter={(v, name) => [fmtCurrency(v, currency), name]} separator=": " />
                     <Legend verticalAlign="bottom" height={48} iconType="circle" formatter={value => <span className="text-xs text-gray-700 dark:text-gray-300">
                           {value}
                         </span>} />
-                  </PieChart>
-                </ResponsiveContainer>
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>)}
+                </div>
               </CardContent>
             </Card>}
         </TabsContent>
@@ -464,6 +469,10 @@ const ReportsTab = () => {
                   </CardContent>
                 </Card>}
             </> : <Card><CardContent className="py-8 text-center text-gray-400">{t('cm.components_pms_ReportsTab.pazar_segmenti_verisi_bulunamadi')}</CardContent></Card>}
+        </TabsContent>
+
+        <TabsContent value="reservations" className="space-y-4 mt-4">
+          <ReservationReportsTab />
         </TabsContent>
 
         <TabsContent value="housekeeping" className="space-y-4 mt-4">

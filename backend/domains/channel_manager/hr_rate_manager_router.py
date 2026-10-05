@@ -113,6 +113,7 @@ async def _push_with_retry(
     cta=None,
     ctd=None,
     days=None,
+    channel_codes=None,
 ) -> dict:
     """Push once and require read-only transaction reconciliation."""
     update_data = {"inv_code": rt_code, "start_date": start_date, "end_date": end_date}
@@ -132,6 +133,8 @@ async def _push_with_retry(
         update_data["ctd"] = 1 if ctd else 0
     if days is not None:
         update_data["days"] = days
+    if channel_codes:
+        update_data["channel_codes"] = channel_codes
 
     try:
         from domains.channel_manager.providers.hotelrunner.ari_delivery import (
@@ -219,7 +222,7 @@ async def get_hr_rate_grid(
             "tenant_id": tenant_id,
             "date": {"$gte": start_date, "$lte": end_date},
         },
-        {"_id": 0},
+        {"_id": 0, "room_type_code": 1, "rate_plan_code": 1, "date": 1, "availability": 1, "rate": 1, "min_stay": 1, "stop_sell": 1},
     ).to_list(5000)
 
     cal_index = {}

@@ -34,6 +34,7 @@ from core.booking_atomicity import (
     is_replica_set_unavailable,
     standalone_fallback_allowed,
 )
+from core.business_date_service import stamp_open_business_date
 from shared_kernel.idempotency import (
     claim_idempotency,
     complete_idempotency,
@@ -285,6 +286,7 @@ async def collect_booking_payment(
         "processed_by": processed_by,
         "processed_at": now_iso,
     }
+    await stamp_open_business_date(db_handle, tenant_id, payment_doc)
     response = {
         "id": payment_id,
         "status": "paid",

@@ -22,8 +22,9 @@ async def _detect_active_provider(tenant_id: str, prefer: str | None = None) -> 
     - `prefer` secilenden FARKLI istenirse FAIL-CLOSED
       (configuration_error="provider_not_selected"); seciliyle AYNI ise o kullanilir.
 
-    Secim YOKSA (alan null/tanimsiz): eski davranis korunur (pilot_drift=0) —
-    `prefer` yumusak tercih (varsa o, yoksa varsayilan sira HR > Exely).
+    Secim YOKSA ve yalnizca bir aktif baglanti varsa onu otomatik algilar.
+    Iki baglanti birden aktifse istemcinin secim yapmasina izin verilmez;
+    super_admin birincil saglayiciyi belirleyene kadar fail-closed davranir.
     """
     hr_conn = await db.hotelrunner_connections.find_one({"tenant_id": tenant_id, "is_active": True}, {"_id": 0})
     if not hr_conn:
@@ -56,13 +57,18 @@ async def _detect_active_provider(tenant_id: str, prefer: str | None = None) -> 
             return {"provider": "hotelrunner", "connection": hr_conn}
         return {"provider": None, "connection": None, "configured_provider": "hotelrunner", "configuration_error": "connection_missing"}
 
-    # Secim yok -> eski otomatik tespit (yumusak prefer + varsayilan sira HR > Exely).
+    if hr_conn and exely_conn:
+        return {
+            "provider": None,
+            "connection": None,
+            "configured_provider": None,
+            "configuration_error": "multiple_active_providers",
+        }
+
+    # Tek aktif baglanti varsa istemci tercihi gerektirmeden otomatik tespit et.
     if prefer == "exely" and exely_conn:
         return {"provider": "exely", "connection": exely_conn}
     if prefer == "hotelrunner" and hr_conn:
-        return {"provider": "hotelrunner", "connection": hr_conn}
-
-    if hr_conn and exely_conn:
         return {"provider": "hotelrunner", "connection": hr_conn}
 
     if hr_conn:

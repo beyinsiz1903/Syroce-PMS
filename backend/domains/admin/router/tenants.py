@@ -8,6 +8,7 @@ Auto-split sub-router (shared imports/classes inlined).
 Admin / Operations Domain Router
 Extracted from legacy_routes.py — Phase B Domain Separation
 """
+import asyncio
 import logging
 import os
 import uuid
@@ -29,6 +30,7 @@ from core.security import (
     _is_super_admin,
     create_admin_tenant_context_token,
     create_token,
+    get_current_user,
     revoke_jti,
 )
 from core.tenant_db import get_system_db
@@ -62,6 +64,7 @@ from domains.admin.property_profiles import get_all_property_types, get_hidden_n
 from domains.admin.subscription_models import get_plan_default_modules
 from models.enums import ROLE_PERMISSIONS, Permission, UserRole
 from models.schemas import Tenant, TenantRegister, User
+from modules.pms_core.chain_access import resolve_chain_properties
 
 
 def _has_permission(role: UserRole | str, perm: Permission) -> bool:
@@ -95,8 +98,8 @@ def _svc_enc():
 ROLES_BY_TIER = {
     "mini": ["admin", "front_desk", "housekeeping"],
     "basic": ["admin", "front_desk", "housekeeping"],
-    "professional": ["admin", "front_desk", "housekeeping", "manager", "revenue", "night_audit", "finance", "procurement"],
-    "enterprise": ["admin", "front_desk", "housekeeping", "manager", "revenue", "night_audit", "gm", "super_admin", "finance", "procurement", "supervisor", "sales"],
+    "professional": ["admin", "supervisor", "front_desk", "housekeeping", "finance", "procurement", "staff"],
+    "enterprise": ["admin", "supervisor", "front_desk", "housekeeping", "finance", "procurement", "sales", "staff"],
 }
 
 PLAN_MONTHLY_PRICES = {"mini": 35.0, "basic": 79.0, "professional": 299.0, "enterprise": 799.0}
@@ -148,10 +151,16 @@ def _build_commercial_quote(payload_quote, modules: dict[str, bool], tier: str, 
         charged_setup = 0.0 if included else setup
         addon_monthly += charged_monthly
         setup_total += charged_setup
-        line_items.append({
-            "module_key": key, "label": label, "monthly": charged_monthly,
-            "setup": charged_setup, "included": included, "usage_note": usage_note,
-        })
+        line_items.append(
+            {
+                "module_key": key,
+                "label": label,
+                "monthly": charged_monthly,
+                "setup": charged_setup,
+                "included": included,
+                "usage_note": usage_note,
+            }
+        )
 
     base_monthly = PLAN_MONTHLY_PRICES[tier]
     monthly_total = base_monthly + addon_monthly
@@ -161,14 +170,22 @@ def _build_commercial_quote(payload_quote, modules: dict[str, bool], tier: str, 
         raise HTTPException(status_code=400, detail="Teklif liste toplamları güncel fiyat kataloğuyla eşleşmiyor")
 
     return {
-        "pricing_version": COMMERCIAL_PRICING_VERSION, "currency": "EUR", "plan_key": tier,
-        "plan_label": PLAN_LABELS[tier], "base_monthly": base_monthly, "addon_monthly": addon_monthly,
-        "list_monthly_total": monthly_total, "list_setup_total": setup_total,
+        "pricing_version": COMMERCIAL_PRICING_VERSION,
+        "currency": "EUR",
+        "plan_key": tier,
+        "plan_label": PLAN_LABELS[tier],
+        "base_monthly": base_monthly,
+        "addon_monthly": addon_monthly,
+        "list_monthly_total": monthly_total,
+        "list_setup_total": setup_total,
         "final_monthly_total": payload_quote.final_monthly_total,
         "final_setup_total": payload_quote.final_setup_total,
         "override_reason": (payload_quote.override_reason or "").strip() or None,
-        "line_items": line_items, "quoted_at": quoted_at.isoformat(), "quoted_by": actor_id,
+        "line_items": line_items,
+        "quoted_at": quoted_at.isoformat(),
+        "quoted_by": actor_id,
     }
+
 
 _env_mode = (os.environ.get("ENVIRONMENT") or os.environ.get("APP_ENV") or os.environ.get("ENV") or "development").lower()
 _cookie_secure = _env_mode != "development"
@@ -443,11 +460,7 @@ def _validate_provider_credentials(provider: str, credentials: dict[str, str]) -
     if not definition:
         raise HTTPException(status_code=400, detail="Desteklenmeyen kanal yöneticisi")
     allowed = {field["key"] for field in definition["fields"]}
-    cleaned = {
-        key: str(value).strip()
-        for key, value in credentials.items()
-        if key in allowed and value is not None and str(value).strip()
-    }
+    cleaned = {key: str(value).strip() for key, value in credentials.items() if key in allowed and value is not None and str(value).strip()}
     missing = [field["label"] for field in definition["fields"] if field["required"] and not cleaned.get(field["key"])]
     if missing:
         raise HTTPException(status_code=400, detail=f"Zorunlu alanlar eksik: {', '.join(missing)}")
@@ -597,9 +610,7 @@ async def update_tenant_provisioning(
     after = await _require_target_tenant(sys_db, tenant_id)
     before_chain_id = before.get("chain_id")
     after_chain_id = after.get("chain_id")
-    if before.get("is_chain_headquarters") and before_chain_id and (
-        before_chain_id != after_chain_id or not after.get("is_chain_headquarters")
-    ):
+    if before.get("is_chain_headquarters") and before_chain_id and (before_chain_id != after_chain_id or not after.get("is_chain_headquarters")):
         await sys_db.hotel_chains.update_one(
             {"id": before_chain_id, "headquarters_tenant_id": tenant_id},
             {"$set": {"headquarters_tenant_id": None, "updated_at": datetime.now(UTC).isoformat()}},
@@ -778,12 +789,12 @@ async def get_property_type_detail(property_type: str):
 async def enter_tenant_context(
     tenant_id: str,
     response: Response,
-    current_user: User = Depends(require_super_admin),
+    current_user: User = Depends(get_current_user),
 ):
     """Enter a short-lived hotel workspace without sharing hotel passwords.
 
-    Only the effective tenant scope changes. The real superadmin user id and
-    role remain authoritative and are recorded on every enter/exit event.
+    Only the effective tenant scope changes. The real superadmin or chain admin
+    user id and role remain authoritative and are recorded on every enter/exit event.
     """
     if current_user.is_impersonating:
         raise HTTPException(
@@ -795,7 +806,7 @@ async def enter_tenant_context(
     if not actor_tenant_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Süperadmin ana otel bağlamı bulunamadı.",
+            detail="Otel bağlamı bulunamadı.",
         )
     if tenant_id == actor_tenant_id:
         raise HTTPException(
@@ -803,23 +814,40 @@ async def enter_tenant_context(
             detail="Zaten bu otelin çalışma alanındasınız.",
         )
 
+    role = getattr(current_user.role, "value", current_user.role)
+    roles = {getattr(item, "value", item) for item in (getattr(current_user, "roles", []) or [])}
+    is_super = role == "super_admin" or "super_admin" in roles
+
     sys_db = get_system_db()
     target = await sys_db.tenants.find_one({"id": tenant_id}, {"_id": 0})
     origin = await sys_db.tenants.find_one({"id": actor_tenant_id}, {"_id": 0})
     target_status = str((target or {}).get("status") or "").lower()
-    if (
-        not target
-        or target.get("is_active") is False
-        or target_status in {"deleted", "archived"}
-    ):
+    if not target or target.get("is_active") is False or target_status in {"deleted", "archived"}:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Otel bulunamadı veya kullanılamıyor.")
     if not origin:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Süperadmin ana oteli bulunamadı.")
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Ana otel bulunamadı.")
+
+    chain_id = None
+    if not is_super:
+        is_admin = role == "admin" or "admin" in roles
+        if not is_admin:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Bu işlem için süperadmin veya otel admin yetkisi gerekir.")
+
+        # Merkez tesis yöneticisi açıkça zincir yetkilisi olmalıdır. Yalnızca
+        # aynı chain_id değerini paylaşmak, her tesis yöneticisine kardeş
+        # otellerde işlem yapma hakkı vermez.
+        own, chain_members = await resolve_chain_properties(current_user, system_db=sys_db)
+        permitted_ids = {member.get("id") or member.get("tenant_id") for member in chain_members}
+        if tenant_id not in permitted_ids:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Otel zincir erişim kapsamınızda değil.")
+
+        chain_id = own.get("chain_id")
 
     access_token, expires_at = create_admin_tenant_context_token(
         current_user.id,
         actor_tenant_id,
         tenant_id,
+        chain_id=chain_id,
     )
     _set_access_cookie(response, access_token, max_age=max(1, expires_at - int(datetime.now(UTC).timestamp())))
 
@@ -869,7 +897,7 @@ async def enter_tenant_context(
 async def exit_tenant_context(
     request: Request,
     response: Response,
-    current_user: User = Depends(require_super_admin),
+    current_user: User = Depends(get_current_user),
 ):
     """Revoke the active hotel context and return to the actor's tenant."""
     if not current_user.is_impersonating or not current_user.actor_tenant_id:
@@ -906,7 +934,7 @@ async def exit_tenant_context(
     sys_db = get_system_db()
     origin = await sys_db.tenants.find_one({"id": current_user.actor_tenant_id}, {"_id": 0})
     if not origin:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Süperadmin ana oteli bulunamadı.")
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Ana otel bulunamadı.")
 
     origin_token = create_token(current_user.id, current_user.actor_tenant_id)
     _set_access_cookie(response, origin_token, max_age=JWT_EXPIRATION_MINUTES * 60)
@@ -956,8 +984,12 @@ async def list_tenants(
     limit = max(1, min(int(limit), 2000))
 
     cursor = db.tenants.find({}, {"_id": 0}).skip(skip).limit(limit)
-    tenants = await cursor.to_list(limit)
-    total = await db.tenants.count_documents({})
+    # The list and total are independent round trips. Running them serially was
+    # visible as a multi-second pause when super admins opened Hotel Management.
+    tenants, total = await asyncio.gather(
+        cursor.to_list(limit),
+        db.tenants.count_documents({}),
+    )
 
     # Merge defaults for backward compatibility
     for tenant in tenants:
@@ -1225,10 +1257,47 @@ async def update_tenant_modules(
       }
     }
     """
-    # Try by logical id first
-    query = {"id": tenant_id}
+    from core.audit import log_audit_event
 
-    update_doc = {"$set": {"modules": payload.modules}}
+    # Read the current effective set first. This makes the published change
+    # auditable at module level rather than leaving a single opaque JSON blob.
+    # Try by logical id first.
+    query = {"id": tenant_id}
+    before = await db.tenants.find_one(query, {"_id": 0})
+    if not before:
+        try:
+            from bson import ObjectId
+
+            before = await db.tenants.find_one({"_id": ObjectId(tenant_id)}, {"_id": 0})
+        except Exception:
+            before = None
+    if not before:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Hotel not found")
+
+    before_modules = get_tenant_modules(before)
+    after_modules = get_tenant_modules({**before, "modules": payload.modules})
+    changed_keys = sorted({
+        key for key in set(before_modules) | set(after_modules)
+        if bool(before_modules.get(key)) != bool(after_modules.get(key))
+    })
+    now = datetime.now(UTC).isoformat()
+    actor_name = getattr(current_user, "name", None) or getattr(current_user, "email", None) or current_user.id
+    module_change_log = dict(before.get("module_control_changes") or {})
+    for key in changed_keys:
+        module_change_log[key] = {
+            "enabled": bool(after_modules.get(key)),
+            "changed_at": now,
+            "changed_by": current_user.id,
+            "changed_by_name": actor_name,
+        }
+
+    update_doc = {"$set": {
+        "modules": payload.modules,
+        "module_control_changes": module_change_log,
+        "module_control_updated_at": now,
+        "module_control_updated_by": current_user.id,
+        "module_control_updated_by_name": actor_name,
+    }}
     # Kanal yoneticisi altyapisi secimi yalnizca explicit gonderildiyse yazilir
     # (modules yazimini bozmadan). None gonderilirse secim temizlenir -> auto-detect.
     if "channel_manager_provider" in payload.model_fields_set:
@@ -1266,6 +1335,18 @@ async def update_tenant_modules(
         )
 
     tenant_doc["modules"] = get_tenant_modules(tenant_doc)
+    await log_audit_event(
+        tenant_id=tenant_doc.get("id") or tenant_id,
+        user_id=current_user.id,
+        action="tenant_modules_published",
+        entity_type="tenant_modules",
+        entity_id=tenant_doc.get("id") or tenant_id,
+        details=f"Süperadmin {len(changed_keys)} modül değişikliğini yayınladı",
+        before_value={key: bool(before_modules.get(key)) for key in changed_keys},
+        after_value={key: bool(after_modules.get(key)) for key in changed_keys},
+        db=db,
+        severity="warning" if any(not after_modules.get(key) for key in changed_keys) else "info",
+    )
     return tenant_doc
 
 

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
+import { Link } from 'react-router-dom';
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -14,17 +15,18 @@ import {
 import {
   Building2, DollarSign, TrendingUp, TrendingDown, AlertTriangle,
   Search, CreditCard, FileText, Clock, CheckCircle2, XCircle,
-  ChevronDown, ChevronRight, Loader2, Plus, Calendar,
+  ChevronDown, ChevronRight, Loader2, Plus, Calendar, Info, ArrowRight,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
+import { paymentMethodLabel } from '@/lib/accountingLabels';
+import { moneyInputProps, parseMoneyInput } from '@/lib/moneyInput';
 
-const fmt = (v) => {
-  if (v == null) return '0';
-  return Number(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-};
+const CURRENCIES = ['TRY', 'EUR', 'USD', 'GBP'];
 
 const TravelAgentARAP = ({ user, tenant, onLogout }) => {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
+  const tenantCurrency = cachedTenantCurrency();
   const [activeTab, setActiveTab] = useState('overview');
 
   const [summary, setSummary] = useState(null);
@@ -43,11 +45,11 @@ const TravelAgentARAP = ({ user, tenant, onLogout }) => {
   const [plansLoading, setPlansLoading] = useState(false);
 
   const [paymentDialog, setPaymentDialog] = useState(false);
-  const [paymentForm, setPaymentForm] = useState({ agency_id: '', amount: '', payment_method: 'bank_transfer', reference: '', notes: '' });
+  const [paymentForm, setPaymentForm] = useState({ agency_id: '', amount: '', currency: tenantCurrency, payment_method: 'bank_transfer', reference: '', notes: '' });
   const [paymentSaving, setPaymentSaving] = useState(false);
 
   const [planDialog, setPlanDialog] = useState(false);
-  const [planForm, setPlanForm] = useState({ agency_id: '', total_amount: '', installments: 3, start_date: '', notes: '' });
+  const [planForm, setPlanForm] = useState({ agency_id: '', total_amount: '', currency: tenantCurrency, installments: 3, start_date: '', notes: '' });
   const [planSaving, setPlanSaving] = useState(false);
 
   const [stmtDialog, setStmtDialog] = useState(false);
@@ -114,7 +116,7 @@ const TravelAgentARAP = ({ user, tenant, onLogout }) => {
   }, [activeTab, loadPlans]);
 
   const handleRecordPayment = async () => {
-    const amount = parseFloat(paymentForm.amount);
+    const amount = parseMoneyInput(paymentForm.amount);
     if (!amount || amount <= 0) {
       toast.error(t('agentArap.invalidAmount'));
       return;
@@ -124,6 +126,7 @@ const TravelAgentARAP = ({ user, tenant, onLogout }) => {
       await axios.post('/agent-arap/payment', {
         agency_id: paymentForm.agency_id,
         amount,
+        currency: paymentForm.currency,
         payment_method: paymentForm.payment_method,
         reference: paymentForm.reference,
         notes: paymentForm.notes,
@@ -140,7 +143,7 @@ const TravelAgentARAP = ({ user, tenant, onLogout }) => {
   };
 
   const handleCreatePlan = async () => {
-    const total = parseFloat(planForm.total_amount);
+    const total = parseMoneyInput(planForm.total_amount);
     if (!total || total <= 0) {
       toast.error(t('agentArap.invalidAmount'));
       return;
@@ -154,6 +157,7 @@ const TravelAgentARAP = ({ user, tenant, onLogout }) => {
       await axios.post('/agent-arap/payment-plans', {
         agency_id: planForm.agency_id,
         total_amount: total,
+        currency: planForm.currency,
         installments: planForm.installments,
         start_date: planForm.start_date,
         notes: planForm.notes,
@@ -183,13 +187,28 @@ const TravelAgentARAP = ({ user, tenant, onLogout }) => {
     }
   };
 
-  const openPaymentDialog = (agencyId) => {
-    setPaymentForm({ agency_id: agencyId, amount: '', payment_method: 'bank_transfer', reference: '', notes: '' });
+  const preferredCurrency = (breakdown = {}) => {
+    const currencies = Object.entries(breakdown).filter(([, value]) => Math.abs(Number(value || 0)) > 0).map(([currency]) => currency);
+    return currencies.length === 1 ? currencies[0] : summary?.currency || tenantCurrency;
+  };
+
+  const money = (value, currency = summary?.currency || tenantCurrency) => formatCurrency(value || 0, currency, { decimals: 2 });
+  const moneyBreakdown = (breakdown, fallback = 0, currency = summary?.currency || tenantCurrency) => {
+    const rows = Object.entries(breakdown || {}).filter(([, value]) => Math.abs(Number(value || 0)) > 0);
+    return rows.length
+      ? rows.sort(([left], [right]) => left.localeCompare(right)).map(([code, value]) => money(value, code)).join(' · ')
+      : money(fallback, currency);
+  };
+
+  const openPaymentDialog = (agency) => {
+    setPaymentForm({ agency_id: agency.agency_id, amount: '', currency: preferredCurrency(agency.balance_by_currency), payment_method: 'bank_transfer', reference: '', notes: '' });
     setPaymentDialog(true);
   };
 
-  const openPlanDialog = (agencyId, balance) => {
-    setPlanForm({ agency_id: agencyId, total_amount: balance > 0 ? String(balance) : '', installments: 3, start_date: new Date().toISOString().split('T')[0], notes: '' });
+  const openPlanDialog = (agency) => {
+    const currency = preferredCurrency(agency.balance_by_currency);
+    const balance = Number(agency.balance_by_currency?.[currency] ?? agency.balance ?? 0);
+    setPlanForm({ agency_id: agency.agency_id, total_amount: balance > 0 ? String(balance) : '', currency, installments: 3, start_date: new Date().toISOString().split('T')[0], notes: '' });
     setPlanDialog(true);
   };
 
@@ -224,6 +243,27 @@ const TravelAgentARAP = ({ user, tenant, onLogout }) => {
           <p className="text-muted-foreground">{t('agentArap.subtitle')}</p>
         </div>
 
+        <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-4 dark:border-blue-800 dark:bg-blue-950/30">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div className="flex items-start gap-3">
+              <div className="mt-0.5 rounded-lg bg-white p-2 text-blue-700 shadow-sm dark:bg-slate-900 dark:text-blue-300">
+                <Info className="h-4 w-4" />
+              </div>
+              <div className="space-y-1">
+                <p className="font-semibold text-slate-900 dark:text-slate-100">Operasyon ve finans ekranı</p>
+                <p className="max-w-4xl text-sm leading-6 text-slate-600 dark:text-slate-300">
+                  Bu ekran, Acente Yönetimi'nde tanımlanan B2B acentelere bağlı rezervasyonların komisyonunu, yapılan ödemeleri, taksit planlarını ve vade yaşlandırmasını yönetir. HotelRunner üzerinden gelen Expedia, Agoda gibi OTA rezervasyonları burada otomatik cari hesap oluşturmaz.
+                </p>
+              </div>
+            </div>
+            <Button asChild variant="outline" className="shrink-0 bg-white dark:bg-slate-900">
+              <Link to="/agency-management">
+                Acente Yönetimi <ArrowRight className="ml-2 h-4 w-4" />
+              </Link>
+            </Button>
+          </div>
+        </div>
+
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList>
             <TabsTrigger value="overview">{t('agentArap.tabOverview')}</TabsTrigger>
@@ -251,7 +291,7 @@ const TravelAgentARAP = ({ user, tenant, onLogout }) => {
                         <TrendingUp className="w-4 h-4 text-red-500" />
                         {t('agentArap.totalReceivable')}
                       </div>
-                      <div className="text-2xl font-bold mt-1 text-red-600">{fmt(summary.total_receivable)}</div>
+                      <div className="text-2xl font-bold mt-1 text-red-600">{moneyBreakdown(summary.total_receivable_by_currency, summary.total_receivable)}</div>
                     </CardContent>
                   </Card>
                   <Card>
@@ -260,7 +300,7 @@ const TravelAgentARAP = ({ user, tenant, onLogout }) => {
                         <DollarSign className="w-4 h-4 text-green-500" />
                         {t('agentArap.totalPaid')}
                       </div>
-                      <div className="text-2xl font-bold mt-1 text-green-600">{fmt(summary.total_paid)}</div>
+                      <div className="text-2xl font-bold mt-1 text-green-600">{moneyBreakdown(summary.total_paid_by_currency, summary.total_paid)}</div>
                     </CardContent>
                   </Card>
                   <Card>
@@ -278,13 +318,13 @@ const TravelAgentARAP = ({ user, tenant, onLogout }) => {
                   <Card>
                     <CardContent className="pt-4">
                       <div className="text-sm text-muted-foreground">{t('agentArap.totalBookingsRevenue')}</div>
-                      <div className="text-xl font-bold">{fmt(summary.total_bookings_revenue)}</div>
+                      <div className="text-xl font-bold">{moneyBreakdown(summary.total_bookings_revenue_by_currency, summary.total_bookings_revenue)}</div>
                     </CardContent>
                   </Card>
                   <Card>
                     <CardContent className="pt-4">
                       <div className="text-sm text-muted-foreground">{t('agentArap.totalCommission')}</div>
-                      <div className="text-xl font-bold">{fmt(summary.total_commission_earned)}</div>
+                      <div className="text-xl font-bold">{moneyBreakdown(summary.total_commission_earned_by_currency, summary.total_commission_earned)}</div>
                     </CardContent>
                   </Card>
                   <Card>
@@ -322,10 +362,10 @@ const TravelAgentARAP = ({ user, tenant, onLogout }) => {
                             <tr key={a.agency_id} className="border-b hover:bg-muted/50">
                               <td className="py-2 px-3 font-medium">{a.agency_name}</td>
                               <td className="py-2 px-3 text-right">{a.total_bookings}</td>
-                              <td className="py-2 px-3 text-right">{fmt(a.total_bookings_revenue)}</td>
-                              <td className="py-2 px-3 text-right">{fmt(a.total_commission_owed)}</td>
-                              <td className="py-2 px-3 text-right text-green-600">{fmt(a.total_paid)}</td>
-                              <td className="py-2 px-3 text-right font-bold text-red-600">{fmt(a.balance)}</td>
+                              <td className="py-2 px-3 text-right">{moneyBreakdown(a.total_bookings_revenue_by_currency, a.total_bookings_revenue, a.currency)}</td>
+                              <td className="py-2 px-3 text-right">{moneyBreakdown(a.total_commission_owed_by_currency, a.total_commission_owed, a.currency)}</td>
+                              <td className="py-2 px-3 text-right text-green-600">{moneyBreakdown(a.total_paid_by_currency, a.total_paid, a.currency)}</td>
+                              <td className="py-2 px-3 text-right font-bold text-red-600">{moneyBreakdown(a.balance_by_currency, a.balance, a.currency)}</td>
                               <td className="py-2 px-3">
                                 {a.days_outstanding > 90 ? (
                                   <Badge variant="destructive">{t('agentArap.overdue')}</Badge>
@@ -386,17 +426,17 @@ const TravelAgentARAP = ({ user, tenant, onLogout }) => {
                     <div className="flex items-center gap-4">
                       <div className="text-right">
                         <div className="text-sm text-muted-foreground">{t('agentArap.balance')}</div>
-                        <div className={`font-bold ${a.balance > 0 ? 'text-red-600' : 'text-green-600'}`}>{fmt(a.balance)}</div>
+                        <div className={`font-bold ${Object.values(a.balance_by_currency || {}).some(value => Number(value) > 0) || a.balance > 0 ? 'text-red-600' : 'text-green-600'}`}>{moneyBreakdown(a.balance_by_currency, a.balance, a.currency)}</div>
                       </div>
                       <div className="flex gap-2">
-                        <Button size="sm" variant="outline" onClick={e => { e.stopPropagation(); openPaymentDialog(a.agency_id); }}>
+                        <Button size="sm" variant="outline" onClick={e => { e.stopPropagation(); openPaymentDialog(a); }}>
                           <CreditCard className="w-3 h-3 mr-1" />{t('agentArap.recordPayment')}
                         </Button>
                         <Button size="sm" variant="outline" onClick={e => { e.stopPropagation(); loadStatement(a.agency_id); }}>
                           <FileText className="w-3 h-3 mr-1" />{t('agentArap.statement')}
                         </Button>
-                        {a.balance > 0 && (
-                          <Button size="sm" variant="outline" onClick={e => { e.stopPropagation(); openPlanDialog(a.agency_id, a.balance); }}>
+                        {(Object.values(a.balance_by_currency || {}).some(value => Number(value) > 0) || a.balance > 0) && (
+                          <Button size="sm" variant="outline" onClick={e => { e.stopPropagation(); openPlanDialog(a); }}>
                             <Calendar className="w-3 h-3 mr-1" />{t('agentArap.createPlan')}
                           </Button>
                         )}
@@ -427,8 +467,8 @@ const TravelAgentARAP = ({ user, tenant, onLogout }) => {
                                     <tr key={ce.id} className="border-b">
                                       <td className="py-1 px-2">{ce.guest_name}</td>
                                       <td className="py-1 px-2 text-xs">{ce.check_in} → {ce.check_out}</td>
-                                      <td className="py-1 px-2 text-right">{fmt(ce.booking_amount)}</td>
-                                      <td className="py-1 px-2 text-right text-red-600">{fmt(ce.amount)}</td>
+                                      <td className="py-1 px-2 text-right">{money(ce.booking_amount, ce.currency)}</td>
+                                      <td className="py-1 px-2 text-right text-red-600">{money(ce.amount, ce.currency)}</td>
                                     </tr>
                                   ))}
                                 </tbody>
@@ -459,8 +499,8 @@ const TravelAgentARAP = ({ user, tenant, onLogout }) => {
                                             {tx.type === 'payment' ? t('agentArap.payment') : t('agentArap.adjustment')}
                                           </Badge>
                                         </td>
-                                        <td className="py-1 px-2 text-right text-green-600">{fmt(tx.amount)}</td>
-                                        <td className="py-1 px-2 text-xs">{tx.payment_method}</td>
+                                        <td className="py-1 px-2 text-right text-green-600">{money(tx.amount, tx.currency)}</td>
+                                        <td className="py-1 px-2 text-xs">{paymentMethodLabel(t, tx.payment_method)}</td>
                                         <td className="py-1 px-2 text-xs">{tx.reference}</td>
                                       </tr>
                                     ))}
@@ -497,7 +537,7 @@ const TravelAgentARAP = ({ user, tenant, onLogout }) => {
                       </Badge>
                     </div>
                     <div className="text-sm text-muted-foreground">
-                      {t('agentArap.totalAmount')}: {fmt(plan.total_amount)} • {plan.installment_count} {t('agentArap.installments')}
+                      {t('agentArap.totalAmount')}: {money(plan.total_amount, plan.currency)} • {plan.installment_count} {t('agentArap.installments')}
                     </div>
                   </CardHeader>
                   <CardContent>
@@ -521,7 +561,7 @@ const TravelAgentARAP = ({ user, tenant, onLogout }) => {
                           </div>
                           <div className="flex items-center gap-3">
                             <span className={`font-medium ${inst.paid ? 'text-green-600' : ''}`}>
-                              {fmt(inst.amount)}
+                              {money(inst.amount, plan.currency)}
                             </span>
                             {!inst.paid && plan.status === 'active' && (
                               <Button size="sm" variant="outline" onClick={() => handleMarkInstallmentPaid(plan.id, idx)}>
@@ -549,7 +589,7 @@ const TravelAgentARAP = ({ user, tenant, onLogout }) => {
                     <Card key={b.key}>
                       <CardContent className="pt-4 text-center">
                         <Badge className={b.color}>{b.label}</Badge>
-                        <div className="text-2xl font-bold mt-2">{fmt(b.data?.total || 0)}</div>
+                        <div className="text-2xl font-bold mt-2">{moneyBreakdown(b.data?.totals_by_currency, b.data?.total || 0, aging.currency)}</div>
                         <div className="text-xs text-muted-foreground">{b.data?.count || 0} {t('agentArap.agencies')}</div>
                       </CardContent>
                     </Card>
@@ -580,7 +620,7 @@ const TravelAgentARAP = ({ user, tenant, onLogout }) => {
                                   {b.data.agencies.map(ag => (
                                     <tr key={ag.agency_id} className="border-b">
                                       <td className="py-1 px-2">{ag.agency_name}</td>
-                                      <td className="py-1 px-2 text-right font-medium text-red-600">{fmt(ag.balance)}</td>
+                                      <td className="py-1 px-2 text-right font-medium text-red-600">{moneyBreakdown(ag.balance_by_currency, ag.balance, aging.currency)}</td>
                                     </tr>
                                   ))}
                                 </tbody>
@@ -604,10 +644,19 @@ const TravelAgentARAP = ({ user, tenant, onLogout }) => {
             <DialogTitle>{t('agentArap.recordPayment')}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
-            <div>
-              <Label>{t('agentArap.amount')}</Label>
-              <Input type="number" value={paymentForm.amount} onChange={e => setPaymentForm(p => ({ ...p, amount: e.target.value }))} />
+            <div className="grid grid-cols-[1fr_120px] gap-3">
+              <div>
+                <Label>{t('agentArap.amount')}</Label>
+              <Input {...moneyInputProps} placeholder="Örn. 150,74" value={paymentForm.amount} onChange={e => setPaymentForm(p => ({ ...p, amount: e.target.value }))} />
+              </div>
+              <div>
+                <Label>Para Birimi</Label>
+                <select className="w-full border rounded-md px-3 py-2 text-sm" value={paymentForm.currency} onChange={e => setPaymentForm(p => ({ ...p, currency: e.target.value }))}>
+                  {CURRENCIES.map(currency => <option key={currency} value={currency}>{currency}</option>)}
+                </select>
+              </div>
             </div>
+            <p className="text-xs text-muted-foreground">Tahsilat yalnızca seçtiğiniz para birimindeki cari bakiyeyi azaltır; dövizler birbirine çevrilmez.</p>
             <div>
               <Label>{t('agentArap.method')}</Label>
               <select
@@ -647,10 +696,19 @@ const TravelAgentARAP = ({ user, tenant, onLogout }) => {
             <DialogTitle>{t('agentArap.createPaymentPlan')}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
-            <div>
-              <Label>{t('agentArap.totalAmount')}</Label>
-              <Input type="number" value={planForm.total_amount} onChange={e => setPlanForm(p => ({ ...p, total_amount: e.target.value }))} />
+            <div className="grid grid-cols-[1fr_120px] gap-3">
+              <div>
+                <Label>{t('agentArap.totalAmount')}</Label>
+              <Input {...moneyInputProps} placeholder="Örn. 150,74" value={planForm.total_amount} onChange={e => setPlanForm(p => ({ ...p, total_amount: e.target.value }))} />
+              </div>
+              <div>
+                <Label>Para Birimi</Label>
+                <select className="w-full border rounded-md px-3 py-2 text-sm" value={planForm.currency} onChange={e => setPlanForm(p => ({ ...p, currency: e.target.value }))}>
+                  {CURRENCIES.map(currency => <option key={currency} value={currency}>{currency}</option>)}
+                </select>
+              </div>
             </div>
+            <p className="text-xs text-muted-foreground">Taksit planı seçilen para biriminde izlenir; farklı döviz bakiyeleri ayrı kalır.</p>
             <div>
               <Label>{t('agentArap.installmentCount')}</Label>
               <select
@@ -694,15 +752,15 @@ const TravelAgentARAP = ({ user, tenant, onLogout }) => {
               <div className="grid grid-cols-3 gap-4 text-sm">
                 <div>
                   <span className="text-muted-foreground">{t('agentArap.totalCommission')}</span>
-                  <div className="font-bold">{fmt(statement.total_commission_owed)}</div>
+                  <div className="font-bold">{moneyBreakdown(statement.total_commission_owed_by_currency, statement.total_commission_owed, statement.currency)}</div>
                 </div>
                 <div>
                   <span className="text-muted-foreground">{t('agentArap.totalPaid')}</span>
-                  <div className="font-bold text-green-600">{fmt(statement.total_paid)}</div>
+                  <div className="font-bold text-green-600">{moneyBreakdown(statement.total_paid_by_currency, statement.total_paid, statement.currency)}</div>
                 </div>
                 <div>
                   <span className="text-muted-foreground">{t('agentArap.balance')}</span>
-                  <div className="font-bold text-red-600">{fmt(statement.balance)}</div>
+                  <div className="font-bold text-red-600">{moneyBreakdown(statement.balance_by_currency, statement.balance, statement.currency)}</div>
                 </div>
               </div>
               <div className="overflow-x-auto">
@@ -721,9 +779,9 @@ const TravelAgentARAP = ({ user, tenant, onLogout }) => {
                       <tr key={idx} className="border-b">
                         <td className="py-1 px-2 text-xs">{line.date}</td>
                         <td className="py-1 px-2 text-xs">{line.description}</td>
-                        <td className="py-1 px-2 text-right text-red-600">{line.debit > 0 ? fmt(line.debit) : ''}</td>
-                        <td className="py-1 px-2 text-right text-green-600">{line.credit > 0 ? fmt(line.credit) : ''}</td>
-                        <td className="py-1 px-2 text-right font-medium">{fmt(line.balance)}</td>
+                        <td className="py-1 px-2 text-right text-red-600">{line.debit > 0 ? money(line.debit, line.currency) : ''}</td>
+                        <td className="py-1 px-2 text-right text-green-600">{line.credit > 0 ? money(line.credit, line.currency) : ''}</td>
+                        <td className="py-1 px-2 text-right font-medium">{money(line.balance, line.currency)}</td>
                       </tr>
                     ))}
                   </tbody>

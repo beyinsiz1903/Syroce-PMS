@@ -17,13 +17,13 @@
 export const landingDefaults = {
   brandName: 'Syroce',
   hero: {
-    badge: 'MODERN HOSPITALITY OPERATING SYSTEM',
-    titlePre: 'Konaklama',
-    titleAccent: 'Operasyonunun',
-    titlePost: 'Yeni Merkezi',
+    badge: 'OTELLER İÇİN YÖNETİM PLATFORMU',
+    titlePre: 'Otelinizin',
+    titleAccent: 'rezervasyonlarını',
+    titlePost: 'tek yerden yönetin',
     description:
-      'Rezervasyondan gelire kadar tüm otel operasyonlarını tek akıllı platformda birleştirin. PMS, misafir deneyimi, tedarik ağı ve raporlama —',
-    descriptionAccent: ' tek işletim sistemi.',
+      'Rezervasyon takvimi, ön büro, oda işlemleri ve folyo takibini tek panelde görün. İş akışınızın Syroce ile nasıl çalışacağını',
+    descriptionAccent: ' canlı demoda birlikte inceleyelim.',
   },
   contact: {
     phone: '0540 452 93 26',
@@ -40,13 +40,13 @@ export const landingDefaults = {
   ],
   faqs: [
     { q: 'Bu sistem kimler için uygun?',          a: 'Oteller, apart tesisler, butik oteller, restoranlar, turizm firmaları ve tedarikçiler — operasyonunu dijitalleştirmek isteyen her ölçekte işletme için uygundur.' },
-    { q: 'Kurulum süreci zor mu?',                a: 'Hayır. Hesabınızı açtıktan sonra rehberli adımlarla işletmenizi tanıtırsınız ve aynı gün kullanmaya başlayabilirsiniz. Ekibimiz kurulumda yanınızdadır.' },
+    { q: 'Kurulum süreci nasıl işler?',            a: 'Oda tipleri, kullanıcılar ve ihtiyaç duyduğunuz modüller demo sonrasında değerlendirilir. Kurulum süresi ve kapsamı tesisinize göre planlanır.' },
     { q: 'Birden fazla işletme yönetebilir miyim?', a: 'Evet. Birden fazla tesisi veya markayı tek panelden yönetebilir, her biri için ayrı yetki ve raporlama tanımlayabilirsiniz.' },
     { q: 'Tedarikçi olarak nasıl katılabilirim?', a: 'Üst menüden Tedarikçi Girişi alanına geçebilir, kayıt formunu doldurarak başvurunuzu birkaç dakikada tamamlayabilirsiniz.' },
-    { q: 'Mobil cihazda kullanılabiliyor mu?',    a: 'Evet. Tüm panel mobil ve tablet cihazlarda sorunsuz çalışır. Ekibiniz sahada da aynı verilere erişir.' },
-    { q: 'Teknik bilgi gerekir mi?',              a: 'Hayır. Arayüz sade Türkçe ile tasarlandı; günlük operasyonu yapan herkes ilk günden rahatça kullanabilir.' },
+    { q: 'Mobil cihazda kullanılabiliyor mu?',    a: 'Mobil kullanım senaryonuzu demoda birlikte inceleyebilir, kullandığınız cihazlardaki akışları doğrulayabiliriz.' },
+    { q: 'Teknik bilgi gerekir mi?',              a: 'Günlük operasyon akışları için tasarlanan ekranları demoda ekibinizin işine göre değerlendirebiliriz.' },
     { q: 'Demo talep edebilir miyim?',            a: 'Elbette. İletişim formundan ulaştığınızda ekibimiz sizinle iletişime geçer ve işletmenize özel bir tanıtım planlar.' },
-    { q: 'Destek süreci nasıl işliyor?',          a: '7/24 erişebileceğiniz canlı destek hattı, e-posta ve telefon kanallarımız mevcuttur. Kritik durumlarda hızlı geri dönüş garantilidir.' },
+    { q: 'Destek süreci nasıl işliyor?',          a: 'Destek kanallarını ve işletmenize sunulacak hizmet kapsamını görüşme sırasında netleştiririz.' },
   ],
 };
 

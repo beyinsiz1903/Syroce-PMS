@@ -3,7 +3,7 @@ import axios from 'axios';
 import { toast } from 'sonner';
 import {
   Send, Save, Plus, Trash2, Loader2, Bed,
-  Building2, CheckSquare, Square, RefreshCw, AlertTriangle
+  Building2, CheckSquare, Square, RefreshCw, AlertTriangle, ImagePlus, X
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -19,6 +19,29 @@ import {
 } from '@/components/ui/alert-dialog';
 import { useTranslation } from 'react-i18next';
 
+const ProtectedImage = ({ src, alt, className }) => {
+  const [objectUrl, setObjectUrl] = useState('');
+  useEffect(() => {
+    if (!src) return undefined;
+    if (!src.startsWith('/api/uploads/')) {
+      setObjectUrl(src);
+      return undefined;
+    }
+    let active = true;
+    let createdUrl = '';
+    axios.get(src.replace(/^\/api/, ''), { responseType: 'blob' }).then(({ data }) => {
+      if (!active) return;
+      createdUrl = URL.createObjectURL(data);
+      setObjectUrl(createdUrl);
+    }).catch(() => setObjectUrl(''));
+    return () => {
+      active = false;
+      if (createdUrl) URL.revokeObjectURL(createdUrl);
+    };
+  }, [src]);
+  return objectUrl ? <img src={objectUrl} alt={alt} className={className} /> : <div className={`${className} bg-slate-100`} aria-label={alt} />;
+};
+
 const AgencyContentDistribution = ({ user }) => {
   const { t, i18n } = useTranslation();
   const [content, setContent] = useState(null);
@@ -30,6 +53,7 @@ const AgencyContentDistribution = ({ user }) => {
   const [distributing, setDistributing] = useState(false);
   const [distributeDialog, setDistributeDialog] = useState(null); // { preview, unpublishOmitted }
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [uploadingImages, setUploadingImages] = useState(false);
 
   const isSuperAdmin = user?.role === 'super_admin' || (Array.isArray(user?.roles) && user.roles.includes('super_admin'));
   const canDelete = isSuperAdmin || ['super_admin', 'admin'].includes(user?.role) || (Array.isArray(user?.roles) && user.roles.some((r) => ['super_admin', 'admin'].includes(r)));
@@ -89,12 +113,54 @@ const AgencyContentDistribution = ({ user }) => {
       const res = await axios.put('/hotel-content', cleaned);
       setContent(res.data);
       setPendingDeletes({ rooms: new Set(), services: new Set() });
-      toast.success('İçerik kaydedildi');
+      const synced = res.data?.distribution?.marketplace_listing_synced;
+      const contracted = res.data?.distribution?.contracted_marketplace_agencies || 0;
+      toast.success(synced
+        ? `İçerik kaydedildi ve acente satış portalına aktarıldı${contracted ? ` (${contracted} sözleşmeli acente)` : ''}.`
+        : 'İçerik kaydedildi. Tesis marketplace yayını açıldığında otomatik kullanılacak.');
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Kaydetme hatası');
     } finally {
       setSaving(false);
     }
+  };
+
+  const uploadImages = async (files, roomIndex = null) => {
+    if (!files?.length) return;
+    setUploadingImages(true);
+    try {
+      const form = new FormData();
+      [...files].forEach(file => form.append('files', file));
+      const { data } = await axios.post(`/hotel-content/images?scope=${roomIndex === null ? 'hotel' : 'room'}`, form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      if (roomIndex === null) {
+        setContent(prev => ({ ...prev, images: [...(prev.images || []), ...(data.urls || [])] }));
+      } else {
+        setContent(prev => {
+          const roomTypes = [...(prev.room_types || [])];
+          roomTypes[roomIndex] = { ...roomTypes[roomIndex], images: [...(roomTypes[roomIndex].images || []), ...(data.urls || [])] };
+          return { ...prev, room_types: roomTypes };
+        });
+      }
+      toast.success(`${data.uploaded || 0} görsel yüklendi. Yayınlamak için Kaydet'e basın.`);
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Görsel yüklenemedi');
+    } finally {
+      setUploadingImages(false);
+    }
+  };
+
+  const removeImage = (url, roomIndex = null) => {
+    if (roomIndex === null) {
+      setContent(prev => ({ ...prev, images: (prev.images || []).filter(image => image !== url) }));
+      return;
+    }
+    setContent(prev => {
+      const roomTypes = [...(prev.room_types || [])];
+      roomTypes[roomIndex] = { ...roomTypes[roomIndex], images: (roomTypes[roomIndex].images || []).filter(image => image !== url) };
+      return { ...prev, room_types: roomTypes };
+    });
   };
 
   // FIX #1 (KRITIK): Dagitim artik 2 adim — once preview cek, kullaniciya
@@ -295,6 +361,20 @@ const AgencyContentDistribution = ({ user }) => {
                       <Input value={content?.phone || ''} onChange={e => setContent(p => ({ ...p, phone: e.target.value }))} />
                     </div>
                   </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <Label>Şehir / Bölge</Label>
+                      <Input value={content?.city || ''} onChange={e => setContent(p => ({ ...p, city: e.target.value }))} placeholder="Kocaeli / Kartepe" />
+                    </div>
+                    <div>
+                      <Label>Ülke kodu</Label>
+                      <Input value={content?.country || 'TR'} maxLength={2} onChange={e => setContent(p => ({ ...p, country: e.target.value.toUpperCase() }))} />
+                    </div>
+                    <div>
+                      <Label>Yıldız</Label>
+                      <Input type="number" min="1" max="5" value={content?.star_rating || ''} onChange={e => setContent(p => ({ ...p, star_rating: e.target.value ? Number(e.target.value) : null }))} placeholder="5" />
+                    </div>
+                  </div>
                   <div>
                     <Label>E-posta</Label>
                     <Input value={content?.email || ''} onChange={e => setContent(p => ({ ...p, email: e.target.value }))} />
@@ -306,6 +386,24 @@ const AgencyContentDistribution = ({ user }) => {
                       onChange={e => setContent(p => ({ ...p, amenities: e.target.value.split(',').map(s => s.trim()).filter(Boolean) }))}
                       placeholder="Havuz, Spa, Restoran, WiFi..."
                     />
+                  </div>
+                  <div>
+                    <Label>Pansiyon tipleri (virgülle ayırın)</Label>
+                    <Input
+                      value={(content?.meal_plans || []).join(', ')}
+                      onChange={e => setContent(p => ({ ...p, meal_plans: e.target.value.split(',').map(s => s.trim()).filter(Boolean) }))}
+                      placeholder="Oda kahvaltı, Yarım pansiyon, Her şey dahil"
+                    />
+                  </div>
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div><Label>Tesis fotoğrafları</Label><p className="text-xs text-slate-500">JPG, PNG veya WebP yükleyin. İlk fotoğraf kapak görselidir.</p></div>
+                      <label className="inline-flex h-9 cursor-pointer items-center rounded-md border border-slate-200 px-3 text-sm font-medium hover:bg-slate-50">
+                        {uploadingImages ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ImagePlus className="mr-2 h-4 w-4" />} Fotoğraf ekle
+                        <input type="file" accept="image/png,image/jpeg,image/webp" multiple className="hidden" disabled={uploadingImages} onChange={e => { uploadImages(e.target.files); e.target.value = ''; }} />
+                      </label>
+                    </div>
+                    {(content?.images || []).length > 0 && <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">{content.images.map((url, index) => <div key={url} className="group relative aspect-[4/3] overflow-hidden rounded-lg border bg-slate-100"><ProtectedImage src={url} alt={`Tesis ${index + 1}`} className="h-full w-full object-cover" /><button type="button" onClick={() => removeImage(url)} className="absolute right-1 top-1 rounded-full bg-slate-950/75 p-1 text-white" aria-label="Fotoğrafı kaldır"><X size={14} /></button>{index === 0 && <Badge className="absolute bottom-1 left-1 bg-white/90 text-slate-800">Kapak</Badge>}</div>)}</div>}
                   </div>
                 </CardContent>
               </Card>
@@ -370,6 +468,10 @@ const AgencyContentDistribution = ({ user }) => {
                           onChange={e => updateRoomType(idx, 'amenities', e.target.value.split(',').map(s => s.trim()).filter(Boolean))}
                           className="text-sm" placeholder="WiFi, Minibar, Klima..."
                         />
+                      </div>
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between"><Label className="text-xs">Oda fotoğrafları</Label><label className="cursor-pointer text-xs font-medium text-blue-600 hover:text-blue-700"><ImagePlus className="mr-1 inline h-3.5 w-3.5" />Fotoğraf ekle<input type="file" accept="image/png,image/jpeg,image/webp" multiple className="hidden" disabled={uploadingImages} onChange={e => { uploadImages(e.target.files, idx); e.target.value = ''; }} /></label></div>
+                        {(rt.images || []).length > 0 && <div className="flex gap-2 overflow-x-auto pb-1">{rt.images.map(url => <div key={url} className="relative h-20 w-28 shrink-0 overflow-hidden rounded-md border bg-slate-100"><ProtectedImage src={url} alt={rt.name || rt.room_type} className="h-full w-full object-cover" /><button type="button" onClick={() => removeImage(url, idx)} className="absolute right-1 top-1 rounded-full bg-slate-950/75 p-0.5 text-white" aria-label="Oda fotoğrafını kaldır"><X size={12} /></button></div>)}</div>}
                       </div>
                     </CardContent>
                   </Card>

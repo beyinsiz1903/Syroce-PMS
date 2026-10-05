@@ -70,10 +70,17 @@ class CityLedgerAccount(BaseModel):
     tenant_id: str
     account_name: str
     company_name: str
+    source_company_id: str | None = None
     contact_person: str | None = None
     email: str | None = None
     phone: str | None = None
     address: str | None = None
+    tax_number: str | None = None
+    tax_office: str | None = None
+    billing_address: str | None = None
+    billing_city: str | None = None
+    billing_postal_code: str | None = None
+    billing_country: str | None = None
     credit_limit: float = 0.0
     current_balance: float = 0.0
     payment_terms: int = 30  # days

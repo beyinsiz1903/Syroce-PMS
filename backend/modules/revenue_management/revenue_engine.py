@@ -9,6 +9,21 @@ from typing import Any
 
 from core.database import db
 
+BOOKING_REVENUE_STATUSES = ["confirmed", "guaranteed", "checked_in", "checked_out"]
+
+
+def _booking_nights(booking: dict[str, Any]) -> int:
+    """Return actual stay nights; bookings do not consistently store ``nights``."""
+    stored = booking.get("nights")
+    if isinstance(stored, (int, float)) and stored > 0:
+        return int(stored)
+    try:
+        check_in = date.fromisoformat(str(booking.get("check_in") or "")[:10])
+        check_out = date.fromisoformat(str(booking.get("check_out") or "")[:10])
+        return max(1, (check_out - check_in).days)
+    except (TypeError, ValueError):
+        return 1
+
 
 class RevenueManagementEngine:
     """Core revenue management engine with demand analysis, rate optimization, yield rules."""
@@ -204,20 +219,67 @@ class RevenueManagementEngine:
 
     async def calculate_ideal_adr(self, tenant_id: str, target_date: str) -> dict[str, Any]:
         """Calculate ideal ADR based on demand and historical data."""
-        forecast = await self.get_occupancy_forecast(tenant_id, 1)
-        day_data = forecast["forecast"][0] if forecast["forecast"] else {}
-        occ_pct = day_data.get("occupancy_pct", 50)
+        target = date.fromisoformat(target_date)
+        days_out = max(1, (target - date.today()).days + 1)
+        forecast = await self.get_occupancy_forecast(tenant_id, days_out)
+        day_data = next((row for row in forecast["forecast"] if row["date"] == target_date), {})
+        occ_pct = day_data.get("occupancy_pct", 0)
 
-        # Get current rate plans
-        rate_plans = await db.rate_plans.find({"tenant_id": tenant_id, "is_active": True}, {"_id": 0}).to_list(20)
-        base_rate = rate_plans[0].get("base_price", 100) if rate_plans else 100
+        # A fabricated fallback rate is financially unsafe. Resolve a real configured
+        # rate from every supported source and fail closed when none exists.
+        rate_plans = await db.rate_plans.find(
+            {"tenant_id": tenant_id, "is_active": {"$ne": False}},
+            {"_id": 0, "base_price": 1, "base_rate": 1},
+        ).to_list(100)
+        room_types = await db.room_types.find(
+            {"tenant_id": tenant_id, "is_active": {"$ne": False}},
+            {"_id": 0, "base_price": 1, "base_rate": 1},
+        ).to_list(100)
+        rooms = await db.rooms.find(
+            {"tenant_id": tenant_id, "is_active": {"$ne": False}},
+            {"_id": 0, "base_price": 1, "base_rate": 1},
+        ).to_list(2000)
+        configured_rates = []
+        # Prefer the most authoritative configured source; combining all three
+        # would weight the same room type multiple times.
+        for source in (rate_plans, room_types, rooms):
+            source_rates = []
+            for row in source:
+                raw = row.get("base_price", row.get("base_rate"))
+                if isinstance(raw, (int, float)) and raw > 0:
+                    source_rates.append(float(raw))
+            if source_rates:
+                configured_rates = source_rates
+                break
+        base_rate = round(sum(configured_rates) / len(configured_rates), 2) if configured_rates else None
 
         # Get historical ADR
-        hist_revenue = await db.folio_charges.find(
-            {"tenant_id": tenant_id, "category": "room", "voided": {"$ne": True}},
-            {"_id": 0, "amount": 1},
-        ).to_list(1000)
-        hist_adr = round(sum(c.get("amount", 0) for c in hist_revenue) / len(hist_revenue), 2) if hist_revenue else base_rate
+        history_start = (date.today() - timedelta(days=30)).isoformat()
+        history = await db.bookings.find(
+            {
+                "tenant_id": tenant_id,
+                "check_in": {"$gte": history_start},
+                "status": {"$in": BOOKING_REVENUE_STATUSES},
+            },
+            {"_id": 0, "total_amount": 1, "nights": 1, "check_in": 1, "check_out": 1},
+        ).to_list(10000)
+        history_nights = sum(_booking_nights(row) for row in history)
+        history_revenue = sum(float(row.get("total_amount") or 0) for row in history)
+        hist_adr = round(history_revenue / history_nights, 2) if history_nights else None
+
+        if base_rate is None:
+            return {
+                "target_date": target_date,
+                "current_occupancy_pct": occ_pct,
+                "base_rate": None,
+                "historical_adr": hist_adr,
+                "demand_multiplier": None,
+                "ideal_adr": None,
+                "revpar_estimate": None,
+                "recommendation": "unavailable",
+                "data_available": False,
+                "data_quality_message": "Aktif oda tipi veya fiyat planında geçerli taban fiyat bulunamadı.",
+            }
 
         # Dynamic pricing multiplier based on occupancy
         if occ_pct >= 90:
@@ -245,6 +307,7 @@ class RevenueManagementEngine:
             "ideal_adr": ideal_adr,
             "revpar_estimate": revpar_estimate,
             "recommendation": "increase" if multiplier > 1 else ("decrease" if multiplier < 1 else "maintain"),
+            "data_available": True,
         }
 
     async def get_rate_suggestions(self, tenant_id: str, days: int = 7) -> dict[str, Any]:
@@ -262,6 +325,8 @@ class RevenueManagementEngine:
                     "recommendation": adr_data["recommendation"],
                     "revpar_estimate": adr_data["revpar_estimate"],
                     "demand_multiplier": adr_data["demand_multiplier"],
+                    "data_available": adr_data["data_available"],
+                    "data_quality_message": adr_data.get("data_quality_message"),
                 }
             )
 
@@ -289,17 +354,17 @@ class RevenueManagementEngine:
 
             if occ >= 95:
                 rec["stop_sell"] = True
-                rec["notes"].append("Doluluk %95+: Stop-sell onerisi")
+                rec["notes"].append("Doluluk %95+: Satışı durdurma önerisi")
             elif occ >= 85:
                 rec["min_stay"] = 2
                 rec["cta"] = True
-                rec["notes"].append("Yuksek talep: Minimum 2 gece + CTA")
+                rec["notes"].append("Yüksek talep: En az 2 gece + girişe kapalı (CTA)")
             elif occ >= 75:
                 rec["min_stay"] = 2
-                rec["notes"].append("Iyi talep: Minimum 2 gece onerisi")
+                rec["notes"].append("İyi talep: En az 2 gece önerisi")
             elif occ < 30:
                 rec["ctd"] = True
-                rec["notes"].append("Dusuk talep: CTD kaldirma onerisi, promosyon onerilir")
+                rec["notes"].append("Düşük talep: Çıkış kısıtını (CTD) kaldırma ve promosyon önerisi")
 
             recommendations.append(rec)
 
@@ -380,23 +445,19 @@ class RevenueManagementEngine:
         )
         today_occ = round((today_booked / total_rooms) * 100, 1)
 
-        # 30-day revenue
-        charges = await db.folio_charges.find(
-            {"tenant_id": tenant_id, "posted_at": {"$gte": start_30}, "voided": {"$ne": True}},
-            {"_id": 0, "amount": 1, "category": 1, "posted_at": 1},
-        ).to_list(10000)
-
-        total_revenue = sum(c.get("amount", 0) for c in charges)
-        room_revenue = sum(c.get("amount", 0) for c in charges if c.get("category") == "room")
-
-        # Room nights sold in last 30 days
-        room_nights = await db.bookings.count_documents(
+        # Keep the engine aligned with the RMS dashboard: reservation value and
+        # actual stay nights are the shared source for 30-day ADR/RevPAR.
+        period_bookings = await db.bookings.find(
             {
                 "tenant_id": tenant_id,
                 "check_in": {"$gte": start_30},
-                "status": {"$in": ["confirmed", "guaranteed", "checked_in", "checked_out"]},
-            }
-        )
+                "status": {"$in": BOOKING_REVENUE_STATUSES},
+            },
+            {"_id": 0, "total_amount": 1, "nights": 1, "check_in": 1, "check_out": 1},
+        ).to_list(10000)
+        total_revenue = sum(float(row.get("total_amount") or 0) for row in period_bookings)
+        room_revenue = total_revenue
+        room_nights = sum(_booking_nights(row) for row in period_bookings)
 
         adr = round(room_revenue / room_nights, 2) if room_nights > 0 else 0
         revpar = round(room_revenue / (total_rooms * 30), 2)
@@ -406,8 +467,8 @@ class RevenueManagementEngine:
         for i in range(30):
             d = today - timedelta(days=29 - i)
             d_s = d.isoformat()
-            d_next = (d + timedelta(days=1)).isoformat()
-            day_rev = sum(c.get("amount", 0) for c in charges if d_s <= (c.get("posted_at") or "")[:10] < d_next)
+            day_bookings = [row for row in period_bookings if (row.get("check_in") or "")[:10] == d_s]
+            day_rev = sum(float(row.get("total_amount") or 0) for row in day_bookings)
             day_booked = await db.bookings.count_documents(
                 {
                     "tenant_id": tenant_id,
@@ -436,16 +497,16 @@ class RevenueManagementEngine:
                     {
                         "date": day["date"],
                         "type": "price_increase",
-                        "message": f"Yuksek talep, {day['available']} oda musait - fiyat artisi onerilir",
+                        "message": f"Yüksek talep, {day['available']} oda müsait — fiyat artışı önerilir",
                         "potential_revenue": round(day["available"] * adr * 0.2, 2),
                     }
                 )
-            elif day["demand_level"] == "low" and day["available"] > 5:
+            elif day["demand_level"] == "low" and day["available"] > 5 and adr > 0:
                 opportunities.append(
                     {
                         "date": day["date"],
                         "type": "promotion",
-                        "message": f"Dusuk talep, {day['available']} oda bos - promosyon onerilir",
+                        "message": f"Düşük talep, {day['available']} oda boş — promosyon önerilir",
                         "potential_revenue": round(day["available"] * adr * 0.6, 2),
                     }
                 )
@@ -461,6 +522,8 @@ class RevenueManagementEngine:
                 "room_nights_sold": room_nights,
                 "adr": adr,
                 "revpar": revpar,
+                "revenue_basis": "reservation_value",
+                "data_available": room_nights > 0,
             },
             "daily_trend": daily_trend,
             "opportunities": opportunities,
@@ -470,6 +533,11 @@ class RevenueManagementEngine:
 
     async def apply_rate_suggestion(self, tenant_id: str, target_date: str, new_rate: float, user_id: str) -> dict[str, Any]:
         """Apply a suggested rate to the rate plan for a specific date."""
+        target = date.fromisoformat(target_date)
+        if target < date.today():
+            raise ValueError("Geçmiş tarih için fiyat uygulanamaz")
+        if new_rate <= 0:
+            raise ValueError("Fiyat sıfırdan büyük olmalıdır")
         # Store rate override
         override = {
             "id": str(uuid.uuid4()),

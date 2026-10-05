@@ -401,7 +401,9 @@ export default function QuickIdScanDialog({
         {/* Footer actions */}
         <div className="border-t px-5 py-3 flex items-center justify-between bg-gray-50">
           <div className="text-[11px] text-gray-500">
-            {serviceStatus?.available ? 'Servis çevrimiçi' : 'Servis çevrimdışı — lütfen Quick-ID API\'yi başlatın'}
+            {serviceStatus?.available
+              ? (serviceStatus?.mode === 'embedded' ? 'PMS içi kimlik tarama hazır' : 'Quick-ID servisi çevrimiçi')
+              : 'Kimlik tarama kullanılamıyor — OCR sağlayıcı ayarlarını kontrol edin'}
           </div>
           <div className="flex gap-2">
             <Button variant="outline" onClick={onClose} size="sm">{t('cm.components_QuickIdScanDialog.kapat')}</Button>

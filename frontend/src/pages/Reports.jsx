@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 import { normalizeFeatures } from '@/utils/featureFlags';
 import { useTranslation } from 'react-i18next';
+import { useBusinessDate } from '@/hooks/useBusinessDate';
 
 const Reports = ({ user, tenant, onLogout }) => {
   const { t, i18n } = useTranslation();
@@ -37,6 +38,7 @@ const Reports = ({ user, tenant, onLogout }) => {
   const [selectedReports, setSelectedReports] = useState([]);
   const [showSelector, setShowSelector] = useState(false);
   const [activeSection, setActiveSection] = useState('excel'); // 'excel' | 'night_audit'
+  const businessDate = useBusinessDate();
 
   const plan =
     tenant?.subscription_plan ||
@@ -74,6 +76,7 @@ const Reports = ({ user, tenant, onLogout }) => {
       icon: DollarSign,
       endpoint: '/reports/daily-flash/excel',
       needsDateRange: false,
+      singleDateParam: 'date_str',
       description: t('reports.dailyFlashReport')
     },
     {
@@ -104,6 +107,17 @@ const Reports = ({ user, tenant, onLogout }) => {
       description: t('reports.forecastDetailReport')
     },
 
+    // REZERVASYON RAPORLARI
+    {
+      id: 'reservation-performance',
+      name: 'Rezervasyon Performansı',
+      category: 'operational',
+      icon: FileText,
+      endpoint: '/reports/reservation-performance/excel',
+      needsDateRange: true,
+      description: 'Rezervasyon, kanal, iptal/no-show, konaklama süresi ve ayrıntılı rezervasyon listesi'
+    },
+
     // OPERASYON RAPORLARI
     {
       id: 'housekeeping-efficiency',
@@ -121,6 +135,7 @@ const Reports = ({ user, tenant, onLogout }) => {
       icon: Calendar,
       endpoint: '/reports/operations-daily-summary/excel',
       needsDateRange: false,
+      singleDateParam: 'date',
       description: t('reports.operationsDailySummary')
     },
 
@@ -156,8 +171,13 @@ const Reports = ({ user, tenant, onLogout }) => {
     if (report && !selectedReports.find(r => r.id === reportId)) {
       setSelectedReports([...selectedReports, {
         ...report,
-        startDate: new Date(new Date().setMonth(new Date().getMonth() - 1)).toISOString().split('T')[0],
-        endDate: new Date().toISOString().split('T')[0]
+        startDate: (() => {
+          const date = new Date(`${businessDate}T12:00:00`);
+          date.setDate(date.getDate() - 29);
+          return date.toISOString().split('T')[0];
+        })(),
+        endDate: businessDate,
+        reportDate: businessDate
       }]);
     }
     setShowSelector(false);
@@ -181,6 +201,8 @@ const Reports = ({ user, tenant, onLogout }) => {
       // Add date parameters if needed
       if (report.needsDateRange) {
         url += `?start_date=${report.startDate}&end_date=${report.endDate}`;
+      } else if (report.singleDateParam) {
+        url += `?${report.singleDateParam}=${report.reportDate}`;
       }
       
       const response = await axios.get(url, {
@@ -208,72 +230,10 @@ const Reports = ({ user, tenant, onLogout }) => {
       link.download = filename;
       document.body.appendChild(link);
       link.click();
-
-  if (isReportsLite) {
-    return (
-      <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="reports">
-        <div className="p-6 max-w-4xl mx-auto space-y-6">
-          <div>
-            <h1 className="text-2xl font-semibold text-gray-900">Raporlar (PMS Lite)</h1>
-            <p className="mt-1 text-sm text-gray-600">
-              Son 7 ve 30 güne ait doluluk ve ciro özetlerini görebilirsiniz.
-            </p>
-          </div>
-
-          <div className="grid gap-4 md:grid-cols-2">
-            <Card>
-              <CardHeader>
-                <CardTitle>Doluluk (7 Gün)</CardTitle>
-                <CardDescription>Son 7 gün ortalama doluluk oranı</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="text-3xl font-bold text-gray-900">%--</div>
-                <p className="mt-1 text-xs text-gray-500">Bu ekranda özet metrikler gösterilir.</p>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Ciro (7 Gün)</CardTitle>
-                <CardDescription>Son 7 gün toplam oda geliri</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="text-3xl font-bold text-gray-900">₺--</div>
-                <p className="mt-1 text-xs text-gray-500">Detaylı kırılımlar ileride eklenebilir.</p>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Doluluk (30 Gün)</CardTitle>
-                <CardDescription>Son 30 gün ortalama doluluk oranı</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="text-3xl font-bold text-gray-900">%--</div>
-                <p className="mt-1 text-xs text-gray-500">Bu alanda daha fazla detay daha sonra eklenebilir.</p>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Ciro (30 Gün)</CardTitle>
-                <CardDescription>Son 30 gün toplam oda geliri</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="text-3xl font-bold text-gray-900">₺--</div>
-                <p className="mt-1 text-xs text-gray-500">Muhasebe / AR raporları burada gösterilmiyor.</p>
-              </CardContent>
-            </Card>
-          </div>
-        </div>
-      </Layout>
-    );
-  }
-
       document.body.removeChild(link);
       window.URL.revokeObjectURL(downloadUrl);
       
-      toast.success(`${report.name} {t('reports.downloadSuccess')}!`);
+      toast.success(`${report.name} ${t('reports.downloadSuccess')}!`);
     } catch (error) {
       console.error('Failed to download report:', error);
       toast.error(t('reports.downloadFailed'));
@@ -289,6 +249,32 @@ const Reports = ({ user, tenant, onLogout }) => {
       await new Promise(resolve => setTimeout(resolve, 500));
     }
   };
+
+  if (isReportsLite) {
+    return (
+      <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="reports">
+        <div className="p-6 max-w-4xl mx-auto space-y-6">
+          <div>
+            <h1 className="text-2xl font-semibold text-gray-900">Raporlar (PMS Lite)</h1>
+            <p className="mt-1 text-sm text-gray-600">Son 7 ve 30 güne ait doluluk ve ciro özetlerini görebilirsiniz.</p>
+          </div>
+          <div className="grid gap-4 md:grid-cols-2">
+            {[
+              ['Doluluk (7 Gün)', 'Son 7 gün ortalama doluluk oranı', '%--'],
+              ['Ciro (7 Gün)', 'Son 7 gün toplam oda geliri', '—'],
+              ['Doluluk (30 Gün)', 'Son 30 gün ortalama doluluk oranı', '%--'],
+              ['Ciro (30 Gün)', 'Son 30 gün toplam oda geliri', '—'],
+            ].map(([title, description, value]) => (
+              <Card key={title}>
+                <CardHeader><CardTitle>{title}</CardTitle><CardDescription>{description}</CardDescription></CardHeader>
+                <CardContent><div className="text-3xl font-bold text-gray-900">{value}</div></CardContent>
+              </Card>
+            ))}
+          </div>
+        </div>
+      </Layout>
+    );
+  }
 
   return (
     <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="reports">
@@ -450,6 +436,17 @@ const Reports = ({ user, tenant, onLogout }) => {
                                       className="mt-1 h-9"
                                     />
                                   </div>
+                                </div>
+                              )}
+                              {report.singleDateParam && (
+                                <div className="max-w-[12rem]">
+                                  <Label className="text-xs text-gray-600">Rapor Tarihi (PMS İş Günü)</Label>
+                                  <Input
+                                    type="date"
+                                    value={report.reportDate}
+                                    onChange={(e) => updateReportDate(report.id, 'reportDate', e.target.value)}
+                                    className="mt-1 h-9"
+                                  />
                                 </div>
                               )}
                             </div>

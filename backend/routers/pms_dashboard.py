@@ -4,14 +4,19 @@ Dashboard overview, operational alerts, room alternatives.
 """
 
 import asyncio
+import logging
 from datetime import UTC, datetime, timedelta
+from typing import NoReturn
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
+from core.business_date_service import ensure_business_date_initialized
 from core.database import db
 from core.security import get_current_user
 from core.tenant_currency import get_tenant_currency
+from core.transient_db_guard import is_transient_db_error
 from models.schemas import User
+from modules.pms_core.operational_snapshot_service import build_operational_snapshot
 
 try:
     from cache_manager import cached
@@ -25,6 +30,35 @@ except ImportError:
 
 
 router = APIRouter(prefix="/api", tags=["pms"])
+logger = logging.getLogger(__name__)
+
+
+async def _open_business_date(tenant_id: str) -> str:
+    """Return the hotel's authoritative open PMS day for dashboard decisions."""
+    state = await ensure_business_date_initialized(db, tenant_id)
+    business_date = str(state.get("business_date") or "")[:10]
+    if len(business_date) != 10:
+        raise RuntimeError(f"PMS business date is invalid for tenant {tenant_id}")
+    return business_date
+
+
+def _raise_transient_database_unavailable(exc: BaseException) -> NoReturn:
+    """Return an explicit retryable response instead of an unhandled 500.
+
+    Dashboard cards are derived state, so serving stale or fabricated numbers
+    during an Atlas primary election would be worse than asking the client to
+    retry.  The exception stays chained for server diagnostics, while FastAPI
+    treats the outage as a handled 503 rather than a new application defect.
+    """
+    logger.warning("PMS dashboard temporarily unavailable due to database failover: %s", type(exc).__name__)
+    raise HTTPException(
+        status_code=503,
+        detail={
+            "code": "DATABASE_TRANSIENT_UNAVAILABLE",
+            "message": "Veritabanı bağlantısı kısa süreli olarak yenileniyor. Lütfen birkaç saniye sonra tekrar deneyin.",
+        },
+        headers={"Retry-After": "3"},
+    ) from exc
 
 
 # rbac-allow: cache-rbac — operasyonel KPI (occupancy/check-in/guest count) tüm rolelere açık
@@ -51,67 +85,27 @@ async def get_pms_dashboard(current_user: User = Depends(get_current_user)):
         if cached_data:
             return cached_data
 
-    # Fallback: Ultra-fast aggregation — exclude virtual rooms
-    pipeline = [
-        {
-            "$match": {
-                "tenant_id": current_user.tenant_id,
-                "$or": [{"is_virtual": False}, {"is_virtual": {"$exists": False}}],
-            }
-        },
-        {"$group": {"_id": None, "total_rooms": {"$sum": 1}, "occupied_rooms": {"$sum": {"$cond": [{"$eq": ["$status", "occupied"]}, 1, 0]}}}},
-    ]
-
-    room_stats = await db.rooms.aggregate(pipeline).to_list(1)
-    total_rooms = room_stats[0]["total_rooms"] if room_stats else 0
-    physically_occupied = room_stats[0]["occupied_rooms"] if room_stats else 0
-
-    # Count bookings overlapping today using date-only comparison (matches AI briefing).
-    # This avoids tz/format inconsistencies and uses the same logic everywhere.
-    today = datetime.now(UTC).strftime("%Y-%m-%d")
-    bookings_today = await db.bookings.find(
-        {
-            "tenant_id": current_user.tenant_id,
-            "status": {"$in": ["confirmed", "guaranteed", "checked_in"]},
-        },
-        {"_id": 0, "check_in": 1, "check_out": 1, "status": 1},
-    ).to_list(5000)
-
-    booking_occupied = 0
-    today_checkins = 0
-    for b in bookings_today:
-        ci = str(b.get("check_in", ""))[:10]
-        co = str(b.get("check_out", ""))[:10]
-        if ci <= today and co > today:
-            booking_occupied += 1
-        if ci == today:
-            today_checkins += 1
-
-    # Single source of truth: active bookings overlapping today (date-only).
-    # rooms.status='occupied' may drift if housekeeping flow misses an event,
-    # so we trust the booking ledger for KPI cards (matches AI briefing & front desk).
-    occupied_rooms = booking_occupied
-    total_guests = booking_occupied
-    if abs(physically_occupied - booking_occupied) >= 3:
-        import logging as _lg
-
-        _lg.getLogger(__name__).warning(
-            "[OCCUPANCY-DRIFT] tenant=%s rooms.status=occupied=%d but booking_overlap=%d (>=3 fark)",
+    try:
+        business_date = await _open_business_date(current_user.tenant_id)
+        snapshot = await build_operational_snapshot(
             current_user.tenant_id,
-            physically_occupied,
-            booking_occupied,
+            business_date=business_date,
+            database=db,
         )
+    except Exception as exc:
+        if is_transient_db_error(exc):
+            _raise_transient_database_unavailable(exc)
+        raise
 
-    currency_code, currency_symbol = await get_tenant_currency(current_user.tenant_id)
+    try:
+        currency_code, currency_symbol = await get_tenant_currency(current_user.tenant_id)
+    except Exception as exc:
+        if is_transient_db_error(exc):
+            _raise_transient_database_unavailable(exc)
+        raise
 
-    # Ultra-fast response
     result = {
-        "total_rooms": total_rooms,
-        "occupied_rooms": occupied_rooms,
-        "available_rooms": max(0, total_rooms - occupied_rooms),
-        "occupancy_rate": round(min((occupied_rooms / total_rooms * 100), 100.0), 2) if total_rooms > 0 else 0,
-        "today_checkins": today_checkins,
-        "total_guests": total_guests,
+        **snapshot,
         "currency": currency_code,
         "currency_symbol": currency_symbol,
     }
@@ -133,7 +127,7 @@ async def get_pms_dashboard(current_user: User = Depends(get_current_user)):
 async def get_operational_alerts(current_user: User = Depends(get_current_user)):
     """Decision-driven operational intelligence: what needs attention NOW."""
     tenant_id = current_user.tenant_id
-    today = datetime.now(UTC).strftime("%Y-%m-%d")
+    today = await _open_business_date(tenant_id)
 
     # Redis cache (15s TTL) — dashboard ekranı sık yüklendiği için en pahalı çağrıyı sıcak tutar
     cache_key = f"operational_alerts:{tenant_id}"
@@ -168,7 +162,7 @@ async def get_operational_alerts(current_user: User = Depends(get_current_user))
         ).to_list(200),
         db.bookings.find(
             {"tenant_id": tenant_id, "status": "checked_in", "$expr": {"$gt": [{"$subtract": [{"$ifNull": ["$total_amount", 0]}, {"$ifNull": ["$paid_amount", 0]}]}, 0.01]}},
-            {"_id": 0, "id": 1, "guest_name": 1, "room_number": 1, "total_amount": 1, "paid_amount": 1},
+            {"_id": 0, "id": 1, "guest_name": 1, "room_number": 1, "total_amount": 1, "paid_amount": 1, "currency": 1},
         ).to_list(200),
         db.bookings.find(
             {
@@ -177,7 +171,7 @@ async def get_operational_alerts(current_user: User = Depends(get_current_user))
                 "check_out": {"$gte": today, "$lt": today_end},
                 "$expr": {"$gt": [{"$subtract": [{"$ifNull": ["$total_amount", 0]}, {"$ifNull": ["$paid_amount", 0]}]}, 0.01]},
             },
-            {"_id": 0, "id": 1, "guest_name": 1, "room_number": 1, "total_amount": 1, "paid_amount": 1},
+            {"_id": 0, "id": 1, "guest_name": 1, "room_number": 1, "total_amount": 1, "paid_amount": 1, "currency": 1},
         ).to_list(200),
         db.bookings.count_documents({"tenant_id": tenant_id, "status": {"$in": active_statuses}, "check_out": {"$gte": today, "$lt": today_end}}),
         db.bookings.count_documents({"tenant_id": tenant_id, "status": {"$in": active_statuses}, "check_in": {"$lte": today + "T23:59:59"}, "check_out": {"$gt": today}}),
@@ -215,11 +209,14 @@ async def get_operational_alerts(current_user: User = Depends(get_current_user))
     # 2) Pending payments (balance > 0 for checked-in guests)
     pending_payments = []
     total_outstanding = 0
+    outstanding_by_currency: dict[str, float] = {}
     for b in unpaid:
         balance = round((b.get("total_amount", 0) or 0) - (b.get("paid_amount", 0) or 0), 2)
         if balance > 0.01:
+            booking_currency = str(b.get("currency") or currency_code or "TRY").upper()
             total_outstanding += balance
-            pending_payments.append({"booking_id": b["id"], "guest_name": display_guest_name(b.get("guest_name"), b.get("guest_id")), "room_number": str(b.get("room_number", "")), "balance": balance})
+            outstanding_by_currency[booking_currency] = round(outstanding_by_currency.get(booking_currency, 0) + balance, 2)
+            pending_payments.append({"booking_id": b["id"], "guest_name": display_guest_name(b.get("guest_name"), b.get("guest_id")), "room_number": str(b.get("room_number", "")), "balance": balance, "currency": booking_currency})
 
     if pending_payments:
         alerts.append(
@@ -227,9 +224,10 @@ async def get_operational_alerts(current_user: User = Depends(get_current_user))
                 "type": "pending_payments",
                 "severity": "medium",
                 "title": f"{len(pending_payments)} odenmemis hesap",
-                "description": f"Toplam {total_outstanding:,.2f} TL tahsil edilmedi",
+                "description": " · ".join(f"{amount:,.2f} {code}" for code, amount in sorted(outstanding_by_currency.items())) + " tahsil edilmedi",
                 "count": len(pending_payments),
                 "total_amount": round(total_outstanding, 2),
+                "totals_by_currency": outstanding_by_currency,
                 "items": sorted(pending_payments, key=lambda x: -x["balance"])[:5],
                 "action": "payments",
                 "action_label": "Odemelere Git",
@@ -275,7 +273,7 @@ async def get_operational_alerts(current_user: User = Depends(get_current_user))
         dep_items = []
         for d in departures_with_balance:
             bal = round((d.get("total_amount", 0) or 0) - (d.get("paid_amount", 0) or 0), 2)
-            dep_items.append({"booking_id": d["id"], "guest_name": display_guest_name(d.get("guest_name"), d.get("guest_id")), "room_number": str(d.get("room_number", "")), "balance": bal})
+            dep_items.append({"booking_id": d["id"], "guest_name": display_guest_name(d.get("guest_name"), d.get("guest_id")), "room_number": str(d.get("room_number", "")), "balance": bal, "currency": str(d.get("currency") or currency_code or "TRY").upper()})
         alerts.append(
             {
                 "type": "departures_with_balance",
@@ -299,6 +297,7 @@ async def get_operational_alerts(current_user: User = Depends(get_current_user))
             "pending_payments_count": len(pending_payments),
             "vip_arrivals": len(vip_arrivals),
             "total_outstanding": round(total_outstanding, 2),
+            "outstanding_by_currency": outstanding_by_currency,
         },
         "currency": currency_code,
         "currency_symbol": currency_symbol,

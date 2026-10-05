@@ -17,9 +17,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel
 
+from core.business_date_service import stamp_open_business_date
 from core.business_date_transition_guard import enforce_business_date_transition
 from core.cache import cached
 from core.database import db
+from core.report_cache import invalidate_financial_report_caches
 from core.security import get_current_user, security
 from modules.pms_core.role_permission_service import (
     require_module,  # v89 DW
@@ -830,7 +832,9 @@ async def add_folio_charge_mobile(
         "department": department,
     }
 
+    await stamp_open_business_date(db, current_user.tenant_id, charge)
     await db.folio_charges.insert_one(charge)
+    invalidate_financial_report_caches(current_user.tenant_id)
 
     # Update folio balance
     new_balance = folio.get("balance", 0) + total

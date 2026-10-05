@@ -2,8 +2,9 @@
 
 import uuid
 from datetime import UTC, datetime
+from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from models.enums import (
     BookingStatus,
@@ -33,6 +34,7 @@ class BookingCreate(BaseModel):
     children_ages: list[int] = []
     guests_count: int = Field(..., ge=1, le=100)  # Total: adults + children
     total_amount: float = Field(..., ge=0, le=1e12)
+    currency: str = Field(default="TRY", min_length=3, max_length=3, pattern=r"^[A-Za-z]{3}$")
     base_rate: float | None = None  # For override tracking
     apply_occupancy_pricing: bool = False
     pricing_rule_version: str | None = None
@@ -59,6 +61,30 @@ class BookingCreate(BaseModel):
     virtual_card_provided: bool = False
     virtual_card_number: str | None = None
     virtual_card_expiry: str | None = None
+    # Complimentary reservations retain their commercial value for reporting,
+    # while the posted accommodation total is zero.
+    is_complimentary: bool = False
+    complimentary_scope: Literal["accommodation_only", "full"] | None = None
+    complimentary_reason: str | None = Field(None, max_length=500)
+
+    @field_validator("currency")
+    @classmethod
+    def normalize_currency(cls, value: str) -> str:
+        return value.upper()
+
+    @model_validator(mode="after")
+    def validate_complimentary_details(self):
+        if not self.is_complimentary:
+            self.complimentary_scope = None
+            self.complimentary_reason = None
+            return self
+        if self.complimentary_scope not in {"accommodation_only", "full"}:
+            raise ValueError("Komp kapsamı seçilmelidir")
+        reason = (self.complimentary_reason or "").strip()
+        if len(reason) < 3:
+            raise ValueError("Komp gerekçesi en az 3 karakter olmalıdır")
+        self.complimentary_reason = reason
+        return self
 
 
 class BookingBase(BaseModel):
@@ -95,6 +121,7 @@ class Booking(BookingBase):
     children_ages: list[int] = []
     guests_count: int | None = None
     total_amount: float
+    currency: str = Field(default="TRY", min_length=3, max_length=3, pattern=r"^[A-Za-z]{3}$")
     base_rate: float | None = None
     apply_occupancy_pricing: bool = False
     pricing_rule_version: str | None = None
@@ -106,6 +133,11 @@ class Booking(BookingBase):
     channel: ChannelType = ChannelType.DIRECT
     rate_plan: str | None = "Standard"
     special_requests: str | None = None
+
+    @field_validator("currency")
+    @classmethod
+    def normalize_currency(cls, value: str) -> str:
+        return value.upper()
     # Corporate/contracted booking fields
     company_id: str | None = None
     contracted_rate: ContractedRateType | None = None
@@ -124,6 +156,10 @@ class Booking(BookingBase):
     virtual_card_provided: bool = False
     virtual_card_number: str | None = None
     virtual_card_expiry: str | None = None
+    is_complimentary: bool = False
+    complimentary_scope: Literal["accommodation_only", "full"] | None = None
+    complimentary_reason: str | None = None
+    complimentary_original_total: float | None = None
     # System fields
     qr_code: str | None = None
     qr_code_data: str | None = None

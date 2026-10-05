@@ -1,3 +1,4 @@
+import accessCatalog from '@/config/userAccessCatalog.json';
 // Canonical top-level module access helper.
 //
 // Explicit `module_scopes` is authoritative. When the field is absent we use
@@ -13,12 +14,15 @@ export const MODULE_SCOPES = Object.freeze([
   'hr',
   'invoice',
   'maintenance',
+  'multi_property',
   'pos',
   'procurement',
   'reports',
   'sales',
   'stock',
   'tasks',
+  'night_audit',
+  'contact_center',
 ]);
 
 const MODULE_SCOPE_SET = new Set(MODULE_SCOPES);
@@ -27,22 +31,27 @@ const LEGACY_UNSCOPED_SURFACE = '__legacy_unscoped_surface__';
 const ROLE_DEFAULT_MODULE_SCOPES = Object.freeze({
   admin: MODULE_SCOPES,
   supervisor: MODULE_SCOPES,
-  front_desk: ['frontdesk'],
+  front_desk: ['frontdesk', 'cashier', 'night_audit', 'contact_center'],
   housekeeping: ['housekeeping', 'tasks'],
   sales: ['sales', 'reports'],
-  finance: ['cashier', 'finance', 'invoice', 'reports'],
+  // Finance consumes finalized payroll and its accounting export. Backend
+  // already grants VIEW_HR (read-only); keep the route gate aligned so the
+  // payroll screen is reachable while manage_hr mutations remain forbidden.
+  finance: ['cashier', 'finance', 'hr', 'invoice', 'reports', 'night_audit'],
   procurement: ['procurement', 'stock'],
   staff: [],
+  call_center_agent: ['contact_center'],
 });
 
 const COMMON_ROUTE_PATHS = new Set([
+  '/admin/otel-kullanicilari', // Account administration: page + API admin gates, no HR subscription.
   '/app/dashboard',
   '/dashboard-simple',
   '/app/profile',
   '/profile',
 ]);
 
-const COMMON_NAV_KEYS = new Set(['dashboard']);
+const COMMON_NAV_KEYS = new Set(['dashboard', 'tenant_users']);
 
 const EXACT_ROUTE_SCOPES = Object.freeze({
   '/app/pms': ['frontdesk'],
@@ -50,6 +59,7 @@ const EXACT_ROUTE_SCOPES = Object.freeze({
   '/pms-operations': ['frontdesk'],
   '/app/reservation-calendar': ['frontdesk'],
   '/reservation-calendar': ['frontdesk'],
+  '/agency-requests': ['frontdesk'],
   '/walkin': ['frontdesk'],
   '/room-map': ['frontdesk'],
   '/frontdesk/audit-checklist': ['frontdesk'],
@@ -146,6 +156,7 @@ const EXACT_ROUTE_SCOPES = Object.freeze({
   '/minibar': ['pos'],
 
   '/app/tasks': ['tasks'],
+  '/app/multi-property': ['multi_property'],
 });
 
 const PREFIX_ROUTE_SCOPES = Object.freeze([
@@ -153,15 +164,111 @@ const PREFIX_ROUTE_SCOPES = Object.freeze([
   ['/staff/', ['hr']],
 ]);
 
+// Routes outside the main operational workspaces still need an explicit
+// ownership decision.  Keep this policy path-based (rather than falling back
+// to an administrator-only legacy surface) so the route-coverage test can
+// make new, unclassified routes fail in CI.
+//
+// The normal shared/self-service routes are listed in COMMON_ROUTE_PATHS.
+// Every route listed here maps to a real operational scope, so an omitted
+// policy remains visible as the legacy sentinel and fails CI.
+const ROUTE_SCOPE_OVERRIDES = Object.freeze(Object.fromEntries([
+  [['frontdesk'], [
+    '/activities', '/arrival-list', '/departure-list', '/no-show-today',
+    '/online-checkin', '/guest/checkin/:bookingId', '/guest/digital-key/:bookingId',
+    '/guest/upsell/:bookingId', '/app/hotel-network', '/guest-journey',
+    '/housekeeping-mobile-app', '/mobile', '/mobile/frontdesk', '/mobile/gm',
+  ]],
+  [['housekeeping'], ['/housekeeping-mobile-app', '/mobile/housekeeping']],
+  [['maintenance'], ['/mobile/maintenance', '/mobile/maintenance/priority-visual']],
+  [['finance'], [
+    '/trial-balance', '/app/folio-management', '/mobile/finance', '/app/cost-management',
+  ]],
+  [['invoice'], ['/app/konaklama-vergisi']],
+  [['stock'], ['/mobile/inventory']],
+  [['pos'], [
+    '/fnb-complete', '/fnb/beo-generator', '/kitchen-display', '/catering',
+    '/spa-dining-packages', '/spa-wellness', '/app/room-requests',
+    '/mobile/fnb', '/mobile/order-tracking',
+  ]],
+  [['sales'], [
+    '/app/mice', '/app/afsadakat', '/loyalty', '/group-reservations',
+    '/function-space', '/suite-connecting', '/mobile/sales', '/mobile/corporate',
+    '/sales-crm', '/group-sales', '/service-recovery', '/travel-agent-arap',
+    '/app/travel-agent-arap', '/app/incoming-agency-contracts', '/agency-management',
+    '/agency-content', '/b2b-analytics', '/profile-udf', '/app/mailing',
+  ]],
+  [['reports'], [
+    '/app/analitik', '/app/academy', '/app/academy/simulator', '/app/academy-report',
+    '/app/academy-manage', '/app/mevzuat-raporlari', '/analytics-export',
+    '/data-intelligence', '/data-model', '/data-pipeline', '/forecast-reports',
+    '/flash-report', '/hurdle-rates', '/ml-dashboard', '/ml-scheduler',
+    '/predictive-analytics', '/revenue-engine', '/revenue-autopilot',
+    '/revenue-autopilot-v2', '/revenue-autopilot/monitor', '/social-media-radar',
+    '/app/sustainability', '/app/migration-observability', '/mobile/revenue',
+    '/mobile/rates', '/app/ai', '/ai-pms', '/ai-whatsapp-concierge',
+  ]],
+  [['channel_manager'], [
+    '/app/revenue-hub', '/app/rms', '/rms', '/hotelrunner', '/exely',
+    '/integration-observability', '/integration-credentials',
+    '/app/channels', '/mobile/channels', '/rate-manager', '/hr-rate-manager',
+    '/unified-rate-manager', '/central-pricing', '/go-live-readiness',
+    '/room-mapping-wizard', '/reservation-lineage',
+  ]],
+  [['channel_manager', 'invoice'], ['/app/integration-hub']],
+  [['hr'], ['/hrv2-ops', '/staff/:id']],
+  [['contact_center'], [
+    '/app/call-center', '/messaging-center', '/messaging-dashboard', '/ota-messaging-hub',
+  ]],
+  [['multi_property'], [
+    '/multi-property-dashboard', '/central-office', '/cross-property-guests',
+  ]],
+  [['reports'], [
+    '/app/dashboard', '/dashboard-simple', '/app/profile', '/profile', '/app/help',
+    '/app/applications', '/app/onboarding', '/app/module-store', '/module-store',
+    '/app/wbe-settings', '/app/xchange', '/app/compliance/pci', '/features',
+    '/app/admin-control-panel', '/app/admin-hub', '/app/admin/leads',
+    '/app/physical-security', '/app/security', '/security', '/security-center',
+    '/gdpr-compliance', '/encryption-management', '/app/settings', '/settings',
+    '/app/guest-relations', '/app/marketplace', '/marketplace', '/app/academy-manage',
+    '/app/academy-report', '/app/academy/simulator', '/executive', '/golive-dashboard',
+    '/production-golive', '/production-rollout', '/pilot-readiness', '/soak-test',
+    '/incident-dashboard', '/incidents', '/lockdown', '/runtime-cockpit',
+    '/runtime-infrastructure', '/control-plane', '/platform-scaling', '/observability',
+    '/system-health', '/system/performance', '/system/logs', '/system/network',
+    '/event-bus', '/operational-events', '/infra-hardening', '/pii-strict-mode', '/templates',
+    '/encryption-management', '/app/admin-hub', '/admin/otel-kullanicilari',
+    '/admin/tenants', '/admin/agencies', '/admin/autonomous-collection',
+    '/admin/capx-integration', '/admin/early-warning', '/admin/features',
+    '/admin/governance', '/admin/housekeeping', '/admin/integration-credentials',
+    '/admin/integrations-overview', '/admin/module-control', '/admin/module-discovery',
+    '/admin/module-health', '/admin/module-report', '/admin/pos', '/admin/quick-id',
+    '/admin/rnl-auto-resolve-runs', '/admin/rnl-duplicates', '/admin/room-qr-codes',
+    '/admin/site-content', '/admin/urgent-permissions', '/admin/user-roles',
+    '/admin/vendors', '/admin/voice-numbers', '/admin/webhook-outbox',
+    '/b2b/docs', '/central-office', '/control-plane', '/data-model', '/data-pipeline',
+    '/dynamic-pricing', '/encryption-management', '/event-bus', '/executive',
+    '/features', '/folio-routing', '/gdpr-compliance', '/id-photo-admin',
+    '/incident-dashboard', '/infra-hardening', '/integration-credentials',
+    '/kitchen-display', '/ml-scheduler', '/mobile/approvals', '/mobile/logs',
+    '/mobile/security', '/module-store', '/observability', '/operational-events',
+    '/pii-strict-mode', '/platform-scaling', '/production-golive',
+    '/production-rollout', '/runtime-infrastructure', '/security', '/soak-test',
+    '/system-health', '/system/logs', '/system/network', '/system/performance',
+  ]],
+].flatMap(([scopes, paths]) => paths.map((path) => [path, scopes]))));
+
 const NAV_KEY_SCOPES = Object.freeze({
   pms: ['frontdesk'],
   pms_operations: ['frontdesk'],
   reservation_calendar: ['frontdesk'],
+  agency_requests: ['frontdesk'],
   shift_handover: ['frontdesk'],
   early_late_pricing: ['frontdesk'],
   walkin: ['frontdesk'],
   room_map: ['frontdesk'],
   wake_up_calls: ['frontdesk'],
+  transfer_parking: ['frontdesk'],
   housekeeping_status: ['housekeeping'],
   lost_found: ['housekeeping'],
   invoices: ['invoice'],
@@ -189,6 +296,7 @@ const NAV_KEY_SCOPES = Object.freeze({
   agency_content: ['channel_manager'],
   b2b_analytics: ['channel_manager'],
   integration_hub: ['channel_manager', 'invoice'],
+  multi_property: ['multi_property'],
   reports: ['reports'],
   reports_basic: ['reports'],
   report_builder: ['reports'],
@@ -208,6 +316,7 @@ const NAV_KEY_SCOPES = Object.freeze({
 const MODULE_KEY_SCOPES = Object.freeze({
   pms: ['frontdesk'],
   reservation_calendar: ['frontdesk'],
+  agency_requests: ['frontdesk'],
   invoices: ['invoice'],
   channel_manager: ['channel_manager'],
   basic_reporting: ['reports'],
@@ -247,8 +356,18 @@ function roleValue(user) {
   return typeof rawRole === 'string' ? rawRole.trim().toLowerCase() : '';
 }
 
+function hasSuperAdminRole(user) {
+  if (roleValue(user) === 'super_admin') return true;
+  if (!Array.isArray(user?.roles)) return false;
+
+  return user.roles.some((role) => {
+    const value = typeof role === 'string' ? role : role?.value;
+    return typeof value === 'string' && value.trim().toLowerCase() === 'super_admin';
+  });
+}
+
 export function hasExplicitModuleScopes(user) {
-  return !!user && Object.prototype.hasOwnProperty.call(user, 'module_scopes');
+  return !!user && user.module_scopes != null;
 }
 
 export function normalizeModuleScope(scope) {
@@ -262,7 +381,7 @@ export function normalizeModuleScope(scope) {
 export function effectiveModuleScopes(user) {
   if (!user) return [];
   const role = roleValue(user);
-  if (role === 'super_admin') return ['*'];
+  if (hasSuperAdminRole(user)) return ['*'];
 
   if (hasExplicitModuleScopes(user)) {
     if (!Array.isArray(user.module_scopes)) return [];
@@ -283,15 +402,19 @@ export function hasModuleAccess(user, scope) {
 export function hasAnyModuleAccess(user, scopes) {
   if (!Array.isArray(scopes) || scopes.length === 0) return true;
   if (scopes.includes(LEGACY_UNSCOPED_SURFACE)) {
-    return roleValue(user) === 'super_admin' || !hasExplicitModuleScopes(user);
+    return hasSuperAdminRole(user) || (roleValue(user) === 'admin' && !hasExplicitModuleScopes(user));
   }
   return scopes.some((scope) => hasModuleAccess(user, scope));
 }
 
 export function moduleScopesForPath(path) {
   if (typeof path !== 'string' || !path) return [LEGACY_UNSCOPED_SURFACE];
+  const page = accessPageForPath(path);
+  if (page) return [page.module];
   const pathname = path.split('?')[0].split('#')[0];
+  if (['/pms', '/app/pms'].includes(pathname)) return [...new Set(Object.values(PMS_TAB_SCOPES).flat())];
   if (COMMON_ROUTE_PATHS.has(pathname)) return [];
+  if (Object.hasOwn(ROUTE_SCOPE_OVERRIDES, pathname)) return [...ROUTE_SCOPE_OVERRIDES[pathname]];
   if (EXACT_ROUTE_SCOPES[pathname]) return [...EXACT_ROUTE_SCOPES[pathname]];
 
   if (pathname.startsWith('/folio-detail/')) return ['cashier'];
@@ -304,6 +427,7 @@ export function moduleScopesForPath(path) {
 export function moduleScopesForRoute(routeConfig) {
   if (!routeConfig || routeConfig.type === 'public' || routeConfig.type === 'redirect') return [];
   if (Array.isArray(routeConfig.moduleScopes)) {
+    if (routeConfig.moduleScopes.length === 0) return [];
     const scopes = routeConfig.moduleScopes.map(normalizeModuleScope).filter(Boolean);
     return scopes.length ? scopes : [LEGACY_UNSCOPED_SURFACE];
   }
@@ -332,4 +456,51 @@ export function moduleScopesForPmsTab(tabKey) {
 
 export function supplementalModuleNavItems(user) {
   return SUPPLEMENTAL_MODULE_NAV_ITEMS.filter((item) => hasAnyModuleAccess(user, item.moduleScopes));
+}
+
+export function accessPageForPath(path = '') {
+  const url = new URL(path, 'https://pms.invalid');
+  const pathname = url.pathname.replace(/^\/app\/pms$/, '/pms');
+  const tab = url.searchParams.get('tab') || url.hash.slice(1);
+  const canonical = pathname === '/pms' && tab ? `/pms?tab=${tab}` : pathname;
+  return accessCatalog.pages
+    .flatMap(page => page.paths.map(route => ({ page, route })))
+    .filter(({ route }) => canonical === route || (!route.includes('?') && canonical.startsWith(route + '/')))
+    .sort((a, b) => b.route.length - a.route.length)[0]?.page;
+}
+
+export function canAccessPage(user, page) {
+  if (hasSuperAdminRole(user)) return true;
+  if (!page || !hasModuleAccess(user, page.module) || user?.page_access?.[page.key] === false) return false;
+  if (roleValue(user) === 'admin') return true;
+  // /auth/me supplies the effective, server-derived permission set.
+  // An unhydrated user must not gain access merely by possessing a scope.
+  return page.permissions.every(permission => user?.effective_permissions?.includes(permission))
+    && (!page.any_permissions?.length || page.any_permissions.some(permission => user?.effective_permissions?.includes(permission)));
+}
+
+export function canAccessPath(user, path) {
+  if (!user) return false;
+  if (hasSuperAdminRole(user)) return true;
+  const pathname = path.split('?')[0].split('#')[0];
+  if (['/admin/otel-kullanicilari', '/app/settings', '/settings'].includes(pathname)) {
+    return roleValue(user) === 'admin';
+  }
+  const page = accessPageForPath(path);
+  if (page) return canAccessPage(user, page);
+  return hasAnyModuleAccess(user, moduleScopesForPath(path));
+}
+
+export function canAccessNavItem(user, item) {
+  if (!item || item.hidden) return false;
+  if (hasSuperAdminRole(user)) return true;
+  if (item.requireSuperAdmin) return false;
+  if (item.allowedRoles?.length && !item.allowedRoles.includes(roleValue(user))) return false;
+  return canAccessPath(user, item.path || '')
+    && hasAnyModuleAccess(user, moduleScopesForNavItem(item));
+}
+
+export function canAccessPmsTab(user, tab) {
+  const page = accessPageForPath(`/pms?tab=${tab}`);
+  return page ? canAccessPage(user, page) : hasAnyModuleAccess(user, moduleScopesForPmsTab(tab));
 }

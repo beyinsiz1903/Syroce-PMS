@@ -18,7 +18,14 @@ const SelfCheckin = ({ bookingId, onComplete }) => {
     email: '',
     phone: '',
     id_number: '',
-    id_type: 'passport'
+    id_type: 'passport',
+    first_name: '',
+    last_name: '',
+    nationality: '',
+    birth_date: '',
+    gender: '',
+    birth_place: '',
+    document_expiry_date: ''
   });
   const [paymentInfo, setPaymentInfo] = useState({
     card_number: '',
@@ -101,6 +108,13 @@ const SelfCheckin = ({ bookingId, onComplete }) => {
         : doc.document_type === 'passport' ? 'passport'
         : doc.document_type === 'drivers_license' ? 'drivers_license'
         : prev.id_type,
+      first_name: doc.first_name || prev.first_name,
+      last_name: doc.last_name || prev.last_name,
+      nationality: doc.nationality || prev.nationality,
+      birth_date: doc.birth_date || prev.birth_date,
+      gender: doc.gender || prev.gender,
+      birth_place: doc.birth_place || prev.birth_place,
+      document_expiry_date: doc.expiry_date || prev.document_expiry_date,
     }));
     toast.success('Kimlik bilgileri forma aktarıldı');
   };

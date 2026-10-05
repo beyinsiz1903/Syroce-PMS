@@ -30,10 +30,18 @@ const TIER_LABELS = {
 // platform/security switches are derived from the selected plan and remain
 // manageable from the tenant detail screen after creation.
 const OPTIONAL_MODULE_GROUP_IDS = new Set([
+  'optional_workspaces',
   'enterprise',
   'ai',
   'mobile',
   'operations',
+  // These are independently licensed/enabled inside their parent hubs. They
+  // must be selectable during onboarding as well as in the later edit screen.
+  'pms_submodules',
+  'rms_submodules',
+  'channels_submodules',
+  'reports_submodules',
+  'reports_items',
   'addons',
 ]);
 

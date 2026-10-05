@@ -110,6 +110,18 @@ class ReleaseRoomBlockService:
 
                 logging.getLogger("inventory.release_room_block").warning("room_night_locks release failed for block %s: %s", block_id, exc)
 
+            # See CreateRoomBlockService: cached availability must not keep a
+            # released room unavailable for another employee or API worker.
+            try:
+                from cache_manager import cache
+
+                cache.safe_invalidate(tenant_context.tenant_id, "rooms_availability")
+                cache.safe_invalidate(tenant_context.tenant_id, "pms_room_blocks")
+            except Exception:
+                import logging
+
+                logging.getLogger("inventory.release_room_block").warning("Could not invalidate inventory caches for block %s", block_id, exc_info=True)
+
             released_block = {
                 **existing_block,
                 **update_doc,

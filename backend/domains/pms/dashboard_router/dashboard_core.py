@@ -812,21 +812,22 @@ async def get_revenue_expense_chart(
         start = end - timedelta(days=365)
         interval = "monthly"
 
-    # 2 bagimsiz find paralel — N+1 fix
+    # The chart is a financial report: do not silently truncate a busy
+    # property's ledger at an arbitrary row count.
     charges, expenses = await asyncio.gather(
         db.folio_charges.find(
             {
                 "tenant_id": current_user.tenant_id,
-                "voided": False,
-                "date": {"$gte": start.isoformat(), "$lte": end.isoformat()},
+                "voided": {"$ne": True},
+                "date": {"$gte": start.isoformat(), "$lt": end.isoformat()},
             }
-        ).to_list(10000),
+        ).to_list(None),
         db.expenses.find(
             {
                 "tenant_id": current_user.tenant_id,
-                "date": {"$gte": start.isoformat(), "$lte": end.isoformat()},
+                "date": {"$gte": start.isoformat(), "$lt": end.isoformat()},
             }
-        ).to_list(10000),
+        ).to_list(None),
     )
 
     # Group data by interval
@@ -899,21 +900,22 @@ async def get_budget_vs_actual(
 
     # v63 Bug CZ: UTC-aware datetimes (mongo strings may be aware → naive comparison TypeError)
     start = datetime.fromisoformat(f"{month}-01").replace(tzinfo=UTC)
-    # Last day of month
+    # First instant of the following month. Report ranges are half-open so
+    # the final calendar day is fully included without leaking next month.
     if start.month == 12:
-        end = start.replace(year=start.year + 1, month=1, day=1) - timedelta(days=1)
+        end = start.replace(year=start.year + 1, month=1, day=1)
     else:
-        end = start.replace(month=start.month + 1, day=1) - timedelta(days=1)
+        end = start.replace(month=start.month + 1, day=1)
 
     # v95 — Parallel queries with server-side $sum (was 3 sequential to_list(10000) + Python sum)
     import asyncio as _asyncio
 
     tid = current_user.tenant_id
-    date_range = {"$gte": start.isoformat(), "$lte": end.isoformat()}
+    date_range = {"$gte": start.isoformat(), "$lt": end.isoformat()}
 
     # Charges aggregation: total revenue + room-only revenue in single pipeline
     charges_pipeline = [
-        {"$match": {"tenant_id": tid, "voided": False, "date": date_range}},
+        {"$match": {"tenant_id": tid, "voided": {"$ne": True}, "date": date_range}},
         {
             "$group": {
                 "_id": None,
@@ -940,7 +942,12 @@ async def get_budget_vs_actual(
     expenses_q = db.expenses.aggregate(expenses_pipeline).to_list(1)
     rooms_count_q = db.rooms.count_documents({"tenant_id": tid})
     bookings_q = db.bookings.find(
-        {"tenant_id": tid, "status": {"$in": ["checked_in", "checked_out"]}, "check_in": date_range},
+        {
+            "tenant_id": tid,
+            "status": {"$in": ["checked_in", "checked_out"]},
+            "check_in": {"$lt": end.isoformat()},
+            "check_out": {"$gt": start.isoformat()},
+        },
         {"_id": 0, "check_in": 1, "check_out": 1},
     ).to_list(10000)
 
@@ -957,7 +964,7 @@ async def get_budget_vs_actual(
     actual_expense = expenses_agg[0]["total"] if expenses_agg else 0
 
     # Get actual occupancy
-    days_in_month = (end - start).days + 1
+    days_in_month = (end - start).days
     available_room_nights = total_rooms * days_in_month
 
     occupied_room_nights = 0
@@ -972,7 +979,7 @@ async def get_budget_vs_actual(
         check_in = max(ci, start)
         check_out = min(co, end)
         nights = (check_out - check_in).days
-        occupied_room_nights += max(nights, 1)
+        occupied_room_nights += max(nights, 0)
 
     actual_occupancy = round((occupied_room_nights / available_room_nights * 100), 2) if available_room_nights > 0 else 0
 
@@ -1051,19 +1058,21 @@ async def get_monthly_profitability(
     # Window başlangıcı: en eski ayın 1'i (geri months-1 ay)
     win_y, win_m = _shift_month(cur_year, cur_month, -(months - 1))
     window_start = datetime(win_y, win_m, 1, tzinfo=UTC)
+    next_y, next_m = _shift_month(cur_year, cur_month, 1)
+    window_end = datetime(next_y, next_m, 1, tzinfo=UTC)
 
     # Tek seferde charges + expenses (paralel)
     charges_q = db.folio_charges.find(
         {
             "tenant_id": current_user.tenant_id,
-            "voided": False,
-            "date": {"$gte": window_start.isoformat()},
+            "voided": {"$ne": True},
+            "date": {"$gte": window_start.isoformat(), "$lt": window_end.isoformat()},
         }
     ).to_list(100000)
     expenses_q = db.expenses.find(
         {
             "tenant_id": current_user.tenant_id,
-            "date": {"$gte": window_start.isoformat()},
+            "date": {"$gte": window_start.isoformat(), "$lt": window_end.isoformat()},
         }
     ).to_list(100000)
     charges, expenses = await asyncio.gather(charges_q, expenses_q)

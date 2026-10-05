@@ -117,6 +117,11 @@ def _init_sensitive_fields():
 _init_sensitive_fields()
 
 
+def is_sensitive_field(field_name: str) -> bool:
+    """Public field-name check for serializers that apply their own masking."""
+    return str(field_name or "").lower() in _SENSITIVE_FIELDS
+
+
 def sanitize_string(text: str) -> str:
     """Redact sensitive data patterns from a string."""
     for pattern, replacement in _SENSITIVE_PATTERNS:

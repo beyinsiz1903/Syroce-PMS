@@ -179,6 +179,64 @@ async def test_release_rebind_deletes_hold_and_locks():
     assert remaining == 0
 
 
+async def test_release_rebind_recognizes_legacy_hotelrunner_hold():
+    """A provider sync must not make an old hold invisible to promotion.
+
+    Production records created by the historical catch-up path retained the
+    durable hold markers but had ``booking_source=hotelrunner`` and
+    ``status=confirmed``.  The real import then became a duplicate unassigned
+    booking because cleanup only matched the modern booking_source value.
+    """
+    ext = _ext_id()
+    booking_id = str(uuid.uuid4())
+    room_id = str(uuid.uuid4())
+    with tenant_context(TEST_TENANT):
+        await db.bookings.insert_one(
+            {
+                "id": booking_id,
+                "tenant_id": TEST_TENANT,
+                "external_reservation_id": ext,
+                "booking_source": "hotelrunner",
+                "status": "confirmed",
+                "room_id": room_id,
+                "room_number": "208",
+                "source": {"provider": "hotelrunner", "kind": UNMATCHED_HOLD_SOURCE, "hold": True},
+                "is_inventory_hold": True,
+                "allocation_source": UNMATCHED_HOLD_SOURCE,
+            }
+        )
+        await db.room_night_locks.insert_one(
+            {
+                "tenant_id": TEST_TENANT,
+                "room_id": room_id,
+                "night_date": CHECK_IN,
+                "booking_id": booking_id,
+                "lock_type": "booking",
+            }
+        )
+
+    rel = await release_unmatched_reservation_hold(
+        tenant_id=TEST_TENANT,
+        external_id=ext,
+        reason="mapping_resolved",
+        delete_hold=True,
+    )
+
+    assert rel == {
+        "released": True,
+        "booking_id": booking_id,
+        "room_id": room_id,
+        "room_number": "208",
+        "nights_released": 1,
+        "deleted": True,
+    }
+    with tenant_context(TEST_TENANT):
+        assert await db.bookings.find_one({"id": booking_id, "tenant_id": TEST_TENANT}) is None
+        assert await db.room_night_locks.count_documents(
+            {"tenant_id": TEST_TENANT, "booking_id": booking_id}
+        ) == 0
+
+
 async def test_release_cancel_marks_cancelled_and_frees_locks():
     ext = _ext_id()
     created = await create_unmatched_reservation_hold(
@@ -264,6 +322,54 @@ async def test_sentinel_locks_do_not_reduce_real_room_type_availability():
     assert deluxe_after["sellable"] == 2
     assert deluxe_after["locked_booking"] == 0
     assert deluxe_after["locked_hold"] == 0
+
+
+async def test_legacy_room_without_is_active_is_sellable_inventory():
+    """Pre-is_active room records must not disappear from channel inventory."""
+    from core.room_type_inventory_service import compute_room_type_inventory
+
+    with tenant_context(TEST_TENANT):
+        await db.rooms.insert_one({
+            "id": str(uuid.uuid4()),
+            "tenant_id": TEST_TENANT,
+            "room_type": "LEGACY_STANDARD",
+            # Intentionally no is_active field: this is the legacy shape.
+        })
+
+    inventory = await compute_room_type_inventory(TEST_TENANT, "2031-03-12")
+    legacy = next((row for row in inventory if row["room_type"] == "LEGACY_STANDARD"), None)
+    assert legacy is not None
+    assert legacy["physical_total"] == 1
+    assert legacy["sellable"] == 1
+
+
+@pytest.mark.asyncio
+async def test_virtual_room_is_excluded_from_channel_inventory():
+    """A virtual routing room must not inflate a physical room-type total."""
+    from core.room_type_inventory_service import compute_room_type_inventory
+
+    with tenant_context(TEST_TENANT):
+        await db.rooms.insert_many([
+            {
+                "id": str(uuid.uuid4()),
+                "tenant_id": TEST_TENANT,
+                "room_type": "VIRTUAL_TEST_STANDARD",
+                "is_active": True,
+            },
+            {
+                "id": str(uuid.uuid4()),
+                "tenant_id": TEST_TENANT,
+                "room_type": "VIRTUAL_TEST_STANDARD",
+                "is_active": True,
+                "is_virtual": True,
+            },
+        ])
+
+    inventory = await compute_room_type_inventory(TEST_TENANT, "2031-03-13")
+    standard = next((row for row in inventory if row["room_type"] == "VIRTUAL_TEST_STANDARD"), None)
+    assert standard is not None
+    assert standard["physical_total"] == 1
+    assert standard["sellable"] == 1
 
 @pytest.mark.asyncio
 async def test_check_booking_source_exists_tenant_isolation():

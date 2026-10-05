@@ -365,14 +365,32 @@ async def test_initialize_chart_of_accounts_is_tenant_scoped_and_idempotent(_pat
     first = await gl.initialize_chart_of_accounts(current_user=_user("finance"))
     second = await gl.initialize_chart_of_accounts(current_user=_user("finance"))
 
-    assert first == {"created": 24, "total": 24, "payroll_mapping_created": True}
-    assert second == {"created": 0, "total": 24, "payroll_mapping_created": False}
-    assert len(_patch.gl_accounts.docs) == 24
+    assert first == {"created": 26, "total": 26, "payroll_mapping_created": True}
+    assert second == {"created": 0, "total": 26, "payroll_mapping_created": False}
+    assert len(_patch.gl_accounts.docs) == 26
     assert next(row for row in _patch.gl_accounts.docs if row["code"] == "257")["normal_balance"] == "credit"
     assert next(row for row in _patch.gl_accounts.docs if row["code"] == "591")["normal_balance"] == "debit"
     assert next(row for row in _patch.gl_accounts.docs if row["code"] == "102")["monetary"] is True
     assert _patch.payroll_gl_mapping.docs[0]["withholding_payable_code"] == "360"
     assert {row["tenant_id"] for row in _patch.gl_accounts.docs} == {TENANT}
+    mapping = _patch.payroll_gl_mapping.docs[0]
+    assert mapping["sgk_payable_code"] == "361"
+    assert mapping["advance_receivable_code"] == "196"
+    assert mapping["employer_expense_code"] == "770"
+    assert mapping["other_deductions_code"] == "336"
+
+
+async def test_chart_completion_preserves_custom_payroll_accounts_and_mapping(_patch):
+    await _mk_account("196", "Özel Personel Avansı", "asset")
+    await _mk_account("361", "Özel SGK", "liability")
+    mapping = {"tenant_id": TENANT, "wage_expense_code": "770.01"}
+    _patch.payroll_gl_mapping.docs.append(dict(mapping))
+
+    await gl.initialize_chart_of_accounts(current_user=_user("finance"))
+
+    assert next(row for row in _patch.gl_accounts.docs if row["code"] == "196")["name"] == "Özel Personel Avansı"
+    assert next(row for row in _patch.gl_accounts.docs if row["code"] == "361")["name"] == "Özel SGK"
+    assert _patch.payroll_gl_mapping.docs == [mapping]
 
 
 async def test_initialize_chart_of_accounts_denies_front_desk(_patch):
@@ -716,6 +734,34 @@ async def test_reversal_is_single_and_idempotent(_patch):
             current_user=_user("finance"),
         )
     assert exc.value.status_code == 409
+
+
+async def test_reversal_date_cannot_precede_source_entry(_patch):
+    await _seed_basic_coa()
+    original = await gl.create_journal(
+        _journal(
+            [{"account_code": "100", "debit": 10}, {"account_code": "600", "credit": 10}],
+            date="2026-06-15",
+        ),
+        current_user=_user("finance"),
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        await gl.reverse_journal(
+            original["entry"]["id"],
+            gl.JournalReversalIn(
+                date="2026-06-14",
+                reason="Kaynak fişten önce ters kayıt denemesi",
+                idempotency_key="reverse-before-source-date",
+            ),
+            current_user=_user("finance"),
+        )
+
+    assert exc.value.status_code == 400
+    assert "kaynak fiş tarihinden" in exc.value.detail
+    assert await _patch.gl_journal_entries.find_one(
+        {"reverses_entry_id": original["entry"]["id"]}
+    ) is None
 
 
 async def test_reversal_date_must_be_in_open_period(_patch):
@@ -1421,6 +1467,7 @@ async def test_voucher_requires_maker_checker_before_posting(_patch):
     created = await gl.create_voucher(_voucher_payload(), current_user=maker)
     voucher = created["voucher"]
     assert voucher["status"] == "draft"
+    assert voucher["setup_idempotency_key"] == f"manual:{voucher['id']}"
     assert _patch.gl_journal_entries.docs == []
 
     submitted = await gl.submit_voucher(
@@ -1456,6 +1503,66 @@ async def test_voucher_requires_maker_checker_before_posting(_patch):
     assert replay["already_posted"] is True
     assert replay["entry"]["id"] == posted["entry"]["id"]
     assert len(_patch.gl_journal_entries.docs) == 1
+    assert [event["action"] for event in posted["voucher"]["history"]] == [
+        "created", "submitted", "approved", "posting", "posted",
+    ]
+
+
+async def test_voucher_post_failure_is_returned_to_approved_and_audited(_patch, monkeypatch):
+    await _seed_basic_coa()
+    maker = _user("finance", user_id="maker")
+    approver = _user("finance", user_id="approver")
+    voucher = (await gl.create_voucher(_voucher_payload(), current_user=maker))["voucher"]
+    await gl.submit_voucher(
+        voucher["id"],
+        gl.VoucherActionIn(reason="İncelemeye sunuldu"),
+        current_user=maker,
+    )
+    await gl.approve_voucher(
+        voucher["id"],
+        gl.VoucherActionIn(reason="Belge doğrulandı"),
+        current_user=approver,
+    )
+
+    async def _posting_failure(*_args, **_kwargs):
+        raise gl.GLPostingError("Sıra numarası kesinleşmedi")
+
+    monkeypatch.setattr(gl, "post_journal_entry", _posting_failure)
+    with pytest.raises(HTTPException) as exc:
+        await gl.post_approved_voucher(voucher["id"], current_user=approver)
+    assert exc.value.status_code == 409
+
+    current = (await gl.get_voucher(voucher["id"], current_user=approver))["voucher"]
+    assert current["status"] == "approved"
+    assert current["last_post_error"] == "Sıra numarası kesinleşmedi"
+    history = current["history"][-1]
+    assert history["by"] == "approver"
+    assert history["action"] == "post_failed"
+    assert history["status"] == "approved"
+    assert history["reason"] == "Sıra numarası kesinleşmedi"
+    assert history["at"]
+
+
+async def test_voucher_rejects_unknown_accounts_before_entering_workflow(_patch):
+    await _seed_basic_coa()
+
+    with pytest.raises(HTTPException) as exc:
+        await gl.create_voucher(
+            gl.VoucherCreateIn(
+                date="2026-08-10",
+                voucher_type="mahsup",
+                memo="Geçersiz hesap doğrulaması",
+                lines=[
+                    gl.JournalLineIn(account_code="999 Geçersiz Hesap", debit=1),
+                    gl.JournalLineIn(account_code="600", credit=1),
+                ],
+            ),
+            current_user=_user("finance"),
+        )
+
+    assert exc.value.status_code == 409
+    assert "999 Geçersiz Hesap" in exc.value.detail
+    assert _patch.gl_vouchers.docs == []
 
 
 async def test_voucher_numbers_are_monotonic_and_cancelled_numbers_remain_auditable(_patch):
@@ -1476,6 +1583,47 @@ async def test_voucher_numbers_are_monotonic_and_cancelled_numbers_remain_audita
     cancelled = await gl.get_voucher(first["id"], current_user=maker)
     assert cancelled["voucher"]["status"] == "cancelled"
     assert cancelled["voucher"]["voucher_no"] == "MF-2026-00000001"
+
+
+async def test_voucher_counter_repairs_legacy_counter_without_tenant_metadata(_patch):
+    """A pre-tenant counter must continue from its existing ordinal.
+
+    Querying it with both `_id` and `tenant_id` would miss the legacy document
+    and cause Mongo's upsert to fail on the already occupied `_id`.
+    """
+    await _seed_basic_coa()
+    legacy_id = f"gl-voucher-counter:{TENANT}:2026"
+    _patch.gl_counters.docs.append({"_id": legacy_id, "value": 1})
+
+    created = await gl.create_voucher(_voucher_payload(date="2026-02-01"), current_user=_user("finance"))
+
+    assert created["voucher"]["voucher_no"] == "MF-2026-00000002"
+    repaired = _patch.gl_counters.docs[0]
+    assert repaired["tenant_id"] == TENANT
+    assert repaired["fiscal_year"] == 2026
+    assert repaired["counter_type"] == "voucher"
+
+
+async def test_foreign_currency_voucher_can_be_created(_patch):
+    await _seed_basic_coa()
+
+    created = await gl.create_voucher(
+        gl.VoucherCreateIn(
+            date="2026-09-03",
+            voucher_type="mahsup",
+            memo="USD fiş oluşturma denetimi",
+            lines=[
+                gl.JournalLineIn(account_code="100", debit=4000, currency="USD", foreign_amount=100, exchange_rate=40),
+                gl.JournalLineIn(account_code="600", credit=4000, currency="USD", foreign_amount=100, exchange_rate=40),
+            ],
+        ),
+        current_user=_user("finance"),
+    )
+
+    assert created["voucher"]["status"] == "draft"
+    assert created["voucher"]["total_debit"] == 4000.0
+    assert created["voucher"]["lines"][0]["currency"] == "USD"
+    assert created["voucher"]["lines"][0]["foreign_amount"] == 100.0
 
 
 async def test_rejected_voucher_can_be_revised_with_optimistic_version(_patch):

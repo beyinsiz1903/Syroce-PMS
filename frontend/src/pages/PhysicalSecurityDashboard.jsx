@@ -252,7 +252,7 @@ const PhysicalSecurityDashboard = ({ user, tenant, onLogout, embedded = false })
                             {log.access_decision === 'granted' ? 'Kabul' : 'Red'}
                           </span>
                         </div>
-                        <p className="text-xs text-gray-500 mt-1">Kullanıcı ID: {log.guest_id || 'Bilinmiyor'}</p>
+                        <p className="text-xs text-gray-500 mt-1">Misafir kaydı: {log.guest_name || 'Mevcut'}</p>
                         {log.denial_reason && (
                           <p className="text-xs text-red-500 mt-1" role="alert">Sebep: {log.denial_reason}</p>
                         )}

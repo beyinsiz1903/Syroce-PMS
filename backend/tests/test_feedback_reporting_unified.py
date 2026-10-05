@@ -17,12 +17,12 @@ import pytest
 
 from modules.guest_journey import feedback_reporting_service as fr
 
-
 # ── Sahte DB altyapısı ──────────────────────────────────────────
 
 class _Cursor:
-    def __init__(self, docs):
+    def __init__(self, docs, limits=None):
         self._docs = list(docs)
+        self._limits = limits
 
     def sort(self, *a, **k):
         return self
@@ -31,6 +31,8 @@ class _Cursor:
         return self
 
     async def to_list(self, *a, **k):
+        if self._limits is not None:
+            self._limits.append(k.get("length", a[0] if a else None))
         return list(self._docs)
 
 
@@ -42,14 +44,15 @@ class _FindColl:
         self._aggregate_rows = aggregate_rows or []
         self.find_queries = []
         self.aggregate_pipelines = []
+        self.to_list_limits = []
 
     def find(self, query=None, projection=None, *a, **k):
         self.find_queries.append(query)
-        return _Cursor(self._find_docs)
+        return _Cursor(self._find_docs, self.to_list_limits)
 
     def aggregate(self, pipeline, *a, **k):
         self.aggregate_pipelines.append(pipeline)
-        return _Cursor(self._aggregate_rows)
+        return _Cursor(self._aggregate_rows, self.to_list_limits)
 
 
 def _db(**colls):
@@ -168,6 +171,7 @@ async def test_compute_nps_score_matches_legacy_formula(monkeypatch):
     assert out["detractors"] == 2
     assert out["total_responses"] == 10
     assert out["period_days"] == 30
+    assert db.nps_surveys.to_list_limits == [None]
 
 
 @pytest.mark.asyncio

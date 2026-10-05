@@ -60,6 +60,27 @@ async def test_overbooking_excludes_booking_being_modified(machine, monkeypatch)
     assert query["id"] == {"$ne": "booking-1"}
 
 
+@pytest.mark.asyncio
+async def test_overbooking_treats_same_day_checkout_as_available(machine, monkeypatch):
+    """Adjacent hotel nights share a boundary but do not overlap."""
+    cursor = MagicMock()
+    cursor.to_list = AsyncMock(return_value=[])
+    bookings = _collection()
+    bookings.find = MagicMock(return_value=cursor)
+    monkeypatch.setattr(state_module, "db", _db(bookings=bookings))
+
+    await machine.check_overbooking(
+        "tenant-1",
+        "room-1",
+        "2026-09-20T14:00:00+03:00",
+        "2026-09-21T12:00:00+03:00",
+    )
+
+    query = bookings.find.call_args.args[0]
+    assert query["check_in"] == {"$lt": "2026-09-21T12:00:00+03:00"}
+    assert query["check_out"] == {"$gt": "2026-09-20T14:00:00+03:00"}
+
+
 @pytest.mark.parametrize("status", sorted(state_module.NON_CANCELLABLE_STATES))
 @pytest.mark.asyncio
 async def test_cancellation_rejects_terminal_or_occupied_states(machine, monkeypatch, status):

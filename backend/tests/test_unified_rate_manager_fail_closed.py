@@ -5,24 +5,121 @@ import pytest
 from fastapi import HTTPException
 
 from domains.channel_manager import unified_rate_manager_router as rate_router
+from domains.channel_manager import channel_connections_router as connections_router
+
+
+@pytest.mark.asyncio
+async def test_detect_provider_exposes_agency_distribution_without_ota(monkeypatch):
+    fake_db = SimpleNamespace(
+        agencies=SimpleNamespace(count_documents=AsyncMock(return_value=2)),
+        rooms=SimpleNamespace(distinct=AsyncMock(return_value=["Standard", "Suite"])),
+    )
+    monkeypatch.setattr(rate_router, "db", fake_db)
+    monkeypatch.setattr(
+        rate_router,
+        "_detect_active_provider",
+        AsyncMock(return_value={"provider": None, "connection": {}, "configuration_error": None}),
+    )
+    monkeypatch.setattr(
+        rate_router,
+        "_active_agency_docs_for_tenant",
+        AsyncMock(return_value=[{"id": "agency-1"}, {"id": "agency-2"}]),
+    )
+
+    result = await rate_router.detect_provider(SimpleNamespace(tenant_id="tenant-test"))
+
+    assert result["provider"] == "agency"
+    assert result["provider_name"] == "Acente Dağıtımı"
+    assert result["room_count"] == 2
+    assert result["has_connection"] is False
+
+
+@pytest.mark.asyncio
+async def test_detect_provider_stays_fail_closed_for_configuration_error(monkeypatch):
+    fake_db = SimpleNamespace(agencies=SimpleNamespace(count_documents=AsyncMock(return_value=2)))
+    monkeypatch.setattr(rate_router, "db", fake_db)
+    monkeypatch.setattr(
+        rate_router,
+        "_detect_active_provider",
+        AsyncMock(return_value={"provider": None, "connection": {}, "configuration_error": "multiple_active_providers"}),
+    )
+    monkeypatch.setattr(
+        rate_router,
+        "_active_agency_docs_for_tenant",
+        AsyncMock(return_value=[{"id": "agency-1"}, {"id": "agency-2"}]),
+    )
+
+    result = await rate_router.detect_provider(SimpleNamespace(tenant_id="tenant-test"))
+
+    assert result["provider"] is None
+    assert result["configuration_error"] == "multiple_active_providers"
+
+
+@pytest.mark.asyncio
+async def test_standalone_agency_update_does_not_require_channel_target(monkeypatch):
+    rate_calendar = SimpleNamespace(bulk_write=AsyncMock())
+    fake_db = MagicMock()
+    fake_db.__getitem__.return_value = rate_calendar
+    monkeypatch.setattr(rate_router, "db", fake_db)
+    monkeypatch.setattr(
+        rate_router,
+        "_detect_active_provider",
+        AsyncMock(return_value={"provider": None, "connection": {}, "configuration_error": None}),
+    )
+    monkeypatch.setattr(
+        rate_router,
+        "_active_agency_docs_for_tenant",
+        AsyncMock(return_value=[{"id": "agency-1", "name": "Test Agency"}]),
+    )
+    push = AsyncMock(return_value=1)
+    monkeypatch.setattr(rate_router, "_push_to_agencies", push)
+
+    request = rate_router.UnifiedBulkUpdateRequest(
+        selections=[rate_router.RoomTypeSelection(room_type_code="Cave Suite", rate_plan_codes=["AGENCY"])],
+        start_date="2026-10-15",
+        end_date="2026-10-15",
+        rate=5432,
+        availability=4,
+        update_fields=["rate", "availability"],
+        agency_ids=["agency-1"],
+    )
+
+    result = await rate_router.unified_bulk_grid_update(
+        request,
+        current_user=SimpleNamespace(tenant_id="tenant-test", id="user-test"),
+        _perm=None,
+    )
+
+    assert result["provider"] == "agency"
+    assert result["saved"] == 1
+    assert result["agency_push_count"] == 1
+    rate_calendar.bulk_write.assert_awaited_once()
+    push.assert_awaited_once()
 
 
 @pytest.mark.asyncio
 async def test_runtime_kill_switch_blocks_before_local_or_provider_write(monkeypatch):
-    hotelrunner_connections = SimpleNamespace(
-        find_one=AsyncMock(return_value={"tenant_id": "tenant-test", "is_active": True}),
-    )
-    exely_connections = SimpleNamespace(find_one=AsyncMock(return_value=None))
-    fake_db = SimpleNamespace(
-        hotelrunner_connections=hotelrunner_connections,
-        exely_connections=exely_connections,
-    )
+    fake_db = SimpleNamespace()
     monkeypatch.setattr(rate_router, "db", fake_db)
-    monkeypatch.setattr(rate_router, "_tenant_configured_provider", AsyncMock(return_value="hotelrunner"))
+    monkeypatch.setattr(
+        rate_router,
+        "_detect_active_provider",
+        AsyncMock(
+            return_value={
+                "provider": "hotelrunner",
+                "connection": {"tenant_id": "tenant-test", "is_active": True},
+            }
+        ),
+    )
     monkeypatch.setattr(
         rate_router,
         "hotelrunner_ari_write_block_reason",
         MagicMock(return_value="HOTELRUNNER_ARI_WRITE_KILL_SWITCH_ACTIVE"),
+    )
+    monkeypatch.setattr(
+        rate_router,
+        "_validated_hotelrunner_channel_codes",
+        AsyncMock(return_value=["bookingcom"]),
     )
 
     request = rate_router.UnifiedBulkUpdateRequest(
@@ -32,6 +129,7 @@ async def test_runtime_kill_switch_blocks_before_local_or_provider_write(monkeyp
         end_date="2026-08-14",
         availability=1,
         update_fields=["availability"],
+        channel_codes=["bookingcom"],
     )
 
     with pytest.raises(HTTPException) as exc_info:
@@ -51,6 +149,47 @@ async def test_runtime_kill_switch_blocks_before_local_or_provider_write(monkeyp
     assert not hasattr(fake_db, "hr_rate_calendar")
 
 
+@pytest.mark.asyncio
+async def test_selected_hotelrunner_channels_are_canonicalised_from_connection(monkeypatch):
+    fake_db = SimpleNamespace(
+        hotelrunner_connections=SimpleNamespace(find_one=AsyncMock(return_value={"is_active": True}))
+    )
+    monkeypatch.setattr(rate_router, "db", fake_db)
+    monkeypatch.setattr(
+        connections_router,
+        "_load_active_hotelrunner_channels",
+        AsyncMock(return_value=([
+            {"code": "bookingcom", "name": "Booking.com"},
+            {"code": "expedia", "name": "Expedia"},
+        ], False, "2026-10-02T00:00:00Z")),
+    )
+
+    result = await rate_router._validated_hotelrunner_channel_codes(
+        "tenant-test", [" BOOKINGCOM ", "expedia", "bookingcom"]
+    )
+
+    assert result == ["bookingcom", "expedia"]
+
+
+@pytest.mark.asyncio
+async def test_selected_hotelrunner_channel_fails_closed_when_connection_list_is_stale(monkeypatch):
+    fake_db = SimpleNamespace(
+        hotelrunner_connections=SimpleNamespace(find_one=AsyncMock(return_value={"is_active": True}))
+    )
+    monkeypatch.setattr(rate_router, "db", fake_db)
+    monkeypatch.setattr(
+        connections_router,
+        "_load_active_hotelrunner_channels",
+        AsyncMock(return_value=([], True, None)),
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await rate_router._validated_hotelrunner_channel_codes("tenant-test", ["bookingcom"])
+
+    assert exc_info.value.status_code == 409
+    assert exc_info.value.detail["error_code"] == "CHANNEL_LIST_STALE"
+
+
 def test_scheduled_delivery_is_not_provider_verified():
     summary = rate_router._provider_delivery_summary([{"provider": "hotelrunner", "delivery_state": "SCHEDULED", "task_count": 1}])
 
@@ -59,3 +198,30 @@ def test_scheduled_delivery_is_not_provider_verified():
         "provider_delivery_state": "SCHEDULED",
         "provider_write_count": None,
     }
+
+
+def test_confirmed_delivery_is_reported_as_provider_verified():
+    summary = rate_router._provider_delivery_summary(
+        [
+            {
+                "provider": "exely",
+                "delivery_state": "CONFIRMED",
+                "task_count": 2,
+                "provider_verified": True,
+                "provider_write_count": 1,
+            }
+        ]
+    )
+
+    assert summary == {
+        "provider_verified": True,
+        "provider_delivery_state": "CONFIRMED",
+        "provider_write_count": 1,
+    }
+
+
+def test_selected_days_are_merged_without_including_gaps():
+    assert rate_router._selected_date_ranges("2026-11-01", "2026-11-10", {1, 2, 3, 4, 5}) == [
+        ("2026-11-02", "2026-11-06"),
+        ("2026-11-09", "2026-11-10"),
+    ]

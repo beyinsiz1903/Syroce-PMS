@@ -30,6 +30,7 @@ async def enqueue_exely_ari_update(
     cta: bool | None = None,
     ctd: bool | None = None,
     actor_id: str | None = None,
+    force_resend_token: str | None = None,
 ) -> dict[str, Any]:
     runtime_block = ari_write_block_reason()
     if runtime_block:
@@ -55,6 +56,11 @@ async def enqueue_exely_ari_update(
     for event_type, operation, value, payload in operations:
         if value is None:
             continue
+        event_payload = {"operation": operation, **payload}
+        if force_resend_token:
+            # An explicit operator submission must be deliverable even when
+            # its business value matches a recently acknowledged update.
+            event_payload["force_resend_token"] = force_resend_token
         event = ARIChangeEvent(
             tenant_id=tenant_id,
             property_id=property_id,
@@ -64,7 +70,7 @@ async def enqueue_exely_ari_update(
             rate_plan_code=rate_plan_code,
             date_from=date.fromisoformat(start_date),
             date_to=date.fromisoformat(end_date),
-            payload={"operation": operation, **payload},
+            payload=event_payload,
             actor_id=actor_id,
             target_provider="exely",
         )

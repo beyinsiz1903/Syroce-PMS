@@ -3,6 +3,7 @@ guest_menu.py
 
 Public endpoints for the QR Digital Menu and Ordering System.
 """
+
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -11,9 +12,11 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from core.database import db
+from core.tenant_currency import get_tenant_currency
 from domains.pms.pos_fnb_router.pos_core import _auto_kds_and_kot, _ensure_adisyon_counter_index, _get_pos_business_date, _next_adisyon_number
 
 router = APIRouter(tags=["guest_menu"])
+
 
 class GuestOrderRequest(BaseModel):
     table_id: str
@@ -21,20 +24,22 @@ class GuestOrderRequest(BaseModel):
     guest_name: str | None = None
     notes: str | None = None
 
+
 @router.get("/public/fnb/{tenant_id}/{outlet_id}/menu")
 async def get_guest_menu(tenant_id: str, outlet_id: str):
     """Get active menu categories and items for the guest."""
 
-    items = await db.pos_menu_items.find({
-        "tenant_id": tenant_id,
-        "is_active": True
-    }, {"_id": 0}).to_list(1000)
+    items = await db.pos_menu_items.find({"tenant_id": tenant_id, "is_active": True}, {"_id": 0}).to_list(1000)
+
+    tenant_currency, _ = await get_tenant_currency(tenant_id)
+    tenant_currency = str(tenant_currency or "TRY").upper()
 
     if not items:
-        return {"categories": []}
+        return {"categories": [], "currency": tenant_currency}
 
     categories = {}
     for item in items:
+        item["currency"] = str(item.get("currency") or tenant_currency).upper()
         cat_name = item.get("category", "Diğer")
         if cat_name not in categories:
             categories[cat_name] = []
@@ -42,12 +47,9 @@ async def get_guest_menu(tenant_id: str, outlet_id: str):
 
     result = []
     for cat_name, cat_items in categories.items():
-        result.append({
-            "name": cat_name,
-            "items": cat_items
-        })
+        result.append({"name": cat_name, "items": cat_items})
 
-    return {"categories": result}
+    return {"categories": result, "currency": tenant_currency}
 
 
 @router.post("/public/fnb/{tenant_id}/{outlet_id}/order")
@@ -59,15 +61,15 @@ async def place_guest_order(tenant_id: str, outlet_id: str, req: GuestOrderReque
 
     # 1. Fetch items to calculate prices
     item_ids = [it["item_id"] for it in req.items]
-    db_items = await db.pos_menu_items.find({
-        "tenant_id": tenant_id,
-        "id": {"$in": item_ids}
-    }).to_list(1000)
+    db_items = await db.pos_menu_items.find({"tenant_id": tenant_id, "id": {"$in": item_ids}}).to_list(1000)
 
     db_items_map = {str(it["id"]): it for it in db_items}
 
+    tenant_currency, _ = await get_tenant_currency(tenant_id)
+    tenant_currency = str(tenant_currency or "TRY").upper()
     order_items = []
     total_amount = 0.0
+    order_currencies: set[str] = set()
 
     for it in req.items:
         db_item = db_items_map.get(str(it["item_id"]))
@@ -77,20 +79,31 @@ async def place_guest_order(tenant_id: str, outlet_id: str, req: GuestOrderReque
         qty = float(it.get("quantity", 1))
         price = float(db_item.get("unit_price", 0))
         total_price = qty * price
+        item_currency = str(db_item.get("currency") or tenant_currency).upper()
+        order_currencies.add(item_currency)
 
-        order_items.append({
-            "item_id": db_item["id"],
-            "item_name": db_item["item_name"],
-            "category": db_item.get("category", "Diğer"),
-            "quantity": qty,
-            "unit_price": price,
-            "total_price": total_price,
-            "notes": it.get("notes", "")
-        })
+        order_items.append(
+            {
+                "item_id": db_item["id"],
+                "item_name": db_item["item_name"],
+                "category": db_item.get("category", "Diğer"),
+                "quantity": qty,
+                "unit_price": price,
+                "total_price": total_price,
+                "currency": item_currency,
+                "notes": it.get("notes", ""),
+            }
+        )
         total_amount += total_price
 
     if not order_items:
         raise HTTPException(status_code=400, detail="Sipariş kalemi bulunamadı veya geçersiz")
+    if len(order_currencies) > 1:
+        raise HTTPException(
+            status_code=400,
+            detail="Farklı para birimlerindeki ürünler aynı siparişte birleştirilemez",
+        )
+    order_currency = next(iter(order_currencies), tenant_currency)
 
     business_date = await _get_pos_business_date(tenant_id)
     await _ensure_adisyon_counter_index()
@@ -106,11 +119,11 @@ async def place_guest_order(tenant_id: str, outlet_id: str, req: GuestOrderReque
         "status": "pending",  # Pending staff approval/closure
         "items": order_items,
         "total_amount": total_amount,
-        "currency": "TRY",
+        "currency": order_currency,
         "business_date": business_date,
         "ordered_at": datetime.now(UTC).isoformat(),
         "adisyon_no": adisyon_no,
-        "notes": req.notes
+        "notes": req.notes,
     }
 
     # Atomicity could be improved, but this is a guest facing non-financial draft order
@@ -118,6 +131,7 @@ async def place_guest_order(tenant_id: str, outlet_id: str, req: GuestOrderReque
 
     # Send to KDS/Kitchen
     try:
+
         class DummyOrder:
             id = order_doc["id"]
             items = order_items
@@ -132,8 +146,4 @@ async def place_guest_order(tenant_id: str, outlet_id: str, req: GuestOrderReque
     # Cleanup _id just in case
     order_doc.pop("_id", None)
 
-    return {
-        "success": True,
-        "message": "Siparişiniz mutfağa iletildi.",
-        "order_id": order_doc["id"]
-    }
+    return {"success": True, "message": "Siparişiniz mutfağa iletildi.", "order_id": order_doc["id"]}

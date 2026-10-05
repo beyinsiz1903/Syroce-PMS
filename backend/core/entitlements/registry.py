@@ -5,9 +5,11 @@ class ModuleFeature(BaseModel):
     key: str
     description: str
 
+
 class ModuleLimit(BaseModel):
     key: str
     description: str
+
 
 class EditionDefinition(BaseModel):
     key: str
@@ -15,12 +17,14 @@ class EditionDefinition(BaseModel):
     features: set[str] = Field(default_factory=set)
     limits: dict[str, int] = Field(default_factory=dict)
 
+
 class ModuleDefinition(BaseModel):
     key: str
     name: str
     features: list[ModuleFeature] = Field(default_factory=list)
     limits: list[ModuleLimit] = Field(default_factory=list)
     editions: dict[str, EditionDefinition] = Field(default_factory=dict)
+
 
 # ─── SYROCE ENTITLEMENT REGISTRY ───
 
@@ -51,24 +55,28 @@ ENTITLEMENT_REGISTRY: dict[str, ModuleDefinition] = {
                 limits={
                     "employees": 50,  # Legacy support
                     "active_employees": 25,
-                }
+                },
             ),
             "pro": EditionDefinition(
                 key="pro",
                 name="HR Pro",
                 features={
-                    "shift", "payroll", "leave", "recruitment",  # Legacy support
-                    "advanced_scheduling", "leave_management",    # Gelecek — runtime'da henüz guard yok
+                    "shift",
+                    "payroll",
+                    "leave",
+                    "recruitment",  # Legacy support
+                    "advanced_scheduling",
+                    "leave_management",  # Gelecek — runtime'da henüz guard yok
                     "performance_management",
-                    "payroll_export",                            # Gelecek — runtime'da henüz guard yok
+                    "payroll_export",  # Gelecek — runtime'da henüz guard yok
                     "advanced_hr_reporting",
                 },
                 limits={
                     "employees": 200,  # Legacy support
                     "active_employees": 250,
-                }
-            )
-        }
+                },
+            ),
+        },
     ),
     "pos_fnb": ModuleDefinition(
         key="pos_fnb",
@@ -91,7 +99,7 @@ ENTITLEMENT_REGISTRY: dict[str, ModuleDefinition] = {
                 limits={
                     "outlets": 1,
                     "devices": 3,
-                }
+                },
             ),
             "pro": EditionDefinition(
                 key="pro",
@@ -100,9 +108,9 @@ ENTITLEMENT_REGISTRY: dict[str, ModuleDefinition] = {
                 limits={
                     "outlets": 5,
                     "devices": 20,
-                }
-            )
-        }
+                },
+            ),
+        },
     ),
     "mice": ModuleDefinition(
         key="mice",
@@ -124,7 +132,7 @@ ENTITLEMENT_REGISTRY: dict[str, ModuleDefinition] = {
                 limits={
                     "spaces_limit": 2,
                     "concurrent_events": 5,
-                }
+                },
             ),
             "pro": EditionDefinition(
                 key="pro",
@@ -133,9 +141,9 @@ ENTITLEMENT_REGISTRY: dict[str, ModuleDefinition] = {
                 limits={
                     "spaces_limit": 10,
                     "concurrent_events": 50,
-                }
-            )
-        }
+                },
+            ),
+        },
     ),
     "housekeeping": ModuleDefinition(
         key="housekeeping",
@@ -155,7 +163,7 @@ ENTITLEMENT_REGISTRY: dict[str, ModuleDefinition] = {
                 features=set(),
                 limits={
                     "active_tasks": 100,
-                }
+                },
             ),
             "pro": EditionDefinition(
                 key="pro",
@@ -163,9 +171,9 @@ ENTITLEMENT_REGISTRY: dict[str, ModuleDefinition] = {
                 features={"quality_control", "advanced_reporting", "mobile_app"},
                 limits={
                     "active_tasks": 1000,
-                }
-            )
-        }
+                },
+            ),
+        },
     ),
     "spa": ModuleDefinition(
         key="spa",
@@ -187,7 +195,7 @@ ENTITLEMENT_REGISTRY: dict[str, ModuleDefinition] = {
                 limits={
                     "therapists": 3,
                     "rooms": 2,
-                }
+                },
             ),
             "pro": EditionDefinition(
                 key="pro",
@@ -196,9 +204,9 @@ ENTITLEMENT_REGISTRY: dict[str, ModuleDefinition] = {
                 limits={
                     "therapists": 20,
                     "rooms": 10,
-                }
-            )
-        }
+                },
+            ),
+        },
     ),
     "parking": ModuleDefinition(
         key="parking",
@@ -221,7 +229,7 @@ ENTITLEMENT_REGISTRY: dict[str, ModuleDefinition] = {
                 limits={
                     "transfer_vehicles": 2,
                     "parking_spots": 50,
-                }
+                },
             ),
             "pro": EditionDefinition(
                 key="pro",
@@ -230,11 +238,12 @@ ENTITLEMENT_REGISTRY: dict[str, ModuleDefinition] = {
                 limits={
                     "transfer_vehicles": 10,
                     "parking_spots": 500,
-                }
-            )
-        }
-    )
+                },
+            ),
+        },
+    ),
 }
+
 
 def get_module_definition(module_key: str) -> ModuleDefinition | None:
     return ENTITLEMENT_REGISTRY.get(module_key)

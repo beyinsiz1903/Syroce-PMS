@@ -11,4 +11,5 @@ async def run():
     events = [d async for d in cur]
     print(json.dumps(events, indent=2))
 
+
 asyncio.run(run())

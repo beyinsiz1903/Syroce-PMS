@@ -5,12 +5,14 @@ import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { FileText, Printer, Download, User, Calendar, CreditCard, MapPin, Phone, Mail } from 'lucide-react';
 import { alertDialog } from '@/lib/dialogs';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 const RegistrationCard = ({
   bookingId,
   onClose
 }) => {
   const [cardData, setCardData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const bookingCurrency = cardData?.booking?.currency || cardData?.booking?.currency_code || cachedTenantCurrency();
   useEffect(() => {
     if (bookingId) {
       fetchRegistrationData();
@@ -48,7 +50,7 @@ const RegistrationCard = ({
     } catch (error) {
       console.error('Error fetching registration data:', error);
     
-      toast.error('İşlem başarısız oldu');
+      toast.error('İşlem şu anda gerçekleştirilemiyor. Lütfen bağlantınızı kontrol edip tekrar deneyin.');
     } finally {
       setLoading(false);
     }
@@ -235,7 +237,7 @@ const RegistrationCard = ({
               </div>
               <div>
                 <label className="text-sm font-semibold text-gray-600">Room Rate:</label>
-                <p className="text-lg font-semibold">${booking.base_rate || 0} / night</p>
+                <p className="text-lg font-semibold">{formatCurrency(booking.base_rate || 0, bookingCurrency)} / night</p>
               </div>
             </div>
           </div>
@@ -249,7 +251,7 @@ const RegistrationCard = ({
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="text-sm font-semibold text-gray-600">Total Amount:</label>
-                <p className="text-2xl font-bold text-green-600">${booking.total_amount || 0}</p>
+                <p className="text-2xl font-bold text-green-600">{formatCurrency(booking.total_amount || 0, bookingCurrency)}</p>
               </div>
               <div>
                 <label className="text-sm font-semibold text-gray-600">Payment Status:</label>

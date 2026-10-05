@@ -7,6 +7,7 @@ import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import MaybeLayout from '@/components/MaybeLayout';
+import { roomLabel } from '@/utils/displayIdentifiers';
 
 const GuestRelationsDashboard = ({ user, tenant, onLogout, embedded = false }) => {
   const { t } = useTranslation();
@@ -16,6 +17,7 @@ const GuestRelationsDashboard = ({ user, tenant, onLogout, embedded = false }) =
   const [analysis, setAnalysis] = useState(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [triggering, setTriggering] = useState(false);
+  const [completingId, setCompletingId] = useState(null);
 
   useEffect(() => {
     fetchDirectives();
@@ -43,7 +45,7 @@ const GuestRelationsDashboard = ({ user, tenant, onLogout, embedded = false }) =
     setAnalyzing(true);
     setAnalysis(null);
     try {
-      const res = await axios.get(`/guest-relations/profiles/${guestId}/analysis`);
+      const res = await axios.get(`/guest-relations/profiles/${encodeURIComponent(guestId.trim())}/analysis`);
       setAnalysis(res.data);
     } catch (err) {
       console.error(err);
@@ -65,6 +67,19 @@ const GuestRelationsDashboard = ({ user, tenant, onLogout, embedded = false }) =
       toast.error('Direktifler tetiklenemedi.');
     } finally {
       setTriggering(false);
+    }
+  };
+
+  const completeDirective = async (directiveId) => {
+    setCompletingId(directiveId);
+    try {
+      await axios.post(`/guest-relations/preparations/directives/${directiveId}/complete`);
+      toast.success('Hazırlık direktifi ve bağlı görev tamamlandı.');
+      await fetchDirectives();
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || 'Hazırlık direktifi güncellenemedi.');
+    } finally {
+      setCompletingId(null);
     }
   };
 
@@ -95,13 +110,14 @@ const GuestRelationsDashboard = ({ user, tenant, onLogout, embedded = false }) =
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex gap-2">
-                  <Input 
-                    placeholder="Misafir ID girin..." 
+                    <Input
+                    placeholder="Misafir kimliği veya rezervasyon numarası"
+                    aria-label="Misafir kimliği veya rezervasyon numarası"
                     value={guestId}
                     onChange={(e) => setGuestId(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && handleAnalyze()}
                   />
-                  <Button variant="secondary" onClick={handleAnalyze} disabled={analyzing}>
+                  <Button variant="secondary" onClick={handleAnalyze} disabled={analyzing} aria-label="Misafir analizini başlat">
                     {analyzing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
                   </Button>
                 </div>
@@ -114,24 +130,23 @@ const GuestRelationsDashboard = ({ user, tenant, onLogout, embedded = false }) =
                       </div>
                       <div>
                         <p className="text-sm font-medium text-indigo-900">{analysis.guest_name}</p>
-                        <p className="text-xs text-indigo-600">ID: {analysis.guest_id}</p>
                       </div>
                     </div>
                     
                     <div className="space-y-3">
                       <div>
                         <span className="text-xs font-semibold text-gray-500 uppercase">Yastık Tercihi</span>
-                        <p className="text-sm font-medium text-gray-800">{analysis.pillow_preference}</p>
+                        <p className="text-sm font-medium text-gray-800">{analysis.pillow_preference || 'Gizlilik profiliniz nedeniyle gizli'}</p>
                       </div>
                       <div>
                         <span className="text-xs font-semibold text-gray-500 uppercase">SPA Tercihleri</span>
-                        <p className="text-sm font-medium text-gray-800">{analysis.spa_preference}</p>
+                        <p className="text-sm font-medium text-gray-800">{analysis.spa_preference || 'Gizlilik profiliniz nedeniyle gizli'}</p>
                       </div>
                       <div>
                         <span className="text-xs font-semibold text-gray-500 uppercase">Minibar Alışkanlığı</span>
                         <p className="text-sm font-medium text-gray-800 flex items-center gap-1">
                           <Coffee className="w-4 h-4 text-amber-600" />
-                          {analysis.minibar_preference}
+                          {analysis.minibar_preference || 'Gizlilik profiliniz nedeniyle gizli'}
                         </p>
                       </div>
                     </div>
@@ -179,7 +194,7 @@ const GuestRelationsDashboard = ({ user, tenant, onLogout, embedded = false }) =
                       <div key={dir.id} className="flex flex-col md:flex-row md:items-center justify-between p-4 bg-white border rounded-xl hover:shadow-sm transition-all gap-4">
                         <div>
                           <div className="flex items-center gap-2 mb-1">
-                            <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 text-xs font-semibold">Oda {dir.room_number || dir.room_id || '-'}</span>
+                            <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 text-xs font-semibold">Oda {roomLabel(dir)}</span>
                             <span className="text-sm font-medium text-gray-900">{dir.guest_name}</span>
                           </div>
                           <p className="text-sm text-gray-600">{directiveText || 'Özel hazırlık direktifi'}</p>
@@ -189,12 +204,15 @@ const GuestRelationsDashboard = ({ user, tenant, onLogout, embedded = false }) =
                             </p>
                           )}
                         </div>
-                        <div className="text-right flex-shrink-0">
+                        <div className="flex items-center gap-2 text-right flex-shrink-0">
                           <span className={`px-3 py-1 rounded-full text-xs font-medium ${
                             status === 'pending' ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'
                           }`}>
                             {status === 'pending' ? 'Bekliyor' : 'Hazır'}
                           </span>
+                          {status === 'pending' && <Button size="sm" onClick={() => completeDirective(dir.id)} disabled={completingId === dir.id}>
+                            {completingId === dir.id ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Hazır olarak işaretle'}
+                          </Button>}
                         </div>
                       </div>
                       );

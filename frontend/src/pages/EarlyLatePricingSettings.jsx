@@ -9,7 +9,7 @@ import { PageHeader } from '@/components/ui/page-header';
 import { Loader2, Plus, Trash2, Save, Clock, RefreshCw, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { confirmDialog } from '@/lib/dialogs';
-import { formatCurrency } from '@/lib/currency';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 import { useTranslation } from 'react-i18next';
 const CHARGE_TYPES = [{
   v: 'flat',
@@ -24,7 +24,6 @@ const CHARGE_TYPES = [{
   v: 'free',
   l: 'Ücretsiz'
 }];
-const TENANT_CURRENCY = 'TRY';
 const blank = (label = '') => ({
   id: '',
   label,
@@ -39,9 +38,9 @@ const clampHour = (n, fallback) => {
   return Math.max(0, Math.min(23, v));
 };
 const fmtRange = r => `${String(r.from_hour).padStart(2, '0')}:00–${String(r.to_hour).padStart(2, '0')}:00`;
-const valueLabel = r => {
+const valueLabel = (r, currency) => {
   if (r.charge_type === 'free') return 'Ücretsiz';
-  if (r.charge_type === 'flat') return formatCurrency(r.charge_value, TENANT_CURRENCY);
+  if (r.charge_type === 'flat') return formatCurrency(r.charge_value, currency);
   return `%${r.charge_value}`;
 };
 function detectIssues(rules, sectionName) {
@@ -64,7 +63,8 @@ function RuleEditor({
   title,
   rules,
   setRules,
-  onDelete
+  onDelete,
+  currency,
 }) {
   const { t, i18n } = useTranslation();
   return <Card className="p-4">
@@ -130,7 +130,7 @@ function RuleEditor({
             </div>
             <div className="col-span-2">
               <Label className="text-[10px] text-slate-500">
-                {t('cm.pages_EarlyLatePricingSettings.deger')} {r.charge_type === 'flat' ? `(${TENANT_CURRENCY})` : r.charge_type.startsWith('percent') ? '(%)' : ''}
+                {t('cm.pages_EarlyLatePricingSettings.deger')} {r.charge_type === 'flat' ? `(${currency})` : r.charge_type.startsWith('percent') ? '(%)' : ''}
               </Label>
               <Input type="number" min={0} value={r.charge_value} onChange={e => {
             const c = [...rules];
@@ -189,6 +189,7 @@ export default function EarlyLatePricingSettings() {
     load();
   }, [load]);
   const issues = cfg ? [...detectIssues(cfg.early_checkin, 'Erken Giriş'), ...detectIssues(cfg.late_checkout, 'Geç Çıkış')] : [];
+  const tenantCurrency = meta?.currency || cachedTenantCurrency();
   const save = async () => {
     if (issues.length > 0) {
       const ok = await confirmDialog({
@@ -211,7 +212,7 @@ export default function EarlyLatePricingSettings() {
       setMeta(_meta || null);
       toast.success('Kurallar kaydedildi');
     } catch (e) {
-      toast.error('Hata: ' + (e.response?.data?.detail || e.message));
+      toast.error('İşlem Hatası: ' + (e.response?.data?.detail || e.message));
     } finally {
       setSaving(false);
     }
@@ -234,7 +235,7 @@ export default function EarlyLatePricingSettings() {
       </div>;
   }
   return <div className="p-6 max-w-6xl mx-auto space-y-4" data-testid="early-late-pricing-settings">
-      <PageHeader icon={Clock} title={t('cm.pages_EarlyLatePricingSettings.erken_giris_gec_cikis_ucretleri')} subtitle={`Saat-bazlı otomatik ek ücret kuralları. Para birimi: ${TENANT_CURRENCY}.`} actions={<div className="flex items-center gap-2">
+      <PageHeader icon={Clock} title={t('cm.pages_EarlyLatePricingSettings.erken_giris_gec_cikis_ucretleri')} subtitle={`Saat-bazlı otomatik ek ücret kuralları. Para birimi: ${tenantCurrency}.`} actions={<div className="flex items-center gap-2">
             <Button variant="outline" size="sm" onClick={load} disabled={loading || saving}>
               <RefreshCw className="w-4 h-4 mr-1.5" /> {t('cm.pages_EarlyLatePricingSettings.yenile')}
             </Button>
@@ -277,14 +278,14 @@ export default function EarlyLatePricingSettings() {
         </div>
       </Card>
 
-      <RuleEditor title={t('cm.pages_EarlyLatePricingSettings.erken_giris_kurallari')} rules={cfg.early_checkin} setRules={r => setCfg({
+      <RuleEditor currency={tenantCurrency} title={t('cm.pages_EarlyLatePricingSettings.erken_giris_kurallari')} rules={cfg.early_checkin} setRules={r => setCfg({
       ...cfg,
       early_checkin: r
     })} onDelete={i => setCfg({
       ...cfg,
       early_checkin: cfg.early_checkin.filter((_, j) => j !== i)
     })} />
-      <RuleEditor title={t('cm.pages_EarlyLatePricingSettings.gec_cikis_kurallari')} rules={cfg.late_checkout} setRules={r => setCfg({
+      <RuleEditor currency={tenantCurrency} title={t('cm.pages_EarlyLatePricingSettings.gec_cikis_kurallari')} rules={cfg.late_checkout} setRules={r => setCfg({
       ...cfg,
       late_checkout: r
     })} onDelete={i => setCfg({
@@ -300,7 +301,7 @@ export default function EarlyLatePricingSettings() {
             <div className="text-xs text-slate-500 mb-1">{t('cm.pages_EarlyLatePricingSettings.erken_giris')}</div>
             <div className="flex flex-wrap gap-1.5">
               {cfg.early_checkin.map(r => <span key={r.id || r.label} className="text-xs px-2 py-0.5 rounded bg-sky-50 border border-sky-200 text-sky-800">
-                  {fmtRange(r)} → {valueLabel(r)}
+                  {fmtRange(r)} → {valueLabel(r, tenantCurrency)}
                 </span>)}
             </div>
           </div>
@@ -308,7 +309,7 @@ export default function EarlyLatePricingSettings() {
             <div className="text-xs text-slate-500 mb-1">{t('cm.pages_EarlyLatePricingSettings.gec_cikis')}</div>
             <div className="flex flex-wrap gap-1.5">
               {cfg.late_checkout.map(r => <span key={r.id || r.label} className="text-xs px-2 py-0.5 rounded bg-amber-50 border border-amber-200 text-amber-800">
-                  {fmtRange(r)} → {valueLabel(r)}
+                  {fmtRange(r)} → {valueLabel(r, tenantCurrency)}
                 </span>)}
             </div>
           </div>

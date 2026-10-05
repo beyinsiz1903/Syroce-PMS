@@ -34,7 +34,7 @@ const EnhancedFolioManager = ({
     } catch (error) {
       console.error('Error fetching folio:', error);
     
-      toast.error('İşlem başarısız oldu');
+      toast.error('İşlem şu anda gerçekleştirilemiyor. Lütfen bağlantınızı kontrol edip tekrar deneyin.');
     }
   };
   const postCharge = async chargeData => {
@@ -50,7 +50,7 @@ const EnhancedFolioManager = ({
       fetchFolio();
     } catch (error) {
       console.error('Error posting charge:', error);
-      toast.error('Masraf kaydedilemedi');
+      toast.error('Harcama/Masraf kaydı oluşturulamadı.');
     }
   };
   const postPayment = async paymentData => {
@@ -66,7 +66,7 @@ const EnhancedFolioManager = ({
       fetchFolio();
     } catch (error) {
       console.error('Error posting payment:', error);
-      toast.error('Ödeme kaydedilemedi');
+      toast.error('Tahsilat/Ödeme kaydı oluşturulamadı.');
     }
   };
   const handleCheckout = async () => {
@@ -82,7 +82,7 @@ const EnhancedFolioManager = ({
       fetchFolio();
     } catch (error) {
       console.error('Error checking out:', error);
-      toast.error('Çıkış yapılamadı');
+      toast.error('Check-out (Çıkış) işlemi gerçekleştirilemedi.');
     }
   };
   if (!folio) {

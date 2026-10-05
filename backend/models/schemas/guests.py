@@ -14,6 +14,12 @@ class GuestCreate(BaseModel):
     id_number: str = ""
     nationality: str | None = None
     address: str | None = None
+    id_type: str | None = None
+    birth_date: str | None = None
+    gender: str | None = None
+    birth_place: str | None = None
+    document_expiry_date: str | None = None
+    document_issue_date: str | None = None
     vip_status: bool = False
     kvkk_consent: bool = False
     scanned_via_quick_id: bool = False
@@ -29,6 +35,12 @@ class Guest(BaseModel):
     id_number: str | None = ""
     nationality: str | None = None
     address: str | None = None
+    id_type: str | None = None
+    birth_date: str | None = None
+    gender: str | None = None
+    birth_place: str | None = None
+    document_expiry_date: str | None = None
+    document_issue_date: str | None = None
     vip_status: bool = False
     loyalty_points: int = 0
     total_stays: int = 0

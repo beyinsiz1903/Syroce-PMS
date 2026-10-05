@@ -17,13 +17,25 @@ const ric =
     : (cb) => setTimeout(() => cb({ didTimeout: true, timeRemaining: () => 0 }), 1500);
 
 const prefetched = new Set();
+let scheduledHeavyPrefetch = null;
+
+export function canPrefetchHeavyModules(connection = typeof navigator !== 'undefined' ? navigator.connection : null) {
+  // Background chunks must never compete with the page the operator is trying
+  // to open. Hover/focus preloading in the navigation remains available on
+  // every connection; this only governs the automatic post-login batch.
+  if (!connection) return true;
+  if (connection.saveData) return false;
+  return !['slow-2g', '2g', '3g'].includes(connection.effectiveType);
+}
 
 function prefetchOne(name, importer) {
-  if (prefetched.has(name)) return;
+  if (prefetched.has(name)) return Promise.resolve();
   prefetched.add(name);
-  ric(() => {
-    importer().catch(() => {
-      prefetched.delete(name);
+  return new Promise((resolve) => {
+    ric(() => {
+      importer().catch(() => {
+        prefetched.delete(name);
+      }).finally(resolve);
     });
   });
 }
@@ -32,13 +44,37 @@ function prefetchOne(name, importer) {
  * Login sonrası çağrılır. Sık kullanılan ağır chunk'ları arka planda indirir.
  * Sıralama: en büyük + en sık kullanılan önce.
  */
-export function prefetchHeavyModules() {
-  prefetchOne('PMSModule', () => import('@/pages/PMSModule'));
-  prefetchOne('ReservationCalendar', () => import('@/pages/ReservationCalendar'));
+export async function prefetchHeavyModules() {
+  if (!canPrefetchHeavyModules()) return;
+  // Run one chunk at a time. The previous parallel imports saturated slower
+  // connections immediately after login, delaying the dashboard and the
+  // first navigation even though the chunks were only speculative.
+  await prefetchOne('PMSModule', () => import('@/pages/PMSModule'));
+  await prefetchOne('ReservationCalendar', () => import('@/pages/ReservationCalendar'));
   // PMS tarihi geride kaldığında PMSDateBadge "Gün sonu işlemini yapın"
   // butonu çıkarıyor; kullanıcı bastığında chunk hazır olsun diye
   // login sonrası sessizce indirilir (734 satırlık ağır sayfa).
-  prefetchOne('NightAuditDashboard', () => import('@/pages/NightAuditDashboard'));
+  await prefetchOne('NightAuditDashboard', () => import('@/pages/NightAuditDashboard'));
+}
+
+// Dashboard ve doğrulama istekleri ilk birkaç saniyede kritik yoldadır.
+// Otomatik chunk indirme ancak ilk ekranın ağ ve render işi sakinleştikten
+// sonra başlar. Kullanıcı menüye hover/focus yaptığında `preloadRoute` yine
+// anında ön yükleme yaptığı için doğrudan navigasyon gecikmez.
+export function scheduleHeavyModulePrefetch({ delay = 6000 } = {}) {
+  if (scheduledHeavyPrefetch) return scheduledHeavyPrefetch.cancel;
+  if (!canPrefetchHeavyModules()) return () => {};
+
+  const timer = setTimeout(() => {
+    scheduledHeavyPrefetch = null;
+    void prefetchHeavyModules();
+  }, delay);
+  const cancel = () => {
+    clearTimeout(timer);
+    if (scheduledHeavyPrefetch?.cancel === cancel) scheduledHeavyPrefetch = null;
+  };
+  scheduledHeavyPrefetch = { cancel };
+  return cancel;
 }
 
 // PMSDateBadge gibi az kullanılan ama tıklama anında ağır sayfaya

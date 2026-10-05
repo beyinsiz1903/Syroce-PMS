@@ -84,8 +84,8 @@ def _svc_enc():
 ROLES_BY_TIER = {
     "mini": ["admin", "front_desk", "housekeeping"],
     "basic": ["admin", "front_desk", "housekeeping"],
-    "professional": ["admin", "front_desk", "housekeeping", "manager", "revenue", "night_audit", "finance", "procurement"],
-    "enterprise": ["admin", "front_desk", "housekeeping", "manager", "revenue", "night_audit", "gm", "super_admin", "finance", "procurement", "supervisor", "sales"],
+    "professional": ["admin", "supervisor", "front_desk", "housekeeping", "finance", "procurement", "staff"],
+    "enterprise": ["admin", "supervisor", "front_desk", "housekeeping", "finance", "procurement", "sales", "staff"],
 }
 
 
@@ -271,6 +271,15 @@ async def update_hotel_info(
     if payload.description is not None:
         update_data["description"] = payload.description
     if payload.total_rooms is not None:
+        active_room_count = await db.rooms.count_documents({
+            "tenant_id": current_user.tenant_id,
+            "is_active": True,
+        })
+        if payload.total_rooms < active_room_count:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Tanımlı oda kapasitesi mevcut {active_room_count} aktif odadan düşük olamaz.",
+            )
         # Check plan limit
         tier = (tenant.get("subscription_tier", "basic")).lower()
         if tier == "pro":

@@ -382,7 +382,7 @@ class FrontDeskService:
                     "rate_plan": "Walk-in",
                     "market_segment": "leisure",
                     "created_at": now.isoformat(),
-                }
+                },
             )
         except BookingConflictError as e:
             return {"success": False, "error": str(e)}
@@ -430,6 +430,7 @@ class FrontDeskService:
                 return req["room_id"], res
             except Exception as e:
                 import logging
+
                 logging.getLogger(__name__).exception("Batch walk-in failed for room %s", req["room_id"])
                 return req["room_id"], {"success": False, "error": str(e)}
 
@@ -442,12 +443,7 @@ class FrontDeskService:
             if res.get("success"):
                 success_count += 1
 
-        return {
-            "success": success_count > 0,
-            "success_count": success_count,
-            "total_count": len(requests),
-            "results": results
-        }
+        return {"success": success_count > 0, "success_count": success_count, "total_count": len(requests), "results": results}
 
     # ── EARLY CHECK-IN / LATE CHECKOUT ──
 
@@ -524,6 +520,21 @@ class FrontDeskService:
         if booking["status"] in {"checked_out", "cancelled", "no_show"}:
             return {"success": False, "error": f"Cannot upgrade reservation in '{booking['status']}' state"}
 
+        # An upgrade can move a room directly, but a price change must never
+        # alter only bookings.total_amount. Daily rates, posted room charges,
+        # the folio balance and reports would then disagree. Route monetary
+        # changes through the dedicated daily-rate / folio correction flows.
+        if rate_adjustment != 0:
+            return {
+                "success": False,
+                "error": (
+                    "Oda yükseltme ücret farkı bu işlemden uygulanamaz. "
+                    "Fiyat değişikliği için günlük fiyat düzeltmesi veya folyo "
+                    "ek ücreti akışını kullanın."
+                ),
+                "code": "rate_adjustment_requires_financial_workflow",
+            }
+
         result = await self.room_move(tenant_id, booking_id, new_room_id, f"Upgrade: {reason}", user_id, user_name)
         if not result["success"]:
             # For non-checked-in bookings, we just update the room_id
@@ -535,11 +546,6 @@ class FrontDeskService:
                 result = {"success": True, "booking_id": booking_id, "new_room": new_room["room_number"]}
             else:
                 return result
-
-        # Apply rate adjustment
-        if rate_adjustment != 0:
-            new_total = booking.get("total_amount", 0) + rate_adjustment
-            await db.bookings.update_one({"id": booking_id, "tenant_id": tenant_id}, {"$set": {"total_amount": new_total}})
 
         await self._log_audit(tenant_id, "reservation", booking_id, "room_upgrade", user_id, {"new_room_id": new_room_id, "reason": reason, "rate_adjustment": rate_adjustment})
 

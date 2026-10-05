@@ -10,6 +10,7 @@ import { PageHeader } from '@/components/ui/page-header';
 import { toast } from 'sonner';
 import { confirmDialog } from '@/lib/dialogs';
 import { fetchJsonWithRetry, fetchWithRetry } from '@/lib/fetchRetry';
+import { formatCurrency as formatCurrencyValue } from '@/lib/currency';
 import { Database, Columns, Filter, Play, FileSpreadsheet, FileText, Plus, X, Trash2, Save, FolderOpen, Loader2, ChevronDown, ChevronUp, BarChart3, Table2, ArrowUpDown, Settings2, BookmarkPlus, RefreshCw } from 'lucide-react';
 
 // Yerel tarih (UTC değil) — Türkiye saat dilimine göre "Bugün" doğru gelir.
@@ -125,16 +126,12 @@ const OPERATORS = [{
   value: 'in',
   label: 'Listede'
 }];
-const formatCurrency = v => new Intl.NumberFormat('tr-TR', {
-  style: 'currency',
-  currency: 'TRY',
-  minimumFractionDigits: 0
-}).format(v || 0);
 const ReportBuilder = () => {
   const { t, i18n } = useTranslation();
   // Config state
   const [dataSources, setDataSources] = useState({});
   const [maxLimit, setMaxLimit] = useState(5000);
+  const [currencyCode, setCurrencyCode] = useState('TRY');
   const [selectedSource, setSelectedSource] = useState('');
   const [selectedColumns, setSelectedColumns] = useState([]);
   const [filters, setFilters] = useState([]);
@@ -171,6 +168,7 @@ const ReportBuilder = () => {
         });
         setDataSources(data.data_sources || {});
         if (data.max_limit) setMaxLimit(data.max_limit);
+        if (data.currency_code) setCurrencyCode(data.currency_code);
       } catch {
         toast.error(t('reportBuilder.configError'));
       } finally {
@@ -242,9 +240,14 @@ const ReportBuilder = () => {
     sort_order: sortOrder,
     limit: Math.max(1, Math.min(parseInt(limit, 10) || 500, maxLimit))
   });
+  const formatCurrency = value => formatCurrencyValue(value, currencyCode, {
+    decimals: 2,
+    compactDecimals: false
+  });
   const generateReport = async () => {
     if (!selectedSource) return toast.error(t('reportBuilder.selectSource'));
     if (selectedColumns.length === 0) return toast.error(t('reportBuilder.selectColumns'));
+    if (dateFrom && dateTo && dateFrom > dateTo) return toast.error('Başlangıç tarihi bitiş tarihinden sonra olamaz');
     setLoading(true);
     setReportData(null);
     setColumnLabels({});
@@ -289,7 +292,14 @@ const ReportBuilder = () => {
         },
         body: JSON.stringify(buildConfig())
       });
-      if (!res.ok) throw new Error(t('reportBuilder.exportFailed'));
+      if (!res.ok) {
+        let detail = '';
+        try {
+          const payload = await res.json();
+          detail = payload.detail || '';
+        } catch {/* response is not JSON */}
+        throw new Error(detail || t('reportBuilder.exportFailed'));
+      }
       const blob = await res.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -335,12 +345,22 @@ const ReportBuilder = () => {
   };
   const loadTemplate = tpl => {
     const c = tpl.config;
+    const source = dataSources[c.data_source];
+    if (!source) {
+      toast.error('Bu şablonun veri kaynağı artık kullanılamıyor');
+      return;
+    }
+    const validColumns = (c.columns || []).filter(col => source.columns[col]);
+    if (validColumns.length === 0) {
+      toast.error('Bu şablonda kullanılabilir sütun kalmamış');
+      return;
+    }
     setSelectedSource(c.data_source);
-    setSelectedColumns(c.columns || []);
-    setFilters(c.filters || []);
+    setSelectedColumns(validColumns);
+    setFilters((c.filters || []).filter(f => validColumns.includes(f.field)));
     setDateFrom(c.date_from || '');
     setDateTo(c.date_to || '');
-    setSortBy(c.sort_by || '');
+    setSortBy(validColumns.includes(c.sort_by) ? c.sort_by : '');
     setSortOrder(c.sort_order || 'desc');
     setLimit(c.limit || 500);
     setShowTemplates(false);

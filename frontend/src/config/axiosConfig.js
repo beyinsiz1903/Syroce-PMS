@@ -10,6 +10,9 @@ import {
   isAdminTenantContextActive,
   restoreOriginTenantContext,
 } from "@/lib/adminTenantContext";
+import { clearAuthScopedSessionStorage } from "@/lib/authSessionScope";
+import { navigateInternal } from "@/lib/appNavigation";
+import { recordSessionEvent } from "@/lib/sessionTelemetry";
 
 const RAW_BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "/api";
 const BACKEND_URL = RAW_BACKEND_URL.endsWith("/api")
@@ -48,7 +51,13 @@ axios.interceptors.request.use(
       // Legacy token fallback - in cookie-auth era this is mostly unused
       // but kept briefly for migration. We no longer write it on login.
       const token = localStorage.getItem("token");
-      if (token) {
+      // A request retried after refresh already carries the freshly minted
+      // access token.  Old deployments persisted the legacy token in local
+      // storage; blindly assigning it here used to replace that fresh header
+      // and made a successful refresh look like a second 401/logout.
+      // Keep the legacy value strictly as a fallback while migration clients
+      // still exist.
+      if (token && !config.headers.Authorization && !config.headers.authorization) {
         config.headers.Authorization = `Bearer ${token}`;
       }
     } else {
@@ -106,18 +115,21 @@ const _isRefreshableUrl = (url = "") =>
   !url.includes("/auth/reset-password");
 
 function _hardLogout() {
+  recordSessionEvent("expired");
   localStorage.removeItem("token");
   localStorage.removeItem("token_ts");
   localStorage.removeItem("refresh_token");
   localStorage.removeItem("user");
   localStorage.removeItem("tenant");
   localStorage.removeItem("modules");
+  localStorage.removeItem("entitlements");
   localStorage.removeItem(ADMIN_TENANT_CONTEXT_KEY);
   // Eski oturum cache'i yeni kullanıcıya sızmasın.
   clearAxiosCache();
+  clearAuthScopedSessionStorage();
   delete axios.defaults.headers.common["Authorization"];
   if (window.location.pathname !== "/auth" && window.location.pathname !== "/") {
-    window.location.assign("/auth");
+    navigateInternal("/auth", { replace: true });
   }
 }
 
@@ -129,15 +141,28 @@ function _hardLogout() {
  * interception disabled so only a fresh server response is trusted.
  */
 export async function verifyActiveSession() {
+  const verification = await _verifyActiveSessionState();
+  return verification.active;
+}
+
+// A failed identity request is not automatically proof that the session has
+// ended.  During a deploy, a brief network interruption, or a proxy timeout,
+// `/auth/me` can be unreachable while the browser still has a valid signed-in
+// session.  Only the identity endpoint's own 401 is definitive; every other
+// failure must preserve local state and let the next retry decide.
+async function _verifyActiveSessionState() {
   try {
     await axios.get("/auth/me", {
       _skipAuthRetry: true,
       _skipRetry: true,
       _noCache: true,
     });
-    return true;
-  } catch {
-    return false;
+    return { active: true, definitive: false };
+  } catch (error) {
+    return {
+      active: false,
+      definitive: error?.response?.status === 401,
+    };
   }
 }
 
@@ -180,10 +205,11 @@ async function _attemptRefresh(retryCount = 0) {
       // prevents an origin API session from being displayed under a stale
       // target-hotel header.
       if (wasAdminTenantContext && restoreOriginTenantContext()) {
-        window.location.assign("/admin/tenants");
+        navigateInternal("/admin/tenants", { replace: true });
         return { contextRestored: true };
       }
 
+      recordSessionEvent("refresh");
       return { token: newAccess };
     } catch (err) {
       const status = err?.response?.status;
@@ -239,7 +265,9 @@ export async function keepActiveSessionAlive() {
   if (result?.contextRestored) return { contextRestored: true };
   if (result?.transient) return { transient: true };
 
-  if (await verifyActiveSession()) return { sessionRecovered: true };
+  const verification = await _verifyActiveSessionState();
+  if (verification.active) return { sessionRecovered: true };
+  if (!verification.definitive) return { transient: true };
 
   _hardLogout();
   return { invalid: true };
@@ -267,14 +295,28 @@ axios.interceptors.response.use(
         return axios(original);
       }
       if (result?.contextRestored) {
+        // A super-admin's short-lived tenant workspace has expired, but the
+        // long-lived origin session was successfully refreshed and restored.
+        // Preserve that distinction for App's bootstrapping catch block: the
+        // triggering 401 must not be interpreted as a full account logout.
+        error._sessionContextRestored = true;
         return Promise.reject(error);
       }
       if (result?.transient) {
         console.warn("Refresh transient failure (5xx/network); session preserved");
         return Promise.reject(error);
       }
-      if (await verifyActiveSession()) {
+      const verification = await _verifyActiveSessionState();
+      if (verification.active) {
         console.warn("401 response was operation-specific; active session preserved. URL:", original.url);
+        return Promise.reject(error);
+      }
+      if (!verification.definitive) {
+        // App's startup request is itself a 401.  Mark it explicitly so its
+        // catch block keeps the last verified identity instead of treating an
+        // inconclusive retry as a real logout.
+        error._sessionVerificationTransient = true;
+        console.warn("401 response could not be verified due to a transient identity check; session preserved. URL:", original.url);
         return Promise.reject(error);
       }
       console.warn("401 Unauthorized - refresh failed, clearing session. URL:", original.url);
@@ -284,9 +326,13 @@ axios.interceptors.response.use(
       // credential (PIN, one-time action token, provider auth, etc.). Only the
       // canonical identity endpoint is allowed to decide that the user session
       // itself is invalid.
-      if (!(await verifyActiveSession())) {
+      const verification = await _verifyActiveSessionState();
+      if (verification.definitive) {
         console.warn("401 Unauthorized after retry and session verification - clearing session. URL:", original.url);
         _hardLogout();
+      } else if (!verification.active) {
+        error._sessionVerificationTransient = true;
+        console.warn("401 Unauthorized after retry could not be verified; session preserved. URL:", original.url);
       } else {
         console.warn("401 Unauthorized after retry; active session preserved. URL:", original.url);
       }
@@ -295,7 +341,7 @@ axios.interceptors.response.use(
       const detail = error.response.data.detail;
       // Yapılandırılmış iş hatası nesnesinden insan-okunur metin türet.
       // Legacy çağrılar `e.response?.data?.detail || e.message` veya
-      // `'Hata: ' + detail` paterniyle tüketiyor; toString override sayesinde
+      // `'İşlem Hatası: ' + detail` paterniyle tüketiyor; toString override sayesinde
       // hem nesne korunur hem string concat'te '[object Object]' çıkmaz.
       const humanize = (d) =>
         d?.error || d?.message || d?.msg || (d?.code ? `İşlem engellendi (${d.code})` : "İşlem başarısız");

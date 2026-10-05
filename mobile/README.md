@@ -79,31 +79,26 @@ Ayrıntı: [`store/README.md`](store/README.md).
 
 ---
 
-## EAS kurulumu (bir kerelik)
+## EAS projesi
+
+Mobil uygulama `@syroces-team/syroce-pms-mobile` EAS projesine bağlıdır:
+
+- Project ID: `ea230577-f8d5-40b1-8df1-5b58dd1ea73a`
+- iOS bundle identifier: `com.syroce.pms`
+- OTA update URL: `https://u.expo.dev/ea230577-f8d5-40b1-8df1-5b58dd1ea73a`
+
+Yeni bir makinede yalnızca Expo hesabına giriş gerekir:
 
 ```bash
 npm install -g eas-cli
-eas login                      # Expo hesabınıza giriş yapın (yoksa: expo.dev/signup)
+eas login
 cd mobile
-eas init                       # extra.eas.projectId üretir + app.json'a yazar
-eas update:configure           # OTA için runtimeVersion + updates.url ekler
+eas project:info               # @syroces-team/syroce-pms-mobile göstermeli
 ```
 
-`eas init` ilk çalıştığında EAS sunucusunda yeni bir proje oluşturur ve
-`app.json` → `extra.eas.projectId` alanını otomatik ekler (UUID formatında,
-ör. `12345678-90ab-cdef-1234-567890abcdef`). `eas update:configure` OTA
-güncellemeleri için gerekli `updates.url` alanını yazar; OTA
-kullanmayacaksanız atlayabilirsiniz. Bu iki komut tamamlanmadan
-`eas build` çalıştırmayın — projeyi sunucuya bağlamak için zorunludur.
-
-> **Not:** `eas init` mutlaka **sizin yerel makinenizden** ve sizin
-> Expo hesabınızla çalıştırılmalıdır; bu DigitalOcean container'ından
-> çalıştırıldığında sizin hesabınıza bağlanamaz. Komut tamamlanınca
-> `app.json` içindeki `extra.eas.projectId` değeri commit edilir, böylece
-> tüm geliştiriciler ve CI aynı projeye build/submit eder.
-
-> Mevcut bir EAS projesinin ID'sini görmek için: <https://expo.dev>
-> → Projects → (proje) → Project settings → "ID" alanı.
+`eas init` ve `eas update:configure` yeniden çalıştırılmamalıdır; proje kimliği,
+owner ve OTA URL'si `app.json` içinde sürüm kontrolündedir. `npm run
+validate:config` bu bağlantının yanlışlıkla değiştirilmesini CI'da engeller.
 
 ### Profiller
 
@@ -138,10 +133,10 @@ npm ci
 npm run check
 ```
 
-Bu komut yapılandırmayı, TypeScript'i, 105 birim testini ve Expo Doctor'ı
-tek kapıda doğrular. `EAS_PROJECT_ID`, App Store Connect kimlikleri ve Google
-Play service-account dosyası henüz yoksa yapılandırma denetimi bunları dış
-hesap adımı olarak uyarır; kod kontrollerini engellemez.
+Bu komut EAS/OTA bağlantısını, TypeScript'i, birim testlerini ve Expo Doctor'ı
+tek kapıda doğrular. App Store Connect kimlikleri ve Google Play
+service-account dosyası henüz yoksa yapılandırma denetimi bunları dış hesap
+adımı olarak uyarır; kod kontrollerini engellemez.
 
 ---
 
@@ -188,7 +183,7 @@ hesap adımı olarak uyarır; kod kontrollerini engellemez.
 
 ```bash
 cd mobile
-eas build --platform ios --profile pilot
+npm run ios:pilot
 ```
 
 İlk çağrıda EAS sertifikaları (Distribution Certificate +
@@ -198,7 +193,7 @@ Build tamamlanınca bir IPA bağlantısı verilir.
 ### TestFlight'a yükleme
 
 ```bash
-eas submit --platform ios --profile pilot --latest
+npm run ios:submit
 ```
 
 Komut son `preview` build'i App Store Connect'e yükler ve TestFlight'ta

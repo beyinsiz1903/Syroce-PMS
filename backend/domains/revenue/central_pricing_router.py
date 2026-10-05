@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from core.audit import log_audit_event
 from core.security import get_current_user
 from core.tenant_db import get_system_db
+from modules.pms_core.chain_access import resolve_chain_properties, tenant_id_from_document
 from modules.pms_core.role_permission_service import require_op
 
 router = APIRouter(prefix="/api/central-pricing", tags=["Central Pricing"])
@@ -83,57 +84,62 @@ def _money(value) -> float:
 
 
 async def _chain_context(current_user) -> tuple[str, list[dict]]:
-    tenant_id = current_user.tenant_id
-    own = await system_db.tenants.find_one(
-        {"$or": [{"tenant_id": tenant_id}, {"id": tenant_id}]},
-        {"_id": 0, "chain_id": 1, "tenant_id": 1, "id": 1, "hotel_name": 1, "name": 1, "is_chain_headquarters": 1},
-    )
-    chain_id = (own or {}).get("chain_id") or tenant_id
-    if (own or {}).get("chain_id"):
-        role = getattr(getattr(current_user, "role", None), "value", getattr(current_user, "role", None))
-        is_hq = bool(getattr(current_user, "is_chain_headquarters", False) or (own or {}).get("is_chain_headquarters"))
-        if role != "super_admin" and not is_hq:
-            raise HTTPException(403, "Zincir fiyat yönetimi yalnız merkez tesis kullanıcılarına açıktır")
-        tenants = await system_db.tenants.find(
-            {"chain_id": chain_id},
-            {"_id": 0, "tenant_id": 1, "id": 1, "hotel_name": 1, "name": 1},
-        ).to_list(500)
-    else:
-        tenants = [own or {"tenant_id": tenant_id, "name": tenant_id}]
+    own, tenants = await resolve_chain_properties(current_user, require_headquarters=True, system_db=system_db)
+    chain_id = own.get("chain_id") or tenant_id_from_document(own)
     properties = [
         {
-            "tenant_id": row.get("tenant_id") or row.get("id"),
-            "property_name": row.get("hotel_name") or row.get("name") or row.get("tenant_id") or row.get("id"),
-        }
-        for row in tenants
-        if row.get("tenant_id") or row.get("id")
+            "tenant_id": tenant_id_from_document(t),
+            "property_name": t.get("property_name") or t.get("hotel_name") or t.get("name") or tenant_id_from_document(t)
+        } for t in tenants
     ]
     return chain_id, properties
 
 
 async def _property_room_rates(chain_id: str, property_doc: dict) -> dict:
     tenant_id = property_doc["tenant_id"]
+    room_types = await system_db.room_types.find(
+        {"tenant_id": tenant_id},
+        {"_id": 0, "id": 1, "name": 1, "room_type": 1, "code": 1},
+    ).to_list(1000)
+    room_type_names = {
+        str(row.get("id")): str(row.get("name") or row.get("room_type") or row.get("code") or row.get("id"))
+        for row in room_types
+        if row.get("id")
+    }
     rooms = await system_db.rooms.find(
         {"tenant_id": tenant_id, "is_active": {"$ne": False}},
         {"_id": 0, "room_type": 1, "type": 1, "base_price": 1, "base_rate": 1},
     ).to_list(20000)
-    grouped: dict[str, dict] = defaultdict(lambda: {"count": 0, "rates": []})
+    grouped: dict[str, dict] = defaultdict(lambda: {"count": 0, "rates": [], "label": "", "unresolved": False})
     for room in rooms:
-        room_type = str(room.get("room_type") or room.get("type") or "Standard")
-        grouped[room_type]["count"] += 1
+        raw_room_type = str(room.get("room_type") or room.get("type") or "Standart").strip()
+        resolved_from_catalog = raw_room_type in room_type_names
+        resolved = room_type_names.get(raw_room_type, raw_room_type)
+        try:
+            uuid.UUID(resolved)
+            unresolved = True
+            label = "Tanımsız oda tipi"
+        except (ValueError, TypeError, AttributeError):
+            unresolved = False
+            label = resolved
+        key = label.casefold()
+        if not grouped[key]["label"] or resolved_from_catalog:
+            grouped[key]["label"] = label
+        grouped[key]["unresolved"] = grouped[key]["unresolved"] or unresolved
+        grouped[key]["count"] += 1
         candidate = room.get("base_price", room.get("base_rate"))
         if candidate is not None:
-            grouped[room_type]["rates"].append(_money(candidate))
+            grouped[key]["rates"].append(_money(candidate))
 
     directives = await system_db.central_pricing_rates.find(
         {"chain_id": chain_id, "tenant_id": tenant_id},
         {"_id": 0},
     ).to_list(500)
-    directive_by_type = {row["room_type"]: row for row in directives}
+    directive_by_type = {str(row["room_type"]).strip().casefold(): row for row in directives}
     all_room_types = sorted(set(grouped) | set(directive_by_type))
     room_rates = []
     for room_type in all_room_types:
-        room_group = grouped.get(room_type, {"count": 0, "rates": []})
+        room_group = grouped.get(room_type, {"count": 0, "rates": [], "label": "", "unresolved": False})
         directive = directive_by_type.get(room_type, {})
         base_rate = directive.get("current_rate")
         if base_rate is None:
@@ -141,15 +147,20 @@ async def _property_room_rates(chain_id: str, property_doc: dict) -> dict:
             base_rate = _money(sum(rates) / len(rates)) if rates else 0.0
         room_rates.append(
             {
-                "room_type": room_type,
+                "room_type": room_group.get("label") or directive.get("room_type") or room_type,
                 "base_rate": _money(base_rate),
                 "count": room_group["count"],
                 "currency": directive.get("currency", "TRY"),
                 "effective_from": directive.get("effective_from"),
                 "provider_sync_status": directive.get("provider_sync_status", "not_requested"),
+                "data_quality": "unresolved_room_type" if room_group.get("unresolved") else ("missing_rate" if _money(base_rate) <= 0 else "ok"),
             }
         )
-    return {**property_doc, "room_rates": room_rates}
+    return {
+        **property_doc,
+        "room_rates": room_rates,
+        "data_quality_warnings": sum(1 for row in room_rates if row["data_quality"] != "ok"),
+    }
 
 
 @router.get("/rates")
@@ -252,20 +263,28 @@ async def bulk_update_rates(
 @router.get("/rate-history")
 async def get_rate_history(current_user=Depends(get_current_user)):
     chain_id, _ = await _chain_context(current_user)
-    history = await system_db.central_pricing_history.find(
-        {"chain_id": chain_id},
-        {"_id": 0},
-    ).sort("updated_at", -1).to_list(1000)
+    history = (
+        await system_db.central_pricing_history.find(
+            {"chain_id": chain_id},
+            {"_id": 0},
+        )
+        .sort("updated_at", -1)
+        .to_list(1000)
+    )
     return {"history": history, "total": len(history)}
 
 
 @router.get("/rate-templates")
 async def get_rate_templates(current_user=Depends(get_current_user)):
     chain_id, _ = await _chain_context(current_user)
-    templates = await system_db.central_pricing_templates.find(
-        {"chain_id": chain_id, "is_active": {"$ne": False}},
-        {"_id": 0},
-    ).sort("updated_at", -1).to_list(500)
+    templates = (
+        await system_db.central_pricing_templates.find(
+            {"chain_id": chain_id, "is_active": {"$ne": False}},
+            {"_id": 0},
+        )
+        .sort("updated_at", -1)
+        .to_list(500)
+    )
     return {"templates": templates, "total": len(templates)}
 
 

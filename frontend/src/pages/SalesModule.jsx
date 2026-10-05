@@ -24,6 +24,7 @@ import {
   Plus
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 
 const SalesModule = ({ user, tenant, onLogout }) => {
   const { t } = useTranslation();
@@ -467,7 +468,7 @@ const SalesModule = ({ user, tenant, onLogout }) => {
                         <div>
                           <div className="text-gray-600">YTD Revenue</div>
                           <div className="font-semibold text-green-600">
-                            ₺{(contract.total_revenue || 0).toLocaleString()}
+                            {formatCurrency(contract.total_revenue || 0, contract.currency || tenant?.currency || cachedTenantCurrency())}
                           </div>
                         </div>
                         <div>

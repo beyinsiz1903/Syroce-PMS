@@ -55,11 +55,10 @@ export default function SecurityCenter({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, []);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   useEffect(() => {
     fetch2FAStatus();
     fetchIPRules();
-  }, []);
+  }, [fetch2FAStatus, fetchIPRules]);
   const setup2FA = async () => {
     setLoading(true);
     try {
@@ -82,11 +81,11 @@ export default function SecurityCenter({
         headers
       });
       setBackupCodes(res.data.backup_codes);
-      setMessage(res.data.message || '2FA etkinlestirildi');
+      setMessage(res.data.message || '2FA etkinleştirildi');
       setSetupData(null);
       fetch2FAStatus();
     } catch (e) {
-      setMessage(e.response?.data?.detail || 'Gecersiz kod');
+      setMessage(e.response?.data?.detail || 'Geçersiz kod');
     }
     setLoading(false);
   };
@@ -96,7 +95,7 @@ export default function SecurityCenter({
     });
     if (!code) return;
     const password = await promptDialog({
-      message: 'Sifrenizi girin:'
+      message: 'Şifrenizi girin:'
     });
     if (!password) return;
     try {
@@ -106,7 +105,7 @@ export default function SecurityCenter({
       }, {
         headers
       });
-      setMessage('2FA devre disi birakildi');
+      setMessage('2FA devre dışı bırakıldı');
       fetch2FAStatus();
     } catch (e) {
       setMessage(e.response?.data?.detail || 'Hata');
@@ -154,7 +153,7 @@ export default function SecurityCenter({
         <div className="flex justify-between items-center">
           <div>
             <h1 className="text-2xl font-bold">Güvenlik Merkezi</h1>
-            <p className="text-gray-500">2FA, IP erişim kontrolu ve güvenlik ayarları</p>
+            <p className="text-gray-500">2FA, IP erişim kontrolü ve güvenlik ayarları</p>
           </div>
         </div>
 
@@ -164,42 +163,42 @@ export default function SecurityCenter({
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList>
-            <TabsTrigger value="2fa">2FA Dogrulama</TabsTrigger>
-            <TabsTrigger value="ip">IP Erisim Kontrolu</TabsTrigger>
+            <TabsTrigger value="2fa">2FA Doğrulama</TabsTrigger>
+            <TabsTrigger value="ip">IP Erişim Kontrolü</TabsTrigger>
           </TabsList>
 
           <TabsContent value="2fa" className="space-y-4">
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
-                  Iki Faktorlu Dogrulama (2FA)
-                  {twoFAStatus?.enabled ? <Badge className="bg-green-100 text-green-700">Aktif</Badge> : <Badge variant="outline">Devre Disi</Badge>}
+                  İki Faktörlü Doğrulama (2FA)
+                  {twoFAStatus?.enabled ? <Badge className="bg-green-100 text-green-700">Aktif</Badge> : <Badge variant="outline">Devre Dışı</Badge>}
                 </CardTitle>
                 <CardDescription>
-                  TOTP tabanli ek güvenlik katmani. Google Authenticator veya benzer uygulamalarla kullanin.
+                  TOTP tabanlı ek güvenlik katmanı. Google Authenticator veya benzer uygulamalarla kullanın.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 {!twoFAStatus?.enabled && !setupData && <Button onClick={setup2FA} disabled={loading}>
-                    {loading ? 'Hazirlaniyor...' : '2FA Etkinlestir'}
+                    {loading ? 'Hazırlanıyor...' : '2FA Etkinleştir'}
                   </Button>}
 
                 {setupData && <div className="space-y-4">
                     <div className="p-4 bg-gray-50 rounded-lg text-center">
-                      <p className="mb-2 font-medium">QR Kodu Tarayin</p>
-                      <img src={setupData.qr_code} alt="QR Code" className="mx-auto w-48 h-48" />
+                      <p className="mb-2 font-medium">QR Kodunu Tarayın</p>
+                      <img src={setupData.qr_code} alt="2FA kurulum QR kodu" className="mx-auto w-48 h-48" />
                       <p className="mt-2 text-sm text-gray-500">Manuel giriş: <code className="bg-gray-200 px-2 py-1 rounded">{setupData.manual_entry_key}</code></p>
                     </div>
                     <div className="flex gap-2">
                       <Input value={verifyCode} onChange={e => setVerifyCode(e.target.value)} placeholder="6 haneli kod" maxLength={6} />
                       <Button onClick={verify2FA} disabled={loading || verifyCode.length !== 6}>
-                        Dogrula
+                        Doğrula
                       </Button>
                     </div>
                   </div>}
 
                 {backupCodes && <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-                    <p className="font-medium text-yellow-800 mb-2">Yedek Kodlariniz (guvenli yere kaydedin!)</p>
+                    <p className="font-medium text-yellow-800 mb-2">Yedek Kodlarınız (güvenli bir yere kaydedin)</p>
                     <div className="grid grid-cols-2 gap-1">
                       {backupCodes.map((code, i) => <code key={code.id || i} className="bg-white px-2 py-1 rounded text-sm">{code}</code>)}
                     </div>
@@ -208,7 +207,7 @@ export default function SecurityCenter({
                 {twoFAStatus?.enabled && <div className="space-y-2">
                     <p className="text-sm text-gray-600">Yedek kod sayısı: {twoFAStatus.backup_codes_remaining}</p>
                     <p className="text-sm text-gray-600">Son doğrulama: {twoFAStatus.last_verified || 'Bilinmiyor'}</p>
-                    <Button variant="destructive" onClick={disable2FA}>2FA Devre Disi Birak</Button>
+                    <Button variant="destructive" onClick={disable2FA}>2FA Devre Dışı Bırak</Button>
                   </div>}
               </CardContent>
             </Card>
@@ -217,8 +216,8 @@ export default function SecurityCenter({
           <TabsContent value="ip" className="space-y-4">
             <Card>
               <CardHeader>
-                <CardTitle>IP Erisim Kurallari</CardTitle>
-                <CardDescription>Whitelist ve blacklist ile IP bazli erişim kontrolu</CardDescription>
+                <CardTitle>IP Erişim Kuralları</CardTitle>
+                <CardDescription>İzin ve engelleme listeleriyle IP tabanlı erişim kontrolü</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex gap-2 items-end">
@@ -243,7 +242,7 @@ export default function SecurityCenter({
                 <div className="flex gap-2">
                   <Button variant="outline" onClick={checkIP}>IP Kontrol Et</Button>
                   {ipCheck && <Badge className={ipCheck.allowed ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}>
-                      {ipCheck.client_ip}: {ipCheck.allowed ? 'Izin Verildi' : 'Engellendi'}
+                      {ipCheck.client_ip}: {ipCheck.allowed ? 'İzin Verildi' : 'Engellendi'}
                     </Badge>}
                 </div>
 
@@ -276,7 +275,7 @@ export default function SecurityCenter({
                             <Button variant="ghost" size="sm" className="text-red-500" onClick={() => deleteIPRule(rule.id)}>{t("common.delete")}</Button>
                           </td>
                         </tr>)}
-                      {ipRules.length === 0 && <tr><td colSpan="5" className="p-8 text-center text-gray-400">Henüz kural eklenmemis</td></tr>}
+                      {ipRules.length === 0 && <tr><td colSpan="5" className="p-8 text-center text-gray-400">Henüz kural eklenmemiş</td></tr>}
                     </tbody>
                   </table>
                 </div>

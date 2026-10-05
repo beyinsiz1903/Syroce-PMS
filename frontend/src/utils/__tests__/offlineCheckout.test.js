@@ -71,6 +71,17 @@ describe('performCheckout — sifir bakiye yolu', () => {
     expect(enqueueCheckout).not.toHaveBeenCalled();
   });
 
+  it('zaten tamamlanmis cikisi idempotent basari sayar', async () => {
+    const err = new Error('already checked out');
+    err.response = { status: 400, data: { detail: 'Guest already checked out' } };
+    const onlineRequest = vi.fn().mockRejectedValue(err);
+
+    const res = await performCheckout('bk-already-out', { balance: 0, onlineRequest });
+
+    expect(res).toMatchObject({ synced: true, alreadyCheckedOut: true, offlineQueued: false });
+    expect(enqueueCheckout).not.toHaveBeenCalled();
+  });
+
   it('navigator.onLine=false ise dogrudan kuyruga ALIR (online cagri yapilmaz)', async () => {
     Object.defineProperty(global.navigator, 'onLine', {
       value: false,

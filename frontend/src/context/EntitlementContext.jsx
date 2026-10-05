@@ -11,8 +11,9 @@ export const useEntitlements = () => {
   return context;
 };
 
-// Strict modules require explicit "true" in modules map to be visible/accessible
-const STRICT_MODULES = new Set(['pos_fnb', 'mice', 'spa', 'hr']);
+// An operator must only see a module explicitly granted to the current hotel.
+// Super-admin access is intentionally kept separate: it is needed for platform
+// administration, but must not be used to describe a hotel's purchased setup.
 
 export const EntitlementProvider = ({ children, currentTenantId, isSuperAdmin }) => {
   const [state, setState] = useState({
@@ -109,23 +110,17 @@ export const EntitlementProvider = ({ children, currentTenantId, isSuperAdmin })
 
   const isStateValid = state.loaded && !state.error && state.tenantId === currentTenantId;
 
-  const hasModule = useCallback((moduleKey) => {
+  const hasTenantModule = useCallback((moduleKey) => {
     if (!moduleKey) return true;
-    if (isSuperAdmin) return true;
     if (state.loading) return false;
     if (!isStateValid) return false;
-    const STRICT_MODULES = new Set(["pos_fnb", "mice", "spa", "hr"]);
-    if (STRICT_MODULES.has(moduleKey)) {
-      return (
-        state.modules?.[moduleKey] === true ||
-        Boolean(state.entitlements?.[moduleKey])
-      );
-    }
-    
-    if (!state.modules || Object.keys(state.modules).length === 0) return true;
-    
-    return state.modules[moduleKey] !== false;
-  }, [isSuperAdmin, state.loading, isStateValid, state.modules, state.entitlements]);
+    return state.modules?.[moduleKey] === true || Boolean(state.entitlements?.[moduleKey]);
+  }, [state.loading, isStateValid, state.modules, state.entitlements]);
+
+  const hasModule = useCallback((moduleKey) => {
+    if (!moduleKey || isSuperAdmin) return true;
+    return hasTenantModule(moduleKey);
+  }, [hasTenantModule, isSuperAdmin]);
 
   const hasFeature = useCallback((moduleKey, featureKey) => {
     if (!moduleKey || !featureKey) return true;
@@ -160,12 +155,13 @@ export const EntitlementProvider = ({ children, currentTenantId, isSuperAdmin })
     refresh: () => fetchEntitlements(currentTenantId),
     clearEntitlements,
     hasModule,
+    hasTenantModule,
     hasFeature,
     getLimit
   }), [
     state.modules, state.entitlements, isSuperAdmin, state.loading,
     state.loaded, state.error, state.tenantId, currentTenantId, fetchEntitlements,
-    clearEntitlements, hasModule, hasFeature, getLimit
+    clearEntitlements, hasModule, hasTenantModule, hasFeature, getLimit
   ]);
 
   return (

@@ -13,6 +13,8 @@ Key guarantees:
 """
 
 import logging
+import re
+import unicodedata
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -26,8 +28,12 @@ from core.database import db
 from core.import_decision import (
     COLL_IMPORTED,
     check_booking_source_exists,
+    rate_code_belongs_to_room,
 )
-from core.room_auto_assignment import create_booking_with_auto_assignment
+from core.room_auto_assignment import (
+    assign_pending_booking_with_auto_assignment,
+    create_booking_with_auto_assignment,
+)
 
 logger = logging.getLogger("core.import_bridge_service")
 
@@ -108,6 +114,68 @@ def _utc_now() -> str:
     return datetime.now(UTC).isoformat()
 
 
+def _normalized_guest_name(value: str | None) -> str:
+    """Normalize display names before using them as an identity safeguard."""
+    decomposed = unicodedata.normalize("NFKD", str(value or ""))
+    ascii_name = decomposed.encode("ascii", "ignore").decode().casefold()
+    return re.sub(r"[^a-z0-9]", "", ascii_name)
+
+
+def _guest_identity_matches(candidate: dict[str, Any], incoming_name: str) -> bool:
+    """PII can be an OTA/agency contact; it is never sufficient on its own."""
+    candidate_name = candidate.get("name") or " ".join(
+        part for part in (candidate.get("first_name"), candidate.get("last_name")) if part
+    )
+    return bool(
+        _normalized_guest_name(candidate_name)
+        and _normalized_guest_name(candidate_name) == _normalized_guest_name(incoming_name)
+    )
+
+
+async def _find_existing_guest_for_import(
+    *,
+    tenant_id: str,
+    guest_name: str,
+    guest_first: str,
+    guest_last: str,
+    guest_email: str,
+    guest_phone: str,
+) -> dict[str, Any] | None:
+    """Find only a guest whose identity agrees with the incoming reservation.
+
+    Channel partners commonly provide a shared agency email address and phone
+    number for different travellers.  Treating either value as a unique guest
+    identity caused reservations to be attached to the wrong person.
+    """
+    from security.encrypted_lookup import build_guest_pii_query
+
+    queries: list[dict[str, Any]] = []
+    if guest_email:
+        queries.append(build_guest_pii_query("email", guest_email))
+    if guest_phone:
+        queries.append(build_guest_pii_query("phone", guest_phone))
+    if guest_first or guest_last:
+        queries.append({"first_name": guest_first, "last_name": guest_last})
+
+    seen_ids: set[str] = set()
+    for identity_query in queries:
+        cursor = db.guests.find(
+            {"tenant_id": tenant_id, **identity_query},
+            {"_id": 0, "id": 1, "name": 1, "first_name": 1, "last_name": 1},
+        )
+        async for candidate in cursor:
+            candidate_id = str(candidate.get("id") or "")
+            if not candidate_id or candidate_id in seen_ids:
+                continue
+            seen_ids.add(candidate_id)
+            if _guest_identity_matches(candidate, guest_name):
+                return candidate
+            logger.warning(
+                "[IMPORT-BRIDGE] Refusing guest link: OTA contact matched a different name"
+            )
+    return None
+
+
 def _is_retryable(error_msg: str) -> bool:
     lower = error_msg.lower()
     for kw in PERMANENT_KEYWORDS:
@@ -144,6 +212,7 @@ async def create_import_record(
         "provider": lineage.get("provider", ""),
         "connector_id": connector_id or lineage.get("connection_id", ""),
         "external_reservation_id": lineage["external_reservation_id"],
+        "agency_reservation_number": lineage.get("agency_reservation_number", ""),
         "lineage_id": lineage.get("id", ""),
         "payload_hash": lineage.get("payload_hash", ""),
         "import_status": import_status,
@@ -170,6 +239,7 @@ async def create_import_record(
         "total_amount": lineage.get("total_amount", 0.0),
         "currency": lineage.get("currency", "TRY"),
         "source_system": lineage.get("source_system", ""),
+        "provider_note": lineage.get("provider_note", ""),
         "provider_updated_at": lineage.get("provider_last_modified_at", "") or lineage.get("provider_updated_at", ""),
         "created_at": now,
         "updated_at": now,
@@ -364,7 +434,10 @@ async def replay_reviewed_mapping_import(
             {"_id": 0, "pms_rate_plan_id": 1},
         )
 
-    if (room_code and not room_mapping) or (rate_code and not rate_mapping):
+    safe_derived_rate = bool(
+        room_mapping and rate_code_belongs_to_room(rate_code, room_code)
+    )
+    if (room_code and not room_mapping) or (rate_code and not rate_mapping and not safe_derived_rate):
         return {"status": "failed"}
 
     claimed = await db[COLL_IMPORTED].find_one_and_update(
@@ -429,14 +502,14 @@ async def auto_import_reservation_to_pms(
         record = pre_claimed_record
     else:
         # ── 1. Atomic claim ──────────────────────────────────────────
+        # Fresh pending records are immediately claimable and must not depend on
+        # retry scheduling fields. Keeping the pending and retry claims separate
+        # also prevents a worker/test race from treating a valid fresh record as
+        # a not-yet-due retry.
         record = await db[COLL_IMPORTED].find_one_and_update(
             {
                 "id": imported_reservation_id,
-                "import_status": {"$in": [STATUS_PENDING, STATUS_RETRY]},
-                "$or": [
-                    {"next_retry_at": None},
-                    {"next_retry_at": {"$lte": now_str}},
-                ],
+                "import_status": STATUS_PENDING,
             },
             {
                 "$set": {
@@ -447,6 +520,25 @@ async def auto_import_reservation_to_pms(
             return_document=ReturnDocument.AFTER,
             projection={"_id": 0},
         )
+        if not record:
+            record = await db[COLL_IMPORTED].find_one_and_update(
+                {
+                    "id": imported_reservation_id,
+                    "import_status": STATUS_RETRY,
+                    "$or": [
+                        {"next_retry_at": None},
+                        {"next_retry_at": {"$lte": now_str}},
+                    ],
+                },
+                {
+                    "$set": {
+                        "import_status": STATUS_PROCESSING,
+                        "updated_at": now_str,
+                    },
+                },
+                return_document=ReturnDocument.AFTER,
+                projection={"_id": 0},
+            )
 
     if not record:
         return False, "Record not claimable (already processing, imported, or not due for retry)"
@@ -482,6 +574,20 @@ async def auto_import_reservation_to_pms(
             ext_res_id,
         )
         if existing_booking_id:
+            if provider == "hotelrunner":
+                from domains.channel_manager.providers.hotelrunner_notes import (
+                    sync_hotelrunner_note,
+                )
+
+                await sync_hotelrunner_note(
+                    db,
+                    tenant_id=tenant_id,
+                    booking_id=existing_booking_id,
+                    external_reservation_id=ext_res_id,
+                    content=record.get("provider_note", ""),
+                    provider_updated_at=record.get("provider_updated_at", ""),
+                    update_existing=False,
+                )
             await db[COLL_IMPORTED].update_one(
                 {"id": imported_reservation_id},
                 {
@@ -568,6 +674,7 @@ async def auto_import_reservation_to_pms(
 
         # ── 4. Resolve rate plan mapping ─────────────────────────
         rate_plan_id = None
+        rate_plan_mapping_status = "mapped"
         rate_code = record.get("rate_plan_code", "")
         if rate_code:
             rate_mapping = await db.rate_plan_mappings.find_one(
@@ -582,6 +689,16 @@ async def auto_import_reservation_to_pms(
             )
             if rate_mapping:
                 rate_plan_id = rate_mapping.get("pms_rate_plan_id")
+            elif room_id and rate_code_belongs_to_room(rate_code, room_type):
+                # HotelRunner derived rates encode their inventory code in the
+                # rate code (for example ``1362167:HR:704308``).  The room
+                # mapping is already authoritative, so retain the provider
+                # plan as metadata instead of blocking a real reservation.
+                # We intentionally do not auto-create an ARI mapping here:
+                # commercial rate synchronisation still requires an operator
+                # to approve the new plan.
+                rate_plan_id = rate_code
+                rate_plan_mapping_status = "inferred_from_room"
             else:
                 await _park_as_unmatched_hold(
                     "unmapped_rate_plan",
@@ -607,6 +724,7 @@ async def auto_import_reservation_to_pms(
             "preferred_room_number": record.get("provider_room_number", ""),
             "rate_plan_id": rate_plan_id,
             "rate_plan_code": rate_code,
+            "rate_plan_mapping_status": rate_plan_mapping_status,
             "adults": record.get("adults", 1),
             "children": record.get("children", 0),
             "total_amount": record.get("total_amount", 0.0),
@@ -618,9 +736,13 @@ async def auto_import_reservation_to_pms(
             "booking_source": "ota_import",
             "channel": record.get("source_system", "") or provider,
             "external_reservation_id": ext_res_id,
+            "agency_reservation_number": record.get("agency_reservation_number", ""),
+            "external_confirmation": record.get("agency_reservation_number", ""),
+            "ota_confirmation": record.get("agency_reservation_number", ""),
             "source": {
                 "provider": provider,
                 "external_reservation_id": ext_res_id,
+                "agency_reservation_number": record.get("agency_reservation_number", ""),
                 "connector_id": record.get("connector_id", ""),
                 "import_record_id": imported_reservation_id,
             },
@@ -637,22 +759,14 @@ async def auto_import_reservation_to_pms(
         guest_phone = record.get("guest_phone", "")
 
         if guest_name:
-            # Try to find existing guest by email or phone
-            # Dual-read: the insert below encrypts PII, so a plaintext-equality
-            # lookup would never match an encrypted row → a duplicate guest record
-            # on every repeated OTA sync. Match _hash_<field> OR legacy plaintext.
-            from security.encrypted_lookup import build_guest_pii_query
-
-            guest_query = {"tenant_id": tenant_id}
-            if guest_email:
-                guest_query.update(build_guest_pii_query("email", guest_email))
-            elif guest_phone:
-                guest_query.update(build_guest_pii_query("phone", guest_phone))
-            else:
-                guest_query["first_name"] = guest_first
-                guest_query["last_name"] = guest_last
-
-            existing_guest = await db.guests.find_one(guest_query, {"_id": 0, "id": 1})
+            existing_guest = await _find_existing_guest_for_import(
+                tenant_id=tenant_id,
+                guest_name=guest_name,
+                guest_first=guest_first,
+                guest_last=guest_last,
+                guest_email=guest_email,
+                guest_phone=guest_phone,
+            )
             if existing_guest:
                 booking_doc["guest_id"] = existing_guest["id"]
             else:
@@ -660,6 +774,7 @@ async def auto_import_reservation_to_pms(
                 guest_doc = {
                     "id": guest_id,
                     "tenant_id": tenant_id,
+                    "name": guest_name,
                     "first_name": guest_first,
                     "last_name": guest_last,
                     "email": guest_email,
@@ -692,12 +807,25 @@ async def auto_import_reservation_to_pms(
         # physical room for the whole stay, then let create_booking_atomic make
         # the race-safe night claim. If all rooms are occupied/blocked, retain
         # the reservation as pending_assignment for a manual calendar move.
-        _, assigned_room = await create_booking_with_auto_assignment(
+        created_booking, assigned_room = await create_booking_with_auto_assignment(
             database=db,
             tenant_id=tenant_id,
             booking_doc=booking_doc,
             create_booking=create_booking_atomic,
         )
+        if provider == "hotelrunner":
+            from domains.channel_manager.providers.hotelrunner_notes import (
+                sync_hotelrunner_note,
+            )
+
+            await sync_hotelrunner_note(
+                db,
+                tenant_id=tenant_id,
+                booking_id=booking_id,
+                external_reservation_id=ext_res_id,
+                content=record.get("provider_note", ""),
+                provider_updated_at=record.get("provider_updated_at", ""),
+            )
         if assigned_room:
             logger.info(
                 "[IMPORT-BRIDGE] OTA reservation %s auto-assigned to room %s",
@@ -716,8 +844,9 @@ async def auto_import_reservation_to_pms(
             release_unmatched_reservation_hold,
         )
 
+        release_result = {"released": False, "room_id": None}
         try:
-            await release_unmatched_reservation_hold(
+            release_result = await release_unmatched_reservation_hold(
                 tenant_id=tenant_id,
                 external_id=ext_res_id,
                 reason="mapping_resolved",
@@ -728,6 +857,27 @@ async def auto_import_reservation_to_pms(
                 "[IMPORT-BRIDGE] unmatched hold release raised %s",
                 type(exc).__name__,
             )
+
+        # Historical HotelRunner holds sometimes claimed the physical room
+        # before their mapping was repaired.  The first allocation pass above
+        # then produced an unassigned duplicate.  After the durable hold is
+        # safely released, retry the normal candidate/atomic-lock path once.
+        if assigned_room is None and release_result.get("released") and release_result.get("room_id"):
+            created_booking, assigned_room = await assign_pending_booking_with_auto_assignment(
+                database=db,
+                tenant_id=tenant_id,
+                booking_doc={
+                    **created_booking,
+                    "preferred_room_number": release_result.get("room_number")
+                    or booking_doc.get("preferred_room_number", ""),
+                },
+            )
+            if assigned_room:
+                logger.info(
+                    "[IMPORT-BRIDGE] OTA reservation %s assigned after legacy hold release to room %s",
+                    ext_res_id,
+                    assigned_room.get("room_number") or assigned_room.get("id"),
+                )
 
         # ── 7. Update import record → imported ───────────────────
         imported_at = _utc_now()
@@ -834,40 +984,64 @@ async def auto_import_reservation_to_pms(
         )
 
         # ── 10. Enqueue outbox event for confirmation ────────────
-        try:
-            from core.outbox_service import BOOKING_CREATED, enqueue_outbox_event
+        # The automatic allocator returns the persisted booking, including the
+        # physical room chosen for it.  ``booking_doc`` above deliberately has
+        # no ``room_id`` until that allocation succeeds, so using it here made
+        # every imported, allocated reservation fail the durable availability
+        # path with "booking availability payload is incomplete".
+        assigned_room_id = str(created_booking.get("room_id") or "").strip()
+        if assigned_room_id:
+            try:
+                from core.outbox_service import BOOKING_CREATED, enqueue_outbox_event
 
-            await enqueue_outbox_event(
-                db,
-                tenant_id=tenant_id,
-                event_type=BOOKING_CREATED,
-                entity_type="booking",
-                entity_id=booking_id,
-                payload={
-                    "booking_id": booking_id,
-                    "source": "ota_import",
-                    "provider": provider,
-                    "external_reservation_id": ext_res_id,
-                },
-                provider=provider,
-                connector_id=record.get("connector_id"),
-                property_id=property_id,
-                correlation_id=record.get("correlation_id"),
+                await enqueue_outbox_event(
+                    db,
+                    tenant_id=tenant_id,
+                    event_type=BOOKING_CREATED,
+                    entity_type="booking",
+                    entity_id=booking_id,
+                    payload={
+                        "booking_id": booking_id,
+                        "guest_id": created_booking.get("guest_id"),
+                        "room_id": assigned_room_id,
+                        "check_in": created_booking.get("check_in", ""),
+                        "check_out": created_booking.get("check_out", ""),
+                        "status": created_booking.get("status", "confirmed"),
+                        "property_id": property_id,
+                        "source_channel": created_booking.get("channel") or provider,
+                        "origin": "ota_import",
+                        "provider": provider,
+                        "external_reservation_id": ext_res_id,
+                    },
+                    provider=provider,
+                    connector_id=record.get("connector_id"),
+                    property_id=property_id,
+                    correlation_id=record.get("correlation_id"),
+                )
+                # Timeline: queued for outbox delivery
+                await _timeline_append(
+                    tenant_id=tenant_id,
+                    correlation_id=correlation_id,
+                    entity_type="reservation",
+                    entity_id=booking_id,
+                    external_id=ext_res_id,
+                    stage="queued",
+                    source="outbox_service",
+                    provider=provider,
+                    metadata={"booking_id": booking_id},
+                )
+            except Exception as e:
+                logger.warning("Outbox enqueue for import failed (non-critical): %s", e)
+        else:
+            # A pending-assignment booking has no room-night lock yet.  There
+            # is therefore no physical-room inventory change to publish.  Its
+            # later room assignment goes through the normal booking-update
+            # flow, which creates the complete availability event.
+            logger.info(
+                "OTA import availability deferred until room assignment: booking=%s provider=%s",
+                booking_id,
+                provider,
             )
-            # Timeline: queued for outbox delivery
-            await _timeline_append(
-                tenant_id=tenant_id,
-                correlation_id=correlation_id,
-                entity_type="reservation",
-                entity_id=booking_id,
-                external_id=ext_res_id,
-                stage="queued",
-                source="outbox_service",
-                provider=provider,
-                metadata={"booking_id": booking_id},
-            )
-        except Exception as e:
-            logger.warning("Outbox enqueue for import failed (non-critical): %s", e)
 
         logger.info(
             "OTA reservation imported: import=%s booking=%s ext=%s provider=%s",
@@ -939,8 +1113,16 @@ async def _handle_import_failure(
 ) -> None:
     """Handle import failure — retry or mark as permanently failed."""
     now = _utc_now()
-    retry_count = record.get("retry_count", 0) + 1
-    max_retries = record.get("max_retries", DEFAULT_MAX_RETRIES)
+    # A worker can receive a pre-claimed document, while another flow may have
+    # already updated its retry metadata.  Always use the persisted value for
+    # the retry decision so an exhausted import cannot remain ``processing``.
+    persisted_retry_state = await db[COLL_IMPORTED].find_one(
+        {"id": record["id"]},
+        {"_id": 0, "retry_count": 1, "max_retries": 1},
+    )
+    retry_state = persisted_retry_state or record
+    retry_count = retry_state.get("retry_count", 0) + 1
+    max_retries = retry_state.get("max_retries", DEFAULT_MAX_RETRIES)
     retryable = _is_retryable(error_msg)
 
     if not retryable or retry_count >= max_retries:

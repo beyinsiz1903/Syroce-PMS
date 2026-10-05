@@ -4,6 +4,8 @@ import logging
 
 logger = logging.getLogger(__name__)
 import asyncio
+import html
+import uuid
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
@@ -17,11 +19,12 @@ try:
 except ImportError:
     Workbook = None
 
+from core.business_date_service import stamp_open_business_date
 from core.database import db
 from core.helpers import create_audit_log
 from core.pagination import PaginationParams, paginate
 from core.security import get_current_user
-from core.utils import calculate_folio_balance, excel_response
+from core.utils import calculate_folio_balance
 from models.enums import ChargeCategory, FolioOperationType
 from models.schemas import (
     ChargeCreate,
@@ -36,6 +39,7 @@ from models.schemas import (
 )
 from modules.folio.services.folio_balance_read_service import FolioBalanceReadService
 from modules.folio.services.open_folio_service import OpenFolioService
+from modules.pms_core.reporting_financials import is_valid_payment
 from modules.pms_core.role_permission_service import require_op
 from shared_kernel.idempotency import (
     claim_idempotency,
@@ -79,8 +83,49 @@ def _ts_sort_key(value) -> str:
     return str(value)
 
 
+def _normalize_currency(value: object, fallback: str = "TRY") -> str:
+    code = str(value or fallback or "TRY").strip().upper()
+    return "TRY" if code in {"TL", "TRL"} else code
+
+
 folio_balance_read_service = FolioBalanceReadService()
 open_folio_service = OpenFolioService()
+
+
+def _folio_export_transactions(charges: list[dict], payments: list[dict]) -> list[dict]:
+    """Return the financially effective transactions for a folio statement.
+
+    An exported statement is an accounting document, not a raw event log.  It
+    must therefore apply the same invalid-payment rule as financial reports:
+    voided, failed, cancelled and rejected payments never reduce the amount
+    due or appear as a successful collection.
+    """
+    transactions: list[dict] = []
+    for charge in charges:
+        if charge.get("voided"):
+            continue
+        transactions.append(
+            {
+                "date": charge.get("business_date") or str(charge.get("created_at") or "")[:10],
+                "desc": charge.get("description", "Charge"),
+                "type": str(charge.get("charge_type", "N/A")).title(),
+                "amount": float(charge.get("amount", 0)),
+                "is_charge": True,
+            }
+        )
+    for payment in payments:
+        if not is_valid_payment(payment):
+            continue
+        transactions.append(
+            {
+                "date": payment.get("payment_date") or payment.get("date") or str(payment.get("created_at") or "")[:10],
+                "desc": payment.get("description", str(payment.get("method", "Payment")).title()),
+                "type": "Payment",
+                "amount": float(payment.get("amount", 0)),
+                "is_charge": False,
+            }
+        )
+    return sorted(transactions, key=lambda transaction: str(transaction["date"]))
 
 
 async def _decrement_booking_paid_amount(tenant_id: str, booking_id: str, amount: float) -> float:
@@ -109,7 +154,7 @@ async def create_folio(
     """Create a new folio for a booking"""
     from modules.pms_core.role_permission_service import RolePermissionService  # Bug CQ-R2
 
-    RolePermissionService().enforce_permission(current_user.role, "post_charge")
+    RolePermissionService().enforce_user_permission(current_user, "post_charge")
     return await open_folio_service.create(folio_data, current_user, request)
 
 
@@ -133,7 +178,7 @@ async def list_folios(status: str | None = None, p: PaginationParams = Depends(p
     booking_map = {}
     if booking_ids:
         bookings = await db.bookings.find(
-            {"id": {"$in": booking_ids}, "tenant_id": current_user.tenant_id}, {"_id": 0, "id": 1, "guest_name": 1, "room_number": 1, "room_id": 1, "check_in": 1, "check_out": 1}
+            {"id": {"$in": booking_ids}, "tenant_id": current_user.tenant_id}, {"_id": 0, "id": 1, "guest_name": 1, "room_number": 1, "room_id": 1, "check_in": 1, "check_out": 1, "currency": 1}
         ).to_list(len(booking_ids))
         booking_map = {b["id"]: b for b in bookings}
 
@@ -144,6 +189,7 @@ async def list_folios(status: str | None = None, p: PaginationParams = Depends(p
             folio["room_number"] = booking.get("room_number", "")
             folio["check_in"] = booking.get("check_in", "")
             folio["check_out"] = booking.get("check_out", "")
+            folio["currency"] = folio.get("currency") or booking.get("currency") or "TRY"
 
     return {
         "folios": folios,
@@ -164,7 +210,7 @@ async def get_folio_dashboard_stats(
     try:
         # v95 — Parallel queries + server-side $sum (was to_list(1000) + Python sum, sequential)
         tid = current_user.tenant_id
-        yesterday = (datetime.now(UTC) - timedelta(days=1)).isoformat()
+        yesterday = (datetime.now(UTC) - timedelta(days=1)).date().isoformat()
 
         open_folios_pipeline = [
             {"$match": {"tenant_id": tid, "status": "open"}},
@@ -177,8 +223,8 @@ async def get_folio_dashboard_stats(
             },
         ]
         open_folios_q = db.folios.aggregate(open_folios_pipeline).to_list(1)
-        charges_q = db.folio_charges.count_documents({"tenant_id": tid, "date": {"$gte": yesterday}, "voided": False})
-        payments_q = db.payments.count_documents({"tenant_id": tid, "date": {"$gte": yesterday}})
+        charges_q = db.folio_charges.count_documents({"tenant_id": tid, "business_date": {"$gte": yesterday}, "voided": {"$ne": True}})
+        payments_q = db.payments.count_documents({"tenant_id": tid, "$or": [{"processed_at": {"$gte": yesterday}}, {"payment_date": {"$gte": yesterday}}, {"date": {"$gte": yesterday}}]})
         open_agg, recent_charges, recent_payments = await asyncio.gather(open_folios_q, charges_q, payments_q)
 
         total_open = open_agg[0]["count"] if open_agg else 0
@@ -221,11 +267,20 @@ async def get_pending_ar(
                 "status": "open",
                 "balance": {"$gt": 0},
             },
-            {"_id": 0, "company_id": 1, "balance": 1, "created_at": 1},
+            {"_id": 0, "id": 1, "booking_id": 1, "folio_number": 1, "company_id": 1, "balance": 1, "currency": 1, "created_at": 1},
         ).to_list(10000)
 
         if not all_folios:
             return []
+
+        booking_ids = list({f.get("booking_id") for f in all_folios if f.get("booking_id") and not f.get("currency")})
+        booking_currency = {}
+        if booking_ids:
+            bookings = await db.bookings.find(
+                {"tenant_id": tenant_id, "id": {"$in": booking_ids}},
+                {"_id": 0, "id": 1, "currency": 1},
+            ).to_list(len(booking_ids))
+            booking_currency = {b["id"]: _normalize_currency(b.get("currency")) for b in bookings}
 
         # Group folios by company
         folios_by_company: dict[str, list] = {}
@@ -240,12 +295,17 @@ async def get_pending_ar(
             if not company:
                 continue
 
-            total_outstanding = sum(f.get("balance", 0) for f in folios)
+            total_outstanding_by_currency: dict[str, float] = {}
+            for folio in folios:
+                currency = _normalize_currency(folio.get("currency") or booking_currency.get(folio.get("booking_id")))
+                total_outstanding_by_currency[currency] = total_outstanding_by_currency.get(currency, 0) + float(folio.get("balance") or 0)
+            total_outstanding = sum(total_outstanding_by_currency.values())
             if total_outstanding <= 0:
                 continue
 
             # Aging calculation
             aging = {"0-7": 0, "8-14": 0, "15-30": 0, "30+": 0}
+            aging_by_currency: dict[str, dict[str, float]] = {key: {} for key in aging}
             oldest_iso = None
             oldest_days = 0
             for folio in folios:
@@ -256,14 +316,17 @@ async def get_pending_ar(
                     folio_dt = now
                 days = (now - folio_dt).days
                 balance = folio.get("balance", 0)
+                currency = _normalize_currency(folio.get("currency") or booking_currency.get(folio.get("booking_id")))
                 if days <= 7:
-                    aging["0-7"] += balance
+                    bucket = "0-7"
                 elif days <= 14:
-                    aging["8-14"] += balance
+                    bucket = "8-14"
                 elif days <= 30:
-                    aging["15-30"] += balance
+                    bucket = "15-30"
                 else:
-                    aging["30+"] += balance
+                    bucket = "30+"
+                aging[bucket] += balance
+                aging_by_currency[bucket][currency] = aging_by_currency[bucket].get(currency, 0) + balance
                 if oldest_iso is None or created_at < oldest_iso:
                     oldest_iso = created_at
                     oldest_days = days
@@ -278,10 +341,15 @@ async def get_pending_ar(
                     "contact_phone": company.get("contact_phone", ""),
                     "payment_terms": company.get("payment_terms", "Net 30"),
                     "total_outstanding": round(total_outstanding, 2),
+                    "total_outstanding_by_currency": {code: round(amount, 2) for code, amount in sorted(total_outstanding_by_currency.items())},
                     "open_folios_count": len(folios),
                     "oldest_invoice_date": oldest_iso,
                     "days_outstanding": oldest_days,
                     "aging": aging,
+                    "aging_by_currency": {
+                        bucket: {code: round(amount, 2) for code, amount in sorted(values.items())}
+                        for bucket, values in aging_by_currency.items()
+                    },
                 }
             )
 
@@ -294,6 +362,140 @@ async def get_pending_ar(
 
         traceback.print_exc()
         return []
+
+
+@router.get("/folio/pending-ar/{company_id}")
+async def get_pending_ar_details(
+    company_id: str,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),
+):
+    tenant_id = current_user.tenant_id
+    company = await db.companies.find_one({"id": company_id, "tenant_id": tenant_id}, {"_id": 0})
+    if not company:
+        raise HTTPException(status_code=404, detail="Cari hesap bulunamadı")
+
+    folios = (
+        await db.folios.find(
+            {
+                "tenant_id": tenant_id,
+                "company_id": company_id,
+                "status": "open",
+                "balance": {"$gt": 0},
+            },
+            {"_id": 0},
+        )
+        .sort("created_at", 1)
+        .to_list(1000)
+    )
+    booking_ids = [folio.get("booking_id") for folio in folios if folio.get("booking_id")]
+    bookings = []
+    if booking_ids:
+        bookings = await db.bookings.find(
+            {"tenant_id": tenant_id, "id": {"$in": booking_ids}},
+            {"_id": 0, "id": 1, "reservation_number": 1, "confirmation_number": 1, "guest_name": 1, "room_number": 1, "check_in": 1, "check_out": 1, "currency": 1},
+        ).to_list(len(booking_ids))
+    booking_map = {booking["id"]: booking for booking in bookings}
+    rows = []
+    for folio in folios:
+        booking = booking_map.get(folio.get("booking_id"), {})
+        rows.append(
+            {
+                "folio_id": folio.get("id"),
+                "folio_number": folio.get("folio_number") or f"F-{str(folio.get('id') or '')[:8]}",
+                "booking_id": folio.get("booking_id"),
+                "reservation_number": booking.get("reservation_number") or booking.get("confirmation_number"),
+                "guest_name": booking.get("guest_name") or folio.get("guest_name") or "—",
+                "room_number": booking.get("room_number") or folio.get("room_number") or "—",
+                "check_in": booking.get("check_in"),
+                "check_out": booking.get("check_out"),
+                "created_at": folio.get("created_at"),
+                "balance": round(float(folio.get("balance") or 0), 2),
+                "currency": _normalize_currency(folio.get("currency") or booking.get("currency")),
+            }
+        )
+    totals_by_currency: dict[str, float] = {}
+    for row in rows:
+        totals_by_currency[row["currency"]] = totals_by_currency.get(row["currency"], 0) + row["balance"]
+    return {
+        "company": {
+            "id": company_id,
+            "name": company.get("name", ""),
+            "contact_person": company.get("contact_person", ""),
+            "contact_email": company.get("contact_email", ""),
+            "contact_phone": company.get("contact_phone", ""),
+        },
+        "folios": rows,
+        "total_outstanding": round(sum(row["balance"] for row in rows), 2),
+        "total_outstanding_by_currency": {code: round(amount, 2) for code, amount in sorted(totals_by_currency.items())},
+    }
+
+
+@router.post("/folio/pending-ar/{company_id}/send-reminder")
+async def send_pending_ar_reminder(
+    company_id: str,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("post_charge")),
+):
+    details = await get_pending_ar_details(company_id, current_user, None)
+    company = details["company"]
+    recipient = (company.get("contact_email") or "").strip()
+    if not recipient:
+        raise HTTPException(status_code=422, detail="Cari hesap için iletişim e-postası tanımlı değil")
+
+    tenant = await db.tenants.find_one({"id": current_user.tenant_id}, {"_id": 0, "name": 1})
+    hotel_name = (tenant or {}).get("name") or "Syroce PMS"
+    rows_html = "".join(
+        "<tr>"
+        f"<td>{html.escape(str(row['folio_number']))}</td>"
+        f"<td>{html.escape(str(row['room_number']))}</td>"
+        f"<td>{html.escape(str(row['guest_name']))}</td>"
+        f"<td style='text-align:right'>{row['balance']:,.2f} {html.escape(row['currency'])}</td>"
+        "</tr>"
+        for row in details["folios"]
+    )
+    body = (
+        f"<p>Sayın {html.escape(company.get('contact_person') or company.get('name') or 'Yetkili')},</p>"
+        f"<p>{html.escape(hotel_name)} nezdindeki toplam <strong>{' · '.join(f'{amount:,.2f} {html.escape(code)}' for code, amount in details['total_outstanding_by_currency'].items())}</strong> "
+        "tutarındaki açık bakiyenize ilişkin döküm aşağıdadır.</p>"
+        "<table style='border-collapse:collapse;width:100%'><thead><tr>"
+        "<th>Folyo</th><th>Oda</th><th>Misafir</th><th style='text-align:right'>Bakiye</th>"
+        f"</tr></thead><tbody>{rows_html}</tbody></table>"
+        "<p>Ödeme durumu hakkında bilgi vermenizi rica ederiz.</p>"
+    )
+    from core.email import send_email
+
+    result = await send_email(
+        to=recipient,
+        subject=f"{hotel_name} açık bakiye hatırlatması",
+        html=body,
+    )
+    if not result.get("sent"):
+        raise HTTPException(status_code=502, detail=result.get("error") or "Hatırlatma e-postası gönderilemedi")
+
+    reminder = {
+        "id": str(uuid.uuid4()),
+        "tenant_id": current_user.tenant_id,
+        "company_id": company_id,
+        "recipient": recipient,
+        "amount": details["total_outstanding"],
+        "amount_by_currency": details["total_outstanding_by_currency"],
+        "folio_ids": [row["folio_id"] for row in details["folios"]],
+        "sent_by": current_user.id,
+        "sent_at": datetime.now(UTC).isoformat(),
+        "provider": result.get("provider"),
+        "provider_id": result.get("id"),
+    }
+    await db.ar_reminders.insert_one(reminder)
+    await create_audit_log(
+        tenant_id=current_user.tenant_id,
+        user=current_user,
+        action="pending_ar_reminder_sent",
+        entity_type="company",
+        entity_id=company_id,
+        changes={"recipient": recipient, "amount": details["total_outstanding"], "amount_by_currency": details["total_outstanding_by_currency"]},
+    )
+    return {"sent": True, "recipient": recipient, "sent_at": reminder["sent_at"]}
 
 
 @router.get("/folio/booking/{booking_id}", response_model=list[Folio])
@@ -373,112 +575,119 @@ async def export_folio_excel(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_finance_reports")),  # v70 Bug DG
 ):
-    """Export Folio to Excel"""
+    """Export Folio to a Professional Excel Document"""
     folio_data = await _legacy_get_folio_details(current_user.tenant_id, folio_id)
 
     folio = folio_data["folio"]
     charges = folio_data["charges"]
     payments = folio_data["payments"]
-    balance = folio_data["balance"]
+
+    tenant_info = await db.properties.find_one({"tenant_id": current_user.tenant_id}) or {}
+    hotel_name = tenant_info.get("name", "Syroce PMS Hotel")
+
+    if not Workbook:
+        raise HTTPException(status_code=500, detail="Excel export is not available (openpyxl missing)")
 
     wb = Workbook()
     ws = wb.active
-    ws.title = "Folio"
+    ws.title = f"Folio_{folio.get('folio_number', folio_id[-6:])}"
 
-    # Folio header
-    ws["A1"] = "GUEST FOLIO"
-    ws["A1"].font = Font(size=16, bold=True)
+    # Styles
+    title_font = Font(size=18, bold=True, color="333333")
+    header_font = Font(size=12, bold=True, color="FFFFFF")
+    header_fill = PatternFill(start_color="4F81BD", end_color="4F81BD", fill_type="solid")
+    border_side = Side(border_style="thin", color="CCCCCC")
+    box_border = Border(left=border_side, right=border_side, top=border_side, bottom=border_side)
+    align_center = Alignment(horizontal="center", vertical="center")
+    align_right = Alignment(horizontal="right")
+
+    # Hotel Header
+    ws["A1"] = hotel_name.upper()
+    ws["A1"].font = title_font
     ws.merge_cells("A1:E1")
 
-    ws["A3"] = "Folio Number:"
-    ws["B3"] = folio.get("folio_number", "N/A")
-    ws["A4"] = "Type:"
-    ws["B4"] = folio.get("folio_type", "guest").title()
-    ws["A5"] = "Status:"
-    ws["B5"] = folio.get("status", "open").upper()
-    ws["A6"] = "Created:"
-    ws["B6"] = folio.get("created_at", "")[:10]
+    ws["A2"] = "GUEST FOLIO / HESAP DÖKÜMÜ"
+    ws["A2"].font = Font(size=14, italic=True, color="666666")
+    ws.merge_cells("A2:E2")
 
-    # Charges section
-    ws["A9"] = "CHARGES"
-    ws["A9"].font = Font(size=14, bold=True)
+    # Folio Details
+    details = [
+        ("Folio No", folio.get("folio_number", "N/A")),
+        ("Status", folio.get("status", "open").upper()),
+        ("Guest Name", folio.get("guest_name", "Unknown Guest")),
+        ("Room", folio.get("room_number", "N/A")),
+        ("Print Date", datetime.now(UTC).strftime("%Y-%m-%d %H:%M"))
+    ]
 
-    charge_headers = ["Date", "Description", "Qty", "Subtotal", "Discount", "Net", "VAT %", "VAT", "City Tax", "Total"]
-    for col_num, header in enumerate(charge_headers, 1):
-        cell = ws.cell(row=10, column=col_num)
-        cell.value = header
-        cell.font = Font(bold=True)
-        cell.fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
-        cell.font = Font(bold=True, color="FFFFFF")
+    row_num = 4
+    for k, v in details:
+        ws[f"A{row_num}"] = k + ":"
+        ws[f"A{row_num}"].font = Font(bold=True)
+        ws[f"B{row_num}"] = v
+        row_num += 1
 
-    # Bug AN: charge.description is user-controlled; openpyxl would parse a
-    # leading '=' as a formula. xlsx_safe() prepends apostrophe to neutralize.
-    from core.csv_safe import xlsx_safe
+    # Transactions Header
+    row_num += 2
+    headers = ["Date", "Description", "Type", "Charge (+)", "Payment (-)"]
+    for col, header in enumerate(headers, 1):
+        cell = ws.cell(row=row_num, column=col, value=header)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = align_center
+        cell.border = box_border
 
-    row = 11
-    total_charges = 0
-    for charge in charges:
-        if not charge.get("voided", False):
-            net = float(charge.get("amount", 0) or 0)
-            disc = float(charge.get("discount_amount", 0) or 0)
-            sub = float(charge.get("subtotal") or (net + disc))  # geriye uyumlu: eski kayıtlarda subtotal=amount+discount=amount
-            ws.cell(row=row, column=1, value=(charge.get("posted_at") or charge.get("date") or "")[:10])
-            ws.cell(row=row, column=2, value=xlsx_safe(charge.get("description", "")))
-            ws.cell(row=row, column=3, value=charge.get("quantity", 1))
-            ws.cell(row=row, column=4, value=round(sub, 2))
-            ws.cell(row=row, column=5, value=round(disc, 2))
-            ws.cell(row=row, column=6, value=round(net, 2))
-            ws.cell(row=row, column=7, value=round(float(charge.get("vat_rate", 0) or 0), 2))
-            ws.cell(row=row, column=8, value=round(float(charge.get("vat_amount", 0) or 0), 2))
-            ws.cell(row=row, column=9, value=round(float(charge.get("tax_amount", 0) or 0), 2))
-            ws.cell(row=row, column=10, value=round(float(charge.get("total", 0) or 0), 2))
-            total_charges += float(charge.get("total", 0) or 0)
-            row += 1
+    # Adjust Column Widths
+    ws.column_dimensions['A'].width = 15
+    ws.column_dimensions['B'].width = 40
+    ws.column_dimensions['C'].width = 15
+    ws.column_dimensions['D'].width = 15
+    ws.column_dimensions['E'].width = 15
 
-    ws.cell(row=row, column=9, value="Total Charges:")
-    ws.cell(row=row, column=9).font = Font(bold=True)
-    ws.cell(row=row, column=10, value=round(total_charges, 2))
-    ws.cell(row=row, column=10).font = Font(bold=True)
+    # Transactions Data
+    row_num += 1
+    total_charges = 0.0
+    total_payments = 0.0
 
-    # Payments section
-    row += 2
-    ws.cell(row=row, column=1, value="PAYMENTS")
-    ws.cell(row=row, column=1).font = Font(size=14, bold=True)
-    row += 1
+    transactions = _folio_export_transactions(charges, payments)
 
-    payment_headers = ["Date", "Method", "Type", "Amount"]
-    for col_num, header in enumerate(payment_headers, 1):
-        cell = ws.cell(row=row, column=col_num)
-        cell.value = header
-        cell.font = Font(bold=True)
-        cell.fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
-        cell.font = Font(bold=True, color="FFFFFF")
+    for tx in transactions:
+        ws.cell(row=row_num, column=1, value=tx["date"]).border = box_border
+        ws.cell(row=row_num, column=2, value=tx["desc"]).border = box_border
+        ws.cell(row=row_num, column=3, value=tx["type"]).border = box_border
 
-    row += 1
-    total_payments = 0
-    for payment in payments:
-        ws.cell(row=row, column=1, value=payment.get("processed_at", "")[:10])
-        ws.cell(row=row, column=2, value=payment.get("payment_method", "").title())
-        ws.cell(row=row, column=3, value=payment.get("payment_type", "").title())
-        ws.cell(row=row, column=4, value=f"${payment.get('amount', 0):,.2f}")
-        total_payments += payment.get("amount", 0)
-        row += 1
+        charge_cell = ws.cell(row=row_num, column=4, value=f"{tx['amount']:.2f}" if tx["is_charge"] else "")
+        charge_cell.border = box_border
+        charge_cell.alignment = align_right
 
-    ws.cell(row=row, column=3, value="Total Payments:")
-    ws.cell(row=row, column=3).font = Font(bold=True)
-    ws.cell(row=row, column=4, value=f"${total_payments:,.2f}")
-    ws.cell(row=row, column=4).font = Font(bold=True)
+        payment_cell = ws.cell(row=row_num, column=5, value=f"{tx['amount']:.2f}" if not tx["is_charge"] else "")
+        payment_cell.border = box_border
+        payment_cell.alignment = align_right
+
+        if tx["is_charge"]: total_charges += tx["amount"]
+        else: total_payments += tx["amount"]
+        row_num += 1
+
+    # Totals
+    row_num += 1
+    ws.cell(row=row_num, column=3, value="TOTALS:").font = Font(bold=True)
+    ws.cell(row=row_num, column=4, value=f"{total_charges:.2f}").font = Font(bold=True)
+    ws.cell(row=row_num, column=5, value=f"{total_payments:.2f}").font = Font(bold=True)
 
     # Balance
-    row += 2
-    ws.cell(row=row, column=5, value="BALANCE DUE:")
-    ws.cell(row=row, column=5).font = Font(size=14, bold=True)
-    ws.cell(row=row, column=6, value=f"${balance:,.2f}")
-    ws.cell(row=row, column=6).font = Font(size=14, bold=True)
-    ws.cell(row=row, column=6).fill = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
+    row_num += 2
+    ws.cell(row=row_num, column=4, value="BALANCE DUE:").font = Font(bold=True, size=12)
+    balance_val = total_charges - total_payments
+    bal_cell = ws.cell(row=row_num, column=5, value=f"{balance_val:.2f}")
+    bal_cell.font = Font(bold=True, size=12, color="FF0000" if balance_val > 0 else "0070C0")
 
-    filename = f"folio_{folio.get('folio_number', folio_id)}.xlsx"
-    return excel_response(wb, filename)
+    import os
+    import tempfile
+
+    from fastapi.responses import FileResponse
+    fd, path = tempfile.mkstemp(suffix=".xlsx")
+    os.close(fd)
+    wb.save(path)
+    return FileResponse(path, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", filename=f"Folio_{folio.get('folio_number', folio_id)}.xlsx")
 
 
 @router.post("/folio/{folio_id}/charge", response_model=FolioCharge)
@@ -487,7 +696,7 @@ async def post_charge_to_folio(folio_id: str, charge_data: ChargeCreate, request
     # Role / permission enforcement (Bug CP fix)
     from modules.pms_core.role_permission_service import RolePermissionService
 
-    RolePermissionService().enforce_permission(current_user.role, "post_charge")
+    RolePermissionService().enforce_user_permission(current_user, "post_charge")
 
     # Optional Idempotency-Key replay protection (cashier double-click / retry).
     idem_key = get_idempotency_key(request)
@@ -559,6 +768,7 @@ async def post_charge_to_folio(folio_id: str, charge_data: ChargeCreate, request
 
         charge_dict = charge.model_dump()
         charge_dict["date"] = charge_dict["date"].isoformat()
+        await stamp_open_business_date(db, current_user.tenant_id, charge_dict)
         await db.folio_charges.insert_one(charge_dict)
 
         # Persist the replay body immediately after the durable insert so a
@@ -595,7 +805,8 @@ async def post_charge_to_folio(folio_id: str, charge_data: ChargeCreate, request
 
         # v95.1 — revenue raporu cache'ini geçersiz kıl (yeni charge eklenince)
         if cache:
-            cache.invalidate_tenant_cache(current_user.tenant_id, "folio_revenue_by_category")
+            cache.invalidate_tenant_cache(current_user.tenant_id, "folio_revenue_by_category_v2")
+            cache.invalidate_tenant_cache(current_user.tenant_id, "reports_basic_dashboard_v2")
 
         # Acente webhook: rezervasyon güncellendi (yeni charge → toplam değişti)
         from routers.webhook_retry_service import schedule_emit_reservation_updated
@@ -624,7 +835,7 @@ async def post_payment_to_folio(folio_id: str, payment_data: PaymentCreate, requ
     # Role / permission enforcement (Bug CP fix)
     from modules.pms_core.role_permission_service import RolePermissionService
 
-    RolePermissionService().enforce_permission(current_user.role, "post_payment")
+    RolePermissionService().enforce_user_permission(current_user, "post_payment")
 
     # Optional Idempotency-Key replay protection (cashier double-click / retry).
     idem_key = get_idempotency_key(request)
@@ -679,11 +890,31 @@ async def post_payment_to_folio(folio_id: str, payment_data: PaymentCreate, requ
         method_str = payment_data.method.value if hasattr(payment_data.method, "value") else str(payment_data.method)
         await ensure_active_shift(current_user.tenant_id, method_str)
 
-        payment = Payment(tenant_id=current_user.tenant_id, folio_id=folio_id, booking_id=folio["booking_id"], processed_by=current_user.id, **payment_data.model_dump())
+        payment_payload = payment_data.model_dump(exclude_none=True)
+        if not payment_payload.get("currency"):
+            booking = None
+            bookings_collection = getattr(db, "bookings", None)
+            if bookings_collection is not None:
+                booking = await bookings_collection.find_one(
+                    {"id": folio["booking_id"], "tenant_id": current_user.tenant_id},
+                    {"_id": 0, "currency": 1},
+                )
+            payment_payload["currency"] = str(
+                (booking or {}).get("currency") or folio.get("currency") or "TRY"
+            ).upper()
+
+        payment = Payment(
+            tenant_id=current_user.tenant_id,
+            folio_id=folio_id,
+            booking_id=folio["booking_id"],
+            processed_by=current_user.id,
+            **payment_payload,
+        )
 
         payment_dict = payment.model_dump()
         payment_dict["processed_at"] = payment_dict["processed_at"].isoformat()
         payment_dict["processed_by_name"] = current_user.name  # Add user name
+        await stamp_open_business_date(db, current_user.tenant_id, payment_dict)
         await db.payments.insert_one(payment_dict)
 
         # Update folio balance
@@ -762,6 +993,8 @@ async def post_payment_to_folio(folio_id: str, payment_data: PaymentCreate, requ
             "payment_added",
             {"payment_id": payment.id, "amount": float(payment.amount), "method": method_str},
         )
+        if cache:
+            cache.invalidate_tenant_cache(current_user.tenant_id, "reports_basic_dashboard_v2")
 
         return payment
     except HTTPException:
@@ -780,7 +1013,7 @@ async def post_payment_to_folio(folio_id: str, payment_data: PaymentCreate, requ
 
 
 @router.get("/folio/reports/revenue-by-category")
-@cached(ttl=300, key_prefix="folio_revenue_by_category")  # 5 dk cache; tarih+tenant key
+@cached(ttl=300, key_prefix="folio_revenue_by_category_v2")  # 5 dk cache; tarih+tenant key
 async def revenue_by_category(
     date_from: str | None = None,
     date_to: str | None = None,
@@ -802,53 +1035,151 @@ async def revenue_by_category(
     if dt_from > dt_to:
         raise HTTPException(status_code=400, detail="date_from > date_to olamaz")
 
-    # charge.date hem ISO string hem BSON datetime olarak depolanmış olabilir.
-    # ISO 8601 string'ler lexicographic olarak sıralanabilir; type-mismatch'ten
-    # kaçınmak için $expr + $cond ile her iki tipi de tek pipeline'da karşıla.
-    pipeline = [
-        {
-            "$match": {
+    projection = {
+        "_id": 0,
+        "business_date": 1,
+        "charge_date": 1,
+        "date": 1,
+        "posted_at": 1,
+        "created_at": 1,
+        "charge_category": 1,
+        "charge_type": 1,
+        "category": 1,
+        "subtotal": 1,
+        "discount_amount": 1,
+        "amount": 1,
+        "charge_amount": 1,
+        "quantity": 1,
+        "vat_amount": 1,
+        "tax_amount": 1,
+        "total": 1,
+        "currency": 1,
+        "source_pos_order_id": 1,
+    }
+    date_fields = ("business_date", "charge_date", "date", "posted_at", "created_at")
+    string_start = dt_from.date().isoformat()
+    string_end = (dt_to.date() + timedelta(days=1)).isoformat()
+    date_clauses = []
+    for field in date_fields:
+        date_clauses.extend(
+            [
+                {field: {"$gte": string_start, "$lt": string_end}},
+                {field: {"$gte": dt_from, "$lte": dt_to}},
+            ]
+        )
+    query = {
+        "tenant_id": current_user.tenant_id,
+        "voided": {"$ne": True},
+        "$or": date_clauses,
+    }
+    pos_date_clauses = []
+    for field in ("business_date", "closed_at", "created_at"):
+        pos_date_clauses.extend(
+            [
+                {field: {"$gte": string_start, "$lt": string_end}},
+                {field: {"$gte": dt_from, "$lte": dt_to}},
+            ]
+        )
+    folio_rows, extra_rows, pos_rows = await asyncio.gather(
+        db.folio_charges.find(query, projection).to_list(None),
+        db.extra_charges.find(query, projection).to_list(None),
+        db.pos_orders.find(
+            {
                 "tenant_id": current_user.tenant_id,
-                "voided": {"$ne": True},
-                "$expr": {
-                    "$let": {
-                        "vars": {
-                            "d": {
-                                "$cond": [
-                                    {"$eq": [{"$type": "$date"}, "string"]},
-                                    {"$dateFromString": {"dateString": "$date", "onError": None, "onNull": None}},
-                                    "$date",
-                                ]
-                            }
-                        },
-                        "in": {
-                            "$and": [
-                                {"$ne": ["$$d", None]},
-                                {"$gte": ["$$d", dt_from]},
-                                {"$lte": ["$$d", dt_to]},
-                            ]
-                        },
-                    }
-                },
-            }
-        },
+                "status": {"$nin": ["cancelled", "canceled", "void", "voided"]},
+                "$or": pos_date_clauses,
+            },
+            {
+                "_id": 0,
+                "id": 1,
+                "business_date": 1,
+                "closed_at": 1,
+                "created_at": 1,
+                "total_amount": 1,
+                "grand_total": 1,
+                "currency": 1,
+                "status": 1,
+            },
+        ).to_list(None),
+    )
+
+    # A POS order may already have been posted to a folio. Include direct POS
+    # revenue only when no folio row represents that order, preventing both
+    # missing restaurant revenue and double counting.
+    represented_pos_order_ids = {
+        str(row.get("source_pos_order_id"))
+        for row in folio_rows
+        if row.get("source_pos_order_id")
+    }
+    direct_pos_rows = [
         {
-            "$group": {
-                "_id": "$charge_category",
-                "count": {"$sum": 1},
-                "subtotal": {"$sum": {"$ifNull": ["$subtotal", "$amount"]}},
-                "discount": {"$sum": {"$ifNull": ["$discount_amount", 0]}},
-                "net": {"$sum": "$amount"},
-                "vat": {"$sum": {"$ifNull": ["$vat_amount", 0]}},
-                "city_tax": {"$sum": {"$ifNull": ["$tax_amount", 0]}},
-                "total": {"$sum": {"$ifNull": ["$total", "$amount"]}},
-            }
-        },
+            "business_date": row.get("business_date"),
+            "date": row.get("closed_at") or row.get("created_at"),
+            "category": "fnb",
+            "total": row.get("total_amount") if row.get("total_amount") is not None else row.get("grand_total", 0),
+            "subtotal": row.get("total_amount") if row.get("total_amount") is not None else row.get("grand_total", 0),
+            "amount": row.get("total_amount") if row.get("total_amount") is not None else row.get("grand_total", 0),
+            "currency": row.get("currency") or "TRY",
+        }
+        for row in pos_rows
+        if str(row.get("id") or "") not in represented_pos_order_ids
+        and str(row.get("status") or "").lower() in {"closed", "completed", "served", "paid"}
     ]
-    rows_raw = await db.folio_charges.aggregate(pipeline).to_list(100)
+
+    def report_day(row: dict) -> date | None:
+        value = row.get("business_date") or row.get("charge_date") or row.get("date") or row.get("posted_at") or row.get("created_at")
+        if isinstance(value, datetime):
+            return value.date()
+        if isinstance(value, date):
+            return value
+        try:
+            return date.fromisoformat(str(value)[:10])
+        except (TypeError, ValueError):
+            return None
+
+    start_day, end_day = dt_from.date(), dt_to.date()
+    grouped: dict[str, dict[str, Any]] = {}
+    for row, is_extra in [
+        *((item, False) for item in folio_rows),
+        *((item, True) for item in extra_rows),
+        *((item, True) for item in direct_pos_rows),
+    ]:
+        row_day = report_day(row)
+        if row_day is None or not start_day <= row_day <= end_day:
+            continue
+        category = str(row.get("charge_category") or row.get("category") or row.get("charge_type") or "other").strip().lower()
+        quantity = float(row.get("quantity") or 1)
+        unit_amount = float(row.get("charge_amount") if row.get("charge_amount") is not None else row.get("amount") or 0)
+        total = float(row.get("total") if row.get("total") is not None else unit_amount * quantity)
+        subtotal = float(row.get("subtotal") if row.get("subtotal") is not None else (total if is_extra else unit_amount))
+        net = total if is_extra else float(row.get("amount") or total)
+        currency = _normalize_currency(row.get("currency"))
+        bucket = grouped.setdefault(
+            category,
+            {"_id": category, "count": 0, "subtotal": 0.0, "discount": 0.0, "net": 0.0, "vat": 0.0, "city_tax": 0.0, "total": 0.0, "by_currency": {}},
+        )
+        currency_bucket = bucket["by_currency"].setdefault(
+            currency,
+            {"subtotal": 0.0, "discount": 0.0, "net": 0.0, "vat": 0.0, "city_tax": 0.0, "total": 0.0},
+        )
+        values = {
+            "subtotal": subtotal,
+            "discount": float(row.get("discount_amount") or 0),
+            "net": net,
+            "vat": float(row.get("vat_amount") or 0),
+            "city_tax": float(row.get("tax_amount") or 0),
+            "total": total,
+        }
+        bucket["count"] = int(bucket["count"]) + 1
+        for field, amount in values.items():
+            bucket[field] = float(bucket[field]) + amount
+            currency_bucket[field] = float(currency_bucket[field]) + amount
+
+    rows_raw = list(grouped.values())
 
     rows = []
     totals = {"count": 0, "subtotal": 0.0, "discount": 0.0, "net": 0.0, "vat": 0.0, "city_tax": 0.0, "total": 0.0}
+    totals_by_currency: dict[str, dict[str, float]] = {}
     for r in rows_raw:
         item = {
             "category": r["_id"] or "other",
@@ -859,11 +1190,22 @@ async def revenue_by_category(
             "vat": round(float(r.get("vat") or 0.0), 2),
             "city_tax": round(float(r.get("city_tax") or 0.0), 2),
             "total": round(float(r.get("total") or 0.0), 2),
+            "by_currency": {
+                currency: {field: round(float(amount or 0), 2) for field, amount in values.items()}
+                for currency, values in sorted((r.get("by_currency") or {}).items())
+            },
         }
         rows.append(item)
         totals["count"] += item["count"]
         for k in ("subtotal", "discount", "net", "vat", "city_tax", "total"):
             totals[k] = round(totals[k] + item[k], 2)
+        for currency, values in item["by_currency"].items():
+            currency_totals = totals_by_currency.setdefault(
+                currency,
+                {"subtotal": 0.0, "discount": 0.0, "net": 0.0, "vat": 0.0, "city_tax": 0.0, "total": 0.0},
+            )
+            for field, amount in values.items():
+                currency_totals[field] = round(currency_totals[field] + amount, 2)
 
     rows.sort(key=lambda x: x["total"], reverse=True)
     return {
@@ -871,6 +1213,7 @@ async def revenue_by_category(
         "date_to": date_to,
         "rows": rows,
         "totals": totals,
+        "totals_by_currency": totals_by_currency,
     }
 
 
@@ -879,7 +1222,7 @@ async def transfer_charges(operation_data: FolioOperationCreate, current_user: U
     """Transfer charges from one folio to another"""
     from modules.pms_core.role_permission_service import RolePermissionService  # Bug CQ-R2
 
-    RolePermissionService().enforce_permission(current_user.role, "transfer_folio")
+    RolePermissionService().enforce_user_permission(current_user, "transfer_folio")
     if operation_data.operation_type != FolioOperationType.TRANSFER:
         raise HTTPException(status_code=400, detail="Invalid operation type")
 
@@ -947,7 +1290,7 @@ async def void_charge(folio_id: str, charge_id: str, void_reason: str, current_u
     """Void a charge"""
     from modules.pms_core.role_permission_service import RolePermissionService  # Bug CQ-R2
 
-    RolePermissionService().enforce_permission(current_user.role, "void_charge")
+    RolePermissionService().enforce_user_permission(current_user, "void_charge")
     charge = await db.folio_charges.find_one({"id": charge_id, "folio_id": folio_id, "tenant_id": current_user.tenant_id, "voided": False})
 
     if not charge:
@@ -976,7 +1319,8 @@ async def void_charge(folio_id: str, charge_id: str, void_reason: str, current_u
 
     # v95.1 — revenue raporu cache'ini geçersiz kıl (charge void edilince)
     if cache:
-        cache.invalidate_tenant_cache(current_user.tenant_id, "folio_revenue_by_category")
+        cache.invalidate_tenant_cache(current_user.tenant_id, "folio_revenue_by_category_v2")
+        cache.invalidate_tenant_cache(current_user.tenant_id, "reports_basic_dashboard_v2")
 
     # Acente webhook: rezervasyon güncellendi (charge iptal → toplam değişti)
     if charge.get("booking_id"):
@@ -1029,7 +1373,7 @@ async def void_payment(
     # (POST_PAYMENT). pms_hardening.py's void-payment route already uses the
     # correct op; this aligns the legacy finance route to the same contract so a
     # role that can only POST payments cannot also VOID them.
-    RolePermissionService().enforce_permission(current_user.role, "void_payment")
+    RolePermissionService().enforce_user_permission(current_user, "void_payment")
 
     reason = (body or {}).get("reason", "").strip()
     if not reason:
@@ -1190,7 +1534,7 @@ async def close_folio(folio_id: str, current_user: User = Depends(get_current_us
     """Close a folio"""
     from modules.pms_core.role_permission_service import RolePermissionService  # Bug CQ-R2
 
-    RolePermissionService().enforce_permission(current_user.role, "close_folio")
+    RolePermissionService().enforce_user_permission(current_user, "close_folio")
     folio = await db.folios.find_one({"id": folio_id, "tenant_id": current_user.tenant_id, "status": "open"})
 
     if not folio:

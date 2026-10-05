@@ -34,6 +34,7 @@ from core.entitlements.enforcement import get_tenant_limit, require_feature
 from core.entitlements.quota import release_quota, reserve_quota
 from core.security import JWT_ALGORITHM, JWT_SECRET, get_current_user
 from core.spa_mice_authz import require_catalog, require_finance, require_mice_ops
+from core.tenant_currency import get_tenant_currency
 from core.tenant_db import get_system_db
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_op  # v94 DW
@@ -49,6 +50,25 @@ from shared_kernel.idempotency import (
 router = APIRouter(prefix="/api/mice", tags=["mice"])
 
 _indexes_ready = False
+
+
+def _normalize_currency(value: str | None, fallback: str) -> str:
+    """Return a strict ISO-style currency code without silently inventing TRY."""
+    code = str(value or fallback).strip().upper()
+    if len(code) != 3 or not code.isascii() or not code.isalpha():
+        raise HTTPException(status_code=422, detail="Para birimi 3 harfli bir kod olmalıdır (örn. TRY, EUR, USD)")
+    return code
+
+
+async def _tenant_currency_code(tenant_id: str) -> str:
+    code, _symbol = await get_tenant_currency(tenant_id)
+    return _normalize_currency(code, "TRY")
+
+
+async def _currency_payload(payload: BaseModel, tenant_id: str) -> dict[str, Any]:
+    data = payload.model_dump()
+    data["currency"] = _normalize_currency(data.get("currency"), await _tenant_currency_code(tenant_id))
+    return data
 
 # Task #231: unique-index "backstops" that self-heal. The non-unique index
 # batch is built once (gated by ``_indexes_ready``); the unique duplicate-
@@ -138,7 +158,7 @@ class FunctionSpaceIn(BaseModel):
     hourly_rate: float = Field(0, ge=0)
     client_request_id: str | None = None
     daily_rate: float = Field(0, ge=0)
-    currency: str = "TRY"
+    currency: str | None = Field(None, min_length=3, max_length=3, pattern=r"^[A-Za-z]{3}$")
     amenities: list[str] = Field(default_factory=list)  # ["projector","stage",...]
     active: bool = True
 
@@ -173,6 +193,9 @@ async def list_spaces(current_user: User = Depends(get_current_user)) -> dict:
     db = get_system_db()
     cur = db.mice_spaces.find({"tenant_id": current_user.tenant_id}, {"_id": 0}).sort("name", 1)
     docs = await cur.to_list(length=None)
+    tenant_currency = await _tenant_currency_code(current_user.tenant_id)
+    for doc in docs:
+        doc["currency"] = _normalize_currency(doc.get("currency"), tenant_currency)
     items = docs
     if not items:
         try:
@@ -185,6 +208,7 @@ async def list_spaces(current_user: User = Depends(get_current_user)) -> dict:
 
 async def _seed_spaces(tenant_id: str) -> list[dict]:
     db = get_system_db()
+    tenant_currency = await _tenant_currency_code(tenant_id)
     seeds = [
         ("Grand Balo Salonu", "Bodrum kat", 480, 500, 280, 320, 450, 0, 0, 8000, 35000),
         ("Bosphorus Toplantı Salonu", "1. kat", 120, 120, 70, 80, 100, 50, 40, 2500, 12000),
@@ -209,7 +233,7 @@ async def _seed_spaces(tenant_id: str) -> list[dict]:
                 "capacity_boardroom": br,
                 "hourly_rate": hr,
                 "daily_rate": dr,
-                "currency": "TRY",
+                "currency": tenant_currency,
                 "amenities": ["wifi", "projector", "ses-sistemi"],
                 "active": True,
                 "created_at": datetime.now(UTC).isoformat(),
@@ -230,7 +254,7 @@ async def create_space(
     require_catalog(current_user)
     db = get_system_db()
 
-    body_dict = body.model_dump()
+    body_dict = await _currency_payload(body, current_user.tenant_id)
     client_request_id = body_dict.pop("client_request_id", None)
     space_id = str(uuid.uuid4())
     resource_id = client_request_id or space_id
@@ -280,7 +304,7 @@ async def update_space(
     db = get_system_db()
     res = await db.mice_spaces.update_one(
         {"id": space_id, "tenant_id": current_user.tenant_id},
-        {"$set": body.model_dump()},
+        {"$set": await _currency_payload(body, current_user.tenant_id)},
     )
     if not res.matched_count:
         raise HTTPException(404, "Mekan bulunamadı")
@@ -317,7 +341,7 @@ class MenuPackageIn(BaseModel):
     type: str = "fb"  # fb / av / decor / ddr  (DDR = Daily Delegate Rate bundle)
     price_per_person: float = Field(0, ge=0)
     flat_price: float = Field(0, ge=0)
-    currency: str = "TRY"
+    currency: str | None = Field(None, min_length=3, max_length=3, pattern=r"^[A-Za-z]{3}$")
     description: str | None = None
     active: bool = True
     # Banquet-grade enrichment (all optional → backwards compatible)
@@ -337,6 +361,9 @@ async def _list_menus_cached(current_user: User) -> dict:
     db = get_system_db()
     cur = db.mice_menus.find({"tenant_id": current_user.tenant_id}, {"_id": 0}).sort("type", 1)
     menus = await cur.to_list(length=None)
+    tenant_currency = await _tenant_currency_code(current_user.tenant_id)
+    for menu in menus:
+        menu["currency"] = _normalize_currency(menu.get("currency"), tenant_currency)
     return {"menus": menus}
 
 
@@ -358,6 +385,7 @@ async def list_menus(current_user: User = Depends(get_current_user)) -> dict:
 
 async def _seed_menus(tenant_id: str) -> list[dict]:
     db = get_system_db()
+    tenant_currency = await _tenant_currency_code(tenant_id)
     seeds = [
         ("Coffee Break (Standart)", "fb", 250, 0),
         ("Açık Büfe Öğle Yemeği", "fb", 950, 0),
@@ -375,7 +403,7 @@ async def _seed_menus(tenant_id: str) -> list[dict]:
                 "type": t,
                 "price_per_person": pp,
                 "flat_price": fp,
-                "currency": "TRY",
+                "currency": tenant_currency,
                 "description": None,
                 "active": True,
                 "created_at": datetime.now(UTC).isoformat(),
@@ -395,7 +423,12 @@ async def create_menu(
 ) -> dict:
     require_catalog(current_user)
     db = get_system_db()
-    doc = {"id": str(uuid.uuid4()), "tenant_id": current_user.tenant_id, **body.model_dump(), "created_at": datetime.now(UTC).isoformat()}
+    doc = {
+        "id": str(uuid.uuid4()),
+        "tenant_id": current_user.tenant_id,
+        **await _currency_payload(body, current_user.tenant_id),
+        "created_at": datetime.now(UTC).isoformat(),
+    }
     await db.mice_menus.insert_one(doc)
     doc.pop("_id", None)
     _invalidate_mice_menus_cache(current_user.tenant_id)
@@ -413,7 +446,7 @@ async def update_menu(
     db = get_system_db()
     res = await db.mice_menus.update_one(
         {"id": menu_id, "tenant_id": current_user.tenant_id},
-        {"$set": body.model_dump()},
+        {"$set": await _currency_payload(body, current_user.tenant_id)},
     )
     if not res.matched_count:
         raise HTTPException(404, "Menü bulunamadı")
@@ -445,6 +478,7 @@ class AccountIn(BaseModel):
     country: str | None = "TR"
     industry: str | None = None  # corporate / wedding-planner / agency / govt
     credit_limit: float = Field(0, ge=0)
+    currency: str | None = Field(None, min_length=3, max_length=3, pattern=r"^[A-Za-z]{3}$")
     payment_terms_days: int = Field(0, ge=0)
     notes: str | None = None
     active: bool = True
@@ -509,6 +543,9 @@ async def list_accounts(
             }
     cur = db.mice_accounts.find(flt, {"_id": 0}).sort("name", 1).limit(500)
     accounts = await cur.to_list(length=None)
+    tenant_currency = await _tenant_currency_code(current_user.tenant_id)
+    for account in accounts:
+        account["currency"] = _normalize_currency(account.get("currency"), tenant_currency)
     return {"accounts": accounts}
 
 
@@ -530,7 +567,7 @@ async def create_account(
         "id": str(uuid.uuid4()),
         "tenant_id": current_user.tenant_id,
         "account_type": "client",  # discriminator; isolates piggybacked rows
-        **body.model_dump(),
+        **await _currency_payload(body, current_user.tenant_id),
         "created_at": datetime.now(UTC).isoformat(),
         "created_by": current_user.username,
     }
@@ -564,11 +601,12 @@ async def update_account(
     # competitors stored in the same collection) via the CRM endpoint.
     from security.search_normalize import normalized_set_for_update
 
-    _norm = normalized_set_for_update(body.model_dump(), collection="mice_accounts")
+    account_data = await _currency_payload(body, current_user.tenant_id)
+    _norm = normalized_set_for_update(account_data, collection="mice_accounts")
     try:
         res = await db.mice_accounts.update_one(
             {"id": account_id, "tenant_id": current_user.tenant_id, **_CLIENT_ACCT_FILTER},
-            {"$set": {**body.model_dump(), **_norm, "account_type": "client", "updated_at": datetime.now(UTC).isoformat()}},
+            {"$set": {**account_data, **_norm, "account_type": "client", "updated_at": datetime.now(UTC).isoformat()}},
         )
     except DuplicateKeyError as exc:
         # Concurrent update raced us to the same tax_no/email — same 409.
@@ -680,7 +718,7 @@ class ResourceInventoryIn(BaseModel):
     total_stock: float = Field(0, ge=0)
     unit: str = "unit"  # unit / set / pcs
     unit_price: float = Field(0, ge=0)
-    currency: str = "TRY"
+    currency: str | None = Field(None, min_length=3, max_length=3, pattern=r"^[A-Za-z]{3}$")
     notes: str | None = None
     active: bool = True
 
@@ -692,6 +730,9 @@ async def list_resources(current_user: User = Depends(get_current_user)) -> dict
     db = get_system_db()
     cur = db.mice_resources.find({"tenant_id": current_user.tenant_id}, {"_id": 0}).sort("type", 1)
     resources = await cur.to_list(length=None)
+    tenant_currency = await _tenant_currency_code(current_user.tenant_id)
+    for resource in resources:
+        resource["currency"] = _normalize_currency(resource.get("currency"), tenant_currency)
     return {"resources": resources}
 
 
@@ -703,7 +744,12 @@ async def create_resource(
 ) -> dict:
     require_catalog(current_user)
     db = get_system_db()
-    doc = {"id": str(uuid.uuid4()), "tenant_id": current_user.tenant_id, **body.model_dump(), "created_at": datetime.now(UTC).isoformat()}
+    doc = {
+        "id": str(uuid.uuid4()),
+        "tenant_id": current_user.tenant_id,
+        **await _currency_payload(body, current_user.tenant_id),
+        "created_at": datetime.now(UTC).isoformat(),
+    }
     await db.mice_resources.insert_one(doc)
     doc.pop("_id", None)
     _invalidate_mice_resources_cache(current_user.tenant_id)
@@ -719,7 +765,10 @@ async def update_resource(
 ) -> dict:
     require_catalog(current_user)
     db = get_system_db()
-    res = await db.mice_resources.update_one({"id": resource_id, "tenant_id": current_user.tenant_id}, {"$set": body.model_dump()})
+    res = await db.mice_resources.update_one(
+        {"id": resource_id, "tenant_id": current_user.tenant_id},
+        {"$set": await _currency_payload(body, current_user.tenant_id)},
+    )
     if not res.matched_count:
         raise HTTPException(404, "Kaynak bulunamadı")
     _invalidate_mice_resources_cache(current_user.tenant_id)
@@ -760,6 +809,7 @@ class ResourceLineIn(BaseModel):
     quantity: float = 1
     unit: str = "pax"  # pax / unit / hour
     unit_price: float = 0
+    currency: str | None = Field(None, min_length=3, max_length=3, pattern=r"^[A-Za-z]{3}$")
     notes: str | None = None
 
 
@@ -842,6 +892,7 @@ class EventIn(BaseModel):
     organizer_user: str | None = None  # sales rep
     event_type: str = "meeting"  # meeting/conference/wedding/gala/training/other
     status: str = "lead"
+    currency: str | None = Field(None, min_length=3, max_length=3, pattern=r"^[A-Za-z]{3}$")
     expected_pax: int = Field(0, ge=0)
     start_date: date
     end_date: date
@@ -1062,9 +1113,15 @@ async def list_events(
     # paralel; 4×count_documents N+1 kapatıldı.
     import asyncio as _asyncio
 
+    tenant_currency = await _tenant_currency_code(current_user.tenant_id)
+
     pipe = [
         {"$match": {"tenant_id": current_user.tenant_id}},
-        {"$group": {"_id": "$status", "n": {"$sum": 1}, "total": {"$sum": "$totals.grand_total"}}},
+        {"$group": {
+            "_id": {"status": "$status", "currency": {"$toUpper": {"$ifNull": ["$currency", tenant_currency]}}},
+            "n": {"$sum": 1},
+            "total": {"$sum": "$totals.grand_total"},
+        }},
     ]
     tid = current_user.tenant_id
     (
@@ -1082,9 +1139,19 @@ async def list_events(
         db.mice_menus.count_documents({"tenant_id": tid}),
         db.mice_resources.count_documents({"tenant_id": tid}),
     )
+    for item in items:
+        item["currency"] = _normalize_currency(item.get("currency"), tenant_currency)
     summary: dict[str, dict] = {}
     for r in summary_rows:
-        summary[r["_id"]] = {"count": r["n"], "total_value": round(r.get("total", 0) or 0, 2)}
+        group = r.get("_id") or {}
+        status_code = group.get("status") if isinstance(group, dict) else group
+        currency = _normalize_currency(group.get("currency") if isinstance(group, dict) else None, tenant_currency)
+        bucket = summary.setdefault(status_code, {"count": 0, "total_value": 0, "total_value_by_currency": {}})
+        bucket["count"] += r["n"]
+        amount = round(r.get("total", 0) or 0, 2)
+        bucket["total_value_by_currency"][currency] = amount
+        if currency == tenant_currency:
+            bucket["total_value"] = amount
     counts = {
         "accounts": cnt_accounts,
         "spaces": cnt_spaces,
@@ -1094,27 +1161,78 @@ async def list_events(
     return {"events": items, "summary": summary, "counts": counts}
 
 
-async def _expand_resource_prices(tenant_id: str, resources: list[dict], pax: int) -> list[dict]:
+async def _expand_resource_prices(
+    tenant_id: str,
+    resources: list[dict],
+    pax: int,
+    event_currency: str,
+    tenant_currency: str,
+) -> list[dict]:
     db = get_system_db()
     out = []
     for r in resources:
         line = dict(r)
+        catalog_item = None
         if r.get("menu_id"):
-            menu = await db.mice_menus.find_one({"id": r["menu_id"], "tenant_id": tenant_id})
-            if menu:
-                if menu.get("price_per_person"):
-                    line["unit_price"] = menu["price_per_person"]
+            catalog_item = await db.mice_menus.find_one({"id": r["menu_id"], "tenant_id": tenant_id})
+            if catalog_item:
+                if catalog_item.get("price_per_person"):
+                    line["unit_price"] = catalog_item["price_per_person"]
                     line["unit"] = "pax"
                     if not line.get("quantity") or line["quantity"] in (0, 1):
                         line["quantity"] = pax
-                elif menu.get("flat_price"):
-                    line["unit_price"] = menu["flat_price"]
+                elif catalog_item.get("flat_price"):
+                    line["unit_price"] = catalog_item["flat_price"]
                     line["unit"] = "unit"
                     line["quantity"] = max(1, line.get("quantity") or 1)
-                line["name"] = line.get("name") or menu["name"]
-                line["type"] = menu.get("type", line.get("type", "fb"))
+                line["name"] = line.get("name") or catalog_item["name"]
+                line["type"] = catalog_item.get("type", line.get("type", "fb"))
+        elif r.get("inventory_id"):
+            catalog_item = await db.mice_resources.find_one({"id": r["inventory_id"], "tenant_id": tenant_id})
+            if catalog_item:
+                line["unit_price"] = catalog_item.get("unit_price", line.get("unit_price", 0))
+                line["unit"] = catalog_item.get("unit", line.get("unit", "unit"))
+                line["name"] = line.get("name") or catalog_item["name"]
+                line["type"] = catalog_item.get("type", line.get("type", "other"))
+        # Catalog prices inherit the tenant currency only for truly legacy
+        # rows. A free-form line is authored inside the event and therefore
+        # inherits the event currency itself.
+        source_currency = _normalize_currency(
+            (catalog_item or {}).get("currency") or line.get("currency"),
+            tenant_currency if catalog_item else event_currency,
+        )
+        if source_currency != event_currency:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"{line.get('name') or 'Kaynak'} {source_currency} fiyatlı; "
+                    f"{event_currency} etkinliğe kur bilgisi olmadan eklenemez"
+                ),
+            )
+        line["currency"] = event_currency
         out.append(line)
     return out
+
+
+def _validate_space_currencies(
+    bookings: list[dict],
+    spaces_by_id: dict[str, dict],
+    event_currency: str,
+    tenant_currency: str,
+) -> None:
+    for booking in bookings:
+        space = spaces_by_id.get(booking.get("space_id"))
+        if not space:
+            continue
+        space_currency = _normalize_currency(space.get("currency"), tenant_currency)
+        if space_currency != event_currency:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"{space.get('name') or 'Mekan'} {space_currency} fiyatlı; "
+                    f"{event_currency} etkinliğe kur bilgisi olmadan eklenemez"
+                ),
+            )
 
 
 @router.post("/events")
@@ -1129,6 +1247,8 @@ async def create_event(
         raise HTTPException(400, "Geçersiz durum")
     db = get_system_db()
     tenant_id = current_user.tenant_id
+    tenant_currency = await _tenant_currency_code(tenant_id)
+    event_currency = _normalize_currency(body.currency, tenant_currency)
 
     client_request_id = body.client_request_id
     event_id = str(uuid.uuid4())
@@ -1159,9 +1279,12 @@ async def create_event(
         tenant_id,
         [r.model_dump() for r in body.resources],
         body.expected_pax,
+        event_currency,
+        tenant_currency,
     )
 
     spaces_by_id = {s["id"]: s async for s in db.mice_spaces.find({"tenant_id": tenant_id})}
+    _validate_space_currencies(bookings, spaces_by_id, event_currency, tenant_currency)
     # mode="json" ⇒ pydantic, tüm date/datetime'leri ISO string'e serileştirir;
     # bu şekilde agenda[].starts_at ve payment_schedule[].due_date BSON için
     # geçerli kalır (PyMongo native `datetime.date`'i kabul etmez).
@@ -1174,6 +1297,7 @@ async def create_event(
         "created_at": datetime.now(UTC).isoformat(),
         "created_by": current_user.username,
     }
+    event_doc["currency"] = event_currency
     event_doc["totals"] = _compute_totals(event_doc, spaces_by_id)
 
     holds_active = body.status in {"tentative", "definite", "confirmed"}
@@ -1265,6 +1389,7 @@ async def get_event(
     ev = await db.mice_events.find_one({"id": event_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
     if not ev:
         raise HTTPException(404, "Etkinlik bulunamadı")
+    ev["currency"] = _normalize_currency(ev.get("currency"), await _tenant_currency_code(current_user.tenant_id))
     return ev
 
 
@@ -1295,13 +1420,22 @@ async def _update_event_impl(
         raise HTTPException(400, "Geçersiz durum")
     db = get_system_db()
     tenant_id = current_user.tenant_id
+    tenant_currency = await _tenant_currency_code(tenant_id)
+    event_currency = _normalize_currency(body.currency, tenant_currency)
     bookings = [b.model_dump() for b in body.space_bookings]
     for b in bookings:
         b["starts_at"] = b["starts_at"].isoformat() if isinstance(b["starts_at"], datetime) else b["starts_at"]
         b["ends_at"] = b["ends_at"].isoformat() if isinstance(b["ends_at"], datetime) else b["ends_at"]
     await _validate_setup_capacity(tenant_id, bookings)
-    resources = await _expand_resource_prices(tenant_id, [r.model_dump() for r in body.resources], body.expected_pax)
+    resources = await _expand_resource_prices(
+        tenant_id,
+        [r.model_dump() for r in body.resources],
+        body.expected_pax,
+        event_currency,
+        tenant_currency,
+    )
     spaces_by_id = {s["id"]: s async for s in db.mice_spaces.find({"tenant_id": tenant_id})}
+    _validate_space_currencies(bookings, spaces_by_id, event_currency, tenant_currency)
     update = {
         **body.model_dump(mode="json", exclude={"space_bookings", "resources", "client_request_id"}),
         "start_date": body.start_date.isoformat(),
@@ -1310,6 +1444,7 @@ async def _update_event_impl(
         "resources": resources,
         "updated_at": datetime.now(UTC).isoformat(),
     }
+    update["currency"] = event_currency
     update["totals"] = _compute_totals(update, spaces_by_id)
 
     holds_active = body.status in {"tentative", "definite", "confirmed"}
@@ -1560,6 +1695,7 @@ _MICE_TRANSITIONS: dict[str, set[str]] = {
 
 async def _post_event_to_folio(tenant_id: str, event: dict) -> None:
     db = get_system_db()
+    event_currency = _normalize_currency(event.get("currency"), await _tenant_currency_code(tenant_id))
     total = float((event.get("totals") or {}).get("grand_total", 0))
     if total <= 0 or not event.get("reservation_id"):
         return
@@ -1574,7 +1710,7 @@ async def _post_event_to_folio(tenant_id: str, event: dict) -> None:
         "transaction_code": "MICE",
         "description": f"Etkinlik: {event.get('name')}",
         "amount": total,
-        "currency": "TRY",
+        "currency": event_currency,
         "posting_type": "CHARGE",
         "posted_at": datetime.now(UTC).isoformat(),
         "source": "mice_module",
@@ -1596,7 +1732,7 @@ async def _post_event_to_folio(tenant_id: str, event: dict) -> None:
                 "transaction_code": "MICE",
                 "description": posting["description"],
                 "amount": total,
-                "currency": "TRY",
+                "currency": event_currency,
                 "posted_at": posting["posted_at"],
             },
             message_id=f"mice-{event['id']}",
@@ -1671,9 +1807,24 @@ async def diary(
             "start_date": {"$lte": date_to},
             "end_date": {"$gte": date_from},
         },
-        {"_id": 0, "name": 1, "status": 1, "client_name": 1, "expected_pax": 1, "start_date": 1, "end_date": 1, "space_bookings": 1, "id": 1, "totals": 1},
+        {
+            "_id": 0,
+            "name": 1,
+            "status": 1,
+            "client_name": 1,
+            "expected_pax": 1,
+            "start_date": 1,
+            "end_date": 1,
+            "space_bookings": 1,
+            "id": 1,
+            "totals": 1,
+            "currency": 1,
+        },
     )
     events = await cur.to_list(length=None)
+    tenant_currency = await _tenant_currency_code(current_user.tenant_id)
+    for event in events:
+        event["currency"] = _normalize_currency(event.get("currency"), tenant_currency)
     return {"events": events}
 
 
@@ -1684,6 +1835,7 @@ async def beo(event_id: str, current_user: User = Depends(get_current_user)) -> 
     event = await db.mice_events.find_one({"id": event_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
     if not event:
         raise HTTPException(404, "Etkinlik bulunamadı")
+    event["currency"] = _normalize_currency(event.get("currency"), await _tenant_currency_code(current_user.tenant_id))
     _l = await db.mice_spaces.find({"tenant_id": current_user.tenant_id}).to_list(length=None)
     spaces_by_id = {s["id"]: s for s in _l}
     space_lines = []
@@ -1712,6 +1864,7 @@ async def beo(event_id: str, current_user: User = Depends(get_current_user)) -> 
                 "organizer_user",
                 "event_type",
                 "status",
+                "currency",
                 "expected_pax",
                 "start_date",
                 "end_date",
@@ -1750,12 +1903,13 @@ def _beo_html(payload: dict) -> str:
     staff = payload.get("staff_assignments") or []
     entertainment = payload.get("entertainment") or {}
     totals = ev.get("totals") or {}
+    currency = _normalize_currency(ev.get("currency"), "TRY")
 
     def _money(v: Any) -> str:
         try:
-            return f"₺{float(v or 0):,.2f}"
+            return f"{float(v or 0):,.2f} {currency}"
         except Exception:
-            return "₺0.00"
+            return f"0.00 {currency}"
 
     def _row(label: str, value: Any) -> str:
         return f"<tr><td class='k'>{_e(str(label))}</td><td>{_e('' if value is None else str(value))}</td></tr>"
@@ -2752,9 +2906,18 @@ async def sign_public_beo(payload: SignatureSubmitIn):
 # ─────────────────────────────────────────────────────────────────────
 # MICE / BEO -> Folio İşleme
 # ─────────────────────────────────────────────────────────────────────
+class BeoGLPostIn(BaseModel):
+    exchange_rate: float | None = Field(
+        None,
+        gt=0,
+        description="Etkinlik para biriminden TRY yevmiye tutarına dönüşüm kuru",
+    )
+
+
 @router.post("/events/{event_id}/post-to-folio")
 async def post_beo_to_folio(
     event_id: str,
+    payload: BeoGLPostIn | None = None,
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_finance_reports")),
 ):
@@ -2773,6 +2936,24 @@ async def post_beo_to_folio(
     amount = round(float((event_doc.get("totals") or {}).get("grand_total", 0) or 0), 2)
     if amount <= 0:
         raise HTTPException(status_code=400, detail="Muhasebeleştirilecek etkinlik tutarı bulunamadı")
+    tenant_currency = await _tenant_currency_code(tenant_id)
+    event_currency = _normalize_currency(event_doc.get("currency"), tenant_currency)
+    exchange_rate = payload.exchange_rate if payload else None
+    if event_currency in {"TRY", "TRL"}:
+        base_amount = amount
+        foreign_fields: dict[str, Any] = {}
+    else:
+        if exchange_rate is None:
+            raise HTTPException(
+                status_code=409,
+                detail=f"{event_currency} etkinlik için TRY muhasebe kuru zorunludur",
+            )
+        base_amount = round(amount * exchange_rate, 2)
+        foreign_fields = {
+            "currency": event_currency,
+            "foreign_amount": amount,
+            "exchange_rate": exchange_rate,
+        }
     try:
         entry = await post_journal_entry(
             db,
@@ -2780,8 +2961,8 @@ async def post_beo_to_folio(
             date=(event_doc.get("end_date") or datetime.now(UTC).isoformat())[:10],
             memo=f"BEO muhasebeleştirme ({event_id})",
             lines=[
-                {"account_code": "120", "debit": amount, "memo": "Etkinlik alacağı"},
-                {"account_code": "600", "credit": amount, "memo": "Etkinlik geliri"},
+                {"account_code": "120", "debit": base_amount, "memo": "Etkinlik alacağı", **foreign_fields},
+                {"account_code": "600", "credit": base_amount, "memo": "Etkinlik geliri", **foreign_fields},
             ],
             source="mice",
             source_ref=event_id,
@@ -2792,6 +2973,22 @@ async def post_beo_to_folio(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     await db.mice_events.update_one(
         {"id": event_id, "tenant_id": tenant_id},
-        {"$set": {"gl_journal_entry_id": entry["id"], "gl_posted_at": datetime.now(UTC).isoformat()}},
+        {
+            "$set": {
+                "gl_journal_entry_id": entry["id"],
+                "gl_posted_at": datetime.now(UTC).isoformat(),
+                "gl_currency": event_currency,
+                "gl_foreign_amount": amount if foreign_fields else None,
+                "gl_exchange_rate": exchange_rate,
+                "gl_base_amount": base_amount,
+            }
+        },
     )
-    return {"status": "success", "journal_entry_id": entry["id"]}
+    return {
+        "status": "success",
+        "journal_entry_id": entry["id"],
+        "currency": event_currency,
+        "foreign_amount": amount if foreign_fields else None,
+        "exchange_rate": exchange_rate,
+        "base_amount_try": base_amount,
+    }

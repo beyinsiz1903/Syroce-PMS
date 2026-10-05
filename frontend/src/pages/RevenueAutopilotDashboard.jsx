@@ -5,6 +5,7 @@ import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { Zap, Shield, CheckCircle2, XCircle, RotateCcw, Clock, TrendingUp, AlertTriangle, Loader2, RefreshCw, Settings, ThumbsUp, ThumbsDown, BarChart3 } from 'lucide-react';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 const API = "";
 const hdrs = () => ({
   'Content-Type': 'application/json'
@@ -144,7 +145,7 @@ export default function RevenueAutopilotDashboard() {
                       <div>
                         <p className="font-medium">{item.room_type} · {item.target_date}</p>
                         <p className="text-sm text-muted-foreground">
-                          {item.current_price}₺ → {item.recommended_price}₺
+                          {formatCurrency(item.current_price, item.currency || cachedTenantCurrency())} → {formatCurrency(item.recommended_price, item.currency || cachedTenantCurrency())}
                           <span className={`ml-2 ${item.price_change_pct >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
                             ({item.price_change_pct > 0 ? '+' : ''}{item.price_change_pct}%)
                           </span>
@@ -170,7 +171,7 @@ export default function RevenueAutopilotDashboard() {
               {recent_applies.map(a => <Card key={a.id}>
                   <CardContent className="py-3 flex items-center justify-between">
                     <div>
-                      <p className="text-sm font-medium">{a.room_type}: {a.old_price}₺ → {a.new_price}₺</p>
+                      <p className="text-sm font-medium">{a.room_type}: {formatCurrency(a.old_price, a.currency || cachedTenantCurrency())} → {formatCurrency(a.new_price, a.currency || cachedTenantCurrency())}</p>
                       <p className="text-xs text-muted-foreground">{new Date(a.created_at).toLocaleString('tr-TR')} · Kanallar: {(a.channels_pushed || []).join(', ')}</p>
                     </div>
                     <Badge variant={a.success ? 'default' : 'destructive'}>{a.success ? 'Başarılı' : 'Başarısız'}</Badge>

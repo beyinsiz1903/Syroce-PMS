@@ -50,6 +50,17 @@ def test_departure_balance_does_not_double_count_posted_room_revenue():
     assert balance == 0.0
 
 
+def test_departure_balance_includes_the_unposted_portion_of_a_partly_posted_stay():
+    balance = calculate_departure_balance(
+        charges=[{"total": 5833.34, "charge_type": "room_charge"}],
+        payments=[{"amount": 5833.34, "status": "paid"}],
+        extra_charges=[],
+        booking_total=7500.0,
+    )
+
+    assert balance == 1666.66
+
+
 def test_departure_balance_preserves_explicit_zero_after_extra_charge_split():
     balance = calculate_departure_balance(
         charges=[],

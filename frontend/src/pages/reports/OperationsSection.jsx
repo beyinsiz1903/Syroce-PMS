@@ -2,29 +2,36 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Hotel, AlertTriangle, Calendar, CheckCircle2, Clock, Activity, Users, Wrench, DollarSign, CreditCard, Shield, Utensils, Building2 } from 'lucide-react';
+import { Hotel, AlertTriangle, Calendar, CheckCircle2, Clock, Activity, Users, Wrench, ReceiptText, CreditCard, Shield, Utensils, Building2 } from 'lucide-react';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from 'recharts';
-import { COLORS, formatCurrency, KPICard, SectionHeader, EmptyState, StatBox, ROOM_STATUS_LABELS } from './ReportHelpers';
+import { COLORS, KPICard, SectionHeader, EmptyState, StatBox, ROOM_STATUS_LABELS } from './ReportHelpers';
+import { MoneyCell } from './GuestSection';
+import { formatCurrency as formatCurrencyValue } from '@/lib/currency';
+import { formatCurrencyBreakdown } from '@/lib/reportCurrency';
+const TASK_STATUS_LABELS = { completed: 'Tamamlandı', pending: 'Bekliyor', assigned: 'Atandı', open: 'Açık', new: 'Yeni', in_progress: 'Devam ediyor', inprogress: 'Devam ediyor', active: 'Devam ediyor', cleaning: 'Temizleniyor', ready: 'Hazır' };
+const TASK_TYPE_LABELS = { checkout_cleaning: 'Çıkış temizliği', stayover_cleaning: 'Konaklama temizliği', room_status: 'Oda kontrolü', deep_cleaning: 'Detaylı temizlik' };
+const PAYMENT_METHOD_LABELS = { cash: 'Nakit', credit_card: 'Kredi kartı', debit_card: 'Banka kartı', bank_transfer: 'Havale / EFT', online: 'Online ödeme' };
 export const NoShowSection = ({
   s,
   noShowGuests,
-  cancelledGuests
+  cancelledGuests,
+  exchangeRates
 }) => {
   const {
     t
   } = useTranslation();
   return <div className="space-y-6" data-testid="section-noshow">
-    <SectionHeader title="No-Show & İptaller" description="No-show ve iptal edilen rezervasyonlar" />
+    <SectionHeader title="Gelmeyen Misafirler ve İptaller" description="Giriş yapmayan ve iptal edilen rezervasyonlar" />
     <div className="grid grid-cols-2 gap-3">
-      <KPICard title="No-Show" value={s.no_shows || 0} icon={AlertTriangle} color="red" />
+      <KPICard title="Gelmeyen Misafir" value={s.no_shows || 0} icon={AlertTriangle} color="red" />
       <KPICard title={t('common.cancellationSingle')} value={s.cancellations || 0} icon={Calendar} color="amber" />
     </div>
     {noShowGuests.length > 0 && <Card>
-        <CardHeader className="pb-2"><CardTitle className="text-sm text-rose-700">No-Show Listesi ({noShowGuests.length})</CardTitle></CardHeader>
+        <CardHeader className="pb-2"><CardTitle className="text-sm text-rose-700">Gelmeyen Misafir Listesi ({noShowGuests.length})</CardTitle></CardHeader>
         <CardContent className="p-0">
           <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead><tr className="border-b bg-rose-50"><th className="text-left py-2 px-3 text-xs font-semibold text-rose-700">Misafir</th><th className="text-left py-2 px-3 text-xs font-semibold text-rose-700">Oda</th><th className="text-left py-2 px-3 text-xs font-semibold text-rose-700">Giriş Tarihi</th><th className="text-right py-2 px-3 text-xs font-semibold text-rose-700">Tutar</th></tr></thead>
-            <tbody>{noShowGuests.map((g, i) => <tr key={g.id || i} className="border-b hover:bg-rose-50/30"><td className="py-2 px-3 font-medium">{g.guest_name || '-'}</td><td className="py-2 px-3">{g.room_number || '-'}</td><td className="py-2 px-3 text-xs">{g.check_in ? new Date(g.check_in).toLocaleDateString('tr-TR') : '-'}</td><td className="py-2 px-3 text-right font-medium">{formatCurrency(g.total_amount)}</td></tr>)}</tbody>
+            <tbody>{noShowGuests.map((g, i) => <tr key={g.id || i} className="border-b hover:bg-rose-50/30"><td className="py-2 px-3 font-medium">{g.guest_name || '-'}</td><td className="py-2 px-3">{g.room_number || '-'}</td><td className="py-2 px-3 text-xs">{g.check_in ? new Date(g.check_in).toLocaleDateString('tr-TR') : '-'}</td><td className="py-2 px-3 text-right font-medium"><MoneyCell amount={g.total_amount} currency={g.currency} exchangeRates={exchangeRates} /></td></tr>)}</tbody>
           </table></div>
         </CardContent>
       </Card>}
@@ -33,11 +40,11 @@ export const NoShowSection = ({
         <CardContent className="p-0">
           <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead><tr className="border-b bg-amber-50"><th className="text-left py-2 px-3 text-xs font-semibold text-amber-700">Misafir</th><th className="text-left py-2 px-3 text-xs font-semibold text-amber-700">Oda</th><th className="text-left py-2 px-3 text-xs font-semibold text-amber-700">Tarih</th><th className="text-right py-2 px-3 text-xs font-semibold text-amber-700">Tutar</th></tr></thead>
-            <tbody>{cancelledGuests.map((g, i) => <tr key={g.id || i} className="border-b hover:bg-amber-50/30"><td className="py-2 px-3 font-medium">{g.guest_name || '-'}</td><td className="py-2 px-3">{g.room_number || '-'}</td><td className="py-2 px-3 text-xs">{g.check_in ? new Date(g.check_in).toLocaleDateString('tr-TR') : '-'}</td><td className="py-2 px-3 text-right font-medium">{formatCurrency(g.total_amount)}</td></tr>)}</tbody>
+            <tbody>{cancelledGuests.map((g, i) => <tr key={g.id || i} className="border-b hover:bg-amber-50/30"><td className="py-2 px-3 font-medium">{g.guest_name || '-'}</td><td className="py-2 px-3">{g.room_number || '-'}</td><td className="py-2 px-3 text-xs">{g.check_in ? new Date(g.check_in).toLocaleDateString('tr-TR') : '-'}</td><td className="py-2 px-3 text-right font-medium"><MoneyCell amount={g.total_amount} currency={g.currency} exchangeRates={exchangeRates} /></td></tr>)}</tbody>
           </table></div>
         </CardContent>
       </Card>}
-    {noShowGuests.length === 0 && cancelledGuests.length === 0 && <Card><CardContent className="py-12"><EmptyState icon={AlertTriangle} message="No-show veya iptal kaydı yok" submessage="Bu dönem için herhangi bir no-show veya iptal bulunmuyor" /></CardContent></Card>}
+    {noShowGuests.length === 0 && cancelledGuests.length === 0 && <Card><CardContent className="py-12"><EmptyState icon={AlertTriangle} message="Gelmeyen misafir veya iptal kaydı yok" submessage="Bu dönem için giriş yapmayan ya da iptal edilen rezervasyon bulunmuyor" /></CardContent></Card>}
   </div>;
 };
 export const RoomStatusSection = ({
@@ -52,10 +59,7 @@ export const RoomStatusSection = ({
       <CardHeader className="pb-2"><CardTitle className="text-sm">Oda Durumu Dağılımı</CardTitle></CardHeader>
       <CardContent>
         {roomStatusData.length > 0 ? <ResponsiveContainer width="100%" height={300}>
-            <PieChart><Pie data={roomStatusData} cx="50%" cy="50%" innerRadius={60} outerRadius={110} dataKey="value" paddingAngle={3} label={({
-            name,
-            value
-          }) => name + ': ' + value}>
+            <PieChart><Pie data={roomStatusData} cx="50%" cy="50%" innerRadius={60} outerRadius={80} dataKey="value" paddingAngle={3} label={({ percent }) => (percent * 100 > 3 ? `${(percent * 100).toFixed(0)}%` : "")}>
               {roomStatusData.map((e, i) => <Cell key={e.id || i} fill={e.color} />)}
             </Pie><Tooltip /><Legend iconSize={10} wrapperStyle={{
             fontSize: 11
@@ -65,17 +69,22 @@ export const RoomStatusSection = ({
     </Card>
   </div>;
 export const HousekeepingSection = ({
-  hk
+  hk,
+  reportDate
 }) => <div className="space-y-6" data-testid="section-housekeeping">
-    <SectionHeader title="Housekeeping Raporu" description="Temizlik operasyonları ve verimlilik" />
+    <SectionHeader title="Kat Hizmetleri Raporu" description={`${reportDate} tarihli görevler; oda durumu sütunu güncel anlık durumu gösterir`} />
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
       <KPICard title="Tamamlanan" value={hk.completed || 0} icon={CheckCircle2} color="green" />
       <KPICard title="Bekleyen" value={hk.pending || 0} icon={Clock} color="amber" />
       <KPICard title="Devam Eden" value={hk.in_progress || 0} icon={Activity} color="blue" />
-      <KPICard title="Haftalık Toplam" value={hk.total_week || 0} icon={Activity} color="purple" />
+      <KPICard title="Kirli Oda" value={hk.dirty || 0} icon={AlertTriangle} color="red" />
+      <KPICard title="Temiz / Hazır" value={hk.clean || 0} icon={CheckCircle2} color="green" />
+      <KPICard title="Çıkış Beklenen" value={hk.due_out || 0} icon={Calendar} color="amber" />
+      <KPICard title="Çıkış Yaptı" value={hk.departed || 0} icon={CheckCircle2} color="blue" />
+      <KPICard title="Toplam Oda" value={hk.total || 0} icon={Hotel} color="purple" />
     </div>
     <Card>
-      <CardHeader className="pb-2"><CardTitle className="text-sm">Housekeeping Performans Özeti</CardTitle></CardHeader>
+      <CardHeader className="pb-2"><CardTitle className="text-sm">Kat Hizmetleri Performans Özeti</CardTitle></CardHeader>
       <CardContent>
         <div className="space-y-4">
           {['completed', 'pending', 'in_progress'].map(status => {
@@ -102,35 +111,44 @@ export const HousekeepingSection = ({
         </div>
       </CardContent>
     </Card>
+    <Card>
+      <CardHeader className="pb-2"><CardTitle className="text-sm">Görev Detayları ({hk.rows?.length || 0})</CardTitle></CardHeader>
+      <CardContent className="p-0 overflow-x-auto">
+        {(hk.rows || []).length ? <table className="w-full text-sm"><thead><tr className="border-b bg-gray-50"><th className="text-left p-3">Oda</th><th className="text-left p-3">Güncel Oda Durumu</th><th className="text-left p-3">Çıkış Bilgisi</th><th className="text-left p-3">Görev</th><th className="text-left p-3">Görev Durumu</th><th className="text-left p-3">Personel</th><th className="text-left p-3">Başlangıç</th><th className="text-left p-3">Bitiş</th></tr></thead><tbody>{hk.rows.map((row, index) => <tr key={row.id || index} className="border-b"><td className="p-3 font-semibold">{row.room_number || '-'}<span className="block text-xs font-normal text-gray-500">{row.room_type || ''}</span></td><td className="p-3">{ROOM_STATUS_LABELS[row.room_status] || row.room_status || '-'}</td><td className="p-3">{row.departed ? 'Çıkış yaptı' : row.due_out ? 'Çıkış bekleniyor' : '-'}{row.departure_guest && <span className="block text-xs text-gray-500">{row.departure_guest}</span>}</td><td className="p-3">{TASK_TYPE_LABELS[row.task_type] || row.task_type || '-'}</td><td className="p-3">{TASK_STATUS_LABELS[row.status] || row.status || '-'}</td><td className="p-3">{row.assigned_to || '-'}</td><td className="p-3 text-xs">{row.started_at ? new Date(row.started_at).toLocaleString('tr-TR') : '-'}</td><td className="p-3 text-xs">{row.completed_at ? new Date(row.completed_at).toLocaleString('tr-TR') : '-'}</td></tr>)}</tbody></table> : <div className="py-10"><EmptyState icon={CheckCircle2} message="Oda kaydı bulunamadı" /></div>}
+      </CardContent>
+    </Card>
   </div>;
 export const PaymentsSection = ({
   payments,
-  paymentData
+  paymentData,
+  reportDate
 }) => {
   const {
     t
   } = useTranslation();
+  const chartCurrencies = new Set(paymentData.flatMap(item => Object.entries(item.totals || {})
+    .filter(([, amount]) => Number(amount) !== 0)
+    .map(([currency]) => currency)));
+  const canComparePaymentMethods = chartCurrencies.size <= 1;
+  const chartCurrency = [...chartCurrencies][0] || 'TRY';
   return <div className="space-y-6" data-testid="section-payments">
-    <SectionHeader title={t('common.paymentReport')} description={t('common.paymentReportDesc')} />
+    <SectionHeader title={t('common.paymentReport')} description={`${reportDate} tarihli geçerli tahsilatlar`} />
     <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
-      <KPICard title="Toplam Ödenen" value={payments.total_paid} icon={CheckCircle2} color="green" />
+      <KPICard title="Toplam Tahsilat" value={payments.total_paid} currencyBreakdown={payments.totals_by_currency} icon={CheckCircle2} color="green" />
       <KPICard title="Bekleyen Fatura" value={payments.total_pending} icon={Clock} color="amber" />
-      <KPICard title={t('common.paymentMethod')} value={Object.keys(payments.by_method || {}).length + ' ' + t('common.methodCountSuffix')} icon={CreditCard} color="blue" />
+      <KPICard title={t('common.paymentMethod')} value={Object.keys(payments.totals_by_method_currency || payments.by_method || {}).length + ' ' + t('common.methodCountSuffix')} icon={CreditCard} color="blue" />
     </div>
     <div className="grid md:grid-cols-2 gap-4">
       <Card>
         <CardHeader className="pb-2"><CardTitle className="text-sm">Ödeme Yöntemi Dağılımı</CardTitle></CardHeader>
         <CardContent>
-          {paymentData.length > 0 ? <ResponsiveContainer width="100%" height={300}>
-              <PieChart><Pie data={paymentData} cx="50%" cy="50%" innerRadius={60} outerRadius={100} dataKey="value" paddingAngle={3} label={({
-                name,
-                value
-              }) => name + ': ' + formatCurrency(value)}>
+          {paymentData.length > 0 && canComparePaymentMethods ? <ResponsiveContainer width="100%" height={300}>
+              <PieChart><Pie data={paymentData} cx="50%" cy="50%" innerRadius={60} outerRadius={80} dataKey="value" paddingAngle={3} label={({ percent }) => (percent * 100 > 3 ? `${(percent * 100).toFixed(0)}%` : "")}>
                 {paymentData.map((_, i) => <Cell key={_.id || i} fill={COLORS[i % COLORS.length]} />)}
-              </Pie><Tooltip /><Legend iconSize={10} wrapperStyle={{
+              </Pie><Tooltip formatter={value => formatCurrencyValue(value, chartCurrency)} /><Legend iconSize={10} wrapperStyle={{
                 fontSize: 11
               }} /></PieChart>
-            </ResponsiveContainer> : <EmptyState icon={CreditCard} message={t('common.noPaymentData')} />}
+            </ResponsiveContainer> : paymentData.length > 0 ? <div className="py-12 text-center text-sm text-slate-600"><AlertTriangle className="mx-auto mb-3 h-8 w-8 text-amber-500" /><p className="font-medium">Farklı para birimleri tek grafikte karşılaştırılmadı.</p><p className="mt-1 text-xs text-slate-500">Doğru tutarlar ödeme detaylarında para birimi bazında gösteriliyor.</p></div> : <EmptyState icon={CreditCard} message={t('common.noPaymentData')} />}
         </CardContent>
       </Card>
       <Card>
@@ -143,11 +161,17 @@ export const PaymentsSection = ({
                 }} />
                   <span className="font-medium text-sm">{p.name}</span>
                 </div>
-                <span className="font-bold text-sm">{formatCurrency(p.value)}</span>
+                <span className="text-right font-bold text-sm">{formatCurrencyBreakdown(p.totals, p.value, p.currency || 'TRY')}</span>
               </div>)}</div> : <p className="text-gray-400 text-center py-12">Veri yok</p>}
         </CardContent>
       </Card>
     </div>
+    <Card>
+      <CardHeader className="pb-2"><CardTitle className="text-sm">Tahsilat Hareketleri ({payments.rows?.length || 0})</CardTitle></CardHeader>
+      <CardContent className="p-0 overflow-x-auto">
+        {(payments.rows || []).length ? <table className="w-full text-sm"><thead><tr className="border-b bg-gray-50"><th className="text-left p-3">Tarih / Saat</th><th className="text-left p-3">Oda</th><th className="text-left p-3">Misafir</th><th className="text-left p-3">Yöntem</th><th className="text-left p-3">İşleyen</th><th className="text-left p-3">Referans</th><th className="text-right p-3">Alınan Tutar</th></tr></thead><tbody>{payments.rows.map((row, index) => <tr key={row.id || index} className="border-b"><td className="p-3">{row.processed_at ? new Date(row.processed_at).toLocaleString('tr-TR') : '-'}</td><td className="p-3 font-semibold">{row.room_number || '-'}</td><td className="p-3">{row.guest_name || '-'}</td><td className="p-3">{PAYMENT_METHOD_LABELS[row.method] || row.method || '-'}</td><td className="p-3">{row.processed_by || '-'}</td><td className="p-3">{row.reference || row.notes || '-'}</td><td className="p-3 text-right font-semibold">{formatCurrencyValue(row.received_amount ?? row.amount, row.received_currency || row.currency, { decimals: 2, compactDecimals: false })}</td></tr>)}</tbody></table> : <div className="py-10"><EmptyState icon={CreditCard} message="Seçili tarihte tahsilat yok" /></div>}
+      </CardContent>
+    </Card>
   </div>;
 };
 export const DepartmentsSection = ({
@@ -160,7 +184,7 @@ export const DepartmentsSection = ({
     t
   } = useTranslation();
   return <div className="space-y-6" data-testid="section-departments">
-    <SectionHeader title="Departman Özeti" description="Tüm departmanların günlük performans özeti" />
+    <SectionHeader title="Departman Özeti" description="Seçili gün hareketleri ile güncel açık işlerin özeti" />
     <div className="grid md:grid-cols-2 gap-4">
       <Card><CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><Users className="w-4 h-4 text-sky-500" />Ön Büro</CardTitle></CardHeader>
         <CardContent><div className="grid grid-cols-3 gap-3">
@@ -169,7 +193,7 @@ export const DepartmentsSection = ({
           <StatBox label="Otelde" value={s.in_house || 0} color="green" />
         </div></CardContent>
       </Card>
-      <Card><CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-emerald-500" />Housekeeping</CardTitle></CardHeader>
+      <Card><CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-emerald-500" />Kat Hizmetleri</CardTitle></CardHeader>
         <CardContent><div className="grid grid-cols-3 gap-3">
           <StatBox label="Tamam" value={hk.completed || 0} color="green" />
           <StatBox label="Bekleyen" value={hk.pending || 0} color="amber" />
@@ -182,7 +206,7 @@ export const DepartmentsSection = ({
           <StatBox label="Tamamlanan" value={maint.completed_month || 0} color="green" />
         </div></CardContent>
       </Card>
-      <Card><CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><DollarSign className="w-4 h-4 text-emerald-500" />Finans</CardTitle></CardHeader>
+      <Card><CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><ReceiptText className="w-4 h-4 text-emerald-500" />Finans</CardTitle></CardHeader>
         <CardContent><div className="grid grid-cols-2 gap-3">
           <StatBox label="Bekleyen" value={finance.pending_invoices || 0} color="red" />
           <StatBox label="Ödenen" value={finance.paid_invoices_month || 0} color="green" />
@@ -192,23 +216,33 @@ export const DepartmentsSection = ({
   </div>;
 };
 export const FnBSection = ({
-  s
-}) => <div className="space-y-6" data-testid="section-fnb">
-    <SectionHeader title="F&B Raporu" description="Yiyecek & İçecek gelir ve performans özeti" />
+  s,
+  reportDate
+}) => {
+  const shareRows = Object.entries(s.fnb_revenue_by_currency || {}).map(([currency, amount]) => {
+    const total = Number(s.today_revenue_by_currency?.[currency] || 0);
+    return total > 0 ? `${currency}: %${(Number(amount || 0) / total * 100).toFixed(1)}` : null;
+  }).filter(Boolean);
+  const revenueShare = shareRows.length
+    ? shareRows.join(' · ')
+    : s.today_revenue > 0 ? `%${((s.fnb_revenue || 0) / s.today_revenue * 100).toFixed(1)}` : '%0';
+  return <div className="space-y-6" data-testid="section-fnb">
+    <SectionHeader title="Yiyecek ve İçecek Raporu" description="Yiyecek ve içecek gelir ve performans özeti" />
     <div className="grid grid-cols-2 gap-3">
-      <KPICard title="Bugünkü F&B Geliri" value={s.fnb_revenue} icon={Utensils} color="amber" />
-      <KPICard title="Toplam Gelir İçi Payı" value={s.today_revenue > 0 ? ((s.fnb_revenue || 0) / s.today_revenue * 100).toFixed(1) + '%' : '%0'} icon={Activity} color="purple" />
+      <KPICard title="Seçili Gün Yiyecek ve İçecek Geliri" value={s.fnb_revenue} currencyBreakdown={s.fnb_revenue_by_currency} icon={Utensils} color="amber" />
+      <KPICard title="Toplam Gelir İçindeki Payı" value={revenueShare} icon={Activity} color="purple" />
     </div>
     <Card className="border-l-4 border-l-amber-500">
       <CardContent className="p-6 text-center">
         <Utensils className="w-12 h-12 text-amber-500 mx-auto mb-3" />
-        <h3 className="text-lg font-bold text-slate-900">F&B Geliri</h3>
-        <p className="text-3xl font-bold text-slate-900 mt-2">{formatCurrency(s.fnb_revenue)}</p>
-        <p className="text-sm text-slate-500 mt-2">Bugünkü toplam yiyecek & içecek geliri</p>
+        <h3 className="text-lg font-bold text-slate-900">Yiyecek ve İçecek Geliri</h3>
+        <p className="text-3xl font-bold text-slate-900 mt-2">{formatCurrencyBreakdown(s.fnb_revenue_by_currency, s.fnb_revenue)}</p>
+        <p className="text-sm text-slate-500 mt-2">{reportDate} tarihli toplam yiyecek ve içecek geliri</p>
         <div className="mt-4 grid grid-cols-2 gap-3 max-w-xs mx-auto">
-          <div className="p-3 bg-slate-50 rounded-lg border border-slate-200"><p className="text-xs text-slate-500">Oda Geliri</p><p className="font-bold text-slate-900">{formatCurrency(s.today_revenue)}</p></div>
-          <div className="p-3 bg-slate-50 rounded-lg border border-slate-200"><p className="text-xs text-slate-500">F&B Payı</p><p className="font-bold text-slate-900">{s.today_revenue > 0 ? ((s.fnb_revenue || 0) / s.today_revenue * 100).toFixed(1) : '0'}%</p></div>
+          <div className="p-3 bg-slate-50 rounded-lg border border-slate-200"><p className="text-xs text-slate-500">Oda Geliri</p><p className="font-bold text-slate-900">{formatCurrencyBreakdown(s.today_room_revenue_by_currency, s.today_room_revenue)}</p></div>
+          <div className="p-3 bg-slate-50 rounded-lg border border-slate-200"><p className="text-xs text-slate-500">Toplam Gelirdeki Payı</p><p className="font-bold text-slate-900">{revenueShare}</p></div>
         </div>
       </CardContent>
     </Card>
   </div>;
+};

@@ -22,6 +22,7 @@ from common.legacy_data_normalization import (
 )
 from core.database import db
 from core.security import get_current_user
+from core.tenant_currency import get_tenant_currency
 from models.schemas import (
     User,
 )
@@ -32,6 +33,11 @@ DEFAULT_UPSELL_PRICES = {
     "late_checkout": 35.00,
     "airport_transfer": 50.00,
 }
+
+
+def _normalize_currency(value: object, fallback: str = "TRY") -> str:
+    code = str(value or fallback or "TRY").strip().upper()
+    return "TRY" if code == "TL" else code
 
 
 async def _get_upsell_prices(tenant_id: str) -> dict:
@@ -98,6 +104,24 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["guest-experience"])
 
 
+def normalize_guest_notes(value) -> list[dict]:
+    """Return legacy scalar/object notes in the current list schema."""
+    if value is None or value == "":
+        return []
+    values = value if isinstance(value, list) else [value]
+    normalized = []
+    for item in values:
+        if isinstance(item, dict):
+            normalized.append({
+                "text": str(item.get("text") or item.get("note") or item.get("content") or ""),
+                "created_by": item.get("created_by") or item.get("author") or "Sistem",
+                "created_at": item.get("created_at"),
+            })
+        else:
+            normalized.append({"text": str(item), "created_by": "Eski kayıt", "created_at": None})
+    return [item for item in normalized if item["text"].strip()]
+
+
 # ── GET /crm/guest/{guest_id} ──
 @router.get("/crm/guest/{guest_id}")
 async def get_guest_360(guest_id: str, current_user: User = Depends(get_current_user)):
@@ -110,14 +134,21 @@ async def get_guest_360(guest_id: str, current_user: User = Depends(get_current_
     if not guest:
         raise HTTPException(status_code=404, detail="Guest not found")
 
+    guest["notes"] = normalize_guest_notes(guest.get("notes"))
+    if not isinstance(guest.get("tags"), list):
+        guest["tags"] = [str(guest["tags"])] if guest.get("tags") else []
+
     # Get all bookings
     bookings = await db.bookings.find({"guest_id": guest_id, "tenant_id": current_user.tenant_id}, {"_id": 0}).sort("check_in", -1).to_list(100)
 
-    # Calculate stats
+    tenant_currency, _ = await get_tenant_currency(current_user.tenant_id)
+    tenant_currency = _normalize_currency(tenant_currency)
+
+    # Calculate stats without adding unrelated currencies together.
     total_stays = len([b for b in bookings if b.get("status") in ["checked_out", "checked_in"]])
     total_nights = 0
-    lifetime_value = 0.0
-    adr_values = []
+    lifetime_value_by_currency: dict[str, float] = {}
+    revenue_nights_by_currency: dict[str, int] = {}
 
     for booking in bookings:
         if booking.get("status") in ["checked_out", "checked_in", "confirmed"]:
@@ -127,12 +158,24 @@ async def get_guest_360(guest_id: str, current_user: User = Depends(get_current_
                 continue
             nights = (check_out.date() - check_in.date()).days
             booking_total = float(safe_decimal(booking.get("total_amount")))
+            currency = _normalize_currency(booking.get("currency"), tenant_currency)
+            booking["currency"] = currency
             total_nights += nights
-            lifetime_value += booking_total
+            lifetime_value_by_currency[currency] = lifetime_value_by_currency.get(currency, 0.0) + booking_total
             if nights > 0:
-                adr_values.append(booking_total / nights)
+                revenue_nights_by_currency[currency] = revenue_nights_by_currency.get(currency, 0) + nights
 
-    average_adr = sum(adr_values) / len(adr_values) if adr_values else 0
+    lifetime_value_by_currency = {
+        currency: round(amount, 2)
+        for currency, amount in sorted(lifetime_value_by_currency.items())
+    }
+    average_adr_by_currency = {
+        currency: round(amount / revenue_nights_by_currency[currency], 2)
+        for currency, amount in lifetime_value_by_currency.items()
+        if revenue_nights_by_currency.get(currency, 0) > 0
+    }
+    lifetime_value = lifetime_value_by_currency.get(tenant_currency, 0.0)
+    average_adr = average_adr_by_currency.get(tenant_currency, 0.0)
 
     # Get preferences
     preferences = await db.guest_preferences.find_one({"guest_id": guest_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
@@ -158,6 +201,9 @@ async def get_guest_360(guest_id: str, current_user: User = Depends(get_current_
             "total_nights": total_nights,
             "lifetime_value": round(lifetime_value, 2),
             "average_adr": round(average_adr, 2),
+            "currency": tenant_currency,
+            "lifetime_value_by_currency": lifetime_value_by_currency,
+            "average_adr_by_currency": average_adr_by_currency,
             "loyalty_status": guest.get("loyalty_tier", "standard"),
             "last_seen_date": bookings[0]["check_in"] if bookings else None,
             "tags": guest.get("tags", []),
@@ -192,7 +238,21 @@ async def get_guest_360(guest_id: str, current_user: User = Depends(get_current_
         "profile": profile,
         "preferences": preferences,
         "behavior": behavior,
-        "stats": {"total_stays": total_stays, "total_nights": total_nights, "lifetime_value": round(lifetime_value, 2), "average_adr": round(average_adr, 2), "channel_distribution": channel_mix},
+        "stats": {
+            "total_stays": total_stays,
+            "total_nights": total_nights,
+            "currency": tenant_currency,
+            # Backward-compatible tenant-currency values for older clients.
+            "lifetime_value": round(lifetime_value, 2),
+            "average_adr": round(average_adr, 2),
+            "lifetime_value_by_currency": lifetime_value_by_currency,
+            "average_adr_by_currency": average_adr_by_currency,
+            "channel_distribution": channel_mix,
+        },
+        # Keep the complete tenant-scoped history available to the PMS guest
+        # profile. ``recent_bookings`` remains for older clients that expect a
+        # compact payload section.
+        "stay_history": bookings,
         "recent_bookings": bookings[:10],
         "recent_upsells": upsell_offers,
     }
@@ -207,7 +267,21 @@ async def add_guest_tag(
     _perm=Depends(require_op("manage_sales")),  # v98 DW
 ):
     """Add tag to guest"""
-    result = await db.guests.update_one({"id": guest_id, "tenant_id": current_user.tenant_id}, {"$addToSet": {"tags": tag}})
+    guest = await db.guests.find_one(
+        {"id": guest_id, "tenant_id": current_user.tenant_id},
+        {"_id": 0, "tags": 1},
+    )
+    if not guest:
+        raise HTTPException(status_code=404, detail="Guest not found")
+
+    raw_tags = guest.get("tags")
+    tags = raw_tags if isinstance(raw_tags, list) else ([str(raw_tags)] if raw_tags else [])
+    if tag not in tags:
+        tags.append(tag)
+    result = await db.guests.update_one(
+        {"id": guest_id, "tenant_id": current_user.tenant_id},
+        {"$set": {"tags": tags}},
+    )
 
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Guest not found")
@@ -226,7 +300,17 @@ async def add_guest_note(
     """Add note to guest"""
     note_obj = {"text": note, "created_by": current_user.name, "created_at": datetime.now(UTC).isoformat()}
 
-    result = await db.guests.update_one({"id": guest_id, "tenant_id": current_user.tenant_id}, {"$push": {"notes": note_obj}})
+    guest = await db.guests.find_one(
+        {"id": guest_id, "tenant_id": current_user.tenant_id},
+        {"_id": 0, "notes": 1},
+    )
+    if not guest:
+        raise HTTPException(status_code=404, detail="Guest not found")
+
+    result = await db.guests.update_one(
+        {"id": guest_id, "tenant_id": current_user.tenant_id},
+        {"$set": {"notes": [*normalize_guest_notes(guest.get("notes")), note_obj]}},
+    )
 
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Guest not found")
@@ -245,7 +329,7 @@ async def delete_guest_note(
     guest = await db.guests.find_one({"id": guest_id, "tenant_id": current_user.tenant_id})
     if not guest:
         raise HTTPException(status_code=404, detail="Guest not found")
-    notes = guest.get("notes", [])
+    notes = normalize_guest_notes(guest.get("notes"))
     if note_index < 0 or note_index >= len(notes):
         raise HTTPException(status_code=400, detail="Invalid note index")
     notes.pop(note_index)

@@ -1,506 +1,336 @@
-import { useState } from 'react';
-import { X, User, Calendar, DollarSign, Clock, Building2, FileText, Home, Award, AlertCircle, Info, Users, XCircle, Loader2 } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import { useEffect, useMemo, useState } from 'react';
+import {
+  ArrowRight, BedDouble, Building2, CalendarDays, FileText, Mail,
+  MessageSquareText, Phone, Send, UserRound, UsersRound, X, XCircle, Loader2,
+  CreditCard, LogIn, LogOut, Pencil,
+} from 'lucide-react';
 import axios from 'axios';
 import { toast } from 'sonner';
-import { confirmDialog } from '@/lib/dialogs';
-import { useTranslation } from 'react-i18next';
-import CallButton from '@/components/contact-center/CallButton';
 
-const ReservationSidebar = ({ 
-  booking, 
-  folio, 
-  room, 
-  onClose, 
-  getSegmentColor, 
-  getStatusLabel,
-  getRateTypeInfo,
-  onViewFolio,
-  onEditReservation,
-  onSendConfirmation,
-  onDataRefresh
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import CallButton from '@/components/contact-center/CallButton';
+import GuestAlertModal from '@/components/GuestAlertModal';
+import { confirmDialog } from '@/lib/dialogs';
+import { cachedTenantCurrency } from '@/lib/currency';
+import { bookingSourceLabel } from '@/utils/bookingSource';
+import { classifyGuestPayment } from '@/utils/paymentClassification';
+
+export const reservationQuickPanelSummary = (booking, folio) => {
+  const checkIn = new Date(booking?.check_in);
+  const checkOut = new Date(booking?.check_out);
+  const nights = Number.isFinite(checkIn.getTime()) && Number.isFinite(checkOut.getTime())
+    ? Math.max(1, Math.round((checkOut - checkIn) / 86400000))
+    : 1;
+  const total = Number(booking?.total_amount || 0);
+  const folioBalance = Number(folio?.balance ?? folio?.total_balance);
+  const bookingBalance = Number(booking?.remaining_balance ?? booking?.balance);
+  return {
+    nights,
+    total,
+    balance: Number.isFinite(folioBalance) ? folioBalance : Number.isFinite(bookingBalance) ? bookingBalance : null,
+    guestCount: Number(booking?.adults || 0) + Number(booking?.children || 0) || Number(booking?.guests_count || 0) || 1,
+    currency: String(folio?.currency || booking?.currency || cachedTenantCurrency()).toUpperCase(),
+  };
+};
+
+const formatDate = (value) => {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value).slice(0, 10);
+  return new Intl.DateTimeFormat('tr-TR', { day: 'numeric', month: 'short', year: 'numeric' }).format(date);
+};
+
+const formatMoney = (amount, currency) => {
+  const normalized = currency === 'TL' ? 'TRY' : currency;
+  try {
+    return new Intl.NumberFormat('tr-TR', {
+      style: 'currency', currency: normalized, minimumFractionDigits: 0, maximumFractionDigits: 2,
+    }).format(Number(amount || 0));
+  } catch {
+    return `${Number(amount || 0).toLocaleString('tr-TR')} ${currency}`;
+  }
+};
+
+const statusTone = (status) => {
+  if (status === 'checked_in') return 'bg-emerald-50 text-emerald-700 border-emerald-200';
+  if (status === 'checked_out') return 'bg-rose-50 text-rose-700 border-rose-200';
+  return 'bg-blue-50 text-blue-700 border-blue-200';
+};
+
+const visibleContact = (value) => {
+  const normalized = String(value || '').trim();
+  return normalized && !normalized.startsWith('SYR1:') ? normalized : '';
+};
+
+const ReservationSidebar = ({
+  booking, folio, room, onClose, getStatusLabel, onViewFolio,
+  onOpenWorkspace, onSendConfirmation, onDataRefresh,
 }) => {
-  const { t } = useTranslation();
   const [cancelling, setCancelling] = useState(false);
+  const [actionBusy, setActionBusy] = useState('');
+  const [quickForm, setQuickForm] = useState('');
+  const [paymentForm, setPaymentForm] = useState({ amount: '', method: 'cash', reference: '' });
+  const [guestForm, setGuestForm] = useState({ name: '', email: '', phone: '' });
+  const [checkinAlertOpen, setCheckinAlertOpen] = useState(false);
+  const summary = useMemo(() => reservationQuickPanelSummary(booking, folio), [booking, folio]);
+
+  useEffect(() => {
+    setQuickForm('');
+    setPaymentForm({
+      amount: summary.balance != null && summary.balance > 0 ? summary.balance.toFixed(2) : '',
+      method: 'cash',
+      reference: '',
+    });
+    setGuestForm({
+      name: booking?.guest_name || booking?.guest?.name || '',
+      email: visibleContact(booking?.guest_email),
+      phone: visibleContact(booking?.guest_phone),
+    });
+  }, [booking?.id, booking?.guest_name, booking?.guest?.name, booking?.guest_email, booking?.guest_phone, summary.balance]);
+
   if (!booking) return null;
 
-  const nights = Math.ceil((new Date(booking.check_out) - new Date(booking.check_in)) / (1000 * 60 * 60 * 24));
-  const adr = booking.total_amount / nights;
+  const guestName = booking.guest_name || booking.guest?.name || 'Misafir';
+  const initials = guestName.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase();
+  const roomNumber = room?.room_number || booking.room_number || 'Atanmadı';
+  const source = bookingSourceLabel(booking);
+  const guestEmail = visibleContact(booking.guest_email);
+  const guestPhone = visibleContact(booking.guest_phone);
+  const canCheckIn = ['confirmed', 'guaranteed'].includes(booking.status);
+  const canCheckOut = booking.status === 'checked_in';
+  const canRecordPayment = !['cancelled', 'checked_out'].includes(booking.status)
+    && summary.balance != null && summary.balance > 0.009;
+
+  const finishQuickAction = () => {
+    setQuickForm('');
+    onDataRefresh?.();
+  };
+
+  const recordPayment = async () => {
+    const amount = Number(paymentForm.amount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      toast.error('Geçerli bir ödeme tutarı girin');
+      return;
+    }
+    if (summary.balance == null) {
+      toast.error('Bakiye henüz hesaplanmadı; lütfen tekrar deneyin');
+      return;
+    }
+    if (Math.round(amount * 100) > Math.round(summary.balance * 100)) {
+      toast.error('Hızlı ödeme kalan bakiyeden fazla olamaz');
+      return;
+    }
+    const normalizedCurrency = summary.currency === 'TL' ? 'TRY' : summary.currency;
+    setActionBusy('payment');
+    try {
+      await axios.post(`/pms/reservations/${booking.id}/record-payment`, {
+        amount,
+        method: paymentForm.method,
+        reference: paymentForm.reference.trim() || null,
+        currency: normalizedCurrency,
+        received_currency: normalizedCurrency,
+        received_amount: amount,
+        exchange_rate: 1,
+        payment_type: classifyGuestPayment(amount, summary.balance),
+      });
+      toast.success('Ödeme kaydedildi');
+      finishQuickAction();
+    } catch (error) {
+      toast.error('İşlem Hatası: ' + (error.response?.data?.detail || error.message));
+    } finally {
+      setActionBusy('');
+    }
+  };
+
+  const saveGuest = async () => {
+    const name = guestForm.name.trim();
+    if (name.length < 2) {
+      toast.error('Misafir adı en az 2 karakter olmalı');
+      return;
+    }
+    setActionBusy('guest');
+    try {
+      await axios.put(`/pms/reservations/${booking.id}/update-guest`, {
+        name,
+        email: guestForm.email.trim() || null,
+        phone: guestForm.phone.trim() || null,
+      });
+      toast.success('Misafir bilgileri güncellendi');
+      finishQuickAction();
+    } catch (error) {
+      toast.error('İşlem Hatası: ' + (error.response?.data?.detail || error.message));
+    } finally {
+      setActionBusy('');
+    }
+  };
+
+  const quickCheckIn = async () => {
+    if (!booking.room_id && !room?.id) {
+      toast.warning('Girişten önce rezervasyona oda atayın');
+      return;
+    }
+    setCheckinAlertOpen(true);
+  };
+
+  const confirmQuickCheckIn = async () => {
+    setCheckinAlertOpen(false);
+    setActionBusy('checkin');
+    try {
+      await axios.post(`/frontdesk/checkin/${booking.id}?create_folio=true`);
+      toast.success('Misafirin girişi yapıldı');
+      finishQuickAction();
+      onClose?.();
+    } catch (error) {
+      toast.error('İşlem Hatası: ' + (error.response?.data?.detail || error.message));
+    } finally {
+      setActionBusy('');
+    }
+  };
+
+  const quickCheckOut = async () => {
+    if (booking.pricing_reconciliation_required) {
+      toast.warning('Fiyat ve tahakkuk farkı düzeltilmeden çıkış yapılamaz. Tam rezervasyon detayını açın.');
+      return;
+    }
+    if (summary.balance == null) {
+      toast.warning('Bakiye hesaplanırken çıkış yapılamaz');
+      return;
+    }
+    if (summary.balance > 0.009) {
+      setPaymentForm((current) => ({ ...current, amount: summary.balance.toFixed(2) }));
+      setQuickForm('payment');
+      toast.warning('Çıkıştan önce folyo bakiyesini kapatın');
+      return;
+    }
+    if (!await confirmDialog({
+      title: 'Çıkışı onaylayın',
+      message: `${guestName} için çıkış işlemi yapılsın mı?`,
+      confirmText: 'Çıkış yap',
+      variant: 'danger',
+    })) return;
+    setActionBusy('checkout');
+    try {
+      await axios.post(`/pms/reservations/${booking.id}/checkout?auto_close_folios=true`);
+      toast.success('Misafirin çıkışı yapıldı');
+      finishQuickAction();
+      onClose?.();
+    } catch (error) {
+      const detail = error.response?.data?.detail || error.message;
+      if (error.response?.status === 402) setQuickForm('payment');
+      toast.error('İşlem Hatası: ' + detail);
+    } finally {
+      setActionBusy('');
+    }
+  };
 
   return (
-    <div 
-      className="fixed right-0 top-16 bottom-0 w-[480px] bg-white shadow-xl z-50 overflow-hidden flex flex-col animate-slide-in-right rounded-l-2xl"
-      style={{ 
-        boxShadow: '0 0 60px rgba(0, 0, 0, 0.15), 0 0 20px rgba(59, 130, 246, 0.1)',
-        borderLeft: '1px solid rgba(59, 130, 246, 0.2)'
-      }}
+    <aside
+      className="fixed bottom-3 right-3 top-3 z-[55] flex w-[430px] max-w-[calc(100vw-24px)] flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-[0_28px_90px_rgba(15,23,42,0.28)] animate-in slide-in-from-right duration-200"
+      data-testid="reservation-quick-panel"
+      aria-label={`${guestName} hızlı rezervasyon özeti`}
     >
-      {/* Header */}
-      <div className="bg-gradient-to-br from-blue-500 via-blue-600 to-indigo-600 text-white p-6 shadow-lg">
-        <div className="flex justify-between items-start mb-6">
-          <div className="flex-1">
-            <h2 className="text-2xl font-bold mb-2 tracking-tight">{booking.guest_name || 'Guest'}</h2>
-            <div className="flex items-center gap-2 flex-wrap">
-              <Badge className={`${getSegmentColor(booking.market_segment)} backdrop-blur-sm bg-opacity-90 transition-all hover:scale-105`}>
-                {booking.market_segment || 'Standard'}
-              </Badge>
-              <Badge className="bg-white/90 text-blue-700 backdrop-blur-sm transition-all hover:scale-105 font-medium">
-                {getStatusLabel(booking.status)}
-              </Badge>
-            </div>
+      <header className="border-b border-slate-200 bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950 px-5 pb-5 pt-4 text-white">
+        <div className="mb-5 flex items-start justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white/15 text-lg font-bold ring-1 ring-white/20">{initials || 'M'}</span>
+            <div className="min-w-0"><p className="truncate text-lg font-bold">{guestName}</p><p className="mt-0.5 truncate text-xs text-slate-300">{source} · {summary.guestCount} misafir</p></div>
           </div>
-          <button 
-            onClick={onClose}
-            className="text-white hover:bg-white/20 rounded-full p-2 transition-all duration-200 hover:rotate-90 backdrop-blur-sm"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <button type="button" onClick={onClose} className="rounded-xl p-2 text-slate-300 transition hover:bg-white/10 hover:text-white" aria-label="Hızlı paneli kapat"><X className="h-5 w-5" /></button>
         </div>
-        
-        {/* Quick Stats - Modern Cards */}
-        <div className="grid grid-cols-3 gap-3">
-          <div className="bg-white/15 backdrop-blur-md rounded-xl p-3 transition-all duration-300 hover:bg-white/25 hover:scale-105 border border-white/20">
-            <div className="text-xs font-medium opacity-90 mb-1">Nights</div>
-            <div className="text-2xl font-bold">{nights}</div>
-          </div>
-          <div className="bg-white/15 backdrop-blur-md rounded-xl p-3 transition-all duration-300 hover:bg-white/25 hover:scale-105 border border-white/20">
-            <div className="text-xs font-medium opacity-90 mb-1">ADR</div>
-            <div className="text-2xl font-bold">${adr.toFixed(0)}</div>
-          </div>
-          <div className="bg-white/15 backdrop-blur-md rounded-xl p-3 transition-all duration-300 hover:bg-white/25 hover:scale-105 border border-white/20">
-            <div className="text-xs font-medium opacity-90 mb-1">Total</div>
-            <div className="text-2xl font-bold">${booking.total_amount}</div>
-          </div>
+        <div className="grid grid-cols-3 gap-2">
+          <div className="rounded-xl border border-white/10 bg-white/10 px-3 py-2"><p className="text-[10px] uppercase tracking-wide text-slate-300">Oda</p><p className="mt-0.5 font-bold">{roomNumber}</p></div>
+          <div className="rounded-xl border border-white/10 bg-white/10 px-3 py-2"><p className="text-[10px] uppercase tracking-wide text-slate-300">Konaklama</p><p className="mt-0.5 font-bold">{summary.nights} gece</p></div>
+          <div className="rounded-xl border border-white/10 bg-white/10 px-3 py-2"><p className="text-[10px] uppercase tracking-wide text-slate-300">Toplam</p><p className="mt-0.5 truncate font-bold">{formatMoney(summary.total, summary.currency)}</p></div>
         </div>
-      </div>
+      </header>
 
-      {/* Content - Scrollable */}
-      <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-gradient-to-b from-gray-50 to-white dark:bg-none dark:bg-card">
-        
-        {/* Guest Information */}
-        <Card className="border-none shadow-md hover:shadow-lg transition-shadow duration-300 rounded-xl">
-          <CardContent className="pt-6">
-            <div className="flex items-center mb-4">
-              <User className="w-5 h-5 text-blue-600 mr-3 transition-transform group-hover:scale-110" />
-              <h3 className="font-bold text-lg">Guest Information</h3>
+      <div className="flex-1 space-y-4 overflow-y-auto bg-slate-50/80 p-4">
+        <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div><p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Rezervasyon durumu</p><Badge className={`mt-2 border ${statusTone(booking.status)}`}>{getStatusLabel(booking.status)}</Badge></div>
+          <div className="text-right"><p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Kalan bakiye</p><p className={`mt-1 text-xl font-bold ${summary.balance == null ? 'text-slate-500' : summary.balance > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>{summary.balance == null ? 'Hesaplanıyor' : formatMoney(summary.balance, summary.currency)}</p></div>
+        </div>
+
+        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <h3 className="mb-3 flex items-center gap-2 text-sm font-bold text-slate-900"><CalendarDays className="h-4 w-4 text-blue-600" /> Konaklama</h3>
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            <div className="rounded-xl bg-slate-50 p-3"><p className="text-[11px] text-slate-500">Giriş</p><p className="mt-1 font-semibold text-slate-800">{formatDate(booking.check_in)}</p></div>
+            <div className="rounded-xl bg-slate-50 p-3"><p className="text-[11px] text-slate-500">Çıkış</p><p className="mt-1 font-semibold text-slate-800">{formatDate(booking.check_out)}</p></div>
+          </div>
+          <div className="mt-3 space-y-2 text-sm">
+            <div className="flex items-center justify-between"><span className="flex items-center gap-2 text-slate-500"><BedDouble className="h-4 w-4" /> Oda tipi</span><strong className="text-slate-800">{room?.room_type || booking.room_type || '—'}</strong></div>
+            <div className="flex items-center justify-between"><span className="flex items-center gap-2 text-slate-500"><UsersRound className="h-4 w-4" /> Misafir</span><strong className="text-slate-800">{booking.adults || 0} yetişkin · {booking.children || 0} çocuk</strong></div>
+          </div>
+        </section>
+
+        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <h3 className="flex items-center gap-2 text-sm font-bold text-slate-900"><UserRound className="h-4 w-4 text-blue-600" /> Misafir ve iletişim</h3>
+            <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => setQuickForm(quickForm === 'guest' ? '' : 'guest')} data-testid="quick-edit-guest-btn"><Pencil className="mr-1 h-3.5 w-3.5" /> Düzenle</Button>
+          </div>
+          {quickForm === 'guest' ? (
+            <div className="space-y-2" data-testid="quick-guest-form">
+              <label className="block text-xs font-medium text-slate-600">Ad soyad<input className="mt-1 h-9 w-full rounded-md border border-slate-300 px-3 text-sm" value={guestForm.name} onChange={(event) => setGuestForm((current) => ({ ...current, name: event.target.value }))} /></label>
+              <label className="block text-xs font-medium text-slate-600">Telefon<input className="mt-1 h-9 w-full rounded-md border border-slate-300 px-3 text-sm" value={guestForm.phone} onChange={(event) => setGuestForm((current) => ({ ...current, phone: event.target.value }))} /></label>
+              <label className="block text-xs font-medium text-slate-600">E-posta<input type="email" className="mt-1 h-9 w-full rounded-md border border-slate-300 px-3 text-sm" value={guestForm.email} onChange={(event) => setGuestForm((current) => ({ ...current, email: event.target.value }))} /></label>
+              <div className="flex justify-end gap-2 pt-1"><Button type="button" variant="ghost" size="sm" onClick={() => setQuickForm('')} disabled={actionBusy === 'guest'}>Vazgeç</Button><Button type="button" size="sm" onClick={saveGuest} disabled={actionBusy === 'guest'}>{actionBusy === 'guest' && <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />}Kaydet</Button></div>
             </div>
-            <div className="space-y-3">
-              <div className="flex justify-between">
-                <span className="text-gray-600">Name:</span>
-                <span className="font-semibold">{booking.guest_name}</span>
-              </div>
-              {booking.guest_email && (
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Email:</span>
-                  <span className="font-semibold text-sm">{booking.guest_email}</span>
-                </div>
-              )}
-
-              {booking.guest_phone && (
-                <div className="flex justify-between items-center">
-                  <span className="text-gray-600">Phone:</span>
-                  <span className="flex items-center gap-2">
-                    <span className="font-semibold">{booking.guest_phone}</span>
-                    <CallButton number={booking.guest_phone} />
-                  </span>
-                </div>
-              )}
-              <div className="flex justify-between">
-                <span className="text-gray-600">Adults:</span>
-                <span className="font-semibold">{booking.adults}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-600">Children:</span>
-                <span className="font-semibold">{booking.children || 0}</span>
-              </div>
-            </div>
-
-          </CardContent>
-        </Card>
-
-        {/* Group summary for this booking (if part of a group) */}
-        {booking.group_booking_id && booking._group_summary && (
-          <>
-            {(() => {
-              const groupSummary = booking._group_summary;
-              return (
-                <Card className="border-none shadow-md hover:shadow-lg transition-all duration-300 rounded-xl bg-blue-50/60 border border-blue-200">
-                  <CardContent className="pt-6">
-                    <div className="flex items-center mb-4">
-                      <Users className="w-5 h-5 text-blue-600 mr-2" />
-                      <h3 className="font-bold text-lg">Group</h3>
-                    </div>
-                    <div className="space-y-2 text-sm">
-                      <div className="flex justify-between">
-                        <span className="text-gray-600">Group ID:</span>
-                        <span className="font-mono text-xs bg-white px-2 py-0.5 rounded border border-blue-100">
-                          {booking.group_booking_id?.slice(0, 8)}…
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-gray-600">Rooms in Group:</span>
-                        <span className="font-semibold">{groupSummary.totalRooms}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-gray-600">Group Revenue:</span>
-                        <span className="font-semibold">${groupSummary.totalAmount}</span>
-                      </div>
-                    </div>
-
-                    <div className="mt-4 space-y-2">
-                      <div className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Other rooms in this group</div>
-                      <div className="space-y-1 max-h-40 overflow-y-auto">
-                        {groupSummary.bookings
-                          .filter(b => b.id !== booking.id)
-                          .map(b => (
-                            <div
-                              key={b.id}
-                              className="flex justify-between items-center text-xs bg-white px-2 py-1 rounded border border-blue-100"
-                            >
-                              <div>
-                                <div className="font-medium">
-                                  Room {b.room_number || '?'}
-                                </div>
-                                <div className="text-[11px] text-gray-500">
-                                  {b.adults} adults{b.children ? `, ${b.children} children` : ''}
-                                </div>
-                              </div>
-                              <div className="text-right">
-                                <div className="font-semibold">${b.total_amount}</div>
-                                <div className="text-[10px] text-gray-500">{getStatusLabel(b.status)}</div>
-                              </div>
-                            </div>
-                          ))}
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })()}
-          </>
-        )}
-
-        {/* Stay Information */}
-        <Card className="border-none shadow-md hover:shadow-lg transition-all duration-300 rounded-xl backdrop-blur-sm">
-          <CardContent className="pt-6">
-            <div className="flex items-center mb-4">
-              <Calendar className="w-5 h-5 text-green-600 mr-2" />
-              <h3 className="font-bold text-lg">Stay Information</h3>
-            </div>
-            <div className="space-y-3">
-              <div className="flex justify-between">
-                <span className="text-gray-600">Room:</span>
-                <span className="font-semibold">{room?.room_number}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-600">Room Type:</span>
-                <span className="font-semibold capitalize">{room?.room_type}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-600">Check-in:</span>
-                <span className="font-semibold">{booking.check_in}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-600">Check-out:</span>
-                <span className="font-semibold">{booking.check_out}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-600">Nights:</span>
-                <span className="font-semibold">{nights}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-600">Status:</span>
-                <Badge className={`${booking.status === 'checked_in' ? 'bg-green-500' : 'bg-blue-500'}`}>
-                  {getStatusLabel(booking.status)}
-                </Badge>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Rate Information */}
-        <Card className="border-none shadow-md hover:shadow-lg transition-all duration-300 rounded-xl backdrop-blur-sm">
-          <CardContent className="pt-6">
-            <div className="flex items-center mb-4">
-              <DollarSign className="w-5 h-5 text-indigo-600 mr-2" />
-              <h3 className="font-bold text-lg">Rate Information</h3>
-            </div>
-            <div className="space-y-3">
-              <div className="flex justify-between items-center">
-                <span className="text-gray-600">ADR:</span>
-                <span className="text-2xl font-bold text-indigo-600">${adr.toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-600">Total Amount:</span>
-                <span className="font-semibold">${booking.total_amount}</span>
-              </div>
-              {booking.rate_type && (
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Rate Code:</span>
-                  <span className={`font-semibold ${getRateTypeInfo(booking).color}`}>
-                    {getRateTypeInfo(booking).label}
-                  </span>
-                </div>
-              )}
-              {booking.market_segment && (
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Segment:</span>
-                  <Badge className={getSegmentColor(booking.market_segment)}>
-                    {booking.market_segment}
-                  </Badge>
-                </div>
-              )}
-              {booking.contracted_rate && (
-                <div className="bg-green-50 border border-green-200 rounded p-2 text-sm text-green-800">
-                  Contracted Rate Applied
-                </div>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Folio Balance */}
-        {folio && (
-          <Card className="border-none shadow-md hover:shadow-lg transition-all duration-300 rounded-xl backdrop-blur-sm">
-            <CardContent className="pt-6">
-              <div className="flex items-center mb-4">
-                <FileText className="w-5 h-5 text-amber-600 mr-2" />
-                <h3 className="font-bold text-lg">Folio Balance</h3>
-              </div>
-              <div className="space-y-3">
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Folio Number:</span>
-                  <span className="font-semibold">{folio.folio_number}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Charges:</span>
-                  <span className="font-semibold">${folio.total_charges || 0}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Payments:</span>
-                  <span className="font-semibold text-green-600">${folio.total_payments || 0}</span>
-                </div>
-                <div className="flex justify-between items-center pt-2 border-t">
-                  <span className="text-gray-700 font-semibold">Balance:</span>
-                  <span className={`text-xl font-bold ${folio.balance > 0 ? 'text-red-600' : 'text-green-600'}`}>
-                    ${folio.balance || 0}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Status:</span>
-                  <Badge className={folio.status === 'open' ? 'bg-yellow-500' : 'bg-gray-500'}>
-                    {folio.status}
-                  </Badge>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Company Information */}
-        {booking.company_name && (
-          <Card className="border-none shadow-md hover:shadow-lg transition-all duration-300 rounded-xl backdrop-blur-sm">
-            <CardContent className="pt-6">
-              <div className="flex items-center mb-4">
-                <Building2 className="w-5 h-5 text-indigo-600 mr-2" />
-                <h3 className="font-bold text-lg">Company</h3>
-              </div>
-              <div className="space-y-3">
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Company:</span>
-                  <span className="font-semibold">{booking.company_name}</span>
-                </div>
-                {booking.corporate_code && (
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Code:</span>
-                    <span className="font-semibold">{booking.corporate_code}</span>
-                  </div>
-                )}
-                {booking.payment_terms && (
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Payment Terms:</span>
-                    <span className="font-semibold">{booking.payment_terms}</span>
-                  </div>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Housekeeping Status */}
-        <Card className="border-none shadow-md hover:shadow-lg transition-all duration-300 rounded-xl backdrop-blur-sm">
-          <CardContent className="pt-6">
-            <div className="flex items-center mb-4">
-              <Home className="w-5 h-5 text-teal-600 mr-2" />
-              <h3 className="font-bold text-lg">Housekeeping</h3>
-            </div>
-            <div className="space-y-3">
-              <div className="flex justify-between">
-                <span className="text-gray-600">Room Status:</span>
-                <Badge className={
-                  room?.status === 'available' ? 'bg-green-500' :
-                  room?.status === 'occupied' ? 'bg-blue-500' :
-                  room?.status === 'dirty' ? 'bg-red-500' :
-                  'bg-gray-500'
-                }>
-                  {room?.status || 'Unknown'}
-                </Badge>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-600">Last Cleaned:</span>
-                <span className="font-semibold">Today, 10:30 AM</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-600">Turndown Service:</span>
-                <span className="font-semibold">Completed</span>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Room Move History */}
-        {booking.room_moves && booking.room_moves.length > 0 && (
-          <Card className="border-none shadow-md hover:shadow-lg transition-all duration-300 rounded-xl backdrop-blur-sm">
-            <CardContent className="pt-6">
-              <div className="flex items-center mb-4">
-                <Clock className="w-5 h-5 text-gray-600 mr-2" />
-                <h3 className="font-bold text-lg">Room Move History</h3>
-              </div>
-              <div className="space-y-2">
-                {booking.room_moves.map((move, idx) => (
-                  <div key={idx} className="bg-gray-50 border border-gray-200 rounded p-3">
-                    <div className="flex justify-between items-center mb-1">
-                      <span className="font-semibold text-sm">
-                        {move.old_room} → {move.new_room}
-                      </span>
-                      <span className="text-xs text-gray-500">
-                        {new Date(move.timestamp).toLocaleDateString()}
-                      </span>
-                    </div>
-                    <div className="text-xs text-gray-600">
-                      <div>Reason: {move.reason}</div>
-                      <div>By: {move.moved_by}</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Loyalty Points */}
-        <Card className="border-none shadow-md hover:shadow-lg transition-all duration-300 rounded-xl backdrop-blur-sm">
-          <CardContent className="pt-6">
-            <div className="flex items-center mb-4">
-              <Award className="w-5 h-5 text-yellow-600 mr-2" />
-              <h3 className="font-bold text-lg">Loyalty Program</h3>
-            </div>
-            <div className="space-y-3">
-              <div className="flex justify-between">
-                <span className="text-gray-600">Member Status:</span>
-                <Badge className="bg-yellow-500">Gold Member</Badge>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-600">Points Balance:</span>
-                <span className="font-semibold">2,450 pts</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-600">Points from Stay:</span>
-                <span className="font-semibold text-green-600">+{Math.floor(booking.total_amount / 10)} pts</span>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Notes */}
-        <Card className="border-none shadow-md hover:shadow-lg transition-all duration-300 rounded-xl backdrop-blur-sm">
-          <CardContent className="pt-6">
-            <div className="flex items-center mb-4">
-              <Info className="w-5 h-5 text-blue-600 mr-3 transition-transform group-hover:scale-110" />
-              <h3 className="font-bold text-lg">Special Notes</h3>
-            </div>
-            <div className="space-y-2">
-              {booking.special_requests ? (
-                <div className="bg-yellow-50 border border-yellow-200 rounded p-3 text-sm">
-                  <AlertCircle className="w-4 h-4 inline mr-2 text-yellow-600" />
-                  {booking.special_requests}
-                </div>
-              ) : (
-                <div className="text-gray-500 text-sm italic">No special requests</div>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Action Buttons */}
-        <div className="space-y-2 pb-6">
-          <Button 
-            data-testid="view-folio-btn"
-            className="w-full" 
-            size="lg"
-            onClick={() => {
-              if (onViewFolio) {
-                onViewFolio(booking.id);
-              }
-            }}
-          >
-            {t('cm.components_ReservationSidebar.folyo_yu_goruntule')}
-          </Button>
-          <Button 
-            variant="outline" 
-            className="w-full"
-            onClick={() => {
-              if (onEditReservation) onEditReservation(booking);
-              // else: parent did not wire handler — button is a no-op here
-            }}
-          >
-            Edit Reservation
-          </Button>
-          <Button 
-            variant="outline" 
-            className="w-full"
-            onClick={() => {
-              if (onSendConfirmation) onSendConfirmation(booking);
-              // else: parent did not wire handler — button is a no-op here
-            }}
-          >
-            Send Confirmation
-          </Button>
-          {booking.status !== 'cancelled' && booking.status !== 'checked_in' && booking.status !== 'checked_out' && (
-            <Button
-              variant="outline"
-              className="w-full border-red-400 text-red-700 hover:bg-red-50"
-              data-testid="sidebar-cancel-booking-btn"
-              disabled={cancelling}
-              onClick={async () => {
-                if (!await confirmDialog({ message: 'Bu rezervasyonu iptal etmek istediğinize emin misiniz?', variant: 'danger' })) return;
-                setCancelling(true);
-                try {
-                  await axios.post('/pms-core/cancel', {
-                    booking_id: booking.id,
-                    reason: 'Kullanıcı tarafından iptal edildi'
-                  });
-                  toast.success('Rezervasyon başarıyla iptal edildi');
-                  onClose();
-                  if (onDataRefresh) onDataRefresh();
-                } catch (err) {
-                  const detail = err.response?.data?.detail;
-                  const msg = typeof detail === 'string' ? detail : detail?.error || 'İptal işlemi başarısız';
-                  toast.error(msg);
-                } finally {
-                  setCancelling(false);
-                }
-              }}
-            >
-              {cancelling ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <XCircle className="w-4 h-4 mr-2" />}
-              {t('cm.components_ReservationSidebar.rezervasyonu_iptal_et')}
-            </Button>
+          ) : (
+          <div className="space-y-2 text-sm">
+            <div className="flex items-center gap-2 text-slate-600"><Mail className="h-4 w-4 text-slate-400" /><span className="truncate">{guestEmail || 'E-posta bilgisi yok'}</span></div>
+            <div className="flex items-center justify-between gap-2 text-slate-600"><span className="flex min-w-0 items-center gap-2"><Phone className="h-4 w-4 shrink-0 text-slate-400" /><span className="truncate">{guestPhone || 'Telefon bilgisi yok'}</span></span>{guestPhone && <CallButton number={guestPhone} />}</div>
+            {booking.company_name && <div className="flex items-center gap-2 text-slate-600"><Building2 className="h-4 w-4 text-slate-400" />{booking.company_name}</div>}
+          </div>
           )}
-        </div>
+        </section>
+
+        {quickForm === 'payment' && <section className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4 shadow-sm" data-testid="quick-payment-form">
+          <div className="mb-3 flex items-center justify-between"><h3 className="flex items-center gap-2 text-sm font-bold text-emerald-950"><CreditCard className="h-4 w-4" /> Hızlı ödeme</h3><button type="button" onClick={() => setQuickForm('')} aria-label="Hızlı ödeme formunu kapat"><X className="h-4 w-4 text-emerald-800" /></button></div>
+          <div className="grid grid-cols-2 gap-2">
+            <label className="text-xs font-medium text-emerald-900">Tutar ({summary.currency})<input type="number" min="0.01" step="0.01" className="mt-1 h-9 w-full rounded-md border border-emerald-300 bg-white px-3 text-sm" value={paymentForm.amount} onChange={(event) => setPaymentForm((current) => ({ ...current, amount: event.target.value }))} /></label>
+            <label className="text-xs font-medium text-emerald-900">Ödeme yöntemi<select className="mt-1 h-9 w-full rounded-md border border-emerald-300 bg-white px-2 text-sm" value={paymentForm.method} onChange={(event) => setPaymentForm((current) => ({ ...current, method: event.target.value }))}><option value="cash">Nakit</option><option value="card">Kredi Kartı</option><option value="bank_transfer">Havale / EFT</option><option value="online">Online</option></select></label>
+          </div>
+          <label className="mt-2 block text-xs font-medium text-emerald-900">Referans / not<input className="mt-1 h-9 w-full rounded-md border border-emerald-300 bg-white px-3 text-sm" value={paymentForm.reference} onChange={(event) => setPaymentForm((current) => ({ ...current, reference: event.target.value }))} placeholder="İsteğe bağlı" /></label>
+          <div className="mt-3 flex items-center justify-between gap-2"><span className="text-xs text-emerald-800">Kalan: {formatMoney(summary.balance, summary.currency)}</span><Button type="button" size="sm" className="bg-emerald-600 hover:bg-emerald-700" onClick={recordPayment} disabled={actionBusy === 'payment'}>{actionBusy === 'payment' && <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />}Ödemeyi kaydet</Button></div>
+        </section>}
+
+        {booking.special_requests && <section className="rounded-2xl border border-amber-200 bg-amber-50/70 p-4"><h3 className="mb-2 flex items-center gap-2 text-sm font-bold text-amber-900"><MessageSquareText className="h-4 w-4" /> Misafir notu</h3><p className="line-clamp-4 text-sm leading-5 text-amber-800">{booking.special_requests}</p></section>}
       </div>
-    </div>
+
+      <footer className="border-t border-slate-200 bg-white p-4">
+        {(canCheckIn || canCheckOut || canRecordPayment) && <div className="mb-2 grid grid-cols-2 gap-2 [&>*:only-child]:col-span-2" data-testid="quick-operational-actions">
+          {canCheckIn && <Button className="h-10 bg-emerald-600 hover:bg-emerald-700" onClick={quickCheckIn} disabled={Boolean(actionBusy)} data-testid="quick-checkin-btn">{actionBusy === 'checkin' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <LogIn className="mr-2 h-4 w-4" />}Giriş yap</Button>}
+          {canCheckOut && <Button className="h-10 bg-amber-600 hover:bg-amber-700" onClick={quickCheckOut} disabled={Boolean(actionBusy)} data-testid="quick-checkout-btn">{actionBusy === 'checkout' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <LogOut className="mr-2 h-4 w-4" />}Çıkış yap</Button>}
+          {canRecordPayment && <Button variant="outline" className="h-10 border-emerald-300 text-emerald-700 hover:bg-emerald-50" onClick={() => setQuickForm(quickForm === 'payment' ? '' : 'payment')} disabled={Boolean(actionBusy)} data-testid="quick-payment-btn"><CreditCard className="mr-2 h-4 w-4" />Ödeme al</Button>}
+        </div>}
+        <Button className="h-11 w-full justify-between bg-blue-600 hover:bg-blue-700" onClick={() => onOpenWorkspace?.(booking)} data-testid="open-reservation-workspace"><span className="flex items-center gap-2"><ArrowRight className="h-4 w-4" /> Tam rezervasyon detayını aç</span><span className="text-xs text-blue-100">Tüm işlemler</span></Button>
+        <div className="mt-2 grid grid-cols-2 gap-2">
+          <Button variant="outline" className="h-10" onClick={() => onViewFolio?.(booking.id)} data-testid="view-folio-btn"><FileText className="mr-2 h-4 w-4" /> Folyo</Button>
+          <Button variant="outline" className="h-10" onClick={() => onSendConfirmation?.(booking)}><Send className="mr-2 h-4 w-4" /> Onay gönder</Button>
+        </div>
+        {booking.status !== 'cancelled' && !['checked_in', 'checked_out'].includes(booking.status) && (
+          <Button variant="ghost" className="mt-2 h-9 w-full text-rose-600 hover:bg-rose-50 hover:text-rose-700" data-testid="sidebar-cancel-booking-btn" disabled={cancelling} onClick={async () => {
+            if (!await confirmDialog({ message: 'Bu rezervasyonu iptal etmek istediğinize emin misiniz?', variant: 'danger' })) return;
+            setCancelling(true);
+            try {
+              await axios.post('/pms-core/cancel', { booking_id: booking.id, reason: 'Kullanıcı tarafından iptal edildi' });
+              toast.success('Rezervasyon başarıyla iptal edildi'); onClose(); onDataRefresh?.();
+            } catch (error) {
+              const detail = error.response?.data?.detail;
+              toast.error(typeof detail === 'string' ? detail : detail?.error || 'İptal işlemi başarısız');
+            } finally { setCancelling(false); }
+          }}>{cancelling ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <XCircle className="mr-2 h-4 w-4" />} Rezervasyonu iptal et</Button>
+        )}
+      </footer>
+
+      <GuestAlertModal
+        guestId={booking.guest_id || booking.guest?.id}
+        open={checkinAlertOpen}
+        onClose={() => setCheckinAlertOpen(false)}
+        onConfirm={confirmQuickCheckIn}
+        confirmLabel="Girişi Onayla"
+      />
+    </aside>
   );
 };
 

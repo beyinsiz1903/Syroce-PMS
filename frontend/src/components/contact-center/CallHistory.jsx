@@ -176,7 +176,7 @@ export default function CallHistory() {
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <DirectionBadge direction={call.direction} />
-                    <span className="truncate text-sm font-medium text-gray-900">
+                    <div className="min-w-0 truncate text-sm font-medium text-gray-900">
                       {call.caller_name ? (
                         <div className="flex flex-col">
                           <span>{call.caller_name}</span>
@@ -185,7 +185,7 @@ export default function CallHistory() {
                       ) : (
                         call.caller_phone_masked || "Bilinmeyen numara"
                       )}
-                    </span>
+                    </div>
                   </div>
                   <div className="mt-1 flex items-center gap-2 text-[11px] text-gray-500">
                     <span>{STATUS_LABEL[call.status] || call.status || "—"}</span>

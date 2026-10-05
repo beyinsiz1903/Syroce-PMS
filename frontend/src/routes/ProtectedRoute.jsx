@@ -12,12 +12,30 @@ import { cloneElement, isValidElement, Suspense, lazy } from "react";
 import { Navigate } from "react-router-dom";
 import { useEntitlements } from "@/context/EntitlementContext";
 import { ModuleAvailabilityState } from "@/components/shared/ModuleAvailabilityState";
+import ProductState from "@/components/shared/ProductState";
 
 const Layout = lazy(() => import("@/components/Layout"));
 
+// Every lazy route crosses this fallback. Keeping it on the shared product
+// state contract prevents a newly-added route from reintroducing a bare
+// spinner while its workspace bundle or initial data boundary is resolving.
 const LoadingFallback = () => (
-  <div className="flex items-center justify-center h-screen">
-    <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-600"></div>
+  <ProductState
+    state="loading"
+    moduleName="Çalışma alanı"
+    showDashboardLink={false}
+  />
+);
+
+const RouteContentLoadingFallback = () => (
+  <div data-testid="route-content-loading">
+    <ProductState
+      state="loading"
+      moduleName="Sayfa"
+      title="Sayfa hazırlanıyor"
+      compact
+      showDashboardLink={false}
+    />
   </div>
 );
 
@@ -28,9 +46,20 @@ function withOptionalLayout(element, { wrapLayout, layoutModule, user, tenant, o
     : element;
   return (
     <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule={layoutModule}>
-      {embeddedElement}
+      <Suspense fallback={<RouteContentLoadingFallback />}>
+        {embeddedElement}
+      </Suspense>
     </Layout>
   );
+}
+
+function hasAllowedRole(user, allowedRoles) {
+  if (!Array.isArray(allowedRoles) || allowedRoles.length === 0) return true;
+  const roles = new Set([
+    user?.role,
+    ...(Array.isArray(user?.roles) ? user.roles : []),
+  ].filter(Boolean).map((role) => String(role).toLowerCase()));
+  return roles.has("super_admin") || roles.has("demo_manager_readonly") || allowedRoles.some((role) => roles.has(String(role).toLowerCase()));
 }
 
 export function ProtectedRoute({
@@ -87,10 +116,19 @@ export function ModuleGuardedRoute({
   user,
   tenant,
   onLogout,
+  allowedRoles,
 }) {
   const { hasModule, hasFeature, loading, error, refresh } = useEntitlements();
 
   if (!isAuthenticated) return <Navigate to="/auth" replace />;
+
+  if (!hasAllowedRole(user, allowedRoles)) {
+    return (
+      <Suspense fallback={<LoadingFallback />}>
+        {withOptionalLayout(<ModuleAvailabilityState reason="forbidden" />, { wrapLayout, layoutModule, user, tenant, onLogout })}
+      </Suspense>
+    );
+  }
 
   if (loading) {
     return <LoadingFallback />;
@@ -134,4 +172,4 @@ export function ModuleGuardedRoute({
   );
 }
 
-export { LoadingFallback };
+export { LoadingFallback, RouteContentLoadingFallback };

@@ -4,7 +4,9 @@ Türkiye'de **7194 sayılı Kanun** uyarınca konaklama vergisi, takip eden ayı
 
 ## Vergi Oranı
 
-Varsayılan oran **%2**'dir (KDV hariç matrah üzerinden). Diplomatik temsilcilik mensupları, öğrenci yurdu, sağlık tesisleri gibi muafiyetler vardır.
+Genel oran **%2**'dir (KDV hariç matrah üzerinden). 30 Nisan 2026 tarihli ve 11263 sayılı Cumhurbaşkanı Kararı ile oran, **1 Mayıs 2026–31 Aralık 2026** arasında **%1** olarak uygulanır. Yürürlük tarihini ve oranı dönem başlamadan kontrol edin. Diplomatik temsilcilik mensupları, öğrenci yurdu, sağlık tesisleri gibi muafiyetler vardır.
+
+Konaklama vergisi KDV değildir ve KDV matrahına dahil edilmez. Konaklama faturasında konaklama hizmeti %10 KDV ile, konaklama vergisi ise ayrı ve %0 KDV'li satırda gösterilir.
 
 ## Aylık İş Akışı
 

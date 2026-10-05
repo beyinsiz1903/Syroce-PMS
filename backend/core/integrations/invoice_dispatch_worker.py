@@ -114,11 +114,7 @@ class InvoiceDispatchWorker(NilveraWorkerHealthMixin):
             "worker_id": self.worker_id,
             "processed_total": health.processed_total,
             "failed_total": health.job_failed_total,
-            "last_processed_at": (
-                health.last_success_at.isoformat()
-                if health.last_success_at
-                else None
-            ),
+            "last_processed_at": (health.last_success_at.isoformat() if health.last_success_at else None),
             "running": health.task_alive,
         }
 
@@ -192,10 +188,7 @@ class InvoiceDispatchWorker(NilveraWorkerHealthMixin):
                 break
 
             record = await sysdb.invoice_sync.find_one_and_update(
-                {
-                    "state": InvoiceSyncState.SAFE_TO_RETRY,
-                    "redispatch_count": {"$lt": 1}
-                },
+                {"state": InvoiceSyncState.SAFE_TO_RETRY, "redispatch_count": {"$lt": 1}},
                 {
                     "$set": {
                         "state": InvoiceSyncState.QUEUED,
@@ -203,7 +196,7 @@ class InvoiceDispatchWorker(NilveraWorkerHealthMixin):
                         "updated_at": now,
                         "next_retry_at": now,
                     },
-                    "$inc": {"version": 1, "redispatch_count": 1}
+                    "$inc": {"version": 1, "redispatch_count": 1},
                 },
                 sort=[("updated_at", 1)],
                 return_document=ReturnDocument.AFTER,
@@ -253,8 +246,8 @@ class InvoiceDispatchWorker(NilveraWorkerHealthMixin):
                             {"lease_expires_at": {"$exists": False}},
                             {"lease_expires_at": {"$lte": now}},
                         ]
-                    }
-                ]
+                    },
+                ],
             },
             {
                 "$set": {

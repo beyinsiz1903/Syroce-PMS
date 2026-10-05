@@ -22,7 +22,7 @@ export function guestStaffRoutes({ p }) {
     { path: "/sales", ...p(SalesModule), wrapLayout: true, layoutModule: "sales" },
     { path: "/travel-agent-arap", ...p(TravelAgentARAP), wrapLayout: true },
     { path: "/app/travel-agent-arap", ...p(TravelAgentARAP), wrapLayout: true },
-    { path: "/agency-requests", ...p(AgencyRequests) },
+    { path: "/agency-requests", ...p(AgencyRequests), wrapLayout: true, layoutModule: "agency_requests" },
     { path: "/app/incoming-agency-contracts", ...p(IncomingAgencyContracts), wrapLayout: true },
     { path: "/agency-management", ...p(AgencyManagement), wrapLayout: true },
     { path: "/agency-content", ...p(AgencyContentDistribution), wrapLayout: true },

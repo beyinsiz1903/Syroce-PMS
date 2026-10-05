@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +30,19 @@ def _date_only(value: Any) -> date | None:
         return date.fromisoformat(value.strip()[:10])
     except ValueError:
         return None
+
+
+def _local_calendar_date(timezone_name: str, *, now: datetime | None = None) -> date:
+    """Resolve a wall-clock instant to the hotel's local calendar date."""
+    try:
+        tenant_timezone = ZoneInfo(timezone_name)
+    except (ZoneInfoNotFoundError, ValueError, KeyError, OSError):
+        logger.warning("Invalid tenant timezone timezone=%s; using Europe/Istanbul", timezone_name)
+        tenant_timezone = ZoneInfo("Europe/Istanbul")
+    reference = now or datetime.now(UTC)
+    if reference.tzinfo is None:
+        reference = reference.replace(tzinfo=UTC)
+    return reference.astimezone(tenant_timezone).date()
 
 
 async def _derive_initial_business_date(db, tenant_id: str, today: date) -> tuple[str, str]:
@@ -55,11 +69,7 @@ async def _derive_initial_business_date(db, tenant_id: str, today: date) -> tupl
         },
         {"_id": 0, "check_in": 1},
     ).to_list(5000)
-    unresolved_dates = sorted(
-        parsed
-        for parsed in (_date_only(item.get("check_in")) for item in candidates)
-        if parsed is not None and parsed <= today
-    )
+    unresolved_dates = sorted(parsed for parsed in (_date_only(item.get("check_in")) for item in candidates) if parsed is not None and parsed <= today)
     if unresolved_dates:
         return unresolved_dates[0].isoformat(), "earliest_unresolved_arrival"
 
@@ -102,7 +112,8 @@ async def ensure_business_date_initialized(
     if current and current.get("business_date"):
         return business_date_payload(current)
 
-    today_value = today or datetime.now(UTC).date()
+    timezone_name = str((current or {}).get("timezone") or "Europe/Istanbul")
+    today_value = today or _local_calendar_date(timezone_name)
     initial_date, reason = await _derive_initial_business_date(db, tenant_id, today_value)
     now = datetime.now(UTC).isoformat()
     fields = {
@@ -127,10 +138,7 @@ async def ensure_business_date_initialized(
     # An aggregation-pipeline update makes initialization an atomic compare and
     # set. If a concurrent night audit establishes the date first, every field
     # below keeps the authoritative value already stored by that audit.
-    conditional_fields = {
-        key: {"$cond": [missing_date, value, f"${key}"]}
-        for key, value in fields.items()
-    }
+    conditional_fields = {key: {"$cond": [missing_date, value, f"${key}"]} for key, value in fields.items()}
     await db.tenant_settings.update_one(
         {"tenant_id": tenant_id},
         [
@@ -155,3 +163,79 @@ async def ensure_business_date_initialized(
         stored.get("business_date_initialization_reason"),
     )
     return business_date_payload(stored)
+
+
+async def stamp_open_business_date(db, tenant_id: str, document: dict[str, Any]) -> str:
+    """Attach the hotel's open PMS day to a newly-created financial record.
+
+    Wall-clock timestamps remain the immutable event time, while
+    ``business_date`` is the accounting day.  They intentionally diverge when
+    reception keeps working after midnight before night audit is completed.
+    An explicit business date (for example a night-audit room charge) is
+    preserved.
+    """
+    explicit = _date_only(document.get("business_date"))
+    if explicit is not None:
+        document["business_date"] = explicit.isoformat()
+        return document["business_date"]
+
+    state = await ensure_business_date_initialized(db, tenant_id)
+    resolved = _date_only(state.get("business_date"))
+    if resolved is None:
+        raise RuntimeError(f"PMS business date is invalid for tenant {tenant_id}")
+    document["business_date"] = resolved.isoformat()
+    return document["business_date"]
+
+
+def accounting_day_match(business_date: str, *legacy_date_clauses: dict[str, Any]) -> dict[str, Any]:
+    """Match an accounting day without double-classifying modern records.
+
+    Timestamp/date fallbacks are only allowed for legacy documents that do not
+    yet carry ``business_date``.  A modern record posted after midnight must
+    therefore stay on its open PMS day and cannot also appear on the following
+    calendar day.
+    """
+    missing_business_date = {
+        "$or": [
+            {"business_date": {"$exists": False}},
+            {"business_date": None},
+            {"business_date": ""},
+        ]
+    }
+    clauses: list[dict[str, Any]] = [{"business_date": str(business_date)[:10]}]
+    if legacy_date_clauses:
+        clauses.append(
+            {
+                "$and": [
+                    missing_business_date,
+                    {"$or": list(legacy_date_clauses)},
+                ]
+            }
+        )
+    return {"$or": clauses}
+
+
+def accounting_period_match(
+    start_business_date: str,
+    end_business_date: str,
+    *legacy_date_clauses: dict[str, Any],
+) -> dict[str, Any]:
+    """Match an inclusive PMS-day range with legacy timestamp fallbacks."""
+    missing_business_date = {
+        "$or": [
+            {"business_date": {"$exists": False}},
+            {"business_date": None},
+            {"business_date": ""},
+        ]
+    }
+    clauses: list[dict[str, Any]] = [
+        {
+            "business_date": {
+                "$gte": str(start_business_date)[:10],
+                "$lte": str(end_business_date)[:10],
+            }
+        }
+    ]
+    if legacy_date_clauses:
+        clauses.append({"$and": [missing_business_date, {"$or": list(legacy_date_clauses)}]})
+    return {"$or": clauses}

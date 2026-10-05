@@ -10,8 +10,10 @@ import { lazyWithPreload as lazy } from "../lazyWithPreload";
 export const AuthPage = lazy(() => import("@/pages/AuthPage"));
 export const Dashboard = lazy(() => import("@/pages/Dashboard"));
 export const LandingPage = lazy(() => import("@/pages/LandingPage"));
+export const HotelPmsLandingPage = lazy(() => import("@/pages/HotelPmsLandingPage"));
 export const PrivacyPolicy = lazy(() => import("@/pages/PrivacyPolicy"));
 export const GuestPortal = lazy(() => import("@/pages/GuestPortal"));
+export const AgencyBookingWidget = lazy(() => import("@/pages/AgencyBookingWidget"));
 
 // Core modules
 export const PMSModule = lazy(() => import("@/pages/PMSModule"));
@@ -28,6 +30,7 @@ export const ReservationCalendar = lazy(() => import("@/pages/ReservationCalenda
 export const SustainabilityReport = lazy(() => import("@/pages/SustainabilityReport"));
 export const WebBookingEngine = lazy(() => import("@/pages/WebBookingEngine"));
 export const WBESettings = lazy(() => import("@/pages/WBESettings"));
+export const FolioManagementHub = lazy(() => import("@/pages/FolioManagementHub"));
 export const Settings = lazy(() => import("@/pages/settings"));
 export const ProfilePage = lazy(() => import("@/pages/ProfilePage"));
 export const PCIComplianceDashboard = lazy(() => import("@/pages/PCIComplianceDashboard"));
@@ -37,6 +40,7 @@ export const ProcurementPage = lazy(() => import("@/pages/ProcurementPage"));
 export const InventoryProcurementGuide = lazy(() => import("@/pages/InventoryProcurementGuide"));
 export const MailingPage = lazy(() => import("@/pages/MailingPage"));
 export const ModuleStorePage = lazy(() => import("@/pages/ModuleStorePage"));
+export const ApplicationCenter = lazy(() => import("@/pages/ApplicationCenter"));
 export const AfsadakatLauncher = lazy(() => import("@/pages/AfsadakatLauncher"));
 export const OnboardingWizard = lazy(() => import("@/pages/OnboardingWizard"));
 export const ResetPasswordPage = lazy(() => import("@/pages/ResetPasswordPage"));
@@ -116,6 +120,7 @@ export const ContactCenterDashboard = lazy(() => import("@/pages/ContactCenterDa
 
 // Admin
 export const AdminTenants = lazy(() => import("@/pages/AdminTenants"));
+export const AdminMarketplaceAgencies = lazy(() => import("@/pages/AdminMarketplaceAgencies"));
 export const AdminVendors = lazy(() => import("@/pages/AdminVendors"));
 export const QuickIdSettings = lazy(() => import("@/pages/admin/QuickIdSettings"));
 export const VoiceNumberMapping = lazy(() => import("@/pages/admin/VoiceNumberMapping"));
@@ -124,7 +129,10 @@ export const RoomRequests = lazy(() => import("@/pages/RoomRequests"));
 export const RoomRequestPage = lazy(() => import("@/pages/guest/RoomRequestPage"));
 export const PublicReviewPage = lazy(() => import("@/pages/PublicReviewPage"));
 export const ModuleReport = lazy(() => import("@/pages/ModuleReport"));
+export const ModuleHealthCenter = lazy(() => import("@/pages/ModuleHealthCenter"));
+export const AdminModuleControlCenter = lazy(() => import("@/pages/AdminModuleControlCenter"));
 export const UserRoleManager = lazy(() => import("@/pages/UserRoleManager"));
+export const TenantUsers = lazy(() => import("@/pages/TenantUsers"));
 export const RnlAutoResolveRuns = lazy(() => import("@/pages/admin/RnlAutoResolveRuns"));
 export const RnlDuplicates = lazy(() => import("@/pages/admin/RnlDuplicates"));
 export const AutonomousCollectionJobs = lazy(() => import("@/pages/admin/AutonomousCollectionJobs"));
@@ -278,7 +286,6 @@ export const CapXIntegration = lazy(() => import("@/pages/CapXIntegration"));
 
 // Opera-parity additions
 export const FolioRoutingPage = lazy(() => import("@/pages/FolioRoutingPage"));
-export const LoyaltyAdminPage = lazy(() => import("@/pages/LoyaltyAdminPage"));
 export const ActivitySchedulerPage = lazy(() => import("@/pages/ActivitySchedulerPage"));
 export const BlockManagementPage = lazy(() => import("@/pages/BlockManagementPage"));
 export const ForecastReportsPage = lazy(() => import("@/pages/ForecastReportsPage"));
@@ -289,3 +296,4 @@ export const CateringMenuPage = lazy(() => import("@/pages/CateringMenuPage"));
 export const SuiteConnectingPage = lazy(() => import("@/pages/SuiteConnectingPage"));
 export const HurdleRatesPage = lazy(() => import("@/pages/HurdleRatesPage"));
 export const SiteContentEditor = lazy(() => import("@/pages/admin/SiteContentEditor"));
+export const HotelNetwork = lazy(() => import("@/pages/HotelNetwork"));

@@ -3,6 +3,7 @@ import axios from 'axios';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Clock } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { formatCurrencyBreakdown } from '@/lib/reportCurrency';
 
 const ShiftMetrics = () => {
   const { t } = useTranslation();
@@ -63,7 +64,7 @@ const ShiftMetrics = () => {
                 <div className="text-2xl mb-1">{shiftIcons[key]}</div>
                 <div className="text-xs font-medium">{shiftNames[key]}</div>
                 <div className="text-xs opacity-80">{data.hours}</div>
-                <div className="text-lg font-bold mt-2">₺{data.sales}</div>
+                <div className="text-lg font-bold mt-2">{formatCurrencyBreakdown(data.sales_by_currency, data.sales, shiftData.currency)}</div>
                 <div className="text-xs opacity-90">{data.orders} {t('cm.components_ShiftMetrics.siparis')}</div>
               </div>
             </div>

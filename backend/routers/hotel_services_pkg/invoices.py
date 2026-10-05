@@ -22,6 +22,97 @@ logger = logging.getLogger(__name__)
 sub_router = APIRouter()
 
 
+def _first_reservation_reference(*values) -> str:
+    for value in values:
+        cleaned = str(value or "").strip()
+        if cleaned:
+            return cleaned
+    return ""
+
+
+def _agency_reservation_reference_from_sources(
+    booking: dict,
+    *,
+    raw_payload: dict | None = None,
+    imported: dict | None = None,
+) -> str:
+    """Prefer the OTA/agency confirmation while retaining legacy fallbacks."""
+    raw_payload = raw_payload or {}
+    imported = imported or {}
+    imported_raw = imported.get("raw_payload") or {}
+    return _first_reservation_reference(
+        booking.get("agency_reservation_number"),
+        raw_payload.get("provider_number"),
+        raw_payload.get("confirmation_number"),
+        imported.get("agency_reservation_number"),
+        imported_raw.get("provider_number"),
+        imported_raw.get("confirmation_number"),
+        imported.get("external_confirmation_number"),
+        booking.get("external_confirmation"),
+        booking.get("ota_confirmation"),
+        booking.get("hr_number"),
+        booking.get("external_reservation_id"),
+    )
+
+
+async def _resolve_agency_reservation_reference(booking: dict, tenant_id: str) -> str:
+    """Resolve new bookings directly and older imports from retained provider data."""
+    direct = _agency_reservation_reference_from_sources(booking)
+    booking_id = str(booking.get("id") or "")
+    external_id = str(booking.get("external_reservation_id") or "")
+    raw_payload = None
+    imported = None
+
+    try:
+        if external_id:
+            raw_event = await db.raw_channel_events.find_one(
+                {"tenant_id": tenant_id, "external_reservation_id": external_id},
+                {"_id": 0, "raw_payload.provider_number": 1, "raw_payload.confirmation_number": 1},
+                sort=[("received_at", -1)],
+            )
+            raw_payload = (raw_event or {}).get("raw_payload") or {}
+    except Exception:  # legacy deployments may not have this collection/index yet
+        raw_payload = None
+
+    try:
+        if booking_id:
+            imported = await db.imported_reservations.find_one(
+                {"tenant_id": tenant_id, "booking_id": booking_id},
+                {"_id": 0, "agency_reservation_number": 1},
+            )
+            if not imported:
+                imported = await db.cm_imported_reservations.find_one(
+                    {"tenant_id": tenant_id, "pms_booking_id": booking_id},
+                    {
+                        "_id": 0,
+                        "agency_reservation_number": 1,
+                        "external_confirmation_number": 1,
+                        "raw_payload.provider_number": 1,
+                        "raw_payload.confirmation_number": 1,
+                    },
+                )
+    except Exception:
+        imported = None
+
+    return (
+        _agency_reservation_reference_from_sources(
+            booking,
+            raw_payload=raw_payload,
+            imported=imported,
+        )
+        or direct
+    )
+
+
+def _invoice_note_with_agency_reference(note: str | None, reference: str) -> str:
+    custom_note = str(note or "").strip()
+    reference = str(reference or "").strip()
+    if not reference or reference in custom_note:
+        return custom_note
+    reference_note = f"Acente rezervasyon no: {reference}"
+    return f"{reference_note}\n{custom_note}" if custom_note else reference_note
+
+
 def _invoice_charge_amount(charge: dict) -> float:
     for field in ("total", "charge_amount", "amount"):
         if field in charge and charge[field] is not None:
@@ -103,6 +194,46 @@ async def _load_reservation_charge_items(booking_id: str, tenant_id: str) -> lis
             items.append(item)
 
     return items
+
+
+def _is_posted_accommodation_charge(charge: dict) -> bool:
+    """Return whether a ledger item is a nightly room posting.
+
+    A reservation's ``total_amount`` is an estimate of the stay.  Once night
+    audit has posted durable room charges, those postings are the authoritative
+    accommodation amounts and must replace (not supplement) that estimate on
+    an invoice.
+    """
+    category = str(charge.get("category") or "").strip().lower()
+    return category == "room"
+
+
+def _synthetic_accommodation_charge(booking: dict) -> dict | None:
+    """Provide an accommodation candidate only before nightly postings exist."""
+    total_amount = float(booking.get("total_amount") or 0)
+    if total_amount <= 0:
+        return None
+    return {
+        "id": "accommodation",
+        "description": "Konaklama",
+        "date": str(booking.get("check_in", ""))[:10],
+        "amount": total_amount,
+        "category": "room",
+    }
+
+
+async def _invoice_charge_candidates(booking: dict, tenant_id: str) -> list[dict]:
+    """Build mutually-exclusive invoice candidates for a reservation.
+
+    Do not combine the booking-level accommodation total with room charges
+    posted by night audit; doing so invoices the same stay twice.
+    """
+    durable_charges = await _load_reservation_charge_items(str(booking["id"]), tenant_id)
+    if any(_is_posted_accommodation_charge(charge) for charge in durable_charges):
+        return durable_charges
+
+    accommodation = _synthetic_accommodation_charge(booking)
+    return ([accommodation] if accommodation else []) + durable_charges
 
 
 @sub_router.get("/reservations/{booking_id}/invoice-pdf")
@@ -434,7 +565,7 @@ body {{ font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial
     {special_requests_html}
     <div class="footer">
         <div>Bu belge <strong>{_e(settings.get("hotel_name"))}</strong> tarafından elektronik olarak düzenlenmiştir.</div>
-        {f'<div>{_e(contact_line)}</div>' if contact_line else ""}
+        {f"<div>{_e(contact_line)}</div>" if contact_line else ""}
         <div>Düzenlenme tarihi: {datetime.now(UTC).strftime("%d.%m.%Y %H:%M UTC")}</div>
     </div>
 </div>
@@ -488,19 +619,7 @@ async def generate_custom_invoice(
             "invoice_footer": "",
         }
 
-    all_charges = []
-    if booking.get("total_amount", 0) > 0:
-        all_charges.append(
-            {
-                "id": "accommodation",
-                "description": "Konaklama",
-                "date": str(booking.get("check_in", ""))[:10],
-                "amount": booking["total_amount"],
-                "category": "room",
-            }
-        )
-
-    all_charges.extend(await _load_reservation_charge_items(booking_id, tid))
+    all_charges = await _invoice_charge_candidates(booking, tid)
 
     if body.selected_charge_ids:
         requested_ids = set(body.selected_charge_ids)
@@ -517,6 +636,11 @@ async def generate_custom_invoice(
     currency = settings.get("currency_symbol", "₺")
     grand_total = sum(c["amount"] for c in selected)
     invoice_number = f"INV-{datetime.now(UTC).strftime('%Y%m%d%H%M')}-{booking_id[:6].upper()}"
+    agency_reservation_number = await _resolve_agency_reservation_reference(booking, tid)
+    invoice_note = _invoice_note_with_agency_reference(
+        body.invoice_note,
+        agency_reservation_number,
+    )
 
     guest_name = body.billing_name or (guest.get("name", booking.get("guest_name", "-")) if guest else booking.get("guest_name", "-"))
 
@@ -586,7 +710,7 @@ thead th {{ background:#f1f5f9; padding:10px 12px; text-align:left; font-weight:
             <p>Oda: <strong>{_e(booking.get("room_number", "-"))}</strong></p>
             <p>Giris: <strong>{_e(str(booking.get("check_in", ""))[:10])}</strong></p>
             <p>Cikis: <strong>{_e(str(booking.get("check_out", ""))[:10])}</strong></p>
-            <p>Rez. No: <strong>{_e(booking.get("ota_confirmation", booking_id[:12]))}</strong></p>
+            <p>Rez. No: <strong>{_e(agency_reservation_number or booking_id[:12])}</strong></p>
         </div>
     </div>
 
@@ -599,7 +723,7 @@ thead th {{ background:#f1f5f9; padding:10px 12px; text-align:left; font-weight:
         <div class="grand">TOPLAM: {_e(currency)}{grand_total:,.2f}</div>
     </div>
 
-    {f'<div style="margin-top:16px;padding:12px;background:#fffbeb;border-radius:8px;font-size:12px;">{_e(body.invoice_note)}</div>' if body.invoice_note else ""}
+    {f'<div style="margin-top:16px;padding:12px;background:#fffbeb;border-radius:8px;font-size:12px;white-space:pre-line;">{_e(invoice_note)}</div>' if invoice_note else ""}
 
     <div class="footer">
         {_e(settings.get("invoice_footer", "") or "Bizi tercih ettiginiz icin tesekkur ederiz.")}<br>
@@ -616,6 +740,8 @@ thead th {{ background:#f1f5f9; padding:10px 12px; text-align:left; font-weight:
             "invoice_number": invoice_number,
             "billing_name": guest_name,
             "billing_tax_id": body.billing_tax_id,
+            "agency_reservation_number": agency_reservation_number,
+            "notes": invoice_note,
             "total": grand_total,
             "item_count": len(selected),
             "created_at": datetime.now(UTC).isoformat(),
@@ -649,21 +775,13 @@ async def get_invoice_charges(
     if not booking:
         raise HTTPException(status_code=404, detail="Rezervasyon bulunamadi")
 
-    charges = []
-    if booking.get("total_amount", 0) > 0:
-        charges.append(
-            {
-                "id": "accommodation",
-                "description": "Konaklama",
-                "category": "room",
-                "amount": booking["total_amount"],
-                "date": str(booking.get("check_in", ""))[:10],
-            }
-        )
+    charges = await _invoice_charge_candidates(booking, tid)
 
-    charges.extend(await _load_reservation_charge_items(booking_id, tid))
-
-    return {"charges": charges}
+    agency_reservation_number = await _resolve_agency_reservation_reference(booking, tid)
+    return {
+        "charges": charges,
+        "agency_reservation_number": agency_reservation_number,
+    }
 
 
 # ═══════════════════════════════════════════════════

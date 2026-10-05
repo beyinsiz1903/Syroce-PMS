@@ -267,10 +267,7 @@ async def sync_reservations(
     catchup_imported, catchup_updated = await run_phase_b(current_user.tenant_id, provider)
 
     return {
-        "message": (
-            f"{catchup_imported} yeni, {catchup_updated} guncellenen "
-            "PMS rezervasyonu uzlastirildi"
-        ),
+        "message": (f"{catchup_imported} yeni, {catchup_updated} guncellenen PMS rezervasyonu uzlastirildi"),
         "total_fetched": result["count"],
         "new_imported": imported,
         "catchup_imported": catchup_imported,

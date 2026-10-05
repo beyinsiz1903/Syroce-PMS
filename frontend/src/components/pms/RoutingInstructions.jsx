@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { ArrowRightLeft, Plus, Trash2, Building2, User, CreditCard, FileText } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 
 const CHARGE_CATEGORIES = [
   { value: 'room', label: 'Oda Ucreti' },
@@ -44,6 +45,7 @@ const enrichRule = (rule) => {
 
 const RoutingInstructions = ({ booking, onSave }) => {
   const { t } = useTranslation();
+  const currency = cachedTenantCurrency();
   const [rules, setRules] = useState(() =>
     (booking?.routing_rules || []).map(enrichRule),
   );
@@ -98,7 +100,7 @@ const RoutingInstructions = ({ booking, onSave }) => {
       // enrichRule yeniden hesaplıyor; veride tekrar tutmak gereksiz).
       const payload = rules.map(({ category_label, target_label, ...rest }) => rest);
       await axios.post(`/frontdesk/booking/${booking.id}/routing-rules`, { rules: payload });
-      toast.success('Yonlendirme kuralları kaydedildi');
+      toast.success('Yönlendirme kuralları kaydedildi');
       onSave?.(payload);
     } catch (err) {
       const detail = err?.response?.data?.detail || 'Kurallar kaydedilemedi';
@@ -113,7 +115,7 @@ const RoutingInstructions = ({ booking, onSave }) => {
       <CardHeader className="pb-2">
         <div className="flex items-center justify-between">
           <CardTitle className="text-sm flex items-center gap-2">
-            <ArrowRightLeft className="h-4 w-4" /> Masraf Yonlendirme Kurallari
+            <ArrowRightLeft className="h-4 w-4" /> Masraf Yönlendirme Kuralları
           </CardTitle>
           <div className="flex gap-2">
             <Button size="sm" variant="outline" onClick={() => setShowAdd(true)}>
@@ -136,7 +138,7 @@ const RoutingInstructions = ({ booking, onSave }) => {
                   <Badge variant="outline">{rule.category_label}</Badge>
                   <ArrowRightLeft className="h-3 w-3 text-muted-foreground" />
                   <Badge>{rule.target_label}</Badge>
-                  {rule.limit && <span className="text-xs text-muted-foreground">Limit: {rule.limit} TL</span>}
+                  {rule.limit != null && <span className="text-xs text-muted-foreground">Limit: {formatCurrency(rule.limit, currency, { decimals: 2 })}</span>}
                 </div>
                 <Button size="sm" variant="ghost" onClick={() => removeRule(rule.id)}>
                   <Trash2 className="h-3 w-3 text-red-500" />

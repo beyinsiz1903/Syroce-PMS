@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import axios from 'axios';
 import { toast } from 'sonner';
@@ -13,6 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   TrendingUp, AlertTriangle, Lock, Unlock, Save, Users
 } from 'lucide-react';
+import { cachedTenantCurrency } from '@/lib/currency';
 
 const DAY_KEYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
 const RT_KEYS = ['standard', 'deluxe', 'cornerSuite', 'juniorSuite', 'kingSuite'];
@@ -25,38 +26,63 @@ const defaultOverbooking = (total) => ({ enabled: false, max_percentage: 5, walk
 
 const RevenueControls = ({ rooms = [] }) => {
   const { t } = useTranslation();
-  const tr = (k) => t(`pmsComponents.revenue.${k}`);
-  const cur = t('pmsComponents.common.currency');
+  const tr = useCallback((k) => t(`pmsComponents.revenue.${k}`), [t]);
+  const cur = cachedTenantCurrency();
+  const roomTypeLabels = useMemo(() => {
+    const labels = {};
+    rooms.forEach(room => {
+      const key = String(room.room_type_id || room.type_id || room.room_type || room.type || '').trim();
+      if (key) labels[key] = room.room_type_name || room.type_name || room.room_type || room.type || key;
+    });
+    return labels;
+  }, [rooms]);
 
   const [activeTab, setActiveTab] = useState('hurdle');
   const [hurdleRates, setHurdleRates] = useState(defaultHurdle());
   const [dayPricing, setDayPricing] = useState(defaultDayPricing());
-  const [overbooking, setOverbooking] = useState(defaultOverbooking(rooms.length || 30));
+  const [overbooking, setOverbooking] = useState(defaultOverbooking(rooms.length));
   const [showWalkDialog, setShowWalkDialog] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
+  const [loadError, setLoadError] = useState(false);
   const [walkData, setWalkData] = useState({ guest_name: '', room_type: '', compensation_type: 'upgrade_nearby', compensation_amount: 0, nearby_hotel: '', notes: '' });
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
-  useEffect(() => { loadSettings(); }, []);
-
-  const loadSettings = async () => {
+  const loadSettings = useCallback(async () => {
+    setLoadError(false);
     try {
       const res = await axios.get('/revenue/settings');
       if (res.data.hurdle_rates && Object.keys(res.data.hurdle_rates).length > 0) setHurdleRates(res.data.hurdle_rates);
       if (res.data.day_pricing && Object.keys(res.data.day_pricing).length > 0) setDayPricing(res.data.day_pricing);
-      if (res.data.overbooking) setOverbooking(prev => ({ ...prev, ...res.data.overbooking, total_rooms: rooms.length || prev.total_rooms }));
+      if (res.data.overbooking) setOverbooking(prev => ({ ...prev, ...res.data.overbooking, total_rooms: rooms.length }));
+      setSettingsLoaded(true);
     } catch {
-      /* use defaults */
+      setLoadError(true);
+      setSettingsLoaded(false);
+      toast.error(tr('loadError'));
     }
-  };
+  }, [rooms.length, tr]);
+
+  useEffect(() => { loadSettings(); }, [loadSettings]);
+
+  const roomTypeKeys = useMemo(() => {
+    const liveKeys = Object.keys(roomTypeLabels);
+    const configuredKeys = Array.from(new Set([...Object.keys(hurdleRates), ...Object.keys(dayPricing)]));
+    const relevantConfigured = configuredKeys.filter(key => !RT_KEYS.includes(key) || liveKeys.includes(key));
+    return liveKeys.length > 0 ? Array.from(new Set([...liveKeys, ...relevantConfigured])) : configuredKeys.length > 0 ? configuredKeys : RT_KEYS;
+  }, [roomTypeLabels, hurdleRates, dayPricing]);
+  const roomTypeLabel = key => roomTypeLabels[key] || (RT_KEYS.includes(key) ? tr(`roomTypes.${key}`) : key);
+
+  useEffect(() => {
+    setOverbooking(prev => ({ ...prev, total_rooms: rooms.length }));
+  }, [rooms.length]);
 
   const updateHurdle = (rt, field, value) => {
-    setHurdleRates(prev => ({ ...prev, [rt]: { ...prev[rt], [field]: field === 'active' ? value : parseFloat(value) || 0 } }));
+    setHurdleRates(prev => ({ ...prev, [rt]: { ...(prev[rt] || { min_rate: 0, bar: 0, active: false }), [field]: field === 'active' ? value : parseFloat(value) || 0 } }));
   };
 
   const updateDayPrice = (rt, day, field, value) => {
     setDayPricing(prev => ({
-      ...prev, [rt]: { ...prev[rt], [day]: { ...prev[rt][day], [field]: field === 'min_stay' ? parseInt(value) || 1 : parseFloat(value) || 0 } }
+      ...prev, [rt]: { ...(prev[rt] || {}), [day]: { ...(prev[rt]?.[day] || { rate: 0, min_stay: 1 }), [field]: field === 'min_stay' ? parseInt(value) || 1 : parseFloat(value) || 0 } }
     }));
   };
 
@@ -93,10 +119,11 @@ const RevenueControls = ({ rooms = [] }) => {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList>
-          <TabsTrigger value="hurdle">{tr('hurdleTab')}</TabsTrigger>
-          <TabsTrigger value="daypricing">{tr('dayPricingTab')}</TabsTrigger>
-          <TabsTrigger value="overbooking">{tr('overbookingTab')}</TabsTrigger>
+        {loadError && <div className="mb-3 flex flex-col gap-2 rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-900 sm:flex-row sm:items-center sm:justify-between"><span>{tr('loadError')}</span><Button size="sm" variant="outline" onClick={loadSettings}>{tr('retry')}</Button></div>}
+        <TabsList className="flex w-full justify-start overflow-x-auto">
+          <TabsTrigger className="shrink-0" value="hurdle">{tr('hurdleTab')}</TabsTrigger>
+          <TabsTrigger className="shrink-0" value="daypricing">{tr('dayPricingTab')}</TabsTrigger>
+          <TabsTrigger className="shrink-0" value="overbooking">{tr('overbookingTab')}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="hurdle" className="space-y-4">
@@ -104,7 +131,7 @@ const RevenueControls = ({ rooms = [] }) => {
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-sm">{tr('hurdleTitle')}</CardTitle>
-                <Button size="sm" onClick={() => saveAll('hurdle')} disabled={saving}><Save className="h-3 w-3 mr-1" /> {tr('save')}</Button>
+                <Button size="sm" onClick={() => saveAll('hurdle')} disabled={saving || !settingsLoaded}><Save className="h-3 w-3 mr-1" /> {tr('save')}</Button>
               </div>
             </CardHeader>
             <CardContent>
@@ -112,9 +139,9 @@ const RevenueControls = ({ rooms = [] }) => {
                 <table className="w-full text-sm">
                   <thead className="bg-muted"><tr><th className="p-2 text-left">{tr('roomType')}</th><th className="p-2 text-center">{tr('minPrice')} ({cur})</th><th className="p-2 text-center">{tr('barPrice')} ({cur})</th><th className="p-2 text-center">{tr('activeLabel')}</th></tr></thead>
                   <tbody>
-                    {RT_KEYS.map(rt => (
+                    {roomTypeKeys.map(rt => (
                       <tr key={rt} className="border-t">
-                        <td className="p-2 font-medium">{tr(`roomTypes.${rt}`)}</td>
+                        <td className="p-2 font-medium">{roomTypeLabel(rt)}</td>
                         <td className="p-2"><Input type="number" className="w-28 h-8 text-sm mx-auto" value={hurdleRates[rt]?.min_rate || ''} onChange={e => updateHurdle(rt, 'min_rate', e.target.value)} placeholder="0" /></td>
                         <td className="p-2"><Input type="number" className="w-28 h-8 text-sm mx-auto" value={hurdleRates[rt]?.bar || ''} onChange={e => updateHurdle(rt, 'bar', e.target.value)} placeholder="0" /></td>
                         <td className="p-2 text-center">
@@ -140,7 +167,7 @@ const RevenueControls = ({ rooms = [] }) => {
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-sm">{tr('dayPricingTitle')}</CardTitle>
-                <Button size="sm" onClick={() => saveAll('daypricing')} disabled={saving}><Save className="h-3 w-3 mr-1" /> {tr('save')}</Button>
+                <Button size="sm" onClick={() => saveAll('daypricing')} disabled={saving || !settingsLoaded}><Save className="h-3 w-3 mr-1" /> {tr('save')}</Button>
               </div>
             </CardHeader>
             <CardContent>
@@ -153,9 +180,9 @@ const RevenueControls = ({ rooms = [] }) => {
                     </tr>
                   </thead>
                   <tbody>
-                    {RT_KEYS.map(rt => (
+                    {roomTypeKeys.map(rt => (
                       <tr key={rt} className="border-t">
-                        <td className="p-2 font-medium text-xs">{tr(`roomTypes.${rt}`)}</td>
+                        <td className="p-2 font-medium text-xs">{roomTypeLabel(rt)}</td>
                         {DAY_KEYS.map(day => (
                           <td key={day} className="p-1">
                             <Input type="number" className="w-16 h-7 text-xs" value={dayPricing[rt]?.[day]?.rate || ''} onChange={e => updateDayPrice(rt, day, 'rate', e.target.value)} placeholder="0" />
@@ -172,7 +199,7 @@ const RevenueControls = ({ rooms = [] }) => {
                   {DAY_KEYS.map(day => (
                     <div key={day} className="text-center">
                       <div className="text-xs text-muted-foreground">{tr(`days.${day}`)}</div>
-                      <Input type="number" min="1" max="14" className="w-12 h-7 text-xs" value={dayPricing[RT_KEYS[0]]?.[day]?.min_stay || 1} onChange={e => { RT_KEYS.forEach(rt => updateDayPrice(rt, day, 'min_stay', e.target.value)); }} />
+                      <Input type="number" min="1" max="14" className="w-12 h-7 text-xs" value={dayPricing[roomTypeKeys[0]]?.[day]?.min_stay || 1} onChange={e => { roomTypeKeys.forEach(rt => updateDayPrice(rt, day, 'min_stay', e.target.value)); }} />
                     </div>
                   ))}
                 </div>
@@ -213,7 +240,7 @@ const RevenueControls = ({ rooms = [] }) => {
                   <Label>{tr('compensationAmount')} ({cur})</Label>
                   <Input type="number" value={overbooking.walk_amount} onChange={e => setOverbooking(p => ({ ...p, walk_amount: parseInt(e.target.value) || 0 }))} />
                 </div>
-                <Button className="w-full" onClick={() => saveAll('overbooking')} disabled={saving}><Save className="h-4 w-4 mr-1" /> {tr('saveSettings')}</Button>
+                <Button className="w-full" onClick={() => saveAll('overbooking')} disabled={saving || !settingsLoaded}><Save className="h-4 w-4 mr-1" /> {tr('saveSettings')}</Button>
               </CardContent>
             </Card>
 
@@ -225,7 +252,7 @@ const RevenueControls = ({ rooms = [] }) => {
                   <div className="text-sm text-muted-foreground">{tr('currentOverbook')}</div>
                   <div className="text-xs mt-1">{tr('capacity')} {overbooking.total_rooms} + {Math.floor(overbooking.total_rooms * overbooking.max_percentage / 100)} = {overbooking.total_rooms + Math.floor(overbooking.total_rooms * overbooking.max_percentage / 100)}</div>
                 </div>
-                <Button className="w-full" variant="destructive" onClick={() => setShowWalkDialog(true)}>
+                <Button className="w-full" variant="destructive" onClick={() => setShowWalkDialog(true)} disabled={rooms.length === 0}>
                   <Users className="h-4 w-4 mr-1" /> {tr('startWalkOut')}
                 </Button>
               </CardContent>

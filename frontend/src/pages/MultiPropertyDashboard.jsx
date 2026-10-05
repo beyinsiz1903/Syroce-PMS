@@ -15,6 +15,8 @@ import {
   Legend
 } from 'chart.js';
 import { useTranslation } from 'react-i18next';
+import { cachedTenantCurrency } from '@/lib/currency';
+import { formatCurrencyBreakdown } from '@/lib/reportCurrency';
 
 ChartJS.register(
   CategoryScale,
@@ -68,14 +70,12 @@ const MultiPropertyDashboard = () => {
     );
   }
 
+  // Revenue from different currencies must not share an unlabeled numeric
+  // axis with occupancy.  The cards retain the currency-safe revenue view;
+  // this comparison visual focuses on the comparable occupancy metric.
   const chartData = {
     labels: properties.map(p => p.name),
     datasets: [
-      {
-        label: 'Revenue',
-        data: dashboardData?.property_revenues || [],
-        backgroundColor: 'rgba(59, 130, 246, 0.8)'
-      },
       {
         label: 'Occupancy %',
         data: dashboardData?.property_occupancies || [],
@@ -125,7 +125,13 @@ const MultiPropertyDashboard = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-gray-600">{t('reports.totalRevenue')}</p>
-                <p className="text-3xl font-bold">${(dashboardData?.total_revenue || 0).toLocaleString()}</p>
+                <p className="text-xl font-bold">
+                  {formatCurrencyBreakdown(
+                    dashboardData?.total_revenue_by_currency,
+                    dashboardData?.total_revenue || 0,
+                    dashboardData?.currency || cachedTenantCurrency(),
+                  )}
+                </p>
               </div>
               <DollarSign className="w-8 h-8 text-green-500" />
             </div>
@@ -212,8 +218,14 @@ const MultiPropertyDashboard = () => {
                   <span className="font-semibold">{property.occupancy_rate}%</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-600">Revenue (MTD):</span>
-                  <span className="font-semibold">${property.revenue_mtd?.toLocaleString()}</span>
+                  <span className="text-gray-600">Revenue (Today):</span>
+                  <span className="font-semibold text-right">
+                    {formatCurrencyBreakdown(
+                      property.today_revenue_by_currency,
+                      property.revenue_mtd || 0,
+                      property.currency || dashboardData?.currency || cachedTenantCurrency(),
+                    )}
+                  </span>
                 </div>
                 <Button size="sm" variant="outline" className="w-full mt-2">
                   View Details

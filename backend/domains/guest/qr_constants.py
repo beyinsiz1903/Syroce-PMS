@@ -81,6 +81,7 @@ CATALOGUE_DEPARTMENT_MAPPINGS = {
     "other": "other",
 }
 
+
 def map_legacy_routing(service_code: str, department_code: str) -> tuple[str, str]:
     if service_code in DEFAULT_SERVICE_MAPPINGS:
         mapped_cat = DEFAULT_SERVICE_MAPPINGS[service_code]

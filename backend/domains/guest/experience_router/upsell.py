@@ -16,9 +16,12 @@ from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
+from core.business_date_service import stamp_open_business_date
 from core.database import db
 from core.helpers import create_audit_log
+from core.report_cache import invalidate_financial_report_caches
 from core.security import get_current_user
+from core.utils import calculate_folio_balance
 from models.schemas import (
     User,
 )
@@ -108,28 +111,64 @@ async def generate_upsell_offers(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_sales")),  # v100 DW
 ):
-    booking = await db.bookings.find_one({"id": booking_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
+    # Calendar/list payloads can temporarily retain a superseded internal id
+    # after OTA reconciliation. Accept tenant-scoped canonical and stable
+    # external references so the same reservation remains selectable.
+    booking = await db.bookings.find_one(
+        {
+            "tenant_id": current_user.tenant_id,
+            "$or": [
+                {"id": booking_id},
+                {"booking_id": booking_id},
+                {"reservation_id": booking_id},
+                {"booking_number": booking_id},
+                {"channel_booking_id": booking_id},
+                {"external_id": booking_id},
+                {"external_reservation_id": booking_id},
+            ],
+        },
+        {"_id": 0},
+    )
 
     if not booking:
         raise HTTPException(status_code=404, detail="Rezervasyon bulunamadi")
 
-    guest = await db.guests.find_one({"id": booking.get("guest_id"), "tenant_id": current_user.tenant_id}, {"_id": 0})
-    if not guest:
-        raise HTTPException(status_code=404, detail="Misafir bilgisi bulunamadi")
+    canonical_booking_id = booking.get("id") or booking_id
+    guest_id = booking.get("guest_id")
 
-    room = await db.rooms.find_one({"id": booking.get("room_id"), "tenant_id": current_user.tenant_id}, {"_id": 0})
-    if not room:
-        raise HTTPException(status_code=404, detail="Oda bilgisi bulunamadi")
+    guest = None
+    if guest_id:
+        guest = await db.guests.find_one(
+            {"id": guest_id, "tenant_id": current_user.tenant_id},
+            {"_id": 0},
+        )
+    guest = guest or {
+        "name": booking.get("guest_name") or "Misafir",
+        "loyalty_tier": booking.get("loyalty_tier") or "standard",
+    }
+
+    room = None
+    if booking.get("room_id"):
+        room = await db.rooms.find_one(
+            {"id": booking["room_id"], "tenant_id": current_user.tenant_id},
+            {"_id": 0},
+        )
 
     check_in = booking["check_in"]
     check_out = booking["check_out"]
     offers = []
 
     rooms = await db.rooms.find({"tenant_id": current_user.tenant_id}, {"_id": 0}).to_list(1000)
-    better_rooms = [r for r in rooms if r.get("base_price", 0) > room.get("base_price", 0)]
+    # An unassigned reservation can still receive generic service offers.
+    # Only a room upgrade requires a valid current room.
+    better_rooms = [r for r in rooms if r.get("base_price", 0) > room.get("base_price", 0)] if room else []
 
     loyalty_tier = guest.get("loyalty_tier", "standard")
-    past_bookings = await db.bookings.count_documents({"guest_id": booking["guest_id"], "tenant_id": current_user.tenant_id, "status": "checked_out"})
+    past_bookings = 0
+    if guest_id:
+        past_bookings = await db.bookings.count_documents(
+            {"guest_id": guest_id, "tenant_id": current_user.tenant_id, "status": "checked_out"}
+        )
 
     for better_room in better_rooms[:3]:
         conflicts = await db.bookings.count_documents(
@@ -162,8 +201,8 @@ async def generate_upsell_offers(
                 {
                     "id": str(uuid.uuid4()),
                     "tenant_id": current_user.tenant_id,
-                    "guest_id": booking["guest_id"],
-                    "booking_id": booking_id,
+                    "guest_id": guest_id,
+                    "booking_id": canonical_booking_id,
                     "type": "room_upgrade",
                     "current_item": room.get("room_type", ""),
                     "target_item": better_room.get("room_type", ""),
@@ -186,8 +225,8 @@ async def generate_upsell_offers(
             {
                 "id": str(uuid.uuid4()),
                 "tenant_id": current_user.tenant_id,
-                "guest_id": booking["guest_id"],
-                "booking_id": booking_id,
+                "guest_id": guest_id,
+                "booking_id": canonical_booking_id,
                 "type": "early_checkin",
                 "current_item": "Standart 15:00 giris",
                 "target_item": "Erken 12:00 giris",
@@ -204,8 +243,8 @@ async def generate_upsell_offers(
         {
             "id": str(uuid.uuid4()),
             "tenant_id": current_user.tenant_id,
-            "guest_id": booking["guest_id"],
-            "booking_id": booking_id,
+            "guest_id": guest_id,
+            "booking_id": canonical_booking_id,
             "type": "late_checkout",
             "current_item": "Standart 11:00 cikis",
             "target_item": "Gec 14:00 cikis",
@@ -222,8 +261,8 @@ async def generate_upsell_offers(
         {
             "id": str(uuid.uuid4()),
             "tenant_id": current_user.tenant_id,
-            "guest_id": booking["guest_id"],
-            "booking_id": booking_id,
+            "guest_id": guest_id,
+            "booking_id": canonical_booking_id,
             "type": "airport_transfer",
             "current_item": None,
             "target_item": "Premium havaalani transferi",
@@ -245,7 +284,7 @@ async def generate_upsell_offers(
 
     estimated_revenue = sum(o["price"] * o["confidence"] for o in offers)
 
-    return {"booking_id": booking_id, "guest_name": guest.get("name", "Bilinmiyor"), "offers": offers, "total_offers": len(offers), "estimated_revenue": round(estimated_revenue, 2)}
+    return {"booking_id": canonical_booking_id, "guest_name": guest.get("name", "Bilinmiyor"), "offers": offers, "total_offers": len(offers), "estimated_revenue": round(estimated_revenue, 2)}
 
 
 # ── POST /ai/upsell/offers ──
@@ -481,21 +520,50 @@ async def update_upsell_offer(
     if action == "accepted":
         existing_charge = await db.folio_charges.find_one({"upsell_offer_id": offer_id, "tenant_id": current_user.tenant_id})
         if not existing_charge:
+            folio = await db.folios.find_one(
+                {
+                    "booking_id": offer["booking_id"],
+                    "tenant_id": current_user.tenant_id,
+                    "status": "open",
+                },
+                {"_id": 0, "id": 1},
+            )
+            if not folio:
+                raise HTTPException(status_code=409, detail="Teklif kabul edilemedi: rezervasyonun açık folyosu bulunamadı")
+            amount = round(float(offer.get("price", 0) or 0), 2)
             folio_charge = {
                 "id": str(uuid.uuid4()),
                 "upsell_offer_id": offer_id,
                 "booking_id": offer["booking_id"],
+                "folio_id": folio["id"],
                 "tenant_id": current_user.tenant_id,
                 "description": f"Upsell: {offer.get('target_item', offer.get('type', 'Ek Hizmet'))}",
-                "amount": offer.get("price", 0),
+                "charge_category": "other",
                 "charge_type": "upsell",
+                "quantity": 1,
+                "unit_price": amount,
+                "amount": amount,
+                "subtotal": amount,
+                "discount_amount": 0,
+                "vat_rate": 0,
+                "vat_amount": 0,
+                "tax_amount": 0,
+                "total": amount,
+                "voided": False,
                 "status": "posted",
                 "created_at": datetime.now(UTC).isoformat(),
                 "created_by": current_user.email,
             }
+            await stamp_open_business_date(db, current_user.tenant_id, folio_charge)
             await db.folio_charges.insert_one(folio_charge)
+            balance = await calculate_folio_balance(folio["id"], current_user.tenant_id)
+            await db.folios.update_one(
+                {"id": folio["id"], "tenant_id": current_user.tenant_id},
+                {"$set": {"balance": balance, "updated_at": datetime.now(UTC).isoformat()}},
+            )
+            invalidate_financial_report_caches(current_user.tenant_id)
 
-    await db.upsell_offers.update_one({"id": offer_id}, {"$set": update_data})
+    await db.upsell_offers.update_one({"id": offer_id, "tenant_id": current_user.tenant_id}, {"$set": update_data})
     return {"message": f"Teklif {'kabul edildi' if action == 'accepted' else 'reddedildi'}", "offer_id": offer_id, "status": action}
 
 

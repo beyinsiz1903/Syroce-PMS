@@ -7,6 +7,7 @@ import uuid
 from datetime import UTC, date, datetime, timedelta
 
 from core.database import db
+from routers.finance.konaklama_vergisi_core import get_accommodation_tax_rate
 
 # A night audit completes in well under 5s even at 500 rooms; 900s (the same
 # stale threshold the hardened engine uses) is a very safe window after which a
@@ -335,6 +336,21 @@ class NightAuditEngine:
             async for c in existing_cursor:
                 already_posted_folio_ids.add(c["folio_id"])
 
+        # Bulk pre-fetch #4: daily rates
+        daily_rates_cursor = db.daily_rates.find(
+            {
+                "tenant_id": tenant_id,
+                "booking_id": {"$in": booking_ids},
+                "date": {"$gte": business_date, "$lt": business_date + "T99"},
+            },
+            {"_id": 0, "booking_id": 1, "rate": 1},
+        ).sort([("updated_at", -1), ("id", -1), ("_id", -1)])
+        daily_rates_by_booking: dict = {}
+        for rate in await daily_rates_cursor.to_list(len(booking_ids)):
+            # Daily-rate writes are unique per stay date. Keep legacy duplicate
+            # handling deterministic until older documents are remediated.
+            daily_rates_by_booking.setdefault(rate["booking_id"], float(rate["rate"]))
+
         # Loop artık in-memory — DB hit YOK.
         posted = 0
         failed = 0
@@ -344,9 +360,11 @@ class NightAuditEngine:
         charges_to_insert: list[dict] = []
         now_iso = datetime.now(UTC).isoformat()
         tax_rate = 10  # default tax rate
-        from core.channel_room_charge_pricing import (
-            calculate_room_charge,
-            is_channel_total_tax_inclusive,
+        from core.channel_room_charge_pricing import calculate_room_charge
+
+        accommodation_tax_rate = await get_accommodation_tax_rate(
+            tenant_id,
+            business_date,
         )
 
         # Architect review fix #1: intra-run duplicate guard. Eski kod
@@ -361,6 +379,10 @@ class NightAuditEngine:
 
         for booking in checked_in:
             try:
+                # Comp accommodation is an audited zero-revenue stay. Skip it
+                # before folio/rate validation so no zero-value charge is posted.
+                if booking.get("is_complimentary"):
+                    continue
                 folio = folios_by_booking.get(booking["id"])
                 if not folio:
                     exceptions.append(
@@ -378,31 +400,13 @@ class NightAuditEngine:
                 if fid in already_posted_folio_ids or fid in scheduled_folio_ids:
                     continue  # idempotency (DB-level OR intra-run dedupe)
 
-                # Channel totals are already guest-payable. Direct bookings
-                # retain this engine's historical total_amount/night + 10%
-                # behavior; only imported OTA totals use reverse extraction.
-                if is_channel_total_tax_inclusive(booking):
-                    pricing = calculate_room_charge(
-                        booking,
-                        business_date,
-                        vat_rate=tax_rate / 100,
-                        accommodation_tax_rate=0.02,
-                    )
-                else:
-                    check_in_dt = datetime.fromisoformat(booking["check_in"].replace("Z", "+00:00"))
-                    check_out_dt = datetime.fromisoformat(booking["check_out"].replace("Z", "+00:00"))
-                    total_nights = max((check_out_dt - check_in_dt).days, 1)
-                    direct_rate = round(booking.get("total_amount", 0) / total_nights, 2)
-                    direct_tax = round(direct_rate * tax_rate / 100, 2)
-                    pricing = {
-                        "amount": direct_rate,
-                        "unit_price": direct_rate,
-                        "tax_rate": tax_rate,
-                        "tax_amount": direct_tax,
-                        "total": round(direct_rate + direct_tax, 2),
-                        "tax_breakdown": {"vat": direct_tax, "accommodation_tax": 0.0},
-                        "tax_inclusive": False,
-                    }
+                pricing = calculate_room_charge(
+                    booking,
+                    business_date,
+                    vat_rate=tax_rate / 100,
+                    accommodation_tax_rate=accommodation_tax_rate,
+                    explicit_daily_rate=daily_rates_by_booking.get(booking["id"]),
+                )
                 nightly_rate = pricing["amount"]
                 tax_amount = pricing["tax_amount"]
                 total = pricing["total"]
@@ -650,11 +654,15 @@ class NightAuditEngine:
 
     async def _create_daily_snapshot(self, tenant_id: str, business_date: str, room_charges_result: dict) -> dict:
         """Create a daily audit snapshot for reporting."""
-        rooms = await db.rooms.find({"tenant_id": tenant_id}, {"_id": 0, "status": 1}).to_list(2000)
-        total_rooms = len(rooms)
-        occupied = sum(1 for r in rooms if r.get("status") == "occupied")
+        from modules.pms_core.operational_snapshot_service import build_operational_snapshot
 
-        checked_in_count = await db.bookings.count_documents({"tenant_id": tenant_id, "status": "checked_in"})
+        operational = await build_operational_snapshot(
+            tenant_id,
+            business_date=business_date,
+            database=db,
+        )
+        total_rooms = operational["total_rooms"]
+        occupied = operational["occupied_rooms"]
 
         snapshot = {
             "id": str(uuid.uuid4()),
@@ -668,7 +676,9 @@ class NightAuditEngine:
             "total_revenue": room_charges_result.get("total_revenue", 0) + room_charges_result.get("total_tax", 0),
             "room_postings": room_charges_result.get("posted", 0),
             "failed_postings": room_charges_result.get("failed", 0),
-            "in_house_guests": checked_in_count,
+            "in_house_guests": operational["in_house_stays"],
+            "operational_snapshot_id": operational["snapshot_id"],
+            "inventory_scope": operational["inventory_scope"],
             "created_at": datetime.now(UTC).isoformat(),
         }
 

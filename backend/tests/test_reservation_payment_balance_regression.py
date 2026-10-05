@@ -10,6 +10,33 @@ import routers.finance.folio as finance_folio
 import routers.reservation_detail as reservation_detail
 
 
+def test_completed_four_night_folio_flags_stale_higher_booking_total():
+    summary = reservation_detail._build_financial_summary(
+        {"total_amount": 12500, "check_in": "2026-09-21", "check_out": "2026-09-25"},
+        [
+            {"charge_type": "room_charge", "business_date": f"2026-09-{day}", "total": 2500, "tax_inclusive": True}
+            for day in range(21, 25)
+        ],
+        [], [], [],
+    )
+    assert summary["room_plan_fully_posted"] is True
+    assert summary["pricing_reconciliation_required"] is True
+    assert summary["pricing_reconciliation_direction"] == "booking_above_posted"
+    assert summary["pricing_reconciliation_difference"] == 2500
+    assert summary["pricing_reconciliation_target_total"] == 10000
+
+
+def test_partial_folio_does_not_treat_unposted_nights_as_price_mismatch():
+    summary = reservation_detail._build_financial_summary(
+        {"total_amount": 10000, "check_in": "2026-09-21", "check_out": "2026-09-25"},
+        [{"charge_type": "room_charge", "business_date": "2026-09-21", "total": 2500, "tax_inclusive": True}],
+        [], [], [],
+    )
+    assert summary["room_plan_fully_posted"] is False
+    assert summary["pricing_reconciliation_required"] is False
+    assert summary["pricing_reconciliation_direction"] is None
+
+
 def test_summary_does_not_double_count_posted_room_charge():
     summary = reservation_detail._build_financial_summary(
         {"total_amount": 3500.0, "paid_amount": 3955.0},
@@ -37,6 +64,404 @@ def test_summary_keeps_unposted_room_total_before_night_audit():
     )
 
     assert summary["balance"] == 3100.0
+
+
+def test_summary_separates_prepayment_and_guest_extras_from_accommodation():
+    summary = reservation_detail._build_financial_summary(
+        {"total_amount": 5000.0, "paid_amount": 1000.0},
+        [
+            {"charge_type": "room_charge", "charge_category": "room", "total": 5000.0, "voided": False},
+            {"charge_type": "restaurant", "charge_category": "food_beverage", "total": 450.0, "voided": False},
+        ],
+        [
+            {"amount": 1000.0, "payment_type": "prepayment", "method": "card", "voided": False},
+            {"amount": 250.0, "payment_type": "interim", "method": "cash", "voided": False},
+        ],
+        [{"charge_name": "Minibar", "total": 150.0, "voided": False}],
+        [],
+    )
+
+    assert summary["accommodation_total"] == 5000.0
+    assert summary["additional_charge_total"] == 600.0
+    assert summary["gross_total"] == 5600.0
+    assert summary["prepayment_total"] == 1000.0
+    assert summary["other_payments_total"] == 250.0
+    assert summary["total_payments"] == 1250.0
+    assert summary["reservation_total_due"] == 4350.0
+
+
+def test_summary_keeps_full_stay_visible_when_only_some_room_nights_are_posted():
+    summary = reservation_detail._build_financial_summary(
+        {"total_amount": 7500.0, "paid_amount": 0.0},
+        [{"charge_type": "room_charge", "total": 5833.34, "voided": False}],
+        [],
+        [],
+        [],
+    )
+
+    # Operational checkout still uses the amount already present on the
+    # folio, while the reservation view must show the entire agreed stay.
+    assert summary["balance"] == 5833.34
+    assert summary["folio_balance"] == 5833.34
+    assert summary["unposted_room_amount"] == 1666.66
+    assert summary["reservation_total_due"] == 7500.0
+
+
+def test_summary_marks_room_charge_overage_as_reconciliation_not_guest_debt():
+    """A stale posted room charge must not be labelled as collectable money."""
+    summary = reservation_detail._build_financial_summary(
+        {"total_amount": 7500.0, "paid_amount": 7500.0},
+        [{"charge_type": "room_charge", "total": 7515.03, "voided": False}],
+        [{"amount": 7500.0, "voided": False}],
+        [],
+        [],
+    )
+
+    assert summary["reservation_total_due"] == 15.03
+    assert summary["pricing_reconciliation_required"] is True
+    assert summary["pricing_reconciliation_difference"] == 15.03
+
+
+def test_comp_adjustment_reconciles_closed_room_charge_without_false_price_warning():
+    """Night Audit revenue offset by an audited Comp discount is reconciled."""
+    summary = reservation_detail._build_financial_summary(
+        {
+            "total_amount": 0.0,
+            "is_complimentary": True,
+            "check_in": "2026-09-28",
+            "check_out": "2026-10-03",
+        },
+        [
+            {
+                "charge_type": "room_charge",
+                "charge_category": "room",
+                "business_date": "2026-09-28",
+                "total": 4800.0,
+                "voided": False,
+            }
+        ],
+        [
+            {
+                "amount": 4800.0,
+                "method": "discount",
+                "payment_type": "comp_adjustment",
+                "voided": False,
+            }
+        ],
+        [],
+        [],
+    )
+
+    assert summary["accommodation_total"] == 4800.0
+    assert summary["total_discounts"] == 4800.0
+    assert summary["complimentary_adjustment_total"] == 4800.0
+    assert summary["reservation_total_due"] == 0.0
+    assert summary["balance"] == 0.0
+    assert summary["pricing_reconciliation_required"] is False
+    assert summary["pricing_reconciliation_direction"] is None
+    assert summary["pricing_reconciliation_difference"] == 0.0
+    assert summary["pricing_reconciliation_target_total"] == 0.0
+
+
+def test_normal_discount_does_not_hide_a_real_room_price_mismatch():
+    summary = reservation_detail._build_financial_summary(
+        {"total_amount": 0.0},
+        [{"charge_type": "room_charge", "total": 4800.0, "voided": False}],
+        [{"amount": 4800.0, "method": "discount", "payment_type": "manual_discount", "voided": False}],
+        [],
+        [],
+    )
+
+    assert summary["complimentary_adjustment_total"] == 0.0
+    assert summary["pricing_reconciliation_required"] is True
+    assert summary["pricing_reconciliation_difference"] == 4800.0
+
+
+def test_audited_rate_correction_offsets_closed_room_charge_without_rewriting_it():
+    summary = reservation_detail._build_financial_summary(
+        {
+            "total_amount": 10000.0,
+            "check_in": "2026-09-28",
+            "check_out": "2026-10-02",
+        },
+        [
+            {"charge_type": "room_charge", "business_date": "2026-09-28", "total": 2500.0, "voided": False},
+            {"charge_type": "room_charge", "business_date": "2026-09-29", "total": 2500.0, "voided": False},
+            {"charge_type": "room_charge", "business_date": "2026-09-30", "total": 2500.0, "voided": False},
+            {"charge_type": "room_charge", "business_date": "2026-10-01", "total": 5000.0, "voided": False},
+        ],
+        [{"amount": 2500.0, "method": "discount", "payment_type": "rate_correction", "voided": False}],
+        [],
+        [],
+    )
+
+    assert summary["rate_correction_total"] == 2500.0
+    assert summary["total_discounts"] == 2500.0
+    assert summary["reservation_total_due"] == 10000.0
+    assert summary["pricing_reconciliation_required"] is False
+
+
+def test_summary_marks_automatic_accommodation_tax_overage_as_reconciliation():
+    """A system tax row may not turn a fully paid booking into new debt."""
+    summary = reservation_detail._build_financial_summary(
+        {"total_amount": 7500.0, "paid_amount": 7500.0},
+        [
+            {"charge_type": "room_charge", "total": 7500.0, "voided": False},
+            {"charge_category": "city_tax", "konaklama_vergisi": True, "total": 15.03, "voided": False},
+        ],
+        [{"amount": 7500.0, "voided": False}],
+        [],
+        [],
+    )
+
+    assert summary["reservation_total_due"] == 15.03
+    assert summary["pricing_reconciliation_required"] is True
+    assert summary["pricing_reconciliation_difference"] == 15.03
+    assert summary["accommodation_tax_total"] == 15.03
+
+
+def test_summary_identifies_a_duplicate_auto_tax_on_a_tax_inclusive_room_charge():
+    booking = {"total_amount": 7500.0, "paid_amount": 7500.0}
+    charges = [
+        # Checkout can run while a legacy stay has only part of its nightly
+        # revenue posted.  Tax-inclusion belongs to each room row, so the
+        # later auto city-tax remains duplicate even though this is below the
+        # reservation-wide confirmed total.
+        {"charge_type": "room_charge", "charge_category": "room", "tax_inclusive": True, "total": 5833.34, "voided": False},
+        {"charge_category": "city_tax", "konaklama_vergisi": True, "total": 15.03, "voided": False},
+    ]
+
+    issue = reservation_detail._build_channel_pricing_issue(
+        booking,
+        charges,
+        [{"amount": 7500.0, "voided": False}],
+        accommodation_tax_rate=0.002,
+    )
+
+    assert issue == {
+        "code": "AUTOMATIC_ACCOMMODATION_TAX_DUPLICATE",
+        "charge_count": 1,
+        "observed_total": 7515.03,
+        "expected_total": 7500.0,
+        "overcharge": 15.03,
+        "repairable": True,
+        "blocked_reason": None,
+    }
+
+
+@pytest.mark.asyncio
+async def test_duplicate_auto_tax_repair_voids_only_the_tax_row_and_keeps_payment(monkeypatch):
+    booking = {"id": "booking-a", "tenant_id": "tenant-a", "total_amount": 7500.0}
+    charges = [
+        {
+            "id": "room-charge",
+            "tenant_id": "tenant-a",
+            "booking_id": "booking-a",
+            "folio_id": "folio-a",
+            "charge_type": "room_charge",
+            "charge_category": "room",
+            "tax_inclusive": True,
+            "total": 7500.0,
+            "voided": False,
+        },
+        {
+            "id": "city-tax",
+            "tenant_id": "tenant-a",
+            "booking_id": "booking-a",
+            "folio_id": "folio-a",
+            "charge_category": "city_tax",
+            "konaklama_vergisi": True,
+            "total": 15.03,
+            "voided": False,
+        },
+    ]
+
+    class AsyncCursor:
+        def __init__(self, rows):
+            self.rows = rows
+
+        def __aiter__(self):
+            self._iterator = iter(self.rows)
+            return self
+
+        async def __anext__(self):
+            try:
+                return next(self._iterator)
+            except StopIteration as exc:
+                raise StopAsyncIteration from exc
+
+    class ChargeCollection:
+        def find(self, query, *_args, **_kwargs):
+            rows = [
+                row for row in charges
+                if row["tenant_id"] == query.get("tenant_id")
+                and row["booking_id"] == query.get("booking_id", row["booking_id"])
+                and (query.get("voided", {}).get("$ne") is not True or not row.get("voided"))
+            ]
+            return AsyncCursor(rows)
+
+        async def update_one(self, query, update, **_kwargs):
+            row = next((item for item in charges if item["id"] == query["id"] and not item.get("voided")), None)
+            if not row:
+                return SimpleNamespace(modified_count=0)
+            row.update(update["$set"])
+            return SimpleNamespace(modified_count=1)
+
+    folio_updates = []
+    fake_db = SimpleNamespace(
+        bookings=SimpleNamespace(find_one=AsyncMock(return_value=booking)),
+        folios=SimpleNamespace(
+            find=lambda *_args, **_kwargs: AsyncCursor([{"id": "folio-a"}]),
+            update_one=AsyncMock(side_effect=lambda *args, **kwargs: folio_updates.append((args, kwargs))),
+        ),
+        folio_charges=ChargeCollection(),
+        payments=SimpleNamespace(find=lambda *_args, **_kwargs: AsyncCursor([{"amount": 7500.0, "voided": False}])),
+        invoices=SimpleNamespace(find_one=AsyncMock(return_value=None)),
+        accommodation_tax_postings=SimpleNamespace(update_many=AsyncMock()),
+        reservation_activity_log=SimpleNamespace(insert_one=AsyncMock()),
+        pms_audit_trail=SimpleNamespace(insert_one=AsyncMock()),
+    )
+    monkeypatch.setattr(reservation_detail, "db", fake_db)
+    monkeypatch.setattr(reservation_detail, "_enforce_perm", lambda *_: None)
+    monkeypatch.setattr(reservation_detail, "_ensure_hotel_context", lambda *_: None)
+
+    async def run_transaction(*, callback, **_kwargs):
+        return await callback(None)
+
+    monkeypatch.setattr(reservation_detail, "_run_reservation_financial_transaction", run_transaction)
+
+    result = await reservation_detail.repair_automatic_accommodation_tax(
+        "booking-a",
+        reservation_detail.ChannelPricingRepairRequest(),
+        current_user=SimpleNamespace(id="user-a", tenant_id="tenant-a", role="manager", name="Operator"),
+        _perm=None,
+    )
+
+    assert result["success"] is True
+    assert result["total_reduction"] == 15.03
+    assert charges[0].get("voided") is False
+    assert charges[1]["voided"] is True
+    assert charges[1]["void_reason"] == "tax_inclusive_booking_total"
+    assert folio_updates[0][0][1]["$set"]["balance"] == 0.0
+    fake_db.accommodation_tax_postings.update_many.assert_awaited_once()
+
+
+def test_room_charge_rate_mismatch_detects_the_exact_cent_difference():
+    mismatches = reservation_detail._room_charge_rate_mismatches(
+        [
+            {
+                "id": "charge-a",
+                "charge_type": "room_charge",
+                "date": "2026-09-03T00:00:00+00:00",
+                "total": 2515.03,
+                "voided": False,
+            }
+        ],
+        {"2026-09-03": 2500.0},
+    )
+
+    assert mismatches == [
+        {
+            "date": "2026-09-03",
+            "charge_id": "charge-a",
+            "expected_total": 2500.0,
+            "posted_total": 2515.03,
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_payment_is_blocked_when_posted_room_rate_and_daily_rate_disagree(monkeypatch):
+    monkeypatch.setattr(
+        reservation_detail,
+        "db",
+        SimpleNamespace(
+            bookings=SimpleNamespace(
+                find_one=AsyncMock(
+                    return_value={"id": "booking-a", "tenant_id": "tenant-a", "total_amount": 7500.0}
+                )
+            )
+        ),
+    )
+    monkeypatch.setattr(reservation_detail, "_enforce_perm", lambda *_: None)
+    monkeypatch.setattr(reservation_detail, "_ensure_hotel_context", lambda *_: None)
+    mismatch_probe = AsyncMock(
+        return_value=[
+            {"date": "2026-09-03", "charge_id": "charge-a", "expected_total": 2500.0, "posted_total": 2515.03}
+        ]
+    )
+    monkeypatch.setattr(reservation_detail, "_posted_room_charge_rate_mismatches", mismatch_probe)
+    accommodation_total_probe = AsyncMock(return_value=7515.03)
+    monkeypatch.setattr(reservation_detail, "_posted_accommodation_charge_total", accommodation_total_probe)
+
+    with pytest.raises(reservation_detail.HTTPException) as exc:
+        await reservation_detail.record_payment(
+            "booking-a",
+            reservation_detail.PaymentRecord(amount=7500.0, method="cash", payment_type="final"),
+            current_user=SimpleNamespace(id="user-a", tenant_id="tenant-a", role="manager", name="Operator"),
+            _perm=None,
+        )
+
+    assert exc.value.status_code == 409
+    assert "mutabakat" in exc.value.detail
+    mismatch_probe.assert_awaited_once_with("tenant-a", "booking-a")
+    accommodation_total_probe.assert_awaited_once_with("tenant-a", "booking-a")
+
+
+@pytest.mark.asyncio
+async def test_payment_allows_legacy_daily_allocation_when_confirmed_total_reconciles(monkeypatch):
+    monkeypatch.setattr(reservation_detail, "stamp_open_business_date", AsyncMock(return_value="2026-09-22"))
+    booking = {"id": "booking-a", "tenant_id": "tenant-a", "total_amount": 11500.0, "paid_amount": 11500.0}
+    payments = SimpleNamespace(find_one=AsyncMock(return_value=None), insert_one=AsyncMock())
+    bookings = SimpleNamespace(find_one=AsyncMock(return_value=booking), update_one=AsyncMock())
+    folios = SimpleNamespace(find_one=AsyncMock(return_value={"id": "folio-a", "status": "open"}))
+    monkeypatch.setattr(
+        reservation_detail,
+        "db",
+        SimpleNamespace(bookings=bookings, payments=payments, folios=folios),
+    )
+    monkeypatch.setattr(reservation_detail, "_enforce_perm", lambda *_: None)
+    monkeypatch.setattr(reservation_detail, "_ensure_hotel_context", lambda *_: None)
+    monkeypatch.setattr(
+        reservation_detail,
+        "_posted_room_charge_rate_mismatches",
+        AsyncMock(
+            return_value=[
+                {"date": "2026-09-05", "posted_total": 4000.0, "expected_total": 4300.0},
+                {"date": "2026-09-06", "posted_total": 4000.0, "expected_total": 5000.0},
+                {"date": "2026-09-07", "posted_total": 3500.0, "expected_total": 5000.0},
+            ]
+        ),
+    )
+    monkeypatch.setattr(
+        reservation_detail,
+        "_posted_accommodation_charge_total",
+        AsyncMock(return_value=11500.0),
+    )
+    monkeypatch.setattr(
+        reservation_detail,
+        "claim_short_window_dedup",
+        AsyncMock(return_value={"status": "acquired", "lock_id": "lock-a"}),
+    )
+    monkeypatch.setattr(reservation_detail, "_refresh_cached_folio_balance", AsyncMock(return_value=0.0))
+    monkeypatch.setattr(reservation_detail, "_log_activity", AsyncMock())
+    monkeypatch.setattr(
+        "routers.webhook_retry_service.schedule_emit_reservation_updated",
+        lambda *_args, **_kwargs: None,
+    )
+
+    result = await reservation_detail.record_payment(
+        "booking-a",
+        reservation_detail.PaymentRecord(amount=750.0, method="card", payment_type="final"),
+        current_user=SimpleNamespace(id="user-a", tenant_id="tenant-a", role="manager", name="Operator"),
+        _perm=None,
+    )
+
+    assert result["success"] is True
+    assert result["payment"]["amount"] == 750.0
+    assert result["payment"]["method"] == "card"
+    payments.insert_one.assert_awaited_once()
+    bookings.update_one.assert_awaited_once()
 
 
 def test_summary_preserves_explicit_zero_after_extra_charge_split():

@@ -23,15 +23,18 @@ const SupplierAuthPage = () => {
   }));
   const onSubmit = async e => {
     e.preventDefault();
-    // Login modu demo (portal yakinda devreye alinacak); yalniz basvuru modu
-    // gercek lead yazar -> POST /api/leads/supplier (axios baseURL '/api').
-    if (mode !== 'register') {
-      setSubmitted(true);
-      return;
-    }
     setSubmitting(true);
     setSubmitError('');
     try {
+      if (mode === 'login') {
+        const { data } = await axios.post('/supplies-market/vendor/login', {
+          email: form.email.trim(),
+          password: form.password,
+        });
+        localStorage.setItem('vendor_token', data.access_token);
+        navigate('/vendor', { replace: true });
+        return;
+      }
       await axios.post('/leads/supplier', {
         company: form.company.trim(),
         tax_no: form.taxNo.trim() || undefined,
@@ -41,7 +44,11 @@ const SupplierAuthPage = () => {
       setSubmitted(true);
     } catch (err) {
       const status = err?.response?.status;
-      setSubmitError(status === 422 ? 'Lütfen firma adı ve geçerli bir e-posta girin.' : 'Başvuru gönderilemedi. Lütfen daha sonra tekrar deneyin.');
+      if (mode === 'login') {
+        setSubmitError(err?.response?.data?.detail || (status === 401 ? 'E-posta veya parola hatalı.' : 'Giriş yapılamadı. Lütfen tekrar deneyin.'));
+      } else {
+        setSubmitError(status === 422 ? 'Lütfen firma adı ve geçerli bir e-posta girin.' : 'Başvuru gönderilemedi. Lütfen daha sonra tekrar deneyin.');
+      }
     } finally {
       setSubmitting(false);
     }
@@ -133,10 +140,10 @@ const SupplierAuthPage = () => {
 
             {submitted ? <div className="mt-6 rounded-2xl border border-emerald-400/30 bg-emerald-400/10 p-5 text-sm text-emerald-100">
                 <div className="font-semibold text-emerald-200">
-                  {mode === 'login' ? 'Demo modu' : 'Başvurunuz alındı'}
+                  Başvurunuz alındı
                 </div>
                 <p className="mt-1.5 text-emerald-100/90">
-                  {mode === 'login' ? 'Tedarikçi portalı yakında devreye alınıyor. Erken erişim için başvuru sekmesinden talep oluşturabilirsiniz.' : 'Başvurunuzu aldık. Ekibimiz başvurunuzu inceleyip en kısa sürede sizinle iletişime geçecek.'}
+                  Başvurunuzu aldık. Ekibimiz başvurunuzu inceleyip en kısa sürede sizinle iletişime geçecek.
                 </p>
                 <button onClick={() => setSubmitted(false)} className="mt-4 inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-2 text-xs font-medium text-white hover:bg-white/15">{t("cm.pages_SupplierAuthPage.forma_d\xF6n")}</button>
               </div> : <form onSubmit={onSubmit} className="mt-6 grid gap-4">
@@ -155,7 +162,7 @@ const SupplierAuthPage = () => {
                   </div>}
 
                 <button type="submit" disabled={submitting} className="group mt-2 inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-cyan-400 to-teal-300 px-6 py-3 text-sm font-semibold text-[#05070f] shadow-[0_12px_40px_-10px_rgba(34,211,238,0.7)] transition hover:translate-y-[-1px] disabled:cursor-not-allowed disabled:opacity-60">
-                  {mode === 'login' ? 'Giriş Yap' : submitting ? 'Gönderiliyor...' : 'Başvuruyu Gönder'}
+                  {submitting ? (mode === 'login' ? 'Giriş yapılıyor...' : 'Gönderiliyor...') : mode === 'login' ? 'Giriş Yap' : 'Başvuruyu Gönder'}
                   <ArrowRight className="h-4 w-4 transition group-hover:translate-x-0.5" />
                 </button>
 

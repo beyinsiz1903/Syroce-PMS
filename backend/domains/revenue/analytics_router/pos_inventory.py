@@ -17,6 +17,7 @@ from fastapi.security import HTTPAuthorizationCredentials
 
 from core.database import db
 from core.security import get_current_user, security
+from core.tenant_currency import get_tenant_currency
 from modules.pms_core.role_permission_service import require_module as require_module_rbac  # v89 DW
 from modules.pms_core.role_permission_service import require_role as _require_role
 
@@ -54,6 +55,7 @@ router = APIRouter(prefix="/api", tags=["analytics"])
 async def get_outlet_sales_breakdown(start_date: str | None = None, end_date: str | None = None, credentials: HTTPAuthorizationCredentials = Depends(security)):
     """Get F&B sales breakdown by outlet"""
     current_user = await get_current_user(credentials)
+    tenant_currency, _ = await get_tenant_currency(current_user.tenant_id)
 
     today = datetime.now(UTC)
     if not start_date:
@@ -61,16 +63,39 @@ async def get_outlet_sales_breakdown(start_date: str | None = None, end_date: st
     if not end_date:
         end_date = today.date().isoformat()
 
+    end_exclusive = (datetime.fromisoformat(end_date) + timedelta(days=1)).date().isoformat()
+    # Yeni siparişlerde business_date otoritedir. Legacy kayıtlarda bu alan
+    # bulunmadığı için created_at aralığına kontrollü fallback yapılır.
+    period_filter = {
+        "$or": [
+            {"business_date": {"$gte": start_date, "$lt": end_exclusive}},
+            {
+                "business_date": {"$exists": False},
+                "created_at": {"$gte": start_date, "$lt": end_exclusive},
+            },
+        ]
+    }
+    query = {
+        "tenant_id": current_user.tenant_id,
+        "status": {"$nin": ["cancelled", "voided"]},
+        **period_filter,
+    }
+
     # Gerçek POS siparişlerinden outlet kırılımı; sabit/placeholder outlet üretilmez.
     # Veri yoksa boş döner (fail-closed), uydurma kategori yok.
     outlet_sales = {}
+    total_sales_by_currency: dict[str, float] = {}
 
-    async for order in db.pos_orders.find({"tenant_id": current_user.tenant_id, "created_at": {"$gte": start_date, "$lte": end_date}}):
+    async for order in db.pos_orders.find(query):
         outlet = order.get("outlet_name") or "Bilinmeyen"
         if outlet not in outlet_sales:
-            outlet_sales[outlet] = {"sales": 0, "orders": 0, "avg_ticket": 0}
+            outlet_sales[outlet] = {"sales": 0, "orders": 0, "avg_ticket": 0, "sales_by_currency": {}}
 
-        outlet_sales[outlet]["sales"] += order.get("total_amount", 0)
+        amount = float(order.get("total_amount", 0) or 0)
+        currency = str(order.get("currency") or tenant_currency).upper()
+        outlet_sales[outlet]["sales"] += amount
+        outlet_sales[outlet]["sales_by_currency"][currency] = round(outlet_sales[outlet]["sales_by_currency"].get(currency, 0) + amount, 2)
+        total_sales_by_currency[currency] = round(total_sales_by_currency.get(currency, 0) + amount, 2)
         outlet_sales[outlet]["orders"] += 1
 
     # Calculate averages
@@ -84,6 +109,8 @@ async def get_outlet_sales_breakdown(start_date: str | None = None, end_date: st
     return {
         "outlets": outlet_sales,
         "total_sales": round(total_sales, 2),
+        "total_sales_by_currency": total_sales_by_currency,
+        "currency": tenant_currency,
         "period": {"start": start_date, "end": end_date},
         "data_available": len(outlet_sales) > 0,
     }
@@ -155,14 +182,15 @@ async def create_inventory_movement(
 async def get_shift_metrics(date: str | None = None, credentials: HTTPAuthorizationCredentials = Depends(security)):
     """Get POS sales metrics by shift (morning/afternoon/evening)"""
     current_user = await get_current_user(credentials)
+    tenant_currency, _ = await get_tenant_currency(current_user.tenant_id)
 
     if not date:
         date = datetime.now(UTC).date().isoformat()
 
     shift_data = {
-        "morning": {"sales": 0, "orders": 0, "hours": "06:00-14:00"},
-        "afternoon": {"sales": 0, "orders": 0, "hours": "14:00-18:00"},
-        "evening": {"sales": 0, "orders": 0, "hours": "18:00-23:00"},
+        "morning": {"sales": 0, "sales_by_currency": {}, "orders": 0, "hours": "06:00-14:00"},
+        "afternoon": {"sales": 0, "sales_by_currency": {}, "orders": 0, "hours": "14:00-18:00"},
+        "evening": {"sales": 0, "sales_by_currency": {}, "orders": 0, "hours": "18:00-23:00"},
     }
 
     # Gercek POS siparislerini vardiya saatlerine gore topla (created_at saatine gore)
@@ -180,11 +208,14 @@ async def get_shift_metrics(date: str | None = None, credentials: HTTPAuthorizat
         else:
             shift = "evening"
 
-        shift_data[shift]["sales"] += order.get("total_amount", 0)
+        amount = float(order.get("total_amount", 0) or 0)
+        currency = str(order.get("currency") or tenant_currency).upper()
+        shift_data[shift]["sales"] += amount
+        shift_data[shift]["sales_by_currency"][currency] = round(shift_data[shift]["sales_by_currency"].get(currency, 0) + amount, 2)
         shift_data[shift]["orders"] += 1
 
     # Round values
     for shift in shift_data:
         shift_data[shift]["sales"] = round(shift_data[shift]["sales"], 2)
 
-    return {"shifts": shift_data, "date": date}
+    return {"shifts": shift_data, "date": date, "currency": tenant_currency}

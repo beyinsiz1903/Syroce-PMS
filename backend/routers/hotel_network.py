@@ -1,0 +1,738 @@
+"""Closed hotel-to-hotel inventory, referral and property-transfer network.
+
+This bounded context intentionally does not mutate agency contracts or reuse an
+agency identity. Hotels remain independent tenants. Cross-tenant reads/writes
+are permitted only after an explicit contract or an accepted spot request.
+"""
+
+from __future__ import annotations
+
+import logging
+import re
+import uuid
+from datetime import UTC, datetime
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, EmailStr, Field, model_validator
+from pymongo import ReturnDocument
+
+from core.atomic_booking import BookingConflictError, create_booking_atomic
+from core.database import db
+from core.security import get_current_user
+from core.tenant_currency import get_tenant_currency
+from core.tenant_db import get_system_db, tenant_context
+from models.schemas import User
+
+router = APIRouter(prefix="/api/hotel-network", tags=["Hotel Network"])
+logger = logging.getLogger(__name__)
+
+
+def _now() -> str:
+    return datetime.now(UTC).isoformat()
+
+
+def _id() -> str:
+    return str(uuid.uuid4())
+
+
+def _tenant(user: User) -> str:
+    tenant_id = getattr(user, "tenant_id", None)
+    if not tenant_id:
+        raise HTTPException(403, "Otel bağlamı gerekli")
+    return tenant_id
+
+
+async def _hotel_name(sysdb, tenant_id: str) -> str:
+    hotel = await sysdb.tenants.find_one(
+        {"$or": [{"id": tenant_id}, {"tenant_id": tenant_id}]},
+        {"_id": 0, "property_name": 1, "hotel_name": 1, "name": 1},
+    )
+    return (hotel or {}).get("property_name") or (hotel or {}).get("hotel_name") or (hotel or {}).get("name") or "Otel"
+
+
+async def _active_contract(sysdb, a: str, b: str) -> dict | None:
+    pair = sorted([a, b])
+    return await sysdb.hotel_network_contracts.find_one(
+        {"tenant_pair": pair, "status": "active"}, {"_id": 0}
+    )
+
+
+async def _audit(sysdb, tenant_id: str, actor_id: str, action: str, entity_id: str, details: dict | None = None) -> None:
+    await sysdb.hotel_network_audit_logs.insert_one({
+        "id": _id(), "tenant_id": tenant_id, "actor_id": actor_id,
+        "action": action, "entity_id": entity_id, "details": details or {},
+        "created_at": _now(),
+    })
+
+
+async def _notify(tenant_id: str, *, title: str, message: str, priority: str = "normal", metadata: dict | None = None) -> None:
+    """Persist a tenant-local, privacy-safe in-app notification.
+
+    Hotel-network events cross tenant boundaries, but their notifications do
+    not.  Only a commercial reference is sent; guest contact data is never put
+    in a notification and stays behind the destination property's acceptance
+    workflow.
+    """
+    try:
+        with tenant_context(tenant_id):
+            await db.notifications.insert_one({
+                "id": _id(), "tenant_id": tenant_id, "user_id": None,
+                "type": "hotel_network", "title": title, "message": message,
+                "priority": priority, "read": False,
+                "action_url": "/app/hotel-network", "metadata": metadata or {},
+                "created_at": _now(),
+            })
+    except Exception as exc:  # A notification failure must never duplicate a booking.
+        logger.warning("Hotel-network notification was not stored: %s", type(exc).__name__)
+
+
+async def _source_booking_financial_activity(tenant_id: str, booking_id: str) -> list[str]:
+    """Return posted financial activity that makes a simple network move unsafe.
+
+    A hotel-network request creates a fresh reservation in another property.
+    It must never quietly move a reservation that already has a payment, posted
+    charge, or invoice: those records require the explicit cross-property
+    transfer and settlement workflow instead.
+    """
+    with tenant_context(tenant_id):
+        folios = await db.folios.find(
+            {"tenant_id": tenant_id, "booking_id": booking_id}, {"_id": 0, "id": 1}
+        ).to_list(100)
+        folio_ids = [row["id"] for row in folios if row.get("id")]
+        scope = {"tenant_id": tenant_id, "$or": [{"booking_id": booking_id}]}
+        if folio_ids:
+            scope["$or"].append({"folio_id": {"$in": folio_ids}})
+
+        payments = await db.payments.find_one(
+            {"$and": [scope, {"voided": {"$ne": True}}, {"status": {"$nin": ["void", "voided", "failed", "cancelled", "rejected"]}}]},
+            {"_id": 0, "id": 1},
+        )
+        charges = await db.folio_charges.find_one(
+            {"$and": [scope, {"voided": {"$ne": True}}, {"status": {"$nin": ["void", "voided", "cancelled"]}}]},
+            {"_id": 0, "id": 1},
+        )
+        invoices = await db.invoices.find_one(
+            {"tenant_id": tenant_id, "booking_id": booking_id, "status": {"$nin": ["draft", "cancelled", "voided"]}},
+            {"_id": 0, "id": 1},
+        )
+
+    return [name for name, record in (("tahsilat", payments), ("tahakkuk", charges), ("fatura", invoices)) if record]
+
+
+def _financial_transfer_block_message(activity: list[str]) -> str:
+    return (
+        f"Kaynak rezervasyonda {', '.join(activity)} bulundu. "
+        "Finansal hareket içeren rezervasyonlar Otel Ağı üzerinden aktarılamaz; "
+        "önce tesisler arası transfer ve mahsuplaşma akışını kullanın."
+    )
+
+
+class NetworkContractCreate(BaseModel):
+    partner_tenant_id: str = Field(..., min_length=1, max_length=128)
+    valid_from: str
+    valid_to: str
+    approval_mode: str = Field(default="automatic", pattern="^(automatic|manual)$")
+    settlement_model: str = Field(default="net_rate", pattern="^(net_rate|commission)$")
+    commission_pct: float = Field(default=0, ge=0, le=100)
+    payment_terms_days: int = Field(default=15, ge=0, le=90)
+    allowed_room_types: list[str] = Field(default_factory=list, max_length=100)
+    special_terms: str = Field(default="", max_length=2000)
+
+    @model_validator(mode="after")
+    def validate_dates(self):
+        try:
+            if datetime.fromisoformat(self.valid_to) <= datetime.fromisoformat(self.valid_from):
+                raise ValueError("Bitiş tarihi başlangıçtan sonra olmalıdır")
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Geçerli sözleşme tarihleri girilmelidir") from exc
+        return self
+
+
+class ContractDecision(BaseModel):
+    accept: bool
+    note: str = Field(default="", max_length=1000)
+
+
+class NetworkListingCreate(BaseModel):
+    room_type: str = Field(..., min_length=1, max_length=160)
+    date_start: str
+    date_end: str
+    nightly_rate: float = Field(..., gt=0)
+    allotment: int = Field(default=1, ge=1, le=500)
+    visibility: str = Field(default="network", pattern="^(network|contracts_only|selected)$")
+    selected_tenant_ids: list[str] = Field(default_factory=list, max_length=200)
+    approval_mode: str = Field(default="manual", pattern="^(automatic|manual)$")
+    amenities: list[str] = Field(default_factory=list, max_length=50)
+    meal_plan: str = Field(default="", max_length=80)
+    notes: str = Field(default="", max_length=1000)
+
+
+class NetworkRequestCreate(BaseModel):
+    listing_id: str
+    check_in: str
+    check_out: str
+    guest_name: str = Field(..., min_length=2, max_length=160)
+    guest_email: EmailStr | None = None
+    guest_phone: str = Field(default="", max_length=40)
+    adults: int = Field(default=2, ge=1, le=20)
+    children: int = Field(default=0, ge=0, le=20)
+    child_ages: list[int] = Field(default_factory=list, max_length=20)
+    source_booking_id: str | None = Field(default=None, max_length=128)
+    collect_by: str = Field(default="target_hotel", pattern="^(source_hotel|target_hotel)$")
+    note: str = Field(default="", max_length=1000)
+
+    @model_validator(mode="after")
+    def validate_stay(self):
+        if len(self.child_ages) != self.children or any(age < 0 or age > 17 for age in self.child_ages):
+            raise ValueError("Her çocuk için 0-17 arasında yaş girilmelidir")
+        if datetime.fromisoformat(self.check_out) <= datetime.fromisoformat(self.check_in):
+            raise ValueError("Çıkış tarihi girişten sonra olmalıdır")
+        return self
+
+
+class NetworkRequestDecision(BaseModel):
+    accept: bool
+    reason: str = Field(default="", max_length=1000)
+    alternative_rate: float | None = Field(default=None, gt=0)
+
+
+class SettlementDecision(BaseModel):
+    accept: bool
+    note: str = Field(default="", max_length=1000)
+
+
+@router.post("/contracts")
+async def propose_contract(data: NetworkContractCreate, user: User = Depends(get_current_user)):
+    tenant_id = _tenant(user)
+    if data.partner_tenant_id == tenant_id:
+        raise HTTPException(400, "Tesis kendi kendisiyle sözleşme yapamaz")
+    sysdb = get_system_db()
+    partner = await sysdb.tenants.find_one(
+        {"$or": [{"id": data.partner_tenant_id}, {"tenant_id": data.partner_tenant_id}]},
+        {"_id": 0, "id": 1},
+    )
+    if not partner:
+        raise HTTPException(404, "Karşı tesis bulunamadı")
+    pair = sorted([tenant_id, data.partner_tenant_id])
+    existing = await sysdb.hotel_network_contracts.find_one(
+        {"tenant_pair": pair, "status": {"$in": ["pending", "active"]}}, {"_id": 0, "id": 1}
+    )
+    if existing:
+        raise HTTPException(409, "Bu iki tesis arasında açık bir sözleşme süreci var")
+    doc = {
+        "id": _id(), "tenant_pair": pair, "proposer_tenant_id": tenant_id,
+        "partner_tenant_id": data.partner_tenant_id, "status": "pending",
+        **data.model_dump(exclude={"partner_tenant_id"}),
+        "created_by": user.id, "created_at": _now(), "updated_at": _now(),
+    }
+    await sysdb.hotel_network_contracts.insert_one(doc)
+    await _audit(sysdb, tenant_id, user.id, "contract.proposed", doc["id"], {"partner_tenant_id": data.partner_tenant_id})
+    doc.pop("_id", None)
+    return {"ok": True, "contract": doc}
+
+
+@router.get("/contracts")
+async def list_contracts(user: User = Depends(get_current_user)):
+    tenant_id = _tenant(user)
+    sysdb = get_system_db()
+    rows = await sysdb.hotel_network_contracts.find(
+        {"tenant_pair": tenant_id}, {"_id": 0}
+    ).sort("created_at", -1).to_list(500)
+    for row in rows:
+        other = next((item for item in row["tenant_pair"] if item != tenant_id), tenant_id)
+        row["partner_name"] = await _hotel_name(sysdb, other)
+        row["direction"] = "outgoing" if row.get("proposer_tenant_id") == tenant_id else "incoming"
+    return {"contracts": rows}
+
+
+@router.get("/partners")
+async def list_network_partners(query: str | None = Query(None, max_length=100), user: User = Depends(get_current_user)):
+    """Return a minimal property directory for an explicit network contract."""
+    tenant_id = _tenant(user)
+    sysdb = get_system_db()
+    filters: list[dict] = [{"id": {"$ne": tenant_id}}, {"tenant_id": {"$ne": tenant_id}}]
+    if query and query.strip():
+        term = re.escape(query.strip())
+        filters.append({"$or": [
+            {"property_name": {"$regex": term, "$options": "i"}},
+            {"hotel_name": {"$regex": term, "$options": "i"}},
+            {"name": {"$regex": term, "$options": "i"}},
+            {"id": {"$regex": term, "$options": "i"}},
+        ]})
+    rows = await sysdb.tenants.find(
+        {"$and": filters},
+        {"_id": 0, "id": 1, "tenant_id": 1, "property_name": 1, "hotel_name": 1, "name": 1},
+    ).limit(50).to_list(50)
+    partners = []
+    for row in rows:
+        partner_id = row.get("id") or row.get("tenant_id")
+        if partner_id and partner_id != tenant_id:
+            partners.append({"id": partner_id, "name": row.get("property_name") or row.get("hotel_name") or row.get("name") or "Tesis"})
+    return {"partners": partners}
+
+
+@router.post("/contracts/{contract_id}/decision")
+async def decide_contract(contract_id: str, data: ContractDecision, user: User = Depends(get_current_user)):
+    tenant_id = _tenant(user)
+    sysdb = get_system_db()
+    contract = await sysdb.hotel_network_contracts.find_one(
+        {"id": contract_id, "tenant_pair": tenant_id, "status": "pending"}, {"_id": 0}
+    )
+    if not contract:
+        raise HTTPException(404, "Bekleyen sözleşme bulunamadı")
+    if contract["proposer_tenant_id"] == tenant_id:
+        raise HTTPException(403, "Teklifi gönderen tesis kendi teklifini onaylayamaz")
+    status = "active" if data.accept else "rejected"
+    await sysdb.hotel_network_contracts.update_one(
+        {"id": contract_id, "status": "pending"},
+        {"$set": {"status": status, "decision_note": data.note, "decided_by": user.id, "decided_at": _now(), "updated_at": _now()}},
+    )
+    await _audit(sysdb, tenant_id, user.id, f"contract.{status}", contract_id)
+    return {"ok": True, "status": status}
+
+
+@router.post("/listings")
+async def create_listing(data: NetworkListingCreate, user: User = Depends(get_current_user)):
+    tenant_id = _tenant(user)
+    if datetime.fromisoformat(data.date_end) <= datetime.fromisoformat(data.date_start):
+        raise HTTPException(400, "İlan bitiş tarihi başlangıçtan sonra olmalıdır")
+    currency, _ = await get_tenant_currency(tenant_id)
+    doc = {
+        "id": _id(), "seller_tenant_id": tenant_id, "status": "active",
+        "reserved_count": 0, "currency": currency, **data.model_dump(), "created_by": user.id,
+        "created_at": _now(), "updated_at": _now(),
+    }
+    sysdb = get_system_db()
+    await sysdb.hotel_network_listings.insert_one(doc)
+    await _audit(sysdb, tenant_id, user.id, "listing.created", doc["id"], {"visibility": doc["visibility"]})
+    doc.pop("_id", None)
+    return {"ok": True, "listing": doc}
+
+
+@router.get("/feed")
+async def network_feed(
+    check_in: str | None = Query(None), check_out: str | None = Query(None),
+    room_type: str | None = Query(None), user: User = Depends(get_current_user),
+):
+    tenant_id = _tenant(user)
+    sysdb = get_system_db()
+    query: dict = {"seller_tenant_id": {"$ne": tenant_id}, "status": "active"}
+    if check_in and check_out:
+        query.update({"date_start": {"$lte": check_in}, "date_end": {"$gte": check_out}})
+    if room_type:
+        query["room_type"] = room_type
+    rows = await sysdb.hotel_network_listings.find(query, {"_id": 0}).sort("created_at", -1).to_list(500)
+    visible = []
+    for row in rows:
+        contract = await _active_contract(sysdb, tenant_id, row["seller_tenant_id"])
+        if row["visibility"] == "contracts_only" and not contract:
+            continue
+        if row["visibility"] == "selected" and tenant_id not in row.get("selected_tenant_ids", []):
+            continue
+        available = int(row.get("allotment", 0)) - int(row.get("reserved_count", 0))
+        if available <= 0:
+            continue
+        item = {k: v for k, v in row.items() if k not in {"seller_tenant_id", "selected_tenant_ids", "created_by"}}
+        item["available"] = available
+        item["relationship"] = "contracted" if contract else "spot"
+        item["seller_name"] = await _hotel_name(sysdb, row["seller_tenant_id"]) if contract else "Kapalı devre tesis"
+        item["automatic_confirmation"] = bool(contract and contract.get("approval_mode") == "automatic" and row.get("approval_mode") == "automatic")
+        visible.append(item)
+    return {"listings": visible}
+
+
+@router.get("/listings/mine")
+async def my_listings(user: User = Depends(get_current_user)):
+    tenant_id = _tenant(user)
+    rows = await get_system_db().hotel_network_listings.find(
+        {"seller_tenant_id": tenant_id}, {"_id": 0, "selected_tenant_ids": 0, "created_by": 0}
+    ).sort("created_at", -1).to_list(500)
+    for row in rows:
+        row["available"] = max(0, int(row.get("allotment", 0)) - int(row.get("reserved_count", 0)))
+    return {"listings": rows}
+
+
+@router.get("/booking-candidates")
+async def booking_candidates(user: User = Depends(get_current_user)):
+    """Reservations that can be transferred before check-in.
+
+    The source tenant receives only its own bookings.  A confirmed reservation
+    is deliberately required: moving an in-house stay is an operational room
+    move, not an inventory-network transaction.
+    """
+    tenant_id = _tenant(user)
+    rows = await db.bookings.find(
+        {
+            "tenant_id": tenant_id,
+            "status": {"$in": ["confirmed", "guaranteed"]},
+            "property_transfer_status": {"$ne": "accepted"},
+        },
+        {
+            "_id": 0, "id": 1, "guest_name": 1, "guest_email": 1,
+            "guest_phone": 1, "adults": 1, "children": 1, "child_ages": 1,
+            "check_in": 1, "check_out": 1, "room_type": 1, "currency": 1,
+            "total_amount": 1,
+        },
+    ).sort("check_in", 1).limit(200).to_list(200)
+    return {"bookings": rows}
+
+
+async def _create_target_booking(sysdb, request_doc: dict, actor_id: str) -> dict:
+    target = request_doc["target_tenant_id"]
+    with tenant_context(target):
+        rooms = await db.rooms.find(
+            {"tenant_id": target, "room_type": request_doc["room_type"], "is_active": {"$ne": False}, "status": {"$nin": ["maintenance", "out_of_order", "blocked"]}},
+            {"_id": 0},
+        ).to_list(500)
+    if not rooms:
+        raise HTTPException(409, "Hedef tesiste uygun oda tipi kalmadı")
+    booking_id = _id()
+    target_name = await _hotel_name(sysdb, target)
+    source_name = await _hotel_name(sysdb, request_doc["source_tenant_id"])
+    last_conflict = None
+    for room in rooms:
+        booking = {
+            "id": booking_id, "tenant_id": target, "room_id": room.get("id"),
+            "room_type": request_doc["room_type"], "guest_name": request_doc["guest_name"],
+            "guest_email": request_doc.get("guest_email"), "guest_phone": request_doc.get("guest_phone", ""),
+            "check_in": request_doc["check_in"] + "T14:00:00+00:00",
+            "check_out": request_doc["check_out"] + "T11:00:00+00:00",
+            "adults": request_doc.get("adults", 2), "children": request_doc.get("children", 0),
+            "child_ages": request_doc.get("child_ages", []), "status": "confirmed",
+            "source_channel": "hotel_network", "source": f"Otel Ağı · {source_name}",
+            "source_hotel_id": request_doc["source_tenant_id"], "source_hotel_name": source_name,
+            "hotel_network_request_id": request_doc["id"], "total_amount": request_doc["total_amount"],
+            "currency": request_doc.get("currency") or "TRY", "notes": request_doc.get("note", ""), "created_by": actor_id,
+            "created_at": _now(), "updated_at": _now(), "target_hotel_name": target_name,
+        }
+        try:
+            return await create_booking_atomic(tenant_id=target, booking_doc=booking)
+        except BookingConflictError as exc:
+            last_conflict = exc
+    raise HTTPException(409, f"Hedef tesiste oda kalmadı: {last_conflict or 'müsaitlik değişti'}")
+
+
+async def _post_interhotel_ledger(sysdb, request_doc: dict, target_booking: dict) -> list[dict]:
+    gross = float(request_doc["total_amount"])
+    commission = round(gross * float(request_doc.get("commission_pct", 0)) / 100, 2)
+    if request_doc["collect_by"] == "source_hotel":
+        amount = round(gross - commission, 2)
+        debtor, creditor, reason = request_doc["source_tenant_id"], request_doc["target_tenant_id"], "Konaklama net bedeli"
+    else:
+        amount = commission
+        debtor, creditor, reason = request_doc["target_tenant_id"], request_doc["source_tenant_id"], "Yönlendirme komisyonu"
+    transfer_ref = f"OTA-{datetime.now(UTC).year}-{request_doc['id'][:8].upper()}"
+    common = {
+        "id": _id(), "transfer_reference": transfer_ref, "request_id": request_doc["id"],
+        "source_booking_id": request_doc.get("source_booking_id"), "target_booking_id": target_booking["id"],
+        "gross_amount": gross, "commission_amount": commission, "amount": amount,
+        "currency": request_doc.get("currency") or "TRY", "reason": reason, "status": "open", "created_at": _now(),
+    }
+    debit = {**common, "id": _id(), "tenant_id": debtor, "counterparty_tenant_id": creditor, "entry_type": "payable"}
+    credit = {**common, "id": _id(), "tenant_id": creditor, "counterparty_tenant_id": debtor, "entry_type": "receivable"}
+    await sysdb.hotel_network_ledger.insert_many([debit, credit])
+    return [debit, credit]
+
+
+async def _accept_request(sysdb, request_doc: dict, actor_id: str) -> dict:
+    claimed = await sysdb.hotel_network_requests.find_one_and_update(
+        {"id": request_doc["id"], "status": "pending"},
+        {"$set": {"status": "processing", "updated_at": _now()}},
+        return_document=ReturnDocument.AFTER,
+    )
+    if not claimed:
+        current = await sysdb.hotel_network_requests.find_one({"id": request_doc["id"]}, {"_id": 0})
+        if current and current.get("status") == "accepted":
+            return current
+        raise HTTPException(409, "Talep başka bir işlem tarafından sonuçlandırıldı")
+    listing_claimed = False
+    target_booking = None
+    try:
+        if claimed.get("source_booking_id"):
+            activity = await _source_booking_financial_activity(
+                claimed["source_tenant_id"], claimed["source_booking_id"]
+            )
+            if activity:
+                raise HTTPException(409, _financial_transfer_block_message(activity))
+        listing = await sysdb.hotel_network_listings.find_one_and_update(
+            {
+                "id": claimed["listing_id"], "status": "active",
+                "$expr": {"$lt": [{"$ifNull": ["$reserved_count", 0]}, "$allotment"]},
+            },
+            {"$inc": {"reserved_count": 1}, "$set": {"updated_at": _now()}},
+            return_document=ReturnDocument.AFTER,
+        )
+        if not listing:
+            raise HTTPException(409, "Paylaşılan kontenjan doldu")
+        listing_claimed = True
+        target_booking = await _create_target_booking(sysdb, claimed, actor_id)
+        ledger = await _post_interhotel_ledger(sysdb, claimed, target_booking)
+        if claimed.get("source_booking_id"):
+            with tenant_context(claimed["source_tenant_id"]):
+                source_result = await db.bookings.update_one(
+                    {
+                        "tenant_id": claimed["source_tenant_id"], "id": claimed["source_booking_id"],
+                        "status": {"$in": ["confirmed", "guaranteed"]},
+                        "property_transfer_status": {"$ne": "accepted"},
+                    },
+                    {"$set": {
+                        "status": "cancelled", "cancelled_at": _now(),
+                        "cancellation_reason_code": "hotel_network_transfer",
+                        "cancellation_reason": "Otel Ağı üzerinden hedef tesise aktarıldı",
+                        "property_transfer_status": "accepted",
+                        "transferred_to_tenant_id": claimed["target_tenant_id"],
+                        "transferred_to_booking_id": target_booking["id"],
+                        "hotel_network_request_id": claimed["id"], "updated_at": _now(),
+                    }},
+                )
+            if source_result.modified_count != 1:
+                raise HTTPException(409, "Kaynak rezervasyon değişti; aktarım incelemeye alındı")
+        await sysdb.hotel_network_requests.update_one(
+            {"id": claimed["id"], "status": "processing"},
+            {"$set": {"status": "accepted", "target_booking_id": target_booking["id"], "transfer_reference": ledger[0]["transfer_reference"], "accepted_by": actor_id, "accepted_at": _now(), "updated_at": _now()}},
+        )
+        await _audit(sysdb, claimed["target_tenant_id"], actor_id, "request.accepted", claimed["id"], {"target_booking_id": target_booking["id"]})
+        await _audit(sysdb, claimed["source_tenant_id"], actor_id, "request.accepted", claimed["id"], {"target_booking_id": target_booking["id"], "transfer_reference": ledger[0]["transfer_reference"]})
+        await _notify(
+            claimed["source_tenant_id"],
+            title="Otel Ağı yönlendirmesi kabul edildi",
+            message=f"{await _hotel_name(sysdb, claimed['target_tenant_id'])} rezervasyonu kabul etti. Cari kayıt {ledger[0]['transfer_reference']} ile oluşturuldu.",
+            priority="high",
+            metadata={"request_id": claimed["id"], "target_booking_id": target_booking["id"], "transfer_reference": ledger[0]["transfer_reference"], "event": "request.accepted"},
+        )
+        return {"ok": True, "status": "accepted", "target_booking_id": target_booking["id"], "transfer_reference": ledger[0]["transfer_reference"]}
+    except Exception:
+        if listing_claimed and target_booking is None:
+            await sysdb.hotel_network_listings.update_one(
+                {"id": claimed["listing_id"], "reserved_count": {"$gt": 0}},
+                {"$inc": {"reserved_count": -1}, "$set": {"updated_at": _now()}},
+            )
+        next_status = "needs_review" if target_booking else "pending"
+        update = {"status": next_status, "updated_at": _now()}
+        if target_booking:
+            update["target_booking_id"] = target_booking["id"]
+        await sysdb.hotel_network_requests.update_one(
+            {"id": claimed["id"], "status": "processing"}, {"$set": update}
+        )
+        raise
+
+
+@router.post("/requests")
+async def create_request(data: NetworkRequestCreate, user: User = Depends(get_current_user)):
+    source = _tenant(user)
+    sysdb = get_system_db()
+    listing = await sysdb.hotel_network_listings.find_one({"id": data.listing_id, "status": "active"}, {"_id": 0})
+    if not listing or listing["seller_tenant_id"] == source:
+        raise HTTPException(404, "Paylaşım ilanı bulunamadı")
+    contract = await _active_contract(sysdb, source, listing["seller_tenant_id"])
+    allowed = listing["visibility"] == "network" or bool(contract) or source in listing.get("selected_tenant_ids", [])
+    if not allowed:
+        raise HTTPException(403, "Bu paylaşım yalnız yetkili tesislere açıktır")
+    if not (listing["date_start"] <= data.check_in and listing["date_end"] >= data.check_out):
+        raise HTTPException(409, "Talep tarihleri paylaşım aralığı dışında")
+    source_booking = None
+    if data.source_booking_id:
+        with tenant_context(source):
+            source_booking = await db.bookings.find_one(
+                {
+                    "tenant_id": source, "id": data.source_booking_id,
+                    "status": {"$in": ["confirmed", "guaranteed"]},
+                    "property_transfer_status": {"$ne": "accepted"},
+                },
+                {
+                    "_id": 0, "id": 1, "guest_name": 1, "guest_email": 1,
+                    "guest_phone": 1, "adults": 1, "children": 1,
+                    "child_ages": 1, "check_in": 1, "check_out": 1,
+                },
+            )
+        if not source_booking:
+            raise HTTPException(404, "Kaynak rezervasyon bulunamadı")
+        activity = await _source_booking_financial_activity(source, data.source_booking_id)
+        if activity:
+            raise HTTPException(409, _financial_transfer_block_message(activity))
+    nights = (datetime.fromisoformat(data.check_out) - datetime.fromisoformat(data.check_in)).days
+    commission_pct = float((contract or {}).get("commission_pct", 0))
+    request_fields = data.model_dump(exclude={"listing_id"})
+    if source_booking:
+        # The source record, not editable browser fields, is the immutable
+        # origin for personal details and stay dates of a transfer.
+        request_fields.update({
+            "guest_name": source_booking.get("guest_name") or data.guest_name,
+            "guest_email": source_booking.get("guest_email") or data.guest_email,
+            "guest_phone": source_booking.get("guest_phone") or data.guest_phone,
+            "adults": source_booking.get("adults") or data.adults,
+            "children": source_booking.get("children") if source_booking.get("children") is not None else data.children,
+            "child_ages": source_booking.get("child_ages") or data.child_ages,
+            "check_in": str(source_booking.get("check_in") or data.check_in)[:10],
+            "check_out": str(source_booking.get("check_out") or data.check_out)[:10],
+        })
+        if not (listing["date_start"] <= request_fields["check_in"] and listing["date_end"] >= request_fields["check_out"]):
+            raise HTTPException(409, "Kaynak rezervasyon tarihleri paylaşım aralığı dışında")
+        nights = (datetime.fromisoformat(request_fields["check_out"]) - datetime.fromisoformat(request_fields["check_in"])).days
+    doc = {
+        "id": _id(), "listing_id": listing["id"], "source_tenant_id": source,
+        "target_tenant_id": listing["seller_tenant_id"], "room_type": listing["room_type"],
+        "nightly_rate": listing["nightly_rate"], "total_amount": round(listing["nightly_rate"] * nights, 2),
+        "currency": listing.get("currency") or "TRY",
+        "allotment": listing["allotment"], "commission_pct": commission_pct,
+        "relationship": "contracted" if contract else "spot", "status": "pending",
+        **request_fields, "created_by": user.id, "created_at": _now(), "updated_at": _now(),
+    }
+    await sysdb.hotel_network_requests.insert_one(doc)
+    await _audit(sysdb, source, user.id, "request.created", doc["id"], {"target_tenant_id": doc["target_tenant_id"], "relationship": doc["relationship"]})
+    await _notify(
+        doc["target_tenant_id"],
+        title="Yeni Otel Ağı talebi",
+        message=f"{await _hotel_name(sysdb, source)} tesisinden onay bekleyen bir yönlendirme talebi var.",
+        priority="high",
+        metadata={"request_id": doc["id"], "event": "request.created"},
+    )
+    doc.pop("_id", None)
+    automatic = bool(contract and contract.get("approval_mode") == "automatic" and listing.get("approval_mode") == "automatic")
+    if automatic:
+        return await _accept_request(sysdb, doc, user.id)
+    return {"ok": True, "status": "pending", "request": {k: v for k, v in doc.items() if k not in {"guest_email", "guest_phone"}}}
+
+
+@router.get("/requests")
+async def list_requests(user: User = Depends(get_current_user)):
+    tenant_id = _tenant(user)
+    sysdb = get_system_db()
+    rows = await sysdb.hotel_network_requests.find(
+        {"$or": [{"source_tenant_id": tenant_id}, {"target_tenant_id": tenant_id}]}, {"_id": 0}
+    ).sort("created_at", -1).to_list(500)
+    for row in rows:
+        row["direction"] = "outgoing" if row["source_tenant_id"] == tenant_id else "incoming"
+        row["source_hotel_name"] = await _hotel_name(sysdb, row["source_tenant_id"])
+        row["target_hotel_name"] = await _hotel_name(sysdb, row["target_tenant_id"])
+        if row["direction"] == "incoming" and row.get("status") not in {"accepted", "completed"}:
+            row["guest_name"] = "Kabul sonrası paylaşılacak"
+            row.pop("guest_email", None)
+            row.pop("guest_phone", None)
+    return {"requests": rows}
+
+
+@router.post("/requests/{request_id}/decision")
+async def decide_request(request_id: str, data: NetworkRequestDecision, user: User = Depends(get_current_user)):
+    tenant_id = _tenant(user)
+    sysdb = get_system_db()
+    request_doc = await sysdb.hotel_network_requests.find_one(
+        {"id": request_id, "target_tenant_id": tenant_id, "status": "pending"}, {"_id": 0}
+    )
+    if not request_doc:
+        raise HTTPException(404, "Bekleyen talep bulunamadı")
+    if not data.accept:
+        if len(data.reason.strip()) < 3:
+            raise HTTPException(400, "Ret nedeni zorunludur")
+        await sysdb.hotel_network_requests.update_one(
+            {"id": request_id, "target_tenant_id": tenant_id, "status": "pending"},
+            {"$set": {"status": "rejected", "decision_reason": data.reason.strip(), "decided_by": user.id, "decided_at": _now(), "updated_at": _now()}},
+        )
+        await _audit(sysdb, tenant_id, user.id, "request.rejected", request_id, {"reason": data.reason.strip()})
+        await _notify(
+            request_doc["source_tenant_id"],
+            title="Otel Ağı yönlendirmesi reddedildi",
+            message=f"Yönlendirme talebi reddedildi: {data.reason.strip()}",
+            metadata={"request_id": request_id, "event": "request.rejected"},
+        )
+        return {"ok": True, "status": "rejected"}
+    if data.alternative_rate:
+        request_doc["nightly_rate"] = data.alternative_rate
+        nights = (datetime.fromisoformat(request_doc["check_out"]) - datetime.fromisoformat(request_doc["check_in"])).days
+        request_doc["total_amount"] = round(data.alternative_rate * nights, 2)
+        await sysdb.hotel_network_requests.update_one(
+            {"id": request_id, "status": "pending"},
+            {"$set": {"nightly_rate": data.alternative_rate, "total_amount": request_doc["total_amount"], "alternative_note": data.reason, "updated_at": _now()}},
+        )
+    return await _accept_request(sysdb, request_doc, user.id)
+
+
+@router.get("/ledger")
+async def network_ledger(status: str | None = Query(None), user: User = Depends(get_current_user)):
+    tenant_id = _tenant(user)
+    query: dict = {"tenant_id": tenant_id}
+    if status:
+        query["status"] = status
+    sysdb = get_system_db()
+    rows = await sysdb.hotel_network_ledger.find(query, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    totals_by_currency: dict[str, dict[str, float]] = {}
+    for row in rows:
+        if row.get("status") != "open":
+            continue
+        currency = str(row.get("currency") or "TRY").upper()
+        bucket = totals_by_currency.setdefault(currency, {"open_receivable": 0.0, "open_payable": 0.0, "net": 0.0})
+        key = "open_receivable" if row.get("entry_type") == "receivable" else "open_payable"
+        bucket[key] += float(row.get("amount") or 0)
+    for bucket in totals_by_currency.values():
+        bucket["open_receivable"] = round(bucket["open_receivable"], 2)
+        bucket["open_payable"] = round(bucket["open_payable"], 2)
+        bucket["net"] = round(bucket["open_receivable"] - bucket["open_payable"], 2)
+    for row in rows:
+        row["counterparty_name"] = await _hotel_name(sysdb, row["counterparty_tenant_id"])
+    single_currency = next(iter(totals_by_currency), None) if len(totals_by_currency) == 1 else None
+    legacy = totals_by_currency.get(single_currency, {}) if single_currency else {}
+    return {
+        "entries": rows,
+        "summary": {
+            "open_receivable": legacy.get("open_receivable"),
+            "open_payable": legacy.get("open_payable"),
+            "net": legacy.get("net"),
+            "currency": single_currency,
+            "totals_by_currency": totals_by_currency,
+        },
+    }
+
+
+@router.post("/ledger/{entry_id}/settlements")
+async def request_settlement(entry_id: str, user: User = Depends(get_current_user)):
+    """The owing property requests settlement; the counterparty must confirm."""
+    tenant_id = _tenant(user)
+    sysdb = get_system_db()
+    entry = await sysdb.hotel_network_ledger.find_one(
+        {"id": entry_id, "tenant_id": tenant_id, "entry_type": "payable", "status": "open"}, {"_id": 0}
+    )
+    if not entry:
+        raise HTTPException(404, "Açık borç kaydı bulunamadı")
+    now = _now()
+    result = await sysdb.hotel_network_ledger.update_many(
+        {"transfer_reference": entry["transfer_reference"], "request_id": entry["request_id"], "status": "open"},
+        {"$set": {"status": "settlement_pending", "settlement_requested_by": user.id, "settlement_requested_at": now, "updated_at": now}},
+    )
+    if getattr(result, "modified_count", 0) != 2:
+        raise HTTPException(409, "Cari kayıt eşleşmedi; mutabakat başlatılamadı")
+    await _audit(sysdb, tenant_id, user.id, "ledger.settlement_requested", entry_id, {"transfer_reference": entry["transfer_reference"]})
+    await _notify(entry["counterparty_tenant_id"], title="Tesisler arası mahsuplaşma onayı", message=f"{entry['transfer_reference']} numaralı {entry['amount']:.2f} {entry['currency']} cari kayıt için ödeme bildirildi.", priority="high", metadata={"entry_id": entry_id, "transfer_reference": entry["transfer_reference"], "event": "ledger.settlement_requested"})
+    return {"ok": True, "status": "settlement_pending"}
+
+
+@router.post("/ledger/{entry_id}/settlements/decision")
+async def decide_settlement(entry_id: str, data: SettlementDecision, user: User = Depends(get_current_user)):
+    """Only the receivable property can close or return a settlement request."""
+    tenant_id = _tenant(user)
+    sysdb = get_system_db()
+    entry = await sysdb.hotel_network_ledger.find_one(
+        {"id": entry_id, "tenant_id": tenant_id, "entry_type": "receivable", "status": "settlement_pending"}, {"_id": 0}
+    )
+    if not entry:
+        raise HTTPException(404, "Onay bekleyen alacak kaydı bulunamadı")
+    now = _now()
+    new_status = "settled" if data.accept else "open"
+    result = await sysdb.hotel_network_ledger.update_many(
+        {"transfer_reference": entry["transfer_reference"], "request_id": entry["request_id"], "status": "settlement_pending"},
+        {"$set": {"status": new_status, "settlement_decided_by": user.id, "settlement_decided_at": now, "settlement_note": data.note.strip(), "updated_at": now}},
+    )
+    if getattr(result, "modified_count", 0) != 2:
+        raise HTTPException(409, "Cari kayıt eşleşmedi; mutabakat sonuçlandırılamadı")
+    action = "ledger.settled" if data.accept else "ledger.settlement_returned"
+    await _audit(sysdb, tenant_id, user.id, action, entry_id, {"transfer_reference": entry["transfer_reference"], "note": data.note.strip()})
+    await _notify(entry["counterparty_tenant_id"], title="Tesisler arası mahsuplaşma sonucu", message=f"{entry['transfer_reference']} numaralı cari kayıt {'kapatıldı' if data.accept else 'yeniden açık duruma alındı'}.", priority="high" if not data.accept else "normal", metadata={"entry_id": entry_id, "transfer_reference": entry["transfer_reference"], "event": action})
+    return {"ok": True, "status": new_status}
+
+
+@router.get("/audit")
+async def network_audit(limit: int = Query(50, ge=1, le=200), user: User = Depends(get_current_user)):
+    tenant_id = _tenant(user)
+    rows = await get_system_db().hotel_network_audit_logs.find(
+        {"tenant_id": tenant_id}, {"_id": 0}
+    ).sort("created_at", -1).limit(limit).to_list(limit)
+    return {"events": rows}

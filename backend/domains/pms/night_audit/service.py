@@ -14,10 +14,7 @@ from common.audit_hook import SEVERITY_CRITICAL, audited
 from common.context import OperationContext
 from common.result import ServiceResult
 from core.business_date_service import ensure_business_date_initialized
-from core.channel_room_charge_pricing import (
-    calculate_room_charge,
-    is_channel_total_tax_inclusive,
-)
+from core.channel_room_charge_pricing import calculate_room_charge
 from domains.pms.night_audit.validations import validate_pre_audit
 
 logger = logging.getLogger(__name__)
@@ -235,7 +232,11 @@ class NightAuditCoreService:
             await self._release_lock(ctx.tenant_id, bd)
 
     # ── Tenant Tax Rate Resolver ───────────────────────────────────────
-    async def _resolve_accommodation_tax_rate(self, tenant_id: str) -> float:
+    async def _resolve_accommodation_tax_rate(
+        self,
+        tenant_id: str,
+        business_date: str | None = None,
+    ) -> float:
         """Tenant'ın `city_tax_rules` ayarından konaklama vergisi oranını
         çöz; eksik/devre dışı ise fallback olarak yasal varsayılanı (%2) kullan.
 
@@ -254,7 +255,7 @@ class NightAuditCoreService:
             #   - active=False     → 0.0 (tenant açıkça kapatmış)
             # Tenant'ın açık kararına saygı duy; muafiyet için
             # rate_percent=0 yazmalıdır.
-            return float(await get_accommodation_tax_rate(tenant_id))
+            return float(await get_accommodation_tax_rate(tenant_id, business_date))
         except Exception as exc:
             logger.warning(
                 "tax rate resolve failed for tenant=%s, falling back to %.4f: %s",
@@ -280,7 +281,7 @@ class NightAuditCoreService:
         total_tax = 0.0
 
         # Tek seferde tenant tax oranını çöz — döngü içinde DB hit olmasın.
-        accommodation_tax_rate = await self._resolve_accommodation_tax_rate(ctx.tenant_id)
+        accommodation_tax_rate = await self._resolve_accommodation_tax_rate(ctx.tenant_id, bd)
         logger.info(
             "night_audit: tenant=%s accommodation_tax_rate=%.4f",
             ctx.tenant_id,
@@ -303,6 +304,7 @@ class NightAuditCoreService:
         # charge'i folio_id=None ile yaziyor + balance $inc'ini atliyordu
         # (otomatik oda geliri folyoya hic yansimadan kayboluyordu).
         folio_by_booking: dict = {}
+        daily_rates_by_booking: dict = {}
         if bookings_list:
             booking_ids = [b.get("id") for b in bookings_list if b.get("id")]
             async for f in self._db.folios.find(
@@ -311,33 +313,31 @@ class NightAuditCoreService:
             ):
                 folio_by_booking[f["booking_id"]] = f["id"]
 
+            async for r in self._db.daily_rates.find(
+                {
+                    "booking_id": {"$in": booking_ids},
+                    "tenant_id": ctx.tenant_id,
+                    "date": {"$gte": bd, "$lt": bd + "T99"},
+                },
+                {"_id": 0, "booking_id": 1, "rate": 1},
+            ).sort([("updated_at", -1), ("id", -1), ("_id", -1)]):
+                # See core.night_audit_hardened: legacy duplicate records must
+                # never make room pricing depend on natural collection order.
+                daily_rates_by_booking.setdefault(r["booking_id"], float(r["rate"]))
+
         for booking in bookings_list:
             rooms_processed += 1
-            if is_channel_total_tax_inclusive(booking):
-                pricing = calculate_room_charge(
-                    booking,
-                    bd,
-                    vat_rate=DEFAULT_VAT_RATE,
-                    accommodation_tax_rate=accommodation_tax_rate,
-                )
-            else:
-                # Preserve this service's established direct-booking rate
-                # semantics; only provider-imported gross totals are changed.
-                direct_rate = float(booking.get("room_rate") or booking.get("rate") or 0.0)
-                vat = round(direct_rate * DEFAULT_VAT_RATE, 2)
-                accommodation_tax = round(direct_rate * accommodation_tax_rate, 2)
-                pricing = {
-                    "amount": direct_rate,
-                    "unit_price": direct_rate,
-                    "tax_rate": round((DEFAULT_VAT_RATE + accommodation_tax_rate) * 100, 1),
-                    "tax_amount": round(vat + accommodation_tax, 2),
-                    "total": round(direct_rate + vat + accommodation_tax, 2),
-                    "tax_breakdown": {
-                        "vat": vat,
-                        "accommodation_tax": accommodation_tax,
-                    },
-                    "tax_inclusive": False,
-                }
+            # Intentional complimentary accommodation is not missing pricing
+            # and must not create a Night Audit warning or revenue charge.
+            if booking.get("is_complimentary"):
+                continue
+            pricing = calculate_room_charge(
+                booking,
+                bd,
+                vat_rate=DEFAULT_VAT_RATE,
+                accommodation_tax_rate=accommodation_tax_rate,
+                explicit_daily_rate=daily_rates_by_booking.get(booking.get("id")),
+            )
             room_rate = pricing["amount"]
             if room_rate <= 0:
                 exceptions.append(
@@ -618,7 +618,7 @@ class NightAuditCoreService:
     ):
         # v95.7: tenant'a özel oranı kullan (eskiden hardcoded ACCOMMODATION_TAX_RATE
         # vardı ve bu sembol kaldırılınca NameError'a sebep oluyordu).
-        accommodation_tax_rate = await self._resolve_accommodation_tax_rate(ctx.tenant_id)
+        accommodation_tax_rate = await self._resolve_accommodation_tax_rate(ctx.tenant_id, bd)
         expected_rate = DEFAULT_VAT_RATE + accommodation_tax_rate
         cursor = self._db.folio_charges.find(
             {
@@ -687,6 +687,64 @@ class NightAuditCoreService:
         )
         async for run in cursor:
             runs.append(run)
+        # Hardened audit runs use operational counters and may not include the
+        # legacy financial fields consumed by the dashboard. Derive those from
+        # authoritative business-date charges rather than displaying 0.00 TL.
+        # ALSO derive total_payments for all runs to show collections clearly.
+        valid_dates = [run.get("business_date") for run in runs if run.get("business_date")]
+        if valid_dates:
+            try:
+                # 1. Enrich Revenue
+                totals = await self._db.folio_charges.aggregate(
+                    [
+                        {
+                            "$match": {
+                                "tenant_id": ctx.tenant_id,
+                                "business_date": {"$in": valid_dates},
+                                "voided": {"$ne": True},
+                            }
+                        },
+                        {
+                            "$group": {
+                                "_id": "$business_date",
+                                "revenue": {"$sum": "$amount"},
+                                "tax": {"$sum": "$tax_amount"},
+                            }
+                        },
+                    ]
+                ).to_list(None)
+                totals_by_date = {row["_id"]: row for row in totals}
+
+                # 2. Enrich Payments
+                pmts = await self._db.payments.aggregate(
+                    [
+                        {
+                            "$match": {
+                                "tenant_id": ctx.tenant_id,
+                                "date": {"$in": valid_dates},
+                                "status": {"$ne": "voided"},
+                            }
+                        },
+                        {
+                            "$group": {
+                                "_id": "$date",
+                                "payments": {"$sum": "$amount"}
+                            }
+                        },
+                    ]
+                ).to_list(None)
+                pmts_by_date = {row["_id"]: row for row in pmts}
+
+                for run in runs:
+                    bd = run.get("business_date")
+                    snapshot = totals_by_date.get(bd, {})
+                    psnapshot = pmts_by_date.get(bd, {})
+
+                    run["total_room_revenue"] = round(float(snapshot.get("revenue") or 0), 2)
+                    run["total_tax_amount"] = round(float(snapshot.get("tax") or 0), 2)
+                    run["total_payments_amount"] = round(float(psnapshot.get("payments") or 0), 2)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Night audit history financial enrichment failed: %s", exc)
         total = await self._db.night_audit_runs.count_documents({"tenant_id": ctx.tenant_id})
         return ServiceResult.success({"runs": runs, "total": total, "limit": limit, "skip": skip})
 
@@ -740,7 +798,8 @@ class NightAuditCoreService:
             "scheduled_hour": schedule_data.get("scheduled_hour", 0),
             "scheduled_minute": schedule_data.get("scheduled_minute", 0),
             "timezone": schedule_data.get("timezone", "Europe/Istanbul"),
-            "skip_validations": schedule_data.get("skip_validations", False),
+            # Scheduled final close is never permitted to bypass readiness.
+            "skip_validations": False,
             "auto_retry": schedule_data.get("auto_retry", True),
             "max_retries": schedule_data.get("max_retries", 2),
             "notify_on_complete": schedule_data.get("notify_on_complete", True),

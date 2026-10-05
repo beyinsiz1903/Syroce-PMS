@@ -40,6 +40,36 @@ yarn start
 
 **Environment:** All API calls route through `VITE_BACKEND_URL` defined in `.env`.
 
+## Marketing landing and measurement
+
+The hotel-focused Google Ads destination is `/otel-programi`. Both it and the
+main landing use the shared demo form (`POST /api/leads/contact`). Submitted
+leads include the landing path and available `utm_source`, `utm_medium`, and
+`utm_campaign` values in lead metadata. A five-minute backend deduplication
+prevents duplicate lead creation.
+Leads are stored in the super-admin **Pazarlama Talepleri** inbox at
+`/app/admin/leads`; this flow does not currently send an email or SMS alert.
+After deploying both backend and frontend, verify one anonymous submission on
+the live site and confirm that the same lead appears in that inbox.
+
+Optional Google measurement is disabled unless deployment supplies real IDs:
+
+```text
+VITE_GOOGLE_TAG_ID=G-XXXXXXXXXX
+VITE_GOOGLE_ADS_ID=AW-XXXXXXXXX
+VITE_GOOGLE_ADS_DEMO_CONVERSION_LABEL=XXXXXXXXXXXX
+```
+
+The visitor must accept optional analytics before the Google tag loads. A
+`generate_lead` event and Google Ads conversion event fire only after a new,
+successful demo submission, not on a failed or deduplicated request. Configure
+and verify the conversion action in Google Ads before running campaigns. Do
+not put placeholders in production environment variables.
+
+The existing privacy-policy page should receive legal review before launch;
+there is no approved Terms of Service document in this repository, so the
+former footer link that incorrectly led to the privacy policy was removed.
+
 ## Build
 
 ```bash

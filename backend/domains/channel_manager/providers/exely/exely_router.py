@@ -6,6 +6,7 @@ API endpoints for Exely connection management, room discovery, mapping, ARI push
 import logging
 import uuid
 from datetime import UTC, datetime, timedelta
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -26,6 +27,8 @@ from domains.channel_manager.providers.exely.production_safety import (
 )
 from domains.channel_manager.providers.exely.provider import ExelyProvider
 from domains.channel_manager.providers.exely.security import (
+    EXELY_PRODUCTION_ENDPOINT_URL,
+    EXELY_TEST_ENDPOINT_URL,
     exely_connection_projection,
     is_exely_production,
     resolve_exely_credentials,
@@ -52,6 +55,7 @@ class ExelyConnectionSetup(BaseModel):
     currency: str = "TRY"
     auto_sync_reservations: bool = True
     sync_interval_minutes: int = 15
+    mode: Literal["sandbox", "production"] = "production"
 
 
 class ExelyRoomMapping(BaseModel):
@@ -59,6 +63,8 @@ class ExelyRoomMapping(BaseModel):
     exely_room_code: str
     exely_rate_plan_code: str
     exely_room_name: str
+    pms_api_room_code: str = ""
+    pms_api_rate_plan_code: str = ""
     sync_availability: bool = True
     sync_price: bool = True
     sync_restrictions: bool = True
@@ -80,7 +86,20 @@ class ExelyARIUpdate(BaseModel):
     ctd: bool | None = None
 
 
+class ExelyARIWriteActivation(BaseModel):
+    enabled: bool
+    confirmation: str
+
+
 # ── Helpers ──────────────────────────────────────────────────────────
+
+
+def _connection_endpoint(mode: str, endpoint_url: str | None) -> str:
+    if endpoint_url:
+        return endpoint_url
+    if mode == "sandbox":
+        return EXELY_TEST_ENDPOINT_URL
+    return EXELY_PRODUCTION_ENDPOINT_URL
 
 
 async def _get_client(tenant_id: str) -> tuple:
@@ -95,7 +114,12 @@ async def _get_client(tenant_id: str) -> tuple:
     if not conn:
         raise HTTPException(status_code=404, detail="Exely connection not found. Please set up a connection first.")
 
-    creds = await resolve_exely_credentials(tenant_id, conn, actor="exely_router")
+    try:
+        creds = await resolve_exely_credentials(tenant_id, conn, actor="exely_router")
+    except ExelyError as exc:
+        raise HTTPException(status_code=502, detail=f"Exely credentials rejected ({type(exc).__name__})")
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Exely credentials failed ({type(exc).__name__})")
     if not creds:
         raise HTTPException(status_code=503, detail="Exely credentials are unavailable")
     kwargs = {
@@ -105,6 +129,7 @@ async def _get_client(tenant_id: str) -> tuple:
         "endpoint_url": creds["endpoint_url"],
         "tenant_id": tenant_id,
         "property_id": creds["hotel_code"],
+        "connection_mode": str(conn.get("mode") or ""),
         "connection_id": f"{tenant_id}:{creds['hotel_code']}",
     }
     try:
@@ -129,6 +154,7 @@ async def setup_connection(
     if runtime_block:
         raise HTTPException(status_code=503, detail=runtime_block)
 
+    endpoint_url = _connection_endpoint(payload.mode, payload.endpoint_url)
     kwargs = {
         "username": payload.username,
         "password": payload.password,
@@ -136,9 +162,9 @@ async def setup_connection(
         "tenant_id": current_user.tenant_id,
         "property_id": payload.hotel_code,
         "connection_id": f"{current_user.tenant_id}:{payload.hotel_code}",
+        "connection_mode": payload.mode,
+        "endpoint_url": endpoint_url,
     }
-    if payload.endpoint_url:
-        kwargs["endpoint_url"] = payload.endpoint_url
 
     provider = ExelyProvider(**kwargs)
     provider_result = await provider.test_connection()
@@ -153,7 +179,7 @@ async def setup_connection(
         "username": payload.username,
         "password": payload.password,
         "hotel_code": payload.hotel_code,
-        "endpoint_url": payload.endpoint_url or "",
+        "endpoint_url": endpoint_url,
         "currency": payload.currency,
     }
     credentials_ref = await sm.store_provider_credentials(
@@ -169,12 +195,12 @@ async def setup_connection(
         "tenant_id": current_user.tenant_id,
         "hotel_code": payload.hotel_code,
         "credentials_ref": credentials_ref,
-        "endpoint_url": payload.endpoint_url or "",
+        "endpoint_url": endpoint_url,
         "property_name": payload.property_name or f"Exely Property ({payload.hotel_code})",
         "auto_sync_reservations": payload.auto_sync_reservations,
         "ari_write_enabled": False,
         "sync_interval_minutes": payload.sync_interval_minutes,
-        "mode": "production" if is_exely_production() else "sandbox",
+        "mode": payload.mode,
         "currency": payload.currency,
         "is_active": True,
         "room_types": test_data.get("room_types", []),
@@ -235,13 +261,28 @@ async def test_connection(
     client, _conn = await _get_client(current_user.tenant_id)
     result = await client.test_connection()
     data = result.data or {}
+    tested_at = datetime.now(UTC).isoformat()
+    health_status = "healthy" if result.success and data.get("connected") else "failed"
+    safe_error_code = str(result.error_type or "EXELY_CONNECTION_TEST_FAILED") if health_status == "failed" else None
+    await db.exely_connections.update_one(
+        {"tenant_id": current_user.tenant_id, "is_active": True},
+        {
+            "$set": {
+                "last_connection_test_at": tested_at,
+                "last_connection_test_status": health_status,
+                "last_connection_test_error": safe_error_code,
+                **({"last_connection_success_at": tested_at} if health_status == "healthy" else {}),
+            }
+        },
+    )
     return {
         "success": result.success,
         "connected": bool(result.success and data.get("connected")),
         "room_types": data.get("room_types", []),
         "rate_plans": data.get("rate_plans", []),
         "duration_ms": result.duration_ms,
-        "error_type": result.error_type if not result.success else None,
+        "error_type": safe_error_code,
+        "tested_at": tested_at,
     }
 
 
@@ -280,6 +321,74 @@ async def update_currency(
     if result.modified_count == 0:
         raise HTTPException(status_code=404, detail="Active connection not found")
     return {"message": f"Currency updated to {payload.currency}", "currency": payload.currency}
+
+
+@router.post("/ari-write")
+async def update_ari_write_state(
+    payload: ExelyARIWriteActivation,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),
+):
+    """Enable or stop provider writes for exactly one tenant connection.
+
+    The global production gate remains controlled by the protected cutover
+    workflow.  Enabling here is deliberately tenant-scoped and requires a
+    healthy connection plus at least one complete availability mapping.
+    """
+    expected = "ENABLE_EXELY_ARI_WRITE" if payload.enabled else "DISABLE_EXELY_ARI_WRITE"
+    if payload.confirmation != expected:
+        raise HTTPException(status_code=400, detail="EXELY_ARI_WRITE_CONFIRMATION_REQUIRED")
+
+    conn = await db.exely_connections.find_one(
+        {"tenant_id": current_user.tenant_id, "is_active": True},
+        {"_id": 0},
+    )
+    if not conn:
+        raise HTTPException(status_code=404, detail="Exely connection not found")
+
+    if payload.enabled:
+        runtime_block = ari_write_block_reason()
+        if runtime_block:
+            raise HTTPException(status_code=503, detail=runtime_block)
+
+        mapping = await db.exely_room_mappings.find_one(
+            {
+                "tenant_id": current_user.tenant_id,
+                "sync_availability": True,
+                "exely_room_code": {"$nin": [None, ""]},
+                "exely_rate_plan_code": {"$nin": [None, ""]},
+            },
+            {"_id": 1},
+        )
+        if not mapping:
+            raise HTTPException(status_code=409, detail="EXELY_ARI_MAPPING_REQUIRED")
+
+        client, _connection = await _get_client(current_user.tenant_id)
+        probe = await client.test_connection()
+        if not probe.success:
+            raise HTTPException(status_code=409, detail="EXELY_CONNECTION_PROBE_FAILED")
+
+    await db.exely_connections.update_one(
+        {"tenant_id": current_user.tenant_id, "is_active": True},
+        {
+            "$set": {
+                "ari_write_enabled": payload.enabled,
+                "ari_write_updated_at": datetime.now(UTC).isoformat(),
+                "ari_write_updated_by": current_user.name,
+            }
+        },
+    )
+    await log_sync(
+        PROVIDER,
+        current_user.tenant_id,
+        "ari_write_activation",
+        "enabled" if payload.enabled else "disabled",
+        user_name=current_user.name,
+    )
+    return {
+        "ari_write_enabled": payload.enabled,
+        "message": "Exely ARI gonderimi acildi" if payload.enabled else "Exely ARI gonderimi durduruldu",
+    }
 
 
 # ── Room Discovery ───────────────────────────────────────────────────
@@ -328,6 +437,24 @@ async def create_room_mapping(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
+    duplicate = await db.exely_room_mappings.find_one(
+        {
+            "tenant_id": current_user.tenant_id,
+            "pms_room_type": payload.pms_room_type,
+            "exely_room_code": payload.exely_room_code,
+            "exely_rate_plan_code": payload.exely_rate_plan_code,
+        },
+        {"_id": 1},
+    )
+    if duplicate:
+        raise HTTPException(status_code=409, detail="Bu oda ve fiyat plani eslemesi zaten mevcut")
+    if payload.sync_availability:
+        other_inventory_mapping = await db.exely_room_mappings.find_one(
+            {"tenant_id": current_user.tenant_id, "pms_room_type": payload.pms_room_type, "sync_availability": True},
+            {"_id": 1},
+        )
+        if other_inventory_mapping:
+            raise HTTPException(status_code=409, detail="Bu PMS oda tipinde başka bir müsaitlik eşlemesi açık")
     mapping = {
         "id": str(uuid.uuid4()),
         "tenant_id": current_user.tenant_id,
@@ -335,6 +462,8 @@ async def create_room_mapping(
         "exely_room_code": payload.exely_room_code,
         "exely_rate_plan_code": payload.exely_rate_plan_code,
         "exely_room_name": payload.exely_room_name,
+        "pms_api_room_code": payload.pms_api_room_code.strip(),
+        "pms_api_rate_plan_code": payload.pms_api_rate_plan_code.strip(),
         "sync_availability": payload.sync_availability,
         "sync_price": payload.sync_price,
         "sync_restrictions": payload.sync_restrictions,
@@ -344,6 +473,55 @@ async def create_room_mapping(
     await db.exely_room_mappings.insert_one(mapping)
     mapping.pop("_id", None)
     return {"message": "Oda eslesmesi olusturuldu", "mapping": mapping}
+
+
+@router.patch("/room-mappings/{mapping_id}")
+async def update_room_mapping(
+    mapping_id: str,
+    payload: ExelyRoomMapping,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),
+):
+    """Edit one mapping without deleting its reservation aliases or audit identity."""
+    selector = {"id": mapping_id, "tenant_id": current_user.tenant_id}
+    existing = await db.exely_room_mappings.find_one(selector, {"_id": 0})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Esleme bulunamadi")
+    room_code = payload.exely_room_code.strip()
+    rate_code = payload.exely_rate_plan_code.strip()
+    pms_type = payload.pms_room_type.strip()
+    if not all((room_code, rate_code, pms_type)):
+        raise HTTPException(status_code=422, detail="Oda tipi ve fiyat planı kodları zorunludur")
+    duplicate = await db.exely_room_mappings.find_one(
+        {"tenant_id": current_user.tenant_id, "id": {"$ne": mapping_id}, "pms_room_type": pms_type, "exely_room_code": room_code, "exely_rate_plan_code": rate_code},
+        {"_id": 1},
+    )
+    if duplicate:
+        raise HTTPException(status_code=409, detail="Bu oda ve fiyat planı eşlemesi zaten mevcut")
+    if payload.sync_availability:
+        other_inventory_mapping = await db.exely_room_mappings.find_one(
+            {"tenant_id": current_user.tenant_id, "id": {"$ne": mapping_id}, "pms_room_type": pms_type, "sync_availability": True},
+            {"_id": 1},
+        )
+        if other_inventory_mapping:
+            raise HTTPException(status_code=409, detail="Bu PMS oda tipinde başka bir müsaitlik eşlemesi açık")
+    fields = {
+        "pms_room_type": pms_type,
+        "exely_room_code": room_code,
+        "exely_rate_plan_code": rate_code,
+        "exely_room_name": payload.exely_room_name.strip(),
+        "pms_api_room_code": payload.pms_api_room_code.strip() or existing.get("pms_api_room_code") or (existing.get("exely_room_code", "") if existing.get("exely_room_code") != room_code else ""),
+        "pms_api_rate_plan_code": payload.pms_api_rate_plan_code.strip()
+        or existing.get("pms_api_rate_plan_code")
+        or (existing.get("exely_rate_plan_code", "") if existing.get("exely_rate_plan_code") != rate_code else ""),
+        "sync_availability": payload.sync_availability,
+        "sync_price": payload.sync_price,
+        "sync_restrictions": payload.sync_restrictions,
+        "updated_at": datetime.now(UTC).isoformat(),
+        "updated_by": current_user.name,
+    }
+    await db.exely_room_mappings.update_one(selector, {"$set": fields})
+    return {"message": "Eşleme güncellendi", "mapping": {**existing, **fields}}
 
 
 @router.get("/room-mappings")
@@ -493,49 +671,69 @@ async def manual_pull(
     _perm=Depends(require_op("manage_channel_connectors")),
 ):
     """Manually trigger a reservation pull from Exely."""
-    runtime_block = reservation_sync_block_reason()
-    if runtime_block:
-        raise HTTPException(status_code=503, detail=runtime_block)
+    try:
+        runtime_block = reservation_sync_block_reason()
+        if runtime_block:
+            raise HTTPException(status_code=503, detail=runtime_block)
 
-    conn = await db.exely_connections.find_one(
-        {"tenant_id": current_user.tenant_id, "is_active": True},
-        exely_connection_projection(),
-    )
-    if not conn:
-        raise HTTPException(status_code=404, detail="Exely connection not found")
+        conn = await db.exely_connections.find_one(
+            {"tenant_id": current_user.tenant_id, "is_active": True},
+            exely_connection_projection(),
+        )
+        if not conn:
+            raise HTTPException(status_code=404, detail="Exely connection not found")
 
-    creds = await resolve_exely_credentials(current_user.tenant_id, conn, actor="exely_manual_pull")
-    if not creds:
-        raise HTTPException(status_code=503, detail="Exely credentials are unavailable")
+        creds = await resolve_exely_credentials(current_user.tenant_id, conn, actor="exely_manual_pull")
+        if not creds:
+            raise HTTPException(status_code=503, detail="Exely credentials are unavailable")
 
-    result = await exely_pull_scheduler.pull_for_tenant(
-        tenant_id=current_user.tenant_id,
-        username=creds["username"],
-        password=creds["password"],
-        hotel_code=creds["hotel_code"],
-        endpoint_url=creds["endpoint_url"],
-    )
+        result = await exely_pull_scheduler.pull_for_tenant(
+            tenant_id=current_user.tenant_id,
+            username=creds["username"],
+            password=creds["password"],
+            hotel_code=creds["hotel_code"],
+            endpoint_url=creds["endpoint_url"],
+        )
+        if not result["success"]:
+            error_code = str(result.get("error") or "EXELY_PROVIDER_READ_FAILED")
+            # A provider-side read rejection is an expected operational result,
+            # not an application crash. Returning it as a structured 200 keeps
+            # reverse proxies from replacing the response body with a generic
+            # 502 page, so the operator can see the exact safe error class.
+            return {
+                "success": False,
+                "error": error_code,
+                "message": f"EXELY_RESERVATION_PULL_FAILED:{error_code}",
+                "provider_read_count": result.get("provider_read_count", 0),
+                "provider_write_count": result.get("provider_write_count", 0),
+            }
 
-    if not result["success"]:
-        raise HTTPException(status_code=502, detail="Exely reservation pull failed")
-
-    cancelled = result.get("cancelled", 0)
-    updated = result.get("updated", 0)
-    imported = result.get("imported", 0)
-    msg_parts = [f"{result['processed']} rezervasyon cekildi"]
-    if imported:
-        msg_parts.append(f"{imported} PMS'e aktarildi")
-    if updated:
-        msg_parts.append(f"{updated} guncellendi")
-    if cancelled:
-        msg_parts.append(f"{cancelled} iptal edildi")
-    return {
-        "message": ", ".join(msg_parts),
-        **result,
-        "auto_imported": imported,
-        "updated": updated,
-        "cancelled": cancelled,
-    }
+        cancelled = result.get("cancelled", 0)
+        updated = result.get("updated", 0)
+        imported = result.get("imported", 0)
+        msg_parts = [f"{result['processed']} rezervasyon cekildi"]
+        if imported:
+            msg_parts.append(f"{imported} PMS'e aktarildi")
+        if updated:
+            msg_parts.append(f"{updated} guncellendi")
+        if cancelled:
+            msg_parts.append(f"{cancelled} iptal edildi")
+        return {
+            "message": ", ".join(msg_parts),
+            **result,
+            "auto_imported": imported,
+            "updated": updated,
+            "cancelled": cancelled,
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("[EXELY] manual reservation pull failed")
+        return {
+            "success": False,
+            "error": type(exc).__name__,
+            "message": f"EXELY_RESERVATION_PULL_FAILED:{type(exc).__name__} - {str(exc)}",
+        }
 
 
 @router.get("/reservations/local")
@@ -621,34 +819,51 @@ async def import_reservation_to_pms(
     _perm=Depends(require_op("manage_channel_connectors")),
 ):
     """Manually import a channel reservation into PMS as a booking."""
-    runtime_block = reservation_sync_block_reason()
-    if runtime_block:
-        raise HTTPException(status_code=503, detail=runtime_block)
+    try:
+        runtime_block = reservation_sync_block_reason()
+        if runtime_block:
+            raise HTTPException(status_code=503, detail=runtime_block)
 
-    tenant_id = current_user.tenant_id
-
-    # Find channel reservation
-    res = await db.exely_reservations.find_one(
-        {"tenant_id": tenant_id, "id": reservation_id},
-        {"_id": 0},
-    )
-    if not res:
+        tenant_id = current_user.tenant_id
         res = await db.exely_reservations.find_one(
-            {"tenant_id": tenant_id, "external_id": reservation_id},
+            {"tenant_id": tenant_id, "id": reservation_id},
             {"_id": 0},
         )
-    if not res:
-        raise HTTPException(status_code=404, detail="Rezervasyon bulunamadi")
+        if not res:
+            res = await db.exely_reservations.find_one(
+                {"tenant_id": tenant_id, "external_id": reservation_id},
+                {"_id": 0},
+            )
+        if not res:
+            raise HTTPException(status_code=404, detail="Rezervasyon bulunamadi")
 
-    from domains.channel_manager.providers.exely.pms_lifecycle import process_single_and_ack
+        from domains.channel_manager.providers.exely.pms_lifecycle import process_single_and_ack
 
-    client, _conn = await _get_client(tenant_id)
-    result = await process_single_and_ack(tenant_id, res, provider=client)
+        client, _conn = await _get_client(tenant_id)
+        result = await process_single_and_ack(tenant_id, res, provider=client)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("[EXELY] manual reservation import failed")
+        # Import failures are operational outcomes. Keep a safe class visible
+        # to the UI instead of letting a reverse proxy replace the response
+        # with a generic error page.
+        return {
+            "success": False,
+            "error": type(exc).__name__,
+            "message": f"EXELY_RESERVATION_IMPORT_FAILED:{type(exc).__name__}",
+            "provider_write_count": 0,
+        }
 
     if not result.get("success"):
         acknowledgement = result.get("acknowledgement") or {}
-        status_code = 502 if acknowledgement.get("provider_write_count") else 409
-        raise HTTPException(status_code=status_code, detail=f"Import tamamlanamadi ({result.get('reason')})")
+        reason = str(result.get("reason") or "PMS_IMPORT_FAILED")
+        return {
+            "success": False,
+            "error": reason,
+            "message": f"EXELY_RESERVATION_IMPORT_FAILED:{reason}",
+            "provider_write_count": int(acknowledgement.get("provider_write_count") or 0),
+        }
 
     return {
         "message": "Rezervasyon PMS'e basariyla aktarildi",
@@ -821,7 +1036,15 @@ async def get_sync_status(current_user: User = Depends(get_current_user)):
     pending_events = await db.exely_raw_events.count_documents(
         {"tenant_id": current_user.tenant_id, "status": "pending"},
     )
+    error_cutoff = (datetime.now(UTC) - timedelta(hours=24)).isoformat()
     error_events = await db.exely_raw_events.count_documents(
+        {
+            "tenant_id": current_user.tenant_id,
+            "status": "error",
+            "received_at": {"$gte": error_cutoff},
+        },
+    )
+    historical_error_events = await db.exely_raw_events.count_documents(
         {"tenant_id": current_user.tenant_id, "status": "error"},
     )
     total_reservations = await db.exely_reservations.count_documents(
@@ -833,6 +1056,8 @@ async def get_sync_status(current_user: User = Depends(get_current_user)):
         "last_pull": cursor,
         "pending_events": pending_events,
         "error_events": error_events,
+        "historical_error_events": historical_error_events,
+        "error_window_hours": 24,
         "total_reservations": total_reservations,
     }
 

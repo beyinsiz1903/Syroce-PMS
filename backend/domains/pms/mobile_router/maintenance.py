@@ -9,6 +9,8 @@ Domain Router: Mobile
 
 Extracted from legacy_routes.py — Mobile dashboard, GM mobile, department mobile endpoints.
 """
+import base64
+import binascii
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -21,6 +23,7 @@ from core.security import get_current_user, security
 from modules.pms_core.role_permission_service import (
     require_module,  # v89 DW
 )
+from security.upload_validator import MAX_IMAGE_BYTES, validate_image_bytes
 
 # ============================================================================
 # MOBILE ENDPOINTS - Department-Based Mobile Dashboard APIs
@@ -111,10 +114,58 @@ class MenuPriceUpdateRequest(BaseModel):
 
 router = APIRouter(prefix="/api", tags=["mobile"])
 
+_MAINTENANCE_PRIORITIES = {"low", "normal", "high", "urgent", "emergency"}
+_MAINTENANCE_TASK_STATUSES = {"new", "assigned", "in_progress", "on_hold", "waiting_parts", "completed", "cancelled"}
+_MAINTENANCE_PHOTO_TYPES = {"before", "during", "after"}
+_MAX_BASE64_IMAGE_CHARS = ((MAX_IMAGE_BYTES + 2) // 3) * 4 + 16
+
+
+def _decode_maintenance_photo(photo_data: str) -> tuple[str, str]:
+    """Verify Base64 image bytes and return a safe canonical data URL."""
+    value = (photo_data or "").strip()
+    if value.startswith("data:"):
+        header, separator, value = value.partition(",")
+        if not separator or not header.lower().endswith(";base64"):
+            raise HTTPException(status_code=400, detail="Photo must be Base64 encoded")
+    if not value:
+        raise HTTPException(status_code=400, detail="Photo is required")
+    if len(value) > _MAX_BASE64_IMAGE_CHARS:
+        raise HTTPException(status_code=413, detail="Photo is too large")
+    try:
+        image_bytes = base64.b64decode(value, validate=True)
+    except (ValueError, binascii.Error):
+        raise HTTPException(status_code=400, detail="Photo must be valid Base64")
+
+    content_type, _ = validate_image_bytes(
+        image_bytes,
+        max_bytes=MAX_IMAGE_BYTES,
+        field_label="Maintenance photo",
+    )
+    canonical_data = base64.b64encode(image_bytes).decode("ascii")
+    return f"data:{content_type};base64,{canonical_data}", content_type
+
+
+def _require_maintenance_priority(priority: str) -> str:
+    normalized = priority.strip().lower()
+    if normalized not in _MAINTENANCE_PRIORITIES:
+        raise HTTPException(status_code=400, detail="Invalid maintenance priority")
+    return normalized
+
+def _maintenance_task_filter(tenant_id: str, task_id: str | None = None) -> dict:
+    """Scope mobile maintenance actions to maintenance tasks in one tenant."""
+    query = {"tenant_id": tenant_id, "department": "maintenance"}
+    if task_id is not None:
+        query["id"] = task_id
+    return query
+
 
 # ── GET /maintenance/mobile/preventive-maintenance-schedule ──
 @router.get("/maintenance/mobile/preventive-maintenance-schedule")
-async def get_pm_schedule_mobile(days: int = 7, credentials: HTTPAuthorizationCredentials = Depends(security)):
+async def get_pm_schedule_mobile(
+    days: int = 7,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_module("maintenance")),
+):
     """Get preventive maintenance schedule for mobile"""
     current_user = await get_current_user(credentials)
     today = datetime.now(UTC)
@@ -158,7 +209,7 @@ async def create_quick_issue_mobile(
     room_id = request.room_id
     issue_type = request.issue_type
     description = request.description
-    priority = request.priority
+    priority = _require_maintenance_priority(request.priority)
 
     # Validate room
     room = await db.rooms.find_one({"id": room_id, "tenant_id": current_user.tenant_id})
@@ -219,7 +270,10 @@ async def create_quick_issue_mobile(
 
 # ── GET /maintenance/mobile/sla-configurations ──
 @router.get("/maintenance/mobile/sla-configurations")
-async def get_sla_configurations(credentials: HTTPAuthorizationCredentials = Depends(security)):
+async def get_sla_configurations(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_module("maintenance")),
+):
     """Get SLA configurations for different priorities"""
     current_user = await get_current_user(credentials)
 
@@ -260,6 +314,11 @@ async def update_sla_configuration(
 ):
     """Update or create SLA configuration"""
     current_user = await get_current_user(credentials)
+    priority = _require_maintenance_priority(priority)
+    if response_time_minutes <= 0 or resolution_time_minutes <= 0:
+        raise HTTPException(status_code=400, detail="SLA durations must be positive")
+    if response_time_minutes > resolution_time_minutes:
+        raise HTTPException(status_code=400, detail="Response SLA cannot exceed resolution SLA")
 
     # Check if configuration exists
     existing = await db.sla_configurations.find_one({"tenant_id": current_user.tenant_id, "priority": priority})
@@ -301,13 +360,17 @@ async def update_task_status_mobile(
 ):
     """Update task status (complete, on_hold, waiting_parts, in_progress)"""
     current_user = await get_current_user(credentials)
+    new_status = new_status.strip().lower()
+    if new_status not in _MAINTENANCE_TASK_STATUSES:
+        raise HTTPException(status_code=400, detail="Invalid maintenance task status")
 
-    task = await db.tasks.find_one({"id": task_id, "tenant_id": current_user.tenant_id})
+    task_filter = _maintenance_task_filter(current_user.tenant_id, task_id)
+    task = await db.tasks.find_one(task_filter)
 
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
-    update_data = {"status": new_status, "updated_at": datetime.now(UTC)}
+    update_data = {"status": new_status, "updated_at": datetime.now(UTC), "updated_by": current_user.username}
 
     if new_status == "in_progress":
         if not task.get("started_at"):
@@ -333,7 +396,7 @@ async def update_task_status_mobile(
         if reason:
             update_data["on_hold_reason"] = reason
 
-    await db.tasks.update_one({"id": task_id, "tenant_id": current_user.tenant_id}, {"$set": update_data})
+    await db.tasks.update_one(task_filter, {"$set": update_data})
 
     return {"message": f"Task status updated to {new_status}", "task_id": task_id, "new_status": new_status, "updated_at": update_data["updated_at"].isoformat()}
 
@@ -350,8 +413,13 @@ async def upload_task_photo_mobile(
 ):
     """Upload photo for maintenance task"""
     current_user = await get_current_user(credentials)
+    photo_type = photo_type.strip().lower()
+    if photo_type not in _MAINTENANCE_PHOTO_TYPES:
+        raise HTTPException(status_code=400, detail="Invalid maintenance photo type")
+    canonical_photo_url, content_type = _decode_maintenance_photo(photo_data)
 
-    task = await db.tasks.find_one({"id": task_id, "tenant_id": current_user.tenant_id})
+    task_filter = _maintenance_task_filter(current_user.tenant_id, task_id)
+    task = await db.tasks.find_one(task_filter)
 
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
@@ -362,7 +430,8 @@ async def upload_task_photo_mobile(
         "id": photo_id,
         "tenant_id": current_user.tenant_id,
         "task_id": task_id,
-        "photo_url": photo_data,  # In production, upload to S3/storage
+        "photo_url": canonical_photo_url,
+        "content_type": content_type,
         "photo_type": photo_type,
         "description": description,
         "uploaded_by": current_user.username,
@@ -372,16 +441,24 @@ async def upload_task_photo_mobile(
     await db.task_photos.insert_one(photo)
 
     # Update task with photo reference
-    await db.tasks.update_one({"id": task_id, "tenant_id": current_user.tenant_id}, {"$push": {"photos": photo_id}})
+    await db.tasks.update_one(task_filter, {"$push": {"photos": photo_id}})
 
     return {"message": "Photo uploaded successfully", "photo_id": photo_id, "task_id": task_id, "photo_type": photo_type}
 
 
 # ── GET /maintenance/mobile/task/{task_id}/photos ──
 @router.get("/maintenance/mobile/task/{task_id}/photos")
-async def get_task_photos_mobile(task_id: str, credentials: HTTPAuthorizationCredentials = Depends(security)):
+async def get_task_photos_mobile(
+    task_id: str,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_module("maintenance")),
+):
     """Get all photos for a task"""
     current_user = await get_current_user(credentials)
+
+    task = await db.tasks.find_one(_maintenance_task_filter(current_user.tenant_id, task_id), {"_id": 1})
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
 
     photos = []
     async for photo in db.task_photos.find({"tenant_id": current_user.tenant_id, "task_id": task_id}).sort("uploaded_at", -1):
@@ -401,7 +478,12 @@ async def get_task_photos_mobile(task_id: str, credentials: HTTPAuthorizationCre
 
 # ── GET /maintenance/mobile/spare-parts ──
 @router.get("/maintenance/mobile/spare-parts")
-async def get_spare_parts_mobile(low_stock_only: bool = False, warehouse_location: str | None = None, credentials: HTTPAuthorizationCredentials = Depends(security)):
+async def get_spare_parts_mobile(
+    low_stock_only: bool = False,
+    warehouse_location: str | None = None,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_module("maintenance")),
+):
     """Get spare parts inventory"""
     current_user = await get_current_user(credentials)
 
@@ -462,9 +544,21 @@ async def use_spare_part_mobile(
 ):
     """Record spare part usage for a task"""
     current_user = await get_current_user(credentials)
+    if quantity <= 0:
+        # Quantity is request-field validation, not a resource state conflict.
+        # Keep the direct mobile endpoint aligned with the API contract and
+        # FastAPI's validation semantics.
+        raise HTTPException(status_code=422, detail="Spare part quantity must be positive")
+
+    # A zero or negative "usage" would either create a meaningless ledger row
+    # or increase inventory when subtracted below. Reject it before touching
+    # task, stock, or usage collections.
+    if quantity <= 0:
+        raise HTTPException(status_code=422, detail="Spare part quantity must be a positive integer")
 
     # Validate task
-    task = await db.tasks.find_one({"id": task_id, "tenant_id": current_user.tenant_id})
+    task_filter = _maintenance_task_filter(current_user.tenant_id, task_id)
+    task = await db.tasks.find_one(task_filter)
 
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
@@ -507,7 +601,7 @@ async def use_spare_part_mobile(
     await db.spare_parts.update_one({"id": spare_part_id, "tenant_id": current_user.tenant_id}, {"$set": {"current_stock": new_stock, "updated_at": datetime.now(UTC)}})
 
     # Add part to task
-    await db.tasks.update_one({"id": task_id, "tenant_id": current_user.tenant_id}, {"$push": {"parts_list": f"{part.get('part_name')} x{quantity}"}})
+    await db.tasks.update_one(task_filter, {"$push": {"parts_list": f"{part.get('part_name')} x{quantity}"}})
 
     return {
         "message": "Spare part usage recorded",
@@ -522,7 +616,11 @@ async def use_spare_part_mobile(
 
 # ── GET /maintenance/mobile/asset/{asset_id}/history ──
 @router.get("/maintenance/mobile/asset/{asset_id}/history")
-async def get_asset_history_mobile(asset_id: str, credentials: HTTPAuthorizationCredentials = Depends(security)):
+async def get_asset_history_mobile(
+    asset_id: str,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_module("maintenance")),
+):
     """Get maintenance history for an asset with MTBF calculation"""
     current_user = await get_current_user(credentials)
 
@@ -587,7 +685,11 @@ async def get_asset_history_mobile(asset_id: str, credentials: HTTPAuthorization
 
 # ── GET /maintenance/mobile/planned-maintenance ──
 @router.get("/maintenance/mobile/planned-maintenance")
-async def get_planned_maintenance_mobile(upcoming_days: int = 30, credentials: HTTPAuthorizationCredentials = Depends(security)):
+async def get_planned_maintenance_mobile(
+    upcoming_days: int = 30,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_module("maintenance")),
+):
     """Get planned maintenance calendar"""
     current_user = await get_current_user(credentials)
 
@@ -649,11 +751,12 @@ async def get_filtered_tasks_mobile(
     start_date: str | None = None,
     end_date: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_module("maintenance")),
 ):
     """Get filtered maintenance tasks"""
     current_user = await get_current_user(credentials)
 
-    query = {"tenant_id": current_user.tenant_id}
+    query = _maintenance_task_filter(current_user.tenant_id)
 
     if status:
         query["status"] = status

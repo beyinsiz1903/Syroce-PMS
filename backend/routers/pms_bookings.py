@@ -3,6 +3,7 @@ PMS Bookings Router — Extracted from routers/pms.py (Stage 2 decomposition)
 Booking CRUD, approval/rejection, multi-room bookings, room move history.
 """
 
+import asyncio
 import logging
 
 from modules.pms_core.role_permission_service import require_module as require_module_v97  # v97 DW
@@ -28,6 +29,7 @@ from core.occupancy_pricing import (
 )
 from core.pagination import PaginationParams, paginate
 from core.security import get_current_user
+from core.tenant_db import get_db_for_tenant
 from core.utils import generate_folio_number, generate_qr_code, generate_time_based_qr_token
 from modules.pms_core.guest_identity import find_existing_guest_by_identity
 from modules.pms_core.role_permission_service import require_op  # v82 DR
@@ -63,6 +65,7 @@ from models.schemas import (
 )
 from modules.reservations.services.create_reservation_service import CreateReservationService
 from modules.reservations.services.reservation_read_service import ReservationReadService
+from modules.reservations.services.room_swap_service import RoomSwapError, room_swap_service
 from modules.reservations.services.update_reservation_service import UpdateReservationService
 
 try:
@@ -85,6 +88,70 @@ update_reservation_service = UpdateReservationService()
 
 REJECTED_STATUS = "rejected"
 
+
+async def _publish_multi_room_booking_created_events(
+    tenant_id: str,
+    property_id: str,
+    bookings: list[dict],
+) -> None:
+    """Give multi-room bookings the same durable inventory path as single bookings.
+
+    The UI uses the multi-room endpoint even when the reservation contains one
+    room. Skipping these events therefore leaves channel availability unchanged
+    for an ordinary reservation created from the main PMS screen.
+    """
+    from core.outbox_service import BOOKING_CREATED, enqueue_outbox_event
+    from domains.channel_manager.availability_auto_sync import sync_availability_after_booking
+
+    for booking in bookings:
+        try:
+            await enqueue_outbox_event(
+                db,
+                tenant_id=tenant_id,
+                event_type=BOOKING_CREATED,
+                entity_type="booking",
+                entity_id=booking["id"],
+                property_id=property_id,
+                correlation_id=str(uuid.uuid4()),
+                payload={
+                    "booking_id": booking["id"],
+                    "guest_id": booking["guest_id"],
+                    "room_id": booking["room_id"],
+                    "check_in": booking["check_in"],
+                    "check_out": booking["check_out"],
+                    "status": booking.get("status", "pending"),
+                    "property_id": property_id,
+                    "source_channel": booking.get("channel") or "direct",
+                    "origin": "ui",
+                },
+            )
+        except Exception as exc:
+            # The booking is already durable at this point. Do not report a
+            # failed creation and invite a duplicate retry; the immediate sync
+            # below remains a best-effort recovery path.
+            logger.error(
+                "Multi-room booking outbox enqueue failed booking=%s error=%s",
+                booking.get("id"),
+                type(exc).__name__,
+            )
+
+        try:
+            asyncio.create_task(
+                sync_availability_after_booking(
+                    tenant_id=tenant_id,
+                    room_id=booking["room_id"],
+                    check_in=booking["check_in"],
+                    check_out=booking["check_out"],
+                )
+            )
+        except Exception as exc:
+            logger.error(
+                "Multi-room booking immediate availability sync failed booking=%s error=%s",
+                booking.get("id"),
+                type(exc).__name__,
+            )
+
+
 # ── Local models ──
 
 RejectReasonCode = Literal[
@@ -99,6 +166,11 @@ RejectReasonCode = Literal[
 class RejectRequest(BaseModel):
     reason_code: RejectReasonCode
     reason_note: str | None = Field(default=None, max_length=500)
+
+
+class RoomSwapRequest(BaseModel):
+    target_booking_id: str = Field(..., min_length=1, max_length=128)
+    reason: str = Field(..., min_length=2, max_length=500)
 
 
 class QuickBookingCreate(BaseModel):
@@ -121,6 +193,7 @@ class MultiRoomBookingCreate(BaseModel):
     guest: GuestCreate | None = None
     arrival_date: str
     departure_date: str
+    currency: str = Field(default="TRY", min_length=3, max_length=3, pattern=r"^[A-Za-z]{3}$")
     rooms: list[dict]
     company_id: str | None = None
     channel: ChannelType = ChannelType.DIRECT
@@ -268,6 +341,7 @@ async def get_arrivals(
     # Safely fetch timezone setting (ignoring schema proxy limits if any)
     try:
         from core.tenant_db import get_current_tenant_id
+
         tid = get_current_tenant_id() or current_user.tenant_id
         settings = await db.tenant_settings.find_one({"tenant_id": tid}, {"_id": 0, "timezone": 1})
         if settings and settings.get("timezone"):
@@ -353,11 +427,12 @@ async def get_arrivals(
 
 @router.get("/pms/bookings")
 async def get_bookings(
-    p: PaginationParams = Depends(paginate(default_limit=30, max_limit=500)),
+    p: PaginationParams = Depends(paginate(default_limit=500, max_limit=1000)),
     start_date: str | None = None,
     end_date: str | None = None,
     status: str | None = None,
     search: str | None = None,
+    full_history: bool = False,
     # Use FastAPI's dependency injection so `get_current_user` is shared
     # with the `require_module` dependency (FastAPI caches dependency
     # results within a single request). The previous code path took the
@@ -420,7 +495,7 @@ async def get_bookings(
         return {"bookings": bookings, "total": len(bookings)}
 
     # Check pre-warmed cache for default query (no filters)
-    if not start_date and not end_date and not status and offset == 0:
+    if not full_history and not start_date and not end_date and not status and offset == 0:
         from cache_warmer import cache_warmer
 
         if cache_warmer:
@@ -690,6 +765,39 @@ async def update_booking(
     return await update_reservation_service.update(booking_id, booking_data, current_user, request)
 
 
+@router.post("/pms/bookings/{booking_id}/swap-room")
+async def swap_booking_rooms(
+    booking_id: str,
+    payload: RoomSwapRequest,
+    current_user: User = Depends(get_current_user),
+    _: None = Depends(require_module("pms")),
+):
+    """Atomically exchange the assigned rooms of two active reservations."""
+    try:
+        return await room_swap_service.swap(
+            tenant_id=current_user.tenant_id,
+            booking_id=booking_id,
+            target_booking_id=payload.target_booking_id,
+            reason=payload.reason.strip(),
+            moved_by=current_user.name,
+            actor_id=current_user.id,
+            is_impersonating=getattr(current_user, "is_impersonating", False),
+        )
+    except RoomSwapError as exc:
+        raise HTTPException(
+            status_code=409
+            if exc.code
+            in {
+                "TARGET_ROOM_CONFLICT",
+                "TARGET_LOCK_CONFLICT",
+                "CONCURRENT_MODIFICATION",
+                "CONCURRENT_ROOM_OCCUPANCY",
+            }
+            else 400,
+            detail={"message": str(exc), "code": exc.code},
+        ) from exc
+
+
 @router.get("/pms/bookings/{booking_id}")
 async def get_booking(
     booking_id: str,
@@ -791,6 +899,12 @@ async def create_multi_room_booking(
     cached response döner; aynı key + farklı payload → 409. Hiç key yoksa
     her istek random group oluşturur (geri uyumlu).
     """
+    # The endpoint is normally called under the request middleware's tenant
+    # context. Use an explicit scoped handle as well: this saga is also called
+    # by trusted internal workflows/tests, where a ContextVar can be absent or
+    # lost across task boundaries. It must never fall back to an unscoped db.
+    tenant_db = get_db_for_tenant(current_user.tenant_id)
+
     # ── Bug Z: Idempotency enforcement ──────────────────────────────────
     idem_key = (request.headers.get("Idempotency-Key") or request.headers.get("idempotency-key") or "").strip()
     payload_hash = None
@@ -801,7 +915,7 @@ async def create_multi_room_booking(
         except Exception:
             payload_hash = None
         deterministic_group = str(uuid.uuid5(uuid.NAMESPACE_OID, f"{current_user.tenant_id}:multiroom:{idem_key}"))
-        existing = await db.bookings.find(
+        existing = await tenant_db.bookings.find(
             {"group_booking_id": deterministic_group, "tenant_id": current_user.tenant_id},
             {"_id": 0},
         ).to_list(length=100)
@@ -823,7 +937,7 @@ async def create_multi_room_booking(
         from security.guest_write import encrypt_guest_insert
 
         guest_dict = encrypt_guest_insert(guest_dict)
-        await db.guests.insert_one(guest_dict)
+        await tenant_db.guests.insert_one(guest_dict)
         guest_id = guest.id
 
     if not guest_id:
@@ -851,7 +965,7 @@ async def create_multi_room_booking(
         if not rid or not isinstance(rid, str):
             raise HTTPException(status_code=400, detail="Her oda icin gecerli room_id gerekli")
         requested_room_ids.append(rid)
-    found_rooms = await db.rooms.find(
+    found_rooms = await tenant_db.rooms.find(
         {"id": {"$in": requested_room_ids}, "tenant_id": current_user.tenant_id},
         {
             "id": 1,
@@ -894,8 +1008,8 @@ async def create_multi_room_booking(
                 continue
             try:
                 # 2) Kilitler bırakıldıktan sonra booking + folio'ları sil.
-                await db.bookings.delete_one({"id": bid, "tenant_id": current_user.tenant_id})
-                await db.folios.delete_many({"booking_id": bid, "tenant_id": current_user.tenant_id})
+                await tenant_db.bookings.delete_one({"id": bid, "tenant_id": current_user.tenant_id})
+                await tenant_db.folios.delete_many({"booking_id": bid, "tenant_id": current_user.tenant_id})
             except Exception as ce:
                 compensation_errors.append(f"booking={bid} delete_failed: {ce}")
         if compensation_errors:
@@ -925,7 +1039,7 @@ async def create_multi_room_booking(
                 if len(children_ages) != children:
                     raise HTTPException(status_code=400, detail="Her cocuk icin yas bilgisi girilmelidir")
                 pricing_rule = await find_occupancy_rule(
-                    db,
+                    tenant_db,
                     current_user.tenant_id,
                     found_by_id[room_id],
                 )
@@ -969,6 +1083,7 @@ async def create_multi_room_booking(
                 "children_ages": children_ages,
                 "guests_count": adults + children,
                 "total_amount": total_amount,
+                "currency": payload.currency.upper(),
                 "base_rate": base_rate,
                 "rate_per_night": pricing_quote["nightly_total"] if pricing_quote else None,
                 "apply_occupancy_pricing": bool(pricing_quote),
@@ -1029,7 +1144,7 @@ async def create_multi_room_booking(
                 )
                 folio_dict = folio.model_dump()
                 folio_dict["created_at"] = folio_dict["created_at"].isoformat()
-                await db.folios.insert_one(folio_dict)
+                await tenant_db.folios.insert_one(folio_dict)
             except Exception as e:
                 # Az önceki booking henüz created_bookings'e eklenmedi — onu da temizle.
                 # Task #437: kilitleri ÖNCE bırak, sonra booking'i sil; release patlarsa
@@ -1038,7 +1153,7 @@ async def create_multi_room_booking(
 
                 try:
                     await release_booking_nights(current_user.tenant_id, booking_id, reason="folio_insert_failed")
-                    await db.bookings.delete_one({"id": booking_id, "tenant_id": current_user.tenant_id})
+                    await tenant_db.bookings.delete_one({"id": booking_id, "tenant_id": current_user.tenant_id})
                 except Exception as ce:
                     logger.error("Folio-fail cleanup partial failure booking=%s: %s (booking kilit sahipliği korunarak bırakıldı)", booking_id, ce)
                 await _rollback_group(reason="folio_insert_failed")
@@ -1055,5 +1170,12 @@ async def create_multi_room_booking(
             await _rollback_group(reason="iter_unexpected_error")
             logger.exception("Multi-room loop unexpected error: %s", e)
             raise HTTPException(status_code=500, detail="Multi-room booking failed; group rolled back")
+
+    property_id = str(getattr(current_user, "property_id", None) or current_user.tenant_id)
+    await _publish_multi_room_booking_created_events(
+        current_user.tenant_id,
+        property_id,
+        created_bookings,
+    )
 
     return created_bookings

@@ -1,16 +1,26 @@
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   RESERVATION_EDIT_LOCK_HEADER,
   RESERVATION_EDIT_LOCK_HEARTBEAT_SECONDS,
   RESERVATION_EDIT_LOCK_LEASE_SECONDS,
+  reservationEditLockReleaseUrl,
   reservationIdFromFullDetailUrl,
   reservationIdFromProtectedMutation,
+  reservationEditLockManager,
 } from '../reservationEditLockManager';
+import axios from 'axios';
 
 describe('reservationEditLockManager contract', () => {
   it('pins the server lease and heartbeat cadence', () => {
-    expect(RESERVATION_EDIT_LOCK_LEASE_SECONDS).toBe(120);
-    expect(RESERVATION_EDIT_LOCK_HEARTBEAT_SECONDS).toBe(30);
+    expect(RESERVATION_EDIT_LOCK_LEASE_SECONDS).toBe(60);
+    expect(RESERVATION_EDIT_LOCK_HEARTBEAT_SECONDS).toBe(20);
     expect(RESERVATION_EDIT_LOCK_HEADER).toBe('X-Reservation-Lock-ID');
+  });
+
+  it('builds a same-origin release URL for reliable page-exit beacons', () => {
+    expect(reservationEditLockReleaseUrl('booking/a')).toBe(
+      '/api/pms/reservations/booking%2Fa/edit-lock/release',
+    );
   });
 
   it('detects the full-detail view that must acquire a per-view lock', () => {
@@ -48,5 +58,33 @@ describe('reservationEditLockManager contract', () => {
     expect(
       reservationIdFromProtectedMutation('/pms/reservations/booking-a/edit-lock/heartbeat', 'post'),
     ).toBeNull();
+    expect(
+      reservationIdFromProtectedMutation('/pms/reservations/booking-a/transfer-to-cari', 'post'),
+    ).toBeNull();
+  });
+});
+
+describe('reservationEditLockManager release isolation', () => {
+  afterEach(async () => {
+    await reservationEditLockManager.releaseCurrent();
+    vi.restoreAllMocks();
+  });
+
+  it('does not let an older modal release the active reservation lock', async () => {
+    vi.spyOn(axios, 'post').mockResolvedValue({ data: { expires_at: '2026-09-27T10:00:00Z' } });
+    const remove = vi.spyOn(axios, 'delete').mockResolvedValue({ data: { success: true } });
+
+    await reservationEditLockManager.acquire('booking-current');
+
+    expect(await reservationEditLockManager.releaseCurrent('booking-old')).toBe(false);
+    expect(reservationEditLockManager.getCurrent()?.bookingId).toBe('booking-current');
+    expect(remove).not.toHaveBeenCalled();
+
+    expect(await reservationEditLockManager.releaseCurrent('booking-current')).toBe(true);
+    expect(remove).toHaveBeenCalledWith(
+      '/pms/reservations/booking-current/edit-lock',
+      expect.objectContaining({ data: expect.objectContaining({ lock_id: expect.any(String) }) }),
+    );
+    expect(reservationEditLockManager.getCurrent()).toBeNull();
   });
 });

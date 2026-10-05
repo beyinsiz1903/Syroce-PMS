@@ -3,19 +3,35 @@ Tests for Sales/CRM Domain Router
 Covers K5 critical gap: Sales/CRM domain had zero test coverage.
 Tests real domain schemas, classification logic, and router endpoint behavior.
 """
-import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
 from datetime import UTC, datetime, timedelta
 
+import pytest
+
 from domains.sales.schemas import (
-    LeadStage,
     CreateLeadRequest,
-    UpdateLeadStageRequest,
-    PmsLiteLeadStatus,
+    LeadStage,
     PmsLiteLeadContact,
     PmsLiteLeadHotel,
     PmsLiteLeadMetadata,
+    PmsLiteLeadStatus,
+    UpdateLeadStageRequest,
 )
+from models.enums import UserRole
+from modules.pms_core.role_permission_service import MODULE_ROLES
+
+
+def test_sales_crm_read_module_roles_match_sales_workflow():
+    """Sales and finance must be able to read the workspace they manage."""
+    roles = MODULE_ROLES["sales"]
+
+    assert {
+        UserRole.SALES,
+        UserRole.FINANCE,
+        UserRole.SUPERVISOR,
+        UserRole.ADMIN,
+        UserRole.SUPER_ADMIN,
+    } <= roles
+    assert UserRole.HOUSEKEEPING not in roles
 
 
 class TestLeadStageEnum:

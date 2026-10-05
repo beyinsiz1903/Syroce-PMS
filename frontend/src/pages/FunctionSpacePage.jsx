@@ -18,6 +18,8 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { Building2, Plus, RefreshCw, X, Loader2 } from "lucide-react";
 import { useTranslation } from 'react-i18next';
+import { roomLabel } from '@/utils/displayIdentifiers';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 
 /**
  * Opera #6 — Function Space.
@@ -64,7 +66,7 @@ export default function FunctionSpacePage() {
 
   const [roomForm, setRoomForm] = useState({
     name: "", capacity: 50, area_m2: "", floor: "",
-    hourly_rate: 0, daily_rate: 0, supported_setups: "",
+    hourly_rate: 0, daily_rate: 0, currency: cachedTenantCurrency(), supported_setups: "",
   });
 
   const handleErr = useCallback((title, e) => {
@@ -104,7 +106,7 @@ export default function FunctionSpacePage() {
       });
       setRoomForm({
         name: "", capacity: 50, area_m2: "", floor: "",
-        hourly_rate: 0, daily_rate: 0, supported_setups: "",
+        hourly_rate: 0, daily_rate: 0, currency: cachedTenantCurrency(), supported_setups: "",
       });
       toast({ title: "Salon eklendi" });
       load();
@@ -393,7 +395,7 @@ export default function FunctionSpacePage() {
                               {b.starts_at?.slice(11, 16)}-{b.ends_at?.slice(11, 16)}
                             </TableCell>
                             <TableCell>{b.event_name}</TableCell>
-                            <TableCell>{room?.name || b.room_id}</TableCell>
+                            <TableCell>{room?.name || roomLabel(b, 'Salon bilgisi yok')}</TableCell>
                             <TableCell className="text-center">
                               <Badge variant="outline">{setupLabel(b.setup_type)}</Badge>
                             </TableCell>
@@ -425,7 +427,7 @@ export default function FunctionSpacePage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <form onSubmit={addRoom} className="grid grid-cols-1 md:grid-cols-7 gap-2 items-end">
+              <form onSubmit={addRoom} className="grid grid-cols-1 md:grid-cols-8 gap-2 items-end">
                 <div className="md:col-span-2">
                   <Label>{t('cm.pages_FunctionSpacePage.salon_adi')}</Label>
                   <Input
@@ -467,10 +469,21 @@ export default function FunctionSpacePage() {
                     onChange={(e) => setRoomForm({ ...roomForm, daily_rate: e.target.value })}
                   />
                 </div>
+                <div>
+                  <Label>Para Birimi</Label>
+                  <Input
+                    value={roomForm.currency}
+                    maxLength={3}
+                    onChange={(e) => setRoomForm({ ...roomForm, currency: e.target.value.toUpperCase() })}
+                    placeholder={cachedTenantCurrency()}
+                    required
+                    data-testid="input-room-currency"
+                  />
+                </div>
                 <Button type="submit" data-testid="button-add-room">
                   <Plus className="h-4 w-4 mr-1" /> {t('cm.pages_FunctionSpacePage.ekle')}
                 </Button>
-                <div className="md:col-span-7">
+                <div className="md:col-span-8">
                   <Label className="text-xs">{t('cm.pages_FunctionSpacePage.desteklenen_kurulumlar_virgullu_bos_bira')}</Label>
                   <Input
                     value={roomForm.supported_setups}
@@ -510,8 +523,12 @@ export default function FunctionSpacePage() {
                             <Badge key={s} variant="secondary" className="mr-1">{setupLabel(s)}</Badge>
                           ))}
                       </TableCell>
-                      <TableCell className="text-right">{r.hourly_rate || "-"}</TableCell>
-                      <TableCell className="text-right">{r.daily_rate || "-"}</TableCell>
+                      <TableCell className="text-right">
+                        {r.hourly_rate ? formatCurrency(r.hourly_rate, r.currency || cachedTenantCurrency()) : "-"}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {r.daily_rate ? formatCurrency(r.daily_rate, r.currency || cachedTenantCurrency()) : "-"}
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>

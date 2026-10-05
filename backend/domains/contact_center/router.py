@@ -25,6 +25,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from core.database import db
+from core.helpers import create_audit_log
 from core.security import _is_super_admin, get_current_user
 from domains.contact_center.provider import get_communication_provider
 from domains.contact_center.read_models import (
@@ -352,6 +353,14 @@ async def assign_conversation(
     )
     if res.matched_count == 0:
         raise HTTPException(status_code=404, detail="Konuşma bulunamadı")
+    await create_audit_log(
+        current_user.tenant_id,
+        current_user,
+        "contact_center_conversation_assigned",
+        "contact_center_conversation",
+        conversation_id,
+        {"assigned": bool(payload.agent_id)},
+    )
     return {"success": True}
 
 
@@ -366,6 +375,13 @@ async def close_conversation(
     res = await db.contact_center_conversations.update_one({"id": conversation_id, "tenant_id": current_user.tenant_id}, {"$set": {"status": "closed", "updated_at": datetime.now(UTC)}})
     if res.matched_count == 0:
         raise HTTPException(status_code=404, detail="Konuşma bulunamadı")
+    await create_audit_log(
+        current_user.tenant_id,
+        current_user,
+        "contact_center_conversation_closed",
+        "contact_center_conversation",
+        conversation_id,
+    )
     return {"success": True}
 
 
@@ -383,6 +399,14 @@ async def link_conversation(
     )
     if res.matched_count == 0:
         raise HTTPException(status_code=404, detail="Konuşma bulunamadı")
+    await create_audit_log(
+        current_user.tenant_id,
+        current_user,
+        "contact_center_conversation_linked",
+        "contact_center_conversation",
+        conversation_id,
+        {"guest_linked": bool(payload.guest_id), "booking_linked": bool(payload.booking_id)},
+    )
     return {"success": True}
 
 

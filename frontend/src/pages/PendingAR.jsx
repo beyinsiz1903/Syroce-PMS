@@ -19,6 +19,9 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useTranslation } from 'react-i18next';
+import { formatCurrency } from '@/lib/currency';
+import { formatCurrencyBreakdown } from '@/lib/reportCurrency';
+import { receivableTransactionTypeLabel } from '@/lib/accountingLabels';
 
 const PendingAR = ({ user, tenant, onLogout }) => {
   const { t } = useTranslation();
@@ -32,6 +35,10 @@ const PendingAR = ({ user, tenant, onLogout }) => {
   const [selectedAccount, setSelectedAccount] = useState(null);
   const [accountStatement, setAccountStatement] = useState(null);
   const [statementLoading, setStatementLoading] = useState(false);
+  const [selectedCompany, setSelectedCompany] = useState(null);
+  const [companyDetails, setCompanyDetails] = useState(null);
+  const [companyDetailsLoading, setCompanyDetailsLoading] = useState(false);
+  const [remindingCompanyId, setRemindingCompanyId] = useState(null);
 
   useEffect(() => {
     loadARData();
@@ -59,12 +66,14 @@ const PendingAR = ({ user, tenant, onLogout }) => {
             const foliosRes = await axios.get(`/folio/booking/company/${company.id}`);
             const folios = foliosRes.data || [];
 
-            const totalOutstanding = folios.reduce((sum, folio) => {
+            const totalOutstandingByCurrency = folios.reduce((totals, folio) => {
               if (folio.status === 'open' && folio.balance > 0) {
-                return sum + folio.balance;
+                const code = String(folio.currency || 'TRY').toUpperCase();
+                totals[code] = (totals[code] || 0) + Number(folio.balance || 0);
               }
-              return sum;
-            }, 0);
+              return totals;
+            }, {});
+            const totalOutstanding = Object.values(totalOutstandingByCurrency).reduce((sum, amount) => sum + amount, 0);
 
             if (totalOutstanding > 0) {
               // Get oldest invoice date
@@ -82,6 +91,7 @@ const PendingAR = ({ user, tenant, onLogout }) => {
                 contact_phone: company.contact_phone,
                 payment_terms: company.payment_terms,
                 total_outstanding: totalOutstanding,
+                total_outstanding_by_currency: totalOutstandingByCurrency,
                 open_folios_count: openFolios.length,
                 oldest_invoice_date: oldestFolio?.created_at,
                 days_outstanding: oldestFolio
@@ -130,18 +140,18 @@ const PendingAR = ({ user, tenant, onLogout }) => {
   };
 
   const getAgingBucket = (days) => {
-    if (days <= 7) return { label: '0-7 days', color: 'bg-green-500' };
-    if (days <= 14) return { label: '8-14 days', color: 'bg-blue-500' };
-    if (days <= 30) return { label: '15-30 days', color: 'bg-yellow-500' };
-    if (days <= 60) return { label: '31-60 days', color: 'bg-amber-500' };
-    return { label: '60+ days', color: 'bg-red-500' };
+    if (days <= 7) return { label: '0-7 gün', color: 'bg-green-500' };
+    if (days <= 14) return { label: '8-14 gün', color: 'bg-blue-500' };
+    if (days <= 30) return { label: '15-30 gün', color: 'bg-yellow-500' };
+    if (days <= 60) return { label: '31-60 gün', color: 'bg-amber-500' };
+    return { label: '60+ gün', color: 'bg-red-500' };
   };
 
   const getUrgencyLevel = (days) => {
-    if (days <= 7) return { level: 'Low', color: 'text-green-600' };
-    if (days <= 30) return { level: 'Medium', color: 'text-yellow-600' };
-    if (days <= 60) return { level: 'High', color: 'text-amber-600' };
-    return { level: 'Critical', color: 'text-red-600' };
+    if (days <= 7) return { level: 'Düşük', color: 'text-green-600' };
+    if (days <= 30) return { level: 'Orta', color: 'text-yellow-600' };
+    if (days <= 60) return { level: 'Yüksek', color: 'text-amber-600' };
+    return { level: 'Kritik', color: 'text-red-600' };
   };
 
   const filteredData = arData
@@ -161,7 +171,13 @@ const PendingAR = ({ user, tenant, onLogout }) => {
     })
     .sort((a, b) => b.days_outstanding - a.days_outstanding);
 
-  const totalOutstanding = arData.reduce((sum, item) => sum + item.total_outstanding, 0);
+  const totalOutstandingByCurrency = arData.reduce((totals, item) => {
+    const breakdown = item.total_outstanding_by_currency || { TRY: item.total_outstanding || 0 };
+    Object.entries(breakdown).forEach(([currency, amount]) => {
+      totals[currency] = (totals[currency] || 0) + Number(amount || 0);
+    });
+    return totals;
+  }, {});
   const totalCompanies = arData.length;
   const criticalCount = arData.filter(item => item.days_outstanding > 60).length;
 
@@ -174,10 +190,10 @@ const PendingAR = ({ user, tenant, onLogout }) => {
     if (!agingData || !agingData.aging_buckets) return [];
 
     const bucketLabels = {
-      current: '0-30 days',
-      '30_days': '31-60 days',
-      '60_days': '61-90 days',
-      '90_plus': '90+ days'
+      current: '0-30 gün',
+      '30_days': '31-60 gün',
+      '60_days': '61-90 gün',
+      '90_plus': '90+ gün'
     };
 
     const rows = [];
@@ -217,6 +233,36 @@ const PendingAR = ({ user, tenant, onLogout }) => {
     setAccountStatement(null);
   };
 
+  const openCompanyDetails = async (company) => {
+    setSelectedCompany(company);
+    setCompanyDetails(null);
+    setCompanyDetailsLoading(true);
+    try {
+      const { data } = await axios.get(`/folio/pending-ar/${company.company_id}`);
+      setCompanyDetails(data);
+    } catch (error) {
+      toast.error(error?.response?.data?.detail || 'Alacak detayları yüklenemedi');
+    } finally {
+      setCompanyDetailsLoading(false);
+    }
+  };
+
+  const sendReminder = async (company) => {
+    if (!company.contact_email) {
+      toast.error('Bu cari hesap için iletişim e-postası tanımlı değil');
+      return;
+    }
+    setRemindingCompanyId(company.company_id);
+    try {
+      const { data } = await axios.post(`/folio/pending-ar/${company.company_id}/send-reminder`);
+      toast.success(`Hatırlatma ${data.recipient} adresine gönderildi`);
+    } catch (error) {
+      toast.error(error?.response?.data?.detail || 'Hatırlatma gönderilemedi');
+    } finally {
+      setRemindingCompanyId(null);
+    }
+  };
+
   if (loading && agingLoading) {
     return (
       <>
@@ -234,8 +280,8 @@ const PendingAR = ({ user, tenant, onLogout }) => {
       <div className="p-6 space-y-6">
         <Tabs defaultValue="pending-ar">
           <TabsList className="mb-4">
-            <TabsTrigger value="pending-ar">Pending AR</TabsTrigger>
-            <TabsTrigger value="city-ledger">City Ledger Aging</TabsTrigger>
+            <TabsTrigger value="pending-ar">Bekleyen Alacaklar</TabsTrigger>
+            <TabsTrigger value="city-ledger">Cari Yaşlandırma</TabsTrigger>
           </TabsList>
 
           {/* Pending AR Tab (Company-based) */}
@@ -244,13 +290,13 @@ const PendingAR = ({ user, tenant, onLogout }) => {
             <div className="flex justify-between items-center">
               <div>
                 <h1 className="text-4xl font-bold" style={{ fontFamily: 'Space Grotesk' }}>
-                  Accounts Receivable
+                  Alacak Hesapları
                 </h1>
-                <p className="text-gray-600 mt-1">Pending corporate invoices and payments</p>
+                <p className="text-gray-600 mt-1">Kurumsal müşterilerin bekleyen fatura ve tahsilatları</p>
               </div>
               <Button onClick={handleExportCompanyAging}>
                 <Download className="w-4 h-4 mr-2" />
-                Export Aging to Excel
+                Yaşlandırmayı Excel'e Aktar
               </Button>
             </div>
 
@@ -260,9 +306,9 @@ const PendingAR = ({ user, tenant, onLogout }) => {
                 <CardContent className="pt-6">
                   <div className="flex items-center justify-between">
                     <div>
-                      <div className="text-sm opacity-90">Total Outstanding</div>
+                      <div className="text-sm opacity-90">Toplam Açık Bakiye</div>
                       <div className="text-3xl font-bold mt-1">
-                        ${totalOutstanding.toFixed(2)}
+                        {formatCurrencyBreakdown(totalOutstandingByCurrency)}
                       </div>
                     </div>
                     <DollarSign className="w-12 h-12 opacity-75" />
@@ -274,7 +320,7 @@ const PendingAR = ({ user, tenant, onLogout }) => {
                 <CardContent className="pt-6">
                   <div className="flex items-center justify-between">
                     <div>
-                      <div className="text-sm text-gray-600">Companies with AR</div>
+                      <div className="text-sm text-gray-600">Borçlu Cari Sayısı</div>
                       <div className="text-3xl font-bold text-blue-600 mt-1">{totalCompanies}</div>
                     </div>
                     <Building2 className="w-12 h-12 text-blue-600 opacity-50" />
@@ -286,7 +332,7 @@ const PendingAR = ({ user, tenant, onLogout }) => {
                 <CardContent className="pt-6">
                   <div className="flex items-center justify-between">
                     <div>
-                      <div className="text-sm text-gray-600">Critical (60+ days)</div>
+                      <div className="text-sm text-gray-600">Kritik (60+ gün)</div>
                       <div className="text-3xl font-bold text-red-600 mt-1">{criticalCount}</div>
                     </div>
                     <AlertCircle className="w-12 h-12 text-red-600 opacity-50" />
@@ -298,7 +344,7 @@ const PendingAR = ({ user, tenant, onLogout }) => {
                 <CardContent className="pt-6">
                   <div className="flex items-center justify-between">
                     <div>
-                      <div className="text-sm text-gray-600">Avg Days Outstanding</div>
+                      <div className="text-sm text-gray-600">Ortalama Vade Gecikmesi</div>
                       <div className="text-3xl font-bold text-amber-600 mt-1">
                         {arData.length > 0
                           ? Math.round(
@@ -321,7 +367,7 @@ const PendingAR = ({ user, tenant, onLogout }) => {
                     <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
                     <Input
                       className="pl-10"
-                      placeholder="Search by company name or code..."
+                      placeholder="Şirket adı veya koduyla ara..."
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
                     />
@@ -332,28 +378,28 @@ const PendingAR = ({ user, tenant, onLogout }) => {
                       size="sm"
                       onClick={() => setFilterDays('all')}
                     >
-                      All
+                      Tümü
                     </Button>
                     <Button
                       variant={filterDays === '0-30' ? 'default' : 'outline'}
                       size="sm"
                       onClick={() => setFilterDays('0-30')}
                     >
-                      0-30 days
+                      0-30 gün
                     </Button>
                     <Button
                       variant={filterDays === '31-60' ? 'default' : 'outline'}
                       size="sm"
                       onClick={() => setFilterDays('31-60')}
                     >
-                      31-60 days
+                      31-60 gün
                     </Button>
                     <Button
                       variant={filterDays === '60+' ? 'default' : 'outline'}
                       size="sm"
                       onClick={() => setFilterDays('60+')}
                     >
-                      60+ days
+                      60+ gün
                     </Button>
                   </div>
                 </div>
@@ -364,14 +410,14 @@ const PendingAR = ({ user, tenant, onLogout }) => {
             <Card>
               <CardHeader>
                 <CardTitle>{t('finance.pendingAR')}</CardTitle>
-                <CardDescription>Outstanding balances by company</CardDescription>
+                <CardDescription>Şirket bazında açık bakiyeler</CardDescription>
               </CardHeader>
               <CardContent>
                 {filteredData.length === 0 ? (
                   <div className="text-center py-12 text-gray-500">
                     <DollarSign className="w-16 h-16 mx-auto mb-4 opacity-50" />
-                    <p className="text-lg font-semibold mb-2">No Pending AR</p>
-                    <p className="text-sm">All corporate invoices are paid up!</p>
+                    <p className="text-lg font-semibold mb-2">Bekleyen Alacak Yok</p>
+                    <p className="text-sm">Tüm kurumsal faturalar tahsil edilmiş.</p>
                   </div>
                 ) : (
                   <div className="space-y-4">
@@ -393,36 +439,36 @@ const PendingAR = ({ user, tenant, onLogout }) => {
                                 )}
                                 <Badge className={aging.color}>{aging.label}</Badge>
                                 <span className={`text-sm font-semibold ${urgency.color}`}>
-                                  {urgency.level} Priority
+                                  {urgency.level} Öncelik
                                 </span>
                               </div>
 
                               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                                 <div>
-                                  <div className="text-gray-600">Outstanding Balance</div>
+                                  <div className="text-gray-600">Açık Bakiye</div>
                                   <div className="text-xl font-bold text-red-600">
-                                    ${item.total_outstanding.toFixed(2)}
+                                    {formatCurrencyBreakdown(item.total_outstanding_by_currency, item.total_outstanding)}
                                   </div>
                                 </div>
                                 <div>
-                                  <div className="text-gray-600">Open Invoices</div>
+                                  <div className="text-gray-600">Açık Folyo</div>
                                   <div className="text-xl font-bold">{item.open_folios_count}</div>
                                 </div>
                                 <div>
-                                  <div className="text-gray-600">Days Outstanding</div>
+                                  <div className="text-gray-600">Gecikme Süresi</div>
                                   <div className="text-xl font-bold text-amber-600">
-                                    {item.days_outstanding} days
+                                    {item.days_outstanding} gün
                                   </div>
                                 </div>
                                 <div>
-                                  <div className="text-gray-600">Payment Terms</div>
-                                  <div className="text-lg font-semibold">{item.payment_terms || 'N/A'}</div>
+                                  <div className="text-gray-600">Ödeme Vadesi</div>
+                                  <div className="text-lg font-semibold">{item.payment_terms || 'Belirtilmemiş'}</div>
                                 </div>
                               </div>
 
                               {item.contact_person && (
                                 <div className="mt-3 pt-3 border-t">
-                                  <div className="text-sm text-gray-600 mb-1">Contact Information:</div>
+                                  <div className="text-sm text-gray-600 mb-1">İletişim Bilgileri:</div>
                                   <div className="flex items-center space-x-4 text-sm">
                                     <div className="flex items-center space-x-1">
                                       <span className="font-medium">{item.contact_person}</span>
@@ -450,10 +496,15 @@ const PendingAR = ({ user, tenant, onLogout }) => {
                             </div>
 
                             <div className="flex flex-col space-y-2">
-                              <Button size="sm">View Details</Button>
-                              <Button variant="outline" size="sm">
+                              <Button size="sm" onClick={() => openCompanyDetails(item)}>Detayları Gör</Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => sendReminder(item)}
+                                disabled={remindingCompanyId === item.company_id}
+                              >
                                 <Mail className="w-4 h-4 mr-2" />
-                                Send Reminder
+                                {remindingCompanyId === item.company_id ? 'Gönderiliyor...' : 'Hatırlatma Gönder'}
                               </Button>
                             </div>
                           </div>
@@ -470,11 +521,11 @@ const PendingAR = ({ user, tenant, onLogout }) => {
           <TabsContent value="city-ledger" className="space-y-6">
             <div className="flex justify-between items-center">
               <div>
-                <h2 className="text-2xl font-bold">City Ledger Aging</h2>
-                <p className="text-gray-600 mt-1">30/60/90 day aging based on city ledger accounts</p>
+                <h2 className="text-2xl font-bold">Cari Hesap Yaşlandırması</h2>
+                <p className="text-gray-600 mt-1">Cari hesapların 30/60/90 günlük vade analizi</p>
               </div>
               <Button variant="outline" onClick={loadAgingData} disabled={agingLoading}>
-                {agingLoading ? 'Refreshing...' : 'Refresh'}
+                {agingLoading ? 'Yenileniyor...' : 'Yenile'}
               </Button>
             </div>
 
@@ -483,41 +534,41 @@ const PendingAR = ({ user, tenant, onLogout }) => {
               <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
                 <Card>
                   <CardContent className="pt-6">
-                    <div className="text-sm text-gray-600">Total AR</div>
+                    <div className="text-sm text-gray-600">Toplam Alacak</div>
                     <div className="text-2xl font-bold text-blue-600 mt-1">
-                      ${agingData.totals.total.toFixed(2)}
+                      {formatCurrencyBreakdown(agingData.totals_by_currency?.total, agingData.totals.total)}
                     </div>
                   </CardContent>
                 </Card>
                 <Card>
                   <CardContent className="pt-6">
-                    <div className="text-sm text-gray-600">0-30 days</div>
+                    <div className="text-sm text-gray-600">0-30 gün</div>
                     <div className="text-2xl font-bold text-green-600 mt-1">
-                      ${agingData.totals.current.toFixed(2)}
+                      {formatCurrencyBreakdown(agingData.totals_by_currency?.current, agingData.totals.current)}
                     </div>
                   </CardContent>
                 </Card>
                 <Card>
                   <CardContent className="pt-6">
-                    <div className="text-sm text-gray-600">31-60 days</div>
+                    <div className="text-sm text-gray-600">31-60 gün</div>
                     <div className="text-2xl font-bold text-yellow-600 mt-1">
-                      ${agingData.totals['30_days'].toFixed(2)}
+                      {formatCurrencyBreakdown(agingData.totals_by_currency?.['30_days'], agingData.totals['30_days'])}
                     </div>
                   </CardContent>
                 </Card>
                 <Card>
                   <CardContent className="pt-6">
-                    <div className="text-sm text-gray-600">61-90 days</div>
+                    <div className="text-sm text-gray-600">61-90 gün</div>
                     <div className="text-2xl font-bold text-amber-600 mt-1">
-                      ${agingData.totals['60_days'].toFixed(2)}
+                      {formatCurrencyBreakdown(agingData.totals_by_currency?.['60_days'], agingData.totals['60_days'])}
                     </div>
                   </CardContent>
                 </Card>
                 <Card>
                   <CardContent className="pt-6">
-                    <div className="text-sm text-gray-600">90+ days</div>
+                    <div className="text-sm text-gray-600">90+ gün</div>
                     <div className="text-2xl font-bold text-red-600 mt-1">
-                      ${agingData.totals['90_plus'].toFixed(2)}
+                      {formatCurrencyBreakdown(agingData.totals_by_currency?.['90_plus'], agingData.totals['90_plus'])}
                     </div>
                   </CardContent>
                 </Card>
@@ -525,7 +576,7 @@ const PendingAR = ({ user, tenant, onLogout }) => {
             ) : (
               <Card>
                 <CardContent className="py-10 text-center text-gray-500">
-                  {agingLoading ? 'Loading aging data...' : 'No city ledger aging data available.'}
+                  {agingLoading ? 'Yaşlandırma verileri yükleniyor...' : 'Cari yaşlandırma verisi bulunamadı.'}
                 </CardContent>
               </Card>
             )}
@@ -534,26 +585,26 @@ const PendingAR = ({ user, tenant, onLogout }) => {
             {agingRows.length > 0 && (
               <Card>
                 <CardHeader>
-                  <CardTitle>City Ledger Accounts</CardTitle>
-                  <CardDescription>Accounts with outstanding balances by aging bucket</CardDescription>
+                  <CardTitle>Cari Hesaplar</CardTitle>
+                  <CardDescription>Vade aralığına göre açık bakiyesi bulunan hesaplar</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="overflow-x-auto">
                     <table className="min-w-full text-sm">
                       <thead>
                         <tr className="border-b text-left text-gray-600">
-                          <th className="py-2 pr-4">Account</th>
-                          <th className="py-2 pr-4 text-right">Balance</th>
-                          <th className="py-2 pr-4 text-right">Days Old</th>
-                          <th className="py-2 pr-4">Bucket</th>
-                          <th className="py-2 pr-4 text-right">Actions</th>
+                          <th className="py-2 pr-4">Hesap</th>
+                          <th className="py-2 pr-4 text-right">Bakiye</th>
+                          <th className="py-2 pr-4 text-right">Gecikme</th>
+                          <th className="py-2 pr-4">Vade Aralığı</th>
+                          <th className="py-2 pr-4 text-right">İşlemler</th>
                         </tr>
                       </thead>
                       <tbody>
                         {agingRows.map((row) => (
                           <tr key={`${row.account_id}-${row.bucketKey}`} className="border-b last:border-b-0">
                             <td className="py-2 pr-4 font-medium">{row.account_name}</td>
-                            <td className="py-2 pr-4 text-right">${row.balance.toFixed(2)}</td>
+                            <td className="py-2 pr-4 text-right">{formatCurrency(row.balance, row.currency || 'TRY')}</td>
                             <td className="py-2 pr-4 text-right">{row.days_old}</td>
                             <td className="py-2 pr-4">
                               <Badge variant="outline">{row.bucketLabel}</Badge>
@@ -564,7 +615,7 @@ const PendingAR = ({ user, tenant, onLogout }) => {
                                 size="sm"
                                 onClick={() => openAccountStatement(row)}
                               >
-                                View Statement
+                                Ekstreyi Gör
                               </Button>
                             </td>
                           </tr>
@@ -578,55 +629,109 @@ const PendingAR = ({ user, tenant, onLogout }) => {
           </TabsContent>
         </Tabs>
 
+        <Dialog open={!!selectedCompany} onOpenChange={(open) => {
+          if (!open) {
+            setSelectedCompany(null);
+            setCompanyDetails(null);
+          }
+        }}>
+          <DialogContent className="max-w-5xl max-h-[85vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>{selectedCompany ? `${selectedCompany.company_name} · Açık Alacak Detayı` : 'Açık Alacak Detayı'}</DialogTitle>
+            </DialogHeader>
+            {companyDetailsLoading ? (
+              <div className="py-12 text-center text-gray-500">Alacak detayları yükleniyor...</div>
+            ) : !companyDetails ? (
+              <div className="py-12 text-center text-gray-500">Detay verisi bulunamadı.</div>
+            ) : (
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <Card><CardContent className="pt-5"><div className="text-sm text-gray-500">Toplam açık bakiye</div><div className="text-2xl font-bold text-red-600">{formatCurrencyBreakdown(companyDetails.total_outstanding_by_currency, companyDetails.total_outstanding)}</div></CardContent></Card>
+                  <Card><CardContent className="pt-5"><div className="text-sm text-gray-500">Açık folyo</div><div className="text-2xl font-bold">{companyDetails.folios.length}</div></CardContent></Card>
+                  <Card><CardContent className="pt-5"><div className="text-sm text-gray-500">İletişim</div><div className="font-semibold">{companyDetails.company.contact_person || '—'}</div><div className="text-sm text-gray-600">{companyDetails.company.contact_email || 'E-posta tanımlı değil'}</div></CardContent></Card>
+                </div>
+                <div className="border rounded-lg overflow-x-auto">
+                  <table className="min-w-full text-sm">
+                    <thead className="bg-gray-50 text-left text-gray-600">
+                      <tr><th className="p-3">Folyo</th><th className="p-3">Rezervasyon</th><th className="p-3">Oda</th><th className="p-3">Misafir</th><th className="p-3">Konaklama</th><th className="p-3 text-right">Bakiye</th></tr>
+                    </thead>
+                    <tbody>
+                      {companyDetails.folios.map((folio) => (
+                        <tr key={folio.folio_id} className="border-t">
+                          <td className="p-3 font-medium">{folio.folio_number}</td>
+                          <td className="p-3">{folio.reservation_number || '—'}</td>
+                          <td className="p-3 font-semibold">{folio.room_number}</td>
+                          <td className="p-3">{folio.guest_name}</td>
+                          <td className="p-3 whitespace-nowrap">{folio.check_in || '—'} → {folio.check_out || '—'}</td>
+                          <td className="p-3 text-right font-semibold text-red-600">{formatCurrency(folio.balance, folio.currency || 'TRY')}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="flex justify-end">
+                  <Button
+                    onClick={() => sendReminder(selectedCompany)}
+                    disabled={remindingCompanyId === selectedCompany?.company_id}
+                  >
+                    <Mail className="w-4 h-4 mr-2" />
+                    {remindingCompanyId === selectedCompany?.company_id ? 'Gönderiliyor...' : 'Bu dökümü e-posta ile gönder'}
+                  </Button>
+                </div>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+
         {/* Account Statement Dialog */}
         <Dialog open={!!selectedAccount} onOpenChange={(open) => !open && closeAccountStatement()}>
           <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>
-                {selectedAccount ? `Account Statement - ${selectedAccount.account_name}` : 'Account Statement'}
+                {selectedAccount ? `Hesap Ekstresi - ${selectedAccount.account_name}` : 'Hesap Ekstresi'}
               </DialogTitle>
             </DialogHeader>
 
             {statementLoading ? (
-              <div className="py-10 text-center text-gray-500">Loading statement...</div>
+              <div className="py-10 text-center text-gray-500">Ekstre yükleniyor...</div>
             ) : !accountStatement ? (
-              <div className="py-10 text-center text-gray-500">No statement data available.</div>
+              <div className="py-10 text-center text-gray-500">Ekstre verisi bulunamadı.</div>
             ) : (
               <div className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
                   <div>
-                    <div className="text-gray-600">Account</div>
+                    <div className="text-gray-600">Hesap</div>
                     <div className="font-semibold">{selectedAccount?.account_name}</div>
                   </div>
                   <div>
-                    <div className="text-gray-600">Current Balance</div>
+                    <div className="text-gray-600">Güncel Bakiye</div>
                     <div className="font-semibold text-red-600">
-                      ${accountStatement.summary.current_balance.toFixed(2)}
+                      {formatCurrency(accountStatement.summary.current_balance, accountStatement.summary.currency || selectedAccount?.currency || 'TRY')}
                     </div>
                   </div>
                   <div>
-                    <div className="text-gray-600">Transactions</div>
+                    <div className="text-gray-600">İşlem Sayısı</div>
                     <div className="font-semibold">{accountStatement.summary.transaction_count}</div>
                   </div>
                 </div>
 
                 <div className="border rounded-md overflow-hidden">
                   <div className="bg-gray-50 px-4 py-2 text-sm font-semibold text-gray-600 flex justify-between">
-                    <span>Transactions</span>
+                    <span>İşlemler</span>
                     <span>
-                      Charges: ${accountStatement.summary.total_charges.toFixed(2)} | Payments: $
-                      {accountStatement.summary.total_payments.toFixed(2)}
+                      Tahakkuk: {formatCurrency(accountStatement.summary.total_charges, accountStatement.summary.currency || selectedAccount?.currency || 'TRY')} | Tahsilat:{' '}
+                      {formatCurrency(accountStatement.summary.total_payments, accountStatement.summary.currency || selectedAccount?.currency || 'TRY')}
                     </span>
                   </div>
                   <div className="max-h-80 overflow-y-auto">
                     <table className="min-w-full text-xs">
                       <thead>
                         <tr className="border-b text-left text-gray-600">
-                          <th className="py-2 px-4">Date</th>
-                          <th className="py-2 px-4">Type</th>
-                          <th className="py-2 px-4">Description</th>
-                          <th className="py-2 px-4 text-right">Amount</th>
-                          <th className="py-2 px-4">Reference</th>
+                          <th className="py-2 px-4">Tarih</th>
+                          <th className="py-2 px-4">Tür</th>
+                          <th className="py-2 px-4">Açıklama</th>
+                          <th className="py-2 px-4 text-right">Tutar</th>
+                          <th className="py-2 px-4">Referans</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -635,10 +740,10 @@ const PendingAR = ({ user, tenant, onLogout }) => {
                             <td className="py-2 px-4">
                               {new Date(tx.transaction_date).toLocaleDateString()}
                             </td>
-                            <td className="py-2 px-4 capitalize">{tx.transaction_type}</td>
+                            <td className="py-2 px-4">{receivableTransactionTypeLabel(t, tx.transaction_type)}</td>
                             <td className="py-2 px-4">{tx.description}</td>
                             <td className="py-2 px-4 text-right">
-                              ${tx.amount.toFixed(2)}
+                              {formatCurrency(tx.amount, tx.currency || accountStatement.summary.currency || selectedAccount?.currency || 'TRY')}
                             </td>
                             <td className="py-2 px-4">{tx.reference_number || '-'}</td>
                           </tr>

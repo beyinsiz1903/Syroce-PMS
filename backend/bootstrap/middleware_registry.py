@@ -84,8 +84,10 @@ def register_middleware(app: FastAPI) -> None:
 
     # CSRF Guard middleware
     from starlette.middleware.base import BaseHTTPMiddleware
+
     try:
         from security.csrf_guard import csrf_guard_middleware
+
         app.add_middleware(BaseHTTPMiddleware, dispatch=csrf_guard_middleware)
     except ImportError:
         pass

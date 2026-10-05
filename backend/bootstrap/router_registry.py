@@ -22,7 +22,10 @@ logger = logging.getLogger(__name__)
 # routers that expose public/provider/webhook/service-key endpoints are
 # intentionally absent and are scoped at endpoint/sub-router level instead.
 ROUTER_MODULE_SCOPES: dict[str, str] = {
-    "routers.housekeeping": "housekeeping",
+    # Mixed router: it also owns shared PMS inventory endpoints such as
+    # /api/pms/room-blocks.  Those are guarded by the request/page policy and
+    # their own operation guards; applying a router-wide housekeeping scope
+    # made front-desk users receive an empty, inconsistent calendar.
     "routers.walkin": "frontdesk",
     "routers.room_map": "frontdesk",
     "routers.report_builder": "reports",
@@ -75,11 +78,22 @@ def _safe_import(module_path: str, attr: str):
         return None
 
 
-def _router_dependencies(module_path: str, declared: list | None) -> list:
+def _router_dependencies(module_path: str, declared: list | None, attr: str = "router") -> list:
     dependencies = list(declared or [])
+    # Marketing forms must accept anonymous visitors. Only this explicitly
+    # public sub-router is exempt; the CRM router keeps its module guard.
+    if module_path == "domains.sales.crm_router" and attr == "public_leads_router":
+        return dependencies
     scope = ROUTER_MODULE_SCOPES.get(module_path)
     if scope:
-        dependencies.append(Depends(require_module_scope(scope)))
+        dependencies.append(
+            Depends(
+                require_module_scope(
+                    scope,
+                    allow_hr_profile_read=module_path == "domains.hr.router",
+                )
+            )
+        )
     return dependencies
 
 
@@ -135,6 +149,7 @@ _EXTRACTED_ROUTERS: list[tuple[str, str, list[str], str | None, list | None]] = 
     ("routers.data_pipeline", "router", ["data-pipeline"], None, None),
     ("routers.event_bus", "router", ["event-bus"], None, None),
     ("routers.observability", "router", ["observability"], None, None),
+    ("routers.rum", "router", ["RUM Performance"], None, None),
     ("routers.security_hardening", "router", ["security-hardening"], None, None),
     ("routers.runtime_infrastructure", "router", ["runtime-infrastructure"], None, None),
     ("routers.infra_hardening", "router", ["infrastructure-hardening"], None, None),
@@ -194,6 +209,7 @@ _EXTRACTED_ROUTERS: list[tuple[str, str, list[str], str | None, list | None]] = 
     ("routers.reservation_waitlist", "router", ["PMS / Reservation Waitlist"], None, None),
     ("domains.channel_manager.operations_router", "router", ["Channel Manager / Operations"], None, None),
     ("domains.sales.crm_router", "router", ["Sales / CRM"], None, None),
+    ("domains.sales.crm_router", "public_leads_router", ["Public Leads"], None, None),
     ("domains.pms.calendar_router", "router", ["PMS / Calendar"], None, None),
     ("domains.pms.approvals_router", "router", ["PMS / Approvals"], None, None),
     ("domains.pms.misc_router", "router", ["PMS / Operations"], None, None),
@@ -215,6 +231,7 @@ _EXTRACTED_ROUTERS: list[tuple[str, str, list[str], str | None, list | None]] = 
     ("routers.system_health_dashboard", "router", ["System Health"], None, None),
     ("routers.system_health_normalized", "router", ["System Health Normalized"], None, None),
     ("routers.system_health_live", "router", ["System Health Live"], None, None),
+    ("routers.module_health", "router", ["Module Health"], None, None),
     ("domains.pms.frontdesk_router_v2", "router", ["Front Desk v2"], None, None),
     ("domains.pms.pos_fnb_router_v2", "router", ["POS & F&B v2"], None, None),
     ("domains.pms.pos_extensions.pos_currency", "router", ["POS Ext / Multi-Currency"], None, None),
@@ -279,6 +296,7 @@ _EXTRACTED_ROUTERS: list[tuple[str, str, list[str], str | None, list | None]] = 
     ("routers.agency_v1", "router", ["Agency v1 - PMS Entegrasyon"], None, None),
     ("routers.b2b_analytics", "router", ["B2B Analytics"], None, None),
     ("routers.marketplace_b2b", "router", ["Marketplace v1"], None, None),
+    ("routers.hotel_network", "router", ["Hotel Network"], None, None),
     ("routers.agency_contracts", "agency_router", ["Marketplace v1 / Contracts"], None, None),
     ("routers.agency_contracts", "hotel_router", ["Marketplace v1 / Incoming"], None, None),
     ("routers.agency_contracts", "admin_router", ["Marketplace v1 / Admin"], None, None),
@@ -354,7 +372,7 @@ def _iter_register(app: FastAPI, api_router, require_super_admin_dep: Callable =
                 kwargs = {"tags": tags}
                 if prefix_override:
                     kwargs["prefix"] = prefix_override
-                dependencies = _router_dependencies(mod_path, deps)
+                dependencies = _router_dependencies(mod_path, deps, attr)
                 if dependencies:
                     kwargs["dependencies"] = dependencies
                 app.include_router(router, **kwargs)

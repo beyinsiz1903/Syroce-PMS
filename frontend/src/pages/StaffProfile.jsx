@@ -19,6 +19,7 @@ import { confirmDialog } from '@/lib/dialogs';
 import PaginationBar from '@/components/PaginationBar';
 import SkeletonRow from '@/components/SkeletonRow';
 import { useHRPagination } from '@/hooks/useHRPagination';
+import { hasGrantedPermission, hasRole } from '@/utils/authRoles';
 const LEAVE_TYPE_LABEL = {
   annual: 'Yıllık',
   sick: 'Hastalık',
@@ -75,7 +76,7 @@ const CHANGE_TYPE_LABEL = {
   correction: 'Düzeltme',
   demotion: 'İndirim'
 };
-const StaffProfile = () => {
+const StaffProfile = ({ user }) => {
   const {
     t
   } = useTranslation();
@@ -292,7 +293,12 @@ const StaffProfile = () => {
   };
 
   // ===== Salary =====
-  const openSalaryDialog = () => setSalaryDialog({
+  const openSalaryDialog = () => {
+    if (data?.staff?.salary_agreement) {
+      toast.info('Net/brüt ücret anlaşmasını Personel Yönetimi → Düzenle ekranından güncelleyin.');
+      return;
+    }
+    setSalaryDialog({
     open: true,
     form: {
       new_hourly_rate: data?.staff?.hourly_rate || '',
@@ -301,6 +307,7 @@ const StaffProfile = () => {
       reason: ''
     }
   });
+  };
   const submitSalary = async e => {
     e.preventDefault();
     setSaving(true);
@@ -608,7 +615,7 @@ const StaffProfile = () => {
         <ArrowLeft className="w-4 h-4 mr-1.5" />{t("cm.pages_StaffProfile.personel_listesi")}</Button>
       <Button variant="outline" size="sm" onClick={load} disabled={loading}>
         <RefreshCw className={`w-4 h-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />{t("cm.pages_StaffProfile.yenile")}</Button>
-      {data?.staff?.active !== false && !termination && <Button variant="outline" size="sm" onClick={openTermDialog} className="text-rose-700 border-rose-300 hover:bg-rose-50">
+      {(!user || hasRole(user, 'admin', 'supervisor') || hasGrantedPermission(user, 'manage_hr')) && data?.staff?.active !== false && !termination && <Button variant="outline" size="sm" onClick={openTermDialog} className="text-rose-700 border-rose-300 hover:bg-rose-50">
           <UserMinus className="w-4 h-4 mr-1.5" />{t("cm.pages_StaffProfile.ayr\u0131l\u0131\u015F_i_\u015Flemleri")}</Button>}
     </>;
   if (loading && !data) {
@@ -624,6 +631,14 @@ const StaffProfile = () => {
       </div>;
   }
   const s = data.staff || {};
+  const canManageHR = !user
+    || hasRole(user, 'admin', 'supervisor')
+    || hasGrantedPermission(user, 'manage_hr');
+  const isSelf = Boolean(user && (
+    (user.id && s.id && String(user.id) === String(s.id))
+    || (user.email && s.email && user.email.trim().toLowerCase() === s.email.trim().toLowerCase())
+  ));
+  const canViewSensitive = canManageHR || isSelf;
   const att = data.attendance || {};
   const lv = data.leaves || {};
   const bal = data.leave_balance;
@@ -652,10 +667,14 @@ const StaffProfile = () => {
         <CardContent className="grid gap-3 md:grid-cols-4 py-4">
           <div className="flex items-center gap-2 text-sm text-slate-700"><Mail className="w-4 h-4 text-slate-400" /> {s.email || '—'}</div>
           <div className="flex items-center gap-2 text-sm text-slate-700"><Phone className="w-4 h-4 text-slate-400" /> {s.phone || '—'}</div>
+          <div className="flex items-center gap-2 text-sm text-slate-700"><FileText className="w-4 h-4 text-slate-400" /> T.C. Kimlik: {s.national_id || '—'}</div>
+          <div className="flex items-center gap-2 text-sm text-slate-700"><DollarSign className="w-4 h-4 text-slate-400" /> IBAN: {s.iban || '—'}</div>
           <div className="flex items-center gap-2 text-sm text-slate-700"><Building2 className="w-4 h-4 text-slate-400" /> {s.department || '—'}</div>
           <div className="flex items-center gap-2 text-sm text-slate-700"><Briefcase className="w-4 h-4 text-slate-400" /> {s.employment_type || '—'}</div>
           <div className="flex items-center gap-2 text-sm text-slate-700"><Calendar className="w-4 h-4 text-slate-400" />{t("cm.pages_StaffProfile.i_\u015Fe_giri\u015F")}{s.hire_date || '—'}</div>
-          <div className="flex items-center gap-2 text-sm text-slate-700"><DollarSign className="w-4 h-4 text-slate-400" />{t("cm.pages_StaffProfile.saatlik")}{s.hourly_rate ? `${s.hourly_rate} TRY` : 'tanımsız (140 TRY default)'}</div>
+          <div className="flex items-center gap-2 text-sm text-slate-700"><DollarSign className="w-4 h-4 text-slate-400" />{s.salary_agreement
+            ? `${s.salary_agreement.unit === 'monthly' ? 'Aylık' : 'Saatlik'} ${s.salary_agreement.basis === 'net' ? 'net' : 'brüt'}: ${formatCurrency(s.salary_agreement.amount, 'TRY')}`
+            : `${t('cm.pages_StaffProfile.saatlik')}${s.hourly_rate ? `${s.hourly_rate} TRY` : 'tanımsız (eski yaklaşık model)'}`}</div>
           <div className="flex items-center gap-2 text-sm text-slate-700"><Clock className="w-4 h-4 text-slate-400" />{t("cm.pages_StaffProfile.ayl\u0131k_saat")}{s.monthly_hours || '195 (default)'}</div>
           <div className="flex items-center gap-2 text-sm">
             {s.active === false ? <StatusBadge intent="danger">{t("cm.pages_StaffProfile.pasif")}</StatusBadge> : s.derived_from === 'users' ? <StatusBadge intent="neutral">{t("cm.pages_StaffProfile.kullan\u0131c\u0131dan_t\xFCretildi")}</StatusBadge> : <StatusBadge intent="info">{t("cm.pages_StaffProfile.hr_y\xF6netimli")}</StatusBadge>}
@@ -672,7 +691,7 @@ const StaffProfile = () => {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-11 text-xs">
+        <TabsList className={`grid w-full text-xs ${canViewSensitive ? 'grid-cols-11' : 'grid-cols-9'}`}>
           <TabsTrigger value="attendance">{t("cm.pages_StaffProfile.devam")}</TabsTrigger>
           <TabsTrigger value="leave">{t("cm.pages_StaffProfile.i_zin")}</TabsTrigger>
           <TabsTrigger value="performance">{t("cm.pages_StaffProfile.performans")}</TabsTrigger>
@@ -682,8 +701,8 @@ const StaffProfile = () => {
           <TabsTrigger value="trainings">{t("cm.pages_StaffProfile.e\u011Fitim")}</TabsTrigger>
           <TabsTrigger value="equipment">{t("cm.pages_StaffProfile.zimmet")}</TabsTrigger>
           <TabsTrigger value="warnings">{t("cm.pages_StaffProfile.uyar\u0131")}</TabsTrigger>
-          <TabsTrigger value="documents">{t("cm.pages_StaffProfile.belgeler")}</TabsTrigger>
-          <TabsTrigger value="salary">{t("cm.pages_StaffProfile.maa\u015F")}</TabsTrigger>
+          {canViewSensitive && <TabsTrigger value="documents">{t("cm.pages_StaffProfile.belgeler")}</TabsTrigger>}
+          {canViewSensitive && <TabsTrigger value="salary">{t("cm.pages_StaffProfile.maa\u015F")}</TabsTrigger>}
         </TabsList>
 
         <TabsContent value="attendance" className="mt-4">
@@ -918,18 +937,18 @@ const StaffProfile = () => {
         </TabsContent>
 
         {/* BELGELER */}
-        <TabsContent value="documents" className="mt-4">
+        {canViewSensitive && <TabsContent value="documents" className="mt-4">
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center justify-between">
                 <span className="flex items-center gap-2"><Folder className="w-4 h-4" />{t("cm.pages_StaffProfile.personel_belgeleri")}</span>
-                <Button size="sm" onClick={() => setDocDialog({
+                {canManageHR && <Button size="sm" onClick={() => setDocDialog({
                 open: true,
                 file: null,
                 doc_type: 'contract',
                 label: ''
               })}>
-                  <Upload className="w-4 h-4 mr-1.5" />{t("cm.pages_StaffProfile.belge_y\xFCkle")}</Button>
+                  <Upload className="w-4 h-4 mr-1.5" />{t("cm.pages_StaffProfile.belge_y\xFCkle")}</Button>}
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -953,9 +972,9 @@ const StaffProfile = () => {
                             <Button size="sm" variant="ghost" onClick={() => downloadDoc(d)}>
                               <Download className="w-3.5 h-3.5" />
                             </Button>
-                            <Button size="sm" variant="ghost" onClick={() => deleteDoc(d)}>
+                            {canManageHR && <Button size="sm" variant="ghost" onClick={() => deleteDoc(d)}>
                               <Trash2 className="w-3.5 h-3.5 text-rose-600" />
-                            </Button>
+                            </Button>}
                           </td>
                         </tr>)}
                       {docsPage.items.length === 0 && <tr><td colSpan={6} className="py-6 text-center text-slate-500">{t("cm.pages_StaffProfile.hen\xFCz_belge_yok_s\xF6zle\u015Fme_kimli")}</td></tr>}
@@ -965,16 +984,17 @@ const StaffProfile = () => {
               </div>
             </CardContent>
           </Card>
-        </TabsContent>
+        </TabsContent>}
 
         {/* MAAŞ */}
-        <TabsContent value="salary" className="mt-4">
+        {canViewSensitive && <TabsContent value="salary" className="mt-4">
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center justify-between">
                 <span className="flex items-center gap-2"><TrendingUp className="w-4 h-4" />{t("cm.pages_StaffProfile.maa\u015F_ge\xE7mi\u015Fi")}</span>
-                <Button size="sm" onClick={openSalaryDialog}>
+                {canManageHR && <Button size="sm" onClick={openSalaryDialog}>
                   <Plus className="w-4 h-4 mr-1.5" />{t("cm.pages_StaffProfile.zam_de\u011Fi\u015Fiklik")}</Button>
+                }
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -999,7 +1019,9 @@ const StaffProfile = () => {
                           </td>
                           <td className="text-xs text-slate-600 max-w-xs">{r.reason || '—'}</td>
                         </tr>)}
-                      {salaryPage.items.length === 0 && <tr><td colSpan={6} className="py-6 text-center text-slate-500">{t("cm.pages_StaffProfile.hen\xFCz_maa\u015F_de\u011Fi\u015Fikli\u011Fi_yok_\u015Fu")}{s.hourly_rate ? formatCurrency(s.hourly_rate, 'TRY') : '140 TRY (default)'}
+                      {salaryPage.items.length === 0 && <tr><td colSpan={6} className="py-6 text-center text-slate-500">{s.salary_agreement
+                        ? `Güncel anlaşma: ${s.salary_agreement.unit === 'monthly' ? 'aylık' : 'saatlik'} ${s.salary_agreement.basis === 'net' ? 'net' : 'brüt'} ${formatCurrency(s.salary_agreement.amount, 'TRY')} (${s.salary_agreement.period_month}). Eski saatlik zam kaydı yok.`
+                        : `${t('cm.pages_StaffProfile.henüz_maaş_değişikliği_yok_şu')}${s.hourly_rate ? formatCurrency(s.hourly_rate, 'TRY') : 'tanımsız (eski yaklaşık model)'}`}
                         </td></tr>}
                     </tbody>
                   </table>}
@@ -1007,7 +1029,7 @@ const StaffProfile = () => {
               </div>
             </CardContent>
           </Card>
-        </TabsContent>
+        </TabsContent>}
 
         {/* EĞİTİM (Task #265 — sertifikadan ayrı operasyonel zorunlu eğitim) */}
         <TabsContent value="trainings" className="mt-4">

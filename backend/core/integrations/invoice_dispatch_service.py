@@ -21,15 +21,8 @@ from models.schemas.invoicing import Invoice
 
 
 class InvoiceDispatchService:
-
     @staticmethod
-    async def prepare_dispatch(
-        *,
-        tenant_id: str,
-        invoice_id: str,
-        provider: InvoiceProvider,
-        document_kind: InvoiceDocumentKind
-    ) -> PrepareDispatchResult:
+    async def prepare_dispatch(*, tenant_id: str, invoice_id: str, provider: InvoiceProvider, document_kind: InvoiceDocumentKind) -> PrepareDispatchResult:
         if document_kind != InvoiceDocumentKind.E_INVOICE:
             raise IntegrationValidationError(
                 f"Unsupported document kind: {document_kind}",
@@ -68,12 +61,7 @@ class InvoiceDispatchService:
 
         persisted_model, created = await InvoiceSyncRepository.create_prepared(tenant_id, sync_model)
 
-        return PrepareDispatchResult(
-            dispatch_id=persisted_model.id,
-            request_uuid=uuid.UUID(persisted_model.request_uuid),
-            idempotency_key=persisted_model.idempotency_key,
-            created=created
-        )
+        return PrepareDispatchResult(dispatch_id=persisted_model.id, request_uuid=uuid.UUID(persisted_model.request_uuid), idempotency_key=persisted_model.idempotency_key, created=created)
 
     @staticmethod
     async def execute_dispatch(tenant_id: str, dispatch_id: str, worker_id: str | None = None) -> bool:
@@ -102,7 +90,7 @@ class InvoiceDispatchService:
                 update_fields=update_fields,
                 inc_fields=inc_fields,
                 expected_version=sync_model.version if worker_id else None,
-                lease_owner_id=worker_id
+                lease_owner_id=worker_id,
             )
             if success and worker_id:
                 sync_model.version += 1
@@ -112,6 +100,7 @@ class InvoiceDispatchService:
         nilvera_cfg = await get_nilvera_tenant_config(tenant_id, decrypt_api_key=True)
         if not nilvera_cfg.get("enabled") or not nilvera_cfg.get("api_key"):
             from datetime import timedelta
+
             await _transition(
                 target_state=InvoiceSyncState.RETRYABLE_ERROR,
                 update_fields={
@@ -119,7 +108,7 @@ class InvoiceDispatchService:
                     "last_error_category": DispatchErrorCategory.AUTHENTICATION,
                     "last_error_retryable": True,
                     "next_retry_at": datetime.now(UTC) + timedelta(hours=12),
-                }
+                },
             )
             return False
 
@@ -134,21 +123,28 @@ class InvoiceDispatchService:
                     "last_error_message": "Source invoice not found in database",
                     "last_error_category": DispatchErrorCategory.NOT_FOUND,
                     "last_error_retryable": False,
-                }
+                },
             )
             return False
 
         invoice = Invoice(**invoice_doc)
 
         seller_info = nilvera_cfg.get("seller", {})
-        if not seller_info.get("vkn") or not seller_info.get("name") or not seller_info.get("tax_office") or not seller_info.get("address") or not seller_info.get("city") or not seller_info.get("country"):
+        if (
+            not seller_info.get("vkn")
+            or not seller_info.get("name")
+            or not seller_info.get("tax_office")
+            or not seller_info.get("address")
+            or not seller_info.get("city")
+            or not seller_info.get("country")
+        ):
             await _transition(
                 target_state=InvoiceSyncState.PERMANENT_ERROR,
                 update_fields={
                     "last_error_message": "Tenant company info (VKN, Name, Tax Office, Address, City, Country) is incomplete. Cannot dispatch.",
                     "last_error_category": DispatchErrorCategory.VALIDATION,
                     "last_error_retryable": False,
-                }
+                },
             )
             return False
 
@@ -169,17 +165,12 @@ class InvoiceDispatchService:
                     "last_error_message": "Customer alias is required for E-Invoice but missing from invoice snapshot.",
                     "last_error_category": DispatchErrorCategory.VALIDATION,
                     "last_error_retryable": False,
-                }
+                },
             )
             return False
 
         try:
-            payload = NilveraInvoiceMapper.map_to_nilvera(
-                invoice=invoice,
-                seller=seller,
-                customer_alias=customer_alias,
-                request_uuid=uuid.UUID(sync_model.request_uuid)
-            )
+            payload = NilveraInvoiceMapper.map_to_nilvera(invoice=invoice, seller=seller, customer_alias=customer_alias, request_uuid=uuid.UUID(sync_model.request_uuid))
         except Exception as e:
             await _transition(
                 target_state=InvoiceSyncState.PERMANENT_ERROR,
@@ -187,18 +178,14 @@ class InvoiceDispatchService:
                     "last_error_message": f"Mapping error: {str(e)[:500]}",
                     "last_error_category": DispatchErrorCategory.VALIDATION,
                     "last_error_retryable": False,
-                }
+                },
             )
             return False
 
         # Increment attempt_count before external API call
         sync_model.attempt_count += 1
 
-        lease_ok = await _transition(
-            target_state=InvoiceSyncState.SENDING,
-            update_fields={},
-            inc_fields={"attempt_count": 1}
-        )
+        lease_ok = await _transition(target_state=InvoiceSyncState.SENDING, update_fields={}, inc_fields={"attempt_count": 1})
         if worker_id and not lease_ok:
             return False
 
@@ -208,30 +195,16 @@ class InvoiceDispatchService:
                 payload_dict = payload.model_dump(by_alias=True, exclude_none=True)
 
                 from core.integrations.nilvera.config import NilveraEndpoints
-                response_data = await client.post(
-                    NilveraEndpoints.SEND_INVOICE_MODEL,
-                    json=payload_dict,
-                    correlation_id=sync_model.request_uuid,
-                    retryable=False
-                )
+
+                response_data = await client.post(NilveraEndpoints.SEND_INVOICE_MODEL, json=payload_dict, correlation_id=sync_model.request_uuid, retryable=False)
 
                 if not isinstance(response_data, dict):
-                     raise NilveraApiError(
-                         message="Invalid provider response type: expected object",
-                         http_status=200,
-                         provider_code="INVALID_RESPONSE_TYPE",
-                         retryable=False
-                     )
+                    raise NilveraApiError(message="Invalid provider response type: expected object", http_status=200, provider_code="INVALID_RESPONSE_TYPE", retryable=False)
 
                 provider_doc_id = response_data.get("UUID")
 
                 if not provider_doc_id:
-                     raise NilveraApiError(
-                         message="Provider returned a successful response without a document UUID",
-                         http_status=200,
-                         provider_code="MISSING_UUID",
-                         retryable=False
-                     )
+                    raise NilveraApiError(message="Provider returned a successful response without a document UUID", http_status=200, provider_code="MISSING_UUID", retryable=False)
 
                 await _transition(
                     target_state=InvoiceSyncState.SUBMITTED,
@@ -240,7 +213,7 @@ class InvoiceDispatchService:
                         "submitted_at": datetime.now(UTC),
                         "last_error_message": None,
                         "last_error_category": None,
-                    }
+                    },
                 )
                 return True
 
@@ -282,10 +255,7 @@ class InvoiceDispatchService:
             if provider_code in ("INVALID_RESPONSE_TYPE", "MISSING_UUID"):
                 update_fields["last_error_category"] = DispatchErrorCategory.INVALID_PROVIDER_RESPONSE
 
-            await _transition(
-                target_state=target_state,
-                update_fields=update_fields
-            )
+            await _transition(target_state=target_state, update_fields=update_fields)
             return False
         except Exception as e:
             # Fallback for unexpected errors (Network, parsing, etc)
@@ -297,6 +267,6 @@ class InvoiceDispatchService:
                     "last_error_retryable": False,
                     "reconciliation_required": True,
                     "reconciliation_reason": "UNEXPECTED_EXCEPTION",
-                }
+                },
             )
             return False

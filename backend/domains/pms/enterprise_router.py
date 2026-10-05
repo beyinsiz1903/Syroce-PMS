@@ -272,47 +272,128 @@ def _safe_decimal(value: object) -> Decimal:
         return Decimal("0")
 
 
+def _business_date_alignment(properties: list[dict]) -> tuple[list[str], bool]:
+    """Return canonical open PMS dates and whether chain KPIs are comparable."""
+    dates = sorted({str(prop.get("business_date") or "") for prop in properties if prop.get("business_date")})
+    return dates, len(dates) <= 1
+
+
 async def _chain_scope(current_user: User) -> tuple[dict, list[dict]]:
-    """Resolve the caller's explicit chain. Never widen scope by role alone."""
-    from core.tenant_db import get_system_db
+    """Resolve a central-office chain scope; members never see siblings."""
+    from modules.pms_core.chain_access import resolve_chain_properties
 
     role = getattr(current_user.role, "value", str(current_user.role))
     if role not in {"admin", "manager", "gm", "super_admin", "finance"}:
         raise HTTPException(status_code=403, detail="Zincir görünümü yönetici yetkisi gerektirir")
-    sys_db = get_system_db()
-    own = await sys_db.tenants.find_one({"id": current_user.tenant_id}, {"_id": 0})
-    if not own:
-        raise HTTPException(status_code=404, detail="Otel bulunamadı")
-    chain_id = own.get("chain_id")
-    if not chain_id:
-        return own, [own]
-    members = await sys_db.tenants.find({"chain_id": chain_id}, {"_id": 0}).sort("property_name", 1).to_list(500)
-    return own, members or [own]
+    return await resolve_chain_properties(current_user, require_headquarters=True)
 
 
 async def _chain_property_metrics(sys_db, tenant: dict, today_start: str, tomorrow_start: str) -> dict:
     tenant_id = tenant["id"]
+    tenant_settings = await sys_db.tenant_settings.find_one(
+        {"tenant_id": tenant_id},
+        {"_id": 0, "business_date": 1, "nilvera.enabled": 1, "nilvera.api_key_enc": 1},
+    )
+    # Chain reporting must follow each property's open PMS day.  Using the
+    # server's UTC date makes a property that has not completed night audit
+    # appear on the wrong operating day and corrupts cross-property KPIs.
+    business_date = str((tenant_settings or {}).get("business_date") or today_start[:10])[:10]
+    business_day_start = f"{business_date}T00:00:00"
+    business_day_end = f"{business_date}T23:59:59.999999"
+    pickup_cutoff = (datetime.fromisoformat(today_start.replace("Z", "+00:00")) - timedelta(days=7)).isoformat()
     total_rooms = int(tenant.get("total_rooms") or 0)
     if total_rooms <= 0:
         total_rooms = await sys_db.rooms.count_documents({"tenant_id": tenant_id})
-    occupied_rooms = await sys_db.rooms.count_documents(
-        {"tenant_id": tenant_id, "$or": [{"status": "occupied"}, {"room_status": "occupied"}]}
-    )
+    occupied_rooms = await sys_db.rooms.count_documents({"tenant_id": tenant_id, "$or": [{"status": "occupied"}, {"room_status": "occupied"}]})
     total_guests = await sys_db.guests.count_documents({"tenant_id": tenant_id})
+    active_statuses = ["confirmed", "guaranteed", "checked_in"]
+    arrivals_today = await sys_db.bookings.count_documents(
+        {"tenant_id": tenant_id, "check_in": business_date, "status": {"$in": ["confirmed", "guaranteed"]}}
+    )
+    departures_today = await sys_db.bookings.count_documents(
+        {"tenant_id": tenant_id, "check_out": business_date, "status": {"$in": ["checked_in", "checked_out"]}}
+    )
+    pickup_7d = await sys_db.bookings.count_documents(
+        {
+            "tenant_id": tenant_id,
+            "created_at": {"$gte": pickup_cutoff},
+            "check_in": {"$gte": business_date},
+            "status": {"$in": active_statuses},
+        }
+    )
+    housekeeping_pending = await sys_db.housekeeping_tasks.count_documents(
+        {"tenant_id": tenant_id, "status": {"$in": ["pending", "assigned", "in_progress", "new"]}}
+    )
+    out_of_order_rooms = await sys_db.rooms.count_documents(
+        {
+            "tenant_id": tenant_id,
+            "$or": [
+                {"status": {"$in": ["maintenance", "out_of_order", "blocked"]}},
+                {"room_status": {"$in": ["maintenance", "out_of_order", "blocked"]}},
+            ],
+        }
+    )
+    open_folios = await sys_db.folios.find(
+        {"tenant_id": tenant_id, "status": {"$in": ["open", "active"]}, "balance": {"$gt": 0.01}},
+        {"_id": 0, "balance": 1, "currency": 1},
+    ).to_list(10000)
     payments = await sys_db.payments.find(
         {
             "tenant_id": tenant_id,
             "voided": {"$ne": True},
             "status": {"$nin": ["voided", "refunded", "cancelled"]},
             "$or": [
-                {"processed_at": {"$gte": today_start, "$lt": tomorrow_start}},
-                {"created_at": {"$gte": today_start, "$lt": tomorrow_start}},
-                {"payment_date": {"$gte": today_start[:10], "$lt": tomorrow_start[:10]}},
+                {"business_date": business_date},
+                {"date": business_date},
+                {"payment_date": business_date},
+                {"payment_date": {"$gte": business_day_start, "$lte": business_day_end}},
+                {"processed_at": {"$gte": business_day_start, "$lte": business_day_end}},
+                {"created_at": {"$gte": business_day_start, "$lte": business_day_end}},
             ],
         },
-        {"_id": 0, "amount": 1, "total": 1},
+        {"_id": 0, "amount": 1, "total": 1, "currency": 1},
     ).to_list(10000)
-    revenue = sum((_safe_decimal(p.get("amount", p.get("total", 0))) for p in payments), Decimal("0"))
+    room_charges = await sys_db.folio_charges.find(
+        {
+            "tenant_id": tenant_id,
+            "voided": {"$ne": True},
+            "$and": [
+                {
+                    "$or": [
+                        {"charge_category": {"$in": ["room", "accommodation", "room_charge"]}},
+                        {"charge_type": "room_charge"},
+                        {"category": {"$in": ["room", "accommodation", "room_charge"]}},
+                    ]
+                },
+                {
+                    "$or": [
+                        {"business_date": business_date},
+                        {"date": business_date},
+                        {"posted_at": {"$gte": business_day_start, "$lte": business_day_end}},
+                    ]
+                },
+            ],
+        },
+        {"_id": 0, "amount": 1, "total": 1, "currency": 1},
+    ).to_list(10000)
+    settings = await sys_db.hotel_settings.find_one({"tenant_id": tenant_id}, {"_id": 0, "currency": 1})
+    property_currency = str((settings or {}).get("currency") or tenant.get("currency") or "TRY").upper()
+    revenue_by_currency: dict[str, Decimal] = {}
+    for payment in payments:
+        currency = str(payment.get("currency") or property_currency).upper()
+        revenue_by_currency[currency] = revenue_by_currency.get(currency, Decimal("0")) + _safe_decimal(payment.get("amount", payment.get("total", 0)))
+    revenue = revenue_by_currency.get(property_currency, Decimal("0"))
+    room_revenue_by_currency: dict[str, Decimal] = {}
+    for charge in room_charges:
+        currency = str(charge.get("currency") or property_currency).upper()
+        room_revenue_by_currency[currency] = room_revenue_by_currency.get(currency, Decimal("0")) + _safe_decimal(
+            charge.get("total", charge.get("amount", 0))
+        )
+    room_revenue = room_revenue_by_currency.get(property_currency, Decimal("0"))
+    outstanding_by_currency: dict[str, Decimal] = {}
+    for folio in open_folios:
+        currency = str(folio.get("currency") or property_currency).upper()
+        outstanding_by_currency[currency] = outstanding_by_currency.get(currency, Decimal("0")) + _safe_decimal(folio.get("balance"))
     provider = tenant.get("channel_manager_provider")
     connection = None
     if provider:
@@ -320,10 +401,6 @@ async def _chain_property_metrics(sys_db, tenant: dict, today_start: str, tomorr
             {"tenant_id": tenant_id, "provider": provider, "property_id": "default"},
             {"_id": 0, "status": 1, "last_successful_sync": 1, "last_error": 1},
         )
-    nilvera = await sys_db.tenant_settings.find_one(
-        {"tenant_id": tenant_id},
-        {"_id": 0, "nilvera.enabled": 1, "nilvera.api_key_enc": 1},
-    )
     occupancy = round((occupied_rooms / total_rooms * 100) if total_rooms else 0, 1)
     return {
         "property_id": tenant_id,
@@ -336,9 +413,31 @@ async def _chain_property_metrics(sys_db, tenant: dict, today_start: str, tomorr
         "occupied_rooms": occupied_rooms,
         "occupancy_pct": occupancy,
         "occupancy_rate": occupancy,
+        "business_date": business_date,
+        "arrivals_today": arrivals_today,
+        "departures_today": departures_today,
+        "pickup_7d": pickup_7d,
+        "housekeeping_pending": housekeeping_pending,
+        "out_of_order_rooms": out_of_order_rooms,
+        "open_folios": len(open_folios),
+        "outstanding_by_currency": {
+            currency: float(amount.quantize(Decimal("0.01")))
+            for currency, amount in outstanding_by_currency.items()
+        },
         "today_revenue": float(revenue.quantize(Decimal("0.01"))),
+        "today_revenue_by_currency": {currency: float(amount.quantize(Decimal("0.01"))) for currency, amount in revenue_by_currency.items()},
+        "room_revenue": float(room_revenue.quantize(Decimal("0.01"))),
+        "room_revenue_by_currency": {
+            currency: float(amount.quantize(Decimal("0.01")))
+            for currency, amount in room_revenue_by_currency.items()
+        },
+        "currency": property_currency,
         "revenue_mtd": float(revenue.quantize(Decimal("0.01"))),
-        "adr": float((revenue / occupied_rooms).quantize(Decimal("0.01"))) if occupied_rooms else 0.0,
+        "adr": float((room_revenue / occupied_rooms).quantize(Decimal("0.01"))) if occupied_rooms else 0.0,
+        "adr_by_currency": {
+            currency: float((amount / occupied_rooms).quantize(Decimal("0.01"))) if occupied_rooms else 0.0
+            for currency, amount in room_revenue_by_currency.items()
+        },
         "total_guests": total_guests,
         "is_headquarters": bool(tenant.get("is_chain_headquarters")),
         "integrations": {
@@ -349,8 +448,8 @@ async def _chain_property_metrics(sys_db, tenant: dict, today_start: str, tomorr
                 "has_error": bool((connection or {}).get("last_error")),
             },
             "nilvera": {
-                "enabled": bool(((nilvera or {}).get("nilvera") or {}).get("enabled")),
-                "api_key_set": bool(((nilvera or {}).get("nilvera") or {}).get("api_key_enc")),
+                "enabled": bool(((tenant_settings or {}).get("nilvera") or {}).get("enabled")),
+                "api_key_set": bool(((tenant_settings or {}).get("nilvera") or {}).get("api_key_enc")),
             },
         },
     }
@@ -388,26 +487,44 @@ async def get_multi_property_dashboard(property_id: str | None = None, current_u
     sys_db = get_system_db()
     today = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
     tomorrow = today + timedelta(days=1)
-    properties = [
-        await _chain_property_metrics(sys_db, member, today.isoformat(), tomorrow.isoformat())
-        for member in members
-    ]
+    properties = [await _chain_property_metrics(sys_db, member, today.isoformat(), tomorrow.isoformat()) for member in members]
     total_rooms = sum(p["total_rooms"] for p in properties)
     occupied_rooms = sum(p["occupied_rooms"] for p in properties)
-    total_revenue = round(sum(p["today_revenue"] for p in properties), 2)
+    total_revenue_by_currency: dict[str, float] = {}
+    for prop in properties:
+        for currency, amount in prop["today_revenue_by_currency"].items():
+            total_revenue_by_currency[currency] = round(total_revenue_by_currency.get(currency, 0.0) + float(amount), 2)
+    total_revenue = round(sum(total_revenue_by_currency.values()), 2)
     total_guests = sum(p["total_guests"] for p in properties)
     avg_occupancy = round((occupied_rooms / total_rooms * 100) if total_rooms else 0, 1)
+    business_dates, business_dates_aligned = _business_date_alignment(properties)
     summary = {
         "total_properties": len(properties),
         "total_rooms": total_rooms,
         "occupied_rooms": occupied_rooms,
         "avg_occupancy": avg_occupancy,
         "total_revenue": total_revenue,
+        "total_revenue_by_currency": total_revenue_by_currency,
         "total_guests": total_guests,
+        "arrivals_today": sum(p["arrivals_today"] for p in properties),
+        "departures_today": sum(p["departures_today"] for p in properties),
+        "pickup_7d": sum(p["pickup_7d"] for p in properties),
+        "housekeeping_pending": sum(p["housekeeping_pending"] for p in properties),
+        "out_of_order_rooms": sum(p["out_of_order_rooms"] for p in properties),
+        "open_folios": sum(p["open_folios"] for p in properties),
+        "business_dates": business_dates,
+        "business_dates_aligned": business_dates_aligned,
     }
     return {
         "chain_id": own.get("chain_id"),
         "is_chain": bool(own.get("chain_id")),
+        "current_property_id": current_user.tenant_id,
+        # A single date is only authoritative when every property is on that
+        # same PMS day.  Consumers must not label mixed operating days as one.
+        "business_date": business_dates[0] if business_dates_aligned and business_dates else None,
+        "business_dates": business_dates,
+        "business_dates_aligned": business_dates_aligned,
+        "generated_at": datetime.now(UTC).isoformat(),
         "summary": summary,
         "properties": properties,
         # Backward-compatible fields for the older dashboard component.

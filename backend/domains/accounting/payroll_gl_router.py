@@ -26,10 +26,12 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from core.database import db
+from core.database import db, get_motor_database
 from core.security import get_current_user
+from domains.accounting.payroll_lines import detailed_payroll_lines
 from models.schemas import User
-from shared_kernel.gl_posting import GLPostingError, post_journal_entry
+from shared_kernel.atomic_workflow import run_atomic
+from shared_kernel.gl_posting import GLPostingError, ensure_gl_idem_index, post_journal_entry
 
 logger = logging.getLogger("domains.accounting.payroll_gl")
 
@@ -74,6 +76,10 @@ class MappingIn(BaseModel):
     wage_expense_code: str = Field(..., min_length=1, max_length=40)
     withholding_payable_code: str = Field(..., min_length=1, max_length=40)
     net_payable_code: str = Field(..., min_length=1, max_length=40)
+    sgk_payable_code: str | None = Field(None, min_length=1, max_length=40)
+    employer_expense_code: str | None = Field(None, min_length=1, max_length=40)
+    advance_receivable_code: str | None = Field(None, min_length=1, max_length=40)
+    other_deductions_code: str | None = Field(None, min_length=1, max_length=40)
 
 
 @router.get("/mapping")
@@ -89,11 +95,12 @@ async def set_mapping(payload: MappingIn, current_user: User = Depends(get_curre
     _require_role(current_user, _GL_ROLES)
     tenant_id = _tenant_of(current_user)
 
-    codes = [
-        payload.wage_expense_code.strip(),
-        payload.withholding_payable_code.strip(),
-        payload.net_payable_code.strip(),
-    ]
+    values = {k: v.strip() if v is not None else None for k, v in payload.model_dump(exclude_unset=True).items()}
+    codes = [v for v in values.values() if v is not None]
+    if any(not c for c in codes):
+        raise HTTPException(400, "Hesap kodu boş olamaz")
+    if values.get("sgk_payable_code") == values["withholding_payable_code"]:
+        raise HTTPException(400, "SGK ve vergi hesapları ayrı olmalı")
     found = await db.gl_accounts.find({"tenant_id": tenant_id, "code": {"$in": codes}}, {"_id": 0, "code": 1}).to_list(100)
     found_codes = {a["code"] for a in found}
     missing = [c for c in codes if c not in found_codes]
@@ -106,9 +113,7 @@ async def set_mapping(payload: MappingIn, current_user: User = Depends(get_curre
         {
             "$set": {
                 "tenant_id": tenant_id,
-                "wage_expense_code": codes[0],
-                "withholding_payable_code": codes[1],
-                "net_payable_code": codes[2],
+                **values,
                 "updated_at": now,
                 "updated_by": _actor_id(current_user),
             }
@@ -119,8 +124,9 @@ async def set_mapping(payload: MappingIn, current_user: User = Depends(get_curre
     return {"mapping": doc}
 
 
-async def _find_posted_entry(tenant_id: str, run_id: str) -> dict | None:
-    return await db.gl_journal_entries.find_one({"tenant_id": tenant_id, "idempotency_key": _idem_key(run_id)}, {"_id": 0})
+async def _find_posted_entry(tenant_id: str, run_id: str, database=None) -> dict | None:
+    database = database if database is not None else db
+    return await database.gl_journal_entries.find_one({"tenant_id": tenant_id, "idempotency_key": _idem_key(run_id)}, {"_id": 0})
 
 
 @router.get("/{run_id}")
@@ -135,8 +141,21 @@ async def posting_status(run_id: str, current_user: User = Depends(get_current_u
 async def post_payroll(run_id: str, current_user: User = Depends(get_current_user)):
     _require_role(current_user, _GL_ROLES)
     tenant_id = _tenant_of(current_user)
-
     run = await db.payroll_runs.find_one({"tenant_id": tenant_id, "id": run_id}, {"_id": 0})
+    if not run:
+        raise HTTPException(404, "Bordro çalışması bulunamadı")
+    await ensure_gl_idem_index(db)
+
+    async def post(database):
+        return await _post_payroll(run_id, current_user, database)
+
+    return await run_atomic(db, get_motor_database().client, tenant_id, f"payroll-gl:{run.get('period_month')}", post)
+
+
+async def _post_payroll(run_id, current_user, database):
+    tenant_id = _tenant_of(current_user)
+
+    run = await database.payroll_runs.find_one({"tenant_id": tenant_id, "id": run_id}, {"_id": 0})
     if not run:
         raise HTTPException(status_code=404, detail="Bordro çalışması bulunamadı")
     if run.get("status") != "locked":
@@ -145,7 +164,55 @@ async def post_payroll(run_id: str, current_user: User = Depends(get_current_use
             detail="Yalnızca kilitli (locked) bordro GL'ye gönderilebilir",
         )
 
-    mapping = await db.payroll_gl_mapping.find_one({"tenant_id": tenant_id}, {"_id": 0})
+    # A revision contains the full replacement payroll, not just its delta.
+    # Every posted ancestor must be balanced by a linked reversal first.
+    existing = await _find_posted_entry(tenant_id, run_id, database)
+    if existing:
+        return {"run_id": run_id, "period_month": run.get("period_month"), "entry": existing}
+    parent_id = run.get("parent_run_id")
+    visited = {run_id}
+    while parent_id:
+        if parent_id in visited:
+            raise HTTPException(status_code=409, detail="Bordro revizyon zinciri geçersiz")
+        visited.add(parent_id)
+        parent = await database.payroll_runs.find_one({"tenant_id": tenant_id, "id": parent_id}, {"_id": 0})
+        if not parent or parent.get("period_month") != run.get("period_month"):
+            raise HTTPException(status_code=409, detail="Üst bordro bulunamadı veya dönemi uyuşmuyor")
+        prior_entry = await _find_posted_entry(tenant_id, parent_id, database)
+        if prior_entry:
+            reversal = await database.gl_journal_entries.find_one(
+                {"tenant_id": tenant_id, "reverses_entry_id": prior_entry["id"]},
+                {"_id": 0, "id": 1},
+            )
+            if not reversal:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Revizyon aktarılmadan önce üst bordronun muhasebe fişine gerekçeli ters kayıt oluşturulmalı; çift tahakkuk engellendi",
+                )
+        parent_id = parent.get("parent_run_id")
+
+    # Serialize all full payroll snapshots for the period, including siblings
+    # and a parent submitted AFTER a child. A run-only key cannot protect this.
+    runs = await database.payroll_runs.find(
+        {
+            "tenant_id": tenant_id,
+            "period_month": run.get("period_month"),
+        },
+        {"_id": 0, "id": 1},
+    ).to_list(None)
+    for other in runs:
+        if other["id"] == run_id:
+            continue
+        posted = await _find_posted_entry(tenant_id, other["id"], database)
+        if posted and not await database.gl_journal_entries.find_one(
+            {
+                "tenant_id": tenant_id,
+                "reverses_entry_id": posted["id"],
+            }
+        ):
+            raise HTTPException(409, "Bu dönemde ters kaydı oluşturulmamış bordro fişi var; çift tahakkuk engellendi")
+
+    mapping = await database.payroll_gl_mapping.find_one({"tenant_id": tenant_id}, {"_id": 0})
     if not mapping:
         raise HTTPException(
             status_code=409,
@@ -174,10 +241,13 @@ async def post_payroll(run_id: str, current_user: User = Depends(get_current_use
             }
         )
 
+    if summary.get("accounting_version") == 2:
+        lines = detailed_payroll_lines(run, mapping)
+
     period = run.get("period_month")
     try:
         entry = await post_journal_entry(
-            db,
+            database,
             tenant_id,
             date=f"{period}-01" if period else None,
             memo=f"Bordro tahakkuk ({period})",

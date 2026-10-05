@@ -27,17 +27,28 @@ test("builds Turkish checkout with actual checkout type", () => {
   assert.match(req.envelope, /<d:CKSTIP>TESISTENCIKIS<\/d:CKSTIP>/);
 });
 
+test("routes a foreign identity card through the official YKN identity-number flow", () => {
+  const req = soap.buildRequest({
+    nationality: "SY", id_type: "foreign_identity_card", id_number: "99999999999",
+    room_number: "208", check_in: "2026-09-25T14:00:00+03:00",
+  }, "checkin", credentials);
+  assert.equal(req.method, "MusteriKimlikNoGiris");
+  assert.match(req.envelope, /<d:KIMLIKNO>99999999999<\/d:KIMLIKNO>/);
+  assert.match(req.envelope, /<d:ULKKOD>SYRIAN_ARAB_REPUBLIC<\/d:ULKKOD>/);
+  assert.doesNotMatch(req.envelope, /<d:BELGENO>/);
+});
+
 test("builds foreign check-in and rejects unknown country", () => {
   const req = soap.buildRequest({ nationality: "DE", passport_number: "C01X", guest_name: "Ada Lovelace", gender: "female", birth_date: "1990-01-02", check_in: "2026-08-23", room_number: "4" }, "checkin", credentials);
   assert.equal(req.method, "MusteriYabanciGiris");
   assert.match(req.envelope, /<d:ULKKOD>GERMANY<\/d:ULKKOD>/);
-  assert.throws(() => soap.buildRequest({ nationality: "XX", passport_number: "P1", guest_name: "A B", birth_date: "1990-01-01", check_in: "2026-08-23" }, "checkin", credentials), /unsupported_foreign_country/);
+  assert.throws(() => soap.buildRequest({ nationality: "XX", passport_number: "P1", guest_name: "A B", birth_date: "1990-01-01", check_in: "2026-08-23", room_number: "4" }, "checkin", credentials), /unsupported_foreign_country/);
 });
 
 test("uses exact official enum symbols and never guesses foreign gender", () => {
   assert.equal(soap.countryEnum("GB"), "UNITED_KINGDOM");
   assert.equal(soap.countryEnum("Rusya"), "RUSSIAN_FEDERATION");
-  assert.throws(() => soap.buildRequest({ nationality: "DE", passport_number: "P1", guest_name: "A B", gender: "", birth_date: "1990-01-01", check_in: "2026-08-23" }, "checkin", credentials), /unsupported_foreign_gender/);
+  assert.throws(() => soap.buildRequest({ nationality: "DE", passport_number: "P1", guest_name: "A B", gender: "", birth_date: "1990-01-01", check_in: "2026-08-23", room_number: "4" }, "checkin", credentials), /unsupported_foreign_gender/);
 });
 
 test("accepts only Basarili response and exposes official error", () => {
@@ -45,4 +56,60 @@ test("accepts only Basarili response and exposes official error", () => {
   const failed = soap.parseResponse("<x><Basarili>false</Basarili><HataKodu>YetkiHatasi</HataKodu><Mesaj>IP gecersiz</Mesaj></x>", "MusteriKimlikNoGiris");
   assert.equal(failed.ok, false);
   assert.match(failed.error, /YetkiHatasi.*IP gecersiz/);
+});
+
+test("rejects a check-in without a room number before building SOAP", () => {
+  assert.throws(
+    () => soap.buildRequest(
+      {
+        guest_name: "Test Guest",
+        nationality: "TC",
+        id_number: "10000000146",
+        room_number: "",
+        check_in: "2026-08-30T14:00:00+03:00",
+        check_out: "2026-08-31T12:00:00+03:00",
+      },
+      "checkin",
+      { userTc: "10000000146", facilityCode: "123456", password: "secret" },
+    ),
+    /missing_room_number/,
+  );
+});
+
+test("omits an overlong optional phone number instead of letting Jandarma reject the guest", () => {
+  const req = soap.buildRequest({
+    action: "checkin", nationality: "TR", id_number: "10000000146", room_number: "12",
+    phone: "+90 (540) 452-9326 dahili 123456789",
+    check_in: "2026-08-23T10:00:00+03:00",
+  }, "checkin", credentials);
+  assert.match(req.envelope, /<d:TELNO><\/d:TELNO>/);
+  assert.equal(soap.optionalPhone("+90 540 452 93 26"), "905404529326");
+});
+
+test("accepts the numeric facility code shape declared as xs:long by the live WSDL", () => {
+  const req = soap.buildRequest({
+    nationality: "TR", id_number: "10000000146", room_number: "12",
+    check_in: "2026-08-23T10:00:00+03:00",
+  }, "checkin", { ...credentials, facilityCode: "12345" });
+
+  assert.match(req.envelope, /<TssKod>12345<\/TssKod>/);
+});
+
+test("checkout does not require entry-only guest, room or check-in fields", () => {
+  const req = soap.buildRequest({
+    nationality: "TR", id_number: "10000000146", check_out: "2026-08-23T12:00:00Z",
+  }, "checkout", credentials);
+
+  assert.equal(req.method, "MusteriKimlikNoCikis");
+  assert.doesNotMatch(req.envelope, /<d:ODANO>/);
+  assert.doesNotMatch(req.envelope, /<d:GRSTRH>/);
+});
+
+test("builds a side-effect-free official parameter call for connection testing", () => {
+  const req = soap.buildConnectionTest(credentials);
+
+  assert.equal(req.method, "ParametreListele");
+  assert.match(req.soapAction, /ParametreListele$/);
+  assert.match(req.envelope, /<parametreTuru>ULKELER<\/parametreTuru>/);
+  assert.doesNotMatch(req.envelope, /Musteri/);
 });

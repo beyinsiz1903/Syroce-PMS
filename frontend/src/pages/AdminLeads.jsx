@@ -30,7 +30,7 @@ const STATUS_META = {
 
 const SOURCE_META = {
   pms_lite_landing:     "PMS Lite",
-  marketing_contact:    "İletişim",
+  marketing_contact:    "Demo / İletişim",
   supplier_application: "Tedarikçi",
 };
 
@@ -54,7 +54,7 @@ const openLeadWhatsApp = (lead) => {
     return;
   }
   const phone = sanitizePhone(lead.phone);
-  const message = `Merhaba ${lead.full_name || ""}, PMS Lite demo talebiniz hakkında bilgi vermek istiyorum...`;
+  const message = `Merhaba ${lead.full_name || ""}, Syroce demo talebiniz hakkında bilgi vermek istiyorum...`;
   window.open(`https://wa.me/${phone}?text=${encodeURIComponent(message)}`, "_blank");
 };
 
@@ -163,7 +163,7 @@ const AdminLeads = () => {
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `pms-lite-leads_${new Date().toISOString().slice(0, 10)}.csv`;
+      a.download = `syroce-marketing-leads_${new Date().toISOString().slice(0, 10)}.csv`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -188,8 +188,8 @@ const AdminLeads = () => {
     <div className="p-4 md:p-6 space-y-4 max-w-[1600px] mx-auto">
       <PageHeader
         icon={Users}
-        title="PMS Lite Lead Listesi"
-        subtitle={t('cm.pages_AdminLeads.pms_lite_tanitim_sayfasindan_gelen_demo_')}
+        title="Pazarlama Talepleri"
+        subtitle="Demo, iletişim ve tedarikçi başvuruları burada listelenir. Yeni talepler için Yenile'yi kullanın."
         actions={
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" onClick={handleCsvExport} disabled={loading}>
@@ -300,6 +300,7 @@ const AdminLeads = () => {
                     <th className="px-3 py-2 font-semibold text-slate-700">{t('cm.pages_AdminLeads.oda')}</th>
                     <th className="px-3 py-2 font-semibold text-slate-700">{t('cm.pages_AdminLeads.isim')}</th>
                     <th className="px-3 py-2 font-semibold text-slate-700">Telefon</th>
+                    <th className="px-3 py-2 font-semibold text-slate-700">Kaynak</th>
                     <th className="px-3 py-2 font-semibold text-slate-700">{t('cm.pages_AdminLeads.durum')}</th>
                     <th className="px-3 py-2 font-semibold text-slate-700">{t('cm.pages_AdminLeads.son_islem')}</th>
                     <th className="px-3 py-2 font-semibold text-slate-700">Not</th>
@@ -325,6 +326,11 @@ const AdminLeads = () => {
                         <td className="px-3 py-2 align-top text-slate-600">{lead.rooms_count ?? "—"}</td>
                         <td className="px-3 py-2 align-top text-slate-800">{lead.full_name || "—"}</td>
                         <td className="px-3 py-2 align-top text-slate-600 font-mono">{lead.phone || "—"}</td>
+                        <td className="px-3 py-2 align-top text-slate-600">
+                          <span className="block">{lead.utm_source || SOURCE_META[lead.source] || '—'}</span>
+                          {lead.utm_campaign && <span className="block text-[10px] text-slate-500">{lead.utm_campaign}</span>}
+                          {lead.landing_path && <span className="block text-[10px] text-slate-500">{lead.landing_path}</span>}
+                        </td>
                         <td className="px-3 py-2 align-top">
                           <div className="flex items-center gap-1.5">
                             <StatusBadge intent={meta.intent}>{meta.label}</StatusBadge>

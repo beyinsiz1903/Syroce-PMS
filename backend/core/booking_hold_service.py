@@ -30,10 +30,16 @@ from typing import Any
 # All queries below carry manual `tenant_id` filters, so use the raw system
 # DB to bypass STRICT_TENANT_MODE without weakening isolation.
 from core.tenant_db import get_system_db as _get_system_db
+from core.transient_db_guard import TransientFailureTracker
 
 db = _get_system_db()
 
 logger = logging.getLogger("core.booking_hold")
+
+# A missed expiry sweep during a short Atlas primary election is recoverable:
+# the next minute's sweep processes the same holds.  Do not create a Sentry
+# issue for every tick, while keeping a sustained database outage visible.
+_sweeper_failures = TransientFailureTracker("booking-hold-sweeper")
 
 DEFAULT_HOLD_TTL_MINUTES = 15
 SWEEPER_INTERVAL_SECONDS = 60
@@ -327,6 +333,15 @@ async def sweep_expired_holds() -> dict[str, Any]:
 _sweeper_task: asyncio.Task | None = None
 
 
+def _record_sweeper_error(exc: BaseException) -> None:
+    _sweeper_failures.log_exception(
+        logger,
+        exc,
+        TransientFailureTracker.OUTER_LOOP_KEY,
+        context="sweep",
+    )
+
+
 async def _sweeper_loop():
     """Background loop that periodically sweeps expired holds."""
     logger.info("Booking hold sweeper started (interval=%ds)", SWEEPER_INTERVAL_SECONDS)
@@ -334,6 +349,7 @@ async def _sweeper_loop():
         try:
             await asyncio.sleep(SWEEPER_INTERVAL_SECONDS)
             result = await sweep_expired_holds()
+            _sweeper_failures.reset(TransientFailureTracker.OUTER_LOOP_KEY)
             if result["expired_count"] > 0:
                 logger.info(
                     "Sweeper: released %d expired holds (%d bookings)",
@@ -344,7 +360,7 @@ async def _sweeper_loop():
             logger.info("Booking hold sweeper stopped")
             break
         except Exception as exc:
-            logger.error("Sweeper error: %s", exc)
+            _record_sweeper_error(exc)
 
 
 def start_hold_sweeper():

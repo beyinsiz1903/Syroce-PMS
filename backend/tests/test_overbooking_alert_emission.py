@@ -1,4 +1,5 @@
-from unittest.mock import patch, AsyncMock
+from unittest.mock import AsyncMock, patch
+
 """
 Test: Overbooking Alert Emission (CM-Hardening Turu #1a, May 2026)
 ==================================================================
@@ -24,7 +25,6 @@ Pin'lenen davranış:
 import asyncio
 import uuid
 from datetime import UTC, datetime, timedelta
-from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -33,7 +33,6 @@ from core.atomic_booking import (
     create_booking_atomic,
 )
 from core.database import db
-
 
 pytestmark = pytest.mark.asyncio
 
@@ -128,6 +127,10 @@ async def test_overbooking_blocked_emits_notification():
         assert meta.get("rejected_room_id") == room_id
         assert meta.get("conflicting_booking_id") == first["id"]
         assert meta.get("conflict_night")  # truthy ISO date string
+        # Bildirimden operatörün açacağı hedef, henüz oluşmamış reddedilen
+        # istek değil odada bulunan çakışan rezervasyondur.
+        assert notif.get("related_id") == first["id"]
+        assert "Çakışan rezervasyon: First" in notif.get("message", "")
     finally:
         await _cleanup(tenant_id, room_id, booking_ids)
 

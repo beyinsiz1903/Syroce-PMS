@@ -353,6 +353,32 @@ async def _aggregate_period(tenant_id: str, year: int, month: int) -> dict[str, 
     ]
     rows = await db.folio_charges.aggregate(pipeline).to_list(length=None)
 
+    # Rapor kullanıcıya gösterildiği için dahili UUID yerine folyo ve
+    # rezervasyon numarasını da ekle. Eşleştirme toplu yapılır; rapor satırı
+    # başına ek sorgu çalıştırılmaz.
+    folio_ids = [row.get("_id") for row in rows if row.get("_id")]
+    booking_ids = [row.get("booking_id") for row in rows if row.get("booking_id")]
+    folio_numbers: dict[str, str] = {}
+    reservation_numbers: dict[str, str] = {}
+    if folio_ids:
+        async for folio in db.folios.find(
+            {"tenant_id": tenant_id, "id": {"$in": folio_ids}},
+            {"_id": 0, "id": 1, "folio_number": 1},
+        ):
+            if folio.get("folio_number"):
+                folio_numbers[folio["id"]] = folio["folio_number"]
+    if booking_ids:
+        async for booking in db.bookings.find(
+            {"tenant_id": tenant_id, "id": {"$in": booking_ids}},
+            {"_id": 0, "id": 1, "reservation_number": 1, "booking_reference": 1},
+        ):
+            reservation_number = booking.get("reservation_number") or booking.get("booking_reference")
+            if reservation_number:
+                reservation_numbers[booking["id"]] = reservation_number
+    for row in rows:
+        row["folio_number"] = folio_numbers.get(row.get("_id"))
+        row["reservation_number"] = reservation_numbers.get(row.get("booking_id"))
+
     # v95.7: exempt_segments — booking.segment listede ise matrah dışı.
     # v95.8: muafiyet sayısı/tutarı rapora ayrı alan olarak yansıtılır
     # (denetim/iz için frontend "X folio muaf" notu gösterir).

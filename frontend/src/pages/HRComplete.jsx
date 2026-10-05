@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useHRTab } from '@/hooks/useHRTab';
 import axios from 'axios';
 import { toast } from 'sonner';
 import {
@@ -21,12 +22,15 @@ import { Textarea } from '@/components/ui/textarea';
 import { PageHeader } from '@/components/ui/page-header';
 import { KpiCard } from '@/components/ui/kpi-card';
 import { StatusBadge } from '@/components/ui/status-badge';
-import { formatCurrency } from '@/lib/currency';
+import PayrollExtras from '@/components/hr/PayrollExtras';
+import PayrollMapping from '@/components/hr/PayrollMapping';
+import HRAdvancesTab from '@/components/hr/HRAdvancesTab';
 import { useTranslation } from 'react-i18next';
 import { useEntitlements } from '@/context/EntitlementContext';
 import PaginationBar from '@/components/PaginationBar';
 import SkeletonRow from '@/components/SkeletonRow';
 import { useHRPagination } from '@/hooks/useHRPagination';
+import { hasGrantedPermission, hasRole } from '@/utils/authRoles';
 
 const LEAVE_TYPE_LABEL = {
   annual: 'Yıllık İzin',
@@ -63,19 +67,25 @@ const todayMonth = () => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 };
 
-const HRComplete = () => {
+const HRComplete = ({ user }) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
-    const { hasFeature } = useEntitlements();
-  const [activeTab, setActiveTab] = useState('attendance');
+  const { hasFeature, loading: entitlementsLoading } = useEntitlements();
+  const [activeTab, setActiveTab] = useHRTab();
+  // Route tests and older embeds may omit `user`; keep their historical
+  // manager-capable behaviour while real authenticated screens follow RBAC.
+  const canManageHR = !user
+    || hasRole(user, 'admin', 'supervisor')
+    || hasGrantedPermission(user, 'manage_hr');
 
   useEffect(() => {
+    if (entitlementsLoading) return;
     if (activeTab === 'payroll' && !hasFeature("hr", "payroll")) setActiveTab('attendance');
     if (activeTab === 'leave' && !hasFeature("hr", "leave")) setActiveTab('attendance');
-    if (activeTab === 'overtime' && !hasFeature("hr", "leave")) setActiveTab('attendance');
+    if (activeTab === 'overtime' && !hasFeature("hr", "shift")) setActiveTab('attendance');
     if (activeTab === 'recruitment' && !hasFeature("hr", "recruitment")) setActiveTab('attendance');
     if (activeTab === 'performance' && !hasFeature("hr", "performance_management")) setActiveTab('attendance');
-  }, [activeTab, hasFeature]);
+  }, [activeTab, hasFeature, entitlementsLoading, setActiveTab]);
 
   const [refreshing, setRefreshing] = useState(false);
 
@@ -99,28 +109,31 @@ const HRComplete = () => {
   const [savingDraft, setSavingDraft] = useState(false);
   const [revising, setRevising] = useState(false);
   const [loadingRun, setLoadingRun] = useState(false);
+  const [extrasDirty, setExtrasDirty] = useState(false);
+  useEffect(() => {
+    setSelectedRun(null); setPayrollPreview(null); setExtrasDirty(false);
+  }, [exportMonth]);
 
   // Pagination hooks
   const staffPage = useHRPagination('/hr/staff', {}, { enabled: activeTab === 'leave' || activeTab === 'performance' || activeTab === 'attendance' || activeTab === 'payroll' });
   const leavePage = useHRPagination('/hr/leave-requests', {}, { enabled: activeTab === 'leave' });
   const performancePage = useHRPagination('/hr/performance', {}, { enabled: activeTab === 'performance' });
   const perfMetrics = useMemo(() => {
-    if (!performancePage?.items) return { high_performers: 0, low_performers: 0 };
     return {
-      high_performers: performancePage.items.filter(i => parseFloat(i.overall_score) >= 8.0).length,
-      low_performers: performancePage.items.filter(i => parseFloat(i.overall_score) < 5.0).length,
+      high_performers: Number(performancePage.meta?.high_performers || 0),
+      low_performers: Number(performancePage.meta?.low_performers || 0),
     };
-  }, [performancePage.items]);
+  }, [performancePage.meta?.high_performers, performancePage.meta?.low_performers]);
 
   // Leave Dropdown & Form
-  const [leaveCounts, setLeaveCounts] = useState({ pending: 0, approved: 0, rejected: 0 });
+  const leaveCounts = leavePage.meta?.counts || { pending: 0, approved: 0, rejected: 0 };
   const [leaveForm, setLeaveForm] = useState({
     staff_id: '', leave_type: 'annual', start_date: '', end_date: '', reason: '',
   });
   const [creatingLeave, setCreatingLeave] = useState(false);
 
   // Performance Form
-  const [perfAvg, setPerfAvg] = useState(0);
+  const perfAvg = Number(performancePage.meta?.avg_score || 0);
   const [perfTemplates, setPerfTemplates] = useState([]);
   const [perfForm, setPerfForm] = useState({
     staff_id: '', period: '', overall_score: '', strengths: '', improvement_areas: '', goals: '',
@@ -130,6 +143,8 @@ const HRComplete = () => {
 
   // Overtime requests (Mesai Onayı)
   const [overtimeItems, setOvertimeItems] = useState([]);
+  const [overtimeForm, setOvertimeForm] = useState({ staff_id: '', work_date: '', hours: '', reason: '' });
+  const [creatingOvertime, setCreatingOvertime] = useState(false);
   const [overtimeCounts, setOvertimeCounts] = useState({ pending: 0, approved: 0, rejected: 0 });
 
   // Kıdem tazminatı tavanı (tenant ayarı)
@@ -150,8 +165,21 @@ const HRComplete = () => {
   });
   const [creatingJob, setCreatingJob] = useState(false);
   const [applicantsDialog, setApplicantsDialog] = useState({ open: false, job: null, list: [], counts: {} });
-  const [applicantForm, setApplicantForm] = useState({ name: '', email: '', phone: '', notes: '', cv_url: '' });
+  const [applicantForm, setApplicantForm] = useState({ name: '', email: '', phone: '', notes: '', cv_url: '', cv_file: null });
   const [savingApplicant, setSavingApplicant] = useState(false);
+
+  // Aynı formdaki alanlar hızlıca doldurulduğunda React güncellemeleri
+  // gruplanabilir. Güncel olmayan form kopyasıyla yazmak, az önce girilmiş bir
+  // alanı (özellikle tarihleri) geri alabiliyordu.
+  const updateLeaveField = useCallback((field, value) => {
+    setLeaveForm(current => ({ ...current, [field]: value }));
+  }, []);
+  const updatePerfField = useCallback((field, value) => {
+    setPerfForm(current => ({ ...current, [field]: value }));
+  }, []);
+  const updateJobField = useCallback((field, value) => {
+    setJobForm(current => ({ ...current, [field]: value }));
+  }, []);
 
   // Leave balances cache (per staff_id)
   const [leaveBalances, setLeaveBalances] = useState({});
@@ -287,6 +315,29 @@ const HRComplete = () => {
     }
   }, []);
 
+  const submitOvertime = async (event) => {
+    event.preventDefault();
+    if (creatingOvertime) return;
+    const hours = Number(overtimeForm.hours);
+    const reason = overtimeForm.reason.trim();
+    if (!overtimeForm.staff_id || !overtimeForm.work_date || !Number.isFinite(hours) || hours <= 0 || hours > 12 || reason.length < 3) {
+      toast.error('Personel, tarih, 0–12 arası pozitif saat ve en az 3 karakter gerekçe girin');
+      return;
+    }
+    setCreatingOvertime(true);
+    try {
+      await axios.post('/hr/overtime-request', { ...overtimeForm, hours, reason });
+      setOvertimeForm((current) => ({ ...current, work_date: '', hours: '', reason: '' }));
+      await loadOvertimeRequests();
+      toast.success('Mesai talebi oluşturuldu');
+    } catch (error) {
+      const detail = error.response?.data?.detail;
+      toast.error(typeof detail === 'string' ? detail : 'Mesai talebi oluşturulamadı');
+    } finally {
+      setCreatingOvertime(false);
+    }
+  };
+
   const decideOvertime = async (req, action) => {
     try {
       let note = '';
@@ -377,7 +428,7 @@ const HRComplete = () => {
         list: res.data?.items || [],
         counts: res.data?.counts || {},
       });
-      setApplicantForm({ name: '', email: '', phone: '', notes: '', cv_url: '' });
+      setApplicantForm({ name: '', email: '', phone: '', notes: '', cv_url: '', cv_file: null });
     } catch (err) {
       toast.error('Adaylar yüklenemedi');
     }
@@ -396,15 +447,45 @@ const HRComplete = () => {
     if (!applicantForm.name.trim()) { toast.error('Aday adı zorunlu'); return; }
     try {
       setSavingApplicant(true);
-      await axios.post(`/hr/job-postings/${applicantsDialog.job.id}/applicants`, applicantForm);
-      toast.success('Aday eklendi');
-      setApplicantForm({ name: '', email: '', phone: '', notes: '', cv_url: '' });
+      const { cv_file, ...payload } = applicantForm;
+      const created = await axios.post(`/hr/job-postings/${applicantsDialog.job.id}/applicants`, payload);
+      let cvUploaded = true;
+      if (cv_file && created.data?.applicant?.id) {
+        const formData = new FormData();
+        formData.append('file', cv_file);
+        try {
+          await axios.post(`/hr/applicants/${created.data.applicant.id}/cv`, formData, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+          });
+        } catch {
+          cvUploaded = false;
+        }
+      }
+      if (cvUploaded) toast.success('Aday eklendi');
+      else toast.warning('Aday eklendi; CV dosyası yüklenemedi. Aday kaydı tekrar oluşturulmadı.');
+      setApplicantForm({ name: '', email: '', phone: '', notes: '', cv_url: '', cv_file: null });
       refreshApplicants();
       loadJobs();
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Aday eklenemedi');
     } finally {
       setSavingApplicant(false);
+    }
+  };
+
+  const downloadApplicantCv = async (applicant) => {
+    try {
+      const response = await axios.get(`/hr/applicant-cvs/${applicant.cv_document_id}/download`, { responseType: 'blob' });
+      const url = window.URL.createObjectURL(new Blob([response.data], { type: applicant.cv_content_type }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = applicant.cv_filename || 'aday-cv';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      toast.error(error.response?.status === 403 ? 'CV dosyasını görüntüleme yetkiniz yok' : 'CV dosyası indirilemedi');
     }
   };
 
@@ -432,8 +513,8 @@ const HRComplete = () => {
     if (note === null) return;
     try {
       await axios.post(`/hr/job-posting/${jobId}/${action}`, { note: note || undefined });
+      await loadJobs();
       toast.success(isApprove ? 'Talep onaylandı' : 'Talep reddedildi');
-      loadJobs();
     } catch (err) {
       toast.error(err.response?.data?.detail || 'İşlem başarısız');
     }
@@ -459,10 +540,9 @@ const HRComplete = () => {
     switch (activeTab) {
       case 'attendance':
         if (!attendanceSummary) loadAttendance();
-        if (!overtimeCounts) loadOvertimeRequests();
         break;
-      case 'leave':
-        if (staffPage.items.length > 0) loadLeaveBalances(staffPage.items.map((s) => s.id));
+      case 'overtime':
+        loadOvertimeRequests();
         break;
       case 'performance':
         if (perfTemplates.length === 0) loadPerfTemplates();
@@ -479,7 +559,13 @@ const HRComplete = () => {
         break;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, staffPage.items]);
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (activeTab === 'leave') {
+      loadLeaveBalances(staffPage.items.map((s) => s.id));
+    }
+  }, [activeTab, staffPage.items, leavePage.meta, loadLeaveBalances]);
 
   // Attendance actions
   const clockIn = async () => {
@@ -522,18 +608,19 @@ const HRComplete = () => {
 
   // Payroll actions
   const handlePayrollExport = async () => {
+    if (extrasDirty) { toast.error('Önce ek kalem değişikliklerini kaydedin.'); return; }
     try {
       setExporting(true);
       // Streaming endpoint: tarayıcı 2MB data: URL limitini atlar
-      const res = await axios.get('/hr/payroll/export/csv', {
-        params: { month: exportMonth },
+      const res = await axios.get(selectedRun ? `/hr/payroll/runs/${selectedRun.id}/export.csv` : '/hr/payroll/export/csv', {
+        params: selectedRun ? undefined : { month: exportMonth },
         responseType: 'blob',
       });
       const blob = new Blob([res.data], { type: 'text/csv;charset=utf-8' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `payroll_${exportMonth}.csv`;
+      link.download = selectedRun ? `payroll_run_${selectedRun.id}.csv` : `payroll_${exportMonth}.csv`;
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -561,6 +648,12 @@ const HRComplete = () => {
     }
   }, []);
 
+  useEffect(() => {
+    if (activeTab === 'payroll' && hasFeature('hr', 'payroll')) {
+      loadPayrollRuns(exportMonth);
+    }
+  }, [activeTab, exportMonth, hasFeature, loadPayrollRuns]);
+
   const handlePayrollPreview = async () => {
     try {
       // Task #264: yeni endpoint daima dry-run + runs özetiyle döner.
@@ -573,7 +666,7 @@ const HRComplete = () => {
     } catch (error) {
       const msg = error.response?.status === 403
         ? 'Bordro görüntüleme yetkiniz yok'
-        : 'Önizleme alınamadı';
+        : error.response?.data?.detail || 'Önizleme alınamadı';
       toast.error(msg);
     }
   };
@@ -581,7 +674,7 @@ const HRComplete = () => {
   const handlePostPayrollToGL = async (run) => {
     try {
       await axios.post(`/payroll-gl/${run.id}/post`);
-      toast.success(`${run.period_month || run.month} Bordrosu Başarıyla Muhasebeleştirildi (770/335).`);
+      toast.success(`${run.period_month || run.month} bordrosu hesap eşlemesine göre muhasebeleştirildi.`);
       await loadPayrollRuns(exportMonth);
     } catch (error) {
       toast.error(error.response?.data?.detail || "Muhasebeleştirme başarısız.");
@@ -589,6 +682,12 @@ const HRComplete = () => {
   };
 
   const handlePayrollSaveDraft = async () => {
+    const draft = payrollRuns.find(run => run.status === 'draft');
+    if (draft) {
+      await loadRunDetail(draft.id);
+      toast.info('Mevcut taslağı açtık. Kalemleri Kaydet ve Yeniden Hesapla ile düzenleyin.');
+      return;
+    }
     const ok = await confirmDialog({
       title: 'Bordroyu Taslak Olarak Kaydet',
       message: (
@@ -609,6 +708,7 @@ const HRComplete = () => {
             : 'Taslak bordro oluşturuldu',
         );
         await loadPayrollRuns(exportMonth);
+        await loadRunDetail(res.data.run_id);
       }
     } catch (error) {
       const msg = error.response?.status === 409
@@ -628,6 +728,7 @@ const HRComplete = () => {
         axios.get(`/hr/payroll/runs/${runId}/revisions`),
       ]);
       setSelectedRun(detail.data);
+      setExtrasDirty(false);
       setRunRevisions(revs.data?.items || []);
     } catch (error) {
       toast.error('Bordro çalışması alınamadı');
@@ -681,7 +782,7 @@ const HRComplete = () => {
       setRevising(true);
       const res = await axios.post(`/hr/payroll/${runId}/revisions`, {
         reason: reason.trim(),
-        extras: [],
+        extras: selectedRun?.extras || [],
       });
       if (res.data?.success) {
         toast.success('Revizyon açıldı — yeni taslak hazır');
@@ -728,7 +829,7 @@ const HRComplete = () => {
       setCreatingLeave(true);
       await axios.post('/hr/leave-request', leaveForm);
       toast.success('İzin talebi oluşturuldu');
-      setLeaveForm({ ...leaveForm, start_date: '', end_date: '', reason: '' });
+      setLeaveForm(current => ({ ...current, start_date: '', end_date: '', reason: '' }));
       leavePage.refresh();
     } catch (error) {
       const msg = error.response?.data?.detail || 'İzin talebi oluşturulamadı';
@@ -786,7 +887,7 @@ const HRComplete = () => {
         competency_scores: perfForm.competency_scores || {},
       });
       toast.success('Performans değerlendirmesi kaydedildi');
-      setPerfForm({ ...perfForm, period: '', overall_score: '', strengths: '', improvement_areas: '', goals: '', competency_scores: {} });
+      setPerfForm(current => ({ ...current, period: '', overall_score: '', strengths: '', improvement_areas: '', goals: '', competency_scores: {} }));
       performancePage.refresh();
     } catch (error) {
       const msg = error.response?.data?.detail || 'Kaydedilemedi';
@@ -805,9 +906,20 @@ const HRComplete = () => {
     }
     try {
       setCreatingJob(true);
-      await axios.post('/hr/job-posting', jobForm);
-      toast.success('İş ilanı yayınlandı');
-      setJobForm({ ...jobForm, title: '', location: '', salary_range: '', description: '' });
+      await axios.post('/hr/job-posting', {
+        ...jobForm,
+        needed_by: jobForm.needed_by || null,
+        location: jobForm.location || null,
+        salary_range: jobForm.salary_range || null,
+        justification: jobForm.justification || null,
+        description: jobForm.description || null,
+      });
+      toast.success('Personel talebi oluşturuldu ve İK onayına gönderildi');
+      setJobForm({
+        title: '', department: '', employment_type: 'full_time',
+        location: '', salary_range: '', description: '',
+        headcount_needed: 1, urgency: 'normal', justification: '', needed_by: '',
+      });
       loadJobs();
     } catch (error) {
       const msg = error.response?.data?.detail || 'Yayınlanamadı';
@@ -848,7 +960,7 @@ const HRComplete = () => {
     [staffDropdown, selectedStaffId],
   );
 
-  const fmtCurrency = (v) => formatCurrency(v ?? 0, 'TRY');
+  const fmtCurrency = (v) => Number(v ?? 0).toLocaleString('tr-TR', { style: 'currency', currency: 'TRY', minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const fmtTime = (iso) => {
     if (!iso) return '—';
     try { return new Date(iso).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }); }
@@ -882,7 +994,25 @@ const HRComplete = () => {
           <Button
             variant="outline"
             className="border-slate-200 bg-white hover:bg-slate-50 text-slate-700"
-            onClick={loadAll}
+            onClick={async () => {
+              setRefreshing(true);
+              try {
+                const requests = [loadStaffDropdown(), loadCompliance()];
+                staffPage.refresh();
+                if (activeTab === 'attendance') requests.push(loadAttendance());
+                if (activeTab === 'overtime') requests.push(loadOvertimeRequests());
+                if (activeTab === 'leave') leavePage.refresh();
+                if (activeTab === 'performance') {
+                  performancePage.refresh();
+                  requests.push(loadPerfTemplates());
+                }
+                if (activeTab === 'recruitment') requests.push(loadJobs());
+                if (activeTab === 'payroll') requests.push(loadPayrollRuns(exportMonth), loadTaxRates(), loadSeveranceCap());
+                await Promise.all(requests);
+              } finally {
+                setRefreshing(false);
+              }
+            }}
             disabled={refreshing}
             data-testid="btn-refresh-hr"
           >
@@ -893,12 +1023,15 @@ const HRComplete = () => {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-6 bg-slate-100/80 p-1.5 rounded-xl border border-slate-200">
+        <TabsList className="grid w-full grid-cols-7 bg-slate-100/80 p-1.5 rounded-xl border border-slate-200">
           <TabsTrigger value="attendance" data-testid="tab-attendance" className="data-[state=active]:bg-teal-600 data-[state=active]:text-white data-[state=active]:shadow-md rounded-lg text-sm font-medium transition-all">
             <Clock className="w-4 h-4 mr-2" />Devam
           </TabsTrigger>
           {hasFeature("hr", "payroll") && (<TabsTrigger value="payroll" data-testid="tab-payroll" className="data-[state=active]:bg-teal-600 data-[state=active]:text-white data-[state=active]:shadow-md rounded-lg text-sm font-medium transition-all">
             <DollarSign className="w-4 h-4 mr-2" />Bordro
+          </TabsTrigger>)}
+          {hasFeature("hr", "payroll") && (<TabsTrigger value="advances" data-testid="tab-advances" className="data-[state=active]:bg-teal-600 data-[state=active]:text-white data-[state=active]:shadow-md rounded-lg text-sm font-medium transition-all">
+            <DollarSign className="w-4 h-4 mr-2" />Avanslar
           </TabsTrigger>)}
           {hasFeature("hr", "leave") && (<TabsTrigger value="leave" data-testid="tab-leave" className="data-[state=active]:bg-teal-600 data-[state=active]:text-white data-[state=active]:shadow-md rounded-lg text-sm font-medium transition-all">
             <Calendar className="w-4 h-4 mr-2" />İzin
@@ -906,7 +1039,7 @@ const HRComplete = () => {
           {hasFeature("hr", "performance_management") && (<TabsTrigger value="performance" data-testid="tab-performance" className="data-[state=active]:bg-teal-600 data-[state=active]:text-white data-[state=active]:shadow-md rounded-lg text-sm font-medium transition-all">
             <Briefcase className="w-4 h-4 mr-2" />Performans
           </TabsTrigger>)}
-          {hasFeature("hr", "leave") && (<TabsTrigger value="overtime" data-testid="tab-overtime" className="data-[state=active]:bg-teal-600 data-[state=active]:text-white data-[state=active]:shadow-md rounded-lg text-sm font-medium transition-all">
+          {hasFeature("hr", "shift") && (<TabsTrigger value="overtime" data-testid="tab-overtime" className="data-[state=active]:bg-teal-600 data-[state=active]:text-white data-[state=active]:shadow-md rounded-lg text-sm font-medium transition-all">
             <Timer className="w-4 h-4 mr-1.5" />
             Mesai Onayı
             {overtimeCounts.pending > 0 && (
@@ -1109,7 +1242,7 @@ const HRComplete = () => {
                     Bordro İşlemleri
                   </CardTitle>
                   <p className="text-sm text-slate-500 mt-1.5 ml-9">
-                    Devam kayıtlarından otomatik hesap (TR İş K. uyumlu: %14 SGK + %1 İşsizlik + %15 Gelir + %0.759 Damga)
+                    Ücret anlaşması, dönem matrahı, onaylı mesai ve ek kalemlerden hesaplanır. Gerçek matrahı olmayan kayıtlar yaklaşık modeldir.
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-3 bg-white p-2 rounded-xl border border-slate-200 shadow-sm">
@@ -1233,7 +1366,7 @@ const HRComplete = () => {
                       </div>
                       <div className="flex items-center gap-2">
                         {selectedRun.status === 'draft' && (
-                          <Button size="sm" onClick={() => handlePayrollFinalize(selectedRun.id)} disabled={finalizing}
+                          <Button size="sm" onClick={() => handlePayrollFinalize(selectedRun.id)} disabled={finalizing || extrasDirty}
                             className="bg-emerald-600 text-white hover:bg-emerald-700 rounded-lg shadow-sm" data-testid="btn-payroll-finalize">
                             <CheckCircle2 className="w-4 h-4 mr-1.5" />
                             {finalizing ? 'Kilitleniyor...' : 'Kilitle'}
@@ -1255,6 +1388,10 @@ const HRComplete = () => {
                         </Button>
                       </div>
                     </div>
+                    {extrasDirty && <p role="status" className="px-5 text-amber-700">Kalem değişikliklerini kaydetmeden kilitleyemezsiniz.</p>}
+                    <PayrollExtras key={`${selectedRun.id}:${selectedRun.updated_at}`} run={selectedRun} onDirty={setExtrasDirty}
+                      onSaved={async id => { await Promise.all([loadRunDetail(id), loadPayrollRuns(exportMonth)]); setPayrollPreview(null); }} />
+                    <PayrollMapping />
                     <div className="overflow-x-auto">
                       <table className="w-full text-sm">
                         <thead>
@@ -1322,6 +1459,10 @@ const HRComplete = () => {
 
                 {payrollPreview ? (
                   <div className="space-y-6">
+                    {payrollPreview.payroll?.some(row => row.calculation_mode !== 'statutory_2026') &&
+                      <div role="status" className="rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                        Bu önizlemede gerçek matrah tanımlanmamış personel var. Bu kişilerin tutarları eski yaklaşık modelle hesaplanır; gerçek bordro için Personel Düzenle ekranında ücret anlaşması ve dönem matrahı girilmelidir.
+                      </div>}
                     <div className="grid gap-4 md:grid-cols-3">
                       <div className="rounded-2xl border border-sky-100 bg-gradient-to-br from-sky-50 to-white p-5 shadow-sm">
                         <div className="flex items-center gap-3 mb-2">
@@ -1403,6 +1544,11 @@ const HRComplete = () => {
           </div>
         </TabsContent>
 
+        {/* === ADVANCES === */}
+        {hasFeature("hr", "payroll") && (
+          <HRAdvancesTab user={user} />
+        )}
+
         {/* === LEAVE === */}
         <TabsContent value="leave" className="mt-4">
           <div className="space-y-6 mt-6">
@@ -1460,7 +1606,7 @@ const HRComplete = () => {
                         <Label className="text-xs font-semibold text-slate-600">Personel</Label>
                         <select
                           value={leaveForm.staff_id}
-                          onChange={(e) => setLeaveForm({ ...leaveForm, staff_id: e.target.value })}
+                          onChange={(e) => updateLeaveField('staff_id', e.target.value)}
                           className="w-full rounded-lg border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:ring-teal-500"
                           data-testid="select-leave-staff"
                         >
@@ -1474,7 +1620,7 @@ const HRComplete = () => {
                         <Label className="text-xs font-semibold text-slate-600">İzin Türü</Label>
                         <select
                           value={leaveForm.leave_type}
-                          onChange={(e) => setLeaveForm({ ...leaveForm, leave_type: e.target.value })}
+                          onChange={(e) => updateLeaveField('leave_type', e.target.value)}
                           className="w-full rounded-lg border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:ring-teal-500"
                         >
                           {Object.entries(LEAVE_TYPE_LABEL).map(([k, v]) => (
@@ -1486,12 +1632,14 @@ const HRComplete = () => {
                         <div className="space-y-1.5">
                           <Label className="text-xs font-semibold text-slate-600">Başlangıç</Label>
                           <Input type="date" value={leaveForm.start_date} className="rounded-lg border-slate-200 bg-slate-50"
-                            onChange={(e) => setLeaveForm({ ...leaveForm, start_date: e.target.value })} />
+                            aria-label="İzin başlangıç tarihi" data-testid="leave-start-date"
+                            onChange={(e) => updateLeaveField('start_date', e.target.value)} />
                         </div>
                         <div className="space-y-1.5">
                           <Label className="text-xs font-semibold text-slate-600">Bitiş</Label>
                           <Input type="date" value={leaveForm.end_date} className="rounded-lg border-slate-200 bg-slate-50"
-                            onChange={(e) => setLeaveForm({ ...leaveForm, end_date: e.target.value })} />
+                            aria-label="İzin bitiş tarihi" data-testid="leave-end-date"
+                            onChange={(e) => updateLeaveField('end_date', e.target.value)} />
                         </div>
                       </div>
                       <div className="space-y-1.5">
@@ -1500,7 +1648,7 @@ const HRComplete = () => {
                           rows={3}
                           value={leaveForm.reason}
                           className="rounded-lg border-slate-200 bg-slate-50 resize-none"
-                          onChange={(e) => setLeaveForm({ ...leaveForm, reason: e.target.value })}
+                          onChange={(e) => updateLeaveField('reason', e.target.value)}
                           placeholder="Mazeret veya ek açıklama..."
                         />
                       </div>
@@ -1642,7 +1790,7 @@ const HRComplete = () => {
                                     <StatusBadge intent={STATUS_INTENT[item.status]}>{STATUS_LABEL[item.status] || item.status}</StatusBadge>
                                   </td>
                                   <td className="py-3 px-4 text-right">
-                                    {item.status === 'pending' && (
+                                    {canManageHR && item.status === 'pending' && (
                                       <div className="flex justify-end gap-1.5 flex-wrap">
                                         <Button size="sm" className="h-7 bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] px-2 rounded-md" onClick={() => decideLeave(item.id, 'dept_approve')} data-testid={`btn-dept-approve-${item.id}`}>
                                           <CheckCircle2 className="w-3.5 h-3.5 mr-1" />Departman Onayı
@@ -1652,7 +1800,7 @@ const HRComplete = () => {
                                         </Button>
                                       </div>
                                     )}
-                                    {item.status === 'dept_approved' && (
+                                    {canManageHR && item.status === 'dept_approved' && (
                                       <div className="flex justify-end gap-1.5 flex-wrap">
                                         <Button size="sm" className="h-7 bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] px-2 rounded-md" onClick={() => decideLeave(item.id, 'approve')} data-testid={`btn-hr-final-${item.id}`}>
                                           <CheckCircle2 className="w-3.5 h-3.5 mr-1" />İK Final Onayı
@@ -1751,7 +1899,7 @@ const HRComplete = () => {
                         <Label className="text-xs font-semibold text-slate-600">Personel</Label>
                         <select
                           value={perfForm.staff_id}
-                          onChange={(e) => setPerfForm({ ...perfForm, staff_id: e.target.value })}
+                          onChange={(e) => updatePerfField('staff_id', e.target.value)}
                           className="w-full rounded-lg border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:ring-teal-500"
                         >
                           <option value="">Seçiniz...</option>
@@ -1791,30 +1939,30 @@ const HRComplete = () => {
                       <div className="grid grid-cols-2 gap-3">
                         <div className="space-y-1.5">
                           <Label className="text-xs font-semibold text-slate-600">Dönem</Label>
-                          <Input value={perfForm.period} onChange={(e) => setPerfForm({ ...perfForm, period: e.target.value })} placeholder="2026 Q1" className="rounded-lg border-slate-200 bg-slate-50" />
+                          <Input value={perfForm.period} onChange={(e) => updatePerfField('period', e.target.value)} placeholder="2026 Q1" className="rounded-lg border-slate-200 bg-slate-50" />
                         </div>
                         <div className="space-y-1.5">
                           <Label className="text-xs font-semibold text-slate-600">Genel Puan (0–10)</Label>
                           <Input type="number" min="0" max="10" step="0.1"
                             value={perfForm.overall_score}
                             className="rounded-lg border-slate-200 bg-slate-50 font-bold"
-                            onChange={(e) => setPerfForm({ ...perfForm, overall_score: e.target.value })} />
+                            onChange={(e) => updatePerfField('overall_score', e.target.value)} />
                         </div>
                       </div>
                       <div className="space-y-1.5">
                         <Label className="text-xs font-semibold text-slate-600">Güçlü Yönler</Label>
                         <Textarea rows={2} value={perfForm.strengths} className="rounded-lg border-slate-200 bg-slate-50 resize-none text-sm"
-                          onChange={(e) => setPerfForm({ ...perfForm, strengths: e.target.value })} />
+                          onChange={(e) => updatePerfField('strengths', e.target.value)} />
                       </div>
                       <div className="space-y-1.5">
                         <Label className="text-xs font-semibold text-slate-600">Gelişim Alanları</Label>
                         <Textarea rows={2} value={perfForm.improvement_areas} className="rounded-lg border-slate-200 bg-slate-50 resize-none text-sm"
-                          onChange={(e) => setPerfForm({ ...perfForm, improvement_areas: e.target.value })} />
+                          onChange={(e) => updatePerfField('improvement_areas', e.target.value)} />
                       </div>
                       <div className="space-y-1.5">
                         <Label className="text-xs font-semibold text-slate-600">Hedefler</Label>
                         <Textarea rows={2} value={perfForm.goals} className="rounded-lg border-slate-200 bg-slate-50 resize-none text-sm"
-                          onChange={(e) => setPerfForm({ ...perfForm, goals: e.target.value })} />
+                          onChange={(e) => updatePerfField('goals', e.target.value)} />
                       </div>
                       <Button type="submit" disabled={creatingPerf} className="w-full bg-teal-600 hover:bg-teal-700 text-white rounded-lg shadow-sm py-5 mt-2">
                         {creatingPerf ? (
@@ -1913,6 +2061,41 @@ const HRComplete = () => {
         {/* === MESAİ ONAYI === */}
         <TabsContent value="overtime" className="mt-4">
           <div className="space-y-6 mt-6">
+            <Card>
+              <CardHeader><CardTitle>Yeni Mesai Talebi</CardTitle></CardHeader>
+              <CardContent>
+                <form onSubmit={submitOvertime} className="grid gap-4 md:grid-cols-2" aria-label="Yeni mesai talebi">
+                  <div className="space-y-2">
+                    <Label htmlFor="overtime-staff">Personel</Label>
+                    <select id="overtime-staff" required disabled={creatingOvertime} value={overtimeForm.staff_id}
+                      onChange={(e) => setOvertimeForm((f) => ({ ...f, staff_id: e.target.value }))}
+                      className="w-full rounded-md border border-input bg-background px-3 py-2">
+                      <option value="">Personel seçin</option>
+                      {staffDropdown.map((staff) => <option key={staff.id} value={staff.id}>{staff.name}</option>)}
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="overtime-date">Mesai Tarihi</Label>
+                    <Input id="overtime-date" type="date" required disabled={creatingOvertime} value={overtimeForm.work_date}
+                      onChange={(e) => setOvertimeForm((f) => ({ ...f, work_date: e.target.value }))} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="overtime-hours">Mesai Süresi (saat)</Label>
+                    <Input id="overtime-hours" type="number" min="0.01" max="12" step="0.01" required disabled={creatingOvertime} value={overtimeForm.hours}
+                      onChange={(e) => setOvertimeForm((f) => ({ ...f, hours: e.target.value }))} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="overtime-reason">Mesai Gerekçesi</Label>
+                    <Textarea id="overtime-reason" minLength={3} maxLength={1000} required disabled={creatingOvertime} value={overtimeForm.reason}
+                      onChange={(e) => setOvertimeForm((f) => ({ ...f, reason: e.target.value }))} />
+                  </div>
+                  <p className="text-sm text-muted-foreground md:col-span-2">Talep önce departman, ardından İK final onayına gider. Başka personel adına talep oluşturma yetkisi sunucuda kontrol edilir.</p>
+                  <Button type="submit" disabled={creatingOvertime || !staffDropdown.length}>
+                    {creatingOvertime ? 'Gönderiliyor…' : 'Mesai Talebi Oluştur'}
+                  </Button>
+                </form>
+              </CardContent>
+            </Card>
             <div className="grid gap-4 md:grid-cols-3">
               <div className="rounded-2xl border border-amber-100 bg-gradient-to-br from-amber-50 to-white p-5 shadow-sm">
                 <div className="flex items-center gap-3 mb-2">
@@ -2124,7 +2307,7 @@ const HRComplete = () => {
                       ))}
                       {overtimeItems.length === 0 && (
                         <tr><td colSpan={7} className="py-6 text-center text-slate-500">
-                          Mesai talebi yok — personel uygulamadan talep gönderdiğinde burada görünür
+                          Mesai talebi yok — yukarıdaki formdan yeni talep oluşturabilirsiniz
                         </td></tr>
                       )}
                     </tbody>
@@ -2185,7 +2368,7 @@ const HRComplete = () => {
               </div>
             </div>
 
-            <Card className="rounded-2xl border-slate-200 shadow-sm overflow-hidden">
+            {canManageHR && <Card className="rounded-2xl border-slate-200 shadow-sm overflow-hidden">
               <CardHeader className="bg-slate-50/50 border-b border-slate-100 pb-4">
                 <CardTitle className="flex items-center gap-2 text-lg font-bold text-slate-800">
                   <div className="p-1.5 rounded-md bg-teal-100 text-teal-700"><Plus className="w-5 h-5" /></div>
@@ -2200,24 +2383,24 @@ const HRComplete = () => {
                   <div className="space-y-1.5">
                     <Label className="text-xs font-semibold text-slate-600">Pozisyon <span className="text-rose-500">*</span></Label>
                     <Input required value={jobForm.title} className="rounded-lg border-slate-200 bg-slate-50 text-sm focus:bg-white"
-                      onChange={(e) => setJobForm({ ...jobForm, title: e.target.value })}
+                      onChange={(e) => updateJobField('title', e.target.value)}
                       placeholder="Örn: Resepsiyonist" />
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs font-semibold text-slate-600">Departman <span className="text-rose-500">*</span></Label>
                     <Input required value={jobForm.department} className="rounded-lg border-slate-200 bg-slate-50 text-sm focus:bg-white"
-                      onChange={(e) => setJobForm({ ...jobForm, department: e.target.value })}
+                      onChange={(e) => updateJobField('department', e.target.value)}
                       placeholder="Örn: front_desk" />
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs font-semibold text-slate-600">İhtiyaç Sayısı (Kişi)</Label>
                     <Input type="number" min="1" max="50" value={jobForm.headcount_needed} className="rounded-lg border-slate-200 bg-slate-50 font-bold text-sm focus:bg-white"
-                      onChange={(e) => setJobForm({ ...jobForm, headcount_needed: parseInt(e.target.value) || 1 })} />
+                      onChange={(e) => updateJobField('headcount_needed', parseInt(e.target.value) || 1)} />
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs font-semibold text-slate-600">Aciliyet</Label>
                     <select value={jobForm.urgency}
-                      onChange={(e) => setJobForm({ ...jobForm, urgency: e.target.value })}
+                      onChange={(e) => updateJobField('urgency', e.target.value)}
                       className="w-full rounded-lg border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:bg-white focus:ring-teal-500">
                       <option value="low">Düşük</option>
                       <option value="normal">Normal</option>
@@ -2228,7 +2411,7 @@ const HRComplete = () => {
                   <div className="space-y-1.5">
                     <Label className="text-xs font-semibold text-slate-600">Çalışma Şekli</Label>
                     <select value={jobForm.employment_type}
-                      onChange={(e) => setJobForm({ ...jobForm, employment_type: e.target.value })}
+                      onChange={(e) => updateJobField('employment_type', e.target.value)}
                       className="w-full rounded-lg border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:bg-white focus:ring-teal-500">
                       <option value="full_time">Tam Zamanlı</option>
                       <option value="part_time">Yarı Zamanlı</option>
@@ -2240,29 +2423,30 @@ const HRComplete = () => {
                   <div className="space-y-1.5">
                     <Label className="text-xs font-semibold text-slate-600">İhtiyaç Tarihi</Label>
                     <Input type="date" value={jobForm.needed_by} className="rounded-lg border-slate-200 bg-slate-50 text-sm focus:bg-white"
-                      onChange={(e) => setJobForm({ ...jobForm, needed_by: e.target.value })} />
+                      aria-label="Personel ihtiyaç tarihi" data-testid="job-needed-by"
+                      onChange={(e) => updateJobField('needed_by', e.target.value)} />
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs font-semibold text-slate-600">Ücret Aralığı (Öneri)</Label>
                     <Input value={jobForm.salary_range} className="rounded-lg border-slate-200 bg-slate-50 text-sm focus:bg-white"
-                      onChange={(e) => setJobForm({ ...jobForm, salary_range: e.target.value })}
+                      onChange={(e) => updateJobField('salary_range', e.target.value)}
                       placeholder="22.000 – 30.000 TL" />
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs font-semibold text-slate-600">Lokasyon</Label>
                     <Input value={jobForm.location} className="rounded-lg border-slate-200 bg-slate-50 text-sm focus:bg-white"
-                      onChange={(e) => setJobForm({ ...jobForm, location: e.target.value })} />
+                      onChange={(e) => updateJobField('location', e.target.value)} />
                   </div>
                   <div className="md:col-span-2 lg:col-span-3 space-y-1.5">
                     <Label className="text-xs font-semibold text-slate-600">Gerekçe (HR'a not)</Label>
                     <Textarea rows={2} value={jobForm.justification} className="rounded-lg border-slate-200 bg-slate-50 text-sm resize-none focus:bg-white"
-                      onChange={(e) => setJobForm({ ...jobForm, justification: e.target.value })}
+                      onChange={(e) => updateJobField('justification', e.target.value)}
                       placeholder="Örn: yaz sezonu için ek personel; mevcut kadronun yetersizliği vb." />
                   </div>
                   <div className="md:col-span-2 lg:col-span-3 space-y-1.5">
                     <Label className="text-xs font-semibold text-slate-600">Pozisyon Açıklaması</Label>
                     <Textarea rows={3} value={jobForm.description} className="rounded-lg border-slate-200 bg-slate-50 text-sm resize-none focus:bg-white"
-                      onChange={(e) => setJobForm({ ...jobForm, description: e.target.value })}
+                      onChange={(e) => updateJobField('description', e.target.value)}
                       placeholder="Sorumluluklar, beklentiler, gerekli niteliklere dair detaylar" />
                   </div>
                   <div className="md:col-span-2 lg:col-span-3 flex justify-end mt-2">
@@ -2273,7 +2457,7 @@ const HRComplete = () => {
                   </div>
                 </form>
               </CardContent>
-            </Card>
+            </Card>}
 
             <Card className="rounded-2xl border-slate-200 shadow-sm overflow-hidden flex flex-col">
               <CardHeader className="bg-slate-50/50 border-b border-slate-100 pb-3 pt-4">
@@ -2333,7 +2517,7 @@ const HRComplete = () => {
                           </td>
                           <td className="py-3 px-5 text-right">
                             <div className="flex justify-end gap-2 flex-wrap">
-                              {job.status === 'pending_approval' && (
+                              {canManageHR && job.status === 'pending_approval' && (
                                 <>
                                   <Button size="sm" onClick={() => decideJob(job.id, 'approve')} title="HR yöneticisi olarak onayla" className="bg-teal-600 hover:bg-teal-700 text-white shadow-sm">
                                     <ThumbsUp className="w-3.5 h-3.5 mr-1" />Onayla
@@ -2346,11 +2530,13 @@ const HRComplete = () => {
                               {job.status === 'active' && (
                                 <>
                                   <Button size="sm" variant="outline" onClick={() => openApplicants(job)} className="border-sky-200 text-sky-700 hover:bg-sky-50">
-                                    <UserPlus className="w-3.5 h-3.5 mr-1" />Aday İşlemleri
+                                    <UserPlus className="w-3.5 h-3.5 mr-1" />{canManageHR ? 'Aday İşlemleri' : 'Adayları Gör'}
                                   </Button>
-                                  <Button size="sm" variant="outline" onClick={() => closeJob(job.id)} title="Pozisyonu Kapat" className="text-slate-500 hover:text-slate-700 hover:bg-slate-50">
-                                    <XCircle className="w-4 h-4" />
-                                  </Button>
+                                  {canManageHR && (
+                                    <Button size="sm" variant="outline" onClick={() => closeJob(job.id)} title="Pozisyonu Kapat" className="text-slate-500 hover:text-slate-700 hover:bg-slate-50">
+                                      <XCircle className="w-4 h-4" />
+                                    </Button>
+                                  )}
                                 </>
                               )}
                             </div>
@@ -2399,6 +2585,7 @@ const HRComplete = () => {
 
               <div className="p-6 space-y-6">
                 {/* Yeni aday formu */}
+                {canManageHR ? (
                 <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
                   <div className="text-sm font-bold text-slate-800 flex items-center gap-2 mb-4">
                     <div className="p-1 rounded-md bg-teal-100 text-teal-700"><UserPlus className="w-4 h-4" /></div>
@@ -2406,17 +2593,22 @@ const HRComplete = () => {
                   </div>
                   <form onSubmit={submitApplicant} className="grid gap-3 md:grid-cols-2">
                     <Input placeholder="Ad Soyad *" value={applicantForm.name} className="rounded-lg border-slate-200 bg-slate-50 text-sm focus:bg-white"
-                      onChange={(e) => setApplicantForm({ ...applicantForm, name: e.target.value })} />
+                      onChange={(e) => setApplicantForm(prev => ({ ...prev, name: e.target.value }))} />
                     <Input placeholder="E-posta" type="email" value={applicantForm.email} className="rounded-lg border-slate-200 bg-slate-50 text-sm focus:bg-white"
-                      onChange={(e) => setApplicantForm({ ...applicantForm, email: e.target.value })} />
+                      onChange={(e) => setApplicantForm(prev => ({ ...prev, email: e.target.value }))} />
                     <Input placeholder="Telefon" value={applicantForm.phone} className="rounded-lg border-slate-200 bg-slate-50 text-sm focus:bg-white"
-                      onChange={(e) => setApplicantForm({ ...applicantForm, phone: e.target.value })} />
+                      onChange={(e) => setApplicantForm(prev => ({ ...prev, phone: e.target.value }))} />
                     <Input placeholder="CV URL (opsiyonel)" value={applicantForm.cv_url} className="rounded-lg border-slate-200 bg-slate-50 text-sm focus:bg-white"
-                      onChange={(e) => setApplicantForm({ ...applicantForm, cv_url: e.target.value })} />
+                      onChange={(e) => setApplicantForm(prev => ({ ...prev, cv_url: e.target.value }))} />
+                    <div className="md:col-span-2">
+                      <Label className="text-xs">CV Dosyası (PDF/Word/JPEG/PNG, en fazla 5 MB)</Label>
+                      <Input type="file" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp" className="rounded-lg border-slate-200 bg-slate-50 text-sm focus:bg-white"
+                        onChange={(e) => setApplicantForm(prev => ({ ...prev, cv_file: e.target.files?.[0] || null }))} />
+                    </div>
                     <div className="md:col-span-2">
                       <Textarea rows={2} placeholder="Notlar (deneyim, görüşme izlenimi, vb.)" className="rounded-lg border-slate-200 bg-slate-50 text-sm resize-none focus:bg-white"
                         value={applicantForm.notes}
-                        onChange={(e) => setApplicantForm({ ...applicantForm, notes: e.target.value })} />
+                        onChange={(e) => setApplicantForm(prev => ({ ...prev, notes: e.target.value }))} />
                     </div>
                     <div className="md:col-span-2 flex justify-end mt-1">
                       <Button type="submit" disabled={savingApplicant} className="bg-teal-600 hover:bg-teal-700 text-white rounded-lg px-6">
@@ -2426,6 +2618,11 @@ const HRComplete = () => {
                     </div>
                   </form>
                 </div>
+                ) : (
+                  <div className="rounded-xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-900" data-testid="hr-readonly-notice">
+                    Bu oturum aday kayıtlarını yalnızca görüntüleyebilir. Aday ekleme, CV erişimi ve durum değişikliği için İK yönetim yetkisi gerekir.
+                  </div>
+                )}
 
                 {/* Aday listesi */}
                 <div>
@@ -2449,18 +2646,29 @@ const HRComplete = () => {
                               <ExternalLink className="w-3.5 h-3.5" /> CV Görüntüle
                             </a>
                           )}
+                          {a.cv_document_id && (
+                            <Button type="button" size="sm" variant="link" className="h-auto p-0 text-xs" onClick={() => downloadApplicantCv(a)}>
+                              <Download className="w-3.5 h-3.5 mr-1" /> CV Dosyasını İndir
+                            </Button>
+                          )}
                         </div>
                         <div className="flex flex-row md:flex-col items-center md:items-end justify-between md:justify-start gap-3 w-full md:w-auto shrink-0 border-t md:border-t-0 pt-3 md:pt-0">
-                          <select value={a.status || 'new'}
-                            onChange={(e) => setApplicantStatus(a.id, e.target.value)}
-                            className="text-sm font-semibold rounded-lg border-slate-200 bg-slate-50 px-3 py-1.5 focus:ring-teal-500 focus:bg-white w-full md:w-auto">
-                            <option value="new">Yeni</option>
-                            <option value="screening">Eleme</option>
-                            <option value="interview">Görüşme</option>
-                            <option value="offer">Teklif</option>
-                            <option value="hired">İşe Alındı</option>
-                            <option value="rejected">Reddedildi</option>
-                          </select>
+                          {canManageHR ? (
+                            <select value={a.status || 'new'}
+                              onChange={(e) => setApplicantStatus(a.id, e.target.value)}
+                              className="text-sm font-semibold rounded-lg border-slate-200 bg-slate-50 px-3 py-1.5 focus:ring-teal-500 focus:bg-white w-full md:w-auto">
+                              <option value="new">Yeni</option>
+                              <option value="screening">Eleme</option>
+                              <option value="interview">Görüşme</option>
+                              <option value="offer">Teklif</option>
+                              <option value="hired">İşe Alındı</option>
+                              <option value="rejected">Reddedildi</option>
+                            </select>
+                          ) : (
+                            <StatusBadge intent={a.status === 'hired' ? 'success' : a.status === 'rejected' ? 'danger' : 'neutral'}>
+                              {({ new: 'Yeni', screening: 'Eleme', interview: 'Görüşme', offer: 'Teklif', hired: 'İşe Alındı', rejected: 'Reddedildi' })[a.status] || a.status || 'Yeni'}
+                            </StatusBadge>
+                          )}
                           <span className="text-[11px] font-medium text-slate-400 flex items-center gap-1">
                             <Clock className="w-3 h-3" />
                             {(a.created_at || '').slice(0, 10)}

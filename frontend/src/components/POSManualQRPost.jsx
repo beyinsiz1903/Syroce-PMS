@@ -249,7 +249,7 @@ const POSManualQRPost = () => {
                 <strong>{t('cm.components_POSManualQRPost.son_aktarilan')}</strong> ${lastPosted.total} - {lastPosted.description}
                 <br />
                 <span className="text-green-600">
-                  Folio: {lastPosted.folio_id} | Zaman: {new Date(lastPosted.posted_at).toLocaleString()}
+                  Folyo kaydına aktarıldı | Zaman: {new Date(lastPosted.posted_at).toLocaleString()}
                 </span>
               </div>
             </div>

@@ -25,7 +25,7 @@ const MaintenanceCalendar = () => {
     } catch (error) {
       console.error('Failed to load calendar:', error);
     
-      toast.error('İşlem başarısız oldu');
+      toast.error('İşlem şu anda gerçekleştirilemiyor. Lütfen bağlantınızı kontrol edip tekrar deneyin.');
     } finally {
       setLoading(false);
     }

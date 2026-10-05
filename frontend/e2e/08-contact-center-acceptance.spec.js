@@ -121,12 +121,10 @@ test.describe('Contact Center Faz 1 - Production Acceptance Test', () => {
         await page.goto('/');
         await page.waitForLoadState('networkidle');
 
-        // Telefon artık bağımsız bir sabit buton yerine ortak iletişim
-        // merkezinden açılıyor. Test de kullanıcının gerçek yolunu izlesin.
-        const communicationLauncher = page.getByTestId('communication-center-launcher');
-        await expect(communicationLauncher).toBeVisible();
-        await communicationLauncher.click();
-        const phoneTrigger = page.getByTestId('communication-open-phone');
+        // Çağrı işlemleri İletişim Merkezi'nden ayrıdır. Yetkili operatörün
+        // gerçek akışı Çağrı Merkezi çalışma alanından telefon konsolunu açmaktır.
+        await page.goto('/app/call-center');
+        const phoneTrigger = page.getByTestId('button-open-phone-console');
         await expect(phoneTrigger).toBeVisible();
         await phoneTrigger.click();
 

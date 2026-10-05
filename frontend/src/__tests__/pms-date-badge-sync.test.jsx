@@ -47,6 +47,14 @@ describe("PMSDateBadge business-date synchronization", () => {
       "Son Night Audit: run-14",
     );
   });
+
+  it("opens the controlled review screen instead of presenting navigation as an execution", () => {
+    render(<MemoryRouter><PMSDateBadge /></MemoryRouter>);
+
+    const reviewButton = screen.getByTestId("pms-date-stale-warning");
+    expect(reviewButton).toHaveTextContent("Gün Sonunu İncele");
+    expect(reviewButton).toHaveAttribute("title", "Gün sonu hazırlığını incele");
+  });
 });
 
 describe("PMSDateBadge dense content safety", () => {

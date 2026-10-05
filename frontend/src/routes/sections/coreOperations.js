@@ -1,13 +1,13 @@
 import {
   Dashboard, ProfilePage, PCIComplianceDashboard, XchangePage, MicePage,
-  ProcurementPage, InventoryProcurementGuide, MailingPage, ModuleStorePage,
+  ProcurementPage, InventoryProcurementGuide, MailingPage, ModuleStorePage, ApplicationCenter,
   AfsadakatLauncher, OnboardingWizard, AIEnhancedPMS, AIModule, AIZekaPage, PMSModule,
   PMSOperationalDashboard, FolioDetailView, HousekeepingStatusPage,
   ShiftHandoverPage, EarlyLatePricingSettings, EodReportPage, WalkinPage,
   RoomMapPage, WakeUpCallsPage, LostFoundPage, MinibarPage, TransferParkingPage, GuestJourney,
   OperationalEventDashboard, MigrationObservabilityPage, IntegrationHub,
   AdminControlPanel, HousekeepingDashboard, POSDashboard, POSWaiterTerminal, POSExtensions, FeaturesShowcase,
-  SustainabilityReport, WBESettings,
+  SustainabilityReport, WBESettings, FolioManagementHub,
 } from "./lazyPages";
 
 export function coreOperationsRoutes({ p, pa, pm, modules }) {
@@ -23,6 +23,7 @@ export function coreOperationsRoutes({ p, pa, pm, modules }) {
     { path: "/app/mailing", ...p(MailingPage), wrapLayout: true, layoutModule: "mailing" },
     { path: "/app/module-store", ...p(ModuleStorePage), wrapLayout: true, layoutModule: "module_store" },
     { path: "/module-store", ...p(ModuleStorePage), wrapLayout: true, layoutModule: "module_store" },
+    { path: "/app/applications", ...p(ApplicationCenter), wrapLayout: true, layoutModule: "applications" },
     { path: "/app/afsadakat", ...p(AfsadakatLauncher), wrapLayout: true, layoutModule: "afsadakat" },
     { path: "/app/onboarding", ...p(OnboardingWizard), wrapLayout: true, layoutModule: "onboarding" },
     { path: "/dashboard-simple", ...p(Dashboard, { modules }), wrapLayout: true, layoutModule: "dashboard" },
@@ -50,7 +51,8 @@ export function coreOperationsRoutes({ p, pa, pm, modules }) {
     { path: "/operational-events", ...p(OperationalEventDashboard), wrapLayout: true, layoutModule: "pms_operations" },
     { path: "/app/migration-observability", ...p(MigrationObservabilityPage), wrapLayout: true, layoutModule: "reports" },
     { path: "/app/sustainability", ...p(SustainabilityReport), wrapLayout: true, layoutModule: "reports" },
-    { path: "/app/wbe-settings", ...pa(WBESettings), wrapLayout: true, layoutModule: "wbe" },
+    { path: "/app/wbe-settings", ...pm(WBESettings, "booking_engine", undefined, { strict: true }), wrapLayout: true, layoutModule: "wbe" },
+    { path: "/app/folio-management", ...pm(FolioManagementHub, "folio_management"), wrapLayout: true, layoutModule: "folio_management" },
     { path: "/app/integration-hub", ...p(IntegrationHub), wrapLayout: true, layoutModule: "integration-hub" },
     { path: "/app/admin-control-panel", ...pa(AdminControlPanel), wrapLayout: true, layoutModule: "admin_control_panel" },
 

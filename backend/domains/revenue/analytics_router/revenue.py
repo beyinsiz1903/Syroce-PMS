@@ -16,6 +16,7 @@ from fastapi.security import HTTPAuthorizationCredentials
 
 from core.database import db
 from core.security import get_current_user, security
+from core.tenant_currency import get_tenant_currency
 from modules.pms_core.role_permission_service import require_role as _require_role
 
 # v67 Bug DD: frontdesk/* endpoint'lerinde RBAC eksikti — HK kullanıcı guest PII (search-bookings),
@@ -52,6 +53,7 @@ router = APIRouter(prefix="/api", tags=["analytics"])
 async def get_market_segment_breakdown(start_date: str | None = None, end_date: str | None = None, credentials: HTTPAuthorizationCredentials = Depends(security)):
     """Get revenue breakdown by market segment (OTA, Direct, Corporate, Group)"""
     current_user = await get_current_user(credentials)
+    tenant_currency, _ = await get_tenant_currency(current_user.tenant_id)
 
     today = datetime.now(UTC)
     if not start_date:
@@ -66,10 +68,10 @@ async def get_market_segment_breakdown(start_date: str | None = None, end_date: 
 
     # Aggregate bookings by source (mapping to market segments)
     segment_data = {
-        "OTA": {"bookings": 0, "revenue": 0, "rooms": 0},
-        "Direct": {"bookings": 0, "revenue": 0, "rooms": 0},
-        "Corporate": {"bookings": 0, "revenue": 0, "rooms": 0},
-        "Group": {"bookings": 0, "revenue": 0, "rooms": 0},
+        "OTA": {"bookings": 0, "revenue": 0, "revenue_by_currency": {}, "rooms": 0},
+        "Direct": {"bookings": 0, "revenue": 0, "revenue_by_currency": {}, "rooms": 0},
+        "Corporate": {"bookings": 0, "revenue": 0, "revenue_by_currency": {}, "rooms": 0},
+        "Group": {"bookings": 0, "revenue": 0, "revenue_by_currency": {}, "rooms": 0},
     }
 
     async for booking in db.bookings.find({"tenant_id": current_user.tenant_id, "check_in": {"$gte": start_date.date().isoformat(), "$lte": end_date.date().isoformat()}}):
@@ -86,12 +88,19 @@ async def get_market_segment_breakdown(start_date: str | None = None, end_date: 
             segment = "Direct"
 
         segment_data[segment]["bookings"] += 1
-        segment_data[segment]["revenue"] += booking.get("total_amount", 0)
+        amount = float(booking.get("total_amount", 0) or 0)
+        currency = str(booking.get("currency") or tenant_currency).upper()
+        segment_data[segment]["revenue"] += amount
+        segment_data[segment]["revenue_by_currency"][currency] = round(segment_data[segment]["revenue_by_currency"].get(currency, 0) + amount, 2)
         segment_data[segment]["rooms"] += 1
 
     # Calculate percentages
     total_revenue = sum(s["revenue"] for s in segment_data.values())
     total_bookings = sum(s["bookings"] for s in segment_data.values())
+    total_revenue_by_currency: dict[str, float] = {}
+    for values in segment_data.values():
+        for currency, amount in values["revenue_by_currency"].items():
+            total_revenue_by_currency[currency] = round(total_revenue_by_currency.get(currency, 0) + amount, 2)
 
     for segment in segment_data:
         segment_data[segment]["revenue_pct"] = round((segment_data[segment]["revenue"] / total_revenue * 100) if total_revenue > 0 else 0, 2)
@@ -101,6 +110,8 @@ async def get_market_segment_breakdown(start_date: str | None = None, end_date: 
     return {
         "segments": segment_data,
         "total_revenue": round(total_revenue, 2),
+        "total_revenue_by_currency": total_revenue_by_currency,
+        "currency": tenant_currency,
         "total_bookings": total_bookings,
         "period": {"start": start_date.date().isoformat(), "end": end_date.date().isoformat()},
     }

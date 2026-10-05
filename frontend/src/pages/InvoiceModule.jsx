@@ -5,28 +5,36 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
 import { useCurrency } from '@/context/CurrencyContext';
-import { formatAmount } from '@/lib/currency';
+import { formatCurrency } from '@/lib/currency';
+import {
+  expenseCategoryLabel,
+  invoiceTypeLabel,
+  inventoryCategoryLabel,
+  inventoryUnitLabel,
+  paymentMethodLabel,
+} from '@/lib/accountingLabels';
 import { ExpenseDialog, SupplierDialog, BankAccountDialog, InventoryDialog } from '@/components/invoice/AccountingDialogs';
 import { Dialog, DialogContent, DialogTrigger } from '@/components/ui/dialog';
 import InvoiceTemplate from '@/components/invoice/InvoiceTemplate';
 import InvoiceFormDialog from '@/components/invoice/InvoiceFormDialog';
+import IncomingInvoicesTab from '@/components/invoice/IncomingInvoicesTab';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   FileText, Plus, Building2, Info,
-  Wallet, Package, AlertCircle, Receipt, BarChart3,
+  Wallet, Package, AlertCircle, Receipt, BarChart3, Inbox,
 } from 'lucide-react';
 
 const InvoiceModule = ({ user, tenant, onLogout }) => {
   const { t, i18n } = useTranslation();
-  const { amount: fmtMoney } = useCurrency();
+  const { code: tenantCurrency } = useCurrency();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedTab = searchParams.get('tab');
   const [activeSection, setActiveSection] = useState(
-    ['invoices', 'expenses', 'suppliers', 'banks', 'inventory', 'reports'].includes(requestedTab)
+    ['invoices', 'incoming', 'expenses', 'suppliers', 'banks', 'inventory', 'reports'].includes(requestedTab)
       ? requestedTab
       : 'invoices',
   );
@@ -153,12 +161,6 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
     next.set('tab', value);
     next.delete('action');
     setSearchParams(next, { replace: true });
-    if (value === 'expenses') { loadExpenses(); loadSuppliers(); }
-    if (value === 'suppliers') loadSuppliers();
-    if (value === 'banks') loadBanks();
-    if (value === 'inventory') loadInventory();
-    if (value === 'cashflow') loadCashFlow();
-    if (value === 'reports') loadReports();
   };
 
   const closeInvoiceDialog = async (created = false) => {
@@ -171,16 +173,16 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
     if (created) await loadInitial();
   };
 
-  const loadCashFlow = async () => {
+  const loadCashFlow = useCallback(async () => {
     try {
       const response = await axios.get('/accounting/cash-flow');
       setCashFlow(response.data);
     } catch (error) {
       toast.error(t('common.loadFailed') || 'Yüklenemedi');
     }
-  };
+  }, [t]);
 
-  const loadReports = async () => {
+  const loadReports = useCallback(async () => {
     try {
       const today = new Date();
       const monthStart = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0];
@@ -194,7 +196,16 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
     } catch (error) {
       toast.error(t('common.loadFailed') || 'Yüklenemedi');
     }
-  };
+  }, [t]);
+
+  useEffect(() => {
+    if (activeSection === 'expenses') { loadExpenses(); loadSuppliers(); }
+    if (activeSection === 'suppliers') loadSuppliers();
+    if (activeSection === 'banks') loadBanks();
+    if (activeSection === 'inventory') loadInventory();
+    if (activeSection === 'cashflow') loadCashFlow();
+    if (activeSection === 'reports') loadReports();
+  }, [activeSection, loadBanks, loadCashFlow, loadExpenses, loadInventory, loadReports, loadSuppliers]);
 
   const updateInvoiceStatus = async (invoiceId, newStatus) => {
     const previous = invoices;
@@ -280,7 +291,16 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
     );
   }
 
-  const money = (v) => fmtMoney(v || 0, { decimals: 2 });
+  const money = (value, currency) => formatCurrency(
+    value || 0,
+    currency || dashboard?.currency || tenantCurrency,
+    { decimals: 2 },
+  );
+  const moneyTotals = (totals, fallbackValue) => {
+    const entries = Object.entries(totals || {}).filter(([, value]) => Number(value) !== 0);
+    if (!entries.length) return money(fallbackValue);
+    return entries.map(([currency, value]) => money(value, currency)).join(' · ');
+  };
 
   return (
     <>
@@ -299,30 +319,30 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
           <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
             <Card>
               <CardHeader className="pb-2"><CardTitle className="text-sm text-gray-600">{t('invoice.kpi.collected')}</CardTitle></CardHeader>
-              <CardContent><div className="text-2xl font-bold text-green-600">{money(dashboard.collected_income ?? dashboard.monthly_income)}</div></CardContent>
+              <CardContent><div className="text-2xl font-bold text-green-600">{moneyTotals(dashboard.collected_income_by_currency, dashboard.collected_income ?? dashboard.monthly_income)}</div></CardContent>
             </Card>
             <Card>
               <CardHeader className="pb-2"><CardTitle className="text-sm text-gray-600">{t('invoice.kpi.accrued')}</CardTitle></CardHeader>
-              <CardContent><div className="text-2xl font-bold text-blue-600">{money(dashboard.accrued_revenue ?? 0)}</div></CardContent>
+              <CardContent><div className="text-2xl font-bold text-blue-600">{moneyTotals(dashboard.accrued_revenue_by_currency, dashboard.accrued_revenue ?? 0)}</div></CardContent>
             </Card>
             <Card>
               <CardHeader className="pb-2"><CardTitle className="text-sm text-gray-600">{t('invoice.kpi.pendingAmount')}</CardTitle></CardHeader>
-              <CardContent><div className="text-2xl font-bold text-yellow-600">{money(dashboard.pending_amount ?? 0)}</div></CardContent>
+              <CardContent><div className="text-2xl font-bold text-yellow-600">{moneyTotals(dashboard.pending_amount_by_currency, dashboard.pending_amount ?? 0)}</div></CardContent>
             </Card>
             <Card>
               <CardHeader className="pb-2"><CardTitle className="text-sm text-gray-600">{t('dashboard.monthlyExpenses')}</CardTitle></CardHeader>
-              <CardContent><div className="text-2xl font-bold text-red-600">{money(dashboard.monthly_expenses)}</div></CardContent>
+              <CardContent><div className="text-2xl font-bold text-red-600">{moneyTotals(dashboard.monthly_expenses_by_currency, dashboard.monthly_expenses)}</div></CardContent>
             </Card>
             <Card>
               <CardHeader className="pb-2"><CardTitle className="text-sm text-gray-600">{t('dashboard.bankBalance')}</CardTitle></CardHeader>
-              <CardContent><div className="text-2xl font-bold">{money(dashboard.total_bank_balance)}</div></CardContent>
+              <CardContent><div className="text-2xl font-bold">{moneyTotals(dashboard.bank_balance_by_currency, dashboard.total_bank_balance)}</div></CardContent>
             </Card>
             <Card>
               <CardHeader className="pb-2"><CardTitle className="text-sm text-gray-600">{t('dashboard.overdue')}</CardTitle></CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold text-red-600">{dashboard.overdue_invoices ?? 0}</div>
                 {(dashboard.overdue_amount ?? 0) > 0 && (
-                  <div className="text-xs text-gray-500 mt-1">{money(dashboard.overdue_amount)}</div>
+                  <div className="text-xs text-gray-500 mt-1">{moneyTotals(dashboard.overdue_amount_by_currency, dashboard.overdue_amount)}</div>
                 )}
               </CardContent>
             </Card>
@@ -330,8 +350,9 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
         )}
 
         <Tabs value={activeSection} onValueChange={handleSectionChange}>
-          <TabsList className="grid w-full grid-cols-6">
+          <TabsList className="grid w-full grid-cols-7">
             <TabsTrigger value="invoices" data-testid="tab-invoices"><FileText className="w-4 h-4 mr-2" />{t('invoice.tabs.invoices')}</TabsTrigger>
+            <TabsTrigger value="incoming" data-testid="tab-incoming"><Inbox className="w-4 h-4 mr-2" />{t('invoice.tabs.incoming') || 'Gelen e-Faturalar'}</TabsTrigger>
             <TabsTrigger value="expenses" data-testid="tab-expenses"><Receipt className="w-4 h-4 mr-2" />{t('invoice.tabs.expenses')}</TabsTrigger>
             <TabsTrigger value="suppliers" data-testid="tab-suppliers"><Building2 className="w-4 h-4 mr-2" />{t('invoice.tabs.suppliers')}</TabsTrigger>
             <TabsTrigger value="banks" data-testid="tab-banks"><Wallet className="w-4 h-4 mr-2" />{t('invoice.tabs.banks')}</TabsTrigger>
@@ -373,7 +394,7 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
                         <div className="text-sm text-gray-500 mt-1">
                           {t('invoice.labels.issue')}: {new Date(invoice.issue_date).toLocaleDateString()} | {t('invoice.labels.due')}: {new Date(invoice.due_date).toLocaleDateString()}
                         </div>
-                        <div className="text-xs text-gray-400 mt-1 capitalize">{t('invoice.labels.type')}: {invoice.invoice_type}</div>
+                        <div className="text-xs text-gray-400 mt-1">{t('invoice.labels.type')}: {invoiceTypeLabel(t, invoice.invoice_type)}</div>
                         {invoice.efatura_status && (() => {
                           const cfg = {
                             pending: { cls: 'bg-yellow-100 text-yellow-700', label: t('invoice.efatura.pending') || 'E-Fatura: Kuyrukta' },
@@ -409,8 +430,8 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
                         })()}
                       </div>
                       <div className="text-right">
-                        <div className="text-2xl font-bold text-blue-600">{money(invoice.total)}</div>
-                        <div className="text-xs text-gray-500">{t('invoice.labels.vat')}: {money(invoice.total_vat)}</div>
+                        <div className="text-2xl font-bold text-blue-600">{money(invoice.total, invoice.currency)}</div>
+                        <div className="text-xs text-gray-500">{t('invoice.labels.vat')}: {money(invoice.total_vat, invoice.currency)}</div>
                         <div className="mt-2">
                           <Select value={invoice.status} onValueChange={(v) => updateInvoiceStatus(invoice.id, v)}>
                             <SelectTrigger className="w-32 h-8"><SelectValue /></SelectTrigger>
@@ -430,6 +451,10 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
             </div>
           </TabsContent>
 
+          <TabsContent value="incoming" className="space-y-4">
+            <IncomingInvoicesTab />
+          </TabsContent>
+
           <TabsContent value="expenses" className="space-y-4">
             <div className="flex justify-between items-center">
               <h2 className="text-2xl font-semibold">{t('invoice.headers.expenses', { count: expenses.length })}</h2>
@@ -444,13 +469,13 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
                     <div className="flex justify-between items-start">
                       <div>
                         <div className="font-bold">{expense.expense_number}</div>
-                        <div className="text-sm text-gray-600 capitalize">{expense.category} - {expense.description}</div>
+                        <div className="text-sm text-gray-600">{expenseCategoryLabel(t, expense.category)} - {expense.description}</div>
                         <div className="text-sm text-gray-500">{t('invoice.labels.date')}: {new Date(expense.date).toLocaleDateString()}</div>
-                        {expense.payment_method && <div className="text-xs text-gray-400 capitalize mt-1">{t('invoice.labels.payment')}: {expense.payment_method}</div>}
+                        {expense.payment_method && <div className="text-xs text-gray-400 mt-1">{t('invoice.labels.payment')}: {paymentMethodLabel(t, expense.payment_method)}</div>}
                       </div>
                       <div className="text-right">
-                        <div className="text-xl font-bold text-red-600">{money(expense.total_amount)}</div>
-                        <div className="text-xs text-gray-500">{t('invoice.labels.vat')}: {money(expense.vat_amount)}</div>
+                        <div className="text-xl font-bold text-red-600">{money(expense.total_amount, expense.currency)}</div>
+                        <div className="text-xs text-gray-500">{t('invoice.labels.vat')}: {money(expense.vat_amount, expense.currency)}</div>
                         <span className={`mt-2 inline-block px-2 py-1 rounded text-xs ${expense.payment_status === 'paid' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
                           {expense.payment_status === 'paid' ? t('invoice.paid') : t('invoice.pending')}
                         </span>
@@ -475,7 +500,7 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
                     {supplier.tax_number && <div className="flex justify-between"><span className="text-gray-600">{t('invoice.labels.taxNo')}:</span><span className="font-medium">{supplier.tax_number}</span></div>}
                     {supplier.email && <div className="flex justify-between"><span className="text-gray-600">{t('invoice.labels.email')}:</span><span className="font-medium">{supplier.email}</span></div>}
                     {supplier.phone && <div className="flex justify-between"><span className="text-gray-600">{t('invoice.labels.phone')}:</span><span className="font-medium">{supplier.phone}</span></div>}
-                    <div className="flex justify-between pt-2 border-t"><span className="text-gray-600">{t('invoice.labels.balance')}:</span><span className="font-bold text-red-600">{money(supplier.account_balance)}</span></div>
+                    <div className="flex justify-between gap-3 pt-2 border-t"><span className="text-gray-600">{t('invoice.labels.balance')}:</span><span className="text-right font-bold text-red-600">{moneyTotals(supplier.account_balance_by_currency, supplier.account_balance)}</span></div>
                   </CardContent>
                 </Card>
               ))}
@@ -501,7 +526,7 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
                       {account.iban && <div className="flex justify-between"><span className="text-gray-600">{t('invoice.labels.iban')}:</span><span className="font-medium text-xs">{account.iban}</span></div>}
                       <div className="flex justify-between pt-2 border-t">
                         <span className="text-gray-600">{t('invoice.labels.balance')}:</span>
-                        <span className="text-xl font-bold text-green-600">{formatAmount(account.balance || 0, code, { decimals: 2 })}</span>
+                        <span className="text-xl font-bold text-green-600">{money(account.balance, code)}</span>
                       </div>
                       <div className="text-xs text-gray-500">{code}</div>
                     </CardContent>
@@ -523,16 +548,16 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
                     <div className="flex justify-between items-start">
                       <div>
                         <CardTitle className="text-lg">{item.name}</CardTitle>
-                        <div className="text-sm text-gray-600 capitalize">{item.category}</div>
+                        <div className="text-sm text-gray-600">{inventoryCategoryLabel(t, item.category)}</div>
                       </div>
                       {item.quantity <= item.reorder_level && <AlertCircle className="w-5 h-5 text-amber-500" />}
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-2 text-sm">
                     {item.sku && <div className="flex justify-between"><span className="text-gray-600">{t('invoice.labels.sku')}:</span><span className="font-medium">{item.sku}</span></div>}
-                    <div className="flex justify-between"><span className="text-gray-600">{t('invoice.labels.qty')}:</span><span className="font-bold">{item.quantity} {item.unit}</span></div>
-                    <div className="flex justify-between"><span className="text-gray-600">{t('invoice.labels.unitPrice')}:</span><span className="font-medium">{money(item.unit_cost)}</span></div>
-                    <div className="flex justify-between pt-2 border-t"><span className="text-gray-600">{t('invoice.labels.totalValue')}:</span><span className="font-bold text-blue-600">{money((item.quantity || 0) * (item.unit_cost || 0))}</span></div>
+                    <div className="flex justify-between"><span className="text-gray-600">{t('invoice.labels.qty')}:</span><span className="font-bold">{item.quantity} {inventoryUnitLabel(t, item.unit)}</span></div>
+                    <div className="flex justify-between"><span className="text-gray-600">{t('invoice.labels.unitPrice')}:</span><span className="font-medium">{money(item.unit_cost, item.currency)}</span></div>
+                    <div className="flex justify-between pt-2 border-t"><span className="text-gray-600">{t('invoice.labels.totalValue')}:</span><span className="font-bold text-blue-600">{money((item.quantity || 0) * (item.unit_cost || 0), item.currency)}</span></div>
                     {item.quantity <= item.reorder_level && <div className="text-xs text-amber-600 font-medium">{t('invoice.labels.lowStock')}</div>}
                   </CardContent>
                 </Card>
@@ -552,13 +577,13 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
                 <CardContent>
                   <div className="space-y-4">
                     <div className="grid grid-cols-3 gap-4">
-                      <div><div className="text-sm text-gray-600">{t('invoice.reports.totalRevenue')}</div><div className="text-3xl font-bold text-green-600">{money(reports.profitLoss.total_revenue)}</div></div>
-                      <div><div className="text-sm text-gray-600">{t('invoice.reports.totalExpenses')}</div><div className="text-3xl font-bold text-red-600">{money(reports.profitLoss.total_expenses)}</div></div>
-                      <div><div className="text-sm text-gray-600">{t('invoice.reports.grossProfit')}</div><div className="text-3xl font-bold text-blue-600">{money(reports.profitLoss.gross_profit)}</div></div>
+                      <div><div className="text-sm text-gray-600">{t('invoice.reports.totalRevenue')}</div><div className="text-3xl font-bold text-green-600">{moneyTotals(reports.profitLoss.total_revenue_by_currency, reports.profitLoss.total_revenue)}</div></div>
+                      <div><div className="text-sm text-gray-600">{t('invoice.reports.totalExpenses')}</div><div className="text-3xl font-bold text-red-600">{moneyTotals(reports.profitLoss.total_expenses_by_currency, reports.profitLoss.total_expenses)}</div></div>
+                      <div><div className="text-sm text-gray-600">{t('invoice.reports.grossProfit')}</div><div className="text-3xl font-bold text-blue-600">{moneyTotals(reports.profitLoss.gross_profit_by_currency, reports.profitLoss.gross_profit)}</div></div>
                     </div>
                     <div className="pt-4 border-t">
                       <div className="text-sm font-medium mb-2">{t('invoice.reports.profitMargin')}</div>
-                      <div className="text-2xl font-bold">{reports.profitLoss.profit_margin}%</div>
+                      <div className="text-2xl font-bold">{reports.profitLoss.profit_margin_by_currency ? Object.entries(reports.profitLoss.profit_margin_by_currency).map(([code, value]) => `${code} %${value}`).join(' · ') : `${reports.profitLoss.profit_margin}%`}</div>
                     </div>
                     {reports.profitLoss.expense_breakdown && Object.keys(reports.profitLoss.expense_breakdown).length > 0 && (
                       <div className="pt-4 border-t">
@@ -566,8 +591,8 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
                         <div className="space-y-2">
                           {Object.entries(reports.profitLoss.expense_breakdown).map(([cat, amt]) => (
                             <div key={cat} className="flex justify-between text-sm">
-                              <span className="capitalize text-gray-600">{cat.replace('_', ' ')}:</span>
-                              <span className="font-medium">{money(amt)}</span>
+                              <span className="text-gray-600">{expenseCategoryLabel(t, cat)}:</span>
+                              <span className="font-medium">{moneyTotals(reports.profitLoss.expense_breakdown_by_currency?.[cat], amt)}</span>
                             </div>
                           ))}
                         </div>
@@ -586,9 +611,9 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
                 </CardHeader>
                 <CardContent>
                   <div className="grid grid-cols-3 gap-4">
-                    <div><div className="text-sm text-gray-600">{t('invoice.reports.vatCollected')}</div><div className="text-2xl font-bold text-green-600">{money(reports.vat.sales_vat)}</div></div>
-                    <div><div className="text-sm text-gray-600">{t('invoice.reports.vatPaid')}</div><div className="text-2xl font-bold text-blue-600">{money(reports.vat.purchase_vat)}</div></div>
-                    <div><div className="text-sm text-gray-600">{t('invoice.reports.vatPayable')}</div><div className="text-2xl font-bold text-red-600">{money(reports.vat.vat_payable)}</div></div>
+                    <div><div className="text-sm text-gray-600">{t('invoice.reports.vatCollected')}</div><div className="text-2xl font-bold text-green-600">{moneyTotals(reports.vat.sales_vat_by_currency, reports.vat.sales_vat)}</div></div>
+                    <div><div className="text-sm text-gray-600">{t('invoice.reports.vatPaid')}</div><div className="text-2xl font-bold text-blue-600">{moneyTotals(reports.vat.purchase_vat_by_currency, reports.vat.purchase_vat)}</div></div>
+                    <div><div className="text-sm text-gray-600">{t('invoice.reports.vatPayable')}</div><div className="text-2xl font-bold text-red-600">{moneyTotals(reports.vat.vat_payable_by_currency, reports.vat.vat_payable)}</div></div>
                   </div>
                 </CardContent>
               </Card>
@@ -602,23 +627,23 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
                     <div>
                       <div className="font-semibold mb-3">{t('invoice.reports.assets')}</div>
                       <div className="space-y-2 text-sm">
-                        <div className="flex justify-between"><span className="text-gray-600">{t('invoice.reports.cash')}:</span><span className="font-medium">{money(reports.balanceSheet.assets.cash)}</span></div>
-                        <div className="flex justify-between"><span className="text-gray-600">{t('invoice.reports.inventory')}:</span><span className="font-medium">{money(reports.balanceSheet.assets.inventory)}</span></div>
-                        <div className="flex justify-between"><span className="text-gray-600">{t('invoice.reports.receivables')}:</span><span className="font-medium">{money(reports.balanceSheet.assets.receivables)}</span></div>
-                        <div className="flex justify-between pt-2 border-t font-bold"><span>{t('invoice.reports.totalAssets')}:</span><span className="text-blue-600">{money(reports.balanceSheet.assets.total)}</span></div>
+                        <div className="flex justify-between"><span className="text-gray-600">{t('invoice.reports.cash')}:</span><span className="font-medium text-right">{moneyTotals(reports.balanceSheet.assets.cash_by_currency, reports.balanceSheet.assets.cash)}</span></div>
+                        <div className="flex justify-between"><span className="text-gray-600">{t('invoice.reports.inventory')}:</span><span className="font-medium text-right">{moneyTotals(reports.balanceSheet.assets.inventory_by_currency, reports.balanceSheet.assets.inventory)}</span></div>
+                        <div className="flex justify-between"><span className="text-gray-600">{t('invoice.reports.receivables')}:</span><span className="font-medium text-right">{moneyTotals(reports.balanceSheet.assets.receivables_by_currency, reports.balanceSheet.assets.receivables)}</span></div>
+                        <div className="flex justify-between pt-2 border-t font-bold"><span>{t('invoice.reports.totalAssets')}:</span><span className="text-blue-600 text-right">{moneyTotals(reports.balanceSheet.assets.total_by_currency, reports.balanceSheet.assets.total)}</span></div>
                       </div>
                     </div>
                     <div>
                       <div className="font-semibold mb-3">{t('invoice.reports.liabilities')}</div>
                       <div className="space-y-2 text-sm">
-                        <div className="flex justify-between"><span className="text-gray-600">{t('invoice.reports.payables')}:</span><span className="font-medium">{money(reports.balanceSheet.liabilities.payables)}</span></div>
-                        <div className="flex justify-between pt-2 border-t font-bold"><span>{t('invoice.reports.totalLiabilities')}:</span><span className="text-red-600">{money(reports.balanceSheet.liabilities.total)}</span></div>
+                        <div className="flex justify-between"><span className="text-gray-600">{t('invoice.reports.payables')}:</span><span className="font-medium text-right">{moneyTotals(reports.balanceSheet.liabilities.payables_by_currency, reports.balanceSheet.liabilities.payables)}</span></div>
+                        <div className="flex justify-between pt-2 border-t font-bold"><span>{t('invoice.reports.totalLiabilities')}:</span><span className="text-red-600 text-right">{moneyTotals(reports.balanceSheet.liabilities.total_by_currency, reports.balanceSheet.liabilities.total)}</span></div>
                       </div>
                     </div>
                     <div>
                       <div className="font-semibold mb-3">{t('invoice.reports.equity')}</div>
                       <div className="space-y-2 text-sm">
-                        <div className="flex justify-between pt-2 border-t font-bold"><span>{t('invoice.reports.totalEquity')}:</span><span className="text-green-600">{money(reports.balanceSheet.equity.total)}</span></div>
+                        <div className="flex justify-between pt-2 border-t font-bold"><span>{t('invoice.reports.totalEquity')}:</span><span className="text-green-600 text-right">{moneyTotals(reports.balanceSheet.equity.total_by_currency, reports.balanceSheet.equity.total)}</span></div>
                       </div>
                     </div>
                   </div>
@@ -628,8 +653,16 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
           </TabsContent>
         </Tabs>
 
-        <ExpenseDialog open={openDialog === 'expense'} onClose={() => { setOpenDialog(null); loadExpenses(true); refreshDashboard(); }} suppliers={suppliers} />
-        <SupplierDialog open={openDialog === 'supplier'} onClose={() => { setOpenDialog(null); loadSuppliers(true); }} />
+        <ExpenseDialog open={openDialog === 'expense'} onClose={() => { setOpenDialog(null); loadExpenses(true); loadSuppliers(true); refreshDashboard(); }} suppliers={suppliers} />
+        <SupplierDialog
+          open={openDialog === 'supplier'}
+          onClose={() => setOpenDialog(null)}
+          onCreated={async (supplier) => {
+            setSuppliers((current) => current.some((item) => item.id === supplier.id) ? current : [supplier, ...current]);
+            setOpenDialog(null);
+            await loadSuppliers(true);
+          }}
+        />
         <BankAccountDialog open={openDialog === 'bank'} onClose={() => { setOpenDialog(null); loadBanks(true); refreshDashboard(); }} />
         <InventoryDialog open={openDialog === 'inventory'} onClose={() => { setOpenDialog(null); loadInventory(true); }} />
         <InvoiceFormDialog

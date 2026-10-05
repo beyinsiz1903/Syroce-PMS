@@ -42,6 +42,34 @@ from modules.pms_core.role_permission_service import require_op  # v95 DW
 
 router = APIRouter(prefix="/api", tags=["pos-marketplace"])
 
+_POS_CATEGORY_ALIASES = {
+    "Ana Yemek": "food",
+    "Başlangıç": "appetizer",
+    "Tatlı": "dessert",
+    "İçecek": "beverage",
+    "Alkollü": "alcohol",
+    "Atıştırmalık": "appetizer",
+    "main": "food",
+}
+
+
+def _normalise_menu_item(item: dict) -> dict:
+    """Expose one stable menu contract while retaining legacy field aliases."""
+    row = dict(item)
+    row.pop("_id", None)
+    name = row.get("item_name") or row.get("name") or ""
+    price = row.get("unit_price")
+    if price is None:
+        price = row.get("price", 0)
+    row["item_name"] = name
+    row["name"] = name
+    row["unit_price"] = float(price or 0)
+    row["price"] = float(price or 0)
+    row["category"] = _POS_CATEGORY_ALIASES.get(row.get("category"), row.get("category") or "food")
+    row["available"] = row.get("available", row.get("status", "active") == "active")
+    return row
+
+
 # ========================================
 
 
@@ -49,7 +77,12 @@ router = APIRouter(prefix="/api", tags=["pos-marketplace"])
 @router.get("/pos/outlets")
 async def get_outlets(current_user: User = Depends(get_current_user)):
     """Get all F&B outlets"""
-    outlets = await db.pos_outlets.find({"tenant_id": current_user.tenant_id}, {"_id": 0}).to_list(100)
+    # Soft-deleted outlets must never reappear in dashboards/terminals.  They
+    # remain in the database only so historical orders keep their references.
+    outlets = await db.pos_outlets.find(
+        {"tenant_id": current_user.tenant_id, "status": {"$ne": "deleted"}},
+        {"_id": 0},
+    ).to_list(100)
 
     # Get transaction counts per outlet
     for outlet in outlets:
@@ -73,10 +106,7 @@ async def create_outlet(
 ):
     """Create new F&B outlet"""
     if request.client_request_id:
-        existing_outlet = await db.pos_outlets.find_one({
-            "tenant_id": current_user.tenant_id,
-            "client_request_id": request.client_request_id
-        }, {"_id": 0})
+        existing_outlet = await db.pos_outlets.find_one({"tenant_id": current_user.tenant_id, "client_request_id": request.client_request_id}, {"_id": 0})
         if existing_outlet:
             return existing_outlet
 
@@ -88,15 +118,13 @@ async def create_outlet(
             await reserve_quota(current_user.tenant_id, "pos_fnb", "outlets", outlet_id, max_outlets)
         except QuotaExceededException:
             import os
+
             mode = os.environ.get("ENTITLEMENT_ENFORCEMENT_MODE", "observe")
             if mode == "observe":
                 logger.warning(f"[ENTITLEMENT_OBSERVE] Tenant {current_user.tenant_id} blocked for outlet limit ({max_outlets}) but allowed due to observe mode.")
                 await reserve_quota(current_user.tenant_id, "pos_fnb", "outlets", outlet_id, max_outlets, force=True)
             else:
-                raise HTTPException(
-                    status_code=403,
-                    detail=f"Maksimum outlet limitine ({max_outlets}) ulastiniz. Daha fazlasi icin paketinizi yukseltin."
-                )
+                raise HTTPException(status_code=403, detail=f"Maksimum outlet limitine ({max_outlets}) ulastiniz. Daha fazlasi icin paketinizi yukseltin.")
 
     outlet = {
         "id": outlet_id,
@@ -124,7 +152,7 @@ async def create_outlet(
                     "tenant_id": current_user.tenant_id,
                     "client_request_id": request.client_request_id,
                 },
-                {"_id": 0}
+                {"_id": 0},
             )
             if existing:
                 return existing
@@ -170,8 +198,7 @@ async def delete_outlet(
     Kotayi bosaltmak icin kalici silinmesi yani 'deleted' durumuna cekilmesi gerekir.)
     """
     res = await db.pos_outlets.update_one(
-        {"id": outlet_id, "tenant_id": current_user.tenant_id, "status": {"$ne": "deleted"}},
-        {"$set": {"status": "deleted", "deleted_at": datetime.now(UTC).isoformat()}}
+        {"id": outlet_id, "tenant_id": current_user.tenant_id, "status": {"$ne": "deleted"}}, {"$set": {"status": "deleted", "deleted_at": datetime.now(UTC).isoformat()}}
     )
 
     if res.matched_count == 0:
@@ -191,13 +218,17 @@ async def delete_outlet(
 @router.get("/pos/outlets/{outlet_id}")
 async def get_outlet_details(outlet_id: str, current_user: User = Depends(get_current_user)):
     """Get outlet details with menu and stats"""
-    outlet = await db.pos_outlets.find_one({"id": outlet_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
+    outlet = await db.pos_outlets.find_one(
+        {"id": outlet_id, "tenant_id": current_user.tenant_id, "status": {"$ne": "deleted"}},
+        {"_id": 0},
+    )
 
     if not outlet:
         raise HTTPException(status_code=404, detail="Outlet not found")
 
     # Get menu items
     menu_items = await db.pos_menu_items.find({"tenant_id": current_user.tenant_id, "outlet_id": outlet_id}, {"_id": 0}).to_list(1000)
+    menu_items = [_normalise_menu_item(item) for item in menu_items]
 
     # Get today's stats
     today = datetime.now(UTC).date().isoformat()
@@ -220,6 +251,7 @@ async def get_menu_items(outlet_id: str = None, category: str = None, current_us
         query["category"] = category
 
     menu_items = await db.pos_menu_items.find(query, {"_id": 0}).to_list(1000)
+    menu_items = [_normalise_menu_item(item) for item in menu_items]
 
     return {"menu_items": menu_items, "count": len(menu_items)}
 
@@ -232,7 +264,7 @@ async def create_menu_item(
 ):
     """Create menu item for outlet"""
     # Verify outlet exists
-    outlet = await db.pos_outlets.find_one({"id": request.outlet_id, "tenant_id": current_user.tenant_id})
+    outlet = await db.pos_outlets.find_one({"id": request.outlet_id, "tenant_id": current_user.tenant_id, "status": "active"})
 
     if not outlet:
         raise HTTPException(status_code=404, detail="Outlet not found")
@@ -242,8 +274,10 @@ async def create_menu_item(
         "tenant_id": current_user.tenant_id,
         "outlet_id": request.outlet_id,
         "item_name": request.item_name,
-        "category": request.category,
+        "name": request.item_name,
+        "category": _POS_CATEGORY_ALIASES.get(request.category, request.category),
         "price": request.price,
+        "unit_price": request.price,
         "cost": request.cost,
         "description": request.description,
         "status": "active",

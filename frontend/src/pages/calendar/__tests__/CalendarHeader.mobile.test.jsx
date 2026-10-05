@@ -19,6 +19,7 @@ const defaultProps = {
   onNavigatePrevious: vi.fn(),
   onNavigateNext: vi.fn(),
   onGoToDate: vi.fn(),
+  onGoToToday: vi.fn(),
   onSyncReservations: vi.fn(),
   onShowFindRoomDialog: vi.fn(),
   onShowNewBookingDialog: vi.fn(),
@@ -26,6 +27,9 @@ const defaultProps = {
   onShowConflicts: vi.fn(),
   viewPreferences: { compactMode: true, showOccupancy: true, showTimeline: false },
   onViewPreferenceChange: vi.fn(),
+  canCreateBooking: true,
+  canManageRooms: true,
+  canSyncChannels: true,
 };
 
 describe('CalendarHeader mobile toolbar', () => {
@@ -41,17 +45,17 @@ describe('CalendarHeader mobile toolbar', () => {
 
     await user.click(screen.getByTestId('mobile-calendar-actions'));
     expect(screen.getByRole('menu')).toHaveTextContent('Takvim işlemleri');
-    expect(screen.getByRole('menu')).toHaveTextContent('OTA senkronizasyonu');
+    expect(screen.getByRole('menu')).toHaveTextContent('Kanalları eşitle');
     expect(screen.getByRole('menu')).toHaveTextContent('Gün aralığı');
   });
 
   it('wires the compact date navigation to calendar callbacks', () => {
     const onPrevious = vi.fn();
     const onNext = vi.fn();
-    const onGoToDate = vi.fn();
+    const onGoToToday = vi.fn();
     render(
       <MemoryRouter>
-        <CalendarHeader {...defaultProps} onNavigatePrevious={onPrevious} onNavigateNext={onNext} onGoToDate={onGoToDate} />
+        <CalendarHeader {...defaultProps} onNavigatePrevious={onPrevious} onNavigateNext={onNext} onGoToToday={onGoToToday} />
       </MemoryRouter>,
     );
 
@@ -60,7 +64,48 @@ describe('CalendarHeader mobile toolbar', () => {
     fireEvent.click(screen.getByTestId('mobile-calendar-nav-next'));
 
     expect(onPrevious).toHaveBeenCalledTimes(1);
-    expect(onGoToDate).toHaveBeenCalledTimes(1);
+    expect(onGoToToday).toHaveBeenCalledTimes(1);
     expect(onNext).toHaveBeenCalledTimes(1);
+  });
+
+  it('names operational-date navigation honestly when the PMS business date differs', () => {
+    render(
+      <MemoryRouter>
+        <CalendarHeader {...defaultProps} businessDate="2026-09-05" />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByTestId('mobile-calendar-nav-today')).toHaveTextContent('PMS İş Günü');
+    expect(screen.getByTestId('calendar-nav-today')).toHaveTextContent('PMS İş Günü');
+    expect(screen.getByTestId('calendar-nav-today')).toHaveAccessibleName('PMS iş günü çevresine git (05.09.2026)');
+  });
+
+  it('keeps the compact room-block action named for assistive technology', () => {
+    render(<MemoryRouter><CalendarHeader {...defaultProps} /></MemoryRouter>);
+
+    expect(screen.getByTestId('calendar-room-block-button')).toHaveAccessibleName('Odayı blokla veya arıza bildir');
+  });
+
+  it('does not expose mutation controls to a read-only calendar user', async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter>
+        <CalendarHeader
+          {...defaultProps}
+          canCreateBooking={false}
+          canManageRooms={false}
+          canSyncChannels={false}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(screen.queryByTestId('mobile-add-reservation-button')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('add-reservation-button')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('calendar-room-block-button')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('ota-sync-button')).not.toBeInTheDocument();
+
+    await user.click(screen.getByTestId('mobile-calendar-actions'));
+    expect(screen.getByRole('menu')).not.toHaveTextContent('Odayı blokla / arıza bildir');
+    expect(screen.getByRole('menu')).not.toHaveTextContent('Kanalları eşitle');
   });
 });

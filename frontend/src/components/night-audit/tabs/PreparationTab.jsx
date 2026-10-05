@@ -10,6 +10,7 @@ import {
   ShieldAlert, Clock, Info, Play,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { reservationEditLockManager } from '@/lib/reservationEditLockManager';
 
 const ACTION_LABELS = {
   edit_booking: 'Rezervasyona git',
@@ -51,7 +52,7 @@ function StatTile({ icon: Icon, label, value, hint, tone = 'gray' }) {
   );
 }
 
-export default function PreparationTab({ onStartRun, onPreviewLoaded, onOpenRun, refreshKey = 0 }) {
+export default function PreparationTab({ onStartRun, onPreviewLoaded, onOpenRun, refreshKey = 0, canRunAudit = false }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [data, setData] = useState(null);
@@ -66,7 +67,9 @@ export default function PreparationTab({ onStartRun, onPreviewLoaded, onOpenRun,
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await axios.get('/night-audit/preview');
+      // The preview contains operational blockers. Never reuse its 30-second
+      // snapshot after a check-in/check-out has just changed the source data.
+      const res = await axios.get('/night-audit/preview', { params: { nocache: 1 } });
       setData(res.data);
       const cb = onPreviewLoadedRef.current;
       if (typeof cb === 'function') {
@@ -82,14 +85,18 @@ export default function PreparationTab({ onStartRun, onPreviewLoaded, onOpenRun,
   useEffect(() => { load(); }, [load, refreshKey]);
 
   const closeInlineBooking = useCallback(() => {
+    const closingBookingId = selectedBookingId;
     setSelectedBookingId(null);
+    void reservationEditLockManager?.releaseCurrent(closingBookingId);
     void load();
-  }, [load]);
+  }, [load, selectedBookingId]);
 
   const completeInlineOperation = useCallback(async () => {
+    const closingBookingId = selectedBookingId;
     setSelectedBookingId(null);
+    await reservationEditLockManager?.releaseCurrent(closingBookingId);
     await load();
-  }, [load]);
+  }, [load, selectedBookingId]);
 
   if (loading && !data) {
     return (
@@ -102,6 +109,7 @@ export default function PreparationTab({ onStartRun, onPreviewLoaded, onOpenRun,
   if (!data) return null;
 
   const drift = data.date_drift_days || 0;
+  const catchupRequired = drift > 1;
   const blockers = data.blockers || [];
   const warnings = data.warnings || [];
   const rooms = data.rooms || {};
@@ -132,19 +140,23 @@ export default function PreparationTab({ onStartRun, onPreviewLoaded, onOpenRun,
       <Card>
         <CardContent className="py-4 flex flex-col md:flex-row md:items-center gap-3 justify-between">
           <div className="flex items-center gap-3">
-            {data.ready ? (
+            {data.ready && !catchupRequired ? (
               <CheckCircle2 className="w-6 h-6 text-emerald-600" />
             ) : (
-              <ShieldAlert className="w-6 h-6 text-rose-600" />
+              <ShieldAlert className={`w-6 h-6 ${catchupRequired ? 'text-amber-600' : 'text-rose-600'}`} />
             )}
             <div>
               <p className="text-sm font-semibold text-gray-900">
-                {data.ready
+                {catchupRequired
+                  ? 'Kontrollü gün kapatma gerekli'
+                  : data.ready
                   ? 'Gece denetimi için hazır görünüyorsunuz'
                   : `Başlatılamıyor — ${blockers.length} engelleyici sorun var`}
               </p>
               <p className="text-xs text-gray-500">
-                {t('cm.components_nightaudit_tabs_PreparationTab.is_gunu')} {data.business_date} · {warnings.length} {t('cm.components_nightaudit_tabs_PreparationTab.uyari')}
+                {catchupRequired
+                  ? `PMS iş günü takvimden ${drift} gün geride; canlı gün sonu çalıştırılamaz.`
+                  : `${t('cm.components_nightaudit_tabs_PreparationTab.is_gunu')} ${data.business_date} · ${warnings.length} ${t('cm.components_nightaudit_tabs_PreparationTab.uyari')}`}
               </p>
             </div>
           </div>
@@ -153,15 +165,15 @@ export default function PreparationTab({ onStartRun, onPreviewLoaded, onOpenRun,
               <RefreshCw className={`w-4 h-4 mr-1 ${loading ? 'animate-spin' : ''}`} />
               {t('cm.components_nightaudit_tabs_PreparationTab.yenile')}
             </Button>
-            <Button
+            {canRunAudit && <Button
               size="sm"
-              onClick={onStartRun}
+              onClick={() => onStartRun?.({ dryRun: catchupRequired })}
               className="bg-indigo-600 hover:bg-indigo-700 text-white"
               data-testid="prep-start-btn"
             >
               <Play className="w-4 h-4 mr-1" />
-              {t('cm.components_nightaudit_tabs_PreparationTab.denetim_baslat')}
-            </Button>
+              {catchupRequired ? 'Simülasyon Başlat' : t('cm.components_nightaudit_tabs_PreparationTab.denetim_baslat')}
+            </Button>}
           </div>
         </CardContent>
       </Card>
@@ -318,6 +330,7 @@ export default function PreparationTab({ onStartRun, onPreviewLoaded, onOpenRun,
           </div>
         )}>
           <ReservationDetailModal
+            key={selectedBookingId}
             bookingId={selectedBookingId}
             onClose={closeInlineBooking}
             onOperationComplete={completeInlineOperation}

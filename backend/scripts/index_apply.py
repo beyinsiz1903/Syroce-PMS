@@ -41,6 +41,12 @@ TO_APPLY = [
     # immediately without a full boot.
     ("folios", [("tenant_id", 1), ("id", 1)]),
     ("folio_charges", [("tenant_id", 1), ("id", 1)]),
+    ("ops_events", [("severity", 1), ("created_at", -1)], "idx_ops_global_sev_created", {}),
+    ("ops_events", [("created_at", -1)], "idx_ops_global_created", {}),
+    ("webhook_deliveries", [("status", 1), ("created_at", -1)], "idx_wh_global_status_created", {}),
+    ("webhook_deliveries", [("created_at", -1)], "idx_wh_global_created", {}),
+    ("webhook_dlq", [("status", 1), ("created_at", -1)], "idx_wh_dlq_global_status_created", {}),
+
     # Atlas Query Targeting (2026-06-17): channel_reconciliation_cases global
     # (cross-tenant) ops-health shapes from monitoring/aggregator.py
     # collect_reconciliation_health() — {status:{$in:[open,acknowledged]}} +

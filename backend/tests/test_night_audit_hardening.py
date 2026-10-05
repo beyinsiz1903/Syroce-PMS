@@ -54,6 +54,25 @@ COLLECTIONS = [
 ]
 
 
+def test_checkout_on_business_date_blocks_that_days_close():
+    from core.night_audit_hardened import _partition_due_bookings
+
+    bookings = [
+        {"id": "due-today", "check_out": "2026-09-25T00:00:00+00:00"},
+        {"id": "already-past", "check_out": "2026-09-24"},
+    ]
+
+    overdue, invalid = _partition_due_bookings(
+        bookings,
+        "check_out",
+        "2026-09-25",
+        include_business_date=True,
+    )
+
+    assert [booking["id"] for booking in overdue] == ["due-today", "already-past"]
+    assert invalid == []
+
+
 async def _get_db():
     """Create a fresh Motor client bound to the current event loop."""
     mongo_url = os.environ.get("MONGO_URL", "mongodb://localhost:27017/hotel_pms")
@@ -164,12 +183,17 @@ async def test_successful_full_audit():
             "business_date": BD, "charge_type": "room_charge",
         }, {"_id": 0})
         assert charge is not None
-        assert charge["amount"] == 2500.0
+        # Reservation fiyatı misafirin ödeyeceği vergi dahil brüt toplamdır.
+        # Night Audit vergiyi bunun üzerine eklemez; matrah/vergi olarak ayırır.
+        assert charge["amount"] == 2232.14
+        assert charge["tax_amount"] == 267.86
+        assert charge["total"] == 2500.0
+        assert charge["tax_inclusive"] is True
         assert charge["voided"] is False
 
         # Verify folio balance updated
         folio = await db.folios.find_one({"id": seed["folio_id"]}, {"_id": 0})
-        assert folio["balance"] > 0
+        assert folio["balance"] == 2500.0
 
         # Verify business date advanced
         settings = await db.tenant_settings.find_one({"tenant_id": TENANT}, {"_id": 0})
@@ -312,6 +336,59 @@ async def test_blocked_on_orphan_checkin():
         result = await _call_engine("start_night_audit", c, db, TENANT, PROPERTY, BD)
         assert result["success"] is False
         assert result["code"] == "VALIDATION_BLOCKED"
+    finally:
+        await _cleanup(db)
+        c.close()
+
+
+@pytest.mark.asyncio
+async def test_dry_run_reports_blockers_and_financial_projection_without_live_writes():
+    """Simulation must finish with useful projections even when live close is blocked."""
+    c, db = await _get_db()
+    try:
+        await _cleanup(db)
+        await _call_engine("ensure_night_audit_indexes", c, db)
+        await _seed_booking(db, room_rate=1000.0)
+        await _seed_booking(db, room_rate=750.0, no_folio=True)
+        await db.tenant_settings.insert_one({"tenant_id": TENANT, "business_date": BD})
+
+        result = await _call_engine(
+            "start_night_audit",
+            c,
+            db,
+            TENANT,
+            PROPERTY,
+            BD,
+            "manual",
+            {"id": "tester"},
+            dry_run=True,
+        )
+
+        assert result["success"] is True
+        assert result["dry_run"] is True
+        assert result["status"] == "dry_run_completed"
+        assert result["blockers"]
+        assert result["rooms_processed"] == 2
+        assert result["charges_posted"] == 1
+        assert result["would_post"] == 1
+        assert result["would_skip"] == 1
+        assert result["total_room_revenue"] == 892.86
+        assert result["total_tax_amount"] == 107.14
+        assert result["projected_total"] == 1000.0
+        assert len(result["candidate_details"]) == 2
+        skipped = next(item for item in result["candidate_details"] if item["status"] == "skipped")
+        assert skipped["reason"] == "no_open_folio"
+        assert skipped["booking_id"]
+        assert skipped["total"] == 750.0
+
+        # Audit trace/candidates may be recorded, but hotel operations stay read-only.
+        assert await db.folio_charges.count_documents({"tenant_id": TENANT}) == 0
+        folios = await db.folios.find({"tenant_id": TENANT}, {"_id": 0}).to_list(10)
+        assert all(folio["balance"] == 0 for folio in folios)
+        settings = await db.tenant_settings.find_one({"tenant_id": TENANT}, {"_id": 0})
+        assert settings["business_date"] == BD
+        bookings = await db.bookings.find({"tenant_id": TENANT}, {"_id": 0}).to_list(10)
+        assert all(booking["status"] == "checked_in" for booking in bookings)
     finally:
         await _cleanup(db)
         c.close()

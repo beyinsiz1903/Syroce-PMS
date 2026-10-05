@@ -12,6 +12,7 @@ from pydantic import ValidationError
 from models.schemas.invoicing import InvoiceCreate
 from routers.finance.accounting import (
     AccountingInvoiceCreateRequest,
+    _normalize_accounting_invoice_due_date,
     _normalize_customer_tax_number,
 )
 
@@ -97,6 +98,27 @@ def test_acc_tax_number_blank_normalized_to_none():
 def test_acc_tax_number_invalid_rejected(bad):
     with pytest.raises(ValidationError):
         AccountingInvoiceCreateRequest(**_acc_base(customer_tax_number=bad))
+
+
+@pytest.mark.parametrize("bad", ["", "   ", "2026-13-01", "04.09.2026"])
+def test_acc_due_date_invalid_rejected_before_route_execution(bad):
+    with pytest.raises(ValidationError, match="due_date geçerli"):
+        AccountingInvoiceCreateRequest(**_acc_base(due_date=bad))
+
+
+def test_acc_due_date_is_normalized_to_iso_date():
+    assert _normalize_accounting_invoice_due_date(" 2026-09-15 ") == "2026-09-15"
+
+
+def test_acc_invoice_type_normalizes_legacy_standard_to_sales():
+    request = AccountingInvoiceCreateRequest(**_acc_base(invoice_type="standard"))
+    assert request.invoice_type == "sales"
+
+
+@pytest.mark.parametrize("bad", ["", "offer", "random_document"])
+def test_acc_invoice_type_rejects_unknown_document_type(bad):
+    with pytest.raises(ValidationError, match="invoice_type geçerli"):
+        AccountingInvoiceCreateRequest(**_acc_base(invoice_type=bad))
 
 
 # ── Package C: shared helper used by the raw-dict update path ──

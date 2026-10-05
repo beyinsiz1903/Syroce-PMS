@@ -563,7 +563,27 @@ async def get_notifications_list(unread_only: bool = False, limit: int = 50, cre
         query["read"] = False
 
     notifications = []
-    async for notif in db.notifications.find(query).sort("created_at", -1).limit(limit):
+    async for notif in (
+        db.notifications.find(
+            query,
+            {
+                "_id": 0,
+                "id": 1,
+                "type": 1,
+                "title": 1,
+                "message": 1,
+                "priority": 1,
+                "read": 1,
+                "created_at": 1,
+                "action_url": 1,
+                "related_entity": 1,
+                "related_id": 1,
+                "metadata": 1,
+            },
+        )
+        .sort("created_at", -1)
+        .limit(limit)
+    ):
         notifications.append(
             {
                 "id": notif["id"],
@@ -574,6 +594,11 @@ async def get_notifications_list(unread_only: bool = False, limit: int = 50, cre
                 "read": notif.get("read", False),
                 "created_at": notif.get("created_at"),
                 "action_url": notif.get("action_url"),
+                # Kartın ilgili kayda gidebilmesi için operasyonel hedef
+                # bilgilerini API sınırında koru.
+                "related_entity": notif.get("related_entity"),
+                "related_id": notif.get("related_id"),
+                "metadata": notif.get("metadata") or {},
             }
         )
 

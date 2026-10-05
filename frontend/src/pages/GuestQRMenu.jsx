@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom';
 import axios from 'axios';
 import { toast, Toaster } from 'react-hot-toast';
 import { ShoppingCart, Plus, Minus, Send, UtensilsCrossed } from 'lucide-react';
+import { formatCurrency } from '@/lib/currency';
 
 const GuestQRMenu = () => {
   const { tenantId, outletId } = useParams();
@@ -11,6 +12,7 @@ const GuestQRMenu = () => {
   const [tableId, setTableId] = useState('T1'); // For demo, usually from URL query
   const [guestName, setGuestName] = useState('');
   const [loading, setLoading] = useState(true);
+  const [menuCurrency, setMenuCurrency] = useState('TRY');
 
   useEffect(() => {
     // URL params like ?table=12
@@ -23,6 +25,7 @@ const GuestQRMenu = () => {
       try {
         const response = await axios.get(`/api/public/fnb/${tenantId}/${outletId}/menu`);
         setCategories(response.data.categories || []);
+        setMenuCurrency(response.data.currency || 'TRY');
       } catch (error) {
         toast.error("Menü yüklenirken bir hata oluştu.");
       } finally {
@@ -47,7 +50,11 @@ const GuestQRMenu = () => {
     });
   };
 
-  const totalAmount = Object.values(cart).reduce((sum, item) => sum + (item.unit_price * item.qty), 0);
+  const totalsByCurrency = Object.values(cart).reduce((totals, item) => {
+    const currency = String(item.currency || menuCurrency).toUpperCase();
+    totals[currency] = (totals[currency] || 0) + (item.unit_price * item.qty);
+    return totals;
+  }, {});
 
   const placeOrder = async () => {
     if (Object.keys(cart).length === 0) return;
@@ -95,7 +102,7 @@ const GuestQRMenu = () => {
                 <div key={item.id} className="bg-white p-4 rounded-xl shadow-sm flex justify-between items-center">
                   <div>
                     <h3 className="font-semibold text-gray-800">{item.item_name}</h3>
-                    <p className="text-blue-600 font-bold mt-1">{item.unit_price.toFixed(2)} ₺</p>
+                    <p className="text-blue-600 font-bold mt-1">{formatCurrency(item.unit_price, item.currency || menuCurrency)}</p>
                   </div>
                   
                   <div className="flex items-center space-x-3 bg-gray-100 rounded-full p-1">
@@ -126,7 +133,11 @@ const GuestQRMenu = () => {
           <div className="max-w-3xl mx-auto flex items-center justify-between">
             <div>
               <div className="text-sm text-gray-500 font-medium">Toplam Tutar</div>
-              <div className="text-xl font-bold text-gray-800">{totalAmount.toFixed(2)} ₺</div>
+              <div className="text-xl font-bold text-gray-800">
+                {Object.entries(totalsByCurrency).map(([currency, amount]) => (
+                  <span key={currency} className="block">{formatCurrency(amount, currency)}</span>
+                ))}
+              </div>
             </div>
             
             <button 

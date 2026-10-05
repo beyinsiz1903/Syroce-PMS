@@ -4,11 +4,14 @@ import api from '@/api/axios';
 import MaybeLayout from '@/components/MaybeLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { AlertTriangle, TrendingUp, Target, CheckCircle, Lightbulb, Activity, ChevronRight, HelpCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import AITabs from '@/components/AITabs';
+import { reservationLabel } from '@/utils/displayIdentifiers';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 
 const PredictiveAnalytics = ({ user, tenant, onLogout, embedded }) => {
   const { t } = useTranslation();
@@ -17,29 +20,48 @@ const PredictiveAnalytics = ({ user, tenant, onLogout, embedded }) => {
   const [demandForecast, setDemandForecast] = useState([]);
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [loading, setLoading] = useState(false);
+  const [predictionError, setPredictionError] = useState('');
+  const [forecastError, setForecastError] = useState('');
 
   const loadPredictions = useCallback(async () => {
+    setPredictionError('');
     try {
       const response = await api.get(`/predictions/no-shows?target_date=${selectedDate}`);
       setNoShowPredictions(response.data.predictions || []);
-    } catch (error) {
+    } catch {
       console.error('Predictions yüklenemedi');
+      setPredictionError('No-show risk verileri yüklenemedi. Sonuç varmış gibi değerlendirme yapılmadı.');
+      return false;
     }
   }, [selectedDate]);
 
   const loadDemandForecast = useCallback(async () => {
+    setForecastError('');
     try {
       const response = await api.get('/predictions/demand-forecast?days=30');
       setDemandForecast(response.data.daily_forecast || []);
-    } catch (error) {
+    } catch {
       console.error('Demand forecast yüklenemedi');
+      setForecastError('Talep tahmini yüklenemedi. Fiyat önerileri geçici olarak gösterilmiyor.');
+      return false;
     }
   }, []);
 
   useEffect(() => {
     setLoading(true);
-    Promise.all([loadPredictions(), loadDemandForecast()]).finally(() => setLoading(false));
+    Promise.allSettled([loadPredictions(), loadDemandForecast()]).finally(() => setLoading(false));
   }, [loadPredictions, loadDemandForecast]);
+
+  const retryPredictions = async () => {
+    setLoading(true);
+    await loadPredictions();
+    setLoading(false);
+  };
+  const retryForecast = async () => {
+    setLoading(true);
+    await loadDemandForecast();
+    setLoading(false);
+  };
 
   const RiskBadge = ({ level }) => {
     const colors = {
@@ -47,9 +69,10 @@ const PredictiveAnalytics = ({ user, tenant, onLogout, embedded }) => {
       medium: 'bg-amber-50 text-amber-600 border-amber-200',
       low: 'bg-emerald-50 text-emerald-600 border-emerald-200'
     };
+    const labels = { high: 'Yüksek', medium: 'Orta', low: 'Düşük' };
     return (
       <Badge className={`${colors[level]} border px-2 py-0.5 rounded-md text-xs font-semibold uppercase`}>
-        {level}
+        {labels[level] || level}
       </Badge>
     );
   };
@@ -105,7 +128,7 @@ const PredictiveAnalytics = ({ user, tenant, onLogout, embedded }) => {
               <div>
                 <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wider mb-1">Yüksek Risk No-show</p>
                 <div className="flex items-baseline gap-2">
-                  <p className="text-2xl font-bold text-slate-800">{noShowPredictions.filter(p => p.risk_level === 'high').length}</p>
+                  <p className="text-2xl font-bold text-slate-800">{predictionError ? '—' : noShowPredictions.filter(p => p.risk_level === 'high').length}</p>
                 </div>
               </div>
               <div className="w-10 h-10 rounded-full bg-red-50 text-red-500 flex items-center justify-center ring-4 ring-white shadow-sm">
@@ -119,7 +142,7 @@ const PredictiveAnalytics = ({ user, tenant, onLogout, embedded }) => {
               <div>
                 <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wider mb-1">Riskli Kayıtlar</p>
                 <div className="flex items-baseline gap-2">
-                  <p className="text-2xl font-bold text-slate-800">{noShowPredictions.length}</p>
+                  <p className="text-2xl font-bold text-slate-800">{predictionError ? '—' : noShowPredictions.length}</p>
                 </div>
               </div>
               <div className="w-10 h-10 rounded-full bg-amber-50 text-amber-500 flex items-center justify-center ring-4 ring-white shadow-sm">
@@ -134,7 +157,7 @@ const PredictiveAnalytics = ({ user, tenant, onLogout, embedded }) => {
                 <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wider mb-1">Yüksek Talep Günleri</p>
                 <div className="flex items-baseline gap-2">
                   <p className="text-2xl font-bold text-slate-800">
-                    {demandForecast.filter(f => ['high', 'very_high'].includes(f.demand_level)).length}
+                    {forecastError ? '—' : demandForecast.filter(f => ['high', 'very_high'].includes(f.demand_level)).length}
                   </p>
                 </div>
               </div>
@@ -149,7 +172,7 @@ const PredictiveAnalytics = ({ user, tenant, onLogout, embedded }) => {
               <div>
                 <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wider mb-1">Günlük Projeksiyon</p>
                 <div className="flex items-baseline gap-2">
-                  <p className="text-2xl font-bold text-slate-800">30</p>
+                  <p className="text-2xl font-bold text-slate-800">{forecastError ? '—' : demandForecast.length}</p>
                 </div>
               </div>
               <div className="w-10 h-10 rounded-full bg-emerald-50 text-emerald-500 flex items-center justify-center ring-4 ring-white shadow-sm">
@@ -170,7 +193,13 @@ const PredictiveAnalytics = ({ user, tenant, onLogout, embedded }) => {
               </CardTitle>
             </CardHeader>
             <CardContent className="p-0 overflow-y-auto flex-1">
-              {loading && noShowPredictions.length === 0 ? (
+              {predictionError ? (
+                <div className="py-10 px-5 text-center" role="alert">
+                  <AlertTriangle className="w-7 h-7 text-red-500 mx-auto mb-3" />
+                  <p className="text-sm text-red-800 mb-3">{predictionError}</p>
+                  <Button variant="outline" size="sm" onClick={retryPredictions}>Tekrar Dene</Button>
+                </div>
+              ) : loading && noShowPredictions.length === 0 ? (
                 <div className="py-12 text-center text-slate-400 text-sm">Tahminler yükleniyor...</div>
               ) : noShowPredictions.length === 0 ? (
                 <div className="py-12 flex flex-col items-center justify-center text-center px-4">
@@ -186,7 +215,7 @@ const PredictiveAnalytics = ({ user, tenant, onLogout, embedded }) => {
                     <div key={idx} className="p-4 hover:bg-slate-50 transition-colors">
                       <div className="flex items-start justify-between mb-2">
                         <div>
-                          <p className="font-bold text-slate-800 font-mono text-sm">#{pred.booking_id.substring(0, 8).toUpperCase()}</p>
+                          <p className="font-bold text-slate-800 text-sm">{reservationLabel(pred)}</p>
                           <p className="text-xs text-slate-500 mt-0.5">
                             Risk Skoru: <span className="font-medium text-slate-700">%{(pred.risk_score * 100).toFixed(0)}</span>
                           </p>
@@ -226,7 +255,13 @@ const PredictiveAnalytics = ({ user, tenant, onLogout, embedded }) => {
               </CardTitle>
             </CardHeader>
             <CardContent className="p-6">
-              {loading && demandForecast.length === 0 ? (
+              {forecastError ? (
+                <div className="py-16 text-center" role="alert">
+                  <AlertTriangle className="w-7 h-7 text-red-500 mx-auto mb-3" />
+                  <p className="text-sm text-red-800 mb-3">{forecastError}</p>
+                  <Button variant="outline" size="sm" onClick={retryForecast}>Tekrar Dene</Button>
+                </div>
+              ) : loading && demandForecast.length === 0 ? (
                 <div className="py-20 text-center text-slate-400 text-sm">Talep grafiği yükleniyor...</div>
               ) : (
                 <>
@@ -267,11 +302,11 @@ const PredictiveAnalytics = ({ user, tenant, onLogout, embedded }) => {
                                 forecast.demand_level === 'medium' ? 'bg-blue-50 text-blue-600 border border-blue-100' :
                                 'bg-slate-100 text-slate-500 border border-slate-200'
                               }`}>
-                                {forecast.demand_level.replace('_', ' ')}
+                                {({ very_high: 'Çok yüksek', high: 'Yüksek', medium: 'Orta', low: 'Düşük' })[forecast.demand_level] || forecast.demand_level}
                               </span>
                             </td>
                             <td className="px-4 py-3 text-right">
-                              <span className="font-semibold text-slate-800">€{forecast.recommended_price}</span>
+                              <span className="font-semibold text-slate-800">{formatCurrency(forecast.recommended_price, forecast.currency || tenant?.currency || cachedTenantCurrency())}</span>
                             </td>
                           </tr>
                         ))}
@@ -279,7 +314,7 @@ const PredictiveAnalytics = ({ user, tenant, onLogout, embedded }) => {
                     </table>
                   </div>
                   
-                  <div className="mt-6 p-4 bg-blue-50 border border-blue-100 rounded-lg flex items-start gap-3">
+                  {demandForecast.length > 0 && <div className="mt-6 p-4 bg-blue-50 border border-blue-100 rounded-lg flex items-start gap-3">
                     <div className="mt-0.5 shrink-0 text-blue-500">
                       <Lightbulb className="w-5 h-5" />
                     </div>
@@ -290,7 +325,7 @@ const PredictiveAnalytics = ({ user, tenant, onLogout, embedded }) => {
                         Renklendirilmiş günler talep potansiyelini ifade eder.
                       </p>
                     </div>
-                  </div>
+                  </div>}
                 </>
               )}
             </CardContent>

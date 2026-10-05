@@ -119,7 +119,7 @@ const OTAMessagingHub = () => {
       setNewMessage('');
       loadMessages(selectedConversation.id);
     } catch (error) {
-      toast.error('Mesaj gönderilemedi');
+      toast.error('İletişim mesajı gönderilemedi.');
     } finally {
       setLoading(false);
     }

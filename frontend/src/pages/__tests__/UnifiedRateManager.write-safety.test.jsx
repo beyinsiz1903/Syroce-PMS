@@ -35,8 +35,42 @@ describe('UnifiedRateManager write safety', () => {
         provider_delivery_state: deliveryState,
       })).toEqual({
         level: 'warning',
-        message: '2 yerel kayıt güncellendi; provider teslimatı henüz doğrulanmadı.',
+        message: '2 yerel kayıt güncellendi; kanal sağlayıcısına teslimat henüz doğrulanmadı.',
       });
     },
   );
+
+  it('reports success only for provider-confirmed delivery', () => {
+    expect(getUnifiedRateDeliveryFeedback({
+      saved: 10,
+      provider_verified: true,
+      provider_delivery_state: 'CONFIRMED',
+    })).toEqual({
+      level: 'success',
+      message: '10 kayıt güncellendi ve kanal sağlayıcısına teslimat doğrulandı.',
+    });
+  });
+
+  it('reports an OTA-independent agency delivery as completed', () => {
+    expect(getUnifiedRateDeliveryFeedback({
+      saved: 4,
+      provider: 'agency',
+      agency_push_count: 2,
+    })).toEqual({
+      level: 'success',
+      message: '4 kayıt güncellendi ve 2 acenteye anında iletildi.',
+    });
+  });
+
+  it('makes partial and rejected provider deliveries visible', () => {
+    expect(getUnifiedRateDeliveryFeedback({ saved: 3, provider_delivery_state: 'PARTIAL' }).level).toBe('error');
+    expect(getUnifiedRateDeliveryFeedback({
+      saved: 3,
+      provider_delivery_state: 'NOT_SENT',
+      provider_error_codes: ['EXELY_ARI_REJECTED'],
+    })).toEqual({
+      level: 'error',
+      message: '3 yerel kayıt güncellendi; kanal sağlayıcısına teslimat başarısız: EXELY_ARI_REJECTED',
+    });
+  });
 });

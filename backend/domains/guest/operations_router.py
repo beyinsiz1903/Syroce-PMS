@@ -17,6 +17,7 @@ from core.security import (
     get_current_user,
     security,
 )
+from core.tenant_currency import get_tenant_currency
 from models.enums import UserRole
 from models.schemas import LoyaltyProgram, LoyaltyProgramCreate, LoyaltyTransaction, LoyaltyTransactionCreate, RoomService, RoomServiceCreate, User
 from modules.guest_journey import feedback_reporting_service as feedback_report
@@ -585,19 +586,74 @@ async def create_loyalty_program(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_sales")),  # v96 DW
 ):
+    guest = await db.guests.find_one(
+        {"id": program_data.guest_id, "tenant_id": current_user.tenant_id, "archived": {"$ne": True}, "status": {"$ne": "deleted"}},
+        {"_id": 0, "id": 1},
+    )
+    if not guest:
+        raise HTTPException(status_code=404, detail="Misafir bulunamadı")
+
+    existing = await db.loyalty_programs.find_one(
+        {"guest_id": program_data.guest_id, "tenant_id": current_user.tenant_id},
+        {"_id": 0},
+    )
+    if existing:
+        return LoyaltyProgram(**existing)
+
     program = LoyaltyProgram(tenant_id=current_user.tenant_id, **program_data.model_dump())
     program_dict = program.model_dump()
     program_dict["last_activity"] = program_dict["last_activity"].isoformat()
     await db.loyalty_programs.insert_one(program_dict)
+    await db.audit_logs.insert_one(
+        {
+            "id": str(uuid.uuid4()),
+            "tenant_id": current_user.tenant_id,
+            "actor_id": current_user.id,
+            "action": "loyalty_member_enrolled",
+            "target_type": "guest",
+            "target_id": program.guest_id,
+            "details": {
+                "tier": program.tier.value if hasattr(program.tier, "value") else str(program.tier),
+                "points": program.points,
+            },
+            "created_at": datetime.now(UTC).isoformat(),
+        }
+    )
     return program
 
 
 # rbac-allow: cache-rbac — GUEST portal — loyalty programları
 @router.get("/loyalty/programs")
-@cached(ttl=600, key_prefix="loyalty_programs")  # Cache for 10 min
-async def get_loyalty_programs(current_user: User = Depends(get_current_user)):
-    """Get loyalty program definitions (not guest memberships)"""
-    programs = await db.loyalty_programs.find({"tenant_id": current_user.tenant_id}, {"_id": 0}).to_list(1000)
+async def get_loyalty_programs(
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_guest_list")),
+):
+    """Return all memberships with policy-protected guest identity data."""
+    programs = await db.loyalty_programs.find({"tenant_id": current_user.tenant_id}, {"_id": 0}).sort("last_activity", -1).to_list(5000)
+    guest_ids = [program.get("guest_id") for program in programs if program.get("guest_id")]
+    guest_rows = await db.guests.find(
+        {"tenant_id": current_user.tenant_id, "id": {"$in": guest_ids}},
+        {"_id": 0},
+    ).to_list(len(guest_ids) or 1)
+
+    from security.encrypted_lookup import decrypt_guest_doc
+    from security.guest_data_visibility import protect_guest_row
+
+    guests_by_id = {}
+    for row in guest_rows:
+        guest = decrypt_guest_doc(row)
+        if guest.get("first_name") or guest.get("last_name"):
+            guest["name"] = f"{guest.get('first_name', '')} {guest.get('last_name', '')}".strip()
+        guest = protect_guest_row(guest, current_user)
+        guests_by_id[guest.get("id")] = {
+            "id": guest.get("id"),
+            "name": guest.get("name") or "Gizli misafir",
+            "email": guest.get("email") or "",
+            "phone": guest.get("phone") or "",
+            "total_stays": guest.get("total_stays", 0),
+        }
+    for program in programs:
+        program["guest"] = guests_by_id.get(program.get("guest_id"))
     return programs
 
 
@@ -605,26 +661,66 @@ async def get_loyalty_programs(current_user: User = Depends(get_current_user)):
 async def create_loyalty_transaction(
     transaction_data: LoyaltyTransactionCreate,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v100("frontdesk")),  # v100 DW
+    _perm=Depends(require_op("manage_sales")),
 ):
+    member_filter = {"guest_id": transaction_data.guest_id, "tenant_id": current_user.tenant_id}
+    program = await db.loyalty_programs.find_one(member_filter, {"_id": 0})
+    if not program:
+        raise HTTPException(status_code=404, detail="Misafir sadakat programına kayıtlı değil")
+
     transaction = LoyaltyTransaction(tenant_id=current_user.tenant_id, **transaction_data.model_dump())
     transaction_dict = transaction.model_dump()
     transaction_dict["created_at"] = transaction_dict["created_at"].isoformat()
-    await db.loyalty_transactions.insert_one(transaction_dict)
-
     if transaction.transaction_type == "earned":
-        await db.loyalty_programs.update_one({"guest_id": transaction.guest_id, "tenant_id": current_user.tenant_id}, {"$inc": {"points": transaction.points, "lifetime_points": transaction.points}})
+        result = await db.loyalty_programs.update_one(
+            member_filter,
+            {
+                "$inc": {"points": transaction.points, "lifetime_points": transaction.points},
+                "$set": {"last_activity": transaction_dict["created_at"]},
+            },
+        )
     else:
-        await db.loyalty_programs.update_one({"guest_id": transaction.guest_id, "tenant_id": current_user.tenant_id}, {"$inc": {"points": -transaction.points}})
+        result = await db.loyalty_programs.update_one(
+            {**member_filter, "points": {"$gte": transaction.points}},
+            {
+                "$inc": {"points": -transaction.points},
+                "$set": {"last_activity": transaction_dict["created_at"]},
+            },
+        )
+        if not result.matched_count:
+            raise HTTPException(status_code=400, detail="Yetersiz puan bakiyesi")
+
+    if not result.matched_count:
+        raise HTTPException(status_code=409, detail="Sadakat bakiyesi güncellenemedi")
+    await db.loyalty_transactions.insert_one(transaction_dict)
+    await db.audit_logs.insert_one(
+        {
+            "id": str(uuid.uuid4()),
+            "tenant_id": current_user.tenant_id,
+            "actor_id": current_user.id,
+            "action": "loyalty_points_adjusted",
+            "target_type": "guest",
+            "target_id": transaction.guest_id,
+            "details": {
+                "transaction_type": transaction.transaction_type,
+                "points": transaction.points,
+                "description": transaction.description,
+            },
+            "created_at": transaction_dict["created_at"],
+        }
+    )
     return transaction
 
 
 # rbac-allow: cache-rbac — GUEST portal — guest loyalty
 @router.get("/loyalty/guest/{guest_id}")
-@cached(ttl=600, key_prefix="loyalty_guest")  # Cache for 10 min
-async def get_guest_loyalty_by_id(guest_id: str, current_user: User = Depends(get_current_user)):
+async def get_guest_loyalty_by_id(
+    guest_id: str,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_guest_list")),
+):
     program = await db.loyalty_programs.find_one({"guest_id": guest_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
-    transactions = await db.loyalty_transactions.find({"guest_id": guest_id, "tenant_id": current_user.tenant_id}, {"_id": 0}).to_list(1000)
+    transactions = await db.loyalty_transactions.find({"guest_id": guest_id, "tenant_id": current_user.tenant_id}, {"_id": 0}).sort("created_at", -1).to_list(1000)
     return {"program": program, "transactions": transactions}
 
 
@@ -913,8 +1009,16 @@ async def refresh_digital_key(booking_id: str, current_user: User = Depends(get_
 @router.get("/guest/upsell-offers/{booking_id}")
 async def get_upsell_offers_v2(booking_id: str, current_user: User = Depends(get_current_user)):
     """Get personalized upsell offers for guest"""
+    booking = await db.bookings.find_one(
+        {"id": booking_id, "tenant_id": current_user.tenant_id},
+        {"_id": 0, "currency": 1},
+    )
+    tenant_currency, _ = await get_tenant_currency(current_user.tenant_id)
+    offer_currency = str((booking or {}).get("currency") or tenant_currency).upper()
     # Get AI predictions
     predictions = await db.ai_upsell_predictions.find({"booking_id": booking_id, "tenant_id": current_user.tenant_id}, {"_id": 0}).sort("confidence", -1).limit(10).to_list(10)
+    for prediction in predictions:
+        prediction["currency"] = str(prediction.get("currency") or offer_currency).upper()
 
     # Get already purchased items — Bug DZ: tenant scoping
     purchased = await db.purchased_upsells.find({"booking_id": booking_id, "tenant_id": current_user.tenant_id}, {"_id": 0}).to_list(100)
@@ -939,13 +1043,36 @@ async def purchase_upsell(booking_id: str, purchase_data: dict, current_user: Us
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
 
+    offer_id = purchase_data.get("offer_id")
+    offer = await db.upsell_products.find_one(
+        {"id": offer_id, "tenant_id": current_user.tenant_id, "is_active": {"$ne": False}},
+        {"_id": 0},
+    )
+    if not offer:
+        offer = await db.ai_upsell_predictions.find_one(
+            {"id": offer_id, "booking_id": booking_id, "tenant_id": current_user.tenant_id},
+            {"_id": 0},
+        )
+    if not offer:
+        raise HTTPException(status_code=404, detail="Upsell offer not found")
+    try:
+        amount = float(offer.get("price", offer.get("amount")))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=422, detail="Upsell offer price is invalid")
+    if amount < 0:
+        raise HTTPException(status_code=422, detail="Upsell offer price is invalid")
+    amount = round(amount, 2)
+    tenant_currency, _ = await get_tenant_currency(current_user.tenant_id)
+    currency = str(offer.get("currency") or booking.get("currency") or tenant_currency).upper()
+
     purchase = {
         "id": str(uuid.uuid4()),
         "tenant_id": booking.get("tenant_id"),
         "booking_id": booking_id,
-        "offer_id": purchase_data.get("offer_id"),
-        "offer_name": purchase_data.get("offer_name", "Upsell"),
-        "amount": purchase_data.get("price", 0),
+        "offer_id": offer_id,
+        "offer_name": offer.get("name") or offer.get("title") or purchase_data.get("offer_name", "Upsell"),
+        "amount": amount,
+        "currency": currency,
         "purchased_at": datetime.now(UTC).isoformat(),
         "status": "confirmed",
     }
@@ -960,10 +1087,11 @@ async def purchase_upsell(booking_id: str, purchase_data: dict, current_user: Us
             "tenant_id": current_user.tenant_id,
             "folio_id": folio["id"],
             "charge_type": "upsell",
-            "description": f"Upsell: {purchase_data.get('offer_type')}",
-            "amount": purchase_data.get("amount"),
+            "description": f"Upsell: {offer.get('name') or offer.get('title') or purchase_data.get('offer_type')}",
+            "amount": amount,
             "quantity": 1,
-            "total": purchase_data.get("amount"),
+            "total": amount,
+            "currency": currency,
             "posted_at": datetime.now(UTC).isoformat(),
             "voided": False,
         }

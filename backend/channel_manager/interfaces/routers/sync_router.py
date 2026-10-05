@@ -39,6 +39,7 @@ class TriggerSyncRequest(BaseModel):
     room_type_ids: list[str] | None = None
     rate_plan_ids: list[str] | None = None
     reason: str = ""
+    force: bool = False
 
 
 class DomainEventRequest(BaseModel):
@@ -177,6 +178,7 @@ async def trigger_inventory_sync(
             date_start=req.date_start,
             date_end=req.date_end,
             room_type_ids=req.room_type_ids,
+            force=req.force,
             triggered_by="user",
             trigger_reason=req.reason or "Manual inventory sync",
             actor_id=current_user.id,

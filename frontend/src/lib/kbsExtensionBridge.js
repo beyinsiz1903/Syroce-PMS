@@ -75,16 +75,19 @@ export async function pingExtension(timeoutMs = 1500) {
 /**
  * Tek bir KBS payload'ini eklenti uzerinden secili makama (Polis/Emniyet veya
  * Jandarma) gonderir. authority = 'polis' (varsayilan) | 'jandarma'.
- * @returns {Promise<{ok:boolean, reference:string, error:string, test:boolean}>}
+ * @returns {Promise<{ok:boolean, reference:string, error:string, test:boolean,officialReference:boolean,responseCode:string,responseMessage:string}>}
  */
 export async function sendViaExtension(body, authority = "polis", timeoutMs = 35000) {
   const res = await request({ type: "SEND", body, authority }, timeoutMs);
-  if (res.timedOut) return { ok: false, reference: "", error: "extension_timeout", test: false };
+  if (res.timedOut) return { ok: false, reference: "", error: "extension_timeout", test: false, officialReference: false, responseCode: "", responseMessage: "" };
   return {
     ok: !!res.ok,
     reference: res.reference || "",
     error: res.error || "",
     test: !!res.test,
+    officialReference: res.officialReference !== false,
+    responseCode: res.responseCode || "",
+    responseMessage: res.responseMessage || "",
   };
 }
 
@@ -99,6 +102,7 @@ export function buildKbsBody(payload, action = "checkin") {
     guest_name: p.guest_name || "",
     phone: p.phone || "",
     nationality: p.nationality || "TC",
+    id_type: p.id_type || "",
     id_number: p.id_number || "",
     passport_number: p.passport_number || "",
     birth_date: p.birth_date || "",

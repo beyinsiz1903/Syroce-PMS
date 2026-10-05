@@ -52,6 +52,11 @@
     return countryEnum(payload.nationality) === "TURKIYE" && /^\d{11}$/.test(String(payload.id_number || ""));
   }
 
+  function isForeignIdentityCard(payload) {
+    return ["FOREIGNIDENTITYCARD", "FOREIGNID", "YABANCIKIMLIK", "YABANCIKIMLIKKARTI", "YKN"]
+      .includes(normalizeText(payload.id_type));
+  }
+
   function toIsoDateTime(value, fallback) {
     const d = new Date(value || fallback || Date.now());
     if (Number.isNaN(d.getTime())) throw new Error("invalid_date");
@@ -64,31 +69,50 @@
     return { firstName: parts.slice(0, -1).join(" "), surname: parts.at(-1) };
   }
 
+  function optionalPhone(value) {
+    // TELNO is optional in the Jandarma contract.  The remote database has a
+    // shorter field than many PMS imports (notes/extensions get copied into
+    // guest_phone), so never let an optional contact value reject an otherwise
+    // valid legal check-in.  Preserve only plausible E.164/local digits.
+    const digits = String(value || "").replace(/\D/g, "");
+    return digits.length >= 7 && digits.length <= 15 ? digits : "";
+  }
+
   function tag(name, value, prefix = "d") {
     return `<${prefix}:${name}>${escapeXml(value)}</${prefix}:${name}>`;
   }
 
   function buildRequest(payload, action, credentials, now = new Date()) {
     if (!credentials || !/^\d{11}$/.test(String(credentials.userTc || ""))) throw new Error("invalid_user_tc");
-    if (!/^\d{6}$/.test(String(credentials.facilityCode || ""))) throw new Error("invalid_facility_code");
+    // Live WSDL declares TssKod as xs:long; it does not impose a six-digit
+    // pattern. Keep the lexical value as digits so leading zeroes are not
+    // lost locally and let the authority validate the assigned code.
+    if (!/^\d{1,19}$/.test(String(credentials.facilityCode || ""))) throw new Error("invalid_facility_code");
     if (!String(credentials.password || "").trim()) throw new Error("missing_web_service_password");
     if (!payload || !["checkin", "checkout"].includes(action)) throw new Error("invalid_action");
 
     const turkish = isTurkish(payload);
-    const method = turkish
+    const identityNumber = turkish || isForeignIdentityCard(payload);
+    const method = identityNumber
       ? (action === "checkin" ? "MusteriKimlikNoGiris" : "MusteriKimlikNoCikis")
       : (action === "checkin" ? "MusteriYabanciGiris" : "MusteriYabanciCikis");
-    const identity = turkish ? String(payload.id_number) : String(payload.passport_number || "").trim();
+    const identity = identityNumber ? String(payload.id_number) : String(payload.passport_number || "").trim();
     if (!identity) throw new Error("missing_guest_identity");
+    if (identityNumber && !/^\d{11}$/.test(identity)) throw new Error("invalid_identity_number");
+    if (action === "checkin" && !String(payload.room_number || "").trim()) {
+      throw new Error("missing_room_number");
+    }
 
     let fields = "";
-    if (turkish && action === "checkin") {
+    if (identityNumber && action === "checkin") {
+      const identityCountry = turkish ? "TURKIYE" : countryEnum(payload.nationality, credentials.countryMap);
+      if (!identityCountry) throw new Error("unsupported_foreign_country");
       fields = tag("GRSTRH", toIsoDateTime(payload.check_in, now))
         + tag("ILERITARIHLI", new Date(payload.check_in).getTime() > now.getTime() ? "true" : "false")
         + tag("KIMLIKNO", identity) + tag("KULLANIMSEKLI", "KONAKLAMA")
         + tag("ODANO", payload.room_number) + tag("PLKNO", payload.plate_number || "")
-        + tag("TELNO", payload.phone || "") + tag("ULKKOD", "TURKIYE");
-    } else if (turkish) {
+        + tag("TELNO", optionalPhone(payload.phone)) + tag("ULKKOD", identityCountry);
+    } else if (identityNumber) {
       fields = tag("CKSTIP", "TESISTENCIKIS") + tag("CKSTRH", toIsoDateTime(payload.check_out, now))
         + tag("KIMLIKNO", identity);
     } else if (action === "checkin") {
@@ -107,7 +131,7 @@
         + tag("ILERITARIHLI", new Date(payload.check_in).getTime() > now.getTime() ? "true" : "false")
         + tag("KULLANIMSEKLI", "KONAKLAMA")
         + tag("ODANO", payload.room_number) + tag("PLKNO", payload.plate_number || "")
-        + tag("SOYADI", name.surname) + tag("TELNO", payload.phone || "") + tag("ULKKOD", country);
+        + tag("SOYADI", name.surname) + tag("TELNO", optionalPhone(payload.phone)) + tag("ULKKOD", country);
     } else {
       fields = tag("BELGENO", identity) + tag("CKSTIP", "TESISTENCIKIS")
         + tag("CKSTRH", toIsoDateTime(payload.check_out, now));
@@ -120,6 +144,22 @@
       + `<TssKod>${escapeXml(credentials.facilityCode)}</TssKod>`
       + `<Sifre>${escapeXml(credentials.password)}</Sifre>`
       + `<musteri xmlns:d="${DATA_NS}" xmlns:m="${MODEL_NS}">${fields}</musteri>`
+      + `</${method}></s:Body></s:Envelope>`;
+    return { method, soapAction: `${SERVICE_NS}ISrvShsYtkTml/${method}`, envelope };
+  }
+
+  function buildConnectionTest(credentials) {
+    if (!credentials || !/^\d{11}$/.test(String(credentials.userTc || ""))) throw new Error("invalid_user_tc");
+    if (!/^\d{1,19}$/.test(String(credentials.facilityCode || ""))) throw new Error("invalid_facility_code");
+    if (!String(credentials.password || "").trim()) throw new Error("missing_web_service_password");
+    const method = "ParametreListele";
+    const envelope = `<?xml version="1.0" encoding="utf-8"?>`
+      + `<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">`
+      + `<s:Body><${method} xmlns="${SERVICE_NS}">`
+      + `<KullaniciTC>${escapeXml(credentials.userTc)}</KullaniciTC>`
+      + `<TssKod>${escapeXml(credentials.facilityCode)}</TssKod>`
+      + `<Sifre>${escapeXml(credentials.password)}</Sifre>`
+      + `<parametreTuru>ULKELER</parametreTuru>`
       + `</${method}></s:Body></s:Envelope>`;
     return { method, soapAction: `${SERVICE_NS}ISrvShsYtkTml/${method}`, envelope };
   }
@@ -141,5 +181,5 @@
     return { ok: true, code: code || "100", message, method };
   }
 
-  root.SyroceJandarmaSoap = { buildRequest, parseResponse, countryEnum, escapeXml };
+  root.SyroceJandarmaSoap = { buildRequest, buildConnectionTest, parseResponse, countryEnum, escapeXml, optionalPhone, isForeignIdentityCard };
 })(typeof self !== "undefined" ? self : globalThis);

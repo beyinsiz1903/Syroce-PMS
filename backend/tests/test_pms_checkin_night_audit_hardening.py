@@ -36,7 +36,7 @@ def _service_with_db(booking: dict, room: dict | None = None):
             find_one=AsyncMock(return_value={"id": "folio-a"}),
             insert_one=AsyncMock(),
         ),
-        guests=SimpleNamespace(update_one=AsyncMock()),
+        guests=SimpleNamespace(find_one=AsyncMock(return_value=None), update_one=AsyncMock()),
         tenant_settings=SimpleNamespace(
             find_one=AsyncMock(return_value={"business_date": "2026-08-17"}),
         ),
@@ -89,6 +89,56 @@ async def test_checkin_rejects_non_eligible_status_before_room_lookup():
     assert result.ok is False
     assert result.code == "INVALID_BOOKING_STATUS"
     service._db.rooms.find_one.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_checkin_names_the_checked_in_guest_when_room_is_occupied():
+    incoming_booking = {
+        "id": "booking-incoming",
+        "tenant_id": "tenant-a",
+        "status": "confirmed",
+        "room_id": "room-107",
+        "guest_id": "guest-incoming",
+        "check_in": "2026-08-17",
+    }
+    blocking_booking = {
+        "id": "booking-blocking",
+        "tenant_id": "tenant-a",
+        "status": "checked_in",
+        "guest_id": "guest-blocking",
+    }
+    service = _service_with_db(
+        incoming_booking,
+        {
+            "id": "room-107",
+            "tenant_id": "tenant-a",
+            "status": "occupied",
+            "room_number": "107",
+            "current_booking_id": "booking-blocking",
+        },
+    )
+    service._db.bookings.find_one.side_effect = [incoming_booking, blocking_booking]
+    service._db.guests.find_one.return_value = {"name": "Nurşema Aras"}
+
+    result = await FrontdeskService.checkin.__wrapped__(
+        service,
+        _context(),
+        "booking-incoming",
+    )
+
+    assert result.ok is False
+    assert result.code == "ROOM_NOT_READY"
+    assert result.error == (
+        "Oda 107 (Nurşema Aras) henüz tahliye edilmemiş. "
+        "Lütfen önce çıkış işlemini tamamlayın veya odayı değiştirin."
+    )
+
+
+
+    assert service._db.guests.find_one.await_args.args[0] == {
+        "id": "guest-blocking",
+        "tenant_id": "tenant-a",
+    }
 
 
 @pytest.mark.asyncio

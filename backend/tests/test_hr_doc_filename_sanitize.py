@@ -49,6 +49,7 @@ def test_safe_characters_preserved():
 # --- download behavior: served content-type = stored detected type ---------
 
 import pytest
+from fastapi import HTTPException
 
 
 @pytest.mark.asyncio
@@ -83,3 +84,88 @@ async def test_download_uses_stored_content_type_and_sanitized_filename(monkeypa
     cd = resp.headers["content-disposition"]
     assert "\r" not in cd and "\n" not in cd
     assert "passwd" in cd and ".." not in cd
+
+
+@pytest.mark.asyncio
+async def test_download_blocks_finance_but_allows_document_owner(monkeypatch):
+    """A finance user may reconcile payroll but cannot download personnel
+    files; the employee who owns the staff record retains self-service access."""
+    import base64
+    from types import SimpleNamespace
+
+    import domains.hr.router as hr
+
+    stored = {
+        "id": "doc-private",
+        "tenant_id": "t1",
+        "staff_id": "staff-1",
+        "content_type": "application/pdf",
+        "filename": "contract.pdf",
+        "data_b64": base64.b64encode(b"%PDF-1.4 private").decode(),
+    }
+    staff = {"id": "staff-1", "tenant_id": "t1", "email": "owner@example.test"}
+
+    class _Docs:
+        async def find_one(self, *_a, **_k):
+            return stored
+
+    async def _staff_in_tenant(*_a, **_k):
+        return staff
+
+    monkeypatch.setattr(hr, "db", SimpleNamespace(staff_documents=_Docs()))
+    monkeypatch.setattr(hr, "_verify_staff_in_tenant", _staff_in_tenant)
+
+    finance = SimpleNamespace(
+        tenant_id="t1",
+        id="finance-1",
+        email="finance@example.test",
+        role="finance",
+        granted_permissions=[],
+    )
+    with pytest.raises(HTTPException) as exc:
+        await hr.download_staff_document(doc_id="doc-private", current_user=finance)
+    assert exc.value.status_code == 403
+
+    owner = SimpleNamespace(
+        tenant_id="t1",
+        id="staff-1",
+        email="owner@example.test",
+        role="staff",
+        granted_permissions=[],
+    )
+    resp = await hr.download_staff_document(doc_id="doc-private", current_user=owner)
+    assert resp.media_type == "application/pdf"
+
+
+@pytest.mark.asyncio
+async def test_unlinked_legacy_document_requires_hr_manager(monkeypatch):
+    """Documents without a staff owner cannot use the self-service bypass."""
+    import base64
+    from types import SimpleNamespace
+
+    import domains.hr.router as hr
+
+    stored = {
+        "id": "doc-legacy",
+        "tenant_id": "t1",
+        "staff_id": None,
+        "content_type": "application/pdf",
+        "filename": "legacy.pdf",
+        "data_b64": base64.b64encode(b"%PDF-1.4 legacy").decode(),
+    }
+
+    class _Docs:
+        async def find_one(self, *_a, **_k):
+            return stored
+
+    monkeypatch.setattr(hr, "db", SimpleNamespace(staff_documents=_Docs()))
+    finance = SimpleNamespace(
+        tenant_id="t1",
+        id="finance-1",
+        email="finance@example.test",
+        role="finance",
+        granted_permissions=[],
+    )
+    with pytest.raises(HTTPException) as exc:
+        await hr.download_staff_document(doc_id="doc-legacy", current_user=finance)
+    assert exc.value.status_code == 403

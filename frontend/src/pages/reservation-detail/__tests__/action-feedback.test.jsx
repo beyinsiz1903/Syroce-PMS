@@ -39,11 +39,12 @@ vi.mock('axios', () => ({ default: axiosMock }));
 
 import { FoliosTab } from '@/pages/reservation-detail/FoliosTab';
 import { OnlinePaymentTab } from '@/pages/reservation-detail/OnlinePaymentTab';
-import { DailyRatesTab, ExtraChargesTab } from '@/pages/reservation-detail/PricingTabs';
+import { DailyRatesTab, ExtraChargesTab, completeDailyRatesForStay, distributeTotalAcrossEditableRates, filterDailyRatesForStay } from '@/pages/reservation-detail/PricingTabs';
 
 beforeEach(() => {
   axiosGet.mockReset();
   axiosPost.mockReset();
+  axiosMock.put.mockReset();
   toast.error.mockReset();
   toast.success.mockReset();
 });
@@ -51,6 +52,66 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe('reservation detail action feedback', () => {
+  it('excludes the checkout date from the chargeable nightly-rate plan', () => {
+    const rates = filterDailyRatesForStay(
+      [
+        { date: '2026-09-21', rate: 2500 },
+        { date: '2026-09-24', rate: 2500 },
+        { date: '2026-09-25', rate: 2500 },
+      ],
+      { check_in: '2026-09-21', check_out: '2026-09-25' },
+    );
+
+    expect(rates.map(rate => rate.date)).toEqual(['2026-09-21', '2026-09-24']);
+  });
+
+  it('completes a partially imported daily-rate plan through the night before checkout', () => {
+    const rates = completeDailyRatesForStay(
+      [
+        { date: '2026-09-28', rate: 2500 },
+        { date: '2026-09-29', rate: 2500 },
+        { date: '2026-09-30', rate: 2500 },
+        { date: '2026-10-01', rate: 2500 },
+      ],
+      { check_in: '2026-09-28', check_out: '2026-10-03', total_amount: 17500 },
+    );
+
+    expect(rates.map(rate => rate.date)).toEqual([
+      '2026-09-28',
+      '2026-09-29',
+      '2026-09-30',
+      '2026-10-01',
+      '2026-10-02',
+    ]);
+    expect(rates.at(-1)).toMatchObject({ rate: '7500.00', generated_reason: 'missing_daily_rate' });
+    expect(rates.reduce((sum, rate) => sum + Number(rate.rate), 0)).toBe(17500);
+  });
+
+  it('shows and saves the missing night completed from the reservation total', async () => {
+    axiosMock.put.mockResolvedValue({ data: { success: true } });
+    render(
+      <DailyRatesTab
+        dailyRates={[
+          { date: '2026-09-28', rate: 2500 },
+          { date: '2026-09-29', rate: 2500 },
+          { date: '2026-09-30', rate: 2500 },
+          { date: '2026-10-01', rate: 2500 },
+        ]}
+        booking={{ id: 'booking-a', check_in: '2026-09-28', check_out: '2026-10-03', total_amount: 17500 }}
+      />,
+    );
+
+    expect(screen.getByText('02 Eki 2026 Cum')).toBeInTheDocument();
+    expect(screen.getByTestId('completed-daily-rates-notice')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Düzenle' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Kaydet' }));
+
+    await waitFor(() => expect(axiosMock.put).toHaveBeenCalledWith(
+      '/pms/reservations/booking-a/daily-rates',
+      { rates: expect.arrayContaining([expect.objectContaining({ date: '2026-10-02', rate: 7500 })]) },
+    ));
+  });
+
   it('rejects a same-account cari transfer before posting', async () => {
     axiosGet.mockResolvedValue({
       data: { accounts: [{ id: 'agency-a', name: 'Test Acente', account_type: 'agency' }] },
@@ -74,7 +135,7 @@ describe('reservation detail action feedback', () => {
     const [source, target] = within(panel).getAllByRole('combobox');
     fireEvent.change(source, { target: { value: 'agency-a' } });
     fireEvent.change(target, { target: { value: 'agency-a' } });
-    fireEvent.change(within(panel).getByRole('spinbutton'), { target: { value: '10' } });
+    fireEvent.change(within(panel).getAllByRole('textbox')[0], { target: { value: '10' } });
     fireEvent.click(within(panel).getByRole('button', { name: /kaydet/i }));
 
     await waitFor(() => {
@@ -98,7 +159,8 @@ describe('reservation detail action feedback', () => {
     expect(screen.getByRole('button', { name: 'Test Masrafı masrafını böl' })).toBeInTheDocument();
   });
 
-  it('blocks zero extra charges before the API call', async () => {
+  it('saves a zero-value extra charge as a complimentary item', async () => {
+    axiosPost.mockResolvedValue({ data: { success: true } });
     render(
       <ExtraChargesTab
         extra_charges={[]}
@@ -109,11 +171,113 @@ describe('reservation detail action feedback', () => {
     );
 
     fireEvent.click(screen.getByRole('button', { name: /ekle/i }));
-    const inputs = screen.getAllByRole('spinbutton');
-    fireEvent.change(inputs[0], { target: { value: '0' } });
-    fireEvent.click(screen.getAllByRole('button', { name: 'Ekle' }).at(-1));
+    fireEvent.change(screen.getByPlaceholderText('Ornek: Minibar'), { target: { value: 'Kola' } });
+    const inputs = screen.getAllByRole('textbox');
+    fireEvent.change(inputs[1], { target: { value: '0' } });
+    fireEvent.click(screen.getByRole('button', { name: '0 TL Ekle' }));
 
-    await waitFor(() => expect(toast.error).toHaveBeenCalled());
+    await waitFor(() => expect(axiosPost).toHaveBeenCalledWith(
+      '/pms/reservations/booking-a/add-extra-charge',
+      expect.objectContaining({ description: 'Kola', amount: 0, quantity: 1 }),
+    ));
+    expect(toast.success).toHaveBeenCalledWith('Komp / ikram kaydı eklendi');
+  });
+
+  it('shows the quantity-adjusted total before adding an extra charge', async () => {
+    axiosPost.mockResolvedValue({ data: { success: true } });
+    render(
+      <ExtraChargesTab
+        extra_charges={[]}
+        charges={[]}
+        booking={{ id: 'booking-a', currency: 'TRY' }}
+        allBookings={[]}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /ekle/i }));
+    fireEvent.change(screen.getByPlaceholderText('Ornek: Minibar'), { target: { value: 'Kahve' } });
+    const inputs = screen.getAllByRole('textbox');
+    fireEvent.change(inputs[1], { target: { value: '15' } });
+    fireEvent.change(inputs[2], { target: { value: '3' } });
+
+    expect(screen.getByTestId('extra-charge-total-preview')).toHaveTextContent('15 TL × 3 = 45 TL');
+    fireEvent.click(screen.getByRole('button', { name: '45 TL Ekle' }));
+
+    await waitFor(() => expect(axiosPost).toHaveBeenCalledWith(
+      '/pms/reservations/booking-a/add-extra-charge',
+      expect.objectContaining({ amount: 15, quantity: 3 }),
+    ));
+  });
+
+  it('shows the reservation currency and can void a mistaken extra charge', async () => {
+    axiosPost.mockResolvedValue({ data: { success: true } });
+    vi.spyOn(window, 'prompt').mockReturnValue('Yanlış para birimi');
+    render(
+      <ExtraChargesTab
+        extra_charges={[{ id: 'extra-eur', description: 'Türk kahvesi', total: 390, currency: 'EUR' }]}
+        charges={[]}
+        booking={{ id: 'booking-a', currency: 'EUR' }}
+        allBookings={[]}
+      />,
+    );
+
+    expect(screen.getByText('390 EUR')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Türk kahvesi kaydını iptal et' }));
+
+    await waitFor(() => expect(axiosPost).toHaveBeenCalledWith(
+      '/pms/reservations/booking-a/extra-charges/extra-eur/void',
+      { reason: 'Yanlış para birimi' },
+    ));
+    expect(toast.success).toHaveBeenCalledWith('Ek ücret iptal edildi');
+  });
+
+  it('lets a EUR reservation receive a TL extra with current-rate conversion', async () => {
+    axiosGet.mockResolvedValue({ data: { rates: { TRY: 1, EUR: 50, USD: 40 } } });
+    axiosPost.mockResolvedValue({ data: { success: true } });
+    render(
+      <ExtraChargesTab
+        extra_charges={[]}
+        charges={[]}
+        booking={{ id: 'booking-a', currency: 'EUR' }}
+        allBookings={[]}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /ekle/i }));
+    const selects = screen.getAllByRole('combobox');
+    fireEvent.change(selects[1], { target: { value: 'TRY' } });
+    await waitFor(() => expect(axiosGet).toHaveBeenCalledWith('/exchange-rates', { timeout: 10000 }));
+    fireEvent.change(screen.getByPlaceholderText('Ornek: Minibar'), { target: { value: 'Türk kahvesi' } });
+    fireEvent.change(screen.getAllByRole('textbox')[1], { target: { value: '390' } });
+    expect(await screen.findByText(/7,8 EUR olarak folyoya yansır/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '390 TL (7,8 EUR) Ekle' }));
+
+    await waitFor(() => expect(axiosPost).toHaveBeenCalledWith(
+      '/pms/reservations/booking-a/add-extra-charge',
+      expect.objectContaining({
+        amount: 390,
+        input_currency: 'TRY',
+        exchange_rate: 0.02,
+      }),
+    ));
+  });
+
+  it('shows negative extra-charge validation inside the form', async () => {
+    render(
+      <ExtraChargesTab
+        extra_charges={[]}
+        charges={[]}
+        booking={{ id: 'booking-a' }}
+        allBookings={[]}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /ekle/i }));
+    fireEvent.change(screen.getByPlaceholderText('Ornek: Minibar'), { target: { value: 'Hatalı kalem' } });
+    fireEvent.change(screen.getAllByRole('textbox')[1], { target: { value: '-1' } });
+    fireEvent.click(screen.getByRole('button', { name: /TL Ekle/ }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('sıfır veya üzeri tutar');
     expect(axiosPost).not.toHaveBeenCalled();
   });
 
@@ -126,11 +290,194 @@ describe('reservation detail action feedback', () => {
     );
 
     fireEvent.click(screen.getByRole('button', { name: 'Düzenle' }));
-    fireEvent.change(screen.getByRole('spinbutton'), { target: { value: '0' } });
+    fireEvent.change(screen.getByLabelText(/gece fiyatı/), { target: { value: '0' } });
     fireEvent.click(screen.getByRole('button', { name: 'Kaydet' }));
 
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Günlük fiyat sıfırdan büyük olmalıdır'));
     expect(axiosMock.put).not.toHaveBeenCalled();
+  });
+
+  it('requires a reason before marking a reservation complimentary', async () => {
+    render(
+      <DailyRatesTab
+        dailyRates={[{ id: 'rate-a', date: '2026-08-18', rate: 10 }]}
+        booking={{ id: 'booking-a' }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Comp Ver' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Comp Olarak Kaydet' }));
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Comp gerekçesi en az 3 karakter olmalı'));
+    expect(axiosPost).not.toHaveBeenCalled();
+  });
+
+  it('marks the entire stay complimentary with an audit reason', async () => {
+    axiosPost.mockResolvedValue({ data: { success: true, adjustment_amount: 0 } });
+    const onRefresh = vi.fn();
+    render(
+      <DailyRatesTab
+        dailyRates={[{ id: 'rate-a', date: '2026-08-18', rate: 10 }]}
+        booking={{ id: 'booking-a' }}
+        onRefresh={onRefresh}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Comp Ver' }));
+    fireEvent.change(screen.getByPlaceholderText('Comp gerekçesi (zorunlu)'), { target: { value: 'Misafir memnuniyeti' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Comp Olarak Kaydet' }));
+
+    await waitFor(() => expect(axiosPost).toHaveBeenCalledWith(
+      '/pms/reservations/booking-a/apply-complimentary-plan',
+      { reason: 'Misafir memnuniyeti', mode: 'entire_stay' },
+    ));
+    expect(onRefresh).toHaveBeenCalled();
+  });
+
+  it('can make only open nights complimentary', async () => {
+    axiosPost.mockResolvedValue({ data: { success: true, adjustment_amount: 0 } });
+    render(
+      <DailyRatesTab
+        dailyRates={[{ id: 'rate-a', date: '2026-08-18', rate: 10 }]}
+        booking={{ id: 'booking-a' }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Comp Ver' }));
+    fireEvent.change(screen.getByLabelText('Comp işlemi'), { target: { value: 'open_nights' } });
+    fireEvent.change(screen.getByPlaceholderText('Comp gerekçesi (zorunlu)'), { target: { value: 'VIP ağırlama' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Comp Olarak Kaydet' }));
+
+    await waitFor(() => expect(axiosPost).toHaveBeenCalledWith(
+      '/pms/reservations/booking-a/apply-complimentary-plan',
+      { reason: 'VIP ağırlama', mode: 'open_nights' },
+    ));
+  });
+
+  it('can create a financial correction for closed nights', async () => {
+    axiosPost.mockResolvedValue({ data: { success: true, adjustment_amount: 4800 } });
+    render(
+      <DailyRatesTab
+        dailyRates={[
+          { id: 'closed-rate', date: '2026-08-17', rate: 4800 },
+          { id: 'open-rate', date: '2026-08-18', rate: 4800 },
+        ]}
+        booking={{ id: 'booking-a', currency: 'TRY' }}
+        businessDate="2026-08-18"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Comp Ver' }));
+    fireEvent.change(screen.getByLabelText('Comp işlemi'), { target: { value: 'closed_nights_adjustment' } });
+    fireEvent.change(screen.getByPlaceholderText('Comp gerekçesi (zorunlu)'), { target: { value: 'Hizmet telafisi' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Comp Olarak Kaydet' }));
+
+    await waitFor(() => expect(axiosPost).toHaveBeenCalledWith(
+      '/pms/reservations/booking-a/apply-complimentary-plan',
+      { reason: 'Hizmet telafisi', mode: 'closed_nights_adjustment' },
+    ));
+    expect(toast.success).toHaveBeenCalledWith('Kapanmış geceler için 4.800 TL finansal düzeltme oluşturuldu');
+  });
+
+  it('offers a guarded repair when a comp stay has a positive reservation total', async () => {
+    axiosPost.mockResolvedValue({ data: { success: true, repaired: true } });
+    const onRefresh = vi.fn();
+    render(
+      <DailyRatesTab
+        dailyRates={[{ date: '2026-08-18', rate: 0 }]}
+        booking={{ id: 'booking-a', is_complimentary: true, total_amount: 2000 }}
+        onRefresh={onRefresh}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Comp konaklama tutarını düzelt' }));
+
+    await waitFor(() => expect(axiosPost).toHaveBeenCalledWith(
+      '/pms/reservations/booking-a/reconcile-complimentary-total',
+    ));
+    expect(onRefresh).toHaveBeenCalled();
+  });
+
+  it('locks daily rates before the current PMS business date', () => {
+    render(
+      <DailyRatesTab
+        dailyRates={[
+          { id: 'rate-closed', date: '2026-08-17', rate: 400 },
+          { id: 'rate-open', date: '2026-08-18', rate: 500 },
+        ]}
+        booking={{ id: 'booking-a' }}
+        businessDate="2026-08-18"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Düzenle' }));
+
+    expect(screen.getAllByLabelText(/gece fiyatı/)).toHaveLength(1);
+    expect(screen.getByText('Gün sonu kapalı')).toBeInTheDocument();
+  });
+
+  it('normalizes a Turkish decimal comma before saving daily rates', async () => {
+    render(
+      <DailyRatesTab
+        dailyRates={[{ id: 'rate-a', date: '2026-08-18', rate: 10 }]}
+        booking={{ id: 'booking-a' }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Düzenle' }));
+    fireEvent.change(screen.getByLabelText(/gece fiyatı/), { target: { value: '1250,50' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Kaydet' }));
+
+    await waitFor(() => expect(axiosMock.put).toHaveBeenCalledWith(
+      '/pms/reservations/booking-a/daily-rates',
+      { rates: [{ id: 'rate-a', date: '2026-08-18', rate: 1250.5 }] },
+    ));
+  });
+
+  it('distributes an edited accommodation total exactly across open nights', async () => {
+    axiosMock.put.mockResolvedValue({ data: { success: true } });
+    render(
+      <DailyRatesTab
+        dailyRates={[
+          { id: 'rate-a', date: '2026-11-06', rate: 5500 },
+          { id: 'rate-b', date: '2026-11-07', rate: 5500 },
+        ]}
+        booking={{ id: 'booking-a', currency: 'TRY' }}
+        summary={{ total_payments: 2000 }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Düzenle' }));
+    fireEvent.change(screen.getByLabelText('Toplam konaklama fiyatı'), { target: { value: '12000' } });
+
+    expect(screen.getAllByLabelText(/gece fiyatı/).map(input => input.value)).toEqual(['6000.00', '6000.00']);
+    expect(within(screen.getByTestId('rate-change-summary')).getByText('2.000 TL')).toBeInTheDocument();
+    expect(within(screen.getByTestId('rate-change-summary')).getByText('10.000 TL')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Kaydet' }));
+    await waitFor(() => expect(axiosMock.put).toHaveBeenCalledWith(
+      '/pms/reservations/booking-a/daily-rates',
+      { rates: [
+        { id: 'rate-a', date: '2026-11-06', rate: 6000 },
+        { id: 'rate-b', date: '2026-11-07', rate: 6000 },
+      ] },
+    ));
+  });
+
+  it('keeps closed nights fixed and distributes cents without losing value', () => {
+    const distributed = distributeTotalAcrossEditableRates(
+      [
+        { date: '2026-08-17', rate: 400 },
+        { date: '2026-08-18', rate: 500 },
+        { date: '2026-08-19', rate: 500 },
+        { date: '2026-08-20', rate: 500 },
+      ],
+      '1400.01',
+      rate => rate.date === '2026-08-17',
+    );
+
+    expect(distributed[0].rate).toBe(400);
+    expect(distributed.slice(1).map(rate => rate.rate)).toEqual(['333.34', '333.34', '333.33']);
+    expect(distributed.reduce((sum, rate) => sum + Number(rate.rate), 0)).toBeCloseTo(1400.01, 2);
   });
 
   it('exposes the virtual-card delete icon as a named action', async () => {

@@ -18,9 +18,11 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import EmptyState from '@/components/EmptyState';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
+import { moneyInputProps, parseMoneyInput } from '@/lib/moneyInput';
 
 export const validateCityLedgerPayment = (amountValue, balanceValue) => {
-  const amount = Number(amountValue);
+  const amount = parseMoneyInput(amountValue);
   const outstandingBalance = Number(balanceValue);
 
   if (!Number.isFinite(amount) || amount <= 0) return 'Geçerli bir ödeme tutarı girin';
@@ -31,7 +33,30 @@ export const validateCityLedgerPayment = (amountValue, balanceValue) => {
   return null;
 };
 
+export const getCityLedgerPaymentAllocations = (openItems, allocationValues) => (
+  openItems
+    .map((item) => ({ booking_id: item.booking_id, amount: parseMoneyInput(allocationValues[item.booking_id] || 0) }))
+    .filter((allocation) => Number.isFinite(allocation.amount) && allocation.amount > 0)
+);
+
+export const validateCityLedgerPaymentAllocations = (amountValue, openItems, allocationValues) => {
+  const amount = parseMoneyInput(amountValue);
+  const allocations = getCityLedgerPaymentAllocations(openItems, allocationValues);
+  if (!allocations.length) return null; // A general city-ledger payment remains supported.
+
+  const allocationTotal = allocations.reduce((sum, allocation) => sum + allocation.amount, 0);
+  if (Math.abs(allocationTotal - amount) > 0.005) {
+    return 'Oda bazlı dağıtım toplamı ödeme tutarına eşit olmalıdır';
+  }
+  const oversubscribed = allocations.some((allocation) => {
+    const item = openItems.find((candidate) => candidate.booking_id === allocation.booking_id);
+    return item && allocation.amount - Number(item.open_amount || 0) > 0.005;
+  });
+  return oversubscribed ? 'Bir odaya ayrılan tahsilat o odanın açık bakiyesini aşamaz' : null;
+};
+
 const EMPTY_ACCOUNT = {
+  source_company_id: '',
   account_name: '',
   company_name: '',
   contact_person: '',
@@ -48,9 +73,37 @@ const EMPTY_ACCOUNT = {
   billing_country: 'Türkiye',
 };
 
+export const buildCityLedgerCandidateAccount = (candidate) => {
+  const parsedTerms = Number.parseInt(candidate.payment_terms, 10);
+  return {
+    ...EMPTY_ACCOUNT,
+    ...candidate,
+    payment_terms: Number.isFinite(parsedTerms) ? parsedTerms : 30,
+    billing_country: candidate.billing_country || 'Türkiye',
+  };
+};
+
+// City-ledger'da 0 veya boş kredi limiti, kredi tanımlanmadığı için "sınırsız"
+// anlamına gelir. Bu hesaplar için parasal "kullanılabilir limit" hesaplanmaz.
+export const getCityLedgerCreditStatus = (creditLimitValue, balanceValue) => {
+  const creditLimit = Number(creditLimitValue) || 0;
+  const balance = Number(balanceValue) || 0;
+  const hasCreditLimit = creditLimit > 0;
+
+  return {
+    creditLimit,
+    balance,
+    hasCreditLimit,
+    available: hasCreditLimit ? creditLimit - balance : null,
+    utilization: hasCreditLimit ? (balance / creditLimit) * 100 : null,
+  };
+};
+
 const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
   const { t } = useTranslation();
+  const currency = tenant?.currency || cachedTenantCurrency();
   const [accounts, setAccounts] = useState([]);
+  const [candidates, setCandidates] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedAccount, setSelectedAccount] = useState(null);
@@ -60,6 +113,15 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
   const [paymentReference, setPaymentReference] = useState('');
   const [paymentRequestId, setPaymentRequestId] = useState('');
   const [postingPayment, setPostingPayment] = useState(false);
+  const [paymentOpenItems, setPaymentOpenItems] = useState([]);
+  const [paymentAllocations, setPaymentAllocations] = useState({});
+  const [loadingPaymentItems, setLoadingPaymentItems] = useState(false);
+
+  const [openItemsDialogOpen, setOpenItemsDialogOpen] = useState(false);
+  const [openItemsAccount, setOpenItemsAccount] = useState(null);
+  const [openItems, setOpenItems] = useState([]);
+  const [openItemsSummary, setOpenItemsSummary] = useState(null);
+  const [loadingOpenItems, setLoadingOpenItems] = useState(false);
 
   const [adjustDialogOpen, setAdjustDialogOpen] = useState(false);
   const [adjustAccount, setAdjustAccount] = useState(null);
@@ -79,33 +141,88 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
   const loadAccounts = async () => {
     setLoading(true);
     try {
-      const response = await axios.get('/cashiering/city-ledger');
-      const data = response.data?.accounts || [];
-      setAccounts(data);
-    } catch (error) {
-      console.error('Failed to load city ledger accounts:', error);
-      toast.error('Cari hesaplar yüklenemedi');
-      setAccounts([]);
+      const [accountsResult, candidatesResult] = await Promise.allSettled([
+        axios.get('/cashiering/city-ledger'),
+        axios.get('/cashiering/city-ledger-candidates'),
+      ]);
+
+      if (accountsResult.status === 'fulfilled') {
+        setAccounts(accountsResult.value.data?.accounts || []);
+      } else {
+        console.error('Failed to load city ledger accounts:', accountsResult.reason);
+        toast.error('Cari hesaplar yüklenemedi');
+        setAccounts([]);
+      }
+
+      if (candidatesResult.status === 'fulfilled') {
+        setCandidates(candidatesResult.value.data?.candidates || []);
+      } else {
+        console.error('Failed to load city ledger candidates:', candidatesResult.reason);
+        toast.error('Tanımlanacak şirketler yüklenemedi');
+        setCandidates([]);
+      }
     } finally {
       setLoading(false);
     }
   };
 
+  const openCandidate = (candidate) => {
+    setNewAccountData(buildCityLedgerCandidateAccount(candidate));
+    setNewAccountDialogOpen(true);
+  };
+
   const filteredAccounts = accounts.filter((account) => {
     const term = searchTerm.toLowerCase();
     return (
-      account.account_name.toLowerCase().includes(term) ||
+      (account.account_name || '').toLowerCase().includes(term) ||
       (account.company_name || '').toLowerCase().includes(term)
     );
   });
 
-  const handleOpenPaymentDialog = (account) => {
+  const loadOpenItems = async (account) => {
+    const response = await axios.get(`/cashiering/city-ledger/${account.id}/open-items`);
+    return response.data;
+  };
+
+  const handleOpenPaymentDialog = async (account) => {
     setSelectedAccount(account);
     setPaymentAmount('');
     setPaymentReference('');
     setPaymentMethod('bank_transfer');
     setPaymentRequestId(globalThis.crypto?.randomUUID?.() || `payment-${Date.now()}`);
+    setPaymentOpenItems([]);
+    setPaymentAllocations({});
     setPaymentDialogOpen(true);
+    setLoadingPaymentItems(true);
+    try {
+      const data = await loadOpenItems(account);
+      setPaymentOpenItems(data.items || []);
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Oda bazlı cari bakiyesi yüklenemedi');
+    } finally {
+      setLoadingPaymentItems(false);
+    }
+  };
+
+  const handleOpenItemsDialog = async (account) => {
+    setOpenItemsAccount(account);
+    setOpenItems([]);
+    setOpenItemsSummary(null);
+    setOpenItemsDialogOpen(true);
+    setLoadingOpenItems(true);
+    try {
+      const data = await loadOpenItems(account);
+      setOpenItems(data.items || []);
+      setOpenItemsSummary(data.summary || null);
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Oda bazlı cari bakiyesi yüklenemedi');
+    } finally {
+      setLoadingOpenItems(false);
+    }
+  };
+
+  const setPaymentAllocation = (bookingId, value) => {
+    setPaymentAllocations((current) => ({ ...current, [bookingId]: value }));
   };
 
   const handleOpenAdjustDialog = (account) => {
@@ -118,7 +235,7 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
 
   const handlePostAdjustment = async () => {
     if (!adjustAccount) return;
-    const amount = parseFloat(adjustAmount);
+    const amount = parseMoneyInput(adjustAmount);
     const balance = Number(adjustAccount.current_balance || 0);
     if (!Number.isFinite(amount) || amount <= 0) {
       toast.error('Geçerli bir tutar girin');
@@ -143,7 +260,7 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
       });
       const res = await axios.post(`/cashiering/city-ledger-adjustment?${params.toString()}`);
       if (res.data?.success) {
-        toast.success(`Ayarlama kaydedildi. Yeni bakiye: ₺${res.data.new_balance.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}`);
+        toast.success(`Ayarlama kaydedildi. Yeni bakiye: ${formatCurrency(res.data.new_balance, adjustAccount.currency || currency)}`);
         setAdjustDialogOpen(false);
         await loadAccounts();
       } else {
@@ -165,7 +282,13 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
       toast.error(validationError);
       return;
     }
-    const amount = Number(paymentAmount);
+    const amount = parseMoneyInput(paymentAmount);
+    const allocations = getCityLedgerPaymentAllocations(paymentOpenItems, paymentAllocations);
+    const allocationError = validateCityLedgerPaymentAllocations(paymentAmount, paymentOpenItems, paymentAllocations);
+    if (allocationError) {
+      toast.error(allocationError);
+      return;
+    }
 
     setPostingPayment(true);
     try {
@@ -176,7 +299,7 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
       params.append('idempotency_key', paymentRequestId);
       if (paymentReference) params.append('reference', paymentReference);
 
-      const response = await axios.post(`/cashiering/city-ledger-payment?${params.toString()}`);
+      const response = await axios.post(`/cashiering/city-ledger-payment?${params.toString()}`, allocations.length ? { allocations } : undefined);
       if (response.data?.success) {
         toast.success('Ödeme başarıyla işlendi');
         setPaymentDialogOpen(false);
@@ -202,7 +325,7 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
     try {
       const payload = {
         ...newAccountData,
-        credit_limit: newAccountData.credit_limit ? parseFloat(newAccountData.credit_limit) : 0,
+        credit_limit: newAccountData.credit_limit ? parseMoneyInput(newAccountData.credit_limit) : 0,
         payment_terms: newAccountData.payment_terms ? Number(newAccountData.payment_terms) : 30,
       };
       const response = await axios.post('/cashiering/city-ledger', payload);
@@ -236,7 +359,7 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
     <>
       <div className="p-6 space-y-6">
         {/* Header */}
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-3xl font-bold flex items-center gap-3">
               <Building2 className="w-8 h-8 text-blue-600" />
@@ -244,7 +367,7 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
             </h1>
             <p className="text-gray-600 mt-1">Kurumsal ve acente partnerlerine ait doğrudan faturalama hesapları</p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <Button variant="outline" onClick={loadAccounts}>
               <RefreshCw className="w-4 h-4 mr-2" />
               Yenile
@@ -265,6 +388,7 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
                 <Input
                   className="pl-10"
                   placeholder="Hesap veya şirket adına göre ara..."
+                  aria-label="Cari hesap veya şirket adına göre ara"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                 />
@@ -283,7 +407,7 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
             <CardContent className="pt-6">
               <div className="text-sm text-gray-600">Toplam Bakiye</div>
               <div className="text-2xl font-bold text-red-600 mt-1">
-                ₺{accounts.reduce((sum, a) => sum + (a.current_balance || 0), 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
+                {formatCurrency(accounts.reduce((sum, a) => sum + Number(a.current_balance || 0), 0), currency)}
               </div>
             </CardContent>
           </Card>
@@ -315,16 +439,19 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
             ) : (
               <div className="space-y-4">
                 {filteredAccounts.map((account) => {
-                  const balance = account.current_balance || 0;
-                  const creditLimit = account.credit_limit || 0;
-                  const available = creditLimit - balance;
-                  const utilization = creditLimit > 0 ? (balance / creditLimit) * 100 : 0;
+                  const {
+                    balance,
+                    creditLimit,
+                    hasCreditLimit,
+                    available,
+                    utilization,
+                  } = getCityLedgerCreditStatus(account.credit_limit, account.current_balance);
 
                   let statusColor = 'bg-green-100 text-green-800';
-                  if (utilization > 90) statusColor = 'bg-red-100 text-red-800';
-                  else if (utilization > 70) statusColor = 'bg-yellow-100 text-yellow-800';
+                  if (hasCreditLimit && utilization > 90) statusColor = 'bg-red-100 text-red-800';
+                  else if (hasCreditLimit && utilization > 70) statusColor = 'bg-yellow-100 text-yellow-800';
 
-                  const fmt = (n) => n.toLocaleString('tr-TR', { minimumFractionDigits: 2 });
+                  const accountCurrency = account.currency || currency;
 
                   return (
                     <div
@@ -340,14 +467,16 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
                           )}
                         </div>
                         <div className="text-sm text-gray-600 mb-2">
-                          Kredi Limiti: ₺{fmt(creditLimit)} &nbsp;|&nbsp; Bakiye: ₺{fmt(balance)} &nbsp;|&nbsp; Kullanılabilir: ₺{fmt(available)}
+                          Kredi Limiti: {hasCreditLimit ? formatCurrency(creditLimit, accountCurrency) : 'Sınırsız'} &nbsp;|&nbsp; Bakiye: {formatCurrency(balance, accountCurrency)} &nbsp;|&nbsp; Kullanılabilir: {hasCreditLimit ? formatCurrency(available, accountCurrency) : 'Sınırsız'}
                         </div>
-                        <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
-                          <div
-                            className="h-2 rounded-full bg-blue-500"
-                            style={{ width: `${Math.min(100, utilization)}%` }}
-                          />
-                        </div>
+                        {hasCreditLimit && (
+                          <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
+                            <div
+                              className="h-2 rounded-full bg-blue-500"
+                              style={{ width: `${Math.min(100, Math.max(0, utilization))}%` }}
+                            />
+                          </div>
+                        )}
                         {account.billing_address && (
                           <div className="text-xs text-gray-400 mt-1">
                             {account.billing_address}, {account.billing_city}
@@ -358,9 +487,18 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
 
                       <div className="flex flex-col items-end gap-2">
                         <Badge className={statusColor}>
-                          Kullanım {creditLimit > 0 ? `${utilization.toFixed(0)}%` : 'Limitsiz'}
+                          {hasCreditLimit ? `Kullanım ${utilization.toFixed(0)}%` : 'Kredi sınırı yok'}
                         </Badge>
-                        <div className="flex gap-2">
+                        <div className="flex flex-wrap justify-end gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleOpenItemsDialog(account)}
+                            title="Bakiyenin rezervasyon ve oda dağılımını gör"
+                          >
+                            <FileText className="w-4 h-4 mr-1" />
+                            Oda Bakiyeleri
+                          </Button>
                           <Button
                             variant="outline"
                             size="sm"
@@ -386,6 +524,40 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
                     </div>
                   );
                 })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Tanımlanacaklar</CardTitle>
+            <CardDescription>
+              Şirketler ekranında kayıtlı olup henüz cari hesaba dönüştürülmemiş kurumsal ve acente kayıtları
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {candidates.length === 0 ? (
+              <div className="rounded-lg border border-dashed p-6 text-center text-sm text-gray-500">
+                Cari hesaba dönüştürülmeyi bekleyen şirket bulunmuyor.
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {candidates.map((candidate) => (
+                  <div key={candidate.source_company_id} className="flex flex-col gap-3 rounded-lg border p-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="min-w-0">
+                      <div className="font-semibold truncate">{candidate.company_name}</div>
+                      <div className="mt-1 text-sm text-gray-500">
+                        {[candidate.contact_person, candidate.email, candidate.phone].filter(Boolean).join(' · ') || 'İletişim bilgisi girilmemiş'}
+                      </div>
+                      {candidate.tax_number && <div className="mt-1 text-xs text-gray-400">VKN / TCKN: {candidate.tax_number}</div>}
+                    </div>
+                    <Button variant="outline" onClick={() => openCandidate(candidate)}>
+                      <Plus className="mr-2 h-4 w-4" />
+                      Cari Hesap Oluştur
+                    </Button>
+                  </div>
+                ))}
               </div>
             )}
           </CardContent>
@@ -441,9 +613,9 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3">
                   <div>
-                    <label className="text-sm text-gray-600">Kredi Limiti (₺)</label>
+                    <label className="text-sm text-gray-600">Kredi Limiti ({currency})</label>
                     <Input
-                      type="number"
+                      {...moneyInputProps}
                       value={newAccountData.credit_limit}
                       onChange={field('credit_limit')}
                       placeholder="ör. 10000"
@@ -538,19 +710,19 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
                   <div className="font-semibold">{selectedAccount.account_name}</div>
                   <div className="text-gray-500">{selectedAccount.company_name}</div>
                   <div className="mt-1 text-xs text-gray-500">
-                    Mevcut Bakiye: ₺{selectedAccount.current_balance?.toLocaleString('tr-TR', { minimumFractionDigits: 2 }) || '0,00'} &nbsp;|&nbsp;
-                    Kredi Limiti: ₺{selectedAccount.credit_limit?.toLocaleString('tr-TR', { minimumFractionDigits: 2 }) || '0,00'}
+                    Mevcut Bakiye: {formatCurrency(selectedAccount.current_balance, selectedAccount.currency || currency)} &nbsp;|&nbsp;
+                    Kredi Limiti: {formatCurrency(selectedAccount.credit_limit, selectedAccount.currency || currency)}
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="text-sm text-gray-600">Tutar (₺)</label>
+                    <label className="text-sm text-gray-600">Tutar ({selectedAccount.currency || currency})</label>
                     <Input
-                      type="number"
+                      {...moneyInputProps}
                       value={paymentAmount}
                       onChange={(e) => setPaymentAmount(e.target.value)}
-                      placeholder="ör. 500.00"
+                      placeholder="ör. 500,00"
                     />
                   </div>
                   <div>
@@ -577,6 +749,46 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
                   />
                 </div>
 
+                <div className="border rounded-md p-3 space-y-2">
+                  <div>
+                    <div className="text-sm font-medium text-gray-800">Oda bazlı tahsilat dağıtımı</div>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Tahsilatı belirli odalara kapatmak için tutarı ilgili rezervasyona yazın. Alanları boş bırakırsanız genel cari ödemesi olarak kaydedilir.
+                    </p>
+                  </div>
+                  {loadingPaymentItems ? (
+                    <div className="text-sm text-gray-500">Oda bakiyeleri yükleniyor...</div>
+                  ) : paymentOpenItems.length === 0 ? (
+                    <div className="text-sm text-gray-500">Bu cari için oda bağlantılı açık bakiye bulunmuyor.</div>
+                  ) : (
+                    <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                      {paymentOpenItems.map((item) => (
+                        <div key={item.booking_id} className="grid grid-cols-[1fr_120px] gap-3 items-center rounded border bg-slate-50 p-2">
+                          <div className="min-w-0">
+                            <div className="text-sm font-medium truncate">Oda {item.room_number} · {item.guest_name}</div>
+                            <div className="text-xs text-gray-500">
+                              Açık: {formatCurrency(item.open_amount, item.currency || selectedAccount.currency || currency)}
+                              {item.check_in && ` · ${String(item.check_in).slice(0, 10)}`}
+                            </div>
+                          </div>
+                          <Input
+                            aria-label={`Oda ${item.room_number} tahsilat tutarı`}
+                            {...moneyInputProps}
+                            value={paymentAllocations[item.booking_id] || ''}
+                            onChange={(event) => setPaymentAllocation(item.booking_id, event.target.value)}
+                            placeholder="0,00"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {Object.values(paymentAllocations).some((value) => parseMoneyInput(value) > 0) && (
+                    <div className="text-xs text-gray-600 pt-1 border-t">
+                      Oda dağıtım toplamı: <strong>{formatCurrency(Object.values(paymentAllocations).reduce((sum, value) => sum + (parseMoneyInput(value) || 0), 0), selectedAccount.currency || currency)}</strong>
+                    </div>
+                  )}
+                </div>
+
                 <div className="flex justify-end gap-2 mt-4">
                   <Button variant="outline" onClick={() => setPaymentDialogOpen(false)}>
                     İptal
@@ -585,6 +797,52 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
                     {postingPayment ? 'Kaydediliyor...' : 'Ödemeyi Kaydet'}
                   </Button>
                 </div>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={openItemsDialogOpen} onOpenChange={setOpenItemsDialogOpen}>
+          <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Oda Bazlı Cari Bakiye</DialogTitle>
+              <DialogDescription>
+                {openItemsAccount ? `${openItemsAccount.account_name} hesabındaki bakiyenin hangi rezervasyonlardan kaynaklandığını inceleyin.` : 'Cari bakiyenin rezervasyon dağılımı'}
+              </DialogDescription>
+            </DialogHeader>
+
+            {loadingOpenItems ? (
+              <div className="py-8 text-center text-sm text-gray-500">Oda bakiyeleri yükleniyor...</div>
+            ) : (
+              <div className="space-y-3">
+                {openItems.map((item) => (
+                  <div key={item.booking_id} className="rounded-lg border p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <div className="font-medium">Oda {item.room_number} · {item.guest_name}</div>
+                        <div className="text-xs text-gray-500 mt-1">
+                          {item.check_in ? `${String(item.check_in).slice(0, 10)} → ${String(item.check_out || '').slice(0, 10)}` : `Rezervasyon: ${item.booking_id}`}
+                        </div>
+                      </div>
+                      <Badge variant={Number(item.open_amount) > 0 ? 'destructive' : 'secondary'}>
+                        Açık {formatCurrency(item.open_amount, item.currency || openItemsAccount?.currency || currency)}
+                      </Badge>
+                    </div>
+                    <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-gray-600">
+                      <div>Tahakkuk: {formatCurrency(item.charged_amount, item.currency || openItemsAccount?.currency || currency)}</div>
+                      <div>Odaya işlenen tahsilat: {formatCurrency(item.allocated_payment_amount, item.currency || openItemsAccount?.currency || currency)}</div>
+                    </div>
+                  </div>
+                ))}
+                {openItems.length === 0 && <div className="py-6 text-center text-sm text-gray-500">Oda bağlantılı cari hareketi bulunmuyor.</div>}
+                {openItemsSummary && (
+                  <div className="rounded-md bg-slate-50 border p-3 text-sm space-y-1">
+                    <div>Odaların açık toplamı: <strong>{formatCurrency(openItemsSummary.room_open_total, openItemsAccount?.currency || currency)}</strong></div>
+                    {Number(openItemsSummary.unallocated_payment_total || 0) > 0 && <div className="text-amber-700">Oda atanmamış eski tahsilat: {formatCurrency(openItemsSummary.unallocated_payment_total, openItemsAccount?.currency || currency)}</div>}
+                    {Number(openItemsSummary.adjustment_total || 0) > 0 && <div className="text-amber-700">Komisyon / fark düşümü: {formatCurrency(openItemsSummary.adjustment_total, openItemsAccount?.currency || currency)}</div>}
+                    {Math.abs(Number(openItemsSummary.balance_difference || 0)) > 0.005 && <div className="text-amber-700">Cari bakiyesi ile oda dağılımı arasında {formatCurrency(openItemsSummary.balance_difference, openItemsAccount?.currency || currency)} fark var. Eski hareketleri oda seçmeden kaydetmiş olabilirsiniz.</div>}
+                  </div>
+                )}
               </div>
             )}
           </DialogContent>
@@ -608,18 +866,18 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
                   <div className="font-semibold">{adjustAccount.account_name}</div>
                   <div className="text-gray-500">{adjustAccount.company_name}</div>
                   <div className="mt-1 text-xs text-gray-500">
-                    Mevcut Bakiye: <span className="font-medium text-red-600">₺{(adjustAccount.current_balance || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}</span>
+                    Mevcut Bakiye: <span className="font-medium text-red-600">{formatCurrency(adjustAccount.current_balance, adjustAccount.currency || currency)}</span>
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="text-sm text-gray-600">Tutar (₺)</label>
+                    <label className="text-sm text-gray-600">Tutar ({adjustAccount.currency || currency})</label>
                     <Input
-                      type="number"
+                      {...moneyInputProps}
                       value={adjustAmount}
                       onChange={(e) => setAdjustAmount(e.target.value)}
-                      placeholder="ör. 750.00"
+                      placeholder="ör. 750,00"
                     />
                   </div>
                   <div>
@@ -642,13 +900,13 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
                   <Input
                     value={adjustDescription}
                     onChange={(e) => setAdjustDescription(e.target.value)}
-                    placeholder="ör. Etstur Ağustos komisyonu %15 — 750 TL"
+                    placeholder={`ör. Acenta komisyonu %15 — 750 ${adjustAccount.currency || currency}`}
                   />
                 </div>
 
-                {adjustAmount && parseFloat(adjustAmount) > 0 && (
+                {adjustAmount && parseMoneyInput(adjustAmount) > 0 && (
                   <div className="bg-amber-50 border border-amber-200 rounded-md p-3 text-sm text-amber-800">
-                    Bakiye <strong>₺{(adjustAccount.current_balance || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}</strong> → <strong>₺{Math.max(0, (adjustAccount.current_balance || 0) - parseFloat(adjustAmount || 0)).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}</strong> olacak.
+                    Bakiye <strong>{formatCurrency(adjustAccount.current_balance, adjustAccount.currency || currency)}</strong> → <strong>{formatCurrency(Math.max(0, (adjustAccount.current_balance || 0) - (parseMoneyInput(adjustAmount) || 0)), adjustAccount.currency || currency)}</strong> olacak.
                   </div>
                 )}
 

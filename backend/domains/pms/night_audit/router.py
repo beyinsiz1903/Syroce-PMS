@@ -5,7 +5,8 @@ plus legacy schedule management and financial reporting.
 """
 
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -16,7 +17,7 @@ from core.database import db
 from core.security import get_current_user
 from domains.pms.night_audit.schemas import NightAuditScheduleRequest, RunNightAuditRequest
 from models.schemas import User
-from modules.pms_core.role_permission_service import require_op  # v101 DW
+from modules.pms_core.role_permission_service import RolePermissionService, require_op  # v101 DW
 
 logger = logging.getLogger(__name__)
 
@@ -63,13 +64,30 @@ def invalidate_finance_cache(tenant_id: str) -> None:
 _invalidate_finance_cache = invalidate_finance_cache
 
 
+def _night_audit_operator_guard(user: User):
+    """Enforce the narrowly scoped day-end operator permission.
+
+    This guard remains inside handlers so direct service calls cannot bypass
+    the route dependency.  It deliberately does not grant system settings or
+    financial-report access to a night-shift receptionist.
+    """
+    if RolePermissionService().check_permission(
+        user.role,
+        "run_night_audit",
+        granted_permissions=getattr(user, "granted_permissions", None),
+    ):
+        return
+    raise HTTPException(status_code=403, detail="Night audit operator permission required")
+
+
 def _admin_guard(user: User):
+    """Keep schedule configuration restricted to administrators."""
     from core.security import _is_super_admin
 
     if _is_super_admin(user):
         return
     if user.role not in ("super_admin", "admin"):
-        raise HTTPException(status_code=403, detail="Only admins can manage night audit")
+        raise HTTPException(status_code=403, detail="Only admins can manage night audit schedule")
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -84,23 +102,87 @@ async def run_night_audit(
     _perm=Depends(require_op("run_night_audit")),  # v101 DW
 ):
     """Start a hardened night audit run."""
-    _admin_guard(current_user)
+    _night_audit_operator_guard(current_user)
     from core.business_date_service import ensure_business_date_initialized
     from core.night_audit_hardened import start_night_audit
 
     authoritative_bd = (await ensure_business_date_initialized(db, current_user.tenant_id))["business_date"]
-    if request.business_date and request.business_date != authoritative_bd and not request.force_rerun:
+    requested_bd = request.business_date or authoritative_bd
+    if requested_bd != authoritative_bd:
         raise HTTPException(
             status_code=409,
             detail={
                 "success": False,
                 "code": "BUSINESS_DATE_MISMATCH",
-                "error": (
-                    f"İstenen iş günü {request.business_date}, otelin açık iş günü "
-                    f"{authoritative_bd} ile eşleşmiyor. Yenileyip tekrar deneyin."
-                ),
+                "error": (f"İstenen iş günü {request.business_date}, otelin açık iş günü {authoritative_bd} ile eşleşmiyor. Yenileyip tekrar deneyin."),
                 "requested_business_date": request.business_date,
                 "current_business_date": authoritative_bd,
+            },
+        )
+
+    # A bypass must never turn an incomplete or same-day close into a financial
+    # posting/date-roll operation.  Preview is the safe operational tool; a
+    # blocked final close must be resolved or resumed through its run record.
+    if request.skip_validations and not request.dry_run:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "success": False,
+                "code": "UNSAFE_VALIDATION_BYPASS",
+                "error": "Doğrulamalar yalnızca simülasyonda atlanabilir. Canlı gün sonu için engeller çözülmelidir.",
+            },
+        )
+    if request.force_rerun and not request.dry_run:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "success": False,
+                "code": "UNSAFE_RERUN",
+                "error": "Tamamlanmış gün sonu tekrar çalıştırılamaz. Gerekliyse ilgili denetim kaydından kontrollü kurtarma işlemi başlatın.",
+            },
+        )
+
+    # A final close is only valid after the property's local calendar has
+    # moved past the open business date.  Closing today's date would advance
+    # the PMS date prematurely, even when all validations were skipped.
+    local_today = datetime.now(ZoneInfo("Europe/Istanbul")).date().isoformat()
+    if not request.dry_run and authoritative_bd >= local_today:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "success": False,
+                "code": "BUSINESS_DATE_NOT_READY",
+                "error": (
+                    f"Açık iş günü {authoritative_bd}. Bugünün günü kapanmadan canlı denetim çalıştırılamaz; "
+                    "önce simülasyon kullanın veya yerel tarih bir sonraki güne geçtiğinde tekrar deneyin."
+                ),
+                "current_business_date": authoritative_bd,
+                "local_calendar_date": local_today,
+            },
+        )
+
+    # A large gap is not a normal end-of-day operation.  Repeatedly closing a
+    # stale date can post room charges, no-shows and financial snapshots for
+    # many historical days without a reconciliation plan.  Permit a dry run
+    # so the operator can assess the backlog, but require controlled recovery
+    # for a live catch-up instead of presenting the close as "ready".
+    try:
+        backlog_days = (date.fromisoformat(local_today) - date.fromisoformat(authoritative_bd)).days
+    except ValueError:
+        backlog_days = 0
+    if not request.dry_run and backlog_days > 1:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "success": False,
+                "code": "BUSINESS_DATE_CATCHUP_REQUIRED",
+                "error": (
+                    f"PMS iş günü takvimden {backlog_days} gün geride. Canlı gün sonu durduruldu; "
+                    "önce simülasyonu inceleyin ve kontrollü gün kapatma planı oluşturun."
+                ),
+                "current_business_date": authoritative_bd,
+                "local_calendar_date": local_today,
+                "backlog_days": backlog_days,
             },
         )
 
@@ -126,10 +208,13 @@ async def run_night_audit(
             "VALIDATION_BLOCKED": 422,
         }.get(code, 400)
         raise HTTPException(status_code=status_code, detail=result)
-    # Successful run mutates folio charges, payments, balances → drop dashboards.
-    _invalidate_finance_cache(current_user.tenant_id)
-    # History/business-date also change after a successful audit run.
-    for prefix in ("na_history", "na_business_date"):
+    # Simulation only records its audit trace/candidates; it never changes
+    # folios, reservations, rooms or the business date. Avoid invalidating
+    # finance/business-date caches as though a real close had happened.
+    if not request.dry_run:
+        _invalidate_finance_cache(current_user.tenant_id)
+    prefixes = ("na_history",) if request.dry_run else ("na_history", "na_business_date")
+    for prefix in prefixes:
         try:
             _cache.safe_invalidate(current_user.tenant_id, prefix)
         except Exception as e:  # pragma: no cover
@@ -140,7 +225,7 @@ async def run_night_audit(
 @router.get("/status")
 async def get_audit_status(
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_finance_reports")),  # v102 DW finance leak fix
+    _perm=Depends(require_op("view_night_audit")),  # v102 DW finance leak fix
 ):
     """Get current night audit status for this tenant."""
     from core.night_audit_hardened import get_run_status
@@ -150,13 +235,14 @@ async def get_audit_status(
 
 @router.get("/preview")
 async def preview_night_audit(
+    _nocache: bool = Query(False, alias="nocache"),
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_finance_reports")),
+    _perm=Depends(require_op("view_night_audit")),
 ):
     """Gece denetimi Hazirlik ozeti — engelleyiciler, uyarilar, oda/misafir durumu."""
     from core.night_audit_hardened import build_audit_preview
 
-    return await build_audit_preview(current_user.tenant_id)
+    return await build_audit_preview(current_user.tenant_id, _nocache=_nocache)
 
 
 @router.get("/runs")
@@ -165,7 +251,7 @@ async def list_runs(
     skip: int = Query(0, ge=0),
     status: str = Query(None),
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_finance_reports")),  # v102 DW finance leak fix
+    _perm=Depends(require_op("view_night_audit")),  # v102 DW finance leak fix
 ):
     """List night audit runs."""
     from core.night_audit_hardened import get_runs
@@ -177,7 +263,7 @@ async def list_runs(
 async def get_run(
     run_id: str,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_finance_reports")),  # v102 DW finance leak fix
+    _perm=Depends(require_op("view_night_audit")),  # v102 DW finance leak fix
 ):
     """Get a specific run by ID."""
     from core.night_audit_hardened import get_run_detail
@@ -195,7 +281,7 @@ async def get_items(
     skip: int = Query(0, ge=0),
     status: str = Query(None),
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_finance_reports")),  # v102 DW finance leak fix
+    _perm=Depends(require_op("view_night_audit")),  # v102 DW finance leak fix
 ):
     """List items for a specific run."""
     from core.night_audit_hardened import get_run_items
@@ -210,7 +296,7 @@ async def resume_run(
     _perm=Depends(require_op("run_night_audit")),  # v101 DW
 ):
     """Resume a failed/blocked/partial run."""
-    _admin_guard(current_user)
+    _night_audit_operator_guard(current_user)
     from core.night_audit_hardened import resume_night_audit
 
     result = await resume_night_audit(
@@ -244,7 +330,7 @@ async def abort_run(
     _perm=Depends(require_op("run_night_audit")),  # v101 DW
 ):
     """Abort a running/blocked/partial run."""
-    _admin_guard(current_user)
+    _night_audit_operator_guard(current_user)
     from core.night_audit_hardened import abort_night_audit
 
     result = await abort_night_audit(
@@ -275,7 +361,7 @@ async def get_audit_history(
     limit: int = 20,
     skip: int = 0,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_finance_reports")),  # v102 DW finance leak fix
+    _perm=Depends(require_op("view_night_audit")),  # v102 DW finance leak fix
     _nocache: bool = Query(False, alias="nocache"),
 ):
     """Get night audit run history."""
@@ -290,7 +376,7 @@ async def get_audit_history(
 async def get_audit_exceptions(
     audit_id: str,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_finance_reports")),  # v102 DW finance leak fix
+    _perm=Depends(require_op("view_night_audit")),  # v102 DW finance leak fix
 ):
     from domains.pms.night_audit.service import night_audit_core_service
 
@@ -303,7 +389,7 @@ async def get_audit_exceptions(
 @cached(ttl=60, key_prefix="na_business_date")
 async def get_business_date(
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_finance_reports")),  # v102 DW finance leak fix
+    _perm=Depends(require_op("view_business_date")),  # v102 DW finance leak fix
     _nocache: bool = Query(False, alias="nocache"),
 ):
     from domains.pms.night_audit.service import night_audit_core_service
@@ -317,7 +403,7 @@ async def get_business_date(
 @cached(ttl=300, key_prefix="na_schedule")
 async def get_schedule(
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_finance_reports")),  # v102 DW finance leak fix
+    _perm=Depends(require_op("view_night_audit")),  # v102 DW finance leak fix
     _nocache: bool = Query(False, alias="nocache"),
 ):
     from domains.pms.night_audit.service import night_audit_core_service
@@ -334,6 +420,11 @@ async def update_schedule(
     _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
 ):
     _admin_guard(current_user)
+    if request.skip_validations:
+        raise HTTPException(
+            status_code=422,
+            detail="Zamanlanmış gün sonu doğrulamaları atlayamaz; bu ayarı kapatın.",
+        )
     from domains.pms.night_audit.service import night_audit_core_service
 
     ctx = OperationContext.from_user(current_user)
@@ -351,7 +442,7 @@ async def update_schedule(
 @cached(ttl=30, key_prefix="na_schedule_status")
 async def get_schedule_status(
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_finance_reports")),  # v102 DW finance leak fix
+    _perm=Depends(require_op("view_night_audit")),  # v102 DW finance leak fix
     _nocache: bool = Query(False, alias="nocache"),
 ):
     from domains.pms.night_audit.service import night_audit_core_service
@@ -365,7 +456,7 @@ async def get_schedule_status(
 async def get_financial_summary(
     date: str = Query(None),
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_finance_reports")),  # v102 DW finance leak fix
+    _perm=Depends(require_op("view_night_audit")),  # v102 DW finance leak fix
     _nocache: bool = Query(False, alias="nocache"),
 ):
     from domains.pms.night_audit.financial_service import financial_service
@@ -390,7 +481,7 @@ async def get_financial_summary(
 async def get_payment_reconciliation(
     date: str = Query(None),
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_finance_reports")),  # v102 DW finance leak fix
+    _perm=Depends(require_op("view_night_audit")),  # v102 DW finance leak fix
     _nocache: bool = Query(False, alias="nocache"),
 ):
     from domains.pms.night_audit.financial_service import financial_service
@@ -416,7 +507,7 @@ async def get_financial_report(
     start_date: str | None = Query(None),
     end_date: str | None = Query(None),
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_finance_reports")),  # v102 DW finance leak fix
+    _perm=Depends(require_op("view_night_audit")),  # v102 DW finance leak fix
 ):
     # Tur 3: defaults — last 30 days when omitted
     from datetime import date as _d
@@ -439,7 +530,7 @@ async def get_financial_report(
 async def get_integrity_check(
     date: str = Query(None),
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_finance_reports")),  # v102 DW finance leak fix
+    _perm=Depends(require_op("view_night_audit")),  # v102 DW finance leak fix
     _nocache: bool = Query(False, alias="nocache"),
 ):
     from domains.pms.night_audit.financial_service import financial_service

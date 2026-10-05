@@ -77,6 +77,32 @@ describe('Auth Cookie Flow in App.jsx', () => {
     });
   });
 
+  it('opens the verified workspace without waiting for subscription metadata', async () => {
+    localStorage.setItem('token_ts', Date.now().toString());
+    localStorage.setItem('user', JSON.stringify({ id: 'u1', name: 'Cached User', tenant_id: 't1' }));
+    localStorage.setItem('tenant', JSON.stringify({ id: 't1', property_name: 'Test Hotel' }));
+
+    let resolveSubscription;
+    axios.get.mockImplementation((url) => {
+      if (url === '/auth/me') {
+        return Promise.resolve({ data: { id: 'u1', name: 'Fresh User', tenant_id: 't1', role: 'admin' } });
+      }
+      if (url === '/subscription/current') {
+        return new Promise((resolve) => { resolveSubscription = resolve; });
+      }
+      return Promise.resolve({ data: {} });
+    });
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(axios.get).toHaveBeenCalledWith('/subscription/current');
+      expect(screen.getByTestId('nav-dashboard-button')).toBeInTheDocument();
+    });
+
+    resolveSubscription({ data: { modules: { pms: true } } });
+  });
+
   it('should recover a missing tenant snapshot and modules from the server', async () => {
     localStorage.setItem('token_ts', Date.now().toString());
     localStorage.setItem('user', JSON.stringify({ id: 'u1', name: 'Cached User' }));
@@ -107,6 +133,8 @@ describe('Auth Cookie Flow in App.jsx', () => {
   it('should clear token_ts if /auth/me definitively rejects the session', async () => {
     localStorage.setItem('token_ts', Date.now().toString());
     localStorage.setItem('user', JSON.stringify({ name: 'Test User' }));
+    localStorage.setItem('entitlements', JSON.stringify({ tenantId: 'previous-hotel' }));
+    sessionStorage.setItem('notif_cache_v1', 'previous-notifications');
     
     // Mock a failed backend verification (e.g. cookie expired)
     axios.get.mockRejectedValueOnce({ response: { status: 401 } });
@@ -122,6 +150,31 @@ describe('Auth Cookie Flow in App.jsx', () => {
       // Auth storage should be cleared
       expect(localStorage.getItem('token_ts')).toBeNull();
       expect(localStorage.getItem('user')).toBeNull();
+      expect(localStorage.getItem('entitlements')).toBeNull();
+      expect(sessionStorage.getItem('notif_cache_v1')).toBeNull();
+    });
+  });
+
+  it('preserves the restored origin session after an expired super-admin workspace context', async () => {
+    localStorage.setItem('token_ts', Date.now().toString());
+    localStorage.setItem('user', JSON.stringify({ id: 'admin-1', name: 'Platform Admin' }));
+    localStorage.setItem('tenant', JSON.stringify({ id: 'origin-tenant', name: 'Platform' }));
+
+    axios.get.mockRejectedValueOnce({
+      response: { status: 401 },
+      _sessionContextRestored: true,
+    });
+
+    try {
+      render(<App />);
+    } catch (e) {
+      // Providers are intentionally minimal in this focused auth test.
+    }
+
+    await waitFor(() => {
+      expect(axios.get).toHaveBeenCalledWith('/auth/me');
+      expect(localStorage.getItem('token_ts')).not.toBeNull();
+      expect(JSON.parse(localStorage.getItem('user'))).toMatchObject({ id: 'admin-1' });
     });
   });
 
@@ -131,6 +184,29 @@ describe('Auth Cookie Flow in App.jsx', () => {
     localStorage.setItem('tenant', JSON.stringify({ id: 't1', name: 'Test Hotel' }));
 
     axios.get.mockRejectedValueOnce({ response: { status: 503 } });
+
+    try {
+      render(<App />);
+    } catch (e) {
+      // Providers are intentionally minimal in this focused auth test.
+    }
+
+    await waitFor(() => {
+      expect(axios.get).toHaveBeenCalledWith('/auth/me');
+      expect(localStorage.getItem('token_ts')).not.toBeNull();
+      expect(localStorage.getItem('user')).not.toBeNull();
+    });
+  });
+
+  it('preserves the cached session when a 401 could not be verified because identity is temporarily unavailable', async () => {
+    localStorage.setItem('token_ts', Date.now().toString());
+    localStorage.setItem('user', JSON.stringify({ id: 'u1', name: 'Test User' }));
+    localStorage.setItem('tenant', JSON.stringify({ id: 't1', name: 'Test Hotel' }));
+
+    axios.get.mockRejectedValueOnce({
+      response: { status: 401 },
+      _sessionVerificationTransient: true,
+    });
 
     try {
       render(<App />);
@@ -254,6 +330,19 @@ describe('Auth Cookie Flow in App.jsx', () => {
       _skipRetry: true,
       _noCache: true,
     });
+    expect(localStorage.getItem('token_ts')).toBe(String(oldMarker));
+    expect(localStorage.getItem('user')).not.toBeNull();
+  });
+
+  it('does not log out when refresh is rejected but the identity check is temporarily unavailable', async () => {
+    const oldMarker = Date.now() - (91 * 60 * 1000);
+    localStorage.setItem('token_ts', String(oldMarker));
+    localStorage.setItem('user', JSON.stringify({ id: 'u1' }));
+    localStorage.setItem('refresh_token', 'possibly-stale-refresh-token');
+    axios.post.mockRejectedValueOnce({ response: { status: 401 } });
+    axios.get.mockRejectedValueOnce({ response: { status: 503 } });
+
+    await expect(keepActiveSessionAlive()).resolves.toEqual({ transient: true });
     expect(localStorage.getItem('token_ts')).toBe(String(oldMarker));
     expect(localStorage.getItem('user')).not.toBeNull();
   });

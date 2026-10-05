@@ -259,10 +259,17 @@ class TestObservabilityTracing:
 
     @pytest.mark.asyncio
     async def test_trace_summary(self):
+        from unittest.mock import AsyncMock
+
         from modules.observability.distributed_tracing import TracingService
         svc = TracingService()
         tid = svc.start_trace("/api/test", "GET")
         svc.end_trace(tid, 200)
+        # This is an isolated service-instance unit test. Production summaries
+        # intentionally merge persisted traces from every worker, so prevent
+        # unrelated integration-test traffic in the shared CI database from
+        # leaking into this assertion.
+        svc._load_traces_in_window = AsyncMock(return_value=svc._traces_in_window(1))
         summary = await svc.get_trace_summary()
         assert summary["total_requests"] == 1
         assert len(summary["endpoints"]) >= 1

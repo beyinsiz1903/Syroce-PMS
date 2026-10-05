@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -31,16 +32,25 @@ const readCache = () => {
   }
 };
 const NotificationBell = () => {
+  const navigate = useNavigate();
   const cached = readCache();
   const [notifications, setNotifications] = useState(cached?.notifications || []);
   const [unreadCount, setUnreadCount] = useState(cached?.unread_count || 0);
   const [isOpen, setIsOpen] = useState(false);
   const markingRef = useRef(false);
   useEffect(() => {
-    // Cache taze + aynı user ise mount fetch'i atla — interval zaten 15sn'de yenileyecek
-    if (!cached) loadNotifications();
-    const interval = setInterval(loadNotifications, 15000);
-    return () => clearInterval(interval);
+    const refreshVisible = () => {
+      if (document.visibilityState === 'visible') loadNotifications();
+    };
+    if (!cached) refreshVisible();
+    // Live messaging uses its socket stream; this general notification list
+    // only needs a visible-tab fallback, not a background 15-second poll.
+    const interval = setInterval(refreshVisible, 60000);
+    document.addEventListener('visibilitychange', refreshVisible);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', refreshVisible);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -118,9 +128,38 @@ const NotificationBell = () => {
         return 'border-l-4 border-gray-300';
     }
   };
+  const getRelatedBookingId = notification => {
+    const metadata = notification?.metadata || {};
+    // Overbooking uyarısında operatörün açması gereken kayıt, reddedilen
+    // istekten önce odada bulunan çakışan rezervasyondur.
+    return metadata.conflicting_booking_id
+      || metadata.conflict_booking_id
+      || (notification?.related_entity === 'booking' ? notification.related_id : null)
+      || metadata.booking_id
+      || null;
+  };
+  const handleNotificationClick = notification => {
+    const bookingId = getRelatedBookingId(notification);
+    if (bookingId) {
+      setIsOpen(false);
+      navigate('/app/reservation-calendar', { state: { openBookingId: bookingId } });
+      return;
+    }
+    if (notification.action_url?.startsWith('/')) {
+      setIsOpen(false);
+      navigate(notification.action_url);
+    }
+  };
   return <>
       <div className="relative">
-        <Button variant="ghost" size="sm" onClick={() => setIsOpen(true)} className="relative p-2 hover:bg-white/20 dark:text-gray-100" data-testid="notification-bell-button">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => setIsOpen(true)}
+          className="relative p-2 hover:bg-white/20 dark:text-gray-100"
+          data-testid="notification-bell-button"
+          aria-label={unreadCount > 0 ? `Bildirimler: ${unreadCount} okunmamış` : 'Bildirimleri aç'}
+        >
           <Bell className="w-5 h-5" />
           {unreadCount > 0 && <Badge className="absolute -top-1 -right-1 h-5 w-5 flex items-center justify-center p-0 bg-red-500 text-white text-xs">
               {unreadCount > 9 ? '9+' : unreadCount}
@@ -141,7 +180,15 @@ const NotificationBell = () => {
             {notifications.length === 0 ? <div className="text-center py-8 text-gray-500" data-testid="notification-empty">
                 <Bell className="w-12 h-12 mx-auto mb-2 opacity-50" />
                 <p className="text-sm">Bildirim yok</p>
-              </div> : notifications.map(notif => <div key={notif.id} className={`p-3 rounded-lg transition-all ${notif.read ? 'bg-gray-50' : getPriorityColor(notif.priority)}`} data-testid={`notification-item-${notif.id}`}>
+              </div> : notifications.map(notif => {
+              const relatedBookingId = getRelatedBookingId(notif);
+              const canOpen = Boolean(relatedBookingId || notif.action_url?.startsWith('/'));
+              return <div key={notif.id} className={`p-3 rounded-lg transition-all ${notif.read ? 'bg-gray-50' : getPriorityColor(notif.priority)} ${canOpen ? 'cursor-pointer hover:shadow-sm focus-within:ring-2 focus-within:ring-blue-400' : ''}`} data-testid={`notification-item-${notif.id}`} role={canOpen ? 'button' : undefined} tabIndex={canOpen ? 0 : undefined} onClick={() => canOpen && handleNotificationClick(notif)} onKeyDown={event => {
+                if (canOpen && (event.key === 'Enter' || event.key === ' ')) {
+                  event.preventDefault();
+                  handleNotificationClick(notif);
+                }
+              }}>
                   <div className="flex items-start space-x-3">
                     <div className="flex-shrink-0 mt-1">
                       {getNotificationIcon(notif.type)}
@@ -166,9 +213,13 @@ const NotificationBell = () => {
                             {notif.category}
                           </Badge>}
                       </div>
+                      {relatedBookingId && <div className="mt-2 text-xs font-medium text-blue-700">
+                        {notif.metadata?.conflicting_booking_id ? 'Çakışan rezervasyonu aç' : 'Rezervasyonu aç'} →
+                      </div>}
                     </div>
                   </div>
-                </div>)}
+                </div>;
+            })}
           </div>
         </DialogContent>
       </Dialog>

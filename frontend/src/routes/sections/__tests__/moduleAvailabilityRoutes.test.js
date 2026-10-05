@@ -4,6 +4,8 @@ import { channelManagerRoutes } from "../channelManager";
 import { hotelFeaturesAiRoutes } from "../hotelFeaturesAi";
 import { marketplaceLoyaltyRoutes } from "../marketplaceLoyalty";
 import { revenueRmsRoutes } from "../revenueRms";
+import { coreOperationsRoutes } from "../coreOperations";
+import { getRouteConfigs } from "../../routeDefinitions";
 
 const p = (component) => ({ type: "protected", component });
 const pm = (component, moduleKey) => ({ type: "module", component, moduleKey });
@@ -18,6 +20,44 @@ describe("module availability route gates", () => {
         moduleKey: "hr",
       });
     }
+  });
+
+  it("keeps staff self-service outside the HR module gate", () => {
+    const route = hotelFeaturesAiRoutes({ p, pm }).find((item) => item.path === "/staff/:id");
+
+    expect(route).toMatchObject({
+      type: "protected",
+      wrapLayout: true,
+      layoutModule: "hr",
+      skipModuleScopeBoundary: true,
+    });
+    expect(route.component).toBeTruthy();
+    expect(route).not.toHaveProperty("moduleKey");
+
+    const composed = getRouteConfigs({
+      user: { role: "staff", module_scopes: [] },
+      tenant: {},
+      modules: {},
+      isAuthenticated: true,
+      onLogout: () => {},
+      hasFeature: () => false,
+    }).find((item) => item.path === "/staff/:id");
+    // The self-service route deliberately skips the visual module boundary,
+    // but it is still classified for the route-scope CI inventory.
+    expect(composed.moduleScopes).toEqual(['hr']);
+  });
+
+  it("opens hotel-owned setup workspaces through their licensed module gates", () => {
+    const routes = coreOperationsRoutes({ p, pa, pm, modules: {} });
+
+    expect(routes.find((route) => route.path === "/app/wbe-settings")).toMatchObject({
+      type: "module",
+      moduleKey: "booking_engine",
+    });
+    expect(routes.find((route) => route.path === "/app/folio-management")).toMatchObject({
+      type: "module",
+      moduleKey: "folio_management",
+    });
   });
 
   it("preserves feature route type after composing protected props", () => {

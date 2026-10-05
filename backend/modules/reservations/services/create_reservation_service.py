@@ -6,12 +6,13 @@ from typing import Any
 
 from fastapi import HTTPException, Request, status
 
-from core.utils import generate_folio_number, generate_qr_code, generate_time_based_qr_token
 from core.occupancy_pricing import (
     OccupancyPricingError,
     calculate_occupancy_quote,
     find_occupancy_rule,
 )
+from core.guest_name_utils import canonical_guest_name
+from core.utils import generate_folio_number, generate_qr_code, generate_time_based_qr_token
 from models.enums import FolioType
 from models.schemas import BookingCreate, Folio, RateOverrideLog
 from modules.reservations.repository import ReservationsRepository
@@ -28,6 +29,16 @@ class CreateReservationService:
         tenant_context = build_tenant_context(current_user, request)
         property_context = build_property_context(current_user, request)
         self._enforce_property_scope(tenant_context.tenant_id, property_context.property_id)
+
+        if booking_data.is_complimentary:
+            from modules.pms_core.role_permission_service import RolePermissionService
+
+            role = getattr(current_user.role, "value", current_user.role)
+            RolePermissionService().enforce_permission(
+                role,
+                "override_rate",
+                getattr(current_user, "permissions", None),
+            )
 
         correlation_id = request.headers.get("x-correlation-id") or str(uuid.uuid4())
         idempotency_key = ensure_idempotent_request(request, required=True)
@@ -63,6 +74,11 @@ class CreateReservationService:
             guest = await self.repository.get_guest_for_tenant(tenant_context.tenant_id, booking_data.guest_id)
             if not guest:
                 raise HTTPException(status_code=404, detail="Guest not found")
+            # Keep the reservation's display/search snapshot aligned with the
+            # one guest-name field the receptionist actually enters.  KBS and
+            # other downstream integrations must not see an empty legacy
+            # ``bookings.guest_name`` for a newly created reservation.
+            guest_name = canonical_guest_name(guest)
 
             try:
                 check_in_dt = datetime.fromisoformat(booking_data.check_in.replace('Z', '+00:00'))
@@ -132,10 +148,15 @@ class CreateReservationService:
                         detail=str(exc),
                     ) from exc
 
+            commercial_total = round(
+                float(pricing_quote['total_amount'] if pricing_quote else booking_data.total_amount),
+                2,
+            )
             booking_dict = {
                 'id': booking_id,
                 'tenant_id': tenant_context.tenant_id,
                 'guest_id': booking_data.guest_id,
+                'guest_name': guest_name,
                 'room_id': booking_data.room_id,
                 'check_in': check_in_dt.isoformat(),
                 'check_out': check_out_dt.isoformat(),
@@ -143,7 +164,7 @@ class CreateReservationService:
                 'children': booking_data.children,
                 'children_ages': booking_data.children_ages,
                 'guests_count': booking_data.guests_count,
-                'total_amount': pricing_quote['total_amount'] if pricing_quote else booking_data.total_amount,
+                'total_amount': 0.0 if booking_data.is_complimentary else commercial_total,
                 'base_rate': booking_data.base_rate,
                 'rate_per_night': pricing_quote['nightly_total'] if pricing_quote else None,
                 'apply_occupancy_pricing': bool(pricing_quote),
@@ -174,9 +195,21 @@ class CreateReservationService:
                 'created_at': now_ts.isoformat(),
                 '_version': 1,
             }
+            if booking_data.is_complimentary:
+                booking_dict.update(
+                    {
+                        'is_complimentary': True,
+                        'complimentary_scope': booking_data.complimentary_scope,
+                        'complimentary_reason': booking_data.complimentary_reason,
+                        'complimentary_original_total': commercial_total,
+                        'complimentary_by': current_user.name,
+                        'complimentary_at': now_ts.isoformat(),
+                    }
+                )
 
             if (
-                not pricing_quote
+                not booking_data.is_complimentary
+                and not pricing_quote
                 and booking_data.base_rate
                 and booking_data.base_rate != booking_data.total_amount
                 and booking_data.override_reason
@@ -292,6 +325,9 @@ class CreateReservationService:
                     "guest_id": booking_data.guest_id,
                     "check_in": booking_dict['check_in'],
                     "check_out": booking_dict['check_out'],
+                    "is_complimentary": booking_data.is_complimentary,
+                    "complimentary_scope": booking_data.complimentary_scope,
+                    "complimentary_original_total": commercial_total if booking_data.is_complimentary else None,
                 },
             )
 

@@ -29,9 +29,7 @@ from models.schemas import User
 
 
 @router.get("/reconciliation")
-async def list_reconciliation_records(
-    user: User = Depends(require_admin)
-):
+async def list_reconciliation_records(user: User = Depends(require_admin)):
     """
     List records that require manual reconciliation.
     """
@@ -42,29 +40,28 @@ async def list_reconciliation_records(
     # Safe projection / DTO mapping to prevent PII/credential leak
     safe_docs = []
     for doc in docs:
-        safe_docs.append({
-            "id": doc.get("id"),
-            "invoice_id": doc.get("invoice_id"),
-            "provider": doc.get("provider"),
-            "document_kind": doc.get("document_kind"),
-            "state": doc.get("state"),
-            "provider_status": doc.get("provider_status"),
-            "provider_status_code": doc.get("provider_status_code"),
-            "reconciliation_reason": doc.get("reconciliation_reason"),
-            "submitted_at": doc.get("submitted_at"),
-            "last_status_check_at": doc.get("last_status_check_at"),
-            "created_at": doc.get("created_at"),
-            "updated_at": doc.get("updated_at"),
-        })
+        safe_docs.append(
+            {
+                "id": doc.get("id"),
+                "invoice_id": doc.get("invoice_id"),
+                "provider": doc.get("provider"),
+                "document_kind": doc.get("document_kind"),
+                "state": doc.get("state"),
+                "provider_status": doc.get("provider_status"),
+                "provider_status_code": doc.get("provider_status_code"),
+                "reconciliation_reason": doc.get("reconciliation_reason"),
+                "submitted_at": doc.get("submitted_at"),
+                "last_status_check_at": doc.get("last_status_check_at"),
+                "created_at": doc.get("created_at"),
+                "updated_at": doc.get("updated_at"),
+            }
+        )
 
     return {"data": safe_docs}
 
 
 @router.get("/{dispatch_id}/status")
-async def get_invoice_status(
-    dispatch_id: str = Path(...),
-    user: User = Depends(require_admin)
-):
+async def get_invoice_status(dispatch_id: str = Path(...), user: User = Depends(require_admin)):
     """
     Get the sync status of an invoice.
     """
@@ -89,11 +86,7 @@ async def get_invoice_status(
 
 
 @router.post("/{dispatch_id}/reconcile")
-async def reconcile_invoice_status(
-    req: ReconcileInvoiceStatusRequest,
-    dispatch_id: str = Path(...),
-    user: User = Depends(require_admin)
-):
+async def reconcile_invoice_status(req: ReconcileInvoiceStatusRequest, dispatch_id: str = Path(...), user: User = Depends(require_admin)):
     """
     Manually reconcile a dispatch record stuck in UNKNOWN or inconsistent state.
     """
@@ -116,34 +109,21 @@ async def reconcile_invoice_status(
 
     target_state = target_state_map[req.resolution]
 
-    success = await InvoiceStatusRepository.reconcile_status(
-        tenant_id=user.tenant_id,
-        dispatch_id=dispatch_id,
-        target_state=target_state,
-        note=req.note,
-        actor=str(user.id)
-    )
+    success = await InvoiceStatusRepository.reconcile_status(tenant_id=user.tenant_id, dispatch_id=dispatch_id, target_state=target_state, note=req.note, actor=str(user.id))
 
     if not success:
         raise HTTPException(status_code=409, detail="Failed to reconcile record. It may have been updated concurrently.")
 
-    await event_bus.publish("invoice_status.reconciled", {
-        "dispatch_id": dispatch_id,
-        "tenant_id": user.tenant_id,
-        "actor": str(user.id),
-        "previous_state": record.state.value,
-        "new_state": target_state.value,
-        "reason": record.reconciliation_reason
-    })
+    await event_bus.publish(
+        "invoice_status.reconciled",
+        {"dispatch_id": dispatch_id, "tenant_id": user.tenant_id, "actor": str(user.id), "previous_state": record.state.value, "new_state": target_state.value, "reason": record.reconciliation_reason},
+    )
 
     return {"status": "success", "dispatch_id": dispatch_id, "new_state": target_state.value}
 
 
 @router.post("/{dispatch_id}/retry-status")
-async def retry_invoice_status(
-    dispatch_id: str = Path(...),
-    user: User = Depends(require_admin)
-):
+async def retry_invoice_status(dispatch_id: str = Path(...), user: User = Depends(require_admin)):
     """
     Force a status poll for a SUBMITTED invoice. Does not re-trigger POST /einvoice/Send/Model.
     """
@@ -155,13 +135,11 @@ async def retry_invoice_status(
         raise HTTPException(status_code=400, detail="Only SUBMITTED records can be status-retried")
 
     from datetime import UTC, datetime
+
     now = datetime.now(UTC)
 
     # Update the record to be picked up immediately by the worker
     db = get_db_for_tenant(user.tenant_id)
-    await db.invoice_sync.update_one(
-        {"id": dispatch_id, "tenant_id": user.tenant_id},
-        {"$set": {"next_status_check_at": now, "reconciliation_required": False, "updated_at": now}}
-    )
+    await db.invoice_sync.update_one({"id": dispatch_id, "tenant_id": user.tenant_id}, {"$set": {"next_status_check_at": now, "reconciliation_required": False, "updated_at": now}})
 
     return {"status": "success", "message": "Status poll enqueued"}

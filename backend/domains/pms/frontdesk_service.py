@@ -13,10 +13,52 @@ from common.audit_hook import SEVERITY_INFO, SEVERITY_WARNING, audited
 from common.context import OperationContext
 from common.result import ServiceResult
 from core.business_date_transition_guard import enforce_business_date_transition
+from core.kbs_auto_enqueue import auto_enqueue_kbs
 from domains.pms.frontdesk_financials import calculate_departure_balance
 from domains.pms.lock_bridge.service import CMD_ENCODE, CMD_REVOKE, enqueue_lock_command
 
 logger = logging.getLogger(__name__)
+
+
+async def _enqueue_kbs_after_frontdesk_transition(
+    ctx: OperationContext,
+    booking_id: str,
+    action: str,
+) -> dict | None:
+    """Best-effort KBS hand-off after the PMS transition is durable.
+
+    A temporary browser-extension/KBS problem must never roll back a room
+    movement that has already completed. The queue itself is idempotent for
+    ``booking + action``, so UI retries remain safe.
+    """
+    try:
+        return await auto_enqueue_kbs(
+            ctx.tenant_id,
+            booking_id,
+            action,
+            actor=f"user:{ctx.actor_id}",
+        )
+    except Exception:  # pragma: no cover - defensive; helper is fail-open by contract
+        logger.exception(
+            "KBS auto-enqueue failed after front-desk transition: booking=%s action=%s",
+            booking_id,
+            action,
+        )
+        return None
+
+
+def _kbs_job_id(kbs_job: Any) -> str | None:
+    """Extract a KBS queue id without letting an integration shape break PMS.
+
+    The KBS enqueue contract historically returned a single job document, but
+    a batch enqueue can return a list.  Check-in/check-out is already durable
+    before this best-effort hand-off, therefore response serialization must be
+    tolerant of either shape.
+    """
+    if isinstance(kbs_job, dict):
+        job_id = kbs_job.get("id")
+        return str(job_id) if job_id is not None else None
+    return None
 
 
 class FrontdeskService:
@@ -135,7 +177,27 @@ class FrontdeskService:
                     }
                 )
                 if blocker:
-                    return ServiceResult.fail("Room is occupied by another guest", "ROOM_NOT_READY")
+                    # The old English-only error forced the receptionist to infer
+                    # which reservation was still occupying the room. Resolve the
+                    # blocker name tenant-safely and make the required next action
+                    # explicit; never allow a second physical check-in meanwhile.
+                    guest = None
+                    blocker_guest_id = blocker.get("guest_id")
+                    if blocker_guest_id:
+                        guest = await self._db.guests.find_one(
+                            {"id": blocker_guest_id, "tenant_id": ctx.tenant_id},
+                            {"_id": 0, "name": 1},
+                        )
+
+                    from core.guest_name_utils import display_guest_name
+
+                    raw_name = (guest or {}).get("name") or blocker.get("guest_name")
+                    blocker_name = display_guest_name(raw_name, blocker_guest_id)
+                    room_number = room.get("room_number") or "atanan"
+                    return ServiceResult.fail(
+                        f"Oda {room_number} ({blocker_name}) henüz tahliye edilmemiş. Lütfen önce çıkış işlemini tamamlayın veya odayı değiştirin.",
+                        "ROOM_NOT_READY",
+                    )
             # Stale occupied status or no active blocker — allow check-in
         elif room_status not in ("available", "inspected"):
             return ServiceResult.fail("Room is not ready for check-in", "ROOM_NOT_READY")
@@ -190,11 +252,19 @@ class FrontdeskService:
                 {"$inc": {"total_stays": 1}},
             )
 
+        kbs_job = await _enqueue_kbs_after_frontdesk_transition(
+            ctx,
+            booking_id,
+            "checkin",
+        )
+
         return ServiceResult.success(
             {
                 "message": "Check-in completed successfully",
                 "checked_in_at": checked_in_time.isoformat(),
                 "room_number": room.get("room_number"),
+                "kbs_queued": bool(kbs_job),
+                "kbs_job_id": _kbs_job_id(kbs_job),
             }
         )
 
@@ -214,6 +284,21 @@ class FrontdeskService:
             return ServiceResult.fail("Booking not found", "NOT_FOUND")
         if booking["status"] == "checked_out":
             return ServiceResult.fail("Guest already checked out", "ALREADY_CHECKED_OUT")
+
+        # Finalise room revenue before evaluating the departure balance.  A
+        # full prepayment must not leave a negative folio merely because the
+        # last nightly charge has not run yet.
+        try:
+            from core.folio_checkout_reconciliation import reconcile_unposted_room_charge
+
+            await reconcile_unposted_room_charge(
+                self._db,
+                tenant_id=ctx.tenant_id,
+                booking=booking,
+                posted_by=f"checkout:{ctx.actor_id}",
+            )
+        except ValueError as exc:
+            return ServiceResult.fail(str(exc), "ROOM_CHARGE_RECONCILIATION_FAILED")
 
         folios = await self._db.folios.find(
             {
@@ -305,28 +390,48 @@ class FrontdeskService:
         )
         await self._db.rooms.update_one(
             {"id": booking["room_id"], "tenant_id": ctx.tenant_id},
-            {"$set": {"status": "dirty", "current_booking_id": None}},
+            {
+                "$set": {
+                    "status": "dirty",
+                    "current_booking_id": None,
+                    "housekeeping_status": "dirty",
+                    "hk_status": "dirty",
+                    "housekeeping_updated_at": checked_out_time.isoformat(),
+                    "housekeeping_updated_by": f"System (Check-out by {ctx.actor_id})",
+                }
+            },
         )
 
         hk_task = {
             "id": str(uuid.uuid4()),
             "tenant_id": ctx.tenant_id,
             "room_id": booking["room_id"],
-            "task_type": "cleaning",
+            "booking_id": booking_id,
+            "room_number": booking.get("room_number"),
+            "task_type": "checkout_cleaning",
             "priority": "high",
-            "status": "new",
+            "status": "pending",
             "notes": "Guest checked out - departure clean required",
             "created_at": datetime.now(UTC).isoformat(),
         }
         await self._db.housekeeping_tasks.insert_one(hk_task)
+
+        kbs_job = await _enqueue_kbs_after_frontdesk_transition(
+            ctx,
+            booking_id,
+            "checkout",
+        )
 
         return ServiceResult.success(
             {
                 "message": "Check-out completed successfully",
                 "checked_out_at": checked_out_time.isoformat(),
                 "total_balance": effective_balance,
+                "currency": booking.get("currency") or "TRY",
                 "folios_closed": len(folios) if auto_close_folios else 0,
                 "folio_details": folio_details,
+                "kbs_queued": bool(kbs_job),
+                "kbs_job_id": _kbs_job_id(kbs_job),
             }
         )
 
@@ -357,7 +462,20 @@ class FrontdeskService:
             {"id": booking["id"], "tenant_id": ctx.tenant_id},
             {"$set": {"status": "checked_in", "checked_in_at": datetime.now(UTC).isoformat()}},
         )
-        return ServiceResult.success({"success": True, "message": "Express check-in tamamlandi", "booking": booking})
+        kbs_job = await _enqueue_kbs_after_frontdesk_transition(
+            ctx,
+            booking["id"],
+            "checkin",
+        )
+        return ServiceResult.success(
+            {
+                "success": True,
+                "message": "Express check-in tamamlandi",
+                "booking": booking,
+                "kbs_queued": bool(kbs_job),
+                "kbs_job_id": _kbs_job_id(kbs_job),
+            }
+        )
 
     # ------------------------------------------------------------------
     # Audit Checklist
@@ -418,6 +536,7 @@ class FrontdeskService:
                 "folio_type": folio.get("folio_type"),
                 "owner_name": owner_name,
                 "balance": round(balance, 2),
+                "currency": folio.get("currency") or "TRY",
                 "status": folio.get("status"),
                 "booking_id": folio.get("booking_id"),
             }
@@ -434,10 +553,18 @@ class FrontdeskService:
             if days_open and days_open > 2 and balance > 0:
                 unbalanced.append({**item, "days_open": days_open})
 
+        total_open_balance_by_currency: dict[str, float] = {}
+        for folio in open_with_balance:
+            currency = str(folio.get("currency") or "TRY").upper()
+            total_open_balance_by_currency[currency] = round(
+                total_open_balance_by_currency.get(currency, 0) + float(folio["balance"]), 2
+            )
+
         summary = {
             "unchecked_in_count": len(unchecked),
             "open_folio_count": len(open_with_balance),
             "total_open_balance": round(sum(f["balance"] for f in open_with_balance), 2),
+            "total_open_balance_by_currency": total_open_balance_by_currency,
             "unbalanced_folio_count": len(unbalanced),
             "overdue_departures_count": len(overdue),
         }
@@ -674,17 +801,58 @@ class FrontdeskService:
         bookings = await self._db.bookings.find({"tenant_id": ctx.tenant_id, "status": "checked_in"}, {"_id": 0}).to_list(1000)
         if not bookings:
             return ServiceResult.success([])
+
+        booking_ids = [b["id"] for b in bookings if b.get("id")]
         guest_ids = list({b["guest_id"] for b in bookings if b.get("guest_id")})
         room_ids = list({b["room_id"] for b in bookings if b.get("room_id")})
-        guest_map = {}
+        guest_map, room_map = {}, {}
+        charges_by_booking, payments_by_booking, extras_by_booking = {}, {}, {}
+
         if guest_ids:
             async for g in self._db.guests.find({"id": {"$in": guest_ids}, "tenant_id": ctx.tenant_id}, {"_id": 0}):
                 guest_map[g["id"]] = g
-        room_map = {}
         if room_ids:
             async for r in self._db.rooms.find({"id": {"$in": room_ids}, "tenant_id": ctx.tenant_id}, {"_id": 0}):
                 room_map[r["id"]] = r
-        enriched = [{**b, "guest": guest_map.get(b.get("guest_id")), "room": room_map.get(b.get("room_id"))} for b in bookings]
+        if booking_ids:
+            async for charge in self._db.folio_charges.find(
+                {"booking_id": {"$in": booking_ids}, "tenant_id": ctx.tenant_id},
+                {"_id": 0},
+            ):
+                charges_by_booking.setdefault(charge["booking_id"], []).append(charge)
+            async for payment in self._db.payments.find(
+                {"booking_id": {"$in": booking_ids}, "tenant_id": ctx.tenant_id},
+                {"_id": 0},
+            ):
+                payments_by_booking.setdefault(payment["booking_id"], []).append(payment)
+            async for charge in self._db.extra_charges.find(
+                {"booking_id": {"$in": booking_ids}, "tenant_id": ctx.tenant_id},
+                {"_id": 0},
+            ):
+                extras_by_booking.setdefault(charge["booking_id"], []).append(charge)
+
+        enriched = []
+        for booking in bookings:
+            booking_id = booking["id"]
+            guest = guest_map.get(booking.get("guest_id")) or {}
+            room = room_map.get(booking.get("room_id")) or {}
+            guest_name = guest.get("name") or f"{guest.get('first_name', '')} {guest.get('last_name', '')}".strip()
+            balance = calculate_departure_balance(
+                charges_by_booking.get(booking_id, []),
+                payments_by_booking.get(booking_id, []),
+                extras_by_booking.get(booking_id, []),
+                booking_total=booking.get("total_amount", 0),
+            )
+            enriched.append(
+                {
+                    **booking,
+                    "guest": guest or None,
+                    "room": room or None,
+                    "guest_name": guest_name or booking.get("guest_name"),
+                    "room_number": room.get("room_number") or booking.get("room_number"),
+                    "balance": balance,
+                }
+            )
         return ServiceResult.success(enriched)
 
     # ------------------------------------------------------------------
@@ -792,15 +960,18 @@ class FrontdeskService:
         room_ids = list({b["room_id"] for b in bookings if b.get("room_id")})
         guest_map = {}
         if guest_ids:
+            from security.encrypted_lookup import decrypt_guest_doc
+
             async for g in self._db.guests.find(
-                {"id": {"$in": guest_ids}},
+                {"tenant_id": tenant_id, "id": {"$in": guest_ids}},
                 {"_id": 0, "id": 1, "name": 1, "phone": 1, "email": 1},
             ):
+                g = decrypt_guest_doc(g)
                 guest_map[g["id"]] = g
         room_map = {}
         if room_ids:
             async for r in self._db.rooms.find(
-                {"id": {"$in": room_ids}},
+                {"tenant_id": tenant_id, "id": {"$in": room_ids}},
                 {"_id": 0, "id": 1, "room_number": 1, "room_type": 1, "status": 1},
             ):
                 room_map[r["id"]] = r

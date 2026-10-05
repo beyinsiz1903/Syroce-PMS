@@ -80,7 +80,5 @@ async def get_period_for_date(db, tenant_id: str, posting_date: str, *, actor: s
 async def assert_gl_period_open(db, tenant_id: str, posting_date: str, *, actor: str = "system") -> dict:
     period = await get_period_for_date(db, tenant_id, posting_date, actor=actor)
     if period.get("status") != "open":
-        raise GLPeriodError(
-            f"{period.get('name') or period.get('id')} dönemi kapalı; bu tarihe muhasebe kaydı yapılamaz"
-        )
+        raise GLPeriodError(f"{period.get('name') or period.get('id')} dönemi kapalı; bu tarihe muhasebe kaydı yapılamaz")
     return period

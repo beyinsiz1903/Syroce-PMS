@@ -46,6 +46,7 @@ class FeatureFlag(str, Enum):
     RATE_MANAGEMENT = "rate_management"
     BOOKING_ENGINE = "booking_engine"
     GUEST_ADVANCED = "guest_advanced"
+    AGENCY_REQUESTS = "agency_requests"
 
     # Enterprise Features
     REVENUE_MANAGEMENT = "revenue_management"
@@ -151,6 +152,7 @@ PLAN_MODULE_DEFAULTS: dict[str, dict[str, bool]] = {
         "rate_management": False,
         "booking_engine": False,
         "guest_advanced": False,
+        "agency_requests": False,
         "mailing": False,
         "housekeeping_advanced": False,
         "pos_basic": False,
@@ -208,6 +210,7 @@ PLAN_MODULE_DEFAULTS: dict[str, dict[str, bool]] = {
         # BASIC ek modülleri - Açık
         "mailing": True,
         "guest_advanced": True,
+        "agency_requests": True,
         "housekeeping_advanced": True,
         "cost_management": True,
         "reports": True,
@@ -285,6 +288,7 @@ PLAN_MODULE_DEFAULTS: dict[str, dict[str, bool]] = {
         "rate_management": True,
         "booking_engine": True,
         "guest_advanced": True,
+        "agency_requests": True,
         "pos_basic": True,
         "maintenance": True,
         # ENTERPRISE - Kapalı
@@ -351,6 +355,7 @@ PLAN_MODULE_DEFAULTS: dict[str, dict[str, bool]] = {
         "rate_management": True,
         "booking_engine": True,
         "guest_advanced": True,
+        "agency_requests": True,
         "pos_basic": True,
         "maintenance": True,
         # ENTERPRISE - Açık
@@ -387,6 +392,43 @@ PLAN_MODULE_DEFAULTS: dict[str, dict[str, bool]] = {
         "contact_center": False,
     },
 }
+
+# Hub sections are tenant modules in their own right.  Keeping their defaults
+# here (rather than relying on a missing-key-is-open convention in the UI)
+# makes old and newly created hotels resolve to the same explicit contract.
+SUBMODULE_KEYS_BY_TIER: dict[str, set[str]] = {
+    "pms_lite": {
+        "pms.frontdesk", "pms.rooms", "pms.guests", "pms.bookings", "pms.housekeeping",
+    },
+    "mini": {
+        "pms.frontdesk", "pms.rooms", "pms.guests", "pms.bookings", "pms.housekeeping", "pms.kbs",
+        "channels.connections", "reports.excel", "reports.daily-flash", "reports.operations-daily-summary",
+    },
+    "basic": {
+        "pms.frontdesk", "pms.rooms", "pms.guests", "pms.bookings", "pms.housekeeping", "pms.kbs",
+        "pms.cashier", "pms.upsell", "pms.internal_chat", "pms.reports", "pms.flash", "pms.tasks", "pms.feedback", "pms.kvkk",
+        "channels.connections", "channels.dashboard", "reports.excel", "reports.night_audit",
+        "reports.daily-flash", "reports.operations-daily-summary", "reports.company-aging", "reports.revenue-detail",
+        "reports.housekeeping-efficiency", "reports.channel-distribution",
+    },
+    "professional": {
+        "pms.frontdesk", "pms.rooms", "pms.guests", "pms.bookings", "pms.housekeeping", "pms.kbs",
+        "pms.cashier", "pms.upsell", "pms.internal_chat", "pms.reports", "pms.flash", "pms.tasks", "pms.feedback", "pms.kvkk",
+        "pms.allotment", "pms.pos", "pms.laundry", "pms.concierge", "pms.revenue", "pms.manager_report",
+        "channels.connections", "channels.dashboard", "reports.excel", "reports.night_audit",
+        "reports.daily-flash", "reports.operations-daily-summary", "reports.company-aging", "reports.revenue-detail",
+        "reports.housekeeping-efficiency", "reports.channel-distribution", "reports.forecast-detail", "reports.market-segment",
+    },
+    "enterprise": {
+        "pms.frontdesk", "pms.rooms", "pms.guests", "pms.bookings", "pms.housekeeping", "pms.kbs",
+        "pms.cashier", "pms.upsell", "pms.internal_chat", "pms.reports", "pms.flash", "pms.tasks", "pms.feedback", "pms.kvkk",
+        "pms.allotment", "pms.pos", "pms.laundry", "pms.concierge", "pms.revenue", "pms.manager_report",
+        "rms.dashboard", "rms.recommendations", "channels.connections", "channels.dashboard", "reports.excel", "reports.night_audit",
+        "reports.daily-flash", "reports.operations-daily-summary", "reports.company-aging", "reports.revenue-detail",
+        "reports.housekeeping-efficiency", "reports.channel-distribution", "reports.forecast-detail", "reports.market-segment",
+    },
+}
+ALL_SUBMODULE_KEYS = set().union(*SUBMODULE_KEYS_BY_TIER.values())
 
 
 # Define subscription plans
@@ -456,6 +498,7 @@ SUBSCRIPTION_PLANS: dict[SubscriptionTier, SubscriptionPlan] = {
             FeatureFlag.CHANNEL_MANAGER,
             FeatureFlag.MAILING,
             FeatureFlag.GUEST_ADVANCED,
+            FeatureFlag.AGENCY_REQUESTS,
             FeatureFlag.HOUSEKEEPING_ADVANCED,
             FeatureFlag.COST_MANAGEMENT,
             FeatureFlag.REPORTS,
@@ -504,6 +547,7 @@ SUBSCRIPTION_PLANS: dict[SubscriptionTier, SubscriptionPlan] = {
             FeatureFlag.RATE_MANAGEMENT,
             FeatureFlag.BOOKING_ENGINE,
             FeatureFlag.GUEST_ADVANCED,
+            FeatureFlag.AGENCY_REQUESTS,
             FeatureFlag.POS_BASIC,
             FeatureFlag.MAINTENANCE,
         ],
@@ -548,7 +592,25 @@ def has_feature_access(tier: SubscriptionTier, feature: FeatureFlag) -> bool:
 def get_plan_default_modules(tier: str) -> dict[str, bool]:
     """Get default modules for a subscription tier"""
     tier_lower = tier.lower() if tier else "basic"
-    return PLAN_MODULE_DEFAULTS.get(tier_lower, PLAN_MODULE_DEFAULTS["basic"]).copy()
+    if tier_lower == "pms_lite":
+        # Legacy PMS Lite is deliberately narrower than the later Mini tier.
+        # Keep a complete map so missing keys never become implicit grants.
+        modules = dict.fromkeys(PLAN_MODULE_DEFAULTS["mini"], False)
+        modules.update({
+            "pms": True,
+            "reservation_calendar": True,
+            "dashboard": True,
+            "guests": True,
+            "housekeeping": True,
+            "settings": True,
+        })
+    else:
+        modules = PLAN_MODULE_DEFAULTS.get(tier_lower, PLAN_MODULE_DEFAULTS["basic"]).copy()
+        tier_lower = tier_lower if tier_lower in SUBMODULE_KEYS_BY_TIER else "basic"
+
+    modules.update(dict.fromkeys(ALL_SUBMODULE_KEYS, False))
+    modules.update(dict.fromkeys(SUBMODULE_KEYS_BY_TIER[tier_lower], True))
+    return modules
 
 
 def get_feature_comparison() -> dict[str, dict[str, bool]]:

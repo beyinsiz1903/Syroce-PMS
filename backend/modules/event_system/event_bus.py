@@ -23,6 +23,8 @@ EVENT_TYPES = [
     "vip_arrival",
     "rate_alert",
     "night_audit_completed",
+    "guest_request_created",
+    "guest_request_completed",
 ]
 
 # ── NOTIFICATION RULES ──
@@ -39,6 +41,8 @@ NOTIFICATION_RULES = {
     "checkout_completed": {"priority": "low", "channels": ["dashboard"], "roles": ["front_desk", "housekeeping"]},
     "rate_alert": {"priority": "medium", "channels": ["dashboard"], "roles": ["admin", "revenue"]},
     "night_audit_completed": {"priority": "low", "channels": ["dashboard"], "roles": ["admin", "night_auditor"]},
+    "guest_request_created": {"priority": "medium", "channels": ["dashboard", "toast"], "roles": ["admin", "front_desk", "housekeeping", "maintenance"]},
+    "guest_request_completed": {"priority": "low", "channels": ["dashboard"], "roles": ["admin", "front_desk", "housekeeping", "maintenance"]},
 }
 
 

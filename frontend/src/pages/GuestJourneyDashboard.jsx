@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import Layout from '@/components/Layout';
+import { roomLabel } from '@/utils/displayIdentifiers';
 const API = "";
 const STATUS_COLORS = {
   open: 'bg-red-100 text-red-800',
@@ -194,7 +195,7 @@ export default function GuestJourneyDashboard({
                           <span className="text-lg">{TYPE_ICONS[r.request_type] || '?'}</span>
                           <div>
                             <p className="text-sm font-medium">{r.description?.slice(0, 60)}</p>
-                            <p className="text-xs text-slate-500">Oda: {r.room_id} | {r.created_at?.replace('T', ' ').slice(0, 16)}</p>
+                            <p className="text-xs text-slate-500">Oda: {roomLabel(r)} | {r.created_at?.replace('T', ' ').slice(0, 16)}</p>
                           </div>
                         </div>
                         <div className="flex items-center gap-2">

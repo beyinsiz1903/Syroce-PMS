@@ -4,10 +4,11 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Loader2, Plus, Banknote, RefreshCw, Shield, FileText } from 'lucide-react';
-import { API, fmtTL, fmtTs, SummaryCard, EmptyState, FormField, SelectField } from './helpers';
+import { API, fmtCurrency, fmtTs, SummaryCard, EmptyState, FormField, SelectField } from './helpers';
 import { useTranslation } from 'react-i18next';
 
 export function DepositsTab({ deposits, booking, onRefresh }) {
+  const currency = booking?.currency || "TL";
   const { t } = useTranslation();
   const [showDeposit, setShowDeposit] = useState(false);
   const [showRefund, setShowRefund] = useState(null);
@@ -23,7 +24,7 @@ export function DepositsTab({ deposits, booking, onRefresh }) {
     try {
       await axios.post(`/pms/reservations/${booking.id}/record-deposit`, { ...depForm, amount: parseFloat(depForm.amount) });
       toast.success('Depozito kaydedildi'); setShowDeposit(false); setDepForm({ amount: '', method: 'cash', reference: '' }); onRefresh?.();
-    } catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
+    } catch (e) { toast.error('İşlem Hatası: ' + (e.response?.data?.detail || e.message)); }
     setLoading(false);
   };
 
@@ -33,7 +34,7 @@ export function DepositsTab({ deposits, booking, onRefresh }) {
     try {
       await axios.post(`/pms/reservations/${booking.id}/refund-deposit`, { deposit_id: depositId, ...refundForm, refund_amount: parseFloat(refundForm.refund_amount) });
       toast.success('Depozito iade edildi'); setShowRefund(null); setRefundForm({ refund_amount: '', refund_method: 'cash', reason: '' }); onRefresh?.();
-    } catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
+    } catch (e) { toast.error('İşlem Hatası: ' + (e.response?.data?.detail || e.message)); }
     setLoading(false);
   };
 
@@ -46,9 +47,9 @@ export function DepositsTab({ deposits, booking, onRefresh }) {
   return (
     <div data-testid="deposits-tab" className="space-y-4">
       <div className="grid grid-cols-3 gap-3">
-        <SummaryCard label={t('cm.pages_reservationdetail_DocumentTabs.toplam_depozito')} value={totalDeposits} color="blue" />
-        <SummaryCard label="Iade Edilen" value={totalRefunded} color="amber" />
-        <SummaryCard label={t('cm.pages_reservationdetail_DocumentTabs.aktif')} value={totalDeposits - totalRefunded} color="emerald" />
+        <SummaryCard currency={currency} label={t('cm.pages_reservationdetail_DocumentTabs.toplam_depozito')} value={totalDeposits} color="blue" />
+        <SummaryCard currency={currency} label="Iade Edilen" value={totalRefunded} color="amber" />
+        <SummaryCard currency={currency} label={t('cm.pages_reservationdetail_DocumentTabs.aktif')} value={totalDeposits - totalRefunded} color="emerald" />
       </div>
 
       <div className="flex items-center justify-between">
@@ -81,9 +82,9 @@ export function DepositsTab({ deposits, booking, onRefresh }) {
                 </div>
                 <div className="flex-1">
                   <div className="text-sm font-medium">Depozito - {d.method === 'cash' ? 'Nakit' : d.method === 'card' ? 'Kart' : 'Havale'}</div>
-                  <div className="text-xs text-gray-400">{fmtTs(d.created_at)} | {d.recorded_by} {d.reference && `| Ref: ${d.reference}`}</div>
+                  <div className="text-xs text-gray-400">{fmtTs(d.created_at)} | {d.recorded_by} {d.reference && `| Referans: ${d.reference}`}</div>
                 </div>
-                <div className={`text-sm font-bold ${d.status === 'refunded' ? 'text-gray-400 line-through' : 'text-blue-700'}`}>{fmtTL(d.amount)} TL</div>
+                <div className={`text-sm font-bold ${d.status === 'refunded' ? 'text-gray-400 line-through' : 'text-blue-700'}`}>{fmtCurrency(d.amount, currency)}</div>
                 <Badge className={`text-xs ${d.status === 'refunded' ? 'bg-gray-100 text-gray-500' : d.status === 'partially_refunded' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
                   {d.status === 'refunded' ? 'Iade Edildi' : d.status === 'partially_refunded' ? 'Kismi Iade' : 'Aktif'}
                 </Badge>
@@ -93,7 +94,7 @@ export function DepositsTab({ deposits, booking, onRefresh }) {
                     variant="ghost"
                     onClick={() => setShowRefund(showRefund === d.id ? null : d.id)}
                     className="h-7 px-2 text-xs text-red-600"
-                    aria-label={`Depozito iade işlemini aç - ${fmtTL((d.amount || 0) - (d.refunded_amount || 0))} TL`}
+                    aria-label={`Depozito iade işlemini aç - ${fmtCurrency((d.amount || 0) - (d.refunded_amount || 0), d.currency || currency)}`}
                   >
                     <RefreshCw className="w-3 h-3" />
                   </Button>
@@ -121,6 +122,7 @@ export function DepositsTab({ deposits, booking, onRefresh }) {
 }
 
 export function VoucherTab({ booking, bookingId }) {
+  const currency = booking?.currency || "TL";
   const { t } = useTranslation();
   const [voucherHtml, setVoucherHtml] = useState('');
   const [loading, setLoading] = useState(false);
@@ -171,6 +173,7 @@ export function VoucherTab({ booking, bookingId }) {
 }
 
 export function InvoiceTab({ booking, bookingId }) {
+  const currency = booking?.currency || "TL";
   const { t } = useTranslation();
   const [charges, setCharges] = useState([]);
   const [selectedIds, setSelectedIds] = useState(new Set());
@@ -187,6 +190,13 @@ export function InvoiceTab({ booking, bookingId }) {
         const items = res.data?.charges || [];
         setCharges(items);
         setSelectedIds(new Set(items.map(c => c.id)));
+        const agencyReservationNumber = String(res.data?.agency_reservation_number || '').trim();
+        if (agencyReservationNumber) {
+          setBillingInfo(prev => prev.note ? prev : ({
+            ...prev,
+            note: `Acente rezervasyon no: ${agencyReservationNumber}`,
+          }));
+        }
       } catch (_e) { /* charge load failed — empty list is acceptable UX */ }
       setLoadingCharges(false);
     };
@@ -244,12 +254,12 @@ export function InvoiceTab({ booking, bookingId }) {
               <FormField label="E-posta" value={billingInfo.email} onChange={v => setBillingInfo(p => ({ ...p, email: v }))} placeholder="fatura@firma.com" />
             </div>
             <FormField label="Adres" value={billingInfo.address} onChange={v => setBillingInfo(p => ({ ...p, address: v }))} placeholder="Fatura adresi" />
-            <FormField label="Fatura Notu" value={billingInfo.note} onChange={v => setBillingInfo(p => ({ ...p, note: v }))} placeholder="Opsiyonel not" />
+            <FormField label="Fatura Notu" value={billingInfo.note} onChange={v => setBillingInfo(p => ({ ...p, note: v }))} placeholder="Acente rezervasyon numarası otomatik eklenir" />
           </div>
 
           <div className="text-sm font-semibold text-gray-700 flex items-center justify-between">
             <span>Faturaya Eklenecek Kalemler</span>
-            <span className="text-xs text-gray-500">{selectedIds.size}/{charges.length} {t('cm.pages_reservationdetail_DocumentTabs.secili_toplam')} {fmtTL(selectedTotal)} TL</span>
+            <span className="text-xs text-gray-500">{selectedIds.size}/{charges.length} {t('cm.pages_reservationdetail_DocumentTabs.secili_toplam')} {fmtCurrency(selectedTotal, currency)}</span>
           </div>
           {loadingCharges ? (
             <div className="flex items-center gap-2 text-sm text-gray-400"><Loader2 className="w-4 h-4 animate-spin" /> {t('cm.pages_reservationdetail_DocumentTabs.yukleniyor')}</div>
@@ -262,14 +272,14 @@ export function InvoiceTab({ booking, bookingId }) {
                     <div className="text-sm font-medium">{c.description}</div>
                     <div className="text-xs text-gray-400">{catLabels[c.category] || c.category} | {c.date}</div>
                   </div>
-                  <div className="text-sm font-bold text-gray-700">{fmtTL(c.amount)} TL</div>
+                  <div className="text-sm font-bold text-gray-700">{fmtCurrency(c.amount, currency)}</div>
                 </label>
               ))}
             </div>
           )}
 
           <Button onClick={generateInvoice} disabled={loading || selectedIds.size === 0} className="w-full h-9 text-sm bg-blue-600 hover:bg-blue-700 text-white" data-testid="generate-invoice-btn">
-            {loading ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <FileText className="w-4 h-4 mr-1" />} Fatura Olustur ({fmtTL(selectedTotal)} TL)
+            {loading ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <FileText className="w-4 h-4 mr-1" />} Fatura Olustur ({fmtCurrency(selectedTotal, currency)})
           </Button>
         </>
       ) : (

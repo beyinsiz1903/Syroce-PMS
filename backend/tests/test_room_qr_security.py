@@ -343,6 +343,70 @@ def test_renewed_session_sees_same_thread(client, mock_db, mock_dependencies):
     assert len(r1.json()["messages"]) == 2
     assert len(r2.json()["messages"]) == 2
 
+def test_guest_can_reply_after_staff_response_with_session_header(client, mock_db, mock_dependencies):
+    """Conversation replies use the booking-scoped guest session, not QR query t."""
+    with patch("domains.guest.messaging.guest_requests.add_guest_message", new_callable=AsyncMock) as add_message, \
+         patch("domains.guest.messaging.guest_requests.emit_guest_requests_ping", new_callable=AsyncMock):
+        add_message.return_value = {
+            "id": "follow-up-1",
+            "created_at": datetime.now(UTC),
+        }
+
+        response = client.post(
+            "/api/public/room-qr/t1/r1/thread/message",
+            json={"body": "Bir havlu daha rica edebilir miyim?"},
+            headers={"X-Guest-Session": "secret"},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["message"]["body"] == "Bir havlu daha rica edebilir miyim?"
+    add_message.assert_awaited_once_with(
+        tenant_id="t1",
+        room_id="r1",
+        property_id="p1",
+        room_number="101",
+        sender_type="guest",
+        body="Bir havlu daha rica edebilir miyim?",
+        booking_id="b1",
+        sender_name="Test Guest",
+    )
+    rate_limit_key = mock_dependencies["rl"].call_args.args[0]
+    assert rate_limit_key.endswith(":message")
+
+def test_renewed_guest_session_can_post_to_same_thread(client, mock_db, mock_dependencies):
+    with patch("domains.guest.messaging.guest_requests.add_guest_message", new_callable=AsyncMock) as add_message, \
+         patch("domains.guest.messaging.guest_requests.emit_guest_requests_ping", new_callable=AsyncMock):
+        add_message.return_value = {
+            "id": "follow-up-2",
+            "created_at": datetime.now(UTC),
+        }
+        response = client.post(
+            "/api/public/room-qr/t1/r1/thread/message",
+            json={"body": "Teşekkür ederim"},
+            headers={"X-Guest-Session": "secret2"},
+        )
+
+    assert response.status_code == 200
+    assert add_message.await_args.kwargs["booking_id"] == "b1"
+
+@pytest.mark.parametrize(
+    "session_token",
+    [None, "forged_123", "expired", "revoked", "missing_expiry"],
+)
+def test_guest_thread_reply_rejects_invalid_sessions(
+    client,
+    mock_db,
+    mock_dependencies,
+    session_token,
+):
+    headers = {"X-Guest-Session": session_token} if session_token else {}
+    response = client.post(
+        "/api/public/room-qr/t1/r1/thread/message",
+        json={"body": "Bu mesaj kaydedilmemeli"},
+        headers=headers,
+    )
+    assert response.status_code == 401
+
 def test_later_booking_cannot_see_previous_thread(client, mock_db, mock_dependencies):
     async def mock_bookings_new(*args, **kwargs):
         return {"id": "b_new", "property_id": "p1", "status": "checked_in"}

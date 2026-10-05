@@ -81,11 +81,7 @@ def _merge_date_ranges(events: list[ARIChangeEvent]) -> list[dict]:
 def _apply_restriction_precedence(payloads: list[dict]) -> dict:
     """Apply restriction precedence rules: close > open, latest explicit wins."""
     result = {}
-    operations = {
-        str(payload["operation"])
-        for payload in payloads
-        if payload.get("operation")
-    }
+    operations = {str(payload["operation"]) for payload in payloads if payload.get("operation")}
     if len(operations) > 1:
         raise ValueError("Restriction operations must be coalesced separately")
     if operations:
@@ -93,6 +89,9 @@ def _apply_restriction_precedence(payloads: list[dict]) -> dict:
         # buffer key includes this value. Preserve it through compaction so the
         # provider compiler cannot receive an ambiguous restriction delta.
         result["operation"] = operations.pop()
+    resend_tokens = [payload.get("force_resend_token") for payload in payloads if payload.get("force_resend_token")]
+    if resend_tokens:
+        result["force_resend_token"] = resend_tokens[-1]
     for p in payloads:
         if "stop_sell" in p:
             if p["stop_sell"] is True:

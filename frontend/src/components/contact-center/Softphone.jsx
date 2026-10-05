@@ -3,7 +3,7 @@
  *
  * Tasarım kararları (doktrin):
  *  - LAZY: Bu bileşen App'te ``React.lazy`` ile yüklenir; Twilio Voice SDK'sı da
- *    yalnızca operatör "Aktifleştir"e basınca CDN'den enjekte edilir — uygulama
+ *    yalnızca telefon konsolu açıldığında CDN'den enjekte edilir — uygulama
  *    açılışında ne SDK ne de mikrofon izni istenir (gizlilik + bundle maliyeti).
  *  - MIKROFON İZNİ AKTİVASYONDA: ``getUserMedia`` yalnızca açık kullanıcı
  *    eylemiyle çağrılır.
@@ -151,15 +151,19 @@ export default function Softphone({ user, hideLauncher = false }) {
       });
   }, []);
 
-  // Pre-load SDK on mount
+  // Telefon konsolu kullanıcı tarafından açılana kadar SDK/token/mikrofon durumu
+  // sorgulanmaz. Böylece İletişim Merkezi ve diğer PMS ekranları çağrı altyapısını
+  // açılış maliyetine dahil etmez.
   useEffect(() => {
-    if (!isStaff) return;
+    if (!isStaff || !open) return;
     loadTwilioVoiceSdk()
       .then(() => {
         setIsSdkReady(true);
       })
       .catch((err) => {
-        console.warn("[CC-VOICE] Twilio SDK preloading failed:", err);
+        console.warn("[CC-VOICE] Twilio SDK loading failed:", err);
+        setStatus("error");
+        setDetail("Telefon altyapısı yüklenemedi. Lütfen daha sonra tekrar deneyin.");
       });
 
     if (navigator.permissions && typeof navigator.permissions.query === "function") {
@@ -177,10 +181,10 @@ export default function Softphone({ user, hideLauncher = false }) {
           };
         })
         .catch((err) => {
-          console.warn("[CC-VOICE] Background mic permission query failed:", err);
+          console.warn("[CC-VOICE] Microphone permission query failed:", err);
         });
     }
-  }, [isStaff]);
+  }, [isStaff, open]);
 
   // Keep token fresh in background + visibility checks + sleep protection (only when drawer is open)
   useEffect(() => {
@@ -289,11 +293,11 @@ export default function Softphone({ user, hideLauncher = false }) {
   }, []);
 
   const updateAgentState = useCallback((newState) => {
+    const previousState = agentState;
+    const previousDuration = agentStateDuration;
     if (newState === "offline") {
       deactivate();
-      return;
-    }
-    if (newState === "ready") {
+    } else if (newState === "ready") {
       if (deviceRef.current) {
         try {
           deviceRef.current.register();
@@ -315,8 +319,18 @@ export default function Softphone({ user, hideLauncher = false }) {
     axios.post("/contact-center/agents/states", { state: newState })
       .catch((err) => {
         console.warn("[CC-VOICE] Updating agent state failed:", err);
+        setAgentState(previousState);
+        setAgentStateDuration(previousDuration);
+        setDetail("Operatör durumu kaydedilemedi; önceki durum geri yüklendi.");
+        if (previousState === "ready" && deviceRef.current) {
+          try {
+            deviceRef.current.register();
+          } catch (registerError) {
+            console.warn("[CC-VOICE] Restoring device registration failed:", registerError);
+          }
+        }
       });
-  }, [deactivate]);
+  }, [agentState, agentStateDuration, deactivate]);
 
   const fetchGuestInfo = useCallback((callSid) => {
     if (!callSid) return;
@@ -859,6 +873,7 @@ export default function Softphone({ user, hideLauncher = false }) {
                   await axios.post(`/contact-center/callbacks/${cbId}/assign`);
                 } catch (e) {
                   console.error(e);
+                  setDetail("Geri arama talebi size atanamadı; numara yine de arama için hazırlandı.");
                 }
               }} />
             </div>

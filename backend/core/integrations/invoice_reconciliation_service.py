@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 
 class InvoiceReconciliationReader(Protocol):
     """Read-only interface for reconciliation verification."""
+
     async def get_sale_status(self, uuid_str: str) -> dict: ...
     async def get_sale_details(self, uuid_str: str) -> dict: ...
 
@@ -20,13 +21,7 @@ class InvoiceReconciliationService:
     """Read-only reconciliation service for ambiguous dispatch results."""
 
     @staticmethod
-    async def execute_reconciliation(
-        tenant_id: str,
-        dispatch_id: str,
-        expected_version: int,
-        worker_id: str,
-        reader: InvoiceReconciliationReader | None = None
-    ) -> bool:
+    async def execute_reconciliation(tenant_id: str, dispatch_id: str, expected_version: int, worker_id: str, reader: InvoiceReconciliationReader | None = None) -> bool:
         """
         Executes a two-channel reconciliation lookup to verify the existence of an invoice
         after an ambiguous POST failure.
@@ -226,7 +221,7 @@ class InvoiceReconciliationService:
                     )
                     return False
 
-                delay_mins = min(15, 2 * (2 ** sync_model.reconciliation_attempt_count))
+                delay_mins = min(15, 2 * (2**sync_model.reconciliation_attempt_count))
                 updates["next_reconciliation_at"] = now + timedelta(minutes=delay_mins)
                 updates["reconciliation_note"] = f"Valid 404 received. Count: {new_not_found}"
 
@@ -264,7 +259,7 @@ class InvoiceReconciliationService:
             )
             return False
 
-        delay_mins = min(15, 2 * (2 ** sync_model.reconciliation_attempt_count))
+        delay_mins = min(15, 2 * (2**sync_model.reconciliation_attempt_count))
         await InvoiceSyncRepository.transition_reconciliation_state(
             tenant_id,
             dispatch_id,

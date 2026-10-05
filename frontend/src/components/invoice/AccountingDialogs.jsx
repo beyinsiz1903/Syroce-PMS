@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import axios from 'axios';
 import { useTranslation } from 'react-i18next';
@@ -9,14 +9,38 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useCurrency } from '@/context/CurrencyContext';
+import { formatCurrency } from '@/lib/currency';
+import { useBusinessDate } from '@/hooks/useBusinessDate';
+import {
+  INVENTORY_CATEGORY_OPTIONS,
+  INVENTORY_UNIT_OPTIONS,
+  inventoryCategoryLabel,
+  inventoryUnitLabel,
+} from '@/lib/accountingLabels';
+
+export const DEFAULT_EXPENSE_VAT_RATE = 20;
+export const createBankAccountInitialState = (currency) => ({
+  name: '', bank_name: '', account_number: '', iban: '', currency, balance: 0,
+});
 
 export const ExpenseDialog = ({ open, onClose, suppliers }) => {
   const { t } = useTranslation();
-  const { amount: fmtMoney } = useCurrency();
+  const { code: tenantCurrency } = useCurrency();
+  const businessDate = useBusinessDate();
   const [form, setForm] = useState({
-    category: 'supplies', description: '', amount: 0, vat_rate: 18,
-    date: new Date().toISOString().split('T')[0], supplier_id: '', payment_method: 'cash', notes: ''
+    category: 'supplies', description: '', amount: 0, vat_rate: DEFAULT_EXPENSE_VAT_RATE,
+    date: businessDate, supplier_id: '', payment_method: 'cash', notes: '', currency: tenantCurrency
   });
+
+  useEffect(() => {
+    if (open) {
+      setForm((current) => (
+        !current.description && !(Number(current.amount) > 0)
+          ? { ...current, date: businessDate, currency: tenantCurrency }
+          : current
+      ));
+    }
+  }, [businessDate, open, tenantCurrency]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -30,11 +54,12 @@ export const ExpenseDialog = ({ open, onClose, suppliers }) => {
         supplier_id: form.supplier_id && form.supplier_id !== 'none' ? form.supplier_id : null,
         payment_method: form.payment_method || null,
         notes: form.notes || null,
+        currency: form.currency,
       };
       await axios.post('/accounting/expenses', payload);
       toast.success(t('messages.success.saved') || 'Kaydedildi');
       onClose();
-      setForm({ category: 'supplies', description: '', amount: 0, vat_rate: 18, date: new Date().toISOString().split('T')[0], supplier_id: '', payment_method: 'cash', notes: '' });
+      setForm({ category: 'supplies', description: '', amount: 0, vat_rate: DEFAULT_EXPENSE_VAT_RATE, date: businessDate, supplier_id: '', payment_method: 'cash', notes: '', currency: tenantCurrency });
     } catch (error) {
       toast.error(error.response?.data?.detail || t('messages.error.saveFailed') || 'Kaydedilemedi');
     }
@@ -68,7 +93,7 @@ export const ExpenseDialog = ({ open, onClose, suppliers }) => {
             <Label>{t('common.description', 'Description')}</Label>
             <Input value={form.description} onChange={(e) => setForm({...form, description: e.target.value})} required />
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-3 gap-4">
             <div>
               <Label>{t('invoice.amountExclVAT', 'Amount (excl. VAT)')}</Label>
               <Input type="number" step="0.01" value={form.amount} onChange={(e) => setForm({...form, amount: parseFloat(e.target.value)})} required />
@@ -84,6 +109,18 @@ export const ExpenseDialog = ({ open, onClose, suppliers }) => {
                   <SelectItem value="10">10%</SelectItem>
                   <SelectItem value="18">18%</SelectItem>
                   <SelectItem value="20">20%</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>{t('invoice.currency', 'Para Birimi')}</Label>
+              <Select value={form.currency} onValueChange={(currency) => setForm({...form, currency})}>
+                <SelectTrigger data-testid="expense-currency"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="TRY">TRY</SelectItem>
+                  <SelectItem value="EUR">EUR</SelectItem>
+                  <SelectItem value="USD">USD</SelectItem>
+                  <SelectItem value="GBP">GBP</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -108,7 +145,7 @@ export const ExpenseDialog = ({ open, onClose, suppliers }) => {
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="cash">{t('pms.cash', 'Cash')}</SelectItem>
-                <SelectItem value="card">{t('pms.creditCard', 'Card')}</SelectItem>
+                <SelectItem value="card">{t('pms.card', 'Card')}</SelectItem>
                 <SelectItem value="bank_transfer">{t('pms.bankTransfer', 'Bank Transfer')}</SelectItem>
               </SelectContent>
             </Select>
@@ -116,7 +153,7 @@ export const ExpenseDialog = ({ open, onClose, suppliers }) => {
           <div className="pt-4 border-t">
             <div className="flex justify-between text-lg font-bold">
               <span>{t('invoice.totalInclVAT', 'Total (incl. VAT)')}:</span>
-              <span>{fmtMoney((form.amount || 0) * (1 + (form.vat_rate || 0) / 100), { decimals: 2 })}</span>
+              <span>{formatCurrency((form.amount || 0) * (1 + (form.vat_rate || 0) / 100), form.currency, { decimals: 2 })}</span>
             </div>
           </div>
           <Button type="submit" className="w-full">{t('invoice.recordExpense', 'Record Expense')}</Button>
@@ -126,7 +163,7 @@ export const ExpenseDialog = ({ open, onClose, suppliers }) => {
   );
 };
 
-export const SupplierDialog = ({ open, onClose }) => {
+export const SupplierDialog = ({ open, onClose, onCreated }) => {
   const { t } = useTranslation();
   const [form, setForm] = useState({
     name: '', tax_office: '', tax_number: '', email: '', phone: '', address: '', category: 'general'
@@ -135,7 +172,7 @@ export const SupplierDialog = ({ open, onClose }) => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      await axios.post('/accounting/suppliers', {
+      const response = await axios.post('/accounting/suppliers', {
         name: form.name,
         tax_office: form.tax_office || null,
         tax_number: form.tax_number || null,
@@ -144,9 +181,10 @@ export const SupplierDialog = ({ open, onClose }) => {
         address: form.address || null,
         category: form.category || 'general',
       });
+      if (!response.data?.id) throw new Error('Tedarikçi kaydı doğrulanamadı.');
       toast.success(t('messages.success.saved') || 'Kaydedildi');
-      onClose();
       setForm({ name: '', tax_office: '', tax_number: '', email: '', phone: '', address: '', category: 'general' });
+      if (onCreated) onCreated(response.data); else onClose();
     } catch (error) {
       toast.error(error.response?.data?.detail || t('messages.error.saveFailed') || 'Kaydedilemedi');
     }
@@ -196,9 +234,18 @@ export const SupplierDialog = ({ open, onClose }) => {
 
 export const BankAccountDialog = ({ open, onClose }) => {
   const { t } = useTranslation();
-  const [form, setForm] = useState({
-    name: '', bank_name: '', account_number: '', iban: '', currency: 'TRY', balance: 0
-  });
+  const { code: tenantCurrency } = useCurrency();
+  const [form, setForm] = useState(() => createBankAccountInitialState(tenantCurrency));
+
+  useEffect(() => {
+    if (open) {
+      setForm((current) => (
+        !current.name && !current.bank_name && !current.account_number && !(Number(current.balance) > 0)
+          ? { ...current, currency: tenantCurrency }
+          : current
+      ));
+    }
+  }, [open, tenantCurrency]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -208,12 +255,12 @@ export const BankAccountDialog = ({ open, onClose }) => {
         bank_name: form.bank_name,
         account_number: form.account_number,
         iban: form.iban || null,
-        currency: form.currency || 'TRY',
+        currency: form.currency || tenantCurrency,
         balance: Number.isFinite(form.balance) ? form.balance : 0,
       });
       toast.success(t('messages.success.saved') || 'Kaydedildi');
       onClose();
-      setForm({ name: '', bank_name: '', account_number: '', iban: '', currency: 'TRY', balance: 0 });
+      setForm(createBankAccountInitialState(tenantCurrency));
     } catch (error) {
       toast.error(error.response?.data?.detail || t('messages.error.saveFailed') || 'Kaydedilemedi');
     }
@@ -251,6 +298,7 @@ export const BankAccountDialog = ({ open, onClose }) => {
                   <SelectItem value="USD">USD</SelectItem>
                   <SelectItem value="EUR">EUR</SelectItem>
                   <SelectItem value="TRY">TRY</SelectItem>
+                  <SelectItem value="GBP">GBP</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -268,8 +316,9 @@ export const BankAccountDialog = ({ open, onClose }) => {
 
 export const InventoryDialog = ({ open, onClose }) => {
   const { t } = useTranslation();
+  const { code: tenantCurrency } = useCurrency();
   const [form, setForm] = useState({
-    name: '', category: 'supplies', unit: 'piece', quantity: 0, unit_cost: 0, reorder_level: 10, sku: ''
+    name: '', category: 'supplies', unit: 'piece', quantity: 0, unit_cost: 0, reorder_level: 10, sku: '', currency: tenantCurrency
   });
 
   const handleSubmit = async (e) => {
@@ -283,10 +332,11 @@ export const InventoryDialog = ({ open, onClose }) => {
         unit_cost: Number.isFinite(form.unit_cost) ? form.unit_cost : 0,
         reorder_level: Number.isFinite(form.reorder_level) ? form.reorder_level : 0,
         sku: form.sku || null,
+        currency: form.currency,
       });
       toast.success(t('messages.success.saved') || 'Kaydedildi');
       onClose();
-      setForm({ name: '', category: 'supplies', unit: 'piece', quantity: 0, unit_cost: 0, reorder_level: 10, sku: '' });
+      setForm({ name: '', category: 'supplies', unit: 'piece', quantity: 0, unit_cost: 0, reorder_level: 10, sku: '', currency: tenantCurrency });
     } catch (error) {
       toast.error(error.response?.data?.detail || t('messages.error.saveFailed') || 'Kaydedilemedi');
     }
@@ -306,25 +356,51 @@ export const InventoryDialog = ({ open, onClose }) => {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <Label>{t('common.category', 'Category')}</Label>
-              <Input value={form.category} onChange={(e) => setForm({...form, category: e.target.value})} required />
+              <Select value={form.category} onValueChange={(category) => setForm({...form, category})}>
+                <SelectTrigger data-testid="inventory-category"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {INVENTORY_CATEGORY_OPTIONS.map((category) => (
+                    <SelectItem key={category} value={category}>{inventoryCategoryLabel(t, category)}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div>
               <Label>SKU</Label>
               <Input value={form.sku} onChange={(e) => setForm({...form, sku: e.target.value})} />
             </div>
           </div>
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-4 gap-4">
             <div>
-              <Label>{t('common.quantity', 'Quantity')}</Label>
+              <Label>{t('invoice.quantity', 'Quantity')}</Label>
               <Input type="number" step="0.01" value={form.quantity} onChange={(e) => setForm({...form, quantity: parseFloat(e.target.value)})} required />
             </div>
             <div>
               <Label>{t('invoice.unit', 'Unit')}</Label>
-              <Input value={form.unit} onChange={(e) => setForm({...form, unit: e.target.value})} required />
+              <Select value={form.unit} onValueChange={(unit) => setForm({...form, unit})}>
+                <SelectTrigger data-testid="inventory-unit"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {INVENTORY_UNIT_OPTIONS.map((unit) => (
+                    <SelectItem key={unit} value={unit}>{inventoryUnitLabel(t, unit)}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div>
               <Label>{t('invoice.unitPrice', 'Unit Price')}</Label>
               <Input type="number" step="0.01" value={form.unit_cost} onChange={(e) => setForm({...form, unit_cost: parseFloat(e.target.value)})} required />
+            </div>
+            <div>
+              <Label>{t('invoice.currency', 'Para Birimi')}</Label>
+              <Select value={form.currency} onValueChange={(currency) => setForm({...form, currency})}>
+                <SelectTrigger data-testid="inventory-currency"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="TRY">TRY</SelectItem>
+                  <SelectItem value="EUR">EUR</SelectItem>
+                  <SelectItem value="USD">USD</SelectItem>
+                  <SelectItem value="GBP">GBP</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
           <div>

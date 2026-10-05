@@ -16,6 +16,9 @@ const HOST_RULES = {
 };
 const JANDARMA_SOAP_ENDPOINT = "https://vatandas.jandarma.gov.tr/KBS_Tesis_Servis/SrvShsYtkTml.svc";
 let hasSessionPassword = false;
+let hasPersistentPassword = false;
+const SESSION_PASSWORD_KEY = "jandarmaWebServicePassword";
+const PERSISTENT_PASSWORD_KEY = "jandarmaPersistentWebServicePassword";
 
 function fillProfileForm(a, cfg) {
   const c = cfg || {};
@@ -42,9 +45,14 @@ async function load() {
     if (isLegacyFlat && a === "polis") fillProfileForm(a, raw);
     else fillProfileForm(a, raw[a]);
   }
-  const { jandarmaWebServicePassword } = await chrome.storage.session.get("jandarmaWebServicePassword");
+  const { jandarmaWebServicePassword } = await chrome.storage.session.get(SESSION_PASSWORD_KEY);
+  const persistent = await chrome.storage.local.get(PERSISTENT_PASSWORD_KEY);
   hasSessionPassword = Boolean(jandarmaWebServicePassword);
-  $("jandarma_password").placeholder = jandarmaWebServicePassword ? "Bu oturum icin yuklendi" : "Yeni web servis sifresi";
+  hasPersistentPassword = Boolean(persistent[PERSISTENT_PASSWORD_KEY]);
+  $("jandarma_rememberPassword").checked = hasPersistentPassword;
+  $("jandarma_password").placeholder = hasPersistentPassword
+    ? "Bu cihazda güvenle hatırlanıyor"
+    : hasSessionPassword ? "Bu oturum için yüklendi" : "Yeni web servis şifresi";
 }
 
 function buildProfile(a, status) {
@@ -91,8 +99,12 @@ function buildProfile(a, status) {
   const facilityCode = a === "jandarma" ? $("jandarma_facilityCode").value.trim() : "";
   const liveConfirmed = a === "jandarma" && $("jandarma_liveConfirmed").checked;
   if (mode === "jandarma-soap") {
-    if (!/^\d{11}$/.test(userTc) || !/^\d{6}$/.test(facilityCode)) {
-      status.textContent = "Jandarma: Yetkili T.C. 11, tesis kodu 6 hane olmalidir.";
+    if (endpoint !== JANDARMA_SOAP_ENDPOINT) {
+      status.textContent = "Jandarma: Resmi SOAP modunda servis adresi değiştirilemez.";
+      return null;
+    }
+    if (!/^\d{11}$/.test(userTc) || !/^\d{1,19}$/.test(facilityCode)) {
+      status.textContent = "Jandarma: Yetkili T.C. 11 hane, tesis kodu yalnız rakamlardan oluşmalıdır.";
       return null;
     }
     if (!liveConfirmed) {
@@ -117,16 +129,52 @@ async function save() {
 
   await chrome.storage.local.set({ kbsConfig: cfg });
   const password = $("jandarma_password").value;
+  const rememberPassword = $("jandarma_rememberPassword").checked;
+  let sessionPassword = "";
   if (password) {
-    await chrome.storage.session.set({ jandarmaWebServicePassword: password });
+    await chrome.storage.session.set({ [SESSION_PASSWORD_KEY]: password });
     hasSessionPassword = true;
+    sessionPassword = password;
+  } else if (rememberPassword && hasSessionPassword) {
+    // Kullanıcı Chrome kapanmadan önce "Bu resepsiyon cihazında hatırla"
+    // seçeneğini açarsa şifreyi yeniden yazmasını istemeyelim. Parola zaten
+    // extension'ın session deposunda; yalnızca açık cihaz-onayıyla kalıcı
+    // cihaz deposuna yükseltilir.
+    const session = await chrome.storage.session.get(SESSION_PASSWORD_KEY);
+    sessionPassword = session[SESSION_PASSWORD_KEY] || "";
   }
-  status.textContent = cfg.jandarma.mode === "jandarma-soap" && !password && !hasSessionPassword
+  if (rememberPassword && sessionPassword) {
+    await chrome.storage.local.set({ [PERSISTENT_PASSWORD_KEY]: sessionPassword });
+    hasPersistentPassword = Boolean(sessionPassword);
+  } else if (!rememberPassword) {
+    await chrome.storage.local.remove(PERSISTENT_PASSWORD_KEY);
+    hasPersistentPassword = false;
+  }
+  status.textContent = cfg.jandarma.mode === "jandarma-soap" && !password && !hasSessionPassword && !hasPersistentPassword
     ? "Ayarlar kaydedildi. Bu oturum icin web servis sifresini de girin."
     : "Kaydedildi.";
+}
+
+async function testJandarmaConnection() {
+  const status = $("status");
+  status.textContent = "Jandarma bağlantısı doğrulanıyor...";
+  // Test, storage'daki son ayarları kullanır; kullanıcı değişiklik yaptıysa
+  // önce güvenli biçimde kaydet.
+  await save();
+  if (!String(status.textContent).startsWith("Kaydedildi")) return;
+  chrome.runtime.sendMessage({ type: "KBS_TEST_JANDARMA_CONNECTION" }, (result) => {
+    if (chrome.runtime.lastError || !result) {
+      status.textContent = "Jandarma bağlantı testi çalıştırılamadı.";
+      return;
+    }
+    status.textContent = result.ok
+      ? `Jandarma bağlantısı doğrulandı (${result.code || "Basarili"}).`
+      : `Jandarma bağlantısı reddedildi: ${result.error || "bilinmeyen_hata"}`;
+  });
 }
 
 document.addEventListener("DOMContentLoaded", () => {
   load();
   $("save").addEventListener("click", save);
+  $("jandarma_test_connection").addEventListener("click", testJandarmaConnection);
 });

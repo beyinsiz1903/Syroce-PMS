@@ -515,7 +515,7 @@ export default function ControlPlane({
           {/* Header */}
           <div className="flex items-center justify-between mb-6">
             <div>
-              <h1 className="text-lg font-semibold text-gray-900 tracking-tight">Control Plane</h1>
+              <h1 className="text-lg font-semibold text-gray-900 tracking-tight flex items-center gap-3">Control Plane {tenant && <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 text-xs font-semibold rounded-full border border-indigo-200">🏨 {tenant.name}</span>}</h1>
               <p className="text-xs text-gray-600 mt-0.5">{t('cm.pages_ControlPlane.ops_merkezi_kanal_sagligi_deploy_dora_en')}</p>
             </div>
           </div>
@@ -533,27 +533,27 @@ export default function ControlPlane({
               </TabsTrigger>
               <TabsTrigger value="health" className="data-[state=active]:bg-gray-50 data-[state=active]:text-gray-900 text-gray-600 text-sm px-4" data-testid="tab-health">
                 <Activity className="h-3.5 w-3.5 mr-2" />
-                Saglik
+                Sağlık
               </TabsTrigger>
               <TabsTrigger value="channel-health" className="data-[state=active]:bg-gray-50 data-[state=active]:text-gray-900 text-gray-600 text-sm px-4" data-testid="tab-channel-health">
                 <Gauge className="h-3.5 w-3.5 mr-2" />
-                Kanal Sagligi
+                Kanal Sağlığı
               </TabsTrigger>
               <TabsTrigger value="feed" className="data-[state=active]:bg-gray-50 data-[state=active]:text-gray-900 text-gray-600 text-sm px-4" data-testid="tab-feed">
                 <Radio className="h-3.5 w-3.5 mr-2" />
-                Canli
+                Canlı
               </TabsTrigger>
               <TabsTrigger value="weekly-proof" className="data-[state=active]:bg-gray-50 data-[state=active]:text-gray-900 text-gray-600 text-sm px-4" data-testid="tab-weekly-proof">
                 <Award className="h-3.5 w-3.5 mr-2" />
-                Deger Kaniti
+                Değer Kanıtı
               </TabsTrigger>
               <TabsTrigger value="deploys" className="data-[state=active]:bg-gray-50 data-[state=active]:text-gray-900 text-gray-600 text-sm px-4" data-testid="tab-deploys">
                 <Rocket className="h-3.5 w-3.5 mr-2" />
-                Deploy
+                Sürüm Yönetimi
               </TabsTrigger>
               <TabsTrigger value="tech-debt" className="data-[state=active]:bg-gray-50 data-[state=active]:text-gray-900 text-gray-600 text-sm px-4" data-testid="tab-tech-debt">
                 <Flame className="h-3.5 w-3.5 mr-2" />
-                Teknik Borc
+                Teknik Borç
               </TabsTrigger>
             </TabsList>
 

@@ -10,6 +10,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from core.database import db
+from core.tenant_db import get_db_for_tenant
 
 logger = logging.getLogger(__name__)
 
@@ -66,9 +67,14 @@ async def flush_buffer():
     _last_flush = now
 
     for tenant_id, events in snapshot.items():
+        # The buffer is process-wide: the request that triggers this flush can
+        # belong to a different tenant than the buffered usage event.  Bind
+        # each write to its event tenant instead of the current request's db
+        # proxy, which correctly rejects cross-tenant writes.
         for event_type, count in events.items():
             try:
-                await db.usage_daily.update_one(
+                tenant_db = get_db_for_tenant(tenant_id)
+                await tenant_db.usage_daily.update_one(
                     {"tenant_id": tenant_id, "date": date_key, "event_type": event_type},
                     {
                         "$inc": {"count": count},
@@ -90,20 +96,27 @@ async def flush_buffer():
 async def get_tenant_usage_summary(tenant_id: str, days: int = 30) -> dict[str, Any]:
     """Get aggregated usage summary for a tenant."""
     cutoff = (datetime.now(UTC) - timedelta(days=days)).strftime("%Y-%m-%d")
+    tenant_db = get_db_for_tenant(tenant_id)
 
     pipeline = [
         {"$match": {"tenant_id": tenant_id, "date": {"$gte": cutoff}}},
         {"$group": {"_id": "$event_type", "total": {"$sum": "$count"}}},
         {"$sort": {"total": -1}},
     ]
-    results = await db.usage_daily.aggregate(pipeline).to_list(100)
+    results = await tenant_db.usage_daily.aggregate(pipeline).to_list(100)
 
     summary = {r["_id"]: r["total"] for r in results}
 
     # Current resource counts
-    rooms = await db.rooms.count_documents({"tenant_id": tenant_id})
-    users = await db.users.count_documents({"tenant_id": tenant_id})
-    guests = await db.guests.count_documents({"tenant_id": tenant_id})
+    rooms = await tenant_db.rooms.count_documents({"tenant_id": tenant_id})
+    users = await tenant_db.users.count_documents({"tenant_id": tenant_id})
+    active_users = await tenant_db.users.count_documents({"tenant_id": tenant_id, "is_active": {"$ne": False}})
+    guests = await tenant_db.guests.count_documents({"tenant_id": tenant_id})
+    latest = await tenant_db.usage_daily.find_one(
+        {"tenant_id": tenant_id, "date": {"$gte": cutoff}},
+        {"_id": 0, "date": 1, "updated_at": 1},
+        sort=[("date", -1), ("updated_at", -1)],
+    )
 
     return {
         "tenant_id": tenant_id,
@@ -112,8 +125,10 @@ async def get_tenant_usage_summary(tenant_id: str, days: int = 30) -> dict[str, 
         "current_resources": {
             "rooms": rooms,
             "users": users,
+            "active_users": active_users,
             "guests": guests,
         },
+        "last_activity_at": (latest or {}).get("updated_at") or (latest or {}).get("date"),
     }
 
 

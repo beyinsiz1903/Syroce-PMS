@@ -19,7 +19,9 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPBearer
 
+from core.business_date_service import stamp_open_business_date
 from core.database import db
+from core.report_cache import invalidate_financial_report_caches
 from core.security import get_current_user
 from models.schemas import User
 from modules.pms_core.role_permission_service import RolePermissionService, require_op
@@ -29,7 +31,7 @@ _role_perm = RolePermissionService()
 
 def _enforce(role: str, op: str):
     """Bug CU (v60) — Departments/Reports/Rates/POS RBAC zorunlu."""
-    _role_perm.enforce_permission(role, op)
+    _role_perm.enforce_permission(getattr(role, "role", role), op, getattr(role, "granted_permissions", None))
 
 
 try:
@@ -101,7 +103,7 @@ async def update_pos_auto_post_settings(settings_data: dict, current_user: User 
     """
     Update POS auto-post settings
     """
-    _enforce(current_user.role, "manage_pos_settings")  # Bug CU
+    _enforce(current_user, "manage_pos_settings")  # Bug CU
     await db.pos_settings.update_one(
         {"tenant_id": current_user.tenant_id, "type": "auto_post"},
         {
@@ -152,7 +154,9 @@ async def manual_pos_sync(
                 "created_by": current_user.id,
             }
 
+            await stamp_open_business_date(db, current_user.tenant_id, folio_charge)
             await db.folio_charges.insert_one(folio_charge)
+            invalidate_financial_report_caches(current_user.tenant_id)
 
             # Mark as posted
             await db.pos_charges.update_one({"_id": charge["_id"]}, {"$set": {"posted_to_folio": True, "posted_at": datetime.now(UTC).isoformat()}})
@@ -174,7 +178,7 @@ async def manual_pos_post(post_data: dict, current_user: User = Depends(get_curr
     """
     Manual post of POS charge via QR/barcode (fallback when integration fails)
     """
-    _enforce(current_user.role, "post_charge")  # Bug CU
+    _enforce(current_user, "post_charge")  # Bug CU
     charge_id = post_data.get("charge_id")
     folio_id = post_data.get("folio_id")
     method = post_data.get("method", "manual")
@@ -209,7 +213,9 @@ async def manual_pos_post(post_data: dict, current_user: User = Depends(get_curr
         "created_by": current_user.id,
     }
 
+    await stamp_open_business_date(db, current_user.tenant_id, folio_charge)
     await db.folio_charges.insert_one(folio_charge)
+    invalidate_financial_report_caches(current_user.tenant_id)
 
     # Mark as posted
     await db.pos_charges.update_one({"_id": charge["_id"]}, {"$set": {"posted_to_folio": True, "posted_at": datetime.now(UTC).isoformat(), "post_method": method}})

@@ -9,6 +9,9 @@ import { Badge } from "@/components/ui/badge";
 import { Calendar, RefreshCw, Filter, ArrowLeft, List } from "lucide-react";
 import { toast } from "sonner";
 import { useTranslation } from 'react-i18next';
+import { folioLabel, reservationLabel, roomLabel } from '@/utils/displayIdentifiers';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
+import { formatCurrencyBreakdown } from '@/lib/reportCurrency';
 
 const getDateOffset = (offsetDays) => {
   const d = new Date();
@@ -86,8 +89,8 @@ const NightAuditLogs = ({ user, tenant, onLogout }) => {
           <table className="w-full text-xs">
             <thead>
               <tr className="border-b text-left text-gray-600">
-                <th className="py-1 pr-2">Booking ID</th>
-                <th className="py-1 pr-2">Room</th>
+                <th className="py-1 pr-2">Rezervasyon</th>
+                <th className="py-1 pr-2">Oda</th>
                 <th className="py-1 pr-2">Folio</th>
                 <th className="py-1 pr-2 text-right">Fee Posted</th>
                 <th className="py-1 pr-2 text-right">Amount</th>
@@ -96,12 +99,12 @@ const NightAuditLogs = ({ user, tenant, onLogout }) => {
             <tbody>
               {details.map((d) => (
                 <tr key={d.booking_id} className="border-b last:border-0">
-                  <td className="py-1 pr-2 font-mono text-[11px]">{d.booking_id}</td>
-                  <td className="py-1 pr-2">{d.room_number || d.room_id || "-"}</td>
-                  <td className="py-1 pr-2 font-mono text-[11px]">{d.folio_id || "-"}</td>
+                  <td className="py-1 pr-2">{reservationLabel(d)}</td>
+                  <td className="py-1 pr-2">{roomLabel(d)}</td>
+                  <td className="py-1 pr-2">{folioLabel(d)}</td>
                   <td className="py-1 pr-2 text-right">{d.fee_posted ? t("common.yes") : t("common.no")}</td>
                   <td className="py-1 pr-2 text-right">
-                    {d.fee_amount ? `€${d.fee_amount.toFixed(2)}` : "-"}
+                    {d.fee_amount ? formatCurrency(d.fee_amount, d.currency || cachedTenantCurrency()) : "-"}
                   </td>
                 </tr>
               ))}
@@ -232,7 +235,7 @@ const NightAuditLogs = ({ user, tenant, onLogout }) => {
                   <div className="flex justify-between">
                     <span>Toplam Charges</span>
                     <span className="font-semibold">
-                      €{stats.total_charges.toFixed ? stats.total_charges.toFixed(2) : stats.total_charges}
+                      {formatCurrency(stats.total_charges, stats.currency || tenant?.currency || cachedTenantCurrency())}
                     </span>
                   </div>
                   <div className="flex justify-between">
@@ -299,7 +302,13 @@ const NightAuditLogs = ({ user, tenant, onLogout }) => {
                             <td className="py-2 pr-3 text-right">{log.rooms_processed ?? "-"}</td>
                             <td className="py-2 pr-3 text-right">{log.charges_posted ?? "-"}</td>
                             <td className="py-2 pr-3 text-right">
-                              {log.total_amount != null ? `€${log.total_amount.toFixed ? log.total_amount.toFixed(2) : log.total_amount}` : "-"}
+                              {log.total_amount != null || log.projected_total_by_currency || log.total_room_revenue_by_currency
+                                ? formatCurrencyBreakdown(
+                                    log.projected_total_by_currency || log.total_room_revenue_by_currency,
+                                    log.total_amount,
+                                    log.currency || tenant?.currency || cachedTenantCurrency(),
+                                  )
+                                : "-"}
                             </td>
                             <td className="py-2 pr-3 text-right">
                               <Button

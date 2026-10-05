@@ -7,8 +7,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { TrendingUp, TrendingDown, BarChart3, Plus, Save, ArrowRight, Info, Target, ArrowUpRight, ArrowDownRight, RefreshCw, CheckCircle2, XCircle } from 'lucide-react';
-import { fmt, fmtPct, tomorrow, dayAfter } from './helpers';
+import { fmtPct, tomorrow, dayAfter } from './helpers';
 import { REC_STYLES, SummaryCard } from './shared';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 const AnalysisTab = ({
   user,
   tenant,
@@ -27,6 +28,8 @@ const AnalysisTab = ({
     commission_pct: 0
   });
   const [result, setResult] = useState(null);
+  const currency = result?.currency || tenant?.currency || cachedTenantCurrency();
+  const money = value => formatCurrency(value, currency);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const handleChange = (field, value) => {
@@ -94,11 +97,11 @@ const AnalysisTab = ({
               <Input type="number" min={1} value={form.rooms_requested} onChange={e => handleChange('rooms_requested', e.target.value)} />
             </div>
             <div>
-              <Label className="text-xs">{t('displacement.proposedRate', 'Proposed Rate (₺)')}</Label>
+              <Label className="text-xs">{t('displacement.proposedRate', `Proposed Rate (${currency})`)}</Label>
               <Input type="number" min={0} step={0.01} value={form.proposed_rate} onChange={e => handleChange('proposed_rate', e.target.value)} />
             </div>
             <div>
-              <Label className="text-xs">{t('displacement.ancillary', 'Ancillary / Room / Night (₺)')}</Label>
+              <Label className="text-xs">{t('displacement.ancillary', `Ancillary / Room / Night (${currency})`)}</Label>
               <Input type="number" min={0} step={0.01} value={form.ancillary_per_room} onChange={e => handleChange('ancillary_per_room', e.target.value)} />
             </div>
             <div>
@@ -138,12 +141,12 @@ const AnalysisTab = ({
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
-            <SummaryCard label={t('displacement.displacedRevenue', 'Displaced Revenue')} value={`₺${fmt(result.summary.total_displaced_revenue)}`} icon={TrendingDown} color="text-red-600" />
-            <SummaryCard label={t('displacement.proposedRevenue', 'Proposed Revenue')} value={`₺${fmt(result.summary.total_proposed_revenue)}`} icon={TrendingUp} color="text-blue-600" />
-            <SummaryCard label={t('displacement.ancillaryRevenue', 'Ancillary Revenue')} value={`₺${fmt(result.summary.total_ancillary_revenue)}`} icon={Plus} color="text-indigo-600" />
-            <SummaryCard label={t('displacement.netDisplacement', 'Net Displacement')} value={`₺${fmt(result.summary.net_displacement)}`} icon={result.summary.net_displacement >= 0 ? ArrowUpRight : ArrowDownRight} color={result.summary.net_displacement >= 0 ? 'text-emerald-600' : 'text-red-600'} />
+            <SummaryCard label={t('displacement.displacedRevenue', 'Displaced Revenue')} value={money(result.summary.total_displaced_revenue)} icon={TrendingDown} color="text-red-600" />
+            <SummaryCard label={t('displacement.proposedRevenue', 'Proposed Revenue')} value={money(result.summary.total_proposed_revenue)} icon={TrendingUp} color="text-blue-600" />
+            <SummaryCard label={t('displacement.ancillaryRevenue', 'Ancillary Revenue')} value={money(result.summary.total_ancillary_revenue)} icon={Plus} color="text-indigo-600" />
+            <SummaryCard label={t('displacement.netDisplacement', 'Net Displacement')} value={money(result.summary.net_displacement)} icon={result.summary.net_displacement >= 0 ? ArrowUpRight : ArrowDownRight} color={result.summary.net_displacement >= 0 ? 'text-emerald-600' : 'text-red-600'} />
             <SummaryCard label={t('displacement.roi', 'ROI')} value={fmtPct(result.summary.roi_pct)} icon={Target} color="text-indigo-600" />
-            <SummaryCard label={t('displacement.revparDelta', 'RevPAR Delta')} value={`₺${fmt(result.summary.revpar_delta)}`} icon={BarChart3} color="text-cyan-600" />
+            <SummaryCard label={t('displacement.revparDelta', 'RevPAR Delta')} value={money(result.summary.revpar_delta)} icon={BarChart3} color="text-cyan-600" />
           </div>
 
           <Card>
@@ -176,11 +179,11 @@ const AnalysisTab = ({
                           </span>
                         </td>
                         <td className="py-2 pr-3 text-right text-gray-600">{d.available_rooms}</td>
-                        <td className="py-2 pr-3 text-right font-medium">₺{fmt(d.expected_transient_rate)}</td>
-                        <td className="py-2 pr-3 text-right text-red-600">₺{fmt(d.displaced_revenue)}</td>
-                        <td className="py-2 pr-3 text-right text-blue-600">₺{fmt(d.proposed_revenue)}</td>
+                        <td className="py-2 pr-3 text-right font-medium">{money(d.expected_transient_rate)}</td>
+                        <td className="py-2 pr-3 text-right text-red-600">{money(d.displaced_revenue)}</td>
+                        <td className="py-2 pr-3 text-right text-blue-600">{money(d.proposed_revenue)}</td>
                         <td className={`py-2 pr-3 text-right font-semibold ${d.net_displacement >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                          ₺{fmt(d.net_displacement)}
+                          {money(d.net_displacement)}
                         </td>
                         <td className="py-2 pr-3 text-center">
                           {d.recommendation === 'accept' ? <CheckCircle2 className="w-4 h-4 text-emerald-500 inline" /> : <XCircle className="w-4 h-4 text-red-500 inline" />}
@@ -200,7 +203,7 @@ const AnalysisTab = ({
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                 <div className="p-3 bg-gray-50 rounded-lg">
                   <p className="text-gray-500 text-xs">{t('displacement.historicalAdr', 'Historical ADR')}</p>
-                  <p className="text-lg font-bold">₺{fmt(result.summary.historical_adr)}</p>
+                  <p className="text-lg font-bold">{money(result.summary.historical_adr)}</p>
                 </div>
                 <div className="p-3 bg-gray-50 rounded-lg">
                   <p className="text-gray-500 text-xs">{t('displacement.cancelRate', 'Cancel Rate')}</p>
@@ -212,7 +215,7 @@ const AnalysisTab = ({
                 </div>
                 <div className="p-3 bg-gray-50 rounded-lg">
                   <p className="text-gray-500 text-xs">{t('displacement.oppCost', 'Opportunity Cost')}</p>
-                  <p className="text-lg font-bold text-amber-600">₺{fmt(result.summary.total_opportunity_cost)}</p>
+                  <p className="text-lg font-bold text-amber-600">{money(result.summary.total_opportunity_cost)}</p>
                 </div>
               </div>
             </CardContent>

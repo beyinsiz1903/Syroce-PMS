@@ -1,4 +1,5 @@
 import { t } from "i18next";
+import { reservationLabel, roomLabel } from '@/utils/displayIdentifiers';
 /**
  * Conflict Queue Page (CM-Hardening Turu #1c, May 2026)
  * ======================================================
@@ -109,8 +110,8 @@ export default function ConflictQueuePage({
       return data;
     },
     onSuccess: data => {
-      toast.success(`Oda atandı (${data.room_id})`, {
-        description: `Rezervasyon ${data.booking_id} kuyruktan çıkarıldı.`
+      toast.success(`Oda atandı (${roomLabel(data)})`, {
+        description: `${reservationLabel(data)} kuyruktan çıkarıldı.`
       });
       qc.invalidateQueries({
         queryKey: QK_LIST

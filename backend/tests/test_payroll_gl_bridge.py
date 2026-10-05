@@ -14,6 +14,7 @@ idempotency unique constraint so the dedup path is exercised end-to-end.
 """
 from __future__ import annotations
 
+import asyncio
 from types import SimpleNamespace
 
 import pytest
@@ -146,6 +147,12 @@ def _patch(monkeypatch):
         return None
 
     monkeypatch.setattr(gl_posting, "ensure_gl_idem_index", _noop)
+    monkeypatch.setattr(pg, "ensure_gl_idem_index", _noop)
+    lock = asyncio.Lock()
+    async def atomic(database, client, tenant, resource, callback):
+        async with lock:
+            return await callback(database)
+    monkeypatch.setattr(pg, "run_atomic", atomic)
     monkeypatch.setattr(gl, "log_audit_event", _noop_audit)
     return fake
 
@@ -168,6 +175,41 @@ async def _set_mapping(user=None):
         ),
         current_user=user or _user("finance"),
     )
+
+
+async def test_v2_full_post_and_idempotency(_patch):
+    from test_payroll_completion import MAPPING, sample
+
+    from domains.hr.salary import json_values
+    await _seed_coa()
+    for code, kind in [("770.02", "expense"), ("361", "liability"), ("196", "asset"), ("369", "liability")]:
+        await gl.create_account(gl.AccountIn(code=code, name=code, type=kind), current_user=_user())
+    await pg.set_mapping(pg.MappingIn(**MAPPING), current_user=_user())
+    _patch.payroll_runs.docs.append({**json_values(sample()), "tenant_id": TENANT, "id": "v2",
+                                   "status": "locked", "period_month": "2026-10"})
+    first = await pg.post_payroll("v2", current_user=_user())
+    second = await pg.post_payroll("v2", current_user=_user())
+    assert first["entry"]["id"] == second["entry"]["id"]
+    assert len(_patch.gl_journal_entries.docs) == 1
+    lines = first["entry"]["lines"]
+    assert len(lines) == 6
+    assert next(x for x in lines if x["account_code"] == "361")["credit"] == 20537.5
+    assert next(x for x in lines if x["account_code"] == "196")["credit"] == 500
+    assert next(x for x in lines if x["account_code"] == "335")["credit"] == 38550.03
+
+
+async def test_v2_without_new_mapping_cannot_post(_patch):
+    from test_payroll_completion import sample
+
+    from domains.hr.salary import json_values
+    await _seed_coa()
+    await _set_mapping()
+    _patch.payroll_runs.docs.append({**json_values(sample()), "tenant_id": TENANT, "id": "v2",
+                                   "status": "locked", "period_month": "2026-10"})
+    with pytest.raises(HTTPException) as error:
+        await pg.post_payroll("v2", current_user=_user())
+    assert error.value.status_code == 409
+    assert not _patch.gl_journal_entries.docs
 
 
 def _seed_run(fake, *, run_id="run-1", status="locked", gross=10000.0, net=7500.0,
@@ -286,6 +328,59 @@ async def test_post_zero_gross_rejected(_patch):
     assert exc.value.status_code == 400
 
 
+async def test_revision_requires_linked_parent_reversal(_patch):
+    await _seed_coa()
+    await _set_mapping()
+    _seed_run(_patch, gross=10, net=7.15)
+    parent = (await pg.post_payroll("run-1", current_user=_user("finance")))["entry"]
+    _seed_run(_patch, run_id="revision", gross=325, net=232.35)
+    _patch.payroll_runs.docs[-1]["parent_run_id"] = "run-1"
+    with pytest.raises(HTTPException) as exc:
+        await pg.post_payroll("revision", current_user=_user("finance"))
+    assert exc.value.status_code == 409
+    assert len(_patch.gl_journal_entries.docs) == 1
+    _patch.gl_journal_entries.docs.append({"id": "reverse", "tenant_id": TENANT, "reverses_entry_id": parent["id"]})
+    result = await pg.post_payroll("revision", current_user=_user("finance"))
+    retry = await pg.post_payroll("revision", current_user=_user("finance"))
+    assert result["entry"]["id"] == retry["entry"]["id"]
+    assert result["entry"]["total_debit"] == result["entry"]["total_credit"] == 325
+    assert len(_patch.gl_journal_entries.docs) == 3
+
+
+async def test_revision_checks_posted_grandparent(_patch):
+    await _seed_coa()
+    await _set_mapping()
+    _seed_run(_patch)
+    await pg.post_payroll("run-1", current_user=_user("finance"))
+    _seed_run(_patch, run_id="middle")
+    _patch.payroll_runs.docs[-1]["parent_run_id"] = "run-1"
+    _seed_run(_patch, run_id="latest")
+    _patch.payroll_runs.docs[-1]["parent_run_id"] = "middle"
+    with pytest.raises(HTTPException) as exc:
+        await pg.post_payroll("latest", current_user=_user("finance"))
+    assert exc.value.status_code == 409
+    assert len(_patch.gl_journal_entries.docs) == 1
+
+
+async def test_revision_without_posted_parent_can_post(_patch):
+    await _seed_coa()
+    await _set_mapping()
+    _seed_run(_patch)
+    _seed_run(_patch, run_id="revision")
+    _patch.payroll_runs.docs[-1]["parent_run_id"] = "run-1"
+    assert (await pg.post_payroll("revision", current_user=_user("finance")))["entry"]
+
+
+async def test_revision_rejects_cross_tenant_parent(_patch):
+    _seed_run(_patch, tenant="other")
+    _seed_run(_patch, run_id="revision")
+    _patch.payroll_runs.docs[-1]["parent_run_id"] = "run-1"
+    with pytest.raises(HTTPException) as exc:
+        await pg.post_payroll("revision", current_user=_user("finance"))
+    assert exc.value.status_code == 409
+    assert not _patch.gl_journal_entries.docs
+
+
 async def test_post_tenant_isolated(_patch):
     await _seed_coa()
     await _set_mapping()
@@ -303,3 +398,51 @@ async def test_status_reports_posted(_patch):
     st = await pg.posting_status("run-1", current_user=_user("finance"))
     assert st["posted"] is True
     assert st["entry"]["idempotency_key"] == "payroll:run-1"
+
+
+async def test_audit_same_run_concurrent_retry_posts_once(_patch, monkeypatch):
+    await _seed_coa()
+    await _set_mapping()
+    _seed_run(_patch)
+    await asyncio.gather(*(pg.post_payroll("run-1", current_user=_user()) for _ in range(2)))
+    assert len(_patch.gl_journal_entries.docs) == 1
+
+
+async def test_audit_child_then_parent_must_not_double_post(_patch):
+    await _seed_coa()
+    await _set_mapping()
+    _seed_run(_patch, run_id="parent")
+    _seed_run(_patch, run_id="child")
+    _patch.payroll_runs.docs[-1]["parent_run_id"] = "parent"
+    await pg.post_payroll("child", current_user=_user())
+    with pytest.raises(HTTPException):
+        await pg.post_payroll("parent", current_user=_user())
+
+
+async def test_audit_concurrent_sibling_revisions_must_not_double_post(_patch, monkeypatch):
+    await _seed_coa()
+    await _set_mapping()
+    _seed_run(_patch, run_id="parent")
+    for rid in ("a", "b"):
+        _seed_run(_patch, run_id=rid)
+        _patch.payroll_runs.docs[-1]["parent_run_id"] = "parent"
+    await asyncio.gather(*(pg.post_payroll(rid, current_user=_user()) for rid in ("a", "b")), return_exceptions=True)
+    assert len(_patch.gl_journal_entries.docs) == 1
+
+
+async def test_audit_lost_post_response_retry_does_not_duplicate(_patch, monkeypatch):
+    await _seed_coa()
+    await _set_mapping()
+    _seed_run(_patch)
+    original = pg.post_journal_entry
+
+    async def lose_response(*args, **kwargs):
+        await original(*args, **kwargs)
+        raise ConnectionError("QA response lost after committed journal")
+
+    monkeypatch.setattr(pg, "post_journal_entry", lose_response)
+    with pytest.raises(ConnectionError):
+        await pg.post_payroll("run-1", current_user=_user())
+    monkeypatch.setattr(pg, "post_journal_entry", original)
+    await pg.post_payroll("run-1", current_user=_user())
+    assert len(_patch.gl_journal_entries.docs) == 1

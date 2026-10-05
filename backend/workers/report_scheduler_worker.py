@@ -13,7 +13,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
@@ -46,11 +46,12 @@ async def _tick() -> None:
                 sch.get("send_time", "08:00"),
                 sch.get("day_of_week"),
                 sch.get("day_of_month"),
+                sch.get("timezone") or "Europe/Istanbul",
             )
         except Exception as exc:
             logger.warning("[report-scheduler] next_run compute failed (%s): %s", sch.get("_id"), exc)
             # next_run hesaplanamıyorsa sonsuz tekrar olmaması için 1 dk ileri sar.
-            next_run = (datetime.now(UTC).replace(microsecond=0)).isoformat()
+            next_run = (datetime.now(UTC).replace(microsecond=0) + timedelta(minutes=1)).isoformat()
 
         claimed = await raw_db.report_schedules.find_one_and_update(
             {

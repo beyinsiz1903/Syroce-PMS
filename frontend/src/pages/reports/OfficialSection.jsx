@@ -4,13 +4,16 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Calendar, Loader2, Search, Download, Printer, Shield } from 'lucide-react';
 import { SectionHeader } from './ReportHelpers';
-import { GuestTable } from './GuestSection';
+import { GuestTable, MoneyCell } from './GuestSection';
+import { reservationLabel } from '@/utils/displayIdentifiers';
+import { formatCurrencyBreakdown } from '@/lib/reportCurrency';
+import GuestPrivacyNotice from './GuestPrivacyNotice';
 
 export const OfficialSection = ({
-  officialDate, setOfficialDate, officialRows, officialLoading,
+  officialDate, setOfficialDate, officialRows, officialPrivacy, officialLoading,
   officialError, officialSearch, setOfficialSearch,
   fetchOfficialGuests, handleOfficialExportCsv, handleOfficialPrint,
-  filteredOfficialRows, officialTotalGuests, officialTotalRevenue,
+  filteredOfficialRows, officialTotalGuests, officialRevenueByCurrency,
 }) => (
   <div className="space-y-4" data-testid="section-official">
     <SectionHeader title="Resmi Müşteri Listesi (Maliye Raporu)" description="Maliye ve resmi denetimler için seçtiğiniz tarihte otelde konaklayan tüm misafirlerin listesi" />
@@ -26,10 +29,10 @@ export const OfficialSection = ({
             Listeyi Getir
           </Button>
           <div className="flex items-center gap-2 md:ml-auto">
-            <Button variant="outline" size="sm" onClick={handleOfficialExportCsv} disabled={officialLoading || !officialRows.length} data-testid="official-csv-btn">
+            <Button variant="outline" size="sm" onClick={handleOfficialExportCsv} disabled={officialLoading || !filteredOfficialRows.length} data-testid="official-csv-btn">
               <Download className="w-3.5 h-3.5 mr-1.5" />CSV İndir
             </Button>
-            <Button variant="outline" size="sm" onClick={handleOfficialPrint} disabled={officialLoading || !officialRows.length} data-testid="official-print-btn">
+            <Button variant="outline" size="sm" onClick={handleOfficialPrint} disabled={officialLoading || !filteredOfficialRows.length} data-testid="official-print-btn">
               <Printer className="w-3.5 h-3.5 mr-1.5" />Yazdır
             </Button>
           </div>
@@ -41,23 +44,27 @@ export const OfficialSection = ({
       <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">{officialError}</div>
     )}
 
+    {officialPrivacy?.server_side_enforced && (
+      <div data-testid="official-privacy-summary"><GuestPrivacyNotice privacy={officialPrivacy} /></div>
+    )}
+
     {officialRows.length > 0 && (
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <div className="p-3 bg-sky-50 rounded-lg border border-sky-100 text-center">
-          <p className="text-xs text-sky-600 font-medium">Toplam Kayıt</p>
-          <p className="text-xl font-bold text-slate-900">{officialRows.length}</p>
+          <p className="text-xs text-sky-600 font-medium">Gösterilen / Toplam Kayıt</p>
+          <p className="text-xl font-bold text-slate-900">{filteredOfficialRows.length} / {officialRows.length}</p>
         </div>
         <div className="p-3 bg-emerald-50 rounded-lg border border-emerald-100 text-center">
           <p className="text-xs text-emerald-600 font-medium">Toplam Kişi</p>
           <p className="text-xl font-bold text-emerald-800">{officialTotalGuests}</p>
         </div>
         <div className="p-3 bg-amber-50 rounded-lg border border-amber-100 text-center">
-          <p className="text-xs text-amber-600 font-medium">Toplam Tutar</p>
-          <p className="text-xl font-bold text-amber-800">{officialTotalRevenue.toLocaleString('tr-TR', { style: 'currency', currency: 'TRY' })}</p>
+          <p className="text-xs text-amber-600 font-medium">Konaklama Toplamı</p>
+          <p className="text-sm font-bold text-amber-800">{formatCurrencyBreakdown(officialRevenueByCurrency)}</p>
         </div>
         <div className="p-3 bg-indigo-50 rounded-lg border border-indigo-100 text-center">
           <p className="text-xs text-indigo-600 font-medium">Seçili Tarih</p>
-          <p className="text-xl font-bold text-slate-900">{new Date(officialDate).toLocaleDateString('tr-TR')}</p>
+          <p className="text-xl font-bold text-slate-900">{new Date(`${officialDate}T12:00:00`).toLocaleDateString('tr-TR')}</p>
         </div>
       </div>
     )}
@@ -72,7 +79,7 @@ export const OfficialSection = ({
     <Card>
       <CardHeader className="pb-2">
         <CardTitle className="text-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
-          <span>{officialDate} tarihi için konaklayan misafirler</span>
+          <span>{new Date(`${officialDate}T12:00:00`).toLocaleDateString('tr-TR')} tarihinde konaklayan misafirler</span>
           {officialRows.length > 0 && (
             <span className="text-xs text-gray-500 flex gap-3 flex-wrap">
               <span>{filteredOfficialRows.length} kayıt gösteriliyor</span>
@@ -99,17 +106,19 @@ export const OfficialSection = ({
                 <tr><td colSpan={7} className="py-12 text-center"><Loader2 className="w-5 h-5 animate-spin text-sky-500 mx-auto mb-2" /><span className="text-gray-400 text-xs">Yükleniyor...</span></td></tr>
               ) : filteredOfficialRows.length > 0 ? filteredOfficialRows.map((r, i) => (
                 <tr key={r.booking_id || i} className="border-b hover:bg-sky-50/30 transition-colors">
-                  <td className="px-3 py-2"><div className="font-medium text-gray-800">{r.guest_name || 'Misafir'}</div><div className="text-[10px] text-gray-400">Rez: {r.booking_id}</div></td>
+                  <td className="px-3 py-2"><div className="font-medium text-gray-800">{r.guest_name || 'Misafir'}</div><div className="text-[10px] text-gray-400">Rez: {reservationLabel(r)}</div></td>
                   <td className="px-3 py-2"><div className="text-[11px] text-gray-700">TCKN: {r.national_id || '-'}</div><div className="text-[11px] text-gray-500">Pasaport: {r.passport_number || '-'}</div></td>
                   <td className="px-3 py-2"><div className="text-[11px] text-gray-700">{r.country || '-'}</div><div className="text-[11px] text-gray-500">{r.city || ''}</div></td>
                   <td className="px-3 py-2 font-medium">{r.room_number || '-'}</td>
                   <td className="px-3 py-2 text-[11px] text-gray-700"><div>{r.check_in ? new Date(r.check_in).toLocaleDateString('tr-TR') : '-'}</div><div>{r.check_out ? new Date(r.check_out).toLocaleDateString('tr-TR') : '-'}</div></td>
                   <td className="px-3 py-2 text-center">{(r.adults || 0)} + {(r.children || 0)}</td>
-                  <td className="px-3 py-2 text-right font-medium">{Number(r.total_amount || 0).toLocaleString('tr-TR', { style: 'currency', currency: 'TRY' })}</td>
+                  <td className="px-3 py-2 text-right font-medium"><MoneyCell amount={r.total_amount} currency={r.currency} /></td>
                 </tr>
               )) : (
                 <tr><td colSpan={7} className="py-10 text-center text-gray-400 text-xs">
-                  {officialRows.length === 0 ? 'Listeyi getirmek için tarih seçip "Listeyi Getir" butonuna tıklayın.' : 'Arama kriterlerine uygun kayıt bulunamadı.'}
+                  {officialRows.length === 0
+                    ? (officialPrivacy ? 'Seçili tarihte konaklayan misafir bulunamadı.' : 'Listeyi getirmek için tarih seçip "Listeyi Getir" butonuna tıklayın.')
+                    : 'Arama kriterlerine uygun kayıt bulunamadı.'}
                 </td></tr>
               )}
             </tbody>
@@ -120,17 +129,17 @@ export const OfficialSection = ({
   </div>
 );
 
-export const PoliceSection = ({ filteredGuests, searchGuest, setSearchGuest }) => (
+export const PoliceSection = ({ filteredGuests, searchGuest, setSearchGuest, reportDate }) => (
   <div data-testid="section-police">
     <Card className="mb-5 border-sky-200 bg-sky-50/30">
       <CardContent className="p-4 flex items-start gap-3">
         <Shield className="w-5 h-5 text-sky-600 flex-shrink-0 mt-0.5" />
         <div>
           <h4 className="font-semibold text-gray-900 text-sm">Polis Bildirimi (Emniyet Listesi)</h4>
-          <p className="text-xs text-gray-600 mt-0.5">Emniyet Müdürlüğü'ne bildirilmesi gereken konaklayan misafir listesi. TC Kimlik No ve pasaport bilgileri dahildir.</p>
+          <p className="text-xs text-gray-600 mt-0.5">{reportDate} tarihinde fiilen konaklayan ve Emniyet Müdürlüğü'ne bildirilmesi gereken misafirler. TC Kimlik No ve pasaport alanları yalnızca yetkili kullanıcıya gösterilir.</p>
         </div>
       </CardContent>
     </Card>
-    <GuestTable guests={filteredGuests} title="Polis Bildirimi Listesi" showId={true} searchGuest={searchGuest} setSearchGuest={setSearchGuest} />
+    <GuestTable guests={filteredGuests} title={`Polis Bildirimi Listesi · ${reportDate}`} showId showAmount={false} showEmail={false} searchGuest={searchGuest} setSearchGuest={setSearchGuest} />
   </div>
 );

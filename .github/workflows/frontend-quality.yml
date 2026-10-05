@@ -19,7 +19,7 @@ jobs:
     # so it runs fast and gates every push/PR.
     theme-guard:
         name: Theme Guard (dark-coverage + brand-drift)
-        runs-on: ubuntu-latest
+        runs-on: ubuntu-24.04
         timeout-minutes: 5
         steps:
             - uses: actions/checkout@v5
@@ -32,7 +32,7 @@ jobs:
 
     # ============ KNIP DEAD-CODE GUARD (SOFT GATE) ============
     knip:
-        runs-on: ubuntu-latest
+        runs-on: ubuntu-24.04
         steps:
             - uses: actions/checkout@v5
             - name: Set up Node.js
@@ -54,7 +54,7 @@ jobs:
     # on PRs. This job blocks merges if any frontend unit test fails.
     vitest:
         name: Frontend Unit Tests + Coverage (Vitest)
-        runs-on: ubuntu-latest
+        runs-on: ubuntu-24.04
         timeout-minutes: 10
         steps:
             - uses: actions/checkout@v5
@@ -71,9 +71,10 @@ jobs:
             - name: Run vitest with coverage thresholds (hard gate)
               run: cd frontend && yarn test:coverage
             - name: Upload frontend coverage report
-              uses: actions/upload-artifact@v5
+              uses: actions/upload-artifact@v6
               if: always()
               with:
+                  retention-days: 1
                   name: frontend-coverage
                   path: frontend/coverage/
 
@@ -82,7 +83,7 @@ jobs:
     # timezone-sensitive unit tests and Expo native dependency/schema checks.
     mobile-unit:
         name: Mobile Pilot Readiness (config + TS + tests + Expo Doctor)
-        runs-on: ubuntu-latest
+        runs-on: ubuntu-24.04
         timeout-minutes: 10
         steps:
             - uses: actions/checkout@v5
@@ -99,7 +100,7 @@ jobs:
 
     # ============ E2E SMOKE (HARD GATE on PR) ============
     e2e-smoke:
-        runs-on: ubuntu-latest
+        runs-on: ubuntu-24.04
         timeout-minutes: 25
         # NOTE: MongoDB is intentionally NOT a `services:` entry — it must run
         # as a single-node replica set (`--replSet`) so that the multi-document
@@ -152,7 +153,7 @@ jobs:
                       sleep 2
                   done
             - name: Set up Python
-              uses: actions/setup-python@v5
+              uses: actions/setup-python@v6
               with:
                   python-version: '3.11'
                   cache: 'pip'
@@ -186,11 +187,11 @@ jobs:
               run: cd frontend && yarn install --ignore-engines --frozen-lockfile
             - name: Install Playwright browsers
               run: |
-                  # GitHub runner'inda Playwright ile alakasiz Microsoft apt kaynaklari
-                  # (packages.microsoft.com) 403 donup `apt-get update`'i dusuruyor; bu yuzden
-                  # `--with-deps` patliyor. Bu kaynaklari kaldir ki gercek Playwright deps kurulsun.
+                  # Unrelated Microsoft/Google apt feeds can fail with 403 or hash mismatch.
+                  # Playwright downloads its own Chromium; retain Ubuntu dependency feeds
+                  # and all apt signature/hash verification.
                   sudo find /etc/apt/sources.list.d -type f \( -name '*.list' -o -name '*.sources' \) \
-                      -exec grep -lE 'packages\.microsoft\.com' {} + 2>/dev/null | xargs -r sudo rm -f || true
+                      -exec grep -lE 'packages\.microsoft\.com|dl\.google\.com/linux/chrome(-stable)?/deb' {} + 2>/dev/null | xargs -r sudo rm -f || true
                   cd frontend && yarn e2e:install
             - name: Build + serve frontend
               env:
@@ -206,9 +207,16 @@ jobs:
             - name: Run e2e smoke
               run: cd frontend && yarn e2e
             - name: Upload Playwright report
-              uses: actions/upload-artifact@v5
+              uses: actions/upload-artifact@v6
               if: always()
               with:
                   name: playwright-report
                   path: frontend/playwright-report/
+                  retention-days: 14
+            - name: Upload critical route performance measurements
+              uses: actions/upload-artifact@v6
+              if: always()
+              with:
+                  name: critical-route-performance
+                  path: frontend/test-results/**/critical-route-performance.json
                   retention-days: 14

@@ -22,7 +22,9 @@ from domains.channel_manager.providers.exely.provider import ExelyProvider
 from domains.channel_manager.providers.exely.response_parser import parse_ari_update_rs
 from domains.channel_manager.providers.exely.soap_builder import (
     build_ari_update_rq,
+    build_rate_amount_batch_rq,
     build_rate_amount_notif_rq,
+    build_restriction_batch_rq,
 )
 from domains.channel_manager.providers.hotelrunner.schemas import ProviderResult
 
@@ -36,6 +38,8 @@ SOAP_WARNING = b"""<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope
 <s:Body><OTA_HotelAvailNotifRS xmlns="http://www.opentravel.org/OTA/2003/05" Version="1.17">
 <Success/><Warnings><Warning Code="438">limited</Warning></Warnings>
 </OTA_HotelAvailNotifRS></s:Body></s:Envelope>"""
+
+SOAP_UNMAPPED_WARNING = SOAP_WARNING.replace(b'Code="438"', b'Code="783"')
 
 SOAP_REJECTED = b"""<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
 <s:Body><OTA_HotelAvailNotifRS xmlns="http://www.opentravel.org/OTA/2003/05" Version="1.17">
@@ -94,6 +98,40 @@ class TestExelyGoldenXML:
         assert 'ArrivalDateBased="true"' in xml
         assert 'MinMaxMessageType="SetMinLOS"' in xml
 
+    def test_rate_batch_combines_room_types_and_periods(self):
+        xml = build_rate_amount_batch_rq(
+            "u",
+            "p",
+            "H",
+            [
+                {"room_type_code": "R1", "rate_plan_code": "BAR", "start_date": "2030-01-01", "end_date": "2030-01-05", "rate_amount": 100, "currency": "USD"},
+                {"room_type_code": "R2", "rate_plan_code": "NRF", "start_date": "2030-01-01", "end_date": "2030-01-05", "rate_amount": 90, "currency": "USD"},
+            ],
+        )
+        assert xml.count("<ns0:RateAmountMessage>") == 2
+        assert 'InvTypeCode="R1" RatePlanCode="BAR"' in xml
+        assert 'InvTypeCode="R2" RatePlanCode="NRF"' in xml
+        assert 'AmountAfterTax="90.00" CurrencyCode="USD"' in xml
+
+    def test_restriction_batch_supports_all_certification_controls(self):
+        base = {"room_type_code": "R1", "rate_plan_code": "BAR", "start_date": "2030-01-01", "end_date": "2030-01-05"}
+        xml = build_restriction_batch_rq(
+            "u",
+            "p",
+            "H",
+            [
+                {**base, "operation": "stop_sell", "value": False},
+                {**base, "operation": "min_los_arrival", "value": 2},
+                {**base, "operation": "cta", "value": True},
+                {**base, "operation": "ctd", "value": False},
+            ],
+        )
+        assert xml.count("<ns0:AvailStatusMessage>") == 4
+        assert 'ArrivalDateBased="true"' in xml
+        assert 'Restriction="Arrival"' in xml
+        assert 'Restriction="Departure"' in xml
+        assert 'Status="Open"' in xml
+
 
 class TestExelyARIResponseContract:
     def test_explicit_success(self):
@@ -104,6 +142,12 @@ class TestExelyARIResponseContract:
         assert result["success"] is True
         assert result["result_class"] == "WARNING_SUCCESS"
         assert result["warning_codes"] == ["438"]
+
+    def test_unmapped_room_or_rate_warning_is_not_acknowledged(self):
+        result = parse_ari_update_rs(SOAP_UNMAPPED_WARNING)
+        assert result["success"] is False
+        assert result["result_class"] == "REJECTED"
+        assert result["warning_codes"] == ["783"]
 
     def test_errors_are_rejected(self):
         result = parse_ari_update_rs(SOAP_REJECTED)
@@ -118,6 +162,59 @@ class TestExelyARIResponseContract:
 
 
 class TestExelySingleWriteProvider:
+    @pytest.mark.asyncio
+    async def test_availability_batch_makes_one_transport_call(self):
+        provider = ExelyProvider(username="u", password="p", hotel_code="H", max_retries=0)
+        provider._transport.send_soap = AsyncMock(return_value=SOAP_SUCCESS)
+        result = await provider.push_ari_operation(
+            operation="availability_batch",
+            room_type_code="",
+            rate_plan_code="",
+            start_date="",
+            end_date="",
+            value=[
+                {"room_type_code": "R1", "rate_plan_code": "RP", "start_date": "2030-01-01", "end_date": "2030-12-31", "availability": 8},
+                {"room_type_code": "R2", "rate_plan_code": "RP", "start_date": "2030-01-01", "end_date": "2030-12-31", "availability": 8},
+            ],
+        )
+        assert result.success is True
+        provider._transport.send_soap.assert_awaited_once()
+        sent_xml = provider._transport.send_soap.await_args.args[0]
+        assert sent_xml.count(":AvailStatusMessage BookingLimit=") == 2
+        assert 'Start="2030-01-01"' in sent_xml
+        assert 'End="2030-12-31"' in sent_xml
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("operation", "messages", "xml_marker"),
+        [
+            (
+                "rate_batch",
+                [{"room_type_code": "R1", "rate_plan_code": "BAR", "start_date": "2030-01-01", "end_date": "2030-01-05", "rate_amount": 100.0, "currency": "USD"}],
+                "RateAmountMessage",
+            ),
+            (
+                "restriction_batch",
+                [{"room_type_code": "R1", "rate_plan_code": "BAR", "start_date": "2030-01-01", "end_date": "2030-01-05", "operation": "min_los_arrival", "value": 2}],
+                'ArrivalDateBased="true"',
+            ),
+        ],
+    )
+    async def test_certification_batches_make_one_transport_call(self, operation, messages, xml_marker):
+        provider = ExelyProvider(username="u", password="p", hotel_code="H", max_retries=0)
+        provider._transport.send_soap = AsyncMock(return_value=SOAP_SUCCESS)
+        result = await provider.push_ari_operation(
+            operation=operation,
+            room_type_code="",
+            rate_plan_code="",
+            start_date="",
+            end_date="",
+            value=messages,
+        )
+        assert result.success is True
+        provider._transport.send_soap.assert_awaited_once()
+        assert xml_marker in provider._transport.send_soap.await_args.args[0]
+
     @pytest.mark.asyncio
     async def test_one_operation_makes_one_transport_call(self):
         provider = ExelyProvider(username="u", password="p", hotel_code="H", max_retries=5)
@@ -175,6 +272,24 @@ class TestExelyDurableDelivery:
         assert result.state == "dry_run"
         assert result.provider_write_count == 0
 
+    @pytest.mark.parametrize(
+        ("operation", "message"),
+        [
+            (
+                "rate_batch",
+                {"room_type_code": "R", "rate_plan_code": "RP", "start_date": "2030-01-01", "end_date": "2030-01-05", "rate_amount": 100.0, "currency": "USD"},
+            ),
+            (
+                "restriction_batch",
+                {"room_type_code": "R", "rate_plan_code": "RP", "start_date": "2030-01-01", "end_date": "2030-01-05", "operation": "min_los_arrival", "value": 2},
+            ),
+        ],
+    )
+    def test_certification_batches_pass_durable_validation(self, operation, message):
+        result = preview_exely_ari(operation, {"tenant_id": "T", "property_id": "P", "value": [message]})
+        assert result.state == "dry_run"
+        assert result.error_code == ""
+
     def test_operation_identity_is_distinct_from_payload_fingerprint(self):
         first = preview_exely_ari(
             "availability",
@@ -203,6 +318,53 @@ class TestExelyDurableDelivery:
         assert result.state == "confirmed"
         assert result.provider_write_count == 1
         provider.push_ari_operation.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_batch_delivery_is_validated_persisted_and_written_once(self):
+        provider = AsyncMock()
+        provider.push_ari_operation.return_value = ProviderResult(
+            success=True,
+            metadata={"provider_status_class": "SUCCESS", "provider_write_count": 1},
+        )
+        messages = [
+            {
+                "room_type_code": "R1",
+                "rate_plan_code": "RP",
+                "start_date": "2030-01-01",
+                "end_date": "2030-01-05",
+                "availability": 0,
+            },
+            {
+                "room_type_code": "R2",
+                "rate_plan_code": "RP",
+                "start_date": "2030-01-01",
+                "end_date": "2030-01-05",
+                "availability": 8,
+            },
+        ]
+        with (
+            patch("domains.channel_manager.providers.exely.ari_delivery._prepare_delivery", new=AsyncMock(return_value=(True, None))),
+            patch("domains.channel_manager.providers.exely.ari_delivery._mark_sending", new=AsyncMock(return_value=True)),
+            patch("domains.channel_manager.providers.exely.ari_delivery._finish", new=AsyncMock(return_value=True)),
+        ):
+            result = await deliver_exely_ari(
+                "T",
+                "availability_batch",
+                {"property_id": "P", "value": messages, "operation_identity": "manual-save-1"},
+                provider=provider,
+                write_enabled=True,
+            )
+        assert result.success is True
+        assert result.provider_write_count == 1
+        provider.push_ari_operation.assert_awaited_once_with(
+            operation="availability_batch",
+            room_type_code="",
+            rate_plan_code="",
+            start_date="",
+            end_date="",
+            value=messages,
+            currency="TRY",
+        )
 
     @pytest.mark.asyncio
     async def test_timeout_is_ambiguous_and_never_retried(self):
@@ -310,6 +472,30 @@ class TestExelyCanonicalOutbox:
         assert [event.payload["operation"] for event in captured] == ["availability", "stop_sell", "cta"]
         assert all(event.target_provider == "exely" for event in captured)
 
+    @pytest.mark.asyncio
+    async def test_explicit_resend_token_reaches_each_durable_event(self):
+        captured = []
+
+        async def fake_publish(event):
+            captured.append(event)
+            return {"durable": True}
+
+        with patch("domains.channel_manager.providers.exely.ari_publish.publish_ari_event", side_effect=fake_publish):
+            await enqueue_exely_ari_update(
+                "T",
+                "P",
+                "R",
+                "RP",
+                "2030-01-01",
+                "2030-01-02",
+                source_service="test",
+                rate_amount=100,
+                stop_sell=False,
+                force_resend_token="manual-save-1",
+            )
+        assert len(captured) == 2
+        assert all(event.payload["force_resend_token"] == "manual-save-1" for event in captured)
+
     def test_compiler_preserves_explicit_restriction_operation(self):
         delta = compile_delta_exely(
             {
@@ -375,6 +561,33 @@ class TestExelyCanonicalOutbox:
             status = await process_ack(change_set, result, "OUT")
         assert status == "manual_review"
         assert update.await_args.args[1] == "manual_review"
+
+    @pytest.mark.asyncio
+    async def test_exely_identical_delivery_in_progress_is_safely_skipped(self):
+        change_set = {
+            "id": "CS",
+            "tenant_id": "T",
+            "property_id": "P",
+            "provider": "exely",
+            "change_scope": "availability",
+            "outbound_attempt_count": 1,
+            "compacted_payload": {"availability": 7},
+        }
+        result = ARIProviderResult(
+            success=False,
+            provider="exely",
+            error="EXELY_ARI_DELIVERY_IN_PROGRESS",
+            delivery_state="blocked",
+            provider_write_count=0,
+        )
+        with (
+            patch("domains.channel_manager.ari.ack_service.repo.insert_outbound_log", new=AsyncMock()),
+            patch("domains.channel_manager.ari.ack_service.repo.update_change_set_status", new=AsyncMock()) as update,
+        ):
+            status = await process_ack(change_set, result, "OUT")
+        assert status == "skipped"
+        assert update.await_args.args[1] == "skipped"
+        assert update.await_args.kwargs["inc_attempt"] is False
 
     def test_active_exely_mutation_paths_use_canonical_delivery(self):
         from pathlib import Path

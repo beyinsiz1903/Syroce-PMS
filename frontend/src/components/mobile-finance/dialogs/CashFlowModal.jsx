@@ -15,6 +15,12 @@ import { Wallet, CreditCard, TrendingUp, AlertTriangle, FileText, DollarSign, Ar
 export default function CashFlowModal(props) {
   const { cashFlowData, cashFlowModalOpen, formatCurrency, setCashFlowModalOpen } = props;
   const { t } = useTranslation();
+  const formatTotals = (totals, fallback = 0, currency) => {
+    const entries = Object.entries(totals || {}).filter(([, amount]) => Number(amount) !== 0);
+    return entries.length
+      ? entries.map(([code, amount]) => formatCurrency(amount, code)).join(' · ')
+      : formatCurrency(fallback, currency);
+  };
   return (
     <Dialog open={cashFlowModalOpen} onOpenChange={setCashFlowModalOpen}>
       <DialogContent className="max-w-full w-[95vw] max-h-[90vh] overflow-y-auto">
@@ -37,14 +43,14 @@ export default function CashFlowModal(props) {
                   <div className="p-3 bg-green-50 rounded-lg">
                     <p className="text-xs text-green-600">{t('cm.components_mobilefinance_dialogs_CashFlowModal.nakit_girisi')}</p>
                     <p className="text-lg font-bold text-green-700">
-                      {formatCurrency(cashFlowData.today?.cash_inflow || 0)}
+                      {formatTotals(cashFlowData.today?.inflow_by_currency, cashFlowData.today?.cash_inflow, cashFlowData.today?.currency)}
                     </p>
                     <p className="text-xs text-gray-500">{cashFlowData.today?.inflow_count} {t('cm.components_mobilefinance_dialogs_CashFlowModal.islem')}</p>
                   </div>
                   <div className="p-3 bg-red-50 rounded-lg">
                     <p className="text-xs text-red-600">{t('cm.components_mobilefinance_dialogs_CashFlowModal.nakit_cikisi')}</p>
                     <p className="text-lg font-bold text-red-700">
-                      {formatCurrency(cashFlowData.today?.cash_outflow || 0)}
+                      {formatTotals(cashFlowData.today?.outflow_by_currency, cashFlowData.today?.cash_outflow, cashFlowData.today?.currency)}
                     </p>
                     <p className="text-xs text-gray-500">{cashFlowData.today?.outflow_count} {t('cm.components_mobilefinance_dialogs_CashFlowModal.islem_9d951')}</p>
                   </div>
@@ -54,7 +60,7 @@ export default function CashFlowModal(props) {
                   <p className={`text-2xl font-bold ${
                     (cashFlowData.today?.net_flow || 0) >= 0 ? 'text-green-700' : 'text-red-700'
                   }`}>
-                    {formatCurrency(cashFlowData.today?.net_flow || 0)}
+                    {formatTotals(cashFlowData.today?.net_by_currency, cashFlowData.today?.net_flow, cashFlowData.today?.currency)}
                   </p>
                 </div>
               </CardContent>
@@ -116,7 +122,7 @@ export default function CashFlowModal(props) {
                         <p className="text-xs text-gray-500">****{bank.account_number}</p>
                       </div>
                       <div className="text-right">
-                        <p className="font-bold text-indigo-700">{formatCurrency(bank.current_balance)}</p>
+                        <p className="font-bold text-indigo-700">{formatCurrency(bank.current_balance, bank.currency)}</p>
                         <p className="text-xs text-gray-500">{bank.currency}</p>
                       </div>
                     </div>
@@ -125,7 +131,7 @@ export default function CashFlowModal(props) {
                     <div className="flex justify-between">
                       <span className="font-semibold">{t('cm.components_mobilefinance_dialogs_CashFlowModal.toplam_try')}</span>
                       <span className="font-bold text-lg text-indigo-700">
-                        {formatCurrency(cashFlowData.total_bank_balance_try || 0)}
+                        {formatCurrency(cashFlowData.total_bank_balance_try || 0, 'TRY')}
                       </span>
                     </div>
                   </div>

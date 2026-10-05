@@ -5,6 +5,8 @@ import { Badge } from '@/components/ui/badge';
 import axios from 'axios';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { useTranslation } from 'react-i18next';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
+import { formatCurrencyBreakdown } from '@/lib/reportCurrency';
 const BACKEND = "";
 const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899'];
 export default function CentralOfficeDashboard({
@@ -20,19 +22,15 @@ export default function CentralOfficeDashboard({
   const [revenue, setRevenue] = useState(null);
   const [alerts, setAlerts] = useState([]);
   const [loading, setLoading] = useState(false);
-  const headers = {};
   const fetchAll = useCallback(async () => {
     setLoading(true);
     try {
-      const [dashRes, compRes, revRes, alertRes] = await Promise.all([axios.get(`/central-office/dashboard`, {
-        headers
-      }), axios.get(`/central-office/occupancy-comparison`, {
-        headers
-      }), axios.get(`/central-office/revenue-report`, {
-        headers
-      }), axios.get(`/central-office/alerts`, {
-        headers
-      })]);
+      const [dashRes, compRes, revRes, alertRes] = await Promise.all([
+        axios.get('/central-office/dashboard'),
+        axios.get('/central-office/occupancy-comparison'),
+        axios.get('/central-office/revenue-report'),
+        axios.get('/central-office/alerts'),
+      ]);
       setDashboard(dashRes.data);
       setComparison(compRes.data);
       setRevenue(revRes.data);
@@ -41,14 +39,17 @@ export default function CentralOfficeDashboard({
       console.error(e);
     }
     setLoading(false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, []);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   useEffect(() => {
     fetchAll();
-  }, []);
+  }, [fetchAll]);
   const kpi = dashboard?.chain_kpi;
+  const fallbackCurrency = tenant?.currency || cachedTenantCurrency();
+  const chainRevenueBreakdown = revenue?.total_chain_revenue_by_currency || revenue?.totals?.revenue_by_currency || {};
+  const chainRevenueCodes = Object.entries(chainRevenueBreakdown).filter(([, amount]) => Number(amount) !== 0).map(([currency]) => currency);
+  const mixedRevenueCurrencies = chainRevenueCodes.length > 1;
+  const singleRevenueCurrency = chainRevenueCodes[0] || fallbackCurrency;
   return <>
       <div className="p-6 space-y-6">
         <div className="flex justify-between items-center">
@@ -115,16 +116,22 @@ export default function CentralOfficeDashboard({
           {revenue && <Card>
               <CardHeader><CardTitle>Gelir Dagilimi</CardTitle></CardHeader>
               <CardContent>
-                <ResponsiveContainer width="100%" height={300}>
-                  <PieChart>
-                    <Pie data={revenue.properties || []} dataKey="total_revenue" nameKey="property_name" cx="50%" cy="50%" outerRadius={100} label>
-                      {(revenue.properties || []).map((entry, i) => <Cell key={entry.id || i} fill={COLORS[i % COLORS.length]} />)}
-                    </Pie>
-                    <Tooltip />
-                  </PieChart>
-                </ResponsiveContainer>
+                {!mixedRevenueCurrencies ? <ResponsiveContainer width="100%" height={300}>
+                    <PieChart>
+                      <Pie data={revenue.properties || []} dataKey="total_revenue" nameKey="property_name" cx="50%" cy="50%" outerRadius={100} label>
+                        {(revenue.properties || []).map((entry, i) => <Cell key={entry.id || i} fill={COLORS[i % COLORS.length]} />)}
+                      </Pie>
+                      <Tooltip formatter={value => formatCurrency(value, singleRevenueCurrency)} />
+                    </PieChart>
+                  </ResponsiveContainer> : <div className="space-y-2 py-4">
+                    <p className="text-sm text-gray-500">Farklı para birimleri tek grafikte toplanmaz.</p>
+                    {(revenue.properties || []).map((property, i) => <div key={property.id || i} className="flex items-center justify-between rounded-lg border px-3 py-2">
+                        <span className="font-medium">{property.property_name}</span>
+                        <span className="font-semibold">{formatCurrencyBreakdown(property.total_revenue_by_currency, property.total_revenue, property.currency || fallbackCurrency)}</span>
+                      </div>)}
+                  </div>}
                 <p className="text-center text-lg font-bold mt-2">
-                  Toplam: {revenue.total_chain_revenue?.toLocaleString('tr-TR')} TRY
+                  Toplam: {formatCurrencyBreakdown(chainRevenueBreakdown, revenue.total_chain_revenue, singleRevenueCurrency)}
                 </p>
               </CardContent>
             </Card>}
@@ -159,7 +166,7 @@ export default function CentralOfficeDashboard({
                           </Badge>
                         </td>
                         <td className="p-3 text-right">{p.today_checkins}</td>
-                        <td className="p-3 text-right">{p.total_revenue?.toLocaleString('tr-TR')} TRY</td>
+                        <td className="p-3 text-right">{formatCurrencyBreakdown(p.total_revenue_by_currency, p.total_revenue, p.currency || fallbackCurrency)}</td>
                       </tr>)}
                   </tbody>
                 </table>

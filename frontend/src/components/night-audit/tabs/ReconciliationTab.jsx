@@ -5,19 +5,31 @@ import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { TabsContent } from '@/components/ui/tabs';
 import { Moon, Play, Clock, CheckCircle2, XCircle, AlertTriangle, RefreshCw, Calendar, FileText, ChevronDown, ChevronUp, DollarSign, Users, Building2, BarChart3, Eye, Loader2, Shield, Info, Timer, Settings2, Zap, RotateCcw, TrendingUp, CreditCard, ShieldCheck, Scale, Receipt, PieChart, ArrowUpDown, Banknote, AlertOctagon, Search } from 'lucide-react';
+import { formatCurrency } from '@/lib/currency';
+import { formatCurrencyBreakdown } from '@/lib/reportCurrency';
 export default function ReconciliationTab(props) {
   const {
     StatCard,
     reconciliation,
+    reportingDate,
     t
   } = props;
+  const money = (value, currency = 'TRY') => formatCurrency(value, currency);
+  const breakdown = (values, fallback) => formatCurrencyBreakdown(values, fallback);
   return <TabsContent value="reconciliation" className="space-y-4 mt-4">
       {reconciliation ? <>
+          <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">
+            <strong>Mutabakat iş günü:</strong> {reconciliation.business_date || reconciliation.date || reportingDate || '-'} · Masraflar, tahsilatlar ve açık folyo riskleri birlikte değerlendirilir
+          </div>
+          {reconciliation.degraded && <div role="alert" className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+            <strong>Eksik veri uyarısı:</strong> Mutabakatın bazı kaynakları okunamadı. Bu ekrandaki tutarları kesin kayıt olarak kullanmadan önce yenileyin.
+            {Array.isArray(reconciliation.degraded_subqueries) && reconciliation.degraded_subqueries.length > 0 && <span className="ml-1 text-amber-800">Etkilenen kaynaklar: {reconciliation.degraded_subqueries.join(', ')}.</span>}
+          </div>}
           {/* Summary Cards */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <StatCard icon={Receipt} label={t('cm.components_nightaudit_tabs_ReconciliationTab.masraf_toplami')} value={`${reconciliation.charges_total?.toFixed(2) || "0.00"} TL`} subValue={`${reconciliation.charges_count || 0} masraf`} color="text-blue-600" />
-            <StatCard icon={CreditCard} label={t('common.paymentTotal')} value={`${reconciliation.payments_total?.toFixed(2) || "0.00"} TL`} subValue={`${reconciliation.payments_count || 0} ödeme`} color="text-emerald-600" />
-            <StatCard icon={Scale} label="Fark" value={`${reconciliation.variance?.toFixed(2) || "0.00"} TL`} subValue={reconciliation.is_balanced ? "Dengeli" : "Dengesiz"} color={reconciliation.is_balanced ? "text-emerald-600" : "text-red-600"} />
+            <StatCard icon={Receipt} label={t('cm.components_nightaudit_tabs_ReconciliationTab.masraf_toplami')} value={breakdown(reconciliation.charges_by_currency, reconciliation.charges_total)} subValue={`${reconciliation.charges_count || 0} masraf`} color="text-blue-600" />
+            <StatCard icon={CreditCard} label={t('common.paymentTotal')} value={breakdown(reconciliation.payments_by_currency, reconciliation.payments_total)} subValue={`${reconciliation.payments_count || 0} ödeme`} color="text-emerald-600" />
+            <StatCard icon={Scale} label="Fark" value={breakdown(reconciliation.variance_by_currency, reconciliation.variance)} subValue={reconciliation.is_balanced ? "Dengeli" : "Dengesiz"} color={reconciliation.is_balanced ? "text-emerald-600" : "text-red-600"} />
             <StatCard icon={AlertOctagon} label={t('cm.components_nightaudit_tabs_ReconciliationTab.tutarsizlik')} value={reconciliation.discrepancy_count || 0} subValue={`${reconciliation.high_balance_count || 0} yüksek bakiye`} color={reconciliation.discrepancy_count > 0 ? "text-red-600" : "text-emerald-600"} />
           </div>
 
@@ -44,7 +56,7 @@ export default function ReconciliationTab(props) {
                           <Badge className={`text-[10px] ${d.type === "duplicate_charge" ? "bg-amber-50 text-amber-700 border-amber-200" : d.type === "rate_discrepancy" ? "bg-blue-50 text-blue-700 border-blue-200" : d.type === "high_balance" ? "bg-red-50 text-red-700 border-red-200" : "bg-gray-50 text-gray-600 border-gray-200"} border`}>
                             {d.type === "duplicate_charge" ? "Tekrar Masraf" : d.type === "rate_discrepancy" ? "Oran Tutarsızlığı" : d.type === "high_balance" ? "Yüksek Bakiye" : d.type === "orphan_charge" ? "Sahipsiz Masraf" : d.type}
                           </Badge>
-                          {d.amount && <span className="text-[11px] text-gray-400">{d.amount} TL</span>}
+                        {d.amount && <span className="text-[11px] text-gray-500">{money(d.amount, d.currency)}</span>}
                         </div>
                       </div>
                     </div>)}
@@ -62,13 +74,20 @@ export default function ReconciliationTab(props) {
               </CardHeader>
               <CardContent>
                 <div className="space-y-1.5">
-                  {reconciliation.high_balance_folios.map(f => <div key={f.id} className="flex items-center justify-between p-2.5 bg-gray-50 rounded-lg text-sm">
-                      <div className="flex items-center gap-2">
-                        <FileText className="w-4 h-4 text-gray-400" />
-                        <span className="font-medium text-gray-800">{f.folio_number || f.id?.substring(0, 8)}</span>
+                  {reconciliation.high_balance_folios.map(f => <div key={f.id} className="flex items-center justify-between p-2.5 bg-gray-50 hover:bg-gray-100 rounded-lg text-sm transition-colors border border-transparent hover:border-gray-200">
+                      <div className="flex flex-col gap-0.5">
+                        <div className="flex items-center gap-2">
+                          <FileText className="w-4 h-4 text-gray-400" />
+                          <span className="font-medium text-gray-800">{f.folio_number || f.id?.substring(0, 8)}</span>
+                        </div>
+                        <div className="flex items-center gap-2 ml-6 text-xs text-gray-500">
+                          <span>{f.room_no || 'Oda ?'}</span>
+                          <span>•</span>
+                          <span>{f.guest_name || 'İsimsiz'}</span>
+                        </div>
                       </div>
                       <span className={`font-bold ${f.balance > 0 ? "text-red-600" : "text-blue-600"}`}>
-                        {f.balance?.toFixed(2)} TL
+                        {money(f.balance, f.currency)}
                       </span>
                     </div>)}
                 </div>

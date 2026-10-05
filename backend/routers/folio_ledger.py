@@ -22,7 +22,7 @@ _rps = RolePermissionService()
 
 
 def _enforce_perm(role: str, op: str) -> None:
-    _rps.enforce_permission(role, op)
+    _rps.enforce_permission(getattr(role, "role", role), op, getattr(role, "granted_permissions", None))
 
 
 router = APIRouter(prefix="/api/folio-ledger", tags=["Folio Ledger"])
@@ -75,7 +75,7 @@ async def post_charge(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("post_charge")),  # v97 DW
 ):
-    _enforce_perm(current_user.role, "post_charge")  # Bug CQ fix
+    _enforce_perm(current_user, "post_charge")  # Bug CQ fix
     try:
         result = await ledger_service.post_charge(
             tenant_id=current_user.tenant_id,
@@ -107,7 +107,7 @@ async def post_payment(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("post_payment")),  # v94 DW
 ):
-    _enforce_perm(current_user.role, "post_payment")  # Bug CQ fix
+    _enforce_perm(current_user, "post_payment")  # Bug CQ fix
     try:
         result = await ledger_service.post_payment(
             tenant_id=current_user.tenant_id,
@@ -137,7 +137,7 @@ async def void_entry(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("post_charge")),  # v97 DW
 ):
-    _enforce_perm(current_user.role, "void_charge")  # Bug CQ fix
+    _enforce_perm(current_user, "void_charge")  # Bug CQ fix
     try:
         result = await ledger_service.void_entry(
             tenant_id=current_user.tenant_id,
@@ -160,7 +160,7 @@ async def transfer(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("post_payment")),  # v97 DW
 ):
-    _enforce_perm(current_user.role, "transfer_folio")  # Bug CQ fix
+    _enforce_perm(current_user, "transfer_folio")  # Bug CQ fix
     try:
         result = await ledger_service.transfer(
             tenant_id=current_user.tenant_id,
@@ -181,7 +181,7 @@ async def transfer(
 
 @router.get("/{folio_id}/ledger")
 async def get_ledger(folio_id: str, current_user: User = Depends(get_current_user)):
-    _enforce_perm(current_user.role, "view_folio")  # Bug CQ fix
+    _enforce_perm(current_user, "view_folio")  # Bug CQ fix
     try:
         return await ledger_service.get_ledger(current_user.tenant_id, folio_id)
     except ValueError as e:
@@ -190,7 +190,7 @@ async def get_ledger(folio_id: str, current_user: User = Depends(get_current_use
 
 @router.get("/{folio_id}/reconcile")
 async def reconcile_folio(folio_id: str, current_user: User = Depends(get_current_user)):
-    _enforce_perm(current_user.role, "view_folio")  # Bug CQ fix
+    _enforce_perm(current_user, "view_folio")  # Bug CQ fix
     try:
         return await ledger_service.reconcile_folio(current_user.tenant_id, folio_id)
     except ValueError as e:
@@ -204,7 +204,7 @@ async def run_reconciliation(
     _perm=Depends(require_op("post_payment")),  # v97 DW
 ):
     # Bug CQ fix — reconciliation report contains tenant-wide financial drift data; finance/admin only
-    _enforce_perm(current_user.role, "close_folio")
+    _enforce_perm(current_user, "close_folio")
     from datetime import datetime
 
     bdate = business_date or datetime.now(UTC).strftime("%Y-%m-%d")

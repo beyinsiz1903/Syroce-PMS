@@ -31,6 +31,7 @@ if _BACKEND_DIR not in sys.path:
 from domains.hr.router import (  # type: ignore  # noqa: E402
     _authorize_staff_access,
     _mask_hr_pii,
+    _payroll_run_to_response,
     _user_has_hr_op,
 )
 from models.enums import Permission, UserRole  # type: ignore  # noqa: E402
@@ -153,6 +154,32 @@ class TestMaskHrPii:
 
     def test_non_dict_record_passthrough(self):
         assert _mask_hr_pii("not-a-dict", _user(UserRole.FRONT_DESK)) == "not-a-dict"
+
+    def test_finance_sees_payroll_amounts_but_not_general_staff_pii(self):
+        user = _user(UserRole.FINANCE)
+        payroll = {
+            "id": "run-1",
+            "rows": [
+                {
+                    **SAMPLE,
+                    "gross_pay": 53000,
+                    "net_salary": 38300.03,
+                    "employer_cost": 65587.50,
+                }
+            ],
+        }
+
+        row = _payroll_run_to_response(payroll, user)["rows"][0]
+
+        # Finance needs monetary snapshot fields for reconciliation/posting.
+        assert row["gross_pay"] == 53000
+        assert row["net_salary"] == 38300.03
+        assert row["employer_cost"] == 65587.50
+        # The same role remains masked in the general staff serializer.
+        staff = _mask_hr_pii(dict(SAMPLE), user, allow_finance_unmask=False)
+        assert staff["national_id"].startswith("***-**-")
+        assert staff["iban"].startswith("****")
+        assert staff["salary"] is None
 
 
 class TestUserHasHrOp:

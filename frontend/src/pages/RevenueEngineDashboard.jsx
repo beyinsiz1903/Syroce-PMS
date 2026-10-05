@@ -7,6 +7,9 @@ import { TrendingUp, DollarSign, BarChart3, Target, Calendar, ArrowUp, ArrowDown
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
+import { confirmDialog } from '@/lib/dialogs';
+import { toast } from 'sonner';
 const API = "";
 const COLORS = ['#0f766e', '#0ea5e9', '#8b5cf6', '#f59e0b', '#ef4444', '#10b981'];
 export default function RevenueEngineDashboard({
@@ -20,16 +23,20 @@ export default function RevenueEngineDashboard({
   } = useTranslation();
   const [dashboard, setDashboard] = useState(null);
   const [forecast, setForecast] = useState(null);
+  const currency = dashboard?.currency || forecast?.currency || cachedTenantCurrency();
+  const money = (amount, code) => formatCurrency(amount, code || currency);
   const [suggestions, setSuggestions] = useState(null);
   const [yieldRecs, setYieldRecs] = useState(null);
   const [channelPerf, setChannelPerf] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [activeTab, setActiveTab] = useState('overview');
   const navigate = useNavigate();
   const headers = {};
   const wrap = content => embedded ? content : <>{content}</>;
   const fetchAll = useCallback(async () => {
     setLoading(true);
+    setLoadError('');
     try {
       const [dashRes, forecastRes, sugRes, yieldRes, chRes] = await Promise.all([axios.get(`/revenue-engine/dashboard`, {
         headers
@@ -49,6 +56,12 @@ export default function RevenueEngineDashboard({
       setChannelPerf(chRes.data);
     } catch (err) {
       console.error('Revenue dashboard fetch error:', err);
+      setLoadError('Gelir verileri yüklenemedi. Eski veya sıfır değerler gösterilmedi.');
+      setDashboard(null);
+      setForecast(null);
+      setSuggestions(null);
+      setYieldRecs(null);
+      setChannelPerf(null);
     } finally {
       setLoading(false);
     }
@@ -58,6 +71,14 @@ export default function RevenueEngineDashboard({
     fetchAll();
   }, [fetchAll]);
   const handleApplyRate = async (targetDate, newRate) => {
+    if (!newRate || newRate <= 0) {
+      toast.error('Geçerli bir fiyat önerisi bulunmuyor.');
+      return;
+    }
+    const confirmed = await confirmDialog({
+      message: `${targetDate} tarihi için ${money(newRate)} fiyatını kaydetmek istiyor musunuz?\n\nBu işlem fiyat kararını kayıt altına alır.`
+    });
+    if (!confirmed) return;
     try {
       await axios.post(`/revenue-engine/apply-rate`, {
         target_date: targetDate,
@@ -65,9 +86,10 @@ export default function RevenueEngineDashboard({
       }, {
         headers
       });
+      toast.success('Fiyat kararı kaydedildi.');
       fetchAll();
     } catch (err) {
-      console.error(err);
+      toast.error(err.response?.data?.detail || 'Fiyat kaydedilemedi.');
     }
   };
   const tabs = [{
@@ -80,7 +102,7 @@ export default function RevenueEngineDashboard({
     icon: TrendingUp
   }, {
     id: 'yield',
-    label: 'Yield Kurallari',
+    label: 'Getiri Kuralları',
     icon: Target
   }, {
     id: 'channels',
@@ -92,6 +114,8 @@ export default function RevenueEngineDashboard({
     if (rec === 'decrease') return <ArrowDown className="w-4 h-4 text-red-500" />;
     return <Minus className="w-4 h-4 text-slate-400" />;
   };
+  const recommendationLabel = rec => ({ increase: 'Artır', decrease: 'Düşür', maintain: 'Koru', unavailable: 'Veri yetersiz' })[rec] || rec;
+  const demandLabel = level => ({ high: 'Yüksek', medium: 'Orta', low: 'Düşük', very_high: 'Çok yüksek' })[level] || level;
   if (loading) {
     return wrap(<div className="flex items-center justify-center h-64" data-testid="revenue-loading">
         <RefreshCw className="w-8 h-8 animate-spin text-teal-600" />
@@ -110,30 +134,41 @@ export default function RevenueEngineDashboard({
           </Button>
         </div>
 
+        {loadError && <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800" role="alert">
+          <div className="flex items-center justify-between gap-4">
+            <span>{loadError}</span>
+            <Button variant="outline" size="sm" onClick={fetchAll}>Tekrar Dene</Button>
+          </div>
+        </div>}
+
+        {!loadError && p30.data_available === false && <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          Son 30 gün için geçerli rezervasyon/gece verisi bulunmadığından finansal KPI ve otomatik fiyat fırsatı üretilmedi.
+        </div>}
+
         {/* KPI Cards */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4" data-testid="revenue-kpi-cards">
           <Card className="border-l-4 border-l-teal-500">
             <CardContent className="p-4">
               <p className="text-xs text-slate-500 uppercase tracking-wide">ADR (30g)</p>
-              <p className="text-2xl font-bold text-slate-900 mt-1" data-testid="kpi-adr">{p30.adr?.toFixed(2) || '0'} TL</p>
+              <p className="text-2xl font-bold text-slate-900 mt-1" data-testid="kpi-adr">{loadError ? '—' : money(p30.adr, p30.currency)}</p>
             </CardContent>
           </Card>
           <Card className="border-l-4 border-l-sky-500">
             <CardContent className="p-4">
               <p className="text-xs text-slate-500 uppercase tracking-wide">RevPAR (30g)</p>
-              <p className="text-2xl font-bold text-slate-900 mt-1" data-testid="kpi-revpar">{p30.revpar?.toFixed(2) || '0'} TL</p>
+              <p className="text-2xl font-bold text-slate-900 mt-1" data-testid="kpi-revpar">{loadError ? '—' : money(p30.revpar, p30.currency)}</p>
             </CardContent>
           </Card>
           <Card className="border-l-4 border-l-violet-500">
             <CardContent className="p-4">
               <p className="text-xs text-slate-500 uppercase tracking-wide">Doluluk (Bugün)</p>
-              <p className="text-2xl font-bold text-slate-900 mt-1" data-testid="kpi-occupancy">{dashboard?.today_occupancy_pct || 0}%</p>
+              <p className="text-2xl font-bold text-slate-900 mt-1" data-testid="kpi-occupancy">{loadError ? '—' : `${dashboard?.today_occupancy_pct || 0}%`}</p>
             </CardContent>
           </Card>
           <Card className="border-l-4 border-l-amber-500">
             <CardContent className="p-4">
               <p className="text-xs text-slate-500 uppercase tracking-wide">Toplam Gelir (30g)</p>
-              <p className="text-2xl font-bold text-slate-900 mt-1" data-testid="kpi-revenue">{(p30.total_revenue || 0).toLocaleString()} TL</p>
+              <p className="text-2xl font-bold text-slate-900 mt-1" data-testid="kpi-revenue">{loadError ? '—' : money(p30.total_revenue, p30.currency)}</p>
             </CardContent>
           </Card>
         </div>
@@ -153,7 +188,7 @@ export default function RevenueEngineDashboard({
             {/* ADR & RevPAR Trend */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <Card>
-                <CardHeader><CardTitle className="text-base">ADR Trend (30 Gun)</CardTitle></CardHeader>
+                <CardHeader><CardTitle className="text-base">ADR Eğilimi (30 Gün)</CardTitle></CardHeader>
                 <CardContent>
                   <ResponsiveContainer width="100%" height={250}>
                     <AreaChart data={dashboard?.daily_trend || []}>
@@ -165,13 +200,13 @@ export default function RevenueEngineDashboard({
                   fontSize: 10
                 }} />
                       <Tooltip />
-                      <Area type="monotone" dataKey="adr" stroke="#0f766e" fill="#0f766e" fillOpacity={0.15} name="ADR (TL)" />
+                      <Area type="monotone" dataKey="adr" stroke="#0f766e" fill="#0f766e" fillOpacity={0.15} name={`ADR (${currency})`} />
                     </AreaChart>
                   </ResponsiveContainer>
                 </CardContent>
               </Card>
               <Card>
-                <CardHeader><CardTitle className="text-base">RevPAR Trend (30 Gun)</CardTitle></CardHeader>
+                <CardHeader><CardTitle className="text-base">RevPAR Eğilimi (30 Gün)</CardTitle></CardHeader>
                 <CardContent>
                   <ResponsiveContainer width="100%" height={250}>
                     <AreaChart data={dashboard?.daily_trend || []}>
@@ -183,7 +218,7 @@ export default function RevenueEngineDashboard({
                   fontSize: 10
                 }} />
                       <Tooltip />
-                      <Area type="monotone" dataKey="revpar" stroke="#0ea5e9" fill="#0ea5e9" fillOpacity={0.15} name="RevPAR (TL)" />
+                      <Area type="monotone" dataKey="revpar" stroke="#0ea5e9" fill="#0ea5e9" fillOpacity={0.15} name={`RevPAR (${currency})`} />
                     </AreaChart>
                   </ResponsiveContainer>
                 </CardContent>
@@ -208,7 +243,7 @@ export default function RevenueEngineDashboard({
               }} domain={[0, 100]} />
                     <Tooltip />
                     <Legend />
-                    <Bar yAxisId="left" dataKey="revenue" fill="#0f766e" name="Gelir (TL)" radius={[2, 2, 0, 0]} />
+                    <Bar yAxisId="left" dataKey="revenue" fill="#0f766e" name={`Gelir (${currency})`} radius={[2, 2, 0, 0]} />
                     <Line yAxisId="right" type="monotone" dataKey="occupancy_pct" stroke="#f59e0b" name="Doluluk %" strokeWidth={2} />
                   </BarChart>
                 </ResponsiveContainer>
@@ -219,7 +254,7 @@ export default function RevenueEngineDashboard({
             <Card>
               <CardHeader>
                 <CardTitle className="text-base flex items-center gap-2">
-                  <Zap className="w-4 h-4 text-amber-500" /> Fiyat Onerileri (7 Gun)
+                  <Zap className="w-4 h-4 text-amber-500" /> Fiyat Önerileri (7 Gün)
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -229,10 +264,10 @@ export default function RevenueEngineDashboard({
                       <tr className="border-b border-slate-200">
                         <th className="text-left py-2 px-3 text-slate-500 font-medium">Tarih</th>
                         <th className="text-center py-2 px-3 text-slate-500 font-medium">Doluluk</th>
-                        <th className="text-center py-2 px-3 text-slate-500 font-medium">Carpan</th>
+                        <th className="text-center py-2 px-3 text-slate-500 font-medium">Çarpan</th>
                         <th className="text-right py-2 px-3 text-slate-500 font-medium">Önerilen ADR</th>
-                        <th className="text-right py-2 px-3 text-slate-500 font-medium">Est. RevPAR</th>
-                        <th className="text-center py-2 px-3 text-slate-500 font-medium">Oneri</th>
+                        <th className="text-right py-2 px-3 text-slate-500 font-medium">Tahmini RevPAR</th>
+                        <th className="text-center py-2 px-3 text-slate-500 font-medium">Öneri</th>
                         <th className="text-center py-2 px-3 text-slate-500 font-medium">İşlem</th>
                       </tr>
                     </thead>
@@ -240,14 +275,14 @@ export default function RevenueEngineDashboard({
                       {(suggestions?.suggestions || []).map((s, i) => <tr key={s.id || i} className="border-b border-slate-100 hover:bg-slate-50">
                           <td className="py-2 px-3 font-medium">{s.date}</td>
                           <td className="py-2 px-3 text-center">{s.current_occupancy_pct}%</td>
-                          <td className="py-2 px-3 text-center">x{s.demand_multiplier}</td>
-                          <td className="py-2 px-3 text-right font-semibold">{s.ideal_adr?.toFixed(2)} TL</td>
-                          <td className="py-2 px-3 text-right">{s.revpar_estimate?.toFixed(2)} TL</td>
+                          <td className="py-2 px-3 text-center">{s.data_available === false ? '—' : `x${s.demand_multiplier}`}</td>
+                          <td className="py-2 px-3 text-right font-semibold">{s.data_available === false ? 'Veri yetersiz' : money(s.ideal_adr, s.currency)}</td>
+                          <td className="py-2 px-3 text-right">{s.data_available === false ? '—' : money(s.revpar_estimate, s.currency)}</td>
                           <td className="py-2 px-3 text-center">
-                            <span className="inline-flex items-center gap-1">{recIcon(s.recommendation)} {s.recommendation}</span>
+                            <span className="inline-flex items-center gap-1">{recIcon(s.recommendation)} {recommendationLabel(s.recommendation)}</span>
                           </td>
                           <td className="py-2 px-3 text-center">
-                            <Button variant="outline" size="sm" data-testid={`apply-rate-${i}`} onClick={() => handleApplyRate(s.date, s.ideal_adr)}>
+                            <Button variant="outline" size="sm" disabled={s.data_available === false} data-testid={`apply-rate-${i}`} onClick={() => handleApplyRate(s.date, s.ideal_adr)}>
                               <CheckCircle className="w-3 h-3 mr-1" /> Uygula
                             </Button>
                           </td>
@@ -261,7 +296,7 @@ export default function RevenueEngineDashboard({
             {/* Revenue Opportunities */}
             {(dashboard?.opportunities || []).length > 0 && <Card>
                 <CardHeader><CardTitle className="text-base flex items-center gap-2">
-                  <Target className="w-4 h-4 text-emerald-500" /> Gelir Firsatlari
+                  <Target className="w-4 h-4 text-emerald-500" /> Gelir Fırsatları
                 </CardTitle></CardHeader>
                 <CardContent>
                   <div className="space-y-3" data-testid="revenue-opportunities">
@@ -271,7 +306,7 @@ export default function RevenueEngineDashboard({
                           <p className="text-xs text-slate-500">{o.message}</p>
                         </div>
                         <Badge variant={o.type === 'price_increase' ? 'default' : 'secondary'}>
-                          +{o.potential_revenue?.toLocaleString()} TL
+                          +{money(o.potential_revenue, o.currency)}
                         </Badge>
                       </div>)}
                   </div>
@@ -307,7 +342,7 @@ export default function RevenueEngineDashboard({
                     <div className="flex justify-between items-center">
                       <p className="font-medium text-sm">{d.date}</p>
                       <Badge variant={d.demand_level === 'high' ? 'destructive' : d.demand_level === 'medium' ? 'default' : 'secondary'}>
-                        {d.demand_level}
+                        {demandLabel(d.demand_level)}
                       </Badge>
                     </div>
                     <div className="mt-2 grid grid-cols-3 gap-2 text-center">
@@ -316,7 +351,7 @@ export default function RevenueEngineDashboard({
                         <p className="font-bold text-lg">{d.booked}</p>
                       </div>
                       <div>
-                        <p className="text-xs text-slate-500">Bos</p>
+                        <p className="text-xs text-slate-500">Boş</p>
                         <p className="font-bold text-lg text-emerald-600">{d.available}</p>
                       </div>
                       <div>
@@ -332,7 +367,7 @@ export default function RevenueEngineDashboard({
         {/* Yield Rules Tab */}
         {activeTab === 'yield' && <div className="space-y-6">
             <Card>
-              <CardHeader><CardTitle className="text-base">Yield Kurallari Onerileri</CardTitle></CardHeader>
+              <CardHeader><CardTitle className="text-base">Getiri Kuralı Önerileri</CardTitle></CardHeader>
               <CardContent>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm" data-testid="yield-table">
@@ -341,10 +376,10 @@ export default function RevenueEngineDashboard({
                         <th className="text-left py-2 px-3 text-slate-500 font-medium">Tarih</th>
                         <th className="text-center py-2 px-3 text-slate-500 font-medium">Doluluk</th>
                         <th className="text-center py-2 px-3 text-slate-500 font-medium">Talep</th>
-                        <th className="text-center py-2 px-3 text-slate-500 font-medium">Min Stay</th>
-                        <th className="text-center py-2 px-3 text-slate-500 font-medium">Stop Sell</th>
-                        <th className="text-center py-2 px-3 text-slate-500 font-medium">CTA</th>
-                        <th className="text-center py-2 px-3 text-slate-500 font-medium">CTD</th>
+                        <th className="text-center py-2 px-3 text-slate-500 font-medium">En Az Gece</th>
+                        <th className="text-center py-2 px-3 text-slate-500 font-medium">Satışı Durdur</th>
+                        <th className="text-center py-2 px-3 text-slate-500 font-medium">Girişe Kapalı</th>
+                        <th className="text-center py-2 px-3 text-slate-500 font-medium">Çıkışa Kapalı</th>
                         <th className="text-left py-2 px-3 text-slate-500 font-medium">Notlar</th>
                       </tr>
                     </thead>
@@ -354,13 +389,13 @@ export default function RevenueEngineDashboard({
                           <td className="py-2 px-3 text-center">{r.occupancy_pct}%</td>
                           <td className="py-2 px-3 text-center">
                             <Badge variant={r.demand_level === 'high' ? 'destructive' : r.demand_level === 'medium' ? 'default' : 'secondary'}>
-                              {r.demand_level}
+                              {demandLabel(r.demand_level)}
                             </Badge>
                           </td>
                           <td className="py-2 px-3 text-center font-semibold">{r.min_stay}</td>
                           <td className="py-2 px-3 text-center">{r.stop_sell ? <ShieldAlert className="w-4 h-4 text-red-500 mx-auto" /> : '-'}</td>
-                          <td className="py-2 px-3 text-center">{r.cta ? <Badge variant="destructive">CTA</Badge> : '-'}</td>
-                          <td className="py-2 px-3 text-center">{r.ctd ? <Badge variant="outline">CTD</Badge> : '-'}</td>
+                          <td className="py-2 px-3 text-center">{r.cta ? <Badge variant="destructive">Evet</Badge> : '-'}</td>
+                          <td className="py-2 px-3 text-center">{r.ctd ? <Badge variant="outline">Evet</Badge> : '-'}</td>
                           <td className="py-2 px-3 text-xs text-slate-500">{(r.notes || []).join('; ')}</td>
                         </tr>)}
                     </tbody>
@@ -405,7 +440,7 @@ export default function RevenueEngineDashboard({
                   fontSize: 11
                 }} width={80} />
                       <Tooltip />
-                      <Bar dataKey="revenue" fill="#0f766e" name="Gelir (TL)" radius={[0, 4, 4, 0]} />
+                      <Bar dataKey="revenue" fill="#0f766e" name={`Gelir (${currency})`} radius={[0, 4, 4, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 </CardContent>
@@ -432,8 +467,8 @@ export default function RevenueEngineDashboard({
                       {(channelPerf?.channels || []).map((c, i) => <tr key={c.id || i} className="border-b border-slate-100 hover:bg-slate-50">
                           <td className="py-2 px-3 font-medium">{c.channel}</td>
                           <td className="py-2 px-3 text-right">{c.bookings}</td>
-                          <td className="py-2 px-3 text-right">{c.revenue?.toLocaleString()} TL</td>
-                          <td className="py-2 px-3 text-right">{c.avg_booking_value?.toFixed(2)} TL</td>
+                          <td className="py-2 px-3 text-right">{money(c.revenue, c.currency)}</td>
+                          <td className="py-2 px-3 text-right">{money(c.avg_booking_value, c.currency)}</td>
                           <td className="py-2 px-3 text-right">{c.booking_share_pct}%</td>
                           <td className="py-2 px-3 text-right">{c.revenue_share_pct}%</td>
                         </tr>)}

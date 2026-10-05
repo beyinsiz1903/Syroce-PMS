@@ -49,6 +49,7 @@ from core.security import get_current_user
 from core.tenant_db import get_system_db
 from core.utils import create_excel_workbook, excel_response
 from models.schemas import User
+from modules.pms_core.chain_access import resolve_chain_properties, tenant_id_from_document
 from shared_kernel.gl_periods import (
     GLPeriodError,
     assert_gl_period_open,
@@ -88,11 +89,13 @@ _DEFAULT_CHART_OF_ACCOUNTS = (
     ("150", "İlk Madde ve Malzeme", "asset"),
     ("153", "Ticari Mallar", "asset"),
     ("191", "İndirilecek KDV", "asset"),
+    ("196", "Personel Avansları", "asset"),
     ("257", "Birikmiş Amortismanlar", "asset", "credit"),
     ("320", "Satıcılar", "liability"),
     ("335", "Personele Borçlar", "liability"),
     ("336", "Diğer Çeşitli Borçlar", "liability"),
     ("360", "Ödenecek Vergi ve Fonlar", "liability"),
+    ("361", "Ödenecek Sosyal Güvenlik Kesintileri", "liability"),
     ("391", "Hesaplanan KDV", "liability"),
     ("570", "Geçmiş Yıllar Kârları", "equity"),
     ("580", "Geçmiş Yıllar Zararları", "equity", "debit"),
@@ -654,6 +657,10 @@ async def initialize_chart_of_accounts(current_user: User = Depends(get_current_
                     "wage_expense_code": "770",
                     "withholding_payable_code": "360",
                     "net_payable_code": "335",
+                    "employer_expense_code": "770",
+                    "sgk_payable_code": "361",
+                    "advance_receivable_code": "196",
+                    "other_deductions_code": "336",
                     "updated_at": now,
                     "updated_by": _actor_id(current_user),
                 }
@@ -888,17 +895,24 @@ async def _allocate_voucher_number(tenant_id: str, fiscal_year: int, now: str) -
     always explainable instead of disappearing from the audit trail.
     """
     counter_id = f"gl-voucher-counter:{tenant_id}:{fiscal_year}"
+    # Counter ids already include the tenant.  Older installations created this
+    # document before the tenant_id field was added; including tenant_id in the
+    # lookup would then miss that document and an upsert would collide with its
+    # immutable _id.  Match by the tenant-qualified id and repair the metadata
+    # on every allocation instead.
     counter = await db.gl_counters.find_one_and_update(
-        {"_id": counter_id, "tenant_id": tenant_id},
+        {"_id": counter_id},
         {
             "$inc": {"value": 1},
             "$setOnInsert": {
+                "created_at": now,
+            },
+            "$set": {
                 "tenant_id": tenant_id,
                 "fiscal_year": fiscal_year,
                 "counter_type": "voucher",
-                "created_at": now,
+                "updated_at": now,
             },
-            "$set": {"updated_at": now},
         },
         upsert=True,
         return_document=ReturnDocument.AFTER,
@@ -912,6 +926,11 @@ async def _validate_voucher_context(tenant_id: str, voucher: dict, actor: str) -
         await assert_gl_period_open(db, tenant_id, voucher["date"], actor=actor)
     except GLPeriodError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    await _validate_voucher_accounts(tenant_id, voucher)
+
+
+async def _validate_voucher_accounts(tenant_id: str, voucher: dict) -> None:
+    """Reject non-existent or inactive accounts before a draft enters workflow."""
     codes = sorted({line["account_code"] for line in voucher.get("lines", [])})
     accounts = await db.gl_accounts.find(
         {"tenant_id": tenant_id, "code": {"$in": codes}},
@@ -990,6 +1009,7 @@ async def create_voucher(payload: VoucherCreateIn, current_user: User = Depends(
     tenant_id = _tenant_of(current_user)
     actor = _actor_id(current_user)
     normalized = _normalized_voucher_payload(payload)
+    await _validate_voucher_accounts(tenant_id, normalized)
     now = _now_iso()
     voucher_id = str(uuid.uuid4())
     fiscal_year = int(normalized["date"][:4])
@@ -999,6 +1019,11 @@ async def create_voucher(payload: VoucherCreateIn, current_user: User = Depends(
         "tenant_id": tenant_id,
         "voucher_no": voucher_no,
         "voucher_sequence": voucher_sequence,
+        # The setup idempotency index predates its sparse/partial definition in
+        # some installations.  A distinct marker keeps regular manual vouchers
+        # clear of the legacy null key while preserving the setup flow's own
+        # caller-provided replay key.
+        "setup_idempotency_key": f"manual:{voucher_id}",
         "fiscal_year": fiscal_year,
         **normalized,
         "status": "draft",
@@ -1043,6 +1068,7 @@ async def update_voucher(
         raise HTTPException(status_code=409, detail="Fiş başka bir kullanıcı tarafından güncellendi")
     now = _now_iso()
     normalized = _normalized_voucher_payload(payload)
+    await _validate_voucher_accounts(tenant_id, normalized)
     revision = {
         "version": before.get("version", 1),
         "at": now,
@@ -1334,17 +1360,37 @@ async def post_approved_voucher(voucher_id: str, current_user: User = Depends(ge
             idempotency_key=f"gl-voucher:{voucher['id']}",
         )
     except GLPostingError as exc:
+        failed_at = _now_iso()
+        error_text = str(exc)[:500]
         await db.gl_vouchers.update_one(
             {"tenant_id": tenant_id, "id": voucher_id, "status": "posting", "posting_claim_id": claim_id},
             {
                 "$set": {
                     "status": "approved",
-                    "last_post_error": str(exc)[:500],
-                    "updated_at": _now_iso(),
+                    "last_post_error": error_text,
+                    "updated_at": failed_at,
                     "updated_by": actor,
                 },
                 "$unset": {"posting_claim_id": ""},
+                "$push": {
+                    "history": {
+                        "at": failed_at,
+                        "by": actor,
+                        "action": "post_failed",
+                        "status": "approved",
+                        "reason": error_text,
+                    },
+                },
             },
+        )
+        await _audit_voucher_transition(
+            tenant_id=tenant_id,
+            actor=actor,
+            voucher=voucher,
+            action="gl_voucher_post_failed",
+            before_status="posting",
+            after_status="approved",
+            reason=error_text,
         )
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     completed_at = _now_iso()
@@ -1425,11 +1471,7 @@ async def sequence_audit(
     if fiscal_year is not None:
         query["fiscal_year"] = fiscal_year
     rows = await db.gl_sequence_reservations.find(query, {"_id": 0}).sort([("fiscal_year", -1), ("sequence", 1)]).to_list(100000)
-    counters = [
-        counter
-        for counter in await db.gl_counters.find(query, {"_id": 0}).to_list(1000)
-        if counter.get("counter_type") != "voucher"
-    ]
+    counters = [counter for counter in await db.gl_counters.find(query, {"_id": 0}).to_list(1000) if counter.get("counter_type") != "voucher"]
     counts = {"posted": 0, "void": 0, "reserved": 0}
     sequences_by_year: dict[int, set[int]] = {}
     for row in rows:
@@ -1472,11 +1514,7 @@ async def journal_integrity_audit(
         query["fiscal_year"] = fiscal_year
     entries = await db.gl_journal_entries.find(query, {"_id": 0}).to_list(100000)
     reservations = await db.gl_sequence_reservations.find(query, {"_id": 0}).to_list(100000)
-    counters = [
-        counter
-        for counter in await db.gl_counters.find(query, {"_id": 0}).to_list(1000)
-        if counter.get("counter_type") != "voucher"
-    ]
+    counters = [counter for counter in await db.gl_counters.find(query, {"_id": 0}).to_list(1000) if counter.get("counter_type") != "voucher"]
 
     entries_by_key = {(int(entry.get("fiscal_year") or str(entry.get("date") or "0000")[:4]), int(entry.get("posting_sequence") or 0)): entry for entry in entries if entry.get("posting_sequence")}
     reservations_by_key = {(int(row.get("fiscal_year") or 0), int(row.get("sequence") or 0)): row for row in reservations if row.get("fiscal_year") and row.get("sequence")}
@@ -1733,12 +1771,7 @@ async def operational_gl_status(current_user: User = Depends(get_current_user)):
 
 
 def _reconciliation_minor(value: object) -> int:
-    return int(
-        (
-            Decimal(str(value or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-            * 100
-        ).to_integral_exact()
-    )
+    return int((Decimal(str(value or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP) * 100).to_integral_exact())
 
 
 def _reconciliation_amount(value: int) -> float:
@@ -1851,11 +1884,7 @@ async def operational_reconciliation(
     )
 
     entries_by_id = {str(entry.get("id")): entry for entry in journal_entries if entry.get("id")}
-    entries_by_source = {
-        (str(entry.get("source")), str(entry.get("source_ref"))): entry
-        for entry in journal_entries
-        if entry.get("source_ref")
-    }
+    entries_by_source = {(str(entry.get("source")), str(entry.get("source_ref"))): entry for entry in journal_entries if entry.get("source_ref")}
     settlement_accounts = {
         mapping["cash_account_code"],
         mapping["card_account_code"],
@@ -1880,9 +1909,7 @@ async def operational_reconciliation(
     posted_night_runs = [run for run in night_audits if run.get("gl_bridge_status") == "posted"]
     linked_night_entries: list[dict] = []
     for run in posted_night_runs:
-        entry = entries_by_id.get(str(run.get("gl_journal_entry_id"))) or entries_by_source.get(
-            ("night_audit", str(run.get("id")))
-        )
+        entry = entries_by_id.get(str(run.get("gl_journal_entry_id"))) or entries_by_source.get(("night_audit", str(run.get("id"))))
         if not entry:
             blockers.append(
                 {
@@ -1905,9 +1932,7 @@ async def operational_reconciliation(
         for line in entry.get("lines", []):
             account = str(line.get("account_code") or "")
             if account in settlement_accounts:
-                night_gl_by_account[account] = night_gl_by_account.get(account, 0) + int(
-                    line.get("debit_minor") or 0
-                )
+                night_gl_by_account[account] = night_gl_by_account.get(account, 0) + int(line.get("debit_minor") or 0)
     payment_variance_minor = payment_total_minor - sum(night_gl_by_account.values())
     if payment_variance_minor:
         blockers.append(
@@ -1917,27 +1942,14 @@ async def operational_reconciliation(
             }
         )
 
-    folio_pos_orders = {
-        str(row.get("source_pos_order_id"))
-        for row in source_folio_charges
-        if row.get("source_pos_order_id")
-    }
-    direct_pos = [
-        row
-        for row in pos_transactions
-        if str(row.get("order_id") or "") not in folio_pos_orders
-        and row.get("gl_bridge_status") != "folio_path"
-    ]
+    folio_pos_orders = {str(row.get("source_pos_order_id")) for row in source_folio_charges if row.get("source_pos_order_id")}
+    direct_pos = [row for row in pos_transactions if str(row.get("order_id") or "") not in folio_pos_orders and row.get("gl_bridge_status") != "folio_path"]
     pos_total_minor = 0
     pos_gl_total_minor = 0
     for transaction in direct_pos:
-        amount_minor = _reconciliation_minor(
-            transaction.get("total_amount", transaction.get("amount"))
-        )
+        amount_minor = _reconciliation_minor(transaction.get("total_amount", transaction.get("amount")))
         pos_total_minor += amount_minor
-        entry = entries_by_id.get(str(transaction.get("gl_journal_entry_id"))) or entries_by_source.get(
-            ("pos_direct", str(transaction.get("order_id")))
-        )
+        entry = entries_by_id.get(str(transaction.get("gl_journal_entry_id"))) or entries_by_source.get(("pos_direct", str(transaction.get("order_id"))))
         if transaction.get("gl_bridge_status") != "posted" or not entry:
             blockers.append(
                 {
@@ -1948,11 +1960,7 @@ async def operational_reconciliation(
             )
             continue
         account = _settlement_account(mapping, transaction.get("payment_method"))
-        linked_minor = sum(
-            int(line.get("debit_minor") or 0)
-            for line in entry.get("lines", [])
-            if str(line.get("account_code") or "") == account
-        )
+        linked_minor = sum(int(line.get("debit_minor") or 0) for line in entry.get("lines", []) if str(line.get("account_code") or "") == account)
         pos_gl_total_minor += linked_minor
         if linked_minor != amount_minor:
             blockers.append(
@@ -1977,9 +1985,7 @@ async def operational_reconciliation(
     for transaction in matched_bank:
         amount_minor = _reconciliation_minor(transaction.get("amount"))
         bank_total_minor += amount_minor
-        entry = entries_by_id.get(str(transaction.get("journal_entry_id"))) or entries_by_source.get(
-            ("bank_reconciliation", str(transaction.get("id")))
-        )
+        entry = entries_by_id.get(str(transaction.get("journal_entry_id"))) or entries_by_source.get(("bank_reconciliation", str(transaction.get("id"))))
         if not entry:
             blockers.append(
                 {
@@ -1989,11 +1995,7 @@ async def operational_reconciliation(
                 }
             )
             continue
-        linked_minor = sum(
-            int(line.get("debit_minor") or 0)
-            for line in entry.get("lines", [])
-            if str(line.get("account_code") or "") == mapping["bank_account_code"]
-        )
+        linked_minor = sum(int(line.get("debit_minor") or 0) for line in entry.get("lines", []) if str(line.get("account_code") or "") == mapping["bank_account_code"])
         bank_gl_total_minor += linked_minor
         if linked_minor != amount_minor:
             blockers.append(
@@ -2011,11 +2013,7 @@ async def operational_reconciliation(
             }
         )
 
-    cashier_difference_minor = sum(
-        _reconciliation_minor(shift.get("difference"))
-        for shift in cashier_shifts
-        if shift.get("status") == "closed"
-    )
+    cashier_difference_minor = sum(_reconciliation_minor(shift.get("difference")) for shift in cashier_shifts if shift.get("status") == "closed")
     open_cashier_count = sum(1 for shift in cashier_shifts if shift.get("status") == "open")
     if cashier_difference_minor:
         blockers.append(
@@ -2032,18 +2030,8 @@ async def operational_reconciliation(
             }
         )
 
-    referenced_entries = linked_night_entries + [
-        entry
-        for entry in journal_entries
-        if entry.get("source") in {"pos_direct", "bank_reconciliation"}
-    ]
-    invalid_entries = sorted(
-        {
-            str(entry.get("entry_no") or entry.get("id"))
-            for entry in referenced_entries
-            if not entry.get("entry_hash") or not verify_journal_entry_hash(entry)
-        }
-    )
+    referenced_entries = linked_night_entries + [entry for entry in journal_entries if entry.get("source") in {"pos_direct", "bank_reconciliation"}]
+    invalid_entries = sorted({str(entry.get("entry_no") or entry.get("id")) for entry in referenced_entries if not entry.get("entry_hash") or not verify_journal_entry_hash(entry)})
     if invalid_entries:
         blockers.append(
             {
@@ -2063,10 +2051,7 @@ async def operational_reconciliation(
             "payment_total": _reconciliation_amount(payment_total_minor),
             "gl_total": _reconciliation_amount(sum(night_gl_by_account.values())),
             "variance": _reconciliation_amount(payment_variance_minor),
-            "by_account": {
-                code: _reconciliation_amount(amount)
-                for code, amount in sorted(payment_by_account.items())
-            },
+            "by_account": {code: _reconciliation_amount(amount) for code, amount in sorted(payment_by_account.items())},
         },
         "pos": {
             "direct_count": len(direct_pos),
@@ -2193,6 +2178,14 @@ async def reverse_journal(
     if original.get("reverses_entry_id"):
         raise HTTPException(status_code=409, detail="Bir ters kayıt fişi yeniden ters kayda alınamaz")
 
+    reversal_date = normalize_posting_date(payload.date)
+    original_date = normalize_posting_date(original.get("date"))
+    if reversal_date < original_date:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Ters kayıt tarihi kaynak fiş tarihinden ({original_date}) önce olamaz",
+        )
+
     reversed_lines = [
         {
             "account_code": line.get("account_code"),
@@ -2223,7 +2216,7 @@ async def reverse_journal(
         reversal = await post_journal_entry(
             db,
             tenant_id,
-            date=payload.date,
+            date=reversal_date,
             memo=f"{original.get('entry_no') or entry_id} ters kaydı — {payload.reason.strip()}",
             lines=reversed_lines,
             source="reversal",
@@ -2632,9 +2625,7 @@ async def create_accounting_setup_opening_balance(
         return {"voucher": existing, "idempotent_replay": True, **(await _accounting_setup_state(tenant_id))}
     actor = _actor_id(current_user)
     now = _now_iso()
-    normalized = _normalized_voucher_payload(
-        VoucherCreateIn(date=payload.date, voucher_type="acilis", memo=payload.memo, lines=payload.lines)
-    )
+    normalized = _normalized_voucher_payload(VoucherCreateIn(date=payload.date, voucher_type="acilis", memo=payload.memo, lines=payload.lines))
     fiscal_year = int(normalized["date"][:4])
     voucher_sequence, voucher_no = await _allocate_voucher_number(tenant_id, fiscal_year, now)
     voucher = {
@@ -2794,65 +2785,26 @@ async def download_eledger_source_package(
     )
 
 
-async def _chain_properties(current_user: User) -> list[dict]:
-    tenant_id = _tenant_of(current_user)
-    own = await _system_db.tenants.find_one(
-        {"$or": [{"tenant_id": tenant_id}, {"id": tenant_id}]},
-        {
-            "_id": 0,
-            "chain_id": 1,
-            "tenant_id": 1,
-            "id": 1,
-            "hotel_name": 1,
-            "name": 1,
-            "property_name": 1,
-            "is_chain_headquarters": 1,
-        },
-    )
-    chain_id = (own or {}).get("chain_id")
-    if not chain_id:
-        return [
-            {
-                "tenant_id": tenant_id,
-                "property_name": (own or {}).get("property_name") or (own or {}).get("hotel_name") or (own or {}).get("name") or tenant_id,
-            }
-        ]
-    tenants = await _system_db.tenants.find(
-        {"chain_id": chain_id},
-        {"_id": 0, "tenant_id": 1, "id": 1, "hotel_name": 1, "name": 1, "property_name": 1},
-    ).to_list(500)
-    return [
-        {
-            "tenant_id": tenant.get("tenant_id") or tenant.get("id"),
-            "property_name": tenant.get("property_name") or tenant.get("hotel_name") or tenant.get("name") or tenant.get("tenant_id") or tenant.get("id"),
-        }
-        for tenant in tenants
-        if tenant.get("tenant_id") or tenant.get("id")
-    ]
-
-
 async def _chain_scope(current_user: User) -> dict:
-    tenant_id = _tenant_of(current_user)
-    own = await _system_db.tenants.find_one(
-        {"$or": [{"tenant_id": tenant_id}, {"id": tenant_id}]},
-        {"_id": 0, "chain_id": 1, "is_chain_headquarters": 1},
-    )
-    chain_id = (own or {}).get("chain_id")
-    properties = await _chain_properties(current_user)
+    own, tenants = await resolve_chain_properties(current_user, require_headquarters=False, system_db=_system_db)
+    chain_id = own.get("chain_id")
     headquarters_tenant_id = None
     if chain_id:
-        chain = await _system_db.hotel_chains.find_one(
-            {"id": chain_id},
-            {"_id": 0, "headquarters_tenant_id": 1},
-        )
+        chain = await _system_db.hotel_chains.find_one({"id": chain_id}, {"_id": 0, "headquarters_tenant_id": 1})
         headquarters_tenant_id = (chain or {}).get("headquarters_tenant_id")
-        if not headquarters_tenant_id and (own or {}).get("is_chain_headquarters"):
-            headquarters_tenant_id = tenant_id
+        if not headquarters_tenant_id and own.get("is_chain_headquarters"):
+            headquarters_tenant_id = tenant_id_from_document(own)
+    properties = [
+        {
+            "tenant_id": tenant_id_from_document(t),
+            "property_name": t.get("property_name") or t.get("hotel_name") or t.get("name") or tenant_id_from_document(t)
+        } for t in tenants
+    ]
     return {
-        "tenant_id": tenant_id,
+        "tenant_id": tenant_id_from_document(own),
         "chain_id": chain_id,
         "properties": properties,
-        "headquarters_tenant_id": headquarters_tenant_id,
+        "headquarters_tenant_id": headquarters_tenant_id
     }
 
 

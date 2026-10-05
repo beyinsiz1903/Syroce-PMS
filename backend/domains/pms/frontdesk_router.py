@@ -13,13 +13,14 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from common.context import OperationContext
 from core.booking_atomicity import (
     is_replica_set_unavailable,
     standalone_fallback_allowed,
 )
+from core.business_date_service import stamp_open_business_date
 from core.business_date_transition_guard import enforce_business_date_transition
 from core.database import db
 from core.security import (
@@ -33,6 +34,7 @@ from models.schemas import Booking, Guest, User
 from modules.pms_core.role_permission_service import require_module as require_module_v97  # v97 DW
 from modules.pms_core.role_permission_service import require_op  # v94 DW
 from shared_kernel.idempotency import (
+    build_request_hash,
     claim_idempotency,
     complete_idempotency,
     get_idempotency_key,
@@ -177,6 +179,7 @@ async def check_in_guest(
     return result.data
 
 
+@router.post("/pms/reservations/{booking_id}/checkout")
 @router.post("/frontdesk/checkout/{booking_id}")
 async def check_out_guest(
     booking_id: str,
@@ -226,6 +229,10 @@ class FolioPaymentRequest(BaseModel):
     payment_type: PaymentType = PaymentType.INTERIM
     reference: str | None = None
     notes: str | None = None
+    currency: str | None = Field(None, min_length=3, max_length=3)
+    received_currency: str | None = Field(None, min_length=3, max_length=3)
+    received_amount: float | None = Field(None, gt=0, le=1e9)
+    exchange_rate: float | None = Field(None, gt=0, le=1e9)
 
 
 _LEGACY_CHARGE_MAP = {
@@ -731,89 +738,128 @@ async def add_folio_charge(
 async def add_folio_payment(
     booking_id: str,
     payload: FolioPaymentRequest,
+    request: Request,
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("post_payment")),  # v94 DW
 ):
     if payload.amount <= 0:
         raise HTTPException(status_code=400, detail="amount 0'dan büyük olmalı")
 
-    booking = await _ensure_booking(current_user.tenant_id, booking_id)
-    folio = await _ensure_open_folio(current_user.tenant_id, booking_id, booking.get("guest_id"))
     amount = float(payload.amount)
-    now = datetime.now(UTC)
-    now_iso = now.isoformat()
     method_value = payload.method.value if hasattr(payload.method, "value") else str(payload.method)
     type_value = payload.payment_type.value if hasattr(payload.payment_type, "value") else str(payload.payment_type)
-    payment_doc = {
-        "id": str(uuid.uuid4()),
-        "tenant_id": current_user.tenant_id,
-        "folio_id": folio["id"],
-        "booking_id": booking_id,
-        "amount": amount,
-        "method": method_value,
-        "payment_type": type_value,
-        "status": "paid",
-        "voided": False,
-        "reference": payload.reference,
-        "notes": payload.notes,
-        "processed_by": current_user.name,
-        "processed_at": now_iso,
-    }
-    # Vardiya kontrolü: nakit ödemede aktif vardiya zorunlu
-    from domains.pms.cashier_service import ensure_active_shift, record_cash_transaction
 
-    await ensure_active_shift(current_user.tenant_id, method_value)
-
-    await db.payments.insert_one(dict(payment_doc))
-    await db.folios.update_one(
-        {"id": folio["id"], "tenant_id": current_user.tenant_id},
-        {"$inc": {"balance": -amount}},
-    )
-    await db.bookings.update_one(
-        {"id": booking_id, "tenant_id": current_user.tenant_id},
-        {"$inc": {"paid_amount": amount}},
-    )
-
-    # Kasa hareketine yaz — cash için race-safe rollback
-    is_cash = method_value.lower() == "cash"
-    try:
-        await record_cash_transaction(
+    # FolioDialog ve hızlı ödeme paneli aynı endpoint'i kullanır. İstemcinin
+    # gönderdiği anahtar hem çift tıklamayı hem de ağ retry'ını tek ödeme
+    # kaydına indirger; aynı anahtar farklı payload ile yeniden kullanılamaz.
+    idem_key = get_idempotency_key(request)
+    idem_lock_id = None
+    if idem_key:
+        claim = await claim_idempotency(
+            db,
             tenant_id=current_user.tenant_id,
-            amount=amount,
-            method=method_value,
-            direction="in",
-            description=f"Folio ödemesi - Oda {booking.get('room_number', '?')}",
-            txn_type="folio_payment",
-            ref_type="payment",
-            ref_id=payment_doc["id"],
-            created_by=current_user.email,
-            created_by_name=getattr(current_user, "name", None) or current_user.email,
-            idempotency_key=f"payment:{payment_doc['id']}",
-            require_open_shift=is_cash,
+            scope=f"frontdesk_folio_payment:{booking_id}",
+            idempotency_key=idem_key,
+            request_hash=build_request_hash(payload.model_dump(mode="json")),
         )
-    except HTTPException as he:
-        if is_cash and he.status_code == 409:
-            try:
-                await db.payments.delete_one({"id": payment_doc["id"], "tenant_id": current_user.tenant_id})
-                await db.folios.update_one(
-                    {"id": folio["id"], "tenant_id": current_user.tenant_id},
-                    {"$inc": {"balance": amount}},
-                )
-                await db.bookings.update_one(
-                    {"id": booking_id, "tenant_id": current_user.tenant_id},
-                    {"$inc": {"paid_amount": -amount}},
-                )
-            except Exception:
-                import logging as _lg
+        if claim["status"] == "replay":
+            return claim["response"]
+        if claim["status"] == "in_flight":
+            raise HTTPException(status_code=409, detail="Aynı ödeme isteği halen işleniyor")
+        if claim["status"] == "mismatch":
+            raise HTTPException(status_code=409, detail="Aynı ödeme anahtarı farklı bilgilerle kullanılamaz")
+        idem_lock_id = claim["lock_id"]
 
-                _lg.getLogger(__name__).exception("payment rollback failed after cashier 409")
+    try:
+        booking = await _ensure_booking(current_user.tenant_id, booking_id)
+        folio = await _ensure_open_folio(current_user.tenant_id, booking_id, booking.get("guest_id"))
+        now_iso = datetime.now(UTC).isoformat()
+        payment_doc = {
+            "id": str(uuid.uuid4()),
+            "tenant_id": current_user.tenant_id,
+            "folio_id": folio["id"],
+            "booking_id": booking_id,
+            "amount": amount,
+            "currency": str(payload.currency or booking.get("currency") or "TRY").upper(),
+            "received_currency": str(payload.received_currency or payload.currency or booking.get("currency") or "TRY").upper(),
+            "received_amount": float(payload.received_amount if payload.received_amount is not None else amount),
+            "exchange_rate": float(payload.exchange_rate if payload.exchange_rate is not None else 1),
+            "method": method_value,
+            "payment_type": type_value,
+            "status": "paid",
+            "voided": False,
+            "reference": payload.reference,
+            "notes": payload.notes,
+            "processed_by": current_user.name,
+            "processed_at": now_iso,
+        }
+        await stamp_open_business_date(db, current_user.tenant_id, payment_doc)
+        # Vardiya kontrolü: nakit ödemede aktif vardiya zorunlu
+        from domains.pms.cashier_service import ensure_active_shift, record_cash_transaction
+
+        await ensure_active_shift(current_user.tenant_id, method_value)
+
+        await db.payments.insert_one(dict(payment_doc))
+        await db.folios.update_one(
+            {"id": folio["id"], "tenant_id": current_user.tenant_id},
+            {"$inc": {"balance": -amount}},
+        )
+        await db.bookings.update_one(
+            {"id": booking_id, "tenant_id": current_user.tenant_id},
+            {"$inc": {"paid_amount": amount}},
+        )
+
+        # Kasa hareketine yaz — cash için race-safe rollback
+        is_cash = method_value.lower() == "cash"
+        try:
+            await record_cash_transaction(
+                tenant_id=current_user.tenant_id,
+                amount=amount,
+                method=method_value,
+                direction="in",
+                description=f"Folio ödemesi - Oda {booking.get('room_number', '?')}",
+                txn_type="folio_payment",
+                ref_type="payment",
+                ref_id=payment_doc["id"],
+                created_by=current_user.email,
+                created_by_name=getattr(current_user, "name", None) or current_user.email,
+                idempotency_key=f"payment:{payment_doc['id']}",
+                require_open_shift=is_cash,
+            )
+        except HTTPException as he:
+            if is_cash and he.status_code == 409:
+                try:
+                    await db.payments.delete_one({"id": payment_doc["id"], "tenant_id": current_user.tenant_id})
+                    await db.folios.update_one(
+                        {"id": folio["id"], "tenant_id": current_user.tenant_id},
+                        {"$inc": {"balance": amount}},
+                    )
+                    await db.bookings.update_one(
+                        {"id": booking_id, "tenant_id": current_user.tenant_id},
+                        {"$inc": {"paid_amount": -amount}},
+                    )
+                except Exception:
+                    logger.exception("payment rollback failed after cashier 409")
+            raise
+        except Exception:
+            logger.exception("cashier txn record failed")
+
+        if idem_lock_id:
+            await complete_idempotency(
+                db,
+                lock_id=idem_lock_id,
+                response_body=payment_doc,
+            )
+            idem_lock_id = None
+        return payment_doc
+    except HTTPException:
+        if idem_lock_id:
+            await release_idempotency(db, lock_id=idem_lock_id)
         raise
-    except Exception:
-        import logging as _lg
-
-        _lg.getLogger(__name__).exception("cashier txn record failed")
-
-    return payment_doc
+    except Exception as exc:
+        if idem_lock_id:
+            await release_idempotency(db, lock_id=idem_lock_id, error=str(exc))
+        raise
 
 
 @router.get("/frontdesk/folio/{booking_id}")
@@ -826,27 +872,24 @@ async def get_folio(booking_id: str, current_user: User = Depends(get_current_us
     return result.data
 
 
-# rbac-allow: cache-rbac — FO arrivals operasyonel (FO/HK/manager)
+# rbac-allow: operational read — FO arrivals (FO/HK/manager)
 @router.get("/frontdesk/arrivals")
-@cached(ttl=120, key_prefix="frontdesk_arrivals")
 async def get_arrivals(date: str | None = None, current_user: User = Depends(get_current_user)):
     ctx = OperationContext.from_user(current_user)
     result = await frontdesk_service.get_arrivals(ctx, date)
     return result.data
 
 
-# rbac-allow: cache-rbac — FO departures operasyonel
+# rbac-allow: operational read — FO departures
 @router.get("/frontdesk/departures")
-@cached(ttl=120, key_prefix="frontdesk_departures")
 async def get_departures(date: str | None = None, current_user: User = Depends(get_current_user)):
     ctx = OperationContext.from_user(current_user)
     result = await frontdesk_service.get_departures(ctx, date)
     return result.data
 
 
-# rbac-allow: cache-rbac — FO inhouse operasyonel
+# rbac-allow: operational read — FO inhouse
 @router.get("/frontdesk/inhouse")
-@cached(ttl=180, key_prefix="frontdesk_inhouse")
 async def get_inhouse_guests(current_user: User = Depends(get_current_user)):
     ctx = OperationContext.from_user(current_user)
     result = await frontdesk_service.get_inhouse(ctx)

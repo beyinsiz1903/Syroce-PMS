@@ -36,10 +36,10 @@ export default function HRPerformanceTab({ Award, performancePage, TrendingUp, p
                 <form onSubmit={submitPerformance} className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
                   <div>
                     <Label className="text-xs">Personel</Label>
-                    <select value={perfForm.staff_id} onChange={e => setPerfForm({
-              ...perfForm,
+                    <select value={perfForm.staff_id} onChange={e => setPerfForm(prev => ({
+              ...prev,
               staff_id: e.target.value
-            })} className="w-full rounded-md border border-input px-3 py-2 text-sm">
+            }))} className="w-full rounded-md border border-input px-3 py-2 text-sm">
                       <option value="">{t('cm.pages_HRComplete.secin_4f7bd')}</option>
                       {staffDropdown.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                     </select>
@@ -62,38 +62,38 @@ export default function HRPerformanceTab({ Award, performancePage, TrendingUp, p
                     </div>}
                   <div>
                     <Label className="text-xs">{t('cm.pages_HRComplete.donem')}</Label>
-                    <Input value={perfForm.period} onChange={e => setPerfForm({
-              ...perfForm,
+                    <Input value={perfForm.period} onChange={e => setPerfForm(prev => ({
+              ...prev,
               period: e.target.value
-            })} placeholder="2026 Q1" />
+            }))} placeholder="2026 Q1" />
                   </div>
                   <div>
                     <Label className="text-xs">Genel Puan (0–10)</Label>
-                    <Input type="number" min="0" max="10" step="0.1" value={perfForm.overall_score} onChange={e => setPerfForm({
-              ...perfForm,
+                    <Input type="number" min="0" max="10" step="0.1" value={perfForm.overall_score} onChange={e => setPerfForm(prev => ({
+              ...prev,
               overall_score: e.target.value
-            })} />
+            }))} />
                   </div>
                   <div>
                     <Label className="text-xs">{t('cm.pages_HRComplete.guclu_yonler')}</Label>
-                    <Textarea rows={2} value={perfForm.strengths} onChange={e => setPerfForm({
-              ...perfForm,
+                    <Textarea rows={2} value={perfForm.strengths} onChange={e => setPerfForm(prev => ({
+              ...prev,
               strengths: e.target.value
-            })} />
+            }))} />
                   </div>
                   <div>
                     <Label className="text-xs">{t('cm.pages_HRComplete.gelisim_alanlari')}</Label>
-                    <Textarea rows={2} value={perfForm.improvement_areas} onChange={e => setPerfForm({
-              ...perfForm,
+                    <Textarea rows={2} value={perfForm.improvement_areas} onChange={e => setPerfForm(prev => ({
+              ...prev,
               improvement_areas: e.target.value
-            })} />
+            }))} />
                   </div>
                   <div>
                     <Label className="text-xs">Hedefler</Label>
-                    <Textarea rows={2} value={perfForm.goals} onChange={e => setPerfForm({
-              ...perfForm,
+                    <Textarea rows={2} value={perfForm.goals} onChange={e => setPerfForm(prev => ({
+              ...prev,
               goals: e.target.value
-            })} />
+            }))} />
                   </div>
                   <div className="md:col-span-2 lg:col-span-3 flex justify-end">
                     <Button type="submit" disabled={creatingPerf}>

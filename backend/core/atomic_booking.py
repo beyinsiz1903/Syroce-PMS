@@ -114,7 +114,7 @@ async def _retire_stale_booking_lock(
     are included in the delete filter so a concurrent replacement cannot be
     removed. Fresh rows are always kept to protect an in-flight create/move.
     """
-    if not existing or not _lock_is_old_enough(existing):
+    if not existing:
         return False
 
     lock_type = (existing.get("lock_type") or "booking").lower()
@@ -126,6 +126,8 @@ async def _retire_stale_booking_lock(
     if not owner_id or owner_id == requested_booking_id:
         return False
 
+    lock_is_old_enough = _lock_is_old_enough(existing)
+
     with tenant_context(tenant_id):
         owner = await db.bookings.find_one(
             {"tenant_id": tenant_id, "id": owner_id},
@@ -133,10 +135,19 @@ async def _retire_stale_booking_lock(
         )
 
     stale_reason: str | None = None
-    if owner is None:
-        stale_reason = "booking_missing"
-    elif (owner.get("status") or "").lower() in TERMINAL_BOOKING_STATUSES:
+    owner_status = (owner.get("status") or "").lower() if owner else ""
+    if owner_status in TERMINAL_BOOKING_STATUSES:
+        # A terminal booking cannot legitimately own inventory anymore.  Do
+        # not apply the in-flight grace period here: checkout/cancellation has
+        # already committed, so keeping this lock even briefly makes a room
+        # look unavailable immediately after the front-desk action.
         stale_reason = "booking_terminal"
+    elif not lock_is_old_enough:
+        # Fresh non-terminal/missing owners may belong to an in-flight create
+        # or move.  Keep them fail-closed until the grace period expires.
+        return False
+    elif owner is None:
+        stale_reason = "booking_missing"
     elif owner.get("room_id") != room_id:
         stale_reason = "room_mismatch"
     else:
@@ -301,6 +312,24 @@ async def _emit_overbooking_alert(
             "booking": "Mevcut Rezervasyon",
         }.get(conflict_type, "Çakışma")
 
+        conflicting_booking_name = ""
+        if conflicting_booking_id:
+            try:
+                with tenant_context(tenant_id):
+                    conflicting_booking = await db.bookings.find_one(
+                        {"id": conflicting_booking_id},
+                        {"_id": 0, "guest_name": 1, "booking_number": 1, "reservation_number": 1},
+                    )
+                if conflicting_booking:
+                    conflicting_booking_name = conflicting_booking.get("guest_name") or conflicting_booking.get("booking_number") or conflicting_booking.get("reservation_number") or ""
+            except Exception:
+                # Bildirim zenginleştirmesi rezervasyon korumasını etkilemez.
+                pass
+
+        conflict_reference = ""
+        if conflicting_booking_id:
+            conflict_reference = f" Çakışan rezervasyon: {conflicting_booking_name} ({conflicting_booking_id})." if conflicting_booking_name else f" Çakışan rezervasyon: {conflicting_booking_id}."
+
         with tenant_context(tenant_id):
             await db.notifications.insert_one(
                 {
@@ -311,17 +340,20 @@ async def _emit_overbooking_alert(
                     "title": f"Overbooking Engellendi - {title_room}",
                     "message": (
                         f"{conflict_night} gecesi için {title_room} talebi reddedildi "
-                        f"(çakışma kaynağı: {type_label}" + (f", booking {conflicting_booking_id}" if conflicting_booking_id else "") + "). "
+                        f"(çakışma kaynağı: {type_label})." + conflict_reference + " "
                         "OTA kaynaklı bookingler 'pending_assignment' kuyruğuna düşmüş olabilir — kontrol edin."
                     ),
                     "related_entity": "booking",
-                    "related_id": booking_id or "",
+                    # Çoğu çakışmada reddedilen istek henüz yazılmadığı için
+                    # operatörü mevcut/çakışan rezervasyona yönlendiririz.
+                    "related_id": conflicting_booking_id or booking_id or "",
                     "read": False,
                     "created_at": datetime.now(UTC).isoformat(),
                     "metadata": {
                         "conflict_type": conflict_type,
                         "conflict_night": conflict_night,
                         "conflicting_booking_id": conflicting_booking_id,
+                        "conflicting_booking_name": conflicting_booking_name or None,
                         "correlation_id": correlation_id,
                         "rejected_room_id": room_id,
                         "rejected_booking_id": booking_id,
@@ -391,25 +423,51 @@ async def _find_overlapping_active_booking(
     check_out: str,
     exclude_booking_id: str | None = None,
 ) -> dict[str, Any] | None:
-    """F8N — Return one active booking on (tenant_id, room_id) whose date
-    window overlaps [check_in, check_out), or None.
+    """Return one active booking whose occupied *nights* overlap the request.
 
-    Overlap rule (half-open intervals, mirrors `_night_dates`):
-        existing.check_in < new.check_out  AND  existing.check_out > new.check_in
-
-    Terminal-state bookings (cancelled / no_show / checked_out) are excluded.
+    The room-night lock is authoritative and uses the date interval
+    ``[check_in.date(), check_out.date())``.  A raw ISO timestamp comparison
+    here used a different rule: a new reservation at ``00:00`` looked like it
+    overlapped a departing guest at ``12:00`` on the same calendar date even
+    though neither booking claims that departure night.  Keep this defence in
+    depth guard aligned with the lock invariant.
     """
+    try:
+        requested_check_in = datetime.fromisoformat(str(check_in).replace("Z", "+00:00")).date()
+        requested_check_out = datetime.fromisoformat(str(check_out).replace("Z", "+00:00")).date()
+    except (TypeError, ValueError):
+        # Creation validates its timestamps independently; leave malformed
+        # request values to that validation path rather than guessing dates.
+        return None
+
     query: dict[str, Any] = {
         "tenant_id": tenant_id,
         "room_id": room_id,
         "status": {"$nin": list(TERMINAL_BOOKING_STATUSES)},
+        # Narrow candidates with index-friendly comparisons.  The definitive
+        # comparison below is date-based so mixed legacy timestamp formats do
+        # not alter the stay-night doctrine.
         "check_in": {"$lt": check_out},
-        "check_out": {"$gt": check_in},
+        "check_out": {"$gt": requested_check_in.isoformat()},
     }
     if exclude_booking_id:
         query["id"] = {"$ne": exclude_booking_id}
     with tenant_context(tenant_id):
-        return await db.bookings.find_one(query, {"_id": 0, "id": 1, "room_id": 1, "check_in": 1, "check_out": 1, "status": 1})
+        candidates = await db.bookings.find(
+            query,
+            {"_id": 0, "id": 1, "room_id": 1, "check_in": 1, "check_out": 1, "status": 1},
+        ).to_list(length=100)
+
+    for candidate in candidates:
+        try:
+            candidate_check_in = datetime.fromisoformat(str(candidate.get("check_in")).replace("Z", "+00:00")).date()
+            candidate_check_out = datetime.fromisoformat(str(candidate.get("check_out")).replace("Z", "+00:00")).date()
+        except (TypeError, ValueError):
+            # A malformed legacy row must not silently make the room sellable.
+            return candidate
+        if candidate_check_in < requested_check_out and candidate_check_out > requested_check_in:
+            return candidate
+    return None
 
 
 async def create_booking_atomic(
@@ -439,6 +497,21 @@ async def create_booking_atomic(
 
     if payload_tenant_id != tenant_id:
         raise TenantViolationError("Booking tenant does not match operation tenant")
+
+    # ``guest_name`` is a denormalised booking snapshot used for calendar,
+    # search and regulatory integrations.  Preserve an explicitly supplied
+    # value (for imports), but never create a blank snapshot when the linked
+    # canonical guest already has a name.
+    if not str(booking_doc.get("guest_name") or "").strip() and booking_doc.get("guest_id"):
+        from core.guest_name_utils import canonical_guest_name
+
+        guest = await db.guests.find_one(
+            {"tenant_id": tenant_id, "id": booking_doc["guest_id"]},
+            {"_id": 0, "name": 1, "full_name": 1, "first_name": 1, "last_name": 1},
+        )
+        guest_name = canonical_guest_name(guest)
+        if guest_name:
+            booking_doc["guest_name"] = guest_name
 
     # Encrypt PII fields before persistence
     try:
@@ -738,6 +811,37 @@ async def release_booking_nights(tenant_id: str, booking_id: str, reason: str = 
         logger.info("Released %d night locks for booking %s (reason=%s)", deleted, booking_id, reason)
 
     return deleted
+
+
+async def release_booking_room_nights(
+    tenant_id: str,
+    booking_id: str,
+    room_id: str,
+    check_in: str,
+    check_out: str,
+    *,
+    reason: str,
+) -> int:
+    """Release only one attempted assignment's locks.
+
+    Auto-assignment may lose a compare-and-set race after claiming room nights.
+    Releasing every lock owned by the booking in that situation can erase the
+    winning assignment's protection.  Compensation therefore has to be scoped
+    to the exact room and stay window attempted by the losing worker.
+    """
+    nights = _night_dates(check_in, check_out)
+    if not nights:
+        return 0
+    with tenant_context(tenant_id):
+        result = await db.room_night_locks.delete_many(
+            {
+                "tenant_id": tenant_id,
+                "booking_id": booking_id,
+                "room_id": room_id,
+                "night_date": {"$in": nights},
+            }
+        )
+    return int(getattr(result, "deleted_count", 0) or 0)
 
 
 async def assign_room_atomic(

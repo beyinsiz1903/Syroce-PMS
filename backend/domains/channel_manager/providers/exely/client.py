@@ -61,8 +61,11 @@ class ExelySoapTransport:
     Retry logic is handled externally by the provider layer.
     """
 
-    def __init__(self, endpoint_url: str = EXELY_DEFAULT_URL):
-        self._endpoint_url = validate_exely_endpoint(endpoint_url)
+    def __init__(self, endpoint_url: str = EXELY_DEFAULT_URL, *, connection_mode: str = ""):
+        self._endpoint_url = validate_exely_endpoint(
+            endpoint_url,
+            connection_mode=connection_mode,
+        )
 
     async def send_soap(
         self,
@@ -107,6 +110,12 @@ class ExelySoapTransport:
                     type(_e).__name__,
                     corr_tag,
                 )
+                # The rebinding guard also owns DNS resolution.  An EAI_AGAIN
+                # from that step is not an invalid SOAP payload and must use
+                # the provider retry policy; SSRF/private-address denials
+                # remain permanent configuration/security failures below.
+                if str(_e).startswith("dns failure:") or str(_e).startswith("no addresses for "):
+                    raise ExelyTemporaryError("Exely endpoint DNS temporarily unavailable") from _e
                 raise ExelyPayloadError("Exely endpoint egress denied") from _e
 
             duration_ms = int((time.monotonic() - start) * 1000)

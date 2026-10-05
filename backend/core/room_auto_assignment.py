@@ -10,13 +10,16 @@ from __future__ import annotations
 
 import re
 import unicodedata
+import uuid
 from collections.abc import Awaitable, Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from core.atomic_booking import (
     BookingConflictError,
     assert_pending_assignment,
+    assign_room_atomic,
+    release_booking_room_nights,
 )
 
 UNSELLABLE_ROOM_STATUSES = {
@@ -167,8 +170,7 @@ async def create_booking_with_auto_assignment(
     if preferred_room_number:
         candidates.sort(
             key=lambda room: (
-                str(room.get("room_number") or room.get("name") or "").strip()
-                != preferred_room_number,
+                str(room.get("room_number") or room.get("name") or "").strip() != preferred_room_number,
                 _natural_room_key(room),
             )
         )
@@ -198,3 +200,175 @@ async def create_booking_with_auto_assignment(
     assert_pending_assignment(pending)
     created = await create_booking(tenant_id=tenant_id, booking_doc=pending)
     return created, None
+
+
+async def assign_pending_booking_with_auto_assignment(
+    *,
+    database: Any,
+    tenant_id: str,
+    booking_doc: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    """Assign an already-persisted pending booking after a stale hold is freed.
+
+    Legacy unmatched holds could occupy the provider's preferred physical room
+    until *after* the durable import was created.  The first allocation pass
+    therefore correctly produced a pending booking.  Once that legacy hold is
+    removed, perform a second race-safe allocation instead of leaving a false
+    "no available room" duplicate on the calendar.
+    """
+    booking_id = str(booking_doc.get("id") or "").strip()
+    if not booking_id or booking_doc.get("room_id"):
+        return booking_doc, None
+
+    # Own the promotion before claiming any room-night locks.  Without this
+    # compare-and-set, two delivery workers can both claim a room for the same
+    # pending booking; the loser then removes the winner's locks while rolling
+    # back.  A short stale timeout makes a crashed worker recoverable.
+    claim_id = str(uuid.uuid4())
+    claim_time = datetime.now(UTC)
+    stale_before = (claim_time - timedelta(minutes=5)).isoformat()
+    claim_result = await database.bookings.update_one(
+        {
+            "tenant_id": tenant_id,
+            "id": booking_id,
+            "room_id": None,
+            "$or": [
+                {"auto_assignment_claim_id": {"$exists": False}},
+                {"auto_assignment_claim_id": None},
+                {"auto_assignment_claimed_at": {"$lt": stale_before}},
+            ],
+        },
+        {
+            "$set": {
+                "auto_assignment_claim_id": claim_id,
+                "auto_assignment_claimed_at": claim_time.isoformat(),
+            }
+        },
+    )
+    if not getattr(claim_result, "matched_count", 0):
+        return booking_doc, None
+
+    async def release_claim() -> None:
+        await database.bookings.update_one(
+            {"tenant_id": tenant_id, "id": booking_id, "auto_assignment_claim_id": claim_id},
+            {"$unset": {"auto_assignment_claim_id": "", "auto_assignment_claimed_at": ""}},
+        )
+
+    async def booking_already_owns_room(room_id: str) -> dict[str, Any] | None:
+        """Detect an idempotent/concurrent success before compensating locks."""
+        current = await database.bookings.find_one(
+            {"tenant_id": tenant_id, "id": booking_id},
+            {"_id": 0},
+        )
+        if current and str(current.get("room_id") or "") == str(room_id):
+            return current
+        return None
+
+    try:
+        candidates = await find_auto_assignment_candidates(
+            database=database,
+            tenant_id=tenant_id,
+            property_id=booking_doc.get("property_id"),
+            room_type=booking_doc.get("room_type") or booking_doc.get("room_type_id") or "",
+            check_in=booking_doc.get("check_in") or booking_doc.get("check_in_date") or "",
+            check_out=booking_doc.get("check_out") or booking_doc.get("check_out_date") or "",
+        )
+    except Exception:
+        await release_claim()
+        raise
+    preferred_room_number = str(booking_doc.get("preferred_room_number") or "").strip()
+    if preferred_room_number:
+        candidates.sort(
+            key=lambda room: (
+                str(room.get("room_number") or room.get("name") or "").strip() != preferred_room_number,
+                _natural_room_key(room),
+            )
+        )
+
+    for room in candidates:
+        check_in = booking_doc.get("check_in") or booking_doc.get("check_in_date") or ""
+        check_out = booking_doc.get("check_out") or booking_doc.get("check_out_date") or ""
+        try:
+            await assign_room_atomic(
+                tenant_id=tenant_id,
+                booking_id=booking_id,
+                room_id=room["id"],
+                check_in=check_in,
+                check_out=check_out,
+                correlation_id=f"ota-hold-promotion:{booking_id}",
+            )
+        except BookingConflictError:
+            continue
+
+        now = datetime.now(UTC).isoformat()
+        try:
+            result = await database.bookings.update_one(
+                {
+                    "tenant_id": tenant_id,
+                    "id": booking_id,
+                    "room_id": None,
+                    "auto_assignment_claim_id": claim_id,
+                },
+                {
+                    "$set": {
+                        "room_id": room["id"],
+                        "room_number": room.get("room_number") or room.get("name") or "",
+                        "allocation_source": "ota_auto_assignment_after_hold_release",
+                        "auto_assigned_at": now,
+                        "updated_at": now,
+                    },
+                    "$unset": {
+                        "auto_assignment_reason": "",
+                        "auto_assignment_claim_id": "",
+                        "auto_assignment_claimed_at": "",
+                    },
+                },
+            )
+        except Exception:
+            # The database result may have become ambiguous after a network
+            # error. Never delete locks if the durable booking already owns
+            # this room; a retry can safely observe that success.
+            if not await booking_already_owns_room(room["id"]):
+                await release_booking_room_nights(
+                    tenant_id,
+                    booking_id,
+                    room["id"],
+                    check_in,
+                    check_out,
+                    reason="pending_booking_assignment_error",
+                )
+            await release_claim()
+            raise
+        if not getattr(result, "matched_count", 1):
+            current = await booking_already_owns_room(room["id"])
+            if current:
+                current.pop("auto_assignment_claim_id", None)
+                current.pop("auto_assignment_claimed_at", None)
+                return current, room
+            await release_booking_room_nights(
+                tenant_id,
+                booking_id,
+                room["id"],
+                check_in,
+                check_out,
+                reason="pending_booking_assignment_lost",
+            )
+            await release_claim()
+            return booking_doc, None
+
+        assigned = dict(booking_doc)
+        assigned.update(
+            {
+                "room_id": room["id"],
+                "room_number": room.get("room_number") or room.get("name") or "",
+                "allocation_source": "ota_auto_assignment_after_hold_release",
+                "auto_assigned_at": now,
+                "updated_at": now,
+            }
+        )
+        assigned.pop("auto_assignment_reason", None)
+        assigned.pop("preferred_room_number", None)
+        return assigned, room
+
+    await release_claim()
+    return booking_doc, None

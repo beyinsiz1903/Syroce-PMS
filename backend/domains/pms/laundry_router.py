@@ -25,8 +25,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from pymongo.errors import DuplicateKeyError
 
+from core.business_date_service import stamp_open_business_date
 from core.database import db
 from core.pos_folio_consumer import _recalc_folio_balance
+from core.report_cache import invalidate_financial_report_caches
 from core.security import get_current_user
 from domains.pms.pos_extensions._idem import ensure_compound_unique
 from models.schemas import User
@@ -382,11 +384,13 @@ async def _charge_order_to_folio(tenant_id: str, actor: str, order: dict) -> dic
                 "line_no": ln["line_no"],
             }
             try:
+                await stamp_open_business_date(db, tenant_id, charge_doc)
                 await db.folio_charges.insert_one(dict(charge_doc))
             except DuplicateKeyError:
                 # Bu (sipariş, satır) zaten yazılmış — idempotent atla.
                 continue
         balance = await _recalc_folio_balance(db, tenant_id, folio_id)
+        invalidate_financial_report_caches(tenant_id)
         return {
             "charged": True,
             "amount": float(order.get("total", 0)),

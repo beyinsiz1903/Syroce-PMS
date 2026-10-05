@@ -9,12 +9,13 @@ Domain Router: Mobile
 
 Extracted from legacy_routes.py — Mobile dashboard, GM mobile, department mobile endpoints.
 """
+import math
 import uuid
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from core.database import db
 from core.security import get_current_user, security
@@ -56,7 +57,7 @@ class QuickIssueRequest(BaseModel):
 
 class QuickOrderItem(BaseModel):
     item_id: str
-    quantity: int = 1
+    quantity: int = Field(default=1, ge=1, le=999)
 
 
 class QuickOrderRequest(BaseModel):
@@ -127,7 +128,7 @@ async def create_quick_order_mobile(
     current_user = await get_current_user(credentials)
     outlet_id = request.outlet_id
     table_number = request.table_number
-    items = [item.dict() for item in request.items]
+    items = [item.model_dump() for item in request.items]
     notes = request.notes
 
     # Normalize idempotency key (bounded so it can't be abused as storage).
@@ -142,26 +143,62 @@ async def create_quick_order_mobile(
     if not outlet:
         raise HTTPException(status_code=404, detail="Outlet not found")
 
-    # Calculate total
+    # Calculate the order from the canonical menu records.  A mobile order
+    # must obey the same outlet, availability and tax rules as the waiter POS;
+    # otherwise a stale/foreign menu id can silently create a zero-value order.
     subtotal = 0.0
+    tax = 0.0
     order_items = []
 
     for item in items:
-        menu_item = await db.pos_menu_items.find_one({"id": item.get("item_id"), "tenant_id": current_user.tenant_id})
+        menu_item = await db.pos_menu_items.find_one(
+            {
+                "id": item.get("item_id"),
+                "tenant_id": current_user.tenant_id,
+                "outlet_id": outlet_id,
+            }
+        )
 
         if not menu_item:
-            continue
+            raise HTTPException(status_code=400, detail="Menü ürünü bu satış noktasında bulunamadı")
+        if menu_item.get("available", menu_item.get("status", "active") == "active") is False:
+            raise HTTPException(status_code=400, detail="Menü ürünü satışta değil")
 
         quantity = item.get("quantity", 1)
-        item_price = menu_item.get("price", 0)
+        item_price = menu_item.get("unit_price")
+        if item_price is None:
+            item_price = menu_item.get("price")
+        item_name = menu_item.get("item_name") or menu_item.get("name")
+        if not item_name or item_price is None or float(item_price) < 0:
+            raise HTTPException(status_code=422, detail="Menü ürünü fiyat/ad sözleşmesi geçersiz")
+        item_price = float(item_price)
+        item_tax_rate = float(menu_item.get("tax_rate", 0.18) or 0)
+        if not 0 <= item_tax_rate <= 1:
+            raise HTTPException(status_code=422, detail="Geçersiz KDV oranı")
         item_total = item_price * quantity
         subtotal += item_total
+        item_tax = round(item_total * item_tax_rate, 2)
+        tax += item_tax
 
-        order_items.append({"item_id": item.get("item_id"), "item_name": menu_item.get("name"), "quantity": quantity, "unit_price": item_price, "total": item_total})
+        order_items.append(
+            {
+                "item_id": item.get("item_id"),
+                "item_name": item_name,
+                "category": menu_item.get("category") or "food",
+                "quantity": quantity,
+                "unit_price": item_price,
+                "tax_rate": item_tax_rate,
+                "tax_amount": item_tax,
+                "total": round(item_total, 2),
+            }
+        )
 
-    # Calculate tax (18% VAT)
-    tax = subtotal * 0.18
-    total = subtotal + tax
+    if not order_items:
+        raise HTTPException(status_code=400, detail="Siparişe en az bir ürün ekleyin")
+
+    subtotal = round(subtotal, 2)
+    tax = round(tax, 2)
+    total = round(subtotal + tax, 2)
 
     # Create order
     order_id = str(uuid.uuid4())
@@ -240,6 +277,10 @@ async def update_menu_item_price_mobile(
     current_user = await get_current_user(credentials)
     new_price = request.new_price
     reason = request.reason
+    if not math.isfinite(new_price) or new_price < 0:
+        raise HTTPException(status_code=400, detail="Menu price must be a finite non-negative amount")
+
+    new_price = round(new_price, 2)
 
     # Find menu item
     menu_item = await db.pos_menu_items.find_one({"id": item_id, "tenant_id": current_user.tenant_id})
@@ -247,11 +288,22 @@ async def update_menu_item_price_mobile(
     if not menu_item:
         raise HTTPException(status_code=404, detail="Menu item not found")
 
-    old_price = menu_item.get("price")
+    old_price = menu_item.get("unit_price", menu_item.get("price"))
 
     # Update price
     await db.pos_menu_items.update_one(
-        {"id": item_id, "tenant_id": current_user.tenant_id}, {"$set": {"price": new_price, "price_updated_at": datetime.now(UTC), "price_updated_by": current_user.username}}
+        {
+            "id": item_id,
+            "tenant_id": current_user.tenant_id,
+        },
+        {
+            "$set": {
+                "price": new_price,
+                "unit_price": new_price,
+                "price_updated_at": datetime.now(UTC),
+                "price_updated_by": current_user.username,
+            }
+        },
     )
 
     # Log price change
@@ -259,7 +311,7 @@ async def update_menu_item_price_mobile(
         {
             "id": str(uuid.uuid4()),
             "tenant_id": current_user.tenant_id,
-            "user_id": current_user.user_id,
+            "user_id": getattr(current_user, "user_id", None) or current_user.id,
             "user_name": current_user.username,
             "action": "MENU_PRICE_UPDATE",
             "entity_type": "menu_item",

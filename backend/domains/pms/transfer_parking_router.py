@@ -29,10 +29,11 @@ from pydantic import BaseModel, Field
 from pymongo.errors import DuplicateKeyError
 
 from core.database import db
-from core.entitlements.enforcement import get_tenant_limit
+from core.entitlements.enforcement import get_tenant_limit, require_feature
 from core.entitlements.quota import QuotaExceededException, release_quota, reserve_quota
 from core.pos_folio_consumer import _recalc_folio_balance
 from core.security import get_current_user
+from core.tenant_currency import get_tenant_currency
 from domains.pms.pos_extensions._idem import ensure_compound_unique
 from models.schemas import User
 from shared_kernel.idempotency import claim_idempotency, complete_idempotency, get_idempotency_key, release_idempotency
@@ -174,6 +175,7 @@ async def create_resource(
 ):
     _require_role(current_user, _CATALOG_ROLES)
     tenant_id = _tenant_of(current_user)
+    tenant_currency, _ = await get_tenant_currency(tenant_id)
     if payload.kind not in _VALID_KINDS:
         raise HTTPException(status_code=422, detail="Geçersiz kaynak tipi")
 
@@ -203,6 +205,7 @@ async def create_resource(
         "name": payload.name.strip(),
         "kind": payload.kind,
         "price": round(float(payload.price), 2),
+        "currency": tenant_currency,
         "capacity": payload.capacity,
         "active": payload.active,
         "created_at": now,
@@ -394,16 +397,23 @@ async def _claim_slots(tenant_id: str, resource_id: str, booking_id: str, slots:
 
 async def _post_booking_to_folio(tenant_id: str, actor: str, booking_doc: dict) -> dict:
     """Rezervasyonu açık guest folio'ya idempotent yazar (tek satır)."""
+    tenant_currency, _ = await get_tenant_currency(tenant_id)
     booking_id = booking_doc.get("booking_id")
     pms_booking = None
     if not booking_id:
         pms_booking = await _find_active_booking_by_room_number(tenant_id, booking_doc.get("room_number", ""))
         booking_id = pms_booking.get("id") if pms_booking else None
 
-    if not booking_id:
-        return {"charged": False, "reason": "no_active_booking_or_folio"}
-
-    open_folio = await db.folios.find_one({"booking_id": booking_id, "folio_type": "guest", "status": "open", "tenant_id": tenant_id})
+    open_folio = None
+    if booking_id:
+        open_folio = await db.folios.find_one(
+            {
+                "booking_id": booking_id,
+                "folio_type": "guest",
+                "status": "open",
+                "tenant_id": tenant_id,
+            }
+        )
 
     # Sessiz degrade YOK: index kurulamazsa yükselt (çağıran rezervasyonu hiç
     # başlatmamış olur — pre-claim gate ile fail-closed).
@@ -418,6 +428,7 @@ async def _post_booking_to_folio(tenant_id: str, actor: str, booking_doc: dict) 
 
     src_id = booking_doc["id"]
     total = round(float(booking_doc.get("total", 0)), 2)
+    currency = str(booking_doc.get("currency") or tenant_currency).upper()
     label = "Transfer" if booking_doc.get("kind") == _KIND_TRANSFER else "Otopark"
     now = _now_iso()
 
@@ -436,6 +447,7 @@ async def _post_booking_to_folio(tenant_id: str, actor: str, booking_doc: dict) 
             "amount": total,
             "tax_amount": 0,
             "total": total,
+            "currency": currency,
             "voided": False,
             "date": now,
             "posted_by": actor,
@@ -450,13 +462,15 @@ async def _post_booking_to_folio(tenant_id: str, actor: str, booking_doc: dict) 
             # Zaten yazılmış — idempotent.
             charged = True
         balance = await _recalc_folio_balance(db, tenant_id, folio_id)
-        return {"charged": charged, "amount": total, "folio_id": folio_id, "balance": balance}
+        return {"charged": charged, "amount": total, "currency": currency, "folio_id": folio_id, "balance": balance}
 
     # Açık folio yok → late-charge.
-    any_folio = await db.folios.find_one(
-        {"booking_id": booking_id, "folio_type": "guest", "tenant_id": tenant_id},
-        sort=[("created_at", -1)],
-    )
+    any_folio = None
+    if booking_id:
+        any_folio = await db.folios.find_one(
+            {"booking_id": booking_id, "folio_type": "guest", "tenant_id": tenant_id},
+            sort=[("created_at", -1)],
+        )
     await db[_LATE_CHARGE_COLLECTION].update_one(
         {"tenant_id": tenant_id, "source_transport_booking_id": src_id},
         {
@@ -472,6 +486,7 @@ async def _post_booking_to_folio(tenant_id: str, actor: str, booking_doc: dict) 
                 "folio_id": any_folio.get("id") if any_folio else None,
                 "folio_status_at_apply": any_folio.get("status") if any_folio else "missing",
                 "total": total,
+                "currency": currency,
                 "status": "pending_review",
                 "updated_at": now,
             },
@@ -496,6 +511,7 @@ async def create_booking(
 ):
     _require_role(current_user, _BOOK_ROLES)
     tenant_id = _tenant_of(current_user)
+    tenant_currency, _ = await get_tenant_currency(tenant_id)
     actor = _actor_id(current_user)
 
     # Idempotency: aynı anahtarla önceki rezervasyonu dön.
@@ -549,6 +565,7 @@ async def create_booking(
         "resource_id": payload.resource_id,
         "resource_name": resource.get("name"),
         "kind": resource.get("kind"),
+        "currency": str(resource.get("currency") or tenant_currency).upper(),
         "guest_name": (payload.guest_name or "").strip() or None,
         "room_number": (payload.room_number or "").strip() or None,
         "booking_id": payload.booking_id or None,
@@ -604,7 +621,35 @@ async def cancel_booking(
         {"id": transport_booking_id, "tenant_id": tenant_id},
         {"$set": {"status": "cancelled", "updated_at": _now_iso()}},
     )
-    return {"ok": True, "status": "cancelled"}
+    # A cancelled parking/transfer service must not remain as revenue on the
+    # guest folio.  Keep the original row for auditability and void it.
+    charge = await db.folio_charges.find_one(
+        {
+            "tenant_id": tenant_id,
+            "source_transport_booking_id": transport_booking_id,
+            "line_no": 0,
+            "voided": {"$ne": True},
+        }
+    )
+    if charge:
+        await db.folio_charges.update_one(
+            {"id": charge.get("id"), "tenant_id": tenant_id},
+            {
+                "$set": {
+                    "voided": True,
+                    "voided_at": _now_iso(),
+                    "voided_by": _actor_id(current_user),
+                    "void_reason": "Transfer/otopark rezervasyonu iptal edildi",
+                }
+            },
+        )
+        if charge.get("folio_id"):
+            await _recalc_folio_balance(db, tenant_id, charge["folio_id"])
+    await db[_LATE_CHARGE_COLLECTION].update_one(
+        {"tenant_id": tenant_id, "source_transport_booking_id": transport_booking_id},
+        {"$set": {"status": "cancelled", "updated_at": _now_iso()}},
+    )
+    return {"ok": True, "status": "cancelled", "folio_charge_voided": bool(charge)}
 
 
 @router.get("/late-charges")
@@ -619,3 +664,166 @@ async def list_late_charges(
         q["status"] = status
     rows = await db[_LATE_CHARGE_COLLECTION].find(q, {"_id": 0}).sort("updated_at", -1).to_list(limit)
     return {"late_charges": rows}
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Pro otopark operasyonları — vale, LPR ve analiz
+# ─────────────────────────────────────────────────────────────────────
+_VALET_STATUSES = {"waiting", "parked", "requested", "delivered", "cancelled"}
+_LPR_DIRECTIONS = {"in", "out"}
+
+
+class ValetTicketIn(BaseModel):
+    plate: str = Field(..., min_length=2, max_length=20)
+    guest_name: str | None = Field(None, max_length=200)
+    room_number: str | None = Field(None, max_length=40)
+    vehicle_info: str | None = Field(None, max_length=160)
+    parking_spot: str | None = Field(None, max_length=80)
+    note: str | None = Field(None, max_length=500)
+
+
+class ValetStatusIn(BaseModel):
+    status: str = Field(..., max_length=20)
+    parking_spot: str | None = Field(None, max_length=80)
+    note: str | None = Field(None, max_length=500)
+
+
+class LPREventIn(BaseModel):
+    plate: str = Field(..., min_length=2, max_length=20)
+    direction: str = Field(..., max_length=10)
+    confidence: float | None = Field(None, ge=0, le=1)
+    camera: str | None = Field(None, max_length=120)
+    occurred_at: datetime | None = None
+
+
+def _normalise_plate(value: str) -> str:
+    return "".join(value.upper().split())
+
+
+@router.get("/valet", dependencies=[Depends(require_feature("parking", "valet_service"))])
+async def list_valet_tickets(
+    status: str = Query("active"),
+    limit: int = Query(200, ge=1, le=500),
+    current_user: User = Depends(get_current_user),
+):
+    q: dict = {"tenant_id": _tenant_of(current_user)}
+    if status == "active":
+        q["status"] = {"$in": ["waiting", "parked", "requested"]}
+    elif status != "all":
+        q["status"] = status
+    rows = await db.parking_valet_tickets.find(q, {"_id": 0}).sort("created_at", -1).to_list(limit)
+    return {"tickets": rows}
+
+
+@router.post("/valet", dependencies=[Depends(require_feature("parking", "valet_service"))])
+async def create_valet_ticket(payload: ValetTicketIn, current_user: User = Depends(get_current_user)):
+    _require_role(current_user, _BOOK_ROLES)
+    tenant_id = _tenant_of(current_user)
+    plate = _normalise_plate(payload.plate)
+    existing = await db.parking_valet_tickets.find_one(
+        {"tenant_id": tenant_id, "plate": plate, "status": {"$in": ["waiting", "parked", "requested"]}},
+        {"_id": 0},
+    )
+    if existing:
+        raise HTTPException(status_code=409, detail="Bu plaka için açık vale kaydı zaten var")
+    now = _now_iso()
+    doc = {
+        "id": str(uuid.uuid4()),
+        "tenant_id": tenant_id,
+        "plate": plate,
+        "guest_name": (payload.guest_name or "").strip() or None,
+        "room_number": (payload.room_number or "").strip() or None,
+        "vehicle_info": (payload.vehicle_info or "").strip() or None,
+        "parking_spot": (payload.parking_spot or "").strip() or None,
+        "note": (payload.note or "").strip() or None,
+        "status": "waiting",
+        "created_at": now,
+        "updated_at": now,
+        "created_by": _actor_id(current_user),
+    }
+    await db.parking_valet_tickets.insert_one(dict(doc))
+    return {"ticket": _serialize(doc)}
+
+
+@router.patch("/valet/{ticket_id}", dependencies=[Depends(require_feature("parking", "valet_service"))])
+async def update_valet_ticket(ticket_id: str, payload: ValetStatusIn, current_user: User = Depends(get_current_user)):
+    _require_role(current_user, _BOOK_ROLES)
+    if payload.status not in _VALET_STATUSES:
+        raise HTTPException(status_code=422, detail="Geçersiz vale durumu")
+    tenant_id = _tenant_of(current_user)
+    current = await db.parking_valet_tickets.find_one({"id": ticket_id, "tenant_id": tenant_id})
+    if not current:
+        raise HTTPException(status_code=404, detail="Vale kaydı bulunamadı")
+    now = _now_iso()
+    updates = {"status": payload.status, "updated_at": now, "updated_by": _actor_id(current_user)}
+    if payload.parking_spot is not None:
+        updates["parking_spot"] = payload.parking_spot.strip() or None
+    if payload.note is not None:
+        updates["note"] = payload.note.strip() or None
+    updates[f"{payload.status}_at"] = now
+    await db.parking_valet_tickets.update_one({"id": ticket_id, "tenant_id": tenant_id}, {"$set": updates})
+    row = await db.parking_valet_tickets.find_one({"id": ticket_id, "tenant_id": tenant_id}, {"_id": 0})
+    return {"ticket": row}
+
+
+@router.get("/lpr-events", dependencies=[Depends(require_feature("parking", "lpr_integration"))])
+async def list_lpr_events(
+    limit: int = Query(200, ge=1, le=500),
+    current_user: User = Depends(get_current_user),
+):
+    rows = await db.parking_lpr_events.find({"tenant_id": _tenant_of(current_user)}, {"_id": 0}).sort("occurred_at", -1).to_list(limit)
+    return {"events": rows}
+
+
+@router.post("/lpr-events", dependencies=[Depends(require_feature("parking", "lpr_integration"))])
+async def create_lpr_event(payload: LPREventIn, current_user: User = Depends(get_current_user)):
+    _require_role(current_user, _BOOK_ROLES)
+    if payload.direction not in _LPR_DIRECTIONS:
+        raise HTTPException(status_code=422, detail="Geçersiz geçiş yönü")
+    now = _now_iso()
+    doc = {
+        "id": str(uuid.uuid4()),
+        "tenant_id": _tenant_of(current_user),
+        "plate": _normalise_plate(payload.plate),
+        "direction": payload.direction,
+        "confidence": payload.confidence,
+        "camera": (payload.camera or "").strip() or None,
+        "occurred_at": (payload.occurred_at or datetime.now(UTC)).isoformat(),
+        "created_at": now,
+        "created_by": _actor_id(current_user),
+    }
+    await db.parking_lpr_events.insert_one(dict(doc))
+    return {"event": _serialize(doc)}
+
+
+@router.get("/analytics", dependencies=[Depends(require_feature("parking", "parking_analytics"))])
+async def parking_analytics(current_user: User = Depends(get_current_user)):
+    tenant_id = _tenant_of(current_user)
+    tenant_currency, _ = await get_tenant_currency(tenant_id)
+    resources = await db.transport_resources.find({"tenant_id": tenant_id, "active": True}, {"_id": 0}).to_list(1000)
+    bookings = await db.transport_bookings.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(5000)
+    valet = await db.parking_valet_tickets.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(5000)
+    lpr = await db.parking_lpr_events.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(5000)
+    active_bookings = [row for row in bookings if row.get("status") == "reserved"]
+    revenue_by_currency: dict[str, float] = {}
+    for row in active_bookings:
+        currency = str(row.get("currency") or tenant_currency).upper()
+        revenue_by_currency[currency] = round(revenue_by_currency.get(currency, 0) + float(row.get("total", 0) or 0), 2)
+    completed_valet = [row for row in valet if row.get("status") == "delivered"]
+    return {
+        "resources": {
+            "parking_spots": sum(1 for row in resources if row.get("kind") == _KIND_PARKING),
+            "transfer_vehicles": sum(1 for row in resources if row.get("kind") == _KIND_TRANSFER),
+        },
+        "bookings": {
+            "total": len(bookings),
+            "active": len(active_bookings),
+            "cancelled": sum(1 for row in bookings if row.get("status") == "cancelled"),
+            "folio_charged": sum(1 for row in bookings if row.get("folio_charged")),
+            "revenue": round(sum(float(row.get("total", 0) or 0) for row in active_bookings), 2),
+            "revenue_by_currency": revenue_by_currency,
+            "currency": tenant_currency,
+        },
+        "valet": {"active": sum(1 for row in valet if row.get("status") in {"waiting", "parked", "requested"}), "delivered": len(completed_valet)},
+        "lpr": {"events": len(lpr), "entries": sum(1 for row in lpr if row.get("direction") == "in"), "exits": sum(1 for row in lpr if row.get("direction") == "out")},
+    }

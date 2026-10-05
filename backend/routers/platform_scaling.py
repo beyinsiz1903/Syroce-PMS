@@ -6,11 +6,17 @@ Platform Scaling Router - Unified API for all enterprise scaling modules:
 - Competitive Set Analysis
 """
 
+import uuid
+from datetime import UTC, datetime
+from typing import Literal
+
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr, Field
 
 from core.cache import cached
-from core.security import get_current_user
+from core.security import get_current_user, hash_password
+from core.tenant_db import get_system_db
+from models.enums import UserRole
 from models.schemas import User
 from modules.platform_scaling.competitive_analysis import (
     ADRAdjustmentEngine,
@@ -31,8 +37,15 @@ from modules.platform_scaling.revenue_ml import (
     RateElasticityModel,
     RevenueMLDashboard,
 )
-from modules.pms_core.role_permission_service import require_module as require_module_v101  # v101 DW
-from modules.pms_core.role_permission_service import require_op  # v73 Bug DI
+from modules.pms_core.chain_access import resolve_chain_properties, tenant_id_from_document
+from modules.pms_core.role_permission_service import (
+    RolePermissionService,
+    require_op,  # v73 Bug DI
+)
+from modules.pms_core.role_permission_service import (
+    require_module as require_module_v101,  # v101 DW
+)
+from security.encrypted_lookup import build_user_email_query, decrypt_user_doc, encrypt_user_doc
 
 router = APIRouter(prefix="/api/platform", tags=["platform-scaling"])
 
@@ -83,12 +96,45 @@ class CrossPropertySearchReq(BaseModel):
 class TransferReservationReq(BaseModel):
     booking_id: str
     target_property_id: str
+    target_room_type: str | None = None
     reason: str | None = None
+    financial_handling: Literal["reject", "retain_and_settle"] = "reject"
+
+
+class ReconcileTransferSettlementReq(BaseModel):
+    method: Literal["bank_transfer", "intercompany_netting", "manual_journal"]
+    reference: str = Field(min_length=2, max_length=120)
+    note: str | None = Field(default=None, max_length=500)
+
+
+class ReverseTransferReq(BaseModel):
+    reason: str = Field(min_length=3, max_length=500)
 
 
 class GlobalRateAdjustReq(BaseModel):
     adjustment_pct: float
     room_type: str | None = None
+
+
+class ChainTeamMemberReq(BaseModel):
+    property_id: str
+    name: str = Field(min_length=2, max_length=120)
+    email: EmailStr
+    password: str = Field(min_length=8, max_length=128)
+    role: UserRole = UserRole.SUPERVISOR
+    phone: str | None = Field(default=None, max_length=40)
+
+
+CHAIN_TEAM_ROLES = {
+    UserRole.ADMIN,
+    UserRole.SUPERVISOR,
+    UserRole.FRONT_DESK,
+    UserRole.HOUSEKEEPING,
+    UserRole.FINANCE,
+    UserRole.PROCUREMENT,
+    UserRole.SALES,
+    UserRole.STAFF,
+}
 
 
 class BookingProbReq(BaseModel):
@@ -210,7 +256,81 @@ async def api_gateway_stats(current_user: User = Depends(get_current_user)):
 @router.get("/multi-property/portfolio")
 async def api_portfolio_overview(current_user: User = Depends(get_current_user)):
     """Get portfolio-wide overview."""
-    return await crs.get_portfolio_overview(current_user.tenant_id)
+    return await crs.get_portfolio_overview(current_user)
+
+
+@router.get("/multi-property/team")
+async def api_chain_team(current_user: User = Depends(get_current_user)):
+    """List users across the authenticated headquarters' verified chain."""
+    if current_user.role not in (UserRole.ADMIN, UserRole.SUPER_ADMIN):
+        raise HTTPException(status_code=403, detail="Zincir kullanıcılarını yalnızca yönetici görüntüleyebilir")
+
+    _, properties = await resolve_chain_properties(current_user, require_headquarters=True)
+    property_map = {
+        tenant_id_from_document(prop): prop.get("property_name") or prop.get("hotel_name") or prop.get("name")
+        for prop in properties
+        if tenant_id_from_document(prop)
+    }
+    sysdb = get_system_db()
+    users_raw = await sysdb.users.find(
+        {"tenant_id": {"$in": list(property_map)}},
+        {"_id": 0, "hashed_password": 0, "password_hash": 0, "password": 0},
+    ).to_list(1000)
+    users = []
+    for raw in users_raw:
+        user = decrypt_user_doc(raw)
+        user["property_name"] = property_map.get(user.get("tenant_id"), user.get("tenant_id"))
+        users.append(user)
+    users.sort(key=lambda item: (item.get("property_name") or "", item.get("name") or ""))
+    return {
+        "properties": [
+            {"property_id": pid, "property_name": name or pid}
+            for pid, name in property_map.items()
+        ],
+        "users": users,
+        "allowed_roles": sorted(role.value for role in CHAIN_TEAM_ROLES),
+    }
+
+
+@router.post("/multi-property/team", status_code=201)
+async def api_create_chain_team_member(
+    req: ChainTeamMemberReq,
+    current_user: User = Depends(get_current_user),
+):
+    """Create a user in one verified sibling property without widening its tenant scope."""
+    if current_user.role not in (UserRole.ADMIN, UserRole.SUPER_ADMIN):
+        raise HTTPException(status_code=403, detail="Zincir kullanıcısı oluşturmak için yönetici yetkisi gerekli")
+    if req.role not in CHAIN_TEAM_ROLES:
+        raise HTTPException(status_code=400, detail="Bu rol tesis kullanıcısı için kullanılamaz")
+
+    _, properties = await resolve_chain_properties(current_user, require_headquarters=True)
+    allowed_ids = {tenant_id_from_document(prop) for prop in properties}
+    if req.property_id not in allowed_ids:
+        raise HTTPException(status_code=403, detail="Hedef tesis bu zincire bağlı değil")
+
+    sysdb = get_system_db()
+    if await sysdb.users.find_one(build_user_email_query(str(req.email))):
+        raise HTTPException(status_code=409, detail="Bu e-posta adresi zaten kayıtlı")
+
+    now = datetime.now(UTC).isoformat()
+    user_id = str(uuid.uuid4())
+    new_user = encrypt_user_doc(
+        {
+            "id": user_id,
+            "tenant_id": req.property_id,
+            "email": str(req.email).lower(),
+            "name": req.name.strip(),
+            "phone": (req.phone or "").strip(),
+            "role": req.role.value,
+            "is_active": True,
+            "hashed_password": hash_password(req.password),
+            "created_at": now,
+            "created_by": current_user.id,
+            "created_via": "chain_headquarters",
+        }
+    )
+    await sysdb.users.insert_one(new_user)
+    return {"success": True, "user_id": user_id, "property_id": req.property_id}
 
 
 @router.post("/multi-property/search-availability")
@@ -220,7 +340,7 @@ async def api_cross_property_search(
     _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
 ):
     """Search availability across all properties."""
-    return await crs.search_availability_cross_property(current_user.tenant_id, req.check_in, req.check_out, req.room_type, req.guests)
+    return await crs.search_availability_cross_property(current_user, req.check_in, req.check_out, req.room_type, req.guests)
 
 
 @router.post("/multi-property/transfer-reservation")
@@ -230,16 +350,208 @@ async def api_transfer_reservation(
     _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
 ):
     """Transfer reservation to another property."""
-    result = await crs.transfer_reservation(current_user.tenant_id, req.booking_id, req.target_property_id, current_user.id, req.reason)
+    if req.financial_handling == "retain_and_settle":
+        # Keeping money in the source hotel creates a real inter-property
+        # payable/receivable.  A normal front-desk transfer must not be able to
+        # choose that accounting policy without payment authority.
+        RolePermissionService().enforce_user_permission(current_user, "post_payment")
+    result = await crs.transfer_reservation(
+        current_user,
+        req.booking_id,
+        req.target_property_id,
+        req.reason,
+        req.target_room_type,
+        req.financial_handling,
+    )
     if not result.get("success"):
+        if result.get("error_code") == "financial_handling_required":
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": result["error_code"],
+                    "message": result.get("error"),
+                    "payment_totals": result.get("payment_totals") or {},
+                },
+            )
         raise HTTPException(status_code=400, detail=result.get("error"))
     return result
+
+
+@router.post("/multi-property/transfers/{transfer_id}/reverse")
+async def api_reverse_transfer(
+    transfer_id: str,
+    req: ReverseTransferReq,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v101("frontdesk")),
+):
+    """Reverse an eligible transfer; changed stays must be transferred anew."""
+    # Reversal can void an open inter-property receivable/payable.  Require
+    # payment authority even when the original transfer did not retain funds,
+    # so a front-desk role cannot mutate the financial trail.
+    RolePermissionService().enforce_user_permission(current_user, "post_payment")
+    result = await crs.reverse_transfer(current_user, transfer_id, req.reason)
+    if not result.get("success"):
+        raise HTTPException(status_code=409, detail=result.get("error"))
+    return result
+
+
+@router.get("/multi-property/transfers")
+async def api_chain_transfers(
+    limit: int = 100,
+    current_user: User = Depends(get_current_user),
+):
+    """Return the verified chain's reservation-transfer and settlement trail."""
+    _, properties = await resolve_chain_properties(current_user, require_headquarters=True)
+    allowed_ids = {tenant_id_from_document(prop) for prop in properties if tenant_id_from_document(prop)}
+    safe_limit = max(1, min(limit, 500))
+    sysdb = get_system_db()
+    transfers = await (
+        sysdb.reservation_transfers.find(
+            {
+                "source_property": {"$in": list(allowed_ids)},
+                "target_property": {"$in": list(allowed_ids)},
+            },
+            {"_id": 0, "original_booking": 0},
+        )
+        .sort("transferred_at", -1)
+        .limit(safe_limit)
+        .to_list(safe_limit)
+    )
+    settlements = await sysdb.chain_transfer_settlements.find(
+        {"transfer_id": {"$in": [row.get("id") for row in transfers if row.get("id")]}},
+        {"_id": 0},
+    ).to_list(safe_limit)
+    settlement_by_transfer = {row.get("transfer_id"): row for row in settlements}
+    for transfer in transfers:
+        transfer["settlement"] = settlement_by_transfer.get(transfer.get("id"))
+    return {"count": len(transfers), "transfers": transfers}
+
+
+@router.post("/multi-property/transfer-settlements/{settlement_id}/reconcile")
+async def api_reconcile_transfer_settlement(
+    settlement_id: str,
+    req: ReconcileTransferSettlementReq,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("post_payment")),
+):
+    """Close a chain transfer payable/receivable with an auditable reference."""
+    _, properties = await resolve_chain_properties(current_user, require_headquarters=True)
+    allowed_ids = {tenant_id_from_document(prop) for prop in properties if tenant_id_from_document(prop)}
+    sysdb = get_system_db()
+    settlement = await sysdb.chain_transfer_settlements.find_one(
+        {
+            "id": settlement_id,
+            "source_property_id": {"$in": list(allowed_ids)},
+            "target_property_id": {"$in": list(allowed_ids)},
+        },
+        {"_id": 0},
+    )
+    if not settlement:
+        raise HTTPException(status_code=404, detail="Zincir içi mahsuplaşma kaydı bulunamadı")
+    if settlement.get("status") != "open":
+        raise HTTPException(status_code=409, detail="Bu mahsuplaşma daha önce kapatılmış")
+
+    now = datetime.now(UTC).isoformat()
+    reconciliation = {
+        "method": req.method,
+        "reference": req.reference.strip(),
+        "note": (req.note or "").strip(),
+        "reconciled_by": current_user.id,
+        "reconciled_at": now,
+    }
+    result = await sysdb.chain_transfer_settlements.update_one(
+        {"id": settlement_id, "status": "open"},
+        {
+            "$set": {
+                "status": "reconciled",
+                "accounting_status": "reconciled",
+                "reconciliation": reconciliation,
+                "updated_at": now,
+            }
+        },
+    )
+    if result.modified_count != 1:
+        raise HTTPException(status_code=409, detail="Mahsuplaşma bu sırada başka bir kullanıcı tarafından kapatıldı")
+    await sysdb.reservation_transfers.update_one(
+        {"id": settlement.get("transfer_id")},
+        {"$set": {"settlement_status": "reconciled", "updated_at": now}},
+    )
+
+    activity_details = {
+        "settlement_id": settlement_id,
+        "transfer_id": settlement.get("transfer_id"),
+        "transfer_reference": settlement.get("transfer_reference") or settlement.get("transfer_id"),
+        **reconciliation,
+        "currency_lines": settlement.get("currency_lines") or [],
+    }
+    for tenant_id, booking_id in (
+        (settlement.get("source_property_id"), settlement.get("source_booking_id")),
+        (settlement.get("target_property_id"), settlement.get("target_booking_id")),
+    ):
+        if tenant_id and booking_id:
+            await sysdb.reservation_activity_log.insert_one(
+                {
+                    "id": str(uuid.uuid4()),
+                    "tenant_id": tenant_id,
+                    "booking_id": booking_id,
+                    "action": "property_transfer_settlement_reconciled",
+                    "actor": getattr(current_user, "name", None) or getattr(current_user, "email", None) or current_user.id,
+                    "details": activity_details,
+                    "created_at": now,
+                }
+            )
+
+    # A reconciliation is an accounting event for both properties. Surface it
+    # in both finance inboxes as well as in the immutable reservation trail;
+    # otherwise the target property can remain unaware that its receivable is
+    # closed until it manually opens the general ledger.
+    transfer_reference = activity_details["transfer_reference"]
+    notifications = []
+    for tenant_id, counterparty_name in (
+        (settlement.get("source_property_id"), settlement.get("target_property_name")),
+        (settlement.get("target_property_id"), settlement.get("source_property_name")),
+    ):
+        if tenant_id:
+            notifications.append(
+                {
+                    "id": str(uuid.uuid4()),
+                    "tenant_id": tenant_id,
+                    "user_id": None,
+                    "type": "chain_transfer_settlement_reconciled",
+                    "title": "Zincir içi mahsuplaşma tamamlandı",
+                    "message": f"{counterparty_name or 'Karşı tesis'} ile {transfer_reference} referanslı transfer mutabakatı kapatıldı.",
+                    "priority": "normal",
+                    "target_roles": ["admin", "finance"],
+                    "read": False,
+                    "action_url": "/app/general-ledger",
+                    "related_entity": "chain_transfer_settlement",
+                    "related_id": settlement_id,
+                    "metadata": activity_details,
+                    "created_at": now,
+                }
+            )
+    try:
+        for notification in notifications:
+            await sysdb.notifications.insert_one(notification)
+    except Exception:
+        # Reconciliation remains authoritative once posted. Keep its ledger
+        # state intact if a non-financial inbox write fails.
+        import logging
+        logging.getLogger(__name__).exception("Transfer settlement notification write failed settlement=%s", settlement_id)
+
+    return {
+        "success": True,
+        "settlement_id": settlement_id,
+        "transfer_reference": transfer_reference,
+        "status": "reconciled",
+        "reconciliation": reconciliation,
+    }
 
 
 @router.get("/multi-property/revenue")
 async def api_portfolio_revenue(days: int = 30, current_user: User = Depends(get_current_user)):
     """Get portfolio-wide revenue metrics."""
-    return await crm.get_portfolio_revenue(current_user.tenant_id, days)
+    return await crm.get_portfolio_revenue(current_user, days)
 
 
 @router.post("/multi-property/global-rate-adjust")
@@ -249,19 +561,19 @@ async def api_global_rate_adjust(
     _perm=Depends(require_op("manage_rates")),  # v101 DW
 ):
     """Apply global rate adjustment across all properties."""
-    return await crm.apply_global_rate_adjustment(current_user.tenant_id, req.adjustment_pct, req.room_type, current_user.id)
+    return await crm.apply_global_rate_adjustment(current_user, req.adjustment_pct, req.room_type)
 
 
 @router.get("/multi-property/alerts")
 async def api_global_alerts(current_user: User = Depends(get_current_user)):
     """Get global alerts across all properties."""
-    return await alerts.get_global_alerts(current_user.tenant_id)
+    return await alerts.get_global_alerts(current_user)
 
 
 @router.get("/multi-property/dashboard")
 async def api_multi_property_dashboard(current_user: User = Depends(get_current_user)):
     """Get comprehensive multi-property dashboard."""
-    return await alerts.get_multi_property_dashboard(current_user.tenant_id)
+    return await alerts.get_multi_property_dashboard(current_user)
 
 
 # ═══════════════════════════════════════════════════════════

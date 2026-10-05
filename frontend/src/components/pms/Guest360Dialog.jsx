@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
@@ -17,6 +18,28 @@ import {
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
 import { promptDialog } from '@/lib/dialogs';
 import CallButton from '@/components/contact-center/CallButton';
+import { bookingSourceLabel } from '@/utils/bookingSource';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
+
+export const normalizeGuestNotes = (value) => {
+  if (value == null || value === '') return [];
+  const values = Array.isArray(value) ? value : [value];
+  return values.map((note) => {
+    if (note && typeof note === 'object') {
+      return {
+        text: String(note.text || note.note || note.content || ''),
+        created_by: note.created_by || note.author || 'Sistem',
+        created_at: note.created_at || null,
+      };
+    }
+    return { text: String(note), created_by: 'Eski kayıt', created_at: null };
+  }).filter(note => note.text.trim());
+};
+
+const normalizeStringList = (value) => {
+  if (value == null || value === '') return [];
+  return (Array.isArray(value) ? value : [value]).map(item => String(item)).filter(Boolean);
+};
 
 const Guest360Dialog = ({
   open,
@@ -25,11 +48,49 @@ const Guest360Dialog = ({
   loadingGuest360,
   selectedGuest360,
   loadGuest360,
+  initialSection = 'profile',
 }) => {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const [newNote, setNewNote] = useState('');
   const [guestTag, setGuestTag] = useState('');
   const [guestNote, setGuestNote] = useState('');
+  const historySectionRef = useRef(null);
+  const rawStayHistory = guest360Data?.stay_history || guest360Data?.recent_bookings;
+  const stayHistory = Array.isArray(rawStayHistory) ? rawStayHistory : [];
+  const guestNotes = normalizeGuestNotes(guest360Data?.guest?.notes);
+  const guestTags = normalizeStringList(guest360Data?.guest?.tags);
+  const statsCurrency = guest360Data?.stats?.currency || cachedTenantCurrency();
+  const formatMoney = (value, currency = statsCurrency) => formatCurrency(value, currency, { decimals: 2 });
+  const formatMoneyBreakdown = (breakdown, fallbackValue) => {
+    const entries = Object.entries(breakdown || {}).filter(([, amount]) => Number.isFinite(Number(amount)));
+    if (!entries.length) return formatMoney(fallbackValue);
+    return entries.map(([currency, amount]) => formatMoney(amount, currency)).join(' • ');
+  };
+  const statusLabels = {
+    checked_out: 'Çıkış yapıldı',
+    checked_in: 'Konaklıyor',
+    confirmed: 'Onaylı',
+    reserved: 'Rezerve',
+    cancelled: 'İptal',
+    no_show: 'Gelmedi',
+  };
+  const loyaltyLabels = {
+    standard: 'Standart',
+    silver: 'Gümüş',
+    gold: 'Altın',
+    vip: 'VIP',
+  };
+  const loyaltyLabel = (value) => loyaltyLabels[value] || loyaltyLabels.standard;
+  const formatChannel = bookingSourceLabel;
+
+  useEffect(() => {
+    if (!open || loadingGuest360 || initialSection !== 'history' || !guest360Data) return;
+    const frame = window.requestAnimationFrame(() => {
+      historySectionRef.current?.scrollIntoView({ block: 'start' });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [guest360Data, initialSection, loadingGuest360, open]);
 
   const addNote = async () => {
     if (!newNote.trim() || !selectedGuest360) return;
@@ -39,7 +100,7 @@ const Guest360Dialog = ({
         note: newNote,
         category: 'general'
       });
-      toast.success('Note added!');
+      toast.success('Not eklendi');
       setNewNote('');
       loadGuest360(selectedGuest360);
     } catch {
@@ -51,7 +112,7 @@ const Guest360Dialog = ({
     if (!guestTag.trim() || !selectedGuest360) return;
     try {
       await axios.post(`/crm/guest/add-tag?guest_id=${selectedGuest360}&tag=${guestTag}`);
-      toast.success('Tag added');
+      toast.success('Etiket eklendi');
       setGuestTag('');
       loadGuest360(selectedGuest360);
     } catch {
@@ -63,7 +124,7 @@ const Guest360Dialog = ({
     if (!guestNote.trim() || !selectedGuest360) return;
     try {
       await axios.post(`/crm/guest/note?guest_id=${selectedGuest360}&note=${guestNote}`);
-      toast.success('Note added');
+      toast.success('Not eklendi');
       setGuestNote('');
       loadGuest360(selectedGuest360);
     } catch {
@@ -73,21 +134,21 @@ const Guest360Dialog = ({
 
   return (
 <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-  <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+  <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto px-4 sm:px-6">
     <DialogHeader>
-      <DialogTitle className="text-2xl">Guest 360° Profile</DialogTitle>
-      <DialogDescription>Complete guest intelligence and relationship data</DialogDescription>
+      <DialogTitle className="text-2xl">Misafir 360° Profili</DialogTitle>
+      <DialogDescription>Misafirin iletişim, sadakat, tercih ve konaklama bilgileri</DialogDescription>
     </DialogHeader>
     
     {loadingGuest360 ? (
       <div className="text-center py-12">
         <div className="text-4xl mb-4"></div>
-        <div>Loading guest profile...</div>
+        <div>Misafir profili yükleniyor…</div>
       </div>
     ) : guest360Data ? (
       <div className="space-y-4">
         {/* Quick Action Buttons - NEW */}
-        <div className="flex gap-2 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-200">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-200">
           <Button 
             onClick={() => {
               const g = guest360Data.guest || {};
@@ -98,33 +159,33 @@ const Guest360Dialog = ({
                 ...(g.email ? { email: g.email } : {}),
                 ...(g.phone ? { phone: g.phone } : {}),
               }).toString();
-              window.location.href = `/ota-messaging-hub?${params}`;
+              navigate(`/ota-messaging-hub?${params}`);
             }}
             className="flex-1 bg-green-600 hover:bg-green-700"
           >
             <Send className="w-4 h-4 mr-2" />
-            Send Offer
+            Teklif Gönder
           </Button>
           <Button 
             onClick={() => {
               // Scroll to notes section or auto-focus note input
               const noteInput = document.querySelector('textarea[placeholder*="note"]');
               if (noteInput) noteInput.focus();
-              toast.info('Note section ready - add your note below');
+              toast.info('Not alanı hazır; notunuzu aşağıya ekleyebilirsiniz.');
             }}
             variant="outline"
             className="flex-1 border-blue-400 hover:bg-blue-50"
           >
             <FileText className="w-4 h-4 mr-2" />
-            Add Note
+            Not Ekle
           </Button>
           <Button 
             onClick={async () => {
               try {
-                const preference = await promptDialog({ message: 'Enter room preference (e.g., High Floor, Sea View, Quiet Room):' });
+                const preference = await promptDialog({ message: 'Oda tercihini girin (ör. yüksek kat, deniz manzarası, sessiz oda):' });
                 if (preference) {
                   await axios.post(`/crm/guest/add-tag?guest_id=${selectedGuest360}&tag=PREF: ${preference}`);
-                  toast.success('Room preference saved!');
+                  toast.success('Oda tercihi kaydedildi');
                   loadGuest360(selectedGuest360);
                 }
               } catch (error) {
@@ -135,61 +196,61 @@ const Guest360Dialog = ({
             className="flex-1 border-indigo-400 hover:bg-indigo-50"
           >
             <Star className="w-4 h-4 mr-2" />
-            Block Room Preference
+            Oda Tercihi Ekle
           </Button>
           <Button 
             onClick={() => {
               // Navigate to messaging center with pre-filled guest
-              window.location.href = `/ota-messaging-hub?guest=${guest360Data.guest?.id}&name=${guest360Data.guest?.name}`;
+              navigate(`/ota-messaging-hub?guest=${guest360Data.guest?.id}&name=${guest360Data.guest?.name}`);
             }}
             variant="outline"
             className="flex-1 border-amber-400 hover:bg-amber-50"
           >
             <MessageSquare className="w-4 h-4 mr-2" />
-            Message Guest
+            Mesaj Gönder
           </Button>
         </div>
 
         {/* Identity Card */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-lg">Identity & Contact</CardTitle>
+            <CardTitle className="text-lg">Kimlik ve İletişim</CardTitle>
           </CardHeader>
-          <CardContent className="grid grid-cols-2 gap-4">
+          <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <div className="text-sm text-gray-600">Name</div>
+              <div className="text-sm text-gray-600">Ad Soyad</div>
               <div className="font-semibold">{guest360Data.guest?.name}</div>
             </div>
             <div>
-              <div className="text-sm text-gray-600">Email</div>
+              <div className="text-sm text-gray-600">E-posta</div>
               <div className="font-semibold">{guest360Data.guest?.email}</div>
             </div>
             <div>
-              <div className="text-sm text-gray-600">Phone</div>
+              <div className="text-sm text-gray-600">Telefon</div>
               <div className="flex items-center gap-2">
                 <span className="font-semibold">{guest360Data.guest?.phone}</span>
                 <CallButton number={guest360Data.guest?.phone} />
               </div>
             </div>
             <div>
-              <div className="text-sm text-gray-600">Country</div>
-              <div className="font-semibold">{guest360Data.guest?.country || 'N/A'}</div>
+              <div className="text-sm text-gray-600">Ülke</div>
+              <div className="font-semibold">{guest360Data.guest?.country || 'Belirtilmemiş'}</div>
             </div>
             <div>
-              <div className="text-sm text-gray-600">Loyalty Status</div>
+              <div className="text-sm text-gray-600">Sadakat Seviyesi</div>
               <div className={`inline-block px-2 py-1 rounded text-sm font-bold ${
                 guest360Data.profile?.loyalty_status === 'vip' ? 'bg-indigo-600 text-white' :
                 guest360Data.profile?.loyalty_status === 'gold' ? 'bg-yellow-500 text-white' :
                 guest360Data.profile?.loyalty_status === 'silver' ? 'bg-gray-400 text-white' :
                 'bg-blue-500 text-white'
               }`}>
-                {guest360Data.profile?.loyalty_status?.toUpperCase() || 'STANDARD'}
+                {loyaltyLabel(guest360Data.profile?.loyalty_status)}
               </div>
             </div>
             <div>
-              <div className="text-sm text-gray-600">Last Seen</div>
+              <div className="text-sm text-gray-600">Son Konaklama</div>
               <div className="font-semibold">
-                {guest360Data.profile?.last_seen_date ? new Date(guest360Data.profile.last_seen_date).toLocaleDateString() : 'N/A'}
+                {guest360Data.profile?.last_seen_date ? new Date(guest360Data.profile.last_seen_date).toLocaleDateString('tr-TR') : 'Kayıt yok'}
               </div>
             </div>
           </CardContent>
@@ -201,16 +262,16 @@ const Guest360Dialog = ({
           <CardHeader>
             <CardTitle className="text-lg flex items-center gap-2">
               <Crown className="w-5 h-5 text-indigo-600" />
-              Loyalty Program Status
+              Sadakat Programı
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex justify-between items-center">
               <div>
                 <div className="text-2xl font-bold">
-                  {guest360Data.profile?.loyalty_points || guest360Data.guest?.loyalty_points || 0} pts
+                  {guest360Data.profile?.loyalty_points || guest360Data.guest?.loyalty_points || 0} puan
                 </div>
-                <div className="text-sm text-gray-600">Current Balance</div>
+                <div className="text-sm text-gray-600">Güncel Puan</div>
               </div>
               <div className={`px-4 py-2 rounded-lg font-bold text-lg ${
                 guest360Data.profile?.loyalty_status === 'vip' ? 'bg-indigo-600 text-white' :
@@ -218,14 +279,14 @@ const Guest360Dialog = ({
                 guest360Data.profile?.loyalty_status === 'silver' ? 'bg-gray-400 text-white' :
                 'bg-blue-500 text-white'
               }`}>
-                {(guest360Data.profile?.loyalty_status || guest360Data.guest?.loyalty_tier || 'standard').toUpperCase()}
+                {loyaltyLabel(guest360Data.profile?.loyalty_status || guest360Data.guest?.loyalty_tier)}
               </div>
             </div>
             
             {/* Progress to Next Tier */}
             <div>
               <div className="flex justify-between text-sm mb-1">
-                <span className="text-gray-600">Progress to Next Tier</span>
+                <span className="text-gray-600">Sonraki Seviyeye İlerleme</span>
                 <span className="font-semibold">
                   {(() => {
                     const currentPoints = guest360Data.profile?.loyalty_points || guest360Data.guest?.loyalty_points || 0;
@@ -237,9 +298,9 @@ const Guest360Dialog = ({
                       currentStatus === 'gold' ? 'vip' :
                       null;
                     
-                    if (!nextTier) return 'MAX TIER';
+                    if (!nextTier) return 'En yüksek seviye';
                     const needed = thresholds[nextTier] - currentPoints;
-                    return needed > 0 ? `${needed} pts to ${nextTier.toUpperCase()}` : 'Eligible for upgrade!';
+                    return needed > 0 ? `${loyaltyLabel(nextTier)} için ${needed} puan` : 'Seviye yükseltmeye uygun';
                   })()}
                 </span>
               </div>
@@ -270,29 +331,29 @@ const Guest360Dialog = ({
             
             {/* Tier Benefits */}
             <div className="text-xs space-y-1">
-              <div className="font-semibold mb-2">Current Benefits:</div>
+              <div className="font-semibold mb-2">Mevcut Ayrıcalıklar:</div>
               {guest360Data.profile?.loyalty_status === 'vip' || guest360Data.guest?.loyalty_tier === 'vip' ? (
                 <>
-                  <div className="flex items-center gap-2">Suite Upgrades</div>
-                  <div className="flex items-center gap-2">Welcome Gifts</div>
-                  <div className="flex items-center gap-2">Complimentary Services</div>
-                  <div className="flex items-center gap-2">Priority Check-in/out</div>
+                  <div className="flex items-center gap-2">Suit oda yükseltme</div>
+                  <div className="flex items-center gap-2">Karşılama hediyesi</div>
+                  <div className="flex items-center gap-2">Ücretsiz hizmetler</div>
+                  <div className="flex items-center gap-2">Öncelikli giriş ve çıkış</div>
                 </>
               ) : guest360Data.profile?.loyalty_status === 'gold' || guest360Data.guest?.loyalty_tier === 'gold' ? (
                 <>
-                  <div className="flex items-center gap-2">Free Room Upgrade</div>
-                  <div className="flex items-center gap-2">Complimentary Breakfast</div>
-                  <div className="flex items-center gap-2">Late Check-out</div>
+                  <div className="flex items-center gap-2">Ücretsiz oda yükseltme</div>
+                  <div className="flex items-center gap-2">Ücretsiz kahvaltı</div>
+                  <div className="flex items-center gap-2">Geç çıkış</div>
                 </>
               ) : guest360Data.profile?.loyalty_status === 'silver' || guest360Data.guest?.loyalty_tier === 'silver' ? (
                 <>
-                  <div className="flex items-center gap-2">10% Discount</div>
-                  <div className="flex items-center gap-2">Points on Stays</div>
+                  <div className="flex items-center gap-2">%10 indirim</div>
+                  <div className="flex items-center gap-2">Konaklamadan puan kazanma</div>
                 </>
               ) : (
                 <>
-                  <div className="flex items-center gap-2">Earn Points</div>
-                  <div className="flex items-center gap-2">Exclusive Offers</div>
+                  <div className="flex items-center gap-2">Puan kazanma</div>
+                  <div className="flex items-center gap-2">Özel teklifler</div>
                 </>
               )}
             </div>
@@ -301,29 +362,29 @@ const Guest360Dialog = ({
 
 
         {/* Stats Dashboard */}
-        <div className="grid grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
           <Card>
             <CardContent className="pt-4 text-center">
               <div className="text-3xl font-bold text-blue-600">{guest360Data.stats?.total_stays || 0}</div>
-              <div className="text-sm text-gray-600">Total Stays</div>
+              <div className="text-sm text-gray-600">Toplam Konaklama</div>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="pt-4 text-center">
               <div className="text-3xl font-bold text-green-600">{guest360Data.stats?.total_nights || 0}</div>
-              <div className="text-sm text-gray-600">Total Nights</div>
+              <div className="text-sm text-gray-600">Toplam Gece</div>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="pt-4 text-center">
-              <div className="text-3xl font-bold text-indigo-600">${guest360Data.stats?.lifetime_value || 0}</div>
-              <div className="text-sm text-gray-600">Lifetime Value</div>
+              <div className="text-xl sm:text-2xl font-bold text-indigo-600 break-words">{formatMoneyBreakdown(guest360Data.stats?.lifetime_value_by_currency, guest360Data.stats?.lifetime_value)}</div>
+              <div className="text-sm text-gray-600">Yaşam Boyu Değer</div>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="pt-4 text-center">
-              <div className="text-3xl font-bold text-amber-600">${guest360Data.stats?.average_adr || 0}</div>
-              <div className="text-sm text-gray-600">Avg ADR</div>
+              <div className="text-xl sm:text-2xl font-bold text-amber-600 break-words">{formatMoneyBreakdown(guest360Data.stats?.average_adr_by_currency, guest360Data.stats?.average_adr)}</div>
+              <div className="text-sm text-gray-600">Ortalama ADR</div>
             </CardContent>
           </Card>
         </div>
@@ -331,20 +392,20 @@ const Guest360Dialog = ({
         {/* Tags & Notes */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-lg">Tags & Notes</CardTitle>
+            <CardTitle className="text-lg">Etiketler ve Notlar</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             <div>
-              <div className="text-sm text-gray-600 mb-2">Tags:</div>
+              <div className="text-sm text-gray-600 mb-2">Etiketler:</div>
               <div className="flex flex-wrap gap-2">
-                {guest360Data.guest?.tags?.map((tag, idx) => (
+                {guestTags.map((tag, idx) => (
                   <span key={idx} className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs">
                     {tag}
                   </span>
                 ))}
                 <div className="flex gap-2">
                   <Input 
-                    placeholder="Add tag..."
+                    placeholder="Etiket ekle…"
                     value={guestTag}
                     onChange={(e) => setGuestTag(e.target.value)}
                     className="h-8 w-32"
@@ -354,44 +415,44 @@ const Guest360Dialog = ({
               </div>
             </div>
             <div>
-              <div className="text-sm text-gray-600 mb-2">Notes:</div>
+              <div className="text-sm text-gray-600 mb-2">Notlar:</div>
               <div className="space-y-2 max-h-32 overflow-y-auto mb-2">
-                {guest360Data.guest?.notes?.map((note, idx) => (
+                {guestNotes.map((note, idx) => (
                   <div key={idx} className="text-xs bg-gray-50 p-2 rounded">
-                    <div className="font-semibold">{note.created_by} - {new Date(note.created_at).toLocaleString()}</div>
+                    <div className="font-semibold">{note.created_by}{note.created_at ? ` · ${new Date(note.created_at).toLocaleString('tr-TR')}` : ''}</div>
                     <div>{note.text}</div>
                   </div>
                 ))}
+                {guestNotes.length === 0 && <p className="text-xs text-gray-400">Kayıtlı not bulunmuyor.</p>}
               </div>
               <div className="flex gap-2">
                 <Textarea 
-                  placeholder="Add note..."
+                  placeholder="Not ekle…"
                   value={guestNote}
                   onChange={(e) => setGuestNote(e.target.value)}
                   className="h-16"
                 />
-                <Button size="sm" onClick={addGuestNote}>Add Note</Button>
+                <Button size="sm" onClick={addGuestNote}>Not Ekle</Button>
               </div>
             </div>
           </CardContent>
         </Card>
 
         {/* Booking History - Enhanced Timeline */}
-        <Card>
+        <Card ref={historySectionRef}>
           <CardHeader>
             <CardTitle className="text-lg flex items-center gap-2">
               <Calendar className="w-5 h-5" />
-              Stay History Timeline
+              Konaklama Geçmişi
             </CardTitle>
             <CardDescription>
-              {guest360Data.profile?.total_stays || 0} total stays • 
-              ${(guest360Data.profile?.total_spending || 0).toFixed(0)} lifetime value
+              {stayHistory.length} rezervasyon kaydı • Toplam değer {formatMoneyBreakdown(guest360Data.stats?.lifetime_value_by_currency, guest360Data.stats?.lifetime_value)}
             </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-3 max-h-96 overflow-y-auto">
-              {guest360Data.recent_bookings && guest360Data.recent_bookings.length > 0 ? (
-                guest360Data.recent_bookings.map((booking, idx) => {
+              {stayHistory.length > 0 ? (
+                stayHistory.map((booking, idx) => {
                   const nights = Math.ceil((new Date(booking.check_out) - new Date(booking.check_in)) / (1000 * 60 * 60 * 24));
                   const adr = nights > 0 ? (booking.total_amount / nights).toFixed(0) : 0;
                   
@@ -416,7 +477,7 @@ const Guest360Dialog = ({
                               })}
                             </div>
                             <div className="text-xs text-gray-600">
-                              {nights} nights • Room {booking.room_number || '?'}
+                              {nights} gece • Oda {booking.room_number || 'Atanmamış'}
                             </div>
                           </div>
                           <Badge variant={
@@ -424,22 +485,22 @@ const Guest360Dialog = ({
                             booking.status === 'checked_in' ? 'default' :
                             'outline'
                           }>
-                            {booking.status}
+                            {statusLabels[booking.status] || booking.status || 'Bilinmiyor'}
                           </Badge>
                         </div>
                         
                         <div className="grid grid-cols-3 gap-2 text-xs">
                           <div>
-                            <div className="text-gray-600">Total</div>
-                            <div className="font-bold text-green-600">${booking.total_amount?.toFixed(2)}</div>
+                            <div className="text-gray-600">Toplam</div>
+                            <div className="font-bold text-green-600">{formatMoney(booking.total_amount, booking.currency || statsCurrency)}</div>
                           </div>
                           <div>
                             <div className="text-gray-600">ADR</div>
-                            <div className="font-bold">${adr}</div>
+                            <div className="font-bold">{formatMoney(adr, booking.currency || statsCurrency)}</div>
                           </div>
                           <div>
-                            <div className="text-gray-600">Channel</div>
-                            <div className="font-bold capitalize">{booking.ota_channel || booking.channel || 'Direct'}</div>
+                            <div className="text-gray-600">Kanal</div>
+                            <div className="font-bold capitalize">{formatChannel(booking)}</div>
                           </div>
                         </div>
                         
@@ -453,7 +514,7 @@ const Guest360Dialog = ({
                   );
                 })
               ) : (
-                <div className="text-center text-gray-400 py-8">No booking history available</div>
+                <div className="text-center text-gray-400 py-8">Kayıtlı konaklama geçmişi bulunamadı.</div>
               )}
             </div>
           </CardContent>
@@ -463,11 +524,11 @@ const Guest360Dialog = ({
         {guest360Data.stats?.channel_distribution && (
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg">Channel Distribution</CardTitle>
-              <CardDescription>Booking sources breakdown</CardDescription>
+              <CardTitle className="text-lg">Kanal Dağılımı</CardTitle>
+              <CardDescription>Rezervasyonların kaynaklara göre dağılımı</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {/* Pie Chart */}
                 <div>
                   <ResponsiveContainer width="100%" height={200}>
@@ -517,7 +578,7 @@ const Guest360Dialog = ({
       </div>
     ) : (
       <div className="text-center py-12 text-gray-500">
-        Select a guest to view their 360° profile
+        360° profilini görüntülemek için bir misafir seçin.
       </div>
     )}
   </DialogContent>

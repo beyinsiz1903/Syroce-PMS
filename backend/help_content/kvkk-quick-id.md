@@ -1,33 +1,31 @@
 # KVKK & Quick-ID Kimlik Fotoğrafları
 
-KVKK (6698 sayılı Kişisel Verilerin Korunması Kanunu) ve GDPR uyumu için, misafir kimlik fotoğrafları izole bir mikro-servis olan **Quick-ID** üzerinde şifreli saklanır.
+Quick-ID, kimlik ve pasaport görüntüsünden misafir alanlarını çıkarıp kullanıcı onayına sunar. Tarama görüntüsü ve ham OCR metni Quick-ID tarama akışında saklanmaz.
 
 ## Quick-ID Mimarisi
 
-- **Ayrı servis**: ana PMS'den bağımsız; `QUICKID_URL` ortam değişkeniyle bağlanır
-- **Servis kimliği**: `QUICKID_SERVICE_KEY` ile bütün çağrılar imzalanır (mTLS benzeri korumalı)
-- **AES-256-GCM** ile fotoğraflar at-rest şifrelenir
-- **Tenant izolasyonu**: her otelin verileri ayrı namespace'te tutulur, cross-tenant okuma teknik olarak imkânsız
+- **Varsayılan yerleşik mod**: OCR, PMS backend içinde çalışır; ikinci bir servis veya herkese açık Quick-ID adresi gerekmez
+- **Opsiyonel ayrı servis**: `QUICKID_MODE=external`, `QUICKID_URL` ve `QUICKID_SERVICE_KEY` tanımlanırsa mevcut servis anahtarlı proxy yolu kullanılır
+- **Sağlayıcılar**: OpenAI/Gemini vision veya konteyner içindeki ücretsiz Tesseract
+- **Kaynak koruması**: görüntü boyutu, zaman aşımı ve eşzamanlı tarama sınırları uygulanır
 
 ## Veri Akışı
 
 1. Misafir online check-in'de fotoğraf yükler veya resepsiyonist çeker
-2. PMS fotoğrafı **base64'le Quick-ID'ye yollar**, geriye yalnızca **referans token** alır
-3. PMS veritabanında **fotoğraf yok**, yalnızca token saklanır
-4. Görüntüleme zamanı: yetkili kullanıcı tıklar, PMS Quick-ID'den token + zaman damgası ile fotoğrafı çeker, **anlık olarak** kullanıcıya stream eder
-5. Kullanıcı sayfayı kapatınca cache'lenmez
+2. PMS backend görüntüyü bellekte işler veya seçilen vision sağlayıcısına gönderir
+3. Çıkarılan alanlar kullanıcıya doğrulama için gösterilir; kullanıcı kabul etmeden rezervasyona yazılmaz
+4. Kabul edilen alanlar mevcut PMS alan şifreleme politikasıyla misafir ve rezervasyon kaydına işlenir
+5. Tarama görüntüsü ve sağlayıcının ham metni cevapta veya veritabanında tutulmaz
 
 ## Erişim Kontrolü
 
-- Yalnızca **GM, Ön Büro Müdürü, KVKK Sorumlusu** rolleri görüntüleyebilir
-- Her görüntüleme **audit log**'a yazılır (kim / ne zaman / hangi misafir / hangi cihaz)
-- Aynı kullanıcı belirli süre içinde aşırı sayıda görüntüleme yaparsa (`KVKK_ID_PHOTO_ALERT_INTERVAL_SECONDS`) yöneticiye uyarı düşer
+- Tarama uç noktası yalnızca oturum açmış PMS kullanıcılarına açıktır
+- Sağlayıcı anahtarları tarayıcıya gönderilmez; PMS içinde şifreli ayarlardan veya ortam değişkenlerinden okunur
+- Tarama, KVKK onay kutusunu otomatik işaretlemez; açık rıza/aydınlatma akışı kullanıcı tarafından tamamlanır
 
 ## Saklama Süresi
 
-- **Aktif misafir**: konaklama süresi + 30 gün
-- **KBS bildirimi tamamlandıysa** ve yasal saklama süresi dolduysa otomatik silinir (cron)
-- Misafir KVKK kapsamında **silinme talebi** verirse manuel silme arabirimi mevcuttur (yönetici onayı gerekir)
+Quick-ID tarama görüntüsünü saklamaz. Kullanıcı tarafından onaylanıp PMS'e yazılan kimlik alanları, PMS'in mevcut yasal saklama ve anonimleştirme kurallarına tabidir.
 
 ## İlgili Raporlar
 

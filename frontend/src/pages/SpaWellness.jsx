@@ -19,6 +19,7 @@ import {
 import { useTranslation } from 'react-i18next';
 import { useEntitlements } from '@/context/EntitlementContext';
 import { ModuleLoadError } from '@/components/shared/ModuleAvailabilityState';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 
 const STATUS = {
   scheduled: { label: 'Planlandı', cls: 'bg-sky-100 text-sky-800' },
@@ -34,6 +35,8 @@ const fmtTime = (iso) => iso ? new Date(iso).toLocaleString('tr-TR', {
 
 const SpaWellness = ({ user, tenant, onLogout }) => {
   const { t } = useTranslation();
+  const tenantCurrency = tenant?.currency || cachedTenantCurrency();
+  const money = (amount, currency = tenantCurrency) => formatCurrency(amount, currency);
   const { getLimit, hasFeature, hasModule, loading: entLoading, isSuperAdmin } = useEntitlements();
 
   const [services, setServices] = useState([]);
@@ -55,7 +58,7 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
     guest_name: '', guest_phone: '', reservation_id: '', charge_to_room: false,
   });
   const [serviceForm, setServiceForm] = useState({
-    name: '', category: 'massage', duration_minutes: 60, price: 0, currency: 'TRY',
+    name: '', category: 'massage', duration_minutes: 60, price: 0, currency: tenantCurrency,
   });
   const [therapistForm, setTherapistForm] = useState({
     name: '', specialties: [], work_start: '09:00', work_end: '21:00',
@@ -217,7 +220,7 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
           <Stat label={t('cm.pages_SpaWellness.bugun_toplam')} value={summary.total} />
           <Stat label="Tamamlanan" value={summary.by_status?.completed || 0} cls="text-emerald-600" />
           <Stat label="Planlanan" value={summary.by_status?.scheduled || 0} cls="text-sky-600" />
-          <Stat label={t('cm.pages_SpaWellness.bugunku_ciro')} value={`₺${(summary.revenue || 0).toLocaleString('tr-TR')}`} cls="text-indigo-600" />
+          <Stat label={t('cm.pages_SpaWellness.bugunku_ciro')} value={money(summary.revenue, summary.currency)} cls="text-indigo-600" />
         </div>
       )}
 
@@ -273,7 +276,7 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
                         <td className="p-2">{therapistById[a.therapist_id]?.name || '—'}</td>
                         <td className="p-2">{roomById[a.room_id]?.name || '—'}</td>
                         <td className="p-2">
-                          ₺{(a.price || 0).toLocaleString('tr-TR')}
+                          {money(a.price, a.currency)}
                           {a.charge_to_room && <Badge className="ml-1 text-[10px]" variant="outline">→ Folio</Badge>}
                         </td>
                         <td className="p-2"><Badge className={`${st.cls} border-0`}>{st.label}</Badge></td>
@@ -325,7 +328,7 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold text-indigo-600">
-                    ₺{(s.price || 0).toLocaleString('tr-TR')}
+                    {money(s.price, s.currency)}
                   </div>
                   {s.commission_rate > 0 && (
                     <div className="text-xs text-gray-500">
@@ -404,7 +407,7 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
                       onChange={(e) => setBookForm({ ...bookForm, service_id: e.target.value })}>
                 <option value="">{t('cm.pages_SpaWellness.secin')}</option>
                 {services.map((s) => <option key={s.id} value={s.id}>
-                  {s.name} ({s.duration_minutes}dk • ₺{s.price})
+                  {s.name} ({s.duration_minutes}dk • {money(s.price, s.currency)})
                 </option>)}
               </select>
             </Field>
@@ -474,7 +477,7 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
               <Field label={t('cm.pages_SpaWellness.sure_dk')}><Input type="number" required value={serviceForm.duration_minutes}
                 onChange={(e) => setServiceForm({ ...serviceForm, duration_minutes: +e.target.value })} /></Field>
             </div>
-            <Field label="Fiyat (₺)"><Input type="number" required value={serviceForm.price}
+            <Field label={`Fiyat (${serviceForm.currency || tenantCurrency})`}><Input type="number" required value={serviceForm.price}
               onChange={(e) => setServiceForm({ ...serviceForm, price: +e.target.value })} /></Field>
             <div className="flex justify-end gap-2"><Button type="submit">{t('cm.pages_SpaWellness.ekle')}</Button></div>
           </form>

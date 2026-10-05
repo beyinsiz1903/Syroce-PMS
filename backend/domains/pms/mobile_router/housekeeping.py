@@ -18,7 +18,7 @@ from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel
 
 from core.database import db
-from core.security import get_current_user, security
+from core.security import _is_super_admin, get_current_user, security
 from modules.pms_core.role_permission_service import (
     require_module,  # v89 DW
 )
@@ -113,9 +113,30 @@ class MenuPriceUpdateRequest(BaseModel):
 router = APIRouter(prefix="/api", tags=["mobile"])
 
 
+async def _get_tenant_room_or_404(tenant_id: str, room_id: str) -> dict[str, Any]:
+    room = await db.rooms.find_one(
+        {"id": room_id, "tenant_id": tenant_id},
+        {"_id": 0, "id": 1, "room_number": 1},
+    )
+    if not room:
+        raise HTTPException(status_code=404, detail="Room not found")
+    return room
+
+
+def _can_override_cleaning_timer(user: Any) -> bool:
+    """Supervisors may close a stranded timer; attendants may close only theirs."""
+    if _is_super_admin(user):
+        return True
+    role = getattr(user, "role", "")
+    return getattr(role, "value", role) in {"admin", "supervisor"}
+
+
 # ── GET /housekeeping/mobile/sla-delayed-rooms ──
 @router.get("/housekeeping/mobile/sla-delayed-rooms")
-async def get_sla_delayed_rooms_mobile(credentials: HTTPAuthorizationCredentials = Depends(security)):
+async def get_sla_delayed_rooms_mobile(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_module("housekeeping")),
+):
     """Get rooms with SLA delays for housekeeping mobile"""
     current_user = await get_current_user(credentials)
 
@@ -159,7 +180,10 @@ async def get_sla_delayed_rooms_mobile(credentials: HTTPAuthorizationCredentials
 
 # ── GET /housekeeping/mobile/team-assignments ──
 @router.get("/housekeeping/mobile/team-assignments")
-async def get_team_assignments_mobile(credentials: HTTPAuthorizationCredentials = Depends(security)):
+async def get_team_assignments_mobile(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_module("housekeeping")),
+):
     """Get team assignment overview for housekeeping mobile"""
     current_user = await get_current_user(credentials)
 
@@ -358,7 +382,11 @@ async def list_room_open_tasks(
 
 # ── GET /housekeeping/mobile/inspection-checklist ──
 @router.get("/housekeeping/mobile/inspection-checklist")
-async def get_inspection_checklist_template(room_type: str | None = None, credentials: HTTPAuthorizationCredentials = Depends(security)):
+async def get_inspection_checklist_template(
+    room_type: str | None = None,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_module("housekeeping")),
+):
     """Get inspection checklist template"""
     await get_current_user(credentials)
 
@@ -410,6 +438,8 @@ async def create_room_inspection(
 ):
     """Create room inspection record"""
     current_user = await get_current_user(credentials)
+    room = await _get_tenant_room_or_404(current_user.tenant_id, room_id)
+    canonical_room_number = room.get("room_number") or room_number
 
     inspection_id = str(uuid.uuid4())
 
@@ -427,12 +457,12 @@ async def create_room_inspection(
             {
                 "id": task_id,
                 "tenant_id": current_user.tenant_id,
-                "title": f"Maintenance Required - Room {room_number}",
+                "title": f"Maintenance Required - Room {canonical_room_number}",
                 "description": "\n".join(issues_found),
                 "priority": "high",
                 "status": "new",
                 "room_id": room_id,
-                "room_number": room_number,
+                "room_number": canonical_room_number,
                 "department": "maintenance",
                 "created_by": current_user.username,
                 "created_at": datetime.now(UTC),
@@ -445,7 +475,7 @@ async def create_room_inspection(
         "id": inspection_id,
         "tenant_id": current_user.tenant_id,
         "room_id": room_id,
-        "room_number": room_number,
+        "room_number": canonical_room_number,
         "inspection_type": inspection_type,
         "inspector": current_user.username,
         "inspection_status": "completed" if not maintenance_required else "failed",
@@ -520,7 +550,11 @@ async def create_lost_found_item(
 
 # ── GET /housekeeping/mobile/lost-found/items ──
 @router.get("/housekeeping/mobile/lost-found/items")
-async def get_lost_found_items(status: str | None = None, credentials: HTTPAuthorizationCredentials = Depends(security)):
+async def get_lost_found_items(
+    status: str | None = None,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_module("housekeeping")),
+):
     """Get lost & found items"""
     current_user = await get_current_user(credentials)
 
@@ -598,6 +632,30 @@ async def assign_hk_tasks(
 ):
     """Assign rooms to housekeeping staff"""
     current_user = await get_current_user(credentials)
+    staff = await db.users.find_one(
+        {
+            "id": staff_id,
+            "tenant_id": current_user.tenant_id,
+            "role": {"$nin": ["guest", "super_admin"]},
+            "$or": [{"is_active": True}, {"is_active": {"$exists": False}}],
+        },
+        {"_id": 0, "id": 1, "name": 1, "username": 1},
+    )
+    if not staff:
+        raise HTTPException(status_code=404, detail="Staff member not found")
+    canonical_staff_name = staff.get("name") or staff.get("username")
+    if not canonical_staff_name:
+        raise HTTPException(status_code=400, detail="Staff member has no assignable name")
+
+    unique_room_ids = list(dict.fromkeys(room_ids))
+    if not unique_room_ids:
+        raise HTTPException(status_code=400, detail="At least one room is required")
+    rooms = await db.rooms.find(
+        {"id": {"$in": unique_room_ids}, "tenant_id": current_user.tenant_id},
+        {"_id": 0, "id": 1},
+    ).to_list(len(unique_room_ids))
+    if len(rooms) != len(unique_room_ids):
+        raise HTTPException(status_code=404, detail="One or more rooms were not found")
 
     assignment_id = str(uuid.uuid4())
     assignment = {
@@ -605,9 +663,9 @@ async def assign_hk_tasks(
         "tenant_id": current_user.tenant_id,
         "assignment_date": datetime.now(UTC),
         "staff_id": staff_id,
-        "staff_name": staff_name,
-        "assigned_rooms": room_ids,
-        "room_count": len(room_ids),
+        "staff_name": canonical_staff_name,
+        "assigned_rooms": unique_room_ids,
+        "room_count": len(unique_room_ids),
         "status": "assigned",
         "assigned_by": current_user.username,
         "notes": notes,
@@ -618,14 +676,18 @@ async def assign_hk_tasks(
     await db.hk_task_assignments.insert_one(assignment)
 
     # Update rooms status
-    await db.rooms.update_many({"id": {"$in": room_ids}, "tenant_id": current_user.tenant_id}, {"$set": {"assigned_to": staff_name, "assigned_at": datetime.now(UTC)}})
+    await db.rooms.update_many({"id": {"$in": unique_room_ids}, "tenant_id": current_user.tenant_id}, {"$set": {"assigned_to": canonical_staff_name, "assigned_at": datetime.now(UTC)}})
 
-    return {"message": "Tasks assigned successfully", "assignment_id": assignment_id, "staff_name": staff_name, "room_count": len(room_ids)}
+    return {"message": "Tasks assigned successfully", "assignment_id": assignment_id, "staff_name": canonical_staff_name, "room_count": len(unique_room_ids)}
 
 
 # ── GET /housekeeping/mobile/staff-assignments ──
 @router.get("/housekeeping/mobile/staff-assignments")
-async def get_staff_assignments(assignment_date: str | None = None, credentials: HTTPAuthorizationCredentials = Depends(security)):
+async def get_staff_assignments(
+    assignment_date: str | None = None,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_module("housekeeping")),
+):
     """Get staff task assignments"""
     current_user = await get_current_user(credentials)
 
@@ -677,6 +739,8 @@ async def start_cleaning_timer(
 ):
     """Start cleaning timer"""
     current_user = await get_current_user(credentials)
+    room = await _get_tenant_room_or_404(current_user.tenant_id, room_id)
+    canonical_room_number = room.get("room_number") or room_number
 
     # Check if already started
     existing = await db.cleaning_timers.find_one({"tenant_id": current_user.tenant_id, "room_id": room_id, "status": "in_progress"})
@@ -689,7 +753,7 @@ async def start_cleaning_timer(
         "id": timer_id,
         "tenant_id": current_user.tenant_id,
         "room_id": room_id,
-        "room_number": room_number,
+        "room_number": canonical_room_number,
         "staff_id": current_user.id,
         "staff_name": current_user.username,
         "task_type": task_type,
@@ -702,7 +766,7 @@ async def start_cleaning_timer(
     # Update room status
     await db.rooms.update_one({"id": room_id, "tenant_id": current_user.tenant_id}, {"$set": {"status": "cleaning"}})
 
-    return {"message": "Cleaning started", "timer_id": timer_id, "room_number": room_number, "started_at": timer["started_at"].isoformat()}
+    return {"message": "Cleaning started", "timer_id": timer_id, "room_number": canonical_room_number, "started_at": timer["started_at"].isoformat()}
 
 
 # ── POST /housekeeping/mobile/cleaning/stop ──
@@ -716,16 +780,38 @@ async def stop_cleaning_timer(
     """Stop cleaning timer"""
     current_user = await get_current_user(credentials)
 
-    timer = await db.cleaning_timers.find_one({"tenant_id": current_user.tenant_id, "room_id": room_id, "status": "in_progress"})
+    timer = await db.cleaning_timers.find_one(
+        {
+            "tenant_id": current_user.tenant_id,
+            "room_id": room_id,
+            "staff_id": current_user.id,
+            "status": "in_progress",
+        }
+    )
 
     if not timer:
         raise HTTPException(status_code=404, detail="No active timer found")
+
+    is_owner = timer.get("staff_id") == current_user.id or timer.get("staff_name") == current_user.username
+    if not is_owner and not _can_override_cleaning_timer(current_user):
+        raise HTTPException(status_code=403, detail="Only the assigned attendant or a supervisor can stop this timer")
 
     completed_at = datetime.now(UTC)
     duration = (completed_at - timer["started_at"]).total_seconds() / 60
 
     await db.cleaning_timers.update_one(
-        {"id": timer["id"], "tenant_id": current_user.tenant_id}, {"$set": {"completed_at": completed_at, "duration_minutes": int(duration), "status": "completed", "notes": notes}}
+        {"id": timer["id"], "tenant_id": current_user.tenant_id},
+        {
+            "$set": {
+                "completed_at": completed_at,
+                "duration_minutes": int(duration),
+                "status": "completed",
+                "notes": notes,
+                "completed_by": current_user.id,
+                "completed_by_name": current_user.username,
+                "supervisor_override": not is_owner,
+            }
+        },
     )
 
     # Update room status
@@ -754,18 +840,20 @@ async def report_maintenance_from_hk(
 ):
     """Report maintenance issue from housekeeping"""
     current_user = await get_current_user(credentials)
+    room = await _get_tenant_room_or_404(current_user.tenant_id, room_id)
+    canonical_room_number = room.get("room_number") or room_number
 
     task_id = str(uuid.uuid4())
     task = {
         "id": task_id,
         "tenant_id": current_user.tenant_id,
         "task_number": f"MAINT-HK-{task_id[:8]}",
-        "title": f"{issue_type} - Room {room_number}",
+        "title": f"{issue_type} - Room {canonical_room_number}",
         "description": description,
         "priority": priority,
         "status": "new",
         "room_id": room_id,
-        "room_number": room_number,
+        "room_number": canonical_room_number,
         "department": "maintenance",
         "reported_by": current_user.username,
         "source": "housekeeping",
@@ -780,7 +868,11 @@ async def report_maintenance_from_hk(
 
 # ── GET /housekeeping/mobile/reports/daily ──
 @router.get("/housekeeping/mobile/reports/daily")
-async def get_hk_daily_report(report_date: str | None = None, credentials: HTTPAuthorizationCredentials = Depends(security)):
+async def get_hk_daily_report(
+    report_date: str | None = None,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_module("housekeeping")),
+):
     """Get housekeeping daily report"""
     current_user = await get_current_user(credentials)
 

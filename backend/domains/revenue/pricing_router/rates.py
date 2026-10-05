@@ -465,9 +465,7 @@ async def get_active_campaigns(
 ):
     """Tenant kampanyalarını gerçek, kalıcı veri kaynağından getirir."""
     current_user = await get_current_user(credentials)
-    rows = await db.rate_campaigns.find(
-        {"tenant_id": current_user.tenant_id}, {"_id": 0}
-    ).sort("starts_on", -1).to_list(500)
+    rows = await db.rate_campaigns.find({"tenant_id": current_user.tenant_id}, {"_id": 0}).sort("starts_on", -1).to_list(500)
     for row in rows:
         row["status"] = _window_status(row)
         row.setdefault("bookings_count", 0)
@@ -565,9 +563,7 @@ async def create_discount_code(
     _perm=Depends(require_op("manage_rates")),
 ):
     await _ensure_pricing_catalog_indexes()
-    exists = await db.discount_codes.find_one(
-        {"tenant_id": current_user.tenant_id, "code": payload.code}, {"_id": 1}
-    )
+    exists = await db.discount_codes.find_one({"tenant_id": current_user.tenant_id, "code": payload.code}, {"_id": 1})
     if exists:
         raise HTTPException(409, "Bu indirim kodu zaten kullanılıyor")
     now = datetime.now(UTC).isoformat()
@@ -666,9 +662,7 @@ async def create_rate_override(
 @router.get("/rates/promotional")
 async def get_promotional_rates(credentials: HTTPAuthorizationCredentials = Depends(security)):
     current_user = await get_current_user(credentials)
-    rows = await db.promotional_rates.find(
-        {"tenant_id": current_user.tenant_id}, {"_id": 0}
-    ).sort("starts_on", -1).to_list(1000)
+    rows = await db.promotional_rates.find({"tenant_id": current_user.tenant_id}, {"_id": 0}).sort("starts_on", -1).to_list(1000)
     for row in rows:
         regular = float(row.get("regular_rate", 0) or 0)
         promo = float(row.get("promo_rate", 0) or 0)

@@ -14,6 +14,7 @@ import {
   CheckCircle2, AlertCircle, Building, ArrowDownToLine, ArrowUpFromLine,
 } from "lucide-react";
 import { useTranslation } from 'react-i18next';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 
 /**
  * Opera #8 — Trial Balance / Daily Operations Resume.
@@ -48,7 +49,7 @@ const CATEGORY_LABELS = {
   other: "Diğer",
 };
 
-const fmt = (n) => new Intl.NumberFormat("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0);
+const money = (n, currency) => formatCurrency(n, currency || cachedTenantCurrency());
 
 function MetricCard({ icon: Icon, label, value, sub, color = "text-foreground" }) {
   const { t } = useTranslation();
@@ -68,12 +69,16 @@ function MetricCard({ icon: Icon, label, value, sub, color = "text-foreground" }
   );
 }
 
-export default function TrialBalancePage() {
+export default function TrialBalancePage({ reportDate }) {
   const { t } = useTranslation();
   const { toast } = useToast();
-  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(() => reportDate || new Date().toISOString().slice(0, 10));
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (reportDate) setDate(reportDate);
+  }, [reportDate]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -92,14 +97,14 @@ export default function TrialBalancePage() {
   useEffect(() => { load(); }, [load]);
 
   return (
-    <div className="container mx-auto p-6 space-y-4 max-w-7xl">
+    <div className="space-y-4" data-testid="operational-reconciliation-report">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
           <h2 className="text-2xl font-semibold flex items-center gap-2">
-            <ClipboardCheck className="h-6 w-6" /> {t('cm.pages_TrialBalancePage.trial_balance_gunluk_ozet')}
+            <ClipboardCheck className="h-6 w-6" /> Günlük Mutabakat
           </h2>
           <p className="text-sm text-muted-foreground">
-            {t('cm.pages_TrialBalancePage.gece_auditi_sonrasi_gelir_odeme_doluluk_')}
+            Gün sonu öncesi gelir, tahsilat, doluluk, cari hesap, depozito ve açık folyo kontrolü
           </p>
         </div>
         <div className="flex items-end gap-2">
@@ -125,7 +130,13 @@ export default function TrialBalancePage() {
 
       {data && (
         <>
-          {/* Balans alarmı */}
+          {data.revenue.posting_pending && (
+            <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900" data-testid="room-revenue-source-notice">
+              Oda geliri henüz folyoya işlenmediği için dolu odaların tahakkuk eden konaklama tutarı kullanılıyor. Gün sonu tamamlandığında rapor otomatik olarak folyo kayıtlarını esas alır.
+            </div>
+          )}
+
+          {/* Günlük gelir / tahsilat karşılaştırması */}
           <Card className={data.balance_check.in_balance ? "border-emerald-500" : "border-amber-500"}>
             <CardContent className="pt-6 flex items-center gap-3">
               {data.balance_check.in_balance ? (
@@ -136,17 +147,17 @@ export default function TrialBalancePage() {
               <div className="flex-1">
                 <div className="font-medium">
                   {data.balance_check.in_balance
-                    ? "Gelir ve ödemeler dengeli"
-                    : "Gelir ↔ Ödeme dengesizliği"}
+                    ? "Günlük gelir ve tahsilat eşit"
+                    : "Günlük gelir ve tahsilat farklı"}
                 </div>
                 <div className="text-xs text-muted-foreground">
-                  Fark: ₺{fmt(data.balance_check.revenue_minus_payments)}
-                  {" · "}{t('cm.pages_TrialBalancePage.ar_cari_a_yansiyacak_tutar')}
+                  Fark: {money(data.balance_check.revenue_minus_payments, data.currency)}
+                  {" · "}Bu bir muhasebe dengesizliği değildir; ön ödeme, açık folyo ve farklı gün tahsilatları nedeniyle oluşabilir
                 </div>
               </div>
               {data.last_night_audit && (
                 <Badge variant="outline">
-                  Son audit: {data.last_night_audit.status || "—"}
+                  Son gün sonu: {data.last_night_audit.status || "—"}
                   {data.last_night_audit.audit_date ? ` · ${data.last_night_audit.audit_date.slice(0, 10)}` : ""}
                 </Badge>
               )}
@@ -159,25 +170,25 @@ export default function TrialBalancePage() {
               icon={Building}
               label="Doluluk"
               value={`%${data.occupancy.occupancy_pct}`}
-              sub={`${data.occupancy.occupied}/${data.occupancy.total_rooms} oda · ${data.occupancy.out_of_order} OOO${data.occupancy.basis === "booking_span" ? " · tarih bazlı" : ""}`}
+              sub={`${data.occupancy.occupied}/${data.occupancy.total_rooms} oda · ${data.occupancy.out_of_order} satışa kapalı${data.occupancy.basis === "booking_span" ? " · tarih bazlı" : ""}`}
             />
             <MetricCard
               icon={TrendingUp}
               label="ADR"
-              value={`₺${fmt(data.revenue.adr)}`}
-              sub={`RevPAR ₺${fmt(data.revenue.revpar)}`}
+              value={money(data.revenue.adr, data.revenue.currency || data.currency)}
+              sub={`Ücretli satılan oda başına · RevPAR ${money(data.revenue.revpar, data.revenue.currency || data.currency)} · ${data.revenue.room_revenue_source === 'accrued' ? 'Tahakkuk eden' : 'Folyoya işlenen'}`}
             />
             <MetricCard
               icon={Wallet}
               label={t('cm.pages_TrialBalancePage.toplam_gelir')}
-              value={`₺${fmt(data.revenue.total)}`}
-              sub={`Oda ₺${fmt(data.revenue.rooms)} · F&B ₺${fmt(data.revenue.fnb)}`}
+              value={money(data.revenue.total, data.revenue.currency || data.currency)}
+              sub={`Oda ${money(data.revenue.rooms, data.revenue.currency || data.currency)} · F&B ${money(data.revenue.fnb, data.revenue.currency || data.currency)}`}
               color="text-emerald-600"
             />
             <MetricCard
               icon={ArrowDownToLine}
               label={t('cm.pages_TrialBalancePage.toplam_tahsilat')}
-              value={`₺${fmt(data.payments.total)}`}
+              value={money(data.payments.total, data.payments.currency || data.currency)}
               sub={`${Object.keys(data.payments.by_method).length} ödeme yöntemi`}
               color="text-blue-600"
             />
@@ -187,25 +198,25 @@ export default function TrialBalancePage() {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <MetricCard
               icon={ArrowDownToLine}
-              label={t('cm.pages_TrialBalancePage.gelis_arrival')}
+              label="Giriş"
               value={data.movements.arrivals}
-              sub="Bugün check-in"
+              sub="Seçili gün giriş"
             />
             <MetricCard
               icon={ArrowUpFromLine}
-              label={t('cm.pages_TrialBalancePage.cikis_departure')}
+              label="Çıkış"
               value={data.movements.departures}
-              sub="Bugün check-out"
+              sub="Seçili gün çıkış"
             />
             <MetricCard
               icon={Users}
-              label="In-House"
+              label="Otelde"
               value={data.movements.in_house}
               sub="Otelde misafir"
             />
             <MetricCard
               icon={AlertCircle}
-              label="No-show"
+              label="Gelmeyen"
               value={data.movements.no_shows}
               sub="Gelmeyen rezervasyon"
               color={data.movements.no_shows > 0 ? "text-amber-600" : ""}
@@ -217,7 +228,7 @@ export default function TrialBalancePage() {
             <Card>
               <CardHeader>
                 <CardTitle>{t('cm.pages_TrialBalancePage.gelir_kategori_bazli')}</CardTitle>
-                <CardDescription>{t('cm.pages_TrialBalancePage.folio_charges_uzerinden_kategori_dagilim')}</CardDescription>
+                <CardDescription>Oda geliri gün sonu öncesinde tahakkuktan, diğer gelirler folyo hareketlerinden alınır.</CardDescription>
               </CardHeader>
               <CardContent>
                 <Table>
@@ -230,7 +241,7 @@ export default function TrialBalancePage() {
                   <TableBody>
                     <TableRow>
                       <TableCell className="font-medium">{t('cm.pages_TrialBalancePage.oda_geliri')}</TableCell>
-                      <TableCell className="text-right font-medium">₺{fmt(data.revenue.rooms)}</TableCell>
+                      <TableCell className="text-right font-medium">{money(data.revenue.rooms, data.revenue.currency || data.currency)}</TableCell>
                     </TableRow>
                     {Object.keys(data.revenue.by_category).length === 0 ? (
                       <TableRow>
@@ -242,14 +253,14 @@ export default function TrialBalancePage() {
                       Object.entries(data.revenue.by_category).map(([k, v]) => (
                         <TableRow key={k}>
                           <TableCell>{CATEGORY_LABELS[k] || k}</TableCell>
-                          <TableCell className="text-right">₺{fmt(v)}</TableCell>
+                          <TableCell className="text-right">{money(v, data.revenue.currency || data.currency)}</TableCell>
                         </TableRow>
                       ))
                     )}
                     <TableRow className="border-t-2">
                       <TableCell className="font-semibold">{t('cm.pages_TrialBalancePage.toplam')}</TableCell>
                       <TableCell className="text-right font-semibold text-emerald-700">
-                        ₺{fmt(data.revenue.total)}
+                        {money(data.revenue.total, data.revenue.currency || data.currency)}
                       </TableCell>
                     </TableRow>
                   </TableBody>
@@ -261,7 +272,7 @@ export default function TrialBalancePage() {
             <Card>
               <CardHeader>
                 <CardTitle>{t('cm.pages_TrialBalancePage.tahsilat_odeme_yontemi')}</CardTitle>
-                <CardDescription>{t('cm.pages_TrialBalancePage.bugunun_payment_koleksiyonu_kayitlari')}</CardDescription>
+                <CardDescription>Seçili gündeki geçerli tahsilatların ödeme yöntemine göre dağılımı.</CardDescription>
               </CardHeader>
               <CardContent>
                 <Table>
@@ -284,7 +295,7 @@ export default function TrialBalancePage() {
                         <TableRow key={k}>
                           <TableCell>{PAYMENT_LABELS[k] || k}</TableCell>
                           <TableCell className="text-right">{v.count}</TableCell>
-                          <TableCell className="text-right">₺{fmt(v.total)}</TableCell>
+                          <TableCell className="text-right">{money(v.total, v.currency || data.payments.currency || data.currency)}</TableCell>
                         </TableRow>
                       ))
                     )}
@@ -292,7 +303,7 @@ export default function TrialBalancePage() {
                       <TableCell className="font-semibold">{t('cm.pages_TrialBalancePage.toplam_29757')}</TableCell>
                       <TableCell />
                       <TableCell className="text-right font-semibold text-blue-700">
-                        ₺{fmt(data.payments.total)}
+                        {money(data.payments.total, data.payments.currency || data.currency)}
                       </TableCell>
                     </TableRow>
                   </TableBody>
@@ -305,22 +316,22 @@ export default function TrialBalancePage() {
           <Card>
             <CardHeader>
               <CardTitle>Defter Durumu</CardTitle>
-              <CardDescription>{t('cm.pages_TrialBalancePage.ar_cari_depozito_ve_acik_folio_bakiyeler')}</CardDescription>
+              <CardDescription>Cari hesap, depozito ve açık folyo bakiyeleri.</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <MetricCard
                   icon={Wallet}
-                  label="AR Bakiyesi"
-                  value={`₺${fmt(data.ledger.ar_balance)}`}
+                  label="Cari Hesap Bakiyesi"
+                  value={money(data.ledger.ar_balance, data.ledger.currency || data.currency)}
                   sub="Tahsil edilmemiş cari"
                   color={data.ledger.ar_balance > 0 ? "text-amber-600" : ""}
                 />
                 <MetricCard
                   icon={ArrowDownToLine}
                   label="Depozito Bakiyesi"
-                  value={`₺${fmt(data.ledger.deposit_balance)}`}
-                  sub="Henüz uygulanmamış depozit"
+                  value={money(data.ledger.deposit_balance, data.ledger.currency || data.currency)}
+                  sub="Henüz kullanılmamış depozito"
                 />
                 <MetricCard
                   icon={ClipboardCheck}

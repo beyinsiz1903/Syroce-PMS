@@ -1,32 +1,34 @@
 """TGA Tesis Entegrasyon — Türkiye Turizm Tanıtım ve Geliştirme Ajansı.
 
-Resmi API: POST https://tesis-entegrasyon.tga.gov.tr/otel-veri/
+Resmi API v6: POST https://tesis-entegrasyon.tga.gov.tr/tesis-aylik-rapor/
 Doc:       https://tesis-entegrasyon.tga.gov.tr/docs
 
-Akış:
-  1. Tenant ayarları (`db.tenants.tga` sub-doc): `belge_no`, `vergi_no`,
-     `api_key_enc` (core.crypto ile şifreli), `environment` (test|live),
-     `enabled`. API anahtarı tesise özel TGA tarafından verilir.
-  2. `build_daily_payload(tenant_id, date)` — bir günlük TGA payload'ı:
-        toplam_oda, toplam_kisi (in-house),
-        giren_oda, giren_kisi (o gün giren),
-        net_oda_geliri,
-        demografik_veriler[] — ISO 3-harf ülke × yetiskin/cocuk/oda/...,
-        kanal_veriler[]      — satış kanalı (Direkt/Acenta/OTA/...) × oda/kişi/gelir.
-     Sadece **fiili** konaklamalar (cancelled / no_show hariç).
-  3. `send_batch(tenant_id, end_date, days=7)` — son N günü tek POST'ta
-     TGA endpoint'ine gönderir; sonucu `integration_tga_outbox` koleksiyonuna
-     yazar (status=sent|failed, retries, response).
-  4. `safe_post_async` ile DNS-rebinding-safe outbound (SXI standardı).
+Güncel akış:
+  1. Tenant ayarları UUID, resmî il/ilçe kodu, belge kapasitesi ve şifreli
+     X-API-Key içerir. v5+ payload'ında belge/vergi numarası gönderilmez.
+  2. `build_monthly_v6_payload` fiilî konaklamaları ülke ve hafta içi/
+     hafta sonu kırılımıyla tam aylık gövdeye dönüştürür.
+  3. Kullanıcı tam gövdeyi önizler ve ayrıca onaylarsa `send_monthly_v6`
+     resmî endpoint'e gönderir; sonuç outbox'a kaydedilir.
+  4. Ağ çıkışı `safe_post_async` ile DNS-rebinding-safe yapılır.
+
+Eski günlük payload yardımcıları rolling-deploy uyumluluğu ve geçmiş outbox
+kayıtlarını okuyabilmek için geçici olarak korunmaktadır; scheduler bunları
+göndermez.
 """
 
 from __future__ import annotations
 
 import logging
 import os
+import uuid
+import xml.etree.ElementTree as ET
+from calendar import monthrange
 from collections import defaultdict
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
+
+from pymongo.errors import DuplicateKeyError
 
 from core.crypto import AADContext, get_crypto_service
 from core.database import db
@@ -34,8 +36,9 @@ from core.database import db
 logger = logging.getLogger(__name__)
 
 TGA_BASE_URL_LIVE = "https://tesis-entegrasyon.tga.gov.tr"
-TGA_BASE_URL_TEST = os.environ.get("TGA_BASE_URL_TEST", "https://tesis-entegrasyon-test.tga.gov.tr")
-TGA_PATH = "/otel-veri/"
+TGA_BASE_URL_TEST = os.environ.get("TGA_BASE_URL_TEST", "https://test-tesis-entegrasyon.tga.gov.tr")
+TGA_PATH = "/tesis-aylik-rapor/"
+TGA_API_VERSION = "v6.0.0"
 HTTP_TIMEOUT_S = 30.0
 OUTBOX_COLL = "integration_tga_outbox"
 
@@ -248,7 +251,8 @@ _ALIAS_OVERRIDES: dict[str, str] = {
     "KIBRIS": "CYP",
     "GUNEY KIBRIS": "CYP",
     "GÜNEY KIBRIS": "CYP",
-    "KKTC": "TUR",  # KKTC pasaportları TGA'da TR uyrukla raporlanır
+    "KKTC": "CTR",
+    "KIBRIS TÜRK CUMHURİYETİ": "CTR",
     "LUKSEMBURG": "LUX",
     "LÜKSEMBURG": "LUX",
     "MONAKO": "MCO",
@@ -426,11 +430,23 @@ async def get_tga_config(tenant_id: str, *, decrypt_api_key: bool = False) -> di
     """Tenant'ın TGA ayarları. `decrypt_api_key=False` → API key maskeli."""
     doc = await db.tenants.find_one({"id": tenant_id}, {"_id": 0, "tga": 1}) or {}
     cfg = (doc.get("tga") or {}) if isinstance(doc, dict) else {}
+    facility_id = cfg.get("facility_id") or str(uuid.uuid5(uuid.NAMESPACE_URL, f"syroce:tga:{tenant_id}"))
     out = {
+        "facility_id": facility_id,
+        "il_kodu": cfg.get("il_kodu") or "",
+        "ilce_kodu": cfg.get("ilce_kodu") or "",
+        "licensed_room_count": cfg.get("licensed_room_count"),
+        "licensed_bed_count": cfg.get("licensed_bed_count"),
+        "api_version": TGA_API_VERSION,
+        # Legacy fields are kept in the response for a safe rolling deploy. v6
+        # does not send either value to TGA.
         "belge_no": cfg.get("belge_no") or "",
         "vergi_no": cfg.get("vergi_no") or "",
         "environment": cfg.get("environment") or "test",
         "enabled": bool(cfg.get("enabled")),
+        "auto_submit": bool(cfg.get("auto_submit")),
+        "auto_submit_hour": int(cfg.get("auto_submit_hour", 5)),
+        "panel_mapping_confirmed": bool(cfg.get("panel_mapping_confirmed")),
         "api_key_set": bool(cfg.get("api_key_enc")),
         "updated_at": cfg.get("updated_at"),
     }
@@ -452,10 +468,43 @@ async def set_tga_config(
     api_key: str | None = None,
     environment: str | None = None,
     enabled: bool | None = None,
+    facility_id: str | None = None,
+    il_kodu: str | None = None,
+    ilce_kodu: str | None = None,
+    licensed_room_count: int | None = None,
+    licensed_bed_count: int | None = None,
+    auto_submit: bool | None = None,
+    auto_submit_hour: int | None = None,
+    panel_mapping_confirmed: bool | None = None,
 ) -> dict[str, Any]:
     """TGA ayarlarını günceller. `api_key` boş/None → mevcut korunur."""
     cur = await db.tenants.find_one({"id": tenant_id}, {"_id": 0, "tga": 1}) or {}
     cfg = dict((cur.get("tga") or {}) if isinstance(cur, dict) else {})
+    if facility_id is not None:
+        try:
+            cfg["facility_id"] = str(uuid.UUID(facility_id.strip()))
+        except (ValueError, AttributeError) as exc:
+            raise ValueError("Tesis kimliği geçerli bir UUID olmalıdır") from exc
+    elif not cfg.get("facility_id"):
+        cfg["facility_id"] = str(uuid.uuid5(uuid.NAMESPACE_URL, f"syroce:tga:{tenant_id}"))
+    if il_kodu is not None:
+        value = il_kodu.strip()
+        if not value.isdigit() or not 1 <= len(value) <= 2:
+            raise ValueError("İl kodu 1-2 haneli sayısal bir değer olmalıdır")
+        cfg["il_kodu"] = value.zfill(2)
+    if ilce_kodu is not None:
+        value = ilce_kodu.strip()
+        if not value.isdigit() or not 1 <= len(value) <= 4:
+            raise ValueError("İlçe kodu 1-4 haneli sayısal bir değer olmalıdır")
+        cfg["ilce_kodu"] = value
+    if licensed_room_count is not None:
+        if licensed_room_count <= 0:
+            raise ValueError("Bakanlık belgesindeki oda sayısı sıfırdan büyük olmalıdır")
+        cfg["licensed_room_count"] = int(licensed_room_count)
+    if licensed_bed_count is not None:
+        if licensed_bed_count <= 0:
+            raise ValueError("Bakanlık belgesindeki yatak sayısı sıfırdan büyük olmalıdır")
+        cfg["licensed_bed_count"] = int(licensed_bed_count)
     if belge_no is not None:
         cfg["belge_no"] = belge_no.strip()
     if vergi_no is not None:
@@ -466,9 +515,31 @@ async def set_tga_config(
         cfg["environment"] = environment
     if enabled is not None:
         cfg["enabled"] = bool(enabled)
+        if not enabled:
+            cfg["auto_submit"] = False
+    if auto_submit_hour is not None:
+        if not 0 <= auto_submit_hour <= 23:
+            raise ValueError("Otomatik gönderim saati 0-23 arasında olmalıdır")
+        cfg["auto_submit_hour"] = int(auto_submit_hour)
+    if panel_mapping_confirmed is not None:
+        cfg["panel_mapping_confirmed"] = bool(panel_mapping_confirmed)
+    if auto_submit is not None:
+        cfg["auto_submit"] = bool(auto_submit)
     if api_key:
         svc = get_crypto_service()
         cfg["api_key_enc"] = svc.encrypt(api_key.strip(), aad=_aad(tenant_id))
+    if enabled:
+        if not cfg.get("api_key_enc"):
+            raise ValueError("Entegrasyonu etkinleştirmek için TGA X-API-Key gereklidir")
+        if not cfg.get("il_kodu") or not cfg.get("ilce_kodu"):
+            raise ValueError("Entegrasyonu etkinleştirmek için il ve ilçe kodları gereklidir")
+        if not cfg.get("licensed_room_count") or not cfg.get("licensed_bed_count"):
+            raise ValueError("Entegrasyonu etkinleştirmek için Bakanlık belgesindeki oda ve yatak sayıları gereklidir")
+    if cfg.get("auto_submit"):
+        if not cfg.get("enabled"):
+            raise ValueError("Otomatik gönderimden önce TGA entegrasyonu etkinleştirilmelidir")
+        if not cfg.get("panel_mapping_confirmed"):
+            raise ValueError("Otomatik gönderimden önce tesis UUID eşleştirmesi TGA panelinde doğrulanmalıdır")
     cfg["updated_at"] = datetime.now(UTC).isoformat()
     await db.tenants.update_one({"id": tenant_id}, {"$set": {"tga": cfg}})
     return await get_tga_config(tenant_id)
@@ -704,6 +775,211 @@ async def build_daily_payload(
     }
 
 
+def calculate_monthly_v6_rows(
+    bookings: list[dict[str, Any]],
+    countries: dict[str, str],
+    period_start: date,
+    period_end: date,
+) -> list[dict[str, Any]]:
+    """Aggregate actual stays into the country/day buckets required by TGA v6.
+
+    TGA defines Friday and Saturday as weekend. Accommodation nights use the
+    PMS-wide ``check_in <= day < check_out`` rule; arrivals are counted only on
+    the actual check-in date (month-boundary carry-ins are not new TGA arrivals).
+    """
+    buckets: dict[str, dict[str, int]] = defaultdict(
+        lambda: {
+            "haftaici_toplam_giris_yapan_misafir": 0,
+            "haftasonu_toplam_giris_yapan_misafir": 0,
+            "haftaici_toplam_geceleme": 0,
+            "haftasonu_toplam_geceleme": 0,
+            "haftaici_toplam_satilan_oda_gece": 0,
+            "haftasonu_toplam_satilan_oda_gece": 0,
+        }
+    )
+    for booking in bookings:
+        ci = _parse_dt(booking.get("check_in"))
+        co = _parse_dt(booking.get("check_out"))
+        if not ci or not co or co.date() <= ci.date():
+            continue
+        guests = max(1, int(booking.get("adults") or 1) + int(booking.get("children") or 0))
+        raw_country = booking.get("nationality") or booking.get("guest_country") or booking.get("country") or countries.get(str(booking.get("guest_id") or ""), "")
+        iso3 = _to_iso3(raw_country)
+        if iso3 == "ZZZ":
+            iso3 = "OTHER"
+        row = buckets[iso3]
+
+        arrival = ci.date()
+        if period_start <= arrival < period_end:
+            prefix = "haftasonu" if arrival.weekday() in (4, 5) else "haftaici"
+            row[f"{prefix}_toplam_giris_yapan_misafir"] += guests
+
+        night = max(ci.date(), period_start)
+        last_night = min(co.date(), period_end)
+        while night < last_night:
+            prefix = "haftasonu" if night.weekday() in (4, 5) else "haftaici"
+            row[f"{prefix}_toplam_geceleme"] += guests
+            row[f"{prefix}_toplam_satilan_oda_gece"] += 1
+            night += timedelta(days=1)
+
+    if not buckets:
+        buckets["OTHER"]
+    return [{"iso_kodu": iso, **values} for iso, values in sorted(buckets.items())]
+
+
+async def build_monthly_v6_payload(
+    tenant_id: str,
+    year: int,
+    month: int,
+    *,
+    average_price_eur: float,
+    data_through: date | None = None,
+) -> dict[str, Any]:
+    """Build the complete v6 monthly request without sending it."""
+    if month < 1 or month > 12:
+        raise ValueError("Ay 1-12 arasında olmalıdır")
+    if average_price_eur < 0:
+        raise ValueError("Aylık net ortalama fiyat negatif olamaz")
+    cfg = await get_tga_config(tenant_id)
+    if not cfg.get("il_kodu") or not cfg.get("ilce_kodu"):
+        raise ValueError("TGA il ve ilçe kodları eksik")
+
+    start = date(year, month, 1)
+    natural_end = date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
+    end = natural_end
+    if data_through is not None:
+        if data_through < start:
+            raise ValueError("Rapor kesim tarihi rapor ayından önce olamaz")
+        end = min(natural_end, data_through + timedelta(days=1))
+    start_dt = datetime(start.year, start.month, start.day, tzinfo=UTC)
+    end_dt = datetime(end.year, end.month, end.day, tzinfo=UTC)
+    bookings = await db.bookings.find(
+        {
+            "tenant_id": tenant_id,
+            "status": {"$in": ["checked_in", "checked_out"]},
+            "check_in": {"$lt": end_dt.isoformat()},
+            "check_out": {"$gt": start_dt.isoformat()},
+        },
+        {
+            "_id": 0,
+            "id": 1,
+            "check_in": 1,
+            "check_out": 1,
+            "adults": 1,
+            "children": 1,
+            "guest_id": 1,
+            "nationality": 1,
+            "guest_country": 1,
+            "country": 1,
+        },
+    ).to_list(length=20000)
+    guest_ids = [str(b["guest_id"]) for b in bookings if b.get("guest_id")]
+    countries = await _guest_country_map(tenant_id, guest_ids)
+
+    active_room_filter = {
+        "tenant_id": tenant_id,
+        "status": {"$nin": ["out_of_service", "inactive"]},
+        "active": {"$ne": False},
+        "is_active": {"$ne": False},
+    }
+    active_rooms = await db.rooms.count_documents(active_room_filter)
+    bed_docs = await db.rooms.aggregate(
+        [
+            {"$match": active_room_filter},
+            {"$group": {"_id": None, "beds": {"$sum": {"$ifNull": ["$bed_capacity", 2]}}}},
+        ]
+    ).to_list(length=1)
+    active_beds = int(bed_docs[0]["beds"]) if bed_docs else active_rooms * 2
+    rooms = int(cfg.get("licensed_room_count") or active_rooms)
+    beds = int(cfg.get("licensed_bed_count") or active_beds)
+    open_days = (end - start).days if data_through is not None else monthrange(year, month)[1]
+    return {
+        "id": cfg["facility_id"],
+        "rapor_tarihi": f"{year}-{month:02d}",
+        "il_kodu": str(cfg["il_kodu"]),
+        "ilce_kodu": str(cfg["ilce_kodu"]),
+        "oda_sayisi": int(rooms),
+        "yatak_sayisi": beds,
+        "tesisin_aylik_acik_oldugu_gun_sayisi": open_days,
+        "aylik_ortalama_fiyat": round(float(average_price_eur), 2),
+        "data": calculate_monthly_v6_rows(bookings, countries, start, end),
+    }
+
+
+async def _tcmb_eur_selling_rate(on_or_before: date) -> tuple[float, date]:
+    """Return the latest official EUR ForexSelling rate on/before a date."""
+    from integrations.xchange.safety import safe_request_async
+
+    for offset in range(0, 11):
+        rate_date = on_or_before - timedelta(days=offset)
+        url = f"https://www.tcmb.gov.tr/kurlar/{rate_date:%Y%m}/{rate_date:%d%m%Y}.xml"
+        try:
+            response = await safe_request_async("GET", url, timeout=10.0)
+            if response.status_code != 200:
+                continue
+            root = ET.fromstring(response.text)
+            node = root.find("Currency[@CurrencyCode='EUR']/ForexSelling")
+            if node is not None and node.text and float(node.text) > 0:
+                return float(node.text), rate_date
+        except Exception as exc:
+            logger.info("[tga] TCMB rate unavailable date=%s err=%s", rate_date, exc)
+    raise ValueError("TCMB EUR döviz satış kuru alınamadı; otomatik TGA gönderimi durduruldu")
+
+
+async def calculate_automatic_average_price_eur(
+    tenant_id: str,
+    year: int,
+    month: int,
+    *,
+    data_through: date,
+) -> dict[str, Any]:
+    """Calculate net room ADR from posted Night Audit room charges.
+
+    Only non-voided room charges are used. ``amount`` is the pre-tax room
+    amount produced by Night Audit, so VAT/accommodation tax and ancillary
+    charges are not included. Missing revenue for sold nights fails closed.
+    """
+    start = date(year, month, 1)
+    end = min(
+        date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1),
+        data_through + timedelta(days=1),
+    )
+    rows = await db.folio_charges.aggregate(
+        [
+            {
+                "$match": {
+                    "tenant_id": tenant_id,
+                    "voided": {"$ne": True},
+                    "$or": [{"charge_category": "room"}, {"charge_type": "room_charge"}],
+                    "business_date": {"$gte": start.isoformat(), "$lt": end.isoformat()},
+                }
+            },
+            {
+                "$group": {
+                    "_id": None,
+                    "net_room_revenue_try": {"$sum": {"$ifNull": ["$amount", 0]}},
+                    "room_nights": {"$sum": {"$ifNull": ["$quantity", 1]}},
+                }
+            },
+        ]
+    ).to_list(length=1)
+    if not rows or float(rows[0].get("room_nights") or 0) <= 0:
+        raise ValueError("Gerçekleşmiş Night Audit oda geliri bulunamadı; otomatik fiyat üretilemedi")
+    revenue_try = float(rows[0].get("net_room_revenue_try") or 0)
+    room_nights = float(rows[0].get("room_nights") or 0)
+    if revenue_try <= 0:
+        raise ValueError("Net oda geliri sıfır; otomatik TGA gönderimi durduruldu")
+    rate, rate_date = await _tcmb_eur_selling_rate(data_through)
+    average = round((revenue_try / room_nights) / rate, 2)
+    return {
+        "average_price_eur": average,
+        "net_room_revenue_try": round(revenue_try, 2),
+        "room_nights": room_nights,
+        "tcmb_eur_selling_rate": rate,
+        "tcmb_rate_date": rate_date.isoformat(),
+    }
+
+
 async def build_batch_envelope(
     tenant_id: str,
     end_date: date,
@@ -744,15 +1020,81 @@ async def _post_envelope(cfg: dict[str, Any], envelope: dict[str, Any]) -> dict[
     try:
         r = await safe_post_async(url, timeout=HTTP_TIMEOUT_S, json=envelope, headers=headers)
         ok = 200 <= r.status_code < 300
+        try:
+            response_data = r.json()
+        except Exception:
+            response_data = None
+        api_version = response_data.get("api_version") if isinstance(response_data, dict) else None
         return {
             "status": "sent" if ok else "failed",
             "http_status": r.status_code,
             "response_text": (r.text or "")[:1000],
+            "response_data": response_data,
+            "api_version": api_version,
+            "api_version_mismatch": bool(api_version and api_version != TGA_API_VERSION),
         }
     except EgressDenied as ed:
         return {"status": "failed", "error": f"egress_denied: {ed}"}
     except Exception as exc:  # network / timeout
         return {"status": "failed", "error": str(exc)[:500]}
+
+
+async def send_monthly_v6(
+    tenant_id: str,
+    year: int,
+    month: int,
+    *,
+    average_price_eur: float,
+    triggered_by: str = "manual",
+    data_through: date | None = None,
+    price_calculation: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Send one reviewed month through the official TGA v6 endpoint."""
+    cfg = await get_tga_config(tenant_id, decrypt_api_key=True)
+    if not cfg.get("enabled"):
+        return {"status": "skipped", "reason": "disabled"}
+    if not cfg.get("api_key") or not cfg.get("il_kodu") or not cfg.get("ilce_kodu"):
+        return {"status": "skipped", "reason": "missing_config"}
+    payload = await build_monthly_v6_payload(
+        tenant_id,
+        year,
+        month,
+        average_price_eur=average_price_eur,
+        data_through=data_through,
+    )
+    started = datetime.now(UTC)
+    result = await _post_envelope(cfg, payload)
+    out_doc: dict[str, Any] = {
+        "tenant_id": tenant_id,
+        "period": payload["rapor_tarihi"],
+        "environment": cfg["environment"],
+        "triggered_by": triggered_by,
+        "report_kind": "monthly_v6",
+        "data_through": data_through.isoformat() if data_through else None,
+        "started_at": started.isoformat(),
+        "finished_at": datetime.now(UTC).isoformat(),
+        "request_summary": {
+            "facility_id": payload["id"],
+            "rapor_tarihi": payload["rapor_tarihi"],
+            "oda_sayisi": payload["oda_sayisi"],
+            "yatak_sayisi": payload["yatak_sayisi"],
+            "country_rows": len(payload["data"]),
+            "average_price_eur": payload.get("aylik_ortalama_fiyat"),
+        },
+        "price_calculation": price_calculation,
+        "retry_count": 0,
+        "next_retry_at": None,
+        **result,
+    }
+    if out_doc.get("status") == "failed":
+        out_doc["first_failed_at"] = started.isoformat()
+        out_doc["next_retry_at"] = (datetime.now(UTC) + timedelta(seconds=_next_backoff_seconds(0))).isoformat()
+    try:
+        await db[OUTBOX_COLL].insert_one(out_doc)
+    except Exception as exc:
+        logger.warning("[tga] monthly outbox insert failed tenant=%s err=%s", tenant_id, exc)
+    out_doc.pop("_id", None)
+    return out_doc
 
 
 async def send_batch(
@@ -1042,12 +1384,134 @@ async def list_send_log(tenant_id: str, *, days: int = 30) -> list[dict[str, Any
     return await cur.to_list(length=200)
 
 
+async def run_automatic_submissions(*, now_utc: datetime | None = None) -> dict[str, Any]:
+    """Run due tenant-local daily TGA v6 submissions, once per local day."""
+    from zoneinfo import ZoneInfo
+
+    now = now_utc or datetime.now(UTC)
+    tenants = await db.tenants.find(
+        {
+            "tga.enabled": True,
+            "tga.auto_submit": True,
+            "tga.panel_mapping_confirmed": True,
+            "tga.api_key_enc": {"$exists": True, "$ne": None},
+        },
+        {"_id": 0, "id": 1, "timezone": 1, "tga.auto_submit_hour": 1},
+    ).to_list(length=5000)
+    stats: dict[str, Any] = {"scanned": len(tenants), "attempted": 0, "sent": 0, "failed": 0, "skipped": 0}
+    for tenant in tenants:
+        tenant_id = tenant.get("id")
+        if not tenant_id:
+            continue
+        settings = await db.tenant_settings.find_one({"tenant_id": tenant_id}, {"_id": 0, "timezone": 1}) or {}
+        tz_name = settings.get("timezone") or tenant.get("timezone") or "Europe/Istanbul"
+        try:
+            local_now = now.astimezone(ZoneInfo(tz_name))
+        except Exception:
+            local_now = now.astimezone(ZoneInfo("Europe/Istanbul"))
+        target_hour = int((tenant.get("tga") or {}).get("auto_submit_hour", 5))
+        if local_now.hour != target_hour:
+            continue
+        claim_id = f"{tenant_id}:{local_now.date().isoformat()}"
+        try:
+            await db.tga_auto_submission_claims.insert_one(
+                {"_id": claim_id, "tenant_id": tenant_id, "local_date": local_now.date().isoformat(), "claimed_at": now.isoformat()}
+            )
+        except DuplicateKeyError:
+            stats["skipped"] += 1
+            continue
+        stats["attempted"] += 1
+        cutoff = local_now.date() - timedelta(days=1)
+        try:
+            pricing = await calculate_automatic_average_price_eur(
+                tenant_id,
+                cutoff.year,
+                cutoff.month,
+                data_through=cutoff,
+            )
+            result = await send_monthly_v6(
+                tenant_id,
+                cutoff.year,
+                cutoff.month,
+                average_price_eur=pricing["average_price_eur"],
+                triggered_by="automatic_daily",
+                data_through=cutoff,
+                price_calculation=pricing,
+            )
+            if result.get("status") == "sent":
+                stats["sent"] += 1
+            else:
+                stats["failed"] += 1
+        except Exception as exc:
+            stats["failed"] += 1
+            logger.exception("[tga-auto] tenant=%s failed", tenant_id)
+            await db[OUTBOX_COLL].insert_one(
+                {
+                    "tenant_id": tenant_id,
+                    "period": f"{cutoff.year}-{cutoff.month:02d}",
+                    "data_through": cutoff.isoformat(),
+                    "report_kind": "monthly_v6",
+                    "triggered_by": "automatic_daily",
+                    "status": "failed_permanent",
+                    "error": str(exc)[:500],
+                    "started_at": now.isoformat(),
+                    "finished_at": datetime.now(UTC).isoformat(),
+                    "next_retry_at": None,
+                }
+            )
+    return stats
+
+
+async def retry_failed_monthly_v6(*, max_docs: int = 100) -> dict[str, int]:
+    """Retry failed v6 posts using their immutable cutoff and price audit."""
+    now = datetime.now(UTC)
+    docs = await (
+        db[OUTBOX_COLL]
+        .find({"report_kind": "monthly_v6", "status": "failed", "next_retry_at": {"$ne": None, "$lte": now.isoformat()}})
+        .sort("next_retry_at", 1)
+        .limit(max_docs)
+        .to_list(length=max_docs)
+    )
+    stats = {"attempted": 0, "succeeded": 0, "failed": 0}
+    for doc in docs:
+        stats["attempted"] += 1
+        tenant_id = str(doc.get("tenant_id") or "")
+        try:
+            year, month = (int(v) for v in str(doc["period"]).split("-", 1))
+            cutoff = date.fromisoformat(str(doc.get("data_through"))) if doc.get("data_through") else None
+            average = float((doc.get("request_summary") or {})["average_price_eur"])
+            cfg = await get_tga_config(tenant_id, decrypt_api_key=True)
+            payload = await build_monthly_v6_payload(tenant_id, year, month, average_price_eur=average, data_through=cutoff)
+            result = await _post_envelope(cfg, payload)
+        except Exception as exc:
+            result = {"status": "failed", "error": str(exc)[:500]}
+        count = int(doc.get("retry_count") or 0) + 1
+        update = {**result, "retry_count": count, "last_retry_at": now.isoformat(), "finished_at": datetime.now(UTC).isoformat()}
+        if result.get("status") == "sent":
+            update["next_retry_at"] = None
+            stats["succeeded"] += 1
+        else:
+            first_failed = _parse_dt(doc.get("first_failed_at") or doc.get("started_at")) or now
+            age = (now - first_failed).total_seconds()
+            if age >= ALERT_THRESHOLD_SECONDS:
+                update["status"] = "failed_permanent"
+                update["next_retry_at"] = None
+                update["alerted_at"] = now.isoformat()
+                await _emit_delivery_failed_alert(tenant_id, {**doc, **update}, age, count)
+            else:
+                update["next_retry_at"] = (now + timedelta(seconds=_next_backoff_seconds(count))).isoformat()
+            stats["failed"] += 1
+        await db[OUTBOX_COLL].update_one({"_id": doc["_id"]}, {"$set": update})
+    return stats
+
+
 async def ensure_indexes() -> None:
     try:
         await db[OUTBOX_COLL].create_index([("tenant_id", 1), ("started_at", -1)])
         await db[OUTBOX_COLL].create_index([("status", 1), ("started_at", -1)])
         # Retry worker bu indeksi kullanır.
         await db[OUTBOX_COLL].create_index([("status", 1), ("next_retry_at", 1)])
+        await db.tga_auto_submission_claims.create_index("claimed_at", expireAfterSeconds=45 * 86400)
     except Exception as exc:
         logger.warning("[tga] index ensure failed: %s", exc)
 
@@ -1055,7 +1519,7 @@ async def ensure_indexes() -> None:
 async def list_enabled_tenants() -> list[str]:
     """Scheduler için: TGA gönderim aktif olan tenant kimlikleri."""
     cur = db.tenants.find(
-        {"tga.enabled": True, "tga.api_key_enc": {"$exists": True, "$ne": None}, "tga.belge_no": {"$exists": True, "$ne": ""}, "tga.vergi_no": {"$exists": True, "$ne": ""}},
+        {"tga.enabled": True, "tga.api_key_enc": {"$exists": True, "$ne": None}, "tga.il_kodu": {"$exists": True, "$ne": ""}, "tga.ilce_kodu": {"$exists": True, "$ne": ""}},
         {"_id": 0, "id": 1},
     )
     return [t["id"] async for t in cur if t.get("id")]

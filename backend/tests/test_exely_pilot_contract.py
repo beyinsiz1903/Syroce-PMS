@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 import yaml
+from lxml import etree
 
 from core.tenant_db import get_current_tenant_id
 from domains.channel_manager.ari.provider_snapshot_contract import ProviderSnapshotEmpty
@@ -20,6 +21,8 @@ ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github" / "workflows" / "exely-pilot.yml"
 INTEGRATIONS_REQUIREMENTS = ROOT / "backend" / "requirements" / "integrations.txt"
 POST_INSTALL = ROOT / "backend" / "scripts" / "post_install.sh"
+API_DOCKERFILE = ROOT / "backend" / "Dockerfile"
+WORKER_DOCKERFILE = ROOT / "worker" / "Dockerfile"
 
 
 def _workflow() -> dict:
@@ -27,7 +30,11 @@ def _workflow() -> dict:
 
 
 def _base_env(monkeypatch, *, operation: str = "discovery", write: bool = False):
-    future_date = (datetime.now(UTC).date() + timedelta(days=60)).isoformat()
+    today = datetime.now(UTC).date()
+    future_date = (today + timedelta(days=60)).isoformat()
+    date_to = today + timedelta(days=365)
+    if operation == "forced_availability_batch":
+        date_to = today + timedelta(days=64)
     values = {
         "APP_ENV": "test",
         "TESTING": "1",
@@ -39,7 +46,11 @@ def _base_env(monkeypatch, *, operation: str = "discovery", write: bool = False)
         "EXELY_PILOT_AVAILABILITY": "2",
         "EXELY_PILOT_CREDENTIAL_SCOPE": "test",
         "EXELY_PILOT_CURRENCY": "USD",
+        "EXELY_PILOT_DATE_FROM": future_date,
+        "EXELY_PILOT_DATE_TO": date_to.isoformat(),
+        "EXELY_PILOT_DELUXE_ROOM_TYPE_CODE": "synthetic-deluxe-room",
         "EXELY_PILOT_ENDPOINT_URL": "https://pmsconnect.test.hopenapi.com/api/PMSConnect.svc",
+        "EXELY_PILOT_EXPECTED_HOTEL_CODE": "synthetic-property",
         "EXELY_PILOT_HMAC_KEY": "synthetic-hmac-key-with-at-least-32-chars",
         "EXELY_PILOT_HOTEL_CODE": "synthetic-property",
         "EXELY_PILOT_MIN_LOS": "2",
@@ -47,8 +58,10 @@ def _base_env(monkeypatch, *, operation: str = "discovery", write: bool = False)
         "EXELY_PILOT_OPERATION": operation,
         "EXELY_PILOT_PASSWORD": "synthetic-password",
         "EXELY_PILOT_RATE": "100.00",
+        "EXELY_PILOT_BASE_RATE_PLAN_CODE": "synthetic-base-rate",
         "EXELY_PILOT_RATE_PLAN_CODE": "synthetic-rate",
         "EXELY_PILOT_ROOM_TYPE_CODE": "synthetic-room",
+        "EXELY_PILOT_STANDARD_ROOM_TYPE_CODE": "synthetic-standard-room",
         "EXELY_PILOT_PMS_ROOM_TYPE": "Synthetic Standard",
         "EXELY_PILOT_RUN_ATTEMPT": "1",
         "EXELY_PILOT_RUN_ID": "123456",
@@ -58,6 +71,14 @@ def _base_env(monkeypatch, *, operation: str = "discovery", write: bool = False)
         "EXELY_PILOT_WRITE_APPROVED": "true" if write else "false",
         "EXELY_PILOT_ACK_DURABLE_PMS_ATTESTED": "true",
     }
+    if operation == "reservation_read_exact_probe":
+        values.update(
+            {
+                "EXELY_PILOT_HOTEL_CODE": "501694",
+                "EXELY_PILOT_EXPECTED_HOTEL_CODE": "501694",
+                "EXELY_PILOT_RESERVATION_ID": "20261020-501694-123456",
+            }
+        )
     if operation in {"reservation_import", "reservation_replay", "reservation_ack"}:
         values.update(
             {
@@ -80,9 +101,13 @@ def test_workflow_is_manual_single_mode_and_exact_head_gated():
         "discovery",
         "inventory_read",
         "reservation_read",
+        "reservation_read_legacy_probe",
+        "reservation_read_exact_probe",
         "reservation_import",
         "reservation_replay",
         "availability",
+        "availability_batch",
+        "forced_availability_batch",
         "rate",
         "stop_sell",
         "min_los",
@@ -161,7 +186,13 @@ def test_litellm_security_override_declares_and_verifies_settings_dependency():
     post_install = POST_INSTALL.read_text()
 
     assert "pydantic-settings==2.14.2" in requirements
+    assert "litellm==1.96.2" in requirements
+    assert "openai==2.20.0" in requirements
+    assert '"litellm>=1.84.0" --no-deps' not in post_install
+    assert "Version(version('litellm')) >= Version('1.96.2')" in post_install
     assert "import litellm, openai, pydantic_settings" in post_install
+    for dockerfile in (API_DOCKERFILE, WORKER_DOCKERFILE):
+        assert '"litellm>=1.84.0" --no-deps' not in dockerfile.read_text()
 
 
 def test_workflow_scopes_ari_and_ack_secrets_to_mutually_exclusive_steps():
@@ -240,7 +271,16 @@ def test_settings_fail_closed_without_write_approval(monkeypatch):
 
 @pytest.mark.parametrize(
     "operation",
-    ["availability", "rate", "stop_sell", "min_los", "min_los_arrival", "reservation_ack"],
+    [
+        "availability",
+        "availability_batch",
+        "forced_availability_batch",
+        "rate",
+        "stop_sell",
+        "min_los",
+        "min_los_arrival",
+        "reservation_ack",
+    ],
 )
 def test_mutations_fail_closed_on_workflow_rerun(monkeypatch, operation):
     _base_env(monkeypatch, operation=operation, write=True)
@@ -252,7 +292,7 @@ def test_mutations_fail_closed_on_workflow_rerun(monkeypatch, operation):
 
 @pytest.mark.parametrize(
     "operation",
-    ["discovery", "inventory_read", "reservation_read", "reservation_import", "reservation_replay"],
+    ["discovery", "inventory_read", "reservation_read", "reservation_read_legacy_probe", "reservation_read_exact_probe", "reservation_import", "reservation_replay"],
 )
 def test_readonly_operations_allow_workflow_rerun(monkeypatch, operation):
     _base_env(monkeypatch, operation=operation)
@@ -261,7 +301,7 @@ def test_readonly_operations_allow_workflow_rerun(monkeypatch, operation):
     assert pilot._load_settings().operation == operation
 
 
-def test_discovery_allows_mapping_secrets_to_be_absent(monkeypatch):
+def test_discovery_uses_explicit_api_codes_without_mapping_secrets(monkeypatch):
     _base_env(monkeypatch, operation="discovery")
     monkeypatch.delenv("EXELY_PILOT_ROOM_TYPE_CODE")
     monkeypatch.delenv("EXELY_PILOT_RATE_PLAN_CODE")
@@ -269,7 +309,17 @@ def test_discovery_allows_mapping_secrets_to_be_absent(monkeypatch):
     settings = pilot._load_settings()
 
     assert settings.room_type_code == ""
-    assert settings.rate_plan_code == ""
+    assert settings.room_type_codes == ("synthetic-standard-room", "synthetic-deluxe-room")
+    assert settings.rate_plan_code == "synthetic-base-rate"
+    assert settings.test_date is not None
+
+
+def test_pilot_rejects_wrong_hotel_code_without_disclosing_it(monkeypatch):
+    _base_env(monkeypatch, operation="discovery")
+    monkeypatch.setenv("EXELY_PILOT_EXPECTED_HOTEL_CODE", "another-test-property")
+
+    with pytest.raises(pilot.PilotSafetyError, match="^BLOCKED_PILOT_HOTEL_CODE_MISMATCH$"):
+        pilot._load_settings()
 
 
 def test_ari_write_still_requires_mapping_secrets(monkeypatch):
@@ -277,6 +327,51 @@ def test_ari_write_still_requires_mapping_secrets(monkeypatch):
     monkeypatch.delenv("EXELY_PILOT_ROOM_TYPE_CODE")
 
     with pytest.raises(pilot.PilotSafetyError, match="BLOCKED_MISSING_CONFIGURATION:EXELY_PILOT_ROOM_TYPE_CODE"):
+        pilot._load_settings()
+
+
+def test_batch_settings_load_two_distinct_rooms_and_one_year_horizon(monkeypatch):
+    _base_env(monkeypatch, operation="availability_batch", write=True)
+
+    settings = pilot._load_settings()
+
+    assert settings.room_type_codes == ("synthetic-standard-room", "synthetic-deluxe-room")
+    assert settings.rate_plan_code == "synthetic-base-rate"
+    assert settings.date_from is not None
+    assert settings.date_to is not None
+    assert (settings.date_to - datetime.now(UTC).date()).days >= 365
+
+
+def test_batch_settings_reject_duplicate_room_mappings(monkeypatch):
+    _base_env(monkeypatch, operation="availability_batch", write=True)
+    monkeypatch.setenv("EXELY_PILOT_DELUXE_ROOM_TYPE_CODE", "synthetic-standard-room")
+
+    with pytest.raises(pilot.PilotSafetyError, match="BLOCKED_DUPLICATE_PILOT_ROOM_MAPPING"):
+        pilot._load_settings()
+
+
+def test_forced_batch_settings_allow_short_explicit_period(monkeypatch):
+    _base_env(monkeypatch, operation="forced_availability_batch", write=True)
+    start = datetime.now(UTC).date() + timedelta(days=60)
+    end = start + timedelta(days=4)
+    monkeypatch.setenv("EXELY_PILOT_DATE_FROM", start.isoformat())
+    monkeypatch.setenv("EXELY_PILOT_DATE_TO", end.isoformat())
+
+    settings = pilot._load_settings()
+
+    assert settings.operation == "forced_availability_batch"
+    assert settings.date_from == start
+    assert settings.date_to == end
+    assert settings.room_type_codes == ("synthetic-standard-room", "synthetic-deluxe-room")
+
+
+def test_forced_batch_settings_reject_more_than_31_days(monkeypatch):
+    _base_env(monkeypatch, operation="forced_availability_batch", write=True)
+    start = datetime.now(UTC).date() + timedelta(days=60)
+    monkeypatch.setenv("EXELY_PILOT_DATE_FROM", start.isoformat())
+    monkeypatch.setenv("EXELY_PILOT_DATE_TO", (start + timedelta(days=31)).isoformat())
+
+    with pytest.raises(pilot.PilotSafetyError, match="BLOCKED_UNSAFE_FORCED_PILOT_DATE_RANGE"):
         pilot._load_settings()
 
 
@@ -292,7 +387,7 @@ def test_inventory_read_requires_mapping_secrets(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_discovery_without_target_mapping_reports_safe_capability_metadata(monkeypatch):
+async def test_discovery_uses_future_date_and_requires_both_api_room_codes(monkeypatch):
     _base_env(monkeypatch, operation="discovery")
     monkeypatch.delenv("EXELY_PILOT_ROOM_TYPE_CODE")
     monkeypatch.delenv("EXELY_PILOT_RATE_PLAN_CODE")
@@ -302,8 +397,11 @@ async def test_discovery_without_target_mapping_reports_safe_capability_metadata
             return_value=SimpleNamespace(
                 success=True,
                 data={
-                    "room_types": [{"code": "synthetic-room-a"}, {"code": "synthetic-room-b"}],
-                    "rate_plans": [{"code": "synthetic-rate"}],
+                    "room_types": [
+                        {"code": "synthetic-standard-room"},
+                        {"code": "synthetic-deluxe-room"},
+                    ],
+                    "rate_plans": [{"code": "synthetic-base-rate"}],
                 },
                 metadata={"provider_status_class": "SUCCESS"},
             )
@@ -316,10 +414,44 @@ async def test_discovery_without_target_mapping_reports_safe_capability_metadata
     assert metadata["capability_match"] is True
     assert metadata["room_match"] is True
     assert metadata["rate_plan_match"] is True
-    assert metadata["match_count_class"] == "MULTIPLE"
+    assert metadata["match_count_class"] == "ONE"
+    assert settings.test_date is not None
+    provider.discover_rooms.assert_awaited_once_with(
+        checkin=settings.test_date.isoformat(),
+        checkout=(settings.test_date + timedelta(days=1)).isoformat(),
+    )
     assert "synthetic-room" not in str(metadata)
     assert "synthetic-rate" not in str(metadata)
     assert recorded == []
+
+
+@pytest.mark.asyncio
+async def test_batch_discovery_requires_both_named_room_mappings(monkeypatch):
+    _base_env(monkeypatch, operation="availability_batch", write=True)
+    settings = pilot._load_settings()
+    provider = SimpleNamespace(
+        discover_rooms=AsyncMock(
+            return_value=SimpleNamespace(
+                success=True,
+                data={
+                    "room_types": [
+                        {"code": "synthetic-standard-room"},
+                        {"code": "synthetic-deluxe-room"},
+                        {"code": "synthetic-suite-room"},
+                    ],
+                    "rate_plans": [{"code": "synthetic-base-rate"}],
+                },
+                metadata={"provider_status_class": "SUCCESS"},
+            )
+        )
+    )
+
+    metadata = await pilot._discover_mapping(provider, settings, lambda *_: None)
+
+    assert metadata["capability_match"] is True
+    assert metadata["room_match"] is True
+    assert metadata["rate_plan_match"] is True
+    assert metadata["match_count_class"] == "ONE"
 
 
 @pytest.mark.asyncio
@@ -579,6 +711,135 @@ def test_safe_metadata_drops_payload_and_identifier_fields(caplog):
 
     assert recorded == [("correlation_label", "abcdef123456"), ("provider_write_count", 0)]
     assert sensitive not in caplog.text
+
+
+@pytest.mark.parametrize(
+    ("reservation_namespace", "expected_canonical"),
+    [
+        ("http://www.opentravel.org/OTA/2003/05", "ONE"),
+        ("urn:alternate-test-namespace", "ZERO"),
+    ],
+)
+def test_read_response_structure_records_only_safe_counts(reservation_namespace, expected_canonical):
+    xml = f'''<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
+      <s:Body><OTA_ReadRS xmlns="http://www.opentravel.org/OTA/2003/05">
+        <Success/><HotelReservations><HotelReservation xmlns="{reservation_namespace}"
+          ResID_Value="sensitive-booking-id"><ResGuests><ResGuest>private guest</ResGuest></ResGuests>
+        </HotelReservation></HotelReservations>
+      </OTA_ReadRS></s:Body>
+    </s:Envelope>'''.encode()
+
+    structure = pilot._read_response_structure(xml)
+
+    assert structure == {
+        "read_response_shape": "OTA_ReadRS",
+        "raw_reservation_count_class": "ONE",
+        "canonical_reservation_count_class": expected_canonical,
+    }
+    assert "sensitive-booking-id" not in repr(structure)
+    assert "private guest" not in repr(structure)
+
+
+def test_read_response_structure_handles_empty_and_invalid_xml_without_payload():
+    empty = b'''<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
+      <s:Body><OTA_ReadRS xmlns="http://www.opentravel.org/OTA/2003/05"><Success/></OTA_ReadRS></s:Body>
+    </s:Envelope>'''
+    assert pilot._read_response_structure(empty) == {
+        "read_response_shape": "OTA_ReadRS",
+        "raw_reservation_count_class": "ZERO",
+        "canonical_reservation_count_class": "ZERO",
+    }
+    assert pilot._read_response_structure(b"private malformed payload") == {"read_response_shape": "MALFORMED"}
+
+
+@pytest.mark.asyncio
+async def test_legacy_read_probe_uses_previous_request_shape_without_writing():
+    response = b'''<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
+      <s:Body><OTA_ResRetrieveRS xmlns="http://www.opentravel.org/OTA/2003/05">
+        <Success/><HotelReservations/>
+      </OTA_ResRetrieveRS></s:Body>
+    </s:Envelope>'''
+    provider = SimpleNamespace(_send_read=AsyncMock(return_value=response))
+    settings = SimpleNamespace(
+        username="synthetic-user",
+        password="synthetic-password",
+        hotel_code="synthetic-property",
+        correlation_label="abcdef123456",
+        operation="reservation_read_legacy_probe",
+        test_date=(datetime.now(UTC).date() + timedelta(days=60)),
+    )
+
+    metadata = await pilot._read_reservations_legacy_probe(provider, settings)
+
+    provider._send_read.assert_awaited_once()
+    args, kwargs = provider._send_read.await_args
+    assert 'Version="1.0"' in args[0]
+    assert 'SelectionType="Undelivered"' in args[0]
+    assert 'Start="' in args[0] and 'End="' in args[0]
+    assert kwargs == {"operation": "reservation_read"}
+    assert metadata["match_count_class"] == "ZERO"
+    assert "synthetic-password" not in repr(metadata)
+
+
+def test_exact_read_probe_rejects_booking_for_another_hotel(monkeypatch):
+    _base_env(monkeypatch, operation="reservation_read_exact_probe")
+    monkeypatch.setenv("EXELY_PILOT_RESERVATION_ID", "20261020-999999-123456")
+
+    with pytest.raises(pilot.PilotSafetyError, match="BLOCKED_PILOT_RESERVATION_HOTEL_MISMATCH"):
+        pilot._load_settings()
+
+
+@pytest.mark.asyncio
+async def test_exact_read_probe_uses_wsdl_unique_id_without_writing():
+    response = b'''<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
+      <s:Body><OTA_ResRetrieveRS xmlns="http://www.opentravel.org/OTA/2003/05">
+        <Success/><HotelReservations/>
+      </OTA_ResRetrieveRS></s:Body>
+    </s:Envelope>'''
+    provider = SimpleNamespace(_send_read=AsyncMock(return_value=response))
+    settings = SimpleNamespace(
+        username="synthetic-user",
+        password="synthetic-password",
+        hotel_code="501694",
+        reservation_id="20261020-501694-123456",
+        correlation_label="abcdef123456",
+        operation="reservation_read_exact_probe",
+    )
+
+    metadata = await pilot._read_reservations_exact_probe(provider, settings)
+
+    provider._send_read.assert_awaited_once()
+    args, kwargs = provider._send_read.await_args
+    root = etree.fromstring(args[0].encode())
+    ns = {"ota": "http://www.opentravel.org/OTA/2003/05"}
+    assert root.find(".//ota:HotelReadRequest", ns) is None
+    unique_id = root.find(".//ota:ReadRequest/ota:UniqueID", ns)
+    assert unique_id is not None and unique_id.get("ID") == "20261020-501694-123456"
+    assert unique_id.get("Type") == "14"
+    assert args[1] == get_soap_action_uri("OTA_ReadRQ")
+    assert kwargs == {"operation": "reservation_read"}
+    assert metadata["match_count_class"] == "ZERO"
+    assert "20261020-501694-123456" not in repr(metadata)
+    assert "synthetic-password" not in repr(metadata)
+
+
+@pytest.mark.asyncio
+async def test_exact_read_probe_reports_only_numeric_provider_rejection_code(monkeypatch):
+    provider = SimpleNamespace(_send_read=AsyncMock(return_value=b"synthetic"))
+    settings = SimpleNamespace(
+        username="synthetic-user",
+        password="synthetic-password",
+        hotel_code="501694",
+        reservation_id="20261020-501694-123456",
+    )
+    monkeypatch.setattr(
+        pilot,
+        "parse_read_rs",
+        lambda _raw: {"success": False, "provider_codes": ["private-booking-id", "783"]},
+    )
+
+    with pytest.raises(pilot.PilotSafetyError, match="^BLOCKED_EXACT_PROBE_READ_FAILED:783$"):
+        await pilot._read_reservations_exact_probe(provider, settings)
 
 
 @pytest.mark.asyncio

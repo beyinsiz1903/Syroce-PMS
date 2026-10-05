@@ -250,6 +250,11 @@ async def apply_auto_mappings(
         raise HTTPException(status_code=400, detail="Gecersiz provider.")
 
     _require_explicit_rate_plans(provider, payload.mappings)
+    if provider == "exely" and payload.mappings:
+        # OTA_HotelAvailRQ discovery returns PMS API codes. Exely's outbound
+        # ARI room/plan IDs can be different; auto-applying these as writable
+        # mappings silently targets the wrong inventory.
+        raise HTTPException(status_code=409, detail="EXELY_ARI_IDS_REQUIRE_MANUAL_VERIFICATION")
 
     created = 0
     errors = []
@@ -277,6 +282,7 @@ async def apply_auto_mappings(
                         "tenant_id": current_user.tenant_id,
                         "pms_room_type": m.pms_room_type,
                         "exely_room_code": m.provider_room_code,
+                        "exely_rate_plan_code": m.provider_rate_plan_code,
                     }
                 )
                 if existing:
@@ -354,4 +360,7 @@ async def get_mapping_status(
         "unmapped_count": unmapped_count,
         "completion_pct": round((mapped_count / total_pms * 100) if total_pms > 0 else 0, 1),
         "existing_mappings": len(existing),
+        "pms_room_types": pms_types,
+        "provider_room_types": provider_rooms,
+        "provider_rate_plans": provider_rates,
     }

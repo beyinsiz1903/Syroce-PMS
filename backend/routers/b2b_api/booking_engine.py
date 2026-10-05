@@ -558,8 +558,9 @@ async def b2b_get_availability(
                 "tenant_id": tenant_id,
                 "room_id": {"$in": rt_data["room_ids"]},
                 "status": {"$in": ["confirmed", "guaranteed", "checked_in", "pending"]},
-                "check_in": {"$lt": check_out + "T23:59:59"},
-                "check_out": {"$gt": check_in + "T00:00:00"},
+                # Half-open stay interval: checkout day is free for an arrival.
+                "check_in": {"$lt": check_out + "T00:00:00"},
+                "check_out": {"$gt": check_in + "T23:59:59.999999"},
             }
         )
         rt_data["available_rooms"] = max(0, rt_data["total_rooms"] - booked)
@@ -677,8 +678,8 @@ async def _b2b_create_reservation_impl(
                 "tenant_id": tenant_id,
                 "room_id": room["id"],
                 "status": {"$in": ["confirmed", "guaranteed", "checked_in", "pending"]},
-                "check_in": {"$lt": data.check_out + "T23:59:59"},
-                "check_out": {"$gt": data.check_in + "T00:00:00"},
+                "check_in": {"$lt": data.check_out + "T00:00:00"},
+                "check_out": {"$gt": data.check_in + "T23:59:59.999999"},
             }
         )
         if conflict == 0:
@@ -693,7 +694,8 @@ async def _b2b_create_reservation_impl(
 
     booking_id = _uuid()
     confirmation_code = f"B2B-{booking_id[:8].upper()}"
-    nights = (co - ci).days
+    # Calendar nights must not lose a night to 14:00/11:00 stay times.
+    nights = (co.date() - ci.date()).days
     total = data.total_amount if data.total_amount > 0 else available_room.get("base_price", 0) * max(nights, 1)
     commission_amount = round(total * commission_rate / 100, 2)
 

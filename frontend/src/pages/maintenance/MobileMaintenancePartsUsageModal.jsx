@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next';
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -43,7 +44,7 @@ export default function MobileMaintenancePartsUsageModal({ partsUsageModalOpen, 
                     <p><strong>Parça:</strong> {selectedPart.part_name}</p>
                     <p><strong>Kategori:</strong> {selectedPart.category}</p>
                     <p><strong>Mevcut Stok:</strong> {selectedPart.current_stock}</p>
-                    <p><strong>Birim Fiyat:</strong> {selectedPart.unit_price} ₺</p>
+                    <p><strong>Birim Fiyat:</strong> {formatCurrency(selectedPart.unit_price, selectedPart.currency || cachedTenantCurrency())}</p>
                     <p><strong>Depo:</strong> {selectedPart.warehouse_location}</p>
                   </CardContent>
                 </Card>
@@ -63,7 +64,7 @@ export default function MobileMaintenancePartsUsageModal({ partsUsageModalOpen, 
                 
                 <div className="p-3 bg-gray-100 rounded">
                   <p className="text-sm">
-                    <strong>Toplam Maliyet:</strong> {(selectedPart.unit_price * usageQuantity).toFixed(2)} ₺
+                    <strong>Toplam Maliyet:</strong> {formatCurrency(selectedPart.unit_price * usageQuantity, selectedPart.currency || cachedTenantCurrency())}
                   </p>
                 </div>
               </>}

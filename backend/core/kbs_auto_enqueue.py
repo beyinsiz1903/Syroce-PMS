@@ -16,6 +16,7 @@ import uuid
 from datetime import UTC, datetime
 
 from core.database import db
+from core.kbs_payload_builder import build_kbs_payload_snapshot
 from core.kbs_payload_validation import validate_kbs_payload
 
 logger = logging.getLogger("core.kbs_auto_enqueue")
@@ -28,66 +29,128 @@ def _now_iso() -> str:
     return datetime.now(UTC).isoformat()
 
 
-async def _build_payload_snapshot(tenant_id: str, booking_id: str) -> dict:
-    booking = await db.bookings.find_one(
-        {"tenant_id": tenant_id, "id": booking_id},
-        {
-            "_id": 0,
-            "id": 1,
-            "guest_id": 1,
-            "guest_name": 1,
-            "guest_email": 1,
-            "guest_phone": 1,
-            "room_number": 1,
-            "check_in": 1,
-            "check_out": 1,
-            "guest_nationality": 1,
-        },
-    )
-    if not booking:
-        return {}
+async def _build_payload_snapshot(tenant_id: str, booking_id: str, target_guest_id: str | None = None) -> dict:
+    _booking, _guest, snapshot = await build_kbs_payload_snapshot(db, tenant_id, booking_id, target_guest_id)
+    return snapshot
 
-    guest: dict = {}
-    if booking.get("guest_id"):
-        from security.encrypted_lookup import decrypt_guest_doc
 
-        guest = (
-            decrypt_guest_doc(
-                await db.guests.find_one(
-                    {"tenant_id": tenant_id, "id": booking["guest_id"]},
-                    {
-                        "_id": 0,
-                        "nationality": 1,
-                        "id_number": 1,
-                        "passport_number": 1,
-                        "birth_date": 1,
-                        "gender": 1,
-                        "address": 1,
-                        "father_name": 1,
-                        "mother_name": 1,
-                        "birth_place": 1,
-                    },
-                )
-            )
-            or {}
+async def _enqueue_single_guest(
+    tenant_id: str,
+    booking_id: str,
+    guest_id: str | None,
+    action: str,
+    actor: str,
+) -> dict | None:
+    try:
+        lock_id = f"{tenant_id}:{booking_id}:{guest_id or 'primary'}:{action}"
+        existing = await db.kbs_reports.find_one(
+            {
+                "_kind": QUEUE_KIND,
+                "tenant_id": tenant_id,
+                "_open_lock": lock_id,
+            },
+            {"_id": 0, "id": 1},
+        )
+        if existing:
+            return existing
+
+        snapshot = await _build_payload_snapshot(tenant_id, booking_id, guest_id)
+        if not snapshot:
+            return None
+
+        booking = await db.bookings.find_one(
+            {"tenant_id": tenant_id, "id": booking_id},
+            {"_id": 0, "guest_id": 1, "kbs_reported": 1, "kbs_test": 1},
         )
 
-    return {
-        "guest_name": booking.get("guest_name", ""),
-        "phone": booking.get("guest_phone", ""),
-        "room_number": booking.get("room_number", ""),
-        "check_in": booking.get("check_in", ""),
-        "check_out": booking.get("check_out", ""),
-        "nationality": guest.get("nationality") or booking.get("guest_nationality") or "TC",
-        "id_number": guest.get("id_number", ""),
-        "passport_number": guest.get("passport_number", ""),
-        "birth_date": guest.get("birth_date", ""),
-        "gender": guest.get("gender", ""),
-        "father_name": guest.get("father_name", ""),
-        "mother_name": guest.get("mother_name", ""),
-        "birth_place": guest.get("birth_place", ""),
-        "address": guest.get("address", ""),
-    }
+        checkin_confirmed = bool((booking or {}).get("kbs_reported")) and not bool((booking or {}).get("kbs_test"))
+        if action == "checkout" and guest_id and guest_id != (booking or {}).get("guest_id"):
+            guest_receipt = await db.kbs_reports.find_one(
+                {
+                    "_kind": QUEUE_KIND,
+                    "tenant_id": tenant_id,
+                    "booking_id": booking_id,
+                    "guest_id": guest_id,
+                    "action": "checkin",
+                    "status": "done",
+                    "kbs_test": {"$ne": True},
+                },
+                {"_id": 0, "id": 1},
+            )
+            checkin_confirmed = bool(guest_receipt)
+
+        if action == "checkout" and not checkin_confirmed:
+            await db.kbs_alerts.insert_one(
+                {
+                    "id": str(uuid.uuid4()),
+                    "tenant_id": tenant_id,
+                    "kind": "checkin_not_confirmed",
+                    "booking_id": booking_id,
+                    "action": action,
+                    "guest_name": snapshot.get("guest_name", ""),
+                    "room_number": snapshot.get("room_number", ""),
+                    "created_at": _now_iso(),
+                    "acknowledged": False,
+                }
+            )
+            return None
+
+        ok, missing = validate_kbs_payload(snapshot, action)
+        if not ok:
+            await db.kbs_alerts.insert_one(
+                {
+                    "id": str(uuid.uuid4()),
+                    "tenant_id": tenant_id,
+                    "kind": "missing_data",
+                    "booking_id": booking_id,
+                    "action": action,
+                    "missing_fields": missing,
+                    "guest_name": snapshot.get("guest_name", ""),
+                    "room_number": snapshot.get("room_number", ""),
+                    "created_at": _now_iso(),
+                    "acknowledged": False,
+                }
+            )
+            return None
+
+        now_iso = _now_iso()
+        job = {
+            "_kind": QUEUE_KIND,
+            "id": str(uuid.uuid4()),
+            "tenant_id": tenant_id,
+            "booking_id": booking_id,
+            "guest_id": guest_id or (booking or {}).get("guest_id"),
+            "action": action,
+            "status": "pending",
+            "_open_lock": lock_id,
+            "attempts": 0,
+            "max_attempts": DEFAULT_MAX_ATTEMPTS,
+            "worker_id": None,
+            "leased_until": None,
+            "next_retry_at": None,
+            "last_error": None,
+            "kbs_reference": None,
+            "payload": snapshot,
+            "notes": "",
+            "enqueued_by": actor,
+            "source": "auto",
+            "created_at": now_iso,
+            "updated_at": now_iso,
+            "claimed_at": None,
+            "completed_at": None,
+            "failed_at": None,
+        }
+        try:
+            await db.kbs_reports.insert_one(job)
+        except Exception as ins_err:
+            if "duplicate key" in str(ins_err).lower() or "E11000" in str(ins_err):
+                existing2 = await db.kbs_reports.find_one({"_kind": QUEUE_KIND, "tenant_id": tenant_id, "_open_lock": lock_id}, {"_id": 0})
+                return existing2
+            raise
+        return job
+    except Exception as e:
+        logger.warning(f"KBS auto-enqueue failed for guest {guest_id}: {e}")
+        return None
 
 
 async def auto_enqueue_kbs(
@@ -96,18 +159,39 @@ async def auto_enqueue_kbs(
     action: str = "checkin",
     *,
     actor: str = "system:auto_enqueue",
-) -> dict | None:
-    """Otomatik enqueue. Hata olursa None döner ve log yazar.
-
-    Eksik veriyle iş kuyruğa girer mi? HAYIR — payload eksikse bunun
-    yerine `kbs_alerts` koleksiyonuna `missing_data` alarmı yazılır
-    (operatöre uyarı). Sertifika alındıktan sonra bile bu alarmlar
-    operatörü hızla yönlendirir.
-
-    KBS_AUTO_ENQUEUE=0 env değişkeniyle kapatılabilir.
-    """
+    target_guest_id: str | None = None,
+) -> list[dict] | dict | None:
     if os.environ.get("KBS_AUTO_ENQUEUE", "1") == "0":
         return None
+
+    if target_guest_id:
+        return await _enqueue_single_guest(tenant_id, booking_id, target_guest_id, action, actor)
+
+    # If no specific guest is provided, enqueue for ALL guests in the booking
+    booking = await db.bookings.find_one({"tenant_id": tenant_id, "id": booking_id}, {"_id": 0, "guest_id": 1})
+    if not booking:
+        return None
+
+    guests_to_enqueue = [booking.get("guest_id")]
+
+    # Also fetch all booking_guests that do NOT have a checkout_date yet (if checkin)
+    # or fetch all if checkout.
+    bg_links = await db.booking_guests.find({"tenant_id": tenant_id, "booking_id": booking_id}, {"_id": 0}).to_list(100)
+    for bg in bg_links:
+        if bg.get("guest_id") and bg.get("guest_id") not in guests_to_enqueue:
+            # For checkout, only enqueue if they haven't already checked out early
+            if action == "checkout" and bg.get("checkout_date"):
+                continue
+            guests_to_enqueue.append(bg["guest_id"])
+
+    jobs = []
+    for gid in guests_to_enqueue:
+        if not gid:
+            continue
+        res = await _enqueue_single_guest(tenant_id, booking_id, gid, action, actor)
+        if res:
+            jobs.append(res)
+    return jobs if jobs else None
 
     try:
         existing = await db.kbs_reports.find_one(
@@ -136,7 +220,37 @@ async def auto_enqueue_kbs(
             )
             return None
 
-        ok, missing = validate_kbs_payload(snapshot)
+        booking = await db.bookings.find_one(
+            {"tenant_id": tenant_id, "id": booking_id},
+            {"_id": 0, "guest_id": 1, "kbs_reported": 1, "kbs_test": 1},
+        )
+
+        # Kurumdan doğrulanmış bir giriş makbuzu yoksa otomatik çıkış
+        # bildirimi anlamsızdır: Jandarma bu isteği "tesiste kayıt yok"
+        # diye reddeder. Bu durumda sahte bir checkout kuyruğu yerine net bir
+        # operatör alarmı üretiriz. Haricen kaydedilmiş istisnai kayıtlar için
+        # resepsiyon yine bilinçli olarak force=true ile manuel gönderebilir.
+        if action == "checkout" and not ((booking or {}).get("kbs_reported") and not (booking or {}).get("kbs_test")):
+            await db.kbs_alerts.insert_one(
+                {
+                    "id": str(uuid.uuid4()),
+                    "tenant_id": tenant_id,
+                    "kind": "checkin_not_confirmed",
+                    "booking_id": booking_id,
+                    "action": action,
+                    "guest_name": snapshot.get("guest_name", ""),
+                    "room_number": snapshot.get("room_number", ""),
+                    "created_at": _now_iso(),
+                    "acknowledged": False,
+                }
+            )
+            logger.warning(
+                "KBS auto-enqueue blocked (check-in not confirmed): booking=%s",
+                booking_id,
+            )
+            return None
+
+        ok, missing = validate_kbs_payload(snapshot, action)
         if not ok:
             await db.kbs_alerts.insert_one(
                 {
@@ -159,10 +273,6 @@ async def auto_enqueue_kbs(
             )
             return None
 
-        booking = await db.bookings.find_one(
-            {"tenant_id": tenant_id, "id": booking_id},
-            {"_id": 0, "guest_id": 1},
-        )
         now_iso = _now_iso()
         job = {
             "_kind": QUEUE_KIND,

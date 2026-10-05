@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { confirmDialog } from '@/lib/dialogs';
 import { useTranslation } from 'react-i18next';
+import { formatCurrency, cachedTenantCurrency } from '@/lib/currency';
 
 const localISODate = (d) => {
   const y = d.getFullYear();
@@ -26,11 +27,19 @@ const localISODate = (d) => {
   return `${y}-${m}-${day}`;
 };
 
-const fmtTRY = (v) =>
-  new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY' }).format(Number(v || 0));
+const bookingCurrency = (booking) => booking?.currency || booking?.folio_currency || cachedTenantCurrency();
+const fmtMoney = (value, booking) => formatCurrency(value, bookingCurrency(booking));
 
 // tel:/sms: URI'larında XSS önlemek için telefonu sadece rakam ve + ile sınırla
 const sanitizePhone = (raw) => (raw ? String(raw).replace(/[^\d+]/g, '') : '');
+
+// Şifreli/depolama biçimindeki PII hiçbir koşulda kullanıcı arayüzüne taşınmamalı.
+export const displayableGuestPhone = (raw) => {
+  const value = String(raw || '').trim();
+  if (!value || /^SYR\d+:/i.test(value) || value.length > 32) return '';
+  const sanitized = sanitizePhone(value);
+  return sanitized.length >= 7 ? value : '';
+};
 
 const PRIMARY_LABEL = (b) =>
   b.room_number ? `Oda ${b.room_number}` : (b.confirmation_number || (b.id || '').substring(0, 8).toUpperCase());
@@ -40,8 +49,22 @@ export const normalizeDepartureResponse = (payload) => {
   return Array.isArray(rows) ? rows : [];
 };
 
+export const partitionDeparturesForBulkCheckout = (rows) => ({
+  eligible: rows.filter((row) => Number(row.balance || 0) <= 0),
+  blocked: rows.filter((row) => Number(row.balance || 0) > 0),
+});
+
+export const isFinalPaymentWithinBalance = (amount, balance) => {
+  const payment = Number(amount);
+  const outstanding = Number(balance);
+  return Number.isFinite(payment)
+    && Number.isFinite(outstanding)
+    && payment > 0
+    && payment <= outstanding + 0.001;
+};
+
 const DepartureList = () => {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const [date, setDate] = useState(() => localISODate(new Date()));
   const [departures, setDepartures] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -84,6 +107,16 @@ const DepartureList = () => {
 
   useEffect(() => { load(); }, [load]);
 
+  useEffect(() => {
+    let active = true;
+    axios.get('/night-audit/business-date')
+      .then(({ data }) => {
+        if (active && data?.business_date) setDate(data.business_date);
+      })
+      .catch(() => {});
+    return () => { active = false; };
+  }, []);
+
   // ── Filter + sort
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -102,25 +135,34 @@ const DepartureList = () => {
   }, [departures, search, sortBy, onlyDebt]);
 
   const totalBalance = departures.reduce((s, b) => s + (b.balance || 0), 0);
+  const balanceByCurrency = departures.reduce((totals, booking) => {
+    const code = bookingCurrency(booking);
+    totals[code] = (totals[code] || 0) + Number(booking.balance || 0);
+    return totals;
+  }, {});
+  const totalBalanceLabel = Object.entries(balanceByCurrency)
+    .filter(([, amount]) => Math.abs(amount) > 0.001)
+    .map(([currency, amount]) => formatCurrency(amount, currency))
+    .join(' · ') || formatCurrency(0, cachedTenantCurrency());
   const withDebt = departures.filter((b) => (b.balance || 0) > 0).length;
 
   // ── Checkout (single)
   const checkout = async (booking, force = false) => {
     if (busyId) return;
     if (!force && (booking.balance || 0) > 0) {
-      const ok = await confirmDialog({
-        message: `${PRIMARY_LABEL(booking)} folio bakiyesi ${fmtTRY(booking.balance)} pozitif. Yine de zorla çıkış yapılsın mı?\nÖnce "Tahsil Et" seçeneğini kullanmak isteyebilirsiniz.`,
-        variant: 'danger',
-      });
-      if (!ok) return;
-      force = true;
-    } else if (!force) {
-      const ok = await confirmDialog({
-        message: `${booking.guest_name || PRIMARY_LABEL(booking)} için çıkış yapılsın mı?`,
-        variant: 'danger',
-      });
-      if (!ok) return;
+      toast.error('Normal çıkış için önce folio bakiyesini kapatın.');
+      openPay(booking);
+      return;
     }
+
+    const ok = await confirmDialog({
+      message: force
+        ? `${PRIMARY_LABEL(booking)} için ${fmtMoney(booking.balance, booking)} açık bakiye varken zorla çıkış yapılacak. Bu işlem yalnızca yetkili istisna durumlarında kullanılmalıdır. Devam edilsin mi?`
+        : `${booking.guest_name || PRIMARY_LABEL(booking)} için çıkış yapılsın mı?`,
+      variant: force ? 'danger' : 'default',
+    });
+    if (!ok) return;
+
     setBusyId(booking.id);
     try {
       await axios.post('/pms-core/checkout', { booking_id: booking.id, force });
@@ -151,18 +193,24 @@ const DepartureList = () => {
   const bulkCheckout = async () => {
     if (selected.size === 0) return;
     const list = visible.filter((b) => selected.has(b.id));
-    const debtCount = list.filter((b) => (b.balance || 0) > 0).length;
+    const { eligible, blocked } = partitionDeparturesForBulkCheckout(list);
+    const debtCount = blocked.length;
+    if (eligible.length === 0) {
+      toast.error('Seçili rezervasyonların bakiyesi kapanmadan toplu çıkış yapılamaz.');
+      return;
+    }
     const ok = await confirmDialog({
-      message: `${list.length} rezervasyon için toplu çıkış yapılsın mı?` + (debtCount > 0 ? `\nUYARI: ${debtCount} tanesinin bakiyesi var, force=true ile çıkartılacak.` : ''),
-      variant: 'danger',
+      message: `${eligible.length} bakiyesiz rezervasyon için toplu çıkış yapılsın mı?`
+        + (debtCount > 0 ? `\nBakiyesi bulunan ${debtCount} rezervasyon güvenlik nedeniyle atlanacak.` : ''),
+      variant: 'default',
     });
     if (!ok) return;
     setBulkBusy(true);
     let ok_n = 0;
     const errors = [];
-    for (const b of list) {
+    for (const b of eligible) {
       try {
-        await axios.post('/pms-core/checkout', { booking_id: b.id, force: true });
+        await axios.post('/pms-core/checkout', { booking_id: b.id, force: false });
         ok_n += 1;
       } catch (e) {
         errors.push({ id: b.id, msg: e.response?.data?.detail?.message || e.response?.data?.detail || e.message });
@@ -190,6 +238,10 @@ const DepartureList = () => {
     if (!payTarget) return;
     const n = Number(payAmount);
     if (!(n > 0)) { toast.error('Tutar 0\'dan büyük olmalı'); return; }
+    if (!isFinalPaymentWithinBalance(n, payTarget.balance)) {
+      toast.error('Tahsilat açık bakiyeden yüksek olamaz');
+      return;
+    }
     setPaySubmitting(true);
     try {
       await axios.post(`/frontdesk/folio/${payTarget.id}/payment`, {
@@ -200,7 +252,7 @@ const DepartureList = () => {
         notes: 'Çıkış tahsilatı (DepartureList)',
       });
       const remaining = (payTarget.balance || 0) - n;
-      toast.success(`Tahsilat alındı: ${fmtTRY(n)}`);
+      toast.success(`Tahsilat alındı: ${fmtMoney(n, payTarget)}`);
       setPayTarget(null);
       // Bakiye sıfırlanır sıfırlanmaz otomatik çıkış öner
       if (remaining <= 0.001) {
@@ -211,7 +263,7 @@ const DepartureList = () => {
         if (auto) await checkout({ ...payTarget, balance: 0 }, false);
         else load();
       } else {
-        toast(`Kalan bakiye: ${fmtTRY(remaining)}`);
+        toast(`Kalan bakiye: ${fmtMoney(remaining, payTarget)}`);
         load();
       }
     } catch (e) {
@@ -238,7 +290,7 @@ const DepartureList = () => {
         checkout_time: lateTime || null,
         extra_charge: charge,
       });
-      toast.success(`Geç çıkış kaydedildi (${lateTime}${charge > 0 ? `, +${fmtTRY(charge)}` : ''})`);
+      toast.success(`Geç çıkış kaydedildi (${lateTime}${charge > 0 ? `, +${fmtMoney(charge, lateTarget)}` : ''})`);
       setLateTarget(null);
       load();
     } catch (e) {
@@ -263,11 +315,11 @@ const DepartureList = () => {
   };
 
   return (
-    <div className="p-4 md:p-6 space-y-5 max-w-6xl mx-auto">
+    <div className="p-4 md:p-6 space-y-5 max-w-7xl mx-auto">
       <PageHeader
         icon={LogOut}
-        title={t('cm.pages_DepartureList.bugunun_cikislari')}
-        subtitle={t('cm.pages_DepartureList.bugun_check_out_yapacak_misafirler_folio')}
+        title="Çıkış Operasyonları"
+        subtitle="PMS iş günündeki çıkışları, açık folyo bakiyelerini, tahsilat ve geç çıkış işlemlerini tek yerden yönetin."
         actions={
           <Button variant="outline" size="sm" onClick={load} disabled={loading}>
             <RefreshCw className={`w-4 h-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} /> {t('cm.pages_DepartureList.yenile')}
@@ -276,9 +328,9 @@ const DepartureList = () => {
       />
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <KpiCard icon={LogOut} label={t('cm.pages_DepartureList.toplam_cikis')} value={departures.length} intent="info" />
-        <KpiCard icon={AlertCircle} label={t('cm.pages_DepartureList.bakiyeli_cikis')} value={withDebt} intent="warning" highlight={withDebt > 0} />
-        <KpiCard icon={Wallet} label={t('cm.pages_DepartureList.toplam_acik_bakiye')} value={fmtTRY(totalBalance)} intent="success" />
+        <KpiCard icon={LogOut} label="Planlanan çıkış" value={departures.length} intent="info" />
+        <KpiCard icon={AlertCircle} label="Tahsilat bekleyen" value={withDebt} intent="warning" highlight={withDebt > 0} />
+        <KpiCard icon={Wallet} label="Açık folyo toplamı" value={totalBalanceLabel} intent={totalBalance > 0 ? 'warning' : 'success'} highlight={totalBalance > 0} />
       </div>
 
       {/* Filtre çubuğu */}
@@ -318,7 +370,7 @@ const DepartureList = () => {
                 </Button>
                 <Button size="sm" onClick={bulkCheckout} disabled={bulkBusy}>
                   {bulkBusy && <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />}
-                  {t('cm.pages_DepartureList.toplu_cikis')}{selected.size})
+                  Toplu çıkış ({selected.size})
                 </Button>
               </div>
             )}
@@ -346,36 +398,38 @@ const DepartureList = () => {
                 checked={selected.size === visible.length && visible.length > 0}
                 onChange={toggleSelectAll}
               />
-              <span>{t('cm.pages_DepartureList.tumunu_sec')}{visible.length})</span>
+              <span>Tümünü seç ({visible.length})</span>
               <ArrowUpDown className="w-3 h-3 ml-2" />
               <span>{sortBy === 'balance_desc' ? 'Bakiyeye göre' : sortBy === 'room_asc' ? 'Oda no' : 'Misafir'}</span>
             </div>
             {visible.map((b) => {
               const debt = (b.balance || 0) > 0;
               const isSel = selected.has(b.id);
+              const guestPhone = displayableGuestPhone(b.guest_phone);
               return (
                 <Card key={b.id}
                   className={`border-l-4 ${debt ? 'border-amber-500 bg-amber-50/40' : 'border-sky-500'} ${isSel ? 'ring-2 ring-sky-300' : ''}`}>
                   <CardContent className="pt-4">
-                    <div className="flex items-start gap-3">
-                      <input type="checkbox" checked={isSel} onChange={() => toggleSelect(b.id)}
-                        className="w-4 h-4 mt-1.5" onClick={(e) => e.stopPropagation()} />
-                      <div className="flex-1 cursor-pointer" onClick={() => openDetail(b)}>
-                        <div className="flex items-center gap-2 mb-2 flex-wrap">
+                    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto]">
+                      <div className="flex min-w-0 items-start gap-3">
+                        <input type="checkbox" checked={isSel} onChange={() => toggleSelect(b.id)}
+                          className="w-4 h-4 mt-1.5" onClick={(e) => e.stopPropagation()} />
+                        <div className="min-w-0 flex-1 cursor-pointer" onClick={() => openDetail(b)}>
+                          <div className="flex items-center gap-2 mb-2 flex-wrap">
                           <h3 className="text-lg font-bold text-slate-800">{PRIMARY_LABEL(b)}</h3>
                           {b.guest_name && <span className="text-slate-700">— {b.guest_name}</span>}
                           {debt && <StatusBadge intent="warning">Bakiyeli</StatusBadge>}
                           {b.late_checkout && (
                             <StatusBadge intent="warning" icon={Clock}>{t('cm.pages_DepartureList.gec_cikis')}</StatusBadge>
                           )}
-                          {b.guest_phone && (
-                            <a href={`tel:${sanitizePhone(b.guest_phone)}`} onClick={(e) => e.stopPropagation()}
-                              className="inline-flex items-center gap-1 text-xs text-sky-700 hover:underline">
-                              <Phone className="w-3 h-3" /> {b.guest_phone}
+                          {guestPhone && (
+                            <a href={`tel:${sanitizePhone(guestPhone)}`} onClick={(e) => e.stopPropagation()}
+                              className="inline-flex max-w-full items-center gap-1 text-xs text-sky-700 hover:underline">
+                              <Phone className="w-3 h-3 shrink-0" /> <span className="truncate">{guestPhone}</span>
                             </a>
                           )}
-                        </div>
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
+                          </div>
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
                           <div>
                             <p className="text-slate-500 text-xs">{t('cm.pages_DepartureList.oda')}</p>
                             <p className="font-semibold">{b.room_number || '—'}</p>
@@ -386,35 +440,36 @@ const DepartureList = () => {
                           </div>
                           <div>
                             <p className="text-slate-500 text-xs">{t('cm.pages_DepartureList.toplam')}</p>
-                            <p className="font-semibold">{fmtTRY(b.total_amount)}</p>
+                            <p className="font-semibold">{fmtMoney(b.total_amount, b)}</p>
                           </div>
                           <div>
-                            <p className="text-slate-500 text-xs">Folio Bakiyesi</p>
+                            <p className="text-slate-500 text-xs">Folyo bakiyesi</p>
                             <p className={`font-semibold ${debt ? 'text-amber-700' : 'text-emerald-700'}`}>
-                              {fmtTRY(b.balance || 0)}
+                              {fmtMoney(b.balance || 0, b)}
                             </p>
+                          </div>
                           </div>
                         </div>
                       </div>
-                      <div className="flex flex-col gap-2 items-end">
+                      <div className="flex flex-wrap gap-2 lg:w-36 lg:flex-col lg:items-stretch">
                         {debt && (
-                          <Button size="sm" onClick={() => openPay(b)} disabled={busyId === b.id}>
+                          <Button size="sm" className="justify-center" onClick={() => openPay(b)} disabled={busyId === b.id}>
                             <CreditCard className="w-4 h-4 mr-1" /> Tahsil Et
                           </Button>
                         )}
-                        <Button size="sm" variant="outline" disabled={busyId === b.id}
+                        <Button size="sm" variant="outline" className="justify-center" disabled={busyId === b.id || debt}
                           onClick={() => checkout(b, false)}>
                           <LogOut className="w-4 h-4 mr-1" />
                           {busyId === b.id ? 'İşleniyor…' : 'Çıkış Yap'}
                         </Button>
-                        <Button size="sm" variant="outline" onClick={() => openLate(b)} disabled={busyId === b.id}>
+                        <Button size="sm" variant="outline" className="justify-center" onClick={() => openLate(b)} disabled={busyId === b.id}>
                           <Clock className="w-4 h-4 mr-1" /> {t('cm.pages_DepartureList.gec_cikis_9e19e')}
                         </Button>
                         {debt && (
-                          <button className="text-xs text-rose-600 hover:underline"
+                          <Button size="sm" variant="ghost" className="justify-center text-rose-600 hover:text-rose-700"
                             onClick={() => checkout(b, true)} disabled={busyId === b.id}>
                             {t('cm.pages_DepartureList.zorla_cikis')}
-                          </button>
+                          </Button>
                         )}
                       </div>
                     </div>
@@ -432,7 +487,7 @@ const DepartureList = () => {
           <DialogHeader>
             <DialogTitle>Tahsilat — {payTarget && PRIMARY_LABEL(payTarget)}</DialogTitle>
             <DialogDescription>
-              {t('cm.pages_DepartureList.acik_bakiye')} <strong>{fmtTRY(payTarget?.balance || 0)}</strong>
+              {t('cm.pages_DepartureList.acik_bakiye')} <strong>{fmtMoney(payTarget?.balance || 0, payTarget)}</strong>
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3 py-2">
@@ -450,6 +505,8 @@ const DepartureList = () => {
                   { v: 'bank_transfer', l: 'Havale', i: 'neutral' },
                 ].map((m) => (
                   <button key={m.v} type="button" onClick={() => setPayMethod(m.v)}
+                    aria-pressed={payMethod === m.v}
+                    aria-label={`${m.l} tahsilat yöntemini seç`}
                     className={`h-10 rounded-md border text-sm font-medium transition ${payMethod === m.v ? 'border-slate-800 bg-slate-900 text-white' : 'border-slate-200 hover:border-slate-400 bg-white'}`}>
                     {m.l}
                   </button>
@@ -524,19 +581,19 @@ const DepartureList = () => {
                 <div><span className="text-slate-500">{t('cm.pages_DepartureList.giris')}</span> <strong>{(detail.check_in || '').slice(0, 10)}</strong></div>
                 <div><span className="text-slate-500">{t('cm.pages_DepartureList.cikis')}</span> <strong>{(detail.check_out || '').slice(0, 10)} {detail.check_out_time || '12:00'}</strong></div>
                 <div><span className="text-slate-500">{t('cm.pages_DepartureList.yetiskin_cocuk')}</span> <strong>{detail.adults || 1}/{detail.children || 0}</strong></div>
-                <div><span className="text-slate-500">{t('cm.pages_DepartureList.toplam_68af4')}</span> <strong>{fmtTRY(detail.total_amount)}</strong></div>
-                <div><span className="text-slate-500">{t('cm.pages_DepartureList.odenen')}</span> <strong>{fmtTRY(detail.paid_amount)}</strong></div>
+                <div><span className="text-slate-500">{t('cm.pages_DepartureList.toplam_68af4')}</span> <strong>{fmtMoney(detail.total_amount, detail)}</strong></div>
+                <div><span className="text-slate-500">{t('cm.pages_DepartureList.odenen')}</span> <strong>{fmtMoney(detail.paid_amount, detail)}</strong></div>
                 <div>
                   <span className="text-slate-500">{t('cm.pages_DepartureList.bakiye')}</span>{' '}
                   <strong className={(detail.balance || 0) > 0 ? 'text-amber-700' : 'text-emerald-700'}>
-                    {fmtTRY(detail.balance || 0)}
+                    {fmtMoney(detail.balance || 0, detail)}
                   </strong>
                 </div>
-                {detail.guest_phone && (
+                {displayableGuestPhone(detail.guest_phone) && (
                   <div className="col-span-2">
                     <span className="text-slate-500">Telefon:</span>{' '}
-                    <a href={`tel:${sanitizePhone(detail.guest_phone)}`} className="text-sky-700 hover:underline font-semibold">
-                      {detail.guest_phone}
+                    <a href={`tel:${sanitizePhone(displayableGuestPhone(detail.guest_phone))}`} className="text-sky-700 hover:underline font-semibold">
+                      {displayableGuestPhone(detail.guest_phone)}
                     </a>
                   </div>
                 )}
@@ -548,19 +605,19 @@ const DepartureList = () => {
               </div>
 
               <div className="border-t pt-3">
-                <div className="text-xs text-slate-500 mb-2">{t('cm.pages_DepartureList.folio_ozeti')}</div>
+                <div className="text-xs text-slate-500 mb-2">Folyo özeti</div>
                 {detailLoading ? (
                   <div className="flex items-center gap-2 text-sm text-slate-500">
                     <Loader2 className="w-4 h-4 animate-spin" /> {t('cm.pages_DepartureList.folio_yukleniyor')}
                   </div>
                 ) : detailFolio ? (
                   <div className="text-sm space-y-1">
-                    <div className="flex justify-between"><span>{t('cm.pages_DepartureList.toplam_charges')}</span><strong>{fmtTRY(detailFolio.charges_total ?? detailFolio.total_charges)}</strong></div>
-                    <div className="flex justify-between"><span>{t('cm.pages_DepartureList.toplam_odeme')}</span><strong>{fmtTRY(detailFolio.payments_total ?? detailFolio.total_payments)}</strong></div>
+                    <div className="flex justify-between"><span>Toplam harcama</span><strong>{fmtMoney(detailFolio.charges_total ?? detailFolio.total_charges, { currency: detailFolio.currency || bookingCurrency(detail) })}</strong></div>
+                    <div className="flex justify-between"><span>{t('cm.pages_DepartureList.toplam_odeme')}</span><strong>{fmtMoney(detailFolio.payments_total ?? detailFolio.total_payments, { currency: detailFolio.currency || bookingCurrency(detail) })}</strong></div>
                     <div className="flex justify-between border-t pt-1 mt-1">
                       <span>{t('cm.pages_DepartureList.bakiye_33769')}</span>
                       <strong className={(detailFolio.balance || 0) > 0 ? 'text-amber-700' : 'text-emerald-700'}>
-                        {fmtTRY(detailFolio.balance || 0)}
+                        {fmtMoney(detailFolio.balance || 0, { currency: detailFolio.currency || bookingCurrency(detail) })}
                       </strong>
                     </div>
                   </div>

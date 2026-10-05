@@ -271,6 +271,32 @@ async def test_for_tenant_records_failure(isolated_tenant):
     assert log["error"] == "open folios block close"
 
 
+async def test_for_tenant_blocks_stale_business_date_without_running_engine(isolated_tenant):
+    """An enabled schedule must not bypass the interactive stale-date guard."""
+    from celery_tasks import _night_audit_for_tenant_async
+    from core.database import db
+
+    await db.tenant_settings.update_one(
+        {"tenant_id": isolated_tenant},
+        {"$set": {"tenant_id": isolated_tenant, "business_date": "2020-01-01"}},
+        upsert=True,
+    )
+    with patch(
+        "core.night_audit_hardened.start_night_audit",
+        new=AsyncMock(),
+    ) as mock_engine:
+        result = await _night_audit_for_tenant_async(isolated_tenant)
+
+    assert result["success"] is False
+    assert result["status"] == "blocked"
+    assert result["business_date"] == "2020-01-01"
+    mock_engine.assert_not_awaited()
+
+    log = await db[_LOG_COLL].find_one({"tenant_id": isolated_tenant}, sort=[("triggered_at", -1)])
+    assert log["status"] == "blocked"
+    assert "kontrollü kapatma" in log["error"]
+
+
 async def test_for_tenant_restores_engine_globals(isolated_tenant):
     """The temporary rebind of engine.client/engine.db must be restored even
     when the engine raises — otherwise later tasks use a dead client."""
