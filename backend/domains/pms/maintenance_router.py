@@ -16,10 +16,12 @@ from core.security import (
 from models.schemas import MaintenanceAsset, MaintenanceWorkOrder, PreventiveMaintenancePlan, SensorAlert, User
 from modules.pms_core.role_permission_service import (  # v99 DW
     require_any_module,
+    require_op,  # v98 DW
+)
+from modules.pms_core.role_permission_service import (
     require_module as require_module_v99,
 )
 from modules.pms_core.role_permission_service import require_module as require_module_v101  # v101 DW
-from modules.pms_core.role_permission_service import require_op  # v98 DW
 
 logger = logging.getLogger(__name__)
 
