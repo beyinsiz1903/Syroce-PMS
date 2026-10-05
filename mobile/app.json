@@ -2,6 +2,7 @@
   "expo": {
     "name": "Syroce PMS",
     "slug": "syroce-pms-mobile",
+    "owner": "syroces-team",
     "version": "1.0.0",
     "orientation": "portrait",
     "scheme": "syrocepms",
