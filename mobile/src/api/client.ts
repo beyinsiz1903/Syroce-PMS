@@ -1,4 +1,5 @@
 import Constants from 'expo-constants';
+import { Platform } from 'react-native';
 import * as SecureStore from '../storage/secureStore';
 
 const TOKEN_KEY = 'syroce.auth.token';
@@ -227,6 +228,12 @@ export async function apiRequest<T = unknown>(path: string, opts: RequestOptions
     Accept: 'application/json',
     ...(opts.headers || {}),
   };
+  // React Native's fetch implementation has no browser Origin/Referer header.
+  // The API only recognises this marker for the native login and token-refresh
+  // endpoints; cookie-authenticated browser requests remain CSRF-protected.
+  if (Platform.OS !== 'web') {
+    headers['X-Syroce-Client'] = 'mobile';
+  }
   if (opts.body && !isFormData(opts.body)) {
     headers['Content-Type'] = 'application/json';
   }

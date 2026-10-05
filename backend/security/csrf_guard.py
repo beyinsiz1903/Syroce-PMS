@@ -36,6 +36,13 @@ if _ENV_ORIGINS:
 
 CSRF_PROTECTED_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
+# Native clients do not have a browser Origin/Referer header.  Keep this list
+# deliberately limited to the unauthenticated token bootstrap endpoints: every
+# cookie-authenticated browser mutation still passes the Origin/Referer check.
+_NATIVE_TOKEN_AUTH_PATHS = {
+    "/api/auth/login",
+    "/api/auth/refresh-token",
+}
 
 async def csrf_guard_middleware(request: Request, call_next):
     """
@@ -83,6 +90,15 @@ async def csrf_guard_middleware(request: Request, call_next):
     referer = request.headers.get("Referer")
 
     if not origin and not referer:
+        # React Native declares itself explicitly. A hostile web page cannot
+        # add this non-simple header without a CORS preflight, and this narrow
+        # bypass is not available to any other authenticated write endpoint.
+        native_token_auth = (
+            request.url.path in _NATIVE_TOKEN_AUTH_PATHS
+            and request.headers.get("X-Syroce-Client", "").strip().lower() == "mobile"
+        )
+        if native_token_auth:
+            return await call_next(request)
         # Bypass origin check if we are in testing mode (pytest with default httpx client)
         if os.environ.get("TESTING") == "1":
             return await call_next(request)
