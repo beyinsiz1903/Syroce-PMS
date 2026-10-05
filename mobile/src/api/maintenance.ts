@@ -1,11 +1,10 @@
 import { api, apiRequest } from './client';
 
 // Maintenance API client — mirror of backend/domains/pms/maintenance_router.py.
-// Work-order list (GET) only requires authentication; work-order CREATE and the
-// mobile technician-task submit are gated by require_module("housekeeping") on
-// the backend. The mobile `maintenanceAccess` entitlement mirrors that role set
-// so we only show the create form / submit action to users who could act —
-// the backend still enforces every write.
+// Work-order list (GET) and technician tasks are gated by the housekeeping
+// module. A work-order may additionally be CREATED by front desk so reception
+// can report a guest-room fault without opening the full maintenance board.
+// The backend still enforces every write.
 
 export type WorkOrder = {
   id: string;

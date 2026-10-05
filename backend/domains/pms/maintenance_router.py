@@ -14,7 +14,10 @@ from core.security import (
     get_current_user,
 )
 from models.schemas import MaintenanceAsset, MaintenanceWorkOrder, PreventiveMaintenancePlan, SensorAlert, User
-from modules.pms_core.role_permission_service import require_module as require_module_v99  # v99 DW
+from modules.pms_core.role_permission_service import (  # v99 DW
+    require_any_module,
+    require_module as require_module_v99,
+)
 from modules.pms_core.role_permission_service import require_module as require_module_v101  # v101 DW
 from modules.pms_core.role_permission_service import require_op  # v98 DW
 
@@ -103,7 +106,7 @@ async def get_energy_consumption(
 async def create_maintenance_work_order(
     data: MaintenanceWorkOrder,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v99("housekeeping")),  # v99 DW
+    _perm=Depends(require_any_module("housekeeping", "frontdesk")),
 ):
     """Create a new maintenance work order (from HK, Front Desk, GM, etc.)"""
     payload = data.model_dump()

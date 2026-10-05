@@ -21,6 +21,12 @@ def test_sensitive_maintenance_reads_are_not_login_only():
         assert permission in inspect.getsource(handler)
 
 
+def test_work_order_reporting_allows_front_desk_without_exposing_the_board():
+    source = inspect.getsource(maintenance_router.create_maintenance_work_order)
+
+    assert 'require_any_module("housekeeping", "frontdesk")' in source
+
+
 def test_iot_commands_are_tenant_owned_and_traceable():
     source = inspect.getsource(maintenance_router.control_smart_device)
 
