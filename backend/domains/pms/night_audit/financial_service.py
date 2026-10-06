@@ -102,7 +102,31 @@ class FinancialService:
             {
                 "$match": {
                     "tenant_id": ctx.tenant_id,
-                    "status": {"$ne": "voided"},
+                    "voided": {"$ne": True},
+                    "$expr": {
+                        "$and": [
+                            {
+                                "$not": [
+                                    {
+                                        "$in": [
+                                            {"$toLower": {"$ifNull": ["$status", "paid"]}},
+                                            ["void", "voided", "failed", "cancelled", "rejected"],
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "$ne": [
+                                    {
+                                        "$toLower": {
+                                            "$ifNull": ["$method", {"$ifNull": ["$payment_method", ""]}]
+                                        }
+                                    },
+                                    "discount",
+                                ]
+                            },
+                        ]
+                    },
                     **accounting_day_match(
                         business_date,
                         {"date": business_date},
@@ -117,31 +141,25 @@ class FinancialService:
                         "method": {"$ifNull": ["$payment_method", "$method"]},
                         "currency": {"$ifNull": ["$currency", "TRY"]},
                     },
-                    "total_amount": {"$sum": "$amount"},
-                    "count": {"$sum": 1},
-                }
-            },
-        ]
-
-        # Also check inline folio payments
-        folio_payment_pipeline = [
-            {"$match": {"tenant_id": ctx.tenant_id, "status": "open"}},
-            {"$unwind": {"path": "$payments", "preserveNullAndEmptyArrays": False}},
-            {
-                "$match": {
-                    "$or": [
-                        {"payments.date": business_date},
-                        {"payments.posted_at": {"$regex": f"^{business_date}"}},
-                    ],
-                }
-            },
-            {
-                "$group": {
-                    "_id": {
-                        "method": "$payments.payment_method",
-                        "currency": {"$ifNull": ["$payments.currency", {"$ifNull": ["$currency", "TRY"]}]},
+                    "total_amount": {
+                        "$sum": {
+                            "$cond": [
+                                {
+                                    "$and": [
+                                        {
+                                            "$eq": [
+                                                {"$toLower": {"$ifNull": ["$payment_type", ""]}},
+                                                "refund",
+                                            ]
+                                        },
+                                        {"$gt": ["$amount", 0]},
+                                    ]
+                                },
+                                {"$multiply": ["$amount", -1]},
+                                "$amount",
+                            ]
+                        }
                     },
-                    "total_amount": {"$sum": "$payments.amount"},
                     "count": {"$sum": 1},
                 }
             },
@@ -175,6 +193,8 @@ class FinancialService:
                     "total_balance": {"$sum": "$balance"},
                     "positive_balance": {"$sum": {"$cond": [{"$gt": ["$balance", 0]}, "$balance", 0]}},
                     "negative_balance": {"$sum": {"$cond": [{"$lt": ["$balance", 0]}, "$balance", 0]}},
+                    "receivable_count": {"$sum": {"$cond": [{"$gt": ["$balance", 0]}, 1, 0]}},
+                    "overpayment_count": {"$sum": {"$cond": [{"$lt": ["$balance", 0]}, 1, 0]}},
                     "count": {"$sum": 1},
                     "folios": {
                         "$push": {
@@ -194,18 +214,18 @@ class FinancialService:
                 maxTimeMS=_FIN_AGG_MAX_MS,
             ).to_list(length=None)
 
-        # Parallel fan-out — 6 bağımsız sorgu tek round-trip penceresinde
+        # Parallel fan-out — canonical payments collection is the single source
+        # of truth. Folio-embedded payments mirror the same operations and must
+        # not be added again (that previously doubled daily collections).
         (
             charge_docs,
             payment_docs,
-            folio_payment_docs,
             tax_docs,
             open_balance_docs,
             audit_run,
         ) = await asyncio.gather(
             _agg(self._db.folio_charges, charge_pipeline),
             _agg(self._db.payments, payment_pipeline),
-            _agg(self._db.folios, folio_payment_pipeline),
             _agg(self._db.folio_charges, tax_pipeline),
             _agg(self._db.folios, open_balance_pipeline),
             self._db.night_audit_runs.find_one(
@@ -224,7 +244,6 @@ class FinancialService:
 
         charge_docs = _ok(charge_docs, [])
         payment_docs = _ok(payment_docs, [])
-        folio_payment_docs = _ok(folio_payment_docs, [])
         tax_docs = _ok(tax_docs, [])
         open_balance_docs = _ok(open_balance_docs, [])
         audit_run = _ok(audit_run, None)
@@ -273,18 +292,6 @@ class FinancialService:
             total_payments += doc["total_amount"]
             total_payments_count += doc["count"]
 
-        for doc in folio_payment_docs:
-            group_id = doc.get("_id")
-            method = (group_id.get("method") if isinstance(group_id, dict) else group_id) or "other"
-            currency = _currency(group_id.get("currency") if isinstance(group_id, dict) else None)
-            entry = payments_by_method.setdefault(method, {"amount": 0.0, "count": 0, "amount_by_currency": {}})
-            entry["amount"] = round(entry["amount"] + doc["total_amount"], 2)
-            entry["count"] += doc["count"]
-            _add_currency(entry["amount_by_currency"], currency, doc["total_amount"])
-            _add_currency(payments_by_currency, currency, doc["total_amount"])
-            total_payments += doc["total_amount"]
-            total_payments_count += doc["count"]
-
         tax_breakdown = {"vat": 0.0, "accommodation_tax": 0.0, "by_currency": {}}
         for doc in tax_docs:
             group_id = doc.get("_id")
@@ -297,6 +304,8 @@ class FinancialService:
 
         open_balance = {"total": 0.0, "receivable": 0.0, "overpayment": 0.0}
         open_folios_count = 0
+        open_receivable_count = 0
+        open_overpayment_count = 0
         open_folios_list = []
         open_balance_by_currency: dict[str, dict[str, float]] = {}
         for doc in open_balance_docs:
@@ -307,6 +316,8 @@ class FinancialService:
             for key in open_balance:
                 open_balance[key] = round(open_balance[key] + current[key], 2)
             open_folios_count += doc.get("count", 0)
+            open_receivable_count += doc.get("receivable_count", 0)
+            open_overpayment_count += doc.get("overpayment_count", 0)
             open_folios_list.extend(doc.get("folios", []))
 
         # Enrich the list
@@ -343,6 +354,8 @@ class FinancialService:
                 },
                 "open_folios": {
                     "count": open_folios_count,
+                    "receivable_count": open_receivable_count,
+                    "overpayment_count": open_overpayment_count,
                     "balance": open_balance,
                     "balance_by_currency": open_balance_by_currency,
                     "items": open_folios_list

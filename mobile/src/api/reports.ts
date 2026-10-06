@@ -18,6 +18,7 @@ export type FinanceSnapshot = {
   todays_collections: {
     amount: number;
     payment_count: number;
+    by_method?: Record<string, { amount: number; count: number }>;
   };
   mtd_collections: {
     amount: number;

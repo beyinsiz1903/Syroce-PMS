@@ -496,6 +496,15 @@ async def get_finance_snapshot(
 
     todays_collections = sum(effective_payment(payment) for payment in todays_payments)
     todays_payment_count = sum(1 for payment in todays_payments if effective_payment(payment) != 0)
+    todays_by_method: dict[str, dict[str, float | int]] = {}
+    for payment in todays_payments:
+        amount = effective_payment(payment)
+        if amount == 0:
+            continue
+        method = str(payment.get("payment_method") or payment.get("method") or "other").strip().lower() or "other"
+        entry = todays_by_method.setdefault(method, {"amount": 0.0, "count": 0})
+        entry["amount"] = round(float(entry["amount"]) + amount, 2)
+        entry["count"] = int(entry["count"]) + 1
 
     # 3. Calculate MTD (Month-to-Date) Collections
     month_start = today.replace(day=1)
@@ -545,7 +554,11 @@ async def get_finance_snapshot(
             "overdue_breakdown": {"0-30_days": round(overdue_0_30, 2), "30-60_days": round(overdue_30_60, 2), "60_plus_days": round(overdue_60_plus, 2)},
             "overdue_invoices_count": overdue_invoices_count,
         },
-        "todays_collections": {"amount": round(todays_collections, 2), "payment_count": todays_payment_count},
+        "todays_collections": {
+            "amount": round(todays_collections, 2),
+            "payment_count": todays_payment_count,
+            "by_method": todays_by_method,
+        },
         "mtd_collections": {"amount": round(mtd_collections, 2), "collection_rate_percentage": round(collection_rate, 2)},
         "accounting_invoices": {"pending_count": pending_invoice_count, "pending_total": round(pending_invoice_total, 2)},
     }

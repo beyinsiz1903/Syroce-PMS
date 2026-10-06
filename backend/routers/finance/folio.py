@@ -213,7 +213,9 @@ async def get_folio_dashboard_stats(
         yesterday = (datetime.now(UTC) - timedelta(days=1)).date().isoformat()
 
         open_folios_pipeline = [
-            {"$match": {"tenant_id": tid, "status": "open"}},
+            # "Outstanding" means money the hotel is still owed. Zero-balance
+            # and credit/overpayment folios must not turn this KPI negative.
+            {"$match": {"tenant_id": tid, "status": "open", "balance": {"$gt": 0}}},
             {
                 "$group": {
                     "_id": None,

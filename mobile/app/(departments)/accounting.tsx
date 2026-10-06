@@ -476,9 +476,9 @@ export default function AccountingScreen() {
               />
               <KpiCard
                 label={a.openFolios}
-                value={String(summary?.open_folios.count ?? 0)}
+                value={String(summary?.open_folios.receivable_count ?? 0)}
                 icon="folder-open-outline"
-                tone={(summary?.open_folios.count ?? 0) > 0 ? 'warning' : 'default'}
+                tone={(summary?.open_folios.receivable_count ?? 0) > 0 ? 'warning' : 'default'}
               />
             </KpiRow>
             <KpiRow>
@@ -530,7 +530,7 @@ export default function AccountingScreen() {
               <SummaryRow label={a.netPosition} value={formatCurrency(summary.net_position, 'TRY')} />
               <SummaryRow
                 label={a.openFolioBalance}
-                value={`${formatCurrency(summary.open_folios.balance.total, 'TRY')} · ${summary.open_folios.count}`}
+                value={`${formatCurrency(summary.open_folios.balance.receivable, 'TRY')} · ${summary.open_folios.receivable_count}`}
                 last
               />
               <Muted style={{ marginTop: spacing.md, fontSize: 11 }}>

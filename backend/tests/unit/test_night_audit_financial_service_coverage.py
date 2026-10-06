@@ -89,12 +89,8 @@ async def test_daily_summary_combines_revenue_payments_tax_balances_and_audit_st
     )
     folios = _aggregate_collection(
         AsyncCursor(
-            [
-                {"_id": "card", "total_amount": 100.0, "count": 1},
-                {"_id": None, "total_amount": 50.0, "count": 1},
-            ]
-        ),
-        AsyncCursor([{"total_balance": 300.0, "positive_balance": 350.0, "negative_balance": -50.0, "count": 3}]),
+            [{"total_balance": 300.0, "positive_balance": 350.0, "negative_balance": -50.0, "count": 3, "receivable_count": 2, "overpayment_count": 1}]
+        )
     )
     database = SimpleNamespace(
         folio_charges=charges,
@@ -123,25 +119,30 @@ async def test_daily_summary_combines_revenue_payments_tax_balances_and_audit_st
     assert daily_charge_match["business_date"] == "2026-08-25"
     payment_match = daily_payment_pipeline[0]["$match"]
     assert payment_match["$or"][0] == {"business_date": "2026-08-25"}
+    assert payment_match["voided"] == {"$ne": True}
+    assert "voided" in str(payment_match["$expr"])
+    assert "discount" in str(payment_match["$expr"])
     legacy_date_match = payment_match["$or"][1]["$and"][1]["$or"]
     assert {"processed_at": {"$regex": "^2026-08-25"}} in legacy_date_match
     assert daily_payment_pipeline[1]["$group"]["_id"]["method"] == {"$ifNull": ["$payment_method", "$method"]}
+    assert "refund" in str(daily_payment_pipeline[1]["$group"]["total_amount"])
     assert result.data["payments"] == {
-        "total": 550.0,
-        "total_by_currency": {"TRY": 550.0},
+        "total": 400.0,
+        "total_by_currency": {"TRY": 400.0},
         "by_method": {
-            "card": {"amount": 500.0, "count": 2, "amount_by_currency": {"TRY": 500.0}},
-            "other": {"amount": 50.0, "count": 1, "amount_by_currency": {"TRY": 50.0}},
+            "card": {"amount": 400.0, "count": 1, "amount_by_currency": {"TRY": 400.0}},
         },
-        "payments_count": 3,
+        "payments_count": 1,
     }
     assert result.data["tax"]["breakdown"] == {"vat": 82.34, "accommodation_tax": 22.67, "by_currency": {"TRY": {"vat": 82.34, "accommodation_tax": 22.67}}}
     assert result.data["open_folios"] == {
         "count": 3,
+        "receivable_count": 2,
+        "overpayment_count": 1,
         "balance": {"total": 300.0, "receivable": 350.0, "overpayment": 50.0}, "items": [],
         "balance_by_currency": {"TRY": {"total": 300.0, "receivable": 350.0, "overpayment": 50.0}},
     }
-    assert result.data["net_position"] == 605.14
+    assert result.data["net_position"] == 755.14
     assert result.data["audit_status"] == "completed"
     assert charges.aggregate.call_args_list[0].kwargs["maxTimeMS"] == financial_module._FIN_AGG_MAX_MS
 
@@ -152,7 +153,7 @@ async def test_daily_summary_degrades_each_failed_subquery_to_safe_defaults():
     database = SimpleNamespace(
         folio_charges=_aggregate_collection(AsyncCursor(error=failure), AsyncCursor(error=failure)),
         payments=_aggregate_collection(AsyncCursor(error=failure)),
-        folios=_aggregate_collection(AsyncCursor(error=failure), AsyncCursor(error=failure)),
+        folios=_aggregate_collection(AsyncCursor(error=failure)),
         night_audit_runs=SimpleNamespace(find_one=AsyncMock(side_effect=failure)),
     )
 

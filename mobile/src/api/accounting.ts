@@ -74,6 +74,8 @@ export type FinancialSummary = {
   };
   open_folios: {
     count: number;
+    receivable_count: number;
+    overpayment_count: number;
     balance: { total: number; receivable: number; overpayment: number };
   };
   net_position: number;
@@ -143,6 +145,8 @@ export async function getFinancialSummary(
     },
     open_folios: {
       count: res.open_folios?.count ?? 0,
+      receivable_count: res.open_folios?.receivable_count ?? 0,
+      overpayment_count: res.open_folios?.overpayment_count ?? 0,
       balance: {
         total: res.open_folios?.balance?.total ?? 0,
         receivable: res.open_folios?.balance?.receivable ?? 0,

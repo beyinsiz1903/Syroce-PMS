@@ -32,6 +32,7 @@ import {
   type FolioListItem,
 } from '../../src/api/folio';
 import { formatCurrency, formatDate, formatTime } from '../../src/utils/format';
+import { getFinanceSnapshot } from '../../src/api/reports';
 
 const t = tr.departments.cashier;
 
@@ -211,6 +212,10 @@ export default function CashierScreen() {
     queryKey: ['cashier-current-shift'],
     queryFn: getCurrentShift,
   });
+  const financeQ = useQuery({
+    queryKey: ['reports-finance'],
+    queryFn: getFinanceSnapshot,
+  });
   const statsQ = useQuery({
     queryKey: ['folio-dashboard-stats'],
     queryFn: getFolioDashboardStats,
@@ -238,7 +243,30 @@ export default function CashierScreen() {
   const shift = shiftQ.data?.shift ?? null;
   const transactions = shiftQ.data?.transactions ?? [];
   const stats = statsQ.data;
-  const collection = collectionBreakdown(transactions, shiftQ.data?.summary);
+  const shiftCollection = collectionBreakdown(transactions, shiftQ.data?.summary);
+  const daily = financeQ.data?.todays_collections;
+  const dailyMethods = daily?.by_method || {};
+  const methodAmount = (...keys: string[]) =>
+    keys.reduce((sum, key) => sum + (dailyMethods[key]?.amount ?? 0), 0);
+  const assignedDaily = methodAmount(
+    'cash',
+    'card',
+    'credit_card',
+    'debit_card',
+    'bank_transfer',
+    'transfer',
+    'online',
+  );
+  const collection = daily
+    ? {
+        total: daily.amount,
+        cash: methodAmount('cash'),
+        card: methodAmount('card', 'credit_card', 'debit_card'),
+        transfer: methodAmount('bank_transfer', 'transfer'),
+        online: methodAmount('online'),
+        other: Math.max(0, daily.amount - assignedDaily),
+      }
+    : shiftCollection;
 
   const openFolio = (f: FolioListItem, pay?: boolean) => {
     const qs = new URLSearchParams();
@@ -295,10 +323,9 @@ export default function CashierScreen() {
       <H1>{t.title}</H1>
       <Muted style={{ marginTop: spacing.xs }}>{t.tileSubtitle}</Muted>
 
-      {/* ── Bugünkü Tahsilat: hero total + Nakit / Kart / Cari kırılımı ──────
-          Computed from the open shift's real transactions; with no open shift
-          there is nothing to collect yet, so the card stays hidden. */}
-      {shift ? (
+      {/* Canonical PMS-day collections. Shift data is retained only as a
+          compatibility fallback while an older backend is being upgraded. */}
+      {daily || shift ? (
         <FadeInView style={{ marginTop: spacing.lg }}>
           <Card accent={c.success} testID="smoke-cashier-collection">
             <Muted style={{ fontSize: 12, fontWeight: '600' }}>{t.todayCollection}</Muted>
@@ -313,7 +340,7 @@ export default function CashierScreen() {
               numberOfLines={1}
               adjustsFontSizeToFit
             >
-              {formatCurrency(collection.total, shift.currency)}
+              {formatCurrency(collection.total, shift?.currency || 'TRY')}
             </Text>
             <Muted style={{ fontSize: 12, marginBottom: spacing.md }}>{t.collectionHint}</Muted>
             <View style={{ flexDirection: 'row', gap: spacing.sm }}>
