@@ -59,7 +59,13 @@ function SectionState({ loading, error }: { loading: boolean; error: boolean }) 
 }
 
 function SegmentList({ data }: { data: Record<string, SegmentStat> }) {
-  const entries = Object.entries(data || {}).sort((a, b) => b[1].revenue - a[1].revenue);
+  const numberOrZero = (value: unknown) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+  const entries = Object.entries(data || {})
+    .filter(([, stat]) => !!stat && typeof stat === 'object')
+    .sort((a, b) => numberOrZero(b[1]?.revenue) - numberOrZero(a[1]?.revenue));
   if (entries.length === 0) {
     return (
       <Card>
@@ -71,11 +77,15 @@ function SegmentList({ data }: { data: Record<string, SegmentStat> }) {
     <>
       {entries.map(([name, stat]) => (
         <Card key={name} style={{ marginBottom: spacing.sm }}>
-          <H2 style={{ textTransform: 'capitalize' }}>{name}</H2>
-          <StatRow label={tr.manager.revenue} value={formatCurrency(stat.revenue)} tone="success" strong />
-          <StatRow label={tr.manager.bookings} value={String(stat.bookings)} />
-          <StatRow label={tr.manager.nights} value={String(stat.nights)} />
-          <StatRow label={tr.manager.adr} value={formatCurrency(stat.adr)} />
+          <H2 style={{ textTransform: 'capitalize' }}>
+            {!name || ['null', 'undefined', 'none'].includes(name.toLowerCase())
+              ? tr.manager.unspecified
+              : name.replaceAll('_', ' ')}
+          </H2>
+          <StatRow label={tr.manager.revenue} value={formatCurrency(numberOrZero(stat.revenue))} tone="success" strong />
+          <StatRow label={tr.manager.bookings} value={String(numberOrZero(stat.bookings))} />
+          <StatRow label={tr.manager.nights} value={String(numberOrZero(stat.nights))} />
+          <StatRow label={tr.manager.adr} value={formatCurrency(numberOrZero(stat.adr))} />
         </Card>
       ))}
     </>

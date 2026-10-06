@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 import { Stack, useRootNavigationState, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -203,13 +203,9 @@ export function ErrorBoundary({
   error: Error;
   retry: () => void;
 }) {
-  // Keep the real error in device logs / TestFlight diagnostics without
-  // losing the original exception. Pilot testers also need a short,
-  // selectable diagnostic because a handled render exception is not emitted
-  // as a TestFlight crash report.
+  // Keep diagnostics in device logs. Operators should see a calm recovery
+  // action, never implementation details or a stack trace.
   console.error('[mobile] route render failed', error);
-  const diagnostic = `${error.name || 'Error'}: ${error.message || 'Bilinmeyen hata'}`.slice(0, 500);
-  const diagnosticStack = (error.stack || 'Stack bilgisi yok').slice(0, 3000);
   return (
     <View
       style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, gap: 16 }}
@@ -218,22 +214,6 @@ export function ErrorBoundary({
       <Text style={{ textAlign: 'center', color: '#64748b' }}>
         Uygulama oturumunuz açık kaldı. Tekrar deneyin; sorun sürerse destek ekibine bildirin.
       </Text>
-      <Text
-        selectable
-        testID="mobile-error-diagnostic"
-        style={{ textAlign: 'center', color: '#94a3b8', fontSize: 12 }}
-      >
-        Teknik bilgi: {diagnostic}
-      </Text>
-      <ScrollView
-        style={{ width: '100%', maxHeight: 240 }}
-        contentContainerStyle={{ padding: 12 }}
-        testID="mobile-error-stack"
-      >
-        <Text selectable style={{ color: '#64748b', fontSize: 11 }}>
-          {diagnosticStack}
-        </Text>
-      </ScrollView>
       <Pressable
         onPress={retry}
         accessibilityRole="button"

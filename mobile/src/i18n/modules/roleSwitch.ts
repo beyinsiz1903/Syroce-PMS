@@ -1,6 +1,6 @@
 export const roleSwitch = {
   title: 'Rol Değiştir',
-  subtitle: 'Yönetici olarak tüm rol ekranlarına geçebilirsiniz',
+  subtitle: 'Personel operasyon ekranları arasında geçiş yapabilirsiniz',
   groups: {
     gm: 'Yönetici',
     front_desk: 'Ön Büro',
