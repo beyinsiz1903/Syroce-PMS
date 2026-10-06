@@ -206,8 +206,11 @@ export function ErrorBoundary({
   retry: () => void;
 }) {
   // Keep the real error in device logs / TestFlight diagnostics without
-  // exposing implementation details to hotel staff.
+  // losing the original exception. Pilot testers also need a short,
+  // selectable diagnostic because a handled render exception is not emitted
+  // as a TestFlight crash report.
   console.error('[mobile] route render failed', error);
+  const diagnostic = `${error.name || 'Error'}: ${error.message || 'Bilinmeyen hata'}`.slice(0, 500);
   return (
     <View
       style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, gap: 16 }}
@@ -215,6 +218,13 @@ export function ErrorBoundary({
       <Text style={{ fontSize: 20, fontWeight: '700' }}>Ekran açılamadı</Text>
       <Text style={{ textAlign: 'center', color: '#64748b' }}>
         Uygulama oturumunuz açık kaldı. Tekrar deneyin; sorun sürerse destek ekibine bildirin.
+      </Text>
+      <Text
+        selectable
+        testID="mobile-error-diagnostic"
+        style={{ textAlign: 'center', color: '#94a3b8', fontSize: 12 }}
+      >
+        Teknik bilgi: {diagnostic}
       </Text>
       <Pressable
         onPress={retry}
