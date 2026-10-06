@@ -131,9 +131,8 @@ export async function getOccupancyForecast(days = 7): Promise<OccupancyForecast>
   return { ...res, forecast: res?.forecast ?? [] };
 }
 
-// Channel mix & rate parity — backend computes booking/revenue share per source
-// channel plus the direct-booking share, which is the channel-parity health
-// signal we surface as the "Kanal Paritesi" KPI. Auth-only read.
+// Channel mix — backend computes booking/revenue share per source channel plus
+// direct-booking share. This is distribution data, not rate-parity data.
 export type ChannelStat = {
   channel?: string;
   bookings?: number;

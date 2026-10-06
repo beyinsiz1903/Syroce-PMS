@@ -30,6 +30,22 @@ export type CashierShift = {
 export type CurrentShiftResponse = {
   shift: CashierShift | null;
   transactions: CashierTransaction[];
+  summary: ShiftTransactionSummary | null;
+};
+
+export type ShiftMethodSummary = {
+  count?: number;
+  in?: number;
+  out?: number;
+  net?: number;
+};
+
+export type ShiftTransactionSummary = {
+  transaction_count?: number;
+  total_in?: number;
+  total_out?: number;
+  net?: number;
+  methods?: Record<string, ShiftMethodSummary>;
 };
 
 // GET /api/cashier/current-shift → { shift, transactions }
@@ -38,6 +54,7 @@ export async function getCurrentShift(): Promise<CurrentShiftResponse> {
   return {
     shift: res?.shift ?? null,
     transactions: res?.transactions ?? [],
+    summary: res?.summary ?? null,
   };
 }
 
@@ -62,13 +79,35 @@ export type CollectionBreakdown = {
   total: number;
   cash: number;
   card: number;
-  cari: number;
+  transfer: number;
+  online: number;
+  other: number;
 };
 
 export function collectionBreakdown(
   transactions: CashierTransaction[],
+  summary?: ShiftTransactionSummary | null,
 ): CollectionBreakdown {
-  const acc: CollectionBreakdown = { total: 0, cash: 0, card: 0, cari: 0 };
+  const methods = summary?.methods;
+  if (methods) {
+    return {
+      total: summary.total_in ?? 0,
+      cash: methods.cash?.in ?? 0,
+      card: methods.card?.in ?? 0,
+      transfer: methods.bank_transfer?.in ?? 0,
+      online: methods.online?.in ?? 0,
+      other: methods.other?.in ?? 0,
+    };
+  }
+
+  const acc: CollectionBreakdown = {
+    total: 0,
+    cash: 0,
+    card: 0,
+    transfer: 0,
+    online: 0,
+    other: 0,
+  };
   for (const t of transactions) {
     if ((t.direction || '').toLowerCase() !== 'in') continue;
     const amt = Math.abs(typeof t.amount === 'number' ? t.amount : 0);
@@ -77,7 +116,9 @@ export function collectionBreakdown(
     const m = (t.method || '').toLowerCase();
     if (m === 'cash') acc.cash += amt;
     else if (m === 'card') acc.card += amt;
-    else acc.cari += amt;
+    else if (m === 'bank_transfer' || m === 'transfer') acc.transfer += amt;
+    else if (m === 'online') acc.online += amt;
+    else acc.other += amt;
   }
   return acc;
 }

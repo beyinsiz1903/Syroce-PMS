@@ -13,7 +13,7 @@ export const accounting = {
   monthRange: 'Bu Ay',
   todayRevenue: 'Bugünkü Gelir',
   collections: 'Tahsilat',
-  netPosition: 'Net Pozisyon',
+  netPosition: 'Tahakkuk–Tahsilat Farkı',
   openFolios: 'Açık Folyolar',
   monthExpenses: 'Ay Gideri',
   pendingInvoices: 'Bekleyen Fatura',
@@ -34,6 +34,8 @@ export const accounting = {
   } as Record<string, string>,
   revenueByCategory: 'Kategoriye Göre Gelir',
   noFinancialSummary: 'Günlük finansal özet bulunamadı',
+  dailyBasisHint:
+    'Gelir, bu iş gününde folyolara işlenen harcamaları; tahsilat ise aynı gün alınan ödemeleri gösterir. Tahsilat önceki günlerin folyolarına ait olabilir.',
 
   // Sections (Stripe-quality cockpit)
   sectionSummary: 'Finansal Özet',

@@ -238,7 +238,9 @@ export default function PosScreen() {
     queryKey: ['pos-active-orders', activeOutlet],
     queryFn: () => listActiveOrders(activeOutlet ? { outlet_id: activeOutlet } : undefined),
     enabled:
-      posAccess && (tab === 'order' || tab === 'kitchen' || tab === 'folio' || tab === 'reports'),
+      posAccess &&
+      !!activeOutlet &&
+      (tab === 'order' || tab === 'kitchen' || tab === 'folio' || tab === 'reports'),
   });
   const tablesQ = useQuery({
     queryKey: ['pos-tables', activeOutlet],
@@ -1880,8 +1882,9 @@ export default function PosScreen() {
       {outletsQ.isLoading ? (
         <DepartmentListState loading error={null} isEmpty={false} emptyText="" />
       ) : outlets.length === 0 ? (
-        <Card>
-          <Muted>{tr.departments.pos.noOutlets}</Muted>
+        <Card accent={c.warning}>
+          <Body style={{ fontWeight: '700' }}>{tr.departments.pos.noOutlets}</Body>
+          <Muted style={{ marginTop: spacing.xs }}>{tr.departments.pos.noOutletsHint}</Muted>
         </Card>
       ) : (
         <ScrollView
@@ -1901,6 +1904,8 @@ export default function PosScreen() {
         </ScrollView>
       )}
 
+      {outlets.length > 0 ? (
+        <>
       {/* Tab selector */}
       <ScrollView
         horizontal
@@ -1959,6 +1964,8 @@ export default function PosScreen() {
       {tab === 'reports' ? renderReportsTab() : null}
       {tab === 'reservations' ? renderReservationsTab() : null}
       {tab === 'spa_gym' ? renderSpaGymTab() : null}
+        </>
+      ) : null}
 
       {/* Active-order detail + actions sheet. */}
       <ActionSheet

@@ -423,7 +423,8 @@ export default function AccountingScreen() {
       .filter((d) => d.value > 0);
   }, [summary, a.paymentMethodLabels]);
 
-  // Kasa Akışı karşılaştırması: Vergili Gelir / Tahsilat / Net Pozisyon.
+  // Kasa Akışı karşılaştırması: aynı iş gününün tahakkuku,
+  // tahsilatı ve aralarındaki fark. Bu fark kâr/zarar değildir.
   const cashFlowBars: ChartDatum[] = useMemo(() => {
     if (!summary) return [];
     return [
@@ -471,7 +472,7 @@ export default function AccountingScreen() {
                 label={a.netPosition}
                 value={formatCurrency(summary?.net_position, 'TRY')}
                 icon="trending-up-outline"
-                tone={(summary?.net_position ?? 0) >= 0 ? 'default' : 'danger'}
+                tone="default"
               />
               <KpiCard
                 label={a.openFolios}
@@ -532,6 +533,9 @@ export default function AccountingScreen() {
                 value={`${formatCurrency(summary.open_folios.balance.total, 'TRY')} · ${summary.open_folios.count}`}
                 last
               />
+              <Muted style={{ marginTop: spacing.md, fontSize: 11 }}>
+                {a.dailyBasisHint}
+              </Muted>
             </Card>
           ) : (
             <EmptyState

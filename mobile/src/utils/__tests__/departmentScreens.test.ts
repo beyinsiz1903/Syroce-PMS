@@ -102,6 +102,30 @@ test('filterSubscribedHubTiles fails open without a subscription snapshot', () =
   assert.deepEqual(filterSubscribedHubTiles(tiles, {}), tiles);
 });
 
+test('filterSubscribedHubTiles hides disabled POS and revenue modules', () => {
+  const tiles: HubTile[] = ['pos', 'revenue', 'cashier'];
+  assert.deepEqual(
+    filterSubscribedHubTiles(tiles, {
+      pos_basic: false,
+      'pms.pos': false,
+      revenue_management: false,
+      mobile_revenue: false,
+      'pms.revenue': false,
+    }),
+    ['cashier'],
+  );
+  assert.deepEqual(
+    filterSubscribedHubTiles(tiles, {
+      pos_basic: true,
+      'pms.pos': false,
+      revenue_management: false,
+      mobile_revenue: false,
+      'pms.revenue': true,
+    }),
+    tiles,
+  );
+});
+
 // ── hubHasNoAccess: drives the hub's empty "no access" card ──────────────────
 test('hubHasNoAccess is true only when no tile is visible', () => {
   assert.equal(hubHasNoAccess('guest'), true);
