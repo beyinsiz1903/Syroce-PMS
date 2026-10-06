@@ -2,7 +2,19 @@ const normalizeCurrency = (currency) => String(currency || 'TRY').toUpperCase() 
   ? 'TRY'
   : String(currency || 'TRY').toUpperCase();
 
-const isRetryable = (error) => !error?.response || Number(error.response?.status || 0) >= 500;
+// Reservation creation and the first folio write are two separate requests.
+// The payment carries a stable reference, so retrying is safe: the backend
+// returns the original payment for a matching retry instead of crediting the
+// guest twice. A short 404 can occur while a just-created reservation is
+// becoming visible behind a rolling API deployment; it must not leave the
+// operator with a confirmed reservation but an unrecorded prepayment.
+const isRetryable = (error) => {
+  const status = Number(error?.response?.status || 0);
+  return !error?.response || status === 404 || status >= 500;
+};
+
+const PREPAYMENT_MAX_ATTEMPTS = 3;
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export const recordInitialPrepayment = async ({
   client,
@@ -31,15 +43,21 @@ export const recordInitialPrepayment = async ({
   };
 
   let response;
-  try {
-    response = await client.post(`/pms/reservations/${bookingId}/record-payment`, payload);
-  } catch (error) {
-    if (!isRetryable(error)) throw error;
-    // Aynı referans backend'de idempotenttir. Geçici ağ/5xx hatasında bir kez
-    // tekrar deneyerek ödeme yazıldığı halde istemcinin cevabı kaçırdığı
-    // belirsiz durumu güvenle kapatırız.
-    response = await client.post(`/pms/reservations/${bookingId}/record-payment`, payload);
+  let lastError;
+  for (let attempt = 1; attempt <= PREPAYMENT_MAX_ATTEMPTS; attempt += 1) {
+    try {
+      response = await client.post(`/pms/reservations/${bookingId}/record-payment`, payload);
+      break;
+    } catch (error) {
+      lastError = error;
+      if (!isRetryable(error) || attempt === PREPAYMENT_MAX_ATTEMPTS) throw error;
+      // A tiny backoff lets a just-created booking become visible to the
+      // payment route during a rolling deployment without blocking the UI.
+      await wait(200 * attempt);
+    }
   }
+
+  if (!response) throw lastError || new Error('Ön ödeme kaydedilemedi');
 
   const payment = response?.data?.payment;
   if (
@@ -52,4 +70,3 @@ export const recordInitialPrepayment = async ({
   }
   return payment;
 };
-
