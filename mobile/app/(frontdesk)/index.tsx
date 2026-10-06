@@ -250,16 +250,10 @@ export default function TodayScreen() {
             onPress={() => router.push(ROUTES.newReservation)}
           />
           <QuickAction
-            icon="person-add-outline"
-            label={tr.today.actionWalkin}
+            icon="construct-outline"
+            label="Arıza Bildir"
             tone={c.warning}
-            onPress={() => router.push(ROUTES.walkin)}
-          />
-          <QuickAction
-            icon="search-outline"
-            label={tr.today.actionGuestSearch}
-            tone={c.vip}
-            onPress={() => router.push(ROUTES.frontdeskGuests)}
+            onPress={() => router.push(ROUTES.frontdeskFault)}
           />
         </View>
 

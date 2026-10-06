@@ -79,6 +79,8 @@ export const ROUTES = {
   availability: '/(frontdesk)/availability',
   frontdeskRooms: '/(frontdesk)/rooms',
   frontdeskGuests: '/(frontdesk)/guests',
+  frontdeskMore: '/(frontdesk)/more',
+  frontdeskFault: '/(frontdesk)/fault',
   reservationCalendar: '/(frontdesk)/calendar',
   guestBookings: '/(guest)',
   guestOnlineCheckin: '/(guest)/checkin',
@@ -94,21 +96,15 @@ export const ROUTES = {
   guestQrBadge: '/(guest)/qrBadge',
 } as const satisfies Record<string, Href>;
 
-// Every staff role lands in the unified common shell `(home)` (Tier-1
-// backbone). Guests keep their dedicated experience. The role-specific Tier-2
-// groups remain reachable from within the shell, but they are no longer the
-// staff landing surface.
-//
-// Task #507 — staff land on the HUB "Ana Sayfa" (the (home) group index), an
-// operations center with the live "Bugün" KPI card, a smart notification feed,
-// and permission-filtered department shortcuts. It is the first visible bottom
-// tab, so the bar highlight stays correct. Guests keep their dedicated area.
+// Mobile is an operational companion, not a compressed desktop PMS. Staff land
+// in the front-desk shell, which contains the small set of actions needed on a
+// shift. Guests retain their dedicated experience.
 export function rootForRole(role: AppRole): Href {
   switch (role) {
     case 'guest_app':
       return ROUTES.guest;
     default:
-      return ROUTES.home;
+      return ROUTES.frontdesk;
   }
 }
 

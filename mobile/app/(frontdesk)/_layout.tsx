@@ -1,6 +1,6 @@
 import React from 'react';
-import type { ColorValue } from 'react-native';
-import { Tabs } from 'expo-router';
+import { Pressable, View, type ColorValue } from 'react-native';
+import { Tabs, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../src/theme';
@@ -25,6 +25,27 @@ function tabIcon(active: IoniconName, inactive: IoniconName) {
 // takiyoruz (gecmis yoksa on buro ana ekranina doner).
 const backOptions = { headerLeft: () => <HeaderBackButton fallback={ROUTES.frontdesk} /> };
 
+// Profil/çıkış ayarları günlük operasyon sekmelerini kalabalıklaştırmasın diye
+// alt barda değil, her ekrandan erişilebilen başlık aksiyonunda tutulur.
+function HeaderActions() {
+  const c = useTheme();
+  const router = useRouter();
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', marginRight: 4 }}>
+      <Pressable
+        onPress={() => router.push(ROUTES.frontdeskMore)}
+        accessibilityRole="button"
+        accessibilityLabel={tr.tabs.more}
+        testID="frontdesk-header-profile"
+        hitSlop={8}
+        style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}
+      >
+        <Ionicons name="person-circle-outline" size={24} color={c.text} />
+      </Pressable>
+    </View>
+  );
+}
+
 export default function FrontDeskLayout() {
   const c = useTheme();
   const insets = useSafeAreaInsets();
@@ -47,11 +68,19 @@ export default function FrontDeskLayout() {
         headerStyle: { backgroundColor: c.surface },
         headerTitleStyle: { color: c.text },
         headerTintColor: c.text,
+        headerRight: () => <HeaderActions />,
       }}
     >
       <Tabs.Screen
         name="index"
         options={{ title: tr.tabs.today, tabBarIcon: tabIcon('today', 'today-outline') }}
+      />
+      <Tabs.Screen
+        name="reservations"
+        options={{
+          title: tr.tabs.bookings,
+          tabBarIcon: tabIcon('reader', 'reader-outline'),
+        }}
       />
       <Tabs.Screen
         name="calendar"
@@ -69,16 +98,17 @@ export default function FrontDeskLayout() {
         options={{ title: tr.tabs.rooms, tabBarIcon: tabIcon('bed', 'bed-outline') }}
       />
       <Tabs.Screen
-        name="reservations"
+        name="reports"
         options={{
-          title: tr.tabs.bookings,
-          tabBarIcon: tabIcon('reader', 'reader-outline'),
+          title: tr.manager.reportsTitle,
+          tabBarIcon: tabIcon('bar-chart', 'bar-chart-outline'),
         }}
       />
       <Tabs.Screen
         name="more"
         options={{
           title: tr.tabs.more,
+          href: null,
           tabBarIcon: tabIcon('ellipsis-horizontal-circle', 'ellipsis-horizontal-circle-outline'),
         }}
       />
@@ -100,6 +130,7 @@ export default function FrontDeskLayout() {
         name="guests"
         options={{ href: null, title: tr.tabs.guests, ...backOptions }}
       />
+      <Tabs.Screen name="fault" options={{ href: null, title: 'Arıza Bildirimi', ...backOptions }} />
     </Tabs>
   );
 }

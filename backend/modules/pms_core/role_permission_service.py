@@ -201,6 +201,40 @@ def require_module(module: str):
     return _dep
 
 
+def require_any_module(*modules: str):
+    """Allow a narrowly-scoped operation for the union of module roles.
+
+    A fault can be reported by reception as well as the housekeeping team,
+    while the maintenance board itself stays guarded by its existing
+    housekeeping permission.  Keeping this as an explicit dependency avoids
+    widening either whole module just for the report-create action.
+    """
+    from fastapi import Depends as _Depends
+    from fastapi import HTTPException as _HTTPException
+
+    from core.security import get_current_user
+    from models.schemas import User as _User
+
+    def _norm(r):
+        return getattr(r, "value", str(r))
+
+    allowed_norm = {
+        _norm(role)
+        for module in modules
+        for role in MODULE_ROLES.get(module, set())
+    }
+
+    async def _dep(current_user: _User = _Depends(get_current_user)) -> None:
+        from core.security import _is_super_admin as _is_sa
+
+        if _is_sa(current_user):
+            return
+        if _norm(current_user.role) not in allowed_norm:
+            raise _HTTPException(status_code=403, detail="Module access denied")
+
+    return _dep
+
+
 def require_role(*allowed_roles):
     """FastAPI dependency factory — role allow-list (cache-wrapper-safe).
 

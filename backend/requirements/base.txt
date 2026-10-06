@@ -34,7 +34,7 @@ jsonschema==4.23.0
 jsonschema-specifications==2025.9.1
 librt==0.8.1
 MarkupSafe==3.0.3
-motor==3.3.1
+motor==3.7.1
 msgpack==1.2.1
 oauthlib==4.0.0
 orjson==3.11.7
@@ -49,13 +49,17 @@ pycparser==2.23
 pydantic==2.12.5
 pydantic_core==2.41.5
 PyJWT==2.15.0
-pymongo==4.8.0
+# CVE-2026-88029 / CVE-2026-96747 / CVE-2026-96748 / CVE-2026-96749.
+# Motor 3.3.1 accepts PyMongo 4.x, including this patched release.
+pymongo==4.18.2
 pyotp==2.9.0
 pyparsing==3.3.2
 pypng==0.20220715.0
 python-dateutil==2.9.0.post0
 python-dotenv==1.2.2
-python-jose==3.5.0
+# `PyJWT` above is the project's only JWT implementation. `python-jose` had
+# no runtime imports and has no patched release for CVE-2026-85394, so it must
+# not be present in deploy images.
 pytz==2025.2
 PyYAML==6.0.3
 qrcode==7.4.2

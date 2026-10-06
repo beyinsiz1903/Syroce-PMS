@@ -97,12 +97,10 @@ function AuthGate({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    // Task #327 — all other staff land in the unified common shell `(home)`
-    // (Tier-1 backbone) and may stay there. They may ALSO browse into:
-    //   * their native Tier-2 group (e.g. front_desk → (frontdesk)), and
-    //   * the shared (departments) area when they hold department entitlement.
-    // Anything else ejects them back to the shell. This is navigation gating
-    // only — backend RBAC still enforces every action inside each surface.
+    // The mobile product is intentionally centred on the shared operational
+    // front-desk shell. This only controls navigation: every write remains
+    // checked by backend RBAC.
+    if (first === '(frontdesk)') return;
     if (first === HOME_SEGMENT) return;
     const inDepartments = first === DEPARTMENTS_SEGMENT;
     if (inDepartments && deptAccess) return;
