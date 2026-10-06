@@ -22,6 +22,8 @@
     "src/utils/__tests__/reservationCalendar.test.ts",
     "src/utils/paymentEntry.ts",
     "src/utils/__tests__/paymentEntry.test.ts",
+    "src/utils/queryData.ts",
+    "src/utils/__tests__/queryData.test.ts",
     "src/state/roleAccess.ts",
     "src/state/__tests__/roleAccess.test.ts",
     "src/utils/departmentScreens.ts",
