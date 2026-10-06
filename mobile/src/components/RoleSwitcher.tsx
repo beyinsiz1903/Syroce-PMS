@@ -12,7 +12,6 @@ const ROLE_ICONS: Record<SwitchableRole, keyof typeof Ionicons.glyphMap> = {
   gm: 'briefcase-outline',
   front_desk: 'desktop-outline',
   housekeeping: 'brush-outline',
-  guest_app: 'person-outline',
 };
 
 // All-access role switcher. Renders nothing for single-role users; for

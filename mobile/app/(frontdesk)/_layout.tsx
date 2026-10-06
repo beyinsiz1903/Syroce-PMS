@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
 import { HeaderBackButton } from '../../src/components/HeaderBackButton';
+import { OperationalHeader } from '../../src/components/OperationalHeader';
 import { ROUTES } from '../../src/navigation/routes';
 
 type IoniconName = keyof typeof Ionicons.glyphMap;
@@ -67,6 +68,7 @@ export default function FrontDeskLayout() {
         tabBarLabelStyle: { fontSize: 11, fontWeight: '600' },
         headerStyle: { backgroundColor: c.surface },
         headerTitleStyle: { color: c.text },
+        headerTitle: ({ children }) => <OperationalHeader title={children} />,
         headerTintColor: c.text,
         headerRight: () => <HeaderActions />,
       }}
@@ -79,6 +81,7 @@ export default function FrontDeskLayout() {
         name="reservations"
         options={{
           title: tr.tabs.bookings,
+          tabBarLabel: tr.tabs.bookingsShort,
           tabBarIcon: tabIcon('reader', 'reader-outline'),
         }}
       />

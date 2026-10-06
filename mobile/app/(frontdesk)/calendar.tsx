@@ -62,6 +62,10 @@ import {
   type PlacedBar,
   type RoomCalStatus,
 } from '../../src/utils/reservationCalendar';
+import {
+  reservationStatusLabel,
+  reservationStatusTone,
+} from '../../src/utils/reservationPresentation';
 
 const USE_NATIVE_DRIVER = Platform.OS !== 'web';
 
@@ -519,6 +523,23 @@ export default function ReservationCalendarScreen() {
 
   const shiftWindow = (dir: number) => setStartDate(addDaysISO(startDate, dir * dayCount));
 
+  const openReservationForCell = useCallback(
+    (room: Room, day: string) => {
+      haptic.tap();
+      router.push({
+        pathname: ROUTES.newReservation,
+        params: {
+          room_id: room.id,
+          room_number: room.room_number || '',
+          room_type: room.room_type || '',
+          check_in: day,
+          check_out: addDaysISO(day, 1),
+        },
+      });
+    },
+    [router],
+  );
+
   return (
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: c.bg }}>
       <View
@@ -832,8 +853,17 @@ export default function ReservationCalendarScreen() {
                             const st = cellStatus(room, di);
                             const isToday = d === todayISO();
                             return (
-                              <View
+                              <Pressable
                                 key={d}
+                                disabled={st !== 'available'}
+                                onPress={() => openReservationForCell(room, d)}
+                                accessibilityRole={st === 'available' ? 'button' : undefined}
+                                accessibilityLabel={
+                                  st === 'available'
+                                    ? `${room.room_number} · ${formatDate(d)} · ${tr.reservations.newReservation}`
+                                    : undefined
+                                }
+                                testID={`calendar-cell-${room.id}-${d}`}
                                 style={{
                                   width: dayWidth,
                                   height: ROW_HEIGHT,
@@ -976,19 +1006,7 @@ function DetailBody({
   const ci = toDateOnly(r.check_in);
   const co = toDateOnly(r.check_out);
   const nights = ci && co ? Math.max(1, diffDays(ci, co)) : bar.nights;
-  const tone = (() => {
-    switch ((r.status || '').toLowerCase()) {
-      case 'checked_in':
-        return 'success' as const;
-      case 'confirmed':
-      case 'guaranteed':
-        return 'info' as const;
-      case 'checked_out':
-        return 'default' as const;
-      default:
-        return 'warning' as const;
-    }
-  })();
+  const tone = reservationStatusTone(r.status);
 
   return (
     <View style={{ gap: spacing.sm }}>
@@ -999,7 +1017,7 @@ function DetailBody({
         </Pressable>
       </View>
       <View style={{ flexDirection: 'row', gap: spacing.xs, flexWrap: 'wrap' }}>
-        <Badge label={r.status || '—'} tone={tone} />
+        <Badge label={reservationStatusLabel(r.status)} tone={tone} />
         {r.vip_status ? <Badge label={tr.calendar.vip} tone="vip" icon="star" /> : null}
       </View>
 

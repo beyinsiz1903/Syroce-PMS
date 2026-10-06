@@ -13,6 +13,10 @@ import { Reservation, searchReservations } from '../../src/api/reservations';
 import { formatCurrency, formatDate } from '../../src/utils/format';
 import { errorMessage, isOffline } from '../../src/utils/errors';
 import { ROUTES } from '../../src/navigation/routes';
+import {
+  reservationStatusLabel,
+  reservationStatusTone,
+} from '../../src/utils/reservationPresentation';
 
 const STATUS_OPTIONS = [
   { value: '', label: tr.reservations.statusAll },
@@ -23,28 +27,6 @@ const STATUS_OPTIONS = [
   { value: 'cancelled', label: tr.reservations.statusCancelled },
   { value: 'no_show', label: tr.reservations.statusNoShow },
 ];
-
-function statusTone(status?: string): 'success' | 'warning' | 'info' | 'default' | 'danger' {
-  switch ((status || '').toLowerCase()) {
-    case 'checked_in':
-      return 'success';
-    case 'confirmed':
-    case 'guaranteed':
-      return 'info';
-    case 'checked_out':
-      return 'default';
-    case 'cancelled':
-    case 'no_show':
-      return 'danger';
-    default:
-      return 'warning';
-  }
-}
-
-function statusLabel(status?: string): string {
-  const opt = STATUS_OPTIONS.find((o) => o.value === (status || '').toLowerCase());
-  return opt && opt.value ? opt.label : status || '—';
-}
 
 function nightsBetween(checkIn?: string, checkOut?: string): number | null {
   if (!checkIn || !checkOut) return null;
@@ -57,7 +39,7 @@ function nightsBetween(checkIn?: string, checkOut?: string): number | null {
 function ReservationRow({ r, onPress }: { r: Reservation; onPress: () => void }) {
   const c = useTheme();
   const nights = nightsBetween(r.check_in, r.check_out);
-  const accentMap: Record<ReturnType<typeof statusTone>, string> = {
+  const accentMap: Record<ReturnType<typeof reservationStatusTone>, string> = {
     success: c.success,
     warning: c.warning,
     info: c.info,
@@ -72,7 +54,7 @@ function ReservationRow({ r, onPress }: { r: Reservation; onPress: () => void })
       testID="smoke-reservation-row"
       style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1 })}
     >
-      <Card accent={accentMap[statusTone(r.status)]}>
+      <Card accent={accentMap[reservationStatusTone(r.status)]}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: spacing.sm }}>
           <View style={{ flex: 1 }}>
             <View style={{ flexDirection: 'row', gap: spacing.sm, alignItems: 'center' }}>
@@ -89,7 +71,7 @@ function ReservationRow({ r, onPress }: { r: Reservation; onPress: () => void })
             {r.booking_number ? <Muted>#{r.booking_number}</Muted> : null}
           </View>
           <View style={{ alignItems: 'flex-end', gap: spacing.xs }}>
-            <Badge label={statusLabel(r.status)} tone={statusTone(r.status)} />
+            <Badge label={reservationStatusLabel(r.status)} tone={reservationStatusTone(r.status)} />
             {typeof r.total_amount === 'number' ? (
               <Body style={{ color: c.textMuted, fontSize: 13 }}>
                 {formatCurrency(r.total_amount)}

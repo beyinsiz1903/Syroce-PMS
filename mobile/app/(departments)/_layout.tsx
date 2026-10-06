@@ -2,6 +2,7 @@ import React from 'react';
 import { Stack } from 'expo-router';
 import { useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
+import { OperationalHeader } from '../../src/components/OperationalHeader';
 
 // File-based stack routing for the shared Departments area. Sibling
 // department screens (Accounting / Maintenance, future tasks) can be added
@@ -13,6 +14,7 @@ export default function DepartmentsLayout() {
       screenOptions={{
         headerStyle: { backgroundColor: c.surface },
         headerTitleStyle: { color: c.text },
+        headerTitle: ({ children }) => <OperationalHeader title={children} />,
         headerTintColor: c.text,
         contentStyle: { backgroundColor: c.bg },
       }}

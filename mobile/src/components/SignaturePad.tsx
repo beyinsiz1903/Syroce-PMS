@@ -124,12 +124,18 @@ export const SignaturePad = forwardRef<SignaturePadHandle, SignaturePadProps>(
             if (!currentStroke.current) return;
             const p = pointFrom(evt);
             currentStroke.current.push(p);
+            // React may execute this state updater after the release handler
+            // has already cleared currentStroke. Capture an immutable copy
+            // now; reading the ref inside the updater caused the intermittent
+            // iOS "slice of null" route crash while drawing a signature.
+            const strokeSnapshot = currentStroke.current.slice();
             // Mutate the last stroke in place for performance, then trigger
             // a re-render by replacing the array reference.
             setStrokes((prev) => {
-              if (prev.length === 0) return prev;
-              const next = prev.slice();
-              next[next.length - 1] = currentStroke.current!.slice();
+              const safePrev = Array.isArray(prev) ? prev : [];
+              if (safePrev.length === 0) return safePrev;
+              const next = safePrev.slice();
+              next[next.length - 1] = strokeSnapshot;
               return next;
             });
           },

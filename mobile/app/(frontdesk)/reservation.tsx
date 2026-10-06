@@ -45,6 +45,11 @@ import {
   paymentTypeForAmount,
   type SimplePaymentMethod,
 } from '../../src/utils/paymentEntry';
+import {
+  reservationMoneySummary,
+  reservationStatusLabel,
+  reservationStatusTone,
+} from '../../src/utils/reservationPresentation';
 
 // DD.MM.YYYY → YYYY-MM-DD (same normaliser the list screen uses). Returns
 // undefined for blank / unparseable input so the caller can reject it.
@@ -121,19 +126,30 @@ export default function ReservationDetailScreen() {
     (ota.isError && isOffline(ota.error)) ||
     (folio.isError && isOffline(folio.error));
 
-  const totalAmount = p.total_amount ? Number(p.total_amount) : undefined;
-  const paidAmount = p.paid_amount ? Number(p.paid_amount) : undefined;
-  const balance =
+  const bookingTotal = p.total_amount ? Number(p.total_amount) : undefined;
+  const bookingPaid = p.paid_amount ? Number(p.paid_amount) : undefined;
+  const bookingBalance =
     p.balance && p.balance !== ''
       ? Number(p.balance)
-      : totalAmount != null && paidAmount != null
-      ? totalAmount - paidAmount
+      : bookingTotal != null && bookingPaid != null
+      ? bookingTotal - bookingPaid
       : undefined;
 
   const rate = enhanced.data?.rate_breakdown;
   const commission = enhanced.data?.commission;
   const policy = enhanced.data?.cancellation_policy;
   const otaData = ota.data;
+  const currentStatus = enhanced.data?.status || p.status;
+  const money = reservationMoneySummary({
+    bookingTotal,
+    bookingPaid,
+    bookingBalance,
+    rateBase: rate?.base_rate,
+    rateTotal: rate?.total_amount,
+    folioBalance: folio.data?.balance,
+    charges: folio.data?.charges,
+    payments: folio.data?.payments,
+  });
 
   const qc = useQueryClient();
 
@@ -174,7 +190,7 @@ export default function ReservationDetailScreen() {
   // rooms are ever offered (no double-booking), plus the loading / empty states.
   const roomView = roomPanelView(rooms, roomsLoading);
 
-  const isCancelled = (p.status || '').toLowerCase() === 'cancelled';
+  const isCancelled = ['cancelled', 'canceled'].includes((currentStatus || '').toLowerCase());
 
   const refreshAll = () => {
     qc.invalidateQueries({ queryKey: ['reservations-search'] });
@@ -201,7 +217,7 @@ export default function ReservationDetailScreen() {
       setSpecialRequests(otaData?.special_requests || '');
     }
     if (next === 'payment') {
-      const current = folio.data?.balance ?? balance ?? 0;
+      const current = money.balance ?? 0;
       setPaymentAmount(current > 0 ? String(Math.round(current * 100) / 100) : '');
     }
   };
@@ -346,7 +362,7 @@ export default function ReservationDetailScreen() {
     mutationFn: async () => {
       const folioData = folio.data;
       if (!folioData?.id) throw new Error(tr.reservations.paymentNoFolio);
-      const currentBalance = folioData.balance ?? balance ?? 0;
+      const currentBalance = money.balance ?? 0;
       if (currentBalance <= 0) throw new Error(tr.reservations.paymentNoBalance);
       const amount = parsePaymentAmount(paymentAmount);
       const amountIssue = paymentAmountError(amount, currentBalance);
@@ -413,7 +429,12 @@ export default function ReservationDetailScreen() {
         subtitle={p.booking_number ? `#${p.booking_number}` : undefined}
         badges={
           <>
-            {p.status ? <Badge label={p.status} tone={isCancelled ? 'danger' : 'info'} /> : null}
+            {currentStatus ? (
+              <Badge
+                label={reservationStatusLabel(currentStatus)}
+                tone={reservationStatusTone(currentStatus)}
+              />
+            ) : null}
             {p.room_number ? (
               <Badge label={`${tr.reservations.room} ${p.room_number}`} tone="default" icon="bed" />
             ) : null}
@@ -597,7 +618,7 @@ export default function ReservationDetailScreen() {
                 <>
                   <Row
                     label={tr.reservations.paymentBalance}
-                    value={formatCurrency(folio.data?.balance ?? balance ?? 0)}
+                    value={formatCurrency(money.balance ?? 0)}
                   />
                   <Field
                     label={tr.reservations.paymentAmount}
@@ -692,18 +713,14 @@ export default function ReservationDetailScreen() {
           <Row
             label={tr.reservations.total}
             value={
-              rate?.total_amount != null
-                ? formatCurrency(rate.total_amount)
-                : totalAmount != null
-                ? formatCurrency(totalAmount)
-                : undefined
+              money.total != null ? formatCurrency(money.total) : undefined
             }
           />
-          {paidAmount != null ? (
-            <Row label={tr.reservations.paid} value={formatCurrency(paidAmount)} />
+          {money.paid != null ? (
+            <Row label={tr.reservations.paid} value={formatCurrency(money.paid)} />
           ) : null}
-          {balance != null ? (
-            <Row label={tr.reservations.balance} value={formatCurrency(balance)} />
+          {money.balance != null ? (
+            <Row label={tr.reservations.balance} value={formatCurrency(money.balance)} />
           ) : null}
           <Row label={tr.reservations.rateType} value={rate?.rate_type} />
           <Row label={tr.reservations.marketSegment} value={rate?.market_segment} />

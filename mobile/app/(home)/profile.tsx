@@ -6,6 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Badge, Button, Card, H1, H2, ListRow, Muted } from '../../src/components/ui';
 import { RoleSwitcher } from '../../src/components/RoleSwitcher';
 import ThemeModeSelector from '../../src/components/ThemeModeSelector';
+import { NightScreen } from '../../src/components/NightScreen';
 import { radius, spacing, useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
 import { useAuthStore } from '../../src/state/authStore';
@@ -165,6 +166,8 @@ export default function ProfileScreen() {
         </Card>
 
         <ThemeModeSelector />
+
+        <NightScreen inline />
 
         <Button
           title={tr.auth.logout}

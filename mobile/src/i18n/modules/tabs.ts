@@ -7,6 +7,7 @@ export const tabs = {
   overview: 'Özet',
   home: 'Ana Sayfa',
   bookings: 'Rezervasyonlar',
+  bookingsShort: 'Rezerv.',
   onlineCheckin: 'Check-in',
   roomService: 'Oda Servisi',
   messages: 'Mesajlar',

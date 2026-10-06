@@ -148,7 +148,7 @@ export const DEPARTMENTS_SEGMENT = '(departments)' as const;
 
 // Roles selectable from the in-app role switcher. Ordered with the manager
 // landing first so the switcher reads top-down from the all-access home.
-export type SwitchableRole = 'gm' | 'front_desk' | 'housekeeping' | 'guest_app';
+export type SwitchableRole = 'gm' | 'front_desk' | 'housekeeping';
 
 export const ALL_ROLE_GROUPS: {
   key: SwitchableRole;
@@ -158,5 +158,4 @@ export const ALL_ROLE_GROUPS: {
   { key: 'gm', route: ROUTES.gm, group: '(gm)' },
   { key: 'front_desk', route: ROUTES.frontdesk, group: '(frontdesk)' },
   { key: 'housekeeping', route: ROUTES.housekeeping, group: '(housekeeping)' },
-  { key: 'guest_app', route: ROUTES.guest, group: '(guest)' },
 ];

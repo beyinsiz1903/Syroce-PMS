@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router';
 import { Body, Button, Card, H1, H2, Muted, webCenter } from '../../src/components/ui';
 import { RoleSwitcher } from '../../src/components/RoleSwitcher';
 import ThemeModeSelector from '../../src/components/ThemeModeSelector';
+import { NightScreen } from '../../src/components/NightScreen';
 import { spacing, useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
 import { useAuthStore } from '../../src/state/authStore';
@@ -102,6 +103,8 @@ export default function MoreScreen() {
       <RoleSwitcher />
 
       <ThemeModeSelector />
+
+      <NightScreen inline />
 
       {deptAccess ? (
         <Card>
