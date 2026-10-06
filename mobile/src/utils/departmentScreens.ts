@@ -46,6 +46,22 @@ export function visibleHubTiles(rawRole: string | undefined): HubTile[] {
   return tiles;
 }
 
+// Spa and MICE are separately sold add-ons. Admin roles have broad RBAC but
+// that must not make disabled products look usable. If the subscription
+// snapshot is unavailable we fail open (the server still guards access), while
+// an explicit `false` removes the dead entry point from the mobile UI.
+export function filterSubscribedHubTiles(
+  tiles: HubTile[],
+  modules?: Record<string, boolean>,
+): HubTile[] {
+  if (!modules) return tiles;
+  return tiles.filter((tile) => {
+    if (tile === 'spa') return modules.spa !== false;
+    if (tile === 'mice') return modules.mice !== false;
+    return true;
+  });
+}
+
 // True when the role sees no department tile at all (the hub shows its empty
 // "no access" card).
 export function hubHasNoAccess(rawRole: string | undefined): boolean {

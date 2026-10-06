@@ -13,6 +13,7 @@ import assert from 'node:assert/strict';
 import {
   HR_TABS,
   PROCUREMENT_TABS,
+  filterSubscribedHubTiles,
   hubHasNoAccess,
   listViewState,
   screenHasAccess,
@@ -80,6 +81,25 @@ test('visibleHubTiles is empty for guest / unknown / missing roles', () => {
   assert.deepEqual(visibleHubTiles('guest'), []);
   assert.deepEqual(visibleHubTiles('other'), []);
   assert.deepEqual(visibleHubTiles(undefined), []);
+});
+
+test('filterSubscribedHubTiles removes explicitly disabled paid add-ons', () => {
+  const tiles: HubTile[] = ['spa', 'mice', 'cashier', 'maintenance'];
+  assert.deepEqual(filterSubscribedHubTiles(tiles, { spa: false, mice: false }), [
+    'cashier',
+    'maintenance',
+  ]);
+  assert.deepEqual(filterSubscribedHubTiles(tiles, { spa: true, mice: false }), [
+    'spa',
+    'cashier',
+    'maintenance',
+  ]);
+});
+
+test('filterSubscribedHubTiles fails open without a subscription snapshot', () => {
+  const tiles: HubTile[] = ['spa', 'mice'];
+  assert.deepEqual(filterSubscribedHubTiles(tiles), tiles);
+  assert.deepEqual(filterSubscribedHubTiles(tiles, {}), tiles);
 });
 
 // ── hubHasNoAccess: drives the hub's empty "no access" card ──────────────────

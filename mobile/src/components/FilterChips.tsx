@@ -22,7 +22,17 @@ export const FilterChips: React.FC<FilterChipsProps> = ({ options, value, onChan
     <ScrollView
       horizontal
       showsHorizontalScrollIndicator={false}
-      contentContainerStyle={{ gap: spacing.sm, paddingVertical: spacing.xs }}
+      // Yatay ScrollView bir dikey flex alani icinde kullanildiginda iOS bazen
+      // satiri kucultup chip'lerin altini sonraki listeyle ust uste bindirir.
+      // Satirin kendi yuksekligini korumasi Takvim/Odalar filtrelerini de guvenli
+      // hale getirir.
+      style={{ flexGrow: 0, flexShrink: 0 }}
+      contentContainerStyle={{
+        gap: spacing.sm,
+        paddingVertical: spacing.xs,
+        minHeight: 52,
+        alignItems: 'center',
+      }}
       testID={testID}
     >
       {options.map((opt) => {

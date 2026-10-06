@@ -2,13 +2,19 @@ import React from 'react';
 import { ScrollView, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import type { Href } from 'expo-router';
+import { useQuery } from '@tanstack/react-query';
 import { Card, H1, Muted, webCenter } from '../../src/components/ui';
 import { DepartmentTile } from '../../src/components/department';
 import { spacing, useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
 import { useAuthStore } from '../../src/state/authStore';
 import { ROUTES } from '../../src/navigation/routes';
-import { visibleHubTiles, type HubTile } from '../../src/utils/departmentScreens';
+import {
+  filterSubscribedHubTiles,
+  visibleHubTiles,
+  type HubTile,
+} from '../../src/utils/departmentScreens';
+import { getCurrentSubscription } from '../../src/api/subscription';
 
 // Static metadata for each hub tile. `visibleHubTiles` decides which keys to
 // render (and in what order) from the signed-in role, so visibility/order is
@@ -80,7 +86,15 @@ export default function DepartmentsHub() {
   // flags are computed from the same predicates, so this is equivalent but keeps
   // the visibility logic in one unit-tested helper.
   const rawRole = useAuthStore((s) => s.user?.role);
-  const tiles = visibleHubTiles(rawRole);
+  const subscription = useQuery({
+    queryKey: ['current-subscription'],
+    queryFn: getCurrentSubscription,
+    staleTime: 5 * 60 * 1000,
+  });
+  const tiles = filterSubscribedHubTiles(
+    visibleHubTiles(rawRole),
+    subscription.data?.modules,
+  );
 
   return (
     <ScrollView
