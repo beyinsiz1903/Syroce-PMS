@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo } from 'react';
-import { ActivityIndicator, Pressable, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
 import { Stack, useRootNavigationState, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -211,6 +211,7 @@ export function ErrorBoundary({
   // as a TestFlight crash report.
   console.error('[mobile] route render failed', error);
   const diagnostic = `${error.name || 'Error'}: ${error.message || 'Bilinmeyen hata'}`.slice(0, 500);
+  const diagnosticStack = (error.stack || 'Stack bilgisi yok').slice(0, 3000);
   return (
     <View
       style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, gap: 16 }}
@@ -226,6 +227,15 @@ export function ErrorBoundary({
       >
         Teknik bilgi: {diagnostic}
       </Text>
+      <ScrollView
+        style={{ width: '100%', maxHeight: 240 }}
+        contentContainerStyle={{ padding: 12 }}
+        testID="mobile-error-stack"
+      >
+        <Text selectable style={{ color: '#64748b', fontSize: 11 }}>
+          {diagnosticStack}
+        </Text>
+      </ScrollView>
       <Pressable
         onPress={retry}
         accessibilityRole="button"
