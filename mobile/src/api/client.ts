@@ -20,9 +20,10 @@ const REFRESH_GRACE_MS = 3 * 60 * 1000; // refresh when <3 min remaining
 // request is rejected BEFORE it reaches the handler, so retrying is safe for
 // every method (including POST /login). Bounded so a genuine outage still
 // fails fast instead of hanging the UI forever.
-const WARMUP_MAX_RETRIES = 8;
+const WARMUP_MAX_RETRIES = 3;
 const WARMUP_DEFAULT_DELAY_MS = 4000;
 const WARMUP_MAX_DELAY_MS = 6000;
+const REQUEST_TIMEOUT_MS = 15_000;
 
 type ExpoConfigLike = { hostUri?: string };
 type LegacyManifestLike = { debuggerHost?: string };
@@ -222,6 +223,33 @@ function warmupBackoff(ms: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
+function createRequestSignal(external?: AbortSignal): {
+  signal: AbortSignal;
+  didTimeout: () => boolean;
+  cleanup: () => void;
+} {
+  const controller = new AbortController();
+  let timedOut = false;
+  const onAbort = () => controller.abort();
+
+  if (external?.aborted) controller.abort();
+  else external?.addEventListener?.('abort', onAbort, { once: true });
+
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, REQUEST_TIMEOUT_MS);
+
+  return {
+    signal: controller.signal,
+    didTimeout: () => timedOut,
+    cleanup: () => {
+      clearTimeout(timer);
+      external?.removeEventListener?.('abort', onAbort);
+    },
+  };
+}
+
 export async function apiRequest<T = unknown>(path: string, opts: RequestOptions = {}): Promise<T> {
   const url = buildUrl(path, opts.query);
   const headers: Record<string, string> = {
@@ -257,18 +285,22 @@ export async function apiRequest<T = unknown>(path: string, opts: RequestOptions
   let text = '';
   let warmupAttempts = 0;
   for (;;) {
+    const requestSignal = createRequestSignal(opts.signal);
     try {
       res = await fetch(url, {
         method: opts.method || 'GET',
         headers,
         body,
-        signal: opts.signal,
+        signal: requestSignal.signal,
       });
+      text = await res.text();
     } catch (e: unknown) {
+      const timedOut = requestSignal.didTimeout();
       const message = e instanceof Error ? e.message : 'network_error';
-      throw new ApiError(0, 'NETWORK', { message });
+      throw new ApiError(0, 'NETWORK', { message: timedOut ? 'request_timeout' : message });
+    } finally {
+      requestSignal.cleanup();
     }
-    text = await res.text();
     // Retry ONLY the backend cold-start warm-up gate, identified by its exact
     // 503 signature ({"status":"starting", ... "Server is warming up"}). That
     // response is produced BEFORE the request reaches any handler, so replaying

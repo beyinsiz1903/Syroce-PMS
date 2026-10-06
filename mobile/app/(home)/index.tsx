@@ -448,7 +448,7 @@ export default function HubScreen() {
             }}
           >
             {visibleShortcuts.map((s) => (
-              <ShortcutTile key={s.key} item={s} onPress={() => router.push(s.route)} />
+              <ShortcutTile key={s.key} item={s} onPress={() => router.navigate(s.route)} />
             ))}
           </View>
         )}
