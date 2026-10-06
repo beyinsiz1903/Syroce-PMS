@@ -262,7 +262,7 @@ const FrontdeskTab = ({
           amount,
           cari_account_id: quickPaymentCariAccountId,
           cari_account_name: selectedCariAccount?.name || selectedCariAccount?.account_name || null,
-          description: 'Ön büro hızlı cari aktarım',
+          description: t('pms.frontdesk.quickTransfer', 'Ön büro hızlı cari aktarım'),
         }, {
           headers: { 'Idempotency-Key': idempotencyKey },
         });
@@ -273,7 +273,7 @@ const FrontdeskTab = ({
           method: quickPaymentMethod,
           payment_type: amount >= balance - 0.01 ? 'final' : 'interim',
           reference: null,
-          notes: 'Ön büro hızlı tahsilat',
+          notes: t('pms.frontdesk.quickPaymentNote', 'Ön büro hızlı tahsilat'),
         }, {
           headers: { 'Idempotency-Key': idempotencyKey },
         });
@@ -918,7 +918,7 @@ const FrontdeskTab = ({
       <Dialog open={!!quickPaymentBooking} onOpenChange={(open) => !open && closeQuickPayment()}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Hızlı Ödeme Al</DialogTitle>
+            <DialogTitle>{t('pms.frontdesk.quickPayment', 'Hızlı Ödeme Al')}</DialogTitle>
           </DialogHeader>
           {quickPaymentBooking && (
             <div className="space-y-4">

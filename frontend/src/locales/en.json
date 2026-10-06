@@ -220,7 +220,7 @@
     "channel_manager": "Channel Manager",
     "integration_hub": "Integration Hub",
     "admin_control_panel": "Admin Control Panel",
-    "reports": "Advanced Reports",
+    "reports": "Reports",
     "report_builder": "Report Builder",
     "rms": "Revenue (RMS)",
     "ai": "AI Modules",
@@ -287,7 +287,7 @@
     "mevzuat_raporlari": "Regulatory Reports",
     "report_scheduler": "Report Scheduler",
     "channels_hub": "Channels Hub",
-    "cm_dashboard": "CM Dashboard",
+    "cm_dashboard": "Go-Live Prep",
     "go_live_readiness": "Go-Live Readiness",
     "travel_agent_arap": "Travel Agent AR/AP",
     "incoming_agency_contracts": "Incoming Agency Requests",
@@ -305,7 +305,44 @@
     "room_map": "Room Map",
     "service_recovery": "Complaint Management",
     "mice": "MICE & Banquet",
-    "room_qr_requests": "Room QR Requests"
+    "room_qr_requests": "Room QR Requests",
+    "reservations": "Reservations",
+    "frontdesk": "Front Desk",
+    "rooms": "Rooms",
+    "guests": "Guests",
+    "accounting": "Accounting",
+    "hotel_settings": "Hotel Settings",
+    "user_management": "User Management",
+    "integrations": "Integrations",
+    "help": "Help Center",
+    "availability": "Rates & Availability",
+    "room_mapping": "Room Mapping",
+    "commissions": "Agency Commissions",
+    "agencies": "Agency Management",
+    "agency_contracts": "Contract Requests",
+    "distribution": "Content & Distribution",
+    "cm_ops": "Channel Connections",
+    "setup_dashboard": "Admin Dashboard",
+    "admin_dashboard": "Control Panel",
+    "integration_overview": "Integration Overview",
+    "integration_keys": "Integration Keys",
+    "setup_wizard": "Setup Wizard",
+    "module_market": "Module Market",
+    "early_warning": "Early Warning Engine",
+    "module_discovery": "Module Discovery",
+    "pos": "POS",
+    "communication": "Messaging Center",
+    "security": "Security & Hardening",
+    "encryption": "Encryption Management",
+    "monitoring": "Observability",
+    "hr_v2": "HotelRunner V2 Ops",
+    "infra": "Infrastructure",
+    "network": "Hotel Network",
+    "hotels": "Hotel Management",
+    "suppliers": "Supplier Management",
+    "module_health": "Module Health",
+    "landing_content": "Landing Content",
+    "room_qr": "Room QR Codes"
   },
   "auth": {
     "signIn": "Sign in to your account or create a new one",
@@ -999,7 +1036,34 @@
     "bulkAddRooms": "Quick / Bulk Add",
     "addSingleRoom": "Add Single Room",
     "addRoomsTitle": "Add rooms to get started",
-    "addRoomsDesc": "Fastest method: Quick / Bulk Add."
+    "addRoomsDesc": "Fastest method: Quick / Bulk Add.",
+    "frontdesk": {
+      "quickPayment": "Quick Payment",
+      "quickPaymentNote": "Front desk quick payment",
+      "quickTransfer": "Front desk quick transfer"
+    },
+    "cashier": "Cashier",
+    "upsell": "Upsell",
+    "flashReport": "Flash Report",
+    "tasks": "Tasks",
+    "feedback": "Feedback",
+    "allotment": "Allotment",
+    "laundry": "Laundry",
+    "pos": "POS",
+    "concierge": "Concierge",
+    "managerReport": "Manager Report",
+    "kbsNotification": "KBS Notification",
+    "kvkk": "Privacy (KVKK)",
+    "revenueControls": "Revenue Controls",
+    "quickActionsTitle": "QUICK ACTIONS",
+    "modulesTitle": "MODULES",
+    "commCenter": {
+      "title": "Communication Center",
+      "show": "Show Communication Center",
+      "minimize": "Minimize",
+      "close": "Close",
+      "open": "Open"
+    }
   },
   "folio": {
     "title": "Folio Management",
@@ -2204,17 +2268,21 @@
     "operations": "Operations",
     "reservations": "Reservations",
     "finance": "Finance",
-    "channels": "Channels",
+    "channels": "Channel Manager",
     "reports": "Reports",
     "advanced": "Advanced",
     "infrastructure": "Infrastructure",
-    "admin": "Administration",
+    "admin": "System Administration",
     "frontdesk": "Front Desk & Res.",
     "sales": "Sales & Revenue",
     "guest": "Guest & CRM",
     "fb": "F&B",
     "backoffice": "Back Office",
-    "system": "Channels & Integrations"
+    "system": "Channels & Integrations",
+    "pms": "PMS Operations",
+    "setup": "Setup & Config",
+    "b2b_supplies": "Supplies Marketplace",
+    "apps": "All Applications"
   },
   "navSections": {
     "frontdesk": {
@@ -2243,6 +2311,15 @@
       "integrations": "Integration Operations",
       "platform": "Platform Operations",
       "governance": "Access, Content & Developer"
+    },
+    "pms": {
+      "daily": "Daily Operations",
+      "finance": "Finance",
+      "management": "Management"
+    },
+    "channels": {
+      "distribution": "Distribution & Sales",
+      "management": "Management"
     }
   },
   "commandCenter": {
@@ -9971,12 +10048,30 @@
       "setupRequired": "Setup required"
     },
     "states": {
-      "empty": { "title": "Nothing to show yet", "description": "Adjust your filters or create the first record to get started." },
-      "forbidden": { "title": "You do not have access to this screen", "description": "Your role or user-specific access does not allow this screen. Ask your hotel administrator for access." },
-      "setup": { "title": "Setup required", "description": "This module is not enabled for your property or its connection is not complete. Check your plan, module and integration settings." },
-      "error": { "title": "Data cannot be loaded right now", "description": "Your existing records were not affected. Try again once the connection is restored." },
-      "throttled": { "title": "Request limit reached", "description": "Too many requests were sent. Wait briefly and try again." },
-      "staleVersion": { "title": "The latest application version could not be loaded", "description": "The files on this page do not match the current version. Reloading may discard unsaved forms and selections." }
+      "empty": {
+        "title": "Nothing to show yet",
+        "description": "Adjust your filters or create the first record to get started."
+      },
+      "forbidden": {
+        "title": "You do not have access to this screen",
+        "description": "Your role or user-specific access does not allow this screen. Ask your hotel administrator for access."
+      },
+      "setup": {
+        "title": "Setup required",
+        "description": "This module is not enabled for your property or its connection is not complete. Check your plan, module and integration settings."
+      },
+      "error": {
+        "title": "Data cannot be loaded right now",
+        "description": "Your existing records were not affected. Try again once the connection is restored."
+      },
+      "throttled": {
+        "title": "Request limit reached",
+        "description": "Too many requests were sent. Wait briefly and try again."
+      },
+      "staleVersion": {
+        "title": "The latest application version could not be loaded",
+        "description": "The files on this page do not match the current version. Reloading may discard unsaved forms and selections."
+      }
     },
     "actions": {
       "retry": "Try again",
@@ -9985,5 +10080,10 @@
       "continue": "Continue",
       "backToDashboard": "Back to dashboard"
     }
+  },
+  "appLauncher": {
+    "title": "Applications",
+    "searchPlaceholder": "Search applications...",
+    "noResults": "No applications found."
   }
 }

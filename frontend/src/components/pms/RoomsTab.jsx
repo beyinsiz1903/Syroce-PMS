@@ -566,21 +566,21 @@ const RoomsTab = ({
         <Select value={typeFilter} onValueChange={setTypeFilter}>
           <SelectTrigger className="w-40 h-9"><SelectValue placeholder={t('pms.roomType')} /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">Tüm Tipler</SelectItem>
+            <SelectItem value="all">{t('pms.rooms.allTypes', 'Tüm Tipler')}</SelectItem>
             {allTypes.map(t2 => <SelectItem key={t2} value={t2}>{t2}</SelectItem>)}
           </SelectContent>
         </Select>
         <Select value={viewFilter} onValueChange={setViewFilter}>
           <SelectTrigger className="w-40 h-9"><SelectValue placeholder={t('common.view')} /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">Tüm Manzaralar</SelectItem>
+            <SelectItem value="all">{t('pms.rooms.allViews', 'Tüm Manzaralar')}</SelectItem>
             {allViews.map(v => <SelectItem key={v} value={v}>{v}</SelectItem>)}
           </SelectContent>
         </Select>
         <Select value={amenityFilter} onValueChange={setAmenityFilter}>
           <SelectTrigger className="w-40 h-9"><SelectValue placeholder="Özellik" /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">Tüm Özellikler</SelectItem>
+            <SelectItem value="all">{t('pms.rooms.allFeatures', 'Tüm Özellikler')}</SelectItem>
             {allAmenities.map(a => <SelectItem key={a} value={a}>{a}</SelectItem>)}
           </SelectContent>
         </Select>
@@ -638,7 +638,7 @@ const RoomsTab = ({
             inspected: 'bg-sky-100 text-sky-800 border-sky-200',
           };
           const statusLabelsTr = {
-            available: 'Boş', occupied: 'Dolu', dirty: 'Kirli', cleaning: 'Temizleniyor',
+            available: t('pms.rooms.statusEmpty', 'Boş'), occupied: t('pms.rooms.statusOccupied', 'Dolu'), dirty: t('pms.rooms.statusDirty', 'Kirli'), cleaning: t('pms.rooms.statusCleaning', 'Temizleniyor'),
             maintenance: 'Bakım', out_of_order: 'Hizmet Dışı', inspected: 'Kontrol Edildi',
           };
 
@@ -674,7 +674,7 @@ const RoomsTab = ({
                       title="Temiz olarak işaretle"
                       data-testid={`mark-room-clean-${room.room_number}`}
                     >
-                      {markingCleanRoomId === room.id ? 'Güncelleniyor…' : 'Kirli · Temiz yap'}
+                      {markingCleanRoomId === room.id ? 'Güncelleniyor…' : '{t('pms.rooms.makeClean', 'Kirli · Temiz yap')}'}
                     </button> : <Badge className={`text-[10px] px-1.5 py-0 h-4 min-h-[16px] leading-tight shrink-0 whitespace-nowrap border ${statusColors[room.status] || 'bg-slate-100 text-slate-700 border-slate-200'}`}>{statusLabelsTr[room.status] || room.status}</Badge>}
                   </div>
                 </div>
@@ -686,7 +686,7 @@ const RoomsTab = ({
                   const hk = room.housekeeping || {};
                   // Room state is the operational source of truth. A delayed
                   // housekeeping-task sync must not make one card say both
-                  // “Temizleniyor” and “Temizlik bekliyor”.
+                  // “Temizleniyor” and “{t('pms.rooms.awaitingCleaning', 'Temizlik bekliyor')}”.
                   const isInProgress = room.status === 'cleaning' || hk.state === 'in_progress';
                   const estimated = hk.estimated_minutes;
                   const elapsed = hk.elapsed_minutes;
@@ -705,7 +705,7 @@ const RoomsTab = ({
                       <div className="flex items-center justify-between text-[10px] text-amber-700 mb-1">
                         <span className="flex items-center gap-1">
                           <span className={`w-1.5 h-1.5 rounded-full ${isInProgress ? 'bg-amber-500 animate-pulse' : 'bg-amber-300'}`} />
-                          {isInProgress ? 'Temizleniyor' : 'Temizlik bekliyor'}
+                          {isInProgress ? t('pms.rooms.statusCleaning', 'Temizleniyor') : '{t('pms.rooms.awaitingCleaning', 'Temizlik bekliyor')}'}
                         </span>
                         {showSeparate ? (
                           <span
@@ -845,7 +845,7 @@ const RoomsTab = ({
                       data-testid={`quick-res-btn-${room.room_number}`}
                     >
                       <Plus className="w-3.5 h-3.5 mr-1" />
-                      Rezervasyon Yap
+                      {t('pms.rooms.makeBooking', 'Rezervasyon Yap')}
                     </Button>
                   )}
                   <Button
@@ -856,7 +856,7 @@ const RoomsTab = ({
                     data-testid={`room-block-btn-${room.room_number}`}
                   >
                     <Wrench className="w-3.5 h-3.5 mr-1" />
-                    Arıza / Blokla
+                    {t('pms.rooms.blockFault', 'Arıza / Blokla')}
                   </Button>
                 </div>
               </CardContent>
@@ -1005,7 +1005,7 @@ const RoomsTab = ({
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-amber-700" style={{ fontFamily: 'Manrope' }}>
               <SprayCan className="w-5 h-5" />
-              Kirli Oda — Karar Paneli
+              {t('pms.rooms.dirtyRoomPanel', 'Kirli Oda — Karar Paneli')}
             </DialogTitle>
             <DialogDescription>
               Misafir check-in bekliyor, oda henüz hazir değil
@@ -1489,7 +1489,7 @@ function DirtyRoomDecision({ room, guestInfo, allRooms, onForceCheckIn, onAssign
       <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
         <div className="flex justify-between items-center mb-1.5">
           <span className="text-sm font-bold text-amber-900">Oda {room.room_number}</span>
-          <Badge className="bg-amber-100 text-amber-800 border border-amber-200 text-[10px]">{room.status === 'cleaning' ? 'Temizleniyor' : 'Kirli'}</Badge>
+          <Badge className="bg-amber-100 text-amber-800 border border-amber-200 text-[10px]">{room.status === 'cleaning' ? t('pms.rooms.statusCleaning', 'Temizleniyor') : t('pms.rooms.statusDirty', 'Kirli')}</Badge>
         </div>
         <p className="text-sm text-amber-700">{guestInfo.guest_name}</p>
         <div className="mt-2 flex items-center gap-2 text-xs text-amber-600">

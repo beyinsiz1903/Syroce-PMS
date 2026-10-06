@@ -427,7 +427,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
               title="Tüm uygulamalar"
             >
               <Grid3X3 className="w-3.5 h-3.5 shrink-0" />
-              <span className="hidden lg:inline font-medium">Tüm Uygulamalar</span>
+              <span className="hidden lg:inline font-medium">{t("navGroups.apps", "Tüm Uygulamalar")}</span>
             </Button>
           </TooltipTrigger>
           <TooltipContent side="bottom" className="lg:hidden"><p>Tüm uygulamalar</p></TooltipContent>
