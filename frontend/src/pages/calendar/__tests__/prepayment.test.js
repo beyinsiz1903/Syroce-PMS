@@ -61,6 +61,26 @@ describe('calendar reservation prepayment', () => {
     expect(client.post.mock.calls[0][1].reference).toBe(client.post.mock.calls[1][1].reference);
   });
 
+  it('retries a transient 404 with the same reference so the payment cannot duplicate', async () => {
+    const client = {
+      post: vi.fn()
+        .mockRejectedValueOnce({ response: { status: 404 } })
+        .mockResolvedValueOnce(paymentResponse()),
+    };
+
+    await recordInitialPrepayment({
+      client,
+      bookingId: 'booking-1',
+      amount: 1000,
+      method: 'cash',
+      currency: 'TRY',
+      idempotencyKey: 'create-404',
+    });
+
+    expect(client.post).toHaveBeenCalledTimes(2);
+    expect(client.post.mock.calls[0][1].reference).toBe(client.post.mock.calls[1][1].reference);
+  });
+
   it('rejects a success response that does not contain the requested payment', async () => {
     const client = { post: vi.fn().mockResolvedValue({ data: { success: true } }) };
 
@@ -74,4 +94,3 @@ describe('calendar reservation prepayment', () => {
     })).rejects.toThrow('Ön ödeme sunucu tarafından doğrulanamadı');
   });
 });
-
