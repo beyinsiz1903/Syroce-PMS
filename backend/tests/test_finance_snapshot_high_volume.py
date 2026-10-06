@@ -51,6 +51,7 @@ async def test_finance_snapshot_reads_complete_financial_collections(monkeypatch
 
     result = await reports.get_finance_snapshot(
         current_user=SimpleNamespace(tenant_id="tenant-1", role="admin"),
+        _nocache=True,
     )
 
     assert result["accounting_invoices"] == {"pending_count": 0, "pending_total": 0}
@@ -58,3 +59,38 @@ async def test_finance_snapshot_reads_complete_financial_collections(monkeypatch
     assert payments.cursor.limits == [None, None]
     assert charges.cursor.limits == [None]
     assert invoices.cursor.limits == [None]
+
+
+@pytest.mark.asyncio
+async def test_finance_snapshot_groups_only_effective_daily_collections(monkeypatch):
+    payments = _Collection(
+        [
+            {"id": "p1", "amount": 6000, "method": "card", "status": "paid"},
+            {"id": "p2", "amount": 1000, "method": "cash", "status": "voided"},
+            {"id": "p3", "amount": 500, "method": "discount", "status": "paid"},
+        ]
+    )
+    fake_db = SimpleNamespace(
+        folios=_Collection([]),
+        payments=payments,
+        folio_charges=_Collection([]),
+        accounting_invoices=_Collection([]),
+    )
+    monkeypatch.setattr(reports, "db", fake_db)
+    monkeypatch.setattr(reports, "_enforce", lambda *_args, **_kwargs: None)
+
+    async def business_date(*_args, **_kwargs):
+        return {"business_date": "2026-10-06"}
+
+    monkeypatch.setattr(reports, "ensure_business_date_initialized", business_date)
+
+    result = await reports.get_finance_snapshot(
+        current_user=SimpleNamespace(tenant_id="tenant-1", role="admin"),
+        _nocache=True,
+    )
+
+    assert result["todays_collections"] == {
+        "amount": 6000.0,
+        "payment_count": 1,
+        "by_method": {"card": {"amount": 6000.0, "count": 1}},
+    }

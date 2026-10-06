@@ -14,7 +14,7 @@ export const accounting = {
   todayRevenue: 'Bugünkü Gelir',
   collections: 'Tahsilat',
   netPosition: 'Tahakkuk–Tahsilat Farkı',
-  openFolios: 'Açık Folyolar',
+  openFolios: 'Tahsilat Bekleyen Folyo',
   monthExpenses: 'Ay Gideri',
   pendingInvoices: 'Bekleyen Fatura',
   dailySummary: 'Günlük Finansal Özet',
@@ -23,7 +23,7 @@ export const accounting = {
   revenueWithTax: 'Vergili Gelir',
   tax: 'Vergi',
   payments: 'Tahsilat',
-  openFolioBalance: 'Açık Folyo Bakiyesi',
+  openFolioBalance: 'Tahsil Edilecek Folyo Bakiyesi',
   auditStatus: 'Gece Denetimi',
   auditStatuses: {
     not_run: 'Çalışmadı',
