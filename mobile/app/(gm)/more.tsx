@@ -3,6 +3,7 @@ import { Alert, ScrollView, Switch } from 'react-native';
 import { useRouter } from 'expo-router';
 import type { Href } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useQuery } from '@tanstack/react-query';
 import { Button, Card, H1, H2, ListGroup, ListRow, Muted } from '../../src/components/ui';
 import { RoleSwitcher } from '../../src/components/RoleSwitcher';
 import ThemeModeSelector from '../../src/components/ThemeModeSelector';
@@ -15,6 +16,7 @@ import { useSettingsStore } from '../../src/state/settingsStore';
 import { getApiUrl } from '../../src/api/client';
 import { authenticateBiometric, getBiometricCapability } from '../../src/biometrics/lock';
 import { getLastPushStatus, type PushRegistrationStatus } from '../../src/notifications/push';
+import { getCurrentSubscription } from '../../src/api/subscription';
 
 type Shortcut = {
   key: string;
@@ -43,6 +45,12 @@ export default function GMMoreScreen() {
   const revenueAccess = useAuthStore((s) => s.revenueAccess);
   const posAccess = useAuthStore((s) => s.posAccess);
   const deptAccess = useAuthStore((s) => s.deptAccess);
+  const subscription = useQuery({
+    queryKey: ['current-subscription'],
+    queryFn: getCurrentSubscription,
+    staleTime: 5 * 60 * 1000,
+  });
+  const modules = subscription.data?.modules;
 
   const biometricLock = useSettingsStore((s) => s.biometricLock);
   const setBiometricLock = useSettingsStore((s) => s.setBiometricLock);
@@ -146,14 +154,14 @@ export default function GMMoreScreen() {
       key: 'mice',
       label: tr.hub.moduleMice,
       route: ROUTES.mice,
-      visible: allAccess || miceAccess,
+      visible: (allAccess || miceAccess) && modules?.mice !== false,
       icon: 'easel-outline',
     },
     {
       key: 'spa',
       label: tr.hub.moduleSpa,
       route: ROUTES.spa,
-      visible: allAccess || spaAccess,
+      visible: (allAccess || spaAccess) && modules?.spa !== false,
       icon: 'flower-outline',
     },
     {

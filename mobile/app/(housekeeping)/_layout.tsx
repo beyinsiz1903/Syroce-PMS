@@ -47,7 +47,8 @@ export default function HousekeepingLayout() {
       <Tabs.Screen
         name="more"
         options={{
-          title: tr.tabs.more,
+          title: tr.tabs.settings,
+          tabBarLabel: tr.tabs.more,
           tabBarIcon: tabIcon('ellipsis-horizontal-circle', 'ellipsis-horizontal-circle-outline'),
         }}
       />

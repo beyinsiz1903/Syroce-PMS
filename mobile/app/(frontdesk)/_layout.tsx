@@ -110,7 +110,8 @@ export default function FrontDeskLayout() {
       <Tabs.Screen
         name="more"
         options={{
-          title: tr.tabs.more,
+          title: tr.tabs.settings,
+          tabBarLabel: tr.tabs.more,
           href: null,
           tabBarIcon: tabIcon('ellipsis-horizontal-circle', 'ellipsis-horizontal-circle-outline'),
         }}

@@ -3,6 +3,8 @@ import { Stack } from 'expo-router';
 import { useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
 import { OperationalHeader } from '../../src/components/OperationalHeader';
+import { HeaderBackButton } from '../../src/components/HeaderBackButton';
+import { ROUTES } from '../../src/navigation/routes';
 
 // File-based stack routing for the shared Departments area. Sibling
 // department screens (Accounting / Maintenance, future tasks) can be added
@@ -15,6 +17,10 @@ export default function DepartmentsLayout() {
         headerStyle: { backgroundColor: c.surface },
         headerTitleStyle: { color: c.text },
         headerTitle: ({ children }) => <OperationalHeader title={children} />,
+        // Departmanlar ayri bir Stack'in ilk ekrani oldugu icin native geri
+        // butonu kendiliginden olusmaz. Kullanici bu alanda kapana kisilmasin;
+        // gezinme gecmisi varsa geldigi ekrana, soguk acilista Ayarlar'a doner.
+        headerLeft: () => <HeaderBackButton fallback={ROUTES.frontdeskMore} />,
         headerTintColor: c.text,
         contentStyle: { backgroundColor: c.bg },
       }}

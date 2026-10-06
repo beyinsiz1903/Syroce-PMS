@@ -4,6 +4,7 @@ export const tabs = {
   rooms: 'Odalar',
   damage: 'Hasar',
   more: 'Daha',
+  settings: 'Ayarlar',
   overview: 'Özet',
   home: 'Ana Sayfa',
   bookings: 'Rezervasyonlar',
