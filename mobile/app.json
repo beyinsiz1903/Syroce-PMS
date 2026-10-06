@@ -7,12 +7,12 @@
     "orientation": "portrait",
     "scheme": "syrocepms",
     "userInterfaceStyle": "automatic",
-    "icon": "./assets/app-icon.png",
+    "icon": "./assets/app-icon-v2.png",
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.syroce.pms",
       "buildNumber": "1",
-      "icon": "./assets/app-icon.png",
+      "icon": "./assets/app-icon-v2.png",
       "infoPlist": {
         "NSCameraUsageDescription": "Kimlik tarama ve QR okuma için kamera kullanılır.",
         "NSPhotoLibraryUsageDescription": "Kimlik fotoğrafı seçmek için galeriye erişim gerekir.",
