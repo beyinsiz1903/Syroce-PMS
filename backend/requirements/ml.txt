@@ -4,7 +4,9 @@
 # NOTE: nltk/textblob were removed (2026-06) as dead deps — never imported; the
 # only sentiment path (domains/ai/reputation_manager.analyze_sentiment) is
 # keyword-based. Re-add WITH corpus pre-download if real NLP is introduced.
-fsspec==2026.2.0
+# CVE-2026-104851: ReferenceFileSystem rendered untrusted Kerchunk templates
+# through unrestricted Jinja. 2026.6.0 switches that path to a sandbox.
+fsspec==2026.6.0
 hf-xet==1.2.0
 huggingface_hub==1.4.1
 joblib==1.5.3
