@@ -15,7 +15,7 @@ const loadFavorites = () => {
 
 const GROUP_TITLES = new Map(NAV_GROUPS.map(({ id, label }) => [id, label]));
 
-export const mergeApplicationEntries = (productModules, navigationItems) => {
+export const mergeApplicationEntries = (productModules, navigationItems, groupLabels = {}) => {
   const result = [];
   const keys = new Set();
   const paths = new Set();
@@ -31,8 +31,8 @@ export const mergeApplicationEntries = (productModules, navigationItems) => {
   navigationItems.forEach((item) => append({
     ...item,
     enabled: true,
-    groupTitle: GROUP_TITLES.get(item.navGroup) || 'Ana çalışma alanları',
-    hint: item.hint || `${GROUP_TITLES.get(item.navGroup) || 'Otel'} çalışma alanına güvenli ve yetkili erişim.`,
+    groupTitle: groupLabels[item.navGroup] || GROUP_TITLES.get(item.navGroup) || 'Ana çalışma alanları',
+    hint: item.hint || `${groupLabels[item.navGroup] || GROUP_TITLES.get(item.navGroup) || 'Otel'} çalışma alanına güvenli ve yetkili erişim.`,
   }));
   return result;
 };
@@ -45,7 +45,10 @@ export default function ApplicationCenter({ tenant, user }) {
   const [favorites, setFavorites] = useState(loadFavorites);
 
   const modules = useMemo(() => {
-    const productModules = PRODUCT_MODULES
+    // Ready setups use an explicit page allow-list. Showing broad product
+    // cards here would re-introduce modules intentionally removed from their
+    // compact workspace, so these profiles are navigation-catalog only.
+    const productModules = (tenant?.visible_nav_items?.length ? [] : PRODUCT_MODULES)
       .filter((item) => hasTenantModule(item.key))
       .map((item) => ({ ...item, enabled: true }));
     const navigationItems = user ? accessibleNavigationItems({
@@ -57,7 +60,7 @@ export default function ApplicationCenter({ tenant, user }) {
       hasModule: hasTenantModule,
     }).filter((item) => item.path) : [];
 
-    return mergeApplicationEntries(productModules, navigationItems).map((item) => ({
+    return mergeApplicationEntries(productModules, navigationItems, tenant?.nav_group_labels).map((item) => ({
       ...item,
       favorite: favorites.includes(item.key),
     })).filter((item) => {

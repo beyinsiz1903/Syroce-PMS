@@ -47,6 +47,11 @@ class Tenant(BaseModel):
     # can rebuild the same menu after a page refresh.
     hidden_nav_groups: list[str] = Field(default_factory=list)
     hidden_nav_items: list[str] = Field(default_factory=list)
+    # Compact setup presets can be fail-closed: only these navigation entries
+    # are exposed, even when the global catalogue grows later.
+    visible_nav_items: list[str] = Field(default_factory=list)
+    nav_group_labels: dict[str, str] = Field(default_factory=dict)
+    nav_item_labels: dict[str, str] = Field(default_factory=dict)
     # Zincir oteller ayrı tenant olarak kalır; ortak chain_id yalnızca
     # yetkili, salt-okunur konsolidasyon kapsamını belirler.
     chain_id: str | None = None

@@ -8,6 +8,7 @@ from enum import Enum
 
 
 class PropertyType(str, Enum):
+    SAPANCA_KARTEPE_BASIC = "sapanca_kartepe_basic"
     PENSION = "pension"
     VILLA = "villa"
     HOSTEL = "hostel"
@@ -33,6 +34,69 @@ class DashboardLayout(str, Enum):
 
 
 PROPERTY_PROFILES: dict[str, dict] = {
+    PropertyType.SAPANCA_KARTEPE_BASIC: {
+        "name_en": "Sapanca-Kartepe Basic",
+        "name_tr": "Sapanca-Kartepe Basic",
+        "icon": "MountainSnow",
+        "description_en": "A focused, ready-to-use workspace for independent hotels in the Sapanca-Kartepe market.",
+        "description_tr": "Sapanca-Kartepe otelleri için sade, hazır ve yalnız günlük operasyonları içeren kurulum.",
+        "room_range": {"min": 1, "max": 100},
+        "recommended_tier": "basic",
+        "dashboard_layout": DashboardLayout.STANDARD,
+        "typical_staff": 5,
+        "setup_preset": True,
+        "modules": {
+            "dashboard": True,
+            "pms": True,
+            "reservation_calendar": True,
+            "agency_requests": True,
+            "night_audit": True,
+            "basic_reporting": True,
+            "reports": False,
+            "settings": True,
+            "channel_manager": True,
+            "booking_engine": True,
+            "revenue_management": True,
+            "pms.frontdesk": True,
+            "pms.rooms": True,
+            "pms.bookings": True,
+            "pms.cashier": True,
+            "pms.reports": True,
+            "channels.connections": False,
+            "channels.dashboard": False,
+        },
+        # An allow-list is deliberate here: adding a new Syroce module must not
+        # silently make it appear in this compact workspace.
+        "visible_nav_items": [
+            "dashboard",
+            "reservation_calendar",
+            "agency_requests",
+            "pms",
+            "night_audit",
+            "revenue_hub",
+            "city_ledger",
+            "cashier_workspace",
+            "reports_basic",
+            "unified_rate_manager",
+            "wbe_settings",
+            "settings",
+        ],
+        "nav_group_labels": {"system": "Kanallar"},
+        "nav_item_labels": {"settings": "Yönetim"},
+        "hidden_nav_groups": [],
+        "hidden_nav_items": [],
+        "special_settings": {
+            "simplified_checkin": True,
+            "quick_reservation_mode": True,
+            "auto_room_assign": False,
+            "show_upsell": False,
+            "show_minibar": False,
+            "show_concierge": False,
+            "show_spa": False,
+            "show_mice": False,
+            "show_loyalty": False,
+        },
+    },
     PropertyType.PENSION: {
         "name_en": "Pension / Guesthouse",
         "name_tr": "Pansiyon",
@@ -1132,6 +1196,11 @@ def get_all_property_types() -> list[dict]:
                 "recommended_tier": profile["recommended_tier"],
                 "dashboard_layout": profile["dashboard_layout"],
                 "typical_staff": profile["typical_staff"],
+                "setup_preset": profile.get("setup_preset", False),
+                "modules": profile.get("modules", {}),
+                "visible_nav_items": profile.get("visible_nav_items", []),
+                "nav_group_labels": profile.get("nav_group_labels", {}),
+                "nav_item_labels": profile.get("nav_item_labels", {}),
             }
         )
     return result
@@ -1146,7 +1215,7 @@ def get_modules_for_property_type(property_type: str, subscription_tier: str = N
 
     base_modules = profile["modules"].copy()
 
-    if subscription_tier:
+    if subscription_tier and not profile.get("setup_preset"):
         from domains.admin.subscription_models import get_plan_default_modules
 
         tier_modules = get_plan_default_modules(subscription_tier)
@@ -1169,8 +1238,11 @@ def get_property_special_settings(property_type: str) -> dict:
 def get_hidden_nav_config(property_type: str) -> dict:
     profile = get_property_profile(property_type)
     if not profile:
-        return {"hidden_nav_groups": [], "hidden_nav_items": []}
+        return {"hidden_nav_groups": [], "hidden_nav_items": [], "visible_nav_items": [], "nav_group_labels": {}, "nav_item_labels": {}}
     return {
         "hidden_nav_groups": profile.get("hidden_nav_groups", []),
         "hidden_nav_items": profile.get("hidden_nav_items", []),
+        "visible_nav_items": profile.get("visible_nav_items", []),
+        "nav_group_labels": profile.get("nav_group_labels", {}),
+        "nav_item_labels": profile.get("nav_item_labels", {}),
     }
