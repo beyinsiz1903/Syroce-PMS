@@ -28,7 +28,7 @@ import {
 } from '../../src/api/bookings';
 import { formatCurrency, formatTime } from '../../src/utils/format';
 import { isOffline } from '../../src/utils/errors';
-import { asArray } from '../../src/utils/queryData';
+import { asArray, countTodayWalkIns } from '../../src/utils/queryData';
 import { ROUTES } from '../../src/navigation/routes';
 
 type IoniconName = keyof typeof Ionicons.glyphMap;
@@ -169,9 +169,7 @@ export default function TodayScreen() {
   // Walk-in summary = today's walk-ins, derived from real in-house data
   // (walk-ins auto-check-in and are tagged source==='walk_in' server-side).
   const today = todayISO();
-  const walkinCount = inhouseData.filter(
-    (b) => (b.source || '').toLowerCase() === 'walk_in' && (b.check_in || '').slice(0, 10) === today,
-  ).length;
+  const walkinCount = countTodayWalkIns(inhouseData, today);
 
   const summary: {
     label: string;
