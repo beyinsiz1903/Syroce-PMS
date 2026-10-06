@@ -28,7 +28,13 @@ from core.security import get_current_user
 from models.enums import RiskLevel
 from modules.folio.services.folio_balance_read_service import FolioBalanceReadService
 from modules.folio.services.open_folio_service import OpenFolioService
-from modules.pms_core.reporting_financials import is_non_cash_adjustment, is_valid_payment
+from modules.pms_core.reporting_financials import (
+    REPORTING_CURRENCY,
+    is_non_cash_adjustment,
+    is_valid_payment,
+    reporting_collection_amount,
+    stamp_reporting_values,
+)
 from shared_kernel.idempotency import claim_short_window_dedup, release_idempotency
 
 try:
@@ -110,6 +116,7 @@ async def get_daily_collections_mobile(
     totals_by_currency: dict[str, float] = {}
     methods_by_currency: dict[str, dict[str, float]] = {}
     method_counts: dict[str, int] = {}
+    conversion_issue_count = 0
 
     business_day = target_date.date().isoformat()
     payment_query = {
@@ -124,15 +131,19 @@ async def get_daily_collections_mobile(
     async for payment in db.payments.find(payment_query):
         if not _is_reportable_collection(payment):
             continue
-        amount, currency = _received_collection_amount(payment)
+        received_amount, currency = _received_collection_amount(payment)
+        amount = reporting_collection_amount(payment)
+        totals_by_currency[currency] = totals_by_currency.get(currency, 0) + received_amount
+        if amount is None:
+            conversion_issue_count += 1
+            continue
         total_collected += amount
-        totals_by_currency[currency] = totals_by_currency.get(currency, 0) + amount
         payment_count += 1
 
         method = payment.get("payment_method") or payment.get("method") or "unknown"
         payment_methods[method] = payment_methods.get(method, 0) + amount
         method_totals = methods_by_currency.setdefault(method, {})
-        method_totals[currency] = method_totals.get(currency, 0) + amount
+        method_totals[REPORTING_CURRENCY] = method_totals.get(REPORTING_CURRENCY, 0) + amount
         method_counts[method] = method_counts.get(method, 0) + 1
 
     return {
@@ -141,7 +152,10 @@ async def get_daily_collections_mobile(
         "payment_count": payment_count,
         "payment_methods": payment_methods,
         "average_transaction": total_collected / payment_count if payment_count > 0 else 0,
-        "totals_by_currency": {key: round(value, 2) for key, value in totals_by_currency.items()},
+        "reporting_currency": REPORTING_CURRENCY,
+        "totals_by_currency": {REPORTING_CURRENCY: round(total_collected, 2)},
+        "received_totals_by_currency": {key: round(value, 2) for key, value in totals_by_currency.items()},
+        "conversion_issue_count": conversion_issue_count,
         "payment_methods_by_currency": {
             method: {key: round(value, 2) for key, value in totals.items()}
             for method, totals in methods_by_currency.items()
@@ -178,6 +192,7 @@ async def get_monthly_collections_mobile(
     total_collected = 0.0
     payments_by_method = {}
     totals_by_currency: dict[str, float] = {}
+    conversion_issue_count = 0
 
     last_business_day = (end_of_month - timedelta(days=1)).date().isoformat()
     payment_query = {
@@ -192,14 +207,18 @@ async def get_monthly_collections_mobile(
     async for payment in db.payments.find(payment_query):
         if not _is_reportable_collection(payment):
             continue
-        amount, currency = _received_collection_amount(payment)
+        received_amount, currency = _received_collection_amount(payment)
+        amount = reporting_collection_amount(payment)
+        totals_by_currency[currency] = totals_by_currency.get(currency, 0) + received_amount
+        if amount is None:
+            conversion_issue_count += 1
+            continue
         total_collected += amount
-        totals_by_currency[currency] = totals_by_currency.get(currency, 0) + amount
 
         method = payment.get("payment_method") or payment.get("method") or "unknown"
         payments_by_method[method] = payments_by_method.get(method, 0) + amount
 
-    return {"total_collected": round(total_collected, 2), "month": target_month, "year": target_year, "payments_by_method": {k: round(v, 2) for k, v in payments_by_method.items()}, "totals_by_currency": {k: round(v, 2) for k, v in totals_by_currency.items()}}
+    return {"total_collected": round(total_collected, 2), "reporting_currency": REPORTING_CURRENCY, "conversion_issue_count": conversion_issue_count, "month": target_month, "year": target_year, "payments_by_method": {k: round(v, 2) for k, v in payments_by_method.items()}, "received_totals_by_currency": {k: round(v, 2) for k, v in totals_by_currency.items()}, "totals_by_currency": {REPORTING_CURRENCY: round(total_collected, 2)}}
 
 
 @router.get("/finance/profit-loss")
@@ -518,6 +537,7 @@ async def record_payment_mobile(
         "created_by": current_user.username,
     }
     await stamp_open_business_date(db, current_user.tenant_id, payment)
+    stamp_reporting_values(payment)
 
     try:
         await db.payments.insert_one(payment)

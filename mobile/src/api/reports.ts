@@ -16,13 +16,17 @@ export type FinanceSnapshot = {
     overdue_invoices_count: number;
   };
   todays_collections: {
+    currency?: string;
     amount: number;
     payment_count: number;
     by_method?: Record<string, { amount: number; count: number }>;
+    conversion_issue_count?: number;
   };
   mtd_collections: {
+    currency?: string;
     amount: number;
     collection_rate_percentage: number;
+    conversion_issue_count?: number;
   };
   accounting_invoices: {
     pending_count: number;

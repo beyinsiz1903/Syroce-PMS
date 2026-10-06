@@ -89,8 +89,8 @@ async def test_finance_snapshot_groups_only_effective_daily_collections(monkeypa
         _nocache=True,
     )
 
-    assert result["todays_collections"] == {
-        "amount": 6000.0,
-        "payment_count": 1,
-        "by_method": {"card": {"amount": 6000.0, "count": 1}},
-    }
+    assert result["todays_collections"]["amount"] == 6000.0
+    assert result["todays_collections"]["currency"] == "TRY"
+    assert result["todays_collections"]["payment_count"] == 1
+    assert result["todays_collections"]["by_method"] == {"card": {"amount": 6000.0, "count": 1}}
+    assert result["todays_collections"]["conversion_issue_count"] == 0

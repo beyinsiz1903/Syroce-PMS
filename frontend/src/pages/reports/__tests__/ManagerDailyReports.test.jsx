@@ -91,4 +91,34 @@ describe('ManagerDailyReports', () => {
     expect(within(section).getByText('Neden: Yönetim ikramı')).toBeInTheDocument();
     expect(within(section).queryByText('Gün sonu bekliyor')).not.toBeInTheDocument();
   });
+
+  it('shows one TRY total while keeping the received foreign currency in transaction detail', () => {
+    render(<ManagerDailyReports
+      section="cash_movements"
+      reportDate="2026-10-06"
+      data={{ payments: {
+        reporting_currency: 'TRY',
+        total_paid: 4000,
+        conversion_issue_count: 0,
+        rows: [{
+          id: 'payment-fx',
+          processed_at: '2026-10-06T10:00:00Z',
+          amount: 4000,
+          currency: 'TRY',
+          reporting_amount: 4000,
+          reporting_currency: 'TRY',
+          received_amount: 100,
+          received_currency: 'USD',
+          exchange_rate: 0.025,
+          exchange_rate_date: '2026-10-06',
+          method: 'cash',
+        }],
+      } }}
+    />);
+
+    const section = screen.getByTestId('section-cash-movements');
+    expect(within(section).getAllByText('₺4.000').length).toBeGreaterThan(0);
+    expect(within(section).getByText(/Alınan:/)).toHaveTextContent('$100');
+    expect(within(section).getByText('Toplam tahsilat (işlem günündeki TL karşılığı)')).toBeInTheDocument();
+  });
 });
