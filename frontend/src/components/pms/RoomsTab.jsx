@@ -674,7 +674,7 @@ const RoomsTab = ({
                       title="Temiz olarak işaretle"
                       data-testid={`mark-room-clean-${room.room_number}`}
                     >
-                      {markingCleanRoomId === room.id ? 'Güncelleniyor…' : '{t('pms.rooms.makeClean', 'Kirli · Temiz yap')}'}
+                      {markingCleanRoomId === room.id ? 'Güncelleniyor…' : t('pms.rooms.makeClean', 'Kirli · Temiz yap')}
                     </button> : <Badge className={`text-[10px] px-1.5 py-0 h-4 min-h-[16px] leading-tight shrink-0 whitespace-nowrap border ${statusColors[room.status] || 'bg-slate-100 text-slate-700 border-slate-200'}`}>{statusLabelsTr[room.status] || room.status}</Badge>}
                   </div>
                 </div>
@@ -705,7 +705,7 @@ const RoomsTab = ({
                       <div className="flex items-center justify-between text-[10px] text-amber-700 mb-1">
                         <span className="flex items-center gap-1">
                           <span className={`w-1.5 h-1.5 rounded-full ${isInProgress ? 'bg-amber-500 animate-pulse' : 'bg-amber-300'}`} />
-                          {isInProgress ? t('pms.rooms.statusCleaning', 'Temizleniyor') : '{t('pms.rooms.awaitingCleaning', 'Temizlik bekliyor')}'}
+                          {isInProgress ? t('pms.rooms.statusCleaning', 'Temizleniyor') : t('pms.rooms.awaitingCleaning', 'Temizlik bekliyor')}
                         </span>
                         {showSeparate ? (
                           <span
@@ -1478,6 +1478,7 @@ export default RoomsTab;
 
 /** Smart Dirty Room Decision sub-component */
 function DirtyRoomDecision({ room, guestInfo, allRooms, onForceCheckIn, onAssignAlternative, onCancel }) {
+  const { t } = useTranslation();
   const sameTypeClean = (allRooms || []).filter(
     r => r.status === 'available' && r.room_type === room.room_type && String(r.room_number) !== String(room.room_number)
   );

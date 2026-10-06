@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Headset, MessageCircleMore, MessagesSquare, Minus, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -17,6 +18,7 @@ const readDisplayMode = () => {
 };
 
 export default function CommunicationCenter({ user }) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [displayMode, setDisplayMode] = useState(readDisplayMode);
   const { internalUnreadCount, guestRequestsUnreadCount } = useNotifications();
@@ -32,7 +34,6 @@ export default function CommunicationCenter({ user }) {
 
   if (!user || user.role === 'guest') return null;
 
-  const { t } = useTranslation();
   const changeDisplayMode = (nextMode) => {
     setDisplayMode(nextMode);
     setOpen(false);

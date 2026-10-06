@@ -47,7 +47,7 @@ const REPORT_MENU = [{
   desc: 'Anlık kasa ve tesis durumu'
 }, {
   id: 'overview',
-  label: '{t('pms.reports.overview', 'Genel Bakış')}',
+  labelKey: 'pms.reports.overview', label: 'Genel Bakış',
   icon: LayoutDashboard,
   desc: 'Yönetici özet raporu'
 }, {
@@ -122,7 +122,7 @@ const REPORT_MENU = [{
   label: 'OPERASYON'
 }, {
   id: 'room_status',
-  label: '{t('pms.reports.roomStatus', 'Oda Durumu')}',
+  labelKey: 'pms.reports.roomStatus', label: 'Oda Durumu',
   icon: Hotel,
   desc: 'Canlı oda durumu'
 }, {
@@ -148,7 +148,7 @@ const REPORT_MENU = [{
   label: 'FİNANS & MUHASEBE'
 }, {
   id: 'payments',
-  label: '{t('pms.reports.cashierReport', 'Kasa Raporu (Ödemeler)')}',
+  labelKey: 'pms.reports.cashierReport', label: 'Kasa Raporu (Ödemeler)',
   icon: CreditCard,
   desc: 'Tahsilat ve ödeme yöntemleri'
 }, {
@@ -206,7 +206,7 @@ const REPORT_MENU = [{
   label: 'RESMİ RAPORLAR'
 }, {
   id: 'official',
-  label: '{t('pms.reports.officialList', 'Maliye Listesi')}',
+  labelKey: 'pms.reports.officialList', label: 'Maliye Listesi',
   icon: FileText,
   desc: 'Resmi müşteri listesi'
 }, {
@@ -365,7 +365,7 @@ const BasicReports = ({
     const tableEl = document.querySelector('[data-testid="official-guest-table"]');
     if (!tableEl) return;
     const w = window.open('', '_blank', 'width=900,height=700');
-    w.document.write('<html><head><title>{t('pms.reports.officialList', 'Maliye Listesi')} - ' + officialDate + '</title>');
+    w.document.write('<html><head><title>' + t('pms.reports.officialList', 'Maliye Listesi') + ' - ' + officialDate + '</title>');
     w.document.write('<style>body{font-family:Arial,sans-serif;padding:20px;font-size:12px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #ddd;padding:6px 8px;text-align:left}th{background:#f5f5f5;font-weight:600}h1{font-size:18px;margin:0 0 4px}p{color:#666;margin:0 0 16px;font-size:12px}</style>');
     w.document.write('</head><body>');
     w.document.write('<h1>Resmi Müşteri Listesi</h1>');
@@ -593,7 +593,7 @@ const BasicReports = ({
     : reportPeriod === 'daily' ? 'Seçili gün' : 'Son 30 gün';
   const normalizedReportQuery = reportQuery.trim().toLocaleLowerCase('tr-TR');
   const visibleMenuItems = normalizedReportQuery
-    ? REPORT_MENU.filter(item => item.id && `${item.label} ${item.desc || ''}`.toLocaleLowerCase('tr-TR').includes(normalizedReportQuery))
+    ? REPORT_MENU.filter(item => item.id && `${item.labelKey ? t(item.labelKey, item.label) : item.label} ${item.desc || ''}`.toLocaleLowerCase('tr-TR').includes(normalizedReportQuery))
     : REPORT_MENU;
   return <>
       <div className="flex min-h-[calc(100vh-64px)] bg-slate-50/70">
@@ -616,7 +616,7 @@ const BasicReports = ({
           <nav className="flex-1 overflow-y-auto p-2 space-y-0.5">
             {visibleMenuItems.map((item, idx) => {
             if (item.type === 'header') {
-              return <p key={idx} className="text-[10px] font-bold text-gray-400 uppercase tracking-wider px-3 pt-4 pb-1">{item.label}</p>;
+              return <p key={idx} className="text-[10px] font-bold text-gray-400 uppercase tracking-wider px-3 pt-4 pb-1">{item.labelKey ? t(item.labelKey, item.label) : item.label}</p>;
             }
             const Icon = item.icon;
             const isActive = activeSection === item.id;
@@ -661,7 +661,7 @@ const BasicReports = ({
               <div className="flex min-w-0 items-center gap-2 text-xs text-gray-400">
                 <span>Raporlar</span>
                 <ChevronRight className="w-3 h-3" />
-                <span className="text-gray-700 font-medium">{t(`cm.pages_BasicReports.${currentMenuItem?.id}`, currentMenuItem?.label || '{t('pms.reports.overview', 'Genel Bakış')}')}</span>
+                <span className="text-gray-700 font-medium">{t(`cm.pages_BasicReports.${currentMenuItem?.id}`, currentMenuItem?.label || t('pms.reports.overview', 'Genel Bakış'))}</span>
               </div>
               <div className="flex flex-wrap items-center justify-end gap-2">
                 {showReportControls && activeSection !== 'flash_report' && !DAILY_REPORT_SECTIONS.has(activeSection) && (
@@ -698,7 +698,7 @@ const BasicReports = ({
                 </Button>}
               </div>
             </div>
-            <ReportFrame reportName={currentMenuItem?.label || '{t('pms.reports.overview', 'Genel Bakış')}'} reportDate={activeSection === 'official' ? officialDate : selectedDate} periodLabel={periodLabel} tenant={tenant} user={user} contract={getReportContract(activeSection)} refreshedAt={needsDashboard ? reportRefreshedAt : null}>
+            <ReportFrame reportName={currentMenuItem?.label || t('pms.reports.overview', 'Genel Bakış')} reportDate={activeSection === 'official' ? officialDate : selectedDate} periodLabel={periodLabel} tenant={tenant} user={user} contract={getReportContract(activeSection)} refreshedAt={needsDashboard ? reportRefreshedAt : null}>
               {renderContent()}
             </ReportFrame>
           </div>
