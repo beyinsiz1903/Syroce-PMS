@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
 import { useAuthStore } from '../../src/state/authStore';
+import { OperationalHeader } from '../../src/components/OperationalHeader';
 
 type IoniconName = keyof typeof Ionicons.glyphMap;
 
@@ -38,6 +39,7 @@ export default function GMLayout() {
         tabBarLabelStyle: { fontSize: 11, fontWeight: '600' },
         headerStyle: { backgroundColor: c.surface },
         headerTitleStyle: { color: c.text },
+        headerTitle: ({ children }) => <OperationalHeader title={children} />,
       }}
     >
       <Tabs.Screen
