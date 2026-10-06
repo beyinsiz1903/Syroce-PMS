@@ -28,7 +28,10 @@ import { createAsyncStoragePersister } from '@tanstack/query-async-storage-persi
 import { createSyncStoragePersister } from '@tanstack/query-sync-storage-persister';
 import { persistQueryClient } from '@tanstack/react-query-persist-client';
 
-export const CACHE_VERSION = 'v3-2026-05';
+// October mobile list APIs normalise wrapped responses to arrays. Invalidate
+// caches written before that contract so upgraded TestFlight clients cannot
+// hydrate the old object shape into list screens.
+export const CACHE_VERSION = 'v3-2026-10-mobile-lists';
 const CACHE_KEY = 'syroce.tq.cache';
 const CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24h
 

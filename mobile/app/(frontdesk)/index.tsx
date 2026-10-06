@@ -28,6 +28,7 @@ import {
 } from '../../src/api/bookings';
 import { formatCurrency, formatTime } from '../../src/utils/format';
 import { isOffline } from '../../src/utils/errors';
+import { asArray } from '../../src/utils/queryData';
 import { ROUTES } from '../../src/navigation/routes';
 
 type IoniconName = keyof typeof Ionicons.glyphMap;
@@ -157,10 +158,13 @@ export default function TodayScreen() {
     !offline &&
     (arrivals.isError || departures.isError || inhouse.isError || noshows.isError);
 
-  const arrivalsData = arrivals.data || [];
-  const departuresData = departures.data || [];
-  const inhouseData = inhouse.data || [];
-  const noshowsData = noshows.data || [];
+  // A previous app version persisted wrapped API payloads under these same
+  // query keys. On upgrade React Query can briefly hydrate that old object
+  // before the network refetch completes; list operations must remain safe.
+  const arrivalsData = asArray<Booking>(arrivals.data);
+  const departuresData = asArray<Booking>(departures.data);
+  const inhouseData = asArray<Booking>(inhouse.data);
+  const noshowsData = asArray<Awaited<ReturnType<typeof getNoShowRisk>>[number]>(noshows.data);
 
   // Walk-in summary = today's walk-ins, derived from real in-house data
   // (walk-ins auto-check-in and are tagged source==='walk_in' server-side).
