@@ -19,6 +19,7 @@ from core.database import db
 from core.helpers import require_module
 from core.security import get_current_user
 from models.schemas import User
+from modules.pms_core.reporting_financials import REPORTING_CURRENCY, reporting_collection_amount
 from modules.pms_core.role_permission_service import require_op
 from modules.pms_core.stay_night_metrics import calculate_stay_night_metrics, load_stay_night_metrics
 
@@ -1463,8 +1464,10 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
     payment_methods = {}
     total_paid = 0
     payment_totals_by_currency: dict[str, float] = {}
+    received_payment_totals_by_currency: dict[str, float] = {}
     ledger_payment_totals_by_currency: dict[str, float] = {}
     payment_totals_by_method_currency: dict[str, dict[str, float]] = {}
+    payment_conversion_issues = []
     payment_rows = []
     for p in all_payments:
         if not _payment_is_collection(p):
@@ -1473,17 +1476,27 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
         amt = float(p.get("amount", 0) or 0)
         if str(p.get("payment_type") or "").lower() == "refund" and amt > 0:
             amt = -amt
-        payment_methods[method] = payment_methods.get(method, 0) + amt
-        total_paid += amt
         payment_booking = booking_by_id.get(str(p.get("booking_id"))) or {}
         received = _received_payment_amount(p, p.get("currency") or payment_booking.get("currency") or "TRY")
         received_currency = str(received.get("currency") or "TRY").upper()
         received_amount = float(received.get("amount") or 0)
         ledger_currency = str(p.get("currency") or payment_booking.get("currency") or "TRY").upper()
         ledger_payment_totals_by_currency[ledger_currency] = ledger_payment_totals_by_currency.get(ledger_currency, 0) + amt
-        payment_totals_by_currency[received_currency] = payment_totals_by_currency.get(received_currency, 0) + received_amount
-        method_totals = payment_totals_by_method_currency.setdefault(method, {})
-        method_totals[received_currency] = method_totals.get(received_currency, 0) + received_amount
+        received_payment_totals_by_currency[received_currency] = received_payment_totals_by_currency.get(received_currency, 0) + received_amount
+        reporting_amount = reporting_collection_amount(p)
+        if reporting_amount is None:
+            payment_conversion_issues.append({
+                "id": p.get("id"),
+                "currency": ledger_currency,
+                "received_currency": received_currency,
+                "reason": "historical_exchange_rate_missing",
+            })
+        else:
+            total_paid += reporting_amount
+            payment_totals_by_currency[REPORTING_CURRENCY] = payment_totals_by_currency.get(REPORTING_CURRENCY, 0) + reporting_amount
+            method_totals = payment_totals_by_method_currency.setdefault(method, {})
+            method_totals[REPORTING_CURRENCY] = method_totals.get(REPORTING_CURRENCY, 0) + reporting_amount
+            payment_methods[method] = payment_methods.get(method, 0) + reporting_amount
         payment_rows.append(
             {
                 "id": p.get("id"),
@@ -1495,6 +1508,11 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
                 "currency": ledger_currency,
                 "received_amount": round(received_amount, 2),
                 "received_currency": received_currency,
+                "reporting_amount": round(reporting_amount, 2) if reporting_amount is not None else None,
+                "reporting_currency": REPORTING_CURRENCY,
+                "conversion_missing": reporting_amount is None,
+                "exchange_rate": p.get("exchange_rate"),
+                "exchange_rate_date": p.get("exchange_rate_date") or p.get("payment_date") or str(p.get("processed_at") or "")[:10],
                 "method": method,
                 "payment_type": p.get("payment_type"),
                 "status": p.get("status") or "paid",
@@ -1504,10 +1522,7 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
                 "processed_at": p.get("processed_at") or p.get("payment_date") or p.get("date") or p.get("created_at"),
             }
         )
-    payment_methods = {
-        method: _single_currency_amount(totals)
-        for method, totals in payment_totals_by_method_currency.items()
-    }
+    payment_methods = {method: round(amount, 2) for method, amount in payment_methods.items()}
 
     daily_charges = daily_period_charges
     charge_totals_by_currency = _currency_breakdown(daily_charges, charge_amount, charge_currency)
@@ -1517,7 +1532,7 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
     }
     uncollected_by_currency = {code: max(amount, 0) for code, amount in balance_change_by_currency.items()}
     charge_total = _single_currency_amount(charge_totals_by_currency)
-    total_paid = _single_currency_amount(payment_totals_by_currency)
+    total_paid = round(total_paid, 2)
     cash_breakdown = payment_totals_by_method_currency.get("cash", {})
     cash_total = _single_currency_amount(cash_breakdown)
     non_cash_breakdown = _merge_currency_breakdowns(*(
@@ -1678,6 +1693,10 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
             "transaction_count": len(payment_rows),
             "rows": sorted(payment_rows, key=lambda row: str(row.get("processed_at") or "")),
             "totals_by_currency": {code: round(amount, 2) for code, amount in payment_totals_by_currency.items()},
+            "reporting_currency": REPORTING_CURRENCY,
+            "received_totals_by_currency": {code: round(amount, 2) for code, amount in received_payment_totals_by_currency.items()},
+            "conversion_issue_count": len(payment_conversion_issues),
+            "conversion_issues": payment_conversion_issues,
             "totals_by_method_currency": {
                 method: {code: round(amount, 2) for code, amount in totals.items()}
                 for method, totals in payment_totals_by_method_currency.items()

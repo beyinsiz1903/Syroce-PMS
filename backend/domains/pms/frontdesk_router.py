@@ -31,6 +31,7 @@ from domains.pms.folio_routing_split import split_kurus
 from domains.pms.frontdesk_service import frontdesk_service
 from models.enums import BookingStatus, ChannelType, ChargeCategory, PaymentMethod, PaymentType
 from models.schemas import Booking, Guest, User
+from modules.pms_core.reporting_financials import stamp_reporting_values
 from modules.pms_core.role_permission_service import require_module as require_module_v97  # v97 DW
 from modules.pms_core.role_permission_service import require_op  # v94 DW
 from shared_kernel.idempotency import (
@@ -794,6 +795,7 @@ async def add_folio_payment(
             "processed_at": now_iso,
         }
         await stamp_open_business_date(db, current_user.tenant_id, payment_doc)
+        stamp_reporting_values(payment_doc)
         # Vardiya kontrolü: nakit ödemede aktif vardiya zorunlu
         from domains.pms.cashier_service import ensure_active_shift, record_cash_transaction
 

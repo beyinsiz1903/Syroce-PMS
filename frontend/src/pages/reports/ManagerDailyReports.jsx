@@ -4,6 +4,17 @@ import { ArrowLeftRight, Banknote, BarChart3, BedDouble, CreditCard, HandCoins, 
 import { EmptyState, KPICard, SectionHeader, formatCurrency } from './ReportHelpers';
 
 const formatDateTime = value => value ? new Date(value).toLocaleString('tr-TR') : '-';
+const ReportingAmount = ({ payments, amount }) => formatCurrency(amount || 0, payments?.reporting_currency || 'TRY');
+const ReceivedDetail = ({ row }) => {
+  const receivedCurrency = row.received_currency || row.currency || 'TRY';
+  if (row.conversion_missing) return <div className="text-xs font-normal text-rose-600">Tarihsel kur eksik; toplama dahil edilmedi</div>;
+  if (receivedCurrency === (row.reporting_currency || 'TRY')) return null;
+  return <div className="text-xs font-normal text-gray-500">
+    Alınan: {formatCurrency(row.received_amount ?? row.amount, receivedCurrency)}
+    {row.exchange_rate ? ` · 1 ${row.currency || 'TRY'} = ${Number(row.exchange_rate).toLocaleString('tr-TR')} ${receivedCurrency}` : ''}
+    {row.exchange_rate_date ? ` · ${String(row.exchange_rate_date).slice(0, 10)}` : ''}
+  </div>;
+};
 const CurrencyBreakdown = ({ totals = {}, fallback }) => {
   const entries = Object.entries(totals);
   return entries.length
@@ -35,9 +46,9 @@ const FrontCashierReport = ({ summary, payments, reportDate }) => (
     <SectionHeader title="Ön Kasa Raporu" description={`${reportDate} tarihli folyo ve tahsilat özeti`} />
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
       <KPICard title="Folyo İşlem Tutarı" value={<CurrencyBreakdown totals={summary.charge_total_by_currency} fallback={summary.charge_total} />} icon={ReceiptText} color="amber" />
-      <KPICard title="Toplam Tahsilat" value={<CurrencyBreakdown totals={payments.totals_by_currency} />} icon={HandCoins} color="green" />
-      <KPICard title="Nakit Tahsilat" value={<CurrencyBreakdown totals={payments.totals_by_method_currency?.cash} />} icon={Banknote} color="blue" />
-      <KPICard title="Kart / Havale Tahsilatı" value={<CurrencyBreakdown totals={Object.entries(payments.totals_by_method_currency || {}).filter(([method]) => method !== 'cash').reduce((result, [, totals]) => { Object.entries(totals).forEach(([code, amount]) => { result[code] = (result[code] || 0) + amount; }); return result; }, {})} />} icon={CreditCard} color="purple" />
+      <KPICard title="Toplam Tahsilat" value={<ReportingAmount payments={payments} amount={payments.total_paid} />} icon={HandCoins} color="green" />
+      <KPICard title="Nakit Tahsilat" value={<ReportingAmount payments={payments} amount={payments.by_method?.cash} />} icon={Banknote} color="blue" />
+      <KPICard title="Kart / Havale Tahsilatı" value={<ReportingAmount payments={payments} amount={Object.entries(payments.by_method || {}).filter(([method]) => method !== 'cash').reduce((sum, [, amount]) => sum + Number(amount || 0), 0)} />} icon={CreditCard} color="purple" />
     </div>
     <Card><CardContent className="p-5 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
       <div><p className="text-gray-500">Folyo hareketi</p><p className="font-bold text-lg">{summary.charge_count || 0}</p></div>
@@ -53,13 +64,16 @@ const FrontCashierReport = ({ summary, payments, reportDate }) => (
 const CashMovementsReport = ({ payments, reportDate }) => (
   <div className="space-y-5" data-testid="section-cash-movements">
     <SectionHeader title="Kasa Hareketleri" description={`${reportDate} tarihinde işlenen geçerli tahsilatlar`} />
+    {payments.conversion_issue_count > 0 && <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+      {payments.conversion_issue_count} işlemde tarihsel TL karşılığı bulunamadığı için bu işlemler toplamdan çıkarıldı. İşlem satırlarında kontrol edebilirsiniz.
+    </div>}
     <Card>
       <CardHeader className="pb-2"><CardTitle className="text-sm">Hareketler ({payments.rows?.length || 0})</CardTitle></CardHeader>
       <CardContent className="p-0 overflow-x-auto">
         {(payments.rows || []).length ? <table className="w-full text-sm">
           <thead><tr className="border-b bg-gray-50"><th className="text-left p-3">Saat</th><th className="text-left p-3">Oda</th><th className="text-left p-3">Misafir</th><th className="text-left p-3">Yöntem</th><th className="text-left p-3">İşleyen</th><th className="text-left p-3">Referans / Not</th><th className="text-right p-3">Tutar</th></tr></thead>
-          <tbody>{payments.rows.map((row, index) => <tr key={row.id || index} className="border-b"><td className="p-3 whitespace-nowrap">{formatDateTime(row.processed_at)}</td><td className="p-3 font-semibold">{row.room_number || '-'}</td><td className="p-3">{row.guest_name || '-'}</td><td className="p-3">{row.method || '-'}</td><td className="p-3">{row.processed_by || '-'}</td><td className="p-3">{row.reference || row.notes || '-'}</td><td className="p-3 text-right font-semibold">{formatCurrency(row.received_amount ?? row.amount, row.received_currency || row.currency)}</td></tr>)}</tbody>
-          <tfoot><tr className="bg-emerald-50"><td colSpan={6} className="p-3 font-semibold">Para birimine göre geçerli tahsilat</td><td className="p-3 text-right font-bold">{Object.entries(payments.totals_by_currency || {}).map(([code, amount]) => <div key={code}>{formatCurrency(amount, code)}</div>)}</td></tr></tfoot>
+          <tbody>{payments.rows.map((row, index) => { const reportingAmount = row.reporting_amount ?? ((row.currency || 'TRY') === 'TRY' ? row.amount : null); return <tr key={row.id || index} className="border-b"><td className="p-3 whitespace-nowrap">{formatDateTime(row.processed_at)}</td><td className="p-3 font-semibold">{row.room_number || '-'}</td><td className="p-3">{row.guest_name || '-'}</td><td className="p-3">{row.method || '-'}</td><td className="p-3">{row.processed_by || '-'}</td><td className="p-3">{row.reference || row.notes || '-'}</td><td className="p-3 text-right font-semibold">{reportingAmount == null ? '—' : formatCurrency(reportingAmount, row.reporting_currency || 'TRY')}<ReceivedDetail row={row} /></td></tr>; })}</tbody>
+          <tfoot><tr className="bg-emerald-50"><td colSpan={6} className="p-3 font-semibold">Toplam tahsilat (işlem günündeki TL karşılığı)</td><td className="p-3 text-right font-bold"><ReportingAmount payments={payments} amount={payments.total_paid} /></td></tr></tfoot>
         </table> : <div className="py-12"><EmptyState icon={ArrowLeftRight} message="Seçili tarihte kasa hareketi yok" /></div>}
       </CardContent>
     </Card>

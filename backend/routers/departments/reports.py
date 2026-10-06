@@ -26,7 +26,7 @@ from core.helpers import require_module
 from core.security import get_current_user
 from core.utils import _XLSX_MAX_CELL_LEN, calculate_folio_balance, create_excel_workbook, excel_response
 from models.schemas import User
-from modules.pms_core.reporting_financials import effective_collection
+from modules.pms_core.reporting_financials import reporting_collection_summary
 from modules.pms_core.role_permission_service import RolePermissionService, require_op
 from modules.pms_core.stay_night_metrics import NON_COMMERCIAL_STATUSES, as_date, booking_nights, load_stay_night_metrics
 
@@ -491,20 +491,7 @@ async def get_finance_snapshot(
         }
     ).to_list(None)
 
-    def effective_payment(payment: dict) -> float:
-        return effective_collection(payment)
-
-    todays_collections = sum(effective_payment(payment) for payment in todays_payments)
-    todays_payment_count = sum(1 for payment in todays_payments if effective_payment(payment) != 0)
-    todays_by_method: dict[str, dict[str, float | int]] = {}
-    for payment in todays_payments:
-        amount = effective_payment(payment)
-        if amount == 0:
-            continue
-        method = str(payment.get("payment_method") or payment.get("method") or "other").strip().lower() or "other"
-        entry = todays_by_method.setdefault(method, {"amount": 0.0, "count": 0})
-        entry["amount"] = round(float(entry["amount"]) + amount, 2)
-        entry["count"] = int(entry["count"]) + 1
+    today_summary = reporting_collection_summary(todays_payments)
 
     # 3. Calculate MTD (Month-to-Date) Collections
     month_start = today.replace(day=1)
@@ -521,7 +508,8 @@ async def get_finance_snapshot(
         }
     ).to_list(None)
 
-    mtd_collections = sum(effective_payment(payment) for payment in mtd_payments)
+    mtd_summary = reporting_collection_summary(mtd_payments)
+    mtd_collections = float(mtd_summary["amount"])
 
     # 4. Calculate Collection Rate (MTD Collections / MTD Revenue)
     mtd_charges = await db.folio_charges.find(
@@ -555,11 +543,12 @@ async def get_finance_snapshot(
             "overdue_invoices_count": overdue_invoices_count,
         },
         "todays_collections": {
-            "amount": round(todays_collections, 2),
-            "payment_count": todays_payment_count,
-            "by_method": todays_by_method,
+            **today_summary,
         },
-        "mtd_collections": {"amount": round(mtd_collections, 2), "collection_rate_percentage": round(collection_rate, 2)},
+        "mtd_collections": {
+            **mtd_summary,
+            "collection_rate_percentage": round(collection_rate, 2),
+        },
         "accounting_invoices": {"pending_count": pending_invoice_count, "pending_total": round(pending_invoice_total, 2)},
     }
 

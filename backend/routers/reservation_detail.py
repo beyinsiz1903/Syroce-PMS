@@ -27,6 +27,7 @@ from domains.channel_manager.providers.hotelrunner_notes import resolve_legacy_h
 from models.schemas import User, _ensure_hotel_context
 from models.schemas.bookings import BookingCreate
 from modules.pms_core.guest_identity import find_existing_guest_by_identity
+from modules.pms_core.reporting_financials import stamp_reporting_values
 from modules.pms_core.role_permission_service import (
     RolePermissionService,
     require_op,  # v97 DW
@@ -1935,6 +1936,7 @@ async def record_payment(
         "voided": False,
     }
     await stamp_open_business_date(db, tid, payment)
+    stamp_reporting_values(payment)
 
     # The reservation detail dialog is one of the main front-desk payment
     # entry points.  Keep it on the same cashier contract as the dedicated

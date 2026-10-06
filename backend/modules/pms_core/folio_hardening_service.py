@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 
 from core.business_date_service import stamp_open_business_date
 from core.database import db
+from modules.pms_core.reporting_financials import stamp_reporting_values
 
 
 class FolioHardeningService:
@@ -128,6 +129,7 @@ class FolioHardeningService:
         }
 
         await stamp_open_business_date(db, tenant_id, payment_doc)
+        stamp_reporting_values(payment_doc)
         await db.payments.insert_one(payment_doc)
         await self._recalculate_folio_balance(tenant_id, folio_id)
 
