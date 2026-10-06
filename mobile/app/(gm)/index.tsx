@@ -1,5 +1,5 @@
-import React, { useCallback, useMemo, useState } from 'react';
-import { Pressable, RefreshControl, ScrollView, View } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { InteractionManager, Pressable, RefreshControl, ScrollView, View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { Body, Button, Card, H1, H2, Muted, SkeletonCard } from '../../src/components/ui';
@@ -183,36 +183,62 @@ export default function GMOverview() {
   const router = useRouter();
   const { user } = useAuthStore();
   const financeReports = useAuthStore((s) => s.financeReports);
+  const approvalsAccess = useAuthStore((s) => s.approvalsAccess);
+  const allAccess = useAuthStore((s) => s.allAccess);
 
   const [trendRange, setTrendRange] = useState<7 | 30>(7);
+  const [secondaryReady, setSecondaryReady] = useState(false);
+
+  // Let the native navigation transition and the first dashboard frame finish
+  // before starting the secondary reports. Starting all seven network requests
+  // during the transition made the control panel feel stuck on slower devices.
+  useEffect(() => {
+    const task = InteractionManager.runAfterInteractions(() => setSecondaryReady(true));
+    return () => task.cancel();
+  }, []);
 
   const snapshot = useQuery({ queryKey: ['gm-snapshot'], queryFn: getGmSnapshot });
   const complaints = useQuery({
     queryKey: ['gm-complaints'],
     queryFn: getComplaintManagement,
+    enabled: secondaryReady,
   });
   // Reuse the existing RBAC-guarded approvals feed (no new endpoint). The strip
   // only renders when there is something pending, so a 403/empty result for a
   // manager who cannot approve simply hides it — no error surface, no console
   // noise (keeps the zero-console Expo Web gate green).
-  const approvals = useQuery({ queryKey: ['gm-approvals'], queryFn: getApprovals });
+  const canLoadApprovals = approvalsAccess || allAccess;
+  const approvals = useQuery({
+    queryKey: ['gm-approvals'],
+    queryFn: getApprovals,
+    enabled: secondaryReady && canLoadApprovals,
+  });
 
   // Real per-day revenue trend (JWT-only). We always fetch 30 days and slice
   // the tail for the 7-day view, so the toggle never triggers a second request.
   const pickup = useQuery({
     queryKey: ['gm-pickup'],
     queryFn: () => getPickupAnalysis(30),
+    enabled: secondaryReady,
   });
   // Real guest-satisfaction (NPS) and sales-target (budget) feeds — both
   // JWT-only, so a manager always gets a 200 (no 403 console noise).
-  const nps = useQuery({ queryKey: ['gm-nps'], queryFn: () => getNpsScore(30) });
-  const budget = useQuery({ queryKey: ['gm-budget'], queryFn: getBudgetOverview });
+  const nps = useQuery({
+    queryKey: ['gm-nps'],
+    queryFn: () => getNpsScore(30),
+    enabled: secondaryReady,
+  });
+  const budget = useQuery({
+    queryKey: ['gm-budget'],
+    queryFn: getBudgetOverview,
+    enabled: secondaryReady,
+  });
   // Cash-on-hand (Kasa) is gated server-side by view_finance_reports; only call
   // it when the manager holds that flag so we never provoke a 403.
   const shift = useQuery({
     queryKey: ['gm-cashier-shift'],
     queryFn: getCurrentShift,
-    enabled: financeReports,
+    enabled: secondaryReady && financeReports,
   });
 
   const urgentApprovals = useMemo(() => {
@@ -225,12 +251,12 @@ export default function GMOverview() {
   const onRefresh = useCallback(() => {
     snapshot.refetch();
     complaints.refetch();
-    approvals.refetch();
+    if (canLoadApprovals) approvals.refetch();
     pickup.refetch();
     nps.refetch();
     budget.refetch();
     if (financeReports) shift.refetch();
-  }, [snapshot, complaints, approvals, pickup, nps, budget, shift, financeReports]);
+  }, [snapshot, complaints, approvals, pickup, nps, budget, shift, financeReports, canLoadApprovals]);
 
   const offline = snapshot.isError && isOffline(snapshot.error);
 

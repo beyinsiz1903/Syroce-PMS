@@ -158,7 +158,7 @@ export default function ProfileScreen() {
                 testID={`smoke-module-${m.key}`}
                 icon={m.icon}
                 label={m.label}
-                onPress={() => router.push(m.route)}
+                onPress={() => router.navigate(m.route)}
                 last={i === visibleModules.length - 1}
               />
             ))
