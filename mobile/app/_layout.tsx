@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo } from 'react';
-import { ActivityIndicator, View } from 'react-native';
+import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -20,7 +20,6 @@ import {
 import { setupOfflineCache } from '../src/cache/persister';
 import { markSync } from '../src/cache/offlineMeta';
 import { flushPosQueue, refreshPosQueueCount } from '../src/cache/posQueue';
-import { attachPushListeners, registerForPush } from '../src/notifications/push';
 import { BiometricLockGate } from '../src/components/BiometricLockGate';
 import { NightScreen } from '../src/components/NightScreen';
 import { installCertPinning } from '../src/security/certPinning';
@@ -109,26 +108,6 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     router.replace(rootForRole(role));
   }, [user, role, allAccess, deptAccess, loading, segments, router]);
 
-  // Push registration runs after sign-in; safe to call repeatedly because
-  // the backend treats POST /push/register as upsert by device_id.
-  useEffect(() => {
-    if (!user) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        await registerForPush();
-      } catch {
-        // best-effort; logged inside helper
-      }
-      if (cancelled) return;
-    })();
-    const detach = attachPushListeners(router, role);
-    return () => {
-      cancelled = true;
-      detach();
-    };
-  }, [user, role, router]);
-
   return <>{children}</>;
 }
 
@@ -208,6 +187,39 @@ export default function RootLayout() {
   );
 
   return tree;
+}
+
+// A screen-level render exception must never look like a native application
+// crash to an operator. Expo Router shows this fallback for a broken route and
+// keeps the session alive so the operator can retry or navigate back after a
+// future diagnostic update.
+export function ErrorBoundary({
+  error,
+  retry,
+}: {
+  error: Error;
+  retry: () => void;
+}) {
+  // Keep the real error in device logs / TestFlight diagnostics without
+  // exposing implementation details to hotel staff.
+  console.error('[mobile] route render failed', error);
+  return (
+    <View
+      style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, gap: 16 }}
+    >
+      <Text style={{ fontSize: 20, fontWeight: '700' }}>Ekran açılamadı</Text>
+      <Text style={{ textAlign: 'center', color: '#64748b' }}>
+        Uygulama oturumunuz açık kaldı. Tekrar deneyin; sorun sürerse destek ekibine bildirin.
+      </Text>
+      <Pressable
+        onPress={retry}
+        accessibilityRole="button"
+        style={{ backgroundColor: '#2563eb', borderRadius: 10, paddingHorizontal: 18, paddingVertical: 12 }}
+      >
+        <Text style={{ color: '#fff', fontWeight: '700' }}>Tekrar dene</Text>
+      </Pressable>
+    </View>
+  );
 }
 
 export function LoadingScreen() {
