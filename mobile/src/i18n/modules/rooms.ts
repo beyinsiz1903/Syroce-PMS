@@ -19,4 +19,6 @@ export const rooms = {
   noResults: 'Filtreye uygun oda yok',
   loadError: 'Odalar yüklenemedi',
   clearFilters: 'Filtreleri temizle',
+  reserveRoom: 'Rezervasyon oluştur',
+  openStay: 'Konaklamayı aç',
 };

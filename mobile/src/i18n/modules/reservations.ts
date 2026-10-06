@@ -97,5 +97,7 @@ export const reservations = {
   cancelConfirmBody: 'Bu rezervasyon iptal edilecek ve oda envanteri serbest bırakılacak. Devam edilsin mi?',
   cancelConfirmYes: 'Evet, iptal et',
   roomChanged: 'Oda güncellendi',
+  preselectedRoom: 'Seçilen oda',
+  preselectedRoomUnavailable: 'seçilen tarihlerde uygun değil. Tarihleri değiştirerek tekrar kontrol edin.',
   actionError: 'İşlem başarısız oldu',
 };

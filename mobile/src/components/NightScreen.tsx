@@ -62,7 +62,7 @@ const NightOverlayBody: React.FC<{ onExit: () => void }> = ({ onExit }) => {
 
 const NIGHT_SCREEN_KEY = 'night_screen_active';
 
-export const NightScreen: React.FC = () => {
+export const NightScreen: React.FC<{ inline?: boolean }> = ({ inline = false }) => {
   const c = useTheme();
   const insets = useSafeAreaInsets();
   const user = useAuthStore((s) => s.user);
@@ -101,14 +101,22 @@ export const NightScreen: React.FC = () => {
         testID="night-screen-trigger"
         hitSlop={8}
         style={{
-          position: 'absolute',
-          left: 16,
-          // Home tab bar'i (60 + insets.bottom) net asar; tab bari olmayan
-          // gruplarda da alttan rahat bir bosluk birakir.
-          bottom: insets.bottom + 72,
-          width: 44,
-          height: 44,
-          borderRadius: 22,
+          ...(inline
+            ? {
+                minHeight: 54,
+                width: '100%' as const,
+                flexDirection: 'row' as const,
+                gap: 10,
+                paddingHorizontal: 16,
+              }
+            : {
+                position: 'absolute' as const,
+                left: 16,
+                bottom: insets.bottom + 72,
+                width: 44,
+                height: 44,
+                borderRadius: 22,
+              }),
           alignItems: 'center',
           justifyContent: 'center',
           backgroundColor: c.surfaceGlass,
@@ -117,6 +125,11 @@ export const NightScreen: React.FC = () => {
         }}
       >
         <Ionicons name="moon-outline" size={20} color={c.textMuted} />
+        {inline ? (
+          <Text style={{ color: c.text, fontSize: 16, fontWeight: '600' }}>
+            {tr.app.nightScreen.title}
+          </Text>
+        ) : null}
       </Pressable>
 
       <Modal

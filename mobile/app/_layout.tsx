@@ -21,7 +21,6 @@ import { setupOfflineCache } from '../src/cache/persister';
 import { markSync } from '../src/cache/offlineMeta';
 import { flushPosQueue, refreshPosQueueCount } from '../src/cache/posQueue';
 import { BiometricLockGate } from '../src/components/BiometricLockGate';
-import { NightScreen } from '../src/components/NightScreen';
 import { installCertPinning } from '../src/security/certPinning';
 
 // V3: install the pinned-fetch wrapper before anything else — this swaps
@@ -139,7 +138,6 @@ function RootShell() {
         <Stack.Screen name="(departments)" options={{ headerShown: false }} />
         <Stack.Screen name="index" options={{ headerShown: false }} />
       </Stack>
-      <NightScreen />
     </View>
   );
 }

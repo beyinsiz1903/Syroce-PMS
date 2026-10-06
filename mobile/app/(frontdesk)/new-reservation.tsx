@@ -1,6 +1,6 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ScrollView, View } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { Badge, Body, Button, Card, EmptyState, Field, H1, H2, Muted, SkeletonCard, webCenter } from '../../src/components/ui';
@@ -30,12 +30,25 @@ function reservationKey(): string {
 export default function NewReservationScreen() {
   const c = useTheme();
   const router = useRouter();
+  const p = useLocalSearchParams<{
+    room_id?: string;
+    room_number?: string;
+    room_type?: string;
+    check_in?: string;
+    check_out?: string;
+  }>();
   const qc = useQueryClient();
   const today = localTodayISO();
+  const initialCheckIn = /^\d{4}-\d{2}-\d{2}$/.test(String(p.check_in || ''))
+    ? String(p.check_in)
+    : today;
+  const initialCheckOut = /^\d{4}-\d{2}-\d{2}$/.test(String(p.check_out || ''))
+    ? String(p.check_out)
+    : addDaysISO(initialCheckIn, 1);
 
   const [guestName, setGuestName] = useState('');
-  const [checkIn, setCheckIn] = useState(today);
-  const [checkOut, setCheckOut] = useState(addDaysISO(today, 1));
+  const [checkIn, setCheckIn] = useState(initialCheckIn);
+  const [checkOut, setCheckOut] = useState(initialCheckOut);
   const [room, setRoom] = useState<AvailabilityRoom | null>(null);
   const [amount, setAmount] = useState('');
   const [adults, setAdults] = useState('2');
@@ -61,6 +74,16 @@ export default function NewReservationScreen() {
         ),
     [roomsQ.data],
   );
+
+  useEffect(() => {
+    if (room || (!p.room_id && !p.room_number)) return;
+    const selected = availableRooms.find(
+      (candidate) =>
+        (p.room_id && candidate.id === String(p.room_id)) ||
+        (p.room_number && String(candidate.room_number || '') === String(p.room_number)),
+    );
+    if (selected) setRoom(selected);
+  }, [availableRooms, p.room_id, p.room_number, room]);
 
   const mutation = useMutation({
     mutationFn: async () => {
@@ -217,6 +240,10 @@ export default function NewReservationScreen() {
           <View style={{ marginTop: spacing.md }}>
             <Badge label={`${tr.reservations.room} ${room.room_number || '—'}`} tone="success" icon="bed" />
           </View>
+        ) : (p.room_id || p.room_number) && !roomsQ.isLoading ? (
+          <Body style={{ color: c.warning, marginTop: spacing.md }}>
+            {tr.reservations.preselectedRoom} {String(p.room_number || p.room_id)} {tr.reservations.preselectedRoomUnavailable}
+          </Body>
         ) : null}
       </Card>
 

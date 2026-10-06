@@ -14,6 +14,12 @@ import { Booking, getInHouse } from '../../src/api/bookings';
 import { formatCurrency } from '../../src/utils/format';
 import { errorMessage, isOffline } from '../../src/utils/errors';
 import { ROUTES } from '../../src/navigation/routes';
+import { asArray } from '../../src/utils/queryData';
+import {
+  effectiveRoomStatus,
+  indexBookingsByRoomNumber,
+  roomNumberKey,
+} from '../../src/utils/roomPresentation';
 
 type StatusTone = 'success' | 'primary' | 'warning' | 'info' | 'danger' | 'default';
 
@@ -104,8 +110,9 @@ function RoomCard({
   onPress?: () => void;
 }) {
   const c = useTheme();
-  const accent = roomStatusColor(room.status, c);
-  const occupied = statusCategory(room.status) === 'occupied';
+  const effectiveStatus = effectiveRoomStatus(room.status, !!booking);
+  const accent = roomStatusColor(effectiveStatus, c);
+  const occupied = statusCategory(effectiveStatus) === 'occupied';
   const guest = booking?.guest_name || room.guest_name;
   const balance = booking?.balance;
   const nights = nightsBetween(booking?.check_in, booking?.check_out);
@@ -135,7 +142,7 @@ function RoomCard({
             {occupied ? guest || '—' : tr.rooms.vacant}
           </Body>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs, marginTop: spacing.sm }}>
-            <Badge label={statusLabel(room.status)} tone={statusTone(room.status)} />
+            <Badge label={statusLabel(effectiveStatus)} tone={statusTone(effectiveStatus)} />
             {taskCount > 0 ? (
               <View
                 style={{
@@ -181,12 +188,10 @@ function RoomCard({
           </View>
         ) : null}
         {onPress ? (
-          <Ionicons
-            name="chevron-forward"
-            size={18}
-            color={c.textMuted}
-            style={{ alignSelf: 'center' }}
-          />
+          <View style={{ alignSelf: 'center', alignItems: 'flex-end', gap: 4 }}>
+            <Ionicons name="chevron-forward" size={18} color={c.textMuted} />
+            <Muted style={{ fontSize: 10 }}>{booking ? tr.rooms.openStay : tr.rooms.reserveRoom}</Muted>
+          </View>
         ) : null}
       </View>
     </Card>
@@ -217,9 +222,9 @@ export default function RoomsScreen() {
   const tasksQ = useQuery({ queryKey: ['frontdesk-room-tasks'], queryFn: listRoomTasks });
   const inhouseQ = useQuery({ queryKey: ['frontdesk-inhouse-rooms'], queryFn: getInHouse });
 
-  const allRooms = roomsQ.data || [];
-  const tasks = tasksQ.data || [];
-  const inhouse = inhouseQ.data || [];
+  const allRooms = asArray<Room>(roomsQ.data);
+  const tasks = asArray<RoomTask>(tasksQ.data);
+  const inhouse = asArray<Booking>(inhouseQ.data);
 
   const taskCountByRoom = useMemo(() => {
     const map: Record<string, number> = {};
@@ -231,14 +236,7 @@ export default function RoomsScreen() {
 
   // Join in-house bookings (which carry balance + stay dates) to rooms by
   // room number — the only shared key between the two backend sources.
-  const bookingByRoomNo = useMemo(() => {
-    const map: Record<string, Booking> = {};
-    for (const b of inhouse) {
-      const key = String(b.room_number ?? '').trim();
-      if (key) map[key] = b;
-    }
-    return map;
-  }, [inhouse]);
+  const bookingByRoomNo = useMemo(() => indexBookingsByRoomNumber(inhouse), [inhouse]);
 
   const floorOptions = useMemo<FilterChipOption[]>(() => {
     const floors = Array.from(
@@ -257,19 +255,20 @@ export default function RoomsScreen() {
   const counts = useMemo(() => {
     const m: Record<string, number> = {};
     for (const r of allRooms) {
-      const cat = statusCategory(r.status);
+      const booking = bookingByRoomNo[roomNumberKey(r.room_number)];
+      const cat = statusCategory(effectiveRoomStatus(r.status, !!booking));
       m[cat] = (m[cat] || 0) + 1;
     }
     return m;
-  }, [allRooms]);
+  }, [allRooms, bookingByRoomNo]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return allRooms.filter((r) => {
-      if (status && statusCategory(r.status) !== status) return false;
+      const b = bookingByRoomNo[roomNumberKey(r.room_number)];
+      if (status && statusCategory(effectiveRoomStatus(r.status, !!b)) !== status) return false;
       if (floor && String(r.floor ?? '') !== floor) return false;
       if (q) {
-        const b = bookingByRoomNo[String(r.room_number ?? '').trim()];
         const hay = `${r.room_number || ''} ${r.guest_name || ''} ${b?.guest_name || ''} ${r.room_type || ''}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
@@ -310,6 +309,17 @@ export default function RoomsScreen() {
         total_amount: b.total_amount != null ? String(b.total_amount) : '',
         paid_amount: b.paid_amount != null ? String(b.paid_amount) : '',
         balance: b.balance != null ? String(b.balance) : '',
+      },
+    });
+  };
+
+  const openNewReservation = (room: Room) => {
+    router.push({
+      pathname: ROUTES.newReservation,
+      params: {
+        room_id: room.id,
+        room_number: room.room_number || '',
+        room_type: room.room_type || '',
       },
     });
   };
@@ -395,13 +405,13 @@ export default function RoomsScreen() {
             />
           }
           renderItem={({ item }) => {
-            const booking = bookingByRoomNo[String(item.room_number ?? '').trim()];
+            const booking = bookingByRoomNo[roomNumberKey(item.room_number)];
             return (
               <RoomCard
                 room={item}
                 booking={booking}
                 taskCount={taskCountByRoom[item.id] || 0}
-                onPress={booking?.id ? () => openBooking(booking) : undefined}
+                onPress={booking?.id ? () => openBooking(booking) : () => openNewReservation(item)}
               />
             );
           }}

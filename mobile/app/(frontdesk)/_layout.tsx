@@ -79,6 +79,7 @@ export default function FrontDeskLayout() {
         name="reservations"
         options={{
           title: tr.tabs.bookings,
+          tabBarLabel: tr.tabs.bookingsShort,
           tabBarIcon: tabIcon('reader', 'reader-outline'),
         }}
       />
