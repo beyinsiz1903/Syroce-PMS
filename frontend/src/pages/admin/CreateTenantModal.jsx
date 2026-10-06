@@ -4,7 +4,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import {
-  Building2, Home, TreePalm, Bed, Car, Building, Gem, Tent,
+  Building2, Home, TreePalm, Bed, Car, Building, Gem, Tent, MountainSnow,
   Briefcase, Sun, Snowflake, Droplets, Star, Crown, ChevronRight,
   ChevronLeft, Check, Users, DoorOpen, Sparkles, ArrowRight,
   RotateCcw, CalendarDays, UserRound, Plug, WalletCards,
@@ -15,7 +15,7 @@ import { useTranslation } from 'react-i18next';
 
 const ICON_MAP = {
   Home, TreePalm, Bed, Car, Building, Gem, Tent, Building2,
-  Briefcase, Sun, Snowflake, Droplets, Star, Crown,
+  Briefcase, Sun, Snowflake, Droplets, Star, Crown, MountainSnow,
 };
 
 const TIER_LABELS = {
@@ -78,6 +78,11 @@ const PLAN_HIGHLIGHTS = [
 
 
 const PROPERTY_CATEGORIES = [
+  {
+    label: 'Hazır Kurulumlar',
+    label_detail: 'Sade ve otomatik çalışma alanları',
+    types: ['sapanca_kartepe_basic'],
+  },
   {
     label: 'Küçük Tesisler',
     label_detail: '1-15 oda',

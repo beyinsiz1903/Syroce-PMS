@@ -266,9 +266,17 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
     const availableGroups = NAV_GROUPS.filter((group) => (
       (!hiddenNavGroups.has(group.id) || isSuperAdmin)
       && (groupedItems[group.id]?.length || 0) > 0
-    ));
+    )).map((group) => ({
+      ...group,
+      label: tenant?.nav_group_labels?.[group.id] || group.label,
+    }));
     return orderedNavigationGroups(availableGroups, user, isSuperAdmin);
-  }, [groupedItems, hiddenNavGroups, isSuperAdmin, user]);
+  }, [groupedItems, hiddenNavGroups, isSuperAdmin, tenant?.nav_group_labels, user]);
+
+  const navGroupLabel = (group) => tenant?.nav_group_labels?.[group.id]
+    || t(`navGroups.${group.id}`, group.label);
+  const navItemLabel = (item) => tenant?.nav_item_labels?.[item.key]
+    || t(`navKeys.${item.key}`, item.label);
 
   const roleWorkspace = useMemo(() => {
     const roles = normalizedUserRoles(user);
@@ -330,7 +338,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
 
     const GroupIcon = GROUP_ICONS[groupDef.id] || Home;
     const active = isGroupActive(groupDef.id);
-    const label = t(`navGroups.${groupDef.id}`, groupDef.label);
+    const label = navGroupLabel(groupDef);
     const sections = sectionNavItems(groupDef.id, items);
 
     return (
@@ -393,7 +401,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
                       data-testid={`nav-${item.key}-button`}
                     >
                       <Icon className={`w-3.5 h-3.5 ${isItemActive ? 'text-blue-600' : 'text-gray-400'}`} />
-                      <span className="text-sm leading-5">{t(`navKeys.${item.key}`, item.label)}</span>
+                      <span className="text-sm leading-5">{navItemLabel(item)}</span>
                     </DropdownMenuItem>
                   );
                 })}
@@ -459,7 +467,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
                 const Icon = ICON_BY_KEY[item.key] || Home;
                 const isDashboard = item.key === 'dashboard';
                 const targetPath = isDashboard ? roleWorkspace.path : item.path;
-                const label = isDashboard ? (roleWorkspace.label || t(`navKeys.${item.key}`, item.label)) : t(`navKeys.${item.key}`, item.label);
+                const label = isDashboard ? (roleWorkspace.label || navItemLabel(item)) : navItemLabel(item);
                 const isActive = isDashboard ? (location.pathname === roleWorkspace.path || normalizedCurrentModule === normalizeKey(item.key) || isItemPathActive(item)) : (normalizedCurrentModule === normalizeKey(item.key) || isItemPathActive(item));
                 
                 return (
@@ -549,14 +557,14 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
                           }`}
                           data-nav-key={item.key}
                           data-testid={`nav-${item.key}-button`}
-                          aria-label={t(`navKeys.${item.key}`, item.label)}
-                          title={t(`navKeys.${item.key}`, item.label)}
+                          aria-label={navItemLabel(item)}
+                          title={navItemLabel(item)}
                         >
                           <Icon className="w-3.5 h-3.5 shrink-0" />
                         </Button>
                       </TooltipTrigger>
                       <TooltipContent side="bottom">
-                        <p>{t(`navKeys.${item.key}`, item.label)}</p>
+                        <p>{navItemLabel(item)}</p>
                       </TooltipContent>
                     </Tooltip>
                   </TooltipProvider>
@@ -640,7 +648,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
                 const Icon = ICON_BY_KEY[item.key] || Home;
                 const isDashboard = item.key === 'dashboard';
                 const targetPath = isDashboard ? roleWorkspace.path : item.path;
-                const label = isDashboard ? (roleWorkspace.label || t(`navKeys.${item.key}`, item.label)) : t(`navKeys.${item.key}`, item.label);
+                const label = isDashboard ? (roleWorkspace.label || navItemLabel(item)) : navItemLabel(item);
                 const isActive = isDashboard ? (location.pathname === roleWorkspace.path || normalizedCurrentModule === normalizeKey(item.key) || isItemPathActive(item)) : (normalizedCurrentModule === normalizeKey(item.key) || isItemPathActive(item));
                 
                 return (
@@ -652,7 +660,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
                 );
               })}
 
-              {NAV_GROUPS.filter(g => !hiddenNavGroups.has(g.id) || isSuperAdmin).map((groupDef) => {
+              {navigationGroups.map((groupDef) => {
                 const items = groupedItems[groupDef.id];
                 if (!items || items.length === 0) return null;
                 const GroupIcon = GROUP_ICONS[groupDef.id] || Home;
@@ -668,7 +676,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
                       className={`w-full justify-between py-2 ${active && !isExpanded ? 'bg-blue-50 text-blue-700 font-semibold' : 'hover:bg-gray-100 dark:text-gray-100'}`}>
                       <div className="flex items-center">
                         <GroupIcon className="w-4 h-4 mr-2" />
-                        {t(`navGroups.${groupDef.id}`, groupDef.label)}
+                        {navGroupLabel(groupDef)}
                       </div>
                       <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
                     </Button>
@@ -690,7 +698,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
                                     onClick={() => handleNavigate(item.path, true)} onMouseEnter={() => preloadRoute(item.path)} onFocus={() => preloadRoute(item.path)}
                                     className={`w-full justify-start py-1.5 text-sm ${isItemActive ? 'bg-blue-600 text-white hover:bg-blue-700' : 'hover:bg-gray-50 dark:text-gray-100'}`}
                                     data-testid={`nav-${item.key}-button`}>
-                                    <Icon className="w-3.5 h-3.5 mr-2" />{t(`navKeys.${item.key}`, item.label)}
+                                    <Icon className="w-3.5 h-3.5 mr-2" />{navItemLabel(item)}
                                   </Button>
                                 );
                               })}
@@ -710,7 +718,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
                   <Button key={item.key} variant="ghost" size="sm" onClick={() => handleNavigate(item.path, true)} onMouseEnter={() => preloadRoute(item.path)} onFocus={() => preloadRoute(item.path)}
                     className={`w-full justify-start py-2 mb-0.5 ${isActive ? 'bg-blue-600 text-white hover:bg-blue-700' : 'hover:bg-gray-100 dark:text-gray-100'}`}
                     data-testid={`nav-${item.key}-button`}>
-                    <Icon className="w-4 h-4 mr-2" />{t(`navKeys.${item.key}`, item.label)}
+                    <Icon className="w-4 h-4 mr-2" />{navItemLabel(item)}
                   </Button>
                 );
               })}
