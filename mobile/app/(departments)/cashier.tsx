@@ -61,7 +61,7 @@ function folioStatusLabel(status?: string): string {
   return map[(status || '').toLowerCase()] || status || '-';
 }
 
-// One Nakit/Kart/Cari column inside the "Bugünkü Tahsilat" card. Real money
+// One payment-family column inside the open-shift collection card. Real money
 // (from the open shift's transactions) under a tinted icon dot.
 const BreakdownTile: React.FC<{
   icon: keyof typeof Ionicons.glyphMap;
@@ -238,7 +238,7 @@ export default function CashierScreen() {
   const shift = shiftQ.data?.shift ?? null;
   const transactions = shiftQ.data?.transactions ?? [];
   const stats = statsQ.data;
-  const collection = collectionBreakdown(transactions);
+  const collection = collectionBreakdown(transactions, shiftQ.data?.summary);
 
   const openFolio = (f: FolioListItem, pay?: boolean) => {
     const qs = new URLSearchParams();
@@ -331,8 +331,8 @@ export default function CashierScreen() {
               />
               <BreakdownTile
                 icon="business-outline"
-                label={t.cari}
-                value={collection.cari}
+                label={t.digital}
+                value={collection.transfer + collection.online + collection.other}
                 tint={c.vip}
               />
             </View>

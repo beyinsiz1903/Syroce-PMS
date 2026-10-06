@@ -4,6 +4,8 @@ export const pos = {
   outlet: 'Satış noktası',
   selectOutlet: 'Satış noktası seçin',
   noOutlets: 'Aktif satış noktası bulunamadı',
+  noOutletsHint:
+    'Sipariş ve masa işlemlerini kullanmak için önce yönetim panelinden bir restoran veya satış noktası tanımlayın.',
   tabs: {
     tables: 'Masa Planı',
     order: 'Siparişler',
@@ -118,11 +120,11 @@ export const pos = {
   kpiOccupancy: 'Masa doluluğu',
   kpiActive: 'Aktif sipariş',
   kpiDelayed: 'Geciken sipariş',
-  banquetSection: 'Banquet Etkinlikleri (BEO)',
+  banquetSection: 'Etkinlik Operasyonları',
   beo: {
-    title: 'Banquet Event Order',
+    title: 'Etkinlik Operasyon Özeti',
     listTitle: 'Etkinlikler',
-    hint: 'Ikram etkinliklerinin okunur BEO özeti',
+    hint: 'İkram etkinliklerinin operasyon özeti',
     noEvents: 'Etkinlik bulunamadı',
     loadError: 'BEO özeti yüklenemedi',
     pax: 'Beklenen kişi',

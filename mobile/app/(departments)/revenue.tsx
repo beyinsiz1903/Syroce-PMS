@@ -24,10 +24,10 @@ import {
   type PriceAdjustment,
   type PricingInsight,
   type ForecastDay,
-  type RevenueOpportunity,
   type ChannelStat,
 } from '../../src/api/revenue';
 import { formatCurrency, formatDate } from '../../src/utils/format';
+import { getCurrentSubscription } from '../../src/api/subscription';
 
 type Tone = 'default' | 'success' | 'warning' | 'danger' | 'info';
 
@@ -62,8 +62,8 @@ function occupancyTone(pct?: number): KpiTone {
   return 'warning';
 }
 
-// Demand level doubles as the displacement-risk signal: a high-demand day is a
-// high displacement risk (discounted/group business crowds out higher rates).
+// The backend derives this level only from already-booked occupancy. Present it
+// as a factual occupancy band, never as measured demand or displacement risk.
 function demandTone(level?: string): Tone {
   switch (level) {
     case 'high':
@@ -82,14 +82,7 @@ function demandLabel(level?: string): string {
   return (level && map[level]) || level || '—';
 }
 
-function riskLabel(level?: string): string {
-  const map = tr.departments.revenue.displacementRisk as Record<string, string>;
-  return (level && map[level]) || level || '—';
-}
-
-// Higher direct-booking share = healthier channel parity (less OTA commission
-// leakage). The backend flags `direct_booking_incentive` when the direct share
-// drops below its threshold; we mirror that into the cockpit tile colour.
+// Higher direct-booking share means less OTA reliance. It is not rate parity.
 function parityTone(incentive?: boolean, share?: number): KpiTone {
   if (typeof share !== 'number') return 'default';
   if (incentive) return 'warning';
@@ -100,6 +93,7 @@ function parityTone(incentive?: boolean, share?: number): KpiTone {
 // verbatim (capitalised) so new OTA channels still render sensibly.
 function channelLabel(ch?: string): string {
   if (!ch) return '—';
+  const normalized = ch.trim().toLocaleLowerCase('tr-TR');
   const map: Record<string, string> = {
     direct: 'Direkt',
     walk_in: 'Walk-in',
@@ -107,8 +101,18 @@ function channelLabel(ch?: string): string {
     phone: 'Telefon',
     website: 'Web Sitesi',
     ota: 'OTA',
+    booking_com: 'Booking.com',
+    'booking.com': 'Booking.com',
+    expedia: 'Expedia',
+    hotelrunner: 'HotelRunner',
+    airbnb: 'Airbnb',
   };
-  if (map[ch]) return map[ch];
+  if (map[normalized]) return map[normalized];
+  // Some channel managers append account/provider suffixes to a recognizable
+  // OTA key. Do not expose that integration identifier to hotel staff.
+  if (normalized.includes('agoda')) return 'Agoda';
+  if (normalized.includes('booking')) return 'Booking.com';
+  if (normalized.includes('expedia')) return 'Expedia';
   return ch.charAt(0).toUpperCase() + ch.slice(1);
 }
 
@@ -122,6 +126,16 @@ export default function RevenueScreen() {
   const c = useTheme();
   const rawRole = useAuthStore((s) => s.user?.role);
   const revenueAccess = !screenRedirectsToHub('revenue', rawRole);
+  const subscriptionQ = useQuery({
+    queryKey: ['subscription-current'],
+    queryFn: getCurrentSubscription,
+    enabled: revenueAccess,
+  });
+  const modules = subscriptionQ.data?.modules;
+  const advancedRevenueEnabled =
+    modules?.revenue_management === true ||
+    modules?.['rms.recommendations'] === true ||
+    modules?.ai_pricing === true;
 
   const dashboardQ = useQuery({
     queryKey: ['rms-dashboard'],
@@ -141,17 +155,17 @@ export default function RevenueScreen() {
   const strategyQ = useQuery({
     queryKey: ['rms-strategy'],
     queryFn: getPricingStrategy,
-    enabled: revenueAccess,
+    enabled: revenueAccess && advancedRevenueEnabled,
   });
   const insightsQ = useQuery({
     queryKey: ['rms-insights'],
     queryFn: () => getPricingInsights(),
-    enabled: revenueAccess,
+    enabled: revenueAccess && advancedRevenueEnabled,
   });
   const adjustmentsQ = useQuery({
     queryKey: ['rms-adjustments'],
     queryFn: () => listPriceAdjustments(),
-    enabled: revenueAccess,
+    enabled: revenueAccess && advancedRevenueEnabled,
   });
 
   if (!revenueAccess) return <Redirect href={ROUTES.departments} />;
@@ -198,7 +212,6 @@ export default function RevenueScreen() {
       </View>
       <View style={{ alignItems: 'flex-end', gap: 4 }}>
         <Badge label={demandLabel(d.demand_level)} tone={demandTone(d.demand_level)} />
-        <Muted style={{ fontSize: 11 }}>{riskLabel(d.demand_level)}</Muted>
       </View>
     </View>
   );
@@ -257,32 +270,6 @@ export default function RevenueScreen() {
       </View>
     );
   };
-
-  const renderOpportunity = (o: RevenueOpportunity, idx: number) => (
-    <Card key={o.date ? `${o.date}-${idx}` : `opp-${idx}`} style={{ marginBottom: spacing.sm }}>
-      <View
-        style={{
-          flexDirection: 'row',
-          justifyContent: 'space-between',
-          alignItems: 'flex-start',
-          gap: spacing.sm,
-        }}
-      >
-        <View style={{ flex: 1 }}>
-          {o.date ? <Muted>{formatDate(o.date)}</Muted> : null}
-          <Body style={{ marginTop: 2 }}>{o.message || '—'}</Body>
-        </View>
-        {typeof o.potential_revenue === 'number' ? (
-          <View style={{ alignItems: 'flex-end' }}>
-            <Muted style={{ fontSize: 11 }}>{t.potential}</Muted>
-            <Body style={{ fontWeight: '700', color: c.success }}>
-              {formatCurrency(o.potential_revenue)}
-            </Body>
-          </View>
-        ) : null}
-      </View>
-    </Card>
-  );
 
   // Premium AI recommendation card. The recommendation direction (raise / lower
   // / hold) is derived from the backend's real suggested-vs-current delta — no
@@ -515,7 +502,11 @@ export default function RevenueScreen() {
 
       <SectionTitle title={t.aiRecommendations} />
       <Muted style={{ marginBottom: spacing.sm }}>{t.aiTagline}</Muted>
-      {(() => {
+      {!advancedRevenueEnabled && !subscriptionQ.isLoading ? (
+        <Card>
+          <Muted>{t.premiumUnavailable}</Muted>
+        </Card>
+      ) : advancedRevenueEnabled ? (() => {
         const items = insightsQ.data?.insights || [];
         const summary = insightsQ.data?.summary;
         if (insightsQ.isLoading || insightsQ.error || items.length === 0) {
@@ -569,33 +560,37 @@ export default function RevenueScreen() {
             {items.map(renderInsight)}
           </View>
         );
-      })()}
+      })() : null}
 
-      <SectionTitle title={t.strategy} />
-      {strategyQ.isLoading || strategyQ.error ? (
-        <DepartmentListState
-          loading={strategyQ.isLoading}
-          error={strategyQ.error}
-          isEmpty={false}
-          skeletonCount={1}
-        />
-      ) : strategyQ.data ? (
-        <Card>
-          {renderMetric(t.currentRate, formatCurrency(strategyQ.data.current_rate))}
-          {renderMetric(t.recommendedRate, formatCurrency(strategyQ.data.recommended_rate))}
-          {renderMetric(t.compAvgRate, formatCurrency(strategyQ.data.comp_avg_rate))}
-          {renderMetric(t.marketPosition, marketPositionLabel(strategyQ.data.market_position))}
-          {renderMetric(
-            t.autoPricing,
-            strategyQ.data.auto_pricing_enabled ? t.on : t.off,
-          )}
-          <View style={{ marginTop: spacing.sm }}>
-            <Badge
-              label={`${t.pendingRecommendations}: ${strategyQ.data.pending_recommendations ?? 0}`}
-              tone={(strategyQ.data.pending_recommendations ?? 0) > 0 ? 'warning' : 'default'}
+      {advancedRevenueEnabled ? (
+        <>
+          <SectionTitle title={t.strategy} />
+          {strategyQ.isLoading || strategyQ.error ? (
+            <DepartmentListState
+              loading={strategyQ.isLoading}
+              error={strategyQ.error}
+              isEmpty={false}
+              skeletonCount={1}
             />
-          </View>
-        </Card>
+          ) : strategyQ.data ? (
+            <Card>
+              {renderMetric(t.currentRate, formatCurrency(strategyQ.data.current_rate))}
+              {renderMetric(t.recommendedRate, formatCurrency(strategyQ.data.recommended_rate))}
+              {renderMetric(t.compAvgRate, formatCurrency(strategyQ.data.comp_avg_rate))}
+              {renderMetric(t.marketPosition, marketPositionLabel(strategyQ.data.market_position))}
+              {renderMetric(
+                t.autoPricing,
+                strategyQ.data.auto_pricing_enabled ? t.on : t.off,
+              )}
+              <View style={{ marginTop: spacing.sm }}>
+                <Badge
+                  label={`${t.pendingRecommendations}: ${strategyQ.data.pending_recommendations ?? 0}`}
+                  tone={(strategyQ.data.pending_recommendations ?? 0) > 0 ? 'warning' : 'default'}
+                />
+              </View>
+            </Card>
+          ) : null}
+        </>
       ) : null}
 
       <SectionTitle title={t.forecast} />
@@ -624,34 +619,23 @@ export default function RevenueScreen() {
         })()
       )}
 
-      <SectionTitle title={t.opportunities} />
-      {dashboardQ.isLoading || dashboardQ.error ? null : (
-        (() => {
-          const items = dashboardQ.data?.opportunities || [];
-          if (items.length === 0) {
-            return (
-              <Card>
-                <Muted>{t.noOpportunities}</Muted>
-              </Card>
+      {advancedRevenueEnabled ? (
+        <>
+          <SectionTitle title={t.adjustments} />
+          {(() => {
+            const items = adjustmentsQ.data || [];
+            const state = (
+              <DepartmentListState
+                loading={adjustmentsQ.isLoading}
+                error={adjustmentsQ.error}
+                isEmpty={items.length === 0}
+                emptyText={t.noAdjustments}
+              />
             );
-          }
-          return <View>{items.map(renderOpportunity)}</View>;
-        })()
-      )}
-
-      <SectionTitle title={t.adjustments} />
-      {(() => {
-        const items = adjustmentsQ.data || [];
-        const state = (
-          <DepartmentListState
-            loading={adjustmentsQ.isLoading}
-            error={adjustmentsQ.error}
-            isEmpty={items.length === 0}
-            emptyText={t.noAdjustments}
-          />
-        );
-        return state ?? <View>{items.map(renderAdjustment)}</View>;
-      })()}
+            return state ?? <View>{items.map(renderAdjustment)}</View>;
+          })()}
+        </>
+      ) : null}
     </ScrollView>
   );
 }

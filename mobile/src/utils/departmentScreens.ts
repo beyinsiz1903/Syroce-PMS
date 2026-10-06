@@ -46,8 +46,8 @@ export function visibleHubTiles(rawRole: string | undefined): HubTile[] {
   return tiles;
 }
 
-// Spa and MICE are separately sold add-ons. Admin roles have broad RBAC but
-// that must not make disabled products look usable. If the subscription
+// Add-ons and plan-scoped department modules must not look usable merely
+// because an admin role has broad RBAC. If the subscription
 // snapshot is unavailable we fail open (the server still guards access), while
 // an explicit `false` removes the dead entry point from the mobile UI.
 export function filterSubscribedHubTiles(
@@ -58,6 +58,18 @@ export function filterSubscribedHubTiles(
   return tiles.filter((tile) => {
     if (tile === 'spa') return modules.spa !== false;
     if (tile === 'mice') return modules.mice !== false;
+    if (tile === 'pos') {
+      const keys = [modules.pos_basic, modules['pms.pos']];
+      return !keys.every((value) => value === false);
+    }
+    if (tile === 'revenue') {
+      const keys = [
+        modules.revenue_management,
+        modules.mobile_revenue,
+        modules['pms.revenue'],
+      ];
+      return !keys.every((value) => value === false);
+    }
     return true;
   });
 }

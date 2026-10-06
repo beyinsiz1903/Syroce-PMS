@@ -23,11 +23,11 @@ export const cashier = {
   searchFolios: 'Misafir, oda veya folyo no ara',
   noFolioMatch: 'Aramayla eşleşen folyo yok',
   // ── Bugünkü tahsilat (vardiya işlemlerinden hesaplanır) ──────────────────
-  todayCollection: 'Bugünkü Tahsilat',
+  todayCollection: 'Açık Vardiya Tahsilatları',
   collectionTotal: 'Toplam tahsilat',
-  collectionHint: 'Açık vardiyada alınan ödemeler',
+  collectionHint: 'Vardiya açıldığından beri alınan ödemeler',
   noCollection: 'Henüz tahsilat yok',
-  cari: 'Cari',
+  digital: 'Dijital / Diğer',
   // Folyo kartı
   collect: 'Tahsilat Al',
   lastActivity: 'Son hareket',
