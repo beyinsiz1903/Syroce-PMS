@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo } from 'react';
 import { ActivityIndicator, Pressable, Text, View } from 'react-native';
-import { Stack, useRouter, useSegments } from 'expo-router';
+import { Stack, useRootNavigationState, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -59,6 +59,7 @@ queryClient.getQueryCache().subscribe((event) => {
 function AuthGate({ children }: { children: React.ReactNode }) {
   const segments = useSegments();
   const router = useRouter();
+  const rootNavigationState = useRootNavigationState();
   const { user, role, allAccess, deptAccess, loading, hydrate } = useAuthStore();
   const hydrateSettings = useSettingsStore((s) => s.hydrate);
 
@@ -68,7 +69,11 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   }, [hydrate, hydrateSettings]);
 
   useEffect(() => {
-    if (loading) return;
+    // Login/hydration can finish before Expo Router has mounted the root
+    // navigator on a cold iOS launch. Navigating in that small window throws
+    // and leaves the otherwise-valid session on the generic error screen.
+    // Wait for the navigator key before applying the auth redirect.
+    if (loading || !rootNavigationState?.key) return;
     const first = segments[0];
     const inAuth = first === '(auth)';
 
@@ -106,7 +111,7 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     if (first === groupForRole(role)) return;
 
     router.replace(rootForRole(role));
-  }, [user, role, allAccess, deptAccess, loading, segments, router]);
+  }, [user, role, allAccess, deptAccess, loading, rootNavigationState?.key, segments, router]);
 
   return <>{children}</>;
 }
