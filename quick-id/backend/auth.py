@@ -1,7 +1,7 @@
 """Authentication & authorization utilities"""
 from datetime import datetime, timezone, timedelta
 from typing import Optional
-from jose import JWTError, jwt
+import jwt
 from _pwd import BcryptContext
 from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -140,7 +140,7 @@ def decode_token(token: str) -> dict:
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         return payload
-    except JWTError:
+    except jwt.PyJWTError:
         return None
 
 
