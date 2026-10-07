@@ -8,7 +8,7 @@ from __future__ import annotations
 import logging
 
 import pytest
-from pymongo.errors import AutoReconnect, NetworkTimeout, ServerSelectionTimeoutError
+from pymongo.errors import AutoReconnect, NetworkTimeout, OperationFailure, ServerSelectionTimeoutError, WriteError
 
 from core.transient_db_guard import (
     TransientFailureTracker,
@@ -22,6 +22,24 @@ def test_classification_recognises_atlas_and_network_errors():
     assert is_transient_db_error(ServerSelectionTimeoutError("x"))
     assert is_transient_db_error(ConnectionError("x"))
     assert is_transient_db_error(OSError("x"))
+
+
+@pytest.mark.parametrize("code", [91, 189, 10107, 11600, 11602, 13435, 13436])
+def test_classification_recognises_replica_set_write_transition_codes(code):
+    assert is_transient_db_error(WriteError("Not primary while writing", code=code))
+
+
+def test_classification_recognises_retryable_operation_label():
+    exc = OperationFailure(
+        "retryable write",
+        code=1,
+        details={"errorLabels": ["RetryableWriteError"]},
+    )
+    assert is_transient_db_error(exc)
+
+
+def test_classification_rejects_non_retryable_write_error():
+    assert not is_transient_db_error(WriteError("duplicate value", code=11000))
 
 
 def test_classification_rejects_programmer_errors():

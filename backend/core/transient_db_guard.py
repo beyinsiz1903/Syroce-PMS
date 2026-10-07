@@ -36,7 +36,7 @@ from __future__ import annotations
 import logging
 from typing import Iterable
 
-from pymongo.errors import AutoReconnect, NetworkTimeout, ServerSelectionTimeoutError
+from pymongo.errors import AutoReconnect, NetworkTimeout, OperationFailure, ServerSelectionTimeoutError
 
 _TRANSIENT_DB_ERRORS: tuple[type[BaseException], ...] = (
     AutoReconnect,
@@ -46,10 +46,42 @@ _TRANSIENT_DB_ERRORS: tuple[type[BaseException], ...] = (
     OSError,
 )
 
+# MongoDB can report a replica-set election during a write as an
+# ``OperationFailure``/``WriteError`` instead of ``NotPrimaryError``.  These
+# server codes are explicitly retryable topology transitions, not bad input
+# or a broken write contract.  In particular Atlas currently emits code 189
+# (PrimarySteppedDown), which otherwise gets sent to Sentry as a product bug.
+_TRANSIENT_OPERATION_CODES = frozenset(
+    {
+        6,      # HostUnreachable
+        7,      # HostNotFound
+        89,     # NetworkTimeout
+        91,     # ShutdownInProgress
+        189,    # PrimarySteppedDown
+        9001,   # SocketException
+        10107,  # NotWritablePrimary / legacy NotMaster
+        11600,  # InterruptedAtShutdown
+        11602,  # InterruptedDueToReplStateChange
+        13435,  # NotPrimaryNoSecondaryOk
+        13436,  # NotPrimaryOrSecondary
+    }
+)
+
 
 def is_transient_db_error(exc: BaseException) -> bool:
     """True if `exc` looks like a recoverable MongoDB / network hiccup."""
-    return isinstance(exc, _TRANSIENT_DB_ERRORS)
+    if isinstance(exc, _TRANSIENT_DB_ERRORS):
+        return True
+    if isinstance(exc, OperationFailure):
+        if getattr(exc, "code", None) in _TRANSIENT_OPERATION_CODES:
+            return True
+        has_error_label = getattr(exc, "has_error_label", None)
+        if callable(has_error_label) and (
+            has_error_label("RetryableWriteError")
+            or has_error_label("RetryableReadError")
+        ):
+            return True
+    return False
 
 
 class TransientFailureTracker:
