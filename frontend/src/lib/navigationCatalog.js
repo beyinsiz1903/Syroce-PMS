@@ -18,6 +18,8 @@ export function accessibleNavigationItems({
 }) {
   const hiddenGroups = new Set(tenant?.hidden_nav_groups || []);
   const hiddenItems = new Set(tenant?.hidden_nav_items || []);
+  const visibleItems = new Set(tenant?.visible_nav_items || []);
+  const itemLabels = tenant?.nav_item_labels || {};
   const userRoles = new Set([
     user?.role,
     ...(Array.isArray(user?.roles) ? user.roles : []),
@@ -29,6 +31,7 @@ export function accessibleNavigationItems({
     // must be honoured for administrators too. Platform-only entries remain
     // available through their explicit super-admin routes.
     if (hiddenItems.has(item.key)) return false;
+    if (visibleItems.size > 0 && !visibleItems.has(item.key)) return false;
     if (item.navGroup && hiddenGroups.has(item.navGroup)) return false;
     if (item.requireSuperAdmin && !isSuperAdmin) return false;
     if (item.requireChain && !tenant?.chain_id) return false;
@@ -39,7 +42,7 @@ export function accessibleNavigationItems({
     ) return false;
     if (item.moduleKey && !(isSuperAdmin && item.requireSuperAdmin) && !hasModule(item.moduleKey)) return false;
     return true;
-  });
+  }).map((item) => itemLabels[item.key] ? { ...item, label: itemLabels[item.key] } : item);
 }
 
 export function navigationItemsByGroup(items) {

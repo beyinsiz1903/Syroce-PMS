@@ -1087,7 +1087,13 @@ async def create_tenant(payload: TenantRegister, current_user: User = Depends(re
     else:
         combined_modules = get_plan_default_modules(tier)
         special_settings = {}
-        nav_config = {"hidden_nav_groups": [], "hidden_nav_items": []}
+        nav_config = {
+            "hidden_nav_groups": [],
+            "hidden_nav_items": [],
+            "visible_nav_items": [],
+            "nav_group_labels": {},
+            "nav_item_labels": {},
+        }
         dashboard_layout = "standard"
 
     # Per-tenant module override: operator picked specific modules / sub-modules
@@ -1170,6 +1176,9 @@ async def create_tenant(payload: TenantRegister, current_user: User = Depends(re
     tenant_dict["dashboard_layout"] = dashboard_layout
     tenant_dict["hidden_nav_groups"] = nav_config.get("hidden_nav_groups", [])
     tenant_dict["hidden_nav_items"] = nav_config.get("hidden_nav_items", [])
+    tenant_dict["visible_nav_items"] = nav_config.get("visible_nav_items", [])
+    tenant_dict["nav_group_labels"] = nav_config.get("nav_group_labels", {})
+    tenant_dict["nav_item_labels"] = nav_config.get("nav_item_labels", {})
     tenant_dict["commercial_quote"] = commercial_quote
     if payload.channel_manager_provider:
         tenant_dict["channel_manager_provider"] = payload.channel_manager_provider

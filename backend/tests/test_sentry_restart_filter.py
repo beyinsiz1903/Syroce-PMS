@@ -25,6 +25,7 @@ from infra.cloud_observability import (
     _is_hotelrunner_obs_rate_limited,
     _is_hotelrunner_pull_rate_limited,
     _is_nonprod_sustained_transient_db,
+    _is_socketio_unsupported_client_protocol,
     _is_static_client_disconnect,
     _is_workflow_restart_port_bind,
     _sentry_before_send,
@@ -132,6 +133,56 @@ class TestBeforeSendIntegration:
             {"exception": {"values": [{"value": str(exc)}]}}, _hint(exc)
         )
         assert out is not None
+
+
+class TestSocketIoUnsupportedClientProtocol:
+    _MSG = (
+        "The client is using an unsupported version of the Socket.IO or "
+        "Engine.IO protocols (further occurrences of this error will be "
+        "logged with level INFO)"
+    )
+
+    @staticmethod
+    def _event(*, url="http://165.245.1.21/ws/socket.io", method="GET", logger="engineio.server", message=None):
+        return {
+            "logger": logger,
+            "request": {"method": method, "url": url},
+            "logentry": {"message": message or TestSocketIoUnsupportedClientProtocol._MSG},
+        }
+
+    def test_exact_bad_client_rejection_is_detected(self):
+        assert _is_socketio_unsupported_client_protocol(self._event()) is True
+
+    def test_legacy_proxy_path_is_detected(self):
+        assert _is_socketio_unsupported_client_protocol(
+            self._event(url="https://pms.syroce.com/socket.io/?EIO=3&transport=polling")
+        ) is True
+
+    def test_same_message_on_api_path_still_pages(self):
+        assert _is_socketio_unsupported_client_protocol(
+            self._event(url="https://pms.syroce.com/api/health")
+        ) is False
+
+    def test_wrong_logger_still_pages(self):
+        assert _is_socketio_unsupported_client_protocol(
+            self._event(logger="app.websocket")
+        ) is False
+
+    def test_near_match_still_pages(self):
+        assert _is_socketio_unsupported_client_protocol(
+            self._event(message="The client is using an unsupported version")
+        ) is False
+
+    def test_post_still_pages(self):
+        assert _is_socketio_unsupported_client_protocol(
+            self._event(method="POST")
+        ) is False
+
+    def test_before_send_drops_and_counts(self):
+        before = get_sentry_filter_stats()["socketio_protocol_client_drops"]
+        assert _sentry_before_send(self._event(), {}) is None
+        after = get_sentry_filter_stats()["socketio_protocol_client_drops"]
+        assert after == before + 1
 
 
 class TestNonProdSustainedTransientDb:
