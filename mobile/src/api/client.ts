@@ -141,6 +141,8 @@ type RequestOptions = {
   signal?: AbortSignal;
   auth?: boolean;
   headers?: Record<string, string>;
+  /** Override for endpoints that legitimately take longer than normal API calls. */
+  timeoutMs?: number;
   /** Internal flag – set by the retry path so we never recurse indefinitely. */
   _retried?: boolean;
 };
@@ -223,7 +225,7 @@ function warmupBackoff(ms: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
-function createRequestSignal(external?: AbortSignal): {
+function createRequestSignal(external?: AbortSignal, timeoutMs = REQUEST_TIMEOUT_MS): {
   signal: AbortSignal;
   didTimeout: () => boolean;
   cleanup: () => void;
@@ -238,7 +240,7 @@ function createRequestSignal(external?: AbortSignal): {
   const timer = setTimeout(() => {
     timedOut = true;
     controller.abort();
-  }, REQUEST_TIMEOUT_MS);
+  }, timeoutMs);
 
   return {
     signal: controller.signal,
@@ -285,7 +287,7 @@ export async function apiRequest<T = unknown>(path: string, opts: RequestOptions
   let text = '';
   let warmupAttempts = 0;
   for (;;) {
-    const requestSignal = createRequestSignal(opts.signal);
+    const requestSignal = createRequestSignal(opts.signal, opts.timeoutMs);
     try {
       res = await fetch(url, {
         method: opts.method || 'GET',
