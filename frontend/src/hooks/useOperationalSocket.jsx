@@ -7,6 +7,7 @@ import { io } from "socket.io-client";
 
 const RAW_URL = import.meta.env.VITE_BACKEND_URL || "";
 const WS_URL = RAW_URL.replace(/\/api$/, "");
+const SOCKET_IO_PATH = "/ws/socket.io";
 
 export function useOperationalSocket(namespace = "/", events = {}) {
   const [connected, setConnected] = useState(false);
@@ -17,6 +18,11 @@ export function useOperationalSocket(namespace = "/", events = {}) {
 
   useEffect(() => {
     const socket = io(`${WS_URL}${namespace}`, {
+      // Keep every Socket.IO client on the canonical endpoint. Relying on the
+      // legacy `/socket.io` nginx rewrite makes stale deployments and direct
+      // backend access indistinguishable from an unsupported Engine.IO client.
+      path: SOCKET_IO_PATH,
+      withCredentials: true,
       transports: ["websocket", "polling"],
       reconnection: true,
       reconnectionAttempts: 10,
