@@ -162,6 +162,7 @@ def get_sentry_filter_stats() -> dict[str, int]:
         "hotelrunner_obs_rate_limit_drops": _HOTELRUNNER_OBS_RATE_LIMIT_DROP_COUNT,
         "static_client_disconnect_drops": _STATIC_CLIENT_DISCONNECT_DROP_COUNT,
         "asgi_incomplete_response_drops": _ASGI_INCOMPLETE_RESPONSE_DROP_COUNT,
+        "socketio_protocol_client_drops": _SOCKETIO_PROTOCOL_CLIENT_DROP_COUNT,
     }
 
 
@@ -270,6 +271,43 @@ _GRAPHQL_FIELD_VALIDATION_DROP_COUNT = 0
 # environment. We anchor on the FULL graphql-core template so a genuine error
 # that merely mentions a field name is never dropped.
 _GRAPHQL_FIELD_VALIDATION_RE = re.compile(r"Cannot query field '[^']*' on type '[^']*'\.")
+
+
+# ── Socket.IO unsupported-client protocol noise ───────────────────
+# Engine.IO emits this at ERROR for the first request made by an old client,
+# crawler or direct-IP scanner with a missing/unsupported EIO version. The
+# request is correctly rejected with 400; it is client input, not a server
+# failure. Only the exact upstream template on the two Socket.IO paths is
+# suppressed from Sentry. Handshake exceptions, authentication failures and
+# all other websocket errors continue to page normally.
+_SOCKETIO_PROTOCOL_CLIENT_DROP_COUNT = 0
+_SOCKETIO_UNSUPPORTED_PROTOCOL_RE = re.compile(
+    r"^The client is using an unsupported version of the Socket\.IO or "
+    r"Engine\.IO protocols \(further occurrences of this error will be "
+    r"logged with level INFO\)$"
+)
+
+
+def _is_socketio_unsupported_client_protocol(event: dict) -> bool:
+    """Detect the exact Engine.IO bad-client rejection on its handshake path."""
+    try:
+        method, path = _event_request_target(event)
+        if method != "GET" or path.rstrip("/") not in {"/ws/socket.io", "/socket.io"}:
+            return False
+        logger_name = event.get("logger")
+        if logger_name is not None and logger_name != "engineio.server":
+            return False
+        le = event.get("logentry") or {}
+        candidates = [le.get("message"), le.get("formatted")]
+        message = event.get("message")
+        candidates.append(message if isinstance(message, str) else None)
+        return any(
+            isinstance(candidate, str)
+            and _SOCKETIO_UNSUPPORTED_PROTOCOL_RE.fullmatch(candidate)
+            for candidate in candidates
+        )
+    except Exception:
+        return False
 
 
 def _is_graphql_field_validation_error(event: dict) -> bool:
@@ -532,6 +570,17 @@ def _sentry_before_send(event: dict, hint: dict) -> dict | None:
     global _HOTELRUNNER_OBS_RATE_LIMIT_DROP_COUNT
     global _STATIC_CLIENT_DISCONNECT_DROP_COUNT
     global _ASGI_INCOMPLETE_RESPONSE_DROP_COUNT
+    global _SOCKETIO_PROTOCOL_CLIENT_DROP_COUNT
+    try:
+        if _is_socketio_unsupported_client_protocol(event):
+            _SOCKETIO_PROTOCOL_CLIENT_DROP_COUNT += 1
+            logger.info(
+                "sentry before_send dropped unsupported Socket.IO client protocol "
+                f"(cumulative={_SOCKETIO_PROTOCOL_CLIENT_DROP_COUNT})"
+            )
+            return None
+    except Exception:
+        pass
     try:
         if _is_graphql_introspection_denied(event):
             _GRAPHQL_INTROSPECTION_DENIED_DROP_COUNT += 1
