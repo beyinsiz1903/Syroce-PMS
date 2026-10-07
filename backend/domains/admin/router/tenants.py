@@ -1267,17 +1267,26 @@ async def update_tenant_modules(
     }
     """
     from core.audit import log_audit_event
+    from core.helpers import invalidate_tenant_doc_cache
+
+    # This is an explicitly super-admin-only cross-tenant operation.  Using
+    # the request-scoped ``db`` handle for the audit row makes a perfectly
+    # valid update fail after it has already been committed whenever the
+    # platform operator's home tenant differs from the hotel being edited.
+    # Keep the tenant update and its audit record on the trusted system DB so
+    # they are one coherent control-plane operation.
+    sys_db = get_system_db()
 
     # Read the current effective set first. This makes the published change
     # auditable at module level rather than leaving a single opaque JSON blob.
     # Try by logical id first.
     query = {"id": tenant_id}
-    before = await db.tenants.find_one(query, {"_id": 0})
+    before = await sys_db.tenants.find_one(query, {"_id": 0})
     if not before:
         try:
             from bson import ObjectId
 
-            before = await db.tenants.find_one({"_id": ObjectId(tenant_id)}, {"_id": 0})
+            before = await sys_db.tenants.find_one({"_id": ObjectId(tenant_id)}, {"_id": 0})
         except Exception:
             before = None
     if not before:
@@ -1312,13 +1321,13 @@ async def update_tenant_modules(
     if "channel_manager_provider" in payload.model_fields_set:
         update_doc["$set"]["channel_manager_provider"] = payload.channel_manager_provider
 
-    result = await db.tenants.update_one(query, update_doc)
+    result = await sys_db.tenants.update_one(query, update_doc)
     if result.matched_count == 0:
         # Fallback to Mongo _id
         try:
             from bson import ObjectId
 
-            result = await db.tenants.update_one({"_id": ObjectId(tenant_id)}, update_doc)
+            result = await sys_db.tenants.update_one({"_id": ObjectId(tenant_id)}, update_doc)
         except Exception:
             result = None
 
@@ -1328,14 +1337,17 @@ async def update_tenant_modules(
             detail="Hotel not found",
         )
 
+    # Raw system DB writes intentionally bypass the tenant-aware collection
+    # wrapper, therefore invalidate the module cache explicitly on all workers.
+    invalidate_tenant_doc_cache(before.get("id") or tenant_id)
     _invalidate_admin_tenants_cache(getattr(current_user, "tenant_id", None))  # v95.3
 
     # Return updated tenant with merged modules
-    tenant_doc = await db.tenants.find_one(query, {"_id": 0})
+    tenant_doc = await sys_db.tenants.find_one(query, {"_id": 0})
     if not tenant_doc:
         from bson import ObjectId
 
-        tenant_doc = await db.tenants.find_one({"_id": ObjectId(tenant_id)}, {"_id": 0})
+        tenant_doc = await sys_db.tenants.find_one({"_id": ObjectId(tenant_id)}, {"_id": 0})
 
     if not tenant_doc:
         raise HTTPException(
@@ -1353,7 +1365,7 @@ async def update_tenant_modules(
         details=f"Süperadmin {len(changed_keys)} modül değişikliğini yayınladı",
         before_value={key: bool(before_modules.get(key)) for key in changed_keys},
         after_value={key: bool(after_modules.get(key)) for key in changed_keys},
-        db=db,
+        db=sys_db,
         severity="warning" if any(not after_modules.get(key) for key in changed_keys) else "info",
     )
     return tenant_doc
