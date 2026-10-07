@@ -36,6 +36,8 @@ export default function NewReservationScreen() {
     room_type?: string;
     check_in?: string;
     check_out?: string;
+    guest_name?: string;
+    guest_id_number?: string;
   }>();
   const qc = useQueryClient();
   const today = localTodayISO();
@@ -46,7 +48,7 @@ export default function NewReservationScreen() {
     ? String(p.check_out)
     : addDaysISO(initialCheckIn, 1);
 
-  const [guestName, setGuestName] = useState('');
+  const [guestName, setGuestName] = useState(String(p.guest_name || ''));
   const [checkIn, setCheckIn] = useState(initialCheckIn);
   const [checkOut, setCheckOut] = useState(initialCheckOut);
   const [room, setRoom] = useState<AvailabilityRoom | null>(null);
@@ -108,6 +110,7 @@ export default function NewReservationScreen() {
         check_in: `${checkIn}T14:00:00+03:00`,
         check_out: `${checkOut}T12:00:00+03:00`,
         total_amount: total,
+        guest_id_number: String(p.guest_id_number || '').trim() || undefined,
         adults: adultCount,
         children: childCount,
       };

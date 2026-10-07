@@ -181,6 +181,9 @@ export type QuickBookingPayload = {
   check_in: string;
   check_out: string;
   total_amount: number;
+  guest_email?: string;
+  guest_phone?: string;
+  guest_id_number?: string;
   adults?: number;
   children?: number;
   daily_rate?: number;
@@ -204,4 +207,38 @@ export async function createQuickBooking(
     body: payload,
     headers: { 'Idempotency-Key': idempotencyKey },
   });
+}
+
+export type ReservationGuestPayload = {
+  name: string;
+  email?: string;
+  phone?: string;
+  id_type?: 'tc_kimlik' | 'passport' | string;
+  id_number?: string;
+  nationality?: string;
+  date_of_birth?: string;
+  gender?: string;
+  address?: string;
+  city?: string;
+  country?: string;
+  notes?: string;
+};
+
+export type ReservationGuestResult = {
+  status: string;
+  guest_id: string;
+  created: boolean;
+  linked: boolean;
+  already_linked: boolean;
+};
+
+// Adds the scanned person as a separate occupant of an existing reservation.
+// This endpoint deliberately does not change the reservation status or perform
+// check-in. If the room is already in-house, the backend handles the person's
+// separate legal guest-notification record.
+export async function addReservationGuest(
+  bookingId: string,
+  payload: ReservationGuestPayload,
+): Promise<ReservationGuestResult> {
+  return api.post<ReservationGuestResult>(`/api/pms/reservations/${bookingId}/guests`, payload);
 }
