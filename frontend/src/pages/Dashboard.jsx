@@ -726,7 +726,7 @@ const Dashboard = ({
             {isSuperAdmin && <Card className="overflow-hidden border-0 bg-[linear-gradient(135deg,#0f172a_0%,#1e293b_50%,#b45309_100%)] text-white shadow-lg" data-testid="migration-observability-dashboard-card">
               <CardContent className="grid gap-5 p-6 md:grid-cols-[1.15fr_0.85fr] md:p-7">
                 <div className="space-y-3">
-                  <Badge className="w-fit bg-white/15 text-white hover:bg-white/15" data-testid="migration-observability-dashboard-badge">Migration Observability</Badge>
+                  <Badge className="w-fit bg-white/15 text-white hover:bg-white/15" data-testid="migration-observability-dashboard-badge">Geçiş İzleme</Badge>
                   <div>
                     <h2 className="text-2xl font-bold" style={{
                   fontFamily: 'Space Grotesk'
@@ -742,11 +742,11 @@ const Dashboard = ({
                   <div className="space-y-2">
                     <div className="flex items-center gap-2 text-sm text-white/80">
                       <Monitor className="h-4 w-4" />
-                      Outbox + Audit + Shadow
+                      Olaylar + Denetim + Tutarlılık
                     </div>
                     <p className="text-sm text-white/70">{t('dashboard.migrationObservabilitySide')}</p>
                   </div>
-                  <Button onClick={() => navigate('/app/migration-observability')} className="rounded-full bg-white text-slate-900 hover:bg-amber-50" data-testid="migration-observability-dashboard-open-button" aria-label="Migration Observability panelini aç">
+                  <Button onClick={() => navigate('/app/migration-observability')} className="rounded-full bg-white text-slate-900 hover:bg-amber-50" data-testid="migration-observability-dashboard-open-button" aria-label="Geçiş izleme panelini aç">
                     {t('dashboard.openPanel')}
                     <ArrowRight className="ml-2 h-4 w-4" aria-hidden="true" />
                   </Button>

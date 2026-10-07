@@ -1040,7 +1040,7 @@
     "aiWhatsApp": "AI WhatsApp Rehber",
     "aiWhatsAppDesc": "7/24 Otomatik misafir hizmeti - Sıfır insan",
     "predictiveAnalytics": "Tahmine Dayalı Analitik",
-    "predictiveAnalyticsDesc": "No-show, talep, şikayet tahminleri - AI Oracle",
+    "predictiveAnalyticsDesc": "Gelmemesi beklenen rezervasyonlar, talep ve şikâyet tahminleri",
     "socialMediaRadar": "Sosyal Medya Radarı",
     "socialMediaRadarDesc": "Instagram, Twitter, Facebook izleme - Gerçek zamanlı",
     "revenueAutopilot": "Gelir Otopilot",
@@ -1093,9 +1093,9 @@
     "chartOther": "Diğer",
     "chartOccupancy": "Doluluk",
     "chartBookings": "Rezervasyonlar",
-    "migrationObservability": "Semantic çekirdek geçişini canlı panelden izleyin.",
-    "migrationObservabilityDesc": "Outbox event breakdown, audit stream ve shadow mismatch oranlarını ayrı bir kontrol yüzeyinde görün. Bu panel yeni write-path açmadan önce operasyonel güvenlik sinyallerini toplar.",
-    "migrationObservabilitySide": "Observability önce, sonra yeni write-path — mevcut migration stratejisi için önerilen güvenlik katmanı.",
+    "migrationObservability": "Sistem geçişlerini canlı olarak izleyin",
+    "migrationObservabilityDesc": "Bekleyen olayları, denetim kayıtlarını ve veri uyuşmazlıklarını tek bir kontrol ekranında görün. Yeni veri akışını açmadan önce operasyonel güvenlik sinyallerini değerlendirin.",
+    "migrationObservabilitySide": "Önce sistem sağlığını doğrulayın, ardından yeni veri akışını güvenle devreye alın.",
     "openPanel": "Paneli aç"
   },
   "pms": {

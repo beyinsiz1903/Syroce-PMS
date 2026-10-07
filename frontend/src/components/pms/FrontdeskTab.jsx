@@ -712,7 +712,7 @@ const FrontdeskTab = ({
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between">
                     <span className="text-gray-600">{tf('currentOccupancy')}:</span>
-                    <span className="font-semibold">{aiPrediction.current_occupancy?.toFixed(1)}%</span>
+                    <span className="font-semibold">{financialPulse.occupancyPct.toFixed(1)}%</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600">{tf('upcomingBookings')}:</span>
