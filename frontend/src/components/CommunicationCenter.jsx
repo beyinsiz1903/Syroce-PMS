@@ -54,7 +54,7 @@ export default function CommunicationCenter({ user }) {
         size="icon"
         onClick={() => changeDisplayMode('minimized')}
         className="print:hidden communication-center-restore safe-fixed-bottom fixed right-2 z-50 h-9 w-9 rounded-full bg-white/95 shadow-lg"
-        aria-label="{t('pms.commCenter.title', 'İletişim merkezi')}ni göster"
+        aria-label={t('pms.commCenter.show', 'İletişim merkezini göster')}
         data-testid="communication-center-restore"
       >
         <Headset className="h-4 w-4" />
@@ -70,7 +70,7 @@ export default function CommunicationCenter({ user }) {
         <div
           className="w-64 rounded-2xl border border-slate-200 bg-white p-2 shadow-2xl dark:border-slate-700 dark:bg-slate-950"
           role="menu"
-          aria-label="{t('pms.commCenter.title', 'İletişim merkezi')} seçenekleri"
+          aria-label={t('pms.commCenter.options', 'İletişim merkezi seçenekleri')}
           data-testid="communication-center-menu"
         >
           <div className="flex items-center justify-between px-2 py-1.5">
@@ -79,10 +79,10 @@ export default function CommunicationCenter({ user }) {
               <div className="text-[11px] text-slate-500">Ekip mesajları ve misafir talepleri</div>
             </div>
             <div className="flex items-center gap-0.5">
-              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => changeDisplayMode('minimized')} aria-label="{t('pms.commCenter.title', 'İletişim merkezi')}ni küçült">
+              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => changeDisplayMode('minimized')} aria-label={t('pms.commCenter.minimize', 'İletişim merkezini küçült')}>
                 <Minus className="h-4 w-4" />
               </Button>
-              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => changeDisplayMode('hidden')} aria-label="{t('pms.commCenter.title', 'İletişim merkezi')}ni kapat">
+              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => changeDisplayMode('hidden')} aria-label={t('pms.commCenter.close', 'İletişim merkezini kapat')}>
                 <X className="h-4 w-4" />
               </Button>
             </div>
@@ -127,7 +127,7 @@ export default function CommunicationCenter({ user }) {
         onClick={() => setOpen((value) => !value)}
         className={`communication-center-launcher h-12 rounded-full shadow-xl shadow-slate-900/20 ${minimized ? 'w-12 px-0' : 'px-4'}`}
         aria-expanded={open}
-        aria-label="{t('pms.commCenter.title', 'İletişim merkezi')}ni aç"
+        aria-label={t('pms.commCenter.open', 'İletişim merkezini aç')}
         data-testid="communication-center-launcher"
       >
         {open ? <X className="h-5 w-5" /> : <Headset className="h-5 w-5" />}
