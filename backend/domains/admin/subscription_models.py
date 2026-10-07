@@ -603,6 +603,11 @@ def get_plan_default_modules(tier: str) -> dict[str, bool]:
             "guests": True,
             "housekeeping": True,
             "settings": True,
+            # Quick-ID is part of the core front-desk/KBS flow in every
+            # commercial tier.  Keeping it off only for the legacy Lite
+            # alias made the mobile quick action visible but caused the scan
+            # request to fail at the entitlement middleware.
+            "quick_id": True,
         })
     else:
         modules = PLAN_MODULE_DEFAULTS.get(tier_lower, PLAN_MODULE_DEFAULTS["basic"]).copy()

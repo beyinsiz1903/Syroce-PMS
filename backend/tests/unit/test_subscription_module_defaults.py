@@ -25,6 +25,7 @@ def test_pms_lite_plan_wins_over_a_legacy_basic_tier():
     assert modules["reports"] is False
     assert modules["marketplace"] is False
     assert modules["pms.cashier"] is False
+    assert modules["quick_id"] is True
 
 
 def test_explicit_tenant_choice_still_overrides_pms_lite_default():
