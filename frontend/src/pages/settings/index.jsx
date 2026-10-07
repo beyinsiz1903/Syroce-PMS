@@ -336,15 +336,20 @@ const Settings = ({
   }, []);
   const loadSubscription = useCallback(async () => {
     try {
-      const [subscriptionRes, plansRes] = await Promise.all([
-        axios.get('/subscription/current'),
-        axios.get('/subscription/plans')
-      ]);
+      const subscriptionRes = await axios.get('/subscription/current');
       setSubscription(subscriptionRes.data);
-      setPlanCatalog(plansRes.data?.plans || []);
     } catch (err) {
       console.error('Sub load failed', err);
       toast.error(err?.response?.data?.detail || 'Abonelik bilgisi alınamadı');
+    }
+  }, []);
+  const loadPlanCatalog = useCallback(async () => {
+    try {
+      const plansRes = await axios.get('/subscription/plans');
+      setPlanCatalog(plansRes.data?.plans || []);
+    } catch (err) {
+      console.error('Plan catalog load failed', err);
+      toast.error(err?.response?.data?.detail || 'Plan kataloğu alınamadı');
     }
   }, []);
   const loadBillingHistory = useCallback(async () => {
@@ -508,6 +513,7 @@ const Settings = ({
     if (activeTab === 'hotel' || activeTab === 'plan') {
       if (!subscription) loadSubscription();
     }
+    if (activeTab === 'plan' && planCatalog.length === 0) loadPlanCatalog();
     if (activeTab === 'team') {
       if (team.length === 0) loadTeam();
       if (isAdmin && !grLoaded) loadGuestRequestSettings();
@@ -521,7 +527,8 @@ const Settings = ({
     if (activeTab === 'rooms') {
       if (roomsList.length === 0) loadRooms();
     }
-  }, [activeTab, billingHistory.length, grLoaded, invoiceSettings, isAdmin, loadBillingHistory, loadB2B, loadGuestRequestSettings, loadInvoiceSettings, loadRooms, loadSubscription, loadTeam, roomsList.length, subscription, team.length]);
+    if (activeTab === 'b2b' && !b2bInfo) loadB2B();
+  }, [activeTab, b2bInfo, billingHistory.length, grLoaded, invoiceSettings, isAdmin, loadBillingHistory, loadB2B, loadGuestRequestSettings, loadInvoiceSettings, loadPlanCatalog, loadRooms, loadSubscription, loadTeam, planCatalog.length, roomsList.length, subscription, team.length]);
 
   // Init hotel form from tenant
   useEffect(() => {
@@ -626,7 +633,7 @@ const Settings = ({
       try {
         sessionStorage.setItem('settings:activeTab', activeTab);
       } catch {/* ignore */}
-      await Promise.all([loadSubscription(), loadBillingHistory(), loadTeam()]);
+      await Promise.all([loadSubscription(), loadPlanCatalog(), loadBillingHistory(), loadTeam()]);
       setTimeout(() => window.location.reload(), 600);
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Plan değiştirilemedi');
@@ -825,8 +832,8 @@ const Settings = ({
     if (activeTab === 'team') {
       loadTeam();
       if (isAdmin) loadGuestRequestSettings();
-    } else if (activeTab === 'plan') loadSubscription();else if (activeTab === 'billing') loadBillingHistory();else if (activeTab === 'hotel') loadSubscription();else if (activeTab === 'invoice') loadInvoiceSettings();else if (activeTab === 'rooms') loadRooms();else if (activeTab === 'b2b') loadB2B();
-  }, [activeTab, isAdmin, loadTeam, loadGuestRequestSettings, loadSubscription, loadBillingHistory, loadInvoiceSettings, loadRooms, loadB2B]);
+    } else if (activeTab === 'plan') Promise.all([loadSubscription(), loadPlanCatalog()]);else if (activeTab === 'billing') loadBillingHistory();else if (activeTab === 'hotel') loadSubscription();else if (activeTab === 'invoice') loadInvoiceSettings();else if (activeTab === 'rooms') loadRooms();else if (activeTab === 'b2b') loadB2B();
+  }, [activeTab, isAdmin, loadTeam, loadGuestRequestSettings, loadSubscription, loadPlanCatalog, loadBillingHistory, loadInvoiceSettings, loadRooms, loadB2B]);
   const tabBusy = activeTab === 'team' && teamLoading || activeTab === 'billing' && billingLoading || activeTab === 'invoice' && invoiceLoading || activeTab === 'rooms' && roomsLoading;
   return <>
       <div className="p-4 md:p-6 space-y-4 max-w-6xl mx-auto">
