@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import RoomsTab, { formatCleaningDuration } from '@/components/pms/RoomsTab';
+import RoomsTab, { formatCleaningDuration, formatRoomAttribute } from '@/components/pms/RoomsTab';
 
 vi.mock('axios', () => ({ default: { get: vi.fn(), post: vi.fn(), put: vi.fn() } }));
 vi.mock('sonner', () => ({
@@ -34,6 +34,13 @@ const booking = {
 };
 
 describe('RoomsTab PMS business date', () => {
+  it('presents stored room metadata with guest-facing Turkish labels', () => {
+    expect(formatRoomAttribute('standard')).toBe('Standart');
+    expect(formatRoomAttribute('city')).toBe('Şehir');
+    expect(formatRoomAttribute('twin')).toBe('İki tek kişilik');
+    expect(formatRoomAttribute('Özel Manzara')).toBe('Özel Manzara');
+  });
+
   it('formats long-running cleaning work in a human-readable duration', () => {
     expect(formatCleaningDuration(30)).toBe('30 dk');
     expect(formatCleaningDuration(90)).toBe('1 sa 30 dk');

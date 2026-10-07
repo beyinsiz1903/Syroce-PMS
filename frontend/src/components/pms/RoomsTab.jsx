@@ -38,6 +38,19 @@ export const formatCleaningDuration = (minutes) => {
   return `${roundedMinutes} dk`;
 };
 
+const ROOM_ATTRIBUTE_LABELS = {
+  standard: 'Standart', deluxe: 'Delüks', suite: 'Süit', family: 'Aile odası',
+  city: 'Şehir', garden: 'Bahçe', sea: 'Deniz', pool: 'Havuz', mountain: 'Dağ',
+  twin: 'İki tek kişilik', queen: 'Queen yatak', king: 'King yatak', double: 'Çift kişilik',
+  single: 'Tek kişilik', sofa: 'Çekyat',
+};
+
+export const formatRoomAttribute = value => {
+  if (!value) return '';
+  const normalized = String(value).trim().toLowerCase().replace(/[\s-]+/g, '_');
+  return ROOM_ATTRIBUTE_LABELS[normalized] || String(value);
+};
+
 const RoomsTab = ({
   rooms,
   bookings = [],
@@ -678,7 +691,7 @@ const RoomsTab = ({
                     </button> : <Badge className={`text-[10px] px-1.5 py-0 h-4 min-h-[16px] leading-tight shrink-0 whitespace-nowrap border ${statusColors[room.status] || 'bg-slate-100 text-slate-700 border-slate-200'}`}>{statusLabelsTr[room.status] || room.status}</Badge>}
                   </div>
                 </div>
-                <p className="text-sm text-slate-600">{room.room_type}</p>
+                <p className="text-sm text-slate-600">{formatRoomAttribute(room.room_type)}</p>
                 <p className="text-xs text-slate-400">Kat {room.floor} &bull; {room.capacity} kişi</p>
 
                 {/* Live cleaning indicator for dirty/cleaning rooms */}
@@ -710,7 +723,7 @@ const RoomsTab = ({
                         {showSeparate ? (
                           <span
                             className="font-medium tabular-nums"
-                            aria-label={isStaleCleaning ? `Temizlik görevi ${elapsedLabel}dır açık` : undefined}
+                            aria-label={isStaleCleaning ? `Temizlik görevi ${elapsedLabel} boyunca açık` : undefined}
                           >
                             {isStaleCleaning ? `${elapsedLabel} açık` : `${elapsedLabel} / ${estimated} dk`}
                           </span>
@@ -832,8 +845,8 @@ const RoomsTab = ({
                 
                 <div className="mt-auto pt-2">
                   <div className="flex gap-1 flex-wrap">
-                    {room.view && <Badge variant="outline" className="text-[10px]">{room.view}</Badge>}
-                    {room.bed_type && <Badge variant="outline" className="text-[10px]"><BedDouble className="w-3 h-3 mr-0.5" />{room.bed_type}</Badge>}
+                    {room.view && <Badge variant="outline" className="text-[10px]">{formatRoomAttribute(room.view)}</Badge>}
+                    {room.bed_type && <Badge variant="outline" className="text-[10px]"><BedDouble className="w-3 h-3 mr-0.5" />{formatRoomAttribute(room.bed_type)}</Badge>}
                   </div>
 
                   {/* Boş oda için hızlı rezervasyon */}
