@@ -7,6 +7,7 @@ vi.mock('@/lib/dialogs', () => ({ confirmDialog }));
 import {
   confirmUnifiedRateMutation,
   getUnifiedRateDeliveryFeedback,
+  verifiedProviderChannels,
 } from '@/pages/UnifiedRateManager';
 
 describe('UnifiedRateManager write safety', () => {
@@ -24,6 +25,13 @@ describe('UnifiedRateManager write safety', () => {
       variant: 'danger',
       confirmText: 'Güncellemeyi Başlat',
     }));
+  });
+
+  it('never exposes disconnected or stale provider channels as push targets', () => {
+    const channels = [{ code: 'booking', name: 'Booking.com' }];
+    expect(verifiedProviderChannels({ connected: false, channels })).toEqual([]);
+    expect(verifiedProviderChannels({ connected: true, channels_stale: true, channels })).toEqual([]);
+    expect(verifiedProviderChannels({ connected: true, channels_stale: false, channels })).toEqual(channels);
   });
 
   it.each(['SCHEDULED', 'QUEUED', 'PENDING'])(
