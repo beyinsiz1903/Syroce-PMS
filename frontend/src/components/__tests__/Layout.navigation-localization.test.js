@@ -1,0 +1,26 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
+import { describe, expect, it } from 'vitest';
+
+const layoutSource = readFileSync(resolve(process.cwd(), 'src/components/Layout.jsx'), 'utf8');
+const tr = JSON.parse(readFileSync(resolve(process.cwd(), 'src/locales/tr.json'), 'utf8'));
+const en = JSON.parse(readFileSync(resolve(process.cwd(), 'src/locales/en.json'), 'utf8'));
+
+describe('top navigation localization', () => {
+  it('uses native labels for the primary navigation in Turkish and English', () => {
+    expect(tr.navKeys.dashboard).toBe('Kontrol Paneli');
+    expect(en.navKeys.dashboard).toBe('Dashboard');
+    expect(tr.navKeys.rooms).toBe('Odalar');
+    expect(en.navKeys.rooms).toBe('Rooms');
+    expect(tr.navKeys.reservation_calendar).toBe('Takvim');
+    expect(en.navKeys.reservation_calendar).toBe('Calendar');
+  });
+
+  it('localizes role-specific workspace labels instead of hard-coding Turkish', () => {
+    expect(layoutSource).toContain("t('navKeys.accounting', 'Muhasebe')");
+    expect(layoutSource).toContain("t('navKeys.general_manager_dashboard', 'GM Paneli')");
+    expect(en.navKeys.accounting).toBe('Accounting');
+    expect(en.navKeys.general_manager_dashboard).toBe('GM Dashboard');
+  });
+});
