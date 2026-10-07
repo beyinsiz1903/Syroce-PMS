@@ -14,4 +14,20 @@ describe('PMSModule workspace loading', () => {
     expect(source).not.toContain("import FeedbackSystem from '@/components/FeedbackSystem'");
     expect(source).not.toContain("import AllotmentGrid from '@/components/AllotmentGrid'");
   });
+
+  it('does not block the first PMS render on secondary data requests', () => {
+    const criticalStart = source.indexOf('const criticalResults = await Promise.allSettled([');
+    const firstRenderReady = source.indexOf('setLoading(false);', criticalStart);
+    const secondaryStart = source.indexOf('const secondaryDataPromise = Promise.allSettled([');
+    const secondaryHydration = source.indexOf('void secondaryDataPromise.then(', firstRenderReady);
+
+    expect(criticalStart).toBeGreaterThan(-1);
+    expect(secondaryStart).toBeLessThan(criticalStart);
+    expect(firstRenderReady).toBeGreaterThan(criticalStart);
+    expect(secondaryHydration).toBeGreaterThan(firstRenderReady);
+    expect(source.slice(criticalStart, firstRenderReady)).toContain('/pms/rooms?limit=100');
+    expect(source.slice(criticalStart, firstRenderReady)).toContain('/pms/bookings?start_date=');
+    expect(source.slice(secondaryStart, criticalStart)).toContain('/pms/guests?limit=100');
+    expect(source.slice(secondaryStart, criticalStart)).toContain('/companies?limit=50');
+  });
 });

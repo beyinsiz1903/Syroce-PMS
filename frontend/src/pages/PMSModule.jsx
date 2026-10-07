@@ -536,15 +536,20 @@ const PMSModule = ({ user, tenant, onLogout }) => {
       // ile genişletilebilir. Backend cache hit oranı da yükseliyor.
       const futureDate = new Date(`${today}T12:00:00Z`); futureDate.setUTCDate(futureDate.getUTCDate() + 30);
       const futureDateStr = futureDate.toISOString().split('T')[0];
-      const results = await Promise.allSettled([
-        axios.get('/pms/rooms?limit=100', { timeout: 15000 }),
+      // Odalar ve rezervasyonlar ilk görünen PMS yüzeyi için kritiktir.
+      // Misafir, şirket ve fiyatlandırma verileri yalnızca ikincil
+      // kontrolleri besler; yavaş bir servis bütün ekranı bloke etmesin.
+      const secondaryDataPromise = Promise.allSettled([
         axios.get('/pms/guests?limit=100', { timeout: 15000 }),
-        axios.get(`/pms/bookings?start_date=${today}&end_date=${futureDateStr}&limit=120`, { timeout: 15000 }),
         axios.get('/companies?limit=50', { timeout: 15000 }),
         axios.get('/channel-manager/unified-rate-manager/pricing-settings', { timeout: 15000 })
       ]);
-      const [roomsRes, guestsRes, bookingsRes, companiesRes, pricingRes] = results.map((r) => (r.status === 'fulfilled' ? r.value : null));
-      results.forEach((r, idx) => { if (r.status === 'rejected') console.warn('PMS loadData partial failure:', idx, r.reason); });
+      const criticalResults = await Promise.allSettled([
+        axios.get('/pms/rooms?limit=100', { timeout: 15000 }),
+        axios.get(`/pms/bookings?start_date=${today}&end_date=${futureDateStr}&limit=120`, { timeout: 15000 })
+      ]);
+      const [roomsRes, bookingsRes] = criticalResults.map((r) => (r.status === 'fulfilled' ? r.value : null));
+      criticalResults.forEach((r, idx) => { if (r.status === 'rejected') console.warn('PMS critical data partial failure:', idx, r.reason); });
       const rawBookings = bookingsRes?.data || [];
       const grouped = [];
       const seenGroupIds = new Set();
@@ -556,9 +561,17 @@ const PMSModule = ({ user, tenant, onLogout }) => {
       });
       rawBookings.filter(b => !b.group_booking_id).forEach(b => { grouped.push({ type: 'single', booking: b }); });
       setGroupedBookings(grouped);
-      setRooms(roomsRes?.data || []); setGuests(guestsRes?.data || []);
-      setBookings(bookingsRes?.data || []); setCompanies(companiesRes?.data || []);
-      setOccupancyPricingRules(pricingRes?.data?.rules || {});
+      setRooms(roomsRes?.data || []);
+      setBookings(bookingsRes?.data || []);
+      setLoading(false);
+
+      void secondaryDataPromise.then((secondaryResults) => {
+        const [guestsRes, companiesRes, pricingRes] = secondaryResults.map((r) => (r.status === 'fulfilled' ? r.value : null));
+        secondaryResults.forEach((r, idx) => { if (r.status === 'rejected') console.warn('PMS secondary data partial failure:', idx, r.reason); });
+        if (guestsRes) setGuests(guestsRes.data || []);
+        if (companiesRes) setCompanies(companiesRes.data || []);
+        if (pricingRes) setOccupancyPricingRules(pricingRes.data?.rules || {});
+      });
     } catch (error) { toast.error('PMS verileri yüklenemedi'); console.error('PMS data load error:', error);
     } finally { setLoading(false); }
   };
