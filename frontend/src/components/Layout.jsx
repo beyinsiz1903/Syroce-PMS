@@ -394,7 +394,10 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
                   return (
                     <DropdownMenuItem
                       key={item.key}
-                      onClick={() => handleNavigate(item.path)} onMouseEnter={() => preloadRoute(item.path)} onFocus={() => preloadRoute(item.path)}
+                      onClick={() => handleNavigate(item.path)}
+                      onPointerDown={() => preloadRoute(item.path)}
+                      onMouseEnter={() => preloadRoute(item.path)}
+                      onFocus={() => preloadRoute(item.path)}
                       className={`flex items-center gap-2 cursor-pointer ${
                         isItemActive ? 'bg-blue-50 text-blue-700 font-semibold' : ''
                       }`}
@@ -423,6 +426,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
               variant="ghost"
               size="sm"
               onClick={() => handleNavigate('/app/applications')}
+              onPointerDown={() => preloadRoute('/app/applications')}
               onMouseEnter={() => preloadRoute('/app/applications')}
               onFocus={() => preloadRoute('/app/applications')}
               className={`flex items-center gap-1 px-2 py-1.5 text-[11px] whitespace-nowrap rounded-md transition-all duration-150 h-8 ${
@@ -477,7 +481,10 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => handleNavigate(targetPath)} onMouseEnter={() => preloadRoute(targetPath)} onFocus={() => preloadRoute(targetPath)}
+                          onClick={() => handleNavigate(targetPath)}
+                          onPointerDown={() => preloadRoute(targetPath)}
+                          onMouseEnter={() => preloadRoute(targetPath)}
+                          onFocus={() => preloadRoute(targetPath)}
                           className={`flex items-center gap-1 px-2 py-1.5 text-[11px] whitespace-nowrap rounded-md h-8 transition-all duration-150 ${
                             isActive
                               ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-sm'
@@ -513,6 +520,9 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
                           variant="ghost"
                           size="sm"
                           onClick={() => handleNavigate(roomsPath)}
+                          onPointerDown={() => preloadRoute('/app/pms')}
+                          onMouseEnter={() => preloadRoute('/app/pms')}
+                          onFocus={() => preloadRoute('/app/pms')}
                           className={`flex items-center gap-1 px-2 py-1.5 text-[11px] whitespace-nowrap rounded-md h-8 transition-all duration-150 ${
                             isRoomsActive
                               ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-sm'
@@ -549,7 +559,10 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => handleNavigate(item.path)} onMouseEnter={() => preloadRoute(item.path)} onFocus={() => preloadRoute(item.path)}
+                          onClick={() => handleNavigate(item.path)}
+                          onPointerDown={() => preloadRoute(item.path)}
+                          onMouseEnter={() => preloadRoute(item.path)}
+                          onFocus={() => preloadRoute(item.path)}
                           className={`hidden md:flex items-center gap-1 px-2 py-1.5 text-[11px] whitespace-nowrap rounded-md h-8 transition-all duration-150 ${
                             isActive
                               ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-sm'

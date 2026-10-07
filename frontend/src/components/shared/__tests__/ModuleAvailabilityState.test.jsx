@@ -3,6 +3,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import {
   ModuleAvailabilityState,
   ModuleLoadError,
+  friendlyModuleName,
   moduleLoadState,
 } from "@/components/shared/ModuleAvailabilityState";
 
@@ -26,5 +27,16 @@ describe("ModuleAvailabilityState", () => {
     expect(screen.getByText("İstek sınırına ulaşıldı")).toBeDefined();
     fireEvent.click(screen.getByRole("button", { name: "Yeniden dene" }));
     expect(retry).toHaveBeenCalledTimes(1);
+  });
+
+  it("never exposes internal module keys to the operator", () => {
+    const labels = {
+      "navKeys.gelir_yonetimi": "Gelir Yönetimi",
+      "moduleAvailability.defaultName": "Bu modül",
+    };
+    const t = (key, options) => labels[key] || options?.defaultValue || key;
+
+    expect(friendlyModuleName("revenue_management", t)).toBe("Gelir Yönetimi");
+    expect(friendlyModuleName("custom_internal_module", t)).toBe("Custom internal module");
   });
 });

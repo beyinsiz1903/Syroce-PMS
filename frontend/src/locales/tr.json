@@ -391,7 +391,50 @@
     "suppliers": "Tedarikci Yönetimi",
     "module_health": "Modül Sağlık Merkezi",
     "landing_content": "Landing İçeriği",
-    "room_qr": "Oda QR Kodları"
+    "room_qr": "Oda QR Kodları",
+    "gdpr_compliance": "KVKK ve Veri Koruma",
+    "tenant_users": "Otel Kullanıcıları",
+    "multi_property": "Zincir Otel Yönetimi",
+    "audit_timeline": "İşlem Kayıtları",
+    "security_hub": "Güvenlik",
+    "urgent_message_report": "Acil Mesaj Raporu",
+    "recalled_messages_report": "Geri Alınan Mesajlar",
+    "id_photo_view_report": "Kimlik Fotoğrafı Raporu",
+    "id_photo_admin": "Bekleyen Kimlik Fotoğrafları",
+    "urgent_permission_admin": "Acil Mesaj İzinleri",
+    "contact_center_dashboard": "Çağrı Merkezi",
+    "voice_number_mapping": "Ses Numaraları",
+    "wbe_settings": "Web Rezervasyon",
+    "agency_requests": "Acente Talepleri",
+    "spa_wellness": "Spa & Wellness",
+    "spa_dining_packages": "Spa & Yemek Paketleri",
+    "activity_scheduler": "Aktivite & Kaynak Rezervasyonları",
+    "sustainability_report": "Sürdürülebilirlik Raporu",
+    "connecting_rooms": "Bağlantılı Oda Tanımları",
+    "cross_property_guests": "Zincir Misafir Profilleri",
+    "city_ledger": "Cari Hesaplar",
+    "pending_ar": "Bekleyen Alacaklar",
+    "general_ledger": "Genel Muhasebe",
+    "bank_reconciliation": "Banka Mutabakatı",
+    "fnb_costing": "F&B Maliyetleri",
+    "admin_hub": "Yönetim Merkezi",
+    "integrations_overview": "Entegrasyon Genel Bakış",
+    "integration_credentials": "Entegrasyon Anahtarları",
+    "capx_integration": "CapX Entegrasyonu",
+    "webhook_outbox_admin": "Outbox & Webhook DLQ",
+    "early_warning_dashboard": "Erken Uyarı Motoru",
+    "pos_dashboard": "Satış Noktası (POS)",
+    "encryption_management": "Şifreleme Yönetimi",
+    "integration_observability": "Entegrasyon Gözlemlenebilirliği",
+    "hrv2_ops": "HotelRunner V2 Operasyonları",
+    "hotel_network": "Otel Ağı",
+    "admin_agencies": "Acente Yönetimi",
+    "admin_vendors": "Tedarikçi Yönetimi",
+    "module_health_center": "Modül Sağlık Merkezi",
+    "site_content": "Site İçeriği",
+    "quick_id_settings": "Kimlik Tarama (Quick-ID)",
+    "room_qr_codes": "Oda QR Kodları",
+    "api_docs": "API Dokümantasyonu"
   },
   "auth": {
     "signIn": "Hesabınıza giriş yapın veya yeni bir hesap oluşturun",
@@ -2404,7 +2447,8 @@
       "properties": "Oteller & İş Ortakları",
       "integrations": "Entegrasyon Operasyonları",
       "platform": "Platform Operasyonları",
-      "governance": "Yetki, İçerik & Geliştirici"
+      "governance": "Yetki, İçerik & Geliştirici",
+      "security_compliance": "Güvenlik ve Uyumluluk"
     },
     "pms": {
       "daily": "Günlük Operasyon",
@@ -10129,6 +10173,10 @@
       "setupRequired": "Kurulum gerekli"
     },
     "states": {
+      "loading": {
+        "title": "Veriler yükleniyor",
+        "description": "En güncel bilgiler hazırlanıyor. Hazır olduğunda bu ekran otomatik olarak açılacak."
+      },
       "empty": {
         "title": "Henüz gösterilecek kayıt yok",
         "description": "Filtreleri değiştirin veya ilk kaydı oluşturarak başlayın."
@@ -10161,6 +10209,9 @@
       "continue": "Devam et",
       "backToDashboard": "Kontrol paneline dön"
     }
+  },
+  "moduleAvailability": {
+    "defaultName": "Bu modül"
   },
   "appLauncher": {
     "title": "Uygulamalar",
