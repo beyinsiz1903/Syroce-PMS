@@ -131,6 +131,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
   const [rmsSuggestions, setRmsSuggestions] = useState([]);
   const [exceptions, setExceptions] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
   const [fdLoading, setFdLoading] = useState(false);
   const [fdError, setFdError] = useState(null);
   const [hkLoading, setHkLoading] = useState(false);
@@ -522,10 +523,12 @@ const PMSModule = ({ user, tenant, onLogout }) => {
   }, [activeTab, hasLoadedFrontdesk, hasLoadedHousekeeping, hasLoadedAllBookings]);
 
   const loadData = async (businessDateOverride = null) => {
+    setLoading(true);
+    setLoadError(null);
     try {
       let operationalDate = businessDateOverride || businessDate;
       if (!operationalDate && (user?.effective_permissions || []).includes('view_bookings')) {
-        const businessDateResponse = await axios.get('/night-audit/business-date', { timeout: 15000 });
+        const businessDateResponse = await axios.get('/night-audit/business-date', { timeout: 8000 });
         operationalDate = businessDateResponse?.data?.business_date;
         if (operationalDate) setBusinessDate(operationalDate);
       }
@@ -540,16 +543,23 @@ const PMSModule = ({ user, tenant, onLogout }) => {
       // Misafir, şirket ve fiyatlandırma verileri yalnızca ikincil
       // kontrolleri besler; yavaş bir servis bütün ekranı bloke etmesin.
       const secondaryDataPromise = Promise.allSettled([
-        axios.get('/pms/guests?limit=100', { timeout: 15000 }),
-        axios.get('/companies?limit=50', { timeout: 15000 }),
-        axios.get('/channel-manager/unified-rate-manager/pricing-settings', { timeout: 15000 })
+        axios.get('/pms/guests?limit=100', { timeout: 8000 }),
+        axios.get('/companies?limit=50', { timeout: 8000 }),
+        axios.get('/channel-manager/unified-rate-manager/pricing-settings', { timeout: 8000 })
       ]);
       const criticalResults = await Promise.allSettled([
-        axios.get('/pms/rooms?limit=100', { timeout: 15000 }),
-        axios.get(`/pms/bookings?start_date=${today}&end_date=${futureDateStr}&limit=120`, { timeout: 15000 })
+        axios.get('/pms/rooms?limit=100', { timeout: 8000 }),
+        axios.get(`/pms/bookings?start_date=${today}&end_date=${futureDateStr}&limit=120`, { timeout: 8000 })
       ]);
       const [roomsRes, bookingsRes] = criticalResults.map((r) => (r.status === 'fulfilled' ? r.value : null));
       criticalResults.forEach((r, idx) => { if (r.status === 'rejected') console.warn('PMS critical data partial failure:', idx, r.reason); });
+      if (!roomsRes && !bookingsRes) {
+        setLoadError('PMS verileri zamanında alınamadı. Bağlantıyı kontrol edip yeniden deneyin.');
+        return;
+      }
+      if (!roomsRes || !bookingsRes) {
+        setLoadError('PMS verilerinin bir bölümü alınamadı. Görünen bilgiler eksik olabilir.');
+      }
       const rawBookings = bookingsRes?.data || [];
       const grouped = [];
       const seenGroupIds = new Set();
@@ -572,7 +582,9 @@ const PMSModule = ({ user, tenant, onLogout }) => {
         if (companiesRes) setCompanies(companiesRes.data || []);
         if (pricingRes) setOccupancyPricingRules(pricingRes.data?.rules || {});
       });
-    } catch (error) { toast.error('PMS verileri yüklenemedi'); console.error('PMS data load error:', error);
+    } catch (error) {
+      setLoadError('PMS verileri yüklenemedi. Bağlantıyı kontrol edip yeniden deneyin.');
+      toast.error('PMS verileri yüklenemedi'); console.error('PMS data load error:', error);
     } finally { setLoading(false); }
   };
 
@@ -991,6 +1003,10 @@ const PMSModule = ({ user, tenant, onLogout }) => {
   return (
     <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="pms">
       <div className="p-6 space-y-6">
+        {loadError && <div role="alert" className="flex flex-col gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 sm:flex-row sm:items-center sm:justify-between">
+          <span>{loadError}</span>
+          <Button variant="outline" size="sm" onClick={() => loadData()} disabled={loading}>Yeniden dene</Button>
+        </div>}
         <div className="mb-6 flex justify-between items-start gap-4">
           <div>
             <h1 className="text-4xl font-bold mb-2" style={{ fontFamily: 'Space Grotesk' }}>{t('pms.title')}</h1>
