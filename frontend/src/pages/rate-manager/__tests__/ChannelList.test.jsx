@@ -25,7 +25,8 @@ describe('ChannelList', () => {
   it('shows stale state instead of a fabricated catalogue', () => {
     render(<ChannelList provider="hotelrunner" channels={[]} stale />);
 
-    expect(screen.getByTestId('rate-manager-channels-stale')).toHaveTextContent('Aktif kanal listesi yenilenemedi');
+    expect(screen.getByTestId('rate-manager-channels-stale')).toHaveTextContent('kanal gönderimi kapatıldı');
+    expect(screen.getByTestId('rate-manager-no-active-channels')).toBeInTheDocument();
     expect(screen.queryByText('Booking.com')).not.toBeInTheDocument();
   });
 });

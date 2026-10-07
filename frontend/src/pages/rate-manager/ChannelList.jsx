@@ -17,9 +17,9 @@ export const ChannelList = ({ channels = [], stale = false, selectedChannelCodes
       </div>
       {stale && <div className="flex items-start gap-1.5 rounded bg-amber-50 p-2 text-[11px] text-amber-800" data-testid="rate-manager-channels-stale">
           <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-          Aktif kanal listesi yenilenemedi.
+          Kanal bağlantısı doğrulanamadı. Güvenlik için kanal gönderimi kapatıldı.
         </div>}
-      {!stale && normalized.length === 0 ? <p className="text-xs text-gray-400" data-testid="rate-manager-no-active-channels">
+      {normalized.length === 0 ? <p className="text-xs text-gray-400" data-testid="rate-manager-no-active-channels">
           Aktif kanal bulunamadı.
         </p> : <div className="border-t pt-1.5 space-y-1">
           {provider === 'hotelrunner' && !stale && selectableChannels.length > 0 && <label className="flex cursor-pointer items-center gap-2 border-b border-slate-100 pb-1.5 text-xs font-medium text-slate-700">

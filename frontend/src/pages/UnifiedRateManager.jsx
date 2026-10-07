@@ -17,6 +17,11 @@ import { StopSalePanel } from './rate-manager/StopSalePanel';
 import { useTranslation } from 'react-i18next';
 const UNIFIED_PREFIX = '/channel-manager/unified-rate-manager';
 
+export const verifiedProviderChannels = providerStatus => {
+  if (providerStatus?.connected !== true || providerStatus?.channels_stale === true) return [];
+  return Array.isArray(providerStatus?.channels) ? providerStatus.channels : [];
+};
+
 export const confirmUnifiedRateMutation = ({ roomCount, dateFrom, dateTo }) => confirmDialog({
   title: 'Fiyat ve müsaitlik güncellemesini onayla',
   message: `${roomCount} oda tipi için ${dateFrom} - ${dateTo} tarihleri arasındaki yerel kayıtlar güncellenecek; seçilen acentelere ve bağlı kanallara iletim başlatılacak. Devam edilsin mi?`,
@@ -224,7 +229,7 @@ const UnifiedRateManager = ({
     }
     axios.get('/channel-manager/connections/overview', { headers }).then(res => {
       const hotelrunner = (res.data?.providers || []).find(item => item.provider === 'hotelrunner');
-      const channels = Array.isArray(hotelrunner?.channels) ? hotelrunner.channels : [];
+      const channels = verifiedProviderChannels(hotelrunner);
       setActiveChannels(channels);
       const validCodes = new Set(channels.map(channel => String(channel?.code || '').trim()).filter(Boolean));
       setSelectedChannelCodes(previous => new Set([...previous].filter(code => validCodes.has(code))));
