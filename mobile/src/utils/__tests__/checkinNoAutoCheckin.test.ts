@@ -11,5 +11,7 @@ test('quick identity flow cannot invoke check-in or walk-in automatically', () =
   assert.doesNotMatch(source, /\/api\/frontdesk\/checkin/);
   assert.match(source, /addReservationGuest\s*\(/);
   assert.match(source, /ROUTES\.newReservation/);
+  assert.match(source, /setDestination\('existing'\)/);
+  assert.match(source, /setSelectedBookingId\(booking\.id\)/);
+  assert.doesNotMatch(source, /setSelectedBookingId\(suggestedBookingId\)/);
 });
-
