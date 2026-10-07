@@ -1047,7 +1047,8 @@
     "migrationObservability": "Monitor the semantic core migration from the live panel.",
     "migrationObservabilityDesc": "View outbox event breakdown, audit stream, and shadow mismatch rates in a dedicated control surface. This panel collects operational safety signals before opening new write-paths.",
     "migrationObservabilitySide": "Observability first, then new write-path — the recommended safety layer for the current migration strategy.",
-    "openPanel": "Open Panel"
+    "openPanel": "Open Panel",
+    "innovative": "Innovative"
   },
   "pms": {
     "title": "Property Management System",

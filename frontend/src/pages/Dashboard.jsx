@@ -794,7 +794,11 @@ const Dashboard = ({
                                   <div className="flex items-center justify-between">
                                     <CardTitle className="text-base">{module.title}</CardTitle>
                                     {module.badge && <span className={`px-1.5 py-0.5 text-xs font-bold rounded ${module.badge === 'GAME-CHANGER' ? 'bg-pink-100 text-pink-700' : module.badge === 'AI' ? 'bg-indigo-100 text-indigo-700' : 'bg-blue-100 text-blue-700'}`}>
-                                        {module.badge}
+                                        {module.badge === 'NEW'
+                                          ? t('common.new')
+                                          : module.badge === 'GAME-CHANGER'
+                                            ? t('dashboard.innovative')
+                                            : module.badge}
                                       </span>}
                                   </div>
                                   <CardDescription className="text-xs">{module.description}</CardDescription>

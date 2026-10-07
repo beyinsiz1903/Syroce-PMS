@@ -1096,7 +1096,8 @@
     "migrationObservability": "Sistem geçişlerini canlı olarak izleyin",
     "migrationObservabilityDesc": "Bekleyen olayları, denetim kayıtlarını ve veri uyuşmazlıklarını tek bir kontrol ekranında görün. Yeni veri akışını açmadan önce operasyonel güvenlik sinyallerini değerlendirin.",
     "migrationObservabilitySide": "Önce sistem sağlığını doğrulayın, ardından yeni veri akışını güvenle devreye alın.",
-    "openPanel": "Paneli aç"
+    "openPanel": "Paneli aç",
+    "innovative": "Yenilikçi"
   },
   "pms": {
     "title": "Otel Yönetim Sistemi",
