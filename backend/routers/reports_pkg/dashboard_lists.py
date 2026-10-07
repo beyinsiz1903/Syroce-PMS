@@ -641,6 +641,10 @@ async def get_basic_reports_dashboard(
     }
     if isinstance(result.get("payments"), dict):
         result["payments"]["rows"] = [protect_guest_row(row, current_user) for row in result["payments"].get("rows", [])]
+    if isinstance(result.get("cash_movements"), dict):
+        result["cash_movements"]["rows"] = [
+            protect_guest_row(row, current_user) for row in result["cash_movements"].get("rows", [])
+        ]
     if isinstance(result.get("housekeeping"), dict):
         result["housekeeping"]["rows"] = [protect_guest_row(row, current_user) for row in result["housekeeping"].get("rows", [])]
     result["room_rate_control"] = [protect_guest_row(row, current_user) for row in result.get("room_rate_control", [])]
@@ -820,6 +824,38 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
             },
             {"_id": 0},
         ).to_list(10000),
+        # Kasa hareketleri kullaniciya gercek islem tarihini vaat eder. PMS is
+        # gunu gece denetimi yapilana kadar acik kalabildigi icin business_date
+        # burada kullanilirsa haftalar sonraki tahsilatlar eski gunde gorunur.
+        db.payments.find(
+            {
+                "tenant_id": tenant_id,
+                "$or": [
+                    {"processed_at": {"$regex": f"^{target_day}"}},
+                    {"processed_at": {"$gte": today_start, "$lt": next_day}},
+                    {"processed_at": {"$gte": today_start.isoformat(), "$lt": next_day.isoformat()}},
+                    {"payment_date": target_day},
+                    {"date": target_day},
+                    {
+                        "$and": [
+                            {"processed_at": {"$in": [None, ""]}},
+                            {"payment_date": {"$in": [None, ""]}},
+                            {"date": {"$in": [None, ""]}},
+                            {"created_at": {"$regex": f"^{target_day}"}},
+                        ]
+                    },
+                    {
+                        "$and": [
+                            {"processed_at": {"$in": [None, ""]}},
+                            {"payment_date": {"$in": [None, ""]}},
+                            {"date": {"$in": [None, ""]}},
+                            {"created_at": {"$gte": today_start, "$lt": next_day}},
+                        ]
+                    },
+                ],
+            },
+            {"_id": 0},
+        ).to_list(10000),
         db.bookings.find(
             {
                 "tenant_id": tenant_id,
@@ -854,13 +890,13 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
         ).to_list(10000),
         get_fnb_orders(),
     )
-    rooms, all_bk, in_house, hk_tasks, maint_open, maint_completed, pending_invoices, paid_invoices, all_guests, all_payments, prev_bookings, ly_bookings, room_blocks, fnb_orders = results
+    rooms, all_bk, in_house, hk_tasks, maint_open, maint_completed, pending_invoices, paid_invoices, all_guests, all_payments, cash_movement_payments, prev_bookings, ly_bookings, room_blocks, fnb_orders = results
 
     loaded_booking_ids = {str(booking.get("id")) for booking in all_bk if booking.get("id")}
     missing_payment_booking_ids = list(
         {
             str(payment.get("booking_id"))
-            for payment in all_payments
+            for payment in [*all_payments, *cash_movement_payments]
             if payment.get("booking_id") and str(payment.get("booking_id")) not in loaded_booking_ids
         }
     )
@@ -1524,6 +1560,85 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
         )
     payment_methods = {method: round(amount, 2) for method, amount in payment_methods.items()}
 
+    # The accounting-day summary above intentionally follows business_date.
+    # The cash-movements screen is an operational audit trail and must instead
+    # follow the timestamp on which the payment was actually processed.
+    cash_movement_rows = []
+    cash_movement_methods: dict[str, float] = {}
+    cash_movement_total = 0.0
+    cash_movement_conversion_issues = []
+    for p in cash_movement_payments:
+        if not _payment_is_collection(p):
+            continue
+        method = _payment_method(p)
+        amount = float(p.get("amount", 0) or 0)
+        if str(p.get("payment_type") or "").lower() == "refund" and amount > 0:
+            amount = -amount
+        payment_booking = booking_by_id.get(str(p.get("booking_id"))) or {}
+        received = _received_payment_amount(p, p.get("currency") or payment_booking.get("currency") or "TRY")
+        reporting_amount = reporting_collection_amount(p)
+        if reporting_amount is None:
+            cash_movement_conversion_issues.append(
+                {
+                    "id": p.get("id"),
+                    "currency": str(p.get("currency") or "TRY").upper(),
+                    "received_currency": str(received.get("currency") or "TRY").upper(),
+                    "reason": "historical_exchange_rate_missing",
+                }
+            )
+        else:
+            cash_movement_total += reporting_amount
+            cash_movement_methods[method] = cash_movement_methods.get(method, 0) + reporting_amount
+        cash_movement_rows.append(
+            {
+                "id": p.get("id"),
+                "booking_id": p.get("booking_id"),
+                "folio_id": p.get("folio_id"),
+                "room_number": str(
+                    p.get("room_number")
+                    or payment_booking.get("room_number")
+                    or room_map.get(str(payment_booking.get("room_id")))
+                    or "?"
+                ).strip()
+                or "?",
+                "guest_name": _guest_display_name(
+                    guests_by_id.get(str(payment_booking.get("guest_id"))), payment_booking
+                )
+                if payment_booking
+                else None,
+                "amount": round(amount, 2),
+                "currency": str(p.get("currency") or payment_booking.get("currency") or "TRY").upper(),
+                "received_amount": round(float(received.get("amount") or 0), 2),
+                "received_currency": str(received.get("currency") or "TRY").upper(),
+                "reporting_amount": round(reporting_amount, 2) if reporting_amount is not None else None,
+                "reporting_currency": REPORTING_CURRENCY,
+                "conversion_missing": reporting_amount is None,
+                "exchange_rate": p.get("exchange_rate"),
+                "exchange_rate_date": p.get("exchange_rate_date") or p.get("payment_date") or str(p.get("processed_at") or "")[:10],
+                "method": method,
+                "payment_type": p.get("payment_type"),
+                "status": p.get("status") or "paid",
+                "reference": p.get("reference"),
+                "notes": p.get("notes"),
+                "processed_by": p.get("processed_by_name") or p.get("created_by_name"),
+                "processed_at": p.get("processed_at") or p.get("payment_date") or p.get("date") or p.get("created_at"),
+            }
+        )
+    cash_movements = {
+        "by_method": {method: round(value, 2) for method, value in cash_movement_methods.items()},
+        "total_paid": round(cash_movement_total, 2),
+        "transaction_count": len(cash_movement_rows),
+        "rows": sorted(cash_movement_rows, key=lambda row: str(row.get("processed_at") or "")),
+        "reporting_currency": REPORTING_CURRENCY,
+        "conversion_issue_count": len(cash_movement_conversion_issues),
+        "conversion_issues": cash_movement_conversion_issues,
+        "currency_exchanges": [
+            row
+            for row in currency_exchanges
+            if str(row.get("created_at") or row.get("business_date") or "")[:10] == target_day
+        ],
+    }
+
     daily_charges = daily_period_charges
     charge_totals_by_currency = _currency_breakdown(daily_charges, charge_amount, charge_currency)
     balance_change_by_currency = {
@@ -1703,6 +1818,7 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
             },
             "currency_exchanges": currency_exchanges,
         },
+        "cash_movements": cash_movements,
         # P1 fix: Polis bildirimi ve maliye listesinde 100 kayıt yetersiz —
         # tüm aylık misafir listesi (cap 5000) döndürülür; frontend tarafı
         # sayfalar / arama ile sınırlı gösterim yapar.
