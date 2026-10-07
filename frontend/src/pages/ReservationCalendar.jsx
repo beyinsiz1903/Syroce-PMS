@@ -538,15 +538,18 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
       // Rooms, stays, blocks and rates determine the sellable calendar. Guest
       // and company pick-lists can be large and are only needed when opening a
       // form, so do not block the first calendar paint on them.
-      const [roomsRes, bookingsRes, blocksRes, calendarRatesRes] = await Promise.all([
+      // Fiyat gridini kritik isteklerle birlikte başlat, ancak oda planının ilk
+      // çizimini bekletme. Oda/blok/rezervasyon verisi operasyonel güvenlik için
+      // kritik; fiyatlar ayrı bir uyarıyla sonradan güvenle uygulanabilir.
+      const calendarRatesPromise = axios.get(`/pms/calendar/rates?start_date=${startDate.toISOString().split('T')[0]}&end_date=${endDate.toISOString().split('T')[0]}`)
+        .then((response) => ({ ...response, rateLoadError: null }))
+        .catch((error) => ({ data: null, rateLoadError: error }));
+      const [roomsRes, bookingsRes, blocksRes] = await Promise.all([
         axios.get('/pms/rooms'),
         axios.get(`/pms/bookings?start_date=${startDate.toISOString().split('T')[0]}&end_date=${endDate.toISOString().split('T')[0]}&limit=500`),
         // Blok verisi satılabilirliği belirler. Bir hata asla "blok yok"
         // anlamına gelmemeli; bu istek özellikle kritik tutulur.
-        axios.get('/pms/room-blocks?status=active'),
-        axios.get(`/pms/calendar/rates?start_date=${startDate.toISOString().split('T')[0]}&end_date=${endDate.toISOString().split('T')[0]}`)
-          .then((response) => ({ ...response, rateLoadError: null }))
-          .catch((error) => ({ data: null, rateLoadError: error }))
+        axios.get('/pms/room-blocks?status=active')
       ]);
 
       // Race guard: bu fetch tamamlanırken kullanıcı yeni navigasyon yaptıysa
@@ -564,13 +567,16 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
       calendarDataLoadedRef.current = true;
       setRoomBlocks(normalizeRoomBlocksResponse(blocksRes.data));
       setCalendarSafetyError(null);
-      if (calendarRatesRes.rateLoadError) {
-        setCalendarRateError('Güncel takvim fiyatları yüklenemedi. Fiyat hücreleri doğrulanana kadar işlem yapmayın.');
-      } else {
-        setCalendarRateError(null);
-        setOccupancyPricingRules(calendarRatesRes.data?.rules || {});
-        setCalendarRates(buildCalendarRateLookup(calendarRatesRes.data?.grid || []));
-      }
+      void calendarRatesPromise.then((calendarRatesRes) => {
+        if (isCancelled()) return;
+        if (calendarRatesRes.rateLoadError) {
+          setCalendarRateError('Güncel takvim fiyatları yüklenemedi. Fiyat hücreleri doğrulanana kadar işlem yapmayın.');
+        } else {
+          setCalendarRateError(null);
+          setOccupancyPricingRules(calendarRatesRes.data?.rules || {});
+          setCalendarRates(buildCalendarRateLookup(calendarRatesRes.data?.grid || []));
+        }
+      });
 
       const rawBookings = bookingsRes.data || [];
       const cachedGuests = useCachedReferenceData ? cachedReferenceData.guests : [];

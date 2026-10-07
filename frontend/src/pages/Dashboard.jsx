@@ -192,21 +192,31 @@ const Dashboard = ({
   }, []);
   const loadDashboardStats = useCallback(async (requestTenantKey) => {
     try {
-      // Use Promise.all for parallel requests - faster!
-      const [pmsResponse, invoiceResponse] = await Promise.all([axios.get('/pms/dashboard').catch(() => ({
-        data: {}
-      })), axios.get('/invoices/stats').catch(() => ({
-        data: {}
-      }))]);
+      // PMS KPI'ları ana ekran için kritiktir. Fatura özeti aynı anda başlasın
+      // fakat yavaş bir finans servisi kontrol panelinin tamamını bekletmesin.
+      const invoiceStatsPromise = axios.get('/invoices/stats').catch(() => ({ data: {} }));
+      const pmsResponse = await axios.get('/pms/dashboard').catch(() => ({ data: {} }));
       const statsData = {
         pms: pmsResponse.data || {},
-        invoices: invoiceResponse.data || {}
+        invoices: dashboardCache.tenantKey === requestTenantKey
+          ? dashboardCache.stats?.invoices || {}
+          : {}
       };
       if (activeTenantKeyRef.current !== requestTenantKey) return;
       setStats(statsData);
       dashboardCache.stats = statsData;
       dashboardCache.timestamp = Date.now();
       dashboardCache.tenantKey = requestTenantKey;
+
+      void invoiceStatsPromise.then((invoiceResponse) => {
+        if (activeTenantKeyRef.current !== requestTenantKey) return;
+        const nextStats = {
+          ...statsData,
+          invoices: invoiceResponse.data || {}
+        };
+        setStats(nextStats);
+        if (dashboardCache.tenantKey === requestTenantKey) dashboardCache.stats = nextStats;
+      });
     } catch (error) {
       console.error('Failed to load stats:', error);
     } finally {

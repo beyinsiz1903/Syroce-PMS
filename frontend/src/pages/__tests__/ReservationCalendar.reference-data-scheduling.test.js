@@ -18,4 +18,16 @@ describe('ReservationCalendar reference data scheduling', () => {
     expect(source).toContain("axios.get('/pms/room-blocks?status=active')");
     expect(source).toContain("axios.get(`/pms/bookings?start_date=${startDate.toISOString().split('T')[0]}&end_date=${endDate.toISOString().split('T')[0]}&limit=500`)");
   });
+
+  it('hydrates calendar rates without blocking the first room grid paint', () => {
+    const ratesStart = source.indexOf('const calendarRatesPromise = axios.get(');
+    const criticalStart = source.indexOf('const [roomsRes, bookingsRes, blocksRes] = await Promise.all([', ratesStart);
+    const dataReady = source.indexOf('calendarDataLoadedRef.current = true;', criticalStart);
+    const ratesHydration = source.indexOf('void calendarRatesPromise.then(', dataReady);
+
+    expect(ratesStart).toBeGreaterThan(-1);
+    expect(criticalStart).toBeGreaterThan(ratesStart);
+    expect(dataReady).toBeGreaterThan(criticalStart);
+    expect(ratesHydration).toBeGreaterThan(dataReady);
+  });
 });
