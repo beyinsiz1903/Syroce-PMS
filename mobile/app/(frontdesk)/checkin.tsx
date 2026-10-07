@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ScrollView, View } from 'react-native';
+import { ActivityIndicator, ScrollView, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import {
   CameraView,
@@ -32,8 +32,9 @@ import {
   walkInQuick,
 } from '../../src/api/bookings';
 import { errorMessage } from '../../src/utils/errors';
+import { captureAndScanIdentity } from '../../src/utils/checkinCapture';
 
-type Step = 'scan' | 'parsed';
+type Step = 'scan' | 'capture' | 'parsed';
 
 const AVAILABLE_STATUSES = ['available', 'clean', 'inspected'];
 
@@ -94,36 +95,58 @@ export default function CheckinScreen() {
     } else {
       setBookingId(trimmed);
     }
-    await pickAndScanId();
+    startPhotoCapture();
   };
 
-  const pickAndScanId = async () => {
-    setBusy(true);
+  const startPhotoCapture = () => {
+    if (busy || step === 'capture') return;
+    // Rendering the capture step first unmounts CameraView. The effect below
+    // then opens UIImagePicker on the next committed render, avoiding the iOS
+    // dual-camera-session dead end seen after tapping "Use Photo".
+    scannedRef.current = true;
     setError(null);
-    try {
-      const result = await ImagePicker.launchCameraAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        quality: 0.7,
-        base64: false,
-      });
-      if (result.canceled) {
+    setStep('capture');
+  };
+
+  useEffect(() => {
+    if (step !== 'capture') return;
+
+    let active = true;
+    setBusy(true);
+    void captureAndScanIdentity({
+      launchCamera: () =>
+        ImagePicker.launchCameraAsync({
+          mediaTypes: ['images'],
+          quality: 0.7,
+          base64: false,
+        }),
+      scanPhoto: scanIdPhoto,
+    }).then((result) => {
+      if (!active) return;
+      if (result.status === 'cancelled') {
         scannedRef.current = false;
-        setBusy(false);
+        setStep('scan');
         return;
       }
-      const uri = result.assets[0].uri;
-      const data = await scanIdPhoto(uri);
-      setParsed(data);
+      if (result.status === 'failed') {
+        const message = errorMessage(result.error, tr.checkin.scanFailed);
+        setError(message === 'NETWORK' ? tr.checkin.scanFailed : message);
+        scannedRef.current = false;
+        setStep('scan');
+        haptic.error();
+        return;
+      }
+      setParsed(result.data);
       setStep('parsed');
       haptic.success();
-    } catch (e: unknown) {
-      setError(errorMessage(e, tr.errors.generic));
-      haptic.error();
-      scannedRef.current = false;
-    } finally {
-      setBusy(false);
-    }
-  };
+    }).finally(() => {
+      if (active) setBusy(false);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [step]);
 
   const onConfirm = async () => {
     if (!parsed) return;
@@ -209,8 +232,25 @@ export default function CheckinScreen() {
           onBarcodeScanned={onBarcodeScanned}
         />
         <View style={{ padding: spacing.lg, gap: spacing.sm, backgroundColor: c.surface }}>
+          {error ? (
+            <Card accent={c.danger}>
+              <Body style={{ color: c.danger }}>{error}</Body>
+            </Card>
+          ) : null}
           <Muted>{tr.checkin.scan}</Muted>
-          <Button title={tr.checkin.photo} icon="camera" onPress={pickAndScanId} loading={busy} fullWidth />
+          <Button title={tr.checkin.photo} icon="camera" onPress={startPhotoCapture} loading={busy} fullWidth />
+        </View>
+      </View>
+    );
+  }
+
+  if (step === 'capture') {
+    return (
+      <View style={{ flex: 1, backgroundColor: c.bg }}>
+        <View style={[{ flex: 1, padding: spacing.lg, alignItems: 'center', justifyContent: 'center', gap: spacing.md }, webCenter]}>
+          <ActivityIndicator size="large" color={c.primary} />
+          <H2>{tr.checkin.parsing}</H2>
+          <Muted style={{ textAlign: 'center' }}>{tr.checkin.parsingHint}</Muted>
         </View>
       </View>
     );
@@ -229,7 +269,7 @@ export default function CheckinScreen() {
             title={tr.checkin.photo}
             icon="camera"
             variant="secondary"
-            onPress={pickAndScanId}
+            onPress={startPhotoCapture}
             loading={busy}
             fullWidth
           />

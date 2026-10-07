@@ -3,6 +3,8 @@ export const checkin = {
   scan: 'QR / Kimlik Tara',
   photo: 'Kimlik Fotoğrafı Çek',
   parsing: 'Kimlik okunuyor...',
+  parsingHint: 'Fotoğraf alındı. Kimlik bilgileri check-in formuna aktarılıyor.',
+  scanFailed: 'Kimlik okunamadı. Lütfen fotoğrafı yeniden çekin.',
   pickRoom: 'Oda seç',
   confirm: 'Check-in onayla',
   success: 'Check-in tamamlandı',
