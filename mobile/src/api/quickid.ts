@@ -1,4 +1,9 @@
-import { apiRequest, getQuickIdUrl } from './client';
+import { File } from 'expo-file-system';
+
+import { apiRequest } from './client';
+import { normalizeQuickIdResponse, type QuickIdApiResponse } from '../utils/quickidResponse';
+
+export { normalizeQuickIdResponse } from '../utils/quickidResponse';
 
 export type QuickIdResult = {
   first_name?: string;
@@ -11,58 +16,19 @@ export type QuickIdResult = {
   document_type?: string;
 };
 
-type QuickIdRaw = {
-  first_name?: string;
-  given_name?: string;
-  name?: string;
-  last_name?: string;
-  surname?: string;
-  family_name?: string;
-  full_name?: string;
-  id_number?: string;
-  tc_no?: string;
-  passport_number?: string;
-  nationality?: string;
-  country?: string;
-  birth_date?: string;
-  dob?: string;
-  document_type?: string;
-  type?: string;
-  fields?: Partial<{
-    first_name: string;
-    last_name: string;
-    id_number: string;
-    passport_number: string;
-  }>;
-};
-
-type RNFile = { uri: string; name: string; type: string };
-
 export async function scanIdPhoto(uri: string): Promise<QuickIdResult> {
-  const url = `${getQuickIdUrl()}/scan`;
-  const form = new FormData();
-  const file: RNFile = { uri, name: 'id-photo.jpg', type: 'image/jpeg' };
-  // React Native FormData accepts file descriptors; cast through unknown to avoid lib DOM mismatch.
-  form.append('file', file as unknown as Blob);
+  // The authenticated PMS proxy accepts JSON/base64, not multipart. Reading
+  // the picker file through Expo's native File API also works for iOS ph/file
+  // URIs without leaking the image to a public Quick-ID service.
+  const imageBase64 = await new File(uri).base64();
+  if (!imageBase64) throw new Error('Kimlik fotoğrafı okunamadı. Lütfen yeniden çekin.');
 
-  // Use the shared bounded request path. The previous raw fetch had no timeout,
-  // so an unavailable Quick-ID service could leave the native camera flow open
-  // indefinitely after the operator tapped "Use Photo".
-  const data = await apiRequest<QuickIdRaw>(url, {
+  const data = await apiRequest<QuickIdApiResponse>('/api/quick-id/scan', {
     method: 'POST',
-    body: form,
-    auth: false,
+    body: { image_base64: imageBase64, smart_mode: true },
+    // Hosted vision providers and fallback OCR can legitimately exceed the
+    // normal 15-second API budget. Backend scan timeout is 60 seconds.
+    timeoutMs: 70_000,
   });
-  const first = data.first_name || data.given_name || data.name || data.fields?.first_name || '';
-  const last = data.last_name || data.surname || data.family_name || data.fields?.last_name || '';
-  return {
-    first_name: first,
-    last_name: last,
-    full_name: data.full_name || `${first} ${last}`.trim(),
-    id_number: data.id_number || data.tc_no || data.fields?.id_number,
-    passport_number: data.passport_number || data.fields?.passport_number,
-    nationality: data.nationality || data.country,
-    birth_date: data.birth_date || data.dob,
-    document_type: data.document_type || data.type,
-  };
+  return normalizeQuickIdResponse(data);
 }
