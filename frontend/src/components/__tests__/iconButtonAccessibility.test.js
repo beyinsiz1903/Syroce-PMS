@@ -7,7 +7,9 @@ const source = (name) => readFileSync(resolve(process.cwd(), `src/components/${n
 
 describe('shared icon buttons', () => {
   it('exposes names for launcher, notification and photo actions', () => {
-    expect(source('AppLauncher.jsx')).toContain('aria-label="Uygulama seçiciyi aç"');
+    expect(source('AppLauncher.jsx')).toContain(
+      'aria-label={t("appLauncher.open", "Uygulama seçiciyi aç")}',
+    );
     expect(source('NotificationCenter.jsx')).toContain('aria-label="Tüm bildirimleri temizle"');
     expect(source('NotificationCenter.jsx')).toContain('aria-label="Bildirim merkezini kapat"');
     expect(source('PhotoUploadComponent.jsx')).toContain('aria-label="Seçilen fotoğrafı kaldır"');
