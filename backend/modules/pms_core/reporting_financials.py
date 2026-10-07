@@ -10,6 +10,30 @@ INVALID_PAYMENT_STATUSES = frozenset({"void", "voided", "failed", "cancelled", "
 REPORTING_CURRENCY = "TRY"
 
 
+def report_payment_identity(payment: dict) -> tuple:
+    """Return the real-world transaction identity used by report totals."""
+    payment_type = str(payment.get("payment_type") or "payment").strip().lower()
+    for field in ("idempotency_key", "provider_ref", "provider_transaction_id", "transaction_id"):
+        value = str(payment.get(field) or "").strip()
+        if value:
+            return (field, value, payment_type)
+    value = str(payment.get("id") or payment.get("_id") or "").strip()
+    return ("id", value, payment_type) if value else ("object", id(payment))
+
+
+def deduplicate_report_payments(payments: list[dict]) -> list[dict]:
+    """Omit retry-created duplicate ledger rows without collapsing refunds."""
+    seen: set[tuple] = set()
+    unique: list[dict] = []
+    for payment in payments:
+        identity = report_payment_identity(payment)
+        if identity in seen:
+            continue
+        seen.add(identity)
+        unique.append(payment)
+    return unique
+
+
 def stamp_reporting_values(payment: dict, reporting_currency: str = REPORTING_CURRENCY) -> dict:
     """Persist the transaction-time reporting value on a new payment document."""
     reporting_currency = str(reporting_currency or REPORTING_CURRENCY).upper()

@@ -30,4 +30,11 @@ describe('PMSModule workspace loading', () => {
     expect(source.slice(secondaryStart, criticalStart)).toContain('/pms/guests?limit=100');
     expect(source.slice(secondaryStart, criticalStart)).toContain('/companies?limit=50');
   });
+
+  it('bounds critical startup requests and offers an inline retry state', () => {
+    expect(source).toContain("axios.get('/pms/rooms?limit=100', { timeout: 8000 })");
+    expect(source).toContain('setLoadError(\'PMS verileri zamanında alınamadı. Bağlantıyı kontrol edip yeniden deneyin.\')');
+    expect(source).toContain('role="alert"');
+    expect(source).toContain('Yeniden dene');
+  });
 });

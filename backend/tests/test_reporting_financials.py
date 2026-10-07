@@ -1,4 +1,5 @@
 from modules.pms_core.reporting_financials import (
+    deduplicate_report_payments,
     effective_collection,
     effective_revenue_adjustment,
     reporting_collection_amount,
@@ -90,3 +91,19 @@ def test_new_fx_payment_stores_transaction_day_try_value_and_rate_date():
     assert payment["reporting_amount"] == 4000
     assert payment["reporting_currency"] == "TRY"
     assert payment["exchange_rate_date"] == "2026-10-06"
+
+
+def test_report_deduplicates_payment_retries_by_idempotency_key():
+    rows = [
+        {"id": "payment-1", "idempotency_key": "collect-42", "amount": 1000, "payment_type": "interim"},
+        {"id": "payment-2", "idempotency_key": "collect-42", "amount": 1000, "payment_type": "interim"},
+    ]
+    assert deduplicate_report_payments(rows) == [rows[0]]
+
+
+def test_report_keeps_refund_with_same_provider_reference():
+    rows = [
+        {"id": "payment-1", "provider_ref": "provider-42", "amount": 1000, "payment_type": "interim"},
+        {"id": "refund-1", "provider_ref": "provider-42", "amount": 1000, "payment_type": "refund"},
+    ]
+    assert deduplicate_report_payments(rows) == rows

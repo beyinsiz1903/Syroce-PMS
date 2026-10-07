@@ -19,7 +19,11 @@ from core.database import db
 from core.helpers import require_module
 from core.security import get_current_user
 from models.schemas import User
-from modules.pms_core.reporting_financials import REPORTING_CURRENCY, reporting_collection_amount
+from modules.pms_core.reporting_financials import (
+    REPORTING_CURRENCY,
+    deduplicate_report_payments,
+    reporting_collection_amount,
+)
 from modules.pms_core.role_permission_service import require_op
 from modules.pms_core.stay_night_metrics import calculate_stay_night_metrics, load_stay_night_metrics
 
@@ -891,6 +895,8 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
         get_fnb_orders(),
     )
     rooms, all_bk, in_house, hk_tasks, maint_open, maint_completed, pending_invoices, paid_invoices, all_guests, all_payments, cash_movement_payments, prev_bookings, ly_bookings, room_blocks, fnb_orders = results
+    all_payments = deduplicate_report_payments(all_payments)
+    cash_movement_payments = deduplicate_report_payments(cash_movement_payments)
 
     loaded_booking_ids = {str(booking.get("id")) for booking in all_bk if booking.get("id")}
     missing_payment_booking_ids = list(

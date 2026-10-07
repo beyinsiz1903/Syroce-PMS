@@ -33,6 +33,8 @@ import SettingsInvoiceTab from './SettingsInvoiceTab';
 import SettingsRoomsTab from './SettingsRoomsTab';
 import SettingsB2bTab from './SettingsB2bTab';
 
+const SETTINGS_REQUEST = { timeout: 10000 };
+
 // ─── Plan Config (Sprint A: gradient/blue/green/orange/pink yok) ──────
 // Plan ücretleri base EUR cinsinden tutulur (subscription tarafı EUR);
 // gösterimde useCurrency.format ile aktif tenant para birimine çevrilir.
@@ -319,7 +321,7 @@ const Settings = ({
   const loadTeam = useCallback(async () => {
     setTeamLoading(true);
     try {
-      const res = await axios.get('/hotel/team');
+      const res = await axios.get('/hotel/team', SETTINGS_REQUEST);
       setTeam(res.data?.users || []);
       setTeamMeta({
         tier: res.data?.tier || 'basic',
@@ -336,7 +338,7 @@ const Settings = ({
   }, []);
   const loadSubscription = useCallback(async () => {
     try {
-      const subscriptionRes = await axios.get('/subscription/current');
+      const subscriptionRes = await axios.get('/subscription/current', SETTINGS_REQUEST);
       setSubscription(subscriptionRes.data);
     } catch (err) {
       console.error('Sub load failed', err);
@@ -345,7 +347,7 @@ const Settings = ({
   }, []);
   const loadPlanCatalog = useCallback(async () => {
     try {
-      const plansRes = await axios.get('/subscription/plans');
+      const plansRes = await axios.get('/subscription/plans', SETTINGS_REQUEST);
       setPlanCatalog(plansRes.data?.plans || []);
     } catch (err) {
       console.error('Plan catalog load failed', err);
@@ -355,7 +357,7 @@ const Settings = ({
   const loadBillingHistory = useCallback(async () => {
     setBillingLoading(true);
     try {
-      const res = await axios.get('/billing/history');
+      const res = await axios.get('/billing/history', SETTINGS_REQUEST);
       setBillingHistory(res.data?.records || []);
     } catch (err) {
       console.error('Billing load failed', err);
@@ -367,7 +369,7 @@ const Settings = ({
   const loadInvoiceSettings = useCallback(async () => {
     setInvoiceLoading(true);
     try {
-      const res = await axios.get('/pms/hotel-settings');
+      const res = await axios.get('/pms/hotel-settings', SETTINGS_REQUEST);
       setInvoiceSettings(res.data || {});
     } catch (err) {
       console.error('Invoice settings load failed', err);
@@ -380,7 +382,7 @@ const Settings = ({
     if (!isAdmin) return;
     setRoomsLoading(true);
     try {
-      const res = await axios.get('/pms/rooms?limit=500');
+      const res = await axios.get('/pms/rooms?limit=500', SETTINGS_REQUEST);
       setRoomsList(res.data || []);
     } catch (err) {
       console.error('Rooms load failed', err);
@@ -393,7 +395,7 @@ const Settings = ({
     if (!isAdmin) return;
     setB2bLoading(true);
     try {
-      const [infoRes, reqRes] = await Promise.all([axios.get('/b2b/connect-info'), axios.get('/b2b/connect-requests')]);
+      const [infoRes, reqRes] = await Promise.all([axios.get('/b2b/connect-info', SETTINGS_REQUEST), axios.get('/b2b/connect-requests', SETTINGS_REQUEST)]);
       setB2bInfo(infoRes.data || null);
       setB2bRequests(reqRes.data?.items || []);
     } catch (err) {
@@ -466,7 +468,7 @@ const Settings = ({
     if (!isAdmin) return;
     setGrLoading(true);
     try {
-      const res = await axios.get('/messaging/guest-requests/settings');
+      const res = await axios.get('/messaging/guest-requests/settings', SETTINGS_REQUEST);
       setGrSettings({
         visible_roles: res.data?.visible_roles || [],
         available_roles: res.data?.available_roles || [],
