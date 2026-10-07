@@ -251,7 +251,7 @@
     "messaging": "Mesajlaşma"
   },
   "navKeys": {
-    "dashboard": "Kontrol Paneli",
+    "dashboard": "Dashboard",
     "reservation_calendar": "Takvim",
     "pms": "PMS",
     "pms_operations": "PMS Operasyonlar",
@@ -268,7 +268,7 @@
     "channel_manager": "Kanal Yöneticisi",
     "integration_hub": "Entegrasyon Merkezi",
     "admin_control_panel": "Yönetim Paneli",
-    "reports": "Gelişmiş Raporlar",
+    "reports": "Raporlar",
     "report_builder": "Rapor Oluşturucu",
     "rms": "Gelir Yönetimi (RMS)",
     "ai": "AI Modülleri",
@@ -318,7 +318,7 @@
     "gelir_yonetimi": "Gelir Yönetimi",
     "ai_zeka": "AI & Zeka",
     "analitik_raporlar": "Analitik & Raporlar",
-    "system_health": "System Health",
+    "system_health": "Sistem Sağlığı",
     "pii_strict_mode": "PII Strict Mode",
     "governance": "Governance",
     "displacement_analysis": "Displacement Analizi",
@@ -336,11 +336,11 @@
     "mevzuat_raporlari": "Mevzuat Raporları",
     "report_scheduler": "Rapor Zamanlayıcı",
     "channels_hub": "Kanallar Hub",
-    "cm_dashboard": "CM Dashboard",
+    "cm_dashboard": "Go-Live Hazırlık",
     "go_live_readiness": "Go-Live Hazırlık",
     "travel_agent_arap": "Acente AR/AP",
     "incoming_agency_contracts": "Gelen Acente Talepleri",
-    "b2b_analytics": "B2B Analitik",
+    "b2b_analytics": "B2B Satış Analitiği",
     "konaklama_vergisi": "Konaklama Vergisi",
     "group_reservations": "Grup Rezervasyonları",
     "departure_list": "Bugünün Çıkışları",
@@ -354,7 +354,44 @@
     "room_map": "Oda Haritası",
     "service_recovery": "Şikayet Yönetimi",
     "mice": "MICE & Banquet",
-    "room_qr_requests": "Oda QR Talepleri"
+    "room_qr_requests": "Oda QR Talepleri",
+    "reservations": "Rezervasyonlar",
+    "frontdesk": "Ön Büro & Rez.",
+    "rooms": "Odalar",
+    "guests": "Misafirler",
+    "accounting": "Muhasebe",
+    "hotel_settings": "Otel Ayarları",
+    "user_management": "Kullanıcı Yönetimi",
+    "integrations": "Entegrasyonlar",
+    "help": "Yardım Merkezi",
+    "availability": "Fiyat & Müsaitlik",
+    "room_mapping": "Oda Eşleştirme Sihirbazı",
+    "commissions": "Acente Komisyonları",
+    "agencies": "Acente Yönetimi",
+    "agency_contracts": "Acente Sözleşme Talepleri",
+    "distribution": "Tesis İçeriği ve Dağıtım",
+    "cm_ops": "Kanal Bağlantıları",
+    "setup_dashboard": "Admin Dashboard",
+    "admin_dashboard": "Kontrol Paneli",
+    "integration_overview": "Entegrasyon Genel Bakış",
+    "integration_keys": "Entegrasyon Anahtarları",
+    "setup_wizard": "Kurulum Sihirbazı",
+    "module_market": "Modül Pazarı",
+    "early_warning": "Erken Uyarı Motoru",
+    "module_discovery": "Modül Keşfi",
+    "pos": "Satış Noktası (POS)",
+    "communication": "Mesajlaşma Merkezi",
+    "security": "Güvenlik & Güçlendirme",
+    "encryption": "Şifreleme Yönetimi",
+    "monitoring": "Entegrasyon Gözlemlenebilirliği",
+    "hr_v2": "HotelRunner V2 Operasyonları",
+    "infra": "Altyapı Güçlendirme",
+    "network": "Otel Ağı",
+    "hotels": "Otel Yönetimi",
+    "suppliers": "Tedarikci Yönetimi",
+    "module_health": "Modül Sağlık Merkezi",
+    "landing_content": "Landing İçeriği",
+    "room_qr": "Oda QR Kodları"
   },
   "auth": {
     "signIn": "Hesabınıza giriş yapın veya yeni bir hesap oluşturun",
@@ -1049,7 +1086,78 @@
     "bulkAddRooms": "Hızlı / Çoklu Ekle",
     "addSingleRoom": "Tek Oda Ekle",
     "addRoomsTitle": "Başlamak için oda ekleyin",
-    "addRoomsDesc": "En hızlı yöntem: Hızlı / Çoklu Oda Ekle."
+    "addRoomsDesc": "En hızlı yöntem: Hızlı / Çoklu Oda Ekle.",
+    "cashier": "Kasa",
+    "cashierActions": {
+      "pinTimeout": "Çok fazla PIN denemesi, lütfen bekleyin",
+      "pinBeforeOpenShift": "Vardiya açmadan önce PIN doğrulayın",
+      "pinBeforeCloseShift": "Vardiya kapatmadan önce PIN doğrulayın",
+      "pinBeforeCashIn": "Nakit girişi öncesi PIN doğrulayın",
+      "pinBeforeCashOut": "Kasa çıkışı öncesi PIN doğrulayın",
+      "pinBeforeBankDeposit": "Banka yatırma işleminden önce PIN doğrulayın",
+      "folioPayment": "Folio ödemesi",
+      "cashOut": "Kasa çıkışı",
+      "manualIn": "Manuel giriş",
+      "manualOut": "Manuel çıkış",
+      "refund": "İade",
+      "bankDeposit": "Banka yatırma",
+      "transaction": "İşlem",
+      "folioRules": "Folyo Kuralları",
+      "noTxnYet": "Henüz işlem yok",
+      "noTxnMatch": "Filtreye uyan işlem yok"
+    },
+    "roomActions": {
+      "allTypes": "Tüm Tipler",
+      "allViews": "Tüm Manzaralar",
+      "allFeatures": "Tüm Özellikler",
+      "statusEmpty": "Boş",
+      "statusOccupied": "Dolu",
+      "statusDirty": "Kirli",
+      "statusCleaning": "Temizleniyor",
+      "makeClean": "Kirli · Temiz yap",
+      "awaitingCleaning": "Temizlik bekliyor",
+      "makeBooking": "Rezervasyon Yap",
+      "blockFault": "Arıza / Blokla",
+      "dirtyRoomPanel": "Kirli Oda — Karar Paneli"
+    },
+    "reportLabels": {
+      "overview": "Genel Bakış",
+      "roomStatus": "Oda Durumu",
+      "cashierReport": "Kasa Raporu (Ödemeler)",
+      "officialList": "Maliye Listesi"
+    },
+    "commCenter": {
+      "title": "İletişim merkezi",
+      "subtitle": "Ekip mesajları ve misafir talepleri",
+      "show": "İletişim merkezini göster",
+      "minimize": "İletişim merkezini küçült",
+      "close": "İletişim merkezini kapat",
+      "open": "İletişim merkezini aç",
+      "options": "İletişim merkezi seçenekleri"
+    },
+    "frontdesk": "Ön Büro",
+    "frontdeskActions": {
+      "quickPayment": "Hızlı Ödeme Al",
+      "quickPaymentNote": "Ön büro hızlı tahsilat",
+      "quickTransfer": "Ön büro hızlı cari aktarım"
+    },
+    "upsell": "Upsell",
+    "flashReport": "Flash Rapor",
+    "tasks": "Görevler",
+    "feedback": "Geri Bildirim",
+    "allotment": "Kontenjan",
+    "laundry": "Çamaşırhane",
+    "pos": "POS",
+    "concierge": "Concierge",
+    "managerReport": "Müdür Raporu",
+    "kbsNotification": "KBS Bildirimi",
+    "kvkk": "KVKK Yönetimi",
+    "revenueControls": "Gelir Kontrolleri",
+    "quickActionsTitle": "HIZLI İŞLEMLER",
+    "modulesTitle": "MODÜLLER",
+    "newBooking": "Yeni Rezervasyon",
+    "newGuest": "Yeni Misafir",
+    "newRoom": "Yeni Oda"
   },
   "folio": {
     "title": "Folio Yönetimi",
@@ -2254,17 +2362,21 @@
     "operations": "Operasyon",
     "reservations": "Rezervasyon",
     "finance": "Finans",
-    "channels": "Kanallar",
+    "channels": "Kanal Yöneticisi",
     "reports": "Raporlar",
     "advanced": "Gelişmiş",
     "infrastructure": "Altyapı",
-    "admin": "Yönetim",
+    "admin": "Sistem Yönetimi",
     "frontdesk": "Ön Büro & Rez.",
     "sales": "Satış & Gelir",
     "guest": "Misafir & CRM",
     "fb": "Restoran & F&B",
     "backoffice": "Arka Ofis",
-    "system": "Kanallar & Entegrasyonlar"
+    "system": "Kanallar & Entegrasyonlar",
+    "pms": "PMS Operasyonları",
+    "setup": "Kurulum & Ayarlar",
+    "b2b_supplies": "Tedarik Pazarı",
+    "apps": "Tüm Uygulamalar"
   },
   "navSections": {
     "frontdesk": {
@@ -2293,6 +2405,15 @@
       "integrations": "Entegrasyon Operasyonları",
       "platform": "Platform Operasyonları",
       "governance": "Yetki, İçerik & Geliştirici"
+    },
+    "pms": {
+      "daily": "Günlük Operasyon",
+      "finance": "Finans",
+      "management": "Yönetim"
+    },
+    "channels": {
+      "distribution": "Dağıtım & Satış",
+      "management": "Yönetim"
     }
   },
   "commandCenter": {
@@ -10008,12 +10129,30 @@
       "setupRequired": "Kurulum gerekli"
     },
     "states": {
-      "empty": { "title": "Henüz gösterilecek kayıt yok", "description": "Filtreleri değiştirin veya ilk kaydı oluşturarak başlayın." },
-      "forbidden": { "title": "Bu ekran için yetkiniz yok", "description": "Rolünüz veya kullanıcıya özel erişiminiz bu ekranı açmaya yetmiyor. Otel yöneticinizden erişim isteyin." },
-      "setup": { "title": "Kurulum gerekli", "description": "Bu modül tesisinizde etkin değil veya bağlantısı henüz tamamlanmadı. Paket, modül ve entegrasyon ayarlarını kontrol edin." },
-      "error": { "title": "Veriler şu anda yüklenemiyor", "description": "Mevcut kayıtlarınız etkilenmedi. Bağlantı düzeldiğinde yeniden deneyebilirsiniz." },
-      "throttled": { "title": "İstek sınırına ulaşıldı", "description": "Çok fazla istek gönderildi. Biraz bekleyip yeniden deneyin." },
-      "staleVersion": { "title": "Uygulamanın yeni sürümü yüklenemedi", "description": "Sayfadaki eski dosyalar güncel sürümle uyuşmuyor. Yenileme işlemi açık form ve seçimleri koruyamayabilir." }
+      "empty": {
+        "title": "Henüz gösterilecek kayıt yok",
+        "description": "Filtreleri değiştirin veya ilk kaydı oluşturarak başlayın."
+      },
+      "forbidden": {
+        "title": "Bu ekran için yetkiniz yok",
+        "description": "Rolünüz veya kullanıcıya özel erişiminiz bu ekranı açmaya yetmiyor. Otel yöneticinizden erişim isteyin."
+      },
+      "setup": {
+        "title": "Kurulum gerekli",
+        "description": "Bu modül tesisinizde etkin değil veya bağlantısı henüz tamamlanmadı. Paket, modül ve entegrasyon ayarlarını kontrol edin."
+      },
+      "error": {
+        "title": "Veriler şu anda yüklenemiyor",
+        "description": "Mevcut kayıtlarınız etkilenmedi. Bağlantı düzeldiğinde yeniden deneyebilirsiniz."
+      },
+      "throttled": {
+        "title": "İstek sınırına ulaşıldı",
+        "description": "Çok fazla istek gönderildi. Biraz bekleyip yeniden deneyin."
+      },
+      "staleVersion": {
+        "title": "Uygulamanın yeni sürümü yüklenemedi",
+        "description": "Sayfadaki eski dosyalar güncel sürümle uyuşmuyor. Yenileme işlemi açık form ve seçimleri koruyamayabilir."
+      }
     },
     "actions": {
       "retry": "Yeniden dene",
@@ -10022,5 +10161,11 @@
       "continue": "Devam et",
       "backToDashboard": "Kontrol paneline dön"
     }
+  },
+  "appLauncher": {
+    "title": "Uygulamalar",
+    "open": "Uygulama seçiciyi aç",
+    "searchPlaceholder": "Uygulamalarda ara...",
+    "noResults": "Uygulama bulunamadı."
   }
 }

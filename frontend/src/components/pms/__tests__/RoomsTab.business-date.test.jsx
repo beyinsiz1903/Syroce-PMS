@@ -8,7 +8,7 @@ vi.mock('sonner', () => ({
   toast: { error: vi.fn(), success: vi.fn(), warning: vi.fn() },
 }));
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key) => (key === 'pms.rooms' ? 'Odalar' : key) }),
+  useTranslation: () => ({ t: (key, fallback) => fallback ?? (key === 'pms.rooms' ? 'Odalar' : key) }),
 }));
 
 afterEach(() => cleanup());

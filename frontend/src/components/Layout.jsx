@@ -431,14 +431,14 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
                   : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
               }`}
               data-testid="nav-applications-button"
-              aria-label="Tüm uygulamalar"
-              title="Tüm uygulamalar"
+              aria-label={t("navGroups.apps", "Tüm Uygulamalar")}
+              title={t("navGroups.apps", "Tüm Uygulamalar")}
             >
               <Grid3X3 className="w-3.5 h-3.5 shrink-0" />
-              <span className="hidden lg:inline font-medium">Tüm Uygulamalar</span>
+              <span className="hidden lg:inline font-medium">{t("navGroups.apps", "Tüm Uygulamalar")}</span>
             </Button>
           </TooltipTrigger>
-          <TooltipContent side="bottom" className="lg:hidden"><p>Tüm uygulamalar</p></TooltipContent>
+          <TooltipContent side="bottom" className="lg:hidden"><p>{t("navGroups.apps", "Tüm Uygulamalar")}</p></TooltipContent>
         </Tooltip>
       </TooltipProvider>
     );

@@ -193,25 +193,25 @@ const PMSModule = ({ user, tenant, onLogout }) => {
   const LITE_TABS = new Set(['frontdesk', 'housekeeping', 'rooms', 'guests', 'bookings', 'reports']);
 
   const ALL_TABS = [
-    { key: 'frontdesk', labelText: 'Ön Büro', icon: UserCheck, testId: 'tab-frontdesk' },
-    { key: 'housekeeping', labelText: 'Kat Hizmetleri', icon: ClipboardList, testId: 'tab-housekeeping' },
-    { key: 'rooms', labelText: 'Odalar', icon: BedDouble, testId: 'tab-rooms' },
-    { key: 'guests', labelText: 'Misafirler', icon: Users, testId: 'tab-guests' },
-    { key: 'bookings', labelText: 'Rezervasyonlar', icon: Calendar, testId: 'tab-bookings' },
-    { key: 'cashier', labelText: 'Kasa', icon: Wallet, testId: 'tab-cashier' },
-    { key: 'upsell', labelText: 'Upsell', icon: TrendingUp, testId: 'tab-upsell' },
-    { key: 'reports', labelText: 'Raporlar', icon: FileText, testId: 'tab-reports' },
-    { key: 'flash', labelText: 'Flash Rapor', icon: BarChart3, testId: 'tab-flash' },
-    { key: 'tasks', labelText: 'Görevler', icon: Wrench, testId: 'tab-tasks' },
-    { key: 'feedback', labelText: 'Geri Bildirim', icon: ThumbsUp, testId: 'tab-feedback' },
-    { key: 'allotment', labelText: 'Kontenjan', icon: Building2, testId: 'tab-allotment' },
-    { key: 'pos', labelText: 'POS', icon: UtensilsCrossed, testId: 'tab-pos' },
-    { key: 'laundry', labelText: 'Çamaşırhane', icon: Shirt, testId: 'tab-laundry' },
-    { key: 'concierge', labelText: 'Concierge', icon: MapPin, testId: 'tab-concierge' },
-    { key: 'revenue', labelText: 'Gelir Kontrol', icon: TrendingUp, testId: 'tab-revenue' },
-    { key: 'manager_report', labelText: 'Müdür Raporu', icon: FileText, testId: 'tab-manager-report' },
-    { key: 'kbs', labelText: 'KBS / GİKS', icon: Shield, testId: 'tab-kbs' },
-    { key: 'kvkk', labelText: 'KVKK', icon: Lock, testId: 'tab-kvkk' },
+    { key: 'frontdesk', labelKey: 'pms.frontdesk', labelText: 'Ön Büro', icon: UserCheck, testId: 'tab-frontdesk' },
+    { key: 'housekeeping', labelKey: 'pms.housekeeping', labelText: 'Kat Hizmetleri', icon: ClipboardList, testId: 'tab-housekeeping' },
+    { key: 'rooms', labelKey: 'pms.rooms', labelText: 'Odalar', icon: BedDouble, testId: 'tab-rooms' },
+    { key: 'guests', labelKey: 'pms.guests', labelText: 'Misafirler', icon: Users, testId: 'tab-guests' },
+    { key: 'bookings', labelKey: 'pms.bookings', labelText: 'Rezervasyonlar', icon: Calendar, testId: 'tab-bookings' },
+    { key: 'cashier', labelKey: 'pms.cashier', labelText: 'Kasa', icon: Wallet, testId: 'tab-cashier' },
+    { key: 'upsell', labelKey: 'pms.upsell', labelText: 'Upsell', icon: TrendingUp, testId: 'tab-upsell' },
+    { key: 'reports', labelKey: 'pms.reports', labelText: 'Raporlar', icon: FileText, testId: 'tab-reports' },
+    { key: 'flash', labelKey: 'pms.flashReport', labelText: 'Flash Rapor', icon: BarChart3, testId: 'tab-flash' },
+    { key: 'tasks', labelKey: 'pms.tasks', labelText: 'Görevler', icon: Wrench, testId: 'tab-tasks' },
+    { key: 'feedback', labelKey: 'pms.feedback', labelText: 'Geri Bildirim', icon: ThumbsUp, testId: 'tab-feedback' },
+    { key: 'allotment', labelKey: 'pms.allotment', labelText: 'Kontenjan', icon: Building2, testId: 'tab-allotment' },
+    { key: 'pos', labelKey: 'pms.pos', labelText: 'POS', icon: UtensilsCrossed, testId: 'tab-pos' },
+    { key: 'laundry', labelKey: 'pms.laundry', labelText: 'Çamaşırhane', icon: Shirt, testId: 'tab-laundry' },
+    { key: 'concierge', labelKey: 'pms.concierge', labelText: 'Concierge', icon: MapPin, testId: 'tab-concierge' },
+    { key: 'revenue', labelKey: 'pms.revenueControls', labelText: 'Gelir Kontrol', icon: TrendingUp, testId: 'tab-revenue' },
+    { key: 'manager_report', labelKey: 'pms.managerReport', labelText: 'Müdür Raporu', icon: FileText, testId: 'tab-manager-report' },
+    { key: 'kbs', labelKey: 'pms.kbsNotification', labelText: 'KBS / GİKS', icon: Shield, testId: 'tab-kbs' },
+    { key: 'kvkk', labelKey: 'pms.kvkk', labelText: 'KVKK', icon: Lock, testId: 'tab-kvkk' },
   ];
 
   // Per-tenant sub-tab entitlement: tenant.modules['pms.<key>'] === false
@@ -1005,7 +1005,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
               <Card className="border-slate-200 bg-white lg:sticky lg:top-6 shadow-sm">
                 <CardContent className="p-3">
                   <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3 px-2">
-                    {t('pms.quickActions', 'Hızlı İşlemler')}
+                    {t('pms.quickActionsTitle', 'Hızlı İşlemler')}
                   </div>
                   <div className="flex flex-col gap-1.5">
                     {validTabKeys.has('bookings') && canCreateBooking && <Button size="sm" variant="outline" className="justify-start bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700" onClick={() => setOpenDialog('booking')}>
@@ -1030,7 +1030,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
               <Card className="border-slate-200 bg-white lg:sticky lg:top-[280px] shadow-sm hidden lg:block">
                 <CardContent className="p-2">
                   <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2 mt-2 px-3">
-                    Modüller
+                    {t('pms.modulesTitle', 'Modüller')}
                   </div>
                   <TabsList className="flex flex-col h-auto bg-transparent w-full space-y-0.5 p-0 items-stretch">
                     {visibleTabs.map((tab) => {

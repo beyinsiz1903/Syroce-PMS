@@ -188,7 +188,7 @@ const FrontdeskTab = ({
     } finally {
       setCheckoutInProgress(null);
     }
-  }, [checkoutInProgress, effectiveBookingBalance, formatMoney, handleCheckOut, setReservationDetailId, t, tf]);
+  }, [checkoutInProgress, effectiveBookingBalance, formatMoney, handleCheckOut, setReservationDetailId, tf]);
 
   const openQuickPayment = useCallback((booking) => {
     const balance = effectiveBookingBalance(booking);
@@ -309,7 +309,7 @@ const FrontdeskTab = ({
       quickPaymentSubmittingRef.current = false;
       setQuickPaymentInProgress(false);
     }
-  }, [effectiveBookingBalance, formatMoney, loadData, loadFrontDeskData, quickPaymentAmount, quickPaymentBooking, quickPaymentCariAccountId, quickPaymentCariAccounts, quickPaymentMethod, t]);
+  }, [effectiveBookingBalance, formatMoney, loadData, loadFrontDeskData, quickPaymentAmount, quickPaymentBooking, quickPaymentCariAccountId, quickPaymentCariAccounts, quickPaymentMethod]);
 
   if (loading) {
     return (
@@ -918,7 +918,7 @@ const FrontdeskTab = ({
       <Dialog open={!!quickPaymentBooking} onOpenChange={(open) => !open && closeQuickPayment()}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Hızlı Ödeme Al</DialogTitle>
+            <DialogTitle>{t('pms.frontdeskActions.quickPayment', 'Hızlı Ödeme Al')}</DialogTitle>
           </DialogHeader>
           {quickPaymentBooking && (
             <div className="space-y-4">
