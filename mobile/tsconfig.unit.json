@@ -37,6 +37,8 @@
     "src/utils/checkinCapture.ts",
     "src/utils/__tests__/checkinCapture.test.ts",
     "src/utils/__tests__/checkinNoAutoCheckin.test.ts",
+    "src/utils/quickidErrors.ts",
+    "src/utils/__tests__/quickidErrors.test.ts",
     "src/cache/posQueueCore.ts",
     "src/cache/__tests__/posQueueCore.test.ts"
   ]

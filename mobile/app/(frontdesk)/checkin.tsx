@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, ScrollView, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { CameraView, useCameraPermissions, type BarcodeScanningResult } from 'expo-camera';
@@ -13,6 +13,7 @@ import { ROUTES } from '../../src/navigation/routes';
 import { spacing, useTheme } from '../../src/theme';
 import { captureAndScanIdentity } from '../../src/utils/checkinCapture';
 import { errorMessage } from '../../src/utils/errors';
+import { quickIdErrorMessage } from '../../src/utils/quickidErrors';
 
 type Step = 'scan' | 'capture' | 'parsed';
 type Destination = 'existing' | null;
@@ -52,6 +53,21 @@ export default function CheckinScreen() {
   const [reservationSearch, setReservationSearch] = useState('');
   const [selectedBookingId, setSelectedBookingId] = useState<string | null>(null);
 
+  const loadReservations = useCallback(() => {
+    setReservationsLoading(true);
+    setReservationsError(false);
+    return Promise.all([getTodayArrivals(), getInHouse()]);
+  }, []);
+
+  const applyReservations = useCallback((arrivals: Booking[], inHouse: Booking[]) => {
+    const merged = mergeReservations(arrivals, inHouse).sort((a, b) => {
+      if (a.id === suggestedBookingId) return -1;
+      if (b.id === suggestedBookingId) return 1;
+      return String(a.room_number || '').localeCompare(String(b.room_number || ''), 'tr', { numeric: true });
+    });
+    setReservations(merged);
+  }, [suggestedBookingId]);
+
   useEffect(() => {
     if (!permission) requestPermission();
   }, [permission, requestPermission]);
@@ -59,17 +75,10 @@ export default function CheckinScreen() {
   useEffect(() => {
     if (destination !== 'existing') return;
     let active = true;
-    setReservationsLoading(true);
-    setReservationsError(false);
-    Promise.all([getTodayArrivals(), getInHouse()])
+    loadReservations()
       .then(([arrivals, inHouse]) => {
         if (!active) return;
-        const merged = mergeReservations(arrivals, inHouse).sort((a, b) => {
-          if (a.id === suggestedBookingId) return -1;
-          if (b.id === suggestedBookingId) return 1;
-          return String(a.room_number || '').localeCompare(String(b.room_number || ''), 'tr', { numeric: true });
-        });
-        setReservations(merged);
+        applyReservations(arrivals, inHouse);
       })
       .catch(() => {
         if (active) setReservationsError(true);
@@ -80,7 +89,7 @@ export default function CheckinScreen() {
     return () => {
       active = false;
     };
-  }, [destination, suggestedBookingId]);
+  }, [applyReservations, destination, loadReservations]);
 
   const filteredReservations = useMemo(() => {
     const needle = reservationSearch.trim().toLocaleLowerCase('tr-TR');
@@ -141,8 +150,7 @@ export default function CheckinScreen() {
           return;
         }
         if (result.status === 'failed') {
-          const message = errorMessage(result.error, tr.checkin.scanFailed);
-          setError(message === 'NETWORK' ? tr.checkin.scanFailed : message);
+          setError(quickIdErrorMessage(result.error));
           scannedRef.current = false;
           setStep('scan');
           haptic.error();
@@ -298,7 +306,15 @@ export default function CheckinScreen() {
           <Field placeholder={tr.checkin.searchReservation} value={reservationSearch} onChangeText={setReservationSearch} autoCapitalize="words" />
           <View style={{ height: spacing.md }} />
           {reservationsLoading ? <ActivityIndicator color={c.primary} /> : null}
-          {reservationsError ? <Muted style={{ color: c.danger }}>{tr.checkin.reservationLoadError}</Muted> : null}
+          {reservationsError ? <View style={{ gap: spacing.sm }}>
+            <Muted style={{ color: c.danger }}>{tr.checkin.reservationLoadError}</Muted>
+            <Button title={tr.app.retry} icon="refresh" variant="outline" onPress={() => {
+              void loadReservations()
+                .then(([arrivals, inHouse]) => applyReservations(arrivals, inHouse))
+                .catch(() => setReservationsError(true))
+                .finally(() => setReservationsLoading(false));
+            }} fullWidth />
+          </View> : null}
           {!reservationsLoading && !reservationsError && filteredReservations.length === 0 ? <Muted>{tr.checkin.noActiveReservations}</Muted> : null}
           {filteredReservations.map((booking) => (
             <View key={booking.id} style={{ marginBottom: spacing.sm }}>
