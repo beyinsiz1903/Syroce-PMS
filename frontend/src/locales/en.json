@@ -342,7 +342,51 @@
     "suppliers": "Supplier Management",
     "module_health": "Module Health",
     "landing_content": "Landing Content",
-    "room_qr": "Room QR Codes"
+    "room_qr": "Room QR Codes",
+    "gdpr_compliance": "Privacy & Data Protection",
+    "tenant_users": "Hotel Users",
+    "multi_property": "Multi-Property Management",
+    "audit_timeline": "Activity Log",
+    "security_hub": "Security",
+    "urgent_message_report": "Urgent Message Report",
+    "recalled_messages_report": "Recalled Messages",
+    "id_photo_view_report": "ID Photo Access Report",
+    "id_photo_admin": "Pending ID Photos",
+    "urgent_permission_admin": "Urgent Message Permissions",
+    "contact_center_dashboard": "Contact Center",
+    "voice_number_mapping": "Voice Numbers",
+    "wbe_settings": "Web Booking Engine",
+    "agency_requests": "Agency Requests",
+    "spa_wellness": "Spa & Wellness",
+    "spa_dining_packages": "Spa & Dining Packages",
+    "activity_scheduler": "Activity & Resource Reservations",
+    "sustainability_report": "Sustainability Report",
+    "transfer_parking": "Transfers & Parking",
+    "connecting_rooms": "Connecting Room Setup",
+    "cross_property_guests": "Cross-Property Guest Profiles",
+    "city_ledger": "City Ledger",
+    "pending_ar": "Outstanding Receivables",
+    "general_ledger": "General Ledger",
+    "bank_reconciliation": "Bank Reconciliation",
+    "fnb_costing": "F&B Costing",
+    "admin_hub": "Management Center",
+    "integrations_overview": "Integration Overview",
+    "integration_credentials": "Integration Credentials",
+    "capx_integration": "CapX Integration",
+    "webhook_outbox_admin": "Outbox & Webhook DLQ",
+    "early_warning_dashboard": "Early Warning Engine",
+    "pos_dashboard": "Point of Sale (POS)",
+    "encryption_management": "Encryption Management",
+    "integration_observability": "Integration Observability",
+    "hrv2_ops": "HotelRunner V2 Operations",
+    "hotel_network": "Hotel Network",
+    "admin_agencies": "Agency Management",
+    "admin_vendors": "Vendor Management",
+    "module_health_center": "Module Health Center",
+    "site_content": "Site Content",
+    "quick_id_settings": "ID Scanning (Quick-ID)",
+    "room_qr_codes": "Room QR Codes",
+    "api_docs": "API Documentation"
   },
   "auth": {
     "signIn": "Sign in to your account or create a new one",
@@ -2354,7 +2398,8 @@
       "properties": "Hotels & Partners",
       "integrations": "Integration Operations",
       "platform": "Platform Operations",
-      "governance": "Access, Content & Developer"
+      "governance": "Access, Content & Developer",
+      "security_compliance": "Security & Compliance"
     },
     "pms": {
       "daily": "Daily Operations",
@@ -10092,6 +10137,10 @@
       "setupRequired": "Setup required"
     },
     "states": {
+      "loading": {
+        "title": "Loading data",
+        "description": "The latest information is being prepared. This screen will open automatically when it is ready."
+      },
       "empty": {
         "title": "Nothing to show yet",
         "description": "Adjust your filters or create the first record to get started."
@@ -10124,6 +10173,9 @@
       "continue": "Continue",
       "backToDashboard": "Back to dashboard"
     }
+  },
+  "moduleAvailability": {
+    "defaultName": "This module"
   },
   "appLauncher": {
     "title": "Applications",

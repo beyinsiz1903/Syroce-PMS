@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Lock, ArrowLeft } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
-export default function NotAvailable({ user }) {
+export default function NotAvailable() {
   const navigate = useNavigate();
   const { t } = useTranslation();
 
@@ -20,9 +20,6 @@ export default function NotAvailable({ user }) {
           <h2 className="text-xl font-bold text-slate-800">
             {t("notAvailable.title", "Bu sayfa planınıza dahil değil")}
           </h2>
-          <p className="text-sm text-slate-600">
-            DEBUG: userRole={user?.role || 'undefined'} | userRoles={(user?.roles || []).join(',')}
-          </p>
           <p className="text-sm text-slate-600">
             {t(
               "notAvailable.description",

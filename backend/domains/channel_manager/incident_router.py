@@ -36,6 +36,17 @@ _NO_ID = {"_id": 0}
 COLL_INCIDENT_AUDIT = "incident_audit_trail"
 
 
+def _tenant_scope(current_user: User) -> dict[str, str]:
+    """Return the tenant filter that applies to the current operator.
+
+    A real super-admin may inspect the cross-tenant control plane. Impersonated
+    super-admins and all tenant users must remain scoped to their active tenant.
+    """
+    if current_user.role == "super_admin" and not getattr(current_user, "is_impersonating", False):
+        return {}
+    return {"tenant_id": current_user.tenant_id}
+
+
 # ── Request Models ────────────────────────────────────────────
 
 
@@ -58,9 +69,7 @@ async def list_incidents(
     current_user: User = Depends(get_current_user),
 ):
     """List operational incidents with filters."""
-    query = {}
-    if current_user.role != "super_admin" or getattr(current_user, "is_impersonating", False):
-        query["tenant_id"] = current_user.tenant_id
+    query = _tenant_scope(current_user)
 
     if status:
         query["status"] = status
@@ -118,9 +127,7 @@ async def get_incident_detail(
     current_user: User = Depends(get_current_user),
 ):
     """Get full incident details with related data."""
-    query = {"id": incident_id}
-    if current_user.role != "super_admin" or getattr(current_user, "is_impersonating", False):
-        query["tenant_id"] = current_user.tenant_id
+    query = {"id": incident_id, **_tenant_scope(current_user)}
 
     incident = await db[COLL_RECONCILIATION_CASES].find_one(
         query,
@@ -129,11 +136,15 @@ async def get_incident_detail(
     if not incident:
         raise HTTPException(status_code=404, detail="Incident not found")
 
+    # A super-admin query is intentionally cross-tenant, but every related
+    # lookup must follow the tenant of the incident that was actually found.
+    tenant_id = incident.get("tenant_id") or current_user.tenant_id
+
     # Get audit trail
     audit = (
         await db[COLL_INCIDENT_AUDIT]
         .find(
-            {"incident_id": incident_id},
+            {"incident_id": incident_id, "tenant_id": tenant_id},
             _NO_ID,
         )
         .sort("timestamp", -1)
@@ -177,10 +188,10 @@ async def get_incident_detail(
     return {
         "incident": {
             **incident,
-            "recommended_action": rule.resolution.value,
+            "recommended_action": rule.resolution.value if rule else "manual_review",
             "can_auto_heal": can_auto_heal(drift_type),
-            "gold_source": rule.gold_source.value,
-            "auto_heal_description": rule.auto_heal_action,
+            "gold_source": rule.gold_source.value if rule else "",
+            "auto_heal_description": rule.auto_heal_action if rule else "",
         },
         "audit_trail": audit,
         "related_lineage": lineage,
@@ -273,12 +284,10 @@ async def incident_summary(
     current_user: User = Depends(get_current_user),
 ):
     """Dashboard-level incident summary."""
-    match_stage = {}
-    if current_user.role != "super_admin" or getattr(current_user, "is_impersonating", False):
-        match_stage["tenant_id"] = current_user.tenant_id
+    tenant_scope = _tenant_scope(current_user)
 
     pipeline = [
-        {"$match": match_stage},
+        {"$match": tenant_scope},
         {
             "$group": {
                 "_id": {"status": "$status", "severity": {"$ifNull": ["$severity", "medium"]}},
@@ -301,7 +310,7 @@ async def incident_summary(
 
     # Type breakdown
     type_pipeline = [
-        {"$match": {"tenant_id": tenant_id, "status": {"$in": ["open", "investigating"]}}},
+        {"$match": {**tenant_scope, "status": {"$in": ["open", "investigating"]}}},
         {
             "$group": {
                 "_id": {"$ifNull": ["$drift_type", {"$ifNull": ["$case_type", "unknown"]}]},
@@ -315,9 +324,7 @@ async def incident_summary(
             by_type[doc["_id"]] = doc["count"]
 
     # Failed ARI pushes (manual review)
-    ari_dead_letters = await db[COLL_ARI_CHANGE_SETS].count_documents(
-        {"tenant_id": tenant_id, "status": "manual_review"},
-    )
+    ari_dead_letters = await db[COLL_ARI_CHANGE_SETS].count_documents({**tenant_scope, "status": "manual_review"})
 
     return {
         "total_incidents": total,
