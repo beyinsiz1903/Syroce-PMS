@@ -83,7 +83,7 @@ describe('RoomsTab PMS business date', () => {
     );
 
     const cleaning = screen.getByTestId('room-cleaning-104');
-    expect(cleaning).toHaveTextContent('Temizleniyor');
+    expect(cleaning).toHaveTextContent('pms.rooms.statusCleaning');
     expect(cleaning).not.toHaveTextContent('Temizlik bekliyor');
   });
 
@@ -131,7 +131,7 @@ describe('RoomsTab PMS business date', () => {
       />,
     );
 
-    expect(screen.getByRole('button', { name: 'Rezervasyon Yap' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'pms.rooms.makeBooking' })).toBeInTheDocument();
     fireEvent.click(screen.getByTestId('mark-room-clean-109'));
 
     await waitFor(() => {
