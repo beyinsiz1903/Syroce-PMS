@@ -281,13 +281,13 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
   const roleWorkspace = useMemo(() => {
     const roles = normalizedUserRoles(user);
     if ([...roles].some((role) => ['accounting', 'finance', 'finance_manager'].includes(role)) && hasModule('invoices')) {
-      return { path: '/app/invoices', label: 'Muhasebe' };
+      return { path: '/app/invoices', label: t('navKeys.accounting', 'Muhasebe') };
     }
     if ([...roles].some((role) => ['gm', 'general_manager', 'manager', 'owner'].includes(role)) && hasModule('gm_dashboards')) {
-      return { path: '/executive', label: 'GM Paneli' };
+      return { path: '/executive', label: t('navKeys.general_manager_dashboard', 'GM Paneli') };
     }
     return { path: '/app/dashboard', label: null };
-  }, [hasModule, user]);
+  }, [hasModule, t, user]);
 
   const currentTabParam = new URLSearchParams(location.search).get('tab');
   const isItemPathActive = (item) => {
