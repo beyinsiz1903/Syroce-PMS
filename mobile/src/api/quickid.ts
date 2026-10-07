@@ -1,4 +1,4 @@
-import { getQuickIdUrl } from './client';
+import { apiRequest, getQuickIdUrl } from './client';
 
 export type QuickIdResult = {
   first_name?: string;
@@ -45,12 +45,14 @@ export async function scanIdPhoto(uri: string): Promise<QuickIdResult> {
   // React Native FormData accepts file descriptors; cast through unknown to avoid lib DOM mismatch.
   form.append('file', file as unknown as Blob);
 
-  const res = await fetch(url, { method: 'POST', body: form });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Quick-ID hata: ${res.status} ${text.slice(0, 120)}`);
-  }
-  const data = (await res.json()) as QuickIdRaw;
+  // Use the shared bounded request path. The previous raw fetch had no timeout,
+  // so an unavailable Quick-ID service could leave the native camera flow open
+  // indefinitely after the operator tapped "Use Photo".
+  const data = await apiRequest<QuickIdRaw>(url, {
+    method: 'POST',
+    body: form,
+    auth: false,
+  });
   const first = data.first_name || data.given_name || data.name || data.fields?.first_name || '';
   const last = data.last_name || data.surname || data.family_name || data.fields?.last_name || '';
   return {

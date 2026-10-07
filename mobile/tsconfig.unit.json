@@ -32,6 +32,9 @@
     "src/state/__tests__/roleAccess.test.ts",
     "src/utils/departmentScreens.ts",
     "src/utils/__tests__/departmentScreens.test.ts",
+    "src/utils/checkinCapture.ts",
+    "src/utils/__tests__/checkinCapture.test.ts",
+    "src/utils/__tests__/checkinNoAutoCheckin.test.ts",
     "src/cache/posQueueCore.ts",
     "src/cache/__tests__/posQueueCore.test.ts"
   ]
