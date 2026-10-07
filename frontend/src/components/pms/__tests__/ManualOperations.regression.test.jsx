@@ -46,6 +46,31 @@ describe('PMS manually discovered operation regressions', () => {
     confirmDialog.mockResolvedValue(true);
   });
 
+  it('uses the canonical room inventory for current occupancy instead of a conflicting AI value', () => {
+    render(
+      <MemoryRouter>
+        <Tabs defaultValue="frontdesk">
+          <FrontdeskTab
+            arrivals={[]}
+            departures={[]}
+            inhouse={[]}
+            bookings={[]}
+            rooms={[{ id: '1', status: 'occupied' }, { id: '2', status: 'available' }]}
+            guests={[]}
+            aiPrediction={{ current_occupancy: 99, upcoming_bookings: 0 }}
+            handleCheckIn={() => {}}
+            handleCheckOut={() => {}}
+            loadFolio={() => {}}
+            loading={false}
+          />
+        </Tabs>
+      </MemoryRouter>,
+    );
+
+    expect(screen.getAllByText('50.0%').length).toBeGreaterThan(0);
+    expect(screen.queryByText('99.0%')).not.toBeInTheDocument();
+  });
+
   it('preserves both booking dates when the fields are changed back-to-back', () => {
     const booking = {
       guest_id: '', check_in: '', check_out: '', adults: 1, children: 0,

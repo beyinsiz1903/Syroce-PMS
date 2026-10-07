@@ -22,6 +22,10 @@ logger = logging.getLogger(__name__)
 api_router = APIRouter()
 
 
+def _primary_language(value: str | None) -> str:
+    return str(value or "tr").strip().lower().split("-", 1)[0].split("_", 1)[0]
+
+
 @api_router.get("/ai/dashboard/briefing")
 @cached(ttl=30, key_prefix="ai_dashboard_briefing")
 async def get_daily_briefing(
@@ -32,6 +36,10 @@ async def get_daily_briefing(
     """
     Get AI-generated daily briefing for dashboard
     """
+    # Browsers commonly expose regional tags (tr-TR, en-US). Treat their
+    # primary subtag as the requested language instead of silently falling
+    # back to English for every value other than the literal "tr".
+    lang = _primary_language(lang)
     try:
         # Operational metrics come from the same open-business-day snapshot as
         # the PMS dashboard and night audit.  AI may explain the truth, but it
