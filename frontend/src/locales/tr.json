@@ -1088,8 +1088,47 @@
     "addRoomsTitle": "Başlamak için oda ekleyin",
     "addRoomsDesc": "En hızlı yöntem: Hızlı / Çoklu Oda Ekle.",
     "cashier": "Kasa",
+    "cashierActions": {
+      "pinTimeout": "Çok fazla PIN denemesi, lütfen bekleyin",
+      "pinBeforeOpenShift": "Vardiya açmadan önce PIN doğrulayın",
+      "pinBeforeCloseShift": "Vardiya kapatmadan önce PIN doğrulayın",
+      "pinBeforeCashIn": "Nakit girişi öncesi PIN doğrulayın",
+      "pinBeforeCashOut": "Kasa çıkışı öncesi PIN doğrulayın",
+      "pinBeforeBankDeposit": "Banka yatırma işleminden önce PIN doğrulayın",
+      "folioPayment": "Folio ödemesi",
+      "cashOut": "Kasa çıkışı",
+      "manualIn": "Manuel giriş",
+      "manualOut": "Manuel çıkış",
+      "refund": "İade",
+      "bankDeposit": "Banka yatırma",
+      "transaction": "İşlem",
+      "folioRules": "Folyo Kuralları",
+      "noTxnYet": "Henüz işlem yok",
+      "noTxnMatch": "Filtreye uyan işlem yok"
+    },
+    "roomActions": {
+      "allTypes": "Tüm Tipler",
+      "allViews": "Tüm Manzaralar",
+      "allFeatures": "Tüm Özellikler",
+      "statusEmpty": "Boş",
+      "statusOccupied": "Dolu",
+      "statusDirty": "Kirli",
+      "statusCleaning": "Temizleniyor",
+      "makeClean": "Kirli · Temiz yap",
+      "awaitingCleaning": "Temizlik bekliyor",
+      "makeBooking": "Rezervasyon Yap",
+      "blockFault": "Arıza / Blokla",
+      "dirtyRoomPanel": "Kirli Oda — Karar Paneli"
+    },
+    "reportLabels": {
+      "overview": "Genel Bakış",
+      "roomStatus": "Oda Durumu",
+      "cashierReport": "Kasa Raporu (Ödemeler)",
+      "officialList": "Maliye Listesi"
+    },
     "commCenter": {
       "title": "İletişim merkezi",
+      "subtitle": "Ekip mesajları ve misafir talepleri",
       "show": "İletişim merkezini göster",
       "minimize": "İletişim merkezini küçült",
       "close": "İletişim merkezini kapat",
@@ -1097,6 +1136,11 @@
       "options": "İletişim merkezi seçenekleri"
     },
     "frontdesk": "Ön Büro",
+    "frontdeskActions": {
+      "quickPayment": "Hızlı Ödeme Al",
+      "quickPaymentNote": "Ön büro hızlı tahsilat",
+      "quickTransfer": "Ön büro hızlı cari aktarım"
+    },
     "upsell": "Upsell",
     "flashReport": "Flash Rapor",
     "tasks": "Görevler",
@@ -1110,7 +1154,10 @@
     "kvkk": "KVKK Yönetimi",
     "revenueControls": "Gelir Kontrolleri",
     "quickActionsTitle": "HIZLI İŞLEMLER",
-    "modulesTitle": "MODÜLLER"
+    "modulesTitle": "MODÜLLER",
+    "newBooking": "Yeni Rezervasyon",
+    "newGuest": "Yeni Misafir",
+    "newRoom": "Yeni Oda"
   },
   "folio": {
     "title": "Folio Yönetimi",
@@ -10117,6 +10164,7 @@
   },
   "appLauncher": {
     "title": "Uygulamalar",
+    "open": "Uygulama seçiciyi aç",
     "searchPlaceholder": "Uygulamalarda ara...",
     "noResults": "Uygulama bulunamadı."
   }

@@ -106,7 +106,7 @@ const CashierTab = () => {
           e.response.headers?.['retry-after'] ??
           e.response.data?.retry_after ??
           null;
-        const detail = e.response?.data?.detail || t('pms.cashier.pinTimeout', 'Çok fazla PIN denemesi, lütfen bekleyin');
+        const detail = e.response?.data?.detail || t('pms.cashierActions.pinTimeout', 'Çok fazla PIN denemesi, lütfen bekleyin');
         toast.error(retry ? `${detail} (${retry}s)` : detail);
       } else if (e?.response?.status === 401) {
         toast.error(e.response?.data?.detail || 'PIN hatalı');
@@ -154,7 +154,7 @@ const CashierTab = () => {
     } catch (e) { toast.error('İşlem Hatası: ' + (e.response?.data?.detail || e.message)); }
     setLoading(false);
   };
-  const openShift = () => requirePin(t('pms.cashier.pinBeforeOpenShift', 'Vardiya açmadan önce PIN doğrulayın'), doOpenShift);
+  const openShift = () => requirePin(t('pms.cashierActions.pinBeforeOpenShift', 'Vardiya açmadan önce PIN doğrulayın'), doOpenShift);
 
   const calcTotal = (counts) =>
     (counts.cash_200 * 200) + (counts.cash_100 * 100) + (counts.cash_50 * 50) +
@@ -183,7 +183,7 @@ const CashierTab = () => {
       toast.error(`Fark ${DIFF_THRESHOLD} TL'yi aştığı için açıklama zorunlu`);
       return;
     }
-    requirePin(t('pms.cashier.pinBeforeCloseShift', 'Vardiya kapatmadan önce PIN doğrulayın'), doCloseShift);
+    requirePin(t('pms.cashierActions.pinBeforeCloseShift', 'Vardiya kapatmadan önce PIN doğrulayın'), doCloseShift);
   };
 
   const handoverShift = async () => {
@@ -215,8 +215,8 @@ const CashierTab = () => {
     const fx = parseFloat(manualTxn.fx_rate) || 1;
     if (cur !== 'TRY' && (!fx || fx <= 0)) { toast.error('Yabancı para için kur girin'); return; }
     const label = direction === 'in'
-      ? t('pms.cashier.pinBeforeCashIn', 'Nakit girişi öncesi PIN doğrulayın')
-      : t('pms.cashier.pinBeforeCashOut', 'Kasa çıkışı öncesi PIN doğrulayın');
+      ? t('pms.cashierActions.pinBeforeCashIn', 'Nakit girişi öncesi PIN doğrulayın')
+      : t('pms.cashierActions.pinBeforeCashOut', 'Kasa çıkışı öncesi PIN doğrulayın');
     requirePin(label, () => doSubmitManual(direction, amt, cur, fx));
   };
 
@@ -246,7 +246,7 @@ const CashierTab = () => {
     const amt = parseFloat(bankDeposit.amount);
     if (!amt || amt <= 0) { toast.error('Tutar girin'); return; }
     if (!bankDeposit.bank_name.trim()) { toast.error('Banka adı zorunlu'); return; }
-    requirePin(t('pms.cashier.pinBeforeBankDeposit', 'Banka yatırma işleminden önce PIN doğrulayın'), () => doSubmitBankDeposit(amt));
+    requirePin(t('pms.cashierActions.pinBeforeBankDeposit', 'Banka yatırma işleminden önce PIN doğrulayın'), () => doSubmitBankDeposit(amt));
   };
 
   const doSubmitBankDeposit = async (amt) => {
@@ -378,17 +378,17 @@ const CashierTab = () => {
   const shiftBusinessDate = String(shift?.business_date || shift?.opened_at || '').slice(0, 10);
   const staleShift = Boolean(shiftBusinessDate && shiftBusinessDate < todayIso());
 
-  const txnTypeLabel = (type) => {
+  const txnTypeLabel = useCallback((type) => {
     const map = {
-      folio_payment: t('pms.cashier.folioPayment', 'Folio ödemesi'),
-      paid_out: t('pms.cashier.cashOut', 'Kasa çıkışı'),
-      manual_in: t('pms.cashier.manualIn', 'Manuel giriş'),
-      manual_out: t('pms.cashier.manualOut', 'Manuel çıkış'),
-      refund: t('pms.cashier.refund', 'İade'),
-      bank_deposit: t('pms.cashier.bankDeposit', 'Banka yatırma'),
+      folio_payment: t('pms.cashierActions.folioPayment', 'Folio ödemesi'),
+      paid_out: t('pms.cashierActions.cashOut', 'Kasa çıkışı'),
+      manual_in: t('pms.cashierActions.manualIn', 'Manuel giriş'),
+      manual_out: t('pms.cashierActions.manualOut', 'Manuel çıkış'),
+      refund: t('pms.cashierActions.refund', 'İade'),
+      bank_deposit: t('pms.cashierActions.bankDeposit', 'Banka yatırma'),
     };
-    return map[type] || t('pms.cashier.transaction', 'İşlem');
-  };
+    return map[type] || t('pms.cashierActions.transaction', 'İşlem');
+  }, [t]);
 
   const methodLabel = (m) => {
     const map = { cash: 'Nakit', card: 'Kart', bank_transfer: 'Havale', online: 'Online' };
@@ -406,7 +406,7 @@ const CashierTab = () => {
       ].join(' ').toLowerCase();
       return haystack.includes(q);
     });
-  }, [transactions, txnSearch, txnMethodFilter]);
+  }, [transactions, txnSearch, txnMethodFilter, txnTypeLabel]);
 
   const exportTransactionsCsv = () => {
     if (!filteredTransactions.length) { toast.error('Dışa aktarılacak işlem yok'); return; }
@@ -504,7 +504,7 @@ const CashierTab = () => {
             <CalendarRange className="w-4 h-4 mr-2" /> {t('cm.components_pms_CashierTab.donem_raporu')}
           </Button>
           <Button onClick={() => navigate('/folio-routing')} variant="outline" className="border-slate-300 text-slate-700 hover:bg-slate-50">
-            <ArrowRightLeft className="w-4 h-4 mr-2" /> {t('pms.cashier.folioRules', 'Folyo Kuralları')}
+            <ArrowRightLeft className="w-4 h-4 mr-2" /> {t('pms.cashierActions.folioRules', 'Folyo Kuralları')}
           </Button>
           <Button variant="outline" onClick={() => { loadShift(); loadHistory(); }}>
             <RefreshCw className="w-4 h-4 mr-2" /> {t('cm.components_pms_CashierTab.yenile')}
@@ -628,7 +628,7 @@ const CashierTab = () => {
             <CardContent>
               {filteredTransactions.length === 0 ? (
                 <p className="text-sm text-gray-400 py-4 text-center">
-                  {transactions.length === 0 ? t('pms.cashier.noTxnYet', 'Henüz işlem yok') : t('pms.cashier.noTxnMatch', 'Filtreye uyan işlem yok')}
+                  {transactions.length === 0 ? t('pms.cashierActions.noTxnYet', 'Henüz işlem yok') : t('pms.cashierActions.noTxnMatch', 'Filtreye uyan işlem yok')}
                 </p>
               ) : (
                 <div className="max-h-[400px] overflow-y-auto space-y-1">

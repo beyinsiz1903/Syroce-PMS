@@ -208,10 +208,10 @@ const PMSModule = ({ user, tenant, onLogout }) => {
     { key: 'pos', labelKey: 'pms.pos', labelText: 'POS', icon: UtensilsCrossed, testId: 'tab-pos' },
     { key: 'laundry', labelKey: 'pms.laundry', labelText: 'Çamaşırhane', icon: Shirt, testId: 'tab-laundry' },
     { key: 'concierge', labelKey: 'pms.concierge', labelText: 'Concierge', icon: MapPin, testId: 'tab-concierge' },
-    { key: 'revenue', labelText: 'Gelir Kontrol', icon: TrendingUp, testId: 'tab-revenue' },
+    { key: 'revenue', labelKey: 'pms.revenueControls', labelText: 'Gelir Kontrol', icon: TrendingUp, testId: 'tab-revenue' },
     { key: 'manager_report', labelKey: 'pms.managerReport', labelText: 'Müdür Raporu', icon: FileText, testId: 'tab-manager-report' },
-    { key: 'kbs', labelText: 'KBS / GİKS', icon: Shield, testId: 'tab-kbs' },
-    { key: 'kvkk', labelText: 'KVKK', icon: Lock, testId: 'tab-kvkk' },
+    { key: 'kbs', labelKey: 'pms.kbsNotification', labelText: 'KBS / GİKS', icon: Shield, testId: 'tab-kbs' },
+    { key: 'kvkk', labelKey: 'pms.kvkk', labelText: 'KVKK', icon: Lock, testId: 'tab-kvkk' },
   ];
 
   // Per-tenant sub-tab entitlement: tenant.modules['pms.<key>'] === false
@@ -1005,7 +1005,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
               <Card className="border-slate-200 bg-white lg:sticky lg:top-6 shadow-sm">
                 <CardContent className="p-3">
                   <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3 px-2">
-                    {t('pms.quickActions', 'Hızlı İşlemler')}
+                    {t('pms.quickActionsTitle', 'Hızlı İşlemler')}
                   </div>
                   <div className="flex flex-col gap-1.5">
                     {validTabKeys.has('bookings') && canCreateBooking && <Button size="sm" variant="outline" className="justify-start bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700" onClick={() => setOpenDialog('booking')}>
@@ -1030,7 +1030,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
               <Card className="border-slate-200 bg-white lg:sticky lg:top-[280px] shadow-sm hidden lg:block">
                 <CardContent className="p-2">
                   <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2 mt-2 px-3">
-                    Modüller
+                    {t('pms.modulesTitle', 'Modüller')}
                   </div>
                   <TabsList className="flex flex-col h-auto bg-transparent w-full space-y-0.5 p-0 items-stretch">
                     {visibleTabs.map((tab) => {

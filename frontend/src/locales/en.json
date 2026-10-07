@@ -1037,12 +1037,51 @@
     "addSingleRoom": "Add Single Room",
     "addRoomsTitle": "Add rooms to get started",
     "addRoomsDesc": "Fastest method: Quick / Bulk Add.",
-    "frontdesk": {
+    "frontdesk": "Front Desk",
+    "frontdeskActions": {
       "quickPayment": "Quick Payment",
       "quickPaymentNote": "Front desk quick payment",
       "quickTransfer": "Front desk quick transfer"
     },
     "cashier": "Cashier",
+    "cashierActions": {
+      "pinTimeout": "Too many PIN attempts. Please wait",
+      "pinBeforeOpenShift": "Verify your PIN before opening the shift",
+      "pinBeforeCloseShift": "Verify your PIN before closing the shift",
+      "pinBeforeCashIn": "Verify your PIN before recording cash in",
+      "pinBeforeCashOut": "Verify your PIN before recording cash out",
+      "pinBeforeBankDeposit": "Verify your PIN before recording a bank deposit",
+      "folioPayment": "Folio payment",
+      "cashOut": "Cash out",
+      "manualIn": "Manual cash in",
+      "manualOut": "Manual cash out",
+      "refund": "Refund",
+      "bankDeposit": "Bank deposit",
+      "transaction": "Transaction",
+      "folioRules": "Folio Rules",
+      "noTxnYet": "No transactions yet",
+      "noTxnMatch": "No transactions match the filter"
+    },
+    "roomActions": {
+      "allTypes": "All Room Types",
+      "allViews": "All Views",
+      "allFeatures": "All Features",
+      "statusEmpty": "Vacant",
+      "statusOccupied": "Occupied",
+      "statusDirty": "Dirty",
+      "statusCleaning": "Cleaning",
+      "makeClean": "Dirty · Mark Clean",
+      "awaitingCleaning": "Awaiting cleaning",
+      "makeBooking": "Create Reservation",
+      "blockFault": "Report Issue / Block",
+      "dirtyRoomPanel": "Dirty Room — Decision Panel"
+    },
+    "reportLabels": {
+      "overview": "Overview",
+      "roomStatus": "Room Status",
+      "cashierReport": "Cash Report (Payments)",
+      "officialList": "Official Guest List"
+    },
     "upsell": "Upsell",
     "flashReport": "Flash Report",
     "tasks": "Tasks",
@@ -1057,8 +1096,12 @@
     "revenueControls": "Revenue Controls",
     "quickActionsTitle": "QUICK ACTIONS",
     "modulesTitle": "MODULES",
+    "newBooking": "New Reservation",
+    "newGuest": "New Guest",
+    "newRoom": "New Room",
     "commCenter": {
       "title": "Communication Center",
+      "subtitle": "Team messages and guest requests",
       "show": "Show Communication Center",
       "minimize": "Minimize",
       "close": "Close",
@@ -10084,6 +10127,7 @@
   },
   "appLauncher": {
     "title": "Applications",
+    "open": "Open application selector",
     "searchPlaceholder": "Search applications...",
     "noResults": "No applications found."
   }

@@ -188,7 +188,7 @@ const FrontdeskTab = ({
     } finally {
       setCheckoutInProgress(null);
     }
-  }, [checkoutInProgress, effectiveBookingBalance, formatMoney, handleCheckOut, setReservationDetailId, t, tf]);
+  }, [checkoutInProgress, effectiveBookingBalance, formatMoney, handleCheckOut, setReservationDetailId, tf]);
 
   const openQuickPayment = useCallback((booking) => {
     const balance = effectiveBookingBalance(booking);
@@ -262,7 +262,7 @@ const FrontdeskTab = ({
           amount,
           cari_account_id: quickPaymentCariAccountId,
           cari_account_name: selectedCariAccount?.name || selectedCariAccount?.account_name || null,
-          description: t('pms.frontdesk.quickTransfer', 'Ön büro hızlı cari aktarım'),
+          description: 'Ön büro hızlı cari aktarım',
         }, {
           headers: { 'Idempotency-Key': idempotencyKey },
         });
@@ -273,7 +273,7 @@ const FrontdeskTab = ({
           method: quickPaymentMethod,
           payment_type: amount >= balance - 0.01 ? 'final' : 'interim',
           reference: null,
-          notes: t('pms.frontdesk.quickPaymentNote', 'Ön büro hızlı tahsilat'),
+          notes: 'Ön büro hızlı tahsilat',
         }, {
           headers: { 'Idempotency-Key': idempotencyKey },
         });
@@ -309,7 +309,7 @@ const FrontdeskTab = ({
       quickPaymentSubmittingRef.current = false;
       setQuickPaymentInProgress(false);
     }
-  }, [effectiveBookingBalance, formatMoney, loadData, loadFrontDeskData, quickPaymentAmount, quickPaymentBooking, quickPaymentCariAccountId, quickPaymentCariAccounts, quickPaymentMethod, t]);
+  }, [effectiveBookingBalance, formatMoney, loadData, loadFrontDeskData, quickPaymentAmount, quickPaymentBooking, quickPaymentCariAccountId, quickPaymentCariAccounts, quickPaymentMethod]);
 
   if (loading) {
     return (
@@ -918,7 +918,7 @@ const FrontdeskTab = ({
       <Dialog open={!!quickPaymentBooking} onOpenChange={(open) => !open && closeQuickPayment()}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>{t('pms.frontdesk.quickPayment', 'Hızlı Ödeme Al')}</DialogTitle>
+            <DialogTitle>{t('pms.frontdeskActions.quickPayment', 'Hızlı Ödeme Al')}</DialogTitle>
           </DialogHeader>
           {quickPaymentBooking && (
             <div className="space-y-4">

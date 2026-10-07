@@ -8,7 +8,7 @@ vi.mock('sonner', () => ({
   toast: { error: vi.fn(), success: vi.fn(), warning: vi.fn() },
 }));
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key) => (key === 'pms.rooms' ? 'Odalar' : key) }),
+  useTranslation: () => ({ t: (key, fallback) => fallback ?? (key === 'pms.rooms' ? 'Odalar' : key) }),
 }));
 
 afterEach(() => cleanup());
@@ -83,7 +83,7 @@ describe('RoomsTab PMS business date', () => {
     );
 
     const cleaning = screen.getByTestId('room-cleaning-104');
-    expect(cleaning).toHaveTextContent('pms.rooms.statusCleaning');
+    expect(cleaning).toHaveTextContent('Temizleniyor');
     expect(cleaning).not.toHaveTextContent('Temizlik bekliyor');
   });
 
@@ -131,7 +131,7 @@ describe('RoomsTab PMS business date', () => {
       />,
     );
 
-    expect(screen.getByRole('button', { name: 'pms.rooms.makeBooking' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Rezervasyon Yap' })).toBeInTheDocument();
     fireEvent.click(screen.getByTestId('mark-room-clean-109'));
 
     await waitFor(() => {

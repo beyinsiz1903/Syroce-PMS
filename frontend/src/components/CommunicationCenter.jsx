@@ -76,7 +76,7 @@ export default function CommunicationCenter({ user }) {
           <div className="flex items-center justify-between px-2 py-1.5">
             <div>
               <div className="text-sm font-bold text-slate-900">{t('pms.commCenter.title', 'İletişim merkezi')}</div>
-              <div className="text-[11px] text-slate-500">Ekip mesajları ve misafir talepleri</div>
+              <div className="text-[11px] text-slate-500">{t('pms.commCenter.subtitle', 'Ekip mesajları ve misafir talepleri')}</div>
             </div>
             <div className="flex items-center gap-0.5">
               <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => changeDisplayMode('minimized')} aria-label={t('pms.commCenter.minimize', 'İletişim merkezini küçült')}>

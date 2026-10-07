@@ -52,7 +52,7 @@ export default function AppLauncher({ user }) {
           variant="ghost"
           size="icon"
           className="h-9 w-9 rounded-full focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2"
-          aria-label="Uygulama seçiciyi aç"
+          aria-label={t("appLauncher.open", "Uygulama seçiciyi aç")}
           title={t("appLauncher.title", "Uygulamalar")}
         >
           <Grid3X3 className="h-[1.1rem] w-[1.1rem] text-slate-600 dark:text-slate-300" aria-hidden="true" />
