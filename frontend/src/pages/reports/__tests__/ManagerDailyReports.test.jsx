@@ -96,7 +96,12 @@ describe('ManagerDailyReports', () => {
     render(<ManagerDailyReports
       section="cash_movements"
       reportDate="2026-10-06"
-      data={{ payments: {
+      data={{
+        payments: {
+          rows: [{ id: 'wrong-accounting-day-row', processed_at: '2026-09-27T10:00:00Z', reporting_amount: 999999 }],
+          total_paid: 999999,
+        },
+        cash_movements: {
         reporting_currency: 'TRY',
         total_paid: 4000,
         conversion_issue_count: 0,
@@ -113,11 +118,15 @@ describe('ManagerDailyReports', () => {
           exchange_rate_date: '2026-10-06',
           method: 'cash',
         }],
-      } }}
+        },
+      }}
     />);
 
     const section = screen.getByTestId('section-cash-movements');
     expect(within(section).getAllByText('₺4.000').length).toBeGreaterThan(0);
+    expect(within(section).getByText('Nakit')).toBeInTheDocument();
+    expect(within(section).queryByText('cash')).not.toBeInTheDocument();
+    expect(within(section).queryByText('₺999.999')).not.toBeInTheDocument();
     expect(within(section).getByText(/Alınan:/)).toHaveTextContent('$100');
     expect(within(section).getByText('Toplam tahsilat (işlem günündeki TL karşılığı)')).toBeInTheDocument();
   });

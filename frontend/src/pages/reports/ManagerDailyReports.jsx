@@ -4,6 +4,12 @@ import { ArrowLeftRight, Banknote, BarChart3, BedDouble, CreditCard, HandCoins, 
 import { EmptyState, KPICard, SectionHeader, formatCurrency } from './ReportHelpers';
 
 const formatDateTime = value => value ? new Date(value).toLocaleString('tr-TR') : '-';
+const formatTime = value => value ? new Date(value).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }) : '-';
+const PAYMENT_METHOD_LABELS = {
+  cash: 'Nakit', card: 'Kart', credit_card: 'Kredi kartı', bank_transfer: 'Havale / EFT',
+  transfer: 'Havale / EFT', city_ledger: 'Cari hesap', agency: 'Acente', online: 'Çevrim içi',
+};
+const formatPaymentMethod = method => PAYMENT_METHOD_LABELS[String(method || '').toLowerCase()] || method || '-';
 const ReportingAmount = ({ payments, amount }) => formatCurrency(amount || 0, payments?.reporting_currency || 'TRY');
 const ReceivedDetail = ({ row }) => {
   const receivedCurrency = row.received_currency || row.currency || 'TRY';
@@ -72,7 +78,7 @@ const CashMovementsReport = ({ payments, reportDate }) => (
       <CardContent className="p-0 overflow-x-auto">
         {(payments.rows || []).length ? <table className="w-full text-sm">
           <thead><tr className="border-b bg-gray-50"><th className="text-left p-3">Saat</th><th className="text-left p-3">Oda</th><th className="text-left p-3">Misafir</th><th className="text-left p-3">Yöntem</th><th className="text-left p-3">İşleyen</th><th className="text-left p-3">Referans / Not</th><th className="text-right p-3">Tutar</th></tr></thead>
-          <tbody>{payments.rows.map((row, index) => { const reportingAmount = row.reporting_amount ?? ((row.currency || 'TRY') === 'TRY' ? row.amount : null); return <tr key={row.id || index} className="border-b"><td className="p-3 whitespace-nowrap">{formatDateTime(row.processed_at)}</td><td className="p-3 font-semibold">{row.room_number || '-'}</td><td className="p-3">{row.guest_name || '-'}</td><td className="p-3">{row.method || '-'}</td><td className="p-3">{row.processed_by || '-'}</td><td className="p-3">{row.reference || row.notes || '-'}</td><td className="p-3 text-right font-semibold">{reportingAmount == null ? '—' : formatCurrency(reportingAmount, row.reporting_currency || 'TRY')}<ReceivedDetail row={row} /></td></tr>; })}</tbody>
+          <tbody>{payments.rows.map((row, index) => { const reportingAmount = row.reporting_amount ?? ((row.currency || 'TRY') === 'TRY' ? row.amount : null); return <tr key={row.id || index} className="border-b"><td className="p-3 whitespace-nowrap">{formatTime(row.processed_at)}</td><td className="p-3 font-semibold">{row.room_number || '-'}</td><td className="p-3">{row.guest_name || '-'}</td><td className="p-3">{formatPaymentMethod(row.method)}</td><td className="p-3">{row.processed_by || '-'}</td><td className="p-3">{row.reference || row.notes || '-'}</td><td className="p-3 text-right font-semibold">{reportingAmount == null ? '—' : formatCurrency(reportingAmount, row.reporting_currency || 'TRY')}<ReceivedDetail row={row} /></td></tr>; })}</tbody>
           <tfoot><tr className="bg-emerald-50"><td colSpan={6} className="p-3 font-semibold">Toplam tahsilat (işlem günündeki TL karşılığı)</td><td className="p-3 text-right font-bold"><ReportingAmount payments={payments} amount={payments.total_paid} /></td></tr></tfoot>
         </table> : <div className="py-12"><EmptyState icon={ArrowLeftRight} message="Seçili tarihte kasa hareketi yok" /></div>}
       </CardContent>
@@ -126,7 +132,7 @@ const DailyAnalysisReport = ({ analysis }) => (
 
 export default function ManagerDailyReports({ section, data, reportDate }) {
   if (section === 'front_cashier') return <FrontCashierReport summary={data?.front_cashier || {}} payments={data?.payments || {}} reportDate={reportDate} />;
-  if (section === 'cash_movements') return <CashMovementsReport payments={data?.payments || {}} reportDate={reportDate} />;
+  if (section === 'cash_movements') return <CashMovementsReport payments={data?.cash_movements || {}} reportDate={reportDate} />;
   if (section === 'rate_control') return <RateControlReport rows={data?.room_rate_control || []} reportDate={reportDate} />;
   return <DailyAnalysisReport analysis={data?.daily_analysis || { date: reportDate }} />;
 }
