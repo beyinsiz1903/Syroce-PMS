@@ -224,6 +224,7 @@ const Desc = ({
 }) => <p className="text-slate-600 leading-relaxed mt-3">{children}</p>;
 export default function B2BApiDocs() {
   const [lang, setLang] = useState('en');
+  const [apiProduct, setApiProduct] = useState('hotel');
   const [activeSection, setActiveSection] = useState('overview');
   const [urlCopied, setUrlCopied] = useState(false);
   const nl = navLabels[lang];
@@ -256,13 +257,17 @@ export default function B2BApiDocs() {
               <div className="w-7 h-7 rounded-md bg-[#C09D63] flex items-center justify-center"><Code size={14} className="text-white" /></div>
               <span className="text-white font-bold text-lg" style={{
               fontFamily: 'Manrope, sans-serif'
-            }}>{t("cm.pages_B2BApiDocs.syroce_open_api")}</span>
+            }}>{apiProduct === 'hotel' ? 'Syroce Hotel Integration API' : 'Syroce Agency Marketplace API'}</span>
             </div>
             <span className="hidden md:block text-slate-400 text-sm border-l border-slate-600 pl-4 ml-2">
               {isEn ? 'Complete PMS Integration Documentation' : 'Kapsamli PMS Entegrasyon Dokumantasyonu'}
             </span>
           </div>
           <div className="flex items-center gap-3">
+            <div className="flex items-center bg-slate-800 rounded-lg p-0.5">
+              <button onClick={() => setApiProduct('marketplace')} className={`px-3 py-1.5 rounded-md text-xs font-semibold ${apiProduct === 'marketplace' ? 'bg-[#C09D63] text-white' : 'text-slate-300'}`}>Marketplace</button>
+              <button onClick={() => setApiProduct('hotel')} className={`px-3 py-1.5 rounded-md text-xs font-semibold ${apiProduct === 'hotel' ? 'bg-[#C09D63] text-white' : 'text-slate-300'}`}>Hotel API</button>
+            </div>
             <button onClick={() => {
             navigator.clipboard.writeText(window.location.origin + '/b2b/docs');
             setUrlCopied(true);
@@ -300,6 +305,7 @@ export default function B2BApiDocs() {
             {/* ── OVERVIEW ── */}
             <section id="overview">
               <SectionHeader icon={BookOpen} title={isEn ? 'Getting Started' : 'Baslangic'} id="overview-h" />
+              {apiProduct === 'marketplace' ? <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-5"><h3 className="font-bold text-emerald-950">Syroce Agency Marketplace API</h3><p className="mt-2 text-sm leading-6 text-emerald-900"><code>syroce_mkt_…</code> anahtarı acentenin kendi backend sunucusu içindir. Otel keşfi, sözleşme teklifi, otel bazlı komisyon, fiyat/müsaitlik, rezervasyon, voucher, iptal/değişiklik, mutabakat ve webhook akışlarında kullanılır. Acente extranetine giriş yapan insan kullanıcı bu anahtara ihtiyaç duymaz.</p><CodeBlock code={`SYROCE_MARKETPLACE_API_KEY=syroce_mkt_...\n\ncurl -H "X-API-Key: $SYROCE_MARKETPLACE_API_KEY" ${window.location.origin}/api/marketplace/v1/hotels`} /></div> : <div className="rounded-xl border border-blue-200 bg-blue-50 p-5"><h3 className="font-bold text-blue-950">Syroce Hotel Integration API</h3><p className="mt-2 text-sm leading-6 text-blue-900"><code>syroce_b2b_…</code> anahtarı yalnızca tek otelin izin verilen PMS alanları içindir. Her anahtar en az bir scope ile oluşturulur; kanal yöneticisine folyo, kimlik veya KBS gibi ilgisiz kapsamlar verilmemelidir.</p><div className="mt-3 flex flex-wrap gap-2">{['booking_engine','guests','housekeeping','folio','services','groups','identity','kbs','webhooks'].map(scope => <code key={scope} className="rounded bg-white px-2 py-1 text-xs text-blue-800">{scope}</code>)}</div></div>}
               <Desc>{isEn ? 'The Syroce Open API provides complete access to all hotel PMS modules — reservations, guest management, loyalty programs, housekeeping, KBS police notifications, passport/ID scanning, lost & found, wake-up calls, guest journey, concierge, spa, MICE/groups, folio/billing, and real-time webhooks. All through a single API with API key authentication.' : 'Syroce Open API, tüm otel PMS modullerine tam erişim saglar — rezervasyon, misafir yönetimi, sadakat programlari, kat hizmetleri, KBS emniyet bildirimleri, pasaport/kimlik okuma, kayip esya, uyandırma servisi, misafir yolculugu, concierge, spa, MICE/grup, folio/fatura ve gerçek zamanlı webhook\'lar. Tek bir API key ile tüm işlemler.'}</Desc>
 
               <div className="mt-6 space-y-4">

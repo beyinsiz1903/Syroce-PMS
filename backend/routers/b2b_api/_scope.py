@@ -82,6 +82,8 @@ async def authenticate_b2b_agency(x_api_key: str | None, required_scope: str | N
 
     if not x_api_key:
         raise HTTPException(status_code=401, detail="API key gerekli")
+    if not x_api_key.startswith("syroce_b2b_"):
+        raise HTTPException(status_code=401, detail="Hotel Integration API için syroce_b2b_ anahtarı gerekli")
 
     key_hash = _hash_api_key(x_api_key)
     key_doc = await sysdb.agency_api_keys.find_one({"key_hash": key_hash, "is_active": True}, {"_id": 0})

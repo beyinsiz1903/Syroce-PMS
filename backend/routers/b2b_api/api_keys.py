@@ -445,12 +445,11 @@ router = APIRouter(prefix="/api/b2b", tags=["B2B API - Syroce"])
 @router.post("/api-keys")
 async def create_api_key(
     agency_id: str = Query(...),
-    scopes: list[str] | None = Query(
-        None,
+    scopes: list[str] = Query(
+        ...,
         description=(
-            "Optional per-subrouter scope list (least-privilege). When omitted "
-            "the key is unrestricted (legacy full access). When provided, the "
-            "key may only call the listed B2B sub-routers; others return 403."
+            "Required least-privilege scope list. The key may only call the "
+            "listed Hotel Integration sub-routers; all others return 403."
         ),
     ),
     current_user: User = Depends(get_current_user),
@@ -462,6 +461,8 @@ async def create_api_key(
 
     # Fail-closed scope validation: unknown scope -> 400 (Task #174).
     normalized_scopes = normalize_scopes(scopes)
+    if not normalized_scopes:
+        raise HTTPException(status_code=400, detail="En az bir API scope seçilmelidir")
 
     agency = await db.agencies.find_one({"id": agency_id, "tenant_id": tenant_id}, {"_id": 0})
     if not agency:
