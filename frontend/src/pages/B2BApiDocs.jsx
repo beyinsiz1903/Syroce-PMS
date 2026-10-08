@@ -495,7 +495,7 @@ export default function B2BApiDocs() {
 
                 <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-6">
                   <h4 className="font-semibold text-emerald-900 mb-3">{isEn ? 'Complete Integration Example (JavaScript/Node.js)' : 'Tam Entegrasyon Ornegi (JavaScript/Node.js)'}</h4>
-                  <CodeBlock lang="javascript" code={`const API_KEY = process.env.SYROCE_API_KEY; // Store in env variable!\nconst BASE_URL = "${API_BASE}";\n\nclass SyroceClient {\n  constructor() {\n    this.headers = {\n      "X-API-Key": API_KEY,\n      "Content-Type": "application/json"\n    };\n  }\n\n  async request(method, path, options = {}) {\n    const url = new URL(BASE_URL + path);\n    if (options.params) {\n      Object.entries(options.params).forEach(([k, v]) =>\n        url.searchParams.set(k, v)\n      );\n    }\n    const res = await fetch(url, { credentials: "include",\n      method,\n      headers: this.headers,\n      body: options.body ? JSON.stringify(options.body) : undefined\n    });\n    if (!res.ok) {\n      const err = await res.json().catch(() => ({}));\n      throw new Error(err.detail || \`HTTP \${res.status}\`);\n    }\n    return res.json();\n  }\n\n  checkAvailability(checkIn, checkOut, roomType) {\n    const params = { check_in: checkIn, check_out: checkOut };\n    if (roomType) params.room_type = roomType;\n    return this.request("GET", "/availability", { params });\n  }\n\n  createReservation(data) {\n    return this.request("POST", "/reservations", { body: data });\n  }\n\n  getReservations(status, limit = 50) {\n    const params = { limit };\n    if (status) params.status = status;\n    return this.request("GET", "/reservations", { params });\n  }\n\n  cancelReservation(id) {\n    return this.request("PUT", \`/reservations/\${id}/cancel\`);\n  }\n\n  searchGuests(query) {\n    return this.request("GET", "/guests/search", { params: { q: query } });\n  }\n}\n\n// Usage\nconst client = new SyroceClient();\nconst avail = await client.checkAvailability("2026-07-01", "2026-07-03");\nconsole.log(\`Available: \${avail.room_types.length} types\`);\n\nconst booking = await client.createReservation({\n  room_type: "Deluxe Double",\n  check_in: "2026-07-01",\n  check_out: "2026-07-03",\n  guest_name: "John Doe",\n  guest_email: "john@example.com"\n});\nconsole.log(\`Booked! Code: \${booking.reservation.confirmation_code}\`);`} />
+                  <CodeBlock lang="javascript" code={`const API_KEY = process.env.SYROCE_API_KEY; // Store in env variable!\nconst BASE_URL = "${API_BASE}";\n\nclass SyroceClient {\n  constructor() {\n    this.headers = {\n      "X-API-Key": API_KEY,\n      "Content-Type": "application/json"\n    };\n  }\n\n  async request(method, path, options = {}) {\n    const url = new URL(BASE_URL + path);\n    if (options.params) {\n      Object.entries(options.params).forEach(([k, v]) =>\n        url.searchParams.set(k, v)\n      );\n    }\n    const res = await fetch(url, {\n      method,\n      headers: this.headers,\n      body: options.body ? JSON.stringify(options.body) : undefined\n    });\n    if (!res.ok) {\n      const err = await res.json().catch(() => ({}));\n      throw new Error(err.detail || \`HTTP \${res.status}\`);\n    }\n    return res.json();\n  }\n\n  checkAvailability(checkIn, checkOut, roomType) {\n    const params = { check_in: checkIn, check_out: checkOut };\n    if (roomType) params.room_type = roomType;\n    return this.request("GET", "/availability", { params });\n  }\n\n  createReservation(data) {\n    return this.request("POST", "/reservations", { body: data });\n  }\n\n  getReservations(status, limit = 50) {\n    const params = { limit };\n    if (status) params.status = status;\n    return this.request("GET", "/reservations", { params });\n  }\n\n  cancelReservation(id) {\n    return this.request("PUT", \`/reservations/\${id}/cancel\`);\n  }\n\n  searchGuests(query) {\n    return this.request("GET", "/guests/search", { params: { q: query } });\n  }\n}\n\n// Usage\nconst client = new SyroceClient();\nconst avail = await client.checkAvailability("2026-07-01", "2026-07-03");\nconsole.log(\`Available: \${avail.room_types.length} types\`);\n\nconst booking = await client.createReservation({\n  room_type: "Deluxe Double",\n  check_in: "2026-07-01",\n  check_out: "2026-07-03",\n  guest_name: "John Doe",\n  guest_email: "john@example.com"\n});\nconsole.log(\`Booked! Code: \${booking.reservation.confirmation_code}\`);`} />
                 </div>
               </div>
             </section>
@@ -566,7 +566,7 @@ export default function B2BApiDocs() {
                 <div className="space-y-3">
                   <CodeBlock lang="bash" code={`curl -X GET "${API_BASE}/availability?check_in=2026-06-01&check_out=2026-06-03" \\\n  -H "X-API-Key: syroce_b2b_your_api_key_here"`} />
                   <CodeBlock lang="python" code={`import requests\n\nheaders = {"X-API-Key": "syroce_b2b_your_api_key_here"}\nresp = requests.get("${API_BASE}/availability",\n    headers=headers,\n    params={"check_in": "2026-06-01", "check_out": "2026-06-03"})\nprint(resp.json())`} />
-                  <CodeBlock lang="javascript" code={`const res = await fetch("${API_BASE}/availability?check_in=2026-06-01&check_out=2026-06-03", { credentials: "include",\n  headers: { "X-API-Key": "syroce_b2b_your_api_key_here" }\n});\nconst data = await res.json();`} />
+                  <CodeBlock lang="javascript" code={`const res = await fetch("${API_BASE}/availability?check_in=2026-06-01&check_out=2026-06-03", {\n  headers: { "X-API-Key": "syroce_b2b_your_api_key_here" }\n});\nconst data = await res.json();`} />
                 </div>
               </div>
 
@@ -753,7 +753,7 @@ export default function B2BApiDocs() {
             {/* ── PAGINATION ── */}
             <section id="pagination">
               <SectionHeader icon={List} title={isEn ? 'Pagination & Filtering' : 'Sayfalama & Filtreleme'} id="pag-h" />
-              <Desc>{isEn ? 'List endpoints support limit-based pagination and various filters. All list responses include a count field.' : 'Liste endpoint\'leri limit tabanli sayfalama ve cesitli filtreler destekler. Tüm liste yanitlari bir count alani icerir.'}</Desc>
+              <Desc>{isEn ? 'Collection endpoints use endpoint-specific filters and limits. Only the endpoints listed below accept a client-supplied limit; response counters also vary by endpoint.' : 'Koleksiyon endpoint\'leri endpoint\'e özel filtreler ve limitler kullanır. Yalnızca aşağıda belirtilen endpoint\'ler istemciden limit kabul eder; yanıt sayaçlarının adı da endpoint\'e göre değişir.'}</Desc>
 
               <div className="mt-6">
                 <SubTitle>{isEn ? 'Pagination Parameters' : 'Sayfalama Parametreleri'}</SubTitle>
@@ -771,8 +771,8 @@ export default function B2BApiDocs() {
                       {[{
                       name: 'limit',
                       type: 'integer',
-                      def: isEn ? 'Varies (20-100)' : 'Degisir (20-100)',
-                      desc: isEn ? 'Maximum number of results to return' : 'Dondurulecek maksimum sonuc sayısı'
+                      def: isEn ? 'Endpoint-specific' : 'Endpoint\'e özel',
+                      desc: isEn ? 'Supported only by the endpoints listed below; there is no offset or cursor contract' : 'Yalnızca aşağıdaki endpoint\'lerde desteklenir; offset veya cursor sözleşmesi yoktur'
                     }, {
                       name: 'status',
                       type: 'string',
@@ -796,12 +796,12 @@ export default function B2BApiDocs() {
 
               <div className="mt-6">
                 <SubTitle>{isEn ? 'Response Structure' : 'Yanit Yapisi'}</SubTitle>
-                <p className="text-sm text-slate-600 mb-3">{isEn ? 'All list endpoints return data in a consistent format with a count field:' : 'Tüm liste endpoint\'leri verileri count alaniyla tutarli bir formatta dondurur:'}</p>
+                <p className="text-sm text-slate-600 mb-3">{isEn ? 'Most filtered list endpoints return count, but this is not a universal envelope. For example, KBS uses guest_count/report_count and service catalogues return only services. Follow the response schema documented for each endpoint.' : 'Filtreli liste endpoint\'lerinin çoğu count döndürür; ancak bu evrensel bir yanıt zarfı değildir. Örneğin KBS guest_count/report_count kullanır, hizmet katalogları yalnızca services döndürür. Her endpoint için belgelenen yanıt şemasını esas alın.'}</p>
                 <CodeBlock lang="json" code={`// GET /api/b2b/reservations?status=confirmed&limit=50\n{\n  "reservations": [\n    { "id": "abc...", "guest_name": "John Doe", ... },\n    { "id": "def...", "guest_name": "Jane Smith", ... }\n  ],\n  "count": 2\n}\n\n// GET /api/b2b/wake-up-calls?date=2026-07-01\n{\n  "wake_up_calls": [...],\n  "count": 5\n}\n\n// GET /api/b2b/lost-found?status=found&category=electronics\n{\n  "items": [...],\n  "count": 3\n}`} />
               </div>
 
               <div className="mt-6">
-                <SubTitle>{isEn ? 'Limits per Endpoint' : 'Endpoint Basina Limitler'}</SubTitle>
+                <SubTitle>{isEn ? 'Client-supplied limits per endpoint' : 'Endpoint bazında istemci limitleri'}</SubTitle>
                 <div className="overflow-x-auto rounded-lg border border-slate-200 mt-3">
                   <table className="w-full text-sm">
                     <thead>
@@ -829,11 +829,6 @@ export default function B2BApiDocs() {
                       max: '200',
                       filters: '-'
                     }, {
-                      ep: '/housekeeping/rooms',
-                      def: '500',
-                      max: '500',
-                      filters: 'status, floor'
-                    }, {
                       ep: '/kbs/guests',
                       def: '100',
                       max: '500',
@@ -843,11 +838,6 @@ export default function B2BApiDocs() {
                       def: '50',
                       max: '200',
                       filters: 'status, category'
-                    }, {
-                      ep: '/wake-up-calls',
-                      def: '200',
-                      max: '200',
-                      filters: 'date, status'
                     }, {
                       ep: '/guest-journey/requests',
                       def: '50',
@@ -1696,6 +1686,12 @@ export default function B2BApiDocs() {
                 }, {
                   name: 'reservation.updated',
                   desc: isEn ? 'Reservation status changed' : 'Rezervasyon durumu degisti'
+                }, {
+                  name: 'rates.updated',
+                  desc: isEn ? 'Room rates changed' : 'Oda fiyatları güncellendi'
+                }, {
+                  name: 'availability.updated',
+                  desc: isEn ? 'Room availability changed' : 'Oda müsaitliği güncellendi'
                 }].map(ev => <div key={ev.name} className="flex items-center gap-3 bg-slate-50 rounded-lg px-4 py-3 border border-slate-200">
                       <code className="text-xs font-mono bg-white px-2 py-1 rounded border border-slate-200 text-[#C09D63] font-semibold">{ev.name}</code>
                       <span className="text-sm text-slate-600">{ev.desc}</span>
@@ -1722,8 +1718,9 @@ export default function B2BApiDocs() {
                   desc: isEn ? 'Signing secret for HMAC verification' : 'HMAC dogrulamasi için imzalama anahtari'
                 }]} />
                   <CodeBlock lang="bash" code={`curl -X POST "${API_BASE}/webhooks" \\\n  -H "X-API-Key: syroce_b2b_your_key" \\\n  -H "Content-Type: application/json" \\\n  -d '{\n    "url": "https://your-app.com/webhook",\n    "events": ["reservation.created", "reservation.cancelled"],\n    "secret": "your_signing_secret"\n  }'`} />
+                  <p className="mt-3 text-sm leading-6 text-slate-600">{isEn ? 'The URL must use public HTTPS and pass SSRF/DNS validation. An agency may have at most 5 active webhooks. If secret is omitted, Syroce generates one and returns it only in this registration response; store it immediately because list responses never expose it.' : 'URL herkese açık HTTPS kullanmalı ve SSRF/DNS doğrulamasından geçmelidir. Bir acentenin en fazla 5 aktif webhook\'u olabilir. secret gönderilmezse Syroce bir secret üretir ve yalnızca bu kayıt yanıtında bir kez döndürür; liste yanıtlarında gösterilmediği için hemen güvenli biçimde saklayın.'}</p>
                 </EndpointBlock>
-                <EndpointBlock method="GET" path="/api/b2b/webhooks" desc={isEn ? 'List your webhooks' : 'Webhook listesi'} />
+                <EndpointBlock method="GET" path="/api/b2b/webhooks" desc={isEn ? 'List your webhooks (signing secrets are never returned)' : 'Webhook listesi (imzalama secret değerleri döndürülmez)'} />
                 <EndpointBlock method="DELETE" path="/api/b2b/webhooks/{webhook_id}" desc={isEn ? 'Delete webhook' : 'Webhook sil'} />
                 <EndpointBlock method="POST" path="/api/b2b/webhooks/{webhook_id}/test" desc={isEn ? 'Send test event' : 'Test olayi gonder'} />
 
@@ -1736,7 +1733,8 @@ export default function B2BApiDocs() {
                   <h4 className="font-semibold text-amber-900 flex items-center gap-2 text-sm">
                     <Shield size={15} /> {isEn ? 'Signature Verification' : 'Imza Dogrulama'}
                   </h4>
-                  <p className="text-sm text-amber-800 mt-2">{isEn ? 'If you provide a secret, each delivery includes X-Webhook-Signature header. Verify with HMAC-SHA256:' : 'Secret belirlerseniz her teslimat X-Webhook-Signature basligini icerir. HMAC-SHA256 ile doğrulayın:'}</p>
+                  <p className="text-sm text-amber-800 mt-2">{isEn ? 'Each delivery includes X-Webhook-Signature. Verify HMAC-SHA256 over the exact raw request body before JSON parsing:' : 'Her teslimat X-Webhook-Signature başlığını içerir. JSON ayrıştırmadan önce isteğin ham gövdesi üzerinden HMAC-SHA256 doğrulaması yapın:'}</p>
+                  <p className="text-sm text-amber-800 mt-2">{isEn ? 'Use X-Webhook-Delivery and X-Idempotency-Key to deduplicate deliveries. Production deliveries are retried up to 5 times; return a 2xx response only after the event is durably accepted.' : 'Tekrarlanan teslimatları ayıklamak için X-Webhook-Delivery ve X-Idempotency-Key başlıklarını kullanın. Üretim teslimatları en fazla 5 kez denenir; yalnızca olayı kalıcı olarak kabul ettikten sonra 2xx döndürün.'}</p>
                   <div className="mt-3">
                     <CodeBlock lang="python" code={`import hmac, hashlib\n\ndef verify_signature(body, secret, sig_header):\n    expected = hmac.new(\n        secret.encode(), body, hashlib.sha256\n    ).hexdigest()\n    return hmac.compare_digest(f"sha256={expected}", sig_header)`} />
                   </div>

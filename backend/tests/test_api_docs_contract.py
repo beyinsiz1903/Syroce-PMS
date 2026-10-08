@@ -14,6 +14,7 @@ DOCS = (ROOT / "frontend/src/pages/B2BApiDocs.jsx").read_text(encoding="utf-8")
 MARKETPLACE = (ROOT / "backend/routers/marketplace_b2b.py").read_text(encoding="utf-8")
 CONTRACTS = (ROOT / "backend/routers/agency_contracts.py").read_text(encoding="utf-8")
 SCOPE_SOURCE = (ROOT / "backend/routers/b2b_api/_scope.py").read_text(encoding="utf-8")
+WEBHOOK_SOURCE = (ROOT / "backend/routers/b2b_api/webhooks.py").read_text(encoding="utf-8")
 B2B_ROUTER_DIR = ROOT / "backend/routers/b2b_api"
 
 
@@ -71,3 +72,22 @@ def test_hotel_docs_describe_required_scope_model():
     assert "scopes=booking_engine" in DOCS
     assert "19 API Groups" not in DOCS
     assert "Mevcut Moduller (19 API Grubu)" not in DOCS
+
+
+def test_hotel_docs_list_every_supported_webhook_event():
+    event_block = WEBHOOK_SOURCE.split("VALID_WEBHOOK_EVENTS = {", 1)[1].split("}", 1)[0]
+    expected = set(re.findall(r'"([a-z.]+)"', event_block))
+    missing = sorted(event for event in expected if event not in DOCS)
+    assert missing == []
+
+
+def test_pagination_docs_do_not_claim_a_universal_count_envelope():
+    assert "All list responses include a count field" not in DOCS
+    assert "Tüm liste yanitlari bir count alani icerir" not in DOCS
+    table = DOCS.split("Client-supplied limits per endpoint", 1)[1].split("</table>", 1)[0]
+    assert "'/housekeeping/rooms'" not in table
+    assert "'/wake-up-calls'" not in table
+
+
+def test_server_to_server_examples_do_not_send_browser_credentials():
+    assert 'credentials: "include"' not in DOCS
