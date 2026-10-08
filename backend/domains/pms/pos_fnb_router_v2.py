@@ -5,7 +5,7 @@ create_order, close_order, void_order, stock_adjust, table_reserve.
 """
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from common.context import OperationContext
 from common.response import from_service_result
@@ -91,6 +91,13 @@ class AddOrderItemsRequest(BaseModel):
 
 class TransferOrderTableRequest(BaseModel):
     to_table_number: str
+
+
+class OrderAdjustmentRequest(BaseModel):
+    adjustment_type: str = Field(pattern="^(discount|service_charge)$")
+    calculation: str = Field(pattern="^(percentage|fixed)$")
+    value: float = Field(gt=0)
+    reason: str = Field(min_length=3, max_length=500)
 
 
 class StockAdjustRequest(BaseModel):
@@ -242,6 +249,80 @@ async def transfer_order_table(
         status_code = 409 if result.code in {"ORDER_NOT_OPEN", "TABLE_UNAVAILABLE"} else 400
         raise HTTPException(status_code=status_code, detail=from_service_result(result))
     return _ok_payload(result)
+
+
+@router.post("/orders/{order_id}/adjustment")
+async def adjust_order_total(
+    order_id: str,
+    req: OrderAdjustmentRequest,
+    user=Depends(get_current_user),
+    _perm=Depends(require_op("post_charge")),
+):
+    """Apply a manager-authorized discount or service charge to an open check."""
+    ctx = OperationContext.from_user(user)
+    result = await pos_fnb_service_v2.apply_order_adjustment(
+        ctx, order_id, req.adjustment_type, req.calculation, req.value, req.reason
+    )
+    if not result.ok:
+        status_code = 403 if result.code == "FORBIDDEN" else 409 if result.code == "ORDER_NOT_OPEN" else 400
+        raise HTTPException(status_code=status_code, detail=from_service_result(result))
+    return _ok_payload(result)
+
+
+@router.get("/operations/summary")
+async def pos_operations_summary(
+    outlet_id: str | None = None,
+    user=Depends(get_current_user),
+    _perm=Depends(require_module_v99("pos")),
+):
+    """Live manager board: open checks, kitchen SLA and cashier reconciliation."""
+    from datetime import UTC, datetime
+
+    from core.database import db
+
+    tenant_id = user.tenant_id
+    settings = await db.tenant_settings.find_one({"tenant_id": tenant_id}, {"_id": 0, "business_date": 1})
+    business_date = str((settings or {}).get("business_date") or datetime.now(UTC).date().isoformat())
+    order_query = {"tenant_id": tenant_id, "status": {"$in": ["pending", "preparing", "ready"]}, "payment_status": {"$ne": "paid"}}
+    tx_query = {"tenant_id": tenant_id, "transaction_date": business_date, "status": {"$in": ["completed", "refunded"]}}
+    kitchen_query = {"tenant_id": tenant_id, "status": {"$in": ["pending", "preparing", "ready"]}}
+    if outlet_id:
+        order_query["outlet_id"] = outlet_id
+        tx_query["outlet_id"] = outlet_id
+        kitchen_query["outlet_id"] = outlet_id
+    open_orders = await db.pos_orders.find(order_query, {"_id": 0}).sort("created_at", 1).limit(500).to_list(500)
+    transactions = await db.pos_transactions.find(tx_query, {"_id": 0}).limit(5000).to_list(5000)
+    kitchen = await db.kitchen_orders.find(kitchen_query, {"_id": 0}).sort("ordered_at", 1).limit(1000).to_list(1000)
+    now = datetime.now(UTC)
+    overdue_kitchen = 0
+    for ticket in kitchen:
+        try:
+            ordered = datetime.fromisoformat(str(ticket.get("ordered_at", "")).replace("Z", "+00:00"))
+            overdue_kitchen += int((now - ordered).total_seconds() > 20 * 60)
+        except ValueError:
+            continue
+    payments: dict[str, float] = {}
+    refunds = 0.0
+    for transaction in transactions:
+        amount = float(transaction.get("total_amount") or transaction.get("amount") or 0)
+        if transaction.get("status") == "refunded" or transaction.get("payment_type") == "refund":
+            refunds += abs(amount)
+            continue
+        breakdown = transaction.get("payment_breakdown") or [{"method": transaction.get("payment_method") or "unknown", "amount": amount}]
+        for part in breakdown:
+            method = str(part.get("method") or "unknown")
+            payments[method] = round(payments.get(method, 0) + float(part.get("amount") or 0), 2)
+    return {
+        "business_date": business_date,
+        "open_orders": open_orders,
+        "open_check_count": len(open_orders),
+        "open_check_total": round(sum(float(row.get("grand_total") or 0) for row in open_orders), 2),
+        "kitchen_open_count": len(kitchen),
+        "kitchen_overdue_count": overdue_kitchen,
+        "payment_methods": payments,
+        "refund_total": round(refunds, 2),
+        "net_collected": round(sum(payments.values()) - refunds, 2),
+    }
 
 
 @router.post("/orders/void")

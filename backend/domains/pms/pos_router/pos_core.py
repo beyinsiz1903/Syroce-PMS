@@ -460,11 +460,13 @@ async def get_z_report(
         ]
         void_tx = [t for t in all_tx if str(t.get("status") or "").lower() in void_statuses]
 
-        gross_sales = sum(float(t.get("total_amount", 0) or 0) for t in valid_tx)
         discounts = sum(float(t.get("discount_amount", 0) or 0) for t in valid_tx)
+        service_charges = sum(float(t.get("service_charge_amount", 0) or 0) for t in valid_tx)
+        collected_sales = sum(float(t.get("total_amount", 0) or 0) - float(t.get("tip_amount", 0) or 0) for t in valid_tx)
+        gross_sales = collected_sales + discounts - service_charges
         tax_total = sum(float(t.get("tax_amount", 0) or 0) for t in valid_tx)
         refunds = sum(float(t.get("total_amount", 0) or 0) for t in void_tx)
-        net_sales = max(gross_sales - discounts, 0)
+        net_sales = max(gross_sales - discounts + service_charges, 0)
 
         # Odeme yontemi dagilimi (gercek). Karma odemelerde toplam tutari
         # "mixed" kovasina atmak yerine kasada tahsil edilen parcalari koru.
@@ -507,6 +509,7 @@ async def get_z_report(
             "net_sales": round(net_sales, 2),
             "tax_total": round(tax_total, 2),
             "discounts": round(discounts, 2),
+            "service_charges": round(service_charges, 2),
             "refunds": round(refunds, 2),
             "transaction_count": len(valid_tx),
             "void_count": len(void_tx),

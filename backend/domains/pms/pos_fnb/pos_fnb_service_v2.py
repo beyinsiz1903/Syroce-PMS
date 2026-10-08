@@ -262,6 +262,9 @@ class PosFnbServiceV2:
             "transaction_date": now.date().isoformat(),
             "transaction_time": now.time().isoformat(),
             "amount": grand_total,
+            "discount_amount": round(float(order.get("discount_amount") or 0), 2),
+            "service_charge_amount": round(float(order.get("service_charge_amount") or 0), 2),
+            "tax_amount": round(float(order.get("effective_tax_amount", order.get("tax_amount", 0)) or 0), 2),
             "tip_amount": tip_amount,
             "total_amount": total_with_tip,
             "payment_method": payment_method,
@@ -313,7 +316,7 @@ class PosFnbServiceV2:
                     "charge_category": "food",
                     "description": f"F&B - Order #{order.get('order_number')}",
                     "amount": grand_total,
-                    "tax_amount": order.get("tax_amount", 0),
+                    "tax_amount": order.get("effective_tax_amount", order.get("tax_amount", 0)),
                     "total": grand_total,
                     "voided": False,
                     "date": now.isoformat(),
@@ -711,6 +714,48 @@ class PosFnbServiceV2:
         return ServiceResult.success(
             {"order_id": order_id, "from_table": source_number, "to_table": target_number}
         )
+
+    @audited("pos.adjust_order", "pos_order", severity=SEVERITY_WARNING, require_reason=True, capture_before=True)
+    async def apply_order_adjustment(
+        self,
+        ctx: OperationContext,
+        order_id: str,
+        adjustment_type: str,
+        calculation: str,
+        value: float,
+        reason: str,
+    ) -> ServiceResult:
+        if not getattr(ctx, "actor_is_super_admin", False) and ctx.actor_role not in ("admin", "supervisor", "super_admin", "fnb_manager"):
+            return ServiceResult.fail("İndirim ve servis bedeli için yönetici yetkisi gerekir", "FORBIDDEN")
+        order = await self._db.pos_orders.find_one({"tenant_id": ctx.tenant_id, "id": order_id}, {"_id": 0})
+        if not order:
+            return ServiceResult.fail("Order not found", "NOT_FOUND")
+        if order.get("status") not in {"pending", "preparing", "ready"} or order.get("payment_status") == "paid":
+            return ServiceResult.fail("Order is not open", "ORDER_NOT_OPEN")
+        base_total = round(float(order.get("pre_adjustment_total") or 0), 2)
+        if base_total <= 0:
+            base_total = round(float(order.get("total_amount") or 0) + float(order.get("tax_amount") or 0), 2)
+        amount = round(base_total * float(value) / 100, 2) if calculation == "percentage" else round(float(value), 2)
+        if amount <= 0:
+            return ServiceResult.fail("Adjustment must be positive", "VALIDATION_ERROR")
+        discount = amount if adjustment_type == "discount" else round(float(order.get("discount_amount") or 0), 2)
+        service_charge = amount if adjustment_type == "service_charge" else round(float(order.get("service_charge_amount") or 0), 2)
+        if discount > base_total:
+            return ServiceResult.fail("İndirim adisyon toplamını aşamaz", "VALIDATION_ERROR")
+        grand_total = round(base_total - discount + service_charge, 2)
+        original_tax = round(float(order.get("original_tax_amount", order.get("tax_amount", 0)) or 0), 2)
+        effective_tax = round(original_tax * max(base_total - discount, 0) / base_total, 2) if base_total else 0
+        now = datetime.now(UTC).isoformat()
+        event = {
+            "id": str(uuid.uuid4()), "type": adjustment_type, "calculation": calculation,
+            "value": float(value), "amount": amount, "reason": reason.strip(),
+            "created_at": now, "created_by": ctx.actor_id,
+        }
+        await self._db.pos_orders.update_one(
+            {"tenant_id": ctx.tenant_id, "id": order_id, "payment_status": {"$ne": "paid"}},
+            {"$set": {"pre_adjustment_total": base_total, "original_tax_amount": original_tax, "effective_tax_amount": effective_tax, "discount_amount": discount, "service_charge_amount": service_charge, "grand_total": grand_total, "updated_at": now}, "$push": {"adjustments": event}},
+        )
+        return ServiceResult.success({"order_id": order_id, "grand_total": grand_total, "discount_amount": discount, "service_charge_amount": service_charge, "adjustment": event})
 
     # ==================================================================
     # Atomic intent persistence — Task #389
