@@ -65,3 +65,9 @@ def test_docs_do_not_promise_unimplemented_rate_limit_contract():
     assert "X-RateLimit-Limit: 120" not in DOCS
     assert "X-RateLimit-Remaining: 115" not in DOCS
     assert "Maximum requests allowed in the window" not in DOCS
+
+
+def test_hotel_docs_describe_required_scope_model():
+    assert "scopes=booking_engine" in DOCS
+    assert "19 API Groups" not in DOCS
+    assert "Mevcut Moduller (19 API Grubu)" not in DOCS
