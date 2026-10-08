@@ -108,4 +108,22 @@ describe('AdminMarketplaceAgencies access lifecycle', () => {
     expect(screen.getByText(/ilk başarılı istekten sonra durum otomatik olarak “Kullanımda” olur/)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'B2B API belgelerini aç →' })).toHaveAttribute('href', '/b2b/docs');
   });
+
+  it('allows superadmin preview when the agency has no portal users', async () => {
+    axios.get.mockResolvedValue({
+      data: {
+        agencies: [{
+          id: 'agency-1', name: 'Kartepe Travel', status: 'active', contact_email: 'kartepe@example.com',
+          api_access: { active: false }, portal_access: { count: 0 },
+        }],
+      },
+    });
+    renderPage();
+
+    await screen.findByText('Kartepe Travel');
+    fireEvent.click(screen.getByRole('button', { name: /Erişim/ }));
+
+    expect(screen.getByRole('button', { name: 'Acente hesabına geç' })).toBeEnabled();
+    expect(screen.getByText(/süperadmin görünümü acenteden bağımsız/)).toBeInTheDocument();
+  });
 });
