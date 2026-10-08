@@ -50,7 +50,9 @@ const ROUTE_OVERRIDES = {
   room_qr_requests: '/app/room-requests',
   quick_id: '/admin/quick-id',
   mailing: '/app/mailing',
-  marketplace: '/app/marketplace',
+  // `marketplace` is the licensed module-store entitlement. The legacy
+  // `/app/marketplace` route is the unrelated hotel supplies marketplace.
+  marketplace: '/app/module-store',
   ai: '/app/ai',
   ai_chatbot: '/ai-chatbot',
   ai_pricing: '/dynamic-pricing',
