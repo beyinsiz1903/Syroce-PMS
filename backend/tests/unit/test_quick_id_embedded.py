@@ -79,6 +79,40 @@ def test_scan_uses_embedded_provider_without_persisting_image(monkeypatch):
     assert "image_base64" not in str(result)
 
 
+def test_hosted_provider_cannot_return_invalid_turkish_identity_data(monkeypatch):
+    async def hallucinated_openai(_image, _mime, _key, _model):
+        return {
+            "document_count": 1,
+            "documents": [
+                {
+                    "is_valid": True,
+                    "document_type": "tc_kimlik",
+                    "first_name": "ALAKASIZ",
+                    "last_name": "UYDURMA",
+                    "id_number": "12345678901",
+                    "warnings": [],
+                }
+            ],
+        }
+
+    monkeypatch.setattr(embedded, "_openai_scan", hallucinated_openai)
+    monkeypatch.setattr(
+        embedded,
+        "provider_catalog",
+        lambda _keys=None: [{"id": "gpt-4o-mini", "name": "GPT", "available": True, "cost": "provider"}],
+    )
+
+    with pytest.raises(ValueError, match="doğrulama"):
+        asyncio.run(
+            embedded.scan_document(
+                _png_data_url(),
+                provider=None,
+                smart_mode=True,
+                api_keys={"openai": "secret"},
+            )
+        )
+
+
 def test_parse_json_whitelists_and_bounds_provider_output():
     result = embedded._parse_json(
         '{"documents":[{"is_valid":true,"document_type":"passport","first_name":"Ada","document_number":"P123","raw_extracted_text":"secret","address":"' + ("x" * 700) + '"}]}'
@@ -92,7 +126,7 @@ def test_parse_json_whitelists_and_bounds_provider_output():
 def test_tesseract_parser_reads_bilingual_turkish_id_labels_from_following_lines():
     text = """TÜRKİYE CUMHURİYETİ KİMLİK KARTI
 T.C. Kimlik No / TR Identity No
-12345678901
+10000000146
 Soyadı / Surname
 YILMAZ
 Adı / Given Name(s)
@@ -112,13 +146,14 @@ Son Geçerlilik / Valid Until
     assert document["is_valid"] is True
     assert document["first_name"] == "ALİ CAN"
     assert document["last_name"] == "YILMAZ"
-    assert document["id_number"] == "12345678901"
+    assert document["id_number"] == "10000000146"
     assert document["birth_date"] == "1992-08-15"
     assert document["expiry_date"] == "2033-09-01"
 
 
 def test_tesseract_parser_removes_bilingual_heading_from_inline_value():
-    text = """T.C. Kimlik No / TR Identity No 12345678901
+    text = """TÜRKİYE CUMHURİYETİ KİMLİK KARTI
+T.C. Kimlik No / TR Identity No 10000000146
 Soyadı / Surname YILMAZ
 Adı / Given Name(s) ALİ CAN
 15.08.1992
@@ -129,6 +164,39 @@ Adı / Given Name(s) ALİ CAN
     assert document["first_name"] == "ALİ CAN"
     assert document["last_name"] == "YILMAZ"
     assert document["is_valid"] is True
+
+
+def test_turkish_id_rejects_invalid_checksum_instead_of_showing_guessed_data():
+    text = """TÜRKİYE CUMHURİYETİ KİMLİK KARTI
+T.C. Kimlik No / TR Identity No
+12345678901
+Soyadı / Surname
+UYDURMA
+Adı / Given Name(s)
+ALAKASIZ İSİM
+"""
+
+    document = embedded._parse_tesseract_text(text)
+
+    assert document["is_valid"] is False
+    assert document["id_number"] is None
+    assert document["document_type"] == "other"
+    assert any("doğrulama" in warning for warning in document["warnings"])
+
+
+def test_turkish_id_requires_card_heading_and_both_plausible_names():
+    without_heading = """T.C. Kimlik No 10000000146
+Soyadı / Surname YILMAZ
+Adı / Given Name(s) ALİ
+"""
+    heading_as_name = """TÜRKİYE CUMHURİYETİ KİMLİK KARTI
+T.C. Kimlik No 10000000146
+Soyadı / Surname IDENTITY CARD
+Adı / Given Name(s) A
+"""
+
+    assert embedded._parse_tesseract_text(without_heading)["is_valid"] is False
+    assert embedded._parse_tesseract_text(heading_as_name)["is_valid"] is False
 
 
 def test_td3_passport_mrz_parses_and_validates_all_core_fields():
