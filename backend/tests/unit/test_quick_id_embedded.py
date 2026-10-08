@@ -89,6 +89,99 @@ def test_parse_json_whitelists_and_bounds_provider_output():
     assert len(document["address"]) == 500
 
 
+def test_tesseract_parser_reads_bilingual_turkish_id_labels_from_following_lines():
+    text = """TÜRKİYE CUMHURİYETİ KİMLİK KARTI
+T.C. Kimlik No / TR Identity No
+12345678901
+Soyadı / Surname
+YILMAZ
+Adı / Given Name(s)
+ALİ CAN
+Doğum Tarihi / Date of Birth   Cinsiyeti / Gender
+15.08.1992                     E / M
+Seri No / Document No
+A12B34567
+Uyruğu / Nationality
+T.C. / TUR
+Son Geçerlilik / Valid Until
+01.09.2033
+"""
+
+    document = embedded._parse_tesseract_text(text)
+
+    assert document["is_valid"] is True
+    assert document["first_name"] == "ALİ CAN"
+    assert document["last_name"] == "YILMAZ"
+    assert document["id_number"] == "12345678901"
+    assert document["birth_date"] == "1992-08-15"
+    assert document["expiry_date"] == "2033-09-01"
+
+
+def test_tesseract_parser_removes_bilingual_heading_from_inline_value():
+    text = """T.C. Kimlik No / TR Identity No 12345678901
+Soyadı / Surname YILMAZ
+Adı / Given Name(s) ALİ CAN
+15.08.1992
+"""
+
+    document = embedded._parse_tesseract_text(text)
+
+    assert document["first_name"] == "ALİ CAN"
+    assert document["last_name"] == "YILMAZ"
+    assert document["is_valid"] is True
+
+
+def test_td3_passport_mrz_parses_and_validates_all_core_fields():
+    # ICAO 9303 reference passport with valid document, birth, expiry and
+    # composite check digits.
+    text = """P<UTOERIKSSON<<ANNA<MARIA<<<<<<<<<<<<<<<<<<<
+L898902C36UTO7408122F1204159ZE184226B<<<<<10
+"""
+
+    document = embedded._parse_tesseract_text(text)
+
+    assert document["is_valid"] is True
+    assert document["document_type"] == "passport"
+    assert document["first_name"] == "ANNA MARIA"
+    assert document["last_name"] == "ERIKSSON"
+    assert document["document_number"] == "L898902C3"
+    assert document["birth_date"] == "1974-08-12"
+    assert document["expiry_date"] == "2012-04-15"
+    assert document["gender"] == "F"
+    assert document["nationality"] == "UTO"
+    assert all(document["mrz_checks"].values())
+
+
+def test_td3_passport_mrz_rejects_a_corrupted_check_digit():
+    text = """P<UTOERIKSSON<<ANNA<MARIA<<<<<<<<<<<<<<<<<<<
+L898902C30UTO7408122F1204159ZE184226B<<<<<10
+"""
+
+    assert embedded._parse_td3_mrz(text) is None
+
+
+def test_scan_maps_local_ocr_recognition_failure_to_validation_error(monkeypatch):
+    async def unreadable(_image):
+        raise ValueError("Kimlik alanları güvenilir biçimde okunamadı")
+
+    monkeypatch.setattr(embedded, "_tesseract_scan", unreadable)
+    monkeypatch.setattr(
+        embedded,
+        "provider_catalog",
+        lambda _keys=None: [{"id": "tesseract", "name": "Tesseract", "available": True, "cost": 0}],
+    )
+
+    with pytest.raises(ValueError, match="güvenilir"):
+        asyncio.run(
+            embedded.scan_document(
+                _png_data_url(),
+                provider=None,
+                smart_mode=True,
+                api_keys={},
+            )
+        )
+
+
 def test_tesseract_preprocessing_crops_and_rectifies_identity_card():
     cv2 = pytest.importorskip("cv2")
     np = pytest.importorskip("numpy")
@@ -149,3 +242,21 @@ def test_proxy_uses_embedded_scanner_when_external_url_is_absent(monkeypatch):
 
     assert response.status_code == 200
     assert response.json()["mode"] == "embedded"
+
+
+def test_proxy_returns_422_when_embedded_ocr_cannot_read_the_card(monkeypatch):
+    async def fake_keys():
+        return {"openai": "", "gemini": "", "preferred_provider": None}
+
+    async def unreadable_scan(*_args, **_kwargs):
+        raise ValueError("Kimlik alanları güvenilir biçimde okunamadı")
+
+    monkeypatch.setattr(quick_id_proxy, "QUICKID_MODE", "embedded")
+    monkeypatch.setattr(quick_id_proxy, "QUICKID_EMBEDDED_ENABLED", True)
+    monkeypatch.setattr(quick_id_proxy, "_resolve_api_keys", fake_keys)
+    monkeypatch.setattr(quick_id_proxy, "embedded_scan_document", unreadable_scan)
+
+    response = client.post("/api/quick-id/scan", json={"image_base64": "image"})
+
+    assert response.status_code == 422
+    assert "güvenilir" in response.json()["detail"]
