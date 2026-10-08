@@ -469,8 +469,12 @@ async def b2b_kbs_guest_list(
             b["birth_date"] = guest.get("birth_date", "")
             b["gender"] = guest.get("gender", "")
 
+    report_query = {"tenant_id": tenant_id, "agency_id": agency["agency_id"], "date": target_date}
+    if status:
+        report_query["status"] = status
+
     kbs_reports = await db.kbs_reports.find(
-        {"tenant_id": tenant_id, "agency_id": agency["agency_id"], "date": target_date},
+        report_query,
         {"_id": 0},
     ).to_list(100)
 
