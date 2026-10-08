@@ -1014,6 +1014,11 @@ export default function B2BApiDocs() {
                   required: false,
                   desc: isEn ? 'Children (default: 0)' : 'Cocuk (varsayilan: 0)'
                 }, {
+                  name: 'special_requests',
+                  type: 'string',
+                  required: false,
+                  desc: isEn ? 'Guest notes and special requests' : 'Misafir notları ve özel talepler'
+                }, {
                   name: 'total_amount',
                   type: 'number',
                   required: false,
@@ -1159,7 +1164,12 @@ export default function B2BApiDocs() {
                   name: 'status',
                   type: 'string',
                   required: false,
-                  desc: 'pending, submitted, confirmed, error'
+                  desc: isEn ? 'Filters returned reports: pending, submitted, confirmed, error' : 'Dönen raporları filtreler: pending, submitted, confirmed, error'
+                }, {
+                  name: 'limit',
+                  type: 'int',
+                  required: false,
+                  desc: isEn ? 'Max results (default 100, max 500)' : 'Maksimum sonuç (varsayılan 100, en fazla 500)'
                 }]} />
                   <CodeBlock lang="json" code={`{\n  "date": "2026-06-01",\n  "guests": [\n    { "id": "b1...", "guest_name": "Ali Yilmaz", "room_number": "302",\n      "check_in": "2026-06-01T14:00:00", "nationality": "TR",\n      "id_number": "12345678901", "passport_number": "",\n      "birth_date": "1985-03-15", "gender": "M" }\n  ],\n  "guest_count": 1,\n  "reports": [],\n  "report_count": 0\n}`} />
                 </EndpointBlock>
@@ -1284,6 +1294,11 @@ export default function B2BApiDocs() {
                   type: 'string',
                   required: false,
                   desc: isEn ? 'Item category' : 'Esya kategorisi'
+                }, {
+                  name: 'limit',
+                  type: 'int',
+                  required: false,
+                  desc: isEn ? 'Max results (default 50, max 200)' : 'Maksimum sonuç (varsayılan 50, en fazla 200)'
                 }]} />
                 </EndpointBlock>
                 <EndpointBlock method="POST" path="/api/b2b/lost-found" desc={isEn ? 'Register a found item' : 'Bulunan esya kaydet'}>
@@ -1301,12 +1316,22 @@ export default function B2BApiDocs() {
                   name: 'category',
                   type: 'string',
                   required: false,
-                  desc: isEn ? 'Category (electronics, clothing, jewelry, documents, other)' : 'Kategori (elektronik, giyim, muceviher, belge, diger)'
+                  desc: 'electronics, clothing, jewelry, documents, other'
                 }, {
                   name: 'location_found',
                   type: 'string',
                   required: false,
                   desc: isEn ? 'Where found' : 'Bulundugu yer'
+                }, {
+                  name: 'found_by',
+                  type: 'string',
+                  required: false,
+                  desc: isEn ? 'Name of the person or employee who found it' : 'Eşyayı bulan kişi veya çalışan'
+                }, {
+                  name: 'guest_name',
+                  type: 'string',
+                  required: false,
+                  desc: isEn ? 'Related guest name, when known' : 'Biliniyorsa ilişkili misafir adı'
                 }, {
                   name: 'room_number',
                   type: 'string',
@@ -1320,6 +1345,11 @@ export default function B2BApiDocs() {
                   type: 'string',
                   required: false,
                   desc: 'found, claimed, returned, disposed'
+                }, {
+                  name: 'guest_name',
+                  type: 'string',
+                  required: false,
+                  desc: isEn ? 'Related guest name' : 'İlişkili misafir adı'
                 }, {
                   name: 'claimed_by',
                   type: 'string',
@@ -1379,9 +1409,36 @@ export default function B2BApiDocs() {
                   type: 'boolean',
                   required: false,
                   desc: isEn ? 'Repeat daily' : 'Her gün tekrarla'
+                }, {
+                  name: 'recurring_until',
+                  type: 'string',
+                  required: false,
+                  desc: isEn ? 'Last recurrence date (YYYY-MM-DD)' : 'Son tekrar tarihi (YYYY-MM-DD)'
+                }, {
+                  name: 'notes',
+                  type: 'string',
+                  required: false,
+                  desc: isEn ? 'Operational notes' : 'Operasyon notları'
                 }]} />
                 </EndpointBlock>
-                <EndpointBlock method="PUT" path="/api/b2b/wake-up-calls/{call_id}" desc={isEn ? 'Update wake-up call' : 'Uyandırma guncelle'} />
+                <EndpointBlock method="PUT" path="/api/b2b/wake-up-calls/{call_id}" desc={isEn ? 'Update wake-up call' : 'Uyandırma guncelle'}>
+                  <ParamTable lang={lang} params={[{
+                  name: 'wake_time',
+                  type: 'string',
+                  required: false,
+                  desc: 'HH:MM'
+                }, {
+                  name: 'status',
+                  type: 'string',
+                  required: false,
+                  desc: 'pending, completed, cancelled, missed'
+                }, {
+                  name: 'notes',
+                  type: 'string',
+                  required: false,
+                  desc: isEn ? 'Operational notes' : 'Operasyon notları'
+                }]} />
+                </EndpointBlock>
                 <EndpointBlock method="DELETE" path="/api/b2b/wake-up-calls/{call_id}" desc={isEn ? 'Cancel wake-up call' : 'Uyandırma iptal'} />
               </div>
             </section>
@@ -1407,6 +1464,16 @@ export default function B2BApiDocs() {
                   type: 'string',
                   required: false,
                   desc: isEn ? 'Flight number' : 'Ucus numarasi'
+                }, {
+                  name: 'room_preference',
+                  type: 'string',
+                  required: false,
+                  desc: isEn ? 'Guest room preference' : 'Misafirin oda tercihi'
+                }, {
+                  name: 'special_requests',
+                  type: 'string',
+                  required: false,
+                  desc: isEn ? 'Pre-arrival special requests' : 'Varış öncesi özel talepler'
                 }, {
                   name: 'passport_number',
                   type: 'string',
@@ -1459,6 +1526,11 @@ export default function B2BApiDocs() {
                   type: 'string',
                   required: false,
                   desc: isEn ? 'Filter by type' : 'Tipe göre filtre'
+                }, {
+                  name: 'limit',
+                  type: 'int',
+                  required: false,
+                  desc: isEn ? 'Max results (default 50, max 200)' : 'Maksimum sonuç (varsayılan 50, en fazla 200)'
                 }]} />
                 </EndpointBlock>
               </div>
@@ -1498,6 +1570,11 @@ export default function B2BApiDocs() {
                   type: 'string',
                   required: false,
                   desc: 'HH:MM'
+                }, {
+                  name: 'guest_count',
+                  type: 'int',
+                  required: false,
+                  desc: isEn ? 'Number of guests (default 1)' : 'Misafir sayısı (varsayılan 1)'
                 }]} />
                 </EndpointBlock>
               </div>
@@ -1558,6 +1635,11 @@ export default function B2BApiDocs() {
                   type: 'string',
                   required: false,
                   desc: 'tentative, confirmed, cancelled'
+                }, {
+                  name: 'limit',
+                  type: 'int',
+                  required: false,
+                  desc: isEn ? 'Max results (default 50, max 200)' : 'Maksimum sonuç (varsayılan 50, en fazla 200)'
                 }]} />
                 </EndpointBlock>
                 <EndpointBlock method="POST" path="/api/b2b/groups/block" desc={isEn ? 'Create a group block' : 'Grup blok oluştur'}>
@@ -1571,6 +1653,16 @@ export default function B2BApiDocs() {
                   type: 'string',
                   required: true,
                   desc: isEn ? 'Contact person' : 'Irtibat kisisi'
+                }, {
+                  name: 'contact_email',
+                  type: 'string',
+                  required: false,
+                  desc: isEn ? 'Contact email' : 'İrtibat e-postası'
+                }, {
+                  name: 'contact_phone',
+                  type: 'string',
+                  required: false,
+                  desc: isEn ? 'Contact phone' : 'İrtibat telefonu'
                 }, {
                   name: 'check_in',
                   type: 'string',
@@ -1596,6 +1688,16 @@ export default function B2BApiDocs() {
                   type: 'string',
                   required: false,
                   desc: isEn ? 'Preferred room type' : 'Tercih edilen oda tipi'
+                }, {
+                  name: 'estimated_revenue',
+                  type: 'number',
+                  required: false,
+                  desc: isEn ? 'Estimated group revenue (default 0)' : 'Tahmini grup geliri (varsayılan 0)'
+                }, {
+                  name: 'notes',
+                  type: 'string',
+                  required: false,
+                  desc: isEn ? 'Group notes' : 'Grup notları'
                 }]} />
                   <CodeBlock lang="json" code={`{\n  "ok": true,\n  "block": {\n    "id": "blk1...",\n    "group_name": "Tech Conference 2026",\n    "rooms_requested": 50,\n    "rooms_picked_up": 0,\n    "status": "tentative"\n  }\n}`} />
                 </EndpointBlock>
@@ -1626,6 +1728,11 @@ export default function B2BApiDocs() {
                   type: 'string',
                   required: false,
                   desc: isEn ? 'Override check-out' : 'Çıkış tarihi'
+                }, {
+                  name: 'guests[].special_requests',
+                  type: 'string',
+                  required: false,
+                  desc: isEn ? 'Guest-specific requests' : 'Misafire özel talepler'
                 }]} />
                   <CodeBlock lang="json" code={`{\n  "ok": true,\n  "created_count": 3,\n  "reservations": [\n    { "guest_name": "Alice Johnson",\n      "booking_id": "b1...",\n      "confirmation_code": "GRP-B1A2C3D4" }\n  ]\n}`} />
                 </EndpointBlock>

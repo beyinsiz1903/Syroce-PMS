@@ -5,9 +5,9 @@ the external endpoint catalogue and scope list shown to integrators with the
 FastAPI source that actually registers those routes.
 """
 
-from pathlib import Path
+import ast
 import re
-
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 DOCS = (ROOT / "frontend/src/pages/B2BApiDocs.jsx").read_text(encoding="utf-8")
@@ -21,6 +21,19 @@ B2B_ROUTER_DIR = ROOT / "backend/routers/b2b_api"
 def _route_exists(method: str, path: str) -> bool:
     decorator = rf'@(router|agency_router)\.{method.lower()}\("{re.escape(path)}"'
     return bool(re.search(decorator, MARKETPLACE + "\n" + CONTRACTS))
+
+
+def _model_fields(source_name: str, class_name: str) -> set[str]:
+    source = (B2B_ROUTER_DIR / source_name).read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    model = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == class_name)
+    return {node.target.id for node in model.body if isinstance(node, ast.AnnAssign)}
+
+
+def _documented_fields(method: str, path: str) -> set[str]:
+    marker = f'<EndpointBlock method="{method}" path="{path}"'
+    block = DOCS.split(marker, 1)[1].split("</EndpointBlock>", 1)[0]
+    return set(re.findall(r"name: '([^']+)'", block))
 
 
 def test_marketplace_documented_endpoints_exist_in_backend():
@@ -91,3 +104,60 @@ def test_pagination_docs_do_not_claim_a_universal_count_envelope():
 
 def test_server_to_server_examples_do_not_send_browser_credentials():
     assert 'credentials: "include"' not in DOCS
+
+
+def test_documented_request_bodies_match_pydantic_models():
+    contracts = {
+        ("POST", "/api/b2b/reservations"): ("booking_engine.py", "B2BReservationCreate"),
+        ("POST", "/api/b2b/guests/{guest_id}/loyalty/points"): ("guests.py", "LoyaltyPointsUpdate"),
+        ("PUT", "/api/b2b/housekeeping/rooms/{room_id}"): ("housekeeping.py", "HousekeepingStatusUpdate"),
+        ("POST", "/api/b2b/kbs/report"): ("kbs.py", "KBSReportCreate"),
+        ("POST", "/api/b2b/identity/scan"): ("identity.py", "IdentityScanData"),
+        ("POST", "/api/b2b/lost-found"): ("lost_found.py", "LostFoundCreate"),
+        ("PUT", "/api/b2b/lost-found/{item_id}"): ("lost_found.py", "LostFoundUpdate"),
+        ("POST", "/api/b2b/wake-up-calls"): ("wake_up.py", "WakeUpCallCreate"),
+        ("PUT", "/api/b2b/wake-up-calls/{call_id}"): ("wake_up.py", "WakeUpCallUpdate"),
+        ("POST", "/api/b2b/guest-journey/online-checkin"): ("guest_journey.py", "B2BOnlineCheckin"),
+        ("POST", "/api/b2b/guest-journey/request"): ("guest_journey.py", "B2BGuestRequest"),
+        ("POST", "/api/b2b/concierge/request"): ("services.py", "ConciergeRequest"),
+        ("POST", "/api/b2b/spa/booking"): ("services.py", "SpaBookingCreate"),
+        ("POST", "/api/b2b/groups/block"): ("groups.py", "GroupBlockCreate"),
+        ("POST", "/api/b2b/folio/{booking_id}/charge"): ("folio.py", "FolioChargeCreate"),
+        ("POST", "/api/b2b/webhooks"): ("webhooks.py", "WebhookRegister"),
+    }
+    mismatches = {}
+    for endpoint, (source_name, class_name) in contracts.items():
+        expected = _model_fields(source_name, class_name)
+        shown = _documented_fields(*endpoint)
+        if shown != expected:
+            mismatches[endpoint] = {"missing": sorted(expected - shown), "extra": sorted(shown - expected)}
+    assert mismatches == {}
+
+
+def test_nested_rooming_list_schema_is_complete():
+    shown = _documented_fields("POST", "/api/b2b/groups/{block_id}/rooming-list")
+    entry_fields = _model_fields("groups.py", "RoomingListEntry")
+    expected = {"guests", *(f"guests[].{field}" for field in entry_fields)}
+    assert shown == expected
+
+
+def test_documented_query_parameters_match_route_contracts():
+    contracts = {
+        ("GET", "/api/b2b/availability"): {"check_in", "check_out", "room_type"},
+        ("GET", "/api/b2b/rates"): {"start_date", "end_date", "room_type"},
+        ("GET", "/api/b2b/reservations"): {"status", "check_in_from", "check_in_to", "limit"},
+        ("GET", "/api/b2b/guests/search"): {"q", "limit"},
+        ("GET", "/api/b2b/guests/{guest_id}/stays"): {"limit"},
+        ("GET", "/api/b2b/housekeeping/rooms"): {"status", "floor"},
+        ("GET", "/api/b2b/kbs/guests"): {"date", "status", "limit"},
+        ("GET", "/api/b2b/lost-found"): {"status", "category", "limit"},
+        ("GET", "/api/b2b/wake-up-calls"): {"date", "status"},
+        ("GET", "/api/b2b/guest-journey/requests"): {"booking_id", "status", "request_type", "limit"},
+        ("GET", "/api/b2b/groups"): {"status", "limit"},
+    }
+    mismatches = {
+        endpoint: {"missing": sorted(expected - _documented_fields(*endpoint)), "extra": sorted(_documented_fields(*endpoint) - expected)}
+        for endpoint, expected in contracts.items()
+        if _documented_fields(*endpoint) != expected
+    }
+    assert mismatches == {}
