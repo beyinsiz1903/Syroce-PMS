@@ -1,19 +1,20 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
-import { Save, Loader2, RotateCcw, Home, Moon, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, AlertTriangle, CopyCheck, Plus, Trash2 } from 'lucide-react';
-import { DAYS, UPDATE_FIELDS } from './constants';
+import { Save, Loader2, RotateCcw, Home, Moon, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, AlertTriangle, CopyCheck, Plus, Trash2, Eye, ShieldCheck, Sparkles } from 'lucide-react';
+import { DAYS, UPDATE_FIELDS, UPDATE_FIELD_PRESETS } from './constants';
 import { ChannelList } from './ChannelList';
+import { buildRateUpdateReview } from './updateReview';
 import { useTranslation } from 'react-i18next';
-import { normalizeOccupancyRule } from '@/utils/occupancyPricing';
+import { calculateOccupancyPrice, normalizeOccupancyRule } from '@/utils/occupancyPricing';
 import { toast } from 'sonner';
 
 export const BulkUpdatePanel = ({
-  roomTypeTree, roomTypes, ratePlans, enabledFields, toggleField,
+  roomTypeTree, roomTypes, ratePlans, enabledFields, toggleField, applyFieldPreset,
   dateFrom, setDateFrom, dateTo, setDateTo,
   allDays, selectedDays, toggleDay, toggleAllDays,
   selections, toggleRoomType, toggleAllRoomTypes, toggleRatePlan,
@@ -27,6 +28,11 @@ export const BulkUpdatePanel = ({
   mobileStep = 1, setMobileStep,
 }) => {
   const { t } = useTranslation();
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const review = useMemo(() => buildRateUpdateReview({
+    dateFrom, dateTo, allDays, selectedDays, selections, enabledFields, roomValues,
+    selectedChannelCodes, activeChannelsStale,
+  }), [dateFrom, dateTo, allDays, selectedDays, selections, enabledFields, roomValues, selectedChannelCodes, activeChannelsStale]);
   const canContinueFromFields = enabledFields.size > 0 && Boolean(dateFrom) && Boolean(dateTo);
   const canContinueFromRooms = totalSelectedRoomTypes > 0;
   const goToStep = (step) => setMobileStep?.(Math.max(1, Math.min(3, step)));
@@ -67,6 +73,21 @@ export const BulkUpdatePanel = ({
             </CardTitle>
           </CardHeader>
           <CardContent className="px-4 pb-4 space-y-2">
+            <div className="mb-3 flex flex-wrap gap-1.5" aria-label="Hızlı güncelleme şablonları">
+              {UPDATE_FIELD_PRESETS.map(preset => (
+                <Button
+                  key={preset.key}
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-7 px-2 text-[11px]"
+                  onClick={() => applyFieldPreset?.(preset.fields)}
+                  data-testid={`rate-preset-${preset.key}`}
+                >
+                  <Sparkles className="mr-1 h-3 w-3" /> {preset.label}
+                </Button>
+              ))}
+            </div>
             {UPDATE_FIELDS.filter(f => !f.providers || f.providers.includes(channelProvider)).map(f => (
               <label key={f.key} className="flex items-center gap-2 cursor-pointer text-sm" data-testid={`field-${f.key}`}>
                 <Checkbox
@@ -119,9 +140,9 @@ export const BulkUpdatePanel = ({
 
         {/* Action Buttons */}
         <div className="hidden gap-2 lg:flex">
-          <Button className="flex-1 bg-amber-600 hover:bg-amber-700 text-white" onClick={handleBulkUpdate} disabled={saving} data-testid="bulk-update-btn">
-            {saving ? <Loader2 className="w-4 h-4 animate-spin mr-1.5" /> : <Save className="w-4 h-4 mr-1.5" />}
-            Güncelle
+          <Button className="flex-1 bg-amber-600 hover:bg-amber-700 text-white" onClick={() => setReviewOpen(true)} disabled={saving} data-testid="bulk-update-btn">
+            <Eye className="w-4 h-4 mr-1.5" />
+            Önizle
           </Button>
           <Button variant="outline" onClick={handleReset} data-testid="bulk-reset-btn">
             <RotateCcw className="w-4 h-4 mr-1" />
@@ -186,8 +207,64 @@ export const BulkUpdatePanel = ({
             <Badge variant="outline" className="bg-white">{totalSelectedRoomTypes} oda tipi</Badge>
             <Badge variant="outline" className="bg-white">{totalSelectedPlans} plan</Badge>
             <Badge variant="outline" className="bg-white">{enabledFields.size} alan</Badge>
+            <Badge variant="outline" className="bg-white">{review.dateCount} hedef gece</Badge>
+            <Badge variant="outline" className="bg-white">{review.cellCount.toLocaleString('tr-TR')} fiyat-plan hücresi</Badge>
+            <Badge variant="outline" className="bg-white">{review.channelCount} OTA kanalı</Badge>
             <Badge variant="outline" className="bg-white">{dateFrom} → {dateTo}</Badge>
             {!allDays && <Badge variant="outline" className="bg-white">{selectedDays.size} gün</Badge>}
+          </div>
+        </CardContent>
+      </Card>
+    )}
+
+    {reviewOpen && (
+      <Card className="mt-4 border-blue-200 bg-blue-50/50" role="dialog" aria-labelledby="rate-review-title" data-testid="rate-publish-review">
+        <CardHeader className="pb-2">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <CardTitle id="rate-review-title" className="flex items-center gap-2 text-base text-slate-900">
+                <ShieldCheck className="h-5 w-5 text-blue-600" /> Yayın öncesi kontrol
+              </CardTitle>
+              <p className="mt-1 text-xs text-slate-600">Seçimin etkisini doğrulayın; ardından PMS ve seçili kanallara gönderimi başlatın.</p>
+            </div>
+            <Button type="button" variant="ghost" size="sm" onClick={() => setReviewOpen(false)}>Kapat</Button>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+            {[
+              ['Gece', review.dateCount], ['Oda tipi', review.roomCount], ['Fiyat planı', review.planCount],
+              ['Kanal', review.channelCount], ['Etkilenen hücre', review.cellCount.toLocaleString('tr-TR')],
+            ].map(([label, value]) => (
+              <div key={label} className="rounded-lg border border-blue-100 bg-white px-3 py-2">
+                <div className="text-[11px] text-slate-500">{label}</div><div className="text-lg font-bold text-slate-900">{value}</div>
+              </div>
+            ))}
+          </div>
+          {review.errors.length > 0 && (
+            <div className="rounded-lg border border-red-200 bg-red-50 p-3" role="alert">
+              <div className="text-sm font-semibold text-red-800">Yayınlamadan önce düzeltin</div>
+              <ul className="mt-1 list-disc space-y-1 pl-5 text-xs text-red-700">{review.errors.map(error => <li key={error}>{error}</li>)}</ul>
+            </div>
+          )}
+          {review.warnings.length > 0 && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+              <div className="text-sm font-semibold text-amber-900">Dikkat edilmesi gerekenler</div>
+              <ul className="mt-1 list-disc space-y-1 pl-5 text-xs text-amber-800">{review.warnings.map(warning => <li key={warning}>{warning}</li>)}</ul>
+            </div>
+          )}
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-blue-100 pt-3">
+            <p className="max-w-2xl text-xs text-slate-600">Çocuk ve ek kişi kuralları oda tipi altında ayrı kaydedilir. OTA tarafındaki eşleşme onayı olmayan kişi bazlı kurallar kanal yayınına dahil edilmez.</p>
+            <Button
+              type="button"
+              className="bg-blue-700 text-white hover:bg-blue-800"
+              disabled={saving || review.errors.length > 0}
+              onClick={handleBulkUpdate}
+              data-testid="rate-confirm-publish"
+            >
+              {saving ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Save className="mr-1.5 h-4 w-4" />}
+              Kontrol ettim, yayınla
+            </Button>
           </div>
         </CardContent>
       </Card>
@@ -215,9 +292,9 @@ export const BulkUpdatePanel = ({
             <Button type="button" variant="outline" size="icon" onClick={() => { handleReset(); goToStep(1); }} data-testid="rate-mobile-reset" aria-label="Sıfırla">
               <RotateCcw className="h-4 w-4" />
             </Button>
-            <Button className="flex-[2] bg-amber-600 text-white hover:bg-amber-700" onClick={handleBulkUpdate} disabled={saving || !canContinueFromFields || !canContinueFromRooms} data-testid="rate-mobile-update">
-              {saving ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Save className="mr-1.5 h-4 w-4" />}
-              Güncelle
+            <Button className="flex-[2] bg-amber-600 text-white hover:bg-amber-700" onClick={() => setReviewOpen(true)} disabled={saving || !canContinueFromFields || !canContinueFromRooms} data-testid="rate-mobile-update">
+              <Eye className="mr-1.5 h-4 w-4" />
+              Önizle ve yayınla
             </Button>
           </>
         )}
@@ -476,6 +553,18 @@ export const OccupancyPricingEditor = ({ roomType, open, onToggle, rule, onSave,
   const base = Number(currentBaseRate || 0);
   const exampleGuests = Number(draft.base_occupancy) + 1;
   const exampleNightly = base + (draft.extra_adult_rate_type === 'percentage' ? (base * Number(draft.extra_adult_rate || 0) / 100) : Number(draft.extra_adult_rate || 0));
+  const previewRule = { ...draft, pricing_type: 'per_person', child_age_bands: sortedBands };
+  const childPreviews = sortedBands.map(band => {
+    const sampleAge = Math.floor((Number(band.min_age) + Number(band.max_age)) / 2);
+    const result = calculateOccupancyPrice({
+      baseNightlyRate: base,
+      nights: 1,
+      adults: Number(draft.base_occupancy),
+      childrenAges: [sampleAge],
+      rule: previewRule,
+    });
+    return { band, supplement: result?.childSupplement ?? 0, total: result?.nightlyTotal ?? base };
+  });
 
   return (
     <div className="border-t border-amber-100 bg-amber-50/40 px-4 py-2" data-testid={`occupancy-pricing-${roomType.code}`}>
@@ -569,8 +658,27 @@ export const OccupancyPricingEditor = ({ roomType, open, onToggle, rule, onSave,
             {!bandsValid && <div className="mt-2 text-xs font-medium text-red-600" role="alert">Yaş kademeleri 0–17 aralığını kesintisiz kapsamalıdır.</div>}
           </div>
           {base > 0 && (
-            <div className="mt-3 rounded-md bg-blue-50 px-3 py-2 text-xs text-blue-800" data-testid={`occupancy-preview-${roomType.code}`}>
-              Örnek: {draft.base_occupancy} kişi {currencySymbol}{base.toLocaleString('tr-TR')}; {exampleGuests}. yetişkin ile gecelik {currencySymbol}{exampleNightly.toLocaleString('tr-TR')}.
+            <div className="mt-3 overflow-hidden rounded-lg border border-blue-200 bg-blue-50" data-testid={`occupancy-preview-${roomType.code}`}>
+              <div className="border-b border-blue-200 px-3 py-2 text-xs font-semibold text-blue-950">Kişi bazlı fiyat simülasyonu</div>
+              <div className="grid gap-px bg-blue-100 sm:grid-cols-2 lg:grid-cols-4">
+                <div className="bg-white p-3">
+                  <div className="text-[11px] text-slate-500">{draft.base_occupancy} yetişkin</div>
+                  <div className="mt-1 font-bold text-slate-900">{currencySymbol}{base.toLocaleString('tr-TR')}</div>
+                  <div className="text-[10px] text-slate-500">Taban gecelik fiyat</div>
+                </div>
+                <div className="bg-white p-3">
+                  <div className="text-[11px] text-slate-500">{exampleGuests}. yetişkin</div>
+                  <div className="mt-1 font-bold text-slate-900">{currencySymbol}{exampleNightly.toLocaleString('tr-TR')}</div>
+                  <div className="text-[10px] text-slate-500">+{currencySymbol}{(exampleNightly - base).toLocaleString('tr-TR')} kişi farkı</div>
+                </div>
+                {childPreviews.map(({ band, supplement, total }) => (
+                  <div key={`${band.min_age}-${band.max_age}`} className="bg-white p-3">
+                    <div className="text-[11px] text-slate-500">{band.min_age}–{band.max_age} yaş çocuk</div>
+                    <div className="mt-1 font-bold text-slate-900">{currencySymbol}{total.toLocaleString('tr-TR')}</div>
+                    <div className="text-[10px] text-slate-500">{supplement > 0 ? `+${currencySymbol}${supplement.toLocaleString('tr-TR')} çocuk farkı` : 'Ücretsiz / dahil'}</div>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
           <p className="mt-2 text-[11px] leading-4 text-gray-500">

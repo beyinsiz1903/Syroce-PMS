@@ -39,7 +39,7 @@ function WizardHarness({ onUpdate = vi.fn(), onReset = vi.fn() }) {
       isRoomTypeSelected={() => false}
       isRoomTypeFullySelected={() => false}
       isRatePlanSelected={() => false}
-      roomValues={{}}
+      roomValues={{ STD: { rate: '1250' } }}
       updateRoomValue={vi.fn()}
       getDefaultValues={() => ({})}
       applyToAllSelected={vi.fn()}
@@ -81,6 +81,8 @@ describe('BulkUpdatePanel mobile wizard', () => {
     fireEvent.click(screen.getByTestId('rate-mobile-next'));
     expect(screen.getByTestId('rate-mobile-step-3')).toHaveAttribute('aria-current', 'step');
     fireEvent.click(screen.getByTestId('rate-mobile-update'));
+    expect(screen.getByTestId('rate-publish-review')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('rate-confirm-publish'));
     expect(onUpdate).toHaveBeenCalledTimes(1);
   });
 });

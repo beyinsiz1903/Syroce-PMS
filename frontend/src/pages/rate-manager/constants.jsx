@@ -18,3 +18,10 @@ export const UPDATE_FIELDS = [
   { key: 'ctd', label: 'Çıkışa kapalı (CTD)' },
   { key: 'stop_sell', label: 'Satışı durdur' },
 ];
+
+export const UPDATE_FIELD_PRESETS = [
+  { key: 'rate_inventory', label: 'Fiyat + müsaitlik', fields: ['rate', 'availability'] },
+  { key: 'stay_rules', label: 'Konaklama kısıtları', fields: ['min_stay', 'min_los_arrival', 'max_stay', 'cta', 'ctd'] },
+  { key: 'stop_sell', label: 'Satışı durdur', fields: ['stop_sell'] },
+  { key: 'all_ari', label: 'Tüm ARI alanları', fields: UPDATE_FIELDS.map(field => field.key) },
+];
