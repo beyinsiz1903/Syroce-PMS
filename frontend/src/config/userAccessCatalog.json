@@ -217,6 +217,7 @@
       "paths": [
         "/sales",
         "/sales-crm",
+        "/crm",
         "/group-sales",
         "/pms?tab=upsell",
         "/pms?tab=feedback"

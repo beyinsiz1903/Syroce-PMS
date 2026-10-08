@@ -15,6 +15,23 @@ class _Collection:
         self.inserted.append(document)
 
 
+class _Attributions(_Collection):
+    def __init__(self, existing=None):
+        super().__init__()
+        self.existing = existing
+
+    async def find_one(self, query, projection=None):
+        return self.existing
+
+
+class _FindOneCollection:
+    def __init__(self, result):
+        self.result = result
+
+    async def find_one(self, query, projection=None):
+        return self.result
+
+
 @pytest.mark.asyncio
 async def test_create_campaign_normalizes_required_fields_and_audits(monkeypatch):
     campaigns = _Collection()
@@ -62,3 +79,49 @@ async def test_create_campaign_rejects_missing_required_text(monkeypatch, payloa
 
     assert exc.value.status_code == 400
     assert campaigns.inserted == []
+
+
+@pytest.mark.asyncio
+async def test_campaign_attribution_is_tenant_scoped_and_idempotent(monkeypatch):
+    existing = {"campaign_id": "c1", "booking_id": "b1", "net_revenue": 900}
+    attributions = _Attributions(existing=existing)
+    db = SimpleNamespace(
+        marketing_campaigns=_FindOneCollection({"id": "c1"}),
+        bookings=_FindOneCollection({"id": "b1", "total_amount": 1000}),
+        marketing_attributions=attributions,
+    )
+    audit = AsyncMock()
+    monkeypatch.setattr(sales_router, "db", db)
+    monkeypatch.setattr(sales_router, "create_audit_log", audit)
+
+    result = await sales_router.record_campaign_attribution(
+        "c1", {"booking_id": "b1"},
+        current_user=SimpleNamespace(tenant_id="tenant-a", id="user-a"), _perm=None,
+    )
+
+    assert result == {"success": True, "created": False, "attribution": existing}
+    assert attributions.inserted == []
+    audit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_campaign_attribution_calculates_net_revenue_once(monkeypatch):
+    attributions = _Attributions()
+    db = SimpleNamespace(
+        marketing_campaigns=_FindOneCollection({"id": "c1"}),
+        bookings=_FindOneCollection({"id": "b1", "total_amount": 1000, "commission_amount": 120, "payment_fee": 30}),
+        marketing_attributions=attributions,
+    )
+    audit = AsyncMock()
+    monkeypatch.setattr(sales_router, "db", db)
+    monkeypatch.setattr(sales_router, "create_audit_log", audit)
+
+    result = await sales_router.record_campaign_attribution(
+        "c1", {"booking_id": "b1"},
+        current_user=SimpleNamespace(tenant_id="tenant-a", id="user-a"), _perm=None,
+    )
+
+    assert result["created"] is True
+    assert result["attribution"]["gross_revenue"] == 1000
+    assert result["attribution"]["net_revenue"] == 850
+    audit.assert_awaited_once()
