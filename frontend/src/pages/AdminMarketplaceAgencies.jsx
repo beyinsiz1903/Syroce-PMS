@@ -5,7 +5,7 @@ import { toast } from 'sonner';
 import { useQuery } from '@tanstack/react-query';
 import {
   Ban, Building2, Handshake, KeyRound, Pencil, Plus, RefreshCw, RotateCcw,
-  Search, ShieldCheck, TrendingUp, Users, WalletCards,
+  Search, ShieldCheck, TrendingUp, Users, WalletCards, LogIn,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -34,6 +34,15 @@ const money = (value) => new Intl.NumberFormat('tr-TR', {
 const dateTime = (value) => value
   ? new Intl.DateTimeFormat('tr-TR', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value))
   : 'Henüz kullanılmadı';
+
+export async function startAgencyPortalContext(agencyId, navigate = (path) => window.location.assign(path)) {
+  const { data } = await axios.post(`/marketplace/v1/admin/agencies/${agencyId}/portal-context`);
+  localStorage.setItem('agency_token', data.token);
+  localStorage.setItem('agency_portal_mode', 'marketplace');
+  sessionStorage.setItem('agency_admin_return_path', '/admin/marketplace/agencies');
+  navigate(data.portal_path || '/agency-portal');
+  return data;
+}
 
 const apiReadiness = (apiAccess) => {
   if (!apiAccess?.active) {
@@ -71,6 +80,7 @@ export default function AdminMarketplaceAgencies() {
   const [accessAgency, setAccessAgency] = useState(null);
   const [accessAction, setAccessAction] = useState(null);
   const [accessBusy, setAccessBusy] = useState(false);
+  const [portalContextBusy, setPortalContextBusy] = useState(false);
   const agenciesQuery = useQuery(adminManagementQueries.agencies);
   const agencies = agenciesQuery.data?.agencies ?? EMPTY_AGENCIES;
   const loading = agenciesQuery.isLoading;
@@ -176,6 +186,17 @@ export default function AdminMarketplaceAgencies() {
       toast.error(error.response?.data?.detail || 'Erişim işlemi tamamlanamadı');
     } finally {
       setAccessBusy(false);
+    }
+  };
+
+  const enterAgencyPortal = async () => {
+    if (!accessAgency) return;
+    setPortalContextBusy(true);
+    try {
+      await startAgencyPortalContext(accessAgency.id);
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Acente hesabı güvenli şekilde açılamadı');
+      setPortalContextBusy(false);
     }
   };
 
@@ -294,6 +315,15 @@ export default function AdminMarketplaceAgencies() {
       <Dialog open={Boolean(accessAgency)} onOpenChange={(open) => { if (!open && !accessBusy) { setAccessAgency(null); setAccessAction(null); } }}>
         <DialogContent className="sm:max-w-xl"><DialogHeader><DialogTitle>{accessAgency?.name} · Erişim yönetimi</DialogTitle></DialogHeader>{accessAgency && <div className="space-y-4">
           <div className="grid gap-3 sm:grid-cols-2"><div className="rounded-lg border p-3"><div className="flex items-center gap-2 font-medium"><Users className="h-4 w-4" />Acente portalı</div><div className="mt-2 text-2xl font-semibold">{accessAgency.portal_access?.count || 0}</div><p className="text-xs text-slate-500">aktif insan kullanıcısı</p>{accessAgency.portal_access?.last_login && <p className="mt-2 text-xs text-slate-500">Son giriş: {dateTime(accessAgency.portal_access.last_login)}</p>}</div><div className="rounded-lg border p-3"><div className="flex items-center gap-2 font-medium"><KeyRound className="h-4 w-4" />Teknik API</div><div className="mt-2"><StatusBadge intent={apiReadiness(accessAgency.api_access).intent}>{apiReadiness(accessAgency.api_access).label}</StatusBadge></div><p className="mt-2 text-xs text-slate-500">Portal oturumundan bağımsızdır.</p></div></div>
+          <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 dark:border-blue-800 dark:bg-blue-950/30">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div><p className="text-sm font-semibold text-blue-950 dark:text-blue-100">Acente çalışma alanını görüntüle</p><p className="mt-1 text-xs leading-5 text-blue-800 dark:text-blue-200">Parola görmeden 15 dakikalık, denetim kayıtlı bir süperadmin oturumu açar.</p></div>
+              <Button size="sm" onClick={enterAgencyPortal} disabled={portalContextBusy || accessAgency.status !== 'active' || !accessAgency.portal_access?.count}>
+                <LogIn className="mr-1.5 h-4 w-4" />{portalContextBusy ? 'Açılıyor…' : 'Acente hesabına geç'}
+              </Button>
+            </div>
+            {!accessAgency.portal_access?.count && <p className="mt-2 text-xs text-amber-800">Geçiş için önce aktif bir portal kullanıcısı davet edilmelidir.</p>}
+          </div>
           {accessAgency.api_access?.active ? <div className="space-y-3 rounded-lg bg-slate-50 p-3 text-sm"><div className="space-y-2"><div className="flex justify-between gap-4"><span className="text-slate-500">Entegrasyon</span><span className="font-medium">{accessAgency.api_access.label || 'Ana entegrasyon'}</span></div><div className="flex justify-between gap-4"><span className="text-slate-500">Anahtar</span><code className="text-xs">{accessAgency.api_access.key_prefix}</code></div><div className="flex justify-between gap-4"><span className="text-slate-500">Son kullanım</span><span>{dateTime(accessAgency.api_access.last_used_at)}</span></div><div className="flex justify-between gap-4"><span className="text-slate-500">İstek sayısı</span><span>{Number(accessAgency.api_access.usage_count || 0).toLocaleString('tr-TR')}</span></div>{accessAgency.api_access.last_used_ip && <div className="flex justify-between gap-4"><span className="text-slate-500">Son kaynak IP</span><code className="text-xs">{accessAgency.api_access.last_used_ip}</code></div>}</div><div className={`rounded-md border p-2.5 text-xs ${apiReadiness(accessAgency.api_access).intent === 'warning' ? 'border-amber-200 bg-amber-50 text-amber-900' : 'border-emerald-200 bg-emerald-50 text-emerald-900'}`}><p className="font-medium">{apiReadiness(accessAgency.api_access).detail}</p>{apiReadiness(accessAgency.api_access).intent === 'warning' && <p className="mt-1">Anahtarı yalnızca acentenin teknik sorumlusuna güvenli sır paylaşımıyla iletin; ilk başarılı istekten sonra durum otomatik olarak “Kullanımda” olur.</p>}</div><Link to="/b2b/docs" className="inline-flex text-xs font-medium text-indigo-700 hover:underline">B2B API belgelerini aç →</Link></div> : <p className="rounded-lg border border-dashed p-4 text-sm text-slate-600">Bu acente için teknik API sırrı bulunmuyor. Acente yalnızca portal kullanacaksa bu doğru ve daha güvenli durumdur.</p>}
           {accessAction && <div className={`rounded-lg border p-3 text-sm ${accessAction === 'revoke' ? 'border-red-200 bg-red-50 text-red-900' : 'border-amber-200 bg-amber-50 text-amber-900'}`}><p>{accessAction === 'revoke' ? 'API erişimi hemen durdurulacak. Portal kullanıcıları etkilenmeyecek.' : accessAgency.api_access?.active ? 'Mevcut anahtar anında geçersiz olacak ve yeni anahtar yalnızca bir kez gösterilecek.' : 'Yeni API anahtarı yalnızca bir kez gösterilecek.'}</p><div className="mt-3 flex justify-end gap-2"><Button variant="outline" size="sm" onClick={() => setAccessAction(null)} disabled={accessBusy}>Vazgeç</Button><Button size="sm" variant={accessAction === 'revoke' ? 'destructive' : 'default'} onClick={confirmAccessAction} disabled={accessBusy}>{accessBusy ? 'İşleniyor…' : 'Onayla'}</Button></div></div>}
           {!accessAction && <div className="flex justify-end gap-2">{accessAgency.api_access?.active && <Button variant="destructive" size="sm" onClick={() => setAccessAction('revoke')}><Ban className="mr-1.5 h-4 w-4" />API erişimini kapat</Button>}<Button size="sm" onClick={() => setAccessAction('rotate')} disabled={accessAgency.status !== 'active'}><RotateCcw className="mr-1.5 h-4 w-4" />{accessAgency.api_access?.active ? 'Anahtarı yenile' : 'API anahtarı oluştur'}</Button></div>}

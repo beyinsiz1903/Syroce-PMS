@@ -83,6 +83,7 @@ const AgencyPortalDashboard = () => {
   const [profileLoading, setProfileLoading] = useState(Boolean(localStorage.getItem('agency_token')));
   const [profileError, setProfileError] = useState('');
   const [profileRevision, setProfileRevision] = useState(0);
+  const [impersonation, setImpersonation] = useState(null);
 
   // Login
   const [loginForm, setLoginForm] = useState({
@@ -165,7 +166,15 @@ const AgencyPortalDashboard = () => {
       setLoginLoading(false);
     }
   };
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    const adminReturnPath = impersonation?.active ? (sessionStorage.getItem('agency_admin_return_path') || '/admin/marketplace/agencies') : null;
+    if (impersonation?.active) {
+      try {
+        await agencyApi.post('/marketplace/v1/extranet/admin-context/exit');
+      } catch {
+        // Local cleanup and return must still work if the short session already expired.
+      }
+    }
     localStorage.removeItem('agency_token');
     localStorage.removeItem('agency_portal_mode');
     localStorage.removeItem('agency_selected_hotel');
@@ -181,6 +190,11 @@ const AgencyPortalDashboard = () => {
     setContentTenantId('');
     setProfileLoading(false);
     setProfileError('');
+    setImpersonation(null);
+    if (adminReturnPath) {
+      sessionStorage.removeItem('agency_admin_return_path');
+      window.location.assign(adminReturnPath);
+    }
   };
 
   // Load profile on mount if token exists
@@ -196,6 +210,7 @@ const AgencyPortalDashboard = () => {
           // selected only when the agent explicitly narrows the search or books.
           const allowedSelected = '';
           setAgencyInfo(data.agency || null);
+          setImpersonation(data.impersonation || null);
           setHotels(availableHotels);
           setContentTenantId(current => availableHotels.some(hotel => hotel.tenant_id === current) ? current : (availableHotels[0]?.tenant_id || ''));
           setSelectedTenantId(allowedSelected);
@@ -598,6 +613,12 @@ const AgencyPortalDashboard = () => {
   const workspaceLabel = portalMode === 'marketplace' ? 'Global marketplace' : 'Otel bağlantılı portal';
   const signedInIdentity = agencyUser?.email || agencyUser?.name || '';
   return <div className="min-h-screen bg-[linear-gradient(180deg,#f8fafc_0%,#f1f5f9_48%,#f8fafc_100%)] text-slate-900" data-testid="agency-portal-dashboard">
+      {impersonation?.active && <div className="sticky top-0 z-50 border-b border-amber-300 bg-amber-100 px-4 py-2 text-amber-950" role="status" data-testid="agency-impersonation-banner">
+        <div className="mx-auto flex max-w-7xl flex-col gap-2 text-sm sm:flex-row sm:items-center sm:justify-between">
+          <span><strong>Süperadmin görünümü:</strong> {agencyInfo?.name || 'Acente'} hesabını parola kullanmadan görüntülüyorsunuz. Oturum 15 dakika içinde sona erer.</span>
+          <Button variant="outline" size="sm" className="border-amber-400 bg-white hover:bg-amber-50" onClick={handleLogout}>Süperadmin paneline dön</Button>
+        </div>
+      </div>}
       {/* Header */}
       <header className="bg-white/90 border-b border-slate-200/80 sticky top-0 z-30 backdrop-blur-xl">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-3">
