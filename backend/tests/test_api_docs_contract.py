@@ -44,6 +44,17 @@ def test_marketplace_documented_endpoints_exist_in_backend():
     assert missing == []
 
 
+def test_marketplace_endpoint_catalogue_has_english_descriptions():
+    block = DOCS.split("const marketplaceEndpoints = [", 1)[1].split("];", 1)[0]
+    rows = re.findall(
+        r"\['(GET|POST|PUT|PATCH|DELETE)', '([^']+)', '([^']+)', '([^']+)'\]",
+        block,
+    )
+    documented = re.findall(r"\['(GET|POST|PUT|PATCH|DELETE)', '([^']+)'", block)
+    assert len(rows) == len(documented)
+    assert all(english.strip() for _, _, _, english in rows)
+
+
 def test_hotel_scope_badges_match_backend_source_of_truth():
     scope_block = SCOPE_SOURCE.split("B2B_SCOPES = [", 1)[1].split("]", 1)[0]
     expected = set(re.findall(r'"([a-z_]+)"', scope_block))
@@ -79,6 +90,44 @@ def test_docs_do_not_promise_unimplemented_rate_limit_contract():
     assert "X-RateLimit-Limit: 120" not in DOCS
     assert "X-RateLimit-Remaining: 115" not in DOCS
     assert "Maximum requests allowed in the window" not in DOCS
+    assert "Rate limit exceeded" not in DOCS
+    assert "The same Idempotency-Key is still being processed" in DOCS
+
+
+def test_hotel_status_table_matches_live_success_contract():
+    status_table = DOCS.split("'HTTP Status Codes'", 1)[1].split("</table>", 1)[0]
+    assert "code: '200'" in status_table
+    assert "code: '201'" not in status_table
+
+
+def test_core_hotel_response_examples_include_backend_fields():
+    hotel_info = DOCS.split(
+        '<EndpointBlock method="GET" path="/api/b2b/hotel-info"', 1
+    )[1].split("</EndpointBlock>", 1)[0]
+    assert all(
+        field in hotel_info
+        for field in ('"tenant_id"', '"hotel"', '"agency"', '"room_types"', '"content_published"')
+    )
+
+    rates = DOCS.split('<EndpointBlock method="GET" path="/api/b2b/rates"', 1)[1].split(
+        "</EndpointBlock>", 1
+    )[0]
+    assert all(field in rates for field in ('"start_date"', '"end_date"', '"source"', '"rates"'))
+
+    reservation = DOCS.split(
+        '<EndpointBlock method="POST" path="/api/b2b/reservations"', 1
+    )[1].split("</EndpointBlock>", 1)[0]
+    assert all(
+        field in reservation
+        for field in (
+            '"room_number"',
+            '"total_amount"',
+            '"commission_rate"',
+            '"commission_amount"',
+            '"created_at"',
+            '"message"',
+        )
+    )
 
 
 def test_hotel_docs_describe_required_scope_model():

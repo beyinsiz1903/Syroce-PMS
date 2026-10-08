@@ -225,26 +225,26 @@ const Desc = ({
 
 const MARKETPLACE_BASE = window.location.origin + '/api/marketplace/v1';
 const marketplaceEndpoints = [
-  ['GET', '/hotels', 'Onaylı sözleşmesi bulunan, yayındaki otelleri listeler. Filtreler: city, country, q, limit (en fazla 200).'],
-  ['GET', '/hotels/{tenant_id}', 'Aktif sözleşmeli otelin içerik ve oda tipi detayını getirir.'],
-  ['POST', '/search', 'Sözleşmeli otellerde canlı fiyat ve müsaitlik arar.'],
-  ['GET', '/hotels/{tenant_id}/availability', 'check_in ve check_out (YYYY-MM-DD) için müsaitlik döndürür.'],
-  ['GET', '/hotels/{tenant_id}/rates', 'start_date, end_date ve isteğe bağlı room_type için fiyatları döndürür.'],
-  ['POST', '/reservations', 'Sunucuda yeniden fiyatlayarak rezervasyon oluşturur; tekrar denemelerde idempotency_key kullanın.'],
-  ['GET', '/reservations', 'Acentenin rezervasyonlarını status, tenant_id ve giriş tarihiyle filtreler; limit en fazla 500.'],
-  ['GET', '/reservations/{reservation_id}', 'Acenteye ait rezervasyonun özet ve PMS görünümünü getirir.'],
-  ['GET', '/reservations/{reservation_id}/voucher.pdf', 'Voucher belgesini PDF olarak indirir.'],
-  ['POST', '/reservations/{reservation_id}/voucher-email', 'Voucher belgesini body içindeki email adresine gönderir.'],
-  ['DELETE', '/reservations/{reservation_id}', 'Doğrudan iptal etmez; otel onayı bekleyen iptal talebi açar. reason en az 5 karakter olmalıdır.'],
-  ['POST', '/reservations/{reservation_id}/modification-proposals', 'Tarih/oda değişiklik teklifini otel onayına gönderir.'],
-  ['GET', '/negotiations', 'Acentenin bekleyen ve sonuçlanan değişiklik/iptal görüşmelerini listeler.'],
-  ['POST', '/negotiations/{proposal_id}/decision', 'Otel tarafından başlatılan görüşmeye acente kararı verir.'],
-  ['POST', '/contracts/propose', 'Bir otel için komisyon ve sözleşme koşulları teklifi oluşturur.'],
-  ['GET', '/contracts/mine', 'Acentenin otel bazlı sözleşmelerini listeler.'],
-  ['GET', '/contracts/{contract_id}', 'Tek sözleşmenin ayrıntısını getirir.'],
-  ['DELETE', '/contracts/{contract_id}', 'Yalnızca bekleyen teklifi geri çeker.'],
-  ['GET', '/reconciliation/agency', 'period_start ve period_end ile acente mutabakatını JSON döndürür.'],
-  ['GET', '/reconciliation/agency.csv', 'Aynı mutabakatı CSV olarak indirir.'],
+  ['GET', '/hotels', 'Onaylı sözleşmesi bulunan, yayındaki otelleri listeler. Filtreler: city, country, q, limit (en fazla 200).', 'Lists published hotels covered by an approved contract. Filters: city, country, q and limit (max 200).'],
+  ['GET', '/hotels/{tenant_id}', 'Aktif sözleşmeli otelin içerik ve oda tipi detayını getirir.', 'Returns content and room-type details for a hotel with an active contract.'],
+  ['POST', '/search', 'Sözleşmeli otellerde canlı fiyat ve müsaitlik arar.', 'Searches live rates and availability across contracted hotels.'],
+  ['GET', '/hotels/{tenant_id}/availability', 'check_in ve check_out (YYYY-MM-DD) için müsaitlik döndürür.', 'Returns availability for check_in and check_out (YYYY-MM-DD).'],
+  ['GET', '/hotels/{tenant_id}/rates', 'start_date, end_date ve isteğe bağlı room_type için fiyatları döndürür.', 'Returns rates for start_date, end_date and optional room_type.'],
+  ['POST', '/reservations', 'Sunucuda yeniden fiyatlayarak rezervasyon oluşturur; tekrar denemelerde idempotency_key kullanın.', 'Creates a server-repriced reservation; reuse idempotency_key when retrying.'],
+  ['GET', '/reservations', 'Acentenin rezervasyonlarını status, tenant_id ve giriş tarihiyle filtreler; limit en fazla 500.', 'Lists agency reservations filtered by status, tenant_id and arrival date; limit is capped at 500.'],
+  ['GET', '/reservations/{reservation_id}', 'Acenteye ait rezervasyonun özet ve PMS görünümünü getirir.', 'Returns the agency-owned reservation summary and PMS view.'],
+  ['GET', '/reservations/{reservation_id}/voucher.pdf', 'Voucher belgesini PDF olarak indirir.', 'Downloads the voucher as PDF.'],
+  ['POST', '/reservations/{reservation_id}/voucher-email', 'Voucher belgesini body içindeki email adresine gönderir.', 'Emails the voucher to the email supplied in the request body.'],
+  ['DELETE', '/reservations/{reservation_id}', 'Doğrudan iptal etmez; otel onayı bekleyen iptal talebi açar. reason en az 5 karakter olmalıdır.', 'Creates a cancellation request for hotel approval instead of cancelling immediately; reason must be at least 5 characters.'],
+  ['POST', '/reservations/{reservation_id}/modification-proposals', 'Tarih/oda değişiklik teklifini otel onayına gönderir.', 'Submits date or room changes for hotel approval.'],
+  ['GET', '/negotiations', 'Acentenin bekleyen ve sonuçlanan değişiklik/iptal görüşmelerini listeler.', 'Lists pending and resolved modification or cancellation negotiations.'],
+  ['POST', '/negotiations/{proposal_id}/decision', 'Otel tarafından başlatılan görüşmeye acente kararı verir.', 'Records the agency decision for a hotel-initiated negotiation.'],
+  ['POST', '/contracts/propose', 'Bir otel için komisyon ve sözleşme koşulları teklifi oluşturur.', 'Proposes commission and commercial terms for one hotel.'],
+  ['GET', '/contracts/mine', 'Acentenin otel bazlı sözleşmelerini listeler.', 'Lists the agency’s hotel-specific contracts.'],
+  ['GET', '/contracts/{contract_id}', 'Tek sözleşmenin ayrıntısını getirir.', 'Returns one contract in detail.'],
+  ['DELETE', '/contracts/{contract_id}', 'Yalnızca bekleyen teklifi geri çeker.', 'Withdraws a pending proposal only.'],
+  ['GET', '/reconciliation/agency', 'period_start ve period_end ile acente mutabakatını JSON döndürür.', 'Returns agency reconciliation as JSON for period_start and period_end.'],
+  ['GET', '/reconciliation/agency.csv', 'Aynı mutabakatı CSV olarak indirir.', 'Downloads the same reconciliation as CSV.'],
 ];
 
 function MarketplaceDocs({ isEn }) {
@@ -253,7 +253,7 @@ function MarketplaceDocs({ isEn }) {
       <SectionHeader icon={BookOpen} title={isEn ? 'Agency Marketplace API' : 'Acente Marketplace API'} id="marketplace-overview" />
       <Desc>{isEn ? 'Server-to-server API for agency hotel discovery, hotel-specific contracts, live search, reservations, negotiation, vouchers and reconciliation. Human extranet users use Bearer login and do not need this key.' : 'Acente yazılımının otel keşfi, otel bazlı sözleşme, canlı arama, rezervasyon, görüşme, voucher ve mutabakat işlemleri için sunucudan sunucuya API’dir. Extranet kullanan insan kullanıcı bu anahtara ihtiyaç duymaz.'}</Desc>
       <div className="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-950">
-        <strong>Güvenlik:</strong> <code>syroce_mkt_…</code> anahtarını yalnızca backend secret/env alanında saklayın. Tarayıcıya, mobil uygulamaya, Git deposuna veya mesaja koymayın. Tüm çağrılarda <code>X-API-Key</code> başlığı kullanılır.
+        <strong>{isEn ? 'Security:' : 'Güvenlik:'}</strong> {isEn ? <>Store the <code>syroce_mkt_…</code> key only in a backend secret or environment variable. Never place it in a browser, mobile application, Git repository or message. Send it in the <code>X-API-Key</code> header on every request.</> : <><code>syroce_mkt_…</code> anahtarını yalnızca backend secret/env alanında saklayın. Tarayıcıya, mobil uygulamaya, Git deposuna veya mesaja koymayın. Tüm çağrılarda <code>X-API-Key</code> başlığı kullanılır.</>}
       </div>
       <div className="mt-5"><CodeBlock lang="bash" code={`export SYROCE_MARKETPLACE_API_KEY="syroce_mkt_..."\n\ncurl "${MARKETPLACE_BASE}/hotels?limit=50" \\\n  -H "X-API-Key: $SYROCE_MARKETPLACE_API_KEY"`} /></div>
     </section>
@@ -261,10 +261,10 @@ function MarketplaceDocs({ isEn }) {
     <section id="marketplace-contracts">
       <SectionHeader icon={Shield} title={isEn ? 'Commercial rules' : 'Ticari kurallar'} id="marketplace-rules" />
       <ul className="mt-4 list-disc space-y-2 pl-6 text-sm leading-6 text-slate-700">
-        <li>Otel keşfi, arama, fiyat ve rezervasyon için ilgili otelle tarih bakımından geçerli, onaylı sözleşme gerekir.</li>
-        <li>Acente varsayılan komisyonu rezervasyona sessizce uygulanmaz; onaylı otel sözleşmesindeki oran önceliklidir.</li>
-        <li>Syroce platform hizmet bedeli yalnızca Syroce yönetimi tarafından belirlenir.</li>
-        <li>İptal ve değişiklik çağrıları doğrudan PMS kaydını değiştirmez; karşı taraf onayı isteyen bir görüşme kaydı açar.</li>
+        <li>{isEn ? 'Hotel discovery, search, rates and reservations require an approved contract that is valid for the requested dates.' : 'Otel keşfi, arama, fiyat ve rezervasyon için ilgili otelle tarih bakımından geçerli, onaylı sözleşme gerekir.'}</li>
+        <li>{isEn ? 'The agency default commission is never silently applied to a reservation; the approved hotel contract takes precedence.' : 'Acente varsayılan komisyonu rezervasyona sessizce uygulanmaz; onaylı otel sözleşmesindeki oran önceliklidir.'}</li>
+        <li>{isEn ? 'Only Syroce administration can set the Syroce platform service fee.' : 'Syroce platform hizmet bedeli yalnızca Syroce yönetimi tarafından belirlenir.'}</li>
+        <li>{isEn ? 'Cancellation and modification calls do not directly alter the PMS record; they open a negotiation that requires the counterparty’s approval.' : 'İptal ve değişiklik çağrıları doğrudan PMS kaydını değiştirmez; karşı taraf onayı isteyen bir görüşme kaydı açar.'}</li>
       </ul>
     </section>
 
@@ -274,25 +274,25 @@ function MarketplaceDocs({ isEn }) {
       <CodeBlock lang="json" code={`{\n  "check_in": "2026-11-10",\n  "check_out": "2026-11-12",\n  "adults": 2,\n  "children": 1,\n  "child_ages": [7],\n  "city": "Sapanca",\n  "amenities": ["pool"],\n  "meal_plans": ["bb"],\n  "min_star_rating": 4,\n  "max_price": 15000,\n  "limit": 50\n}`} />
       <div className="mt-6"><SubTitle>POST /reservations</SubTitle></div>
       <CodeBlock lang="json" code={`{\n  "tenant_id": "hotel-tenant-id",\n  "room_type": "Deluxe",\n  "check_in": "2026-11-10",\n  "check_out": "2026-11-12",\n  "guest_name": "Ayşe Yılmaz",\n  "guest_email": "ayse@example.com",\n  "guest_phone": "+905551112233",\n  "adults": 2,\n  "children": 0,\n  "child_ages": [],\n  "special_requests": "Geç giriş",\n  "external_reference": "AGENCY-PNR-42",\n  "idempotency_key": "booking-42-attempt-1"\n}`} />
-      <p className="mt-3 text-sm text-slate-600">Gönderilen <code>total_amount</code> güven kaynağı değildir; sunucu aktif sözleşme ve fiyat kayıtlarıyla tutarı yeniden hesaplar.</p>
+      <p className="mt-3 text-sm text-slate-600">{isEn ? <>The submitted <code>total_amount</code> is not trusted; the server recalculates it from the active contract and rate records.</> : <>Gönderilen <code>total_amount</code> güven kaynağı değildir; sunucu aktif sözleşme ve fiyat kayıtlarıyla tutarı yeniden hesaplar.</>}</p>
       <div className="mt-6"><SubTitle>POST /contracts/propose</SubTitle></div>
       <CodeBlock lang="json" code={`{\n  "tenant_id": "hotel-tenant-id",\n  "commission_pct": 12,\n  "valid_from": "2026-11-01",\n  "valid_to": "2027-10-31",\n  "currency": "TRY",\n  "payment_terms": "net_15",\n  "allowed_room_types": ["Deluxe", "Suite"],\n  "cancellation_policy": {\n    "free_until_days_before": 7,\n    "penalty_pct": 50,\n    "no_show_penalty_pct": 100\n  },\n  "special_terms": "Mutabakat her ayın ilk haftasıdır.",\n  "webhook_url": "https://agency.example.com/syroce/events"\n}`} />
-      <p className="mt-3 text-sm text-slate-600"><code>payment_terms</code>: prepaid, on_arrival, net_7, net_15 veya net_30. Tarih aralığı en fazla iki yıl olabilir; webhook adresi verilirse HTTPS olmalıdır.</p>
+      <p className="mt-3 text-sm text-slate-600"><code>payment_terms</code>: prepaid, on_arrival, net_7, net_15 {isEn ? 'or' : 'veya'} net_30. {isEn ? 'The date range may not exceed two years; a supplied webhook URL must use HTTPS.' : 'Tarih aralığı en fazla iki yıl olabilir; webhook adresi verilirse HTTPS olmalıdır.'}</p>
       <div className="mt-6"><SubTitle>{isEn ? 'Negotiation and voucher bodies' : 'Görüşme ve voucher gövdeleri'}</SubTitle></div>
       <CodeBlock lang="json" code={`// POST /reservations/{id}/voucher-email\n{ "email": "operations@agency.example" }\n\n// POST /reservations/{id}/modification-proposals\n{\n  "check_in": "2026-11-11",\n  "check_out": "2026-11-13",\n  "room_type": "Suite",\n  "reason": "Misafir tarih değişikliği istedi"\n}\n\n// POST /negotiations/{proposal_id}/decision\n{ "accept": true, "response_note": "Teklif kabul edildi" }`} />
-      <p className="mt-3 text-sm text-slate-600">İptal talebindeki <code>reason</code> JSON gövdesi değil, <code>DELETE /reservations/{'{reservation_id}'}?reason=...</code> sorgu parametresidir. Mutabakat çağrılarında <code>period_start</code> ve <code>period_end</code> zorunlu YYYY-MM-DD sorgu parametreleridir.</p>
+      <p className="mt-3 text-sm text-slate-600">{isEn ? <>For cancellation, <code>reason</code> is a query parameter in <code>DELETE /reservations/{'{reservation_id}'}?reason=...</code>, not a JSON body. Reconciliation calls require <code>period_start</code> and <code>period_end</code> query parameters in YYYY-MM-DD format.</> : <>İptal talebindeki <code>reason</code> JSON gövdesi değil, <code>DELETE /reservations/{'{reservation_id}'}?reason=...</code> sorgu parametresidir. Mutabakat çağrılarında <code>period_start</code> ve <code>period_end</code> zorunlu YYYY-MM-DD sorgu parametreleridir.</>}</p>
     </section>
 
     <section id="marketplace-endpoints">
       <SectionHeader icon={List} title={isEn ? 'Verified endpoint catalogue' : 'Doğrulanmış endpoint kataloğu'} id="marketplace-endpoints-h" />
       <Desc>{isEn ? 'The catalogue below is limited to external agency endpoints authenticated with syroce_mkt_ keys. Admin, hotel-JWT, extranet and public widget routes are intentionally excluded.' : 'Bu katalog yalnızca syroce_mkt_ anahtarıyla çağrılan dış acente endpoint’lerini içerir. Yönetim, otel JWT, extranet ve herkese açık widget route’ları özellikle dahil edilmemiştir.'}</Desc>
-      <div className="mt-5 space-y-3">{marketplaceEndpoints.map(([method, path, desc]) => <EndpointBlock key={`${method}-${path}`} method={method} path={`/api/marketplace/v1${path}`} desc={desc} />)}</div>
+      <div className="mt-5 space-y-3">{marketplaceEndpoints.map(([method, path, trDesc, enDesc]) => <EndpointBlock key={`${method}-${path}`} method={method} path={`/api/marketplace/v1${path}`} desc={isEn ? enDesc : trDesc} />)}</div>
     </section>
 
     <section id="marketplace-errors">
       <SectionHeader icon={AlertTriangle} title={isEn ? 'Errors and retries' : 'Hatalar ve tekrar deneme'} id="marketplace-errors-h" />
       <CodeBlock lang="json" code={`401  {"detail":"Marketplace API için syroce_mkt_ anahtarı gerekli"}\n401  {"detail":"Geçersiz veya devre dışı marketplace API key"}\n403  {"detail":"Bu otelle aktif sözleşmeniz yok"}\n404  {"detail":"Rezervasyon bulunamadı"}\n409  {"detail":"Aynı rezervasyon isteği halen işleniyor"}\n422  {"detail":[{"loc":["body", "field"], "msg":"...", "type":"..."}]}`} />
-      <p className="mt-4 text-sm leading-6 text-slate-600">Rezervasyon çağrısını ağ hatası veya timeout sonrasında aynı <code>idempotency_key</code> ile tekrar edin. 4xx hatalarını veri/yetki düzeltilmeden tekrar etmeyin. Bu sürümde belgelenmiş sabit istek limiti veya <code>X-RateLimit-*</code> yanıt başlığı garantisi yoktur; 429/503 alınırsa <code>Retry-After</code> varsa ona uyun, yoksa üstel bekleme kullanın.</p>
+      <p className="mt-4 text-sm leading-6 text-slate-600">{isEn ? <>After a network error or timeout, retry a reservation request with the same <code>idempotency_key</code>. Do not retry 4xx responses until the data or authorization problem is corrected. This version does not guarantee a fixed request limit or <code>X-RateLimit-*</code> response headers. For 429/503 responses, honor <code>Retry-After</code> when present; otherwise use exponential backoff.</> : <>Rezervasyon çağrısını ağ hatası veya timeout sonrasında aynı <code>idempotency_key</code> ile tekrar edin. 4xx hatalarını veri/yetki düzeltilmeden tekrar etmeyin. Bu sürümde belgelenmiş sabit istek limiti veya <code>X-RateLimit-*</code> yanıt başlığı garantisi yoktur; 429/503 alınırsa <code>Retry-After</code> varsa ona uyun, yoksa üstel bekleme kullanın.</>}</p>
     </section>
   </>;
 }
@@ -614,12 +614,6 @@ export default function B2BApiDocs() {
                       desc: isEn ? 'Request succeeded' : 'İstek basarili',
                       example: isEn ? 'Data returned successfully' : 'Veri basariyla dondu'
                     }, {
-                      code: '201',
-                      status: 'Created',
-                      color: 'emerald',
-                      desc: isEn ? 'Resource created' : 'Kaynak oluşturuldu',
-                      example: isEn ? 'Reservation created' : 'Rezervasyon oluşturuldu'
-                    }, {
                       code: '400',
                       status: 'Bad Request',
                       color: 'amber',
@@ -659,8 +653,8 @@ export default function B2BApiDocs() {
                       code: '429',
                       status: 'Too Many Requests',
                       color: 'red',
-                      desc: isEn ? 'Rate limit exceeded' : 'İstek limiti asildi',
-                      example: isEn ? 'Retry after the specified time' : 'Belirtilen sureden sonra tekrar deneyin'
+                      desc: isEn ? 'The same Idempotency-Key is still being processed' : 'Aynı Idempotency-Key hâlâ işleniyor',
+                      example: isEn ? 'Retry after 2 seconds with the same key' : 'Aynı anahtarla 2 saniye sonra tekrar deneyin'
                     }, {
                       code: '500',
                       status: 'Server Error',
@@ -904,7 +898,9 @@ export default function B2BApiDocs() {
               <SectionHeader icon={Hotel} title={isEn ? 'Content API' : 'Icerik API'} id="content-h" />
               <Desc>{isEn ? 'Retrieve hotel content including room types, services, and property information.' : 'Oda tipleri, hizmetler ve tesis bilgileri dahil otel icerigini getirin.'}</Desc>
               <div className="mt-6 space-y-3">
-                <EndpointBlock method="GET" path="/api/b2b/hotel-info" desc={isEn ? 'Get the integration hotel identity and basic profile.' : 'Entegrasyon anahtarının bağlı olduğu otelin kimliğini ve temel profilini getirir.'} />
+                <EndpointBlock method="GET" path="/api/b2b/hotel-info" desc={isEn ? 'Get the integration hotel identity and basic profile.' : 'Entegrasyon anahtarının bağlı olduğu otelin kimliğini ve temel profilini getirir.'}>
+                  <CodeBlock lang="json" code={`{\n  "tenant_id": "hotel-tenant-id",\n  "hotel": {\n    "name": "Grand Palace Hotel",\n    "currency": "TRY",\n    "country": "TR",\n    "city": "Istanbul",\n    "address": "...",\n    "phone": "+90212...",\n    "email": "hotel@example.com",\n    "website": "https://hotel.example.com",\n    "timezone": "Europe/Istanbul",\n    "property_type": "hotel",\n    "star_rating": 5\n  },\n  "agency": {\n    "id": "agency-id",\n    "name": "Example Travel",\n    "commission_rate": 12\n  },\n  "room_types": [\n    { "room_type": "Deluxe Double", "capacity": 3, "base_price": 250,\n      "bed_type": "double", "total_rooms": 10 }\n  ],\n  "content_published": true\n}`} />
+                </EndpointBlock>
                 <EndpointBlock method="GET" path="/api/b2b/content" desc={isEn ? 'No parameters required.' : 'Parametre gerektirmez.'}>
                   <CodeBlock lang="json" code={`{\n  "published": true,\n  "hotel_content": {\n    "hotel_name": "Grand Palace Hotel",\n    "star_rating": 5,\n    "room_types": [...],\n    "services": [...]\n  }\n}`} />
                 </EndpointBlock>
@@ -960,7 +956,7 @@ export default function B2BApiDocs() {
                   required: false,
                   desc: isEn ? 'Filter by room type' : 'Oda tipine göre filtre'
                 }]} />
-                  <CodeBlock lang="json" code={`{\n  "source": "agency_rates",\n  "rates": [\n    { "date": "2026-06-01", "room_type_code": "DLX",\n      "single": 200, "double": 250, "triple": 300 }\n  ]\n}`} />
+                  <CodeBlock lang="json" code={`{\n  "start_date": "2026-06-01",\n  "end_date": "2026-06-03",\n  "source": "agency_rates",\n  "rates": [\n    { "date": "2026-06-01", "room_type_code": "DLX",\n      "single": 200, "double": 250, "triple": 300 }\n  ]\n}`} />
                 </EndpointBlock>
               </div>
             </section>
@@ -1024,7 +1020,7 @@ export default function B2BApiDocs() {
                   required: false,
                   desc: isEn ? 'Total price (0 = auto)' : 'Toplam fiyat (0 = otomatik)'
                 }]} />
-                  <CodeBlock lang="json" code={`{\n  "ok": true,\n  "reservation": {\n    "id": "a1b2c3d4-...",\n    "confirmation_code": "B2B-A1B2C3D4",\n    "status": "confirmed",\n    "commission_rate": 12,\n    "commission_amount": 90.00\n  }\n}`} />
+                  <CodeBlock lang="json" code={`{\n  "ok": true,\n  "reservation": {\n    "id": "a1b2c3d4-...",\n    "confirmation_code": "B2B-A1B2C3D4",\n    "status": "confirmed",\n    "room_type": "Deluxe Double",\n    "room_number": "204",\n    "check_in": "2026-06-01",\n    "check_out": "2026-06-03",\n    "guest_name": "John Doe",\n    "total_amount": 750.00,\n    "commission_rate": 12,\n    "commission_amount": 90.00,\n    "created_at": "2026-05-20T12:00:00+00:00"\n  },\n  "message": "Rezervasyon olusturuldu: B2B-A1B2C3D4"\n}`} />
                 </EndpointBlock>
                 <EndpointBlock method="GET" path="/api/b2b/reservations" desc={isEn ? 'List reservations with filters' : 'Filtreyle rezervasyon listele'}>
                   <ParamTable lang={lang} params={[{
