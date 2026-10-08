@@ -131,6 +131,35 @@ Adı / Given Name(s) ALİ CAN
     assert document["is_valid"] is True
 
 
+def test_td3_passport_mrz_parses_and_validates_all_core_fields():
+    # ICAO 9303 reference passport with valid document, birth, expiry and
+    # composite check digits.
+    text = """P<UTOERIKSSON<<ANNA<MARIA<<<<<<<<<<<<<<<<<<<
+L898902C36UTO7408122F1204159ZE184226B<<<<<10
+"""
+
+    document = embedded._parse_tesseract_text(text)
+
+    assert document["is_valid"] is True
+    assert document["document_type"] == "passport"
+    assert document["first_name"] == "ANNA MARIA"
+    assert document["last_name"] == "ERIKSSON"
+    assert document["document_number"] == "L898902C3"
+    assert document["birth_date"] == "1974-08-12"
+    assert document["expiry_date"] == "2012-04-15"
+    assert document["gender"] == "F"
+    assert document["nationality"] == "UTO"
+    assert all(document["mrz_checks"].values())
+
+
+def test_td3_passport_mrz_rejects_a_corrupted_check_digit():
+    text = """P<UTOERIKSSON<<ANNA<MARIA<<<<<<<<<<<<<<<<<<<
+L898902C30UTO7408122F1204159ZE184226B<<<<<10
+"""
+
+    assert embedded._parse_td3_mrz(text) is None
+
+
 def test_scan_maps_local_ocr_recognition_failure_to_validation_error(monkeypatch):
     async def unreadable(_image):
         raise ValueError("Kimlik alanları güvenilir biçimde okunamadı")

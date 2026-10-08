@@ -210,7 +210,114 @@ def _clean_person_name(value: str | None) -> str | None:
     return cleaned[:120] or None
 
 
+MRZ_WEIGHTS = (7, 3, 1)
+
+
+def _mrz_character_value(character: str) -> int:
+    if character == "<":
+        return 0
+    if character.isdigit():
+        return int(character)
+    if "A" <= character <= "Z":
+        return ord(character) - ord("A") + 10
+    raise ValueError("Geçersiz MRZ karakteri")
+
+
+def _mrz_check_digit(value: str) -> str:
+    total = sum(_mrz_character_value(character) * MRZ_WEIGHTS[index % 3] for index, character in enumerate(value))
+    return str(total % 10)
+
+
+def _mrz_date(value: str, *, expiry: bool = False) -> str | None:
+    if not re.fullmatch(r"\d{6}", value):
+        return None
+    year, month, day = int(value[:2]), int(value[2:4]), int(value[4:6])
+    current_year = datetime.now().year
+    if expiry:
+        # Passport expiry dates in a live system belong to the current century;
+        # an already-expired document remains useful for identifying the guest.
+        full_year = 2000 + year
+    else:
+        full_year = (1900 if year > current_year % 100 else 2000) + year
+    try:
+        return datetime(full_year, month, day).date().isoformat()
+    except ValueError:
+        return None
+
+
+def _mrz_name(value: str) -> str | None:
+    cleaned = re.sub(r"<+", " ", value).strip()
+    cleaned = re.sub(r"\s+", " ", cleaned)
+    return cleaned or None
+
+
+def _mrz_lines(text: str) -> tuple[str, str] | None:
+    """Find a TD3 (passport) MRZ pair in noisy OCR output."""
+    candidates: list[str] = []
+    for raw_line in text.upper().splitlines():
+        line = re.sub(r"[^A-Z0-9<]", "", raw_line)
+        if 40 <= len(line) <= 48:
+            candidates.append(line[:44].ljust(44, "<"))
+    for index, first in enumerate(candidates[:-1]):
+        if not first.startswith("P<"):
+            continue
+        second = candidates[index + 1]
+        if len(second) == 44:
+            return first, second
+    return None
+
+
+def _parse_td3_mrz(text: str) -> dict[str, Any] | None:
+    pair = _mrz_lines(text)
+    if not pair:
+        return None
+    first, second = pair
+    passport_number = second[0:9]
+    birth_raw = second[13:19]
+    expiry_raw = second[21:27]
+    personal_number = second[28:42]
+
+    checks = {
+        "document_number": _mrz_check_digit(passport_number) == second[9],
+        "birth_date": _mrz_check_digit(birth_raw) == second[19],
+        "expiry_date": _mrz_check_digit(expiry_raw) == second[27],
+        "personal_number": second[42] == "<" or _mrz_check_digit(personal_number) == second[42],
+        "composite": _mrz_check_digit(second[0:10] + second[13:20] + second[21:43]) == second[43],
+    }
+    # Never populate identity fields from an MRZ whose three core check digits
+    # fail. The composite digit is retained as an additional warning because
+    # some countries use filler values in the optional-data field.
+    if not all(checks[field] for field in ("document_number", "birth_date", "expiry_date")):
+        return None
+
+    name_parts = first[5:44].split("<<", 1)
+    last_name = _mrz_name(name_parts[0])
+    first_name = _mrz_name(name_parts[1]) if len(name_parts) > 1 else None
+    return {
+        "is_valid": True,
+        "document_type": "passport",
+        "first_name": first_name,
+        "last_name": last_name,
+        "id_number": None,
+        "document_number": passport_number.replace("<", "") or None,
+        "birth_date": _mrz_date(birth_raw),
+        "expiry_date": _mrz_date(expiry_raw, expiry=True),
+        "gender": second[20] if second[20] in {"M", "F"} else None,
+        "nationality": second[10:13].replace("<", "") or None,
+        "birth_place": None,
+        "issue_date": None,
+        "mother_name": None,
+        "father_name": None,
+        "address": None,
+        "warnings": [] if checks["composite"] else ["MRZ ana alanları doğrulandı; birleşik kontrol basamağı doğrulanamadı"],
+        "mrz_checks": checks,
+    }
+
+
 def _parse_tesseract_text(text: str) -> dict[str, Any]:
+    mrz_document = _parse_td3_mrz(text)
+    if mrz_document:
+        return mrz_document
     upper = text.upper()
     tc_match = re.search(r"\b[1-9]\d{10}\b", text)
     passport_match = re.search(r"\b[A-Z]{1,2}\d{6,8}\b", upper)
