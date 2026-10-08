@@ -105,14 +105,14 @@ def _pkce_s256(value: str) -> str:
     return base64.urlsafe_b64encode(hashlib.sha256(value.encode()).digest()).decode().rstrip("=")
 
 
-def _create_admin_agency_context_token(*, target_user_id: str, actor_user_id: str, agency_id: str) -> tuple[str, int]:
-    """Mint a short-lived agency portal session without exposing a password."""
+def _create_admin_agency_context_token(*, actor_user_id: str, agency_id: str) -> tuple[str, int]:
+    """Mint a short-lived agency portal session without borrowing an agency identity."""
     from core.security import JWT_ALGORITHM, JWT_SECRET
 
     now_ts = datetime.now(UTC).timestamp()
     exp_ts = int(now_ts + ADMIN_AGENCY_CONTEXT_MINUTES * 60)
     payload = {
-        "user_id": target_user_id,
+        "user_id": f"admin-agency-context:{agency_id}",
         "agency_id": agency_id,
         "actor_user_id": actor_user_id,
         "impersonation": True,
@@ -203,25 +203,12 @@ async def get_marketplace_agency(
                 raise HTTPException(401, "Geçersiz acente erişim token'ı")
             if payload.get("jti") and await is_jti_revoked(payload["jti"]):
                 raise HTTPException(401, "Acente oturumu sonlandırılmış")
-            user = await sysdb.users.find_one(
-                {"$or": [{"id": payload["user_id"]}, {"user_id": payload["user_id"]}]},
-                {"_id": 0},
-            )
-            if not user or user.get("is_active") is False:
-                raise HTTPException(401, "Acente kullanıcısı aktif değil")
-            invalid_before = user.get("tokens_invalid_before")
-            if invalid_before and float(payload.get("iat") or 0) < float(invalid_before):
-                raise HTTPException(401, "Acente oturumu artık geçerli değil")
-            raw_role = user.get("role")
-            role = getattr(raw_role, "value", raw_role)
-            roles = user.get("roles") or []
-            if role != "marketplace_agent" and "marketplace_agent" not in roles:
-                raise HTTPException(403, "Kullanıcı bir global acente yetkilisi değil")
             if payload.get("impersonation") is True:
                 if payload.get("purpose") != "admin_agency_context":
                     raise HTTPException(401, "Geçersiz acente görüntüleme oturumu")
                 actor_id = payload.get("actor_user_id")
-                if not actor_id or payload.get("agency_id") != user.get("agency_id"):
+                agency_id = payload.get("agency_id")
+                if not actor_id or not agency_id:
                     raise HTTPException(401, "Acente görüntüleme kapsamı geçersiz")
                 actor = await sysdb.users.find_one(
                     {"$or": [{"id": actor_id}, {"user_id": actor_id}]},
@@ -238,13 +225,34 @@ async def get_marketplace_agency(
                     "expires_at": int(payload.get("exp") or 0),
                     "jti": payload.get("jti"),
                 }
-            agency_id = user.get("agency_id")
-            actor_user = {
-                "id": user.get("id") or user.get("user_id"),
-                "name": user.get("name", ""),
-                "email": user.get("email", ""),
-                "role": "marketplace_agent",
-            }
+                actor_user = {
+                    "id": f"admin-agency-context:{agency_id}",
+                    "name": "Süperadmin önizlemesi",
+                    "email": actor.get("email", ""),
+                    "role": "marketplace_agent",
+                }
+            else:
+                user = await sysdb.users.find_one(
+                    {"$or": [{"id": payload["user_id"]}, {"user_id": payload["user_id"]}]},
+                    {"_id": 0},
+                )
+                if not user or user.get("is_active") is False:
+                    raise HTTPException(401, "Acente kullanıcısı aktif değil")
+                invalid_before = user.get("tokens_invalid_before")
+                if invalid_before and float(payload.get("iat") or 0) < float(invalid_before):
+                    raise HTTPException(401, "Acente oturumu artık geçerli değil")
+                raw_role = user.get("role")
+                role = getattr(raw_role, "value", raw_role)
+                roles = user.get("roles") or []
+                if role != "marketplace_agent" and "marketplace_agent" not in roles:
+                    raise HTTPException(403, "Kullanıcı bir global acente yetkilisi değil")
+                agency_id = user.get("agency_id")
+                actor_user = {
+                    "id": user.get("id") or user.get("user_id"),
+                    "name": user.get("name", ""),
+                    "email": user.get("email", ""),
+                    "role": "marketplace_agent",
+                }
         except (pyjwt.ExpiredSignatureError, pyjwt.InvalidTokenError):
             raise HTTPException(401, "Geçersiz veya süresi dolmuş acente token'ı")
         except Exception as e:
@@ -1232,8 +1240,8 @@ async def admin_enter_agency_portal(
 ):
     """Open an audited, short-lived agency portal session as superadmin.
 
-    No agency password is read, returned or replaced. The session uses an
-    active marketplace user's permission set and expires after 15 minutes.
+    No agency password is read, returned or replaced. The session is a scoped
+    superadmin preview identity and expires after 15 minutes.
     """
     if not _is_super_admin(current_user) or getattr(current_user, "is_impersonating", False):
         raise HTTPException(403, "Acente hesabını yalnızca ana süperadmin oturumu görüntüleyebilir")
@@ -1243,21 +1251,8 @@ async def admin_enter_agency_portal(
     if not agency:
         raise HTTPException(404, "Aktif acente bulunamadı")
 
-    target_user = await sysdb.users.find_one(
-        {
-            "agency_id": agency_id,
-            "is_active": {"$ne": False},
-            "$or": [{"role": "marketplace_agent"}, {"roles": "marketplace_agent"}],
-        },
-        {"_id": 0, "id": 1, "user_id": 1, "name": 1, "email": 1, "agency_id": 1},
-    )
-    if not target_user:
-        raise HTTPException(409, "Acente portalına geçmek için en az bir aktif portal kullanıcısı gerekir")
-
-    target_user_id = target_user.get("id") or target_user.get("user_id")
     actor_user_id = current_user.id
     token, expires_at = _create_admin_agency_context_token(
-        target_user_id=target_user_id,
         actor_user_id=actor_user_id,
         agency_id=agency_id,
     )
@@ -1267,7 +1262,7 @@ async def admin_enter_agency_portal(
         action="admin_agency_context_enter",
         details={
             "actor_user_id": actor_user_id,
-            "target_user_id": target_user_id,
+            "context_identity": "scoped_superadmin_preview",
             "expires_at": expires_at,
             "source_ip": request.client.host if request.client else None,
         },
