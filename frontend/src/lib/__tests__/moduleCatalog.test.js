@@ -22,6 +22,14 @@ describe('module catalog', () => {
     expect(state.launchable).toBe(true);
   });
 
+  it('routes the module marketplace entitlement to the module store, not supplies sales', () => {
+    const marketplace = PRODUCT_MODULES.find((item) => item.key === 'marketplace');
+
+    expect(marketplace.label).toBe('Modül Mağazası');
+    expect(marketplace.path).toBe('/app/module-store');
+    expect(marketplace.path).not.toBe('/app/marketplace');
+  });
+
   it('reports enabled modules without inventing launch routes', () => {
     const counts = moduleCounts({ subscription_tier: 'mini', modules: { pms: true } });
     expect(counts.total).toBe(PRODUCT_MODULES.length);
