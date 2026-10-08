@@ -91,6 +91,7 @@ const Sparkline = ({
 const dashboardCache = {
   stats: null,
   aiBriefing: null,
+  aiBriefingLanguage: null,
   timestamp: null,
   tenantKey: null,
   CACHE_DURATION: 30000 // 30 seconds
@@ -111,12 +112,14 @@ const Dashboard = ({
     symbol: currencySymbol
   } = useCurrency();
   const tenantCacheKey = tenant?.id || tenant?._id || tenant?.tenant_id || user?.tenant_id || 'unknown';
+  const interfaceLanguage = (i18n.resolvedLanguage || i18n.language || 'tr').split('-')[0];
   const isCurrentTenantCache = dashboardCache.tenantKey === tenantCacheKey;
+  const isCurrentBriefingCache = isCurrentTenantCache && dashboardCache.aiBriefingLanguage === interfaceLanguage;
   const activeTenantKeyRef = useRef(tenantCacheKey);
   activeTenantKeyRef.current = tenantCacheKey;
   const [stats, setStats] = useState(() => isCurrentTenantCache ? dashboardCache.stats : null);
   const [loading, setLoading] = useState(() => !(isCurrentTenantCache && dashboardCache.stats));
-  const [aiBriefing, setAiBriefing] = useState(() => isCurrentTenantCache ? dashboardCache.aiBriefing : null);
+  const [aiBriefing, setAiBriefing] = useState(() => isCurrentBriefingCache ? dashboardCache.aiBriefing : null);
   const [loadingAI, setLoadingAI] = useState(false);
   const [occupancyData, setOccupancyData] = useState([]);
   const [revenueData, setRevenueData] = useState([]);
@@ -136,30 +139,32 @@ const Dashboard = ({
   useLayoutEffect(() => {
     const cacheMatchesTenant = dashboardCache.tenantKey === tenantCacheKey;
     setStats(cacheMatchesTenant ? dashboardCache.stats : null);
-    setAiBriefing(cacheMatchesTenant ? dashboardCache.aiBriefing : null);
+    setAiBriefing(cacheMatchesTenant && dashboardCache.aiBriefingLanguage === interfaceLanguage ? dashboardCache.aiBriefing : null);
     setOccupancyData([]);
     setRevenueData([]);
     setTrendData([]);
     setAnalyticsReady(false);
     setLoading(!(cacheMatchesTenant && dashboardCache.stats));
-  }, [tenantCacheKey]);
+  }, [tenantCacheKey, interfaceLanguage]);
 
-  const loadAIBriefing = useCallback(async (requestTenantKey) => {
+  const loadAIBriefing = useCallback(async (requestTenantKey, requestLanguage) => {
     setLoadingAI(true);
     try {
-      const response = await axios.get(`/ai/dashboard/briefing?lang=${i18n.language}`);
+      const response = await axios.get(`/ai/dashboard/briefing?lang=${encodeURIComponent(requestLanguage)}`);
       const data = response.data;
-      if (activeTenantKeyRef.current !== requestTenantKey) return;
+      if (activeTenantKeyRef.current !== requestTenantKey || requestLanguage !== interfaceLanguage) return;
       setAiBriefing(data);
-      if (dashboardCache.tenantKey === requestTenantKey) dashboardCache.aiBriefing = data;
+      if (dashboardCache.tenantKey === requestTenantKey) {
+        dashboardCache.aiBriefing = data;
+        dashboardCache.aiBriefingLanguage = requestLanguage;
+      }
     } catch (error) {
       console.error('Failed to load AI briefing:', error);
       // Fail silently - AI features are optional
     } finally {
-      if (activeTenantKeyRef.current === requestTenantKey) setLoadingAI(false);
+      if (activeTenantKeyRef.current === requestTenantKey && requestLanguage === interfaceLanguage) setLoadingAI(false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
-  }, []);
+  }, [interfaceLanguage]);
   const loadChartData = useCallback(async (requestTenantKey) => {
     const endpoints = [{
       url: '/analytics/occupancy-trend?days=30',
@@ -296,7 +301,7 @@ const Dashboard = ({
     // Her mount'ta idle slotunda istenir; böylece sıcak dashboard'da boş grafik
     // bırakılmaz, ama ilk ekran ağ ve CPU kaynaklarıyla yarışmaz.
     cancelIdle = runIdle(() => {
-      loadAIBriefing(tenantCacheKey);
+      loadAIBriefing(tenantCacheKey, interfaceLanguage);
       loadChartData(tenantCacheKey);
       setAnalyticsReady(true);
     }, {
@@ -309,7 +314,7 @@ const Dashboard = ({
     // isteği ve yanıt işleme maliyeti çıkarıyordu. KPI isteği zaten axios
     // önbelleği üzerinden bu verileri yüklediği için ek bir prefetch yok.
     return () => cancelIdle();
-  }, [tenantCacheKey, loadDashboardStats, loadAIBriefing, loadChartData]);
+  }, [tenantCacheKey, interfaceLanguage, loadDashboardStats, loadAIBriefing, loadChartData]);
   const visibleModules = useMemo(() => [{
     title: t('nav.pms'),
     description: t('dashboard.propertyManagement'),
@@ -615,7 +620,15 @@ const Dashboard = ({
                       <Sparkles className="w-5 h-5 text-amber-300" aria-hidden="true" />
                       {aiBriefing.ai_powered ? t('ai.dailyBriefing') : t('ai.dailySummary')}
                     </span>
-                    <Button variant="ghost" size="sm" onClick={loadAIBriefing} className="text-white hover:bg-white/20 text-xs" disabled={loadingAI} aria-label={loadingAI ? 'AI brifing yükleniyor' : 'AI brifingini yenile'} aria-busy={loadingAI}>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => loadAIBriefing(tenantCacheKey, interfaceLanguage)}
+                      className="text-white hover:bg-white/20 text-xs"
+                      disabled={loadingAI}
+                      aria-label={loadingAI ? t('ai.loading') : t('ai.refreshInsights')}
+                      aria-busy={loadingAI}
+                    >
                       {loadingAI ? t('ai.loading') : t('ai.refreshInsights')}
                     </Button>
                   </CardTitle>

@@ -1530,6 +1530,13 @@
   },
   "nightAudit": {
     "title": "Gece Denetimi",
+    "businessDayAria": "PMS iş günü",
+    "initializedDateNotice": "İş günü başlangıç kaydından oluşturuldu; Night Audit değildir.",
+    "legacyDateNotice": "İş günü eski kayıttan geliyor; Night Audit kaynağı bilinmiyor.",
+    "lastAudit": "Son Night Audit: {{id}}",
+    "reviewPreparation": "Gün sonu hazırlığını incele",
+    "opening": "Açılıyor…",
+    "reviewEndOfDay": "Gün Sonunu İncele",
     "postRoomCharges": "Oda Masraflarını Ekle",
     "runAudit": "Gece Denetimi Çalıştır",
     "auditDate": "Denetim Tarihi",
