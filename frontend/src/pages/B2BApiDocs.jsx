@@ -222,6 +222,75 @@ const SubTitle = ({
 const Desc = ({
   children
 }) => <p className="text-slate-600 leading-relaxed mt-3">{children}</p>;
+
+const MARKETPLACE_BASE = window.location.origin + '/api/marketplace/v1';
+const marketplaceEndpoints = [
+  ['GET', '/hotels', 'Onaylı sözleşmesi bulunan, yayındaki otelleri listeler. Filtreler: city, country, q, limit (en fazla 200).'],
+  ['GET', '/hotels/{tenant_id}', 'Aktif sözleşmeli otelin içerik ve oda tipi detayını getirir.'],
+  ['POST', '/search', 'Sözleşmeli otellerde canlı fiyat ve müsaitlik arar.'],
+  ['GET', '/hotels/{tenant_id}/availability', 'check_in ve check_out (YYYY-MM-DD) için müsaitlik döndürür.'],
+  ['GET', '/hotels/{tenant_id}/rates', 'start_date, end_date ve isteğe bağlı room_type için fiyatları döndürür.'],
+  ['POST', '/reservations', 'Sunucuda yeniden fiyatlayarak rezervasyon oluşturur; tekrar denemelerde idempotency_key kullanın.'],
+  ['GET', '/reservations', 'Acentenin rezervasyonlarını status, tenant_id ve giriş tarihiyle filtreler; limit en fazla 500.'],
+  ['GET', '/reservations/{reservation_id}', 'Acenteye ait rezervasyonun özet ve PMS görünümünü getirir.'],
+  ['GET', '/reservations/{reservation_id}/voucher.pdf', 'Voucher belgesini PDF olarak indirir.'],
+  ['POST', '/reservations/{reservation_id}/voucher-email', 'Voucher belgesini body içindeki email adresine gönderir.'],
+  ['DELETE', '/reservations/{reservation_id}', 'Doğrudan iptal etmez; otel onayı bekleyen iptal talebi açar. reason en az 5 karakter olmalıdır.'],
+  ['POST', '/reservations/{reservation_id}/modification-proposals', 'Tarih/oda değişiklik teklifini otel onayına gönderir.'],
+  ['GET', '/negotiations', 'Acentenin bekleyen ve sonuçlanan değişiklik/iptal görüşmelerini listeler.'],
+  ['POST', '/negotiations/{proposal_id}/decision', 'Otel tarafından başlatılan görüşmeye acente kararı verir.'],
+  ['POST', '/contracts/propose', 'Bir otel için komisyon ve sözleşme koşulları teklifi oluşturur.'],
+  ['GET', '/contracts/mine', 'Acentenin otel bazlı sözleşmelerini listeler.'],
+  ['GET', '/contracts/{contract_id}', 'Tek sözleşmenin ayrıntısını getirir.'],
+  ['DELETE', '/contracts/{contract_id}', 'Yalnızca bekleyen teklifi geri çeker.'],
+  ['GET', '/reconciliation/agency', 'period_start ve period_end ile acente mutabakatını JSON döndürür.'],
+  ['GET', '/reconciliation/agency.csv', 'Aynı mutabakatı CSV olarak indirir.'],
+];
+
+function MarketplaceDocs({ isEn }) {
+  return <>
+    <section id="overview">
+      <SectionHeader icon={BookOpen} title={isEn ? 'Agency Marketplace API' : 'Acente Marketplace API'} id="marketplace-overview" />
+      <Desc>{isEn ? 'Server-to-server API for agency hotel discovery, hotel-specific contracts, live search, reservations, negotiation, vouchers and reconciliation. Human extranet users use Bearer login and do not need this key.' : 'Acente yazılımının otel keşfi, otel bazlı sözleşme, canlı arama, rezervasyon, görüşme, voucher ve mutabakat işlemleri için sunucudan sunucuya API’dir. Extranet kullanan insan kullanıcı bu anahtara ihtiyaç duymaz.'}</Desc>
+      <div className="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-950">
+        <strong>Güvenlik:</strong> <code>syroce_mkt_…</code> anahtarını yalnızca backend secret/env alanında saklayın. Tarayıcıya, mobil uygulamaya, Git deposuna veya mesaja koymayın. Tüm çağrılarda <code>X-API-Key</code> başlığı kullanılır.
+      </div>
+      <div className="mt-5"><CodeBlock lang="bash" code={`export SYROCE_MARKETPLACE_API_KEY="syroce_mkt_..."\n\ncurl "${MARKETPLACE_BASE}/hotels?limit=50" \\\n  -H "X-API-Key: $SYROCE_MARKETPLACE_API_KEY"`} /></div>
+    </section>
+
+    <section id="marketplace-contracts">
+      <SectionHeader icon={Shield} title={isEn ? 'Commercial rules' : 'Ticari kurallar'} id="marketplace-rules" />
+      <ul className="mt-4 list-disc space-y-2 pl-6 text-sm leading-6 text-slate-700">
+        <li>Otel keşfi, arama, fiyat ve rezervasyon için ilgili otelle tarih bakımından geçerli, onaylı sözleşme gerekir.</li>
+        <li>Acente varsayılan komisyonu rezervasyona sessizce uygulanmaz; onaylı otel sözleşmesindeki oran önceliklidir.</li>
+        <li>Syroce platform hizmet bedeli yalnızca Syroce yönetimi tarafından belirlenir.</li>
+        <li>İptal ve değişiklik çağrıları doğrudan PMS kaydını değiştirmez; karşı taraf onayı isteyen bir görüşme kaydı açar.</li>
+      </ul>
+    </section>
+
+    <section id="marketplace-models">
+      <SectionHeader icon={FileText} title={isEn ? 'Request models' : 'İstek modelleri'} id="marketplace-models-h" />
+      <SubTitle>POST /search</SubTitle>
+      <CodeBlock lang="json" code={`{\n  "check_in": "2026-11-10",\n  "check_out": "2026-11-12",\n  "adults": 2,\n  "children": 1,\n  "child_ages": [7],\n  "city": "Sapanca",\n  "amenities": ["pool"],\n  "meal_plans": ["bb"],\n  "min_star_rating": 4,\n  "max_price": 15000,\n  "limit": 50\n}`} />
+      <div className="mt-6"><SubTitle>POST /reservations</SubTitle></div>
+      <CodeBlock lang="json" code={`{\n  "tenant_id": "hotel-tenant-id",\n  "room_type": "Deluxe",\n  "check_in": "2026-11-10",\n  "check_out": "2026-11-12",\n  "guest_name": "Ayşe Yılmaz",\n  "guest_email": "ayse@example.com",\n  "guest_phone": "+905551112233",\n  "adults": 2,\n  "children": 0,\n  "child_ages": [],\n  "special_requests": "Geç giriş",\n  "external_reference": "AGENCY-PNR-42",\n  "idempotency_key": "booking-42-attempt-1"\n}`} />
+      <p className="mt-3 text-sm text-slate-600">Gönderilen <code>total_amount</code> güven kaynağı değildir; sunucu aktif sözleşme ve fiyat kayıtlarıyla tutarı yeniden hesaplar.</p>
+    </section>
+
+    <section id="marketplace-endpoints">
+      <SectionHeader icon={List} title={isEn ? 'Verified endpoint catalogue' : 'Doğrulanmış endpoint kataloğu'} id="marketplace-endpoints-h" />
+      <Desc>{isEn ? 'The catalogue below is limited to external agency endpoints authenticated with syroce_mkt_ keys. Admin, hotel-JWT, extranet and public widget routes are intentionally excluded.' : 'Bu katalog yalnızca syroce_mkt_ anahtarıyla çağrılan dış acente endpoint’lerini içerir. Yönetim, otel JWT, extranet ve herkese açık widget route’ları özellikle dahil edilmemiştir.'}</Desc>
+      <div className="mt-5 space-y-3">{marketplaceEndpoints.map(([method, path, desc]) => <EndpointBlock key={`${method}-${path}`} method={method} path={`/api/marketplace/v1${path}`} desc={desc} />)}</div>
+    </section>
+
+    <section id="marketplace-errors">
+      <SectionHeader icon={AlertTriangle} title={isEn ? 'Errors and retries' : 'Hatalar ve tekrar deneme'} id="marketplace-errors-h" />
+      <CodeBlock lang="json" code={`401  {"detail":"Marketplace API için syroce_mkt_ anahtarı gerekli"}\n401  {"detail":"Geçersiz veya devre dışı marketplace API key"}\n403  {"detail":"Bu otelle aktif sözleşmeniz yok"}\n404  {"detail":"Rezervasyon bulunamadı"}\n409  {"detail":"Aynı rezervasyon isteği halen işleniyor"}\n422  {"detail":[{"loc":["body", "field"], "msg":"...", "type":"..."}]}`} />
+      <p className="mt-4 text-sm leading-6 text-slate-600">Rezervasyon çağrısını ağ hatası veya timeout sonrasında aynı <code>idempotency_key</code> ile tekrar edin. 4xx hatalarını veri/yetki düzeltilmeden tekrar etmeyin. Bu sürümde belgelenmiş sabit istek limiti veya <code>X-RateLimit-*</code> yanıt başlığı garantisi yoktur; 429/503 alınırsa <code>Retry-After</code> varsa ona uyun, yoksa üstel bekleme kullanın.</p>
+    </section>
+  </>;
+}
+
 export default function B2BApiDocs() {
   const [lang, setLang] = useState('en');
   const [apiProduct, setApiProduct] = useState('hotel');
@@ -285,7 +354,7 @@ export default function B2BApiDocs() {
       </header>
 
       <div className="flex pt-14">
-        <aside className="hidden lg:block fixed left-0 top-14 bottom-0 w-60 bg-slate-50 border-r border-slate-200 overflow-y-auto">
+        {apiProduct === 'hotel' && <aside className="hidden lg:block fixed left-0 top-14 bottom-0 w-60 bg-slate-50 border-r border-slate-200 overflow-y-auto">
           <nav className="py-4 px-3">
             <div className="space-y-0.5">
               {sections.map(({
@@ -297,15 +366,17 @@ export default function B2BApiDocs() {
                 </button>)}
             </div>
           </nav>
-        </aside>
+        </aside>}
 
-        <main className="flex-1 lg:ml-60 min-h-screen">
+        <main className={`flex-1 min-h-screen ${apiProduct === 'hotel' ? 'lg:ml-60' : ''}`}>
           <div className="max-w-4xl mx-auto px-6 md:px-10 py-10 space-y-12">
+
+            {apiProduct === 'marketplace' ? <MarketplaceDocs isEn={isEn} /> : <>
 
             {/* ── OVERVIEW ── */}
             <section id="overview">
               <SectionHeader icon={BookOpen} title={isEn ? 'Getting Started' : 'Baslangic'} id="overview-h" />
-              {apiProduct === 'marketplace' ? <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-5"><h3 className="font-bold text-emerald-950">Syroce Agency Marketplace API</h3><p className="mt-2 text-sm leading-6 text-emerald-900"><code>syroce_mkt_…</code> anahtarı acentenin kendi backend sunucusu içindir. Otel keşfi, sözleşme teklifi, otel bazlı komisyon, fiyat/müsaitlik, rezervasyon, voucher, iptal/değişiklik, mutabakat ve webhook akışlarında kullanılır. Acente extranetine giriş yapan insan kullanıcı bu anahtara ihtiyaç duymaz.</p><CodeBlock code={`SYROCE_MARKETPLACE_API_KEY=syroce_mkt_...\n\ncurl -H "X-API-Key: $SYROCE_MARKETPLACE_API_KEY" ${window.location.origin}/api/marketplace/v1/hotels`} /></div> : <div className="rounded-xl border border-blue-200 bg-blue-50 p-5"><h3 className="font-bold text-blue-950">Syroce Hotel Integration API</h3><p className="mt-2 text-sm leading-6 text-blue-900"><code>syroce_b2b_…</code> anahtarı yalnızca tek otelin izin verilen PMS alanları içindir. Her anahtar en az bir scope ile oluşturulur; kanal yöneticisine folyo, kimlik veya KBS gibi ilgisiz kapsamlar verilmemelidir.</p><div className="mt-3 flex flex-wrap gap-2">{['booking_engine','guests','housekeeping','folio','services','groups','identity','kbs','webhooks'].map(scope => <code key={scope} className="rounded bg-white px-2 py-1 text-xs text-blue-800">{scope}</code>)}</div></div>}
+              <div className="rounded-xl border border-blue-200 bg-blue-50 p-5"><h3 className="font-bold text-blue-950">Syroce Hotel Integration API</h3><p className="mt-2 text-sm leading-6 text-blue-900"><code>syroce_b2b_…</code> anahtarı yalnızca tek otelin izin verilen PMS alanları içindir. Her anahtar en az bir scope ile oluşturulur; kanal yöneticisine folyo, kimlik veya KBS gibi ilgisiz kapsamlar verilmemelidir.</p><div className="mt-3 flex flex-wrap gap-2">{['booking_engine','folio','groups','guest_journey','guests','housekeeping','identity','kbs','lost_found','services','wake_up','webhooks'].map(scope => <code key={scope} className="rounded bg-white px-2 py-1 text-xs text-blue-800">{scope}</code>)}</div></div>
               <Desc>{isEn ? 'The Syroce Open API provides complete access to all hotel PMS modules — reservations, guest management, loyalty programs, housekeeping, KBS police notifications, passport/ID scanning, lost & found, wake-up calls, guest journey, concierge, spa, MICE/groups, folio/billing, and real-time webhooks. All through a single API with API key authentication.' : 'Syroce Open API, tüm otel PMS modullerine tam erişim saglar — rezervasyon, misafir yönetimi, sadakat programlari, kat hizmetleri, KBS emniyet bildirimleri, pasaport/kimlik okuma, kayip esya, uyandırma servisi, misafir yolculugu, concierge, spa, MICE/grup, folio/fatura ve gerçek zamanlı webhook\'lar. Tek bir API key ile tüm işlemler.'}</Desc>
 
               <div className="mt-6 space-y-4">
@@ -329,7 +400,7 @@ export default function B2BApiDocs() {
 
               <div className="mt-8">
                 <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wider mb-3">{isEn ? 'Response Format' : 'Yanit Formati'}</h3>
-                <CodeBlock lang="json" code={`// Success\n{ "ok": true, "data": {...} }\n\n// Error\n{ "detail": "Error message" }`} />
+                <CodeBlock lang="json" code={`// Başarılı yanıt endpoint'e özgüdür; örnek:\n{ "check_in": "2026-07-01", "check_out": "2026-07-03", "room_types": [] }\n\n// Hata yanıtı\n{ "detail": "Error message" }`} />
               </div>
             </section>
 
@@ -617,7 +688,7 @@ export default function B2BApiDocs() {
             {/* ── RATE LIMITS ── */}
             <section id="ratelimits">
               <SectionHeader icon={Gauge} title={isEn ? 'Rate Limits' : 'İstek Limitleri'} id="rl-h" />
-              <Desc>{isEn ? 'API requests are rate-limited per API key to ensure fair usage and system stability. Limits vary by endpoint type.' : 'API istekleri, adil kullanım ve sistem kararlılığı için API key basina sınırlandırılmıştır. Limitler endpoint tipine göre değişir.'}</Desc>
+              <Desc>{isEn ? 'This API version does not publish a fixed per-key quota. Handle 429 and 503 with Retry-After when present and exponential backoff otherwise.' : 'Bu API sürümü sabit bir anahtar kotası yayımlamaz. 429 ve 503 yanıtlarında varsa Retry-After başlığına uyun; yoksa üstel bekleme uygulayın.'}</Desc>
 
               <div className="mt-6">
                 <div className="overflow-x-auto rounded-lg border border-slate-200">
@@ -633,23 +704,23 @@ export default function B2BApiDocs() {
                     <tbody>
                       {[{
                       type: isEn ? 'Read (GET)' : 'Okuma (GET)',
-                      limit: '120',
-                      window: isEn ? 'per minute' : 'dakika basina',
+                      limit: isEn ? 'Not guaranteed' : 'Garanti edilmez',
+                      window: '—',
                       ex: 'availability, rates, reservations list, guests'
                     }, {
                       type: isEn ? 'Write (POST/PUT)' : 'Yazma (POST/PUT)',
-                      limit: '30',
-                      window: isEn ? 'per minute' : 'dakika basina',
+                      limit: isEn ? 'Not guaranteed' : 'Garanti edilmez',
+                      window: '—',
                       ex: 'create reservation, loyalty points, folio charge'
                     }, {
                       type: isEn ? 'Delete (DELETE)' : 'Silme (DELETE)',
-                      limit: '10',
-                      window: isEn ? 'per minute' : 'dakika basina',
+                      limit: isEn ? 'Not guaranteed' : 'Garanti edilmez',
+                      window: '—',
                       ex: 'cancel wake-up, delete webhook'
                     }, {
                       type: isEn ? 'Bulk Operations' : 'Toplu Islemler',
-                      limit: '5',
-                      window: isEn ? 'per minute' : 'dakika basina',
+                      limit: isEn ? 'Not guaranteed' : 'Garanti edilmez',
+                      window: '—',
                       ex: 'rooming-list upload, KBS report'
                     }].map((r, i) => <tr key={r.id || i} className={i % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}>
                           <td className="px-4 py-2.5 font-medium text-slate-700">{r.type}</td>
@@ -664,8 +735,7 @@ export default function B2BApiDocs() {
 
               <div className="mt-6">
                 <SubTitle>{isEn ? 'Rate Limit Headers' : 'İstek Limiti Basliklari'}</SubTitle>
-                <p className="text-sm text-slate-600 mb-3">{isEn ? 'Every API response includes headers showing your current rate limit status:' : 'Her API yaniti mevcut istek limiti durumunuzu gosteren basliklar icerir:'}</p>
-                <CodeBlock lang="http" code={`X-RateLimit-Limit: 120\nX-RateLimit-Remaining: 115\nX-RateLimit-Reset: 1719835260`} />
+                <p className="text-sm text-slate-600 mb-3">{isEn ? 'X-RateLimit-* headers are not part of the current API contract. Use Retry-After only when it is actually returned.' : 'X-RateLimit-* başlıkları mevcut API sözleşmesinin parçası değildir. Retry-After başlığını yalnızca gerçekten döndüğünde kullanın.'}</p>
                 <div className="mt-3 space-y-1.5 text-sm text-slate-600">
                   <div><code className="text-xs bg-slate-100 px-1.5 py-0.5 rounded font-mono">{t("cm.pages_B2BApiDocs.x_ratelimit_limit")}</code> — {isEn ? 'Maximum requests allowed in the window' : 'Penceredeki maksimum istek sayısı'}</div>
                   <div><code className="text-xs bg-slate-100 px-1.5 py-0.5 rounded font-mono">{t("cm.pages_B2BApiDocs.x_ratelimit_remaining")}</code> — {isEn ? 'Remaining requests in current window' : 'Mevcut pencerede kalan istek sayısı'}</div>
@@ -1124,9 +1194,9 @@ export default function B2BApiDocs() {
             {/* ── IDENTITY / PASSPORT ── */}
             <section id="identity">
               <SectionHeader icon={Fingerprint} title={isEn ? 'Passport / ID Scanning' : 'Pasaport / Kimlik Okuma'} id="id-h" />
-              <Desc>{isEn ? 'Submit passport/ID OCR scan results and query guest identity data. Supports passport, ID card, and driving license. Auto-updates guest profile with scanned data.' : 'Pasaport/kimlik OCR tarama sonuclarini gönderin ve misafir kimlik verilerini sorgulayIn. Pasaport, kimlik karti ve ehliyet destegi. Taranan veriler otomatik misafir profiline yansir.'}</Desc>
+              <Desc>{isEn ? 'Store passport/ID OCR results for a guest who has a current or recent reservation owned by this agency. The scan remains agency-scoped and does not overwrite the hotel-wide guest profile.' : 'Bu acenteye ait güncel veya yakın tarihli rezervasyonu bulunan misafir için pasaport/kimlik OCR sonucunu saklar. Tarama acente kapsamında kalır ve otelin ortak misafir profilinin üzerine yazmaz.'}</Desc>
               <div className="mt-6 space-y-6">
-                <EndpointBlock method="POST" path="/api/b2b/identity/scan" desc={isEn ? 'Submit OCR scan data — auto-updates guest profile' : 'OCR tarama verisini gönderin — misafir profili otomatik guncellenir'}>
+                <EndpointBlock method="POST" path="/api/b2b/identity/scan" desc={isEn ? 'Submit an agency-scoped OCR scan; hotel staff must verify shared profile changes' : 'Acente kapsamlı OCR taraması gönderir; ortak profil değişikliklerini otel personeli doğrulamalıdır'}>
                   <ParamTable lang={lang} params={[{
                   name: 'guest_id',
                   type: 'string',
@@ -1674,6 +1744,7 @@ export default function B2BApiDocs() {
               <p className="text-sm text-slate-400">{t("cm.pages_B2BApiDocs.syroce_open_api_v2_0_22")}{isEn ? 'Documentation Sections' : 'Dokumantasyon Bolumu'} &middot; 19 {isEn ? 'API Groups' : 'API Grubu'} &middot; {new Date().getFullYear()}</p>
               <p className="text-xs text-slate-300 mt-1">{isEn ? 'API Version: v1 (stable) — No breaking changes without version bump' : 'API Versiyon: v1 (stabil) — Versiyon degisikligi olmadan kirilma degisikligi yapilmaz'}</p>
             </div>
+            </>}
           </div>
         </main>
       </div>
