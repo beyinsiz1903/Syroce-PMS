@@ -5,6 +5,7 @@ vi.mock('../lazyPages', () => ({
   FlashReport: 'FlashReport',
   GroupSales: 'GroupSales',
   SalesCRM: 'SalesCRM',
+  CRMWorkspace: 'CRMWorkspace',
   ServiceRecovery: 'ServiceRecovery',
   SpaWellness: 'SpaWellness',
   SpaDiningPackages: 'SpaDiningPackages',

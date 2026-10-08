@@ -8,7 +8,7 @@ campaigns, segments, complaints, spa, events.
 import uuid
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from core.database import db
 from core.helpers import create_audit_log
@@ -378,6 +378,38 @@ async def get_sales_attention(
 # ── Marketing Automation ────────────────────────────────────────────
 
 
+@router.get("/marketing/campaigns")
+async def list_campaigns(
+    status: str | None = None,
+    limit: int = Query(100, ge=1, le=500),
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),
+):
+    """Tenant-scoped campaign list; empty means empty, never demo data."""
+    query: dict = {"tenant_id": current_user.tenant_id, "archived_at": {"$exists": False}}
+    if status:
+        query["status"] = status
+    rows = await db.marketing_campaigns.find(query, {"_id": 0}).sort("created_at", -1).limit(limit).to_list(limit)
+    campaign_ids = [row.get("id") for row in rows if row.get("id")]
+    totals: dict[str, dict] = {}
+    if campaign_ids:
+        grouped = await db.marketing_attributions.aggregate(
+            [
+                {"$match": {"tenant_id": current_user.tenant_id, "campaign_id": {"$in": campaign_ids}}},
+                {"$group": {"_id": "$campaign_id", "conversions": {"$sum": 1}, "gross_revenue": {"$sum": {"$ifNull": ["$gross_revenue", 0]}}, "net_revenue": {"$sum": {"$ifNull": ["$net_revenue", 0]}}}},
+            ]
+        ).to_list(len(campaign_ids))
+        totals = {item["_id"]: item for item in grouped}
+    for row in rows:
+        value = totals.get(row.get("id"), {})
+        row["attribution"] = {
+            "conversions": int(value.get("conversions") or 0),
+            "gross_revenue": float(value.get("gross_revenue") or 0),
+            "net_revenue": float(value.get("net_revenue") or 0),
+        }
+    return {"campaigns": rows, "count": len(rows), "data_available": bool(rows)}
+
+
 @router.post("/marketing/campaigns")
 async def create_campaign(
     campaign_data: dict,
@@ -413,6 +445,54 @@ async def create_campaign(
         {"segment": campaign["segment"]},
     )
     return {"success": True, "message": "Kampanya olusturuldu", "campaign_id": campaign["id"]}
+
+
+@router.post("/marketing/campaigns/{campaign_id}/attributions")
+async def record_campaign_attribution(
+    campaign_id: str,
+    payload: dict,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),
+):
+    """Credit a real booking once; retries return the persisted attribution."""
+    booking_id = str(payload.get("booking_id") or "").strip()
+    if not booking_id:
+        raise HTTPException(status_code=400, detail="booking_id zorunlu")
+    campaign = await db.marketing_campaigns.find_one(
+        {"tenant_id": current_user.tenant_id, "id": campaign_id, "archived_at": {"$exists": False}}, {"_id": 0, "id": 1}
+    )
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Kampanya bulunamadı")
+    booking = await db.bookings.find_one(
+        {"tenant_id": current_user.tenant_id, "$or": [{"id": booking_id}, {"booking_id": booking_id}]},
+        {"_id": 0, "id": 1, "booking_id": 1, "total_amount": 1, "commission_amount": 1, "payment_fee": 1},
+    )
+    if not booking:
+        raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
+    canonical_booking_id = booking.get("id") or booking.get("booking_id") or booking_id
+    key = {"tenant_id": current_user.tenant_id, "campaign_id": campaign_id, "booking_id": canonical_booking_id}
+    existing = await db.marketing_attributions.find_one(key, {"_id": 0})
+    if existing:
+        return {"success": True, "created": False, "attribution": existing}
+    gross = float(booking.get("total_amount") or 0)
+    document = {
+        "id": str(uuid.uuid4()), **key,
+        "gross_revenue": gross,
+        "net_revenue": gross - float(booking.get("commission_amount") or 0) - float(booking.get("payment_fee") or 0),
+        "attribution_model": "last_eligible_touch", "created_at": _now(),
+    }
+    try:
+        await db.marketing_attributions.insert_one(document)
+        created = True
+    except Exception as exc:
+        # Unique tenant/campaign/booking index turns concurrent retries into an
+        # idempotent read. Do not hide unrelated database failures.
+        if exc.__class__.__name__ != "DuplicateKeyError":
+            raise
+        document = await db.marketing_attributions.find_one(key, {"_id": 0})
+        created = False
+    await create_audit_log(current_user.tenant_id, current_user, "marketing_attribution_recorded", "marketing_campaign", campaign_id, {"booking_id": canonical_booking_id, "created": created})
+    return {"success": True, "created": created, "attribution": document}
 
 
 @router.get("/marketing/segments")

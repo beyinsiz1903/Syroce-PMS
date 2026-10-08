@@ -143,6 +143,7 @@ export const OnlineCheckin = lazy(() => import("@/pages/OnlineCheckin"));
 export const FlashReport = lazy(() => import("@/pages/FlashReport"));
 export const GroupSales = lazy(() => import("@/pages/GroupSales"));
 export const SalesCRM = lazy(() => import("@/pages/SalesCRM"));
+export const CRMWorkspace = lazy(() => import("@/pages/CRMWorkspace"));
 export const ServiceRecovery = lazy(() => import("@/pages/ServiceRecovery"));
 export const SpaWellness = lazy(() => import("@/pages/SpaWellness"));
 export const AIChatbot = lazy(() => import("@/pages/AIChatbot"));
