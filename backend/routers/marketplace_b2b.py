@@ -15,10 +15,12 @@ Mimari farklar (mevcut /api/b2b ile karşılaştırma):
 from __future__ import annotations
 
 import asyncio
+import base64
 import csv
 import hashlib
 import html
 import io
+import json
 import logging
 import os
 import secrets
@@ -51,6 +53,56 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/marketplace/v1", tags=["Marketplace v1"])
 
 ADMIN_AGENCY_CONTEXT_MINUTES = 15
+AGENCY_CONNECT_CODE_MINUTES = 5
+
+
+class AgencyConnectAuthorize(BaseModel):
+    client_id: str = Field(..., min_length=3, max_length=120)
+    redirect_uri: str = Field(..., min_length=10, max_length=500)
+    code_challenge: str = Field(..., min_length=43, max_length=128)
+    state: str = Field(..., min_length=8, max_length=256)
+
+
+class AgencyConnectExchange(BaseModel):
+    client_id: str = Field(..., min_length=3, max_length=120)
+    redirect_uri: str = Field(..., min_length=10, max_length=500)
+    code: str = Field(..., min_length=32, max_length=512)
+    code_verifier: str = Field(..., min_length=43, max_length=128)
+
+
+def _agency_connect_clients() -> dict[str, dict]:
+    """Return exact-match first-party clients; wildcards are intentionally unsupported."""
+    configured = os.environ.get("SYROCE_AGENCY_CONNECT_CLIENTS_JSON", "").strip()
+    if configured:
+        try:
+            clients = json.loads(configured)
+            if isinstance(clients, dict):
+                return clients
+        except (TypeError, ValueError):
+            logger.error("SYROCE_AGENCY_CONNECT_CLIENTS_JSON geçerli JSON değil")
+        return {}
+    # Safe first-party defaults. Production may replace this list entirely via env.
+    return {
+        "syroce_agency": {
+            "name": "Syroce Agency",
+            "redirect_uris": [
+                "https://agency.syroce.com/auth/syroce/callback",
+                "http://localhost:3000/auth/syroce/callback",
+            ],
+        }
+    }
+
+
+def _registered_agency_connect_client(client_id: str, redirect_uri: str) -> dict:
+    client = _agency_connect_clients().get(client_id)
+    allowed = client.get("redirect_uris", []) if isinstance(client, dict) else []
+    if not client or redirect_uri not in allowed:
+        raise HTTPException(400, "İstemci veya dönüş adresi kayıtlı değil")
+    return client
+
+
+def _pkce_s256(value: str) -> str:
+    return base64.urlsafe_b64encode(hashlib.sha256(value.encode()).digest()).decode().rstrip("=")
 
 
 def _create_admin_agency_context_token(*, target_user_id: str, actor_user_id: str, agency_id: str) -> tuple[str, int]:
@@ -238,6 +290,106 @@ async def get_marketplace_agency(
         "source": source,
         "user": actor_user,
         "impersonation": impersonation,
+    }
+
+
+@router.get("/connect/client")
+async def marketplace_connect_client(client_id: str = Query(...), redirect_uri: str = Query(...)):
+    """Validate and describe a first-party client before rendering consent."""
+    client = _registered_agency_connect_client(client_id, redirect_uri)
+    return {"client_id": client_id, "name": client.get("name") or client_id}
+
+
+@router.post("/connect/authorize")
+async def marketplace_connect_authorize(
+    payload: AgencyConnectAuthorize,
+    agency: dict = Depends(get_marketplace_agency),
+):
+    """Issue a five-minute, single-use authorization code protected by PKCE."""
+    client = _registered_agency_connect_client(payload.client_id, payload.redirect_uri)
+    if not payload.code_challenge.replace("-", "").replace("_", "").isalnum():
+        raise HTTPException(400, "PKCE code_challenge geçersiz")
+
+    sysdb = get_system_db()
+    raw_code = secrets.token_urlsafe(48)
+    now = datetime.now(UTC)
+    expires_at = now + timedelta(minutes=AGENCY_CONNECT_CODE_MINUTES)
+    await sysdb.agency_connect_codes.insert_one(
+        {
+            "id": _uuid(),
+            "code_hash": _hash_key(raw_code),
+            "client_id": payload.client_id,
+            "client_name": client.get("name") or payload.client_id,
+            "redirect_uri": payload.redirect_uri,
+            "code_challenge": payload.code_challenge,
+            "code_challenge_method": "S256",
+            "agency_id": agency["agency_id"],
+            "created_by": (agency.get("user") or {}).get("id"),
+            "created_at": now,
+            "expires_at": expires_at,
+            "used_at": None,
+        }
+    )
+    await _record_marketplace_audit(
+        sysdb,
+        agency_id=agency["agency_id"],
+        action="agency_connect_authorized",
+        details={"client_id": payload.client_id},
+    )
+    return {"code": raw_code, "state": payload.state, "expires_in": AGENCY_CONNECT_CODE_MINUTES * 60}
+
+
+@router.post("/connect/token")
+async def marketplace_connect_token(payload: AgencyConnectExchange):
+    """Exchange a PKCE code server-to-server; the browser never receives the API key."""
+    client = _registered_agency_connect_client(payload.client_id, payload.redirect_uri)
+    challenge = _pkce_s256(payload.code_verifier)
+    sysdb = get_system_db()
+    now = datetime.now(UTC)
+    result = await sysdb.agency_connect_codes.update_one(
+        {
+            "code_hash": _hash_key(payload.code),
+            "client_id": payload.client_id,
+            "redirect_uri": payload.redirect_uri,
+            "code_challenge": challenge,
+            "used_at": None,
+            "expires_at": {"$gt": now},
+        },
+        {"$set": {"used_at": now}},
+    )
+    if result.modified_count != 1:
+        raise HTTPException(400, "Yetkilendirme kodu geçersiz, kullanılmış veya süresi dolmuş")
+
+    code_doc = await sysdb.agency_connect_codes.find_one(
+        {"code_hash": _hash_key(payload.code), "client_id": payload.client_id},
+        {"_id": 0},
+    )
+    if not code_doc:
+        raise HTTPException(400, "Yetkilendirme kaydı bulunamadı")
+
+    await sysdb.marketplace_api_keys.update_many(
+        {"agency_id": code_doc["agency_id"], "client_id": payload.client_id, "is_active": True},
+        {"$set": {"is_active": False, "revoked_at": _now_iso(), "revocation_reason": "reconnected"}},
+    )
+    raw_key, key_doc = await _create_marketplace_api_key(
+        sysdb,
+        code_doc["agency_id"],
+        label=f"{client.get('name') or payload.client_id} hesabıyla bağlantı",
+    )
+    await sysdb.marketplace_api_keys.update_one(
+        {"id": key_doc["id"]},
+        {"$set": {"client_id": payload.client_id, "grant_type": "authorization_code_pkce"}},
+    )
+    await _record_marketplace_audit(
+        sysdb,
+        agency_id=code_doc["agency_id"],
+        action="agency_connect_token_issued",
+        details={"client_id": payload.client_id, "key_id": key_doc["id"]},
+    )
+    return {
+        "access_token": raw_key,
+        "token_type": "X-API-Key",
+        "agency_id": code_doc["agency_id"],
     }
 
 @router.get("/extranet/my-hotels")
