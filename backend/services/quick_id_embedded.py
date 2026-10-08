@@ -164,12 +164,50 @@ def _date_to_iso(value: str) -> str | None:
 
 
 def _label_value(text: str, labels: list[str]) -> str | None:
-    expression = "|".join(re.escape(label) for label in labels)
-    match = re.search(rf"(?:{expression})\s*[:/]?\s*([^\n]+)", text, flags=re.I)
-    if not match:
+    """Read a value printed beside *or below* a document label.
+
+    Turkish identity cards use bilingual headings such as ``Soyadı / Surname``
+    with the actual value on the next line.  The old single-regex parser
+    returned ``Surname`` as the surname and ``Given Name(s)`` as the first
+    name, which made otherwise clear cards fail validation.
+    """
+    lines = [re.sub(r"\s+", " ", line).strip() for line in text.splitlines()]
+    labels_by_length = sorted(labels, key=len, reverse=True)
+    label_expression = "|".join(re.escape(label) for label in labels_by_length)
+    any_heading = re.compile(
+        r"(?:soyad[ıi]|surname|family name|ad[ıi]|given name(?:\(s\))?|first name|"
+        r"doğum tarihi|date of birth|cinsiyet|gender|uyruğu|nationality|"
+        r"seri no|document no|son geçerlilik|valid until|imza|signature)",
+        flags=re.I,
+    )
+
+    for index, line in enumerate(lines):
+        match = re.search(rf"(?<![\wÇĞİÖŞÜçğıöşü])(?:{label_expression})(?![\wÇĞİÖŞÜçğıöşü])", line, flags=re.I)
+        if not match:
+            continue
+
+        # Remove both halves of a bilingual heading before considering the
+        # remainder an inline value (e.g. ``Soyadı / Surname SUTAY``).
+        remainder = line[match.end() :].strip(" /:-")
+        remainder = any_heading.sub("", remainder).strip(" /:-")
+        if remainder and not any_heading.search(remainder):
+            return remainder[:120]
+
+        # Values on Turkish ID cards normally occupy the next non-empty line.
+        for candidate in lines[index + 1 : index + 4]:
+            candidate = candidate.strip(" /:-")
+            if not candidate or any_heading.search(candidate):
+                continue
+            return candidate[:120]
+    return None
+
+
+def _clean_person_name(value: str | None) -> str | None:
+    if not value:
         return None
-    value = re.sub(r"\s{2,}.*$", "", match.group(1)).strip(" :-")
-    return value[:120] or None
+    cleaned = re.sub(r"[^A-Za-zÇĞİÖŞÜçğıöşü' -]", " ", value)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" -")
+    return cleaned[:120] or None
 
 
 def _parse_tesseract_text(text: str) -> dict[str, Any]:
@@ -177,8 +215,15 @@ def _parse_tesseract_text(text: str) -> dict[str, Any]:
     tc_match = re.search(r"\b[1-9]\d{10}\b", text)
     passport_match = re.search(r"\b[A-Z]{1,2}\d{6,8}\b", upper)
     dates = [iso for raw in re.findall(r"\b(?:\d{2}[./-]\d{2}[./-]\d{4}|\d{4}-\d{2}-\d{2})\b", text) if (iso := _date_to_iso(raw))]
-    first_name = _label_value(text, ["Adı", "Ad", "Given Names", "Given Name", "First Name", "Prénom"])
-    last_name = _label_value(text, ["Soyadı", "Soyad", "Surname", "Family Name", "Nom"])
+    # Put the specific labels before the short Turkish ``Ad`` label so it can
+    # never match inside ``Soyadı``.  `_label_value` also sorts by length as a
+    # second line of defence against partial matches.
+    first_name = _clean_person_name(
+        _label_value(text, ["Given Name(s)", "Given Names", "Given Name", "First Name", "Prénom", "Adı", "Adi", "Ad"])
+    )
+    last_name = _clean_person_name(
+        _label_value(text, ["Family Name", "Surname", "Soyadı", "Soyadi", "Soyad", "Nom"])
+    )
     document_type = "tc_kimlik" if tc_match else ("passport" if passport_match or "PASSPORT" in upper else "other")
     nationality = "TR" if any(token in upper for token in ("TÜRKİYE", "TURKEY", "TURKIYE")) else None
     gender = "F" if any(token in upper for token in ("KADIN", "FEMALE", " F ")) else None
@@ -411,6 +456,7 @@ async def scan_document(
         raise RuntimeError("Kullanılabilir OCR sağlayıcısı yok; API anahtarı girin veya yerel OCR'ı etkinleştirin")
 
     errors: list[str] = []
+    quality_errors: list[str] = []
     async with _scan_slots:
         async with asyncio.timeout(SCAN_TIMEOUT_SECONDS):
             for candidate in chain:
@@ -442,6 +488,14 @@ async def scan_document(
                     }
                 except Exception as exc:
                     errors.append(f"{candidate}: {exc}")
+                    if isinstance(exc, ValueError):
+                        quality_errors.append(f"{candidate}: {exc}")
+    # A readable image that local OCR cannot confidently parse is an input
+    # quality/recognition problem (422), not a service outage (503).  This also
+    # gives the mobile app the correct retake guidance instead of claiming the
+    # service is unavailable.
+    if errors and len(quality_errors) == len(errors):
+        raise ValueError("OCR tamamlanamadı: " + "; ".join(quality_errors)[:500])
     raise RuntimeError("OCR tamamlanamadı: " + "; ".join(errors)[:500])
 
 
