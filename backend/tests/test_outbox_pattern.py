@@ -315,6 +315,7 @@ async def test_permanent_error_fails_immediately():
     """Permanent errors should mark event as failed without retry."""
     client, db = await _get_db()
     try:
+        await _cleanup_events(db)
         entity_id = f"perm_fail_{uuid.uuid4().hex[:8]}"
         event = await enqueue_outbox_event(
             db, tenant_id=TEST_TENANT, event_type=INVENTORY_RELEASED,
@@ -328,14 +329,23 @@ async def test_permanent_error_fails_immediately():
             mock_dispatch.return_value = (False, "permanent: invalid payload schema_mismatch")
 
             with patch("core.outbox_worker.get_system_db", return_value=db):
+                from pymongo import ReturnDocument
+
                 claimed = await db.outbox_events.find_one_and_update(
-                    {"id": event["id"], "status": STATUS_PENDING},
+                    {
+                        "id": event["id"],
+                        "status": STATUS_PENDING,
+                        "max_attempts": {"$exists": True},
+                    },
                     {
                         "$set": {"status": STATUS_PROCESSING, "last_attempt_at": datetime.now(timezone.utc).isoformat()},
                         "$inc": {"attempt_count": 1},
                     },
                     projection={"_id": 0},
+                    return_document=ReturnDocument.AFTER,
                 )
+                assert claimed is not None
+                assert claimed["status"] == STATUS_PROCESSING
                 await worker._process_event(claimed)
 
         stored = await db.outbox_events.find_one({"id": event["id"]}, {"_id": 0})
