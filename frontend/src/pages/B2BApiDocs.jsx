@@ -734,13 +734,8 @@ export default function B2BApiDocs() {
               </div>
 
               <div className="mt-6">
-                <SubTitle>{isEn ? 'Rate Limit Headers' : 'İstek Limiti Basliklari'}</SubTitle>
-                <p className="text-sm text-slate-600 mb-3">{isEn ? 'X-RateLimit-* headers are not part of the current API contract. Use Retry-After only when it is actually returned.' : 'X-RateLimit-* başlıkları mevcut API sözleşmesinin parçası değildir. Retry-After başlığını yalnızca gerçekten döndüğünde kullanın.'}</p>
-                <div className="mt-3 space-y-1.5 text-sm text-slate-600">
-                  <div><code className="text-xs bg-slate-100 px-1.5 py-0.5 rounded font-mono">{t("cm.pages_B2BApiDocs.x_ratelimit_limit")}</code> — {isEn ? 'Maximum requests allowed in the window' : 'Penceredeki maksimum istek sayısı'}</div>
-                  <div><code className="text-xs bg-slate-100 px-1.5 py-0.5 rounded font-mono">{t("cm.pages_B2BApiDocs.x_ratelimit_remaining")}</code> — {isEn ? 'Remaining requests in current window' : 'Mevcut pencerede kalan istek sayısı'}</div>
-                  <div><code className="text-xs bg-slate-100 px-1.5 py-0.5 rounded font-mono">{t("cm.pages_B2BApiDocs.x_ratelimit_reset")}</code> — {isEn ? 'Unix timestamp when the window resets' : 'Pencerenin sifirlanacagi Unix zaman damgasi'}</div>
-                </div>
+                <SubTitle>{isEn ? 'Retry contract' : 'Tekrar deneme sözleşmesi'}</SubTitle>
+                <p className="text-sm text-slate-600 mb-3">{isEn ? 'X-RateLimit-* headers are not part of the current API contract. Do not build quota accounting around them. Use Retry-After only when it is actually returned.' : 'X-RateLimit-* başlıkları mevcut API sözleşmesinin parçası değildir; kota hesabını bu başlıklara bağlamayın. Retry-After başlığını yalnızca gerçekten döndüğünde kullanın.'}</p>
               </div>
 
               <div className="mt-6">
@@ -912,7 +907,8 @@ export default function B2BApiDocs() {
             <section id="content">
               <SectionHeader icon={Hotel} title={isEn ? 'Content API' : 'Icerik API'} id="content-h" />
               <Desc>{isEn ? 'Retrieve hotel content including room types, services, and property information.' : 'Oda tipleri, hizmetler ve tesis bilgileri dahil otel icerigini getirin.'}</Desc>
-              <div className="mt-6">
+              <div className="mt-6 space-y-3">
+                <EndpointBlock method="GET" path="/api/b2b/hotel-info" desc={isEn ? 'Get the integration hotel identity and basic profile.' : 'Entegrasyon anahtarının bağlı olduğu otelin kimliğini ve temel profilini getirir.'} />
                 <EndpointBlock method="GET" path="/api/b2b/content" desc={isEn ? 'No parameters required.' : 'Parametre gerektirmez.'}>
                   <CodeBlock lang="json" code={`{\n  "published": true,\n  "hotel_content": {\n    "hotel_name": "Grand Palace Hotel",\n    "star_rating": 5,\n    "room_types": [...],\n    "services": [...]\n  }\n}`} />
                 </EndpointBlock>
@@ -1060,7 +1056,7 @@ export default function B2BApiDocs() {
               <SectionHeader icon={Users} title={isEn ? 'Guest Management' : 'Misafir Yönetimi'} id="guests-h" />
               <Desc>{isEn ? 'Search guests, view profiles, and access stay history.' : 'Misafir arayin, profilleri görüntüleyin ve konaklama gecmisine erişin.'}</Desc>
               <div className="mt-6 space-y-6">
-                <EndpointBlock method="GET" path="/api/b2b/guests/search?q={query}" desc={isEn ? 'Search by name, email, or phone (min 2 chars)' : 'Isim, e-posta veya telefon ile arama (min 2 karakter)'}>
+                <EndpointBlock method="GET" path="/api/b2b/guests/search" desc={isEn ? 'Search by name, email, or phone using the q query parameter (min 2 chars).' : 'q sorgu parametresiyle isim, e-posta veya telefon arayın (en az 2 karakter).'}>
                   <ParamTable lang={lang} params={[{
                   name: 'q',
                   type: 'string',
@@ -1741,7 +1737,7 @@ export default function B2BApiDocs() {
             </section>
 
             <div className="border-t border-slate-200 pt-8 pb-16 text-center">
-              <p className="text-sm text-slate-400">{t("cm.pages_B2BApiDocs.syroce_open_api_v2_0_22")}{isEn ? 'Documentation Sections' : 'Dokumantasyon Bolumu'} &middot; 19 {isEn ? 'API Groups' : 'API Grubu'} &middot; {new Date().getFullYear()}</p>
+              <p className="text-sm text-slate-400">Syroce Hotel Integration API &middot; {isEn ? '12 permission-scoped API groups' : '12 yetki kapsamlı API grubu'} &middot; {new Date().getFullYear()}</p>
               <p className="text-xs text-slate-300 mt-1">{isEn ? 'API Version: v1 (stable) — No breaking changes without version bump' : 'API Versiyon: v1 (stabil) — Versiyon degisikligi olmadan kirilma degisikligi yapilmaz'}</p>
             </div>
             </>}
