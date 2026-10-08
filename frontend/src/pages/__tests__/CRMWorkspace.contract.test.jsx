@@ -4,6 +4,7 @@ import { vi } from 'vitest';
 import userEvent from '@testing-library/user-event';
 import axios from 'axios';
 import CRMWorkspace from '@/pages/CRMWorkspace';
+import { BrowserRouter } from 'react-router-dom';
 
 vi.mock('axios');
 vi.mock('@/pages/SalesCRM', () => ({ default: () => <div>Sales CRM panel</div> }));
@@ -13,6 +14,11 @@ vi.mock('@/components/pms/KVKKManager', () => ({ default: () => <div>Privacy pan
 describe('CRMWorkspace contracts', () => {
   beforeEach(() => vi.clearAllMocks());
 
+  const renderCRM = (path = '/crm') => {
+    window.history.replaceState({}, '', path);
+    return render(<BrowserRouter><CRMWorkspace /></BrowserRouter>);
+  };
+
   it('loads tenant-scoped intelligence and duplicate candidates without fabricated totals', async () => {
     axios.get.mockImplementation((url) => {
       if (url.includes('duplicates')) return Promise.resolve({ data: { matches: [{ score: 0.8, reasons: ['email_exact'], left: { id: 'g1', name: 'Ada Lovelace' }, right: { id: 'g2', name: 'Ada L.' } }] } });
@@ -20,7 +26,7 @@ describe('CRMWorkspace contracts', () => {
       if (url.includes('automation/rules')) return Promise.resolve({ data: { rules: [] } });
       return Promise.resolve({ data: { guests_analyzed: 12, top_value_guests: [], high_churn_guests: [], upsell_opportunities: [] } });
     });
-    render(<CRMWorkspace />);
+    renderCRM();
 
     await waitFor(() => expect(screen.getByText('12')).toBeInTheDocument());
     expect(axios.get).toHaveBeenCalledWith('/data-intelligence/guests/dashboard', { params: { limit: 30 } });
@@ -31,7 +37,7 @@ describe('CRMWorkspace contracts', () => {
 
   it('fails closed when intelligence is unavailable', async () => {
     axios.get.mockRejectedValue({ response: { data: { detail: 'Yetkisiz işlem' } } });
-    render(<CRMWorkspace />);
+    renderCRM();
     expect(await screen.findByRole('alert')).toHaveTextContent('Yetkisiz işlem');
     expect(screen.queryByText('12')).not.toBeInTheDocument();
   });
@@ -45,11 +51,21 @@ describe('CRMWorkspace contracts', () => {
       return Promise.resolve({ data: { guests_analyzed: 2, top_value_guests: [], high_churn_guests: [], upsell_opportunities: [] } });
     });
     axios.post.mockResolvedValue({ data: { bookings_repointed: 1, folios_repointed: 1 } });
-    render(<CRMWorkspace />);
+    renderCRM();
     await user.click(await screen.findByRole('tab', { name: 'Mükerrer kayıtlar' }));
     await user.click(await screen.findByRole('button', { name: 'İncele ve birleştir' }));
     expect(axios.post).not.toHaveBeenCalled();
     await user.click(screen.getByRole('button', { name: 'Onayla ve birleştir' }));
     await waitFor(() => expect(axios.post).toHaveBeenCalledWith('/cross-property/guests/g1/merge', { target_guest_id: 'g2' }));
+  });
+
+  it('opens the requested workspace tab from the URL and keeps tab state shareable', async () => {
+    const user = userEvent.setup();
+    axios.get.mockResolvedValue({ data: {} });
+    renderCRM('/crm?tab=sales');
+    expect(await screen.findByText('Sales CRM panel')).toBeInTheDocument();
+    await user.click(screen.getByRole('tab', { name: 'KVKK ve izinler' }));
+    expect(window.location.search).toBe('?tab=privacy');
+    expect(screen.getByText('Privacy panel')).toBeInTheDocument();
   });
 });

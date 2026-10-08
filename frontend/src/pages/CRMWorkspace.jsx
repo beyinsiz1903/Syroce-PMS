@@ -10,10 +10,13 @@ import { toast } from 'sonner';
 import SalesCRM from '@/pages/SalesCRM';
 import GuestRelationsDashboard from '@/pages/GuestRelationsDashboard';
 import KVKKManager from '@/components/pms/KVKKManager';
+import { useSearchParams } from 'react-router-dom';
 
 const number = new Intl.NumberFormat('tr-TR');
+const CRM_TABS = new Set(['intelligence', 'duplicates', 'relations', 'campaigns', 'journeys', 'sales', 'privacy']);
 
 const CRMWorkspace = (props) => {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [dashboard, setDashboard] = useState(null);
   const [duplicates, setDuplicates] = useState([]);
   const [campaigns, setCampaigns] = useState([]);
@@ -22,6 +25,15 @@ const CRMWorkspace = (props) => {
   const [error, setError] = useState('');
   const [mergeCandidate, setMergeCandidate] = useState(null);
   const [merging, setMerging] = useState(false);
+  const requestedTab = searchParams.get('tab');
+  const activeTab = CRM_TABS.has(requestedTab) ? requestedTab : 'intelligence';
+
+  const selectTab = (tab) => {
+    const next = new URLSearchParams(searchParams);
+    if (tab === 'intelligence') next.delete('tab');
+    else next.set('tab', tab);
+    setSearchParams(next, { replace: true });
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -95,7 +107,7 @@ const CRMWorkspace = (props) => {
           ))}
         </section>
 
-        <Tabs defaultValue="intelligence">
+        <Tabs value={activeTab} onValueChange={selectTab}>
           <TabsList className="h-auto w-full justify-start overflow-x-auto p-1">
             <TabsTrigger value="intelligence">Misafir 360</TabsTrigger>
             <TabsTrigger value="duplicates">Mükerrer kayıtlar</TabsTrigger>

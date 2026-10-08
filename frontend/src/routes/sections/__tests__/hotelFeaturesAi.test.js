@@ -51,4 +51,16 @@ describe('multi-property navigation', () => {
       to: '/app/multi-property',
     });
   });
+
+  it('redirects the legacy sales CRM route into the unified CRM sales tab', () => {
+    const routes = hotelFeaturesAiRoutes(helpers);
+    expect(routes.find((route) => route.path === '/sales-crm')).toMatchObject({
+      type: 'redirect',
+      to: '/crm?tab=sales',
+    });
+    expect(routes.find((route) => route.path === '/crm')).toMatchObject({
+      component: 'CRMWorkspace',
+      wrapLayout: true,
+    });
+  });
 });

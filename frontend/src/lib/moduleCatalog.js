@@ -39,7 +39,7 @@ const ROUTE_OVERRIDES = {
   booking_engine: '/app/wbe-settings',
   multi_property: '/app/multi-property',
   group_sales: '/group-sales',
-  sales_crm: '/sales-crm',
+  sales_crm: '/crm',
   loyalty_program: '/loyalty',
   audit_trail: '/audit-timeline',
   gm_dashboards: '/executive',

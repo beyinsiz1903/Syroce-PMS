@@ -178,7 +178,7 @@ DEFAULT_PRODUCTS += [
         "description": "Kurumsal müşteri, fırsat, aktivite ve satış pipeline yönetimini tek çalışma alanında toplayın.",
         "description_en": "Manage corporate accounts, opportunities, activities and sales pipeline in one workspace.",
         "category": "module", "billing_type": "subscription", "price_try": 1490.0, "duration_days": 30,
-        "trial_days": 14, "icon": "Handshake", "route_path": "/sales-crm", "active": True,
+        "trial_days": 14, "icon": "Handshake", "route_path": "/crm", "active": True,
         "features": ["Müşteri ve fırsat yönetimi", "Aktivite takibi", "Satış pipeline", "Kurumsal hesaplar"],
         "features_en": ["Account and opportunity management", "Activity tracking", "Sales pipeline", "Corporate accounts"],
     },

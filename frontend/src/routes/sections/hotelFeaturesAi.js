@@ -1,5 +1,5 @@
 import {
-  OnlineCheckin, FlashReport, GroupSales, SalesCRM, CRMWorkspace, ServiceRecovery,
+  OnlineCheckin, FlashReport, GroupSales, CRMWorkspace, ServiceRecovery,
   SpaWellness, SpaDiningPackages, MultiProperty, StaffManagement, StaffProfile, ShiftPlannerPage,
   HRHub, FnBComplete, FnbBeoGenerator, KitchenDisplay,
   AIChatbot, DynamicPricing, AIWhatsAppConcierge, PredictiveAnalytics,
@@ -12,7 +12,7 @@ export function hotelFeaturesAiRoutes({ p, pm }) {
     { path: "/online-checkin", ...p(OnlineCheckin) },
     { path: "/flash-report", ...p(FlashReport) },
     { path: "/group-sales", ...p(GroupSales), wrapLayout: true, layoutModule: "group-sales" },
-    { path: "/sales-crm", ...p(SalesCRM), wrapLayout: true, layoutModule: "sales-crm" },
+    { path: "/sales-crm", type: "redirect", to: "/crm?tab=sales" },
     { path: "/crm", ...p(CRMWorkspace), wrapLayout: true, layoutModule: "sales-crm" },
     { path: "/service-recovery", ...p(ServiceRecovery), wrapLayout: true },
     { path: "/spa-wellness", ...pm(SpaWellness, "spa", undefined, { strict: true }), wrapLayout: true, layoutModule: "spa" },
