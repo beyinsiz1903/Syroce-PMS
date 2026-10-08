@@ -207,7 +207,40 @@ def _clean_person_name(value: str | None) -> str | None:
         return None
     cleaned = re.sub(r"[^A-Za-zÇĞİÖŞÜçğıöşü' -]", " ", value)
     cleaned = re.sub(r"\s+", " ", cleaned).strip(" -")
-    return cleaned[:120] or None
+    words = [word for word in cleaned.split(" ") if word]
+    forbidden = {
+        "TÜRKİYE",
+        "TURKEY",
+        "REPUBLIC",
+        "IDENTITY",
+        "KIMLIK",
+        "KİMLİK",
+        "CARD",
+        "SURNAME",
+        "GIVEN",
+        "NAME",
+    }
+    if (
+        not words
+        or len(words) > 5
+        or any(len(word.replace("'", "")) < 2 for word in words)
+        or any(word.upper() in forbidden for word in words)
+        or not 2 <= len(cleaned) <= 120
+    ):
+        return None
+    return cleaned
+
+
+def _is_valid_tckn(value: str) -> bool:
+    """Validate a Turkish identity number using both official check digits."""
+    if not re.fullmatch(r"[1-9]\d{10}", value):
+        return False
+    digits = [int(character) for character in value]
+    odd_sum = sum(digits[index] for index in (0, 2, 4, 6, 8))
+    even_sum = sum(digits[index] for index in (1, 3, 5, 7))
+    tenth = ((odd_sum * 7) - even_sum) % 10
+    eleventh = sum(digits[:10]) % 10
+    return digits[9] == tenth and digits[10] == eleventh
 
 
 MRZ_WEIGHTS = (7, 3, 1)
@@ -319,8 +352,17 @@ def _parse_tesseract_text(text: str) -> dict[str, Any]:
     if mrz_document:
         return mrz_document
     upper = text.upper()
-    tc_match = re.search(r"\b[1-9]\d{10}\b", text)
-    passport_match = re.search(r"\b[A-Z]{1,2}\d{6,8}\b", upper)
+    tckn_candidates = re.findall(r"\b[1-9]\d{10}\b", text)
+    valid_tckn = next((candidate for candidate in tckn_candidates if _is_valid_tckn(candidate)), None)
+    is_turkish_id = bool(
+        valid_tckn
+        and any(
+            marker in upper
+            for marker in ("KİMLİK KARTI", "KIMLIK KARTI", "IDENTITY CARD")
+        )
+    )
+    is_passport = "PASSPORT" in upper or "PASSEPORT" in upper
+    passport_match = re.search(r"\b[A-Z]{1,2}\d{6,8}\b", upper) if is_passport else None
     dates = [iso for raw in re.findall(r"\b(?:\d{2}[./-]\d{2}[./-]\d{4}|\d{4}-\d{2}-\d{2})\b", text) if (iso := _date_to_iso(raw))]
     # Put the specific labels before the short Turkish ``Ad`` label so it can
     # never match inside ``Soyadı``.  `_label_value` also sorts by length as a
@@ -331,18 +373,21 @@ def _parse_tesseract_text(text: str) -> dict[str, Any]:
     last_name = _clean_person_name(
         _label_value(text, ["Family Name", "Surname", "Soyadı", "Soyadi", "Soyad", "Nom"])
     )
-    document_type = "tc_kimlik" if tc_match else ("passport" if passport_match or "PASSPORT" in upper else "other")
+    document_type = "tc_kimlik" if is_turkish_id else ("passport" if is_passport else "other")
     nationality = "TR" if any(token in upper for token in ("TÜRKİYE", "TURKEY", "TURKIYE")) else None
     gender = "F" if any(token in upper for token in ("KADIN", "FEMALE", " F ")) else None
     if gender is None and any(token in upper for token in ("ERKEK", "MALE", " M ")):
         gender = "M"
-    is_valid = bool(first_name or last_name) and bool(tc_match or passport_match)
+    is_valid = bool(first_name and last_name) and bool(is_turkish_id or (is_passport and passport_match))
+    warnings = ["Yerel OCR sonucu; alanları kimlik belgesiyle karşılaştırın"]
+    if tckn_candidates and not valid_tckn:
+        warnings.append("Okunan T.C. kimlik numarası doğrulama basamaklarını geçmedi")
     return {
         "is_valid": is_valid,
         "document_type": document_type,
         "first_name": first_name,
         "last_name": last_name,
-        "id_number": tc_match.group(0) if tc_match else None,
+        "id_number": valid_tckn if is_turkish_id else None,
         "document_number": passport_match.group(0) if passport_match else None,
         "birth_date": dates[0] if dates else None,
         "expiry_date": dates[-1] if len(dates) > 1 else None,
@@ -353,8 +398,47 @@ def _parse_tesseract_text(text: str) -> dict[str, Any]:
         "mother_name": _label_value(text, ["Anne Adı", "Mother Name"]),
         "father_name": _label_value(text, ["Baba Adı", "Father Name"]),
         "address": None,
-        "warnings": ["Yerel OCR sonucu; alanları kimlik belgesiyle karşılaştırın"],
+        "warnings": warnings,
     }
+
+
+def _document_is_acceptable(document: dict[str, Any]) -> bool:
+    """Fail closed before any OCR provider output reaches the mobile client."""
+    first_name = _clean_person_name(document.get("first_name"))
+    last_name = _clean_person_name(document.get("last_name"))
+    if not first_name or not last_name:
+        return False
+    document["first_name"] = first_name
+    document["last_name"] = last_name
+
+    document_type = str(document.get("document_type") or "").lower()
+    if document_type == "tc_kimlik":
+        identity_number = re.sub(r"\D", "", str(document.get("id_number") or ""))
+        if not _is_valid_tckn(identity_number):
+            document["id_number"] = None
+            document["is_valid"] = False
+            return False
+        document["id_number"] = identity_number
+        document["is_valid"] = True
+        return True
+
+    if document_type == "passport":
+        document_number = str(document.get("document_number") or "").replace("<", "").strip().upper()
+        if not re.fullmatch(r"[A-Z0-9]{6,12}", document_number):
+            document["is_valid"] = False
+            return False
+        mrz_checks = document.get("mrz_checks")
+        if isinstance(mrz_checks, dict) and not all(
+            mrz_checks.get(field) for field in ("document_number", "birth_date", "expiry_date")
+        ):
+            document["is_valid"] = False
+            return False
+        document["document_number"] = document_number
+        document["is_valid"] = True
+        return True
+
+    document["is_valid"] = False
+    return False
 
 
 async def _tesseract_scan(image_bytes: bytes) -> dict[str, Any]:
@@ -574,7 +658,14 @@ async def scan_document(
                         extracted = await _tesseract_scan(image_bytes)
                     else:
                         extracted = await _openai_scan(image_bytes, mime_type, openai_key, candidate)
-                    documents = extracted.get("documents", [])
+                    documents = [
+                        document
+                        for document in extracted.get("documents", [])
+                        if isinstance(document, dict) and _document_is_acceptable(document)
+                    ]
+                    if not documents:
+                        raise ValueError("OCR sonucu kimlik doğrulama kontrollerini geçmedi; fotoğrafı yeniden çekin")
+                    extracted = {**extracted, "documents": documents, "document_count": len(documents)}
                     valid_fields = sum(bool(doc.get(field)) for doc in documents for field in ("first_name", "last_name", "id_number", "document_number", "birth_date"))
                     confidence_score = min(98, 45 + valid_fields * 8) if documents else 0
                     return {
