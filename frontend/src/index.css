@@ -1071,6 +1071,8 @@ code {
 
 /* text-emerald-950  — near-black success text → near-white in dark */
 .dark .text-emerald-950 { color: #a7f3d0; }
+/* text-blue-950 — near-black informational text → readable light blue in dark */
+.dark .text-blue-950 { color: #bfdbfe; }
 
 /* bg-sky-50/80  — info/reserved state pill background */
 .dark .bg-sky-50\/80 { background-color: rgb(3 26 46 / 0.8); }

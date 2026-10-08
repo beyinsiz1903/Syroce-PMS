@@ -200,6 +200,8 @@ async def get_marketplace_agency(
                 raise e
             raise HTTPException(401, "Geçersiz token")
     elif x_api_key:
+        if not x_api_key.startswith("syroce_mkt_"):
+            raise HTTPException(401, "Marketplace API için syroce_mkt_ anahtarı gerekli")
         key_hash = _hash_key(x_api_key)
         key_doc = await sysdb.marketplace_api_keys.find_one({"key_hash": key_hash, "is_active": True}, {"_id": 0})
         if not key_doc:

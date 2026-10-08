@@ -427,7 +427,10 @@ jobs:
             mongo:7.0 --replSet rs0 --bind_ip_all
           ready=0
           for i in $(seq 1 30); do
-            if docker exec syroce-full-mongo mongosh --quiet \
+            # Keep mongosh state outside /data/db. Running mongosh while the
+            # image entrypoint is still fixing data-directory ownership can
+            # otherwise race on .mongodb/*.lock and terminate the container.
+            if docker exec --env HOME=/tmp syroce-full-mongo mongosh --quiet \
               --eval 'db.adminCommand({ping:1}).ok' >/dev/null 2>&1; then
               ready=1
               break
@@ -439,11 +442,11 @@ jobs:
             docker logs syroce-full-mongo
             exit 1
           fi
-          docker exec syroce-full-mongo mongosh --quiet --eval \
+          docker exec --env HOME=/tmp syroce-full-mongo mongosh --quiet --eval \
             'rs.initiate({_id:"rs0",members:[{_id:0,host:"localhost:27017"}]})'
           primary=0
           for i in $(seq 1 30); do
-            if docker exec syroce-full-mongo mongosh --quiet \
+            if docker exec --env HOME=/tmp syroce-full-mongo mongosh --quiet \
               --eval 'quit(rs.status().myState === 1 ? 0 : 1)' >/dev/null 2>&1; then
               primary=1
               break
