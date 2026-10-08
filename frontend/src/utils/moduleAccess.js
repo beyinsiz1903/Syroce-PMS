@@ -101,6 +101,7 @@ const EXACT_ROUTE_SCOPES = Object.freeze({
   '/group-sales': ['sales'],
   '/sales-crm': ['sales'],
   '/crm': ['sales'],
+  '/quality-management': ['reports', 'housekeeping'],
   '/group-bookings-manage': ['sales'],
   '/block-management': ['sales'],
   '/deposit-tracking': ['sales'],

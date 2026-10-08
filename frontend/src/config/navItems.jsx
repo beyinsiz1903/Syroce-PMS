@@ -425,6 +425,17 @@ export const NAV_ITEMS = [
     navSection: "incidents",
   },
   {
+    key: "quality_management",
+    label: "Kalite Yönetimi",
+    path: "/quality-management",
+    moduleKey: "pms",
+    tier: "professional",
+    group: "professional",
+    navGroup: "operations",
+    navSection: "incidents",
+    allowedRoles: ["admin", "super_admin", "supervisor", "manager", "general_manager", "housekeeping"],
+  },
+  {
     key: "cross_property_guests",
     label: "Zincir Misafir Profilleri",
     path: "/cross-property-guests",

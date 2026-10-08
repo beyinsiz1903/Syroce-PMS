@@ -172,6 +172,22 @@
       ]
     },
     {
+      "key": "quality_management",
+      "label": "Kalite yönetimi",
+      "module": "reports",
+      "paths": [
+        "/quality-management"
+      ],
+      "api_prefixes": [
+        "/api/quality"
+      ],
+      "permissions": [],
+      "any_permissions": [
+        "view_reports",
+        "view_hk_board"
+      ]
+    },
+    {
       "key": "finance",
       "label": "Finansal raporlar",
       "module": "finance",

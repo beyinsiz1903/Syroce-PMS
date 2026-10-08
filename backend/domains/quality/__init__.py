@@ -1,0 +1,1 @@
+"""Hotel quality-management domain."""

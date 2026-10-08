@@ -3,7 +3,7 @@ import {
   SpaWellness, SpaDiningPackages, MultiProperty, StaffManagement, StaffProfile, ShiftPlannerPage,
   HRHub, FnBComplete, FnbBeoGenerator, KitchenDisplay,
   AIChatbot, DynamicPricing, AIWhatsAppConcierge, PredictiveAnalytics,
-  SocialMediaRadar, RevenueAutopilot, RevenueAutopilotMonitor,
+  SocialMediaRadar, RevenueAutopilot, RevenueAutopilotMonitor, QualityManagement,
 } from "./lazyPages";
 
 export function hotelFeaturesAiRoutes({ p, pm }) {
@@ -15,6 +15,7 @@ export function hotelFeaturesAiRoutes({ p, pm }) {
     { path: "/sales-crm", type: "redirect", to: "/crm?tab=sales" },
     { path: "/crm", ...p(CRMWorkspace), wrapLayout: true, layoutModule: "sales-crm" },
     { path: "/service-recovery", ...p(ServiceRecovery), wrapLayout: true },
+    { path: "/quality-management", ...p(QualityManagement), wrapLayout: true, layoutModule: "quality-management" },
     { path: "/spa-wellness", ...pm(SpaWellness, "spa", undefined, { strict: true }), wrapLayout: true, layoutModule: "spa" },
     { path: "/spa-dining-packages", ...pm(SpaDiningPackages, "spa", undefined, { strict: false }), wrapLayout: true, layoutModule: "spa" },
     { path: "/app/multi-property", ...p(MultiProperty), wrapLayout: true, layoutModule: "multi-property" },

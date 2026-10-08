@@ -117,6 +117,7 @@ export const POSDashboard = lazy(() => import("@/pages/POSDashboard"));
 export const POSWaiterTerminal = lazy(() => import("@/pages/POSWaiterTerminal"));
 export const POSExtensions = lazy(() => import("@/pages/POSExtensions"));
 export const ContactCenterDashboard = lazy(() => import("@/pages/ContactCenterDashboard"));
+export const QualityManagement = lazy(() => import("@/pages/QualityManagement"));
 
 // Admin
 export const AdminTenants = lazy(() => import("@/pages/AdminTenants"));
