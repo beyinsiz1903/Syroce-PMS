@@ -133,6 +133,10 @@ const AgencyPortalDashboard = () => {
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [widgetOriginsText, setWidgetOriginsText] = useState('');
+  const [contracts, setContracts] = useState([]);
+  const [contractHotels, setContractHotels] = useState([]);
+  const [contractsLoading, setContractsLoading] = useState(false);
+  const [contractForm, setContractForm] = useState({ tenant_id: '', commission_pct: '', valid_from: toDateInput(new Date()), valid_to: `${new Date().getFullYear() + 1}-12-31`, payment_terms: 'on_arrival', currency: 'TRY' });
 
   // Login handler
   const handleLogin = async e => {
@@ -465,6 +469,29 @@ const AgencyPortalDashboard = () => {
     try { const { data } = await agencyApi.get('/marketplace/v1/reconciliation/agency', { params: { period_start: toDateInput(startDate), period_end: end } }); setReconciliation(data); }
     catch (err) { toast.error(err.response?.data?.detail || 'Mutabakat özeti yüklenemedi. Lütfen yeniden deneyin.'); }
   };
+  const loadContracts = async () => {
+    if (portalMode !== 'marketplace') return;
+    setContractsLoading(true);
+    try {
+      const [{ data: contractData }, { data: hotelData }] = await Promise.all([
+        agencyApi.get('/marketplace/v1/contracts/mine'),
+        agencyApi.get('/marketplace/v1/contracts/hotel-candidates'),
+      ]);
+      setContracts(contractData.contracts || []);
+      setContractHotels(hotelData.hotels || []);
+      setContractForm(current => ({ ...current, commission_pct: current.commission_pct || String(agencyInfo?.default_commission_pct ?? 12) }));
+    } catch (err) { toast.error(err.response?.data?.detail || 'Sözleşmeler yüklenemedi.'); }
+    finally { setContractsLoading(false); }
+  };
+  const proposeContract = async event => {
+    event.preventDefault();
+    try {
+      await agencyApi.post('/marketplace/v1/contracts/propose', { ...contractForm, commission_pct: Number(contractForm.commission_pct), allowed_room_types: [], cancellation_policy: { free_until_days_before: 7, penalty_pct: 50, no_show_penalty_pct: 100 } });
+      toast.success('Sözleşme teklifiniz otele gönderildi. Otel onaylamadan satış açılamaz.');
+      setContractForm(current => ({ ...current, tenant_id: '' }));
+      await loadContracts();
+    } catch (err) { toast.error(err.response?.data?.detail || 'Sözleşme teklifi gönderilemedi.'); }
+  };
   const downloadReconciliation = async () => {
     const end = toDateInput(new Date()); const startDate = new Date(); startDate.setDate(startDate.getDate() - 30);
     try {
@@ -640,11 +667,12 @@ const AgencyPortalDashboard = () => {
           </div>
         </section>
         <Tabs defaultValue="search" className="w-full">
-          <TabsList className={`grid w-full ${portalMode === 'marketplace' ? 'grid-cols-2 lg:grid-cols-5' : 'grid-cols-1 sm:grid-cols-3'} h-auto gap-1 rounded-xl border border-slate-200 bg-white p-1.5 shadow-sm`}>
+          <TabsList className={`grid w-full ${portalMode === 'marketplace' ? 'grid-cols-2 lg:grid-cols-6' : 'grid-cols-1 sm:grid-cols-3'} h-auto gap-1 rounded-xl border border-slate-200 bg-white p-1.5 shadow-sm`}>
             <TabsTrigger value="search" data-testid="tab-search" className="min-h-10 rounded-lg data-[state=active]:bg-slate-900 data-[state=active]:text-white">{t('cm.pages_AgencyPortalDashboard.musaitlik_ara')}</TabsTrigger>
             <TabsTrigger value="reservations" onClick={loadReservations} data-testid="tab-reservations" className="min-h-10 rounded-lg data-[state=active]:bg-slate-900 data-[state=active]:text-white">Rezervasyonlarım</TabsTrigger>
             <TabsTrigger value="content" onClick={() => loadContent()} data-testid="tab-content" className="min-h-10 rounded-lg data-[state=active]:bg-slate-900 data-[state=active]:text-white">Tesis Bilgileri</TabsTrigger>
             {portalMode === 'marketplace' && <TabsTrigger value="finance" onClick={loadReconciliation} className="min-h-10 rounded-lg data-[state=active]:bg-slate-900 data-[state=active]:text-white">Mutabakat</TabsTrigger>}
+            {portalMode === 'marketplace' && <TabsTrigger value="contracts" onClick={loadContracts} className="min-h-10 rounded-lg data-[state=active]:bg-slate-900 data-[state=active]:text-white">Sözleşmeler</TabsTrigger>}
             {portalMode === 'marketplace' && <TabsTrigger value="settings" onClick={loadPortalSettings} data-testid="tab-settings" className="min-h-10 rounded-lg data-[state=active]:bg-slate-900 data-[state=active]:text-white"><Settings size={14} className="mr-1.5" />Ayarlar</TabsTrigger>}
           </TabsList>
 
@@ -814,6 +842,11 @@ const AgencyPortalDashboard = () => {
               </div>
               {(reconciliation.by_hotel || []).map(row => <Card key={row.tenant_id}><CardContent className="py-4 flex items-center justify-between"><div><div className="font-medium">{row.hotel_name}</div><div className="text-xs text-slate-500">{row.bookings} rezervasyon · Komisyon {formatMoney(row.commission, hotelInfo?.currency)} · Platform {formatMoney(row.platform_fee, hotelInfo?.currency)}</div></div><div className="text-right"><div className="font-bold">{formatMoney(row.gross_revenue, hotelInfo?.currency)}</div><div className="text-xs text-emerald-700">Net {formatMoney(row.net_to_hotel, hotelInfo?.currency)}</div></div></CardContent></Card>)}
             </>}
+          </TabsContent>}
+
+          {portalMode === 'marketplace' && <TabsContent value="contracts" className="mt-4 space-y-4">
+            <Card><CardHeader><CardTitle>Otel bazlı sözleşme teklifi</CardTitle></CardHeader><CardContent><p className="mb-4 text-sm text-slate-600">Komisyon her otelle ayrı kararlaştırılır. Teklif oranı satışta ancak otel onayladıktan sonra kullanılır.</p><form onSubmit={proposeContract} className="grid gap-3 md:grid-cols-3"><div><Label htmlFor="contract-hotel">Otel</Label><select id="contract-hotel" required value={contractForm.tenant_id} onChange={event => { const hotel = contractHotels.find(item => item.tenant_id === event.target.value); setContractForm(current => ({ ...current, tenant_id: event.target.value, currency: hotel?.currency || 'TRY' })); }} className="mt-1 flex h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm"><option value="">Otel seçin</option>{contractHotels.filter(item => !['pending', 'approved'].includes(item.contract_status)).map(item => <option key={item.tenant_id} value={item.tenant_id}>{item.hotel_name}{item.city ? ` · ${item.city}` : ''}</option>)}</select></div><div><Label htmlFor="contract-rate">Teklif edilen komisyon (%)</Label><Input id="contract-rate" required type="number" min="0" max="100" step="0.01" value={contractForm.commission_pct} onChange={event => setContractForm(current => ({ ...current, commission_pct: event.target.value }))} /></div><div><Label htmlFor="contract-payment">Ödeme vadesi</Label><select id="contract-payment" value={contractForm.payment_terms} onChange={event => setContractForm(current => ({ ...current, payment_terms: event.target.value }))} className="mt-1 flex h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm"><option value="prepaid">Ön ödemeli</option><option value="on_arrival">Girişte</option><option value="net_7">7 gün</option><option value="net_15">15 gün</option><option value="net_30">30 gün</option></select></div><div><Label htmlFor="contract-from">Başlangıç</Label><Input id="contract-from" required type="date" value={contractForm.valid_from} onChange={event => setContractForm(current => ({ ...current, valid_from: event.target.value }))} /></div><div><Label htmlFor="contract-to">Bitiş</Label><Input id="contract-to" required type="date" value={contractForm.valid_to} onChange={event => setContractForm(current => ({ ...current, valid_to: event.target.value }))} /></div><div className="flex items-end"><Button type="submit" className="w-full bg-emerald-700 hover:bg-emerald-800">Teklifi otele gönder</Button></div></form></CardContent></Card>
+            {contractsLoading ? <Card><CardContent className="py-10 text-center"><Loader2 className="mx-auto animate-spin" /></CardContent></Card> : contracts.map(contract => <Card key={contract.id}><CardContent className="flex flex-wrap items-center justify-between gap-3 py-4"><div><div className="font-semibold">{contract.hotel_name}</div><div className="text-xs text-slate-500">{contract.contract_code} · {formatDate(contract.valid_from)} – {formatDate(contract.valid_to)} · {contract.payment_terms}</div></div><div className="text-right"><Badge className={contract.status === 'approved' ? 'bg-emerald-600' : contract.status === 'pending' ? 'bg-amber-500' : 'bg-slate-500'}>{contract.status === 'approved' ? 'Onaylandı' : contract.status === 'pending' ? 'Otel onayı bekleniyor' : contract.status}</Badge><div className="mt-1 text-sm font-semibold">%{contract.commission_pct} komisyon</div></div></CardContent></Card>)}
           </TabsContent>}
 
           {/* Content Tab */}

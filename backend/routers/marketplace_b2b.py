@@ -626,12 +626,11 @@ async def _marketplace_occupancy_price(
     }
 
 
-def _commission_for(agency: dict, listing: dict) -> float:
-    """Listing'de komisyon override varsa onu, yoksa agency default'unu kullan."""
-    pct = listing.get("commission_pct")
-    if pct is None:
-        pct = agency.get("default_commission_pct", 12.0)
-    return float(pct)
+def _contract_commission(contract: dict) -> float:
+    """Return the hotel-approved commission; never silently fall back."""
+    if contract.get("status") != "approved" or contract.get("commission_pct") is None:
+        raise HTTPException(403, "Onaylı otel–acente sözleşmesi ve komisyon oranı gerekli")
+    return float(contract["commission_pct"])
 
 
 def _syroce_b2b_fee(total: float, source: str, agency_fee_pct: float | None = None) -> tuple[float, float]:
@@ -1294,12 +1293,13 @@ async def agency_search(
     if co <= ci:
         raise HTTPException(400, "check_out, check_in'den sonra olmalı")
 
-    from routers.agency_contracts import list_partner_tenant_ids
+    from routers.agency_contracts import list_active_contracts
 
     last_night = _last_occupied_date(req.check_in, req.check_out)
-    partner_tenant_ids = await list_partner_tenant_ids(
+    active_contracts = await list_active_contracts(
         agency["agency_id"], on_date=req.check_in, through_date=last_night
     )
+    partner_tenant_ids = list(active_contracts)
     if not partner_tenant_ids:
         return {"check_in": req.check_in, "check_out": req.check_out, "results": [], "total_hotels": 0, "message": "Henüz onaylı sözleşmeniz olan otel yok."}
 
@@ -1447,7 +1447,7 @@ async def agency_search(
 
         # Sadece müsait oda tipleri olan otelleri ekle
         nights = (co - ci).days
-        commission_pct = _commission_for(agency, listing)
+        commission_pct = _contract_commission(active_contracts[tenant_id])
         available = []
         for rt_data in room_types.values():
             pricing = rt_data.pop("pricing")
@@ -1503,9 +1503,10 @@ async def agency_hotel_availability(
     from routers.agency_contracts import has_active_contract
 
     last_night = _last_occupied_date(check_in, check_out)
-    if not await has_active_contract(
+    contract = await has_active_contract(
         agency["agency_id"], tenant_id, on_date=check_in, through_date=last_night
-    ):
+    )
+    if not contract:
         raise HTTPException(403, "Bu otelle bu tarih için aktif sözleşmeniz yok")
     listing = await _get_listing_or_404(tenant_id)
     if any(d in listing.get("blocked_dates", []) for d in _date_range(check_in, check_out)):
@@ -1544,7 +1545,7 @@ async def agency_hotel_availability(
             rt_data["_room_ids"].append(r.get("id"))
 
         nights = (co - ci).days
-        commission_pct = _commission_for(agency, listing)
+        commission_pct = _contract_commission(contract)
         for rt_data in room_types.values():
             booked = await db.bookings.count_documents(
                 {
@@ -1722,7 +1723,7 @@ async def agency_create_reservation(
             raise HTTPException(409, "Seçilen tarihler için müsait oda yok")
 
         # Komisyon: sözleşmede otelin onayladığı oran (override edilmiş olabilir) kullanılır
-        commission_pct = float(contract.get("commission_pct", _commission_for(agency, listing)))
+        commission_pct = _contract_commission(contract)
         # Retain the explicit calendar-night/base calculation as a safe
         # fallback and as executable documentation of checkout exclusivity.
         nights = (co.date() - ci.date()).days

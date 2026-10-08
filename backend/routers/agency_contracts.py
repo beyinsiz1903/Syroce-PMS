@@ -163,6 +163,30 @@ async def list_partner_tenant_ids(
     return [doc["tenant_id"] async for doc in cursor]
 
 
+async def list_active_contracts(
+    agency_id: str,
+    on_date: str | None = None,
+    through_date: str | None = None,
+) -> dict[str, dict]:
+    """Return approved contracts keyed by hotel for one stay window.
+
+    Callers must use the approved contract's commission.  Agency defaults and
+    marketplace listing values are proposal helpers, never sale terms.
+    """
+    sysdb = get_system_db()
+    today = on_date or datetime.now(UTC).strftime("%Y-%m-%d")
+    cursor = sysdb.agency_contracts.find(
+        {
+            "agency_id": agency_id,
+            "status": "approved",
+            "valid_from": {"$lte": today},
+            "valid_to": {"$gte": through_date or today},
+        },
+        {"_id": 0},
+    )
+    return {doc["tenant_id"]: doc async for doc in cursor}
+
+
 async def list_active_agencies_for_tenant(tenant_id: str, on_date: str | None = None) -> list[str]:
     """Bu otelle bugün aktif (approved + tarih içinde) sözleşmesi olan tüm agency_id
     listesi. has_active_contract / list_partner_tenant_ids'in TERSİ (tenant -> agency).
@@ -352,6 +376,28 @@ async def contract_list_mine(
     agency: dict = Depends(_agency_dep),
 ):
     return await _list_agency_contracts(status, limit, agency)
+
+
+@agency_router.get("/contracts/hotel-candidates")
+async def contract_hotel_candidates(agency: dict = Depends(_agency_dep)) -> dict:
+    """Minimal public hotel data needed to create a contract proposal."""
+    sysdb = get_system_db()
+    listings = await sysdb.marketplace_listings.find(
+        {"is_listed": True},
+        {"_id": 0, "tenant_id": 1, "hotel_name": 1, "city": 1, "country": 1,
+         "currency": 1, "allowed_room_types": 1},
+    ).sort("hotel_name", 1).to_list(1000)
+    contracts = await sysdb.agency_contracts.find(
+        {"agency_id": agency["agency_id"], "status": {"$in": ["pending", "approved"]}},
+        {"_id": 0, "tenant_id": 1, "status": 1},
+    ).to_list(1000)
+    status_by_tenant = {item["tenant_id"]: item["status"] for item in contracts}
+    return {
+        "hotels": [
+            {**listing, "contract_status": status_by_tenant.get(listing["tenant_id"])}
+            for listing in listings
+        ]
+    }
 
 
 # Alias — Acente otomasyon SaaS'ı GET /contracts/ kullanıyor
@@ -743,4 +789,4 @@ async def migrate_existing_agencies(
 # ─── Tek bir router objesi expose et (registry için) ──────────────────────
 
 # Birden fazla prefix var; registry'ye ayrı ayrı ekleyeceğiz.
-__all__ = ["agency_router", "hotel_router", "admin_router", "has_active_contract", "list_partner_tenant_ids"]
+__all__ = ["agency_router", "hotel_router", "admin_router", "has_active_contract", "list_partner_tenant_ids", "list_active_contracts"]

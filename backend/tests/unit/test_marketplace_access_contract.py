@@ -10,6 +10,7 @@ from routers.marketplace_b2b import (
     MarketplaceAgencyCreate,
     MarketplacePortalSettingsUpdate,
     MarketplaceReservationCreate,
+    _contract_commission,
     _last_occupied_date,
     _marketplace_financials,
     _require_hotel_admin,
@@ -145,6 +146,14 @@ def test_marketplace_financials_reconcile_after_price_change():
         "syroce_b2b_fee_amount": 150.0,
         "net_to_hotel": 6225.0,
     }
+
+
+def test_marketplace_commission_requires_hotel_approved_contract():
+    assert _contract_commission({"status": "approved", "commission_pct": 14.5}) == 14.5
+    for contract in ({}, {"status": "pending", "commission_pct": 12}, {"status": "approved"}):
+        with pytest.raises(HTTPException) as error:
+            _contract_commission(contract)
+        assert error.value.status_code == 403
 
 
 def test_marketplace_room_snapshot_keeps_ledger_and_pms_fields_consistent():

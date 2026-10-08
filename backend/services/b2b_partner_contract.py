@@ -45,7 +45,7 @@ class PartnerContractSnapshot:
     agency_id: str
     has_contract: bool
     commission_pct: float
-    commission_source: str  # "contract" | "agency_default"
+    commission_source: str  # "contract" | "no_approved_contract"
     payment_terms: str
     allowed_room_types: list[str]
     currency: str | None
@@ -141,13 +141,10 @@ async def build_snapshot(
         or {}
     )
 
-    legacy_commission = float(
-        agency_doc.get("commission_rate", agency.get("commission_rate", _DEFAULT_COMMISSION_PCT)) if agency_doc else agency.get("commission_rate", _DEFAULT_COMMISSION_PCT) or _DEFAULT_COMMISSION_PCT
-    )
     current_debt = float(agency.get("current_debt", 0.0) or 0.0)
 
     if contract:
-        commission_pct = float(contract.get("commission_pct", legacy_commission) or 0.0)
+        commission_pct = float(contract.get("commission_pct") or 0.0)
         commission_source = "contract"
         payment_terms = contract.get("payment_terms") or _DEFAULT_PAYMENT_TERMS
         allowed_room_types = list(contract.get("allowed_room_types") or [])
@@ -160,8 +157,9 @@ async def build_snapshot(
         valid_from = contract.get("valid_from")
         valid_to = contract.get("valid_to")
     else:
-        commission_pct = legacy_commission
-        commission_source = "agency_default"
+        # A default may prefill a future proposal, but is never a sale term.
+        commission_pct = 0.0
+        commission_source = "no_approved_contract"
         payment_terms = _DEFAULT_PAYMENT_TERMS
         allowed_room_types = []
         currency = agency.get("currency")
