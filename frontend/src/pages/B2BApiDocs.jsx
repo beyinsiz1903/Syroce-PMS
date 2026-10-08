@@ -1892,7 +1892,7 @@ export function verifySyroceWebhook(rawBody, secret, signature) {
     .createHmac("sha256", secret)
     .update(rawBody)
     .digest("hex");
-  const expected = Buffer.from(`sha256=${digest}`);
+  const expected = Buffer.from("sha256=" + digest);
   const received = Buffer.from(signature || "");
   return expected.length === received.length &&
     crypto.timingSafeEqual(expected, received);
