@@ -114,6 +114,10 @@ OPERATION_PERMISSIONS = {
     "view_procurement": [Permission.VIEW_PROCUREMENT],
     "manage_procurement": [Permission.MANAGE_PROCUREMENT],
     "approve_procurement_b2b": [Permission.MANAGE_PROCUREMENT],
+    # Quality-management separation of duties: report readers can inspect the
+    # register; operational supervisors/HK task assignees can mutate it.
+    "view_quality": [Permission.VIEW_REPORTS, Permission.VIEW_HK_BOARD],
+    "manage_quality": [Permission.ASSIGN_TASK],
 }
 
 # v89: module → roles mapping for require_module() helper

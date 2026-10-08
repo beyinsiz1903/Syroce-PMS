@@ -24,6 +24,7 @@ vi.mock('../lazyPages', () => ({
   SocialMediaRadar: 'SocialMediaRadar',
   RevenueAutopilot: 'RevenueAutopilot',
   RevenueAutopilotMonitor: 'RevenueAutopilotMonitor',
+  QualityManagement: 'QualityManagement',
 }));
 
 import { getRequiredModule } from '@/components/PlanRouteGuard';
@@ -50,5 +51,10 @@ describe('multi-property navigation', () => {
       type: 'redirect',
       to: '/app/multi-property',
     });
+  });
+
+  it('exposes the quality management workspace', () => {
+    const route = hotelFeaturesAiRoutes(helpers).find((item) => item.path === '/quality-management');
+    expect(route).toMatchObject({ component: 'QualityManagement', wrapLayout: true });
   });
 });
