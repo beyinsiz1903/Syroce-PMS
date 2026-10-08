@@ -7,6 +7,8 @@ FastAPI source that actually registers those routes.
 
 import ast
 import re
+import subprocess
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -210,3 +212,63 @@ def test_documented_query_parameters_match_route_contracts():
         if _documented_fields(*endpoint) != expected
     }
     assert mismatches == {}
+
+
+def test_documentation_code_examples_are_syntax_valid():
+    python_examples = re.findall(
+        r'<CodeBlock lang="python" code={`(.*?)`} />', DOCS, flags=re.DOTALL
+    )
+    assert python_examples
+    for example in python_examples:
+        ast.parse(example.replace(r"\n", "\n").replace(r"\'", "'"))
+
+    javascript_examples = re.findall(
+        r'<CodeBlock lang="javascript" code={`(.*?)`} />', DOCS, flags=re.DOTALL
+    )
+    assert javascript_examples
+    for example in javascript_examples:
+        # Template interpolation belongs to the rendered example. Replace it
+        # only for the parser; runtime credentials remain intentionally absent.
+        source = (
+            example.replace(r"\n", "\n")
+            .replace(r"\`", "`")
+            .replace(r"\${", "${")
+        )
+        with tempfile.NamedTemporaryFile(suffix=".mjs", mode="w", encoding="utf-8") as handle:
+            handle.write(source)
+            handle.flush()
+            result = subprocess.run(
+                ["node", "--check", handle.name], capture_output=True, text=True, check=False
+            )
+        assert result.returncode == 0, result.stderr
+
+
+def test_webhook_test_and_production_delivery_are_not_conflated():
+    source = WEBHOOK_SOURCE
+    retry_source = (ROOT / "backend/routers/webhook_retry_service.py").read_text(
+        encoding="utf-8"
+    )
+    assert '"X-Idempotency-Key": idempotency_key' in retry_source
+    test_route = source.split("async def b2b_test_webhook", 1)[1]
+    assert '"X-Webhook-Delivery": delivery_id' in test_route
+    assert "X-Idempotency-Key" not in test_route
+    assert "one synchronous delivery" in DOCS
+    assert "does not retry" in DOCS
+
+
+def test_versioning_policy_defines_breaking_and_additive_changes():
+    assert "clients must ignore unknown response fields" in DOCS
+    assert "requires a new versioned base path" in DOCS
+    assert "credentials and scopes are never broadened automatically" in DOCS
+
+
+def test_turkish_documentation_headings_use_turkish_characters():
+    stale = (
+        "Yanit",
+        "Ornek",
+        "Kullanim",
+        "Icerik API",
+        "Musaitlik API",
+        "Baslangic",
+    )
+    assert [token for token in stale if token in DOCS] == []
