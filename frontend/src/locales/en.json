@@ -1481,6 +1481,13 @@
   },
   "nightAudit": {
     "title": "Night Audit",
+    "businessDayAria": "PMS business day",
+    "initializedDateNotice": "The business date was created from the opening record; this is not a completed Night Audit.",
+    "legacyDateNotice": "The business date comes from a legacy record; its Night Audit source is unknown.",
+    "lastAudit": "Last Night Audit: {{id}}",
+    "reviewPreparation": "Review end-of-day preparation",
+    "opening": "Opening…",
+    "reviewEndOfDay": "Review End of Day",
     "postRoomCharges": "Post Room Charges",
     "runAudit": "Run Night Audit",
     "auditDate": "Audit Date",

@@ -9,12 +9,32 @@ vi.mock("@/api/axios", () => ({
   default: { get: vi.fn() },
 }));
 vi.mock("@/lib/prefetch", () => ({ prefetchNightAudit: vi.fn() }));
+let activeLanguage = "tr";
+const translations = {
+  tr: {
+    "nightAudit.lastAudit": "Son Night Audit: {{id}}",
+    "nightAudit.reviewPreparation": "Gün sonu hazırlığını incele",
+    "nightAudit.reviewEndOfDay": "Gün Sonunu İncele",
+    "nightAudit.initializedDateNotice": "İş günü başlangıç kaydından oluşturuldu; Night Audit değildir.",
+  },
+  en: {
+    "nightAudit.lastAudit": "Last Night Audit: {{id}}",
+    "nightAudit.reviewPreparation": "Review end-of-day preparation",
+    "nightAudit.reviewEndOfDay": "Review End of Day",
+    "nightAudit.initializedDateNotice": "The business date was created from the opening record; this is not a completed Night Audit.",
+  },
+};
 vi.mock("react-i18next", () => ({
-  useTranslation: () => ({ t: (key) => key }),
+  useTranslation: () => ({
+    i18n: { language: activeLanguage, resolvedLanguage: activeLanguage },
+    t: (key, options) => (translations[activeLanguage]?.[key] || options?.defaultValue || options || key)
+      .replace?.("{{id}}", options?.id) ?? key,
+  }),
 }));
 
 describe("PMSDateBadge business-date synchronization", () => {
   beforeEach(() => {
+    activeLanguage = "tr";
     localStorage.clear();
     sessionStorage.clear();
     localStorage.setItem("user", JSON.stringify({ tenant_id: "tenant-1" }));
@@ -55,6 +75,18 @@ describe("PMSDateBadge business-date synchronization", () => {
     expect(reviewButton).toHaveTextContent("Gün Sonunu İncele");
     expect(reviewButton).toHaveAttribute("title", "Gün sonu hazırlığını incele");
   });
+
+  it("renders the business date and review action in English when English is selected", () => {
+    activeLanguage = "en";
+    render(<MemoryRouter><PMSDateBadge /></MemoryRouter>);
+
+    expect(screen.getByText("Jul 16, 2026")).toBeInTheDocument();
+    expect(screen.getByTestId("pms-date-stale-warning")).toHaveTextContent("Review End of Day");
+    expect(screen.getByTestId("pms-date-stale-warning")).toHaveAttribute(
+      "title",
+      "Review end-of-day preparation",
+    );
+  });
 });
 
 describe("PMSDateBadge dense content safety", () => {
@@ -90,6 +122,7 @@ describe("PMSDateBadge dense content safety", () => {
 
 describe("PMSDateBadge origin transparency", () => {
   it("explains that an initialized date is not a completed night audit", () => {
+    activeLanguage = "tr";
     localStorage.clear();
     sessionStorage.clear();
     localStorage.setItem("user", JSON.stringify({ tenant_id: "tenant-1" }));

@@ -23,4 +23,10 @@ describe('top navigation localization', () => {
     expect(en.navKeys.accounting).toBe('Accounting');
     expect(en.navKeys.general_manager_dashboard).toBe('GM Dashboard');
   });
+
+  it('uses the locale dictionary for the rooms shortcut', () => {
+    expect(layoutSource).toContain("const roomsLabel = t('navKeys.rooms', 'Odalar')");
+    expect(layoutSource).toContain('aria-label={roomsLabel}');
+    expect(layoutSource).not.toContain('aria-label="Odalar"');
+  });
 });

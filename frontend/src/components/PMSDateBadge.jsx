@@ -1,17 +1,21 @@
 import { useEffect, useState, useCallback } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { Calendar, AlertTriangle } from "lucide-react";
 import api from "@/api/axios";
 import { prefetchNightAudit } from "@/lib/prefetch";
 import { BUSINESS_DATE_CHANGED_EVENT } from "@/lib/businessDateEvents";
 
-const MONTHS_TR = ["Oca", "Şub", "Mar", "Nis", "May", "Haz", "Tem", "Ağu", "Eyl", "Eki", "Kas", "Ara"];
-
-const fmtDate = (iso) => {
+const fmtDate = (iso, locale) => {
   if (!iso) return "—";
   const [y, m, d] = String(iso).split("-").map((s) => parseInt(s, 10));
   if (!y || !m || !d) return iso;
-  return `${String(d).padStart(2, "0")} ${MONTHS_TR[m - 1] || ""} ${y}`;
+  return new Intl.DateTimeFormat(locale, {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(Date.UTC(y, m - 1, d)));
 };
 
 const todayISO = () => {
@@ -46,6 +50,7 @@ const readBdCache = () => {
 };
 
 export default function PMSDateBadge({ inLayout = false }) {
+  const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
   const cached = readBdCache();
@@ -148,13 +153,13 @@ export default function PMSDateBadge({ inLayout = false }) {
         ? "print:hidden flex min-h-9 max-w-full shrink-0 select-none items-center justify-end border-b border-slate-200 bg-slate-50/90 px-3 py-1 dark:border-slate-800 dark:bg-slate-950/70 sm:px-4"
         : "print:hidden max-w-full select-none"}
       data-testid={inLayout ? "layout-business-date-bar" : undefined}
-      aria-label={inLayout ? "PMS iş günü" : undefined}
+      aria-label={inLayout ? t("nightAudit.businessDayAria", "PMS iş günü") : undefined}
       title={bdMeta?.update_source === "initialization"
-        ? "İş günü başlangıç kaydından oluşturuldu; Night Audit değildir."
+        ? t("nightAudit.initializedDateNotice", "İş günü başlangıç kaydından oluşturuldu; Night Audit değildir.")
         : bdMeta?.update_source === "legacy_record"
-          ? "İş günü eski kayıttan geliyor; Night Audit kaynağı bilinmiyor."
+          ? t("nightAudit.legacyDateNotice", "İş günü eski kayıttan geliyor; Night Audit kaynağı bilinmiyor.")
         : bdMeta?.audit_run_id
-          ? `Son Night Audit: ${bdMeta.audit_run_id}`
+          ? t("nightAudit.lastAudit", { defaultValue: "Son Night Audit: {{id}}", id: bdMeta.audit_run_id })
           : undefined}
     >
       <div className={`${containerClass} max-w-full`} data-testid="pms-date-badge">
@@ -164,7 +169,7 @@ export default function PMSDateBadge({ inLayout = false }) {
           <Calendar className="w-3.5 h-3.5 text-slate-500 shrink-0" />
         )}
         <span className="font-medium">PMS:</span>
-        <span className="font-semibold tabular-nums">{fmtDate(bd)}</span>
+        <span className="font-semibold tabular-nums">{fmtDate(bd, i18n.resolvedLanguage || i18n.language || "tr")}</span>
         {isStale && (
           <button
             type="button"
@@ -174,9 +179,11 @@ export default function PMSDateBadge({ inLayout = false }) {
             disabled={navigating}
             className="ml-1 px-2.5 py-0.5 rounded-full bg-amber-600 hover:bg-amber-700 disabled:bg-amber-700 disabled:cursor-wait text-white text-[11px] font-medium transition-colors"
             data-testid="pms-date-stale-warning"
-            title="Gün sonu hazırlığını incele"
+            title={t("nightAudit.reviewPreparation", "Gün sonu hazırlığını incele")}
           >
-            {navigating ? "Açılıyor…" : "Gün Sonunu İncele"}
+            {navigating
+              ? t("nightAudit.opening", "Açılıyor…")
+              : t("nightAudit.reviewEndOfDay", "Gün Sonunu İncele")}
           </button>
         )}
       </div>

@@ -512,6 +512,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
               {visibleNav.some((item) => item.key === 'pms') && canAccessPmsTab(user, 'rooms') && (() => {
                 const roomsPath = '/app/pms#rooms';
                 const isRoomsActive = location.pathname === '/app/pms' && location.hash === '#rooms';
+                const roomsLabel = t('navKeys.rooms', 'Odalar');
                 return (
                   <TooltipProvider key="rooms-shortcut" delayDuration={300}>
                     <Tooltip>
@@ -530,15 +531,15 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
                           }`}
                           data-nav-key="rooms-shortcut"
                           data-testid="nav-rooms-shortcut-button"
-                          aria-label="Odalar"
-                          title="Odalar"
+                          aria-label={roomsLabel}
+                          title={roomsLabel}
                         >
                           <BedDouble className="w-3.5 h-3.5 shrink-0" />
-                          <span className="hidden lg:inline font-medium">Odalar</span>
+                          <span className="hidden lg:inline font-medium">{roomsLabel}</span>
                         </Button>
                       </TooltipTrigger>
                       <TooltipContent side="bottom" className="lg:hidden">
-                        <p>Odalar</p>
+                        <p>{roomsLabel}</p>
                       </TooltipContent>
                     </Tooltip>
                   </TooltipProvider>
