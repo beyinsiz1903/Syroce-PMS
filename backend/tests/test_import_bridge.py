@@ -329,8 +329,15 @@ async def test_auto_import_pending_assignment_defers_availability_outbox():
              patch("core.atomic_booking.db", db):
             from core.import_bridge_service import create_import_record, auto_import_reservation_to_pms
 
-            record = await create_import_record(lineage, "pending_auto_import", connector_id=TEST_CONNECTOR)
-            success, msg = await auto_import_reservation_to_pms(record["id"])
+            # This test verifies the pending-room/outbox behavior, not the
+            # worker's atomic claim. CI runs a live backend worker beside the
+            # suite, so a pending row can otherwise be claimed between these
+            # two awaits and make the assertion nondeterministic.
+            record = await create_import_record(lineage, "processing", connector_id=TEST_CONNECTOR)
+            success, msg = await auto_import_reservation_to_pms(
+                record["id"],
+                pre_claimed_record=record,
+            )
 
         assert success is True, f"Auto import failed: {msg}"
         assert await db.outbox_events.count_documents({"tenant_id": TEST_TENANT}) == 0

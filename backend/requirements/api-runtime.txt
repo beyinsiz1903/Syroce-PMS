@@ -35,6 +35,10 @@
 # API boot/runtime gaps found by Phase 6.0 AST scan
 celery==5.3.4
 psutil==7.2.2
+# Quick-ID's OpenCV preprocessing imports NumPy directly. Keep the runtime pin
+# aligned with the canonical ML subset without moving the heavy ML stack into
+# the API's canonical dependency set.
+numpy==2.3.4
 
 # Optional tracing runtime. These imports are feature-gated, but a clean
 # production image must contain them whenever an OTLP endpoint is configured.

@@ -17,7 +17,7 @@ import re
 from datetime import datetime
 from typing import Any
 
-from PIL import Image, ImageEnhance, ImageFilter
+from PIL import Image, ImageEnhance, ImageFilter, ImageOps
 
 MAX_IMAGE_BYTES = int(os.environ.get("QUICKID_MAX_IMAGE_BYTES", str(8 * 1024 * 1024)))
 SCAN_TIMEOUT_SECONDS = float(os.environ.get("QUICKID_SCAN_TIMEOUT_SECONDS", "60"))
@@ -209,14 +209,26 @@ async def _tesseract_scan(image_bytes: bytes) -> dict[str, Any]:
     import pytesseract
 
     def run() -> dict[str, Any]:
-        with Image.open(io.BytesIO(image_bytes)) as source:
-            image = source.convert("L")
-            image = ImageEnhance.Contrast(image).enhance(1.6)
-            image = image.filter(ImageFilter.SHARPEN)
+        image = _prepare_tesseract_image(image_bytes)
+        try:
+            text = pytesseract.image_to_string(
+                image,
+                lang="tur+eng",
+                config="--oem 3 --psm 6 -c preserve_interword_spaces=1",
+                timeout=20,
+            )
+        except pytesseract.TesseractError:
             try:
-                text = pytesseract.image_to_string(image, lang="tur+eng", config="--psm 6")
-            except pytesseract.TesseractError:
-                text = pytesseract.image_to_string(image, lang="eng", config="--psm 6")
+                text = pytesseract.image_to_string(
+                    image,
+                    lang="eng",
+                    config="--oem 3 --psm 6 -c preserve_interword_spaces=1",
+                    timeout=20,
+                )
+            except RuntimeError as exc:
+                raise ValueError("Yerel OCR zaman aşımına uğradı; fotoğrafı yeniden çekin") from exc
+        except RuntimeError as exc:
+            raise ValueError("Yerel OCR zaman aşımına uğradı; fotoğrafı yeniden çekin") from exc
         if len(text.strip()) < 5:
             raise ValueError("Görüntüde okunabilir kimlik metni bulunamadı")
         document = _parse_tesseract_text(text)
@@ -225,6 +237,142 @@ async def _tesseract_scan(image_bytes: bytes) -> dict[str, Any]:
         return {"document_count": 1, "documents": [document]}
 
     return await asyncio.to_thread(run)
+
+
+def _order_quad_points(points):
+    """Return quadrilateral points as top-left, top-right, bottom-right, bottom-left."""
+    import numpy as np
+
+    points = np.asarray(points, dtype="float32").reshape(4, 2)
+    ordered = np.zeros((4, 2), dtype="float32")
+    sums = points.sum(axis=1)
+    differences = np.diff(points, axis=1).reshape(-1)
+    ordered[0] = points[sums.argmin()]
+    ordered[2] = points[sums.argmax()]
+    ordered[1] = points[differences.argmin()]
+    ordered[3] = points[differences.argmax()]
+    return ordered
+
+
+def _find_identity_card_quad(image):
+    """Find the largest plausible ID-card boundary, or return ``None``."""
+    import cv2
+
+    height, width = image.shape[:2]
+    image_area = float(height * width)
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    gray = cv2.GaussianBlur(gray, (5, 5), 0)
+    edges = cv2.Canny(gray, 45, 140)
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (7, 7))
+    edges = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel, iterations=2)
+    contours, _ = cv2.findContours(edges, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+
+    candidates: list[tuple[float, Any]] = []
+    for contour in sorted(contours, key=cv2.contourArea, reverse=True)[:30]:
+        area = cv2.contourArea(contour)
+        if area < image_area * 0.08 or area > image_area * 0.98:
+            continue
+        perimeter = cv2.arcLength(contour, True)
+        polygon = cv2.approxPolyDP(contour, 0.025 * perimeter, True)
+        if len(polygon) != 4 or not cv2.isContourConvex(polygon):
+            continue
+        rectangle = cv2.minAreaRect(polygon)
+        side_a, side_b = rectangle[1]
+        if min(side_a, side_b) < 60:
+            continue
+        aspect_ratio = max(side_a, side_b) / min(side_a, side_b)
+        if not 1.25 <= aspect_ratio <= 1.95:
+            continue
+        rectangularity = area / max(side_a * side_b, 1.0)
+        if rectangularity < 0.72:
+            continue
+        # Prefer a large contour close to the ISO/IEC 7810 ID-1 ratio (1.586).
+        ratio_score = max(0.0, 1.0 - abs(aspect_ratio - 1.586) / 0.5)
+        candidates.append((area * (0.7 + 0.3 * ratio_score), polygon.reshape(4, 2)))
+    return max(candidates, key=lambda item: item[0])[1] if candidates else None
+
+
+def _warp_identity_card(image, points):
+    import cv2
+    import numpy as np
+
+    top_left, top_right, bottom_right, bottom_left = _order_quad_points(points)
+    width = int(max(np.linalg.norm(bottom_right - bottom_left), np.linalg.norm(top_right - top_left)))
+    height = int(max(np.linalg.norm(top_right - bottom_right), np.linalg.norm(top_left - bottom_left)))
+    if width < 120 or height < 75:
+        return image
+    destination = np.array(
+        [[0, 0], [width - 1, 0], [width - 1, height - 1], [0, height - 1]],
+        dtype="float32",
+    )
+    matrix = cv2.getPerspectiveTransform(
+        np.array([top_left, top_right, bottom_right, bottom_left], dtype="float32"),
+        destination,
+    )
+    card = cv2.warpPerspective(image, matrix, (width, height), flags=cv2.INTER_CUBIC)
+    if card.shape[0] > card.shape[1]:
+        card = cv2.rotate(card, cv2.ROTATE_90_CLOCKWISE)
+    return card
+
+
+def _prepare_tesseract_image_opencv(image_bytes: bytes) -> Image.Image:
+    """Crop, deskew and enhance a document with OpenCV."""
+    import cv2
+    import numpy as np
+
+    with Image.open(io.BytesIO(image_bytes)) as source:
+        oriented = ImageOps.exif_transpose(source).convert("RGB")
+        max_side = max(oriented.size)
+        if max_side > 1800:
+            scale = 1800 / max_side
+            oriented = oriented.resize(
+                (max(1, round(oriented.width * scale)), max(1, round(oriented.height * scale))),
+                Image.Resampling.LANCZOS,
+            )
+        image = cv2.cvtColor(np.asarray(oriented), cv2.COLOR_RGB2BGR)
+
+    quadrilateral = _find_identity_card_quad(image)
+    if quadrilateral is not None:
+        image = _warp_identity_card(image, quadrilateral)
+
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    gray = cv2.createCLAHE(clipLimit=2.2, tileGridSize=(8, 8)).apply(gray)
+    gray = cv2.bilateralFilter(gray, 7, 45, 45)
+    sharpened = cv2.addWeighted(gray, 1.65, cv2.GaussianBlur(gray, (0, 0), 2.0), -0.65, 0)
+    binary = cv2.adaptiveThreshold(
+        sharpened,
+        255,
+        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+        cv2.THRESH_BINARY,
+        35,
+        11,
+    )
+    # A small white border keeps characters at the card edge away from the OCR boundary.
+    binary = cv2.copyMakeBorder(binary, 18, 18, 18, 18, cv2.BORDER_CONSTANT, value=255)
+    return Image.fromarray(binary)
+
+
+def _prepare_tesseract_image(image_bytes: bytes) -> Image.Image:
+    """Prepare OCR input and retain a Pillow-only fallback for safe operation."""
+    try:
+        return _prepare_tesseract_image_opencv(image_bytes)
+    except Exception:
+        # A malformed contour or unavailable native OpenCV library must not
+        # disable the free local OCR path. The original enhancement remains a
+        # deterministic fallback, while the source image is still never saved.
+        with Image.open(io.BytesIO(image_bytes)) as source:
+            image = ImageOps.exif_transpose(source).convert("L")
+            max_side = max(image.size)
+            if max_side > 1800:
+                scale = 1800 / max_side
+                image = image.resize(
+                    (max(1, round(image.width * scale)), max(1, round(image.height * scale))),
+                    Image.Resampling.LANCZOS,
+                )
+            image = ImageOps.autocontrast(image, cutoff=1)
+            image = ImageEnhance.Contrast(image).enhance(1.7)
+            image = image.filter(ImageFilter.UnsharpMask(radius=1.8, percent=170, threshold=3))
+            return ImageOps.expand(image, border=18, fill=255)
 
 
 def provider_catalog(api_keys: dict[str, str] | None = None) -> list[dict[str, Any]]:
