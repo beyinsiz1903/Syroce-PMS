@@ -31,7 +31,7 @@ const DASHBOARD_MODULE_KEYS = {
   '/hotel-inventory': ['pms'],
   '/flash-report': ['reports', 'basic_reporting'],
   '/group-sales': ['group_sales'],
-  '/sales-crm': ['sales_crm'],
+  '/crm': ['sales_crm'],
   '/service-recovery': ['guest_advanced'],
   '/spa-wellness': ['spa'],
   '/ai-chatbot': ['ai', 'ai_chatbot'],
@@ -412,7 +412,7 @@ const Dashboard = ({
     title: t('dashboard.salesCRM'),
     description: t('dashboard.salesCRMDesc'),
     icon: TrendingUp,
-    path: '/sales-crm',
+    path: '/crm',
     color: '#3b82f6',
     badge: 'NEW',
     category: 'revenue'

@@ -53,6 +53,18 @@ describe('multi-property navigation', () => {
     });
   });
 
+  it('redirects the legacy sales CRM route into the unified CRM sales tab', () => {
+    const routes = hotelFeaturesAiRoutes(helpers);
+    expect(routes.find((route) => route.path === '/sales-crm')).toMatchObject({
+      type: 'redirect',
+      to: '/crm?tab=sales',
+    });
+    expect(routes.find((route) => route.path === '/crm')).toMatchObject({
+      component: 'CRMWorkspace',
+      wrapLayout: true,
+    });
+  });
+
   it('exposes the quality management workspace', () => {
     const route = hotelFeaturesAiRoutes(helpers).find((item) => item.path === '/quality-management');
     expect(route).toMatchObject({ component: 'QualityManagement', wrapLayout: true });
