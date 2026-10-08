@@ -13,6 +13,7 @@ import { ROUTES } from '../../src/navigation/routes';
 import { spacing, useTheme } from '../../src/theme';
 import { captureAndScanIdentity } from '../../src/utils/checkinCapture';
 import { errorMessage } from '../../src/utils/errors';
+import { prepareIdentityPhoto } from '../../src/utils/identityImage';
 import { quickIdErrorMessage } from '../../src/utils/quickidErrors';
 
 type Step = 'scan' | 'capture' | 'parsed';
@@ -139,7 +140,14 @@ export default function CheckinScreen() {
     let active = true;
     setBusy(true);
     void captureAndScanIdentity({
-      launchCamera: () => ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.7, base64: false }),
+      launchCamera: () => ImagePicker.launchCameraAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [16, 10],
+        quality: 0.8,
+        base64: false,
+      }),
+      preparePhoto: prepareIdentityPhoto,
       scanPhoto: scanIdPhoto,
     })
       .then((result) => {

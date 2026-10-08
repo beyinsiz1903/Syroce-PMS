@@ -17,6 +17,27 @@ test('accepted camera photo is sent to the identity parser', async () => {
   assert.deepEqual(result, { status: 'parsed', data: { first_name: 'Ada' } });
 });
 
+test('prepares the accepted photo before sending it to OCR', async () => {
+  const operations: string[] = [];
+  const result = await captureAndScanIdentity({
+    launchCamera: async () => ({ canceled: false, assets: [{ uri: 'file:///original.heic' }] }),
+    preparePhoto: async (uri) => {
+      operations.push(`prepare:${uri}`);
+      return 'file:///prepared.jpg';
+    },
+    scanPhoto: async (uri) => {
+      operations.push(`scan:${uri}`);
+      return { id_number: '12345678901' };
+    },
+  });
+
+  assert.deepEqual(operations, [
+    'prepare:file:///original.heic',
+    'scan:file:///prepared.jpg',
+  ]);
+  assert.equal(result.status, 'parsed');
+});
+
 test('camera cancellation returns to the caller without scanning', async () => {
   let scanCalls = 0;
   const result = await captureAndScanIdentity({
