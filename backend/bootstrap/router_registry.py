@@ -180,6 +180,7 @@ _EXTRACTED_ROUTERS: list[tuple[str, str, list[str], str | None, list | None]] = 
     ("domains.guest.router", "router", ["guest-profile-domain"], None, None),
     ("domains.guest.checkin_router", "router", ["checkin-domain"], None, None),
     ("domains.sales.router", "router", ["sales-crm-domain"], None, None),
+    ("domains.quality.router", "router", ["quality-management"], None, None),
     ("domains.pms.pos_router", "router", ["pos-fnb-domain"], None, None),
     ("domains.pms.mobile_router", "router", ["mobile-domain"], None, None),
     ("domains.revenue.analytics_router", "router", ["analytics-domain"], None, None),
