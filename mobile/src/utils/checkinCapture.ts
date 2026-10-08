@@ -10,6 +10,7 @@ export type CheckinCaptureResult<T> =
 
 type CaptureDependencies<T> = {
   launchCamera: () => Promise<CameraResult>;
+  preparePhoto?: (uri: string) => Promise<string>;
   scanPhoto: (uri: string) => Promise<T>;
 };
 
@@ -20,6 +21,7 @@ type CaptureDependencies<T> = {
  */
 export async function captureAndScanIdentity<T>({
   launchCamera,
+  preparePhoto = async (uri) => uri,
   scanPhoto,
 }: CaptureDependencies<T>): Promise<CheckinCaptureResult<T>> {
   try {
@@ -29,7 +31,8 @@ export async function captureAndScanIdentity<T>({
     const uri = capture.assets?.[0]?.uri;
     if (!uri) throw new Error('Kimlik fotoğrafı alınamadı. Lütfen yeniden deneyin.');
 
-    return { status: 'parsed', data: await scanPhoto(uri) };
+    const preparedUri = await preparePhoto(uri);
+    return { status: 'parsed', data: await scanPhoto(preparedUri) };
   } catch (error: unknown) {
     return { status: 'failed', error };
   }
