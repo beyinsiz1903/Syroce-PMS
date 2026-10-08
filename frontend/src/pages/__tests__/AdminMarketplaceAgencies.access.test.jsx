@@ -4,7 +4,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import axios from 'axios';
 
-import AdminMarketplaceAgencies from '../AdminMarketplaceAgencies';
+import AdminMarketplaceAgencies, { startAgencyPortalContext } from '../AdminMarketplaceAgencies';
 
 vi.mock('axios', () => ({
   default: {
@@ -40,6 +40,21 @@ describe('AdminMarketplaceAgencies access lifecycle', () => {
     vi.clearAllMocks();
     axios.get.mockResolvedValue({ data: { agencies: [] } });
     axios.post.mockResolvedValue({ data: { agency: { id: 'agency-1' }, api_key: null } });
+  });
+
+  it('opens a passwordless audited agency context without replacing the hotel admin token', async () => {
+    axios.post.mockResolvedValue({ data: { token: 'short-lived-agency-token', portal_path: '/agency-portal' } });
+    localStorage.setItem('access_token', 'existing-superadmin-token');
+    const navigate = vi.fn();
+
+    await startAgencyPortalContext('agency-1', navigate);
+
+    expect(axios.post).toHaveBeenCalledWith('/marketplace/v1/admin/agencies/agency-1/portal-context');
+    expect(localStorage.getItem('access_token')).toBe('existing-superadmin-token');
+    expect(localStorage.getItem('agency_token')).toBe('short-lived-agency-token');
+    expect(localStorage.getItem('agency_portal_mode')).toBe('marketplace');
+    expect(sessionStorage.getItem('agency_admin_return_path')).toBe('/admin/marketplace/agencies');
+    expect(navigate).toHaveBeenCalledWith('/agency-portal');
   });
 
   it('defaults new agencies to portal-only and does not create an unnecessary secret', async () => {

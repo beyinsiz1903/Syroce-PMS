@@ -50,6 +50,28 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/marketplace/v1", tags=["Marketplace v1"])
 
+ADMIN_AGENCY_CONTEXT_MINUTES = 15
+
+
+def _create_admin_agency_context_token(*, target_user_id: str, actor_user_id: str, agency_id: str) -> tuple[str, int]:
+    """Mint a short-lived agency portal session without exposing a password."""
+    from core.security import JWT_ALGORITHM, JWT_SECRET
+
+    now_ts = datetime.now(UTC).timestamp()
+    exp_ts = int(now_ts + ADMIN_AGENCY_CONTEXT_MINUTES * 60)
+    payload = {
+        "user_id": target_user_id,
+        "agency_id": agency_id,
+        "actor_user_id": actor_user_id,
+        "impersonation": True,
+        "purpose": "admin_agency_context",
+        "iat": now_ts,
+        "jti": secrets.token_urlsafe(24),
+        "exp": exp_ts,
+        "type": "access",
+    }
+    return pyjwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM), exp_ts
+
 # ─── Global Extranet UI ───────────────────────────────────────────────────
 
 
@@ -117,6 +139,7 @@ async def get_marketplace_agency(
     sysdb = get_system_db()
     agency_id = None
     actor_user = None
+    impersonation = None
 
     if authorization and authorization.lower().startswith("bearer "):
         try:
@@ -142,6 +165,27 @@ async def get_marketplace_agency(
             roles = user.get("roles") or []
             if role != "marketplace_agent" and "marketplace_agent" not in roles:
                 raise HTTPException(403, "Kullanıcı bir global acente yetkilisi değil")
+            if payload.get("impersonation") is True:
+                if payload.get("purpose") != "admin_agency_context":
+                    raise HTTPException(401, "Geçersiz acente görüntüleme oturumu")
+                actor_id = payload.get("actor_user_id")
+                if not actor_id or payload.get("agency_id") != user.get("agency_id"):
+                    raise HTTPException(401, "Acente görüntüleme kapsamı geçersiz")
+                actor = await sysdb.users.find_one(
+                    {"$or": [{"id": actor_id}, {"user_id": actor_id}]},
+                    {"_id": 0, "id": 1, "user_id": 1, "name": 1, "email": 1, "role": 1, "roles": 1, "is_active": 1},
+                )
+                actor_role = getattr((actor or {}).get("role"), "value", (actor or {}).get("role"))
+                actor_roles = (actor or {}).get("roles") or []
+                if not actor or actor.get("is_active") is False or (actor_role != "super_admin" and "super_admin" not in actor_roles):
+                    raise HTTPException(401, "Süperadmin görüntüleme yetkisi artık geçerli değil")
+                impersonation = {
+                    "active": True,
+                    "actor_id": actor.get("id") or actor.get("user_id"),
+                    "actor_name": actor.get("name", ""),
+                    "expires_at": int(payload.get("exp") or 0),
+                    "jti": payload.get("jti"),
+                }
             agency_id = user.get("agency_id")
             actor_user = {
                 "id": user.get("id") or user.get("user_id"),
@@ -193,6 +237,7 @@ async def get_marketplace_agency(
         "contact_email": agency.get("contact_email", ""),
         "source": source,
         "user": actor_user,
+        "impersonation": impersonation,
     }
 
 @router.get("/extranet/my-hotels")
@@ -320,7 +365,36 @@ async def marketplace_extranet_profile(agency: dict = Depends(get_marketplace_ag
         },
         "user": agency.get("user"),
         "hotels": hotel_result["hotels"],
+        "impersonation": {
+            key: value for key, value in (agency.get("impersonation") or {}).items() if key != "jti"
+        } or None,
     }
+
+
+@router.post("/extranet/admin-context/exit")
+async def marketplace_admin_context_exit(agency: dict = Depends(get_marketplace_agency)):
+    """Revoke an agency preview token and record its explicit close event."""
+    context = agency.get("impersonation") or {}
+    if not context.get("active") or not context.get("jti") or not context.get("expires_at"):
+        raise HTTPException(409, "Etkin süperadmin acente görünümü bulunamadı")
+
+    from core.security import revoke_jti
+
+    revoked = await revoke_jti(
+        context["jti"],
+        int(context["expires_at"]),
+        user_id=context.get("actor_id"),
+        reason="admin_agency_context_exit",
+    )
+    if not revoked:
+        raise HTTPException(401, "Acente görüntüleme oturumu daha önce kapatılmış")
+    await _record_marketplace_audit(
+        get_system_db(),
+        agency_id=agency["agency_id"],
+        action="admin_agency_context_exit",
+        details={"actor_user_id": context.get("actor_id")},
+    )
+    return {"ok": True}
 
 
 @router.get("/extranet/settings")
@@ -995,6 +1069,62 @@ async def admin_update_agency(
     )
     agency = await sysdb.marketplace_agencies.find_one({"id": agency_id}, {"_id": 0})
     return {"ok": True, "agency": agency}
+
+
+@router.post("/admin/agencies/{agency_id}/portal-context")
+async def admin_enter_agency_portal(
+    agency_id: str,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+):
+    """Open an audited, short-lived agency portal session as superadmin.
+
+    No agency password is read, returned or replaced. The session uses an
+    active marketplace user's permission set and expires after 15 minutes.
+    """
+    if not _is_super_admin(current_user) or getattr(current_user, "is_impersonating", False):
+        raise HTTPException(403, "Acente hesabını yalnızca ana süperadmin oturumu görüntüleyebilir")
+
+    sysdb = get_system_db()
+    agency = await sysdb.marketplace_agencies.find_one({"id": agency_id, "status": "active"}, {"_id": 0})
+    if not agency:
+        raise HTTPException(404, "Aktif acente bulunamadı")
+
+    target_user = await sysdb.users.find_one(
+        {
+            "agency_id": agency_id,
+            "is_active": {"$ne": False},
+            "$or": [{"role": "marketplace_agent"}, {"roles": "marketplace_agent"}],
+        },
+        {"_id": 0, "id": 1, "user_id": 1, "name": 1, "email": 1, "agency_id": 1},
+    )
+    if not target_user:
+        raise HTTPException(409, "Acente portalına geçmek için en az bir aktif portal kullanıcısı gerekir")
+
+    target_user_id = target_user.get("id") or target_user.get("user_id")
+    actor_user_id = current_user.id
+    token, expires_at = _create_admin_agency_context_token(
+        target_user_id=target_user_id,
+        actor_user_id=actor_user_id,
+        agency_id=agency_id,
+    )
+    await _record_marketplace_audit(
+        sysdb,
+        agency_id=agency_id,
+        action="admin_agency_context_enter",
+        details={
+            "actor_user_id": actor_user_id,
+            "target_user_id": target_user_id,
+            "expires_at": expires_at,
+            "source_ip": request.client.host if request.client else None,
+        },
+    )
+    return {
+        "token": token,
+        "expires_at": expires_at,
+        "portal_path": "/agency-portal",
+        "agency": {"id": agency_id, "name": agency.get("name", "")},
+    }
 
 
 @router.delete("/admin/agencies/{agency_id}")
