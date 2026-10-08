@@ -1,6 +1,6 @@
 import { t } from "i18next";
 import { useState, useEffect } from 'react';
-import { BookOpen, Key, Search, Hotel, Calendar, DollarSign, FileText, Bell, ChevronRight, Globe, Copy, Check, ArrowLeft, Code, Shield, Zap, Users, Sparkles, ClipboardList, CreditCard, Fingerprint, Package, Phone, Coffee, Building, Receipt, AlertTriangle, Gauge, List, Rocket } from 'lucide-react';
+import { BookOpen, Key, Search, Hotel, Calendar, DollarSign, FileText, Bell, ChevronRight, Globe, Copy, Check, ArrowLeft, Code, Shield, Zap, Users, Sparkles, ClipboardList, CreditCard, Fingerprint, Package, Phone, Coffee, Building, Receipt, AlertTriangle, Gauge, List, Rocket, GitBranch } from 'lucide-react';
 const API_BASE = window.location.origin + '/api/b2b';
 const sections = [{
   id: 'overview',
@@ -71,6 +71,9 @@ const sections = [{
 }, {
   id: 'webhooks',
   icon: Bell
+}, {
+  id: 'versioning',
+  icon: GitBranch
 }];
 const navLabels = {
   en: {
@@ -96,7 +99,8 @@ const navLabels = {
     spa: 'Spa & Wellness',
     groups: 'MICE & Groups',
     folio: 'Folio & Billing',
-    webhooks: 'Webhooks'
+    webhooks: 'Webhooks',
+    versioning: 'Versioning'
   },
   tr: {
     overview: 'Genel Bakış',
@@ -105,23 +109,24 @@ const navLabels = {
     errors: 'Hata Kodları',
     ratelimits: 'İstek Limitleri',
     pagination: 'Sayfalama',
-    content: 'Icerik',
-    availability: 'Musaitlik',
+    content: 'İçerik',
+    availability: 'Müsaitlik',
     rates: 'Fiyatlar',
     reservations: 'Rezervasyonlar',
     guests: 'Misafirler',
-    loyalty: 'Sadakat Programi',
+    loyalty: 'Sadakat Programı',
     housekeeping: 'Kat Hizmetleri',
     kbs: 'KBS / Emniyet',
     identity: 'Pasaport / Kimlik',
-    lostfound: 'Kayip Esya',
+    lostfound: 'Kayıp Eşya',
     wakeup: 'Uyandırma',
-    journey: 'Misafir Yolculugu',
+    journey: 'Misafir Yolculuğu',
     concierge: 'Concierge',
     spa: 'Spa & Wellness',
     groups: 'MICE & Grup',
     folio: 'Folio & Fatura',
-    webhooks: 'Webhook\'lar'
+    webhooks: 'Webhook\'lar',
+    versioning: 'Sürümleme'
   }
 };
 const t_labels = {
@@ -281,6 +286,24 @@ function MarketplaceDocs({ isEn }) {
       <div className="mt-6"><SubTitle>{isEn ? 'Negotiation and voucher bodies' : 'Görüşme ve voucher gövdeleri'}</SubTitle></div>
       <CodeBlock lang="json" code={`// POST /reservations/{id}/voucher-email\n{ "email": "operations@agency.example" }\n\n// POST /reservations/{id}/modification-proposals\n{\n  "check_in": "2026-11-11",\n  "check_out": "2026-11-13",\n  "room_type": "Suite",\n  "reason": "Misafir tarih değişikliği istedi"\n}\n\n// POST /negotiations/{proposal_id}/decision\n{ "accept": true, "response_note": "Teklif kabul edildi" }`} />
       <p className="mt-3 text-sm text-slate-600">{isEn ? <>For cancellation, <code>reason</code> is a query parameter in <code>DELETE /reservations/{'{reservation_id}'}?reason=...</code>, not a JSON body. Reconciliation calls require <code>period_start</code> and <code>period_end</code> query parameters in YYYY-MM-DD format.</> : <>İptal talebindeki <code>reason</code> JSON gövdesi değil, <code>DELETE /reservations/{'{reservation_id}'}?reason=...</code> sorgu parametresidir. Mutabakat çağrılarında <code>period_start</code> ve <code>period_end</code> zorunlu YYYY-MM-DD sorgu parametreleridir.</>}</p>
+      <div className="mt-8"><SubTitle>{isEn ? 'Representative response envelopes' : 'Temel yanıt zarfları'}</SubTitle></div>
+      <CodeBlock lang="json" code={`// POST /search
+{ "check_in": "2026-11-10", "check_out": "2026-11-12",
+  "results": [...], "total_hotels": 4, "message": null }
+
+// POST /reservations
+{ "ok": true, "idempotent_replay": false,
+  "reservation": { "id": "...", "confirmation_code": "MKT-...",
+    "status": "confirmed", "total_amount": 7500,
+    "commission_pct": 12, "commission_amount": 900 } }
+
+// POST /contracts/propose
+{ "ok": true, "contract": { "id": "...", "tenant_id": "...",
+  "status": "pending", "commission_pct": 12 } }
+
+// GET /reconciliation/agency
+{ "agency_id": "...", "period_start": "2026-11-01",
+  "period_end": "2026-11-30", "totals": {...}, "by_hotel": [...] }`} />
     </section>
 
     <section id="marketplace-endpoints">
@@ -381,7 +404,7 @@ export default function B2BApiDocs() {
 
             {/* ── OVERVIEW ── */}
             <section id="overview">
-              <SectionHeader icon={BookOpen} title={isEn ? 'Getting Started' : 'Baslangic'} id="overview-h" />
+              <SectionHeader icon={BookOpen} title={isEn ? 'Getting Started' : 'Başlangıç'} id="overview-h" />
               <div className="rounded-xl border border-blue-200 bg-blue-50 p-5"><h3 className="font-bold text-blue-950">Syroce Hotel Integration API</h3><p className="mt-2 text-sm leading-6 text-blue-900"><code>syroce_b2b_…</code> anahtarı yalnızca tek otelin izin verilen PMS alanları içindir. Her anahtar en az bir scope ile oluşturulur; kanal yöneticisine folyo, kimlik veya KBS gibi ilgisiz kapsamlar verilmemelidir.</p><div className="mt-3 flex flex-wrap gap-2">{['booking_engine','folio','groups','guest_journey','guests','housekeeping','identity','kbs','lost_found','services','wake_up','webhooks'].map(scope => <code key={scope} className="rounded bg-white px-2 py-1 text-xs text-blue-800">{scope}</code>)}</div></div>
               <Desc>{isEn ? 'The Hotel Integration API exposes only the PMS capabilities explicitly granted to an integration key. Each key is bound to one hotel and one agency; requests outside its scopes return 403.' : 'Hotel Integration API yalnızca entegrasyon anahtarına açıkça verilen PMS yeteneklerini sunar. Her anahtar tek bir otel ve tek bir acenteye bağlıdır; kapsam dışındaki istekler 403 döndürür.'}</Desc>
 
@@ -405,15 +428,15 @@ export default function B2BApiDocs() {
               </div>
 
               <div className="mt-8">
-                <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wider mb-3">{isEn ? 'Response Format' : 'Yanit Formati'}</h3>
+                <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wider mb-3">{isEn ? 'Response Format' : 'Yanıt Formatı'}</h3>
                 <CodeBlock lang="json" code={`// Başarılı yanıt endpoint'e özgüdür; örnek:\n{ "check_in": "2026-07-01", "check_out": "2026-07-03", "room_types": [] }\n\n// Hata yanıtı\n{ "detail": "Error message" }`} />
               </div>
             </section>
 
             {/* ── QUICK START ── */}
             <section id="quickstart">
-              <SectionHeader icon={Rocket} title={isEn ? 'Quick Start Guide' : 'Hızlı Baslangic Rehberi'} id="qs-h" />
-              <Desc>{isEn ? 'Follow these steps to start integrating with the Syroce Open API in minutes. From getting your API key to making your first reservation.' : 'Syroce Open API ile dakikalar icinde entegrasyona baslayin. API key almaktan ilk rezervasyonunuzu yapmaya kadar adim adim rehber.'}</Desc>
+              <SectionHeader icon={Rocket} title={isEn ? 'Quick Start Guide' : 'Hızlı Başlangıç Rehberi'} id="qs-h" />
+              <Desc>{isEn ? 'Follow these steps to start integrating with the Syroce Open API in minutes. From getting your API key to making your first reservation.' : 'Syroce Open API ile dakikalar içinde entegrasyona başlayın. API anahtarı almaktan ilk rezervasyonunuzu yapmaya kadar adım adım rehber.'}</Desc>
 
               <div className="mt-8 space-y-6">
                 <div className="bg-slate-50 rounded-xl border border-slate-200 p-6">
@@ -455,7 +478,7 @@ export default function B2BApiDocs() {
                   <div className="flex items-start gap-4">
                     <div className="w-8 h-8 rounded-full bg-[#C09D63] flex items-center justify-center text-white font-bold text-sm shrink-0">3</div>
                     <div className="flex-1">
-                      <h4 className="font-semibold text-slate-900">{isEn ? 'Check Availability & Rates' : 'Musaitlik ve Fiyat Sorgulayın'}</h4>
+                      <h4 className="font-semibold text-slate-900">{isEn ? 'Check Availability & Rates' : 'Müsaitlik ve Fiyat Sorgulayın'}</h4>
                       <div className="mt-3">
                         <CodeBlock lang="bash" code={`# Check room availability\ncurl "${API_BASE}/availability?check_in=2026-07-01&check_out=2026-07-03" \\\n  -H "X-API-Key: syroce_b2b_YOUR_KEY_HERE"\n\n# Get rates for date range\ncurl "${API_BASE}/rates?start_date=2026-07-01&end_date=2026-07-03" \\\n  -H "X-API-Key: syroce_b2b_YOUR_KEY_HERE"`} />
                       </div>
@@ -512,7 +535,7 @@ export default function B2BApiDocs() {
 
               <div className="mt-6">
                 <SubTitle>{isEn ? 'API Key Format' : 'API Key Formati'}</SubTitle>
-                <p className="text-sm text-slate-600 mb-3">{isEn ? 'All API keys start with the prefix syroce_b2b_ followed by a random string. Example:' : 'Tüm API key\'ler syroce_b2b_ on eki ile baslar, ardindan rastgele bir dizi gelir. Ornek:'}</p>
+                <p className="text-sm text-slate-600 mb-3">{isEn ? 'All API keys start with the prefix syroce_b2b_ followed by a random string. Example:' : 'Tüm API anahtarları syroce_b2b_ ön eki ile başlar, ardından rastgele bir dizi gelir. Örnek:'}</p>
                 <CodeBlock lang="text" code="syroce_b2b_zMskjN7H0K4xPq2B1wR9fY3eT6uI8oL" />
               </div>
 
@@ -562,7 +585,7 @@ export default function B2BApiDocs() {
               </div>
 
               <div className="mt-6">
-                <SubTitle>{isEn ? 'Usage Examples' : 'Kullanim Ornekleri'}</SubTitle>
+                <SubTitle>{isEn ? 'Usage Examples' : 'Kullanım Örnekleri'}</SubTitle>
                 <div className="space-y-3">
                   <CodeBlock lang="bash" code={`curl -X GET "${API_BASE}/availability?check_in=2026-06-01&check_out=2026-06-03" \\\n  -H "X-API-Key: syroce_b2b_your_api_key_here"`} />
                   <CodeBlock lang="python" code={`import requests\n\nheaders = {"X-API-Key": "syroce_b2b_your_api_key_here"}\nresp = requests.get("${API_BASE}/availability",\n    headers=headers,\n    params={"check_in": "2026-06-01", "check_out": "2026-06-03"})\nprint(resp.json())`} />
@@ -577,7 +600,7 @@ export default function B2BApiDocs() {
                   <li>{isEn ? 'Each key is scoped to a single agency and hotel tenant' : 'Her key tek bir acenteye ve otel tenant\'ina baglidir'}</li>
                   <li>{isEn ? 'Store your key in environment variables — never hardcode in source code' : 'Key\'inizi ortam degiskenlerinde saklayin — kaynak koduna asla yazmayIn'}</li>
                   <li>{isEn ? 'Keys can be revoked or rotated by the hotel at any time' : 'Key\'ler otel tarafından her zaman iptal edilebilir veya dondurulebilir'}</li>
-                  <li>{isEn ? 'Usage is tracked: request count, last used time, and IP address' : 'Kullanim takip edilir: istek sayısı, son kullanım zamani ve IP adresi'}</li>
+                  <li>{isEn ? 'Usage is tracked: request count, last used time, and IP address' : 'Kullanım takip edilir: istek sayısı, son kullanım zamanı ve IP adresi'}</li>
                   <li>{isEn ? 'Use HTTPS in production — never send API keys over unencrypted connections' : 'Uretimde HTTPS kullanin — API key\'leri sifrelenmemis baglantilarda gondermeyin'}</li>
                   <li>{isEn ? 'Rotate keys periodically using the regenerate endpoint' : 'Key\'leri periyodik olarak yenileme endpoint\'i ile dondurun'}</li>
                 </ul>
@@ -590,7 +613,7 @@ export default function B2BApiDocs() {
               <Desc>{isEn ? 'The API uses standard HTTP status codes. Error responses include a detail field with a human-readable message.' : 'API standart HTTP durum kodlarini kullanir. Hata yanitlari okunabilir bir mesaj iceren detail alani icerir.'}</Desc>
 
               <div className="mt-6">
-                <SubTitle>{isEn ? 'Error Response Format' : 'Hata Yanit Formati'}</SubTitle>
+                <SubTitle>{isEn ? 'Error Response Format' : 'Hata Yanıt Formatı'}</SubTitle>
                 <CodeBlock lang="json" code={`{\n  "detail": "Geçersiz veya devre dışı API key"\n}`} />
               </div>
 
@@ -603,7 +626,7 @@ export default function B2BApiDocs() {
                         <th className="text-left px-4 py-2.5 font-semibold text-slate-700 w-24">{isEn ? 'Code' : 'Kod'}</th>
                         <th className="text-left px-4 py-2.5 font-semibold text-slate-700 w-40">{isEn ? 'Status' : 'Durum'}</th>
                         <th className="text-left px-4 py-2.5 font-semibold text-slate-700">{isEn ? 'Description' : 'Açıklama'}</th>
-                        <th className="text-left px-4 py-2.5 font-semibold text-slate-700">{isEn ? 'Example' : 'Ornek'}</th>
+                        <th className="text-left px-4 py-2.5 font-semibold text-slate-700">{isEn ? 'Example' : 'Örnek'}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -611,8 +634,8 @@ export default function B2BApiDocs() {
                       code: '200',
                       status: 'OK',
                       color: 'emerald',
-                      desc: isEn ? 'Request succeeded' : 'İstek basarili',
-                      example: isEn ? 'Data returned successfully' : 'Veri basariyla dondu'
+                      desc: isEn ? 'Request succeeded' : 'İstek başarılı',
+                      example: isEn ? 'Data returned successfully' : 'Veri başarıyla döndü'
                     }, {
                       code: '400',
                       status: 'Bad Request',
@@ -647,8 +670,8 @@ export default function B2BApiDocs() {
                       code: '422',
                       status: 'Validation Error',
                       color: 'amber',
-                      desc: isEn ? 'Request body validation failed' : 'İstek govdesi doğrulama hatası',
-                      example: isEn ? 'Negative amount, zero points, date in past' : 'Negatif tutar, sifir puan, gecmis tarih'
+                      desc: isEn ? 'Request body validation failed' : 'İstek gövdesi doğrulama hatası',
+                      example: isEn ? 'Negative amount, zero points, date in past' : 'Negatif tutar, sıfır puan, geçmiş tarih'
                     }, {
                       code: '429',
                       status: 'Too Many Requests',
@@ -673,9 +696,22 @@ export default function B2BApiDocs() {
               </div>
 
               <div className="mt-6">
-                <SubTitle>{isEn ? 'Common Error Examples' : 'Yaygin Hata Ornekleri'}</SubTitle>
+                <SubTitle>{isEn ? 'Common Error Examples' : 'Yaygın Hata Örnekleri'}</SubTitle>
                 <div className="space-y-3">
                   <CodeBlock lang="json" code={`// 401 — Invalid API Key\n{"detail": "Geçersiz veya devre dışı API key"}\n\n// 403 — Agency Inactive\n{"detail": "Acente hesabı aktif değil"}\n\n// 400 — Bad Request\n{"detail": "check_out, check_in'den sonra olmalı"}\n{"detail": "Geçersiz durum. Geçerli: clean, dirty, inspected, maintenance, out_of_order"}\n{"detail": "operation must be 'add' or 'subtract'"}\n\n// 404 — Not Found\n{"detail": "Rezervasyon bulunamadı"}\n{"detail": "Misafir bulunamadı"}\n{"detail": "Oda bulunamadı"}\n\n// 409 — No Availability\n{"detail": "Bu tarihler ve oda tipi için müsait oda yok"}\n\n// 422 — Validation Error (Pydantic)\n{"detail": [{"loc": ["body", "amount"], "msg": "Input should be greater than 0", "type": "greater_than"}]}`} />
+                </div>
+              </div>
+
+              <div className="mt-6">
+                <SubTitle>{isEn ? 'Endpoint-specific error contract' : 'Endpoint bazında hata sözleşmesi'}</SubTitle>
+                <div className="space-y-2 text-sm leading-6 text-slate-600">
+                  <p><code>401</code> — {isEn ? 'Every endpoint: missing, invalid or revoked X-API-Key.' : 'Tüm endpoint’ler: eksik, geçersiz veya iptal edilmiş X-API-Key.'}</p>
+                  <p><code>403</code> — {isEn ? 'Every endpoint: inactive agency, wrong hotel binding or missing required scope.' : 'Tüm endpoint’ler: pasif acente, yanlış otel bağlantısı veya eksik kapsam.'}</p>
+                  <p><code>400</code> — <code>availability</code>, <code>reservations/{'{id}'}/cancel</code>, <code>groups/block</code>, <code>lost-found/{'{id}'}</code>, <code>housekeeping/rooms/{'{id}'}</code>, <code>folio/{'{id}'}/charge</code>, <code>wake-up-calls/{'{id}'}</code>, <code>webhooks</code>.</p>
+                  <p><code>404</code> — {isEn ? 'Detail or mutation endpoints when the requested guest, reservation, room, group, report, folio, service, identity record, wake-up call or webhook is outside the key scope or does not exist.' : 'İstenen misafir, rezervasyon, oda, grup, rapor, folyo, hizmet, kimlik kaydı, uyandırma çağrısı veya webhook anahtar kapsamı dışında olduğunda ya da bulunmadığında ayrıntı/değişiklik endpoint’leri.'}</p>
+                  <p><code>409</code> — <code>POST /reservations</code> ({isEn ? 'Idempotency-Key conflict or no inventory' : 'Idempotency-Key çakışması veya stok yokluğu'}); <code>POST /groups/{'{block_id}'}/rooming-list</code> ({isEn ? 'rooming-list conflict' : 'oda listesi çakışması'}).</p>
+                  <p><code>422</code> — {isEn ? 'FastAPI validation for every typed body/query/path field before the handler runs. The response is the standard detail[] validation envelope.' : 'Handler çalışmadan önce tüm tipli gövde/sorgu/yol alanlarında FastAPI doğrulaması. Yanıt standart detail[] doğrulama zarfıdır.'}</p>
+                  <p><code>429</code> — <code>POST /reservations</code> {isEn ? 'only while the same Idempotency-Key is in flight; Retry-After: 2.' : 'yalnızca aynı Idempotency-Key işlenmeye devam ederken; Retry-After: 2.'}</p>
                 </div>
               </div>
 
@@ -698,7 +734,7 @@ export default function B2BApiDocs() {
                         <th className="text-left px-4 py-2.5 font-semibold text-slate-700">{isEn ? 'Endpoint Type' : 'Endpoint Tipi'}</th>
                         <th className="text-left px-4 py-2.5 font-semibold text-slate-700">{isEn ? 'Rate Limit' : 'İstek Limiti'}</th>
                         <th className="text-left px-4 py-2.5 font-semibold text-slate-700">{isEn ? 'Window' : 'Pencere'}</th>
-                        <th className="text-left px-4 py-2.5 font-semibold text-slate-700">{isEn ? 'Examples' : 'Ornekler'}</th>
+                        <th className="text-left px-4 py-2.5 font-semibold text-slate-700">{isEn ? 'Examples' : 'Örnekler'}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -789,7 +825,7 @@ export default function B2BApiDocs() {
               </div>
 
               <div className="mt-6">
-                <SubTitle>{isEn ? 'Response Structure' : 'Yanit Yapisi'}</SubTitle>
+                <SubTitle>{isEn ? 'Response Structure' : 'Yanıt Yapısı'}</SubTitle>
                 <p className="text-sm text-slate-600 mb-3">{isEn ? 'Most filtered list endpoints return count, but this is not a universal envelope. For example, KBS uses guest_count/report_count and service catalogues return only services. Follow the response schema documented for each endpoint.' : 'Filtreli liste endpoint\'lerinin çoğu count döndürür; ancak bu evrensel bir yanıt zarfı değildir. Örneğin KBS guest_count/report_count kullanır, hizmet katalogları yalnızca services döndürür. Her endpoint için belgelenen yanıt şemasını esas alın.'}</p>
                 <CodeBlock lang="json" code={`// GET /api/b2b/reservations?status=confirmed&limit=50\n{\n  "reservations": [\n    { "id": "abc...", "guest_name": "John Doe", ... },\n    { "id": "def...", "guest_name": "Jane Smith", ... }\n  ],\n  "count": 2\n}\n\n// GET /api/b2b/wake-up-calls?date=2026-07-01\n{\n  "wake_up_calls": [...],\n  "count": 5\n}\n\n// GET /api/b2b/lost-found?status=found&category=electronics\n{\n  "items": [...],\n  "count": 3\n}`} />
               </div>
@@ -861,7 +897,7 @@ export default function B2BApiDocs() {
                       <tr className="bg-slate-50 border-b border-slate-200">
                         <th className="text-left px-4 py-2.5 font-semibold text-slate-700">{isEn ? 'Type' : 'Tip'}</th>
                         <th className="text-left px-4 py-2.5 font-semibold text-slate-700">{isEn ? 'Format' : 'Format'}</th>
-                        <th className="text-left px-4 py-2.5 font-semibold text-slate-700">{isEn ? 'Example' : 'Ornek'}</th>
+                        <th className="text-left px-4 py-2.5 font-semibold text-slate-700">{isEn ? 'Example' : 'Örnek'}</th>
                         <th className="text-left px-4 py-2.5 font-semibold text-slate-700">{isEn ? 'Used In' : 'Kullanildigi Yer'}</th>
                       </tr>
                     </thead>
@@ -895,7 +931,7 @@ export default function B2BApiDocs() {
 
             {/* ── CONTENT ── */}
             <section id="content">
-              <SectionHeader icon={Hotel} title={isEn ? 'Content API' : 'Icerik API'} id="content-h" />
+              <SectionHeader icon={Hotel} title={isEn ? 'Content API' : 'İçerik API'} id="content-h" />
               <Desc>{isEn ? 'Retrieve hotel content including room types, services, and property information.' : 'Oda tipleri, hizmetler ve tesis bilgileri dahil otel icerigini getirin.'}</Desc>
               <div className="mt-6 space-y-3">
                 <EndpointBlock method="GET" path="/api/b2b/hotel-info" desc={isEn ? 'Get the integration hotel identity and basic profile.' : 'Entegrasyon anahtarının bağlı olduğu otelin kimliğini ve temel profilini getirir.'}>
@@ -909,7 +945,7 @@ export default function B2BApiDocs() {
 
             {/* ── AVAILABILITY ── */}
             <section id="availability">
-              <SectionHeader icon={Calendar} title={isEn ? 'Availability API' : 'Musaitlik API'} id="avail-h" />
+              <SectionHeader icon={Calendar} title={isEn ? 'Availability API' : 'Müsaitlik API'} id="avail-h" />
               <Desc>{isEn ? 'Check real-time room availability for specified dates.' : 'Belirtilen tarihler için gerçek zamanlı oda müsaitliğini kontrol edin.'}</Desc>
               <div className="mt-6">
                 <EndpointBlock method="GET" path="/api/b2b/availability">
@@ -944,7 +980,7 @@ export default function B2BApiDocs() {
                   name: 'start_date',
                   type: 'string',
                   required: true,
-                  desc: isEn ? 'Start date (YYYY-MM-DD)' : 'Baslangic tarihi (YYYY-MM-DD)'
+                  desc: isEn ? 'Start date (YYYY-MM-DD)' : 'Başlangıç tarihi (YYYY-MM-DD)'
                 }, {
                   name: 'end_date',
                   type: 'string',
@@ -1825,7 +1861,16 @@ export default function B2BApiDocs() {
                 </EndpointBlock>
                 <EndpointBlock method="GET" path="/api/b2b/webhooks" desc={isEn ? 'List your webhooks (signing secrets are never returned)' : 'Webhook listesi (imzalama secret değerleri döndürülmez)'} />
                 <EndpointBlock method="DELETE" path="/api/b2b/webhooks/{webhook_id}" desc={isEn ? 'Delete webhook' : 'Webhook sil'} />
-                <EndpointBlock method="POST" path="/api/b2b/webhooks/{webhook_id}/test" desc={isEn ? 'Send test event' : 'Test olayi gonder'} />
+                <EndpointBlock method="POST" path="/api/b2b/webhooks/{webhook_id}/test" desc={isEn ? 'Send one immediate test delivery' : 'Tek seferlik anlık test olayı gönder'}>
+                  <CodeBlock lang="json" code={`{
+  "ok": true,
+  "delivery_id": "d1e2f3a4-...",
+  "status_code": 204,
+  "error": null,
+  "message": "Test olayi gonderildi"
+}`} />
+                  <p className="mt-3 text-sm leading-6 text-slate-600">{isEn ? 'The test endpoint performs one synchronous delivery and returns the receiver status. It includes X-Webhook-Event, X-Webhook-Delivery and, when configured, X-Webhook-Signature. Unlike production delivery, it does not retry, enter the dead-letter queue or send X-Idempotency-Key.' : 'Test endpoint’i tek bir eşzamanlı teslimat yapar ve alıcının durum kodunu döndürür. X-Webhook-Event, X-Webhook-Delivery ve yapılandırılmışsa X-Webhook-Signature başlıklarını gönderir. Üretim teslimatından farklı olarak tekrar denemez, başarısız teslimat kuyruğuna girmez ve X-Idempotency-Key göndermez.'}</p>
+                </EndpointBlock>
 
                 <div className="mt-6">
                   <SubTitle>{isEn ? 'Webhook Payload' : 'Webhook Payload'}</SubTitle>
@@ -1840,8 +1885,29 @@ export default function B2BApiDocs() {
                   <p className="text-sm text-amber-800 mt-2">{isEn ? 'Use X-Webhook-Delivery and X-Idempotency-Key to deduplicate deliveries. Production deliveries are retried up to 5 times; return a 2xx response only after the event is durably accepted.' : 'Tekrarlanan teslimatları ayıklamak için X-Webhook-Delivery ve X-Idempotency-Key başlıklarını kullanın. Üretim teslimatları en fazla 5 kez denenir; yalnızca olayı kalıcı olarak kabul ettikten sonra 2xx döndürün.'}</p>
                   <div className="mt-3">
                     <CodeBlock lang="python" code={`import hmac, hashlib\n\ndef verify_signature(body, secret, sig_header):\n    expected = hmac.new(\n        secret.encode(), body, hashlib.sha256\n    ).hexdigest()\n    return hmac.compare_digest(f"sha256={expected}", sig_header)`} />
+                    <CodeBlock lang="javascript" code={`import crypto from "node:crypto";
+
+export function verifySyroceWebhook(rawBody, secret, signature) {
+  const digest = crypto
+    .createHmac("sha256", secret)
+    .update(rawBody)
+    .digest("hex");
+  const expected = Buffer.from(`sha256=${digest}`);
+  const received = Buffer.from(signature || "");
+  return expected.length === received.length &&
+    crypto.timingSafeEqual(expected, received);
+}`} />
                   </div>
                 </div>
+              </div>
+            </section>
+
+            <section id="versioning">
+              <SectionHeader icon={GitBranch} title={isEn ? 'Versioning and compatibility' : 'Sürümleme ve geriye uyumluluk'} id="versioning-h" />
+              <div className="mt-4 space-y-3 text-sm leading-6 text-slate-700">
+                <p>{isEn ? 'The current Hotel Integration contract uses /api/b2b. Additive fields and new optional endpoints may be released without changing this base path; clients must ignore unknown response fields.' : 'Mevcut Hotel Integration sözleşmesi /api/b2b temel yolunu kullanır. Yeni yanıt alanları ve isteğe bağlı endpoint’ler bu yol değiştirilmeden eklenebilir; istemciler tanımadıkları yanıt alanlarını yok saymalıdır.'}</p>
+                <p>{isEn ? 'Removing or renaming a field, changing its type, making an optional request field required, or changing authentication semantics is a breaking change and requires a new versioned base path plus a published migration window.' : 'Bir alanı kaldırmak veya yeniden adlandırmak, türünü değiştirmek, isteğe bağlı bir istek alanını zorunlu yapmak ya da kimlik doğrulama anlamını değiştirmek geriye uyumsuz değişikliktir; yeni sürümlenmiş temel yol ve yayımlanmış geçiş süresi gerektirir.'}</p>
+                <p>{isEn ? 'Deprecations are announced before removal. During the migration window both versions remain independently testable; credentials and scopes are never broadened automatically.' : 'Kullanımdan kaldırmalar silinmeden önce duyurulur. Geçiş süresince iki sürüm de bağımsız test edilebilir durumda tutulur; anahtar izinleri ve kapsamları hiçbir zaman otomatik genişletilmez.'}</p>
               </div>
             </section>
 
