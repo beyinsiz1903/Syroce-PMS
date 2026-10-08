@@ -89,6 +89,45 @@ def test_parse_json_whitelists_and_bounds_provider_output():
     assert len(document["address"]) == 500
 
 
+def test_tesseract_preprocessing_crops_and_rectifies_identity_card():
+    cv2 = pytest.importorskip("cv2")
+    np = pytest.importorskip("numpy")
+
+    canvas = np.full((700, 1000, 3), 55, dtype=np.uint8)
+    card = np.full((360, 570, 3), 238, dtype=np.uint8)
+    cv2.rectangle(card, (5, 5), (565, 355), (15, 15, 15), 8)
+    cv2.putText(card, "TURKIYE CUMHURIYETI KIMLIK KARTI", (35, 75), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (20, 20, 20), 2)
+    cv2.putText(card, "12345678901", (45, 180), cv2.FONT_HERSHEY_SIMPLEX, 1.25, (20, 20, 20), 3)
+    source = np.float32([[0, 0], [569, 0], [569, 359], [0, 359]])
+    destination = np.float32([[180, 130], [820, 80], [860, 560], [130, 610]])
+    transformed = cv2.warpPerspective(card, cv2.getPerspectiveTransform(source, destination), (1000, 700))
+    mask = cv2.warpPerspective(np.full((360, 570), 255, dtype=np.uint8), cv2.getPerspectiveTransform(source, destination), (1000, 700))
+    canvas[mask > 0] = transformed[mask > 0]
+    ok, encoded = cv2.imencode(".jpg", canvas)
+    assert ok
+
+    prepared = embedded._prepare_tesseract_image(encoded.tobytes())
+
+    assert prepared.width > prepared.height
+    assert 1.35 < prepared.width / prepared.height < 1.85
+    assert prepared.mode == "L"
+    assert np.asarray(prepared).std() > 20
+
+
+def test_tesseract_preprocessing_falls_back_when_opencv_fails(monkeypatch):
+    monkeypatch.setattr(
+        embedded,
+        "_prepare_tesseract_image_opencv",
+        lambda _image: (_ for _ in ()).throw(RuntimeError("native library unavailable")),
+    )
+    image_bytes, _ = embedded._decode_image(_png_data_url())
+
+    prepared = embedded._prepare_tesseract_image(image_bytes)
+
+    assert prepared.mode == "L"
+    assert prepared.size == (116, 86)
+
+
 def test_proxy_uses_embedded_scanner_when_external_url_is_absent(monkeypatch):
     async def fake_keys():
         return {"openai": "secret", "gemini": "", "preferred_provider": "gpt-4o-mini"}
