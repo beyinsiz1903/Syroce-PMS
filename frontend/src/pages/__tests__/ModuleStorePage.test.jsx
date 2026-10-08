@@ -30,7 +30,7 @@ describe('ModuleStorePage loading state', () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByRole('heading', { name: /modul_pazari/ })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Modül Pazarı' })).toBeInTheDocument();
     expect(container.querySelectorAll('.animate-pulse').length).toBeGreaterThan(0);
   });
 });
