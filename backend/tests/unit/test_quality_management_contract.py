@@ -2,7 +2,7 @@ import pytest
 from fastapi import HTTPException
 from pydantic import ValidationError
 
-from domains.quality.router import QualityRecordInput, validate_transition
+from domains.quality.router import QualityRecordInput, _advance_due, validate_transition
 
 
 def test_quality_record_normalizes_due_date_and_checklist():
@@ -44,3 +44,16 @@ def test_verified_capa_can_close():
         "closed",
         {"_kind": "quality_capa", "verification_note": "Yerinde doğrulandı", "checklist": [{"required": True, "result": "pass"}]},
     )
+
+
+def test_recurring_audit_dates_are_normalized_and_advanced():
+    record = QualityRecordInput(
+        kind="audit",
+        title="Aylık havuz denetimi",
+        department="Teknik",
+        due_at="2026-10-09T12:00:00+03:00",
+        recurrence="monthly",
+        recurrence_until="2027-01-01",
+    )
+    assert record.recurrence_until == "2027-01-01T00:00:00+00:00"
+    assert _advance_due(record.due_at, record.recurrence) == "2026-11-08T09:00:00+00:00"

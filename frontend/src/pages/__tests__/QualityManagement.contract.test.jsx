@@ -13,6 +13,9 @@ describe('QualityManagement contracts', () => {
     axios.get.mockImplementation((url) => {
       if (url === '/quality/dashboard') return Promise.resolve({ data: { summary: { open: 2, overdue: 1, critical: 1, closed: 3, closure_rate: 60, by_kind: {}, by_department: {} } } });
       if (url === '/quality/records') return Promise.resolve({ data: { records: [{ id: 'q1', _kind: 'quality_capa', title: 'Tekrarlayan temizlik hatası', department: 'Kat Hizmetleri', severity: 'high', status: 'open' }] } });
+      if (url === '/quality/staff') return Promise.resolve({ data: { staff: [] } });
+      if (url === '/quality/notifications') return Promise.resolve({ data: { notifications: [] } });
+      if (url === '/quality/documents') return Promise.resolve({ data: { documents: [] } });
       return Promise.resolve({ data: { entries: [], summary: {} } });
     });
   });
@@ -26,8 +29,11 @@ describe('QualityManagement contracts', () => {
 
   it('loads dashboard, register and feedback without serial blocking', async () => {
     render(<QualityManagement />);
-    await waitFor(() => expect(axios.get).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(axios.get).toHaveBeenCalledTimes(6));
     expect(axios.get).toHaveBeenCalledWith('/quality/dashboard');
     expect(axios.get).toHaveBeenCalledWith('/quality/records', { params: { limit: 500 } });
+    expect(axios.get).toHaveBeenCalledWith('/quality/staff');
+    expect(axios.get).toHaveBeenCalledWith('/quality/notifications');
+    expect(axios.get).toHaveBeenCalledWith('/quality/documents');
   });
 });
