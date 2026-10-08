@@ -655,10 +655,13 @@ async def _b2b_create_reservation_impl(
         raise HTTPException(status_code=400, detail="check_out, check_in'den sonra olmali")
 
     # Partner contract layer (T002): one consolidated read of the agency's
-    # effective terms. Contract value wins; no-contract agencies fall back to
-    # the legacy commission. Credit/allotment are surfaced read-only here and
-    # HARD-enforced in T003.
+    # effective terms. Only a hotel-approved contract can authorize a sale.
     snapshot = await build_snapshot(tenant_id, agency_id, agency_doc=agency)
+    if not snapshot.has_contract:
+        raise HTTPException(
+            status_code=403,
+            detail="Bu otelle aktif ve onaylı sözleşmeniz yok",
+        )
     # Opt-in contract room-type restriction (empty allowed_room_types => no limit).
     if not snapshot.is_room_type_allowed(data.room_type):
         raise HTTPException(
