@@ -96,6 +96,130 @@ DEFAULT_PRODUCTS: list[dict[str, Any]] = [
     },
 ]
 
+# Public add-on prices are intentionally transparent. Large global PMS vendors
+# generally require a sales quote for these capabilities; Syroce publishes a
+# predictable monthly TRY price and keeps usage-based third-party costs explicit.
+# Only modules that already have a product route and entitlement key are listed.
+DEFAULT_PRODUCTS += [
+    {
+        "key": "hr",
+        "name": "İnsan Kaynakları & Vardiya",
+        "name_en": "Human Resources & Scheduling",
+        "description": "Personel, vardiya, izin, özlük, performans ve bordro hazırlığını PMS verisiyle birlikte yönetin.",
+        "description_en": "Manage staff, schedules, leave, employee records, performance and payroll preparation with PMS data.",
+        "category": "module", "billing_type": "subscription", "price_try": 1490.0,
+        "duration_days": 30, "trial_days": 14, "icon": "Users", "route_path": "/hr?tab=suite",
+        "badge": "Operasyon", "badge_en": "Operations", "popular": True, "active": True,
+        "features": ["Vardiya ve izin yönetimi", "Personel özlük dosyası", "Performans ve bordro hazırlığı", "Rol bazlı erişim"],
+        "features_en": ["Scheduling and leave", "Employee records", "Performance and payroll preparation", "Role-based access"],
+    },
+    {
+        "key": "pos_fnb",
+        "name": "Restoran POS & F&B",
+        "name_en": "Restaurant POS & F&B",
+        "description": "Restoran, bar ve oda servisi satışlarını adisyondan misafir folyosuna kadar tek akışta yönetin.",
+        "description_en": "Run restaurant, bar and room-service sales from order to guest folio in one workflow.",
+        "category": "module", "billing_type": "subscription", "price_try": 1990.0,
+        "duration_days": 30, "trial_days": 14, "icon": "Utensils", "route_path": "/fnb-complete",
+        "badge": "En çok tercih edilen", "badge_en": "Most popular", "popular": True, "active": True,
+        "features": ["Masa planı ve adisyon", "Mutfak ekranı", "Odaya/folyoya aktarım", "Ürün ve satış raporları"],
+        "features_en": ["Table plan and orders", "Kitchen display", "Room and folio posting", "Product and sales reports"],
+    },
+    {
+        "key": "invoices",
+        "name": "Genel Muhasebe & Finans",
+        "name_en": "General Accounting & Finance",
+        "description": "Ön muhasebe, cari hesap, kasa-banka, gelir-gider, fatura ve büyük defteri otel operasyonuyla birleştirin.",
+        "description_en": "Connect ledgers, accounts, cash and bank, income and expenses, invoices and general ledger to hotel operations.",
+        "category": "module", "billing_type": "subscription", "price_try": 2490.0,
+        "duration_days": 30, "trial_days": 14, "icon": "Landmark", "route_path": "/app/general-ledger",
+        "badge": "Finans", "badge_en": "Finance", "popular": True, "active": True,
+        "features": ["Cari hesap ve yaşlandırma", "Kasa ve banka hareketleri", "Gelir-gider ve fatura", "Genel muhasebe raporları"],
+        "features_en": ["Accounts and aging", "Cash and bank activity", "Income, expenses and invoices", "General-ledger reports"],
+    },
+    {
+        "key": "revenue_management", "name": "Gelir Yönetimi (RMS)", "name_en": "Revenue Management (RMS)",
+        "description": "Doluluk, talep ve kanal performansından fiyat önerileri ve gelir fırsatları üretin.",
+        "description_en": "Turn occupancy, demand and channel performance into rate recommendations and revenue opportunities.",
+        "category": "module", "billing_type": "subscription", "price_try": 2990.0, "duration_days": 30,
+        "trial_days": 14, "icon": "ChartNoAxesCombined", "route_path": "/app/revenue-hub", "badge": "Gelir", "badge_en": "Revenue", "active": True,
+        "features": ["ADR, RevPAR ve pickup", "Doluluk tahmini", "Fiyat önerileri", "Kanal performansı"],
+        "features_en": ["ADR, RevPAR and pickup", "Occupancy forecast", "Rate recommendations", "Channel performance"],
+    },
+    {
+        "key": "spa", "name": "Spa & Wellness", "name_en": "Spa & Wellness",
+        "description": "Terapist, hizmet kataloğu, oda ve randevu planlamasını folyo entegrasyonuyla yönetin.",
+        "description_en": "Manage therapists, services, rooms and appointments with folio integration.",
+        "category": "module", "billing_type": "subscription", "price_try": 1490.0, "duration_days": 30,
+        "trial_days": 14, "icon": "HeartPulse", "route_path": "/spa-wellness", "active": True,
+        "features": ["Randevu takvimi", "Terapist ve oda planı", "Hizmet kataloğu", "Folyoya aktarım"],
+        "features_en": ["Appointment calendar", "Therapist and room planning", "Service catalog", "Folio posting"],
+    },
+    {
+        "key": "mice", "name": "MICE & Etkinlik", "name_en": "MICE & Events",
+        "description": "Toplantı, düğün, banket, teklif, etkinlik alanı ve catering operasyonlarını yönetin.",
+        "description_en": "Manage meetings, weddings, banquets, proposals, function spaces and catering operations.",
+        "category": "module", "billing_type": "subscription", "price_try": 1990.0, "duration_days": 30,
+        "trial_days": 14, "icon": "CalendarRange", "route_path": "/app/mice", "active": True,
+        "features": ["Satış pipeline", "Etkinlik ve salon takvimi", "Teklif yönetimi", "Catering ve BEO"],
+        "features_en": ["Sales pipeline", "Event and venue calendar", "Proposal management", "Catering and BEO"],
+    },
+    {
+        "key": "maintenance", "name": "Teknik Servis & Bakım", "name_en": "Maintenance & Engineering",
+        "description": "Arıza kayıtlarını, iş emirlerini, varlıkları ve planlı bakımı operasyon ekipleriyle yönetin.",
+        "description_en": "Manage incidents, work orders, assets and preventive maintenance with operations teams.",
+        "category": "module", "billing_type": "subscription", "price_try": 790.0, "duration_days": 30,
+        "trial_days": 14, "icon": "Wrench", "route_path": "/maintenance/work-orders", "active": True,
+        "features": ["İş emri ve SLA", "Varlık envanteri", "Planlı bakım", "Mobil görev takibi"],
+        "features_en": ["Work orders and SLA", "Asset inventory", "Preventive maintenance", "Mobile task tracking"],
+    },
+    {
+        "key": "sales_crm", "name": "Otel Satış CRM", "name_en": "Hotel Sales CRM",
+        "description": "Kurumsal müşteri, fırsat, aktivite ve satış pipeline yönetimini tek çalışma alanında toplayın.",
+        "description_en": "Manage corporate accounts, opportunities, activities and sales pipeline in one workspace.",
+        "category": "module", "billing_type": "subscription", "price_try": 1490.0, "duration_days": 30,
+        "trial_days": 14, "icon": "Handshake", "route_path": "/sales-crm", "active": True,
+        "features": ["Müşteri ve fırsat yönetimi", "Aktivite takibi", "Satış pipeline", "Kurumsal hesaplar"],
+        "features_en": ["Account and opportunity management", "Activity tracking", "Sales pipeline", "Corporate accounts"],
+    },
+    {
+        "key": "contact_center", "name": "İletişim Merkezi", "name_en": "Communication Center",
+        "description": "WhatsApp, çağrı, web ve sosyal kanalları birleşik gelen kutusunda yönetin.",
+        "description_en": "Manage WhatsApp, calls, web and social channels from a unified inbox.",
+        "category": "integration", "billing_type": "subscription", "price_try": 2990.0, "duration_days": 30,
+        "trial_days": 14, "icon": "Headset", "route_path": "/app/call-center", "price_note": "Mesaj ve çağrı kullanımı hariçtir.", "price_note_en": "Message and call usage is excluded.", "active": True,
+        "features": ["Birleşik gelen kutusu", "Çağrı ve mesaj geçmişi", "Ekip atama", "Misafir profili bağlantısı"],
+        "features_en": ["Unified inbox", "Call and message history", "Team assignment", "Guest-profile linking"],
+    },
+    {
+        "key": "academy", "name": "Syroce Academy", "name_en": "Syroce Academy",
+        "description": "Departmana özel eğitim, sınav, ilerleme ve sertifika süreçlerini yönetin.",
+        "description_en": "Manage department training, exams, progress and certification.",
+        "category": "module", "billing_type": "subscription", "price_try": 590.0, "duration_days": 30,
+        "trial_days": 14, "icon": "GraduationCap", "route_path": "/app/academy", "active": True,
+        "features": ["Rol bazlı eğitim yolları", "Sınav ve başarı takibi", "PDF sertifika", "Yönetici raporu"],
+        "features_en": ["Role-based learning paths", "Exam and progress tracking", "PDF certificates", "Manager reports"],
+    },
+    {
+        "key": "booking_engine", "name": "Web Rezervasyon Motoru", "name_en": "Web Booking Engine",
+        "description": "Otel web sitesinden komisyonsuz, mobil uyumlu ve anlık müsaitlikli doğrudan rezervasyon alın.",
+        "description_en": "Accept commission-free, mobile-ready direct bookings with live availability on your website.",
+        "category": "integration", "billing_type": "subscription", "price_try": 1290.0, "duration_days": 30,
+        "trial_days": 14, "icon": "Globe2", "route_path": "/app/wbe-settings", "active": True,
+        "features": ["Komisyonsuz rezervasyon", "Anlık fiyat ve müsaitlik", "Mobil uyumlu deneyim", "PMS'e otomatik kayıt"],
+        "features_en": ["Commission-free bookings", "Live rates and availability", "Mobile-ready experience", "Automatic PMS posting"],
+    },
+    {
+        "key": "multi_property", "name": "Çoklu Tesis Yönetimi", "name_en": "Multi-property Management",
+        "description": "Zincir oteller için tesisler arası performans, misafir ve yönetim görünümü sağlayın.",
+        "description_en": "Give hotel groups a cross-property view of performance, guests and operations.",
+        "category": "module", "billing_type": "subscription", "price_try": 3490.0, "duration_days": 30,
+        "icon": "Building2", "route_path": "/app/multi-property", "price_note": "Tesis başına fiyatlandırılır.", "price_note_en": "Priced per property.", "active": True,
+        "features": ["Zincir performans paneli", "Tesisler arası misafir görünümü", "Merkezi raporlama", "Rol bazlı yönetim"],
+        "features_en": ["Group performance dashboard", "Cross-property guest view", "Central reporting", "Role-based management"],
+    },
+]
+
 
 def _db():
     """Return raw, non-tenant-scoped DB.
@@ -156,9 +280,18 @@ class ProductIn(BaseModel):
     icon: str | None = None
     credits: int | None = None
     features: list[str] = Field(default_factory=list)
+    features_en: list[str] = Field(default_factory=list)
     external: bool = False
     sso_path: str | None = None
     active: bool = True
+    name_en: str | None = None
+    description_en: str | None = None
+    route_path: str | None = None
+    badge: str | None = None
+    badge_en: str | None = None
+    popular: bool = False
+    price_note: str | None = None
+    price_note_en: str | None = None
 
 
 class PurchaseRequest(BaseModel):
@@ -167,6 +300,11 @@ class PurchaseRequest(BaseModel):
 
 class StartTrialRequest(BaseModel):
     product_key: str
+
+
+class QuoteRequest(BaseModel):
+    product_key: str
+    note: str | None = Field(default=None, max_length=1000)
 
 
 # ── Public catalog ──────────────────────────────────────────────
@@ -194,6 +332,38 @@ async def my_subscriptions(
         raise HTTPException(status_code=403, detail="Tenant gerekli")
     subs = await get_active_subscriptions(current_user.tenant_id)
     return {"subscriptions": subs}
+
+
+@router.post("/request-quote")
+async def request_quote(
+    payload: QuoteRequest,
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Record an actionable sales request when self-service payment is unavailable."""
+    _require_tenant_admin(current_user)
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=403, detail="Tenant gerekli")
+    db = _db()
+    product = await db.marketplace_products.find_one(
+        {"key": payload.product_key, "active": True}, {"_id": 0, "key": 1, "name": 1, "price_try": 1}
+    )
+    if not product:
+        raise HTTPException(status_code=404, detail="Ürün bulunamadı")
+
+    request_id = str(uuid.uuid4())
+    await db.marketplace_quote_requests.insert_one({
+        "id": request_id,
+        "tenant_id": current_user.tenant_id,
+        "user_id": current_user.id,
+        "user_email": current_user.email,
+        "product_key": product["key"],
+        "product_name": product["name"],
+        "listed_price_try": product.get("price_try"),
+        "note": payload.note,
+        "status": "new",
+        "created_at": _now_iso(),
+    })
+    return {"ok": True, "request_id": request_id, "status": "new"}
 
 
 # ── Purchase flow ───────────────────────────────────────────────
