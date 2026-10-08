@@ -48,6 +48,7 @@ MODULE_ALIASES: dict[str, list[str]] = {
     "quick_id": ["quick_id", "quick_id_integration"],
     "af_sadakat": ["af_sadakat", "af_sadakat_loyalty"],
     "pos_fnb": ["pos_fnb", "pos_fnb_basic", "pos_fnb_pro"],
+    "invoices": ["invoices", "general_accounting"],
 }
 
 
@@ -115,6 +116,9 @@ async def ensure_indexes() -> None:
             name="uniq_sub_order_id",
         )
         await db.marketplace_orders.create_index("tenant_id", name="idx_order_tenant")
+        await db.marketplace_quote_requests.create_index(
+            [("tenant_id", 1), ("created_at", -1)], name="idx_quote_request_tenant_created"
+        )
         # Atomic activation marker: any callback (paid OR trial) inserts
         # one row per order_id. Unique index makes concurrent/replayed
         # callbacks fail-fast on the second insert, preventing duplicate

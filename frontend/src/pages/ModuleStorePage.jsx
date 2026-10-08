@@ -1,301 +1,173 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import axios from "axios";
 import { toast } from "sonner";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import {
+  Building2, CalendarRange, ChartNoAxesCombined, Check, CheckCircle2, Clock,
+  ExternalLink, Gift, Globe2, GraduationCap, Handshake, Headset, HeartPulse,
+  Landmark, Loader2, Mail, Package, QrCode, RefreshCw, ScanLine, Search,
+  ShieldCheck, ShoppingBag, Sparkles, Users, Utensils, Wrench,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { useNavigate } from "react-router-dom";
-import { ShoppingBag, QrCode, ScanLine, Mail, Package, Sparkles, CheckCircle2, Clock, Loader2, RefreshCw, Gift, ExternalLink } from "lucide-react";
-import { useTranslation } from 'react-i18next';
-const ICONS = {
-  QrCode,
-  ScanLine,
-  Mail,
-  Package,
-  Sparkles
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+
+const ICONS = { Building2, CalendarRange, ChartNoAxesCombined, Globe2, GraduationCap, Handshake, Headset, HeartPulse, Landmark, Mail, Package, QrCode, ScanLine, Sparkles, Users, Utensils, Wrench };
+const CATEGORY_COPY = {
+  all: { tr: "Tümü", en: "All" }, module: { tr: "Modüller", en: "Modules" },
+  integration: { tr: "Entegrasyonlar", en: "Integrations" }, credit_pack: { tr: "Kredi Paketleri", en: "Credit Packs" },
 };
-const CATEGORY_LABEL = {
-  module: "Modül",
-  integration: "Entegrasyon",
-  credit_pack: "Kredi Paketi"
+const CATEGORY_STYLE = {
+  module: "border-blue-200 bg-blue-50 text-blue-700",
+  integration: "border-violet-200 bg-violet-50 text-violet-700",
+  credit_pack: "border-emerald-200 bg-emerald-50 text-emerald-700",
 };
-const CATEGORY_COLOR = {
-  module: "bg-blue-100 text-blue-800 border-blue-200",
-  integration: "bg-indigo-100 text-indigo-800 border-indigo-200",
-  credit_pack: "bg-emerald-100 text-emerald-800 border-emerald-200"
-};
-function ProductCard({
-  product,
-  owned,
-  onPurchase,
-  onStartTrial,
-  onLaunch,
-  buying
-}) {
-  const { t, i18n } = useTranslation();
+const copy = (english, tr, en) => (english ? en : tr);
+
+function ProductCard({ product, subscription, paymentReady, buying, english, onPurchase, onTrial, onQuote, onLaunch }) {
   const Icon = ICONS[product.icon] || Package;
-  const ownedSub = owned.find(s => s.product_key === product.key);
-  const hasTrial = !!product.trial_days;
-  const isExternal = !!product.external;
-  return <Card className="flex flex-col">
-      <CardHeader className="pb-3">
+  const name = english && product.name_en ? product.name_en : product.name;
+  const description = english && product.description_en ? product.description_en : product.description;
+  const features = english ? (product.features_en || []) : (product.features || []);
+  const owned = Boolean(subscription);
+  const recurring = product.billing_type === "subscription";
+  const busy = buying === product.key;
+  return (
+    <article className={`group relative flex h-full flex-col overflow-hidden rounded-2xl border bg-white shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-lg ${product.popular ? "border-blue-300 ring-1 ring-blue-100" : "border-slate-200"}`}>
+      {product.popular && <div className="bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-1.5 text-center text-[11px] font-semibold uppercase tracking-[0.14em] text-white">{copy(english, "Öne çıkan çözüm", "Featured solution")}</div>}
+      <div className="flex flex-1 flex-col p-5">
         <div className="flex items-start justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-lg bg-slate-100 flex items-center justify-center">
-              <Icon className="w-5 h-5 text-slate-700" />
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-slate-950 text-white shadow-sm"><Icon className="h-5 w-5" aria-hidden="true" /></div>
+            <div className="min-w-0">
+              <h3 className="text-base font-bold leading-tight text-slate-950">{name}</h3>
+              <div className="mt-1 flex flex-wrap gap-1.5">
+                <Badge variant="outline" className={CATEGORY_STYLE[product.category] || CATEGORY_STYLE.module}>{CATEGORY_COPY[product.category]?.[english ? "en" : "tr"] || product.category}</Badge>
+                {product.badge && <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-700">{english && product.badge_en ? product.badge_en : product.badge}</Badge>}
+              </div>
             </div>
-            <div>
-              <CardTitle className="text-base">{product.name}</CardTitle>
-              <Badge className={`mt-1 ${CATEGORY_COLOR[product.category] || ""}`}>
-                {CATEGORY_LABEL[product.category] || product.category}
-              </Badge>
+          </div>
+          {owned && <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-600" aria-label={copy(english, "Aktif", "Active")} />}
+        </div>
+        <p className="mt-4 min-h-16 text-sm leading-6 text-slate-600">{description}</p>
+        <ul className="mt-4 space-y-2">
+          {features.slice(0, 4).map((feature, index) => <li key={`${product.key}-${index}`} className="flex items-start gap-2 text-sm text-slate-700"><Check className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" /><span>{feature}</span></li>)}
+        </ul>
+        <div className="mt-auto pt-6">
+          <div className="border-t border-slate-100 pt-4">
+            <div className="flex items-end justify-between gap-3">
+              <div>
+                <div className="flex items-baseline gap-1"><span className="text-2xl font-black tracking-tight text-slate-950">₺{Number(product.price_try || 0).toLocaleString(english ? "en-US" : "tr-TR")}</span><span className="text-xs font-medium text-slate-500">{recurring ? copy(english, "/ ay", "/ month") : copy(english, "tek sefer", "one-time")}</span></div>
+                <p className="mt-1 text-[11px] text-slate-500">{english && product.price_note_en ? product.price_note_en : product.price_note || copy(english, "KDV hariç · PMS ile hazır entegre", "Excl. VAT · Native PMS integration")}</p>
+              </div>
+              {product.trial_days > 0 && !owned && <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100">{product.trial_days} {copy(english, "gün deneme", "day trial")}</Badge>}
+            </div>
+            <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {owned ? <Button variant="outline" className="sm:col-span-2" onClick={() => onLaunch(product)} disabled={!product.route_path && !product.external}><ExternalLink className="mr-2 h-4 w-4" /> {copy(english, "Modülü aç", "Open module")}</Button> : <>
+                {product.trial_days > 0 && <Button variant="outline" onClick={() => onTrial(product)} disabled={busy}><Gift className="mr-2 h-4 w-4" /> {copy(english, "Ücretsiz dene", "Start trial")}</Button>}
+                <Button className={product.trial_days > 0 ? "" : "sm:col-span-2"} onClick={() => paymentReady ? onPurchase(product) : onQuote(product)} disabled={busy}>
+                  {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : paymentReady ? <><ShoppingBag className="mr-2 h-4 w-4" /> {copy(english, "Satın al", "Buy now")}</> : copy(english, "Teklif iste", "Request quote")}
+                </Button>
+              </>}
             </div>
           </div>
         </div>
-      </CardHeader>
-      <CardContent className="flex flex-col flex-1 gap-4">
-        <p className="text-sm text-slate-600">{product.description}</p>
-        {product.features?.length > 0 && <ul className="space-y-1.5 text-sm">
-            {product.features.map((f, i) => <li key={f.id || i} className="flex items-start gap-2 text-slate-700">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600 mt-0.5 shrink-0" />
-                <span>{f}</span>
-              </li>)}
-          </ul>}
-        <div className="mt-auto pt-3 border-t flex items-end justify-between">
-          <div>
-            <div className="text-2xl font-bold text-slate-900">
-              {product.price_try.toLocaleString(i18n.language)} ₺
-            </div>
-            <div className="text-xs text-slate-500">
-              {product.billing_type === "subscription" ? `${product.duration_days} günlük abonelik` : "Tek seferlik"}
-            </div>
-          </div>
-          {ownedSub ? <div className="flex items-center gap-2">
-              <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200">
-                {ownedSub.trial ? "Deneme Aktif" : "Aktif"}
-              </Badge>
-              {isExternal && <Button size="sm" variant="outline" onClick={() => onLaunch(product)}>
-                  <ExternalLink className="w-3.5 h-3.5 mr-1" /> {t('cm.pages_ModuleStorePage.ac')}
-                </Button>}
-            </div> : <div className="flex flex-col gap-1.5 items-end">
-              {hasTrial && <Button onClick={() => onStartTrial(product)} disabled={buying === product.key} size="sm" variant="outline" className="border-indigo-300 text-indigo-700 hover:bg-indigo-50">
-                  <Gift className="w-3.5 h-3.5 mr-1" />
-                  {product.trial_days} {t('cm.pages_ModuleStorePage.gun_ucretsiz_dene')}
-                </Button>}
-              <Button onClick={() => onPurchase(product)} disabled={buying === product.key} size="sm">
-                {buying === product.key ? <Loader2 className="w-4 h-4 animate-spin" /> : <>
-                    <ShoppingBag className="w-4 h-4 mr-1" /> {t('cm.pages_ModuleStorePage.satin_al')}
-                  </>}
-              </Button>
-            </div>}
-        </div>
-      </CardContent>
-    </Card>;
+      </div>
+    </article>
+  );
 }
-export default function ModuleStorePage({
-  user,
-  tenant,
-  onLogout
-}) {
-  const { t, i18n } = useTranslation();
+
+const StoreSkeleton = () => <div className="h-[430px] animate-pulse rounded-2xl border border-slate-200 bg-white p-5"><div className="h-12 w-12 rounded-xl bg-slate-200" /><div className="mt-4 h-5 w-2/3 rounded bg-slate-200" /><div className="mt-4 h-3 w-full rounded bg-slate-100" /><div className="mt-2 h-3 w-5/6 rounded bg-slate-100" /></div>;
+
+export default function ModuleStorePage() {
+  const { i18n } = useTranslation();
+  const english = (i18n.resolvedLanguage || i18n.language || "tr").startsWith("en");
   const navigate = useNavigate();
   const [products, setProducts] = useState([]);
-  const [subs, setSubs] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [subscriptions, setSubscriptions] = useState([]);
   const [paymentReady, setPaymentReady] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [buying, setBuying] = useState(null);
   const [tab, setTab] = useState("store");
+  const [category, setCategory] = useState("all");
+  const [query, setQuery] = useState("");
+
   const load = async () => {
     setLoading(true);
     try {
-      const [p, s] = await Promise.all([axios.get("/module-store/products"), axios.get("/module-store/my-subscriptions")]);
-      setProducts(p.data.products || []);
-      setPaymentReady(!!p.data.payment_ready);
-      setSubs(s.data.subscriptions || []);
-    } catch (e) {
-      console.error('Module store load failed', {
-        status: e?.response?.status ?? 'NOT_RECORDED',
-        type: e?.name ?? 'Error',
-      });
-      toast.error("Veriler yüklenemedi");
-    }
-    setLoading(false);
+      const [catalog, owned] = await Promise.all([axios.get("/module-store/products"), axios.get("/module-store/my-subscriptions")]);
+      setProducts(catalog.data.products || []);
+      setPaymentReady(Boolean(catalog.data.payment_ready));
+      setSubscriptions(owned.data.subscriptions || []);
+    } catch (error) {
+      console.error("Module store load failed", { status: error?.response?.status, type: error?.name });
+      toast.error(copy(english, "Modül kataloğu yüklenemedi", "Module catalog could not be loaded"));
+    } finally { setLoading(false); }
   };
-  useEffect(() => {
-    load();
-  }, []);
-  const handlePurchase = async product => {
-    if (!paymentReady) {
-      toast.warning("Ödeme sistemi henüz aktif değil. Yöneticiniz iyzico bilgilerini girince satın alabilirsiniz.");
-      return;
-    }
-    setBuying(product.key);
-    try {
-      const res = await axios.post("/module-store/purchase", {
-        product_key: product.key
-      });
-      if (res.data.payment_page_url) {
-        window.location.href = res.data.payment_page_url;
-      }
-    } catch (e) {
-      toast.error(e.response?.data?.detail || "Satın alma başlatılamadı");
-    }
-    setBuying(null);
+  useEffect(() => { void load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const subscriptionByProduct = useMemo(() => Object.fromEntries(subscriptions.map(item => [item.product_key, item])), [subscriptions]);
+  const filteredProducts = useMemo(() => {
+    const locale = english ? "en" : "tr";
+    const normalized = query.trim().toLocaleLowerCase(locale);
+    return products.filter(product => category === "all" || product.category === category).filter(product => !normalized || [product.name, product.name_en, product.description, product.description_en, ...(english ? (product.features_en || []) : (product.features || []))].join(" ").toLocaleLowerCase(locale).includes(normalized)).sort((a, b) => Number(b.popular || false) - Number(a.popular || false) || a.name.localeCompare(b.name, locale));
+  }, [category, english, products, query]);
+
+  const withBusy = async (product, action) => { setBuying(product.key); try { await action(); } finally { setBuying(null); } };
+  const handlePurchase = product => withBusy(product, async () => {
+    try { const { data } = await axios.post("/module-store/purchase", { product_key: product.key }); if (!data.payment_page_url) throw new Error("missing_payment_url"); window.location.assign(data.payment_page_url); }
+    catch (error) { toast.error(error?.response?.data?.detail || copy(english, "Satın alma başlatılamadı", "Purchase could not be started")); }
+  });
+  const handleTrial = product => withBusy(product, async () => {
+    try { await axios.post("/module-store/start-trial", { product_key: product.key }); toast.success(copy(english, `${product.trial_days} günlük deneme etkinleştirildi`, `${product.trial_days}-day trial activated`)); await load(); }
+    catch (error) { toast.error(error?.response?.data?.detail || copy(english, "Deneme başlatılamadı", "Trial could not be started")); }
+  });
+  const handleQuote = product => withBusy(product, async () => {
+    try { await axios.post("/module-store/request-quote", { product_key: product.key }); toast.success(copy(english, "Talebiniz alındı. Satış ekibi sizinle iletişime geçecek.", "Request received. Our sales team will contact you.")); }
+    catch (error) { toast.error(error?.response?.data?.detail || copy(english, "Teklif talebi gönderilemedi", "Quote request could not be sent")); }
+  });
+  const handleLaunch = product => {
+    if (product.key === "af_sadakat") return navigate("/app/afsadakat");
+    if (product.route_path) return navigate(product.route_path);
+    toast.info(copy(english, "Modül bağlantısı hazırlanıyor", "Module link is being prepared"));
   };
-  const handleStartTrial = async product => {
-    setBuying(product.key);
-    try {
-      await axios.post("/module-store/start-trial", {
-        product_key: product.key
-      });
-      toast.success(`${product.trial_days} günlük ücretsiz deneme başlatıldı`);
-      await load();
-      if (product.external) {
-        // For external modules, jump straight to the launcher
-        if (product.key === "af_sadakat") navigate("/app/afsadakat");
-      }
-    } catch (e) {
-      toast.error(e.response?.data?.detail || "Deneme başlatılamadı");
-    }
-    setBuying(null);
-  };
-  const handleLaunch = async product => {
-    if (product.key === "af_sadakat") {
-      navigate("/app/afsadakat");
-    }
-  };
-  const grouped = useMemo(() => {
-    const g = {
-      module: [],
-      integration: [],
-      credit_pack: []
-    };
-    for (const p of products) {
-      const cat = g[p.category] ? p.category : "module";
-      g[cat].push(p);
-    }
-    return g;
-  }, [products]);
-  const SkeletonCard = () => <Card className="flex flex-col animate-pulse">
-      <CardHeader className="pb-3">
-        <div className="flex items-center gap-3">
-          <div className="w-11 h-11 rounded-lg bg-slate-200" />
-          <div className="flex-1 space-y-2">
-            <div className="h-4 bg-slate-200 rounded w-2/3" />
-            <div className="h-3 bg-slate-100 rounded w-1/3" />
-          </div>
+
+  return <main className="min-h-screen bg-slate-50/70 pb-12">
+    <section className="border-b border-slate-200 bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950 text-white">
+      <div className="mx-auto grid max-w-[1500px] gap-8 px-4 py-10 sm:px-6 lg:grid-cols-[1fr_auto] lg:items-end lg:py-14">
+        <div className="max-w-3xl">
+          <Badge className="mb-4 border-white/15 bg-white/10 text-white hover:bg-white/10"><ShieldCheck className="mr-1.5 h-3.5 w-3.5" /> {copy(english, "Syroce ile hazır entegre", "Native Syroce integrations")}</Badge>
+          <h1 className="text-3xl font-black tracking-tight sm:text-4xl">{copy(english, "Oteliniz büyüdükçe sisteminiz de büyüsün", "A platform that grows with your hotel")}</h1>
+          <p className="mt-4 max-w-2xl text-base leading-7 text-slate-300">{copy(english, "İhtiyacınız olan operasyon, finans, satış ve misafir deneyimi modüllerini seçin. Tek oturum, tek veri modeli ve PMS ile kesintisiz çalışma.", "Choose the operations, finance, sales and guest-experience modules you need. One login, one data model and seamless PMS workflows.")}</p>
         </div>
-      </CardHeader>
-      <CardContent className="flex flex-col flex-1 gap-3">
-        <div className="h-3 bg-slate-100 rounded w-full" />
-        <div className="h-3 bg-slate-100 rounded w-5/6" />
-        <div className="h-3 bg-slate-100 rounded w-4/6" />
-        <div className="mt-auto pt-3 border-t flex items-end justify-between">
-          <div className="h-7 bg-slate-200 rounded w-24" />
-          <div className="h-8 bg-slate-200 rounded w-20" />
+        <div className="grid grid-cols-3 gap-2 text-center">
+          <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3"><div className="text-xl font-bold">{products.length || "—"}</div><div className="text-[11px] text-slate-300">{copy(english, "hazır çözüm", "solutions")}</div></div>
+          <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3"><div className="text-xl font-bold">14</div><div className="text-[11px] text-slate-300">{copy(english, "gün deneme", "day trial")}</div></div>
+          <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3"><div className="text-xl font-bold">0</div><div className="text-[11px] text-slate-300">{copy(english, "entegrasyon işi", "integration work")}</div></div>
         </div>
-      </CardContent>
-    </Card>;
-  return <>
-      <div className="max-w-[1600px] mx-auto p-4 sm:p-6 space-y-6">
-        <div className="flex items-center justify-between flex-wrap gap-3">
-          <div>
-            <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
-              <ShoppingBag className="w-6 h-6" /> {t('cm.pages_ModuleStorePage.modul_pazari')}
-            </h1>
-            <p className="text-sm text-slate-600">
-              {t('cm.pages_ModuleStorePage.ihtiyaciniz_olan_modul_entegrasyon_ve_kr')}
-            </p>
-          </div>
-          <Button variant="outline" onClick={load}>
-            <RefreshCw className="w-4 h-4 mr-1" /> {t('cm.pages_ModuleStorePage.yenile')}
-          </Button>
-        </div>
-
-        {!paymentReady && <Card className="border-amber-200 bg-amber-50">
-            <CardContent className="pt-4 text-sm text-amber-900">
-              {t('cm.pages_ModuleStorePage.odeme_sistemi_iyzico_henuz_aktif_edilmem')}
-            </CardContent>
-          </Card>}
-
-        <Tabs value={tab} onValueChange={setTab}>
-          <TabsList>
-            <TabsTrigger value="store">{t('cm.pages_ModuleStorePage.magaza')}</TabsTrigger>
-            <TabsTrigger value="subs">
-              Aboneliklerim {subs.length > 0 && <Badge className="ml-2 bg-slate-200 text-slate-800">{subs.length}</Badge>}
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="store" className="space-y-8 mt-6">
-            {loading ? <section>
-                <div className="h-5 w-28 bg-slate-200 rounded mb-3 animate-pulse" />
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                  {Array.from({
-                length: 8
-              }).map((_, i) => <SkeletonCard key={i} />)}
-                </div>
-              </section> : products.length === 0 ? <Card>
-                <CardContent className="pt-6 text-center text-slate-500">
-                  {t('cm.pages_ModuleStorePage.su_anda_gosterilecek_urun_yok')}
-                </CardContent>
-              </Card> : [{
-            key: "module",
-            title: "Modüller"
-          }, {
-            key: "integration",
-            title: "Entegrasyonlar"
-          }, {
-            key: "credit_pack",
-            title: "Kredi Paketleri"
-          }].map(sec => grouped[sec.key].length > 0 && <section key={sec.key}>
-                  <h2 className="text-lg font-semibold text-slate-900 mb-3">
-                    {sec.title}
-                  </h2>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                    {grouped[sec.key].map(p => <ProductCard key={p.key} product={p} owned={subs} onPurchase={handlePurchase} onStartTrial={handleStartTrial} onLaunch={handleLaunch} buying={buying} />)}
-                  </div>
-                </section>)}
-          </TabsContent>
-
-          <TabsContent value="subs" className="mt-6">
-            {loading ? <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {Array.from({
-              length: 3
-            }).map((_, i) => <SkeletonCard key={i} />)}
-              </div> : subs.length === 0 ? <Card>
-                <CardContent className="pt-6 text-center text-slate-500">
-                  {t('cm.pages_ModuleStorePage.henuz_aktif_aboneliginiz_yok')}
-                </CardContent>
-              </Card> : <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {subs.map(s => {
-              const product = products.find(p => p.key === s.product_key);
-              const Icon = ICONS[product?.icon] || Package;
-              const endDate = s.end_date ? new Date(s.end_date).toLocaleDateString("tr-TR") : "Süresiz";
-              return <Card key={s.id}>
-                      <CardContent className="pt-5 flex items-center justify-between gap-4">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center">
-                            <Icon className="w-5 h-5 text-slate-700" />
-                          </div>
-                          <div>
-                            <div className="font-semibold text-slate-900">
-                              {product?.name || s.product_key}
-                            </div>
-                            <div className="text-xs text-slate-500 flex items-center gap-1.5">
-                              <Clock className="w-3 h-3" /> {t('cm.pages_ModuleStorePage.bitis')} {endDate}
-                            </div>
-                          </div>
-                        </div>
-                        <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200">
-                          {t('cm.pages_ModuleStorePage.aktif')}
-                        </Badge>
-                      </CardContent>
-                    </Card>;
-            })}
-              </div>}
-          </TabsContent>
-        </Tabs>
       </div>
-    </>;
+    </section>
+    <div className="mx-auto max-w-[1500px] space-y-6 px-4 py-6 sm:px-6">
+      {!paymentReady && <div className="flex items-start gap-3 rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-950 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-100"><ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-blue-600 dark:text-blue-300" /><div><strong>{copy(english, "Güvenli teklif akışı aktif. ", "Secure quote flow is active. ")}</strong>{copy(english, "Online ödeme bağlantısı devreye alınana kadar “Teklif iste” ile talebiniz kayıt altına alınır.", "Until online payment is enabled, Request quote records your request for the sales team.")}</div></div>}
+      <Tabs value={tab} onValueChange={setTab}>
+        <div className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm lg:flex-row lg:items-center lg:justify-between">
+          <TabsList className="w-full lg:w-auto"><TabsTrigger value="store" className="flex-1 lg:flex-none">{copy(english, "Modül Pazarı", "Marketplace")}</TabsTrigger><TabsTrigger value="subs" className="flex-1 lg:flex-none">{copy(english, "Aboneliklerim", "My subscriptions")} {subscriptions.length > 0 && <Badge className="ml-2">{subscriptions.length}</Badge>}</TabsTrigger></TabsList>
+          <div className="flex flex-col gap-3 sm:flex-row"><div className="relative min-w-0 sm:w-72"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><Input value={query} onChange={event => setQuery(event.target.value)} className="pl-9" placeholder={copy(english, "Modül ara…", "Search modules…")} aria-label={copy(english, "Modül ara", "Search modules")} /></div><Button variant="outline" onClick={() => void load()} disabled={loading}><RefreshCw className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} /> {copy(english, "Yenile", "Refresh")}</Button></div>
+        </div>
+        <TabsContent value="store" className="mt-6 space-y-5">
+          <div className="flex gap-2 overflow-x-auto pb-1">{Object.entries(CATEGORY_COPY).map(([key, labels]) => <Button key={key} size="sm" variant={category === key ? "default" : "outline"} onClick={() => setCategory(key)} className="shrink-0">{labels[english ? "en" : "tr"]}</Button>)}</div>
+          {loading ? <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">{Array.from({ length: 9 }).map((_, index) => <StoreSkeleton key={index} />)}</div> : filteredProducts.length === 0 ? <Card><CardContent className="py-14 text-center text-slate-500">{copy(english, "Aramanızla eşleşen modül bulunamadı.", "No modules match your search.")}</CardContent></Card> : <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">{filteredProducts.map(product => <ProductCard key={product.key} product={product} subscription={subscriptionByProduct[product.key]} paymentReady={paymentReady} buying={buying} english={english} onPurchase={handlePurchase} onTrial={handleTrial} onQuote={handleQuote} onLaunch={handleLaunch} />)}</div>}
+        </TabsContent>
+        <TabsContent value="subs" className="mt-6">
+          {subscriptions.length === 0 ? <Card><CardContent className="py-14 text-center"><Package className="mx-auto h-10 w-10 text-slate-300" /><h2 className="mt-4 font-semibold text-slate-900">{copy(english, "Henüz aktif aboneliğiniz yok", "No active subscriptions yet")}</h2><p className="mt-1 text-sm text-slate-500">{copy(english, "İhtiyacınız olan modülü pazardan seçerek başlayın.", "Choose a module from the marketplace to get started.")}</p></CardContent></Card> : <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">{subscriptions.map(subscription => {
+            const product = products.find(item => item.key === subscription.product_key); const Icon = ICONS[product?.icon] || Package;
+            return <Card key={subscription.id}><CardContent className="flex items-center justify-between gap-4 p-5"><div className="flex min-w-0 items-center gap-3"><div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-slate-950 text-white"><Icon className="h-5 w-5" /></div><div className="min-w-0"><div className="truncate font-semibold text-slate-950">{english && product?.name_en ? product.name_en : product?.name || subscription.product_key}</div><div className="mt-1 flex items-center gap-1 text-xs text-slate-500"><Clock className="h-3.5 w-3.5" />{subscription.end_date ? new Date(subscription.end_date).toLocaleDateString(english ? "en-US" : "tr-TR") : copy(english, "Süresiz", "No expiry")}</div></div></div><Button size="sm" variant="outline" onClick={() => handleLaunch(product || {})}>{copy(english, "Aç", "Open")}</Button></CardContent></Card>;
+          })}</div>}
+        </TabsContent>
+      </Tabs>
+    </div>
+  </main>;
 }
