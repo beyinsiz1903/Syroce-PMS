@@ -8,6 +8,13 @@ const tr = JSON.parse(readFileSync(resolve(process.cwd(), 'src/locales/tr.json')
 const en = JSON.parse(readFileSync(resolve(process.cwd(), 'src/locales/en.json'), 'utf8'));
 
 describe('top navigation localization', () => {
+  it('places desktop navigation above the workspace without a fixed-width rail', () => {
+    expect(layoutSource).toContain('data-testid="desktop-top-navigation"');
+    expect(layoutSource).toContain('hidden xl:flex w-full shrink-0 flex-wrap');
+    expect(layoutSource).not.toContain('hidden xl:flex w-64');
+    expect(layoutSource).toContain('xl:hidden absolute inset-x-0 top-full');
+    expect(layoutSource).toContain('WorkspaceTools key={scope}');
+  });
   it('uses native labels for the primary navigation in Turkish and English', () => {
     expect(tr.navKeys.dashboard).toBe('Kontrol Paneli');
     expect(en.navKeys.dashboard).toBe('Dashboard');

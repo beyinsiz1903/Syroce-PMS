@@ -30,7 +30,7 @@ the handover router and its tests passed. `git diff --check` passed.
 
 ## Implemented behavior
 
-- Desktop sidebar and labelled mobile menu retain the existing navigation catalogue and
+- Desktop top navigation and labelled mobile menu retain the existing navigation catalogue and
   authorization checks. Super-admin hotel/platform selection filters navigation only;
   it does not change the selected hotel or grant permissions.
 - Role-aware start shortcuts and non-administrator login destinations are selected from
@@ -81,3 +81,12 @@ devices against staging. Run a complete reservation → stay → payment → che
 test data. Measure task completion time and operator error rate with hotel staff before rating
 the overall product. CI and deployment status must be reviewed separately; local test success
 is not a deployment confirmation.
+
+## Full-width navigation follow-up
+
+The fixed desktop sidebar was replaced with a wrapping horizontal navigation row after
+operator feedback about lost calendar/room width. Existing role/entitlement gates, hotel/platform
+navigation scope and shared workspace tools remain intact. The front desk uses full-width
+content, inline quick actions and horizontal module tabs; on narrow screens the tabs scroll
+horizontally instead of consuming multiple rows. The mobile main menu overlays the page
+and does not push the workspace downward. No financial or reservation behavior is changed.
