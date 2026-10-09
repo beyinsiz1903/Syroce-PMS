@@ -171,10 +171,11 @@ const POSDashboard = () => {
                 <QuickBtn        icon={Monitor}         label={t('fnb.kitchenDisplay', 'Mutfak Ekranı')} onClick={() => navigate('/kitchen-display')} testId="nav-kitchen-display" />
               )}
               <QuickBtn        icon={Coffee}          label={t('staffRoomService.title', 'Oda Servisi Siparişleri')} onClick={() => navigate('/staff/room-service')} testId="nav-staff-room-service" />
+              <details className="relative"><summary className="cursor-pointer rounded-lg border px-3 py-2 text-sm">{t("experience.posManagement", "Yönetim ve ayarlar")}</summary><div className="absolute right-0 z-20 mt-2 flex w-64 flex-col gap-2 rounded-xl border bg-background p-3 shadow-lg">
               <QuickBtn        icon={UtensilsCrossed} label={t('posDashboard.fnbSuite', 'Yiyecek ve İçecek Merkezi')} onClick={() => navigate('/fnb-complete')} testId="nav-fnb-complete" />
               <QuickBtn        icon={SlidersHorizontal} label="Kampanya ve Kasa" onClick={() => navigate('/pos-extensions')} testId="nav-pos-extensions" />
               <QuickBtn        icon={Sparkles}        label={t('posDashboard.allFeatures', 'Modül Ayarları')} onClick={() => navigate('/admin/features')} />
-              <QuickBtn        icon={ArrowLeft}       label={t('nav.dashboard', 'Kontrol Paneli')}        onClick={() => navigate('/app/dashboard')} />
+              <QuickBtn        icon={ArrowLeft}       label={t('nav.dashboard', 'Kontrol Paneli')}        onClick={() => navigate('/app/dashboard')} /></div></details>
             </div>
           </div>
         </div>
@@ -250,7 +251,7 @@ const POSDashboard = () => {
             }}>Yeniden dene</button>
           </div>
         )}
-        <Tabs defaultValue="outlets" className="w-full">
+        <Tabs defaultValue="operations" className="w-full">
           <div className="overflow-x-auto pb-1 mb-5">
           <TabsList className="inline-flex min-w-max h-10 items-center rounded-xl bg-white border border-gray-200 shadow-sm p-1 gap-0.5">
             {[

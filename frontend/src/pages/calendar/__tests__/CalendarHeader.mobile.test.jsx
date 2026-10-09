@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from 'vitest';
 import CalendarHeader from '@/pages/calendar/CalendarHeader';
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key) => key.split('.').at(-1) }),
+  useTranslation: () => ({ t: (key, fallback) => fallback || key.split('.').at(-1) }),
 }));
 
 const defaultProps = {
@@ -75,8 +75,8 @@ describe('CalendarHeader mobile toolbar', () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByTestId('mobile-calendar-nav-today')).toHaveTextContent('PMS İş Günü');
-    expect(screen.getByTestId('calendar-nav-today')).toHaveTextContent('PMS İş Günü');
+    expect(screen.getByTestId('mobile-calendar-nav-today')).toHaveTextContent('İş günü');
+    expect(screen.getByTestId('calendar-nav-today')).toHaveTextContent('İş günü');
     expect(screen.getByTestId('calendar-nav-today')).toHaveAccessibleName('PMS iş günü çevresine git (05.09.2026)');
   });
 

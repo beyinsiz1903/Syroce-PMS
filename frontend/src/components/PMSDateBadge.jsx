@@ -168,7 +168,7 @@ export default function PMSDateBadge({ inLayout = false }) {
         ) : (
           <Calendar className="w-3.5 h-3.5 text-slate-500 shrink-0" />
         )}
-        <span className="font-medium">PMS:</span>
+        <span className="font-medium">{t("experience.businessDate", "İş günü")}:</span>
         <span className="font-semibold tabular-nums">{fmtDate(bd, i18n.resolvedLanguage || i18n.language || "tr")}</span>
         {isStale && (
           <button
@@ -177,7 +177,7 @@ export default function PMSDateBadge({ inLayout = false }) {
             onMouseEnter={prefetchNightAudit}
             onFocus={prefetchNightAudit}
             disabled={navigating}
-            className="ml-1 px-2.5 py-0.5 rounded-full bg-amber-600 hover:bg-amber-700 disabled:bg-amber-700 disabled:cursor-wait text-white text-[11px] font-medium transition-colors"
+            className="ml-1 min-h-8 px-2.5 py-1 rounded-full bg-amber-600 hover:bg-amber-700 disabled:bg-amber-700 disabled:cursor-wait text-white text-xs font-medium transition-colors"
             data-testid="pms-date-stale-warning"
             title={t("nightAudit.reviewPreparation", "Gün sonu hazırlığını incele")}
           >

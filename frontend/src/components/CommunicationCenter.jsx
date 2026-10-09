@@ -62,7 +62,8 @@ export default function CommunicationCenter({ user }) {
     );
   }
 
-  const minimized = displayMode === 'minimized';
+  const operationalFocus = /^\/(?:app\/)?(?:pos|housekeeping|reservation-calendar)/.test(window.location.pathname);
+  const minimized = displayMode === 'minimized' || operationalFocus;
 
   return (
     <div className="print:hidden communication-center safe-fixed-bottom fixed right-4 z-50 flex flex-col items-end gap-2 sm:right-5">

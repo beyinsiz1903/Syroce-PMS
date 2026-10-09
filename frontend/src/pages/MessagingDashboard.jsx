@@ -959,12 +959,14 @@ function AutomationTab() {
   const handleCreate = async () => {
     if (!form.name?.trim()) { toast.error('Kural adı gerekli'); return; }
     if (!form.template_id) { toast.error('Şablon seçilmelidir'); return; }
+    if (form.enabled && !await confirmDialog({ message: activationMessage(form) })) return;
     const r = await safe(() => post('/messaging-center/automation/rules', form));
     if (r.ok && r.data.id) { toast.success('Otomasyon kuralı oluşturuldu'); setShowCreate(false); load(); }
   };
 
   const handleUpdate = async () => {
     if (!editRule) return;
+    if (form.enabled && !await confirmDialog({ message: activationMessage(form) })) return;
     const r = await safe(() => put(`/messaging-center/automation/rules/${editRule.id}`, form));
     if (r.ok) { toast.success('Kural güncellendi'); setEditRule(null); load(); }
   };
@@ -975,7 +977,10 @@ function AutomationTab() {
     if (r.ok) { toast.success('Kural silindi'); load(); }
   };
 
+  const activationMessage = (rule) => `“${rule.name}” kuralı etkinleştirilecek. Tetikleyici: ${TRIGGER_LABELS[rule.trigger_event] || "Özel olay"}; kanal: ${rule.channel === "email" ? "E-posta" : rule.channel === "sms" ? "SMS" : "WhatsApp"}; gecikme: ${rule.delay_minutes || 0} dakika. Şablon: ${tmplMap[rule.template_id]?.name || "Seçili şablon"}. Uygun olaylarda izin ve kanal kontrollerinden geçen misafirlere otomatik ileti gönderilebilir. Devam edilsin mi?`;
+
   const toggleEnabled = async (rule) => {
+    if (!rule.enabled && !await confirmDialog({ message: activationMessage(rule) })) return;
     await safe(() => put(`/messaging-center/automation/rules/${rule.id}`, { enabled: !rule.enabled }));
     load();
   };

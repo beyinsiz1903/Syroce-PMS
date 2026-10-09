@@ -307,11 +307,11 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
       <div className="p-6 space-y-6">
         <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
           <div>
-            <h1 className="text-4xl font-bold mb-2" style={{ fontFamily: 'Space Grotesk' }}>{t('invoice.title')}</h1>
+            <h1 className="text-2xl font-semibold mb-2" >{t('invoice.title')}</h1>
             <p className="text-gray-600">{t('invoice.subtitle')}</p>
           </div>
           <Button variant="outline" onClick={() => navigate('/app/general-ledger?tab=integrations')}>
-            Nilvera Muhasebe Eşlemesi
+            Muhasebe entegrasyon ayarları
           </Button>
         </div>
 
@@ -350,7 +350,7 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
         )}
 
         <Tabs value={activeSection} onValueChange={handleSectionChange}>
-          <TabsList className="grid w-full grid-cols-7">
+          <TabsList className="flex h-auto w-full flex-wrap justify-start gap-1">
             <TabsTrigger value="invoices" data-testid="tab-invoices"><FileText className="w-4 h-4 mr-2" />{t('invoice.tabs.invoices')}</TabsTrigger>
             <TabsTrigger value="incoming" data-testid="tab-incoming"><Inbox className="w-4 h-4 mr-2" />{t('invoice.tabs.incoming') || 'Gelen e-Faturalar'}</TabsTrigger>
             <TabsTrigger value="expenses" data-testid="tab-expenses"><Receipt className="w-4 h-4 mr-2" />{t('invoice.tabs.expenses')}</TabsTrigger>
@@ -376,11 +376,11 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
               </Button>
             </div>
 
-            <div className="space-y-4">
+            <div className="space-y-2">
               {invoices.map((invoice) => (
                 <Card key={invoice.id} data-testid={`invoice-card-${invoice.invoice_number}`}>
-                  <CardContent className="pt-6">
-                    <div className="flex justify-between items-start">
+                  <CardContent className="p-4">
+                    <div className="flex flex-wrap justify-between items-start gap-4">
                       <div>
                         <div className="font-bold text-lg">{invoice.invoice_number}</div>
                         <div className="text-sm text-gray-600">

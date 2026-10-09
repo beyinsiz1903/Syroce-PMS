@@ -1036,8 +1036,8 @@ const PMSModule = ({ user, tenant, onLogout }) => {
                   <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3 px-2">
                     {t('pms.quickActionsTitle', 'Hızlı İşlemler')}
                   </div>
-                  <div className="flex flex-col gap-1.5">
-                    {validTabKeys.has('bookings') && canCreateBooking && <Button size="sm" variant="outline" className="justify-start bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700" onClick={() => setOpenDialog('booking')}>
+                  <div className="flex flex-wrap gap-2 lg:flex-col">
+                    {validTabKeys.has('bookings') && canCreateBooking && <Button size="sm" className="justify-start" onClick={() => setOpenDialog('booking')}>
                       <Plus className="w-4 h-4 mr-2.5 text-slate-500" />{t('pms.newBooking', 'Yeni Rezervasyon')}
                     </Button>}
                     {validTabKeys.has('guests') && canCreateBooking && <Button size="sm" variant="outline" className="justify-start bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700" onClick={() => setOpenDialog('guest')}>

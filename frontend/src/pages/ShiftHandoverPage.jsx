@@ -11,7 +11,8 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Loader2, ClipboardCheck, AlertTriangle, Check, Trash2, Plus, Inbox } from 'lucide-react';
 import { toast } from 'sonner';
 
-import { confirmDialog } from '@/lib/dialogs';
+import ReservationPicker from '@/components/experience/ReservationPicker';
+import { confirmDialog, promptDialog } from '@/lib/dialogs';
 import { useTranslation } from 'react-i18next';
 import { localIsoDate, useBusinessDate } from '@/hooks/useBusinessDate';
 
@@ -46,6 +47,9 @@ export default function ShiftHandoverPage({ user, tenant, onLogout }) {
     related_booking_id: '',
   });
   const [creating, setCreating] = useState(false);
+  const [formOpen, setFormOpen] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadError, setLoadError] = useState(false);
 
   // Vardiya notları, tarayıcının UTC gününe değil Night Audit'in yönettiği
   // PMS iş gününe yazılmalıdır. Kullanıcı tarihi elle değiştirdiyse seçim
@@ -59,13 +63,14 @@ export default function ShiftHandoverPage({ user, tenant, onLogout }) {
   }, [localToday, operationalBusinessDate]);
 
   const load = useCallback(async () => {
-    setLoading(true);
+    setLoading(true); setLoadError(false);
     try {
       const params = { status: statusFilter, limit: 200 };
       if (businessDate) params.business_date = businessDate;
       const { data } = await api.get('/pms/shift-handover', { params });
-      setItems(data.items || []);
+      setItems(data.items || []); setHasMore(Boolean(data.has_more));
     } catch (e) {
+      setLoadError(true);
       toast.error('Yükleme hatası: ' + (e.response?.data?.detail || e.message));
     } finally { setLoading(false); }
   }, [statusFilter, businessDate]);
@@ -83,7 +88,7 @@ export default function ShiftHandoverPage({ user, tenant, onLogout }) {
       const payload = { ...form };
       Object.keys(payload).forEach(k => { if (payload[k] === '') delete payload[k]; });
       await api.post('/pms/shift-handover', payload);
-      toast.success('Devir notu eklendi');
+      toast.success('Devir notu eklendi'); setFormOpen(false);
       setForm(p => ({ ...p, note: '', related_room: '', related_booking_id: '' }));
       load();
     } catch (e) { toast.error('İşlem Hatası: ' + (e.response?.data?.detail || e.message)); }
@@ -93,9 +98,19 @@ export default function ShiftHandoverPage({ user, tenant, onLogout }) {
   const ack = async (id) => {
     try {
       await api.patch(`/pms/shift-handover/${id}/acknowledge`, {});
-      toast.success('Devir notu onaylandı');
+      toast.success('Devir notu devralındı');
       load();
     } catch (e) { toast.error('İşlem Hatası: ' + (e.response?.data?.detail || e.message)); }
+  };
+
+  const advance = async (item, status) => {
+    const note = status === 'resolved' ? await promptDialog({ message: t('experience.resolutionPrompt', 'Yapılan işlemi ve sonucu yazın:') }) : null;
+    if (status === 'resolved' && !note) return;
+    try {
+      await api.patch(`/pms/shift-handover/${item.id}/progress`, { status, resolution_note: note });
+      toast.success(t('experience.handoverUpdated', 'Devir durumu güncellendi'));
+      load();
+    } catch (error) { toast.error(error.response?.data?.detail || t('experience.updateError', 'İşlem kaydedilemedi. Listeyi yenileyin.')); }
   };
 
   const remove = async (id) => {
@@ -121,8 +136,9 @@ export default function ShiftHandoverPage({ user, tenant, onLogout }) {
           <p className="text-sm text-slate-500 mt-1">{t('cm.pages_ShiftHandoverPage.resepsiyon_vardiyalari_arasinda_kritik_n')}</p>
         </div>
 
+        <Button variant="outline" aria-expanded={formOpen} onClick={() => setFormOpen(!formOpen)}><Plus className="mr-2 h-4 w-4" />{t("cm.pages_ShiftHandoverPage.yeni_devir_notu")}</Button>
         {/* Yeni devir notu formu */}
-        <Card className="p-4 border-amber-200 bg-amber-50/30">
+        {formOpen && <Card className="p-4 border-amber-200 bg-amber-50/30">
           <h2 className="text-sm font-semibold mb-3 flex items-center gap-2 text-slate-900">
             <Plus className="w-4 h-4 text-amber-600" /> {t('cm.pages_ShiftHandoverPage.yeni_devir_notu')}
           </h2>
@@ -160,7 +176,7 @@ export default function ShiftHandoverPage({ user, tenant, onLogout }) {
             </div>
             <div>
               <Label className="text-xs text-slate-600">{t('cm.pages_ShiftHandoverPage.ilgili_rezervasyon_id')} <span className="opacity-60">(opsiyonel)</span></Label>
-              <Input value={form.related_booking_id} onChange={e => setForm(p => ({ ...p, related_booking_id: e.target.value }))} className="h-9" />
+              <ReservationPicker value={form.related_booking_id} onSelect={booking => setForm(p => ({ ...p, related_booking_id: booking?.id || "", related_room: booking?.room_number || p.related_room }))} />
             </div>
           </div>
           <div className="mt-3">
@@ -179,15 +195,15 @@ export default function ShiftHandoverPage({ user, tenant, onLogout }) {
               {t('cm.pages_ShiftHandoverPage.devir_notu_ekle')}
             </Button>
           </div>
-        </Card>
+        </Card>}
 
         {/* Liste filtreleri + içerik */}
         <Card className="p-4 border-slate-200">
           <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
             <Tabs value={statusFilter} onValueChange={setStatusFilter}>
-              <TabsList>
+              <TabsList className="h-auto flex-wrap">
                 <TabsTrigger value="open">{t('cm.pages_ShiftHandoverPage.acik')}</TabsTrigger>
-                <TabsTrigger value="acknowledged">Onaylanan</TabsTrigger>
+                <TabsTrigger value="acknowledged">{t("experience.workStatus.acknowledged", "Devralındı")}</TabsTrigger><TabsTrigger value="in_progress">{t("experience.workStatus.in_progress", "İşlemde")}</TabsTrigger><TabsTrigger value="resolved">{t("experience.workStatus.resolved", "Tamamlandı")}</TabsTrigger>
                 <TabsTrigger value="all">{t('cm.pages_ShiftHandoverPage.tumu')}</TabsTrigger>
               </TabsList>
             </Tabs>
@@ -206,7 +222,9 @@ export default function ShiftHandoverPage({ user, tenant, onLogout }) {
             </div>
           )}
 
-          {!loading && items.length === 0 && (
+          {loadError && <div role="alert" className="mb-3 rounded border border-amber-300 p-3">{t("experience.loadError", "Liste yüklenemedi. Yeniden deneyin.")}<Button variant="outline" onClick={load}>{t("common.refresh", "Yenile")}</Button></div>}
+          {hasMore && <p className="mb-3 text-sm text-muted-foreground">{t("experience.previewLimit", "Bu liste bir önizlemedir. Tüm kayıtlar için kaynak ekranını açın.")}</p>}
+          {!loading && !loadError && items.length === 0 && (
             <div className="text-center py-12 px-4 border-2 border-dashed border-slate-200 rounded-lg">
               <Inbox className="w-10 h-10 text-slate-300 mx-auto mb-2" />
               <div className="text-sm font-medium text-slate-700">{t('cm.pages_ShiftHandoverPage.bu_vardiyada_henuz_devir_notu_yok')}</div>
@@ -233,24 +251,26 @@ export default function ShiftHandoverPage({ user, tenant, onLogout }) {
                         {it.related_room && <Badge variant="outline" className="text-xs border-slate-200">{t('cm.pages_ShiftHandoverPage.oda')} {it.related_room}</Badge>}
                         {it.acknowledged && (
                           <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200">
-                            <Check className="w-3 h-3 mr-1" />{t('cm.pages_ShiftHandoverPage.onaylandi')}
+                            <Check className="w-3 h-3 mr-1" />{t(`experience.workStatus.${it.status || "acknowledged"}`, "Devralındı")}
                           </Badge>
                         )}
                       </div>
                       <div className="text-sm text-slate-800 whitespace-pre-wrap">{it.note}</div>
+                      {it.resolution_note && <p className="mt-2 rounded bg-emerald-50 p-2 text-sm text-emerald-950">{it.resolution_note} · {it.resolved_by_name}</p>}
                       <div className="text-[11px] text-slate-500 mt-2">
                         {it.from_user_name} · {new Date(it.created_at).toLocaleString(i18n.language)}
                         {it.acknowledged && it.acknowledged_by_name && (
-                          <> · Onay: {it.acknowledged_by_name} ({new Date(it.acknowledged_at).toLocaleString(i18n.language)})</>
+                          <> · Devralan: {it.acknowledged_by_name} ({new Date(it.acknowledged_at).toLocaleString(i18n.language)})</>
                         )}
                       </div>
                     </div>
                     <div className="flex flex-col gap-1.5 shrink-0">
                       {!it.acknowledged && (
                         <Button size="sm" onClick={() => ack(it.id)} className="bg-emerald-600 hover:bg-emerald-700 h-8">
-                          <Check className="w-3.5 h-3.5 mr-1" /> {t('cm.pages_ShiftHandoverPage.onayla')}
+                          <Check className="w-3.5 h-3.5 mr-1" /> {t("experience.acknowledge", "Devral")}
                         </Button>
                       )}
+                      {it.acknowledged && it.status !== "resolved" && <><Button size="sm" variant="outline" onClick={() => advance(it, "resolved")}>{t("experience.resolve", "Sonuçlandır")}</Button>{it.status !== "in_progress" && <Button size="sm" variant="outline" onClick={() => advance(it, "in_progress")}>{t("experience.startWork", "İşleme al")}</Button>}</>}
                       <Button
                         size="sm"
                         variant="ghost"

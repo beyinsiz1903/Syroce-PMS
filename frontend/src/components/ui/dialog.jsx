@@ -1,4 +1,7 @@
 import * as React from "react"
+import { useTranslation } from "react-i18next"
+function DialogLabel() { const { t } = useTranslation(); return t("experience.dialog", "İşlem penceresi"); }
+function CloseLabel() { const { t } = useTranslation(); return t("common.close", "Kapat"); }
 import * as DialogPrimitive from "@radix-ui/react-dialog"
 import { X } from "lucide-react"
 
@@ -16,12 +19,14 @@ const DialogOverlay = React.forwardRef(({ className, ...props }, ref) => (
   <DialogPrimitive.Overlay
     ref={ref}
     className={cn(
-      "fixed inset-0 z-50 bg-black/80  data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
+      "fixed inset-0 z-50 bg-black/40  data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
       className
     )}
     {...props} />
 ))
 DialogOverlay.displayName = DialogPrimitive.Overlay.displayName
+
+const hasDescription = (children) => React.Children.toArray(children).some(child => React.isValidElement(child) && (child.type === DialogDescription || child.type === DialogPrimitive.Description || hasDescription(child.props.children)));
 
 const DialogContent = React.forwardRef(({ className, overlayClassName, children, ...props }, ref) => (
   <DialogPortal>
@@ -33,12 +38,12 @@ const DialogContent = React.forwardRef(({ className, overlayClassName, children,
         className
       )}
       {...props}>
-      <DialogPrimitive.Description className="sr-only">Dialog</DialogPrimitive.Description>
+      {!hasDescription(children) && <DialogPrimitive.Description className="sr-only"><DialogLabel /></DialogPrimitive.Description>}
       {children}
       <DialogPrimitive.Close
         className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground">
         <X className="h-4 w-4" />
-        <span className="sr-only">Close</span>
+        <span className="sr-only"><CloseLabel /></span>
       </DialogPrimitive.Close>
     </DialogPrimitive.Content>
   </DialogPortal>

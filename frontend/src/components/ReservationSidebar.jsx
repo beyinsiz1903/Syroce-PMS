@@ -10,6 +10,7 @@ import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import CallButton from '@/components/contact-center/CallButton';
+import { openGuestContext } from '@/lib/productExperience';
 import GuestAlertModal from '@/components/GuestAlertModal';
 import { confirmDialog } from '@/lib/dialogs';
 import { cachedTenantCurrency } from '@/lib/currency';
@@ -234,7 +235,7 @@ const ReservationSidebar = ({
         <div className="mb-5 flex items-start justify-between gap-3">
           <div className="flex min-w-0 items-center gap-3">
             <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white/15 text-lg font-bold ring-1 ring-white/20">{initials || 'M'}</span>
-            <div className="min-w-0"><p className="truncate text-lg font-bold">{guestName}</p><p className="mt-0.5 truncate text-xs text-slate-300">{source} · {summary.guestCount} misafir</p></div>
+            <div className="min-w-0"><p className="truncate text-lg font-bold">{guestName}</p>{booking.guest_id && <button type="button" className="mt-1 text-xs underline" onClick={() => openGuestContext(booking.guest_id)}>Misafir özeti</button>}<p className="mt-0.5 truncate text-xs text-slate-300">{source} · {summary.guestCount} misafir</p></div>
           </div>
           <button type="button" onClick={onClose} className="rounded-xl p-2 text-slate-300 transition hover:bg-white/10 hover:text-white" aria-label="Hızlı paneli kapat"><X className="h-5 w-5" /></button>
         </div>

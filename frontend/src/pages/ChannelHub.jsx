@@ -55,13 +55,13 @@ export default function ChannelHub({ user, tenant, onLogout }) { // eslint-disab
               {t('channelHub.title', 'Kanallar')}
             </h1>
             <p className="text-sm text-gray-500">
-              {t('channelHub.subtitle', 'Bağlantılar, dashboard ve operasyon tek yerde')}
+              {t('channelHub.subtitle', 'Kanal bağlantıları, aktarım durumu ve takip gerektiren işlemler')}
             </p>
           </div>
         </div>
 
         <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
-          <TabsList className={`grid w-full max-w-3xl ${
+          <TabsList className={`grid h-auto w-full max-w-3xl ${
             allowedTabs.length === 4 ? 'grid-cols-4'
               : allowedTabs.length === 3 ? 'grid-cols-3'
                 : (allowedTabs.length === 2 ? 'grid-cols-2' : 'grid-cols-1')
@@ -75,7 +75,7 @@ export default function ChannelHub({ user, tenant, onLogout }) { // eslint-disab
             {allowedTabs.includes('dashboard') && (
               <TabsTrigger value="dashboard" data-testid="tab-channel-dashboard">
                 <BarChart3 className="w-4 h-4 mr-2" />
-                {t('channelHub.tabs.dashboard', 'Dashboard')}
+                {t('channelHub.tabs.dashboard', 'Genel bakış')}
               </TabsTrigger>
             )}
             {allowedTabs.includes('conflicts') && (

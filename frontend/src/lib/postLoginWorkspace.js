@@ -5,11 +5,17 @@ const ADMIN_ROLES = new Set([
   'owner',
 ]);
 
-export async function resolvePostLoginDestination({ api, user, existingRedirect = null }) {
+export async function resolvePostLoginDestination({ api, user, tenant, existingRedirect = null }) {
   if (existingRedirect) return existingRedirect;
 
   const role = String(user?.role || '').toLowerCase();
-  if (!ADMIN_ROLES.has(role) || !user?.tenant_id) return null;
+  if (!user?.tenant_id) return null;
+  if (!ADMIN_ROLES.has(role)) {
+    // Missing entitlement data must not turn a role default into new access.
+    if (!tenant?.modules) return null;
+    const items = accessibleNavigationItems({ user, tenant, hasModule: key => tenant.modules[key] === true });
+    return roleStartItems(user, items)[0]?.path || null;
+  }
 
   try {
     const response = await api.get('/multi-property/properties');
@@ -32,3 +38,5 @@ export async function resolvePostLoginDestination({ api, user, existingRedirect 
 
   return null;
 }
+import { accessibleNavigationItems } from '@/lib/navigationCatalog';
+import { roleStartItems } from '@/lib/productExperience';
