@@ -35,6 +35,10 @@ class PosOrderStateChanged(RuntimeError):
     """The order left its payable state while checkout was in flight."""
 
 
+class PosTableUnavailable(RuntimeError):
+    """A table could not be atomically claimed for a new dine-in order."""
+
+
 class PosFnbServiceV2:
     """Production-grade POS & F&B with concurrency and consistency guards."""
 
@@ -211,7 +215,10 @@ class PosFnbServiceV2:
         if not items or len(items) == 0:
             return ServiceResult.fail("Order must have at least one item", "VALIDATION_ERROR")
 
-        # Validate table availability for dine-in
+        table = None
+        # Validate table availability for dine-in.  The later conditional write
+        # is the authority: this read only preserves the useful fast failure
+        # and legacy behaviour for outlets without a table-layout record.
         if order_type == "dine_in" and table_number:
             table = await self._db.table_layouts.find_one({"table_number": table_number, "outlet_id": outlet_id, "tenant_id": ctx.tenant_id})
             if table and (table.get("status") != "available" or table.get("current_order_id")):
@@ -248,8 +255,6 @@ class PosFnbServiceV2:
             "business_date": business_date,
             "created_at": now.isoformat(),
         }
-        await self._db.pos_orders.insert_one(order_doc)
-
         # Create kitchen orders per station
         stations = {}
         for item in order_items:
@@ -258,6 +263,7 @@ class PosFnbServiceV2:
                 stations[st] = []
             stations[st].append(item)
 
+        kitchen_docs = []
         for station, station_items in stations.items():
             for si in station_items:
                 ko_doc = {
@@ -275,14 +281,26 @@ class PosFnbServiceV2:
                     "status": "pending",
                     "ordered_at": now.isoformat(),
                 }
-                await self._db.kitchen_orders.insert_one(ko_doc)
+                kitchen_docs.append(ko_doc)
 
-        # Update table status
-        if order_type == "dine_in" and table_number:
-            await self._db.table_layouts.update_one(
-                {"table_number": table_number, "outlet_id": outlet_id, "tenant_id": ctx.tenant_id},
-                {"$set": {"status": "occupied", "current_order_id": order_id, "opened_at": now.isoformat()}},
-            )
+        if table is not None:
+            try:
+                await self._persist_order_and_claim_table(
+                    tenant_id=ctx.tenant_id,
+                    outlet_id=outlet_id,
+                    table_number=table_number,
+                    order_doc=order_doc,
+                    kitchen_docs=kitchen_docs,
+                )
+            except PosTableUnavailable:
+                return ServiceResult.fail(f"Table {table_number} is unavailable", "TABLE_UNAVAILABLE")
+        else:
+            # Outlets that have not configured a table layout retain the
+            # existing counter-service flow.  A configured dine-in table always
+            # takes the atomic claim path above.
+            await self._db.pos_orders.insert_one(order_doc)
+            for kitchen_doc in kitchen_docs:
+                await self._db.kitchen_orders.insert_one(kitchen_doc)
 
         await self._enqueue_kot(ctx.tenant_id, order_doc, order_items, ctx.actor_id)
         await self._broadcast_kitchen_queue(ctx.tenant_id)
@@ -297,6 +315,86 @@ class PosFnbServiceV2:
                 "grand_total": grand_total,
             }
         )
+
+    async def _persist_order_and_claim_table(
+        self,
+        *,
+        tenant_id: str,
+        outlet_id: str,
+        table_number: str,
+        order_doc: dict,
+        kitchen_docs: list[dict],
+    ) -> None:
+        """Create a dine-in order only if its table is still unclaimed.
+
+        The availability read in ``create_order`` is intentionally not trusted:
+        two waiter terminals can both observe an available table.  The
+        conditional update is performed before the inserts inside the same
+        transaction, so losing the race leaves neither an order nor kitchen
+        rows behind.
+        """
+
+        async def _commit(session) -> None:
+            claim = await self._db.table_layouts.update_one(
+                {
+                    "tenant_id": tenant_id,
+                    "outlet_id": outlet_id,
+                    "table_number": table_number,
+                    "status": "available",
+                    "current_order_id": None,
+                },
+                {
+                    "$set": {
+                        "status": "occupied",
+                        "current_order_id": order_doc["id"],
+                        "opened_at": order_doc["created_at"],
+                    }
+                },
+                session=session,
+            )
+            if claim.matched_count != 1:
+                raise PosTableUnavailable(table_number)
+            await self._db.pos_orders.insert_one(order_doc, session=session)
+            if kitchen_docs:
+                await self._db.kitchen_orders.insert_many(kitchen_docs, session=session)
+
+        try:
+            await with_resource_locks(
+                client=self._db.client,
+                db=self._db,
+                tenant_id=tenant_id,
+                locks_collection="pos_table_locks",
+                # The conditional claim itself is the synchronization point;
+                # keeping this list empty also avoids redundant lock documents.
+                resources=[],
+                callback=_commit,
+            )
+        except Exception as exc:  # noqa: BLE001
+            if isinstance(exc, PosTableUnavailable):
+                raise
+            if not is_replica_set_unavailable(exc):
+                raise
+            if not standalone_fallback_allowed():
+                raise HTTPException(
+                    status_code=503,
+                    detail="POS masa açılışı atomik garanti sağlayamıyor (Mongo replica set gerekli).",
+                )
+            # Explicit local-development opt-in.  The table claim remains
+            # conditional, and we compensate it if a following local write
+            # fails so a development failure does not strand the table.
+            try:
+                await _commit(None)
+            except Exception:
+                await self._db.table_layouts.update_one(
+                    {
+                        "tenant_id": tenant_id,
+                        "outlet_id": outlet_id,
+                        "table_number": table_number,
+                        "current_order_id": order_doc["id"],
+                    },
+                    {"$set": {"status": "available", "current_order_id": None, "opened_at": None}},
+                )
+                raise
 
     # ==================================================================
     # Close Order + Payment
