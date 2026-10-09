@@ -356,7 +356,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
                 <Button
                   variant="ghost"
                   size="sm"
-                  className={`flex items-center gap-1 px-2 py-1.5 text-sm whitespace-normal text-left rounded-md transition-all duration-150 min-h-10 h-auto justify-start ${
+                  className={`flex items-center gap-1 px-2 py-1.5 text-xs whitespace-nowrap rounded-md transition-all duration-150 h-9 shrink-0 justify-start ${
                     active
                       ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-sm'
                       : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
@@ -596,7 +596,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
           </div>
 
           {mobileMenuOpen && (
-            <nav id="mobile-navigation" className="xl:hidden mt-2 pb-2 border-t pt-2 max-h-[70vh] overflow-y-auto" data-testid="mobile-nav">
+            <nav id="mobile-navigation" className="xl:hidden absolute inset-x-0 top-full z-50 border-b border-t bg-background p-3 shadow-lg max-h-[70dvh] overflow-y-auto" data-testid="mobile-nav">
               <div className="px-2 pb-2 flex items-center gap-2">
 
                 <LanguageSelector />
@@ -730,8 +730,8 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
       <PMSDateBadge inLayout />
       <WakeUpAlarmMonitor tenant={tenant} />
 
-      <div className="flex flex-1 min-w-0">
-            <nav ref={navRef} className="hidden xl:flex w-64 shrink-0 flex-col items-stretch gap-1 border-r bg-background p-3 sticky top-16 self-start max-h-[calc(100vh-7rem)] overflow-y-auto">
+      <div className="flex flex-1 min-w-0 flex-col">
+            <nav ref={navRef} data-testid="desktop-top-navigation" aria-label={t("experience.navigationScope", "Gezinme kapsamı")} className="hidden xl:flex w-full shrink-0 flex-wrap items-center gap-1 border-b bg-background px-3 py-2 print:hidden">
               {[...standaloneItems.filter((item) => item.key === 'dashboard'), ...visibleNav.filter((item) => item.key === 'reservation_calendar')].map((item) => {
                 const Icon = ICON_BY_KEY[item.key] || Home;
                 const isDashboard = item.key === 'dashboard';
@@ -750,7 +750,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
                           onPointerDown={() => preloadRoute(targetPath)}
                           onMouseEnter={() => preloadRoute(targetPath)}
                           onFocus={() => preloadRoute(targetPath)}
-                          className={`flex w-full justify-start items-center gap-2 px-3 py-2 text-sm whitespace-normal text-left rounded-md min-h-10 h-auto transition-all duration-150 ${
+                          className={`flex shrink-0 justify-start items-center gap-2 px-3 py-2 text-xs whitespace-nowrap text-left rounded-md h-9 transition-all duration-150 ${
                             isActive
                               ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-sm'
                               : 'text-gray-600 hover:bg-gray-100'
@@ -772,7 +772,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
                 );
               })}
 
-              <div className="h-px w-full bg-border my-2 shrink-0" />
+              <div className="h-5 w-px bg-border mx-1 shrink-0" />
               {/* Odalar kısayolu — PMS'in rooms sekmesine direkt bağlantı */}
               {visibleNav.some((item) => item.key === 'pms') && canAccessPmsTab(user, 'rooms') && (() => {
                 const roomsPath = '/app/pms#rooms';
@@ -789,7 +789,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
                           onPointerDown={() => preloadRoute('/app/pms')}
                           onMouseEnter={() => preloadRoute('/app/pms')}
                           onFocus={() => preloadRoute('/app/pms')}
-                          className={`flex w-full justify-start items-center gap-2 px-3 py-2 text-sm whitespace-normal text-left rounded-md min-h-10 h-auto transition-all duration-150 ${
+                          className={`flex shrink-0 justify-start items-center gap-2 px-3 py-2 text-xs whitespace-nowrap text-left rounded-md h-9 transition-all duration-150 ${
                             isRoomsActive
                               ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-sm'
                               : 'text-gray-600 hover:bg-gray-100'
@@ -810,7 +810,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
                   </TooltipProvider>
                 );
               })()}
-              {isSuperAdmin && <div className="mb-2 grid grid-cols-2 gap-1 rounded-lg bg-muted p-1" aria-label={t('experience.navigationScope', 'Gezinme kapsamı')}>{['hotel', 'platform'].map(mode => <Button key={mode} size="sm" variant={navigationMode === mode ? 'default' : 'ghost'} aria-pressed={navigationMode === mode} onClick={() => { setNavigationMode(mode); writeExperiencePreference(scope, 'navigationMode', mode); }}>{t(`experience.${mode}`, mode === 'hotel' ? 'Otel' : 'Platform')}</Button>)}</div>}
+              {isSuperAdmin && <div className="grid shrink-0 grid-cols-2 gap-1 rounded-lg bg-muted p-0.5" aria-label={t('experience.navigationScope', 'Gezinme kapsamı')}>{['hotel', 'platform'].map(mode => <Button key={mode} size="sm" variant={navigationMode === mode ? 'default' : 'ghost'} aria-pressed={navigationMode === mode} onClick={() => { setNavigationMode(mode); writeExperiencePreference(scope, 'navigationMode', mode); }}>{t(`experience.${mode}`, mode === 'hotel' ? 'Otel' : 'Platform')}</Button>)}</div>}
               {navigationGroups.filter(group => navigationMode === 'platform' && isSuperAdmin ? group.id === 'admin' : group.id !== 'admin').map((groupDef) => renderGroupDropdown(groupDef))}
               {!isSuperAdmin && navigationGroups.filter(group => group.id === 'admin').map(renderGroupDropdown)}
             </nav>

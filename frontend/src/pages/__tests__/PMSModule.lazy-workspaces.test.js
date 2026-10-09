@@ -6,6 +6,15 @@ import { describe, expect, it } from 'vitest';
 const source = readFileSync(resolve(process.cwd(), 'src/pages/PMSModule.jsx'), 'utf8');
 
 describe('PMSModule workspace loading', () => {
+  it('uses full-width content and horizontal tabs at every breakpoint', () => {
+    expect(source).toContain('currentModule="pms" fullWidth');
+    expect(source).not.toContain('currentModule="pms">');
+    expect(source).toContain('data-testid="pms-module-tabs"');
+    expect(source).toContain('flex flex-nowrap sm:flex-wrap overflow-x-auto');
+    expect(source).not.toContain('lg:w-[260px]');
+    expect(source).not.toContain('shadow-sm hidden lg:block');
+    expect(source).toContain("validTabKeys.has('bookings') && canCreateBooking");
+  });
   it('keeps secondary workspaces out of the front-desk startup bundle', () => {
     expect(source).toContain("const StaffTaskManager = lazy(() => import('@/components/StaffTaskManager'))");
     expect(source).toContain("const FeedbackSystem = lazy(() => import('@/components/FeedbackSystem'))");

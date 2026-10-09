@@ -12,6 +12,9 @@ import en from '../src/locales/en.json';
 import '../src/index.css';
 import { EntitlementProvider } from '../src/context/EntitlementContext';
 import Layout from '../src/components/Layout';
+import PMSModule from '../src/pages/PMSModule';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+const previewQueryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 import { SimulationProvider } from '../src/context/SimulationContext';
 import RoleStart from '../src/components/experience/RoleStart';
 import ApplicationCenter from '../src/pages/ApplicationCenter';
@@ -38,6 +41,9 @@ const adapter = async config => {
   if (path.includes('/crm/guest/')) data = { guest: { name: 'Örnek Misafir', email: 'example@example.test', tags: ['Sessiz oda'] }, stay_history: [{ id: 'stay1', check_in: '2026-10-01', check_out: '2026-10-03', status: 'checked_out', room_number: '101' }] };
   if (path.includes('data-intelligence')) data = { guests_analyzed: 30, high_churn_guests: [{ guest_id: 'g1', name: 'Örnek Misafir', churn_score: 0.55, next_action: 'Son konaklama deneyimini değerlendirin.' }], top_value_guests: [], upsell_opportunities: [] };
   if (path.includes('frontdesk/search-bookings')) data = { bookings: [{ id: 'b1', guest_name: 'Örnek Misafir', booking_number: 'R-100', check_in: '2026-10-09', check_out: '2026-10-11', room_number: '101' }] };
+  if (path.startsWith('/pms/rooms?')) data = rooms;
+  if (path.startsWith('/pms/bookings?') || path.startsWith('/pms/guests?') || path.startsWith('/companies?')) data = [];
+  if (path.startsWith('/frontdesk/')) data = [];
   return { data, status: 200, statusText: 'OK', headers: {}, config };
 };
 
@@ -48,7 +54,8 @@ function Preview() {
   const [lines, setLines] = useState([{ id: 'line1', room_id: '', adults: 2, children: 0, base_rate: 1500, total_amount: 3000 }]);
   const update = (index, key, value) => setLines(current => current.map((line, i) => i === index ? { ...line, [key]: value } : line));
   const props = { user, tenant, onLogout: () => {} };
-  return <Layout {...props}><div className="border-b bg-blue-50 p-3 text-sm text-blue-950">Yerel tasarım kontrolü · örnek kayıtlar · canlı sisteme bağlı değildir.<div className="mt-2 flex flex-wrap gap-2">{[['/app/dashboard', 'Başlangıç'], ['/app/applications', 'Uygulamalar'], ['/crm', 'CRM'], ['/housekeeping-status', 'Kat hizmetleri'], ['/shift-handover', 'Vardiya devri']].map(([path, label]) => <Button key={path} size="sm" variant="outline" onClick={() => navigate(path)}>{label}</Button>)}<Button size="sm" onClick={() => setBookingOpen(true)}>Rezervasyon formu</Button></div></div>
+  if (location.pathname === "/app/pms") return <PMSModule {...props} />;
+  return <Layout {...props}><div className="border-b bg-blue-50 p-3 text-sm text-blue-950">Yerel tasarım kontrolü · örnek kayıtlar · canlı sisteme bağlı değildir.<div className="mt-2 flex flex-wrap gap-2">{[['/app/dashboard', 'Başlangıç'], ['/app/pms', 'Ön büro önizlemesi'], ['/app/applications', 'Uygulamalar'], ['/crm', 'CRM'], ['/housekeeping-status', 'Kat hizmetleri'], ['/shift-handover', 'Vardiya devri']].map(([path, label]) => <Button key={path} size="sm" variant="outline" onClick={() => navigate(path)}>{label}</Button>)}<Button size="sm" onClick={() => setBookingOpen(true)}>Rezervasyon formu</Button></div></div>
     {location.pathname === '/app/applications' ? <ApplicationCenter {...props} /> : location.pathname === '/crm' ? <CRMWorkspace {...props} /> : location.pathname === '/housekeeping-status' ? <HousekeepingRoomGrid /> : location.pathname === '/shift-handover' ? <ShiftHandoverPage {...props} /> : <div className="p-6"><RoleStart {...props} /></div>}
     <BookingDialog open={bookingOpen} onClose={() => setBookingOpen(false)} guests={[]} rooms={rooms} companies={[]} ratePlans={[]} packages={[]} newBooking={draft} setNewBooking={setDraft} multiRoomBooking={lines} updateMultiRoomField={update} addRoomToMultiBooking={() => setLines(current => [...current, { ...current[0], id: String(current.length) }])} removeRoomFromMultiBooking={index => setLines(current => current.filter((_, i) => i !== index))} updateMultiRoomChildrenAges={(index, value) => update(index, 'children', value)} updateMultiRoomChildAge={() => {}} handleChildrenChange={() => {}} handleChildAgeChange={() => {}} handleCompanySelect={() => {}} handleContractedRateSelect={() => {}} handleCreateBooking={event => { event.preventDefault(); setBookingOpen(false); }} setOpenDialog={() => {}} />
   </Layout>;
@@ -57,5 +64,5 @@ function Preview() {
 if (import.meta.env.DEV) {
   axios.defaults.adapter = adapter; api.defaults.adapter = adapter;
   await i18n.use(initReactI18next).init({ lng: 'tr', fallbackLng: 'en', resources: { tr: { translation: tr }, en: { translation: en } }, interpolation: { escapeValue: false } });
-  createRoot(document.getElementById('root')).render(<ThemeProvider attribute="class"><MemoryRouter initialEntries={['/app/dashboard']}><EntitlementProvider currentTenantId={tenant.id} isSuperAdmin><SimulationProvider><Preview /></SimulationProvider></EntitlementProvider></MemoryRouter></ThemeProvider>);
+  createRoot(document.getElementById('root')).render(<ThemeProvider attribute="class"><MemoryRouter initialEntries={['/app/dashboard']}><EntitlementProvider currentTenantId={tenant.id} isSuperAdmin><SimulationProvider><QueryClientProvider client={previewQueryClient}><Preview /></QueryClientProvider></SimulationProvider></EntitlementProvider></MemoryRouter></ThemeProvider>);
 }

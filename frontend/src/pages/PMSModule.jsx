@@ -988,7 +988,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
 
   if (loading) {
     return (
-      <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="pms">
+      <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="pms" fullWidth>
         <div className="flex items-center justify-center h-screen">
           <div className="text-center">
             <RefreshCw className="w-12 h-12 animate-spin text-slate-700 mx-auto mb-4" />
@@ -1001,18 +1001,18 @@ const PMSModule = ({ user, tenant, onLogout }) => {
   }
 
   return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="pms">
-      <div className="p-6 space-y-6">
+    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="pms" fullWidth>
+      <div className="p-3 sm:p-6 space-y-4">
         {loadError && <div role="alert" className="flex flex-col gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 sm:flex-row sm:items-center sm:justify-between">
           <span>{loadError}</span>
           <Button variant="outline" size="sm" onClick={() => loadData()} disabled={loading}>Yeniden dene</Button>
         </div>}
-        <div className="mb-6 flex justify-between items-start gap-4">
+        <div className="flex flex-col justify-between gap-3 lg:flex-row lg:items-start">
           <div>
-            <h1 className="text-4xl font-bold mb-2" style={{ fontFamily: 'Space Grotesk' }}>{t('pms.title')}</h1>
+            <h1 className="text-2xl font-bold mb-2">{t('pms.title')}</h1>
             <p className="text-gray-600">{t('pms.subtitle')}</p>
           </div>
-          <div className="w-96">
+          <div className="w-full lg:w-96 lg:shrink-0">
             <GlobalSearch user={user} onSelectResult={(result) => {
               if (result.type === 'page' && result.data?.path) {
                 navigate(result.data.path);
@@ -1028,15 +1028,15 @@ const PMSModule = ({ user, tenant, onLogout }) => {
         </div>
 
         <Tabs value={activeTab} className="w-full" onValueChange={(v) => { setActiveTab(v); window.location.hash = v; }}>
-          <div className="flex flex-col lg:flex-row gap-6 items-start">
-            {/* Sol Menü (Sidebar) */}
-            <div className="w-full lg:w-[260px] shrink-0 space-y-4">
-              <Card className="border-slate-200 bg-white lg:sticky lg:top-6 shadow-sm">
+          <div className="flex flex-col gap-4" data-testid="pms-full-width-workspace">
+            {/* Full-width actions and horizontal module tabs */}
+            <div className="w-full min-w-0 space-y-3">
+              <Card className="border-slate-200 bg-white shadow-sm">
                 <CardContent className="p-3">
-                  <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3 px-2">
+                  <div className="sr-only">
                     {t('pms.quickActionsTitle', 'Hızlı İşlemler')}
                   </div>
-                  <div className="flex flex-wrap gap-2 lg:flex-col">
+                  <div className="flex flex-wrap items-center gap-2" data-testid="pms-quick-actions">
                     {validTabKeys.has('bookings') && canCreateBooking && <Button size="sm" className="justify-start" onClick={() => setOpenDialog('booking')}>
                       <Plus className="w-4 h-4 mr-2.5 text-slate-500" />{t('pms.newBooking', 'Yeni Rezervasyon')}
                     </Button>}
@@ -1056,12 +1056,12 @@ const PMSModule = ({ user, tenant, onLogout }) => {
                 </CardContent>
               </Card>
 
-              <Card className="border-slate-200 bg-white lg:sticky lg:top-[280px] shadow-sm hidden lg:block">
+              <Card className="border-slate-200 bg-white shadow-sm">
                 <CardContent className="p-2">
-                  <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2 mt-2 px-3">
+                  <div className="sr-only">
                     {t('pms.modulesTitle', 'Modüller')}
                   </div>
-                  <TabsList className="flex flex-col h-auto bg-transparent w-full space-y-0.5 p-0 items-stretch">
+                  <TabsList aria-label={t("pms.modulesTitle", "Modüller")} data-testid="pms-module-tabs" className="flex flex-nowrap sm:flex-wrap overflow-x-auto h-auto bg-transparent w-full gap-1 p-0 justify-start">
                     {visibleTabs.map((tab) => {
                       const Icon = tab.icon;
                       const label = tab.labelKey ? t(tab.labelKey) : tab.labelText;
@@ -1070,9 +1070,9 @@ const PMSModule = ({ user, tenant, onLogout }) => {
                           key={tab.key} 
                           value={tab.key} 
                           data-testid={tab.testId}
-                          className="w-full justify-start px-3 py-2.5 data-[state=active]:bg-blue-50 data-[state=active]:text-blue-700 data-[state=active]:shadow-none hover:bg-slate-100 rounded-md font-medium text-sm text-slate-600 transition-colors"
+                          className="shrink-0 justify-start px-3 py-2 data-[state=active]:bg-blue-50 data-[state=active]:text-blue-700 data-[state=active]:shadow-none hover:bg-slate-100 rounded-md font-medium text-sm text-slate-600 transition-colors"
                         >
-                          {Icon ? <Icon className="w-4 h-4 mr-3 opacity-70" /> : null}{label}
+                          {Icon ? <Icon className="w-4 h-4 mr-2 opacity-70" /> : null}{label}
                         </TabsTrigger>
                       );
                     })}
@@ -1081,7 +1081,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
               </Card>
             </div>
 
-            {/* Ana Çalışma Alanı (Sağ Taraf) */}
+            {/* Full-width active workspace */}
             <div className="flex-1 min-w-0 w-full bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden p-0 sm:p-4">
 
           {/* Perf fix: yalnız aktif sekme mount. Lazy chunk ilk ziyarette
