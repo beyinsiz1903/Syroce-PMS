@@ -1,3 +1,5 @@
+import POSRecoveryQueue from '../components/POSRecoveryQueue';
+import { enqueueOrder, readQueue, sendQueuedOrder } from '../lib/posOfflineQueue';
 import { useTranslation } from "react-i18next";
 import { toast } from 'sonner';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
@@ -68,6 +70,23 @@ const POSWaiterTerminal = () => {
   const [splitMethods, setSplitMethods] = useState(['cash', 'card']);
   const [tipAmount, setTipAmount] = useState('0');
   const pendingKeyRef = useRef(null);
+  const [queueScope, setQueueScope] = useState(null);
+  const [queueVersion, setQueueVersion] = useState(0);
+  const [couponCode, setCouponCode] = useState('');
+  const [loyaltyGuest, setLoyaltyGuest] = useState('');
+  const [loyaltyPoints, setLoyaltyPoints] = useState('0');
+  const [paymentCurrency, setPaymentCurrency] = useState('');
+  useEffect(() => {
+    axios.get('/pos/v2/session').then(res => setQueueScope(res.data))
+      .catch(() => toast.error('Sipariş kuyruğu için oturum doğrulanamadı. Bağlantıyı kontrol edin.'));
+  }, []);
+  const queueChanged = useCallback(() => {
+    pendingKeyRef.current = null;
+    setCart([]);
+    setActiveOrder(null);
+    setStep(STEPS.OUTLET);
+    setQueueVersion(value => value + 1);
+  }, []);
 
   // Signature pad (canvas) — captured for room charges as proof of authorization.
   const canvasRef = useRef(null);
@@ -280,25 +299,23 @@ const POSWaiterTerminal = () => {
     if (!pendingKeyRef.current) {
       pendingKeyRef.current = globalThis.crypto?.randomUUID?.() || `pos-term-${Date.now()}-${Math.random()}`;
     }
+    if (!queueScope) throw new Error('Oturum doğrulanamadı; sipariş kaydedilmedi.');
+    if (readQueue(queueScope).length) throw new Error('Önce cihazda bekleyen siparişi gönderin veya çakışmasını çözün.');
     let orderId = activeOrder?.id;
-    if (orderId) {
-      await axios.post(`/pos/v2/orders/${orderId}/items`, {
-        items: buildOrderItems(),
-        idempotency_key: pendingKeyRef.current,
-      });
-    } else {
-      const response = await axios.post('/pos/v2/orders', {
-        outlet_id: outlet.id,
-        table_number: String(table.table_number),
-        items: buildOrderItems(),
-        order_type: 'dine_in',
-        idempotency_key: pendingKeyRef.current,
-      });
-      // A network retry can return the idempotent envelope, where the order
-      // lives under `order`. Both shapes identify the same durable check.
-      orderId = response.data?.order_id || response.data?.order?.id;
-      if (!orderId) throw new Error('ORDER_ID_MISSING');
-    }
+    const path = orderId ? `/pos/v2/orders/${orderId}/items` : '/pos/v2/orders';
+    const body = {
+      ...(orderId ? {} : { outlet_id: outlet.id, table_number: String(table.table_number), order_type: 'dine_in' }),
+      items: buildOrderItems().map(({ item_id, quantity, station }) => ({ item_id, quantity, station })),
+      idempotency_key: pendingKeyRef.current,
+    };
+    enqueueOrder(queueScope, path, body);
+    setQueueVersion(value => value + 1);
+    // The durable row owns this payload now; editing a cart cannot alter it.
+    setCart([]);
+    const response = await sendQueuedOrder(queueScope, pendingKeyRef.current, axios);
+    setQueueVersion(value => value + 1);
+    orderId = orderId || response?.data?.order_id || response?.data?.order?.id;
+    if (!orderId) throw new Error('Sunucu adisyon numarası döndürmedi; masa durumunu kontrol edin.');
     pendingKeyRef.current = null;
     setCart([]);
     await loadTables(outlet.id);
@@ -310,7 +327,8 @@ const POSWaiterTerminal = () => {
       await ensureOpenOrder();
       toast.success('Sipariş mutfağa gönderildi ve adisyon açık bırakıldı');
     } catch (error) {
-      toast.error(posErrorMessage(error, 'Sipariş mutfağa gönderilemedi'));
+      setQueueVersion(value => value + 1);
+      toast.error(posErrorMessage(error, error.message || 'Sipariş mutfağa gönderilemedi'));
     } finally {
       setLoading(false);
     }
@@ -339,7 +357,19 @@ const POSWaiterTerminal = () => {
     setLoading(true);
     try {
       const order = await ensureOpenOrder();
-      const closeKey = globalThis.crypto?.randomUUID?.() || `pos-close-${Date.now()}-${Math.random()}`;
+      if (queueScope && readQueue(queueScope).length) throw new Error('Bekleyen siparişler çözülmeden tahsilat yapılamaz.');
+      const options = { coupon_code: couponCode || null, guest_id: loyaltyGuest || null,
+        loyalty_points: Number(loyaltyPoints || 0), currency_code: paymentCurrency || currency };
+      const quote = (await axios.post('/pos/v2/checkout/quote', {
+        ...options, order_id: order.id, tip_amount: Number(tipAmount || 0),
+      })).data;
+      if (!quote?.quote_id) throw new Error('Ödeme özeti alınamadı.');
+      if (!await confirmDialog({ message: `Tahsilat: ${formatCurrency(quote.payable, quote.base_currency, { decimals: 2 })}\nKupon indirimi: ${quote.coupon_discount} · Puan indirimi: ${quote.loyalty_discount}\nÖdeme: ${formatCurrency(quote.amount_foreign, quote.currency_code, { decimals: 2 })} (kur: ${quote.rate_used}; döviz yuvarlama farkı: ${quote.fx_rounding_base || 0} ${quote.base_currency}). Onaylıyor musunuz?` })) return;
+      if (payments) {
+        const cents = Math.round(quote.payable * 100), part = Math.floor(cents / payments.length);
+        payments = payments.map((row, index) => ({ ...row, amount: (part + (index === payments.length - 1 ? cents - part * payments.length : 0)) / 100 }));
+      }
+      const closeKey = `pos-close:${order.id}:${quote.quote_id}:${paymentMethod}`;
       const signature = paymentMethod === 'room_charge' && hasSignatureRef.current ? canvasRef.current.toDataURL('image/png') : null;
       const res = await axios.post('/pos/v2/orders/close', {
           order_id: order.id,
@@ -350,6 +380,7 @@ const POSWaiterTerminal = () => {
           idempotency_key: closeKey,
           tip_amount: Number(tipAmount || 0),
           payments,
+          checkout_options: { ...options, quote_id: quote.quote_id },
       });
       if (res.status >= 200 && res.status < 300) {
         const data = res.data || {};
@@ -370,6 +401,7 @@ const POSWaiterTerminal = () => {
         resetForNext();
         setSplitOpen(false);
         setTipAmount('0');
+        setCouponCode(''); setLoyaltyGuest(''); setLoyaltyPoints('0'); setPaymentCurrency('');
         if (outlet) await loadTables(outlet.id);
         setTable(null);
         setStep(STEPS.TABLE);
@@ -379,7 +411,7 @@ const POSWaiterTerminal = () => {
       const status = err?.response?.status;
       if (status && status < 500) pendingKeyRef.current = null;
       alertDialog({
-        message: posErrorMessage(err, 'Sipariş oluşturulamadı. Bağlantınızı kontrol edip yeniden deneyin.')
+        message: posErrorMessage(err, err.message || 'Sipariş oluşturulamadı. Bağlantınızı kontrol edip yeniden deneyin.')
       });
     } finally {
       setLoading(false);
@@ -502,6 +534,7 @@ const POSWaiterTerminal = () => {
     return name.includes(q) || room.includes(q);
   });
   return <div className="p-4 md:p-6 space-y-4">
+      <POSRecoveryQueue scope={queueScope} version={queueVersion} onReplayed={queueChanged} />
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>

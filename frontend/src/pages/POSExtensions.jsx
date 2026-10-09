@@ -1,9 +1,10 @@
+import { toast } from "sonner";
 import { t } from "i18next";
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, RefreshCw } from "lucide-react";
 import { parseMoneyInput } from '@/lib/moneyInput';
-const TABS = [{
+const TABS = [{ id: "stock", label: "Stok kurtarma" }, {
   id: "currency",
   label: "Çoklu Döviz"
 }, {
@@ -34,21 +35,25 @@ async function apiFetch(path, opts = {}) {
     ...(opts.headers || {})
   };
   // credentials: 'include' sends the httpOnly cookie automatically.
-  const res = await fetch(path, {
+  let res;
+  try { res = await fetch(path, {
     ...opts,
     headers,
     credentials: "include"
-  });
+  }); } catch { res = { ok: false, status: 0, json: async () => ({ detail: "Sunucuya ulaşılamadı. İşlemin sonucunu kontrol ederek yeniden deneyin." }) }; }
   let body = null;
   try {
     body = await res.json();
   } catch {
     body = null;
   }
+  const message = res.ok ? "İşlem tamamlandı" : (typeof body?.detail === "string" ? body.detail : body?.detail?.message || "İşlem tamamlanamadı; yetkinizi ve alanları kontrol edin.");
+  if (!res.ok) toast.error(message);
+  if (opts.method && opts.method !== "GET" || !res.ok) window.dispatchEvent(new CustomEvent("pos-extension-result", { detail: { time: new Date().toLocaleTimeString("tr-TR"), status: res.ok ? "completed" : "failed", message } }));
   return {
     status: res.status,
     ok: res.ok,
-    body
+    body: body || {}
   };
 }
 function Section({
@@ -79,15 +84,72 @@ function Btn({
   variant = "primary",
   disabled
 }) {
+  const [pending, setPending] = useState(false);
   const base = "px-3 py-2 rounded text-sm font-medium transition disabled:opacity-50";
   const cls = variant === "primary" ? `${base} bg-gray-900 text-white hover:bg-gray-800` : variant === "outline" ? `${base} border border-gray-300 bg-white text-gray-800 hover:bg-gray-50` : `${base} bg-red-600 text-white hover:bg-red-700`;
-  return <button type="button" onClick={onClick} disabled={disabled} className={cls}>{children}</button>;
+  return <button type="button" onClick={async () => { setPending(true); try { await onClick(); } catch { toast.error("İşlem tamamlanamadı. Yeniden deneyin."); } finally { setPending(false); } }} disabled={disabled || pending} className={cls}>{pending ? "İşleniyor…" : children}</button>;
 }
-function Json({
-  data
-}) {
-  if (!data) return null;
-  return <pre className="bg-gray-50 border rounded p-2 text-xs overflow-x-auto max-h-64">{JSON.stringify(data, null, 2)}</pre>;
+const LABELS = {
+  currency_code: 'Para birimi', base_currency: 'Tesis para birimi', rate_to_base: 'Kur', valid_at: 'Geçerlilik',
+  code: 'Kod', name: 'Ad', active: 'Etkin', status: 'Durum', balance: 'Puan bakiyesi',
+  discount_type: 'İndirim türü', discount_value: 'İndirim', used_count: 'Kullanım', max_uses: 'Kullanım limiti',
+  min_amount: 'Asgari tutar', start_time: 'Başlangıç', end_time: 'Bitiş', days_of_week: 'Günler',
+  guest_id: 'Misafir numarası', points: 'Puan', kind: 'İşlem', created_at: 'Oluşturulma', updated_at: 'Güncellenme',
+  earn_points_per_unit: 'Birim tutar başına puan', redeem_value_per_point: 'Puan karşılığı',
+  min_redeem_points: 'Asgari kullanım', lifetime_earned: 'Toplam kazanılan', lifetime_redeemed: 'Toplam kullanılan',
+  barcode: 'Barkod', menu_item_id: 'Ürün numarası', item_id: 'Ürün numarası', item_name: 'Ürün', quantity: 'Adet',
+  order_id: 'Adisyon numarası', order_number: 'Adisyon', station: 'İstasyon', printer_id: 'Yazıcı',
+  attempts: 'Deneme', last_error: 'Son hata', error: 'Hata', message: 'Sonuç', valid: 'Geçerli',
+  success: 'Başarılı', reason: 'Açıklama', amount: 'Tutar', discount_amount: 'İndirim tutarı',
+  final_amount: 'Son tutar', amount_base: 'Tesis para biriminde tutar', amount_foreign: 'Döviz tutarı',
+  opening_float: 'Açılış nakdi', closing_cash: 'Kapanış nakdi', expected_cash: 'Beklenen nakit',
+  difference: 'Fark', outlet_id: 'Satış noktası', opened_at: 'Açılış', closed_at: 'Kapanış',
+  payment_method: 'Ödeme yöntemi', job_type: 'İş türü', type: 'Tür', note: 'Not',
+  driver: 'Cihaz sürücüsü', fiscal_no: 'Mali belge numarası', z_no: 'Z numarası',
+  opening_cash: 'Açılış nakdi', counted_cash_total: 'Sayılan nakit', expected_cash_total: 'Beklenen nakit',
+  cash_sales: 'Nakit hareket toplamı', variance: 'Kasa farkı', tx_count: 'İşlem sayısı',
+  stock_consumption_status: 'Stok tüketimi', stock_restore_status: 'İade stoğu',
+  stock_consumption_status_error: 'Tüketim hatası', stock_restore_status_error: 'İade hatası',
+};
+const STATES = { pending: 'Bekliyor', queued: 'Kuyrukta', completed: 'Tamamlandı', failed: 'Başarısız',
+  sent: 'Gönderildi', printed: 'Yazdırıldı', running: 'Çalışıyor', open: 'Açık', closed: 'Kapalı',
+  percent: 'Yüzde', amount: 'Tutar', cash: 'Nakit', card: 'Kart', simulated: 'Simülasyon' };
+function Cell({ value }) {
+  if (value === null || value === undefined) return '—';
+  if (typeof value === 'boolean') return <span className="rounded bg-gray-100 px-2">{value ? 'Evet' : 'Hayır'}</span>;
+  if (Array.isArray(value)) return value.every(v => typeof v !== 'object') ? value.join(', ') : <ResultTable data={value} />;
+  if (typeof value === 'object') return <ResultTable data={value} />;
+  return <span className={STATES[value] ? 'rounded bg-gray-100 px-2 py-1' : ''}>{STATES[value] || String(value)}</span>;
+}
+export function ResultTable({ data }) {
+  if (!data || Array.isArray(data) && !data.length) return <p className="text-sm text-gray-500">Kayıt bulunamadı.</p>;
+  if (!Array.isArray(data)) {
+    if (typeof data !== 'object') return <Cell value={data} />;
+    const fields = Object.entries(data).filter(([key]) => LABELS[key]);
+    const nested = Object.entries(data).filter(([key, value]) => !LABELS[key] && value && typeof value === 'object');
+    return <div><dl className="grid grid-cols-2 gap-2 text-sm">{fields.map(([key, value]) => <div key={key}><dt className="text-gray-500">{LABELS[key]}</dt><dd><Cell value={value} /></dd></div>)}</dl>{nested.map(([key, value]) => <ResultTable key={key} data={value} />)}{!fields.length && !nested.length && <p>İşlem sonucu kaydedildi.</p>}</div>;
+  }
+  const keys = Object.keys(LABELS).filter(key => data.some(row => row && Object.hasOwn(row, key)));
+  return <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead><tr>{keys.map(key => <th className="p-2 border-b" key={key}>{LABELS[key]}</th>)}</tr></thead><tbody>{data.map((row, index) => <tr key={row.id || index}>{keys.map(key => <td className="p-2 border-b" key={key}><Cell value={row[key]} /></td>)}</tr>)}</tbody></table></div>;
+}
+
+function StockTab() {
+  const [jobs, setJobs] = useState([]);
+  const load = useCallback(async () => {
+    const result = await apiFetch('/api/pos/v2/stock/recovery');
+    if (result.ok) setJobs(result.body.jobs || []);
+  }, []);
+  useEffect(() => { load(); }, [load]);
+  return <Section title="Stok kurtarma kuyruğu">
+    <p className="text-sm mb-3">Tahsilat tekrar yapılmaz. Eksik stok girişini veya bağlantıyı düzelttikten sonra yeniden çalıştırın. İlk 200 bekleyen işlem gösterilir.</p>
+    <Btn onClick={load}>Yenile</Btn>
+    {!jobs.length && <p>Bekleyen stok işlemi yok.</p>}
+    {jobs.map(job => <div key={job.id} className="border rounded p-3 my-2"><ResultTable data={job} />
+      <Btn onClick={async () => {
+        const result = await apiFetch(`/api/pos/v2/stock/recovery/${encodeURIComponent(job.id)}/retry`, { method: 'POST' });
+        if (result.ok) await load();
+      }}>Stoğu yeniden işle</Btn></div>)}
+  </Section>;
 }
 
 // ── Tabs ────────────────────────────────────────────────────────────
@@ -123,9 +185,9 @@ function CurrencyTab() {
         </div>
       </Section>
       <Section title={t("cm.pages_POSExtensions.tan\u0131ml\u0131_kurlar")}>
-        <Json data={rates} />
+        <ResultTable data={rates} />
       </Section>
-      {last && <Section title={t("cm.pages_POSExtensions.son_i\u015Flem_yan\u0131t\u0131")}><Json data={last} /></Section>}
+      {last && <Section title={t("cm.pages_POSExtensions.son_i\u015Flem_yan\u0131t\u0131")}><ResultTable data={last} /></Section>}
     </>;
 }
 function HappyHourTab() {
@@ -162,7 +224,7 @@ function HappyHourTab() {
         await load();
       }}>{t("cm.pages_POSExtensions.kaydet")}</Btn>
       </Section>
-      <Section title={t("cm.pages_POSExtensions.tan\u0131ml\u0131_kurallar")}><Json data={rules} /></Section>
+      <Section title={t("cm.pages_POSExtensions.tan\u0131ml\u0131_kurallar")}><ResultTable data={rules} /></Section>
     </>;
 }
 function CouponsTab() {
@@ -207,9 +269,9 @@ function CouponsTab() {
         });
         setLast(r.body);
       }}>{t("cm.pages_POSExtensions.kontrol_et")}</Btn>
-        {last && <Json data={last} />}
+        {last && <ResultTable data={last} />}
       </Section>
-      <Section title={t("cm.pages_POSExtensions.tan\u0131ml\u0131_kuponlar")}><Json data={coupons} /></Section>
+      <Section title={t("cm.pages_POSExtensions.tan\u0131ml\u0131_kuponlar")}><ResultTable data={coupons} /></Section>
     </>;
 }
 function LoyaltyTab() {
@@ -224,14 +286,14 @@ function LoyaltyTab() {
     load();
   }, []);
   return <>
-      <Section title={t("cm.pages_POSExtensions.program_ayarlar\u0131")}><Json data={settings} /></Section>
+      <Section title={t("cm.pages_POSExtensions.program_ayarlar\u0131")}><ResultTable data={settings} /></Section>
       <Section title={t("cm.pages_POSExtensions.misafir_bakiyesi")}>
         <Input label={t("cm.pages_POSExtensions.misafir_id")} value={guestId} onChange={setGuestId} />
         <Btn variant="outline" onClick={async () => {
         const r = await apiFetch(`/api/pos/ext/loyalty/balance?guest_id=${encodeURIComponent(guestId)}`);
         setBalance(r.body);
       }}>{t("cm.pages_POSExtensions.bakiye_sorgula")}</Btn>
-        {balance && <Json data={balance} />}
+        {balance && <ResultTable data={balance} />}
       </Section>
     </>;
 }
@@ -322,9 +384,9 @@ function BarcodeTab() {
           setLookupResult(r.body);
         }}>{t("cm.pages_POSExtensions.sorgula")}</Btn>
         </div>
-        {lookupResult && <Json data={lookupResult} />}
+        {lookupResult && <ResultTable data={lookupResult} />}
       </Section>
-      <Section title={t("cm.pages_POSExtensions.e\u015Flemeler")}><Json data={maps} /></Section>
+      <Section title={t("cm.pages_POSExtensions.e\u015Flemeler")}><ResultTable data={maps} /></Section>
     </>;
 }
 function PrintTab() {
@@ -359,9 +421,9 @@ function PrintTab() {
         }
         await load();
       }}>{t("cm.pages_POSExtensions.test_bas")}</Btn>
-        {last && <Json data={last} />}
+        {last && <ResultTable data={last} />}
       </Section>
-      <Section title={t("cm.pages_POSExtensions.kuyruk")}><Json data={jobs} /></Section>
+      <Section title={t("cm.pages_POSExtensions.kuyruk")}><ResultTable data={jobs} /></Section>
     </>;
 }
 function FiscalTab() {
@@ -375,7 +437,7 @@ function FiscalTab() {
   }, []);
   return <>
       <Section title={t("cm.pages_POSExtensions.mali_yaz\u0131c\u0131_\xF6kc_durumu")}>
-        <p className="text-sm text-gray-700">Mali cihaz bağlantısını ve gün sonu işlemini buradan yönetebilirsiniz. Fiziksel cihaz bağlı değilse işlem güvenli test modunda sıraya alınır.</p>
+        <p className="text-sm text-gray-700">Mali cihaz işlemleri onaylı cihaz entegrasyonu gerektirir. Simülasyon çıktısı mali belge değildir. Üretimde uygun sürücü yoksa işlem engellenir; hata aşağıdaki işlem geçmişinde gösterilir.</p>
         <div className="mt-2">
           <Btn variant="outline" onClick={async () => {
           await apiFetch("/api/pos/ext/fiscal/eod", {
@@ -385,10 +447,11 @@ function FiscalTab() {
         }}>Gün Sonu Z Raporu Oluştur</Btn>
         </div>
       </Section>
-      <Section title={t("cm.pages_POSExtensions.bekleyen_fiscal_i_\u015F_kuyru\u011Fu")}><Json data={jobs} /></Section>
+      <Section title={t("cm.pages_POSExtensions.bekleyen_fiscal_i_\u015F_kuyru\u011Fu")}><ResultTable data={jobs} /></Section>
     </>;
 }
 const TAB_COMPONENTS = {
+  stock: StockTab,
   currency: CurrencyTab,
   happyhour: HappyHourTab,
   coupons: CouponsTab,
@@ -401,6 +464,12 @@ const TAB_COMPONENTS = {
 export default function POSExtensions() {
   const navigate = useNavigate();
   const [tab, setTab] = useState("currency");
+  const [history, setHistory] = useState([]);
+  useEffect(() => {
+    const receive = event => setHistory(rows => [event.detail, ...rows].slice(0, 30));
+    window.addEventListener("pos-extension-result", receive);
+    return () => window.removeEventListener("pos-extension-result", receive);
+  }, []);
   const Comp = TAB_COMPONENTS[tab];
   return <div className="p-4 max-w-5xl mx-auto">
       <div className="flex items-center justify-between mb-4">
@@ -417,5 +486,6 @@ export default function POSExtensions() {
           </button>)}
       </div>
       <Comp />
+      {history.length > 0 && <Section title="Bu oturumdaki işlem geçmişi"><ol aria-live="polite">{history.map((row, index) => <li key={index} className={row.status === "failed" ? "text-red-700" : "text-green-700"}>{row.time} · {row.message}</li>)}</ol></Section>}
     </div>;
 }
