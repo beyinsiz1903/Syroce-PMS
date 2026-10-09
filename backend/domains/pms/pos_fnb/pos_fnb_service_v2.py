@@ -586,39 +586,6 @@ class PosFnbServiceV2:
         except HTTPException as exc:
             return ServiceResult.fail(str(exc.detail), "VALIDATION_ERROR")
         grand_delta = round(subtotal_delta + tax_delta, 2)
-        updated = await self._db.pos_orders.update_one(
-            {"id": order_id, "tenant_id": ctx.tenant_id, "payment_status": {"$ne": "paid"}},
-            {
-                "$push": {"order_items": {"$each": normalized}},
-                "$inc": {
-                    "total_amount": round(subtotal_delta, 2),
-                    "tax_amount": tax_delta,
-                    "grand_total": grand_delta,
-                },
-                "$set": {"updated_at": now.isoformat()},
-            },
-        )
-        if getattr(updated, "matched_count", 0) == 0:
-            return ServiceResult.fail("Order is not open", "ORDER_NOT_OPEN")
-
-        for item in normalized:
-            await self._db.kitchen_orders.insert_one(
-                {
-                    "id": str(uuid.uuid4()),
-                    "tenant_id": ctx.tenant_id,
-                    "order_id": order_id,
-                    "order_number": order.get("order_number"),
-                    "outlet_id": order.get("outlet_id"),
-                    "table_number": order.get("table_number"),
-                    "items": [item],
-                    "line_id": item["line_id"],
-                    "station": item.get("station"),
-                    "status": "pending",
-                    "priority": "normal",
-                    "ordered_at": now.isoformat(),
-                }
-            )
-
         batch = {
             "id": str(uuid.uuid4()),
             "tenant_id": ctx.tenant_id,
@@ -628,11 +595,80 @@ class PosFnbServiceV2:
             "amount_added": grand_delta,
             "created_at": now.isoformat(),
         }
-        if idempotency_key:
-            await self._db.pos_order_item_batches.insert_one(dict(batch))
+        kitchen_docs = [
+            {
+                "id": str(uuid.uuid4()), "tenant_id": ctx.tenant_id,
+                "order_id": order_id, "order_number": order.get("order_number"),
+                "outlet_id": order.get("outlet_id"), "table_number": order.get("table_number"),
+                "items": [item], "line_id": item["line_id"], "station": item.get("station"),
+                "status": "pending", "priority": "normal", "ordered_at": now.isoformat(),
+            }
+            for item in normalized
+        ]
+        try:
+            await self._append_items_atomically(
+                ctx=ctx, order=order, normalized=normalized, kitchen_docs=kitchen_docs,
+                subtotal_delta=subtotal_delta, tax_delta=tax_delta, grand_delta=grand_delta,
+                batch=batch,
+            )
+        except DuplicateKeyError:
+            existing = await self._db.pos_order_item_batches.find_one(
+                {"tenant_id": ctx.tenant_id, "idempotency_key": idempotency_key}, {"_id": 0}
+            )
+            if existing:
+                return ServiceResult.success({**existing, "idempotent": True})
+            raise
+        except PosOrderStateChanged:
+            return ServiceResult.fail("Order is not open", "ORDER_NOT_OPEN")
         await self._enqueue_kot(ctx.tenant_id, order, normalized, ctx.actor_id)
         await self._broadcast_kitchen_queue(ctx.tenant_id)
         return ServiceResult.success(batch)
+
+    async def _append_items_atomically(
+        self,
+        *,
+        ctx: OperationContext,
+        order: dict,
+        normalized: list[dict],
+        kitchen_docs: list[dict],
+        subtotal_delta: float,
+        tax_delta: float,
+        grand_delta: float,
+        batch: dict,
+    ) -> None:
+        """Persist an append batch, its order totals and kitchen rows together."""
+
+        async def _commit(session) -> None:
+            if batch.get("idempotency_key"):
+                await self._db.pos_order_item_batches.insert_one(dict(batch), session=session)
+            updated = await self._db.pos_orders.update_one(
+                {
+                    "id": order["id"], "tenant_id": ctx.tenant_id,
+                    "status": order.get("status"), "payment_status": order.get("payment_status"),
+                },
+                {
+                    "$push": {"order_items": {"$each": normalized}},
+                    "$inc": {"total_amount": round(subtotal_delta, 2), "tax_amount": tax_delta, "grand_total": grand_delta},
+                    "$set": {"updated_at": batch["created_at"]},
+                },
+                session=session,
+            )
+            if updated.matched_count != 1:
+                raise PosOrderStateChanged(order["id"])
+            for kitchen_doc in kitchen_docs:
+                await self._db.kitchen_orders.insert_one(kitchen_doc, session=session)
+
+        try:
+            await with_resource_locks(
+                client=self._db.client, db=self._db, tenant_id=ctx.tenant_id,
+                locks_collection="folio_locks", resources=[], callback=_commit,
+            )
+        except Exception as exc:  # noqa: BLE001
+            if not is_replica_set_unavailable(exc):
+                raise
+            if not standalone_fallback_allowed():
+                raise HTTPException(status_code=503, detail="Ek sipariş atomik garanti sağlayamıyor (Mongo replica set gerekli).")
+            await _commit(None)
 
     @audited("pos.void_order_item", "pos_order", severity=SEVERITY_WARNING, require_reason=True, capture_before=True)
     async def void_order_item(
