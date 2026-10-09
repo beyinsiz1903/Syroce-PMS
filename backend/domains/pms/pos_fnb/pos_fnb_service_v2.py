@@ -6,6 +6,7 @@ order lifecycle management, table reservation contention,
 void/refund safety, stock race protection.
 """
 
+import hashlib
 import logging
 import uuid
 from datetime import UTC, datetime
@@ -68,6 +69,14 @@ class PosFnbServiceV2:
                 by_station.setdefault(str(line.get("station") or "main"), []).append(line)
             for station, station_lines in by_station.items():
                 routing = await resolve_kot_printer(tenant_id, order.get("outlet_id"), station)
+                # An order can receive several append batches.  The old key only
+                # used the order and station, so the spool correctly deduplicated
+                # a retry *and incorrectly deduplicated every later batch*.  Line
+                # IDs are immutable server-generated identifiers, making this key
+                # stable for a retry while allowing a genuine append to print.
+                line_fingerprint = hashlib.sha256(
+                    ":".join(sorted(str(line.get("line_id") or "") for line in station_lines)).encode()
+                ).hexdigest()[:16]
                 await enqueue_print_job(
                     tenant_id=tenant_id,
                     kind="kitchen",
@@ -78,7 +87,7 @@ class PosFnbServiceV2:
                         "business_date": order.get("business_date"),
                         "items": station_lines,
                     },
-                    idempotency_key=f"kot-v2-{order['id']}-{station}",
+                    idempotency_key=f"kot-v2-{order['id']}-{station}-{line_fingerprint}",
                     printer_id=routing["printer_id"],
                     created_by=actor_id,
                     auto_dispatch=True,
@@ -704,17 +713,20 @@ class PosFnbServiceV2:
             "payment_type": "refund", "status": "refunded", "reason": reason.strip(),
             "processed_by": ctx.actor_id, "idempotency_key": idempotency_key, "created_at": now.isoformat(),
         }
-        await self._db.pos_transactions.insert_one(refund_doc)
-        new_refunded = round(refunded + refund_amount, 2)
-        await self._db.pos_transactions.update_one(
-            {"tenant_id": ctx.tenant_id, "id": sale["id"]},
-            {"$set": {"refunded_amount": new_refunded, "refund_status": "full" if new_refunded == paid else "partial"}},
+        updated_sale = await self._persist_refund_and_state(
+            tenant_id=ctx.tenant_id,
+            order_id=order_id,
+            sale_id=sale["id"],
+            paid=paid,
+            refund_amount=refund_amount,
+            refund_doc=refund_doc,
         )
-        full_refund = new_refunded == paid
-        await self._db.pos_orders.update_one(
-            {"tenant_id": ctx.tenant_id, "id": order_id},
-            {"$set": {"payment_status": "refunded" if full_refund else "partially_refunded", "refunded_amount": new_refunded}},
-        )
+        if updated_sale is None:
+            # Another manager completed (or consumed) the remaining refundable
+            # balance after our initial read.  No refund document is inserted.
+            return ServiceResult.fail("İade tutarı kalan iade edilebilir tutarı aşıyor", "REFUND_LIMIT")
+        new_refunded = round(float(updated_sale.get("refunded_amount") or 0), 2)
+        full_refund = new_refunded >= paid
         if sale.get("payment_method") == "room_charge" and full_refund:
             folio = await self._db.folios.find_one({"booking_id": order.get("booking_id"), "folio_type": "guest", "tenant_id": ctx.tenant_id}, {"_id": 0, "id": 1})
             await self._publish_charge_reversal(ctx.tenant_id, order_id, folio.get("id") if folio else None, reason.strip())
@@ -898,6 +910,87 @@ class PosFnbServiceV2:
             # idempotency_key still dedups the enqueue; only all-or-nothing is
             # relaxed.
             await _txn(None)
+
+    async def _persist_refund_and_state(
+        self,
+        *,
+        tenant_id: str,
+        order_id: str,
+        sale_id: str,
+        paid: float,
+        refund_amount: float,
+        refund_doc: dict,
+    ) -> dict | None:
+        """Atomically reserve refundable balance and persist its refund.
+
+        The refund ceiling must be checked at write time, not against a stale
+        ``refunded_amount`` read.  The transaction also ensures that the refund
+        record, source sale and order state move together.
+        """
+
+        async def _commit(session):
+            updated_sale = await self._db.pos_transactions.find_one_and_update(
+                {
+                    "tenant_id": tenant_id,
+                    "id": sale_id,
+                    "status": "completed",
+                    "$expr": {
+                        "$lte": [
+                            {"$add": [{"$ifNull": ["$refunded_amount", 0]}, refund_amount]},
+                            paid,
+                        ]
+                    },
+                },
+                [
+                    {"$set": {"refunded_amount": {"$add": [{"$ifNull": ["$refunded_amount", 0]}, refund_amount]}}},
+                    {
+                        "$set": {
+                            "refund_status": {
+                                "$cond": [{"$gte": ["$refunded_amount", paid]}, "full", "partial"]
+                            }
+                        }
+                    },
+                ],
+                return_document=True,
+                session=session,
+            )
+            if not updated_sale:
+                return None
+            new_refunded = round(float(updated_sale.get("refunded_amount") or 0), 2)
+            await self._db.pos_transactions.insert_one(refund_doc, session=session)
+            await self._db.pos_orders.update_one(
+                {"tenant_id": tenant_id, "id": order_id},
+                {
+                    "$set": {
+                        "payment_status": "refunded" if new_refunded >= paid else "partially_refunded",
+                        "refunded_amount": new_refunded,
+                    }
+                },
+                session=session,
+            )
+            return updated_sale
+
+        try:
+            return await with_resource_locks(
+                client=self._db.client,
+                db=self._db,
+                tenant_id=tenant_id,
+                locks_collection="pos_refund_locks",
+                resources=[("sale", sale_id)],
+                callback=_commit,
+            )
+        except Exception as exc:  # noqa: BLE001
+            if not is_replica_set_unavailable(exc):
+                raise
+            if not standalone_fallback_allowed():
+                raise HTTPException(
+                    status_code=503,
+                    detail="POS iadesi atomik garanti sağlayamıyor (Mongo replica set gerekli).",
+                )
+            # Explicit local-development opt-in only.  The conditional source
+            # update still protects the financial ceiling, but a standalone
+            # Mongo cannot offer all-or-nothing writes across three documents.
+            return await _commit(None)
 
     async def _publish_charge_reversal(
         self,
