@@ -111,7 +111,10 @@ def _public_policy(policy: dict) -> dict:
 
 
 @router.get("/retention-policy")
-async def get_retention_policy(current_user=Depends(get_current_user)):
+async def get_retention_policy(
+    current_user=Depends(get_current_user),
+    _permission=Depends(require_op("view_system_diagnostics")),
+):
     tenant_id = current_user.tenant_id
     stored = await db.gdpr_retention_policies.find_one({"tenant_id": tenant_id}, {"_id": 0})
     return _public_policy(stored or _default_policy(tenant_id))

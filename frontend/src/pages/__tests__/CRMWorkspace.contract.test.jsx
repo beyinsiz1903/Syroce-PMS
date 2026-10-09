@@ -19,7 +19,8 @@ describe('CRMWorkspace contracts', () => {
     return render(<BrowserRouter><CRMWorkspace /></BrowserRouter>);
   };
 
-  it('loads tenant-scoped intelligence and duplicate candidates without fabricated totals', async () => {
+  it('loads the summary first and defers expensive tab sources until requested', async () => {
+    const user = userEvent.setup();
     axios.get.mockImplementation((url) => {
       if (url.includes('duplicates')) return Promise.resolve({ data: { matches: [{ score: 0.8, reasons: ['email_exact'], left: { id: 'g1', name: 'Ada Lovelace' }, right: { id: 'g2', name: 'Ada L.' } }] } });
       if (url.includes('campaigns')) return Promise.resolve({ data: { campaigns: [] } });
@@ -30,8 +31,10 @@ describe('CRMWorkspace contracts', () => {
 
     await waitFor(() => expect(screen.getByText('12')).toBeInTheDocument());
     expect(axios.get).toHaveBeenCalledWith('/data-intelligence/guests/dashboard', { params: { limit: 30 } });
-    expect(axios.get).toHaveBeenCalledWith('/cross-property/duplicates/scan', { params: { min_score: 0.6, limit: 50 } });
-    expect(axios.get).toHaveBeenCalledWith('/marketing/campaigns', { params: { limit: 100 } });
+    expect(axios.get).not.toHaveBeenCalledWith('/cross-property/duplicates/scan', expect.anything());
+    expect(axios.get).not.toHaveBeenCalledWith('/marketing/campaigns', expect.anything());
+    await user.click(screen.getByRole('tab', { name: 'Mükerrer kayıtlar' }));
+    await waitFor(() => expect(axios.get).toHaveBeenCalledWith('/cross-property/duplicates/scan', { params: { min_score: 0.6, skip: 0, limit: 20 } }));
     expect(screen.getByText('CRM Merkezi')).toBeInTheDocument();
   });
 
@@ -55,6 +58,8 @@ describe('CRMWorkspace contracts', () => {
     await user.click(await screen.findByRole('tab', { name: 'Mükerrer kayıtlar' }));
     await user.click(await screen.findByRole('button', { name: 'İncele ve birleştir' }));
     expect(axios.post).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Onayla ve birleştir' })).toBeDisabled();
+    await user.click(screen.getByRole('checkbox'));
     await user.click(screen.getByRole('button', { name: 'Onayla ve birleştir' }));
     await waitFor(() => expect(axios.post).toHaveBeenCalledWith('/cross-property/guests/g1/merge', { target_guest_id: 'g2' }));
   });

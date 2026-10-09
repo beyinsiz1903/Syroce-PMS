@@ -459,7 +459,16 @@ const SalesCRM = ({ user, tenant, onLogout }) => {
               <Card
                 key={lead.id}
                 className="cursor-pointer hover:shadow-md transition"
+                role="button"
+                tabIndex={0}
+                aria-label={`${lead.contact_name || 'İsimsiz satış fırsatı'} ayrıntılarını aç`}
                 onClick={() => openDetail(lead.id)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    openDetail(lead.id);
+                  }
+                }}
               >
                 <CardContent className="pt-5 pb-5">
                   <div className="flex items-start justify-between gap-4">

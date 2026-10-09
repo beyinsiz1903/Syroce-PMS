@@ -443,7 +443,7 @@ async def get_kbs_history(skip: int = 0, limit: int = 100, current_user: User = 
 
 
 @router.get("/kvkk/requests")
-async def get_kvkk_requests(skip: int = 0, limit: int = 100, current_user: User = Depends(get_current_user)):
+async def get_kvkk_requests(skip: int = 0, limit: int = 100, current_user: User = Depends(get_current_user), _perm=Depends(require_op("view_system_diagnostics"))):
     query = {"tenant_id": current_user.tenant_id}
     # Perf: find + count sıralı (~2 RTT) → asyncio.gather.
     import asyncio
@@ -499,7 +499,7 @@ async def update_kvkk_request(
 
 
 @router.get("/kvkk/consents")
-async def get_kvkk_consents(skip: int = 0, limit: int = 100, current_user: User = Depends(get_current_user)):
+async def get_kvkk_consents(skip: int = 0, limit: int = 100, current_user: User = Depends(get_current_user), _perm=Depends(require_op("view_system_diagnostics"))):
     query = {"tenant_id": current_user.tenant_id}
     docs = await db.kvkk_consents.find(query).sort("date", -1).skip(skip).limit(limit).to_list(limit)
     for d in docs:
@@ -509,7 +509,7 @@ async def get_kvkk_consents(skip: int = 0, limit: int = 100, current_user: User 
 
 
 @router.get("/kvkk/audit-log")
-async def get_kvkk_audit_log(skip: int = 0, limit: int = 200, current_user: User = Depends(get_current_user)):
+async def get_kvkk_audit_log(skip: int = 0, limit: int = 200, current_user: User = Depends(get_current_user), _perm=Depends(require_op("view_system_diagnostics"))):
     docs = await db.kvkk_audit_log.find({"tenant_id": current_user.tenant_id}).sort("timestamp", -1).skip(skip).limit(limit).to_list(limit)
     for d in docs:
         d["id"] = str(d.pop("_id"))
