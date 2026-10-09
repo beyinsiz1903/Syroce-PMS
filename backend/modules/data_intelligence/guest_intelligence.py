@@ -4,6 +4,7 @@ Uses existing guest journey, reservations, messaging, and review data.
 """
 
 import logging
+import re
 import uuid
 from datetime import UTC, date, datetime
 from typing import Any
@@ -11,6 +12,16 @@ from typing import Any
 from core.database import db
 
 logger = logging.getLogger(__name__)
+
+_TEST_GUEST_PATTERN = re.compile(r"(^|[^a-z0-9])(test|deneme|fixture|probe|e2e|qa)([^a-z0-9]|$)", re.IGNORECASE)
+
+
+def _looks_like_test_guest(guest: dict[str, Any]) -> bool:
+    """Flag suspicious records for data-quality reporting; never delete them."""
+    if guest.get("is_test") is True or guest.get("test_run_id") or guest.get("fixture_id"):
+        return True
+    haystack = " ".join(str(guest.get(key) or "") for key in ("name", "email"))
+    return bool(_TEST_GUEST_PATTERN.search(haystack))
 
 
 class GuestLifetimeValueModel:
@@ -139,16 +150,16 @@ class GuestSegmentationModel:
 
     def _assign_segment(self, stays: int, spend: float, biz: int, leisure: int, room_type: str) -> dict[str, Any]:
         if stays >= 5 and spend > 10000:
-            return {"name": "loyal_high_value", "description": "Sadik yuksek degerli misafir", "tags": ["loyal", "high_spender", "priority"]}
+            return {"name": "loyal_high_value", "description": "Sadık, yüksek değerli misafir", "tags": ["loyal", "high_spender", "priority"]}
         if stays >= 3 and biz > leisure:
-            return {"name": "business_regular", "description": "Duzeni is seyahati misafiri", "tags": ["business", "regular", "corporate"]}
+            return {"name": "business_regular", "description": "Düzenli iş seyahati misafiri", "tags": ["business", "regular", "corporate"]}
         if stays >= 3 and leisure > biz:
-            return {"name": "leisure_regular", "description": "Duzenli tatil misafiri", "tags": ["leisure", "regular", "vacation"]}
+            return {"name": "leisure_regular", "description": "Düzenli tatil misafiri", "tags": ["leisure", "regular", "vacation"]}
         if spend > 5000:
-            return {"name": "high_spender", "description": "Yuksek harcama yapan misafir", "tags": ["high_spender", "premium"]}
+            return {"name": "high_spender", "description": "Yüksek harcama yapan misafir", "tags": ["high_spender", "premium"]}
         if stays == 1:
-            return {"name": "first_timer", "description": "Ilk kez konaklayan misafir", "tags": ["new", "acquisition"]}
-        return {"name": "occasional", "description": "Ara sira gelen misafir", "tags": ["occasional", "retention_target"]}
+            return {"name": "first_timer", "description": "İlk kez konaklayan misafir", "tags": ["new", "acquisition"]}
+        return {"name": "occasional", "description": "Ara sıra gelen misafir", "tags": ["occasional", "retention_target"]}
 
 
 class ChurnPredictionModel:
@@ -183,26 +194,26 @@ class ChurnPredictionModel:
                 days_since = (date.today() - last_stay).days
                 if days_since > 365:
                     risk_score += 0.35
-                    factors.append({"factor": "long_absence", "impact": 0.35, "detail": f"Son konaklama {days_since} gun once"})
+                    factors.append({"factor": "long_absence", "impact": 0.35, "detail": f"Son konaklama {days_since} gün önce"})
                 elif days_since > 180:
                     risk_score += 0.20
-                    factors.append({"factor": "medium_absence", "impact": 0.20, "detail": f"Son konaklama {days_since} gun once"})
+                    factors.append({"factor": "medium_absence", "impact": 0.20, "detail": f"Son konaklama {days_since} gün önce"})
             except (ValueError, TypeError, IndexError):
                 risk_score += 0.15
                 factors.append({"factor": "unknown_recency", "impact": 0.15, "detail": "Son konaklama tarihi bilinmiyor"})
         else:
             risk_score += 0.30
-            factors.append({"factor": "no_completed_stays", "impact": 0.30, "detail": "Tamamlanmis konaklama yok"})
+            factors.append({"factor": "no_completed_stays", "impact": 0.30, "detail": "Tamamlanmış konaklama yok"})
 
         # Cancellation ratio
         total = len(bookings)
         cancel_ratio = len(cancelled) / max(total, 1)
         if cancel_ratio > 0.5:
             risk_score += 0.25
-            factors.append({"factor": "high_cancellation", "impact": 0.25, "detail": f"Iptal orani: {cancel_ratio:.0%}"})
+            factors.append({"factor": "high_cancellation", "impact": 0.25, "detail": f"İptal oranı: {cancel_ratio:.0%}"})
         elif cancel_ratio > 0.3:
             risk_score += 0.15
-            factors.append({"factor": "medium_cancellation", "impact": 0.15, "detail": f"Iptal orani: {cancel_ratio:.0%}"})
+            factors.append({"factor": "medium_cancellation", "impact": 0.15, "detail": f"İptal oranı: {cancel_ratio:.0%}"})
 
         # Declining frequency
         if len(completed) >= 3:
@@ -212,7 +223,7 @@ class ChurnPredictionModel:
                 older_gap = (date.fromisoformat(dates[-2][:10]) - date.fromisoformat(dates[-3][:10])).days
                 if recent_gap > older_gap * 1.5:
                     risk_score += 0.15
-                    factors.append({"factor": "declining_frequency", "impact": 0.15, "detail": "Konaklama sikligi azaliyor"})
+                    factors.append({"factor": "declining_frequency", "impact": 0.15, "detail": "Konaklama sıklığı azalıyor"})
             except (ValueError, TypeError, IndexError):
                 pass
 
@@ -243,7 +254,7 @@ class ChurnPredictionModel:
             )
         if complaints >= 2:
             risk_score += 0.15
-            factors.append({"factor": "complaints", "impact": 0.15, "detail": f"{complaints} sikayet kaydi"})
+            factors.append({"factor": "complaints", "impact": 0.15, "detail": f"{complaints} şikâyet kaydı"})
 
         risk_score = min(round(risk_score, 3), 1.0)
 
@@ -257,10 +268,10 @@ class ChurnPredictionModel:
 
     def _next_action(self, score: float, factors: list) -> str:
         if score > 0.5:
-            return "Kisisel teklif gonderin - ozel indirim veya sadakat odulu"
+            return "Kişisel teklif gönderin — özel indirim veya sadakat ödülü"
         elif score > 0.25:
-            return "Hatirlatma iletisimi gonderin - ozel kampanya bilgilendirmesi"
-        return "Standart sadakat programi iletisimine devam"
+            return "Hatırlatma iletişimi gönderin — özel kampanya bilgilendirmesi"
+        return "Standart sadakat programı iletişimine devam edin"
 
 
 class UpsellRecommendationModel:
@@ -318,11 +329,11 @@ class UpsellRecommendationModel:
             recommendations.append(
                 {
                     "type": "room_upgrade",
-                    "title": f"{next_room} Oda Upgrade",
-                    "description": f"{current_type} odanizi {next_room} odaya yukseltin",
+                    "title": f"{next_room} oda yükseltmesi",
+                    "description": f"{current_type} odanızı {next_room} odaya yükseltin",
                     "estimated_value": round(avg_spend * 0.3, 2),
                     "confidence": 0.7 if len(bookings) > 2 else 0.5,
-                    "reason": f"Misafir genellikle {current_type} tercih ediyor",
+                    "reason": f"Misafir genellikle {current_type} oda tercih ediyor",
                 }
             )
 
@@ -332,10 +343,10 @@ class UpsellRecommendationModel:
                 {
                     "type": "fnb_package",
                     "title": "Gurme Yemek Paketi",
-                    "description": "Ozel akam yemegi ve kahvalti paketi",
+                    "description": "Özel akşam yemeği ve kahvaltı paketi",
                     "estimated_value": round(charge_categories.get("food", 100) * 0.5, 2),
                     "confidence": 0.65,
-                    "reason": "Onceki konaklamalarda F&B harcamasi mevcut",
+                    "reason": "Önceki konaklamalarda yiyecek ve içecek harcaması mevcut",
                 }
             )
 
@@ -345,10 +356,10 @@ class UpsellRecommendationModel:
                 {
                     "type": "spa_package",
                     "title": "Spa & Wellness Paketi",
-                    "description": "Ozel spa ve masaj paketi",
+                    "description": "Özel spa ve masaj paketi",
                     "estimated_value": round(charge_categories.get("spa", 80) * 0.4, 2),
                     "confidence": 0.60,
-                    "reason": "Onceki konaklamalarda spa kullanimi mevcut",
+                    "reason": "Önceki konaklamalarda spa kullanımı mevcut",
                 }
             )
 
@@ -357,11 +368,11 @@ class UpsellRecommendationModel:
             recommendations.append(
                 {
                     "type": "late_checkout",
-                    "title": "Gec Cikis Garantisi",
-                    "description": "14:00 yerine 16:00'ya kadar odanizda kalin",
+                    "title": "Geç çıkış garantisi",
+                    "description": "14.00 yerine 16.00'ya kadar odanızda kalın",
                     "estimated_value": round(avg_spend * 0.15, 2),
                     "confidence": 0.75,
-                    "reason": f"Sadik misafir ({len(bookings)} konaklama)",
+                    "reason": f"Sadık misafir ({len(bookings)} konaklama)",
                 }
             )
 
@@ -371,11 +382,11 @@ class UpsellRecommendationModel:
             recommendations.append(
                 {
                     "type": "early_checkin",
-                    "title": "Erken Giris Garantisi",
-                    "description": "14:00 yerine 10:00'da odaniza girin",
+                    "title": "Erken giriş garantisi",
+                    "description": "14.00 yerine 10.00'da odanıza girin",
                     "estimated_value": round(avg_spend * 0.1, 2),
                     "confidence": 0.70,
-                    "reason": "VIP/yuksek degerli misafir",
+                    "reason": "VIP/yüksek değerli misafir",
                 }
             )
 
@@ -444,23 +455,38 @@ class GuestIntelligenceDashboard:
             },
         }
 
-    async def get_dashboard(self, tenant_id: str, limit: int = 50, *, persist_snapshot: bool = False) -> dict[str, Any]:
+    async def get_dashboard(
+        self,
+        tenant_id: str,
+        limit: int = 50,
+        *,
+        persist_snapshot: bool = False,
+        include_test_data: bool = False,
+    ) -> dict[str, Any]:
         """Get aggregate guest intelligence dashboard."""
         started_at = datetime.now(UTC)
 
         # Get recent active guests
         from security.encrypted_lookup import decrypt_guest_doc
 
+        guest_query: dict[str, Any] = {"tenant_id": tenant_id}
+        if not include_test_data:
+            guest_query["$nor"] = [
+                {"is_test": True},
+                {"test_run_id": {"$exists": True}},
+                {"fixture_id": {"$exists": True}},
+            ]
         guests = (
             await db.guests.find(
-                {"tenant_id": tenant_id},
-                {"_id": 0, "id": 1, "name": 1, "email": 1, "tags": 1},
+                guest_query,
+                {"_id": 0, "id": 1, "name": 1, "email": 1, "tags": 1, "is_test": 1, "test_run_id": 1, "fixture_id": 1},
             )
             .sort("created_at", -1)
             .limit(limit)
             .to_list(limit)
         )
         guests = [decrypt_guest_doc(g) for g in guests]
+        suspicious_test_records = sum(1 for guest in guests if _looks_like_test_guest(guest))
 
         # Bulk-load dependent data once. The former implementation performed up
         # to nine database round-trips per guest (270+ queries for the default
@@ -616,6 +642,7 @@ class GuestIntelligenceDashboard:
                 }
             )
 
+        completed_at = datetime.now(UTC)
         return {
             "tenant_id": tenant_id,
             "guests_analyzed": len(guests),
@@ -625,6 +652,18 @@ class GuestIntelligenceDashboard:
             "top_value_guests": top_value_guests[:10],
             "high_churn_guests": high_churn_guests[:10],
             "upsell_opportunities": upsell_opportunities[:10],
+            "data_quality": {
+                "explicit_test_records_excluded": not include_test_data,
+                "suspicious_test_records_in_sample": suspicious_test_records,
+                "sample_size": len(guests),
+            },
+            "performance": {
+                "strategy": "bulk_prefetch",
+                "database_reads": 4,
+                "duration_ms": int((completed_at - started_at).total_seconds() * 1000),
+                "slo_target_ms": 1000,
+                "slo_met": (completed_at - started_at).total_seconds() < 1,
+            },
             "generated_at": started_at.isoformat(),
         }
 

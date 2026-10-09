@@ -154,9 +154,14 @@ async def get_maintenance_risk(
 
 
 @router.get("/guests/dashboard")
-async def get_guest_dashboard(limit: int = Query(30, ge=1, le=100), current_user: User = Depends(get_current_user), _perm=Depends(require_op("view_guest_list"))):
+async def get_guest_dashboard(
+    limit: int = Query(30, ge=1, le=100),
+    include_test_data: bool = Query(False),
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_guest_list")),
+):
     """Get aggregate guest intelligence dashboard."""
-    return await guest_intelligence.get_dashboard(current_user.tenant_id, limit)
+    return await guest_intelligence.get_dashboard(current_user.tenant_id, limit, include_test_data=include_test_data)
 
 
 @router.get("/guests/{guest_id}/summary")

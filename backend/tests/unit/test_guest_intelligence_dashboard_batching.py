@@ -58,6 +58,8 @@ async def test_dashboard_bulk_loads_dependencies_and_browser_read_does_not_write
     result = await module.GuestIntelligenceDashboard().get_dashboard("tenant-1", 30)
 
     assert result["guests_analyzed"] == 2
+    assert result["performance"]["strategy"] == "bulk_prefetch"
+    assert result["performance"]["database_reads"] == 4
     assert guests.find_calls == bookings.find_calls == charges.find_calls == requests.find_calls == 1
     assert snapshots.inserts == []
     assert logs.inserts == []
@@ -85,3 +87,19 @@ async def test_scheduler_run_can_persist_snapshot(monkeypatch):
 
     assert len(snapshots.inserts) == 1
     assert len(logs.inserts) == 1
+
+
+@pytest.mark.parametrize(
+    "guest",
+    [
+        {"name": "QA Test Guest"},
+        {"email": "profile@fixture.local"},
+        {"name": "Normal Guest", "is_test": True},
+    ],
+)
+def test_suspicious_test_guests_are_reported(guest):
+    assert module._looks_like_test_guest(guest) is True
+
+
+def test_real_guest_is_not_flagged_as_test_data():
+    assert module._looks_like_test_guest({"name": "Ada Lovelace", "email": "ada@hotel.com"}) is False
