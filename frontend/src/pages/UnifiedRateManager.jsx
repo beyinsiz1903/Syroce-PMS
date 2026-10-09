@@ -14,7 +14,7 @@ import { Grid3X3, CalendarDays, Ban, CheckCircle2, Eye, Loader2, Building2, Chev
 import { BulkUpdatePanel } from './rate-manager/BulkUpdatePanel';
 import { CalendarGridView } from './rate-manager/CalendarGridView';
 import { StopSalePanel } from './rate-manager/StopSalePanel';
-import { UPDATE_FIELDS } from './rate-manager/constants';
+import { UPDATE_FIELDS, usesExpandedAriLayout } from './rate-manager/constants';
 import { useTranslation } from 'react-i18next';
 const UNIFIED_PREFIX = '/channel-manager/unified-rate-manager';
 
@@ -740,6 +740,7 @@ const UnifiedRateManager = ({
         </div>
       </MaybeLayout>;
   }
+  const expandedBulkEditor = activeView === 'bulk' && usesExpandedAriLayout(enabledFields.size);
   return <MaybeLayout embedded={embedded} user={user} tenant={tenant} onLogout={onLogout} currentModule="unified_rate_manager">
       <div className="p-4 md:p-6 space-y-4" data-testid="unified-rate-manager-page">
         {/* Header */}
@@ -786,7 +787,11 @@ const UnifiedRateManager = ({
           </div>}
 
         {/* Main content with agency panel */}
-        <div className="flex flex-col gap-4 lg:flex-row">
+        <div
+          className={`flex flex-col gap-4 ${expandedBulkEditor ? '' : 'lg:flex-row'}`}
+          data-layout={expandedBulkEditor ? 'expanded-editor' : 'standard'}
+          data-testid="unified-rate-workspace"
+        >
           {/* Main tabs area */}
           <div className="flex-1 min-w-0">
             <Tabs value={activeView} onValueChange={setActiveView}>
@@ -817,7 +822,7 @@ const UnifiedRateManager = ({
           </div>
 
           {/* Agency Panel (right side) */}
-          <div className={`${activeView === 'bulk' && mobileBulkStep === 3 ? 'block' : 'hidden'} w-full flex-shrink-0 lg:block lg:w-[260px]`} data-testid="agency-panel">
+          <div className={`${activeView === 'bulk' && mobileBulkStep === 3 ? 'block' : 'hidden'} w-full flex-shrink-0 lg:block lg:w-[260px] ${expandedBulkEditor ? 'lg:self-end' : ''}`} data-testid="agency-panel">
             <Card className="sticky top-4">
               <CardHeader className="pb-2 pt-4 px-4">
                 <div className="flex items-center justify-between">

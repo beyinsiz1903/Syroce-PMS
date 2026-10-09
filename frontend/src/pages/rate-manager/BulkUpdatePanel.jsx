@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
 import { Save, Loader2, RotateCcw, Home, Moon, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, AlertTriangle, CopyCheck, Plus, Trash2, Eye, ShieldCheck, Sparkles } from 'lucide-react';
-import { DAYS, UPDATE_FIELDS, UPDATE_FIELD_PRESETS } from './constants';
+import { DAYS, UPDATE_FIELDS, UPDATE_FIELD_PRESETS, usesExpandedAriLayout } from './constants';
 import { ChannelList } from './ChannelList';
 import { buildRateUpdateReview } from './updateReview';
 import { useTranslation } from 'react-i18next';
@@ -36,6 +36,11 @@ export const BulkUpdatePanel = ({
   const canContinueFromFields = enabledFields.size > 0 && Boolean(dateFrom) && Boolean(dateTo);
   const canContinueFromRooms = totalSelectedRoomTypes > 0;
   const goToStep = (step) => setMobileStep?.(Math.max(1, Math.min(3, step)));
+  // Four or more simultaneous ARI fields no longer fit comfortably between
+  // both sidebars. On wide screens stack the channel selector under the
+  // filters and give the editor the remaining page width instead of creating
+  // a narrow, internally scrolling table.
+  const wideFieldLayout = usesExpandedAriLayout(enabledFields.size);
 
   return (
   <div>
@@ -62,7 +67,13 @@ export const BulkUpdatePanel = ({
       </div>
     </div>
 
-    <div className="flex flex-col lg:flex-row gap-4" data-testid="bulk-update-layout">
+    <div
+      className={wideFieldLayout
+        ? 'flex flex-col gap-4 lg:grid lg:grid-cols-[240px_minmax(0,1fr)] lg:items-start'
+        : 'flex flex-col gap-4 lg:flex-row'}
+      data-layout={wideFieldLayout ? 'expanded' : 'standard'}
+      data-testid="bulk-update-layout"
+    >
       {/* LEFT PANEL: Filters */}
       <div className={`${mobileStep === 1 ? 'block' : 'hidden'} w-full flex-shrink-0 space-y-4 lg:block lg:w-[240px]`} data-testid="bulk-left-panel">
         {/* Update Fields Selection */}
@@ -152,7 +163,7 @@ export const BulkUpdatePanel = ({
       </div>
 
       {/* CENTER PANEL: Room Types Table */}
-      <div className={`${mobileStep === 2 ? 'block' : 'hidden'} min-w-0 flex-1 lg:block`} data-testid="bulk-center-panel">
+      <div className={`${mobileStep === 2 ? 'block' : 'hidden'} min-w-0 flex-1 lg:block ${wideFieldLayout ? 'lg:col-start-2 lg:row-span-2 lg:row-start-1' : ''}`} data-testid="bulk-center-panel">
         <Card className="h-full">
           <CardHeader className="pb-2 pt-4 px-4">
             <div className="flex items-center justify-between">
@@ -179,6 +190,7 @@ export const BulkUpdatePanel = ({
                 currencySymbol={currencySymbol} currency={currency}
                 channelProvider={channelProvider}
                 totalSelectedRoomTypes={Object.keys(selections).length}
+                wideFieldLayout={wideFieldLayout}
               />
             )}
           </CardContent>
@@ -186,7 +198,7 @@ export const BulkUpdatePanel = ({
       </div>
 
       {/* RIGHT PANEL: Channels */}
-      <div className={`${mobileStep === 3 ? 'block' : 'hidden'} w-full flex-shrink-0 lg:block lg:w-[200px]`} data-testid="bulk-right-panel">
+      <div className={`${mobileStep === 3 ? 'block' : 'hidden'} w-full flex-shrink-0 lg:block ${wideFieldLayout ? 'lg:col-start-1 lg:row-start-2 lg:w-auto' : 'lg:w-[200px]'}`} data-testid="bulk-right-panel">
         <Card className="h-full">
           <CardHeader className="pb-2 pt-4 px-4">
             <CardTitle className="text-sm font-semibold text-gray-700">Kanallar</CardTitle>
@@ -327,12 +339,12 @@ const RoomTypeList = ({
   roomTypeTree, enabledFields, selections, roomValues, updateRoomValue, getDefaultValues, applyToAllSelected,
   expandedRoomTypes, toggleExpanded, isRoomTypeSelected, isRoomTypeFullySelected, isRatePlanSelected,
   toggleRoomType, toggleRatePlan, pricingSettings, occupancyPricingRules, saveOccupancyPricingRule, getPricingLabel, togglePricingType, currencySymbol, currency,
-  totalSelectedRoomTypes, channelProvider,
+  totalSelectedRoomTypes, channelProvider, wideFieldLayout,
 }) => {
   const { t } = useTranslation();
   const [editingRule, setEditingRule] = useState(null);
   return (
-  <div className="overflow-x-auto" data-testid="room-type-list">
+  <div className={wideFieldLayout ? 'overflow-x-auto xl:overflow-x-visible' : 'overflow-x-auto'} data-testid="room-type-list">
     {/* Table Header */}
     <div className="grid items-center border-b bg-gray-50 px-4 py-2 text-xs font-medium text-gray-500 gap-3"
       style={{ gridTemplateColumns: 'minmax(220px, 1fr) repeat(auto-fit, minmax(130px, 1fr))' }}>
