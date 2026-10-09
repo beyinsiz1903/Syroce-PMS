@@ -476,9 +476,8 @@ def require_module(module_name: str):
                     detail="AI modulleri bu otel icin aktif degil",
                 )
         if not modules.get(module_name, False):
-            if module_name == "academy":
-                pass  # Local testing bypass for academy module
-            else:
+            from core.subscriptions import tenant_has_module
+            if not await tenant_has_module(tenant_id, module_name):
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail=f"{module_name} modulu bu otel icin aktif degil",

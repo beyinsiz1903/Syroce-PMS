@@ -76,3 +76,21 @@ def retrieve_checkout_form(token: str) -> dict:
     except Exception as e:
         logger.exception("iyzico retrieve_checkout_form error")
         return {"status": "failure", "errorMessage": str(e)}
+
+
+def charge_saved_card(payload: dict) -> dict:
+    """Charge an iyzico card token for a marketplace renewal.
+
+    The token is stored server-side only.  Callers must never expose cardUserKey
+    or cardToken in an API response or log.
+    """
+    if not is_configured():
+        return {"status": "failure", "errorMessage": "iyzico yapılandırılmadı"}
+    try:
+        import iyzipay  # type: ignore
+        payment = iyzipay.Payment().create(payload, get_options())
+        import json as _json
+        return _json.loads(payment.read().decode("utf-8"))
+    except Exception as exc:
+        logger.exception("iyzico marketplace renewal error")
+        return {"status": "failure", "errorMessage": str(exc)}

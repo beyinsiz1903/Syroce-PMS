@@ -29,10 +29,10 @@ async def get_active_subscriptions(tenant_id: str) -> list[dict[str, Any]]:
     cur = db.tenant_subscriptions.find(
         {
             "tenant_id": tenant_id,
-            "status": "active",
             "$or": [
-                {"end_date": None},
-                {"end_date": {"$gt": now.isoformat()}},
+                {"status": "active", "end_date": None},
+                {"status": "active", "end_date": {"$gt": now.isoformat()}},
+                {"status": "past_due", "grace_until": {"$gt": now.isoformat()}},
             ],
         },
         {"_id": 0},
@@ -77,10 +77,10 @@ async def tenant_has_module(tenant_id: str, module_key: str) -> bool:
         {
             "tenant_id": tenant_id,
             "product_key": {"$in": accepted_keys},
-            "status": "active",
             "$or": [
-                {"end_date": None},
-                {"end_date": {"$gt": now.isoformat()}},
+                {"status": "active", "end_date": None},
+                {"status": "active", "end_date": {"$gt": now.isoformat()}},
+                {"status": "past_due", "grace_until": {"$gt": now.isoformat()}},
             ],
         }
     )
@@ -119,6 +119,13 @@ async def ensure_indexes() -> None:
         await db.marketplace_quote_requests.create_index(
             [("tenant_id", 1), ("created_at", -1)], name="idx_quote_request_tenant_created"
         )
+        await db.marketplace_price_history.create_index([("product_key", 1), ("changed_at", -1)], name="idx_marketplace_price_history")
+        await db.marketplace_provisioning.create_index("subscription_id", unique=True, name="uniq_marketplace_provisioning_subscription")
+        await db.marketplace_setup_tasks.create_index([("tenant_id", 1), ("product_key", 1), ("status", 1)], name="idx_marketplace_setup_tasks")
+        await db.marketplace_payment_methods.create_index([("tenant_id", 1), ("is_default", 1)], name="idx_marketplace_payment_default")
+        await db.marketplace_renewal_attempts.create_index("attempt_key", unique=True, name="uniq_marketplace_renewal_attempt")
+        await db.marketplace_refund_requests.create_index("order_id", unique=True, name="uniq_marketplace_refund_order")
+        await db.marketplace_credit_grants.create_index("order_id", unique=True, name="uniq_marketplace_credit_grant_order")
         # Atomic activation marker: any callback (paid OR trial) inserts
         # one row per order_id. Unique index makes concurrent/replayed
         # callbacks fail-fast on the second insert, preventing duplicate

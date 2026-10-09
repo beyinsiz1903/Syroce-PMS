@@ -45,4 +45,12 @@ describe('AdminModuleControlCenter', () => {
     expect(screen.getByText('Son modül yayını')).toBeInTheDocument();
     expect(screen.getAllByText('Merkez Yönetici').length).toBeGreaterThan(0);
   });
+
+  it('opens the superadmin marketplace price editor', async () => {
+    render(<AdminModuleControlCenter />);
+    await screen.findByText('Denizli Oteli');
+    fireEvent.click(screen.getByTestId('manage-marketplace-prices'));
+    expect(await screen.findByText('Modül mağazası fiyat ve sözleşme yönetimi')).toBeInTheDocument();
+    expect(axios.get).toHaveBeenCalledWith('/module-store/admin/products');
+  });
 });
