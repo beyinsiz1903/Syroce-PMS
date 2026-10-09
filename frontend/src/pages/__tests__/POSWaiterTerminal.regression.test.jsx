@@ -62,7 +62,11 @@ describe('POS waiter menu regressions', () => {
     render(<POSWaiterTerminal />);
     fireEvent.click(await screen.findByTestId('outlet-outlet-1'));
     fireEvent.click(await screen.findByTestId('table-1'));
-    fireEvent.click(await screen.findByTestId('menu-item-burger'));
+    await screen.findByTestId('menu-item-burger');
+    fireEvent.change(screen.getByRole('textbox', { name: /Menüde ürün ara|Search menu items/ }), { target: { value: 'not found' } });
+    expect(screen.queryByTestId('menu-item-burger')).not.toBeInTheDocument();
+    fireEvent.change(screen.getByRole('textbox', { name: /Menüde ürün ara|Search menu items/ }), { target: { value: 'burger' } });
+    fireEvent.keyDown(screen.getByTestId('menu-item-burger'), { key: 'Enter' });
     fireEvent.click(screen.getByTestId('send-kitchen'));
 
     await waitFor(() => expect(axiosPost).toHaveBeenCalledWith('/pos/v2/orders', expect.objectContaining({

@@ -190,8 +190,10 @@ describe('PMS manually discovered operation regressions', () => {
       />,
     );
 
-    expect(screen.getByPlaceholderText('Child 1 age')).toHaveValue(7);
-    expect(screen.getByPlaceholderText('Child 2 age')).toHaveValue(10);
+    const ages = screen.getAllByLabelText('Çocuk yaşı');
+    expect(ages).toHaveLength(2);
+    expect(ages[0]).toHaveValue(7);
+    expect(ages[1]).toHaveValue(10);
   });
 
   it('posts charge and payment JSON to the active frontdesk contract', async () => {

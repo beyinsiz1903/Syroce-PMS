@@ -459,6 +459,7 @@ function App() {
     const resolvedLanding = await resolvePostLoginDestination({
       api: axios,
       user: canonicalUser,
+      tenant: tenantData,
       existingRedirect: sessionStorage.getItem("postLoginRedirect"),
     });
     if (resolvedLanding) sessionStorage.setItem("postLoginRedirect", resolvedLanding);

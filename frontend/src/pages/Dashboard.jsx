@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Hotel, FileText, TrendingUp, TrendingDown, Minus, Award, ShoppingCart, Users, BedDouble, Calendar, Package, Shield, Sparkles, Bot, Star, Building, Gift, UserCheck, MessageCircle, Target, Instagram, Zap, Monitor, ArrowRight } from 'lucide-react';
 import CommandCenter from '@/components/CommandCenter';
+import RoleStart from '@/components/experience/RoleStart';
 import ProductState from '@/components/shared/ProductState';
 import { runIdle } from '@/lib/idle';
 import { useCurrency } from '@/context/CurrencyContext';
@@ -604,7 +605,7 @@ const Dashboard = ({
       <div className="p-4 md:p-6 space-y-4" role="main" aria-label="Ana gösterge paneli">
         <div>
           <h1 className="text-2xl md:text-3xl font-bold mb-1 dark:text-slate-100" style={{
-          fontFamily: 'Space Grotesk'
+          fontFamily: 'inherit'
         }}>
             {t('dashboard.welcome')}, {user.name}
           </h1>
@@ -612,8 +613,11 @@ const Dashboard = ({
         </div>
 
         {loading ? <ProductState state="loading" moduleName={t('dashboard.title', { defaultValue: 'Kontrol paneli' })} compact showDashboardLink={false} /> : <>
+            <RoleStart user={user} tenant={tenant} />
+            <CommandCenter />
+            <details className="rounded-xl border bg-card p-4"><summary className="cursor-pointer font-semibold">{t("experience.summary", "Günlük değerlendirme")}</summary><p className="my-2 text-sm text-muted-foreground">{t("experience.summaryScope", "Otomatik özet, oluşturulduğu anı yansıtır. Güncel operasyon durumunu iş listelerinden doğrulayın.")}</p>
             {/* AI Daily Briefing Card */}
-            {aiBriefing && <Card className="bg-gradient-to-br from-slate-900 via-slate-800 to-amber-700 text-white mb-4 border-0 shadow-lg" role="region" aria-label="Yapay zeka günlük brifing">
+            {aiBriefing && <Card className="bg-slate-50 text-slate-900 dark:bg-slate-900 dark:text-slate-100 mb-4 border-0 shadow-lg" role="region" aria-label="Yapay zeka günlük brifing">
                 <CardHeader className="p-4">
                   <CardTitle className="flex items-center justify-between text-base md:text-lg">
                     <span className="flex items-center gap-2">
@@ -624,7 +628,7 @@ const Dashboard = ({
                       variant="ghost"
                       size="sm"
                       onClick={() => loadAIBriefing(tenantCacheKey, interfaceLanguage)}
-                      className="text-white hover:bg-white/20 text-xs"
+                      className="text-slate-700 hover:bg-slate-200 text-xs"
                       disabled={loadingAI}
                       aria-label={loadingAI ? t('ai.loading') : t('ai.refreshInsights')}
                       aria-busy={loadingAI}
@@ -670,7 +674,7 @@ const Dashboard = ({
                 </CardContent>
               </Card>}
 
-            {loadingAI && !aiBriefing && <Card className="bg-gradient-to-br from-slate-900 via-slate-800 to-amber-700 text-white mb-6 border-0">
+            {loadingAI && !aiBriefing && <Card className="bg-slate-50 text-slate-900 dark:bg-slate-900 dark:text-slate-100 mb-6 border-0">
                 <CardContent className="py-8">
                   <div className="flex items-center justify-center">
                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white mr-3"></div>
@@ -679,8 +683,7 @@ const Dashboard = ({
                 </CardContent>
               </Card>}
 
-            {/* Command Center: Decision-Driven Alerts */}
-            <CommandCenter />
+            </details>
 
             {/* Quick Stats — KPI kartları + son 7 gün sparkline */}
             {stats?.pms && (() => {
@@ -746,36 +749,7 @@ const Dashboard = ({
               </div>;
         })()}
 
-            {isSuperAdmin && <Card className="overflow-hidden border-0 bg-[linear-gradient(135deg,#0f172a_0%,#1e293b_50%,#b45309_100%)] text-white shadow-lg" data-testid="migration-observability-dashboard-card">
-              <CardContent className="grid gap-5 p-6 md:grid-cols-[1.15fr_0.85fr] md:p-7">
-                <div className="space-y-3">
-                  <Badge className="w-fit bg-white/15 text-white hover:bg-white/15" data-testid="migration-observability-dashboard-badge">Geçiş İzleme</Badge>
-                  <div>
-                    <h2 className="text-2xl font-bold" style={{
-                  fontFamily: 'Space Grotesk'
-                }} data-testid="migration-observability-dashboard-title">
-                      {t('dashboard.migrationObservability')}
-                    </h2>
-                    <p className="mt-2 max-w-2xl text-sm leading-7 text-white/80" data-testid="migration-observability-dashboard-description">
-                      {t('dashboard.migrationObservabilityDesc')}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex flex-col justify-between gap-4 rounded-[24px] border border-white/15 bg-white/10 p-5 backdrop-blur-sm" data-testid="migration-observability-dashboard-sidepanel">
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2 text-sm text-white/80">
-                      <Monitor className="h-4 w-4" />
-                      Olaylar + Denetim + Tutarlılık
-                    </div>
-                    <p className="text-sm text-white/70">{t('dashboard.migrationObservabilitySide')}</p>
-                  </div>
-                  <Button onClick={() => navigate('/app/migration-observability')} className="rounded-full bg-white text-slate-900 hover:bg-amber-50" data-testid="migration-observability-dashboard-open-button" aria-label="Geçiş izleme panelini aç">
-                    {t('dashboard.openPanel')}
-                    <ArrowRight className="ml-2 h-4 w-4" aria-hidden="true" />
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>}
+            {isSuperAdmin && <details className="rounded-xl border bg-card p-3"><summary className="cursor-pointer text-sm font-medium">Platform yönetimi</summary><Button variant="link" onClick={() => navigate("/app/migration-observability")}>{t("dashboard.migrationObservability")}</Button></details>}
 
             {/* Modules Grid - Categorized with Accordion */}
 
@@ -803,7 +777,7 @@ const Dashboard = ({
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                           {category.modules.map(module => {
                     const Icon = module.icon;
-                    return <Card key={module.path} className={`card-hover cursor-pointer ${module.badge === 'GAME-CHANGER' ? 'border-2 border-pink-500 shadow-lg' : module.badge === 'AI' ? 'border-2 border-indigo-400 shadow-lg' : module.badge === 'NEW' ? 'border-2 border-blue-300 shadow-md' : ''}`} onClick={() => navigate(module.path)} data-testid={`module-${module.title.toLowerCase()}`}>
+                    return <Card key={module.path} className={`card-hover cursor-pointer ${'border-slate-200'}`} onClick={() => navigate(module.path)} data-testid={`module-${module.title.toLowerCase()}`}>
                             <CardHeader className="p-4">
                               <div className="flex items-center space-x-2">
                                 <div style={{
@@ -816,7 +790,7 @@ const Dashboard = ({
                                 <div className="flex-1">
                                   <div className="flex items-center justify-between">
                                     <CardTitle className="text-base">{module.title}</CardTitle>
-                                    {module.badge && <span className={`px-1.5 py-0.5 text-xs font-bold rounded ${module.badge === 'GAME-CHANGER' ? 'bg-pink-100 text-pink-700' : module.badge === 'AI' ? 'bg-indigo-100 text-indigo-700' : 'bg-blue-100 text-blue-700'}`}>
+                                    {module.badge === 'NEW' && <span className={`px-1.5 py-0.5 text-xs font-bold rounded ${module.badge === 'GAME-CHANGER' ? 'bg-pink-100 text-pink-700' : module.badge === 'AI' ? 'bg-indigo-100 text-indigo-700' : 'bg-blue-100 text-blue-700'}`}>
                                         {module.badge === 'NEW'
                                           ? t('common.new')
                                           : module.badge === 'GAME-CHANGER'

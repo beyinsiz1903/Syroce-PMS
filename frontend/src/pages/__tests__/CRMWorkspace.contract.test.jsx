@@ -74,7 +74,7 @@ describe('CRMWorkspace contracts', () => {
     expect(screen.getByText('Privacy panel')).toBeInTheDocument();
   });
 
-  it('surfaces analysis performance and suspicious demo-data quality', async () => {
+  it('keeps data quality visible without exposing engineering performance metrics', async () => {
     axios.get.mockResolvedValue({
       data: {
         guests_analyzed: 30,
@@ -87,8 +87,8 @@ describe('CRMWorkspace contracts', () => {
     });
     renderCRM();
 
-    expect(await screen.findByText(/Toplu analiz · 184 ms · hedef/)).toBeInTheDocument();
-    expect(screen.getByText(/3 olası test\/demo kaydı bulundu/)).toBeInTheDocument();
+    expect(await screen.findByText(/3 olası test\/demo kaydı bulundu/)).toBeInTheDocument();
+    expect(screen.queryByText(/Toplu analiz · 184 ms · hedef/)).not.toBeInTheDocument();
   });
 
   it('keeps merge history available and can undo a completed merge', async () => {

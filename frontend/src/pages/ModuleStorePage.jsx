@@ -29,14 +29,14 @@ const copy = (english, tr, en) => (english ? en : tr);
 
 function ProductCard({ product, subscription, paymentReady, buying, english, onPurchase, onTrial, onQuote, onLaunch }) {
   const Icon = ICONS[product.icon] || Package;
-  const name = english && product.name_en ? product.name_en : product.name;
+  const name = english && product.name_en ? product.name_en : (product.name || "").replace(/mail\b/gi, "e-posta").replace("Omni Inbox", "Birleşik gelen kutusu");
   const description = english && product.description_en ? product.description_en : product.description;
   const features = english ? (product.features_en || []) : (product.features || []);
   const owned = Boolean(subscription);
   const recurring = product.billing_type === "subscription";
   const busy = buying === product.key;
   const [quantity, setQuantity] = useState(Math.max(1, Number(product.included_units || 1)));
-  const unitLabels = { property: copy(english, "tesis", "property"), room: copy(english, "oda", "room"), employee: copy(english, "çalışan", "employee"), outlet: "outlet", user: copy(english, "kullanıcı", "user"), pack: copy(english, "paket", "pack") };
+  const unitLabels = { property: copy(english, "tesis", "property"), room: copy(english, "oda", "room"), employee: copy(english, "çalışan", "employee"), outlet: copy(english, "satış noktası", "outlet"), user: copy(english, "kullanıcı", "user"), pack: copy(english, "paket", "pack") };
   return (
     <article className={`group relative flex h-full flex-col overflow-hidden rounded-2xl border bg-white shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-lg ${product.popular ? "border-blue-300 ring-1 ring-blue-100" : "border-slate-200"}`}>
       {product.popular && <div className="bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-1.5 text-center text-[11px] font-semibold uppercase tracking-[0.14em] text-white">{copy(english, "Öne çıkan çözüm", "Featured solution")}</div>}
@@ -59,12 +59,12 @@ function ProductCard({ product, subscription, paymentReady, buying, english, onP
           {features.slice(0, 4).map((feature, index) => <li key={`${product.key}-${index}`} className="flex items-start gap-2 text-sm text-slate-700"><Check className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" /><span>{feature}</span></li>)}
         </ul>
         <div className="mt-auto pt-6">
-          <div className="mb-3 rounded-lg bg-slate-50 p-3 text-xs text-slate-600"><div className="flex justify-between"><span>{copy(english, "Fiyat ölçüsü", "Pricing unit")}</span><strong>{product.included_units || 1} {unitLabels[product.pricing_model] || product.pricing_model}</strong></div><div className="mt-1 flex justify-between"><span>{copy(english, "Tahmini kurulum", "Estimated setup")}</span><strong>~{product.setup_minutes || 0} dk</strong></div><div className="mt-1 flex justify-between"><span>KDV</span><strong>%{product.tax_rate_pct ?? 20}</strong></div></div>
+          <div className="mb-3 rounded-lg bg-slate-50 p-3 text-xs text-slate-600"><div className="flex justify-between"><span>{copy(english, "Fiyat ölçüsü", "Pricing unit")}</span><strong>{product.pricing_model === "pack" ? copy(english, "Paket başına", "Per pack") : product.included_units || 1} {product.pricing_model !== "pack" && (unitLabels[product.pricing_model] || product.pricing_model)}</strong></div><div className="mt-1 flex justify-between"><span>{copy(english, "Tahmini kurulum", "Estimated setup")}</span><strong>~{product.setup_minutes || 0} dk</strong></div><div className="mt-1 flex justify-between"><span>KDV</span><strong>%{product.tax_rate_pct ?? 20}</strong></div></div>
           <div className="border-t border-slate-100 pt-4">
             <div className="flex items-end justify-between gap-3">
               <div>
                 <div className="flex items-baseline gap-1"><span className="text-2xl font-black tracking-tight text-slate-950">₺{Number(product.price_try || 0).toLocaleString(english ? "en-US" : "tr-TR")}</span><span className="text-xs font-medium text-slate-500">{recurring ? copy(english, "/ ay", "/ month") : copy(english, "tek sefer", "one-time")}</span></div>
-                <p className="mt-1 text-[11px] text-slate-500">{english && product.price_note_en ? product.price_note_en : product.price_note || copy(english, "KDV checkout sırasında eklenir", "VAT is added at checkout")}</p>
+                <p className="mt-1 text-[11px] text-slate-500">{english && product.price_note_en ? product.price_note_en : product.price_note?.replace(/checkout/gi, "ödeme adımı") || copy(english, "KDV ödeme adımında eklenir", "VAT is added at checkout")}</p>
               </div>
               {product.trial_days > 0 && !owned && <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100">{product.trial_days} {copy(english, "gün deneme", "day trial")}</Badge>}
             </div>

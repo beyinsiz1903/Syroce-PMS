@@ -46,10 +46,17 @@ const BookingDialog = ({
   const [selectedGuest, setSelectedGuest] = useState(null);
   const [showGuestDropdown, setShowGuestDropdown] = useState(false);
   const guestSearchTimerRef = useRef(null);
+  const guestSearchController = useRef(null);
+  const [submitting, setSubmitting] = useState(false);
+  const submitLock = useRef(false);
+  useEffect(() => () => { clearTimeout(guestSearchTimerRef.current); guestSearchController.current?.abort(); }, []);
 
   // Reset guest search state when dialog opens/closes
   useEffect(() => {
     if (!open) {
+      clearTimeout(guestSearchTimerRef.current);
+      guestSearchController.current?.abort();
+      setGuestSearchLoading(false);
       setGuestSearchQuery('');
       setGuestSearchResults([]);
       setSelectedGuest(null);
@@ -66,7 +73,11 @@ const BookingDialog = ({
       guest_id: ''
     }));
     if (guestSearchTimerRef.current) clearTimeout(guestSearchTimerRef.current);
+    guestSearchController.current?.abort();
+    const controller = new AbortController();
+    guestSearchController.current = controller;
     if (query.trim().length < 2) {
+      setGuestSearchLoading(false);
       setGuestSearchResults([]);
       setShowGuestDropdown(false);
       return;
@@ -74,19 +85,22 @@ const BookingDialog = ({
     setGuestSearchLoading(true);
     guestSearchTimerRef.current = setTimeout(async () => {
       try {
-        const res = await axios.get(`/pms/guests/search?q=${encodeURIComponent(query.trim())}&limit=10`);
+        const res = await axios.get(`/pms/guests/search?q=${encodeURIComponent(query.trim())}&limit=10`, { signal: controller.signal });
+        if (controller.signal.aborted) return;
         setGuestSearchResults(res.data || []);
         setShowGuestDropdown(true);
       } catch {
+        if (controller.signal.aborted) return;
         setGuestSearchResults([]);
       } finally {
-        setGuestSearchLoading(false);
+        if (!controller.signal.aborted) setGuestSearchLoading(false);
       }
     }, 300);
   }, [setNewBooking]);
 
   // Select an existing guest from search results
   const handleSelectGuest = useCallback(guest => {
+    clearTimeout(guestSearchTimerRef.current); guestSearchController.current?.abort(); setGuestSearchLoading(false);
     setSelectedGuest(guest);
     setGuestSearchQuery(guest.name);
     setShowGuestDropdown(false);
@@ -99,6 +113,7 @@ const BookingDialog = ({
 
   // Clear selected guest
   const handleClearGuest = useCallback(() => {
+    clearTimeout(guestSearchTimerRef.current); guestSearchController.current?.abort(); setGuestSearchLoading(false);
     setSelectedGuest(null);
     setGuestSearchQuery('');
     setGuestSearchResults([]);
@@ -108,15 +123,42 @@ const BookingDialog = ({
       guest_id: ''
     }));
   }, [setNewBooking]);
-  return <Dialog open={open} onOpenChange={o => !o && onClose()}>
-  <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+  return <Dialog open={open} onOpenChange={o => !o && !submitLock.current && onClose()}>
+  <DialogContent className="max-w-4xl max-h-[94dvh] overflow-y-auto p-4 sm:p-6">
     <DialogHeader>
       <DialogTitle>{t('cm.components_pms_BookingDialog.yeni_rezervasyon_olustur')}</DialogTitle>
       <DialogDescription>{t('cm.components_pms_BookingDialog.rezervasyon_bilgilerini_asagiya_girin')}</DialogDescription>
     </DialogHeader>
-    <form onSubmit={(e) => handleCreateBooking(e, selectedGuest ? null : guestSearchQuery)} className="space-y-6">
+    <form onSubmit={async (e) => { e.preventDefault(); if (submitLock.current) return; submitLock.current = true; setSubmitting(true); try { await handleCreateBooking(e, selectedGuest ? null : guestSearchQuery); } finally { submitLock.current = false; setSubmitting(false); } }} className="space-y-6">
+      {/* Check-in and Check-out */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div>
+          <Label>{t('experience.booking.checkIn', "Giriş tarihi *")}</Label>
+          <Input aria-label={t("experience.booking.checkIn", "Giriş tarihi *")} type="date" value={newBooking.check_in} onChange={e => setNewBooking(prev => ({
+              ...prev,
+              check_in: e.target.value
+            }))} required />
+        </div>
+        <div>
+          <Label>{t('experience.booking.checkOut', "Çıkış tarihi *")}</Label>
+          <Input aria-label={t("experience.booking.checkOut", "Çıkış tarihi *")} min={newBooking.check_in || undefined} type="date" value={newBooking.check_out} onChange={e => setNewBooking(prev => ({
+              ...prev,
+              check_out: e.target.value
+            }))} required />
+        </div>
+        <div>
+          <Label>Para Birimi *</Label>
+          <Select value={newBooking.currency || cachedTenantCurrency()} onValueChange={currency => setNewBooking(prev => ({ ...prev, currency }))}>
+            <SelectTrigger data-testid="booking-dialog-currency"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {['TRY', 'EUR', 'USD', 'GBP'].map(code => <SelectItem key={code} value={code}>{code}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
       {/* Guest search */}
-      <div className="grid grid-cols-2 gap-4 items-end">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-end">
         <div>
           <Label>{t('cm.components_pms_BookingDialog.misafir')}</Label>
           {selectedGuest ? <div className="mt-1 flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-md p-2.5" data-testid="booking-dialog-selected-guest">
@@ -129,7 +171,7 @@ const BookingDialog = ({
                   {selectedGuest.total_stays > 0 && ` | ${selectedGuest.total_stays} konaklama`}
                 </p>
               </div>
-              <Button type="button" variant="ghost" size="sm" className="h-6 w-6 p-0 text-blue-400 hover:text-blue-600 hover:bg-blue-100" onClick={handleClearGuest} data-testid="booking-dialog-clear-guest">
+              <Button type="button" variant="ghost" size="sm" aria-label={t("experience.clearGuest", "Misafir seçimini kaldır")} className="h-10 w-10 p-0 text-blue-600 hover:text-blue-600 hover:bg-blue-100" onClick={handleClearGuest} data-testid="booking-dialog-clear-guest">
                 &times;
               </Button>
             </div> : <div className="relative mt-1">
@@ -180,11 +222,11 @@ const BookingDialog = ({
       <div className="mt-4 border rounded-lg p-4 space-y-4 bg-slate-50">
         <div className="flex items-center justify-between">
           <div>
-            <h3 className="font-semibold text-sm">Rooms in this Booking</h3>
-            <p className="text-xs text-slate-500">You can add multiple rooms under one reservation (family, small group, etc.).</p>
+            <h3 className="font-semibold text-sm">{t('experience.booking.rooms', "Bu rezervasyondaki odalar")}</h3>
+            <p className="text-xs text-slate-500">{t('experience.booking.roomsHelp', "Aynı rezervasyona birden fazla oda ekleyebilirsiniz.")}</p>
           </div>
           <Button type="button" variant="outline" size="sm" onClick={addRoomToMultiBooking}>
-            <Plus className="w-4 h-4 mr-1" /> Add Room
+            <Plus className="w-4 h-4 mr-1" /> {t('experience.booking.addRoom', "Oda ekle")}
           </Button>
         </div>
 
@@ -192,48 +234,48 @@ const BookingDialog = ({
           {multiRoomBooking.map((room, index) => {
             const physicalRoom = rooms.find(item => item.id === room.room_id);
             const occupancyRule = findOccupancyRule(occupancyPricingRules, physicalRoom);
-            return <div key={room.id || index} className="border rounded-md bg-white p-3 space-y-3">
+            return <div key={room.id || index} className="border rounded-md bg-card p-3 space-y-3">
               <div className="flex items-center justify-between">
-                <div className="font-medium text-sm">Room #{index + 1}</div>
+                <div className="font-medium text-sm">{t('experience.booking.room', 'Oda')} {index + 1}</div>
                 {multiRoomBooking.length > 1 && <Button type="button" variant="ghost" size="sm" className="text-red-500 hover:text-red-700 hover:bg-red-50" onClick={() => removeRoomFromMultiBooking(index)}>
-                    Remove
+                    {t('experience.booking.remove', "Kaldır")}
                   </Button>}
               </div>
 
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
-                  <Label className="text-xs">Room *</Label>
+                  <Label className="text-xs">{t("experience.booking.room", "Oda")} *</Label>
                   <Select value={room.room_id} onValueChange={v => updateMultiRoomField(index, 'room_id', v)}>
-                    <SelectTrigger><SelectValue placeholder="Select room" /></SelectTrigger>
+                    <SelectTrigger><SelectValue placeholder={t('experience.booking.selectRoom', "Oda seçin")} /></SelectTrigger>
                     <SelectContent>
                       {rooms.filter(r => r.status === 'available').map(r => <SelectItem key={r.id} value={r.id}>
-                          Room {r.room_number} - {r.room_type}
+                          {t('experience.booking.room', 'Oda')} {r.room_number} - {r.room_type}
                         </SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
                 <div>
-                  <Label className="text-xs">Adults</Label>
-                  <Input type="number" min="1" value={room.adults} onChange={e => updateMultiRoomField(index, 'adults', e.target.value)} />
+                  <Label className="text-xs">{t('experience.booking.adults', "Yetişkin")}</Label>
+                  <Input aria-label={t("experience.booking.adults", "Yetişkin")} type="number" min="1" value={room.adults} onChange={e => updateMultiRoomField(index, 'adults', e.target.value)} />
                 </div>
                 <div>
-                  <Label className="text-xs">Children</Label>
-                  <Input type="number" min="0" value={room.children} onChange={e => updateMultiRoomChildrenAges(index, e.target.value)} />
+                  <Label className="text-xs">{t('experience.booking.children', "Çocuk")}</Label>
+                  <Input aria-label={t("experience.booking.children", "Çocuk")} type="number" min="0" value={room.children} onChange={e => updateMultiRoomChildrenAges(index, e.target.value)} />
                 </div>
               </div>
 
               {room.children > 0 && <div>
-                  <Label className="text-xs">Children Ages</Label>
+                  <Label className="text-xs">{t('experience.booking.childAges', "Çocukların yaşları")}</Label>
                   <div className="grid grid-cols-4 gap-2 mt-1">
                     {Array.from({
                     length: room.children
-                  }).map((_, ageIndex) => <Input key={ageIndex} type="number" min="0" max="17" placeholder={`Child ${ageIndex + 1}`} value={room.children_ages?.[ageIndex] ?? ''} onChange={e => updateMultiRoomChildAge(index, ageIndex, e.target.value)} />)}
+                  }).map((_, ageIndex) => <Input key={ageIndex} type="number" min="0" max="17" aria-label={t('experience.childAge', { index: ageIndex + 1, defaultValue: 'Çocuk yaşı' })} placeholder={t('experience.childAge', { index: ageIndex + 1, defaultValue: 'Çocuk yaşı' })} value={room.children_ages?.[ageIndex] ?? ''} onChange={e => updateMultiRoomChildAge(index, ageIndex, e.target.value)} />)}
                   </div>
                 </div>}
 
-              <div className="grid grid-cols-2 gap-3 pt-2 border-t mt-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t mt-2">
                 <div>
-                  <Label className="text-xs">Rate Plan</Label>
+                  <Label className="text-xs">{t('experience.booking.ratePlan', "Fiyat planı")}</Label>
                   <Select value={room.rate_plan || ''} onValueChange={v => {
                     // Set rate plan and suggest base rate from selected plan
                     const selected = ratePlans.find(rp => rp.code === v || rp.id === v);
@@ -248,7 +290,7 @@ const BookingDialog = ({
                       }
                     }
                   }}>
-                    <SelectTrigger><SelectValue placeholder="Select rate plan" /></SelectTrigger>
+                    <SelectTrigger><SelectValue placeholder={t('experience.booking.selectRatePlan', "Fiyat planı seçin")} /></SelectTrigger>
                     <SelectContent>
                       {ratePlans.map(rp => <SelectItem key={rp.id} value={rp.code || rp.id}>
                           {rp.name} ({rp.code}) - {rp.currency} {rp.base_price}
@@ -257,9 +299,9 @@ const BookingDialog = ({
                   </Select>
                 </div>
                 <div>
-                  <Label className="text-xs">Package</Label>
+                  <Label className="text-xs">{t('experience.booking.package', "Paket")}</Label>
                   <Select value={room.package_code || ''} onValueChange={v => updateMultiRoomField(index, 'package_code', v)}>
-                    <SelectTrigger><SelectValue placeholder="No package" /></SelectTrigger>
+                    <SelectTrigger><SelectValue placeholder={t('experience.booking.noPackage', "Paket seçilmedi")} /></SelectTrigger>
                     <SelectContent>
                       {packages.map(pkg => <SelectItem key={pkg.id} value={pkg.code}>
                           {pkg.name} ({pkg.code})
@@ -269,49 +311,22 @@ const BookingDialog = ({
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3 pt-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
                 <div>
-                  <Label className="text-xs">Base Rate</Label>
+                  <Label className="text-xs">{t('experience.booking.baseRate', "Temel fiyat")}</Label>
                   <Input type="number" step="0.01" value={room.base_rate === 0 ? '' : room.base_rate} onChange={e => updateMultiRoomField(index, 'base_rate', e.target.value)} />
                 </div>
                 <div>
-                  <Label className="text-xs">{room.apply_occupancy_pricing ? 'Hesaplanan toplam' : 'Total Amount *'}</Label>
+                  <Label className="text-xs">{room.apply_occupancy_pricing ? 'Hesaplanan toplam' : t('experience.booking.total', 'Toplam tutar *')}</Label>
                   <Input type="number" step="0.01" value={room.total_amount === 0 ? '' : room.total_amount} disabled={room.apply_occupancy_pricing} onChange={e => updateMultiRoomField(index, 'total_amount', e.target.value)} />
                 </div>
               </div>
               {room.apply_occupancy_pricing && occupancyRule && <div className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800">
                 {occupancyRule.base_occupancy} yetişkin fiyata dahil · Ek yetişkin {formatCurrency(occupancyRule.extra_adult_rate, newBooking.currency || room.currency || cachedTenantCurrency())}/gece.
                 {occupancyRule.child_age_bands?.length > 0 && ` Çocuk yaş kademeleri: ${occupancyRule.child_age_bands.map(band => `${band.min_age}–${band.max_age} ${band.pricing_mode === 'free' ? 'ücretsiz' : band.pricing_mode === 'adult_rate' ? 'yetişkin sayılır' : band.pricing_mode === 'adult_percentage' ? `%${band.value}` : formatCurrency(band.value, newBooking.currency || room.currency || cachedTenantCurrency())}`).join(', ')}.`}
-                {' '}Toplam backend tarafından yeniden doğrulanır.
+                {' '}Toplam tutar kaydetme sırasında doğrulanır.
               </div>}
             </div>})}
-        </div>
-      </div>
-
-      {/* Check-in and Check-out */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div>
-          <Label>Check-in *</Label>
-          <Input type="date" value={newBooking.check_in} onChange={e => setNewBooking(prev => ({
-              ...prev,
-              check_in: e.target.value
-            }))} required />
-        </div>
-        <div>
-          <Label>Check-out *</Label>
-          <Input type="date" value={newBooking.check_out} onChange={e => setNewBooking(prev => ({
-              ...prev,
-              check_out: e.target.value
-            }))} required />
-        </div>
-        <div>
-          <Label>Para Birimi *</Label>
-          <Select value={newBooking.currency || cachedTenantCurrency()} onValueChange={currency => setNewBooking(prev => ({ ...prev, currency }))}>
-            <SelectTrigger data-testid="booking-dialog-currency"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              {['TRY', 'EUR', 'USD', 'GBP'].map(code => <SelectItem key={code} value={code}>{code}</SelectItem>)}
-            </SelectContent>
-          </Select>
         </div>
       </div>
 
@@ -330,112 +345,112 @@ const BookingDialog = ({
 
       {/* Children Ages - Show only if children > 0 */}
       {newBooking.children > 0 && <div>
-          <Label>Children Ages</Label>
+          <Label>{t('experience.booking.childAges', "Çocukların yaşları")}</Label>
           <div className="grid grid-cols-4 gap-2 mt-2">
             {Array.from({
               length: newBooking.children
-            }).map((_, index) => <Input key={index} type="number" min="0" max="17" placeholder={`Child ${index + 1} age`} value={newBooking.children_ages[index] || ''} onChange={e => handleChildAgeChange(index, e.target.value)} />)}
+            }).map((_, index) => <Input key={index} type="number" min="0" max="17" aria-label={t('experience.childAge', { index: index + 1, defaultValue: 'Çocuk yaşı' })} placeholder={t('experience.childAge', { index: index + 1, defaultValue: 'Çocuk yaşı' })} value={newBooking.children_ages[index] || ''} onChange={e => handleChildAgeChange(index, e.target.value)} />)}
           </div>
         </div>}
 
       {/* Company Selection */}
       <div>
         <div className="flex justify-between items-center mb-2">
-          <Label>Firma (isteğe bağlı)</Label>
+          <Label>{t('experience.booking.company', "Firma (isteğe bağlı)")}</Label>
           <Button type="button" variant="outline" size="sm" onClick={() => setOpenDialog('company')}>
             <Plus className="w-4 h-4 mr-1" />
-            New Company
+            {t('experience.booking.newCompany', "Yeni firma ekle")}
           </Button>
         </div>
         <Select value={newBooking.company_id || "none"} onValueChange={handleCompanySelect}>
-          <SelectTrigger><SelectValue placeholder="Select company (optional)" /></SelectTrigger>
+          <SelectTrigger><SelectValue placeholder={t('experience.booking.selectCompany', "Firma seçin (isteğe bağlı)")} /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="none">None</SelectItem>
+            <SelectItem value="none">{t('experience.booking.none', "Seçilmedi")}</SelectItem>
             {companies.filter(c => c.status === 'active').map(c => <SelectItem key={c.id} value={c.id}>{c.name} - {c.corporate_code}</SelectItem>)}
           </SelectContent>
         </Select>
       </div>
 
       {/* Contracted Rate */}
-      {newBooking.company_id && <div className="grid grid-cols-2 gap-4">
+      {newBooking.company_id && <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <Label>Contracted Rate</Label>
+            <Label>{t('experience.booking.contracted', "Anlaşmalı fiyat")}</Label>
             <Select value={newBooking.contracted_rate} onValueChange={handleContractedRateSelect}>
-              <SelectTrigger><SelectValue placeholder="Select rate" /></SelectTrigger>
+              <SelectTrigger><SelectValue placeholder={t('experience.booking.selectRate', "Fiyat seçin")} /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="corp_std">Standard Corporate</SelectItem>
-                <SelectItem value="corp_pref">Preferred Corporate</SelectItem>
-                <SelectItem value="gov">Government Rate</SelectItem>
-                <SelectItem value="ta">Travel Agent Rate</SelectItem>
-                <SelectItem value="crew">Airline Crew Rate</SelectItem>
-                <SelectItem value="mice">Event/Conference Rate</SelectItem>
-                <SelectItem value="lts">Long Stay/Project Rate</SelectItem>
-                <SelectItem value="tou">Tour Operator Rate</SelectItem>
+                <SelectItem value="corp_std">{t('experience.booking.corpStd', "Standart kurumsal")}</SelectItem>
+                <SelectItem value="corp_pref">{t('experience.booking.corpPref', "Özel kurumsal")}</SelectItem>
+                <SelectItem value="gov">{t('experience.booking.government', "Kamu fiyatı")}</SelectItem>
+                <SelectItem value="ta">{t('experience.booking.travelAgent', "Acente fiyatı")}</SelectItem>
+                <SelectItem value="crew">{t('experience.booking.crew', "Uçuş ekibi fiyatı")}</SelectItem>
+                <SelectItem value="mice">{t('experience.booking.event', "Etkinlik ve konferans fiyatı")}</SelectItem>
+                <SelectItem value="lts">{t('experience.booking.longProject', "Uzun konaklama ve proje fiyatı")}</SelectItem>
+                <SelectItem value="tou">{t('experience.booking.tour', "Tur operatörü fiyatı")}</SelectItem>
               </SelectContent>
             </Select>
           </div>
           <div>
-            <Label>Rate Type</Label>
+            <Label>{t('experience.booking.rateType', "Fiyat türü")}</Label>
             <Select value={newBooking.rate_type} onValueChange={v => setNewBooking({
               ...newBooking,
               rate_type: v
             })}>
-              <SelectTrigger><SelectValue placeholder="Select type" /></SelectTrigger>
+              <SelectTrigger><SelectValue placeholder={t('experience.booking.selectType', "Tür seçin")} /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="bar">BAR / Rack Rate</SelectItem>
-                <SelectItem value="corporate">Corporate Rate</SelectItem>
-                <SelectItem value="government">Government Rate</SelectItem>
-                <SelectItem value="wholesale">Wholesale Rate</SelectItem>
-                <SelectItem value="package">Package Rate</SelectItem>
-                <SelectItem value="promotional">Promotional Rate</SelectItem>
-                <SelectItem value="non_refundable">Non-Refundable</SelectItem>
-                <SelectItem value="long_stay">Long Stay Rate</SelectItem>
-                <SelectItem value="day_use">Day Use Rate</SelectItem>
+                <SelectItem value="bar">{t('experience.booking.bar', "Standart satış fiyatı (BAR)")}</SelectItem>
+                <SelectItem value="corporate">{t('experience.booking.corp', "Kurumsal fiyat")}</SelectItem>
+                <SelectItem value="government">{t('experience.booking.government', "Kamu fiyatı")}</SelectItem>
+                <SelectItem value="wholesale">{t('experience.booking.wholesale', "Toptan satış fiyatı")}</SelectItem>
+                <SelectItem value="package">{t('experience.booking.packageRate', "Paket fiyatı")}</SelectItem>
+                <SelectItem value="promotional">{t('experience.booking.promo', "Kampanyalı fiyat")}</SelectItem>
+                <SelectItem value="non_refundable">{t('experience.booking.nonRefundable', "İade edilmez")}</SelectItem>
+                <SelectItem value="long_stay">{t('experience.booking.longStay', "Uzun konaklama fiyatı")}</SelectItem>
+                <SelectItem value="day_use">{t('experience.booking.dayUse', "Günübirlik kullanım fiyatı")}</SelectItem>
               </SelectContent>
             </Select>
           </div>
         </div>}
 
       {/* Market Segment and Cancellation Policy */}
-      {newBooking.company_id && <div className="grid grid-cols-2 gap-4">
+      {newBooking.company_id && <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <Label>Market Segment</Label>
+            <Label>{t('experience.booking.segment', "Pazar segmenti")}</Label>
             <Select value={newBooking.market_segment} onValueChange={v => setNewBooking({
               ...newBooking,
               market_segment: v
             })}>
-              <SelectTrigger><SelectValue placeholder="Select segment" /></SelectTrigger>
+              <SelectTrigger><SelectValue placeholder={t('experience.booking.selectSegment', "Segment seçin")} /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="corporate">Corporate</SelectItem>
-                <SelectItem value="leisure">Leisure</SelectItem>
-                <SelectItem value="group">Group</SelectItem>
-                <SelectItem value="mice">MICE/Event</SelectItem>
-                <SelectItem value="government">Government</SelectItem>
-                <SelectItem value="crew">Airline Crew</SelectItem>
-                <SelectItem value="wholesale">Wholesale</SelectItem>
-                <SelectItem value="long_stay">Long Stay</SelectItem>
-                <SelectItem value="complimentary">Complimentary</SelectItem>
-                <SelectItem value="other">Other</SelectItem>
+                <SelectItem value="corporate">{t('experience.booking.corporate', "Kurumsal")}</SelectItem>
+                <SelectItem value="leisure">{t('experience.booking.leisure', "Tatil")}</SelectItem>
+                <SelectItem value="group">{t('experience.booking.group', "Grup")}</SelectItem>
+                <SelectItem value="mice">{t('experience.booking.mice', "Toplantı ve etkinlik")}</SelectItem>
+                <SelectItem value="government">{t('experience.booking.gov', "Kamu")}</SelectItem>
+                <SelectItem value="crew">{t('experience.booking.airline', "Uçuş ekibi")}</SelectItem>
+                <SelectItem value="wholesale">{t('experience.booking.wholesaler', "Toptan satış")}</SelectItem>
+                <SelectItem value="long_stay">{t('experience.booking.long', "Uzun konaklama")}</SelectItem>
+                <SelectItem value="complimentary">{t('experience.booking.comp', "Ücretsiz konaklama")}</SelectItem>
+                <SelectItem value="other">{t('experience.booking.other', "Diğer")}</SelectItem>
               </SelectContent>
             </Select>
           </div>
           <div>
-            <Label>Cancellation Policy</Label>
+            <Label>{t('experience.booking.cancelPolicy', "İptal koşulu")}</Label>
             <Select value={newBooking.cancellation_policy} onValueChange={v => setNewBooking({
               ...newBooking,
               cancellation_policy: v
             })}>
-              <SelectTrigger><SelectValue placeholder="Select policy" /></SelectTrigger>
+              <SelectTrigger><SelectValue placeholder={t('experience.booking.selectPolicy', "İptal koşulu seçin")} /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="same_day">Same Day (18:00)</SelectItem>
-                <SelectItem value="h24">24 Hours</SelectItem>
-                <SelectItem value="h48">48 Hours</SelectItem>
-                <SelectItem value="h72">72 Hours</SelectItem>
-                <SelectItem value="d7">7 Days</SelectItem>
-                <SelectItem value="d14">14 Days</SelectItem>
-                <SelectItem value="non_refundable">Non-Refundable</SelectItem>
-                <SelectItem value="flexible">Flexible</SelectItem>
-                <SelectItem value="special_event">Special Event</SelectItem>
+                <SelectItem value="same_day">{t('experience.booking.sameDay', "Aynı gün (18.00)")}</SelectItem>
+                <SelectItem value="h24">{t('experience.booking.h24', "24 saat")}</SelectItem>
+                <SelectItem value="h48">{t('experience.booking.h48', "48 saat")}</SelectItem>
+                <SelectItem value="h72">{t('experience.booking.h72', "72 saat")}</SelectItem>
+                <SelectItem value="d7">{t('experience.booking.d7', "7 gün")}</SelectItem>
+                <SelectItem value="d14">{t('experience.booking.d14', "14 gün")}</SelectItem>
+                <SelectItem value="non_refundable">{t('experience.booking.nonRefundable', "İade edilmez")}</SelectItem>
+                <SelectItem value="flexible">{t('experience.booking.flex', "Esnek")}</SelectItem>
+                <SelectItem value="special_event">{t('experience.booking.special', "Özel etkinlik")}</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -443,17 +458,17 @@ const BookingDialog = ({
 
       {/* Billing Information */}
       {newBooking.company_id && <div className="space-y-4 border-t pt-4">
-          <h3 className="font-semibold">Billing Information</h3>
+          <h3 className="font-semibold">{t('experience.booking.billing', "Fatura bilgileri")}</h3>
           <div>
-            <Label>Billing Address</Label>
+            <Label>{t('experience.booking.address', "Fatura adresi")}</Label>
             <Textarea value={newBooking.billing_address} onChange={e => setNewBooking({
               ...newBooking,
               billing_address: e.target.value
             })} rows={2} />
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <Label>Tax Number</Label>
+              <Label>{t('experience.booking.tax', "Vergi numarası")}</Label>
               <Input value={newBooking.billing_tax_number} onChange={e => setNewBooking({
                 ...newBooking,
                 billing_tax_number: e.target.value
@@ -463,7 +478,7 @@ const BookingDialog = ({
 
             </div>
             <div>
-              <Label>Contact Person</Label>
+              <Label>{t('experience.booking.contact', "İlgili kişi")}</Label>
               <Input value={newBooking.billing_contact_person} onChange={e => setNewBooking({
                 ...newBooking,
                 billing_contact_person: e.target.value
@@ -475,17 +490,17 @@ const BookingDialog = ({
       {/* Channel selection (rate details managed per-room above) */}
       <div className="grid grid-cols-3 gap-4 border-t pt-4">
         <div className="col-span-2 text-xs text-gray-500 flex items-center">
-          Per-room base rate and total amount are managed in the multi-room section above.
+          {t('experience.booking.rateHelp', "Oda fiyatlarını ve tutarlarını yukarıdaki oda bölümünden düzenleyebilirsiniz.")}
         </div>
         <div>
-          <Label>Channel</Label>
+          <Label>{t('experience.booking.channel', "Rezervasyon kanalı")}</Label>
           <Select value={newBooking.channel} onValueChange={v => setNewBooking({
               ...newBooking,
               channel: v
             })}>
             <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="direct">Direct</SelectItem>
+              <SelectItem value="direct">{t('experience.booking.direct', "Doğrudan")}</SelectItem>
               <SelectItem value="booking_com">Booking.com</SelectItem>
               <SelectItem value="expedia">Expedia</SelectItem>
               <SelectItem value="airbnb">Airbnb</SelectItem>
@@ -497,14 +512,14 @@ const BookingDialog = ({
 
       {/* Override Reason - Show if rate is different from base */}
       {newBooking.base_rate > 0 && newBooking.base_rate !== newBooking.total_amount && <div className="bg-yellow-50 border border-yellow-200 p-4 rounded">
-          <Label className="text-yellow-800">Override Reason * (Required for rate change)</Label>
+          <Label className="text-yellow-800">{t('experience.booking.override', "Fiyat değişikliği gerekçesi *")}</Label>
           <Textarea value={newBooking.override_reason} onChange={e => setNewBooking({
             ...newBooking,
             override_reason: e.target.value
-          })} placeholder="Explain why the rate is different from the base rate..." className="mt-2" required />
+          })} placeholder={t('experience.booking.overrideHelp', "Fiyat değişikliğinin nedenini açıklayın.")} className="mt-2" required />
         </div>}
 
-      <Button type="submit" className="w-full">Create Booking</Button>
+      <div className="sticky bottom-0 -mx-4 border-t bg-background px-4 py-3 sm:-mx-6 sm:px-6"><p className="mb-2 text-sm text-muted-foreground">{t("experience.booking.review", "Kaydetmeden önce tarihleri, oda seçimini ve toplam tutarı kontrol edin.")}</p><Button type="submit" disabled={submitting} aria-busy={submitting} className="w-full">{t('experience.booking.create', "Rezervasyonu oluştur")}</Button></div>
     </form>
   </DialogContent>
 </Dialog>;

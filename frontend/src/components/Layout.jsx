@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -30,7 +30,9 @@ import {
   Utensils, Briefcase, ConciergeBell, BedDouble } from 'lucide-react';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import LanguageSelector from '@/components/LanguageSelector';
-import AppLauncher from '@/components/AppLauncher';
+import WorkspaceTools from '@/components/experience/WorkspaceTools';
+import { useWorkspaceReturnPosition } from '@/hooks/useWorkspaceReturnPosition';
+import { experienceScope, readExperiencePreference, writeExperiencePreference, roleStartItems } from '@/lib/productExperience';
 
 import NotificationBell from '@/components/NotificationBell';
 import NightScreen from '@/components/NightScreen';
@@ -202,17 +204,12 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
   const roleLabel = userRoleLabel(user?.role, t);
   const accessScopeLabel = userAccessScopeLabel(user?.role);
   const navRef = useRef(null);
+  const scope = experienceScope(user, tenant);
+  const [navigationMode, setNavigationMode] = useState(() => readExperiencePreference(scope, 'navigationMode', 'hotel'));
+  useEffect(() => { setNavigationMode(readExperiencePreference(scope, 'navigationMode', 'hotel')); }, [scope]);
   const mainRef = useRef(null);
 
-  useEffect(() => {
-    if (location.hash) return;
-    if (mainRef.current) {
-      mainRef.current.scrollTop = 0;
-    }
-    if (typeof window !== 'undefined') {
-      window.scrollTo(0, 0);
-    }
-  }, [location.pathname, location.hash]);
+  useWorkspaceReturnPosition(mainRef, location.pathname, scope, location.hash);
   const hiddenNavGroups = useMemo(() => new Set(tenant?.hidden_nav_groups || []), [tenant]);
 
   const currentTier = useMemo(() => {
@@ -275,8 +272,8 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
 
   const navGroupLabel = (group) => tenant?.nav_group_labels?.[group.id]
     || t(`navGroups.${group.id}`, group.label);
-  const navItemLabel = (item) => tenant?.nav_item_labels?.[item.key]
-    || t(`navKeys.${item.key}`, item.label);
+  const navItemLabel = useCallback((item) => tenant?.nav_item_labels?.[item.key]
+    || t(`navKeys.${item.key}`, item.label), [tenant?.nav_item_labels, t]);
 
   const roleWorkspace = useMemo(() => {
     const roles = normalizedUserRoles(user);
@@ -286,8 +283,10 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
     if ([...roles].some((role) => ['gm', 'general_manager', 'manager', 'owner'].includes(role)) && hasModule('gm_dashboards')) {
       return { path: '/executive', label: t('navKeys.general_manager_dashboard', 'GM Paneli') };
     }
-    return { path: '/app/dashboard', label: null };
-  }, [hasModule, t, user]);
+    const start = roleStartItems(user, visibleNav)[0];
+    const specialized = ['housekeeping', 'waiter', 'restaurant', 'fnb', 'sales', 'cashier'].includes(user?.role);
+    return specialized && start ? { path: start.path, label: navItemLabel(start) } : { path: '/app/dashboard', label: null };
+  }, [hasModule, t, user, visibleNav, navItemLabel]);
 
   const currentTabParam = new URLSearchParams(location.search).get('tab');
   const isItemPathActive = (item) => {
@@ -357,7 +356,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
                 <Button
                   variant="ghost"
                   size="sm"
-                  className={`flex items-center gap-1 px-2 py-1.5 text-[11px] whitespace-nowrap rounded-md transition-all duration-150 h-8 ${
+                  className={`flex items-center gap-1 px-2 py-1.5 text-sm whitespace-normal text-left rounded-md transition-all duration-150 min-h-10 h-auto justify-start ${
                     active
                       ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-sm'
                       : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
@@ -367,7 +366,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
                   title={label}
                 >
                   <GroupIcon className="w-3.5 h-3.5 shrink-0" />
-                  <span className="hidden lg:inline font-medium">{label}</span>
+                  <span className="font-medium">{label}</span>
                   <ChevronDown className={`w-2.5 h-2.5 shrink-0 ${active ? 'text-white/70' : 'text-gray-400'}`} />
                 </Button>
               </DropdownMenuTrigger>
@@ -439,7 +438,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
               title={t("navGroups.apps", "Tüm Uygulamalar")}
             >
               <Grid3X3 className="w-3.5 h-3.5 shrink-0" />
-              <span className="hidden lg:inline font-medium">{t("navGroups.apps", "Tüm Uygulamalar")}</span>
+              <span className="hidden sm:inline font-medium">{t("navGroups.apps", "Tüm Uygulamalar")}</span>
             </Button>
           </TooltipTrigger>
           <TooltipContent side="bottom" className="lg:hidden"><p>{t("navGroups.apps", "Tüm Uygulamalar")}</p></TooltipContent>
@@ -478,16 +477,18 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:bg-none dark:bg-background flex flex-col" data-testid="app-shell">
+    <div className="min-h-screen bg-background flex flex-col" data-testid="app-shell">
+      <a href="#workspace-main" className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-[100] focus:rounded focus:bg-background focus:p-3">{t("experience.skip", "İçeriğe geç")}</a>
       <header className="print:hidden bg-white border-b border-gray-200 sticky top-0 z-50 shadow-sm shrink-0">
         <div className="px-3 py-1.5">
           <div className="flex items-center min-h-[44px]">
             <div
-              className="flex items-center gap-2 shrink-0 cursor-pointer mr-3"
+              role="button" tabIndex={0} aria-label={t("experience.start", "Çalışma alanınız")} onKeyDown={event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); navigate(roleWorkspace.path); } }}
+              className="flex items-center gap-2 shrink-0 cursor-pointer mr-auto"
               onClick={() => navigate(roleWorkspace.path)}
             >
-              <img src="/syroce-logo.svg" alt="Syroce" className="h-7 w-auto" />
-              <div className="hidden lg:flex flex-col leading-none">
+              <img src="/syroce-logo.svg" alt="Syroce" className="h-7 w-auto dark:brightness-0 dark:invert" />
+              <div className="hidden sm:flex flex-col leading-none">
                 <span className="text-[9px] uppercase tracking-widest text-gray-400">Syroce PMS</span>
                 <span className="text-xs font-semibold text-gray-700 truncate max-w-[120px]" title={tenant?.property_name || ''}>
                   {tenant?.property_name || 'Hotel'}
@@ -495,89 +496,9 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
               </div>
             </div>
 
-            <nav ref={navRef} className="hidden md:flex items-center gap-0.5 flex-1 min-w-0 overflow-x-auto pb-1.5 [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-gray-300 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-gray-400" style={{ scrollbarWidth: 'auto', scrollbarColor: '#94a3b8 transparent' }}>
-              {[...standaloneItems.filter((item) => item.key === 'dashboard'), ...visibleNav.filter((item) => item.key === 'reservation_calendar')].map((item) => {
-                const Icon = ICON_BY_KEY[item.key] || Home;
-                const isDashboard = item.key === 'dashboard';
-                const targetPath = isDashboard ? roleWorkspace.path : item.path;
-                const label = isDashboard ? (roleWorkspace.label || navItemLabel(item)) : navItemLabel(item);
-                const isActive = isDashboard ? (location.pathname === roleWorkspace.path || normalizedCurrentModule === normalizeKey(item.key) || isItemPathActive(item)) : (normalizedCurrentModule === normalizeKey(item.key) || isItemPathActive(item));
-                
-                return (
-                  <TooltipProvider key={item.key} delayDuration={300}>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleNavigate(targetPath)}
-                          onPointerDown={() => preloadRoute(targetPath)}
-                          onMouseEnter={() => preloadRoute(targetPath)}
-                          onFocus={() => preloadRoute(targetPath)}
-                          className={`flex items-center gap-1 px-2 py-1.5 text-[11px] whitespace-nowrap rounded-md h-8 transition-all duration-150 ${
-                            isActive
-                              ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-sm'
-                              : 'text-gray-600 hover:bg-gray-100'
-                          }`}
-                          data-nav-key={item.key}
-                          data-testid={`nav-${item.key}-button`}
-                          aria-label={label}
-                          title={label}
-                        >
-                          <Icon className="w-3.5 h-3.5 shrink-0" />
-                          <span className="hidden lg:inline font-medium">{label}</span>
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent side="bottom" className="lg:hidden">
-                        <p>{label}</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                );
-              })}
 
-              <div className="w-px h-5 bg-gray-200 mx-1 shrink-0" />
-              {/* Odalar kısayolu — PMS'in rooms sekmesine direkt bağlantı */}
-              {visibleNav.some((item) => item.key === 'pms') && canAccessPmsTab(user, 'rooms') && (() => {
-                const roomsPath = '/app/pms#rooms';
-                const isRoomsActive = location.pathname === '/app/pms' && location.hash === '#rooms';
-                const roomsLabel = t('navKeys.rooms', 'Odalar');
-                return (
-                  <TooltipProvider key="rooms-shortcut" delayDuration={300}>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleNavigate(roomsPath)}
-                          onPointerDown={() => preloadRoute('/app/pms')}
-                          onMouseEnter={() => preloadRoute('/app/pms')}
-                          onFocus={() => preloadRoute('/app/pms')}
-                          className={`flex items-center gap-1 px-2 py-1.5 text-[11px] whitespace-nowrap rounded-md h-8 transition-all duration-150 ${
-                            isRoomsActive
-                              ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-sm'
-                              : 'text-gray-600 hover:bg-gray-100'
-                          }`}
-                          data-nav-key="rooms-shortcut"
-                          data-testid="nav-rooms-shortcut-button"
-                          aria-label={roomsLabel}
-                          title={roomsLabel}
-                        >
-                          <BedDouble className="w-3.5 h-3.5 shrink-0" />
-                          <span className="hidden lg:inline font-medium">{roomsLabel}</span>
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent side="bottom" className="lg:hidden">
-                        <p>{roomsLabel}</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                );
-              })()}
-              {navigationGroups.map((groupDef) => renderGroupDropdown(groupDef))}
-            </nav>
 
-            <div className="flex items-center gap-1.5 shrink-0 ml-2">
+            <div className="flex items-center gap-1 shrink-0 ml-2">
               {renderApplicationsButton()}
               {renderModuleStoreButton()}
               {standaloneItems.filter((item) => item.key === 'settings').map((item) => {
@@ -594,7 +515,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
                           onPointerDown={() => preloadRoute(item.path)}
                           onMouseEnter={() => preloadRoute(item.path)}
                           onFocus={() => preloadRoute(item.path)}
-                          className={`hidden md:flex items-center gap-1 px-2 py-1.5 text-[11px] whitespace-nowrap rounded-md h-8 transition-all duration-150 ${
+                          className={`hidden md:flex justify-start items-center gap-2 px-3 py-2 text-sm whitespace-normal text-left rounded-md min-h-10 h-auto transition-all duration-150 ${
                             isActive
                               ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-sm'
                               : 'text-gray-600 hover:bg-gray-100'
@@ -614,19 +535,17 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
                   </TooltipProvider>
                 );
               })}
-              <div className="hidden md:block">
+              <div className="hidden xl:block">
                 <LanguageSelector />
               </div>
-              <PushSubscriptionManager />
-              <AppLauncher user={user} />
+              <WorkspaceTools key={scope} user={user} tenant={tenant} items={visibleNav} />
               <NotificationBell />
-              <ThemeToggle />
-              <NightScreen />
+              <div className="hidden lg:flex"><ThemeToggle /><NightScreen /></div>
 
               <Button
                 variant="ghost"
                 size="sm"
-                className="md:hidden h-8 w-8 p-0 dark:text-gray-100"
+                className="xl:hidden h-10 w-10 p-0 dark:text-gray-100"
                 onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
                 data-testid="mobile-menu-toggle"
                 aria-label={mobileMenuOpen ? 'Gezinme menüsünü kapat' : 'Gezinme menüsünü aç'}
@@ -659,12 +578,10 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
                   {!isSuperAdmin && (
                     <DropdownMenuItem className="text-sm text-gray-600">
                       <span className="text-gray-500 mr-1">Plan:</span>
-                      <span className={`inline-flex items-center gap-1 ${tierConfig.cls} px-2 py-0.5 rounded-full text-[10px] font-semibold`}>
-                        <TierIcon className="w-3 h-3" />
-                        {tierConfig.label}
-                      </span>
+                      <span className="font-semibold">{tierConfig.label}</span>
                     </DropdownMenuItem>
                   )}
+                  <div className="px-2 py-1"><PushSubscriptionManager /></div>
                   <DropdownMenuItem onClick={() => navigate('/app/profile')} className="text-sm cursor-pointer">
                     <User className="w-4 h-4 mr-2" />
                     Profilim
@@ -679,12 +596,9 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
           </div>
 
           {mobileMenuOpen && (
-            <nav id="mobile-navigation" className="md:hidden mt-2 pb-2 border-t pt-2 max-h-[70vh] overflow-y-auto" data-testid="mobile-nav">
+            <nav id="mobile-navigation" className="xl:hidden mt-2 pb-2 border-t pt-2 max-h-[70vh] overflow-y-auto" data-testid="mobile-nav">
               <div className="px-2 pb-2 flex items-center gap-2">
-                <span className={`inline-flex items-center gap-1 ${tierConfig.cls} px-2 py-0.5 rounded-full text-xs font-semibold border`}>
-                  <TierIcon className="w-3 h-3" />
-                  {tierConfig.label}
-                </span>
+
                 <LanguageSelector />
               </div>
 
@@ -700,7 +614,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
                 const targetPath = isDashboard ? roleWorkspace.path : item.path;
                 const label = isDashboard ? (roleWorkspace.label || navItemLabel(item)) : navItemLabel(item);
                 const isActive = isDashboard ? (location.pathname === roleWorkspace.path || normalizedCurrentModule === normalizeKey(item.key) || isItemPathActive(item)) : (normalizedCurrentModule === normalizeKey(item.key) || isItemPathActive(item));
-                
+
                 return (
                   <Button key={item.key} variant="ghost" size="sm" onClick={() => handleNavigate(targetPath, true)} onMouseEnter={() => preloadRoute(targetPath)} onFocus={() => preloadRoute(targetPath)}
                     className={`w-full justify-start py-2 mb-0.5 ${isActive ? 'bg-blue-600 text-white hover:bg-blue-700' : 'hover:bg-gray-100 dark:text-gray-100'}`}
@@ -710,7 +624,8 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
                 );
               })}
 
-              {navigationGroups.map((groupDef) => {
+              {isSuperAdmin && <div className="grid grid-cols-2 gap-1 p-2">{["hotel", "platform"].map(mode => <Button key={mode} size="sm" variant={navigationMode === mode ? "default" : "ghost"} aria-pressed={navigationMode === mode} onClick={() => { setNavigationMode(mode); writeExperiencePreference(scope, "navigationMode", mode); }}>{t(`experience.${mode}`, mode === "hotel" ? "Otel" : "Platform")}</Button>)}</div>}
+              {navigationGroups.filter(group => !isSuperAdmin || (navigationMode === "platform" ? group.id === "admin" : group.id !== "admin")).map((groupDef) => {
                 const items = groupedItems[groupDef.id];
                 if (!items || items.length === 0) return null;
                 const GroupIcon = GROUP_ICONS[groupDef.id] || Home;
@@ -815,14 +730,100 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
       <PMSDateBadge inLayout />
       <WakeUpAlarmMonitor tenant={tenant} />
 
+      <div className="flex flex-1 min-w-0">
+            <nav ref={navRef} className="hidden xl:flex w-64 shrink-0 flex-col items-stretch gap-1 border-r bg-background p-3 sticky top-16 self-start max-h-[calc(100vh-7rem)] overflow-y-auto">
+              {[...standaloneItems.filter((item) => item.key === 'dashboard'), ...visibleNav.filter((item) => item.key === 'reservation_calendar')].map((item) => {
+                const Icon = ICON_BY_KEY[item.key] || Home;
+                const isDashboard = item.key === 'dashboard';
+                const targetPath = isDashboard ? roleWorkspace.path : item.path;
+                const label = isDashboard ? (roleWorkspace.label || navItemLabel(item)) : navItemLabel(item);
+                const isActive = isDashboard ? (location.pathname === roleWorkspace.path || normalizedCurrentModule === normalizeKey(item.key) || isItemPathActive(item)) : (normalizedCurrentModule === normalizeKey(item.key) || isItemPathActive(item));
+
+                return (
+                  <TooltipProvider key={item.key} delayDuration={300}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleNavigate(targetPath)}
+                          onPointerDown={() => preloadRoute(targetPath)}
+                          onMouseEnter={() => preloadRoute(targetPath)}
+                          onFocus={() => preloadRoute(targetPath)}
+                          className={`flex w-full justify-start items-center gap-2 px-3 py-2 text-sm whitespace-normal text-left rounded-md min-h-10 h-auto transition-all duration-150 ${
+                            isActive
+                              ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-sm'
+                              : 'text-gray-600 hover:bg-gray-100'
+                          }`}
+                          data-nav-key={item.key}
+                          data-testid={`nav-${item.key}-button`}
+                          aria-label={label}
+                          title={label}
+                        >
+                          <Icon className="w-3.5 h-3.5 shrink-0" />
+                          <span className="font-medium">{label}</span>
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom" className="lg:hidden">
+                        <p>{label}</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                );
+              })}
+
+              <div className="h-px w-full bg-border my-2 shrink-0" />
+              {/* Odalar kısayolu — PMS'in rooms sekmesine direkt bağlantı */}
+              {visibleNav.some((item) => item.key === 'pms') && canAccessPmsTab(user, 'rooms') && (() => {
+                const roomsPath = '/app/pms#rooms';
+                const isRoomsActive = location.pathname === '/app/pms' && location.hash === '#rooms';
+                const roomsLabel = t('navKeys.rooms', 'Odalar');
+                return (
+                  <TooltipProvider key="rooms-shortcut" delayDuration={300}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleNavigate(roomsPath)}
+                          onPointerDown={() => preloadRoute('/app/pms')}
+                          onMouseEnter={() => preloadRoute('/app/pms')}
+                          onFocus={() => preloadRoute('/app/pms')}
+                          className={`flex w-full justify-start items-center gap-2 px-3 py-2 text-sm whitespace-normal text-left rounded-md min-h-10 h-auto transition-all duration-150 ${
+                            isRoomsActive
+                              ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-sm'
+                              : 'text-gray-600 hover:bg-gray-100'
+                          }`}
+                          data-nav-key="rooms-shortcut"
+                          data-testid="nav-rooms-shortcut-button"
+                          aria-label={roomsLabel}
+                          title={roomsLabel}
+                        >
+                          <BedDouble className="w-3.5 h-3.5 shrink-0" />
+                          <span className="font-medium">{roomsLabel}</span>
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom" className="lg:hidden">
+                        <p>{roomsLabel}</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                );
+              })()}
+              {isSuperAdmin && <div className="mb-2 grid grid-cols-2 gap-1 rounded-lg bg-muted p-1" aria-label={t('experience.navigationScope', 'Gezinme kapsamı')}>{['hotel', 'platform'].map(mode => <Button key={mode} size="sm" variant={navigationMode === mode ? 'default' : 'ghost'} aria-pressed={navigationMode === mode} onClick={() => { setNavigationMode(mode); writeExperiencePreference(scope, 'navigationMode', mode); }}>{t(`experience.${mode}`, mode === 'hotel' ? 'Otel' : 'Platform')}</Button>)}</div>}
+              {navigationGroups.filter(group => navigationMode === 'platform' && isSuperAdmin ? group.id === 'admin' : group.id !== 'admin').map((groupDef) => renderGroupDropdown(groupDef))}
+              {!isSuperAdmin && navigationGroups.filter(group => group.id === 'admin').map(renderGroupDropdown)}
+            </nav>
       <main
+        id="workspace-main" tabIndex={-1}
         ref={mainRef}
-        className={`app-safe-bottom-padding flex-1 w-full mx-auto overflow-auto ${fullWidth ? 'max-w-none' : 'max-w-7xl'}`}
+        className={`app-safe-bottom-padding flex-1 min-w-0 w-full mx-auto overflow-auto ${fullWidth ? 'max-w-none' : 'max-w-7xl'}`}
       >
         <ErrorBoundary>
           {children}
         </ErrorBoundary>
       </main>
+      </div>
 
       <SimulationOverlay />
     </div>

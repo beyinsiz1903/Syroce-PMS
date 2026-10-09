@@ -52,6 +52,7 @@ const POSWaiterTerminal = () => {
   const [tables, setTables] = useState([]);
   const [table, setTable] = useState(null);
   const [menuItems, setMenuItems] = useState([]);
+  const [menuQuery, setMenuQuery] = useState('');
   const [category, setCategory] = useState('all');
   const [cart, setCart] = useState([]);
   const [inhouse, setInhouse] = useState([]);
@@ -223,7 +224,7 @@ const POSWaiterTerminal = () => {
     all: 'Tümü', food: 'Ana Yemek', beverage: 'İçecek', alcohol: 'Alkollü',
     dessert: 'Tatlı', appetizer: 'Başlangıç',
   };
-  const visibleItems = category === 'all' ? menuItems : menuItems.filter(m => m.category === category);
+  const visibleItems = menuItems.filter(item => (category === 'all' || item.category === category) && (item.item_name || '').toLocaleLowerCase().includes(menuQuery.trim().toLocaleLowerCase()));
 
   // ── Signature canvas ──────────────────────────────────────────────────
   const canvasPoint = e => {
@@ -592,7 +593,7 @@ const POSWaiterTerminal = () => {
             <Button variant="ghost" size="sm" onClick={() => setStep(STEPS.OUTLET)}>
               <ArrowLeft className="w-4 h-4 mr-1" />{t("cm.pages_POSWaiterTerminal.satis_noktasi")}</Button>
           </div>
-          {loadingTables ? <Card><CardContent className="p-8 flex items-center justify-center gap-2 text-gray-500"><Loader2 className="w-5 h-5 animate-spin" /> Masalar yükleniyor…</CardContent></Card> : tables.length === 0 ? <Card><CardContent className="p-8 text-center text-gray-500">{t("cm.pages_POSWaiterTerminal.bu_satis_noktasinda_masa_bulun")}</CardContent></Card> : <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
+          {loadingTables ? <Card><CardContent className="p-8 flex items-center justify-center gap-2 text-gray-500"><Loader2 className="w-5 h-5 animate-spin" /> Masalar yükleniyor…</CardContent></Card> : tables.length === 0 ? <Card><CardContent className="p-8 text-center text-gray-500">{t("cm.pages_POSWaiterTerminal.bu_satis_noktasinda_masa_bulun")}</CardContent></Card> : <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
               {tables.map(tbl => <button key={tbl.id} onClick={() => pickTable(tbl)} data-testid={`table-${tbl.table_number}`} className={`rounded-lg border-2 p-4 text-center transition-shadow hover:shadow-md ${statusColor(tbl.status)}`}>
                   <div className="text-xl font-bold">{tbl.table_number}</div>
                   <div className="text-xs mt-1">{tbl.seats} {t("cm.pages_POSWaiterTerminal.kisi")}</div>
@@ -603,9 +604,9 @@ const POSWaiterTerminal = () => {
         </div>}
 
       {/* Step 3: Menu + Cart */}
-      {step === STEPS.ORDER && <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      {step === STEPS.ORDER && <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_minmax(280px,0.8fr)] xl:grid-cols-3 gap-4">
           {/* Menu */}
-          <div className="lg:col-span-2 space-y-3">
+          <div className="xl:col-span-2 space-y-3">
             <div className="flex items-center justify-between flex-wrap gap-2">
               <Button variant="ghost" size="sm" onClick={() => setStep(STEPS.TABLE)}>
                 <ArrowLeft className="w-4 h-4 mr-1" />{t("cm.pages_POSWaiterTerminal.masalar")}</Button>
@@ -615,8 +616,12 @@ const POSWaiterTerminal = () => {
                   </Button>)}
               </div>
             </div>
+            <Input value={menuQuery} onChange={event => setMenuQuery(event.target.value)} aria-label={t("experience.menuSearch", "Menüde ürün ara")} placeholder={t("experience.menuSearch", "Menüde ürün ara")} />
             {loadingMenu ? <div className="py-16 flex items-center justify-center gap-2 text-gray-500"><Loader2 className="w-5 h-5 animate-spin" /> Menü yükleniyor…</div> : <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
               {visibleItems.map(item => <Card key={item.id}
+                role="button" tabIndex={item.available === false ? -1 : 0}
+                aria-label={item.item_name}
+                onKeyDown={event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); addToCart(item); } }}
                 aria-disabled={item.available === false}
                 className={item.available === false
                   ? 'cursor-not-allowed opacity-60'
@@ -637,7 +642,7 @@ const POSWaiterTerminal = () => {
           </div>
 
           {/* Cart */}
-          <div className="space-y-3">
+          <div className="space-y-3 md:sticky md:top-4 md:self-start">
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="flex items-center gap-2 text-base">

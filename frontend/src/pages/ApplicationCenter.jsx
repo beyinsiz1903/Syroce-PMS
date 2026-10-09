@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { CheckCircle2, Clock3, Grid3X3, Heart, Search, Settings2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -7,10 +7,12 @@ import { useEntitlements } from '@/context/EntitlementContext';
 import { PRODUCT_MODULES } from '@/lib/moduleCatalog';
 import { NAV_GROUPS } from '@/config/navItems';
 import { accessibleNavigationItems } from '@/lib/navigationCatalog';
+import { applicationPresentation, experienceScope, readExperiencePreference, writeExperiencePreference } from '@/lib/productExperience';
+import { canAccessPath } from '@/utils/moduleAccess';
 
 const STORAGE_KEY = 'syroce.application-center.favorites';
-const loadFavorites = () => {
-  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); } catch { return []; }
+const loadFavorites = (key) => {
+  try { const value = JSON.parse(localStorage.getItem(key) || '[]'); return Array.isArray(value) ? value.filter(item => typeof item === 'string') : []; } catch { return []; }
 };
 
 const GROUP_TITLES = new Map(NAV_GROUPS.map(({ id, label }) => [id, label]));
@@ -40,16 +42,19 @@ export const mergeApplicationEntries = (productModules, navigationItems, groupLa
 export default function ApplicationCenter({ tenant, user }) {
   const navigate = useNavigate();
   const { hasModule, hasTenantModule = hasModule } = useEntitlements();
-  const [query, setQuery] = useState('');
+  const scope = experienceScope(user, tenant);
+  const [query, setQuery] = useState(() => readExperiencePreference(scope, 'appQuery', ''));
   const [view, setView] = useState('all');
-  const [favorites, setFavorites] = useState(loadFavorites);
+  const favoritesKey = user ? `${STORAGE_KEY}:${scope}` : STORAGE_KEY;
+  const [favorites, setFavorites] = useState(() => loadFavorites(favoritesKey));
+  useEffect(() => { setFavorites(loadFavorites(favoritesKey)); setQuery(readExperiencePreference(scope, 'appQuery', '')); }, [favoritesKey, scope]);
 
   const modules = useMemo(() => {
     // Ready setups use an explicit page allow-list. Showing broad product
     // cards here would re-introduce modules intentionally removed from their
     // compact workspace, so these profiles are navigation-catalog only.
     const productModules = (tenant?.visible_nav_items?.length ? [] : PRODUCT_MODULES)
-      .filter((item) => hasTenantModule(item.key))
+      .filter((item) => hasTenantModule(item.key) && (!user || (item.path && canAccessPath(user, item.path))))
       .map((item) => ({ ...item, enabled: true }));
     const navigationItems = user ? accessibleNavigationItems({
       user,
@@ -61,10 +66,11 @@ export default function ApplicationCenter({ tenant, user }) {
     }).filter((item) => item.path) : [];
 
     return mergeApplicationEntries(productModules, navigationItems, tenant?.nav_group_labels).map((item) => ({
-      ...item,
+      ...applicationPresentation(item, tenant?.nav_group_labels),
       favorite: favorites.includes(item.key),
     })).filter((item) => {
     if (!item.enabled) return false;
+    if (tenant?.hidden_nav_items?.includes(item.key) || tenant?.hidden_nav_groups?.includes(item.navGroup)) return false;
     if (view === 'favorites' && !item.favorite) return false;
     const needle = query.trim().toLocaleLowerCase('tr-TR');
     return !needle || `${item.label} ${item.hint || ''} ${item.groupTitle}`.toLocaleLowerCase('tr-TR').includes(needle);
@@ -79,7 +85,7 @@ export default function ApplicationCenter({ tenant, user }) {
   const toggleFavorite = (key) => {
     setFavorites((current) => {
       const next = current.includes(key) ? current.filter((item) => item !== key) : [...current, key];
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+      try { localStorage.setItem(favoritesKey, JSON.stringify(next)); } catch { /* Storage unavailable: keep current session usable. */ }
       return next;
     });
   };
@@ -90,14 +96,14 @@ export default function ApplicationCenter({ tenant, user }) {
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">{tenant?.property_name || tenant?.name || 'Otel çalışma alanı'}</p>
           <h1 className="mt-1 text-2xl font-bold text-slate-950">Uygulamalar</h1>
-          <p className="mt-1 text-sm text-slate-600">Bu otel için etkinleştirilmiş modül ve alt çalışma alanlarına tek yerden ulaşın.</p>
+          <p className="mt-1 text-sm text-slate-600">Günlük işlerinize göre düzenlenmiş çalışma alanları. Sık kullandıklarınızı favorilerinize ekleyin.</p>
         </div>
         <Button variant="outline" onClick={() => navigate('/app/module-store')}><Settings2 className="mr-2 h-4 w-4" /> Modül ve paketleri yönet</Button>
       </header>
 
       <section className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
         <div className="flex flex-col gap-3 sm:flex-row">
-          <div className="relative flex-1"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><Input className="pl-9" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Uygulama veya yapmak istediğiniz işi arayın" /></div>
+          <div className="relative flex-1"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><Input className="pl-9" value={query} aria-label="Uygulama veya işlem ara" onChange={(event) => { setQuery(event.target.value); writeExperiencePreference(scope, "appQuery", event.target.value); }} placeholder="Uygulama veya yapmak istediğiniz işi arayın" /></div>
           <div className="flex gap-1">
             <Button variant={view === 'all' ? 'default' : 'ghost'} onClick={() => setView('all')}><Grid3X3 className="mr-2 h-4 w-4" /> Tümü</Button>
             <Button variant={view === 'favorites' ? 'default' : 'ghost'} onClick={() => setView('favorites')}><Heart className="mr-2 h-4 w-4" /> Favoriler</Button>
@@ -115,7 +121,7 @@ export default function ApplicationCenter({ tenant, user }) {
           <div><h2 className="text-base font-semibold text-slate-900">{group}</h2><p className="text-xs text-slate-500">{items.length} uygulama</p></div>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {items.map((item) => (
-              <article key={item.key} className="flex min-h-48 flex-col rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-slate-300 hover:shadow-md">
+              <article key={item.key} className="flex min-h-40 flex-col rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-slate-300 hover:shadow-md">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-100"><Grid3X3 className="h-5 w-5 text-slate-600" /></div>
                   <button type="button" onClick={() => toggleFavorite(item.key)} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-rose-500" aria-label={`${item.label} ${item.favorite ? 'favorilerden çıkar' : 'favorilere ekle'}`} title={item.favorite ? 'Favorilerden çıkar' : 'Favorilere ekle'}><Heart className={`h-4 w-4 ${item.favorite ? 'fill-rose-500 text-rose-500' : ''}`} /></button>
@@ -123,7 +129,7 @@ export default function ApplicationCenter({ tenant, user }) {
                 <h3 className="mt-3 text-sm font-semibold text-slate-950">{item.label}</h3>
                 <p className="mt-1 flex-1 text-xs leading-5 text-slate-600">{item.hint || 'Otel operasyonu çalışma alanı'}</p>
                 {item.path ? (
-                  <Button className="mt-4 w-full" onClick={() => navigate(item.path)} data-testid={`launch-${item.key}`}>Uygulamayı aç</Button>
+                  <Button variant="outline" className="mt-4 w-full" onClick={() => navigate(item.path)} data-testid={`launch-${item.key}`}>Uygulamayı aç</Button>
                 ) : (
                   <Button className="mt-4 w-full" variant="outline" onClick={() => navigate('/app/module-store')}>Kurulumu tamamla</Button>
                 )}

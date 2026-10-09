@@ -56,7 +56,7 @@ const CalendarHeader = ({
   ].join('-');
   const isBusinessDateDifferent = Boolean(businessDate && businessDate !== localTodayKey);
   const todayNavigationLabel = isBusinessDateDifferent
-    ? 'PMS İş Günü'
+    ? t('experience.businessDate', 'İş günü')
     : t('cm.pages_calendar_CalendarHeader.bugun_01475');
   const todayNavigationDescription = isBusinessDateDifferent
     ? `PMS iş günü çevresine git (${new Date(`${businessDate}T00:00:00`).toLocaleDateString('tr-TR')})`
@@ -119,7 +119,7 @@ const CalendarHeader = ({
       />
 
       {/* Mobile toolbar: primary navigation stays visible; secondary actions live in one menu. */}
-      <div className="space-y-2 md:hidden" data-testid="mobile-calendar-toolbar">
+      <div className="space-y-2 xl:hidden" data-testid="mobile-calendar-toolbar">
         <div className="flex min-w-0 items-center gap-2">
           <button
             type="button"

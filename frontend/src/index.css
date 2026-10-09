@@ -152,6 +152,27 @@ code {
 }
 
 @layer utilities {
+    /* Density changes spacing, never the meaning or order of data. */
+    [data-workspace-density="compact"] [data-testid="app-shell"] td,
+    [data-workspace-density="compact"] [data-testid="app-shell"] th {
+        padding-top: 0.5rem;
+        padding-bottom: 0.5rem;
+    }
+    [data-testid="app-shell"] :is(button, a, input, select, textarea, summary):focus-visible {
+        outline: 2px solid hsl(var(--ring));
+        outline-offset: 3px;
+    }
+    [data-testid="app-shell"] [role="tablist"] { max-width: 100%; }
+    @media (pointer: coarse) {
+        [data-testid="app-shell"] :is(button, [role="tab"], select) { min-height: 44px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+        [data-testid="app-shell"] *, [role="dialog"] * {
+            animation-duration: 0.01ms !important;
+            transition-duration: 0.01ms !important;
+            scroll-behavior: auto !important;
+        }
+    }
     .animate-slide-in-right {
         animation: slideInRight 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
     }

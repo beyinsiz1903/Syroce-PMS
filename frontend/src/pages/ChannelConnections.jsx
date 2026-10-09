@@ -239,7 +239,7 @@ export default function ChannelConnections({
           {/* Header */}
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div>
-              <h1 className="text-2xl font-bold text-slate-900" data-testid="page-title">Bagli Kanallar</h1>
+              <h1 className="text-2xl font-bold text-slate-900" data-testid="page-title">Bağlı kanallar</h1>
               <p className="text-sm text-slate-500 mt-1">
                 {t('cm.pages_ChannelConnections.otelinizin_bagli_oldugu_satis_kanallari_')}
               </p>
@@ -363,7 +363,7 @@ export default function ChannelConnections({
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-bold text-slate-900" data-testid="page-title">{t('cm.pages_ChannelConnections.kanal_yonetimi')}</h1>
+            <h2 className="text-xl font-semibold text-slate-900" data-testid="page-title">{t('cm.pages_ChannelConnections.kanal_yonetimi')}</h2>
             <p className="text-sm text-slate-500 mt-1">
               {t('cm.pages_ChannelConnections.kanal_saglayicilarinizin_baglanti_durumu')}
             </p>
@@ -397,11 +397,11 @@ export default function ChannelConnections({
               <div className="text-sm text-sky-800 space-y-1">
                 <p className="font-semibold">{t('cm.pages_ChannelConnections.yeni_otel_baglanti_rehberi')}</p>
                 <ol className="list-decimal ml-4 space-y-0.5 text-sky-700">
-                  <li>Kanal saglayicinizdan (HotelRunner / Exely) API kimlik bilgilerini alin</li>
-                  <li>Asagidaki ilgili saglayici kartindan "Baglan" butonuna tiklayin</li>
+                  <li>Kanal sağlayıcınızdan (HotelRunner / Exely) API kimlik bilgilerini alın</li>
+                  <li>Aşağıdaki ilgili sağlayıcı kartından "Bağlan" düğmesine tıklayın</li>
                   <li>{t('cm.pages_ChannelConnections.kimlik_bilgilerini_girin_sistem_otomatik')}</li>
                   <li>{t('cm.pages_ChannelConnections.baglanti_kurulduktan_sonra_oda_eslemeler')}</li>
-                  <li>Acenteler (Booking, Expedia vb.) HotelRunner/Exely panelinden baglanir</li>
+                  <li>Acenteler (Booking, Expedia vb.) HotelRunner/Exely panelinden bağlanır</li>
                 </ol>
                 <p className="text-xs text-sky-600 mt-2">
                   <strong>Not:</strong> {t('cm.pages_ChannelConnections.her_otel_icin_ayri_token_id_gereklidir_b')}
@@ -419,7 +419,7 @@ export default function ChannelConnections({
                 <span className="text-sm font-medium text-slate-700">{t('cm.pages_ChannelConnections.pms_oda_tipleri')}</span>
               </div>
               <div className="flex flex-wrap gap-2">
-                {overview.pms_room_types.map(rt => <Badge key={rt} variant="secondary" className="text-xs">{rt}</Badge>)}
+                {overview.pms_room_types.map(rt => <Badge key={rt} variant="secondary" className="text-xs">{/^[a-f0-9-]{24,}$/i.test(rt) ? t("experience.roomTypeMissing", "Oda tipi adı eksik") : rt}</Badge>)}
               </div>
             </CardContent>
           </Card>}
@@ -433,7 +433,7 @@ export default function ChannelConnections({
           value: hr?.hr_id
         }, {
           label: 'Ortam',
-          value: hr?.environment
+          value: hr?.environment === "live" || hr?.environment === "production" ? t("experience.live", "Canlı ortam") : ["test", "sandbox", "staging"].includes(hr?.environment) ? t("experience.test", "Test ortamı") : t("common.notSpecified", "Belirtilmedi")
         }]} extraInfo={hr?.channels?.length > 0 ? <div className="mt-3">
                 <span className="text-xs font-medium text-slate-500">Bagli Acenteler:</span>
                 <div className="flex flex-wrap gap-1 mt-1">
@@ -467,7 +467,7 @@ export default function ChannelConnections({
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <Network className="w-5 h-5 text-amber-600" />
-                HotelRunner Baglantisi Kur
+                HotelRunner bağlantısı kur
               </DialogTitle>
               <DialogDescription>
                 HotelRunner panelinizden aldiginiz API token ve HR ID bilgilerini girin.
@@ -517,7 +517,7 @@ export default function ChannelConnections({
               <Button variant="outline" onClick={() => setConnectDialog(null)} disabled={connecting}>{t('cm.pages_ChannelConnections.iptal')}</Button>
               <Button onClick={connectHR} disabled={connecting} data-testid="hr-connect-submit">
                 {connecting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Link2 className="w-4 h-4 mr-2" />}
-                Baglan ve Test Et
+                Bağlan ve test et
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -529,7 +529,7 @@ export default function ChannelConnections({
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <Network className="w-5 h-5 text-emerald-600" />
-                Exely Baglantisi Kur
+                Exely bağlantısı kur
               </DialogTitle>
               <DialogDescription>
                 Exely'den aldiginiz SOAP API kimlik bilgilerini girin.
@@ -592,7 +592,7 @@ export default function ChannelConnections({
               <Button variant="outline" onClick={() => setConnectDialog(null)} disabled={connecting}>{t('cm.pages_ChannelConnections.iptal_25174')}</Button>
               <Button onClick={connectExely} disabled={connecting} data-testid="exely-connect-submit">
                 {connecting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Link2 className="w-4 h-4 mr-2" />}
-                Baglan ve Test Et
+                Bağlan ve test et
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -670,7 +670,7 @@ function ProviderCard({
               <div>
                 <span className="text-slate-500 text-xs">{t('cm.pages_ChannelConnections.oda_eslemesi')}</span>
                 <p className="font-medium text-slate-800">
-                  {mappings > 0 ? <span className="text-green-600">{mappings} esleme</span> : <span className="text-amber-600">{t('cm.pages_ChannelConnections.henuz_yok')}</span>}
+                  {mappings > 0 ? <span className="text-green-600">{mappings} eşleştirme</span> : <span className="text-amber-600">{t('cm.pages_ChannelConnections.henuz_yok')}</span>}
                 </p>
               </div>
               <div>
@@ -698,7 +698,7 @@ function ProviderCard({
                 <div>
                   <p className="font-medium">{operationalStatus.label}</p>
                   {operationalStatus.last_error && <p className="mt-0.5">{operationalStatus.last_error}</p>}
-                  {operationalStatus.key === 'first_sync_pending' && <p className="mt-0.5">Bağlantı yapılandırıldı; ilk başarılı rezervasyon veya ARI senkronizasyonu tamamlanmadan üretimde sayılmaz.</p>}
+                  {operationalStatus.key === 'first_sync_pending' && <p className="mt-0.5">Bağlantı yapılandırıldı; ilk başarılı rezervasyon veya ARI senkronizasyonu tamamlanmadan bağlantı doğrulanmış kabul edilmez.</p>}
                   {operationalStatus.key === 'stale' && <p className="mt-0.5">Son başarılı senkronizasyon beklenen aralığı aştı. Bağlantıyı test edin ve kuyrukları kontrol edin.</p>}
                 </div>
               </div>}
@@ -743,7 +743,7 @@ function ProviderCard({
               </p>
               <Button onClick={onConnect} data-testid={`${provider}-connect-btn`}>
                 <Link2 className="w-4 h-4 mr-2" />
-                {displayName} Baglan
+                {displayName} bağlantısı kur
               </Button>
             </div>
           </>}

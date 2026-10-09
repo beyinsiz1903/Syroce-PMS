@@ -6,14 +6,14 @@
 
 // ─── NAV GROUPS for top bar dropdown menus ──────────
 export const NAV_GROUPS = [
-  { id: "frontdesk", label: "Ön Büro & Rez.", icon: "ConciergeBell" },
-  { id: "sales", label: "Satış & Gelir", icon: "TrendingUp" },
-  { id: "guest", label: "Misafir & CRM", icon: "Users" },
+  { id: "frontdesk", label: "Ön büro", icon: "ConciergeBell" },
+  { id: "sales", label: "Satış ve gelir", icon: "TrendingUp" },
+  { id: "guest", label: "Misafirler ve CRM", icon: "Users" },
   { id: "operations", label: "Operasyon", icon: "Building" },
-  { id: "fb", label: "Restoran & F&B", icon: "Utensils" },
+  { id: "fb", label: "Restoran ve POS", icon: "Utensils" },
   { id: "backoffice", label: "Arka Ofis", icon: "Briefcase" },
   { id: "reports", label: "Raporlar", icon: "BarChart3" },
-  { id: "system", label: "Kanallar & Entegrasyonlar", icon: "Settings" },
+  { id: "system", label: "Kanallar ve entegrasyonlar", icon: "Settings" },
   { id: "admin", label: "Sistem Yönetimi", icon: "Shield" },
 ];
 
@@ -84,7 +84,7 @@ export const NAV_ITEMS = [
   // ──── STANDALONE (shown as direct buttons) ─────────
   {
     key: "dashboard",
-    label: "Dashboard",
+    label: "Kontrol Paneli",
     path: "/app/dashboard",
     tier: "basic",
     group: "core",
@@ -135,7 +135,7 @@ export const NAV_ITEMS = [
   },
   {
     key: "channels_hub",
-    label: "Kanallar Hub",
+    label: "Kanallar",
     path: "/channels",
     tier: "basic",
     group: "core",
@@ -250,7 +250,7 @@ export const NAV_ITEMS = [
   },
   {
     key: "agency_requests",
-    label: "Acenta Talepleri",
+    label: "Acente talepleri",
     path: "/agency-requests",
     moduleKey: "agency_requests",
     tier: "basic",
@@ -260,7 +260,7 @@ export const NAV_ITEMS = [
   },
   {
     key: "pms",
-    label: "PMS",
+    label: "Ön büro",
     path: "/app/pms",
     moduleKey: "pms",
     tier: "basic",
@@ -270,7 +270,9 @@ export const NAV_ITEMS = [
   },
   {
     key: "housekeeping_status",
-    label: "Housekeeping",
+    navGroup: "operations",
+    navSection: "daily",
+    label: "Kat hizmetleri",
     path: "/housekeeping-status",
     moduleKey: "pms",
     tier: "basic",
@@ -922,7 +924,7 @@ export const NAV_ITEMS = [
   },
   {
     key: "module_store",
-    label: "Modül Pazarı",
+    label: "Modül mağazası",
     path: "/app/module-store",
     tier: "basic",
     group: "core",

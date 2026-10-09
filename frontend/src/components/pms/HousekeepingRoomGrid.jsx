@@ -285,12 +285,14 @@ const HousekeepingRoomGrid = ({ embedded = false, onChange }) => {
           />
         )
       ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-3">
           {filteredRooms.map(room => {
             const st = room.housekeeping_status || 'clean';
             const cfg = STATUS_CONFIG[st] || STATUS_CONFIG.clean;
             const isSelected = selectedRooms.includes(room.id);
             const hasGuest = !!room.current_booking;
+            const nextStatus = { dirty: 'cleaning', cleaning: 'clean', clean: 'inspected' }[st];
+            const nextLabel = { dirty: t('experience.hk.start', 'Temizliğe başla'), cleaning: t('experience.hk.clean', 'Temizliği tamamla'), clean: t('experience.hk.inspect', 'Kontrolü tamamla') }[st];
 
             return (
               <div
@@ -303,6 +305,7 @@ const HousekeepingRoomGrid = ({ embedded = false, onChange }) => {
                 <div className="absolute top-2 right-2">
                   <input
                     type="checkbox"
+                    aria-label={t("experience.selectRoom", { defaultValue: "{{room}} numaralı odayı seç", room: room.room_number })}
                     checked={isSelected}
                     onChange={() => toggleRoom(room.id)}
                     className="w-4 h-4 rounded border-gray-300"
@@ -314,7 +317,7 @@ const HousekeepingRoomGrid = ({ embedded = false, onChange }) => {
                   <span className="font-bold text-lg">{room.room_number}</span>
                 </div>
 
-                <div className="text-xs text-gray-500 mb-2">{room.room_type || tg('standardType')}</div>
+                <div className="text-xs text-gray-500 mb-2">{/^[a-f0-9-]{24,}$/i.test(room.room_type || "") ? t("experience.unspecified", "Belirtilmedi") : (room.room_type || tg('standardType'))}</div>
 
                 <Badge className={`text-xs ${cfg.color} mb-2`}>{cfg.label}</Badge>
 
@@ -324,18 +327,21 @@ const HousekeepingRoomGrid = ({ embedded = false, onChange }) => {
                   </div>
                 )}
 
-                <div className="flex flex-wrap gap-1 mt-2">
+                <div className="mt-3 space-y-2">
+                  {nextStatus && <Button className="w-full min-h-11" onClick={() => updateStatus(room.id, nextStatus)} data-testid={`next-status-${room.room_number}`}>{nextLabel}</Button>}
+                  <details><summary className="cursor-pointer py-2 text-sm text-muted-foreground">{t("experience.hk.other", "Diğer durum işlemleri")}</summary><div className="flex flex-wrap gap-2">
                   {Object.entries(STATUS_CONFIG).filter(([k]) => k !== st).map(([key, c]) => (
                     <button
                       key={key}
                       onClick={(e) => { e.stopPropagation(); updateStatus(room.id, key); }}
-                      className={`text-[10px] px-1.5 py-0.5 rounded border hover:opacity-80 transition ${c.color}`}
+                      className={`text-sm min-h-10 px-3 py-2 rounded border hover:opacity-80 transition ${c.color}`}
                       title={c.label}
                       data-testid={`status-btn-${room.room_number}-${key}`}
                     >
                       {c.label}
                     </button>
                   ))}
+                  </div></details>
                 </div>
               </div>
             );
