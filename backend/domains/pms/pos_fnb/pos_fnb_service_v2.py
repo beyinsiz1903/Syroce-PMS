@@ -30,6 +30,10 @@ from core.outbox_service import (
 logger = logging.getLogger(__name__)
 
 
+class PosOrderStateChanged(RuntimeError):
+    """The order left its payable state while checkout was in flight."""
+
+
 class PosFnbServiceV2:
     """Production-grade POS & F&B with concurrency and consistency guards."""
 
@@ -367,6 +371,11 @@ class PosFnbServiceV2:
             "processed_by": ctx.actor_id,
             "idempotency_key": idempotency_key,
             "order_items": order.get("order_items", []),
+            # Preserve the expected mutable state so the transactional update
+            # below becomes a compare-and-set rather than overwriting a void
+            # or another terminal's checkout.
+            "order_status_before_payment": order.get("status"),
+            "payment_status_before_payment": order.get("payment_status"),
             "created_at": now.isoformat(),
         }
         if payment_breakdown:
@@ -430,11 +439,19 @@ class PosFnbServiceV2:
                 "charges": [charge_doc],
             }
 
-        # Atomic intent: transaction record + IC outbox event in ONE Mongo txn.
+        # Atomic checkout: transaction, optional IC intent and terminal order
+        # state must commit together.  Persisting the sale and closing the
+        # order in separate writes could leave a paid transaction attached to
+        # a still-open adisyon after a process/network failure.
         # The partial unique index (tenant_id, order_id) for completed sales is
         # the final concurrency guard when two terminals close the same check.
         try:
-            await self._persist_txn_and_intent(ctx.tenant_id, txn_doc, order_id, outbox_payload)
+            await self._persist_txn_and_intent(
+                ctx.tenant_id,
+                txn_doc,
+                order_id,
+                outbox_payload,
+            )
         except DuplicateKeyError:
             existing_sale = await self._db.pos_transactions.find_one(
                 {"tenant_id": ctx.tenant_id, "order_id": order_id, "status": "completed"}, {"_id": 0, "id": 1}
@@ -446,24 +463,18 @@ class PosFnbServiceV2:
                     "idempotent": True,
                 })
             raise
-
-        # Close order.
-        # SECURITY: tenant_id filter required (defense-in-depth — read above
-        # is tenant-scoped, but make the mutation independently safe).
-        await self._db.pos_orders.update_one(
-            {"id": order_id, "tenant_id": ctx.tenant_id},
-            {
-                "$set": {
-                    "status": "closed",
-                    "payment_status": "paid",
-                    "payment_method": payment_method,
-                    "closed_at": now.isoformat(),
-                    "closed_by": ctx.actor_id,
-                    "guest_signature": guest_signature,
-                    "payment_breakdown": payment_breakdown,
-                }
-            },
-        )
+        except PosOrderStateChanged:
+            # A void or another terminal may win between our initial read and
+            # the transaction.  Re-read to return a deterministic business
+            # result rather than treating it as a server error.
+            current = await self._db.pos_orders.find_one(
+                {"id": order_id, "tenant_id": ctx.tenant_id}, {"_id": 0, "status": 1, "payment_status": 1}
+            )
+            if current and (current.get("status") == "closed" or current.get("payment_status") == "paid"):
+                return ServiceResult.success({"message": "Order already closed (idempotent)", "idempotent": True})
+            if current and current.get("status") == "voided":
+                return ServiceResult.fail("Cannot close a voided order", "ORDER_VOIDED")
+            return ServiceResult.fail("Order is no longer payable", "ORDER_NOT_OPEN")
 
         try:
             from core.integrations.operational_gl_bridge import post_direct_pos_to_gl
@@ -856,12 +867,12 @@ class PosFnbServiceV2:
         order_id: str,
         outbox_payload: dict | None,
     ) -> None:
-        """Write the POS transaction record + IC outbox event in ONE Mongo txn.
+        """Write the sale, optional IC intent and closed order in ONE Mongo txn.
 
-        Either both land or neither does — the order's payment record and the
-        durable intent to post the folio charge stay consistent. When there is
-        no folio target (``outbox_payload is None``) only the transaction record
-        is written.
+        Either all records land or none do — a completed sale can never survive
+        with its order still payable.  The order update is conditional so a
+        concurrent void/checkout aborts the transaction instead of overwriting
+        a terminal state.
         """
 
         async def _txn(session) -> None:
@@ -876,6 +887,30 @@ class PosFnbServiceV2:
                     entity_id=order_id,
                     payload=outbox_payload,
                 )
+            close_result = await self._db.pos_orders.update_one(
+                {
+                    "id": order_id,
+                    "tenant_id": tenant_id,
+                    # Compare-and-set keeps a concurrent void or checkout from
+                    # being overwritten between the transaction read and write.
+                    "status": txn_doc.get("order_status_before_payment"),
+                    "payment_status": txn_doc.get("payment_status_before_payment"),
+                },
+                {
+                    "$set": {
+                        "status": "closed",
+                        "payment_status": "paid",
+                        "payment_method": txn_doc["payment_method"],
+                        "closed_at": txn_doc["created_at"],
+                        "closed_by": txn_doc["processed_by"],
+                        "guest_signature": txn_doc.get("guest_signature"),
+                        "payment_breakdown": txn_doc.get("payment_breakdown"),
+                    }
+                },
+                session=session,
+            )
+            if close_result.matched_count != 1:
+                raise PosOrderStateChanged(order_id)
 
         try:
             await with_resource_locks(
@@ -883,6 +918,9 @@ class PosFnbServiceV2:
                 db=self._db,
                 tenant_id=tenant_id,
                 locks_collection="folio_locks",
+                # The conditional update of the POS order is the resource
+                # serialization point. The transaction retry handles a write
+                # conflict with a concurrent void or checkout.
                 resources=[],
                 callback=_txn,
             )
