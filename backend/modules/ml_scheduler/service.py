@@ -165,7 +165,7 @@ class MLSchedulerService:
             elif model_type == ModelType.GUEST_INTELLIGENCE:
                 from modules.data_intelligence.guest_intelligence import guest_intelligence
 
-                result = await guest_intelligence.get_dashboard(tenant_id, 30)
+                result = await guest_intelligence.get_dashboard(tenant_id, 30, persist_snapshot=True)
                 confidence = result.get("confidence_score", result.get("confidence", 0.0)) if isinstance(result, dict) else 0.0
 
             end = datetime.now(UTC)

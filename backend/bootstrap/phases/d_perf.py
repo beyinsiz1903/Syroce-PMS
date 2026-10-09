@@ -334,6 +334,10 @@ async def _create_perf_indexes_inner():
             pass
         await _raw_db.guests.create_index([("tenant_id", 1), ("email", 1)], name="idx_guests_tenant_email")
         await _raw_db.guests.create_index([("tenant_id", 1), ("phone", 1)], name="idx_guests_tenant_phone")
+        await _raw_db.guests.create_index([("tenant_id", 1), ("created_at", -1)], name="idx_guests_tenant_created")
+        await _raw_db.bookings.create_index([("tenant_id", 1), ("guest_id", 1), ("status", 1), ("check_in", 1)], name="idx_bookings_tenant_guest_status_checkin")
+        await _raw_db.folio_charges.create_index([("tenant_id", 1), ("guest_id", 1), ("voided", 1)], name="idx_folio_charges_tenant_guest_voided")
+        await _raw_db.guest_requests.create_index([("tenant_id", 1), ("guest_id", 1), ("type", 1)], name="idx_guest_requests_tenant_guest_type")
         # messaging_automation_rules: every read/write is tenant-scoped
         # (list_automation_rules, count, distinct, automation worker scan).
         # Atlas profiler showed 425ms write samples on this collection — no
@@ -343,6 +347,15 @@ async def _create_perf_indexes_inner():
         await _raw_db.messaging_automation_rules.create_index(
             [("tenant_id", 1), ("trigger_event", 1), ("enabled", 1)],
             name="idx_msg_auto_rules_tenant_trigger",
+        )
+        # Only new/updated rules carry semantic_key. This partial unique index
+        # blocks concurrent duplicate creates without failing on legacy rows;
+        # legacy duplicates are suppressed by the runtime dedupe path.
+        await _raw_db.messaging_automation_rules.create_index(
+            [("tenant_id", 1), ("semantic_key", 1)],
+            name="uniq_msg_auto_rules_tenant_semantic",
+            unique=True,
+            partialFilterExpression={"semantic_key": {"$type": "string"}},
         )
         await _raw_db.folios.create_index([("tenant_id", 1), ("booking_id", 1)], name="idx_folios_tenant_booking")
         await _raw_db.folios.create_index([("tenant_id", 1), ("status", 1), ("created_at", -1)], name="idx_folios_tenant_status_created")

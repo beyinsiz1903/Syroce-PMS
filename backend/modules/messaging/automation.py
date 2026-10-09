@@ -44,6 +44,28 @@ TRIGGER_EVENTS = {
 }
 
 
+def automation_rule_key(rule: dict) -> tuple[str, str, str]:
+    """Semantic identity used to prevent one event sending twice."""
+    return (
+        rule.get("trigger_event") or "",
+        rule.get("template_id") or "",
+        rule.get("channel") or "",
+    )
+
+
+def automation_rule_semantic_key(trigger_event: str, template_id: str, channel: str) -> str:
+    return f"{trigger_event}:{template_id}:{channel}"
+
+
+def deduplicate_automation_rules(rules: list[dict]) -> list[dict]:
+    """Keep the oldest rule for each semantic identity, without deleting data."""
+    ordered = sorted(rules, key=lambda item: (item.get("created_at") or "", item.get("id") or ""))
+    unique: dict[tuple[str, str, str], dict] = {}
+    for rule in ordered:
+        unique.setdefault(automation_rule_key(rule), rule)
+    return list(unique.values())
+
+
 def new_automation_rule(
     tenant_id: str,
     trigger_event: str,
@@ -60,6 +82,7 @@ def new_automation_rule(
         "template_id": template_id,
         "channel": channel,
         "name": name,
+        "semantic_key": automation_rule_semantic_key(trigger_event, template_id, channel),
         "enabled": enabled,
         "delay_minutes": delay_minutes,
         "total_sent": 0,
@@ -92,6 +115,7 @@ async def process_booking_event(tenant_id: str, event_type: str, booking: dict):
             {"_id": 0},
         ).to_list(20)
 
+        rules = deduplicate_automation_rules(rules)
         if not rules:
             return
 

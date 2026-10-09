@@ -636,8 +636,11 @@ async def list_trigger_events(current_user: User = Depends(get_current_user)):
 @router.get("/automation/rules")
 async def list_automation_rules(current_user: User = Depends(get_current_user)):
     db = _get_db()
-    rules = await db.messaging_automation_rules.find({"tenant_id": current_user.tenant_id}, {"_id": 0}).to_list(50)
-    return {"rules": rules}
+    rules = await db.messaging_automation_rules.find({"tenant_id": current_user.tenant_id}, {"_id": 0}).to_list(200)
+    from modules.messaging.automation import deduplicate_automation_rules
+
+    unique_rules = deduplicate_automation_rules(rules)
+    return {"rules": unique_rules, "total": len(unique_rules), "duplicates_suppressed": len(rules) - len(unique_rules)}
 
 
 @router.post("/automation/rules")
@@ -651,6 +654,18 @@ async def create_automation_rule(
     if req.trigger_event not in TRIGGER_EVENTS:
         raise HTTPException(status_code=400, detail=f"Gecersiz tetikleme olayi: {req.trigger_event}")
     db = _get_db()
+    existing = await db.messaging_automation_rules.find_one(
+        {
+            "tenant_id": current_user.tenant_id,
+            "trigger_event": req.trigger_event,
+            "template_id": req.template_id,
+            "channel": req.channel,
+        },
+        {"_id": 0, "id": 1},
+    )
+    if existing:
+        raise HTTPException(status_code=409, detail="Aynı tetikleyici, şablon ve kanal için bir otomasyon zaten var")
+
     doc = new_automation_rule(
         current_user.tenant_id,
         req.trigger_event,
@@ -660,7 +675,14 @@ async def create_automation_rule(
         req.enabled,
         req.delay_minutes,
     )
-    await db.messaging_automation_rules.insert_one(doc)
+    try:
+        await db.messaging_automation_rules.insert_one(doc)
+    except Exception as exc:
+        from pymongo.errors import DuplicateKeyError
+
+        if isinstance(exc, DuplicateKeyError):
+            raise HTTPException(status_code=409, detail="Aynı otomasyon eş zamanlı olarak oluşturuldu") from exc
+        raise
     doc.pop("_id", None)
     return doc
 
@@ -820,8 +842,7 @@ async def seed_demo_data(
             logs_seeded = len(logs)
 
     # ── Seed automation rules ──
-    rules_count = await db.messaging_automation_rules.count_documents({"tenant_id": tenant_id})
-    if rules_count == 0:
+    if await db.messaging_automation_rules.count_documents({"tenant_id": tenant_id}) == 0:
         from modules.messaging.automation import new_automation_rule
 
         tmpl_list = await db.messaging_templates.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(50)
@@ -847,9 +868,19 @@ async def seed_demo_data(
                         enabled=True,
                     )
                 )
-        if auto_rules:
-            await db.messaging_automation_rules.insert_many(auto_rules)
-            rules_seeded = len(auto_rules)
+        for rule in auto_rules:
+            result = await db.messaging_automation_rules.update_one(
+                {
+                    "tenant_id": tenant_id,
+                    "trigger_event": rule["trigger_event"],
+                    "template_id": rule["template_id"],
+                    "channel": rule["channel"],
+                },
+                {"$setOnInsert": rule},
+                upsert=True,
+            )
+            if result.upserted_id is not None:
+                rules_seeded += 1
 
     return {"success": True, "templates": templates_seeded, "logs": logs_seeded, "automation_rules": rules_seeded}
 

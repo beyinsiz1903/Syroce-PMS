@@ -553,6 +553,7 @@ def _score_pair(a: dict, b: dict) -> tuple[float, list[str]]:
 @_cached(ttl=600, key_prefix="cross_dup_scan")
 async def scan_duplicates(
     min_score: float = Query(0.6, ge=0.3, le=1.0),
+    skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_guest_list")),
@@ -648,15 +649,18 @@ async def scan_duplicates(
         )
 
     scored.sort(key=lambda r: r["score"], reverse=True)
-    truncated = len(scored) > limit
+    page = scored[skip : skip + limit]
     return {
         "chain_size": len(tenant_ids),
         "scanned_guests": len(all_guests),
         "candidate_pairs": len(candidate_pairs),
         "matches_count": len(scored),
-        "truncated": truncated,
+        "skip": skip,
+        "limit": limit,
+        "has_more": skip + len(page) < len(scored),
+        "truncated": len(scored) > len(page),
         "min_score": min_score,
-        "matches": scored[:limit],
+        "matches": page,
     }
 
 

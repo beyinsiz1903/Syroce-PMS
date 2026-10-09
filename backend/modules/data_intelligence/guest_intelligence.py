@@ -16,12 +16,20 @@ logger = logging.getLogger(__name__)
 class GuestLifetimeValueModel:
     """Calculate guest lifetime value based on stay history and spending."""
 
-    async def calculate(self, tenant_id: str, guest_id: str) -> dict[str, Any]:
+    async def calculate(
+        self,
+        tenant_id: str,
+        guest_id: str,
+        *,
+        bookings: list[dict[str, Any]] | None = None,
+        folio_charges: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
         # Get all bookings for guest
-        bookings = await db.bookings.find(
-            {"tenant_id": tenant_id, "guest_id": guest_id},
-            {"_id": 0, "total_amount": 1, "status": 1, "check_in": 1, "check_out": 1, "room_type": 1, "source": 1},
-        ).to_list(500)
+        if bookings is None:
+            bookings = await db.bookings.find(
+                {"tenant_id": tenant_id, "guest_id": guest_id},
+                {"_id": 0, "total_amount": 1, "status": 1, "check_in": 1, "check_out": 1, "room_type": 1, "source": 1},
+            ).to_list(500)
 
         completed = [b for b in bookings if b.get("status") in ("checked_out", "checked_in")]
         cancelled = [b for b in bookings if b.get("status") == "cancelled"]
@@ -31,10 +39,11 @@ class GuestLifetimeValueModel:
         avg_spend = round(total_revenue / max(stay_count, 1), 2)
 
         # Folio charges
-        folio_charges = await db.folio_charges.find(
-            {"tenant_id": tenant_id, "guest_id": guest_id, "voided": False},
-            {"_id": 0, "amount": 1},
-        ).to_list(500)
+        if folio_charges is None:
+            folio_charges = await db.folio_charges.find(
+                {"tenant_id": tenant_id, "guest_id": guest_id, "voided": False},
+                {"_id": 0, "amount": 1},
+            ).to_list(500)
         ancillary_revenue = sum(c.get("amount", 0) for c in folio_charges)
 
         # Stay frequency
@@ -76,11 +85,12 @@ class GuestLifetimeValueModel:
 class GuestSegmentationModel:
     """Segment guests based on behavior patterns."""
 
-    async def segment_guest(self, tenant_id: str, guest_id: str) -> dict[str, Any]:
-        bookings = await db.bookings.find(
-            {"tenant_id": tenant_id, "guest_id": guest_id},
-            {"_id": 0, "total_amount": 1, "status": 1, "source": 1, "check_in": 1, "check_out": 1, "room_type": 1, "purpose": 1},
-        ).to_list(500)
+    async def segment_guest(self, tenant_id: str, guest_id: str, *, bookings: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+        if bookings is None:
+            bookings = await db.bookings.find(
+                {"tenant_id": tenant_id, "guest_id": guest_id},
+                {"_id": 0, "total_amount": 1, "status": 1, "source": 1, "check_in": 1, "check_out": 1, "room_type": 1, "purpose": 1},
+            ).to_list(500)
 
         completed = [b for b in bookings if b.get("status") in ("checked_out", "checked_in")]
         stay_count = len(completed)
@@ -144,11 +154,20 @@ class GuestSegmentationModel:
 class ChurnPredictionModel:
     """Predict guest churn risk."""
 
-    async def predict(self, tenant_id: str, guest_id: str) -> dict[str, Any]:
-        bookings = await db.bookings.find(
-            {"tenant_id": tenant_id, "guest_id": guest_id},
-            {"_id": 0, "status": 1, "check_in": 1, "check_out": 1, "created_at": 1},
-        ).to_list(500)
+    async def predict(
+        self,
+        tenant_id: str,
+        guest_id: str,
+        *,
+        bookings: list[dict[str, Any]] | None = None,
+        future_count: int | None = None,
+        complaint_count: int | None = None,
+    ) -> dict[str, Any]:
+        if bookings is None:
+            bookings = await db.bookings.find(
+                {"tenant_id": tenant_id, "guest_id": guest_id},
+                {"_id": 0, "status": 1, "check_in": 1, "check_out": 1, "created_at": 1},
+            ).to_list(500)
 
         completed = [b for b in bookings if b.get("status") in ("checked_out", "checked_in")]
         cancelled = [b for b in bookings if b.get("status") == "cancelled"]
@@ -198,26 +217,30 @@ class ChurnPredictionModel:
                 pass
 
         # No upcoming reservation
-        future = await db.bookings.count_documents(
-            {
-                "tenant_id": tenant_id,
-                "guest_id": guest_id,
-                "check_in": {"$gte": date.today().isoformat()},
-                "status": {"$in": ["confirmed", "guaranteed"]},
-            }
-        )
+        future = future_count
+        if future is None:
+            future = await db.bookings.count_documents(
+                {
+                    "tenant_id": tenant_id,
+                    "guest_id": guest_id,
+                    "check_in": {"$gte": date.today().isoformat()},
+                    "status": {"$in": ["confirmed", "guaranteed"]},
+                }
+            )
         if future == 0 and len(completed) > 0:
             risk_score += 0.10
             factors.append({"factor": "no_future_booking", "impact": 0.10, "detail": "Gelecek rezervasyon yok"})
 
         # Guest feedback
-        complaints = await db.guest_requests.count_documents(
-            {
-                "tenant_id": tenant_id,
-                "guest_id": guest_id,
-                "type": {"$in": ["complaint", "issue"]},
-            }
-        )
+        complaints = complaint_count
+        if complaints is None:
+            complaints = await db.guest_requests.count_documents(
+                {
+                    "tenant_id": tenant_id,
+                    "guest_id": guest_id,
+                    "type": {"$in": ["complaint", "issue"]},
+                }
+            )
         if complaints >= 2:
             risk_score += 0.15
             factors.append({"factor": "complaints", "impact": 0.15, "detail": f"{complaints} sikayet kaydi"})
@@ -243,23 +266,37 @@ class ChurnPredictionModel:
 class UpsellRecommendationModel:
     """Generate upsell recommendations based on guest profile."""
 
-    async def recommend(self, tenant_id: str, guest_id: str, booking_id: str | None = None) -> dict[str, Any]:
+    async def recommend(
+        self,
+        tenant_id: str,
+        guest_id: str,
+        booking_id: str | None = None,
+        *,
+        guest: dict[str, Any] | None = None,
+        bookings: list[dict[str, Any]] | None = None,
+        charges: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
         # Guest profile
-        guest = await db.guests.find_one({"id": guest_id, "tenant_id": tenant_id}, {"_id": 0})
+        if guest is None:
+            guest = await db.guests.find_one({"id": guest_id, "tenant_id": tenant_id}, {"_id": 0})
         if not guest:
             return {"guest_id": guest_id, "recommendations": [], "error": "Guest not found"}
 
         # Past bookings
-        bookings = await db.bookings.find(
-            {"tenant_id": tenant_id, "guest_id": guest_id, "status": {"$in": ["checked_out", "checked_in"]}},
-            {"_id": 0, "room_type": 1, "total_amount": 1, "special_requests": 1},
-        ).to_list(100)
+        if bookings is None:
+            bookings = await db.bookings.find(
+                {"tenant_id": tenant_id, "guest_id": guest_id, "status": {"$in": ["checked_out", "checked_in"]}},
+                {"_id": 0, "room_type": 1, "total_amount": 1, "special_requests": 1},
+            ).to_list(100)
+        else:
+            bookings = [b for b in bookings if b.get("status") in ("checked_out", "checked_in")]
 
         # Past folio charges (spending patterns)
-        charges = await db.folio_charges.find(
-            {"tenant_id": tenant_id, "guest_id": guest_id, "voided": False},
-            {"_id": 0, "charge_category": 1, "description": 1, "amount": 1},
-        ).to_list(500)
+        if charges is None:
+            charges = await db.folio_charges.find(
+                {"tenant_id": tenant_id, "guest_id": guest_id, "voided": False},
+                {"_id": 0, "charge_category": 1, "description": 1, "amount": 1},
+            ).to_list(500)
 
         charge_categories = {}
         for c in charges:
@@ -407,7 +444,7 @@ class GuestIntelligenceDashboard:
             },
         }
 
-    async def get_dashboard(self, tenant_id: str, limit: int = 50) -> dict[str, Any]:
+    async def get_dashboard(self, tenant_id: str, limit: int = 50, *, persist_snapshot: bool = False) -> dict[str, Any]:
         """Get aggregate guest intelligence dashboard."""
         started_at = datetime.now(UTC)
 
@@ -425,6 +462,46 @@ class GuestIntelligenceDashboard:
         )
         guests = [decrypt_guest_doc(g) for g in guests]
 
+        # Bulk-load dependent data once. The former implementation performed up
+        # to nine database round-trips per guest (270+ queries for the default
+        # dashboard), which made the CRM landing page take several seconds.
+        guest_ids = [g.get("id") for g in guests if g.get("id")]
+        booking_rows = await db.bookings.find(
+            {"tenant_id": tenant_id, "guest_id": {"$in": guest_ids}},
+            {
+                "_id": 0,
+                "guest_id": 1,
+                "total_amount": 1,
+                "status": 1,
+                "check_in": 1,
+                "check_out": 1,
+                "room_type": 1,
+                "source": 1,
+                "purpose": 1,
+                "special_requests": 1,
+            },
+        ).to_list(max(500, len(guest_ids) * 500))
+        charge_rows = await db.folio_charges.find(
+            {"tenant_id": tenant_id, "guest_id": {"$in": guest_ids}, "voided": False},
+            {"_id": 0, "guest_id": 1, "charge_category": 1, "description": 1, "amount": 1},
+        ).to_list(max(500, len(guest_ids) * 500))
+        complaint_rows = await db.guest_requests.find(
+            {"tenant_id": tenant_id, "guest_id": {"$in": guest_ids}, "type": {"$in": ["complaint", "issue"]}},
+            {"_id": 0, "guest_id": 1},
+        ).to_list(max(500, len(guest_ids) * 100))
+
+        bookings_by_guest: dict[str, list[dict[str, Any]]] = {}
+        charges_by_guest: dict[str, list[dict[str, Any]]] = {}
+        complaints_by_guest: dict[str, int] = {}
+        for row in booking_rows:
+            bookings_by_guest.setdefault(row.get("guest_id"), []).append(row)
+        for row in charge_rows:
+            charges_by_guest.setdefault(row.get("guest_id"), []).append(row)
+        for row in complaint_rows:
+            gid = row.get("guest_id")
+            complaints_by_guest[gid] = complaints_by_guest.get(gid, 0) + 1
+        today = date.today().isoformat()
+
         # Calculate scores for all guests
         value_distribution = {"platinum": 0, "gold": 0, "silver": 0, "bronze": 0}
         segment_distribution = {}
@@ -437,7 +514,14 @@ class GuestIntelligenceDashboard:
             gid = guest["id"]
 
             # LTV
-            ltv = await self.ltv.calculate(tenant_id, gid)
+            guest_bookings = bookings_by_guest.get(gid, [])
+            guest_charges = charges_by_guest.get(gid, [])
+            future_count = sum(
+                1
+                for b in guest_bookings
+                if str(b.get("check_in") or "") >= today and b.get("status") in ("confirmed", "guaranteed")
+            )
+            ltv = await self.ltv.calculate(tenant_id, gid, bookings=guest_bookings, folio_charges=guest_charges)
             tier = ltv.get("value_tier", "bronze")
             value_distribution[tier] = value_distribution.get(tier, 0) + 1
 
@@ -453,12 +537,18 @@ class GuestIntelligenceDashboard:
                 )
 
             # Segmentation
-            seg = await self.segmentation.segment_guest(tenant_id, gid)
+            seg = await self.segmentation.segment_guest(tenant_id, gid, bookings=guest_bookings)
             seg_name = seg.get("segment", "occasional")
             segment_distribution[seg_name] = segment_distribution.get(seg_name, 0) + 1
 
             # Churn
-            churn = await self.churn.predict(tenant_id, gid)
+            churn = await self.churn.predict(
+                tenant_id,
+                gid,
+                bookings=guest_bookings,
+                future_count=future_count,
+                complaint_count=complaints_by_guest.get(gid, 0),
+            )
             label = churn.get("churn_risk_label", "low")
             churn_risk_summary[label] = churn_risk_summary.get(label, 0) + 1
 
@@ -473,7 +563,13 @@ class GuestIntelligenceDashboard:
                 )
 
             # Upsell
-            upsell = await self.upsell.recommend(tenant_id, gid)
+            upsell = await self.upsell.recommend(
+                tenant_id,
+                gid,
+                guest=guest,
+                bookings=guest_bookings,
+                charges=guest_charges,
+            )
             if upsell.get("total_upsell_potential", 0) > 100:
                 upsell_opportunities.append(
                     {
@@ -488,7 +584,8 @@ class GuestIntelligenceDashboard:
         high_churn_guests.sort(key=lambda x: x["churn_score"], reverse=True)
         upsell_opportunities.sort(key=lambda x: x["potential"], reverse=True)
 
-        # Persist snapshot
+        # Browser reads are side-effect free. Scheduler runs opt in to model
+        # snapshots so observability is preserved without write amplification.
         snapshot = {
             "id": str(uuid.uuid4()),
             "tenant_id": tenant_id,
@@ -503,22 +600,21 @@ class GuestIntelligenceDashboard:
             "generated_at": started_at.isoformat(),
             "version": "1.0",
         }
-        await db.guest_intelligence_snapshots.insert_one(snapshot)
-
-        # Log execution
-        await db.model_execution_logs.insert_one(
-            {
-                "id": str(uuid.uuid4()),
-                "tenant_id": tenant_id,
-                "run_id": snapshot["id"],
-                "model_type": "guest_intelligence",
-                "status": "success",
-                "output_count": len(guests),
-                "started_at": started_at.isoformat(),
-                "completed_at": datetime.now(UTC).isoformat(),
-                "duration_ms": int((datetime.now(UTC) - started_at).total_seconds() * 1000),
-            }
-        )
+        if persist_snapshot:
+            await db.guest_intelligence_snapshots.insert_one(snapshot)
+            await db.model_execution_logs.insert_one(
+                {
+                    "id": str(uuid.uuid4()),
+                    "tenant_id": tenant_id,
+                    "run_id": snapshot["id"],
+                    "model_type": "guest_intelligence",
+                    "status": "success",
+                    "output_count": len(guests),
+                    "started_at": started_at.isoformat(),
+                    "completed_at": datetime.now(UTC).isoformat(),
+                    "duration_ms": int((datetime.now(UTC) - started_at).total_seconds() * 1000),
+                }
+            )
 
         return {
             "tenant_id": tenant_id,

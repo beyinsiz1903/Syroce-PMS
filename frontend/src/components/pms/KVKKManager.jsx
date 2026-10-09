@@ -15,10 +15,13 @@ import {
   Shield, CheckCircle, Database, UserX
 } from 'lucide-react';
 
-const CATEGORY_KEYS = ['guestId', 'folioInvoice', 'contactInfo', 'preferencesNotes', 'cameraRecords', 'marketingConsents', 'complaintRecords', 'employeeRecords'];
-const RETENTION_KEYS = ['tenYears', 'tenYears', 'threeYears', 'fiveYears', 'thirtyDays', 'untilRevoked', 'fiveYears', 'fifteenYears'];
-const LEGAL_KEYS = ['kbs', 'tax', 'consent', 'legitimate', 'security', 'explicitConsent', 'legal', 'labor'];
 const REQUEST_TYPE_KEYS = ['access', 'erasure', 'rectification', 'portability', 'objection'];
+const POLICY_LABELS = {
+  guest_pii: 'Misafir kişisel verileri',
+  booking_history: 'Rezervasyon geçmişi',
+  audit_logs: 'Denetim kayıtları',
+  marketing_consents: 'Pazarlama izinleri',
+};
 
 const KVKKManager = () => {
   const { t } = useTranslation();
@@ -30,6 +33,7 @@ const KVKKManager = () => {
   const [newRequest, setNewRequest] = useState({ guest_name: '', type: '', details: '' });
   const [consents, setConsents] = useState([]);
   const [auditLogs, setAuditLogs] = useState([]);
+  const [retentionPolicy, setRetentionPolicy] = useState(null);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [loadWarning, setLoadWarning] = useState('');
@@ -38,15 +42,17 @@ const KVKKManager = () => {
     setLoading(true);
     setLoadWarning('');
     try {
-      const [reqRes, consentRes, auditRes] = await Promise.allSettled([
+      const [reqRes, consentRes, auditRes, policyRes] = await Promise.allSettled([
         axios.get('/kvkk/requests'),
         axios.get('/kvkk/consents'),
         axios.get('/kvkk/audit-log'),
+        axios.get('/gdpr/retention-policy'),
       ]);
       if (reqRes.status === 'fulfilled') setRequests(reqRes.value.data.requests || []); else setRequests([]);
       if (consentRes.status === 'fulfilled') setConsents(consentRes.value.data.consents || []); else setConsents([]);
       if (auditRes.status === 'fulfilled') setAuditLogs(auditRes.value.data.logs || []); else setAuditLogs([]);
-      const failed = [reqRes, consentRes, auditRes].filter(result => result.status === 'rejected').length;
+      if (policyRes.status === 'fulfilled') setRetentionPolicy(policyRes.value.data || null); else setRetentionPolicy(null);
+      const failed = [reqRes, consentRes, auditRes, policyRes].filter(result => result.status === 'rejected').length;
       if (failed) {
         const message = `${failed} KVKK veri kaynağı yüklenemedi. Eksik bilgiler gösterilmiyor.`;
         setLoadWarning(message);
@@ -101,7 +107,7 @@ const KVKKManager = () => {
         <Card><CardContent className="p-3 text-center"><div className="text-2xl font-bold">{requests.length}</div><div className="text-xs text-muted-foreground">{tv('totalRequests')}</div></CardContent></Card>
         <Card className="border-yellow-200"><CardContent className="p-3 text-center"><div className="text-2xl font-bold text-yellow-600">{requests.filter(r => r.status === 'pending').length}</div><div className="text-xs text-muted-foreground">{tv('pending')}</div></CardContent></Card>
         <Card className="border-green-200"><CardContent className="p-3 text-center"><div className="text-2xl font-bold text-green-600">{requests.filter(r => r.status === 'completed').length}</div><div className="text-xs text-muted-foreground">{tv('completed')}</div></CardContent></Card>
-        <Card><CardContent className="p-3 text-center"><div className="text-2xl font-bold">{CATEGORY_KEYS.length}</div><div className="text-xs text-muted-foreground">{tv('retentionPolicyCount')}</div></CardContent></Card>
+        <Card><CardContent className="p-3 text-center"><div className="text-2xl font-bold">{retentionPolicy?.policies?.length ?? '—'}</div><div className="text-xs text-muted-foreground">{tv('retentionPolicyCount')}</div></CardContent></Card>
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
@@ -115,16 +121,18 @@ const KVKKManager = () => {
         <TabsContent value="policies">
           <Card>
             <CardContent className="p-0">
+              {retentionPolicy && <div className="flex flex-wrap gap-2 border-b p-3 text-xs"><Badge variant={retentionPolicy.configured ? 'default' : 'secondary'}>{retentionPolicy.configured ? 'Tesise özel politika' : 'Varsayılan politika'}</Badge><Badge variant="outline">Otomatik anonimleştirme: {retentionPolicy.auto_anonymize ? 'Açık' : 'Kapalı'}</Badge></div>}
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
-                  <thead className="bg-muted"><tr><th className="p-3 text-left">{tv('dataCategory')}</th><th className="p-3 text-left">{tv('retentionPeriod')}</th><th className="p-3 text-left">{tv('legalBasis')}</th><th className="p-3 text-left">{tv('statusLabel')}</th></tr></thead>
+                  <thead className="bg-muted"><tr><th className="p-3 text-left">{tv('dataCategory')}</th><th className="p-3 text-left">{tv('retentionPeriod')}</th><th className="p-3 text-left">Anonimleştirme</th><th className="p-3 text-left">{tv('statusLabel')}</th></tr></thead>
                   <tbody>
-                    {CATEGORY_KEYS.map((catKey, i) => (
-                      <tr key={catKey} className="border-t">
-                        <td className="p-3 font-medium">{tv(`categories.${catKey}`)}</td>
-                        <td className="p-3"><Badge variant="outline">{tv(`retentions.${RETENTION_KEYS[i]}`)}</Badge></td>
-                        <td className="p-3 text-muted-foreground">{tv(`legalBases.${LEGAL_KEYS[i]}`)}</td>
-                        <td className="p-3"><Badge className="bg-green-100 text-green-800">{tv('active')}</Badge></td>
+                    {!retentionPolicy && !loading && <tr><td colSpan="4" className="p-4 text-center text-muted-foreground">Saklama politikası yüklenemedi.</td></tr>}
+                    {(retentionPolicy?.policies || []).map((policy) => (
+                      <tr key={policy.data_type} className="border-t">
+                        <td className="p-3 font-medium">{POLICY_LABELS[policy.data_type] || policy.data_type}</td>
+                        <td className="p-3"><Badge variant="outline">{policy.retention_days} gün</Badge></td>
+                        <td className="p-3 text-muted-foreground">{policy.auto_anonymize ? 'Süre sonunda otomatik' : 'Manuel/yasal süreç'}</td>
+                        <td className="p-3"><Badge className={retentionPolicy.configured ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'}>{retentionPolicy.configured ? 'Yapılandırıldı' : 'Varsayılan'}</Badge></td>
                       </tr>
                     ))}
                   </tbody>
