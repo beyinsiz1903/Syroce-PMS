@@ -29,4 +29,11 @@ describe('top navigation localization', () => {
     expect(layoutSource).toContain('aria-label={roomsLabel}');
     expect(layoutSource).not.toContain('aria-label="Odalar"');
   });
+
+  it('keeps the paid module marketplace permanently discoverable', () => {
+    expect(layoutSource).toContain('data-testid="nav-module-store-shortcut"');
+    expect(layoutSource).toContain('data-testid="mobile-nav-module-store"');
+    expect(layoutSource).toContain("handleNavigate('/app/module-store')");
+    expect(layoutSource).toContain("t('navKeys.module_store', 'Modül Pazarı')");
+  });
 });
