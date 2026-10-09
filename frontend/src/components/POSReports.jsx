@@ -191,7 +191,7 @@ const POSReports = ({ outletId }) => {
                     </CardContent>
                   </Card>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid gap-3 sm:grid-cols-3">
                   <Card>
                     <CardContent className="p-3 flex items-center justify-between">
                       <span className="text-sm text-gray-600">{t('cm.components_POSReports.toplam_kdv')}</span>
@@ -202,6 +202,12 @@ const POSReports = ({ outletId }) => {
                     <CardContent className="p-3 flex items-center justify-between">
                       <span className="text-sm text-gray-600">{t('cm.components_POSReports.indirim')}</span>
                       <span className="font-semibold text-amber-600">{money(report.discounts, report.currency)}</span>
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardContent className="p-3 flex items-center justify-between">
+                      <span className="text-sm text-gray-600">Servis bedeli</span>
+                      <span className="font-semibold text-blue-700">{money(report.service_charges, report.currency)}</span>
                     </CardContent>
                   </Card>
                 </div>

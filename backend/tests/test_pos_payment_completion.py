@@ -22,6 +22,8 @@ class Collection:
         for doc in self.docs:
             if all(doc.get(key) == value for key, value in query.items() if not isinstance(value, dict)):
                 doc.update(update.get("$set", {}))
+                for key, value in update.get("$push", {}).items():
+                    doc.setdefault(key, []).append(value)
                 return SimpleNamespace(matched_count=1, modified_count=1)
         return SimpleNamespace(matched_count=0, modified_count=0)
 
@@ -80,6 +82,33 @@ async def test_refund_cannot_exceed_original_payment(monkeypatch):
     result = await method(service, context(), "order-1", 101, "Misafir talebi", "refund-1")
     assert result.ok is False
     assert result.code == "REFUND_LIMIT"
+
+
+@pytest.mark.asyncio
+async def test_manager_discount_recalculates_open_check_and_keeps_audit_event():
+    orders = Collection([{
+        "id": "order-1", "tenant_id": "tenant-1", "status": "pending", "payment_status": "unpaid",
+        "total_amount": 100, "tax_amount": 10, "grand_total": 110,
+    }])
+    service = PosFnbServiceV2()
+    service._db = SimpleNamespace(pos_orders=orders)
+    method = PosFnbServiceV2.apply_order_adjustment.__wrapped__
+    result = await method(service, context(), "order-1", "discount", "percentage", 10, "Yetkili misafir indirimi")
+    assert result.ok is True
+    assert result.data["discount_amount"] == 11
+    assert result.data["grand_total"] == 99
+    assert orders.docs[0]["adjustments"][0]["reason"] == "Yetkili misafir indirimi"
+
+
+@pytest.mark.asyncio
+async def test_waiter_cannot_apply_manager_adjustment():
+    service = PosFnbServiceV2()
+    service._db = SimpleNamespace(pos_orders=Collection())
+    waiter = SimpleNamespace(tenant_id="tenant-1", actor_id="waiter-1", actor_role="waiter", actor_is_super_admin=False)
+    method = PosFnbServiceV2.apply_order_adjustment.__wrapped__
+    result = await method(service, waiter, "order-1", "discount", "fixed", 5, "İndirim")
+    assert result.ok is False
+    assert result.code == "FORBIDDEN"
 
 
 async def _none():

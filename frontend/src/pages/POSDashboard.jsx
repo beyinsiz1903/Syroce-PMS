@@ -9,11 +9,12 @@ import POSMenuItems         from '../components/POSMenuItems';
 import POSOutletManagement  from '../components/POSOutletManagement';
 import POSReports           from '../components/POSReports';
 import POSPrinterSettings   from '../components/POSPrinterSettings';
+import POSOperations        from '../components/POSOperations';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import {
   UtensilsCrossed, BarChart3, Sparkles, Store, LayoutGrid,
   AlertCircle, Coffee, Tablet, Printer, Menu as MenuIcon,
-  TrendingUp, ShoppingBag, ArrowLeft, ChevronRight, Monitor, SlidersHorizontal,
+  TrendingUp, ShoppingBag, ArrowLeft, ChevronRight, Monitor, SlidersHorizontal, Activity,
 } from 'lucide-react';
 import { useEntitlements } from '@/context/EntitlementContext';
 import { useBusinessDate } from '@/hooks/useBusinessDate';
@@ -254,6 +255,7 @@ const POSDashboard = () => {
           <TabsList className="inline-flex min-w-max h-10 items-center rounded-xl bg-white border border-gray-200 shadow-sm p-1 gap-0.5">
             {[
               { value: 'outlets',  icon: Store,       label: t('posDashboard.outlets',   'Satış Noktaları'), testId: 'tab-outlets' },
+              { value: 'operations', icon: Activity, label: 'Canlı Operasyon', testId: 'tab-operations' },
               { value: 'menu',     icon: MenuIcon,    label: t('posDashboard.menuItems', 'Menü Kalemleri'), testId: 'tab-menu' },
               { value: 'tables',   icon: LayoutGrid,  label: t('posDashboard.tables',    'Masalar'),         testId: 'tab-tables' },
               { value: 'reports',  icon: BarChart3,   label: t('posDashboard.reports',   'Raporlar'),        testId: 'tab-reports' },
@@ -276,6 +278,10 @@ const POSDashboard = () => {
 
           <TabsContent value="outlets">
             <POSOutletManagement onChange={handleOutletsChanged} />
+          </TabsContent>
+
+          <TabsContent value="operations">
+            <POSOperations outletId={currentOutletId} />
           </TabsContent>
 
           <TabsContent value="menu">
