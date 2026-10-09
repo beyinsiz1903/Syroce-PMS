@@ -181,7 +181,18 @@ class WebSocketRedisAdapter:
                     await self._pubsub.unsubscribe(channel)
                 except Exception as e:
                     failure_class = classify_redis_failure(e)
-                    if failure_class in ("REDIS_CONNECTION", "REDIS_TIMEOUT"):
+                    # ``redis.asyncio`` can raise a plain RuntimeError when
+                    # UNSUBSCRIBE overlaps a listener reconnect/close.  At
+                    # this point the local reference count and desired
+                    # channel set have already been reconciled, so a later
+                    # reconnect cannot restore the departed room.  Treat the
+                    # cleanup race like a connection teardown, while keeping
+                    # explicit command/policy failures at ERROR level.
+                    if failure_class in (
+                        "REDIS_CONNECTION",
+                        "REDIS_TIMEOUT",
+                        "REDIS_RUNTIMEERROR",
+                    ):
                         logger.warning("WS unsubscribe non-critical error class=%s", failure_class)
                     else:
                         logger.error("WS unsubscribe error class=%s", failure_class)
