@@ -31,6 +31,7 @@ export const GL_ENDPOINTS = {
   integrityAudit: '/gl/integrity-audit',
   trialBalance: '/gl/trial-balance',
   periods: '/gl/periods',
+  closingCenter: '/gl/periods',
   initializePeriods: '/gl/periods/initialize',
   yearEnd: '/gl/year-end',
   closeYear: '/gl/year-end/close',
@@ -398,6 +399,8 @@ const GeneralLedgerModule = () => {
   const [periods, setPeriods] = useState([]);
   const [periodYear, setPeriodYear] = useState(() => Number(localIsoDate().slice(0, 4)));
   const [periodBusy, setPeriodBusy] = useState('');
+  const [closingCenter, setClosingCenter] = useState(null);
+  const [closingCenterBusy, setClosingCenterBusy] = useState('');
   const [yearEndStatus, setYearEndStatus] = useState(null);
   const [periodActionDialog, setPeriodActionDialog] = useState(null);
   const [periodActionReason, setPeriodActionReason] = useState('');
@@ -914,12 +917,25 @@ const GeneralLedgerModule = () => {
     }
   };
 
+  const inspectClosingCenter = async (period) => {
+    setClosingCenterBusy(period.id);
+    try {
+      const response = await axios.get(`${GL_ENDPOINTS.closingCenter}/${period.id}/closing-center`);
+      setClosingCenter(response.data);
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'ERP kapanış kontrolleri yüklenemedi.');
+    } finally {
+      setClosingCenterBusy('');
+    }
+  };
+
   const changePeriodStatus = async (period, action, reason) => {
     setPeriodBusy(`${period.id}:${action}`);
     try {
       await axios.post(`${GL_ENDPOINTS.periods}/${period.id}/${action}`, { reason: reason.trim() });
       toast.success(action === 'close' ? 'Mali dönem kapatıldı.' : 'Mali dönem yeniden açıldı.');
       await fetchPeriods();
+      setClosingCenter(null);
       return true;
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Mali dönem güncellenemedi.');
@@ -1448,6 +1464,33 @@ const GeneralLedgerModule = () => {
               </div>
             </CardHeader>
             <CardContent>
+              <div className="mb-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm" data-testid="erp-closing-center">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="flex items-center gap-2 font-bold text-slate-900"><ShieldCheck className="h-5 w-5 text-blue-600" /> ERP Kapanış Merkezi</p>
+                    <p className="mt-1 text-xs text-slate-500">Kasa, POS, banka, e-fatura, stok, yevmiye ve mizan tek kapanış kararında doğrulanır.</p>
+                  </div>
+                  {closingCenter && (
+                    <span className={`rounded-full px-3 py-1 text-xs font-bold ${closingCenter.ready_to_close ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'}`}>
+                      {closingCenter.ready_to_close ? 'Kapanışa hazır' : `${closingCenter.summary?.blocked || 0} engel var`}
+                    </span>
+                  )}
+                </div>
+                {closingCenter ? (
+                  <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                    {(closingCenter.checks || []).map((check) => (
+                      <div key={check.code} className={`rounded-lg border p-3 ${check.status === 'blocked' ? 'border-red-200 bg-red-50' : check.status === 'warning' ? 'border-amber-200 bg-amber-50' : 'border-emerald-200 bg-emerald-50'}`}>
+                        <div className="flex items-start gap-2">
+                          {check.status === 'blocked' ? <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-600" /> : check.status === 'warning' ? <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" /> : <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />}
+                          <div><p className="text-sm font-semibold text-slate-900">{check.label}</p><p className="mt-1 text-xs text-slate-600">{check.message}</p></div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-4 rounded-lg bg-slate-50 p-3 text-sm text-slate-600">Aşağıdaki dönemlerden birinde “Kapanışı Kontrol Et” seçeneğini kullanın.</p>
+                )}
+              </div>
               <div className={`mb-4 rounded-lg border p-4 ${yearEndStatus?.closed ? 'border-slate-300 bg-slate-50' : 'border-blue-200 bg-blue-50/50'}`}>
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                   <div>
@@ -1490,6 +1533,9 @@ const GeneralLedgerModule = () => {
                           </span>
                         </div>
                         {closed && period.close_reason && <p className="mt-2 text-xs text-slate-600">Gerekçe: {period.close_reason}</p>}
+                        {!closed && <Button className="mt-3 w-full" size="sm" variant="outline" disabled={closingCenterBusy === period.id} onClick={() => inspectClosingCenter(period)}>
+                          <ShieldCheck className="mr-1.5 h-3.5 w-3.5" /> {closingCenterBusy === period.id ? 'Kontrol ediliyor...' : 'Kapanışı Kontrol Et'}
+                        </Button>}
                         <Button className="w-full mt-3" size="sm" variant={closed ? 'outline' : 'default'} disabled={busy} onClick={() => requestPeriodAction(action, period)}>
                           {closed ? <Unlock className="w-3.5 h-3.5 mr-1.5" /> : <LockKeyhole className="w-3.5 h-3.5 mr-1.5" />}
                           {busy ? 'İşleniyor...' : closed ? 'Yeniden Aç' : 'Dönemi Kapat'}

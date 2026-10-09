@@ -37,6 +37,7 @@ describe('GeneralLedgerModule persistent GL contract', () => {
       integrityAudit: '/gl/integrity-audit',
       trialBalance: '/gl/trial-balance',
       periods: '/gl/periods',
+      closingCenter: '/gl/periods',
       initializePeriods: '/gl/periods/initialize',
       yearEnd: '/gl/year-end',
       closeYear: '/gl/year-end/close',

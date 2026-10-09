@@ -802,6 +802,31 @@ async def test_initialize_fiscal_year_creates_twelve_open_periods(_patch):
     assert out["periods"][-1]["end_date"] == "2026-12-31"
 
 
+async def test_erp_closing_center_blocks_open_cashier_and_negative_inventory(_patch):
+    await gl.initialize_periods(gl.FiscalYearIn(fiscal_year=2026), current_user=_user("finance"))
+    _patch.cashier_shifts = _Coll("cashier_shifts")
+    _patch.inventory_items = _Coll("inventory_items")
+    _patch.cashier_shifts.docs.append({
+        "tenant_id": TENANT,
+        "business_date": "2026-01-15",
+        "status": "open",
+    })
+    _patch.inventory_items.docs.append({"tenant_id": TENANT, "quantity": -2})
+
+    snapshot = await gl.period_closing_center("tenant-A:2026:01", current_user=_user("finance"))
+
+    assert snapshot["ready_to_close"] is False
+    assert {item["code"] for item in snapshot["blockers"]} == {"cashier", "inventory"}
+    with pytest.raises(HTTPException) as exc:
+        await gl.close_period(
+            "tenant-A:2026:01",
+            gl.PeriodActionIn(reason="Ocak kapanışı"),
+            current_user=_user("finance"),
+        )
+    assert exc.value.status_code == 409
+    assert "ERP kapanış" in exc.value.detail
+
+
 async def test_closed_period_blocks_new_post_but_allows_exact_retry(_patch):
     await _seed_basic_coa()
     key = "close-retry-key"
