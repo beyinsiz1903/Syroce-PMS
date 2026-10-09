@@ -4,7 +4,7 @@ import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 import {
   Activity, ArrowLeftRight, Building2, Check, ChevronRight, CircleAlert,
-  Clock3, PackageCheck, RotateCcw, Search, ShieldCheck, SlidersHorizontal, Users,
+  Clock3, PackageCheck, Pencil, RotateCcw, Save, Search, ShieldCheck, SlidersHorizontal, Users,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -32,6 +32,10 @@ export default function AdminModuleControlCenter() {
   const [statusData, setStatusData] = useState({ entitlements: null, usage: null });
   const [statusLoading, setStatusLoading] = useState(false);
   const [statusError, setStatusError] = useState('');
+  const [catalogOpen, setCatalogOpen] = useState(false);
+  const [products, setProducts] = useState([]);
+  const [productDrafts, setProductDrafts] = useState({});
+  const [savingProduct, setSavingProduct] = useState('');
 
   const load = async () => {
     setLoading(true);
@@ -49,6 +53,31 @@ export default function AdminModuleControlCenter() {
   };
 
   useEffect(() => { load(); }, []);
+
+  const loadProducts = async () => {
+    try {
+      const response = await axios.get('/module-store/admin/products');
+      const rows = Array.isArray(response.data?.products) ? response.data.products : [];
+      setProducts(rows);
+      setProductDrafts(Object.fromEntries(rows.map((item) => [item.key, { ...item }])));
+    } catch (err) { toast.error(err.response?.data?.detail || 'Mağaza fiyatları yüklenemedi.'); }
+  };
+
+  const toggleCatalog = () => {
+    const next = !catalogOpen; setCatalogOpen(next);
+    if (next && !products.length) void loadProducts();
+  };
+
+  const saveProduct = async (key) => {
+    setSavingProduct(key);
+    try {
+      const draftProduct = productDrafts[key];
+      await axios.post('/module-store/admin/products', draftProduct);
+      toast.success(`${draftProduct.name} fiyatı ve ticari sözleşmesi güncellendi.`);
+      await loadProducts();
+    } catch (err) { toast.error(err.response?.data?.detail || 'Ürün kaydedilemedi.'); }
+    finally { setSavingProduct(''); }
+  };
 
   const selected = useMemo(
     () => tenants.find((tenant) => tenantId(tenant) === selectedId),
@@ -145,6 +174,7 @@ export default function AdminModuleControlCenter() {
           <p className="mt-1 max-w-2xl text-sm text-slate-600">Lisansı ve tesis erişimini tek ekrandan yönetin. Değişiklikler yayınlanana kadar taslakta kalır.</p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <Button variant="outline" onClick={toggleCatalog} data-testid="manage-marketplace-prices"><Pencil className="mr-2 h-4 w-4" /> Mağaza fiyatlarını yönet</Button>
           <Button variant="outline" onClick={discard} disabled={!changes.length || saving}>
             <RotateCcw className="mr-2 h-4 w-4" /> Taslağı geri al
           </Button>
@@ -153,6 +183,21 @@ export default function AdminModuleControlCenter() {
           </Button>
         </div>
       </header>
+
+      {catalogOpen && <section className="rounded-xl border border-blue-200 bg-white p-4 shadow-sm" aria-label="Modül mağazası fiyat yönetimi">
+        <div className="mb-4"><h2 className="font-semibold text-slate-950">Modül mağazası fiyat ve sözleşme yönetimi</h2><p className="mt-1 text-xs text-slate-500">Değişiklikler fiyat versiyonu ve kaynak bilgisiyle denetim geçmişine kaydedilir. Checkout her zaman bu sözleşmeyi kullanır.</p></div>
+        <div className="grid gap-3 xl:grid-cols-2">{products.map((product) => { const draftProduct = productDrafts[product.key] || product; const update = (field, value) => setProductDrafts((current) => ({ ...current, [product.key]: { ...current[product.key], [field]: value } })); return <article key={product.key} className="rounded-xl border border-slate-200 p-4">
+          <div className="flex items-start justify-between gap-3"><div><h3 className="font-semibold text-slate-900">{product.name}</h3><p className="text-xs text-slate-500">{product.key} · v{product.price_version || 1}</p></div><Button size="sm" onClick={() => saveProduct(product.key)} disabled={savingProduct === product.key}><Save className="mr-1.5 h-4 w-4" /> Kaydet</Button></div>
+          <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <label className="text-xs text-slate-600">Birim fiyat ₺<Input type="number" value={draftProduct.unit_price_try ?? draftProduct.price_try ?? 0} onChange={(event) => { const value = Number(event.target.value); update('unit_price_try', value); update('price_try', value); }} /></label>
+            <label className="text-xs text-slate-600">KDV %<Input type="number" value={draftProduct.tax_rate_pct ?? 20} onChange={(event) => update('tax_rate_pct', Number(event.target.value))} /></label>
+            <label className="text-xs text-slate-600">Dahil birim<Input type="number" value={draftProduct.included_units ?? 1} onChange={(event) => update('included_units', Number(event.target.value))} /></label>
+            <label className="text-xs text-slate-600">Kurulum dk<Input type="number" value={draftProduct.setup_minutes ?? 30} onChange={(event) => update('setup_minutes', Number(event.target.value))} /></label>
+          </div>
+          <div className="mt-2 grid gap-2 sm:grid-cols-3"><label className="text-xs text-slate-600">Fiyat ölçüsü<Input value={draftProduct.pricing_model || 'property'} onChange={(event) => update('pricing_model', event.target.value)} /></label><label className="text-xs text-slate-600">Kaynak<Input value={draftProduct.price_source || ''} onChange={(event) => update('price_source', event.target.value)} /></label><label className="text-xs text-slate-600">Geçerlilik başlangıcı<Input type="date" value={draftProduct.price_valid_from || ''} onChange={(event) => update('price_valid_from', event.target.value)} /></label></div>
+        </article>; })}</div>
+        {!products.length && <p className="py-8 text-center text-sm text-slate-500">Ürünler yükleniyor…</p>}
+      </section>}
 
       {error && <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error} <button className="font-semibold underline" onClick={load}>Yeniden dene</button></div>}
 

@@ -151,6 +151,9 @@ async def phase_c_domain_indexes_and_workers(app):
         from core.subscriptions import ensure_indexes as _ms_indexes
 
         await _ms_indexes()
+        from workers.marketplace_renewal_worker import start as _start_marketplace_renewals
+        if _start_marketplace_renewals():
+            logger.info("Marketplace automatic renewal worker started")
         logger.info("Marketplace indexes ensured")
     except Exception as e:
         logger.warning(f"Marketplace index creation error: {e}")

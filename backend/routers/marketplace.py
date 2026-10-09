@@ -12,7 +12,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from core.security import get_current_user
@@ -220,6 +220,13 @@ DEFAULT_PRODUCTS += [
     },
 ]
 
+# Keep the public catalog, checkout and renewal worker on one commercial
+# contract.  Existing admin edits remain authoritative because seeding uses
+# $setOnInsert.
+from core.marketplace_contracts import calculate_price, enrich_product, provision_subscription
+
+DEFAULT_PRODUCTS = [enrich_product(product) for product in DEFAULT_PRODUCTS]
+
 
 def _db():
     """Return raw, non-tenant-scoped DB.
@@ -257,6 +264,16 @@ async def _seed_products_if_empty() -> None:
         )
         if result.upserted_id is not None:
             inserted += 1
+        # Backfill newly introduced contract fields without overwriting any
+        # price or policy that a platform administrator already set.
+        existing = await db.marketplace_products.find_one({"key": p["key"]}, {"_id": 0}) or {}
+        missing = {key: value for key, value in p.items() if key not in existing and key in {
+            "pricing_model", "included_units", "unit_price_try", "tax_rate_pct", "setup_minutes",
+            "provisioning_strategy", "readiness_checks", "price_version", "price_valid_from",
+            "price_source", "price_source_url", "auto_renew",
+        }}
+        if missing:
+            await db.marketplace_products.update_one({"key": p["key"]}, {"$set": missing})
     if inserted:
         logger.info("[marketplace] inserted %d new default products", inserted)
 
@@ -292,10 +309,24 @@ class ProductIn(BaseModel):
     popular: bool = False
     price_note: str | None = None
     price_note_en: str | None = None
+    pricing_model: str = "property"
+    included_units: int = Field(default=1, ge=1)
+    unit_price_try: float | None = Field(default=None, ge=0)
+    tax_rate_pct: float = Field(default=20, ge=0, le=100)
+    setup_minutes: int = Field(default=30, ge=0)
+    provisioning_strategy: str = "native"
+    readiness_checks: list[str] = Field(default_factory=list)
+    price_source: str = "Syroce commercial review"
+    price_source_url: str | None = None
+    price_valid_from: str | None = None
+    price_valid_until: str | None = None
+    price_version: int = Field(default=1, ge=1)
+    auto_renew: bool = True
 
 
 class PurchaseRequest(BaseModel):
     product_key: str
+    quantity: int = Field(default=1, ge=1, le=10000)
 
 
 class StartTrialRequest(BaseModel):
@@ -305,6 +336,20 @@ class StartTrialRequest(BaseModel):
 class QuoteRequest(BaseModel):
     product_key: str
     note: str | None = Field(default=None, max_length=1000)
+
+
+class SubscriptionAction(BaseModel):
+    reason: str | None = Field(default=None, max_length=500)
+
+
+class ReadinessStepUpdate(BaseModel):
+    step_key: str
+    completed: bool = True
+
+
+class RefundRequest(BaseModel):
+    order_id: str
+    reason: str = Field(min_length=3, max_length=500)
 
 
 # ── Public catalog ──────────────────────────────────────────────
@@ -321,6 +366,15 @@ async def list_products() -> dict:
         "payment_ready": is_configured(),
         "currency": "TRY",
     }
+
+
+@router.get("/products/{product_key}/quote")
+async def product_quote(product_key: str, quantity: int = 1) -> dict:
+    await _seed_products_if_empty()
+    product = await _db().marketplace_products.find_one({"key": product_key, "active": True}, {"_id": 0})
+    if not product:
+        raise HTTPException(status_code=404, detail="Ürün bulunamadı")
+    return {"product_key": product_key, "pricing_model": product.get("pricing_model", "property"), "included_units": product.get("included_units", 1), **calculate_price(product, quantity)}
 
 
 # ── Tenant: my subscriptions ────────────────────────────────────
@@ -370,11 +424,13 @@ async def request_quote(
 @router.post("/purchase")
 async def purchase(
     payload: PurchaseRequest,
+    request: Request,
     current_user: User = Depends(get_current_user),
 ) -> dict:
     """Generic iyzico Checkout Form purchase. Returns paymentPageUrl."""
     from core.iyzico import init_checkout_form, is_configured, public_callback_url
 
+    _require_tenant_admin(current_user)
     if not current_user.tenant_id:
         raise HTTPException(status_code=403, detail="Tenant gerekli")
     db = _db()
@@ -388,6 +444,7 @@ async def purchase(
         )
 
     tenant = await db.tenants.find_one({"id": current_user.tenant_id}, {"_id": 0})
+    quote = calculate_price(product, payload.quantity)
     order_id = str(uuid.uuid4())
     order_doc = {
         "order_id": order_id,
@@ -395,7 +452,13 @@ async def purchase(
         "user_id": current_user.id,
         "product_key": product["key"],
         "product_name": product["name"],
-        "price_try": product["price_try"],
+        "price_try": quote["total_try"],
+        "subtotal_try": quote["subtotal_try"],
+        "tax_try": quote["tax_try"],
+        "tax_rate_pct": quote["tax_rate_pct"],
+        "quantity": quote["quantity"],
+        "billable_units": quote["billable_units"],
+        "price_version": quote["price_version"],
         "duration_days": product.get("duration_days"),
         "credits": product.get("credits"),
         "billing_type": product.get("billing_type"),
@@ -413,8 +476,8 @@ async def purchase(
     iyzico_payload = {
         "locale": "tr",
         "conversationId": order_id,
-        "price": str(product["price_try"]),
-        "paidPrice": str(product["price_try"]),
+        "price": str(quote["total_try"]),
+        "paidPrice": str(quote["total_try"]),
         "currency": "TRY",
         "basketId": order_id,
         "paymentGroup": "PRODUCT",
@@ -426,9 +489,9 @@ async def purchase(
             "surname": last,
             "gsmNumber": (tenant or {}).get("phone") or "+905555555555",
             "email": buyer_email,
-            "identityNumber": "11111111111",
+            "identityNumber": (tenant or {}).get("tax_number") or (tenant or {}).get("identity_number") or "11111111111",
             "registrationAddress": (tenant or {}).get("address") or "Türkiye",
-            "ip": "127.0.0.1",
+            "ip": request.client.host if request.client else "127.0.0.1",
             "city": (tenant or {}).get("city") or "Istanbul",
             "country": "Turkey",
         },
@@ -450,7 +513,7 @@ async def purchase(
                 "name": product["name"][:80],
                 "category1": "Dijital",
                 "itemType": "VIRTUAL",
-                "price": str(product["price_try"]),
+                "price": str(quote["total_try"]),
             }
         ],
     }
@@ -488,6 +551,7 @@ async def start_trial(
     if already started. After expiry, the entitlement check naturally
     returns False until the tenant pays for the real subscription.
     """
+    _require_tenant_admin(current_user)
     if not current_user.tenant_id:
         raise HTTPException(status_code=403, detail="Tenant gerekli")
     db = _db()
@@ -565,6 +629,7 @@ async def start_trial(
                 await provision_tenant(current_user.tenant_id)
             except Exception as e:
                 logger.exception("[marketplace] afsadakat trial provision failed: %s", e)
+        await provision_subscription(db, current_user.tenant_id, product, sub["id"])
         logger.info("[marketplace] trial started tenant=%s product=%s until=%s", current_user.tenant_id, product["key"], sub["end_date"])
 
     return {
@@ -626,11 +691,94 @@ async def purchase_callback(order_id: str) -> dict:
         logger.exception("[marketplace] activation failed for order=%s: %s", order_id, e)
         raise HTTPException(status_code=500, detail="Aktivasyon hatası; lütfen birkaç dakika sonra tekrar deneyin")
 
+    # Some iyzico merchant configurations return a reusable card token.  Store
+    # it server-side only so the renewal worker can charge without exposing it.
+    if res.get("cardToken") and res.get("cardUserKey"):
+        tenant = await db.tenants.find_one({"id": order["tenant_id"]}, {"_id": 0}) or {}
+        contact = tenant.get("property_name") or "Otel"
+        address = {"contactName": contact, "city": tenant.get("city") or "Istanbul", "country": "Turkey", "address": tenant.get("address") or "Türkiye"}
+        await db.marketplace_payment_methods.update_many({"tenant_id": order["tenant_id"]}, {"$set": {"is_default": False}})
+        await db.marketplace_payment_methods.insert_one({"id": str(uuid.uuid4()), "tenant_id": order["tenant_id"], "provider": "iyzico", "status": "active", "is_default": True, "card_user_key": res["cardUserKey"], "card_token": res["cardToken"], "last4": res.get("lastFourDigits"), "card_family": res.get("cardFamily"), "buyer": {"id": order["user_id"], "name": contact, "surname": "Yetkilisi", "gsmNumber": tenant.get("phone") or "+905555555555", "email": tenant.get("email") or "noreply@syroce.com", "identityNumber": tenant.get("tax_number") or "11111111111", "registrationAddress": address["address"], "ip": "127.0.0.1", "city": address["city"], "country": "Turkey"}, "address": address, "created_at": _now_iso()})
+
     await db.marketplace_orders.update_one(
         {"order_id": order_id, "status": "pending"},
         {"$set": {"status": "completed", "iyzico_payment_id": res.get("paymentId"), "completed_at": _now_iso()}},
     )
     return {"status": "completed", "product_key": order["product_key"]}
+
+
+@router.get("/billing")
+async def billing_overview(current_user: User = Depends(get_current_user)) -> dict:
+    _require_tenant_admin(current_user)
+    db = _db()
+    subscriptions = await get_active_subscriptions(current_user.tenant_id)
+    orders = [row async for row in db.marketplace_orders.find({"tenant_id": current_user.tenant_id, "status": "completed"}, {"_id": 0, "iyzico_token": 0}).sort("created_at", -1).limit(100)]
+    methods = [row async for row in db.marketplace_payment_methods.find({"tenant_id": current_user.tenant_id, "status": "active"}, {"_id": 0, "card_token": 0, "card_user_key": 0, "buyer": 0, "address": 0})]
+    return {"subscriptions": subscriptions, "invoices": orders, "payment_methods": methods}
+
+
+@router.delete("/payment-methods/{payment_method_id}")
+async def remove_payment_method(payment_method_id: str, current_user: User = Depends(get_current_user)) -> dict:
+    """Revoke a saved renewal mandate without ever returning provider tokens."""
+    _require_tenant_admin(current_user)
+    db = _db()
+    result = await db.marketplace_payment_methods.update_one(
+        {"id": payment_method_id, "tenant_id": current_user.tenant_id, "status": "active"},
+        {"$set": {"status": "revoked", "is_default": False, "revoked_by": current_user.id, "revoked_at": _now_iso()}},
+    )
+    if not result.matched_count:
+        raise HTTPException(status_code=404, detail="Ödeme yöntemi bulunamadı")
+    return {"ok": True}
+
+
+@router.post("/subscriptions/{subscription_id}/cancel")
+async def cancel_subscription(subscription_id: str, payload: SubscriptionAction, current_user: User = Depends(get_current_user)) -> dict:
+    _require_tenant_admin(current_user)
+    db = _db()
+    result = await db.tenant_subscriptions.update_one({"id": subscription_id, "tenant_id": current_user.tenant_id, "status": {"$in": ["active", "past_due"]}}, {"$set": {"auto_renew": False, "cancel_at_period_end": True, "cancel_reason": payload.reason, "cancelled_by": current_user.id, "updated_at": _now_iso()}})
+    if not result.matched_count:
+        raise HTTPException(status_code=404, detail="Abonelik bulunamadı")
+    return {"ok": True, "cancel_at_period_end": True}
+
+
+@router.post("/orders/refund-request")
+async def request_refund(payload: RefundRequest, current_user: User = Depends(get_current_user)) -> dict:
+    _require_tenant_admin(current_user)
+    db = _db()
+    order = await db.marketplace_orders.find_one({"order_id": payload.order_id, "tenant_id": current_user.tenant_id, "status": "completed"}, {"_id": 0})
+    if not order:
+        raise HTTPException(status_code=404, detail="İade edilebilir sipariş bulunamadı")
+    request_id = str(uuid.uuid4())
+    await db.marketplace_refund_requests.update_one({"order_id": payload.order_id}, {"$setOnInsert": {"id": request_id, "tenant_id": current_user.tenant_id, "order_id": payload.order_id, "reason": payload.reason, "status": "new", "created_by": current_user.id, "created_at": _now_iso()}}, upsert=True)
+    return {"ok": True, "request_id": request_id, "status": "new"}
+
+
+@router.get("/subscriptions/{subscription_id}/readiness")
+async def subscription_readiness(subscription_id: str, current_user: User = Depends(get_current_user)) -> dict:
+    _require_tenant_admin(current_user)
+    plan = await _db().marketplace_provisioning.find_one({"subscription_id": subscription_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
+    if not plan:
+        raise HTTPException(status_code=404, detail="Kurulum planı bulunamadı")
+    complete = sum(1 for step in plan.get("steps", []) if step.get("status") == "complete")
+    return {**plan, "health": "healthy" if complete == len(plan.get("steps", [])) else "setup_required", "completed_steps": complete, "total_steps": len(plan.get("steps", []))}
+
+
+@router.patch("/subscriptions/{subscription_id}/readiness")
+async def update_readiness(subscription_id: str, payload: ReadinessStepUpdate, current_user: User = Depends(get_current_user)) -> dict:
+    _require_tenant_admin(current_user)
+    db = _db()
+    plan = await db.marketplace_provisioning.find_one({"subscription_id": subscription_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
+    if not plan:
+        raise HTTPException(status_code=404, detail="Kurulum planı bulunamadı")
+    found = False
+    for step in plan.get("steps", []):
+        if step.get("key") == payload.step_key:
+            step["status"] = "complete" if payload.completed else "pending"; step["updated_at"] = _now_iso(); found = True
+    if not found:
+        raise HTTPException(status_code=404, detail="Kurulum adımı bulunamadı")
+    ready = all(step.get("status") == "complete" for step in plan.get("steps", []))
+    await db.marketplace_provisioning.update_one({"subscription_id": subscription_id}, {"$set": {"steps": plan["steps"], "status": "ready" if ready else "setup_required", "updated_at": _now_iso()}})
+    return {"ok": True, "status": "ready" if ready else "setup_required"}
 
 
 async def _activate_subscription(order: dict) -> None:
@@ -646,6 +794,7 @@ async def _activate_subscription(order: dict) -> None:
     duration_days = order.get("duration_days")
     credits = order.get("credits")
     now = datetime.now(UTC)
+    product = await db.marketplace_products.find_one({"key": product_key}, {"_id": 0}) or enrich_product({"key": product_key, "price_try": order.get("subtotal_try", order.get("price_try", 0)), "billing_type": order.get("billing_type", "subscription")})
 
     # Atomic idempotency guard: insert a marker row keyed by order_id
     # BEFORE any entitlement mutation. Unique index on order_id (see
@@ -681,19 +830,7 @@ async def _activate_subscription(order: dict) -> None:
             },
             upsert=True,
         )
-        await db.tenant_subscriptions.insert_one(
-            {
-                "id": str(uuid.uuid4()),
-                "tenant_id": tenant_id,
-                "product_key": product_key,
-                "status": "active",
-                "start_date": now.isoformat(),
-                "end_date": None,
-                "credits_granted": int(credits),
-                "order_id": order["order_id"],
-                "created_at": _now_iso(),
-            }
-        )
+        await db.marketplace_credit_grants.insert_one({"id": str(uuid.uuid4()), "tenant_id": tenant_id, "product_key": product_key, "credits_granted": int(credits), "order_id": order["order_id"], "created_at": _now_iso()})
         logger.info("[marketplace] tenant=%s credits +%s for %s", tenant_id, credits, product_key)
         return
 
@@ -725,25 +862,32 @@ async def _activate_subscription(order: dict) -> None:
             pass
         await db.tenant_subscriptions.update_one(
             {"id": existing["id"]},
-            {"$set": {"end_date": new_end.isoformat(), "last_renewal_order_id": order["order_id"], "updated_at": _now_iso()}},
+            {"$set": {"end_date": new_end.isoformat(), "last_renewal_order_id": order["order_id"], "trial": False, "auto_renew": bool(product.get("auto_renew", True)), "quantity": order.get("quantity", 1), "updated_at": _now_iso()}},
         )
+        subscription_id = existing["id"]
         logger.info("[marketplace] tenant=%s extended %s until %s", tenant_id, product_key, new_end.isoformat())
     else:
+        subscription_id = str(uuid.uuid4())
         await db.tenant_subscriptions.insert_one(
             {
-                "id": str(uuid.uuid4()),
+                "id": subscription_id,
                 "tenant_id": tenant_id,
                 "product_key": product_key,
                 "status": "active",
                 "start_date": now.isoformat(),
                 "end_date": new_end.isoformat(),
                 "order_id": order["order_id"],
+                "trial": False,
+                "auto_renew": bool(product.get("auto_renew", True)),
+                "quantity": order.get("quantity", 1),
+                "renewal_status": "scheduled",
                 "created_at": _now_iso(),
             }
         )
         logger.info("[marketplace] tenant=%s activated %s until %s", tenant_id, product_key, new_end.isoformat())
 
     await _post_activate()
+    await provision_subscription(db, tenant_id, product, subscription_id)
 
 
 # ── Authorization helpers ────────────────────────────────────────
@@ -781,6 +925,8 @@ def _require_platform_admin(user: User) -> None:
 def _require_tenant_admin(user: User) -> None:
     if not _is_tenant_admin(user):
         raise HTTPException(status_code=403, detail="Yetki yok")
+    if not getattr(user, "tenant_id", None):
+        raise HTTPException(status_code=422, detail="Bu işlem için bir otel hesabı seçilmelidir")
 
 
 # ── Platform admin: product catalog CRUD ────────────────────────
@@ -803,13 +949,40 @@ async def admin_upsert_product(
 ) -> dict:
     _require_platform_admin(current_user)
     db = _db()
-    doc = payload.model_dump()
+    doc = enrich_product(payload.model_dump())
+    existing = await db.marketplace_products.find_one({"key": doc["key"]}, {"_id": 0})
+    price_changed = bool(existing) and any(existing.get(field) != doc.get(field) for field in ("price_try", "unit_price_try", "tax_rate_pct", "included_units", "pricing_model"))
+    if price_changed:
+        doc["price_version"] = int(existing.get("price_version", 1)) + 1
+        await db.marketplace_price_history.insert_one({"id": str(uuid.uuid4()), "product_key": doc["key"], "version": doc["price_version"], "previous": {field: existing.get(field) for field in ("price_try", "unit_price_try", "tax_rate_pct", "included_units", "pricing_model", "price_source", "price_valid_from", "price_valid_until")}, "next": {field: doc.get(field) for field in ("price_try", "unit_price_try", "tax_rate_pct", "included_units", "pricing_model", "price_source", "price_valid_from", "price_valid_until")}, "changed_by": current_user.id, "changed_at": _now_iso()})
     await db.marketplace_products.update_one(
         {"key": doc["key"]},
         {"$set": {**doc, "updated_at": _now_iso()}, "$setOnInsert": {"created_at": _now_iso()}},
         upsert=True,
     )
-    return {"ok": True, "key": doc["key"]}
+    return {"ok": True, "key": doc["key"], "price_version": doc.get("price_version", 1)}
+
+
+@router.get("/admin/products/{key}/price-history")
+async def admin_price_history(key: str, current_user: User = Depends(get_current_user)) -> dict:
+    _require_platform_admin(current_user)
+    rows = [row async for row in _db().marketplace_price_history.find({"product_key": key}, {"_id": 0}).sort("changed_at", -1).limit(100)]
+    return {"history": rows}
+
+
+@router.get("/admin/setup-tasks")
+async def admin_setup_tasks(current_user: User = Depends(get_current_user), status_filter: str | None = None) -> dict:
+    _require_platform_admin(current_user)
+    query = {"status": status_filter} if status_filter else {}
+    rows = [row async for row in _db().marketplace_setup_tasks.find(query, {"_id": 0}).sort("created_at", -1).limit(200)]
+    return {"tasks": rows}
+
+
+@router.post("/admin/run-renewals")
+async def admin_run_renewals(current_user: User = Depends(get_current_user)) -> dict:
+    _require_platform_admin(current_user)
+    from workers.marketplace_renewal_worker import process_due_renewals
+    return await process_due_renewals(_db())
 
 
 @router.delete("/admin/products/{key}")
