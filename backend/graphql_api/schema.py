@@ -535,10 +535,10 @@ def _introspection_enabled() -> bool:
     return True
 
 
-_extensions = [QueryDepthLimiter(max_depth=10)]
+_extensions = [lambda: QueryDepthLimiter(max_depth=10)]
 if not _introspection_enabled() and NoSchemaIntrospectionCustomRule is not None:
     # Disable introspection by rejecting any query that touches __schema/__type.
-    _extensions.append(AddValidationRules([NoSchemaIntrospectionCustomRule]))
+    _extensions.append(lambda: AddValidationRules([NoSchemaIntrospectionCustomRule]))
 
 schema = strawberry.Schema(
     query=Query,

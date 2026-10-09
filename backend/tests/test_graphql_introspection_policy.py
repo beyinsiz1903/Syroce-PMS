@@ -13,7 +13,6 @@ from strawberry.extensions import AddValidationRules
 
 from graphql_api.schema import _introspection_enabled
 
-
 # --- policy logic ---------------------------------------------------------
 
 def test_explicit_opt_in_enables(monkeypatch):
@@ -64,7 +63,7 @@ _INTROSPECTION = "{ __schema { types { name } } }"
 def test_introspection_rejected_when_rule_applied():
     schema = strawberry.Schema(
         query=_Q,
-        extensions=[AddValidationRules([NoSchemaIntrospectionCustomRule])],
+        extensions=[lambda: AddValidationRules([NoSchemaIntrospectionCustomRule])],
     )
     result = schema.execute_sync(_INTROSPECTION)
     assert result.errors, "introspection must be rejected when rule applied"
