@@ -170,6 +170,70 @@ async def list_periods(
     return {"periods": rows}
 
 
+async def _optional_count(collection_name: str, query: dict) -> int:
+    """Count an ERP source without making legacy/test DB adapters mandatory."""
+    collection = getattr(db, collection_name, None)
+    if collection is None:
+        return 0
+    return await collection.count_documents(query)
+
+
+async def _closing_center_snapshot(period: dict, tenant_id: str) -> dict:
+    """Build the immutable readiness decision used by both UI and close action."""
+    start, end = period["start_date"], period["end_date"]
+    dated = {"$gte": start, "$lte": end}
+    timestamped = {"$gte": f"{start}T00:00:00", "$lte": f"{end}T23:59:59.999999"}
+    mapping = await get_operational_mapping(db, tenant_id)
+    (
+        pending_vouchers,
+        open_cashiers,
+        failed_night_audits,
+        failed_pos,
+        unmatched_bank,
+        pending_invoice_reviews,
+        negative_inventory,
+    ) = await asyncio.gather(
+        _optional_count("gl_vouchers", {"tenant_id": tenant_id, "date": dated, "status": {"$in": ["draft", "submitted", "approved", "posting", "rejected"]}}),
+        _optional_count("cashier_shifts", {"tenant_id": tenant_id, "status": "open", "$or": [{"business_date": dated}, {"opened_at": timestamped}]}),
+        _optional_count("night_audit_runs", {"tenant_id": tenant_id, "business_date": dated, "gl_bridge_status": "failed"}),
+        _optional_count("pos_transactions", {"tenant_id": tenant_id, "transaction_date": dated, "gl_bridge_status": "failed"}),
+        _optional_count("bank_transactions", {"tenant_id": tenant_id, "date": dated, "status": {"$ne": "matched"}}),
+        _optional_count("gl_nilvera_queue", {"tenant_id": tenant_id, "created_at": timestamped, "status": {"$in": ["pending", "blocked"]}}),
+        _optional_count("inventory_items", {"tenant_id": tenant_id, "quantity": {"$lt": 0}}),
+    )
+    trial = await compute_trial_balance(db, tenant_id, as_of=end)
+    checks = [
+        {"code": "vouchers", "label": "Yevmiye fişleri", "status": "blocked" if pending_vouchers else "ready", "count": pending_vouchers, "message": f"{pending_vouchers} fiş kesinleşmeyi bekliyor" if pending_vouchers else "Tüm fişler kesinleşti"},
+        {"code": "cashier", "label": "Kasa vardiyaları", "status": "blocked" if open_cashiers else "ready", "count": open_cashiers, "message": f"{open_cashiers} kasa vardiyası açık" if open_cashiers else "Açık kasa vardiyası yok"},
+        {"code": "operational_bridge", "label": "PMS/POS muhasebe köprüsü", "status": "blocked" if (failed_night_audits or failed_pos) else ("warning" if not mapping.get("enabled") else "ready"), "count": failed_night_audits + failed_pos, "message": "Muhasebe köprüsü kapalı; otomatik aktarım yapılmıyor" if not mapping.get("enabled") else (f"{failed_night_audits + failed_pos} aktarım hatası var" if failed_night_audits or failed_pos else "Operasyon aktarımları sağlıklı")},
+        {"code": "trial_balance", "label": "Mizan dengesi", "status": "ready" if trial.get("totals", {}).get("balanced", False) else "blocked", "count": 0, "message": "Mizan dengeli" if trial.get("totals", {}).get("balanced", False) else "Mizan borç/alacak dengesi bozuk"},
+        {"code": "bank", "label": "Banka mutabakatı", "status": "warning" if unmatched_bank else "ready", "count": unmatched_bank, "message": f"{unmatched_bank} banka hareketi eşleşmemiş" if unmatched_bank else "Banka hareketleri eşleşti"},
+        {"code": "invoice_queue", "label": "E-fatura muhasebe kuyruğu", "status": "warning" if pending_invoice_reviews else "ready", "count": pending_invoice_reviews, "message": f"{pending_invoice_reviews} belge inceleme bekliyor" if pending_invoice_reviews else "Bekleyen belge yok"},
+        {"code": "inventory", "label": "Stok bütünlüğü", "status": "blocked" if negative_inventory else "ready", "count": negative_inventory, "message": f"{negative_inventory} stok kalemi negatif" if negative_inventory else "Negatif stok yok"},
+    ]
+    blockers = [check for check in checks if check["status"] == "blocked"]
+    warnings = [check for check in checks if check["status"] == "warning"]
+    return {
+        "period": {key: period.get(key) for key in ("id", "name", "start_date", "end_date", "status")},
+        "ready_to_close": not blockers,
+        "checks": checks,
+        "blockers": blockers,
+        "warnings": warnings,
+        "summary": {"ready": len(checks) - len(blockers) - len(warnings), "blocked": len(blockers), "warning": len(warnings)},
+        "generated_at": _now_iso(),
+    }
+
+
+@router.get("/periods/{period_id}/closing-center")
+async def period_closing_center(period_id: str, current_user: User = Depends(get_current_user)):
+    _require_role(current_user, _READ_ROLES)
+    tenant_id = _tenant_of(current_user)
+    period = await db.gl_periods.find_one({"tenant_id": tenant_id, "id": period_id}, {"_id": 0})
+    if not period:
+        raise HTTPException(status_code=404, detail="Mali dönem bulunamadı")
+    return await _closing_center_snapshot(period, tenant_id)
+
+
 @router.post("/periods/initialize")
 async def initialize_periods(payload: FiscalYearIn, current_user: User = Depends(get_current_user)):
     _require_role(current_user, _GL_ROLES)
@@ -226,6 +290,10 @@ async def close_period(
             status_code=409,
             detail=(f"{pending_voucher.get('voucher_no') or 'Bekleyen fiş'} kesinleşmeden mali dönem kapatılamaz"),
         )
+    closing_center = await _closing_center_snapshot(period, tenant_id)
+    if not closing_center["ready_to_close"]:
+        labels = ", ".join(item["label"] for item in closing_center["blockers"][:4])
+        raise HTTPException(status_code=409, detail=f"ERP kapanış kontrolleri tamamlanmadı: {labels}")
     integrity = await journal_integrity_audit(
         fiscal_year=int(period["fiscal_year"]),
         current_user=current_user,
@@ -248,6 +316,7 @@ async def close_period(
                 "closed_by": _actor_id(current_user),
                 "close_reason": payload.reason.strip(),
                 "closing_trial_balance": trial["totals"],
+                "closing_center_snapshot": closing_center,
             }
         },
     )

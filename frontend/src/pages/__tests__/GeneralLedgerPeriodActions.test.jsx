@@ -77,4 +77,31 @@ describe('GeneralLedgerModule period action dialogs', () => {
       reason: 'Test yıl sonu kapanışı',
     }));
   });
+
+  it('shows the ERP closing center blockers before the period action', async () => {
+    const user = userEvent.setup();
+    axios.get.mockImplementation((url) => {
+      if (url === GL_ENDPOINTS.accounts) return Promise.resolve({ data: { accounts: [] } });
+      if (url === GL_ENDPOINTS.trialBalance) return Promise.resolve({ data: { rows: [], totals: { balanced: true } } });
+      if (url === GL_ENDPOINTS.periods) return Promise.resolve({ data: { periods } });
+      if (url === `${GL_ENDPOINTS.yearEnd}/2026`) return Promise.resolve({ data: { closed: false } });
+      if (url.endsWith('/closing-center')) return Promise.resolve({ data: {
+        ready_to_close: false,
+        summary: { ready: 5, blocked: 1, warning: 1 },
+        checks: [
+          { code: 'cashier', label: 'Kasa vardiyaları', status: 'blocked', message: '1 kasa vardiyası açık' },
+          { code: 'bank', label: 'Banka mutabakatı', status: 'warning', message: '2 banka hareketi eşleşmemiş' },
+        ],
+      } });
+      return Promise.resolve({ data: {} });
+    });
+    renderModule();
+
+    await user.click(screen.getByRole('tab', { name: 'Mali Dönemler' }));
+    await user.click(await screen.findByRole('button', { name: 'Kapanışı Kontrol Et' }));
+
+    expect(await screen.findByText('1 engel var')).toBeInTheDocument();
+    expect(screen.getByText('1 kasa vardiyası açık')).toBeInTheDocument();
+    expect(axios.get).toHaveBeenCalledWith(`${GL_ENDPOINTS.closingCenter}/tenant-A:2026:1/closing-center`);
+  });
 });
