@@ -13,6 +13,10 @@ describe('AdminModuleControlCenter', () => {
     axios.get.mockImplementation((url) => {
       if (url.endsWith('/entitlements')) return Promise.resolve({ data: { plan_name: 'Mini', subscription_status: 'active' } });
       if (url.endsWith('/usage')) return Promise.resolve({ data: { period_days: 30, events: { reservation_created: 4 }, current_resources: { users: 3, active_users: 2 }, last_activity_at: '2026-10-01T09:15:00Z' } });
+      if (url.endsWith('/admin/products')) return Promise.resolve({ data: { products: [] } });
+      if (url.endsWith('/setup-tasks')) return Promise.resolve({ data: { tasks: [] } });
+      if (url.endsWith('/refund-requests')) return Promise.resolve({ data: { requests: [] } });
+      if (url.endsWith('/quote-requests')) return Promise.resolve({ data: { requests: [{ id: 'quote-12345678', product_name: 'Restoran POS', tenant_name: 'Denizli Oteli', user_email: 'admin@example.com', status: 'new' }] } });
       return Promise.resolve({ data: { tenants: [{
         id: 'hotel-1', property_name: 'Denizli Oteli', subscription_tier: 'mini', modules: { pms: true, hr: false },
         module_control_updated_at: '2026-10-01T09:15:00Z', module_control_updated_by_name: 'Merkez Yönetici',
@@ -52,5 +56,10 @@ describe('AdminModuleControlCenter', () => {
     fireEvent.click(screen.getByTestId('manage-marketplace-prices'));
     expect(await screen.findByText('Modül mağazası fiyat ve sözleşme yönetimi')).toBeInTheDocument();
     expect(axios.get).toHaveBeenCalledWith('/module-store/admin/products');
+    expect(await screen.findByText('Restoran POS')).toBeInTheDocument();
+    expect(screen.getByLabelText('Aşama')).toHaveValue('new');
+    expect(screen.getByLabelText('Sorumlu')).toBeInTheDocument();
+    expect(screen.getByLabelText('Takip tarihi')).toBeInTheDocument();
+    expect(screen.getByLabelText('Yönetici notu')).toBeInTheDocument();
   });
 });

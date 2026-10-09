@@ -132,7 +132,7 @@ export default function ModuleStorePage() {
     catch (error) { toast.error(error?.response?.data?.detail || copy(english, "Deneme başlatılamadı", "Trial could not be started")); }
   });
   const handleQuote = product => withBusy(product, async () => {
-    try { await axios.post("/module-store/request-quote", { product_key: product.key }); toast.success(copy(english, "Talebiniz alındı. Satış ekibi sizinle iletişime geçecek.", "Request received. Our sales team will contact you.")); }
+    try { const { data } = await axios.post("/module-store/request-quote", { product_key: product.key }); const shortId = data.request_id?.slice(0, 8); toast.success(copy(english, `Talebiniz satış kuyruğuna kaydedildi${shortId ? ` · No: ${shortId}` : ''}.`, `Your request was added to the sales queue${shortId ? ` · ID: ${shortId}` : ''}.`)); }
     catch (error) { toast.error(error?.response?.data?.detail || copy(english, "Teklif talebi gönderilemedi", "Quote request could not be sent")); }
   });
   const handleLaunch = product => {

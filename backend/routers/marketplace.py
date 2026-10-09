@@ -8,8 +8,10 @@ iyzico Checkout Form üzerinden ödeme alır, başarılı ödeme sonrası
 from __future__ import annotations
 
 import logging
+import os
 import uuid
 from datetime import UTC, datetime, timedelta
+from html import escape
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -358,6 +360,13 @@ class SetupTaskUpdate(BaseModel):
     note: str | None = Field(default=None, max_length=1000)
 
 
+class QuoteRequestUpdate(BaseModel):
+    status: str = Field(pattern="^(new|assigned|in_progress|quote_sent|won|lost)$")
+    assignee: str | None = Field(default=None, max_length=200)
+    internal_note: str | None = Field(default=None, max_length=1000)
+    follow_up_at: str | None = Field(default=None, max_length=40)
+
+
 # ── Public catalog ──────────────────────────────────────────────
 @router.get("/products")
 async def list_products() -> dict:
@@ -411,19 +420,54 @@ async def request_quote(
         raise HTTPException(status_code=404, detail="Ürün bulunamadı")
 
     request_id = str(uuid.uuid4())
-    await db.marketplace_quote_requests.insert_one({
+    tenant = await db.tenants.find_one(
+        {"id": current_user.tenant_id},
+        {"_id": 0, "property_name": 1, "name": 1, "phone": 1, "email": 1},
+    ) or {}
+    sales_email = (os.environ.get("MARKETPLACE_SALES_EMAIL") or "").strip()
+    doc = {
         "id": request_id,
         "tenant_id": current_user.tenant_id,
+        "tenant_name": tenant.get("property_name") or tenant.get("name") or current_user.tenant_id,
         "user_id": current_user.id,
         "user_email": current_user.email,
+        "tenant_email": tenant.get("email"),
+        "tenant_phone": tenant.get("phone"),
         "product_key": product["key"],
         "product_name": product["name"],
         "listed_price_try": product.get("price_try"),
         "note": payload.note,
         "status": "new",
+        "delivery": {"admin_queue": True, "email": "not_configured"},
         "created_at": _now_iso(),
-    })
-    return {"ok": True, "request_id": request_id, "status": "new"}
+    }
+    await db.marketplace_quote_requests.insert_one(doc)
+    if sales_email:
+        from core.email import send_email
+
+        result = await send_email(
+            sales_email,
+            f"Yeni modül teklif talebi · {product['name']}",
+            (
+                f"<h2>Yeni teklif talebi</h2><p><strong>Talep:</strong> {escape(request_id)}</p>"
+                f"<p><strong>Otel:</strong> {escape(str(doc['tenant_name']))} ({escape(str(current_user.tenant_id))})</p>"
+                f"<p><strong>Ürün:</strong> {escape(str(product['name']))}</p>"
+                f"<p><strong>İletişim:</strong> {escape(str(current_user.email or tenant.get('email') or 'Belirtilmedi'))}"
+                f" · {escape(str(tenant.get('phone') or 'Telefon belirtilmedi'))}</p>"
+                f"<p><strong>Not:</strong> {escape(payload.note or '—')}</p>"
+            ),
+            reply_to=current_user.email or tenant.get("email"),
+        )
+        email_status = "sent" if result.get("sent") else "failed"
+        await db.marketplace_quote_requests.update_one(
+            {"id": request_id},
+            {"$set": {"delivery.email": email_status, "delivery.email_destination": sales_email,
+                      "delivery.email_provider": result.get("provider"), "delivery.email_error": result.get("error"),
+                      "delivery.updated_at": _now_iso()}},
+        )
+        doc["delivery"]["email"] = email_status
+    return {"ok": True, "request_id": request_id, "status": "new", "delivery": doc["delivery"],
+            "destination": "Süperadmin > Modül Kontrol Merkezi > Teklif talepleri"}
 
 
 # ── Purchase flow ───────────────────────────────────────────────
@@ -890,6 +934,42 @@ async def admin_setup_tasks(current_user: User = Depends(get_current_user), stat
     query = {"status": status_filter} if status_filter else {}
     rows = [row async for row in _db().marketplace_setup_tasks.find(query, {"_id": 0}).sort("created_at", -1).limit(200)]
     return {"tasks": rows}
+
+
+@router.get("/admin/quote-requests")
+async def admin_quote_requests(current_user: User = Depends(get_current_user), status_filter: str | None = None) -> dict:
+    _require_platform_admin(current_user)
+    query = {"status": status_filter} if status_filter else {}
+    rows = [row async for row in _db().marketplace_quote_requests.find(query, {"_id": 0}).sort("created_at", -1).limit(200)]
+    legacy_statuses = {"contacted": "in_progress", "qualified": "in_progress", "closed": "won", "rejected": "lost"}
+    for row in rows:
+        row["status"] = legacy_statuses.get(row.get("status"), row.get("status", "new"))
+    return {"requests": rows}
+
+
+@router.patch("/admin/quote-requests/{request_id}")
+async def admin_update_quote_request(request_id: str, payload: QuoteRequestUpdate, current_user: User = Depends(get_current_user)) -> dict:
+    _require_platform_admin(current_user)
+    db = _db()
+    existing = await db.marketplace_quote_requests.find_one({"id": request_id}, {"_id": 0})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Teklif talebi bulunamadı")
+    fields = {"status": payload.status, "assignee": payload.assignee, "internal_note": payload.internal_note,
+              "follow_up_at": payload.follow_up_at, "updated_by": current_user.id, "updated_at": _now_iso()}
+    if payload.status == "in_progress" and not existing.get("contacted_at"):
+        fields["contacted_at"] = _now_iso()
+    if payload.status == "quote_sent":
+        fields["quote_sent_at"] = _now_iso()
+    if payload.status in {"won", "lost"}:
+        fields["closed_at"] = _now_iso()
+    await db.marketplace_quote_requests.update_one({"id": request_id}, {"$set": fields})
+    await db.marketplace_quote_request_history.insert_one({
+        "id": str(uuid.uuid4()), "request_id": request_id,
+        "from_status": existing.get("status"), "to_status": payload.status,
+        "assignee": payload.assignee, "internal_note": payload.internal_note,
+        "follow_up_at": payload.follow_up_at, "changed_by": current_user.id, "changed_at": _now_iso(),
+    })
+    return {"ok": True, "status": payload.status}
 
 
 @router.patch("/admin/setup-tasks/{task_id}")
