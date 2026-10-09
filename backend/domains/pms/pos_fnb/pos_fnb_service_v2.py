@@ -11,6 +11,7 @@ import uuid
 from datetime import UTC, datetime
 
 from fastapi import HTTPException
+from pymongo.errors import DuplicateKeyError
 
 from common.audit_hook import SEVERITY_CRITICAL, SEVERITY_INFO, SEVERITY_WARNING, audited
 from common.context import OperationContext
@@ -57,6 +58,116 @@ class PosFnbServiceV2:
         except Exception:  # noqa: BLE001 -- realtime is best effort
             logger.warning("Kitchen queue broadcast failed for tenant=%s", tenant_id, exc_info=True)
 
+    async def _enqueue_kot(self, tenant_id: str, order: dict, lines: list[dict], actor_id: str) -> None:
+        """Create one idempotent KOT print job per station for v2 orders."""
+        try:
+            from domains.pms.pos_extensions.pos_print_spool import enqueue_print_job, resolve_kot_printer
+
+            by_station: dict[str, list[dict]] = {}
+            for line in lines:
+                by_station.setdefault(str(line.get("station") or "main"), []).append(line)
+            for station, station_lines in by_station.items():
+                routing = await resolve_kot_printer(tenant_id, order.get("outlet_id"), station)
+                await enqueue_print_job(
+                    tenant_id=tenant_id,
+                    kind="kitchen",
+                    payload={
+                        "station": station,
+                        "table": order.get("table_number"),
+                        "order_number": order.get("order_number"),
+                        "business_date": order.get("business_date"),
+                        "items": station_lines,
+                    },
+                    idempotency_key=f"kot-v2-{order['id']}-{station}",
+                    printer_id=routing["printer_id"],
+                    created_by=actor_id,
+                    auto_dispatch=True,
+                    routing_warning=None if routing.get("matched") else "Bu istasyon için yazıcı eşlemesi bulunamadı.",
+                )
+        except Exception:
+            # The durable kitchen queue remains the source of truth and the
+            # print-spool marks retries/operators' remediation separately.
+            logger.warning("KOT enqueue failed for order=%s", order.get("id"), exc_info=True)
+
+    async def _business_date(self, tenant_id: str, now: datetime) -> str:
+        """Use the hotel operating day, never the server's calendar day."""
+        settings_collection = getattr(self._db, "tenant_settings", None)
+        if settings_collection is None:
+            return now.date().isoformat()
+        settings = await settings_collection.find_one({"tenant_id": tenant_id}, {"_id": 0, "business_date": 1})
+        return str((settings or {}).get("business_date") or now.date().isoformat())
+
+    async def _catalog_lines(
+        self, ctx: OperationContext, outlet_id: str, items: list[dict], now: datetime
+    ) -> tuple[list[dict], float, float]:
+        """Build immutable order lines from the tenant's menu catalog.
+
+        Price, tax, display name and kitchen station are financial master data.
+        Requests may provide quantities and kitchen notes only; accepting their
+        prices would let a browser create an arbitrary checkout total.
+        """
+        catalog = getattr(self._db, "pos_menu_items", None)
+        if catalog is None:
+            raise HTTPException(status_code=503, detail="POS menu catalog is unavailable")
+        rules_collection = getattr(self._db, "pos_happy_hour_rules", None)
+        rules = []
+        if rules_collection is not None:
+            rules = await rules_collection.find(
+                {"tenant_id": ctx.tenant_id, "active": True}, {"_id": 0}
+            ).to_list(200)
+        from domains.pms.pos_extensions.pos_happy_hour import _apply_discount, _rule_matches
+
+        lines: list[dict] = []
+        subtotal = 0.0
+        tax_total = 0.0
+        for requested in items:
+            item_id = str(requested.get("item_id") or "").strip()
+            if not item_id:
+                raise HTTPException(status_code=422, detail="Her sipariş kalemi bir menü ürünü içermelidir")
+            menu = await catalog.find_one(
+                {"id": item_id, "tenant_id": ctx.tenant_id, "outlet_id": outlet_id}, {"_id": 0}
+            )
+            if not menu:
+                raise HTTPException(status_code=422, detail="Menü ürünü bu satış noktasında bulunamadı")
+            if menu.get("available", menu.get("status", "active") == "active") is False:
+                raise HTTPException(status_code=422, detail="Menü ürünü satışta değil")
+            try:
+                quantity = int(requested.get("quantity", 1))
+                price = float(menu.get("unit_price", menu.get("price")))
+                tax_rate = float(menu.get("tax_rate", 0.10) or 0)
+            except (TypeError, ValueError):
+                raise HTTPException(status_code=422, detail="Menü ürününün fiyat veya KDV tanımı geçersiz")
+            if quantity < 1 or quantity > 100 or price < 0 or not 0 <= tax_rate <= 1:
+                raise HTTPException(status_code=422, detail="Sipariş miktarı, fiyatı veya KDV oranı geçersiz")
+            applied_rule_id = None
+            final_price = price
+            pricing_item = {"item_id": item_id, "category": menu.get("category")}
+            for rule in rules:
+                if _rule_matches(rule, now, outlet_id, pricing_item):
+                    final_price = _apply_discount(price, rule)
+                    applied_rule_id = rule["id"]
+                    break
+            line_total = round(quantity * final_price, 2)
+            subtotal += line_total
+            tax_total += round(line_total * tax_rate, 2)
+            lines.append(
+                {
+                    "line_id": str(uuid.uuid4()),
+                    "item_id": item_id,
+                    "item_name": menu.get("item_name") or menu.get("name") or "Ürün",
+                    "quantity": quantity,
+                    "unit_price": final_price,
+                    "original_unit_price": price,
+                    "applied_happy_hour_rule_id": applied_rule_id,
+                    "total": line_total,
+                    "tax_rate": tax_rate,
+                    "station": menu.get("station") or requested.get("station") or "main",
+                    "special_instructions": str(requested.get("special_instructions") or "")[:500] or None,
+                    "status": "pending",
+                }
+            )
+        return lines, round(subtotal, 2), round(tax_total, 2)
+
     # ==================================================================
     # POS Order — Full Lifecycle
     # ==================================================================
@@ -77,7 +188,12 @@ class PosFnbServiceV2:
             existing = await self._db.pos_orders.find_one({"idempotency_key": idempotency_key, "tenant_id": ctx.tenant_id})
             if existing:
                 existing.pop("_id", None)
-                return ServiceResult.success({"message": "Order already exists (idempotent)", "order": existing, "idempotent": True})
+                return ServiceResult.success({
+                    "message": "Order already exists (idempotent)",
+                    "order_id": existing.get("id"),
+                    "order": existing,
+                    "idempotent": True,
+                })
 
         if not items or len(items) == 0:
             return ServiceResult.fail("Order must have at least one item", "VALIDATION_ERROR")
@@ -89,38 +205,14 @@ class PosFnbServiceV2:
                 return ServiceResult.fail(f"Table {table_number} is unavailable", "TABLE_UNAVAILABLE")
 
         now = datetime.now(UTC)
+        business_date = await self._business_date(ctx.tenant_id, now)
         order_id = str(uuid.uuid4())
         order_number = f"ORD-{now.strftime('%Y%m%d%H%M')}-{uuid.uuid4().hex[:4].upper()}"
 
-        # Calculate totals
-        total_amount = 0.0
-        tax_amount = 0.0
-        order_items = []
-        for item in items:
-            qty = item.get("quantity", 1)
-            price = item.get("price", 0.0)
-            tax_rate = float(item.get("tax_rate", 0.10) or 0)
-            if not 0 <= tax_rate <= 1:
-                return ServiceResult.fail("Tax rate must be between 0 and 1", "VALIDATION_ERROR")
-            item_total = round(qty * price, 2)
-            total_amount += item_total
-            tax_amount += round(item_total * tax_rate, 2)
-            order_items.append(
-                {
-                    "line_id": str(uuid.uuid4()),
-                    "item_id": item.get("item_id", str(uuid.uuid4())),
-                    "item_name": item.get("name", "Unknown"),
-                    "quantity": qty,
-                    "unit_price": price,
-                    "total": item_total,
-                    "tax_rate": tax_rate,
-                    "station": item.get("station", "main"),
-                    "special_instructions": item.get("special_instructions"),
-                    "status": "pending",
-                }
-            )
-
-        tax_amount = round(tax_amount, 2)
+        try:
+            order_items, total_amount, tax_amount = await self._catalog_lines(ctx, outlet_id, items, now)
+        except HTTPException as exc:
+            return ServiceResult.fail(str(exc.detail), "VALIDATION_ERROR")
         grand_total = round(total_amount + tax_amount, 2)
 
         order_doc = {
@@ -140,6 +232,7 @@ class PosFnbServiceV2:
             "payment_status": "unpaid",
             "created_by": ctx.actor_id,
             "idempotency_key": idempotency_key,
+            "business_date": business_date,
             "created_at": now.isoformat(),
         }
         await self._db.pos_orders.insert_one(order_doc)
@@ -178,6 +271,7 @@ class PosFnbServiceV2:
                 {"$set": {"status": "occupied", "current_order_id": order_id, "opened_at": now.isoformat()}},
             )
 
+        await self._enqueue_kot(ctx.tenant_id, order_doc, order_items, ctx.actor_id)
         await self._broadcast_kitchen_queue(ctx.tenant_id)
 
         return ServiceResult.success(
@@ -228,6 +322,7 @@ class PosFnbServiceV2:
             return ServiceResult.success({"message": "Already paid (idempotent)", "idempotent": True})
 
         now = datetime.now(UTC)
+        business_date = await self._business_date(ctx.tenant_id, now)
         grand_total = order.get("grand_total", 0)
         total_with_tip = round(grand_total + tip_amount, 2)
 
@@ -259,7 +354,7 @@ class PosFnbServiceV2:
             "order_id": order_id,
             "order_number": order.get("order_number"),
             "outlet_id": order.get("outlet_id"),
-            "transaction_date": now.date().isoformat(),
+            "transaction_date": business_date,
             "transaction_time": now.time().isoformat(),
             "amount": grand_total,
             "discount_amount": round(float(order.get("discount_amount") or 0), 2),
@@ -336,7 +431,21 @@ class PosFnbServiceV2:
             }
 
         # Atomic intent: transaction record + IC outbox event in ONE Mongo txn.
-        await self._persist_txn_and_intent(ctx.tenant_id, txn_doc, order_id, outbox_payload)
+        # The partial unique index (tenant_id, order_id) for completed sales is
+        # the final concurrency guard when two terminals close the same check.
+        try:
+            await self._persist_txn_and_intent(ctx.tenant_id, txn_doc, order_id, outbox_payload)
+        except DuplicateKeyError:
+            existing_sale = await self._db.pos_transactions.find_one(
+                {"tenant_id": ctx.tenant_id, "order_id": order_id, "status": "completed"}, {"_id": 0, "id": 1}
+            )
+            if existing_sale:
+                return ServiceResult.success({
+                    "message": "Order was already closed by another terminal",
+                    "transaction_id": existing_sale.get("id"),
+                    "idempotent": True,
+                })
+            raise
 
         # Close order.
         # SECURITY: tenant_id filter required (defense-in-depth — read above
@@ -450,34 +559,12 @@ class PosFnbServiceV2:
             return ServiceResult.fail("Order is not open", "ORDER_NOT_OPEN")
 
         now = datetime.now(UTC)
-        normalized: list[dict] = []
-        subtotal_delta = 0.0
-        tax_delta = 0.0
-        for item in items:
-            qty = max(1, int(item.get("quantity", 1) or 1))
-            price = max(0.0, float(item.get("price", 0) or 0))
-            tax_rate = float(item.get("tax_rate", 0.10) or 0)
-            if not 0 <= tax_rate <= 1:
-                return ServiceResult.fail("Tax rate must be between 0 and 1", "VALIDATION_ERROR")
-            line_total = round(qty * price, 2)
-            subtotal_delta += line_total
-            tax_delta += round(line_total * tax_rate, 2)
-            normalized.append(
-                {
-                    "line_id": str(uuid.uuid4()),
-                    "item_id": item.get("item_id") or str(uuid.uuid4()),
-                    "item_name": item.get("name") or "Ürün",
-                    "quantity": qty,
-                    "unit_price": price,
-                    "total": line_total,
-                    "tax_rate": tax_rate,
-                    "station": item.get("station") or "main",
-                    "special_instructions": item.get("special_instructions"),
-                    "status": "pending",
-                }
+        try:
+            normalized, subtotal_delta, tax_delta = await self._catalog_lines(
+                ctx, str(order.get("outlet_id") or ""), items, now
             )
-
-        tax_delta = round(tax_delta, 2)
+        except HTTPException as exc:
+            return ServiceResult.fail(str(exc.detail), "VALIDATION_ERROR")
         grand_delta = round(subtotal_delta + tax_delta, 2)
         updated = await self._db.pos_orders.update_one(
             {"id": order_id, "tenant_id": ctx.tenant_id, "payment_status": {"$ne": "paid"}},
@@ -523,6 +610,7 @@ class PosFnbServiceV2:
         }
         if idempotency_key:
             await self._db.pos_order_item_batches.insert_one(dict(batch))
+        await self._enqueue_kot(ctx.tenant_id, order, normalized, ctx.actor_id)
         await self._broadcast_kitchen_queue(ctx.tenant_id)
         return ServiceResult.success(batch)
 
@@ -606,11 +694,12 @@ class PosFnbServiceV2:
         if sale.get("payment_method") == "room_charge" and refund_amount != round(paid - refunded, 2):
             return ServiceResult.fail("Oda hesabı işlemleri yalnızca tamamen iade edilebilir", "REFUND_LIMIT")
         now = datetime.now(UTC)
+        business_date = await self._business_date(ctx.tenant_id, now)
         refund_id = str(uuid.uuid4())
         refund_doc = {
             "id": refund_id, "tenant_id": ctx.tenant_id, "order_id": order_id,
             "original_transaction_id": sale.get("id"), "outlet_id": order.get("outlet_id"),
-            "transaction_date": now.date().isoformat(), "transaction_time": now.time().isoformat(),
+            "transaction_date": business_date, "transaction_time": now.time().isoformat(),
             "amount": -refund_amount, "total_amount": -refund_amount, "payment_method": sale.get("payment_method"),
             "payment_type": "refund", "status": "refunded", "reason": reason.strip(),
             "processed_by": ctx.actor_id, "idempotency_key": idempotency_key, "created_at": now.isoformat(),

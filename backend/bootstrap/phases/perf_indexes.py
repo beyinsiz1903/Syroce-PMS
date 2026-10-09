@@ -411,6 +411,13 @@ async def ensure_performance_indexes():
         ("pos_orders", [("tenant_id", 1), ("id", 1)], "tenant_id_1_id_1", {}),
         ("pos_transactions", [("tenant_id", 1), ("id", 1)], "tenant_id_1_id_1", {}),
         ("pos_transactions", [("tenant_id", 1), ("order_id", 1)], "idx_pos_txn_tenant_order", {}),
+        # A closed check has exactly one sale transaction. Refund rows carry
+        # payment_type=refund and remain outside this partial unique guard.
+        # This is the DB-level backstop for two cashier terminals closing the
+        # same order at once.
+        ("pos_transactions", [("tenant_id", 1), ("order_id", 1)], "ux_pos_sale_per_order", {"unique": True, "partialFilterExpression": {"status": "completed", "payment_type": {"$exists": False}}}),
+        ("pos_transactions", [("tenant_id", 1), ("idempotency_key", 1)], "ux_pos_txn_tenant_idemp", {"unique": True, "partialFilterExpression": {"idempotency_key": {"$type": "string"}}}),
+        ("pos_order_item_batches", [("tenant_id", 1), ("idempotency_key", 1)], "ux_pos_item_batch_tenant_idemp", {"unique": True, "partialFilterExpression": {"idempotency_key": {"$type": "string"}}}),
         ("pos_transactions", [("tenant_id", 1), ("outlet_id", 1), ("table_number", 1)], "idx_pos_txn_open_tab", {"partialFilterExpression": {"status": "open"}}),
         # B2B agency auto-provisioning (Seçenek B / connect-request approval).
         #   - b2b_connect_codes.code_hmac UNIQUE: fast tenant resolution from a

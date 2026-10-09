@@ -71,6 +71,25 @@ describe('POS waiter menu regressions', () => {
     expect(screen.getByTestId('pay-cash')).toBeEnabled();
   });
 
+  it('recovers the order id when a retried create request returns the idempotent envelope', async () => {
+    axiosGet.mockImplementation((url) => {
+      if (url === '/pos/outlets') return Promise.resolve({ data: { outlets: [{ id: 'outlet-1', name: 'Restoran' }] } });
+      if (url === '/pos/table-layout/outlet-1') return Promise.resolve({ data: { tables: [{ id: 'table-1', table_number: '1', seats: 4, status: 'available' }] } });
+      if (url === '/pos/menu-items') return Promise.resolve({ data: { menu_items: [{ id: 'burger', name: 'Burger', price: 100, tax_rate: .1, available: true }] } });
+      if (url === '/pos/v2/orders/order-replayed') return Promise.resolve({ data: { order: { id: 'order-replayed', order_number: 'ORD-REPLAY', status: 'pending', payment_status: 'unpaid', grand_total: 110, order_items: [] } } });
+      throw new Error(`Unexpected GET ${url}`);
+    });
+    axiosPost.mockResolvedValue({ data: { idempotent: true, order: { id: 'order-replayed' } } });
+
+    render(<POSWaiterTerminal />);
+    fireEvent.click(await screen.findByTestId('outlet-outlet-1'));
+    fireEvent.click(await screen.findByTestId('table-1'));
+    fireEvent.click(await screen.findByTestId('menu-item-burger'));
+    fireEvent.click(screen.getByTestId('send-kitchen'));
+
+    expect(await screen.findByTestId('active-order-summary')).toHaveTextContent('ORD-REPLAY');
+  });
+
   it('closes an open check with a cent-exact mixed payment', async () => {
     axiosGet.mockImplementation((url) => {
       if (url === '/pos/outlets') return Promise.resolve({ data: { outlets: [{ id: 'outlet-1', name: 'Restoran', currency: 'TRY' }] } });

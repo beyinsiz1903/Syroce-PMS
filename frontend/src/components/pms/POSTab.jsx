@@ -99,7 +99,7 @@ const POSTab = ({ businessDate }) => {
           <Button variant="outline" size="sm" onClick={() => navigate('/fnb-complete')} data-testid="btn-pos-fnb">
             <ExternalLink className="w-4 h-4 mr-1.5" /> {tc('openFnB')}
           </Button>
-          <Button size="sm" onClick={() => navigate('/fnb-complete')} data-testid="btn-pos-new-order">
+          <Button size="sm" onClick={() => navigate('/pos/terminal')} data-testid="btn-pos-new-order">
             <Plus className="w-4 h-4 mr-1.5" /> {tc('newOrder')}
           </Button>
           <Button variant="outline" size="sm" onClick={loadData} disabled={loading}>

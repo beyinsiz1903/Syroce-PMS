@@ -75,6 +75,10 @@ async def test_waiter_can_append_items_to_open_order_idempotently(monkeypatch):
         pos_orders=orders,
         pos_order_item_batches=batches,
         kitchen_orders=kitchen_orders,
+        pos_menu_items=MemoryCollection([{
+            "id": "burger", "tenant_id": "tenant-1", "outlet_id": "outlet-1",
+            "item_name": "Burger", "unit_price": 100, "tax_rate": .1, "available": True,
+        }]),
     )
     monkeypatch.setattr(service, "_broadcast_kitchen_queue", lambda _tenant_id: _async_none())
 
@@ -88,6 +92,33 @@ async def test_waiter_can_append_items_to_open_order_idempotently(monkeypatch):
     assert orders.docs[0]["grand_total"] == 220
     assert len(orders.docs[0]["order_items"]) == 1
     assert len(kitchen_orders.docs) == 1
+
+
+@pytest.mark.asyncio
+async def test_waiter_price_is_rebuilt_from_catalog_not_browser_payload(monkeypatch):
+    orders = MemoryCollection()
+    service = PosFnbServiceV2()
+    service._db = SimpleNamespace(
+        pos_orders=orders,
+        pos_menu_items=MemoryCollection([{
+            "id": "burger", "tenant_id": "tenant-1", "outlet_id": "outlet-1",
+            "item_name": "Burger", "unit_price": 125, "tax_rate": .1, "available": True,
+        }]),
+        kitchen_orders=MemoryCollection(),
+        table_layouts=MemoryCollection(),
+    )
+    monkeypatch.setattr(service, "_broadcast_kitchen_queue", lambda _tenant_id: _async_none())
+    monkeypatch.setattr(service, "_enqueue_kot", lambda *_args: _async_none())
+
+    result = await PosFnbServiceV2.create_order.__wrapped__(
+        service, ctx(), "outlet-1", items=[{"item_id": "burger", "name": "Sahte", "price": 1, "tax_rate": 0}],
+    )
+
+    assert result.ok is True
+    line = orders.docs[0]["order_items"][0]
+    assert line["item_name"] == "Burger"
+    assert line["unit_price"] == 125
+    assert orders.docs[0]["grand_total"] == 137.5
 
 
 @pytest.mark.asyncio
