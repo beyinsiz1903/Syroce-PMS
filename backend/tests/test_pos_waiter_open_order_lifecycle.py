@@ -29,11 +29,11 @@ class MemoryCollection:
     async def find_one(self, query, _projection=None):
         return next((dict(doc) for doc in self.docs if self._matches(doc, query)), None)
 
-    async def insert_one(self, doc):
+    async def insert_one(self, doc, **_kwargs):
         self.docs.append(dict(doc))
         return SimpleNamespace(inserted_id=doc.get("id"))
 
-    async def update_one(self, query, update):
+    async def update_one(self, query, update, **_kwargs):
         for doc in self.docs:
             if not self._matches(doc, query):
                 continue
@@ -56,6 +56,22 @@ class MemoryCollection:
         return SimpleNamespace(matched_count=changed, modified_count=changed)
 
 
+class _FakeSession:
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_args):
+        return False
+
+    async def with_transaction(self, callback, **_kwargs):
+        return await callback(self)
+
+
+class _FakeClient:
+    async def start_session(self):
+        return _FakeSession()
+
+
 def ctx():
     return SimpleNamespace(tenant_id="tenant-1", actor_id="waiter-1", actor_role="admin")
 
@@ -72,6 +88,7 @@ async def test_waiter_can_append_items_to_open_order_idempotently(monkeypatch):
     kitchen_orders = MemoryCollection()
     service = PosFnbServiceV2()
     service._db = SimpleNamespace(
+        client=_FakeClient(),
         pos_orders=orders,
         pos_order_item_batches=batches,
         kitchen_orders=kitchen_orders,
