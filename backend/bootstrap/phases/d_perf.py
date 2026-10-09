@@ -338,6 +338,15 @@ async def _create_perf_indexes_inner():
         await _raw_db.bookings.create_index([("tenant_id", 1), ("guest_id", 1), ("status", 1), ("check_in", 1)], name="idx_bookings_tenant_guest_status_checkin")
         await _raw_db.folio_charges.create_index([("tenant_id", 1), ("guest_id", 1), ("voided", 1)], name="idx_folio_charges_tenant_guest_voided")
         await _raw_db.guest_requests.create_index([("tenant_id", 1), ("guest_id", 1), ("type", 1)], name="idx_guest_requests_tenant_guest_type")
+        await _raw_db.guest_profile_merges.create_index(
+            [("tenant_id", 1), ("id", 1)],
+            name="uniq_guest_profile_merges_tenant_id",
+            unique=True,
+        )
+        await _raw_db.guest_profile_merges.create_index(
+            [("tenant_id", 1), ("status", 1), ("created_at", -1)],
+            name="idx_guest_profile_merges_status_created",
+        )
         # messaging_automation_rules: every read/write is tenant-scoped
         # (list_automation_rules, count, distinct, automation worker scan).
         # Atlas profiler showed 425ms write samples on this collection — no

@@ -294,7 +294,10 @@ const POSWaiterTerminal = () => {
         order_type: 'dine_in',
         idempotency_key: pendingKeyRef.current,
       });
-      orderId = response.data?.order_id;
+      // A network retry can return the idempotent envelope, where the order
+      // lives under `order`. Both shapes identify the same durable check.
+      orderId = response.data?.order_id || response.data?.order?.id;
+      if (!orderId) throw new Error('ORDER_ID_MISSING');
     }
     pendingKeyRef.current = null;
     setCart([]);

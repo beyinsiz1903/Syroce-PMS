@@ -34,10 +34,12 @@ router = APIRouter(prefix="/api/pos/v2", tags=["POS & F&B v2"])
 
 class OrderItemSchema(BaseModel):
     item_id: str | None = None
-    name: str
-    quantity: int = 1
-    price: float
-    tax_rate: float = 0.10
+    # The server takes name, price and tax from its menu catalog.  They remain
+    # optional here only for older clients; none are trusted for calculation.
+    name: str | None = None
+    quantity: int = Field(default=1, ge=1, le=100)
+    price: float | None = Field(default=None, ge=0)
+    tax_rate: float | None = Field(default=None, ge=0, le=1)
     station: str = "main"
     special_instructions: str | None = None
 
@@ -53,8 +55,8 @@ class CreateOrderRequest(BaseModel):
 
 
 class PaymentPart(BaseModel):
-    method: str
-    amount: float
+    method: str = Field(pattern="^(cash|card)$")
+    amount: float = Field(gt=0)
 
 
 class CloseOrderRequest(BaseModel):
@@ -62,7 +64,7 @@ class CloseOrderRequest(BaseModel):
     payment_method: str = "cash"
     post_to_folio: bool = False
     booking_id: str | None = None
-    tip_amount: float = 0.0
+    tip_amount: float = Field(default=0.0, ge=0)
     idempotency_key: str | None = None
     guest_signature: str | None = None
     payments: list[PaymentPart] | None = None
