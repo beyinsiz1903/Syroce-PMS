@@ -25,3 +25,5 @@ export const UPDATE_FIELD_PRESETS = [
   { key: 'stop_sell', label: 'Satışı durdur', fields: ['stop_sell'] },
   { key: 'all_ari', label: 'Tüm ARI alanları', fields: UPDATE_FIELDS.map(field => field.key) },
 ];
+
+export const usesExpandedAriLayout = enabledFieldCount => enabledFieldCount >= 4;
