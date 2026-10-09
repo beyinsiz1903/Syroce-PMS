@@ -352,6 +352,12 @@ class RefundRequest(BaseModel):
     reason: str = Field(min_length=3, max_length=500)
 
 
+class SetupTaskUpdate(BaseModel):
+    status: str = Field(pattern="^(new|in_progress|blocked|completed)$")
+    assignee: str | None = Field(default=None, max_length=200)
+    note: str | None = Field(default=None, max_length=1000)
+
+
 # ── Public catalog ──────────────────────────────────────────────
 @router.get("/products")
 async def list_products() -> dict:
@@ -700,9 +706,14 @@ async def purchase_callback(order_id: str) -> dict:
         await db.marketplace_payment_methods.update_many({"tenant_id": order["tenant_id"]}, {"$set": {"is_default": False}})
         await db.marketplace_payment_methods.insert_one({"id": str(uuid.uuid4()), "tenant_id": order["tenant_id"], "provider": "iyzico", "status": "active", "is_default": True, "card_user_key": res["cardUserKey"], "card_token": res["cardToken"], "last4": res.get("lastFourDigits"), "card_family": res.get("cardFamily"), "buyer": {"id": order["user_id"], "name": contact, "surname": "Yetkilisi", "gsmNumber": tenant.get("phone") or "+905555555555", "email": tenant.get("email") or "noreply@syroce.com", "identityNumber": tenant.get("tax_number") or "11111111111", "registrationAddress": address["address"], "ip": "127.0.0.1", "city": address["city"], "country": "Turkey"}, "address": address, "created_at": _now_iso()})
 
+    payment_transactions = [
+        {"payment_transaction_id": item.get("paymentTransactionId"), "paid_price": item.get("paidPrice") or item.get("price")}
+        for item in (res.get("paymentItems") or []) if item.get("paymentTransactionId")
+    ]
+
     await db.marketplace_orders.update_one(
         {"order_id": order_id, "status": "pending"},
-        {"$set": {"status": "completed", "iyzico_payment_id": res.get("paymentId"), "completed_at": _now_iso()}},
+        {"$set": {"status": "completed", "iyzico_payment_id": res.get("paymentId"), "payment_transactions": payment_transactions, "completed_at": _now_iso()}},
     )
     return {"status": "completed", "product_key": order["product_key"]}
 
@@ -760,7 +771,19 @@ async def subscription_readiness(subscription_id: str, current_user: User = Depe
     if not plan:
         raise HTTPException(status_code=404, detail="Kurulum planı bulunamadı")
     complete = sum(1 for step in plan.get("steps", []) if step.get("status") == "complete")
-    return {**plan, "health": "healthy" if complete == len(plan.get("steps", [])) else "setup_required", "completed_steps": complete, "total_steps": len(plan.get("steps", []))}
+    db = _db()
+    recent_error = await db.module_health_events.find_one({"tenant_id": current_user.tenant_id, "module_key": plan["product_key"], "status": "error"}, {"_id": 0}, sort=[("created_at", -1)])
+    setup_task = await db.marketplace_setup_tasks.find_one({"tenant_id": current_user.tenant_id, "product_key": plan["product_key"], "status": {"$ne": "completed"}}, {"_id": 0})
+    now = _now_iso()
+    if recent_error:
+        health, health_reason = "error", recent_error.get("message") or "Son sağlık kontrolü hata verdi"
+    elif setup_task and setup_task.get("sla_due_at", "") < now:
+        health, health_reason = "sla_breached", "Dış entegrasyon kurulum SLA süresi aşıldı"
+    elif complete != len(plan.get("steps", [])) or setup_task:
+        health, health_reason = "setup_required", "Zorunlu kurulum adımları tamamlanmadı"
+    else:
+        health, health_reason = "healthy", "Lisans, provisioning ve zorunlu kurulum kontrolleri hazır"
+    return {**plan, "health": health, "health_reason": health_reason, "last_error": recent_error, "setup_task": setup_task, "completed_steps": complete, "total_steps": len(plan.get("steps", []))}
 
 
 @router.patch("/subscriptions/{subscription_id}/readiness")
@@ -867,6 +890,51 @@ async def admin_setup_tasks(current_user: User = Depends(get_current_user), stat
     query = {"status": status_filter} if status_filter else {}
     rows = [row async for row in _db().marketplace_setup_tasks.find(query, {"_id": 0}).sort("created_at", -1).limit(200)]
     return {"tasks": rows}
+
+
+@router.patch("/admin/setup-tasks/{task_id}")
+async def admin_update_setup_task(task_id: str, payload: SetupTaskUpdate, current_user: User = Depends(get_current_user)) -> dict:
+    _require_platform_admin(current_user)
+    fields = {"status": payload.status, "assignee": payload.assignee, "note": payload.note, "updated_by": current_user.id, "updated_at": _now_iso()}
+    if payload.status == "completed":
+        fields["completed_at"] = _now_iso()
+    result = await _db().marketplace_setup_tasks.update_one({"id": task_id}, {"$set": fields})
+    if not result.matched_count:
+        raise HTTPException(status_code=404, detail="Kurulum görevi bulunamadı")
+    return {"ok": True, "status": payload.status}
+
+
+@router.get("/admin/refund-requests")
+async def admin_refund_requests(current_user: User = Depends(get_current_user)) -> dict:
+    _require_platform_admin(current_user)
+    rows = [row async for row in _db().marketplace_refund_requests.find({}, {"_id": 0}).sort("created_at", -1).limit(200)]
+    return {"requests": rows}
+
+
+@router.post("/admin/refund-requests/{request_id}/approve")
+async def admin_approve_refund(request_id: str, request: Request, current_user: User = Depends(get_current_user)) -> dict:
+    """Execute a full provider refund only after explicit platform approval."""
+    from core.iyzico import refund_payment
+
+    _require_platform_admin(current_user)
+    db = _db()
+    refund_request = await db.marketplace_refund_requests.find_one({"id": request_id, "status": "new"}, {"_id": 0})
+    if not refund_request:
+        raise HTTPException(status_code=404, detail="Bekleyen iade talebi bulunamadı")
+    order = await db.marketplace_orders.find_one({"order_id": refund_request["order_id"], "status": "completed"}, {"_id": 0})
+    transactions = (order or {}).get("payment_transactions") or []
+    if not transactions:
+        raise HTTPException(status_code=409, detail="Bu eski ödeme için sağlayıcı işlem kimliği bulunmuyor; manuel iade gerekli")
+    provider_results = []
+    for transaction in transactions:
+        result = refund_payment({"locale": "tr", "conversationId": f"refund-{request_id}", "paymentTransactionId": transaction["payment_transaction_id"], "price": str(transaction["paid_price"]), "currency": "TRY", "ip": request.client.host if request.client else "127.0.0.1"})
+        provider_results.append(result)
+        if result.get("status") != "success":
+            await db.marketplace_refund_requests.update_one({"id": request_id}, {"$set": {"status": "provider_failed", "provider_error": result.get("errorMessage"), "updated_at": _now_iso()}})
+            raise HTTPException(status_code=502, detail=result.get("errorMessage") or "Ödeme sağlayıcısı iadeyi reddetti")
+    await db.marketplace_refund_requests.update_one({"id": request_id}, {"$set": {"status": "refunded", "approved_by": current_user.id, "provider_results": provider_results, "refunded_at": _now_iso()}})
+    await db.marketplace_orders.update_one({"order_id": refund_request["order_id"]}, {"$set": {"refund_status": "refunded", "refunded_at": _now_iso()}})
+    return {"ok": True, "status": "refunded"}
 
 
 @router.post("/admin/run-renewals")

@@ -94,3 +94,19 @@ def charge_saved_card(payload: dict) -> dict:
     except Exception as exc:
         logger.exception("iyzico marketplace renewal error")
         return {"status": "failure", "errorMessage": str(exc)}
+
+
+def refund_payment(payload: dict) -> dict:
+    """Refund one iyzico payment transaction; caller controls authorization."""
+    if not is_configured():
+        return {"status": "failure", "errorMessage": "iyzico yapılandırılmadı"}
+    try:
+        import json as _json
+
+        import iyzipay  # type: ignore
+
+        response = iyzipay.Refund().create(payload, get_options())
+        return _json.loads(response.read().decode("utf-8"))
+    except Exception as exc:
+        logger.exception("iyzico marketplace refund error")
+        return {"status": "failure", "errorMessage": str(exc)}
