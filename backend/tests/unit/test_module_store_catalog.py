@@ -81,4 +81,7 @@ def test_marketplace_lifecycle_endpoints_are_registered():
         "/api/module-store/payment-methods/{payment_method_id}",
         "/api/module-store/admin/products/{key}/price-history",
         "/api/module-store/admin/run-renewals",
+        "/api/module-store/admin/setup-tasks/{task_id}",
+        "/api/module-store/admin/refund-requests",
+        "/api/module-store/admin/refund-requests/{request_id}/approve",
     } <= paths

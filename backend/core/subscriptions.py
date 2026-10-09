@@ -125,6 +125,7 @@ async def ensure_indexes() -> None:
         await db.marketplace_payment_methods.create_index([("tenant_id", 1), ("is_default", 1)], name="idx_marketplace_payment_default")
         await db.marketplace_renewal_attempts.create_index("attempt_key", unique=True, name="uniq_marketplace_renewal_attempt")
         await db.marketplace_refund_requests.create_index("order_id", unique=True, name="uniq_marketplace_refund_order")
+        await db.marketplace_refund_requests.create_index([("status", 1), ("created_at", -1)], name="idx_marketplace_refund_status")
         await db.marketplace_credit_grants.create_index("order_id", unique=True, name="uniq_marketplace_credit_grant_order")
         # Atomic activation marker: any callback (paid OR trial) inserts
         # one row per order_id. Unique index makes concurrent/replayed

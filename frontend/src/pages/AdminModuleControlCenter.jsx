@@ -36,6 +36,8 @@ export default function AdminModuleControlCenter() {
   const [products, setProducts] = useState([]);
   const [productDrafts, setProductDrafts] = useState({});
   const [savingProduct, setSavingProduct] = useState('');
+  const [setupTasks, setSetupTasks] = useState([]);
+  const [refundRequests, setRefundRequests] = useState([]);
 
   const load = async () => {
     setLoading(true);
@@ -56,11 +58,31 @@ export default function AdminModuleControlCenter() {
 
   const loadProducts = async () => {
     try {
-      const response = await axios.get('/module-store/admin/products');
+      const [response, tasksResponse, refundsResponse] = await Promise.all([
+        axios.get('/module-store/admin/products'),
+        axios.get('/module-store/admin/setup-tasks'),
+        axios.get('/module-store/admin/refund-requests'),
+      ]);
       const rows = Array.isArray(response.data?.products) ? response.data.products : [];
       setProducts(rows);
       setProductDrafts(Object.fromEntries(rows.map((item) => [item.key, { ...item }])));
+      setSetupTasks(tasksResponse.data?.tasks || []);
+      setRefundRequests(refundsResponse.data?.requests || []);
     } catch (err) { toast.error(err.response?.data?.detail || 'Mağaza fiyatları yüklenemedi.'); }
+  };
+
+  const updateSetupTask = async (task, status) => {
+    try {
+      await axios.patch(`/module-store/admin/setup-tasks/${task.id}`, { status, assignee: task.assignee || null });
+      toast.success('Kurulum görevi güncellendi.'); await loadProducts();
+    } catch (err) { toast.error(err.response?.data?.detail || 'Kurulum görevi güncellenemedi.'); }
+  };
+
+  const approveRefund = async (request) => {
+    try {
+      await axios.post(`/module-store/admin/refund-requests/${request.id}/approve`);
+      toast.success('İade ödeme sağlayıcısı üzerinden tamamlandı.'); await loadProducts();
+    } catch (err) { toast.error(err.response?.data?.detail || 'İade tamamlanamadı.'); }
   };
 
   const toggleCatalog = () => {
@@ -197,6 +219,10 @@ export default function AdminModuleControlCenter() {
           <div className="mt-2 grid gap-2 sm:grid-cols-3"><label className="text-xs text-slate-600">Fiyat ölçüsü<Input value={draftProduct.pricing_model || 'property'} onChange={(event) => update('pricing_model', event.target.value)} /></label><label className="text-xs text-slate-600">Kaynak<Input value={draftProduct.price_source || ''} onChange={(event) => update('price_source', event.target.value)} /></label><label className="text-xs text-slate-600">Geçerlilik başlangıcı<Input type="date" value={draftProduct.price_valid_from || ''} onChange={(event) => update('price_valid_from', event.target.value)} /></label></div>
         </article>; })}</div>
         {!products.length && <p className="py-8 text-center text-sm text-slate-500">Ürünler yükleniyor…</p>}
+        <div className="mt-6 grid gap-4 xl:grid-cols-2">
+          <div><h3 className="font-semibold text-slate-950">Dış entegrasyon kurulumları</h3><div className="mt-2 space-y-2">{setupTasks.map((task) => <div key={task.id} className="rounded-lg border p-3 text-xs"><div className="flex items-center justify-between gap-2"><strong>{task.product_key} · {task.tenant_id}</strong><span className={task.sla_due_at && task.sla_due_at < new Date().toISOString() && task.status !== 'completed' ? 'text-red-600' : 'text-slate-500'}>{task.status} · SLA {task.sla_due_at ? new Date(task.sla_due_at).toLocaleString('tr-TR') : '—'}</span></div><div className="mt-2 flex gap-2">{task.status === 'new' && <Button size="sm" variant="outline" onClick={() => updateSetupTask(task, 'in_progress')}>Başlat</Button>}{task.status !== 'completed' && <Button size="sm" onClick={() => updateSetupTask(task, 'completed')}>Tamamla</Button>}</div></div>)}{!setupTasks.length && <p className="text-xs text-slate-500">Bekleyen kurulum görevi yok.</p>}</div></div>
+          <div><h3 className="font-semibold text-slate-950">İade talepleri</h3><div className="mt-2 space-y-2">{refundRequests.map((request) => <div key={request.id} className="flex items-center justify-between gap-2 rounded-lg border p-3 text-xs"><span><strong>{request.order_id}</strong><br />{request.reason} · {request.status}</span>{request.status === 'new' && <Button size="sm" onClick={() => approveRefund(request)}>Sağlayıcıdan iade et</Button>}</div>)}{!refundRequests.length && <p className="text-xs text-slate-500">Bekleyen iade talebi yok.</p>}</div></div>
+        </div>
       </section>}
 
       {error && <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error} <button className="font-semibold underline" onClick={load}>Yeniden dene</button></div>}
