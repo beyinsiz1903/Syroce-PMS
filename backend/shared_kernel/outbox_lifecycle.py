@@ -187,6 +187,11 @@ class OutboxLifecycleWorker:
                 {
                     "event_type": {"$in": self.event_types},
                     "status": "processing",
+                    # OTA delivery documents belong exclusively to
+                    # ``OutboxWorker``.  Without this boundary the temporary
+                    # migration worker can recover or claim the same record,
+                    # creating a cross-worker race in production and CI.
+                    "max_attempts": {"$exists": False},
                     "processing_started_at": {"$lte": cutoff},
                 },
                 {"_id": 0},
@@ -224,6 +229,10 @@ class OutboxLifecycleWorker:
         event = await get_system_db().outbox_events.find_one_and_update(
             {
                 "event_type": {"$in": self.event_types},
+                # ``enqueue_outbox_event`` marks OTA delivery documents with
+                # max_attempts. Leave those records for the production OTA
+                # worker; this worker only owns legacy migration events.
+                "max_attempts": {"$exists": False},
                 "$or": [
                     {"status": "pending"},
                     {

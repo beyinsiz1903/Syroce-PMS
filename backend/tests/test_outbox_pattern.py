@@ -355,6 +355,24 @@ async def test_permanent_error_fails_immediately():
         client.close()
 
 
+@pytest.mark.asyncio
+async def test_migration_worker_never_claims_ota_outbox_documents():
+    """The migration and OTA workers must have disjoint ownership queries."""
+    from shared_kernel.outbox_lifecycle import OutboxLifecycleWorker
+
+    collection = AsyncMock()
+    collection.find_one_and_update.return_value = None
+    fake_db = AsyncMock()
+    fake_db.outbox_events = collection
+
+    worker = OutboxLifecycleWorker(event_types=[INVENTORY_RELEASED])
+    with patch("shared_kernel.outbox_lifecycle.get_system_db", return_value=fake_db):
+        assert await worker.claim_next_event() is None
+
+    query = collection.find_one_and_update.await_args.args[0]
+    assert query["max_attempts"] == {"$exists": False}
+
+
 # ─── E. Duplicate Claim Protection ──────────────────────────────────
 
 
