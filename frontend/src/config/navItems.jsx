@@ -407,8 +407,8 @@ export const NAV_ITEMS = [
   },
   {
     key: "guest_journey",
-    label: "Misafir Yolculuğu",
-    path: "/guest-journey",
+    label: "CRM Merkezi",
+    path: "/crm",
     moduleKey: "pms",
     tier: "professional",
     group: "professional",
@@ -453,6 +453,7 @@ export const NAV_ITEMS = [
     tier: "basic",
     group: "core",
     navGroup: "guest",
+    hidden: true,
   },
 
   // ──── RESERVATIONS GROUP ───────────────────────────
