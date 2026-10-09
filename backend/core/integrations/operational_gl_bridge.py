@@ -170,7 +170,7 @@ async def post_direct_pos_to_gl(
         )
         return {"status": "skipped", "reason": "not_configured"}
     total = _minor(transaction.get("total_amount"))
-    tax = _minor(order.get("tax_amount"))
+    tax = _minor(transaction.get("tax_amount", order.get("tax_amount")))
     # A fully complimentary order is a valid terminal POS transaction, but it
     # has no financial value to post.  Treat it as a successful no-op instead
     # of marking the already completed sale as a GL bridge failure.  The POS

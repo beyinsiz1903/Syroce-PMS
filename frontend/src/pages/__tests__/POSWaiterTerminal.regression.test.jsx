@@ -11,6 +11,7 @@ vi.mock('axios', () => ({
   },
 }));
 
+vi.mock('@/lib/dialogs', () => ({ confirmDialog: vi.fn().mockResolvedValue(true), alertDialog: vi.fn() }));
 vi.mock('react-router-dom', () => ({ useNavigate: () => vi.fn() }));
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 
@@ -18,6 +19,7 @@ import POSWaiterTerminal, { normalizeWaiterMenuItems, posErrorMessage } from '@/
 
 describe('POS waiter menu regressions', () => {
   beforeEach(() => {
+    localStorage.clear();
     axiosGet.mockReset();
     axiosPost.mockReset();
   });
@@ -45,6 +47,7 @@ describe('POS waiter menu regressions', () => {
 
   it('opens a persisted check and keeps it available after sending to kitchen', async () => {
     axiosGet.mockImplementation((url) => {
+      if (url === '/pos/v2/session') return Promise.resolve({ data: { tenant_id: 't1', actor_id: 'u1' } });
       if (url === '/pos/outlets') return Promise.resolve({ data: { outlets: [{ id: 'outlet-1', name: 'Restoran', currency: 'TRY' }] } });
       if (url === '/pos/table-layout/outlet-1') return Promise.resolve({ data: { tables: [{ id: 'table-1', table_number: '1', seats: 4, status: 'available' }] } });
       if (url === '/pos/menu-items') return Promise.resolve({ data: { menu_items: [{ id: 'burger', name: 'Burger', price: 100, tax_rate: 0.18, category: 'food', available: true }] } });
@@ -65,7 +68,7 @@ describe('POS waiter menu regressions', () => {
     await waitFor(() => expect(axiosPost).toHaveBeenCalledWith('/pos/v2/orders', expect.objectContaining({
       outlet_id: 'outlet-1',
       table_number: '1',
-      items: [expect.objectContaining({ item_id: 'burger', price: 100, tax_rate: 0.18 })],
+      items: [expect.objectContaining({ item_id: 'burger', quantity: 1 })],
     })));
     expect(await screen.findByTestId('active-order-summary')).toHaveTextContent('ORD-1');
     expect(screen.getByTestId('pay-cash')).toBeEnabled();
@@ -73,6 +76,7 @@ describe('POS waiter menu regressions', () => {
 
   it('recovers the order id when a retried create request returns the idempotent envelope', async () => {
     axiosGet.mockImplementation((url) => {
+      if (url === '/pos/v2/session') return Promise.resolve({ data: { tenant_id: 't1', actor_id: 'u1' } });
       if (url === '/pos/outlets') return Promise.resolve({ data: { outlets: [{ id: 'outlet-1', name: 'Restoran' }] } });
       if (url === '/pos/table-layout/outlet-1') return Promise.resolve({ data: { tables: [{ id: 'table-1', table_number: '1', seats: 4, status: 'available' }] } });
       if (url === '/pos/menu-items') return Promise.resolve({ data: { menu_items: [{ id: 'burger', name: 'Burger', price: 100, tax_rate: .1, available: true }] } });
@@ -92,6 +96,7 @@ describe('POS waiter menu regressions', () => {
 
   it('closes an open check with a cent-exact mixed payment', async () => {
     axiosGet.mockImplementation((url) => {
+      if (url === '/pos/v2/session') return Promise.resolve({ data: { tenant_id: 't1', actor_id: 'u1' } });
       if (url === '/pos/outlets') return Promise.resolve({ data: { outlets: [{ id: 'outlet-1', name: 'Restoran', currency: 'TRY' }] } });
       if (url === '/pos/table-layout/outlet-1') return Promise.resolve({ data: { tables: [{ id: 'table-1', table_number: '1', seats: 4, status: 'occupied', current_order_id: 'order-1' }] } });
       if (url === '/pos/menu-items') return Promise.resolve({ data: { menu_items: [] } });
@@ -104,7 +109,9 @@ describe('POS waiter menu regressions', () => {
       } } });
       throw new Error(`Unexpected GET ${url}`);
     });
-    axiosPost.mockResolvedValue({ status: 200, data: { amount_paid: 118.01, payment_method: 'mixed' } });
+    axiosPost.mockImplementation(url => Promise.resolve(url === '/pos/v2/checkout/quote'
+      ? { data: { quote_id: 'quote1', payable: 118.01, amount_foreign: 118.01, currency_code: 'TRY', base_currency: 'TRY', rate_used: 1 } }
+      : { status: 200, data: { amount_paid: 118.01, payment_method: 'mixed' } }));
 
     render(<POSWaiterTerminal />);
     fireEvent.click(await screen.findByTestId('outlet-outlet-1'));
@@ -121,6 +128,7 @@ describe('POS waiter menu regressions', () => {
   it('keeps the destination table identity after transferring an open check', async () => {
     let tableLoads = 0;
     axiosGet.mockImplementation((url) => {
+      if (url === '/pos/v2/session') return Promise.resolve({ data: { tenant_id: 't1', actor_id: 'u1' } });
       if (url === '/pos/outlets') return Promise.resolve({ data: { outlets: [{ id: 'outlet-1', name: 'Restoran', currency: 'TRY' }] } });
       if (url === '/pos/table-layout/outlet-1') {
         tableLoads += 1;

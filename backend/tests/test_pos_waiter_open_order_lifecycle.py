@@ -116,6 +116,7 @@ async def test_waiter_price_is_rebuilt_from_catalog_not_browser_payload(monkeypa
     orders = MemoryCollection()
     service = PosFnbServiceV2()
     service._db = SimpleNamespace(
+        client=_FakeClient(),
         pos_orders=orders,
         pos_menu_items=MemoryCollection([{
             "id": "burger", "tenant_id": "tenant-1", "outlet_id": "outlet-1",

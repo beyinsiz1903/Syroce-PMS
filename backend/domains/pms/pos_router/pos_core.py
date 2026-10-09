@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 async def _query_pos_transactions(
     tenant_id: str,
     *,
-    limit: int = 50,
+    limit: int | None = 50,
     outlet_id: str | None = None,
     booking_id: str | None = None,
     start_date: str | None = None,
@@ -108,7 +108,7 @@ async def _query_pos_transactions(
                 seen_ids.add(row_id)
             merged.append(row)
     merged.sort(key=lambda row: str(row.get("created_at") or ""), reverse=True)
-    return merged[:limit]
+    return merged if limit is None else merged[:limit]
 
 
 async def get_anomaly_detection(credentials: HTTPAuthorizationCredentials = Depends(security)):
@@ -312,7 +312,7 @@ async def get_pos_daily_summary(
 
     transactions = await _query_pos_transactions(
         current_user.tenant_id,
-        limit=5000,
+        limit=None,
         outlet_id=outlet_id,
         date=date,
     )
@@ -447,7 +447,7 @@ async def get_z_report(
 
         all_tx = await _query_pos_transactions(
             current_user.tenant_id,
-            limit=5000,
+            limit=None,
             outlet_id=outlet_id,
             date=report_date,
         )
@@ -465,8 +465,9 @@ async def get_z_report(
         collected_sales = sum(float(t.get("total_amount", 0) or 0) - float(t.get("tip_amount", 0) or 0) for t in valid_tx)
         gross_sales = collected_sales + discounts - service_charges
         tax_total = sum(float(t.get("tax_amount", 0) or 0) for t in valid_tx)
-        refunds = sum(float(t.get("total_amount", 0) or 0) for t in void_tx)
-        net_sales = max(gross_sales - discounts + service_charges, 0)
+        refunds = sum(abs(float(t.get("total_amount", 0) or 0)) for t in valid_tx
+                      if t.get("payment_type") == "refund" or t.get("status") == "refunded")
+        net_sales = gross_sales - discounts + service_charges
 
         # Odeme yontemi dagilimi (gercek). Karma odemelerde toplam tutari
         # "mixed" kovasina atmak yerine kasada tahsil edilen parcalari koru.
@@ -511,6 +512,7 @@ async def get_z_report(
             "discounts": round(discounts, 2),
             "service_charges": round(service_charges, 2),
             "refunds": round(refunds, 2),
+            "void_amount": round(sum(float(t.get("total_amount", 0) or 0) for t in void_tx), 2),
             "transaction_count": len(valid_tx),
             "void_count": len(void_tx),
             "payment_methods": {k: round(v, 2) for k, v in payment_methods.items()},

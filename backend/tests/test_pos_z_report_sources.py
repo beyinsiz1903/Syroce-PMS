@@ -131,7 +131,8 @@ async def test_z_report_merges_waiter_orders_and_legacy_transactions(monkeypatch
     assert report["tax_total"] == 21
     assert report["transaction_count"] == 2
     assert report["void_count"] == 1
-    assert report["refunds"] == 20
+    assert report["refunds"] == 0
+    assert report["void_amount"] == 20
     assert report["payment_methods"] == {"cash": 32, "card": 150}
     assert report["category_sales"] == {"food": 120, "beverage": 50}
     assert orders.queries[0]["business_date"] == "2026-09-03"
@@ -226,7 +227,7 @@ async def test_daily_summary_uses_selected_date_outlet_and_excludes_voids(monkey
 
     query.assert_awaited_once_with(
         "tenant-a",
-        limit=5000,
+        limit=None,
         outlet_id="outlet-a",
         date="2026-09-27",
     )

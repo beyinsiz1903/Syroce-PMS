@@ -400,6 +400,7 @@ jobs:
     timeout-minutes: 30
     env:
       MONGO_URL: mongodb://localhost:27017/hotel_pms_test?replicaSet=rs0
+      POS_TEST_MONGO_URI: mongodb://localhost:27017/?replicaSet=rs0
       DB_NAME: hotel_pms_test
       REDIS_URL: redis://localhost:6379/0
       JWT_SECRET: ci-test-secret-key-do-not-use-in-production

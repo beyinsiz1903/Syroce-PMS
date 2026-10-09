@@ -29,6 +29,12 @@ def _ok_payload(result):
 router = APIRouter(prefix="/api/pos/v2", tags=["POS & F&B v2"])
 
 
+@router.get("/session")
+async def pos_session(user=Depends(get_current_user), _perm=Depends(require_module_v99("pos"))):
+    ctx = OperationContext.from_user(user)
+    return {"tenant_id": ctx.tenant_id, "actor_id": ctx.actor_id}
+
+
 # ── Schemas ──────────────────────────────────────────────────────────
 
 
@@ -56,7 +62,15 @@ class CreateOrderRequest(BaseModel):
 
 class PaymentPart(BaseModel):
     method: str = Field(pattern="^(cash|card)$")
-    amount: float = Field(gt=0)
+    amount: float = Field(gt=0, allow_inf_nan=False)
+
+
+class CheckoutOptions(BaseModel):
+    quote_id: str = Field(min_length=64, max_length=64)
+    coupon_code: str | None = Field(default=None, max_length=64)
+    guest_id: str | None = Field(default=None, max_length=128)
+    loyalty_points: int = Field(default=0, ge=0)
+    currency_code: str | None = Field(default=None, min_length=3, max_length=3)
 
 
 class CloseOrderRequest(BaseModel):
@@ -64,10 +78,34 @@ class CloseOrderRequest(BaseModel):
     payment_method: str = "cash"
     post_to_folio: bool = False
     booking_id: str | None = None
-    tip_amount: float = Field(default=0.0, ge=0)
+    tip_amount: float = Field(default=0.0, ge=0, allow_inf_nan=False)
     idempotency_key: str | None = None
     guest_signature: str | None = None
     payments: list[PaymentPart] | None = None
+    checkout_options: CheckoutOptions | None = None
+
+
+class CheckoutQuoteRequest(BaseModel):
+    order_id: str
+    coupon_code: str | None = Field(default=None, max_length=64)
+    guest_id: str | None = None
+    loyalty_points: int = Field(default=0, ge=0)
+    currency_code: str | None = Field(default=None, min_length=3, max_length=3)
+    tip_amount: float = Field(default=0, ge=0, allow_inf_nan=False)
+
+
+@router.post("/checkout/quote")
+async def checkout_quote(req: CheckoutQuoteRequest, user=Depends(get_current_user), _perm=Depends(require_module_v99("pos"))):
+    from domains.pms.pos_fnb.checkout_benefits import quote_checkout
+
+    ctx = OperationContext.from_user(user)
+    result = await pos_fnb_service_v2.get_order(ctx, req.order_id)
+    if not result.ok:
+        raise HTTPException(404, "Adisyon bulunamadı.")
+    order = result.data["order"]
+    if order.get("status") not in {"pending", "preparing", "ready"}:
+        raise HTTPException(409, "Adisyon açık değil.")
+    return await quote_checkout(pos_fnb_service_v2._db, ctx.tenant_id, order, req.model_dump())
 
 
 class VoidOrderItemRequest(BaseModel):
@@ -167,6 +205,7 @@ async def close_order(
         req.idempotency_key,
         req.guest_signature,
         [part.model_dump() for part in req.payments] if req.payments else None,
+        checkout_options=req.checkout_options.model_dump() if req.checkout_options else None,
     )
     if not result.ok:
         # Terminal-state conflicts → 409; everything else → 400.
@@ -293,7 +332,7 @@ async def pos_operations_summary(
         tx_query["outlet_id"] = outlet_id
         kitchen_query["outlet_id"] = outlet_id
     open_orders = await db.pos_orders.find(order_query, {"_id": 0}).sort("created_at", 1).limit(500).to_list(500)
-    transactions = await db.pos_transactions.find(tx_query, {"_id": 0}).limit(5000).to_list(5000)
+    transactions = await db.pos_transactions.find(tx_query, {"_id": 0}).to_list(None)
     kitchen = await db.kitchen_orders.find(kitchen_query, {"_id": 0}).sort("ordered_at", 1).limit(1000).to_list(1000)
     now = datetime.now(UTC)
     overdue_kitchen = 0
@@ -345,6 +384,34 @@ async def void_order(
             status_code = 400
         raise HTTPException(status_code=status_code, detail=from_service_result(result))
     return _ok_payload(result)
+
+
+@router.get("/stock/recovery")
+async def stock_recovery_list(user=Depends(get_current_user), _perm=Depends(require_op("manage_sales"))):
+    rows = await pos_fnb_service_v2._db.pos_orders.find({
+        "tenant_id": user.tenant_id, "$or": [
+            {"stock_consumption_status": {"$in": ["pending", "failed"]}},
+            {"stock_restore_status": {"$in": ["pending", "failed"]}},
+        ],
+    }, {"_id": 0, "id": 1, "order_number": 1, "created_at": 1,
+        "stock_consumption_status": 1, "stock_restore_status": 1,
+        "stock_consumption_status_error": 1, "stock_restore_status_error": 1}).sort("created_at", 1).to_list(200)
+    return {"jobs": rows}
+
+
+@router.post("/stock/recovery/{order_id}/retry")
+async def retry_stock(order_id: str, user=Depends(get_current_user), _perm=Depends(require_op("manage_sales"))):
+    from domains.pms.pos_fnb.stock_recovery import run_stock_job
+
+    ctx = OperationContext.from_user(user)
+    db = pos_fnb_service_v2._db
+    order = await db.pos_orders.find_one({"tenant_id": ctx.tenant_id, "id": order_id})
+    if not order:
+        raise HTTPException(404, "Adisyon bulunamadı.")
+    for field, restore in (("stock_consumption_status", False), ("stock_restore_status", True)):
+        if order.get(field) in {"pending", "failed"}:
+            await run_stock_job(db, ctx.tenant_id, order_id, ctx.actor_id, restore=restore)
+    return {"success": True, "message": "Stok kayıtları güncellendi."}
 
 
 @router.post("/stock/adjust")

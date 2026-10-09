@@ -62,11 +62,11 @@ def _now() -> datetime:
     return datetime.now(UTC)
 
 
-def _parse_iso(s: str | None) -> datetime | None:
+def _parse_iso(s: str | datetime | None) -> datetime | None:
     if not s:
         return None
     try:
-        d = datetime.fromisoformat(s.replace("Z", "+00:00"))
+        d = s if isinstance(s, datetime) else datetime.fromisoformat(s.replace("Z", "+00:00"))
         if d.tzinfo is None:
             d = d.replace(tzinfo=UTC)
         return d
@@ -89,11 +89,11 @@ def _check_validity(coupon: dict, amount: float, now: datetime) -> tuple[bool, s
     vf = coupon.get("valid_from")
     vt = coupon.get("valid_to")
     if vf:
-        d = vf if isinstance(vf, datetime) else _parse_iso(vf)
+        d = _parse_iso(vf)
         if d and now < d:
             return False, "Coupon not yet valid"
     if vt:
-        d = vt if isinstance(vt, datetime) else _parse_iso(vt)
+        d = _parse_iso(vt)
         if d and now > d:
             return False, "Coupon expired"
     if int(coupon.get("used_count", 0)) >= int(coupon.get("max_uses", 1)):

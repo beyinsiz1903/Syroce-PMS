@@ -37,6 +37,9 @@ class InMemoryCollection:
                     elif op == "$gt":
                         if dv is None or dv <= ov:
                             return False
+                    elif op == "$exists":
+                        if (k in doc) != ov:
+                            return False
                     elif op == "$ne":
                         if dv == ov:
                             return False
@@ -232,9 +235,10 @@ async def test_close_order_overdraft_never_goes_negative():
     ing = await db.ingredients.find_one({"id": "ing1", "tenant_id": "t1"})
     assert ing["current_stock"] == 5.0  # untouched — never negative
 
-    rec = db.stock_consumptions.docs[0]
-    assert rec["consumed_quantity"] == 0.0
-    assert rec["overdraft_quantity"] == 6.0
+    assert db.stock_consumptions.docs == []
+    failed = await db.pos_orders.find_one({"id": "ord1", "tenant_id": "t1"})
+    assert failed["stock_consumption_status"] == "failed"
+    assert "yetersiz" in failed["stock_consumption_status_error"]
 
 
 async def test_close_order_is_tenant_scoped():

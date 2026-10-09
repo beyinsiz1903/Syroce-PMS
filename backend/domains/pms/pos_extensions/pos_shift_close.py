@@ -63,25 +63,38 @@ def _now() -> datetime:
 
 
 async def _expected_cash_for_shift(tenant_id: str, shift: dict) -> dict:
-    """Sum pos_transactions cash payments closed during the shift window for this cashier."""
-    q: dict = {
-        "tenant_id": tenant_id,
-        "outlet_id": shift["outlet_id"],
-        "payment_method": "cash",
-        "status": {"$in": ["completed", "closed"]},
-        "closed_at": {"$gte": shift["opened_at"]},
+    """Aggregate all canonical sales/refunds, including the cash part of splits."""
+    query = {
+        "tenant_id": tenant_id, "outlet_id": shift["outlet_id"],
+        "status": {"$in": ["completed", "closed", "refunded"]},
     }
+    actor = {"$ifNull": ["$processed_by", "$cashier_id"]}
+    window = [
+        {"$gte": ["$effective_at", shift["opened_at"]]},
+        {"$lte": ["$effective_at", shift.get("closed_at") or _now()]},
+    ]
     if shift.get("cashier_id"):
-        q["cashier_id"] = shift["cashier_id"]
-    rows = await db.pos_transactions.find(q, {"_id": 0, "amount_paid": 1, "grand_total": 1, "total": 1}).to_list(2000)
-    cash_sum = 0.0
-    for r in rows:
-        v = r.get("amount_paid") or r.get("grand_total") or r.get("total") or 0
-        try:
-            cash_sum += float(v)
-        except Exception:
-            pass
-    return {"cash_sales": round(cash_sum, 2), "tx_count": len(rows)}
+        window.append({"$eq": [actor, shift["cashier_id"]]})
+    total = {"$ifNull": ["$total_amount", {"$ifNull": ["$amount_paid", {"$ifNull": ["$grand_total", {"$ifNull": ["$total", 0]}]}]}]}
+    rows = await db.pos_transactions.aggregate([
+        {"$match": query},
+        {"$set": {"effective_at": {"$convert": {
+            "input": {"$ifNull": ["$closed_at", "$created_at"]}, "to": "date", "onError": None, "onNull": None,
+        }}}},
+        {"$match": {"$expr": {"$and": window}}},
+        {"$project": {"cash": {"$cond": [
+            {"$gt": [{"$size": {"$ifNull": ["$payment_breakdown", []]}}, 0]},
+            {"$sum": {"$map": {
+                "input": {"$filter": {"input": "$payment_breakdown", "as": "part", "cond": {"$eq": ["$$part.method", "cash"]}}},
+                "as": "part", "in": "$$part.amount",
+            }}},
+            {"$cond": [{"$eq": ["$payment_method", "cash"]}, total, 0]},
+        ]}, "is_refund": {"$or": [{"$eq": ["$status", "refunded"]}, {"$eq": ["$payment_type", "refund"]}]}}},
+        {"$group": {"_id": None, "cash_sales": {"$sum": {"$cond": ["$is_refund", {"$multiply": [-1, {"$abs": "$cash"}]}, "$cash"]}},
+                    "tx_count": {"$sum": 1}}},
+    ]).to_list(None)
+    row = rows[0] if rows else {}
+    return {"cash_sales": round(float(row.get("cash_sales", 0)), 2), "tx_count": row.get("tx_count", 0)}
 
 
 @router.post("/open")

@@ -8,6 +8,7 @@ void/refund safety, stock race protection.
 
 import hashlib
 import logging
+import math
 import uuid
 from datetime import UTC, datetime
 
@@ -154,7 +155,7 @@ class PosFnbServiceV2:
                 tax_rate = float(menu.get("tax_rate", 0.10) or 0)
             except (TypeError, ValueError):
                 raise HTTPException(status_code=422, detail="Menü ürününün fiyat veya KDV tanımı geçersiz")
-            if quantity < 1 or quantity > 100 or price < 0 or not 0 <= tax_rate <= 1:
+            if quantity < 1 or quantity > 100 or not math.isfinite(price) or price < 0 or not 0 <= tax_rate <= 1:
                 raise HTTPException(status_code=422, detail="Sipariş miktarı, fiyatı veya KDV oranı geçersiz")
             applied_rule_id = None
             final_price = price
@@ -171,6 +172,8 @@ class PosFnbServiceV2:
                 {
                     "line_id": str(uuid.uuid4()),
                     "item_id": item_id,
+                    "recipe_id": menu.get("recipe_id"),
+                    "category": menu.get("category") or "other",
                     "item_name": menu.get("item_name") or menu.get("name") or "Ürün",
                     "quantity": quantity,
                     "unit_price": final_price,
@@ -200,10 +203,14 @@ class PosFnbServiceV2:
         order_type: str = "dine_in",
         idempotency_key: str | None = None,
     ) -> ServiceResult:
+        from domains.pms.pos_fnb.checkout_benefits import fingerprint
+        request_hash = fingerprint([outlet_id, table_number, items, guest_name, booking_id, order_type])
         # Idempotency guard
         if idempotency_key:
             existing = await self._db.pos_orders.find_one({"idempotency_key": idempotency_key, "tenant_id": ctx.tenant_id})
             if existing:
+                if existing.get("request_hash") and existing["request_hash"] != request_hash:
+                    raise HTTPException(409, "İstek anahtarı farklı bir sipariş için kullanılmış.")
                 existing.pop("_id", None)
                 return ServiceResult.success({
                     "message": "Order already exists (idempotent)",
@@ -221,7 +228,11 @@ class PosFnbServiceV2:
         # and legacy behaviour for outlets without a table-layout record.
         if order_type == "dine_in" and table_number:
             table = await self._db.table_layouts.find_one({"table_number": table_number, "outlet_id": outlet_id, "tenant_id": ctx.tenant_id})
-            if table and (table.get("status") != "available" or table.get("current_order_id")):
+            if table and (table.get("status") != "available" or table.get("current_order_id") or table.get("current_transaction_id")):
+                if idempotency_key:
+                    prior = await self._db.pos_orders.find_one({"tenant_id": ctx.tenant_id, "idempotency_key": idempotency_key})
+                    if prior and prior.get("request_hash") == request_hash:
+                        return ServiceResult.success({"order_id": prior["id"], "idempotent": True})
                 return ServiceResult.fail(f"Table {table_number} is unavailable", "TABLE_UNAVAILABLE")
 
         now = datetime.now(UTC)
@@ -252,6 +263,7 @@ class PosFnbServiceV2:
             "payment_status": "unpaid",
             "created_by": ctx.actor_id,
             "idempotency_key": idempotency_key,
+            "request_hash": request_hash,
             "business_date": business_date,
             "created_at": now.isoformat(),
         }
@@ -283,6 +295,8 @@ class PosFnbServiceV2:
                 }
                 kitchen_docs.append(ko_doc)
 
+        if idempotency_key:
+            order_doc["_id"] = fingerprint([ctx.tenant_id, "order", idempotency_key])
         if table is not None:
             try:
                 await self._persist_order_and_claim_table(
@@ -292,15 +306,25 @@ class PosFnbServiceV2:
                     order_doc=order_doc,
                     kitchen_docs=kitchen_docs,
                 )
-            except PosTableUnavailable:
+            except (PosTableUnavailable, DuplicateKeyError):
+                if idempotency_key:
+                    prior = await self._db.pos_orders.find_one({"tenant_id": ctx.tenant_id, "idempotency_key": idempotency_key})
+                    if prior and prior.get("request_hash") == request_hash:
+                        return ServiceResult.success({"order_id": prior["id"], "idempotent": True})
                 return ServiceResult.fail(f"Table {table_number} is unavailable", "TABLE_UNAVAILABLE")
         else:
-            # Outlets that have not configured a table layout retain the
-            # existing counter-service flow.  A configured dine-in table always
-            # takes the atomic claim path above.
-            await self._db.pos_orders.insert_one(order_doc)
-            for kitchen_doc in kitchen_docs:
-                await self._db.kitchen_orders.insert_one(kitchen_doc)
+            async def commit_counter(session):
+                await self._db.pos_orders.insert_one(dict(order_doc), session=session)
+                for kitchen_doc in kitchen_docs:
+                    await self._db.kitchen_orders.insert_one(dict(kitchen_doc), session=session)
+            try:
+                await with_resource_locks(client=self._db.client, db=self._db, tenant_id=ctx.tenant_id,
+                                          locks_collection="pos_table_locks", resources=[], callback=commit_counter)
+            except DuplicateKeyError:
+                prior = await self._db.pos_orders.find_one({"tenant_id": ctx.tenant_id, "idempotency_key": idempotency_key})
+                if prior and prior.get("request_hash") == request_hash:
+                    return ServiceResult.success({"order_id": prior["id"], "idempotent": True})
+                raise HTTPException(409, "Sipariş anahtarı başka isteğe ait.") from None
 
         await self._enqueue_kot(ctx.tenant_id, order_doc, order_items, ctx.actor_id)
         await self._broadcast_kitchen_queue(ctx.tenant_id)
@@ -342,6 +366,7 @@ class PosFnbServiceV2:
                     "table_number": table_number,
                     "status": "available",
                     "current_order_id": None,
+                    "current_transaction_id": None,
                 },
                 {
                     "$set": {
@@ -411,11 +436,16 @@ class PosFnbServiceV2:
         idempotency_key: str | None = None,
         guest_signature: str | None = None,
         payments: list[dict] | None = None,
+        checkout_options: dict | None = None,
     ) -> ServiceResult:
+        from domains.pms.pos_fnb.checkout_benefits import fingerprint
+        request_hash = fingerprint([order_id, payment_method, post_to_folio, booking_id, tip_amount, payments, checkout_options])
         # Idempotency
         if idempotency_key:
             existing_txn = await self._db.pos_transactions.find_one({"idempotency_key": idempotency_key, "tenant_id": ctx.tenant_id})
             if existing_txn:
+                if existing_txn.get("order_id") != order_id or (existing_txn.get("request_hash") and existing_txn["request_hash"] != request_hash):
+                    raise HTTPException(409, "Ödeme anahtarı farklı bir işlem için kullanılmış.")
                 return ServiceResult.success({"message": "Payment already processed (idempotent)", "idempotent": True})
 
         order = await self._db.pos_orders.find_one({"id": order_id, "tenant_id": ctx.tenant_id}, {"_id": 0})
@@ -435,6 +465,18 @@ class PosFnbServiceV2:
         now = datetime.now(UTC)
         business_date = await self._business_date(ctx.tenant_id, now)
         grand_total = order.get("grand_total", 0)
+        checkout_quote = None
+        if checkout_options is not None:
+            from domains.pms.pos_fnb.checkout_benefits import quote_checkout
+
+            checkout_quote = await quote_checkout(self._db, ctx.tenant_id, order, {**checkout_options, "tip_amount": tip_amount})
+            if checkout_options.get("quote_id") != checkout_quote["quote_id"]:
+                raise HTTPException(409, "Ödeme özeti değişti. Güncel tutarı yeniden onaylayın.")
+            if post_to_folio and checkout_quote["currency_code"] != checkout_quote["base_currency"]:
+                raise HTTPException(422, "Oda hesabı tesis para biriminde aktarılır.")
+            if payments and checkout_quote["currency_code"] != checkout_quote["base_currency"]:
+                raise HTTPException(422, "Bölünmüş ödeme tesis para biriminde yapılır. Tek döviz ödemesi için nakit veya kart seçin.")
+            grand_total = checkout_quote["net"]
         total_with_tip = round(grand_total + tip_amount, 2)
 
         payment_breakdown = None
@@ -487,6 +529,14 @@ class PosFnbServiceV2:
         }
         if payment_breakdown:
             txn_doc["payment_breakdown"] = payment_breakdown
+        if checkout_quote:
+            txn_doc["checkout_quote"] = checkout_quote
+            txn_doc["discount_amount"] += checkout_quote["coupon_discount"] + checkout_quote["loyalty_discount"]
+            txn_doc["tax_amount"] = checkout_quote["tax_amount"]
+        txn_doc["request_hash"] = request_hash
+        txn_doc["order_snapshot"] = {
+            field: order.get(field) for field in ("grand_total", "order_items", "discount_amount", "service_charge_amount")
+        }
         if guest_signature:
             txn_doc["guest_signature"] = guest_signature
         # Task #389 — Outbox/Compensation. Resolve the target folio (if any)
@@ -527,7 +577,7 @@ class PosFnbServiceV2:
                     "charge_category": "food",
                     "description": f"F&B - Order #{order.get('order_number')}",
                     "amount": grand_total,
-                    "tax_amount": order.get("effective_tax_amount", order.get("tax_amount", 0)),
+                    "tax_amount": txn_doc["tax_amount"],
                     "total": grand_total,
                     "voided": False,
                     "date": now.isoformat(),
@@ -618,7 +668,9 @@ class PosFnbServiceV2:
         # tenant-scoped and overdraft-safe. Runs exactly once per order because
         # the idempotency/terminal-state guards above return early on re-close.
         try:
-            await self._consume_recipe_stock(ctx, order)
+            from domains.pms.pos_fnb.stock_recovery import run_stock_job
+
+            await run_stock_job(self._db, ctx.tenant_id, order_id, ctx.actor_id)
         except Exception:  # noqa: BLE001 — never break payment on stock failure
             logger.exception(
                 "Recipe stock consumption failed for order %s (tenant %s)",
@@ -657,6 +709,8 @@ class PosFnbServiceV2:
         items: list[dict],
         idempotency_key: str | None = None,
     ) -> ServiceResult:
+        from domains.pms.pos_fnb.checkout_benefits import fingerprint
+        request_hash = fingerprint([order_id, items])
         if not items:
             return ServiceResult.fail("Order must have at least one item", "VALIDATION_ERROR")
         if idempotency_key:
@@ -665,6 +719,8 @@ class PosFnbServiceV2:
                 {"_id": 0},
             )
             if existing:
+                if existing.get("order_id") != order_id or (existing.get("request_hash") and existing["request_hash"] != request_hash):
+                    raise HTTPException(409, "İstek anahtarı farklı bir ek sipariş için kullanılmış.")
                 return ServiceResult.success({**existing, "idempotent": True})
 
         order = await self._db.pos_orders.find_one(
@@ -693,6 +749,9 @@ class PosFnbServiceV2:
             "amount_added": grand_delta,
             "created_at": now.isoformat(),
         }
+        batch["request_hash"] = request_hash
+        if idempotency_key:
+            batch["_id"] = fingerprint([ctx.tenant_id, "append", idempotency_key])
         kitchen_docs = [
             {
                 "id": str(uuid.uuid4()), "tenant_id": ctx.tenant_id,
@@ -714,6 +773,8 @@ class PosFnbServiceV2:
                 {"tenant_id": ctx.tenant_id, "idempotency_key": idempotency_key}, {"_id": 0}
             )
             if existing:
+                if existing.get("order_id") != order_id or (existing.get("request_hash") and existing["request_hash"] != request_hash):
+                    raise HTTPException(409, "İstek anahtarı farklı bir ek sipariş için kullanılmış.")
                 return ServiceResult.success({**existing, "idempotent": True})
             raise
         except PosOrderStateChanged:
@@ -858,6 +919,15 @@ class PosFnbServiceV2:
             "payment_type": "refund", "status": "refunded", "reason": reason.strip(),
             "processed_by": ctx.actor_id, "idempotency_key": idempotency_key, "created_at": now.isoformat(),
         }
+        if sale.get("payment_breakdown"):
+            parts, allocated = [], 0.0
+            for index, part in enumerate(sale["payment_breakdown"]):
+                share = round(float(part["amount"]) * refund_amount / paid, 2)
+                if index == len(sale["payment_breakdown"]) - 1:
+                    share = round(refund_amount - allocated, 2)
+                allocated += share
+                parts.append({"method": part["method"], "amount": -share})
+            refund_doc["payment_breakdown"] = parts
         updated_sale = await self._persist_refund_and_state(
             tenant_id=ctx.tenant_id,
             order_id=order_id,
@@ -891,7 +961,9 @@ class PosFnbServiceV2:
                 )
         if full_refund:
             try:
-                await self._restore_recipe_stock(ctx, order_id)
+                from domains.pms.pos_fnb.stock_recovery import run_stock_job
+
+                await run_stock_job(self._db, ctx.tenant_id, order_id, ctx.actor_id, restore=True)
             except Exception:
                 logger.exception("Recipe stock restore failed for refunded order %s", order_id)
         return ServiceResult.success({"order_id": order_id, "refund_id": refund_id, "refund_amount": refund_amount, "full_refund": full_refund})
@@ -1021,7 +1093,21 @@ class PosFnbServiceV2:
         a terminal state.
         """
 
+        if (txn_doc.get("checkout_quote") or {}).get("guest_id"):
+            # Fail closed if historical duplicates prevent the uniqueness guard.
+            await self._db.loyalty_pos_accounts.create_index(
+                [("tenant_id", 1), ("guest_id", 1)], unique=True,
+                name="pos_checkout_loyalty_account_unique",
+            )
+
         async def _txn(session) -> None:
+            if txn_doc.get("checkout_quote"):
+                from domains.pms.pos_fnb.checkout_benefits import commit_benefits
+
+                fresh_order = await self._db.pos_orders.find_one({"tenant_id": tenant_id, "id": order_id}, session=session)
+                if not fresh_order:
+                    raise PosOrderStateChanged(order_id)
+                await commit_benefits(self._db, tenant_id, fresh_order, txn_doc, session)
             await self._db.pos_transactions.insert_one(txn_doc, session=session)
             if outbox_payload:
                 await enqueue_outbox_event(
@@ -1041,6 +1127,7 @@ class PosFnbServiceV2:
                     # being overwritten between the transaction read and write.
                     "status": txn_doc.get("order_status_before_payment"),
                     "payment_status": txn_doc.get("payment_status_before_payment"),
+                    **txn_doc.get("order_snapshot", {}),
                 },
                 {
                     "$set": {
@@ -1051,6 +1138,7 @@ class PosFnbServiceV2:
                         "closed_by": txn_doc["processed_by"],
                         "guest_signature": txn_doc.get("guest_signature"),
                         "payment_breakdown": txn_doc.get("payment_breakdown"),
+                        "stock_consumption_status": "pending",
                     }
                 },
                 session=session,
@@ -1073,7 +1161,7 @@ class PosFnbServiceV2:
         except Exception as exc:  # noqa: BLE001
             if not is_replica_set_unavailable(exc):
                 raise
-            if not standalone_fallback_allowed():
+            if txn_doc.get("checkout_quote") or not standalone_fallback_allowed():
                 raise HTTPException(
                     status_code=503,
                     detail=("POS işlem yazımı atomik garanti sağlayamıyor (Mongo replica set gerekli)."),
@@ -1129,6 +1217,14 @@ class PosFnbServiceV2:
             if not updated_sale:
                 return None
             new_refunded = round(float(updated_sale.get("refunded_amount") or 0), 2)
+            # Allocate from the transaction's current cumulative balance, not
+            # the caller's pre-transaction read (parallel partial refunds).
+            for field in ("tax_amount", "tip_amount", "discount_amount", "service_charge_amount"):
+                original = float(updated_sale.get(field) or 0)
+                refund_doc[field] = -round(round(original * new_refunded / paid, 2)
+                                           - round(original * (new_refunded - refund_amount) / paid, 2), 2)
+            from domains.pms.pos_fnb.checkout_benefits import reverse_benefits
+            await reverse_benefits(self._db, tenant_id, updated_sale, refund_doc, paid, new_refunded, session)
             await self._db.pos_transactions.insert_one(refund_doc, session=session)
             await self._db.pos_orders.update_one(
                 {"tenant_id": tenant_id, "id": order_id},
@@ -1136,6 +1232,7 @@ class PosFnbServiceV2:
                     "$set": {
                         "payment_status": "refunded" if new_refunded >= paid else "partially_refunded",
                         "refunded_amount": new_refunded,
+                        **({"stock_restore_status": "pending"} if new_refunded >= paid else {}),
                     }
                 },
                 session=session,
