@@ -8,7 +8,9 @@ iyzico Checkout Form üzerinden ödeme alır, başarılı ödeme sonrası
 from __future__ import annotations
 
 import logging
+import os
 import uuid
+from html import escape
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -358,6 +360,12 @@ class SetupTaskUpdate(BaseModel):
     note: str | None = Field(default=None, max_length=1000)
 
 
+class QuoteRequestUpdate(BaseModel):
+    status: str = Field(pattern="^(new|contacted|qualified|closed|rejected)$")
+    assignee: str | None = Field(default=None, max_length=200)
+    internal_note: str | None = Field(default=None, max_length=1000)
+
+
 # ── Public catalog ──────────────────────────────────────────────
 @router.get("/products")
 async def list_products() -> dict:
@@ -411,19 +419,54 @@ async def request_quote(
         raise HTTPException(status_code=404, detail="Ürün bulunamadı")
 
     request_id = str(uuid.uuid4())
-    await db.marketplace_quote_requests.insert_one({
+    tenant = await db.tenants.find_one(
+        {"id": current_user.tenant_id},
+        {"_id": 0, "property_name": 1, "name": 1, "phone": 1, "email": 1},
+    ) or {}
+    sales_email = (os.environ.get("MARKETPLACE_SALES_EMAIL") or "").strip()
+    doc = {
         "id": request_id,
         "tenant_id": current_user.tenant_id,
+        "tenant_name": tenant.get("property_name") or tenant.get("name") or current_user.tenant_id,
         "user_id": current_user.id,
         "user_email": current_user.email,
+        "tenant_email": tenant.get("email"),
+        "tenant_phone": tenant.get("phone"),
         "product_key": product["key"],
         "product_name": product["name"],
         "listed_price_try": product.get("price_try"),
         "note": payload.note,
         "status": "new",
+        "delivery": {"admin_queue": True, "email": "not_configured"},
         "created_at": _now_iso(),
-    })
-    return {"ok": True, "request_id": request_id, "status": "new"}
+    }
+    await db.marketplace_quote_requests.insert_one(doc)
+    if sales_email:
+        from core.email import send_email
+
+        result = await send_email(
+            sales_email,
+            f"Yeni modül teklif talebi · {product['name']}",
+            (
+                f"<h2>Yeni teklif talebi</h2><p><strong>Talep:</strong> {escape(request_id)}</p>"
+                f"<p><strong>Otel:</strong> {escape(str(doc['tenant_name']))} ({escape(str(current_user.tenant_id))})</p>"
+                f"<p><strong>Ürün:</strong> {escape(str(product['name']))}</p>"
+                f"<p><strong>İletişim:</strong> {escape(str(current_user.email or tenant.get('email') or 'Belirtilmedi'))}"
+                f" · {escape(str(tenant.get('phone') or 'Telefon belirtilmedi'))}</p>"
+                f"<p><strong>Not:</strong> {escape(payload.note or '—')}</p>"
+            ),
+            reply_to=current_user.email or tenant.get("email"),
+        )
+        email_status = "sent" if result.get("sent") else "failed"
+        await db.marketplace_quote_requests.update_one(
+            {"id": request_id},
+            {"$set": {"delivery.email": email_status, "delivery.email_destination": sales_email,
+                      "delivery.email_provider": result.get("provider"), "delivery.email_error": result.get("error"),
+                      "delivery.updated_at": _now_iso()}},
+        )
+        doc["delivery"]["email"] = email_status
+    return {"ok": True, "request_id": request_id, "status": "new", "delivery": doc["delivery"],
+            "destination": "Süperadmin > Modül Kontrol Merkezi > Teklif talepleri"}
 
 
 # ── Purchase flow ───────────────────────────────────────────────
@@ -890,6 +933,29 @@ async def admin_setup_tasks(current_user: User = Depends(get_current_user), stat
     query = {"status": status_filter} if status_filter else {}
     rows = [row async for row in _db().marketplace_setup_tasks.find(query, {"_id": 0}).sort("created_at", -1).limit(200)]
     return {"tasks": rows}
+
+
+@router.get("/admin/quote-requests")
+async def admin_quote_requests(current_user: User = Depends(get_current_user), status_filter: str | None = None) -> dict:
+    _require_platform_admin(current_user)
+    query = {"status": status_filter} if status_filter else {}
+    rows = [row async for row in _db().marketplace_quote_requests.find(query, {"_id": 0}).sort("created_at", -1).limit(200)]
+    return {"requests": rows}
+
+
+@router.patch("/admin/quote-requests/{request_id}")
+async def admin_update_quote_request(request_id: str, payload: QuoteRequestUpdate, current_user: User = Depends(get_current_user)) -> dict:
+    _require_platform_admin(current_user)
+    fields = {"status": payload.status, "assignee": payload.assignee, "internal_note": payload.internal_note,
+              "updated_by": current_user.id, "updated_at": _now_iso()}
+    if payload.status == "contacted":
+        fields["contacted_at"] = _now_iso()
+    if payload.status in {"closed", "rejected"}:
+        fields["closed_at"] = _now_iso()
+    result = await _db().marketplace_quote_requests.update_one({"id": request_id}, {"$set": fields})
+    if not result.matched_count:
+        raise HTTPException(status_code=404, detail="Teklif talebi bulunamadı")
+    return {"ok": True, "status": payload.status}
 
 
 @router.patch("/admin/setup-tasks/{task_id}")

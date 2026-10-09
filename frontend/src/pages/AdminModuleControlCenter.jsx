@@ -38,6 +38,7 @@ export default function AdminModuleControlCenter() {
   const [savingProduct, setSavingProduct] = useState('');
   const [setupTasks, setSetupTasks] = useState([]);
   const [refundRequests, setRefundRequests] = useState([]);
+  const [quoteRequests, setQuoteRequests] = useState([]);
 
   const load = async () => {
     setLoading(true);
@@ -58,16 +59,18 @@ export default function AdminModuleControlCenter() {
 
   const loadProducts = async () => {
     try {
-      const [response, tasksResponse, refundsResponse] = await Promise.all([
+      const [response, tasksResponse, refundsResponse, quotesResponse] = await Promise.all([
         axios.get('/module-store/admin/products'),
         axios.get('/module-store/admin/setup-tasks'),
         axios.get('/module-store/admin/refund-requests'),
+        axios.get('/module-store/admin/quote-requests'),
       ]);
       const rows = Array.isArray(response.data?.products) ? response.data.products : [];
       setProducts(rows);
       setProductDrafts(Object.fromEntries(rows.map((item) => [item.key, { ...item }])));
       setSetupTasks(tasksResponse.data?.tasks || []);
       setRefundRequests(refundsResponse.data?.requests || []);
+      setQuoteRequests(quotesResponse.data?.requests || []);
     } catch (err) { toast.error(err.response?.data?.detail || 'Mağaza fiyatları yüklenemedi.'); }
   };
 
@@ -83,6 +86,13 @@ export default function AdminModuleControlCenter() {
       await axios.post(`/module-store/admin/refund-requests/${request.id}/approve`);
       toast.success('İade ödeme sağlayıcısı üzerinden tamamlandı.'); await loadProducts();
     } catch (err) { toast.error(err.response?.data?.detail || 'İade tamamlanamadı.'); }
+  };
+
+  const updateQuoteRequest = async (request, status) => {
+    try {
+      await axios.patch(`/module-store/admin/quote-requests/${request.id}`, { status, assignee: request.assignee || null, internal_note: request.internal_note || null });
+      toast.success('Teklif talebi güncellendi.'); await loadProducts();
+    } catch (err) { toast.error(err.response?.data?.detail || 'Teklif talebi güncellenemedi.'); }
   };
 
   const toggleCatalog = () => {
@@ -219,7 +229,8 @@ export default function AdminModuleControlCenter() {
           <div className="mt-2 grid gap-2 sm:grid-cols-3"><label className="text-xs text-slate-600">Fiyat ölçüsü<Input value={draftProduct.pricing_model || 'property'} onChange={(event) => update('pricing_model', event.target.value)} /></label><label className="text-xs text-slate-600">Kaynak<Input value={draftProduct.price_source || ''} onChange={(event) => update('price_source', event.target.value)} /></label><label className="text-xs text-slate-600">Geçerlilik başlangıcı<Input type="date" value={draftProduct.price_valid_from || ''} onChange={(event) => update('price_valid_from', event.target.value)} /></label></div>
         </article>; })}</div>
         {!products.length && <p className="py-8 text-center text-sm text-slate-500">Ürünler yükleniyor…</p>}
-        <div className="mt-6 grid gap-4 xl:grid-cols-2">
+        <div className="mt-6 grid gap-4 xl:grid-cols-3">
+          <div><h3 className="font-semibold text-slate-950">Teklif talepleri</h3><div className="mt-2 space-y-2">{quoteRequests.map((request) => <div key={request.id} className="rounded-lg border p-3 text-xs"><div className="flex items-start justify-between gap-2"><span><strong>{request.product_name}</strong><br />{request.tenant_name || request.tenant_id}<br /><a className="text-blue-700 underline" href={`mailto:${request.user_email || request.tenant_email}`}>{request.user_email || request.tenant_email || 'E-posta yok'}</a>{request.tenant_phone ? ` · ${request.tenant_phone}` : ''}<br /><span className="text-slate-500">No: {request.id?.slice(0, 8)} · {request.status}</span></span><div className="flex shrink-0 flex-col gap-1">{request.status === 'new' && <Button size="sm" variant="outline" onClick={() => updateQuoteRequest(request, 'contacted')}>İletişime geçildi</Button>}{!['closed', 'rejected'].includes(request.status) && <Button size="sm" onClick={() => updateQuoteRequest(request, 'closed')}>Kapat</Button>}</div></div></div>)}{!quoteRequests.length && <p className="text-xs text-slate-500">Bekleyen teklif talebi yok.</p>}</div></div>
           <div><h3 className="font-semibold text-slate-950">Dış entegrasyon kurulumları</h3><div className="mt-2 space-y-2">{setupTasks.map((task) => <div key={task.id} className="rounded-lg border p-3 text-xs"><div className="flex items-center justify-between gap-2"><strong>{task.product_key} · {task.tenant_id}</strong><span className={task.sla_due_at && task.sla_due_at < new Date().toISOString() && task.status !== 'completed' ? 'text-red-600' : 'text-slate-500'}>{task.status} · SLA {task.sla_due_at ? new Date(task.sla_due_at).toLocaleString('tr-TR') : '—'}</span></div><div className="mt-2 flex gap-2">{task.status === 'new' && <Button size="sm" variant="outline" onClick={() => updateSetupTask(task, 'in_progress')}>Başlat</Button>}{task.status !== 'completed' && <Button size="sm" onClick={() => updateSetupTask(task, 'completed')}>Tamamla</Button>}</div></div>)}{!setupTasks.length && <p className="text-xs text-slate-500">Bekleyen kurulum görevi yok.</p>}</div></div>
           <div><h3 className="font-semibold text-slate-950">İade talepleri</h3><div className="mt-2 space-y-2">{refundRequests.map((request) => <div key={request.id} className="flex items-center justify-between gap-2 rounded-lg border p-3 text-xs"><span><strong>{request.order_id}</strong><br />{request.reason} · {request.status}</span>{request.status === 'new' && <Button size="sm" onClick={() => approveRefund(request)}>Sağlayıcıdan iade et</Button>}</div>)}{!refundRequests.length && <p className="text-xs text-slate-500">Bekleyen iade talebi yok.</p>}</div></div>
         </div>

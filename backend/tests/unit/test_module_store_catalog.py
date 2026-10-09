@@ -84,4 +84,6 @@ def test_marketplace_lifecycle_endpoints_are_registered():
         "/api/module-store/admin/setup-tasks/{task_id}",
         "/api/module-store/admin/refund-requests",
         "/api/module-store/admin/refund-requests/{request_id}/approve",
+        "/api/module-store/admin/quote-requests",
+        "/api/module-store/admin/quote-requests/{request_id}",
     } <= paths
