@@ -10,6 +10,10 @@ from infra.ws_redis_adapter import WebSocketRedisAdapter
     ("failure", "expected_level"),
     [
         (RuntimeError("unable to perform operation on <TCPTransport closed=True>"), logging.WARNING),
+        # redis.asyncio emits a bare RuntimeError when UNSUBSCRIBE races a
+        # pub/sub reconnect.  Local bookkeeping is already complete, so the
+        # cleanup failure must not become a production ERROR/Sentry incident.
+        (RuntimeError("pubsub connection changed while unsubscribing"), logging.WARNING),
         (RuntimeError("command not allowed for this role"), logging.ERROR),
     ],
 )
