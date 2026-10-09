@@ -57,5 +57,9 @@ describe('AdminModuleControlCenter', () => {
     expect(await screen.findByText('Modül mağazası fiyat ve sözleşme yönetimi')).toBeInTheDocument();
     expect(axios.get).toHaveBeenCalledWith('/module-store/admin/products');
     expect(await screen.findByText('Restoran POS')).toBeInTheDocument();
+    expect(screen.getByLabelText('Aşama')).toHaveValue('new');
+    expect(screen.getByLabelText('Sorumlu')).toBeInTheDocument();
+    expect(screen.getByLabelText('Takip tarihi')).toBeInTheDocument();
+    expect(screen.getByLabelText('Yönetici notu')).toBeInTheDocument();
   });
 });

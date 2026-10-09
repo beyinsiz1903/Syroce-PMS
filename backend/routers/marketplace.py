@@ -10,8 +10,8 @@ from __future__ import annotations
 import logging
 import os
 import uuid
-from html import escape
 from datetime import UTC, datetime, timedelta
+from html import escape
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -361,9 +361,10 @@ class SetupTaskUpdate(BaseModel):
 
 
 class QuoteRequestUpdate(BaseModel):
-    status: str = Field(pattern="^(new|contacted|qualified|closed|rejected)$")
+    status: str = Field(pattern="^(new|assigned|in_progress|quote_sent|won|lost)$")
     assignee: str | None = Field(default=None, max_length=200)
     internal_note: str | None = Field(default=None, max_length=1000)
+    follow_up_at: str | None = Field(default=None, max_length=40)
 
 
 # ── Public catalog ──────────────────────────────────────────────
@@ -940,21 +941,34 @@ async def admin_quote_requests(current_user: User = Depends(get_current_user), s
     _require_platform_admin(current_user)
     query = {"status": status_filter} if status_filter else {}
     rows = [row async for row in _db().marketplace_quote_requests.find(query, {"_id": 0}).sort("created_at", -1).limit(200)]
+    legacy_statuses = {"contacted": "in_progress", "qualified": "in_progress", "closed": "won", "rejected": "lost"}
+    for row in rows:
+        row["status"] = legacy_statuses.get(row.get("status"), row.get("status", "new"))
     return {"requests": rows}
 
 
 @router.patch("/admin/quote-requests/{request_id}")
 async def admin_update_quote_request(request_id: str, payload: QuoteRequestUpdate, current_user: User = Depends(get_current_user)) -> dict:
     _require_platform_admin(current_user)
-    fields = {"status": payload.status, "assignee": payload.assignee, "internal_note": payload.internal_note,
-              "updated_by": current_user.id, "updated_at": _now_iso()}
-    if payload.status == "contacted":
-        fields["contacted_at"] = _now_iso()
-    if payload.status in {"closed", "rejected"}:
-        fields["closed_at"] = _now_iso()
-    result = await _db().marketplace_quote_requests.update_one({"id": request_id}, {"$set": fields})
-    if not result.matched_count:
+    db = _db()
+    existing = await db.marketplace_quote_requests.find_one({"id": request_id}, {"_id": 0})
+    if not existing:
         raise HTTPException(status_code=404, detail="Teklif talebi bulunamadı")
+    fields = {"status": payload.status, "assignee": payload.assignee, "internal_note": payload.internal_note,
+              "follow_up_at": payload.follow_up_at, "updated_by": current_user.id, "updated_at": _now_iso()}
+    if payload.status == "in_progress" and not existing.get("contacted_at"):
+        fields["contacted_at"] = _now_iso()
+    if payload.status == "quote_sent":
+        fields["quote_sent_at"] = _now_iso()
+    if payload.status in {"won", "lost"}:
+        fields["closed_at"] = _now_iso()
+    await db.marketplace_quote_requests.update_one({"id": request_id}, {"$set": fields})
+    await db.marketplace_quote_request_history.insert_one({
+        "id": str(uuid.uuid4()), "request_id": request_id,
+        "from_status": existing.get("status"), "to_status": payload.status,
+        "assignee": payload.assignee, "internal_note": payload.internal_note,
+        "follow_up_at": payload.follow_up_at, "changed_by": current_user.id, "changed_at": _now_iso(),
+    })
     return {"ok": True, "status": payload.status}
 
 
