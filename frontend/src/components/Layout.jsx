@@ -448,6 +448,35 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
     );
   };
 
+  const renderModuleStoreButton = () => {
+    const active = location.pathname === '/app/module-store' || location.pathname === '/module-store';
+    const label = t('navKeys.module_store', 'Modül Pazarı');
+    return (
+      <TooltipProvider key="module-store-shortcut" delayDuration={300}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => handleNavigate('/app/module-store')}
+              onPointerDown={() => preloadRoute('/app/module-store')}
+              onMouseEnter={() => preloadRoute('/app/module-store')}
+              onFocus={() => preloadRoute('/app/module-store')}
+              className={`flex h-8 items-center gap-1 whitespace-nowrap rounded-md px-2 py-1.5 text-[11px] transition-all duration-150 ${active ? 'bg-blue-600 text-white shadow-sm hover:bg-blue-700' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'}`}
+              data-testid="nav-module-store-shortcut"
+              aria-label={label}
+              title={label}
+            >
+              <ShoppingCart className="h-3.5 w-3.5 shrink-0" />
+              <span className="hidden xl:inline font-medium">{label}</span>
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" className="xl:hidden"><p>{label}</p></TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    );
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:bg-none dark:bg-background flex flex-col" data-testid="app-shell">
       <header className="print:hidden bg-white border-b border-gray-200 sticky top-0 z-50 shadow-sm shrink-0">
@@ -550,6 +579,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
 
             <div className="flex items-center gap-1.5 shrink-0 ml-2">
               {renderApplicationsButton()}
+              {renderModuleStoreButton()}
               {standaloneItems.filter((item) => item.key === 'settings').map((item) => {
                 const Icon = ICON_BY_KEY[item.key] || Home;
                 const isActive = normalizedCurrentModule === normalizeKey(item.key) || isItemPathActive(item);
@@ -657,6 +687,12 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
                 </span>
                 <LanguageSelector />
               </div>
+
+              <Button variant="ghost" size="sm" onClick={() => handleNavigate('/app/module-store', true)}
+                className={`mb-0.5 w-full justify-start py-2 ${location.pathname.includes('module-store') ? 'bg-blue-600 text-white hover:bg-blue-700' : 'hover:bg-gray-100 dark:text-gray-100'}`}
+                data-testid="mobile-nav-module-store">
+                <ShoppingCart className="mr-2 h-4 w-4" />{t('navKeys.module_store', 'Modül Pazarı')}
+              </Button>
 
               {[...standaloneItems.filter((item) => item.key === 'dashboard'), ...visibleNav.filter((item) => item.key === 'reservation_calendar')].map((item) => {
                 const Icon = ICON_BY_KEY[item.key] || Home;
