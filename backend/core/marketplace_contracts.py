@@ -5,9 +5,13 @@ when its commercial unit, tax, provisioning and readiness contract are explicit.
 """
 from __future__ import annotations
 
+import logging
+import uuid
 from datetime import UTC, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 PRODUCT_CONTRACTS: dict[str, dict[str, Any]] = {
     "quick_id_integration": {"unit": "property", "included": 1, "setup_minutes": 15, "strategy": "native", "checks": ["quick_id_service", "camera_permission", "kbs_configuration"]},
@@ -86,3 +90,51 @@ async def provision_subscription(db, tenant_id: str, product: dict[str, Any], su
     plan = {"subscription_id": subscription_id, "tenant_id": tenant_id, "product_key": product["key"], "strategy": strategy, "status": status, "steps": steps, "updated_at": now}
     await db.marketplace_provisioning.update_one({"subscription_id": subscription_id}, {"$set": plan, "$setOnInsert": {"created_at": now}}, upsert=True)
     return plan
+
+
+async def activate_subscription(db, order: dict[str, Any]) -> None:
+    """Idempotently grant credits or activate/extend a paid subscription."""
+    from pymongo.errors import DuplicateKeyError
+
+    tenant_id, product_key = order["tenant_id"], order["product_key"]
+    now = datetime.now(UTC)
+    product = await db.marketplace_products.find_one({"key": product_key}, {"_id": 0}) or enrich_product(
+        {"key": product_key, "price_try": order.get("subtotal_try", order.get("price_try", 0)), "billing_type": order.get("billing_type", "subscription")}
+    )
+    try:
+        await db.tenant_subscription_activations.insert_one({"order_id": order["order_id"], "tenant_id": tenant_id, "product_key": product_key, "activated_at": now.isoformat()})
+    except DuplicateKeyError:
+        logger.info("[marketplace] order=%s already activated", order["order_id"])
+        return
+
+    credits = order.get("credits")
+    if credits and product_key.startswith("mailing"):
+        await db.mailing_credits.update_one(
+            {"tenant_id": tenant_id},
+            {"$inc": {"balance": int(credits), "lifetime_purchased": int(credits)}, "$setOnInsert": {"tenant_id": tenant_id, "created_at": now.isoformat()}, "$set": {"updated_at": now.isoformat()}},
+            upsert=True,
+        )
+        await db.marketplace_credit_grants.insert_one({"id": str(uuid.uuid4()), "tenant_id": tenant_id, "product_key": product_key, "credits_granted": int(credits), "order_id": order["order_id"], "created_at": now.isoformat()})
+        return
+
+    existing = await db.tenant_subscriptions.find_one({"tenant_id": tenant_id, "product_key": product_key, "status": "active"})
+    new_end = now + timedelta(days=order.get("duration_days") or 30)
+    if existing and existing.get("end_date"):
+        try:
+            current_end = datetime.fromisoformat(existing["end_date"].replace("Z", "+00:00"))
+            new_end = (current_end if current_end > now else now) + timedelta(days=order.get("duration_days") or 30)
+        except (TypeError, ValueError):
+            pass
+        subscription_id = existing["id"]
+        await db.tenant_subscriptions.update_one({"id": subscription_id}, {"$set": {"end_date": new_end.isoformat(), "last_renewal_order_id": order["order_id"], "trial": False, "auto_renew": bool(product.get("auto_renew", True)), "quantity": order.get("quantity", 1), "updated_at": now.isoformat()}})
+    else:
+        subscription_id = str(uuid.uuid4())
+        await db.tenant_subscriptions.insert_one({"id": subscription_id, "tenant_id": tenant_id, "product_key": product_key, "status": "active", "start_date": now.isoformat(), "end_date": new_end.isoformat(), "order_id": order["order_id"], "trial": False, "auto_renew": bool(product.get("auto_renew", True)), "quantity": order.get("quantity", 1), "renewal_status": "scheduled", "created_at": now.isoformat()})
+
+    if product_key == "af_sadakat":
+        try:
+            from core.afsadakat_provisioner import provision_tenant
+            await provision_tenant(tenant_id)
+        except Exception as exc:
+            logger.exception("[marketplace] afsadakat provision failed for %s: %s", tenant_id, exc)
+    await provision_subscription(db, tenant_id, product, subscription_id)

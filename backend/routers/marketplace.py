@@ -223,7 +223,7 @@ DEFAULT_PRODUCTS += [
 # Keep the public catalog, checkout and renewal worker on one commercial
 # contract.  Existing admin edits remain authoritative because seeding uses
 # $setOnInsert.
-from core.marketplace_contracts import calculate_price, enrich_product, provision_subscription
+from core.marketplace_contracts import activate_subscription, calculate_price, enrich_product, provision_subscription
 
 DEFAULT_PRODUCTS = [enrich_product(product) for product in DEFAULT_PRODUCTS]
 
@@ -686,7 +686,7 @@ async def purchase_callback(order_id: str) -> dict:
     # via order_id uniqueness so safe to retry. Mark order completed only
     # after activation success — guarantees no "paid but not activated" state.
     try:
-        await _activate_subscription(order)
+        await activate_subscription(db, order)
     except Exception as e:
         logger.exception("[marketplace] activation failed for order=%s: %s", order_id, e)
         raise HTTPException(status_code=500, detail="Aktivasyon hatası; lütfen birkaç dakika sonra tekrar deneyin")
@@ -781,115 +781,6 @@ async def update_readiness(subscription_id: str, payload: ReadinessStepUpdate, c
     return {"ok": True, "status": "ready" if ready else "setup_required"}
 
 
-async def _activate_subscription(order: dict) -> None:
-    """Create or extend a tenant subscription based on a paid order.
-
-    Idempotent: a unique index on (order_id) for tenant_subscriptions
-    guarantees a given order can grant entitlement only once even if
-    the callback is replayed.
-    """
-    db = _db()
-    tenant_id = order["tenant_id"]
-    product_key = order["product_key"]
-    duration_days = order.get("duration_days")
-    credits = order.get("credits")
-    now = datetime.now(UTC)
-    product = await db.marketplace_products.find_one({"key": product_key}, {"_id": 0}) or enrich_product({"key": product_key, "price_try": order.get("subtotal_try", order.get("price_try", 0)), "billing_type": order.get("billing_type", "subscription")})
-
-    # Atomic idempotency guard: insert a marker row keyed by order_id
-    # BEFORE any entitlement mutation. Unique index on order_id (see
-    # core.subscriptions.ensure_indexes) makes the second insert raise
-    # DuplicateKeyError, so concurrent callbacks and replays cannot
-    # double-extend a subscription — even in the "extend existing"
-    # branch where tenant_subscriptions.order_id is not persisted.
-    from pymongo.errors import DuplicateKeyError
-
-    try:
-        await db.tenant_subscription_activations.insert_one(
-            {
-                "order_id": order["order_id"],
-                "tenant_id": tenant_id,
-                "product_key": product_key,
-                "activated_at": _now_iso(),
-            }
-        )
-    except DuplicateKeyError:
-        logger.info("[marketplace] order=%s already activated (atomic guard)", order["order_id"])
-        return
-
-    # Credit pack: top up the mailing credits balance.
-    # Use lifetime_purchased to stay consistent with the existing mailing
-    # module schema (avoids dual counter drift).
-    if credits and product_key.startswith("mailing"):
-        await db.mailing_credits.update_one(
-            {"tenant_id": tenant_id},
-            {
-                "$inc": {"balance": int(credits), "lifetime_purchased": int(credits)},
-                "$setOnInsert": {"tenant_id": tenant_id, "created_at": _now_iso()},
-                "$set": {"updated_at": _now_iso()},
-            },
-            upsert=True,
-        )
-        await db.marketplace_credit_grants.insert_one({"id": str(uuid.uuid4()), "tenant_id": tenant_id, "product_key": product_key, "credits_granted": int(credits), "order_id": order["order_id"], "created_at": _now_iso()})
-        logger.info("[marketplace] tenant=%s credits +%s for %s", tenant_id, credits, product_key)
-        return
-
-    # Post-activation hooks: external modules need provisioning.
-    async def _post_activate() -> None:
-        if product_key == "af_sadakat":
-            try:
-                from core.afsadakat_provisioner import provision_tenant
-
-                await provision_tenant(tenant_id)
-            except Exception as e:
-                logger.exception("[marketplace] afsadakat provision failed for %s: %s", tenant_id, e)
-
-    # Subscription: extend existing active sub, or create new one.
-    existing = await db.tenant_subscriptions.find_one(
-        {
-            "tenant_id": tenant_id,
-            "product_key": product_key,
-            "status": "active",
-        }
-    )
-    new_end = now + timedelta(days=duration_days or 30)
-    if existing and existing.get("end_date"):
-        try:
-            curr_end = datetime.fromisoformat(existing["end_date"].replace("Z", "+00:00"))
-            base = curr_end if curr_end > now else now
-            new_end = base + timedelta(days=duration_days or 30)
-        except Exception:
-            pass
-        await db.tenant_subscriptions.update_one(
-            {"id": existing["id"]},
-            {"$set": {"end_date": new_end.isoformat(), "last_renewal_order_id": order["order_id"], "trial": False, "auto_renew": bool(product.get("auto_renew", True)), "quantity": order.get("quantity", 1), "updated_at": _now_iso()}},
-        )
-        subscription_id = existing["id"]
-        logger.info("[marketplace] tenant=%s extended %s until %s", tenant_id, product_key, new_end.isoformat())
-    else:
-        subscription_id = str(uuid.uuid4())
-        await db.tenant_subscriptions.insert_one(
-            {
-                "id": subscription_id,
-                "tenant_id": tenant_id,
-                "product_key": product_key,
-                "status": "active",
-                "start_date": now.isoformat(),
-                "end_date": new_end.isoformat(),
-                "order_id": order["order_id"],
-                "trial": False,
-                "auto_renew": bool(product.get("auto_renew", True)),
-                "quantity": order.get("quantity", 1),
-                "renewal_status": "scheduled",
-                "created_at": _now_iso(),
-            }
-        )
-        logger.info("[marketplace] tenant=%s activated %s until %s", tenant_id, product_key, new_end.isoformat())
-
-    await _post_activate()
-    await provision_subscription(db, tenant_id, product, subscription_id)
-
-
 # ── Authorization helpers ────────────────────────────────────────
 def _is_platform_admin(user: User) -> bool:
     """Platform-wide admin (Syroce staff). Manages product catalog."""
@@ -981,7 +872,7 @@ async def admin_setup_tasks(current_user: User = Depends(get_current_user), stat
 @router.post("/admin/run-renewals")
 async def admin_run_renewals(current_user: User = Depends(get_current_user)) -> dict:
     _require_platform_admin(current_user)
-    from workers.marketplace_renewal_worker import process_due_renewals
+    from core.marketplace_renewal_service import process_due_renewals
     return await process_due_renewals(_db())
 
 

@@ -2,7 +2,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from workers.marketplace_renewal_worker import process_due_renewals
+from core.marketplace_renewal_service import process_due_renewals
 
 
 class Cursor:
