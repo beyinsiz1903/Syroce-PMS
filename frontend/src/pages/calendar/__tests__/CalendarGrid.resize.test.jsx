@@ -85,15 +85,15 @@ describe('CalendarGrid stay resize handle', () => {
 
   it('uses distinct but readable surfaces for each reservation lifecycle state', () => {
     expect(getReservationCardSurface({ status: 'confirmed' })).toMatchObject({
-      background: '#eff6ff',
+      background: 'var(--calendar-arrival-bg, #eff6ff)',
       border: '#3b82f6',
     });
     expect(getReservationCardSurface({ status: 'checked_in' })).toMatchObject({
-      background: '#ecfdf5',
+      background: 'var(--calendar-stay-bg, #ecfdf5)',
       border: '#10b981',
     });
     expect(getReservationCardSurface({ status: 'checked_out' })).toMatchObject({
-      background: '#fff1f2',
+      background: 'var(--calendar-departure-bg, #fff1f2)',
       border: '#f43f5e',
     });
   });

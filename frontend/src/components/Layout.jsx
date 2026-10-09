@@ -598,8 +598,8 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
           {mobileMenuOpen && (
             <nav id="mobile-navigation" className="xl:hidden absolute inset-x-0 top-full z-50 border-b border-t bg-background p-3 shadow-lg max-h-[70dvh] overflow-y-auto" data-testid="mobile-nav">
               <div className="px-2 pb-2 flex items-center gap-2">
-
                 <LanguageSelector />
+                <div className="lg:hidden"><ThemeToggle /></div>
               </div>
 
               <Button variant="ghost" size="sm" onClick={() => handleNavigate('/app/module-store', true)}

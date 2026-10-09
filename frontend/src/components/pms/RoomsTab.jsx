@@ -853,7 +853,7 @@ const RoomsTab = ({
                   {canCreateReservation && (
                     <Button
                       size="sm"
-                      className="w-full mt-2 h-8 text-xs bg-amber-600 hover:bg-amber-700 text-white"
+                      className="w-full mt-2 h-8 text-xs pms-primary-action bg-amber-600 hover:bg-amber-700 text-white"
                       onClick={(e) => handleQuickResOpen(e, room)}
                       data-testid={`quick-res-btn-${room.room_number}`}
                     >
@@ -1254,7 +1254,7 @@ const RoomsTab = ({
 
               {/* Onay */}
               <Button
-                className="w-full bg-amber-600 hover:bg-amber-700 text-white"
+                className="w-full pms-primary-action bg-amber-600 hover:bg-amber-700 text-white"
                 onClick={handlePaymentSubmit}
                 disabled={paymentLoading || !paymentAmount || parseMoneyInput(paymentAmount) <= 0}
                 data-testid="quick-payment-submit"
@@ -1449,7 +1449,7 @@ const RoomsTab = ({
                 />
               </div>
               <Button
-                className="w-full bg-amber-600 hover:bg-amber-700 text-white"
+                className="w-full pms-primary-action bg-amber-600 hover:bg-amber-700 text-white"
                 onClick={handleQuickResSubmit}
                 disabled={quickResLoading}
                 data-testid="quick-res-submit"

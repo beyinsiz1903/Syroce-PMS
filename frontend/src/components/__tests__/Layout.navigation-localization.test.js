@@ -8,6 +8,10 @@ const tr = JSON.parse(readFileSync(resolve(process.cwd(), 'src/locales/tr.json')
 const en = JSON.parse(readFileSync(resolve(process.cwd(), 'src/locales/en.json'), 'utf8'));
 
 describe('top navigation localization', () => {
+  it('keeps the theme selector reachable inside narrow-screen navigation', () => {
+    const mobileNav = layoutSource.split('<nav id="mobile-navigation"')[1].split('</nav>')[0];
+    expect(mobileNav).toContain('<div className="lg:hidden"><ThemeToggle /></div>');
+  });
   it('places desktop navigation above the workspace without a fixed-width rail', () => {
     expect(layoutSource).toContain('data-testid="desktop-top-navigation"');
     expect(layoutSource).toContain('hidden xl:flex w-full shrink-0 flex-wrap');

@@ -10,6 +10,7 @@ import { initReactI18next } from 'react-i18next';
 import tr from '../src/locales/tr.json';
 import en from '../src/locales/en.json';
 import '../src/index.css';
+import '../src/App.css';
 import { EntitlementProvider } from '../src/context/EntitlementContext';
 import Layout from '../src/components/Layout';
 import PMSModule from '../src/pages/PMSModule';
