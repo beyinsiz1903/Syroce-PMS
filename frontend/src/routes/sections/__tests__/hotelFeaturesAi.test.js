@@ -65,6 +65,14 @@ describe('multi-property navigation', () => {
     });
   });
 
+  it('redirects legacy complaint management into CRM guest relations', () => {
+    const routes = hotelFeaturesAiRoutes(helpers);
+    expect(routes.find((route) => route.path === '/service-recovery')).toMatchObject({
+      type: 'redirect',
+      to: '/crm?tab=relations',
+    });
+  });
+
   it('exposes the quality management workspace', () => {
     const route = hotelFeaturesAiRoutes(helpers).find((item) => item.path === '/quality-management');
     expect(route).toMatchObject({ component: 'QualityManagement', wrapLayout: true });
