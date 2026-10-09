@@ -142,7 +142,7 @@ const CalendarHeader = ({
             type="button"
             onClick={onShowNewBookingDialog}
             size="icon"
-            className="h-9 w-9 shrink-0 bg-gradient-to-r from-amber-500 to-amber-600 text-white shadow-sm"
+            className="h-9 w-9 shrink-0 pms-primary-action bg-gradient-to-r from-amber-500 to-amber-600 text-white shadow-sm"
             data-testid="mobile-add-reservation-button"
             aria-label={t('cm.pages_calendar_CalendarHeader.rezervasyon_ekle')}
           >
@@ -474,7 +474,7 @@ const CalendarHeader = ({
 
         {canCreateBooking && <Button
           onClick={onShowNewBookingDialog}
-          className="bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white text-xs h-9 px-4 font-bold shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md active:translate-y-0"
+          className="pms-primary-action bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white text-xs h-9 px-4 font-bold shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md active:translate-y-0"
           data-testid="add-reservation-button"
         >
           <Plus className="w-3.5 h-3.5 mr-1" />

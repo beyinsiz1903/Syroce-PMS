@@ -73,9 +73,9 @@ export const getReservationCardPresentation = (booking) => {
 
 export const getReservationCardSurface = (booking) => {
   const status = String(booking?.status || '').toLowerCase();
-  if (status === 'checked_in') return { background: '#ecfdf5', border: '#10b981', text: '#064e3b', muted: '#047857' };
-  if (status === 'checked_out') return { background: '#fff1f2', border: '#f43f5e', text: '#881337', muted: '#be123c' };
-  return { background: '#eff6ff', border: '#3b82f6', text: '#172554', muted: '#1d4ed8' };
+  if (status === 'checked_in') return { background: 'var(--calendar-stay-bg, #ecfdf5)', border: '#10b981', text: 'var(--calendar-stay-text, #064e3b)', muted: 'var(--calendar-stay-muted, #047857)' };
+  if (status === 'checked_out') return { background: 'var(--calendar-departure-bg, #fff1f2)', border: '#f43f5e', text: 'var(--calendar-departure-text, #881337)', muted: 'var(--calendar-departure-muted, #be123c)' };
+  return { background: 'var(--calendar-arrival-bg, #eff6ff)', border: '#3b82f6', text: 'var(--calendar-arrival-text, #172554)', muted: 'var(--calendar-arrival-muted, #1d4ed8)' };
 };
 
 export const clearCalendarTextSelection = () => {

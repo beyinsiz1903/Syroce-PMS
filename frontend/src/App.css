@@ -20,6 +20,14 @@ body {
   text-rendering: optimizeLegibility;
 }
 
+/* Keep the legacy light canvas, but never leak its ink into dark controls. */
+html.dark body {
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  color-scheme: dark;
+}
+html.dark .loading-screen { color: hsl(var(--muted-foreground)); }
+
 h1, h2, h3, h4, h5, h6 {
   font-family: 'Space Grotesk', sans-serif;
   letter-spacing: -0.015em;
