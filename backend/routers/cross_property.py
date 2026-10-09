@@ -19,12 +19,14 @@ saw every tenant in the system.
 from __future__ import annotations
 
 import re
+import uuid
 from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
+from cache_manager import cache as _cache
 from cache_manager import cached as _cached
 from core.audit import log_audit_event
 from core.security import get_current_user
@@ -60,6 +62,14 @@ async def _tenant_name_map(tenant_ids: list[str]) -> dict[str, str]:
         if tid:
             out[tid] = t.get("property_name") or t.get("hotel_name") or t.get("name") or tid
     return out
+
+
+def _invalidate_duplicate_scan(tenant_ids: list[str]) -> None:
+    for tenant_id in tenant_ids:
+        try:
+            _cache.safe_invalidate(tenant_id, "cross_dup_scan")
+        except Exception:
+            pass
 
 
 # ── Guest search ─────────────────────────────────────────────────
@@ -357,6 +367,26 @@ class MergeRequest(BaseModel):
     keep_field_overrides: dict[str, Any] = {}
 
 
+_MERGE_OVERRIDE_FIELDS = {
+    "name",
+    "first_name",
+    "last_name",
+    "email",
+    "phone",
+    "loyalty_tier",
+    "preferences",
+    "vip",
+    "company",
+}
+
+
+def _merge_restore_snapshot(document: dict, requested_fields: set[str]) -> dict[str, Any]:
+    """Capture raw stored values required to reverse explicit field overrides."""
+    companion_fields = {"_hash_email", "_hash_phone", "_ng_name", "_ng_first_name", "_ng_last_name"}
+    keys = requested_fields | companion_fields
+    return {key: document[key] for key in keys if key in document}
+
+
 @router.post("/guests/{primary_id}/merge")
 async def merge_guest_profiles(
     primary_id: str,
@@ -386,11 +416,9 @@ async def merge_guest_profiles(
     tenant_ids = await _chain_tenant_ids(current_user)
     primary = await db.guests.find_one(
         {"$or": [{"id": primary_id}, {"guest_id": primary_id}], "tenant_id": {"$in": tenant_ids}},
-        {"_id": 1, "tenant_id": 1, "id": 1, "guest_id": 1},
     )
     duplicate = await db.guests.find_one(
         {"$or": [{"id": payload.target_guest_id}, {"guest_id": payload.target_guest_id}], "tenant_id": {"$in": tenant_ids}},
-        {"_id": 1, "tenant_id": 1, "id": 1, "guest_id": 1},
     )
     if not primary or not duplicate:
         raise HTTPException(status_code=404, detail="Primary or duplicate guest not found")
@@ -403,6 +431,32 @@ async def merge_guest_profiles(
     # known alias of the duplicate, set canonical primary id (prefer guest.id).
     dup_aliases = [v for v in {duplicate.get("id"), duplicate.get("guest_id"), payload.target_guest_id} if v]
     primary_canonical = primary.get("id") or primary.get("guest_id") or primary_id
+    merge_id = str(uuid.uuid4())
+    requested_override_fields = set(payload.keep_field_overrides) & _MERGE_OVERRIDE_FIELDS
+    primary_before = _merge_restore_snapshot(primary, requested_override_fields)
+    property_names = await _tenant_name_map([primary_tenant, dup_tenant])
+    await db.guest_profile_merges.insert_one(
+        {
+            "id": merge_id,
+            "tenant_id": current_user.tenant_id,
+            "primary_tenant_id": primary_tenant,
+            "duplicate_tenant_id": dup_tenant,
+            "primary_guest_id": primary_canonical,
+            "duplicate_guest_id": duplicate.get("id") or duplicate.get("guest_id") or payload.target_guest_id,
+            "primary_guest_name": _full_name(primary) or "(isimsiz)",
+            "duplicate_guest_name": _full_name(duplicate) or "(isimsiz)",
+            "primary_property_name": property_names.get(primary_tenant, primary_tenant),
+            "duplicate_property_name": property_names.get(dup_tenant, dup_tenant),
+            "duplicate_aliases": dup_aliases,
+            "override_fields": sorted(requested_override_fields),
+            "primary_before": primary_before,
+            "status": "pending",
+            "bookings_repointed": 0,
+            "folios_repointed": 0,
+            "created_at": datetime.now(UTC).isoformat(),
+            "created_by": getattr(current_user, "id", None) or "",
+        }
+    )
 
     repoint_q = {
         "tenant_id": dup_tenant,
@@ -442,7 +496,7 @@ async def merge_guest_profiles(
 
     # Apply optional field overrides on primary — pin to its immutable _id
     if payload.keep_field_overrides:
-        safe = {k: v for k, v in payload.keep_field_overrides.items() if k in {"name", "first_name", "last_name", "email", "phone", "loyalty_tier", "preferences", "vip", "company"}}
+        safe = {k: v for k, v in payload.keep_field_overrides.items() if k in _MERGE_OVERRIDE_FIELDS}
         if safe:
             # encrypt_guest_update recomputes the plaintext name companions
             # (normalized + merged _ng_name from `primary`) AND encrypts PII
@@ -454,6 +508,19 @@ async def merge_guest_profiles(
                 {"_id": primary["_id"], "tenant_id": primary.get("tenant_id")},
                 {"$set": safe},
             )
+
+    await db.guest_profile_merges.update_one(
+        {"id": merge_id, "tenant_id": current_user.tenant_id, "status": "pending"},
+        {
+            "$set": {
+                "status": "completed",
+                "bookings_repointed": booking_res.modified_count,
+                "folios_repointed": folio_res.modified_count,
+                "completed_at": datetime.now(UTC).isoformat(),
+            }
+        },
+    )
+    _invalidate_duplicate_scan(tenant_ids)
 
     try:
         await log_audit_event(
@@ -476,10 +543,147 @@ async def merge_guest_profiles(
 
     return {
         "ok": True,
+        "merge_id": merge_id,
         "primary_id": primary_id,
         "archived_id": payload.target_guest_id,
         "bookings_repointed": booking_res.modified_count,
         "folios_repointed": folio_res.modified_count,
+    }
+
+
+@router.get("/guests/merges")
+async def list_guest_profile_merges(
+    limit: int = Query(20, ge=1, le=100),
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_guest_list")),
+):
+    require_roles(current_user, {UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.SUPERVISOR})
+    tenant_ids = await _chain_tenant_ids(current_user)
+    rows = (
+        await db.guest_profile_merges.find(
+            {
+                "tenant_id": current_user.tenant_id,
+                "primary_tenant_id": {"$in": tenant_ids},
+                "duplicate_tenant_id": {"$in": tenant_ids},
+            },
+            {
+                "_id": 0,
+                "id": 1,
+                "primary_guest_id": 1,
+                "duplicate_guest_id": 1,
+                "primary_guest_name": 1,
+                "duplicate_guest_name": 1,
+                "primary_property_name": 1,
+                "duplicate_property_name": 1,
+                "primary_tenant_id": 1,
+                "duplicate_tenant_id": 1,
+                "status": 1,
+                "bookings_repointed": 1,
+                "folios_repointed": 1,
+                "created_at": 1,
+                "completed_at": 1,
+                "undone_at": 1,
+            },
+        )
+        .sort("created_at", -1)
+        .limit(limit)
+        .to_list(limit)
+    )
+    return {"merges": rows}
+
+
+@router.post("/guests/merges/{merge_id}/undo")
+async def undo_guest_profile_merge(
+    merge_id: str,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),
+):
+    """Reverse one completed merge without touching post-merge guest activity."""
+    require_roles(current_user, {UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.SUPERVISOR})
+    tenant_ids = await _chain_tenant_ids(current_user)
+    operation = await db.guest_profile_merges.find_one(
+        {
+            "id": merge_id,
+            "tenant_id": current_user.tenant_id,
+            "primary_tenant_id": {"$in": tenant_ids},
+            "duplicate_tenant_id": {"$in": tenant_ids},
+        },
+        {"_id": 0},
+    )
+    if not operation:
+        raise HTTPException(status_code=404, detail="Birleştirme işlemi bulunamadı")
+    if operation.get("status") == "undone":
+        raise HTTPException(status_code=409, detail="Birleştirme daha önce geri alındı")
+    if operation.get("status") != "completed":
+        raise HTTPException(status_code=409, detail="Birleştirme tamamlanmadığı için otomatik geri alınamaz")
+
+    primary_id = operation["primary_guest_id"]
+    duplicate_id = operation["duplicate_guest_id"]
+    duplicate_tenant = operation["duplicate_tenant_id"]
+    tagged_query = {
+        "tenant_id": duplicate_tenant,
+        "guest_id": primary_id,
+        "merged_from": {"$in": operation.get("duplicate_aliases") or [duplicate_id]},
+    }
+    guest_result = await db.guests.update_one(
+        {
+            "$or": [{"id": duplicate_id}, {"guest_id": duplicate_id}],
+            "tenant_id": duplicate_tenant,
+            "merged_into": primary_id,
+        },
+        {"$set": {"archived": False}, "$unset": {"archived_at": "", "merged_into": ""}},
+    )
+    if guest_result.matched_count == 0:
+        raise HTTPException(status_code=409, detail="Arşivlenen profil değişti; güvenli geri alma yapılamadı")
+    booking_result = await db.bookings.update_many(
+        tagged_query,
+        {"$set": {"guest_id": duplicate_id}, "$unset": {"merged_from": ""}},
+    )
+    folio_result = await db.folios.update_many(
+        tagged_query,
+        {"$set": {"guest_id": duplicate_id}, "$unset": {"merged_from": ""}},
+    )
+
+    override_fields = set(operation.get("override_fields") or [])
+    primary_before = operation.get("primary_before") or {}
+    if override_fields:
+        restore_set = dict(primary_before)
+        restore_unset = {key: "" for key in override_fields if key not in primary_before}
+        update: dict[str, Any] = {}
+        if restore_set:
+            update["$set"] = restore_set
+        if restore_unset:
+            update["$unset"] = restore_unset
+        if update:
+            await db.guests.update_one(
+                {"$or": [{"id": primary_id}, {"guest_id": primary_id}], "tenant_id": operation["primary_tenant_id"]},
+                update,
+            )
+
+    undone_at = datetime.now(UTC).isoformat()
+    await db.guest_profile_merges.update_one(
+        {"id": merge_id, "tenant_id": current_user.tenant_id, "status": "completed"},
+        {"$set": {"status": "undone", "undone_at": undone_at, "undone_by": getattr(current_user, "id", None) or ""}},
+    )
+    _invalidate_duplicate_scan(tenant_ids)
+    try:
+        await log_audit_event(
+            current_user.tenant_id,
+            actor_user_id=getattr(current_user, "id", None) or "",
+            action="cross_property.guest_merge_undone",
+            entity_type="guest",
+            entity_id=primary_id,
+            metadata={"merge_id": merge_id, "restored_guest_id": duplicate_id},
+            severity="medium",
+        )
+    except Exception:
+        pass
+    return {
+        "ok": True,
+        "merge_id": merge_id,
+        "bookings_restored": booking_result.modified_count,
+        "folios_restored": folio_result.modified_count,
+        "guest_restored": True,
     }
 
 
@@ -549,6 +753,74 @@ def _score_pair(a: dict, b: dict) -> tuple[float, list[str]]:
     return min(score, 1.0), reasons
 
 
+async def _duplicate_candidate_pool(tenant_ids: list[str], legacy_limit: int = 2000) -> tuple[list[dict], dict[str, Any]]:
+    """Fetch only guests sharing a blind index, plus a bounded legacy pool.
+
+    Encrypted guest rows have deterministic email/phone hashes. Grouping those
+    hashes in MongoDB avoids decrypting every guest in a large hotel chain.
+    Rows awaiting the encryption backfill are still covered by a bounded legacy
+    scan and explicitly reported to callers.
+    """
+    active_filter = {"$or": [{"archived": {"$exists": False}}, {"archived": False}]}
+
+    async def repeated_hashes(field: str) -> list[str]:
+        pipeline = [
+            {"$match": {"tenant_id": {"$in": tenant_ids}, field: {"$type": "string"}, **active_filter}},
+            {"$group": {"_id": f"${field}", "count": {"$sum": 1}}},
+            {"$match": {"count": {"$gt": 1}}},
+            {"$limit": 5000},
+        ]
+        return [row["_id"] async for row in db.guests.aggregate(pipeline) if row.get("_id")]
+
+    email_hashes = await repeated_hashes("_hash_email")
+    phone_hashes = await repeated_hashes("_hash_phone")
+    projection = {
+        "_id": 0,
+        "id": 1,
+        "guest_id": 1,
+        "tenant_id": 1,
+        "name": 1,
+        "first_name": 1,
+        "last_name": 1,
+        "email": 1,
+        "phone": 1,
+        "loyalty_tier": 1,
+    }
+    hashed_query = {
+        "tenant_id": {"$in": tenant_ids},
+        "$and": [
+            active_filter,
+            {"$or": [{"_hash_email": {"$in": email_hashes}}, {"_hash_phone": {"$in": phone_hashes}}]},
+        ],
+    }
+    hashed = await db.guests.find(hashed_query, projection).limit(20000).to_list(20000)
+    legacy_query = {
+        "tenant_id": {"$in": tenant_ids},
+        "$and": [
+            active_filter,
+            {"_hash_email": {"$exists": False}},
+            {"_hash_phone": {"$exists": False}},
+            {"$or": [{"email": {"$type": "string"}}, {"phone": {"$type": "string"}}]},
+        ],
+    }
+    legacy = await db.guests.find(legacy_query, projection).limit(legacy_limit + 1).to_list(legacy_limit + 1)
+    legacy_truncated = len(legacy) > legacy_limit
+    legacy = legacy[:legacy_limit]
+
+    unique: dict[tuple[str, str], dict] = {}
+    for guest in hashed + legacy:
+        key = (guest.get("tenant_id") or "", guest.get("id") or guest.get("guest_id") or "")
+        if key[1]:
+            unique[key] = guest
+    return list(unique.values()), {
+        "strategy": "blind_index_candidates_with_legacy_fallback",
+        "repeated_email_hashes": len(email_hashes),
+        "repeated_phone_hashes": len(phone_hashes),
+        "legacy_rows_scanned": len(legacy),
+        "legacy_scan_truncated": legacy_truncated,
+    }
+
+
 @router.get("/duplicates/scan")
 @_cached(ttl=600, key_prefix="cross_dup_scan")
 async def scan_duplicates(
@@ -576,17 +848,15 @@ async def scan_duplicates(
     tenant_ids = await _chain_tenant_ids(current_user)
     name_map = await _tenant_name_map(tenant_ids)
 
-    # 1) Tüm guest'leri tek pass çek (sınırlı projeksiyon, archived hariç)
-    cursor = db.guests.find(
-        {"tenant_id": {"$in": tenant_ids}, "$or": [{"archived": {"$exists": False}}, {"archived": False}]},
-        {"_id": 0, "id": 1, "guest_id": 1, "tenant_id": 1, "name": 1, "first_name": 1, "last_name": 1, "email": 1, "phone": 1, "loyalty_tier": 1},
-    ).limit(20000)
+    # 1) Only fetch hash-collision candidates; keep a bounded fallback for
+    # plaintext legacy rows that have not completed the encryption backfill.
     from security.encrypted_lookup import decrypt_guest_doc
 
     # Decrypt before the _norm_email/_norm_phone blocking + _score_pair + output:
     # AES-GCM ciphertexts differ per row, so bucketing on ciphertext would make
     # the cross-property dedupe blind to every migrated guest.
-    all_guests = [decrypt_guest_doc(g) async for g in cursor]
+    candidate_guests, scan_meta = await _duplicate_candidate_pool(tenant_ids)
+    all_guests = [decrypt_guest_doc(g) for g in candidate_guests]
 
     # 2) Blocking — email + phone son 10 hane bucket'ları
     by_email: dict[str, list[int]] = _dd(list)
@@ -601,10 +871,15 @@ async def scan_duplicates(
 
     # 3) Aday çiftleri topla (her bucket içindeki tüm çiftler)
     candidate_pairs: set[tuple[int, int]] = set()
+    candidate_pairs_truncated = False
+    max_bucket_size = 250
     for buckets in (by_email, by_phone):
         for indices in buckets.values():
             if len(indices) < 2:
                 continue
+            if len(indices) > max_bucket_size:
+                candidate_pairs_truncated = True
+                indices = indices[:max_bucket_size]
             for i in range(len(indices)):
                 for j in range(i + 1, len(indices)):
                     a_i, b_i = indices[i], indices[j]
@@ -654,6 +929,7 @@ async def scan_duplicates(
         "chain_size": len(tenant_ids),
         "scanned_guests": len(all_guests),
         "candidate_pairs": len(candidate_pairs),
+        "candidate_pairs_truncated": candidate_pairs_truncated,
         "matches_count": len(scored),
         "skip": skip,
         "limit": limit,
@@ -661,6 +937,7 @@ async def scan_duplicates(
         "truncated": len(scored) > len(page),
         "min_score": min_score,
         "matches": page,
+        "scan": scan_meta,
     }
 
 
