@@ -155,7 +155,9 @@ const EXACT_ROUTE_SCOPES = Object.freeze({
   '/pos/terminal': ['pos'],
   '/pos-extensions': ['pos'],
   '/staff/room-service': ['pos'],
-  '/minibar': ['pos'],
+  // Minibar tüketimi oda/folio operasyonudur. POS entegrasyonu olabilir ama
+  // kat hizmetleri ve ön büro için POS lisansı zorunlu olmamalıdır.
+  '/minibar': ['frontdesk', 'housekeeping'],
 
   '/app/tasks': ['tasks'],
   '/app/multi-property': ['multi_property'],
