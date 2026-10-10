@@ -227,7 +227,7 @@ async def trigger_room_preparations(
         current_user,
         "guest_preparation_triggered",
         "guest_preparation_directive",
-        None,
+        "batch",
         {
             "processed_bookings": len(tomorrow_bookings),
             "directives_generated": generated_count,
