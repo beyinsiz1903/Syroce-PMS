@@ -27,9 +27,25 @@ const CATEGORY_LABELS = Object.fromEntries(CATEGORY_OPTIONS.map((c) => [c.value,
 
 const EMPTY_ITEM = { name: '', price: '', category: 'drink', active: true, inventory_product_id: '' };
 
-const MinibarPage = () => {
+// `/pms/rooms` returns a bare array. Accept the two historic wrapped shapes as
+// well, so a rollout behind a cache/proxy cannot silently leave the room picker
+// empty again.
+export const roomsFromResponse = (data) => {
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data?.rooms)) return data.rooms;
+  if (Array.isArray(data?.items)) return data.items;
+  return [];
+};
+
+const CATALOG_ROLES = new Set(['admin', 'super_admin', 'supervisor']);
+
+const MinibarPage = ({ user }) => {
   useTranslation();
   const currency = cachedTenantCurrency();
+  const roles = [user?.role, ...(Array.isArray(user?.roles) ? user.roles : [])]
+    .filter(Boolean)
+    .map((role) => String(role).toLowerCase());
+  const canManageCatalog = roles.some((role) => CATALOG_ROLES.has(role));
   const [tab, setTab] = useState('consume');
 
   // Katalog
@@ -41,6 +57,8 @@ const MinibarPage = () => {
 
   // Tüketim
   const [rooms, setRooms] = useState([]);
+  const [loadingRooms, setLoadingRooms] = useState(true);
+  const [roomsError, setRoomsError] = useState('');
   const [selectedRoom, setSelectedRoom] = useState('');
   const [cart, setCart] = useState({});
   const [submitting, setSubmitting] = useState(false);
@@ -65,11 +83,17 @@ const MinibarPage = () => {
   }, []);
 
   const loadRooms = useCallback(async () => {
+    setLoadingRooms(true);
+    setRoomsError('');
     try {
       const res = await axios.get('/pms/rooms');
-      setRooms(res.data?.rooms || []);
+      setRooms(roomsFromResponse(res.data));
     } catch (e) {
       console.error('Rooms load error', e);
+      setRooms([]);
+      setRoomsError('Odalar yüklenemedi. Bağlantıyı kontrol edip yeniden deneyin.');
+    } finally {
+      setLoadingRooms(false);
     }
   }, []);
 
@@ -260,7 +284,7 @@ const MinibarPage = () => {
         <Tabs value={tab} onValueChange={setTab}>
           <TabsList>
             <TabsTrigger value="consume" data-testid="tab-consume">Tüketim Gir</TabsTrigger>
-            <TabsTrigger value="catalog" data-testid="tab-catalog">Katalog</TabsTrigger>
+            {canManageCatalog && <TabsTrigger value="catalog" data-testid="tab-catalog">Katalog</TabsTrigger>}
           </TabsList>
 
           {/* ── Tüketim ── */}
@@ -271,10 +295,11 @@ const MinibarPage = () => {
                 <select
                   value={selectedRoom}
                   onChange={(e) => setSelectedRoom(e.target.value)}
-                  className="h-9 w-full border rounded-md px-3 text-sm"
+                  disabled={loadingRooms || Boolean(roomsError)}
+                  className="h-9 w-full border rounded-md px-3 text-sm disabled:cursor-not-allowed disabled:opacity-60"
                   data-testid="minibar-room-select"
                 >
-                  <option value="">Oda seçin...</option>
+                  <option value="">{loadingRooms ? 'Odalar yükleniyor...' : 'Oda seçin...'}</option>
                   {rooms
                     .slice()
                     .sort((a, b) => String(a.room_number).localeCompare(String(b.room_number), 'tr', { numeric: true }))
@@ -284,6 +309,12 @@ const MinibarPage = () => {
                       </option>
                     ))}
                 </select>
+                {roomsError && (
+                  <p className="mt-1.5 text-xs text-destructive" role="alert">{roomsError}</p>
+                )}
+                {!loadingRooms && !roomsError && rooms.length === 0 && (
+                  <p className="mt-1.5 text-xs text-muted-foreground">Seçilebilir oda bulunamadı.</p>
+                )}
               </div>
             </div>
 
@@ -291,9 +322,11 @@ const MinibarPage = () => {
               <Card className="p-12 text-center">
                 <Wine className="w-12 h-12 text-gray-300 mx-auto mb-3" />
                 <p className="text-gray-500 mb-4">Henüz minibar ürünü tanımlanmamış</p>
-                <Button size="sm" onClick={() => setTab('catalog')}>
-                  <Plus className="w-4 h-4 mr-1.5" /> Katalog Oluştur
-                </Button>
+                {canManageCatalog && (
+                  <Button size="sm" onClick={() => setTab('catalog')}>
+                    <Plus className="w-4 h-4 mr-1.5" /> Katalog Oluştur
+                  </Button>
+                )}
               </Card>
             ) : (
               <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
@@ -389,7 +422,7 @@ const MinibarPage = () => {
           </TabsContent>
 
           {/* ── Katalog ── */}
-          <TabsContent value="catalog" className="space-y-4 mt-4">
+          {canManageCatalog && <TabsContent value="catalog" className="space-y-4 mt-4">
             <div className="flex justify-end">
               <Button size="sm" onClick={openCreateItem} data-testid="minibar-create-item">
                 <Plus className="w-4 h-4 mr-1.5" /> Yeni Ürün
@@ -450,7 +483,7 @@ const MinibarPage = () => {
                 ))}
               </div>
             )}
-          </TabsContent>
+          </TabsContent>}
         </Tabs>
       </div>
 

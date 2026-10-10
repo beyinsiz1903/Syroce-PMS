@@ -27,7 +27,7 @@ import {
   Layers, BarChart3, Bot, Building2, Zap, Crown, Shield, Users, ClipboardCheck,
   ChevronDown, Server, CalendarCheck, X, Undo2,
   BrainCircuit, MessageSquare, Clock, Rocket, Download, Grid3X3, ParkingSquare, Activity,
-  Utensils, Briefcase, ConciergeBell, BedDouble, CalendarClock, Flag, MoonStar } from 'lucide-react';
+  Utensils, Briefcase, ConciergeBell, BedDouble, Wine, CalendarClock, Flag, MoonStar } from 'lucide-react';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import LanguageSelector from '@/components/LanguageSelector';
 import WorkspaceTools from '@/components/experience/WorkspaceTools';
@@ -86,6 +86,7 @@ const ICON_BY_KEY = {
   long_stay: CalendarClock,
   turndown: MoonStar,
   golf: Flag,
+  minibar: Wine,
   group_folio: FileText,
   travel_agent_arap: DollarSign,
   agency_management: Building2,
