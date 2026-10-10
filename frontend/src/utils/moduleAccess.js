@@ -155,7 +155,11 @@ const EXACT_ROUTE_SCOPES = Object.freeze({
   '/pos/terminal': ['pos'],
   '/pos-extensions': ['pos'],
   '/staff/room-service': ['pos'],
-  '/minibar': ['pos'],
+  '/minibar': ['frontdesk', 'housekeeping'],
+  '/reservation-waitlist': ['frontdesk'],
+  '/long-stay': ['cashier', 'finance'],
+  '/turndown': ['housekeeping'],
+  '/golf': ['frontdesk'],
 
   '/app/tasks': ['tasks'],
   '/app/multi-property': ['multi_property'],

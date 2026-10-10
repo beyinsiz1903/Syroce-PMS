@@ -15,9 +15,14 @@ import { GeneralInfoTab } from '../InfoTabs';
 describe('GeneralInfoTab', () => {
   beforeEach(() => {
     apiGet.mockReset();
+    apiGet.mockResolvedValue({ data: {} });
   });
 
-  it('does not request or display the no-show risk score', () => {
+  it('shows the explainable no-show risk score for an upcoming booking', async () => {
+    apiGet.mockImplementation((url) => {
+      if (url.includes('/no-show-risk/')) return Promise.resolve({ data: { score: 65, level: 'medium', factors: [{ label: 'Ödeme yapılmamış' }] } });
+      return Promise.resolve({ data: {} });
+    });
     render(
       <GeneralInfoTab
         booking={{
@@ -33,29 +38,27 @@ describe('GeneralInfoTab', () => {
       />,
     );
 
-    expect(apiGet).not.toHaveBeenCalledWith(expect.stringContaining('/pms/no-show-risk/'));
-    expect(screen.queryByTestId('no-show-risk-banner')).not.toBeInTheDocument();
-    expect(screen.queryByText(/No-Show Risk Skoru/i)).not.toBeInTheDocument();
+    expect(await screen.findByTestId('no-show-risk-banner')).toHaveTextContent('No-show riski: 65/100');
+    expect(apiGet).toHaveBeenCalledWith('/pms/no-show-risk/booking-a');
   });
 
-  it('keeps guest alerts visible without restoring the risk score', async () => {
-    apiGet.mockResolvedValue({
-      data: {
-        has_alerts: true,
-        alerts: [{ id: 'alert-a', type: 'note', level: 'warning', message: 'Geç giriş notu' }],
-      },
-    });
+  it('keeps guest alerts visible and does not score an in-house stay', async () => {
+    apiGet.mockImplementation((url) => Promise.resolve({
+      data: url.includes('/highlights')
+        ? { has_alerts: true, alerts: [{ id: 'alert-a', type: 'note', level: 'warning', message: 'Geç giriş notu' }] }
+        : {},
+    }));
 
     render(
       <GeneralInfoTab
         booking={{
           id: 'booking-a',
-          status: 'confirmed',
           guest_id: 'guest-a',
           check_in: '2026-08-26',
           check_out: '2026-08-28',
           created_at: '2026-08-22T12:00:00Z',
           checked_in_at: '2026-08-26T11:00:00Z',
+          status: 'checked_in',
           special_requests: 'Sessiz oda',
         }}
         guest={{
@@ -83,7 +86,7 @@ describe('GeneralInfoTab', () => {
     expect(screen.getByText('Tekrar misafir — 2. ziyareti')).toBeInTheDocument();
     expect(screen.getByText('Sessiz oda')).toBeInTheDocument();
     expect(screen.getByText('Test Acente')).toBeInTheDocument();
-    expect(screen.queryByText(/No-Show Risk Skoru/i)).not.toBeInTheDocument();
+    expect(screen.queryByTestId('no-show-risk-banner')).not.toBeInTheDocument();
   });
 
   it('shows the reservation currency instead of a hard-coded TL label', () => {

@@ -106,7 +106,10 @@ async def schedule_turndown(payload: ScheduleIn, current_user: User = Depends(ge
     if payload.vip_only:
         res_query["vip_status"] = {"$nin": [None, ""]}
 
-    reservations = await db.reservations.find(
+    # PMS'in kanonik konaklama kaynağı `bookings`tir. Eski `reservations`
+    # koleksiyonu burada kullanıldığında planlayıcı sağlıklı otellerde dahi
+    # sıfır görev üretebiliyordu.
+    reservations = await db.bookings.find(
         res_query,
         {"_id": 0, "room_id": 1, "room_number": 1, "vip_status": 1, "id": 1},
     ).to_list(2000)

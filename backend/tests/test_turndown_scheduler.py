@@ -1,8 +1,8 @@
 """Targeted tests for Turndown automatic scheduling (T008).
 
 Pinned contract (Kademe 3):
-  * Only checked_in reservations generate turndown tasks; vip_only filters to
-    reservations with a non-empty vip_status.
+  * Only checked_in bookings generate turndown tasks; vip_only filters to
+    bookings with a non-empty vip_status.
   * Idempotent per (tenant, room, day): the partial-unique compound index
     rejects a second insert -> skipped, never a duplicate task.
   * VIP rooms get priority=high; checklist attached; task_type='turndown'.
@@ -68,7 +68,7 @@ class _Coll:
 
 class _FakeDB:
     def __init__(self):
-        self.reservations = _Coll("reservations")
+        self.bookings = _Coll("bookings")
         self.housekeeping_tasks = _Coll(
             "housekeeping_tasks",
             unique_key=("tenant_id", "room_id", "task_type", "turndown_date"),
@@ -98,7 +98,7 @@ def _patch(monkeypatch):
 
 
 def _seed_res(fake, *, res_id, room_id, status="checked_in", vip=None, tenant=TENANT):
-    fake.reservations.docs.append({
+    fake.bookings.docs.append({
         "id": res_id, "tenant_id": tenant, "room_id": room_id,
         "room_number": room_id, "status": status, "vip_status": vip,
     })

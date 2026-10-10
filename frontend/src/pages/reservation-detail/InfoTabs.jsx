@@ -106,6 +106,7 @@ export function GeneralInfoTab({
   const [editing, setEditing] = useState(false);
   const [guestForm, setGuestForm] = useState({});
   const [highlights, setHighlights] = useState(null);
+  const [noShowRisk, setNoShowRisk] = useState(null);
   useEffect(() => {
     if (guest) setGuestForm({
       ...guest
@@ -116,6 +117,19 @@ export function GeneralInfoTab({
     if (!gid) return;
     api.get(`/pms/guests/${gid}/highlights`).then(r => setHighlights(r.data)).catch(() => setHighlights(null));
   }, [guest?.id, booking?.guest_id]);
+  useEffect(() => {
+    // Risk, operasyon öncesi karar desteğidir; giriş/çıkış tamamlandıktan sonra
+    // gereksiz bir çağrı ve yanıltıcı bir uyarı üretmeyelim.
+    if (!booking?.id || ['checked_in', 'in_house', 'checked_out', 'cancelled', 'no_show'].includes(booking?.status)) {
+      setNoShowRisk(null);
+      return;
+    }
+    let active = true;
+    api.get(`/pms/no-show-risk/${booking.id}`)
+      .then((response) => { if (active) setNoShowRisk(response.data); })
+      .catch(() => { if (active) setNoShowRisk(null); });
+    return () => { active = false; };
+  }, [booking?.id, booking?.status]);
   const handleSave = async () => {
     try {
       await axios.put(`/pms/reservations/${booking.id}/update-guest`, guestForm);
@@ -163,6 +177,22 @@ export function GeneralInfoTab({
                 </div>;
         })}
           </div>}
+        {noShowRisk && <div
+          className={`flex items-start gap-2 px-3 py-2 rounded-lg border text-sm ${
+            noShowRisk.level === 'high'
+              ? 'bg-red-50 border-red-300 text-red-800'
+              : noShowRisk.level === 'medium'
+                ? 'bg-amber-50 border-amber-300 text-amber-800'
+                : 'bg-sky-50 border-sky-200 text-sky-800'
+          }`}
+          data-testid="no-show-risk-banner"
+        >
+          <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+          <div>
+            <span className="font-semibold">No-show riski: {noShowRisk.score}/100</span>
+            {noShowRisk.factors?.length > 0 && <span className="ml-1">· {noShowRisk.factors.map((factor) => factor.label).join(', ')}</span>}
+          </div>
+        </div>}
         {guest?.total_stays > 1 && <div className="flex items-center gap-2 px-3 py-2 rounded-lg border bg-sky-50 border-sky-200 text-sky-800 text-sm">
             <Repeat className="w-4 h-4 shrink-0" />
             <span className="font-medium">Tekrar misafir — {guest.total_stays}. ziyareti</span>

@@ -367,6 +367,7 @@
   "navKeys": {
     "dashboard": "Dashboard",
     "reservation_calendar": "Calendar",
+    "reservation_waitlist": "Reservation Waitlist",
     "pms": "PMS",
     "pms_operations": "PMS Operations",
     "folio_detail": "Folio Detail",
@@ -404,6 +405,9 @@
     "admin_module_report": "Module Report",
     "admin_leads": "Leads",
     "housekeeping_status": "Housekeeping",
+    "turndown": "Turndown Service",
+    "golf": "Golf Operations",
+    "long_stay": "Long-Stay Cycles",
     "wake_up_calls": "Wake-up Calls",
     "lost_found": "Lost & Found",
     "group_bookings": "Group Reservations",
