@@ -293,6 +293,9 @@ export const NAV_ITEMS = [
     key: "turndown",
     label: "Akşam Oda Hazırlığı",
     path: "/turndown",
+    // Turndown is a PMS/housekeeping workflow, not a standalone entitlement.
+    // Without this, a tenant with PMS disabled could receive it as a role home.
+    moduleKey: "pms",
     moduleScopes: ["housekeeping"],
     tier: "basic",
     group: "operations",
