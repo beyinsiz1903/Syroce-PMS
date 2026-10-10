@@ -1,12 +1,15 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from 'next-themes';
+import { useBorderPreference } from '@/hooks/useBorderPreference';
 import { Sun, Moon, Monitor, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuCheckboxItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 
@@ -16,6 +19,7 @@ import {
 const ThemeToggle = () => {
   const { t } = useTranslation();
   const { theme, setTheme } = useTheme();
+  const [prominentBorders, setProminentBorders] = useBorderPreference();
 
   const options = [
     { value: 'light', label: t('settings.themeLight', 'Açık'), icon: Sun },
@@ -53,6 +57,14 @@ const ThemeToggle = () => {
             </DropdownMenuItem>
           );
         })}
+        <DropdownMenuSeparator />
+        <DropdownMenuCheckboxItem checked={prominentBorders} onCheckedChange={setProminentBorders}
+          data-testid="prominent-borders-toggle">
+          {t('settings.prominentBorders', 'Prominent borders')}
+        </DropdownMenuCheckboxItem>
+        <p className="max-w-56 px-2 pb-2 text-xs text-muted-foreground">
+          {t('settings.prominentBordersHelp', 'Stronger light-mode outlines. Saved only in this browser.')}
+        </p>
       </DropdownMenuContent>
     </DropdownMenu>
   );

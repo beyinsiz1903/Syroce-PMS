@@ -12,6 +12,14 @@ body {
     -moz-osx-font-smoothing: grayscale;
 }
 
+/* Hotel displays: emphasize structural calendar lines, never booking/status borders. */
+@media screen {
+    html:not(.dark)[data-prominent-borders] .pms-calendar-grid,
+    html:not(.dark)[data-prominent-borders] .pms-calendar-grid :is(.border-slate-200, .border-slate-300, .calendar-inventory-cell) {
+        border-color: hsl(var(--input));
+    }
+}
+
 code {
     font-family:
         source-code-pro, Menlo, Monaco, Consolas, "Courier New", monospace;
@@ -35,7 +43,7 @@ code {
         --accent-foreground: 0 0% 9%;
         --destructive: 0 84.2% 60.2%;
         --destructive-foreground: 0 0% 98%;
-        --border: 215 16% 76%;
+        --border: 0 0% 89.8%;
         --input: 215 16% 52%;
         --ring: 0 0% 3.9%;
         --chart-1: 12 76% 61%;
@@ -1271,7 +1279,8 @@ code {
 /* Light-only clarity: preserve 1px widths and semantic status colors.
    Neutral legacy utilities also occur in portalled dialogs, outside app-shell. */
 @media screen {
-    html:not(.dark) :is(.border-gray-100, .border-gray-200, .border-slate-100, .border-slate-200) {
+    html:not(.dark)[data-prominent-borders] { --border: 215 16% 76%; }
+    html:not(.dark)[data-prominent-borders] :is(.border-gray-100, .border-gray-200, .border-slate-100, .border-slate-200) {
         border-color: hsl(var(--border));
     }
 }
@@ -1283,4 +1292,9 @@ code {
     letter-spacing: -0.02em;
     text-align: start;
     overflow-wrap: anywhere;
+}
+
+/* Outline actions are softer than data-entry fields; dark mode stays unchanged. */
+@media screen {
+    html:not(.dark) .pms-outline-action.border-input { border-color: hsl(var(--border)); }
 }
