@@ -1,13 +1,15 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
+import { useNavigate } from 'react-router-dom';
 import MaybeLayout from '@/components/MaybeLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Zap, Play, CheckCircle2, AlertCircle, Settings, Shield, Clock, RotateCw, Cpu, Check, FileText, Info } from 'lucide-react';
+import { Zap, Play, CheckCircle2, AlertCircle, Settings, Shield, Clock, RotateCw, Cpu, Check, FileText, Info, Activity } from 'lucide-react';
 import { toast } from 'sonner';
 import AITabs from '@/components/AITabs';
 
 const RevenueAutopilot = ({ user, tenant, onLogout, embedded }) => {
+  const navigate = useNavigate();
   const [autopilotMode, setAutopilotMode] = useState('supervised');
   const [lastLogs, setLastLogs] = useState([]);
   const [isRunning, setIsRunning] = useState(false);
@@ -74,18 +76,29 @@ const RevenueAutopilot = ({ user, tenant, onLogout, embedded }) => {
             </div>
           </div>
           
-          <Button 
-            onClick={triggerRun} 
-            disabled={isRunning || loading}
-            className="bg-slate-900 hover:bg-slate-800 text-white shadow-sm h-9 px-4 text-xs"
-          >
-            {isRunning ? (
-              <RotateCw className="w-4 h-4 mr-2 animate-spin" />
-            ) : (
-              <Play className="w-4 h-4 mr-2" />
-            )}
-            {isRunning ? 'Çalışıyor...' : 'Manuel Tetikle'}
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="outline"
+              onClick={() => navigate('/revenue-autopilot/monitor')}
+              className="h-9 px-4 text-xs"
+              data-testid="autopilot-run-results"
+            >
+              <Activity className="mr-2 h-4 w-4" />
+              Çalışma sonuçları
+            </Button>
+            <Button
+              onClick={triggerRun}
+              disabled={isRunning || loading}
+              className="bg-slate-900 hover:bg-slate-800 text-white shadow-sm h-9 px-4 text-xs"
+            >
+              {isRunning ? (
+                <RotateCw className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <Play className="w-4 h-4 mr-2" />
+              )}
+              {isRunning ? 'Çalışıyor...' : 'Manuel Tetikle'}
+            </Button>
+          </div>
         </div>
 
         {/* Current Status Banner */}

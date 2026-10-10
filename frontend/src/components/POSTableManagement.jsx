@@ -4,7 +4,7 @@ import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
-import { Users, RefreshCw, CheckCircle, Clock, ArrowRightLeft, ReceiptText, CalendarDays, Plus, XCircle } from 'lucide-react';
+import { Users, RefreshCw, CheckCircle, Clock, ArrowRightLeft, ReceiptText, CalendarDays, Plus, XCircle, QrCode } from 'lucide-react';
 import { confirmDialog } from '@/lib/dialogs';
 import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 
@@ -23,7 +23,11 @@ const posErrorMessage = (error, fallback) => {
   return fallback;
 };
 
-const POSTableManagement = ({ outletId = 'main_restaurant' }) => {
+const escapeHtml = (value) => String(value ?? '').replace(/[&<>'"]/g, (character) => ({
+  '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;',
+}[character]));
+
+const POSTableManagement = ({ outletId = 'main_restaurant', tenantId, outletName }) => {
   const [tables, setTables] = useState([]);
   const [statusCounts, setStatusCounts] = useState({});
   const [loading, setLoading] = useState(true);
@@ -33,6 +37,7 @@ const POSTableManagement = ({ outletId = 'main_restaurant' }) => {
   const [reservations, setReservations] = useState([]);
   const [reservationFormOpen, setReservationFormOpen] = useState(false);
   const [savingReservation, setSavingReservation] = useState(false);
+  const [printingGuestQr, setPrintingGuestQr] = useState(false);
   const [reservationForm, setReservationForm] = useState({
     guest_name: '',
     pax: 2,
@@ -189,6 +194,52 @@ const POSTableManagement = ({ outletId = 'main_restaurant' }) => {
     }
   };
 
+  const printGuestQrMenus = async () => {
+    if (!tenantId) {
+      toast.error('QR kodları için otel bilgisi bulunamadı. Sayfayı yenileyip tekrar deneyin.');
+      return;
+    }
+    if (tables.length === 0) {
+      toast.error('Yazdırılacak masa bulunamadı. Önce masa düzenini oluşturun.');
+      return;
+    }
+
+    let popup = null;
+    try {
+      setPrintingGuestQr(true);
+      popup = window.open('', '_blank', 'width=900,height=1000');
+      if (!popup) {
+        toast.error('Pop-up engellenmiş. Tarayıcı ayarlarından bu siteye izin verin.');
+        return;
+      }
+      popup.document.write('<!doctype html><meta charset="utf-8"><title>QR kodları hazırlanıyor...</title><body style="font-family:system-ui;padding:40px;color:#334155;">QR kodları hazırlanıyor...</body>');
+
+      const module = await import('qrcode');
+      const QRCode = module?.default ?? module;
+      const qrs = await Promise.all(tables.map(async (table) => {
+        const url = `${window.location.origin}/g/fnb/${encodeURIComponent(tenantId)}/${encodeURIComponent(outletId)}?table=${encodeURIComponent(table.id)}`;
+        return {
+          tableNumber: table.table_number,
+          url,
+          image: await QRCode.toDataURL(url, { width: 480, margin: 1, errorCorrectionLevel: 'M' }),
+        };
+      }));
+      const cards = qrs.map(({ tableNumber, url, image }) => `
+        <article><img src="${image}" alt="Masa ${escapeHtml(tableNumber)} QR kodu"><h2>Masa ${escapeHtml(tableNumber)}</h2><p>Menüyü açmak ve sipariş vermek için okutun.</p><small>${escapeHtml(url)}</small></article>
+      `).join('');
+      popup.document.open();
+      popup.document.write(`<!doctype html><meta charset="utf-8"><title>${escapeHtml(outletName || 'Restoran')} misafir QR menüsü</title><style>body{font-family:system-ui;color:#172033;margin:32px}h1{margin:0 0 4px}p{color:#526075}main{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;margin-top:28px}article{border:1px solid #cbd5e1;border-radius:16px;padding:18px;text-align:center;break-inside:avoid}img{width:190px;height:190px}h2{margin:10px 0 4px;font-size:20px}small{display:block;overflow-wrap:anywhere;color:#64748b;font-size:10px}@media print{body{margin:12mm}main{gap:12px}article{border-color:#94a3b8}}</style><h1>${escapeHtml(outletName || 'Restoran')} · Misafir QR menüsü</h1><p>Her kod yalnızca kendi şubesi ve masası için sipariş kabul eder.</p><main>${cards}</main>`);
+      popup.document.close();
+      toast.success(`${qrs.length} masa için misafir QR kodu hazır`);
+    } catch (error) {
+      popup?.close();
+      console.error('Misafir QR kodları hazırlanamadı:', error);
+      toast.error('Misafir QR kodları hazırlanamadı. Yeniden deneyin.');
+    } finally {
+      setPrintingGuestQr(false);
+    }
+  };
+
   const getStatusColor = (status) => {
     switch (status) {
       case 'available':
@@ -233,10 +284,16 @@ const POSTableManagement = ({ outletId = 'main_restaurant' }) => {
             <Users className="w-5 h-5 mr-2 text-blue-600" />
             Restoran Masaları ({tables.length})
           </CardTitle>
-          <Button variant="outline" size="sm" onClick={loadTables} disabled={loading}>
-            <RefreshCw className="w-4 h-4 mr-2" />
-            Yenile
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={printGuestQrMenus} disabled={loading || printingGuestQr} data-testid="print-guest-qr-menus">
+              <QrCode className="mr-2 h-4 w-4" />
+              {printingGuestQr ? 'Hazırlanıyor…' : 'Misafir QR menüleri'}
+            </Button>
+            <Button variant="outline" size="sm" onClick={loadTables} disabled={loading}>
+              <RefreshCw className="w-4 h-4 mr-2" />
+              Yenile
+            </Button>
+          </div>
         </div>
       </CardHeader>
       <CardContent>
