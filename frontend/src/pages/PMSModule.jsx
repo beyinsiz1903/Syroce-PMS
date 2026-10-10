@@ -53,6 +53,7 @@ import GroupRevenueByCompany from '@/components/GroupRevenueByCompany';
 import PickupPaceReport from '@/components/PickupPaceReport';
 import BookingDetailDialog from '@/components/pms/BookingDetailDialog';
 import { parseBookingConflict } from '@/lib/bookingConflict';
+import { saveReservationWaitlistDraft } from '@/lib/reservationWaitlistDraft';
 import BulkRoomsDialog from '@/components/pms/BulkRoomsDialog';
 import CompanyDialog from '@/components/pms/CompanyDialog';
 import FindRoomDialog from '@/components/pms/FindRoomDialog';
@@ -884,7 +885,22 @@ const PMSModule = ({ user, tenant, onLogout }) => {
       setMultiRoomBooking([{ room_id: '', adults: 1, children: 0, children_ages: [], total_amount: 0, base_rate: 0, rate_plan: '', package_code: null }]);
     } catch (error) {
       const conflict = parseBookingConflict(error);
-      if (conflict) { setBookingConflict(conflict); return; }
+      if (conflict) {
+        const selectedRoom = rooms.find((room) => room.id === multiRoomBooking[0]?.room_id);
+        saveReservationWaitlistDraft({
+          guest_name: guests.find((guest) => guest.id === newBooking.guest_id)?.name || inlineGuestName || '',
+          room_type: selectedRoom?.room_type || selectedRoom?.type || '',
+          check_in: newBooking.check_in,
+          check_out: newBooking.check_out,
+          adults: newBooking.adults || 1,
+          children: newBooking.children || 0,
+          notes: 'Müsaitlik bulunamadığı için rezervasyon ekranından aktarıldı.',
+        });
+        toast.info('Müsait oda bulunamadı. Bilgiler bekleme listesine hazırlandı.');
+        setOpenDialog(null);
+        navigate('/reservation-waitlist');
+        return;
+      }
       const detail = error.response?.data?.detail;
       toast.error(typeof detail === 'string' ? detail : (detail?.message || 'Rezervasyon oluşturulamadı'));
     }

@@ -107,6 +107,7 @@ export function GeneralInfoTab({
   const [guestForm, setGuestForm] = useState({});
   const [highlights, setHighlights] = useState(null);
   const [noShowRisk, setNoShowRisk] = useState(null);
+  const [enablingLongStay, setEnablingLongStay] = useState(false);
   useEffect(() => {
     if (guest) setGuestForm({
       ...guest
@@ -139,6 +140,16 @@ export function GeneralInfoTab({
     } catch (e) {
       toast.error('İşlem Hatası: ' + (e.response?.data?.detail || e.message));
     }
+  };
+  const enableLongStay = async () => {
+    if (!booking?.id || !window.confirm('Bu rezervasyon için aylık dönemsel faturalama etkinleştirilsin mi?')) return;
+    setEnablingLongStay(true);
+    try {
+      await api.post('/long-stay/configure', { booking_id: booking.id, billing_cycle: 'monthly', start_date: String(booking.check_in || '').slice(0, 10), notes: 'Rezervasyon detayından etkinleştirildi.' });
+      toast.success('Aylık dönemsel faturalama etkinleştirildi');
+    } catch (error) {
+      toast.error(error?.response?.data?.detail || 'Dönemsel faturalama etkinleştirilemedi');
+    } finally { setEnablingLongStay(false); }
   };
   const nights = booking?.check_in && booking?.check_out ? Math.max(1, reservationNights(booking.check_in, booking.check_out)) : 1;
   const balance = summary?.balance || 0;
@@ -211,6 +222,12 @@ export function GeneralInfoTab({
               data-testid="edit-stay-dates"
             >
               <Pencil className="w-3.5 h-3.5 mr-1.5" /> Tarihleri Düzenle
+            </Button>}
+            {!readOnly && booking?.id && !['checked_out', 'cancelled', 'no_show'].includes(booking?.status) && <Button
+              type="button" size="sm" variant="outline" onClick={enableLongStay} disabled={enablingLongStay}
+              className="h-8 shrink-0 text-xs" data-testid="enable-long-stay"
+            >
+              <Repeat className="w-3.5 h-3.5 mr-1.5" /> {enablingLongStay ? 'Etkinleştiriliyor...' : 'Dönemsel Faturalama'}
             </Button>}
           </div>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">

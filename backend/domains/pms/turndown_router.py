@@ -23,6 +23,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from pymongo.errors import DuplicateKeyError
 
+from core.business_date_service import ensure_business_date_initialized
 from core.database import db
 from core.security import get_current_user
 from models.schemas import User
@@ -86,9 +87,12 @@ class ScheduleIn(BaseModel):
     vip_only: bool = False
 
 
-def _resolve_date(service_date: str | None) -> str:
+async def _resolve_date(service_date: str | None, tenant_id: str) -> str:
     if not service_date:
-        return date.today().isoformat()
+        # Operational work must follow the PMS accounting day, which may differ
+        # from the server calendar while night audit is pending.
+        state = await ensure_business_date_initialized(db, tenant_id)
+        return str(state["business_date"])[:10]
     try:
         return date.fromisoformat(service_date).isoformat()
     except ValueError as exc:
@@ -99,7 +103,7 @@ def _resolve_date(service_date: str | None) -> str:
 async def schedule_turndown(payload: ScheduleIn, current_user: User = Depends(get_current_user)):
     _require_role(current_user, _HK_ROLES)
     tenant_id = _tenant_of(current_user)
-    svc_date = _resolve_date(payload.service_date)
+    svc_date = await _resolve_date(payload.service_date, tenant_id)
     await _ensure_turndown_index()
 
     res_query: dict = {"tenant_id": tenant_id, "status": "checked_in"}
@@ -164,6 +168,6 @@ async def list_turndown_tasks(
     tenant_id = _tenant_of(current_user)
     q: dict = {"tenant_id": tenant_id, "task_type": "turndown"}
     if service_date:
-        q["turndown_date"] = _resolve_date(service_date)
+        q["turndown_date"] = await _resolve_date(service_date, tenant_id)
     items = await db.housekeeping_tasks.find(q, {"_id": 0}).sort("created_at", -1).to_list(1000)
     return {"items": items, "count": len(items)}

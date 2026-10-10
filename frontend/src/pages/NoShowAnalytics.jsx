@@ -706,12 +706,19 @@ const PredictionTab = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [daysAhead, setDaysAhead] = useState('7');
+  const [batchRisk, setBatchRisk] = useState({});
 
   const load = useCallback(() => {
     setLoading(true);
     setError('');
     axios.get(`/pms/noshow-prediction?days_ahead=${daysAhead}`)
-      .then(r => setData(r.data))
+      .then(async (r) => {
+        const predictions = r.data?.predictions || [];
+        const ids = predictions.map((item) => item.booking_id).filter(Boolean);
+        const bulk = ids.length ? await axios.post('/pms/no-show-risk/bulk', { booking_ids: ids }) : { data: { results: {} } };
+        setBatchRisk(bulk.data?.results || {});
+        setData(r.data);
+      })
       .catch(e => {
         console.error(e);
         setData(null);
@@ -794,13 +801,14 @@ const PredictionTab = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {(data.predictions || []).map((p, i) => {
-                    const rs = RISK_STYLES[p.risk_level] || RISK_STYLES.low;
+                {[...(data.predictions || [])].sort((a, b) => (batchRisk[b.booking_id]?.score || b.risk_score || 0) - (batchRisk[a.booking_id]?.score || a.risk_score || 0)).map((p, i) => {
+                    const operationalRisk = batchRisk[p.booking_id];
+                    const rs = RISK_STYLES[operationalRisk?.level || p.risk_level] || RISK_STYLES.low;
                     return (
                       <tr key={p.booking_id} className={`border-b last:border-0 ${rs.bg}`} data-testid={`pred-row-${i}`}>
                         <td className="py-2.5 pr-3">
                           <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${rs.badge}`}>
-                            {p.risk_level === 'high' ? 'YÜKSEK' : p.risk_level === 'medium' ? 'ORTA' : 'DÜŞÜK'}
+                            {(operationalRisk?.level || p.risk_level) === 'high' ? 'YÜKSEK' : (operationalRisk?.level || p.risk_level) === 'medium' ? 'ORTA' : 'DÜŞÜK'}
                           </span>
                         </td>
                         <td className="py-2.5 pr-3 font-medium text-gray-800">{p.guest_name}</td>
@@ -811,7 +819,7 @@ const PredictionTab = () => {
                         <td className="py-2.5 text-right">
                           <div className="flex items-center justify-end gap-2">
                             <div className="w-12 h-2 bg-gray-200 rounded-full overflow-hidden">
-                              <div className={`h-full rounded-full ${p.risk_score > 60 ? 'bg-red-500' : p.risk_score > 30 ? 'bg-amber-500' : 'bg-green-500'}`} style={{ width: `${p.risk_score}%` }} />
+                              <div className={`h-full rounded-full ${(operationalRisk?.score || p.risk_score) > 60 ? 'bg-red-500' : (operationalRisk?.score || p.risk_score) > 30 ? 'bg-amber-500' : 'bg-green-500'}`} style={{ width: `${operationalRisk?.score || p.risk_score}%` }} />
                             </div>
                             <span className="text-xs font-bold text-gray-700 w-6 text-right">{p.risk_score}</span>
                           </div>
