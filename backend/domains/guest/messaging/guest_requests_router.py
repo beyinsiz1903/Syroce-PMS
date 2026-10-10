@@ -130,6 +130,44 @@ async def reply_guest_request_thread(
         },
         sort=[("created_at", -1)],
     )
+
+    if room_id.startswith("wa_"):
+        phone_number = room_id.replace("wa_", "")
+
+        # Send via WhatsApp
+        from modules.messaging.providers import CHANNEL_PROVIDER_MAP
+        from modules.messaging.service import MessagingService
+
+        svc = MessagingService(raw_db)
+        config = await svc._get_provider_config(current_user.tenant_id, "whatsapp")
+        if config:
+            creds = await svc._load_credentials(current_user.tenant_id, config)
+            mode = svc._resolve_mode(config)
+            provider = CHANNEL_PROVIDER_MAP["whatsapp"]
+            try:
+                await provider.send(
+                    recipient=phone_number,
+                    body=text,
+                    credentials=creds,
+                    mode=mode
+                )
+            except Exception:
+                pass
+
+        doc = await gr.add_guest_message(
+            tenant_id=current_user.tenant_id,
+            property_id=None,
+            room_id=room_id,
+            room_number="WA",
+            sender_type="staff",
+            body=text,
+            booking_id=None,
+            sender_user_id=current_user.id,
+            sender_name=current_user.name
+        )
+        await gr.emit_guest_requests_ping(current_user.tenant_id, room_id)
+        return {"success": True, "message": gr._serialize(doc)}
+
     if not last_guest:
         raise HTTPException(status_code=404, detail="Bu oda için talep bulunamadı")
 
