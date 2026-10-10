@@ -398,6 +398,20 @@ export const NAV_ITEMS = [
     navSection: "guest_requests",
   },
   {
+    key: "minibar",
+    label: "Minibar",
+    path: "/minibar",
+    // Tüketim, oda hizmeti operasyonudur; ürün kataloğu ekranın içinde yalnızca
+    // yönetici/süpervizör rolüne açılır.
+    moduleKey: "pms",
+    moduleScopes: ["frontdesk", "housekeeping"],
+    tier: "basic",
+    group: "operations",
+    navGroup: "operations",
+    navSection: "daily",
+    allowedRoles: ["admin", "super_admin", "supervisor", "front_desk", "housekeeping"],
+  },
+  {
     key: "connecting_rooms",
     label: "Bağlantılı Oda Tanımları",
     path: "/suite-connecting",
