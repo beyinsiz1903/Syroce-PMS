@@ -9,6 +9,7 @@ import re
 import uuid
 from datetime import UTC, datetime, timedelta
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
@@ -131,6 +132,7 @@ class WhatsAppSettingsReq(BaseModel):
     access_token: str = ""  # empty = preserve existing
     phone_number_id: str
     business_name: str = ""
+    waba_id: str = ""  # WhatsApp Business Account ID
     webhook_verify_token: str = ""  # Meta verification handshake (GET /api/whatsapp/webhook)
     app_secret: str = ""  # HMAC-SHA256 secret for X-Hub-Signature-256 verification
     # Bug #6 fix: default fail-safe → sandbox
@@ -1303,3 +1305,72 @@ async def get_messaging_activity(
     # Sort by created_at desc and limit
     activities.sort(key=lambda a: a.get("created_at", ""), reverse=True)
     return {"activities": activities[:limit]}
+
+
+@router.get("/whatsapp/meta-templates")
+async def list_meta_whatsapp_templates(
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_messaging_center")),
+):
+    """Fetch approved HSM templates directly from Meta Graph API."""
+    from server import db
+    tenant_id = current_user.tenant_id
+
+    config = await db.messaging_provider_configs.find_one(
+        {"tenant_id": tenant_id, "provider_type": "whatsapp"}
+    )
+    if not config:
+        return {"templates": []}
+
+    creds = _decrypt_secrets(config.get("credentials_encrypted", {}), _WHATSAPP_SECRET_KEYS)
+    access_token = creds.get("access_token")
+    waba_id = config.get("credentials_encrypted", {}).get("waba_id") or creds.get("waba_id")
+
+    if not access_token or not waba_id:
+        return {"templates": []}
+
+    if config.get("is_sandbox"):
+        return {"templates": [{
+            "name": "hello_world",
+            "language": "en_US",
+            "category": "UTILITY",
+            "variables_count": 0,
+            "components": [{"type": "BODY", "text": "Hello World Sandbox"}]
+        }]}
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(
+                f"https://graph.facebook.com/v19.0/{waba_id}/message_templates",
+                params={"access_token": access_token}
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            templates = data.get("data", [])
+
+            clean_templates = []
+            for t in templates:
+                if t.get("status") in ("APPROVED", "ACTIVE"):
+                    variables = []
+                    components = t.get("components", [])
+                    for comp in components:
+                        if comp.get("type") == "BODY":
+                            text = comp.get("text", "")
+                            import re
+                            vars_found = re.findall(r'\{\{(\d+)\}\}', text)
+                            variables.extend(vars_found)
+                    clean_templates.append({
+                        "name": t.get("name"),
+                        "language": t.get("language"),
+                        "category": t.get("category"),
+                        "variables_count": len(set(variables)),
+                        "components": components
+                    })
+            return {"templates": clean_templates}
+    except httpx.HTTPStatusError as e:
+        logger.exception(f"Meta Graph HTTP Error: {e.response.text}")
+        raise HTTPException(status_code=502, detail="Meta API'den şablonlar çekilemedi")
+    except Exception:
+        logger.exception("Failed to fetch Meta WhatsApp templates")
+        raise HTTPException(status_code=502, detail="Meta API'den şablonlar çekilemedi")
+

@@ -1278,30 +1278,46 @@ function SchedulerCard() {
 function WhatsAppTemplateTab() {
   const { t, i18n } = useTranslation();
   const [recipient, setRecipient] = useState('');
-  const [templateName, setTemplateName] = useState('');
-  const [languageCode, setLanguageCode] = useState('tr');
-  const [paramsText, setParamsText] = useState('');
+  const [metaTemplates, setMetaTemplates] = useState([]);
+  const [loadingMeta, setLoadingMeta] = useState(false);
+  const [selectedTemplateIndex, setSelectedTemplateIndex] = useState('');
+  const [variables, setVariables] = useState({});
   const [sending, setSending] = useState(false);
 
   const recipientCheck = useMemo(() => validateRecipient('whatsapp', recipient), [recipient]);
+  
+  useEffect(() => {
+    const fetchTemplates = async () => {
+      setLoadingMeta(true);
+      const r = await safe(() => get('/messaging-center/whatsapp/meta-templates'));
+      if (r.ok) setMetaTemplates(r.data.templates || []);
+      setLoadingMeta(false);
+    };
+    fetchTemplates();
+  }, []);
+
+  const selectedTemplate = selectedTemplateIndex !== '' ? metaTemplates[selectedTemplateIndex] : null;
 
   const handleSend = async () => {
     if (!recipientCheck.ok) { toast.error(recipientCheck.msg); return; }
-    if (!templateName.trim()) { toast.error('Template adı (Meta panelinde onaylı) gerekli'); return; }
-    const params = paramsText.split('\n').map((s) => s.trim()).filter(Boolean);
+    if (!selectedTemplate) { toast.error('Lütfen bir template seçin'); return; }
+    
+    const params = Array.from({ length: selectedTemplate.variables_count || 0 }).map((_, i) => variables[i+1] || '');
     const components = params.length
       ? [{ type: 'body', parameters: params.map((t) => ({ type: 'text', text: t })) }]
       : [];
+      
     setSending(true);
     const r = await safe(() => post('/messaging-center/send-template', {
       recipient,
-      template_name: templateName,
-      language_code: languageCode,
+      template_name: selectedTemplate.name,
+      language_code: selectedTemplate.language,
       components,
     }));
+    
     if (r.ok && r.data.success) {
       toast.success('Template gönderildi');
-      setRecipient(''); setParamsText('');
+      setRecipient(''); setVariables({});
     } else if (r.ok) {
       toast.error(r.data.error || 'Template gönderim hatası');
     }
@@ -1323,7 +1339,7 @@ function WhatsAppTemplateTab() {
       </Card>
       <Card>
         <CardContent className="pt-6 space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4">
             <div>
               <Label>{t('cm.pages_MessagingDashboard.telefon_numarasi_e_164')}</Label>
               <Input value={recipient} onChange={(e) => setRecipient(e.target.value)} placeholder="+905551234567"
@@ -1333,34 +1349,43 @@ function WhatsAppTemplateTab() {
               )}
             </div>
             <div>
-              <Label>Dil Kodu</Label>
-              <Select value={languageCode} onValueChange={setLanguageCode}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+              <div className="flex justify-between items-center mb-1">
+                <Label>Meta Onaylı Şablon (Template)</Label>
+                {loadingMeta && <Loader2 className="h-3 w-3 animate-spin text-slate-400" />}
+              </div>
+              <Select value={selectedTemplateIndex} onValueChange={(val) => { setSelectedTemplateIndex(val); setVariables({}); }}>
+                <SelectTrigger><SelectValue placeholder="Bir şablon seçin..." /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="tr">{t('cm.pages_MessagingDashboard.turkce_tr')}</SelectItem>
-                  <SelectItem value="en">English (en)</SelectItem>
-                  <SelectItem value="en_US">English US (en_US)</SelectItem>
+                  {metaTemplates.length === 0 && !loadingMeta && (
+                    <SelectItem value="none" disabled>Onaylı şablon bulunamadı (Ayarları kontrol edin)</SelectItem>
+                  )}
+                  {metaTemplates.map((t, idx) => (
+                    <SelectItem key={`${t.name}_${t.language}_${idx}`} value={String(idx)}>
+                      {t.name} ({t.language}) - {t.category}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
           </div>
-          <div>
-            <Label>{t('cm.pages_MessagingDashboard.template_adi_meta_da_onayli')}</Label>
-            <Input value={templateName} onChange={(e) => setTemplateName(e.target.value)} placeholder="hello_world" />
-          </div>
-          <div>
-            <Label>{t('cm.pages_MessagingDashboard.body_parametreleri_her_satir_bir_paramet')}</Label>
-            <Textarea
-              className="min-h-[100px] font-mono text-xs"
-              value={paramsText}
-              onChange={(e) => setParamsText(e.target.value)}
-              placeholder={'Ahmet\n16:00\nDeluxe Oda'}
-            />
-            <p className="text-xs text-slate-500 mt-1">
-              Template body'sindeki {'{{1}}'}, {'{{2}}'} {t('cm.pages_MessagingDashboard.placeholder_sirasiyla_bu_parametrelerle_')}
-            </p>
-          </div>
-          <Button onClick={handleSend} disabled={sending || !recipientCheck.ok || !templateName.trim()} className="w-full">
+          
+          {selectedTemplate && selectedTemplate.variables_count > 0 && (
+            <div className="p-4 bg-slate-50 rounded-lg border border-slate-100 space-y-3 mt-4">
+              <Label className="text-slate-600">Şablon Değişkenleri (Variables)</Label>
+              {Array.from({ length: selectedTemplate.variables_count }).map((_, i) => (
+                <div key={i}>
+                  <Input 
+                    placeholder={`{{${i+1}}} değeri...`} 
+                    value={variables[i+1] || ''}
+                    onChange={(e) => setVariables(p => ({ ...p, [i+1]: e.target.value }))}
+                    className="h-8 text-sm bg-white"
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+          
+          <Button onClick={handleSend} disabled={sending || !recipientCheck.ok || !selectedTemplate} className="w-full mt-4">
             {sending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Send className="h-4 w-4 mr-2" />}
             {t('cm.pages_MessagingDashboard.template_gonder')}
           </Button>

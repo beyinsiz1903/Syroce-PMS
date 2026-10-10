@@ -24,6 +24,8 @@ from pathlib import Path
 ALLOWED_RAW_HTTPX = {
     # Server constant for Meta Graph API (WhatsApp Embedded Signup)
     "backend/domains/ai/router/whatsapp.py",
+    # Server constant for Meta Graph API (WhatsApp Template Sync)
+    "backend/routers/messaging.py",
     # Operator env QUICKID_URL — internal sister service URL
     "backend/routers/quick_id_proxy.py",
     # Server constants for HotelRunner partner endpoints
