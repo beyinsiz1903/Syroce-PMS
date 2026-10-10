@@ -8,6 +8,32 @@ const tokens = {};
 postcss.parse(css).walkRules('.dark', rule => {
   rule.walkDecls(decl => { tokens[decl.prop] = decl.value; });
 });
+
+describe('light theme clarity contracts', () => {
+  const light = {};
+  postcss.parse(css).walkRules(':root', rule => {
+    rule.walkDecls(decl => { light[decl.prop] = decl.value; });
+  });
+  it.each(['background', 'card', 'muted'])('secondary text is readable on %s', surface => {
+    expect(contrast(light['--muted-foreground'], light['--' + surface])).toBeGreaterThanOrEqual(4.5);
+  });
+  it.each(['background', 'card'])('input edges are distinct on %s', surface => {
+    expect(contrast(light['--input'], light['--' + surface])).toBeGreaterThanOrEqual(3);
+  });
+  it('separates white cards from the canvas without thick borders', () => {
+    expect(light['--background']).not.toBe(light['--card']);
+    expect(contrast(light['--border'], light['--card'])).toBeGreaterThan(1.5);
+    const lightRules = [];
+    postcss.parse(css).walkRules(rule => {
+      if (rule.selector.includes('html:not(.dark)')) lightRules.push(rule);
+    });
+    expect(lightRules.length).toBeGreaterThan(0);
+    for (const rule of lightRules) {
+      expect(rule.parent.params).toBe('screen');
+      rule.walkDecls(decl => expect(decl.prop).not.toMatch(/width/));
+    }
+  });
+});
 const rgb = value => {
   if (value.startsWith('#')) return value.slice(1).match(/../g).map(x => parseInt(x, 16) / 255);
   const [h, s, l] = value.match(/[\d.]+/g).map(Number);

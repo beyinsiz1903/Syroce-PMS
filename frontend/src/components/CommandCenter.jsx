@@ -62,8 +62,8 @@ export const CommandCenter = ({
   if (loading) {
     return <Card className={`${className}`}>
         <CardContent className="flex items-center justify-center py-8">
-          <Loader2 className="w-5 h-5 animate-spin text-slate-400 mr-2" />
-          <span className="text-sm text-slate-500">{t('commandCenter.loadingStatus')}</span>
+          <Loader2 className="w-5 h-5 animate-spin text-muted-foreground mr-2" />
+          <span className="text-sm text-muted-foreground">{t('commandCenter.loadingStatus')}</span>
         </CardContent>
       </Card>;
   }
@@ -116,7 +116,7 @@ export const CommandCenter = ({
                 <div className="text-2xl font-bold text-slate-900" style={{
                 fontFamily: 'Manrope'
               }}>{summary?.arrivals_today || 0}</div>
-                <div className="text-xs text-slate-500">{t('commandCenter.todayArrivals')}</div>
+                <div className="text-xs text-muted-foreground">{t('commandCenter.todayArrivals')}</div>
               </div>
             </div>
           </CardContent>
@@ -131,7 +131,7 @@ export const CommandCenter = ({
                 <div className="text-2xl font-bold text-slate-900" style={{
                 fontFamily: 'Manrope'
               }}>{summary?.departures_today || 0}</div>
-                <div className="text-xs text-slate-500">{t('commandCenter.todayDepartures')}</div>
+                <div className="text-xs text-muted-foreground">{t('commandCenter.todayDepartures')}</div>
               </div>
             </div>
           </CardContent>
@@ -146,7 +146,7 @@ export const CommandCenter = ({
                 <div className="text-2xl font-bold text-slate-900" style={{
                 fontFamily: 'Manrope'
               }}>{summary?.inhouse || 0}</div>
-                <div className="text-xs text-slate-500">{t('commandCenter.inHouse')}</div>
+                <div className="text-xs text-muted-foreground">{t('commandCenter.inHouse')}</div>
               </div>
             </div>
           </CardContent>
@@ -161,7 +161,7 @@ export const CommandCenter = ({
                 <div className="text-2xl font-bold text-slate-900" style={{
                 fontFamily: 'Manrope'
               }}>{summary?.dirty_rooms || 0}</div>
-                <div className="text-xs text-slate-500">{t('commandCenter.dirtyRooms')}</div>
+                <div className="text-xs text-muted-foreground">{t('commandCenter.dirtyRooms')}</div>
               </div>
             </div>
           </CardContent>
@@ -177,7 +177,7 @@ export const CommandCenter = ({
               <AlertTriangle className="w-4 h-4 inline mr-1.5 text-amber-500" />
               {t('commandCenter.attentionNeeded')} ({alerts.length})
             </h3>
-            <Button variant="ghost" size="sm" onClick={load} className="h-7 text-xs text-slate-500" data-testid="cc-refresh">
+            <Button variant="ghost" size="sm" onClick={load} className="h-7 text-xs text-muted-foreground" data-testid="cc-refresh">
               <RefreshCw className="w-3.5 h-3.5 mr-1" /> {t('commandCenter.refresh')}
             </Button>
           </div>
@@ -197,14 +197,14 @@ export const CommandCenter = ({
                             <span className="text-sm font-semibold text-slate-800">{getAlertTitle(alert)}</span>
                             <Badge className={`text-[10px] px-1.5 py-0 ${style.badge}`}>{alert.severity === 'high' ? t('commandCenter.urgent') : alert.severity === 'medium' ? t('commandCenter.medium') : t('commandCenter.info')}</Badge>
                           </div>
-                          <p className="text-xs text-slate-500 mt-0.5">{getAlertDescription(alert)}</p>
+                          <p className="text-xs text-muted-foreground mt-0.5">{getAlertDescription(alert)}</p>
                           {alert.items && alert.items.length > 0 && <div className="flex flex-wrap gap-1.5 mt-2">
                               {alert.items.slice(0, 3).map((item, j) => <span key={j} className="inline-flex items-center text-[11px] bg-white/70 border border-slate-200 rounded-md px-2 py-0.5 text-slate-600">
                                   {item.room_number && <span className="font-semibold mr-1">{t('commandCenter.room')} {item.room_number}</span>}
                                   {item.guest_name}
                                   {item.balance > 0 && <span className="ml-1 font-semibold text-red-600">{fmtMoney(item.balance)}</span>}
                                 </span>)}
-                              {alert.items.length > 3 && <span className="text-[11px] text-slate-400">+{alert.items.length - 3} {t('commandCenter.more')}</span>}
+                              {alert.items.length > 3 && <span className="text-[11px] text-muted-foreground">+{alert.items.length - 3} {t('commandCenter.more')}</span>}
                             </div>}
                         </div>
                       </div>

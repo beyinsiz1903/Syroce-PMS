@@ -19,7 +19,7 @@ code {
 
 @layer base {
     :root {
-        --background: 0 0% 100%;
+        --background: 210 20% 97%;
         --foreground: 0 0% 3.9%;
         --card: 0 0% 100%;
         --card-foreground: 0 0% 3.9%;
@@ -30,13 +30,13 @@ code {
         --secondary: 0 0% 96.1%;
         --secondary-foreground: 0 0% 9%;
         --muted: 0 0% 96.1%;
-        --muted-foreground: 0 0% 45.1%;
+        --muted-foreground: 215 19% 37%;
         --accent: 0 0% 96.1%;
         --accent-foreground: 0 0% 9%;
         --destructive: 0 84.2% 60.2%;
         --destructive-foreground: 0 0% 98%;
-        --border: 0 0% 89.8%;
-        --input: 0 0% 89.8%;
+        --border: 215 16% 76%;
+        --input: 215 16% 52%;
         --ring: 0 0% 3.9%;
         --chart-1: 12 76% 61%;
         --chart-2: 173 58% 39%;
@@ -1267,3 +1267,20 @@ code {
     color: hsl(var(--primary-foreground));
 }
 .dark .pms-primary-action:hover { background-color: #2455a0; }
+
+/* Light-only clarity: preserve 1px widths and semantic status colors.
+   Neutral legacy utilities also occur in portalled dialogs, outside app-shell. */
+@media screen {
+    html:not(.dark) :is(.border-gray-100, .border-gray-200, .border-slate-100, .border-slate-200) {
+        border-color: hsl(var(--border));
+    }
+}
+.dashboard-greeting {
+    font-family: inherit;
+    font-size: clamp(1.5rem, 2vw, 2rem);
+    font-weight: 400;
+    line-height: 1.35;
+    letter-spacing: -0.02em;
+    text-align: start;
+    overflow-wrap: anywhere;
+}

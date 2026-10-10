@@ -18,6 +18,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 const previewQueryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 import { SimulationProvider } from '../src/context/SimulationContext';
 import RoleStart from '../src/components/experience/RoleStart';
+import DashboardWelcome from '../src/components/experience/DashboardWelcome';
 import ApplicationCenter from '../src/pages/ApplicationCenter';
 import CRMWorkspace from '../src/pages/CRMWorkspace';
 import HousekeepingRoomGrid from '../src/components/pms/HousekeepingRoomGrid';
@@ -57,7 +58,7 @@ function Preview() {
   const props = { user, tenant, onLogout: () => {} };
   if (location.pathname === "/app/pms") return <PMSModule {...props} />;
   return <Layout {...props}><div className="border-b bg-blue-50 p-3 text-sm text-blue-950">Yerel tasarım kontrolü · örnek kayıtlar · canlı sisteme bağlı değildir.<div className="mt-2 flex flex-wrap gap-2">{[['/app/dashboard', 'Başlangıç'], ['/app/pms', 'Ön büro önizlemesi'], ['/app/applications', 'Uygulamalar'], ['/crm', 'CRM'], ['/housekeeping-status', 'Kat hizmetleri'], ['/shift-handover', 'Vardiya devri']].map(([path, label]) => <Button key={path} size="sm" variant="outline" onClick={() => navigate(path)}>{label}</Button>)}<Button size="sm" onClick={() => setBookingOpen(true)}>Rezervasyon formu</Button></div></div>
-    {location.pathname === '/app/applications' ? <ApplicationCenter {...props} /> : location.pathname === '/crm' ? <CRMWorkspace {...props} /> : location.pathname === '/housekeeping-status' ? <HousekeepingRoomGrid /> : location.pathname === '/shift-handover' ? <ShiftHandoverPage {...props} /> : <div className="p-6"><RoleStart {...props} /></div>}
+    {location.pathname === '/app/applications' ? <ApplicationCenter {...props} /> : location.pathname === '/crm' ? <CRMWorkspace {...props} /> : location.pathname === '/housekeeping-status' ? <HousekeepingRoomGrid /> : location.pathname === '/shift-handover' ? <ShiftHandoverPage {...props} /> : <div className="p-6"><DashboardWelcome {...props} /><RoleStart {...props} /></div>}
     <BookingDialog open={bookingOpen} onClose={() => setBookingOpen(false)} guests={[]} rooms={rooms} companies={[]} ratePlans={[]} packages={[]} newBooking={draft} setNewBooking={setDraft} multiRoomBooking={lines} updateMultiRoomField={update} addRoomToMultiBooking={() => setLines(current => [...current, { ...current[0], id: String(current.length) }])} removeRoomFromMultiBooking={index => setLines(current => current.filter((_, i) => i !== index))} updateMultiRoomChildrenAges={(index, value) => update(index, 'children', value)} updateMultiRoomChildAge={() => {}} handleChildrenChange={() => {}} handleChildAgeChange={() => {}} handleCompanySelect={() => {}} handleContractedRateSelect={() => {}} handleCreateBooking={event => { event.preventDefault(); setBookingOpen(false); }} setOpenDialog={() => {}} />
   </Layout>;
 }
