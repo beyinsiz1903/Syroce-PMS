@@ -29,4 +29,16 @@ describe("infrastructure routes", () => {
       expect(routes.find((route) => route.path === path)?.requireSuperAdmin, path).toBe(true);
     }
   });
+
+  it("keeps the legacy credential-vault URL as a canonical, hash-preserving alias", () => {
+    const p = vi.fn((component) => ({ type: "protected", component }));
+    const pa = vi.fn((component) => ({ type: "protected", component, requireSuperAdmin: true }));
+    const route = infrastructureRoutes({ p, pa }).find((candidate) => candidate.path === "/integration-credentials");
+
+    expect(route).toMatchObject({
+      type: "redirect",
+      to: "/admin/integration-credentials",
+      preserveLocation: true,
+    });
+  });
 });

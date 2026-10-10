@@ -2,7 +2,7 @@ import {
   DataPipelineDashboard, EventBusDashboard, SystemHealthDashboard,
   ObservabilityDashboard, SecurityHub, RuntimeInfrastructureDashboard,
   InfraHardeningDashboard, ProductionGoLiveDashboard, PlatformScalingDashboard,
-  PIIStrictModeDashboard, IntegrationObservabilityDashboard, CredentialVaultDashboard,
+  PIIStrictModeDashboard, IntegrationObservabilityDashboard,
 } from "./lazyPages";
 
 export function infrastructureRoutes({ p, pa }) {
@@ -13,7 +13,10 @@ export function infrastructureRoutes({ p, pa }) {
     { path: "/system-health", ...p(SystemHealthDashboard), wrapLayout: true, layoutModule: "system_health" },
     { path: "/observability", ...adminRoute(ObservabilityDashboard), wrapLayout: true, layoutModule: "observability" },
     { path: "/integration-observability", ...adminRoute(IntegrationObservabilityDashboard), wrapLayout: true },
-    { path: "/integration-credentials", ...p(CredentialVaultDashboard), wrapLayout: true },
+    // Compatibility alias: the catalog-based, super-admin-protected screen is
+    // the single canonical place for platform integration keys. Preserve a
+    // credential hash so existing deep links still focus the same key.
+    { path: "/integration-credentials", type: "redirect", to: "/admin/integration-credentials", preserveLocation: true },
     { path: "/security-hardening", type: "redirect", to: "/security?tab=hardening" },
     { path: "/security", ...p(SecurityHub), wrapLayout: true, layoutModule: "security" },
     { path: "/app/security", ...p(SecurityHub), wrapLayout: true, layoutModule: "security" },
