@@ -289,6 +289,12 @@ export const NAV_ITEMS = [
     tier: "basic",
     group: "core",
   },
+  { key: "maintenance_work_orders", label: "Teknik Servis", path: "/maintenance/work-orders", moduleKey: "maintenance", tier: "basic", group: "operations", navGroup: "operations", navSection: "daily" },
+  { key: "maintenance_assets", label: "Varlıklar ve ekipmanlar", path: "/maintenance/assets", moduleKey: "maintenance", tier: "basic", group: "operations", navGroup: "operations", navSection: "daily" },
+  { key: "maintenance_plans", label: "Planlı bakım", path: "/maintenance/plans", moduleKey: "maintenance", tier: "basic", group: "operations", navGroup: "operations", navSection: "daily" },
+  { key: "hurdle_rates", label: "Fiyat kuralları", path: "/hurdle-rates", moduleKey: "revenue_management", tier: "enterprise", group: "enterprise", navGroup: "sales" },
+  { key: "revenue_autopilot_monitor", label: "Otopilot çalışma sonuçları", path: "/revenue-autopilot/monitor", moduleKey: "ai_revenue_autopilot", tier: "enterprise", group: "enterprise", navGroup: "sales" },
+  { key: "physical_security", label: "Fiziksel güvenlik", path: "/app/physical-security", tier: "basic", group: "core", navGroup: "admin", navSection: "platform", requireSuperAdmin: true },
   {
     key: "turndown",
     label: "Akşam Oda Hazırlığı",

@@ -29,7 +29,11 @@ class GuestOrderRequest(BaseModel):
 async def get_guest_menu(tenant_id: str, outlet_id: str):
     """Get active menu categories and items for the guest."""
 
-    items = await db.pos_menu_items.find({"tenant_id": tenant_id, "is_active": True}, {"_id": 0}).to_list(1000)
+    outlet = await db.pos_outlets.find_one({"tenant_id": tenant_id, "id": outlet_id, "is_active": {"$ne": False}}, {"_id": 0, "id": 1})
+    if not outlet:
+        raise HTTPException(status_code=404, detail="Şube bulunamadı")
+
+    items = await db.pos_menu_items.find({"tenant_id": tenant_id, "outlet_id": outlet_id, "is_active": True}, {"_id": 0}).to_list(1000)
 
     tenant_currency, _ = await get_tenant_currency(tenant_id)
     tenant_currency = str(tenant_currency or "TRY").upper()
@@ -59,9 +63,17 @@ async def place_guest_order(tenant_id: str, outlet_id: str, req: GuestOrderReque
     Ayrıca POS personeli ekranında da görünmesi için pending statüsünde bir sipariş oluşturulur.
     """
 
-    # 1. Fetch items to calculate prices
+    outlet = await db.pos_outlets.find_one({"tenant_id": tenant_id, "id": outlet_id, "is_active": {"$ne": False}}, {"_id": 0, "id": 1})
+    if not outlet:
+        raise HTTPException(status_code=404, detail="Şube bulunamadı")
+    table = await db.table_layouts.find_one({"tenant_id": tenant_id, "outlet_id": outlet_id, "$or": [{"id": req.table_id}, {"table_number": req.table_id}]}, {"_id": 0, "id": 1})
+    if not table:
+        raise HTTPException(status_code=400, detail="Bu şubeye ait geçerli bir masa seçin")
+
+    # 1. Fetch items to calculate prices. Tenant-only lookup would allow a
+    # QR from one outlet to order an item from another outlet.
     item_ids = [it["item_id"] for it in req.items]
-    db_items = await db.pos_menu_items.find({"tenant_id": tenant_id, "id": {"$in": item_ids}}).to_list(1000)
+    db_items = await db.pos_menu_items.find({"tenant_id": tenant_id, "outlet_id": outlet_id, "id": {"$in": item_ids}, "is_active": True}).to_list(1000)
 
     db_items_map = {str(it["id"]): it for it in db_items}
 

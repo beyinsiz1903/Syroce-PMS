@@ -15,6 +15,15 @@ def _cursor(rows):
     return cursor
 
 
+def _guest_menu_db(items, *, outlet=True, table=True):
+    """Create the minimal public QR menu datastore with outlet/table ownership."""
+    outlets = MagicMock()
+    outlets.find_one = AsyncMock(return_value={"id": "outlet-1"} if outlet else None)
+    tables = MagicMock()
+    tables.find_one = AsyncMock(return_value={"id": "table-1"} if table else None)
+    return SimpleNamespace(pos_menu_items=items, pos_outlets=outlets, table_layouts=tables)
+
+
 @pytest.mark.asyncio
 async def test_public_menu_exposes_tenant_currency_and_enriches_legacy_items(monkeypatch):
     items = MagicMock()
@@ -28,7 +37,7 @@ async def test_public_menu_exposes_tenant_currency_and_enriches_legacy_items(mon
             }
         ]
     )
-    monkeypatch.setattr(guest_menu, "db", SimpleNamespace(pos_menu_items=items))
+    monkeypatch.setattr(guest_menu, "db", _guest_menu_db(items))
     monkeypatch.setattr(
         guest_menu,
         "get_tenant_currency",
@@ -45,7 +54,7 @@ async def test_public_menu_exposes_tenant_currency_and_enriches_legacy_items(mon
 async def test_empty_public_menu_still_exposes_tenant_currency(monkeypatch):
     items = MagicMock()
     items.find.return_value = _cursor([])
-    monkeypatch.setattr(guest_menu, "db", SimpleNamespace(pos_menu_items=items))
+    monkeypatch.setattr(guest_menu, "db", _guest_menu_db(items))
     monkeypatch.setattr(
         guest_menu,
         "get_tenant_currency",
@@ -66,7 +75,7 @@ async def test_guest_order_rejects_mixed_currency_cart(monkeypatch):
             {"id": "tea", "item_name": "Çay", "unit_price": 5, "currency": "USD"},
         ]
     )
-    monkeypatch.setattr(guest_menu, "db", SimpleNamespace(pos_menu_items=items))
+    monkeypatch.setattr(guest_menu, "db", _guest_menu_db(items))
     monkeypatch.setattr(
         guest_menu,
         "get_tenant_currency",
