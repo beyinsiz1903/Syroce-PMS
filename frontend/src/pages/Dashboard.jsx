@@ -10,6 +10,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/
 import { Hotel, FileText, TrendingUp, TrendingDown, Minus, Award, ShoppingCart, Users, BedDouble, Calendar, Package, Shield, Sparkles, Bot, Star, Building, Gift, UserCheck, MessageCircle, Target, Instagram, Zap, Monitor, ArrowRight } from 'lucide-react';
 import CommandCenter from '@/components/CommandCenter';
 import RoleStart from '@/components/experience/RoleStart';
+import DashboardWelcome from '@/components/experience/DashboardWelcome';
 import ProductState from '@/components/shared/ProductState';
 import { runIdle } from '@/lib/idle';
 import { useCurrency } from '@/context/CurrencyContext';
@@ -73,7 +74,7 @@ const Sparkline = ({
   const last = values[values.length - 1];
   const delta = first === 0 ? 0 : (last - first) / Math.abs(first) * 100;
   const TrendIcon = Math.abs(delta) < 1 ? Minus : delta > 0 ? TrendingUp : TrendingDown;
-  const trendCls = Math.abs(delta) < 1 ? 'text-slate-400' : delta > 0 ? 'text-emerald-600' : 'text-rose-600';
+  const trendCls = Math.abs(delta) < 1 ? 'text-muted-foreground' : delta > 0 ? 'text-emerald-600' : 'text-rose-600';
   return <div className="w-full">
       <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" className="w-full" style={{
       height
@@ -603,14 +604,7 @@ const Dashboard = ({
   }
   return <>
       <div className="p-4 md:p-6 space-y-4" role="main" aria-label="Ana gösterge paneli">
-        <div>
-          <h1 className="text-2xl md:text-3xl font-bold mb-1 dark:text-slate-100" style={{
-          fontFamily: 'inherit'
-        }}>
-            {t('dashboard.welcome')}, {user.name}
-          </h1>
-          <p className="text-sm md:text-base text-gray-600 dark:text-slate-300">{tenant?.property_name || 'Hotel Management System'}</p>
-        </div>
+        <DashboardWelcome user={user} tenant={tenant} />
 
         {loading ? <ProductState state="loading" moduleName={t('dashboard.title', { defaultValue: 'Kontrol paneli' })} compact showDashboardLink={false} /> : <>
             <RoleStart user={user} tenant={tenant} />
@@ -805,7 +799,7 @@ const Dashboard = ({
                             {module.stats && <CardContent>
                                 <div className="grid grid-cols-2 gap-2 text-sm">
                                   {Object.entries(module.stats).slice(0, 2).map(([key, value]) => <div key={key}>
-                                      <p className="text-gray-500 dark:text-slate-400 capitalize">{key.replace('_', ' ')}</p>
+                                      <p className="text-muted-foreground capitalize">{key.replace('_', ' ')}</p>
                                       <p className="font-semibold">{typeof value === 'number' ? value.toFixed(0) : typeof value === 'object' && value !== null ? JSON.stringify(value) : String(value ?? '')}</p>
                                     </div>)}
                                 </div>
