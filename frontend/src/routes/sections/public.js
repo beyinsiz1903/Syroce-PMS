@@ -3,6 +3,7 @@ import {
   PmsLiteLanding, AgencyPortalDashboard, B2BApiDocs, SimpleAdminPanel,
   ResetPasswordPage, PreCheckinPage, CertificateVerifyPage, WebBookingEngine,
   AgencyBookingWidget, AgencyConnectAuthorize,
+  GuestQRMenu,
 } from "./lazyPages";
 
 export function publicRoutes({ pa }) {
@@ -28,5 +29,6 @@ export function publicRoutes({ pa }) {
     { path: "/sertifika-dogrula", type: "public", component: CertificateVerifyPage },
     { path: "/sertifika-dogrula/:code", type: "public", component: CertificateVerifyPage },
     { path: "/wbe/:tenantId", type: "public", component: WebBookingEngine },
+    { path: "/g/fnb/:tenantId/:outletId", type: "public", component: GuestQRMenu },
   ];
 }

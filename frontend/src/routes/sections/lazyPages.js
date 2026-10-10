@@ -14,6 +14,7 @@ export const HotelPmsLandingPage = lazy(() => import("@/pages/HotelPmsLandingPag
 export const PrivacyPolicy = lazy(() => import("@/pages/PrivacyPolicy"));
 export const GuestPortal = lazy(() => import("@/pages/GuestPortal"));
 export const AgencyBookingWidget = lazy(() => import("@/pages/AgencyBookingWidget"));
+export const GuestQRMenu = lazy(() => import("@/pages/GuestQRMenu"));
 
 // Core modules
 export const PMSModule = lazy(() => import("@/pages/PMSModule"));

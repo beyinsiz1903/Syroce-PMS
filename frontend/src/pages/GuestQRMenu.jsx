@@ -9,7 +9,7 @@ const GuestQRMenu = () => {
   const { tenantId, outletId } = useParams();
   const [categories, setCategories] = useState([]);
   const [cart, setCart] = useState({});
-  const [tableId, setTableId] = useState('T1'); // For demo, usually from URL query
+  const [tableId, setTableId] = useState('');
   const [guestName, setGuestName] = useState('');
   const [loading, setLoading] = useState(true);
   const [menuCurrency, setMenuCurrency] = useState('TRY');
@@ -17,9 +17,7 @@ const GuestQRMenu = () => {
   useEffect(() => {
     // URL params like ?table=12
     const params = new URLSearchParams(window.location.search);
-    if (params.get('table')) {
-      setTableId(params.get('table'));
-    }
+    setTableId(params.get('table') || '');
 
     const fetchMenu = async () => {
       try {
@@ -57,7 +55,7 @@ const GuestQRMenu = () => {
   }, {});
 
   const placeOrder = async () => {
-    if (Object.keys(cart).length === 0) return;
+    if (Object.keys(cart).length === 0 || !tableId) { toast.error('QR kodundaki masa bilgisi gerekli.'); return; }
     
     try {
       const items = Object.values(cart).map(it => ({
@@ -89,7 +87,7 @@ const GuestQRMenu = () => {
       {/* Header */}
       <div className="bg-white p-4 shadow-sm sticky top-0 z-10">
         <h1 className="text-xl font-bold text-center text-gray-800">Dijital Menü</h1>
-        <div className="text-center text-sm text-gray-500">Masa: {tableId}</div>
+        <div className="text-center text-sm text-gray-500">{tableId ? `Masa: ${tableId}` : 'Geçersiz QR kodu'}</div>
       </div>
 
       {/* Menu Categories */}
@@ -141,7 +139,7 @@ const GuestQRMenu = () => {
             </div>
             
             <button 
-              onClick={placeOrder}
+              onClick={placeOrder} disabled={!tableId}
               className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl font-semibold flex items-center space-x-2"
             >
               <span>Siparişi Ver</span>
