@@ -13,6 +13,37 @@ from core.database import db
 
 logger = logging.getLogger(__name__)
 
+
+def _num(value) -> float:
+    """Coerce a possibly-None/non-numeric DB value to a number (None -> 0)."""
+    if isinstance(value, bool):
+        return 0
+    if isinstance(value, (int, float)):
+        return value
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _label(value, default: str) -> str:
+    """Normalize a DB field into a hashable label.
+
+    Some bookings store ``source`` / ``room_type`` as a nested dict
+    (e.g. ``{"channel": "booking", ...}``) which breaks ``set()`` / dict lookups.
+    """
+    if value is None or value == "":
+        return default
+    if isinstance(value, dict):
+        for key in ("name", "code", "channel", "type", "id"):
+            v = value.get(key)
+            if isinstance(v, str) and v:
+                return v
+        return default
+    if isinstance(value, (list, tuple, set)):
+        return default
+    return str(value)
+
 _TEST_GUEST_PATTERN = re.compile(r"(^|[^a-z0-9])(test|deneme|fixture|probe|e2e|qa)([^a-z0-9]|$)", re.IGNORECASE)
 
 
@@ -45,7 +76,7 @@ class GuestLifetimeValueModel:
         completed = [b for b in bookings if b.get("status") in ("checked_out", "checked_in")]
         cancelled = [b for b in bookings if b.get("status") == "cancelled"]
 
-        total_revenue = sum(b.get("total_amount", 0) for b in completed)
+        total_revenue = sum(_num(b.get("total_amount")) for b in completed)
         stay_count = len(completed)
         avg_spend = round(total_revenue / max(stay_count, 1), 2)
 
@@ -55,7 +86,7 @@ class GuestLifetimeValueModel:
                 {"tenant_id": tenant_id, "guest_id": guest_id, "voided": False},
                 {"_id": 0, "amount": 1},
             ).to_list(500)
-        ancillary_revenue = sum(c.get("amount", 0) for c in folio_charges)
+        ancillary_revenue = sum(_num(c.get("amount")) for c in folio_charges)
 
         # Stay frequency
         if stay_count >= 2:
@@ -105,18 +136,18 @@ class GuestSegmentationModel:
 
         completed = [b for b in bookings if b.get("status") in ("checked_out", "checked_in")]
         stay_count = len(completed)
-        total_spend = sum(b.get("total_amount", 0) for b in completed)
+        total_spend = sum(_num(b.get("total_amount")) for b in completed)
 
         # Determine purpose
         business_count = sum(1 for b in completed if b.get("purpose") in ("business", "corporate"))
         leisure_count = stay_count - business_count
 
         # Room type preference
-        room_types = [b.get("room_type", "Standard") for b in completed]
+        room_types = [_label(b.get("room_type"), "Standard") for b in completed]
         preferred_room = max(set(room_types), key=room_types.count) if room_types else "Standard"
 
         # Source preference
-        sources = [b.get("source", "direct") for b in completed]
+        sources = [_label(b.get("source") or b.get("source_channel"), "direct") for b in completed]
         preferred_source = max(set(sources), key=sources.count) if sources else "direct"
 
         # Lead time analysis
@@ -311,13 +342,13 @@ class UpsellRecommendationModel:
 
         charge_categories = {}
         for c in charges:
-            cat = c.get("charge_category", "other")
+            cat = _label(c.get("charge_category"), "other")
             if cat not in charge_categories:
                 charge_categories[cat] = 0
-            charge_categories[cat] += c.get("amount", 0)
+            charge_categories[cat] += _num(c.get("amount"))
 
-        avg_spend = sum(b.get("total_amount", 0) for b in bookings) / max(len(bookings), 1)
-        room_types_used = [b.get("room_type", "Standard") for b in bookings]
+        avg_spend = sum(_num(b.get("total_amount")) for b in bookings) / max(len(bookings), 1)
+        room_types_used = [_label(b.get("room_type"), "Standard") for b in bookings]
         current_type = room_types_used[-1] if room_types_used else "Standard"
 
         recommendations = []
@@ -430,7 +461,7 @@ class GuestIntelligenceDashboard:
             {"tenant_id": tenant_id, "guest_id": guest_id},
             {"_id": 0, "overall_rating": 1},
         ).to_list(10)
-        avg_rating = round(sum(r.get("overall_rating", 3) for r in reviews) / max(len(reviews), 1), 1) if reviews else None
+        avg_rating = round(sum(_num(r.get("overall_rating") or 3) for r in reviews) / max(len(reviews), 1), 1) if reviews else None
 
         # Request volume
         requests = await db.guest_requests.count_documents(
