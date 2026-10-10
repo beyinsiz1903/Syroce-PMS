@@ -1691,6 +1691,8 @@
     "language": "Language",
     "theme": "Theme",
     "darkMode": "Dark Mode",
+    "prominentBorders": "Prominent borders",
+    "prominentBordersHelp": "Stronger light-mode outlines. Saved only in this browser.",
     "themeLight": "Light",
     "themeDark": "Dark",
     "themeSystem": "System",

@@ -429,7 +429,7 @@ const CalendarGrid = ({
 
   return (
     <div
-      className="relative flex h-full flex-col overflow-hidden border-y border-slate-200 bg-white shadow-[0_8px_30px_rgba(15,23,42,0.05)] select-none"
+      className="pms-calendar-grid relative flex h-full flex-col overflow-hidden border-y border-slate-200 bg-white shadow-[0_8px_30px_rgba(15,23,42,0.05)] select-none"
       data-testid="calendar-grid"
       data-large-property-mode={virtualRowsEnabled ? 'virtualized' : 'standard'}
       onPointerDown={clearCalendarTextSelection}
@@ -603,7 +603,7 @@ const CalendarGrid = ({
                             return (
                               <div
                                 key={idx}
-                                className={`${CELL_CLS} flex-shrink-0 border-r border-b relative ${
+                                className={`${CELL_CLS} calendar-inventory-cell flex-shrink-0 border-r border-b relative ${
                                   weekend ? 'bg-blue-50/30 border-blue-200' : 'bg-blue-50/10 border-blue-200'
                                 } ${isToday(date) ? 'bg-blue-50/40' : ''}`}
                                 style={{ height: `${rowHeight}px`, minHeight: `${rowHeight}px` }}

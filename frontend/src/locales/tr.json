@@ -1740,6 +1740,8 @@
     "language": "Dil",
     "theme": "Tema",
     "darkMode": "Karanlık Mod",
+    "prominentBorders": "Belirgin sınırlar",
+    "prominentBordersHelp": "Açık temadaki çizgileri güçlendirir. Yalnızca bu tarayıcıda saklanır.",
     "themeLight": "Açık",
     "themeDark": "Koyu",
     "themeSystem": "Sistem",

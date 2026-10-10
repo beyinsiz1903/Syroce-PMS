@@ -22,7 +22,8 @@ describe('light theme clarity contracts', () => {
   });
   it('separates white cards from the canvas without thick borders', () => {
     expect(light['--background']).not.toBe(light['--card']);
-    expect(contrast(light['--border'], light['--card'])).toBeGreaterThan(1.5);
+    expect(light['--border']).toBe('0 0% 89.8%');
+    expect(css).toContain('html:not(.dark)[data-prominent-borders] { --border: 215 16% 76%; }');
     const lightRules = [];
     postcss.parse(css).walkRules(rule => {
       if (rule.selector.includes('html:not(.dark)')) lightRules.push(rule);
