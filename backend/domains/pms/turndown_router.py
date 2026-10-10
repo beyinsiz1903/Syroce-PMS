@@ -23,6 +23,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from pymongo.errors import DuplicateKeyError
 
+from core.business_date_service import ensure_business_date_initialized
 from core.database import db
 from core.business_date_service import ensure_business_date_initialized
 from core.security import get_current_user
