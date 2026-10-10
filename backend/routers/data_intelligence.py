@@ -217,7 +217,7 @@ async def get_upsell_opportunities(
     dash = await guest_intelligence.get_dashboard(current_user.tenant_id, 30)
     return {
         "opportunities": dash.get("upsell_opportunities", []),
-        "total_potential": sum(o.get("potential", 0) for o in dash.get("upsell_opportunities", [])),
+        "total_potential": sum((o.get("potential") or 0) for o in dash.get("upsell_opportunities", [])),
     }
 
 
