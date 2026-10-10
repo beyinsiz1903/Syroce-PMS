@@ -30,6 +30,13 @@ describe('workflow-oriented hotel navigation', () => {
       navSection: 'wellness',
       path: '/activities',
     });
+    expect(item('minibar')).toMatchObject({
+      path: '/minibar',
+      moduleKey: 'pms',
+      navGroup: 'operations',
+      navSection: 'daily',
+      moduleScopes: ['frontdesk', 'housekeeping'],
+    });
     expect(SUPPLEMENTAL_MODULE_NAV_ITEMS.find(({ key }) => key === 'tasks_workspace'))
       .toMatchObject({ navGroup: 'operations', navSection: 'daily' });
   });
