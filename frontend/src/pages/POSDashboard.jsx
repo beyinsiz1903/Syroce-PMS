@@ -78,7 +78,7 @@ const POSDashboard = () => {
   const [stats,           setStats]           = useState({ outlet_count: 0, menu_count: 0, today_orders: 0, today_revenue: 0 });
   const [loadingStats,    setLoadingStats]    = useState(true);
   const [dashboardError,  setDashboardError]  = useState('');
-  const { hasFeature } = useEntitlements();
+  const { hasFeature, tenantId } = useEntitlements();
   const businessDate = useBusinessDate();
 
   /* ── data ── */
@@ -291,7 +291,11 @@ const POSDashboard = () => {
 
           <TabsContent value="tables">
             {currentOutletId ? (
-              <POSTableManagement outletId={currentOutletId} />
+              <POSTableManagement
+                outletId={currentOutletId}
+                tenantId={tenantId}
+                outletName={outlets.find((outlet) => outlet.id === currentOutletId)?.outlet_name || outlets.find((outlet) => outlet.id === currentOutletId)?.name}
+              />
             ) : outlets.length > 0 ? (
               <EmptyTabState
                 icon={LayoutGrid}
