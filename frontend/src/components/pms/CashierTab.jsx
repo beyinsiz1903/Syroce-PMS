@@ -39,6 +39,7 @@ const CashierTab = () => {
   const [shiftHistory, setShiftHistory] = useState([]);
   const [transactions, setTransactions] = useState([]);
   const [shiftSummary, setShiftSummary] = useState(null);
+  const [longStayDue, setLongStayDue] = useState([]);
   const [loading, setLoading] = useState(false);
   const [showOpenDialog, setShowOpenDialog] = useState(false);
   const [showCloseDialog, setShowCloseDialog] = useState(false);
@@ -141,7 +142,12 @@ const CashierTab = () => {
     } catch { setShiftHistory([]); }
   }, []);
 
-  useEffect(() => { loadShift(); loadHistory(); }, [loadShift, loadHistory]);
+  const loadLongStayDue = useCallback(async () => {
+    try { const response = await axios.get('/long-stay/due'); setLongStayDue(response.data || []); }
+    catch (error) { if (error?.response?.status !== 403) setLongStayDue([]); }
+  }, []);
+
+  useEffect(() => { loadShift(); loadHistory(); loadLongStayDue(); }, [loadShift, loadHistory, loadLongStayDue]);
 
   const doOpenShift = async () => {
     setLoading(true);
@@ -511,6 +517,13 @@ const CashierTab = () => {
           </Button>
         </div>
       </div>
+
+      {longStayDue.length > 0 && <Card className="border-amber-300 bg-amber-50/50" data-testid="long-stay-due-card">
+        <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4">
+          <div className="flex items-center gap-3"><CalendarRange className="h-5 w-5 text-amber-700" /><div><p className="font-semibold text-amber-950">Dönemsel faturalama bekleyen {longStayDue.length} konaklama</p><p className="text-sm text-amber-800">Vadesi gelen açık dönemleri kapatıp yeni fatura dönemini başlatın.</p></div></div>
+          <Button variant="outline" onClick={() => navigate('/long-stay')}>Dönemleri incele</Button>
+        </CardContent>
+      </Card>}
 
       {shift ? (
         <>
