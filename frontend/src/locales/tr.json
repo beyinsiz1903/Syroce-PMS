@@ -415,6 +415,7 @@
   "navKeys": {
     "dashboard": "Kontrol Paneli",
     "reservation_calendar": "Takvim",
+    "reservation_waitlist": "Rezervasyon Bekleme Listesi",
     "pms": "Ön büro",
     "pms_operations": "PMS Operasyonlar",
     "folio_detail": "Folio Detay",
@@ -452,6 +453,9 @@
     "admin_module_report": "Modül Raporu",
     "admin_leads": "Potansiyel Müşteriler",
     "housekeeping_status": "Kat Hizmetleri",
+    "turndown": "Akşam Oda Hazırlığı",
+    "golf": "Golf Operasyonu",
+    "long_stay": "Uzun Konaklama Dönemleri",
     "minibar": "Minibar",
     "wake_up_calls": "Uyandırma Çağrısı",
     "transfer_parking": "Transfer & Otopark",

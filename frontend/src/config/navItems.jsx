@@ -249,6 +249,17 @@ export const NAV_ITEMS = [
     navSection: "reservations",
   },
   {
+    key: "reservation_waitlist",
+    label: "Rezervasyon Bekleme Listesi",
+    path: "/reservation-waitlist",
+    moduleScopes: ["frontdesk"],
+    tier: "basic",
+    group: "core",
+    navGroup: "frontdesk",
+    navSection: "reservations",
+    allowedRoles: ["admin", "super_admin", "supervisor", "front_desk"],
+  },
+  {
     key: "agency_requests",
     label: "Acente talepleri",
     path: "/agency-requests",
@@ -277,6 +288,20 @@ export const NAV_ITEMS = [
     moduleKey: "pms",
     tier: "basic",
     group: "core",
+  },
+  {
+    key: "turndown",
+    label: "Akşam Oda Hazırlığı",
+    path: "/turndown",
+    // Turndown is a PMS/housekeeping workflow, not a standalone entitlement.
+    // Without this, a tenant with PMS disabled could receive it as a role home.
+    moduleKey: "pms",
+    moduleScopes: ["housekeeping"],
+    tier: "basic",
+    group: "operations",
+    navGroup: "operations",
+    navSection: "daily",
+    allowedRoles: ["admin", "super_admin", "supervisor", "manager", "housekeeping"],
   },
   {
     key: "spa_wellness",
@@ -309,6 +334,17 @@ export const NAV_ITEMS = [
     navSection: "wellness",
   },
   {
+    key: "golf",
+    label: "Golf Operasyonu",
+    path: "/golf",
+    moduleScopes: ["frontdesk"],
+    tier: "basic",
+    group: "operations",
+    navGroup: "operations",
+    navSection: "wellness",
+    allowedRoles: ["admin", "super_admin", "supervisor", "front_desk", "staff"],
+  },
+  {
     key: "shift_handover",
     label: "Vardiya Devri",
     path: "/shift-handover",
@@ -336,6 +372,16 @@ export const NAV_ITEMS = [
     tier: "basic",
     group: "operations",
     navGroup: "reports",
+  },
+  {
+    key: "long_stay",
+    label: "Uzun Konaklama Dönemleri",
+    path: "/long-stay",
+    moduleScopes: ["cashier", "finance"],
+    tier: "basic",
+    group: "operations",
+    navGroup: "backoffice",
+    allowedRoles: ["admin", "super_admin", "supervisor", "front_desk", "finance"],
   },
   {
     key: "sustainability_report",
