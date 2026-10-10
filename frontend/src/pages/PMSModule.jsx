@@ -885,7 +885,9 @@ const PMSModule = ({ user, tenant, onLogout }) => {
       setMultiRoomBooking([{ room_id: '', adults: 1, children: 0, children_ages: [], total_amount: 0, base_rate: 0, rate_plan: '', package_code: null }]);
     } catch (error) {
       const conflict = parseBookingConflict(error);
-      if (conflict) {
+      const errorText = String(error?.response?.data?.detail?.message || error?.response?.data?.detail || '').toLocaleLowerCase('tr-TR');
+      const availabilityFailure = Boolean(conflict) || error?.response?.status === 409 || /(müsait|uygun oda|availability|overbook|çakış)/.test(errorText);
+      if (availabilityFailure) {
         const selectedRoom = rooms.find((room) => room.id === multiRoomBooking[0]?.room_id);
         saveReservationWaitlistDraft({
           guest_name: guests.find((guest) => guest.id === newBooking.guest_id)?.name || inlineGuestName || '',
