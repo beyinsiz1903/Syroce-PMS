@@ -70,12 +70,15 @@ def harness(monkeypatch):
     import core.metering as metering_module
     import domains.channel_manager.availability_auto_sync as availability_module
     import integrations.capx as capx_module
+    import modules.messaging.automation as messaging_automation
 
+    fire_booking_event = AsyncMock()
     monkeypatch.setattr(afsadakat_module, "emit_event", emit_event)
     monkeypatch.setattr(metering_module, "record_usage", record_usage)
     monkeypatch.setattr(capx_module, "push_booking_lifecycle_event", push_lifecycle)
     monkeypatch.setattr(capx_module, "fire_and_forget", fire_and_forget)
     monkeypatch.setattr(availability_module, "sync_availability_after_booking", sync_availability)
+    monkeypatch.setattr(messaging_automation, "fire_booking_event", fire_booking_event)
     monkeypatch.setattr(asyncio, "create_task", create_task)
 
     return SimpleNamespace(
@@ -105,6 +108,7 @@ def harness(monkeypatch):
         fire_and_forget=fire_and_forget,
         sync_availability=sync_availability,
         create_task=create_task,
+        fire_booking_event=fire_booking_event,
     )
 
 
@@ -178,6 +182,7 @@ async def test_create_persists_booking_folio_outbox_audit_and_optional_commercia
     harness.record_usage.assert_awaited_once()
     harness.sync_availability.assert_called_once()
     harness.create_task.assert_called_once_with("availability-task")
+    harness.fire_booking_event.assert_awaited_once()
     harness.repository.complete_idempotency_lock.assert_awaited_once_with(
         "lock-1", result["id"], result
     )
