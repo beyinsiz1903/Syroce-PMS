@@ -1324,9 +1324,26 @@ async def list_meta_whatsapp_templates(
 
     creds = _decrypt_secrets(config.get("credentials_encrypted", {}), _WHATSAPP_SECRET_KEYS)
     access_token = creds.get("access_token")
-    waba_id = config.get("credentials_encrypted", {}).get("waba_id") or creds.get("waba_id")
+    phone_number_id = creds.get("phone_number_id") or config.get("phone_number_id")
+    waba_id = config.get("credentials_encrypted", {}).get("waba_id") or creds.get("waba_id") or config.get("waba_id")
 
-    if not access_token or not waba_id:
+    if not access_token:
+        return {"templates": []}
+
+    # WABA ID girilmediyse Phone Number ID uzerinden Meta'dan otomatik cozumle
+    if not waba_id and phone_number_id:
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                p_resp = await client.get(
+                    f"https://graph.facebook.com/v19.0/{phone_number_id}",
+                    params={"fields": "whatsapp_business_account", "access_token": access_token},
+                )
+                if p_resp.status_code == 200:
+                    waba_id = p_resp.json().get("whatsapp_business_account", {}).get("id")
+        except Exception:
+            pass
+
+    if not waba_id:
         return {"templates": []}
 
     if config.get("is_sandbox"):
