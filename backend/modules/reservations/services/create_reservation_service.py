@@ -1,17 +1,20 @@
 import hashlib
 import json
+import logging
 import uuid
 from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import HTTPException, Request, status
 
+logger = logging.getLogger(__name__)
+
+from core.guest_name_utils import canonical_guest_name
 from core.occupancy_pricing import (
     OccupancyPricingError,
     calculate_occupancy_quote,
     find_occupancy_rule,
 )
-from core.guest_name_utils import canonical_guest_name
 from core.utils import generate_folio_number, generate_qr_code, generate_time_based_qr_token
 from models.enums import FolioType
 from models.schemas import BookingCreate, Folio, RateOverrideLog
@@ -351,6 +354,16 @@ class CreateReservationService:
                 ))
             except Exception:
                 pass
+
+            # ── Messaging Automation: trigger confirmation message on booking create ──
+            try:
+                booking_status = booking_dict.get("status", "confirmed")
+                if booking_status in ("confirmed", "guaranteed"):
+                    from modules.messaging.automation import fire_booking_event
+
+                    await fire_booking_event(tenant_context.tenant_id, "booking_confirmed", dict(booking_dict))
+            except Exception as msg_err:
+                logger.warning(f"Messaging automation fire on create failed: {msg_err}")
 
             response_body = dict(booking_dict)
             response_body.pop('_id', None)
