@@ -44,6 +44,10 @@ class RunNightAuditRequest(BaseModel):
     skip_validations: bool = False
     dry_run: bool = False
     reason: str | None = None
+    # Closes only the current open day during an administrator-approved
+    # business-date recovery; it is never a bulk-close switch.
+    controlled_catchup: bool = False
+    simulation_run_id: str | None = None
 
 
 class NightAuditSummary(BaseModel):

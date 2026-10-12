@@ -57,6 +57,7 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
   const [showScheduleDialog, setShowScheduleDialog] = useState(false);
   const [blockedRunDetail, setBlockedRunDetail] = useState(null);
   const [simulationResult, setSimulationResult] = useState(null);
+  const [catchupSimulation, setCatchupSimulation] = useState(null);
   const [runActionId, setRunActionId] = useState(null);
   const [previewData, setPreviewData] = useState(null);
   const [prepRefreshKey, setPrepRefreshKey] = useState(0);
@@ -86,6 +87,8 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
     skip_validations: false,
     dry_run: false,
     reason: "",
+    controlled_catchup: false,
+    catchup_confirmed: false,
   });
   const businessDateOriginCopy = businessDateMeta?.is_initialized
     ? buildBusinessDateOriginCopy(businessDateMeta, user)
@@ -261,6 +264,8 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
         skip_validations: runOptions.skip_validations,
         dry_run: runOptions.dry_run,
         reason: runOptions.reason || null,
+        controlled_catchup: runOptions.controlled_catchup,
+        simulation_run_id: runOptions.controlled_catchup ? catchupSimulation?.runId : null,
       };
       const res = await axios.post("/night-audit/run", payload, {
         timeout: NIGHT_AUDIT_RUN_TIMEOUT_MS,
@@ -273,9 +278,10 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
           : `Gece denetimi tamamlandı: ${postedChargeCount} masraf kaydedildi`
       );
       setShowRunDialog(false);
-      setRunOptions({ force_rerun: false, skip_validations: false, dry_run: false, reason: "" });
+      setRunOptions({ force_rerun: false, skip_validations: false, dry_run: false, reason: "", controlled_catchup: false, catchup_confirmed: false });
       if (result.dry_run) {
         setSimulationResult(result);
+        setCatchupSimulation({ date: result.business_date, runId: result.run?.id || null });
         await fetchHistory();
       } else {
         await loadAll();
@@ -293,7 +299,7 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
             emitBusinessDateChanged(verifiedDate, verification.data);
             toast.success("Gece denetiminin sunucuda tamamlandığı doğrulandı");
             setShowRunDialog(false);
-            setRunOptions({ force_rerun: false, skip_validations: false, dry_run: false, reason: "" });
+            setRunOptions({ force_rerun: false, skip_validations: false, dry_run: false, reason: "", controlled_catchup: false, catchup_confirmed: false });
             await loadAll();
             setPrepRefreshKey((k) => k + 1);
             return;
@@ -446,11 +452,19 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
   // Final close never bypasses blockers. A dry run remains available so the
   // operator can inspect the result without posting or advancing the date.
   const businessDateCatchupRequired = Number(previewData?.date_drift_days || 0) > 1;
-  const runBlocked = ((previewData?.blockers?.length > 0) || businessDateCatchupRequired) && !runOptions.dry_run;
+  const controlledCatchupReady = businessDateCatchupRequired
+    && runOptions.controlled_catchup
+    && runOptions.catchup_confirmed
+    && catchupSimulation?.date === businessDate
+    && catchupSimulation?.runId
+    && runOptions.reason.trim().length >= 10;
+  const runBlocked = ((previewData?.blockers?.length > 0) || (businessDateCatchupRequired && !controlledCatchupReady)) && !runOptions.dry_run;
   const openRunDialog = (options = {}) => {
     setRunOptions((current) => ({
       ...current,
       dry_run: options.dryRun ?? current.dry_run,
+      controlled_catchup: false,
+      catchup_confirmed: false,
     }));
     setShowRunDialog(true);
   };
@@ -846,8 +860,11 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
                   <div className="text-xs text-amber-900">
                     <p className="font-semibold">Kontrollü gün kapatma gerekli</p>
                     <p className="mt-0.5">
-                      PMS iş günü takvimden {previewData.date_drift_days} gün geride. Canlı gün sonu kapalıdır; yalnızca simülasyon çalıştırabilirsiniz.
+                      PMS iş günü takvimden {previewData.date_drift_days} gün geride. Önce simülasyonu inceleyin; ardından bu pencerede yalnızca açık iş gününü kapatabilirsiniz. Toplu kapanış yapılmaz.
                     </p>
+                    {catchupSimulation?.date !== businessDate && (
+                      <p className="mt-1 font-medium">Canlı kontrollü kapatma açılmadan önce bu iş günü için simülasyonu tamamlayın.</p>
+                    )}
                   </div>
                 </div>
               )}
@@ -879,7 +896,7 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
                     data-testid="dry-run-checkbox"
                     type="checkbox"
                     checked={runOptions.dry_run}
-                    onChange={(e) => setRunOptions({ ...runOptions, dry_run: e.target.checked })}
+                    onChange={(e) => setRunOptions({ ...runOptions, dry_run: e.target.checked, controlled_catchup: false, catchup_confirmed: false })}
                     className="w-4 h-4 rounded border-gray-300 text-indigo-600"
                   />
                   <div>
@@ -889,7 +906,7 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
                 </label>
 
                 <div>
-                  <label className="text-xs text-gray-600 mb-1 block">Açıklama (opsiyonel)</label>
+                  <label className="text-xs text-gray-600 mb-1 block">Açıklama {businessDateCatchupRequired && !runOptions.dry_run ? "(zorunlu)" : "(opsiyonel)"}</label>
                   <input
                     data-testid="reason-input"
                     type="text"
@@ -899,12 +916,31 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
                     className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
                   />
                 </div>
+
+                {businessDateCatchupRequired && !runOptions.dry_run && (
+                  <label className="flex items-start gap-3 rounded-lg border border-amber-300 bg-amber-50 p-3 cursor-pointer" data-testid="controlled-catchup-confirmation">
+                    <input
+                      type="checkbox"
+                      checked={runOptions.controlled_catchup && runOptions.catchup_confirmed}
+                      onChange={(e) => setRunOptions({
+                        ...runOptions,
+                        controlled_catchup: e.target.checked,
+                        catchup_confirmed: e.target.checked,
+                      })}
+                      className="mt-0.5 w-4 h-4 rounded border-gray-300 text-indigo-600"
+                    />
+                    <span className="text-xs text-amber-950">
+                      Simülasyonu ve finansal etkileri inceledim. <strong>Yalnızca {businessDate}</strong> iş gününün kontrollü olarak kapatılacağını onaylıyorum.
+                      {catchupSimulation?.date !== businessDate && " Bu tarih için tamamlanmış simülasyon henüz yok."}
+                    </span>
+                  </label>
+                )}
               </div>
 
               {runBlocked && (
                 <p className="text-xs text-rose-700 pt-1" data-testid="run-blocked-hint">
                   {businessDateCatchupRequired
-                    ? "PMS iş günü takvimden geride. Kontrollü kapatma planı oluşturun; burada yalnızca simülasyon çalıştırılabilir."
+                    ? "Önce simülasyonu inceleyin. Canlı kapatma için gerekçe girip yalnızca açık iş gününü kapatacağınızı onaylayın."
                     : "Engelleyici sorunlar çözülmeden canlı gün sonu başlatılamaz. Hazırlık sekmesinden çözün veya yalnızca simülasyon çalıştırın."}
                 </p>
               )}
@@ -917,7 +953,7 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
                   data-testid="confirm-run-btn"
                   onClick={handleRunAudit}
                   disabled={running || runBlocked}
-                  title={runBlocked ? 'Engelleyici sorunlar var. Önce Hazırlık sekmesinden çözün veya simülasyon çalıştırın.' : undefined}
+                  title={runBlocked ? 'Engelleri çözün veya kontrollü kapatma onayını ve gerekçesini tamamlayın.' : undefined}
                   className="bg-indigo-600 hover:bg-indigo-700 text-white"
                 >
                   {running ? (
@@ -933,7 +969,7 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
                   ) : (
                     <>
                       <Play className="w-4 h-4 mr-1" />
-                      Denetimi Başlat
+                      {runOptions.controlled_catchup ? "Kontrollü Kapat" : "Denetimi Başlat"}
                     </>
                   )}
                 </Button>
