@@ -13,6 +13,7 @@ from fastapi import HTTPException
 from pymongo.errors import DuplicateKeyError
 
 from integrations.xchange.safety import EgressDenied, safe_request_async
+from modules.messaging.meta_diagnostics import meta_error_diagnostics
 from modules.messaging.models import new_delivery_log
 from modules.messaging.providers import PROVIDER_MAP
 from modules.messaging.recipient_crypto import reveal_recipient, seal_delivery_log
@@ -75,7 +76,8 @@ async def approved_templates(db, tenant_id):
                 params=params,
             )
             if response.status_code != 200:
-                raise HTTPException(502, "Meta şablonları alınamadı. Hesap kimliği ve anahtar izinlerini kontrol edin.")
+                diagnostic = meta_error_diagnostics(response, templates=True)
+                raise HTTPException(502, f"Meta şablonları alınamadı. {diagnostic['error']}")
             data = response.json()
             result.extend(describe_template(t) for t in data.get("data", []) if t.get("status") == "APPROVED")
             paging = data.get("paging", {})
