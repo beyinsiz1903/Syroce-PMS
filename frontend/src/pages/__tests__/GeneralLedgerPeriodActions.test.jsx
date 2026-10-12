@@ -1,6 +1,6 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import axios from 'axios';
 import { MemoryRouter } from 'react-router-dom';
 
@@ -27,6 +27,7 @@ const period = (periodNo, status = 'open') => ({
 
 describe('GeneralLedgerModule period action dialogs', () => {
   let periods;
+  afterEach(() => vi.restoreAllMocks());
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -49,17 +50,19 @@ describe('GeneralLedgerModule period action dialogs', () => {
     await user.click(screen.getByRole('tab', { name: 'Mali Dönemler' }));
     await user.click(await screen.findByRole('button', { name: 'Dönemi Kapat' }));
 
-    expect(screen.getByTestId('gl-period-action-dialog')).toBeInTheDocument();
+    const dialog = within(screen.getByTestId('gl-period-action-dialog'));
     expect(legacyPrompt).not.toHaveBeenCalled();
-    fireEvent.change(screen.getByLabelText('Gerekçe'), { target: { value: 'Test dönem kapanışı' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Kapat ve Onayla' }));
+    expect(axios.post).not.toHaveBeenCalled();
+    fireEvent.change(dialog.getByLabelText('Gerekçe'), { target: { value: 'Test dönem kapanışı' } });
+    fireEvent.click(dialog.getByRole('button', { name: 'Kapat ve Onayla' }));
 
     await waitFor(() => expect(axios.post).toHaveBeenCalledWith(
       `${GL_ENDPOINTS.periods}/tenant-A:2026:1/close`,
       { reason: 'Test dönem kapanışı' },
     ));
-    legacyPrompt.mockRestore();
-  });
+  // Full-coverage CI also mounts the complete ledger and Radix focus scopes.
+  // Keep a bounded budget for this integration flow, not a global timeout.
+  }, 15000);
 
   it('collects the year-end reason before creating the closing and carry-forward entries', async () => {
     const user = userEvent.setup();
