@@ -151,6 +151,17 @@ celery_app.conf.update(
             "task": "celery_tasks.tga_monthly_v6_retry_task",
             "schedule": crontab(minute="*/5"),
         },
+        # Messaging confirmations are first persisted, then dispatched from this
+        # durable sweep.  It recovers events from web-process restarts and retries
+        # failed provider deliveries using their stored backoff timestamps.
+        "messaging-automation-dispatch": {
+            "task": "celery_tasks.dispatch_due_messaging_automation_events_task",
+            "schedule": crontab(minute="*"),
+        },
+        "messaging-delivery-retry": {
+            "task": "celery_tasks.messaging_retry_task",
+            "schedule": crontab(minute="*/2"),
+        },
         # Contact Center Faz 2 (Task #648) — çağrı kaydı retention sweep.
         # Her gün 02:30'da süresi dolan (CC_RECORDING_RETENTION_DAYS) kayıtları
         # ayrı nesne deposundan siler ve recording_ref'i kaldırır. Fail-closed:
