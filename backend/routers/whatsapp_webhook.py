@@ -43,9 +43,10 @@ router = APIRouter(tags=["WhatsApp Webhook"])
 
 
 def _get_db():
-    from core.database import _raw_db
+    """Use the explicit system view: webhook tenant resolution precedes auth."""
+    from core.tenant_db import get_system_db
 
-    return _raw_db
+    return get_system_db()
 
 
 async def _find_config_by_phone_id(phone_number_id: str) -> dict | None:
