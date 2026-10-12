@@ -13,6 +13,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import Any
 
+from .meta_diagnostics import meta_error_diagnostics
 from .models import ProviderType
 
 logger = logging.getLogger(__name__)
@@ -305,38 +306,8 @@ class WhatsAppProvider(BaseProvider):
                 resp = await client.get(url, headers={"Authorization": f"Bearer {access_token}"})
             if resp.status_code == 200:
                 return {"status": "healthy", "checked_at": datetime.now(UTC).isoformat()}
-            # Never return Meta's raw body/message, headers, or exception text:
-            # they can contain credentials or account information. Only accept
-            # numeric diagnostic codes and map them to operator-safe guidance.
-            try:
-                body = resp.json()
-            except ValueError:
-                body = None
-            detail = body.get("error") if isinstance(body, dict) else None
-            detail = detail if isinstance(detail, dict) else {}
-            code = detail.get("code")
-            subcode = detail.get("error_subcode")
-            code = code if type(code) is int and 0 <= code <= 9999999 else None
-            subcode = subcode if type(subcode) is int and 0 <= subcode <= 9999999 else None
-            if code == 190 or resp.status_code == 401:
-                reason = "Erişim anahtarı geçersiz veya süresi dolmuş olabilir. Meta üzerinden anahtarı doğrulayıp yenileyin."
-            elif code in (10, 200, 294) or resp.status_code == 403:
-                reason = "Erişim izni yetersiz. Anahtarın WhatsApp hesabına ve telefon numarasına erişimini kontrol edin."
-            elif code == 100 or resp.status_code == 404:
-                reason = "Telefon numarası kimliği veya bu kaynağa erişim doğrulanamadı. Phone Number ID ve hesap yetkilerini kontrol edin."
-            elif code in (4, 17, 32, 613, 80007, 130429) or resp.status_code == 429:
-                reason = "Meta istek sınırına ulaşıldı. Bir süre sonra yeniden deneyin."
-            elif resp.status_code >= 500:
-                reason = "Meta hizmetinde geçici hata var. Bir süre sonra yeniden deneyin."
-            else:
-                reason = "Meta bağlantı isteğini reddetti. Hesap yapılandırmasını ve erişim izinlerini kontrol edin."
-            codes = f"HTTP {resp.status_code}"
-            if code is not None:
-                codes += f", Meta {code}"
-            if subcode is not None:
-                codes += f", alt kod {subcode}"
-            return {"status": "unhealthy", "error": f"{reason} ({codes})", "http_status": resp.status_code,
-                    "meta_code": code, "meta_subcode": subcode, "checked_at": datetime.now(UTC).isoformat()}
+            return {"status": "unhealthy", **meta_error_diagnostics(resp),
+                    "checked_at": datetime.now(UTC).isoformat()}
         except httpx.TimeoutException:
             error = "Meta bağlantısı zaman aşımına uğradı. Sunucu ağ bağlantısını kontrol edip yeniden deneyin."
         except httpx.RequestError:

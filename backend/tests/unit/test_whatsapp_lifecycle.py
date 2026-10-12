@@ -26,6 +26,28 @@ async def test_template_network_failure_is_actionable(monkeypatch, error, status
     assert "secret" not in caught.value.detail
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status,body,expected", [
+    (401, {"error": {"code": 190, "error_subcode": 463, "message": "secret"}}, "Meta 190, alt kod 463"),
+    (403, {"error": {"code": 10}}, "whatsapp_business_management"),
+    (400, {"error": {"code": 100}}, "WABA ID"),
+    (429, {"error": {"code": 130429}}, "istek sınırına"),
+    (503, {"error": {"message": "secret"}}, "geçici hata"),
+    (400, {"error": {"code": "secret", "error_subcode": True}}, "HTTP 400"),
+    (502, None, "HTTP 502"),
+])
+async def test_mapping_validation_exposes_safe_meta_diagnostics(monkeypatch, status, body, expected):
+    monkeypatch.setattr(MessagingService, "_get_provider_config", AsyncMock(return_value={"is_sandbox": False}))
+    monkeypatch.setattr(MessagingService, "_load_credentials", AsyncMock(return_value={"waba_id": "123", "access_token": "secret"}))
+    response = httpx.Response(status, json=body) if body is not None else httpx.Response(status, text="<html>secret</html>")
+    monkeypatch.setattr(lifecycle, "safe_request_async", AsyncMock(return_value=response))
+    with pytest.raises(HTTPException) as caught:
+        await lifecycle.validate_mapping(object(), "tenant", {"name": "welcome", "language": "tr", "variables": []})
+    assert caught.value.status_code == 502
+    assert expected in caught.value.detail
+    assert "secret" not in caught.value.detail
+
+
 class Cursor:
     def __init__(self, docs):
         self.docs = docs
