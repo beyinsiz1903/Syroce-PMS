@@ -632,6 +632,7 @@ async def approve_booking(
             "$set": {
                 "status": BookingStatus.CONFIRMED.value,
                 "approved_at": now,
+                "messaging_pending.booking_confirmed": now,
                 "approved_by_user_id": current_user.id,
                 "updated_at": now,
             }

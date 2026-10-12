@@ -2,10 +2,14 @@ name: Deploy to Droplet
 
 on:
   workflow_run:
-    workflows: ["Syroce PMS CI/CD Pipeline"]
+    workflows: ["Syroce PMS CI/CD Pipeline", "Frontend Quality Gates"]
     branches: [main]
     types: [completed]
   workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
 
 concurrency:
   group: production-deploy
@@ -24,13 +28,39 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v5
 
+      - name: Verify both required workflows for the exact main revision
+        id: gate
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const sha = process.env.DEPLOY_SHA;
+            const repo = { owner: context.repo.owner, repo: context.repo.repo };
+            const main = await github.rest.repos.getBranch({ ...repo, branch: 'main' });
+            if (main.data.commit.sha !== sha) {
+              core.notice('Superseded revision: not deploying.');
+              core.setOutput('ready', 'false');
+              return;
+            }
+            const runs = await github.paginate(github.rest.actions.listWorkflowRunsForRepo, {
+              ...repo, head_sha: sha, branch: 'main', event: 'push', per_page: 100
+            });
+            const required = ['Syroce PMS CI/CD Pipeline', 'Frontend Quality Gates'];
+            const ready = required.every(name => {
+              const latest = runs.filter(r => r.name === name).sort((a,b) => b.id-a.id)[0];
+              return latest?.conclusion === 'success';
+            });
+            core.setOutput('ready', String(ready));
+            if (!ready) core.notice('Both required push workflows must pass; no deployment performed.');
+
       - name: Deploy to Server
+        if: steps.gate.outputs.ready == 'true'
         uses: appleboy/ssh-action@v0.1.10
         with:
           host: ${{ secrets.DROPLET_IP }}
           username: root
           key: ${{ secrets.DROPLET_SSH_KEY }}
           command_timeout: 30m
+          envs: DEPLOY_SHA
           script: |
             set -euo pipefail
             exec 9>/var/lock/syroce-pms-deploy.lock
@@ -40,6 +70,7 @@ jobs:
             # Deploy the exact revision that passed the full CI workflow.  A
             # plain `git pull origin main` can otherwise release a newer commit
             # whose checks are still running.
+            test "$(git ls-remote origin refs/heads/main | cut -f1)" = "$DEPLOY_SHA" || { echo "Revision superseded; skipping"; exit 0; }
             git reset --hard HEAD
             git fetch --depth=1 origin "$DEPLOY_SHA"
             git checkout --detach "$DEPLOY_SHA"

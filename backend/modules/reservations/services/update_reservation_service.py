@@ -238,6 +238,8 @@ class UpdateReservationService:
                     )
 
             # Apply remaining field updates with optimistic locking (INV-4)
+            if new_status in ("confirmed", "guaranteed") and old_status not in ("confirmed", "guaranteed"):
+                update_data["messaging_pending.booking_confirmed"] = datetime.now(UTC).isoformat()
             if update_data:
                 expected_version = existing_booking.get("_version")
                 try:

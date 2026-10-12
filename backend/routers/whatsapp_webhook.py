@@ -39,13 +39,14 @@ from modules.messaging.recipient_crypto import seal_recipient
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/messaging-center/whatsapp", tags=["WhatsApp Webhook"])
+router = APIRouter(tags=["WhatsApp Webhook"])
 
 
 def _get_db():
-    from server import db
+    """Use the explicit system view: webhook tenant resolution precedes auth."""
+    from core.tenant_db import get_system_db
 
-    return db
+    return get_system_db()
 
 
 async def _find_config_by_phone_id(phone_number_id: str) -> dict | None:
@@ -53,14 +54,15 @@ async def _find_config_by_phone_id(phone_number_id: str) -> dict | None:
     if not phone_number_id:
         return None
     db = _get_db()
-    return await db.messaging_provider_configs.find_one(
+    matches = await db.messaging_provider_configs.find(
         {
             "provider_type": "whatsapp",
             "enabled": True,
             "credentials_encrypted.phone_number_id": phone_number_id,
         },
         {"_id": 0},
-    )
+    ).limit(2).to_list(2)
+    return matches[0] if len(matches) == 1 else None
 
 
 async def _find_config_by_verify_token(token: str) -> dict | None:
@@ -77,10 +79,10 @@ async def _find_config_by_verify_token(token: str) -> dict | None:
     db = _get_db()
     from modules.messaging.service import _decrypt_provider_creds
 
-    configs = await db.messaging_provider_configs.find(
+    configs = db.messaging_provider_configs.find(
         {"provider_type": "whatsapp", "enabled": True}, {"_id": 0}
-    ).to_list(500)
-    for cfg in configs:
+    )
+    async for cfg in configs:
         creds = _decrypt_provider_creds(
             cfg.get("credentials_encrypted", {}) or {}, "whatsapp"
         )
@@ -112,7 +114,8 @@ def _verify_signature(raw_body: bytes, signature_header: str, app_secret: str) -
     return hmac.compare_digest(expected, digest)
 
 
-@router.get("/webhook")
+@router.get("/api/whatsapp/webhook", include_in_schema=False)
+@router.get("/api/messaging-center/whatsapp/webhook")
 async def verify_webhook(
     hub_mode: str = Query(..., alias="hub.mode"),
     hub_challenge: str = Query(..., alias="hub.challenge"),
@@ -138,19 +141,19 @@ async def verify_webhook(
     return Response(content=hub_challenge, media_type="text/plain")
 
 
-@router.post("/webhook")
+@router.post("/api/whatsapp/webhook", include_in_schema=False)
+@router.post("/api/messaging-center/whatsapp/webhook")
 async def receive_webhook(request: Request) -> dict[str, Any]:
     """Receive inbound messages and delivery status callbacks.
 
-    Returns 200 quickly — Meta will retry for 24h if we return non-2xx.
-    Failures must NOT raise; we log + 200 to avoid retry storms.
+    Authenticate before writes. Return 503 on persistence failures so Meta retries.
     """
     raw_body = await request.body()
     try:
         payload = await request.json()
     except Exception:
         logger.warning("WhatsApp webhook: invalid JSON body")
-        return {"received": True}
+        raise HTTPException(400, "Invalid JSON")
 
     signature = request.headers.get("x-hub-signature-256", "")
 
@@ -181,13 +184,13 @@ async def receive_webhook(request: Request) -> dict[str, Any]:
                     "WhatsApp webhook: app_secret not configured for tenant=%s; rejecting payload",
                     tenant_id,
                 )
-                continue
+                raise HTTPException(403, "Webhook signature required")
             if not _verify_signature(raw_body, signature, app_secret):
                 logger.warning(
                     "WhatsApp webhook: signature mismatch for tenant=%s",
                     tenant_id,
                 )
-                continue
+                raise HTTPException(403, "Invalid webhook signature")
 
             now_iso = datetime.now(UTC).isoformat()
 
@@ -227,18 +230,20 @@ async def receive_webhook(request: Request) -> dict[str, Any]:
                         },
                         upsert=True,
                     )
-                    # Meta retry'larında yan etkileri (consent + omnichannel
-                    # ingest) tekrarlamamak için yalnızca ilk teslimde devam et.
-                    if res.upserted_id is None:
-                        continue
+                    # Retry idempotent downstream ingestion after partial failure.
                     processed += 1
                 except Exception:
                     logger.exception("WhatsApp inbound upsert failed")
+                    raise HTTPException(503, "Inbound persistence unavailable") from None
 
-                # Auto opt-in: kullanıcı yazdıysa pencere açıldı + onay verilmiş sayılır.
+                # Incoming messages open a reply window, NOT business-message consent.
                 # PII-at-rest: gönderen telefonu plaintext yazılmaz; recipient_enc
                 # (şifreli) + recipient_hash (HMAC blind-index) saklanır, doküman
                 # tekilliği recipient_hash üzerinden kurulur.
+                try:
+                    inbound_at = min(datetime.fromtimestamp(int(msg.get("timestamp", 0)), UTC), datetime.now(UTC)).isoformat()
+                except (ValueError, TypeError, OverflowError, OSError):
+                    raise HTTPException(400, "Invalid message timestamp") from None
                 sender = msg.get("from", "")
                 if sender:
                     try:
@@ -263,10 +268,9 @@ async def receive_webhook(request: Request) -> dict[str, Any]:
                                     "recipient_enc": sealed.get("recipient_enc"),
                                     "recipient_hash": s_hash,
                                     "channel": "whatsapp",
-                                    "status": ConsentStatus.OPT_IN.value,
-                                    "source": "wa_inbound",
                                     "updated_at": now_iso,
                                 },
+                                "$max": {"last_inbound_at": inbound_at},
                                 "$unset": {"recipient": ""},
                             },
                         )
@@ -277,14 +281,16 @@ async def receive_webhook(request: Request) -> dict[str, Any]:
                                     "channel": "whatsapp",
                                     "recipient_hash": s_hash,
                                     "recipient_enc": sealed.get("recipient_enc"),
-                                    "status": ConsentStatus.OPT_IN.value,
+                                    "status": ConsentStatus.PENDING.value,
                                     "source": "wa_inbound",
+                                    "last_inbound_at": inbound_at,
                                     "created_at": now_iso,
                                     "updated_at": now_iso,
                                 }
                             )
                     except Exception:
                         logger.exception("WhatsApp consent upsert failed")
+                        raise HTTPException(503, "Consent persistence unavailable") from None
 
                 # Contact Center köprüsü: gelen mesajı şifreli omnichannel
                 # modele yansıt. ingest zaten kendi içinde fail-safe; webhook'un
@@ -296,15 +302,17 @@ async def receive_webhook(request: Request) -> dict[str, Any]:
                         phone_number_id=phone_number_id,
                         wa_message=msg,
                         contact_name=contacts_map.get(msg.get("from", "")),
+                        strict=True,
                     )
                 except Exception:
-                    logger.exception("contact-center ingest bridge failed (suppressed)")
+                    logger.exception("contact-center ingest bridge failed")
+                    raise HTTPException(503, "Conversation persistence unavailable") from None
 
             # 2) Status callbacks (sent → delivered → read → failed)
             for st in value.get("statuses", []) or []:
                 wa_msg_id = st.get("id", "")
                 status = st.get("status", "")
-                if not wa_msg_id or not status:
+                if not wa_msg_id or status not in ("sent", "delivered", "read", "failed"):
                     continue
                 update_doc: dict[str, Any] = {
                     "status": status,
@@ -322,12 +330,14 @@ async def receive_webhook(request: Request) -> dict[str, Any]:
                         {
                             "tenant_id": tenant_id,
                             "provider_message_id": wa_msg_id,
+                            "status": {"$nin": {"sent": ["delivered", "read", "failed"], "delivered": ["read"], "read": [], "failed": ["delivered", "read"]}[status]},
                         },
                         {"$set": update_doc},
                     )
                     processed += 1
                 except Exception:
                     logger.exception("WhatsApp status update failed")
+                    raise HTTPException(503, "Delivery persistence unavailable") from None
 
                 # Contact Center köprüsü: teslimat durumunu giden CC mesajına
                 # yansıt (yalnızca outbound; fail-safe, PII'siz).

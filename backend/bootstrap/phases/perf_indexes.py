@@ -247,6 +247,8 @@ async def ensure_performance_indexes():
         # Booking automation events are durable and exactly-once per booking
         # event.  The worker uses this key both for recovery and idempotency.
         ("messaging_automation_events", [("event_key", 1)], "ux_msg_automation_event_key", {"unique": True}),
+        ("bookings", [("tenant_id", 1), ("messaging_pending", 1)], "idx_booking_messaging_pending", {"sparse": True}),
+        ("messaging_delivery_logs", [("status", 1), ("next_retry_at", 1)], "idx_messaging_delivery_due", {}),
         ("messaging_automation_events", [("status", 1), ("next_attempt_at", 1)], "idx_msg_automation_due", {}),
         # WhatsApp webhook tenant lookup — phone_number_id'den config'e.
         ("messaging_provider_configs", [("provider_type", 1), ("credentials_encrypted.phone_number_id", 1)], "idx_msg_provider_phone_lookup", {}),
