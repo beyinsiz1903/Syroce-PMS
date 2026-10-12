@@ -7,6 +7,8 @@ import { Badge, Button, Card, H1, H2, ListRow, Muted } from '../../src/component
 import { RoleSwitcher } from '../../src/components/RoleSwitcher';
 import ThemeModeSelector from '../../src/components/ThemeModeSelector';
 import { NightScreen } from '../../src/components/NightScreen';
+import { AccessibilityPreferences } from '../../src/components/AccessibilityPreferences';
+import { LanguagePreferences } from '../../src/components/LanguagePreferences';
 import { radius, spacing, useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
 import { useAuthStore } from '../../src/state/authStore';
@@ -166,6 +168,10 @@ export default function ProfileScreen() {
         </Card>
 
         <ThemeModeSelector />
+
+        <AccessibilityPreferences />
+
+        <LanguagePreferences />
 
         <NightScreen inline />
 

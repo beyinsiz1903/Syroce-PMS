@@ -134,6 +134,7 @@ function RootShell() {
 }
 
 export default function RootLayout() {
+  const locale = useSettingsStore((s) => s.locale);
   // Wire up the offline-cache persister exactly once. The dispose function
   // is captured so HMR updates can release listeners cleanly during dev.
   useEffect(() => {
@@ -178,7 +179,7 @@ export default function RootLayout() {
         </SafeAreaProvider>
       </GestureHandlerRootView>
     ),
-    [],
+    [locale],
   );
 
   return tree;

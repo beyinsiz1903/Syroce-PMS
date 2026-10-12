@@ -19,10 +19,12 @@ import {
   View,
   ViewProps,
   ViewStyle,
+  useWindowDimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { cardShadow, motion, radius, spacing, useTheme } from '../theme';
 import { haptic } from '../hooks/useHaptic';
+import { useSettingsStore } from '../state/settingsStore';
 
 // Hareket/haptik temelleri tek yerden cagrilabilsin diye kit bunlari yeniden
 // ihrac eder (ekranlar `import { haptic, motion } from '../../src/components/ui'`).
@@ -47,8 +49,12 @@ export const webCenter: ViewStyle =
 
 export const Screen: React.FC<ViewProps> = ({ style, children, ...rest }) => {
   const c = useTheme();
+  const { width } = useWindowDimensions();
+  // Native tablet screens retain a readable work column instead of stretching
+  // forms edge-to-edge. Phone layout stays completely unchanged.
+  const tablet = width >= 700;
   return (
-    <View style={[{ flex: 1, backgroundColor: c.bg, padding: spacing.lg }, style]} {...rest}>
+    <View style={[{ flex: 1, backgroundColor: c.bg, padding: spacing.lg, width: '100%', maxWidth: tablet ? 900 : undefined, alignSelf: tablet ? 'center' : undefined }, style]} {...rest}>
       {children}
     </View>
   );
@@ -100,11 +106,13 @@ export const Card: React.FC<
 
 export const H1: React.FC<TextProps> = ({ style, ...rest }) => {
   const c = useTheme();
+  const textScale = useSettingsStore((s) => s.textScale);
+  const scale = textScale === 'extra_large' ? 1.24 : textScale === 'large' ? 1.12 : 1;
   return (
     <Text
       accessibilityRole="header"
       style={[
-        { color: c.text, fontSize: 30, fontWeight: '800', letterSpacing: -0.6, lineHeight: 36 },
+        { color: c.text, fontSize: 30 * scale, fontWeight: '800', letterSpacing: -0.6, lineHeight: 36 * scale },
         style,
       ]}
       {...rest}
@@ -114,10 +122,12 @@ export const H1: React.FC<TextProps> = ({ style, ...rest }) => {
 
 export const H2: React.FC<TextProps> = ({ style, ...rest }) => {
   const c = useTheme();
+  const textScale = useSettingsStore((s) => s.textScale);
+  const scale = textScale === 'extra_large' ? 1.24 : textScale === 'large' ? 1.12 : 1;
   return (
     <Text
       style={[
-        { color: c.text, fontSize: 20, fontWeight: '700', letterSpacing: -0.3, lineHeight: 26 },
+        { color: c.text, fontSize: 20 * scale, fontWeight: '700', letterSpacing: -0.3, lineHeight: 26 * scale },
         style,
       ]}
       {...rest}
@@ -127,12 +137,16 @@ export const H2: React.FC<TextProps> = ({ style, ...rest }) => {
 
 export const Body: React.FC<TextProps> = ({ style, ...rest }) => {
   const c = useTheme();
-  return <Text style={[{ color: c.text, fontSize: 15 }, style]} {...rest} />;
+  const textScale = useSettingsStore((s) => s.textScale);
+  const scale = textScale === 'extra_large' ? 1.24 : textScale === 'large' ? 1.12 : 1;
+  return <Text style={[{ color: c.text, fontSize: 15 * scale, lineHeight: 21 * scale }, style]} {...rest} />;
 };
 
 export const Muted: React.FC<TextProps> = ({ style, ...rest }) => {
   const c = useTheme();
-  return <Text style={[{ color: c.textMuted, fontSize: 13 }, style]} {...rest} />;
+  const textScale = useSettingsStore((s) => s.textScale);
+  const scale = textScale === 'extra_large' ? 1.24 : textScale === 'large' ? 1.12 : 1;
+  return <Text style={[{ color: c.textMuted, fontSize: 13 * scale, lineHeight: 18 * scale }, style]} {...rest} />;
 };
 
 type ButtonVariant = 'primary' | 'secondary' | 'success' | 'danger' | 'outline' | 'ghost';

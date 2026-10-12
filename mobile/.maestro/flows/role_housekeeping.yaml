@@ -1,0 +1,24 @@
+appId: com.syroce.pms
+name: "Housekeeping role acceptance"
+tags: [acceptance, housekeeping, role]
+env:
+  SMOKE_HK_EMAIL: qa-housekeeping@syroce.com
+  SMOKE_HK_PASSWORD: CHANGE_ME
+---
+- launchApp:
+    clearState: true
+    clearKeychain: true
+    permissions: { all: allow }
+- assertVisible: { text: "Giriş Yap", timeout: 30000 }
+- tapOn: { id: "smoke-login-email" }
+- inputText: ${SMOKE_HK_EMAIL}
+- tapOn: { id: "smoke-login-password" }
+- inputText: ${SMOKE_HK_PASSWORD}
+- hideKeyboard
+- tapOn: { id: "smoke-login-submit" }
+- # Staff roles intentionally land in the shared front-desk shift shell.
+- # Department access is tested separately; this flow proves the assigned
+- # housekeeping account authenticates and is not left on the login gate.
+- assertVisible: { text: "Bugün Giriş", timeout: 30000 }
+- assertNotVisible: { id: "smoke-login-submit", timeout: 30000 }
+- takeScreenshot: { path: "artifacts/housekeeping-role-acceptance" }

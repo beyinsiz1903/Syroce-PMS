@@ -16,20 +16,30 @@ import { BIOMETRIC_PREF_STORAGE_KEY } from '../api/client';
  * store simply re-hydrates from disk on app boot via `hydrate()`.
  */
 export type ThemeMode = 'light' | 'dark' | 'system';
+export type TextScale = 'standard' | 'large' | 'extra_large';
+export type AppLocale = 'tr' | 'en';
 
 // Tema tercihi sir DEGIL ve cikista silinmemeli -> AsyncStorage (SecureStore
 // degil; SecureStore cikista tamamen silinir). 'system' = cihazin OS acik/koyu
 // ayarini izle.
 const THEME_MODE_KEY = 'theme_mode';
+const TEXT_SCALE_KEY = 'text_scale';
+const APP_LOCALE_KEY = 'app_locale';
 const VALID_THEME_MODES: ThemeMode[] = ['light', 'dark', 'system'];
+const VALID_TEXT_SCALES: TextScale[] = ['standard', 'large', 'extra_large'];
+const VALID_APP_LOCALES: AppLocale[] = ['tr', 'en'];
 
 export type SettingsState = {
   hydrated: boolean;
   biometricLock: boolean;
   themeMode: ThemeMode;
+  textScale: TextScale;
+  locale: AppLocale;
   hydrate: () => Promise<void>;
   setBiometricLock: (v: boolean) => Promise<void>;
   setThemeMode: (m: ThemeMode) => Promise<void>;
+  setTextScale: (m: TextScale) => Promise<void>;
+  setLocale: (locale: AppLocale) => Promise<void>;
 };
 
 export const useSettingsStore = create<SettingsState>((set) => ({
@@ -38,10 +48,14 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   // Varsayilan koyu: marka kimligi korunur. Acik/Sistem kullanicinin opt-in
   // secimidir (settingsStore -> useTheme uzerinden tum ekranlara yansir).
   themeMode: 'dark',
+  textScale: 'standard',
+  locale: 'tr',
 
   async hydrate() {
     let biometricLock = false;
     let themeMode: ThemeMode = 'dark';
+    let textScale: TextScale = 'standard';
+    let locale: AppLocale = 'tr';
     try {
       const raw = await SecureStore.getItemAsync(BIOMETRIC_PREF_STORAGE_KEY);
       biometricLock = raw === '1';
@@ -56,7 +70,19 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     } catch {
       // ignore — tema varsayilani koyu kalir
     }
-    set({ biometricLock, themeMode, hydrated: true });
+    try {
+      const raw = await AsyncStorage.getItem(TEXT_SCALE_KEY);
+      if (raw && VALID_TEXT_SCALES.includes(raw as TextScale)) textScale = raw as TextScale;
+    } catch {
+      // ignore — accessibility default remains standard
+    }
+    try {
+      const raw = await AsyncStorage.getItem(APP_LOCALE_KEY);
+      if (raw && VALID_APP_LOCALES.includes(raw as AppLocale)) locale = raw as AppLocale;
+    } catch {
+      // Turkish remains the safe default
+    }
+    set({ biometricLock, themeMode, textScale, locale, hydrated: true });
   },
 
   async setBiometricLock(v: boolean) {
@@ -79,5 +105,15 @@ export const useSettingsStore = create<SettingsState>((set) => ({
       // ignore — yine de bellek-ici uygula
     }
     set({ themeMode: m });
+  },
+
+  async setTextScale(m: TextScale) {
+    try { await AsyncStorage.setItem(TEXT_SCALE_KEY, m); } catch { /* memory still updates */ }
+    set({ textScale: m });
+  },
+
+  async setLocale(locale: AppLocale) {
+    try { await AsyncStorage.setItem(APP_LOCALE_KEY, locale); } catch { /* memory still updates */ }
+    set({ locale });
   },
 }));
