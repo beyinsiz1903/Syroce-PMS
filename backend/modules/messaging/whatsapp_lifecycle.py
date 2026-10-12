@@ -8,10 +8,10 @@ import re
 import uuid
 from datetime import UTC, datetime, timedelta
 
-import httpx
 from fastapi import HTTPException
 from pymongo.errors import DuplicateKeyError
 
+from integrations.xchange.safety import EgressDenied, safe_request_async
 from modules.messaging.models import new_delivery_log
 from modules.messaging.providers import PROVIDER_MAP
 from modules.messaging.recipient_crypto import reveal_recipient, seal_delivery_log
@@ -61,13 +61,18 @@ async def approved_templates(db, tenant_id):
     if not waba or not str(waba).isdigit() or not creds.get("access_token"):
         raise HTTPException(400, "WhatsApp Business hesap kimliği (WABA ID) ve erişim anahtarı gerekli.")
     result, after = [], None
-    async with httpx.AsyncClient(timeout=15) as client:
+    try:
         while True:
             params = {"limit": 100}
             if after:
                 params["after"] = after
-            response = await client.get(f"https://graph.facebook.com/v21.0/{waba}/message_templates",
-                                        headers={"Authorization": f"Bearer {creds['access_token']}"}, params=params)
+            response = await safe_request_async(
+                "GET",
+                f"https://graph.facebook.com/v21.0/{waba}/message_templates",
+                timeout=15,
+                headers={"Authorization": f"Bearer {creds['access_token']}"},
+                params=params,
+            )
             if response.status_code != 200:
                 raise HTTPException(502, "Meta şablonları alınamadı. Hesap kimliği ve anahtar izinlerini kontrol edin.")
             data = response.json()
@@ -77,6 +82,8 @@ async def approved_templates(db, tenant_id):
             if not paging.get("next") or not cursor or cursor == after:
                 break
             after = cursor
+    except EgressDenied as exc:
+        raise HTTPException(502, "Meta şablon servisine güvenli bağlantı kurulamadı.") from exc
     return result
 
 
