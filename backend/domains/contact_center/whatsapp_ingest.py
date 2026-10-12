@@ -102,6 +102,7 @@ async def ingest_whatsapp_inbound(
     phone_number_id: str,
     wa_message: dict,
     contact_name: str | None = None,
+    strict: bool = False,
 ) -> None:
     """Tek bir gelen WhatsApp mesajını Contact Center'a köprüler.
 
@@ -206,6 +207,8 @@ async def ingest_whatsapp_inbound(
     except Exception:
         # Asla raise etme: PII'siz log. Webhook 200-fast kalır.
         logger.exception("contact-center WhatsApp ingest başarısız (bastırıldı)")
+        if strict:
+            raise
 
 
 # ── Delivery-status sync ────────────────────────────────────────────

@@ -9,7 +9,6 @@ import re
 import uuid
 from datetime import UTC, datetime, timedelta
 
-import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
@@ -184,6 +183,7 @@ async def get_messaging_settings(current_user: User = Depends(get_current_user))
                 "access_token": _mask(creds.get("access_token", ""), show=8),
                 "phone_number_id": creds.get("phone_number_id", ""),
                 "business_name": creds.get("business_name", ""),
+                "waba_id": creds.get("waba_id", ""),
                 "webhook_verify_token": "********" if creds.get("webhook_verify_token") else "",
                 "app_secret": "********" if creds.get("app_secret") else "",
             }
@@ -272,6 +272,7 @@ async def save_whatsapp_settings(
         "access_token": req.access_token,
         "phone_number_id": req.phone_number_id,
         "business_name": req.business_name,
+        "waba_id": req.waba_id,
         "webhook_verify_token": req.webhook_verify_token,
         "app_secret": req.app_secret,
     }
@@ -503,62 +504,21 @@ async def send_whatsapp_template(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_sales")),
 ):
+    from modules.messaging.whatsapp_lifecycle import WhatsAppDelivery, approved_templates
     db = _get_db()
-    cfg = await db.messaging_provider_configs.find_one(
-        {
-            "tenant_id": current_user.tenant_id,
-            "provider_type": "whatsapp",
-            "enabled": True,
-        },
-        {"_id": 0},
-    )
-    if not cfg:
-        raise HTTPException(
-            status_code=400,
-            detail="WhatsApp yapılandırılmamış (önce /settings/whatsapp ile credentials ekleyin)",
-        )
-
-    from modules.messaging.models import ProviderType, new_delivery_log
-    from modules.messaging.providers import PROVIDER_MAP, ProviderMode
-
-    provider = PROVIDER_MAP[ProviderType.WHATSAPP.value]
-    creds = cfg.get("credentials_encrypted", {}) or {}
-    mode = ProviderMode.SANDBOX if cfg.get("is_sandbox") else ProviderMode.LIVE
-
-    result = await provider.send_template(
-        recipient=req.recipient,
-        template_name=req.template_name,
-        language_code=req.language_code,
-        components=req.components,
-        credentials=creds,
-        mode=mode,
-    )
-
-    # delivery log
-    try:
-        log = new_delivery_log(
-            tenant_id=current_user.tenant_id,
-            property_id=None,
-            channel="whatsapp",
-            provider_type=ProviderType.WHATSAPP.value,
-            recipient=req.recipient,
-            template_id=None,
-            subject=None,
-            body=f"[template:{req.template_name}]",
-            booking_id=req.booking_id,
-            guest_id=req.guest_id,
-            use_case="template",
-        )
-        log["status"] = "sent" if result.get("success") else "failed"
-        log["provider_message_id"] = result.get("provider_message_id")
-        log["error_message"] = result.get("error")
-        log["template_name"] = req.template_name
-        log["template_language"] = req.language_code
-        await db.messaging_delivery_logs.insert_one(seal_delivery_log(log))
-    except Exception:
-        logger.exception("template send delivery log insert failed")
-
-    return result
+    templates = await approved_templates(db, current_user.tenant_id)
+    selected = next((t for t in templates if t["name"] == req.template_name and t["language"] == req.language_code), None)
+    if not selected or not selected["supported"]:
+        raise HTTPException(400, "Desteklenen ve Meta onaylı bir şablon seçin.")
+    parameters = req.components[0].get("parameters", []) if req.components else []
+    if (len(req.components) > 1 or (req.components and req.components[0].get("type") != "body")
+            or not isinstance(parameters, list) or len(parameters) != selected["variables_count"]
+            or any(not isinstance(p, dict) or p.get("type") != "text" or not str(p.get("text", "")).strip() for p in parameters)):
+        raise HTTPException(400, "Şablon değişkenleri eksik veya uyumsuz.")
+    delivery = WhatsAppDelivery(db)
+    delivery_id = await delivery.enqueue(current_user.tenant_id, req.recipient, req.template_name,
+        req.language_code, req.components, booking_id=req.booking_id, guest_id=req.guest_id, use_case="template")
+    return await delivery.deliver(current_user.tenant_id, delivery_id)
 
 
 @router.post("/retry/{delivery_id}")
@@ -593,7 +553,7 @@ async def get_delivery_logs(
         q["status"] = status
     if channel:
         q["channel"] = channel
-    logs = await db.messaging_delivery_logs.find(q, {"_id": 0}).sort("created_at", -1).to_list(limit)
+    logs = await db.messaging_delivery_logs.find(q, {"_id": 0, "template_components_enc": 0}).sort("created_at", -1).to_list(limit)
     # Recipient is sealed at rest (recipient_enc + recipient_hash); decrypt at
     # this read boundary and strip the at-rest fields. This endpoint already
     # requires view_guest_list, so the raw recipient is returned (unchanged
@@ -625,6 +585,7 @@ class AutomationRuleReq(BaseModel):
     name: str
     enabled: bool = True
     delay_minutes: int = 0
+    meta_template: dict | None = None
 
 
 @router.get("/automation/triggers")
@@ -642,6 +603,15 @@ async def list_automation_rules(current_user: User = Depends(get_current_user)):
     from modules.messaging.automation import deduplicate_automation_rules
 
     unique_rules = deduplicate_automation_rules(rules)
+    counts = await db.messaging_delivery_logs.aggregate([
+        {"$match": {"tenant_id": current_user.tenant_id, "automation_rule_id": {"$ne": None}}},
+        {"$group": {"_id": {"rule": "$automation_rule_id", "status": "$status"}, "count": {"$sum": 1}}},
+    ]).to_list(None)
+    for rule in unique_rules:
+        if rule.get("channel") == "whatsapp":
+            related = [r for r in counts if r["_id"]["rule"] == rule["id"]]
+            rule["total_sent"] = sum(r["count"] for r in related if r["_id"]["status"] in ("sent", "delivered", "read"))
+            rule["total_failed"] = sum(r["count"] for r in related if r["_id"]["status"] in ("failed", "rejected", "unknown"))
     return {"rules": unique_rules, "total": len(unique_rules), "duplicates_suppressed": len(rules) - len(unique_rules)}
 
 
@@ -656,6 +626,7 @@ async def create_automation_rule(
     if req.trigger_event not in TRIGGER_EVENTS:
         raise HTTPException(status_code=400, detail=f"Gecersiz tetikleme olayi: {req.trigger_event}")
     db = _get_db()
+    await _validate_automation_rule(db, current_user.tenant_id, req.model_dump())
     existing = await db.messaging_automation_rules.find_one(
         {
             "tenant_id": current_user.tenant_id,
@@ -677,6 +648,7 @@ async def create_automation_rule(
         req.enabled,
         req.delay_minutes,
     )
+    doc["meta_template"] = req.meta_template
     try:
         await db.messaging_automation_rules.insert_one(doc)
     except Exception as exc:
@@ -697,10 +669,21 @@ async def update_automation_rule(
     _perm=Depends(require_op("manage_sales")),  # v100 DW
 ):
     db = _get_db()
-    allowed = ["name", "template_id", "channel", "enabled", "delay_minutes", "trigger_event"]
+    allowed = ["name", "template_id", "channel", "enabled", "delay_minutes", "trigger_event", "meta_template"]
     updates = {k: v for k, v in req.items() if k in allowed}
+    previous = await db.messaging_automation_rules.find_one({"id": rule_id, "tenant_id": current_user.tenant_id})
+    if not previous:
+        raise HTTPException(404, "Kural bulunamadı")
+    merged = {**previous, **updates}
+    await _validate_automation_rule(db, current_user.tenant_id, merged)
+    from modules.messaging.automation import automation_rule_semantic_key
+    updates["semantic_key"] = automation_rule_semantic_key(merged["trigger_event"], merged["template_id"], merged["channel"])
     updates["updated_at"] = datetime.now(UTC).isoformat()
-    result = await db.messaging_automation_rules.update_one({"id": rule_id, "tenant_id": current_user.tenant_id}, {"$set": updates})
+    from pymongo.errors import DuplicateKeyError
+    try:
+        result = await db.messaging_automation_rules.update_one({"id": rule_id, "tenant_id": current_user.tenant_id}, {"$set": updates})
+    except DuplicateKeyError:
+        raise HTTPException(409, "Aynı tetikleyici ve şablon için bir kural zaten var.") from None
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Kural bulunamadi")
     return {"success": True}
@@ -731,48 +714,8 @@ async def test_automation_rule(
     if not rule:
         raise HTTPException(status_code=404, detail="Kural bulunamadi")
 
-    # Bug #11 fix: Try to use a real recent booking with a guest_id so that
-    # automation flow's recipient resolution actually exercises end-to-end.
-    # Fallback to a labeled fake only if no real bookings exist.
-    real = await db.bookings.find_one(
-        {"tenant_id": current_user.tenant_id, "guest_id": {"$ne": None}},
-        {"_id": 0},
-        sort=[("created_at", -1)],
-    )
-    if real:
-        booking_for_test = {
-            **real,
-            "id": "test-" + str(real.get("id", uuid.uuid4().hex[:8])),
-            "_test_mode": True,
-        }
-    else:
-        booking_for_test = {
-            "id": "test-" + str(uuid.uuid4())[:8],
-            "guest_name": "Test Misafir",
-            "guest_id": None,
-            "room_id": None,
-            "room_number": "101",
-            "check_in": datetime.now(UTC).isoformat(),
-            "check_out": datetime.now(UTC).isoformat(),
-            "total_amount": 1500,
-            "_test_mode": True,
-        }
-    from modules.messaging.automation import process_booking_event
-
-    try:
-        await process_booking_event(current_user.tenant_id, rule["trigger_event"], booking_for_test)
-    except Exception as e:
-        logger.exception("automation test failed")
-        return {
-            "success": False,
-            "message": f"Test calistirildi ama hata: {e}",
-            "used_real_booking": bool(real),
-        }
-    return {
-        "success": True,
-        "message": f"Test tetiklendi: {rule['name']}" + (" (gercek rezervasyon kullanildi)" if real else " (gercek rezervasyon yok, sahte booking ile)"),
-        "used_real_booking": bool(real),
-    }
+    await _validate_automation_rule(db, current_user.tenant_id, {**rule, "enabled": True})
+    return {"success": True, "message": "Kural yapılandırması doğrulandı. Hiçbir misafire mesaj gönderilmedi.", "used_real_booking": False}
 
 
 # ════════════════════════════════════════════════════════
@@ -1043,10 +986,16 @@ class ConsentReq(BaseModel):
     recipient: str
     channel: str
     status: str
+    evidence: str = ""
 
 
 @router.post("/consent")
-async def update_consent(req: ConsentReq, current_user: User = Depends(get_current_user)):
+async def update_consent(req: ConsentReq, current_user: User = Depends(get_current_user),
+                         _perm=Depends(require_op("manage_sales"))):
+    if req.channel not in ("email", "whatsapp") or req.status not in ("opt_in", "opt_out", "pending"):
+        raise HTTPException(400, "Geçersiz kanal veya izin durumu.")
+    if req.channel == "whatsapp" and req.status == "opt_in" and not req.evidence.strip():
+        raise HTTPException(400, "İznin nerede ve ne zaman alındığını belirtin.")
     db = _get_db()
     # PII-at-rest: store the recipient sealed (recipient_enc) and key the consent
     # document on the recipient_hash blind-index instead of plaintext.
@@ -1066,6 +1015,8 @@ async def update_consent(req: ConsentReq, current_user: User = Depends(get_curre
         {
             "$set": {
                 "status": req.status,
+                "source": "operator_recorded",
+                "evidence": req.evidence[:500],
                 "updated_at": now_iso,
                 "updated_by": current_user.id,
                 "recipient_enc": sealed.get("recipient_enc"),
@@ -1310,92 +1261,53 @@ async def get_messaging_activity(
 @router.get("/whatsapp/meta-templates")
 async def list_meta_whatsapp_templates(
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("manage_messaging_center")),
+    _perm=Depends(require_op("manage_sales")),
 ):
-    """Fetch approved HSM templates directly from Meta Graph API."""
-    from server import db
-    tenant_id = current_user.tenant_id
+    """Fetch approved templates with pagination and explicit setup errors."""
+    from modules.messaging.whatsapp_lifecycle import approved_templates
+    return {"templates": await approved_templates(_get_db(), current_user.tenant_id)}
 
-    config = await db.messaging_provider_configs.find_one(
-        {"tenant_id": tenant_id, "provider_type": "whatsapp"}
-    )
-    if not config:
-        return {"templates": []}
 
-    creds = _decrypt_secrets(config.get("credentials_encrypted", {}), _WHATSAPP_SECRET_KEYS)
-    access_token = creds.get("access_token")
-    phone_number_id = creds.get("phone_number_id") or config.get("phone_number_id")
-    waba_id = config.get("credentials_encrypted", {}).get("waba_id") or creds.get("waba_id") or config.get("waba_id")
+async def _validate_automation_rule(db, tenant_id, rule):
+    from modules.messaging.automation import TRIGGER_EVENTS, _build_template_variables
+    from modules.messaging.whatsapp_lifecycle import validate_mapping
+    if rule.get("trigger_event") not in TRIGGER_EVENTS or rule.get("channel") not in ("email", "whatsapp"):
+        raise HTTPException(400, "Geçersiz olay veya kanal.")
+    delay = rule.get("delay_minutes", 0)
+    if not isinstance(delay, int) or not 0 <= delay <= 10080:
+        raise HTTPException(400, "Gecikme 0–10080 dakika arasında olmalıdır.")
+    if not rule.get("enabled"):
+        return
+    if rule["channel"] == "whatsapp":
+        mapping = rule.get("meta_template") or {}
+        await validate_mapping(db, tenant_id, mapping)
+        if rule.get("template_id") != f"meta:{mapping.get('name')}:{mapping.get('language')}":
+            raise HTTPException(400, "Meta şablon kimliği eşleşmiyor.")
+        available = _build_template_variables({}, None, None, None)
+        if any(v not in available for v in mapping.get("variables", [])):
+            raise HTTPException(400, "Bilinmeyen şablon değişkeni.")
+    else:
+        template = await db.messaging_templates.find_one({"id": rule.get("template_id"), "tenant_id": tenant_id, "channel": "email", "is_active": True})
+        if not template:
+            raise HTTPException(400, "Etkin e-posta şablonu seçin.")
+        if delay:
+            raise HTTPException(400, "E-posta otomasyonu için gecikme desteklenmiyor; 0 seçin.")
 
-    if not access_token:
-        return {"templates": []}
 
-    # WABA ID girilmediyse Phone Number ID uzerinden Meta'dan otomatik cozumle
-    if not waba_id and phone_number_id:
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                p_resp = await client.get(
-                    f"https://graph.facebook.com/v19.0/{phone_number_id}",
-                    params={"fields": "whatsapp_business_account", "access_token": access_token},
-                )
-                if p_resp.status_code == 200:
-                    waba_id = p_resp.json().get("whatsapp_business_account", {}).get("id")
-                    if waba_id:
-                        # WABA ID is not a secret. Cache it with the provider
-                        # configuration so a template refresh does not make an
-                        # extra Meta Graph request every time.
-                        await db.messaging_provider_configs.update_one(
-                            {"id": config["id"], "tenant_id": tenant_id},
-                            {"$set": {"credentials_encrypted.waba_id": waba_id, "updated_at": datetime.now(UTC).isoformat()}},
-                        )
-        except Exception:
-            logger.warning("Meta WABA resolution failed for configured WhatsApp provider", exc_info=True)
+@router.get("/hotel-info")
+async def get_messaging_hotel_info(current_user: User = Depends(get_current_user)):
+    tenant = await _get_db().tenants.find_one({"id": current_user.tenant_id}, {"messaging_info": 1})
+    return (tenant or {}).get("messaging_info", {})
 
-    if not waba_id:
-        return {"templates": []}
 
-    if config.get("is_sandbox"):
-        return {"templates": [{
-            "name": "hello_world",
-            "language": "en_US",
-            "category": "UTILITY",
-            "variables_count": 0,
-            "components": [{"type": "BODY", "text": "Hello World Sandbox"}]
-        }]}
-
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(
-                f"https://graph.facebook.com/v19.0/{waba_id}/message_templates",
-                params={"access_token": access_token}
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            templates = data.get("data", [])
-
-            clean_templates = []
-            for t in templates:
-                if t.get("status") in ("APPROVED", "ACTIVE"):
-                    variables = []
-                    components = t.get("components", [])
-                    for comp in components:
-                        if comp.get("type") == "BODY":
-                            text = comp.get("text", "")
-                            import re
-                            vars_found = re.findall(r'\{\{(\d+)\}\}', text)
-                            variables.extend(vars_found)
-                    clean_templates.append({
-                        "name": t.get("name"),
-                        "language": t.get("language"),
-                        "category": t.get("category"),
-                        "variables_count": len(set(variables)),
-                        "components": components
-                    })
-            return {"templates": clean_templates}
-    except httpx.HTTPStatusError as e:
-        logger.exception(f"Meta Graph HTTP Error: {e.response.text}")
-        raise HTTPException(status_code=502, detail="Meta API'den şablonlar çekilemedi")
-    except Exception:
-        logger.exception("Failed to fetch Meta WhatsApp templates")
-        raise HTTPException(status_code=502, detail="Meta API'den şablonlar çekilemedi")
-
+@router.put("/hotel-info")
+async def set_messaging_hotel_info(req: dict, current_user: User = Depends(get_current_user),
+                                  _perm=Depends(require_op("view_system_diagnostics"))):
+    allowed = {"wifi_sifre", "restoran_saatleri", "havuz_saatleri", "spa_saatleri", "harita_link", "transfer_bilgi", "degerlendirme_link"}
+    if any(k not in allowed or not isinstance(v, str) or len(v) > 1000 for k, v in req.items()):
+        raise HTTPException(400, "Geçersiz tesis bilgisi.")
+    for key in ("harita_link", "degerlendirme_link"):
+        if req.get(key) and not req[key].startswith("https://"):
+            raise HTTPException(400, "Bağlantılar https:// ile başlamalıdır.")
+    await _get_db().tenants.update_one({"id": current_user.tenant_id}, {"$set": {"messaging_info": req}})
+    return {"success": True}

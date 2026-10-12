@@ -282,13 +282,13 @@ class WhatsAppProvider(BaseProvider):
             if resp.status_code in (200, 201):
                 data = resp.json()
                 msg_id = data.get("messages", [{}])[0].get("id", "")
-                return {"success": True, "provider_message_id": msg_id, "error": None, "latency_ms": latency_ms}
+                return {"success": bool(msg_id), "outcome_unknown": not bool(msg_id), "provider_message_id": msg_id, "error": None, "latency_ms": latency_ms}
             err = f"WhatsApp template HTTP {resp.status_code}: {resp.text[:200]}"
-            return {"success": False, "error": err, "provider_message_id": None, "error_class": self.classify_error(err), "latency_ms": latency_ms}
+            return {"success": False, "error": err, "provider_message_id": None, "error_class": self.classify_error(err), "latency_ms": latency_ms, "outcome_unknown": resp.status_code >= 500}
         except Exception as e:
             logger.exception("WhatsApp send_template error")
-            err_str = str(e)[:300]
-            return {"success": False, "error": err_str, "provider_message_id": None, "error_class": self.classify_error(err_str), "latency_ms": round((time.time() - start) * 1000, 2)}
+            err_str = type(e).__name__
+            return {"outcome_unknown": True, "success": False, "error": err_str, "provider_message_id": None, "error_class": self.classify_error(err_str), "latency_ms": round((time.time() - start) * 1000, 2)}
 
     async def check_health(self, credentials: dict, mode: str = ProviderMode.LIVE) -> dict[str, Any]:
         if mode in (ProviderMode.TEST, ProviderMode.SANDBOX):

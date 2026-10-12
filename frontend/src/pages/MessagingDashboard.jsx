@@ -71,11 +71,12 @@ const extractVariables = (body) => {
 // ── i18n labels (TR — düzgün diakritiklerle) ────────────────────────────
 const STATUS_INTENT = {
   sent: 'success', delivered: 'success', failed: 'danger', bounced: 'danger',
-  queued: 'warning', sending: 'info',
+  queued: 'warning', sending: 'info', unknown: 'warning', rejected: 'danger', simulated: 'info', read: 'success',
 };
 const STATUS_LABELS = {
   sent: 'Gönderildi', delivered: 'Teslim Edildi', failed: 'Başarısız',
   queued: 'Kuyrukta', sending: 'Gönderiliyor', bounced: 'Geri Döndü',
+  unknown: 'Sonuç belirsiz — kontrol gerekli', rejected: 'Gönderim engellendi', simulated: 'Simülasyon — gönderilmedi', read: 'Okundu',
 };
 const CHANNEL_ICONS = { email: Mail, whatsapp: MessageSquare };
 const CHANNEL_LABELS = { email: 'E-posta', whatsapp: 'WhatsApp' };
@@ -116,7 +117,7 @@ function SettingsTab({ onChanged }) {
     from_email: '', from_name: 'Otel', use_tls: true, is_sandbox: true, enabled: true,
   });
   const [waForm, setWaForm] = useState({
-    access_token: '', phone_number_id: '', business_name: '',
+    access_token: '', phone_number_id: '', waba_id: '', business_name: '',
     webhook_verify_token: '', app_secret: '',
     is_sandbox: true, enabled: true,
   });
@@ -146,6 +147,7 @@ function SettingsTab({ onChanged }) {
           ...prev,
           access_token: '',  // masked
           phone_number_id: r.data.whatsapp.credentials.phone_number_id || '',
+          waba_id: r.data.whatsapp.credentials.waba_id || '',
           business_name: r.data.whatsapp.credentials.business_name || '',
           webhook_verify_token: '',  // masked
           app_secret: '',            // masked
@@ -311,6 +313,10 @@ function SettingsTab({ onChanged }) {
               <Label>Phone Number ID</Label>
               <Input data-testid="wa-phone-id" placeholder="Meta Phone Number ID" value={waForm.phone_number_id}
                 onChange={(e) => setWaForm((p) => ({ ...p, phone_number_id: e.target.value }))} />
+            </div>
+            <div>
+              <Label htmlFor="wa-waba">WhatsApp Business hesap kimliği (WABA ID)</Label>
+              <Input id="wa-waba" value={waForm.waba_id} onChange={(e) => setWaForm((p) => ({ ...p, waba_id: e.target.value }))} />
             </div>
             <div>
               <Label>{t('cm.pages_MessagingDashboard.isletme_adi')}</Label>
@@ -773,7 +779,7 @@ function DeliveryLogsTab() {
     <div className="space-y-4" data-testid="delivery-logs-tab">
       <div className="flex flex-wrap gap-2 justify-between items-center">
         <div className="flex gap-1 flex-wrap">
-          {['all', 'sent', 'delivered', 'failed', 'queued'].map((f) => (
+          {['all', 'queued', 'sent', 'delivered', 'read', 'failed', 'rejected', 'unknown', 'simulated'].map((f) => (
             <Button key={f} size="sm" variant={filter === f ? 'default' : 'outline'} onClick={() => setFilter(f)}>
               {f === 'all' ? 'Tümü' : STATUS_LABELS[f] || f}
             </Button>
@@ -817,6 +823,7 @@ function DeliveryLogsTab() {
                       {new Date(l.created_at).toLocaleString(i18n.language)}
                     </p>
                   </div>
+                  {l.error_message && <p className="text-xs text-destructive max-w-xs">{l.error_message}</p>}
                   <StatusBadge intent={STATUS_INTENT[l.status] || 'neutral'}>
                     {STATUS_LABELS[l.status] || l.status}
                   </StatusBadge>
@@ -915,6 +922,7 @@ function MetricsTab() {
 // Automation Tab
 // ════════════════════════════════════════════════
 const TRIGGER_LABELS = {
+  booking_created: 'Rezervasyon oluşturuldu',
   booking_confirmed: 'Rezervasyon Onaylandı',
   pre_arrival: 'Check-in Öncesi',
   checked_in: 'Check-in Yapıldı',
@@ -927,13 +935,15 @@ const TRIGGER_INTENT = {
   checked_out: 'default',
 };
 
-function AutomationTab() {
+export function AutomationTab() {
   const { t, i18n } = useTranslation();
   const [rules, setRules] = useState([]);
   const [templates, setTemplates] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [editRule, setEditRule] = useState(null);
+  const [metaTemplates, setMetaTemplates] = useState([]);
+  const [metaError, setMetaError] = useState('');
   const [form, setForm] = useState({
     trigger_event: 'checked_in', template_id: '', channel: 'whatsapp', name: '', enabled: true, delay_minutes: 0,
   });
@@ -946,6 +956,9 @@ function AutomationTab() {
     ]);
     if (rulesR.ok) setRules(rulesR.data.rules || []);
     if (tmplR.ok) setTemplates(tmplR.data.templates || []);
+    const meta = await safe(() => get('/messaging-center/whatsapp/meta-templates'));
+    if (meta.ok) { setMetaTemplates(meta.data.templates || []); setMetaError(''); }
+    else setMetaError('Meta şablonları alınamadı. Ayarlar bölümünde WABA ID, erişim anahtarı ve etkin bağlantıyı kontrol edin.');
     setLoading(false);
   }, []);
   useEffect(() => { load(); }, [load]);
@@ -962,6 +975,7 @@ function AutomationTab() {
     if (form.enabled && !await confirmDialog({ message: activationMessage(form) })) return;
     const r = await safe(() => post('/messaging-center/automation/rules', form));
     if (r.ok && r.data.id) { toast.success('Otomasyon kuralı oluşturuldu'); setShowCreate(false); load(); }
+    else toast.error(r.error || 'Kural oluşturulamadı.');
   };
 
   const handleUpdate = async () => {
@@ -969,6 +983,7 @@ function AutomationTab() {
     if (form.enabled && !await confirmDialog({ message: activationMessage(form) })) return;
     const r = await safe(() => put(`/messaging-center/automation/rules/${editRule.id}`, form));
     if (r.ok) { toast.success('Kural güncellendi'); setEditRule(null); load(); }
+    else toast.error(r.error || 'Kural güncellenemedi.');
   };
 
   const handleDelete = async (id) => {
@@ -977,11 +992,12 @@ function AutomationTab() {
     if (r.ok) { toast.success('Kural silindi'); load(); }
   };
 
-  const activationMessage = (rule) => `“${rule.name}” kuralı etkinleştirilecek. Tetikleyici: ${TRIGGER_LABELS[rule.trigger_event] || "Özel olay"}; kanal: ${rule.channel === "email" ? "E-posta" : rule.channel === "sms" ? "SMS" : "WhatsApp"}; gecikme: ${rule.delay_minutes || 0} dakika. Şablon: ${tmplMap[rule.template_id]?.name || "Seçili şablon"}. Uygun olaylarda izin ve kanal kontrollerinden geçen misafirlere otomatik ileti gönderilebilir. Devam edilsin mi?`;
+  const activationMessage = (rule) => `“${rule.name}” kuralı etkinleştirilecek. Tetikleyici: ${TRIGGER_LABELS[rule.trigger_event] || "Özel olay"}; kanal: ${rule.channel === "email" ? "E-posta" : rule.channel === "sms" ? "SMS" : "WhatsApp"}; gecikme: ${rule.delay_minutes || 0} dakika. Şablon: ${rule.meta_template?.name || tmplMap[rule.template_id]?.name || "Seçili şablon"}. Uygun olaylarda izin ve kanal kontrollerinden geçen misafirlere otomatik ileti gönderilebilir. Devam edilsin mi?`;
 
   const toggleEnabled = async (rule) => {
     if (!rule.enabled && !await confirmDialog({ message: activationMessage(rule) })) return;
-    await safe(() => put(`/messaging-center/automation/rules/${rule.id}`, { enabled: !rule.enabled }));
+    const result = await safe(() => put(`/messaging-center/automation/rules/${rule.id}`, { enabled: !rule.enabled }));
+    if (!result.ok) toast.error(result.error || 'Kural değiştirilemedi.');
     load();
   };
 
@@ -989,15 +1005,13 @@ function AutomationTab() {
     const r = await safe(() => post(`/messaging-center/automation/test/${rule.id}`, {}));
     if (r.ok && r.data.success) {
       toast.success(r.data.message || `Test tetiklendi: ${rule.name}`);
-    } else if (r.ok) {
-      toast.error(r.data.message || 'Test hatası');
-    }
+    } else { toast.error(r.error || r.data?.message || 'Doğrulama başarısız.'); }
   };
 
   const openEdit = (r) => {
     setForm({
       trigger_event: r.trigger_event, template_id: r.template_id, channel: r.channel,
-      name: r.name, enabled: r.enabled, delay_minutes: r.delay_minutes || 0,
+      name: r.name, enabled: r.enabled, delay_minutes: r.delay_minutes || 0, meta_template: r.meta_template,
     });
     setEditRule(r);
   };
@@ -1008,7 +1022,7 @@ function AutomationTab() {
 
   if (loading) return <div className="flex items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-slate-400" /></div>;
 
-  const noTemplates = templates.length === 0;
+  const noTemplates = templates.length === 0 && metaTemplates.length === 0;
 
   return (
     <div className="space-y-4" data-testid="automation-tab">
@@ -1033,7 +1047,7 @@ function AutomationTab() {
 
       <div className="flex justify-between items-center">
         <h3 className="font-semibold text-slate-900">{t('cm.pages_MessagingDashboard.otomasyon_kurallari')}</h3>
-        <Button data-testid="create-automation-btn" size="sm" onClick={openCreate} disabled={noTemplates}>
+        <Button data-testid="create-automation-btn" size="sm" onClick={openCreate} >
           <Plus className="h-4 w-4 mr-1.5" /> {t('cm.pages_MessagingDashboard.yeni_kural')}
         </Button>
       </div>
@@ -1064,7 +1078,7 @@ function AutomationTab() {
                     <div className="flex-1 min-w-0">
                       <p className="font-medium text-sm text-slate-900">{r.name}</p>
                       <p className="text-xs text-slate-500 truncate">
-                        {t('cm.pages_MessagingDashboard.sablon')} {tmpl?.name || 'Bilinmiyor'}
+                        {t('cm.pages_MessagingDashboard.sablon')} {r.meta_template?.name || tmpl?.name || 'Eşleştirme gerekli'}
                         {r.delay_minutes > 0 && ` · ${r.delay_minutes} dk gecikme`}
                       </p>
                     </div>
@@ -1076,7 +1090,7 @@ function AutomationTab() {
                       <Button size="sm" variant="ghost" onClick={() => toggleEnabled(r)} title={r.enabled ? 'Devre dışı bırak' : 'Aktif et'}>
                         <Power className={`h-3.5 w-3.5 ${r.enabled ? 'text-emerald-600' : 'text-slate-400'}`} />
                       </Button>
-                      <Button size="sm" variant="ghost" onClick={() => testRule(r)} title="Test et">
+                      <Button size="sm" variant="ghost" onClick={() => testRule(r)} title="Yapılandırmayı doğrula (mesaj göndermez)">
                         <Play className="h-3.5 w-3.5 text-sky-600" />
                       </Button>
                       <Button size="sm" variant="ghost" onClick={() => openEdit(r)}><Pencil className="h-3.5 w-3.5" /></Button>
@@ -1092,6 +1106,7 @@ function AutomationTab() {
 
       {/* Pre-Arrival Scheduler */}
       <SchedulerCard />
+      <MessagingSetupDetails />
 
       {/* Create/Edit Dialog */}
       <Dialog open={showCreate || !!editRule} onOpenChange={(v) => { if (!v) { setShowCreate(false); setEditRule(null); } }}>
@@ -1127,6 +1142,33 @@ function AutomationTab() {
                 </Select>
               </div>
             </div>
+            {form.channel === 'whatsapp' ? (
+              <div className="space-y-3">
+                <Label>Meta onaylı WhatsApp şablonu</Label>
+                {metaError && <p role="alert" className="text-sm text-destructive">{metaError}</p>}
+                <Select value={form.template_id} onValueChange={(id) => {
+                  const selected = metaTemplates.find((item) => `meta:${item.name}:${item.language}` === id);
+                  if (selected) setForm((p) => ({ ...p, template_id: id, meta_template: { name: selected.name, language: selected.language, variables: Array(selected.variables_count).fill('') } }));
+                }}>
+                  <SelectTrigger data-testid="automation-meta-template"><SelectValue placeholder="Şablon ve dil seçin" /></SelectTrigger>
+                  <SelectContent>{metaTemplates.map((item) => <SelectItem key={`${item.name}:${item.language}`} value={`meta:${item.name}:${item.language}`} disabled={!item.supported}>
+                    {item.name} · {item.language}{!item.supported ? ' (desteklenmeyen biçim)' : ''}
+                  </SelectItem>)}</SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">Yerel metin şablonları WhatsApp onayı yerine geçmez. Değişkenleri Meta şablonundaki sırayla eşleştirin. Eksik tesis bilgisi varsa gönderim engellenir.</p>
+                {(form.meta_template?.variables || []).map((value, index) => (
+                  <div key={index}>
+                    <Label>Değişken {index + 1}</Label>
+                    <Select value={value} onValueChange={(next) => setForm((p) => ({ ...p, meta_template: { ...p.meta_template, variables: p.meta_template.variables.map((v, i) => i === index ? next : v) } }))}>
+                      <SelectTrigger><SelectValue placeholder="Rezervasyon veya tesis alanı seçin" /></SelectTrigger>
+                      <SelectContent>{Object.entries({misafir_adi:'Misafir adı',otel_adi:'Otel adı',oda_no:'Oda numarası',oda_tipi:'Oda tipi',giris_tarihi:'Giriş tarihi',cikis_tarihi:'Çıkış tarihi',konfirmasyon_no:'Rezervasyon numarası',toplam_tutar:'Toplam tutar',telefon:'Otel telefonu',email:'Otel e-postası',adres:'Otel adresi',wifi_sifre:'Wi-Fi şifresi',restoran_saatleri:'Restoran saatleri',havuz_saatleri:'Havuz saatleri',spa_saatleri:'SPA saatleri',harita_link:'Harita bağlantısı',transfer_bilgi:'Transfer bilgisi',degerlendirme_link:'Değerlendirme bağlantısı'}).map(([key,label]) => <SelectItem key={key} value={key}>{label}</SelectItem>)}</SelectContent>
+                    </Select>
+                  </div>
+                ))}
+                <Label htmlFor="automation-delay">Gecikme (dakika)</Label>
+                <Input id="automation-delay" type="number" min="0" max="10080" value={form.delay_minutes} onChange={(e) => setForm((p) => ({ ...p, delay_minutes: Number(e.target.value) }))} />
+              </div>
+            ) : (
             <div>
               <Label>{t('cm.pages_MessagingDashboard.sablon_68cce')}</Label>
               <Select value={form.template_id} onValueChange={(v) => setForm((p) => ({ ...p, template_id: v }))}>
@@ -1140,6 +1182,8 @@ function AutomationTab() {
                 </SelectContent>
               </Select>
             </div>
+
+            )}
             <div className="flex items-center gap-2">
               <Switch checked={form.enabled} onCheckedChange={(v) => setForm((p) => ({ ...p, enabled: v }))} />
               <Label>{t('cm.pages_MessagingDashboard.aktif_81c33')}</Label>
@@ -1316,7 +1360,7 @@ function WhatsAppTemplateTab() {
     }));
     
     if (r.ok && r.data.success) {
-      toast.success('Template gönderildi');
+      toast.success(r.data.status === 'simulated' ? 'Simülasyon tamamlandı; gerçek mesaj gönderilmedi.' : 'Mesaj Meta tarafından kabul edildi; teslimatı Loglar bölümünden izleyin.');
       setRecipient(''); setVariables({});
     } else if (r.ok) {
       toast.error(r.data.error || 'Template gönderim hatası');
@@ -1360,7 +1404,7 @@ function WhatsAppTemplateTab() {
                     <SelectItem value="none" disabled>Onaylı şablon bulunamadı (Ayarları kontrol edin)</SelectItem>
                   )}
                   {metaTemplates.map((t, idx) => (
-                    <SelectItem key={`${t.name}_${t.language}_${idx}`} value={String(idx)}>
+                    <SelectItem key={`${t.name}_${t.language}_${idx}`} value={String(idx)} disabled={!t.supported}>
                       {t.name} ({t.language}) - {t.category}
                     </SelectItem>
                   ))}
@@ -1557,4 +1601,43 @@ export default function MessagingDashboard() {
       </Tabs>
     </div>
   );
+}
+
+function MessagingSetupDetails() {
+  const [info, setInfo] = useState({});
+  const [phone, setPhone] = useState('');
+  const [evidence, setEvidence] = useState('');
+  const [saving, setSaving] = useState(false);
+  useEffect(() => { safe(() => get('/messaging-center/hotel-info')).then((r) => { if (r.ok) setInfo(r.data); }); }, []);
+  const consent = async (status) => {
+    if (!phone.trim() || (status === 'opt_in' && !evidence.trim())) {
+      toast.error('Telefon ve izin kaynağını doldurun.'); return;
+    }
+    if (!await confirmDialog({ message: status === 'opt_in' ? 'Misafirin WhatsApp mesajları için gerçekten izin verdiğini doğruluyor musunuz?' : 'Bu numaraya WhatsApp gönderimleri durdurulsun mu?' })) return;
+    setSaving(true);
+    const r = await safe(() => post('/messaging-center/consent', { recipient: phone.replace(/[^+0-9]/g, ''), channel: 'whatsapp', status, evidence }));
+    if (r.ok) toast.success('İletişim izni kaydedildi.');
+    else toast.error(r.error || 'İzin kaydedilemedi.');
+    setSaving(false);
+  };
+  return <div className="space-y-4">
+    <Card><CardContent className="pt-6 space-y-3">
+      <h3 className="font-semibold">Otomatik WhatsApp kurulumu</h3>
+      <p className="text-sm text-muted-foreground">Ayarlar bölümünde WhatsApp bağlantısını kurun. Rezervasyon oluşturuldu, giriş ve çıkış için ayrı birer kural oluşturup Meta onaylı şablon seçin. Yalnızca onaylanan rezervasyonlara mesaj istiyorsanız “Rezervasyon onayı” olayını seçin; aynı mesaj için her iki olayı birden etkinleştirmeyin. Simülasyon modunda gerçek mesaj gönderilmez.</p>
+      <p className="text-sm text-muted-foreground">Loglar: “Gönderildi” Meta kabulünü, “Teslim Edildi” cihaz teslimini gösterir. “Sonuç belirsiz” kayıtları çift gönderimi önlemek için otomatik tekrar denenmez; Meta kaydı kontrol edilmelidir.</p>
+      <h4 className="font-medium">Misafirin WhatsApp ileti izni</h4>
+      <Label htmlFor="consent-phone">Telefon (ülke koduyla)</Label>
+      <Input id="consent-phone" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+905551234567" />
+      <Label htmlFor="consent-evidence">İzin kaynağı ve tarihi</Label>
+      <Input id="consent-evidence" value={evidence} onChange={(e) => setEvidence(e.target.value)} placeholder="Örnek: İmzalı giriş formu, 12.10.2026" maxLength={500} />
+      <div className="flex gap-2"><Button disabled={saving} onClick={() => consent('opt_in')}>Verilen izni kaydet</Button><Button disabled={saving} variant="outline" onClick={() => consent('opt_out')}>Gönderimleri durdur</Button></div>
+    </CardContent></Card>
+    <Card><CardContent className="pt-6 space-y-3">
+      <h3 className="font-semibold">Mesajlarda kullanılacak tesis bilgileri</h3>
+      <p className="text-sm text-muted-foreground">Yalnızca gerçek ve güncel bilgileri girin. Boş bir alan şablonda kullanılıyorsa mesaj gönderilmez.</p>
+      {Object.entries({wifi_sifre:'Wi-Fi şifresi',restoran_saatleri:'Restoran saatleri',havuz_saatleri:'Havuz saatleri',spa_saatleri:'SPA saatleri',harita_link:'Harita bağlantısı',transfer_bilgi:'Transfer bilgisi',degerlendirme_link:'Değerlendirme bağlantısı'}).map(([key, label]) =>
+        <div key={key}><Label htmlFor={`hotel-info-${key}`}>{label}</Label><Input id={`hotel-info-${key}`} value={info[key] || ''} maxLength={1000} onChange={(e) => setInfo((p) => ({...p,[key]:e.target.value}))} /></div>)}
+      <Button disabled={saving} onClick={async () => { setSaving(true); const r = await safe(() => put('/messaging-center/hotel-info', info)); if (r.ok) toast.success('Tesis bilgileri kaydedildi.'); else toast.error(r.error || 'Tesis bilgileri kaydedilemedi.'); setSaving(false); }}>Tesis bilgilerini kaydet</Button>
+    </CardContent></Card>
+  </div>;
 }

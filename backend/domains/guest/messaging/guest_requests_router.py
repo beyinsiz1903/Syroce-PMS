@@ -135,7 +135,7 @@ async def reply_guest_request_thread(
         phone_number = room_id.replace("wa_", "")
 
         # Send via WhatsApp
-        from modules.messaging.providers import CHANNEL_PROVIDER_MAP
+        from modules.messaging.providers import PROVIDER_MAP
         from modules.messaging.service import MessagingService
 
         svc = MessagingService(raw_db)
@@ -145,7 +145,19 @@ async def reply_guest_request_thread(
 
         creds = await svc._load_credentials(current_user.tenant_id, config)
         mode = svc._resolve_mode(config)
-        provider = CHANNEL_PROVIDER_MAP["whatsapp"]
+        if not last_guest:
+            raise HTTPException(404, "WhatsApp görüşmesi bulunamadı")
+        from datetime import UTC, datetime, timedelta
+
+        from modules.messaging.recipient_crypto import recipient_hash
+        session = await raw_db.messaging_consents.find_one({
+            "tenant_id": current_user.tenant_id, "channel": "whatsapp",
+            "$or": [{"recipient": phone_number}, {"recipient_hash": recipient_hash(phone_number)}],
+            "last_inbound_at": {"$gte": (datetime.now(UTC) - timedelta(hours=24)).isoformat()},
+        })
+        if not session or not await svc._check_consent(current_user.tenant_id, phone_number, "whatsapp"):
+            raise HTTPException(409, "Yanıt penceresi kapalı veya ileti izni reddedilmiş. Onaylı şablon kullanın.")
+        provider = PROVIDER_MAP["whatsapp"]
         try:
             delivery = await provider.send(
                 recipient=phone_number,

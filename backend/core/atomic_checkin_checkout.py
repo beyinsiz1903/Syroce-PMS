@@ -148,6 +148,7 @@ async def check_in_booking_atomic(
         booking_update = {
             "status": "checked_in",
             "checked_in_at": now_iso,
+            "messaging_pending.checked_in": now_iso,
             "checked_in_by": actor_name or actor_id,
             "updated_at": now_iso,
         }
@@ -389,6 +390,7 @@ async def check_out_booking_atomic(
         booking_update = {
             "status": "checked_out",
             "checked_out_at": now_iso,
+            "messaging_pending.checked_out": now_iso,
             "checked_out_by": actor_name or actor_id,
             "updated_at": now_iso,
         }

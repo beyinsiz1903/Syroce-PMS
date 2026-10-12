@@ -544,6 +544,14 @@ async def create_booking_atomic(
     check_in = booking_doc.get("check_in") or booking_doc.get("check_in_date")
     check_out = booking_doc.get("check_out") or booking_doc.get("check_out_date")
     booking_status = booking_doc.get("status", "confirmed")
+    pending = dict(booking_doc.get("messaging_pending") or {})
+    pending["booking_created"] = datetime.now(UTC).isoformat()
+    booking_doc["messaging_pending"] = pending
+    if booking_status in ("confirmed", "guaranteed", "checked_in"):
+        pending["booking_confirmed"] = datetime.now(UTC).isoformat()
+        if booking_status == "checked_in":
+            pending["checked_in"] = pending["booking_confirmed"]
+        booking_doc["messaging_pending"] = pending
     booking_id = booking_doc.get("id")
     correlation_id = booking_doc.get("correlation_id") or booking_id
 

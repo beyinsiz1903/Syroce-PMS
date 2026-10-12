@@ -11,11 +11,17 @@ Trigger Events:
 
 import logging
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
 TRIGGER_EVENTS = {
+    "booking_created": {
+        "label": "Rezervasyon oluşturuldu",
+        "description": "Rezervasyon ilk kez kaydedildiğinde; onay olayından ayrıdır",
+        "default_channel": "whatsapp",
+        "default_category": "rezervasyon_onay",
+    },
     "booking_confirmed": {
         "label": "Rezervasyon Onaylandi",
         "description": "Rezervasyon durumu confirmed olunca",
@@ -98,147 +104,70 @@ async def _get_db():
     return db
 
 
-async def process_booking_event(tenant_id: str, event_type: str, booking: dict):
-    """
-    Called when a booking status changes.
-    Finds matching automation rules and sends messages.
-    """
+async def process_booking_event(tenant_id: str, event_type: str, booking: dict, db=None):
+    """Materialize one durable delivery per event/rule; never swallow failures."""
     if event_type not in TRIGGER_EVENTS:
         return
-
-    try:
+    if db is None:
         db = await _get_db()
+    from modules.messaging.whatsapp_lifecycle import WhatsAppDelivery
+    from security.encrypted_lookup import decrypt_guest_doc
 
-        rules = await db.messaging_automation_rules.find(
-            {"tenant_id": tenant_id, "trigger_event": event_type, "enabled": True},
-            {"_id": 0},
-        ).to_list(20)
-
-        rules = deduplicate_automation_rules(rules)
-        if not rules:
-            return
-
-        guest = None
-        guest_id = booking.get("guest_id")
-        if guest_id:
-            from security.encrypted_lookup import decrypt_guest_doc
-
-            # Decrypt before deriving recipient_email/recipient_phone — encrypted
-            # guests would otherwise yield AES envelopes as recipients and every
-            # automation (email + SMS) would silently fail for migrated guests.
-            guest = decrypt_guest_doc(await db.guests.find_one({"id": guest_id, "tenant_id": tenant_id}, {"_id": 0}))
-
-        room = None
-        room_id = booking.get("room_id")
-        if room_id:
-            room = await db.rooms.find_one({"id": room_id, "tenant_id": tenant_id}, {"_id": 0})
-
-        tenant = await db.tenants.find_one({"id": tenant_id}, {"_id": 0})
-
-        variables = _build_template_variables(booking, guest, room, tenant)
-
-        recipient_email = guest.get("email", "") if guest else ""
-        recipient_phone = guest.get("phone", "") if guest else ""
-
-        for rule in rules:
-            try:
-                recipient = recipient_email if rule["channel"] == "email" else recipient_phone
-                if not recipient:
-                    logger.warning(f"Automation {rule['id']}: {rule['channel']} alici bilgisi yok (booking={booking.get('id')})")
-                    await db.messaging_automation_rules.update_one(
-                        {"id": rule["id"]},
-                        {"$inc": {"total_failed": 1}, "$set": {"last_triggered_at": datetime.now(UTC).isoformat()}},
-                    )
-                    continue
-
-                template = None
-                if rule.get("template_id"):
-                    template = await db.messaging_templates.find_one({"id": rule["template_id"], "tenant_id": tenant_id}, {"_id": 0})
-
-                # v41 Bug BG: HTML-escape variables when channel renders HTML.
-                _esc_html = rule["channel"] in ("email",)
-                body = _render_template(template, variables, escape_html=_esc_html) if template else f"Otomatik bildirim: {event_type}"
-                subject = _render_subject(template, variables) if template else None
-
-                from modules.messaging.service import MessagingService
-
-                svc = MessagingService(db)
-                result = await svc.send_message(
-                    tenant_id=tenant_id,
-                    channel=rule["channel"],
-                    recipient=recipient,
-                    body=body,
-                    subject=subject,
-                    template_id=rule.get("template_id"),
-                    variables=variables,
-                    booking_id=booking.get("id"),
-                    guest_id=guest_id,
-                    use_case=event_type,
-                )
-
-                if result.get("success"):
-                    await db.messaging_automation_rules.update_one(
-                        {"id": rule["id"]},
-                        {"$inc": {"total_sent": 1}, "$set": {"last_triggered_at": datetime.now(UTC).isoformat()}},
-                    )
-                    logger.info(f"Automation sent: {rule['name']} -> {recipient} ({rule['channel']})")
-                    # Create in-app notification for success
-                    await _create_automation_notification(
-                        db,
-                        tenant_id,
-                        success=True,
-                        rule_name=rule["name"],
-                        guest_name=variables.get("misafir_adi", "Misafir"),
-                        channel=rule["channel"],
-                        event_type=event_type,
-                    )
-                else:
-                    await db.messaging_automation_rules.update_one(
-                        {"id": rule["id"]},
-                        {"$inc": {"total_failed": 1}, "$set": {"last_triggered_at": datetime.now(UTC).isoformat()}},
-                    )
-                    logger.warning(f"Automation failed: {rule['name']} -> {result.get('error')}")
-                    # Create in-app notification for failure
-                    await _create_automation_notification(
-                        db,
-                        tenant_id,
-                        success=False,
-                        rule_name=rule["name"],
-                        guest_name=variables.get("misafir_adi", "Misafir"),
-                        channel=rule["channel"],
-                        event_type=event_type,
-                        error=result.get("error", ""),
-                    )
-
-            except Exception as e:
-                logger.exception(f"Automation rule {rule.get('id')} failed: {e}")
-
-    except Exception as e:
-        logger.exception(f"process_booking_event error: {e}")
+    rules = await db.messaging_automation_rules.find(
+        {"tenant_id": tenant_id, "trigger_event": event_type, "enabled": True}, {"_id": 0}
+    ).to_list(None)
+    guest = decrypt_guest_doc(await db.guests.find_one({"id": booking.get("guest_id"), "tenant_id": tenant_id}, {"_id": 0})) or {}
+    room = await db.rooms.find_one({"id": booking.get("room_id"), "tenant_id": tenant_id}, {"_id": 0})
+    tenant = await db.tenants.find_one({"id": tenant_id}, {"_id": 0})
+    variables = _build_template_variables(booking, guest, room, tenant)
+    for rule in deduplicate_automation_rules(rules):
+        if rule["channel"] != "whatsapp":
+            from modules.messaging.service import MessagingService
+            key = f"{tenant_id}:{event_type}:{booking['id']}:{rule['id']}"
+            claim = await db.messaging_automation_attempts.update_one(
+                {"_id": key}, {"$setOnInsert": {"status": "claimed", "tenant_id": tenant_id}}, upsert=True)
+            if claim.upserted_id is None:
+                continue
+            result = await MessagingService(db).send_message(
+                tenant_id, rule["channel"], guest.get("email", ""), template_id=rule.get("template_id"),
+                variables=variables, booking_id=booking["id"], guest_id=booking.get("guest_id"), use_case=event_type)
+            await db.messaging_automation_attempts.update_one({"_id": key}, {"$set": {"result": result}})
+            continue
+        mapping = rule.get("meta_template") or {}
+        missing = [name for name in mapping.get("variables", []) if not variables.get(name)]
+        key = f"{tenant_id}:{event_type}:{booking['id']}:{rule['id']}"
+        components = [{"type": "body", "parameters": [{"type": "text", "text": str(variables.get(name, ""))}
+                       for name in mapping.get("variables", [])]}] if mapping.get("variables") else []
+        await WhatsAppDelivery(db).enqueue(
+            tenant_id, guest.get("phone", ""), mapping.get("name", ""), mapping.get("language", "tr"),
+            components, key=key, delay_minutes=max(0, int(rule.get("delay_minutes", 0))),
+            booking_id=booking["id"], guest_id=booking.get("guest_id"), use_case=event_type, rule_id=rule["id"],
+            initial_status="rejected" if not mapping.get("name") or missing else "queued",
+            error_message=("Meta şablonu eşleştirilmemiş veya eksik alanlar: " + ", ".join(missing)) if not mapping.get("name") or missing else None)
 
 
 def _build_template_variables(booking: dict, guest: dict | None, room: dict | None, tenant: dict | None) -> dict:
     """Build a dict of template variables from booking context."""
     v = {
         "misafir_adi": guest.get("name", "") if guest else booking.get("guest_name", "Misafir"),
-        "otel_adi": tenant.get("name", "Otel") if tenant else "Otel",
+        "otel_adi": tenant.get("name", "") if tenant else "",
         "oda_no": room.get("room_number", "") if room else booking.get("room_number", ""),
         "oda_tipi": room.get("type", "") if room else "",
         "giris_tarihi": _format_date(booking.get("check_in", "")),
         "cikis_tarihi": _format_date(booking.get("check_out", "")),
         "konfirmasyon_no": booking.get("id", "")[:8].upper(),
-        "toplam_tutar": str(booking.get("total_amount", "")),
-        "wifi_sifre": "Hotel2026",
-        "restoran_saatleri": "07:00-10:00 / 12:00-14:00 / 19:00-22:00",
-        "havuz_saatleri": "08:00-20:00",
-        "spa_saatleri": "10:00-21:00",
+        "toplam_tutar": str(booking["total_amount"]) if booking.get("total_amount") is not None else "",
+        "wifi_sifre": (tenant or {}).get("messaging_info", {}).get("wifi_sifre", ""),
+        "restoran_saatleri": (tenant or {}).get("messaging_info", {}).get("restoran_saatleri", ""),
+        "havuz_saatleri": (tenant or {}).get("messaging_info", {}).get("havuz_saatleri", ""),
+        "spa_saatleri": (tenant or {}).get("messaging_info", {}).get("spa_saatleri", ""),
         "telefon": tenant.get("phone", "") if tenant else "",
         "email": tenant.get("email", "") if tenant else "",
         "adres": tenant.get("address", "") if tenant else "",
-        "harita_link": "https://maps.google.com",
-        "transfer_bilgi": "Detaylar icin resepsiyonu arayiniz",
-        "degerlendirme_link": "https://g.page/review",
-        "fatura_no": booking.get("id", "")[:8].upper(),
+        "harita_link": (tenant or {}).get("messaging_info", {}).get("harita_link", ""),
+        "transfer_bilgi": (tenant or {}).get("messaging_info", {}).get("transfer_bilgi", ""),
+        "degerlendirme_link": (tenant or {}).get("messaging_info", {}).get("degerlendirme_link", ""),
+        "fatura_no": booking.get("invoice_number", ""),
     }
     return v
 
@@ -246,6 +175,8 @@ def _build_template_variables(booking: dict, guest: dict | None, room: dict | No
 def _format_date(date_str: str) -> str:
     if not date_str:
         return ""
+    if isinstance(date_str, (datetime, date)):
+        return date_str.strftime("%d.%m.%Y")
     try:
         dt = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
         return dt.strftime("%d.%m.%Y")
@@ -346,7 +277,7 @@ async def fire_booking_event(tenant_id: str, event_type: str, booking: dict):
                 "event_key": event_key,
                 "tenant_id": tenant_id,
                 "event_type": event_type,
-                "booking": booking,
+                "booking": {key: booking.get(key) for key in ("id", "guest_id", "room_id", "check_in", "check_out", "total_amount")},
                 "status": "pending",
                 "attempts": 0,
                 "next_attempt_at": now,
@@ -366,10 +297,15 @@ async def fire_booking_event(tenant_id: str, event_type: str, booking: dict):
         logger.warning("Messaging automation dispatch could not be queued; recovery sweep will retry")
 
 
-async def dispatch_due_booking_events(limit: int = 100) -> dict[str, int]:
+async def dispatch_due_booking_events(limit: int = 100, db=None) -> dict[str, int]:
     """Deliver durable booking events with bounded exponential retry."""
-    db = await _get_db()
+    if db is None:
+        db = await _get_db()
     now = datetime.now(UTC)
+    await recover_booking_markers(db, limit)
+    await db.messaging_automation_events.update_many(
+        {"status": "processing", "updated_at": {"$lt": (now - timedelta(minutes=5)).isoformat()}},
+        {"$set": {"status": "retry", "next_attempt_at": now.isoformat()}})
     due = await db.messaging_automation_events.find(
         {"status": {"$in": ["pending", "retry"]}, "next_attempt_at": {"$lte": now.isoformat()}},
         {"_id": 0},
@@ -384,7 +320,7 @@ async def dispatch_due_booking_events(limit: int = 100) -> dict[str, int]:
         if claimed.modified_count != 1:
             continue
         try:
-            await process_booking_event(event["tenant_id"], event["event_type"], event["booking"])
+            await process_booking_event(event["tenant_id"], event["event_type"], event["booking"], db=db)
             await db.messaging_automation_events.update_one(
                 {"id": event["id"]},
                 {"$set": {"status": "processed", "processed_at": datetime.now(UTC).isoformat(), "updated_at": datetime.now(UTC).isoformat()}},
@@ -405,3 +341,22 @@ async def dispatch_due_booking_events(limit: int = 100) -> dict[str, int]:
             )
             logger.exception("Messaging automation event delivery failed: %s", event["id"])
     return stats
+
+async def recover_booking_markers(db, limit=100):
+    """Outbox markers are committed in the same document as the lifecycle change."""
+    bookings = await db.bookings.find({"messaging_pending": {"$exists": True, "$ne": {}}}).limit(limit).to_list(limit)
+    for booking in bookings:
+        for event_type, occurred_at in booking.get("messaging_pending", {}).items():
+            key = f"{booking['tenant_id']}:{event_type}:{booking['id']}"
+            now = datetime.now(UTC).isoformat()
+            await db.messaging_automation_events.update_one(
+                {"event_key": key},
+                {"$setOnInsert": {"id": key, "event_key": key, "tenant_id": booking["tenant_id"],
+                 "event_type": event_type, "booking": {"id": booking["id"], "guest_id": booking.get("guest_id"),
+                 "room_id": booking.get("room_id"), "check_in": booking.get("check_in"), "check_out": booking.get("check_out"),
+                 "total_amount": booking.get("total_amount")},
+                 "status": "pending", "attempts": 0, "next_attempt_at": now, "created_at": now, "updated_at": now}},
+                upsert=True)
+            await db.bookings.update_one(
+                {"id": booking["id"], "tenant_id": booking["tenant_id"], f"messaging_pending.{event_type}": occurred_at},
+                {"$unset": {f"messaging_pending.{event_type}": ""}})

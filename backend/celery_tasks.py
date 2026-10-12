@@ -35,16 +35,23 @@ def dispatch_due_messaging_automation_events_task():
     """Durably dispatch booking confirmations that survived a restart/broker outage."""
     from modules.messaging.automation import dispatch_due_booking_events
 
-    return asyncio.run(dispatch_due_booking_events())
+    return asyncio.run(_run_messaging_with_db(dispatch_due_booking_events))
 
 
 @celery_app.task(name="celery_tasks.messaging_retry_task")
 def messaging_retry_task():
     """Retry due messaging delivery logs with the persisted retry policy."""
-    from modules.messaging.automation import _get_db
     from modules.messaging.service import MessagingService
 
-    return asyncio.run(_retry_due_messaging_deliveries(_get_db, MessagingService))
+    return asyncio.run(_run_messaging_with_db(lambda db: MessagingService(db).retry_due_messages()))
+
+
+async def _run_messaging_with_db(operation):
+    db, client = get_db()
+    try:
+        return await operation(db=db)
+    finally:
+        client.close()
 
 
 async def _retry_due_messaging_deliveries(get_db, service_class):

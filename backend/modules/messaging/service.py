@@ -269,7 +269,7 @@ class MessagingService:
                     "$set": {
                         "status": DeliveryStatus.SENT.value,
                         "provider_message_id": result.get("provider_message_id"),
-                        "delivered_at": datetime.now(UTC).isoformat(),
+                        "sent_at": datetime.now(UTC).isoformat(),
                         "updated_at": datetime.now(UTC).isoformat(),
                     }
                 },
@@ -294,7 +294,7 @@ class MessagingService:
             return await self._try_fallback(tenant_id, channel, recipient, body, subject, log_doc, booking_id, guest_id, property_id, use_case)
 
     async def _try_fallback(self, tenant_id, original_channel, recipient, body, subject, original_log, booking_id, guest_id, property_id, use_case) -> dict:
-        fallbacks = FALLBACK_CHAIN.get(original_channel, [])
+        fallbacks = [] if original_channel == "whatsapp" else FALLBACK_CHAIN.get(original_channel, [])
         for fb_channel in fallbacks:
             fb_provider_type = CHANNEL_PROVIDER_MAP.get(fb_channel)
             fb_config = await self._get_provider_config(tenant_id, fb_provider_type)
@@ -334,6 +334,11 @@ class MessagingService:
         doc = await self.db.messaging_delivery_logs.find_one({"id": delivery_id, "tenant_id": tenant_id}, {"_id": 0})
         if not doc:
             return {"success": False, "error": "Delivery not found"}
+        if doc.get("template_components_enc"):
+            from .whatsapp_lifecycle import WhatsAppDelivery
+            return await WhatsAppDelivery(self.db).deliver(tenant_id, delivery_id)
+        if doc.get("status") != "failed":
+            return {"success": False, "error": "Only failed deliveries can be retried"}
         if doc.get("retry_count", 0) >= doc.get("max_retries", 3):
             return {"success": False, "error": "Max retries reached"}
 
@@ -346,6 +351,14 @@ class MessagingService:
         creds = await self._load_credentials(tenant_id, config)
         mode = self._resolve_mode(config)
 
+        claim = await self.db.messaging_delivery_logs.update_one(
+            {"id": delivery_id, "tenant_id": tenant_id, "status": "failed", "retry_count": doc.get("retry_count", 0)},
+            {"$set": {"status": "sending", "updated_at": datetime.now(UTC).isoformat()}})
+        if claim.modified_count != 1:
+            return {"success": False, "error": "Already claimed"}
+        if not await self._check_consent(tenant_id, reveal_recipient(doc), doc.get("channel")):
+            await self.db.messaging_delivery_logs.update_one({"id": delivery_id, "tenant_id": tenant_id}, {"$set": {"status": "rejected"}})
+            return {"success": False, "error": "Recipient opted out"}
         # Recipient is sealed at rest (recipient_enc); decrypt at the read
         # boundary to send. Dual-read falls back to legacy plaintext.
         result = await provider.send(reveal_recipient(doc), doc["body"], doc.get("subject"), creds, mode)
@@ -359,7 +372,7 @@ class MessagingService:
                         "status": DeliveryStatus.SENT.value,
                         "retry_count": new_count,
                         "provider_message_id": result.get("provider_message_id"),
-                        "delivered_at": datetime.now(UTC).isoformat(),
+                        "sent_at": datetime.now(UTC).isoformat(),
                         "updated_at": datetime.now(UTC).isoformat(),
                     }
                 },
@@ -371,6 +384,7 @@ class MessagingService:
                 {"id": delivery_id},
                 {
                     "$set": {
+                        "status": "failed",
                         "retry_count": new_count,
                         "error_message": result.get("error"),
                         "next_retry_at": next_retry.isoformat(),
@@ -382,10 +396,13 @@ class MessagingService:
 
     async def retry_due_messages(self, limit: int = 100) -> dict[str, int]:
         """Retry due failed deliveries without relying on an operator click."""
+        from .whatsapp_lifecycle import WhatsAppDelivery
+        await WhatsAppDelivery(self.db).drain(limit)
         now = datetime.now(UTC).isoformat()
         due = await self.db.messaging_delivery_logs.find(
             {
                 "status": DeliveryStatus.FAILED.value,
+                "template_name": {"$exists": False},
                 "retry_count": {"$lt": 3},
                 "next_retry_at": {"$lte": now},
             },
