@@ -39,8 +39,10 @@ import { hr } from './modules/departments/hr';
 import { revenue } from './modules/departments/revenue';
 import { pos } from './modules/departments/pos';
 import { guest } from './modules/guest';
+import { en } from './en';
+import { useSettingsStore } from '../state/settingsStore';
 
-export const tr = {
+const turkish = {
   app,
   auth,
   tabs,
@@ -74,3 +76,25 @@ export const tr = {
   },
   guest,
 };
+
+function mergeLocale(base: any, override: any): any {
+  return new Proxy(base, {
+    get(target, key: string) {
+      const original = target[key];
+      const translated = override?.[key];
+      if (original && typeof original === 'object') return mergeLocale(original, translated);
+      return translated ?? original;
+    },
+  });
+}
+
+// Compatibility export: existing screens can keep `tr.section.label` while
+// the resolved value follows the persisted locale. The root subscribes to the
+// locale store so navigation labels and mounted screens re-render on change.
+export const tr = new Proxy(turkish, {
+  get(target, key: string) {
+    const override = useSettingsStore.getState().locale === 'en' ? (en as any)[key] : undefined;
+    const original = (target as any)[key];
+    return original && typeof original === 'object' ? mergeLocale(original, override) : override ?? original;
+  },
+});

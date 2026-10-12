@@ -1,0 +1,24 @@
+appId: com.syroce.pms
+name: "Manager role acceptance"
+tags: [acceptance, manager, role]
+env:
+  SMOKE_MANAGER_EMAIL: qa-manager@syroce.com
+  SMOKE_MANAGER_PASSWORD: CHANGE_ME
+---
+- launchApp:
+    clearState: true
+    clearKeychain: true
+    permissions: { all: allow }
+- assertVisible: { text: "Giriş Yap", timeout: 30000 }
+- tapOn: { id: "smoke-login-email" }
+- inputText: ${SMOKE_MANAGER_EMAIL}
+- tapOn: { id: "smoke-login-password" }
+- inputText: ${SMOKE_MANAGER_PASSWORD}
+- hideKeyboard
+- tapOn: { id: "smoke-login-submit" }
+- # Managers also use the shared shift shell on first launch. This avoids a
+- # fragile assumption about a role-specific tab while still verifying the
+- # manager credential completes the mobile authentication path.
+- assertVisible: { text: "Bugün Giriş", timeout: 30000 }
+- assertNotVisible: { id: "smoke-login-submit", timeout: 30000 }
+- takeScreenshot: { path: "artifacts/manager-role-acceptance" }

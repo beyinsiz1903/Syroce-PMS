@@ -80,11 +80,36 @@ npm run smoke
 | `flows/push_register.yaml`           | Login + "Daha" sekmesinde push bildirim göstergesi görünür    | front_desk  |
 | `flows/biometric_lock.yaml`          | Biyometrik kilidi aç → background → foreground → kilit göster | front_desk  |
 | `flows/offline_today.yaml`           | Login + Bugün cache + uçak modu + OfflineBanner doğrulanır    | front_desk  |
+| `flows/role_housekeeping.yaml`       | Atanmış kat hizmetleri hesabı ortak vardiya kabuğuna girer    | housekeeping |
+| `flows/role_manager.yaml`            | Atanmış yönetici hesabı ortak vardiya kabuğuna girer          | gm / manager |
 
 `login.yaml` `runFlow` ile diğerlerinden çağrılır — tek kaynaktan
 korunur. `biometric_lock.yaml` ve `offline_today.yaml` ek olarak
 `scripts/*.js` shell köprüsünü kullanır (aşağıdaki "Önkoşullar"
 bölümüne bakın).
+
+## Gerçek cihaz ekran kanıtı
+
+Mağaza görselleri için üretilen temsili ekranları ürün kanıtı olarak
+kullanmayın. TestFlight / Play Internal build'i gerçek cihazda açtıktan
+sonra, QA hesabı değişkenlerini verip aşağıdaki komutu çalıştırın:
+
+```bash
+cd mobile
+SMOKE_EMAIL=qa-frontdesk@syroce.com \
+SMOKE_PASSWORD=*** \
+SMOKE_HK_EMAIL=qa-housekeeping@syroce.com \
+SMOKE_HK_PASSWORD=*** \
+SMOKE_MANAGER_EMAIL=qa-manager@syroce.com \
+SMOKE_MANAGER_PASSWORD=*** \
+SMOKE_GUEST_EMAIL=qa-guest@syroce.com \
+SMOKE_GUEST_PASSWORD=*** \
+bash scripts/capture-real-device-evidence.sh
+```
+
+Her akışın görüntüsü ve JUnit çıktısı `artifacts/mobile-device-evidence/<tarih>`
+altına kaydedilir. Dijital anahtar akışı yalnızca ekranın açıldığını doğrular;
+fiziksel kilit açma doğrulaması bu aşamanın kapsamı dışındadır.
 
 ## Yeni akışlar için önkoşullar
 
