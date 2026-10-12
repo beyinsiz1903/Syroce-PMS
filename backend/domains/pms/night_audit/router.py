@@ -170,7 +170,7 @@ async def run_night_audit(
         backlog_days = (date.fromisoformat(local_today) - date.fromisoformat(authoritative_bd)).days
     except ValueError:
         backlog_days = 0
-    if not request.dry_run and backlog_days > 1:
+    if not request.dry_run and backlog_days > 1 and not request.controlled_catchup:
         raise HTTPException(
             status_code=409,
             detail={
@@ -186,11 +186,52 @@ async def run_night_audit(
             },
         )
 
+    # Recovery can post financial entries. Keep the normal block as the
+    # default, but allow an administrator to close exactly one overdue day
+    # after recording why the controlled recovery is required.
+    if request.controlled_catchup:
+        if request.dry_run:
+            raise HTTPException(
+                status_code=422,
+                detail={"success": False, "code": "INVALID_CATCHUP_MODE", "error": "Kontrollü kapatma simülasyonla birlikte kullanılamaz."},
+            )
+        _admin_guard(current_user)
+        if backlog_days <= 1:
+            raise HTTPException(
+                status_code=422,
+                detail={"success": False, "code": "CATCHUP_NOT_REQUIRED", "error": "Kontrollü kapatma yalnızca iki veya daha fazla gün gerideyken kullanılabilir."},
+            )
+        if not request.reason or len(request.reason.strip()) < 10:
+            raise HTTPException(
+                status_code=422,
+                detail={"success": False, "code": "CATCHUP_REASON_REQUIRED", "error": "Kontrollü kapatma için en az 10 karakterlik açıklama zorunludur."},
+            )
+        if not request.simulation_run_id:
+            raise HTTPException(
+                status_code=422,
+                detail={"success": False, "code": "CATCHUP_SIMULATION_REQUIRED", "error": "Kontrollü kapatma öncesinde bu iş günü için tamamlanmış bir simülasyon seçilmelidir."},
+            )
+        simulation = await db.night_audit_runs.find_one(
+            {
+                "id": request.simulation_run_id,
+                "tenant_id": current_user.tenant_id,
+                "business_date": authoritative_bd,
+                "dry_run": True,
+                "status": "dry_run_completed",
+            },
+            {"_id": 0, "id": 1},
+        )
+        if not simulation:
+            raise HTTPException(
+                status_code=422,
+                detail={"success": False, "code": "CATCHUP_SIMULATION_INVALID", "error": "Seçilen simülasyon bulunamadı veya açık iş günüyle eşleşmiyor. Yeniden simülasyon çalıştırın."},
+            )
+
     result = await start_night_audit(
         tenant_id=current_user.tenant_id,
         property_id=request.property_id,
         business_date=request.business_date,
-        trigger_source=request.trigger_source,
+        trigger_source="controlled_catchup" if request.controlled_catchup else request.trigger_source,
         actor={"id": current_user.id, "email": getattr(current_user, "email", "")},
         skip_validations=request.skip_validations,
         dry_run=request.dry_run,

@@ -232,3 +232,57 @@ async def test_run_endpoint_blocks_large_business_date_backlog():
     assert exc.value.detail["code"] == "BUSINESS_DATE_CATCHUP_REQUIRED"
     assert exc.value.detail["backlog_days"] > 1
     start_mock.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_controlled_catchup_closes_only_current_open_day_with_reason():
+    """An administrator can recover one overdue day, never a date range."""
+    from domains.pms.night_audit.router import run_night_audit
+
+    user = SimpleNamespace(id="user-1", tenant_id="tenant-1", role="admin", email="manager@example.com")
+    request = RunNightAuditRequest(
+        business_date="2000-01-01",
+        controlled_catchup=True,
+        simulation_run_id="dry-run-1",
+        reason="Takvim geride kaldı; finansal kontrol tamamlandı.",
+    )
+    start_mock = AsyncMock(return_value={"success": True, "business_date": "2000-01-01"})
+
+    with (
+        patch(
+            "core.business_date_service.ensure_business_date_initialized",
+            new=AsyncMock(return_value={"business_date": "2000-01-01"}),
+        ),
+        patch("core.night_audit_hardened.start_night_audit", new=start_mock),
+        patch(
+            "domains.pms.night_audit.router.db",
+            new=SimpleNamespace(night_audit_runs=SimpleNamespace(find_one=AsyncMock(return_value={"id": "dry-run-1"}))),
+        ),
+    ):
+        await run_night_audit(request, current_user=user, _perm=None)
+
+    assert start_mock.await_args.kwargs["business_date"] == "2000-01-01"
+    assert start_mock.await_args.kwargs["trigger_source"] == "controlled_catchup"
+
+
+@pytest.mark.asyncio
+async def test_controlled_catchup_requires_a_recorded_reason():
+    from domains.pms.night_audit.router import run_night_audit
+
+    user = SimpleNamespace(id="user-1", tenant_id="tenant-1", role="admin", email="manager@example.com")
+    request = RunNightAuditRequest(business_date="2000-01-01", controlled_catchup=True, reason="kısa")
+    start_mock = AsyncMock()
+
+    with (
+        patch(
+            "core.business_date_service.ensure_business_date_initialized",
+            new=AsyncMock(return_value={"business_date": "2000-01-01"}),
+        ),
+        patch("core.night_audit_hardened.start_night_audit", new=start_mock),
+    ):
+        with pytest.raises(HTTPException) as exc:
+            await run_night_audit(request, current_user=user, _perm=None)
+
+    assert exc.value.status_code == 422
+    assert exc.value.detail["code"] == "CATCHUP_REASON_REQUIRED"
+    start_mock.assert_not_awaited()
