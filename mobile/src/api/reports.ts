@@ -6,8 +6,10 @@ import { api } from './client';
 
 export type FinanceSnapshot = {
   report_date: string;
+  business_date?: string;
   pending_ar: {
     total: number;
+    by_currency?: Record<string, { total: number; '0-30_days': number; '30-60_days': number; '60_plus_days': number; overdue_invoices_count: number }>;
     overdue_breakdown: {
       '0-30_days': number;
       '30-60_days': number;
@@ -31,6 +33,7 @@ export type FinanceSnapshot = {
   accounting_invoices: {
     pending_count: number;
     pending_total: number;
+    by_currency?: Record<string, number>;
   };
 };
 

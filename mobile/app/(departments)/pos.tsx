@@ -65,8 +65,9 @@ import { makeIdempotencyKey } from '../../src/cache/posQueueCore';
 import {
   enqueueCloseOrder,
   enqueueQuickOrder,
+  getLegacyPosQueueCount,
   refreshPosQueueCount,
-  usePosQueueCount,
+  useScopedPosQueueCount,
 } from '../../src/cache/posQueue';
 
 // A request that never reached the server (offline / dropped mid-flight) so we
@@ -164,14 +165,21 @@ export default function PosScreen() {
   const c = useTheme();
   const qc = useQueryClient();
   const posAccess = useAuthStore((s) => s.posAccess);
+  const user = useAuthStore((s) => s.user);
+  const queueScope = useMemo(() => ({
+    tenantId: user?.tenant_id || user?.hotel_id || 'unavailable',
+    userId: user?.id || user?.user_id || 'unavailable',
+  }), [user?.tenant_id, user?.hotel_id, user?.id, user?.user_id]);
 
   // Count of POS writes (quick-order / close) waiting on the durable offline
   // queue. Drives the header badge; re-read from disk on mount so a restart
   // surfaces anything that was queued before the app was killed.
-  const pendingSync = usePosQueueCount();
+  const pendingSync = useScopedPosQueueCount(queueScope);
+  const [legacyQueueCount, setLegacyQueueCount] = useState(0);
   useEffect(() => {
-    refreshPosQueueCount().catch(() => {});
-  }, []);
+    refreshPosQueueCount(queueScope).catch(() => {});
+    getLegacyPosQueueCount().then(setLegacyQueueCount).catch(() => {});
+  }, [queueScope]);
 
   const [tab, setTab] = useState<Tab>('tables');
   const [outletId, setOutletId] = useState<string>('');
@@ -345,7 +353,7 @@ export default function PosScreen() {
     try {
       if (!onlineManager.isOnline()) {
         // Known offline — persist straight to the durable queue, no failed call.
-        await enqueueQuickOrder(payload, idempotencyKey);
+        await enqueueQuickOrder(payload, idempotencyKey, queueScope);
         haptic.success();
         resetForm();
         Alert.alert(tr.app.success, tr.departments.pos.orderQueued);
@@ -365,7 +373,7 @@ export default function PosScreen() {
       if (isNetworkError(e)) {
         // Dropped mid-flight — move it to the durable queue (same key) so the
         // reconnect replay finishes it exactly once.
-        await enqueueQuickOrder(payload, idempotencyKey);
+        await enqueueQuickOrder(payload, idempotencyKey, queueScope);
         haptic.success();
         resetForm();
         Alert.alert(tr.app.success, tr.departments.pos.orderQueued);
@@ -469,6 +477,7 @@ export default function PosScreen() {
         await enqueueCloseOrder(
           { order_id: orderId, payment_method: payMethod },
           idempotencyKey,
+          queueScope,
         );
         haptic.success();
         closePaySheet();
@@ -519,6 +528,7 @@ export default function PosScreen() {
         await enqueueCloseOrder(
           { order_id: orderId, payment_method: payMethod },
           idempotencyKey,
+          queueScope,
         );
         haptic.success();
         closePaySheet();
@@ -1875,6 +1885,14 @@ export default function PosScreen() {
             icon="cloud-offline-outline"
           />
         </View>
+      ) : null}
+      {legacyQueueCount > 0 ? (
+        <Card accent={c.warning} style={{ marginTop: spacing.xs }}>
+          <Body style={{ fontWeight: '700' }}>
+            {tr.departments.pos.legacyQueueTitle}: {legacyQueueCount}
+          </Body>
+          <Muted style={{ marginTop: spacing.xs }}>{tr.departments.pos.legacyQueueHint}</Muted>
+        </Card>
       ) : null}
 
       {/* Outlet selector */}

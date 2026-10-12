@@ -18,6 +18,7 @@ import { closeOrder, openQuickOrder, type PaymentMethod } from '../api/posFnb';
 import {
   enqueue as coreEnqueue,
   loadQueue,
+  POS_QUEUE_KEY,
   replayQueue,
   type DurableKV,
   type PosQueueEntry,
@@ -56,38 +57,40 @@ function buildDurableKV(): DurableKV {
 const kv = buildDurableKV();
 
 // ── pending-count store (badge) ─────────────────────────────────────────────
-let _count = 0;
 const _listeners = new Set<() => void>();
+const _counts = new Map<string, number>();
 
 function emit(): void {
   for (const fn of _listeners) fn();
 }
-function setCount(n: number): void {
-  if (n !== _count) {
-    _count = n;
-    emit();
-  }
-}
-function subscribe(cb: () => void): () => void {
-  _listeners.add(cb);
-  return () => {
-    _listeners.delete(cb);
-  };
-}
-function snapshot(): number {
-  return _count;
+export type QueueScope = { tenantId: string; userId: string };
+
+function scopeKey(scope: QueueScope): string {
+  return `syroce.pos.queue.v2.${encodeURIComponent(scope.tenantId)}.${encodeURIComponent(scope.userId)}`;
 }
 
-/** React hook returning the number of POS writes waiting to sync. */
-export function usePosQueueCount(): number {
-  return useSyncExternalStore(subscribe, snapshot, snapshot);
+export function useScopedPosQueueCount(scope: QueueScope): number {
+  const key = scopeKey(scope);
+  const subscribeScoped = (cb: () => void) => {
+    _listeners.add(cb);
+    return () => _listeners.delete(cb);
+  };
+  return useSyncExternalStore(subscribeScoped, () => _counts.get(key) || 0, () => 0);
 }
 
 /** Re-read the queue from disk and publish its size to subscribers. */
-export async function refreshPosQueueCount(): Promise<number> {
-  const entries = await loadQueue(kv);
-  setCount(entries.length);
+export async function refreshPosQueueCount(scope: QueueScope): Promise<number> {
+  const entries = await loadQueue(kv, scopeKey(scope));
+  _counts.set(scopeKey(scope), entries.length);
+  emit();
   return entries.length;
+}
+
+// Records written by the previous device-wide queue have no account owner.
+// Preserve them for operator reconciliation; never submit them under the
+// currently signed-in account.
+export async function getLegacyPosQueueCount(): Promise<number> {
+  return (await loadQueue(kv, POS_QUEUE_KEY)).length;
 }
 
 // ── enqueue helpers ─────────────────────────────────────────────────────────
@@ -106,6 +109,7 @@ export type CloseOrderPayload = {
 export async function enqueueQuickOrder(
   payload: QuickOrderPayload,
   idempotencyKey: string,
+  scope: QueueScope,
 ): Promise<void> {
   await coreEnqueue(kv, {
     id: idempotencyKey,
@@ -113,13 +117,14 @@ export async function enqueueQuickOrder(
     payload,
     idempotency_key: idempotencyKey,
     createdAt: Date.now(),
-  });
-  await refreshPosQueueCount();
+  }, scopeKey(scope));
+  await refreshPosQueueCount(scope);
 }
 
 export async function enqueueCloseOrder(
   payload: CloseOrderPayload,
   idempotencyKey: string,
+  scope: QueueScope,
 ): Promise<void> {
   await coreEnqueue(kv, {
     id: idempotencyKey,
@@ -127,8 +132,8 @@ export async function enqueueCloseOrder(
     payload,
     idempotency_key: idempotencyKey,
     createdAt: Date.now(),
-  });
-  await refreshPosQueueCount();
+  }, scopeKey(scope));
+  await refreshPosQueueCount(scope);
 }
 
 // ── replay ──────────────────────────────────────────────────────────────────
@@ -148,20 +153,21 @@ async function sendEntry(entry: PosQueueEntry): Promise<SendOutcome> {
   }
 }
 
-let _flushing = false;
+const _flushingScopes = new Set<string>();
 
 /**
  * Drain the queue. Safe to call repeatedly (reconnect, app start, manual): a
  * re-entrancy latch prevents two concurrent flushes from double-sending the
  * head entry. The count is always re-published afterwards.
  */
-export async function flushPosQueue(): Promise<void> {
-  if (_flushing) return;
-  _flushing = true;
+export async function flushPosQueue(scope: QueueScope): Promise<void> {
+  const key = scopeKey(scope);
+  if (_flushingScopes.has(key)) return;
+  _flushingScopes.add(key);
   try {
-    await replayQueue(kv, sendEntry);
+    await replayQueue(kv, sendEntry, key);
   } finally {
-    _flushing = false;
-    await refreshPosQueueCount();
+    _flushingScopes.delete(key);
+    await refreshPosQueueCount(scope);
   }
 }

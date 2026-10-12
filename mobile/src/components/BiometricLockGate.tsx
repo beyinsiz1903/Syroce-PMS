@@ -62,7 +62,9 @@ export const BiometricLockGate: React.FC<{ children: React.ReactNode }> = ({ chi
     if (!settingsHydrated) return;
     if (!user) {
       setLocked(false);
-      initialised.current = true;
+      // Auth hydration may finish after settings hydration. Keep the gate
+      // eligible to lock when the persisted session arrives moments later.
+      initialised.current = false;
       return;
     }
     if (!enabled) {

@@ -22,6 +22,8 @@ export const manager = {
   reportsTitle: 'Raporlar',
   reportsNoAccess: 'Bu raporları görüntüleme yetkiniz yok.',
   financeSnapshot: 'Finans Özeti',
+  businessDateLabel: 'PMS iş günü',
+  conversionIssues: 'Ödeme, geçmiş kur kaydı olmadığı için tahsilat toplamına alınamadı',
   pendingAr: 'Bekleyen Cari Alacak',
   overdueInvoices: 'Vadesi geçen fatura',
   overdue030: '0-30 gün',

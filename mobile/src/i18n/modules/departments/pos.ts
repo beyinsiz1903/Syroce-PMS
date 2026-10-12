@@ -30,6 +30,8 @@ export const pos = {
   orderAlreadyOpened: 'Bu sipariş zaten açılmıştı — çift sipariş oluşturulmadı',
   orderQueued: 'Bağlantı yok — sipariş kuyruğa alındı, internet gelince gönderilecek',
   pendingSync: 'Gönderim bekleyen',
+  legacyQueueTitle: 'Eski sürümden incelenmesi gereken çevrimdışı işlem',
+  legacyQueueHint: 'Bu kayıtların sahibi belirlenemediği için otomatik gönderilmiyor. Yeniden işlem oluşturmadan önce PMS sipariş ve tahsilat kayıtlarını kontrol edin.',
   activeOrders: 'Aktif Siparişler',
   noActiveOrders: 'Aktif sipariş yok',
   delayed: 'Geciken',

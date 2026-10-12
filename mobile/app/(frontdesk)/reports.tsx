@@ -35,6 +35,15 @@ export default function FrontDeskReportsScreen() {
   const offline = today.isError && isOffline(today.error);
   const data = today.data;
   const fin = finance.data;
+  const pendingArByCurrency = fin?.pending_ar.by_currency ?? (fin ? {
+    TRY: {
+      total: fin.pending_ar.total,
+      '0-30_days': fin.pending_ar.overdue_breakdown['0-30_days'],
+      '30-60_days': fin.pending_ar.overdue_breakdown['30-60_days'],
+      '60_plus_days': fin.pending_ar.overdue_breakdown['60_plus_days'],
+      overdue_invoices_count: fin.pending_ar.overdue_invoices_count,
+    },
+  } : {});
 
   return (
     <View style={{ flex: 1, backgroundColor: c.bg }} testID="frontdesk-reports">
@@ -91,9 +100,15 @@ export default function FrontDeskReportsScreen() {
               <Card><Muted>Finansal özet şu an yüklenemedi.</Muted></Card>
             ) : fin ? (
               <Card testID="frontdesk-finance-summary">
-                <StatRow label="Bugünkü tahsilat" value={`${formatCurrency(fin.todays_collections.amount)} (${fin.todays_collections.payment_count})`} tone="success" strong />
-                <StatRow label="Bekleyen alacak" value={formatCurrency(fin.pending_ar.total)} tone="warning" />
+                <Muted>PMS iş günü · {fin.business_date || fin.report_date}</Muted>
+                <StatRow label="Bugünkü tahsilat" value={`${formatCurrency(fin.todays_collections.amount, fin.todays_collections.currency || 'TRY')} (${fin.todays_collections.payment_count})`} tone="success" strong />
+                {Object.entries(pendingArByCurrency).map(([currency, bucket]) => (
+                  <StatRow key={`ar-${currency}`} label={`Bekleyen alacak · ${currency}`} value={formatCurrency(bucket.total, currency)} tone="warning" />
+                ))}
                 <StatRow label="Vadesi geçen fatura" value={String(fin.pending_ar.overdue_invoices_count)} tone="danger" />
+                {fin.todays_collections.conversion_issue_count ? (
+                  <Muted>{fin.todays_collections.conversion_issue_count} {tr.manager.conversionIssues}</Muted>
+                ) : null}
               </Card>
             ) : null}
           </>

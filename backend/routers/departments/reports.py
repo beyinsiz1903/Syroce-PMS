@@ -26,7 +26,7 @@ from core.helpers import require_module
 from core.security import get_current_user
 from core.utils import _XLSX_MAX_CELL_LEN, calculate_folio_balance, create_excel_workbook, excel_response
 from models.schemas import User
-from modules.pms_core.reporting_financials import reporting_collection_summary
+from modules.pms_core.reporting_financials import REPORTING_CURRENCY, reporting_collection_summary
 from modules.pms_core.role_permission_service import RolePermissionService, require_op
 from modules.pms_core.stay_night_metrics import NON_COMMERCIAL_STATUSES, as_date, booking_nights, load_stay_night_metrics
 
@@ -458,11 +458,24 @@ async def get_finance_snapshot(
     overdue_30_60 = 0
     overdue_60_plus = 0
     overdue_invoices_count = 0
+    pending_ar_by_currency: dict[str, dict[str, float | int]] = {}
 
     for folio in company_folios:
         balance = await calculate_folio_balance(folio["id"], current_user.tenant_id)
 
         if balance > 0:
+            currency = str(folio.get("currency") or REPORTING_CURRENCY).upper()
+            bucket = pending_ar_by_currency.setdefault(
+                currency,
+                {
+                    "total": 0.0,
+                    "0-30_days": 0.0,
+                    "30-60_days": 0.0,
+                    "60_plus_days": 0.0,
+                    "overdue_invoices_count": 0,
+                },
+            )
+            bucket["total"] = float(bucket["total"]) + balance
             total_pending_ar += balance
 
             # Calculate aging
@@ -471,13 +484,17 @@ async def get_finance_snapshot(
 
             if age_days > 0:  # Any overdue
                 overdue_invoices_count += 1
+                bucket["overdue_invoices_count"] = int(bucket["overdue_invoices_count"]) + 1
 
                 if age_days <= 30:
                     overdue_0_30 += balance
+                    bucket["0-30_days"] = float(bucket["0-30_days"]) + balance
                 elif age_days <= 60:
                     overdue_30_60 += balance
+                    bucket["30-60_days"] = float(bucket["30-60_days"]) + balance
                 else:
                     overdue_60_plus += balance
+                    bucket["60_plus_days"] = float(bucket["60_plus_days"]) + balance
 
     # 2. Calculate Today's Collections (payments received today)
     todays_payments = await db.payments.find(
@@ -534,11 +551,25 @@ async def get_finance_snapshot(
 
     pending_invoice_total = sum(inv.get("total", 0) for inv in pending_invoices)
     pending_invoice_count = len(pending_invoices)
+    pending_invoice_by_currency: dict[str, float] = {}
+    for invoice in pending_invoices:
+        currency = str(invoice.get("currency") or REPORTING_CURRENCY).upper()
+        pending_invoice_by_currency[currency] = (
+            pending_invoice_by_currency.get(currency, 0.0) + float(invoice.get("total") or 0)
+        )
 
     return {
         "report_date": today.isoformat(),
+        "business_date": today.isoformat(),
         "pending_ar": {
             "total": round(total_pending_ar, 2),
+            "by_currency": {
+                currency: {
+                    key: round(float(value), 2) if key != "overdue_invoices_count" else value
+                    for key, value in totals.items()
+                }
+                for currency, totals in pending_ar_by_currency.items()
+            },
             "overdue_breakdown": {"0-30_days": round(overdue_0_30, 2), "30-60_days": round(overdue_30_60, 2), "60_plus_days": round(overdue_60_plus, 2)},
             "overdue_invoices_count": overdue_invoices_count,
         },
@@ -549,7 +580,11 @@ async def get_finance_snapshot(
             **mtd_summary,
             "collection_rate_percentage": round(collection_rate, 2),
         },
-        "accounting_invoices": {"pending_count": pending_invoice_count, "pending_total": round(pending_invoice_total, 2)},
+        "accounting_invoices": {
+            "pending_count": pending_invoice_count,
+            "pending_total": round(pending_invoice_total, 2),
+            "by_currency": {currency: round(total, 2) for currency, total in pending_invoice_by_currency.items()},
+        },
     }
 
 
