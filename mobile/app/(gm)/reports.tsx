@@ -159,6 +159,16 @@ export default function ReportsScreen() {
 
   const fin = finance.data;
   const companies = aging.data?.companies ?? [];
+  const pendingArByCurrency = fin?.pending_ar.by_currency ?? (fin ? { TRY: {
+    total: fin.pending_ar.total,
+    '0-30_days': fin.pending_ar.overdue_breakdown['0-30_days'],
+    '30-60_days': fin.pending_ar.overdue_breakdown['30-60_days'],
+    '60_plus_days': fin.pending_ar.overdue_breakdown['60_plus_days'],
+    overdue_invoices_count: fin.pending_ar.overdue_invoices_count,
+  } } : {});
+  const pendingInvoicesByCurrency = fin?.accounting_invoices.by_currency ?? (fin ? {
+    TRY: fin.accounting_invoices.pending_total,
+  } : {});
 
   return (
     <View style={{ flex: 1, backgroundColor: c.bg }}>
@@ -179,28 +189,38 @@ export default function ReportsScreen() {
           <Card testID="report-finance-snapshot">
             <StatRow
               label={tr.manager.pendingAr}
-              value={formatCurrency(fin.pending_ar.total)}
+              value={Object.entries(pendingArByCurrency)
+                .map(([currency, bucket]) => formatCurrency(bucket.total, currency)).join(' · ')}
               tone="warning"
               strong
             />
-            <StatRow label={tr.manager.overdue030} value={formatCurrency(fin.pending_ar.overdue_breakdown['0-30_days'])} />
-            <StatRow label={tr.manager.overdue3060} value={formatCurrency(fin.pending_ar.overdue_breakdown['30-60_days'])} />
-            <StatRow label={tr.manager.overdue60plus} value={formatCurrency(fin.pending_ar.overdue_breakdown['60_plus_days'])} tone="danger" />
+            {Object.entries(pendingArByCurrency).map(([currency, bucket]) => (
+              <React.Fragment key={`ar-${currency}`}>
+                <StatRow label={`${tr.manager.overdue030} · ${currency}`} value={formatCurrency(bucket['0-30_days'], currency)} />
+                <StatRow label={`${tr.manager.overdue3060} · ${currency}`} value={formatCurrency(bucket['30-60_days'], currency)} />
+                <StatRow label={`${tr.manager.overdue60plus} · ${currency}`} value={formatCurrency(bucket['60_plus_days'], currency)} tone="danger" />
+              </React.Fragment>
+            ))}
             <StatRow label={tr.manager.overdueInvoices} value={String(fin.pending_ar.overdue_invoices_count)} />
             <View style={{ height: 1, backgroundColor: c.border, marginVertical: spacing.sm }} />
+            <StatRow label={tr.manager.businessDateLabel} value={fin.business_date || fin.report_date} />
             <StatRow
               label={tr.manager.todaysCollections}
-              value={`${formatCurrency(fin.todays_collections.amount)} (${fin.todays_collections.payment_count} ${tr.manager.paymentCount})`}
+              value={`${formatCurrency(fin.todays_collections.amount, fin.todays_collections.currency || 'TRY')} (${fin.todays_collections.payment_count} ${tr.manager.paymentCount})`}
               tone="success"
             />
-            <StatRow label={tr.manager.mtdCollections} value={formatCurrency(fin.mtd_collections.amount)} tone="success" />
+            {fin.todays_collections.conversion_issue_count ? (
+              <Muted>{fin.todays_collections.conversion_issue_count} {tr.manager.conversionIssues}</Muted>
+            ) : null}
+            <StatRow label={tr.manager.mtdCollections} value={formatCurrency(fin.mtd_collections.amount, fin.mtd_collections.currency || 'TRY')} tone="success" />
             <StatRow
               label={tr.manager.collectionRate}
               value={`%${fin.mtd_collections.collection_rate_percentage.toFixed(1)}`}
             />
             <StatRow
               label={tr.manager.pendingInvoices}
-              value={`${formatCurrency(fin.accounting_invoices.pending_total)} (${fin.accounting_invoices.pending_count})`}
+              value={`${Object.entries(pendingInvoicesByCurrency)
+                .map(([currency, amount]) => formatCurrency(amount, currency)).join(' · ')} (${fin.accounting_invoices.pending_count})`}
             />
           </Card>
         ) : null}

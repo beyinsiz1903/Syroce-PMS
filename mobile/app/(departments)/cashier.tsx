@@ -340,7 +340,7 @@ export default function CashierScreen() {
               numberOfLines={1}
               adjustsFontSizeToFit
             >
-              {formatCurrency(collection.total, shift?.currency || 'TRY')}
+              {formatCurrency(collection.total, daily?.currency || shift?.currency || 'TRY')}
             </Text>
             <Muted style={{ fontSize: 12, marginBottom: spacing.md }}>{t.collectionHint}</Muted>
             <View style={{ flexDirection: 'row', gap: spacing.sm }}>

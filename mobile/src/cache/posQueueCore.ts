@@ -65,30 +65,30 @@ export function parseQueue(raw: string | null): PosQueueEntry[] {
   }
 }
 
-export async function loadQueue(kv: DurableKV): Promise<PosQueueEntry[]> {
-  return parseQueue(await kv.getItem(POS_QUEUE_KEY));
+export async function loadQueue(kv: DurableKV, key = POS_QUEUE_KEY): Promise<PosQueueEntry[]> {
+  return parseQueue(await kv.getItem(key));
 }
 
-export async function saveQueue(kv: DurableKV, entries: PosQueueEntry[]): Promise<void> {
-  await kv.setItem(POS_QUEUE_KEY, JSON.stringify(entries));
+export async function saveQueue(kv: DurableKV, entries: PosQueueEntry[], key = POS_QUEUE_KEY): Promise<void> {
+  await kv.setItem(key, JSON.stringify(entries));
 }
 
 /**
  * Append an entry, de-duplicating on `idempotency_key` so a double-tap or a
  * re-enqueue after a failed direct send never stores the same order twice.
  */
-export async function enqueue(kv: DurableKV, entry: PosQueueEntry): Promise<PosQueueEntry[]> {
-  const entries = await loadQueue(kv);
+export async function enqueue(kv: DurableKV, entry: PosQueueEntry, key = POS_QUEUE_KEY): Promise<PosQueueEntry[]> {
+  const entries = await loadQueue(kv, key);
   if (entries.some((e) => e.idempotency_key === entry.idempotency_key)) return entries;
   const next = [...entries, entry];
-  await saveQueue(kv, next);
+  await saveQueue(kv, next, key);
   return next;
 }
 
-export async function removeFromQueue(kv: DurableKV, id: string): Promise<PosQueueEntry[]> {
-  const entries = await loadQueue(kv);
+export async function removeFromQueue(kv: DurableKV, id: string, key = POS_QUEUE_KEY): Promise<PosQueueEntry[]> {
+  const entries = await loadQueue(kv, key);
   const next = entries.filter((e) => e.id !== id);
-  if (next.length !== entries.length) await saveQueue(kv, next);
+  if (next.length !== entries.length) await saveQueue(kv, next, key);
   return next;
 }
 
@@ -96,11 +96,12 @@ export type ReplayDecision = 'drop' | 'retain_stop';
 
 /**
  * Server-authoritative replay decision from an HTTP status.
- *   2xx → drop (processed); 4xx → drop (permanent reject — never replay garbage
- *   into a loop); network (0) / 5xx → retain + stop (transient, retry later).
+ *   2xx → drop (processed); permanent 4xx → drop; auth/rate-limit/timeout
+ *   responses and network/5xx failures → retain + stop for a safe retry.
  */
 export function decideFromStatus(status: number): ReplayDecision {
   if (status >= 200 && status < 300) return 'drop';
+  if ([0, 401, 408, 425, 429].includes(status)) return 'retain_stop';
   if (status >= 400 && status < 500) return 'drop';
   return 'retain_stop';
 }
@@ -122,8 +123,9 @@ export interface ReplayReport {
 export async function replayQueue(
   kv: DurableKV,
   send: (entry: PosQueueEntry) => Promise<SendOutcome>,
+  key = POS_QUEUE_KEY,
 ): Promise<ReplayReport> {
-  const entries = await loadQueue(kv);
+  const entries = await loadQueue(kv, key);
   let dropped = 0;
   let retained = 0;
   let stopped = false;
@@ -137,7 +139,7 @@ export async function replayQueue(
       decision = 'retain_stop';
     }
     if (decision === 'drop') {
-      await removeFromQueue(kv, entry.id);
+      await removeFromQueue(kv, entry.id, key);
       dropped += 1;
     } else {
       retained += 1;

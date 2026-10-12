@@ -44,6 +44,18 @@ export async function login(email: string, password: string): Promise<LoginRespo
   return res;
 }
 
+export async function verifyTwoFactor(challengeToken: string, code: string): Promise<LoginResponse> {
+  const res = await apiRequest<LoginResponse>('/api/auth/2fa/verify', {
+    method: 'POST',
+    body: { challenge_token: challengeToken, code: code.trim() },
+    auth: false,
+  });
+  if (res?.access_token) await setToken(res.access_token);
+  if (res?.refresh_token) await setRefreshToken(res.refresh_token);
+  else await setRefreshToken(null);
+  return res;
+}
+
 export async function logout(): Promise<void> {
   // V3 (round 7): unregister this device's push token FIRST so the
   // backend stops fanning notifications to a logged-out phone (privacy

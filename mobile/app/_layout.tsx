@@ -4,7 +4,7 @@ import { Stack, useRootNavigationState, useRouter, useSegments } from 'expo-rout
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { onlineManager, QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { onlineManager, QueryClientProvider } from '@tanstack/react-query';
 import NetInfo from '@react-native-community/netinfo';
 import { useAuthStore } from '../src/state/authStore';
 import { useSettingsStore } from '../src/state/settingsStore';
@@ -19,33 +19,15 @@ import {
 } from '../src/navigation/routes';
 import { setupOfflineCache } from '../src/cache/persister';
 import { markSync } from '../src/cache/offlineMeta';
-import { flushPosQueue, refreshPosQueueCount } from '../src/cache/posQueue';
+import { flushPosQueue, refreshPosQueueCount, type QueueScope } from '../src/cache/posQueue';
 import { BiometricLockGate } from '../src/components/BiometricLockGate';
 import { installCertPinning } from '../src/security/certPinning';
+import { queryClient } from '../src/cache/queryClient';
 
 // V3: install the pinned-fetch wrapper before anything else — this swaps
 // `globalThis.fetch` so subsequent API calls in client.ts route through
 // the SSL-pinning library on production builds. No-op on Expo Go.
 installCertPinning();
-
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      retry: 1,
-      staleTime: 30_000,
-      // V3: when offline we still want the persisted cache to be served
-      // immediately. gcTime controls how long unused entries linger in
-      // memory; the persister manages on-disk lifetime separately.
-      gcTime: 24 * 60 * 60 * 1000,
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: true,
-      networkMode: 'offlineFirst',
-    },
-    mutations: {
-      networkMode: 'offlineFirst',
-    },
-  },
-});
 
 // Mark a successful sync timestamp whenever a query succeeds so the
 // OfflineBanner can show "Son güncelleme X dk önce" once we drop offline.
@@ -61,6 +43,15 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   const rootNavigationState = useRootNavigationState();
   const { user, role, allAccess, deptAccess, loading, hydrate } = useAuthStore();
   const hydrateSettings = useSettingsStore((s) => s.hydrate);
+
+  useEffect(() => {
+    const tenantId = user?.tenant_id || user?.hotel_id;
+    const userId = user?.id || user?.user_id;
+    if (!tenantId || !userId) return;
+    const scope: QueueScope = { tenantId, userId };
+    refreshPosQueueCount(scope).catch(() => {});
+    flushPosQueue(scope).catch(() => {});
+  }, [user?.tenant_id, user?.hotel_id, user?.id, user?.user_id]);
 
   useEffect(() => {
     hydrate();
@@ -159,12 +150,13 @@ export default function RootLayout() {
       onlineManager.setOnline(online);
       // Drain the durable POS write queue the moment we come back online so
       // orders entered offline are sent (server-authoritative, exactly once).
-      if (online) flushPosQueue().catch(() => {});
+      if (online) {
+        const user = useAuthStore.getState().user;
+        const tenantId = user?.tenant_id || user?.hotel_id;
+        const userId = user?.id || user?.user_id;
+        if (tenantId && userId) flushPosQueue({ tenantId, userId }).catch(() => {});
+      }
     });
-    // On cold start: surface any queue persisted before the app was killed and
-    // attempt a flush (no-op when empty / still offline).
-    refreshPosQueueCount().catch(() => {});
-    flushPosQueue().catch(() => {});
     return () => {
       dispose();
       netSub();

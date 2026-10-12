@@ -9,15 +9,17 @@ import { haptic } from '../../src/hooks/useHaptic';
 
 export default function LoginScreen() {
   const c = useTheme();
-  const { login, loading, error } = useAuthStore();
+  const { login, verifyTwoFactor, cancelTwoFactor, pendingTwoFactorToken, loading, error } = useAuthStore();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [twoFactorCode, setTwoFactorCode] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   const onSubmit = async () => {
     setSubmitting(true);
     try {
-      await login(email.trim(), password);
+      if (pendingTwoFactorToken) await verifyTwoFactor(twoFactorCode);
+      else await login(email.trim(), password);
       haptic.success();
     } catch {
       haptic.error();
@@ -53,26 +55,49 @@ export default function LoginScreen() {
             </View>
 
             <Card style={{ padding: spacing.xl, borderRadius: radius.lg, gap: spacing.md }}>
-              <Field
-                label={tr.auth.email}
-                autoCapitalize="none"
-                autoCorrect={false}
-                keyboardType="email-address"
-                value={email}
-                onChangeText={setEmail}
-                accessibilityLabel={tr.auth.email}
-                testID="smoke-login-email"
-                textContentType="emailAddress"
-              />
-              <Field
-                label={tr.auth.password}
-                secureTextEntry
-                value={password}
-                onChangeText={setPassword}
-                accessibilityLabel={tr.auth.password}
-                testID="smoke-login-password"
-                textContentType="password"
-              />
+              {pendingTwoFactorToken ? (
+                <>
+                  <Muted>{tr.auth.twoFactorHint}</Muted>
+                  <Field
+                    label={tr.auth.twoFactorCode}
+                    autoCapitalize="characters"
+                    autoCorrect={false}
+                    value={twoFactorCode}
+                    onChangeText={setTwoFactorCode}
+                    accessibilityLabel={tr.auth.twoFactorCode}
+                    testID="smoke-login-2fa-code"
+                  />
+                  <Button
+                    title={tr.auth.backToPassword}
+                    variant="secondary"
+                    onPress={() => { cancelTwoFactor(); setTwoFactorCode(''); }}
+                    fullWidth
+                  />
+                </>
+              ) : (
+                <>
+                  <Field
+                    label={tr.auth.email}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    keyboardType="email-address"
+                    value={email}
+                    onChangeText={setEmail}
+                    accessibilityLabel={tr.auth.email}
+                    testID="smoke-login-email"
+                    textContentType="emailAddress"
+                  />
+                  <Field
+                    label={tr.auth.password}
+                    secureTextEntry
+                    value={password}
+                    onChangeText={setPassword}
+                    accessibilityLabel={tr.auth.password}
+                    testID="smoke-login-password"
+                    textContentType="password"
+                  />
+                </>
+              )}
               {error ? (
                 <Body
                   style={{ color: c.danger }}
@@ -84,8 +109,9 @@ export default function LoginScreen() {
               ) : null}
               <View style={{ height: spacing.xs }} />
               <Button
-                title={tr.auth.submit}
+                title={pendingTwoFactorToken ? tr.auth.verifyCode : tr.auth.submit}
                 loading={submitting || loading}
+                disabled={!!pendingTwoFactorToken && twoFactorCode.trim().length === 0}
                 onPress={onSubmit}
                 testID="smoke-login-submit"
                 fullWidth
