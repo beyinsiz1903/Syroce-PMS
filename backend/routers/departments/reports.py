@@ -583,7 +583,17 @@ async def get_finance_snapshot(
         "accounting_invoices": {
             "pending_count": pending_invoice_count,
             "pending_total": round(pending_invoice_total, 2),
-            "by_currency": {currency: round(total, 2) for currency, total in pending_invoice_by_currency.items()},
+            # Preserve the established empty-state response shape. Consumers
+            # only need a currency breakdown when an invoice exists.
+            **(
+                {
+                    "by_currency": {
+                        currency: round(total, 2) for currency, total in pending_invoice_by_currency.items()
+                    }
+                }
+                if pending_invoice_by_currency
+                else {}
+            ),
         },
     }
 
