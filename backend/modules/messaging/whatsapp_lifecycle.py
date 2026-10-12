@@ -8,6 +8,7 @@ import re
 import uuid
 from datetime import UTC, datetime, timedelta
 
+import httpx
 from fastapi import HTTPException
 from pymongo.errors import DuplicateKeyError
 
@@ -84,6 +85,10 @@ async def approved_templates(db, tenant_id):
             after = cursor
     except EgressDenied as exc:
         raise HTTPException(502, "Meta şablon servisine güvenli bağlantı kurulamadı.") from exc
+    except httpx.TimeoutException as exc:
+        raise HTTPException(504, "Meta şablon servisi zamanında yanıt vermedi. Biraz sonra tekrar deneyin.") from exc
+    except httpx.RequestError as exc:
+        raise HTTPException(503, "Sunucudan Meta şablon servisine bağlantı kurulamadı. Ağ bağlantısını kontrol edip tekrar deneyin.") from exc
     return result
 
 

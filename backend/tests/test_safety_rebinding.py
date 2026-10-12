@@ -16,7 +16,9 @@ We monkeypatch ``socket.getaddrinfo`` so the test does not depend on real DNS.
 from __future__ import annotations
 
 import socket
+from unittest.mock import AsyncMock
 
+import httpcore
 import pytest
 
 from integrations.xchange import safety
@@ -111,3 +113,46 @@ def test_assert_safe_host_smtp_mixed_blocked(monkeypatch):
 def test_assert_safe_host_empty_rejected():
     with pytest.raises(safety.EgressDenied):
         safety.assert_safe_host("", 587)
+
+
+def test_dual_stack_prefers_ipv4_and_keeps_validated_ipv6(monkeypatch):
+    lookup = lambda *args, **kwargs: _fake_addrinfo(["2a03:2880:f084:10d:face:b00c:0:2", "157.240.1.1"])
+    monkeypatch.setattr(socket, "getaddrinfo", lookup)
+    _, targets, _ = safety._resolve_targets("https://graph.facebook.com")
+    assert targets == ("157.240.1.1", "2a03:2880:f084:10d:face:b00c:0:2")
+
+
+@pytest.mark.asyncio
+async def test_connect_falls_back_only_to_validated_ip_without_dns(monkeypatch):
+    backend = safety._PinnedNetworkBackend({"example.com": ("1.1.1.1", "8.8.8.8")})
+    stream = object()
+    backend._inner.connect_tcp = AsyncMock(side_effect=[httpcore.ConnectError("offline"), stream])
+    monkeypatch.setattr(socket, "getaddrinfo", lambda *a, **kw: pytest.fail("must not resolve again"))
+    assert await backend.connect_tcp("example.com", 443, timeout=10) is stream
+    assert [call.args[0] for call in backend._inner.connect_tcp.call_args_list] == ["1.1.1.1", "8.8.8.8"]
+    with pytest.raises(httpcore.ConnectError, match="Unvalidated"):
+        await backend.connect_tcp("other.example", 443)
+
+
+@pytest.mark.asyncio
+async def test_connect_exhaustion_propagates():
+    backend = safety._PinnedNetworkBackend({"example.com": ("1.1.1.1", "8.8.8.8")})
+    backend._inner.connect_tcp = AsyncMock(side_effect=httpcore.ConnectError("offline"))
+    with pytest.raises(httpcore.ConnectError):
+        await backend.connect_tcp("example.com", 443, timeout=10)
+    assert backend._inner.connect_tcp.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_does_not_retry_non_connect_errors():
+    backend = safety._PinnedNetworkBackend({"example.com": ("1.1.1.1", "8.8.8.8")})
+    backend._inner.connect_tcp = AsyncMock(side_effect=httpcore.WriteError("ambiguous"))
+    with pytest.raises(httpcore.WriteError):
+        await backend.connect_tcp("example.com", 443, timeout=10)
+    assert backend._inner.connect_tcp.await_count == 1
+
+
+def test_dual_stack_private_record_blocks_all_targets(monkeypatch):
+    monkeypatch.setattr(socket, "getaddrinfo", lambda *a, **kw: _fake_addrinfo(["1.1.1.1", "::1"]))
+    with pytest.raises(safety.EgressDenied):
+        safety._resolve_targets("https://example.com")
