@@ -14,7 +14,7 @@ a domain could resolve to a public IP at validation time and to
 ``169.254.169.254`` (or any private IP) milliseconds later when
 ``httpx`` actually connects. ``safe_post_async`` closes that
 window: it resolves once, validates **every** returned address,
-picks one as the pinned target, and configures ``httpx`` with a
+pins the validated address set (IPv4 first), and configures ``httpx`` with a
 custom ``httpcore`` network backend that rewrites the connect-time
 hostname to the pinned IP. TLS SNI / cert verification still use
 the original hostname, so HTTPS targets keep working unchanged.
@@ -26,6 +26,7 @@ import ipaddress
 import logging
 import os
 import socket
+import time
 from urllib.parse import urlparse
 
 import httpcore
@@ -88,8 +89,8 @@ def assert_safe_url(url: str) -> None:
             raise EgressDenied(f"egress to private address blocked: {host} → {ip}")
 
 
-def _resolve_and_pin(url: str) -> tuple[str, str, int]:
-    """Validate URL + DNS, return (host, pinned_ip, port).
+def _resolve_targets(url: str) -> tuple[str, tuple[str, ...], int]:
+    """Validate URL + DNS, return (host, validated_addresses, port).
 
     Resolves the hostname **once** and validates every returned
     address. If any address is private (and override disabled) the
@@ -114,7 +115,10 @@ def _resolve_and_pin(url: str) -> tuple[str, str, int]:
             infos = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
         except socket.gaierror as e:
             raise EgressDenied(f"dns failure: {e}") from e
-        return host, infos[0][4][0], port
+        resolved = sorted({info[4][0] for info in infos}, key=lambda ip: (ipaddress.ip_address(ip).version, ip))
+        if not resolved:
+            raise EgressDenied(f"no addresses for {host}")
+        return host, tuple(resolved), port
 
     if host in {"localhost", "metadata", "metadata.google.internal"}:
         if not _ALLOW_PRIVATE:
@@ -125,13 +129,19 @@ def _resolve_and_pin(url: str) -> tuple[str, str, int]:
     except socket.gaierror as e:
         raise EgressDenied(f"dns failure: {e}") from e
 
-    resolved = sorted({info[4][0] for info in infos})
+    resolved = sorted({info[4][0] for info in infos}, key=lambda ip: (ipaddress.ip_address(ip).version, ip))
     if not resolved:
         raise EgressDenied(f"no addresses for {host}")
     for ip in resolved:
         if _is_private(ip) and not _ALLOW_PRIVATE:
             raise EgressDenied(f"egress to private address blocked: {host} → {ip}")
-    return host, resolved[0], port
+    return host, tuple(resolved), port
+
+
+def _resolve_and_pin(url: str) -> tuple[str, str, int]:
+    """Compatibility API for callers requiring a single validated address."""
+    host, targets, port = _resolve_targets(url)
+    return host, targets[0], port
 
 
 class _PinnedNetworkBackend(httpcore.AsyncNetworkBackend):
@@ -140,9 +150,12 @@ class _PinnedNetworkBackend(httpcore.AsyncNetworkBackend):
     The TLS handshake (started later by ``httpcore`` against the original
     hostname) still sees the correct SNI and validates the certificate
     against the hostname — only the underlying TCP destination is pinned.
+    Fallback occurs only before a connection is established; requests are
+    never replayed after a write/read failure. All attempts share a bounded
+    connect timeout and use the original validated DNS snapshot.
     """
 
-    def __init__(self, host_to_ip: dict[str, str]):
+    def __init__(self, host_to_ip: dict[str, str | tuple[str, ...]]):
         self._inner = AutoBackend()
         self._map = {h.lower(): ip for h, ip in host_to_ip.items()}
 
@@ -154,14 +167,25 @@ class _PinnedNetworkBackend(httpcore.AsyncNetworkBackend):
         local_address: str | None = None,
         socket_options: list | None = None,
     ):
-        target = self._map.get(host.lower(), host)
-        return await self._inner.connect_tcp(
-            target,
-            port,
-            timeout=timeout,
-            local_address=local_address,
-            socket_options=socket_options,
-        )
+        targets = self._map.get(host.lower())
+        if targets is None:
+            raise httpcore.ConnectError("Unvalidated connection target")
+        if isinstance(targets, str):
+            targets = (targets,)
+        started = time.monotonic()
+        for index, target in enumerate(targets):
+            remaining = None if timeout is None else timeout - (time.monotonic() - started)
+            if remaining is not None and remaining <= 0:
+                raise httpcore.ConnectTimeout("Validated address connection budget exhausted")
+            try:
+                return await self._inner.connect_tcp(
+                    target, port,
+                    timeout=None if remaining is None else remaining / (len(targets) - index),
+                    local_address=local_address, socket_options=socket_options,
+                )
+            except (httpcore.ConnectError, httpcore.ConnectTimeout):
+                if index == len(targets) - 1:
+                    raise
 
     async def connect_unix_socket(self, *args, **kwargs):  # pragma: no cover
         return await self._inner.connect_unix_socket(*args, **kwargs)
@@ -170,7 +194,7 @@ class _PinnedNetworkBackend(httpcore.AsyncNetworkBackend):
         return await self._inner.sleep(seconds)
 
 
-def _pinned_transport(host: str, ip: str) -> httpx.AsyncHTTPTransport:
+def _pinned_transport(host: str, ip: str | tuple[str, ...]) -> httpx.AsyncHTTPTransport:
     """Build an ``httpx.AsyncHTTPTransport`` that pins DNS for ``host`` → ``ip``."""
     transport = httpx.AsyncHTTPTransport()
     # Replace the pool's default network backend with a pinned one.
@@ -233,8 +257,8 @@ async def safe_request_async(
     pinned to the validated IP. Raises :class:`EgressDenied` if the URL
     fails validation; ``httpx`` exceptions propagate unchanged.
     """
-    host, pinned_ip, _ = _resolve_and_pin(url)
-    transport = _pinned_transport(host, pinned_ip)
+    host, targets, _ = _resolve_targets(url)
+    transport = _pinned_transport(host, targets)
     timeout_value = timeout if timeout is not None else _DEFAULT_TIMEOUT
     async with httpx.AsyncClient(transport=transport, timeout=timeout_value) as client:
         return await client.request(method, url, **httpx_kwargs)

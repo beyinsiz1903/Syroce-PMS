@@ -249,6 +249,7 @@ def test_trigger_room_preparations(env, monkeypatch):
     booking = env.db.bookings.docs[_BOOKING_ID]
     assert "[MİSAFİR İLİŞKİLERİ DİREKTİFİ]" in booking["special_requests"]
     assert audit_events[0]["args"][2] == "guest_preparation_triggered"
+    assert audit_events[0]["args"][4] == "batch"
     assert audit_events[0]["args"][5] == {"processed_bookings": 1, "directives_generated": 1}
 
 

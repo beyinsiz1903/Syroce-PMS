@@ -958,7 +958,7 @@ export function AutomationTab() {
     if (tmplR.ok) setTemplates(tmplR.data.templates || []);
     const meta = await safe(() => get('/messaging-center/whatsapp/meta-templates'));
     if (meta.ok) { setMetaTemplates(meta.data.templates || []); setMetaError(''); }
-    else setMetaError('Meta şablonları alınamadı. Ayarlar bölümünde WABA ID, erişim anahtarı ve etkin bağlantıyı kontrol edin.');
+    else setMetaError(typeof meta.error === 'string' ? meta.error : 'Meta şablonları alınamadı. Lütfen tekrar deneyin.');
     setLoading(false);
   }, []);
   useEffect(() => { load(); }, [load]);

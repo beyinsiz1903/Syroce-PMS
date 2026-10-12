@@ -29,16 +29,20 @@ beforeEach(() => {
 afterEach(cleanup);
 
 it.each([false, true])('submits overtime and preserves input on API failure: %s', async (fails) => {
+  const user = userEvent.setup();
   if (fails) axios.post.mockRejectedValue({ response: { data: { detail: 'Yetkiniz yok' } } });
   else axios.post.mockResolvedValue({ data: { success: true } });
   render(<MemoryRouter><HRHub /></MemoryRouter>);
-  await userEvent.click(screen.getByRole('tab', { name: /Mesai Onayı/ }));
-  await userEvent.selectOptions(screen.getByLabelText('Personel', { exact: true }), 'qa');
+  await user.click(screen.getByRole('tab', { name: /Mesai Onayı/ }));
+  const staffSelect = screen.getByLabelText('Personel', { exact: true });
+  await within(staffSelect).findByRole('option', { name: 'QA Test Personeli' });
+  await user.selectOptions(staffSelect, 'qa');
   fireEvent.change(screen.getByLabelText('Mesai Tarihi'), { target: { value: '2026-09-11' } });
-  await userEvent.type(screen.getByLabelText('Mesai Süresi (saat)'), '1.5');
-  await userEvent.type(screen.getByLabelText('Mesai Gerekçesi'), 'QA mesai testi');
+  fireEvent.change(screen.getByLabelText('Mesai Süresi (saat)'), { target: { value: '1.5' } });
+  await user.click(screen.getByLabelText('Mesai Gerekçesi'));
+  await user.paste('QA mesai testi');
   const previousLoads = axios.get.mock.calls.filter(([url]) => url === '/hr/overtime-requests').length;
-  await userEvent.click(screen.getByRole('button', { name: 'Mesai Talebi Oluştur' }));
+  await user.click(screen.getByRole('button', { name: 'Mesai Talebi Oluştur' }));
   await waitFor(() => expect(axios.post).toHaveBeenCalledWith('/hr/overtime-request', {
     staff_id: 'qa', work_date: '2026-09-11', hours: 1.5, reason: 'QA mesai testi',
   }));
@@ -50,7 +54,8 @@ it.each([false, true])('submits overtime and preserves input on API failure: %s'
     expect(screen.getByLabelText('Mesai Gerekçesi')).toHaveValue('');
     expect(axios.get.mock.calls.filter(([url]) => url === '/hr/overtime-requests').length).toBeGreaterThan(previousLoads);
   }
-});
+// These routed integration tests mount the full HR workspace under CI coverage.
+}, 15000);
 
 it('renders staff balances and server leave counts in the routed HR screen', async () => {
   render(<MemoryRouter><HRHub /></MemoryRouter>);

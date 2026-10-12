@@ -27,6 +27,17 @@ beforeEach(() => {
 });
 
 describe('WhatsApp lifecycle setup', () => {
+  it('shows the server connection error instead of blaming credentials', async () => {
+    axios.get.mockImplementation(async (url) => {
+      if (url.endsWith('/meta-templates')) throw { response: { data: { detail: 'Sunucudan Meta şablon servisine bağlantı kurulamadı.' } } };
+      return { data: url.endsWith('/automation/rules') ? { rules: [] } : { templates: [] } };
+    });
+    render(<AutomationTab />);
+    fireEvent.click(await screen.findByTestId('create-automation-btn'));
+    expect(await screen.findByText('Sunucudan Meta şablon servisine bağlantı kurulamadı.')).toBeInTheDocument();
+    expect(axios.post).not.toHaveBeenCalled();
+  });
+
   it('does not create a rule or send messages on load', async () => {
     render(<AutomationTab />);
     await screen.findByTestId('create-automation-btn');

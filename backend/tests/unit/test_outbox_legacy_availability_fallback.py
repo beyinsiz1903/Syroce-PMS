@@ -21,6 +21,24 @@ def _booking_event() -> dict:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("errors,prefix", [
+    (["DEFINITIVE_REJECTION"], "permanent:"),
+    (["DEFINITIVE_REJECTION", "DEFINITIVE_REJECTION"], "permanent:"),
+    (["DEFINITIVE_REJECTION", "ExelyTemporaryError"], "retryable:"),
+    (["TimeoutError"], "retryable:"),
+])
+async def test_legacy_definitive_rejection_is_not_retried(errors, prefix):
+    with (
+        patch("channel_manager.application.event_sync_service.EventSyncService.handle_event", new=AsyncMock(return_value={"handled": True, "jobs": []})),
+        patch("domains.channel_manager.availability_auto_sync.sync_availability_from_durable_event", new=AsyncMock(return_value={"configured_providers": len(errors), "queued_operations": 0, "errors": errors})),
+        patch("core.agency_fanout.fan_out_agency_events", new=AsyncMock()),
+    ):
+        success, message = await dispatch_outbox_event(_booking_event())
+    assert not success
+    assert message.startswith(prefix)
+
+
+@pytest.mark.asyncio
 async def test_booking_event_falls_back_to_legacy_provider_connections():
     cm_result = {
         "handled": True,

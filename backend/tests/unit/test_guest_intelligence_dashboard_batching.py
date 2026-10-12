@@ -5,6 +5,17 @@ import pytest
 from modules.data_intelligence import guest_intelligence as module
 
 
+@pytest.mark.asyncio
+async def test_sentry_dict_source_and_room_type_do_not_crash_segmentation():
+    result = await module.GuestSegmentationModel().segment_guest("hotel", "guest", bookings=[{
+        "status": "checked_out", "total_amount": None,
+        "source": {"channel": "booking"}, "room_type": {"name": "Standard"},
+        "check_in": "2026-10-01", "check_out": "2026-10-02",
+    }])
+    assert result["preferred_booking_source"] == "booking"
+    assert result["preferred_room_type"] == "Standard"
+
+
 class Cursor:
     def __init__(self, rows):
         self.rows = list(rows)

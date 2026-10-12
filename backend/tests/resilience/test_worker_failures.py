@@ -12,7 +12,7 @@ Markers: chaos_l1, chaos_l2, chaos_outbox
 """
 import asyncio
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -20,11 +20,11 @@ from core.outbox_service import is_retryable_error
 
 
 def _utc_now():
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _utc_past(hours=0, minutes=0):
-    return (datetime.now(timezone.utc) - timedelta(hours=hours, minutes=minutes)).isoformat()
+    return (datetime.now(UTC) - timedelta(hours=hours, minutes=minutes)).isoformat()
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -120,7 +120,7 @@ class TestStuckRecovery:
         await db.outbox_events.insert_one(event)
 
         # Run recovery — should not touch this event
-        recovered = await outbox_worker._recover_stuck()
+        await outbox_worker._recover_stuck()
 
         updated = await db.outbox_events.find_one({"id": event["id"]}, {"_id": 0})
         assert updated["status"] == "processing"  # Still processing (not recovered)
@@ -136,35 +136,51 @@ class TestAtomicClaim:
     Guarantee: Exactly ONE claim succeeds (MongoDB atomic find_one_and_update).
     """
 
+    @pytest.fixture
+    async def claim_db(self, db):
+        # CI also runs a real backend/OTA worker against the shared test DB.
+        # A tenant filter on our two workers cannot stop that third consumer
+        # claiming the seeded row first. Use a private database, without
+        # replacing the shared handle used by the server or other fixtures.
+        name = f"test_atomic_claim_{uuid.uuid4().hex}"
+        isolated = db.client[name]
+        try:
+            yield isolated
+        finally:
+            await db.client.drop_database(name)
+
     @pytest.mark.chaos_l2
+    @pytest.mark.parametrize("race_round", range(5))
     async def test_concurrent_claims_yield_exactly_one_winner(
-        self, db, outbox_event_factory, tenant_factory
+        self, db, claim_db, outbox_event_factory, tenant_factory, race_round
     ):
         """Only one concurrent claim should succeed for the same event."""
-        tenant_id = tenant_factory("race-001")
+        tenant_id = tenant_factory(f"race-{race_round}-{uuid.uuid4().hex}")
 
         # Insert exactly one claimable event
         event = outbox_event_factory(tenant_id=tenant_id, status="pending")
-        await db.outbox_events.insert_one(event)
+        await claim_db.outbox_events.insert_one(event)
 
         from core.outbox_worker import OutboxWorker
-        # Scope both workers to the fixture tenant. Other suites may leave
-        # legitimate retryable events in the shared integration database;
-        # those must not become false winners in this same-event race.
+        # Both contenders must claim the same tenant's single seeded event.
         worker1 = OutboxWorker(
             poll_interval=0,
             batch_size=1,
             processing_timeout=120,
             tenant_id=tenant_id,
-            database=db,
+            database=claim_db,
         )
         worker2 = OutboxWorker(
             poll_interval=0,
             batch_size=1,
             processing_timeout=120,
             tenant_id=tenant_id,
-            database=db,
+            database=claim_db,
         )
+
+        # A consumer on the shared application DB cannot steal this event.
+        background_worker = OutboxWorker(tenant_id=tenant_id, database=db)
+        assert await background_worker._claim_event() is None
 
         # Race: both try to claim at the same time
         results = await asyncio.gather(
@@ -175,11 +191,14 @@ class TestAtomicClaim:
         # Exactly one should get the event, one should get None
         claimed = [r for r in results if r is not None]
         assert len(claimed) == 1, f"Expected exactly 1 claim, got {len(claimed)}"
+        assert claimed[0]["id"] == event["id"]
 
         # The event in DB should be processing with exactly 1 worker_id
-        doc = await db.outbox_events.find_one({"id": event["id"]}, {"_id": 0})
+        doc = await claim_db.outbox_events.find_one({"id": event["id"]}, {"_id": 0})
         assert doc["status"] == "processing"
         assert doc["attempt_count"] == 1
+        assert doc["worker_id"] == claimed[0]["worker_id"]
+        assert doc["worker_id"] in {worker1.worker_id, worker2.worker_id}
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -210,7 +229,7 @@ class TestDelayedProcessingDetection:
             await db.outbox_events.insert_one(event)
 
         # Query same as ops_router outbox endpoint
-        cutoff = (datetime.now(timezone.utc) - timedelta(minutes=30)).isoformat()
+        cutoff = (datetime.now(UTC) - timedelta(minutes=30)).isoformat()
         stuck_count = await db.outbox_events.count_documents({
             "status": {"$in": ["pending", "retry"]},
             "created_at": {"$lte": cutoff},

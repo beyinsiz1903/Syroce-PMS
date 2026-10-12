@@ -164,7 +164,14 @@ async def dispatch_outbox_event(event: dict[str, Any]) -> tuple[bool, str]:
                         detail,
                     )
                     return True, f"Dispatched: {queued} legacy availability operations queued; partial: {detail[:400]}"
-                return False, f"retryable: legacy channel availability sync failed: {detail[:400]}"
+                # A provider's definitive rejection cannot be repaired by
+                # replaying the identical booking payload. Keep it visible as
+                # failed for operator correction, without wasting five retries.
+                # Mixed/unknown outcomes remain retryable for the other target.
+                classification = "permanent" if all(
+                    item == "DEFINITIVE_REJECTION" for item in legacy_errors
+                ) else "retryable"
+                return False, f"{classification}: legacy channel availability sync failed: {detail[:400]}"
             if configured and queued == 0:
                 return False, "retryable: legacy channel availability sync accepted no operations"
             if configured:

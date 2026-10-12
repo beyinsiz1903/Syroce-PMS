@@ -4,6 +4,7 @@ from copy import deepcopy
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
+import httpx
 import pytest
 from fastapi import HTTPException
 from pymongo.errors import DuplicateKeyError
@@ -11,6 +12,18 @@ from pymongo.errors import DuplicateKeyError
 from modules.messaging import whatsapp_lifecycle as lifecycle
 from modules.messaging.automation import _build_template_variables, process_booking_event
 from modules.messaging.service import MessagingService
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("error,status", [(httpx.ConnectError("secret host"), 503), (httpx.ReadTimeout("secret token"), 504)])
+async def test_template_network_failure_is_actionable(monkeypatch, error, status):
+    monkeypatch.setattr(MessagingService, "_get_provider_config", AsyncMock(return_value={"is_sandbox": False}))
+    monkeypatch.setattr(MessagingService, "_load_credentials", AsyncMock(return_value={"waba_id": "123", "access_token": "secret"}))
+    monkeypatch.setattr(lifecycle, "safe_request_async", AsyncMock(side_effect=error))
+    with pytest.raises(HTTPException) as caught:
+        await lifecycle.approved_templates(object(), "tenant")
+    assert caught.value.status_code == status
+    assert "secret" not in caught.value.detail
 
 
 class Cursor:
