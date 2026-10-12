@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Image, KeyboardAvoidingView, Platform, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 import { Body, Button, Card, Field, Muted } from '../../src/components/ui';
 import { radius, spacing, useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
@@ -10,6 +11,7 @@ import { haptic } from '../../src/hooks/useHaptic';
 export default function LoginScreen() {
   const c = useTheme();
   const { login, verifyTwoFactor, cancelTwoFactor, pendingTwoFactorToken, loading, error } = useAuthStore();
+  const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [twoFactorCode, setTwoFactorCode] = useState('');
@@ -114,6 +116,12 @@ export default function LoginScreen() {
                 disabled={!!pendingTwoFactorToken && twoFactorCode.trim().length === 0}
                 onPress={onSubmit}
                 testID="smoke-login-submit"
+                fullWidth
+              />
+              <Button
+                title="Şifremi unuttum"
+                variant="secondary"
+                onPress={() => router.push('/(auth)/reset-password')}
                 fullWidth
               />
             </Card>

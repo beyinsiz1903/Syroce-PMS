@@ -46,6 +46,7 @@ import type { AppRole } from '../state/authStore';
 //     call site: `router.push(\`\${ROUTES.reservationDetail}/\${id}\`)`.
 export const ROUTES = {
   login: '/(auth)/login',
+  passwordReset: '/(auth)/reset-password',
   home: '/(home)',
   homeNotifications: '/(home)/notifications',
   homeTasks: '/(home)/tasks',
@@ -58,6 +59,7 @@ export const ROUTES = {
   housekeeping: '/(housekeeping)',
   hkDamage: '/(housekeeping)/damage',
   gm: '/(gm)',
+  reportDetail: '/(gm)/report-detail',
   guest: '/(guest)',
   departments: '/(departments)',
   spa: '/(departments)/spa',

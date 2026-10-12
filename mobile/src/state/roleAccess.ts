@@ -10,6 +10,28 @@
 
 export type AppRole = 'front_desk' | 'housekeeping' | 'gm' | 'guest_app' | 'other';
 
+export type ServerAccessContext = {
+  role?: string;
+  effective_permissions?: string[];
+  module_scopes?: string[] | null;
+  page_access?: Record<string, boolean>;
+};
+
+/**
+ * UI visibility is fail-closed when the server supplied an access context.
+ * Legacy sessions without it retain the old cosmetic role map until /auth/me
+ * refreshes them; authorization remains exclusively on the backend.
+ */
+export function hasServerAccess(user: ServerAccessContext | undefined, page: string, permission?: string): boolean | undefined {
+  if (!user || (!user.page_access && !user.effective_permissions && user.module_scopes === undefined)) return undefined;
+  if (user.page_access && Object.prototype.hasOwnProperty.call(user.page_access, page)) return !!user.page_access[page];
+  if (permission && user.effective_permissions?.includes(permission)) return true;
+  // A token response can contain permissions while an older server has not
+  // yet published page_access. Keep the legacy cosmetic map in that mixed
+  // deployment rather than hiding a working, backend-authorized workflow.
+  return undefined;
+}
+
 export function normalizeRole(raw: string | undefined): AppRole {
   if (!raw) return 'other';
   const r = raw.toLowerCase();

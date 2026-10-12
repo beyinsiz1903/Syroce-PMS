@@ -143,6 +143,16 @@ export default function ProfileScreen() {
           </View>
         </Card>
 
+        <Card>
+          <H2>Tesis bağlamı</H2>
+          <Muted style={{ marginTop: spacing.xs }}>
+            {user?.hotel_id || user?.tenant_id || 'Aktif tesis'}
+          </Muted>
+          <Muted style={{ marginTop: spacing.sm }}>
+            Bu mobil oturum tek tesise bağlıdır. Başka bir tesise geçmek için o tesisin yetkili hesabıyla giriş yapın; merkez kullanıcıları tesisler arası görünümü web uygulamasından kullanır.
+          </Muted>
+        </Card>
+
         <RoleSwitcher />
 
         <H2 style={{ marginTop: spacing.sm }}>{tr.hub.modules}</H2>

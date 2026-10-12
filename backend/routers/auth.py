@@ -317,6 +317,18 @@ def _build_token_response(user: User, tenant, response: Response = None) -> Toke
     Centralising this prevents path drift (e.g. a 2FA-verified login
     silently degrading to a refresh-less response).
     """
+    # The mobile client receives this object before its first /auth/me refresh.
+    # Populate the same server-authoritative entitlement summary used by that
+    # endpoint so initial navigation cannot fall back to a divergent role map.
+    from modules.pms_core.module_scope_service import effective_module_scopes
+    from modules.pms_core.user_access_policy import PAGES, can_access_page, effective_permissions
+
+    user.effective_permissions = effective_permissions(user)
+    user.module_scopes = sorted(effective_module_scopes(user))
+    # Only booleans computed by the server travel to the handset.  This is a
+    # navigation hint, not an authorization grant; every API still verifies it.
+    user.page_access = {key: can_access_page(user, key) for key in PAGES}
+
     # One login == one device session. Both token types carry the same sid so
     # a normal logout closes only this browser, never another computer.
     session_id = __import__("secrets").token_urlsafe(24)
