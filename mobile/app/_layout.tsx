@@ -23,6 +23,7 @@ import { flushPosQueue, refreshPosQueueCount, type QueueScope } from '../src/cac
 import { BiometricLockGate } from '../src/components/BiometricLockGate';
 import { installCertPinning } from '../src/security/certPinning';
 import { queryClient } from '../src/cache/queryClient';
+import { captureNativeError, installNativeErrorTracking, setNativeErrorRoute } from '../src/observability/nativeErrors';
 
 // V3: install the pinned-fetch wrapper before anything else — this swaps
 // `globalThis.fetch` so subsequent API calls in client.ts route through
@@ -43,6 +44,7 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   const rootNavigationState = useRootNavigationState();
   const { user, role, allAccess, deptAccess, loading, hydrate } = useAuthStore();
   const hydrateSettings = useSettingsStore((s) => s.hydrate);
+  useEffect(() => { setNativeErrorRoute(`/${segments.join('/')}`); }, [segments]);
 
   useEffect(() => {
     const tenantId = user?.tenant_id || user?.hotel_id;
@@ -137,6 +139,7 @@ export default function RootLayout() {
   // Wire up the offline-cache persister exactly once. The dispose function
   // is captured so HMR updates can release listeners cleanly during dev.
   useEffect(() => {
+    installNativeErrorTracking();
     const dispose = setupOfflineCache(queryClient);
     // V3 (round 7): drive React Query's onlineManager from NetInfo so
     // queued mutations + `refetchOnReconnect` fire correctly when we
@@ -198,6 +201,7 @@ export function ErrorBoundary({
   // Keep diagnostics in device logs. Operators should see a calm recovery
   // action, never implementation details or a stack trace.
   console.error('[mobile] route render failed', error);
+  captureNativeError(error, 'render');
   return (
     <View
       style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, gap: 16 }}

@@ -54,6 +54,7 @@ export default function GMLayout() {
           tabBarIcon: tabIcon('bar-chart', 'bar-chart-outline'),
         }}
       />
+      <Tabs.Screen name="report-detail" options={{ href: null, title: 'Rapor detayı' }} />
       <Tabs.Screen
         name="more"
         options={{

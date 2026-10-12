@@ -73,6 +73,15 @@ class SessionRumEvent(BaseModel):
     event: Literal["login", "restore", "refresh", "logout", "expired"]
 
 
+class NativeErrorEvent(BaseModel):
+    """Small, PII-free native diagnostic envelope (no stack or request body)."""
+    kind: Literal["render", "fatal", "unhandled"]
+    route: str = Field(min_length=1, max_length=160)
+    message: str = Field(min_length=1, max_length=500)
+    platform: Literal["ios", "android", "web"]
+    app_version: str = Field(min_length=1, max_length=64)
+
+
 async def _ensure_indexes() -> None:
     """Keep sampled telemetry bounded even when no separate data-retention job runs."""
     global _indexes_ready
@@ -84,6 +93,9 @@ async def _ensure_indexes() -> None:
     session_collection = db.client_rum_session_events
     await session_collection.create_index([("tenant_id", 1), ("event", 1), ("received_at", -1)])
     await session_collection.create_index("received_at", expireAfterSeconds=30 * 24 * 60 * 60)
+    native_collection = db.client_native_error_events
+    await native_collection.create_index([("tenant_id", 1), ("received_at", -1)])
+    await native_collection.create_index("received_at", expireAfterSeconds=30 * 24 * 60 * 60)
     _indexes_ready = True
 
 
@@ -108,6 +120,18 @@ async def record_session_event(payload: SessionRumEvent, current_user: User = De
     await _ensure_indexes()
     await db.client_rum_session_events.insert_one({
         "event": payload.event,
+        "tenant_id": current_user.tenant_id,
+        "received_at": datetime.now(UTC),
+    })
+    return {"accepted": 1}
+
+
+@router.post("/native-errors", status_code=202)
+async def record_native_error(payload: NativeErrorEvent, current_user: User = Depends(get_current_user)):
+    """Accept bounded diagnostics from the installed app without collecting PII."""
+    await _ensure_indexes()
+    await db.client_native_error_events.insert_one({
+        **payload.model_dump(),
         "tenant_id": current_user.tenant_id,
         "received_at": datetime.now(UTC),
     })

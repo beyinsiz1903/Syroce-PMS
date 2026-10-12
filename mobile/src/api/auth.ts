@@ -17,7 +17,19 @@ export type AuthUser = {
   name?: string;
   role?: string;
   hotel_id?: string;
+  /** Server-derived UI context. Never infer a grant from a missing field. */
+  effective_permissions?: string[];
+  module_scopes?: string[] | null;
+  page_access?: Record<string, boolean>;
 };
+
+export async function requestPasswordReset(email: string): Promise<{ message?: string }> {
+  return api.post('/api/auth/forgot-password', { email });
+}
+
+export async function resetPasswordWithToken(token: string, newPassword: string): Promise<{ message?: string }> {
+  return api.post('/api/auth/reset-password-by-token', { token, new_password: newPassword });
+}
 
 export type LoginResponse = {
   access_token: string;

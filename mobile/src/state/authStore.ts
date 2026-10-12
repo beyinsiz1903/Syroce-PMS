@@ -25,6 +25,7 @@ import {
   hasSpaAccess,
   isAllAccessRole,
   normalizeRole,
+  hasServerAccess,
 } from './roleAccess';
 
 // The pure role/entitlement helpers live in `roleAccess.ts` (no React/RN/
@@ -152,19 +153,20 @@ export const useAuthStore = create<AuthState>((set) => ({
       // Network/5xx failures keep the cached user so an already-authenticated
       // operator can continue using the offline-capable surfaces.
     }
+    const server = (page: string, permission: string, fallback: boolean) => hasServerAccess(user || undefined, page, permission) ?? fallback;
     set({
       user,
       role: normalizeRole(user?.role),
       allAccess: isAllAccessRole(user?.role),
-      financeReports: canViewFinanceReports(user?.role),
+      financeReports: server('finance', 'view_finance_reports', canViewFinanceReports(user?.role)),
       spaAccess: hasSpaAccess(user?.role),
       miceAccess: hasMiceAccess(user?.role),
-      maintenanceAccess: hasMaintenanceAccess(user?.role),
+      maintenanceAccess: server('maintenance', 'view_maintenance', hasMaintenanceAccess(user?.role)),
       procurementAccess: hasProcurementAccess(user?.role),
       hrAccess: hasHrAccess(user?.role),
       revenueAccess: hasRevenueAccess(user?.role),
       posAccess: hasPosAccess(user?.role),
-      deptAccess: hasDepartmentAccess(user?.role),
+      deptAccess: server('departments', 'view_departments', hasDepartmentAccess(user?.role)),
       approvalsAccess: hasApprovalsAccess(user?.role),
       loading: false,
     });
@@ -207,20 +209,21 @@ export const useAuthStore = create<AuthState>((set) => ({
         throw new Error('Geçersiz yanıt');
       }
       await persistUser(res.user);
+      const server = (page: string, permission: string, fallback: boolean) => hasServerAccess(res.user, page, permission) ?? fallback;
       set({
         user: res.user,
         pendingTwoFactorToken: null,
         role: normalizeRole(res.user?.role),
         allAccess: isAllAccessRole(res.user?.role),
-        financeReports: canViewFinanceReports(res.user?.role),
+        financeReports: server('finance', 'view_finance_reports', canViewFinanceReports(res.user?.role)),
         spaAccess: hasSpaAccess(res.user?.role),
         miceAccess: hasMiceAccess(res.user?.role),
-        maintenanceAccess: hasMaintenanceAccess(res.user?.role),
+        maintenanceAccess: server('maintenance', 'view_maintenance', hasMaintenanceAccess(res.user?.role)),
         procurementAccess: hasProcurementAccess(res.user?.role),
         hrAccess: hasHrAccess(res.user?.role),
         revenueAccess: hasRevenueAccess(res.user?.role),
         posAccess: hasPosAccess(res.user?.role),
-        deptAccess: hasDepartmentAccess(res.user?.role),
+        deptAccess: server('departments', 'view_departments', hasDepartmentAccess(res.user?.role)),
         approvalsAccess: hasApprovalsAccess(res.user?.role),
         loading: false,
         error: null,

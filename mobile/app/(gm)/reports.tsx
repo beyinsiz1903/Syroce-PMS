@@ -1,7 +1,8 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { RefreshControl, ScrollView, View } from 'react-native';
+import { RefreshControl, ScrollView, Share, View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
-import { Body, Card, H1, H2, Muted, SectionTitle, SkeletonCard } from '../../src/components/ui';
+import { useRouter } from 'expo-router';
+import { Body, Button, Card, H1, H2, Muted, SectionTitle, SkeletonCard } from '../../src/components/ui';
 import { KpiPill } from '../../src/components/KpiCard';
 import { StatRow } from '../../src/components/StatRow';
 import { OfflineBanner } from '../../src/components/OfflineBanner';
@@ -94,6 +95,7 @@ function SegmentList({ data }: { data: Record<string, SegmentStat> }) {
 
 export default function ReportsScreen() {
   const c = useTheme();
+  const router = useRouter();
   const financeReports = useAuthStore((s) => s.financeReports);
 
   const [preset, setPreset] = useState<RangePreset>('this_month');
@@ -169,6 +171,14 @@ export default function ReportsScreen() {
   const pendingInvoicesByCurrency = fin?.accounting_invoices.by_currency ?? (fin ? {
     TRY: fin.accounting_invoices.pending_total,
   } : {});
+  const shareReport = async () => {
+    const total = fin?.pending_ar?.total ?? 0;
+    const collected = fin?.mtd_collections?.amount ?? 0;
+    await Share.share({
+      title: 'Syroce operasyon özeti',
+      message: `Syroce operasyon özeti (${formatRangeLabel(range.start, range.end)})\nBekleyen alacak: ${formatCurrency(total)}\nAy içi tahsilat: ${formatCurrency(collected)}\nNot: Bu paylaşım finansal veri içerir; yalnızca yetkili kişilerle paylaşın.`,
+    });
+  };
 
   return (
     <View style={{ flex: 1, backgroundColor: c.bg }}>
@@ -180,6 +190,8 @@ export default function ReportsScreen() {
       >
         <OfflineBanner visible={offline} />
         <H1>{tr.manager.reportsTitle}</H1>
+        <Button title="Rapor özetini paylaş" variant="secondary" onPress={shareReport} disabled={!fin} fullWidth />
+        <Button title="Finansal rapor detayını aç" variant="outline" onPress={() => router.push('/(gm)/report-detail')} fullWidth />
 
         {/* ── Finance snapshot ── */}
         <SectionTitle title={tr.manager.financeSnapshot} />
