@@ -140,19 +140,28 @@ async def reply_guest_request_thread(
 
         svc = MessagingService(raw_db)
         config = await svc._get_provider_config(current_user.tenant_id, "whatsapp")
-        if config:
-            creds = await svc._load_credentials(current_user.tenant_id, config)
-            mode = svc._resolve_mode(config)
-            provider = CHANNEL_PROVIDER_MAP["whatsapp"]
-            try:
-                await provider.send(
-                    recipient=phone_number,
-                    body=text,
-                    credentials=creds,
-                    mode=mode
-                )
-            except Exception:
-                pass
+        if not config:
+            raise HTTPException(status_code=409, detail="WhatsApp sağlayıcısı yapılandırılmamış")
+
+        creds = await svc._load_credentials(current_user.tenant_id, config)
+        mode = svc._resolve_mode(config)
+        provider = CHANNEL_PROVIDER_MAP["whatsapp"]
+        try:
+            delivery = await provider.send(
+                recipient=phone_number,
+                body=text,
+                credentials=creds,
+                mode=mode,
+            )
+        except Exception:
+            logger.exception("WhatsApp guest-request delivery failed")
+            raise HTTPException(status_code=502, detail="WhatsApp mesajı gönderilemedi") from None
+
+        if not delivery.get("success"):
+            raise HTTPException(
+                status_code=502,
+                detail=delivery.get("error") or "WhatsApp mesajı gönderilemedi",
+            )
 
         doc = await gr.add_guest_message(
             tenant_id=current_user.tenant_id,
@@ -166,7 +175,11 @@ async def reply_guest_request_thread(
             sender_name=current_user.name
         )
         await gr.emit_guest_requests_ping(current_user.tenant_id, room_id)
-        return {"success": True, "message": gr._serialize(doc)}
+        return {
+            "success": True,
+            "message": gr._serialize(doc),
+            "provider_message_id": delivery.get("provider_message_id"),
+        }
 
     if not last_guest:
         raise HTTPException(status_code=404, detail="Bu oda için talep bulunamadı")

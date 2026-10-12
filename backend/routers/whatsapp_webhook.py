@@ -2,8 +2,8 @@
 Meta WhatsApp Business Cloud API — Inbound Webhook.
 
 Endpoints (public, no auth):
-  GET  /api/whatsapp/webhook   → Meta verification handshake
-  POST /api/whatsapp/webhook   → Inbound message + status callbacks
+  GET  /api/messaging-center/whatsapp/webhook   → Meta verification handshake
+  POST /api/messaging-center/whatsapp/webhook   → Inbound message + status callbacks
 
 Tenant resolution: payload includes
   entry[].changes[].value.metadata.phone_number_id
@@ -16,9 +16,8 @@ Security:
     `webhook_verify_token` stored in the provider config; fails closed
     if no tenant matches.
   - POST endpoint verifies `X-Hub-Signature-256` HMAC-SHA256 of the raw
-    body against per-tenant `app_secret`. If `app_secret` is not
-    configured for a tenant, signature check is skipped (logged as
-    warning). Production must always set app_secret.
+  body against the per-tenant `app_secret`. A missing secret is rejected in
+    every mode: a sandbox endpoint must never become an unsigned backdoor.
 """
 
 from __future__ import annotations
@@ -40,7 +39,7 @@ from modules.messaging.recipient_crypto import seal_recipient
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/whatsapp", tags=["WhatsApp Webhook"])
+router = APIRouter(prefix="/api/messaging-center/whatsapp", tags=["WhatsApp Webhook"])
 
 
 def _get_db():
@@ -65,16 +64,37 @@ async def _find_config_by_phone_id(phone_number_id: str) -> dict | None:
 
 
 async def _find_config_by_verify_token(token: str) -> dict | None:
+    """Look up an encrypted verify token without querying its ciphertext.
+
+    Field encryption intentionally makes equal plaintext values have unrelated
+    ciphertext.  Querying ``credentials_encrypted.webhook_verify_token`` would
+    therefore fail after credentials are encrypted at rest.  This endpoint is
+    called only during Meta's rare setup handshake, so a bounded scan of active
+    WhatsApp configurations is both safe and operationally inexpensive.
+    """
     if not token:
         return None
     db = _get_db()
-    return await db.messaging_provider_configs.find_one(
-        {
-            "provider_type": "whatsapp",
-            "enabled": True,
-            "credentials_encrypted.webhook_verify_token": token,
-        },
-        {"_id": 0},
+    from modules.messaging.service import _decrypt_provider_creds
+
+    configs = await db.messaging_provider_configs.find(
+        {"provider_type": "whatsapp", "enabled": True}, {"_id": 0}
+    ).to_list(500)
+    for cfg in configs:
+        creds = _decrypt_provider_creds(
+            cfg.get("credentials_encrypted", {}) or {}, "whatsapp"
+        )
+        if hmac.compare_digest(str(creds.get("webhook_verify_token", "")), token):
+            return cfg
+    return None
+
+
+def _credentials(config: dict) -> dict:
+    """Decrypt provider credentials only at the authenticated runtime boundary."""
+    from modules.messaging.service import _decrypt_provider_creds
+
+    return _decrypt_provider_creds(
+        config.get("credentials_encrypted", {}) or {}, "whatsapp"
     )
 
 
@@ -150,25 +170,19 @@ async def receive_webhook(request: Request) -> dict[str, Any]:
                 continue
 
             tenant_id = cfg.get("tenant_id")
-            creds = cfg.get("credentials_encrypted", {}) or {}
+            creds = _credentials(cfg)
             app_secret = creds.get("app_secret", "")
-            is_sandbox = bool(cfg.get("is_sandbox"))
 
-            # Fail-closed: production (non-sandbox) MUST have app_secret + valid signature.
-            # Sandbox modunda Meta test araçları imza göndermeyebilir, sadece warning.
+            # Fail closed in every mode.  Sandbox is a transport choice, not a
+            # trust-boundary bypass: accepting unsigned payloads lets anyone
+            # create guest conversations and consent records.
             if not app_secret:
-                if is_sandbox:
-                    logger.warning(
-                        "WhatsApp webhook (sandbox): app_secret not set for tenant=%s — accepting unsigned payload (DO NOT use in production)",
-                        tenant_id,
-                    )
-                else:
-                    logger.error(
-                        "WhatsApp webhook: app_secret not set for tenant=%s in LIVE mode — rejecting payload (set app_secret to enable inbound)",
-                        tenant_id,
-                    )
-                    continue
-            elif not _verify_signature(raw_body, signature, app_secret):
+                logger.error(
+                    "WhatsApp webhook: app_secret not configured for tenant=%s; rejecting payload",
+                    tenant_id,
+                )
+                continue
+            if not _verify_signature(raw_body, signature, app_secret):
                 logger.warning(
                     "WhatsApp webhook: signature mismatch for tenant=%s",
                     tenant_id,
@@ -213,9 +227,11 @@ async def receive_webhook(request: Request) -> dict[str, Any]:
                         },
                         upsert=True,
                     )
-                    # Sadece yeni eklenen mesajları say (Meta retry'da tekrar sayma)
-                    if res.upserted_id is not None:
-                        processed += 1
+                    # Meta retry'larında yan etkileri (consent + omnichannel
+                    # ingest) tekrarlamamak için yalnızca ilk teslimde devam et.
+                    if res.upserted_id is None:
+                        continue
+                    processed += 1
                 except Exception:
                     logger.exception("WhatsApp inbound upsert failed")
 

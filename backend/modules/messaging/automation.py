@@ -9,10 +9,9 @@ Trigger Events:
 - checked_out: Misafir check-out yapti
 """
 
-import asyncio
 import logging
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
@@ -325,7 +324,84 @@ async def _create_automation_notification(
 
 
 async def fire_booking_event(tenant_id: str, event_type: str, booking: dict):
+    """Persist a booking automation event before asking the worker to deliver it.
+
+    A process-local ``create_task`` loses confirmations on a restart between the
+    reservation commit and the task starting.  The durable event is keyed by
+    booking + event type, so idempotent reservation retries cannot send the same
+    confirmation twice.  Celery's periodic sweep is the recovery path when the
+    immediate dispatch is unavailable.
     """
-    Non-blocking fire-and-forget. Called from UpdateReservationService.
-    """
-    asyncio.create_task(process_booking_event(tenant_id, event_type, booking))
+    if event_type not in TRIGGER_EVENTS or not booking.get("id"):
+        return
+
+    db = await _get_db()
+    event_key = f"{tenant_id}:{event_type}:{booking['id']}"
+    now = datetime.now(UTC).isoformat()
+    await db.messaging_automation_events.update_one(
+        {"event_key": event_key},
+        {
+            "$setOnInsert": {
+                "id": str(uuid.uuid4()),
+                "event_key": event_key,
+                "tenant_id": tenant_id,
+                "event_type": event_type,
+                "booking": booking,
+                "status": "pending",
+                "attempts": 0,
+                "next_attempt_at": now,
+                "created_at": now,
+            },
+            "$set": {"updated_at": now},
+        },
+        upsert=True,
+    )
+
+    # Broker yoksa bile event kalıcıdır; beat sonraki turda ele alır.
+    try:
+        from celery_app import celery_app
+
+        celery_app.send_task("celery_tasks.dispatch_due_messaging_automation_events_task")
+    except Exception:
+        logger.warning("Messaging automation dispatch could not be queued; recovery sweep will retry")
+
+
+async def dispatch_due_booking_events(limit: int = 100) -> dict[str, int]:
+    """Deliver durable booking events with bounded exponential retry."""
+    db = await _get_db()
+    now = datetime.now(UTC)
+    due = await db.messaging_automation_events.find(
+        {"status": {"$in": ["pending", "retry"]}, "next_attempt_at": {"$lte": now.isoformat()}},
+        {"_id": 0},
+    ).sort("created_at", 1).limit(limit).to_list(limit)
+    stats = {"processed": 0, "retried": 0, "failed": 0}
+
+    for event in due:
+        claimed = await db.messaging_automation_events.update_one(
+            {"id": event["id"], "status": event.get("status")},
+            {"$set": {"status": "processing", "updated_at": now.isoformat()}},
+        )
+        if claimed.modified_count != 1:
+            continue
+        try:
+            await process_booking_event(event["tenant_id"], event["event_type"], event["booking"])
+            await db.messaging_automation_events.update_one(
+                {"id": event["id"]},
+                {"$set": {"status": "processed", "processed_at": datetime.now(UTC).isoformat(), "updated_at": datetime.now(UTC).isoformat()}},
+            )
+            stats["processed"] += 1
+        except Exception as exc:
+            attempts = int(event.get("attempts", 0)) + 1
+            if attempts >= 5:
+                status = "failed"
+                stats["failed"] += 1
+            else:
+                status = "retry"
+                stats["retried"] += 1
+            next_attempt = datetime.now(UTC) + timedelta(minutes=2**attempts)
+            await db.messaging_automation_events.update_one(
+                {"id": event["id"]},
+                {"$set": {"status": status, "attempts": attempts, "next_attempt_at": next_attempt.isoformat(), "last_error": type(exc).__name__, "updated_at": datetime.now(UTC).isoformat()}},
+            )
+            logger.exception("Messaging automation event delivery failed: %s", event["id"])
+    return stats

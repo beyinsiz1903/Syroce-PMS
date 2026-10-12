@@ -10,7 +10,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from core.security import get_current_user
@@ -1340,8 +1340,16 @@ async def list_meta_whatsapp_templates(
                 )
                 if p_resp.status_code == 200:
                     waba_id = p_resp.json().get("whatsapp_business_account", {}).get("id")
+                    if waba_id:
+                        # WABA ID is not a secret. Cache it with the provider
+                        # configuration so a template refresh does not make an
+                        # extra Meta Graph request every time.
+                        await db.messaging_provider_configs.update_one(
+                            {"id": config["id"], "tenant_id": tenant_id},
+                            {"$set": {"credentials_encrypted.waba_id": waba_id, "updated_at": datetime.now(UTC).isoformat()}},
+                        )
         except Exception:
-            pass
+            logger.warning("Meta WABA resolution failed for configured WhatsApp provider", exc_info=True)
 
     if not waba_id:
         return {"templates": []}
@@ -1390,80 +1398,4 @@ async def list_meta_whatsapp_templates(
     except Exception:
         logger.exception("Failed to fetch Meta WhatsApp templates")
         raise HTTPException(status_code=502, detail="Meta API'den şablonlar çekilemedi")
-
-
-@router.get("/whatsapp/webhook")
-async def verify_whatsapp_webhook(
-    mode: str = Query(None, alias="hub.mode"),
-    challenge: str = Query(None, alias="hub.challenge"),
-    verify_token: str = Query(None, alias="hub.verify_token"),
-):
-    """Meta webhook verification endpoint."""
-    if mode == "subscribe" and challenge:
-        return Response(content=str(challenge), media_type="text/plain")
-    raise HTTPException(status_code=403, detail="Verification failed")
-
-
-@router.post("/whatsapp/webhook")
-async def receive_whatsapp_webhook(payload: dict):
-    """Receive inbound messages from Meta WhatsApp."""
-    from domains.guest.messaging.guest_requests import add_guest_message, emit_guest_requests_ping
-    from server import db
-
-    try:
-        entries = payload.get("entry", [])
-        for entry in entries:
-            changes = entry.get("changes", [])
-            for change in changes:
-                val = change.get("value", {})
-                messages = val.get("messages", [])
-                metadata = val.get("metadata", {})
-                contacts = val.get("contacts", [])
-
-                phone_number_id = metadata.get("phone_number_id")
-                if not phone_number_id or not messages:
-                    continue
-
-                configs = await db.messaging_provider_configs.find(
-                    {"provider_type": "whatsapp", "enabled": True}
-                ).to_list(100)
-                tenant_id = None
-                for c in configs:
-                    creds = _decrypt_secrets(c.get("credentials_encrypted", {}), _WHATSAPP_SECRET_KEYS)
-                    if creds.get("phone_number_id") == phone_number_id:
-                        tenant_id = c.get("tenant_id")
-                        break
-
-                if not tenant_id:
-                    logger.warning(f"Webhook received for unknown phone_number_id {phone_number_id}")
-                    continue
-
-                for msg in messages:
-                    from_number = msg.get("from")
-                    msg_type = msg.get("type", "text")
-                    text = msg.get("text", {}).get("body", "") if msg_type == "text" else f"[{msg_type} mesajı]"
-
-                    guest_name = contacts[0].get("profile", {}).get("name", from_number) if contacts else from_number
-                    room_id = f"wa_{from_number}"
-
-                    await add_guest_message(
-                        tenant_id=tenant_id,
-                        room_id=room_id,
-                        room_number="WA",
-                        sender_type="guest",
-                        body=text,
-                        sender_name=guest_name,
-                        category="iletisim",
-                    )
-
-                    try:
-                        await emit_guest_requests_ping(tenant_id, room_id)
-                    except Exception:
-                        pass
-
-        return {"status": "ok"}
-    except Exception as e:
-        logger.exception("Error processing WhatsApp Webhook: %s", e)
-        return {"status": "error"}
-
 

@@ -30,6 +30,27 @@ except ImportError as e:
 logger = logging.getLogger(__name__)
 
 
+@celery_app.task(name="celery_tasks.dispatch_due_messaging_automation_events_task")
+def dispatch_due_messaging_automation_events_task():
+    """Durably dispatch booking confirmations that survived a restart/broker outage."""
+    from modules.messaging.automation import dispatch_due_booking_events
+
+    return asyncio.run(dispatch_due_booking_events())
+
+
+@celery_app.task(name="celery_tasks.messaging_retry_task")
+def messaging_retry_task():
+    """Retry due messaging delivery logs with the persisted retry policy."""
+    from modules.messaging.automation import _get_db
+    from modules.messaging.service import MessagingService
+
+    return asyncio.run(_retry_due_messaging_deliveries(_get_db, MessagingService))
+
+
+async def _retry_due_messaging_deliveries(get_db, service_class):
+    return await service_class(await get_db()).retry_due_messages()
+
+
 @celery_app.task(name="celery_tasks.tga_automatic_submission_task")
 def tga_automatic_submission_task():
     """Dispatch due tenant-local TGA v6 cumulative monthly reports."""

@@ -818,6 +818,26 @@ jobs:
           name: frontend-build
           path: frontend/build/
 
+  # Keep the production release gate self-contained.  Deploy is triggered only
+  # after this workflow completes, so the Vitest suite must be a dependency of
+  # the same workflow rather than merely a parallel PR check.
+  frontend-unit:
+    runs-on: ubuntu-24.04
+    needs: frontend-lint
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: yarn
+          cache-dependency-path: frontend/yarn.lock
+      - name: Install dependencies
+        run: cd frontend && yarn install --ignore-engines --frozen-lockfile
+      - name: Run frontend unit tests with coverage
+        run: cd frontend && yarn test:coverage
+
   # ============ SECURITY SCAN (HARD GATE) ============
   security-scan:
     runs-on: ubuntu-24.04
@@ -946,7 +966,7 @@ jobs:
   # ============ DOCKER BUILD & PUSH ============
   docker-build:
     runs-on: ubuntu-24.04
-    needs: [backend-test, load-test, frontend-build, security-scan, battle-e2e]
+    needs: [backend-test, load-test, frontend-build, frontend-unit, security-scan, battle-e2e]
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/staging'
     permissions:
       contents: read

@@ -1,13 +1,25 @@
 name: Deploy to Droplet
 
 on:
-  push:
-    branches:
-      - main
+  workflow_run:
+    workflows: ["Syroce PMS CI/CD Pipeline"]
+    branches: [main]
+    types: [completed]
+  workflow_dispatch:
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
 
 jobs:
   deploy:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'main')
     runs-on: ubuntu-24.04
+    env:
+      DEPLOY_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
     steps:
       - name: Checkout Code
         uses: actions/checkout@v5
@@ -25,9 +37,12 @@ jobs:
             flock -n 9 || { echo "Another deployment is already running"; exit 1; }
 
             cd /opt/syroce-pms
-            # Stash any local changes and pull the latest code
+            # Deploy the exact revision that passed the full CI workflow.  A
+            # plain `git pull origin main` can otherwise release a newer commit
+            # whose checks are still running.
             git reset --hard HEAD
-            git pull origin main
+            git fetch --depth=1 origin "$DEPLOY_SHA"
+            git checkout --detach "$DEPLOY_SHA"
 
             # Keep the host monitor versioned with the deployment and derive
             # expected containers from Compose service identities. This avoids

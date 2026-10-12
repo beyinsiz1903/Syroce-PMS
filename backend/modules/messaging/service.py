@@ -278,6 +278,7 @@ class MessagingService:
         else:
             self._provider_errors[provider_type] = self._provider_errors.get(provider_type, 0) + 1
             error_class = result.get("error_class", "unknown_error")
+            next_retry = datetime.now(UTC) + timedelta(minutes=2)
             await self.db.messaging_delivery_logs.update_one(
                 {"id": log_doc["id"]},
                 {
@@ -285,6 +286,7 @@ class MessagingService:
                         "status": DeliveryStatus.FAILED.value,
                         "error_message": result.get("error"),
                         "error_class": error_class,
+                        "next_retry_at": next_retry.isoformat(),
                         "updated_at": datetime.now(UTC).isoformat(),
                     }
                 },
@@ -377,6 +379,24 @@ class MessagingService:
                 },
             )
             return {"success": False, "error": result.get("error"), "retry_count": new_count}
+
+    async def retry_due_messages(self, limit: int = 100) -> dict[str, int]:
+        """Retry due failed deliveries without relying on an operator click."""
+        now = datetime.now(UTC).isoformat()
+        due = await self.db.messaging_delivery_logs.find(
+            {
+                "status": DeliveryStatus.FAILED.value,
+                "retry_count": {"$lt": 3},
+                "next_retry_at": {"$lte": now},
+            },
+            {"_id": 0, "id": 1, "tenant_id": 1},
+        ).sort("next_retry_at", 1).limit(limit).to_list(limit)
+        stats = {"attempted": 0, "sent": 0, "failed": 0}
+        for log in due:
+            result = await self.retry_failed(log["tenant_id"], log["id"])
+            stats["attempted"] += 1
+            stats["sent" if result.get("success") else "failed"] += 1
+        return stats
 
     # ── delivery metrics ──
 

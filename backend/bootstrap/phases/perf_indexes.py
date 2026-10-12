@@ -244,6 +244,10 @@ async def ensure_performance_indexes():
         # Webhook upsert'i (tenant_id, wa_message_id) key'iyle yapıyor;
         # concurrency altında race-free garanti için unique index gerekli.
         ("wa_inbound_messages", [("tenant_id", 1), ("wa_message_id", 1)], "idx_wa_inbound_unique", {"unique": True}),
+        # Booking automation events are durable and exactly-once per booking
+        # event.  The worker uses this key both for recovery and idempotency.
+        ("messaging_automation_events", [("event_key", 1)], "ux_msg_automation_event_key", {"unique": True}),
+        ("messaging_automation_events", [("status", 1), ("next_attempt_at", 1)], "idx_msg_automation_due", {}),
         # WhatsApp webhook tenant lookup — phone_number_id'den config'e.
         ("messaging_provider_configs", [("provider_type", 1), ("credentials_encrypted.phone_number_id", 1)], "idx_msg_provider_phone_lookup", {}),
         # Task #645 — Contact Center Faz 1 (omnichannel WhatsApp MVP).
