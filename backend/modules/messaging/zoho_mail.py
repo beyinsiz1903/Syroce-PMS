@@ -10,6 +10,8 @@ import time
 
 import httpx
 
+from integrations.xchange.safety import EgressDenied, safe_request_async
+
 DOMAINS = {"eu": "zoho.eu", "us": "zoho.com"}
 SECRET_KEYS = {"zoho_client_secret", "zoho_refresh_token"}
 _tokens = {}
@@ -32,7 +34,7 @@ class ZohoError(Exception):
     pass
 
 
-async def access_token(client, creds):
+async def access_token(creds):
     # Bounded process-local cache; rotated credentials cannot reuse an old token.
     key = hashlib.sha256(repr(tuple(creds.get(k) for k in (
         "zoho_region", "zoho_client_id", "zoho_client_secret", "zoho_refresh_token",
@@ -41,8 +43,10 @@ async def access_token(client, creds):
         cached = _tokens.get(key)
         if cached and cached[1] > time.monotonic():
             return cached[0]
-        response = await client.post(
+        response = await safe_request_async(
+            "POST",
             f"https://accounts.{DOMAINS[creds['zoho_region']]}/oauth/v2/token",
+            timeout=15,
             data={"grant_type": "refresh_token", "client_id": creds["zoho_client_id"],
                   "client_secret": creds["zoho_client_secret"], "refresh_token": creds["zoho_refresh_token"]},
         )
@@ -57,9 +61,11 @@ async def access_token(client, creds):
         return token
 
 
-async def account(client, creds, token):
-    response = await client.get(
+async def account(creds, token):
+    response = await safe_request_async(
+        "GET",
         f"https://mail.{DOMAINS[creds['zoho_region']]}/api/accounts",
+        timeout=15,
         headers={"Authorization": f"Zoho-oauthtoken {token}"},
     )
     payload = response.json()
@@ -78,13 +84,12 @@ async def account(client, creds, token):
 async def check_health(creds):
     try:
         validate_credentials(creds)
-        async with httpx.AsyncClient(timeout=15, follow_redirects=False) as client:
-            token = await access_token(client, creds)
-            await account(client, creds, token)
+        token = await access_token(creds)
+        await account(creds, token)
         return {"status": "healthy", "note": "OAuth ve gönderen doğrulandı; mesaj gönderilmedi. Gönderim izni test e-postasıyla doğrulanmalıdır."}
     except (ValueError, TypeError, AttributeError, ZohoError) as exc:
         return {"status": "unhealthy", "error": str(exc) if isinstance(exc, ZohoError) else "Zoho yapılandırması veya yanıtı geçersiz."}
-    except httpx.HTTPError:
+    except (httpx.HTTPError, EgressDenied):
         return {"status": "unhealthy", "error": "Zoho HTTPS bağlantısı tamamlanamadı."}
 
 
@@ -93,24 +98,23 @@ async def send(recipient, body, subject, creds):
     attempted = False
     try:
         validate_credentials(creds)
-        async with httpx.AsyncClient(timeout=20, follow_redirects=False) as client:
-            token = await access_token(client, creds)
-            await account(client, creds, token)
-            attempted = True
-            response = await client.post(
-                f"https://mail.{DOMAINS[creds['zoho_region']]}/api/accounts/{creds['zoho_account_id']}/messages",
-                headers={"Authorization": f"Zoho-oauthtoken {token}"},
-                json={"fromAddress": creds["from_email"], "toAddress": recipient,
-                      "subject": subject or "Otel Bilgilendirme", "content": body,
-                      "mailFormat": "html" if any(tag in body.lower() for tag in ("<html", "<div", "<p>")) else "plaintext",
-                      "encoding": "UTF-8"},
-            )
-            payload = response.json()
-            message_id = (payload.get("data") or {}).get("messageId")
-            if response.status_code == 200 and payload.get("status", {}).get("code") == 200 and message_id:
-                return {"success": True, "provider_message_id": str(message_id), "latency_ms": (time.monotonic() - started) * 1000}
-            return {"success": False, "outcome_unknown": response.status_code >= 500 or response.status_code == 200,
-                    "error_class": "provider_error", "error": f"Zoho gönderimi doğrulanamadı (HTTP {response.status_code}); Zoho gönderilenler klasörünü kontrol edin."}
-    except (httpx.HTTPError, ValueError, TypeError, AttributeError, ZohoError):
+        token = await access_token(creds)
+        await account(creds, token)
+        attempted = True
+        response = await safe_request_async(
+            "POST", f"https://mail.{DOMAINS[creds['zoho_region']]}/api/accounts/{creds['zoho_account_id']}/messages",
+            timeout=20, headers={"Authorization": f"Zoho-oauthtoken {token}"},
+            json={"fromAddress": creds["from_email"], "toAddress": recipient,
+                  "subject": subject or "Otel Bilgilendirme", "content": body,
+                  "mailFormat": "html" if any(tag in body.lower() for tag in ("<html", "<div", "<p>")) else "plaintext",
+                  "encoding": "UTF-8"},
+        )
+        payload = response.json()
+        message_id = (payload.get("data") or {}).get("messageId")
+        if response.status_code == 200 and payload.get("status", {}).get("code") == 200 and message_id:
+            return {"success": True, "provider_message_id": str(message_id), "latency_ms": (time.monotonic() - started) * 1000}
+        return {"success": False, "outcome_unknown": response.status_code >= 500 or response.status_code == 200,
+                "error_class": "provider_error", "error": f"Zoho gönderimi doğrulanamadı (HTTP {response.status_code}); Zoho gönderilenler klasörünü kontrol edin."}
+    except (httpx.HTTPError, EgressDenied, ValueError, TypeError, AttributeError, ZohoError):
         return {"success": False, "outcome_unknown": attempted, "error_class": "zoho_error",
                 "error": "Zoho HTTPS gönderimi tamamlanamadı. OAuth, hesap ve bağlantı ayarlarını kontrol edin."}

@@ -16,8 +16,12 @@ def creds():
 
 
 def mock_api(monkeypatch, handler):
-    original = httpx.AsyncClient
-    monkeypatch.setattr(zoho_mail.httpx, "AsyncClient", lambda **kw: original(transport=httpx.MockTransport(handler), **kw))
+    async def safe_request(method, url, **kwargs):
+        request = httpx.Request(method, url, headers=kwargs.get("headers"), content=kwargs.get("content"),
+                                data=kwargs.get("data"), json=kwargs.get("json"))
+        return handler(request)
+
+    monkeypatch.setattr(zoho_mail, "safe_request_async", safe_request)
 
 
 def preflight(request):
@@ -92,7 +96,7 @@ async def test_account_mismatch_prevents_send(monkeypatch, creds):
 async def test_health_is_read_only_and_sandbox_never_calls_network(monkeypatch, creds):
     mock_api(monkeypatch, preflight)
     assert (await zoho_mail.check_health(creds))["status"] == "healthy"
-    monkeypatch.setattr(zoho_mail.httpx, "AsyncClient", MagicMock(side_effect=AssertionError("network forbidden")))
+    monkeypatch.setattr(zoho_mail, "safe_request_async", MagicMock(side_effect=AssertionError("network forbidden")))
     result = await SMTPEmailProvider().send("recipient@example.com", "test", credentials=creds, mode="sandbox")
     assert result["success"] and result["mode"] == "sandbox"
 
