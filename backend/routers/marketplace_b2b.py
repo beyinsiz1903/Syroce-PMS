@@ -2569,13 +2569,34 @@ def _voucher_html(doc: dict) -> str:
     return f"""<!doctype html><html><head><meta charset='utf-8'><style>body{{font-family:Arial;color:#172033;padding:32px}}.sheet{{border:1px solid #ccd5e1;border-radius:12px;padding:24px}}table{{width:100%;border-collapse:collapse}}td{{padding:10px;border-bottom:1px solid #eee}}</style></head><body><div class='sheet'><h1>Rezervasyon Voucher</h1><table><tr><td>Onay kodu</td><td>{safe(doc.get('confirmation_code'))}</td></tr><tr><td>Otel</td><td>{safe(doc.get('hotel_name'))}</td></tr><tr><td>Misafir</td><td>{safe(doc.get('guest_name'))}</td></tr><tr><td>Giriş / Çıkış</td><td>{safe(doc.get('check_in'))} / {safe(doc.get('check_out'))}</td></tr><tr><td>Tutar</td><td>{safe(doc.get('total_amount'))} {safe(doc.get('currency', 'TRY'))}</td></tr></table><p>Syroce Acente Portalı tarafından oluşturulmuştur.</p></div></body></html>"""
 
 
-@router.get("/reservations/{reservation_id}/voucher.pdf")
-async def agency_reservation_voucher_pdf(reservation_id: str, agency: dict = Depends(get_marketplace_agency)):
-    doc = await get_system_db().marketplace_bookings.find_one(
-        {"id": reservation_id, "agency_id": agency["agency_id"]}, {"_id": 0}
+async def _agency_voucher_booking(reservation_id: str, agency_id: str) -> dict:
+    """Return the agency-authorized booking while its marketplace projection catches up.
+
+    The canonical PMS booking is written atomically before the asynchronous
+    marketplace ledger projection. Voucher availability must therefore follow
+    the same fallback already used by the reservation list and detail views.
+    """
+    sysdb = get_system_db()
+    doc = await sysdb.marketplace_bookings.find_one(
+        {"id": reservation_id, "agency_id": agency_id}, {"_id": 0}
     )
     if not doc:
+        doc = await sysdb.bookings.find_one(
+            {
+                "id": reservation_id,
+                "agency_id": agency_id,
+                "agency_completion.kind": "marketplace",
+            },
+            {"_id": 0},
+        )
+    if not doc:
         raise HTTPException(404, "Rezervasyon bulunamadı")
+    return public_booking(doc)
+
+
+@router.get("/reservations/{reservation_id}/voucher.pdf")
+async def agency_reservation_voucher_pdf(reservation_id: str, agency: dict = Depends(get_marketplace_agency)):
+    doc = await _agency_voucher_booking(reservation_id, agency["agency_id"])
     try:
         from weasyprint import HTML
         pdf = HTML(string=_voucher_html(doc)).write_pdf()
@@ -2588,11 +2609,7 @@ async def agency_reservation_voucher_pdf(reservation_id: str, agency: dict = Dep
 async def agency_email_reservation_voucher(
     reservation_id: str, data: VoucherEmailRequest, agency: dict = Depends(get_marketplace_agency)
 ):
-    doc = await get_system_db().marketplace_bookings.find_one(
-        {"id": reservation_id, "agency_id": agency["agency_id"]}, {"_id": 0}
-    )
-    if not doc:
-        raise HTTPException(404, "Rezervasyon bulunamadı")
+    doc = await _agency_voucher_booking(reservation_id, agency["agency_id"])
     from core.email import send_email
     result = await send_email(str(data.email), f"Rezervasyon Voucher · {doc.get('confirmation_code')}", _voucher_html(doc), sensitive=True)
     if not isinstance(result, dict) or not result.get("sent"):
