@@ -800,6 +800,8 @@ async def _marketplace_stay_price(
             base_rows = await db.rate_calendar.find(query, {"_id": 0}).to_list(max(len(dates) * 8, 32))
 
     plans = {str(row.get("rate_plan_code") or "LEGACY") for row in agency_rows + base_rows}
+    if not plans and allow_base_rate_fallback:
+        plans = {"BASE"}
     if not plans:
         return {"sellable": False, "nightly_rates": [], "total_price": 0.0, "reason": "agency_rate_not_shared"}
     if rate_plan_code is None:
@@ -878,7 +880,8 @@ async def _agency_rate_plans(tenant_id, agency_id, room_type, check_in, check_ou
         base_rows = await db.hr_rate_calendar.find(query, {"_id": 0}).to_list(5000)
         if not base_rows:
             base_rows = await db.rate_calendar.find(query, {"_id": 0}).to_list(5000)
-    return sorted({str(row.get("rate_plan_code") or "LEGACY") for row in agency_rows + base_rows})
+    plans = {str(row.get("rate_plan_code") or "LEGACY") for row in agency_rows + base_rows}
+    return sorted(plans or ({"BASE"} if allow_base_rate_fallback else set()))
 
 
 def _rate_product_snapshot(plan_code, room, contract, pricing=None):
@@ -1207,7 +1210,7 @@ async def _sales_lock_evidence(sysdb, lock: dict) -> dict:
         if lock.get("operation") == "marketplace_modification":
             proposal = await sysdb.marketplace_negotiations.find_one(
                 {"id": lock["reference_id"], "tenant_id": lock["tenant_id"], "agency_id": lock["agency_id"]},
-                {"_id": 0, "id": 1, "reservation_id": 1, "status": 1},
+                {"_id": 0, "id": 1, "reservation_id": 1, "status": 1, "applied_snapshot": 1},
             )
             if not proposal:
                 return {"booking": None, "idempotency": None, "proposal": None}
@@ -1217,16 +1220,30 @@ async def _sales_lock_evidence(sysdb, lock: dict) -> dict:
             booking_query["id"] = lock["reference_id"]
     else:
         return {"booking": None, "idempotency": None, "proposal": None}
+    snapshot = (proposal or {}).get("applied_snapshot") or {}
     booking = await sysdb.bookings.find_one(
         booking_query,
-        {"_id": 0, "id": 1, "confirmation_code": 1, "status": 1, "agency_completion.status": 1},
+        {"_id": 0, "id": 1, "confirmation_code": 1, "status": 1, "agency_completion.status": 1,
+         **dict.fromkeys(snapshot, 1)},
     )
+    modification_verified = False
+    if proposal and proposal.get("status") == "accepted" and snapshot and booking:
+        ledger = await sysdb.marketplace_bookings.find_one(
+            {"id": booking["id"], "tenant_id": lock["tenant_id"], "agency_id": lock["agency_id"]},
+            {"_id": 0, **dict.fromkeys(snapshot, 1)},
+        )
+        modification_verified = bool(ledger) and all(
+            booking.get(field) == value and ledger.get(field) == value for field, value in snapshot.items()
+        )
+    if proposal and proposal.get("status") == "declined":
+        modification_verified = True  # Rejection performs no reservation writes.
     idempotency = None
     if key:
         idempotency = await sysdb.idempotency_keys.find_one(
             {"idempotency_key": key}, {"_id": 0, "scope": 1, "status": 1, "created_at": 1, "expires_at": 1},
         )
-    return {"booking": booking, "idempotency": idempotency, "proposal": proposal if lock.get("operation") == "marketplace_modification" else None}
+    return {"booking": booking, "idempotency": idempotency, "proposal": proposal,
+            "modification_verified": modification_verified}
 
 
 @router.get("/admin/sales-locks")
@@ -1245,6 +1262,19 @@ async def admin_list_agency_sales_locks(_: bool = Depends(_require_system_admin)
             "reference_id": lock.get("reference_id"), "recovery_state": lock.get("recovery_state", "active"),
             "created_at": lock.get("created_at"), **evidence,
         })
+    pending = await sysdb.agency_sales_lock_recoveries.find(
+        {"status": "pending_release"}, {"_id": 0},
+    ).to_list(500)
+    # A completed deletion may have lost its response or final audit update.
+    # Expose that receipt even when the original lock is already gone.
+    for record in pending:
+        if any(item["lock_id"] == record["lock_id"] and item["owner"] == record["lock_owner"] for item in items):
+            continue
+        items.append({"lock_id": record["lock_id"], "owner": record["lock_owner"],
+                      "tenant_id": record["tenant_id"], "agency_id": record["agency_id"],
+                      "operation": record.get("operation"), "recovery_state": "pending_release",
+                      "booking": record.get("booking"), "proposal": record.get("proposal"),
+                      "modification_verified": True, "receipt_only": True})
     return {"items": items, "total": len(items)}
 
 
@@ -1260,8 +1290,19 @@ async def admin_reconcile_agency_sales_lock(
     sysdb = get_system_db()
     lock = await sysdb.agency_sale_mutexes.find_one({"_id": lock_id, "owner": data.owner})
     if not lock:
+        receipt = await sysdb.agency_sales_lock_recoveries.find_one(
+            {"lock_id": lock_id, "lock_owner": data.owner, "status": {"$in": ["pending_release", "released"]}},
+        )
+        if receipt:
+            # Never touch a replacement lock: only finish the original receipt.
+            await sysdb.agency_sales_lock_recoveries.update_one(
+                {"id": receipt["id"]}, {"$set": {"status": "released", "released_at": _now_iso()}},
+            )
+            return {"ok": True, "recovery_id": receipt["id"], "idempotent_replay": True}
         raise HTTPException(409, "Satış kilidi değişmiş veya zaten uzlaştırılmış; listeyi yenileyin")
     evidence = await _sales_lock_evidence(sysdb, lock)
+    if lock.get("operation") == "marketplace_modification" and not evidence.get("modification_verified"):
+        raise HTTPException(409, "Değişiklik tamamlandığı doğrulanamadı: teklif, PMS ve marketplace kaydı uzlaştırılmadan kilit kaldırılamaz.")
     has_booking = bool(evidence.get("booking"))
     processing = (evidence.get("idempotency") or {}).get("status") == "processing"
     if data.resolution == "booking_committed" and not has_booking:
@@ -1281,13 +1322,17 @@ async def admin_reconcile_agency_sales_lock(
         "proposal": evidence.get("proposal"), "status": "pending_release",
         "reconciled_at": _now_iso(), "actor_type": "system_admin",
     }
-    await sysdb.agency_sales_lock_recoveries.insert_one(record)
+    previous = await sysdb.agency_sales_lock_recoveries.find_one(
+        {"lock_id": lock_id, "lock_owner": data.owner, "status": "pending_release"},
+    )
+    if previous:
+        record = previous
+    else:
+        await sysdb.agency_sales_lock_recoveries.insert_one(record)
     deleted = await sysdb.agency_sale_mutexes.delete_one({"_id": lock_id, "owner": data.owner})
     if not deleted.deleted_count:
-        await sysdb.agency_sales_lock_recoveries.update_one(
-            {"id": record["id"]}, {"$set": {"status": "delete_conflict", "updated_at": _now_iso()}},
-        )
-        raise HTTPException(409, "Satış kilidi eşzamanlı değişti; denetim kaydı bırakıldı, listeyi yenileyin")
+        if await sysdb.agency_sale_mutexes.find_one({"_id": lock_id, "owner": data.owner}):
+            raise HTTPException(409, "Satış kilidi kaldırılamadı; denetim kaydı korundu, yeniden deneyin")
     await sysdb.agency_sales_lock_recoveries.update_one(
         {"id": record["id"]}, {"$set": {"status": "released", "released_at": _now_iso()}},
     )
@@ -2919,7 +2964,13 @@ async def _decide_marketplace_modification_locked(proposal_id, data, current_use
     status_value = "accepted" if data.accept else "declined"
     await sysdb.marketplace_negotiations.update_one(
         {"id": proposal_id, "status": "awaiting_hotel"},
-        {"$set": {"status": status_value, "response_note": data.response_note.strip(), "responded_at": _now_iso(), "updated_at": _now_iso()}},
+        {"$set": {"status": status_value, "response_note": data.response_note.strip(), "responded_at": _now_iso(), "updated_at": _now_iso(),
+                  "applied_snapshot": ({key: changes[key] for key in (
+                      "check_in", "check_out", "room_id", "room_type", "rate_plan_code", "total_amount",
+                      "net_to_hotel", "credit_exposure_amount", "credit_exposure_currency",
+                      "nightly_rates", "meal_plan", "cancellation_policy",
+                  )} if data.accept and proposal["type"] == "agency_modification" else
+                  {"status": "cancelled"} if data.accept else {})}},
     )
     return {
         "ok": True,

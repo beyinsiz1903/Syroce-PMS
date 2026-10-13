@@ -183,6 +183,7 @@ const IncomingAgencyContracts = ({ user, tenant, onLogout }) => {
   const [commissionOverride, setCommissionOverride] = useState('');
   const [creditLimit, setCreditLimit] = useState('');
   const [creditCurrency, setCreditCurrency] = useState('TRY');
+  const [allowBaseRate, setAllowBaseRate] = useState(false);
   const [approveNotes, setApproveNotes] = useState('');
   const [rejectReason, setRejectReason] = useState('');
   const [terminateReason, setTerminateReason] = useState('');
@@ -241,6 +242,7 @@ const IncomingAgencyContracts = ({ user, tenant, onLogout }) => {
 
   const openApprove = (c) => {
     setApproveDlg(c);
+    setAllowBaseRate(false);
     setCommissionOverride(String(c.commission_pct ?? ''));
     setCreditLimit('');
     setCreditCurrency(c.currency || 'TRY');
@@ -254,6 +256,7 @@ const IncomingAgencyContracts = ({ user, tenant, onLogout }) => {
       const override = parseFloat(commissionOverride);
       const body = {
         notes: approveNotes,
+        allow_base_rate_fallback: allowBaseRate,
         commission_pct_override: !isNaN(override) && override !== approveDlg.commission_pct ? override : null,
       };
       if (creditLimit.trim() !== '') {
@@ -529,6 +532,7 @@ const IncomingAgencyContracts = ({ user, tenant, onLogout }) => {
               </div>
             </div>
             <p className="text-xs text-muted-foreground -mt-2">Limit, yalnızca net otel alacağıyla ve bu para birimindeki açık borçlarla karşılaştırılır. Kur dönüşümü otomatik yapılmaz.</p>
+            <label className="block text-sm"><input type="checkbox" checked={allowBaseRate} onChange={e => setAllowBaseRate(e.target.checked)} /> Paylaşılmış fiyat yoksa tesisin temel/takvim fiyatıyla satışa izin ver (varsayılan kapalı).</label>
             <div>
               <Label>Not (opsiyonel)</Label>
               <Textarea

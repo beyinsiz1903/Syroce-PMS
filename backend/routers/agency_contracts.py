@@ -466,6 +466,7 @@ def _require_hotel_user(user: User) -> str:
 
 
 class ApproveRequest(BaseModel):
+    allow_base_rate_fallback: bool = False
     commission_pct_override: float | None = Field(default=None, ge=0, le=100)
     credit_limit: float | None = Field(default=None, ge=0)
     credit_currency: str | None = Field(default=None, pattern="^[A-Z]{3}$")
@@ -593,6 +594,7 @@ async def hotel_approve_request(
                 "status": "approved",
                 "commission_pct": final_pct,
                 "hotel_approved_commission_pct": final_pct,
+                "allow_base_rate_fallback": data.allow_base_rate_fallback,
                 # A limit can be configured only by the hotel at approval
                 # time.  Persisting its currency makes later credit checks
                 # deterministic; there is deliberately no implicit FX path.

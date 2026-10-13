@@ -40,15 +40,16 @@ export default function AgencySalesLockRecovery() {
     {error && <p role="alert">{error}</p>}
     <p role="status">{busy ? 'Yükleniyor…' : `${data.total} takılı satış kilidi`}</p>
     <div className="overflow-x-auto"><table className="w-full text-left">
-      <thead><tr>{['Tesis / Acente', 'İşlem', 'Oluşan rezervasyon', 'İdempotency', 'Kurtarma'].map(x => <th className="p-2" key={x}>{x}</th>)}</tr></thead>
-      <tbody>{data.items.map(item => <tr key={item.lock_id} className="border-t align-top">
+      <thead><tr>{['Tesis / Acente', 'İşlem', 'Oluşan rezervasyon', 'İdempotency', 'Kurtarma', 'Kanıt durumu'].map(x => <th className="p-2" key={x}>{x}</th>)}</tr></thead>
+      <tbody>{data.items.map(item => <tr key={`${item.lock_id}:${item.owner}`} className="border-t align-top">
         <td className="p-2">{item.tenant_id}<br />{item.agency_id}</td>
         <td className="p-2">{item.operation}<br /><small>{item.created_at ? new Date(item.created_at).toLocaleString('tr-TR') : '—'}</small>{item.proposal && <><br /><small>Teklif: {item.proposal.id} · {item.proposal.status}</small></>}</td>
         <td className="p-2">{item.booking ? `${item.booking.confirmation_code || item.booking.id} · ${item.booking.status}` : 'Bulunamadı'}</td>
         <td className="p-2">{item.idempotency?.status || 'Yok'}</td>
         <td className="p-2 min-w-[290px]"><textarea className="w-full border rounded p-1" rows="2" placeholder="Uzlaştırma gerekçesi" value={reason[item.lock_id] || ''} onChange={e => setReason({ ...reason, [item.lock_id]: e.target.value })} />
           <label className="block text-xs mt-1"><input type="checkbox" checked={!!confirmed[item.lock_id]} onChange={e => setConfirmed({ ...confirmed, [item.lock_id]: e.target.checked })} /> Özgün yazıcının durduğunu doğruladım.</label>
-          <button disabled={busy || item.idempotency?.status === 'processing'} onClick={() => reconcile(item, item.booking ? 'booking_committed' : 'no_booking_committed')}>Kanıtla ve kilidi kaldır</button></td>
+          <button disabled={busy || item.idempotency?.status === 'processing' || (item.operation === 'marketplace_modification' && !item.modification_verified)} onClick={() => reconcile(item, item.booking ? 'booking_committed' : 'no_booking_committed')}>{item.receipt_only ? 'Denetim kaydını tamamla' : 'Kanıtla ve kilidi kaldır'}</button></td>
+        <td className="p-2">{item.receipt_only ? 'Kilit kalktı; denetim kaydı tamamlanacak.' : item.operation === 'marketplace_modification' && !item.modification_verified ? 'Değişiklik kanıtı eksik. PMS, marketplace ve teklif uzlaştırılmadan kilit açılamaz.' : ''}</td>
       </tr>)}</tbody>
     </table></div>
   </main>;

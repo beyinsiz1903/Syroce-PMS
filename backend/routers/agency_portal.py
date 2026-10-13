@@ -638,6 +638,24 @@ async def list_agency_contracts(agency_id: str, current_user: User = Depends(get
     return {"contracts": contracts}
 
 
+class AgencyRatePolicy(BaseModel):
+    allow_base_rate_fallback: bool
+
+
+@router.put("/agencies/{agency_id}/contracts/{contract_id}/rate-policy")
+async def update_agency_rate_policy(agency_id: str, contract_id: str, data: AgencyRatePolicy,
+                                   current_user: User = Depends(get_current_user)):
+    _require_hotel_staff(current_user)
+    result = await db.agency_contracts.update_one(
+        {"id": contract_id, "agency_id": agency_id, "tenant_id": current_user.tenant_id},
+        {"$set": {"allow_base_rate_fallback": data.allow_base_rate_fallback,
+                  "rate_policy_updated_by": current_user.id, "rate_policy_updated_at": datetime.now(UTC).isoformat()}},
+    )
+    if not result.matched_count:
+        raise HTTPException(404, "Sözleşme bulunamadı")
+    return {"ok": True}
+
+
 @router.post("/agencies/{agency_id}/allotments")
 async def create_agency_allotment(agency_id: str, data: AgencyAllotmentCreate, current_user: User = Depends(get_current_user)):
     _require_hotel_staff(current_user)
@@ -1191,18 +1209,16 @@ async def agency_portal_create_reservation(
     from routers.marketplace_b2b import _marketplace_stay_price, _rate_product_snapshot
     from shared_kernel.idempotency import build_request_hash
 
+    contract = await _legacy_active_contract(db, tenant_id, agency_id, data.check_in, data.check_out)
     pricing = await _marketplace_stay_price(
         tenant_id=tenant_id, agency_id=agency_id, room_type=data.room_type_id,
         check_in=data.check_in, check_out=data.check_out, fallback_rate=float(total) / nights,
         rate_plan_code=data.rate_plan_code,
+        allow_base_rate_fallback=bool((contract or {}).get("allow_base_rate_fallback")),
     )
     if not pricing["sellable"]:
         raise HTTPException(409, detail="Seçilen fiyat planı bu tarihlerde satılamıyor; yeniden arayın")
     total = round(float(pricing["total_price"]), 2)
-    contract = await db.agency_contracts.find_one({
-        "agency_id": agency_id, "tenant_id": tenant_id, "is_active": True,
-        "start_date": {"$lte": data.check_in}, "end_date": {"$gte": _last_occupied_date(data.check_in, data.check_out)},
-    })
     product = _rate_product_snapshot(data.rate_plan_code, available_room, contract or {}, pricing)
     if total <= 0:
         raise HTTPException(status_code=409, detail="Bu oda tipi için geçerli satış fiyatı tanımlı değil")
