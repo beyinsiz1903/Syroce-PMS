@@ -797,6 +797,10 @@ async def _marketplace_stay_price(
     shared_availability: list[int] = []
     for date in dates:
         row = agency_by_date.get(date) or base_by_date.get(date) or {}
+        # Stay-through minimum: every occupied night must permit this stay.
+        # Checkout is exclusive and must not impose a minimum on the stay.
+        if len(dates) < int(row.get("min_stay") or 1):
+            return {"sellable": False, "nightly_rates": [], "total_price": 0.0, "reason": "min_stay"}
         if row.get("stop_sell") is True or (
             date in agency_by_date
             and row.get("availability") is not None
