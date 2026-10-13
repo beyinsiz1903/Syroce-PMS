@@ -10,13 +10,12 @@ import {
 } from "@/lib/nightAuditRunSafety";
 
 describe("night audit run safety", () => {
-  it.each([2, 38, 365])("guides a %i-day backlog through simulation without allowing a permission bypass", (days) => {
-    expect(requiresCatchupSimulationMode(days, false, true)).toBe(true);
-    expect(requiresCatchupSimulationMode(days, true, false)).toBe(true);
-    expect(requiresCatchupSimulationMode(days, true, true)).toBe(false);
+  it.each([2, 38, 365])("allows direct admin close for a %i-day backlog but protects permissions", (days) => {
+    expect(requiresCatchupSimulationMode(days, false)).toBe(true);
+    expect(requiresCatchupSimulationMode(days, true)).toBe(false);
   });
   it("preserves normal one-day closing", () => {
-    expect(requiresCatchupSimulationMode(1, false, false)).toBe(false);
+    expect(requiresCatchupSimulationMode(1, false)).toBe(false);
   });
   it("requires a completed simulation reference for exactly the open day", () => {
     expect(hasCurrentCatchupSimulation(null, "2026-09-05")).toBe(false);

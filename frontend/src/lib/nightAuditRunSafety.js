@@ -4,8 +4,8 @@ export function hasCurrentCatchupSimulation(simulation, businessDate) {
   return Boolean(businessDate && simulation?.date === businessDate && simulation?.runId);
 }
 
-export function requiresCatchupSimulationMode(backlogDays, hasSimulation, canManage) {
-  return Number(backlogDays) > 1 && (!hasSimulation || !canManage);
+export function requiresCatchupSimulationMode(backlogDays, canManage) {
+  return Number(backlogDays) > 1 && !canManage;
 }
 
 export function isNightAuditTimeout(error) {
