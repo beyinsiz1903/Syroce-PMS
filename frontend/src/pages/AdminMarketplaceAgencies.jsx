@@ -1,3 +1,4 @@
+import { currencyTotalsText } from '@/utils/agencyMoney';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
@@ -28,9 +29,6 @@ const EMPTY_FORM = {
 };
 const EMPTY_AGENCIES = [];
 
-const money = (value) => new Intl.NumberFormat('tr-TR', {
-  style: 'currency', currency: 'TRY', maximumFractionDigits: 2,
-}).format(Number(value || 0));
 
 const dateTime = (value) => value
   ? new Intl.DateTimeFormat('tr-TR', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value))
@@ -106,8 +104,6 @@ export default function AdminMarketplaceAgencies() {
   const totals = useMemo(() => agencies.reduce((acc, agency) => ({
     hotels: acc.hotels + Number(agency.connected_hotels || 0),
     bookings: acc.bookings + Number(agency.booking_count || 0),
-    gross: acc.gross + Number(agency.gross_volume || 0),
-    revenue: acc.revenue + Number(agency.platform_revenue || 0),
   }), { hotels: 0, bookings: 0, gross: 0, revenue: 0 }), [agencies]);
 
   const openCreate = () => {
@@ -234,8 +230,8 @@ export default function AdminMarketplaceAgencies() {
         <KpiCard icon={Handshake} label="Toplam acente" value={agencies.length} />
         <KpiCard icon={Building2} label="Aktif otel bağlantısı" value={totals.hotels} intent="info" />
         <KpiCard icon={WalletCards} label="Rezervasyon" value={totals.bookings} intent="success" />
-        <KpiCard icon={TrendingUp} label="Brüt işlem hacmi" value={money(totals.gross)} />
-        <KpiCard icon={TrendingUp} label="Platform geliri" value={money(totals.revenue)} intent="success" />
+        <KpiCard icon={TrendingUp} label="Brüt işlem hacmi" value={currencyTotalsText(agencies.flatMap(a => a.totals_by_currency || []), 'gross_volume')} />
+        <KpiCard icon={TrendingUp} label="Platform geliri" value={currencyTotalsText(agencies.flatMap(a => a.totals_by_currency || []), 'platform_revenue')} intent="success" />
       </div>
 
       <Card>
@@ -278,7 +274,7 @@ export default function AdminMarketplaceAgencies() {
                       <td className="px-4 py-3"><div className="font-medium">{agency.connected_hotels || 0} otel</div><div className="text-xs text-slate-500">{agency.booking_count || 0} rezervasyon</div></td>
                       <td className="px-4 py-3"><span className="font-semibold">%{Number(agency.default_commission_pct ?? 12).toLocaleString('tr-TR')}</span><div className="text-xs text-slate-500">Yeni teklif başlangıcı</div></td>
                       <td className="px-4 py-3">{agency.platform_fee_pct == null ? <><span className="font-semibold text-indigo-700">Kanala göre</span><div className="text-xs text-slate-500">API %1 · Portal %2 (eski tarife)</div></> : <><span className="font-semibold text-indigo-700">%{Number(agency.platform_fee_pct).toLocaleString('tr-TR')}</span><div className="text-xs text-slate-500">Acente → Syroce hizmet bedeli</div></>}</td>
-                      <td className="px-4 py-3"><div className="font-medium">{money(agency.gross_volume)}</div><div className="text-xs text-emerald-700">Gelir {money(agency.platform_revenue)}</div></td>
+                      <td className="px-4 py-3"><div className="font-medium">{currencyTotalsText(agency.totals_by_currency, 'gross_volume')}</div><div className="text-xs text-emerald-700">Gelir {currencyTotalsText(agency.totals_by_currency, 'platform_revenue')}</div></td>
                       <td className="px-4 py-3"><div className="flex items-center gap-1.5 text-xs"><Users className="h-3.5 w-3.5 text-slate-400" />{agency.portal_access?.count || 0} portal kullanıcısı</div><div className={`mt-1 flex items-center gap-1.5 text-xs ${readiness.intent === 'success' ? 'text-emerald-700' : readiness.intent === 'warning' ? 'text-amber-700' : 'text-slate-500'}`} title={readiness.detail}><KeyRound className="h-3.5 w-3.5" />API {readiness.label}</div></td>
                       <td className="px-4 py-3 text-right"><div className="flex justify-end gap-2"><Button variant="outline" size="sm" onClick={() => { setAccessAgency(agency); setAccessAction(null); }}><ShieldCheck className="mr-1.5 h-3.5 w-3.5" />Erişim</Button><Button variant="outline" size="sm" onClick={() => openEdit(agency)}><Pencil className="mr-1.5 h-3.5 w-3.5" />Düzenle</Button></div></td>
                     </tr>;

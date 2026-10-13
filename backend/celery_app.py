@@ -156,11 +156,11 @@ celery_app.conf.update(
         # failed provider deliveries using their stored backoff timestamps.
         "messaging-automation-dispatch": {
             "task": "celery_tasks.dispatch_due_messaging_automation_events_task",
-            "schedule": crontab(minute="*"),
+            "schedule": 5.0,
         },
         "messaging-delivery-retry": {
             "task": "celery_tasks.messaging_retry_task",
-            "schedule": crontab(minute="*/2"),
+            "schedule": 5.0,
         },
         # Contact Center Faz 2 (Task #648) — çağrı kaydı retention sweep.
         # Her gün 02:30'da süresi dolan (CC_RECORDING_RETENTION_DAYS) kayıtları

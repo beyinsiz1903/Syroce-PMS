@@ -28,6 +28,7 @@ from datetime import UTC, datetime
 
 import jwt as pyjwt
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import Response
 from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 
 from core.agency_completion import pending_completion, public_booking
@@ -1253,6 +1254,7 @@ async def agency_portal_create_reservation(
 async def agency_portal_create_reservation_endpoint(
     data: AgencyReservationCreate, current_user: User = Depends(get_current_user),
 ):
+    """Create a legacy portal reservation under the same atomic guard as B2B."""
     from core.agency_sales_guard import agency_sale_guard, durable_agency_replay
     from core.tenant_db import get_system_db
     from shared_kernel.idempotency import build_request_hash
@@ -1261,11 +1263,65 @@ async def agency_portal_create_reservation_endpoint(
     await _active_agency_for(current_user)
     system_db = get_system_db()
     async with agency_sale_guard(system_db, current_user.tenant_id, current_user.agency_id):
-        replay = await durable_agency_replay(system_db, current_user.tenant_id, current_user.agency_id,
-                                            data.idempotency_key, build_request_hash(data.model_dump()))
+        replay = await durable_agency_replay(
+            system_db, current_user.tenant_id, current_user.agency_id,
+            data.idempotency_key, build_request_hash(data.model_dump()),
+        )
         if replay is not None:
             return replay
         return await agency_portal_create_reservation(data, current_user)
+
+
+class PortalVoucherEmailRequest(BaseModel):
+    email: EmailStr
+
+
+async def _portal_voucher_booking(reservation_id: str, user: User):
+    from security.encrypted_lookup import decrypt_booking_doc
+
+    _require_agency_user(user)
+    await _active_agency_for(user)
+    agency_id = getattr(user, "agency_id", None)
+    if not agency_id or not user.tenant_id:
+        raise HTTPException(403, "Tesis ve acente bağlamı gerekli")
+    doc = await db.bookings.find_one({
+        "id": reservation_id, "tenant_id": user.tenant_id, "agency_id": agency_id,
+        "source_channel": "agency",
+    }, {"_id": 0})
+    if not doc:
+        raise HTTPException(404, "Rezervasyon bulunamadı")
+    doc = decrypt_booking_doc(doc)
+    tenant = await db.tenants.find_one({"id": user.tenant_id}, {"_id": 0, "name": 1})
+    return {**doc, "hotel_name": (tenant or {}).get("name", "")}
+
+
+@router.get("/agency-portal/reservations/{reservation_id}/voucher.pdf")
+async def agency_portal_voucher_pdf(reservation_id: str, current_user: User = Depends(get_current_user)):
+    from routers.marketplace_b2b import _voucher_html
+
+    doc = await _portal_voucher_booking(reservation_id, current_user)
+    try:
+        from weasyprint import HTML
+        pdf = HTML(string=_voucher_html(doc)).write_pdf()
+    except Exception:
+        raise HTTPException(503, "PDF oluşturucu şu anda kullanılamıyor") from None
+    return Response(pdf, media_type="application/pdf", headers={"Content-Disposition": 'attachment; filename="voucher.pdf"'})
+
+
+@router.post("/agency-portal/reservations/{reservation_id}/voucher-email")
+async def agency_portal_voucher_email(reservation_id: str, data: PortalVoucherEmailRequest,
+                                     current_user: User = Depends(get_current_user)):
+    from core.email import send_email
+    from routers.marketplace_b2b import _voucher_html
+
+    doc = await _portal_voucher_booking(reservation_id, current_user)
+    try:
+        result = await send_email(str(data.email), "Rezervasyon belgeniz", _voucher_html(doc), sensitive=True)
+    except Exception:
+        raise HTTPException(502, "Voucher e-postası gönderilemedi") from None
+    if not isinstance(result, dict) or not result.get("sent"):
+        raise HTTPException(502, "Voucher e-postası gönderilemedi")
+    return {"ok": True, "message": "Voucher e-postası gönderildi"}
 
 
 @router.get("/agency-portal/reservations")

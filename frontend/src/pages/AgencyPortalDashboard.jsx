@@ -1,4 +1,7 @@
+import { currencyTotalsText, formatAgencyMoney } from '@/utils/agencyMoney';
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
+import { AGENCY_ADMIN_RETURN_PATH, agencyVoucherPath } from '@/utils/agencyPortalNavigation';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { Search, CalendarDays, Users, Bed, Plus, Loader2, Building2, LogOut, ClipboardList, Eye, Phone, Mail, MapPin, RefreshCw, ShieldCheck, Printer, XCircle, WalletCards, SlidersHorizontal, ChevronDown, Sparkles, Hotel, ArrowRight, BadgeCheck, Settings, Bell, Globe2, KeyRound, Save } from 'lucide-react';
@@ -171,7 +174,7 @@ const AgencyPortalDashboard = () => {
     }
   };
   const handleLogout = async () => {
-    const adminReturnPath = impersonation?.active ? (sessionStorage.getItem('agency_admin_return_path') || '/admin/agencies') : null;
+    const adminReturnPath = impersonation?.active ? AGENCY_ADMIN_RETURN_PATH : null;
     if (impersonation?.active) {
       try {
         await agencyApi.post('/marketplace/v1/extranet/admin-context/exit');
@@ -455,7 +458,7 @@ const AgencyPortalDashboard = () => {
   };
   const printVoucher = async reservation => {
     try {
-      const { data } = await agencyApi.get(`/marketplace/v1/reservations/${encodeURIComponent(reservation.id)}/voucher.pdf`, { responseType: 'blob' });
+      const { data } = await agencyApi.get(agencyVoucherPath(portalMode, reservation.id), { responseType: 'blob' });
       const url = URL.createObjectURL(new Blob([data], { type: 'application/pdf' }));
       const popup = window.open(url, '_blank', 'noopener,noreferrer');
       if (!popup) {
@@ -476,7 +479,7 @@ const AgencyPortalDashboard = () => {
     if (!email || !voucherEmailTarget) return;
     setVoucherEmailLoading(true);
     try {
-      await agencyApi.post(`/marketplace/v1/reservations/${encodeURIComponent(voucherEmailTarget.id)}/voucher-email`, { email });
+      await agencyApi.post(agencyVoucherPath(portalMode, voucherEmailTarget.id, true), { email });
       toast.success('Rezervasyon belgesi e-posta ile gönderildi.');
       setVoucherEmailTarget(null);
       setVoucherEmail('');
@@ -621,6 +624,10 @@ const AgencyPortalDashboard = () => {
                 {t('cm.pages_AgencyPortalDashboard.giris_yap')}
               </Button>
             </form>
+            <div className="mt-4 flex flex-col gap-2 text-sm">
+              <Link to="/agency-recover" className="text-emerald-800 underline">Şifremi unuttum</Link>
+              <Link to="/agency-activate" className="text-emerald-800 underline">Davetimi nasıl etkinleştiririm?</Link>
+            </div>
           </CardContent>
         </Card>
       </div>;
@@ -866,9 +873,9 @@ const AgencyPortalDashboard = () => {
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm"><div><h2 className="font-semibold text-slate-900">Son 30 gün mutabakat özeti</h2><p className="text-xs leading-5 text-slate-500">Brüt satış, acente komisyonu, platform hizmet bedeli ve otellere aktarılacak net tutar.</p></div><Button variant="outline" size="sm" onClick={downloadReconciliation}>CSV olarak indir</Button></div>
             {!reconciliation ? <Card><CardContent className="py-10 text-center text-slate-400"><Loader2 className="animate-spin mx-auto" /></CardContent></Card> : <>
               <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-                {[['Brüt satış', reconciliation.totals?.gross_revenue, true], ['Acente komisyonu', reconciliation.totals?.commission, true], ['Platform hizmet bedeli', reconciliation.totals?.platform_fee, true], ['Otellere aktarılacak net', reconciliation.totals?.net_to_hotels, true], ['Rezervasyon', reconciliation.totals?.bookings, false]].map(([label, value, monetary], index) => <Card key={label} className={`overflow-hidden border-slate-200 shadow-sm ${index === 3 ? 'ring-1 ring-emerald-200' : ''} ${index === 4 ? 'col-span-2 lg:col-span-1' : ''}`}><div className={`h-1 ${index === 3 ? 'bg-emerald-500' : 'bg-slate-200'}`} /><CardContent className="pt-4"><div className="text-xs font-medium text-slate-500">{label}</div><div className={`mt-1 text-lg font-bold ${index === 3 ? 'text-emerald-700' : 'text-slate-900'}`}>{monetary ? formatMoney(value, hotelInfo?.currency) : value}</div></CardContent></Card>)}
+                {[['Brüt satış', 'gross_revenue', true], ['Acente komisyonu', 'commission', true], ['Platform hizmet bedeli', 'platform_fee', true], ['Otellere aktarılacak net', 'net_to_hotels', true], ['Rezervasyon', reconciliation.totals?.bookings, false]].map(([label, value, monetary], index) => <Card key={label} className={`overflow-hidden border-slate-200 shadow-sm ${index === 3 ? 'ring-1 ring-emerald-200' : ''} ${index === 4 ? 'col-span-2 lg:col-span-1' : ''}`}><div className={`h-1 ${index === 3 ? 'bg-emerald-500' : 'bg-slate-200'}`} /><CardContent className="pt-4"><div className="text-xs font-medium text-slate-500">{label}</div><div className={`mt-1 text-lg font-bold ${index === 3 ? 'text-emerald-700' : 'text-slate-900'}`}>{monetary ? currencyTotalsText(reconciliation.totals_by_currency, value) : value}</div></CardContent></Card>)}
               </div>
-              {(reconciliation.by_hotel || []).map(row => <Card key={row.tenant_id}><CardContent className="py-4 flex items-center justify-between"><div><div className="font-medium">{row.hotel_name}</div><div className="text-xs text-slate-500">{row.bookings} rezervasyon · Komisyon {formatMoney(row.commission, hotelInfo?.currency)} · Platform {formatMoney(row.platform_fee, hotelInfo?.currency)}</div></div><div className="text-right"><div className="font-bold">{formatMoney(row.gross_revenue, hotelInfo?.currency)}</div><div className="text-xs text-emerald-700">Net {formatMoney(row.net_to_hotel, hotelInfo?.currency)}</div></div></CardContent></Card>)}
+              {(reconciliation.by_hotel || []).map(row => <Card key={`${row.tenant_id}-${row.currency}`}><CardContent className="py-4 flex items-center justify-between"><div><div className="font-medium">{row.hotel_name}</div><div className="text-xs text-slate-500">{row.bookings} rezervasyon · Komisyon {formatAgencyMoney(row.commission, row.currency)} · Platform {formatAgencyMoney(row.platform_fee, row.currency)}</div></div><div className="text-right"><div className="font-bold">{formatAgencyMoney(row.gross_revenue, row.currency)}</div><div className="text-xs text-emerald-700">Net {formatAgencyMoney(row.net_to_hotel, row.currency)}</div></div></CardContent></Card>)}
             </>}
           </TabsContent>}
 
@@ -1106,7 +1113,7 @@ const AgencyPortalDashboard = () => {
           <DialogHeader>
             <DialogTitle>Voucher'ı e-posta ile gönder</DialogTitle>
             <p className="text-sm text-slate-500">
-              {voucherEmailTarget?.confirmation_code || voucherEmailTarget?.id} rezervasyonunun voucher PDF'i belirtilen adrese gönderilir.
+              {voucherEmailTarget?.confirmation_code || voucherEmailTarget?.id} rezervasyonunun belgesi e-posta içeriğinde belirtilen adrese gönderilir. PDF için yazdır/indir düğmesini kullanın.
             </p>
           </DialogHeader>
           <div className="space-y-2 py-2">

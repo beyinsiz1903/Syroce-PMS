@@ -82,6 +82,11 @@ class CreateReservationService:
             # other downstream integrations must not see an empty legacy
             # ``bookings.guest_name`` for a newly created reservation.
             guest_name = canonical_guest_name(guest)
+            if booking_data.whatsapp_consent:
+                from core.database import db
+                from modules.messaging.form_consent import record_booking_consent
+
+                await record_booking_consent(db, tenant_context.tenant_id, booking_data.guest_id, current_user.id, True, booking_data.whatsapp_consent_phone)
 
             try:
                 check_in_dt = datetime.fromisoformat(booking_data.check_in.replace('Z', '+00:00'))

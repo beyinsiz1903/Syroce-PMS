@@ -1248,8 +1248,8 @@ async def admin_list_agencies(_: bool = Depends(_require_system_admin)):
         ]).to_list(500),
         sysdb.marketplace_bookings.aggregate([
             {"$match": {"status": {"$ne": "cancelled"}}},
-            {"$group": {"_id": "$agency_id", "booking_count": {"$sum": 1}, "gross_volume": {"$sum": "$total_amount"}, "platform_revenue": {"$sum": "$syroce_b2b_fee_amount"}}},
-        ]).to_list(500),
+            {"$group": {"_id": {"agency_id": "$agency_id", "currency": {"$toUpper": {"$ifNull": ["$currency", "UNKNOWN"]}}}, "booking_count": {"$sum": 1}, "gross_volume": {"$sum": "$total_amount"}, "platform_revenue": {"$sum": "$syroce_b2b_fee_amount"}}},
+        ]).to_list(None),
         sysdb.marketplace_api_keys.find(
             {"is_active": True},
             {
@@ -1270,7 +1270,14 @@ async def admin_list_agencies(_: bool = Depends(_require_system_admin)):
         ).to_list(5000),
     )
     contract_stats = {row["_id"]: len(row.get("connected_hotels") or []) for row in contract_rows}
-    booking_stats = {row["_id"]: row for row in booking_rows}
+    from core.agency_reporting import currency_code
+    booking_stats = {}
+    for row in booking_rows:
+        booking_stats.setdefault(row['_id']['agency_id'], []).append({
+            'currency': currency_code(row['_id'].get('currency')), 'booking_count': row['booking_count'],
+            'gross_volume': round(float(row.get('gross_volume') or 0), 2),
+            'platform_revenue': round(float(row.get('platform_revenue') or 0), 2),
+        })
     active_keys: dict[str, dict] = {}
     for key in sorted(key_rows, key=lambda item: item.get("created_at") or "", reverse=True):
         active_keys.setdefault(key.get("agency_id"), key)
@@ -1282,11 +1289,13 @@ async def admin_list_agencies(_: bool = Depends(_require_system_admin)):
             agency_users["last_login"] = user["last_login"]
     for agency in docs:
         agency_id = agency.get("id")
-        stats = booking_stats.get(agency_id, {})
+        stats = booking_stats.get(agency_id, [])
         agency["connected_hotels"] = contract_stats.get(agency_id, 0)
-        agency["booking_count"] = int(stats.get("booking_count", 0) or 0)
-        agency["gross_volume"] = round(float(stats.get("gross_volume", 0) or 0), 2)
-        agency["platform_revenue"] = round(float(stats.get("platform_revenue", 0) or 0), 2)
+        agency["booking_count"] = sum(row['booking_count'] for row in stats)
+        agency["totals_by_currency"] = stats
+        agency["gross_volume"] = stats[0]['gross_volume'] if len(stats) == 1 else None
+        agency["platform_revenue"] = stats[0]['platform_revenue'] if len(stats) == 1 else None
+        agency["currency"] = stats[0]['currency'] if len(stats) == 1 else None
         key = active_keys.get(agency_id)
         agency["api_access"] = {
             "active": bool(key),
@@ -2464,8 +2473,8 @@ async def agency_email_reservation_voucher(
     if not doc:
         raise HTTPException(404, "Rezervasyon bulunamadı")
     from core.email import send_email
-    result = await send_email(str(data.email), f"Rezervasyon Voucher · {doc.get('confirmation_code')}", _voucher_html(doc))
-    if not result:
+    result = await send_email(str(data.email), f"Rezervasyon Voucher · {doc.get('confirmation_code')}", _voucher_html(doc), sensitive=True)
+    if not isinstance(result, dict) or not result.get("sent"):
         raise HTTPException(502, "Voucher e-postası gönderilemedi")
     return {"ok": True, "message": "Voucher e-postası gönderildi"}
 
@@ -2816,19 +2825,23 @@ async def agency_reconciliation(
             "check_in": {"$gte": period_start, "$lte": period_end},
         },
         {"_id": 0},
-    ).to_list(5000)
+    ).to_list(None)
 
-    by_hotel: dict[str, dict] = {}
-    totals = {"gross_revenue": 0.0, "commission": 0.0, "platform_fee": 0.0, "net_to_hotels": 0.0, "bookings": 0, "cancelled": 0}
+    from core.agency_reporting import combined_summary, currency_code
+    by_hotel: dict = {}
+    totals_by_currency = {}
     for d in docs:
+        currency = currency_code(d.get('currency'))
+        totals = totals_by_currency.setdefault(currency, {"currency": currency, "gross_revenue": 0.0, "commission": 0.0, "platform_fee": 0.0, "net_to_hotels": 0.0, "bookings": 0, "cancelled": 0})
         if d.get("status") == "cancelled":
             totals["cancelled"] += 1
             continue
         tid = d["tenant_id"]
         bucket = by_hotel.setdefault(
-            tid,
+            (tid, currency),
             {
                 "tenant_id": tid,
+                "currency": currency,
                 "hotel_name": d.get("hotel_name"),
                 "bookings": 0,
                 "gross_revenue": 0.0,
@@ -2856,7 +2869,8 @@ async def agency_reconciliation(
         "period_start": period_start,
         "period_end": period_end,
         "agency_id": agency["agency_id"],
-        "totals": {k: (round(v, 2) if isinstance(v, float) else v) for k, v in totals.items()},
+        "totals": combined_summary(totals_by_currency),
+        "totals_by_currency": [{k: round(v, 2) if isinstance(v, float) else v for k, v in row.items()} for row in totals_by_currency.values()],
         "by_hotel": [{**v, "gross_revenue": round(v["gross_revenue"], 2), "commission": round(v["commission"], 2), "platform_fee": round(v["platform_fee"], 2), "net_to_hotel": round(v["net_to_hotel"], 2)} for v in by_hotel.values()],
     }
 
@@ -2874,7 +2888,7 @@ async def agency_reconciliation_csv(
             "check_in": {"$gte": period_start, "$lte": period_end},
         },
         {"_id": 0},
-    ).sort("check_in", 1).to_list(5000)
+    ).sort("check_in", 1).to_list(None)
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(["Onay Kodu", "Otel", "Misafir", "Giriş", "Çıkış", "Durum", "Para Birimi", "Brüt", "Komisyon", "Platform Bedeli", "Otele Net"])
@@ -2890,7 +2904,7 @@ async def agency_reconciliation_csv(
                 str(item.get("check_in", ""))[:10],
                 str(item.get("check_out", ""))[:10],
                 item.get("status", ""),
-                item.get("currency", "TRY"),
+                item.get("currency") or "UNKNOWN",
                 round(float(item.get("total_amount", 0) or 0), 2),
                 round(float(item.get("commission_amount", 0) or 0), 2),
                 round(float(item.get("syroce_b2b_fee_amount", 0) or 0), 2),
@@ -2920,19 +2934,23 @@ async def hotel_reconciliation(
             "check_in": {"$gte": period_start, "$lte": period_end},
         },
         {"_id": 0},
-    ).to_list(5000)
+    ).to_list(None)
 
-    by_agency: dict[str, dict] = {}
-    totals = {"gross_revenue": 0.0, "commission": 0.0, "platform_fee": 0.0, "net_to_hotel": 0.0, "bookings": 0, "cancelled": 0}
+    from core.agency_reporting import combined_summary, currency_code
+    by_agency: dict = {}
+    totals_by_currency = {}
     for d in docs:
+        currency = currency_code(d.get('currency'))
+        totals = totals_by_currency.setdefault(currency, {"currency": currency, "gross_revenue": 0.0, "commission": 0.0, "platform_fee": 0.0, "net_to_hotel": 0.0, "bookings": 0, "cancelled": 0})
         if d.get("status") == "cancelled":
             totals["cancelled"] += 1
             continue
         aid = d["agency_id"]
         bucket = by_agency.setdefault(
-            aid,
+            (aid, currency),
             {
                 "agency_id": aid,
+                "currency": currency,
                 "bookings": 0,
                 "gross_revenue": 0.0,
                 "commission_owed": 0.0,
@@ -2959,7 +2977,8 @@ async def hotel_reconciliation(
         "period_start": period_start,
         "period_end": period_end,
         "tenant_id": tenant_id,
-        "totals": {k: (round(v, 2) if isinstance(v, float) else v) for k, v in totals.items()},
+        "totals": combined_summary(totals_by_currency),
+        "totals_by_currency": [{k: round(v, 2) if isinstance(v, float) else v for k, v in row.items()} for row in totals_by_currency.values()],
         "by_agency": [{**v, "gross_revenue": round(v["gross_revenue"], 2), "commission_owed": round(v["commission_owed"], 2), "platform_fee": round(v["platform_fee"], 2), "net_received": round(v["net_received"], 2)} for v in by_agency.values()],
     }
 

@@ -266,7 +266,10 @@ async def test_admin_agency_list_separates_portal_and_api_access_evidence(monkey
     fake_db = SimpleNamespace(
         marketplace_agencies=_AdminCollection([{"id": "agency-1", "name": "Test Travel"}]),
         agency_contracts=_AdminCollection([{"_id": "agency-1", "connected_hotels": ["hotel-1"]}]),
-        marketplace_bookings=_AdminCollection([{"_id": "agency-1", "booking_count": 2, "gross_volume": 1000, "platform_revenue": 10}]),
+        marketplace_bookings=_AdminCollection([
+            {"_id": {"agency_id": "agency-1", "currency": "TRY"}, "booking_count": 2, "gross_volume": 1000, "platform_revenue": 10},
+            {"_id": {"agency_id": "agency-1", "currency": "EUR"}, "booking_count": 1, "gross_volume": 100, "platform_revenue": 1},
+        ]),
         marketplace_api_keys=_AdminCollection([{
             "id": "key-1", "agency_id": "agency-1", "is_active": True,
             "key_prefix": "syroce_mkt_example...", "usage_count": 7,
@@ -285,6 +288,8 @@ async def test_admin_agency_list_separates_portal_and_api_access_evidence(monkey
     assert agency["api_access"]["usage_count"] == 7
     assert agency["api_access"]["last_used_ip"] == "10.0.0.5"
     assert agency["portal_access"] == {"count": 1, "last_login": "2026-10-01T09:00:00+00:00"}
+    assert agency["gross_volume"] is None and agency["platform_revenue"] is None
+    assert {row["currency"]: row["gross_volume"] for row in agency["totals_by_currency"]} == {"TRY": 1000, "EUR": 100}
 
 
 @pytest.mark.asyncio

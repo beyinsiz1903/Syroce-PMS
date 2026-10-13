@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import axios from 'axios';
+import WhatsAppConsent from './WhatsAppConsent';
 import { toast } from 'sonner';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -524,6 +525,8 @@ const RoomsTab = ({
         guest_name: guest_name.trim(),
         guest_email: quickResForm.guest_email?.trim() || undefined,
         guest_phone: quickResForm.guest_phone?.trim() || undefined,
+        whatsapp_consent: quickResForm.whatsapp_consent === true,
+        whatsapp_consent_phone: quickResForm.whatsapp_consent_phone || '',
         guest_id_number: quickResForm.guest_id_number?.trim() || undefined,
         room_id: quickResRoom.id,
         check_in: check_in + 'T14:00:00+00:00',
@@ -1378,6 +1381,9 @@ const RoomsTab = ({
                 )}
               </div>
 
+              <WhatsAppConsent open={quickResDialog} identity={selectedGuest?.id || guestSearchQuery}
+                phone={quickResForm.guest_phone} value={quickResForm.whatsapp_consent}
+                onChange={value => setQuickResForm(prev => ({ ...prev, whatsapp_consent: value, whatsapp_consent_phone: value ? prev.guest_phone : '' }))} />
               {!selectedGuest && guestSearchQuery.trim().length >= 2 && (
                 <div className="grid grid-cols-2 gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
                   <div>

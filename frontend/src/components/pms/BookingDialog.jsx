@@ -1,5 +1,6 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import axios from 'axios';
+import WhatsAppConsent from './WhatsAppConsent';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -70,7 +71,8 @@ const BookingDialog = ({
     setSelectedGuest(null);
     setNewBooking(prev => ({
       ...prev,
-      guest_id: ''
+      guest_id: '',
+      guest_phone: prev.guest_id ? '' : prev.guest_phone
     }));
     if (guestSearchTimerRef.current) clearTimeout(guestSearchTimerRef.current);
     guestSearchController.current?.abort();
@@ -107,7 +109,8 @@ const BookingDialog = ({
     setGuestSearchResults([]);
     setNewBooking(prev => ({
       ...prev,
-      guest_id: guest.id
+      guest_id: guest.id,
+      guest_phone: guest.phone || ''
     }));
   }, [setNewBooking]);
 
@@ -217,6 +220,14 @@ const BookingDialog = ({
           </Button>
         </div>
       </div>
+
+      {!selectedGuest && <label className="block text-sm">Telefon (ülke koduyla)
+        <Input type="tel" placeholder="+905xxxxxxxxx" value={newBooking.guest_phone || ''}
+          onChange={e => setNewBooking(prev => ({ ...prev, guest_phone: e.target.value }))} />
+      </label>}
+      <WhatsAppConsent open={open} identity={newBooking.guest_id || guestSearchQuery}
+        phone={newBooking.guest_phone} value={newBooking.whatsapp_consent}
+        onChange={value => setNewBooking(prev => ({ ...prev, whatsapp_consent: value, whatsapp_consent_phone: value ? prev.guest_phone : '' }))} />
 
       {/* Multi-room rooms list */}
       <div className="mt-4 border rounded-lg p-4 space-y-4 bg-slate-50">

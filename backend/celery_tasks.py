@@ -33,9 +33,18 @@ logger = logging.getLogger(__name__)
 @celery_app.task(name="celery_tasks.dispatch_due_messaging_automation_events_task")
 def dispatch_due_messaging_automation_events_task():
     """Durably dispatch booking confirmations that survived a restart/broker outage."""
-    from modules.messaging.automation import dispatch_due_booking_events
+    return asyncio.run(_run_messaging_with_db(_dispatch_and_deliver_messaging))
 
-    return asyncio.run(_run_messaging_with_db(dispatch_due_booking_events))
+
+async def _dispatch_and_deliver_messaging(db):
+    from modules.messaging.automation import dispatch_due_booking_events
+    from modules.messaging.whatsapp_lifecycle import WhatsAppDelivery
+
+    events = await dispatch_due_booking_events(db=db)
+    # Materialized confirmations must not wait for the retry sweep. drain()
+    # keeps persisted due times, atomic claims and unknown-outcome protections.
+    deliveries = await WhatsAppDelivery(db).drain()
+    return {"events": events, "deliveries": deliveries}
 
 
 @celery_app.task(name="celery_tasks.messaging_retry_task")
