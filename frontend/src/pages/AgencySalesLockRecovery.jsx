@@ -43,7 +43,7 @@ export default function AgencySalesLockRecovery() {
       <thead><tr>{['Tesis / Acente', 'İşlem', 'Oluşan rezervasyon', 'İdempotency', 'Kurtarma'].map(x => <th className="p-2" key={x}>{x}</th>)}</tr></thead>
       <tbody>{data.items.map(item => <tr key={item.lock_id} className="border-t align-top">
         <td className="p-2">{item.tenant_id}<br />{item.agency_id}</td>
-        <td className="p-2">{item.operation}<br /><small>{item.created_at ? new Date(item.created_at).toLocaleString('tr-TR') : '—'}</small></td>
+        <td className="p-2">{item.operation}<br /><small>{item.created_at ? new Date(item.created_at).toLocaleString('tr-TR') : '—'}</small>{item.proposal && <><br /><small>Teklif: {item.proposal.id} · {item.proposal.status}</small></>}</td>
         <td className="p-2">{item.booking ? `${item.booking.confirmation_code || item.booking.id} · ${item.booking.status}` : 'Bulunamadı'}</td>
         <td className="p-2">{item.idempotency?.status || 'Yok'}</td>
         <td className="p-2 min-w-[290px]"><textarea className="w-full border rounded p-1" rows="2" placeholder="Uzlaştırma gerekçesi" value={reason[item.lock_id] || ''} onChange={e => setReason({ ...reason, [item.lock_id]: e.target.value })} />

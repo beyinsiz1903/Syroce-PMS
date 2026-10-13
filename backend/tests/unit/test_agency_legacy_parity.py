@@ -14,6 +14,15 @@ def test_portal_requires_product_and_retry_identity():
                                        check_out='2027-01-02', guest_name='Test Guest')
 
 
+def test_legacy_contract_base_rate_fallback_is_explicitly_opt_in():
+    base = {
+        'contract_name': 'Acente sözleşmesi', 'start_date': '2027-01-01', 'end_date': '2027-12-31',
+        'contract_type': 'commission', 'commission_rate': 10,
+    }
+    assert portal.AgencyContractCreate(**base).allow_base_rate_fallback is False
+    assert portal.AgencyContractCreate(**base, allow_base_rate_fallback=True).allow_base_rate_fallback is True
+
+
 @pytest.mark.asyncio
 async def test_retry_returns_existing_booking_without_second_write(monkeypatch):
     from core import agency_sales_guard, tenant_db
@@ -58,6 +67,7 @@ async def test_legacy_availability_uses_distributed_plans_not_base_price(monkeyp
         rooms=collection([{'id': 'r', 'room_type': 's', 'capacity': 2, 'base_price': 99}]),
         bookings=SimpleNamespace(count_documents=AsyncMock(return_value=0)),
         tenants=SimpleNamespace(find_one=AsyncMock(return_value={'currency': 'TRY'})),
+        agency_contracts=SimpleNamespace(find_one=AsyncMock(return_value=None)),
         agency_rate_calendar=collection(rows), hr_rate_calendar=collection([]), rate_calendar=collection([]),
     )
     monkeypatch.setattr(portal, 'db', database)
@@ -71,3 +81,32 @@ async def test_legacy_availability_uses_distributed_plans_not_base_price(monkeyp
     assert sorted(offer['stay_total'] for offer in response['room_types']) == expected
     if expected:
         assert {offer['rate_plan_code'] for offer in response['room_types']} == {'RO', 'BB'}
+
+
+@pytest.mark.asyncio
+async def test_legacy_availability_uses_the_same_base_rate_contract_option_as_booking(monkeypatch):
+    from routers import marketplace_b2b as marketplace
+
+    def collection(rows):
+        return SimpleNamespace(find=lambda *args, **kwargs: SimpleNamespace(to_list=AsyncMock(return_value=rows)))
+
+    database = SimpleNamespace(
+        rooms=collection([{'id': 'r', 'room_type': 's', 'capacity': 2, 'base_price': 99}]),
+        bookings=SimpleNamespace(count_documents=AsyncMock(return_value=0)),
+        tenants=SimpleNamespace(find_one=AsyncMock(return_value={'currency': 'TRY'})),
+        agency_contracts=SimpleNamespace(find_one=AsyncMock(return_value={'allow_base_rate_fallback': True})),
+        agency_rate_calendar=collection([]),
+        hr_rate_calendar=collection([{'date': '2027-01-01', 'rate_plan_code': 'BASE', 'rate': 1000}]),
+        rate_calendar=collection([]),
+    )
+    monkeypatch.setattr(portal, 'db', database)
+    monkeypatch.setattr(marketplace, 'db', database)
+    monkeypatch.setattr(portal, '_require_agency_user', lambda user: None)
+    monkeypatch.setattr(portal, '_active_agency_for', AsyncMock(return_value={'id': 'a'}))
+    monkeypatch.setattr(portal, '_get_b2b_allotment', AsyncMock(return_value=None))
+    monkeypatch.setattr(portal, '_get_b2b_price', AsyncMock(return_value=(99, True)))
+
+    response = await portal.agency_portal_availability('2027-01-01', '2027-01-02', 2, 0,
+                                                       SimpleNamespace(tenant_id='t', agency_id='a'))
+    assert response['room_types'][0]['rate_plan_code'] == 'BASE'
+    assert response['room_types'][0]['stay_total'] == 1000

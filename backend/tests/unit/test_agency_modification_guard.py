@@ -83,6 +83,8 @@ async def test_decision_persists_product_and_checks_before_assignment(decision):
     assert m._check_agency_credit.call_args.kwargs['net_to_hotel']==117
     changes=database.bookings.update_one.call_args.args[1]['$set']
     assert changes['rate_plan_code']=='BB' and changes['meal_plan']=='BB' and changes['net_to_hotel']==117
+    assert changes['credit_exposure_amount'] == 117
+    assert changes['credit_exposure_currency'] == 'TRY'
     assert changes['syroce_b2b_fee_amount']==2.6
     assert m.assign_room_atomic.call_args_list[0].kwargs['release_obsolete'] is False
     assert 'release_obsolete' not in m.assign_room_atomic.call_args_list[1].kwargs

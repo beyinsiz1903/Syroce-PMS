@@ -149,6 +149,9 @@ class AgencyContractCreate(BaseModel):
     commission_rate: float | None = Field(None, ge=0, le=100)
     credit_limit: float | None = Field(None, ge=0)
     credit_currency: str | None = Field(None, pattern="^[A-Z]{3}$")
+    # Default remains distribution-only.  This is an explicit legacy
+    # compatibility choice, never an implicit base-price sale.
+    allow_base_rate_fallback: bool = False
     season_rates: list[SeasonRate] | None = None
 
     @model_validator(mode="after")
@@ -618,6 +621,7 @@ async def create_agency_contract(agency_id: str, data: AgencyContractCreate, cur
         "commission_rate": data.commission_rate,
         "credit_limit": data.credit_limit,
         "credit_currency": data.credit_currency,
+        "allow_base_rate_fallback": data.allow_base_rate_fallback,
         "season_rates": [r.model_dump() for r in data.season_rates] if data.season_rates else [],
         "created_at": datetime.now(UTC).isoformat(),
         "created_by": current_user.id,
@@ -909,6 +913,19 @@ def _active_stay_overlap_filter(check_in: str, check_out: str) -> dict:
     }
 
 
+async def _legacy_active_contract(
+    database, tenant_id: str, agency_id: str, check_in: str, check_out: str | None,
+):
+    """Return the one contract whose terms govern both search and booking."""
+    return await database.agency_contracts.find_one({
+        "agency_id": agency_id,
+        "tenant_id": tenant_id,
+        "is_active": True,
+        "start_date": {"$lte": check_in},
+        "end_date": {"$gte": _last_occupied_date(check_in, check_out)},
+    })
+
+
 async def _get_b2b_price(
     db,
     tenant_id: str,
@@ -918,9 +935,7 @@ async def _get_b2b_price(
     public_price: float,
     check_out: str | None = None,
 ):
-    last_night = _last_occupied_date(check_in, check_out)
-    # Find active contract
-    contract = await db.agency_contracts.find_one({"agency_id": agency_id, "tenant_id": tenant_id, "is_active": True, "start_date": {"$lte": check_in}, "end_date": {"$gte": last_night}})
+    contract = await _legacy_active_contract(db, tenant_id, agency_id, check_in, check_out)
 
     if not contract:
         return public_price, False
@@ -1048,18 +1063,20 @@ async def agency_portal_availability(
     from routers.marketplace_b2b import _agency_rate_plans, _marketplace_stay_price, _rate_product_snapshot
 
     results = []
+    contract = await _legacy_active_contract(db, tenant_id, current_user.agency_id, check_in, check_out)
+    allow_base_rate_fallback = bool((contract or {}).get("allow_base_rate_fallback"))
     for rt_name, offer in room_types.items():
         if offer["available_rooms"] <= 0:
             continue
         plans = await _agency_rate_plans(
             tenant_id, current_user.agency_id, rt_name, check_in, check_out,
-            allow_base_rate_fallback=True,
+            allow_base_rate_fallback=allow_base_rate_fallback,
         )
         for plan in plans:
             pricing = await _marketplace_stay_price(
                 tenant_id=tenant_id, agency_id=current_user.agency_id, room_type=rt_name,
                 check_in=check_in, check_out=check_out, fallback_rate=offer["base_price"], rate_plan_code=plan,
-                allow_base_rate_fallback=True,
+                allow_base_rate_fallback=allow_base_rate_fallback,
             )
             if not pricing["sellable"]:
                 continue
