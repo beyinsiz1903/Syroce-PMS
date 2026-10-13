@@ -56,7 +56,7 @@ def _provider() -> str:
     return "resend"
 
 
-async def _send_via_ses(*, to: str, subject: str, html: str, text: str | None, sender: str, reply_to: str | None) -> dict:
+async def _send_via_ses(*, to: str, subject: str, html: str, text: str | None, sender: str, reply_to: str | None, sensitive: bool = False) -> dict:
     """Send a single email via Amazon SES (used when MAIL_PROVIDER=ses)."""
     try:
         import boto3  # type: ignore
@@ -85,8 +85,11 @@ async def _send_via_ses(*, to: str, subject: str, html: str, text: str | None, s
         logger.info("[email] SES sent to=%s id=%s subject=%r", to, msg_id, subject)
         return {"sent": True, "provider": "ses", "id": msg_id}
     except Exception as exc:
-        logger.exception("[email] SES send failed: %s", exc)
-        return {"sent": False, "provider": "ses", "error": str(exc)}
+        if sensitive:
+            logger.warning("[email] Sensitive SES message failed (%s)", type(exc).__name__)
+        else:
+            logger.exception("[email] SES send failed: %s", exc)
+        return {"sent": False, "provider": "ses", "error": type(exc).__name__ if sensitive else str(exc)}
 
 
 def _frontend_base_url() -> str:
@@ -109,6 +112,7 @@ async def send_email(
     from_addr: str | None = None,
     reply_to: str | None = None,
     attachments: list[dict] | None = None,
+    sensitive: bool = False,
 ) -> dict:
     """Send a transactional email.
 
@@ -139,9 +143,12 @@ async def send_email(
         return {"sent": False, "provider": "skipped", "error": "invalid_sender"}
 
     if _provider() == "ses":
-        return await _send_via_ses(to=to, subject=subject, html=html, text=text, sender=sender, reply_to=reply_to)
+        return await _send_via_ses(to=to, subject=subject, html=html, text=text, sender=sender, reply_to=reply_to, sensitive=sensitive)
 
     if not api_key:
+        if sensitive:
+            logger.warning("[email] RESEND_API_KEY missing — sensitive message not sent; body omitted")
+            return {"sent": False, "provider": "console"}
         logger.warning(
             "[email] RESEND_API_KEY missing — printing email instead.\n    To: %s\n    Subject: %s\n    Body:\n%s",
             to,
@@ -191,8 +198,11 @@ async def send_email(
         logger.info("[email] Resend sent to=%s id=%s subject=%r", to, msg_id, subject)
         return {"sent": True, "provider": "resend", "id": msg_id}
     except Exception as exc:  # noqa: BLE001 — we want to never crash auth flow
-        logger.exception("[email] Resend send failed: %s", exc)
-        return {"sent": False, "provider": "resend", "error": str(exc)}
+        if sensitive:
+            logger.warning("[email] Sensitive Resend message failed (%s)", type(exc).__name__)
+        else:
+            logger.exception("[email] Resend send failed: %s", exc)
+        return {"sent": False, "provider": "resend", "error": type(exc).__name__ if sensitive else str(exc)}
 
 
 def render_password_reset_email(

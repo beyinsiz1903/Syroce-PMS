@@ -19,6 +19,7 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { adminManagementQueries } from '@/lib/adminManagementQueries';
 import { preloadRoute } from '@/routes/preload';
+import AgencyOnboardingPanel from '@/components/agency/AgencyOnboardingPanel';
 
 const EMPTY_FORM = {
   name: '', contact_email: '', contact_phone: '', country: 'TR',
@@ -39,7 +40,7 @@ export async function startAgencyPortalContext(agencyId, navigate = (path) => wi
   const { data } = await axios.post(`/marketplace/v1/admin/agencies/${agencyId}/portal-context`);
   localStorage.setItem('agency_token', data.token);
   localStorage.setItem('agency_portal_mode', 'marketplace');
-  sessionStorage.setItem('agency_admin_return_path', '/admin/marketplace/agencies');
+  sessionStorage.setItem('agency_admin_return_path', '/admin/agencies');
   navigate(data.portal_path || '/agency-portal');
   return data;
 }
@@ -155,6 +156,7 @@ export default function AdminMarketplaceAgencies() {
           setCreatedKey({ value: response.data.api_key, agencyName: form.name, warning: response.data.warning });
         }
         toast.success(form.issue_api_key ? 'Acente ve API erişimi oluşturuldu' : 'Acente oluşturuldu; teknik API erişimi kapalı');
+        setAccessAgency(response.data.agency);
       }
       setDialogOpen(false);
       await load();
@@ -272,7 +274,7 @@ export default function AdminMarketplaceAgencies() {
                     const readiness = apiReadiness(agency.api_access);
                     return <tr key={agency.id} className="hover:bg-slate-50/70">
                       <td className="px-4 py-3"><div className="font-semibold text-slate-900">{agency.name}</div><div className="text-xs text-slate-500">{agency.contact_email || 'İletişim e-postası yok'}{agency.contact_phone ? ` · ${agency.contact_phone}` : ''}</div></td>
-                      <td className="px-4 py-3"><StatusBadge intent={agency.status === 'active' ? 'success' : 'danger'}>{agency.status === 'active' ? 'Aktif' : 'Devre dışı'}</StatusBadge></td>
+                      <td className="px-4 py-3"><StatusBadge intent={agency.status === 'active' ? 'success' : 'danger'}>{agency.status === 'active' ? 'Hesap aktif' : 'Devre dışı'}</StatusBadge><p className="mt-1 text-xs text-slate-500">Satış hazırlığı: Erişim ekranında kontrol edin</p></td>
                       <td className="px-4 py-3"><div className="font-medium">{agency.connected_hotels || 0} otel</div><div className="text-xs text-slate-500">{agency.booking_count || 0} rezervasyon</div></td>
                       <td className="px-4 py-3"><span className="font-semibold">%{Number(agency.default_commission_pct ?? 12).toLocaleString('tr-TR')}</span><div className="text-xs text-slate-500">Yeni teklif başlangıcı</div></td>
                       <td className="px-4 py-3">{agency.platform_fee_pct == null ? <><span className="font-semibold text-indigo-700">Kanala göre</span><div className="text-xs text-slate-500">API %1 · Portal %2 (eski tarife)</div></> : <><span className="font-semibold text-indigo-700">%{Number(agency.platform_fee_pct).toLocaleString('tr-TR')}</span><div className="text-xs text-slate-500">Acente → Syroce hizmet bedeli</div></>}</td>
@@ -314,7 +316,8 @@ export default function AdminMarketplaceAgencies() {
       </Dialog>
 
       <Dialog open={Boolean(accessAgency)} onOpenChange={(open) => { if (!open && !accessBusy) { setAccessAgency(null); setAccessAction(null); } }}>
-        <DialogContent className="sm:max-w-xl"><DialogHeader><DialogTitle>{accessAgency?.name} · Erişim yönetimi</DialogTitle></DialogHeader>{accessAgency && <div className="space-y-4">
+        <DialogContent className="sm:max-w-xl max-h-[90vh] overflow-y-auto"><DialogHeader><DialogTitle>{accessAgency?.name} · Erişim yönetimi</DialogTitle></DialogHeader>{accessAgency && <div className="space-y-4">
+          <AgencyOnboardingPanel key={accessAgency.id} agency={accessAgency} onUpdated={load} />
           <div className="grid gap-3 sm:grid-cols-2"><div className="rounded-lg border p-3"><div className="flex items-center gap-2 font-medium"><Users className="h-4 w-4" />Acente portalı</div><div className="mt-2 text-2xl font-semibold">{accessAgency.portal_access?.count || 0}</div><p className="text-xs text-slate-500">aktif insan kullanıcısı</p>{accessAgency.portal_access?.last_login && <p className="mt-2 text-xs text-slate-500">Son giriş: {dateTime(accessAgency.portal_access.last_login)}</p>}</div><div className="rounded-lg border p-3"><div className="flex items-center gap-2 font-medium"><KeyRound className="h-4 w-4" />Teknik API</div><div className="mt-2"><StatusBadge intent={apiReadiness(accessAgency.api_access).intent}>{apiReadiness(accessAgency.api_access).label}</StatusBadge></div><p className="mt-2 text-xs text-slate-500">Portal oturumundan bağımsızdır.</p></div></div>
           <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 dark:border-blue-800 dark:bg-blue-950/30">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
