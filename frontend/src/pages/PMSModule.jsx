@@ -872,12 +872,14 @@ const PMSModule = ({ user, tenant, onLogout }) => {
       const payload = {
         arrival_date: newBooking.check_in, departure_date: newBooking.check_out,
         rooms: roomsPayload, company_id: newBooking.company_id || null, channel: newBooking.channel || 'direct',
-        currency: newBooking.currency || cachedTenantCurrency()
+        currency: newBooking.currency || cachedTenantCurrency(),
+        whatsapp_consent: newBooking.whatsapp_consent === true,
+        whatsapp_consent_phone: newBooking.whatsapp_consent_phone || ''
       };
       if (newBooking.guest_id) {
         payload.guest_id = newBooking.guest_id;
       } else {
-        payload.guest = { name: inlineGuestName, phone: '' };
+        payload.guest = { name: inlineGuestName, phone: newBooking.guest_phone || '' };
       }
       await axios.post('/pms/bookings/multi-room', payload);
       toast.success('Rezervasyon oluşturuldu'); setOpenDialog(null); loadData(); setSelectedCompany(null);

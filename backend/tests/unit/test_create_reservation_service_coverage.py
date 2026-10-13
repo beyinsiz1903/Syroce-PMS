@@ -189,6 +189,26 @@ async def test_create_persists_booking_folio_outbox_audit_and_optional_commercia
 
 
 @pytest.mark.asyncio
+async def test_consent_is_durable_before_booking_or_messaging(harness, monkeypatch):
+    from modules.messaging import form_consent
+    order = []
+
+    async def record(*args):
+        order.append("consent")
+
+    async def insert(*args):
+        assert order == ["consent"]
+        order.append("booking")
+
+    consent = AsyncMock(side_effect=record)
+    monkeypatch.setattr(form_consent, "record_booking_consent", consent)
+    harness.repository.insert_booking.side_effect = insert
+    await harness.service.create(_booking(whatsapp_consent=True, whatsapp_consent_phone="+905551112233"), harness.user, harness.request)
+    assert order == ["consent", "booking"]
+    consent.assert_awaited_once_with(harness.database, "tenant-1", "guest-1", "user-1", True, "+905551112233")
+
+
+@pytest.mark.asyncio
 async def test_create_uses_defaults_without_writing_rate_override(harness):
     result = await harness.service.create(harness.booking, harness.user, harness.request)
 

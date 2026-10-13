@@ -1,5 +1,6 @@
 import React, { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import axios from "axios";
+import WhatsAppConsent from '@/components/pms/WhatsAppConsent';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -107,7 +108,7 @@ export const NewBookingDialog = ({
     setGuestSearchQuery(query);
     setSelectedGuest(null);
     // Also update newBooking for new guest creation fallback
-    setNewBooking(prev => ({ ...prev, guest_id: '', guest_name: query }));
+    setNewBooking(prev => ({ ...prev, guest_id: '', guest_name: query, guest_phone: prev.guest_id ? '' : prev.guest_phone }));
 
     if (guestSearchTimerRef.current) clearTimeout(guestSearchTimerRef.current);
 
@@ -316,6 +317,9 @@ export const NewBookingDialog = ({
           )}
         </div>
 
+        <WhatsAppConsent open={open} identity={newBooking.guest_id || guestSearchQuery}
+          phone={newBooking.guest_phone} value={newBooking.whatsapp_consent}
+          onChange={value => setNewBooking(prev => ({ ...prev, whatsapp_consent: value, whatsapp_consent_phone: value ? prev.guest_phone : '' }))} />
         {!selectedGuest && guestSearchQuery.trim().length >= 2 && (
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
             <div>
