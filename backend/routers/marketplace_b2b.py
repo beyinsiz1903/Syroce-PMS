@@ -780,22 +780,28 @@ async def _marketplace_stay_price(
     *, tenant_id: str, agency_id: str, room_type: str, check_in: str, check_out: str, fallback_rate: float,
     rate_plan_code: str | None = None,
     exclude_booking_id: str | None = None,
+    allow_base_rate_fallback: bool = False,
 ) -> dict:
     """Return the exact sellable nightly rates shared with this agency.
 
-    Agency calendar wins per night, then the hotel's public calendar, then the
-    room base rate. A stop-sell or zero agency allotment closes the whole stay.
+    By default an agency can sell only products explicitly distributed through
+    its calendar. A contract may opt in to the legacy hotel/base-rate fallback.
+    A stop-sell or zero agency allotment closes the whole stay.
     """
     dates = _date_range(check_in, check_out)
     query = {"tenant_id": tenant_id, "room_type_code": room_type, "date": {"$in": dates}}
     agency_rows = await db.agency_rate_calendar.find(
         {**query, "agency_id": agency_id}, {"_id": 0}
     ).to_list(max(len(dates) * 8, 32))
-    base_rows = await db.hr_rate_calendar.find(query, {"_id": 0}).to_list(max(len(dates) * 8, 32))
-    if not base_rows:
-        base_rows = await db.rate_calendar.find(query, {"_id": 0}).to_list(max(len(dates) * 8, 32))
+    base_rows = []
+    if allow_base_rate_fallback:
+        base_rows = await db.hr_rate_calendar.find(query, {"_id": 0}).to_list(max(len(dates) * 8, 32))
+        if not base_rows:
+            base_rows = await db.rate_calendar.find(query, {"_id": 0}).to_list(max(len(dates) * 8, 32))
 
     plans = {str(row.get("rate_plan_code") or "LEGACY") for row in agency_rows + base_rows}
+    if not plans:
+        return {"sellable": False, "nightly_rates": [], "total_price": 0.0, "reason": "agency_rate_not_shared"}
     if rate_plan_code is None:
         if len(plans) > 1:
             return {"sellable": False, "nightly_rates": [], "total_price": 0.0, "reason": "rate_plan_required"}
@@ -816,8 +822,9 @@ async def _marketplace_stay_price(
     shared_availability: list[int] = []
     for date in dates:
         row = agency_by_date.get(date) or base_by_date.get(date) or {}
-        if rate_plan_code != "BASE" and (not row or row.get("rate") is None):
-            return {"sellable": False, "nightly_rates": [], "total_price": 0.0, "reason": "missing_plan_night"}
+        if not row or row.get("rate") is None:
+            if not (allow_base_rate_fallback and rate_plan_code == "BASE"):
+                return {"sellable": False, "nightly_rates": [], "total_price": 0.0, "reason": "missing_shared_rate_night"}
         # Stay-through minimum: every occupied night must permit this stay.
         # Checkout is exclusive and must not impose a minimum on the stay.
         if len(dates) < int(row.get("min_stay") or 1):
@@ -863,13 +870,15 @@ async def _marketplace_stay_price(
     return result
 
 
-async def _agency_rate_plans(tenant_id, agency_id, room_type, check_in, check_out):
+async def _agency_rate_plans(tenant_id, agency_id, room_type, check_in, check_out, *, allow_base_rate_fallback=False):
     query = {"tenant_id": tenant_id, "room_type_code": room_type, "date": {"$in": _date_range(check_in, check_out)}}
     agency_rows = await db.agency_rate_calendar.find({**query, "agency_id": agency_id}, {"_id": 0}).to_list(5000)
-    base_rows = await db.hr_rate_calendar.find(query, {"_id": 0}).to_list(5000)
-    if not base_rows:
-        base_rows = await db.rate_calendar.find(query, {"_id": 0}).to_list(5000)
-    return sorted({str(row.get("rate_plan_code") or "LEGACY") for row in agency_rows + base_rows}) or ["BASE"]
+    base_rows = []
+    if allow_base_rate_fallback:
+        base_rows = await db.hr_rate_calendar.find(query, {"_id": 0}).to_list(5000)
+        if not base_rows:
+            base_rows = await db.rate_calendar.find(query, {"_id": 0}).to_list(5000)
+    return sorted({str(row.get("rate_plan_code") or "LEGACY") for row in agency_rows + base_rows})
 
 
 def _rate_product_snapshot(plan_code, room, contract, pricing=None):
@@ -927,7 +936,8 @@ async def _marketplace_occupancy_price(
 
 
 async def _validated_agency_quote(*, tenant_id, agency_id, room, check_in, check_out,
-                                  rate_plan_code, adults, children, child_ages, exclude_booking_id=None):
+                                  rate_plan_code, adults, children, child_ages, exclude_booking_id=None,
+                                  allow_base_rate_fallback=False):
     if not rate_plan_code or len(child_ages) != children or any(age < 0 or age > 17 for age in child_ages):
         raise HTTPException(422, "Fiyat planı ve her çocuk için geçerli yaş bilgisi gerekli")
     if adults < 1 or children < 0 or int(room.get("capacity") or 2) < adults + children:
@@ -936,6 +946,7 @@ async def _validated_agency_quote(*, tenant_id, agency_id, room, check_in, check
         tenant_id=tenant_id, agency_id=agency_id, room_type=room["room_type"],
         check_in=check_in, check_out=check_out, rate_plan_code=rate_plan_code,
         fallback_rate=float(room.get("base_price") or 0), exclude_booking_id=exclude_booking_id,
+        allow_base_rate_fallback=allow_base_rate_fallback,
     )
     if not pricing["sellable"]:
         raise HTTPException(409, "Seçilen fiyat planı veya kontenjan bu tarihlerde satışa kapalı")
@@ -1839,7 +1850,10 @@ async def agency_search(
             # One offer per room type AND rate plan. Never overwrite by date alone.
             products = {}
             for rt_data in room_types.values():
-                for plan in await _agency_rate_plans(tenant_id, agency["agency_id"], rt_data["room_type"], req.check_in, req.check_out):
+                for plan in await _agency_rate_plans(
+                    tenant_id, agency["agency_id"], rt_data["room_type"], req.check_in, req.check_out,
+                    allow_base_rate_fallback=bool(active_contracts[tenant_id].get("allow_base_rate_fallback")),
+                ):
                     if req.rate_plan_code and plan != req.rate_plan_code:
                         continue
                     products[(rt_data["room_type"], plan)] = {**rt_data, "rate_plan_code": plan}
@@ -1865,6 +1879,7 @@ async def agency_search(
                     check_out=req.check_out,
                     fallback_rate=float(rt_data["base_price"] or 0),
                     rate_plan_code=rt_data["rate_plan_code"],
+                    allow_base_rate_fallback=bool(active_contracts[tenant_id].get("allow_base_rate_fallback")),
                 )
                 pricing = await _marketplace_occupancy_price(
                     tenant_id=tenant_id,
@@ -2003,6 +2018,7 @@ async def agency_hotel_availability(
                 check_in=check_in,
                 check_out=check_out,
                 fallback_rate=float(rt_data["base_price"] or 0),
+                allow_base_rate_fallback=bool(contract.get("allow_base_rate_fallback")),
             )
             pricing = await _marketplace_occupancy_price(
                 tenant_id=tenant_id,
@@ -2179,6 +2195,7 @@ async def agency_create_reservation(
             adults=data.adults,
             children=data.children,
             child_ages=data.child_ages,
+            allow_base_rate_fallback=bool(contract.get("allow_base_rate_fallback")),
         )
         # Server-side "ground truth" price. Search and booking use this exact helper.
         server_total: float = pricing["total_price"]
@@ -2691,6 +2708,7 @@ async def _decide_marketplace_modification_locked(proposal_id, data, current_use
                 tenant_id=tenant_id, agency_id=proposal["agency_id"], room=room,
                 check_in=requested["check_in"], check_out=requested["check_out"], rate_plan_code=plan,
                 adults=adults, children=children, child_ages=child_ages, exclude_booking_id=booking["id"],
+                allow_base_rate_fallback=bool(contract.get("allow_base_rate_fallback")),
             )
             financials = _marketplace_financials(pricing["total_price"], commission_pct, fee_pct)
             await _check_agency_credit(tenant_id=tenant_id, agency_id=proposal["agency_id"],

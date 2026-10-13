@@ -1051,11 +1051,15 @@ async def agency_portal_availability(
     for rt_name, offer in room_types.items():
         if offer["available_rooms"] <= 0:
             continue
-        plans = await _agency_rate_plans(tenant_id, current_user.agency_id, rt_name, check_in, check_out)
+        plans = await _agency_rate_plans(
+            tenant_id, current_user.agency_id, rt_name, check_in, check_out,
+            allow_base_rate_fallback=True,
+        )
         for plan in plans:
             pricing = await _marketplace_stay_price(
                 tenant_id=tenant_id, agency_id=current_user.agency_id, room_type=rt_name,
                 check_in=check_in, check_out=check_out, fallback_rate=offer["base_price"], rate_plan_code=plan,
+                allow_base_rate_fallback=True,
             )
             if not pricing["sellable"]:
                 continue

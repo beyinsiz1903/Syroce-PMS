@@ -482,6 +482,36 @@ async def test_marketplace_price_honors_agency_stop_sell(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_marketplace_price_requires_explicit_agency_distribution_by_default(monkeypatch):
+    fake_db = SimpleNamespace(
+        agency_rate_calendar=_Collection([]),
+        hr_rate_calendar=_Collection([{"date": "2026-09-25", "rate_plan_code": "BASE", "rate": 1000}]),
+        rate_calendar=_Collection([]),
+    )
+    monkeypatch.setattr(marketplace_b2b, "db", fake_db)
+
+    blocked = await marketplace_b2b._marketplace_stay_price(
+        tenant_id="hotel-1", agency_id="agency-1", room_type="Standard",
+        check_in="2026-09-25", check_out="2026-09-26", fallback_rate=2000,
+        rate_plan_code="BASE",
+    )
+    allowed = await marketplace_b2b._marketplace_stay_price(
+        tenant_id="hotel-1", agency_id="agency-1", room_type="Standard",
+        check_in="2026-09-25", check_out="2026-09-26", fallback_rate=2000,
+        rate_plan_code="BASE", allow_base_rate_fallback=True,
+    )
+
+    assert blocked == {
+        "sellable": False,
+        "nightly_rates": [],
+        "total_price": 0.0,
+        "reason": "agency_rate_not_shared",
+    }
+    assert allowed["sellable"] is True
+    assert allowed["total_price"] == 1000
+
+
+@pytest.mark.asyncio
 async def test_marketplace_price_exposes_lowest_shared_allotment(monkeypatch):
     fake_db = SimpleNamespace(
         bookings=_Collection([]),

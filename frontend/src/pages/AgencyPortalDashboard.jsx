@@ -140,7 +140,7 @@ const AgencyPortalDashboard = () => {
   const [contracts, setContracts] = useState([]);
   const [contractHotels, setContractHotels] = useState([]);
   const [contractsLoading, setContractsLoading] = useState(false);
-  const [contractForm, setContractForm] = useState({ tenant_id: '', commission_pct: '', valid_from: toDateInput(new Date()), valid_to: `${new Date().getFullYear() + 1}-12-31`, payment_terms: 'on_arrival', currency: 'TRY' });
+  const [contractForm, setContractForm] = useState({ tenant_id: '', commission_pct: '', valid_from: toDateInput(new Date()), valid_to: `${new Date().getFullYear() + 1}-12-31`, payment_terms: 'on_arrival', currency: 'TRY', allow_base_rate_fallback: false });
 
   // Login handler
   const handleLogin = async e => {
