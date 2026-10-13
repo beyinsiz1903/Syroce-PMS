@@ -256,12 +256,14 @@ async def test_readiness_all_steps_and_fail_closed(setup, monkeypatch):
     search = AsyncMock(return_value={'results': [{'tenant_id': 't', 'hotel_name': 'Hotel', 'available_room_types': [
         {'room_type': 'standard', 'total_price': 100, 'available_rooms': 1, 'currency': 'TRY'}]}]})
     monkeypatch.setattr(marketplace_b2b, 'agency_search', search)
-    verify = AsyncMock(return_value=True)
-    monkeypatch.setattr(onboarding, 'verified_offer', verify)
-    assert (await onboarding.readiness('a', ci, co, admin))['ready']
-    verify.return_value = False
+    verify = AsyncMock(return_value=['RO'])
+    monkeypatch.setattr(onboarding, 'verified_offer_rate_plans', verify)
+    initial_readiness = await onboarding.readiness('a', ci, co, admin)
+    assert initial_readiness['ready']
+    assert initial_readiness['offers'][0]['rate_plan_codes'] == ['RO']
+    verify.return_value = []
     assert not (await onboarding.readiness('a', ci, co, admin))['ready']
-    verify.return_value = True
+    verify.return_value = ['RO']
     database.users.rows[0]['is_active'] = False
     assert not (await onboarding.readiness('a', ci, co, admin))['ready']
     database.users.rows[0]['is_active'] = True
@@ -278,7 +280,7 @@ async def test_readiness_requires_explicit_unambiguous_shared_inventory(monkeypa
     from routers import agency_contracts, marketplace_b2b
     ci = datetime.now(UTC).date() + timedelta(days=1)
     co = ci + timedelta(days=2)
-    rows = [{'date': (ci + timedelta(days=i)).isoformat(), 'rate': 100, 'availability': 2,
+    rows = [{'date': (ci + timedelta(days=i)).isoformat(), 'rate_plan_code': 'RO', 'rate': 100, 'availability': 2,
              'tenant_id': 't', 'agency_id': 'a', 'room_type_code': 'standard'} for i in range(2)]
     contract = {'allowed_room_types': ['other'] if case == 'wrong_room' else ['standard']}
     if case == 'missing_night':
@@ -296,6 +298,22 @@ async def test_readiness_requires_explicit_unambiguous_shared_inventory(monkeypa
     monkeypatch.setattr(marketplace_b2b, '_get_listing_or_404', listing)
     monkeypatch.setattr(agency_contracts, 'has_active_contract', AsyncMock(return_value=contract))
     assert await onboarding.verified_offer('a', 't', 'standard', ci, co) is (case == 'valid')
+
+
+@pytest.mark.asyncio
+async def test_readiness_treats_ro_and_bb_as_independent_sellable_products(monkeypatch):
+    from routers import agency_contracts, marketplace_b2b
+    ci = datetime.now(UTC).date() + timedelta(days=1)
+    co = ci + timedelta(days=2)
+    rows = [
+        {'date': (ci + timedelta(days=i)).isoformat(), 'rate_plan_code': plan, 'rate': rate,
+         'availability': 2, 'tenant_id': 't', 'agency_id': 'a', 'room_type_code': 'standard'}
+        for i in range(2) for plan, rate in [('RO', 100), ('BB', 150)]
+    ]
+    monkeypatch.setattr(marketplace_b2b, 'db', SimpleNamespace(agency_rate_calendar=Collection(rows)))
+    monkeypatch.setattr(marketplace_b2b, '_get_listing_or_404', AsyncMock(return_value={}))
+    monkeypatch.setattr(agency_contracts, 'has_active_contract', AsyncMock(return_value={'allowed_room_types': ['standard']}))
+    assert await onboarding.verified_offer_rate_plans('a', 't', 'standard', ci, co) == ['BB', 'RO']
 
 
 @pytest.mark.asyncio

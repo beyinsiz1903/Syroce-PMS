@@ -256,11 +256,14 @@ async def readiness(agency_id: str, check_in: date = Query(...), check_out: date
             ), {"agency_id": agency_id, "agency_name": agency["name"]})
             for hotel in result["results"]:
                 for room in hotel["available_room_types"]:
-                    if (room.get("total_price", 0) > 0 and room.get("available_rooms", 0) > 0
-                            and await verified_offer(agency_id, hotel["tenant_id"], room["room_type"], check_in, check_out)):
+                    valid_plans = await verified_offer_rate_plans(
+                        agency_id, hotel["tenant_id"], room["room_type"], check_in, check_out,
+                    )
+                    if room.get("total_price", 0) > 0 and room.get("available_rooms", 0) > 0 and valid_plans:
                         offers.append({"tenant_id": hotel["tenant_id"], "hotel_name": hotel["hotel_name"],
                                        "room_type": room["room_type"], "total_price": room["total_price"],
-                                       "currency": room["currency"], "available_rooms": room["available_rooms"]})
+                                       "currency": room["currency"], "available_rooms": room["available_rooms"],
+                                       "rate_plan_codes": valid_plans})
         except Exception:
             logger.warning("Agency readiness sales check failed")
             check_error = True
@@ -273,8 +276,12 @@ async def readiness(agency_id: str, check_in: date = Query(...), check_out: date
             "scope": "Seçilen tarihlerde 2 yetişkin; her gece için açıkça paylaşılmış fiyat/kontenjan aranır. Anlık kontrol, kontenjan ayırmaz. En fazla 200 tesis taranır."}
 
 
-async def verified_offer(agency_id, tenant_id, room_type, check_in, check_out):
-    """Readiness is conservative: never certify fallback or ambiguous rate plans."""
+async def verified_offer_rate_plans(agency_id, tenant_id, room_type, check_in, check_out):
+    """Return independently sellable rate plans for a room/stay.
+
+    A room can legitimately have RO and BB rows for the same night.  Ambiguity
+    is assessed *within a rate plan*, never across different products.
+    """
     from core.tenant_db import tenant_context
     from routers.agency_contracts import has_active_contract
     from routers.marketplace_b2b import _get_listing_or_404, db
@@ -283,12 +290,12 @@ async def verified_offer(agency_id, tenant_id, room_type, check_in, check_out):
         await _get_listing_or_404(tenant_id)
     except HTTPException as exc:
         if exc.status_code == 404:
-            return False
+            return []
         raise
     contract = await has_active_contract(agency_id, tenant_id, on_date=check_in.isoformat(),
                                          through_date=(check_out - timedelta(days=1)).isoformat())
     if not contract or (contract.get("allowed_room_types") and room_type not in contract["allowed_room_types"]):
-        return False
+        return []
     nights = (check_out - check_in).days
     dates = [(check_in + timedelta(days=i)).isoformat() for i in range(nights)]
     with tenant_context(tenant_id):
@@ -296,13 +303,27 @@ async def verified_offer(agency_id, tenant_id, room_type, check_in, check_out):
             "tenant_id": tenant_id, "agency_id": agency_id, "room_type_code": room_type,
             "date": {"$in": dates},
         }, {"_id": 0}).to_list(nights * 8 + 1)
-    for day in dates:
-        matching = [row for row in rows if row.get("date") == day]
-        if len(matching) != 1:
-            return False
-        row = matching[0]
-        if (row.get("stop_sell") or float(row.get("rate") or 0) <= 0
-                or int(row.get("availability") or 0) <= 0 or int(row.get("min_stay") or 1) > nights
-                or (day == dates[0] and row.get("closed_to_arrival"))):
-            return False
-    return True
+    plans = sorted({str(row.get("rate_plan_code") or "").strip() for row in rows if row.get("rate_plan_code")})
+    sellable = []
+    for plan in plans:
+        plan_rows = [row for row in rows if row.get("rate_plan_code") == plan]
+        valid = True
+        for day in dates:
+            matching = [row for row in plan_rows if row.get("date") == day]
+            if len(matching) != 1:
+                valid = False
+                break
+            row = matching[0]
+            if (row.get("stop_sell") or float(row.get("rate") or 0) <= 0
+                    or int(row.get("availability") or 0) <= 0 or int(row.get("min_stay") or 1) > nights
+                    or (day == dates[0] and row.get("closed_to_arrival"))):
+                valid = False
+                break
+        if valid:
+            sellable.append(plan)
+    return sellable
+
+
+async def verified_offer(agency_id, tenant_id, room_type, check_in, check_out):
+    """Backward-compatible boolean readiness predicate for one or more plans."""
+    return bool(await verified_offer_rate_plans(agency_id, tenant_id, room_type, check_in, check_out))
