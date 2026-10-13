@@ -148,9 +148,16 @@ async def process_booking_event(tenant_id: str, event_type: str, booking: dict, 
 
 def _build_template_variables(booking: dict, guest: dict | None, room: dict | None, tenant: dict | None) -> dict:
     """Build a dict of template variables from booking context."""
+    # Tenant.property_name is canonical; retain name for legacy tenant records.
+    # Do not invent a name when neither field contains usable information.
+    hotel_name = next(
+        (value.strip() for field in ("property_name", "name")
+         if isinstance(value := (tenant or {}).get(field), str) and value.strip()),
+        "",
+    )
     v = {
         "misafir_adi": guest.get("name", "") if guest else booking.get("guest_name", "Misafir"),
-        "otel_adi": tenant.get("name", "") if tenant else "",
+        "otel_adi": hotel_name,
         "oda_no": room.get("room_number", "") if room else booking.get("room_number", ""),
         "oda_tipi": room.get("type", "") if room else "",
         "giris_tarihi": _format_date(booking.get("check_in", "")),
