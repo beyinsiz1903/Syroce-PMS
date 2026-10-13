@@ -35,6 +35,9 @@ class _Collection:
     def find(self, *_args, **_kwargs):
         return _Cursor(self.rows)
 
+    async def count_documents(self, *_args, **_kwargs):
+        return 0
+
 
 class _LoginCollection:
     def __init__(self, row=None):
@@ -476,6 +479,7 @@ async def test_marketplace_price_honors_agency_stop_sell(monkeypatch):
 @pytest.mark.asyncio
 async def test_marketplace_price_exposes_lowest_shared_allotment(monkeypatch):
     fake_db = SimpleNamespace(
+        bookings=_Collection([]),
         agency_rate_calendar=_Collection([
             {"date": "2026-10-15", "rate": 5432, "availability": 4},
             {"date": "2026-10-16", "rate": 5432, "availability": 3},
