@@ -959,6 +959,7 @@ async def unified_bulk_grid_update(
     if parsed_end < parsed_start:
         raise HTTPException(status_code=422, detail="Bitiş tarihi başlangıç tarihinden önce olamaz")
     update_fields = set(request.update_fields)
+    _validate_agency_restrictions(request.agency_ids, update_fields)
 
     # HotelRunner's public inventory API accepts only the base rate. Guest and
     # child supplements are derived from the property's HotelRunner pricing
@@ -1580,10 +1581,17 @@ async def _push_to_exely(tenant_id, conn, request, pairs, per_room_map, update_f
     }
 
 
+def _validate_agency_restrictions(agency_ids, update_fields):
+    unsupported = set(update_fields) - {"rate", "availability", "min_stay", "stop_sell"}
+    if agency_ids and unsupported:
+        raise HTTPException(422, "Acente hedefinde henüz desteklenmeyen alanlar: " + ", ".join(sorted(unsupported)) + ". Bu alanları kaldırın veya acente hedeflerini seçimden çıkarın; hiçbir kayıt gönderilmedi.")
+
+
 async def _push_to_agencies(tenant_id, agency_ids, pairs, per_room_map, request, update_fields, selected_days_set, now, user_id):
     """Secilen acentelere fiyat/musaitlik bilgisi kaydet."""
     if not agency_ids:
         return 0
+    _validate_agency_restrictions(agency_ids, update_fields)
 
     # Verify agencies exist and are active
     active_agencies = await _active_agency_docs_for_tenant(tenant_id)

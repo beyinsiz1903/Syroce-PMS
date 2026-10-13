@@ -222,6 +222,50 @@ def test_no_fabricated_hotel_information():
     assert _build_template_variables({}, None, None, {"messaging_info": {"wifi_sifre": "actual"}})["wifi_sifre"] == "actual"
 
 
+@pytest.mark.parametrize("tenant,expected", [
+    ({"property_name": "The Canyon Kartepe"}, "The Canyon Kartepe"),
+    ({"property_name": " Current Hotel ", "name": "Legacy Hotel"}, "Current Hotel"),
+    ({"name": "Legacy Hotel"}, "Legacy Hotel"),
+    ({"property_name": "  ", "name": " Legacy Hotel "}, "Legacy Hotel"),
+    ({"property_name": None, "name": "Legacy Hotel"}, "Legacy Hotel"),
+    ({"property_name": "  ", "name": None}, ""),
+    ({"property_name": 123, "name": []}, ""),
+    ({}, ""),
+    (None, ""),
+])
+def test_hotel_name_uses_canonical_field_with_legacy_fallback(tenant, expected):
+    assert _build_template_variables({}, None, None, tenant)["otel_adi"] == expected
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("property_name,expected_status", [
+    ("The Canyon Kartepe", "queued"),
+    ("   ", "rejected"),
+    (None, "rejected"),
+])
+async def test_booking_confirmation_materializes_tenant_hotel_name(monkeypatch, property_name, expected_status):
+    db = SimpleNamespace(
+        messaging_automation_rules=SimpleNamespace(find=lambda *_a, **_k: Cursor([{
+            "id": "rule", "channel": "whatsapp", "template_id": "meta:confirmation:tr",
+            "meta_template": {"name": "confirmation", "language": "tr", "variables": ["otel_adi"]}}])),
+        guests=SimpleNamespace(find_one=AsyncMock(return_value=None)),
+        rooms=SimpleNamespace(find_one=AsyncMock(return_value=None)),
+        tenants=SimpleNamespace(find_one=AsyncMock(return_value={"id": "tenant", "property_name": property_name})),
+    )
+    queue = AsyncMock()
+    monkeypatch.setattr(lifecycle.WhatsAppDelivery, "enqueue", queue)
+    await process_booking_event("tenant", "booking_confirmed", {"id": "booking"}, db=db)
+    db.tenants.find_one.assert_awaited_once_with({"id": "tenant"}, {"_id": 0})
+    queue.assert_awaited_once()
+    assert queue.call_args.kwargs["initial_status"] == expected_status
+    assert queue.call_args.kwargs["key"] == "tenant:booking_confirmed:booking:rule"
+    if expected_status == "queued":
+        assert queue.call_args.args[4] == [{"type": "body", "parameters": [{"type": "text", "text": property_name}]}]
+        assert queue.call_args.kwargs["error_message"] is None
+    else:
+        assert "otel_adi" in queue.call_args.kwargs["error_message"]
+
+
 @pytest.mark.asyncio
 async def test_event_errors_propagate_for_dispatch_retry():
     db = SimpleNamespace(messaging_automation_rules=SimpleNamespace(find=lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("db down"))))
