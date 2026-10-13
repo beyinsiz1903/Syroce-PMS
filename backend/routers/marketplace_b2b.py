@@ -31,6 +31,7 @@ import jwt as pyjwt
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query, Request, Response
 from pydantic import BaseModel, EmailStr, Field, model_validator
 
+from core.agency_completion import pending_completion, public_booking
 from core.atomic_booking import BookingConflictError, assign_room_atomic, create_booking_atomic
 from core.database import db
 from core.occupancy_pricing import OccupancyPricingError, calculate_occupancy_quote, find_occupancy_rule
@@ -1190,6 +1191,45 @@ async def admin_create_agency(
     return response
 
 
+@router.get("/admin/integrations")
+async def admin_incomplete_integrations(
+    limit: int = Query(100, ge=1, le=200), offset: int = Query(0, ge=0),
+    _: bool = Depends(_require_system_admin),
+):
+    system = get_system_db()
+    query = {"agency_completion.status": {"$in": ["pending", "processing", "retry", "waiting", "failed"]}}
+    rows = await system.bookings.find(query, {
+        "_id": 0, "id": 1, "tenant_id": 1, "agency_id": 1, "confirmation_code": 1,
+        "agency_completion": 1,
+    }).sort("agency_completion.available_at", 1).skip(offset).limit(limit).to_list(limit)
+    for row in rows:
+        state = row.pop("agency_completion")
+        row["integration"] = {key: state.get(key) for key in
+                              ("status", "done", "attempts", "last_error", "updated_at", "available_at")}
+    return {"items": rows, "total": await system.bookings.count_documents(query)}
+
+
+@router.post("/admin/integrations/{booking_id}/retry")
+async def admin_retry_integration(booking_id: str, _: bool = Depends(_require_system_admin)):
+    from core.agency_completion import stable_id
+    system = get_system_db()
+    row = await system.bookings.find_one({"id": booking_id, "agency_completion.status": {
+        "$in": ["failed", "retry", "waiting"]}}, {"_id": 0, "id": 1, "tenant_id": 1})
+    if not row:
+        raise HTTPException(409, "İşlem çalışıyor, tamamlanmış veya yeniden denemeye uygun değil")
+    # Only failed delivery is requeued; never steal an active outbox lease.
+    await system.outbox_events.update_one({"tenant_id": row["tenant_id"],
+        "idempotency_key": stable_id(booking_id, "inventory"), "status": "failed"}, {"$set": {
+            "status": "pending", "attempt_count": 0, "available_at": _now_iso(), "last_error": None}})
+    result = await system.bookings.update_one({"id": booking_id, "tenant_id": row["tenant_id"],
+        "agency_completion.status": {"$in": ["failed", "retry", "waiting"]}}, {"$set": {
+            "agency_completion.status": "pending", "agency_completion.attempts": 0,
+            "agency_completion.available_at": datetime.now(UTC), "agency_completion.last_error": None}})
+    if not result.matched_count:
+        raise HTTPException(409, "İşlem başka bir çalışan tarafından alındı; yenileyin")
+    return {"ok": True, "booking_id": booking_id, "integration_status": "pending"}
+
+
 @router.get("/admin/agencies")
 async def admin_list_agencies(_: bool = Depends(_require_system_admin)):
     sysdb = get_system_db()
@@ -2150,6 +2190,10 @@ async def agency_create_reservation(
         agency_snapshot = _reservation_agency_snapshot(agency)
         product_snapshot = _rate_product_snapshot(data.rate_plan_code, available_room, contract, pricing)
         booking_doc = {
+            "agency_completion": pending_completion('marketplace'),
+            "hotel_name": listing.get("hotel_name"),
+            "syroce_b2b_fee_pct": syroce_b2b_fee_pct,
+            "syroce_b2b_fee_amount": syroce_b2b_fee_amount,
             "agency_idempotency_key": data.idempotency_key,
             "agency_request_hash": build_request_hash(data.model_dump()),
             "id": booking_id,
@@ -2199,134 +2243,13 @@ async def agency_create_reservation(
             await db.guests.delete_one({"id": guest_id, "tenant_id": data.tenant_id})
             raise
 
-        # The booking is durable from this point. Ancillary delivery failures
-        # are logged instead of returning an error that could cause a duplicate
-        # agency retry.
-        try:
-            from models.schemas import Folio, FolioType
-
-            folio = Folio(
-                id=_uuid(),
-                tenant_id=data.tenant_id,
-                booking_id=booking_id,
-                folio_type=FolioType.GUEST,
-                guest_id=guest_id,
-            )
-            folio_dict = folio.model_dump()
-            folio_dict["created_at"] = folio_dict["created_at"].isoformat()
-            await db.folios.insert_one(folio_dict)
-        except Exception as exc:
-            logger.warning("Marketplace folio creation failed booking=%s error=%s", booking_id, type(exc).__name__)
-
-        try:
-            from routers.pms_bookings import _publish_multi_room_booking_created_events
-
-            property_id = data.tenant_id
-            await _publish_multi_room_booking_created_events(
-                tenant_id=data.tenant_id,
-                property_id=property_id,
-                bookings=[booking_doc],
-            )
-            from core.ws_rooms import tenant_broadcast_room
-            from websocket_server import sio
-
-            await sio.emit("booking_created", {"booking": booking_doc}, room=tenant_broadcast_room(data.tenant_id))
-        except Exception as exc:
-            logger.warning("Marketplace live publish failed booking=%s error=%s", booking_id, type(exc).__name__)
-
-        try:
-            await db.notifications.insert_one(
-                {
-                    "id": _uuid(),
-                    "tenant_id": data.tenant_id,
-                    "user_id": None,
-                    "type": "reservation",
-                    "title": f"Yeni Acente Rezervasyonu: {data.guest_name.strip()}",
-                    "message": (
-                        f"{agency['agency_name']} tarafından yeni rezervasyon oluşturuldu. "
-                        f"Giriş: {data.check_in}, Çıkış: {data.check_out}, "
-                        f"Oda: {available_room.get('room_number', '-')}, "
-                        f"Tutar: {total:.2f} {listing.get('currency', 'TRY')}"
-                    ),
-                    "priority": "high",
-                    "read": False,
-                    "action_url": f"/reservations?booking_id={booking_id}",
-                    "metadata": {
-                        "booking_id": booking_id,
-                        "agency_id": agency["agency_id"],
-                        "agency_name": agency["agency_name"],
-                        "channel": "marketplace",
-                    },
-                    "created_at": _now_iso(),
-                }
-            )
-        except Exception as exc:
-            logger.warning("Marketplace notification failed booking=%s error=%s", booking_id, type(exc).__name__)
-
-    # Cross-tenant ledger (ileride mutabakat için) — sysdb tenant-bağımsız
-    ledger_doc = {
-            **product_snapshot,
-            "id": booking_id,
-            **agency_snapshot,
-            "tenant_id": data.tenant_id,
-            "hotel_name": listing.get("hotel_name"),
-            **room_snapshot,
-            "confirmation_code": confirmation_code,
-            "external_reference": data.external_reference,
-            "idempotency_key": data.idempotency_key,
-            "check_in": data.check_in,
-            "check_out": data.check_out,
-            "guest_name": data.guest_name,
-            "total_amount": total,
-            "currency": listing.get("currency", "TRY"),
-            "nightly_rates": pricing["nightly_rates"],
-            "commission_pct": commission_pct,
-            "commission_amount": commission_amount,
-            "syroce_b2b_fee_pct": syroce_b2b_fee_pct,
-            "syroce_b2b_fee_amount": syroce_b2b_fee_amount,
-            "net_to_hotel": net_to_hotel,
-            "status": "confirmed",
-            "payment_status": "pending",
-            "payment_terms": contract.get("payment_terms", "on_arrival"),
-            "cancellation_policy": product_snapshot["cancellation_policy"],
-            "created_at": _now_iso(),
-        }
-    try:
-        await sysdb.marketplace_bookings.update_one(
-            {"agency_id": agency["agency_id"], "id": booking_id},
-            {"$setOnInsert": ledger_doc},
-            upsert=True,
-        )
-    except Exception as exc:
-        # The PMS booking is already durable. Never return a false failure that
-        # encourages the agency to submit a second reservation.
-        logger.error("Marketplace ledger write failed booking=%s error=%s", booking_id, type(exc).__name__)
-
-    # Webhook bildirimi (otele)
-    try:
-        from routers.b2b_api import fire_webhooks
-
-        background_tasks.add_task(
-            fire_webhooks,
-            data.tenant_id,
-            agency["agency_id"],
-            "marketplace.reservation.created",
-            {
-                "reservation_id": booking_id,
-                "confirmation_code": confirmation_code,
-                "hotel_name": listing.get("hotel_name"),
-                "agency_name": agency["agency_name"],
-                "check_in": data.check_in,
-                "check_out": data.check_out,
-                "total_amount": total,
-            },
-        )
-    except Exception as e:
-        logger.warning(f"Marketplace webhook fire failed: {e}")
+    # Completion intent was stored atomically with the booking. The durable
+    # worker repairs local projections and tracks downstream delivery.
 
     return {
         "ok": True,
         "reservation": {
+            "integration_status": "pending",
             **product_snapshot,
             "id": booking_id,
             "confirmation_code": confirmation_code,
@@ -2461,6 +2384,14 @@ async def agency_list_reservations(
         query.setdefault("check_in", {})["$lte"] = check_in_to
 
     docs = await sysdb.marketplace_bookings.find(query, {"_id": 0}).sort("created_at", -1).limit(limit).to_list(limit)
+    canonical_query = {**query, "agency_completion.kind": "marketplace"}
+    if check_in_to:
+        canonical_query["check_in"] = {**query["check_in"], "$lte": check_in_to + "T23:59:59.999999"}
+    canonical = await sysdb.bookings.find(canonical_query, {"_id": 0}).sort("created_at", -1).limit(limit).to_list(limit)
+    merged = {row["id"]: row for row in docs}
+    for row in canonical:
+        merged[row["id"]] = {**merged.get(row["id"], {}), **public_booking(row)}
+    docs = sorted(merged.values(), key=lambda row: str(row.get("created_at", "")), reverse=True)[:limit]
     return {"reservations": docs, "total": len(docs)}
 
 
@@ -2472,6 +2403,10 @@ async def agency_get_reservation(
     sysdb = get_system_db()
     doc = await sysdb.marketplace_bookings.find_one({"id": reservation_id, "agency_id": agency["agency_id"]}, {"_id": 0})
     if not doc:
+        pending = await sysdb.bookings.find_one({"id": reservation_id, "agency_id": agency["agency_id"],
+                                               "agency_completion.kind": "marketplace"})
+        if pending:
+            return {"summary": public_booking(pending), "booking": public_booking(pending)}
         raise HTTPException(404, "Rezervasyon bulunamadı")
 
     with tenant_context(doc["tenant_id"]):
@@ -2491,7 +2426,7 @@ async def agency_get_reservation(
                 "guest_name_lower": 0,
             },
         )
-    return {"summary": doc, "booking": booking}
+    return {"summary": doc, "booking": public_booking(booking) if booking else None}
 
 
 def _voucher_html(doc: dict) -> str:

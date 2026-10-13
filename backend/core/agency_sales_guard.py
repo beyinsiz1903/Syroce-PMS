@@ -57,4 +57,6 @@ async def durable_agency_replay(database, tenant_id, agency_id, key, request_has
         raise HTTPException(409, "İşlem anahtarı farklı rezervasyon bilgileriyle kullanılmış")
     fields = ("id", "tenant_id", "confirmation_code", "status", "room_type", "rate_plan_code",
               "meal_plan", "cancellation_policy", "check_in", "check_out", "total_amount", "currency")
+    row["integration_status"] = row.get("agency_completion", {}).get("status", "unknown")
+    fields += ("integration_status",)
     return {"ok": True, "idempotent_replay": True, "reservation": {key: row.get(key) for key in fields}}

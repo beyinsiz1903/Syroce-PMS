@@ -30,6 +30,7 @@ import jwt as pyjwt
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 
+from core.agency_completion import pending_completion, public_booking
 from core.atomic_booking import BookingConflictError, create_booking_atomic
 from core.database import db
 from core.security import (
@@ -1187,6 +1188,7 @@ async def agency_portal_create_reservation(
                 raise HTTPException(status_code=402, detail="Cari limit (Credit limit) aşıldı")
 
     booking_doc = {
+        "agency_completion": pending_completion('hotel'),
         **product,
         "agency_idempotency_key": data.idempotency_key,
         "agency_request_hash": build_request_hash(data.model_dump()),
@@ -1237,96 +1239,12 @@ async def agency_portal_create_reservation(
         await db.guests.delete_one({"id": guest_id, "tenant_id": tenant_id})
         raise
 
-    # Keep agency reservations operationally identical to reservations created
-    # by the hotel and marketplace: create the guest folio, notify the hotel,
-    # update channel inventory and push the new card to open PMS calendars.
-    # These integrations run after the atomic room claim; a transient
-    # notification failure must not encourage the agency to submit a duplicate.
-    try:
-        from models.schemas import Folio, FolioType
-
-        folio = Folio(
-            id=_uuid(),
-            tenant_id=tenant_id,
-            booking_id=booking_id,
-            folio_type=FolioType.GUEST,
-            guest_id=guest_id,
-        )
-        folio_doc = folio.model_dump()
-        folio_doc["created_at"] = folio_doc["created_at"].isoformat()
-        await db.folios.insert_one(folio_doc)
-    except Exception as exc:
-        logger.warning("Agency booking folio creation failed booking=%s error=%s", booking_id, type(exc).__name__)
-
-    try:
-        await db.notifications.insert_one(
-            {
-                "id": _uuid(),
-                "tenant_id": tenant_id,
-                "user_id": None,
-                "type": "reservation",
-                "title": f"Yeni Acente Rezervasyonu: {data.guest_name.strip()}",
-                "message": (
-                    f"{agency_name} tarafından yeni rezervasyon oluşturuldu. "
-                    f"Giriş: {data.check_in}, Çıkış: {data.check_out}, "
-                    f"Oda: {available_room.get('room_number', '-')}, Tutar: {total:.2f} {currency}"
-                ),
-                "priority": "high",
-                "read": False,
-                "action_url": f"/reservations?booking_id={booking_id}",
-                "metadata": {
-                    "booking_id": booking_id,
-                    "agency_id": agency_id,
-                    "agency_name": agency_name,
-                    "agency_user_id": current_user.id,
-                    "channel": "agency",
-                },
-                "created_at": _now_iso(),
-            }
-        )
-    except Exception as exc:
-        logger.warning("Agency booking notification failed booking=%s error=%s", booking_id, type(exc).__name__)
-
-    try:
-        from routers.pms_bookings import _publish_multi_room_booking_created_events
-
-        await _publish_multi_room_booking_created_events(
-            tenant_id=tenant_id,
-            property_id=tenant_id,
-            bookings=[booking_doc],
-        )
-        from core.ws_rooms import tenant_broadcast_room
-        from websocket_server import sio
-
-        await sio.emit("booking_created", {"booking": booking_doc}, room=tenant_broadcast_room(tenant_id))
-    except Exception as exc:
-        logger.warning("Agency booking live publish failed booking=%s error=%s", booking_id, type(exc).__name__)
-
-    try:
-        await db.pms_audit_trail.insert_one(
-            {
-                "id": _uuid(),
-                "tenant_id": tenant_id,
-                "entity_type": "booking",
-                "entity_id": booking_id,
-                "action": "agency_portal_booking_created",
-                "details": {
-                    "agency_id": agency_id,
-                    "agency_name": agency_name,
-                    "agency_user_id": current_user.id,
-                    "room_id": available_room.get("id"),
-                    "room_number": available_room.get("room_number"),
-                },
-                "timestamp": _now_iso(),
-                "performed_by": current_user.id,
-            }
-        )
-    except Exception as exc:
-        logger.warning("Agency booking audit log failed booking=%s error=%s", booking_id, type(exc).__name__)
+    # Completion intent was stored atomically with the booking. The durable
+    # worker repairs local projections and tracks downstream delivery.
 
     return {
         "ok": True,
-        "booking": booking_doc,
+        "booking": public_booking(booking_doc),
         "message": f"Rezervasyon olusturuldu: {confirmation_code}",
     }
 
@@ -1369,4 +1287,4 @@ async def agency_portal_list_reservations(current_user: User = Depends(get_curre
         .sort("created_at", -1)
         .to_list(500)
     )
-    return docs
+    return [public_booking(row) for row in docs]
