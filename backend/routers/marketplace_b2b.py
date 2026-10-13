@@ -1197,13 +1197,26 @@ class ModificationProposalCreate(BaseModel):
 async def _sales_lock_evidence(sysdb, lock: dict) -> dict:
     """Return operator-safe evidence; never infer an abandoned writer by age."""
     key = lock.get("idempotency_key")
+    proposal = None
     booking_query = {"tenant_id": lock["tenant_id"], "agency_id": lock["agency_id"]}
     if key:
         booking_query["agency_idempotency_key"] = key
     elif lock.get("reference_id"):
-        booking_query["id"] = lock["reference_id"]
+        # Modification locks keep the proposal id, not the reservation id.
+        # Resolve it before looking for durable booking evidence.
+        if lock.get("operation") == "marketplace_modification":
+            proposal = await sysdb.marketplace_negotiations.find_one(
+                {"id": lock["reference_id"], "tenant_id": lock["tenant_id"], "agency_id": lock["agency_id"]},
+                {"_id": 0, "id": 1, "reservation_id": 1, "status": 1},
+            )
+            if not proposal:
+                return {"booking": None, "idempotency": None, "proposal": None}
+            booking_query["id"] = proposal.get("reservation_id")
+        else:
+            proposal = None
+            booking_query["id"] = lock["reference_id"]
     else:
-        return {"booking": None, "idempotency": None}
+        return {"booking": None, "idempotency": None, "proposal": None}
     booking = await sysdb.bookings.find_one(
         booking_query,
         {"_id": 0, "id": 1, "confirmation_code": 1, "status": 1, "agency_completion.status": 1},
@@ -1213,7 +1226,7 @@ async def _sales_lock_evidence(sysdb, lock: dict) -> dict:
         idempotency = await sysdb.idempotency_keys.find_one(
             {"idempotency_key": key}, {"_id": 0, "scope": 1, "status": 1, "created_at": 1, "expires_at": 1},
         )
-    return {"booking": booking, "idempotency": idempotency}
+    return {"booking": booking, "idempotency": idempotency, "proposal": proposal if lock.get("operation") == "marketplace_modification" else None}
 
 
 @router.get("/admin/sales-locks")
@@ -1257,18 +1270,27 @@ async def admin_reconcile_agency_sales_lock(
         raise HTTPException(409, "Rezervasyon bulundu; 'rezervasyon oluştu' uzlaştırmasını kullanın")
     if processing:
         raise HTTPException(409, "İdempotency işlemi hâlâ işleniyor; önce özgün işlemi tamamlayın veya inceleyin")
-    deleted = await sysdb.agency_sale_mutexes.delete_one({"_id": lock_id, "owner": data.owner})
-    if not deleted.deleted_count:
-        raise HTTPException(409, "Satış kilidi eşzamanlı değişti; listeyi yenileyin")
+    # Persist the operator's attestation before releasing the fence. This
+    # preserves evidence even if a later storage operation fails.
     record = {
         "id": _uuid(), "lock_id": lock_id, "lock_owner": data.owner,
         "tenant_id": lock["tenant_id"], "agency_id": lock["agency_id"],
         "operation": lock.get("operation"), "resolution": data.resolution,
         "reason": data.reason.strip(), "writer_stopped_confirmed": True,
         "booking": evidence.get("booking"), "idempotency": evidence.get("idempotency"),
+        "proposal": evidence.get("proposal"), "status": "pending_release",
         "reconciled_at": _now_iso(), "actor_type": "system_admin",
     }
     await sysdb.agency_sales_lock_recoveries.insert_one(record)
+    deleted = await sysdb.agency_sale_mutexes.delete_one({"_id": lock_id, "owner": data.owner})
+    if not deleted.deleted_count:
+        await sysdb.agency_sales_lock_recoveries.update_one(
+            {"id": record["id"]}, {"$set": {"status": "delete_conflict", "updated_at": _now_iso()}},
+        )
+        raise HTTPException(409, "Satış kilidi eşzamanlı değişti; denetim kaydı bırakıldı, listeyi yenileyin")
+    await sysdb.agency_sales_lock_recoveries.update_one(
+        {"id": record["id"]}, {"$set": {"status": "released", "released_at": _now_iso()}},
+    )
     await _record_marketplace_audit(sysdb, agency_id=lock["agency_id"], action="agency_sales_lock_released", details={
         "lock_id": lock_id, "tenant_id": lock["tenant_id"], "operation": lock.get("operation"),
         "resolution": data.resolution, "recovery_id": record["id"],
@@ -2859,6 +2881,9 @@ async def _decide_marketplace_modification_locked(proposal_id, data, current_use
             "agency_commission_amount": financials["commission_amount"],
             "syroce_b2b_fee_pct": fee_pct,
             **financials,
+            "credit_exposure_amount": financials["net_to_hotel"],
+            "credit_exposure_currency": booking.get("currency", "TRY"),
+            "credit_exposure_basis": "net_to_hotel_after_agency_commission_v1",
             "updated_at": _now_iso(),
         }
         with tenant_context(tenant_id):
