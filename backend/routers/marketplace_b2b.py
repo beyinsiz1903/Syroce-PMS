@@ -2529,8 +2529,8 @@ async def agency_email_reservation_voucher(
     if not doc:
         raise HTTPException(404, "Rezervasyon bulunamadı")
     from core.email import send_email
-    result = await send_email(str(data.email), f"Rezervasyon Voucher · {doc.get('confirmation_code')}", _voucher_html(doc))
-    if not result:
+    result = await send_email(str(data.email), f"Rezervasyon Voucher · {doc.get('confirmation_code')}", _voucher_html(doc), sensitive=True)
+    if not isinstance(result, dict) or not result.get("sent"):
         raise HTTPException(502, "Voucher e-postası gönderilemedi")
     return {"ok": True, "message": "Voucher e-postası gönderildi"}
 
