@@ -216,6 +216,7 @@ export default function AdminMarketplaceAgencies() {
         title="Acente Yönetimi"
         subtitle="Acenteleri, otel bağlantılarını, işlem hacmini ve acentenin Syroce'a ödeyeceği hizmet bedelini tek yerden yönetin."
         actions={<>
+          <Button asChild variant="outline"><Link to="/admin/agency-integrations">Eksik entegrasyonlar</Link></Button>
           <Button variant="outline" size="sm" onClick={load} disabled={agenciesQuery.isFetching}>
             <RefreshCw className={`mr-1.5 h-4 w-4 ${loading || refreshing ? 'animate-spin' : ''}`} />Yenile
           </Button>

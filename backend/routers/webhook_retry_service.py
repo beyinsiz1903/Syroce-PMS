@@ -72,6 +72,7 @@ async def deliver_webhook_with_retry(
     webhook_doc: dict,
     event: str,
     data: dict,
+    delivery_id: str | None = None,
 ) -> dict[str, Any]:
     """Deliver webhook with exponential backoff retry.
 
@@ -81,7 +82,12 @@ async def deliver_webhook_with_retry(
 
     sysdb = get_system_db()
 
-    delivery_id = _uuid()
+    durable_delivery = delivery_id is not None
+    delivery_id = delivery_id or _uuid()
+    if durable_delivery:
+        previous = await sysdb.webhook_deliveries.find_one({'id': delivery_id})
+        if previous and previous.get('status') == STATUS_SUCCEEDED:
+            return {'delivery_id': delivery_id, 'status': STATUS_SUCCEEDED}
     idempotency_key = _generate_idempotency_key(webhook_doc["id"], event, delivery_id)
     tenant_id = webhook_doc.get("tenant_id", "")
     agency_id = webhook_doc.get("agency_id", "")
@@ -130,7 +136,10 @@ async def deliver_webhook_with_retry(
         "created_at": _now_iso(),
         "completed_at": None,
     }
-    await sysdb.webhook_deliveries.insert_one(delivery_record)
+    if durable_delivery:
+        await sysdb.webhook_deliveries.update_one({'_id': delivery_id}, {'$setOnInsert': delivery_record}, upsert=True)
+    else:
+        await sysdb.webhook_deliveries.insert_one(delivery_record)
 
     # Emit: delivery started
     await emit_ops_event(

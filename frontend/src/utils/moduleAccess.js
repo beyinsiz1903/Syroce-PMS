@@ -244,7 +244,7 @@ const ROUTE_SCOPE_OVERRIDES = Object.freeze(Object.fromEntries([
     '/system-health', '/system/performance', '/system/logs', '/system/network',
     '/event-bus', '/operational-events', '/infra-hardening', '/pii-strict-mode', '/templates',
     '/encryption-management', '/app/admin-hub', '/admin/otel-kullanicilari',
-    '/admin/tenants', '/admin/agencies', '/admin/autonomous-collection',
+    '/admin/tenants', '/admin/agencies', '/admin/agency-integrations', '/admin/autonomous-collection',
     '/admin/capx-integration', '/admin/early-warning', '/admin/features',
     '/admin/governance', '/admin/housekeeping', '/admin/integration-credentials',
     '/admin/integrations-overview', '/admin/module-control', '/admin/module-discovery',

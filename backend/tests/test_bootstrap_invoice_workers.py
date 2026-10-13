@@ -1,6 +1,7 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from starlette.datastructures import State
 
 from bootstrap.phases.e_outbox import phase_e_outbox_and_eventbus
 from bootstrap.phases.shutdown import shutdown_all
@@ -9,8 +10,16 @@ from bootstrap.phases.shutdown import shutdown_all
 @pytest.fixture
 def mock_app():
     app = MagicMock()
-    app.state = MagicMock()
+    app.state = State()
     return app
+
+
+@pytest.fixture(autouse=True)
+def mock_agency_worker():
+    with patch("core.agency_completion.worker") as worker:
+        worker.start = AsyncMock()
+        worker.stop = AsyncMock()
+        yield worker
 
 
 @pytest.fixture(autouse=True)
@@ -60,9 +69,11 @@ def mock_workers():
         yield m_dispatch, m_recon, m_status, m_lifecycle, m_incoming
 
 @pytest.mark.asyncio
-async def test_bootstrap_startup_starts_workers_once(mock_app, mock_workers):
+async def test_bootstrap_startup_starts_workers_once(mock_app, mock_workers, mock_agency_worker):
     m_dispatch, m_recon, m_status, m_lifecycle, m_incoming = mock_workers
     await phase_e_outbox_and_eventbus(mock_app)
+    mock_agency_worker.start.assert_awaited_once()
+    assert mock_app.state.agency_completion_worker is mock_agency_worker
 
     m_dispatch.start.assert_called_once()
     m_recon.start.assert_called_once()
@@ -78,7 +89,10 @@ async def test_bootstrap_startup_starts_workers_once(mock_app, mock_workers):
     assert m_incoming.start.call_count == 1
 
 @pytest.mark.asyncio
-async def test_bootstrap_shutdown_stops_workers_idempotently(mock_app, mock_workers, isolated_shutdown):
+@pytest.mark.parametrize("agency_started", [False, True])
+async def test_bootstrap_shutdown_stops_workers_idempotently(
+    mock_app, mock_workers, isolated_shutdown, mock_agency_worker, agency_started,
+):
     m_dispatch, m_recon, m_status, m_lifecycle, m_incoming = mock_workers
 
     mock_app.state.invoice_dispatch_worker = m_dispatch
@@ -86,6 +100,8 @@ async def test_bootstrap_shutdown_stops_workers_idempotently(mock_app, mock_work
     mock_app.state.invoice_status_worker = m_status
     mock_app.state.invoice_lifecycle_worker = m_lifecycle
     mock_app.state.incoming_invoice_sync_worker = m_incoming
+    if agency_started:
+        mock_app.state.agency_completion_worker = mock_agency_worker
 
     await shutdown_all(mock_app)
     m_dispatch.stop.assert_called_once()
@@ -101,6 +117,7 @@ async def test_bootstrap_shutdown_stops_workers_idempotently(mock_app, mock_work
     assert m_status.stop.call_count == 2
     assert m_lifecycle.stop.call_count == 2
     assert m_incoming.stop.call_count == 2
+    assert mock_agency_worker.stop.await_count == (2 if agency_started else 0)
 
 @pytest.mark.asyncio
 async def test_bootstrap_reconciliation_start_error_reraised(mock_app, mock_workers):

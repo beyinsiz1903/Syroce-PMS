@@ -8,6 +8,9 @@ logger = logging.getLogger(__name__)
 
 
 async def phase_e_outbox_and_eventbus(app):
+    from core.agency_completion import worker as agency_completion_worker
+    await agency_completion_worker.start()
+    app.state.agency_completion_worker = agency_completion_worker
     # OTA-002: Outbox Pattern indexes
     try:
         from core.outbox_service import ensure_outbox_indexes

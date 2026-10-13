@@ -377,6 +377,8 @@ const AgencyPortalDashboard = () => {
         });
       }
       toast.success(response.data.message || `Rezervasyon başarıyla oluşturuldu. Onay kodu: ${response.data.reservation?.confirmation_code || '-'}`);
+      const integration = (response.data.reservation || response.data.booking)?.integration_status;
+      if (integration && integration !== 'complete') toast.info('Rezervasyon kaydedildi. Entegrasyon işlemleri takip ediliyor; yeniden rezervasyon oluşturmayın.');
       setShowBookingForm(false);
       setAvailability(null);
       loadReservations();
@@ -841,6 +843,7 @@ const AgencyPortalDashboard = () => {
                         <div className="font-semibold text-slate-800">{r.guest_name || 'Misafir'}</div>
                         <div className="text-xs text-slate-600 mt-1 flex flex-wrap gap-x-3 gap-y-1">
                           <span className="font-mono">{r.confirmation_code || r.id}</span>
+                          {r.integration_status && r.integration_status !== 'complete' && <span role="status">Entegrasyon tamamlanıyor ({r.integration_status}); rezervasyon kayıtlı.</span>}
                           {r.hotel_name && <span className="font-medium text-emerald-700">{r.hotel_name}</span>}
                           <span>{r.room_type || 'Oda tipi belirtilmemiş'}</span>
                           <span>{r.room_number ? `Oda ${r.room_number}` : 'Oda ataması bekliyor'}</span>

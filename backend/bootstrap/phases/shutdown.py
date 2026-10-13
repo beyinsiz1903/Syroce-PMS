@@ -8,6 +8,9 @@ logger = logging.getLogger(__name__)
 
 
 async def shutdown_all(app):
+    agency_worker = getattr(app.state, 'agency_completion_worker', None)
+    if agency_worker:
+        await agency_worker.stop()
     # ARI worker uses MongoDB on every five-second tick. Stop it before the
     # shared client is closed so a deploy/restart cannot create a final tick
     # against a closed proxy (and a misleading Sentry incident).
