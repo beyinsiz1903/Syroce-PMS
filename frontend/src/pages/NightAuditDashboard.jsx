@@ -28,6 +28,8 @@ import {
   NIGHT_AUDIT_RUN_TIMEOUT_MS,
   confirmsNightAuditAdvance,
   isNightAuditTimeout,
+  hasCurrentCatchupSimulation,
+  requiresCatchupSimulationMode,
 } from "@/lib/nightAuditRunSafety";
 
 import {
@@ -452,17 +454,20 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
   // Final close never bypasses blockers. A dry run remains available so the
   // operator can inspect the result without posting or advancing the date.
   const businessDateCatchupRequired = Number(previewData?.date_drift_days || 0) > 1;
+  const hasCatchupSimulation = hasCurrentCatchupSimulation(catchupSimulation, businessDate);
+  const simulationModeRequired = requiresCatchupSimulationMode(previewData?.date_drift_days, hasCatchupSimulation, canManageSchedule);
   const controlledCatchupReady = businessDateCatchupRequired
+    && canManageSchedule
     && runOptions.controlled_catchup
     && runOptions.catchup_confirmed
-    && catchupSimulation?.date === businessDate
-    && catchupSimulation?.runId
+    && hasCatchupSimulation
     && runOptions.reason.trim().length >= 10;
   const runBlocked = ((previewData?.blockers?.length > 0) || (businessDateCatchupRequired && !controlledCatchupReady)) && !runOptions.dry_run;
   const openRunDialog = (options = {}) => {
     setRunOptions((current) => ({
       ...current,
-      dry_run: options.dryRun ?? current.dry_run,
+      dry_run: simulationModeRequired
+        ? true : (options.dryRun ?? current.dry_run),
       controlled_catchup: false,
       catchup_confirmed: false,
     }));
@@ -862,9 +867,10 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
                     <p className="mt-0.5">
                       PMS iş günü takvimden {previewData.date_drift_days} gün geride. Önce simülasyonu inceleyin; ardından bu pencerede yalnızca açık iş gününü kapatabilirsiniz. Toplu kapanış yapılmaz.
                     </p>
-                    {catchupSimulation?.date !== businessDate && (
-                      <p className="mt-1 font-medium">Canlı kontrollü kapatma açılmadan önce bu iş günü için simülasyonu tamamlayın.</p>
+                    {!hasCatchupSimulation && (
+                      <p className="mt-1 font-medium">1. Simülasyonu çalıştırın. 2. Sonuçları inceleyin. 3. Kontrollü kapatmaya geçip en az 10 karakterlik gerekçe yazın ve onaylayın.</p>
                     )}
+                    {!canManageSchedule && <p className="mt-1 font-medium">Kontrollü kapatma yönetici yetkisi gerektirir. Simülasyonu inceleyebilirsiniz; kapanışı tesis yöneticisi tamamlamalıdır.</p>}
                   </div>
                 </div>
               )}
@@ -896,6 +902,7 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
                     data-testid="dry-run-checkbox"
                     type="checkbox"
                     checked={runOptions.dry_run}
+                    disabled={simulationModeRequired}
                     onChange={(e) => setRunOptions({ ...runOptions, dry_run: e.target.checked, controlled_catchup: false, catchup_confirmed: false })}
                     className="w-4 h-4 rounded border-gray-300 text-indigo-600"
                   />
@@ -906,7 +913,7 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
                 </label>
 
                 <div>
-                  <label className="text-xs text-gray-600 mb-1 block">Açıklama {businessDateCatchupRequired && !runOptions.dry_run ? "(zorunlu)" : "(opsiyonel)"}</label>
+                  <label className="text-xs text-gray-600 mb-1 block">Açıklama {businessDateCatchupRequired && !runOptions.dry_run ? "(zorunlu, en az 10 karakter)" : "(opsiyonel)"}</label>
                   <input
                     data-testid="reason-input"
                     type="text"
@@ -1072,8 +1079,20 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
                     </div>
                   </div>
                 )}
-                <div className="flex justify-end">
+                <div className="flex flex-wrap justify-end gap-2">
                   <Button onClick={() => setSimulationResult(null)}>Kapat</Button>
+                  {businessDateCatchupRequired && canManageSchedule && hasCatchupSimulation && (
+                    <Button
+                      data-testid="review-controlled-close"
+                      disabled={Boolean(simulationResult.blockers?.length)}
+                      onClick={() => {
+                        setSimulationResult(null);
+                        openRunDialog({ dryRun: false });
+                      }}
+                    >
+                      {businessDate} için kontrollü kapatmaya geç
+                    </Button>
+                  )}
                 </div>
               </div>
             )}
