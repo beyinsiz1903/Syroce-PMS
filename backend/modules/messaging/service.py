@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 # Bug #15 fix: provider-type → secret credential keys (encrypted at-rest).
 # Mirrored in routers/messaging.py (kept narrow per provider).
 _PROVIDER_SECRET_KEYS = {
-    "smtp_email": {"smtp_password"},
+    "smtp_email": {"smtp_password", "zoho_client_secret", "zoho_refresh_token"},
     "whatsapp": {"access_token", "webhook_verify_token", "app_secret"},
 }
 
@@ -82,6 +82,8 @@ class MessagingService:
         access_token / webhook_verify_token / app_secret artık envelope-encrypted
         (field_encryption). Provider'lara plaintext döndürmek için decrypt et.
         """
+        if "email_transport" in (config.get("credentials_encrypted") or {}):
+            return _decrypt_provider_creds(config["credentials_encrypted"], config.get("provider_type", ""))
         try:
             from modules.security_hardening.credential_vault import credential_vault
 
@@ -261,6 +263,13 @@ class MessagingService:
         except Exception:
             logger.debug("messaging: observability metric record failed", exc_info=True)
 
+        if result.get("outcome_unknown"):
+            await self.db.messaging_delivery_logs.update_one(
+                {"id": log_doc["id"], "tenant_id": tenant_id},
+                {"$set": {"status": DeliveryStatus.UNKNOWN.value, "error_message": result.get("error"),
+                          "next_retry_at": None, "updated_at": datetime.now(UTC).isoformat()}},
+            )
+            return {"success": False, "outcome_unknown": True, "error": result.get("error"), "delivery_id": log_doc["id"]}
         if result.get("success"):
             self._provider_successes[provider_type] = self._provider_successes.get(provider_type, 0) + 1
             await self.db.messaging_delivery_logs.update_one(
@@ -363,6 +372,15 @@ class MessagingService:
         # boundary to send. Dual-read falls back to legacy plaintext.
         result = await provider.send(reveal_recipient(doc), doc["body"], doc.get("subject"), creds, mode)
         new_count = doc.get("retry_count", 0) + 1
+
+        if result.get("outcome_unknown"):
+            await self.db.messaging_delivery_logs.update_one(
+                {"id": delivery_id, "tenant_id": tenant_id},
+                {"$set": {"status": DeliveryStatus.UNKNOWN.value, "next_retry_at": None,
+                          "retry_count": new_count, "error_message": result.get("error"),
+                          "updated_at": datetime.now(UTC).isoformat()}},
+            )
+            return {"success": False, "outcome_unknown": True, "delivery_id": delivery_id}
 
         if result.get("success"):
             await self.db.messaging_delivery_logs.update_one(

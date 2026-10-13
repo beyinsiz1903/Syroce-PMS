@@ -8,6 +8,7 @@ import random
 import re
 import uuid
 from datetime import UTC, datetime, timedelta
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -33,7 +34,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/messaging-center", tags=["messaging-center"])
 
 # Sensitive credential keys that MUST be encrypted at rest (PCI/PII).
-_SMTP_SECRET_KEYS = {"smtp_password"}
+_SMTP_SECRET_KEYS = {"smtp_password", "zoho_client_secret", "zoho_refresh_token"}
 _WHATSAPP_SECRET_KEYS = {"access_token", "webhook_verify_token", "app_secret"}
 
 
@@ -45,6 +46,8 @@ def _encrypt_secrets(creds: dict, secret_keys: set[str]) -> dict:
     try:
         svc = get_field_encryption_service()
     except Exception:
+        if creds.get("email_transport") == "zoho_api" or any(creds.get(k) for k in ("zoho_client_secret", "zoho_refresh_token")):
+            raise HTTPException(503, "Güvenli anahtar saklama kullanılamıyor; ayarlar kaydedilmedi.") from None
         logger.exception("field_encryption_unavailable; storing creds plaintext (insecure)")
         return dict(creds)
     out = dict(creds)
@@ -115,9 +118,15 @@ def _get_service():
 
 
 class SMTPSettingsReq(BaseModel):
-    smtp_host: str
+    email_transport: Literal["smtp", "zoho_api"] = "smtp"
+    zoho_region: Literal["eu", "us"] = "eu"
+    zoho_account_id: str = ""
+    zoho_client_id: str = ""
+    zoho_client_secret: str = ""
+    zoho_refresh_token: str = ""
+    smtp_host: str = ""
     smtp_port: int = 587
-    smtp_username: str
+    smtp_username: str = ""
     smtp_password: str = ""  # empty = preserve existing (mask round-trip safe)
     from_email: str
     from_name: str = "Otel"
@@ -162,6 +171,12 @@ async def get_messaging_settings(current_user: User = Depends(get_current_user))
 
         if pt == "smtp_email":
             masked = {
+                "email_transport": creds.get("email_transport", "smtp"),
+                "zoho_region": creds.get("zoho_region", "eu"),
+                "zoho_account_id": creds.get("zoho_account_id", ""),
+                "zoho_client_id": creds.get("zoho_client_id", ""),
+                "zoho_client_secret": "********" if creds.get("zoho_client_secret") else "",
+                "zoho_refresh_token": "********" if creds.get("zoho_refresh_token") else "",
                 "smtp_host": creds.get("smtp_host", ""),
                 "smtp_port": creds.get("smtp_port", 587),
                 "smtp_username": _mask(creds.get("smtp_username", "")),
@@ -219,6 +234,12 @@ async def save_email_settings(
     """
     db = _get_db()
     incoming = {
+        "email_transport": req.email_transport,
+        "zoho_region": req.zoho_region,
+        "zoho_account_id": req.zoho_account_id.strip(),
+        "zoho_client_id": req.zoho_client_id.strip(),
+        "zoho_client_secret": req.zoho_client_secret,
+        "zoho_refresh_token": req.zoho_refresh_token,
         "smtp_host": req.smtp_host,
         "smtp_port": req.smtp_port,
         "smtp_username": req.smtp_username,
@@ -229,16 +250,25 @@ async def save_email_settings(
     }
     existing = await db.messaging_provider_configs.find_one({"tenant_id": current_user.tenant_id, "provider_type": "smtp_email"}, {"_id": 0})
     now = datetime.now(UTC).isoformat()
+    previous = _decrypt_secrets((existing or {}).get("credentials_encrypted", {}) or {}, _SMTP_SECRET_KEYS)
+    merged = _merge_partial_creds(previous, incoming, _SMTP_SECRET_KEYS | {"smtp_username"})
+    if merged.get("email_transport") == "zoho_api":
+        from modules.messaging.zoho_mail import validate_credentials
+        try:
+            validate_credentials(merged)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from None
+    changed_transport = previous.get("email_transport", "smtp") != req.email_transport
+    sandbox = req.is_sandbox or changed_transport
+    creds_encrypted = _encrypt_secrets(merged, _SMTP_SECRET_KEYS)
     if existing:
-        existing_creds_dec = _decrypt_secrets(existing.get("credentials_encrypted", {}) or {}, _SMTP_SECRET_KEYS)
-        merged = _merge_partial_creds(existing_creds_dec, incoming, _SMTP_SECRET_KEYS)
-        creds_encrypted = _encrypt_secrets(merged, _SMTP_SECRET_KEYS)
         await db.messaging_provider_configs.update_one(
-            {"id": existing["id"]},
+            {"id": existing["id"], "tenant_id": current_user.tenant_id},
             {
                 "$set": {
                     "credentials_encrypted": creds_encrypted,
-                    "is_sandbox": req.is_sandbox,
+                    "is_sandbox": sandbox,
+                    "health_status": "unknown",
                     "enabled": req.enabled,
                     "updated_at": now,
                 }
@@ -248,8 +278,7 @@ async def save_email_settings(
     else:
         from modules.messaging.models import new_provider_config
 
-        creds_encrypted = _encrypt_secrets(incoming, _SMTP_SECRET_KEYS)
-        doc = new_provider_config(current_user.tenant_id, "smtp_email", creds_encrypted, req.is_sandbox, req.enabled)
+        doc = new_provider_config(current_user.tenant_id, "smtp_email", creds_encrypted, sandbox, req.enabled)
         await db.messaging_provider_configs.insert_one(doc)
         doc.pop("_id", None)
         return {"success": True, "action": "created", "id": doc["id"]}

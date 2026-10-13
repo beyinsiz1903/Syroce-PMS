@@ -56,6 +56,10 @@ class SMTPEmailProvider(BaseProvider):
 
     async def send(self, recipient: str, body: str, subject: str | None = None, credentials: dict = None, mode: str = ProviderMode.LIVE) -> dict[str, Any]:
         creds = credentials or {}
+        if creds.get("email_transport") == "zoho_api" and mode == ProviderMode.LIVE:
+            from .zoho_mail import send
+
+            return await send(recipient, body, subject, creds)
         smtp_host = creds.get("smtp_host", "")
         smtp_port = int(creds.get("smtp_port", 587))
         smtp_username = creds.get("smtp_username", "")
@@ -137,6 +141,10 @@ class SMTPEmailProvider(BaseProvider):
     async def check_health(self, credentials: dict, mode: str = ProviderMode.LIVE) -> dict[str, Any]:
         if mode in (ProviderMode.TEST, ProviderMode.SANDBOX):
             return {"status": "healthy", "mode": mode, "checked_at": datetime.now(UTC).isoformat()}
+        if credentials.get("email_transport") == "zoho_api":
+            from .zoho_mail import check_health
+
+            return {**await check_health(credentials), "checked_at": datetime.now(UTC).isoformat()}
         smtp_host = credentials.get("smtp_host", "")
         smtp_port = int(credentials.get("smtp_port", 587))
         smtp_username = credentials.get("smtp_username", "")

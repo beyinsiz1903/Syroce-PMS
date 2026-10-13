@@ -113,6 +113,8 @@ function SettingsTab({ onChanged }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [emailForm, setEmailForm] = useState({
+    email_transport: 'smtp', zoho_region: 'eu', zoho_account_id: '', zoho_client_id: '',
+    zoho_client_secret: '', zoho_refresh_token: '',
     smtp_host: '', smtp_port: 587, smtp_username: '', smtp_password: '',
     from_email: '', from_name: 'Otel', use_tls: true, is_sandbox: true, enabled: true,
   });
@@ -131,6 +133,11 @@ function SettingsTab({ onChanged }) {
       if (r.data.email?.credentials) {
         setEmailForm((prev) => ({
           ...prev,
+          email_transport: r.data.email.credentials.email_transport || 'smtp',
+          zoho_region: r.data.email.credentials.zoho_region || 'eu',
+          zoho_account_id: r.data.email.credentials.zoho_account_id || '',
+          zoho_client_id: r.data.email.credentials.zoho_client_id || '',
+          zoho_client_secret: '', zoho_refresh_token: '',
           smtp_host: r.data.email.credentials.smtp_host || '',
           smtp_port: r.data.email.credentials.smtp_port || 587,
           smtp_username: '',  // masked — don't pre-fill
@@ -196,7 +203,7 @@ function SettingsTab({ onChanged }) {
     }
     r.data.results.forEach((res) => {
       const label = res.provider_type === 'smtp_email' ? 'E-posta' : 'WhatsApp';
-      if (res.status === 'healthy') toast.success(`${label}: Bağlantı başarılı`);
+      if (res.status === 'healthy') toast.success(`${label}: ${res.note || 'Bağlantı başarılı'}`);
       else toast.error(`${label}: ${res.error || 'Bağlantı hatası'}`);
     });
     load();
@@ -214,13 +221,36 @@ function SettingsTab({ onChanged }) {
               <div className="w-9 h-9 rounded-lg bg-sky-50 flex items-center justify-center">
                 <Mail className="h-4 w-4 text-sky-600" />
               </div>
-              <h3 className="text-lg font-semibold text-slate-900">{t('cm.pages_MessagingDashboard.e_posta_smtp_ayarlari')}</h3>
+              <h3 className="text-lg font-semibold text-slate-900">E-posta Ayarları (SMTP / Zoho HTTPS)</h3>
             </div>
             <div className="flex items-center gap-2">
               <ConnectionBadge provider={settings?.email} channel="email" />
             </div>
           </div>
+          <div className="mb-4">
+            <Label htmlFor="email-transport">Gönderim yöntemi</Label>
+            <select id="email-transport" className="block w-full border rounded-md p-2" value={emailForm.email_transport}
+              onChange={(e) => setEmailForm((p) => ({ ...p, email_transport: e.target.value, is_sandbox: true, enabled: false }))}>
+              <option value="smtp">SMTP</option>
+              <option value="zoho_api">Zoho Mail HTTPS API (443)</option>
+            </select>
+          </div>
+          {emailForm.email_transport === 'zoho_api' && <div className="mb-4 space-y-3">
+            <p className="text-sm text-slate-600">SMTP şifresi yerine Zoho OAuth bilgileri gerekir. İzinler: ZohoMail.messages.CREATE ve ZohoMail.accounts.READ. Yöntem değişikliği simülasyon modunda kaydedilir. Boş gizli alanlar mevcut değerleri korur. Gönderen görünen adı Zoho hesabından yönetilir.</p>
+            <Label htmlFor="zoho-region">Zoho bölgesi</Label>
+            <select id="zoho-region" className="block border rounded-md p-2" value={emailForm.zoho_region}
+              onChange={(e) => setEmailForm((p) => ({ ...p, zoho_region: e.target.value }))}>
+              <option value="eu">Avrupa (zoho.eu)</option><option value="us">ABD (zoho.com)</option>
+            </select>
+            {[['zoho_account_id', 'Zoho hesap kimliği'], ['zoho_client_id', 'OAuth Client ID'],
+              ['zoho_client_secret', 'OAuth Client Secret'], ['zoho_refresh_token', 'OAuth Refresh Token']].map(([key, label]) => (
+              <div key={key}><Label htmlFor={key}>{label}</Label>
+                <Input id={key} autoComplete="off" type={['zoho_client_secret', 'zoho_refresh_token'].includes(key) ? 'password' : 'text'}
+                  value={emailForm[key]} onChange={(e) => setEmailForm((p) => ({ ...p, [key]: e.target.value }))} /></div>
+            ))}
+          </div>}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {emailForm.email_transport === 'smtp' && <>
             <div>
               <Label>SMTP Sunucu</Label>
               <Input data-testid="smtp-host" placeholder="smtp.gmail.com" value={emailForm.smtp_host}
@@ -241,6 +271,7 @@ function SettingsTab({ onChanged }) {
               <Input data-testid="smtp-password" type="password" placeholder="••••••••" value={emailForm.smtp_password}
                 onChange={(e) => setEmailForm((p) => ({ ...p, smtp_password: e.target.value }))} />
             </div>
+            </>}
             <div>
               <Label>{t('cm.pages_MessagingDashboard.gonderen_e_posta')}</Label>
               <Input data-testid="smtp-from-email" placeholder="info@oteliniz.com" value={emailForm.from_email}
@@ -253,10 +284,10 @@ function SettingsTab({ onChanged }) {
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-6 mt-4">
-            <div className="flex items-center gap-2">
+            {emailForm.email_transport === 'smtp' && <div className="flex items-center gap-2">
               <Switch checked={emailForm.use_tls} onCheckedChange={(v) => setEmailForm((p) => ({ ...p, use_tls: v }))} />
               <Label>TLS</Label>
-            </div>
+            </div>}
             <div className="flex items-center gap-2">
               <Switch data-testid="smtp-sandbox" checked={emailForm.is_sandbox} onCheckedChange={(v) => setEmailForm((p) => ({ ...p, is_sandbox: v }))} />
               <Label>Sandbox Modu</Label>
