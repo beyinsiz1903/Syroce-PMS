@@ -14,12 +14,21 @@ from routers import agency_onboarding as onboarding
 
 def matches(row, query):
     for key, value in query.items():
-        if key == '$or':
+        if key == '$and':
+            if not all(matches(row, part) for part in value):
+                return False
+        elif key == '$or':
             if not any(matches(row, part) for part in value):
                 return False
         elif isinstance(value, dict):
             for op, expected in value.items():
                 actual = row.get(key)
+                if op == '$ne' and actual == expected:
+                    return False
+                if op == '$in' and not (any(item in expected for item in actual) if isinstance(actual, list) else actual in expected):
+                    return False
+                if op == '$nin' and actual in expected:
+                    return False
                 if op == '$exists' and (key in row) != expected:
                     return False
                 if op == '$gt' and (actual is None or actual <= expected):
@@ -81,6 +90,76 @@ async def issue(setup):
     result = await onboarding.invite('a', onboarding.InviteRequest(name='Agent Name', email='agent@example.com'), admin)
     token = re.search(r'#token=([^"<]+)', mail.call_args.args[2]).group(1)
     return result, token
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('role', ['marketplace_agent', 'agency_agent', 'agency_admin'])
+async def test_recovery_consumed_once_revokes_sessions(setup, monkeypatch, role):
+    from core.security import verify_password
+    from security import auth_throttle
+    monkeypatch.setattr(auth_throttle, 'enforce', AsyncMock())
+    monkeypatch.setattr(auth_throttle, 'client_ip', lambda request: 'test')
+    database, mail, _ = setup
+    database.users.rows.append({'id': 'u', 'agency_id': 'a', 'role': role, 'email': 'agent@example.com', 'is_active': True})
+    await onboarding.send_recovery('agent@example.com')
+    token = re.search(r'#token=([^"<]+)', mail.call_args.args[2]).group(1)
+    user = database.users.rows[0]
+    assert token not in str(user) and mail.call_args.kwargs['sensitive']
+    data = onboarding.AcceptRequest(token=token, password='SecureAgency2026!')
+    assert (await onboarding.reset(data, None))['ok']
+    assert verify_password(data.password, user['hashed_password'])
+    assert user['tokens_invalid_before'] > 0 and 'agency_reset_hash' not in user
+    with pytest.raises(HTTPException) as error:
+        await onboarding.reset(data, None)
+    assert error.value.status_code == 400
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('overrides', [{'is_active': False}, {'onboarding_status': 'invited'}, {'role': 'admin'}, {'agency_id': None}])
+async def test_recovery_does_not_activate_or_repurpose_accounts(setup, overrides):
+    database, mail, _ = setup
+    database.users.rows.append({'id': 'u', 'agency_id': 'a', 'role': 'marketplace_agent',
+                               'email': 'agent@example.com', 'is_active': True, **overrides})
+    await onboarding.send_recovery('agent@example.com')
+    mail.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_recovery_response_is_generic_and_lookup_deferred(monkeypatch):
+    from fastapi import BackgroundTasks
+
+    from security import auth_throttle
+    monkeypatch.setattr(auth_throttle, 'enforce', AsyncMock())
+    monkeypatch.setattr(auth_throttle, 'client_ip', lambda request: 'test')
+    send = AsyncMock()
+    monkeypatch.setattr(onboarding, 'send_recovery', send)
+    tasks = BackgroundTasks()
+    response = await onboarding.recover(onboarding.RecoverRequest(email='Unknown@example.com'), None, tasks)
+    assert response['ok'] and 'token' not in response
+    send.assert_not_awaited()
+    await tasks()
+    send.assert_awaited_once_with('unknown@example.com')
+
+
+@pytest.mark.asyncio
+async def test_recovery_reissue_invalidates_old_token_and_expiry_is_enforced(setup, monkeypatch):
+    from security import auth_throttle
+    monkeypatch.setattr(auth_throttle, 'enforce', AsyncMock())
+    monkeypatch.setattr(auth_throttle, 'client_ip', lambda request: 'test')
+    database, mail, _ = setup
+    database.users.rows.append({'id': 'u', 'agency_id': 'a', 'role': 'marketplace_agent',
+                               'email': 'agent@example.com', 'is_active': True})
+    await onboarding.send_recovery('agent@example.com')
+    old = re.search(r'#token=([^"<]+)', mail.call_args.args[2]).group(1)
+    await onboarding.send_recovery('agent@example.com')
+    new = re.search(r'#token=([^"<]+)', mail.call_args.args[2]).group(1)
+    assert old != new
+    with pytest.raises(HTTPException):
+        await onboarding.reset(onboarding.AcceptRequest(token=old, password='SecureAgency2026!'), None)
+    database.users.rows[0]['agency_reset_expires'] = datetime.now(UTC) - timedelta(seconds=1)
+    with pytest.raises(HTTPException):
+        await onboarding.reset(onboarding.AcceptRequest(token=new, password='SecureAgency2026!'), None)
+    assert 'hashed_password' not in database.users.rows[0]
 
 
 @pytest.mark.asyncio

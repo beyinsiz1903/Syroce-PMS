@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { Search, CalendarDays, Users, Bed, Plus, Loader2, Building2, LogOut, ClipboardList, Eye, Phone, Mail, MapPin, RefreshCw, ShieldCheck, Printer, XCircle, WalletCards, SlidersHorizontal, ChevronDown, Sparkles, Hotel, ArrowRight, BadgeCheck, Settings, Bell, Globe2, KeyRound, Save } from 'lucide-react';
@@ -619,6 +620,10 @@ const AgencyPortalDashboard = () => {
                 {t('cm.pages_AgencyPortalDashboard.giris_yap')}
               </Button>
             </form>
+            <div className="mt-4 flex flex-col gap-2 text-sm">
+              <Link to="/agency-recover" className="text-emerald-800 underline">Şifremi unuttum</Link>
+              <Link to="/agency-activate" className="text-emerald-800 underline">Davetimi nasıl etkinleştiririm?</Link>
+            </div>
           </CardContent>
         </Card>
       </div>;
