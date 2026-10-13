@@ -41,16 +41,16 @@ async def test_quote_excludes_self_and_applies_occupancy(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_credit_replaces_old_booking_not_double_counts(monkeypatch):
-    aggregate = AsyncMock(return_value=[{'amount':40}])
     queries = []
-    def run(query):
+    def run(query, *_args):
         queries.append(query)
-        return SimpleNamespace(to_list=aggregate)
-    monkeypatch.setattr(m, 'db', SimpleNamespace(bookings=SimpleNamespace(aggregate=run)))
-    await m._check_agency_credit(tenant_id='t', agency_id='a', contract={'credit_limit':100}, net_to_hotel=60, exclude_booking_id='b')
-    assert queries[0][0]['$match']['id'] == {'$ne':'b'}
+        return SimpleNamespace(to_list=AsyncMock(return_value=[{'currency': 'TRY', 'net_to_hotel': 40}]))
+    monkeypatch.setattr(m, 'db', SimpleNamespace(bookings=SimpleNamespace(find=run)))
+    contract = {'credit_limit': 100, 'credit_currency': 'TRY'}
+    await m._check_agency_credit(tenant_id='t', agency_id='a', contract=contract, net_to_hotel=60, booking_currency='TRY', exclude_booking_id='b')
+    assert queries[0]['id'] == {'$ne':'b'}
     with pytest.raises(HTTPException):
-        await m._check_agency_credit(tenant_id='t', agency_id='a', contract={'credit_limit':100}, net_to_hotel=61, exclude_booking_id='b')
+        await m._check_agency_credit(tenant_id='t', agency_id='a', contract=contract, net_to_hotel=61, booking_currency='TRY', exclude_booking_id='b')
 
 
 @pytest.fixture

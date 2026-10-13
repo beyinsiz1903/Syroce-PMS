@@ -32,6 +32,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, 
 from pydantic import BaseModel, EmailStr, Field, model_validator
 
 from core.agency_completion import pending_completion, public_booking
+from core.agency_credit import assert_credit_capacity
 from core.atomic_booking import BookingConflictError, assign_room_atomic, create_booking_atomic
 from core.database import db
 from core.occupancy_pricing import OccupancyPricingError, calculate_occupancy_quote, find_occupancy_rule
@@ -946,20 +947,13 @@ async def _validated_agency_quote(*, tenant_id, agency_id, room, check_in, check
     return pricing
 
 
-async def _check_agency_credit(*, tenant_id, agency_id, contract, net_to_hotel, exclude_booking_id=None):
-    if contract.get("credit_limit") is None:
-        return
-    query = {"tenant_id": tenant_id, "agency_id": agency_id,
-             "status": {"$ne": "cancelled"}, "payment_status": {"$ne": "paid"}}
-    if exclude_booking_id:
-        query["id"] = {"$ne": exclude_booking_id}
-    debts = await db.bookings.aggregate([
-        {"$match": query},
-        {"$group": {"_id": None, "amount": {"$sum": {"$ifNull": ["$net_to_hotel", "$total_amount"]}}}},
-    ]).to_list(1)
-    debt = float(debts[0].get("amount", 0)) if debts else 0.0
-    if debt + net_to_hotel > float(contract["credit_limit"]):
-        raise HTTPException(409, "Acente kredi limiti bu rezervasyon için yetersiz")
+async def _check_agency_credit(*, tenant_id, agency_id, contract, net_to_hotel,
+                               booking_currency, exclude_booking_id=None):
+    await assert_credit_capacity(
+        db, tenant_id=tenant_id, agency_id=agency_id, contract=contract,
+        booking_currency=booking_currency, new_net_exposure=net_to_hotel,
+        exclude_booking_id=exclude_booking_id,
+    )
 
 
 def _contract_commission(contract: dict) -> float:
@@ -2204,8 +2198,10 @@ async def agency_create_reservation(
         # The platform fee is the agency's liability to Syroce; it must not
         # reduce the hotel's contracted payout a second time.
         net_to_hotel = round(total - commission_amount, 2)
-        await _check_agency_credit(tenant_id=data.tenant_id, agency_id=agency["agency_id"],
-                                   contract=contract, net_to_hotel=net_to_hotel)
+        await _check_agency_credit(
+            tenant_id=data.tenant_id, agency_id=agency["agency_id"], contract=contract,
+            net_to_hotel=net_to_hotel, booking_currency=listing.get("currency", "TRY"),
+        )
 
         guest_id = _uuid()
         from security.guest_write import encrypt_guest_insert
@@ -2265,6 +2261,9 @@ async def agency_create_reservation(
             "agency_commission_rate": commission_pct,
             "agency_commission_amount": commission_amount,
             "net_to_hotel": net_to_hotel,
+            "credit_exposure_amount": net_to_hotel,
+            "credit_exposure_currency": listing.get("currency", "TRY"),
+            "credit_exposure_basis": "net_to_hotel_after_agency_commission_v1",
             "confirmation_code": confirmation_code,
             "external_reference": data.external_reference,
             "special_requests": data.special_requests,
@@ -2695,7 +2694,8 @@ async def _decide_marketplace_modification_locked(proposal_id, data, current_use
             )
             financials = _marketplace_financials(pricing["total_price"], commission_pct, fee_pct)
             await _check_agency_credit(tenant_id=tenant_id, agency_id=proposal["agency_id"],
-                contract=contract, net_to_hotel=financials["net_to_hotel"], exclude_booking_id=booking["id"])
+                contract=contract, net_to_hotel=financials["net_to_hotel"],
+                booking_currency=booking.get("currency", "TRY"), exclude_booking_id=booking["id"])
             try:
                 await assign_room_atomic(
                     tenant_id=tenant_id,

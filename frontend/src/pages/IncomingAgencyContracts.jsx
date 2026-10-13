@@ -181,6 +181,8 @@ const IncomingAgencyContracts = ({ user, tenant, onLogout }) => {
   const [rejectDlg, setRejectDlg] = useState(null);
   const [terminateDlg, setTerminateDlg] = useState(null);
   const [commissionOverride, setCommissionOverride] = useState('');
+  const [creditLimit, setCreditLimit] = useState('');
+  const [creditCurrency, setCreditCurrency] = useState('TRY');
   const [approveNotes, setApproveNotes] = useState('');
   const [rejectReason, setRejectReason] = useState('');
   const [terminateReason, setTerminateReason] = useState('');
@@ -240,6 +242,8 @@ const IncomingAgencyContracts = ({ user, tenant, onLogout }) => {
   const openApprove = (c) => {
     setApproveDlg(c);
     setCommissionOverride(String(c.commission_pct ?? ''));
+    setCreditLimit('');
+    setCreditCurrency(c.currency || 'TRY');
     setApproveNotes('');
   };
 
@@ -252,6 +256,16 @@ const IncomingAgencyContracts = ({ user, tenant, onLogout }) => {
         notes: approveNotes,
         commission_pct_override: !isNaN(override) && override !== approveDlg.commission_pct ? override : null,
       };
+      if (creditLimit.trim() !== '') {
+        const limit = Number(creditLimit);
+        const currency = creditCurrency.trim().toUpperCase();
+        if (!Number.isFinite(limit) || limit < 0 || !/^[A-Z]{3}$/.test(currency)) {
+          toast.error('Kredi limiti için geçerli tutar ve üç harfli para birimi girin');
+          return;
+        }
+        body.credit_limit = limit;
+        body.credit_currency = currency;
+      }
       await axios.post(`/marketplace/incoming-requests/${approveDlg.id}/approve`, body);
       toast.success('Sözleşme onaylandı — acente artık otelinize rezervasyon yapabilir');
       setApproveDlg(null);
@@ -502,6 +516,19 @@ const IncomingAgencyContracts = ({ user, tenant, onLogout }) => {
                 Acentenin teklif ettiği oranın üzerine yazabilirsiniz; aynı bırakırsanız teklif kabul edilir.
               </p>
             </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Kredi limiti (opsiyonel)</Label>
+                <Input type="number" min="0" step="0.01" value={creditLimit}
+                       onChange={(e) => setCreditLimit(e.target.value)} placeholder="Sınırsız" />
+              </div>
+              <div>
+                <Label>Kredi para birimi</Label>
+                <Input maxLength={3} value={creditCurrency}
+                       onChange={(e) => setCreditCurrency(e.target.value.toUpperCase())} placeholder="TRY" />
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground -mt-2">Limit, yalnızca net otel alacağıyla ve bu para birimindeki açık borçlarla karşılaştırılır. Kur dönüşümü otomatik yapılmaz.</p>
             <div>
               <Label>Not (opsiyonel)</Label>
               <Textarea
