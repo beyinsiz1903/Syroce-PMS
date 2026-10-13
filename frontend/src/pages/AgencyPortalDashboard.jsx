@@ -446,11 +446,13 @@ const AgencyPortalDashboard = () => {
     if (!checkOut) return;
     const roomType = window.prompt('İstenen oda tipi', reservation.room_type || '');
     if (!roomType) return;
+    const ratePlan = window.prompt('Fiyat planı kodu (arama sonucundaki RO, BB vb.)', reservation.rate_plan_code || '');
+    if (!ratePlan?.trim()) return toast.error('Fiyat planı seçilmelidir.');
     const reason = window.prompt('Değişiklik gerekçesi (en az 5 karakter)', 'Misafir talebi');
     if (!reason || reason.trim().length < 5) return toast.error('Değişiklik açıklaması en az 5 karakter olmalıdır.');
     try {
       await agencyApi.post(`/marketplace/v1/reservations/${encodeURIComponent(reservation.id)}/modification-proposals`, {
-        check_in: checkIn, check_out: checkOut, room_type: roomType.trim(), reason: reason.trim(),
+        check_in: checkIn, check_out: checkOut, room_type: roomType.trim(), rate_plan_code: ratePlan.trim(), reason: reason.trim(),
       });
       toast.success('Değişiklik talebi otele iletildi. Onay verilene kadar mevcut rezervasyon korunur.');
       loadReservations();

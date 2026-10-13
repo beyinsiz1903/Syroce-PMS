@@ -860,6 +860,7 @@ async def assign_room_atomic(
     check_in: str,
     check_out: str,
     correlation_id: str | None = None,
+    release_obsolete: bool = True,
 ) -> dict[str, Any]:
     """Atomically (re)assign a physical room to an EXISTING booking.
 
@@ -972,6 +973,11 @@ async def assign_room_atomic(
                 conflict_type=conflict_type,
                 conflicting_nights=[night],
             )
+
+    # Agency edits retain the original protection until their booking write
+    # succeeds; an uncertain write must retain both sets for reconciliation.
+    if not release_obsolete:
+        return {"success": True, "nights_locked": nights, "room_id": room_id}
 
     # Step 3 — release obsolete locks: any previous room, plus nights on the
     # same room that no longer belong to the edited stay window.
