@@ -770,7 +770,8 @@ async def _get_listing_or_404(tenant_id: str) -> dict:
 
 
 async def _marketplace_stay_price(
-    *, tenant_id: str, agency_id: str, room_type: str, check_in: str, check_out: str, fallback_rate: float
+    *, tenant_id: str, agency_id: str, room_type: str, check_in: str, check_out: str, fallback_rate: float,
+    rate_plan_code: str | None = None,
 ) -> dict:
     """Return the exact sellable nightly rates shared with this agency.
 
@@ -786,12 +787,29 @@ async def _marketplace_stay_price(
     if not base_rows:
         base_rows = await db.rate_calendar.find(query, {"_id": 0}).to_list(max(len(dates) * 8, 32))
 
+    plans = {str(row.get("rate_plan_code") or "LEGACY") for row in agency_rows + base_rows}
+    if rate_plan_code is None:
+        if len(plans) > 1:
+            return {"sellable": False, "nightly_rates": [], "total_price": 0.0, "reason": "rate_plan_required"}
+        rate_plan_code = next(iter(plans), "BASE")
+    if plans and rate_plan_code not in plans or not plans and rate_plan_code != "BASE":
+        return {"sellable": False, "nightly_rates": [], "total_price": 0.0, "reason": "unknown_rate_plan"}
+    agency_rows = [row for row in agency_rows if str(row.get("rate_plan_code") or "LEGACY") == rate_plan_code]
+    base_rows = [row for row in base_rows if str(row.get("rate_plan_code") or "LEGACY") == rate_plan_code]
     agency_by_date = {row.get("date"): row for row in agency_rows}
     base_by_date = {row.get("date"): row for row in base_rows}
+    if len(agency_by_date) != len(agency_rows) or len(base_by_date) != len(base_rows):
+        return {"sellable": False, "nightly_rates": [], "total_price": 0.0, "reason": "duplicate_rate_plan_night"}
+    effective_rows = [agency_by_date.get(day) or base_by_date.get(day) or {} for day in dates]
+    for field in ("meal_plan", "cancellation_policy"):
+        if len({json.dumps(row.get(field), sort_keys=True) for row in effective_rows if row.get(field) is not None}) > 1:
+            return {"sellable": False, "nightly_rates": [], "total_price": 0.0, "reason": "inconsistent_product_terms"}
     nightly_rates: list[dict] = []
     shared_availability: list[int] = []
     for date in dates:
         row = agency_by_date.get(date) or base_by_date.get(date) or {}
+        if rate_plan_code != "BASE" and (not row or row.get("rate") is None):
+            return {"sellable": False, "nightly_rates": [], "total_price": 0.0, "reason": "missing_plan_night"}
         # Stay-through minimum: every occupied night must permit this stay.
         # Checkout is exclusive and must not impose a minimum on the stay.
         if len(dates) < int(row.get("min_stay") or 1):
@@ -809,6 +827,9 @@ async def _marketplace_stay_price(
             shared_availability.append(max(0, int(row["availability"])))
         nightly_rates.append({"date": date, "rate": round(float(rate or 0), 2)})
     result = {
+        "rate_plan_code": rate_plan_code,
+        "meal_plan": next((row["meal_plan"] for row in effective_rows if row.get("meal_plan")), None),
+        "cancellation_policy": next((row["cancellation_policy"] for row in effective_rows if row.get("cancellation_policy")), None),
         "sellable": True,
         "nightly_rates": nightly_rates,
         "total_price": round(sum(item["rate"] for item in nightly_rates), 2),
@@ -818,6 +839,23 @@ async def _marketplace_stay_price(
         # night. Physical PMS inventory remains the upper safety bound.
         result["shared_availability"] = min(shared_availability)
     return result
+
+
+async def _agency_rate_plans(tenant_id, agency_id, room_type, check_in, check_out):
+    query = {"tenant_id": tenant_id, "room_type_code": room_type, "date": {"$in": _date_range(check_in, check_out)}}
+    agency_rows = await db.agency_rate_calendar.find({**query, "agency_id": agency_id}, {"_id": 0}).to_list(5000)
+    base_rows = await db.hr_rate_calendar.find(query, {"_id": 0}).to_list(5000)
+    if not base_rows:
+        base_rows = await db.rate_calendar.find(query, {"_id": 0}).to_list(5000)
+    return sorted({str(row.get("rate_plan_code") or "LEGACY") for row in agency_rows + base_rows}) or ["BASE"]
+
+
+def _rate_product_snapshot(plan_code, room, contract, pricing=None):
+    """Immutable sale terms, sourced from the selected plan and approved contract."""
+    pricing = pricing or {}
+    meal = pricing.get("meal_plan") or (plan_code.upper() if plan_code.upper() in {"RO", "BB", "HB", "FB", "AI"} else (room.get("meal_plan") or room.get("board_type") or "unspecified"))
+    return {"rate_plan_code": plan_code, "meal_plan": meal,
+            "cancellation_policy": pricing.get("cancellation_policy") or contract.get("cancellation_policy") or {}}
 
 
 async def _marketplace_occupancy_price(
@@ -980,6 +1018,7 @@ class MarketplaceListingUpdate(BaseModel):
 
 
 class MarketplaceSearchRequest(BaseModel):
+    rate_plan_code: str | None = Field(default=None, min_length=1, max_length=160)
     check_in: str  # YYYY-MM-DD
     check_out: str  # YYYY-MM-DD
     adults: int = Field(default=2, ge=1, le=20)
@@ -1029,6 +1068,7 @@ def _normalized_tokens(values: list[object] | None) -> set[str]:
 class MarketplaceReservationCreate(BaseModel):
     tenant_id: str = Field(..., min_length=1, max_length=128)
     room_type: str = Field(..., min_length=1, max_length=160)
+    rate_plan_code: str | None = Field(default=None, min_length=1, max_length=160)
     check_in: str  # YYYY-MM-DD
     check_out: str  # YYYY-MM-DD
     guest_name: str = Field(..., min_length=2, max_length=160)
@@ -1640,9 +1680,6 @@ async def agency_search(
             listing_amenities = _normalized_tokens(listing.get("amenities"))
             requested_meals = _normalized_tokens(req.meal_plans)
             known_meals = {"ro", "bb", "hb", "fb", "ai"}
-            listing_meals = _normalized_tokens(listing.get("meal_plans")) | (
-                listing_amenities & known_meals
-            )
             room_amenities = set().union(*(
                 _normalized_tokens(room.get("amenities")) for room in rooms
             )) if rooms else set()
@@ -1652,8 +1689,8 @@ async def agency_search(
                 room_meals |= _normalized_tokens(room.get("amenities")) & known_meals
             if not requested_amenities.issubset(listing_amenities | room_amenities):
                 continue
-            if requested_meals and not requested_meals.intersection(listing_meals | room_meals):
-                continue
+            # Board filtering is applied to the selected rate product below,
+            # not to hotel-level amenities (a hotel may sell both RO and BB).
 
             room_types: dict[str, dict] = {}
             for r in rooms:
@@ -1672,8 +1709,6 @@ async def agency_search(
                     continue
                 current_room_meals = _normalized_tokens([r.get("meal_plan"), r.get("board_type")])
                 current_room_meals |= _normalized_tokens(r.get("amenities")) & known_meals
-                if requested_meals and not requested_meals.intersection(listing_meals | current_room_meals):
-                    continue
                 rt_data = room_types.setdefault(
                     rt,
                     {
@@ -1693,6 +1728,14 @@ async def agency_search(
                 rt_data["total_rooms"] += 1
                 rt_data["_room_ids"].append(r.get("id"))
 
+            # One offer per room type AND rate plan. Never overwrite by date alone.
+            products = {}
+            for rt_data in room_types.values():
+                for plan in await _agency_rate_plans(tenant_id, agency["agency_id"], rt_data["room_type"], req.check_in, req.check_out):
+                    if req.rate_plan_code and plan != req.rate_plan_code:
+                        continue
+                    products[(rt_data["room_type"], plan)] = {**rt_data, "rate_plan_code": plan}
+            room_types = products
             for rt_data in room_types.values():
                 booked = await db.bookings.count_documents(
                     {
@@ -1713,6 +1756,7 @@ async def agency_search(
                     check_in=req.check_in,
                     check_out=req.check_out,
                     fallback_rate=float(rt_data["base_price"] or 0),
+                    rate_plan_code=rt_data["rate_plan_code"],
                 )
                 pricing = await _marketplace_occupancy_price(
                     tenant_id=tenant_id,
@@ -1736,12 +1780,16 @@ async def agency_search(
             pricing = rt_data.pop("pricing")
             if rt_data["available_rooms"] <= 0 or not pricing["sellable"]:
                 continue
+            product = _rate_product_snapshot(rt_data["rate_plan_code"], rt_data, active_contracts[tenant_id], pricing)
+            if requested_meals and _filter_token(product["meal_plan"]) not in requested_meals:
+                continue
             total_price = pricing["total_price"]
             if req.max_price and total_price > req.max_price:
                 continue
             available.append(
                 {
                     **rt_data,
+                    **product,
                     "nights": nights,
                     "total_price": total_price,
                     "nightly_rates": pricing["nightly_rates"],
@@ -1928,6 +1976,8 @@ async def agency_create_reservation(
     from routers.agency_contracts import has_active_contract
 
     sysdb = get_system_db()
+    if not data.rate_plan_code:
+        raise HTTPException(422, "Arama sonucundaki rate_plan_code rezervasyonda zorunludur")
     if data.idempotency_key:
         existing = await sysdb.marketplace_bookings.find_one(
             {
@@ -2018,6 +2068,7 @@ async def agency_create_reservation(
             check_in=data.check_in,
             check_out=data.check_out,
             fallback_rate=float(available_room.get("base_price", 0) or 0),
+            rate_plan_code=data.rate_plan_code,
         )
         if not pricing["sellable"]:
             raise HTTPException(409, "Seçilen oda tipi bu tarihlerde acente satışına kapalı")
@@ -2082,6 +2133,7 @@ async def agency_create_reservation(
         confirmation_code = f"MKT-{booking_id[:8].upper()}"
         room_snapshot = _reservation_room_snapshot(available_room)
         agency_snapshot = _reservation_agency_snapshot(agency)
+        product_snapshot = _rate_product_snapshot(data.rate_plan_code, available_room, contract, pricing)
         booking_doc = {
             "id": booking_id,
             "tenant_id": data.tenant_id,
@@ -2097,7 +2149,7 @@ async def agency_create_reservation(
             "status": "confirmed",
             "payment_status": "pending",
             "payment_terms": contract.get("payment_terms", "on_arrival"),
-            "cancellation_policy": contract.get("cancellation_policy") or {},
+            **product_snapshot,
             "total_amount": total,
             "currency": listing.get("currency", "TRY"),
             "nightly_rates": pricing["nightly_rates"],
@@ -2196,6 +2248,7 @@ async def agency_create_reservation(
 
     # Cross-tenant ledger (ileride mutabakat için) — sysdb tenant-bağımsız
     ledger_doc = {
+            **product_snapshot,
             "id": booking_id,
             **agency_snapshot,
             "tenant_id": data.tenant_id,
@@ -2218,7 +2271,7 @@ async def agency_create_reservation(
             "status": "confirmed",
             "payment_status": "pending",
             "payment_terms": contract.get("payment_terms", "on_arrival"),
-            "cancellation_policy": contract.get("cancellation_policy") or {},
+            "cancellation_policy": product_snapshot["cancellation_policy"],
             "created_at": _now_iso(),
         }
     try:
@@ -2257,6 +2310,7 @@ async def agency_create_reservation(
     return {
         "ok": True,
         "reservation": {
+            **product_snapshot,
             "id": booking_id,
             "confirmation_code": confirmation_code,
             "external_reference": data.external_reference,

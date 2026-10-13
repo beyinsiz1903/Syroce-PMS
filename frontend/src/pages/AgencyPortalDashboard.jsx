@@ -361,6 +361,7 @@ const AgencyPortalDashboard = () => {
           ...payload,
           tenant_id: selectedRoomType.tenant_id,
           room_type: selectedRoomType.room_type,
+          rate_plan_code: selectedRoomType.rate_plan_code,
           total_amount: bookingForm.total_amount,
           idempotency_key: bookingForm.idempotency_key,
         });
@@ -773,7 +774,7 @@ const AgencyPortalDashboard = () => {
                   <h3 className="text-sm font-semibold text-slate-800">{formatDate(availability.check_in)} – {formatDate(availability.check_out)}</h3>
                   <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">{availability.night_count} gece · {availability.adults + availability.children} misafir</span>
                 </div>
-                {availability.room_types.length === 0 ? <Card className="border-dashed"><CardContent className="py-10 text-center"><Search size={28} className="mx-auto mb-3 text-slate-300" /><div className="font-medium text-slate-700">Uygun tesis bulunamadı</div><p className="mt-1 text-sm text-slate-500">Tarihleri veya isteğe bağlı filtreleri değiştirerek yeniden arayabilirsiniz.</p></CardContent></Card> : availability.room_types.map(rt => <Card key={`${rt.tenant_id || 'hotel'}-${rt.room_type}`} className="overflow-hidden border-slate-200 bg-white shadow-sm transition-all hover:-translate-y-0.5 hover:border-emerald-200 hover:shadow-md" data-testid={`result-${rt.room_type}`}>
+                {availability.room_types.length === 0 ? <Card className="border-dashed"><CardContent className="py-10 text-center"><Search size={28} className="mx-auto mb-3 text-slate-300" /><div className="font-medium text-slate-700">Uygun tesis bulunamadı</div><p className="mt-1 text-sm text-slate-500">Tarihleri veya isteğe bağlı filtreleri değiştirerek yeniden arayabilirsiniz.</p></CardContent></Card> : availability.room_types.map(rt => <Card key={`${rt.tenant_id || 'hotel'}-${rt.room_type}-${rt.rate_plan_code || "legacy"}`} className="overflow-hidden border-slate-200 bg-white shadow-sm transition-all hover:-translate-y-0.5 hover:border-emerald-200 hover:shadow-md" data-testid={`result-${rt.room_type}-${rt.rate_plan_code || "legacy"}`}>
                       <CardContent className="py-4">
                         {portalMode === 'marketplace' && <div className="mb-3 flex flex-wrap items-center gap-2 border-b border-slate-100 pb-3"><Building2 size={15} className="text-emerald-600" /><span className="font-semibold text-slate-800">{rt.hotel_name}</span>{rt.hotel_city && <span className="text-xs text-slate-500 flex items-center gap-1"><MapPin size={11} />{rt.hotel_city}</span>}</div>}
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -793,14 +794,15 @@ const AgencyPortalDashboard = () => {
                           <div className="flex flex-wrap items-center justify-between sm:justify-end gap-3 sm:gap-4">
                             <div className="text-right">
                               <div className="text-lg font-bold text-slate-800">{formatMoney(rt.stay_total, rt.currency || availability.currency)}</div>
+                              <div className="text-xs">Plan: {rt.rate_plan_code || 'Eski sözleşme'} · Pansiyon: {rt.meal_plan || 'Belirtilmemiş'}</div>
                               <div className="text-[11px] text-slate-500">{availability.night_count} gece · Gecelik {formatMoney(rt.base_price, rt.currency || availability.currency)}</div>
-                              {rt.occupancy_pricing?.children_ages?.length > 0 && <div className="mt-1 text-[11px] text-violet-700" data-testid={`child-price-${rt.room_type}`}>
+                              {rt.occupancy_pricing?.children_ages?.length > 0 && <div className="mt-1 text-[11px] text-violet-700" data-testid={`child-price-${rt.room_type}-${rt.rate_plan_code || "legacy"}`}>
                                 Çocuk yaşları ({rt.occupancy_pricing.children_ages.join(', ')}) fiyata dahil
                                 {rt.occupancy_pricing.child_supplement_nightly > 0 ? ` · ${formatMoney(rt.occupancy_pricing.child_supplement_nightly, rt.currency || availability.currency)}/gece çocuk farkı` : ' · ücretsiz'}
                               </div>}
                               {rt.has_contract && <Badge variant="outline" className="mt-1 text-[10px] border-emerald-300 text-emerald-700">Acente sözleşme fiyatı</Badge>}
                             </div>
-                            <Button size="sm" onClick={() => openBookingForm(rt)} data-testid={`book-${rt.room_type}`} className="gap-1 shrink-0 bg-slate-900 hover:bg-slate-800">
+                            <Button size="sm" onClick={() => openBookingForm(rt)} data-testid={`book-${rt.room_type}-${rt.rate_plan_code || "legacy"}`} className="gap-1 shrink-0 bg-slate-900 hover:bg-slate-800">
                               <Plus size={14} /> Rezerve Et
                             </Button>
                           </div>
