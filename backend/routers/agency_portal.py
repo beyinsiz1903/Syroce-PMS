@@ -889,6 +889,21 @@ def _last_occupied_date(check_in: str, check_out: str | None) -> str:
     return (datetime.strptime(check_out, "%Y-%m-%d").date() - timedelta(days=1)).isoformat()
 
 
+def _active_stay_overlap_filter(check_in: str, check_out: str) -> dict:
+    """Mongo predicate for hotel nights in the half-open window [in, out).
+
+    Bookings retain their operational check-out hour (normally 11:00).  A
+    timestamp comparison against the new stay's midnight would incorrectly
+    count a same-day departure as occupied. Compare the stored date portion
+    instead, while retaining the requested checkout as the exclusive upper
+    boundary for arrivals.
+    """
+    return {
+        "check_in": {"$lt": check_out + "T00:00:00"},
+        "$expr": {"$gt": [{"$substrBytes": ["$check_out", 0, 10]}, check_in]},
+    }
+
+
 async def _get_b2b_price(
     db,
     tenant_id: str,
@@ -992,10 +1007,7 @@ async def agency_portal_availability(
                 "tenant_id": tenant_id,
                 "room_id": {"$in": rt_data["room_ids"]},
                 "status": {"$in": ["confirmed", "guaranteed", "checked_in", "pending"]},
-                # Hotel nights are [check_in, check_out): a departure date is
-                # immediately sellable for a new arrival.
-                "check_in": {"$lt": check_out + "T00:00:00"},
-                "check_out": {"$gt": check_in + "T00:00:00"},
+                **_active_stay_overlap_filter(check_in, check_out),
             }
         )
         rt_data["booked_rooms"] = booked_count
@@ -1011,8 +1023,7 @@ async def agency_portal_availability(
                         "agency_id": current_user.agency_id,
                         "room_id": {"$in": rt_data["room_ids"]},
                         "status": {"$in": ["confirmed", "guaranteed", "checked_in", "pending"]},
-                        "check_in": {"$lt": check_out + "T00:00:00"},
-                        "check_out": {"$gt": check_in + "T00:00:00"},
+                        **_active_stay_overlap_filter(check_in, check_out),
                     }
                 )
                 rt_data["available_rooms"] = min(public_available, max(0, allotment_count - agency_booked))
@@ -1083,8 +1094,7 @@ async def agency_portal_create_reservation(
                 "tenant_id": tenant_id,
                 "room_id": room["id"],
                 "status": {"$in": ["confirmed", "guaranteed", "checked_in", "pending"]},
-                "check_in": {"$lt": data.check_out + "T00:00:00"},
-                "check_out": {"$gt": data.check_in + "T00:00:00"},
+                **_active_stay_overlap_filter(data.check_in, data.check_out),
             }
         )
         if conflict == 0:
@@ -1105,8 +1115,7 @@ async def agency_portal_create_reservation(
                     "agency_id": agency_id,
                     "room_id": {"$in": [room["id"] for room in rooms]},
                     "status": {"$in": ["confirmed", "guaranteed", "checked_in", "pending"]},
-                    "check_in": {"$lt": data.check_out + "T00:00:00"},
-                    "check_out": {"$gt": data.check_in + "T00:00:00"},
+                    **_active_stay_overlap_filter(data.check_in, data.check_out),
                 }
             )
             if agency_booked >= allotment_count:
