@@ -236,6 +236,7 @@ class ContractPropose(BaseModel):
     valid_to: str  # YYYY-MM-DD
     currency: str = Field(default="TRY", pattern="^[A-Z]{3}$")
     allowed_room_types: list[str] = []
+    allow_base_rate_fallback: bool = False
     special_terms: str = ""
     # Agency v1 (ADR Karar 6) — PMS -> acente imzali webhook hedefi. Opsiyonel
     # ve additive (zero-downtime: mevcut sozlesmeler bu alan olmadan calismaya
@@ -332,6 +333,7 @@ async def contract_propose(
         "valid_to": data.valid_to,
         "currency": data.currency,
         "allowed_room_types": data.allowed_room_types,
+        "allow_base_rate_fallback": data.allow_base_rate_fallback,
         "special_terms": data.special_terms,
         # Agency v1 (ADR Karar 6) — PMS -> acente webhook hedefi (opsiyonel).
         "webhook_url": data.webhook_url,

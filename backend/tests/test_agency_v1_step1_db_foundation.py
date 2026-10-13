@@ -33,6 +33,11 @@ def test_webhook_url_optional_defaults_none():
     assert c.webhook_url is None
 
 
+def test_base_rate_fallback_is_an_explicit_contract_choice():
+    assert ContractPropose(**_valid_contract_payload()).allow_base_rate_fallback is False
+    assert ContractPropose(**_valid_contract_payload(allow_base_rate_fallback=True)).allow_base_rate_fallback is True
+
+
 def test_webhook_url_valid_https_accepted():
     c = ContractPropose(**_valid_contract_payload(
         webhook_url="https://acente.example.com/syroce/hook"))
