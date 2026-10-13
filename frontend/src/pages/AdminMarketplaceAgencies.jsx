@@ -39,7 +39,7 @@ export async function startAgencyPortalContext(agencyId, navigate = (path) => wi
   const { data } = await axios.post(`/marketplace/v1/admin/agencies/${agencyId}/portal-context`);
   localStorage.setItem('agency_token', data.token);
   localStorage.setItem('agency_portal_mode', 'marketplace');
-  sessionStorage.setItem('agency_admin_return_path', '/admin/marketplace/agencies');
+  sessionStorage.setItem('agency_admin_return_path', '/admin/agencies');
   navigate(data.portal_path || '/agency-portal');
   return data;
 }

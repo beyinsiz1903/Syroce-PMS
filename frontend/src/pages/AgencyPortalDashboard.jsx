@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { AGENCY_ADMIN_RETURN_PATH, agencyVoucherPath } from '@/utils/agencyPortalNavigation';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { Search, CalendarDays, Users, Bed, Plus, Loader2, Building2, LogOut, ClipboardList, Eye, Phone, Mail, MapPin, RefreshCw, ShieldCheck, Printer, XCircle, WalletCards, SlidersHorizontal, ChevronDown, Sparkles, Hotel, ArrowRight, BadgeCheck, Settings, Bell, Globe2, KeyRound, Save } from 'lucide-react';
@@ -171,7 +172,7 @@ const AgencyPortalDashboard = () => {
     }
   };
   const handleLogout = async () => {
-    const adminReturnPath = impersonation?.active ? (sessionStorage.getItem('agency_admin_return_path') || '/admin/marketplace/agencies') : null;
+    const adminReturnPath = impersonation?.active ? AGENCY_ADMIN_RETURN_PATH : null;
     if (impersonation?.active) {
       try {
         await agencyApi.post('/marketplace/v1/extranet/admin-context/exit');
@@ -450,7 +451,7 @@ const AgencyPortalDashboard = () => {
   };
   const printVoucher = async reservation => {
     try {
-      const { data } = await agencyApi.get(`/marketplace/v1/reservations/${encodeURIComponent(reservation.id)}/voucher.pdf`, { responseType: 'blob' });
+      const { data } = await agencyApi.get(agencyVoucherPath(portalMode, reservation.id), { responseType: 'blob' });
       const url = URL.createObjectURL(new Blob([data], { type: 'application/pdf' }));
       const popup = window.open(url, '_blank', 'noopener,noreferrer');
       if (!popup) {
@@ -471,7 +472,7 @@ const AgencyPortalDashboard = () => {
     if (!email || !voucherEmailTarget) return;
     setVoucherEmailLoading(true);
     try {
-      await agencyApi.post(`/marketplace/v1/reservations/${encodeURIComponent(voucherEmailTarget.id)}/voucher-email`, { email });
+      await agencyApi.post(agencyVoucherPath(portalMode, voucherEmailTarget.id, true), { email });
       toast.success('Rezervasyon belgesi e-posta ile gönderildi.');
       setVoucherEmailTarget(null);
       setVoucherEmail('');
@@ -1099,7 +1100,7 @@ const AgencyPortalDashboard = () => {
           <DialogHeader>
             <DialogTitle>Voucher'ı e-posta ile gönder</DialogTitle>
             <p className="text-sm text-slate-500">
-              {voucherEmailTarget?.confirmation_code || voucherEmailTarget?.id} rezervasyonunun voucher PDF'i belirtilen adrese gönderilir.
+              {voucherEmailTarget?.confirmation_code || voucherEmailTarget?.id} rezervasyonunun belgesi e-posta içeriğinde belirtilen adrese gönderilir. PDF için yazdır/indir düğmesini kullanın.
             </p>
           </DialogHeader>
           <div className="space-y-2 py-2">
