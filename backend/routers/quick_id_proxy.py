@@ -647,7 +647,15 @@ async def precheckin_create(
             if r.status_code >= 500:
                 raise HTTPException(status_code=503, detail="Servise ulaşılamıyor")
             raise HTTPException(status_code=r.status_code, detail=str(detail) or "Token oluşturulamadı")
-        return r.json()
+        result = r.json()
+        token_id = (result.get("token") or {}).get("token_id")
+        if token_id:
+            await raw_db.precheckin_consent_bindings.update_one(
+                {"_id": hashlib.sha256(token_id.encode()).hexdigest()},
+                {"$setOnInsert": {"tenant_id": current_user.tenant_id, "created_at": datetime.now(UTC)}},
+                upsert=True,
+            )
+        return result
     except httpx.RequestError as e:
         raise HTTPException(status_code=503, detail=f"Servise ulaşılamıyor: {e}")
 
@@ -655,6 +663,21 @@ async def precheckin_create(
 # Aşağıdaki iki endpoint **public** — JWT zorunlu DEĞİL.
 # Misafir kendi telefonundan QR linkiyle açtığında çalışır.
 public_router = APIRouter(prefix="/api/quick-id/precheckin", tags=["Quick-ID Public"])
+
+
+@public_router.post("/{token_id}/whatsapp-consent")
+async def precheckin_whatsapp_consent(request: Request, token_id: str = Path(..., pattern=TOKEN_PATTERN), payload: dict = Body(...)):
+    """Independent of OCR/KVKK. Tenant comes ONLY from the authenticated issuer."""
+    if payload.get("consent") is not True:
+        raise HTTPException(422, "Açık WhatsApp onayı gerekli")
+    await precheckin_info_public(request, token_id)  # validates active upstream token + rate limit
+    binding = await raw_db.precheckin_consent_bindings.find_one({"_id": hashlib.sha256(token_id.encode()).hexdigest()})
+    if not binding:
+        raise HTTPException(409, "WhatsApp izni için tesisten yeni ön giriş bağlantısı isteyin.")
+    from modules.messaging.form_consent import record_form_consent
+
+    await record_form_consent(raw_db, binding["tenant_id"], payload.get("phone"), source="precheckin_form", actor="guest-self-service")
+    return {"success": True}
 
 # In-memory rate limiter (IP+token bazlı). Multi-instance için Redis'e taşınabilir.
 import time
@@ -769,7 +792,10 @@ async def precheckin_info_public(request: Request, token_id: str = Path(..., pat
 
         _rl_record_attempt(bucket, success=True)
         logger.info(f"[DIAG] [{req_id}] QID final response status 200, total_duration={(_diag_time.time() - _t_start) * 1000:.2f}ms")
-        return r.json()
+        result = r.json()
+        binding = await raw_db.precheckin_consent_bindings.find_one({"_id": hashlib.sha256(token_id.encode()).hexdigest()})
+        result["whatsapp_consent_available"] = bool(binding)
+        return result
     except httpx.RequestError as e:
         up_dur = _diag_time.time() - t_upstream
         logger.info(f"[DIAG] [{req_id}] upstream exception: {e.__class__.__name__}, upstream_duration={up_dur * 1000:.2f}ms")

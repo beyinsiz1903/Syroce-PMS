@@ -4,7 +4,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator, model_validator
 
 from models.enums import (
     BookingStatus,
@@ -19,6 +19,8 @@ from models.enums import (
 
 
 class BookingCreate(BaseModel):
+    whatsapp_consent: StrictBool = False
+    whatsapp_consent_phone: str = ""
     guest_id: str
     room_id: str
     check_in: str

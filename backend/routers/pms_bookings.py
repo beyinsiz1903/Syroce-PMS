@@ -63,6 +63,7 @@ from models.schemas import (
     User,
     _ensure_hotel_context,
 )
+from modules.messaging.form_consent import WhatsAppFormConsent, record_booking_consent
 from modules.reservations.services.create_reservation_service import CreateReservationService
 from modules.reservations.services.reservation_read_service import ReservationReadService
 from modules.reservations.services.room_swap_service import RoomSwapError, room_swap_service
@@ -173,7 +174,7 @@ class RoomSwapRequest(BaseModel):
     reason: str = Field(..., min_length=2, max_length=500)
 
 
-class QuickBookingCreate(BaseModel):
+class QuickBookingCreate(WhatsAppFormConsent):
     guest_name: str = Field(..., min_length=1, max_length=200)
     room_id: str
     check_in: str
@@ -188,7 +189,7 @@ class QuickBookingCreate(BaseModel):
     daily_rate: float | None = Field(None, ge=0, le=1e12)
 
 
-class MultiRoomBookingCreate(BaseModel):
+class MultiRoomBookingCreate(WhatsAppFormConsent):
     guest_id: str | None = None
     guest: GuestCreate | None = None
     arrival_date: str
@@ -301,6 +302,8 @@ async def create_quick_booking(
         raise HTTPException(status_code=400, detail="En az bir misafir gerekli")
 
     booking_data = BookingCreate(
+        whatsapp_consent=data.whatsapp_consent,
+        whatsapp_consent_phone=data.whatsapp_consent_phone,
         guest_id=guest_id,
         room_id=data.room_id,
         check_in=data.check_in,
@@ -983,6 +986,7 @@ async def create_multi_room_booking(
     if missing:
         raise HTTPException(status_code=404, detail=f"Oda(lar) bulunamadi: {missing[:5]}")
 
+    await record_booking_consent(tenant_db, current_user.tenant_id, guest_id, current_user.id, payload.whatsapp_consent, payload.whatsapp_consent_phone)
     group_id = deterministic_group or str(uuid.uuid4())
     created_bookings: list[Booking] = []
 
