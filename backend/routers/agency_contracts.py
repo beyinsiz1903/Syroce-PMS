@@ -22,7 +22,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
@@ -465,7 +465,15 @@ def _require_hotel_user(user: User) -> str:
 
 class ApproveRequest(BaseModel):
     commission_pct_override: float | None = Field(default=None, ge=0, le=100)
+    credit_limit: float | None = Field(default=None, ge=0)
+    credit_currency: str | None = Field(default=None, pattern="^[A-Z]{3}$")
     notes: str = ""
+
+    @model_validator(mode="after")
+    def _credit_currency_is_explicit(self):
+        if self.credit_limit is not None and not self.credit_currency:
+            raise ValueError("Kredi limiti için kredi para birimi zorunludur")
+        return self
 
 
 class RejectRequest(BaseModel):
@@ -567,7 +575,7 @@ async def hotel_approve_request(
     sysdb = get_system_db()
 
     # Önce mevcut komisyonu öğren (override yoksa korumak için)
-    existing = await sysdb.agency_contracts.find_one({"id": contract_id, "tenant_id": tenant_id}, {"_id": 0, "commission_pct": 1, "status": 1})
+    existing = await sysdb.agency_contracts.find_one({"id": contract_id, "tenant_id": tenant_id}, {"_id": 0, "commission_pct": 1, "status": 1, "currency": 1})
     if not existing:
         raise HTTPException(404, "Sözleşme bulunamadı")
     if existing["status"] != "pending":
@@ -583,6 +591,11 @@ async def hotel_approve_request(
                 "status": "approved",
                 "commission_pct": final_pct,
                 "hotel_approved_commission_pct": final_pct,
+                # A limit can be configured only by the hotel at approval
+                # time.  Persisting its currency makes later credit checks
+                # deterministic; there is deliberately no implicit FX path.
+                "credit_limit": data.credit_limit,
+                "credit_currency": data.credit_currency,
                 "decided_at": _now_iso(),
                 "decided_by": current_user.email,
                 "decision_notes": data.notes,
@@ -603,7 +616,12 @@ async def hotel_approve_request(
             "tenant_id": tenant_id,
             "event": "approved",
             "actor": current_user.email,
-            "payload": {"commission_pct": final_pct, "notes": data.notes},
+            "payload": {
+                "commission_pct": final_pct,
+                "credit_limit": data.credit_limit,
+                "credit_currency": data.credit_currency,
+                "notes": data.notes,
+            },
             "created_at": _now_iso(),
         }
     )

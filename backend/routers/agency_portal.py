@@ -32,6 +32,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 
 from core.agency_completion import pending_completion, public_booking
+from core.agency_credit import assert_credit_capacity
 from core.atomic_booking import BookingConflictError, create_booking_atomic
 from core.database import db
 from core.security import (
@@ -147,6 +148,7 @@ class AgencyContractCreate(BaseModel):
     contract_type: Literal["net_rate", "commission"]
     commission_rate: float | None = Field(None, ge=0, le=100)
     credit_limit: float | None = Field(None, ge=0)
+    credit_currency: str | None = Field(None, pattern="^[A-Z]{3}$")
     season_rates: list[SeasonRate] | None = None
 
     @model_validator(mode="after")
@@ -156,6 +158,8 @@ class AgencyContractCreate(BaseModel):
             raise ValueError("Komisyon sözleşmesinde komisyon oranı zorunludur")
         if self.contract_type == "net_rate" and not self.season_rates:
             raise ValueError("Net fiyat sözleşmesinde en az bir sezon fiyatı zorunludur")
+        if self.credit_limit is not None and not self.credit_currency:
+            raise ValueError("Kredi limiti için kredi para birimi zorunludur")
         for rate in self.season_rates or []:
             if rate.season_start < self.start_date or rate.season_end > self.end_date:
                 raise ValueError("Sezon fiyatları sözleşme tarihleri içinde olmalıdır")
@@ -613,6 +617,7 @@ async def create_agency_contract(agency_id: str, data: AgencyContractCreate, cur
         "contract_type": data.contract_type,
         "commission_rate": data.commission_rate,
         "credit_limit": data.credit_limit,
+        "credit_currency": data.credit_currency,
         "season_rates": [r.model_dump() for r in data.season_rates] if data.season_rates else [],
         "created_at": datetime.now(UTC).isoformat(),
         "created_by": current_user.id,
@@ -1185,17 +1190,17 @@ async def agency_portal_create_reservation(
     tenant = await db.tenants.find_one({"id": tenant_id}, {"_id": 0, "currency": 1})
     currency = (tenant or {}).get("currency") or "TRY"
 
-    # Credit Limit Check
+    # Credit exposure is always the hotel's net receivable after agency commission.
+    net_to_hotel = round(total - commission_amount, 2)
     if agency_id and contract:
-        if contract.get("credit_limit") is not None:
-            debts = await db.bookings.aggregate([
-                {"$match": {"tenant_id": tenant_id, "agency_id": agency_id,
-                            "status": {"$ne": "cancelled"}, "payment_status": {"$ne": "paid"}}},
-                {"$group": {"_id": None, "amount": {"$sum": {"$ifNull": ["$net_to_hotel", "$total_amount"]}}}},
-            ]).to_list(1)
-            current_debt = float(debts[0]["amount"]) if debts else 0.0
-            if current_debt + total > contract["credit_limit"]:
-                raise HTTPException(status_code=402, detail="Cari limit (Credit limit) aşıldı")
+        await assert_credit_capacity(
+            db,
+            tenant_id=tenant_id,
+            agency_id=agency_id,
+            contract=contract,
+            booking_currency=currency,
+            new_net_exposure=net_to_hotel,
+        )
 
     booking_doc = {
         "agency_completion": pending_completion('hotel'),
@@ -1224,6 +1229,10 @@ async def agency_portal_create_reservation(
         "agency_name": agency_name,
         "agency_commission_rate": commission_rate,
         "agency_commission_amount": commission_amount,
+        "net_to_hotel": net_to_hotel,
+        "credit_exposure_amount": net_to_hotel,
+        "credit_exposure_currency": currency,
+        "credit_exposure_basis": "net_to_hotel_after_agency_commission_v1",
         "agency_user_id": current_user.id,
         "confirmation_code": confirmation_code,
         "special_requests": data.special_requests,
