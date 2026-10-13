@@ -17,6 +17,7 @@ import {
 
 import { confirmDialog } from '@/lib/dialogs';
 import { useTranslation } from 'react-i18next';
+import AgencyRatePolicy from '@/components/agency/AgencyRatePolicy';
 
 const PAGE_SIZE = 20;
 
@@ -437,6 +438,7 @@ const AgencyManagement = ({ user, tenant, onLogout }) => {
 
               {expandedAgency === agency.id && (
                 <div className="border-t bg-slate-50 px-5 py-4 space-y-4">
+                  <AgencyRatePolicy agencyId={agency.id} />
                   {/* Agency details */}
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
                     <div><span className="text-slate-400">E-posta:</span> <span className="text-slate-700">{agency.contact_email || '-'}</span></div>

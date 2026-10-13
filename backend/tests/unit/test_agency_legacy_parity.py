@@ -110,3 +110,53 @@ async def test_legacy_availability_uses_the_same_base_rate_contract_option_as_bo
                                                        SimpleNamespace(tenant_id='t', agency_id='a'))
     assert response['room_types'][0]['rate_plan_code'] == 'BASE'
     assert response['room_types'][0]['stay_total'] == 1000
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('allowed', [True, False])
+async def test_empty_calendars_only_offer_base_when_contract_opts_in(monkeypatch, allowed):
+    from routers import marketplace_b2b as marketplace
+    def collection():
+        return SimpleNamespace(find=lambda *args: SimpleNamespace(to_list=AsyncMock(return_value=[])))
+    monkeypatch.setattr(marketplace, 'db', SimpleNamespace(agency_rate_calendar=collection(), hr_rate_calendar=collection(), rate_calendar=collection()))
+    plans = await marketplace._agency_rate_plans('t', 'a', 's', '2027-01-01', '2027-01-02', allow_base_rate_fallback=allowed)
+    result = await marketplace._marketplace_stay_price(tenant_id='t', agency_id='a', room_type='s', check_in='2027-01-01', check_out='2027-01-02', fallback_rate=1000, rate_plan_code='BASE', allow_base_rate_fallback=allowed)
+    assert plans == (['BASE'] if allowed else [])
+    assert result['sellable'] is allowed
+    if allowed:
+        assert result['total_price'] == 1000
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('allowed', [True, False])
+async def test_booking_passes_contract_policy_to_actual_pricer(monkeypatch, allowed):
+    from routers import marketplace_b2b as marketplace
+    from security import guest_write
+    def collection(rows):
+        return SimpleNamespace(find=lambda *args: SimpleNamespace(to_list=AsyncMock(return_value=rows)))
+    database = SimpleNamespace(rooms=collection([{'id': 'r', 'room_type': 's', 'base_price': 1000}]),
+        bookings=SimpleNamespace(count_documents=AsyncMock(return_value=0)),
+        agency_contracts=SimpleNamespace(find_one=AsyncMock(return_value={'allow_base_rate_fallback': allowed})))
+    monkeypatch.setattr(portal, 'db', database)
+    monkeypatch.setattr(portal, '_require_agency_user', lambda user: None)
+    monkeypatch.setattr(portal, '_active_agency_for', AsyncMock(return_value={'id': 'a'}))
+    monkeypatch.setattr(portal, '_get_b2b_allotment', AsyncMock(return_value=None))
+    monkeypatch.setattr(portal, '_get_b2b_price', AsyncMock(return_value=(1000, True)))
+    monkeypatch.setattr(guest_write, 'encrypt_guest_insert', lambda doc: doc)
+    pricer = AsyncMock(side_effect=RuntimeError('pricing boundary reached'))
+    monkeypatch.setattr(marketplace, '_marketplace_stay_price', pricer)
+    data = portal.AgencyReservationCreate(room_type_id='s', rate_plan_code='BASE', idempotency_key='attempt',
+        check_in='2027-01-01', check_out='2027-01-02', guest_name='Test Guest')
+    with pytest.raises(RuntimeError, match='pricing boundary reached'):
+        await portal.agency_portal_create_reservation(data, SimpleNamespace(tenant_id='t', agency_id='a'))
+    assert pricer.call_args.kwargs['allow_base_rate_fallback'] is allowed
+
+
+@pytest.mark.asyncio
+async def test_contract_policy_update_scoped_to_hotel_and_agency(monkeypatch):
+    update = AsyncMock(return_value=SimpleNamespace(matched_count=1))
+    monkeypatch.setattr(portal, 'db', SimpleNamespace(agency_contracts=SimpleNamespace(update_one=update)))
+    monkeypatch.setattr(portal, '_require_hotel_staff', lambda user: None)
+    await portal.update_agency_rate_policy('a', 'c', portal.AgencyRatePolicy(allow_base_rate_fallback=True), SimpleNamespace(tenant_id='t', id='staff'))
+    assert update.call_args.args[0] == {'id': 'c', 'agency_id': 'a', 'tenant_id': 't'}
+    assert update.call_args.args[1]['$set']['rate_policy_updated_by'] == 'staff'

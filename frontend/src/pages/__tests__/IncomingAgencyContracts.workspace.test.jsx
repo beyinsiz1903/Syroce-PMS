@@ -66,7 +66,7 @@ describe('IncomingAgencyContracts workspace', () => {
     toastSuccess.mockReset();
   });
 
-  it('explains its B2B scope and renders a pending contract with working approval', async () => {
+  it.each([false, true])('approves with explicit base-price policy %s', async (allowed) => {
     apiGet.mockResolvedValue({
       data: {
         contracts: [pendingContract],
@@ -84,12 +84,15 @@ describe('IncomingAgencyContracts workspace', () => {
     expect(screen.getByTestId('agency-contract-summary')).toHaveTextContent(/Karar bekleyen\s*1/);
 
     await user.click(screen.getByTestId('approve-btn'));
+    const policy = screen.getByRole('checkbox', { name: /Paylaşılmış fiyat yoksa/ });
+    expect(policy).not.toBeChecked();
+    if (allowed) await user.click(policy);
     await user.click(screen.getByTestId('confirm-approve'));
 
     await waitFor(() => {
       expect(apiPost).toHaveBeenCalledWith(
         '/marketplace/incoming-requests/contract-1/approve',
-        { notes: '', commission_pct_override: null },
+        { notes: '', commission_pct_override: null, allow_base_rate_fallback: allowed },
       );
     });
     expect(toastSuccess).toHaveBeenCalled();
