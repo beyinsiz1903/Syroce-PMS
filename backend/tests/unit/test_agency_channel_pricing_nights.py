@@ -41,6 +41,7 @@ def test_calendar_nights_total_and_commission(relative_path, function_name, arri
         "ci_date": datetime.fromisoformat(arrival).date(),
         "co_date": datetime.fromisoformat(departure).date(),
         "rooms": [{"base_price": 1500}],
+        "pricing": {"total_price": nights * 1500},
         "commission_rate": 10, "commission_pct": 10,
     }
     exec(compile(ast.Module(body=expressions, type_ignores=[]), str(source), "exec"), scope)

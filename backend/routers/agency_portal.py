@@ -182,6 +182,8 @@ class AgencyLoginRequest(BaseModel):
 
 class AgencyReservationCreate(BaseModel):
     room_type_id: str
+    rate_plan_code: str = Field(..., min_length=1, max_length=120)
+    idempotency_key: str = Field(..., min_length=1, max_length=120)
     check_in: str  # YYYY-MM-DD
     check_out: str  # YYYY-MM-DD
     guest_name: str = Field(..., min_length=2, max_length=160)
@@ -1026,12 +1028,28 @@ async def agency_portal_availability(
         rt_data["stay_total"] = round(float(rt_data["base_price"]) * nights, 2)
 
     tenant = await db.tenants.find_one({"id": tenant_id}, {"_id": 0, "currency": 1})
-    results = [v for v in room_types.values() if v["available_rooms"] > 0 and int(v.get("capacity") or 0) >= party_size]
+    from routers.marketplace_b2b import _agency_rate_plans, _marketplace_stay_price, _rate_product_snapshot
+
+    results = []
+    for rt_name, offer in room_types.items():
+        if offer["available_rooms"] <= 0:
+            continue
+        plans = await _agency_rate_plans(tenant_id, current_user.agency_id, rt_name, check_in, check_out)
+        for plan in plans:
+            pricing = await _marketplace_stay_price(
+                tenant_id=tenant_id, agency_id=current_user.agency_id, room_type=rt_name,
+                check_in=check_in, check_out=check_out, fallback_rate=offer["base_price"], rate_plan_code=plan,
+            )
+            if not pricing["sellable"]:
+                continue
+            results.append({**offer, **_rate_product_snapshot(plan, offer, {}, pricing),
+                            "stay_total": pricing["total_price"],
+                            "base_price": round(pricing["total_price"] / nights, 2),
+                            "available_rooms": min(offer["available_rooms"], pricing.get("shared_availability", offer["available_rooms"]))})
     return {"check_in": check_in, "check_out": check_out, "night_count": nights, "adults": adults,
             "children": children, "currency": (tenant or {}).get("currency") or "TRY", "room_types": results}
 
 
-@router.post("/agency-portal/reservations")
 async def agency_portal_create_reservation(
     data: AgencyReservationCreate,
     current_user: User = Depends(get_current_user),
@@ -1134,7 +1152,22 @@ async def agency_portal_create_reservation(
         if has_contract:
             # Masked assignment to prevent breaking brittle AST parsers looking for "total ="
             [_, total] = [None, b2b_price * nights]
-    total = round(float(total), 2)
+    from routers.marketplace_b2b import _marketplace_stay_price, _rate_product_snapshot
+    from shared_kernel.idempotency import build_request_hash
+
+    pricing = await _marketplace_stay_price(
+        tenant_id=tenant_id, agency_id=agency_id, room_type=data.room_type_id,
+        check_in=data.check_in, check_out=data.check_out, fallback_rate=float(total) / nights,
+        rate_plan_code=data.rate_plan_code,
+    )
+    if not pricing["sellable"]:
+        raise HTTPException(409, detail="Seçilen fiyat planı bu tarihlerde satılamıyor; yeniden arayın")
+    total = round(float(pricing["total_price"]), 2)
+    contract = await db.agency_contracts.find_one({
+        "agency_id": agency_id, "tenant_id": tenant_id, "is_active": True,
+        "start_date": {"$lte": data.check_in}, "end_date": {"$gte": _last_occupied_date(data.check_in, data.check_out)},
+    })
+    product = _rate_product_snapshot(data.rate_plan_code, available_room, contract or {}, pricing)
     if total <= 0:
         raise HTTPException(status_code=409, detail="Bu oda tipi için geçerli satış fiyatı tanımlı değil")
 
@@ -1143,15 +1176,21 @@ async def agency_portal_create_reservation(
     currency = (tenant or {}).get("currency") or "TRY"
 
     # Credit Limit Check
-    if getattr(current_user, "agency_id", None) and has_contract:
-        contract = await db.agency_contracts.find_one({"agency_id": current_user.agency_id, "tenant_id": current_user.tenant_id, "is_active": True})
-        if contract and contract.get("credit_limit"):
-            agency_bookings = await db.bookings.find({"tenant_id": current_user.tenant_id, "agency_id": current_user.agency_id, "status": {"$in": ["confirmed", "checked_in"]}}).to_list(1000)
-            current_debt = sum([b.get("total_amount", 0) for b in agency_bookings])
+    if agency_id and contract:
+        if contract.get("credit_limit") is not None:
+            debts = await db.bookings.aggregate([
+                {"$match": {"tenant_id": tenant_id, "agency_id": agency_id,
+                            "status": {"$ne": "cancelled"}, "payment_status": {"$ne": "paid"}}},
+                {"$group": {"_id": None, "amount": {"$sum": {"$ifNull": ["$net_to_hotel", "$total_amount"]}}}},
+            ]).to_list(1)
+            current_debt = float(debts[0]["amount"]) if debts else 0.0
             if current_debt + total > contract["credit_limit"]:
                 raise HTTPException(status_code=402, detail="Cari limit (Credit limit) aşıldı")
 
     booking_doc = {
+        **product,
+        "agency_idempotency_key": data.idempotency_key,
+        "agency_request_hash": build_request_hash(data.model_dump()),
         "id": booking_id,
         "tenant_id": tenant_id,
         "guest_id": guest_id,
@@ -1291,6 +1330,28 @@ async def agency_portal_create_reservation(
         "booking": booking_doc,
         "message": f"Rezervasyon olusturuldu: {confirmation_code}",
     }
+
+
+@router.post("/agency-portal/reservations")
+async def agency_portal_create_reservation_endpoint(
+    data: AgencyReservationCreate, current_user: User = Depends(get_current_user),
+):
+    """Create a legacy portal reservation under the same atomic guard as B2B."""
+    from core.agency_sales_guard import agency_sale_guard, durable_agency_replay
+    from core.tenant_db import get_system_db
+    from shared_kernel.idempotency import build_request_hash
+
+    _require_agency_user(current_user)
+    await _active_agency_for(current_user)
+    system_db = get_system_db()
+    async with agency_sale_guard(system_db, current_user.tenant_id, current_user.agency_id):
+        replay = await durable_agency_replay(
+            system_db, current_user.tenant_id, current_user.agency_id,
+            data.idempotency_key, build_request_hash(data.model_dump()),
+        )
+        if replay is not None:
+            return replay
+        return await agency_portal_create_reservation(data, current_user)
 
 
 class PortalVoucherEmailRequest(BaseModel):

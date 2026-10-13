@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import axios from 'axios';
+import WhatsAppConsent from '@/components/pms/WhatsAppConsent';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -32,6 +33,8 @@ export default function PreCheckinPage() {
   const [info, setInfo] = useState(null);
   const [loadErr, setLoadErr] = useState(null);
   const [consent, setConsent] = useState(false);
+  const [whatsappConsent, setWhatsappConsent] = useState(false);
+  const [phone, setPhone] = useState('');
   const [file, setFile] = useState(null);
   const [preview, setPreview] = useState(null);
   const [scanning, setScanning] = useState(false);
@@ -39,10 +42,13 @@ export default function PreCheckinPage() {
 
   useEffect(() => {
     if (!token) return;
+    let active = true;
+    setInfo(null); setLoadErr(null); setConsent(false); setWhatsappConsent(false); setPhone(''); setDone(null);
     axios.get(`/quick-id/precheckin/${token}/info`)
-      .then(r => setInfo(r.data))
-      .catch(e => setLoadErr(e?.response?.data?.detail || 'QR kodu geçersiz veya süresi dolmuş'));
-  }, []);
+      .then(r => { if (active) setInfo(r.data); })
+      .catch(e => { if (active) setLoadErr(e?.response?.data?.detail || 'QR kodu geçersiz veya süresi dolmuş'); });
+    return () => { active = false; };
+  }, [token]);
 
   const handleFile = (f) => {
     if (!f) return;
@@ -57,6 +63,9 @@ export default function PreCheckinPage() {
     setScanning(true);
     try {
       const b64 = await fileToBase64(file);
+      if (whatsappConsent) {
+        await axios.post(`/quick-id/precheckin/${token}/whatsapp-consent`, { consent: true, phone });
+      }
       const r = await axios.post(`/quick-id/precheckin/${token}/scan`, {
         image_base64: b64,
         kvkk_consent: true,
@@ -162,6 +171,11 @@ export default function PreCheckinPage() {
               </span>
             </label>
 
+            {info.whatsapp_consent_available ? <><label className="block text-sm">WhatsApp telefonu (isteğe bağlı, ülke koduyla)
+              <input type="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="+905xxxxxxxxx" className="w-full border rounded p-2" />
+            </label>
+            <WhatsAppConsent phone={phone} identity={token} value={whatsappConsent} onChange={setWhatsappConsent} selfService />
+            </> : <p className="text-xs text-slate-500">Bu bağlantıda WhatsApp izni alınamıyor. İzin vermek isterseniz tesisten yeni ön giriş bağlantısı isteyin. Ön girişe devam edebilirsiniz.</p>}
             <Button onClick={submit} disabled={scanning || !file || !consent} className="w-full bg-indigo-600 hover:bg-indigo-700">
               {scanning ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> {t('cm.pages_PreCheckinPage.gonderiliyor')}</> : <><CheckCircle2 className="w-4 h-4 mr-2" /> {t('cm.pages_PreCheckinPage.gonder')}</>}
             </Button>

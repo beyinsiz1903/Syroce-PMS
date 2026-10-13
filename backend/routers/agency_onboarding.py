@@ -6,7 +6,7 @@ import secrets
 import uuid
 from datetime import UTC, date, datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, EmailStr, Field
 from pymongo.errors import DuplicateKeyError
 
@@ -33,6 +33,80 @@ def digest(token):
     return hashlib.sha256(token.encode()).hexdigest()
 
 
+class RecoverRequest(BaseModel):
+    email: EmailStr
+
+
+def recovery_scope():
+    return {"is_active": {"$ne": False}, "agency_id": {"$exists": True, "$nin": [None, ""]},
+            "onboarding_status": {"$ne": "invited"},
+            "$or": [{"role": {"$in": ["marketplace_agent", "agency_admin", "agency_agent"]}},
+                    {"roles": {"$in": ["marketplace_agent", "agency_admin", "agency_agent"]}}]}
+
+
+async def send_recovery(email):
+    from core.email import _frontend_base_url, send_email
+
+    try:
+        database = get_system_db()
+        user = await database.users.find_one({"$and": [build_user_email_query(email), recovery_scope()]})
+        if not user:
+            return
+        token = secrets.token_urlsafe(32)
+        now = datetime.now(UTC)
+        result = await database.users.update_one({"id": user["id"], **recovery_scope()}, {"$set": {
+            "agency_reset_hash": digest(token), "agency_reset_expires": now + timedelta(minutes=30),
+        }})
+        if not result.modified_count:
+            return
+        link = f"{_frontend_base_url().rstrip('/')}/agency-recover#token={token}"
+        delivery = await send_email(email, "Syroce — Acente şifrenizi yenileyin",
+                                   f'<p><a href="{html.escape(link, quote=True)}">Yeni şifre belirle</a></p>'
+                                   '<p>Bağlantı 30 dakika geçerlidir ve tek kullanımlıktır. Talep size ait değilse yok sayın.</p>',
+                                   sensitive=True)
+        await audit(database, user['agency_id'], 'portal_recovery_requested', user_id=user['id'],
+                    email_sent=bool(delivery.get('sent')))
+    except Exception:
+        logger.error("Agency recovery delivery failed")
+
+
+@router.post("/extranet/auth/recover")
+async def recover(data: RecoverRequest, request: Request, background_tasks: BackgroundTasks):
+    from security.auth_throttle import FORGOT_PW_EMAIL, FORGOT_PW_IP, client_ip, enforce, normalize_identity
+
+    email = str(data.email).strip().lower()
+    await enforce(FORGOT_PW_IP, f"ip:{client_ip(request)}", "sıfırlama isteği")
+    await enforce(FORGOT_PW_EMAIL, f"em:{normalize_identity(email)}", "sıfırlama isteği")
+    # Lookup and delivery both happen after the identical public response.
+    background_tasks.add_task(send_recovery, email)
+    return {"ok": True, "message": "Uygun bir acente hesabı varsa şifre yenileme bağlantısı gönderilecektir. Gelen kutunuzu ve spam klasörünü kontrol edin."}
+
+
+@router.post("/extranet/auth/reset")
+async def reset(data: AcceptRequest, request: Request):
+    from core.security import invalidate_user_doc_cache
+    from security.auth_throttle import RESET_TOKEN_IP, client_ip, enforce
+    from security.credential_guard import CredentialGuard
+
+    await enforce(RESET_TOKEN_IP, f"ip:{client_ip(request)}", "şifre yenileme")
+    if len(data.password.encode()) > 72 or not CredentialGuard.validate_password_strength(data.password)["is_strong"]:
+        raise HTTPException(422, "Şifre en az 12 karakter, büyük/küçük harf ve rakam içermeli; en fazla 72 bayt olmalıdır")
+    database = get_system_db()
+    now = datetime.now(UTC)
+    query = {**recovery_scope(), "agency_reset_hash": digest(data.token), "agency_reset_expires": {"$gt": now}}
+    user = await database.users.find_one(query)
+    if not user:
+        raise HTTPException(400, "Bağlantı geçersiz, kullanılmış veya süresi dolmuş. Yeni bağlantı isteyin.")
+    result = await database.users.update_one({**query, "id": user['id']}, {
+        "$set": {"hashed_password": hash_password(data.password), "password_reset_at": now.isoformat(),
+                 "tokens_invalid_before": now.timestamp(), "requires_password_change": False},
+        "$unset": {"agency_reset_hash": "", "agency_reset_expires": ""},
+    })
+    if not result.modified_count:
+        raise HTTPException(400, "Bağlantı kullanılmış veya yenilenmiş. Yeni bağlantı isteyin.")
+    invalidate_user_doc_cache(user['id'])
+    await audit(database, user['agency_id'], 'portal_password_reset', user_id=user['id'])
+    return {"ok": True, "login_path": "/acente-girisi"}
 async def audit(database, agency_id, action, **details):
     # An audit outage must not turn successful activation into an apparent failure.
     try:
