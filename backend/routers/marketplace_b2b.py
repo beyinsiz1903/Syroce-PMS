@@ -824,7 +824,17 @@ async def _marketplace_stay_price(
         if rate is None:
             rate = fallback_rate
         if date in agency_by_date and row.get("availability") is not None:
-            shared_availability.append(max(0, int(row["availability"])))
+            tomorrow = (datetime.fromisoformat(date) + timedelta(days=1)).date().isoformat()
+            used = await db.bookings.count_documents({
+                "tenant_id": tenant_id, "agency_id": agency_id, "room_type": room_type,
+                "$or": [{"rate_plan_code": rate_plan_code}, {"rate_plan_code": {"$exists": False}}],
+                "status": {"$in": ["confirmed", "guaranteed", "checked_in", "pending"]},
+                "check_in": {"$lt": tomorrow + "T00:00:00"}, "check_out": {"$gt": date + "T00:00:00"},
+            })
+            remaining = max(0, int(row["availability"]) - used)
+            if remaining == 0:
+                return {"sellable": False, "nightly_rates": [], "total_price": 0.0, "reason": "agency_allotment_exhausted"}
+            shared_availability.append(remaining)
         nightly_rates.append({"date": date, "rate": round(float(rate or 0), 2)})
     result = {
         "rate_plan_code": rate_plan_code,
@@ -2101,9 +2111,11 @@ async def agency_create_reservation(
         if credit_limit is not None:
             debt_pipeline = [
                 {"$match": {"agency_id": agency["agency_id"], "tenant_id": data.tenant_id, "status": {"$ne": "cancelled"}, "payment_status": {"$ne": "paid"}}},
-                {"$group": {"_id": None, "amount": {"$sum": "$net_to_hotel"}}},
+                {"$group": {"_id": None, "amount": {"$sum": {"$ifNull": ["$net_to_hotel", "$total_amount"]}}}},
             ]
-            debt_rows = await sysdb.marketplace_bookings.aggregate(debt_pipeline).to_list(1)
+            # Canonical PMS rows remain authoritative even if the ancillary
+            # marketplace ledger write failed after the booking committed.
+            debt_rows = await db.bookings.aggregate(debt_pipeline).to_list(1)
             current_debt = float(debt_rows[0].get("amount", 0)) if debt_rows else 0.0
             if current_debt + net_to_hotel > float(credit_limit):
                 raise HTTPException(409, "Acente kredi limiti bu rezervasyon için yetersiz")
@@ -2135,6 +2147,8 @@ async def agency_create_reservation(
         agency_snapshot = _reservation_agency_snapshot(agency)
         product_snapshot = _rate_product_snapshot(data.rate_plan_code, available_room, contract, pricing)
         booking_doc = {
+            "agency_idempotency_key": data.idempotency_key,
+            "agency_request_hash": build_request_hash(data.model_dump()),
             "id": booking_id,
             "tenant_id": data.tenant_id,
             "guest_id": guest_id,
@@ -2341,6 +2355,8 @@ async def agency_create_reservation_endpoint(
 ):
     """Create once even when the agency retries concurrently after a timeout."""
     sysdb = get_system_db()
+    if not data.idempotency_key:
+        raise HTTPException(422, "Rezervasyonda idempotency_key zorunludur")
     guard = None
     if data.idempotency_key:
         claim = await claim_idempotency(
@@ -2366,7 +2382,12 @@ async def agency_create_reservation_endpoint(
             raise HTTPException(409, "Bu işlem anahtarı farklı rezervasyon bilgileriyle kullanılmış")
         guard = claim["lock_id"]
     try:
-        result = await agency_create_reservation(data, background_tasks, agency)
+        from core.agency_sales_guard import agency_sale_guard, durable_agency_replay
+
+        async with agency_sale_guard(sysdb, data.tenant_id, agency["agency_id"]):
+            result = await durable_agency_replay(sysdb, data.tenant_id, agency["agency_id"], data.idempotency_key, build_request_hash(data.model_dump()))
+            if result is None:
+                result = await agency_create_reservation(data, background_tasks, agency)
         if guard:
             try:
                 await complete_idempotency(sysdb, lock_id=guard, response_body=result)
