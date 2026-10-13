@@ -107,8 +107,6 @@ async def reset(data: AcceptRequest, request: Request):
     invalidate_user_doc_cache(user['id'])
     await audit(database, user['agency_id'], 'portal_password_reset', user_id=user['id'])
     return {"ok": True, "login_path": "/acente-girisi"}
-
-
 async def audit(database, agency_id, action, **details):
     # An audit outage must not turn successful activation into an apparent failure.
     try:
