@@ -142,6 +142,27 @@ async def test_recovery_response_is_generic_and_lookup_deferred(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_recovery_reissue_invalidates_old_token_and_expiry_is_enforced(setup, monkeypatch):
+    from security import auth_throttle
+    monkeypatch.setattr(auth_throttle, 'enforce', AsyncMock())
+    monkeypatch.setattr(auth_throttle, 'client_ip', lambda request: 'test')
+    database, mail, _ = setup
+    database.users.rows.append({'id': 'u', 'agency_id': 'a', 'role': 'marketplace_agent',
+                               'email': 'agent@example.com', 'is_active': True})
+    await onboarding.send_recovery('agent@example.com')
+    old = re.search(r'#token=([^"<]+)', mail.call_args.args[2]).group(1)
+    await onboarding.send_recovery('agent@example.com')
+    new = re.search(r'#token=([^"<]+)', mail.call_args.args[2]).group(1)
+    assert old != new
+    with pytest.raises(HTTPException):
+        await onboarding.reset(onboarding.AcceptRequest(token=old, password='SecureAgency2026!'), None)
+    database.users.rows[0]['agency_reset_expires'] = datetime.now(UTC) - timedelta(seconds=1)
+    with pytest.raises(HTTPException):
+        await onboarding.reset(onboarding.AcceptRequest(token=new, password='SecureAgency2026!'), None)
+    assert 'hashed_password' not in database.users.rows[0]
+
+
+@pytest.mark.asyncio
 async def test_invite_activation_replay_and_scope(setup):
     from core.security import verify_password
     database, mail, admin = setup
