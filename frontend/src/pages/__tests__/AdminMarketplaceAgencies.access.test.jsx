@@ -53,7 +53,7 @@ describe('AdminMarketplaceAgencies access lifecycle', () => {
     expect(localStorage.getItem('access_token')).toBe('existing-superadmin-token');
     expect(localStorage.getItem('agency_token')).toBe('short-lived-agency-token');
     expect(localStorage.getItem('agency_portal_mode')).toBe('marketplace');
-    expect(sessionStorage.getItem('agency_admin_return_path')).toBe('/admin/marketplace/agencies');
+    expect(sessionStorage.getItem('agency_admin_return_path')).toBe('/admin/agencies');
     expect(navigate).toHaveBeenCalledWith('/agency-portal');
   });
 
