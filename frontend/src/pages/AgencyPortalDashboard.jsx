@@ -171,7 +171,7 @@ const AgencyPortalDashboard = () => {
     }
   };
   const handleLogout = async () => {
-    const adminReturnPath = impersonation?.active ? (sessionStorage.getItem('agency_admin_return_path') || '/admin/marketplace/agencies') : null;
+    const adminReturnPath = impersonation?.active ? (sessionStorage.getItem('agency_admin_return_path') || '/admin/agencies') : null;
     if (impersonation?.active) {
       try {
         await agencyApi.post('/marketplace/v1/extranet/admin-context/exit');

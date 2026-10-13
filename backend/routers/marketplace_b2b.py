@@ -150,7 +150,9 @@ async def marketplace_extranet_login(req: MarketplaceLoginRequest, request: Requ
 
     # Global users (tenant_id = null or "SYROCE_GLOBAL" etc.)
     # Assuming marketplace_agent users are in the global users collection.
-    user = await sysdb.users.find_one({"email": normalized_email})
+    from security.encrypted_lookup import build_user_email_query, decrypt_user_doc
+
+    user = decrypt_user_doc(await sysdb.users.find_one(build_user_email_query(normalized_email)))
 
     if not user or user.get("is_active") is False or not verify_password(req.password, user.get("hashed_password", "")):
         await sysdb.marketplace_login_attempts.insert_one(
@@ -238,6 +240,9 @@ async def get_marketplace_agency(
                 )
                 if not user or user.get("is_active") is False:
                     raise HTTPException(401, "Acente kullanıcısı aktif değil")
+                from security.encrypted_lookup import decrypt_user_doc
+
+                user = decrypt_user_doc(user)
                 invalid_before = user.get("tokens_invalid_before")
                 if invalid_before and float(payload.get("iat") or 0) < float(invalid_before):
                     raise HTTPException(401, "Acente oturumu artık geçerli değil")
