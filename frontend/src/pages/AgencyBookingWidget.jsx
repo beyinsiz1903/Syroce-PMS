@@ -48,6 +48,7 @@ export default function AgencyBookingWidget() {
       const { data } = await client.post('/marketplace/v1/widget/reservations', {
         tenant_id: selected.hotel.tenant_id,
         room_type: selected.room.room_type,
+        rate_plan_code: selected.room.rate_plan_code,
         check_in: form.check_in,
         check_out: form.check_out,
         adults: form.adults,
@@ -80,8 +81,8 @@ export default function AgencyBookingWidget() {
       {confirmation && <div className="mx-5 mb-5 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-900"><div className="flex items-center gap-2 font-bold"><CheckCircle2 size={20} />Rezervasyonunuz oluşturuldu</div><p className="mt-1 text-sm">Onay kodu: <strong>{confirmation.confirmation_code}</strong></p></div>}
       <div className="space-y-4 border-t border-slate-100 bg-slate-50 p-5">
         {!loading && results.length === 0 && <div className="py-8 text-center text-sm text-slate-500"><CalendarDays className="mx-auto mb-2" />Tarihleri girerek canlı fiyat ve müsaitlik arayın.</div>}
-        {results.flatMap(hotel => hotel.available_room_types.map(room => ({ hotel, room }))).map(({ hotel, room }) => <article key={`${hotel.tenant_id}-${room.room_type}`} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center"><div><h2 className="font-bold">{hotel.hotel_name}</h2><p className="mt-1 flex items-center gap-1 text-xs text-slate-500"><MapPin size={13} />{hotel.city || 'Konum belirtilmedi'}</p><p className="mt-3 flex items-center gap-2 text-sm font-semibold"><BedDouble size={17} style={{ color }} />{room.room_type}</p><p className="mt-1 text-xs text-slate-500">{room.available_rooms} oda müsait · En fazla {room.capacity} kişi</p></div><div className="sm:text-right"><p className="text-xl font-bold">{money(room.total_price, room.currency || hotel.currency)}</p><p className="text-xs text-slate-500">{room.nights} gece konaklama toplamı</p><button onClick={() => setSelected({ hotel, room })} className="mt-3 rounded-lg px-4 py-2 text-sm font-semibold text-white" style={{ backgroundColor: color }}>Rezervasyon yap</button></div></div>
+        {results.flatMap(hotel => hotel.available_room_types.map(room => ({ hotel, room }))).map(({ hotel, room }) => <article key={`${hotel.tenant_id}-${room.room_type}-${room.rate_plan_code}`} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center"><div><h2 className="font-bold">{hotel.hotel_name}</h2><p className="mt-1 flex items-center gap-1 text-xs text-slate-500"><MapPin size={13} />{hotel.city || 'Konum belirtilmedi'}</p><p className="mt-3 flex items-center gap-2 text-sm font-semibold"><BedDouble size={17} style={{ color }} />{room.room_type} · {room.rate_plan_code} · {room.meal_plan}</p><p className="mt-1 text-xs text-slate-500">{room.available_rooms} oda müsait · En fazla {room.capacity} kişi</p></div><div className="sm:text-right"><p className="text-xl font-bold">{money(room.total_price, room.currency || hotel.currency)}</p><p className="text-xs text-slate-500">{room.nights} gece konaklama toplamı</p><button onClick={() => setSelected({ hotel, room })} className="mt-3 rounded-lg px-4 py-2 text-sm font-semibold text-white" style={{ backgroundColor: color }}>Rezervasyon yap</button></div></div>
         </article>)}
       </div>
     </section>
