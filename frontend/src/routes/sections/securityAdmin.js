@@ -1,5 +1,5 @@
 import {
-  GDPRCompliance, EncryptionManagementPage, CentralOfficeDashboard, AgencyIntegrationRepairs,
+  GDPRCompliance, EncryptionManagementPage, CentralOfficeDashboard, AgencyIntegrationRepairs, AgencySalesLockRecovery,
   CentralPricingManager, CrossPropertyGuests, MLDashboard, AdminTenants, AdminMarketplaceAgencies,
   AdminVendors, QuickIdSettings, RoomQrCodes, RoomRequests, ModuleReport, ModuleHealthCenter,
   AdminLeads, GovernancePanel, UserRoleManager, TenantUsers, HousekeepingDashboard,
@@ -37,6 +37,7 @@ export function securityAdminRoutes({ p, pa, pm }) {
     { path: "/admin/tenants", ...pa(AdminTenants), wrapLayout: true, layoutModule: "admin-tenants" },
     { path: "/admin/agencies", ...pa(AdminMarketplaceAgencies), wrapLayout: true, layoutModule: "admin-agencies" },
     { path: "/admin/agency-integrations", ...pa(AgencyIntegrationRepairs), wrapLayout: true, layoutModule: "admin-agencies" },
+    { path: "/admin/agency-sales-locks", ...pa(AgencySalesLockRecovery), wrapLayout: true, layoutModule: "admin-agencies" },
     { path: "/admin/vendors", ...pa(AdminVendors), wrapLayout: true, layoutModule: "admin_vendors" },
     { path: "/admin/quick-id", ...pa(QuickIdSettings), wrapLayout: true, layoutModule: "quick_id_settings" },
     { path: "/admin/voice-numbers", ...p(VoiceNumberMapping), wrapLayout: true, layoutModule: "voice-number-mapping" },

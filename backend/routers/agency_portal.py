@@ -1262,7 +1262,10 @@ async def agency_portal_create_reservation_endpoint(
     _require_agency_user(current_user)
     await _active_agency_for(current_user)
     system_db = get_system_db()
-    async with agency_sale_guard(system_db, current_user.tenant_id, current_user.agency_id):
+    async with agency_sale_guard(
+        system_db, current_user.tenant_id, current_user.agency_id,
+        operation="hotel_portal_reservation", idempotency_key=data.idempotency_key,
+    ):
         replay = await durable_agency_replay(
             system_db, current_user.tenant_id, current_user.agency_id,
             data.idempotency_key, build_request_hash(data.model_dump()),
