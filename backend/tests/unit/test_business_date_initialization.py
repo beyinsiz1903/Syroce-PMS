@@ -235,7 +235,8 @@ async def test_run_endpoint_blocks_large_business_date_backlog():
 
 
 @pytest.mark.asyncio
-async def test_controlled_catchup_closes_only_current_open_day_with_reason():
+@pytest.mark.parametrize("simulation_run_id", [None, "dry-run-1"])
+async def test_controlled_catchup_closes_only_current_open_day_with_reason(simulation_run_id):
     """An administrator can recover one overdue day, never a date range."""
     from domains.pms.night_audit.router import run_night_audit
 
@@ -243,7 +244,7 @@ async def test_controlled_catchup_closes_only_current_open_day_with_reason():
     request = RunNightAuditRequest(
         business_date="2000-01-01",
         controlled_catchup=True,
-        simulation_run_id="dry-run-1",
+        simulation_run_id=simulation_run_id,
         reason="Takvim geride kaldı; finansal kontrol tamamlandı.",
     )
     start_mock = AsyncMock(return_value={"success": True, "business_date": "2000-01-01"})
@@ -263,6 +264,8 @@ async def test_controlled_catchup_closes_only_current_open_day_with_reason():
 
     assert start_mock.await_args.kwargs["business_date"] == "2000-01-01"
     assert start_mock.await_args.kwargs["trigger_source"] == "controlled_catchup"
+    assert start_mock.await_args.kwargs["skip_validations"] is False
+    assert start_mock.await_args.kwargs["dry_run"] is False
 
 
 @pytest.mark.asyncio

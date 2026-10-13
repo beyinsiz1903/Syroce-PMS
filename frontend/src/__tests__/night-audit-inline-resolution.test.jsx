@@ -107,9 +107,9 @@ describe('Night Audit inline blocker resolution', () => {
     );
 
     expect(await screen.findByText('Kontrollü gün kapatma gerekli')).toBeInTheDocument();
-    expect(screen.getByText('PMS iş günü takvimden 10 gün geride; canlı gün sonu çalıştırılamaz.')).toBeInTheDocument();
+    expect(screen.getByText('PMS iş günü takvimden 10 gün geride; yönetici gerekçe ve onayla açık günü kapatabilir. Simülasyon isteğe bağlıdır.')).toBeInTheDocument();
 
     fireEvent.click(screen.getByTestId('prep-start-btn'));
-    expect(onStartRun).toHaveBeenCalledWith({ dryRun: true });
+    expect(onStartRun).toHaveBeenCalledWith({ dryRun: false });
   });
 });

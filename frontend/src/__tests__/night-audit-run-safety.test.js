@@ -5,9 +5,24 @@ import {
   confirmsNightAuditAdvance,
   isNightAuditTimeout,
   nextIsoDate,
+  hasCurrentCatchupSimulation,
+  requiresCatchupSimulationMode,
 } from "@/lib/nightAuditRunSafety";
 
 describe("night audit run safety", () => {
+  it.each([2, 38, 365])("allows direct admin close for a %i-day backlog but protects permissions", (days) => {
+    expect(requiresCatchupSimulationMode(days, false)).toBe(true);
+    expect(requiresCatchupSimulationMode(days, true)).toBe(false);
+  });
+  it("preserves normal one-day closing", () => {
+    expect(requiresCatchupSimulationMode(1, false)).toBe(false);
+  });
+  it("requires a completed simulation reference for exactly the open day", () => {
+    expect(hasCurrentCatchupSimulation(null, "2026-09-05")).toBe(false);
+    expect(hasCurrentCatchupSimulation({ date: "2026-09-05" }, "2026-09-05")).toBe(false);
+    expect(hasCurrentCatchupSimulation({ date: "2026-09-05", runId: "sim-1" }, "2026-09-05")).toBe(true);
+    expect(hasCurrentCatchupSimulation({ date: "2026-09-05", runId: "sim-1" }, "2026-09-06")).toBe(false);
+  });
   it("allows long-running audits more than the global 30 second timeout", () => {
     expect(NIGHT_AUDIT_RUN_TIMEOUT_MS).toBeGreaterThan(30_000);
   });

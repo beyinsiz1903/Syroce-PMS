@@ -155,7 +155,7 @@ export default function PreparationTab({ onStartRun, onPreviewLoaded, onOpenRun,
               </p>
               <p className="text-xs text-gray-500">
                 {catchupRequired
-                  ? `PMS iş günü takvimden ${drift} gün geride; canlı gün sonu çalıştırılamaz.`
+                  ? `PMS iş günü takvimden ${drift} gün geride; yönetici gerekçe ve onayla açık günü kapatabilir. Simülasyon isteğe bağlıdır.`
                   : `${t('cm.components_nightaudit_tabs_PreparationTab.is_gunu')} ${data.business_date} · ${warnings.length} ${t('cm.components_nightaudit_tabs_PreparationTab.uyari')}`}
               </p>
             </div>
@@ -167,12 +167,12 @@ export default function PreparationTab({ onStartRun, onPreviewLoaded, onOpenRun,
             </Button>
             {canRunAudit && <Button
               size="sm"
-              onClick={() => onStartRun?.({ dryRun: catchupRequired })}
+              onClick={() => onStartRun?.({ dryRun: false })}
               className="bg-indigo-600 hover:bg-indigo-700 text-white"
               data-testid="prep-start-btn"
             >
               <Play className="w-4 h-4 mr-1" />
-              {catchupRequired ? 'Simülasyon Başlat' : t('cm.components_nightaudit_tabs_PreparationTab.denetim_baslat')}
+              {catchupRequired ? 'Gün Sonu Seçenekleri' : t('cm.components_nightaudit_tabs_PreparationTab.denetim_baslat')}
             </Button>}
           </div>
         </CardContent>

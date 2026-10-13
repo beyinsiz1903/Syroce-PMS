@@ -206,11 +206,7 @@ async def run_night_audit(
                 status_code=422,
                 detail={"success": False, "code": "CATCHUP_REASON_REQUIRED", "error": "Kontrollü kapatma için en az 10 karakterlik açıklama zorunludur."},
             )
-        if not request.simulation_run_id:
-            raise HTTPException(
-                status_code=422,
-                detail={"success": False, "code": "CATCHUP_SIMULATION_REQUIRED", "error": "Kontrollü kapatma öncesinde bu iş günü için tamamlanmış bir simülasyon seçilmelidir."},
-            )
+        # Simulation is optional; supplied references must match this tenant/day.
         simulation = await db.night_audit_runs.find_one(
             {
                 "id": request.simulation_run_id,
@@ -220,8 +216,8 @@ async def run_night_audit(
                 "status": "dry_run_completed",
             },
             {"_id": 0, "id": 1},
-        )
-        if not simulation:
+        ) if request.simulation_run_id else None
+        if request.simulation_run_id and not simulation:
             raise HTTPException(
                 status_code=422,
                 detail={"success": False, "code": "CATCHUP_SIMULATION_INVALID", "error": "Seçilen simülasyon bulunamadı veya açık iş günüyle eşleşmiyor. Yeniden simülasyon çalıştırın."},
