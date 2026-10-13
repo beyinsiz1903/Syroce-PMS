@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import { BedDouble, CalendarDays, CheckCircle2, Loader2, MapPin, Search } from 'lucide-react';
 
@@ -27,6 +27,9 @@ export default function AgencyBookingWidget() {
   const [selected, setSelected] = useState(null);
   const [guest, setGuest] = useState({ guest_name: '', guest_email: '', guest_phone: '', special_requests: '' });
   const [confirmation, setConfirmation] = useState(null);
+  const bookingAttempt = useRef(null);
+
+  useEffect(() => { bookingAttempt.current = null; }, [selected]);
 
   useEffect(() => {
     client.get('/marketplace/v1/widget/config').then(({ data }) => setConfig(data)).catch(error_ => setError(error_.response?.data?.detail || 'Widget yüklenemedi. Web sitesi yetkisini kontrol edin.'));
@@ -44,7 +47,7 @@ export default function AgencyBookingWidget() {
   const reserve = async event => {
     event.preventDefault(); setLoading(true); setError('');
     try {
-      const idempotency = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`;
+      bookingAttempt.current ||= globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`;
       const { data } = await client.post('/marketplace/v1/widget/reservations', {
         tenant_id: selected.hotel.tenant_id,
         room_type: selected.room.room_type,
@@ -55,7 +58,7 @@ export default function AgencyBookingWidget() {
         children: form.children,
         child_ages: form.child_ages,
         total_amount: selected.room.total_price,
-        idempotency_key: idempotency,
+        idempotency_key: bookingAttempt.current,
         ...guest,
       });
       setConfirmation(data.reservation); setSelected(null);
