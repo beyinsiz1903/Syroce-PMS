@@ -834,7 +834,10 @@ async def _marketplace_stay_price(
                 "tenant_id": tenant_id, "agency_id": agency_id, "room_type": room_type,
                 "$or": [{"rate_plan_code": rate_plan_code}, {"rate_plan_code": {"$exists": False}}],
                 "status": {"$in": ["confirmed", "guaranteed", "checked_in", "pending"]},
-                "check_in": {"$lt": tomorrow + "T00:00:00"}, "check_out": {"$gt": date + "T00:00:00"},
+                "check_in": {"$lt": tomorrow + "T00:00:00"},
+                # Checkout day is not an occupied night, regardless of the
+                # stored check-out hour (typically 11:00).
+                "$expr": {"$gt": [{"$substrBytes": ["$check_out", 0, 10]}, date]},
             })
             remaining = max(0, int(row["availability"]) - used)
             if remaining == 0:

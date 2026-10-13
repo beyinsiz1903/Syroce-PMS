@@ -53,6 +53,7 @@ def test_portal_calendar_nights_and_client_quote_is_ignored(arrival, departure, 
         "ci_date": datetime.fromisoformat(arrival).date(),
         "co_date": datetime.fromisoformat(departure).date(),
         "rooms": [{"base_price": 1500}],
+        "pricing": {"total_price": expected_nights * 1500},
     }
     exec(compile(ast.Module(body=pricing, type_ignores=[]), str(source), "exec"), scope)
     assert scope["nights"] == expected_nights

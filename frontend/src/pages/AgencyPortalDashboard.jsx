@@ -354,6 +354,8 @@ const AgencyPortalDashboard = () => {
         children: bookingForm.children,
         child_ages: bookingForm.child_ages,
         special_requests: bookingForm.special_requests.trim(),
+        rate_plan_code: selectedRoomType.rate_plan_code,
+        idempotency_key: bookingForm.idempotency_key,
       };
       let response;
       if (portalMode === 'marketplace') {
