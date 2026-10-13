@@ -25,7 +25,7 @@ import logging
 import os
 import secrets
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 import jwt as pyjwt
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query, Request, Response
@@ -778,6 +778,7 @@ async def _get_listing_or_404(tenant_id: str) -> dict:
 async def _marketplace_stay_price(
     *, tenant_id: str, agency_id: str, room_type: str, check_in: str, check_out: str, fallback_rate: float,
     rate_plan_code: str | None = None,
+    exclude_booking_id: str | None = None,
 ) -> dict:
     """Return the exact sellable nightly rates shared with this agency.
 
@@ -832,6 +833,7 @@ async def _marketplace_stay_price(
         if date in agency_by_date and row.get("availability") is not None:
             tomorrow = (datetime.fromisoformat(date) + timedelta(days=1)).date().isoformat()
             used = await db.bookings.count_documents({
+                **({"id": {"$ne": exclude_booking_id}} if exclude_booking_id else {}),
                 "tenant_id": tenant_id, "agency_id": agency_id, "room_type": room_type,
                 "$or": [{"rate_plan_code": rate_plan_code}, {"rate_plan_code": {"$exists": False}}],
                 "status": {"$in": ["confirmed", "guaranteed", "checked_in", "pending"]},
@@ -923,6 +925,43 @@ async def _marketplace_occupancy_price(
     }
 
 
+async def _validated_agency_quote(*, tenant_id, agency_id, room, check_in, check_out,
+                                  rate_plan_code, adults, children, child_ages, exclude_booking_id=None):
+    if not rate_plan_code or len(child_ages) != children or any(age < 0 or age > 17 for age in child_ages):
+        raise HTTPException(422, "Fiyat planı ve her çocuk için geçerli yaş bilgisi gerekli")
+    if adults < 1 or children < 0 or int(room.get("capacity") or 2) < adults + children:
+        raise HTTPException(409, "Oda kapasitesi misafir sayısı için yetersiz")
+    pricing = await _marketplace_stay_price(
+        tenant_id=tenant_id, agency_id=agency_id, room_type=room["room_type"],
+        check_in=check_in, check_out=check_out, rate_plan_code=rate_plan_code,
+        fallback_rate=float(room.get("base_price") or 0), exclude_booking_id=exclude_booking_id,
+    )
+    if not pricing["sellable"]:
+        raise HTTPException(409, "Seçilen fiyat planı veya kontenjan bu tarihlerde satışa kapalı")
+    pricing = await _marketplace_occupancy_price(
+        tenant_id=tenant_id, room=room, pricing=pricing, adults=adults, child_ages=child_ages,
+    )
+    if pricing["total_price"] <= 0:
+        raise HTTPException(409, "Geçerli satış fiyatı tanımlı değil")
+    return pricing
+
+
+async def _check_agency_credit(*, tenant_id, agency_id, contract, net_to_hotel, exclude_booking_id=None):
+    if contract.get("credit_limit") is None:
+        return
+    query = {"tenant_id": tenant_id, "agency_id": agency_id,
+             "status": {"$ne": "cancelled"}, "payment_status": {"$ne": "paid"}}
+    if exclude_booking_id:
+        query["id"] = {"$ne": exclude_booking_id}
+    debts = await db.bookings.aggregate([
+        {"$match": query},
+        {"$group": {"_id": None, "amount": {"$sum": {"$ifNull": ["$net_to_hotel", "$total_amount"]}}}},
+    ]).to_list(1)
+    debt = float(debts[0].get("amount", 0)) if debts else 0.0
+    if debt + net_to_hotel > float(contract["credit_limit"]):
+        raise HTTPException(409, "Acente kredi limiti bu rezervasyon için yetersiz")
+
+
 def _contract_commission(contract: dict) -> float:
     """Return the hotel-approved commission; never silently fall back."""
     if contract.get("status") != "approved" or contract.get("commission_pct") is None:
@@ -950,7 +989,7 @@ def _marketplace_financials(total: float, commission_pct: float, fee_pct: float)
     return {
         "commission_amount": commission_amount,
         "syroce_b2b_fee_amount": fee_amount,
-        "net_to_hotel": round(float(total) - commission_amount - fee_amount, 2),
+        "net_to_hotel": round(float(total) - commission_amount, 2),
     }
 
 
@@ -1127,7 +1166,15 @@ class ModificationProposalCreate(BaseModel):
     check_in: str
     check_out: str
     room_type: str = Field(..., min_length=1, max_length=160)
+    rate_plan_code: str = Field(..., min_length=1, max_length=160)
     reason: str = Field(..., min_length=5, max_length=1000)
+
+    @model_validator(mode="after")
+    def validate_stay(self):
+        ci, co = date.fromisoformat(self.check_in), date.fromisoformat(self.check_out)
+        if ci.isoformat() != self.check_in or co.isoformat() != self.check_out or co <= ci:
+            raise ValueError("Geçerli giriş ve çıkış tarihleri gerekli")
+        return self
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -2128,22 +2175,15 @@ async def agency_create_reservation(
         # fallback and as executable documentation of checkout exclusivity.
         nights = (co.date() - ci.date()).days
         server_total = float(available_room.get("base_price", 0)) * max(nights, 1)
-        pricing = await _marketplace_stay_price(
+        pricing = await _validated_agency_quote(
             tenant_id=data.tenant_id,
             agency_id=agency["agency_id"],
-            room_type=data.room_type,
+            room=available_room,
             check_in=data.check_in,
             check_out=data.check_out,
-            fallback_rate=float(available_room.get("base_price", 0) or 0),
             rate_plan_code=data.rate_plan_code,
-        )
-        if not pricing["sellable"]:
-            raise HTTPException(409, "Seçilen oda tipi bu tarihlerde acente satışına kapalı")
-        pricing = await _marketplace_occupancy_price(
-            tenant_id=data.tenant_id,
-            room=available_room,
-            pricing=pricing,
             adults=data.adults,
+            children=data.children,
             child_ages=data.child_ages,
         )
         # Server-side "ground truth" price. Search and booking use this exact helper.
@@ -2164,18 +2204,8 @@ async def agency_create_reservation(
         # The platform fee is the agency's liability to Syroce; it must not
         # reduce the hotel's contracted payout a second time.
         net_to_hotel = round(total - commission_amount, 2)
-        credit_limit = contract.get("credit_limit")
-        if credit_limit is not None:
-            debt_pipeline = [
-                {"$match": {"agency_id": agency["agency_id"], "tenant_id": data.tenant_id, "status": {"$ne": "cancelled"}, "payment_status": {"$ne": "paid"}}},
-                {"$group": {"_id": None, "amount": {"$sum": {"$ifNull": ["$net_to_hotel", "$total_amount"]}}}},
-            ]
-            # Canonical PMS rows remain authoritative even if the ancillary
-            # marketplace ledger write failed after the booking committed.
-            debt_rows = await db.bookings.aggregate(debt_pipeline).to_list(1)
-            current_debt = float(debt_rows[0].get("amount", 0)) if debt_rows else 0.0
-            if current_debt + net_to_hotel > float(credit_limit):
-                raise HTTPException(409, "Acente kredi limiti bu rezervasyon için yetersiz")
+        await _check_agency_credit(tenant_id=data.tenant_id, agency_id=agency["agency_id"],
+                                   contract=contract, net_to_hotel=net_to_hotel)
 
         guest_id = _uuid()
         from security.guest_write import encrypt_guest_insert
@@ -2593,6 +2623,18 @@ async def hotel_decide_marketplace_modification(
     data: CancellationProposalDecision,
     current_user: User = Depends(get_current_user),
 ):
+    from core.agency_sales_guard import agency_sale_guard
+    tenant_id = _require_hotel_admin(current_user)
+    system = get_system_db()
+    proposal = await system.marketplace_negotiations.find_one({"id": proposal_id, "tenant_id": tenant_id})
+    if not proposal:
+        raise HTTPException(404, "Değişiklik talebi bulunamadı")
+    async with agency_sale_guard(system, tenant_id, proposal["agency_id"]):
+        with tenant_context(tenant_id):
+            return await _decide_marketplace_modification_locked(proposal_id, data, current_user)
+
+
+async def _decide_marketplace_modification_locked(proposal_id, data, current_user):
     tenant_id = _require_hotel_admin(current_user)
     sysdb = get_system_db()
     proposal = await sysdb.marketplace_negotiations.find_one(
@@ -2621,30 +2663,39 @@ async def hotel_decide_marketplace_modification(
         if not contract:
             raise HTTPException(409, "Yeni tarihler aktif acente sözleşmesi kapsamında değil")
         listing = await _get_listing_or_404(tenant_id)
-        allowed = contract.get("allowed_room_types") or listing.get("allowed_room_types") or []
-        if allowed and requested["room_type"] not in allowed:
-            raise HTTPException(409, "İstenen oda tipi acente satışına açık değil")
+        for policy in (contract, listing):
+            if policy.get("allowed_room_types") and requested["room_type"] not in policy["allowed_room_types"]:
+                raise HTTPException(409, "İstenen oda tipi acente satışına açık değil")
+        if any(day in listing.get("blocked_dates", []) for day in _date_range(requested["check_in"], requested["check_out"])):
+            raise HTTPException(409, "Bu tarihler otel tarafından kapatılmış")
         with tenant_context(tenant_id):
             rooms = await db.rooms.find(
-                {"tenant_id": tenant_id, "room_type": requested["room_type"], "is_active": {"$ne": False}}, {"_id": 0}
+                {"tenant_id": tenant_id, "room_type": requested["room_type"], "is_active": {"$ne": False},
+                 "status": {"$nin": ["maintenance", "out_of_order", "blocked"]}}, {"_id": 0}
             ).to_list(500)
             booking = await db.bookings.find_one({"id": proposal["reservation_id"], "tenant_id": tenant_id}, {"_id": 0})
-        if not booking or booking.get("status") != "confirmed":
+        if not booking or booking.get("status") != "confirmed" or booking.get("agency_id") != proposal["agency_id"]:
             raise HTTPException(409, "Rezervasyon artık değiştirilebilir durumda değil")
+        adults, children = int(booking.get("adults", 2)), int(booking.get("children", 0))
+        child_ages = booking.get("child_ages") or []
+        rooms = [room for room in rooms if int(room.get("capacity") or 2) >= adults + children]
         if not rooms:
             raise HTTPException(409, "İstenen oda tipinde aktif oda bulunamadı")
-        pricing = await _marketplace_stay_price(
-            tenant_id=tenant_id,
-            agency_id=proposal["agency_id"],
-            room_type=requested["room_type"],
-            check_in=requested["check_in"],
-            check_out=requested["check_out"],
-            fallback_rate=float(rooms[0].get("base_price", 0) or 0),
-        )
-        if not pricing["sellable"]:
-            raise HTTPException(409, "Yeni tarihler satışa kapalı")
+        plan = requested.get("rate_plan_code")
+        if not plan:
+            raise HTTPException(409, "Eski teklif fiyat planı içermiyor; yeni teklif oluşturun")
+        commission_pct = _contract_commission(contract)
+        fee_pct = float(booking.get("syroce_b2b_fee_pct", 0) or 0)
         selected_room = None
         for room in rooms:
+            pricing = await _validated_agency_quote(
+                tenant_id=tenant_id, agency_id=proposal["agency_id"], room=room,
+                check_in=requested["check_in"], check_out=requested["check_out"], rate_plan_code=plan,
+                adults=adults, children=children, child_ages=child_ages, exclude_booking_id=booking["id"],
+            )
+            financials = _marketplace_financials(pricing["total_price"], commission_pct, fee_pct)
+            await _check_agency_credit(tenant_id=tenant_id, agency_id=proposal["agency_id"],
+                contract=contract, net_to_hotel=financials["net_to_hotel"], exclude_booking_id=booking["id"])
             try:
                 await assign_room_atomic(
                     tenant_id=tenant_id,
@@ -2652,6 +2703,7 @@ async def hotel_decide_marketplace_modification(
                     room_id=room["id"],
                     check_in=requested["check_in"] + "T14:00:00",
                     check_out=requested["check_out"] + "T11:00:00",
+                    release_obsolete=False,
                 )
                 selected_room = room
                 break
@@ -2661,15 +2713,11 @@ async def hotel_decide_marketplace_modification(
             raise HTTPException(409, "İstenen tarihlerde uygun fiziksel oda bulunamadı")
         total = float(pricing["total_price"])
         paid = float(booking.get("total_paid", 0) or 0)
-        commission_pct = float(booking.get("agency_commission_rate", 0) or 0)
-        fee_pct = float(booking.get("syroce_b2b_fee_pct", 0) or 0)
-        if not fee_pct:
-            fee_pct = float((await sysdb.marketplace_bookings.find_one(
-                {"id": proposal["reservation_id"], "tenant_id": tenant_id},
-                {"syroce_b2b_fee_pct": 1, "_id": 0},
-            ) or {}).get("syroce_b2b_fee_pct", 0) or 0)
         financials = _marketplace_financials(total, commission_pct, fee_pct)
         changes = {
+            **_rate_product_snapshot(plan, selected_room, contract, pricing),
+            "occupancy_pricing": pricing.get("occupancy_pricing"),
+            "agency_commission_rate": commission_pct,
             "check_in": requested["check_in"] + "T14:00:00",
             "check_out": requested["check_out"] + "T11:00:00",
             "room_id": selected_room["id"],
@@ -2684,10 +2732,18 @@ async def hotel_decide_marketplace_modification(
             "updated_at": _now_iso(),
         }
         with tenant_context(tenant_id):
-            await db.bookings.update_one({"id": proposal["reservation_id"], "tenant_id": tenant_id}, {"$set": changes})
+            updated = await db.bookings.update_one({"id": proposal["reservation_id"], "tenant_id": tenant_id,
+                "agency_id": proposal["agency_id"], "status": "confirmed"}, {"$set": changes})
+            if updated.matched_count == 0:
+                # Locks already acquired: retain the fence for reconciliation.
+                raise RuntimeError("Booking changed while applying agency modification")
         await sysdb.marketplace_bookings.update_one(
             {"id": proposal["reservation_id"], "tenant_id": tenant_id}, {"$set": changes}
         )
+        # Re-enter idempotently only after persistence, then release the old
+        # nights. An exception before here keeps the admission fence intact.
+        await assign_room_atomic(tenant_id=tenant_id, booking_id=booking["id"],
+            room_id=selected_room["id"], check_in=changes["check_in"], check_out=changes["check_out"])
     elif data.accept:
         with tenant_context(tenant_id):
             booking = await db.bookings.find_one({"id": proposal["reservation_id"], "tenant_id": tenant_id})

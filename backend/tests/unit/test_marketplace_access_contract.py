@@ -147,7 +147,7 @@ def test_marketplace_financials_reconcile_after_price_change():
     assert _marketplace_financials(7500, 15, 2) == {
         "commission_amount": 1125.0,
         "syroce_b2b_fee_amount": 150.0,
-        "net_to_hotel": 6225.0,
+        "net_to_hotel": 6375.0,
     }
 
 
