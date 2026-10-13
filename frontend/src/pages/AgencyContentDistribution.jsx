@@ -45,6 +45,13 @@ const ProtectedImage = ({ src, alt, className }) => {
 const AgencyContentDistribution = ({ user }) => {
   const { t, i18n } = useTranslation();
   const [content, setContent] = useState(null);
+  const [savedContent, setSavedContent] = useState('');
+  const [readiness, setReadiness] = useState(null);
+  const refreshReadiness = useCallback(async () => {
+    setReadiness(null);
+    try { setReadiness((await axios.get('/hotel-content/readiness')).data); }
+    catch { toast.error('Yayına hazırlık kontrolü alınamadı; yeniden kontrol edin.'); }
+  }, []);
   const [agencies, setAgencies] = useState([]);
   const [selectedAgencies, setSelectedAgencies] = useState([]);
   const [pendingDeletes, setPendingDeletes] = useState({ rooms: new Set(), services: new Set() });
@@ -80,6 +87,8 @@ const AgencyContentDistribution = ({ user }) => {
         res = await tryOnce();
       }
       setContent(res.content);
+      setSavedContent(JSON.stringify(res.content));
+      await refreshReadiness();
       const list = Array.isArray(res.agencies) ? res.agencies : (res.agencies?.items || []);
       setAgencies(list);
       const published = list.filter(a => a.published_content).map(a => a.id);
@@ -93,7 +102,7 @@ const AgencyContentDistribution = ({ user }) => {
     } finally {
       if (!silent) setLoading(false);
     }
-  }, []);
+  }, [refreshReadiness]);
 
   useEffect(() => {
     const ctrl = new AbortController();
@@ -112,12 +121,10 @@ const AgencyContentDistribution = ({ user }) => {
       };
       const res = await axios.put('/hotel-content', cleaned);
       setContent(res.data);
+      setSavedContent(JSON.stringify(res.data));
+      await refreshReadiness();
       setPendingDeletes({ rooms: new Set(), services: new Set() });
-      const synced = res.data?.distribution?.marketplace_listing_synced;
-      const contracted = res.data?.distribution?.contracted_marketplace_agencies || 0;
-      toast.success(synced
-        ? `İçerik kaydedildi ve acente satış portalına aktarıldı${contracted ? ` (${contracted} sözleşmeli acente)` : ''}.`
-        : 'İçerik kaydedildi. Tesis marketplace yayını açıldığında otomatik kullanılacak.');
+      toast.success('İçerik kaydedildi. Mevcut yayınlara güncel içerik yansır; kayıt işlemi marketplace satışını açmaz.');
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Kaydetme hatası');
     } finally {
@@ -166,7 +173,9 @@ const AgencyContentDistribution = ({ user }) => {
   // FIX #1 (KRITIK): Dagitim artik 2 adim — once preview cek, kullaniciya
   // diff'i (X eklenecek, Y kaldirilacak) goster, sonra onayla.
   const openDistributeDialog = async () => {
-    if (selectedAgencies.length === 0) {
+    if (dirty) { toast.error('Önce içerik değişikliklerini kaydedin.'); return; }
+    if (!readiness) { toast.error('Önce yayına hazırlık kontrolünü yenileyin.'); return; }
+    if (selectedAgencies.length === 0 && !agencies.some(agency => agency.published_content)) {
       toast.error('En az bir acente seçin');
       return;
     }
@@ -175,7 +184,9 @@ const AgencyContentDistribution = ({ user }) => {
       const { data } = await axios.get('/hotel-content/distribute-preview', {
         params: { agency_ids: selectedAgencies.join(',') },
       });
-      setDistributeDialog({ preview: data, unpublishOmitted: false });
+      const fresh = (await axios.get('/hotel-content/readiness')).data;
+      setReadiness(fresh);
+      setDistributeDialog({ preview: data, readiness: fresh, acknowledged: false, unpublishOmitted: false });
     } catch (e) {
       toast.error('Önizleme alınamadı: ' + (e.response?.data?.detail || e.message));
     } finally {
@@ -190,6 +201,7 @@ const AgencyContentDistribution = ({ user }) => {
       const res = await axios.post('/hotel-content/distribute', {
         agency_ids: selectedAgencies,
         unpublish_omitted: distributeDialog.unpublishOmitted,
+        expected_content_version: distributeDialog.readiness.content_version,
       });
       toast.success(res.data.message);
       setDistributeDialog(null);
@@ -288,6 +300,7 @@ const AgencyContentDistribution = ({ user }) => {
   };
 
   const hasPendingDeletes = pendingDeletes.rooms.size > 0 || pendingDeletes.services.size > 0;
+  const dirty = JSON.stringify(content) !== savedContent || hasPendingDeletes;
 
   if (loading) {
     return (
@@ -312,12 +325,26 @@ const AgencyContentDistribution = ({ user }) => {
             {t('cm.pages_AgencyContentDistribution.kaydet')}{hasPendingDeletes ? ` (${pendingDeletes.rooms.size + pendingDeletes.services.size} silme)` : ''}
           </Button>
           {/* FIX #1: Buton adi semantik — "Yayın Listesini Güncelle" */}
-          <Button onClick={openDistributeDialog} disabled={distributing || previewLoading} data-testid="distribute-btn" className="gap-2">
+          <Button onClick={openDistributeDialog} disabled={distributing || previewLoading || saving || uploadingImages || dirty || !readiness} data-testid="distribute-btn" className="gap-2">
             {(distributing || previewLoading) ? <Loader2 className="animate-spin" size={14} /> : <Send size={14} />}
             {t('cm.pages_AgencyContentDistribution.yayin_listesini_guncelle')}
           </Button>
         </div>
       </div>
+
+      <Card><CardHeader><CardTitle>Yayına hazırlık ve erişim kapsamı</CardTitle></CardHeader><CardContent className="space-y-3 text-sm">
+        <p><strong>Otele bağlı portal:</strong> Sağdaki acente listesi yalnız bu portalın içerik erişimini yönetir. Seçimi kaldırmak tek başına erişimi kesmez; onay penceresinde yayından kaldırmayı ayrıca seçmelisiniz.</p>
+        <p><strong>Marketplace:</strong> Erişim tesisin marketplace yayınına ve geçerli, onaylı sözleşmeye bağlıdır. Bu listeden acente kaldırmak marketplace erişimini veya sözleşmesini kapatmaz. Bunun için marketplace tesis yayını / sözleşme yönetimini kullanın.</p>
+        <p>Kaydet, önceden yayınlanmış acentelere güncel içeriği yansıtır ve varsa marketplace içeriğini günceller; yeni satış yetkisi vermez.</p>
+        {!readiness ? <p role="alert">Hazırlık durumu doğrulanamadı. <button type="button" onClick={refreshReadiness}>Tekrar kontrol et</button></p> : <>
+          <p>PMS adı: {readiness.tenant_name || '—'} · Yayın adı: {readiness.content_name || '—'}</p>
+          <p>Otele bağlı portal: {readiness.access.hotel_portal_published_count} aktif acenteye açık. Marketplace yayını: {readiness.access.marketplace_listed ? 'Açık' : 'Kapalı'} · Geçerli sözleşme: {readiness.access.marketplace_active_contract_count}</p>
+          <p role="status">Kayıtlı sürüm {readiness.content_version}: {readiness.ready ? 'İçerik kontrolü tamam; satış uygunluğu ayrıca değerlendirilir.' : 'Yayın öncesi eksikler / uyarılar var.'}</p>
+          <ul className="list-disc pl-5">{[...readiness.errors, ...readiness.warnings].map(item => <li key={item}>{item}</li>)}</ul>
+          <p className="text-xs">Fotoğraf kontrolü kayıt varlığını denetler; görsellerin açıldığını ve kullanım haklarını ayrıca doğrulayın.</p>
+        </>}
+        {dirty && <p role="alert">Kaydedilmemiş değişiklikler var. Kontrol kayıtlı sürüme aittir; yayın listesi için önce Kaydet’e basın.</p>}
+      </CardContent></Card>
 
       {hasPendingDeletes && (
         <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-900 flex items-center gap-2">
@@ -532,7 +559,7 @@ const AgencyContentDistribution = ({ user }) => {
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-base flex items-center gap-2">
-                <Building2 size={16} /> Acenteler
+                <Building2 size={16} /> Otele bağlı portal acenteleri
               </CardTitle>
               <div className="flex gap-2 mt-2">
                 <Button size="sm" variant="outline" className="text-xs h-7" onClick={selectAllAgencies}>{t('cm.pages_AgencyContentDistribution.tumunu_sec')}</Button>
@@ -590,6 +617,12 @@ const AgencyContentDistribution = ({ user }) => {
             <AlertDialogTitle>{t('cm.pages_AgencyContentDistribution.yayin_listesini_guncelle_c8c37')}</AlertDialogTitle>
             <AlertDialogDescription asChild>
               <div className="space-y-3 text-sm">
+                <p>Bu işlem yalnız otele bağlı portalı etkiler. Marketplace yayını ve sözleşme erişimi değişmez.</p>
+                {(distributeDialog?.readiness?.errors || []).map(item => <p role="alert" key={item}>{item}</p>)}
+                {(distributeDialog?.readiness?.warnings || []).length > 0 && <div>
+                  <ul>{distributeDialog.readiness.warnings.map(item => <li key={item}>{item}</li>)}</ul>
+                  <label><input type="checkbox" checked={!!distributeDialog.acknowledged} onChange={e => setDistributeDialog(prev => ({ ...prev, acknowledged: e.target.checked }))} /> İçerik uyarılarını inceledim; mevcut içerikle devam et</label>
+                </div>}
                 <div className="rounded-md border border-slate-200 bg-slate-50 p-3 space-y-1">
                   <div className="flex justify-between"><span>{t('cm.pages_AgencyContentDistribution.su_an_yayinda')}</span><strong>{distributeDialog?.preview?.currently_published ?? 0}</strong></div>
                   <div className="flex justify-between"><span>{t('cm.pages_AgencyContentDistribution.secili')}</span><strong>{distributeDialog?.preview?.selected ?? 0}</strong></div>
@@ -622,7 +655,7 @@ const AgencyContentDistribution = ({ user }) => {
             <AlertDialogCancel>{t('cm.pages_AgencyContentDistribution.vazgec')}</AlertDialogCancel>
             <AlertDialogAction
               onClick={submitDistribute}
-              disabled={distributing}
+              disabled={distributing || (selectedAgencies.length === 0 ? !distributeDialog?.unpublishOmitted : (!distributeDialog?.readiness?.can_publish || ((distributeDialog?.readiness?.warnings || []).length > 0 && !distributeDialog?.acknowledged)))}
               data-testid="confirm-distribute"
             >
               {distributing ? <Loader2 className="animate-spin mr-1" size={14} /> : <Send size={14} className="mr-1" />}

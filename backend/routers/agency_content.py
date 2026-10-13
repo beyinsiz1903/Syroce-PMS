@@ -80,6 +80,7 @@ class HotelContentUpdate(BaseModel):
 
 class ContentDistributeRequest(BaseModel):
     agency_ids: list[str]
+    expected_content_version: int | None = None
     # FIX #1 (KRITIK): Eskiden distribute her zaman "diff senkron" yapiyordu —
     # listede olmayan acenteler sessizce unpublish ediliyordu. Artik DEFAULT
     # additive (sadece ekle); cikarmak icin acikca True gonderilmeli.
@@ -108,6 +109,48 @@ def _validate_content_for_distribute(content: dict) -> list[str]:
 
 
 # ─── Endpoints ───────────────────────────────────────────────────
+
+
+def content_readiness(content: dict, tenant: dict) -> dict:
+    errors = _validate_content_for_distribute(content)
+    warnings = []
+    for field, message in (
+        ('city', 'Şehir / bölge eksik.'), ('country', 'Ülke kodu eksik.'),
+        ('description', 'Tesis açıklaması eksik.'), ('address', 'Tesis adresi eksik.'),
+    ):
+        if not str(content.get(field) or '').strip():
+            warnings.append(message)
+    for field, message in (('meal_plans', 'Pansiyon bilgisi eksik; yalnız oda satılıyorsa bunu açıkça belirtin.'),
+                           ('images', 'Tesis / kapak fotoğrafı eksik.')):
+        if not any(str(value or '').strip() for value in content.get(field) or []):
+            warnings.append(message)
+    for index, room in enumerate(content.get('room_types') or [], 1):
+        if not any(str(value or '').strip() for value in room.get('images') or []):
+            warnings.append(f'Oda tipi {index}: fotoğraf eksik.')
+    tenant_name = str(tenant.get('property_name') or tenant.get('name') or '').strip()
+    content_name = str(content.get('hotel_name') or '').strip()
+    if tenant_name and content_name and tenant_name.casefold() != content_name.casefold():
+        warnings.append('PMS tesis adı ile yayın içeriğindeki ad farklı; ticari adın doğruluğunu kontrol edin.')
+    return {'ready': not errors and not warnings, 'can_publish': not errors,
+            'errors': errors, 'warnings': warnings, 'tenant_name': tenant_name,
+            'content_name': content_name, 'content_version': content.get('content_version', 0)}
+
+
+@router.get('/hotel-content/readiness')
+async def get_content_readiness(current_user: User = Depends(get_current_user)):
+    """Read-only saved-content checks; readiness never grants sales access."""
+    _require_hotel_staff(current_user)
+    tenant_id = current_user.tenant_id
+    content = await db.hotel_content.find_one({'tenant_id': tenant_id}, {'_id': 0}) or {}
+    tenant = await db.tenants.find_one({'id': tenant_id}, {'_id': 0}) or {}
+    listing = await get_system_db().marketplace_listings.find_one({'tenant_id': tenant_id}, {'_id': 0}) or {}
+    from routers.agency_contracts import list_active_agencies_for_tenant
+    partners = await list_active_agencies_for_tenant(tenant_id)
+    return {**content_readiness(content, tenant), 'access': {
+        'hotel_portal_published_count': await db.agencies.count_documents({'tenant_id': tenant_id, 'published_content': True, 'status': 'active'}),
+        'marketplace_listed': bool(listing.get('is_listed')),
+        'marketplace_active_contract_count': len(partners),
+    }}
 
 
 @router.get("/hotel-content")
@@ -294,14 +337,17 @@ async def distribute_content(
     _require_hotel_staff(current_user)
     tenant_id = current_user.tenant_id
 
-    if not data.agency_ids:
+    if not data.agency_ids and not data.unpublish_omitted:
         raise HTTPException(status_code=400, detail="En az bir acente seçmelisiniz")
 
     # Icerik var mi + minimum dolulukta mi?
     content = await db.hotel_content.find_one({"tenant_id": tenant_id}, {"_id": 0})
-    if not content:
+    if not content and data.agency_ids:
         raise HTTPException(status_code=404, detail="Önce otel içeriğini kaydedin")
-    errors = _validate_content_for_distribute(content)
+    content = content or {}
+    if data.agency_ids and data.expected_content_version is not None and data.expected_content_version != content.get('content_version', 1):
+        raise HTTPException(409, 'İçerik sürümü değişti. Kontrolü yenileyip yeniden onaylayın.')
+    errors = _validate_content_for_distribute(content) if data.agency_ids else []
     if errors:
         raise HTTPException(
             status_code=400,
@@ -363,9 +409,6 @@ async def distribute_preview(
     _require_hotel_staff(current_user)
     tenant_id = current_user.tenant_id
     ids = [x for x in (agency_ids or "").split(",") if x]
-    if not ids:
-        return {"to_add": 0, "to_remove": 0, "currently_published": 0, "selected": 0}
-
     currently_published_ids = [
         d["id"]
         async for d in db.agencies.find(
