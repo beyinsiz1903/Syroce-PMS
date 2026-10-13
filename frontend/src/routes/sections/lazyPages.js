@@ -170,6 +170,7 @@ export const AgencyManagement = lazy(() => import("@/pages/AgencyManagement"));
 export const AgencyContentDistribution = lazy(() => import("@/pages/AgencyContentDistribution"));
 export const AgencyPortalDashboard = lazy(() => import("@/pages/AgencyPortalDashboard"));
 export const AgencyActivate = lazy(() => import("@/pages/AgencyActivate"));
+export const AgencyRecover = lazy(() => import("@/pages/AgencyRecover"));
 export const AgencyConnectAuthorize = lazy(() => import("@/pages/AgencyConnectAuthorize"));
 export const B2BAnalyticsDashboard = lazy(() => import("@/pages/B2BAnalyticsDashboard"));
 export const ReportScheduler = lazy(() => import("@/pages/ReportScheduler"));

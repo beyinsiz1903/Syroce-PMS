@@ -1,6 +1,6 @@
 import {
   LandingPage, HotelPmsLandingPage, RoomRequestPage, PublicReviewPage, PrivacyPolicy,
-  PmsLiteLanding, AgencyPortalDashboard, AgencyActivate, B2BApiDocs, SimpleAdminPanel,
+  PmsLiteLanding, AgencyPortalDashboard, AgencyActivate, AgencyRecover, B2BApiDocs, SimpleAdminPanel,
   ResetPasswordPage, PreCheckinPage, CertificateVerifyPage, WebBookingEngine,
   AgencyBookingWidget, AgencyConnectAuthorize,
   GuestQRMenu,
@@ -19,6 +19,7 @@ export function publicRoutes({ pa }) {
     { path: "/agency-portal", type: "public", component: AgencyPortalDashboard },
     { path: "/acente-girisi", type: "public", component: AgencyPortalDashboard },
     { path: "/agency-activate", type: "public", component: AgencyActivate },
+    { path: "/agency-recover", type: "public", component: AgencyRecover },
     { path: "/agency-connect/authorize", type: "public", component: AgencyConnectAuthorize },
     { path: "/agency-widget", type: "public", component: AgencyBookingWidget },
     // Public URL namespace, but admin-protected docs route (intentional —
