@@ -21,7 +21,7 @@ export default function AgencyIntegrationRepairs() {
     catch { setError('Yeniden deneme başlatılamadı. Durum değişmiş olabilir; listeyi yenileyin.'); setBusy(false); }
   };
   return <main className="p-6 space-y-4">
-    <Link to="/admin/agencies">Acente yönetimine dön</Link>
+    <div className="flex gap-3"><Link to="/admin/agencies">Acente yönetimine dön</Link><Link to="/admin/agency-sales-locks">Takılı satış işlemleri</Link></div>
     <h1 className="text-2xl font-semibold">Entegrasyonu eksik acente rezervasyonları</h1>
     <p>Rezervasyon PMS’e kaydedilmiştir. Yeniden rezervasyon oluşturmayın. Eksik adımlar otomatik tekrar denenir; sekiz başarısız denemeden sonra müdahale gerekir.</p>
     <p>Bu takip, kalıcı tamamlama desteğiyle oluşturulan yeni rezervasyonları kapsar. Eski rezervasyonlar otomatik olarak onarılmış sayılmaz.</p>

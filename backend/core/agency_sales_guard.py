@@ -18,12 +18,20 @@ logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
-async def agency_sale_guard(database, tenant_id, agency_id):
+async def agency_sale_guard(database, tenant_id, agency_id, *, operation="reservation", idempotency_key=None, reference_id=None):
+    """Acquire an agency admission fence with enough context for manual recovery.
+
+    A lock is intentionally never expired automatically.  The recovery console
+    can release it only after an operator attests that the original writer has
+    stopped and records the matching reservation/idempotency evidence.
+    """
     key = hashlib.sha256(json.dumps([tenant_id, agency_id]).encode()).hexdigest()
     owner = str(uuid.uuid4())
     try:
         await database.agency_sale_mutexes.insert_one({
             "_id": key, "owner": owner, "tenant_id": tenant_id, "agency_id": agency_id,
+            "operation": operation, "idempotency_key": idempotency_key,
+            "reference_id": reference_id, "recovery_state": "active",
             "created_at": datetime.now(UTC),
         })
     except DuplicateKeyError:

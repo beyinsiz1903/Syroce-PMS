@@ -28,8 +28,9 @@ async def test_retry_returns_existing_booking_without_second_write(monkeypatch):
     entered = []
 
     @asynccontextmanager
-    async def guard(db, tenant, agency):
+    async def guard(db, tenant, agency, **kwargs):
         assert db is database and (tenant, agency) == ('t', 'a')
+        assert kwargs == {'operation': 'hotel_portal_reservation', 'idempotency_key': 'attempt'}
         entered.append(True)
         yield
 

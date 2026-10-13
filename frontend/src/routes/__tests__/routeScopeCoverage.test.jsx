@@ -12,12 +12,15 @@ const routeRuntime = {
 };
 
 describe('route scope coverage', () => {
-  it('gives agency integration repairs the same scope as agency administration', () => {
+  it('gives agency recovery screens the same scope as agency administration', () => {
     const routes = getRouteConfigs(routeRuntime);
     const agencies = routes.find((route) => route.path === '/admin/agencies');
     const repairs = routes.find((route) => route.path === '/admin/agency-integrations');
+    const salesLocks = routes.find((route) => route.path === '/admin/agency-sales-locks');
     expect(repairs.moduleScopes).toEqual(agencies.moduleScopes);
     expect(repairs.type).toEqual(agencies.type);
+    expect(salesLocks.moduleScopes).toEqual(agencies.moduleScopes);
+    expect(salesLocks.type).toEqual(agencies.type);
   });
 
   it('does not allow protected routes to fall back to the legacy unscoped surface', () => {

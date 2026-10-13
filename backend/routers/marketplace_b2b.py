@@ -1038,6 +1038,13 @@ class MarketplaceApiKeyRotate(BaseModel):
     label: str = Field(default="Ana entegrasyon", min_length=2, max_length=80)
 
 
+class AgencySalesLockReconcile(BaseModel):
+    owner: str = Field(..., min_length=8, max_length=100)
+    resolution: str = Field(..., pattern="^(booking_committed|no_booking_committed)$")
+    reason: str = Field(..., min_length=10, max_length=1000)
+    writer_stopped_confirmed: bool = False
+
+
 class MarketplaceListingCreate(BaseModel):
     hotel_name: str
     city: str
@@ -1174,6 +1181,88 @@ class ModificationProposalCreate(BaseModel):
 # ═══════════════════════════════════════════════════════════════════════
 # SYSTEM ADMIN — Marketplace Agency Yönetimi
 # ═══════════════════════════════════════════════════════════════════════
+
+
+async def _sales_lock_evidence(sysdb, lock: dict) -> dict:
+    """Return operator-safe evidence; never infer an abandoned writer by age."""
+    key = lock.get("idempotency_key")
+    booking_query = {"tenant_id": lock["tenant_id"], "agency_id": lock["agency_id"]}
+    if key:
+        booking_query["agency_idempotency_key"] = key
+    elif lock.get("reference_id"):
+        booking_query["id"] = lock["reference_id"]
+    else:
+        return {"booking": None, "idempotency": None}
+    booking = await sysdb.bookings.find_one(
+        booking_query,
+        {"_id": 0, "id": 1, "confirmation_code": 1, "status": 1, "agency_completion.status": 1},
+    )
+    idempotency = None
+    if key:
+        idempotency = await sysdb.idempotency_keys.find_one(
+            {"idempotency_key": key}, {"_id": 0, "scope": 1, "status": 1, "created_at": 1, "expires_at": 1},
+        )
+    return {"booking": booking, "idempotency": idempotency}
+
+
+@router.get("/admin/sales-locks")
+async def admin_list_agency_sales_locks(_: bool = Depends(_require_system_admin)):
+    """List manual-recovery-only admission fences with durable-write evidence."""
+    sysdb = get_system_db()
+    locks = await sysdb.agency_sale_mutexes.find({}, {"_id": 1, "owner": 1, "tenant_id": 1, "agency_id": 1,
+                                                       "operation": 1, "idempotency_key": 1, "reference_id": 1,
+                                                       "recovery_state": 1, "created_at": 1}).sort("created_at", 1).to_list(500)
+    items = []
+    for lock in locks:
+        evidence = await _sales_lock_evidence(sysdb, lock)
+        items.append({
+            "lock_id": lock["_id"], "owner": lock.get("owner"), "tenant_id": lock.get("tenant_id"),
+            "agency_id": lock.get("agency_id"), "operation": lock.get("operation", "unknown"),
+            "reference_id": lock.get("reference_id"), "recovery_state": lock.get("recovery_state", "active"),
+            "created_at": lock.get("created_at"), **evidence,
+        })
+    return {"items": items, "total": len(items)}
+
+
+@router.post("/admin/sales-locks/{lock_id}/reconcile")
+async def admin_reconcile_agency_sales_lock(
+    lock_id: str,
+    data: AgencySalesLockReconcile,
+    _: bool = Depends(_require_system_admin),
+):
+    """Release one lock only after evidence review and explicit writer-stop attestation."""
+    if not data.writer_stopped_confirmed:
+        raise HTTPException(422, "Kilidi açmadan önce özgün yazıcının durduğunu doğrulamalısınız")
+    sysdb = get_system_db()
+    lock = await sysdb.agency_sale_mutexes.find_one({"_id": lock_id, "owner": data.owner})
+    if not lock:
+        raise HTTPException(409, "Satış kilidi değişmiş veya zaten uzlaştırılmış; listeyi yenileyin")
+    evidence = await _sales_lock_evidence(sysdb, lock)
+    has_booking = bool(evidence.get("booking"))
+    processing = (evidence.get("idempotency") or {}).get("status") == "processing"
+    if data.resolution == "booking_committed" and not has_booking:
+        raise HTTPException(409, "Rezervasyon kaydı doğrulanamadı; 'rezervasyon oluşmadı' uzlaştırmasını kullanın")
+    if data.resolution == "no_booking_committed" and has_booking:
+        raise HTTPException(409, "Rezervasyon bulundu; 'rezervasyon oluştu' uzlaştırmasını kullanın")
+    if processing:
+        raise HTTPException(409, "İdempotency işlemi hâlâ işleniyor; önce özgün işlemi tamamlayın veya inceleyin")
+    deleted = await sysdb.agency_sale_mutexes.delete_one({"_id": lock_id, "owner": data.owner})
+    if not deleted.deleted_count:
+        raise HTTPException(409, "Satış kilidi eşzamanlı değişti; listeyi yenileyin")
+    record = {
+        "id": _uuid(), "lock_id": lock_id, "lock_owner": data.owner,
+        "tenant_id": lock["tenant_id"], "agency_id": lock["agency_id"],
+        "operation": lock.get("operation"), "resolution": data.resolution,
+        "reason": data.reason.strip(), "writer_stopped_confirmed": True,
+        "booking": evidence.get("booking"), "idempotency": evidence.get("idempotency"),
+        "reconciled_at": _now_iso(), "actor_type": "system_admin",
+    }
+    await sysdb.agency_sales_lock_recoveries.insert_one(record)
+    await _record_marketplace_audit(sysdb, agency_id=lock["agency_id"], action="agency_sales_lock_released", details={
+        "lock_id": lock_id, "tenant_id": lock["tenant_id"], "operation": lock.get("operation"),
+        "resolution": data.resolution, "recovery_id": record["id"],
+    })
+    return {"ok": True, "recovery_id": record["id"], "booking": evidence.get("booking")}
 
 
 @router.post("/admin/agencies")
@@ -2353,7 +2442,10 @@ async def agency_create_reservation_endpoint(
     try:
         from core.agency_sales_guard import agency_sale_guard, durable_agency_replay
 
-        async with agency_sale_guard(sysdb, data.tenant_id, agency["agency_id"]):
+        async with agency_sale_guard(
+            sysdb, data.tenant_id, agency["agency_id"],
+            operation="marketplace_reservation", idempotency_key=data.idempotency_key,
+        ):
             result = await durable_agency_replay(sysdb, data.tenant_id, agency["agency_id"], data.idempotency_key, build_request_hash(data.model_dump()))
             if result is None:
                 result = await agency_create_reservation(data, background_tasks, agency)
@@ -2628,7 +2720,10 @@ async def hotel_decide_marketplace_modification(
     proposal = await system.marketplace_negotiations.find_one({"id": proposal_id, "tenant_id": tenant_id})
     if not proposal:
         raise HTTPException(404, "Değişiklik talebi bulunamadı")
-    async with agency_sale_guard(system, tenant_id, proposal["agency_id"]):
+    async with agency_sale_guard(
+        system, tenant_id, proposal["agency_id"], operation="marketplace_modification",
+        reference_id=proposal_id,
+    ):
         with tenant_context(tenant_id):
             return await _decide_marketplace_modification_locked(proposal_id, data, current_user)
 

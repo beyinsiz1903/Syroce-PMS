@@ -43,6 +43,22 @@ async def test_cross_request_serialization_and_uncertain_write_fails_closed():
 
 
 @pytest.mark.asyncio
+async def test_uncertain_lock_keeps_recovery_context_without_sensitive_request_data():
+    database = SimpleNamespace(agency_sale_mutexes=Mutexes())
+    with pytest.raises(RuntimeError):
+        async with agency_sale_guard(
+            database, 'hotel-1', 'agency-1', operation='marketplace_reservation',
+            idempotency_key='client-key', reference_id='request-1',
+        ):
+            raise RuntimeError('database result unknown')
+    lock = next(iter(database.agency_sale_mutexes.rows.values()))
+    assert lock['recovery_state'] == 'active'
+    assert lock['operation'] == 'marketplace_reservation'
+    assert lock['idempotency_key'] == 'client-key'
+    assert lock['reference_id'] == 'request-1'
+
+
+@pytest.mark.asyncio
 async def test_one_allotment_concurrent_sales_and_retry(monkeypatch):
     database = SimpleNamespace(agency_sale_mutexes=Mutexes())
     occupied = []
