@@ -18,8 +18,10 @@ const STATUS = {
   void: ['İptal', 'bg-slate-100 text-slate-500'],
 };
 const money = (value, currency) => `${Number(value || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency || ''}`;
-const monthStart = () => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth() - 1, 1).toISOString().slice(0, 10); };
-const monthEnd = () => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 0).toISOString().slice(0, 10); };
+// Local calendar date; toISOString() would shift to UTC (01.09 00:00 +03 -> 31.08).
+const localDate = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+export const monthStart = (now = new Date()) => localDate(new Date(now.getFullYear(), now.getMonth() - 1, 1));
+export const monthEnd = (now = new Date()) => localDate(new Date(now.getFullYear(), now.getMonth(), 0));
 const balanceText = (value, currency) => {
   if (Math.abs(Number(value || 0)) < 0.01) return 'Bakiye yok';
   return Number(value) > 0 ? `Acente ödeyecek: ${money(value, currency)}` : `Otel ödeyecek: ${money(-value, currency)}`;
@@ -32,7 +34,7 @@ export default function AgencyStatements() {
   const [form, setForm] = useState({ agency_id: '', period_start: monthStart(), period_end: monthEnd(), currency: 'TRY' });
   const [issuing, setIssuing] = useState(false);
   const [detail, setDetail] = useState(null);
-  const [payment, setPayment] = useState({ amount: '', paid_at: new Date().toISOString().slice(0, 10), method: 'bank_transfer', reference: '' });
+  const [payment, setPayment] = useState({ amount: '', paid_at: localDate(new Date()), method: 'bank_transfer', reference: '' });
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
 
