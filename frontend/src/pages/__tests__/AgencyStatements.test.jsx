@@ -7,7 +7,7 @@ const { apiGet, apiPost, toastSuccess } = vi.hoisted(() => ({ apiGet: vi.fn(), a
 vi.mock('axios', () => ({ default: { get: (...a) => apiGet(...a), post: (...a) => apiPost(...a) } }));
 vi.mock('sonner', () => ({ toast: { success: toastSuccess, error: vi.fn() } }));
 
-import AgencyStatements from '@/pages/AgencyStatements';
+import AgencyStatements, { monthEnd, monthStart } from '@/pages/AgencyStatements';
 
 const statement = {
   id: 's1', number: 'EKS-2026-0001', agency_name: 'Syroce Travel', period_start: '2026-11-01', period_end: '2026-11-30',
@@ -37,5 +37,21 @@ describe('AgencyStatements', () => {
     await userEvent.click(screen.getByText('İtirazı yanıtla'));
     await waitFor(() => expect(apiPost).toHaveBeenCalledWith('/marketplace/hotel/statements/s1/resolve', { note: 'Sözleşmede %15 tanımlı' }));
     expect(toastSuccess).toHaveBeenCalledWith('İtiraz yanıtlandı.');
+  });
+});
+
+describe('default statement period', () => {
+  it('is the previous calendar month in local time, not shifted to UTC', () => {
+    const tz = process.env.TZ;
+    process.env.TZ = 'Europe/Istanbul';
+    try {
+      const now = new Date(2026, 9, 14, 1, 30);
+      expect(monthStart(now)).toBe('2026-09-01');
+      expect(monthEnd(now)).toBe('2026-09-30');
+      expect(monthStart(new Date(2026, 0, 5))).toBe('2025-12-01');
+      expect(monthEnd(new Date(2026, 2, 5))).toBe('2026-02-28');
+    } finally {
+      process.env.TZ = tz;
+    }
   });
 });
