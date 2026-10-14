@@ -67,7 +67,7 @@ const AMENITY_FILTERS = [
 ];
 const MEAL_FILTERS = [['RO', 'Sadece oda'], ['BB', 'Oda kahvaltı'], ['HB', 'Yarım pansiyon'], ['FB', 'Tam pansiyon'], ['AI', 'Her şey dahil']];
 const PAYMENT_TERMS_LABELS = { prepaid: 'Ön ödemeli', on_arrival: 'Girişte', net_7: '7 gün', net_15: '15 gün', net_30: '30 gün' };
-const CONTRACT_STATUS_LABELS = { approved: 'Onaylandı', pending: 'Otel onayı bekleniyor', rejected: 'Reddedildi', expired: 'Süresi doldu', terminated: 'Sonlandırıldı' };
+const CONTRACT_STATUS_LABELS = { approved: 'Onaylandı', pending: 'Otel onayı bekleniyor', rejected: 'Reddedildi', expired: 'Süresi doldu', terminated: 'Sonlandırıldı', withdrawn: 'Geri çekildi' };
 const toggleFilter = (values, value) => values.includes(value) ? values.filter(item => item !== value) : [...values, value];
 const resizeChildAges = (ages, count) => Array.from({ length: count }, (_, index) => ages?.[index] ?? 0);
 const formatMoney = (amount, currency = 'TRY') => new Intl.NumberFormat('tr-TR', {

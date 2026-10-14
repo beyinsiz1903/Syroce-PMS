@@ -221,6 +221,11 @@ async def get_marketplace_agency(
                     {"$or": [{"id": actor_id}, {"user_id": actor_id}]},
                     {"_id": 0, "id": 1, "user_id": 1, "name": 1, "email": 1, "role": 1, "roles": 1, "is_active": 1},
                 )
+                if actor:
+                    # PII is encrypted at rest ("SYR1:..."); never hand ciphertext to the portal.
+                    from security.encrypted_lookup import decrypt_user_doc
+
+                    actor = decrypt_user_doc(actor)
                 actor_role = getattr((actor or {}).get("role"), "value", (actor or {}).get("role"))
                 actor_roles = (actor or {}).get("roles") or []
                 if not actor or actor.get("is_active") is False or (actor_role != "super_admin" and "super_admin" not in actor_roles):
