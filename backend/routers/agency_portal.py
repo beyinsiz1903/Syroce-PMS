@@ -404,6 +404,8 @@ async def update_agency(
     existing = await db.agencies.find_one({"id": agency_id, "tenant_id": tenant_id}, {"_id": 0})
     if not existing:
         raise HTTPException(status_code=404, detail="Acente bulunamadi")
+    if existing.get("status") == "migrated":
+        raise HTTPException(status_code=409, detail="Bu acente marketplace'e taşındı; işlemleri marketplace üzerinden yapın")
 
     updates = {"updated_at": _now_iso()}
     for field in ("name", "contact_name", "contact_email", "contact_phone", "commission_rate", "notes", "status"):
