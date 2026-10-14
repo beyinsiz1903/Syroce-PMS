@@ -36,7 +36,7 @@ from core.agency_credit import assert_credit_capacity
 from core.atomic_booking import BookingConflictError, assign_room_atomic, create_booking_atomic
 from core.database import db
 from core.marketplace_ledger_sync import NON_REVENUE_STATUSES, refresh_ledger_from_pms
-from core.occupancy_pricing import OccupancyPricingError, calculate_occupancy_quote, find_occupancy_rule
+from core.occupancy_pricing import OccupancyPricingError, calculate_occupancy_quote, find_occupancy_rule, rule_has_money_amounts
 from core.security import _is_super_admin, get_current_user, verify_password
 from core.sellable_rooms import PHYSICAL_ROOM_FILTER
 from core.stay_overlap import stay_overlap_filter
@@ -1018,10 +1018,23 @@ def _rate_product_snapshot(plan_code, room, contract, pricing=None):
 async def _marketplace_occupancy_price(
     *, tenant_id: str, room: dict, pricing: dict, adults: int, child_ages: list[int]
 ) -> dict:
-    """Apply the hotel's saved occupancy policy to each shared nightly rate."""
+    """Apply the hotel's saved occupancy policy (per room or per person).
+
+    A rule that rejects the party, or whose fixed supplements were entered in
+    another currency than the agency sale currency, closes only this room
+    type; it never fails the whole search or prices in the wrong currency.
+    """
     rule = await find_occupancy_rule(db, tenant_id, room)
-    if not rule:
+    if not rule or not pricing.get("sellable", True):
         return {**pricing, "occupancy_pricing": None}
+
+    closed = {"sellable": False, "nightly_rates": [], "total_price": 0.0, "occupancy_pricing": None}
+    if rule_has_money_amounts(rule):
+        rule_currency = str(rule.get("currency") or await _legacy_rule_currency(tenant_id) or "").upper()
+        sale_currency = await _sale_currency(tenant_id)
+        if rule_currency and rule_currency != sale_currency:
+            return {**pricing, **closed, "reason": "occupancy_rule_currency_mismatch",
+                    "occupancy_error": f"Otelin kişi/çocuk ücret kuralı {rule_currency} girilmiş; acente satış para birimi {sale_currency}."}
 
     quoted_nights = []
     total = 0.0
@@ -1037,7 +1050,7 @@ async def _marketplace_occupancy_price(
             quoted_nights.append({**item, "base_rate": item["rate"], "rate": quote["nightly_total"]})
             total += quote["nightly_total"]
     except OccupancyPricingError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return {**pricing, **closed, "reason": "occupancy_rule_rejected", "occupancy_error": str(exc)}
 
     summary = calculate_occupancy_quote(
         base_nightly_rate=pricing["nightly_rates"][0]["rate"] if pricing.get("nightly_rates") else 0,
@@ -1061,6 +1074,17 @@ async def _marketplace_occupancy_price(
     }
 
 
+async def _legacy_rule_currency(tenant_id: str) -> str | None:
+    """Rules saved before currencies were recorded were entered in the grid,
+    which then always showed the channel manager's currency."""
+    from domains.channel_manager.unified_rate_manager_router import _detect_active_provider, _rate_currency
+
+    detection = await _detect_active_provider(tenant_id)
+    if not detection.get("provider"):
+        return None
+    return await _rate_currency(tenant_id, detection)
+
+
 async def _validated_agency_quote(*, tenant_id, agency_id, room, check_in, check_out,
                                   rate_plan_code, adults, children, child_ages, exclude_booking_id=None,
                                   allow_base_rate_fallback=False, contract=None):
@@ -1079,6 +1103,8 @@ async def _validated_agency_quote(*, tenant_id, agency_id, room, check_in, check
     pricing = await _marketplace_occupancy_price(
         tenant_id=tenant_id, room=room, pricing=pricing, adults=adults, child_ages=child_ages,
     )
+    if not pricing.get("sellable", True):
+        raise HTTPException(409, pricing.get("occupancy_error") or "Seçilen oda bu misafir sayısı için satılamıyor")
     if pricing["total_price"] <= 0:
         raise HTTPException(409, "Geçerli satış fiyatı tanımlı değil")
     return pricing

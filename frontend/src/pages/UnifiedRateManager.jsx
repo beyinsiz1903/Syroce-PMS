@@ -444,7 +444,8 @@ const UnifiedRateManager = ({
         settings: [{
           room_type_code: roomTypeCode,
           ...currentRule,
-          pricing_type: newType
+          pricing_type: newType,
+          currency
         }]
       }, {
         headers
@@ -464,12 +465,12 @@ const UnifiedRateManager = ({
   };
   const saveOccupancyPricingRule = async (roomTypeCode, rule) => {
     await axios.put(`${UNIFIED_PREFIX}/pricing-settings`, {
-      settings: [{ room_type_code: roomTypeCode, ...rule, pricing_type: 'per_person' }]
+      settings: [{ room_type_code: roomTypeCode, ...rule, pricing_type: 'per_person', currency }]
     }, { headers });
     setPricingSettings(prev => ({ ...prev, [roomTypeCode]: 'per_person' }));
     setOccupancyPricingRules(prev => ({
       ...prev,
-      [roomTypeCode]: { ...rule, pricing_type: 'per_person' }
+      [roomTypeCode]: { ...rule, pricing_type: 'per_person', currency }
     }));
     toast.success('Kişi bazlı fiyatlandırma kuralı kaydedildi');
   };

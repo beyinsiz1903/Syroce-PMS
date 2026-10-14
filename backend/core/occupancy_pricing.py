@@ -232,6 +232,19 @@ def calculate_occupancy_quote(
     }
 
 
+def rule_has_money_amounts(rule: dict[str, Any] | None) -> bool:
+    """Whether the rule adds fixed amounts, i.e. depends on a currency.
+
+    Per-room pricing and percentage supplements are currency-neutral.
+    """
+    normalized = normalize_occupancy_rule(rule)
+    if normalized["pricing_type"] != "per_person":
+        return False
+    if normalized["extra_adult_rate_type"] == "fixed" and normalized["extra_adult_rate"] > 0:
+        return True
+    return any(band["pricing_mode"] == "fixed" and band["value"] > 0 for band in normalized["child_age_bands"])
+
+
 def _room_type_candidates(room: dict[str, Any]) -> list[str]:
     candidates: list[str] = []
     for field in ("room_type_code", "room_type", "type", "room_type_name"):
@@ -280,6 +293,7 @@ async def find_occupancy_rule(db: Any, tenant_id: str, room: dict[str, Any]) -> 
                 return {
                     "room_type_code": candidate,
                     **normalize_occupancy_rule(document),
+                    "currency": document.get("currency"),
                 }
 
         # Older imports sometimes changed only letter case.  Keep matching
@@ -295,5 +309,6 @@ async def find_occupancy_rule(db: Any, tenant_id: str, room: dict[str, Any]) -> 
                 return {
                     "room_type_code": code,
                     **normalize_occupancy_rule(document),
+                    "currency": document.get("currency"),
                 }
     return None

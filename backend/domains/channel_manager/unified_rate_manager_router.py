@@ -175,6 +175,9 @@ class PricingSettingItem(BaseModel):
     max_occupancy: int | None = Field(None, ge=1, le=50)
     provider_pricing_verified: bool = False
     provider_pricing_note: str | None = Field(None, max_length=500)
+    # Currency the hotel saw while entering fixed supplements (agency-only
+    # mode shows the sale currency, channel mode the channel's currency).
+    currency: str | None = Field(None, pattern="^[A-Z]{3}$")
 
 
 class PricingSettingsRequest(BaseModel):
@@ -205,6 +208,7 @@ def _pricing_payload(docs: list[dict]) -> tuple[dict[str, str], dict[str, dict]]
         rule["provider_pricing_verified_at"] = doc.get("provider_pricing_verified_at")
         rule["provider_pricing_verified_by"] = doc.get("provider_pricing_verified_by")
         rule["provider_pricing_note"] = doc.get("provider_pricing_note")
+        rule["currency"] = doc.get("currency")
         rule["provider_sync_state"] = "VERIFIED" if rule["pricing_type"] != "per_person" or rule["provider_pricing_verified"] else "MANUAL_CONFIGURATION_REQUIRED"
         rules[room_type_code] = rule
     return settings, rules
@@ -2031,6 +2035,7 @@ async def update_pricing_settings(
             {"_id": 0, "provider_pricing_verified": 1},
         )
         verified = bool(item.provider_pricing_verified) if detection["provider"] == "hotelrunner" else True
+        rule_currency = item.currency or (await _rate_currency(tenant_id, detection) if detection["provider"] else None)
         verification_changed = verified != bool((existing or {}).get("provider_pricing_verified", False))
         await db[collection].update_one(
             {"tenant_id": tenant_id, "room_type_code": item.room_type_code},
@@ -2043,6 +2048,7 @@ async def update_pricing_settings(
                     "provider_pricing_verified_at": now if verified else None,
                     "provider_pricing_verified_by": current_user.id if verified else None,
                     "provider_pricing_note": (item.provider_pricing_note or "").strip() or None,
+                    "currency": rule_currency,
                     "updated_at": now,
                     "updated_by": current_user.id,
                 }
