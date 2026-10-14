@@ -146,9 +146,16 @@ async def get_upload(path: str, optional_user: User | None = Depends(get_optiona
                 agency_id = getattr(optional_user, "agency_id", None)
                 allowed = False
                 if is_catalog_image and agency_id:
+                    from core.tenant_db import get_system_db
+                    from routers.agency_content import catalogue_visible_to
                     from routers.agency_contracts import has_active_contract
 
                     allowed = await has_active_contract(agency_id, target_tenant_id)
+                    if allowed:
+                        listing = await get_system_db().marketplace_listings.find_one(
+                            {"tenant_id": target_tenant_id}, {"_id": 0, "content_agency_ids": 1}
+                        )
+                        allowed = catalogue_visible_to(listing or {}, agency_id)
                 if not allowed:
                     raise HTTPException(status_code=403, detail="Forbidden: Tenant mismatch")
 

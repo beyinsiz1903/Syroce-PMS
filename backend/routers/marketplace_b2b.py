@@ -1914,9 +1914,17 @@ async def agency_get_hotel(
         raise HTTPException(403, "Bu otelle aktif sözleşmeniz yok")
     listing = await _get_listing_or_404(tenant_id)
 
+    from routers.agency_content import catalogue_visible_to
+
+    content_visible = catalogue_visible_to(listing, agency["agency_id"])
     with tenant_context(tenant_id):
         rooms = await db.rooms.find({"tenant_id": tenant_id, **PHYSICAL_ROOM_FILTER}, {"_id": 0}).to_list(500)
-        content = await db.hotel_content.find_one({"tenant_id": tenant_id}, {"_id": 0})
+        content = await db.hotel_content.find_one({"tenant_id": tenant_id}, {"_id": 0}) if content_visible else None
+    if not content_visible:
+        # The hotel shares its catalogue with selected agencies only; others
+        # keep the commercial basics they need to sell.
+        listing = {**listing, "photos": [], "description": "", "room_content": [], "services": [], "content_restricted": True}
+    listing.pop("content_agency_ids", None)
     if content:
         listing = {
             **listing,
@@ -1969,6 +1977,8 @@ async def agency_search(
     Şehir/ülke/sorgu filtreleriyle eşleşen tüm listed otellerde tarih aralığı
     için müsait oda tiplerini döndürür. Engelli tarih kuralları uygulanır.
     """
+    from routers.agency_content import catalogue_visible_to
+
     try:
         ci = datetime.fromisoformat(req.check_in + "T00:00:00+00:00")
         co = datetime.fromisoformat(req.check_out + "T00:00:00+00:00")
@@ -2171,8 +2181,8 @@ async def agency_search(
                     "city": listing.get("city"),
                     "country": listing.get("country"),
                     "star_rating": listing.get("star_rating"),
-                    "photos": listing.get("photos", [])[:3],
-                    "description": listing.get("description", ""),
+                    "photos": listing.get("photos", [])[:3] if catalogue_visible_to(listing, agency["agency_id"]) else [],
+                    "description": listing.get("description", "") if catalogue_visible_to(listing, agency["agency_id"]) else "",
                     "amenities": listing.get("amenities", []),
                     "meal_plans": listing.get("meal_plans", []),
                     "currency": listing.get("currency", "TRY"),
