@@ -26,6 +26,14 @@ export const NAV_GROUP_SECTIONS = {
     { id: "guest_services", label: "Misafir Hizmetleri" },
     { id: "daily_controls", label: "Günlük Kontroller" },
   ],
+  // Agency extranet (agencies under contract, own logins) and the hotel
+  // network (closed hotel-to-hotel transfers) are separate businesses.
+  sales: [
+    { id: "revenue", label: "Gelir & Fiyat" },
+    { id: "groups", label: "Grup Satışları" },
+    { id: "agency_extranet", label: "Acente Extranet" },
+    { id: "hotel_network", label: "Otel Ağı (oteller arası)" },
+  ],
   operations: [
     { id: "daily", label: "Günlük Operasyon" },
     { id: "guest_requests", label: "Misafir Talepleri" },
@@ -292,8 +300,8 @@ export const NAV_ITEMS = [
   { key: "maintenance_work_orders", label: "Teknik Servis", path: "/maintenance/work-orders", moduleKey: "maintenance", tier: "basic", group: "operations", navGroup: "operations", navSection: "daily" },
   { key: "maintenance_assets", label: "Varlıklar ve ekipmanlar", path: "/maintenance/assets", moduleKey: "maintenance", tier: "basic", group: "operations", navGroup: "operations", navSection: "daily" },
   { key: "maintenance_plans", label: "Planlı bakım", path: "/maintenance/plans", moduleKey: "maintenance", tier: "basic", group: "operations", navGroup: "operations", navSection: "daily" },
-  { key: "hurdle_rates", label: "Fiyat kuralları", path: "/hurdle-rates", moduleKey: "revenue_management", tier: "enterprise", group: "enterprise", navGroup: "sales" },
-  { key: "revenue_autopilot_monitor", label: "Otopilot çalışma sonuçları", path: "/revenue-autopilot/monitor", moduleKey: "ai_revenue_autopilot", tier: "enterprise", group: "enterprise", navGroup: "sales" },
+  { key: "hurdle_rates", label: "Fiyat kuralları", path: "/hurdle-rates", moduleKey: "revenue_management", tier: "enterprise", group: "enterprise", navGroup: "sales", navSection: "revenue" },
+  { key: "revenue_autopilot_monitor", label: "Otopilot çalışma sonuçları", path: "/revenue-autopilot/monitor", moduleKey: "ai_revenue_autopilot", tier: "enterprise", group: "enterprise", navGroup: "sales", navSection: "revenue" },
   { key: "physical_security", label: "Fiziksel güvenlik", path: "/app/physical-security", tier: "basic", group: "core", navGroup: "admin", navSection: "platform", requireSuperAdmin: true },
   {
     key: "turndown",
@@ -533,6 +541,7 @@ export const NAV_ITEMS = [
     tier: "basic",
     group: "core",
     navGroup: "sales",
+    navSection: "groups",
   },
   {
     key: "block_management",
@@ -542,6 +551,7 @@ export const NAV_ITEMS = [
     tier: "basic",
     group: "core",
     navGroup: "sales",
+    navSection: "groups",
   },
   {
     key: "deposit_tracking",
@@ -551,6 +561,7 @@ export const NAV_ITEMS = [
     tier: "basic",
     group: "core",
     navGroup: "sales",
+    navSection: "groups",
   },
   {
     key: "group_folio",
@@ -560,6 +571,7 @@ export const NAV_ITEMS = [
     tier: "basic",
     group: "core",
     navGroup: "sales",
+    navSection: "groups",
   },
   {
     key: "no_show_analytics",
@@ -755,6 +767,7 @@ export const NAV_ITEMS = [
     tier: "basic",
     group: "core",
     navGroup: "sales",
+    navSection: "agency_extranet",
   },
   {
     key: "agency_management",
@@ -764,6 +777,7 @@ export const NAV_ITEMS = [
     tier: "basic",
     group: "core",
     navGroup: "sales",
+    navSection: "agency_extranet",
   },
   {
     key: "incoming_agency_contracts",
@@ -773,6 +787,7 @@ export const NAV_ITEMS = [
     tier: "basic",
     group: "core",
     navGroup: "sales",
+    navSection: "agency_extranet",
   },
   {
     key: "agency_statements",
@@ -782,6 +797,7 @@ export const NAV_ITEMS = [
     tier: "basic",
     group: "core",
     navGroup: "sales",
+    navSection: "agency_extranet",
   },
   {
     key: "agency_content",
@@ -791,6 +807,7 @@ export const NAV_ITEMS = [
     tier: "basic",
     group: "core",
     navGroup: "sales",
+    navSection: "agency_extranet",
   },
   {
     key: "b2b_analytics",
@@ -800,6 +817,7 @@ export const NAV_ITEMS = [
     tier: "professional",
     group: "professional",
     navGroup: "sales",
+    navSection: "agency_extranet",
   },
   {
     key: "report_scheduler",
@@ -968,6 +986,7 @@ export const NAV_ITEMS = [
     tier: "enterprise",
     group: "enterprise",
     navGroup: "sales",
+    navSection: "revenue",
   },
   {
     key: "ai_zeka",
@@ -1314,6 +1333,7 @@ export const NAV_ITEMS = [
     tier: "basic",
     group: "core",
     navGroup: "sales",
+    navSection: "hotel_network",
   },
 
   // ──── SUPER ADMIN ONLY ─────────────────────────────

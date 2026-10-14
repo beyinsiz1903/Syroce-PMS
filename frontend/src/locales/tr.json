@@ -2608,6 +2608,12 @@
     "apps": "Tüm Uygulamalar"
   },
   "navSections": {
+    "sales": {
+      "revenue": "Gelir & Fiyat",
+      "groups": "Grup Satışları",
+      "agency_extranet": "Acente Extranet",
+      "hotel_network": "Otel Ağı (oteller arası)"
+    },
     "frontdesk": {
       "reservations": "Rezervasyon & Konaklama",
       "room_management": "Oda Yönetimi",
