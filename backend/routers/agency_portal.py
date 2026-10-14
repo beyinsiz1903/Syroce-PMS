@@ -1294,6 +1294,21 @@ async def agency_portal_create_reservation(
     except Exception:
         await db.guests.delete_one({"id": guest_id, "tenant_id": tenant_id})
         raise
+    if agency_id:
+        from core.agency_allotment import legacy_allotment_overrun, marketplace_allotment_overrun, rollback_oversold_booking
+
+        legacy_cap = await _get_b2b_allotment(db, tenant_id, agency_id, data.check_in, data.room_type_id, data.check_out)
+        oversold = legacy_cap is not None and await legacy_allotment_overrun(
+            db, tenant_id=tenant_id, agency_id=agency_id, room_ids=[room["id"] for room in rooms],
+            allotment_count=legacy_cap, check_in=data.check_in, check_out=data.check_out,
+        )
+        oversold = oversold or bool(await marketplace_allotment_overrun(
+            db, tenant_id=tenant_id, agency_id=agency_id, room_type=data.room_type_id,
+            rate_plan_code=data.rate_plan_code, check_in=data.check_in, check_out=data.check_out,
+        ))
+        if oversold:
+            await rollback_oversold_booking(db, tenant_id=tenant_id, booking_id=booking_id)
+            raise HTTPException(status_code=409, detail="Acente kontenjanı eş zamanlı bir satışla doldu; yeniden arayın")
 
     # Completion intent was stored atomically with the booking. The durable
     # worker repairs local projections and tracks downstream delivery.
