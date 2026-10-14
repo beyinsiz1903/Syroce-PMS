@@ -157,6 +157,8 @@ const AgencyPortalDashboard = () => {
   const [widgetOriginsText, setWidgetOriginsText] = useState('');
   const [contracts, setContracts] = useState([]);
   const [contractHotels, setContractHotels] = useState([]);
+  const [selectedHotelIds, setSelectedHotelIds] = useState([]);
+  const [proposing, setProposing] = useState(false);
   const [contractsLoading, setContractsLoading] = useState(false);
   const [contractForm, setContractForm] = useState({ tenant_id: '', commission_pct: '', valid_from: toDateInput(new Date()), valid_to: `${new Date().getFullYear() + 1}-12-31`, payment_terms: 'on_arrival', currency: 'TRY', allow_base_rate_fallback: false });
 
@@ -602,13 +604,28 @@ const AgencyPortalDashboard = () => {
   };
   const proposeContract = async event => {
     event.preventDefault();
+    if (!selectedHotelIds.length) return toast.error('Teklif göndermek için en az bir otel seçin.');
+    setProposing(true);
     try {
-      await agencyApi.post('/marketplace/v1/contracts/propose', { ...contractForm, commission_pct: Math.round(Number(contractForm.commission_pct)), allowed_room_types: [], cancellation_policy: { free_until_days_before: 7, penalty_pct: 50, no_show_penalty_pct: 100 } });
-      toast.success('Sözleşme teklifiniz otele gönderildi. Otel onaylamadan satış açılamaz.');
-      setContractForm(current => ({ ...current, tenant_id: '' }));
+      const { data } = await agencyApi.post('/marketplace/v1/contracts/propose-bulk', {
+        tenant_ids: selectedHotelIds,
+        commission_pct: Math.round(Number(contractForm.commission_pct)),
+        payment_terms: contractForm.payment_terms,
+        valid_from: contractForm.valid_from,
+        valid_to: contractForm.valid_to,
+        cancellation_policy: { free_until_days_before: 7, penalty_pct: 50, no_show_penalty_pct: 100 },
+      });
+      if (data.sent) toast.success(`${data.sent} otele teklif gönderildi. Her otel ayrı onaylar; onaydan önce satış açılmaz.`);
+      (data.results || []).filter(result => !result.ok).forEach(result => {
+        const hotel = contractHotels.find(item => item.tenant_id === result.tenant_id);
+        toast.error(`${hotel?.hotel_name || 'Otel'}: ${typeof result.error === 'string' ? result.error : 'teklif gönderilemedi'}`);
+      });
+      setSelectedHotelIds([]);
       await loadContracts();
     } catch (err) { toast.error(err.response?.data?.detail || 'Sözleşme teklifi gönderilemedi.'); }
+    finally { setProposing(false); }
   };
+
   const downloadReconciliation = async () => {
     const params = reconPeriodParams();
     if (!params) return;
@@ -1014,7 +1031,32 @@ const AgencyPortalDashboard = () => {
           </TabsContent>}
 
           {portalMode === 'marketplace' && <TabsContent value="contracts" className="mt-4 space-y-4">
-            <Card><CardHeader><CardTitle>Otel bazlı sözleşme teklifi</CardTitle></CardHeader><CardContent><p className="mb-4 text-sm text-slate-600">Komisyon her otelle ayrı kararlaştırılır. Teklif oranı satışta ancak otel onayladıktan sonra kullanılır.</p><form onSubmit={proposeContract} className="grid gap-3 md:grid-cols-3"><div><Label htmlFor="contract-hotel">Otel</Label><select id="contract-hotel" required value={contractForm.tenant_id} onChange={event => { const hotel = contractHotels.find(item => item.tenant_id === event.target.value); setContractForm(current => ({ ...current, tenant_id: event.target.value, currency: hotel?.currency || 'TRY' })); }} className="mt-1 flex h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm"><option value="">Otel seçin</option>{contractHotels.filter(item => !['pending', 'approved'].includes(item.contract_status)).map(item => <option key={item.tenant_id} value={item.tenant_id}>{item.hotel_name}{item.city ? ` · ${item.city}` : ''}</option>)}</select></div><div><Label htmlFor="contract-rate">Teklif edilen komisyon (%)</Label><Input id="contract-rate" required type="number" min="0" max="100" step="1" inputMode="numeric" value={contractForm.commission_pct} onChange={event => { const raw = event.target.value; setContractForm(current => ({ ...current, commission_pct: raw === '' ? '' : String(Math.min(100, Math.max(0, Math.round(Number(raw))))) })); }} /></div><div><Label htmlFor="contract-payment">Ödeme vadesi</Label><select id="contract-payment" value={contractForm.payment_terms} onChange={event => setContractForm(current => ({ ...current, payment_terms: event.target.value }))} className="mt-1 flex h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm"><option value="prepaid">Ön ödemeli</option><option value="on_arrival">Girişte</option><option value="net_7">7 gün</option><option value="net_15">15 gün</option><option value="net_30">30 gün</option></select></div><div><Label htmlFor="contract-from">Başlangıç</Label><Input id="contract-from" required type="date" value={contractForm.valid_from} onChange={event => setContractForm(current => ({ ...current, valid_from: event.target.value }))} /></div><div><Label htmlFor="contract-to">Bitiş</Label><Input id="contract-to" required type="date" value={contractForm.valid_to} onChange={event => setContractForm(current => ({ ...current, valid_to: event.target.value }))} /></div><div className="flex items-end"><Button type="submit" className="w-full bg-emerald-700 hover:bg-emerald-800">Teklifi otele gönder</Button></div></form></CardContent></Card>
+            <Card><CardHeader><CardTitle>Otel bazlı sözleşme teklifi</CardTitle></CardHeader><CardContent><p className="mb-4 text-sm text-slate-600">Komisyon her otelle ayrı kararlaştırılır. Teklif oranı satışta ancak otel onayladıktan sonra kullanılır.</p><form onSubmit={proposeContract} className="grid gap-3 md:grid-cols-3"><div><Label htmlFor="contract-rate">Teklif edilen komisyon (%)</Label><Input id="contract-rate" required type="number" min="0" max="100" step="1" inputMode="numeric" value={contractForm.commission_pct} onChange={event => { const raw = event.target.value; setContractForm(current => ({ ...current, commission_pct: raw === '' ? '' : String(Math.min(100, Math.max(0, Math.round(Number(raw))))) })); }} /></div><div><Label htmlFor="contract-payment">Ödeme vadesi</Label><select id="contract-payment" value={contractForm.payment_terms} onChange={event => setContractForm(current => ({ ...current, payment_terms: event.target.value }))} className="mt-1 flex h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm"><option value="prepaid">Ön ödemeli</option><option value="on_arrival">Girişte</option><option value="net_7">7 gün</option><option value="net_15">15 gün</option><option value="net_30">30 gün</option></select></div><div><Label htmlFor="contract-from">Başlangıç</Label><Input id="contract-from" required type="date" value={contractForm.valid_from} onChange={event => setContractForm(current => ({ ...current, valid_from: event.target.value }))} /></div><div><Label htmlFor="contract-to">Bitiş</Label><Input id="contract-to" required type="date" value={contractForm.valid_to} onChange={event => setContractForm(current => ({ ...current, valid_to: event.target.value }))} /></div><div className="flex items-end"><Button type="submit" disabled={proposing || !selectedHotelIds.length} className="w-full bg-emerald-700 hover:bg-emerald-800" data-testid="propose-selected-hotels">{proposing && <Loader2 size={14} className="mr-2 animate-spin" />}Seçili otellere teklif gönder ({selectedHotelIds.length})</Button></div></form></CardContent></Card>
+            <Card data-testid="hotel-candidates"><CardHeader className="pb-2"><CardTitle className="text-base">Oteller</CardTitle><p className="text-xs text-slate-500">Tüm Syroce otelleri listelenir. Fiyat, kontenjan ve fotoğraf galerisi otel sözleşmeyi onayladıktan sonra açılır.</p></CardHeader>
+              <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {contractHotels.length === 0 && !contractsLoading && <p className="text-sm text-slate-400">Listelenecek otel yok.</p>}
+                {contractHotels.map(hotel => {
+                  const locked = ['pending', 'approved'].includes(hotel.contract_status);
+                  const checked = selectedHotelIds.includes(hotel.tenant_id);
+                  return (
+                    <label key={hotel.tenant_id} className={`flex cursor-pointer flex-col overflow-hidden rounded-lg border ${checked ? 'border-emerald-500 ring-1 ring-emerald-300' : 'border-slate-200'} ${locked ? 'cursor-default opacity-70' : ''}`}>
+                      {hotel.cover_photo ? <AgencyImage src={hotel.cover_photo} alt={hotel.hotel_name} className="h-28 w-full object-cover" /> : <div className="flex h-28 items-center justify-center bg-slate-100 text-slate-300"><Hotel size={28} /></div>}
+                      <div className="space-y-1 p-3">
+                        <div className="flex items-start justify-between gap-2">
+                          <span className="font-semibold text-slate-900">{hotel.hotel_name}</span>
+                          {locked ? <Badge className={hotel.contract_status === 'approved' ? 'bg-emerald-600' : 'bg-amber-500'}>{CONTRACT_STATUS_LABELS[hotel.contract_status]}</Badge>
+                            : <input type="checkbox" checked={checked} onChange={() => setSelectedHotelIds(ids => (checked ? ids.filter(id => id !== hotel.tenant_id) : [...ids, hotel.tenant_id]))} aria-label={`${hotel.hotel_name} seç`} />}
+                        </div>
+                        <div className="text-xs text-slate-500">{[hotel.city, hotel.country].filter(Boolean).join(', ')}{hotel.star_rating ? ` · ${'★'.repeat(hotel.star_rating)}` : ''}</div>
+                        {(hotel.meal_plans || []).length > 0 && <div className="text-xs text-slate-600">Pansiyon: {hotel.meal_plans.join(', ')}</div>}
+                        {(hotel.room_type_names || []).length > 0 && <div className="text-xs text-slate-600">Odalar: {hotel.room_type_names.slice(0, 4).join(', ')}</div>}
+                        {hotel.summary && <p className="line-clamp-3 text-xs text-slate-500">{hotel.summary}</p>}
+                      </div>
+                    </label>
+                  );
+                })}
+              </CardContent>
+            </Card>
             {contractsLoading ? <Card><CardContent className="py-10 text-center"><Loader2 className="mx-auto animate-spin" /></CardContent></Card> : contracts.map(contract => <Card key={contract.id}><CardContent className="flex flex-wrap items-center justify-between gap-3 py-4"><div><div className="font-semibold">{contract.hotel_name}</div><div className="text-xs text-slate-500">{contract.contract_code} · {formatDate(contract.valid_from)} – {formatDate(contract.valid_to)} · {PAYMENT_TERMS_LABELS[contract.payment_terms] || contract.payment_terms}</div></div><div className="text-right"><Badge className={contract.status === 'approved' ? 'bg-emerald-600' : contract.status === 'pending' ? 'bg-amber-500' : 'bg-slate-500'}>{contract.status === 'approved' ? 'Onaylandı' : contract.status === 'pending' ? 'Otel onayı bekleniyor' : (CONTRACT_STATUS_LABELS[contract.status] || contract.status)}</Badge><div className="mt-1 text-sm font-semibold">%{Math.round(Number(contract.commission_pct))} komisyon</div></div></CardContent></Card>)}
           </TabsContent>}
 

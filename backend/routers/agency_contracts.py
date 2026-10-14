@@ -353,7 +353,7 @@ async def contract_propose(
 ):
     """Yeni sözleşme teklifi (acente → otel)."""
     _validate_dates(data.valid_from, data.valid_to)
-    listing = await _listing_dep(data.tenant_id)
+    listing = await _listing_dep(data.tenant_id, for_proposal=True)
 
     sysdb = get_system_db()
     await _ensure_indexes()
@@ -418,6 +418,38 @@ async def contract_propose(
     return {"ok": True, "contract": doc}
 
 
+class ContractProposeBulk(BaseModel):
+    """Same terms sent to several hotels; each hotel decides separately."""
+
+    tenant_ids: list[str] = Field(..., min_length=1, max_length=50)
+    commission_pct: float = Field(default=12.0, ge=0, le=100)
+    cancellation_policy: CancellationPolicy = Field(default_factory=CancellationPolicy)
+    payment_terms: str = Field(default="on_arrival", pattern="^(prepaid|on_arrival|net_7|net_15|net_30)$")
+    valid_from: str
+    valid_to: str
+    # None: each hotel's own sale currency.
+    currency: str | None = Field(default=None, pattern="^[A-Z]{3}$")
+    special_terms: str = ""
+
+
+@agency_router.post("/contracts/propose-bulk")
+async def contract_propose_bulk(data: ContractProposeBulk, agency: dict = Depends(_agency_dep)):
+    """Send one proposal per selected hotel; one failure does not stop the others."""
+    _validate_dates(data.valid_from, data.valid_to)
+    terms = data.model_dump(exclude={"tenant_ids"})
+    results = []
+    for tenant_id in dict.fromkeys(data.tenant_ids):  # de-duplicate, keep order
+        try:
+            currency = terms["currency"] or (await _listing_dep(tenant_id, for_proposal=True)).get("currency") or "TRY"
+            response = await contract_propose(ContractPropose(**{**terms, "currency": currency}, tenant_id=tenant_id), agency)
+            contract = response["contract"]
+            results.append({"tenant_id": tenant_id, "ok": True, "hotel_name": contract.get("hotel_name"),
+                            "contract_code": contract.get("contract_code")})
+        except HTTPException as exc:
+            results.append({"tenant_id": tenant_id, "ok": False, "error": exc.detail})
+    return {"sent": sum(1 for r in results if r["ok"]), "failed": sum(1 for r in results if not r["ok"]), "results": results}
+
+
 async def _list_agency_contracts(status: str | None, limit: int, agency: dict) -> dict:
     sysdb = get_system_db()
     q: dict = {"agency_id": agency["agency_id"]}
@@ -438,22 +470,20 @@ async def contract_list_mine(
 
 @agency_router.get("/contracts/hotel-candidates")
 async def contract_hotel_candidates(agency: dict = Depends(_agency_dep)) -> dict:
-    """Minimal public hotel data needed to create a contract proposal."""
+    """Every active hotel with pre-contract information (no prices or availability)."""
+    from core.agency_hotel_directory import hotel_profiles, teaser
+
     sysdb = get_system_db()
-    listings = await sysdb.marketplace_listings.find(
-        {"is_listed": True},
-        {"_id": 0, "tenant_id": 1, "hotel_name": 1, "city": 1, "country": 1,
-         "currency": 1, "allowed_room_types": 1},
-    ).sort("hotel_name", 1).to_list(1000)
+    profiles = await hotel_profiles(sysdb, include_hidden=False)
     contracts = await sysdb.agency_contracts.find(
         {"agency_id": agency["agency_id"], "status": {"$in": ["pending", "approved"]}},
         {"_id": 0, "tenant_id": 1, "status": 1},
-    ).to_list(1000)
+    ).to_list(5000)
     status_by_tenant = {item["tenant_id"]: item["status"] for item in contracts}
     return {
         "hotels": [
-            {**listing, "contract_status": status_by_tenant.get(listing["tenant_id"])}
-            for listing in listings
+            {**teaser(profile), "contract_status": status_by_tenant.get(profile["tenant_id"])}
+            for profile in profiles
         ]
     }
 
