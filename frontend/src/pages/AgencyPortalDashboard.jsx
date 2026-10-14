@@ -127,6 +127,11 @@ const AgencyPortalDashboard = () => {
   const [reservationsLoading, setReservationsLoading] = useState(false);
   const [reconciliation, setReconciliation] = useState(null);
   const [notices, setNotices] = useState([]);
+  const [statements, setStatements] = useState([]);
+  const [disputeTarget, setDisputeTarget] = useState(null);
+  const [disputeReason, setDisputeReason] = useState('');
+  const [disputeIds, setDisputeIds] = useState([]);
+  const [statementBusy, setStatementBusy] = useState(false);
   const [reconPeriod, setReconPeriod] = useState(() => {
     const startDate = new Date(); startDate.setDate(startDate.getDate() - 30);
     return { start: toDateInput(startDate), end: toDateInput(new Date()) };
@@ -545,11 +550,37 @@ const AgencyPortalDashboard = () => {
     }
     return { period_start: reconPeriod.start, period_end: reconPeriod.end };
   };
+  const agreeStatement = async statement => {
+    setStatementBusy(true);
+    try {
+      await agencyApi.post(`/marketplace/v1/statements/${encodeURIComponent(statement.id)}/agree`);
+      toast.success(`${statement.number} onaylandı; otele iletildi.`);
+      setStatements((await agencyApi.get('/marketplace/v1/statements')).data.items || []);
+    } catch (err) { toast.error(err.response?.data?.detail || 'Ekstre onaylanamadı.'); }
+    finally { setStatementBusy(false); }
+  };
+  const openDispute = async statement => {
+    try {
+      const { data } = await agencyApi.get(`/marketplace/v1/statements/${encodeURIComponent(statement.id)}`);
+      setDisputeTarget(data); setDisputeReason(''); setDisputeIds([]);
+    } catch (err) { toast.error(err.response?.data?.detail || 'Ekstre açılamadı.'); }
+  };
+  const submitDispute = async () => {
+    setStatementBusy(true);
+    try {
+      await agencyApi.post(`/marketplace/v1/statements/${encodeURIComponent(disputeTarget.id)}/dispute`, { reason: disputeReason.trim(), booking_ids: disputeIds });
+      toast.success('İtirazınız otele iletildi.');
+      setDisputeTarget(null);
+      setStatements((await agencyApi.get('/marketplace/v1/statements')).data.items || []);
+    } catch (err) { toast.error(err.response?.data?.detail || 'İtiraz gönderilemedi.'); }
+    finally { setStatementBusy(false); }
+  };
   const loadReconciliation = async () => {
     if (portalMode !== 'marketplace') return;
     const params = reconPeriodParams();
     if (!params) return;
     setReconciliation(null);
+    agencyApi.get('/marketplace/v1/statements').then(({ data }) => setStatements(data.items || [])).catch(() => setStatements([]));
     try { const { data } = await agencyApi.get('/marketplace/v1/reconciliation/agency', { params }); setReconciliation(data); }
     catch (err) { toast.error(err.response?.data?.detail || 'Mutabakat özeti yüklenemedi. Lütfen yeniden deneyin.'); }
   };
@@ -959,6 +990,23 @@ const AgencyPortalDashboard = () => {
               {(reconciliation.totals?.cancelled > 0 || reconciliation.totals?.no_show > 0) && <p className="text-xs text-slate-500">Hesaba katılmayan: {reconciliation.totals?.cancelled || 0} iptal · {reconciliation.totals?.no_show || 0} no-show</p>}
               {(reconciliation.by_hotel || []).map(row => <Card key={`${row.tenant_id}-${row.currency}`}><CardContent className="py-4 flex items-center justify-between"><div><div className="font-medium">{row.hotel_name}</div><div className="text-xs text-slate-500">{row.bookings} rezervasyon · Komisyon {formatAgencyMoney(row.commission, row.currency)} · Platform {formatAgencyMoney(row.platform_fee, row.currency)}</div></div><div className="text-right"><div className="font-bold">{formatAgencyMoney(row.gross_revenue, row.currency)}</div><div className="text-xs text-emerald-700">Net {formatAgencyMoney(row.net_to_hotel, row.currency)}</div></div></CardContent></Card>)}
             </>}
+            <Card data-testid="agency-statements">
+              <CardHeader className="pb-2"><CardTitle className="text-base">Otellerin dönem ekstreleri</CardTitle><p className="text-xs text-slate-500">Otelin düzenlediği ekstreyi kontrol edip onaylayın veya satır belirterek itiraz edin.</p></CardHeader>
+              <CardContent className="space-y-2">
+                {statements.length === 0 ? <p className="text-sm text-slate-400">Henüz ekstre yok.</p> : statements.map(statement => (
+                  <div key={statement.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3">
+                    <div>
+                      <div className="text-sm font-medium">{statement.number} · {statement.hotel_name}</div>
+                      <div className="text-xs text-slate-500">{statement.period_start} – {statement.period_end} · {statement.status} · {Number(statement.outstanding) > 0 ? `Ödemeniz: ${formatAgencyMoney(statement.outstanding, statement.currency)}` : Number(statement.outstanding) < 0 ? `Otel ödeyecek: ${formatAgencyMoney(-statement.outstanding, statement.currency)}` : 'Bakiye yok'}</div>
+                    </div>
+                    {['issued', 'resolved'].includes(statement.status) && <div className="flex gap-2">
+                      <Button size="sm" onClick={() => agreeStatement(statement)} disabled={statementBusy}>Mutabıkız</Button>
+                      <Button size="sm" variant="outline" onClick={() => openDispute(statement)} disabled={statementBusy}>İtiraz et</Button>
+                    </div>}
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
           </TabsContent>}
 
           {portalMode === 'marketplace' && <TabsContent value="contracts" className="mt-4 space-y-4">
@@ -1197,6 +1245,29 @@ const AgencyPortalDashboard = () => {
             <Button variant={negotiationDecision?.accept ? 'default' : 'destructive'} onClick={submitNegotiationDecision} disabled={negotiationLoading || (!negotiationDecision?.accept && negotiationNote.trim().length < 5)} data-testid="submit-agency-negotiation">
               {negotiationLoading && <Loader2 className="animate-spin mr-2" size={14} />}{negotiationDecision?.accept ? 'Kabul Et' : 'Reddet'}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(disputeTarget)} onOpenChange={open => !open && !statementBusy && setDisputeTarget(null)}>
+        <DialogContent className="max-w-lg" data-testid="agency-dispute-dialog">
+          <DialogHeader>
+            <DialogTitle>{disputeTarget?.number} ekstresine itiraz</DialogTitle>
+            <p className="text-sm text-slate-500">İtiraz ettiğiniz rezervasyonları işaretleyin ve gerekçenizi yazın.</p>
+          </DialogHeader>
+          <div className="max-h-56 space-y-1 overflow-y-auto">
+            {(disputeTarget?.lines || []).map(line => (
+              <label key={line.booking_id} className="flex items-center gap-2 rounded border p-2 text-xs">
+                <input type="checkbox" checked={disputeIds.includes(line.booking_id)} onChange={() => setDisputeIds(ids => ids.includes(line.booking_id) ? ids.filter(id => id !== line.booking_id) : [...ids, line.booking_id])} />
+                <span className="flex-1">{line.confirmation_code} · {line.check_in} · {line.guest_name} · {line.status}</span>
+                <span>{formatAgencyMoney(line.gross, disputeTarget.currency)}</span>
+              </label>
+            ))}
+          </div>
+          <textarea className="min-h-20 w-full rounded-md border p-2 text-sm" placeholder="İtiraz gerekçesi (en az 5 karakter)" value={disputeReason} maxLength={1000} onChange={e => setDisputeReason(e.target.value)} />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDisputeTarget(null)} disabled={statementBusy}>Vazgeç</Button>
+            <Button variant="destructive" onClick={submitDispute} disabled={statementBusy || disputeReason.trim().length < 5}>İtirazı gönder</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

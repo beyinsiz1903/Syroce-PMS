@@ -361,6 +361,9 @@ const IncomingAgencyContracts = ({ user, tenant, onLogout }) => {
               <Button asChild variant="outline" className="bg-white dark:bg-slate-900">
                 <Link to="/travel-agent-arap">Komisyon ve Ödemeler <ArrowRight className="ml-2 h-4 w-4" /></Link>
               </Button>
+              <Button asChild variant="outline" className="bg-white dark:bg-slate-900">
+                <Link to="/app/agency-statements">Acente Ekstreleri <ArrowRight className="ml-2 h-4 w-4" /></Link>
+              </Button>
             </div>
           </div>
         </div>
