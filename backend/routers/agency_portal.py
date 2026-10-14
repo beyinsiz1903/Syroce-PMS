@@ -956,6 +956,7 @@ async def _get_b2b_price(
 
     if not contract:
         return public_price, False
+    last_night = _last_occupied_date(check_in, check_out)
 
     if contract.get("contract_type") == "commission":
         comm = float(contract.get("commission_rate") or 0)

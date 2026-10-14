@@ -2142,10 +2142,15 @@ async def agency_hotel_availability(
     tenant_id: str,
     check_in: str = Query(..., description="YYYY-MM-DD"),
     check_out: str = Query(..., description="YYYY-MM-DD"),
+    adults: int = Query(2, ge=1, le=20),
+    child_ages: list[int] = Query(default_factory=list, description="Her çocuk için yaş (0-17)"),
+    rate_plan_code: str | None = Query(None, min_length=1, max_length=160),
     agency: dict = Depends(get_marketplace_agency),
 ):
     from routers.agency_contracts import has_active_contract
 
+    if any(age < 0 or age > 17 for age in child_ages):
+        raise HTTPException(422, "Çocuk yaşları 0-17 arasında olmalıdır")
     last_night = _last_occupied_date(check_in, check_out)
     contract = await has_active_contract(
         agency["agency_id"], tenant_id, on_date=check_in, through_date=last_night
@@ -2207,15 +2212,17 @@ async def agency_hotel_availability(
                 check_in=check_in,
                 check_out=check_out,
                 fallback_rate=float(rt_data["base_price"] or 0),
+                rate_plan_code=rate_plan_code,
                 allow_base_rate_fallback=bool(contract.get("allow_base_rate_fallback")),
             )
-            pricing = await _marketplace_occupancy_price(
-                tenant_id=tenant_id,
-                room=rt_data,
-                pricing=pricing,
-                adults=req.adults,
-                child_ages=req.child_ages,
-            )
+            if pricing["sellable"]:
+                pricing = await _marketplace_occupancy_price(
+                    tenant_id=tenant_id,
+                    room=rt_data,
+                    pricing=pricing,
+                    adults=adults,
+                    child_ages=child_ages,
+                )
             if pricing.get("shared_availability") is not None:
                 rt_data["available_rooms"] = min(
                     rt_data["available_rooms"], pricing["shared_availability"]
@@ -2223,9 +2230,11 @@ async def agency_hotel_availability(
             rt_data["nights"] = nights
             rt_data["total_price"] = pricing["total_price"]
             rt_data["nightly_rates"] = pricing["nightly_rates"]
-            rt_data["occupancy_pricing"] = pricing["occupancy_pricing"]
+            rt_data["occupancy_pricing"] = pricing.get("occupancy_pricing")
+            rt_data["rate_plan_code"] = pricing.get("rate_plan_code")
             if not pricing["sellable"]:
                 rt_data["available_rooms"] = 0
+                rt_data["unavailable_reason"] = pricing.get("reason")
             rt_data["commission_pct"] = commission_pct
             rt_data["agency_payable"] = round(rt_data["total_price"] * (1 - commission_pct / 100), 2)
             del rt_data["_room_ids"]
