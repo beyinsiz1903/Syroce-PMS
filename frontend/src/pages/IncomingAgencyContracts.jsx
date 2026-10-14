@@ -178,6 +178,8 @@ const IncomingAgencyContracts = ({ user, tenant, onLogout }) => {
   const [counts, setCounts] = useState({ pending: 0, approved: 0, rejected: 0, terminated: 0, expired: 0, withdrawn: 0 });
 
   const [approveDlg, setApproveDlg] = useState(null);
+  const [contractType, setContractType] = useState('commission');
+  const [seasonRates, setSeasonRates] = useState([]);
   const [rejectDlg, setRejectDlg] = useState(null);
   const [terminateDlg, setTerminateDlg] = useState(null);
   const [commissionOverride, setCommissionOverride] = useState('');
@@ -247,7 +249,14 @@ const IncomingAgencyContracts = ({ user, tenant, onLogout }) => {
     setCreditLimit('');
     setCreditCurrency(c.currency || 'TRY');
     setApproveNotes('');
+    setContractType('commission');
+    setSeasonRates([]);
   };
+  const addSeason = () => setSeasonRates(rows => [...rows, {
+    room_type_id: (approveDlg?.allowed_room_types || [])[0] || '',
+    season_start: approveDlg?.valid_from || '', season_end: approveDlg?.valid_to || '', price: '',
+  }]);
+  const updateSeason = (index, field, value) => setSeasonRates(rows => rows.map((row, i) => (i === index ? { ...row, [field]: value } : row)));
 
   const submitApprove = async () => {
     if (!approveDlg) return;
@@ -258,7 +267,17 @@ const IncomingAgencyContracts = ({ user, tenant, onLogout }) => {
         notes: approveNotes,
         allow_base_rate_fallback: allowBaseRate,
         commission_pct_override: !isNaN(override) && override !== approveDlg.commission_pct ? override : null,
+        contract_type: contractType,
       };
+      if (contractType === 'net_rate') {
+        const seasons = seasonRates.map(row => ({ ...row, room_type_id: row.room_type_id.trim(), price: Number(row.price) }));
+        if (!seasons.length || seasons.some(row => !row.room_type_id || !(row.price > 0) || !row.season_start || !row.season_end || row.season_end < row.season_start)) {
+          toast.error('Net fiyat için her sezonda oda tipi, geçerli tarih aralığı ve fiyat girin');
+          return;
+        }
+        body.season_rates = seasons;
+        body.commission_pct_override = null;
+      }
       if (creditLimit.trim() !== '') {
         const limit = Number(creditLimit);
         const currency = creditCurrency.trim().toUpperCase();
@@ -510,6 +529,25 @@ const IncomingAgencyContracts = ({ user, tenant, onLogout }) => {
               Acente <strong>%{approveDlg?.commission_pct?.toFixed(1)}</strong> komisyon teklif etti.
               Aşağıdan değiştirebilir veya aynen onaylayabilirsiniz.
             </p>
+            <div className="flex gap-4 text-sm">
+              <label className="flex items-center gap-2"><input type="radio" checked={contractType === 'commission'} onChange={() => setContractType('commission')} /> Komisyonlu satış</label>
+              <label className="flex items-center gap-2"><input type="radio" checked={contractType === 'net_rate'} onChange={() => { setContractType('net_rate'); if (!seasonRates.length) addSeason(); }} /> Net fiyat (sezon bazlı)</label>
+            </div>
+            {contractType === 'net_rate' ? (
+              <div className="space-y-2" data-testid="net-rate-seasons">
+                <p className="text-xs text-muted-foreground">Acentenin alış fiyatını oda tipi ve sezona göre girin. Net fiyatta komisyon uygulanmaz; sezon dışı geceler paylaşılan fiyattan satılır.</p>
+                {seasonRates.map((row, index) => (
+                  <div key={index} className="grid grid-cols-[1.2fr_1fr_1fr_0.8fr_auto] gap-2">
+                    <Input placeholder="Oda tipi" value={row.room_type_id} onChange={e => updateSeason(index, 'room_type_id', e.target.value)} />
+                    <Input type="date" value={row.season_start} onChange={e => updateSeason(index, 'season_start', e.target.value)} />
+                    <Input type="date" value={row.season_end} onChange={e => updateSeason(index, 'season_end', e.target.value)} />
+                    <Input type="number" min="0" step="0.01" placeholder="Gecelik" value={row.price} onChange={e => updateSeason(index, 'price', e.target.value)} />
+                    <Button type="button" variant="ghost" onClick={() => setSeasonRates(rows => rows.filter((_, i) => i !== index))}>Sil</Button>
+                  </div>
+                ))}
+                <Button type="button" variant="outline" size="sm" onClick={addSeason}>Sezon ekle</Button>
+              </div>
+            ) : (
             <div>
               <Label>Komisyon (%)</Label>
               <Input
@@ -522,6 +560,7 @@ const IncomingAgencyContracts = ({ user, tenant, onLogout }) => {
                 Acentenin teklif ettiği oranın üzerine yazabilirsiniz; aynı bırakırsanız teklif kabul edilir.
               </p>
             </div>
+            )}
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>Kredi limiti (opsiyonel)</Label>

@@ -780,6 +780,22 @@ async def _get_listing_or_404(tenant_id: str) -> dict:
     return listing
 
 
+NET_RATE_PLAN = "NET"
+
+
+def _net_season_prices(contract: dict | None, room_type: str, dates: list[str]) -> dict[str, float]:
+    """Night -> contract net price for an approved net-rate marketplace contract."""
+    if not contract or contract.get("contract_type") != "net_rate":
+        return {}
+    prices: dict[str, float] = {}
+    for night in dates:
+        for season in contract.get("season_rates") or []:
+            if season.get("room_type_id") == room_type and str(season.get("season_start")) <= night <= str(season.get("season_end")):
+                prices[night] = round(float(season["price"]), 2)
+                break
+    return prices
+
+
 async def _calendar_room_codes(tenant_id: str, room_type: str) -> list[str]:
     """PMS room type plus every channel-manager code mapped to it.
 
@@ -846,8 +862,13 @@ async def _marketplace_stay_price(
     rate_plan_code: str | None = None,
     exclude_booking_id: str | None = None,
     allow_base_rate_fallback: bool = False,
+    contract: dict | None = None,
 ) -> dict:
     """Return the exact sellable nightly rates shared with this agency.
+
+    With an approved net-rate contract, nights covered by a contract season
+    are priced at the contract's net price; without any calendar row they are
+    sold as the ``NET`` product.
 
     By default an agency can sell only products explicitly distributed through
     its calendar. A contract may opt in to the legacy hotel/base-rate fallback.
@@ -867,9 +888,12 @@ async def _marketplace_stay_price(
             base_rows = await db.rate_calendar.find(query, {"_id": 0}).to_list(max(len(dates) * 8 * len(room_codes), 32))
         base_rows = _prefer_pms_rows(base_rows, room_type)
 
+    net_prices = _net_season_prices(contract, room_type, dates)
     plans = {str(row.get("rate_plan_code") or "LEGACY") for row in agency_rows + base_rows}
     if not plans and allow_base_rate_fallback:
         plans = {"BASE"}
+    if not plans and net_prices and len(net_prices) == len(dates):
+        plans = {NET_RATE_PLAN}
     if not plans:
         return {"sellable": False, "nightly_rates": [], "total_price": 0.0, "reason": "agency_rate_not_shared"}
     if rate_plan_code is None:
@@ -907,7 +931,7 @@ async def _marketplace_stay_price(
     shared_availability: list[int] = []
     for date in dates:
         row = agency_by_date.get(date) or base_by_date.get(date) or {}
-        if not row or row.get("rate") is None:
+        if (not row or row.get("rate") is None) and date not in net_prices:
             if not (allow_base_rate_fallback and rate_plan_code == "BASE"):
                 return {"sellable": False, "nightly_rates": [], "total_price": 0.0, "reason": "missing_shared_rate_night"}
         # Stay-through minimum: every occupied night must permit this stay.
@@ -922,7 +946,7 @@ async def _marketplace_stay_price(
             and int(row["availability"]) <= 0
         ):
             return {"sellable": False, "nightly_rates": [], "total_price": 0.0}
-        rate = row.get("rate")
+        rate = net_prices.get(date, row.get("rate"))
         if rate is None:
             rate = fallback_rate
         if date in agency_by_date and row.get("availability") is not None:
@@ -956,7 +980,7 @@ async def _marketplace_stay_price(
     return result
 
 
-async def _agency_rate_plans(tenant_id, agency_id, room_type, check_in, check_out, *, allow_base_rate_fallback=False):
+async def _agency_rate_plans(tenant_id, agency_id, room_type, check_in, check_out, *, allow_base_rate_fallback=False, contract=None):
     room_codes = await _calendar_room_codes(tenant_id, room_type)
     query = {"tenant_id": tenant_id, "room_type_code": {"$in": room_codes} if len(room_codes) > 1 else room_type,
              "date": {"$in": _date_range(check_in, check_out)}}
@@ -967,6 +991,10 @@ async def _agency_rate_plans(tenant_id, agency_id, room_type, check_in, check_ou
         if not base_rows:
             base_rows = await db.rate_calendar.find(query, {"_id": 0}).to_list(5000)
     plans = {str(row.get("rate_plan_code") or "LEGACY") for row in agency_rows + base_rows}
+    if not plans:
+        nights = _date_range(check_in, check_out)
+        if contract and len(_net_season_prices(contract, room_type, nights)) == len(nights):
+            return [NET_RATE_PLAN]
     return sorted(plans or ({"BASE"} if allow_base_rate_fallback else set()))
 
 
@@ -1026,7 +1054,7 @@ async def _marketplace_occupancy_price(
 
 async def _validated_agency_quote(*, tenant_id, agency_id, room, check_in, check_out,
                                   rate_plan_code, adults, children, child_ages, exclude_booking_id=None,
-                                  allow_base_rate_fallback=False):
+                                  allow_base_rate_fallback=False, contract=None):
     if not rate_plan_code or len(child_ages) != children or any(age < 0 or age > 17 for age in child_ages):
         raise HTTPException(422, "Fiyat planı ve her çocuk için geçerli yaş bilgisi gerekli")
     if adults < 1 or children < 0 or int(room.get("capacity") or 2) < adults + children:
@@ -1035,7 +1063,7 @@ async def _validated_agency_quote(*, tenant_id, agency_id, room, check_in, check
         tenant_id=tenant_id, agency_id=agency_id, room_type=room["room_type"],
         check_in=check_in, check_out=check_out, rate_plan_code=rate_plan_code,
         fallback_rate=float(room.get("base_price") or 0), exclude_booking_id=exclude_booking_id,
-        allow_base_rate_fallback=allow_base_rate_fallback,
+        allow_base_rate_fallback=allow_base_rate_fallback, contract=contract,
     )
     if not pricing["sellable"]:
         raise HTTPException(409, "Seçilen fiyat planı veya kontenjan bu tarihlerde satışa kapalı")
@@ -1058,7 +1086,11 @@ async def _check_agency_credit(*, tenant_id, agency_id, contract, net_to_hotel,
 
 def _contract_commission(contract: dict) -> float:
     """Return the hotel-approved commission; never silently fall back."""
-    if contract.get("status") != "approved" or contract.get("commission_pct") is None:
+    if contract.get("status") != "approved":
+        raise HTTPException(403, "Onaylı otel–acente sözleşmesi ve komisyon oranı gerekli")
+    if contract.get("contract_type") == "net_rate":
+        return 0.0  # net price is the agency's buying price
+    if contract.get("commission_pct") is None:
         raise HTTPException(403, "Onaylı otel–acente sözleşmesi ve komisyon oranı gerekli")
     return float(contract["commission_pct"])
 
@@ -2105,6 +2137,7 @@ async def agency_search(
                 for plan in await _agency_rate_plans(
                     tenant_id, agency["agency_id"], rt_data["room_type"], req.check_in, req.check_out,
                     allow_base_rate_fallback=bool(active_contracts[tenant_id].get("allow_base_rate_fallback")),
+                    contract=active_contracts[tenant_id],
                 ):
                     if req.rate_plan_code and plan != req.rate_plan_code:
                         continue
@@ -2131,6 +2164,7 @@ async def agency_search(
                     fallback_rate=float(rt_data["base_price"] or 0),
                     rate_plan_code=rt_data["rate_plan_code"],
                     allow_base_rate_fallback=bool(active_contracts[tenant_id].get("allow_base_rate_fallback")),
+                    contract=active_contracts[tenant_id],
                 )
                 pricing = await _marketplace_occupancy_price(
                     tenant_id=tenant_id,
@@ -2274,7 +2308,7 @@ async def agency_hotel_availability(
                 check_out=check_out,
                 fallback_rate=float(rt_data["base_price"] or 0),
                 rate_plan_code=rate_plan_code,
-                allow_base_rate_fallback=bool(contract.get("allow_base_rate_fallback")),
+                allow_base_rate_fallback=bool(contract.get("allow_base_rate_fallback")), contract=contract,
             )
             if pricing["sellable"]:
                 pricing = await _marketplace_occupancy_price(
@@ -2454,7 +2488,7 @@ async def agency_create_reservation(
             adults=data.adults,
             children=data.children,
             child_ages=data.child_ages,
-            allow_base_rate_fallback=bool(contract.get("allow_base_rate_fallback")),
+            allow_base_rate_fallback=bool(contract.get("allow_base_rate_fallback")), contract=contract,
         )
         # Server-side "ground truth" price. Search and booking use this exact helper.
         server_total: float = pricing["total_price"]
@@ -3000,7 +3034,7 @@ async def _decide_marketplace_modification_locked(proposal_id, data, current_use
                 tenant_id=tenant_id, agency_id=proposal["agency_id"], room=room,
                 check_in=requested["check_in"], check_out=requested["check_out"], rate_plan_code=plan,
                 adults=adults, children=children, child_ages=child_ages, exclude_booking_id=booking["id"],
-                allow_base_rate_fallback=bool(contract.get("allow_base_rate_fallback")),
+                allow_base_rate_fallback=bool(contract.get("allow_base_rate_fallback")), contract=contract,
             )
             financials = _marketplace_financials(pricing["total_price"], commission_pct, fee_pct)
             await _check_agency_credit(tenant_id=tenant_id, agency_id=proposal["agency_id"],
