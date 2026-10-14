@@ -145,11 +145,17 @@ async def process_one(database):
             raise error
         step = 'inventory_delivery'
         delivery = await database.outbox_events.find_one({'idempotency_key': stable_id(booking['id'], 'inventory')})
-        if not delivery or delivery.get('status') == 'failed':
-            raise RuntimeError('inventory_delivery_requires_repair')
-        complete = delivery.get('status') == 'processed'
+        if not delivery:
+            raise RuntimeError('inventory_event_missing')
+        # The agency sale is complete once Syroce PMS holds the booking, folio,
+        # ledger, notification and audit records and the inventory event is
+        # queued. Delivery to a third-party channel manager (Exely,
+        # HotelRunner, ...) is the hotel's channel integration: its outcome is
+        # recorded for operators but never holds the agency's reservation in
+        # "waiting" or turns it into "failed".
         await database.bookings.update_one(query, {'$set': {
-            'agency_completion.status': 'complete' if complete else 'waiting',
+            'agency_completion.status': 'complete',
+            'agency_completion.channel_delivery': delivery.get('status') or 'pending',
             'agency_completion.available_at': datetime.now(UTC) + timedelta(seconds=30),
             'agency_completion.last_error': None, 'agency_completion.updated_at': datetime.now(UTC),
         }, '$unset': {'agency_completion.owner': '', 'agency_completion.lease_until': ''}})

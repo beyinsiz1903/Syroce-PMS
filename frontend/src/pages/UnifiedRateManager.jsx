@@ -85,6 +85,9 @@ const UnifiedRateManager = ({
   const [agenciesLoading, setAgenciesLoading] = useState(false);
   const [selectedAgencies, setSelectedAgencies] = useState(new Set());
   const [agencyPanelOpen, setAgencyPanelOpen] = useState(true);
+  // Syroce agency extranet distribution without the channel manager.
+  const [agenciesOnly, setAgenciesOnly] = useState(false);
+  const agenciesOnlyRef = useRef(false);
   const [agencyOverrides, setAgencyOverrides] = useState({});
   const [editingOverride, setEditingOverride] = useState(null);
   const CURRENCY_SYMBOLS = {
@@ -177,6 +180,20 @@ const UnifiedRateManager = ({
   }, []);
 
   // Fetch grid
+  const switchAgenciesOnly = async enabled => {
+    setAgenciesOnly(enabled);
+    agenciesOnlyRef.current = enabled;
+    setSelections({});
+    if (!enabled) return fetchGrid();
+    try {
+      const { data } = await axios.get(`${UNIFIED_PREFIX}/room-types`, { headers });
+      setRoomTypes(data.agency_room_types || []);
+      setRatePlans([{ code: 'AGENCY', name: 'Acente Satış' }]);
+    } catch {
+      setAgenciesOnly(false);
+      toast.error('PMS oda tipleri yüklenemedi.');
+    }
+  };
   const fetchGrid = useCallback(async () => {
     if (!provider) return;
     const requestId = ++gridRequestRef.current;
@@ -189,8 +206,10 @@ const UnifiedRateManager = ({
       });
       if (requestId !== gridRequestRef.current) return;
       setGrid(data.grid || []);
-      setRoomTypes(data.room_types || []);
-      setRatePlans(data.rate_plans || []);
+      if (!agenciesOnlyRef.current) {
+        setRoomTypes(data.room_types || []);
+        setRatePlans(data.rate_plans || []);
+      }
       if (data.pricing_settings) setPricingSettings(data.pricing_settings);
       if (data.occupancy_pricing_rules) setOccupancyPricingRules(data.occupancy_pricing_rules);
       if (data.currency) setCurrency(data.currency);
@@ -594,6 +613,11 @@ const UnifiedRateManager = ({
         };
       });
       const agencyIds = selectedAgencies.size > 0 ? Array.from(selectedAgencies) : null;
+      if (agenciesOnly && !agencyIds) {
+        toast.error('Yalnız acente gönderimi için en az bir acente seçin.');
+        setSaving(false);
+        return;
+      }
       const {
         data
       } = await axios.post(`${UNIFIED_PREFIX}/bulk-grid-update`, {
@@ -603,7 +627,8 @@ const UnifiedRateManager = ({
         selected_days: allDays ? null : Array.from(selectedDays),
         update_fields: Array.from(enabledFields),
         agency_ids: agencyIds,
-        channel_codes: Array.from(selectedChannelCodes),
+        agencies_only: agenciesOnly,
+        channel_codes: agenciesOnly ? [] : Array.from(selectedChannelCodes),
       }, {
         headers
       });
@@ -842,6 +867,10 @@ const UnifiedRateManager = ({
                     </p> : agencies.length === 0 ? <p className="text-xs text-zinc-400 text-center py-3">
                       {t('cm.pages_UnifiedRateManager.henuz_aktif_acente_tanimlanmamis')}
                     </p> : <>
+                      {provider && provider !== 'agency' && <label className="flex items-start gap-2 cursor-pointer rounded border border-sky-200 bg-sky-50 p-2 text-xs text-sky-900" data-testid="agencies-only-toggle">
+                        <Checkbox checked={agenciesOnly} onCheckedChange={value => switchAgenciesOnly(Boolean(value))} />
+                        <span><strong>Yalnız acentelere gönder</strong> — PMS oda tipleri ve otelin satış para birimiyle; kanal yöneticisine ({provider}) ve otel takvimine gönderilmez.</span>
+                      </label>}
                       {/* Select all */}
                       <label className="flex items-center gap-2 cursor-pointer text-xs font-medium text-zinc-600 pb-1 border-b border-zinc-100" data-testid="agency-select-all">
                         <Checkbox checked={selectedAgencies.size === agencies.length && agencies.length > 0} onCheckedChange={toggleAllAgencies} />

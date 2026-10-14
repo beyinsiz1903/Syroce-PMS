@@ -225,3 +225,47 @@ def test_selected_days_are_merged_without_including_gaps():
         ("2026-11-02", "2026-11-06"),
         ("2026-11-09", "2026-11-10"),
     ]
+
+
+@pytest.mark.asyncio
+async def test_agencies_only_never_touches_the_channel_manager(monkeypatch):
+    calendar = SimpleNamespace(bulk_write=AsyncMock())
+    fake_db = MagicMock()
+    fake_db.__getitem__.return_value = calendar
+    monkeypatch.setattr(rate_router, "db", fake_db)
+    monkeypatch.setattr(
+        rate_router,
+        "_detect_active_provider",
+        AsyncMock(return_value={"provider": "exely", "connection": {"currency": "USD", "room_types": [{"code": "5001575"}]}}),
+    )
+    monkeypatch.setattr(rate_router, "_active_agency_docs_for_tenant", AsyncMock(return_value=[{"id": "agency-1"}]))
+    exely = AsyncMock()
+    monkeypatch.setattr(rate_router, "_push_to_exely", exely)
+    push = AsyncMock(return_value=1)
+    monkeypatch.setattr(rate_router, "_push_to_agencies", push)
+    import routers.marketplace_b2b as marketplace
+
+    monkeypatch.setattr(marketplace, "_sale_currency", AsyncMock(return_value="TRY"))
+
+    request = rate_router.UnifiedBulkUpdateRequest(
+        selections=[rate_router.RoomTypeSelection(room_type_code="Superior", rate_plan_codes=["AGENCY"])],
+        start_date="2026-11-01", end_date="2026-11-02", rate=9200, update_fields=["rate"],
+        agency_ids=["agency-1"], agencies_only=True,
+    )
+    result = await rate_router.unified_bulk_grid_update(request, SimpleNamespace(tenant_id="t", id="u"), None)
+
+    exely.assert_not_awaited()
+    calendar.bulk_write.assert_not_awaited()
+    assert push.await_args.kwargs["rate_currency"] == "TRY"
+    assert result["agency_push_count"] == 1 and result["saved"] == 0
+
+
+@pytest.mark.asyncio
+async def test_agencies_only_requires_agencies():
+    request = rate_router.UnifiedBulkUpdateRequest(
+        selections=[rate_router.RoomTypeSelection(room_type_code="Superior", rate_plan_codes=["AGENCY"])],
+        start_date="2026-11-01", end_date="2026-11-02", rate=1, update_fields=["rate"], agencies_only=True,
+    )
+    with pytest.raises(HTTPException) as exc:
+        await rate_router.unified_bulk_grid_update(request, SimpleNamespace(tenant_id="t", id="u"), None)
+    assert exc.value.status_code == 422

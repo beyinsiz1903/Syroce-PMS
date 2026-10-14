@@ -133,6 +133,9 @@ class UnifiedBulkUpdateRequest(BaseModel):
     ctd: bool | None = None
     update_fields: list[str] = []
     agency_ids: list[str] | None = None
+    # Syroce agency extranet distribution only: PMS room types, the hotel's
+    # sale currency, and no write to the channel manager or its calendar.
+    agencies_only: bool = False
     # OTA hedefleri hiçbir zaman istemcinin serbest metin listesi değildir.
     # HotelRunner'dan doğrulanmış bağlı kanal kodları burada seçilir. Boş liste
     # yalnızca PMS yerel takvimini günceller; otomatik olarak tüm OTA'lara gitmez.
@@ -711,6 +714,14 @@ async def _agency_only_room_types(tenant_id: str, provider: str, provider_codes:
     ]
 
 
+async def _agency_rate_currency(tenant_id: str, detection: dict, agencies_only: bool) -> str:
+    if agencies_only:
+        from routers.marketplace_b2b import _sale_currency
+
+        return await _sale_currency(tenant_id)
+    return await _rate_currency(tenant_id, detection)
+
+
 async def _rate_currency(tenant_id: str, detection: dict) -> str:
     """Currency of the rates entered in the grid (the provider's sale currency)."""
     conn = detection.get("connection") or {}
@@ -891,6 +902,9 @@ async def get_unified_room_types(current_user: User = Depends(get_current_user))
 
     return {
         "room_types": room_types,
+        # PMS room types for "agencies only" distribution, independent of the
+        # channel manager's own room codes.
+        "agency_room_types": [{"code": name, "name": name} for name in await _pms_room_type_names(tenant_id)],
         "rate_plans": rate_plans,
         "pricing_settings": pricing_map,
         "occupancy_pricing_rules": pricing_rules,
@@ -910,10 +924,20 @@ async def unified_bulk_grid_update(
     """Toplu fiyat/musaitlik guncelle. Kanal saglayiciya + acentelere push."""
     tenant_id = current_user.tenant_id
 
+    if request.agencies_only:
+        if not request.agency_ids:
+            raise HTTPException(status_code=422, detail="Yalnız acente gönderimi için en az bir acente seçin")
+        if request.channel_codes:
+            raise HTTPException(status_code=422, detail="Yalnız acente gönderiminde kanal seçilemez")
+
     # The browser never chooses the outbound provider. The superadmin tenant
     # configuration is authoritative; with one legacy connection we can still
     # auto-detect it, while two active unconfigured providers fail closed.
     detection = await _detect_active_provider(tenant_id)
+    if request.agencies_only:
+        # Agency extranet distribution is independent of any third-party
+        # channel manager (Exely, HotelRunner): nothing is sent there.
+        detection = {"provider": "agency", "connection": {}}
     if not detection["provider"]:
         active_agencies = await _active_agency_docs_for_tenant(tenant_id)
         if active_agencies and request.agency_ids and not detection.get("configuration_error"):
@@ -931,7 +955,7 @@ async def unified_bulk_grid_update(
                 },
             )
     else:
-        targets = [detection]
+        targets = [] if request.agencies_only else [detection]
 
     selected_channel_codes: list[str] = []
     if request.channel_codes:
@@ -1106,9 +1130,12 @@ async def unified_bulk_grid_update(
             saved += 1
             d += timedelta(days=1)
 
-    # Save to main rate calendar
-    if bulk_ops:
+    # Save to main rate calendar (the hotel/channel calendar). Agency-only
+    # distribution must not change the hotel's own or channel prices.
+    if bulk_ops and not request.agencies_only:
         await db[cal_collection].bulk_write(bulk_ops, ordered=False)
+    if request.agencies_only:
+        saved = 0
 
     # Push to every resolved channel provider (background)
     channel_push_count = 0
@@ -1178,7 +1205,7 @@ async def unified_bulk_grid_update(
             selected_days_set,
             now,
             current_user.id,
-            rate_currency=await _rate_currency(tenant_id, detection),
+            rate_currency=await _agency_rate_currency(tenant_id, detection, request.agencies_only),
         )
 
     delivery_summary = _provider_delivery_summary(provider_delivery_results)
