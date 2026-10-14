@@ -29,6 +29,19 @@ def test_same_day_checkout_is_not_an_overlap():
     assert not _matches(query, {"check_in": "2027-01-12", "check_out": "2027-01-15"})
 
 
+def test_pms_and_date_only_formats_follow_the_same_night_rule():
+    query = _overlap_helper()("2026-10-15", "2026-10-17")
+    for stored_in, stored_out in [
+        ("2026-10-13T14:00:00+00:00", "2026-10-15T12:00:00+00:00"),
+        ("2026-10-13T14:00:00", "2026-10-15T11:00:00"),
+        ("2026-10-13", "2026-10-15"),
+    ]:
+        assert not _matches(query, {"check_in": stored_in, "check_out": stored_out})
+        assert _matches(_overlap_helper()("2026-10-14", "2026-10-16"), {"check_in": stored_in, "check_out": stored_out})
+    assert _matches(query, {"check_in": "2026-10-16", "check_out": "2026-10-18"})
+    assert not _matches(query, {"check_in": "2026-10-17", "check_out": "2026-10-18"})
+
+
 def test_all_real_night_overlaps_are_still_counted():
     query = _overlap_helper()("2027-01-15", "2027-01-18")
     assert _matches(query, {"check_in": "2027-01-14T14:00:00", "check_out": "2027-01-16T11:00:00"})
