@@ -43,6 +43,12 @@ services:
       WEB_CONCURRENCY: "1"
     env_file:
       - ./backend/.env
+    volumes:
+      # Hotel/room photos and other uploads are written to UPLOAD_DIR
+      # (default /app/uploads). Without a volume every deploy recreated the
+      # container and silently deleted them. A new named volume is seeded from
+      # the image directory, keeping appuser ownership.
+      - backend_uploads:/app/uploads
     deploy:
       replicas: ${BACKEND_REPLICAS:-1}
       update_config:
@@ -216,3 +222,6 @@ services:
       timeout: 5s
       retries: 3
     logging: *default-logging
+
+volumes:
+  backend_uploads:

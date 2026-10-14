@@ -35,8 +35,10 @@ from core.agency_completion import pending_completion, public_booking
 from core.agency_credit import assert_credit_capacity
 from core.atomic_booking import BookingConflictError, assign_room_atomic, create_booking_atomic
 from core.database import db
+from core.marketplace_ledger_sync import NON_REVENUE_STATUSES, refresh_ledger_from_pms
 from core.occupancy_pricing import OccupancyPricingError, calculate_occupancy_quote, find_occupancy_rule
 from core.security import _is_super_admin, get_current_user, verify_password
+from core.stay_overlap import stay_overlap_filter
 from core.tenant_db import get_system_db, tenant_context
 from models.schemas import User
 from shared_kernel.idempotency import (
@@ -776,6 +778,27 @@ async def _get_listing_or_404(tenant_id: str) -> dict:
     return listing
 
 
+async def _departure_restriction_row(
+    *, tenant_id: str, agency_id: str, room_type: str, check_out: str, rate_plan_code: str,
+    allow_base_rate_fallback: bool,
+) -> dict:
+    """Return the calendar row of the departure date; it only carries the CTD restriction."""
+    plan_filter = (
+        {"rate_plan_code": {"$exists": False}} if rate_plan_code == "LEGACY" else {"rate_plan_code": rate_plan_code}
+    )
+    query = {"tenant_id": tenant_id, "room_type_code": room_type, "date": check_out, **plan_filter}
+    projection = {"_id": 0, "date": 1, "ctd": 1}
+
+    async def _first(collection, extra: dict) -> dict | None:
+        rows = await collection.find({**query, **extra}, projection).to_list(1)
+        return next((row for row in rows if row.get("date") == check_out), None)
+
+    row = await _first(db.agency_rate_calendar, {"agency_id": agency_id})
+    if row is None and allow_base_rate_fallback:
+        row = await _first(db.hr_rate_calendar, {}) or await _first(db.rate_calendar, {})
+    return row or {}
+
+
 async def _marketplace_stay_price(
     *, tenant_id: str, agency_id: str, room_type: str, check_in: str, check_out: str, fallback_rate: float,
     rate_plan_code: str | None = None,
@@ -817,6 +840,17 @@ async def _marketplace_stay_price(
     if len(agency_by_date) != len(agency_rows) or len(base_by_date) != len(base_rows):
         return {"sellable": False, "nightly_rates": [], "total_price": 0.0, "reason": "duplicate_rate_plan_night"}
     effective_rows = [agency_by_date.get(day) or base_by_date.get(day) or {} for day in dates]
+    arrival_row = effective_rows[0] if effective_rows else {}
+    if arrival_row.get("cta") is True:
+        return {"sellable": False, "nightly_rates": [], "total_price": 0.0, "reason": "closed_to_arrival"}
+    if len(dates) < int(arrival_row.get("min_los_arrival") or 1):
+        return {"sellable": False, "nightly_rates": [], "total_price": 0.0, "reason": "min_stay_arrival"}
+    departure_row = await _departure_restriction_row(
+        tenant_id=tenant_id, agency_id=agency_id, room_type=room_type, check_out=check_out,
+        rate_plan_code=rate_plan_code, allow_base_rate_fallback=allow_base_rate_fallback,
+    )
+    if departure_row.get("ctd") is True:
+        return {"sellable": False, "nightly_rates": [], "total_price": 0.0, "reason": "closed_to_departure"}
     for field in ("meal_plan", "cancellation_policy"):
         if len({json.dumps(row.get(field), sort_keys=True) for row in effective_rows if row.get(field) is not None}) > 1:
             return {"sellable": False, "nightly_rates": [], "total_price": 0.0, "reason": "inconsistent_product_terms"}
@@ -831,6 +865,8 @@ async def _marketplace_stay_price(
         # Checkout is exclusive and must not impose a minimum on the stay.
         if len(dates) < int(row.get("min_stay") or 1):
             return {"sellable": False, "nightly_rates": [], "total_price": 0.0, "reason": "min_stay"}
+        if row.get("max_stay") and len(dates) > int(row["max_stay"]):
+            return {"sellable": False, "nightly_rates": [], "total_price": 0.0, "reason": "max_stay"}
         if row.get("stop_sell") is True or (
             date in agency_by_date
             and row.get("availability") is not None
@@ -847,10 +883,9 @@ async def _marketplace_stay_price(
                 "tenant_id": tenant_id, "agency_id": agency_id, "room_type": room_type,
                 "$or": [{"rate_plan_code": rate_plan_code}, {"rate_plan_code": {"$exists": False}}],
                 "status": {"$in": ["confirmed", "guaranteed", "checked_in", "pending"]},
-                "check_in": {"$lt": tomorrow + "T00:00:00"},
                 # Checkout day is not an occupied night, regardless of the
                 # stored check-out hour (typically 11:00).
-                "$expr": {"$gt": [{"$substrBytes": ["$check_out", 0, 10]}, date]},
+                **stay_overlap_filter(date, tomorrow),
             })
             remaining = max(0, int(row["availability"]) - used)
             if remaining == 0:
@@ -2022,8 +2057,7 @@ async def agency_search(
                         "status": {"$in": ["confirmed", "guaranteed", "checked_in", "pending"]},
                         # Half-open hotel-night overlap. A same-day departure
                         # must not consume the arriving guest's room-night.
-                        "check_in": {"$lt": req.check_out + "T00:00:00"},
-                        "check_out": {"$gt": req.check_in + "T00:00:00"},
+                        **stay_overlap_filter(req.check_in, req.check_out),
                     }
                 )
                 rt_data["available_rooms"] = max(0, rt_data["total_rooms"] - booked)
@@ -2108,10 +2142,15 @@ async def agency_hotel_availability(
     tenant_id: str,
     check_in: str = Query(..., description="YYYY-MM-DD"),
     check_out: str = Query(..., description="YYYY-MM-DD"),
+    adults: int = Query(2, ge=1, le=20),
+    child_ages: list[int] = Query(default_factory=list, description="Her çocuk için yaş (0-17)"),
+    rate_plan_code: str | None = Query(None, min_length=1, max_length=160),
     agency: dict = Depends(get_marketplace_agency),
 ):
     from routers.agency_contracts import has_active_contract
 
+    if any(age < 0 or age > 17 for age in child_ages):
+        raise HTTPException(422, "Çocuk yaşları 0-17 arasında olmalıdır")
     last_night = _last_occupied_date(check_in, check_out)
     contract = await has_active_contract(
         agency["agency_id"], tenant_id, on_date=check_in, through_date=last_night
@@ -2162,8 +2201,7 @@ async def agency_hotel_availability(
                     "tenant_id": tenant_id,
                     "room_id": {"$in": rt_data["_room_ids"]},
                     "status": {"$in": ["confirmed", "guaranteed", "checked_in", "pending"]},
-                    "check_in": {"$lt": check_out + "T00:00:00"},
-                    "check_out": {"$gt": check_in + "T00:00:00"},
+                    **stay_overlap_filter(check_in, check_out),
                 }
             )
             rt_data["available_rooms"] = max(0, rt_data["total_rooms"] - booked)
@@ -2174,15 +2212,17 @@ async def agency_hotel_availability(
                 check_in=check_in,
                 check_out=check_out,
                 fallback_rate=float(rt_data["base_price"] or 0),
+                rate_plan_code=rate_plan_code,
                 allow_base_rate_fallback=bool(contract.get("allow_base_rate_fallback")),
             )
-            pricing = await _marketplace_occupancy_price(
-                tenant_id=tenant_id,
-                room=rt_data,
-                pricing=pricing,
-                adults=req.adults,
-                child_ages=req.child_ages,
-            )
+            if pricing["sellable"]:
+                pricing = await _marketplace_occupancy_price(
+                    tenant_id=tenant_id,
+                    room=rt_data,
+                    pricing=pricing,
+                    adults=adults,
+                    child_ages=child_ages,
+                )
             if pricing.get("shared_availability") is not None:
                 rt_data["available_rooms"] = min(
                     rt_data["available_rooms"], pricing["shared_availability"]
@@ -2190,9 +2230,11 @@ async def agency_hotel_availability(
             rt_data["nights"] = nights
             rt_data["total_price"] = pricing["total_price"]
             rt_data["nightly_rates"] = pricing["nightly_rates"]
-            rt_data["occupancy_pricing"] = pricing["occupancy_pricing"]
+            rt_data["occupancy_pricing"] = pricing.get("occupancy_pricing")
+            rt_data["rate_plan_code"] = pricing.get("rate_plan_code")
             if not pricing["sellable"]:
                 rt_data["available_rooms"] = 0
+                rt_data["unavailable_reason"] = pricing.get("reason")
             rt_data["commission_pct"] = commission_pct
             rt_data["agency_payable"] = round(rt_data["total_price"] * (1 - commission_pct / 100), 2)
             del rt_data["_room_ids"]
@@ -2324,8 +2366,7 @@ async def agency_create_reservation(
                     "tenant_id": data.tenant_id,
                     "room_id": room["id"],
                     "status": {"$in": ["confirmed", "guaranteed", "checked_in", "pending"]},
-                    "check_in": {"$lt": data.check_out + "T00:00:00"},
-                    "check_out": {"$gt": data.check_in + "T00:00:00"},
+                    **stay_overlap_filter(data.check_in, data.check_out),
                 }
             )
             if conflict == 0:
@@ -2603,6 +2644,7 @@ async def agency_list_reservations(
         query.setdefault("check_in", {})["$lte"] = check_in_to
 
     docs = await sysdb.marketplace_bookings.find(query, {"_id": 0}).sort("created_at", -1).limit(limit).to_list(limit)
+    docs = await refresh_ledger_from_pms(sysdb, docs)
     canonical_query = {**query, "agency_completion.kind": "marketplace"}
     if check_in_to:
         canonical_query["check_in"] = {**query["check_in"], "$lte": check_in_to + "T23:59:59.999999"}
@@ -3088,15 +3130,16 @@ async def agency_reconciliation(
         },
         {"_id": 0},
     ).to_list(None)
+    docs = await refresh_ledger_from_pms(sysdb, docs)
 
     from core.agency_reporting import combined_summary, currency_code
     by_hotel: dict = {}
     totals_by_currency = {}
     for d in docs:
         currency = currency_code(d.get('currency'))
-        totals = totals_by_currency.setdefault(currency, {"currency": currency, "gross_revenue": 0.0, "commission": 0.0, "platform_fee": 0.0, "net_to_hotels": 0.0, "bookings": 0, "cancelled": 0})
-        if d.get("status") == "cancelled":
-            totals["cancelled"] += 1
+        totals = totals_by_currency.setdefault(currency, {"currency": currency, "gross_revenue": 0.0, "commission": 0.0, "platform_fee": 0.0, "net_to_hotels": 0.0, "bookings": 0, "cancelled": 0, "no_show": 0})
+        if d.get("status") in NON_REVENUE_STATUSES:
+            totals[d["status"]] += 1
             continue
         tid = d["tenant_id"]
         bucket = by_hotel.setdefault(
@@ -3137,6 +3180,23 @@ async def agency_reconciliation(
     }
 
 
+_CSV_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _csv_text(value, *, force_text: bool = False) -> str:
+    """Spreadsheet-safe text cell.
+
+    Hotel and guest names are typed by other parties; a value starting with a
+    formula character would run as a formula when the CSV is opened. A leading
+    apostrophe keeps it visible text. ``force_text`` also protects references
+    such as confirmation codes that spreadsheets would otherwise reformat.
+    """
+    text = str(value or "").replace("\n", " ").replace("\r", " ")
+    if force_text or text.startswith(_CSV_FORMULA_PREFIXES):
+        return "'" + text
+    return text
+
+
 @router.get("/reconciliation/agency.csv")
 async def agency_reconciliation_csv(
     period_start: str = Query(..., description="YYYY-MM-DD"),
@@ -3144,28 +3204,27 @@ async def agency_reconciliation_csv(
     agency: dict = Depends(get_marketplace_agency),
 ):
     """Download an agency-owned, spreadsheet-safe reconciliation detail."""
-    docs = await get_system_db().marketplace_bookings.find(
+    sysdb = get_system_db()
+    docs = await sysdb.marketplace_bookings.find(
         {
             "agency_id": agency["agency_id"],
             "check_in": {"$gte": period_start, "$lte": period_end},
         },
         {"_id": 0},
     ).sort("check_in", 1).to_list(None)
+    docs = await refresh_ledger_from_pms(sysdb, docs)
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(["Onay Kodu", "Otel", "Misafir", "Giriş", "Çıkış", "Durum", "Para Birimi", "Brüt", "Komisyon", "Platform Bedeli", "Otele Net"])
     for item in docs:
-        # A leading apostrophe prevents spreadsheet formula execution while
-        # preserving user-entered references as visible text.
-        safe_code = "'" + str(item.get("confirmation_code") or item.get("id") or "").replace("\n", " ").replace("\r", " ")
         writer.writerow(
             [
-                safe_code,
-                item.get("hotel_name", ""),
-                item.get("guest_name", ""),
+                _csv_text(item.get("confirmation_code") or item.get("id"), force_text=True),
+                _csv_text(item.get("hotel_name")),
+                _csv_text(item.get("guest_name")),
                 str(item.get("check_in", ""))[:10],
                 str(item.get("check_out", ""))[:10],
-                item.get("status", ""),
+                _csv_text(item.get("status")),
                 item.get("currency") or "UNKNOWN",
                 round(float(item.get("total_amount", 0) or 0), 2),
                 round(float(item.get("commission_amount", 0) or 0), 2),
@@ -3197,15 +3256,16 @@ async def hotel_reconciliation(
         },
         {"_id": 0},
     ).to_list(None)
+    docs = await refresh_ledger_from_pms(sysdb, docs)
 
     from core.agency_reporting import combined_summary, currency_code
     by_agency: dict = {}
     totals_by_currency = {}
     for d in docs:
         currency = currency_code(d.get('currency'))
-        totals = totals_by_currency.setdefault(currency, {"currency": currency, "gross_revenue": 0.0, "commission": 0.0, "platform_fee": 0.0, "net_to_hotel": 0.0, "bookings": 0, "cancelled": 0})
-        if d.get("status") == "cancelled":
-            totals["cancelled"] += 1
+        totals = totals_by_currency.setdefault(currency, {"currency": currency, "gross_revenue": 0.0, "commission": 0.0, "platform_fee": 0.0, "net_to_hotel": 0.0, "bookings": 0, "cancelled": 0, "no_show": 0})
+        if d.get("status") in NON_REVENUE_STATUSES:
+            totals[d["status"]] += 1
             continue
         aid = d["agency_id"]
         bucket = by_agency.setdefault(

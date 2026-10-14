@@ -925,10 +925,9 @@ def _active_stay_overlap_filter(check_in: str, check_out: str) -> dict:
     instead, while retaining the requested checkout as the exclusive upper
     boundary for arrivals.
     """
-    return {
-        "check_in": {"$lt": check_out + "T00:00:00"},
-        "$expr": {"$gt": [{"$substrBytes": ["$check_out", 0, 10]}, check_in]},
-    }
+    from core.stay_overlap import stay_overlap_filter
+
+    return stay_overlap_filter(check_in, check_out)
 
 
 async def _legacy_active_contract(
@@ -957,6 +956,7 @@ async def _get_b2b_price(
 
     if not contract:
         return public_price, False
+    last_night = _last_occupied_date(check_in, check_out)
 
     if contract.get("contract_type") == "commission":
         comm = float(contract.get("commission_rate") or 0)

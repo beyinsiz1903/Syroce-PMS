@@ -309,9 +309,9 @@ async def update_hotel_content(data: HotelContentUpdate, current_user: User = De
         {"tenant_id": tenant_id, "published_content": True},
         {"$set": {"published_content_version": update_data["content_version"], "content_updated_at": update_data["updated_at"]}},
     )
-    contracted_agencies = await sysdb.agency_contracts.count_documents(
-        {"tenant_id": tenant_id, "is_active": True}
-    )
+    from routers.agency_contracts import list_active_agencies_for_tenant
+
+    contracted_agencies = len(await list_active_agencies_for_tenant(tenant_id))
 
     update_data.pop("_id", None)
     update_data["distribution"] = {

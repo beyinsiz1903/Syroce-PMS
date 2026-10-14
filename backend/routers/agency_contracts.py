@@ -86,6 +86,25 @@ def _start_expire_worker_once() -> None:
     _expire_worker_started = True
 
 
+CONTRACT_CODE_INDEX = "uniq_code"
+# Hotel-side legacy contracts (routers/agency_portal.py) share this collection
+# without a contract_code; a non-partial unique index would let only one of
+# them exist and turn the second legacy contract into a DuplicateKeyError.
+CONTRACT_CODE_PARTIAL = {"contract_code": {"$type": "string"}}
+
+
+async def _ensure_contract_code_index(coll) -> None:
+    existing = (await coll.index_information()).get(CONTRACT_CODE_INDEX)
+    if existing and existing.get("partialFilterExpression") != CONTRACT_CODE_PARTIAL:
+        await coll.drop_index(CONTRACT_CODE_INDEX)
+    await coll.create_index(
+        [("contract_code", 1)],
+        unique=True,
+        partialFilterExpression=CONTRACT_CODE_PARTIAL,
+        name=CONTRACT_CODE_INDEX,
+    )
+
+
 async def _ensure_indexes() -> None:
     """İlk istekte (lazy) gerekli indeksleri yarat. Idempotent."""
     global _indexes_ready
@@ -104,7 +123,7 @@ async def _ensure_indexes() -> None:
     )
     # 2) ID & contract_code unique
     await coll.create_index([("id", 1)], unique=True, name="uniq_id")
-    await coll.create_index([("contract_code", 1)], unique=True, name="uniq_code")
+    await _ensure_contract_code_index(coll)
     # 3) Perf: tek otel kontrolü (has_active_contract)
     await coll.create_index(
         [("agency_id", 1), ("tenant_id", 1), ("status", 1), ("valid_from", 1), ("valid_to", 1)],
