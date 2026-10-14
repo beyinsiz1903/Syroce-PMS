@@ -274,6 +274,9 @@ def _patch(monkeypatch, *, agencies, capture=None, db=None):
     monkeypatch.setattr(
         "routers.agency_contracts.list_active_agencies_for_tenant", _list, raising=True
     )
+    monkeypatch.setattr(
+        "routers.agency_contracts.list_webhook_agencies_for_tenant", _list, raising=True
+    )
     if capture is not None:
         monkeypatch.setattr(
             "core.agency_webhook.enqueue_agency_webhook_event", capture, raising=True

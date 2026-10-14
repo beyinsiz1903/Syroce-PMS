@@ -22,7 +22,8 @@ Doktrin / izolasyon:
     create_reservation, import_bridge) DEGISTIRILMEZ (Zero Bloat — cekirdek her yeni
     acente icin haritalama tablosu tasimaz; Karar 7).
   - agency_id<->tenant_id eslemesi cekirdege gomulmez; aktif acente listesi b2b
-    sinirindaki routers.agency_contracts.list_active_agencies_for_tenant'tan cozulur.
+    sinirindaki routers.agency_contracts.list_webhook_agencies_for_tenant'tan cozulur
+    (yalniz webhook_url tanimli aktif sozlesmeler).
   - Kaynak payload room_id+tarih tasir (room_type_id DEGIL). rooms.room_type ==
     agency dunyasindaki room_type_id (availability sorgusu da boyle eslestirir).
   - Fail-closed: room_type/tarih cozulemezse acente event'i ATILMAZ (room_id'yi
@@ -219,9 +220,11 @@ async def fan_out_agency_events(event: dict[str, Any]) -> int:
             return 0
         agency_event_type, base_payload = derived
 
-        from routers.agency_contracts import list_active_agencies_for_tenant
+        from routers.agency_contracts import list_webhook_agencies_for_tenant
 
-        agency_ids = await list_active_agencies_for_tenant(tenant_id)
+        # Only agencies with a registered webhook can receive the event;
+        # portal-only partners read availability live.
+        agency_ids = await list_webhook_agencies_for_tenant(tenant_id)
         if not agency_ids:
             return 0
 
