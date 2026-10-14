@@ -38,6 +38,7 @@ from core.database import db
 from core.marketplace_ledger_sync import NON_REVENUE_STATUSES, refresh_ledger_from_pms
 from core.occupancy_pricing import OccupancyPricingError, calculate_occupancy_quote, find_occupancy_rule
 from core.security import _is_super_admin, get_current_user, verify_password
+from core.sellable_rooms import PHYSICAL_ROOM_FILTER
 from core.stay_overlap import stay_overlap_filter
 from core.tenant_db import get_system_db, tenant_context
 from models.schemas import User
@@ -1864,7 +1865,7 @@ async def agency_get_hotel(
     listing = await _get_listing_or_404(tenant_id)
 
     with tenant_context(tenant_id):
-        rooms = await db.rooms.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(500)
+        rooms = await db.rooms.find({"tenant_id": tenant_id, **PHYSICAL_ROOM_FILTER}, {"_id": 0}).to_list(500)
         content = await db.hotel_content.find_one({"tenant_id": tenant_id}, {"_id": 0})
     if content:
         listing = {
@@ -1984,7 +1985,7 @@ async def agency_search(
             continue
 
         with tenant_context(tenant_id):
-            rooms = await db.rooms.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(500)
+            rooms = await db.rooms.find({"tenant_id": tenant_id, **PHYSICAL_ROOM_FILTER}, {"_id": 0}).to_list(500)
 
             requested_amenities = _normalized_tokens(req.amenities)
             listing_amenities = _normalized_tokens(listing.get("amenities"))
@@ -2170,7 +2171,7 @@ async def agency_hotel_availability(
         raise HTTPException(400, "check_out, check_in'den sonra olmalı")
 
     with tenant_context(tenant_id):
-        rooms = await db.rooms.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(1000)
+        rooms = await db.rooms.find({"tenant_id": tenant_id, **PHYSICAL_ROOM_FILTER}, {"_id": 0}).to_list(1000)
         room_types: dict[str, dict] = {}
         for r in rooms:
             if r.get("is_active") is False or r.get("status") in {"maintenance", "out_of_order", "blocked"}:
@@ -2351,6 +2352,7 @@ async def agency_create_reservation(
                 "tenant_id": data.tenant_id,
                 "room_type": data.room_type,
                 "is_active": {"$ne": False},
+                **PHYSICAL_ROOM_FILTER,
                 "status": {"$nin": ["maintenance", "out_of_order", "blocked"]},
             },
             {"_id": 0},
@@ -2907,7 +2909,7 @@ async def _decide_marketplace_modification_locked(proposal_id, data, current_use
             raise HTTPException(409, "Bu tarihler otel tarafından kapatılmış")
         with tenant_context(tenant_id):
             rooms = await db.rooms.find(
-                {"tenant_id": tenant_id, "room_type": requested["room_type"], "is_active": {"$ne": False},
+                {"tenant_id": tenant_id, "room_type": requested["room_type"], "is_active": {"$ne": False}, **PHYSICAL_ROOM_FILTER,
                  "status": {"$nin": ["maintenance", "out_of_order", "blocked"]}}, {"_id": 0}
             ).to_list(500)
             booking = await db.bookings.find_one({"id": proposal["reservation_id"], "tenant_id": tenant_id}, {"_id": 0})

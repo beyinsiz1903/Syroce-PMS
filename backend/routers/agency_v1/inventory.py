@@ -24,6 +24,7 @@ from typing import Any
 from pymongo.errors import DuplicateKeyError
 
 from core.database import db
+from core.sellable_rooms import PHYSICAL_ROOM_FILTER
 
 logger = logging.getLogger("agency_v1.inventory")
 
@@ -141,7 +142,7 @@ async def claim_floating_inventory(booking_doc: dict[str, Any]) -> dict[str, Any
 
     # Aday fiziksel odalar (tek havuz kaynagi): bu tenant + tip + aktif.
     rooms = await db.rooms.find(
-        {"tenant_id": tenant_id, "room_type": room_type, "is_active": {"$ne": False}},
+        {"tenant_id": tenant_id, "room_type": room_type, "is_active": {"$ne": False}, **PHYSICAL_ROOM_FILTER},
         {"_id": 0, "id": 1},
     ).to_list(1000)
     candidate_ids = [r["id"] for r in rooms if r.get("id")]
