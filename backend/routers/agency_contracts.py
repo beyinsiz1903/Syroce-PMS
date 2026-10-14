@@ -233,6 +233,33 @@ async def list_active_agencies_for_tenant(tenant_id: str, on_date: str | None = 
     return seen
 
 
+async def list_webhook_agencies_for_tenant(tenant_id: str, on_date: str | None = None) -> list[str]:
+    """Active partner agencies of this hotel that registered a webhook_url.
+
+    Portal-only agencies read availability live; queuing a webhook event for
+    them can only fail permanently ("agency contract has no webhook_url") and
+    raised a Sentry alert on every availability change.
+    """
+    sysdb = get_system_db()
+    today = on_date or datetime.now(UTC).strftime("%Y-%m-%d")
+    cursor = sysdb.agency_contracts.find(
+        {
+            "tenant_id": tenant_id,
+            "status": "approved",
+            "valid_from": {"$lte": today},
+            "valid_to": {"$gte": today},
+            "webhook_url": {"$regex": "^https://"},
+        },
+        {"_id": 0, "agency_id": 1},
+    )
+    seen: list[str] = []
+    async for doc in cursor:
+        aid = doc.get("agency_id")
+        if aid and aid not in seen:
+            seen.append(aid)
+    return seen
+
+
 # ═══════════════════════════════════════════════════════════════════════
 # AGENCY-SIDE (X-API-Key)
 # ═══════════════════════════════════════════════════════════════════════
@@ -830,4 +857,4 @@ async def migrate_existing_agencies(
 # ─── Tek bir router objesi expose et (registry için) ──────────────────────
 
 # Birden fazla prefix var; registry'ye ayrı ayrı ekleyeceğiz.
-__all__ = ["agency_router", "hotel_router", "admin_router", "has_active_contract", "list_partner_tenant_ids", "list_active_contracts"]
+__all__ = ["agency_router", "hotel_router", "admin_router", "has_active_contract", "list_partner_tenant_ids", "list_active_contracts", "list_webhook_agencies_for_tenant"]
