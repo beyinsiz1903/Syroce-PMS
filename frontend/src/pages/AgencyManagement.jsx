@@ -424,7 +424,7 @@ const AgencyManagement = ({ user, tenant, onLogout }) => {
                 </div>
                 <div className="flex items-center gap-3">
                   <Badge variant={agency.status === 'active' ? 'default' : 'secondary'} className="text-xs">
-                    {agency.status === 'active' ? 'Aktif' : 'Pasif'}
+                    {agency.status === 'active' ? 'Aktif' : agency.status === 'migrated' ? "Marketplace'e taşındı" : 'Pasif'}
                   </Badge>
                   <span className="text-xs text-slate-500 flex items-center gap-1">
                     <Percent size={12} />{agency.commission_rate}%
@@ -452,9 +452,9 @@ const AgencyManagement = ({ user, tenant, onLogout }) => {
                     <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); openAgencyForm(agency); }} data-testid={`edit-agency-${agency.id}`}>
                       <Edit2 size={14} className="mr-1" /> {t('cm.pages_AgencyManagement.duzenle')}
                     </Button>
-                    <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); handleToggleStatus(agency); }}>
+                    {agency.status !== 'migrated' && <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); handleToggleStatus(agency); }}>
                       {agency.status === 'active' ? <><ToggleRight size={14} className="mr-1" /> Devre Disi Birak</> : <><ToggleLeft size={14} className="mr-1" /> {t('cm.pages_AgencyManagement.aktif_et')}</>}
-                    </Button>
+                    </Button>}
                     <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); openUserForm(agency.id); }} data-testid={`add-user-${agency.id}`}>
                       <UserPlus size={14} className="mr-1" /> {t('cm.pages_AgencyManagement.kullanici_ekle')}
                     </Button>

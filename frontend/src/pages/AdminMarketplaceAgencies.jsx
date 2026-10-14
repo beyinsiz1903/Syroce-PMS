@@ -21,6 +21,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { adminManagementQueries } from '@/lib/adminManagementQueries';
 import { preloadRoute } from '@/routes/preload';
 import AgencyOnboardingPanel from '@/components/agency/AgencyOnboardingPanel';
+import LegacyAgencyMigrationDialog from '@/components/agency/LegacyAgencyMigrationDialog';
 
 const EMPTY_FORM = {
   name: '', contact_email: '', contact_phone: '', country: 'TR',
@@ -217,6 +218,7 @@ export default function AdminMarketplaceAgencies() {
         subtitle="Acenteleri, otel bağlantılarını, işlem hacmini ve acentenin Syroce'a ödeyeceği hizmet bedelini tek yerden yönetin."
         actions={<>
           <Button asChild variant="outline"><Link to="/admin/agency-integrations">Eksik entegrasyonlar</Link></Button>
+          <LegacyAgencyMigrationDialog marketplaceAgencies={agencies} onDone={load} />
           <Button variant="outline" size="sm" onClick={load} disabled={agenciesQuery.isFetching}>
             <RefreshCw className={`mr-1.5 h-4 w-4 ${loading || refreshing ? 'animate-spin' : ''}`} />Yenile
           </Button>
