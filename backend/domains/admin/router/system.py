@@ -254,6 +254,8 @@ async def get_system_performance(minutes: int = 10, current_user: User = Depends
 
         # Get rate limit stats
         try:
+            from apm_middleware import get_rate_limit_stats as _get_rl_stats
+
             rl_stats = _get_rl_stats()
         except Exception:
             try:
@@ -353,6 +355,8 @@ async def get_apm_endpoint_details(current_user: User = Depends(get_current_user
 async def get_rate_limit_status(current_user: User = Depends(get_current_user)):
     """Get current rate limiting status and configuration"""
     try:
+        from apm_middleware import get_rate_limit_stats as _get_rl_stats
+
         rl_stats = _get_rl_stats()
         return {
             "enabled": True,

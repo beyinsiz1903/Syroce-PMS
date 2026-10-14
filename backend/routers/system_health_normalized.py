@@ -5,6 +5,7 @@ evidence summary, degraded reason, critical blockers, and trend delta.
 """
 
 from datetime import UTC, datetime
+from typing import Any
 
 from fastapi import APIRouter, Depends
 

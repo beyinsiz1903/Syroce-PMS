@@ -332,6 +332,7 @@ async def get_group_bookings(
     """Detect and analyze group bookings (5+ rooms)"""
     start = datetime.fromisoformat(start_date).date()
     end = datetime.fromisoformat(end_date).date()
+    tenant_currency, _ = await get_tenant_currency(current_user.tenant_id)
 
     # Get all bookings in range
     bookings = await db.bookings.find(

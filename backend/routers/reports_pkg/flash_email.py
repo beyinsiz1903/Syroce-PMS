@@ -740,6 +740,7 @@ async def export_daily_flash_excel(
                 row_num += 1
             row_num += 1
 
+        import os
         import tempfile
 
         from fastapi.responses import FileResponse
