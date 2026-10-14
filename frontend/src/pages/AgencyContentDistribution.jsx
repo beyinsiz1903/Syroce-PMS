@@ -19,6 +19,60 @@ import {
 } from '@/components/ui/alert-dialog';
 import { useTranslation } from 'react-i18next';
 
+// Marketplace catalogue visibility. Sales access always comes from the
+// approved contract; this only decides who sees photos and descriptions.
+const MarketplaceContentTargeting = () => {
+  const [state, setState] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const load = useCallback(async () => {
+    try { setState((await axios.get('/hotel-content/marketplace-distribution')).data); }
+    catch { setState({ error: true }); }
+  }, []);
+  useEffect(() => { load(); }, [load]);
+  if (!state) return null;
+  if (state.error) return <p className="text-xs text-slate-400">Marketplace içerik dağıtımı yüklenemedi.</p>;
+  const toggle = id => setState(current => ({
+    ...current,
+    agency_ids: current.agency_ids.includes(id) ? current.agency_ids.filter(x => x !== id) : [...current.agency_ids, id],
+  }));
+  const save = async () => {
+    if (state.mode === 'selected' && state.agency_ids.length === 0) return toast.error('En az bir acente seçin veya "Tüm sözleşmeli acenteler" seçeneğini kullanın.');
+    setSaving(true);
+    try {
+      await axios.put('/hotel-content/marketplace-distribution', { mode: state.mode, agency_ids: state.agency_ids });
+      toast.success('Marketplace içerik dağıtımı kaydedildi.');
+      await load();
+    } catch (err) { toast.error(err.response?.data?.detail || 'Marketplace içerik dağıtımı kaydedilemedi.'); }
+    finally { setSaving(false); }
+  };
+  return (
+    <Card className="mt-4" data-testid="marketplace-content-targeting">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base flex items-center gap-2"><Send size={16} /> Marketplace acenteleri</CardTitle>
+        <p className="text-xs text-slate-500">Fotoğraf, açıklama ve oda içerikleri kimlere gösterilsin? Satış yetkisi yine sözleşmeye bağlıdır.</p>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {!state.is_listed && <p className="text-xs text-amber-700">Tesis marketplace'te yayında değil.</p>}
+        <label className="flex items-center gap-2 text-sm"><input type="radio" checked={state.mode === 'all'} onChange={() => setState(c => ({ ...c, mode: 'all' }))} /> Tüm sözleşmeli acenteler</label>
+        <label className="flex items-center gap-2 text-sm"><input type="radio" checked={state.mode === 'selected'} onChange={() => setState(c => ({ ...c, mode: 'selected' }))} /> Yalnız seçtiklerim</label>
+        {state.mode === 'selected' && (
+          (state.agencies || []).length === 0
+            ? <p className="text-xs text-slate-400">Onaylı sözleşmesi olan marketplace acentesi yok.</p>
+            : state.agencies.map(agency => (
+              <label key={agency.id} className="flex items-center gap-2 rounded border p-2 text-sm">
+                <input type="checkbox" checked={state.agency_ids.includes(agency.id)} onChange={() => toggle(agency.id)} />
+                <span className="truncate">{agency.name}</span>
+              </label>
+            ))
+        )}
+        <Button size="sm" className="w-full" onClick={save} disabled={saving || !state.is_listed}>
+          {saving && <Loader2 size={14} className="mr-2 animate-spin" />}Kaydet
+        </Button>
+      </CardContent>
+    </Card>
+  );
+};
+
 const ProtectedImage = ({ src, alt, className }) => {
   const [objectUrl, setObjectUrl] = useState('');
   useEffect(() => {
@@ -596,6 +650,8 @@ const AgencyContentDistribution = ({ user }) => {
               )}
             </CardContent>
           </Card>
+
+          <MarketplaceContentTargeting />
 
           <div className="mt-4 p-4 bg-slate-50 rounded-lg text-sm text-slate-500">
             <p className="font-medium text-slate-700 mb-1">{t('cm.pages_AgencyContentDistribution.nasil_calisir')}</p>

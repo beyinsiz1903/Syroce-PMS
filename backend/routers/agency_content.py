@@ -427,3 +427,73 @@ async def distribute_preview(
         "currently_published": len(cur_set),
         "selected": len(new_set),
     }
+
+
+# ─── Marketplace content targeting ──────────────────────────────
+
+
+class MarketplaceContentDistribution(BaseModel):
+    # "all": every agency with an approved contract sees the catalogue.
+    # "selected": only the listed contracted agencies do.
+    mode: str = Field("all", pattern="^(all|selected)$")
+    agency_ids: list[str] = Field(default_factory=list, max_length=500)
+
+
+async def _contracted_marketplace_agencies(tenant_id: str) -> list[dict]:
+    from routers.agency_contracts import list_active_agencies_for_tenant
+
+    ids = await list_active_agencies_for_tenant(tenant_id)
+    if not ids:
+        return []
+    docs = await get_system_db().marketplace_agencies.find(
+        {"id": {"$in": ids}}, {"_id": 0, "id": 1, "name": 1, "contact_email": 1}
+    ).to_list(len(ids))
+    return sorted(docs, key=lambda doc: str(doc.get("name") or "").casefold())
+
+
+@router.get("/hotel-content/marketplace-distribution")
+async def get_marketplace_distribution(current_user: User = Depends(get_current_user)):
+    """Contracted marketplace agencies and which of them receive the catalogue."""
+    _require_hotel_staff(current_user)
+    tenant_id = current_user.tenant_id
+    listing = await get_system_db().marketplace_listings.find_one(
+        {"tenant_id": tenant_id}, {"_id": 0, "is_listed": 1, "content_agency_ids": 1}
+    ) or {}
+    selected = listing.get("content_agency_ids")
+    return {
+        "is_listed": bool(listing.get("is_listed")),
+        "mode": "all" if selected is None else "selected",
+        "agency_ids": selected or [],
+        "agencies": await _contracted_marketplace_agencies(tenant_id),
+    }
+
+
+@router.put("/hotel-content/marketplace-distribution")
+async def update_marketplace_distribution(
+    data: MarketplaceContentDistribution, current_user: User = Depends(get_current_user)
+):
+    _require_hotel_staff(current_user)
+    tenant_id = current_user.tenant_id
+    sysdb = get_system_db()
+    listing = await sysdb.marketplace_listings.find_one({"tenant_id": tenant_id}, {"_id": 0, "id": 1})
+    if not listing:
+        raise HTTPException(status_code=404, detail="Önce marketplace tesis yayınını açın")
+    selected = None
+    if data.mode == "selected":
+        contracted = {doc["id"] for doc in await _contracted_marketplace_agencies(tenant_id)}
+        unknown = sorted(set(data.agency_ids) - contracted)
+        if unknown:
+            raise HTTPException(status_code=400, detail="Yalnız onaylı sözleşmesi olan acenteler seçilebilir")
+        selected = sorted(set(data.agency_ids))
+    await sysdb.marketplace_listings.update_one(
+        {"tenant_id": tenant_id},
+        {"$set": {"content_agency_ids": selected, "content_targeting_updated_at": _now_iso(),
+                  "content_targeting_updated_by": getattr(current_user, "id", None)}},
+    )
+    return {"ok": True, "mode": data.mode, "agency_ids": selected or []}
+
+
+def catalogue_visible_to(listing: dict, agency_id: str) -> bool:
+    """Whether a contracted agency may see the hotel's editorial content."""
+    selected = listing.get("content_agency_ids")
+    return selected is None or agency_id in selected
