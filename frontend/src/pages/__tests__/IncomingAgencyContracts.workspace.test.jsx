@@ -92,7 +92,7 @@ describe('IncomingAgencyContracts workspace', () => {
     await waitFor(() => {
       expect(apiPost).toHaveBeenCalledWith(
         '/marketplace/incoming-requests/contract-1/approve',
-        { notes: '', commission_pct_override: null, allow_base_rate_fallback: allowed },
+        { notes: '', commission_pct_override: null, allow_base_rate_fallback: allowed, contract_type: 'commission' },
       );
     });
     expect(toastSuccess).toHaveBeenCalled();

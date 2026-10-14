@@ -521,8 +521,31 @@ def _require_hotel_user(user: User) -> str:
     return user.tenant_id
 
 
+class SeasonRate(BaseModel):
+    room_type_id: str = Field(..., min_length=1, max_length=120)
+    season_start: str
+    season_end: str
+    price: float = Field(..., gt=0)
+
+    @model_validator(mode="after")
+    def _ordered(self):
+        try:
+            start = datetime.fromisoformat(self.season_start).date()
+            end = datetime.fromisoformat(self.season_end).date()
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Sezon tarihleri YYYY-AA-GG biçiminde olmalıdır") from exc
+        if end < start:
+            raise ValueError("Sezon bitişi başlangıçtan önce olamaz")
+        self.season_start, self.season_end = start.isoformat(), end.isoformat()
+        return self
+
+
 class ApproveRequest(BaseModel):
     allow_base_rate_fallback: bool = False
+    # Net-rate contracts: the hotel sets the agency's buying price per room
+    # type and season; no commission is due on a net price.
+    contract_type: str = Field(default="commission", pattern="^(commission|net_rate)$")
+    season_rates: list[SeasonRate] = Field(default_factory=list, max_length=200)
     commission_pct_override: float | None = Field(default=None, ge=0, le=100)
     credit_limit: float | None = Field(default=None, ge=0)
     credit_currency: str | None = Field(default=None, pattern="^[A-Z]{3}$")
@@ -532,6 +555,8 @@ class ApproveRequest(BaseModel):
     def _credit_currency_is_explicit(self):
         if self.credit_limit is not None and not self.credit_currency:
             raise ValueError("Kredi limiti için kredi para birimi zorunludur")
+        if self.contract_type == "net_rate" and not self.season_rates:
+            raise ValueError("Net fiyat sözleşmesinde en az bir sezon fiyatı zorunludur")
         return self
 
 
@@ -649,13 +674,21 @@ async def hotel_approve_request(
     sysdb = get_system_db()
 
     # Önce mevcut komisyonu öğren (override yoksa korumak için)
-    existing = await sysdb.agency_contracts.find_one({"id": contract_id, "tenant_id": tenant_id}, {"_id": 0, "commission_pct": 1, "status": 1, "currency": 1})
+    existing = await sysdb.agency_contracts.find_one(
+        {"id": contract_id, "tenant_id": tenant_id},
+        {"_id": 0, "commission_pct": 1, "status": 1, "currency": 1, "valid_from": 1, "valid_to": 1},
+    )
     if not existing:
         raise HTTPException(404, "Sözleşme bulunamadı")
     if existing["status"] != "pending":
         raise HTTPException(409, f"Bu sözleşme zaten '{existing['status']}' durumunda")
 
     final_pct = data.commission_pct_override if data.commission_pct_override is not None else existing["commission_pct"]
+    if data.contract_type == "net_rate":
+        final_pct = 0.0  # the net price already is the agency's buying price
+        for season in data.season_rates:
+            if season.season_start < existing.get("valid_from", "") or season.season_end > existing.get("valid_to", ""):
+                raise HTTPException(400, "Sezon fiyatları sözleşme geçerlilik tarihleri içinde olmalıdır")
     # ATOMIC: yalnızca status="pending" iken güncelle. Başka istek araya girip
     # durumu değiştirdiyse update düşmez.
     contract = await sysdb.agency_contracts.find_one_and_update(
@@ -666,6 +699,8 @@ async def hotel_approve_request(
                 "commission_pct": final_pct,
                 "hotel_approved_commission_pct": final_pct,
                 "allow_base_rate_fallback": data.allow_base_rate_fallback,
+                "contract_type": data.contract_type,
+                "season_rates": [season.model_dump() for season in data.season_rates],
                 # A limit can be configured only by the hotel at approval
                 # time.  Persisting its currency makes later credit checks
                 # deterministic; there is deliberately no implicit FX path.
