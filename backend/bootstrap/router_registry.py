@@ -302,6 +302,8 @@ _EXTRACTED_ROUTERS: list[tuple[str, str, list[str], str | None, list | None]] = 
     ("routers.agency_contracts", "agency_router", ["Marketplace v1 / Contracts"], None, None),
     ("routers.agency_contracts", "hotel_router", ["Marketplace v1 / Incoming"], None, None),
     ("routers.agency_contracts", "admin_router", ["Marketplace v1 / Admin"], None, None),
+    ("routers.agency_statements", "hotel_router", ["Marketplace / Statements (hotel)"], None, None),
+    ("routers.agency_statements", "agency_router", ["Marketplace / Statements (agency)"], None, None),
     ("routers.kbs", "router", ["KBS"], None, None),
     ("routers.help", "router", ["help"], None, None),
     ("routers.academy", "router", ["academy"], None, None),
