@@ -761,7 +761,7 @@ const AgencyPortalDashboard = () => {
   </div>;
 
   // ─── MAIN PORTAL ───
-  const workspaceLabel = portalMode === 'marketplace' ? 'Global pazar yeri' : 'Otel bağlantılı portal';
+  const workspaceLabel = portalMode === 'marketplace' ? 'Acente Extranet' : 'Otel bağlantılı portal';
   // Show only human-readable identity; never surface session/impersonation tokens (e.g. "SYR1:eyJ...").
   const isReadableIdentity = value => typeof value === 'string' && value.trim() !== '' && value.length <= 80 && !/^[A-Z0-9]+:/.test(value) && !/^eyJ/.test(value) && !/[A-Za-z0-9_-]{40,}/.test(value);
   const signedInIdentity = [agencyUser?.email, agencyUser?.name].find(isReadableIdentity) || '';

@@ -21,7 +21,7 @@ import { useTranslation } from 'react-i18next';
 
 // Marketplace catalogue visibility. Sales access always comes from the
 // approved contract; this only decides who sees photos and descriptions.
-const MarketplaceContentTargeting = () => {
+const MarketplaceContentTargeting = ({ onVisibilityChange }) => {
   const [state, setState] = useState(null);
   const [saving, setSaving] = useState(false);
   const load = useCallback(async () => {
@@ -41,6 +41,7 @@ const MarketplaceContentTargeting = () => {
       await axios.put('/hotel-content/agency-visibility', { visible });
       toast.success(visible ? 'Tesisiniz acentelerin otel listesinde görünür.' : 'Tesisiniz acente listesinden gizlendi; mevcut sözleşmeler devam eder.');
       await load();
+      onVisibilityChange?.();
     } catch (err) { toast.error(err.response?.data?.detail || 'Görünürlük güncellenemedi.'); }
     finally { setSaving(false); }
   };
@@ -401,7 +402,7 @@ const AgencyContentDistribution = ({ user }) => {
       <Card><CardHeader><CardTitle>Yayına hazırlık ve erişim kapsamı</CardTitle></CardHeader><CardContent className="space-y-3 text-sm">
         <p><strong>Otele bağlı portal:</strong> Sağdaki acente listesi yalnız bu portalın içerik erişimini yönetir. Seçimi kaldırmak tek başına erişimi kesmez; onay penceresinde yayından kaldırmayı ayrıca seçmelisiniz.</p>
         <p><strong>Acente Extranet:</strong> Tesisiniz tüm acentelerin otel listesinde görünür ve teklif alabilir; fiyat, kontenjan ve rezervasyon yalnız onayladığınız sözleşmeyle açılır. Bu listeden acente kaldırmak sözleşmeyi kapatmaz; bunun için Acente Sözleşme Talepleri ekranını kullanın.</p>
-        <p>Kaydet, önceden yayınlanmış acentelere güncel içeriği yansıtır ve varsa marketplace içeriğini günceller; yeni satış yetkisi vermez.</p>
+        <p>Kaydet, önceden yayınlanmış acentelere güncel içeriği yansıtır ve acente listesindeki tanıtım bilgisini günceller; yeni satış yetkisi vermez.</p>
         {!readiness ? <p role="alert">Hazırlık durumu doğrulanamadı. <button type="button" onClick={refreshReadiness}>Tekrar kontrol et</button></p> : <>
           <p>PMS adı: {readiness.tenant_name || '—'} · Yayın adı: {readiness.content_name || '—'}</p>
           <p>Otele bağlı portal: {readiness.access.hotel_portal_published_count} aktif acenteye açık. Acente listesinde: {readiness.access.marketplace_listed ? 'Görünür' : 'Gizli'} · Geçerli sözleşme: {readiness.access.marketplace_active_contract_count}</p>
@@ -663,7 +664,7 @@ const AgencyContentDistribution = ({ user }) => {
             </CardContent>
           </Card>
 
-          <MarketplaceContentTargeting />
+          <MarketplaceContentTargeting onVisibilityChange={refreshReadiness} />
 
           <div className="mt-4 p-4 bg-slate-50 rounded-lg text-sm text-slate-500">
             <p className="font-medium text-slate-700 mb-1">{t('cm.pages_AgencyContentDistribution.nasil_calisir')}</p>
