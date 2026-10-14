@@ -2502,6 +2502,15 @@ async def agency_create_reservation(
         except Exception:
             await db.guests.delete_one({"id": guest_id, "tenant_id": data.tenant_id})
             raise
+        from core.agency_allotment import marketplace_allotment_overrun, rollback_oversold_booking
+
+        overrun = await marketplace_allotment_overrun(
+            db, tenant_id=data.tenant_id, agency_id=agency["agency_id"], room_type=data.room_type,
+            rate_plan_code=data.rate_plan_code, check_in=data.check_in, check_out=data.check_out,
+        )
+        if overrun:
+            await rollback_oversold_booking(db, tenant_id=data.tenant_id, booking_id=booking_id)
+            raise HTTPException(409, f"Acente kontenjanı {overrun} gecesi için eş zamanlı bir satışla doldu; yeniden arayın")
 
     # Completion intent was stored atomically with the booking. The durable
     # worker repairs local projections and tracks downstream delivery.
