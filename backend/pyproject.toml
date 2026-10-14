@@ -67,7 +67,9 @@ exclude = [
 
 [tool.ruff.lint]
 select = ["E9", "F63", "F7", "F82", "F401", "F811", "F841", "I", "W", "C4", "UP006", "UP012", "UP015", "UP017", "UP024", "UP034", "UP041", "UP045"]
-ignore = ["F821"]
+# F821 (undefined name) stays enabled: every ignored hit was a runtime
+# NameError (HTTP 500 or a silently swallowed feature failure).
+ignore = []
 
 [tool.ruff.lint.isort]
 known-first-party = ["core", "common", "domains", "infra", "modules", "controlplane", "security", "shared_kernel", "workers", "ops", "channel_manager", "routers", "bootstrap", "models"]

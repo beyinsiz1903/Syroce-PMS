@@ -500,6 +500,8 @@ async def b2b_get_guest(guest_id: str, agency: dict = Depends(get_b2b_agency)):
     # v64 Bug DA: cross-agency IDOR guard — sadece kendi rezervasyonu olan misafir
     if not await _agency_owns_guest(tenant_id, agency["agency_id"], guest_id):
         raise HTTPException(status_code=404, detail="Misafir bulunamadi")
+    from security.encrypted_lookup import decrypt_guest_doc
+
     doc = decrypt_guest_doc(
         await db.guests.find_one(
             {"tenant_id": tenant_id, "id": guest_id},

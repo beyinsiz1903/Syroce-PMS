@@ -5,9 +5,12 @@ reuse across the 5 sub-routers.
 
 import html as _html
 import re as _re
+import uuid
 from datetime import UTC, datetime, timedelta
 
 from pydantic import BaseModel, Field
+
+from core.database import db
 
 
 def _e(value) -> str:

@@ -7,7 +7,7 @@ yeniden persist edilmez. Ciphertext / blind-index / Mongo ``_id`` ASLA dönmez.
 
 from __future__ import annotations
 
-from datetime import UTC
+from datetime import UTC, datetime
 
 
 def mask_phone(phone: str | None) -> str | None:
