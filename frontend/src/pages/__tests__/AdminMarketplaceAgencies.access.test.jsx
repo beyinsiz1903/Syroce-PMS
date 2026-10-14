@@ -126,4 +126,35 @@ describe('AdminMarketplaceAgencies access lifecycle', () => {
     expect(screen.getByRole('button', { name: 'Acente hesabına geç' })).toBeEnabled();
     expect(screen.getByText(/süperadmin görünümü acenteden bağımsız/)).toBeInTheDocument();
   });
+
+  it('soft-disables an agency after confirmation and can re-activate it', async () => {
+    axios.get.mockResolvedValue({
+      data: {
+        agencies: [{
+          id: 'agency-1', name: 'Kartepe Travel', status: 'active', contact_email: 'kartepe@example.com',
+          api_access: { active: false }, portal_access: { count: 0 },
+        }],
+      },
+    });
+    axios.delete.mockResolvedValue({ data: { ok: true, withdrawn_proposals: 2 } });
+    renderPage();
+
+    await screen.findByText('Kartepe Travel');
+    fireEvent.click(screen.getByRole('button', { name: /Erişim/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Acenteyi devre dışı bırak/ }));
+    expect(axios.delete).not.toHaveBeenCalled();
+    expect(screen.getByTestId('agency-access-confirm')).toHaveTextContent('Hiçbir kayıt silinmez');
+    axios.get.mockResolvedValue({
+      data: { agencies: [{ id: 'agency-1', name: 'Kartepe Travel', status: 'disabled', api_access: { active: false }, portal_access: { count: 0 } }] },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Onayla' }));
+    await waitFor(() => expect(axios.delete).toHaveBeenCalledWith('/marketplace/v1/admin/agencies/agency-1'));
+
+    await waitFor(() => expect(screen.queryByTestId('agency-access-confirm')).not.toBeInTheDocument());
+    await screen.findByText('Devre dışı');
+    fireEvent.click(screen.getByRole('button', { name: /Erişim/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Yeniden etkinleştir/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Onayla' }));
+    await waitFor(() => expect(axios.patch).toHaveBeenCalledWith('/marketplace/v1/admin/agencies/agency-1', { status: 'active' }));
+  });
 });

@@ -230,7 +230,17 @@ async def list_active_agencies_for_tenant(tenant_id: str, on_date: str | None = 
         aid = doc.get("agency_id")
         if aid and aid not in seen:
             seen.append(aid)
-    return seen
+    if not seen:
+        return seen
+    # A disabled agency keeps its approved contracts (they resume on
+    # re-activation) but must not count as an active partner meanwhile.
+    disabled = {
+        row["id"]
+        for row in await sysdb.marketplace_agencies.find(
+            {"id": {"$in": seen}, "status": {"$ne": "active"}}, {"_id": 0, "id": 1}
+        ).to_list(len(seen))
+    }
+    return [aid for aid in seen if aid not in disabled]
 
 
 async def list_webhook_agencies_for_tenant(tenant_id: str, on_date: str | None = None) -> list[str]:
