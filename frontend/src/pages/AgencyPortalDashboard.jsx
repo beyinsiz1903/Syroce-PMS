@@ -126,6 +126,7 @@ const AgencyPortalDashboard = () => {
   const [reservations, setReservations] = useState([]);
   const [reservationsLoading, setReservationsLoading] = useState(false);
   const [reconciliation, setReconciliation] = useState(null);
+  const [notices, setNotices] = useState([]);
   const [reconPeriod, setReconPeriod] = useState(() => {
     const startDate = new Date(); startDate.setDate(startDate.getDate() - 30);
     return { start: toDateInput(startDate), end: toDateInput(new Date()) };
@@ -250,6 +251,25 @@ const AgencyPortalDashboard = () => {
     };
     loadProfile();
   }, [token, profileRevision, portalMode]);
+
+  const loadNotices = async () => {
+    if (portalMode !== 'marketplace') return;
+    try {
+      const { data } = await agencyApi.get('/marketplace/v1/notices', { params: { limit: 20 } });
+      setNotices(data.items || []);
+    } catch {
+      // Notices are informational; the portal stays usable without them.
+    }
+  };
+  useEffect(() => {
+    if (token && portalMode === 'marketplace') loadNotices();
+  }, [token, portalMode]); // eslint-disable-line react-hooks/exhaustive-deps
+  const markNoticeRead = async notice => {
+    try {
+      await agencyApi.post(`/marketplace/v1/notices/${encodeURIComponent(notice.id)}/read`);
+      setNotices(current => current.map(item => (item.id === notice.id ? { ...item, read: true } : item)));
+    } catch (err) { toast.error(err.response?.data?.detail || 'Bildirim güncellenemedi.'); }
+  };
 
   // Load content
   const loadContent = async tenantIdOverride => {
@@ -741,6 +761,19 @@ const AgencyPortalDashboard = () => {
             </div>
           </div>
         </section>
+        {notices.some(notice => !notice.read) && (
+          <Card className="border-amber-200 bg-amber-50/60" data-testid="agency-notices">
+            <CardHeader className="pb-2"><CardTitle className="flex items-center gap-2 text-base"><Bell size={17} className="text-amber-600" />Otellerden bildirimler</CardTitle></CardHeader>
+            <CardContent className="space-y-2">
+              {notices.filter(notice => !notice.read).slice(0, 5).map(notice => (
+                <div key={notice.id} className="flex flex-wrap items-start justify-between gap-3 rounded-lg border border-amber-200 bg-white p-3">
+                  <div className="min-w-0"><div className="text-sm font-medium text-slate-900">{notice.title}</div><div className="text-xs leading-5 text-slate-600">{notice.message}</div><div className="text-[11px] text-slate-400">{String(notice.created_at || '').slice(0, 16).replace('T', ' ')}</div></div>
+                  <Button variant="outline" size="sm" onClick={() => markNoticeRead(notice)}>Okundu</Button>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        )}
         <Tabs defaultValue="search" className="w-full">
           <TabsList className={`grid w-full ${portalMode === 'marketplace' ? 'grid-cols-2 lg:grid-cols-6' : 'grid-cols-1 sm:grid-cols-3'} h-auto gap-1 rounded-xl border border-slate-200 bg-white p-1.5 shadow-sm`}>
             <TabsTrigger value="search" data-testid="tab-search" className="min-h-10 rounded-lg data-[state=active]:bg-slate-900 data-[state=active]:text-white">{t('cm.pages_AgencyPortalDashboard.musaitlik_ara')}</TabsTrigger>
@@ -1022,7 +1055,8 @@ const AgencyPortalDashboard = () => {
                     ['reservation_change', 'Rezervasyon değişiklikleri', 'Tarih, oda ve durum değişiklikleri'],
                     ['cancellation_request', 'İptal görüşmeleri', 'Otel ile karşılıklı iptal talebi ve yanıtları'],
                     ['payment_reconciliation', 'Finans ve mutabakat', 'Tahsilat ve dönem mutabakat bildirimleri'],
-                  ].map(([key, label, description]) => <label key={key} className="flex cursor-pointer items-start justify-between gap-4 rounded-lg border border-slate-200 p-3 hover:border-emerald-300"><span><span className="block text-sm font-medium text-slate-800">{label}</span><span className="block text-xs leading-5 text-slate-500">{description}</span></span><input type="checkbox" className="mt-1 h-4 w-4 accent-emerald-700" checked={Boolean(portalSettings.notification_preferences?.[key])} onChange={event => updateNotification(key, event.target.checked)} /></label>)}
+                    ['contract_updates', 'Sözleşme kararları', 'Otelin sözleşme onayı, reddi ve feshi'],
+                  ].map(([key, label, description]) => <label key={key} className="flex cursor-pointer items-start justify-between gap-4 rounded-lg border border-slate-200 p-3 hover:border-emerald-300"><span><span className="block text-sm font-medium text-slate-800">{label}</span><span className="block text-xs leading-5 text-slate-500">{description}</span></span><input type="checkbox" className="mt-1 h-4 w-4 accent-emerald-700" checked={portalSettings.notification_preferences?.[key] !== false} onChange={event => updateNotification(key, event.target.checked)} /></label>)}
                 </CardContent>
               </Card>
 
