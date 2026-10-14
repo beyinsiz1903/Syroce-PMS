@@ -22,7 +22,7 @@ const page = () => render(<AgencyContentDistribution user={{ role: 'admin' }} />
 it('separates access paths and blocks publishing unsaved edits', async () => {
   page();
   await screen.findByText(/PMS adı: PMS Hotel/);
-  expect(screen.getByText(/marketplace erişimini veya sözleşmesini kapatmaz/)).toBeInTheDocument();
+  expect(screen.getByText(/Bu listeden acente kaldırmak sözleşmeyi kapatmaz/)).toBeInTheDocument();
   expect(screen.getByText(/Geçerli sözleşme: 2/)).toBeInTheDocument();
   fireEvent.change(screen.getAllByRole('textbox')[0], { target: { value: 'Changed' } });
   expect(screen.getByTestId('distribute-btn')).toBeDisabled();

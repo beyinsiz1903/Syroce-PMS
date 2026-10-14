@@ -149,7 +149,8 @@ async def get_content_readiness(current_user: User = Depends(get_current_user)):
     partners = await list_active_agencies_for_tenant(tenant_id)
     return {**content_readiness(content, tenant), 'access': {
         'hotel_portal_published_count': await db.agencies.count_documents({'tenant_id': tenant_id, 'published_content': True, 'status': 'active'}),
-        'marketplace_listed': bool(listing.get('is_listed')),
+        # Every active hotel is in the agency directory unless it opted out.
+        'marketplace_listed': listing.get('is_listed') is not False,
         'marketplace_active_contract_count': len(partners),
     }}
 
@@ -461,7 +462,7 @@ async def get_marketplace_distribution(current_user: User = Depends(get_current_
     ) or {}
     selected = listing.get("content_agency_ids")
     return {
-        "is_listed": bool(listing.get("is_listed")),
+        "is_listed": listing.get("is_listed") is not False,
         "mode": "all" if selected is None else "selected",
         "agency_ids": selected or [],
         "agencies": await _contracted_marketplace_agencies(tenant_id),
@@ -475,9 +476,6 @@ async def update_marketplace_distribution(
     _require_hotel_staff(current_user)
     tenant_id = current_user.tenant_id
     sysdb = get_system_db()
-    listing = await sysdb.marketplace_listings.find_one({"tenant_id": tenant_id}, {"_id": 0, "id": 1})
-    if not listing:
-        raise HTTPException(status_code=404, detail="Önce marketplace tesis yayınını açın")
     selected = None
     if data.mode == "selected":
         contracted = {doc["id"] for doc in await _contracted_marketplace_agencies(tenant_id)}
@@ -485,12 +483,38 @@ async def update_marketplace_distribution(
         if unknown:
             raise HTTPException(status_code=400, detail="Yalnız onaylı sözleşmesi olan acenteler seçilebilir")
         selected = sorted(set(data.agency_ids))
+    # A hotel needs no listing document to be in the directory; create the
+    # settings holder on first use without changing its visibility.
     await sysdb.marketplace_listings.update_one(
         {"tenant_id": tenant_id},
         {"$set": {"content_agency_ids": selected, "content_targeting_updated_at": _now_iso(),
-                  "content_targeting_updated_by": getattr(current_user, "id", None)}},
+                  "content_targeting_updated_by": getattr(current_user, "id", None)},
+         "$setOnInsert": {"created_at": _now_iso()}},
+        upsert=True,
     )
     return {"ok": True, "mode": data.mode, "agency_ids": selected or []}
+
+
+class AgencyVisibility(BaseModel):
+    visible: bool
+
+
+@router.put("/hotel-content/agency-visibility")
+async def update_agency_visibility(data: AgencyVisibility, current_user: User = Depends(get_current_user)):
+    """Show or hide the hotel in the agency directory.
+
+    Hidden hotels receive no new contract proposals; approved contracts keep
+    working. Visibility never exposes prices or availability.
+    """
+    _require_hotel_staff(current_user)
+    tenant_id = current_user.tenant_id
+    await get_system_db().marketplace_listings.update_one(
+        {"tenant_id": tenant_id},
+        {"$set": {"is_listed": data.visible, "updated_at": _now_iso(), "visibility_updated_by": getattr(current_user, "id", None)},
+         "$setOnInsert": {"created_at": _now_iso()}},
+        upsert=True,
+    )
+    return {"ok": True, "visible": data.visible}
 
 
 def catalogue_visible_to(listing: dict, agency_id: str) -> bool:

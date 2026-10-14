@@ -118,8 +118,9 @@ async def migration_preview(tenant_id: str = Query(..., min_length=1), _: bool =
         })
     return {
         "tenant_id": tenant_id,
-        "marketplace_listed": bool((listing or {}).get("is_listed")),
-        "notes": [] if (listing or {}).get("is_listed") else ["Tesis marketplace'te listelenmemiş: taşınan acenteler listeleme açılana kadar satış yapamaz."],
+        "marketplace_listed": (listing or {}).get("is_listed") is not False,
+        "notes": ["Tesis acente listesinden gizlenmiş: yeni teklif almaz, taşınan sözleşmeler çalışmaya devam eder."]
+        if (listing or {}).get("is_listed") is False else [],
         "agencies": rows,
     }
 

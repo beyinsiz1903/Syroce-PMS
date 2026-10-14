@@ -30,34 +30,46 @@ const MarketplaceContentTargeting = () => {
   }, []);
   useEffect(() => { load(); }, [load]);
   if (!state) return null;
-  if (state.error) return <p className="text-xs text-slate-400">Marketplace içerik dağıtımı yüklenemedi.</p>;
+  if (state.error) return <p className="text-xs text-slate-400">Acente extranet ayarları yüklenemedi.</p>;
   const toggle = id => setState(current => ({
     ...current,
     agency_ids: current.agency_ids.includes(id) ? current.agency_ids.filter(x => x !== id) : [...current.agency_ids, id],
   }));
+  const toggleVisibility = async visible => {
+    setSaving(true);
+    try {
+      await axios.put('/hotel-content/agency-visibility', { visible });
+      toast.success(visible ? 'Tesisiniz acentelerin otel listesinde görünür.' : 'Tesisiniz acente listesinden gizlendi; mevcut sözleşmeler devam eder.');
+      await load();
+    } catch (err) { toast.error(err.response?.data?.detail || 'Görünürlük güncellenemedi.'); }
+    finally { setSaving(false); }
+  };
   const save = async () => {
     if (state.mode === 'selected' && state.agency_ids.length === 0) return toast.error('En az bir acente seçin veya "Tüm sözleşmeli acenteler" seçeneğini kullanın.');
     setSaving(true);
     try {
       await axios.put('/hotel-content/marketplace-distribution', { mode: state.mode, agency_ids: state.agency_ids });
-      toast.success('Marketplace içerik dağıtımı kaydedildi.');
+      toast.success('Acente extranet içerik dağıtımı kaydedildi.');
       await load();
-    } catch (err) { toast.error(err.response?.data?.detail || 'Marketplace içerik dağıtımı kaydedilemedi.'); }
+    } catch (err) { toast.error(err.response?.data?.detail || 'Acente extranet içerik dağıtımı kaydedilemedi.'); }
     finally { setSaving(false); }
   };
   return (
     <Card className="mt-4" data-testid="marketplace-content-targeting">
       <CardHeader className="pb-3">
-        <CardTitle className="text-base flex items-center gap-2"><Send size={16} /> Marketplace acenteleri</CardTitle>
+        <CardTitle className="text-base flex items-center gap-2"><Send size={16} /> Acente Extranet (sözleşmeli acenteler)</CardTitle>
         <p className="text-xs text-slate-500">Fotoğraf, açıklama ve oda içerikleri kimlere gösterilsin? Satış yetkisi yine sözleşmeye bağlıdır.</p>
       </CardHeader>
       <CardContent className="space-y-2">
-        {!state.is_listed && <p className="text-xs text-amber-700">Tesis marketplace'te yayında değil.</p>}
+        <label className="flex items-start gap-2 rounded border border-slate-200 p-2 text-sm">
+          <input type="checkbox" className="mt-1" checked={state.is_listed} disabled={saving} onChange={e => toggleVisibility(e.target.checked)} data-testid="agency-visibility-toggle" />
+          <span><strong>Acentelerin otel listesinde görün</strong><span className="block text-xs text-slate-500">Acenteler tesisinizi görüp sözleşme teklifi gönderebilir. Fiyat, kontenjan ve rezervasyon yalnız onayladığınız sözleşmeyle açılır.</span></span>
+        </label>
         <label className="flex items-center gap-2 text-sm"><input type="radio" checked={state.mode === 'all'} onChange={() => setState(c => ({ ...c, mode: 'all' }))} /> Tüm sözleşmeli acenteler</label>
         <label className="flex items-center gap-2 text-sm"><input type="radio" checked={state.mode === 'selected'} onChange={() => setState(c => ({ ...c, mode: 'selected' }))} /> Yalnız seçtiklerim</label>
         {state.mode === 'selected' && (
           (state.agencies || []).length === 0
-            ? <p className="text-xs text-slate-400">Onaylı sözleşmesi olan marketplace acentesi yok.</p>
+            ? <p className="text-xs text-slate-400">Onaylı sözleşmesi olan acente yok.</p>
             : state.agencies.map(agency => (
               <label key={agency.id} className="flex items-center gap-2 rounded border p-2 text-sm">
                 <input type="checkbox" checked={state.agency_ids.includes(agency.id)} onChange={() => toggle(agency.id)} />
@@ -65,7 +77,7 @@ const MarketplaceContentTargeting = () => {
               </label>
             ))
         )}
-        <Button size="sm" className="w-full" onClick={save} disabled={saving || !state.is_listed}>
+        <Button size="sm" className="w-full" onClick={save} disabled={saving}>
           {saving && <Loader2 size={14} className="mr-2 animate-spin" />}Kaydet
         </Button>
       </CardContent>
@@ -178,7 +190,7 @@ const AgencyContentDistribution = ({ user }) => {
       setSavedContent(JSON.stringify(res.data));
       await refreshReadiness();
       setPendingDeletes({ rooms: new Set(), services: new Set() });
-      toast.success('İçerik kaydedildi. Mevcut yayınlara güncel içerik yansır; kayıt işlemi marketplace satışını açmaz.');
+      toast.success('İçerik kaydedildi. Mevcut yayınlara güncel içerik yansır; kayıt işlemi acente satışını açmaz.');
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Kaydetme hatası');
     } finally {
@@ -388,11 +400,11 @@ const AgencyContentDistribution = ({ user }) => {
 
       <Card><CardHeader><CardTitle>Yayına hazırlık ve erişim kapsamı</CardTitle></CardHeader><CardContent className="space-y-3 text-sm">
         <p><strong>Otele bağlı portal:</strong> Sağdaki acente listesi yalnız bu portalın içerik erişimini yönetir. Seçimi kaldırmak tek başına erişimi kesmez; onay penceresinde yayından kaldırmayı ayrıca seçmelisiniz.</p>
-        <p><strong>Marketplace:</strong> Erişim tesisin marketplace yayınına ve geçerli, onaylı sözleşmeye bağlıdır. Bu listeden acente kaldırmak marketplace erişimini veya sözleşmesini kapatmaz. Bunun için marketplace tesis yayını / sözleşme yönetimini kullanın.</p>
+        <p><strong>Acente Extranet:</strong> Tesisiniz tüm acentelerin otel listesinde görünür ve teklif alabilir; fiyat, kontenjan ve rezervasyon yalnız onayladığınız sözleşmeyle açılır. Bu listeden acente kaldırmak sözleşmeyi kapatmaz; bunun için Acente Sözleşme Talepleri ekranını kullanın.</p>
         <p>Kaydet, önceden yayınlanmış acentelere güncel içeriği yansıtır ve varsa marketplace içeriğini günceller; yeni satış yetkisi vermez.</p>
         {!readiness ? <p role="alert">Hazırlık durumu doğrulanamadı. <button type="button" onClick={refreshReadiness}>Tekrar kontrol et</button></p> : <>
           <p>PMS adı: {readiness.tenant_name || '—'} · Yayın adı: {readiness.content_name || '—'}</p>
-          <p>Otele bağlı portal: {readiness.access.hotel_portal_published_count} aktif acenteye açık. Marketplace yayını: {readiness.access.marketplace_listed ? 'Açık' : 'Kapalı'} · Geçerli sözleşme: {readiness.access.marketplace_active_contract_count}</p>
+          <p>Otele bağlı portal: {readiness.access.hotel_portal_published_count} aktif acenteye açık. Acente listesinde: {readiness.access.marketplace_listed ? 'Görünür' : 'Gizli'} · Geçerli sözleşme: {readiness.access.marketplace_active_contract_count}</p>
           <p role="status">Kayıtlı sürüm {readiness.content_version}: {readiness.ready ? 'İçerik kontrolü tamam; satış uygunluğu ayrıca değerlendirilir.' : 'Yayın öncesi eksikler / uyarılar var.'}</p>
           <ul className="list-disc pl-5">{[...readiness.errors, ...readiness.warnings].map(item => <li key={item}>{item}</li>)}</ul>
           <p className="text-xs">Fotoğraf kontrolü kayıt varlığını denetler; görsellerin açıldığını ve kullanım haklarını ayrıca doğrulayın.</p>
@@ -673,7 +685,7 @@ const AgencyContentDistribution = ({ user }) => {
             <AlertDialogTitle>{t('cm.pages_AgencyContentDistribution.yayin_listesini_guncelle_c8c37')}</AlertDialogTitle>
             <AlertDialogDescription asChild>
               <div className="space-y-3 text-sm">
-                <p>Bu işlem yalnız otele bağlı portalı etkiler. Marketplace yayını ve sözleşme erişimi değişmez.</p>
+                <p>Bu işlem yalnız otele bağlı portalı etkiler. Acente extranet görünürlüğü ve sözleşme erişimi değişmez.</p>
                 {(distributeDialog?.readiness?.errors || []).map(item => <p role="alert" key={item}>{item}</p>)}
                 {(distributeDialog?.readiness?.warnings || []).length > 0 && <div>
                   <ul>{distributeDialog.readiness.warnings.map(item => <li key={item}>{item}</li>)}</ul>

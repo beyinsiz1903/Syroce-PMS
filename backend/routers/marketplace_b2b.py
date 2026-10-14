@@ -427,9 +427,9 @@ async def marketplace_my_hotels(agency: dict = Depends(get_marketplace_agency)):
 
     hotels = []
     if tenant_ids:
-        listings = await sysdb.marketplace_listings.find(
-            {"tenant_id": {"$in": tenant_ids}, "is_listed": True}, {"_id": 0}
-        ).to_list(1000)
+        from core.agency_hotel_directory import hotel_profiles
+
+        listings = await hotel_profiles(sysdb, tenant_ids)
 
         for listing in listings:
             hotels.append({
@@ -773,16 +773,20 @@ def _require_system_admin(
 
 
 
-async def _get_listing_or_404(tenant_id: str) -> dict:
-    """Bir otelin marketplace listing'ini döner. Liste edilmemişse 404."""
-    sysdb = get_system_db()
-    listing = await sysdb.marketplace_listings.find_one({"tenant_id": tenant_id, "is_listed": True}, {"_id": 0})
-    if not listing:
-        raise HTTPException(404, "Bu otel marketplace'te listelenmemiş")
-    tenant = await sysdb.tenants.find_one({"id": tenant_id}, {"_id": 0, "subscription_status": 1, "is_active": 1})
-    if not tenant or tenant.get("is_active") is False or tenant.get("subscription_status", "active") != "active":
+async def _get_listing_or_404(tenant_id: str, *, for_proposal: bool = False) -> dict:
+    """Hotel profile for agency operations (every active hotel has one).
+
+    Inactive hotels are not served. A hotel that opted out of the agency
+    directory accepts no new proposals, but its approved contracts keep working.
+    """
+    from core.agency_hotel_directory import hotel_profile
+
+    profile = await hotel_profile(get_system_db(), tenant_id)
+    if not profile:
         raise HTTPException(404, "Bu otel şu anda rezervasyon kabul etmiyor")
-    return listing
+    if for_proposal and profile["hidden"]:
+        raise HTTPException(404, "Bu otel acente tekliflerine kapalı")
+    return profile
 
 
 NET_RATE_PLAN = "NET"
@@ -1915,28 +1919,14 @@ async def agency_list_hotels(
     if not partner_tenant_ids:
         return {"hotels": [], "total": 0, "message": "Henüz onaylı sözleşmeniz olan otel yok. Önce otele teklif gönderin."}
 
-    sysdb = get_system_db()
-    query: dict = {"is_listed": True, "tenant_id": {"$in": partner_tenant_ids}}
-    from security.query_safety import safe_search_term
+    from core.agency_hotel_directory import hotel_profiles, matches_filters
 
-    if city and (_c := safe_search_term(city)):
-        query["city"] = {"$regex": f"^{_c}$", "$options": "i"}
-    if country:
-        query["country"] = country.upper()
-    if q and (_s := safe_search_term(q)):
-        query["$or"] = [
-            {"hotel_name": {"$regex": _s, "$options": "i"}},
-            {"description": {"$regex": _s, "$options": "i"}},
-        ]
-
-    docs = (
-        await sysdb.marketplace_listings.find(
-            query,
-            {"_id": 0, "blocked_dates": 0, "created_by": 0},
-        )
-        .limit(limit)
-        .to_list(limit)
-    )
+    profiles = await hotel_profiles(get_system_db(), partner_tenant_ids)
+    docs = [
+        {k: v for k, v in profile.items() if k not in ("blocked_dates", "created_by", "content_agency_ids", "hidden")}
+        for profile in profiles
+        if matches_filters(profile, city=city, country=country, q=q)
+    ][:limit]
     return {"hotels": docs, "total": len(docs)}
 
 
@@ -2035,22 +2025,12 @@ async def agency_search(
         return {"check_in": req.check_in, "check_out": req.check_out, "results": [], "total_hotels": 0, "message": "Henüz onaylı sözleşmeniz olan otel yok."}
 
     sysdb = get_system_db()
-    list_query: dict = {"is_listed": True, "tenant_id": {"$in": partner_tenant_ids}}
-    from security.query_safety import safe_search_term
+    from core.agency_hotel_directory import hotel_profiles, matches_filters
 
-    if req.city and (_c := safe_search_term(req.city)):
-        list_query["city"] = {"$regex": f"^{_c}$", "$options": "i"}
-    if req.country:
-        list_query["country"] = req.country.upper()
-    if req.q and (_s := safe_search_term(req.q)):
-        list_query["$or"] = [
-            {"hotel_name": {"$regex": _s, "$options": "i"}},
-            {"description": {"$regex": _s, "$options": "i"}},
-        ]
-    if req.min_star_rating:
-        list_query["star_rating"] = {"$gte": req.min_star_rating}
-
-    listings = await sysdb.marketplace_listings.find(list_query, {"_id": 0}).limit(req.limit).to_list(req.limit)
+    listings = [
+        profile for profile in await hotel_profiles(sysdb, partner_tenant_ids)
+        if matches_filters(profile, city=req.city, country=req.country, q=req.q, min_star_rating=req.min_star_rating)
+    ][: req.limit]
     tenant_ids = [item["tenant_id"] for item in listings]
     content_docs = await sysdb.hotel_content.find(
         {"tenant_id": {"$in": tenant_ids}}, {"_id": 0}

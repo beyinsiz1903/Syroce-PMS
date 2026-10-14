@@ -156,6 +156,13 @@ async def get_upload(path: str, optional_user: User | None = Depends(get_optiona
                             {"tenant_id": target_tenant_id}, {"_id": 0, "content_agency_ids": 1}
                         )
                         allowed = catalogue_visible_to(listing or {}, agency_id)
+                    if not allowed:
+                        # Pre-contract: any agency may see the cover photo of a
+                        # hotel in the directory, nothing else.
+                        from core.agency_hotel_directory import hotel_profile
+
+                        profile = await hotel_profile(get_system_db(), target_tenant_id)
+                        allowed = bool(profile and not profile["hidden"] and profile.get("cover_photo") == f"/api/uploads/{path}")
                 if not allowed:
                     raise HTTPException(status_code=403, detail="Forbidden: Tenant mismatch")
 

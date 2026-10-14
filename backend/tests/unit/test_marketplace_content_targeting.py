@@ -46,13 +46,14 @@ async def test_selected_mode_accepts_only_contracted_agencies(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_all_mode_clears_selection_and_requires_listing(monkeypatch):
+async def test_all_mode_clears_selection_and_creates_settings_without_listing(monkeypatch):
     sysdb = _sysdb({"id": "l1"})
     monkeypatch.setattr(agency_content, "get_system_db", lambda: sysdb)
     await agency_content.update_marketplace_distribution(agency_content.MarketplaceContentDistribution(mode="all"), USER)
     assert sysdb.marketplace_listings.update_one.await_args.args[1]["$set"]["content_agency_ids"] is None
 
-    monkeypatch.setattr(agency_content, "get_system_db", lambda: _sysdb(None))
-    with pytest.raises(HTTPException) as exc:
-        await agency_content.update_marketplace_distribution(agency_content.MarketplaceContentDistribution(mode="all"), USER)
-    assert exc.value.status_code == 404
+    # Every active hotel is in the agency directory; no listing document is required.
+    fresh = _sysdb(None)
+    monkeypatch.setattr(agency_content, "get_system_db", lambda: fresh)
+    await agency_content.update_marketplace_distribution(agency_content.MarketplaceContentDistribution(mode="all"), USER)
+    assert fresh.marketplace_listings.update_one.await_args.kwargs["upsert"] is True
