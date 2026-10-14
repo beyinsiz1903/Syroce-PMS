@@ -778,6 +778,45 @@ async def _get_listing_or_404(tenant_id: str) -> dict:
     return listing
 
 
+async def _calendar_room_codes(tenant_id: str, room_type: str) -> list[str]:
+    """PMS room type plus every channel-manager code mapped to it.
+
+    Exely/HotelRunner hotels keep their rate calendars (and the agency rows
+    the rate manager writes) under provider room codes such as ``5001575``,
+    while agency inventory uses the PMS room type (``Deluxe``).
+    """
+    codes = [room_type]
+    try:
+        for collection, field in (("exely_room_mappings", "exely_room_code"), ("hotelrunner_room_mappings", "hr_inv_code")):
+            rows = await db[collection].find(
+                {"tenant_id": tenant_id, "pms_room_type": room_type}, {"_id": 0, field: 1}
+            ).to_list(50)
+            codes.extend(str(row[field]) for row in rows if row.get(field) and str(row[field]) not in codes)
+    except Exception as exc:  # noqa: BLE001 - mapping lookup must not close sales
+        logger.debug("room code alias lookup skipped: %s", type(exc).__name__)
+    return codes
+
+
+def _prefer_pms_rows(rows: list[dict], room_type: str) -> list[dict]:
+    """One row per (date, plan): a row written under the PMS name wins over an alias."""
+    chosen: dict[tuple, dict] = {}
+    for row in rows:
+        key = (row.get("date"), str(row.get("rate_plan_code") or "LEGACY"))
+        if key not in chosen or (row.get("room_type_code") == room_type and chosen[key].get("room_type_code") != room_type):
+            chosen[key] = row
+    return list(chosen.values())
+
+
+async def _sale_currency(tenant_id: str) -> str:
+    listing = await get_system_db().marketplace_listings.find_one({"tenant_id": tenant_id}, {"_id": 0, "currency": 1})
+    if listing and listing.get("currency"):
+        return str(listing["currency"]).upper()
+    from core.tenant_currency import get_tenant_currency
+
+    code, _ = await get_tenant_currency(tenant_id)
+    return str(code or "TRY").upper()
+
+
 async def _departure_restriction_row(
     *, tenant_id: str, agency_id: str, room_type: str, check_out: str, rate_plan_code: str,
     allow_base_rate_fallback: bool,
@@ -786,7 +825,8 @@ async def _departure_restriction_row(
     plan_filter = (
         {"rate_plan_code": {"$exists": False}} if rate_plan_code == "LEGACY" else {"rate_plan_code": rate_plan_code}
     )
-    query = {"tenant_id": tenant_id, "room_type_code": room_type, "date": check_out, **plan_filter}
+    room_codes = await _calendar_room_codes(tenant_id, room_type)
+    query = {"tenant_id": tenant_id, "room_type_code": {"$in": room_codes}, "date": check_out, **plan_filter}
     projection = {"_id": 0, "date": 1, "ctd": 1}
 
     async def _first(collection, extra: dict) -> dict | None:
@@ -812,15 +852,18 @@ async def _marketplace_stay_price(
     A stop-sell or zero agency allotment closes the whole stay.
     """
     dates = _date_range(check_in, check_out)
-    query = {"tenant_id": tenant_id, "room_type_code": room_type, "date": {"$in": dates}}
+    room_codes = await _calendar_room_codes(tenant_id, room_type)
+    query = {"tenant_id": tenant_id, "room_type_code": {"$in": room_codes} if len(room_codes) > 1 else room_type, "date": {"$in": dates}}
     agency_rows = await db.agency_rate_calendar.find(
         {**query, "agency_id": agency_id}, {"_id": 0}
-    ).to_list(max(len(dates) * 8, 32))
+    ).to_list(max(len(dates) * 8 * len(room_codes), 32))
+    agency_rows = _prefer_pms_rows(agency_rows, room_type)
     base_rows = []
     if allow_base_rate_fallback:
-        base_rows = await db.hr_rate_calendar.find(query, {"_id": 0}).to_list(max(len(dates) * 8, 32))
+        base_rows = await db.hr_rate_calendar.find(query, {"_id": 0}).to_list(max(len(dates) * 8 * len(room_codes), 32))
         if not base_rows:
-            base_rows = await db.rate_calendar.find(query, {"_id": 0}).to_list(max(len(dates) * 8, 32))
+            base_rows = await db.rate_calendar.find(query, {"_id": 0}).to_list(max(len(dates) * 8 * len(room_codes), 32))
+        base_rows = _prefer_pms_rows(base_rows, room_type)
 
     plans = {str(row.get("rate_plan_code") or "LEGACY") for row in agency_rows + base_rows}
     if not plans and allow_base_rate_fallback:
@@ -840,6 +883,10 @@ async def _marketplace_stay_price(
     if len(agency_by_date) != len(agency_rows) or len(base_by_date) != len(base_rows):
         return {"sellable": False, "nightly_rates": [], "total_price": 0.0, "reason": "duplicate_rate_plan_night"}
     effective_rows = [agency_by_date.get(day) or base_by_date.get(day) or {} for day in dates]
+    rate_currencies = {str(row["currency"]).upper() for row in effective_rows if row.get("currency")}
+    if rate_currencies and rate_currencies != {await _sale_currency(tenant_id)}:
+        # No implicit FX: a USD channel-manager rate must never be sold as TRY.
+        return {"sellable": False, "nightly_rates": [], "total_price": 0.0, "reason": "currency_mismatch"}
     arrival_row = effective_rows[0] if effective_rows else {}
     if arrival_row.get("cta") is True:
         return {"sellable": False, "nightly_rates": [], "total_price": 0.0, "reason": "closed_to_arrival"}
@@ -908,7 +955,9 @@ async def _marketplace_stay_price(
 
 
 async def _agency_rate_plans(tenant_id, agency_id, room_type, check_in, check_out, *, allow_base_rate_fallback=False):
-    query = {"tenant_id": tenant_id, "room_type_code": room_type, "date": {"$in": _date_range(check_in, check_out)}}
+    room_codes = await _calendar_room_codes(tenant_id, room_type)
+    query = {"tenant_id": tenant_id, "room_type_code": {"$in": room_codes} if len(room_codes) > 1 else room_type,
+             "date": {"$in": _date_range(check_in, check_out)}}
     agency_rows = await db.agency_rate_calendar.find({**query, "agency_id": agency_id}, {"_id": 0}).to_list(5000)
     base_rows = []
     if allow_base_rate_fallback:

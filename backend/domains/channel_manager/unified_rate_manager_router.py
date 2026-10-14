@@ -678,6 +678,54 @@ async def _build_exely_grid(tenant_id, conn, start_date, end_date):
 # ── Shared Grid Helpers ──────────────────────────────────────────
 
 
+async def _pms_room_type_names(tenant_id: str) -> list[str]:
+    """Sellable PMS room types (virtual holder rooms excluded)."""
+    rooms = await db.rooms.find(
+        {"tenant_id": tenant_id, "is_active": {"$ne": False}, "is_virtual": {"$ne": True}}, {"_id": 0, "room_type": 1}
+    ).to_list(500)
+    return sorted({str(room.get("room_type") or "").strip() for room in rooms if room.get("room_type")})
+
+
+def _provider_room_codes(detection: dict) -> set[str]:
+    conn = detection.get("connection") or {}
+    if detection.get("provider") == "hotelrunner":
+        room_types, _ = _extract_hr_room_types(conn.get("cached_rooms", []))
+    else:
+        room_types = conn.get("room_types", [])
+    return {str(item.get("code")) for item in room_types if item.get("code")}
+
+
+async def _agency_only_room_types(tenant_id: str, provider: str, provider_codes: set[str]) -> list[dict]:
+    """PMS room types the channel manager does not know, offered for agency sale only."""
+    if not await _active_agency_docs_for_tenant(tenant_id):
+        return []
+    collection, field = (
+        ("hotelrunner_room_mappings", "hr_inv_code") if provider == "hotelrunner" else ("exely_room_mappings", "exely_room_code")
+    )
+    mappings = await db[collection].find({"tenant_id": tenant_id}, {"_id": 0, "pms_room_type": 1, field: 1}).to_list(200)
+    mapped = {str(m.get("pms_room_type")) for m in mappings if m.get("pms_room_type") and str(m.get(field)) in provider_codes}
+    return [
+        {"code": name, "name": f"{name} (yalnız acente)", "agency_only": True}
+        for name in await _pms_room_type_names(tenant_id)
+        if name not in mapped and name not in provider_codes
+    ]
+
+
+async def _rate_currency(tenant_id: str, detection: dict) -> str:
+    """Currency of the rates entered in the grid (the provider's sale currency)."""
+    conn = detection.get("connection") or {}
+    if detection.get("provider") == "hotelrunner":
+        cached = conn.get("cached_rooms") or []
+        currency = cached[0].get("sales_currency") if cached else None
+    elif detection.get("provider") == "exely":
+        currency = conn.get("currency")
+    else:
+        currency = None
+    if not currency:
+        currency, _ = await get_tenant_currency(tenant_id)
+    return str(currency or "TRY").upper()
+
+
 def _extract_hr_room_types(cached_rooms):
     room_types_map = {}
     rate_plans_map = {}
@@ -811,10 +859,7 @@ async def get_unified_room_types(current_user: User = Depends(get_current_user))
     if not detection["provider"]:
         agencies = await _active_agency_docs_for_tenant(tenant_id)
         if agencies and not detection.get("configuration_error"):
-            rooms = await db.rooms.find(
-                {"tenant_id": tenant_id, "is_active": {"$ne": False}}, {"_id": 0, "room_type": 1}
-            ).to_list(500)
-            names = sorted({str(room.get("room_type") or "").strip() for room in rooms if room.get("room_type")})
+            names = await _pms_room_type_names(tenant_id)
             pricing_docs = await db.pricing_settings.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(200)
             pricing_map, pricing_rules = _pricing_payload(pricing_docs)
             return {
@@ -842,6 +887,7 @@ async def get_unified_room_types(current_user: User = Depends(get_current_user))
         pricing_docs = await db.pricing_settings.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(200)
 
     pricing_map, pricing_rules = _pricing_payload(pricing_docs)
+    room_types = [*room_types, *await _agency_only_room_types(tenant_id, detection["provider"], _provider_room_codes(detection))]
 
     return {
         "room_types": room_types,
@@ -961,6 +1007,15 @@ async def unified_bulk_grid_update(
     update_fields = set(request.update_fields)
     _validate_agency_restrictions(request.agency_ids, update_fields)
 
+    # PMS-only room types (not known to the channel manager) are sold to
+    # agencies only and must never be sent to the provider.
+    provider_pairs = pairs
+    if provider_type in ("exely", "hotelrunner"):
+        provider_codes = _provider_room_codes(detection)
+        provider_pairs = [pair for pair in pairs if pair[0] in provider_codes]
+        if len(provider_pairs) != len(pairs) and not request.agency_ids:
+            raise HTTPException(status_code=422, detail="Yalnız acente oda tipleri için en az bir acente seçin; bu tipler kanal yöneticisine gönderilmez.")
+
     # HotelRunner's public inventory API accepts only the base rate. Guest and
     # child supplements are derived from the property's HotelRunner pricing
     # setup. Fail closed for rate writes until an operator has explicitly
@@ -1058,7 +1113,7 @@ async def unified_bulk_grid_update(
     # Push to every resolved channel provider (background)
     channel_push_count = 0
     provider_delivery_results: list[dict] = []
-    for tgt in targets:
+    for tgt in (targets if provider_pairs else []):
         # Rate Manager eskiden kanal seçimi olmadan HotelRunner'a gönderiyor ve
         # sağlayıcının tüm bağlı OTA'larına yayılıyordu. Seçim yoksa bu işlem
         # yalnızca yerel takvimi günceller; kullanıcı açıkça OTA seçmelidir.
@@ -1072,7 +1127,7 @@ async def unified_bulk_grid_update(
                 cnt = await _push_to_hotelrunner(
                     tenant_id,
                     request,
-                    pairs,
+                    provider_pairs,
                     per_room_map,
                     update_fields,
                     selected_days_set,
@@ -1084,7 +1139,7 @@ async def unified_bulk_grid_update(
                     tenant_id,
                     tgt["connection"],
                     request,
-                    pairs,
+                    provider_pairs,
                     per_room_map,
                     update_fields,
                     selected_days_set,
@@ -1123,6 +1178,7 @@ async def unified_bulk_grid_update(
             selected_days_set,
             now,
             current_user.id,
+            rate_currency=await _rate_currency(tenant_id, detection),
         )
 
     delivery_summary = _provider_delivery_summary(provider_delivery_results)
@@ -1593,7 +1649,7 @@ def _validate_agency_restrictions(agency_ids, update_fields):
         raise HTTPException(422, "Acente hedefinde henüz desteklenmeyen alanlar: " + ", ".join(sorted(unsupported)) + ". Bu alanları kaldırın veya acente hedeflerini seçimden çıkarın; hiçbir kayıt gönderilmedi.")
 
 
-async def _push_to_agencies(tenant_id, agency_ids, pairs, per_room_map, request, update_fields, selected_days_set, now, user_id):
+async def _push_to_agencies(tenant_id, agency_ids, pairs, per_room_map, request, update_fields, selected_days_set, now, user_id, rate_currency=None):
     """Secilen acentelere fiyat/musaitlik bilgisi kaydet."""
     if not agency_ids:
         return 0
@@ -1666,6 +1722,8 @@ async def _push_to_agencies(tenant_id, agency_ids, pairs, per_room_map, request,
 
                 if "rate" in update_fields and v_rate is not None:
                     set_fields["rate"] = v_rate
+                    if rate_currency:
+                        set_fields["currency"] = rate_currency
                 if "availability" in update_fields and v_avail is not None:
                     set_fields["availability"] = v_avail
                 if "min_stay" in update_fields and v_min is not None:
