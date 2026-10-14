@@ -775,6 +775,15 @@ export const NAV_ITEMS = [
     navGroup: "sales",
   },
   {
+    key: "agency_statements",
+    label: "Acente Ekstreleri",
+    path: "/app/agency-statements",
+    moduleKey: "channel_manager",
+    tier: "basic",
+    group: "core",
+    navGroup: "sales",
+  },
+  {
     key: "agency_content",
     label: "Tesis İçeriği ve Dağıtım",
     path: "/agency-content",
