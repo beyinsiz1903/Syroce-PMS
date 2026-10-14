@@ -943,6 +943,35 @@ async def _legacy_active_contract(
     })
 
 
+def _season_rate_for(contract: dict, room_type: str, night: str) -> float | None:
+    for season in contract.get("season_rates") or []:
+        if (season.get("room_type_id") == room_type
+                and str(season.get("season_start")) <= night <= str(season.get("season_end"))):
+            return float(season["price"])
+    return None
+
+
+def _legacy_contract_terms(contract: dict | None, room_type: str, pricing: dict, agency_commission: float) -> tuple[dict, float]:
+    """Apply the hotel-defined legacy contract to calendar pricing.
+
+    * net_rate: each night covered by a season rate is sold at the contract's
+      net price, and no further commission is due on a net price.
+    * commission: the calendar price stands and the contract's commission rate
+      replaces the agency card default.
+    Without a contract the calendar price and agency default apply.
+    """
+    if not contract:
+        return pricing, float(agency_commission or 0)
+    if contract.get("contract_type") == "net_rate":
+        nightly = []
+        for item in pricing.get("nightly_rates") or []:
+            season_price = _season_rate_for(contract, room_type, item["date"])
+            nightly.append({**item, "rate": round(season_price, 2)} if season_price is not None else item)
+        total = round(sum(float(item["rate"]) for item in nightly), 2)
+        return {**pricing, "nightly_rates": nightly, "total_price": total}, 0.0
+    return pricing, float(contract.get("commission_rate") if contract.get("commission_rate") is not None else agency_commission or 0)
+
+
 async def _get_b2b_price(
     db,
     tenant_id: str,
@@ -959,8 +988,9 @@ async def _get_b2b_price(
     last_night = _last_occupied_date(check_in, check_out)
 
     if contract.get("contract_type") == "commission":
-        comm = float(contract.get("commission_rate") or 0)
-        return public_price * (1.0 - (comm / 100.0)), True
+        # Commission contracts sell at the hotel price; the commission is
+        # booked separately (see _legacy_contract_terms), never deducted twice.
+        return public_price, True
 
     # Net rate
     season_rates = contract.get("season_rates", [])
@@ -1098,7 +1128,9 @@ async def agency_portal_availability(
             )
             if not pricing["sellable"]:
                 continue
+            pricing, commission_rate = _legacy_contract_terms(contract, rt_name, pricing, (agency or {}).get("commission_rate", 0))
             results.append({**offer, **_rate_product_snapshot(plan, offer, {}, pricing),
+                            "commission_rate": commission_rate,
                             "stay_total": pricing["total_price"],
                             "base_price": round(pricing["total_price"] / nights, 2),
                             "available_rooms": min(offer["available_rooms"], pricing.get("shared_availability", offer["available_rooms"]))})
@@ -1218,6 +1250,7 @@ async def agency_portal_create_reservation(
     )
     if not pricing["sellable"]:
         raise HTTPException(409, detail="Seçilen fiyat planı bu tarihlerde satılamıyor; yeniden arayın")
+    pricing, commission_rate = _legacy_contract_terms(contract, data.room_type_id, pricing, commission_rate)
     total = round(float(pricing["total_price"]), 2)
     product = _rate_product_snapshot(data.rate_plan_code, available_room, contract or {}, pricing)
     if total <= 0:
