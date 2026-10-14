@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field
 
 from core.database import db
 from core.security import _is_super_admin, get_current_user
+from core.sellable_rooms import PHYSICAL_ROOM_FILTER
 from core.tenant_db import get_system_db
 from models.enums import UserRole
 from models.schemas import User
@@ -164,7 +165,7 @@ async def get_hotel_content(current_user: User = Depends(get_current_user)):
     if not content:
         # Auto-initialize from tenant and rooms
         tenant = await db.tenants.find_one({"id": tenant_id}, {"_id": 0})
-        rooms = await db.rooms.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(500)
+        rooms = await db.rooms.find({"tenant_id": tenant_id, **PHYSICAL_ROOM_FILTER}, {"_id": 0}).to_list(500)
 
         # Group rooms by type
         rt_map = {}

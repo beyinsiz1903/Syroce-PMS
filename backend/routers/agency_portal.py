@@ -44,6 +44,7 @@ from core.security import (
     hash_password,
     verify_password,
 )
+from core.sellable_rooms import PHYSICAL_ROOM_FILTER
 from models.enums import UserRole
 from models.schemas import User
 from security.encrypted_lookup import build_user_email_query, decrypt_user_doc, encrypt_user_doc
@@ -602,7 +603,7 @@ async def create_agency_contract(agency_id: str, data: AgencyContractCreate, cur
     rate_room_types = {rate.room_type_id for rate in data.season_rates or []}
     if rate_room_types:
         existing_room_types = set(
-            await db.rooms.distinct("room_type", {"tenant_id": current_user.tenant_id, "room_type": {"$in": list(rate_room_types)}})
+            await db.rooms.distinct("room_type", {"tenant_id": current_user.tenant_id, "room_type": {"$in": list(rate_room_types)}, **PHYSICAL_ROOM_FILTER})
         )
         missing_room_types = sorted(rate_room_types - existing_room_types)
         if missing_room_types:
@@ -669,7 +670,7 @@ async def create_agency_allotment(agency_id: str, data: AgencyAllotmentCreate, c
         raise HTTPException(status_code=400, detail="Kontenjan tarihleri sözleşme tarihleri içinde olmalıdır")
 
     room_exists = await db.rooms.find_one(
-        {"tenant_id": current_user.tenant_id, "room_type": data.room_type_id, "is_active": {"$ne": False}},
+        {"tenant_id": current_user.tenant_id, "room_type": data.room_type_id, "is_active": {"$ne": False}, **PHYSICAL_ROOM_FILTER},
         {"_id": 0, "id": 1},
     )
     if not room_exists:
@@ -1009,7 +1010,7 @@ async def agency_portal_availability(
     nights = (co - ci).days
 
     # Get all room types for this hotel
-    rooms = await db.rooms.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(1000)
+    rooms = await db.rooms.find({"tenant_id": tenant_id, **PHYSICAL_ROOM_FILTER}, {"_id": 0}).to_list(1000)
     party_size = adults + children
 
     # Group by room_type
@@ -1120,7 +1121,7 @@ async def agency_portal_create_reservation(
     nights = (co_date - ci_date).days
 
     # Find an available room of the requested type
-    rooms = await db.rooms.find({"tenant_id": tenant_id, "room_type": data.room_type_id}, {"_id": 0}).to_list(500)
+    rooms = await db.rooms.find({"tenant_id": tenant_id, "room_type": data.room_type_id, **PHYSICAL_ROOM_FILTER}, {"_id": 0}).to_list(500)
     rooms = [room for room in rooms if room.get("status") not in {"maintenance", "out_of_order", "blocked"}
              and room.get("is_active") is not False]
 
