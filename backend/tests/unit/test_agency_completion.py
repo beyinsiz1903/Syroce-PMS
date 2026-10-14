@@ -83,19 +83,26 @@ async def test_failure_resumes_missing_steps_and_redacts_error(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_expired_lease_recovers_and_waits_for_actual_distribution(monkeypatch):
+@pytest.mark.parametrize('channel_status', ['retry', 'failed', 'processed'])
+async def test_channel_manager_outcome_never_blocks_the_agency_sale(monkeypatch, channel_status):
     db = database()
     state = db.bookings.row['agency_completion']
     state.update(status='processing', owner='dead-worker', lease_until=datetime.now(UTC) - timedelta(seconds=1))
     monkeypatch.setattr(queue, 'perform_step', AsyncMock())
-    db.outbox_events.find_one.return_value = {'status': 'retry'}
+    db.outbox_events.find_one.return_value = {'status': channel_status}
     await queue.process_one(db)
-    assert state['status'] == 'waiting'
-    state['available_at'] = datetime.now(UTC) - timedelta(seconds=1)
-    db.outbox_events.find_one.return_value = {'status': 'failed'}
-    state['attempts'] = 7
+    assert state['status'] == 'complete'
+    assert state['channel_delivery'] == channel_status
+
+
+@pytest.mark.asyncio
+async def test_missing_inventory_event_is_still_repaired(monkeypatch):
+    db = database()
+    monkeypatch.setattr(queue, 'perform_step', AsyncMock())
+    db.outbox_events.find_one.return_value = None
     await queue.process_one(db)
-    assert state['status'] == 'failed' and state['last_error'].startswith('inventory_delivery:')
+    state = db.bookings.row['agency_completion']
+    assert state['status'] == 'retry' and state['last_error'].startswith('inventory_delivery:')
 
 
 @pytest.mark.asyncio
