@@ -1581,8 +1581,14 @@ async def _push_to_exely(tenant_id, conn, request, pairs, per_room_map, update_f
     }
 
 
+# Every field below is enforced by marketplace_b2b._marketplace_stay_price.
+AGENCY_SUPPORTED_FIELDS = frozenset(
+    {"rate", "availability", "min_stay", "min_los_arrival", "max_stay", "stop_sell", "cta", "ctd"}
+)
+
+
 def _validate_agency_restrictions(agency_ids, update_fields):
-    unsupported = set(update_fields) - {"rate", "availability", "min_stay", "stop_sell"}
+    unsupported = set(update_fields) - AGENCY_SUPPORTED_FIELDS
     if agency_ids and unsupported:
         raise HTTPException(422, "Acente hedefinde henüz desteklenmeyen alanlar: " + ", ".join(sorted(unsupported)) + ". Bu alanları kaldırın veya acente hedeflerini seçimden çıkarın; hiçbir kayıt gönderilmedi.")
 
@@ -1621,7 +1627,11 @@ async def _push_to_agencies(tenant_id, agency_ids, pairs, per_room_map, request,
             v_rate = rv.rate if rv else request.rate
             v_avail = rv.availability if rv else request.availability
             v_min = rv.min_stay if rv else request.min_stay
+            v_min_arrival = rv.min_los_arrival if rv else request.min_los_arrival
+            v_max = rv.max_stay if rv else request.max_stay
             v_stop = rv.stop_sell if rv else request.stop_sell
+            v_cta = rv.cta if rv else request.cta
+            v_ctd = rv.ctd if rv else request.ctd
 
             # Apply agency override if exists
             override_key = f"{agency_id}|{rt_code}"
@@ -1662,6 +1672,14 @@ async def _push_to_agencies(tenant_id, agency_ids, pairs, per_room_map, request,
                     set_fields["min_stay"] = v_min
                 if "stop_sell" in update_fields and v_stop is not None:
                     set_fields["stop_sell"] = v_stop
+                if "min_los_arrival" in update_fields and v_min_arrival is not None:
+                    set_fields["min_los_arrival"] = v_min_arrival
+                if "max_stay" in update_fields and v_max is not None:
+                    set_fields["max_stay"] = v_max
+                if "cta" in update_fields and v_cta is not None:
+                    set_fields["cta"] = v_cta
+                if "ctd" in update_fields and v_ctd is not None:
+                    set_fields["ctd"] = v_ctd
 
                 bulk_ops.append(
                     UpdateOne(
@@ -1684,7 +1702,7 @@ async def _push_to_agencies(tenant_id, agency_ids, pairs, per_room_map, request,
         events_to_fire = []
         if "rate" in update_fields:
             events_to_fire.append("rates.updated")
-        if "availability" in update_fields or "stop_sell" in update_fields:
+        if set(update_fields) & {"availability", "stop_sell", "min_stay", "min_los_arrival", "max_stay", "cta", "ctd"}:
             events_to_fire.append("availability.updated")
         if events_to_fire:
             payload_base = {

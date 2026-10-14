@@ -925,10 +925,9 @@ def _active_stay_overlap_filter(check_in: str, check_out: str) -> dict:
     instead, while retaining the requested checkout as the exclusive upper
     boundary for arrivals.
     """
-    return {
-        "check_in": {"$lt": check_out + "T00:00:00"},
-        "$expr": {"$gt": [{"$substrBytes": ["$check_out", 0, 10]}, check_in]},
-    }
+    from core.stay_overlap import stay_overlap_filter
+
+    return stay_overlap_filter(check_in, check_out)
 
 
 async def _legacy_active_contract(

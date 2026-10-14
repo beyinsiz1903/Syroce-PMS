@@ -126,8 +126,18 @@ const AgencyPortalDashboard = () => {
   const [reservations, setReservations] = useState([]);
   const [reservationsLoading, setReservationsLoading] = useState(false);
   const [reconciliation, setReconciliation] = useState(null);
+  const [reconPeriod, setReconPeriod] = useState(() => {
+    const startDate = new Date(); startDate.setDate(startDate.getDate() - 30);
+    return { start: toDateInput(startDate), end: toDateInput(new Date()) };
+  });
   const [negotiations, setNegotiations] = useState([]);
   const [cancelTarget, setCancelTarget] = useState(null);
+  const [modificationTarget, setModificationTarget] = useState(null);
+  const [modificationForm, setModificationForm] = useState({ check_in: '', check_out: '', room_type: '', rate_plan_code: '', reason: '' });
+  const [modificationLoading, setModificationLoading] = useState(false);
+  const [negotiationDecision, setNegotiationDecision] = useState(null);
+  const [negotiationNote, setNegotiationNote] = useState('');
+  const [negotiationLoading, setNegotiationLoading] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
   const [cancelLoading, setCancelLoading] = useState(false);
   const [voucherEmailTarget, setVoucherEmailTarget] = useState(null);
@@ -410,14 +420,23 @@ const AgencyPortalDashboard = () => {
       setReservationsLoading(false);
     }
   };
-  const decideNegotiation = async (proposal, accept) => {
-    const responseNote = window.prompt(accept ? 'Kabul notu (isteğe bağlı)' : 'Reddetme gerekçesi') || '';
-    if (!accept && responseNote.trim().length < 5) return toast.error('Rezervasyonu koruma gerekçesi en az 5 karakter olmalıdır.');
+  const decideNegotiation = (proposal, accept) => {
+    setNegotiationDecision({ proposal, accept });
+    setNegotiationNote('');
+  };
+  const submitNegotiationDecision = async () => {
+    if (!negotiationDecision) return;
+    const { proposal, accept } = negotiationDecision;
+    const responseNote = negotiationNote.trim();
+    if (!accept && responseNote.length < 5) return toast.error('Rezervasyonu koruma gerekçesi en az 5 karakter olmalıdır.');
+    setNegotiationLoading(true);
     try {
       await agencyApi.post(`/marketplace/v1/negotiations/${encodeURIComponent(proposal.id)}/decision`, { accept, response_note: responseNote });
       toast.success(accept ? 'Karşılıklı iptal onaylandı.' : 'İptal talebi reddedildi; rezervasyon korunuyor.');
+      setNegotiationDecision(null);
       loadReservations();
     } catch (err) { toast.error(err.response?.data?.detail || 'Yanıtınız kaydedilemedi. Lütfen yeniden deneyin.'); }
+    finally { setNegotiationLoading(false); }
   };
   const openCancellationDialog = reservation => {
     setCancelTarget(reservation);
@@ -439,24 +458,35 @@ const AgencyPortalDashboard = () => {
       setCancelLoading(false);
     }
   };
-  const proposeModification = async reservation => {
-    const checkIn = window.prompt('Yeni giriş tarihi (YYYY-AA-GG)', String(reservation.check_in || '').slice(0, 10));
-    if (!checkIn) return;
-    const checkOut = window.prompt('Yeni çıkış tarihi (YYYY-AA-GG)', String(reservation.check_out || '').slice(0, 10));
-    if (!checkOut) return;
-    const roomType = window.prompt('İstenen oda tipi', reservation.room_type || '');
-    if (!roomType) return;
-    const ratePlan = window.prompt('Fiyat planı kodu (arama sonucundaki RO, BB vb.)', reservation.rate_plan_code || '');
-    if (!ratePlan?.trim()) return toast.error('Fiyat planı seçilmelidir.');
-    const reason = window.prompt('Değişiklik gerekçesi (en az 5 karakter)', 'Misafir talebi');
-    if (!reason || reason.trim().length < 5) return toast.error('Değişiklik açıklaması en az 5 karakter olmalıdır.');
+  const proposeModification = reservation => {
+    setModificationTarget(reservation);
+    setModificationForm({
+      check_in: String(reservation.check_in || '').slice(0, 10),
+      check_out: String(reservation.check_out || '').slice(0, 10),
+      room_type: reservation.room_type || '',
+      rate_plan_code: reservation.rate_plan_code || '',
+      reason: '',
+    });
+  };
+  const submitModification = async () => {
+    const form = {
+      ...modificationForm,
+      room_type: modificationForm.room_type.trim(),
+      rate_plan_code: modificationForm.rate_plan_code.trim(),
+      reason: modificationForm.reason.trim(),
+    };
+    if (!form.check_in || !form.check_out || form.check_out <= form.check_in) return toast.error('Çıkış tarihi, giriş tarihinden sonra olmalıdır.');
+    if (!form.room_type) return toast.error('Oda tipi boş olamaz.');
+    if (!form.rate_plan_code) return toast.error('Fiyat planı seçilmelidir.');
+    if (form.reason.length < 5) return toast.error('Değişiklik açıklaması en az 5 karakter olmalıdır.');
+    setModificationLoading(true);
     try {
-      await agencyApi.post(`/marketplace/v1/reservations/${encodeURIComponent(reservation.id)}/modification-proposals`, {
-        check_in: checkIn, check_out: checkOut, room_type: roomType.trim(), rate_plan_code: ratePlan.trim(), reason: reason.trim(),
-      });
+      await agencyApi.post(`/marketplace/v1/reservations/${encodeURIComponent(modificationTarget.id)}/modification-proposals`, form);
       toast.success('Değişiklik talebi otele iletildi. Onay verilene kadar mevcut rezervasyon korunur.');
+      setModificationTarget(null);
       loadReservations();
     } catch (err) { toast.error(err.response?.data?.detail || 'Değişiklik talebi iletilemedi. Lütfen yeniden deneyin.'); }
+    finally { setModificationLoading(false); }
   };
   const printVoucher = async reservation => {
     try {
@@ -488,10 +518,19 @@ const AgencyPortalDashboard = () => {
     } catch (err) { toast.error(err.response?.data?.detail || 'Rezervasyon belgesi gönderilemedi. Lütfen e-posta adresini kontrol edin.'); }
     finally { setVoucherEmailLoading(false); }
   };
+  const reconPeriodParams = () => {
+    if (!reconPeriod.start || !reconPeriod.end || reconPeriod.end < reconPeriod.start) {
+      toast.error('Mutabakat dönemi için geçerli bir başlangıç ve bitiş tarihi seçin.');
+      return null;
+    }
+    return { period_start: reconPeriod.start, period_end: reconPeriod.end };
+  };
   const loadReconciliation = async () => {
     if (portalMode !== 'marketplace') return;
-    const end = toDateInput(new Date()); const startDate = new Date(); startDate.setDate(startDate.getDate() - 30);
-    try { const { data } = await agencyApi.get('/marketplace/v1/reconciliation/agency', { params: { period_start: toDateInput(startDate), period_end: end } }); setReconciliation(data); }
+    const params = reconPeriodParams();
+    if (!params) return;
+    setReconciliation(null);
+    try { const { data } = await agencyApi.get('/marketplace/v1/reconciliation/agency', { params }); setReconciliation(data); }
     catch (err) { toast.error(err.response?.data?.detail || 'Mutabakat özeti yüklenemedi. Lütfen yeniden deneyin.'); }
   };
   const loadContracts = async () => {
@@ -518,13 +557,14 @@ const AgencyPortalDashboard = () => {
     } catch (err) { toast.error(err.response?.data?.detail || 'Sözleşme teklifi gönderilemedi.'); }
   };
   const downloadReconciliation = async () => {
-    const end = toDateInput(new Date()); const startDate = new Date(); startDate.setDate(startDate.getDate() - 30);
+    const params = reconPeriodParams();
+    if (!params) return;
     try {
       const { data } = await agencyApi.get('/marketplace/v1/reconciliation/agency.csv', {
-        params: { period_start: toDateInput(startDate), period_end: end }, responseType: 'blob',
+        params, responseType: 'blob',
       });
       const url = URL.createObjectURL(new Blob([data], { type: 'text/csv;charset=utf-8' }));
-      const link = document.createElement('a'); link.href = url; link.download = `acente-mutabakat-${end}.csv`; link.click();
+      const link = document.createElement('a'); link.href = url; link.download = `acente-mutabakat-${params.period_start}-${params.period_end}.csv`; link.click();
       URL.revokeObjectURL(url);
     } catch (err) { toast.error(err.response?.data?.detail || 'Mutabakat dosyası indirilemedi. Lütfen yeniden deneyin.'); }
   };
@@ -872,11 +912,18 @@ const AgencyPortalDashboard = () => {
           </TabsContent>
 
           {portalMode === 'marketplace' && <TabsContent value="finance" className="mt-4 space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm"><div><h2 className="font-semibold text-slate-900">Son 30 gün mutabakat özeti</h2><p className="text-xs leading-5 text-slate-500">Brüt satış, acente komisyonu, platform hizmet bedeli ve otellere aktarılacak net tutar.</p></div><Button variant="outline" size="sm" onClick={downloadReconciliation}>CSV olarak indir</Button></div>
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm"><div><h2 className="font-semibold text-slate-900">Dönem mutabakat özeti</h2><p className="text-xs leading-5 text-slate-500">Giriş tarihine göre brüt satış, acente komisyonu, platform hizmet bedeli ve otellere aktarılacak net tutar. Otelin PMS'te yaptığı iptal, no-show ve tutar değişiklikleri yansıtılır.</p></div>
+              <div className="flex flex-wrap items-end gap-2">
+                <div><Label htmlFor="recon-start" className="text-xs">Başlangıç</Label><Input id="recon-start" type="date" value={reconPeriod.start} onChange={e => setReconPeriod(current => ({ ...current, start: e.target.value }))} className="h-9" /></div>
+                <div><Label htmlFor="recon-end" className="text-xs">Bitiş</Label><Input id="recon-end" type="date" value={reconPeriod.end} onChange={e => setReconPeriod(current => ({ ...current, end: e.target.value }))} className="h-9" /></div>
+                <Button size="sm" onClick={loadReconciliation}>Uygula</Button>
+                <Button variant="outline" size="sm" onClick={downloadReconciliation}>CSV olarak indir</Button>
+              </div></div>
             {!reconciliation ? <Card><CardContent className="py-10 text-center text-slate-400"><Loader2 className="animate-spin mx-auto" /></CardContent></Card> : <>
               <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
                 {[['Brüt satış', 'gross_revenue', true], ['Acente komisyonu', 'commission', true], ['Platform hizmet bedeli', 'platform_fee', true], ['Otellere aktarılacak net', 'net_to_hotels', true], ['Rezervasyon', reconciliation.totals?.bookings, false]].map(([label, value, monetary], index) => <Card key={label} className={`overflow-hidden border-slate-200 shadow-sm ${index === 3 ? 'ring-1 ring-emerald-200' : ''} ${index === 4 ? 'col-span-2 lg:col-span-1' : ''}`}><div className={`h-1 ${index === 3 ? 'bg-emerald-500' : 'bg-slate-200'}`} /><CardContent className="pt-4"><div className="text-xs font-medium text-slate-500">{label}</div><div className={`mt-1 text-lg font-bold ${index === 3 ? 'text-emerald-700' : 'text-slate-900'}`}>{monetary ? currencyTotalsText(reconciliation.totals_by_currency, value) : value}</div></CardContent></Card>)}
               </div>
+              {(reconciliation.totals?.cancelled > 0 || reconciliation.totals?.no_show > 0) && <p className="text-xs text-slate-500">Hesaba katılmayan: {reconciliation.totals?.cancelled || 0} iptal · {reconciliation.totals?.no_show || 0} no-show</p>}
               {(reconciliation.by_hotel || []).map(row => <Card key={`${row.tenant_id}-${row.currency}`}><CardContent className="py-4 flex items-center justify-between"><div><div className="font-medium">{row.hotel_name}</div><div className="text-xs text-slate-500">{row.bookings} rezervasyon · Komisyon {formatAgencyMoney(row.commission, row.currency)} · Platform {formatAgencyMoney(row.platform_fee, row.currency)}</div></div><div className="text-right"><div className="font-bold">{formatAgencyMoney(row.gross_revenue, row.currency)}</div><div className="text-xs text-emerald-700">Net {formatAgencyMoney(row.net_to_hotel, row.currency)}</div></div></CardContent></Card>)}
             </>}
           </TabsContent>}
@@ -1068,6 +1115,53 @@ const AgencyPortalDashboard = () => {
             <Button onClick={handleBooking} disabled={bookingLoading} data-testid="confirm-booking-btn">
               {bookingLoading ? <Loader2 className="animate-spin mr-2" size={14} /> : null}
               Rezervasyonu Oluştur
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(modificationTarget)} onOpenChange={open => !open && !modificationLoading && setModificationTarget(null)}>
+        <DialogContent className="max-w-md" data-testid="agency-modification-dialog">
+          <DialogHeader>
+            <DialogTitle>Değişiklik talebi gönder</DialogTitle>
+            <p className="text-sm text-slate-500">
+              {modificationTarget?.confirmation_code || modificationTarget?.id} için talep otele iletilir. Otel onaylayana kadar mevcut rezervasyon geçerlidir.
+            </p>
+          </DialogHeader>
+          <div className="grid grid-cols-2 gap-3 py-2">
+            <div><Label htmlFor="agency-mod-check-in">Yeni giriş</Label><Input id="agency-mod-check-in" type="date" value={modificationForm.check_in} onChange={e => setModificationForm(f => ({ ...f, check_in: e.target.value }))} /></div>
+            <div><Label htmlFor="agency-mod-check-out">Yeni çıkış</Label><Input id="agency-mod-check-out" type="date" min={modificationForm.check_in} value={modificationForm.check_out} onChange={e => setModificationForm(f => ({ ...f, check_out: e.target.value }))} /></div>
+            <div><Label htmlFor="agency-mod-room-type">Oda tipi</Label><Input id="agency-mod-room-type" value={modificationForm.room_type} onChange={e => setModificationForm(f => ({ ...f, room_type: e.target.value }))} /></div>
+            <div><Label htmlFor="agency-mod-rate-plan">Fiyat planı</Label><Input id="agency-mod-rate-plan" placeholder="RO, BB…" value={modificationForm.rate_plan_code} onChange={e => setModificationForm(f => ({ ...f, rate_plan_code: e.target.value }))} /></div>
+            <div className="col-span-2"><Label htmlFor="agency-mod-reason">Gerekçe</Label>
+              <textarea id="agency-mod-reason" className="flex min-h-20 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={modificationForm.reason} maxLength={500} placeholder="En az 5 karakterle değişiklik gerekçesini yazın" onChange={e => setModificationForm(f => ({ ...f, reason: e.target.value }))} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setModificationTarget(null)} disabled={modificationLoading}>Vazgeç</Button>
+            <Button onClick={submitModification} disabled={modificationLoading || modificationForm.reason.trim().length < 5} data-testid="submit-agency-modification">
+              {modificationLoading && <Loader2 className="animate-spin mr-2" size={14} />}Talebi Gönder
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(negotiationDecision)} onOpenChange={open => !open && !negotiationLoading && setNegotiationDecision(null)}>
+        <DialogContent className="max-w-md" data-testid="agency-negotiation-dialog">
+          <DialogHeader>
+            <DialogTitle>{negotiationDecision?.accept ? 'Otelin iptal talebini kabul et' : 'Otelin iptal talebini reddet'}</DialogTitle>
+            <p className="text-sm text-slate-500">
+              {negotiationDecision?.accept ? 'Kabul ederseniz rezervasyon karşılıklı olarak iptal edilir.' : 'Reddederseniz rezervasyon korunur; gerekçeniz otele iletilir.'}
+            </p>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <Label htmlFor="agency-negotiation-note">{negotiationDecision?.accept ? 'Kabul notu (isteğe bağlı)' : 'Reddetme gerekçesi'}</Label>
+            <textarea id="agency-negotiation-note" className="flex min-h-20 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={negotiationNote} maxLength={500} onChange={e => setNegotiationNote(e.target.value)} autoFocus />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setNegotiationDecision(null)} disabled={negotiationLoading}>Vazgeç</Button>
+            <Button variant={negotiationDecision?.accept ? 'default' : 'destructive'} onClick={submitNegotiationDecision} disabled={negotiationLoading || (!negotiationDecision?.accept && negotiationNote.trim().length < 5)} data-testid="submit-agency-negotiation">
+              {negotiationLoading && <Loader2 className="animate-spin mr-2" size={14} />}{negotiationDecision?.accept ? 'Kabul Et' : 'Reddet'}
             </Button>
           </DialogFooter>
         </DialogContent>

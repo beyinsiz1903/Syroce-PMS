@@ -17,10 +17,14 @@ async def test_content_update_syncs_existing_marketplace_listing(monkeypatch):
     tenant_db = SimpleNamespace(hotel_content=hotel_content, agencies=agencies)
     listings = SimpleNamespace(update_one=AsyncMock(return_value=SimpleNamespace(matched_count=1)))
     monkeypatch.setattr(agency_content, "db", tenant_db)
-    contracts = SimpleNamespace(count_documents=AsyncMock(return_value=3))
     monkeypatch.setattr(
-        agency_content, "get_system_db", lambda: SimpleNamespace(marketplace_listings=listings, agency_contracts=contracts)
+        agency_content, "get_system_db", lambda: SimpleNamespace(marketplace_listings=listings)
     )
+    # Marketplace partners are approved, in-date contracts (status="approved"),
+    # not the legacy hotel contract schema (is_active=True).
+    from routers import agency_contracts
+
+    monkeypatch.setattr(agency_contracts, "list_active_agencies_for_tenant", AsyncMock(return_value=["a1", "a2", "a3"]))
 
     data = agency_content.HotelContentUpdate(
         hotel_name="The Canyon Kartepe",
@@ -66,10 +70,10 @@ async def test_content_update_does_not_auto_publish_unlisted_hotel(monkeypatch):
     )
     listings = SimpleNamespace(update_one=AsyncMock(return_value=SimpleNamespace(matched_count=0)))
     monkeypatch.setattr(agency_content, "db", tenant_db)
-    contracts = SimpleNamespace(count_documents=AsyncMock(return_value=0))
-    monkeypatch.setattr(
-        agency_content, "get_system_db", lambda: SimpleNamespace(marketplace_listings=listings, agency_contracts=contracts)
-    )
+    monkeypatch.setattr(agency_content, "get_system_db", lambda: SimpleNamespace(marketplace_listings=listings))
+    from routers import agency_contracts
+
+    monkeypatch.setattr(agency_contracts, "list_active_agencies_for_tenant", AsyncMock(return_value=[]))
     user = SimpleNamespace(
         id="u1", email="hotel@example.com", tenant_id="t1", role=UserRole.ADMIN, roles=[]
     )
