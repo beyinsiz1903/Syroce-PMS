@@ -127,3 +127,26 @@ async def test_context_exit_revokes_token_and_writes_audit(monkeypatch):
     )
     audit = db.marketplace_audit_logs.insert_one.await_args.args[0]
     assert audit["action"] == "admin_agency_context_exit"
+
+
+@pytest.mark.asyncio
+async def test_preview_identity_is_decrypted_not_ciphertext(monkeypatch):
+    token, _ = marketplace_b2b._create_admin_agency_context_token(actor_user_id="super-1", agency_id="agency-1")
+    db = SimpleNamespace(
+        users=SimpleNamespace(find_one=AsyncMock(return_value={
+            "id": "super-1", "role": "super_admin", "roles": ["super_admin"], "is_active": True,
+            "email": "SYR1:ciphertext", "name": "SYR1:ciphertext-name",
+        })),
+        marketplace_agencies=SimpleNamespace(find_one=AsyncMock(return_value={"id": "agency-1", "status": "active"})),
+    )
+    monkeypatch.setattr(marketplace_b2b, "get_system_db", lambda: db)
+    security_module = importlib.import_module("core.security")
+    monkeypatch.setattr(security_module, "is_jti_revoked", AsyncMock(return_value=False))
+    import security.encrypted_lookup as lookup
+
+    monkeypatch.setattr(lookup, "decrypt_user_doc", lambda doc: {**doc, "email": "ops@syroce.com", "name": "Operator"})
+
+    result = await marketplace_b2b.get_marketplace_agency(SimpleNamespace(client=None), authorization=f"Bearer {token}")
+
+    assert result["user"]["email"] == "ops@syroce.com"
+    assert result["impersonation"]["actor_name"] == "Operator"
