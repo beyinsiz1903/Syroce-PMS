@@ -453,7 +453,7 @@ const AgencyManagement = ({ user, tenant, onLogout }) => {
                       <Edit2 size={14} className="mr-1" /> {t('cm.pages_AgencyManagement.duzenle')}
                     </Button>
                     {agency.status !== 'migrated' && <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); handleToggleStatus(agency); }}>
-                      {agency.status === 'active' ? <><ToggleRight size={14} className="mr-1" /> Devre Disi Birak</> : <><ToggleLeft size={14} className="mr-1" /> {t('cm.pages_AgencyManagement.aktif_et')}</>}
+                      {agency.status === 'active' ? <><ToggleRight size={14} className="mr-1" /> Devre Dışı Bırak</> : <><ToggleLeft size={14} className="mr-1" /> {t('cm.pages_AgencyManagement.aktif_et')}</>}
                     </Button>}
                     <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); openUserForm(agency.id); }} data-testid={`add-user-${agency.id}`}>
                       <UserPlus size={14} className="mr-1" /> {t('cm.pages_AgencyManagement.kullanici_ekle')}

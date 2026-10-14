@@ -905,6 +905,9 @@ async def get_unified_room_types(current_user: User = Depends(get_current_user))
         # PMS room types for "agencies only" distribution, independent of the
         # channel manager's own room codes.
         "agency_room_types": [{"code": name, "name": name} for name in await _pms_room_type_names(tenant_id)],
+        # Agency-only rates are stored in the hotel's sale currency, not the
+        # channel manager's; the grid must show that currency in that mode.
+        "agency_currency": await _agency_rate_currency(tenant_id, detection, True),
         "rate_plans": rate_plans,
         "pricing_settings": pricing_map,
         "occupancy_pricing_rules": pricing_rules,

@@ -932,7 +932,7 @@ const AgencyPortalDashboard = () => {
                           <div className="flex flex-wrap items-center justify-between sm:justify-end gap-3 sm:gap-4">
                             <div className="text-right">
                               <div className="text-lg font-bold text-slate-800">{formatMoney(rt.stay_total, rt.currency || availability.currency)}</div>
-                              <div className="text-xs">Plan: {rt.rate_plan_code || 'Eski sözleşme'} · Pansiyon: {rt.meal_plan || 'Belirtilmemiş'}</div>
+                              <div className="text-xs">Plan: {rt.rate_plan_code || 'Eski sözleşme'} · Pansiyon: {rt.meal_plan && rt.meal_plan !== 'unspecified' ? rt.meal_plan : 'Belirtilmemiş'}</div>
                               <div className="text-[11px] text-slate-500">{availability.night_count} gece · Gecelik {formatMoney(rt.base_price, rt.currency || availability.currency)}</div>
                               {rt.occupancy_pricing?.children_ages?.length > 0 && <div className="mt-1 text-[11px] text-violet-700" data-testid={`child-price-${rt.room_type}-${rt.rate_plan_code || "legacy"}`}>
                                 Çocuk yaşları ({rt.occupancy_pricing.children_ages.join(', ')}) fiyata dahil

@@ -23,9 +23,11 @@ export const verifiedProviderChannels = providerStatus => {
   return Array.isArray(providerStatus?.channels) ? providerStatus.channels : [];
 };
 
-export const confirmUnifiedRateMutation = ({ roomCount, dateFrom, dateTo }) => confirmDialog({
+export const confirmUnifiedRateMutation = ({ roomCount, dateFrom, dateTo, agenciesOnly = false, currency }) => confirmDialog({
   title: 'Fiyat ve müsaitlik güncellemesini onayla',
-  message: `${roomCount} oda tipi için ${dateFrom} - ${dateTo} tarihleri arasındaki yerel kayıtlar güncellenecek; seçilen acentelere ve bağlı kanallara iletim başlatılacak. Devam edilsin mi?`,
+  message: agenciesOnly
+    ? `${roomCount} oda tipi için ${dateFrom} - ${dateTo} tarihleri arasındaki fiyat ve kontenjan yalnız seçili acentelere ${currency || ''} olarak kaydedilecek; kanal yöneticisine ve otel takvimine gönderilmeyecek. Devam edilsin mi?`
+    : `${roomCount} oda tipi için ${dateFrom} - ${dateTo} tarihleri arasındaki yerel kayıtlar güncellenecek; seçilen acentelere ve bağlı kanallara iletim başlatılacak. Devam edilsin mi?`,
   confirmText: 'Güncellemeyi Başlat',
   cancelText: 'Vazgeç',
   variant: 'danger'
@@ -189,6 +191,7 @@ const UnifiedRateManager = ({
       const { data } = await axios.get(`${UNIFIED_PREFIX}/room-types`, { headers });
       setRoomTypes(data.agency_room_types || []);
       setRatePlans([{ code: 'AGENCY', name: 'Acente Satış' }]);
+      if (data.agency_currency) setCurrency(data.agency_currency);
     } catch {
       setAgenciesOnly(false);
       toast.error('PMS oda tipleri yüklenemedi.');
@@ -212,7 +215,7 @@ const UnifiedRateManager = ({
       }
       if (data.pricing_settings) setPricingSettings(data.pricing_settings);
       if (data.occupancy_pricing_rules) setOccupancyPricingRules(data.occupancy_pricing_rules);
-      if (data.currency) setCurrency(data.currency);
+      if (data.currency && !agenciesOnlyRef.current) setCurrency(data.currency);
     } catch {
       if (requestId === gridRequestRef.current) toast.error('Veriler yüklenemedi');
     } finally {
@@ -424,7 +427,7 @@ const UnifiedRateManager = ({
   };
   const getPricingLabel = roomTypeCode => {
     const type = pricingSettings[roomTypeCode] || 'per_person';
-    return type === 'per_room' ? 'Oda bazli fiyatlandirma' : 'Kisi bazli fiyatlandirma';
+    return type === 'per_room' ? 'Oda bazlı fiyatlandırma' : 'Kişi bazlı fiyatlandırma';
   };
   const togglePricingType = async (roomTypeCode, e) => {
     e.preventDefault();
@@ -446,7 +449,7 @@ const UnifiedRateManager = ({
       }, {
         headers
       });
-      toast.success(`${newType === 'per_room' ? 'Oda bazli' : 'Kisi bazli'} fiyatlandirma ayarlandi`);
+      toast.success(`${newType === 'per_room' ? 'Oda bazlı' : 'Kişi bazlı'} fiyatlandırma ayarlandı`);
       setOccupancyPricingRules(prev => ({
         ...prev,
         [roomTypeCode]: { ...currentRule, pricing_type: newType }
@@ -593,7 +596,9 @@ const UnifiedRateManager = ({
     if (!await confirmUnifiedRateMutation({
       roomCount: selectedRoomCodes.length,
       dateFrom,
-      dateTo
+      dateTo,
+      agenciesOnly,
+      currency
     })) return;
     setSaving(true);
     try {
@@ -635,7 +640,7 @@ const UnifiedRateManager = ({
       const feedback = getUnifiedRateDeliveryFeedback(data);
       toast[feedback.level](feedback.message, { duration: 8000 });
       if (data.agency_push_count > 0) {
-        toast.success(`${data.agency_push_count} acente için kaydedildi (webhook bildirimleri gönderildi)`, {
+        toast.success(`${data.agency_push_count} acente için acente fiyatı kaydedildi`, {
           duration: 5000
         });
       }

@@ -350,7 +350,7 @@ const IncomingAgencyContracts = ({ user, tenant, onLogout }) => {
               Acente Sözleşme Talepleri
             </h1>
             <p className="text-sm text-muted-foreground mt-1">
-              Marketplace'ten otelinize sözleşme teklifi gönderen acenteleri buradan yönetin.
+              Acente Extranet üzerinden otelinize sözleşme teklifi gönderen acenteleri buradan yönetin.
               Sadece onayladığınız acenteler otelinize rezervasyon yapabilir.
             </p>
           </div>
@@ -369,7 +369,7 @@ const IncomingAgencyContracts = ({ user, tenant, onLogout }) => {
               <div className="space-y-1">
                 <p className="font-semibold text-slate-900 dark:text-slate-100">B2B iş ortaklığı onay merkezi</p>
                 <p className="max-w-4xl text-sm leading-6 text-slate-600 dark:text-slate-300">
-                  Burada komisyon, ödeme vadesi, geçerlilik ve iptal şartlarını inceleyip acenteye rezervasyon yetkisi verirsiniz. Bu ekran HotelRunner kanal bağlantılarını değil, Syroce Marketplace B2B sözleşmelerini yönetir.
+                  Burada komisyon, ödeme vadesi, geçerlilik ve iptal şartlarını inceleyip acenteye rezervasyon yetkisi verirsiniz. Bu ekran HotelRunner kanal bağlantılarını değil, Syroce Acente Extranet sözleşmelerini yönetir.
                 </p>
               </div>
             </div>
@@ -497,7 +497,7 @@ const IncomingAgencyContracts = ({ user, tenant, onLogout }) => {
                       {tab === 'history' && historyFilter === 'withdrawn' && 'Geri çekilmiş sözleşme yok.'}
                     </p>
                     <p className="mx-auto mt-2 max-w-xl text-sm text-muted-foreground">
-                      Yeni bir Marketplace sözleşme teklifi geldiğinde acente, komisyon oranı ve ticari şartları burada görünecek.
+                      Yeni bir acente sözleşme teklifi geldiğinde acente, komisyon oranı ve ticari şartları burada görünecek.
                     </p>
                   </CardContent>
                 </Card>

@@ -57,3 +57,30 @@ async def test_all_mode_clears_selection_and_creates_settings_without_listing(mo
     monkeypatch.setattr(agency_content, "get_system_db", lambda: fresh)
     await agency_content.update_marketplace_distribution(agency_content.MarketplaceContentDistribution(mode="all"), USER)
     assert fresh.marketplace_listings.update_one.await_args.kwargs["upsert"] is True
+
+
+@pytest.mark.asyncio
+async def test_room_types_offered_to_agencies(monkeypatch):
+    sysdb = _sysdb({"id": "l1", "allowed_room_types": ["Superior"]})
+    monkeypatch.setattr(agency_content, "get_system_db", lambda: sysdb)
+    monkeypatch.setattr(agency_content, "_contracted_marketplace_agencies", AsyncMock(return_value=[]))
+    monkeypatch.setattr(agency_content, "_sellable_room_types", AsyncMock(return_value=["Standard", "Superior", "Suite"]))
+
+    state = await agency_content.get_marketplace_distribution(USER)
+    assert state["room_types"] == ["Standard", "Superior", "Suite"]
+    assert state["allowed_room_types"] == ["Superior"]
+
+    for bad in ([], ["Penthouse"]):
+        with pytest.raises(HTTPException) as exc:
+            await agency_content.update_agency_room_types(agency_content.AgencyRoomTypes(room_types=bad), USER)
+        assert exc.value.status_code == 400
+
+    result = await agency_content.update_agency_room_types(agency_content.AgencyRoomTypes(room_types=["Suite", "Standard"]), USER)
+    assert result["allowed_room_types"] == ["Standard", "Suite"]
+
+    # Choosing every room type is stored as "no restriction".
+    result = await agency_content.update_agency_room_types(
+        agency_content.AgencyRoomTypes(room_types=["Suite", "Standard", "Superior"]), USER
+    )
+    assert result["allowed_room_types"] == []
+    assert sysdb.marketplace_listings.update_one.await_args.args[1]["$set"]["allowed_room_types"] == []
