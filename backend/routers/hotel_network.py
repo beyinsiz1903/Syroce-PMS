@@ -381,7 +381,9 @@ async def _create_target_booking(sysdb, request_doc: dict, actor_id: str) -> dic
     target = request_doc["target_tenant_id"]
     with tenant_context(target):
         rooms = await db.rooms.find(
-            {"tenant_id": target, "room_type": request_doc["room_type"], "is_active": {"$ne": False}, "status": {"$nin": ["maintenance", "out_of_order", "blocked"]}},
+            # Virtual holder rooms (is_virtual, capacity 99) are not sellable inventory.
+            {"tenant_id": target, "room_type": request_doc["room_type"], "is_active": {"$ne": False},
+             "is_virtual": {"$ne": True}, "status": {"$nin": ["maintenance", "out_of_order", "blocked"]}},
             {"_id": 0},
         ).to_list(500)
     if not rooms:
@@ -421,7 +423,9 @@ async def _post_interhotel_ledger(sysdb, request_doc: dict, target_booking: dict
     else:
         amount = commission
         debtor, creditor, reason = request_doc["target_tenant_id"], request_doc["source_tenant_id"], "Yönlendirme komisyonu"
-    transfer_ref = f"OTA-{datetime.now(UTC).year}-{request_doc['id'][:8].upper()}"
+    # "NET" (hotel network), not "OTA": these are hotel-to-hotel transfers,
+    # unrelated to online travel agencies or the agency extranet.
+    transfer_ref = f"NET-{datetime.now(UTC).year}-{request_doc['id'][:8].upper()}"
     common = {
         "id": _id(), "transfer_reference": transfer_ref, "request_id": request_doc["id"],
         "source_booking_id": request_doc.get("source_booking_id"), "target_booking_id": target_booking["id"],

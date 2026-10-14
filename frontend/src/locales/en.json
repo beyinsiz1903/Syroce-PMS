@@ -2559,6 +2559,12 @@
     "apps": "All Applications"
   },
   "navSections": {
+    "sales": {
+      "revenue": "Revenue & Pricing",
+      "groups": "Group Sales",
+      "agency_extranet": "Agency Extranet",
+      "hotel_network": "Hotel Network (inter-hotel)"
+    },
     "frontdesk": {
       "reservations": "Reservations & Stays",
       "room_management": "Room Management",

@@ -101,3 +101,33 @@ async def test_source_booking_financial_activity_detects_posted_charge(monkeypat
 
     assert activity == ["tahakkuk"]
     assert "tahakkuk bulundu" in _financial_transfer_block_message(activity)
+
+
+@pytest.mark.asyncio
+async def test_transfer_reference_is_network_not_ota():
+    sysdb = SimpleNamespace(hotel_network_ledger=InsertManyCollection())
+    request = {"id": "abcdef12-0000", "source_tenant_id": "hotel-a", "target_tenant_id": "hotel-b",
+               "total_amount": 100, "commission_pct": 10, "collect_by": "target_hotel"}
+    rows = await _post_interhotel_ledger(sysdb, request, {"id": "target-booking"})
+    assert rows[0]["transfer_reference"].startswith("NET-")
+    assert rows[0]["transfer_reference"].endswith("-ABCDEF12")
+
+
+@pytest.mark.asyncio
+async def test_target_booking_never_uses_virtual_holder_rooms(monkeypatch):
+    from contextlib import nullcontext
+
+    seen = {}
+
+    class Rooms:
+        def find(self, query, *_args):
+            seen["query"] = query
+            return Cursor([])
+
+    monkeypatch.setattr(hotel_network, "db", SimpleNamespace(rooms=Rooms()))
+    monkeypatch.setattr(hotel_network, "tenant_context", lambda _tenant: nullcontext())
+    request = {"id": "r1", "target_tenant_id": "hotel-b", "source_tenant_id": "hotel-a", "room_type": "Superior"}
+
+    with pytest.raises(Exception):
+        await hotel_network._create_target_booking(SimpleNamespace(), request, "actor")
+    assert seen["query"]["is_virtual"] == {"$ne": True}
