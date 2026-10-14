@@ -45,6 +45,18 @@ const MarketplaceContentTargeting = ({ onVisibilityChange }) => {
     } catch (err) { toast.error(err.response?.data?.detail || 'Görünürlük güncellenemedi.'); }
     finally { setSaving(false); }
   };
+  const offeredRoomTypes = (state.allowed_room_types || []).length ? state.allowed_room_types : (state.room_types || []);
+  const toggleRoomType = async roomType => {
+    const next = offeredRoomTypes.includes(roomType) ? offeredRoomTypes.filter(rt => rt !== roomType) : [...offeredRoomTypes, roomType];
+    if (next.length === 0) return toast.error('En az bir oda tipi açık kalmalı. Tesisi tamamen gizlemek için yukarıdaki görünürlük anahtarını kullanın.');
+    setSaving(true);
+    try {
+      await axios.put('/hotel-content/agency-room-types', { room_types: next });
+      toast.success('Acentelere açık oda tipleri güncellendi.');
+      await load();
+    } catch (err) { toast.error(err.response?.data?.detail || 'Oda tipleri güncellenemedi.'); }
+    finally { setSaving(false); }
+  };
   const save = async () => {
     if (state.mode === 'selected' && state.agency_ids.length === 0) return toast.error('En az bir acente seçin veya "Tüm sözleşmeli acenteler" seçeneğini kullanın.');
     setSaving(true);
@@ -66,6 +78,20 @@ const MarketplaceContentTargeting = ({ onVisibilityChange }) => {
           <input type="checkbox" className="mt-1" checked={state.is_listed} disabled={saving} onChange={e => toggleVisibility(e.target.checked)} data-testid="agency-visibility-toggle" />
           <span><strong>Acentelerin otel listesinde görün</strong><span className="block text-xs text-slate-500">Acenteler tesisinizi görüp sözleşme teklifi gönderebilir. Fiyat, kontenjan ve rezervasyon yalnız onayladığınız sözleşmeyle açılır.</span></span>
         </label>
+        {(state.room_types || []).length > 0 && (
+          <div className="rounded border border-slate-200 p-2 text-sm" data-testid="agency-room-types">
+            <strong>Acentelere açık oda tipleri</strong>
+            <span className="block text-xs text-slate-500">İşaretli olmayan oda tipleri acente aramasında ve rezervasyonda görünmez. Fiyat ve kontenjan yine Fiyat & Müsaitlik ekranından gelir.</span>
+            <div className="mt-2 grid grid-cols-2 gap-1">
+              {state.room_types.map(roomType => (
+                <label key={roomType} className="flex items-center gap-2 text-xs">
+                  <input type="checkbox" checked={offeredRoomTypes.includes(roomType)} disabled={saving} onChange={() => toggleRoomType(roomType)} />
+                  <span className="truncate">{roomType}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+        )}
         <label className="flex items-center gap-2 text-sm"><input type="radio" checked={state.mode === 'all'} onChange={() => setState(c => ({ ...c, mode: 'all' }))} /> Tüm sözleşmeli acenteler</label>
         <label className="flex items-center gap-2 text-sm"><input type="radio" checked={state.mode === 'selected'} onChange={() => setState(c => ({ ...c, mode: 'selected' }))} /> Yalnız seçtiklerim</label>
         {state.mode === 'selected' && (

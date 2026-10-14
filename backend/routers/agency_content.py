@@ -458,7 +458,7 @@ async def get_marketplace_distribution(current_user: User = Depends(get_current_
     _require_hotel_staff(current_user)
     tenant_id = current_user.tenant_id
     listing = await get_system_db().marketplace_listings.find_one(
-        {"tenant_id": tenant_id}, {"_id": 0, "is_listed": 1, "content_agency_ids": 1}
+        {"tenant_id": tenant_id}, {"_id": 0, "is_listed": 1, "content_agency_ids": 1, "allowed_room_types": 1}
     ) or {}
     selected = listing.get("content_agency_ids")
     return {
@@ -466,7 +466,49 @@ async def get_marketplace_distribution(current_user: User = Depends(get_current_
         "mode": "all" if selected is None else "selected",
         "agency_ids": selected or [],
         "agencies": await _contracted_marketplace_agencies(tenant_id),
+        "room_types": await _sellable_room_types(tenant_id),
+        # Empty = every room type may be sold to agencies.
+        "allowed_room_types": listing.get("allowed_room_types") or [],
     }
+
+
+async def _sellable_room_types(tenant_id: str) -> list[str]:
+    """Room types as the agency search groups them (physical rooms only)."""
+    rooms = await db.rooms.find({"tenant_id": tenant_id, **PHYSICAL_ROOM_FILTER}, {"_id": 0, "room_type": 1}).to_list(5000)
+    return sorted({r.get("room_type") or "Standard" for r in rooms}, key=str.casefold)
+
+
+class AgencyRoomTypes(BaseModel):
+    room_types: list[str] = Field(default_factory=list, max_length=200)
+
+
+@router.put("/hotel-content/agency-room-types")
+async def update_agency_room_types(data: AgencyRoomTypes, current_user: User = Depends(get_current_user)):
+    """Which room types agencies may search and book; empty list = all.
+
+    Contracts and shared agency rates still decide price and allotment; this
+    only narrows what the hotel offers to the agency extranet.
+    """
+    _require_hotel_staff(current_user)
+    tenant_id = current_user.tenant_id
+    known = set(await _sellable_room_types(tenant_id))
+    chosen = sorted(set(data.room_types), key=str.casefold)
+    if not chosen:
+        # [] is stored as "no restriction"; hiding every room type is the
+        # directory visibility switch's job.
+        raise HTTPException(status_code=400, detail="En az bir oda tipi seçin")
+    unknown = [rt for rt in chosen if rt not in known]
+    if unknown:
+        raise HTTPException(status_code=400, detail=f"Bilinmeyen oda tipi: {', '.join(unknown)}")
+    allowed = [] if set(chosen) == known else chosen
+    await get_system_db().marketplace_listings.update_one(
+        {"tenant_id": tenant_id},
+        {"$set": {"allowed_room_types": allowed, "updated_at": _now_iso(),
+                  "room_types_updated_by": getattr(current_user, "id", None)},
+         "$setOnInsert": {"created_at": _now_iso()}},
+        upsert=True,
+    )
+    return {"ok": True, "allowed_room_types": allowed}
 
 
 @router.put("/hotel-content/marketplace-distribution")

@@ -49,3 +49,18 @@ it('fails closed when readiness cannot be read', async () => {
   await screen.findByText(/Hazırlık durumu doğrulanamadı/);
   expect(screen.getByTestId('distribute-btn')).toBeDisabled();
 });
+
+it('lets the hotel choose which room types agencies can book', async () => {
+  const previous = axios.get.getMockImplementation();
+  axios.get.mockImplementation(url => url === '/hotel-content/marketplace-distribution'
+    ? Promise.resolve({ data: { is_listed: true, mode: 'all', agency_ids: [], agencies: [], room_types: ['Standard', 'Superior'], allowed_room_types: ['Superior'] } })
+    : previous(url));
+  axios.put.mockResolvedValue({ data: { ok: true } });
+  page();
+  const box = await screen.findByTestId('agency-room-types');
+  const [standard, superior] = box.querySelectorAll('input[type=checkbox]');
+  expect(standard).not.toBeChecked();
+  expect(superior).toBeChecked();
+  fireEvent.click(standard);
+  await waitFor(() => expect(axios.put).toHaveBeenCalledWith('/hotel-content/agency-room-types', { room_types: ['Superior', 'Standard'] }));
+});

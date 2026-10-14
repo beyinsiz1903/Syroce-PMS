@@ -27,6 +27,18 @@ describe('UnifiedRateManager write safety', () => {
     }));
   });
 
+  it('says agency-only updates skip the channel manager and names the sale currency', async () => {
+    confirmDialog.mockResolvedValue(true);
+
+    await confirmUnifiedRateMutation({
+      roomCount: 1, dateFrom: '2026-11-20', dateTo: '2026-11-22', agenciesOnly: true, currency: 'TRY',
+    });
+    const { message } = confirmDialog.mock.calls[0][0];
+    expect(message).toContain('TRY');
+    expect(message).toContain('kanal yöneticisine ve otel takvimine gönderilmeyecek');
+    expect(message).not.toContain('bağlı kanallara');
+  });
+
   it('never exposes disconnected or stale provider channels as push targets', () => {
     const channels = [{ code: 'booking', name: 'Booking.com' }];
     expect(verifiedProviderChannels({ connected: false, channels })).toEqual([]);
