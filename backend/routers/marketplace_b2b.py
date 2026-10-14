@@ -1664,6 +1664,10 @@ async def admin_update_agency(
         updates["country"] = updates["country"].upper()
     if not updates:
         raise HTTPException(400, "Güncellenecek alan bulunamadı")
+    if updates.get("status") == "disabled":
+        await _disable_agency(sysdb, agency_id)
+    elif updates.get("status") == "active":
+        updates["disabled_at"] = None
     updates["updated_at"] = _now_iso()
     result = await sysdb.marketplace_agencies.update_one({"id": agency_id}, {"$set": updates})
     if result.matched_count == 0:
@@ -1726,21 +1730,40 @@ async def admin_disable_agency(
     agency_id: str,
     _: bool = Depends(_require_system_admin),
 ):
-    sysdb = get_system_db()
-    res = await sysdb.marketplace_agencies.update_one({"id": agency_id}, {"$set": {"status": "disabled", "disabled_at": _now_iso()}})
+    withdrawn = await _disable_agency(get_system_db(), agency_id)
+    return {
+        "ok": True,
+        "withdrawn_proposals": withdrawn,
+        "message": "Acente devre dışı bırakıldı; API anahtarları iptal edildi, bekleyen teklifler geri çekildi",
+    }
+
+
+async def _disable_agency(sysdb, agency_id: str) -> int:
+    """Soft-disable: nothing is deleted and the account can be re-activated.
+
+    Login, sessions and API keys stop working; pending proposals are withdrawn
+    so hotels are not left with requests they can never use. Approved
+    contracts are kept and resume when the agency is re-activated.
+    """
+    now = _now_iso()
+    res = await sysdb.marketplace_agencies.update_one({"id": agency_id}, {"$set": {"status": "disabled", "disabled_at": now}})
     if res.matched_count == 0:
         raise HTTPException(404, "Acente bulunamadı")
     await sysdb.marketplace_api_keys.update_many(
         {"agency_id": agency_id, "is_active": True},
-        {"$set": {"is_active": False, "revoked_at": _now_iso()}},
+        {"$set": {"is_active": False, "revoked_at": now}},
+    )
+    withdrawn = await sysdb.agency_contracts.update_many(
+        {"agency_id": agency_id, "status": "pending"},
+        {"$set": {"status": "withdrawn", "updated_at": now, "decision_notes": "Acente hesabı devre dışı bırakıldı"}},
     )
     await _record_marketplace_audit(
         sysdb,
         agency_id=agency_id,
         action="agency_disabled",
-        details={"reason": "system_admin"},
+        details={"reason": "system_admin", "withdrawn_proposals": withdrawn.modified_count or 0},
     )
-    return {"ok": True, "message": "Acente devre dışı bırakıldı, tüm API key'ler iptal edildi"}
+    return withdrawn.modified_count or 0
 
 
 @router.post("/admin/agencies/{agency_id}/api-keys/regenerate")
