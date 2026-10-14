@@ -442,6 +442,7 @@ class MarketplaceNotificationSettings(BaseModel):
     reservation_change: bool = True
     cancellation_request: bool = True
     payment_reconciliation: bool = True
+    contract_updates: bool = True
 
 
 class MarketplacePortalSettingsUpdate(BaseModel):
@@ -3065,6 +3066,32 @@ async def hotel_list_marketplace_negotiations(current_user: User = Depends(get_c
         {"tenant_id": tenant_id}, {"_id": 0}
     ).sort("created_at", -1).to_list(500)
     return {"items": docs}
+
+
+@router.get("/notices")
+async def agency_list_notices(
+    unread_only: bool = Query(False),
+    limit: int = Query(50, ge=1, le=200),
+    agency: dict = Depends(get_marketplace_agency),
+):
+    """Hotel-originated notices for this agency (contract decisions, PMS cancellations)."""
+    query: dict = {"agency_id": agency["agency_id"]}
+    if unread_only:
+        query["read"] = False
+    sysdb = get_system_db()
+    items = await sysdb.marketplace_agency_notices.find(query, {"_id": 0}).sort("created_at", -1).limit(limit).to_list(limit)
+    unread = await sysdb.marketplace_agency_notices.count_documents({"agency_id": agency["agency_id"], "read": False})
+    return {"items": items, "unread": unread}
+
+
+@router.post("/notices/{notice_id}/read")
+async def agency_mark_notice_read(notice_id: str, agency: dict = Depends(get_marketplace_agency)):
+    result = await get_system_db().marketplace_agency_notices.update_one(
+        {"id": notice_id, "agency_id": agency["agency_id"]}, {"$set": {"read": True, "read_at": _now_iso()}}
+    )
+    if not result.matched_count:
+        raise HTTPException(404, "Bildirim bulunamadı")
+    return {"ok": True}
 
 
 @router.get("/negotiations")

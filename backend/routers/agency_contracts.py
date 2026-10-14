@@ -378,6 +378,16 @@ async def contract_propose(
         )
         raise HTTPException(409, f"Bu otelle zaten {existing['status']} durumda bir sözleşmeniz var ({existing['contract_code']}). Önce onu sonlandırın/geri çekin.")
     doc.pop("_id", None)
+    from core.agency_notify import notify_hotel
+
+    await notify_hotel(
+        data.tenant_id,
+        kind="agency_contract",
+        title=f"Yeni acente sözleşme talebi: {agency['agency_name']}",
+        message=f"{contract_code} · komisyon %{data.commission_pct:g} · {data.valid_from} – {data.valid_to}",
+        action_url="/app/incoming-agency-contracts",
+        metadata={"contract_id": contract_id, "agency_id": agency["agency_id"]},
+    )
     return {"ok": True, "contract": doc}
 
 
@@ -508,6 +518,21 @@ class TerminateRequest(BaseModel):
 
 
 HISTORY_STATUSES = ("rejected", "terminated", "expired", "withdrawn")
+
+
+async def _notify_contract_decision(sysdb, contract: dict, title: str, message: str) -> None:
+    from core.agency_notify import PREF_CONTRACT, notify_agency
+
+    await notify_agency(
+        sysdb,
+        agency_id=contract["agency_id"],
+        tenant_id=contract.get("tenant_id"),
+        kind="contract_decision",
+        title=f"{contract.get('contract_code', '')} · {contract.get('hotel_name', '')}: {title}",
+        message=message,
+        preference=PREF_CONTRACT,
+        reference_id=contract.get("id"),
+    )
 
 
 async def _auto_expire_overdue(tenant_id: str | None = None) -> int:
@@ -648,6 +673,10 @@ async def hotel_approve_request(
             "created_at": _now_iso(),
         }
     )
+    await _notify_contract_decision(
+        sysdb, contract, "sözleşme onaylandı",
+        f"Komisyon %{final_pct:g}. Bu otel için satış {contract.get('valid_from')} – {contract.get('valid_to')} arasında açık. {data.notes}".strip(),
+    )
     return {"ok": True, "contract": contract}
 
 
@@ -694,6 +723,7 @@ async def hotel_reject_request(
             "created_at": _now_iso(),
         }
     )
+    await _notify_contract_decision(sysdb, contract, "sözleşme teklifi reddedildi", data.reason or "Sebep belirtilmedi")
     return {"ok": True, "contract": contract}
 
 
@@ -744,6 +774,10 @@ async def hotel_terminate_contract(
             "payload": {"reason": data.reason, "effective_date": new_valid_to},
             "created_at": _now_iso(),
         }
+    )
+    await _notify_contract_decision(
+        sysdb, contract, "sözleşme feshedildi",
+        f"Yeni satış {new_valid_to} itibarıyla kapandı; mevcut rezervasyonlar etkilenmez. {data.reason}".strip(),
     )
     return {"ok": True, "contract": contract}
 

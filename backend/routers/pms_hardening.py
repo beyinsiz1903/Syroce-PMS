@@ -417,6 +417,9 @@ async def api_cancel_booking(req: CancellationRequest, current_user: User = Depe
     result = await rsm.handle_cancellation(current_user.tenant_id, booking, current_user.id, req.reason)
     if not result["success"]:
         raise HTTPException(status_code=400, detail=result)
+    from core.agency_notify import on_pms_status_change
+
+    await on_pms_status_change(current_user.tenant_id, booking, "cancelled", req.reason)
 
     # Channel availability auto-sync: iptal sonrası müsaitlik güncelle
     try:
@@ -448,6 +451,9 @@ async def api_no_show(req: NoShowRequest, current_user: User = Depends(get_curre
     result = await rsm.handle_no_show(current_user.tenant_id, booking, current_user.id)
     if not result["success"]:
         raise HTTPException(status_code=400, detail=result)
+    from core.agency_notify import on_pms_status_change
+
+    await on_pms_status_change(current_user.tenant_id, booking, "no_show")
 
     # Channel availability auto-sync: no-show sonrası müsaitlik güncelle
     try:
