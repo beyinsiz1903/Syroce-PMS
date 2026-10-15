@@ -339,3 +339,81 @@ def offer_source(plan: str) -> str:
 async def verified_offer(agency_id, tenant_id, room_type, check_in, check_out):
     """Backward-compatible boolean readiness predicate for one or more plans."""
     return bool(await verified_offer_rate_plans(agency_id, tenant_id, room_type, check_in, check_out))
+
+
+# ── Signed-in agency user's own profile ─────────────────────────────
+
+from routers.marketplace_b2b import get_marketplace_agency as _agency_dep  # noqa: E402
+
+
+class ProfileUpdate(BaseModel):
+    name: str = Field(min_length=2, max_length=160)
+
+
+class PasswordChange(BaseModel):
+    current_password: str = Field(min_length=1, max_length=200)
+    new_password: str = Field(min_length=12, max_length=72)
+
+
+def _profile_user_id(agency: dict) -> str:
+    """The real signed-in agency user; a superadmin preview has none."""
+    if agency.get("impersonation"):
+        raise HTTPException(403, "Süperadmin önizlemesinde kullanıcı profili değiştirilemez")
+    user_id = (agency.get("user") or {}).get("id")
+    if not user_id:
+        raise HTTPException(403, "Bu işlem için acente kullanıcısıyla giriş yapın")
+    return user_id
+
+
+@router.get("/extranet/profile")
+async def get_profile(agency: dict = Depends(_agency_dep)):
+    user = agency.get("user") or {}
+    return {"id": user.get("id"), "name": user.get("name", ""), "email": user.get("email", ""),
+            "can_edit": not agency.get("impersonation")}
+
+
+@router.patch("/extranet/profile")
+async def update_profile(data: ProfileUpdate, agency: dict = Depends(_agency_dep)):
+    from core.security import invalidate_user_doc_cache
+
+    user_id = _profile_user_id(agency)
+    name = data.name.strip()
+    if len(name) < 2:
+        raise HTTPException(422, "Ad soyad en az iki karakter olmalıdır")
+    database = get_system_db()
+    result = await database.users.update_one(
+        {"id": user_id, "agency_id": agency["agency_id"]}, {"$set": {"name": name, "updated_at": datetime.now(UTC).isoformat()}}
+    )
+    if not result.matched_count:
+        raise HTTPException(404, "Kullanıcı bulunamadı")
+    invalidate_user_doc_cache(user_id)
+    await audit(database, agency["agency_id"], "portal_profile_updated", user_id=user_id)
+    return {"ok": True, "name": name}
+
+
+@router.post("/extranet/profile/password")
+async def change_password(data: PasswordChange, request: Request, agency: dict = Depends(_agency_dep)):
+    """Change the signed-in user's password; other sessions are signed out."""
+    from core.security import create_token, invalidate_user_doc_cache, verify_password
+    from security.auth_throttle import RESET_TOKEN_IP, client_ip, enforce
+    from security.credential_guard import CredentialGuard
+
+    user_id = _profile_user_id(agency)
+    await enforce(RESET_TOKEN_IP, f"ip:{client_ip(request)}", "şifre değiştirme")
+    if len(data.new_password.encode()) > 72 or not CredentialGuard.validate_password_strength(data.new_password)["is_strong"]:
+        raise HTTPException(422, "Şifre en az 12 karakter, büyük/küçük harf ve rakam içermeli; en fazla 72 bayt olmalıdır")
+    if data.new_password == data.current_password:
+        raise HTTPException(422, "Yeni şifre mevcut şifreden farklı olmalıdır")
+    database = get_system_db()
+    user = await database.users.find_one({"id": user_id, "agency_id": agency["agency_id"]}, {"_id": 0, "hashed_password": 1})
+    if not user or not verify_password(data.current_password, user.get("hashed_password") or ""):
+        raise HTTPException(400, "Mevcut şifre hatalı")
+    now = datetime.now(UTC)
+    await database.users.update_one({"id": user_id, "agency_id": agency["agency_id"]}, {"$set": {
+        "hashed_password": hash_password(data.new_password), "password_changed_at": now.isoformat(),
+        "tokens_invalid_before": now.timestamp(), "requires_password_change": False,
+    }})
+    invalidate_user_doc_cache(user_id)
+    await audit(database, agency["agency_id"], "portal_password_changed", user_id=user_id)
+    # Issued after the cut-off, so only this session survives.
+    return {"ok": True, "token": create_token(user_id, None)}
