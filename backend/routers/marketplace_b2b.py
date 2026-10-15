@@ -3255,7 +3255,25 @@ async def _decide_marketplace_modification_locked(proposal_id, data, current_use
         {"$set": {"status": "declined", "response_note": data.response_note.strip(), "responded_at": _now_iso(),
                   "updated_at": _now_iso(), "applied_snapshot": {}}},
     )
+    await _notify_agency_of_decision(sysdb, proposal, accepted=False, note=data.response_note)
     return {"ok": True, "status": "declined", "reservation_modified": False, "reservation_cancelled": False}
+
+
+async def _notify_agency_of_decision(sysdb, proposal: dict, *, accepted: bool, note: str = "") -> None:
+    """Tell the agency the hotel's answer to its own change/cancellation request."""
+    if proposal.get("type") not in {"agency_modification", "agency_cancellation"}:
+        return
+    from core.agency_notify import notify_agency
+
+    what = "Değişiklik talebiniz" if proposal["type"] == "agency_modification" else "İptal talebiniz"
+    verdict = "otel tarafından onaylandı" if accepted else "otel tarafından reddedildi"
+    code = proposal.get("confirmation_code") or proposal.get("reservation_id")
+    await notify_agency(
+        sysdb, agency_id=proposal["agency_id"], tenant_id=proposal.get("tenant_id"), reference_id=proposal.get("reservation_id"),
+        kind="reservation_change_decision", preference="reservation_change",
+        title=f"{code}: {what.lower()} {verdict}",
+        message=(note or "").strip() or ("Rezervasyon güncellendi." if accepted else "Mevcut rezervasyon korunur."),
+    )
 
 
 MODIFICATION_SNAPSHOT_FIELDS = (
@@ -3335,11 +3353,13 @@ async def _finish_marketplace_proposal(sysdb, tenant_id: str, proposal: dict, da
         await assign_room_atomic(tenant_id=tenant_id, booking_id=reservation_id,
             room_id=changes["room_id"], check_in=changes["check_in"], check_out=changes["check_out"])
     snapshot = {key: changes[key] for key in MODIFICATION_SNAPSHOT_FIELDS} if is_modification else {"status": "cancelled"}
-    await sysdb.marketplace_negotiations.update_one(
+    accepted = await sysdb.marketplace_negotiations.update_one(
         {"id": proposal["id"], "status": "applying"},
         {"$set": {"status": "accepted", "response_note": data.response_note.strip(), "responded_at": _now_iso(),
                   "updated_at": _now_iso(), "applied_snapshot": snapshot}},
     )
+    if getattr(accepted, "modified_count", 1):
+        await _notify_agency_of_decision(sysdb, proposal, accepted=True, note=data.response_note)
     return {"ok": True, "status": "accepted", "reservation_modified": is_modification,
             "reservation_cancelled": not is_modification}
 

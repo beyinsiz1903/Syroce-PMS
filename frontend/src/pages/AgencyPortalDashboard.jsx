@@ -152,6 +152,9 @@ const AgencyPortalDashboard = () => {
   const [voucherEmail, setVoucherEmail] = useState('');
   const [voucherEmailLoading, setVoucherEmailLoading] = useState(false);
   const [portalSettings, setPortalSettings] = useState(null);
+  const [profile, setProfile] = useState(null);
+  const [passwordForm, setPasswordForm] = useState({ current: '', next: '', repeat: '' });
+  const [profileBusy, setProfileBusy] = useState(false);
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [widgetOriginsText, setWidgetOriginsText] = useState('');
@@ -656,14 +659,44 @@ const AgencyPortalDashboard = () => {
     if (portalMode !== 'marketplace') return;
     setSettingsLoading(true);
     try {
-      const { data } = await agencyApi.get('/marketplace/v1/extranet/settings');
+      const [{ data }, { data: me }] = await Promise.all([
+        agencyApi.get('/marketplace/v1/extranet/settings'),
+        agencyApi.get('/marketplace/v1/extranet/profile'),
+      ]);
       setPortalSettings(data);
+      setProfile(me);
       setWidgetOriginsText((data.widget?.allowed_origins || []).join('\n'));
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Hesap ayarları yüklenemedi. Lütfen yeniden deneyin.');
     } finally {
       setSettingsLoading(false);
     }
+  };
+  const saveProfileName = async () => {
+    if ((profile?.name || '').trim().length < 2) return toast.error('Ad soyad en az iki karakter olmalıdır.');
+    setProfileBusy(true);
+    try {
+      const { data } = await agencyApi.patch('/marketplace/v1/extranet/profile', { name: profile.name.trim() });
+      setProfile(current => ({ ...current, name: data.name }));
+      toast.success('Profiliniz güncellendi.');
+    } catch (err) { toast.error(err.response?.data?.detail || 'Profil güncellenemedi.'); }
+    finally { setProfileBusy(false); }
+  };
+  const changePassword = async event => {
+    event.preventDefault();
+    if (passwordForm.next !== passwordForm.repeat) return toast.error('Yeni şifreler aynı değil.');
+    setProfileBusy(true);
+    try {
+      const { data } = await agencyApi.post('/marketplace/v1/extranet/profile/password', {
+        current_password: passwordForm.current, new_password: passwordForm.next,
+      });
+      // Other sessions are signed out; this one continues with the new token.
+      localStorage.setItem('agency_token', data.token);
+      setToken(data.token);
+      setPasswordForm({ current: '', next: '', repeat: '' });
+      toast.success('Şifreniz değişti. Diğer cihazlardaki oturumlar kapatıldı.');
+    } catch (err) { toast.error(err.response?.data?.detail || 'Şifre değiştirilemedi.'); }
+    finally { setProfileBusy(false); }
   };
   const updateAgencyField = (field, value) => setPortalSettings(current => ({
     ...current,
@@ -840,14 +873,20 @@ const AgencyPortalDashboard = () => {
             </CardContent>
           </Card>
         )}
-        <Tabs defaultValue="search" className="w-full">
+        {/* Load on activation, not on click: Radix switches tabs on mousedown,
+            the page height then changes and the mouseup may miss the trigger,
+            so a click handler would not run (tab open, content empty). */}
+        <Tabs defaultValue="search" className="w-full" onValueChange={value => ({
+          reservations: loadReservations, content: () => loadContent(), finance: loadReconciliation,
+          contracts: loadContracts, settings: loadPortalSettings,
+        })[value]?.()}>
           <TabsList className={`grid w-full ${portalMode === 'marketplace' ? 'grid-cols-2 lg:grid-cols-6' : 'grid-cols-1 sm:grid-cols-3'} h-auto gap-1 rounded-xl border border-slate-200 bg-white p-1.5 shadow-sm`}>
             <TabsTrigger value="search" data-testid="tab-search" className="min-h-10 rounded-lg data-[state=active]:bg-slate-900 data-[state=active]:text-white">{t('cm.pages_AgencyPortalDashboard.musaitlik_ara')}</TabsTrigger>
-            <TabsTrigger value="reservations" onClick={loadReservations} data-testid="tab-reservations" className="min-h-10 rounded-lg data-[state=active]:bg-slate-900 data-[state=active]:text-white">Rezervasyonlarım</TabsTrigger>
-            <TabsTrigger value="content" onClick={() => loadContent()} data-testid="tab-content" className="min-h-10 rounded-lg data-[state=active]:bg-slate-900 data-[state=active]:text-white">Tesis Bilgileri</TabsTrigger>
-            {portalMode === 'marketplace' && <TabsTrigger value="finance" onClick={loadReconciliation} className="min-h-10 rounded-lg data-[state=active]:bg-slate-900 data-[state=active]:text-white">Mutabakat</TabsTrigger>}
-            {portalMode === 'marketplace' && <TabsTrigger value="contracts" onClick={loadContracts} className="min-h-10 rounded-lg data-[state=active]:bg-slate-900 data-[state=active]:text-white">Sözleşmeler</TabsTrigger>}
-            {portalMode === 'marketplace' && <TabsTrigger value="settings" onClick={loadPortalSettings} data-testid="tab-settings" className="min-h-10 rounded-lg data-[state=active]:bg-slate-900 data-[state=active]:text-white"><Settings size={14} className="mr-1.5" />Ayarlar</TabsTrigger>}
+            <TabsTrigger value="reservations" data-testid="tab-reservations" className="min-h-10 rounded-lg data-[state=active]:bg-slate-900 data-[state=active]:text-white">Rezervasyonlarım</TabsTrigger>
+            <TabsTrigger value="content" data-testid="tab-content" className="min-h-10 rounded-lg data-[state=active]:bg-slate-900 data-[state=active]:text-white">Tesis Bilgileri</TabsTrigger>
+            {portalMode === 'marketplace' && <TabsTrigger value="finance" className="min-h-10 rounded-lg data-[state=active]:bg-slate-900 data-[state=active]:text-white">Mutabakat</TabsTrigger>}
+            {portalMode === 'marketplace' && <TabsTrigger value="contracts" className="min-h-10 rounded-lg data-[state=active]:bg-slate-900 data-[state=active]:text-white">Sözleşmeler</TabsTrigger>}
+            {portalMode === 'marketplace' && <TabsTrigger value="settings" data-testid="tab-settings" className="min-h-10 rounded-lg data-[state=active]:bg-slate-900 data-[state=active]:text-white"><Settings size={14} className="mr-1.5" />Ayarlar</TabsTrigger>}
           </TabsList>
 
           {/* Search Tab */}
@@ -1155,6 +1194,25 @@ const AgencyPortalDashboard = () => {
               <Button onClick={savePortalSettings} disabled={settingsSaving || settingsLoading || !portalSettings} className="bg-emerald-700 hover:bg-emerald-800"><Save size={14} className="mr-1.5" />{settingsSaving ? 'Kaydediliyor…' : 'Değişiklikleri Kaydet'}</Button>
             </div>
             {settingsLoading ? <Card><CardContent className="py-12 text-center text-slate-500"><Loader2 className="mx-auto mb-2 animate-spin" />Ayarlar yükleniyor…</CardContent></Card> : portalSettings && <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+              {profile && <Card className="border-slate-200 shadow-sm xl:col-span-2" data-testid="agency-profile-card">
+                <CardHeader><CardTitle className="flex items-center gap-2 text-base"><Settings size={17} className="text-emerald-700" />Profilim</CardTitle></CardHeader>
+                <CardContent className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="agency-profile-name">Ad soyad</Label>
+                    <div className="flex gap-2"><Input id="agency-profile-name" value={profile.name || ''} disabled={!profile.can_edit} onChange={event => setProfile(current => ({ ...current, name: event.target.value }))} />
+                      <Button type="button" variant="outline" disabled={!profile.can_edit || profileBusy} onClick={saveProfileName}>Kaydet</Button></div>
+                    <p className="text-xs text-slate-500">Giriş e-postası: {profile.email || '—'}</p>
+                    {!profile.can_edit && <p className="text-xs text-amber-700">Süperadmin önizlemesinde profil değiştirilemez.</p>}
+                  </div>
+                  <form onSubmit={changePassword} className="space-y-2">
+                    <Label>Şifre değiştir</Label>
+                    <Input type="password" autoComplete="current-password" placeholder="Mevcut şifre" required disabled={!profile.can_edit} value={passwordForm.current} onChange={event => setPasswordForm(f => ({ ...f, current: event.target.value }))} />
+                    <Input type="password" autoComplete="new-password" placeholder="Yeni şifre (en az 12 karakter, büyük/küçük harf ve rakam)" required minLength={12} maxLength={72} disabled={!profile.can_edit} value={passwordForm.next} onChange={event => setPasswordForm(f => ({ ...f, next: event.target.value }))} />
+                    <Input type="password" autoComplete="new-password" placeholder="Yeni şifre (tekrar)" required minLength={12} maxLength={72} disabled={!profile.can_edit} value={passwordForm.repeat} onChange={event => setPasswordForm(f => ({ ...f, repeat: event.target.value }))} />
+                    <Button type="submit" variant="outline" disabled={!profile.can_edit || profileBusy}>Şifreyi değiştir</Button>
+                  </form>
+                </CardContent>
+              </Card>}
               <Card className="border-slate-200 shadow-sm">
                 <CardHeader><CardTitle className="flex items-center gap-2 text-base"><Building2 size={17} className="text-emerald-700" />Acente bilgileri</CardTitle></CardHeader>
                 <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2">

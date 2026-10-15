@@ -350,3 +350,20 @@ async def test_agency_endpoint_cannot_finish_an_agency_modification_without_the_
     assert exc.value.status_code == 404
     assert world.marketplace_negotiations.rows[0]["status"] == "applying"
     assert world.marketplace_bookings.rows[0]["net_to_hotel"] == 80  # untouched
+
+
+@pytest.mark.asyncio
+async def test_agency_is_told_the_hotels_answer(world, monkeypatch):
+    import importlib
+
+    sent = []
+
+    async def notify(_sysdb, **kw):
+        sent.append(kw)
+
+    monkeypatch.setattr(importlib.import_module("core.agency_notify"), "notify_agency", notify)
+    await m.hotel_decide_marketplace_modification("p", m.CancellationProposalDecision(accept=False, response_note="Kredi limiti yetersiz"), object())
+    assert sent[-1]["agency_id"] == "a" and "reddedildi" in sent[-1]["title"] and sent[-1]["message"] == "Kredi limiti yetersiz"
+    world.marketplace_negotiations.rows[0]["status"] = "awaiting_hotel"
+    await m.hotel_decide_marketplace_modification("p", ACCEPT, object())
+    assert "onaylandı" in sent[-1]["title"]
