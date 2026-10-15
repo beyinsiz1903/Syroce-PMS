@@ -81,13 +81,13 @@ async def assert_credit_capacity(
         {"_id": 0, "id": 1, "currency": 1, "credit_exposure_currency": 1, "credit_exposure_amount": 1,
          "net_to_hotel": 1, "total_amount": 1, "agency_commission_amount": 1},
     ).to_list(None)
-    settled = await _settled_through_statements(
-        statements_db, tenant_id, agency_id, [row.get("id") for row in rows] + [exclude_booking_id]
-    )
+    ids = [row.get("id") for row in rows] + [exclude_booking_id]
+    settled = await _settled_through_statements(statements_db, tenant_id, agency_id, ids)
+    collected = await _collected_by_booking(database, tenant_id, ids)
     if exclude_booking_id:
-        # A modified booking replaces its old exposure, but what the agency
-        # already paid for it through statements still counts.
-        new_exposure = round(max(0.0, new_exposure - settled.get(exclude_booking_id, 0.0)), 2)
+        # A modified booking replaces its old exposure, but what was already
+        # paid for it (statement or PMS collection) still counts.
+        new_exposure = round(max(0.0, new_exposure - _paid_towards(settled.get(exclude_booking_id), collected.get(exclude_booking_id))), 2)
     debt = 0.0
     for row in rows:
         row_currency = _currency(row.get("credit_exposure_currency") or row.get("currency"))
@@ -96,10 +96,61 @@ async def assert_credit_capacity(
                 409,
                 f"Açık borçlarda {row_currency} para birimi var; {credit_currency} kredi limitiyle kur dönüşümü olmadan birlikte hesaplanamaz.",
             )
-        remaining = max(0.0, booking_net_exposure(row) - settled.get(row.get("id"), 0.0))
+        remaining = max(0.0, booking_net_exposure(row) - _paid_towards(settled.get(row.get("id")), collected.get(row.get("id"))))
         debt = round(debt + remaining, 2)
     if round(debt + new_exposure, 2) > limit_amount:
         raise HTTPException(409, "Acente kredi limiti bu rezervasyon için yetersiz")
+
+
+def _paid_towards(statement_settled: float | None, collected: float | None) -> float:
+    """What is already paid on a booking's net exposure.
+
+    Statement payments and PMS collections (guest or agency payments posted
+    on the reservation) can describe the same money, so the larger of the
+    two counts, never their sum.
+    """
+    return max(float(statement_settled or 0.0), float(collected or 0.0))
+
+
+# A city-ledger transfer moves the debt to an account; no money is received.
+NON_COLLECTION_METHODS = frozenset({"city_ledger"})
+NON_COLLECTION_TYPES = frozenset({"city_ledger_transfer"})
+
+
+def collected_amount(payments: list[dict]) -> float:
+    """Money actually received on a reservation, net of refunds.
+
+    ``bookings.paid_amount`` is not used: transfers to the city ledger raise
+    it too although nothing was collected.
+    """
+    total = 0.0
+    for payment in payments:
+        if payment.get("voided") is True:
+            continue
+        if payment.get("method") in NON_COLLECTION_METHODS or payment.get("payment_type") in NON_COLLECTION_TYPES:
+            continue
+        try:
+            amount = float(payment.get("amount") or 0)
+        except (TypeError, ValueError):
+            continue
+        if payment.get("payment_type") == "refund" or payment.get("status") == "refunded":
+            amount = -abs(amount)
+        total += amount
+    return round(max(0.0, total), 2)
+
+
+async def _collected_by_booking(database, tenant_id: str, booking_ids: list) -> dict[str, float]:
+    ids = [booking_id for booking_id in booking_ids if booking_id]
+    if not ids:
+        return {}
+    rows = await database.payments.find(
+        {"tenant_id": tenant_id, "booking_id": {"$in": ids}},
+        {"_id": 0, "booking_id": 1, "amount": 1, "method": 1, "payment_type": 1, "status": 1, "voided": 1},
+    ).to_list(None)
+    grouped: dict[str, list] = {}
+    for row in rows:
+        grouped.setdefault(row.get("booking_id"), []).append(row)
+    return {booking_id: collected_amount(items) for booking_id, items in grouped.items()}
 
 
 async def _settled_through_statements(statements_db, tenant_id: str, agency_id: str, booking_ids: list) -> dict[str, float]:
