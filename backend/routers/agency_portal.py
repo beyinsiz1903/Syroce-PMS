@@ -717,6 +717,11 @@ async def list_agency_allotments(agency_id: str, current_user: User = Depends(ge
     return {"allotments": allotments}
 
 
+SUPERADMIN_AGENCY_LOGIN_DETAIL = (
+    "Süperadmin hesabı acente portalına buradan giremez. Acente ekranını görmek için Acente Yönetimi → Erişim → Acente hesabına geç'i kullanın."
+)
+
+
 @router.post("/agency-portal/auth/login")
 async def agency_login(request: Request, data: AgencyLoginRequest):
     """Acente giris."""
@@ -813,7 +818,12 @@ async def agency_login(request: Request, data: AgencyLoginRequest):
     _login_roles = user_doc.get("roles") or []
     _login_is_sa = _login_role == "super_admin" or "super_admin" in _login_roles
     _login_is_agency = _login_role in ("agency_admin", "agency_agent") or any(r in ("agency_admin", "agency_agent") for r in _login_roles)
-    if not (_login_is_sa or _login_is_agency):
+    if _login_is_sa:
+        # A PMS superadmin password must not open an agency session here: the
+        # audited, time-limited preview (admin agency access) is the way in.
+        # Not a credential probe (password already verified): no throttle hit.
+        raise HTTPException(status_code=403, detail=SUPERADMIN_AGENCY_LOGIN_DETAIL)
+    if not _login_is_agency:
         # Role-block is an authorization decision, NOT a credential
         # probe (it reveals nothing about whether the password is
         # correct, since we only reach here after pw_ok). Therefore
@@ -841,9 +851,8 @@ async def agency_login(request: Request, data: AgencyLoginRequest):
     agency = None
     if user_doc.get("agency_id"):
         agency = await sysdb.agencies.find_one({"id": user_doc.get("agency_id")}, {"_id": 0})
-    if not _login_is_sa:
-        if not agency or agency.get("status") != "active":
-            raise HTTPException(status_code=403, detail="Acente hesabi aktif degil")
+    if not agency or agency.get("status") != "active":
+        raise HTTPException(status_code=403, detail="Acente hesabi aktif degil")
 
     token = create_token(user_doc["id"], user_doc.get("tenant_id"))
 

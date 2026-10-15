@@ -167,6 +167,10 @@ async def marketplace_extranet_login(req: MarketplaceLoginRequest, request: Requ
 
     role = getattr(user.get("role"), "value", user.get("role"))
     roles = user.get("roles") or []
+    if role == "super_admin" or "super_admin" in roles:
+        from routers.agency_portal import SUPERADMIN_AGENCY_LOGIN_DETAIL
+
+        raise HTTPException(status_code=403, detail=SUPERADMIN_AGENCY_LOGIN_DETAIL)
     if role != "marketplace_agent" and "marketplace_agent" not in roles:
         raise HTTPException(status_code=403, detail="Sadece global acente kullanıcıları girebilir")
 
