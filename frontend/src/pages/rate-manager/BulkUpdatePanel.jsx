@@ -469,6 +469,7 @@ const RoomTypeList = ({
                 }}
                 currentBaseRate={rv.rate}
                 currencySymbol={currencySymbol}
+                currency={currency}
                 channelProvider={channelProvider}
               />
             )}
@@ -506,7 +507,7 @@ const RoomTypeList = ({
   );
 };
 
-export const OccupancyPricingEditor = ({ roomType, open, onToggle, rule, onSave, currentBaseRate, currencySymbol, channelProvider }) => {
+export const OccupancyPricingEditor = ({ roomType, open, onToggle, rule, onSave, currentBaseRate, currencySymbol, currency, channelProvider }) => {
   const normalizedRule = normalizeOccupancyRule(rule);
   const initial = {
     base_occupancy: normalizedRule.base_occupancy,
@@ -588,6 +589,11 @@ export const OccupancyPricingEditor = ({ roomType, open, onToggle, rule, onSave,
           {open ? 'Kuralı kapat' : 'Kuralı düzenle'}
         </button>
       </div>
+      {rule?.currency && currency && rule.currency !== currency && rule.pricing_type === 'per_person' && ((rule.extra_adult_rate_type !== 'percentage' && Number(rule.extra_adult_rate) > 0) || (rule.child_age_bands || []).some(band => band.pricing_mode === 'fixed' && Number(band.value) > 0)) && (
+        <p className="mt-1 text-[11px] text-red-700" data-testid={`occupancy-currency-warning-${roomType.code}`}>
+          Bu kuraldaki sabit tutarlar {rule.currency} girilmiş; ekran {currency} gösteriyor. Acente satışında farklı para birimindeki sabit ek ücret uygulanmaz, oda satışa kapanır. Tutarları {currency} olarak kontrol edip kaydedin.
+        </p>
+      )}
       {open && (
         <div className="mt-3 rounded-lg border border-amber-200 bg-white p-3">
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">

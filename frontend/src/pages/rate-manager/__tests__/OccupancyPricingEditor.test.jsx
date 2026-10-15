@@ -35,3 +35,20 @@ describe('HotelRunner occupancy pricing verification', () => {
     }));
   });
 });
+
+describe('occupancy rule currency', () => {
+  const editor = (rule, currency) => render(<OccupancyPricingEditor
+    roomType={{ code: 'Standard', name: 'Standard' }} open={false} onToggle={vi.fn()} rule={rule}
+    onSave={vi.fn()} currentBaseRate={4000} currencySymbol="₺" currency={currency} channelProvider="exely"
+  />);
+
+  it('warns when fixed supplements were entered in another currency', () => {
+    editor({ pricing_type: 'per_person', base_occupancy: 2, extra_adult_rate: 20, currency: 'USD' }, 'TRY');
+    expect(screen.getByTestId('occupancy-currency-warning-Standard')).toHaveTextContent('USD girilmiş');
+  });
+
+  it('stays quiet for currency-neutral rules', () => {
+    editor({ pricing_type: 'per_person', base_occupancy: 2, extra_adult_rate_type: 'percentage', extra_adult_rate: 50, currency: 'USD' }, 'TRY');
+    expect(screen.queryByTestId('occupancy-currency-warning-Standard')).not.toBeInTheDocument();
+  });
+});
