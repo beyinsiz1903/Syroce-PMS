@@ -81,7 +81,13 @@ async def assert_credit_capacity(
         {"_id": 0, "id": 1, "currency": 1, "credit_exposure_currency": 1, "credit_exposure_amount": 1,
          "net_to_hotel": 1, "total_amount": 1, "agency_commission_amount": 1},
     ).to_list(None)
-    settled = await _settled_through_statements(statements_db, tenant_id, agency_id, [row.get("id") for row in rows])
+    settled = await _settled_through_statements(
+        statements_db, tenant_id, agency_id, [row.get("id") for row in rows] + [exclude_booking_id]
+    )
+    if exclude_booking_id:
+        # A modified booking replaces its old exposure, but what the agency
+        # already paid for it through statements still counts.
+        new_exposure = round(max(0.0, new_exposure - settled.get(exclude_booking_id, 0.0)), 2)
     debt = 0.0
     for row in rows:
         row_currency = _currency(row.get("credit_exposure_currency") or row.get("currency"))

@@ -345,3 +345,22 @@ async def test_statement_period_follows_the_current_pms_date():
     assert first == second  # identical reads give identical statements
     november = await build_statement(database, **{**kwargs, "period_start": "2026-11-01", "period_end": "2026-11-30"})
     assert [line["booking_id"] for line in november["lines"]] == ["moved-out"]
+
+
+@pytest.mark.asyncio
+async def test_modifying_a_paid_booking_keeps_its_payment(monkeypatch):
+    from core.agency_credit import assert_credit_capacity
+
+    statement = {"id": "s1", "tenant_id": "t1", "agency_id": "a1", "status": "settled", "currency": "TRY",
+                 "lines": [{"booking_id": "b1", "agency_owes_hotel": 90}], "totals": {"hotel_owes_agency": 0},
+                 "payments": [{"amount": 90, "direction": "agency_to_hotel"}]}
+    statements_db = SimpleNamespace(agency_statements=_StatementFinder(_Statements([statement])))
+    database = SimpleNamespace(bookings=_Bookings([
+        {"id": "b1", "agency_id": "a1", "status": "confirmed", "currency": "TRY", "credit_exposure_amount": 90}]))
+    contract = {"credit_limit": 100, "credit_currency": "TRY"}
+    # New net 117 replaces b1; 90 of it is already paid, so 27 is new debt.
+    await assert_credit_capacity(database, tenant_id="t1", agency_id="a1", contract=contract, booking_currency="TRY",
+                                 new_net_exposure=117, exclude_booking_id="b1", statements_db=statements_db)
+    with pytest.raises(HTTPException):
+        await assert_credit_capacity(database, tenant_id="t1", agency_id="a1", contract=contract, booking_currency="TRY",
+                                     new_net_exposure=191, exclude_booking_id="b1", statements_db=statements_db)

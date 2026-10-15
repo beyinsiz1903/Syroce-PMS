@@ -94,3 +94,18 @@ async def test_engine_never_sells_a_free_night_or_an_ambiguous_price(monkeypatch
     assert (await marketplace._marketplace_stay_price(**stay))["reason"] == "duplicate_rate_plan_night"
     _patch(monkeypatch, [row, dict(row)])  # identical copy: not ambiguous
     assert (await marketplace._marketplace_stay_price(**stay))["total_price"] == 1000
+
+
+@pytest.mark.asyncio
+async def test_a_broken_bb_row_does_not_close_a_valid_ro_product(monkeypatch):
+    async def sale_try(_tenant):
+        return "TRY"
+
+    monkeypatch.setattr(marketplace, "_sale_currency", sale_try)
+    base = {"room_type_code": "Superior", "date": "2026-11-20"}
+    _patch(monkeypatch, [{**base, "rate_plan_code": "RO", "rate": 1000},
+                         {**base, "rate_plan_code": "BB", "rate": 1200}, {**base, "rate_plan_code": "BB", "rate": 1300}])
+    stay = {"tenant_id": "t", "agency_id": "a", "room_type": "Superior", "check_in": "2026-11-20",
+            "check_out": "2026-11-21", "fallback_rate": 0}
+    assert (await marketplace._marketplace_stay_price(**stay, rate_plan_code="RO"))["total_price"] == 1000
+    assert (await marketplace._marketplace_stay_price(**stay, rate_plan_code="BB"))["reason"] == "duplicate_rate_plan_night"

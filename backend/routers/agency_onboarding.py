@@ -305,8 +305,16 @@ async def verified_offer_rate_plans(agency_id, tenant_id, room_type, check_in, c
     with tenant_context(tenant_id):
         plans = await _agency_rate_plans(tenant_id, agency_id, room_type, stay["check_in"], stay["check_out"],
                                          allow_base_rate_fallback=allow_base, contract=contract)
-        room = await db.rooms.find_one({"tenant_id": tenant_id, "room_type": room_type, **PHYSICAL_ROOM_FILTER},
-                                       {"_id": 0, "base_price": 1}) or {}
+        # Same room selection as search: active, sellable, fits 2 adults.
+        candidates = await db.rooms.find(
+            {"tenant_id": tenant_id, "room_type": room_type, **PHYSICAL_ROOM_FILTER}, {"_id": 0}
+        ).to_list(500)
+        room = next((r for r in candidates
+                     if r.get("is_active") is not False
+                     and r.get("status") not in {"maintenance", "out_of_order", "blocked"}
+                     and int(r.get("capacity") or 2) >= 2), None)
+        if room is None:
+            return []
         sellable = []
         for plan in plans:
             pricing = await _marketplace_stay_price(

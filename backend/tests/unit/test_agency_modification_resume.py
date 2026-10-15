@@ -337,3 +337,16 @@ async def test_hotel_cancellation_never_cancels_a_guest_who_checked_in_meanwhile
     assert database.bookings.rows[0]["status"] == "checked_in"
     assert database.marketplace_bookings.rows[0]["status"] == "confirmed"
     assert database.marketplace_negotiations.rows[0]["status"] == "superseded"  # closed, not stuck
+
+
+@pytest.mark.asyncio
+async def test_agency_endpoint_cannot_finish_an_agency_modification_without_the_fence(world):
+    world.marketplace_bookings.fail_updates = 1
+    with pytest.raises(RuntimeError):
+        await m.hotel_decide_marketplace_modification("p", ACCEPT, object())
+    assert world.marketplace_negotiations.rows[0]["status"] == "applying"
+    with pytest.raises(HTTPException) as exc:  # agency-side "complete" on an agency_modification
+        await m.agency_decide_negotiation("p", ACCEPT, {"agency_id": "a"})
+    assert exc.value.status_code == 404
+    assert world.marketplace_negotiations.rows[0]["status"] == "applying"
+    assert world.marketplace_bookings.rows[0]["net_to_hotel"] == 80  # untouched

@@ -907,8 +907,7 @@ async def _marketplace_stay_price(
     agency_rows = await db.agency_rate_calendar.find(
         {**query, "agency_id": agency_id}, {"_id": 0}
     ).to_list(max(len(dates) * 8 * len(room_codes), 32))
-    if _conflicting_rows(agency_rows):
-        return {"sellable": False, "nightly_rates": [], "total_price": 0.0, "reason": "duplicate_rate_plan_night"}
+    raw_agency_rows = agency_rows
     agency_rows = _prefer_pms_rows(agency_rows, room_type)
     base_rows = []
     if allow_base_rate_fallback:
@@ -931,6 +930,9 @@ async def _marketplace_stay_price(
         rate_plan_code = next(iter(plans), "BASE")
     if plans and rate_plan_code not in plans or not plans and rate_plan_code != "BASE":
         return {"sellable": False, "nightly_rates": [], "total_price": 0.0, "reason": "unknown_rate_plan"}
+    # Ambiguity is judged per product: a broken BB row must not close RO.
+    if _conflicting_rows([row for row in raw_agency_rows if str(row.get("rate_plan_code") or "LEGACY") == rate_plan_code]):
+        return {"sellable": False, "nightly_rates": [], "total_price": 0.0, "reason": "duplicate_rate_plan_night"}
     agency_rows = [row for row in agency_rows if str(row.get("rate_plan_code") or "LEGACY") == rate_plan_code]
     base_rows = [row for row in base_rows if str(row.get("rate_plan_code") or "LEGACY") == rate_plan_code]
     agency_by_date = {row.get("date"): row for row in agency_rows}
@@ -3420,7 +3422,11 @@ async def agency_decide_negotiation(
 ):
     sysdb = get_system_db()
     proposal = await sysdb.marketplace_negotiations.find_one(
-        {"id": proposal_id, "agency_id": agency["agency_id"], "status": {"$in": ["awaiting_agency", "applying"]}}, {"_id": 0}
+        # Only hotel-initiated cancellations are the agency's to decide or
+        # finish; agency-initiated proposals are finished by the hotel under
+        # the sales fence.
+        {"id": proposal_id, "agency_id": agency["agency_id"], "type": "hotel_cancellation",
+         "status": {"$in": ["awaiting_agency", "applying"]}}, {"_id": 0}
     )
     if not proposal:
         raise HTTPException(404, "Yanıt bekleyen teklif bulunamadı")

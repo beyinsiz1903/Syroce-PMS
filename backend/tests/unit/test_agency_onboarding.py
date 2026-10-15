@@ -386,7 +386,9 @@ async def test_readiness_counts_an_approved_net_contract_without_calendar(monkey
 
     net = {'status': 'approved', 'contract_type': 'net_rate', 'commission_pct': 0,
            'season_rates': [{'room_type_id': 'Superior', 'season_start': '2026-11-01', 'season_end': '2026-11-30', 'price': 700}]}
-    monkeypatch.setattr(marketplace_b2b, 'db', _pricing_db([]))
+    database = _pricing_db([])
+    database.rooms = Collection([{'tenant_id': 't', 'room_type': 'Superior', 'base_price': 0, 'capacity': 2}])
+    monkeypatch.setattr(marketplace_b2b, 'db', database)
     monkeypatch.setattr(marketplace_b2b, '_get_listing_or_404', AsyncMock(return_value={}))
     monkeypatch.setattr(agency_contracts, 'has_active_contract', AsyncMock(return_value=net))
     priced = await marketplace_b2b._marketplace_stay_price(tenant_id='t', agency_id='a', room_type='Superior',
@@ -394,3 +396,21 @@ async def test_readiness_counts_an_approved_net_contract_without_calendar(monkey
     assert priced['sellable'] and priced['total_price'] == 1400
     assert await onboarding.verified_offer_rate_plans('a', 't', 'Superior', date(2026, 11, 20), date(2026, 11, 22)) == ['NET']
     assert onboarding.offer_source('NET') == 'Sözleşmeli NET sezon fiyatı'
+
+
+@pytest.mark.asyncio
+async def test_readiness_prices_with_a_sellable_room_like_search(monkeypatch):
+    from routers import agency_contracts, marketplace_b2b
+
+    database = _pricing_db([])
+    database.rooms = Collection([
+        {'tenant_id': 't', 'room_type': 'standard', 'base_price': 0, 'is_active': False, 'capacity': 2},
+        {'tenant_id': 't', 'room_type': 'standard', 'base_price': 0, 'status': 'out_of_order', 'capacity': 2},
+        {'tenant_id': 't', 'room_type': 'standard', 'base_price': 1000, 'capacity': 2},
+    ])
+    monkeypatch.setattr(marketplace_b2b, 'db', database)
+    monkeypatch.setattr(marketplace_b2b, '_get_listing_or_404', AsyncMock(return_value={}))
+    monkeypatch.setattr(agency_contracts, 'has_active_contract',
+                        AsyncMock(return_value={'status': 'approved', 'commission_pct': 10, 'allow_base_rate_fallback': True}))
+    ci = datetime.now(UTC).date() + timedelta(days=1)
+    assert await onboarding.verified_offer_rate_plans('a', 't', 'standard', ci, ci + timedelta(days=1)) == ['BASE']
