@@ -160,6 +160,8 @@ const AgencyPortalDashboard = () => {
   const [selectedHotelIds, setSelectedHotelIds] = useState([]);
   const [proposing, setProposing] = useState(false);
   const [contractsLoading, setContractsLoading] = useState(false);
+  const [withdrawingId, setWithdrawingId] = useState(null);
+  const [withdrawBusy, setWithdrawBusy] = useState(false);
   const [contractForm, setContractForm] = useState({ tenant_id: '', commission_pct: '', valid_from: toDateInput(new Date()), valid_to: `${new Date().getFullYear() + 1}-12-31`, payment_terms: 'on_arrival', currency: 'TRY', allow_base_rate_fallback: false });
 
   // Login handler
@@ -601,6 +603,18 @@ const AgencyPortalDashboard = () => {
       setContractForm(current => ({ ...current, commission_pct: current.commission_pct || String(Math.round(Number(agencyInfo?.default_commission_pct ?? 12)) || 12) }));
     } catch (err) { toast.error(err.response?.data?.detail || 'Sözleşmeler yüklenemedi.'); }
     finally { setContractsLoading(false); }
+  };
+  // A pending proposal (e.g. sent to the wrong hotel) can be withdrawn
+  // before the hotel decides; it then never becomes a contract.
+  const withdrawContract = async contract => {
+    setWithdrawBusy(true);
+    try {
+      await agencyApi.delete(`/marketplace/v1/contracts/${contract.id}`);
+      toast.success(`${contract.contract_code} teklifi geri çekildi.`);
+      setWithdrawingId(null);
+      await loadContracts();
+    } catch (err) { toast.error(err.response?.data?.detail || 'Teklif geri çekilemedi.'); }
+    finally { setWithdrawBusy(false); }
   };
   const proposeContract = async event => {
     event.preventDefault();
@@ -1058,7 +1072,9 @@ const AgencyPortalDashboard = () => {
                 })}
               </CardContent>
             </Card>
-            {contractsLoading ? <Card><CardContent className="py-10 text-center"><Loader2 className="mx-auto animate-spin" /></CardContent></Card> : contracts.map(contract => <Card key={contract.id}><CardContent className="flex flex-wrap items-center justify-between gap-3 py-4"><div><div className="font-semibold">{contract.hotel_name}</div><div className="text-xs text-slate-500">{contract.contract_code} · {formatDate(contract.valid_from)} – {formatDate(contract.valid_to)} · {PAYMENT_TERMS_LABELS[contract.payment_terms] || contract.payment_terms}</div></div><div className="text-right"><Badge className={contract.status === 'approved' ? 'bg-emerald-600' : contract.status === 'pending' ? 'bg-amber-500' : 'bg-slate-500'}>{contract.status === 'approved' ? 'Onaylandı' : contract.status === 'pending' ? 'Otel onayı bekleniyor' : (CONTRACT_STATUS_LABELS[contract.status] || contract.status)}</Badge><div className="mt-1 text-sm font-semibold">%{Math.round(Number(contract.commission_pct))} komisyon</div></div></CardContent></Card>)}
+            {contractsLoading ? <Card><CardContent className="py-10 text-center"><Loader2 className="mx-auto animate-spin" /></CardContent></Card> : contracts.map(contract => <Card key={contract.id}><CardContent className="flex flex-wrap items-center justify-between gap-3 py-4"><div><div className="font-semibold">{contract.hotel_name}</div><div className="text-xs text-slate-500">{contract.contract_code} · {formatDate(contract.valid_from)} – {formatDate(contract.valid_to)} · {PAYMENT_TERMS_LABELS[contract.payment_terms] || contract.payment_terms}</div></div><div className="text-right"><Badge className={contract.status === 'approved' ? 'bg-emerald-600' : contract.status === 'pending' ? 'bg-amber-500' : 'bg-slate-500'}>{contract.status === 'approved' ? 'Onaylandı' : contract.status === 'pending' ? 'Otel onayı bekleniyor' : (CONTRACT_STATUS_LABELS[contract.status] || contract.status)}</Badge><div className="mt-1 text-sm font-semibold">%{Math.round(Number(contract.commission_pct))} komisyon</div>{contract.status === 'pending' && (withdrawingId === contract.id
+              ? <div className="mt-2 flex justify-end gap-2"><Button size="sm" variant="outline" disabled={withdrawBusy} onClick={() => setWithdrawingId(null)}>Vazgeç</Button><Button size="sm" variant="destructive" disabled={withdrawBusy} onClick={() => withdrawContract(contract)} data-testid={`confirm-withdraw-${contract.id}`}>Evet, geri çek</Button></div>
+              : <Button size="sm" variant="outline" className="mt-2" onClick={() => setWithdrawingId(contract.id)} data-testid={`withdraw-${contract.id}`}>Teklifi geri çek</Button>)}</div></CardContent></Card>)}
           </TabsContent>}
 
           {/* Content Tab */}
