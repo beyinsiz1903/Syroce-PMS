@@ -14,3 +14,15 @@ describe('agency session expiry', () => {
     expect(endsCurrentSession(error('new'), null)).toBe(false);
   });
 });
+
+describe('identity load failures', () => {
+  it('never signs out a newer session because of an older request', async () => {
+    const { profileFailureAction } = await import('@/pages/AgencyPortalDashboard');
+    const unauthorized = { response: { status: 401 } };
+    expect(profileFailureAction(unauthorized, 'old', 'new')).toBe('ignore');
+    expect(profileFailureAction(unauthorized, 'old', null)).toBe('ignore');
+    expect(profileFailureAction(unauthorized, 'new', 'new')).toBe('logout');
+    expect(profileFailureAction({ response: { status: 403 } }, 'new', 'new')).toBe('logout');
+    expect(profileFailureAction({ response: { status: 500 } }, 'new', 'new')).toBe('error');
+  });
+});

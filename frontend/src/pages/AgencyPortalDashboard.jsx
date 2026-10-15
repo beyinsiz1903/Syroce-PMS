@@ -37,6 +37,12 @@ export const endsCurrentSession = (error, currentToken) => {
   return error?.response?.status === 401 && Boolean(currentToken)
     && sentWith === `Bearer ${currentToken}` && !url.includes('/auth/login');
 };
+// What the portal does with a failed identity load. A response that belongs
+// to an older session (the user signed out and in meanwhile) is ignored.
+export const profileFailureAction = (error, requestToken, currentToken) => {
+  if (!requestToken || requestToken !== currentToken) return 'ignore';
+  return [401, 403].includes(error?.response?.status) ? 'logout' : 'error';
+};
 agencyApi.interceptors.response.use(undefined, error => {
   if (endsCurrentSession(error, localStorage.getItem('agency_token'))) {
     window.dispatchEvent(new CustomEvent('agency-session-expired'));
@@ -258,11 +264,15 @@ const AgencyPortalDashboard = () => {
 
   // Load profile on mount if token exists
   useEffect(() => {
-    if (!token) return;
+    if (!token) return undefined;
+    let active = true;
+    const requestToken = token;
+    const current = () => active && localStorage.getItem('agency_token') === requestToken;
     const loadProfile = async () => {
       try {
         if (portalMode === 'marketplace') {
           const { data } = await agencyApi.get('/marketplace/v1/extranet/profile');
+          if (!current()) return;  // answer of an older session
           const availableHotels = data.hotels || [];
           setAgencyUser(data.user || null);
           // Discovery starts from the whole contracted portfolio. A hotel is
@@ -278,19 +288,22 @@ const AgencyPortalDashboard = () => {
           setHotelInfo(selected ? { name: selected.name, currency: selected.currency || 'TRY', ...selected } : null);
         } else {
           const { data } = await agencyApi.get('/agency-portal/profile');
+          if (!current()) return;
           setAgencyUser(data.user || null);
           setAgencyInfo(data.agency);
           setHotelInfo(data.hotel || null);
         }
         setProfileError('');
       } catch (err) {
-        if (err.response?.status === 401 || err.response?.status === 403) handleLogout();
-        else setProfileError('Acente hesabı doğrulanamadı. Bağlantınızı kontrol edip tekrar deneyin.');
+        const action = profileFailureAction(err, requestToken, active ? localStorage.getItem('agency_token') : null);
+        if (action === 'logout') handleLogout();
+        else if (action === 'error') setProfileError('Acente hesabı doğrulanamadı. Bağlantınızı kontrol edip tekrar deneyin.');
       } finally {
-        setProfileLoading(false);
+        if (current()) setProfileLoading(false);
       }
     };
     loadProfile();
+    return () => { active = false; };
   }, [token, profileRevision, portalMode]);
 
   const loadNotices = async () => {
