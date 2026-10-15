@@ -204,6 +204,15 @@ class _Bookings:
         return next((dict(r) for r in self.rows if r.get("id") == query.get("id")), None)
 
 
+class _Payments:
+    def __init__(self, rows=None):
+        self.rows = rows or []
+
+    def find(self, query, *_a, **_k):
+        ids = set(query["booking_id"]["$in"])
+        return SimpleNamespace(to_list=AsyncMock(return_value=[dict(r) for r in self.rows if r.get("booking_id") in ids]))
+
+
 class _StatementFinder:
     def __init__(self, store):
         self.store = store
@@ -226,7 +235,7 @@ def _credit_world(monkeypatch):
         {"id": "b1", "agency_id": "a1", "status": "checked_out", "currency": "TRY", "credit_exposure_amount": 60},
         {"id": "b2", "agency_id": "a1", "status": "checked_out", "currency": "TRY", "credit_exposure_amount": 30},
     ])
-    return store, SimpleNamespace(bookings=bookings), SimpleNamespace(agency_statements=_StatementFinder(store))
+    return store, SimpleNamespace(bookings=bookings, payments=_Payments()), SimpleNamespace(agency_statements=_StatementFinder(store))
 
 
 async def _can_sell(database, statements_db, amount):
@@ -361,7 +370,7 @@ async def test_modifying_a_paid_booking_keeps_its_payment(monkeypatch):
                  "payments": [{"amount": 90, "direction": "agency_to_hotel"}]}
     statements_db = SimpleNamespace(agency_statements=_StatementFinder(_Statements([statement])))
     database = SimpleNamespace(bookings=_Bookings([
-        {"id": "b1", "agency_id": "a1", "status": "confirmed", "currency": "TRY", "credit_exposure_amount": 90}]))
+        {"id": "b1", "agency_id": "a1", "status": "confirmed", "currency": "TRY", "credit_exposure_amount": 90}]), payments=_Payments())
     contract = {"credit_limit": 100, "credit_currency": "TRY"}
     # New net 117 replaces b1; 90 of it is already paid, so 27 is new debt.
     await assert_credit_capacity(database, tenant_id="t1", agency_id="a1", contract=contract, booking_currency="TRY",
@@ -372,12 +381,13 @@ async def test_modifying_a_paid_booking_keeps_its_payment(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_pms_collection_frees_credit_without_double_counting(monkeypatch):
+async def test_only_money_received_in_the_pms_frees_credit(monkeypatch):
     from core.agency_credit import assert_credit_capacity
 
     statements_db = SimpleNamespace(agency_statements=_StatementFinder(_Statements([])))
     booking = {"id": "b1", "agency_id": "a1", "status": "confirmed", "currency": "TRY", "credit_exposure_amount": 6800}
-    database = SimpleNamespace(bookings=_Bookings([booking]))
+    payments = _Payments()
+    database = SimpleNamespace(bookings=_Bookings([booking]), payments=payments)
     contract = {"credit_limit": 10000, "credit_currency": "TRY"}
 
     async def can_sell(amount, **kw):
@@ -389,9 +399,25 @@ async def test_pms_collection_frees_credit_without_double_counting(monkeypatch):
             return False
 
     assert not await can_sell(6800)  # 6800 open + 6800 > 10000
-    booking["paid_amount"] = 8000  # guest paid the gross at the hotel (on-arrival terms)
+    # Moving the balance to the city ledger collects nothing: still blocked.
+    payments.rows.append({"booking_id": "b1", "amount": 8000, "method": "city_ledger", "payment_type": "city_ledger_transfer"})
+    assert not await can_sell(6800)
+    # A voided cash payment does not count either.
+    payments.rows.append({"booking_id": "b1", "amount": 8000, "method": "cash", "payment_type": "final", "voided": True})
+    assert not await can_sell(6800)
+    # Real collection (guest paid at the hotel) frees it ...
+    payments.rows.append({"booking_id": "b1", "amount": 8000, "method": "cash", "payment_type": "final"})
     assert await can_sell(6800)
-    booking["paid_amount"] = 3000  # partial collection
-    assert await can_sell(6200) and not await can_sell(6201)
-    # A modification keeps what was already collected on the booking itself.
-    assert await can_sell(10000 + 3000, exclude_booking_id="b1") and not await can_sell(13001, exclude_booking_id="b1")
+    # ... and a refund takes it back (stored negative or positive).
+    payments.rows.append({"booking_id": "b1", "amount": -5000, "method": "cash", "payment_type": "refund", "status": "refunded"})
+    assert await can_sell(6200) and not await can_sell(6201)  # 3000 collected
+    # A modification keeps what was collected on the booking itself.
+    assert await can_sell(13000, exclude_booking_id="b1") and not await can_sell(13001, exclude_booking_id="b1")
+
+
+def test_collected_amount_rules():
+    from core.agency_credit import collected_amount
+
+    assert collected_amount([{"amount": 100}, {"amount": 50, "payment_type": "refund"}]) == 50
+    assert collected_amount([{"amount": 100, "method": "city_ledger"}, {"amount": 20, "voided": True}]) == 0
+    assert collected_amount([{"amount": 10}, {"amount": -40, "payment_type": "refund"}]) == 0
