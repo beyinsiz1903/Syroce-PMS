@@ -109,3 +109,21 @@ async def test_a_broken_bb_row_does_not_close_a_valid_ro_product(monkeypatch):
             "check_out": "2026-11-21", "fallback_rate": 0}
     assert (await marketplace._marketplace_stay_price(**stay, rate_plan_code="RO"))["total_price"] == 1000
     assert (await marketplace._marketplace_stay_price(**stay, rate_plan_code="BB"))["reason"] == "duplicate_rate_plan_night"
+
+
+@pytest.mark.asyncio
+async def test_ignored_channel_alias_rows_never_close_the_pms_price(monkeypatch):
+    async def sale_try(_tenant):
+        return "TRY"
+
+    monkeypatch.setattr(marketplace, "_sale_currency", sale_try)
+    night = {"date": "2026-11-20", "rate_plan_code": "RO"}
+    stay = {"tenant_id": "t", "agency_id": "a", "room_type": "Superior", "check_in": "2026-11-20",
+            "check_out": "2026-11-21", "fallback_rate": 0, "rate_plan_code": "RO"}
+    pms = {**night, "room_type_code": "Superior", "rate": 1000}
+    aliases = [{**night, "room_type_code": "5001575", "rate": 1200}, {**night, "room_type_code": "5001575", "rate": 1300}]
+
+    _patch(monkeypatch, [pms, *aliases])  # PMS row wins; aliases are unused
+    assert (await marketplace._marketplace_stay_price(**stay))["total_price"] == 1000
+    _patch(monkeypatch, aliases)  # no PMS row: the disagreeing aliases are what would be sold
+    assert (await marketplace._marketplace_stay_price(**stay))["reason"] == "duplicate_rate_plan_night"

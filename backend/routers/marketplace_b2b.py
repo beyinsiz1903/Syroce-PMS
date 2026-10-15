@@ -838,13 +838,22 @@ _COMMERCIAL_FIELDS = ("rate", "availability", "stop_sell", "min_stay", "max_stay
                       "cta", "ctd", "currency", "meal_plan", "cancellation_policy")
 
 
-def _conflicting_rows(rows: list[dict]) -> bool:
-    """Two rows for the same night, plan *and* room code that disagree on a
-    commercial term: the sellable price is ambiguous. (A PMS-name row and a
-    channel-code alias are not a conflict; identical copies are harmless.)"""
+def _conflicting_rows(rows: list[dict], room_type: str) -> bool:
+    """Rows that would actually be used for one night and plan disagree on a
+    commercial term: the sellable price is ambiguous.
+
+    Like ``_prefer_pms_rows``, a night with a row under the PMS room type uses
+    only those rows, so disagreeing channel-code aliases it ignores cannot
+    close the sale. Identical copies are harmless.
+    """
+    pms_nights = {(row.get("date"), str(row.get("rate_plan_code") or "LEGACY"))
+                  for row in rows if row.get("room_type_code") == room_type}
     seen: dict[tuple, tuple] = {}
     for row in rows:
-        key = (row.get("date"), str(row.get("rate_plan_code") or "LEGACY"), row.get("room_type_code"))
+        night = (row.get("date"), str(row.get("rate_plan_code") or "LEGACY"))
+        if night in pms_nights and row.get("room_type_code") != room_type:
+            continue  # unused alias
+        key = night
         terms = tuple(json.dumps(row.get(field), sort_keys=True) for field in _COMMERCIAL_FIELDS)
         if key in seen and seen[key] != terms:
             return True
@@ -931,7 +940,7 @@ async def _marketplace_stay_price(
     if plans and rate_plan_code not in plans or not plans and rate_plan_code != "BASE":
         return {"sellable": False, "nightly_rates": [], "total_price": 0.0, "reason": "unknown_rate_plan"}
     # Ambiguity is judged per product: a broken BB row must not close RO.
-    if _conflicting_rows([row for row in raw_agency_rows if str(row.get("rate_plan_code") or "LEGACY") == rate_plan_code]):
+    if _conflicting_rows([row for row in raw_agency_rows if str(row.get("rate_plan_code") or "LEGACY") == rate_plan_code], room_type):
         return {"sellable": False, "nightly_rates": [], "total_price": 0.0, "reason": "duplicate_rate_plan_night"}
     agency_rows = [row for row in agency_rows if str(row.get("rate_plan_code") or "LEGACY") == rate_plan_code]
     base_rows = [row for row in base_rows if str(row.get("rate_plan_code") or "LEGACY") == rate_plan_code]
