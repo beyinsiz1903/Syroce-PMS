@@ -95,3 +95,17 @@ async def test_empty_preview_reports_last_published_agency(monkeypatch):
     result = await content.distribute_preview('', SimpleNamespace(tenant_id='t', role='admin', roles=[]))
     assert result == {'to_add': 0, 'to_remove': 1, 'currently_published': 1, 'selected': 0}
     assert queries == [{'tenant_id': 't', 'published_content': True}]
+
+
+@pytest.mark.asyncio
+async def test_unsaved_country_default_is_not_reported_missing(monkeypatch):
+    saved = {**complete(), 'country': None}
+    tenant = SimpleNamespace(hotel_content=SimpleNamespace(find_one=AsyncMock(return_value=saved)),
+        tenants=SimpleNamespace(find_one=AsyncMock(return_value={'property_name': 'Hotel'})),
+        agencies=SimpleNamespace(count_documents=AsyncMock(return_value=0)))
+    monkeypatch.setattr(content, 'db', tenant)
+    monkeypatch.setattr(content, 'get_system_db', lambda: SimpleNamespace(
+        marketplace_listings=SimpleNamespace(find_one=AsyncMock(return_value={}))))
+    monkeypatch.setattr(agency_contracts, 'list_active_agencies_for_tenant', AsyncMock(return_value=[]))
+    result = await content.get_content_readiness(SimpleNamespace(tenant_id='t', role='admin', roles=[]))
+    assert 'Ülke kodu eksik.' not in result['warnings']  # form, directory and save all use TR
