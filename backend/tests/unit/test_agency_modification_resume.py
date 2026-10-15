@@ -165,3 +165,125 @@ async def test_finish_compares_every_recorded_field_not_only_dates(world):
     proposal = await world.marketplace_negotiations.find_one({"id": "p"})
     await m._finish_marketplace_proposal(world, "t", proposal, ACCEPT)
     assert (world.bookings.rows[0]["rate_plan_code"], world.bookings.rows[0]["net_to_hotel"]) == ("BB", 117)
+
+
+@pytest.mark.asyncio
+async def test_resume_cannot_take_over_while_the_first_writer_is_still_running(world):
+    import asyncio
+
+    from core.agency_sales_guard import agency_sale_guard
+
+    gate, entered = asyncio.Event(), asyncio.Event()
+    real_update = world.marketplace_bookings.update_one
+
+    async def slow_ledger(query, update, **kw):
+        entered.set()
+        await gate.wait()  # first writer paused mid-write
+        return await real_update(query, update, **kw)
+
+    world.marketplace_bookings.update_one = slow_ledger
+    first = asyncio.create_task(m.hotel_decide_marketplace_modification("p", ACCEPT, object()))
+    try:
+        await asyncio.wait_for(entered.wait(), 5)
+        assert world.marketplace_negotiations.rows[0]["status"] == "applying"
+
+        with pytest.raises(HTTPException) as busy:  # "Uygulamayı tamamla" while the first is alive
+            # A wrongly granted takeover would block on the same paused write.
+            await asyncio.wait_for(m.hotel_decide_marketplace_modification("p", ACCEPT, object()), 2)
+        assert busy.value.status_code == 409
+        with pytest.raises(HTTPException):  # and no other sale can slip in
+            async with agency_sale_guard(world, "t", "a", operation="reservation", reference_id="other"):
+                pass
+        assert world.agency_sale_mutexes.rows[0]["recovery_state"] == "active"
+    finally:
+        gate.set()
+    assert (await asyncio.wait_for(first, 5))["status"] == "accepted"
+    assert world.agency_sale_mutexes.rows == []
+
+
+@pytest.mark.asyncio
+async def test_only_one_resumer_wins_a_retained_fence(world):
+    world.marketplace_bookings.fail_updates = 1
+    with pytest.raises(RuntimeError):
+        await m.hotel_decide_marketplace_modification("p", ACCEPT, object())
+    fence = world.agency_sale_mutexes.rows[0]
+    assert fence["recovery_state"] == "retained"
+
+    from core.agency_sales_guard import agency_sale_guard
+
+    async with agency_sale_guard(world, "t", "a", operation="marketplace_modification", reference_id="p", resume=True):
+        assert world.agency_sale_mutexes.rows[0]["recovery_state"] == "active"
+        with pytest.raises(HTTPException):  # a second resumer loses the compare-and-set
+            async with agency_sale_guard(world, "t", "a", operation="marketplace_modification", reference_id="p", resume=True):
+                pass
+
+
+def _crashed(world):
+    """Writer killed mid-acceptance: changes recorded, fence left 'active'."""
+    recorded = {"check_in": "2027-01-01T14:00:00", "check_out": "2027-01-02T11:00:00", "room_id": "r", "total_amount": 130,
+                "rate_plan_code": "BB", "commission_pct": 10, "net_to_hotel": 117, "credit_exposure_amount": 117,
+                "room_type": "standard", "credit_exposure_currency": "TRY", "nightly_rates": [], "meal_plan": "BB",
+                "cancellation_policy": {}, "updated_at": "now"}
+    world.marketplace_negotiations.rows[0].update(status="applying", pending_changes=recorded)
+    import hashlib
+    import json
+
+    key = hashlib.sha256(json.dumps(["t", "a"]).encode()).hexdigest()
+    world.agency_sale_mutexes.rows.append({"_id": key, "owner": "dead-writer-1", "tenant_id": "t", "agency_id": "a",
+                                           "operation": "marketplace_modification", "reference_id": "p",
+                                           "idempotency_key": None, "recovery_state": "active"})
+    world.agency_sales_lock_recoveries = _Store()
+    world.idempotency_keys = _Store()
+    return key
+
+
+@pytest.mark.asyncio
+async def test_operator_releases_a_crashed_writers_fence_for_resume(world, monkeypatch):
+    key = _crashed(world)
+    audit = AsyncMock()
+    monkeypatch.setattr(m, "_record_marketplace_audit", audit)
+
+    with pytest.raises(HTTPException) as busy:  # hotel "complete": fence not retained
+        await m.hotel_decide_marketplace_modification("p", ACCEPT, object())
+    assert busy.value.status_code == 409
+    reconcile = m.AgencySalesLockReconcile(owner="dead-writer-1", resolution="booking_committed",
+                                           reason="Süreç çöktü, inceleme yapıldı", writer_stopped_confirmed=True)
+    with pytest.raises(HTTPException) as refused:  # plain release: change not verified
+        await m.admin_reconcile_agency_sales_lock(key, reconcile, True)
+    assert refused.value.status_code == 409
+
+    listed = await m._sales_lock_evidence(world, world.agency_sale_mutexes.rows[0])
+    assert listed["resumable"] is True and "pending_changes" not in listed["proposal"]
+
+    resume = m.AgencySalesLockResume(owner="dead-writer-1", reason="Süreç çöktü, inceleme yapıldı")
+    with pytest.raises(HTTPException) as unconfirmed:
+        await m.admin_release_sales_lock_for_resume(key, resume, True)
+    assert unconfirmed.value.status_code == 422
+    resume.writer_stopped_confirmed = True
+    with pytest.raises(HTTPException):  # wrong owner: never touch another holder's fence
+        await m.admin_release_sales_lock_for_resume(key, m.AgencySalesLockResume(
+            owner="someone-else", reason="Süreç çöktü, inceleme yapıldı", writer_stopped_confirmed=True), True)
+
+    released = await m.admin_release_sales_lock_for_resume(key, resume, True)
+    assert released["proposal_id"] == "p"
+    assert world.agency_sale_mutexes.rows[0]["recovery_state"] == "retained"  # kept, not deleted
+    assert world.agency_sales_lock_recoveries.rows[0]["resolution"] == "released_for_resume"
+    assert audit.await_args.kwargs["action"] == "agency_sales_lock_released_for_resume"
+    assert (await m.admin_release_sales_lock_for_resume(key, resume, True))["idempotent_replay"] is True
+
+    result = await m.hotel_decide_marketplace_modification("p", ACCEPT, object())  # "Uygulamayı tamamla"
+    assert result["status"] == "accepted"
+    assert (world.bookings.rows[0]["net_to_hotel"], world.marketplace_bookings.rows[0]["net_to_hotel"]) == (117, 117)
+    assert world.agency_sale_mutexes.rows == []
+
+
+@pytest.mark.asyncio
+async def test_release_for_resume_refuses_other_operations(world, monkeypatch):
+    key = _crashed(world)
+    world.agency_sale_mutexes.rows[0]["operation"] = "reservation"
+    monkeypatch.setattr(m, "_record_marketplace_audit", AsyncMock())
+    with pytest.raises(HTTPException) as exc:
+        await m.admin_release_sales_lock_for_resume(key, m.AgencySalesLockResume(
+            owner="dead-writer-1", reason="Süreç çöktü, inceleme yapıldı", writer_stopped_confirmed=True), True)
+    assert exc.value.status_code == 409
+    assert world.agency_sale_mutexes.rows[0]["recovery_state"] == "active"

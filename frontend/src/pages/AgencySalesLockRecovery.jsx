@@ -32,6 +32,22 @@ export default function AgencySalesLockRecovery() {
     } catch (err) { setError(err.response?.data?.detail || 'Kilit uzlaştırılamadı.'); setBusy(false); }
   };
 
+  // Crashed modification: keep the fence, hand it to the same proposal's resume.
+  const releaseForResume = async item => {
+    const note = (reason[item.lock_id] || '').trim();
+    if (!confirmed[item.lock_id] || note.length < 10) {
+      setError('Yazıcının durduğunu onaylayın ve en az 10 karakterlik gerekçe girin.');
+      return;
+    }
+    setBusy(true); setError('');
+    try {
+      await axios.post(`/marketplace/v1/admin/sales-locks/${encodeURIComponent(item.lock_id)}/release-for-resume`, {
+        owner: item.owner, reason: note, writer_stopped_confirmed: true,
+      });
+      await load();
+    } catch (err) { setError(err.response?.data?.detail || 'Kilit devam için açılamadı.'); setBusy(false); }
+  };
+
   return <main className="p-6 space-y-4 max-w-7xl mx-auto">
     <Link to="/admin/agencies">Acente yönetimine dön</Link>
     <h1 className="text-2xl font-semibold">Takılı Acente Satış İşlemleri</h1>
@@ -48,8 +64,12 @@ export default function AgencySalesLockRecovery() {
         <td className="p-2">{item.idempotency?.status || 'Yok'}</td>
         <td className="p-2 min-w-[290px]"><textarea className="w-full border rounded p-1" rows="2" placeholder="Uzlaştırma gerekçesi" value={reason[item.lock_id] || ''} onChange={e => setReason({ ...reason, [item.lock_id]: e.target.value })} />
           <label className="block text-xs mt-1"><input type="checkbox" checked={!!confirmed[item.lock_id]} onChange={e => setConfirmed({ ...confirmed, [item.lock_id]: e.target.checked })} /> Özgün yazıcının durduğunu doğruladım.</label>
-          <button disabled={busy || item.idempotency?.status === 'processing' || (item.operation === 'marketplace_modification' && !item.modification_verified)} onClick={() => reconcile(item, item.booking ? 'booking_committed' : 'no_booking_committed')}>{item.receipt_only ? 'Denetim kaydını tamamla' : 'Kanıtla ve kilidi kaldır'}</button></td>
-        <td className="p-2">{item.receipt_only ? 'Kilit kalktı; denetim kaydı tamamlanacak.' : item.operation === 'marketplace_modification' && !item.modification_verified ? 'Değişiklik kanıtı eksik. PMS, marketplace ve teklif uzlaştırılmadan kilit açılamaz.' : ''}</td>
+          <button disabled={busy || item.idempotency?.status === 'processing' || (item.operation === 'marketplace_modification' && !item.modification_verified)} onClick={() => reconcile(item, item.booking ? 'booking_committed' : 'no_booking_committed')}>{item.receipt_only ? 'Denetim kaydını tamamla' : 'Kanıtla ve kilidi kaldır'}</button>
+          {item.resumable && <button className="block mt-1" disabled={busy} onClick={() => releaseForResume(item)}>Devam için serbest bırak</button>}</td>
+        <td className="p-2">{item.receipt_only ? 'Kilit kalktı; denetim kaydı tamamlanacak.'
+          : item.recovery_state === 'retained' ? 'Devam için açık: otel, Acente Talepleri ekranında "Uygulamayı tamamla" ile kaydedilen değişikliği bitirir.'
+          : item.resumable ? 'Onay yarıda kaldı (süreç durmuş olabilir). Yazıcının durduğunu doğrulayıp "Devam için serbest bırak" deyin; kilit silinmez, yalnız bu teklifin tamamlanmasına açılır.'
+          : item.operation === 'marketplace_modification' && !item.modification_verified ? 'Değişiklik kanıtı eksik. PMS, marketplace ve teklif uzlaştırılmadan kilit açılamaz.' : ''}</td>
       </tr>)}</tbody>
     </table></div>
   </main>;
