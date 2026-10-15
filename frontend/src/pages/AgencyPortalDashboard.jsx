@@ -840,33 +840,22 @@ const AgencyPortalDashboard = () => {
           <TabsContent value="search" className="mt-4 space-y-4">
             <Card className="border-slate-200 shadow-sm">
               <CardContent className="p-4 sm:p-5">
-                {portalMode === 'marketplace' && <div className="mb-5 space-y-4 rounded-xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-white p-4 sm:p-5">
-                  <div>
-                    <div className="font-semibold text-slate-900">Size uygun tesisleri bulun</div>
-                    <p className="text-xs leading-5 text-emerald-800 flex items-start gap-1.5 mt-1"><ShieldCheck size={14} className="mt-0.5 shrink-0" />Arama sonuçlarında yalnızca sözleşmesi aktif ve seçtiğiniz tarihlerde satışa açık tesisler gösterilir.</p>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <div><Label className="text-xs font-medium text-slate-600">Tesis veya bölge</Label><Input value={searchForm.q} onChange={e => setSearchForm(p => ({ ...p, q: e.target.value }))} placeholder="Tesis adı, bölge veya özellik" className="mt-1 bg-white" /></div>
-                    <div><Label className="text-xs font-medium text-slate-600">Şehir</Label><Input value={searchForm.city} onChange={e => setSearchForm(p => ({ ...p, city: e.target.value }))} placeholder="Tüm şehirlerde ara" className="mt-1 bg-white" /></div>
-                  </div>
-                  <button type="button" onClick={() => setShowAdvancedFilters(value => !value)} className="flex w-full items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-700 hover:border-emerald-300" aria-expanded={showAdvancedFilters}>
-                    <span className="flex items-center gap-2"><SlidersHorizontal size={15} />İsteğe bağlı filtreler</span><span className="flex items-center gap-2 text-xs font-normal text-slate-500">{searchForm.amenities.length + searchForm.meal_plans.length + (searchForm.min_star_rating ? 1 : 0) + (searchForm.max_price ? 1 : 0) + (selectedTenantId ? 1 : 0) > 0 ? `${searchForm.amenities.length + searchForm.meal_plans.length + (searchForm.min_star_rating ? 1 : 0) + (searchForm.max_price ? 1 : 0) + (selectedTenantId ? 1 : 0)} seçili` : 'Filtre yok'}<ChevronDown size={15} className={`transition-transform ${showAdvancedFilters ? 'rotate-180' : ''}`} /></span>
-                  </button>
-                  {showAdvancedFilters && <div className="space-y-4 rounded-lg border border-slate-200 bg-white p-4">
-                    <div><Label className="text-xs">Belirli tesis</Label><select value={selectedTenantId} onChange={e => { setSelectedTenantId(e.target.value); setAvailability(null); }} className="mt-1 flex h-10 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"><option value="">Tüm sözleşmeli tesisler</option>{hotels.map(hotel => <option key={hotel.tenant_id} value={hotel.tenant_id}>{hotel.name}{hotel.city ? ` · ${hotel.city}` : ''}</option>)}</select></div>
-                    <div><Label className="text-xs">Tesis ve oda özellikleri</Label><div className="mt-2 flex flex-wrap gap-2">{AMENITY_FILTERS.map(([value, label]) => <button type="button" key={value} onClick={() => setSearchForm(p => ({ ...p, amenities: toggleFilter(p.amenities, value) }))} className={`rounded-full border px-3 py-1.5 text-xs transition ${searchForm.amenities.includes(value) ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-300 bg-white text-slate-700 hover:border-emerald-400'}`}>{label}</button>)}</div></div>
-                    <div><Label className="text-xs">Pansiyon tipi</Label><div className="mt-2 flex flex-wrap gap-2">{MEAL_FILTERS.map(([value, label]) => <button type="button" key={value} onClick={() => setSearchForm(p => ({ ...p, meal_plans: toggleFilter(p.meal_plans, value) }))} className={`rounded-full border px-3 py-1.5 text-xs transition ${searchForm.meal_plans.includes(value) ? 'border-blue-600 bg-blue-600 text-white' : 'border-slate-300 bg-white text-slate-700 hover:border-blue-400'}`}>{label}</button>)}</div></div>
-                    <div className="grid grid-cols-2 gap-3"><div><Label className="text-xs">En az yıldız</Label><select value={searchForm.min_star_rating || ''} onChange={e => setSearchForm(p => ({ ...p, min_star_rating: e.target.value ? Number(e.target.value) : null }))} className="mt-1 flex h-10 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"><option value="">Fark etmez</option>{[3,4,5].map(star => <option key={star} value={star}>{star} yıldız ve üzeri</option>)}</select></div><div><Label className="text-xs">Azami toplam fiyat</Label><Input type="number" min="0" value={searchForm.max_price || ''} onChange={e => setSearchForm(p => ({ ...p, max_price: e.target.value ? Number(e.target.value) : null }))} placeholder="Sınırsız" /></div></div>
-                  </div>}
-                </div>}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 items-end">
+                {/* Dates first: the native date picker needs room below the field. */}
+                <div className="mb-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 items-end">
                   <div className="space-y-1">
                     <Label className="text-xs">{t('cm.pages_AgencyPortalDashboard.giris_tarihi')}</Label>
                     <Input type="date" min={toDateInput(new Date())} value={searchForm.check_in} onChange={e => {
                       const checkIn = e.target.value;
                       const next = new Date(`${checkIn}T12:00:00`);
+                      // While a date is typed segment by segment the value can be
+                      // empty or invalid; only then-valid dates move check-out.
+                      if (!checkIn || Number.isNaN(next.getTime())) {
+                        setSearchForm(p => ({ ...p, check_in: checkIn }));
+                        setAvailability(null);
+                        return;
+                      }
                       next.setDate(next.getDate() + 1);
-                      setSearchForm(p => ({ ...p, check_in: checkIn, check_out: p.check_out <= checkIn ? toDateInput(next) : p.check_out }));
+                      setSearchForm(p => ({ ...p, check_in: checkIn, check_out: !p.check_out || p.check_out <= checkIn ? toDateInput(next) : p.check_out }));
                       setAvailability(null);
                     }} data-testid="search-checkin" className="w-full" />
                   </div>
@@ -903,6 +892,25 @@ const AgencyPortalDashboard = () => {
                     {t('cm.pages_AgencyPortalDashboard.ara')} <ArrowRight size={14} />
                   </Button>
                 </div>
+                {portalMode === 'marketplace' && <div className="mb-5 space-y-4 rounded-xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-white p-4 sm:p-5">
+                  <div>
+                    <div className="font-semibold text-slate-900">Size uygun tesisleri bulun</div>
+                    <p className="text-xs leading-5 text-emerald-800 flex items-start gap-1.5 mt-1"><ShieldCheck size={14} className="mt-0.5 shrink-0" />Arama sonuçlarında yalnızca sözleşmesi aktif ve seçtiğiniz tarihlerde satışa açık tesisler gösterilir.</p>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div><Label className="text-xs font-medium text-slate-600">Tesis veya bölge</Label><Input value={searchForm.q} onChange={e => setSearchForm(p => ({ ...p, q: e.target.value }))} placeholder="Tesis adı, bölge veya özellik" className="mt-1 bg-white" /></div>
+                    <div><Label className="text-xs font-medium text-slate-600">Şehir</Label><Input value={searchForm.city} onChange={e => setSearchForm(p => ({ ...p, city: e.target.value }))} placeholder="Tüm şehirlerde ara" className="mt-1 bg-white" /></div>
+                  </div>
+                  <button type="button" onClick={() => setShowAdvancedFilters(value => !value)} className="flex w-full items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-700 hover:border-emerald-300" aria-expanded={showAdvancedFilters}>
+                    <span className="flex items-center gap-2"><SlidersHorizontal size={15} />İsteğe bağlı filtreler</span><span className="flex items-center gap-2 text-xs font-normal text-slate-500">{searchForm.amenities.length + searchForm.meal_plans.length + (searchForm.min_star_rating ? 1 : 0) + (searchForm.max_price ? 1 : 0) + (selectedTenantId ? 1 : 0) > 0 ? `${searchForm.amenities.length + searchForm.meal_plans.length + (searchForm.min_star_rating ? 1 : 0) + (searchForm.max_price ? 1 : 0) + (selectedTenantId ? 1 : 0)} seçili` : 'Filtre yok'}<ChevronDown size={15} className={`transition-transform ${showAdvancedFilters ? 'rotate-180' : ''}`} /></span>
+                  </button>
+                  {showAdvancedFilters && <div className="space-y-4 rounded-lg border border-slate-200 bg-white p-4">
+                    <div><Label className="text-xs">Belirli tesis</Label><select value={selectedTenantId} onChange={e => { setSelectedTenantId(e.target.value); setAvailability(null); }} className="mt-1 flex h-10 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"><option value="">Tüm sözleşmeli tesisler</option>{hotels.map(hotel => <option key={hotel.tenant_id} value={hotel.tenant_id}>{hotel.name}{hotel.city ? ` · ${hotel.city}` : ''}</option>)}</select></div>
+                    <div><Label className="text-xs">Tesis ve oda özellikleri</Label><div className="mt-2 flex flex-wrap gap-2">{AMENITY_FILTERS.map(([value, label]) => <button type="button" key={value} onClick={() => setSearchForm(p => ({ ...p, amenities: toggleFilter(p.amenities, value) }))} className={`rounded-full border px-3 py-1.5 text-xs transition ${searchForm.amenities.includes(value) ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-300 bg-white text-slate-700 hover:border-emerald-400'}`}>{label}</button>)}</div></div>
+                    <div><Label className="text-xs">Pansiyon tipi</Label><div className="mt-2 flex flex-wrap gap-2">{MEAL_FILTERS.map(([value, label]) => <button type="button" key={value} onClick={() => setSearchForm(p => ({ ...p, meal_plans: toggleFilter(p.meal_plans, value) }))} className={`rounded-full border px-3 py-1.5 text-xs transition ${searchForm.meal_plans.includes(value) ? 'border-blue-600 bg-blue-600 text-white' : 'border-slate-300 bg-white text-slate-700 hover:border-blue-400'}`}>{label}</button>)}</div></div>
+                    <div className="grid grid-cols-2 gap-3"><div><Label className="text-xs">En az yıldız</Label><select value={searchForm.min_star_rating || ''} onChange={e => setSearchForm(p => ({ ...p, min_star_rating: e.target.value ? Number(e.target.value) : null }))} className="mt-1 flex h-10 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"><option value="">Fark etmez</option>{[3,4,5].map(star => <option key={star} value={star}>{star} yıldız ve üzeri</option>)}</select></div><div><Label className="text-xs">Azami toplam fiyat</Label><Input type="number" min="0" value={searchForm.max_price || ''} onChange={e => setSearchForm(p => ({ ...p, max_price: e.target.value ? Number(e.target.value) : null }))} placeholder="Sınırsız" /></div></div>
+                  </div>}
+                </div>}
               </CardContent>
             </Card>
 
