@@ -76,3 +76,21 @@ def test_approval_requires_seasons_for_net_rate():
     ok = agency_contracts.ApproveRequest(contract_type="net_rate", season_rates=[
         {"room_type_id": "Superior", "season_start": "2026-11-01", "season_end": "2026-11-30", "price": 700}])
     assert ok.season_rates[0].price == 700
+
+
+@pytest.mark.asyncio
+async def test_engine_never_sells_a_free_night_or_an_ambiguous_price(monkeypatch):
+    async def sale_try(_tenant):
+        return "TRY"
+
+    monkeypatch.setattr(marketplace, "_sale_currency", sale_try)
+    row = {"room_type_code": "Superior", "rate_plan_code": "BB", "date": "2026-11-20", "rate": 1000}
+    stay = {"tenant_id": "t", "agency_id": "a", "room_type": "Superior", "check_in": "2026-11-20", "check_out": "2026-11-21",
+                "fallback_rate": 0, "rate_plan_code": "BB"}
+
+    _patch(monkeypatch, [{**row, "rate": 0}])
+    assert (await marketplace._marketplace_stay_price(**stay))["reason"] == "zero_rate_night"
+    _patch(monkeypatch, [row, {**row, "rate": 1200}])
+    assert (await marketplace._marketplace_stay_price(**stay))["reason"] == "duplicate_rate_plan_night"
+    _patch(monkeypatch, [row, dict(row)])  # identical copy: not ambiguous
+    assert (await marketplace._marketplace_stay_price(**stay))["total_price"] == 1000

@@ -249,10 +249,28 @@ async def record_payment(statement_id: str, data: PaymentCreate, current_user: U
     tenant_id = _require_hotel_admin(current_user)
     sysdb = get_system_db()
     statement = await _hotel_statement(statement_id, tenant_id)
+    if statement["status"] == "settled":
+        raise HTTPException(409, "Ekstre kapanmış; fazla ödeme veya iade ayrı bir işlem olarak kaydedilmelidir")
     if statement["status"] in ("void", "issued", "disputed"):
         raise HTTPException(409, "Ödeme yalnız acentenin onayladığı veya itirazı çözülmüş ekstreye kaydedilir")
-    payment = {"id": str(uuid.uuid4()), **data.model_dump(), "recorded_by": current_user.email, "recorded_at": _now()}
     previous = statement.get("payments") or []
+    reference = data.reference.strip()
+    if reference:
+        # A resent request (integration retry, double click) must not pay twice.
+        repeat = next((p for p in previous if p.get("reference") == reference and p.get("direction") == data.direction), None)
+        if repeat:
+            if abs(float(repeat.get("amount") or 0) - data.amount) >= 0.01:
+                raise HTTPException(409, f"{reference} referansıyla farklı tutarda bir ödeme zaten kayıtlı")
+            return _public(statement)
+    current = outstanding(statement)
+    expected = "agency_to_hotel" if current > 0 else "hotel_to_agency"
+    if data.direction != expected:
+        raise HTTPException(409, "Ödeme yönü ekstre bakiyesiyle uyuşmuyor: " + (
+            "acente otele borçlu" if current > 0 else "otel acenteye borçlu"))
+    if data.amount - abs(current) >= 0.01:
+        raise HTTPException(409, f"Ödeme kalan bakiyeyi aşıyor (kalan {abs(current):.2f} {statement.get('currency', '')})")
+    payment = {"id": str(uuid.uuid4()), **data.model_dump(), "reference": reference,
+               "recorded_by": current_user.email, "recorded_at": _now()}
     remaining = outstanding({**statement, "payments": [*previous, payment]})
     status = "settled" if abs(remaining) < 0.01 else statement["status"]
     # The status is derived from the payments we read: refuse the write if

@@ -186,3 +186,162 @@ def test_ledger_sync_takes_the_modified_commission_rate():
     assert line["net_to_hotel"] == 117  # not 104 from the stale 20 %
     # Rate changed alone (amount unchanged) is healed too.
     assert ledger_patch_from_booking(ledger, {"total_amount": 100, "agency_commission_rate": 10})["net_to_hotel"] == 90
+
+
+# ── statement payments are the single source for credit; payment rules ──
+
+class _Bookings:
+    def __init__(self, rows):
+        self.rows = rows
+
+    def find(self, query, *_a, **_k):
+        rows = [r for r in self.rows if r.get("agency_id") == query.get("agency_id") and r.get("status") != "cancelled"]
+        return SimpleNamespace(to_list=AsyncMock(return_value=rows))
+
+
+class _StatementFinder:
+    def __init__(self, store):
+        self.store = store
+
+    def find(self, query, *_a, **_k):
+        ids = set(query["lines.booking_id"]["$in"])
+        rows = [d for d in self.store.docs if d.get("status") != "void"
+                and any(line.get("booking_id") in ids for line in d.get("lines", []))]
+        return SimpleNamespace(to_list=AsyncMock(return_value=rows))
+
+
+def _credit_world(monkeypatch):
+    statement = {"id": "s1", "tenant_id": "t1", "agency_id": "a1", "number": "EKS-1", "currency": "TRY", "status": "agreed",
+                 "payments": [], "lines": [{"booking_id": "b1", "agency_owes_hotel": 60}, {"booking_id": "b2", "agency_owes_hotel": 30}],
+                 "totals": {"net_balance": 90, "hotel_owes_agency": 0}}
+    store = _Statements([statement])
+    monkeypatch.setattr(agency_statements, "get_system_db", lambda: SimpleNamespace(agency_statements=store))
+    monkeypatch.setattr(agency_statements, "_notify_agency", AsyncMock())
+    bookings = _Bookings([
+        {"id": "b1", "agency_id": "a1", "status": "checked_out", "currency": "TRY", "credit_exposure_amount": 60},
+        {"id": "b2", "agency_id": "a1", "status": "checked_out", "currency": "TRY", "credit_exposure_amount": 30},
+    ])
+    return store, SimpleNamespace(bookings=bookings), SimpleNamespace(agency_statements=_StatementFinder(store))
+
+
+async def _can_sell(database, statements_db, amount):
+    from core.agency_credit import assert_credit_capacity
+
+    try:
+        await assert_credit_capacity(database, tenant_id="t1", agency_id="a1", contract={"credit_limit": 100, "credit_currency": "TRY"},
+                                     booking_currency="TRY", new_net_exposure=amount, statements_db=statements_db)
+        return True
+    except HTTPException:
+        return False
+
+
+@pytest.mark.asyncio
+async def test_paid_statement_frees_the_credit_limit(monkeypatch):
+    store, database, statements_db = _credit_world(monkeypatch)
+    assert not await _can_sell(database, statements_db, 20)  # 90 open + 20 > 100
+
+    pay = agency_statements.PaymentCreate(amount=40, direction="agency_to_hotel", paid_at="2026-10-15", reference="EFT-1")
+    await agency_statements.record_payment("s1", pay, USER)  # partial: clears 40 of b1 (oldest first)
+    assert await _can_sell(database, statements_db, 50)  # 50 open + 50 = 100
+    assert not await _can_sell(database, statements_db, 51)
+
+    rest = agency_statements.PaymentCreate(amount=50, direction="agency_to_hotel", paid_at="2026-10-16", reference="EFT-2")
+    settled = await agency_statements.record_payment("s1", rest, USER)
+    assert settled["status"] == "settled"
+    assert await _can_sell(database, statements_db, 100)  # every statement line cleared
+
+
+@pytest.mark.asyncio
+async def test_payment_rules_are_enforced_by_the_backend(monkeypatch):
+    store, _, _ = _credit_world(monkeypatch)
+    pay = lambda amount, direction="agency_to_hotel", reference="": agency_statements.PaymentCreate(  # noqa: E731
+        amount=amount, direction=direction, paid_at="2026-10-15", reference=reference)
+
+    for bad in (pay(91), pay(10, "hotel_to_agency")):  # overpayment, wrong direction
+        with pytest.raises(HTTPException) as exc:
+            await agency_statements.record_payment("s1", bad, USER)
+        assert exc.value.status_code == 409
+
+    await agency_statements.record_payment("s1", pay(30, reference="EFT-9"), USER)
+    again = await agency_statements.record_payment("s1", pay(30, reference="EFT-9"), USER)  # resent request
+    assert len(store.docs[0]["payments"]) == 1 and outstanding(again) == 60
+    with pytest.raises(HTTPException):
+        await agency_statements.record_payment("s1", pay(25, reference="EFT-9"), USER)
+
+    await agency_statements.record_payment("s1", pay(60), USER)
+    assert store.docs[0]["status"] == "settled"
+    with pytest.raises(HTTPException) as closed:  # closed statement: no extra payment
+        await agency_statements.record_payment("s1", pay(10), USER)
+    assert closed.value.status_code == 409 and outstanding(store.docs[0]) == 0
+
+
+class _Rows:
+    """Ledger/PMS double: equality, $in, $gte/$lte and $not filters."""
+
+    def __init__(self, rows):
+        self.rows = rows
+
+    @classmethod
+    def _ok(cls, value, cond):
+        if isinstance(cond, dict):
+            if "$not" in cond:
+                return not cls._ok(value, cond["$not"])
+            if "$in" in cond and value not in cond["$in"]:
+                return False
+            if "$gte" in cond and not (value is not None and str(value) >= cond["$gte"]):
+                return False
+            if "$lte" in cond and not (value is not None and str(value) <= cond["$lte"]):
+                return False
+            return True
+        return value == cond
+
+    def find(self, query, *_a, **_k):
+        hits = [dict(r) for r in self.rows if all(self._ok(r.get(k), v) for k, v in query.items())]
+
+        class _Cursor:
+            async def to_list(self, _n=None):
+                return hits
+
+            def __aiter__(self):
+                self._it = iter(hits)
+                return self
+
+            async def __anext__(self):
+                try:
+                    return next(self._it)
+                except StopIteration:
+                    raise StopAsyncIteration from None
+
+        return _Cursor()
+
+    async def update_one(self, query, update, **_k):
+        for r in self.rows:
+            if all(r.get(k) == v for k, v in query.items()):
+                r.update(update["$set"])
+        return SimpleNamespace(matched_count=1)
+
+
+@pytest.mark.asyncio
+async def test_statement_period_follows_the_current_pms_date():
+    from core.agency_statements import build_statement
+
+    row = {"tenant_id": "t", "agency_id": "a", "status": "confirmed", "currency": "TRY", "total_amount": 100,
+           "commission_pct": 10, "payment_terms": "prepaid"}
+    ledger = _Rows([
+        {**row, "id": "moved-out", "check_in": "2026-10-20", "check_out": "2026-10-22"},   # PMS moved it to November
+        {**row, "id": "moved-in", "check_in": "2026-09-05", "check_out": "2026-09-07"},    # PMS moved it into October
+        {**row, "id": "last-day", "check_in": "2026-10-31T14:00:00", "check_out": "2026-11-01T11:00:00"},
+    ])
+    pms = _Rows([
+        {**row, "id": "moved-out", "check_in": "2026-11-20", "check_out": "2026-11-22"},
+        {**row, "id": "moved-in", "check_in": "2026-10-05", "check_out": "2026-10-07"},
+        {**row, "id": "last-day", "check_in": "2026-10-31T14:00:00", "check_out": "2026-11-01T11:00:00"},
+    ])
+    database = SimpleNamespace(marketplace_bookings=ledger, bookings=pms)
+    kwargs = {"tenant_id": "t", "agency_id": "a", "period_start": "2026-10-01", "period_end": "2026-10-31", "currency": "TRY"}
+    first = await build_statement(database, **kwargs)
+    second = await build_statement(database, **kwargs)
+    assert [line["booking_id"] for line in first["lines"]] == ["moved-in", "last-day"]
+    assert first == second  # identical reads give identical statements
+    november = await build_statement(database, **{**kwargs, "period_start": "2026-11-01", "period_end": "2026-11-30"})
+    assert [line["booking_id"] for line in november["lines"]] == ["moved-out"]

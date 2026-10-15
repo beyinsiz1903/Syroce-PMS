@@ -80,7 +80,7 @@ export default function AgencyOnboardingPanel({ agency, onUpdated }) {
       {!report.checks.contract_approved && <p className="text-sm">Acente portalındaki sözleşme akışından tesisle bağlantı kurun. Tesis yetkilisi PMS → Gelen acente sözleşmeleri ekranında onaylamalıdır. Bu kontrol sözleşmeyi otomatik onaylamaz.</p>}
       {!report.checks.sellable_offer && <p className="text-sm">Tesisin satışa açık olduğunu, sözleşmedeki oda tiplerini, paylaşılan fiyatları ve kontenjanı kontrol edin; farklı tarihlerle tekrar deneyin.</p>}
       {report.check_error && <p role="alert">Satış kontrolü tamamlanamadı; hazır olarak işaretlenmedi. Yeniden deneyin.</p>}
-      {report.offers.slice(0, 5).map((offer) => <p className="text-sm" key={`${offer.tenant_id}-${offer.room_type}`}>{offer.hotel_name} · {offer.room_type}: {offer.total_price} {offer.currency} · {offer.available_rooms} oda</p>)}
+      {report.offers.slice(0, 5).map((offer) => <p className="text-sm" key={`${offer.tenant_id}-${offer.room_type}`}>{offer.hotel_name} · {offer.room_type}: {offer.total_price} {offer.currency} · {offer.available_rooms} oda{offer.rate_sources && Object.keys(offer.rate_sources).length > 0 && <span className="block text-xs text-slate-500">Fiyat kaynağı: {Object.entries(offer.rate_sources).map(([plan, source]) => `${plan} — ${source}`).join(' · ')}</span>}</p>)}
       <p className="text-xs text-slate-500">{report.scope} Son kontrol: {new Date(report.checked_at).toLocaleString('tr-TR')}. Rezervasyon anında tekrar doğrulanır.</p>
     </div>}
   </section>;
