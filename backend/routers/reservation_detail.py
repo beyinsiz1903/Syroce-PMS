@@ -688,6 +688,16 @@ async def _refresh_cached_folio_balance(tenant_id: str, folio_id: str) -> float:
         {"id": folio_id, "tenant_id": tenant_id},
         {"$set": {"balance": balance}},
     )
+    # Every folio money movement also re-derives the reservation's balance
+    # and payment status (paid / partial / transferred / refunded).
+    try:
+        folio = await db.folios.find_one({"id": folio_id, "tenant_id": tenant_id}, {"_id": 0, "booking_id": 1})
+    except Exception:  # noqa: BLE001 - the folio balance above is already durable
+        folio = None
+    if folio and folio.get("booking_id"):
+        from core.booking_payment_state import refresh_booking_payment_state
+
+        await refresh_booking_payment_state(db, tenant_id, folio["booking_id"])
     return balance
 
 
@@ -2423,6 +2433,7 @@ async def record_agency_payment(
         {"id": booking_id, "tenant_id": tid},
         {"$set": {"paid_amount": round(new_paid, 2)}},
     )
+    await _refresh_cached_folio_balance(tid, folio["id"])
 
     await _log_activity(
         tid,

@@ -1465,6 +1465,10 @@ async def void_payment(
                 {"id": payment["booking_id"], "tenant_id": current_user.tenant_id},
                 {"$inc": {"paid_amount": booking_paid_adjustment}},
             )
+        if payment.get("booking_id"):
+            from core.booking_payment_state import refresh_booking_payment_state
+
+            await refresh_booking_payment_state(db, current_user.tenant_id, payment["booking_id"])
 
     # Kasaya iade kaydı (negatif/out) — başarısızsa void'i geri al (compensation)
     try:
@@ -1522,6 +1526,10 @@ async def void_payment(
     except Exception:
         logger.exception("audit log for void_payment failed")
 
+    if payment.get("booking_id"):
+        from core.booking_payment_state import refresh_booking_payment_state
+
+        await refresh_booking_payment_state(db, current_user.tenant_id, payment["booking_id"])
     return {
         "message": "Ödeme iade edildi",
         "payment_id": payment_id,

@@ -380,6 +380,9 @@ async def collect_booking_payment(
                 payment_id=payment_id,
             )
 
+    from core.booking_payment_state import refresh_booking_payment_state
+
+    await refresh_booking_payment_state(db_handle, tenant_id, booking_id)
     return CollectionOutcome(
         status="paid",
         response=response,
