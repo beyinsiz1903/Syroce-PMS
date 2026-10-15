@@ -45,7 +45,7 @@ async def test_credit_replaces_old_booking_not_double_counts(monkeypatch):
     def run(query, *_args):
         queries.append(query)
         return SimpleNamespace(to_list=AsyncMock(return_value=[{'currency': 'TRY', 'net_to_hotel': 40}]))
-    monkeypatch.setattr(m, 'db', SimpleNamespace(bookings=SimpleNamespace(find=run)))
+    monkeypatch.setattr(m, 'db', SimpleNamespace(bookings=SimpleNamespace(find=run, find_one=AsyncMock(return_value={}))))
     contract = {'credit_limit': 100, 'credit_currency': 'TRY'}
     await m._check_agency_credit(tenant_id='t', agency_id='a', contract=contract, net_to_hotel=60, booking_currency='TRY', exclude_booking_id='b')
     assert queries[0]['id'] == {'$ne':'b'}

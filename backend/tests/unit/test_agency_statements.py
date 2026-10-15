@@ -195,8 +195,13 @@ class _Bookings:
         self.rows = rows
 
     def find(self, query, *_a, **_k):
-        rows = [r for r in self.rows if r.get("agency_id") == query.get("agency_id") and r.get("status") != "cancelled"]
+        excluded = (query.get("id") or {}).get("$ne")
+        rows = [r for r in self.rows if r.get("agency_id") == query.get("agency_id") and r.get("status") != "cancelled"
+                and r.get("id") != excluded]
         return SimpleNamespace(to_list=AsyncMock(return_value=rows))
+
+    async def find_one(self, query, *_a, **_k):
+        return next((dict(r) for r in self.rows if r.get("id") == query.get("id")), None)
 
 
 class _StatementFinder:
@@ -364,3 +369,29 @@ async def test_modifying_a_paid_booking_keeps_its_payment(monkeypatch):
     with pytest.raises(HTTPException):
         await assert_credit_capacity(database, tenant_id="t1", agency_id="a1", contract=contract, booking_currency="TRY",
                                      new_net_exposure=191, exclude_booking_id="b1", statements_db=statements_db)
+
+
+@pytest.mark.asyncio
+async def test_pms_collection_frees_credit_without_double_counting(monkeypatch):
+    from core.agency_credit import assert_credit_capacity
+
+    statements_db = SimpleNamespace(agency_statements=_StatementFinder(_Statements([])))
+    booking = {"id": "b1", "agency_id": "a1", "status": "confirmed", "currency": "TRY", "credit_exposure_amount": 6800}
+    database = SimpleNamespace(bookings=_Bookings([booking]))
+    contract = {"credit_limit": 10000, "credit_currency": "TRY"}
+
+    async def can_sell(amount, **kw):
+        try:
+            await assert_credit_capacity(database, tenant_id="t1", agency_id="a1", contract=contract, booking_currency="TRY",
+                                         new_net_exposure=amount, statements_db=statements_db, **kw)
+            return True
+        except HTTPException:
+            return False
+
+    assert not await can_sell(6800)  # 6800 open + 6800 > 10000
+    booking["paid_amount"] = 8000  # guest paid the gross at the hotel (on-arrival terms)
+    assert await can_sell(6800)
+    booking["paid_amount"] = 3000  # partial collection
+    assert await can_sell(6200) and not await can_sell(6201)
+    # A modification keeps what was already collected on the booking itself.
+    assert await can_sell(10000 + 3000, exclude_booking_id="b1") and not await can_sell(13001, exclude_booking_id="b1")
