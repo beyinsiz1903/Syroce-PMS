@@ -20,7 +20,9 @@ class _Users:
     async def update_one(self, query, update):
         for row in self.rows:
             if all(row.get(k) == v for k, v in query.items()):
-                row.update(update["$set"])
+                row.update(update.get("$set", {}))
+                for key, value in update.get("$max", {}).items():
+                    row[key] = max(row.get(key) or 0, value)
                 return SimpleNamespace(matched_count=1)
         return SimpleNamespace(matched_count=0)
 
@@ -69,4 +71,40 @@ async def test_superadmin_preview_cannot_change_profile(users):
     with pytest.raises(HTTPException) as exc:
         await onboarding.update_profile(onboarding.ProfileUpdate(name="Başkası"), preview)
     assert exc.value.status_code == 403
-    assert (await onboarding.get_profile(preview))["can_edit"] is False
+
+
+@pytest.mark.asyncio
+async def test_concurrent_password_changes_one_wins(users, monkeypatch):
+    import asyncio
+
+    stored_before = users.rows[0]["hashed_password"]
+    real_find = users.find_one
+    both_read = asyncio.Event()
+    reads = []
+
+    async def find_then_wait(query, *a, **k):
+        row = await real_find(query, *a, **k)
+        reads.append(1)
+        if len(reads) == 2:
+            both_read.set()
+        await both_read.wait()  # both requests verified the same old password
+        return row
+
+    users.find_one = find_then_wait
+    change = lambda new: onboarding.change_password(  # noqa: E731
+        onboarding.PasswordChange(current_password="EskiSifre1234", new_password=new), REQUEST, AGENCY)
+    results = await asyncio.gather(change("BirinciSifre123"), change("IkinciSifre1234"), return_exceptions=True)
+    ok = [r for r in results if isinstance(r, dict)]
+    lost = [r for r in results if isinstance(r, HTTPException)]
+    assert len(ok) == 1 and len(lost) == 1 and lost[0].status_code == 409
+    assert users.rows[0]["hashed_password"] != stored_before
+    assert verify_password("BirinciSifre123", users.rows[0]["hashed_password"]) != verify_password(
+        "IkinciSifre1234", users.rows[0]["hashed_password"])
+
+
+def test_only_one_profile_identity_route():
+    from routers import marketplace_b2b
+
+    routes = [r for router in (marketplace_b2b.router, onboarding.router) for r in router.routes
+              if getattr(r, "path", "") == "/api/marketplace/v1/extranet/profile" and "GET" in getattr(r, "methods", set())]
+    assert len(routes) == 1  # the portal identity endpoint ({user, agency, hotels, impersonation})

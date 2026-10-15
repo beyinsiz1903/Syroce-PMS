@@ -366,4 +366,7 @@ async def test_agency_is_told_the_hotels_answer(world, monkeypatch):
     assert sent[-1]["agency_id"] == "a" and "reddedildi" in sent[-1]["title"] and sent[-1]["message"] == "Kredi limiti yetersiz"
     world.marketplace_negotiations.rows[0]["status"] = "awaiting_hotel"
     await m.hotel_decide_marketplace_modification("p", ACCEPT, object())
-    assert "onaylandı" in sent[-1]["title"]
+    assert "onaylandı" in sent[-1]["title"] and sent[-1]["preference"] == "reservation_change"
+    world.marketplace_negotiations.rows[0].update(status="awaiting_hotel", type="agency_cancellation", reason="Misafir gelmeyecek")
+    await m.hotel_decide_marketplace_modification("p", m.CancellationProposalDecision(accept=False, response_note="Ceza uygulanır"), object())
+    assert sent[-1]["preference"] == "cancellation_request"

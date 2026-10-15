@@ -3270,7 +3270,8 @@ async def _notify_agency_of_decision(sysdb, proposal: dict, *, accepted: bool, n
     code = proposal.get("confirmation_code") or proposal.get("reservation_id")
     await notify_agency(
         sysdb, agency_id=proposal["agency_id"], tenant_id=proposal.get("tenant_id"), reference_id=proposal.get("reservation_id"),
-        kind="reservation_change_decision", preference="reservation_change",
+        kind="reservation_change_decision",
+        preference="reservation_change" if proposal["type"] == "agency_modification" else "cancellation_request",
         title=f"{code}: {what.lower()} {verdict}",
         message=(note or "").strip() or ("Rezervasyon güncellendi." if accepted else "Mevcut rezervasyon korunur."),
     )

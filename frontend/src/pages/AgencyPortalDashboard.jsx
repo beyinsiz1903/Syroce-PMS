@@ -29,9 +29,22 @@ agencyApi.interceptors.request.use(config => {
 });
 // A signed-in session that the server no longer accepts (expired, password
 // changed, account disabled) must end visibly instead of leaving spinners.
+// Only the session that made the request may be ended: a late 401 from a
+// previous (signed-out) session must not sign out the new one.
+export const endsCurrentSession = (error, currentToken) => {
+  const url = String(error?.config?.url || '');
+  const sentWith = String(error?.config?.headers?.Authorization || '');
+  return error?.response?.status === 401 && Boolean(currentToken)
+    && sentWith === `Bearer ${currentToken}` && !url.includes('/auth/login');
+};
+// What the portal does with a failed identity load. A response that belongs
+// to an older session (the user signed out and in meanwhile) is ignored.
+export const profileFailureAction = (error, requestToken, currentToken) => {
+  if (!requestToken || requestToken !== currentToken) return 'ignore';
+  return [401, 403].includes(error?.response?.status) ? 'logout' : 'error';
+};
 agencyApi.interceptors.response.use(undefined, error => {
-  const url = String(error.config?.url || '');
-  if (error.response?.status === 401 && localStorage.getItem('agency_token') && !url.includes('/auth/login')) {
+  if (endsCurrentSession(error, localStorage.getItem('agency_token'))) {
     window.dispatchEvent(new CustomEvent('agency-session-expired'));
   }
   return Promise.reject(error);
@@ -251,11 +264,15 @@ const AgencyPortalDashboard = () => {
 
   // Load profile on mount if token exists
   useEffect(() => {
-    if (!token) return;
+    if (!token) return undefined;
+    let active = true;
+    const requestToken = token;
+    const current = () => active && localStorage.getItem('agency_token') === requestToken;
     const loadProfile = async () => {
       try {
         if (portalMode === 'marketplace') {
           const { data } = await agencyApi.get('/marketplace/v1/extranet/profile');
+          if (!current()) return;  // answer of an older session
           const availableHotels = data.hotels || [];
           setAgencyUser(data.user || null);
           // Discovery starts from the whole contracted portfolio. A hotel is
@@ -271,19 +288,22 @@ const AgencyPortalDashboard = () => {
           setHotelInfo(selected ? { name: selected.name, currency: selected.currency || 'TRY', ...selected } : null);
         } else {
           const { data } = await agencyApi.get('/agency-portal/profile');
+          if (!current()) return;
           setAgencyUser(data.user || null);
           setAgencyInfo(data.agency);
           setHotelInfo(data.hotel || null);
         }
         setProfileError('');
       } catch (err) {
-        if (err.response?.status === 401 || err.response?.status === 403) handleLogout();
-        else setProfileError('Acente hesabı doğrulanamadı. Bağlantınızı kontrol edip tekrar deneyin.');
+        const action = profileFailureAction(err, requestToken, active ? localStorage.getItem('agency_token') : null);
+        if (action === 'logout') handleLogout();
+        else if (action === 'error') setProfileError('Acente hesabı doğrulanamadı. Bağlantınızı kontrol edip tekrar deneyin.');
       } finally {
-        setProfileLoading(false);
+        if (current()) setProfileLoading(false);
       }
     };
     loadProfile();
+    return () => { active = false; };
   }, [token, profileRevision, portalMode]);
 
   const loadNotices = async () => {
@@ -687,7 +707,8 @@ const AgencyPortalDashboard = () => {
         agencyApi.get('/marketplace/v1/extranet/profile'),
       ]);
       setPortalSettings(data);
-      setProfile(me);
+      // Same identity endpoint the portal reload uses ({user, impersonation}).
+      setProfile({ name: me.user?.name || '', email: me.user?.email || '', can_edit: !me.impersonation });
       setWidgetOriginsText((data.widget?.allowed_origins || []).join('\n'));
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Hesap ayarları yüklenemedi. Lütfen yeniden deneyin.');
