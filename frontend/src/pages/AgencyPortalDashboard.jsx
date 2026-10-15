@@ -29,9 +29,16 @@ agencyApi.interceptors.request.use(config => {
 });
 // A signed-in session that the server no longer accepts (expired, password
 // changed, account disabled) must end visibly instead of leaving spinners.
+// Only the session that made the request may be ended: a late 401 from a
+// previous (signed-out) session must not sign out the new one.
+export const endsCurrentSession = (error, currentToken) => {
+  const url = String(error?.config?.url || '');
+  const sentWith = String(error?.config?.headers?.Authorization || '');
+  return error?.response?.status === 401 && Boolean(currentToken)
+    && sentWith === `Bearer ${currentToken}` && !url.includes('/auth/login');
+};
 agencyApi.interceptors.response.use(undefined, error => {
-  const url = String(error.config?.url || '');
-  if (error.response?.status === 401 && localStorage.getItem('agency_token') && !url.includes('/auth/login')) {
+  if (endsCurrentSession(error, localStorage.getItem('agency_token'))) {
     window.dispatchEvent(new CustomEvent('agency-session-expired'));
   }
   return Promise.reject(error);
@@ -687,7 +694,8 @@ const AgencyPortalDashboard = () => {
         agencyApi.get('/marketplace/v1/extranet/profile'),
       ]);
       setPortalSettings(data);
-      setProfile(me);
+      // Same identity endpoint the portal reload uses ({user, impersonation}).
+      setProfile({ name: me.user?.name || '', email: me.user?.email || '', can_edit: !me.impersonation });
       setWidgetOriginsText((data.widget?.allowed_origins || []).join('\n'));
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Hesap ayarları yüklenemedi. Lütfen yeniden deneyin.');

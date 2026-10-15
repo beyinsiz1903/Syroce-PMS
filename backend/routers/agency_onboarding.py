@@ -365,13 +365,6 @@ def _profile_user_id(agency: dict) -> str:
     return user_id
 
 
-@router.get("/extranet/profile")
-async def get_profile(agency: dict = Depends(_agency_dep)):
-    user = agency.get("user") or {}
-    return {"id": user.get("id"), "name": user.get("name", ""), "email": user.get("email", ""),
-            "can_edit": not agency.get("impersonation")}
-
-
 @router.patch("/extranet/profile")
 async def update_profile(data: ProfileUpdate, agency: dict = Depends(_agency_dep)):
     from core.security import invalidate_user_doc_cache
@@ -406,13 +399,20 @@ async def change_password(data: PasswordChange, request: Request, agency: dict =
         raise HTTPException(422, "Yeni şifre mevcut şifreden farklı olmalıdır")
     database = get_system_db()
     user = await database.users.find_one({"id": user_id, "agency_id": agency["agency_id"]}, {"_id": 0, "hashed_password": 1})
-    if not user or not verify_password(data.current_password, user.get("hashed_password") or ""):
+    verified_hash = (user or {}).get("hashed_password") or ""
+    if not user or not verify_password(data.current_password, verified_hash):
         raise HTTPException(400, "Mevcut şifre hatalı")
     now = datetime.now(UTC)
-    await database.users.update_one({"id": user_id, "agency_id": agency["agency_id"]}, {"$set": {
-        "hashed_password": hash_password(data.new_password), "password_changed_at": now.isoformat(),
-        "tokens_invalid_before": now.timestamp(), "requires_password_change": False,
-    }})
+    # Write only if the password we verified is still the stored one: of two
+    # concurrent changes exactly one wins; the cut-off never moves backwards.
+    result = await database.users.update_one(
+        {"id": user_id, "agency_id": agency["agency_id"], "hashed_password": verified_hash},
+        {"$set": {"hashed_password": hash_password(data.new_password), "password_changed_at": now.isoformat(),
+                  "requires_password_change": False},
+         "$max": {"tokens_invalid_before": now.timestamp()}},
+    )
+    if not result.matched_count:
+        raise HTTPException(409, "Şifre bu arada değişti; yeni şifrenizle tekrar giriş yapın")
     invalidate_user_doc_cache(user_id)
     await audit(database, agency["agency_id"], "portal_password_changed", user_id=user_id)
     # Issued after the cut-off, so only this session survives.
