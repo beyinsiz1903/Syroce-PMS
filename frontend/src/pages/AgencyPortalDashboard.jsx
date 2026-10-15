@@ -92,6 +92,10 @@ const PAYMENT_TERMS_LABELS = { prepaid: 'Ön ödemeli', on_arrival: 'Girişte', 
 const CONTRACT_STATUS_LABELS = { approved: 'Onaylandı', pending: 'Otel onayı bekleniyor', rejected: 'Reddedildi', expired: 'Süresi doldu', terminated: 'Sonlandırıldı', withdrawn: 'Geri çekildi' };
 const toggleFilter = (values, value) => values.includes(value) ? values.filter(item => item !== value) : [...values, value];
 const resizeChildAges = (ages, count) => Array.from({ length: count }, (_, index) => ages?.[index] ?? 0);
+export const PAYMENT_STATUS_LABELS = {
+  paid: 'Ödendi', partial: 'Kısmen ödendi', pending: 'Ödeme bekleniyor', unpaid: 'Ödeme bekleniyor',
+  transferred: 'Cari hesaba aktarıldı', refunded: 'İade edildi',
+};
 const formatMoney = (amount, currency = 'TRY') => new Intl.NumberFormat('tr-TR', {
   style: 'currency', currency, minimumFractionDigits: 2, maximumFractionDigits: 2,
 }).format(Number(amount) || 0);
@@ -149,6 +153,8 @@ const AgencyPortalDashboard = () => {
 
   // Reservations list
   const [reservations, setReservations] = useState([]);
+  const [paymentHistory, setPaymentHistory] = useState(null);
+  const [creditOverview, setCreditOverview] = useState(null);
   const [reservationsLoading, setReservationsLoading] = useState(false);
   const [reconciliation, setReconciliation] = useState(null);
   const [notices, setNotices] = useState([]);
@@ -624,12 +630,22 @@ const AgencyPortalDashboard = () => {
     } catch (err) { toast.error(err.response?.data?.detail || 'İtiraz gönderilemedi.'); }
     finally { setStatementBusy(false); }
   };
+  const openPaymentHistory = async reservation => {
+    setPaymentHistory({ reservation, loading: true });
+    try {
+      const { data } = await agencyApi.get(`/marketplace/v1/reservations/${encodeURIComponent(reservation.id)}/payments`);
+      setPaymentHistory({ reservation, ...data });
+    } catch (err) {
+      setPaymentHistory({ reservation, error: err.response?.data?.detail || 'Ödeme bilgisi alınamadı.' });
+    }
+  };
   const loadReconciliation = async () => {
     if (portalMode !== 'marketplace') return;
     const params = reconPeriodParams();
     if (!params) return;
     setReconciliation(null);
     agencyApi.get('/marketplace/v1/statements').then(({ data }) => setStatements(data.items || [])).catch(() => setStatements([]));
+    agencyApi.get('/marketplace/v1/extranet/credit').then(({ data }) => setCreditOverview(data.hotels || [])).catch(() => setCreditOverview([]));
     try { const { data } = await agencyApi.get('/marketplace/v1/reconciliation/agency', { params }); setReconciliation(data); }
     catch (err) {
       setReconciliation({ error: err.response?.data?.detail || 'Mutabakat özeti yüklenemedi.' });
@@ -1090,8 +1106,13 @@ const AgencyPortalDashboard = () => {
                           {statusLabels[r.status] || r.status}
                         </Badge>
                         <div className="text-sm font-bold text-slate-700 sm:mt-1">{formatMoney(r.total_amount, r.currency || hotelInfo?.currency)}</div>
+                        {portalMode === 'marketplace' && r.status !== 'cancelled' && <div className="text-xs text-slate-500" data-testid={`payment-summary-${r.id}`}>
+                          Tahsil edilen {formatMoney(r.collected_amount || 0, r.currency || hotelInfo?.currency)} · Kalan {formatMoney(r.balance ?? r.total_amount, r.currency || hotelInfo?.currency)}
+                          {r.payment_status && <span className="ml-1 font-medium text-slate-700">· {PAYMENT_STATUS_LABELS[r.payment_status] || r.payment_status}</span>}
+                        </div>}
                         <div className="flex flex-wrap gap-1.5 mt-2 sm:justify-end">
                           <Button size="sm" variant="outline" onClick={() => printVoucher(r)}><Printer size={13} className="mr-1" />Voucher</Button>
+                          {portalMode === 'marketplace' && <Button size="sm" variant="outline" onClick={() => openPaymentHistory(r)}><WalletCards size={13} className="mr-1" />Ödemeler</Button>}
                           {portalMode === 'marketplace' && <Button size="sm" variant="outline" onClick={() => openVoucherEmailDialog(r)}><Mail size={13} className="mr-1" />E-posta</Button>}
                           {!['cancelled', 'checked_in', 'checked_out'].includes(r.status) && portalMode === 'marketplace' && <Button size="sm" variant="outline" onClick={() => proposeModification(r)}>Değişiklik</Button>}
                           {!['cancelled', 'checked_in', 'checked_out'].includes(r.status) && portalMode === 'marketplace' && <Button size="sm" variant="outline" className="text-red-700" onClick={() => openCancellationDialog(r)}><XCircle size={13} className="mr-1" />İptal</Button>}
@@ -1112,11 +1133,22 @@ const AgencyPortalDashboard = () => {
               </div></div>
             {reconciliation?.error ? <Card><CardContent className="py-8 text-center text-sm text-slate-600">{reconciliation.error} <Button size="sm" variant="outline" className="ml-2" onClick={loadReconciliation}>Yeniden dene</Button></CardContent></Card> : !reconciliation ? <Card><CardContent className="py-10 text-center text-slate-400"><Loader2 className="animate-spin mx-auto" /></CardContent></Card> : <>
               <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-                {[['Brüt satış', 'gross_revenue', true], ['Acente komisyonu', 'commission', true], ['Platform hizmet bedeli', 'platform_fee', true], ['Otellere aktarılacak net', 'net_to_hotels', true], ['Rezervasyon', reconciliation.totals?.bookings, false]].map(([label, value, monetary], index) => <Card key={label} className={`overflow-hidden border-slate-200 shadow-sm ${index === 3 ? 'ring-1 ring-emerald-200' : ''} ${index === 4 ? 'col-span-2 lg:col-span-1' : ''}`}><div className={`h-1 ${index === 3 ? 'bg-emerald-500' : 'bg-slate-200'}`} /><CardContent className="pt-4"><div className="text-xs font-medium text-slate-500">{label}</div><div className={`mt-1 text-lg font-bold ${index === 3 ? 'text-emerald-700' : 'text-slate-900'}`}>{monetary ? currencyTotalsText(reconciliation.totals_by_currency, value) : value}</div></CardContent></Card>)}
+                {[['Brüt satış', 'gross_revenue', true], ['Acente komisyonu', 'commission', true], ['Platform hizmet bedeli', 'platform_fee', true], ['Satışların otele net tutarı', 'net_to_hotels', true], ['Rezervasyon', reconciliation.totals?.bookings, false]].map(([label, value, monetary], index) => <Card key={label} className={`overflow-hidden border-slate-200 shadow-sm ${index === 3 ? 'ring-1 ring-emerald-200' : ''} ${index === 4 ? 'col-span-2 lg:col-span-1' : ''}`}><div className={`h-1 ${index === 3 ? 'bg-emerald-500' : 'bg-slate-200'}`} /><CardContent className="pt-4"><div className="text-xs font-medium text-slate-500">{label}</div><div className={`mt-1 text-lg font-bold ${index === 3 ? 'text-emerald-700' : 'text-slate-900'}`}>{monetary ? currencyTotalsText(reconciliation.totals_by_currency, value) : value}</div></CardContent></Card>)}
               </div>
               {(reconciliation.totals?.cancelled > 0 || reconciliation.totals?.no_show > 0) && <p className="text-xs text-slate-500">Hesaba katılmayan: {reconciliation.totals?.cancelled || 0} iptal · {reconciliation.totals?.no_show || 0} no-show</p>}
               {(reconciliation.by_hotel || []).map(row => <Card key={`${row.tenant_id}-${row.currency}`}><CardContent className="py-4 flex items-center justify-between"><div><div className="font-medium">{row.hotel_name}</div><div className="text-xs text-slate-500">{row.bookings} rezervasyon · Komisyon {formatAgencyMoney(row.commission, row.currency)} · Platform {formatAgencyMoney(row.platform_fee, row.currency)}</div></div><div className="text-right"><div className="font-bold">{formatAgencyMoney(row.gross_revenue, row.currency)}</div><div className="text-xs text-emerald-700">Net {formatAgencyMoney(row.net_to_hotel, row.currency)}</div></div></CardContent></Card>)}
             </>}
+            {creditOverview && creditOverview.length > 0 && <Card data-testid="agency-credit">
+              <CardHeader className="pb-2"><CardTitle className="text-base">Kredi kullanımı</CardTitle><p className="text-xs text-slate-500">Otel başına açık net borcunuz (ekstre ödemeleri ve otelde tahsil edilen tutarlar düşülmüş) ve kalan kredi. Misafirin otele ödediği bakiye ayrıca rezervasyonda gösterilir.</p></CardHeader>
+              <CardContent className="space-y-2">
+                {creditOverview.map(hotel => <div key={hotel.tenant_id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3 text-sm">
+                  <div><div className="font-medium">{hotel.hotel_name}</div><div className="text-xs text-slate-500">{hotel.contract_code}</div></div>
+                  {!hotel.credit ? <span className="text-xs text-slate-500">Kredi limiti tanımsız</span>
+                    : hotel.credit.error ? <span className="text-xs text-red-700">{hotel.credit.error}</span>
+                    : <div className="text-right text-xs"><div>Kullanılan <strong>{formatMoney(hotel.credit.used, hotel.credit.currency)}</strong> / Limit {formatMoney(hotel.credit.limit, hotel.credit.currency)}</div><div className="text-emerald-700">Kalan {formatMoney(hotel.credit.available, hotel.credit.currency)}</div></div>}
+                </div>)}
+              </CardContent>
+            </Card>}
             <Card data-testid="agency-statements">
               <CardHeader className="pb-2"><CardTitle className="text-base">Otellerin dönem ekstreleri</CardTitle><p className="text-xs text-slate-500">Otelin düzenlediği ekstreyi kontrol edip onaylayın veya satır belirterek itiraz edin.</p></CardHeader>
               <CardContent className="space-y-2">
@@ -1482,6 +1514,25 @@ const AgencyPortalDashboard = () => {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={Boolean(paymentHistory)} onOpenChange={open => !open && setPaymentHistory(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader><DialogTitle>Ödemeler · {paymentHistory?.reservation?.confirmation_code}</DialogTitle></DialogHeader>
+          {paymentHistory?.loading ? <Loader2 className="mx-auto animate-spin" /> : paymentHistory?.error ? <p className="text-sm text-red-700">{paymentHistory.error}</p> : paymentHistory && <div className="space-y-3" data-testid="payment-history">
+            <div className="grid grid-cols-3 gap-2 text-center text-sm">
+              <div className="rounded-lg border p-2"><div className="text-xs text-slate-500">Rezervasyon</div><div className="font-semibold">{formatMoney(paymentHistory.total_amount, paymentHistory.currency)}</div></div>
+              <div className="rounded-lg border p-2"><div className="text-xs text-slate-500">Tahsil edilen</div><div className="font-semibold">{formatMoney(paymentHistory.collected_amount, paymentHistory.currency)}</div></div>
+              <div className="rounded-lg border p-2"><div className="text-xs text-slate-500">Kalan</div><div className="font-semibold">{formatMoney(paymentHistory.balance ?? paymentHistory.total_amount, paymentHistory.currency)}</div></div>
+            </div>
+            {paymentHistory.payment_status && <p className="text-xs text-slate-600">Durum: <strong>{PAYMENT_STATUS_LABELS[paymentHistory.payment_status] || paymentHistory.payment_status}</strong>{paymentHistory.transferred_amount > 0 && ` · Cari hesaba aktarılan ${formatMoney(paymentHistory.transferred_amount, paymentHistory.currency)} (tahsil edilmedi)`}</p>}
+            {(paymentHistory.payments || []).length === 0 ? <p className="text-sm text-slate-500">Bu rezervasyon için henüz ödeme kaydı yok.</p> : <div className="divide-y rounded-lg border">
+              {paymentHistory.payments.map((payment, index) => <div key={index} className={`flex items-center justify-between px-3 py-2 text-sm ${payment.voided ? 'text-slate-400 line-through' : ''}`}>
+                <span>{payment.date ? formatDate(String(payment.date).slice(0, 10)) : '—'} · {payment.label}{payment.voided ? ' (iptal edildi)' : ''}</span>
+                <span className={payment.kind === 'refund' ? 'text-red-700' : ''}>{payment.kind === 'refund' ? '−' : ''}{formatMoney(payment.amount, payment.currency)}</span>
+              </div>)}
+            </div>}
+          </div>}
+        </DialogContent>
+      </Dialog>
       <Dialog open={Boolean(voucherEmailTarget)} onOpenChange={open => !open && !voucherEmailLoading && setVoucherEmailTarget(null)}>
         <DialogContent className="max-w-md" data-testid="voucher-email-dialog">
           <DialogHeader>

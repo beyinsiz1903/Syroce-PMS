@@ -2914,6 +2914,83 @@ async def agency_list_reservations(
     return {"reservations": docs, "total": len(docs)}
 
 
+PAYMENT_KIND_LABELS = {"collection": "Tahsilat", "refund": "İade", "transfer": "Cari hesaba aktarım"}
+
+
+@router.get("/reservations/{reservation_id}/payments")
+async def agency_reservation_payments(
+    reservation_id: str,
+    agency: dict = Depends(get_marketplace_agency),
+):
+    """Payment history of the agency's own reservation (no internal notes)."""
+    from core.booking_payment_state import collected_amount, transferred_amount
+
+    sysdb = get_system_db()
+    ledger = await sysdb.marketplace_bookings.find_one(
+        {"id": reservation_id, "agency_id": agency["agency_id"]}, {"_id": 0, "tenant_id": 1, "currency": 1}
+    )
+    if not ledger:
+        raise HTTPException(404, "Rezervasyon bulunamadı")
+    tenant_id = ledger["tenant_id"]
+    with tenant_context(tenant_id):
+        booking = await db.bookings.find_one({"id": reservation_id, "tenant_id": tenant_id},
+                                             {"_id": 0, "total_amount": 1, "balance": 1, "payment_status": 1, "currency": 1})
+        rows = await db.payments.find(
+            {"tenant_id": tenant_id, "booking_id": reservation_id, "method": {"$ne": "discount"}},
+            {"_id": 0, "amount": 1, "method": 1, "payment_type": 1, "status": 1, "voided": 1, "currency": 1,
+             "processed_at": 1, "created_at": 1},
+        ).sort("processed_at", 1).to_list(500)
+    items = []
+    for row in rows:
+        if row.get("method") == "city_ledger" or row.get("payment_type") == "city_ledger_transfer":
+            kind = "transfer"
+        elif row.get("payment_type") == "refund" or row.get("status") == "refunded" or float(row.get("amount") or 0) < 0:
+            kind = "refund"
+        else:
+            kind = "collection"
+        items.append({
+            "date": row.get("processed_at") or row.get("created_at"),
+            "kind": kind, "label": PAYMENT_KIND_LABELS[kind],
+            "amount": round(abs(float(row.get("amount") or 0)), 2),
+            "currency": row.get("currency") or (booking or {}).get("currency") or ledger.get("currency"),
+            "method": row.get("method"), "voided": row.get("voided") is True,
+        })
+    return {
+        "total_amount": (booking or {}).get("total_amount"),
+        "collected_amount": collected_amount(rows),
+        "transferred_amount": transferred_amount(rows),
+        "balance": (booking or {}).get("balance"),
+        "payment_status": (booking or {}).get("payment_status"),
+        "currency": (booking or {}).get("currency") or ledger.get("currency"),
+        "payments": items,
+    }
+
+
+@router.get("/extranet/credit")
+async def agency_credit_overview(agency: dict = Depends(get_marketplace_agency)):
+    """Credit limit, used and available per hotel; used = open net debt after
+    statement payments and money collected in the PMS."""
+    from core.agency_credit import credit_usage
+
+    sysdb = get_system_db()
+    today = datetime.now(UTC).date().isoformat()
+    contracts = await sysdb.agency_contracts.find(
+        {"agency_id": agency["agency_id"], "status": "approved", "valid_to": {"$gte": today}},
+        {"_id": 0, "tenant_id": 1, "hotel_name": 1, "contract_code": 1, "credit_limit": 1, "credit_currency": 1},
+    ).to_list(500)
+    hotels = []
+    for contract in contracts:
+        try:
+            with tenant_context(contract["tenant_id"]):
+                usage = await credit_usage(db, tenant_id=contract["tenant_id"], agency_id=agency["agency_id"],
+                                           contract=contract, statements_db=sysdb)
+        except HTTPException as exc:
+            usage = {"error": exc.detail}
+        hotels.append({"tenant_id": contract["tenant_id"], "hotel_name": contract.get("hotel_name"),
+                       "contract_code": contract.get("contract_code"), "credit": usage})
+    return {"hotels": hotels}
+
+
 @router.get("/reservations/{reservation_id}")
 async def agency_get_reservation(
     reservation_id: str,

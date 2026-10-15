@@ -70,6 +70,24 @@ async def assert_credit_capacity(
             f"Rezervasyon para birimi ({sale_currency}) sözleşme kredi para biriminden ({credit_currency}) farklı. Kur tanımı olmadan satış yapılamaz.",
         )
     new_exposure = _money(new_net_exposure, "yeni rezervasyon net tutarı")
+    debt, paid_on_excluded = await open_credit_exposure(
+        database, tenant_id=tenant_id, agency_id=agency_id, credit_currency=credit_currency,
+        exclude_booking_id=exclude_booking_id, statements_db=statements_db,
+    )
+    if exclude_booking_id:
+        # A modified booking replaces its old exposure, but what was already
+        # paid for it (statement or PMS collection) still counts.
+        new_exposure = round(max(0.0, new_exposure - paid_on_excluded), 2)
+    if round(debt + new_exposure, 2) > limit_amount:
+        raise HTTPException(409, "Acente kredi limiti bu rezervasyon için yetersiz")
+
+
+async def open_credit_exposure(
+    database, *, tenant_id: str, agency_id: str, credit_currency: str,
+    exclude_booking_id: str | None = None, statements_db=None,
+) -> tuple[float, float]:
+    """Open net debt of an agency at one hotel, after statement payments and
+    PMS collections; plus what is already paid on ``exclude_booking_id``."""
     query = {
         "tenant_id": tenant_id,
         "agency_id": agency_id,
@@ -86,10 +104,6 @@ async def assert_credit_capacity(
     ids = [row.get("id") for row in rows] + [exclude_booking_id]
     settled = await _settled_through_statements(statements_db, tenant_id, agency_id, ids)
     collected = await _collected_by_booking(database, tenant_id, ids)
-    if exclude_booking_id:
-        # A modified booking replaces its old exposure, but what was already
-        # paid for it (statement or PMS collection) still counts.
-        new_exposure = round(max(0.0, new_exposure - _paid_towards(settled.get(exclude_booking_id), collected.get(exclude_booking_id))), 2)
     debt = 0.0
     for row in rows:
         row_currency = _currency(row.get("credit_exposure_currency") or row.get("currency"))
@@ -100,8 +114,19 @@ async def assert_credit_capacity(
             )
         remaining = max(0.0, booking_net_exposure(row) - _paid_towards(settled.get(row.get("id")), collected.get(row.get("id"))))
         debt = round(debt + remaining, 2)
-    if round(debt + new_exposure, 2) > limit_amount:
-        raise HTTPException(409, "Acente kredi limiti bu rezervasyon için yetersiz")
+    paid_on_excluded = _paid_towards(settled.get(exclude_booking_id), collected.get(exclude_booking_id)) if exclude_booking_id else 0.0
+    return debt, paid_on_excluded
+
+
+async def credit_usage(database, *, tenant_id: str, agency_id: str, contract: dict, statements_db=None) -> dict | None:
+    """Limit, used and available credit for one contract (None: no limit)."""
+    if contract.get("credit_limit") is None:
+        return None
+    limit_amount = _money(contract["credit_limit"], "sözleşme kredi limiti")
+    currency = _currency(contract.get("credit_currency"))
+    used, _ = await open_credit_exposure(database, tenant_id=tenant_id, agency_id=agency_id,
+                                         credit_currency=currency, statements_db=statements_db)
+    return {"limit": limit_amount, "used": used, "available": round(max(0.0, limit_amount - used), 2), "currency": currency}
 
 
 def _paid_towards(statement_settled: float | None, collected: float | None) -> float:
