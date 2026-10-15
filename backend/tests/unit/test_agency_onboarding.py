@@ -274,6 +274,16 @@ async def test_readiness_all_steps_and_fail_closed(setup, monkeypatch):
     assert not (await onboarding.readiness('a', ci, co, admin))['checks']['contract_approved']
 
 
+def _pricing_db(rows):
+    """Everything the booking pricing engine reads; readiness uses that engine."""
+    database = SimpleNamespace(
+        agency_rate_calendar=Collection(rows), hr_rate_calendar=Collection(), rate_calendar=Collection(),
+        exely_room_mappings=Collection(), hotelrunner_room_mappings=Collection(), bookings=Collection(),
+        rooms=Collection([{'tenant_id': 't', 'room_type': 'standard', 'base_price': 0}]),
+    )
+    return database
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize('case', ['valid', 'missing_night', 'duplicate_plan', 'zero_rate', 'zero_stock', 'min_stay', 'stop_sell', 'wrong_room', 'inactive_hotel'])
 async def test_readiness_requires_explicit_unambiguous_shared_inventory(monkeypatch, case):
@@ -286,12 +296,12 @@ async def test_readiness_requires_explicit_unambiguous_shared_inventory(monkeypa
     if case == 'missing_night':
         rows.pop()
     if case == 'duplicate_plan':
-        rows.append(deepcopy(rows[0]))
+        rows.append({**deepcopy(rows[0]), 'rate': 120})  # same night/plan/room, conflicting price
     for label, field, value in [('zero_rate', 'rate', 0), ('zero_stock', 'availability', 0),
                                 ('min_stay', 'min_stay', 3), ('stop_sell', 'stop_sell', True)]:
         if case == label:
             rows[0][field] = value
-    monkeypatch.setattr(marketplace_b2b, 'db', SimpleNamespace(agency_rate_calendar=Collection(rows)))
+    monkeypatch.setattr(marketplace_b2b, 'db', _pricing_db(rows))
     listing = AsyncMock(return_value={})
     if case == 'inactive_hotel':
         listing.side_effect = HTTPException(404, 'closed')
@@ -310,7 +320,7 @@ async def test_readiness_treats_ro_and_bb_as_independent_sellable_products(monke
          'availability': 2, 'tenant_id': 't', 'agency_id': 'a', 'room_type_code': 'standard'}
         for i in range(2) for plan, rate in [('RO', 100), ('BB', 150)]
     ]
-    monkeypatch.setattr(marketplace_b2b, 'db', SimpleNamespace(agency_rate_calendar=Collection(rows)))
+    monkeypatch.setattr(marketplace_b2b, 'db', _pricing_db(rows))
     monkeypatch.setattr(marketplace_b2b, '_get_listing_or_404', AsyncMock(return_value={}))
     monkeypatch.setattr(agency_contracts, 'has_active_contract', AsyncMock(return_value={'allowed_room_types': ['standard']}))
     assert await onboarding.verified_offer_rate_plans('a', 't', 'standard', ci, co) == ['BB', 'RO']
@@ -365,3 +375,42 @@ async def test_public_accept_route_and_admin_auth_contract(setup):
         assert (await client.post('/api/marketplace/v1/admin/agencies/a/invitations', json={'name': 'Agent', 'email': 'agent@example.com'})).status_code == 401
         response = await client.post('/api/marketplace/v1/extranet/invitations/accept', json={'token': token, 'password': 'SecureAgency2026!'})
         assert response.status_code == 200 and response.json()['ok']
+
+
+@pytest.mark.asyncio
+async def test_readiness_counts_an_approved_net_contract_without_calendar(monkeypatch):
+    """Sellable NET season price is ready too (no 'sellable but not ready')."""
+    from datetime import date
+
+    from routers import agency_contracts, marketplace_b2b
+
+    net = {'status': 'approved', 'contract_type': 'net_rate', 'commission_pct': 0,
+           'season_rates': [{'room_type_id': 'Superior', 'season_start': '2026-11-01', 'season_end': '2026-11-30', 'price': 700}]}
+    database = _pricing_db([])
+    database.rooms = Collection([{'tenant_id': 't', 'room_type': 'Superior', 'base_price': 0, 'capacity': 2}])
+    monkeypatch.setattr(marketplace_b2b, 'db', database)
+    monkeypatch.setattr(marketplace_b2b, '_get_listing_or_404', AsyncMock(return_value={}))
+    monkeypatch.setattr(agency_contracts, 'has_active_contract', AsyncMock(return_value=net))
+    priced = await marketplace_b2b._marketplace_stay_price(tenant_id='t', agency_id='a', room_type='Superior',
+        check_in='2026-11-20', check_out='2026-11-22', fallback_rate=0, contract=net)
+    assert priced['sellable'] and priced['total_price'] == 1400
+    assert await onboarding.verified_offer_rate_plans('a', 't', 'Superior', date(2026, 11, 20), date(2026, 11, 22)) == ['NET']
+    assert onboarding.offer_source('NET') == 'Sözleşmeli NET sezon fiyatı'
+
+
+@pytest.mark.asyncio
+async def test_readiness_prices_with_a_sellable_room_like_search(monkeypatch):
+    from routers import agency_contracts, marketplace_b2b
+
+    database = _pricing_db([])
+    database.rooms = Collection([
+        {'tenant_id': 't', 'room_type': 'standard', 'base_price': 0, 'is_active': False, 'capacity': 2},
+        {'tenant_id': 't', 'room_type': 'standard', 'base_price': 0, 'status': 'out_of_order', 'capacity': 2},
+        {'tenant_id': 't', 'room_type': 'standard', 'base_price': 1000, 'capacity': 2},
+    ])
+    monkeypatch.setattr(marketplace_b2b, 'db', database)
+    monkeypatch.setattr(marketplace_b2b, '_get_listing_or_404', AsyncMock(return_value={}))
+    monkeypatch.setattr(agency_contracts, 'has_active_contract',
+                        AsyncMock(return_value={'status': 'approved', 'commission_pct': 10, 'allow_base_rate_fallback': True}))
+    ci = datetime.now(UTC).date() + timedelta(days=1)
+    assert await onboarding.verified_offer_rate_plans('a', 't', 'standard', ci, ci + timedelta(days=1)) == ['BASE']

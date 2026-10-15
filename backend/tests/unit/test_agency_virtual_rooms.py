@@ -28,7 +28,7 @@ async def test_hotel_availability_counts_only_physical_rooms(monkeypatch):
     monkeypatch.setattr(marketplace, "tenant_context", lambda _tenant: nullcontext())
     monkeypatch.setattr(marketplace, "db", SimpleNamespace(
         rooms=SimpleNamespace(find=_find),
-        bookings=SimpleNamespace(count_documents=AsyncMock(return_value=0)),
+        bookings=SimpleNamespace(find=lambda *a: SimpleNamespace(to_list=AsyncMock(return_value=[]))),
     ))
     pricing = {"sellable": True, "rate_plan_code": "BASE", "nightly_rates": [], "total_price": 9200}
     monkeypatch.setattr(marketplace, "_marketplace_stay_price", AsyncMock(return_value=pricing))

@@ -36,7 +36,7 @@ async def test_hotel_availability_uses_query_occupancy(monkeypatch):
     rooms = [{"id": "r1", "room_type": "standard", "capacity": 3, "base_price": 100}]
     monkeypatch.setattr(marketplace, "db", SimpleNamespace(
         rooms=SimpleNamespace(find=lambda *a: SimpleNamespace(to_list=AsyncMock(return_value=rooms))),
-        bookings=SimpleNamespace(count_documents=AsyncMock(return_value=0)),
+        bookings=SimpleNamespace(find=lambda *a: SimpleNamespace(to_list=AsyncMock(return_value=[]))),
     ))
     pricing = {"sellable": True, "rate_plan_code": "BB", "nightly_rates": [{"date": "2026-11-10", "rate": 100}], "total_price": 100}
     monkeypatch.setattr(marketplace, "_marketplace_stay_price", AsyncMock(return_value=pricing))

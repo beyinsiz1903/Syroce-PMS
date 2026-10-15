@@ -104,14 +104,37 @@ def outstanding(statement: dict) -> float:
     return round(balance - paid, 2)
 
 
-async def build_statement(sysdb, *, tenant_id: str, agency_id: str, period_start: str, period_end: str, currency: str) -> dict:
-    from core.marketplace_ledger_sync import refresh_ledger_from_pms
+def settled_by_booking(statement: dict) -> dict[str, float]:
+    """How much of each booking's debt to the hotel this statement has cleared.
 
-    rows = await sysdb.marketplace_bookings.find(
-        {"tenant_id": tenant_id, "agency_id": agency_id, "check_in": {"$gte": period_start, "$lte": period_end + "T23:59:59"}},
-        {"_id": 0},
-    ).to_list(None)
-    rows = await refresh_ledger_from_pms(sysdb, rows)
+    Clearing credit = commissions the hotel owes the agency on the same
+    statement (set off) + agency payments - hotel payments. It is applied to
+    the lines the agency owes, in statement order, so partial payments clear
+    the oldest stays first and a settled statement clears every line.
+    """
+    if statement.get("status") == "void":
+        return {}
+    totals = statement.get("totals") or {}
+    credit = _money(totals.get("hotel_owes_agency"))
+    for payment in statement.get("payments") or []:
+        amount = _money(payment.get("amount"))
+        credit += amount if payment.get("direction") == "agency_to_hotel" else -amount
+    cleared: dict[str, float] = {}
+    for line in statement.get("lines") or []:
+        owed = _money(line.get("agency_owes_hotel"))
+        booking_id = line.get("booking_id")
+        if owed <= 0 or not booking_id or credit <= 0:
+            continue
+        portion = round(min(owed, credit), 2)
+        cleared[booking_id] = round(cleared.get(booking_id, 0.0) + portion, 2)
+        credit = round(credit - portion, 2)
+    return cleared
+
+
+async def build_statement(sysdb, *, tenant_id: str, agency_id: str, period_start: str, period_end: str, currency: str) -> dict:
+    from core.marketplace_ledger_sync import ledger_rows_for_period
+
+    rows = await ledger_rows_for_period(sysdb, {"tenant_id": tenant_id, "agency_id": agency_id}, period_start, period_end)
     rows = [row for row in rows if str(row.get("currency") or "TRY").upper() == currency]
     ids = [row["id"] for row in rows if row.get("id")]
     bookings = {}

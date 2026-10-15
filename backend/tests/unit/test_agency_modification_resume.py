@@ -287,3 +287,66 @@ async def test_release_for_resume_refuses_other_operations(world, monkeypatch):
             owner="dead-writer-1", reason="Süreç çöktü, inceleme yapıldı", writer_stopped_confirmed=True), True)
     assert exc.value.status_code == 409
     assert world.agency_sale_mutexes.rows[0]["recovery_state"] == "active"
+
+
+@pytest.fixture
+def hotel_cancellation(monkeypatch):
+    database = SimpleNamespace(
+        bookings=_Store([{"id": "b", "tenant_id": "t", "agency_id": "a", "status": "confirmed"}]),
+        marketplace_bookings=_Store([{"id": "b", "agency_id": "a", "tenant_id": "t", "status": "confirmed"}]),
+        marketplace_negotiations=_Store([{"id": "p", "type": "hotel_cancellation", "tenant_id": "t", "agency_id": "a",
+                                          "reservation_id": "b", "status": "awaiting_agency", "reason": "Otel hizmet veremiyor"}]),
+    )
+    monkeypatch.setattr(m, "db", database)
+    monkeypatch.setattr(m, "get_system_db", lambda: database)
+    monkeypatch.setattr("core.atomic_booking.release_booking_nights", AsyncMock())
+    return database
+
+
+@pytest.mark.asyncio
+async def test_interrupted_hotel_cancellation_is_finished_by_accepting_again(hotel_cancellation):
+    database = hotel_cancellation
+    database.marketplace_bookings.fail_updates = 1  # ledger outage after the PMS cancel
+    with pytest.raises(RuntimeError):
+        await m.agency_decide_negotiation("p", ACCEPT, {"agency_id": "a"})
+    assert database.bookings.rows[0]["status"] == "cancelled"
+    assert database.marketplace_negotiations.rows[0]["status"] == "applying"
+    with pytest.raises(HTTPException):  # cannot flip to "declined" after the PMS cancel
+        await m.agency_decide_negotiation("p", m.CancellationProposalDecision(accept=False), {"agency_id": "a"})
+
+    result = await m.agency_decide_negotiation("p", ACCEPT, {"agency_id": "a"})
+    assert result["status"] == "accepted" and result["reservation_cancelled"] is True
+    assert database.marketplace_bookings.rows[0]["status"] == "cancelled"
+    assert database.marketplace_negotiations.rows[0]["status"] == "accepted"
+
+
+@pytest.mark.asyncio
+async def test_hotel_cancellation_never_cancels_a_guest_who_checked_in_meanwhile(hotel_cancellation):
+    database = hotel_cancellation
+    real_find = database.bookings.find_one
+
+    async def checked_in_after_read(query, *a, **k):
+        row = await real_find(query, *a, **k)
+        database.bookings.rows[0]["status"] = "checked_in"  # front desk checks the guest in
+        return row
+
+    database.bookings.find_one = checked_in_after_read
+    with pytest.raises(HTTPException) as exc:
+        await m.agency_decide_negotiation("p", ACCEPT, {"agency_id": "a"})
+    assert exc.value.status_code == 409 and "giriş yaptı" in exc.value.detail
+    assert database.bookings.rows[0]["status"] == "checked_in"
+    assert database.marketplace_bookings.rows[0]["status"] == "confirmed"
+    assert database.marketplace_negotiations.rows[0]["status"] == "superseded"  # closed, not stuck
+
+
+@pytest.mark.asyncio
+async def test_agency_endpoint_cannot_finish_an_agency_modification_without_the_fence(world):
+    world.marketplace_bookings.fail_updates = 1
+    with pytest.raises(RuntimeError):
+        await m.hotel_decide_marketplace_modification("p", ACCEPT, object())
+    assert world.marketplace_negotiations.rows[0]["status"] == "applying"
+    with pytest.raises(HTTPException) as exc:  # agency-side "complete" on an agency_modification
+        await m.agency_decide_negotiation("p", ACCEPT, {"agency_id": "a"})
+    assert exc.value.status_code == 404
+    assert world.marketplace_negotiations.rows[0]["status"] == "applying"
+    assert world.marketplace_bookings.rows[0]["net_to_hotel"] == 80  # untouched

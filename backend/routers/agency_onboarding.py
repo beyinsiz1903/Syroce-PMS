@@ -263,7 +263,8 @@ async def readiness(agency_id: str, check_in: date = Query(...), check_out: date
                         offers.append({"tenant_id": hotel["tenant_id"], "hotel_name": hotel["hotel_name"],
                                        "room_type": room["room_type"], "total_price": room["total_price"],
                                        "currency": room["currency"], "available_rooms": room["available_rooms"],
-                                       "rate_plan_codes": valid_plans})
+                                       "rate_plan_codes": valid_plans,
+                                       "rate_sources": {plan: offer_source(plan) for plan in valid_plans}})
         except Exception:
             logger.warning("Agency readiness sales check failed")
             check_error = True
@@ -273,18 +274,21 @@ async def readiness(agency_id: str, check_in: date = Query(...), check_out: date
             "active_users": active_users, "invitations": invitations, "contract_count": contract_count,
             "offers": offers, "check_error": check_error, "checked_at": now.isoformat(),
             "check_in": check_in, "check_out": check_out,
-            "scope": "Seçilen tarihlerde 2 yetişkin; her gece için açıkça paylaşılmış fiyat/kontenjan aranır. Anlık kontrol, kontenjan ayırmaz. En fazla 200 tesis taranır."}
+            "scope": "Seçilen tarihlerde 2 yetişkin; arama ve rezervasyonla aynı fiyat motoru kullanılır (paylaşılmış takvim, sözleşmeli NET sezon fiyatı veya izin verilmiş temel fiyat). Anlık kontrol, kontenjan ayırmaz. En fazla 200 tesis taranır."}
 
 
 async def verified_offer_rate_plans(agency_id, tenant_id, room_type, check_in, check_out):
-    """Return independently sellable rate plans for a room/stay.
+    """Rate plans the booking engine would actually sell for this room/stay.
 
-    A room can legitimately have RO and BB rows for the same night.  Ambiguity
-    is assessed *within a rate plan*, never across different products.
+    Readiness uses the same pricing engine as search and booking, so every
+    product source counts: a shared agency calendar, an approved NET-rate
+    contract season price, or an explicitly allowed base rate. Ambiguity
+    (two rows for one plan and night) is rejected by that engine.
     """
+    from core.sellable_rooms import PHYSICAL_ROOM_FILTER
     from core.tenant_db import tenant_context
     from routers.agency_contracts import has_active_contract
-    from routers.marketplace_b2b import _get_listing_or_404, db
+    from routers.marketplace_b2b import _agency_rate_plans, _get_listing_or_404, _marketplace_stay_price, db
 
     try:
         await _get_listing_or_404(tenant_id)
@@ -296,32 +300,40 @@ async def verified_offer_rate_plans(agency_id, tenant_id, room_type, check_in, c
                                          through_date=(check_out - timedelta(days=1)).isoformat())
     if not contract or (contract.get("allowed_room_types") and room_type not in contract["allowed_room_types"]):
         return []
-    nights = (check_out - check_in).days
-    dates = [(check_in + timedelta(days=i)).isoformat() for i in range(nights)]
+    allow_base = bool(contract.get("allow_base_rate_fallback"))
+    stay = {"check_in": check_in.isoformat(), "check_out": check_out.isoformat()}
     with tenant_context(tenant_id):
-        rows = await db.agency_rate_calendar.find({
-            "tenant_id": tenant_id, "agency_id": agency_id, "room_type_code": room_type,
-            "date": {"$in": dates},
-        }, {"_id": 0}).to_list(nights * 8 + 1)
-    plans = sorted({str(row.get("rate_plan_code") or "").strip() for row in rows if row.get("rate_plan_code")})
-    sellable = []
-    for plan in plans:
-        plan_rows = [row for row in rows if row.get("rate_plan_code") == plan]
-        valid = True
-        for day in dates:
-            matching = [row for row in plan_rows if row.get("date") == day]
-            if len(matching) != 1:
-                valid = False
-                break
-            row = matching[0]
-            if (row.get("stop_sell") or float(row.get("rate") or 0) <= 0
-                    or int(row.get("availability") or 0) <= 0 or int(row.get("min_stay") or 1) > nights
-                    or (day == dates[0] and row.get("closed_to_arrival"))):
-                valid = False
-                break
-        if valid:
-            sellable.append(plan)
+        plans = await _agency_rate_plans(tenant_id, agency_id, room_type, stay["check_in"], stay["check_out"],
+                                         allow_base_rate_fallback=allow_base, contract=contract)
+        # Same room selection as search: active, sellable, fits 2 adults.
+        candidates = await db.rooms.find(
+            {"tenant_id": tenant_id, "room_type": room_type, **PHYSICAL_ROOM_FILTER}, {"_id": 0}
+        ).to_list(500)
+        room = next((r for r in candidates
+                     if r.get("is_active") is not False
+                     and r.get("status") not in {"maintenance", "out_of_order", "blocked"}
+                     and int(r.get("capacity") or 2) >= 2), None)
+        if room is None:
+            return []
+        sellable = []
+        for plan in plans:
+            pricing = await _marketplace_stay_price(
+                tenant_id=tenant_id, agency_id=agency_id, room_type=room_type, **stay,
+                fallback_rate=float(room.get("base_price") or 0), rate_plan_code=plan,
+                allow_base_rate_fallback=allow_base, contract=contract,
+            )
+            if pricing.get("sellable") and float(pricing.get("total_price") or 0) > 0:
+                sellable.append(plan)
     return sellable
+
+
+def offer_source(plan: str) -> str:
+    """Where a sellable product's price comes from (shown on readiness)."""
+    if plan == "NET":
+        return "Sözleşmeli NET sezon fiyatı"
+    if plan == "BASE":
+        return "Açıkça izin verilmiş temel fiyat"
+    return "Paylaşılmış acente fiyat takvimi"
 
 
 async def verified_offer(agency_id, tenant_id, room_type, check_in, check_out):

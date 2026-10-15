@@ -53,6 +53,7 @@ async def assert_credit_capacity(
     booking_currency: str,
     new_net_exposure: float,
     exclude_booking_id: str | None = None,
+    statements_db=None,
 ) -> None:
     """Reject mixed-currency or over-limit agency sales without FX guessing."""
     limit = contract.get("credit_limit")
@@ -77,9 +78,16 @@ async def assert_credit_capacity(
         query["id"] = {"$ne": exclude_booking_id}
     rows = await database.bookings.find(
         query,
-        {"_id": 0, "currency": 1, "credit_exposure_currency": 1, "credit_exposure_amount": 1,
+        {"_id": 0, "id": 1, "currency": 1, "credit_exposure_currency": 1, "credit_exposure_amount": 1,
          "net_to_hotel": 1, "total_amount": 1, "agency_commission_amount": 1},
     ).to_list(None)
+    settled = await _settled_through_statements(
+        statements_db, tenant_id, agency_id, [row.get("id") for row in rows] + [exclude_booking_id]
+    )
+    if exclude_booking_id:
+        # A modified booking replaces its old exposure, but what the agency
+        # already paid for it through statements still counts.
+        new_exposure = round(max(0.0, new_exposure - settled.get(exclude_booking_id, 0.0)), 2)
     debt = 0.0
     for row in rows:
         row_currency = _currency(row.get("credit_exposure_currency") or row.get("currency"))
@@ -88,6 +96,29 @@ async def assert_credit_capacity(
                 409,
                 f"Açık borçlarda {row_currency} para birimi var; {credit_currency} kredi limitiyle kur dönüşümü olmadan birlikte hesaplanamaz.",
             )
-        debt = round(debt + booking_net_exposure(row), 2)
+        remaining = max(0.0, booking_net_exposure(row) - settled.get(row.get("id"), 0.0))
+        debt = round(debt + remaining, 2)
     if round(debt + new_exposure, 2) > limit_amount:
         raise HTTPException(409, "Acente kredi limiti bu rezervasyon için yetersiz")
+
+
+async def _settled_through_statements(statements_db, tenant_id: str, agency_id: str, booking_ids: list) -> dict[str, float]:
+    """Debt already paid through period statements (the single finance source)."""
+    ids = [booking_id for booking_id in booking_ids if booking_id]
+    if not ids:
+        return {}
+    from core.agency_statements import settled_by_booking
+
+    if statements_db is None:
+        from core.tenant_db import get_system_db
+
+        statements_db = get_system_db()
+    statements = await statements_db.agency_statements.find(
+        {"tenant_id": tenant_id, "agency_id": agency_id, "status": {"$ne": "void"}, "lines.booking_id": {"$in": ids}},
+        {"_id": 0, "status": 1, "totals": 1, "payments": 1, "lines.booking_id": 1, "lines.agency_owes_hotel": 1},
+    ).to_list(None)
+    settled: dict[str, float] = {}
+    for statement in statements:
+        for booking_id, amount in settled_by_booking(statement).items():
+            settled[booking_id] = round(settled.get(booking_id, 0.0) + amount, 2)
+    return settled

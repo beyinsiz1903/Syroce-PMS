@@ -35,7 +35,7 @@ from core.agency_completion import pending_completion, public_booking
 from core.agency_credit import assert_credit_capacity
 from core.atomic_booking import BookingConflictError, assign_room_atomic, create_booking_atomic
 from core.database import db
-from core.marketplace_ledger_sync import NON_REVENUE_STATUSES, refresh_ledger_from_pms
+from core.marketplace_ledger_sync import NON_REVENUE_STATUSES, ledger_rows_for_period, refresh_ledger_from_pms
 from core.occupancy_pricing import OccupancyPricingError, calculate_occupancy_quote, find_occupancy_rule, rule_has_money_amounts
 from core.security import _is_super_admin, get_current_user, verify_password
 from core.sellable_rooms import PHYSICAL_ROOM_FILTER
@@ -834,6 +834,33 @@ def _prefer_pms_rows(rows: list[dict], room_type: str) -> list[dict]:
     return list(chosen.values())
 
 
+_COMMERCIAL_FIELDS = ("rate", "availability", "stop_sell", "min_stay", "max_stay", "min_los_arrival",
+                      "cta", "ctd", "currency", "meal_plan", "cancellation_policy")
+
+
+def _conflicting_rows(rows: list[dict], room_type: str) -> bool:
+    """Rows that would actually be used for one night and plan disagree on a
+    commercial term: the sellable price is ambiguous.
+
+    Like ``_prefer_pms_rows``, a night with a row under the PMS room type uses
+    only those rows, so disagreeing channel-code aliases it ignores cannot
+    close the sale. Identical copies are harmless.
+    """
+    pms_nights = {(row.get("date"), str(row.get("rate_plan_code") or "LEGACY"))
+                  for row in rows if row.get("room_type_code") == room_type}
+    seen: dict[tuple, tuple] = {}
+    for row in rows:
+        night = (row.get("date"), str(row.get("rate_plan_code") or "LEGACY"))
+        if night in pms_nights and row.get("room_type_code") != room_type:
+            continue  # unused alias
+        key = night
+        terms = tuple(json.dumps(row.get(field), sort_keys=True) for field in _COMMERCIAL_FIELDS)
+        if key in seen and seen[key] != terms:
+            return True
+        seen.setdefault(key, terms)
+    return False
+
+
 async def _sale_currency(tenant_id: str) -> str:
     listing = await get_system_db().marketplace_listings.find_one({"tenant_id": tenant_id}, {"_id": 0, "currency": 1})
     if listing and listing.get("currency"):
@@ -889,6 +916,7 @@ async def _marketplace_stay_price(
     agency_rows = await db.agency_rate_calendar.find(
         {**query, "agency_id": agency_id}, {"_id": 0}
     ).to_list(max(len(dates) * 8 * len(room_codes), 32))
+    raw_agency_rows = agency_rows
     agency_rows = _prefer_pms_rows(agency_rows, room_type)
     base_rows = []
     if allow_base_rate_fallback:
@@ -911,6 +939,9 @@ async def _marketplace_stay_price(
         rate_plan_code = next(iter(plans), "BASE")
     if plans and rate_plan_code not in plans or not plans and rate_plan_code != "BASE":
         return {"sellable": False, "nightly_rates": [], "total_price": 0.0, "reason": "unknown_rate_plan"}
+    # Ambiguity is judged per product: a broken BB row must not close RO.
+    if _conflicting_rows([row for row in raw_agency_rows if str(row.get("rate_plan_code") or "LEGACY") == rate_plan_code], room_type):
+        return {"sellable": False, "nightly_rates": [], "total_price": 0.0, "reason": "duplicate_rate_plan_night"}
     agency_rows = [row for row in agency_rows if str(row.get("rate_plan_code") or "LEGACY") == rate_plan_code]
     base_rows = [row for row in base_rows if str(row.get("rate_plan_code") or "LEGACY") == rate_plan_code]
     agency_by_date = {row.get("date"): row for row in agency_rows}
@@ -958,6 +989,9 @@ async def _marketplace_stay_price(
         rate = net_prices.get(date, row.get("rate"))
         if rate is None:
             rate = fallback_rate
+        if float(rate or 0) <= 0:
+            # A zero/negative night would be sold for free.
+            return {"sellable": False, "nightly_rates": [], "total_price": 0.0, "reason": "zero_rate_night"}
         if date in agency_by_date and row.get("availability") is not None:
             tomorrow = (datetime.fromisoformat(date) + timedelta(days=1)).date().isoformat()
             used = await db.bookings.count_documents({
@@ -1072,6 +1106,36 @@ async def _marketplace_occupancy_price(
             "child_supplement_nightly": summary["child_supplement_nightly"],
         },
     }
+
+
+def _room_type_offered(room_type: str, listing: dict, contract: dict | None) -> bool:
+    """One rule for search, detail, availability and booking: the hotel's
+    offered room types and the agency contract's room types both apply."""
+    for policy in (listing or {}, contract or {}):
+        allowed = policy.get("allowed_room_types")
+        if allowed and room_type not in allowed:
+            return False
+    return True
+
+
+async def _occupied_room_count(tenant_id: str, room_ids: list, check_in: str, check_out: str) -> int:
+    """Physical rooms busy on any night of the stay.
+
+    Counts rooms, not reservations: two back-to-back stays in one room
+    occupy one room, not two (booking uses the same per-room rule).
+    """
+    if not room_ids:
+        return 0
+    rows = await db.bookings.find(
+        {
+            "tenant_id": tenant_id,
+            "room_id": {"$in": room_ids},
+            "status": {"$in": ["confirmed", "guaranteed", "checked_in", "pending"]},
+            **stay_overlap_filter(check_in, check_out),
+        },
+        {"_id": 0, "room_id": 1},
+    ).to_list(None)
+    return len({row.get("room_id") for row in rows if row.get("room_id")})
 
 
 async def _legacy_rule_currency(tenant_id: str) -> str | None:
@@ -2048,7 +2112,8 @@ async def agency_get_hotel(
 ):
     from routers.agency_contracts import has_active_contract
 
-    if not await has_active_contract(agency["agency_id"], tenant_id):
+    contract = await has_active_contract(agency["agency_id"], tenant_id)
+    if not contract:
         raise HTTPException(403, "Bu otelle aktif sözleşmeniz yok")
     listing = await _get_listing_or_404(tenant_id)
 
@@ -2085,7 +2150,7 @@ async def agency_get_hotel(
         if r.get("is_active") is False or r.get("status") in {"maintenance", "out_of_order", "blocked"}:
             continue
         rt = r.get("room_type", "Standard")
-        if listing.get("allowed_room_types") and rt not in listing["allowed_room_types"]:
+        if not _room_type_offered(rt, listing, contract):
             continue
         if rt not in room_types:
             editorial = editorial_room_types.get(rt, {})
@@ -2168,6 +2233,7 @@ async def agency_search(
             item.get("room_type"): item for item in content.get("room_types", [])
             if item.get("room_type")
         }
+        content_visible = catalogue_visible_to(listing, agency["agency_id"])
         # Tarih engeli kontrolü
         if any(d in listing.get("blocked_dates", []) for d in _date_range(req.check_in, req.check_out)):
             continue
@@ -2196,7 +2262,7 @@ async def agency_search(
                 if r.get("is_active") is False or r.get("status") in {"maintenance", "out_of_order", "blocked"}:
                     continue
                 rt = r.get("room_type", "Standard")
-                if listing.get("allowed_room_types") and rt not in listing["allowed_room_types"]:
+                if not _room_type_offered(rt, listing, active_contracts[tenant_id]):
                     continue
                 if r.get("capacity", 2) < capacity_needed:
                     continue
@@ -2213,8 +2279,9 @@ async def agency_search(
                     {
                         "room_type": rt,
                         "name": editorial_room_types.get(rt, {}).get("name") or rt,
-                        "description": editorial_room_types.get(rt, {}).get("description", ""),
-                        "images": editorial_room_types.get(rt, {}).get("images", []),
+                        # Room media follow the same catalogue visibility as hotel media.
+                        "description": editorial_room_types.get(rt, {}).get("description", "") if content_visible else "",
+                        "images": editorial_room_types.get(rt, {}).get("images", []) if content_visible else [],
                         "capacity": r.get("capacity", 2),
                         "base_price": r.get("base_price", 0),
                         "total_rooms": 0,
@@ -2240,16 +2307,9 @@ async def agency_search(
                     products[(rt_data["room_type"], plan)] = {**rt_data, "rate_plan_code": plan}
             room_types = products
             for rt_data in room_types.values():
-                booked = await db.bookings.count_documents(
-                    {
-                        "tenant_id": tenant_id,
-                        "room_id": {"$in": rt_data["_room_ids"]},
-                        "status": {"$in": ["confirmed", "guaranteed", "checked_in", "pending"]},
-                        # Half-open hotel-night overlap. A same-day departure
-                        # must not consume the arriving guest's room-night.
-                        **stay_overlap_filter(req.check_in, req.check_out),
-                    }
-                )
+                # Half-open hotel-night overlap; a same-day departure does not
+                # consume the arriving guest's room-night.
+                booked = await _occupied_room_count(tenant_id, rt_data["_room_ids"], req.check_in, req.check_out)
                 rt_data["available_rooms"] = max(0, rt_data["total_rooms"] - booked)
                 pricing = await _marketplace_stay_price(
                     tenant_id=tenant_id,
@@ -2311,8 +2371,8 @@ async def agency_search(
                     "city": listing.get("city"),
                     "country": listing.get("country"),
                     "star_rating": listing.get("star_rating"),
-                    "photos": listing.get("photos", [])[:3] if catalogue_visible_to(listing, agency["agency_id"]) else [],
-                    "description": listing.get("description", "") if catalogue_visible_to(listing, agency["agency_id"]) else "",
+                    "photos": listing.get("photos", [])[:3] if content_visible else [],
+                    "description": listing.get("description", "") if content_visible else "",
                     "amenities": listing.get("amenities", []),
                     "meal_plans": listing.get("meal_plans", []),
                     "currency": listing.get("currency", "TRY"),
@@ -2367,7 +2427,7 @@ async def agency_hotel_availability(
             if r.get("is_active") is False or r.get("status") in {"maintenance", "out_of_order", "blocked"}:
                 continue
             rt = r.get("room_type", "Standard")
-            if listing.get("allowed_room_types") and rt not in listing["allowed_room_types"]:
+            if not _room_type_offered(rt, listing, contract):
                 continue
             rt_data = room_types.setdefault(
                 rt,
@@ -2387,14 +2447,7 @@ async def agency_hotel_availability(
         nights = (co - ci).days
         commission_pct = _contract_commission(contract)
         for rt_data in room_types.values():
-            booked = await db.bookings.count_documents(
-                {
-                    "tenant_id": tenant_id,
-                    "room_id": {"$in": rt_data["_room_ids"]},
-                    "status": {"$in": ["confirmed", "guaranteed", "checked_in", "pending"]},
-                    **stay_overlap_filter(check_in, check_out),
-                }
-            )
+            booked = await _occupied_room_count(tenant_id, rt_data["_room_ids"], check_in, check_out)
             rt_data["available_rooms"] = max(0, rt_data["total_rooms"] - booked)
             pricing = await _marketplace_stay_price(
                 tenant_id=tenant_id,
@@ -3212,11 +3265,11 @@ MODIFICATION_SNAPSHOT_FIELDS = (
 )
 
 
-async def _record_proposal_intent(sysdb, proposal: dict, changes: dict) -> None:
+async def _record_proposal_intent(sysdb, proposal: dict, changes: dict, from_status: str = "awaiting_hotel") -> None:
     """Persist the exact changes before any write, so an interrupted
     acceptance resumes with the same changes instead of re-pricing."""
     recorded = await sysdb.marketplace_negotiations.update_one(
-        {"id": proposal["id"], "status": "awaiting_hotel"},
+        {"id": proposal["id"], "status": from_status},
         {"$set": {"status": "applying", "pending_changes": changes, "applying_at": _now_iso(), "updated_at": _now_iso()}},
     )
     if recorded.matched_count == 0:
@@ -3251,6 +3304,16 @@ async def _finish_marketplace_proposal(sysdb, tenant_id: str, proposal: dict, da
                                 {"status": "cancelled", "cancelled_at": changes["cancelled_at"]}]
             updated = await db.bookings.update_one(query, {"$set": changes})
             if updated.matched_count == 0:
+                current = await db.bookings.find_one({"id": reservation_id, "tenant_id": tenant_id}, {"_id": 0, "status": 1})
+                if not is_modification and (current or {}).get("status") in {"checked_in", "checked_out"}:
+                    # Nothing was written: the guest arrived first. Close the
+                    # proposal instead of leaving it to fail on every retry.
+                    await sysdb.marketplace_negotiations.update_one(
+                        {"id": proposal["id"], "status": "applying"},
+                        {"$set": {"status": "superseded", "updated_at": _now_iso(),
+                                  "response_note": "Misafir giriş yaptığı için iptal uygulanmadı"}},
+                    )
+                    raise HTTPException(409, "Misafir giriş yaptı; iptal uygulanmadı")
                 # Locks already acquired: retain the fence for reconciliation.
                 raise RuntimeError("Booking changed while applying agency proposal")
         if not is_modification:
@@ -3368,31 +3431,38 @@ async def agency_decide_negotiation(
 ):
     sysdb = get_system_db()
     proposal = await sysdb.marketplace_negotiations.find_one(
-        {"id": proposal_id, "agency_id": agency["agency_id"], "status": "awaiting_agency"}, {"_id": 0}
+        # Only hotel-initiated cancellations are the agency's to decide or
+        # finish; agency-initiated proposals are finished by the hotel under
+        # the sales fence.
+        {"id": proposal_id, "agency_id": agency["agency_id"], "type": "hotel_cancellation",
+         "status": {"$in": ["awaiting_agency", "applying"]}}, {"_id": 0}
     )
     if not proposal:
         raise HTTPException(404, "Yanıt bekleyen teklif bulunamadı")
-    status_value = "accepted" if data.accept else "declined"
-    if data.accept:
-        with tenant_context(proposal["tenant_id"]):
-            booking = await db.bookings.find_one({"id": proposal["reservation_id"], "tenant_id": proposal["tenant_id"]})
-            if not booking or booking.get("status") in {"checked_in", "checked_out", "cancelled"}:
-                raise HTTPException(409, "Rezervasyon artık iptal edilebilir durumda değil")
-            await db.bookings.update_one(
-                {"id": proposal["reservation_id"], "tenant_id": proposal["tenant_id"]},
-                {"$set": {"status": "cancelled", "cancellation_reason": proposal["reason"], "cancelled_by": "mutual_agreement", "cancelled_at": _now_iso(), "updated_at": _now_iso()}},
-            )
-            from core.atomic_booking import release_booking_nights
-            await release_booking_nights(proposal["tenant_id"], proposal["reservation_id"], reason="mutual_agreement")
-        await sysdb.marketplace_bookings.update_one(
-            {"id": proposal["reservation_id"], "agency_id": agency["agency_id"]},
-            {"$set": {"status": "cancelled", "cancelled_at": _now_iso(), "cancellation_reason": proposal["reason"]}},
+    tenant_id = proposal["tenant_id"]
+    if proposal["status"] == "applying":
+        # An earlier acceptance recorded its cancellation and was interrupted:
+        # accepting again finishes exactly that cancellation.
+        if not data.accept:
+            raise HTTPException(409, "Kabul edilen iptal uygulanıyor; reddedilemez, yeniden kabul ederek tamamlayın")
+        return await _finish_marketplace_proposal(sysdb, tenant_id, proposal, data)
+    if not data.accept:
+        await sysdb.marketplace_negotiations.update_one(
+            {"id": proposal_id, "status": "awaiting_agency"},
+            {"$set": {"status": "declined", "response_note": data.response_note.strip(), "responded_at": _now_iso(), "updated_at": _now_iso()}},
         )
-    await sysdb.marketplace_negotiations.update_one(
-        {"id": proposal_id, "status": "awaiting_agency"},
-        {"$set": {"status": status_value, "response_note": data.response_note.strip(), "responded_at": _now_iso(), "updated_at": _now_iso()}},
-    )
-    return {"ok": True, "status": status_value, "reservation_cancelled": bool(data.accept)}
+        return {"ok": True, "status": "declined", "reservation_cancelled": False}
+    with tenant_context(tenant_id):
+        booking = await db.bookings.find_one({"id": proposal["reservation_id"], "tenant_id": tenant_id})
+    if not booking or booking.get("status") in {"checked_in", "checked_out", "cancelled"}:
+        raise HTTPException(409, "Rezervasyon artık iptal edilebilir durumda değil")
+    changes = {"status": "cancelled", "cancellation_reason": proposal["reason"], "cancelled_by": "mutual_agreement",
+               "cancelled_at": _now_iso(), "updated_at": _now_iso()}
+    # Same durable path as hotel-side acceptance: record, apply idempotently
+    # (the PMS write refuses a booking checked in meanwhile), verify the
+    # ledger, only then "accepted".
+    await _record_proposal_intent(sysdb, proposal, changes, from_status="awaiting_agency")
+    return await _finish_marketplace_proposal(sysdb, tenant_id, {**proposal, "pending_changes": changes}, data)
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -3408,14 +3478,7 @@ async def agency_reconciliation(
 ):
     """Acente için dönem bazlı komisyon ve ciro özeti."""
     sysdb = get_system_db()
-    docs = await sysdb.marketplace_bookings.find(
-        {
-            "agency_id": agency["agency_id"],
-            "check_in": {"$gte": period_start, "$lte": period_end},
-        },
-        {"_id": 0},
-    ).to_list(None)
-    docs = await refresh_ledger_from_pms(sysdb, docs)
+    docs = await ledger_rows_for_period(sysdb, {"agency_id": agency["agency_id"]}, period_start, period_end)
 
     from core.agency_reporting import combined_summary, currency_code
     by_hotel: dict = {}
@@ -3490,14 +3553,8 @@ async def agency_reconciliation_csv(
 ):
     """Download an agency-owned, spreadsheet-safe reconciliation detail."""
     sysdb = get_system_db()
-    docs = await sysdb.marketplace_bookings.find(
-        {
-            "agency_id": agency["agency_id"],
-            "check_in": {"$gte": period_start, "$lte": period_end},
-        },
-        {"_id": 0},
-    ).sort("check_in", 1).to_list(None)
-    docs = await refresh_ledger_from_pms(sysdb, docs)
+    docs = await ledger_rows_for_period(sysdb, {"agency_id": agency["agency_id"]}, period_start, period_end)
+    docs.sort(key=lambda row: str(row.get("check_in") or ""))
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(["Onay Kodu", "Otel", "Misafir", "Giriş", "Çıkış", "Durum", "Para Birimi", "Brüt", "Komisyon", "Platform Bedeli", "Otele Net"])
@@ -3534,14 +3591,7 @@ async def hotel_reconciliation(
     """Otel için marketplace üzerinden gelen rezervasyonların komisyon raporu."""
     tenant_id = _require_hotel_admin(current_user)
     sysdb = get_system_db()
-    docs = await sysdb.marketplace_bookings.find(
-        {
-            "tenant_id": tenant_id,
-            "check_in": {"$gte": period_start, "$lte": period_end},
-        },
-        {"_id": 0},
-    ).to_list(None)
-    docs = await refresh_ledger_from_pms(sysdb, docs)
+    docs = await ledger_rows_for_period(sysdb, {"tenant_id": tenant_id}, period_start, period_end)
 
     from core.agency_reporting import combined_summary, currency_code
     by_agency: dict = {}

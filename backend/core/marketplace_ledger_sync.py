@@ -108,3 +108,28 @@ async def refresh_ledger_from_pms(sysdb, docs: list[dict]) -> list[dict]:
             doc = {**doc, **patch, "pms_synced_at": now}
         refreshed.append(doc)
     return refreshed
+
+
+async def ledger_rows_for_period(sysdb, scope: dict, period_start: str, period_end: str) -> list[dict]:
+    """Ledger rows whose *current PMS* check-in falls in [start, end] (dates).
+
+    Period membership follows the authoritative PMS date: rows the ledger
+    still files in the period but the PMS moved out are dropped, and rows
+    moved into the period from elsewhere are found through the PMS booking.
+    ``scope`` is ``{"tenant_id": ...}`` and/or ``{"agency_id": ...}``.
+    """
+    in_range = {"$gte": period_start, "$lte": period_end + "T23:59:59.999999"}
+    rows = await sysdb.marketplace_bookings.find({**scope, "check_in": in_range}, {"_id": 0}).to_list(None)
+    # Ledger rows filed outside the period whose PMS date may now be inside
+    # it; look them up in the PMS by id (indexed), not by scanning bookings.
+    outside = await sysdb.marketplace_bookings.find(
+        {**scope, "check_in": {"$not": in_range}}, {"_id": 0, "id": 1}
+    ).to_list(None)
+    outside_ids = [row["id"] for row in outside if row.get("id")]
+    if outside_ids:
+        moved_in = [row["id"] async for row in sysdb.bookings.find(
+            {"id": {"$in": outside_ids}, "check_in": in_range}, {"_id": 0, "id": 1})]
+        if moved_in:
+            rows += await sysdb.marketplace_bookings.find({**scope, "id": {"$in": moved_in}}, {"_id": 0}).to_list(None)
+    rows = await refresh_ledger_from_pms(sysdb, rows)
+    return [row for row in rows if period_start <= str(row.get("check_in") or "")[:10] <= period_end]

@@ -1,5 +1,4 @@
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
 
 import pytest
 
@@ -9,12 +8,16 @@ from routers import marketplace_b2b as market
 @pytest.mark.asyncio
 @pytest.mark.parametrize('kind', ['agency', 'hotel'])
 async def test_reconciliation_never_adds_try_and_eur(monkeypatch, kind):
-    rows = [{'tenant_id': 't', 'agency_id': 'a', 'currency': currency, 'total_amount': amount,
+    rows = [{'tenant_id': 't', 'agency_id': 'a', 'currency': currency, 'total_amount': amount, 'check_in': '2026-05-01',
              'commission_amount': amount / 10, 'syroce_b2b_fee_amount': amount / 100}
             for currency, amount in [('TRY', 1000), ('EUR', 100), (None, 50)]]
-    rows.append({'currency': 'EUR', 'status': 'cancelled', 'total_amount': 9999})
-    collection = SimpleNamespace(find=lambda *a: SimpleNamespace(to_list=AsyncMock(return_value=rows)))
-    monkeypatch.setattr(market, 'get_system_db', lambda: SimpleNamespace(marketplace_bookings=collection))
+    rows.append({'currency': 'EUR', 'status': 'cancelled', 'total_amount': 9999, 'check_in': '2026-05-01'})
+
+    async def period_rows(_sysdb, _scope, _start, _end):
+        return rows
+
+    monkeypatch.setattr(market, 'get_system_db', lambda: SimpleNamespace())
+    monkeypatch.setattr(market, 'ledger_rows_for_period', period_rows)
     monkeypatch.setattr(market, '_require_hotel_admin', lambda user: 't')
     if kind == 'agency':
         result = await market.agency_reconciliation('2026-01-01', '2026-12-31', {'agency_id': 'a'})

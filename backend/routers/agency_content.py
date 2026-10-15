@@ -145,6 +145,10 @@ async def get_content_readiness(current_user: User = Depends(get_current_user)):
     content = await db.hotel_content.find_one({'tenant_id': tenant_id}, {'_id': 0}) or {}
     tenant = await db.tenants.find_one({'id': tenant_id}, {'_id': 0}) or {}
     listing = await get_system_db().marketplace_listings.find_one({'tenant_id': tenant_id}, {'_id': 0}) or {}
+    if content and not str(content.get('country') or '').strip():
+        # The form shows, the agency directory uses and saving stores this
+        # same country; do not report it as missing.
+        content = {**content, 'country': listing.get('country') or tenant.get('country') or 'TR'}
     from routers.agency_contracts import list_active_agencies_for_tenant
     partners = await list_active_agencies_for_tenant(tenant_id)
     return {**content_readiness(content, tenant), 'access': {
