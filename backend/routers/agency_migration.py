@@ -95,12 +95,14 @@ async def _suggest_target(sysdb, agency: dict) -> dict | None:
 async def migration_preview(tenant_id: str = Query(..., min_length=1), _: bool = Depends(_require_system_admin)):
     sysdb = get_system_db()
     listing = await sysdb.marketplace_listings.find_one({"tenant_id": tenant_id}, {"_id": 0, "is_listed": 1})
-    agencies = await sysdb.agencies.find({"tenant_id": tenant_id, "status": "active"}, {"_id": 0}).to_list(500)
+    agencies = await sysdb.agencies.find({"tenant_id": tenant_id, "status": {"$in": ["active", "migrating"]}}, {"_id": 0}).to_list(500)
     rows = []
     for agency in agencies:
         snapshot = await _legacy_snapshot(sysdb, tenant_id, agency)
         contract = snapshot["contract"]
         warnings = []
+        if agency.get("status") == "migrating":
+            warnings.append("Önceki taşıma yarıda kaldı: tekrar çalıştırınca aynı hedef acenteyle kaldığı yerden tamamlanır.")
         if not contract:
             warnings.append("Aktif eski sözleşme yok: acentenin varsayılan komisyonuyla 1 yıllık komisyon sözleşmesi açılır.")
         if snapshot["allotments"]:
@@ -123,6 +125,11 @@ async def migration_preview(tenant_id: str = Query(..., min_length=1), _: bool =
         if (listing or {}).get("is_listed") is False else [],
         "agencies": rows,
     }
+
+
+def migration_target_id(tenant_id: str, legacy_agency_id: str) -> str:
+    """Stable marketplace agency id for a legacy agency (retry-safe)."""
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, f"syroce:legacy-agency:{tenant_id}:{legacy_agency_id}"))
 
 
 def _contract_terms(legacy_contract: dict | None, agency: dict) -> dict:
@@ -156,28 +163,42 @@ async def _migrate_one(sysdb, tenant_id: str, hotel_name: str, item: MigrationIt
     from routers.agency_contracts import _ensure_indexes, _next_contract_code
 
     agency = await sysdb.agencies.find_one({"id": item.legacy_agency_id, "tenant_id": tenant_id}, {"_id": 0})
-    if not agency or agency.get("status") != "active":
+    # "migrating" = an earlier run stopped part-way: resume it, same target.
+    if not agency or agency.get("status") not in ("active", "migrating"):
         return {"legacy_agency_id": item.legacy_agency_id, "error": "Aktif eski acente bulunamadı"}
     snapshot = await _legacy_snapshot(sysdb, tenant_id, agency)
     plan: dict = {"legacy_agency_id": agency["id"], "legacy_agency_name": agency.get("name"), "actions": [], "skipped": []}
+    resumed_target = agency.get("migration_target_id")
+    if resumed_target:
+        plan["actions"].append("Yarıda kalan taşıma aynı hedef acenteyle tamamlanır")
 
-    # 1. Target marketplace agency
-    if item.marketplace_agency_id:
-        target = await sysdb.marketplace_agencies.find_one({"id": item.marketplace_agency_id, "status": "active"}, {"_id": 0})
+    # 1. Target marketplace agency. The id is fixed per legacy agency (or the
+    # one an interrupted run recorded), so a retry never creates a second one.
+    requested = item.marketplace_agency_id or resumed_target
+    if resumed_target and item.marketplace_agency_id and item.marketplace_agency_id != resumed_target:
+        return {**plan, "error": "Yarıda kalan taşıma başka bir hedef acenteye başlamıştı; aynı hedefle tekrar deneyin"}
+    if requested:
+        target = await sysdb.marketplace_agencies.find_one({"id": requested, "status": "active"}, {"_id": 0})
         if not target:
             return {**plan, "error": "Hedef marketplace acentesi bulunamadı veya aktif değil"}
         plan["actions"].append(f"Mevcut marketplace acentesine bağlanır: {target.get('name')}")
     else:
         target = {
-            "id": str(uuid.uuid4()), "name": agency.get("name"), "contact_email": agency.get("contact_email", ""),
+            "id": migration_target_id(tenant_id, agency["id"]), "name": agency.get("name"), "contact_email": agency.get("contact_email", ""),
             "contact_phone": agency.get("contact_phone", ""), "country": "TR",
             "default_commission_pct": float(agency.get("commission_rate") or 0), "status": "active", "created_at": _now(),
             "migrated_from": {"tenant_id": tenant_id, "legacy_agency_id": agency["id"]},
         }
         plan["actions"].append(f"Yeni marketplace acentesi oluşturulur: {target['name']}")
         if not dry_run:
-            await sysdb.marketplace_agencies.insert_one(dict(target))
+            await sysdb.marketplace_agencies.update_one({"id": target["id"]}, {"$setOnInsert": dict(target)}, upsert=True)
     plan["marketplace_agency_id"] = target["id"]
+    if not dry_run:
+        # Record the target before moving anything; the legacy portal stops
+        # selling for this agency while its users and bookings move.
+        await sysdb.agencies.update_one({"id": agency["id"], "tenant_id": tenant_id}, {"$set": {
+            "status": "migrating", "migration_target_id": target["id"], "migration_started_at": _now(), "updated_at": _now(),
+        }})
 
     # 2. Contract
     existing = await sysdb.agency_contracts.find_one(
@@ -235,7 +256,9 @@ async def _migrate_one(sysdb, tenant_id: str, hotel_name: str, item: MigrationIt
     # 4. Future bookings
     today = _today()
     bookings = await sysdb.bookings.find({
-        "tenant_id": tenant_id, "agency_id": agency["id"], "status": {"$in": ACTIVE_BOOKING_STATUSES}, "check_out": {"$gte": today},
+        "tenant_id": tenant_id, "status": {"$in": ACTIVE_BOOKING_STATUSES}, "check_out": {"$gte": today},
+        # Bookings an interrupted run already re-pointed still need their ledger row.
+        "$or": [{"agency_id": agency["id"]}, {"legacy_agency_id": agency["id"], "agency_id": target["id"]}],
     }, {"_id": 0}).to_list(5000)
     if bookings:
         plan["actions"].append(f"{len(bookings)} gelecek rezervasyon marketplace acentesine bağlanır ve deftere işlenir")
@@ -246,7 +269,7 @@ async def _migrate_one(sysdb, tenant_id: str, hotel_name: str, item: MigrationIt
             await sysdb.bookings.update_one({"id": booking["id"], "tenant_id": tenant_id}, {"$set": {
                 "agency_id": target["id"], "agency_name": target.get("name"), "legacy_agency_id": agency["id"], "updated_at": _now(),
             }})
-            await sysdb.marketplace_bookings.update_one({"id": booking["id"], "agency_id": target["id"]}, {"$setOnInsert": {
+            await sysdb.marketplace_bookings.update_one({"id": booking["id"]}, {"$setOnInsert": {
                 "id": booking["id"], "agency_id": target["id"], "agency_name": target.get("name"), "tenant_id": tenant_id,
                 "hotel_name": hotel_name, "confirmation_code": booking.get("confirmation_code"), "guest_name": booking.get("guest_name"),
                 "room_type": booking.get("room_type"), "room_number": booking.get("room_number"),
@@ -264,7 +287,7 @@ async def _migrate_one(sysdb, tenant_id: str, hotel_name: str, item: MigrationIt
     if not dry_run:
         await sysdb.agencies.update_one({"id": agency["id"], "tenant_id": tenant_id}, {"$set": {
             "status": "migrated", "migrated_to_marketplace_agency_id": target["id"], "migrated_at": _now(), "updated_at": _now(),
-        }})
+        }, "$unset": {"migration_target_id": "", "migration_started_at": ""}})
     return plan
 
 

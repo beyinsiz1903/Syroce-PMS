@@ -7,11 +7,13 @@ Agency (portal):   /api/marketplace/v1/statements
 from __future__ import annotations
 
 import uuid
+from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field, field_validator
 from pymongo import ReturnDocument
+from pymongo.errors import DuplicateKeyError
 
 from core.agency_statements import build_statement, outstanding
 from core.security import get_current_user
@@ -23,6 +25,7 @@ hotel_router = APIRouter(prefix="/api/marketplace/hotel/statements", tags=["Mark
 agency_router = APIRouter(prefix="/api/marketplace/v1/statements", tags=["Marketplace / Statements (agency)"])
 
 OPEN_STATUSES = ("issued", "agreed", "disputed", "resolved")
+LOCK_TTL_SECONDS = 120
 
 
 def _now() -> str:
@@ -124,18 +127,58 @@ async def issue_statement(data: StatementCreate, current_user: User = Depends(ge
     )
     if not contract:
         raise HTTPException(404, "Bu acenteyle marketplace sözleşmesi bulunamadı")
+    async with _issue_lock(sysdb, tenant_id, data.agency_id, data.currency):
+        return await _issue_statement_locked(sysdb, tenant_id, data, contract, current_user)
+
+
+@asynccontextmanager
+async def _issue_lock(sysdb, tenant_id: str, agency_id: str, currency: str):
+    """Serialize issuing per hotel/agency/currency so two concurrent issues
+    cannot both pass the overlap check. A crashed holder expires."""
+    key = f"{tenant_id}:{agency_id}:{currency}"
+    for _ in range(2):
+        try:
+            await sysdb.agency_statement_locks.insert_one({"_id": key, "created_at": _now()})
+            break
+        except DuplicateKeyError:
+            stale_before = datetime.fromtimestamp(datetime.now(UTC).timestamp() - LOCK_TTL_SECONDS, UTC).isoformat()
+            removed = await sysdb.agency_statement_locks.delete_one({"_id": key, "created_at": {"$lt": stale_before}})
+            if not removed.deleted_count:
+                raise HTTPException(409, "Bu acente için başka bir ekstre şu an düzenleniyor; birazdan tekrar deneyin") from None
+    else:
+        raise HTTPException(409, "Bu acente için başka bir ekstre şu an düzenleniyor; birazdan tekrar deneyin")
+    try:
+        yield
+    finally:
+        await sysdb.agency_statement_locks.delete_one({"_id": key})
+
+
+async def _issue_statement_locked(sysdb, tenant_id: str, data, contract: dict, current_user: User) -> dict:
+    # Any overlap would bill the same stays twice (e.g. 1-31 Oct and 15-31 Oct).
     duplicate = await sysdb.agency_statements.find_one({
         "tenant_id": tenant_id, "agency_id": data.agency_id, "currency": data.currency,
-        "period_start": data.period_start, "period_end": data.period_end, "status": {"$in": list(OPEN_STATUSES) + ["settled"]},
-    }, {"_id": 0, "number": 1})
+        "period_start": {"$lte": data.period_end}, "period_end": {"$gte": data.period_start},
+        "status": {"$in": list(OPEN_STATUSES) + ["settled"]},
+    }, {"_id": 0, "number": 1, "period_start": 1, "period_end": 1})
     if duplicate:
-        raise HTTPException(409, f"Bu dönem için {duplicate['number']} ekstresi zaten var; önce iptal edin")
+        raise HTTPException(
+            409, f"Bu dönem {duplicate['number']} ekstresiyle ({duplicate['period_start']} – {duplicate['period_end']}) çakışıyor; önce onu iptal edin"
+        )
     built = await build_statement(
         sysdb, tenant_id=tenant_id, agency_id=data.agency_id, period_start=data.period_start,
         period_end=data.period_end, currency=data.currency,
     )
     if not built["lines"]:
         raise HTTPException(400, "Bu dönemde bu para biriminde rezervasyon yok")
+    # A stay moved to another period after billing must not be billed again.
+    ids = [line["booking_id"] for line in built["lines"] if line.get("booking_id")]
+    billed = await sysdb.agency_statements.find_one(
+        {"tenant_id": tenant_id, "agency_id": data.agency_id, "status": {"$ne": "void"}, "lines.booking_id": {"$in": ids}},
+        {"_id": 0, "number": 1, "lines.booking_id": 1, "lines.confirmation_code": 1},
+    )
+    if billed:
+        codes = sorted({line.get("confirmation_code") or line["booking_id"] for line in billed.get("lines", []) if line.get("booking_id") in ids})
+        raise HTTPException(409, f"{', '.join(codes)} zaten {billed['number']} ekstresinde; önce o ekstreyi iptal edin")
     statement = {
         "id": str(uuid.uuid4()),
         "number": await _next_number(sysdb),
@@ -209,10 +252,17 @@ async def record_payment(statement_id: str, data: PaymentCreate, current_user: U
     if statement["status"] in ("void", "issued", "disputed"):
         raise HTTPException(409, "Ödeme yalnız acentenin onayladığı veya itirazı çözülmüş ekstreye kaydedilir")
     payment = {"id": str(uuid.uuid4()), **data.model_dump(), "recorded_by": current_user.email, "recorded_at": _now()}
-    remaining = outstanding({**statement, "payments": [*statement.get("payments", []), payment]})
+    previous = statement.get("payments") or []
+    remaining = outstanding({**statement, "payments": [*previous, payment]})
     status = "settled" if abs(remaining) < 0.01 else statement["status"]
+    # The status is derived from the payments we read: refuse the write if
+    # another payment landed meanwhile, otherwise two concurrent payments that
+    # together settle the balance would leave the statement open.
+    guard = {f"payments.{len(previous)}": {"$exists": False}}
+    if previous:
+        guard[f"payments.{len(previous) - 1}.id"] = previous[-1]["id"]
     updated = await sysdb.agency_statements.find_one_and_update(
-        {"id": statement_id, "tenant_id": tenant_id, "status": statement["status"]},
+        {"id": statement_id, "tenant_id": tenant_id, "status": statement["status"], **guard},
         {"$push": {"payments": payment, "history": _event("payment", current_user.email, amount=data.amount, direction=data.direction)},
          "$set": {"status": status}},
         projection={"_id": 0}, return_document=ReturnDocument.AFTER,

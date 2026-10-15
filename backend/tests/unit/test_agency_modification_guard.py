@@ -162,3 +162,44 @@ async def test_room_claim_can_retain_original_locks_until_commit(monkeypatch):
         check_in='2027-01-01T14:00:00',check_out='2027-01-02T11:00:00',release_obsolete=False)
     assert result['success']
     locks.delete_many.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_acceptance_records_intent_and_writes_commission_pct(decision):
+    database, _, _ = decision
+    await m._decide_marketplace_modification_locked('p', m.CancellationProposalDecision(accept=True), object())
+    intent = database.marketplace_negotiations.update_one.call_args_list[0].args
+    assert intent[0] == {'id': 'p', 'status': 'awaiting_hotel'} and intent[1]['$set']['status'] == 'applying'
+    ledger = database.marketplace_bookings.update_one.call_args.args
+    assert ledger[0] == {'id': 'b', 'tenant_id': 't', 'agency_id': 'a'}
+    assert ledger[1]['$set']['commission_pct'] == 10 and ledger[1]['$set']['net_to_hotel'] == 117
+    final = database.marketplace_negotiations.update_one.call_args_list[-1].args
+    assert final[0] == {'id': 'p', 'status': 'applying'} and final[1]['$set']['status'] == 'accepted'
+
+
+@pytest.mark.asyncio
+async def test_missing_ledger_row_is_never_reported_accepted(decision):
+    database, _, _ = decision
+    database.marketplace_bookings.update_one = AsyncMock(return_value=SimpleNamespace(matched_count=0))
+    with pytest.raises(RuntimeError):
+        await m._decide_marketplace_modification_locked('p', m.CancellationProposalDecision(accept=True), object())
+    statuses = [c.args[1]['$set']['status'] for c in database.marketplace_negotiations.update_one.call_args_list]
+    assert statuses == ['applying']  # stays applying; fence kept for recovery
+
+
+@pytest.mark.asyncio
+async def test_interrupted_acceptance_resumes_with_recorded_changes(decision):
+    database, proposal, booking = decision
+    recorded = {'check_in': '2027-01-01T14:00:00', 'check_out': '2027-01-02T11:00:00', 'room_id': 'r', 'total_amount': 130,
+                'commission_pct': 10, 'net_to_hotel': 117, 'room_type': 'standard', 'rate_plan_code': 'BB',
+                'credit_exposure_amount': 117, 'credit_exposure_currency': 'TRY', 'nightly_rates': [], 'meal_plan': 'BB',
+                'cancellation_policy': {}}
+    proposal.update(status='applying', pending_changes=recorded)
+    booking.update({k: recorded[k] for k in ('check_in', 'check_out', 'room_id', 'total_amount')})  # PMS already written
+    result = await m._decide_marketplace_modification_locked('p', m.CancellationProposalDecision(accept=True), object())
+    assert result['status'] == 'accepted'
+    m._validated_agency_quote.assert_not_awaited()  # never re-priced
+    database.bookings.update_one.assert_not_awaited()  # PMS write not repeated
+    assert database.marketplace_bookings.update_one.call_args.args[1]['$set'] == recorded
+    with pytest.raises(HTTPException):
+        await m._decide_marketplace_modification_locked('p', m.CancellationProposalDecision(accept=False), object())

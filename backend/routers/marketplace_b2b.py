@@ -3018,12 +3018,18 @@ async def _decide_marketplace_modification_locked(proposal_id, data, current_use
             "id": proposal_id,
             "tenant_id": tenant_id,
             "type": {"$in": ["agency_modification", "agency_cancellation"]},
-            "status": "awaiting_hotel",
+            "status": {"$in": ["awaiting_hotel", "applying"]},
         },
         {"_id": 0},
     )
     if not proposal:
         raise HTTPException(404, "Yanıt bekleyen değişiklik talebi bulunamadı")
+    if proposal["status"] == "applying":
+        # An earlier acceptance was interrupted after its changes were
+        # recorded: finish exactly those changes, never re-price.
+        if not data.accept:
+            raise HTTPException(409, "Kabul edilen değişiklik uygulanıyor; reddedilemez, yeniden kabul ederek tamamlayın")
+        return await _finish_marketplace_proposal(sysdb, tenant_id, proposal, data)
     if proposal.get("expires_at") and datetime.fromisoformat(proposal["expires_at"]) < datetime.now(UTC):
         await sysdb.marketplace_negotiations.update_one({"id": proposal_id}, {"$set": {"status": "expired"}})
         raise HTTPException(409, "Değişiklik teklifinin 48 saatlik süresi dolmuş")
@@ -3112,53 +3118,93 @@ async def _decide_marketplace_modification_locked(proposal_id, data, current_use
             "credit_exposure_basis": "net_to_hotel_after_agency_commission_v1",
             "updated_at": _now_iso(),
         }
-        with tenant_context(tenant_id):
-            updated = await db.bookings.update_one({"id": proposal["reservation_id"], "tenant_id": tenant_id,
-                "agency_id": proposal["agency_id"], "status": "confirmed"}, {"$set": changes})
-            if updated.matched_count == 0:
-                # Locks already acquired: retain the fence for reconciliation.
-                raise RuntimeError("Booking changed while applying agency modification")
-        await sysdb.marketplace_bookings.update_one(
-            {"id": proposal["reservation_id"], "tenant_id": tenant_id}, {"$set": changes}
-        )
-        # Re-enter idempotently only after persistence, then release the old
-        # nights. An exception before here keeps the admission fence intact.
-        await assign_room_atomic(tenant_id=tenant_id, booking_id=booking["id"],
-            room_id=selected_room["id"], check_in=changes["check_in"], check_out=changes["check_out"])
-    elif data.accept:
+        # The ledger (statements, reports, credit) computes from commission_pct.
+        changes["commission_pct"] = commission_pct
+        await _record_proposal_intent(sysdb, proposal, changes)
+        return await _finish_marketplace_proposal(sysdb, tenant_id, {**proposal, "pending_changes": changes}, data)
+    if data.accept:
         with tenant_context(tenant_id):
             booking = await db.bookings.find_one({"id": proposal["reservation_id"], "tenant_id": tenant_id})
-            if not booking or booking.get("status") in {"checked_in", "checked_out", "cancelled"}:
-                raise HTTPException(409, "Rezervasyon artık iptal edilebilir durumda değil")
-            await db.bookings.update_one(
-                {"id": proposal["reservation_id"], "tenant_id": tenant_id},
-                {"$set": {"status": "cancelled", "cancellation_reason": proposal["reason"], "cancelled_by": "mutual_agreement", "cancelled_at": _now_iso(), "updated_at": _now_iso()}},
-            )
-            from core.atomic_booking import release_booking_nights
+        if not booking or booking.get("status") in {"checked_in", "checked_out", "cancelled"}:
+            raise HTTPException(409, "Rezervasyon artık iptal edilebilir durumda değil")
+        changes = {"status": "cancelled", "cancellation_reason": proposal["reason"], "cancelled_by": "mutual_agreement",
+                   "cancelled_at": _now_iso(), "updated_at": _now_iso()}
+        await _record_proposal_intent(sysdb, proposal, changes)
+        return await _finish_marketplace_proposal(sysdb, tenant_id, {**proposal, "pending_changes": changes}, data)
 
-            await release_booking_nights(tenant_id, proposal["reservation_id"], reason="mutual_agreement")
-        await sysdb.marketplace_bookings.update_one(
-            {"id": proposal["reservation_id"], "tenant_id": tenant_id},
-            {"$set": {"status": "cancelled", "cancelled_at": _now_iso(), "cancellation_reason": proposal["reason"]}},
-        )
-
-    status_value = "accepted" if data.accept else "declined"
     await sysdb.marketplace_negotiations.update_one(
         {"id": proposal_id, "status": "awaiting_hotel"},
-        {"$set": {"status": status_value, "response_note": data.response_note.strip(), "responded_at": _now_iso(), "updated_at": _now_iso(),
-                  "applied_snapshot": ({key: changes[key] for key in (
-                      "check_in", "check_out", "room_id", "room_type", "rate_plan_code", "total_amount",
-                      "net_to_hotel", "credit_exposure_amount", "credit_exposure_currency",
-                      "nightly_rates", "meal_plan", "cancellation_policy",
-                  )} if data.accept and proposal["type"] == "agency_modification" else
-                  {"status": "cancelled"} if data.accept else {})}},
+        {"$set": {"status": "declined", "response_note": data.response_note.strip(), "responded_at": _now_iso(),
+                  "updated_at": _now_iso(), "applied_snapshot": {}}},
     )
-    return {
-        "ok": True,
-        "status": status_value,
-        "reservation_modified": bool(data.accept and proposal["type"] == "agency_modification"),
-        "reservation_cancelled": bool(data.accept and proposal["type"] == "agency_cancellation"),
-    }
+    return {"ok": True, "status": "declined", "reservation_modified": False, "reservation_cancelled": False}
+
+
+MODIFICATION_SNAPSHOT_FIELDS = (
+    "check_in", "check_out", "room_id", "room_type", "rate_plan_code", "total_amount",
+    "net_to_hotel", "credit_exposure_amount", "credit_exposure_currency",
+    "nightly_rates", "meal_plan", "cancellation_policy",
+)
+
+
+async def _record_proposal_intent(sysdb, proposal: dict, changes: dict) -> None:
+    """Persist the exact changes before any write, so an interrupted
+    acceptance resumes with the same changes instead of re-pricing."""
+    recorded = await sysdb.marketplace_negotiations.update_one(
+        {"id": proposal["id"], "status": "awaiting_hotel"},
+        {"$set": {"status": "applying", "pending_changes": changes, "applying_at": _now_iso(), "updated_at": _now_iso()}},
+    )
+    if recorded.matched_count == 0:
+        raise HTTPException(409, "Değişiklik talebi eş zamanlı yanıtlandı; yenileyin")
+
+
+async def _finish_marketplace_proposal(sysdb, tenant_id: str, proposal: dict, data) -> dict:
+    """Apply recorded changes to the PMS booking and the agency ledger.
+
+    Every step is idempotent. The proposal only becomes ``accepted`` after
+    both records carry the changes; otherwise it stays ``applying`` and the
+    admission fence is kept for recovery.
+    """
+    changes = proposal["pending_changes"]
+    reservation_id = proposal["reservation_id"]
+    is_modification = proposal["type"] == "agency_modification"
+    with tenant_context(tenant_id):
+        booking = await db.bookings.find_one({"id": reservation_id, "tenant_id": tenant_id}, {"_id": 0})
+        already = booking is not None and all(booking.get(key) == changes[key] for key in ("check_in", "check_out", "room_id", "total_amount")) \
+            if is_modification else booking is not None and booking.get("status") == "cancelled"
+        if not already:
+            query = {"id": reservation_id, "tenant_id": tenant_id, "agency_id": proposal["agency_id"]}
+            query["status"] = "confirmed" if is_modification else {"$nin": ["checked_in", "checked_out", "cancelled"]}
+            updated = await db.bookings.update_one(query, {"$set": changes})
+            if updated.matched_count == 0:
+                # Locks already acquired: retain the fence for reconciliation.
+                raise RuntimeError("Booking changed while applying agency proposal")
+        if not is_modification:
+            from core.atomic_booking import release_booking_nights
+
+            await release_booking_nights(tenant_id, reservation_id, reason="mutual_agreement")
+    ledger_changes = changes if is_modification else {
+        key: changes[key] for key in ("status", "cancelled_at", "cancellation_reason")}
+    ledger = await sysdb.marketplace_bookings.update_one(
+        {"id": reservation_id, "tenant_id": tenant_id, "agency_id": proposal["agency_id"]}, {"$set": ledger_changes}
+    )
+    if ledger.matched_count == 0:
+        # PMS and ledger would disagree on price/commission: keep the
+        # proposal in "applying" and the fence held until reconciled.
+        logger.error("Agency proposal %s: ledger row missing for booking %s", proposal["id"], reservation_id)
+        raise RuntimeError("Agency ledger row missing while applying proposal")
+    if is_modification:
+        # Re-enter idempotently only after persistence, then release the old nights.
+        await assign_room_atomic(tenant_id=tenant_id, booking_id=reservation_id,
+            room_id=changes["room_id"], check_in=changes["check_in"], check_out=changes["check_out"])
+    snapshot = {key: changes[key] for key in MODIFICATION_SNAPSHOT_FIELDS} if is_modification else {"status": "cancelled"}
+    await sysdb.marketplace_negotiations.update_one(
+        {"id": proposal["id"], "status": "applying"},
+        {"$set": {"status": "accepted", "response_note": data.response_note.strip(), "responded_at": _now_iso(),
+                  "updated_at": _now_iso(), "applied_snapshot": snapshot}},
+    )
+    return {"ok": True, "status": "accepted", "reservation_modified": is_modification,
+            "reservation_cancelled": not is_modification}
 
 
 @router.post("/hotel/reservations/{reservation_id}/cancellation-proposals")
