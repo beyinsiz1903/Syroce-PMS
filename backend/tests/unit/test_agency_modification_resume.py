@@ -165,3 +165,54 @@ async def test_finish_compares_every_recorded_field_not_only_dates(world):
     proposal = await world.marketplace_negotiations.find_one({"id": "p"})
     await m._finish_marketplace_proposal(world, "t", proposal, ACCEPT)
     assert (world.bookings.rows[0]["rate_plan_code"], world.bookings.rows[0]["net_to_hotel"]) == ("BB", 117)
+
+
+@pytest.mark.asyncio
+async def test_resume_cannot_take_over_while_the_first_writer_is_still_running(world):
+    import asyncio
+
+    from core.agency_sales_guard import agency_sale_guard
+
+    gate, entered = asyncio.Event(), asyncio.Event()
+    real_update = world.marketplace_bookings.update_one
+
+    async def slow_ledger(query, update, **kw):
+        entered.set()
+        await gate.wait()  # first writer paused mid-write
+        return await real_update(query, update, **kw)
+
+    world.marketplace_bookings.update_one = slow_ledger
+    first = asyncio.create_task(m.hotel_decide_marketplace_modification("p", ACCEPT, object()))
+    try:
+        await asyncio.wait_for(entered.wait(), 5)
+        assert world.marketplace_negotiations.rows[0]["status"] == "applying"
+
+        with pytest.raises(HTTPException) as busy:  # "Uygulamayı tamamla" while the first is alive
+            # A wrongly granted takeover would block on the same paused write.
+            await asyncio.wait_for(m.hotel_decide_marketplace_modification("p", ACCEPT, object()), 2)
+        assert busy.value.status_code == 409
+        with pytest.raises(HTTPException):  # and no other sale can slip in
+            async with agency_sale_guard(world, "t", "a", operation="reservation", reference_id="other"):
+                pass
+        assert world.agency_sale_mutexes.rows[0]["recovery_state"] == "active"
+    finally:
+        gate.set()
+    assert (await asyncio.wait_for(first, 5))["status"] == "accepted"
+    assert world.agency_sale_mutexes.rows == []
+
+
+@pytest.mark.asyncio
+async def test_only_one_resumer_wins_a_retained_fence(world):
+    world.marketplace_bookings.fail_updates = 1
+    with pytest.raises(RuntimeError):
+        await m.hotel_decide_marketplace_modification("p", ACCEPT, object())
+    fence = world.agency_sale_mutexes.rows[0]
+    assert fence["recovery_state"] == "retained"
+
+    from core.agency_sales_guard import agency_sale_guard
+
+    async with agency_sale_guard(world, "t", "a", operation="marketplace_modification", reference_id="p", resume=True):
+        assert world.agency_sale_mutexes.rows[0]["recovery_state"] == "active"
+        with pytest.raises(HTTPException):  # a second resumer loses the compare-and-set
+            async with agency_sale_guard(world, "t", "a", operation="marketplace_modification", reference_id="p", resume=True):
+                pass
