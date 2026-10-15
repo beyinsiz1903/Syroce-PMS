@@ -1363,7 +1363,7 @@ async def _sales_lock_evidence(sysdb, lock: dict) -> dict:
         if lock.get("operation") == "marketplace_modification":
             proposal = await sysdb.marketplace_negotiations.find_one(
                 {"id": lock["reference_id"], "tenant_id": lock["tenant_id"], "agency_id": lock["agency_id"]},
-                {"_id": 0, "id": 1, "reservation_id": 1, "status": 1, "applied_snapshot": 1},
+                {"_id": 0, "id": 1, "reservation_id": 1, "status": 1, "applied_snapshot": 1, "pending_changes": 1},
             )
             if not proposal:
                 return {"booking": None, "idempotency": None, "proposal": None}
@@ -1395,8 +1395,16 @@ async def _sales_lock_evidence(sysdb, lock: dict) -> dict:
         idempotency = await sysdb.idempotency_keys.find_one(
             {"idempotency_key": key}, {"_id": 0, "scope": 1, "status": 1, "created_at": 1, "expires_at": 1},
         )
+    # A crashed acceptance: changes recorded, fence still "active".
+    resumable = bool(
+        lock.get("operation") == "marketplace_modification" and proposal
+        and proposal.get("status") == "applying" and proposal.get("pending_changes")
+        and lock.get("recovery_state", "active") == "active"
+    )
+    if proposal:
+        proposal = {k: v for k, v in proposal.items() if k != "pending_changes"}
     return {"booking": booking, "idempotency": idempotency, "proposal": proposal,
-            "modification_verified": modification_verified}
+            "modification_verified": modification_verified, "resumable": resumable}
 
 
 @router.get("/admin/sales-locks")
@@ -1494,6 +1502,60 @@ async def admin_reconcile_agency_sales_lock(
         "resolution": data.resolution, "recovery_id": record["id"],
     })
     return {"ok": True, "recovery_id": record["id"], "booking": evidence.get("booking")}
+
+
+class AgencySalesLockResume(BaseModel):
+    owner: str = Field(..., min_length=8, max_length=100)
+    reason: str = Field(..., min_length=10, max_length=1000)
+    writer_stopped_confirmed: bool = False
+
+
+@router.post("/admin/sales-locks/{lock_id}/release-for-resume")
+async def admin_release_sales_lock_for_resume(
+    lock_id: str,
+    data: AgencySalesLockResume,
+    _: bool = Depends(_require_system_admin),
+):
+    """Hand a crashed modification's fence over to its own resume.
+
+    The writer died without marking its fence, so the hotel's "complete"
+    action gets 409 while the proposal is unfinished, and a plain release is
+    refused because the change is not verified. After the operator attests
+    the writer stopped, the fence is *kept* and only marked ``retained`` for
+    the same proposal (owner-checked, audited); exactly one resume can then
+    take it over and finish the recorded changes.
+    """
+    if not data.writer_stopped_confirmed:
+        raise HTTPException(422, "Devam için açmadan önce özgün yazıcının durduğunu doğrulamalısınız")
+    sysdb = get_system_db()
+    lock = await sysdb.agency_sale_mutexes.find_one({"_id": lock_id, "owner": data.owner})
+    if not lock:
+        raise HTTPException(409, "Satış kilidi değişmiş veya zaten uzlaştırılmış; listeyi yenileyin")
+    if lock.get("recovery_state") == "retained":
+        return {"ok": True, "idempotent_replay": True, "proposal_id": lock.get("reference_id")}
+    evidence = await _sales_lock_evidence(sysdb, lock)
+    if not evidence.get("resumable"):
+        raise HTTPException(409, "Bu kilit devam ettirilebilir bir değişiklik işlemine ait değil; kanıtla uzlaştırma yolunu kullanın")
+    record = {
+        "id": _uuid(), "lock_id": lock_id, "lock_owner": data.owner,
+        "tenant_id": lock["tenant_id"], "agency_id": lock["agency_id"], "operation": lock.get("operation"),
+        "resolution": "released_for_resume", "reason": data.reason.strip(), "writer_stopped_confirmed": True,
+        "proposal": evidence.get("proposal"), "booking": evidence.get("booking"),
+        "status": "released_for_resume", "reconciled_at": _now_iso(), "actor_type": "system_admin",
+    }
+    # Evidence first: a failure after this never loses the operator's attestation.
+    await sysdb.agency_sales_lock_recoveries.insert_one(record)
+    marked = await sysdb.agency_sale_mutexes.update_one(
+        {"_id": lock_id, "owner": data.owner, "recovery_state": {"$in": [None, "active"]}},
+        {"$set": {"recovery_state": "retained", "retained_at": datetime.now(UTC), "retained_by": "system_admin",
+                  "retained_recovery_id": record["id"]}},
+    )
+    if not marked.matched_count:
+        raise HTTPException(409, "Satış kilidi değişti; listeyi yenileyin")
+    await _record_marketplace_audit(sysdb, agency_id=lock["agency_id"], action="agency_sales_lock_released_for_resume", details={
+        "lock_id": lock_id, "tenant_id": lock["tenant_id"], "proposal_id": lock.get("reference_id"), "recovery_id": record["id"],
+    })
+    return {"ok": True, "recovery_id": record["id"], "proposal_id": lock.get("reference_id")}
 
 
 @router.post("/admin/agencies")
