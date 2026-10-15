@@ -1,5 +1,5 @@
 import { currencyTotalsText, formatAgencyMoney } from '@/utils/agencyMoney';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { AGENCY_ADMIN_RETURN_PATH, agencyVoucherPath } from '@/utils/agencyPortalNavigation';
 import axios from 'axios';
@@ -26,6 +26,15 @@ agencyApi.interceptors.request.use(config => {
     delete config.headers.Authorization;
   }
   return config;
+});
+// A signed-in session that the server no longer accepts (expired, password
+// changed, account disabled) must end visibly instead of leaving spinners.
+agencyApi.interceptors.response.use(undefined, error => {
+  const url = String(error.config?.url || '');
+  if (error.response?.status === 401 && localStorage.getItem('agency_token') && !url.includes('/auth/login')) {
+    window.dispatchEvent(new CustomEvent('agency-session-expired'));
+  }
+  return Promise.reject(error);
 });
 
 const AgencyImage = ({ src, alt, className }) => {
@@ -82,6 +91,7 @@ const AgencyPortalDashboard = () => {
   const [agencyInfo, setAgencyInfo] = useState(null);
   const [hotelInfo, setHotelInfo] = useState(null);
   const [token, setToken] = useState(localStorage.getItem('agency_token'));
+  const sessionEndingRef = useRef(false);
   const [portalMode, setPortalMode] = useState(localStorage.getItem('agency_portal_mode') || 'hotel');
   const [hotels, setHotels] = useState([]);
   const [selectedTenantId, setSelectedTenantId] = useState(localStorage.getItem('agency_selected_hotel') || '');
@@ -198,6 +208,16 @@ const AgencyPortalDashboard = () => {
       setLoginLoading(false);
     }
   };
+  useEffect(() => {
+    const expired = () => {
+      if (sessionEndingRef.current) return;  // the logout's own requests may 401 too
+      sessionEndingRef.current = true;
+      toast.error('Oturum süreniz doldu. Lütfen yeniden giriş yapın.', { id: 'agency-session-expired' });
+      Promise.resolve(handleLogout()).finally(() => { sessionEndingRef.current = false; });
+    };
+    window.addEventListener('agency-session-expired', expired);
+    return () => window.removeEventListener('agency-session-expired', expired);
+  });
   const handleLogout = async () => {
     const adminReturnPath = impersonation?.active ? AGENCY_ADMIN_RETURN_PATH : null;
     if (impersonation?.active) {
@@ -591,7 +611,10 @@ const AgencyPortalDashboard = () => {
     setReconciliation(null);
     agencyApi.get('/marketplace/v1/statements').then(({ data }) => setStatements(data.items || [])).catch(() => setStatements([]));
     try { const { data } = await agencyApi.get('/marketplace/v1/reconciliation/agency', { params }); setReconciliation(data); }
-    catch (err) { toast.error(err.response?.data?.detail || 'Mutabakat özeti yüklenemedi. Lütfen yeniden deneyin.'); }
+    catch (err) {
+      setReconciliation({ error: err.response?.data?.detail || 'Mutabakat özeti yüklenemedi.' });
+      if (err.response?.status !== 401) toast.error(err.response?.data?.detail || 'Mutabakat özeti yüklenemedi. Lütfen yeniden deneyin.');
+    }
   };
   const loadContracts = async () => {
     if (portalMode !== 'marketplace') return;
@@ -1066,7 +1089,7 @@ const AgencyPortalDashboard = () => {
                 <Button size="sm" onClick={loadReconciliation}>Uygula</Button>
                 <Button variant="outline" size="sm" onClick={downloadReconciliation}>CSV olarak indir</Button>
               </div></div>
-            {!reconciliation ? <Card><CardContent className="py-10 text-center text-slate-400"><Loader2 className="animate-spin mx-auto" /></CardContent></Card> : <>
+            {reconciliation?.error ? <Card><CardContent className="py-8 text-center text-sm text-slate-600">{reconciliation.error} <Button size="sm" variant="outline" className="ml-2" onClick={loadReconciliation}>Yeniden dene</Button></CardContent></Card> : !reconciliation ? <Card><CardContent className="py-10 text-center text-slate-400"><Loader2 className="animate-spin mx-auto" /></CardContent></Card> : <>
               <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
                 {[['Brüt satış', 'gross_revenue', true], ['Acente komisyonu', 'commission', true], ['Platform hizmet bedeli', 'platform_fee', true], ['Otellere aktarılacak net', 'net_to_hotels', true], ['Rezervasyon', reconciliation.totals?.bookings, false]].map(([label, value, monetary], index) => <Card key={label} className={`overflow-hidden border-slate-200 shadow-sm ${index === 3 ? 'ring-1 ring-emerald-200' : ''} ${index === 4 ? 'col-span-2 lg:col-span-1' : ''}`}><div className={`h-1 ${index === 3 ? 'bg-emerald-500' : 'bg-slate-200'}`} /><CardContent className="pt-4"><div className="text-xs font-medium text-slate-500">{label}</div><div className={`mt-1 text-lg font-bold ${index === 3 ? 'text-emerald-700' : 'text-slate-900'}`}>{monetary ? currencyTotalsText(reconciliation.totals_by_currency, value) : value}</div></CardContent></Card>)}
               </div>
