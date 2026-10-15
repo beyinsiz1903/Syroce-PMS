@@ -3002,9 +3002,12 @@ async def hotel_decide_marketplace_modification(
     proposal = await system.marketplace_negotiations.find_one({"id": proposal_id, "tenant_id": tenant_id})
     if not proposal:
         raise HTTPException(404, "Değişiklik talebi bulunamadı")
+    # An acceptance interrupted after recording its changes kept the fence;
+    # finishing those same recorded changes may take it over.
+    resume = bool(data.accept and proposal.get("status") == "applying" and proposal.get("pending_changes"))
     async with agency_sale_guard(
         system, tenant_id, proposal["agency_id"], operation="marketplace_modification",
-        reference_id=proposal_id,
+        reference_id=proposal_id, resume=resume,
     ):
         with tenant_context(tenant_id):
             return await _decide_marketplace_modification_locked(proposal_id, data, current_user)
@@ -3170,11 +3173,20 @@ async def _finish_marketplace_proposal(sysdb, tenant_id: str, proposal: dict, da
     is_modification = proposal["type"] == "agency_modification"
     with tenant_context(tenant_id):
         booking = await db.bookings.find_one({"id": reservation_id, "tenant_id": tenant_id}, {"_id": 0})
-        already = booking is not None and all(booking.get(key) == changes[key] for key in ("check_in", "check_out", "room_id", "total_amount")) \
-            if is_modification else booking is not None and booking.get("status") == "cancelled"
+        # Skip the PMS write only if every recorded product/financial field is
+        # already there; a partial match (e.g. same dates, other plan or
+        # commission) must still be written.
+        already = booking is not None and all(
+            booking.get(key) == value for key, value in changes.items() if key != "updated_at"
+        )
         if not already:
             query = {"id": reservation_id, "tenant_id": tenant_id, "agency_id": proposal["agency_id"]}
-            query["status"] = "confirmed" if is_modification else {"$nin": ["checked_in", "checked_out", "cancelled"]}
+            if is_modification:
+                query["status"] = "confirmed"
+            else:
+                # Not yet cancelled, or cancelled by this very proposal (partial earlier write).
+                query["$or"] = [{"status": {"$nin": ["checked_in", "checked_out", "cancelled"]}},
+                                {"status": "cancelled", "cancelled_at": changes["cancelled_at"]}]
             updated = await db.bookings.update_one(query, {"$set": changes})
             if updated.matched_count == 0:
                 # Locks already acquired: retain the fence for reconciliation.

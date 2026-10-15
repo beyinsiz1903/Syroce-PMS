@@ -195,7 +195,7 @@ async def test_interrupted_acceptance_resumes_with_recorded_changes(decision):
                 'credit_exposure_amount': 117, 'credit_exposure_currency': 'TRY', 'nightly_rates': [], 'meal_plan': 'BB',
                 'cancellation_policy': {}}
     proposal.update(status='applying', pending_changes=recorded)
-    booking.update({k: recorded[k] for k in ('check_in', 'check_out', 'room_id', 'total_amount')})  # PMS already written
+    booking.update(recorded)  # PMS already carries every recorded field
     result = await m._decide_marketplace_modification_locked('p', m.CancellationProposalDecision(accept=True), object())
     assert result['status'] == 'accepted'
     m._validated_agency_quote.assert_not_awaited()  # never re-priced

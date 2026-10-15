@@ -18,12 +18,18 @@ logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
-async def agency_sale_guard(database, tenant_id, agency_id, *, operation="reservation", idempotency_key=None, reference_id=None):
+async def agency_sale_guard(database, tenant_id, agency_id, *, operation="reservation", idempotency_key=None, reference_id=None,
+                           resume=False):
     """Acquire an agency admission fence with enough context for manual recovery.
 
     A lock is intentionally never expired automatically.  The recovery console
     can release it only after an operator attests that the original writer has
     stopped and records the matching reservation/idempotency evidence.
+
+    ``resume=True`` lets the caller take over a fence retained by the *same*
+    operation on the *same* reference (e.g. an interrupted proposal whose exact
+    changes are durably recorded). It is only safe for idempotent replays of
+    recorded writes; any other holder still gets 409.
     """
     key = hashlib.sha256(json.dumps([tenant_id, agency_id]).encode()).hexdigest()
     owner = str(uuid.uuid4())
@@ -35,7 +41,15 @@ async def agency_sale_guard(database, tenant_id, agency_id, *, operation="reserv
             "created_at": datetime.now(UTC),
         })
     except DuplicateKeyError:
-        raise HTTPException(409, "Acente satış kontrolü meşgul. Aynı işlem anahtarıyla tekrar deneyin; sürerse destek ile iletişime geçin.") from None
+        taken = None
+        if resume and reference_id:
+            taken = await database.agency_sale_mutexes.find_one_and_update(
+                {"_id": key, "operation": operation, "reference_id": reference_id, "recovery_state": "active"},
+                {"$set": {"owner": owner, "resumed_at": datetime.now(UTC)}},
+            )
+        if not taken:
+            raise HTTPException(409, "Acente satış kontrolü meşgul. Aynı işlem anahtarıyla tekrar deneyin; sürerse destek ile iletişime geçin.") from None
+        logger.warning("Agency admission fence resumed for %s reference=%s key=%s", operation, reference_id, key)
     release = False
     try:
         yield
