@@ -28,6 +28,7 @@ _BOOKING_PROJECTION = {
     "total_amount": 1,
     "payment_status": 1,
     "balance": 1,
+    "agency_commission_rate": 1,
 }
 
 
@@ -53,15 +54,24 @@ def ledger_patch_from_booking(ledger: dict, booking: dict) -> dict:
         patch["balance"] = balance
 
     total = _money(booking.get("total_amount"))
-    if total is not None and total != _money(ledger.get("total_amount")):
+    # An accepted modification rewrites the commission on the PMS booking;
+    # statements and reports compute from the ledger's commission_pct.
+    booking_pct = _money(booking.get("agency_commission_rate"))
+    pct_changed = booking_pct is not None and booking_pct != _money(ledger.get("commission_pct"))
+    if pct_changed:
+        patch["commission_pct"] = booking_pct
+    amount_changed = total is not None and total != _money(ledger.get("total_amount"))
+    if amount_changed:
         patch["total_amount"] = total
-        commission_pct = _money(ledger.get("commission_pct"))
-        if commission_pct is not None:
-            commission = round(total * commission_pct / 100, 2)
+    if amount_changed or pct_changed:
+        effective_total = total if total is not None else _money(ledger.get("total_amount"))
+        commission_pct = booking_pct if pct_changed else _money(ledger.get("commission_pct"))
+        if commission_pct is not None and effective_total is not None:
+            commission = round(effective_total * commission_pct / 100, 2)
             patch["commission_amount"] = commission
-            patch["net_to_hotel"] = round(total - commission, 2)
+            patch["net_to_hotel"] = round(effective_total - commission, 2)
         fee_pct = _money(ledger.get("syroce_b2b_fee_pct"))
-        if fee_pct is not None:
+        if amount_changed and fee_pct is not None:
             patch["syroce_b2b_fee_amount"] = round(total * fee_pct / 100, 2)
     return patch
 

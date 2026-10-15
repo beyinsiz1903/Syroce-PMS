@@ -9,6 +9,10 @@ from routers import agency_contracts, agency_migration
 
 def _match(doc, query):
     for key, cond in query.items():
+        if key == "$or":
+            if not any(_match(doc, sub) for sub in cond):
+                return False
+            continue
         value = doc.get(key)
         if isinstance(cond, dict):
             for op, arg in cond.items():
@@ -64,6 +68,8 @@ class _Coll:
         for r in self.rows:
             if _match(r, query):
                 r.update(update.get("$set", {}))
+                for key in update.get("$unset", {}):
+                    r.pop(key, None)
                 return
         if upsert:
             self.rows.append({**update.get("$setOnInsert", {}), **update.get("$set", {})})
@@ -160,3 +166,43 @@ async def test_existing_marketplace_contract_is_kept(db):
     result = (await agency_migration.migration_execute(_request(False, "M1"), _=True))["results"][0]
     assert any("SOZ-1" in s for s in result["skipped"])
     assert sum(1 for c in db.agency_contracts.rows if c.get("contract_code")) == 1
+
+
+@pytest.mark.asyncio
+async def test_interrupted_migration_resumes_with_the_same_target(db, monkeypatch):
+    real_upsert = db.marketplace_bookings.update_one
+    calls = {"n": 0}
+
+    async def flaky(query, update, upsert=False):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("network")  # users and PMS bookings already moved
+        return await real_upsert(query, update, upsert=upsert)
+
+    monkeypatch.setattr(db.marketplace_bookings, "update_one", flaky)
+    first = (await agency_migration.migration_execute(_request(False), _=True))["results"][0]
+    assert "error" in first
+    assert db.agencies.rows[0]["status"] == "migrating"
+
+    preview = await agency_migration.migration_preview(tenant_id="t1", _=True)
+    assert any("yarıda kaldı" in w for w in preview["agencies"][0]["warnings"])
+
+    second = (await agency_migration.migration_execute(_request(False), _=True))["results"][0]
+    target_id = second["marketplace_agency_id"]
+    assert target_id == agency_migration.migration_target_id("t1", "L1")
+    assert len(db.marketplace_agencies.rows) == 1  # no second agency
+    assert sum(1 for c in db.agency_contracts.rows if c.get("contract_code")) == 1
+    assert next(u for u in db.users.rows if u["id"] == "u1")["agency_id"] == target_id
+    assert next(b for b in db.bookings.rows if b["id"] == "b-future")["agency_id"] == target_id
+    assert [row["id"] for row in db.marketplace_bookings.rows] == ["b-future"]
+    assert db.marketplace_bookings.rows[0]["agency_id"] == target_id
+    assert db.agencies.rows[0]["status"] == "migrated" and "migration_target_id" not in db.agencies.rows[0]
+
+
+@pytest.mark.asyncio
+async def test_resume_refuses_a_different_target(db):
+    db.agencies.rows[0].update(status="migrating", migration_target_id="M-FIRST")
+    db.marketplace_agencies.rows.append({"id": "M-FIRST", "status": "active", "name": "Atlas"})
+    db.marketplace_agencies.rows.append({"id": "M-OTHER", "status": "active", "name": "Başka"})
+    result = (await agency_migration.migration_execute(_request(False, "M-OTHER"), _=True))["results"][0]
+    assert "aynı hedefle" in result["error"]
