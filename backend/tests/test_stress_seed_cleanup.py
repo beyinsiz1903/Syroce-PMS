@@ -121,6 +121,15 @@ def test_seed_rejects_when_stress_tid_env_missing(stress_client, monkeypatch):
     assert "E2E_STRESS_TENANT_ID" in r.json()["detail"]
 
 
+def _stress_tenant_exists(monkeypatch, stress_mod):
+    """The seed now refuses a stress tenant that does not exist; these tests
+    exercise the factory counts, so the stress tenant is taken as present."""
+    async def _resolve(tid, *, require_existing=False):
+        return tid
+
+    monkeypatch.setattr(stress_mod, "_resolve_stress_tid_async", _resolve)
+
+
 def test_seed_accepts_room_count_at_cap(stress_client, monkeypatch):
     """F6: cap is now 500. room_count=500 must pass validation
     (Pydantic le=500). Note: this only validates the Pydantic gate;
@@ -140,6 +149,7 @@ def test_seed_accepts_room_count_at_cap(stress_client, monkeypatch):
     @contextmanager
     def _noop_ctx(_tid): yield
     monkeypatch.setattr(stress_mod, "tenant_context", _noop_ctx)
+    _stress_tenant_exists(monkeypatch, stress_mod)
     import core.database as _coredb
     monkeypatch.setattr(_coredb, "db", _StubDb())
 
@@ -194,6 +204,7 @@ def test_seed_factory_counts_at_25(stress_client, monkeypatch):
     @contextmanager
     def _noop_ctx(_tid): yield
     monkeypatch.setattr(stress_mod, "tenant_context", _noop_ctx)
+    _stress_tenant_exists(monkeypatch, stress_mod)
     import core.database as _coredb
     monkeypatch.setattr(_coredb, "db", _StubDb())
 
@@ -318,6 +329,7 @@ def test_cleanup_sweeps_dead_pending_outbox(stress_client, monkeypatch):
     @contextmanager
     def _noop_ctx(_tid): yield
     monkeypatch.setattr(stress_mod, "tenant_context", _noop_ctx)
+    _stress_tenant_exists(monkeypatch, stress_mod)
     import core.database as _coredb
     monkeypatch.setattr(_coredb, "db", _StubDb())
 
