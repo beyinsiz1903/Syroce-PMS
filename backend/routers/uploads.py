@@ -19,6 +19,9 @@ router = APIRouter(prefix="", tags=["uploads"])
 
 _backend_dir = Path(__file__).resolve().parent.parent
 UPLOAD_DIR = Path(os.environ.get("UPLOAD_DIR", str(_backend_dir / "uploads"))).resolve()
+# Files under this folder (agency payment proofs, ...) are served only by
+# their own authorised endpoints, never by the generic route below.
+PRIVATE_UPLOAD_DIR = UPLOAD_DIR / "_private"
 
 security = HTTPBearer(auto_error=False)
 
@@ -178,6 +181,9 @@ async def get_upload(path: str, optional_user: User | None = Depends(get_optiona
         user_identifier = optional_user.id if optional_user else f"vendor_{optional_vendor_id}"
         logger.warning(f"Path traversal attempt by user {user_identifier}: {path}")
         raise HTTPException(status_code=400, detail="Invalid path")
+
+    if safe_path == PRIVATE_UPLOAD_DIR or PRIVATE_UPLOAD_DIR in safe_path.parents:
+        raise HTTPException(status_code=404, detail="File not found")
 
     if not safe_path.is_file():
         raise HTTPException(status_code=404, detail="File not found on disk")

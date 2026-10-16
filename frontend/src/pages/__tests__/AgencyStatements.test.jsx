@@ -38,6 +38,25 @@ describe('AgencyStatements', () => {
     await waitFor(() => expect(apiPost).toHaveBeenCalledWith('/marketplace/hotel/statements/s1/resolve', { note: 'Sözleşmede %15 tanımlı' }));
     expect(toastSuccess).toHaveBeenCalledWith('İtiraz yanıtlandı.');
   });
+
+  it('verifies or rejects an agency payment notice', async () => {
+    const withNotice = { ...statement, status: 'agreed', outstanding: 6800, dispute: null,
+      payment_notices: [{ id: 'n1', amount: 6800, paid_at: '2026-10-15', reference: 'EFT-1', reported_by: 'acente@example.com', status: 'pending', has_proof: true }] };
+    apiGet.mockImplementation(url => {
+      if (url === '/marketplace/hotel/statements') return Promise.resolve({ data: { items: [withNotice] } });
+      if (url === '/marketplace/hotel/statements/agencies') return Promise.resolve({ data: { agencies: [] } });
+      return Promise.resolve({ data: withNotice });
+    });
+    apiPost.mockResolvedValue({ data: { ...withNotice, status: 'settled', outstanding: 0, payment_notices: [{ ...withNotice.payment_notices[0], status: 'verified' }] } });
+    render(<AgencyStatements />);
+    expect(await screen.findByText('1 ödeme bildirimi')).toBeTruthy();
+    await userEvent.click(screen.getByText('EKS-2026-0001 · Syroce Travel'));
+    expect(await screen.findByText(/ref EFT-1/)).toBeTruthy();
+    expect(screen.getByText('Reddet').closest('button').disabled).toBe(true); // a rejection needs a reason
+    await userEvent.click(screen.getByText('Doğrula'));
+    await waitFor(() => expect(apiPost).toHaveBeenCalledWith('/marketplace/hotel/statements/s1/payment-notices/n1/verify', { note: '' }));
+    expect(toastSuccess).toHaveBeenCalledWith('Ödeme doğrulandı ve ekstreye işlendi.');
+  });
 });
 
 describe('default statement period', () => {
