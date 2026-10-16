@@ -94,20 +94,22 @@ async def open_credit_exposure(
         "status": {"$ne": "cancelled"},
         "payment_status": {"$ne": "paid"},
     }
-    # A booking paid in the PMS can still owe a hotel-added statement charge.
-    surcharged = await _surcharged_booking_ids(statements_db, tenant_id, agency_id)
-    if surcharged:
-        query.pop("payment_status")
-        query["$or"] = [{"payment_status": {"$ne": "paid"}}, {"id": {"$in": surcharged}}]
+    # A booking paid in the PMS, or cancelled, can still owe a statement
+    # charge (hotel surcharge, cancellation penalty): read it as well.
+    statement_debtors = await _statement_debtor_ids(statements_db, tenant_id, agency_id)
+    if statement_debtors:
+        query = {"tenant_id": tenant_id, "agency_id": agency_id,
+                 "$or": [{"status": {"$ne": "cancelled"}, "payment_status": {"$ne": "paid"}},
+                         {"id": {"$in": statement_debtors}}]}
     if exclude_booking_id:
         query["id"] = {"$ne": exclude_booking_id}
     rows = await database.bookings.find(
         query,
-        {"_id": 0, "id": 1, "currency": 1, "credit_exposure_currency": 1, "credit_exposure_amount": 1,
+        {"_id": 0, "id": 1, "status": 1, "currency": 1, "credit_exposure_currency": 1, "credit_exposure_amount": 1,
          "net_to_hotel": 1, "total_amount": 1, "agency_commission_amount": 1},
     ).to_list(None)
     ids = [row.get("id") for row in rows] + [exclude_booking_id]
-    settled, adjusted = await _settled_through_statements(statements_db, tenant_id, agency_id, ids)
+    settled, adjusted, statement_owed = await _settled_through_statements(statements_db, tenant_id, agency_id, ids)
     collected = await _collected_by_booking(database, tenant_id, ids)
     debt = 0.0
     for row in rows:
@@ -117,7 +119,12 @@ async def open_credit_exposure(
                 409,
                 f"Açık borçlarda {row_currency} para birimi var; {credit_currency} kredi limitiyle kur dönüşümü olmadan birlikte hesaplanamaz.",
             )
-        owed = booking_net_exposure(row) + adjusted.get(row.get("id"), 0.0)
+        if row.get("status") == "cancelled":
+            # No stay to pay for: only what its statement lines charge
+            # (penalty and/or the hotel's surcharge).
+            owed = statement_owed.get(row.get("id"), 0.0)
+        else:
+            owed = booking_net_exposure(row) + adjusted.get(row.get("id"), 0.0)
         remaining = max(0.0, owed - _paid_towards(settled.get(row.get("id")), collected.get(row.get("id"))))
         debt = round(debt + remaining, 2)
     # A correction on the modified booking still applies to its new amount.
@@ -161,27 +168,36 @@ async def _collected_by_booking(database, tenant_id: str, booking_ids: list) -> 
     return {booking_id: collected_amount(items) for booking_id, items in grouped.items()}
 
 
-async def _surcharged_booking_ids(statements_db, tenant_id: str, agency_id: str) -> list[str]:
-    """Bookings with a positive (agency owes more) line correction."""
+async def _statement_debtor_ids(statements_db, tenant_id: str, agency_id: str) -> list[str]:
+    """Bookings a statement charges beyond their stay: a positive (agency
+    owes more) correction, or a cancelled / no-show line the agency owes."""
     if statements_db is None:
         from core.tenant_db import get_system_db
 
         statements_db = get_system_db()
     rows = await statements_db.agency_statements.find(
-        {"tenant_id": tenant_id, "agency_id": agency_id, "status": {"$ne": "void"}, "lines.adjustment.amount": {"$gt": 0}},
-        {"_id": 0, "lines.booking_id": 1, "lines.adjustment.amount": 1},
+        {"tenant_id": tenant_id, "agency_id": agency_id, "status": {"$ne": "void"},
+         "$or": [{"lines.adjustment.amount": {"$gt": 0}},
+                 {"lines": {"$elemMatch": {"status": {"$in": ["cancelled", "no_show"]}, "agency_owes_hotel": {"$gt": 0}}}}]},
+        {"_id": 0, "lines.booking_id": 1, "lines.status": 1, "lines.agency_owes_hotel": 1, "lines.adjustment.amount": 1},
     ).to_list(None)
-    return sorted({line["booking_id"] for row in rows for line in row.get("lines") or []
-                   if line.get("booking_id") and float((line.get("adjustment") or {}).get("amount") or 0) > 0})
+    ids = set()
+    for row in rows:
+        for line in row.get("lines") or []:
+            surcharge = float((line.get("adjustment") or {}).get("amount") or 0) > 0
+            penalty = line.get("status") in ("cancelled", "no_show") and float(line.get("agency_owes_hotel") or 0) > 0
+            if line.get("booking_id") and (surcharge or penalty):
+                ids.add(line["booking_id"])
+    return sorted(ids)
 
 
-async def _settled_through_statements(statements_db, tenant_id: str, agency_id: str, booking_ids: list) -> tuple[dict[str, float], dict[str, float]]:
+async def _settled_through_statements(statements_db, tenant_id: str, agency_id: str, booking_ids: list) -> tuple[dict, dict, dict]:
     """Per booking: debt already paid through period statements (the single
-    finance source), and the hotel's signed line corrections on them (- the
-    agency owes less, + more), which change what is owed for that booking."""
+    finance source); the hotel's signed line corrections (- the agency owes
+    less, + more); and what the statement lines charge in total."""
     ids = [booking_id for booking_id in booking_ids if booking_id]
     if not ids:
-        return {}, {}
+        return {}, {}, {}
     from core.agency_statements import settled_by_booking
 
     if statements_db is None:
@@ -195,11 +211,14 @@ async def _settled_through_statements(statements_db, tenant_id: str, agency_id: 
     ).to_list(None)
     settled: dict[str, float] = {}
     adjusted: dict[str, float] = {}
+    owed: dict[str, float] = {}
     for statement in statements:
         for booking_id, amount in settled_by_booking(statement).items():
             settled[booking_id] = round(settled.get(booking_id, 0.0) + amount, 2)
         for line in statement.get("lines") or []:
+            if line.get("booking_id"):
+                owed[line["booking_id"]] = round(owed.get(line["booking_id"], 0.0) + float(line.get("agency_owes_hotel") or 0), 2)
             amount = float((line.get("adjustment") or {}).get("amount") or 0)
             if line.get("booking_id") and abs(amount) >= 0.01:
                 adjusted[line["booking_id"]] = round(adjusted.get(line["booking_id"], 0.0) + amount, 2)
-    return settled, adjusted
+    return settled, adjusted, owed

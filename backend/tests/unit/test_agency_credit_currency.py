@@ -15,6 +15,10 @@ class _Cursor:
         return self.rows
 
 
+# No period statements in these scenarios (and no database connection).
+NO_STATEMENTS = SimpleNamespace(agency_statements=SimpleNamespace(find=lambda *_a, **_k: _Cursor([])))
+
+
 class _Bookings:
     def __init__(self, rows):
         self.rows = rows
@@ -32,7 +36,7 @@ async def test_credit_limit_uses_net_hotel_exposure_in_one_contract_currency():
     await assert_credit_capacity(
         database, tenant_id="hotel", agency_id="agency",
         contract={"credit_limit": 1200, "credit_currency": "TRY"},
-        booking_currency="TRY", new_net_exposure=50,
+        booking_currency="TRY", new_net_exposure=50, statements_db=NO_STATEMENTS,
     )
 
 
@@ -43,7 +47,7 @@ async def test_credit_limit_rejects_mixed_open_debt_currency_without_fx_guess():
         await assert_credit_capacity(
             database, tenant_id="hotel", agency_id="agency",
             contract={"credit_limit": 1000, "credit_currency": "TRY"},
-            booking_currency="TRY", new_net_exposure=100,
+            booking_currency="TRY", new_net_exposure=100, statements_db=NO_STATEMENTS,
         )
 
 
@@ -54,7 +58,7 @@ async def test_credit_limit_rejects_sale_currency_that_differs_from_contract_cur
         await assert_credit_capacity(
             database, tenant_id="hotel", agency_id="agency",
             contract={"credit_limit": 1000, "credit_currency": "TRY"},
-            booking_currency="EUR", new_net_exposure=100,
+            booking_currency="EUR", new_net_exposure=100, statements_db=NO_STATEMENTS,
         )
 
 

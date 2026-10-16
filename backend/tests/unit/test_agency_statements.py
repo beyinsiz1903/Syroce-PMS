@@ -220,10 +220,8 @@ class _StatementFinder:
         self.store = store
 
     def find(self, query, *_a, **_k):
-        if "lines.adjustment.amount" in query:  # bookings with a hotel surcharge
-            rows = [d for d in self.store.docs if d.get("status") != "void"
-                    and any(float((line.get("adjustment") or {}).get("amount") or 0) > 0 for line in d.get("lines", []))]
-            return SimpleNamespace(to_list=AsyncMock(return_value=rows))
+        if "$or" in query:  # bookings a statement charges beyond their stay
+            return SimpleNamespace(to_list=AsyncMock(return_value=[d for d in self.store.docs if d.get("status") != "void"]))
         ids = set(query["lines.booking_id"]["$in"])
         rows = [d for d in self.store.docs if d.get("status") != "void"
                 and any(line.get("booking_id") in ids for line in d.get("lines", []))]

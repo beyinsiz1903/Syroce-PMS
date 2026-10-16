@@ -275,3 +275,33 @@ async def test_issue_refuses_different_lines_with_the_same_total(monkeypatch):
     with pytest.raises(HTTPException) as exc:
         await st.issue_statement(data, USER)
     assert exc.value.status_code == 409 and not sysdb.agency_statements.insert_one.await_count
+
+
+@pytest.mark.asyncio
+async def test_charge_on_a_cancelled_booking_uses_credit():
+    """Cancelled booking, nothing owed for the stay, +50 on its statement
+    line: with a 50 limit a new 50 sale must be refused."""
+    from core.agency_credit import assert_credit_capacity, credit_usage
+
+    cancelled = {**PREPAID, "status": "cancelled", "agency_owes_hotel": 0.0}
+    line = apply_adjustment(cancelled, 50, "Geç iptal masrafı")
+    statement = {"tenant_id": "t1", "agency_id": "a1", "status": "agreed", "lines": [line],
+                 "totals": statement_totals([line]), "payments": []}
+    booking = {"id": "b1", "status": "cancelled", "currency": "TRY", "credit_exposure_amount": 6800}
+
+    def _cursor(rows):
+        return SimpleNamespace(to_list=AsyncMock(return_value=rows))
+
+    def _bookings(query, *_a, **_k):
+        named = any(booking["id"] in (cond.get("id") or {}).get("$in", []) for cond in query.get("$or", []))
+        return _cursor([booking] if named else [])
+
+    database = SimpleNamespace(bookings=SimpleNamespace(find=_bookings), payments=SimpleNamespace(find=lambda *a, **k: _cursor([])))
+    statements_db = SimpleNamespace(agency_statements=SimpleNamespace(find=lambda *a, **k: _cursor([statement])))
+    contract = {"credit_limit": 50, "credit_currency": "TRY"}
+    usage = await credit_usage(database, tenant_id="t1", agency_id="a1", contract=contract, statements_db=statements_db)
+    assert usage["used"] == 50.0  # the statement charge, not the cancelled stay's 6.800
+    with pytest.raises(HTTPException) as exc:
+        await assert_credit_capacity(database, tenant_id="t1", agency_id="a1", contract=contract,
+                                     booking_currency="TRY", new_net_exposure=50, statements_db=statements_db)
+    assert exc.value.status_code == 409
