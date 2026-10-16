@@ -17,6 +17,12 @@ const STATUS = {
   settled: ['Kapandı', 'bg-slate-200 text-slate-700'],
   void: ['İptal', 'bg-slate-100 text-slate-500'],
 };
+const NOTICE_STATUS = {
+  pending: ['Doğrulama bekliyor', 'text-amber-700'],
+  verified: ['Doğrulandı', 'text-emerald-700'],
+  rejected: ['Reddedildi', 'text-red-700'],
+};
+const pendingNotices = statement => (statement.payment_notices || []).filter(n => n.status === 'pending');
 const money = (value, currency) => `${Number(value || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency || ''}`;
 // Local calendar date; toISOString() would shift to UTC (01.09 00:00 +03 -> 31.08).
 const localDate = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -36,6 +42,7 @@ export default function AgencyStatements() {
   const [detail, setDetail] = useState(null);
   const [payment, setPayment] = useState({ amount: '', paid_at: localDate(new Date()), method: 'bank_transfer', reference: '' });
   const [note, setNote] = useState('');
+  const [noticeNote, setNoticeNote] = useState('');
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
@@ -69,6 +76,7 @@ export default function AgencyStatements() {
     try {
       setDetail((await axios.get(`/marketplace/hotel/statements/${statement.id}`)).data);
       setNote('');
+      setNoticeNote('');
       setPayment(current => ({ ...current, amount: '' }));
     } catch (err) { toast.error(err.response?.data?.detail || 'Ekstre açılamadı.'); }
   };
@@ -81,6 +89,17 @@ export default function AgencyStatements() {
       await load();
     } catch (err) { toast.error(err.response?.data?.detail || 'İşlem tamamlanamadı.'); }
     finally { setBusy(false); }
+  };
+  const decideNotice = async (notice, verify) => {
+    await act(`payment-notices/${notice.id}/${verify ? 'verify' : 'reject'}`, { note: noticeNote.trim() },
+      verify ? 'Ödeme doğrulandı ve ekstreye işlendi.' : 'Ödeme bildirimi reddedildi; acenteye iletildi.');
+    setNoticeNote('');
+  };
+  const openProof = async notice => {
+    try {
+      const { data } = await axios.get(`/marketplace/hotel/statements/${detail.id}/payment-notices/${notice.id}/proof`, { responseType: 'blob' });
+      window.open(URL.createObjectURL(data), '_blank', 'noopener');
+    } catch { toast.error('Dekont açılamadı.'); }
   };
   const recordPayment = () => {
     const amount = Number(payment.amount);
@@ -127,6 +146,7 @@ export default function AgencyStatements() {
                     <div className="text-xs text-slate-500">{statement.period_start} – {statement.period_end} · {statement.totals?.bookings} konaklama · {statement.totals?.cancelled + statement.totals?.no_show} iptal/no-show</div>
                   </div>
                   <div className="flex items-center gap-3">
+                    {pendingNotices(statement).length > 0 && <Badge className="bg-amber-100 text-amber-800">{pendingNotices(statement).length} ödeme bildirimi</Badge>}
                     <span className="text-sm">{balanceText(statement.outstanding, statement.currency)}</span>
                     <Badge className={STATUS[statement.status]?.[1]}>{STATUS[statement.status]?.[0] || statement.status}</Badge>
                   </div>
@@ -162,6 +182,22 @@ export default function AgencyStatements() {
             </div>
             {detail.dispute && <div className="rounded border border-red-200 bg-red-50 p-3 text-sm"><strong>İtiraz:</strong> {detail.dispute.reason}</div>}
             {detail.payments?.length > 0 && <div className="text-xs text-slate-600">Ödemeler: {detail.payments.map(p => `${p.paid_at} ${money(p.amount, detail.currency)} (${p.direction === 'agency_to_hotel' ? 'acente→otel' : 'otel→acente'})`).join(' · ')}</div>}
+            {detail.payment_notices?.length > 0 && <div className="space-y-2 rounded border p-3" data-testid="hotel-payment-notices">
+              <div className="text-sm font-medium">Acentenin ödeme bildirimleri</div>
+              <p className="text-xs text-slate-500">Bildirim, siz doğrulayana kadar bakiyeyi ve acente kredisini değiştirmez. Doğrulanınca aynı banka referansıyla ekstreye ödeme olarak işlenir.</p>
+              {detail.payment_notices.map(notice => <div key={notice.id} className="flex flex-wrap items-center justify-between gap-2 border-t pt-2 text-xs">
+                <span>{notice.paid_at} · {money(notice.amount, detail.currency)} · ref {notice.reference} · {notice.reported_by}</span>
+                <span className="flex items-center gap-2">
+                  {notice.has_proof && <button type="button" className="underline" onClick={() => openProof(notice)}>Dekont</button>}
+                  <span className={NOTICE_STATUS[notice.status]?.[1]}>{NOTICE_STATUS[notice.status]?.[0] || notice.status}{notice.note ? `: ${notice.note}` : ''}</span>
+                  {notice.status === 'pending' && <>
+                    <Button size="sm" onClick={() => decideNotice(notice, true)} disabled={busy}>Doğrula</Button>
+                    <Button size="sm" variant="outline" className="text-red-700" onClick={() => decideNotice(notice, false)} disabled={busy || noticeNote.trim().length < 5}>Reddet</Button>
+                  </>}
+                </span>
+              </div>)}
+              {pendingNotices(detail).length > 0 && <Input placeholder="Not (reddederken zorunlu, en az 5 karakter)" value={noticeNote} onChange={e => setNoticeNote(e.target.value)} />}
+            </div>}
             {['agreed', 'resolved'].includes(detail.status) && Math.abs(detail.outstanding) >= 0.01 && (
               <div className="grid gap-2 sm:grid-cols-4">
                 <Input type="number" min="0" step="0.01" placeholder="Tutar" value={payment.amount} onChange={e => setPayment(p => ({ ...p, amount: e.target.value }))} />

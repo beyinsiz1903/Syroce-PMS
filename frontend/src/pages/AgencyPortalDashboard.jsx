@@ -159,6 +159,8 @@ const AgencyPortalDashboard = () => {
   const [reconciliation, setReconciliation] = useState(null);
   const [notices, setNotices] = useState([]);
   const [statements, setStatements] = useState([]);
+  const [paymentNotice, setPaymentNotice] = useState(null);
+  const [paymentNoticeBusy, setPaymentNoticeBusy] = useState(false);
   const [disputeTarget, setDisputeTarget] = useState(null);
   const [disputeReason, setDisputeReason] = useState('');
   const [disputeIds, setDisputeIds] = useState([]);
@@ -604,6 +606,35 @@ const AgencyPortalDashboard = () => {
       return null;
     }
     return { period_start: reconPeriod.start, period_end: reconPeriod.end };
+  };
+  const NOTICE_STATUS = { pending: 'Otel doğrulaması bekleniyor', verified: 'Doğrulandı', rejected: 'Reddedildi' };
+  const openPaymentNotice = statement => {
+    const pending = (statement.payment_notices || []).filter(n => n.status === 'pending').reduce((sum, n) => sum + Number(n.amount || 0), 0);
+    setPaymentNotice({ statement, amount: Math.max(0, Number(statement.outstanding || 0) - pending).toFixed(2),
+      paid_at: toDateInput(new Date()), reference: '', method: 'bank_transfer', file: null });
+  };
+  const submitPaymentNotice = async event => {
+    event.preventDefault();
+    const form = new FormData();
+    form.append('amount', paymentNotice.amount);
+    form.append('paid_at', paymentNotice.paid_at);
+    form.append('reference', paymentNotice.reference.trim());
+    form.append('method', paymentNotice.method);
+    if (paymentNotice.file) form.append('proof', paymentNotice.file);
+    setPaymentNoticeBusy(true);
+    try {
+      await agencyApi.post(`/marketplace/v1/statements/${paymentNotice.statement.id}/payment-notices`, form);
+      toast.success('Ödeme bildiriminiz otele iletildi. Otel doğruladığında bakiye ve krediniz güncellenir.');
+      setPaymentNotice(null);
+      setStatements((await agencyApi.get('/marketplace/v1/statements')).data.items || []);
+    } catch (err) { toast.error(err.response?.data?.detail || 'Ödeme bildirimi gönderilemedi.'); }
+    finally { setPaymentNoticeBusy(false); }
+  };
+  const openPaymentProof = async (statement, notice) => {
+    try {
+      const { data } = await agencyApi.get(`/marketplace/v1/statements/${statement.id}/payment-notices/${notice.id}/proof`, { responseType: 'blob' });
+      window.open(URL.createObjectURL(data), '_blank', 'noopener');
+    } catch { toast.error('Dekont açılamadı.'); }
   };
   const agreeStatement = async statement => {
     setStatementBusy(true);
@@ -1162,6 +1193,13 @@ const AgencyPortalDashboard = () => {
                       <Button size="sm" onClick={() => agreeStatement(statement)} disabled={statementBusy}>Mutabıkız</Button>
                       <Button size="sm" variant="outline" onClick={() => openDispute(statement)} disabled={statementBusy}>İtiraz et</Button>
                     </div>}
+                    {['agreed', 'resolved'].includes(statement.status) && Number(statement.outstanding) > 0 && <Button size="sm" variant="outline" onClick={() => openPaymentNotice(statement)} data-testid={`report-payment-${statement.id}`}><WalletCards size={13} className="mr-1" />Ödeme bildir</Button>}
+                    {(statement.payment_notices || []).length > 0 && <div className="w-full space-y-1 border-t pt-2">
+                      {statement.payment_notices.map(notice => <div key={notice.id} className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                        <span>{notice.paid_at} · {formatAgencyMoney(notice.amount, statement.currency)} · ref {notice.reference}</span>
+                        <span className="flex items-center gap-2">{notice.has_proof && <button type="button" className="underline" onClick={() => openPaymentProof(statement, notice)}>Dekont</button>}<span className={notice.status === 'verified' ? 'text-emerald-700' : notice.status === 'rejected' ? 'text-red-700' : 'text-amber-700'}>{NOTICE_STATUS[notice.status] || notice.status}{notice.status === 'rejected' && notice.note ? `: ${notice.note}` : ''}</span></span>
+                      </div>)}
+                    </div>}
                   </div>
                 ))}
               </CardContent>
@@ -1531,6 +1569,22 @@ const AgencyPortalDashboard = () => {
               </div>)}
             </div>}
           </div>}
+        </DialogContent>
+      </Dialog>
+      <Dialog open={Boolean(paymentNotice)} onOpenChange={open => !open && !paymentNoticeBusy && setPaymentNotice(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>Ödeme bildir · {paymentNotice?.statement?.number}</DialogTitle></DialogHeader>
+          {paymentNotice && <form onSubmit={submitPaymentNotice} className="space-y-3" data-testid="payment-notice-form">
+            <p className="text-xs text-slate-500">Bildirim otel doğrulayana kadar bakiyenizi ve kredinizi değiştirmez.</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div><Label htmlFor="notice-amount">Tutar ({paymentNotice.statement.currency})</Label><Input id="notice-amount" type="number" min="0.01" step="0.01" required value={paymentNotice.amount} onChange={e => setPaymentNotice(n => ({ ...n, amount: e.target.value }))} /></div>
+              <div><Label htmlFor="notice-date">Ödeme tarihi</Label><Input id="notice-date" type="date" required max={toDateInput(new Date())} value={paymentNotice.paid_at} onChange={e => setPaymentNotice(n => ({ ...n, paid_at: e.target.value }))} /></div>
+            </div>
+            <div><Label htmlFor="notice-ref">Banka referansı / açıklama</Label><Input id="notice-ref" required minLength={3} maxLength={120} value={paymentNotice.reference} onChange={e => setPaymentNotice(n => ({ ...n, reference: e.target.value }))} /></div>
+            <div><Label htmlFor="notice-method">Yöntem</Label><select id="notice-method" className="mt-1 flex h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm" value={paymentNotice.method} onChange={e => setPaymentNotice(n => ({ ...n, method: e.target.value }))}><option value="bank_transfer">Havale / EFT</option><option value="card">Kart</option><option value="cash">Nakit</option><option value="other">Diğer</option></select></div>
+            <div><Label htmlFor="notice-proof">Dekont (PDF, JPG, PNG — en fazla 5 MB)</Label><Input id="notice-proof" type="file" accept="application/pdf,image/jpeg,image/png,image/webp" onChange={e => setPaymentNotice(n => ({ ...n, file: e.target.files?.[0] || null }))} /></div>
+            <DialogFooter><Button type="button" variant="outline" disabled={paymentNoticeBusy} onClick={() => setPaymentNotice(null)}>Vazgeç</Button><Button type="submit" disabled={paymentNoticeBusy}>{paymentNoticeBusy ? 'Gönderiliyor…' : 'Bildir'}</Button></DialogFooter>
+          </form>}
         </DialogContent>
       </Dialog>
       <Dialog open={Boolean(voucherEmailTarget)} onOpenChange={open => !open && !voucherEmailLoading && setVoucherEmailTarget(null)}>
