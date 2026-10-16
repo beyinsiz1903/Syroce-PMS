@@ -59,6 +59,59 @@ describe('AgencyStatements', () => {
   });
 });
 
+describe('AgencyStatements preview and line corrections', () => {
+  const line = { booking_id: 'b1', confirmation_code: 'MKT-1', check_in: '2026-11-20', guest_name: 'Test', status: 'confirmed', payment_terms: 'prepaid', gross: 8000, commission: 1200, hotel_owes_agency: 0, agency_owes_hotel: 6800 };
+  afterEach(() => { cleanup(); vi.clearAllMocks(); });
+
+  it('previews before sending, corrects one line with a reason, then sends', async () => {
+    apiGet.mockImplementation(url => Promise.resolve({ data: url.endsWith('/agencies') ? { agencies: [{ id: 'a1', name: 'Syroce Travel' }] } : { items: [] } }));
+    apiPost.mockImplementation((url, body) => {
+      if (url.endsWith('/preview')) {
+        const adjusted = body.adjustments?.length ? { ...line, agency_owes_hotel: 6500, adjustment: { amount: -300, reason: body.adjustments[0].reason } } : line;
+        return Promise.resolve({ data: { agency_name: 'Syroce Travel', period_start: '2026-11-01', period_end: '2026-11-30', currency: 'TRY', lines: [adjusted], totals: {}, outstanding: adjusted.agency_owes_hotel, signature: body.adjustments?.length ? 'sig-2' : 'sig-1' } });
+      }
+      return Promise.resolve({ data: { number: 'EKS-2026-0002' } });
+    });
+    render(<AgencyStatements />);
+    await userEvent.selectOptions(await screen.findByLabelText('Acente'), 'a1');
+    await userEvent.click(screen.getByText('Ekstreyi önizle'));
+    expect(await screen.findByText('Acente ödeyecek: 6.800,00 TRY', { exact: false })).toBeTruthy();
+    expect(screen.getByText('Ön ödemeli')).toBeTruthy();
+    expect(apiPost).toHaveBeenCalledTimes(1); // nothing issued yet
+
+    await userEvent.click(screen.getByLabelText('MKT-1 satırını düzelt'));
+    await userEvent.type(screen.getByLabelText('Düzeltme tutarı'), '-300');
+    await userEvent.type(screen.getByLabelText('Düzeltme gerekçesi'), 'Erken çıkış indirimi');
+    // Not recalculated yet: the screen still shows 6.800, so it cannot be sent.
+    expect(screen.getByText('Acenteye gönder').closest('button').disabled).toBe(true);
+    await userEvent.click(screen.getByText('Yeniden hesapla'));
+    expect(await screen.findByText('Acente ödeyecek: 6.500,00 TRY', { exact: false })).toBeTruthy();
+    expect(screen.getByText('Acenteye gönder').closest('button').disabled).toBe(false);
+    await userEvent.click(screen.getByText('Acenteye gönder'));
+    await waitFor(() => expect(apiPost).toHaveBeenLastCalledWith('/marketplace/hotel/statements', expect.objectContaining({
+      agency_id: 'a1', adjustments: [{ booking_id: 'b1', amount: -300, reason: 'Erken çıkış indirimi' }] })));
+    expect(apiPost.mock.calls.at(-1)[1]).toMatchObject({ expected_signature: 'sig-2' }); // the recalculated preview
+    expect(toastSuccess).toHaveBeenCalledWith('EKS-2026-0002 düzenlendi ve acenteye iletildi.');
+  });
+
+  it('corrects a line of an issued statement', async () => {
+    const issued = { id: 's2', number: 'EKS-2026-0003', agency_name: 'Syroce Travel', period_start: '2026-11-01', period_end: '2026-11-30', currency: 'TRY', status: 'issued', outstanding: 6800, totals: { bookings: 1, cancelled: 0, no_show: 0 }, lines: [line], payments: [] };
+    apiGet.mockImplementation(url => Promise.resolve({ data: url.endsWith('/agencies') ? { agencies: [] } : url.endsWith('/statements') ? { items: [issued] } : issued }));
+    apiPost.mockResolvedValue({ data: { ...issued, outstanding: 6500, lines: [{ ...line, agency_owes_hotel: 6500, adjustment: { amount: -300, reason: 'Erken çıkış indirimi' } }] } });
+    render(<AgencyStatements />);
+    await userEvent.click(await screen.findByText('EKS-2026-0003 · Syroce Travel'));
+    await userEvent.click(await screen.findByLabelText('MKT-1 satırını düzelt'));
+    await userEvent.type(screen.getByLabelText('Düzeltme tutarı'), '-300');
+    const save = screen.getByText('Düzeltmeyi kaydet ve acenteye bildir');
+    await userEvent.click(save);
+    expect(apiPost).not.toHaveBeenCalled(); // reason is mandatory
+    await userEvent.type(screen.getByLabelText('Düzeltme gerekçesi'), 'Erken çıkış indirimi');
+    await userEvent.click(save);
+    await waitFor(() => expect(apiPost).toHaveBeenCalledWith('/marketplace/hotel/statements/s2/adjust', { booking_id: 'b1', amount: -300, reason: 'Erken çıkış indirimi' }));
+    expect(await screen.findByTestId('adjustment-b1')).toBeTruthy();
+  });
+});
+
 describe('default statement period', () => {
   it('is the previous calendar month in local time, not shifted to UTC', () => {
     const tz = process.env.TZ;

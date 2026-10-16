@@ -28,6 +28,48 @@ const money = (value, currency) => `${Number(value || 0).toLocaleString('tr-TR',
 const localDate = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 export const monthStart = (now = new Date()) => localDate(new Date(now.getFullYear(), now.getMonth() - 1, 1));
 export const monthEnd = (now = new Date()) => localDate(new Date(now.getFullYear(), now.getMonth(), 0));
+const LINE_STATUS = { confirmed: 'Onaylı', guaranteed: 'Garantili', checked_in: 'Konaklıyor', checked_out: 'Çıkış yaptı', cancelled: 'İptal', no_show: 'Gelmedi', pending: 'Beklemede' };
+const TERMS = { prepaid: 'Ön ödemeli', on_arrival: 'Girişte', net_7: '7 gün vadeli', net_15: '15 gün vadeli', net_30: '30 gün vadeli' };
+export const ADJUSTABLE = ['issued', 'disputed', 'resolved'];
+
+// Statement lines; with `edits` a checkbox per line opens a signed correction
+// (+ the agency owes more, − less) that needs a reason.
+export function StatementLines({ lines, currency, highlight = [], edits, onEdit }) {
+  const editing = Boolean(edits);
+  return (
+    <div className="max-h-80 overflow-y-auto rounded border text-xs">
+      <table className="w-full">
+        <thead className="bg-slate-50 text-left"><tr>{editing && <th className="w-8 p-2" aria-label="Düzelt" />}<th className="p-2">Rezervasyon</th><th>Durum</th><th>Ödeme</th><th className="text-right">Brüt/Ceza</th><th className="text-right">Komisyon</th><th className="text-right p-2">Otel→Acente / Acente→Otel</th></tr></thead>
+        <tbody>
+          {lines.map(line => {
+            const edit = edits?.[line.booking_id];
+            return [
+              <tr key={line.booking_id} className={`border-t ${highlight.includes(line.booking_id) ? 'bg-red-50' : ''}`}>
+                {editing && <td className="p-2"><input type="checkbox" aria-label={`${line.confirmation_code} satırını düzelt`} checked={Boolean(edit)} onChange={e => onEdit(line.booking_id, e.target.checked ? { amount: line.adjustment?.amount ?? '', reason: line.adjustment?.reason ?? '' } : null)} /></td>}
+                <td className="p-2">{line.confirmation_code}<div className="text-slate-400">{line.check_in} · {line.guest_name}</div></td>
+                <td>{LINE_STATUS[line.status] || line.status}</td><td>{TERMS[line.payment_terms] || line.payment_terms}</td>
+                <td className="text-right">{money(line.gross, currency)}</td>
+                <td className="text-right">{money(line.commission, currency)}</td>
+                <td className="p-2 text-right">{money(line.hotel_owes_agency, '')} / {money(line.agency_owes_hotel, '')}
+                  {line.adjustment && <div className="text-amber-700" data-testid={`adjustment-${line.booking_id}`}>Düzeltme {line.adjustment.amount > 0 ? '+' : '−'}{money(Math.abs(line.adjustment.amount), '')} · {line.adjustment.reason}</div>}</td>
+              </tr>,
+              edit && <tr key={`${line.booking_id}-edit`} className="bg-amber-50">
+                <td colSpan={7} className="p-2"><div className="grid gap-2 sm:grid-cols-[180px_1fr]">
+                  <Input type="number" step="0.01" aria-label="Düzeltme tutarı" placeholder="+ fazla / − az" value={edit.amount} onChange={e => onEdit(line.booking_id, { ...edit, amount: e.target.value })} />
+                  <Input aria-label="Düzeltme gerekçesi" placeholder="Gerekçe (en az 5 karakter)" maxLength={300} value={edit.reason} onChange={e => onEdit(line.booking_id, { ...edit, reason: e.target.value })} />
+                </div><p className="mt-1 text-[11px] text-slate-500">Artı: acente otele daha fazla öder · Eksi: daha az öder. 0 düzeltmeyi kaldırır. PMS'teki rezervasyon tutarı değişmez.</p></td>
+              </tr>,
+            ];
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+const editsToAdjustments = edits => Object.entries(edits || {}).map(([booking_id, edit]) => ({ booking_id, amount: Number(edit.amount || 0), reason: (edit.reason || '').trim() }));
+const invalidEdit = edits => editsToAdjustments(edits).some(item => Number.isNaN(item.amount) || (Math.abs(item.amount) >= 0.01 && item.reason.length < 5));
+
 const balanceText = (value, currency) => {
   if (Math.abs(Number(value || 0)) < 0.01) return 'Bakiye yok';
   return Number(value) > 0 ? `Acente ödeyecek: ${money(value, currency)}` : `Otel ödeyecek: ${money(-value, currency)}`;
@@ -42,6 +84,11 @@ export default function AgencyStatements() {
   const [detail, setDetail] = useState(null);
   const [payment, setPayment] = useState({ amount: '', paid_at: localDate(new Date()), method: 'bank_transfer', reference: '' });
   const [note, setNote] = useState('');
+  const [preview, setPreview] = useState(null);
+  const [previewEdits, setPreviewEdits] = useState({});
+  // A correction typed after the last calculation is not what the preview shows.
+  const [previewStale, setPreviewStale] = useState(false);
+  const [lineEdits, setLineEdits] = useState({});
   const [noticeNote, setNoticeNote] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -62,21 +109,68 @@ export default function AgencyStatements() {
   }, []);
   useEffect(() => { load(); }, [load]);
 
-  const issue = async () => {
+  const runPreview = async (edits = previewEdits) => {
     if (!form.agency_id) return toast.error('Acente seçin.');
+    if (invalidEdit(edits)) return toast.error('Her düzeltme için tutar ve en az 5 karakter gerekçe girin.');
     setIssuing(true);
     try {
-      const { data } = await axios.post('/marketplace/hotel/statements', form);
+      const { data } = await axios.post('/marketplace/hotel/statements/preview', { ...form, adjustments: editsToAdjustments(edits) });
+      setPreview(data);
+      setPreviewStale(false);
+    } catch (err) { toast.error(err.response?.data?.detail || 'Ekstre hesaplanamadı.'); }
+    finally { setIssuing(false); }
+  };
+  const openPreview = () => { setPreviewEdits({}); runPreview({}); };
+  const issue = async () => {
+    if (invalidEdit(previewEdits)) return toast.error('Her düzeltme için tutar ve en az 5 karakter gerekçe girin.');
+    setIssuing(true);
+    try {
+      if (previewStale) return toast.error('Düzeltmeler değişti; göndermeden önce yeniden hesaplayın.');
+      const { data } = await axios.post('/marketplace/hotel/statements', {
+        ...form, adjustments: editsToAdjustments(previewEdits),
+        expected_signature: preview?.signature ?? null, expected_net_balance: preview?.totals?.net_balance ?? null,
+      });
       toast.success(`${data.number} düzenlendi ve acenteye iletildi.`);
+      setPreview(null);
+      setPreviewEdits({});
       await load();
     } catch (err) { toast.error(err.response?.data?.detail || 'Ekstre düzenlenemedi.'); }
     finally { setIssuing(false); }
+  };
+  const editPreviewLine = (bookingId, edit) => {
+    setPreviewStale(true);
+    setPreviewEdits(current => {
+      const next = { ...current };
+      if (edit) next[bookingId] = edit; else delete next[bookingId];
+      return next;
+    });
+  };
+  const editDetailLine = (bookingId, edit) => setLineEdits(current => {
+    const next = { ...current };
+    if (edit) next[bookingId] = edit; else delete next[bookingId];
+    return next;
+  });
+  const saveLineEdits = async () => {
+    if (invalidEdit(lineEdits)) return toast.error('Her düzeltme için tutar ve en az 5 karakter gerekçe girin.');
+    setBusy(true);
+    try {
+      let data = null;
+      for (const item of editsToAdjustments(lineEdits)) {
+        ({ data } = await axios.post(`/marketplace/hotel/statements/${detail.id}/adjust`, item));
+      }
+      if (data) setDetail(data);
+      setLineEdits({});
+      toast.success('Düzeltme kaydedildi ve acenteye bildirildi.');
+      await load();
+    } catch (err) { toast.error(err.response?.data?.detail || 'Düzeltme kaydedilemedi.'); }
+    finally { setBusy(false); }
   };
   const open = async statement => {
     try {
       setDetail((await axios.get(`/marketplace/hotel/statements/${statement.id}`)).data);
       setNote('');
       setNoticeNote('');
+      setLineEdits({});
       setPayment(current => ({ ...current, amount: '' }));
     } catch (err) { toast.error(err.response?.data?.detail || 'Ekstre açılamadı.'); }
   };
@@ -129,7 +223,7 @@ export default function AgencyStatements() {
           <div><Label htmlFor="st-start">Başlangıç</Label><Input id="st-start" type="date" value={form.period_start} onChange={e => setForm(f => ({ ...f, period_start: e.target.value }))} /></div>
           <div><Label htmlFor="st-end">Bitiş</Label><Input id="st-end" type="date" value={form.period_end} onChange={e => setForm(f => ({ ...f, period_end: e.target.value }))} /></div>
           <div><Label htmlFor="st-cur">Para birimi</Label><Input id="st-cur" maxLength={3} value={form.currency} onChange={e => setForm(f => ({ ...f, currency: e.target.value.toUpperCase() }))} /></div>
-          <div className="sm:col-span-5"><Button onClick={issue} disabled={issuing}>{issuing ? <Loader2 size={14} className="mr-2 animate-spin" /> : <Plus size={14} className="mr-2" />}Ekstre düzenle ve acenteye gönder</Button></div>
+          <div className="sm:col-span-5"><Button onClick={openPreview} disabled={issuing}>{issuing ? <Loader2 size={14} className="mr-2 animate-spin" /> : <Plus size={14} className="mr-2" />}Ekstreyi önizle</Button><p className="mt-1 text-xs text-slate-500">Önizlemede satırları kontrol edip gerekirse düzeltin; ekstre ancak "Acenteye gönder" ile oluşur.</p></div>
         </CardContent>
       </Card>
 
@@ -157,6 +251,24 @@ export default function AgencyStatements() {
         </CardContent>
       </Card>
 
+      <Dialog open={Boolean(preview)} onOpenChange={value => !value && !issuing && setPreview(null)}>
+        <DialogContent className="max-w-3xl">
+          {preview && <div data-testid="statement-preview" className="space-y-3">
+            <DialogHeader>
+              <DialogTitle>Önizleme · {preview.agency_name}</DialogTitle>
+              <p className="text-sm text-slate-500">{preview.period_start} – {preview.period_end} · {balanceText(preview.outstanding, preview.currency)}{preview.totals?.adjustments ? ` · düzeltmeler ${money(preview.totals.adjustments, preview.currency)}` : ''}</p>
+              <p className="text-xs text-slate-500">Henüz kaydedilmedi; acente bilgilendirilmedi. Düzeltmek istediğiniz satırın kutucuğunu işaretleyin.</p>
+            </DialogHeader>
+            <StatementLines lines={preview.lines} currency={preview.currency} edits={previewEdits} onEdit={editPreviewLine} />
+            <DialogFooter className="gap-2">
+              <Button variant="outline" onClick={() => runPreview()} disabled={issuing}>Yeniden hesapla</Button>
+              {previewStale && <span className="self-center text-xs text-amber-700">Düzeltmeler değişti; göndermeden önce yeniden hesaplayın.</span>}
+              <Button onClick={issue} disabled={issuing || previewStale}>{issuing ? <Loader2 size={14} className="mr-2 animate-spin" /> : null}Acenteye gönder</Button>
+            </DialogFooter>
+          </div>}
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={Boolean(detail)} onOpenChange={value => !value && setDetail(null)}>
         <DialogContent className="max-w-3xl">
           {detail && <>
@@ -164,22 +276,9 @@ export default function AgencyStatements() {
               <DialogTitle>{detail.number} · {detail.agency_name}</DialogTitle>
               <p className="text-sm text-slate-500">{detail.period_start} – {detail.period_end} · {STATUS[detail.status]?.[0]} · {balanceText(detail.outstanding, detail.currency)}</p>
             </DialogHeader>
-            <div className="max-h-72 overflow-y-auto rounded border text-xs">
-              <table className="w-full">
-                <thead className="bg-slate-50 text-left"><tr><th className="p-2">Rezervasyon</th><th>Durum</th><th>Ödeme</th><th className="text-right">Brüt/Ceza</th><th className="text-right">Komisyon</th><th className="text-right p-2">Otel→Acente / Acente→Otel</th></tr></thead>
-                <tbody>
-                  {detail.lines.map(line => (
-                    <tr key={line.booking_id} className={`border-t ${detail.dispute?.booking_ids?.includes(line.booking_id) ? 'bg-red-50' : ''}`}>
-                      <td className="p-2">{line.confirmation_code}<div className="text-slate-400">{line.check_in} · {line.guest_name}</div></td>
-                      <td>{line.status}</td><td>{line.payment_terms}</td>
-                      <td className="text-right">{money(line.gross, detail.currency)}</td>
-                      <td className="text-right">{money(line.commission, detail.currency)}</td>
-                      <td className="p-2 text-right">{money(line.hotel_owes_agency, '')} / {money(line.agency_owes_hotel, '')}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <StatementLines lines={detail.lines} currency={detail.currency} highlight={detail.dispute?.booking_ids || []}
+              edits={ADJUSTABLE.includes(detail.status) && !detail.payments?.length ? lineEdits : undefined} onEdit={editDetailLine} />
+            {Object.keys(lineEdits).length > 0 && <div className="flex justify-end"><Button size="sm" onClick={saveLineEdits} disabled={busy}>Düzeltmeyi kaydet ve acenteye bildir</Button></div>}
             {detail.dispute && <div className="rounded border border-red-200 bg-red-50 p-3 text-sm"><strong>İtiraz:</strong> {detail.dispute.reason}</div>}
             {detail.payments?.length > 0 && <div className="text-xs text-slate-600">Ödemeler: {detail.payments.map(p => `${p.paid_at} ${money(p.amount, detail.currency)} (${p.direction === 'agency_to_hotel' ? 'acente→otel' : 'otel→acente'})`).join(' · ')}</div>}
             {detail.payment_notices?.length > 0 && <div className="space-y-2 rounded border p-3" data-testid="hotel-payment-notices">
