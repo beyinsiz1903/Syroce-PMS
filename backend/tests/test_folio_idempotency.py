@@ -432,3 +432,24 @@ async def test_payment_key_scoped_per_folio(_patch, fake_user):
     # Same idempotency-key but different folio scope -> two distinct rows.
     assert r1.id != r2.id
     assert _patch.payments.insert_calls == 2
+
+
+async def test_payment_refreshes_reservation_payment_state(monkeypatch, _patch, fake_user):
+    """The standard folio payment window must update the reservation's
+    balance and payment status, like every other payment path."""
+    from core import booking_payment_state
+
+    calls = []
+
+    async def _refresh(database, tenant_id, booking_id):
+        calls.append((tenant_id, booking_id))
+
+    monkeypatch.setattr(booking_payment_state, "refresh_booking_payment_state", _refresh)
+    await folio_router.post_payment_to_folio(
+        folio_id="F1",
+        payment_data=_payment_payload(),
+        request=_FakeRequest(None),
+        current_user=fake_user,
+    )
+    folio = await _patch.folios.find_one({"id": "F1"})
+    assert calls == [(fake_user.tenant_id, folio["booking_id"])]

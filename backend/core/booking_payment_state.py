@@ -17,6 +17,14 @@ logger = logging.getLogger(__name__)
 # A city-ledger transfer moves the debt to an account; no money is received.
 NON_COLLECTION_METHODS = frozenset({"city_ledger"})
 NON_COLLECTION_TYPES = frozenset({"city_ledger_transfer"})
+# A payment row in one of these states moved no money (declined card,
+# cancelled or rejected entry, not yet confirmed).
+INVALID_STATUSES = frozenset({"failed", "cancelled", "canceled", "rejected", "declined", "void", "voided", "pending"})
+
+
+def is_effective(payment: dict) -> bool:
+    """The one filter every payment sum uses: not voided, not failed."""
+    return payment.get("voided") is not True and str(payment.get("status") or "").lower() not in INVALID_STATUSES
 
 
 def _is_transfer(payment: dict) -> bool:
@@ -36,19 +44,19 @@ def _signed_amount(payment: dict) -> float:
 def collected_amount(payments: list[dict]) -> float:
     """Money actually received on a reservation, net of refunds."""
     total = sum(_signed_amount(p) for p in payments
-                if p.get("voided") is not True and not _is_transfer(p) and p.get("method") != "discount")
+                if is_effective(p) and not _is_transfer(p) and p.get("method") != "discount")
     return round(max(0.0, total), 2)
 
 
 def transferred_amount(payments: list[dict]) -> float:
     """Amount moved to the city ledger (settled on account, not collected)."""
-    total = sum(_signed_amount(p) for p in payments if p.get("voided") is not True and _is_transfer(p))
+    total = sum(_signed_amount(p) for p in payments if is_effective(p) and _is_transfer(p))
     return round(max(0.0, total), 2)
 
 
 def refunded_amount(payments: list[dict]) -> float:
     return round(sum(abs(_signed_amount(p)) for p in payments
-                     if p.get("voided") is not True and _signed_amount(p) < 0), 2)
+                     if is_effective(p) and _signed_amount(p) < 0), 2)
 
 
 def payment_state(*, balance: float, payments: list[dict]) -> str:
@@ -64,6 +72,22 @@ def payment_state(*, balance: float, payments: list[dict]) -> str:
     return "pending"
 
 
+PAYMENT_FIELDS = {"_id": 0, "amount": 1, "method": 1, "payment_type": 1, "status": 1, "voided": 1}
+
+
+async def compute_booking_payment_state(database, tenant_id: str, booking: dict, payments: list[dict] | None = None) -> dict:
+    """Balance, status and collected money of one reservation, from its live
+    payments; also used on read so records older than this module are right."""
+    from routers.reservation_detail import _reservation_outstanding_balance
+
+    balance = round(float(await _reservation_outstanding_balance(tenant_id, booking)), 2)
+    if payments is None:
+        payments = await database.payments.find(
+            {"tenant_id": tenant_id, "booking_id": booking["id"]}, PAYMENT_FIELDS).to_list(None)
+    return {"balance": max(0.0, balance), "payment_status": payment_state(balance=balance, payments=payments),
+            "collected_amount": collected_amount(payments)}
+
+
 async def refresh_booking_payment_state(database, tenant_id: str, booking_id: str) -> dict | None:
     """Recompute ``balance`` and ``payment_status`` after a payment change.
 
@@ -74,15 +98,7 @@ async def refresh_booking_payment_state(database, tenant_id: str, booking_id: st
         booking = await database.bookings.find_one({"id": booking_id, "tenant_id": tenant_id}, {"_id": 0})
         if not booking:
             return None
-        from routers.reservation_detail import _reservation_outstanding_balance
-
-        balance = round(float(await _reservation_outstanding_balance(tenant_id, booking)), 2)
-        payments = await database.payments.find(
-            {"tenant_id": tenant_id, "booking_id": booking_id},
-            {"_id": 0, "amount": 1, "method": 1, "payment_type": 1, "status": 1, "voided": 1},
-        ).to_list(None)
-        state = {"balance": max(0.0, balance), "payment_status": payment_state(balance=balance, payments=payments),
-                 "collected_amount": collected_amount(payments)}
+        state = await compute_booking_payment_state(database, tenant_id, booking)
         await database.bookings.update_one({"id": booking_id, "tenant_id": tenant_id}, {"$set": state})
         return state
     except Exception as exc:  # noqa: BLE001 - see docstring

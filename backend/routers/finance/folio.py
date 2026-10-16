@@ -922,6 +922,11 @@ async def post_payment_to_folio(folio_id: str, payment_data: PaymentCreate, requ
         # Update folio balance
         balance = await calculate_folio_balance(folio_id, current_user.tenant_id)
         await db.folios.update_one({"id": folio_id}, {"$set": {"balance": balance}})
+        # Reservation balance / payment status follow the payment (never raises).
+        from core.booking_payment_state import refresh_booking_payment_state
+
+        if folio.get("booking_id"):
+            await refresh_booking_payment_state(db, current_user.tenant_id, folio["booking_id"])
 
         # Persist replay body now: the payment row is durable. Any retry that
         # races a still-running cashier/webhook call below must replay this

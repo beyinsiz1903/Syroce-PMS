@@ -49,3 +49,12 @@ async def test_refresh_writes_balance_status_and_collected(monkeypatch):
 async def test_refresh_never_raises():
     db = SimpleNamespace(bookings=SimpleNamespace(find_one=AsyncMock(side_effect=RuntimeError("down"))))
     assert await state.refresh_booking_payment_state(db, "t1", "b1") is None
+
+
+@pytest.mark.parametrize("status", ["failed", "cancelled", "canceled", "rejected", "declined", "pending", "FAILED"])
+def test_payments_that_moved_no_money_count_nowhere(status):
+    bad = [{**CASH, "status": status}, {"amount": 2000, "method": "city_ledger", "status": status},
+           {"amount": -500, "payment_type": "refund", "status": status}]
+    assert (state.collected_amount(bad), state.transferred_amount(bad), state.refunded_amount(bad)) == (0, 0, 0)
+    assert state.payment_state(balance=8000, payments=bad) == "pending"
+    assert state.collected_amount([{**CASH, "status": "paid"}, *bad]) == 8000
