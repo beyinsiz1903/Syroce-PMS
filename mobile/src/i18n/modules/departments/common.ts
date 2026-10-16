@@ -4,4 +4,18 @@ export const departmentsCommon = {
   open: 'Departmanlar',
   none: 'Erişebileceğiniz departman bulunmuyor.',
   loadError: 'Veriler yüklenemedi, tekrar dene',
+  workspaceHint: 'İş akışınızı seçin. Ekranlardaki veriler açıldığında yüklenir.',
+  groups: {
+    operations: 'Günlük operasyon',
+    control: 'Finans ve kontrol',
+    management: 'Planlama ve yönetim',
+  },
+  accessLoading: 'Modül erişimleri kontrol ediliyor',
+  accessUnavailable: 'Bazı modüllerin paket erişimi doğrulanamadı.',
+  accessRestricted: 'Bu hesapla abonelik bilgileri görüntülenemiyor.',
+  coreAccessHint: 'Yetkili olduğunuz temel ekranları kullanabilirsiniz. Ek modüller için erişim bilgisinin doğrulanması gerekiyor.',
+  accessUnknown: 'Erişim bilgisi bekleniyor',
+  accessDisabled: 'Paket erişimi kapalı',
+  accessDisabledHint: 'Bu modül için otelinizin paket erişimi kapalı görünüyor.',
+  noAccessHint: 'Bu hesap için departman yetkisi tanımlı değil. Erişim gerekiyorsa otel yöneticinizle görüşün.',
 };

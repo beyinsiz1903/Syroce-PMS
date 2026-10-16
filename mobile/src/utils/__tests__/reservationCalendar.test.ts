@@ -18,6 +18,7 @@ import {
   placeReservations,
   planMove,
   roomCalStatus,
+  calendarCellStatus,
   toDateOnly,
   type CalReservation,
 } from '../reservationCalendar';
@@ -28,6 +29,14 @@ test('toDateOnly: extracts date from date or datetime, rejects junk', () => {
   assert.equal(toDateOnly('2026-06-12T14:30:00Z'), '2026-06-12');
   assert.equal(toDateOnly(''), undefined);
   assert.equal(toDateOnly('not-a-date'), undefined);
+});
+
+test('calendar cells do not carry current occupancy or cleaning beyond checkout', () => {
+  assert.equal(calendarCellStatus({ statuses: ['occupied', 'cleaning'], occupied: false, blocked: false, isToday: false }), 'available');
+  assert.equal(calendarCellStatus({ statuses: ['available', 'maintenance'], occupied: false, blocked: false, isToday: false }), 'out_of_order');
+  assert.equal(calendarCellStatus({ statuses: ['occupied'], occupied: false, blocked: false, isToday: true }), 'occupied');
+  assert.equal(calendarCellStatus({ statuses: ['available'], occupied: true, blocked: false, isToday: false }), 'occupied');
+  assert.equal(calendarCellStatus({ statuses: ['available'], occupied: false, blocked: true, isToday: false }), 'blocked');
 });
 
 // ── roomCalStatus ──────────────────────────────────────────────────────────
@@ -70,6 +79,7 @@ test('placeReservations: a 12->14 stay spans exactly two columns (checkout exclu
   assert.equal(bars.length, 1);
   assert.equal(bars[0].startOffset, 0);
   assert.equal(bars[0].nights, 2);
+  assert.equal(bars[0].totalNights, 2);
   assert.equal(bars[0].clippedStart, false);
   assert.equal(bars[0].clippedEnd, false);
 });
@@ -83,6 +93,7 @@ test('placeReservations: clips a stay that straddles the left/right edges', () =
   assert.equal(bars.length, 1);
   assert.equal(bars[0].startOffset, 0);
   assert.equal(bars[0].nights, 5);
+  assert.equal(bars[0].totalNights, 10); // label stays truthful when clipped
   assert.equal(bars[0].clippedStart, true);
   assert.equal(bars[0].clippedEnd, true);
 });

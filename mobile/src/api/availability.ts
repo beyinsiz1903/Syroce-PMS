@@ -1,4 +1,5 @@
 import { api } from './client';
+import { verifiedRoomBlocks } from '../utils/calendarData';
 import {
   addDaysISO,
   buildAvailabilityGrid,
@@ -83,10 +84,7 @@ export async function getRoomBlocks(fromDate?: string, toDate?: string): Promise
     from_date: fromDate || undefined,
     to_date: toDate || undefined,
   });
-  if (Array.isArray(res)) return res;
-  if (Array.isArray(res?.blocks)) return res.blocks;
-  if (Array.isArray(res?.items)) return res.items;
-  return [];
+  return verifiedRoomBlocks<RoomBlock>(res);
 }
 
 // Builds a room-by-day grid by querying availability for each day in the

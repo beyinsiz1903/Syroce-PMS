@@ -1,7 +1,8 @@
 import React from 'react';
 import { Pressable, View } from 'react-native';
-import { Body, Card, H2, Muted, SkeletonCard } from './ui';
-import { spacing, useTheme } from '../theme';
+import { Ionicons } from '@expo/vector-icons';
+import { Body, Card, Muted, SkeletonCard } from './ui';
+import { radius, spacing, useTheme } from '../theme';
 import { tr } from '../i18n/tr';
 import { errorMessage, isOffline } from '../utils/errors';
 import { listViewState } from '../utils/departmentScreens';
@@ -21,26 +22,41 @@ export const DepartmentTile: React.FC<{
   subtitle: string;
   onPress: () => void;
   testID?: string;
-}> = ({ title, subtitle, onPress, testID }) => {
+  icon?: keyof typeof Ionicons.glyphMap;
+  disabled?: boolean;
+  statusText?: string;
+  grouped?: boolean;
+  last?: boolean;
+}> = ({ title, subtitle, onPress, testID, icon, disabled, statusText, grouped, last }) => {
   const c = useTheme();
+  const content = (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
+      {icon ? (
+        <View style={{ width: 40, height: 40, borderRadius: radius.md, backgroundColor: disabled ? c.surfaceAlt : c.primarySoft, alignItems: 'center', justifyContent: 'center' }}>
+          <Ionicons name={icon} size={22} color={disabled ? c.textMuted : c.primary} />
+        </View>
+      ) : null}
+      <View style={{ flex: 1, gap: 3 }}>
+        <Body style={{ fontWeight: '700' }}>{title}</Body>
+        <Muted numberOfLines={2}>{subtitle}</Muted>
+        {statusText ? <Muted style={{ color: c.textMuted, fontSize: 12, fontWeight: '600' }}>{statusText}</Muted> : null}
+      </View>
+      <Ionicons name={disabled ? 'lock-closed-outline' : 'chevron-forward'} size={18} color={disabled ? c.textMuted : c.primary} />
+    </View>
+  );
   return (
-    <Pressable onPress={onPress} testID={testID} accessibilityRole="button">
-      {({ pressed }) => (
-        <Card style={{ opacity: pressed ? 0.85 : 1 }}>
-          <View
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-            }}
-          >
-            <View style={{ flex: 1, paddingRight: spacing.sm }}>
-              <H2>{title}</H2>
-              <Muted style={{ marginTop: spacing.xs }}>{subtitle}</Muted>
-            </View>
-            <Body style={{ color: c.textMuted, fontSize: 22 }}>›</Body>
-          </View>
-        </Card>
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      testID={testID}
+      accessibilityRole="button"
+      accessibilityLabel={[title, subtitle, statusText].filter(Boolean).join('. ')}
+      accessibilityState={{ disabled: !!disabled }}
+    >
+      {({ pressed }) => grouped ? (
+        <View style={{ minHeight: 88, padding: spacing.lg, borderBottomWidth: last ? 0 : 1, borderBottomColor: c.border, opacity: pressed ? 0.75 : 1 }}>{content}</View>
+      ) : (
+        <Card style={{ opacity: pressed ? 0.75 : 1 }}>{content}</Card>
       )}
     </Pressable>
   );

@@ -10,12 +10,13 @@ import { OfflineBanner } from '../../src/components/OfflineBanner';
 import { radius, spacing, useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
 import { Reservation, searchReservations } from '../../src/api/reservations';
-import { formatCurrency, formatDate } from '../../src/utils/format';
+import { formatDate } from '../../src/utils/format';
 import { errorMessage, isOffline } from '../../src/utils/errors';
 import { ROUTES } from '../../src/navigation/routes';
 import {
   reservationStatusLabel,
   reservationStatusTone,
+  reservationAmountLabel,
 } from '../../src/utils/reservationPresentation';
 
 const STATUS_OPTIONS = [
@@ -70,11 +71,11 @@ function ReservationRow({ r, onPress }: { r: Reservation; onPress: () => void })
             </Body>
             {r.booking_number ? <Muted>#{r.booking_number}</Muted> : null}
           </View>
-          <View style={{ alignItems: 'flex-end', gap: spacing.xs }}>
+          <View style={{ alignItems: 'flex-end', gap: spacing.xs, maxWidth: '46%', flexShrink: 1 }}>
             <Badge label={reservationStatusLabel(r.status)} tone={reservationStatusTone(r.status)} />
             {typeof r.total_amount === 'number' ? (
-              <Body style={{ color: c.textMuted, fontSize: 13 }}>
-                {formatCurrency(r.total_amount)}
+              <Body testID={`reservation-total-${r.id}`} style={{ color: c.textMuted, fontSize: 13, textAlign: 'right' }}>
+                {reservationAmountLabel(r.total_amount, r.currency)}
               </Body>
             ) : null}
           </View>

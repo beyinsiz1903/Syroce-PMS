@@ -60,13 +60,11 @@ export const Screen: React.FC<ViewProps> = ({ style, children, ...rest }) => {
   );
 };
 
-// Premium cam kart: 24px radius, yumusak yukseltili golge, ince beyaz kenarlik
-// ve ust kenarda ince isik cizgisi (cam rim hissi) ile zeminden ayrilir.
-// `accent` verilirse sol kenarda renkli durum cubugu cizer (status at-a-glance).
-// `glass=false` ile rim isik cizgisi kapatilabilir (ic ice kartlar icin).
+// Flat operational card. Optional accents never replace textual statuses.
+// The legacy glass option stays available, but is no longer the default.
 export const Card: React.FC<
   ViewProps & { accent?: string; elevated?: boolean; padded?: boolean; glass?: boolean }
-> = ({ style, children, accent, elevated = true, padded = true, glass = true, ...rest }) => {
+> = ({ style, children, accent, elevated = true, padded = true, glass = false, ...rest }) => {
   const c = useTheme();
   return (
     <View
@@ -139,14 +137,14 @@ export const Body: React.FC<TextProps> = ({ style, ...rest }) => {
   const c = useTheme();
   const textScale = useSettingsStore((s) => s.textScale);
   const scale = textScale === 'extra_large' ? 1.24 : textScale === 'large' ? 1.12 : 1;
-  return <Text style={[{ color: c.text, fontSize: 15 * scale, lineHeight: 21 * scale }, style]} {...rest} />;
+  return <Text style={[{ color: c.text, fontSize: 16 * scale, lineHeight: 23 * scale }, style]} {...rest} />;
 };
 
 export const Muted: React.FC<TextProps> = ({ style, ...rest }) => {
   const c = useTheme();
   const textScale = useSettingsStore((s) => s.textScale);
   const scale = textScale === 'extra_large' ? 1.24 : textScale === 'large' ? 1.12 : 1;
-  return <Text style={[{ color: c.textMuted, fontSize: 13 * scale, lineHeight: 18 * scale }, style]} {...rest} />;
+  return <Text style={[{ color: c.textMuted, fontSize: 14 * scale, lineHeight: 20 * scale }, style]} {...rest} />;
 };
 
 type ButtonVariant = 'primary' | 'secondary' | 'success' | 'danger' | 'outline' | 'ghost';
@@ -188,10 +186,10 @@ export const Button: React.FC<ButtonProps> = ({
   const glow = solid
     ? {
         shadowColor: p.bg,
-        shadowOffset: { width: 0, height: 6 },
-        shadowOpacity: 0.35,
-        shadowRadius: 12,
-        elevation: 4,
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.12,
+        shadowRadius: 4,
+        elevation: 2,
       }
     : null;
 
@@ -203,7 +201,8 @@ export const Button: React.FC<ButtonProps> = ({
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityState={{ disabled: !!disabled || !!loading }}
+      accessibilityLabel={rest.accessibilityLabel ?? title}
+      accessibilityState={{ disabled: !!disabled || !!loading, busy: !!loading }}
       disabled={disabled || loading}
       onPress={handlePress}
       style={({ pressed }) => [
@@ -231,7 +230,7 @@ export const Button: React.FC<ButtonProps> = ({
       ) : (
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.xs }}>
           {icon ? <Ionicons name={icon} size={18} color={p.text} /> : null}
-          <Text style={{ color: p.text, fontSize: 16, fontWeight: '700' }}>{title}</Text>
+          <Text style={{ color: p.text, fontSize: 16, fontWeight: '700', flexShrink: 1, textAlign: 'center' }}>{title}</Text>
         </View>
       )}
     </Pressable>
@@ -259,6 +258,7 @@ export const Field: React.FC<TextInputProps & { label?: string }> = ({ label, st
           style,
         ]}
         {...rest}
+        accessibilityLabel={rest.accessibilityLabel ?? label}
       />
     </View>
   );
@@ -292,14 +292,14 @@ export const Badge: React.FC<BadgeProps> = ({ label, tone = 'default', icon }) =
         alignItems: 'center',
         gap: 4,
         paddingHorizontal: spacing.sm,
-        paddingVertical: 3,
+        paddingVertical: 4,
         borderRadius: radius.pill,
         backgroundColor: color + '1f',
         alignSelf: 'flex-start',
       }}
     >
       {icon ? <Ionicons name={icon} size={12} color={color} /> : null}
-      <Text style={{ color, fontSize: 11, fontWeight: '700', letterSpacing: 0.2 }}>{label}</Text>
+      <Text style={{ color, fontSize: 12, lineHeight: 17, fontWeight: '700', flexShrink: 1 }}>{label}</Text>
     </View>
   );
 };

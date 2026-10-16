@@ -211,6 +211,7 @@ async def get_guest_bookings(current_user: User = Depends(get_current_user)):
             "status": booking.get("status"),
             "guests_count": booking.get("adults", 1) + booking.get("children", 0),
             "total_amount": booking.get("total_amount", 0),
+            "currency": booking.get("currency"),
             "guest_name": guest.get("name") if guest else current_user.name,
             "qr_code_data": booking.get("qr_code_data"),
             "can_checkin": booking.get("status") == "confirmed" and check_in_dt and check_in_dt <= now_utc,

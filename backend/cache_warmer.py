@@ -176,36 +176,35 @@ class CacheWarmer:
             logger.info(f"  ❌ Front desk warming failed: {e}")
 
     async def warm_rooms_cache(self, tenant_id: str):
-        """Pre-warm rooms cache"""
+        """Cache only a proven-complete active, nonvirtual tenant room list."""
+        cache_key = f"rooms:{tenant_id}"
         try:
-            projection = {"_id": 0, "id": 1, "room_number": 1, "room_type": 1, "status": 1, "floor": 1, "capacity": 1, "base_price": 1, "max_occupancy": 1, "tenant_id": 1, "is_virtual": 1}
-            # First, check total count
-            total_rooms = await self.db.rooms.count_documents({})
-            logger.info(f"  🔍 Total rooms in DB: {total_rooms}")
-
-            # Try without tenant filter if none found — exclude virtual rooms
-            rooms = (
-                await self.db.rooms.find(
+            projection = {"_id": 0, "id": 1, "room_number": 1, "room_type": 1, "status": 1, "room_status": 1, "housekeeping_status": 1, "hk_status": 1, "floor": 1, "capacity": 1, "base_price": 1, "max_occupancy": 1, "tenant_id": 1, "is_virtual": 1}
+            query = {
+                "tenant_id": tenant_id,
+                "$and": [
+                    {"$or": [{"is_active": True}, {"is_active": {"$exists": False}}]},
                     {"$or": [{"is_virtual": False}, {"is_virtual": {"$exists": False}}]},
-                    projection,
-                )
-                .limit(100)
-                .to_list(100)
+                ],
+            }
+            # Read one past the cache bound. A capped list is never cached as
+            # if it were complete, and ordering matches paginated GET /rooms.
+            rooms = (
+                await self.db.rooms.find(query, projection)
+                .sort("_id", 1)
+                .limit(2001)
+                .to_list(2001)
             )
-
-            if rooms and len(rooms) > 0:
-                # Cache for all tenants found
-                tenants = {room.get("tenant_id") for room in rooms if room.get("tenant_id")}
-                for t_id in tenants:
-                    tenant_rooms = [r for r in rooms if r.get("tenant_id") == t_id]
-                    cache_key = f"rooms:{t_id}"
-                    self.cache[cache_key] = {
-                        "data": tenant_rooms,
-                        "expires_at": datetime.utcnow() + timedelta(seconds=20),  # Shorter expiry for fresh data
-                    }
-                    logger.info(f"  ✅ Rooms cache warmed for tenant {t_id[:8]}: {len(tenant_rooms)} rooms")
-            else:
-                logger.info("  ⚠️ No rooms found in database")
+            if len(rooms) > 2000:
+                self.invalidate(cache_key)
+                logger.info("Rooms cache bypassed for tenant %s: list exceeds 2000 rooms", tenant_id[:8])
+                return
+            self.cache[cache_key] = {
+                "data": rooms,
+                "complete": True,
+                "expires_at": datetime.now(UTC).replace(tzinfo=None) + timedelta(seconds=20),
+            }
+            logger.info("Rooms cache warmed for tenant %s: %s rooms", tenant_id[:8], len(rooms))
         except Exception as e:
             logger.info(f"  ❌ Rooms cache warming failed: {e}")
 
@@ -229,6 +228,7 @@ class CacheWarmer:
                 "check_out": 1,
                 "status": 1,
                 "total_amount": 1,
+                "currency": 1,
                 "rate_type": 1,
                 "market_segment": 1,
                 "booking_source": 1,
@@ -397,11 +397,13 @@ class CacheWarmer:
     # icin kendi `@cached` decorator'ini kullanir; orphan kalan bu sahte isitma
     # kaldirildi (doktrin: no fake-green).
 
-    def get_cached(self, cache_key: str):
+    def get_cached(self, cache_key: str, *, require_complete: bool = False):
         """Get data from warmed cache"""
         if cache_key in self.cache:
             entry = self.cache[cache_key]
-            if datetime.utcnow() < entry["expires_at"]:
+            if datetime.now(UTC).replace(tzinfo=None) < entry["expires_at"]:
+                if require_complete and entry.get("complete") is not True:
+                    return None
                 return entry["data"]
             else:
                 del self.cache[cache_key]

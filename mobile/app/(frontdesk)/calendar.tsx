@@ -7,6 +7,7 @@ import {
   ScrollView,
   Text,
   View,
+  useWindowDimensions,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from 'react-native';
@@ -23,22 +24,25 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
-import { Badge, Body, Button, EmptyState, FadeInView, H1, H2, Muted } from '../../src/components/ui';
+import { ActionSheet, Badge, Body, Button, EmptyState, FadeInView, H1, H2, Muted } from '../../src/components/ui';
+import { OfflineBanner } from '../../src/components/OfflineBanner';
+import { useOnline } from '../../src/hooks/useOnline';
 import { DatePicker } from '../../src/components/DatePicker';
 import { FilterChips, type FilterChipOption } from '../../src/components/FilterChips';
 import { cardShadow, radius, spacing, useTheme, type ThemeColors } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
 import { listRooms, type Room } from '../../src/api/rooms';
-import { assignRoom } from '../../src/api/bookings';
 import {
-  searchReservations,
   updateReservation,
   type Reservation,
 } from '../../src/api/reservations';
+import { getCalendarReservations } from '../../src/api/reservationCalendar';
 import { getRoomBlocks } from '../../src/api/availability';
 import { blockCoversDay } from '../../src/utils/availabilityGrid';
 import { errorMessage, isOffline } from '../../src/utils/errors';
-import { formatCurrency, formatDate } from '../../src/utils/format';
+import { formatDate } from '../../src/utils/format';
+import { localDayISO } from '../../src/utils/todayPresentation';
+import { calendarDataReady } from '../../src/utils/calendarData';
 import { haptic } from '../../src/hooks/useHaptic';
 import { ROUTES } from '../../src/navigation/routes';
 import {
@@ -56,6 +60,7 @@ import {
   placeReservations,
   planMove,
   roomCalStatus,
+  calendarCellStatus,
   toDateOnly,
   type CalendarView,
   type OccupancyFilter,
@@ -65,12 +70,13 @@ import {
 import {
   reservationStatusLabel,
   reservationStatusTone,
+  reservationAmountLabel,
 } from '../../src/utils/reservationPresentation';
 
 const USE_NATIVE_DRIVER = Platform.OS !== 'web';
 
 function todayISO(): string {
-  return new Date().toISOString().slice(0, 10);
+  return localDayISO();
 }
 
 // Cell / bar palette. The five operator statuses map to the theme's status
@@ -87,23 +93,6 @@ function statusColor(status: RoomCalStatus, c: ThemeColors): string {
       return c.danger;
     case 'blocked':
       return c.textMuted;
-  }
-}
-
-// A reservation bar is coloured by its OWN lifecycle status (checked-in guests
-// read green, upcoming confirmed blue, departed muted) — distinct from the
-// room-condition cell tint underneath.
-function barColor(status: string | undefined, c: ThemeColors): string {
-  switch ((status || '').toLowerCase()) {
-    case 'checked_in':
-      return c.success;
-    case 'confirmed':
-    case 'guaranteed':
-      return c.primary;
-    case 'checked_out':
-      return c.textMuted;
-    default:
-      return c.warning;
   }
 }
 
@@ -135,6 +124,7 @@ function ReservationBar({
   roomCount,
   compact,
   moving,
+  canMove,
   c,
   onTap,
   onDrop,
@@ -146,6 +136,7 @@ function ReservationBar({
   roomCount: number;
   compact: boolean;
   moving: boolean;
+  canMove: boolean;
   c: ThemeColors;
   onTap: (bar: PlacedBar) => void;
   onDrop: (bar: PlacedBar, dx: number, dy: number, reset: () => void) => void;
@@ -170,6 +161,7 @@ function ReservationBar({
   }));
 
   const pan = Gesture.Pan()
+    .enabled(canMove && !bar.clippedStart && !bar.clippedEnd && bar.reservation.status !== 'checked_out')
     .activateAfterLongPress(160)
     .onStart(() => {
       lifted.value = withTiming(1, { duration: 120 });
@@ -179,23 +171,28 @@ function ReservationBar({
       tx.value = e.translationX;
       ty.value = e.translationY;
     })
-    .onEnd((e) => {
+    .onEnd((e, success) => {
       lifted.value = withTiming(0, { duration: 160 });
-      runOnJS(onDrop)(bar, e.translationX, e.translationY, reset);
+      if (success) runOnJS(onDrop)(bar, e.translationX, e.translationY, reset);
+      else runOnJS(reset)();
     })
-    .onFinalize(() => {
+    .onFinalize((_e, success) => {
       lifted.value = withTiming(0, { duration: 160 });
+      if (!success) runOnJS(reset)();
     });
 
   const tap = Gesture.Tap()
     .maxDuration(250)
-    .onEnd(() => {
-      runOnJS(onTap)(bar);
+    .onEnd((_e, success) => {
+      if (success) runOnJS(onTap)(bar);
     });
 
   const gesture = Gesture.Race(pan, tap);
 
-  const color = barColor(bar.reservation.status, c);
+  // Every reservation is blue, consistently with the "Dolu" legend. Green
+  // means free inventory, never an already checked-in reservation. Lifecycle
+  // remains explicit in the accessible label and the detail sheet.
+  const color = c.primary;
   const left = bar.startOffset * dayWidth;
   const width = Math.max(bar.nights * dayWidth - 4, dayWidth - 4);
   const top = roomIndex * ROW_HEIGHT;
@@ -206,7 +203,8 @@ function ReservationBar({
       <Animated.View
         testID={`calendar-bar-${bar.reservation.id}`}
         accessibilityRole="button"
-        accessibilityLabel={`${name} ${tr.calendar.openDetail}`}
+        accessibilityLabel={`${name} · ${reservationStatusLabel(bar.reservation.status)} · ${tr.calendar.openDetail}`}
+        onAccessibilityTap={() => onTap(bar)}
         style={[
           {
             position: 'absolute',
@@ -250,7 +248,7 @@ function ReservationBar({
               </Text>
             </View>
             <Text numberOfLines={1} style={{ color: '#ffffffcc', fontSize: 10, fontWeight: '600' }}>
-              {bar.nights} {tr.calendar.nights}
+              {bar.totalNights} {tr.calendar.nights}
               {moving ? ` · ${tr.calendar.moving}` : ''}
             </Text>
           </>
@@ -265,6 +263,8 @@ export default function ReservationCalendarScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
+  const online = useOnline();
+  const { width: screenWidth } = useWindowDimensions();
 
   const [view, setView] = useState<CalendarView>('week');
   const [startDate, setStartDate] = useState<string>(todayISO());
@@ -273,24 +273,28 @@ export default function ReservationCalendarScreen() {
   const [toast, setToast] = useState<Toast | null>(null);
   const [roomTypeFilter, setRoomTypeFilter] = useState<string>('all');
   const [occupancyFilter, setOccupancyFilter] = useState<OccupancyFilter>('all');
+  const [pendingMove, setPendingMove] = useState<{ label: string; apply: () => void } | null>(null);
+  const moveInFlight = useRef(false);
+  const [showTools, setShowTools] = useState(false);
 
   const headerScrollRef = useRef<ScrollView>(null);
 
   const preset = VIEW_PRESETS[view];
-  const dayWidth = preset.dayWidth;
+  const dayWidth = view === 'week' ? Math.max(52, (screenWidth - spacing.lg * 2 - ROOM_COL_WIDTH) / 5) : preset.dayWidth;
   const dayCount = preset.days;
   const dayList = useMemo(() => buildDayList(startDate, dayCount), [startDate, dayCount]);
   const endExclusive = useMemo(() => addDaysISO(startDate, dayCount), [startDate, dayCount]);
 
   const roomsQuery = useQuery({ queryKey: ['calendar', 'rooms'], queryFn: listRooms });
   const reservationsQuery = useQuery({
-    queryKey: ['calendar', 'reservations'],
-    queryFn: () => searchReservations({}),
+    queryKey: ['calendar', 'reservations', startDate, endExclusive],
+    queryFn: () => getCalendarReservations(startDate, endExclusive),
   });
   const blocksQuery = useQuery({
     queryKey: ['calendar', 'blocks', startDate, endExclusive],
     queryFn: () => getRoomBlocks(startDate, endExclusive),
   });
+  const dataReady = calendarDataReady(online, [roomsQuery, reservationsQuery, blocksQuery]);
 
   const rooms = useMemo<Room[]>(() => {
     const list = roomsQuery.data ?? [];
@@ -390,9 +394,12 @@ export default function ReservationCalendarScreen() {
   const cellStatus = useCallback(
     (room: Room, dayIdx: number): RoomCalStatus => {
       const day = dayList[dayIdx];
-      if (occupied.has(`${room.id}|${dayIdx}`)) return 'occupied';
-      if (blockedCell(room.id, day)) return 'blocked';
-      return roomCalStatus(room.status, false);
+      return calendarCellStatus({
+        statuses: [room.status, room.room_status, room.hk_status, room.housekeeping_status],
+        occupied: occupied.has(`${room.id}|${dayIdx}`),
+        blocked: blockedCell(room.id, day),
+        isToday: day === todayISO(),
+      });
     },
     [dayList, occupied, blockedCell],
   );
@@ -404,6 +411,12 @@ export default function ReservationCalendarScreen() {
 
   const handleDrop = useCallback(
     (bar: PlacedBar, dx: number, dy: number, reset: () => void) => {
+      // Never mutate from a stale/offline/partial grid or from a clipped stay:
+      // its visible start is not necessarily the actual check-in date.
+      if (!dataReady || movingId || bar.clippedStart || bar.clippedEnd || bar.reservation.status === 'checked_out') {
+        reset();
+        return;
+      }
       const startRoomIndex = roomIdToIndex.get(bar.roomId) ?? 0;
       const target = computeDropTarget({
         startOffset: bar.startOffset,
@@ -416,19 +429,13 @@ export default function ReservationCalendarScreen() {
         roomCount: visibleRooms.length,
         nights: bar.nights,
       });
-      const trueNights = (() => {
-        const ci = toDateOnly(bar.reservation.check_in);
-        const co = toDateOnly(bar.reservation.check_out);
-        if (ci && co) return Math.max(1, diffDays(ci, co));
-        return bar.nights;
-      })();
       const targetRoom = visibleRooms[target.roomIndex];
       const plan = planMove({
         changedRoom: target.changedRoom,
         changedDay: target.changedDay,
         targetRoomId: targetRoom?.id,
         newCheckIn: dayList[target.dayOffset],
-        nights: trueNights,
+        nights: bar.totalNights,
       });
 
       if (!hasMove(plan)) {
@@ -436,33 +443,26 @@ export default function ReservationCalendarScreen() {
         return;
       }
 
-      setMovingId(bar.reservation.id);
-      const resync = () =>
-        Promise.all([
-          queryClient.invalidateQueries({ queryKey: ['calendar', 'reservations'] }),
-          queryClient.invalidateQueries({ queryKey: ['calendar', 'rooms'] }),
-          queryClient.invalidateQueries({ queryKey: ['calendar', 'blocks'] }),
-        ]);
+      const resync = () => Promise.all([
+        ['calendar'], ['frontdesk-rooms'], ['frontdesk-inhouse-rooms'],
+        ['rooms'], ['hk-inhouse'], ['arrivals-today'], ['departures-today'],
+        ['inhouse'], ['hub-today'], ['noshow-today'], ['reservations-search'],
+        ['reservation-full', bar.reservation.id], ['reservation-enhanced', bar.reservation.id],
+        ['reservation-ota', bar.reservation.id],
+      ].map((queryKey) => queryClient.invalidateQueries({ queryKey })));
 
-      (async () => {
-        // assign-room and date-update are two separate backend calls with no
-        // single atomic endpoint, so track each step. A failure AFTER a prior
-        // step succeeded is a real partial mutation — we must NOT spring the
-        // card back (that would be a fake rollback); instead refetch server
-        // truth so the grid shows exactly what the backend now holds.
-        let committed = false;
+      const apply = async () => {
+        if (moveInFlight.current) return;
+        moveInFlight.current = true;
+        setMovingId(bar.reservation.id);
+        // The common reservation service validates the effective room + dates
+        // together and reserves its nights atomically. The legacy assign-room
+        // shortcut does not perform date-overlap validation.
         try {
-          if (plan.assignRoomId) {
-            await assignRoom(bar.reservation.id, plan.assignRoomId);
-            committed = true;
-          }
-          if (plan.newCheckIn && plan.newCheckOut) {
-            await updateReservation(bar.reservation.id, {
-              check_in: plan.newCheckIn,
-              check_out: plan.newCheckOut,
-            });
-            committed = true;
-          }
+          await updateReservation(bar.reservation.id, {
+            ...(plan.assignRoomId ? { room_id: plan.assignRoomId } : {}),
+            ...(plan.newCheckIn ? { check_in: plan.newCheckIn, check_out: plan.newCheckOut } : {}),
+          });
           haptic.success();
           flashToast({
             msg:
@@ -475,30 +475,26 @@ export default function ReservationCalendarScreen() {
           });
           await resync();
         } catch (e) {
-          if (committed) {
-            // Partial mutation already landed on the backend. Be honest: don't
-            // claim full failure and don't fake a rollback — show partial and
-            // re-sync so the card sits where the server actually placed it.
-            haptic.warning();
-            await resync();
-            flashToast({ msg: tr.calendar.movePartial, tone: 'danger' });
-          } else {
-            // Nothing changed on the backend: safe to snap the card back, then
-            // re-sync to reflect server truth (which still equals the origin).
-            haptic.error();
-            reset();
-            await resync();
-            flashToast({
-              msg: isOffline(e) ? errorMessage(e, tr.calendar.moveFailed) : tr.calendar.moveFailed,
-              tone: 'danger',
-            });
-          }
+          // A lost response is not proof of rollback. Refetch truth and never
+          // claim that the original room/date has been restored.
+          haptic.error();
+          await resync();
+          flashToast({
+            msg: isOffline(e) ? errorMessage(e, tr.calendar.moveFailed) : tr.calendar.moveFailed,
+            tone: 'danger',
+          });
         } finally {
+          moveInFlight.current = false;
           setMovingId(null);
         }
-      })();
+      };
+      reset();
+      setPendingMove({
+        label: `${bar.reservation.guest_name || tr.calendar.guest} · ${targetRoom?.room_number || '—'}\n${formatDate(plan.newCheckIn || bar.reservation.check_in)} – ${formatDate(plan.newCheckOut || bar.reservation.check_out)}`,
+        apply: () => { setPendingMove(null); void apply(); },
+      });
     },
-    [roomIdToIndex, dayWidth, dayCount, visibleRooms, dayList, queryClient, flashToast],
+    [roomIdToIndex, dayWidth, dayCount, visibleRooms, dayList, queryClient, flashToast, dataReady, movingId],
   );
 
   const onBodyScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -508,14 +504,15 @@ export default function ReservationCalendarScreen() {
 
   const pinch = useMemo(
     () =>
-      Gesture.Pinch().onEnd((e) => {
-        runOnJS(setView)(nextViewFromZoom(view, e.scale));
+      Gesture.Pinch().onEnd((e, success) => {
+        if (success) runOnJS(setView)(nextViewFromZoom(view, e.scale));
       }),
     [view],
   );
 
-  const loading = roomsQuery.isLoading || reservationsQuery.isLoading;
-  const errored = roomsQuery.isError || reservationsQuery.isError;
+  const loading = roomsQuery.isPending || reservationsQuery.isPending || blocksQuery.isPending;
+  const errored = roomsQuery.isError || reservationsQuery.isError || blocksQuery.isError;
+  const reload = () => { roomsQuery.refetch(); reservationsQuery.refetch(); blocksQuery.refetch(); };
   const gridWidth = dayCount * dayWidth;
   const gridHeight = visibleRooms.length * ROW_HEIGHT;
   const filtered = roomTypeFilter !== 'all' || occupancyFilter !== 'all';
@@ -547,15 +544,28 @@ export default function ReservationCalendarScreen() {
         style={{ flex: 1, paddingTop: spacing.md, paddingBottom: insets.bottom }}
       >
         <View style={{ paddingHorizontal: spacing.lg }}>
+          <OfflineBanner visible={!online} />
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm }}>
-            <H1 style={{ flex: 1 }}>{tr.calendar.title}</H1>
-            <Button
+            <H1 style={{ flex: 1 }}>{tr.calendar.openCta}</H1>
+            <Pressable
+              testID="calendar-tools"
+              accessibilityRole="button"
+              accessibilityLabel={tr.calendar.tools}
+              accessibilityState={{ expanded: showTools }}
+              onPress={() => setShowTools((value) => !value)}
+              style={{ width: 48, height: 48, borderRadius: radius.md, backgroundColor: showTools ? c.primarySoft : c.surface, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: c.border }}
+            >
+              <Ionicons name="options-outline" size={24} color={c.primary} />
+            </Pressable>
+            <Pressable
               testID="calendar-new-reservation"
-              title={tr.reservations.newReservation}
-              icon="add"
-              variant="success"
+              accessibilityRole="button"
+              accessibilityLabel={tr.reservations.newReservation}
               onPress={() => router.push(ROUTES.newReservation)}
-            />
+              style={{ width: 48, height: 48, borderRadius: radius.md, backgroundColor: c.primary, alignItems: 'center', justifyContent: 'center' }}
+            >
+              <Ionicons name="add" size={28} color={c.primaryText} />
+            </Pressable>
           </View>
           <Muted style={{ marginTop: 2 }}>{tr.calendar.subtitle}</Muted>
         </View>
@@ -584,6 +594,8 @@ export default function ReservationCalendarScreen() {
                 }}
                 style={{
                   flex: 1,
+                  minHeight: 48,
+                  justifyContent: 'center',
                   paddingVertical: spacing.sm,
                   borderRadius: radius.md,
                   alignItems: 'center',
@@ -618,7 +630,7 @@ export default function ReservationCalendarScreen() {
               haptic.tap();
               shiftWindow(-1);
             }}
-            style={{ padding: spacing.sm }}
+            style={{ width: 48, height: 48, alignItems: 'center', justifyContent: 'center' }}
           >
             <Ionicons name="chevron-back" size={22} color={c.text} />
           </Pressable>
@@ -629,7 +641,7 @@ export default function ReservationCalendarScreen() {
               haptic.tap();
               setStartDate(todayISO());
             }}
-            style={{ flex: 1, alignItems: 'center' }}
+            style={{ flex: 1, minHeight: 48, alignItems: 'center', justifyContent: 'center' }}
           >
             <Body style={{ fontWeight: '700' }}>
               {formatDate(dayList[0])} – {formatDate(dayList[dayList.length - 1])}
@@ -644,14 +656,14 @@ export default function ReservationCalendarScreen() {
               haptic.tap();
               shiftWindow(1);
             }}
-            style={{ padding: spacing.sm }}
+            style={{ width: 48, height: 48, alignItems: 'center', justifyContent: 'center' }}
           >
             <Ionicons name="chevron-forward" size={22} color={c.text} />
           </Pressable>
         </View>
 
         {/* Jump to an arbitrary date (besides the Today shortcut above) */}
-        <View style={{ paddingHorizontal: spacing.lg, marginTop: spacing.sm }}>
+        {showTools ? <View style={{ paddingHorizontal: spacing.lg, marginTop: spacing.sm }}>
           <DatePicker
             testID="calendar-jump-date"
             value={startDate}
@@ -662,7 +674,7 @@ export default function ReservationCalendarScreen() {
               setStartDate(iso);
             }}
           />
-        </View>
+        </View> : null}
 
         {/* Legend */}
         <View
@@ -703,28 +715,29 @@ export default function ReservationCalendarScreen() {
                 onChange={setRoomTypeFilter}
               />
             ) : null}
-            <FilterChips
+            {showTools ? <FilterChips
               testID="calendar-filter-occupancy"
               options={occupancyOptions}
               value={occupancyFilter}
               onChange={(v) => setOccupancyFilter(v as OccupancyFilter)}
-            />
+            /> : null}
           </View>
         ) : null}
 
         <View style={{ height: spacing.sm }} />
 
         {/* Grid */}
-        {loading ? (
+        {!online && loading ? (
+          <EmptyState icon="cloud-offline-outline" title={tr.app.offline} />
+        ) : loading ? (
           <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
             <ActivityIndicator color={c.primary} />
           </View>
         ) : errored ? (
-          <EmptyState
-            testID="calendar-error"
-            icon="alert-circle-outline"
-            title={tr.calendar.loadError}
-          />
+          <View style={{ padding: spacing.lg, gap: spacing.md }}>
+            <EmptyState testID="calendar-error" icon="alert-circle-outline" title={tr.calendar.loadError} />
+            <Button title={tr.app.retry} onPress={reload} disabled={!online} icon="refresh" fullWidth />
+          </View>
         ) : rooms.length === 0 ? (
           <EmptyState testID="calendar-empty" icon="bed-outline" title={tr.calendar.empty} />
         ) : visibleRooms.length === 0 ? (
@@ -855,7 +868,7 @@ export default function ReservationCalendarScreen() {
                             return (
                               <Pressable
                                 key={d}
-                                disabled={st !== 'available'}
+                                disabled={st !== 'available' || !dataReady}
                                 onPress={() => openReservationForCell(room, d)}
                                 accessibilityRole={st === 'available' ? 'button' : undefined}
                                 accessibilityLabel={
@@ -895,6 +908,7 @@ export default function ReservationCalendarScreen() {
                             roomCount={rooms.length}
                             compact={compact}
                             moving={movingId === bar.reservation.id}
+                            canMove={dataReady && !movingId && !pendingMove}
                             c={c}
                             onTap={setSelected}
                             onDrop={handleDrop}
@@ -939,6 +953,18 @@ export default function ReservationCalendarScreen() {
         ) : null}
       </View>
 
+      <ActionSheet
+        visible={!!pendingMove}
+        onClose={() => setPendingMove(null)}
+        title={tr.calendar.moveConfirmTitle}
+        testID="calendar-move-confirm"
+      >
+        <Body>{pendingMove?.label}</Body>
+        <Muted>{tr.calendar.moveConfirmHint}</Muted>
+        <Button title={tr.calendar.moveConfirm} onPress={() => pendingMove?.apply()} disabled={!dataReady || !!movingId} fullWidth />
+        <Button title={tr.app.cancel} variant="outline" onPress={() => setPendingMove(null)} fullWidth />
+      </ActionSheet>
+
       {/* Detail bubble */}
       <Modal visible={!!selected} transparent animationType={USE_NATIVE_DRIVER ? 'slide' : 'fade'} onRequestClose={() => setSelected(null)}>
         <Pressable
@@ -979,6 +1005,7 @@ export default function ReservationCalendarScreen() {
                       total_amount: r.total_amount != null ? String(r.total_amount) : '',
                       paid_amount: r.paid_amount != null ? String(r.paid_amount) : '',
                       balance: r.balance != null ? String(r.balance) : '',
+                      currency: r.currency || '',
                     },
                   });
                 }}
@@ -1012,7 +1039,7 @@ function DetailBody({
     <View style={{ gap: spacing.sm }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
         <H2>{r.guest_name || tr.calendar.guest}</H2>
-        <Pressable testID="calendar-detail-close" onPress={onClose} accessibilityRole="button" accessibilityLabel={tr.calendar.close}>
+        <Pressable testID="calendar-detail-close" onPress={onClose} accessibilityRole="button" accessibilityLabel={tr.calendar.close} style={{ width: 48, height: 48, alignItems: 'center', justifyContent: 'center' }}>
           <Ionicons name="close" size={24} color={c.textMuted} />
         </Pressable>
       </View>
@@ -1027,7 +1054,7 @@ function DetailBody({
         value={`${formatDate(r.check_in)} – ${formatDate(r.check_out)} · ${nights} ${tr.calendar.nights}`}
         c={c}
       />
-      <Row label={tr.calendar.price} value={formatCurrency(r.total_amount)} c={c} />
+      <Row label={tr.calendar.price} value={reservationAmountLabel(r.total_amount, r.currency)} c={c} />
       <Button
         title={tr.calendar.openDetail}
         icon="open-outline"

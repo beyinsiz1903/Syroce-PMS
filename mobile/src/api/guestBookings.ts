@@ -22,6 +22,7 @@ export type GuestBooking = {
   status?: string;
   guests_count?: number;
   total_amount?: number;
+  currency?: string | null;
   guest_name?: string;
   qr_code_data?: string;
   can_checkin?: boolean;

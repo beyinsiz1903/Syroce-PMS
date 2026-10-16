@@ -22,8 +22,8 @@ export const VIEW_PRESETS: Record<CalendarView, ViewPreset> = {
   month: { view: 'month', days: 31, dayWidth: 38 },
 };
 
-export const ROW_HEIGHT = 56;
-export const ROOM_COL_WIDTH = 96;
+export const ROW_HEIGHT = 64;
+export const ROOM_COL_WIDTH = 80;
 
 // The five operator-facing cell statuses required by the showcase legend.
 export type RoomCalStatus = 'available' | 'occupied' | 'cleaning' | 'out_of_order' | 'blocked';
@@ -41,6 +41,22 @@ export function roomCalStatus(roomStatus: string | undefined, hasOccupancy: bool
   if (OOO_STATUSES.has(s)) return 'out_of_order';
   if (CLEANING_STATUSES.has(s)) return 'cleaning';
   if (hasOccupancy || s === 'occupied') return 'occupied';
+  return 'available';
+}
+
+// Today's room condition is not future inventory. A guest checking out today
+// must not block every later date just because the room doc says occupied.
+export function calendarCellStatus(input: {
+  statuses: Array<string | undefined>; occupied: boolean; blocked: boolean; isToday: boolean;
+}): RoomCalStatus {
+  const statuses = input.statuses.map((status) => (status || '').trim().toLowerCase());
+  if (statuses.some((status) => OOO_STATUSES.has(status))) return 'out_of_order';
+  if (input.occupied) return 'occupied';
+  if (input.blocked) return 'blocked';
+  if (input.isToday) {
+    if (statuses.some((status) => CLEANING_STATUSES.has(status))) return 'cleaning';
+    if (statuses.includes('occupied')) return 'occupied';
+  }
   return 'available';
 }
 
@@ -80,6 +96,7 @@ export type CalReservation = {
   total_amount?: number;
   paid_amount?: number;
   balance?: number;
+  currency?: string;
   vip_status?: boolean;
 };
 
@@ -92,6 +109,7 @@ export type PlacedBar = {
   roomId: string;
   startOffset: number;
   nights: number;
+  totalNights: number;
   clippedStart: boolean;
   clippedEnd: boolean;
 };
@@ -172,6 +190,7 @@ export function placeReservations(
       roomId: r.room_id,
       startOffset,
       nights,
+      totalNights: diffDays(ci, co),
       clippedStart: rawStart < 0,
       clippedEnd: rawEnd > dayCount,
     });

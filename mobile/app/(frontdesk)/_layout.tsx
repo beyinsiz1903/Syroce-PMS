@@ -34,12 +34,21 @@ function HeaderActions() {
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', marginRight: 4 }}>
       <Pressable
+        onPress={() => router.push(ROUTES.frontdeskNotifications)}
+        accessibilityRole="button"
+        accessibilityLabel={tr.tabs.notifications}
+        testID="frontdesk-header-notifications"
+        style={{ width: 48, height: 48, alignItems: 'center', justifyContent: 'center' }}
+      >
+        <Ionicons name="notifications-outline" size={23} color={c.text} />
+      </Pressable>
+      <Pressable
         onPress={() => router.push(ROUTES.frontdeskMore)}
         accessibilityRole="button"
         accessibilityLabel={tr.tabs.more}
         testID="frontdesk-header-profile"
         hitSlop={8}
-        style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}
+        style={{ width: 48, height: 48, alignItems: 'center', justifyContent: 'center' }}
       >
         <Ionicons name="person-circle-outline" size={24} color={c.text} />
       </Pressable>
@@ -59,13 +68,14 @@ export default function FrontDeskLayout() {
           // Thumb-zone ergonomics: a taller bar with safe-area padding so the
           // targets clear the home indicator on native and read comfortably on
           // web (insets.bottom is 0 there, so the bar settles at 60px).
-          height: 60 + insets.bottom,
+          height: 64 + insets.bottom,
           paddingBottom: insets.bottom + 6,
           paddingTop: 6,
         },
         tabBarActiveTintColor: c.primary,
         tabBarInactiveTintColor: c.textMuted,
-        tabBarLabelStyle: { fontSize: 11, fontWeight: '600' },
+        tabBarLabelStyle: { fontSize: 12, fontWeight: '600' },
+        tabBarHideOnKeyboard: true,
         headerStyle: { backgroundColor: c.surface },
         headerTitleStyle: { color: c.text },
         headerTitle: ({ children }) => <OperationalHeader title={children} />,
@@ -81,6 +91,7 @@ export default function FrontDeskLayout() {
         name="reservations"
         options={{
           title: tr.tabs.bookings,
+          href: null,
           tabBarLabel: tr.tabs.bookingsShort,
           tabBarIcon: tabIcon('reader', 'reader-outline'),
         }}
@@ -101,9 +112,18 @@ export default function FrontDeskLayout() {
         options={{ title: tr.tabs.rooms, tabBarIcon: tabIcon('bed', 'bed-outline') }}
       />
       <Tabs.Screen
+        name="messages"
+        options={{
+          title: tr.tabs.messages,
+          tabBarButtonTestID: 'frontdesk-tab-messages',
+          tabBarIcon: tabIcon('chatbubble', 'chatbubble-outline'),
+        }}
+      />
+      <Tabs.Screen
         name="reports"
         options={{
           title: tr.manager.reportsTitle,
+          href: null,
           tabBarIcon: tabIcon('bar-chart', 'bar-chart-outline'),
         }}
       />
@@ -112,7 +132,6 @@ export default function FrontDeskLayout() {
         options={{
           title: tr.tabs.settings,
           tabBarLabel: tr.tabs.more,
-          href: null,
           tabBarIcon: tabIcon('ellipsis-horizontal-circle', 'ellipsis-horizontal-circle-outline'),
         }}
       />
@@ -128,13 +147,15 @@ export default function FrontDeskLayout() {
       />
       <Tabs.Screen
         name="reservation"
-        options={{ href: null, title: tr.reservations.detailTitle, ...backOptions }}
+        options={{ href: null, title: tr.reservations.detailTitle, tabBarStyle: { display: 'none' }, ...backOptions }}
       />
       <Tabs.Screen
         name="guests"
         options={{ href: null, title: tr.tabs.guests, ...backOptions }}
       />
       <Tabs.Screen name="fault" options={{ href: null, title: 'Arıza Bildirimi', ...backOptions }} />
+      <Tabs.Screen name="notifications" options={{ href: null, title: tr.tabs.notifications, ...backOptions }} />
+      <Tabs.Screen name="tasks" options={{ href: null, title: tr.tabs.tasks, ...backOptions }} />
     </Tabs>
   );
 }

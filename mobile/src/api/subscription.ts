@@ -4,6 +4,7 @@ export type CurrentSubscription = {
   status?: string;
   tier?: string;
   modules?: Record<string, boolean>;
+  entitlements?: Record<string, { editions?: string[]; features?: string[]; limits?: Record<string, number> }>;
 };
 
 // The same tenant entitlement snapshot used by the web PMS. Mobile uses it

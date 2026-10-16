@@ -14,6 +14,8 @@ import {
   HR_TABS,
   PROCUREMENT_TABS,
   filterSubscribedHubTiles,
+  groupHubTiles,
+  hubModuleState,
   hubHasNoAccess,
   listViewState,
   screenHasAccess,
@@ -96,10 +98,59 @@ test('filterSubscribedHubTiles removes explicitly disabled paid add-ons', () => 
   ]);
 });
 
-test('filterSubscribedHubTiles fails open without a subscription snapshot', () => {
+test('unknown subscription never grants paid tiles or removes core workflows', () => {
   const tiles: HubTile[] = ['spa', 'mice'];
-  assert.deepEqual(filterSubscribedHubTiles(tiles), tiles);
-  assert.deepEqual(filterSubscribedHubTiles(tiles, {}), tiles);
+  assert.deepEqual(filterSubscribedHubTiles(tiles), []);
+  assert.deepEqual(filterSubscribedHubTiles(tiles, {}), []);
+  for (const tile of ['spa', 'mice', 'pos', 'revenue'] as const) {
+    assert.equal(hubModuleState(tile), 'unknown');
+    assert.equal(hubModuleState(tile, { modules: {} }), 'unknown');
+  }
+  // A denied/unavailable subscription read supplies no snapshot. Staff still
+  // retain their role/page-authorized core navigation, including HR core reads.
+  for (const tile of ['cashier', 'accounting', 'maintenance', 'procurement', 'hr'] as const) {
+    assert.equal(hubModuleState(tile), 'enabled');
+    assert.equal(hubModuleState(tile, { modules: { hr: false, maintenance: false } }), 'enabled');
+  }
+});
+
+test('marketplace editions enable paid modules even when the legacy plan flag is false', () => {
+  for (const [tile, key] of [['spa', 'spa'], ['mice', 'mice'], ['pos', 'pos_fnb'], ['revenue', 'revenue_management']] as const) {
+    assert.equal(hubModuleState(tile, { modules: { [key]: false }, entitlements: { [key]: { editions: ['basic'] } } }), 'enabled');
+  }
+  assert.deepEqual(filterSubscribedHubTiles(['spa', 'mice'], { spa: false, mice: false }, { spa: { editions: ['pro'] } }), ['spa']);
+});
+
+test('subscription gating recognizes canonical POS keys and keeps partial/malformed snapshots unknown', () => {
+  assert.equal(hubModuleState('pos', { modules: { pos_fnb: true } }), 'enabled');
+  assert.equal(hubModuleState('pos', { modules: { pos_fnb_pro: true } }), 'enabled');
+  assert.equal(hubModuleState('pos', { modules: { pos_fnb: false } }), 'disabled');
+  assert.equal(hubModuleState('pos', { modules: { pos_basic: false } }), 'unknown');
+  assert.equal(hubModuleState('pos', { modules: { pos_basic: false }, entitlements: {} }), 'disabled');
+  assert.equal(hubModuleState('spa', { modules: { spa: false } }), 'disabled');
+  assert.equal(hubModuleState('spa', { modules: { spa: 'true' }, entitlements: { spa: { editions: [] } } }), 'unknown');
+  assert.equal(hubModuleState('spa', { modules: [], entitlements: { spa: { editions: [true] } } }), 'unknown');
+  assert.equal(hubModuleState('revenue', { modules: { revenue_management: false, mobile_revenue: true } }), 'enabled');
+});
+
+test('hub respects server page/scope restrictions and existing screen access flags', () => {
+  assert.deepEqual(visibleHubTiles('housekeeping', { maintenanceAccess: false }), []);
+  assert.deepEqual(visibleHubTiles('front_desk', { moduleScopes: ['frontdesk'] }), ['spa']);
+  assert.deepEqual(visibleHubTiles('front_desk', { pageAccess: { pos: false } }), ['spa']);
+  assert.deepEqual(visibleHubTiles('front_desk', { moduleScopes: ['*'] }), ['spa', 'pos']);
+  assert.deepEqual(visibleHubTiles('finance', { financeReports: false }), ['procurement', 'hr', 'revenue']);
+  assert.deepEqual(visibleHubTiles('staff', { financeReports: true }), ['spa', 'cashier', 'accounting']);
+  assert.deepEqual(visibleHubTiles('guest', { pageAccess: { pos: true, maintenance: true } }), []);
+});
+
+test('hub groups preserve each role-visible entry exactly once and omit empty groups', () => {
+  const groups = groupHubTiles(visibleHubTiles('admin'));
+  assert.deepEqual(groups.map((group) => group.key), ['operations', 'control', 'management']);
+  const tiles = groups.flatMap((group) => group.tiles);
+  assert.equal(tiles.length, 9);
+  assert.equal(new Set(tiles).size, 9);
+  assert.deepEqual(groupHubTiles(['maintenance']), [{ key: 'operations', tiles: ['maintenance'] }]);
+  assert.deepEqual(groupHubTiles([]), []);
 });
 
 test('filterSubscribedHubTiles hides disabled POS and revenue modules', () => {
