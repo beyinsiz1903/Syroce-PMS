@@ -255,7 +255,17 @@ async def record_payment(statement_id: str, data: PaymentCreate, current_user: U
     return await _record_payment(statement_id, data, current_user)
 
 
-async def _record_payment(statement_id: str, data: PaymentCreate, current_user: User, *, notify: bool = True) -> dict:
+def _ref_key(reference) -> str:
+    """One comparison for bank references on every path ("EFT-1 " == "eft-1")."""
+    return " ".join(str(reference or "").split()).casefold()
+
+
+async def _record_payment(statement_id: str, data: PaymentCreate, current_user: User, *, notify: bool = True,
+                          notice_id: str | None = None, note: str = "") -> dict:
+    """Record a statement payment. With ``notice_id`` (or a pending agency
+    notice carrying the same reference and amount) the payment and the
+    notice decision are one atomic write: both happen or neither does, and a
+    concurrent decision on the notice makes this write lose."""
     tenant_id = _require_hotel_admin(current_user)
     sysdb = get_system_db()
     statement = await _hotel_statement(statement_id, tenant_id)
@@ -265,12 +275,24 @@ async def _record_payment(statement_id: str, data: PaymentCreate, current_user: 
         raise HTTPException(409, "Ödeme yalnız acentenin onayladığı veya itirazı çözülmüş ekstreye kaydedilir")
     previous = statement.get("payments") or []
     reference = data.reference.strip()
-    if reference:
-        # A resent request (integration retry, double click) must not pay twice.
-        repeat = next((p for p in previous if p.get("reference") == reference and p.get("direction") == data.direction), None)
+    key = _ref_key(reference)
+    if notice_id:
+        notice = _find_notice(statement, notice_id)
+        if notice["status"] != "pending":
+            raise HTTPException(409, "Bu bildirim zaten sonuçlandırılmış")
+    else:
+        notice = next((n for n in statement.get("payment_notices") or [] if key and data.direction == "agency_to_hotel"
+                       and n.get("status") == "pending" and _ref_key(n.get("reference")) == key
+                       and abs(float(n.get("amount") or 0) - data.amount) < 0.01), None)
+    if key:
+        # A resent request (integration retry, double click, other letter
+        # case) must not pay twice.
+        repeat = next((p for p in previous if _ref_key(p.get("reference")) == key and p.get("direction") == data.direction), None)
         if repeat:
             if abs(float(repeat.get("amount") or 0) - data.amount) >= 0.01:
                 raise HTTPException(409, f"{reference} referansıyla farklı tutarda bir ödeme zaten kayıtlı")
+            if notice_id:
+                raise HTTPException(409, f"{reference} referansıyla ödeme zaten kayıtlı; bildirimi reddedip gerekçe yazın")
             return _public(statement)
     current = outstanding(statement)
     expected = "agency_to_hotel" if current > 0 else "hotel_to_agency"
@@ -281,6 +303,8 @@ async def _record_payment(statement_id: str, data: PaymentCreate, current_user: 
         raise HTTPException(409, f"Ödeme kalan bakiyeyi aşıyor (kalan {abs(current):.2f} {statement.get('currency', '')})")
     payment = {"id": str(uuid.uuid4()), **data.model_dump(), "reference": reference,
                "recorded_by": current_user.email, "recorded_at": _now()}
+    if notice:
+        payment["notice_id"] = notice["id"]
     remaining = outstanding({**statement, "payments": [*previous, payment]})
     status = "settled" if abs(remaining) < 0.01 else statement["status"]
     # The status is derived from the payments we read: refuse the write if
@@ -289,38 +313,27 @@ async def _record_payment(statement_id: str, data: PaymentCreate, current_user: 
     guard = {f"payments.{len(previous)}": {"$exists": False}}
     if previous:
         guard[f"payments.{len(previous) - 1}.id"] = previous[-1]["id"]
+    query = {"id": statement_id, "tenant_id": tenant_id, "status": statement["status"], **guard}
+    updates: dict = {"$push": {"payments": payment, "history": _event("payment", current_user.email, amount=data.amount, direction=data.direction)},
+                     "$set": {"status": status}}
+    options: dict = {}
+    if notice:
+        query["payment_notices"] = {"$elemMatch": {"id": notice["id"], "status": "pending"}}
+        updates["$set"].update({
+            "payment_notices.$[n].status": "verified", "payment_notices.$[n].decided_at": _now(),
+            "payment_notices.$[n].decided_by": current_user.email,
+            "payment_notices.$[n].note": note or ("" if notice_id else "Aynı referansla ödeme kaydedildi"),
+        })
+        options["array_filters"] = [{"n.id": notice["id"]}]
     updated = await sysdb.agency_statements.find_one_and_update(
-        {"id": statement_id, "tenant_id": tenant_id, "status": statement["status"], **guard},
-        {"$push": {"payments": payment, "history": _event("payment", current_user.email, amount=data.amount, direction=data.direction)},
-         "$set": {"status": status}},
-        projection={"_id": 0}, return_document=ReturnDocument.AFTER,
+        query, updates, projection={"_id": 0}, return_document=ReturnDocument.AFTER, **options,
     )
     if not updated:
-        raise HTTPException(409, "Ekstre eş zamanlı değişti; yenileyin")
-    if reference and data.direction == "agency_to_hotel":
-        # The same bank reference as an agency payment notice is the same
-        # money: the notice is verified by this payment, never counted again.
-        updated = await _close_matching_notice(sysdb, updated, reference, data.amount, current_user.email) or updated
+        raise HTTPException(409, "Ekstre veya ödeme bildirimi eş zamanlı değişti; yenileyin")
     if notify:
         await _notify_agency(sysdb, updated, "ödeme kaydedildi",
                              f"{data.amount:.2f} {updated['currency']} ({data.paid_at}). Kalan: {outstanding(updated):.2f}")
     return _public(updated)
-
-
-async def _close_matching_notice(sysdb, statement: dict, reference: str, amount: float, actor: str) -> dict | None:
-    ref = reference.strip().casefold()
-    notice = next((n for n in statement.get("payment_notices") or [] if n.get("status") == "pending"
-                   and str(n.get("reference") or "").strip().casefold() == ref
-                   and abs(float(n.get("amount") or 0) - amount) < 0.01), None)
-    if not notice:
-        return None
-    return await sysdb.agency_statements.find_one_and_update(
-        {"id": statement["id"], "tenant_id": statement["tenant_id"],
-         "payment_notices": {"$elemMatch": {"id": notice["id"], "status": "pending"}}},
-        {"$set": {"payment_notices.$.status": "verified", "payment_notices.$.decided_at": _now(),
-                  "payment_notices.$.decided_by": actor, "payment_notices.$.note": "Aynı referansla ödeme kaydedildi"}},
-        projection={"_id": 0}, return_document=ReturnDocument.AFTER,
-    )
 
 
 @hotel_router.post("/{statement_id}/resolve")
@@ -429,14 +442,14 @@ def _pending_notice_total(statement: dict) -> float:
 
 
 def _reference_taken(statement: dict, reference: str) -> bool:
-    ref = reference.strip().casefold()
-    return any(str(n.get("reference") or "").strip().casefold() == ref and n.get("status") in ("pending", "verified")
+    key = _ref_key(reference)
+    return any(_ref_key(n.get("reference")) == key and n.get("status") in ("pending", "verified")
                for n in statement.get("payment_notices") or []) or any(
-        str(p.get("reference") or "").strip().casefold() == ref for p in statement.get("payments") or [])
+        _ref_key(p.get("reference")) == key for p in statement.get("payments") or [])
 
 
 async def _store_proof(statement: dict, notice_id: str, proof: UploadFile) -> str:
-    from routers.uploads import UPLOAD_DIR
+    from routers.uploads import PRIVATE_UPLOAD_DIR
     from security.upload_validator import MAX_DOC_BYTES, validate_document_bytes
 
     payload = await proof.read(MAX_DOC_BYTES + 1)
@@ -444,23 +457,27 @@ async def _store_proof(statement: dict, notice_id: str, proof: UploadFile) -> st
     extension = PROOF_TYPES.get(content_type)
     if not extension:
         raise HTTPException(400, "Dekont yalnız PDF, JPG, PNG veya WEBP olabilir")
-    relative = f"{statement['tenant_id']}/agency-payment-proofs/{statement['id']}/{notice_id}{extension}"
-    target = UPLOAD_DIR / relative
+    # Private folder: the generic /api/uploads route refuses it, so a proof is
+    # readable only through the two authorised endpoints below.
+    relative = f"agency-payment-proofs/{statement['tenant_id']}/{statement['id']}/{notice_id}{extension}"
+    target = PRIVATE_UPLOAD_DIR / relative
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(payload)
     return relative
 
 
 def _proof_response(notice: dict) -> FileResponse:
-    from routers.uploads import UPLOAD_DIR
+    from routers.uploads import PRIVATE_UPLOAD_DIR
 
     relative = notice.get("proof_path")
     if not relative:
         raise HTTPException(404, "Bu bildirimde dekont yok")
-    target = (UPLOAD_DIR / relative).resolve()
-    if not str(target).startswith(str(UPLOAD_DIR.resolve())) or not target.is_file():
+    root = PRIVATE_UPLOAD_DIR.resolve()
+    target = (root / relative).resolve()
+    if root not in target.parents or not target.is_file():
         raise HTTPException(404, "Dekont bulunamadı")
-    return FileResponse(target, filename=f"dekont-{notice['reference']}{target.suffix}")
+    safe_ref = "".join(ch if ch.isalnum() or ch in "-_" else "-" for ch in str(notice.get("reference") or ""))[:60]
+    return FileResponse(target, filename=f"dekont-{safe_ref or notice['id']}{target.suffix}")
 
 
 def _find_notice(statement: dict, notice_id: str) -> dict:
@@ -536,29 +553,21 @@ class NoticeDecision(BaseModel):
 
 @hotel_router.post("/{statement_id}/payment-notices/{notice_id}/verify")
 async def verify_payment_notice(statement_id: str, notice_id: str, data: NoticeDecision, current_user: User = Depends(get_current_user)):
-    """Verified notice = a statement payment with the same bank reference;
-    only now do the statement balance and the agency credit change."""
+    """Verified notice = a statement payment with the same bank reference,
+    written together with the decision; only now do the statement balance
+    and the agency credit change."""
     tenant_id = _require_hotel_admin(current_user)
     sysdb = get_system_db()
-    statement = await _hotel_statement(statement_id, tenant_id)
-    notice = _find_notice(statement, notice_id)
+    notice = _find_notice(await _hotel_statement(statement_id, tenant_id), notice_id)
     if notice["status"] != "pending":
         raise HTTPException(409, "Bu bildirim zaten sonuçlandırılmış")
     payment = PaymentCreate(amount=notice["amount"], direction="agency_to_hotel", paid_at=notice["paid_at"],
                             method=notice.get("method") or "bank_transfer", reference=notice["reference"])
-    # Same rules as a manual payment; a resent reference is idempotent.
-    await _record_payment(statement_id, payment, current_user, notify=False)
-    updated = await sysdb.agency_statements.find_one_and_update(
-        {"id": statement_id, "tenant_id": tenant_id, "payment_notices": {"$elemMatch": {"id": notice_id}}},
-        {"$set": {"payment_notices.$.status": "verified", "payment_notices.$.decided_at": _now(),
-                  "payment_notices.$.decided_by": current_user.email, "payment_notices.$.note": data.note.strip()}},
-        projection={"_id": 0}, return_document=ReturnDocument.AFTER,
-    )
-    if not updated:
-        raise HTTPException(404, "Ödeme bildirimi bulunamadı")
+    updated = await _record_payment(statement_id, payment, current_user, notify=False,
+                                    notice_id=notice_id, note=data.note.strip())
     await _notify_agency(sysdb, updated, "ödeme bildiriminiz doğrulandı",
                          f"{notice['amount']:.2f} {updated['currency']} (ref {notice['reference']}) ekstreye işlendi. Kalan: {outstanding(updated):.2f}")
-    return _public(updated)
+    return updated
 
 
 class NoticeRejection(BaseModel):

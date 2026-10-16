@@ -45,9 +45,16 @@ class _Store:
     async def find_one(self, query, *_a, **_k):
         return copy.deepcopy(self.doc) if self._match(query) else None
 
-    async def find_one_and_update(self, query, update, **_k):
+    async def find_one_and_update(self, query, update, array_filters=None, **_k):
         if not self._match(query):
             return None
+        for key, value in update.get("$set", {}).items():
+            if key.startswith("payment_notices.$[n]."):
+                flt = {k[2:]: v for k, v in array_filters[0].items()}
+                for item in self.doc["payment_notices"]:
+                    if all(item.get(k) == v for k, v in flt.items()):
+                        item[key.split(".", 2)[2]] = value
+        update = {**update, "$set": {k: v for k, v in update.get("$set", {}).items() if not k.startswith("payment_notices.$[n].")}}
         elem = (query.get("payment_notices") or {}).get("$elemMatch") if isinstance(query.get("payment_notices"), dict) else None
         target = next((n for n in self.doc.get("payment_notices") or [] if all(n.get(k) == v for k, v in elem.items())), None) if elem else None
         for key, value in update.get("$set", {}).items():
@@ -71,7 +78,7 @@ def world(monkeypatch, tmp_path):
     monkeypatch.setattr(st, "_notify_agency", AsyncMock())
     monkeypatch.setattr(st, "_notify_hotel", AsyncMock())
     monkeypatch.setattr(st, "_require_hotel_admin", lambda _u: "t1")
-    monkeypatch.setattr(importlib.import_module("routers.uploads"), "UPLOAD_DIR", tmp_path)
+    monkeypatch.setattr(importlib.import_module("routers.uploads"), "PRIVATE_UPLOAD_DIR", tmp_path / "_private")
     return store
 
 
@@ -176,3 +183,60 @@ async def test_statement_with_pending_notice_cannot_be_voided(world):
     with pytest.raises(HTTPException) as exc:
         await st.void_statement("s1", st.ResolveRequest(note="yeniden düzenle"), USER)
     assert exc.value.status_code == 409 and "ödeme bildirimi" in exc.value.detail
+
+
+@pytest.mark.asyncio
+async def test_reference_letter_case_cannot_pay_twice(world):
+    await st.record_payment("s1", st.PaymentCreate(amount=3000, direction="agency_to_hotel", paid_at="2026-10-15", reference="eft-case"), USER)
+    again = await st.record_payment("s1", st.PaymentCreate(amount=3000, direction="agency_to_hotel", paid_at="2026-10-15", reference=" EFT-CASE "), USER)
+    assert len(world.doc["payments"]) == 1 and again["outstanding"] == 3800
+
+
+@pytest.mark.asyncio
+async def test_failed_decision_write_leaves_nothing_half_done_and_can_be_retried(world):
+    notice = (await _report(6800, "EFT-20"))["payment_notices"][0]
+    real = world.find_one_and_update
+    world.find_one_and_update = AsyncMock(side_effect=RuntimeError("db down"))
+    with pytest.raises(RuntimeError):
+        await st.verify_payment_notice("s1", notice["id"], st.NoticeDecision(), USER)
+    assert world.doc["payments"] == [] and world.doc["payment_notices"][0]["status"] == "pending"
+    assert world.doc["status"] == "agreed"
+    world.find_one_and_update = real
+    done = await st.verify_payment_notice("s1", notice["id"], st.NoticeDecision(), USER)
+    assert done["status"] == "settled" and done["payment_notices"][0]["status"] == "verified"
+    assert world.doc["payments"][0]["notice_id"] == notice["id"]
+
+
+@pytest.mark.asyncio
+async def test_concurrent_rejection_wins_over_a_verification_in_flight(world):
+    notice = (await _report(6800, "EFT-21"))["payment_notices"][0]
+    real = world.find_one_and_update
+
+    async def reject_first(query, update, **kwargs):
+        world.doc["payment_notices"][0]["status"] = "rejected"  # other operator, between read and write
+        return await real(query, update, **kwargs)
+
+    world.find_one_and_update = reject_first
+    with pytest.raises(HTTPException) as exc:
+        await st.verify_payment_notice("s1", notice["id"], st.NoticeDecision(), USER)
+    assert exc.value.status_code == 409
+    assert world.doc["payments"] == [] and world.doc["payment_notices"][0]["status"] == "rejected"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("role,path", [
+    ("housekeeping", "t1/../_private/agency-payment-proofs/t1/s1/n1.pdf"),
+    ("super_admin", "_private/agency-payment-proofs/t1/s1/n1.pdf"),
+])
+async def test_generic_upload_route_never_serves_payment_proofs(monkeypatch, tmp_path, role, path):
+    import routers.uploads as uploads
+
+    monkeypatch.setattr(uploads, "UPLOAD_DIR", tmp_path)
+    monkeypatch.setattr(uploads, "PRIVATE_UPLOAD_DIR", tmp_path / "_private")
+    proof = tmp_path / "_private/agency-payment-proofs/t1/s1/n1.pdf"
+    proof.parent.mkdir(parents=True)
+    proof.write_bytes(b"%PDF-1.4 secret")
+    user = SimpleNamespace(id="u2", tenant_id="t1", role=role)
+    with pytest.raises(HTTPException) as exc:
+        await uploads.get_upload(path, optional_user=user, optional_vendor_id=None)
+    assert exc.value.status_code == 404
