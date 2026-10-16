@@ -6,6 +6,8 @@ import math
 
 from fastapi import HTTPException
 
+from core.booking_payment_state import collected_amount
+
 
 def _currency(value: object) -> str:
     code = str(value or "").strip().upper()
@@ -110,33 +112,6 @@ def _paid_towards(statement_settled: float | None, collected: float | None) -> f
     two counts, never their sum.
     """
     return max(float(statement_settled or 0.0), float(collected or 0.0))
-
-
-# A city-ledger transfer moves the debt to an account; no money is received.
-NON_COLLECTION_METHODS = frozenset({"city_ledger"})
-NON_COLLECTION_TYPES = frozenset({"city_ledger_transfer"})
-
-
-def collected_amount(payments: list[dict]) -> float:
-    """Money actually received on a reservation, net of refunds.
-
-    ``bookings.paid_amount`` is not used: transfers to the city ledger raise
-    it too although nothing was collected.
-    """
-    total = 0.0
-    for payment in payments:
-        if payment.get("voided") is True:
-            continue
-        if payment.get("method") in NON_COLLECTION_METHODS or payment.get("payment_type") in NON_COLLECTION_TYPES:
-            continue
-        try:
-            amount = float(payment.get("amount") or 0)
-        except (TypeError, ValueError):
-            continue
-        if payment.get("payment_type") == "refund" or payment.get("status") == "refunded":
-            amount = -abs(amount)
-        total += amount
-    return round(max(0.0, total), 2)
 
 
 async def _collected_by_booking(database, tenant_id: str, booking_ids: list) -> dict[str, float]:

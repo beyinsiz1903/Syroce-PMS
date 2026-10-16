@@ -853,6 +853,9 @@ async def add_folio_payment(
                 response_body=payment_doc,
             )
             idem_lock_id = None
+        from core.booking_payment_state import refresh_booking_payment_state
+
+        await refresh_booking_payment_state(db, current_user.tenant_id, booking_id)
         return payment_doc
     except HTTPException:
         if idem_lock_id:

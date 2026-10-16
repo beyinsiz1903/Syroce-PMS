@@ -831,6 +831,13 @@ async def post_charge_to_folio(folio_id: str, charge_data: ChargeCreate, request
         raise
 
 
+async def _refresh_reservation_payment_state(tenant_id: str, folio: dict) -> None:
+    from core.booking_payment_state import refresh_booking_payment_state
+
+    if folio.get("booking_id"):
+        await refresh_booking_payment_state(db, tenant_id, folio["booking_id"])
+
+
 @router.post("/folio/{folio_id}/payment", response_model=Payment)
 async def post_payment_to_folio(folio_id: str, payment_data: PaymentCreate, request: Request, current_user: User = Depends(get_current_user)):
     """Post a payment to folio"""
@@ -922,7 +929,6 @@ async def post_payment_to_folio(folio_id: str, payment_data: PaymentCreate, requ
         # Update folio balance
         balance = await calculate_folio_balance(folio_id, current_user.tenant_id)
         await db.folios.update_one({"id": folio_id}, {"$set": {"balance": balance}})
-
         # Persist replay body now: the payment row is durable. Any retry that
         # races a still-running cashier/webhook call below must replay this
         # response, never re-insert.
@@ -965,6 +971,8 @@ async def post_payment_to_folio(folio_id: str, payment_data: PaymentCreate, requ
                     await db.payments.delete_one({"id": payment.id, "tenant_id": current_user.tenant_id})
                     new_balance = await calculate_folio_balance(folio_id, current_user.tenant_id)
                     await db.folios.update_one({"id": folio_id}, {"$set": {"balance": new_balance}})
+                    # The payment is gone: the reservation must not stay "paid".
+                    await _refresh_reservation_payment_state(current_user.tenant_id, folio)
                     # Row no longer exists → wipe the replay cache so the
                     # client can retry the same key after reopening a shift.
                     if cached_idem_lock_id:
@@ -985,6 +993,10 @@ async def post_payment_to_folio(folio_id: str, payment_data: PaymentCreate, requ
             import logging as _lg
 
             _lg.getLogger(__name__).exception("cashier txn record failed")
+
+        # Reservation balance / payment status follow the payment, once the
+        # cashier step has decided whether it stays (never raises).
+        await _refresh_reservation_payment_state(current_user.tenant_id, folio)
 
         # Acente webhook: rezervasyon güncellendi (ödeme alındı → bakiye değişti)
         from routers.webhook_retry_service import schedule_emit_reservation_updated
@@ -1465,6 +1477,10 @@ async def void_payment(
                 {"id": payment["booking_id"], "tenant_id": current_user.tenant_id},
                 {"$inc": {"paid_amount": booking_paid_adjustment}},
             )
+        if payment.get("booking_id"):
+            from core.booking_payment_state import refresh_booking_payment_state
+
+            await refresh_booking_payment_state(db, current_user.tenant_id, payment["booking_id"])
 
     # Kasaya iade kaydı (negatif/out) — başarısızsa void'i geri al (compensation)
     try:
@@ -1522,6 +1538,10 @@ async def void_payment(
     except Exception:
         logger.exception("audit log for void_payment failed")
 
+    if payment.get("booking_id"):
+        from core.booking_payment_state import refresh_booking_payment_state
+
+        await refresh_booking_payment_state(db, current_user.tenant_id, payment["booking_id"])
     return {
         "message": "Ödeme iade edildi",
         "payment_id": payment_id,
