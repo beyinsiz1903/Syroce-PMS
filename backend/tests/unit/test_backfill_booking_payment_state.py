@@ -27,11 +27,15 @@ def _match(row, query):
 class _Coll:
     def __init__(self, rows=()):
         self.rows = [copy.deepcopy(r) for r in rows]
+        self.before_write = None
 
     def find(self, query, *_a, **_k):
         rows = [copy.deepcopy(r) for r in self.rows if _match(r, query)]
 
         class _Cur:
+            async def to_list(self, _n):
+                return rows
+
             def __aiter__(self):
                 self._it = iter(rows)
                 return self
@@ -47,10 +51,13 @@ class _Coll:
     async def find_one(self, query, *_a, **_k):
         return next((copy.deepcopy(r) for r in self.rows if _match(r, query)), None)
 
-    async def distinct(self, key):
-        return list({r.get(key) for r in self.rows})
+    async def distinct(self, key, query=None):
+        return list({r.get(key) for r in self.rows if _match(r, query or {})})
 
     async def update_one(self, query, update):
+        if self.before_write:
+            hook, self.before_write = self.before_write, None
+            hook()
         for row in self.rows:
             if _match(row, query):
                 row.update(copy.deepcopy(update.get("$set", {})))
@@ -85,7 +92,8 @@ def world(monkeypatch):
         ]),
         booking_payment_state_backfill_runs=_Coll(),
     )
-    balances = {"b1": 0, "b2": 0, "b3": 600}
+    balances = world_balances = {"b1": 0, "b2": 0, "b3": 600}
+    database.balances = world_balances
     monkeypatch.setattr(detail, "_reservation_outstanding_balance", AsyncMock(side_effect=lambda _t, b: balances[b["id"]]))
     monkeypatch.setattr(tenant_db, "get_system_db", lambda: database)
     return database
@@ -138,3 +146,43 @@ def test_scope_is_mandatory():
         import asyncio
 
         asyncio.run(backfill.main([]))
+
+
+@pytest.mark.asyncio
+async def test_payment_after_the_plan_is_not_overwritten(world):
+    """Plan made, then a 600 payment lands and its own refresh stores 0 / paid:
+    apply re-derives from the live payments and leaves the record right."""
+    plan = await backfill.plan_tenant(world, "t2")
+    world.payments.rows.append({"tenant_id": "t2", "booking_id": "b3", "amount": 600, "method": "cash", "status": "paid"})
+    world.balances["b3"] = 0
+    _booking(world, "b3").update(balance=0.0, payment_status="paid", collected_amount=1000.0)
+    result = await backfill.apply_plan(world, plan, "run-1")
+    assert result == {"written": 0, "already_right": 1, "conflicts": []}
+    b3 = _booking(world, "b3")
+    assert (b3["balance"], b3["payment_status"], b3["collected_amount"]) == (0.0, "paid", 1000.0)
+
+
+@pytest.mark.asyncio
+async def test_change_between_read_and_write_is_skipped_as_conflict(world):
+    plan = await backfill.plan_tenant(world, "t1")
+
+    def payment_refresh_lands():
+        _booking(world, "b1").update(balance=500.0, payment_status="partial", collected_amount=7500.0)
+
+    world.bookings.before_write = payment_refresh_lands
+    result = await backfill.apply_plan(world, plan, "run-2")
+    assert result["written"] == 0 and result["conflicts"] == ["b1"]
+    b1 = _booking(world, "b1")
+    assert (b1["balance"], b1["payment_status"]) == (500.0, "partial") and "payment_state_backfill" not in b1
+
+
+@pytest.mark.asyncio
+async def test_undo_leaves_records_changed_after_the_run(world):
+    plan = await backfill.plan_tenant(world, "t1")
+    assert (await backfill.apply_plan(world, plan, "run-3"))["written"] == 1
+    # A later refund: the payment path re-derives 3.000 / partial / 5.000 collected.
+    _booking(world, "b1").update(balance=3000.0, payment_status="partial", collected_amount=5000.0)
+    result = await backfill.undo_run(world, ["t1"], "run-3")
+    assert result == {"restored": 0, "conflicts": ["b1"]}
+    b1 = _booking(world, "b1")
+    assert (b1["balance"], b1["payment_status"], b1["collected_amount"]) == (3000.0, "partial", 5000.0)
