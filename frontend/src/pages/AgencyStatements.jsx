@@ -127,7 +127,8 @@ export default function AgencyStatements() {
     try {
       if (previewStale) return toast.error('Düzeltmeler değişti; göndermeden önce yeniden hesaplayın.');
       const { data } = await axios.post('/marketplace/hotel/statements', {
-        ...form, adjustments: editsToAdjustments(previewEdits), expected_net_balance: preview?.totals?.net_balance ?? null,
+        ...form, adjustments: editsToAdjustments(previewEdits),
+        expected_signature: preview?.signature ?? null, expected_net_balance: preview?.totals?.net_balance ?? null,
       });
       toast.success(`${data.number} düzenlendi ve acenteye iletildi.`);
       setPreview(null);

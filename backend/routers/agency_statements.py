@@ -59,7 +59,9 @@ class StatementCreate(BaseModel):
     period_end: str
     currency: str = Field("TRY", pattern="^[A-Z]{3}$")
     adjustments: list[LineAdjustment] = Field(default_factory=list, max_length=500)
-    # The balance the hotel saw in the preview: issue refuses anything else.
+    # What the hotel saw in the preview: issue refuses anything else.
+    # The signature covers every line (booking, status, amounts, correction).
+    expected_signature: str | None = Field(None, max_length=128)
     expected_net_balance: float | None = None
 
     @field_validator("period_start", "period_end")
@@ -157,7 +159,7 @@ async def preview_statement(data: StatementCreate, current_user: User = Depends(
     built = await _build_checked(sysdb, tenant_id, data, current_user)
     return {"agency_id": data.agency_id, "agency_name": contract.get("agency_name"), "period_start": data.period_start,
             "period_end": data.period_end, "currency": data.currency, **built,
-            "outstanding": built["totals"]["net_balance"]}
+            "outstanding": built["totals"]["net_balance"], "signature": statement_signature(built)}
 
 
 async def _statement_contract(sysdb, tenant_id: str, agency_id: str) -> dict:
@@ -214,6 +216,18 @@ async def _issue_lock(sysdb, tenant_id: str, agency_id: str, currency: str):
         await sysdb.agency_statement_locks.delete_one({"_id": key})
 
 
+def statement_signature(built: dict) -> str:
+    """Fingerprint of the bookings and amounts a statement would contain."""
+    import hashlib
+    import json
+
+    keys = ("booking_id", "status", "payment_terms", "gross", "penalty", "commission", "agency_owes_hotel", "hotel_owes_agency")
+    lines = [[*(line.get(k) for k in keys), (line.get("adjustment") or {}).get("amount"), (line.get("adjustment") or {}).get("reason")]
+             for line in built["lines"]]
+    payload = json.dumps([lines, built["totals"].get("net_balance")], sort_keys=True, default=str)
+    return hashlib.sha256(payload.encode()).hexdigest()
+
+
 def _with_adjustments(lines: list[dict], adjustments: list[LineAdjustment], actor: str) -> list[dict]:
     by_id = {line.get("booking_id"): index for index, line in enumerate(lines)}
     lines = list(lines)
@@ -257,7 +271,9 @@ async def _issue_statement_locked(sysdb, tenant_id: str, data, contract: dict, c
             409, f"Bu dönem {duplicate['number']} ekstresiyle ({duplicate['period_start']} – {duplicate['period_end']}) çakışıyor; önce onu iptal edin"
         )
     built = await _build_checked(sysdb, tenant_id, data, current_user)
-    if data.expected_net_balance is not None and abs(built["totals"]["net_balance"] - data.expected_net_balance) >= 0.01:
+    changed = (data.expected_signature is not None and data.expected_signature != statement_signature(built)) or (
+        data.expected_net_balance is not None and abs(built["totals"]["net_balance"] - data.expected_net_balance) >= 0.01)
+    if changed:
         raise HTTPException(409, "Ekstre önizlemede gösterilenden farklı hesaplandı (rezervasyonlar veya düzeltmeler değişti); yeniden önizleyin")
     statement = {
         "id": str(uuid.uuid4()),

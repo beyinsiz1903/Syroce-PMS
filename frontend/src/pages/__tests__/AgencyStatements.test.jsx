@@ -68,7 +68,7 @@ describe('AgencyStatements preview and line corrections', () => {
     apiPost.mockImplementation((url, body) => {
       if (url.endsWith('/preview')) {
         const adjusted = body.adjustments?.length ? { ...line, agency_owes_hotel: 6500, adjustment: { amount: -300, reason: body.adjustments[0].reason } } : line;
-        return Promise.resolve({ data: { agency_name: 'Syroce Travel', period_start: '2026-11-01', period_end: '2026-11-30', currency: 'TRY', lines: [adjusted], totals: {}, outstanding: adjusted.agency_owes_hotel } });
+        return Promise.resolve({ data: { agency_name: 'Syroce Travel', period_start: '2026-11-01', period_end: '2026-11-30', currency: 'TRY', lines: [adjusted], totals: {}, outstanding: adjusted.agency_owes_hotel, signature: body.adjustments?.length ? 'sig-2' : 'sig-1' } });
       }
       return Promise.resolve({ data: { number: 'EKS-2026-0002' } });
     });
@@ -90,7 +90,7 @@ describe('AgencyStatements preview and line corrections', () => {
     await userEvent.click(screen.getByText('Acenteye gönder'));
     await waitFor(() => expect(apiPost).toHaveBeenLastCalledWith('/marketplace/hotel/statements', expect.objectContaining({
       agency_id: 'a1', adjustments: [{ booking_id: 'b1', amount: -300, reason: 'Erken çıkış indirimi' }] })));
-    expect(apiPost.mock.calls.at(-1)[1]).toHaveProperty('expected_net_balance');
+    expect(apiPost.mock.calls.at(-1)[1]).toMatchObject({ expected_signature: 'sig-2' }); // the recalculated preview
     expect(toastSuccess).toHaveBeenCalledWith('EKS-2026-0002 düzenlendi ve acenteye iletildi.');
   });
 

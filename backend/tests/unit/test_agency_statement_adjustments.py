@@ -226,3 +226,52 @@ async def test_credit_follows_the_corrected_statement(adjustment, paid, expected
     usage = await credit_usage(database, tenant_id="t1", agency_id="a1",
                                contract={"credit_limit": 10000, "credit_currency": "TRY"}, statements_db=statements_db)
     assert usage["used"] == expected_used
+
+
+@pytest.mark.asyncio
+async def test_surcharge_on_a_booking_paid_in_the_pms_still_uses_credit():
+    """100 fully collected in the PMS (payment_status=paid) + 50 added on the
+    statement: 50 is owed and must count against the limit."""
+    from core.agency_credit import credit_usage
+
+    line = apply_adjustment({**PREPAID, "agency_owes_hotel": 100.0}, 50, "Minibar ücreti")
+    statement = {"tenant_id": "t1", "agency_id": "a1", "status": "agreed", "lines": [line],
+                 "totals": statement_totals([line]), "payments": []}
+    booking = {"id": "b1", "currency": "TRY", "credit_exposure_amount": 100, "payment_status": "paid"}
+
+    def _cursor(rows):
+        return SimpleNamespace(to_list=AsyncMock(return_value=rows))
+
+    def _bookings(query, *_a, **_k):
+        # Mirrors the filter: a paid booking is only read when named in $or.
+        named = any(booking["id"] in (cond.get("id") or {}).get("$in", []) for cond in query.get("$or", []))
+        return _cursor([booking] if named else [])
+
+    database = SimpleNamespace(
+        bookings=SimpleNamespace(find=_bookings),
+        payments=SimpleNamespace(find=lambda *a, **k: _cursor([{"booking_id": "b1", "amount": 100, "method": "cash", "status": "paid"}])),
+    )
+    statements_db = SimpleNamespace(agency_statements=SimpleNamespace(find=lambda *a, **k: _cursor([statement])))
+    usage = await credit_usage(database, tenant_id="t1", agency_id="a1",
+                               contract={"credit_limit": 1000, "credit_currency": "TRY"}, statements_db=statements_db)
+    assert usage["used"] == 50.0
+
+
+@pytest.mark.asyncio
+async def test_issue_refuses_different_lines_with_the_same_total(monkeypatch):
+    previewed = [{**PREPAID, "agency_owes_hotel": 100.0}, {**PREPAID, "booking_id": "b3", "agency_owes_hotel": 100.0}]
+    now = [{**PREPAID, "agency_owes_hotel": 150.0}, {**PREPAID, "booking_id": "b3", "agency_owes_hotel": 50.0}]
+    signature = st.statement_signature({"lines": previewed, "totals": statement_totals(previewed)})
+    sysdb = SimpleNamespace(
+        agency_contracts=SimpleNamespace(find_one=AsyncMock(return_value={"agency_name": "Test"})),
+        agency_statements=SimpleNamespace(find_one=AsyncMock(return_value=None), insert_one=AsyncMock()),
+        agency_statement_locks=SimpleNamespace(insert_one=AsyncMock(), delete_one=AsyncMock()),
+    )
+    monkeypatch.setattr(st, "get_system_db", lambda: sysdb)
+    monkeypatch.setattr(st, "build_statement", AsyncMock(return_value={"lines": now, "totals": statement_totals(now)}))
+    monkeypatch.setattr(st, "_require_hotel_admin", lambda _u: "t1")
+    data = st.StatementCreate(agency_id="a1", period_start="2026-11-01", period_end="2026-11-30",
+                              expected_signature=signature, expected_net_balance=200)
+    with pytest.raises(HTTPException) as exc:
+        await st.issue_statement(data, USER)
+    assert exc.value.status_code == 409 and not sysdb.agency_statements.insert_one.await_count

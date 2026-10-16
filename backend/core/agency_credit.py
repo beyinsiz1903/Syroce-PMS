@@ -94,6 +94,11 @@ async def open_credit_exposure(
         "status": {"$ne": "cancelled"},
         "payment_status": {"$ne": "paid"},
     }
+    # A booking paid in the PMS can still owe a hotel-added statement charge.
+    surcharged = await _surcharged_booking_ids(statements_db, tenant_id, agency_id)
+    if surcharged:
+        query.pop("payment_status")
+        query["$or"] = [{"payment_status": {"$ne": "paid"}}, {"id": {"$in": surcharged}}]
     if exclude_booking_id:
         query["id"] = {"$ne": exclude_booking_id}
     rows = await database.bookings.find(
@@ -154,6 +159,20 @@ async def _collected_by_booking(database, tenant_id: str, booking_ids: list) -> 
     for row in rows:
         grouped.setdefault(row.get("booking_id"), []).append(row)
     return {booking_id: collected_amount(items) for booking_id, items in grouped.items()}
+
+
+async def _surcharged_booking_ids(statements_db, tenant_id: str, agency_id: str) -> list[str]:
+    """Bookings with a positive (agency owes more) line correction."""
+    if statements_db is None:
+        from core.tenant_db import get_system_db
+
+        statements_db = get_system_db()
+    rows = await statements_db.agency_statements.find(
+        {"tenant_id": tenant_id, "agency_id": agency_id, "status": {"$ne": "void"}, "lines.adjustment.amount": {"$gt": 0}},
+        {"_id": 0, "lines.booking_id": 1, "lines.adjustment.amount": 1},
+    ).to_list(None)
+    return sorted({line["booking_id"] for row in rows for line in row.get("lines") or []
+                   if line.get("booking_id") and float((line.get("adjustment") or {}).get("amount") or 0) > 0})
 
 
 async def _settled_through_statements(statements_db, tenant_id: str, agency_id: str, booking_ids: list) -> tuple[dict[str, float], dict[str, float]]:
