@@ -3269,14 +3269,15 @@ async def _notify_agency_of_decision(sysdb, proposal: dict, *, accepted: bool, n
         return
     from core.agency_notify import notify_agency
 
-    what = "Değişiklik talebiniz" if proposal["type"] == "agency_modification" else "İptal talebiniz"
+    # Lower-case literals: str.lower() turns Turkish "İ" into "i̇" (i + dot).
+    what = "değişiklik talebiniz" if proposal["type"] == "agency_modification" else "iptal talebiniz"
     verdict = "otel tarafından onaylandı" if accepted else "otel tarafından reddedildi"
     code = proposal.get("confirmation_code") or proposal.get("reservation_id")
     await notify_agency(
         sysdb, agency_id=proposal["agency_id"], tenant_id=proposal.get("tenant_id"), reference_id=proposal.get("reservation_id"),
         kind="reservation_change_decision",
         preference="reservation_change" if proposal["type"] == "agency_modification" else "cancellation_request",
-        title=f"{code}: {what.lower()} {verdict}",
+        title=f"{code}: {what} {verdict}",
         message=(note or "").strip() or ("Rezervasyon güncellendi." if accepted else "Mevcut rezervasyon korunur."),
     )
 

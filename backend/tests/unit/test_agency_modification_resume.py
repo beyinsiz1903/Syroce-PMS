@@ -370,3 +370,4 @@ async def test_agency_is_told_the_hotels_answer(world, monkeypatch):
     world.marketplace_negotiations.rows[0].update(status="awaiting_hotel", type="agency_cancellation", reason="Misafir gelmeyecek")
     await m.hotel_decide_marketplace_modification("p", m.CancellationProposalDecision(accept=False, response_note="Ceza uygulanır"), object())
     assert sent[-1]["preference"] == "cancellation_request"
+    assert ": iptal talebiniz otel tarafından reddedildi" in sent[-1]["title"]  # no "i̇" from str.lower()
