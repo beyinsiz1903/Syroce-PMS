@@ -17,6 +17,11 @@ Who owes whom depends on the booking's payment terms:
 
 Penalties are always owed by the agency (it guarantees its bookings). The
 platform fee is the agency's liability to Syroce and is reported, not netted.
+
+The hotel may correct one line with a signed amount and a reason
+(``apply_adjustment``): positive = the agency owes the hotel more, negative =
+less. The computed values are kept on the line, so a correction can be
+changed or removed and is always visible.
 """
 
 from __future__ import annotations
@@ -83,9 +88,25 @@ def statement_line(row: dict, booking: dict | None) -> dict:
     return line
 
 
+def apply_adjustment(line: dict, amount: float, reason: str, *, actor: str | None = None, at: str | None = None) -> dict:
+    """Correct a line by a signed amount (0 removes the correction)."""
+    previous = line.get("adjustment") or {}
+    base = previous.get("computed") or {"agency_owes_hotel": _money(line.get("agency_owes_hotel")),
+                                        "hotel_owes_agency": _money(line.get("hotel_owes_agency"))}
+    amount = _money(amount)
+    balance = round(base["agency_owes_hotel"] - base["hotel_owes_agency"] + amount, 2)
+    line = {k: v for k, v in line.items() if k != "adjustment"}
+    line["agency_owes_hotel"] = balance if balance > 0 else 0.0
+    line["hotel_owes_agency"] = -balance if balance < 0 else 0.0
+    if abs(amount) >= 0.01:
+        line["adjustment"] = {"amount": amount, "reason": reason.strip(), "by": actor, "at": at, "computed": base}
+    return line
+
+
 def statement_totals(lines: list[dict]) -> dict:
     keys = ("gross", "penalty", "commission", "platform_fee", "net_to_hotel", "hotel_owes_agency", "agency_owes_hotel")
     totals = {key: round(sum(_money(line.get(key)) for line in lines), 2) for key in keys}
+    totals["adjustments"] = round(sum(_money((line.get("adjustment") or {}).get("amount")) for line in lines), 2)
     # Positive: the agency pays the hotel; negative: the hotel pays the agency.
     totals["net_balance"] = round(totals["agency_owes_hotel"] - totals["hotel_owes_agency"], 2)
     totals["bookings"] = sum(1 for line in lines if line["status"] not in NON_REVENUE)

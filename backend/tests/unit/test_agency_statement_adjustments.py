@@ -1,0 +1,156 @@
+"""Statement preview (nothing saved) and signed per-line corrections with a reason."""
+
+import copy
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+
+import pytest
+from fastapi import HTTPException
+
+from core.agency_statements import apply_adjustment, statement_totals
+from routers import agency_statements as st
+
+USER = SimpleNamespace(id="u", email="ops@hotel.test", tenant_id="t1", role="admin", roles=[])
+PREPAID = {"booking_id": "b1", "confirmation_code": "MKT-1", "status": "confirmed", "payment_terms": "prepaid",
+           "agency_owes_hotel": 6800.0, "hotel_owes_agency": 0.0, "gross": 8000.0}
+ON_ARRIVAL = {"booking_id": "b2", "confirmation_code": "MKT-2", "status": "confirmed", "payment_terms": "on_arrival",
+              "agency_owes_hotel": 0.0, "hotel_owes_agency": 1200.0, "gross": 8000.0}
+
+
+def test_adjustment_is_signed_keeps_the_computed_values_and_can_be_removed():
+    less = apply_adjustment(PREPAID, -300, "Erken çıkış indirimi")
+    assert (less["agency_owes_hotel"], less["adjustment"]["computed"]["agency_owes_hotel"]) == (6500.0, 6800.0)
+    changed = apply_adjustment(less, 200, "Minibar")  # replaces, not stacks
+    assert changed["agency_owes_hotel"] == 7000.0
+    removed = apply_adjustment(changed, 0, "")
+    assert removed["agency_owes_hotel"] == 6800.0 and "adjustment" not in removed
+    # Crossing zero moves the line to the other side.
+    flipped = apply_adjustment(ON_ARRIVAL, 1500, "Ek ücret")
+    assert (flipped["agency_owes_hotel"], flipped["hotel_owes_agency"]) == (300.0, 0.0)
+    totals = statement_totals([less, ON_ARRIVAL])
+    assert (totals["net_balance"], totals["adjustments"]) == (5300.0, -300.0)
+
+
+def _match(doc, query):
+    for key, cond in query.items():
+        value = doc
+        for part in key.split("."):
+            value = value.get(part) if isinstance(value, dict) else (value[int(part)] if isinstance(value, list) and int(part) < len(value) else None)
+        if isinstance(cond, dict) and "$exists" in cond:
+            if (value is not None) != cond["$exists"]:
+                return False
+        elif isinstance(cond, dict) and "$size" in cond:
+            if len(value or []) != cond["$size"]:
+                return False
+        elif value != cond:
+            return False
+    return True
+
+
+class _Store:
+    def __init__(self, doc):
+        self.doc = doc
+
+    async def find_one(self, query, *_a, **_k):
+        return copy.deepcopy(self.doc) if _match(self.doc, query) else None
+
+    async def find_one_and_update(self, query, update, **_k):
+        if not _match(self.doc, query):
+            return None
+        for key, value in update.get("$push", {}).items():
+            self.doc.setdefault(key, []).append(value)
+        self.doc.update(copy.deepcopy(update.get("$set", {})))
+        return copy.deepcopy(self.doc)
+
+
+@pytest.fixture
+def issued(monkeypatch):
+    lines = [dict(PREPAID), dict(ON_ARRIVAL)]
+    doc = {"id": "s1", "tenant_id": "t1", "agency_id": "a1", "number": "EKS-1", "currency": "TRY", "status": "issued",
+           "lines": lines, "totals": statement_totals(lines), "payments": [], "history": [{"event": "issued"}]}
+    store = _Store(doc)
+    monkeypatch.setattr(st, "get_system_db", lambda: SimpleNamespace(agency_statements=store))
+    monkeypatch.setattr(st, "_notify_agency", AsyncMock())
+    monkeypatch.setattr(st, "_require_hotel_admin", lambda _u: "t1")
+    return store
+
+
+@pytest.mark.asyncio
+async def test_hotel_corrects_one_line_and_the_agency_is_told(issued):
+    result = await st.adjust_statement_line("s1", st.LineAdjustment(booking_id="b1", amount=-300, reason="Erken çıkış indirimi"), USER)
+    assert result["outstanding"] == 5300.0 and result["totals"]["adjustments"] == -300.0
+    line = next(l for l in result["lines"] if l["booking_id"] == "b1")
+    assert line["adjustment"]["reason"] == "Erken çıkış indirimi" and line["adjustment"]["by"] == USER.email
+    assert result["history"][-1]["event"] == "line_adjusted"
+    assert "MKT-1: -300.00 TRY" in st._notify_agency.await_args.args[3]
+
+
+@pytest.mark.asyncio
+async def test_correction_needs_a_reason_and_a_line_of_this_statement(issued):
+    with pytest.raises(HTTPException) as no_reason:
+        await st.adjust_statement_line("s1", st.LineAdjustment(booking_id="b1", amount=-300, reason="yok"), USER)
+    assert no_reason.value.status_code == 422
+    with pytest.raises(HTTPException) as other:
+        await st.adjust_statement_line("s1", st.LineAdjustment(booking_id="zz", amount=10, reason="Başka satır"), USER)
+    assert other.value.status_code == 400
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("change", [{"status": "agreed"}, {"payments": [{"id": "p", "amount": 1}]}])
+async def test_agreed_or_paid_statement_cannot_be_corrected(issued, change):
+    issued.doc.update(change)
+    with pytest.raises(HTTPException) as exc:
+        await st.adjust_statement_line("s1", st.LineAdjustment(booking_id="b1", amount=-300, reason="Erken çıkış"), USER)
+    assert exc.value.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_correcting_a_disputed_statement_asks_the_agency_again(issued):
+    issued.doc["status"] = "disputed"
+    result = await st.adjust_statement_line("s1", st.LineAdjustment(booking_id="b1", amount=-300, reason="İtiraz haklı"), USER)
+    assert result["status"] == "resolved"
+
+
+@pytest.mark.asyncio
+async def test_concurrent_change_makes_the_correction_miss(issued, monkeypatch):
+    stale = copy.deepcopy(issued.doc)
+    issued.doc["history"].append({"event": "disputed"})  # agency acted after our read
+    monkeypatch.setattr(st, "_hotel_statement", AsyncMock(return_value=stale))
+    with pytest.raises(HTTPException) as exc:
+        await st.adjust_statement_line("s1", st.LineAdjustment(booking_id="b1", amount=-300, reason="Erken çıkış"), USER)
+    assert exc.value.status_code == 409 and "adjustment" not in issued.doc["lines"][0]
+
+
+@pytest.mark.asyncio
+async def test_preview_saves_nothing_and_matches_the_issue(monkeypatch):
+    built = {"lines": [dict(PREPAID), dict(ON_ARRIVAL)], "totals": statement_totals([PREPAID, ON_ARRIVAL])}
+    inserted = []
+    sysdb = SimpleNamespace(
+        agency_contracts=SimpleNamespace(find_one=AsyncMock(return_value={"agency_name": "Test", "hotel_name": "Demo"})),
+        agency_statements=SimpleNamespace(find_one=AsyncMock(return_value=None), insert_one=AsyncMock(side_effect=inserted.append)),
+    )
+    monkeypatch.setattr(st, "get_system_db", lambda: sysdb)
+    monkeypatch.setattr(st, "build_statement", AsyncMock(return_value=copy.deepcopy(built)))
+    monkeypatch.setattr(st, "_require_hotel_admin", lambda _u: "t1")
+    monkeypatch.setattr(st, "_notify_agency", AsyncMock())
+    data = st.StatementCreate(agency_id="a1", period_start="2026-11-01", period_end="2026-11-30",
+                              adjustments=[st.LineAdjustment(booking_id="b1", amount=-300, reason="Erken çıkış indirimi")])
+    preview = await st.preview_statement(data, USER)
+    assert preview["outstanding"] == 5300.0 and inserted == [] and not st._notify_agency.await_count
+
+    async def _next(_db):
+        return "EKS-9"
+
+    monkeypatch.setattr(st, "_next_number", _next)
+
+    class _Lock:
+        async def insert_one(self, _doc): ...
+        async def delete_one(self, _q): ...
+
+    sysdb.agency_statement_locks = _Lock()
+    issued = await st.issue_statement(data, USER)
+    def _no_time(lines):
+        return [{**l, "adjustment": {k: v for k, v in l["adjustment"].items() if k != "at"}} if "adjustment" in l else l for l in lines]
+
+    assert issued["totals"] == preview["totals"] and _no_time(issued["lines"]) == _no_time(preview["lines"])
+    assert len(inserted) == 1

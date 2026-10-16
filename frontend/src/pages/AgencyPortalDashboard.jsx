@@ -92,6 +92,8 @@ const PAYMENT_TERMS_LABELS = { prepaid: 'Ön ödemeli', on_arrival: 'Girişte', 
 const CONTRACT_STATUS_LABELS = { approved: 'Onaylandı', pending: 'Otel onayı bekleniyor', rejected: 'Reddedildi', expired: 'Süresi doldu', terminated: 'Sonlandırıldı', withdrawn: 'Geri çekildi' };
 const toggleFilter = (values, value) => values.includes(value) ? values.filter(item => item !== value) : [...values, value];
 const resizeChildAges = (ages, count) => Array.from({ length: count }, (_, index) => ages?.[index] ?? 0);
+const STATEMENT_LINE_STATUS = { confirmed: 'Onaylı', guaranteed: 'Garantili', checked_in: 'Konaklıyor', checked_out: 'Çıkış yaptı', cancelled: 'İptal', no_show: 'Gelmedi', pending: 'Beklemede' };
+const STATEMENT_TERMS = { prepaid: 'Ön ödemeli', on_arrival: 'Girişte', net_7: '7 gün vadeli', net_15: '15 gün vadeli', net_30: '30 gün vadeli' };
 export const PAYMENT_STATUS_LABELS = {
   paid: 'Ödendi', partial: 'Kısmen ödendi', pending: 'Ödeme bekleniyor', unpaid: 'Ödeme bekleniyor',
   transferred: 'Cari hesaba aktarıldı', refunded: 'İade edildi',
@@ -162,6 +164,7 @@ const AgencyPortalDashboard = () => {
   const [paymentNotice, setPaymentNotice] = useState(null);
   const [paymentNoticeBusy, setPaymentNoticeBusy] = useState(false);
   const [disputeTarget, setDisputeTarget] = useState(null);
+  const [statementDetail, setStatementDetail] = useState(null);
   const [disputeReason, setDisputeReason] = useState('');
   const [disputeIds, setDisputeIds] = useState([]);
   const [statementBusy, setStatementBusy] = useState(false);
@@ -644,6 +647,12 @@ const AgencyPortalDashboard = () => {
       setStatements((await agencyApi.get('/marketplace/v1/statements')).data.items || []);
     } catch (err) { toast.error(err.response?.data?.detail || 'Ekstre onaylanamadı.'); }
     finally { setStatementBusy(false); }
+  };
+  const openStatementDetail = async statement => {
+    try {
+      const { data } = await agencyApi.get(`/marketplace/v1/statements/${encodeURIComponent(statement.id)}`);
+      setStatementDetail(data);
+    } catch (err) { toast.error(err.response?.data?.detail || 'Ekstre açılamadı.'); }
   };
   const openDispute = async statement => {
     try {
@@ -1190,6 +1199,7 @@ const AgencyPortalDashboard = () => {
                       <div className="text-xs text-slate-500">{statement.period_start} – {statement.period_end} · {statement.status} · {Number(statement.outstanding) > 0 ? `Ödemeniz: ${formatAgencyMoney(statement.outstanding, statement.currency)}` : Number(statement.outstanding) < 0 ? `Otel ödeyecek: ${formatAgencyMoney(-statement.outstanding, statement.currency)}` : 'Bakiye yok'}</div>
                     </div>
                     {['issued', 'resolved'].includes(statement.status) && <div className="flex gap-2">
+                      <Button size="sm" variant="outline" onClick={() => openStatementDetail(statement)}>Satırlar</Button>
                       <Button size="sm" onClick={() => agreeStatement(statement)} disabled={statementBusy}>Mutabıkız</Button>
                       <Button size="sm" variant="outline" onClick={() => openDispute(statement)} disabled={statementBusy}>İtiraz et</Button>
                     </div>}
@@ -1492,6 +1502,22 @@ const AgencyPortalDashboard = () => {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={Boolean(statementDetail)} onOpenChange={open => !open && setStatementDetail(null)}>
+        <DialogContent className="max-w-2xl" data-testid="agency-statement-detail">
+          <DialogHeader>
+            <DialogTitle>{statementDetail?.number} · {statementDetail?.hotel_name}</DialogTitle>
+            <p className="text-sm text-slate-500">{statementDetail?.period_start} – {statementDetail?.period_end}</p>
+          </DialogHeader>
+          <div className="max-h-80 divide-y overflow-y-auto rounded border text-xs">
+            {(statementDetail?.lines || []).map(line => <div key={line.booking_id} className="flex flex-wrap items-start justify-between gap-2 p-2">
+              <div><div className="font-medium">{line.confirmation_code} · {line.guest_name}</div><div className="text-slate-500">{line.check_in} · {STATEMENT_LINE_STATUS[line.status] || line.status} · {STATEMENT_TERMS[line.payment_terms] || line.payment_terms}</div>
+                {line.adjustment && <div className="text-amber-700">Otel düzeltmesi {line.adjustment.amount > 0 ? '+' : '−'}{formatAgencyMoney(Math.abs(line.adjustment.amount), statementDetail.currency)} · {line.adjustment.reason}</div>}</div>
+              <div className="text-right">{Number(line.agency_owes_hotel) > 0 ? `Siz ödeyeceksiniz: ${formatAgencyMoney(line.agency_owes_hotel, statementDetail.currency)}` : Number(line.hotel_owes_agency) > 0 ? `Otel ödeyecek: ${formatAgencyMoney(line.hotel_owes_agency, statementDetail.currency)}` : '—'}</div>
+            </div>)}
+          </div>
+          <DialogFooter><Button variant="outline" onClick={() => setStatementDetail(null)}>Kapat</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
       <Dialog open={Boolean(disputeTarget)} onOpenChange={open => !open && !statementBusy && setDisputeTarget(null)}>
         <DialogContent className="max-w-lg" data-testid="agency-dispute-dialog">
           <DialogHeader>
@@ -1502,7 +1528,7 @@ const AgencyPortalDashboard = () => {
             {(disputeTarget?.lines || []).map(line => (
               <label key={line.booking_id} className="flex items-center gap-2 rounded border p-2 text-xs">
                 <input type="checkbox" checked={disputeIds.includes(line.booking_id)} onChange={() => setDisputeIds(ids => ids.includes(line.booking_id) ? ids.filter(id => id !== line.booking_id) : [...ids, line.booking_id])} />
-                <span className="flex-1">{line.confirmation_code} · {line.check_in} · {line.guest_name} · {line.status}</span>
+                <span className="flex-1">{line.confirmation_code} · {line.check_in} · {line.guest_name} · {STATEMENT_LINE_STATUS[line.status] || line.status}{line.adjustment ? ` · otel düzeltmesi ${line.adjustment.amount > 0 ? '+' : '−'}${formatAgencyMoney(Math.abs(line.adjustment.amount), disputeTarget.currency)}` : ''}</span>
                 <span>{formatAgencyMoney(line.gross, disputeTarget.currency)}</span>
               </label>
             ))}

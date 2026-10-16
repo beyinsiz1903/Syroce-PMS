@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field, field_validator
 from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
-from core.agency_statements import build_statement, outstanding
+from core.agency_statements import apply_adjustment, build_statement, outstanding, statement_totals
 from core.security import get_current_user
 from core.tenant_db import get_system_db
 from models.schemas import User
@@ -40,11 +40,25 @@ def _iso_date(value: str) -> str:
         raise ValueError("Tarih YYYY-AA-GG biçiminde olmalıdır") from exc
 
 
+class LineAdjustment(BaseModel):
+    """Signed correction of one line: + the agency owes more, - less."""
+
+    booking_id: str = Field(..., min_length=1)
+    amount: float = Field(..., ge=-10_000_000, le=10_000_000)
+    reason: str = Field("", max_length=300)
+
+    @field_validator("reason")
+    @classmethod
+    def _reason(cls, value: str) -> str:
+        return value.strip()
+
+
 class StatementCreate(BaseModel):
     agency_id: str = Field(..., min_length=1)
     period_start: str
     period_end: str
     currency: str = Field("TRY", pattern="^[A-Z]{3}$")
+    adjustments: list[LineAdjustment] = Field(default_factory=list, max_length=500)
 
     @field_validator("period_start", "period_end")
     @classmethod
@@ -119,20 +133,52 @@ async def _notify_hotel(statement: dict, title: str, message: str) -> None:
 # ── Hotel ──────────────────────────────────────────────────────────
 
 
+@hotel_router.post("/preview")
+async def preview_statement(data: StatementCreate, current_user: User = Depends(get_current_user)):
+    """What "issue" would create, with the given corrections; nothing is saved
+    and the agency is not notified."""
+    tenant_id = _require_hotel_admin(current_user)
+    sysdb = get_system_db()
+    contract = await _statement_contract(sysdb, tenant_id, data.agency_id)
+    duplicate = await _overlapping_statement(sysdb, tenant_id, data)
+    if duplicate:
+        raise HTTPException(
+            409, f"Bu dönem {duplicate['number']} ekstresiyle ({duplicate['period_start']} – {duplicate['period_end']}) çakışıyor; önce onu iptal edin"
+        )
+    built = await _build_checked(sysdb, tenant_id, data, current_user)
+    return {"agency_id": data.agency_id, "agency_name": contract.get("agency_name"), "period_start": data.period_start,
+            "period_end": data.period_end, "currency": data.currency, **built,
+            "outstanding": built["totals"]["net_balance"]}
+
+
+async def _statement_contract(sysdb, tenant_id: str, agency_id: str) -> dict:
+    # The contract may have ended since; its bookings are still billable.
+    contract = await sysdb.agency_contracts.find_one(
+        {"tenant_id": tenant_id, "agency_id": agency_id, "contract_code": {"$type": "string"}},
+        {"_id": 0, "agency_name": 1, "hotel_name": 1},
+        sort=[("created_at", -1)],
+    )
+    if not contract:
+        raise HTTPException(404, "Bu acenteyle marketplace sözleşmesi bulunamadı")
+    return contract
+
+
+async def _overlapping_statement(sysdb, tenant_id: str, data) -> dict | None:
+    # Any overlap would bill the same stays twice (e.g. 1-31 Oct and 15-31 Oct).
+    return await sysdb.agency_statements.find_one({
+        "tenant_id": tenant_id, "agency_id": data.agency_id, "currency": data.currency,
+        "period_start": {"$lte": data.period_end}, "period_end": {"$gte": data.period_start},
+        "status": {"$in": list(OPEN_STATUSES) + ["settled"]},
+    }, {"_id": 0, "number": 1, "period_start": 1, "period_end": 1})
+
+
 @hotel_router.post("")
 async def issue_statement(data: StatementCreate, current_user: User = Depends(get_current_user)):
     tenant_id = _require_hotel_admin(current_user)
     if data.period_end < data.period_start:
         raise HTTPException(400, "Dönem bitişi başlangıçtan önce olamaz")
     sysdb = get_system_db()
-    # The contract may have ended since; its bookings are still billable.
-    contract = await sysdb.agency_contracts.find_one(
-        {"tenant_id": tenant_id, "agency_id": data.agency_id, "contract_code": {"$type": "string"}},
-        {"_id": 0, "agency_name": 1, "hotel_name": 1},
-        sort=[("created_at", -1)],
-    )
-    if not contract:
-        raise HTTPException(404, "Bu acenteyle marketplace sözleşmesi bulunamadı")
+    contract = await _statement_contract(sysdb, tenant_id, data.agency_id)
     async with _issue_lock(sysdb, tenant_id, data.agency_id, data.currency):
         return await _issue_statement_locked(sysdb, tenant_id, data, contract, current_user)
 
@@ -159,17 +205,23 @@ async def _issue_lock(sysdb, tenant_id: str, agency_id: str, currency: str):
         await sysdb.agency_statement_locks.delete_one({"_id": key})
 
 
-async def _issue_statement_locked(sysdb, tenant_id: str, data, contract: dict, current_user: User) -> dict:
-    # Any overlap would bill the same stays twice (e.g. 1-31 Oct and 15-31 Oct).
-    duplicate = await sysdb.agency_statements.find_one({
-        "tenant_id": tenant_id, "agency_id": data.agency_id, "currency": data.currency,
-        "period_start": {"$lte": data.period_end}, "period_end": {"$gte": data.period_start},
-        "status": {"$in": list(OPEN_STATUSES) + ["settled"]},
-    }, {"_id": 0, "number": 1, "period_start": 1, "period_end": 1})
-    if duplicate:
-        raise HTTPException(
-            409, f"Bu dönem {duplicate['number']} ekstresiyle ({duplicate['period_start']} – {duplicate['period_end']}) çakışıyor; önce onu iptal edin"
-        )
+def _with_adjustments(lines: list[dict], adjustments: list[LineAdjustment], actor: str) -> list[dict]:
+    by_id = {line.get("booking_id"): index for index, line in enumerate(lines)}
+    lines = list(lines)
+    for item in adjustments:
+        if item.booking_id not in by_id:
+            raise HTTPException(400, "Düzeltilen rezervasyon bu ekstrede yok")
+        if abs(item.amount) >= 0.01 and len(item.reason) < 5:
+            raise HTTPException(422, "Her düzeltme için en az 5 karakterlik gerekçe yazın")
+        index = by_id[item.booking_id]
+        lines[index] = apply_adjustment(lines[index], item.amount, item.reason, actor=actor, at=_now())
+    return lines
+
+
+async def _build_checked(sysdb, tenant_id: str, data, current_user: User) -> dict:
+    """The statement exactly as it would be issued (shared by preview)."""
+    if data.period_end < data.period_start:
+        raise HTTPException(400, "Dönem bitişi başlangıçtan önce olamaz")
     built = await build_statement(
         sysdb, tenant_id=tenant_id, agency_id=data.agency_id, period_start=data.period_start,
         period_end=data.period_end, currency=data.currency,
@@ -185,6 +237,17 @@ async def _issue_statement_locked(sysdb, tenant_id: str, data, contract: dict, c
     if billed:
         codes = sorted({line.get("confirmation_code") or line["booking_id"] for line in billed.get("lines", []) if line.get("booking_id") in ids})
         raise HTTPException(409, f"{', '.join(codes)} zaten {billed['number']} ekstresinde; önce o ekstreyi iptal edin")
+    lines = _with_adjustments(built["lines"], data.adjustments, current_user.email)
+    return {"lines": lines, "totals": statement_totals(lines)}
+
+
+async def _issue_statement_locked(sysdb, tenant_id: str, data, contract: dict, current_user: User) -> dict:
+    duplicate = await _overlapping_statement(sysdb, tenant_id, data)
+    if duplicate:
+        raise HTTPException(
+            409, f"Bu dönem {duplicate['number']} ekstresiyle ({duplicate['period_start']} – {duplicate['period_end']}) çakışıyor; önce onu iptal edin"
+        )
+    built = await _build_checked(sysdb, tenant_id, data, current_user)
     statement = {
         "id": str(uuid.uuid4()),
         "number": await _next_number(sysdb),
@@ -199,7 +262,7 @@ async def _issue_statement_locked(sysdb, tenant_id: str, data, contract: dict, c
         "status": "issued",
         "payments": [],
         "dispute": None,
-        "history": [_event("issued", current_user.email)],
+        "history": [_event("issued", current_user.email, adjustments=len([a for a in data.adjustments if abs(a.amount) >= 0.01]))],
         "issued_at": _now(),
         "issued_by": current_user.email,
     }
@@ -333,6 +396,43 @@ async def _record_payment(statement_id: str, data: PaymentCreate, current_user: 
     if notify:
         await _notify_agency(sysdb, updated, "ödeme kaydedildi",
                              f"{data.amount:.2f} {updated['currency']} ({data.paid_at}). Kalan: {outstanding(updated):.2f}")
+    return _public(updated)
+
+
+ADJUSTABLE = ("issued", "disputed", "resolved")
+
+
+@hotel_router.post("/{statement_id}/adjust")
+async def adjust_statement_line(statement_id: str, data: LineAdjustment, current_user: User = Depends(get_current_user)):
+    """Correct one line of a statement the agency has not agreed to yet (no
+    payment recorded). 0 removes the correction. A disputed statement becomes
+    "resolved": the agency is asked to agree again."""
+    tenant_id = _require_hotel_admin(current_user)
+    sysdb = get_system_db()
+    statement = await _hotel_statement(statement_id, tenant_id)
+    if statement["status"] not in ADJUSTABLE or statement.get("payments"):
+        raise HTTPException(409, "Yalnız acentenin henüz onaylamadığı ve ödeme kaydı olmayan ekstre düzeltilebilir")
+    lines = _with_adjustments(statement.get("lines") or [], [data], current_user.email)
+    totals = statement_totals(lines)
+    status = "resolved" if statement["status"] == "disputed" else statement["status"]
+    updated = await sysdb.agency_statements.find_one_and_update(
+        # Written over exactly the version we read: a concurrent agreement,
+        # dispute, payment or correction makes this write miss.
+        {"id": statement_id, "tenant_id": tenant_id, "status": statement["status"], "payments.0": {"$exists": False},
+         "totals.net_balance": (statement.get("totals") or {}).get("net_balance"),
+         "history": {"$size": len(statement.get("history") or [])}},
+        {"$set": {"lines": lines, "totals": totals, "status": status, "updated_at": _now()},
+         "$push": {"history": _event("line_adjusted", current_user.email, booking_id=data.booking_id,
+                                     amount=round(data.amount, 2), reason=data.reason)}},
+        projection={"_id": 0}, return_document=ReturnDocument.AFTER,
+    )
+    if not updated:
+        raise HTTPException(409, "Ekstre eş zamanlı değişti; yenileyip tekrar deneyin")
+    line = next(line for line in lines if line.get("booking_id") == data.booking_id)
+    what = (f"{line.get('confirmation_code')}: {data.amount:+.2f} {updated['currency']} ({data.reason})"
+            if abs(data.amount) >= 0.01 else f"{line.get('confirmation_code')}: düzeltme kaldırıldı")
+    await _notify_agency(sysdb, updated, "ekstrede düzeltme yapıldı",
+                         f"{what}. Yeni bakiye {outstanding(updated):.2f} {updated['currency']}. Lütfen yeniden kontrol edin.")
     return _public(updated)
 
 
