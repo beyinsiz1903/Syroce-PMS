@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock
 import pytest
 from fastapi import HTTPException
 
-from core.agency_statements import apply_adjustment, statement_totals
+from core.agency_statements import apply_adjustment, outstanding, statement_totals
 from routers import agency_statements as st
 
 USER = SimpleNamespace(id="u", email="ops@hotel.test", tenant_id="t1", role="admin", roles=[])
@@ -38,6 +38,9 @@ def _match(doc, query):
             value = value.get(part) if isinstance(value, dict) else (value[int(part)] if isinstance(value, list) and int(part) < len(value) else None)
         if isinstance(cond, dict) and "$exists" in cond:
             if (value is not None) != cond["$exists"]:
+                return False
+        elif isinstance(cond, dict) and "$in" in cond:
+            if value not in cond["$in"]:
                 return False
         elif isinstance(cond, dict) and "$size" in cond:
             if len(value or []) != cond["$size"]:
@@ -112,9 +115,10 @@ async def test_correcting_a_disputed_statement_asks_the_agency_again(issued):
 
 
 @pytest.mark.asyncio
-async def test_concurrent_change_makes_the_correction_miss(issued, monkeypatch):
+@pytest.mark.parametrize("meanwhile", [{"status": "disputed"}, {"revision": 2}])
+async def test_concurrent_change_makes_the_correction_miss(issued, monkeypatch, meanwhile):
     stale = copy.deepcopy(issued.doc)
-    issued.doc["history"].append({"event": "disputed"})  # agency acted after our read
+    issued.doc.update(meanwhile)  # agency disputed / another correction after our read
     monkeypatch.setattr(st, "_hotel_statement", AsyncMock(return_value=stale))
     with pytest.raises(HTTPException) as exc:
         await st.adjust_statement_line("s1", st.LineAdjustment(booking_id="b1", amount=-300, reason="Erken çıkış"), USER)
@@ -154,3 +158,71 @@ async def test_preview_saves_nothing_and_matches_the_issue(monkeypatch):
 
     assert issued["totals"] == preview["totals"] and _no_time(issued["lines"]) == _no_time(preview["lines"])
     assert len(inserted) == 1
+
+
+@pytest.mark.asyncio
+async def test_payment_checked_against_an_old_balance_cannot_settle_a_corrected_statement(issued, monkeypatch):
+    """Payment reads 100, the hotel adds +50, the 100 payment must not close it."""
+    issued.doc.update(status="agreed", lines=[{**PREPAID, "agency_owes_hotel": 100.0}],
+                      totals=statement_totals([{**PREPAID, "agency_owes_hotel": 100.0}]))
+    stale = copy.deepcopy(issued.doc)
+    issued.doc["status"] = "issued"
+    await st.adjust_statement_line("s1", st.LineAdjustment(booking_id="b1", amount=50, reason="Minibar ücreti"), USER)
+    issued.doc["status"] = "agreed"  # agency agreed again, to the new version
+    monkeypatch.setattr(st, "_hotel_statement", AsyncMock(return_value=stale))
+    with pytest.raises(HTTPException) as exc:
+        await st.record_payment("s1", st.PaymentCreate(amount=100, direction="agency_to_hotel", paid_at="2026-11-30"), USER)
+    assert exc.value.status_code == 409 and issued.doc["payments"] == [] and outstanding(issued.doc) == 150.0
+
+
+@pytest.mark.asyncio
+async def test_agency_agreement_is_bound_to_the_version_it_saw(issued, monkeypatch):
+    agency = {"agency_id": "a1"}
+    await st.adjust_statement_line("s1", st.LineAdjustment(booking_id="b1", amount=50, reason="Minibar ücreti"), USER)
+    with pytest.raises(HTTPException) as stale:
+        await st.agree_statement("s1", st.AgreeRequest(revision=1), agency)
+    assert stale.value.status_code == 409 and issued.doc["status"] == "issued"
+    monkeypatch.setattr(st, "_notify_hotel", AsyncMock())
+    agreed = await st.agree_statement("s1", st.AgreeRequest(revision=2), agency)
+    assert agreed["status"] == "agreed" and agreed["history"][-1]["revision"] == 2
+
+
+@pytest.mark.asyncio
+async def test_issue_refuses_a_balance_other_than_the_preview(monkeypatch):
+    built = {"lines": [dict(PREPAID)], "totals": statement_totals([PREPAID])}
+    sysdb = SimpleNamespace(
+        agency_contracts=SimpleNamespace(find_one=AsyncMock(return_value={"agency_name": "Test"})),
+        agency_statements=SimpleNamespace(find_one=AsyncMock(return_value=None), insert_one=AsyncMock()),
+        agency_statement_locks=SimpleNamespace(insert_one=AsyncMock(), delete_one=AsyncMock()),
+    )
+    monkeypatch.setattr(st, "get_system_db", lambda: sysdb)
+    monkeypatch.setattr(st, "build_statement", AsyncMock(return_value=built))
+    monkeypatch.setattr(st, "_require_hotel_admin", lambda _u: "t1")
+    data = st.StatementCreate(agency_id="a1", period_start="2026-11-01", period_end="2026-11-30", expected_net_balance=6800,
+                              adjustments=[st.LineAdjustment(booking_id="b1", amount=-300, reason="Erken çıkış indirimi")])
+    with pytest.raises(HTTPException) as exc:  # preview showed 6800, the corrections make 6500
+        await st.issue_statement(data, USER)
+    assert exc.value.status_code == 409 and not sysdb.agency_statements.insert_one.await_count
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("adjustment,paid,expected_used", [(-300, 6500, 0.0), (-300, 0, 6500.0), (50, 0, 6850.0), (50, 6850, 0.0)])
+async def test_credit_follows_the_corrected_statement(adjustment, paid, expected_used):
+    from core.agency_credit import credit_usage
+
+    line = apply_adjustment(PREPAID, adjustment, "Düzeltme gerekçesi")
+    statement = {"tenant_id": "t1", "agency_id": "a1", "status": "settled" if paid else "agreed",
+                 "lines": [line], "totals": statement_totals([line]),
+                 "payments": [{"amount": paid, "direction": "agency_to_hotel"}] if paid else []}
+
+    def _cursor(rows):
+        return SimpleNamespace(to_list=AsyncMock(return_value=rows))
+
+    database = SimpleNamespace(
+        bookings=SimpleNamespace(find=lambda *a, **k: _cursor([{"id": "b1", "currency": "TRY", "credit_exposure_amount": 6800}])),
+        payments=SimpleNamespace(find=lambda *a, **k: _cursor([])),
+    )
+    statements_db = SimpleNamespace(agency_statements=SimpleNamespace(find=lambda *a, **k: _cursor([statement])))
+    usage = await credit_usage(database, tenant_id="t1", agency_id="a1",
+                               contract={"credit_limit": 10000, "credit_currency": "TRY"}, statements_db=statements_db)
+    assert usage["used"] == expected_used

@@ -80,10 +80,12 @@ async def test_dispute_must_reference_statement_lines(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_agree_only_from_issued_or_resolved(monkeypatch):
-    sysdb = SimpleNamespace(agency_statements=SimpleNamespace(find_one_and_update=AsyncMock(return_value=None)))
+    sysdb = SimpleNamespace(agency_statements=SimpleNamespace(
+        find_one=AsyncMock(return_value={"id": "s1", "agency_id": "a1", "status": "agreed"}),
+        find_one_and_update=AsyncMock(return_value=None)))
     monkeypatch.setattr(agency_statements, "get_system_db", lambda: sysdb)
     with pytest.raises(HTTPException) as exc:
-        await agency_statements.agree_statement("s1", {"agency_id": "a1"})
+        await agency_statements.agree_statement("s1", agency_statements.AgreeRequest(revision=1), {"agency_id": "a1"})
     assert exc.value.status_code == 409
     query = sysdb.agency_statements.find_one_and_update.await_args.args[0]
     assert query["status"] == {"$in": ["issued", "resolved"]}

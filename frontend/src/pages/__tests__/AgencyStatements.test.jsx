@@ -82,11 +82,15 @@ describe('AgencyStatements preview and line corrections', () => {
     await userEvent.click(screen.getByLabelText('MKT-1 satırını düzelt'));
     await userEvent.type(screen.getByLabelText('Düzeltme tutarı'), '-300');
     await userEvent.type(screen.getByLabelText('Düzeltme gerekçesi'), 'Erken çıkış indirimi');
+    // Not recalculated yet: the screen still shows 6.800, so it cannot be sent.
+    expect(screen.getByText('Acenteye gönder').closest('button').disabled).toBe(true);
     await userEvent.click(screen.getByText('Yeniden hesapla'));
     expect(await screen.findByText('Acente ödeyecek: 6.500,00 TRY', { exact: false })).toBeTruthy();
+    expect(screen.getByText('Acenteye gönder').closest('button').disabled).toBe(false);
     await userEvent.click(screen.getByText('Acenteye gönder'));
     await waitFor(() => expect(apiPost).toHaveBeenLastCalledWith('/marketplace/hotel/statements', expect.objectContaining({
       agency_id: 'a1', adjustments: [{ booking_id: 'b1', amount: -300, reason: 'Erken çıkış indirimi' }] })));
+    expect(apiPost.mock.calls.at(-1)[1]).toHaveProperty('expected_net_balance');
     expect(toastSuccess).toHaveBeenCalledWith('EKS-2026-0002 düzenlendi ve acenteye iletildi.');
   });
 

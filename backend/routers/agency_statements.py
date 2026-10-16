@@ -59,6 +59,8 @@ class StatementCreate(BaseModel):
     period_end: str
     currency: str = Field("TRY", pattern="^[A-Z]{3}$")
     adjustments: list[LineAdjustment] = Field(default_factory=list, max_length=500)
+    # The balance the hotel saw in the preview: issue refuses anything else.
+    expected_net_balance: float | None = None
 
     @field_validator("period_start", "period_end")
     @classmethod
@@ -100,9 +102,16 @@ def _event(kind: str, actor: str | None, **details) -> dict:
     return {"event": kind, "actor": actor, "at": _now(), **details}
 
 
+def _revision(statement: dict) -> dict:
+    """Filter for exactly the version that was read: every amount change
+    (line correction) bumps ``revision``; legacy statements have none."""
+    return {"revision": statement.get("revision")}
+
+
 def _public(statement: dict) -> dict:
     statement.pop("_id", None)
     statement["outstanding"] = outstanding(statement)
+    statement["revision"] = statement.get("revision") or 1
     # Storage paths of payment proofs never leave the server.
     statement["payment_notices"] = [
         {**{k: v for k, v in notice.items() if k != "proof_path"}, "has_proof": bool(notice.get("proof_path"))}
@@ -248,6 +257,8 @@ async def _issue_statement_locked(sysdb, tenant_id: str, data, contract: dict, c
             409, f"Bu dönem {duplicate['number']} ekstresiyle ({duplicate['period_start']} – {duplicate['period_end']}) çakışıyor; önce onu iptal edin"
         )
     built = await _build_checked(sysdb, tenant_id, data, current_user)
+    if data.expected_net_balance is not None and abs(built["totals"]["net_balance"] - data.expected_net_balance) >= 0.01:
+        raise HTTPException(409, "Ekstre önizlemede gösterilenden farklı hesaplandı (rezervasyonlar veya düzeltmeler değişti); yeniden önizleyin")
     statement = {
         "id": str(uuid.uuid4()),
         "number": await _next_number(sysdb),
@@ -260,6 +271,7 @@ async def _issue_statement_locked(sysdb, tenant_id: str, data, contract: dict, c
         "currency": data.currency,
         **built,
         "status": "issued",
+        "revision": 1,
         "payments": [],
         "dispute": None,
         "history": [_event("issued", current_user.email, adjustments=len([a for a in data.adjustments if abs(a.amount) >= 0.01]))],
@@ -376,7 +388,9 @@ async def _record_payment(statement_id: str, data: PaymentCreate, current_user: 
     guard = {f"payments.{len(previous)}": {"$exists": False}}
     if previous:
         guard[f"payments.{len(previous) - 1}.id"] = previous[-1]["id"]
-    query = {"id": statement_id, "tenant_id": tenant_id, "status": statement["status"], **guard}
+    # Written over the version read: a line correction landing meanwhile
+    # changes the balance this payment was checked against.
+    query = {"id": statement_id, "tenant_id": tenant_id, "status": statement["status"], **guard, **_revision(statement)}
     updates: dict = {"$push": {"payments": payment, "history": _event("payment", current_user.email, amount=data.amount, direction=data.direction)},
                      "$set": {"status": status}}
     options: dict = {}
@@ -419,9 +433,9 @@ async def adjust_statement_line(statement_id: str, data: LineAdjustment, current
         # Written over exactly the version we read: a concurrent agreement,
         # dispute, payment or correction makes this write miss.
         {"id": statement_id, "tenant_id": tenant_id, "status": statement["status"], "payments.0": {"$exists": False},
-         "totals.net_balance": (statement.get("totals") or {}).get("net_balance"),
-         "history": {"$size": len(statement.get("history") or [])}},
-        {"$set": {"lines": lines, "totals": totals, "status": status, "updated_at": _now()},
+         **_revision(statement)},
+        {"$set": {"lines": lines, "totals": totals, "status": status, "updated_at": _now(),
+                  "revision": (statement.get("revision") or 1) + 1},
          "$push": {"history": _event("line_adjusted", current_user.email, booking_id=data.booking_id,
                                      amount=round(data.amount, 2), reason=data.reason)}},
         projection={"_id": 0}, return_document=ReturnDocument.AFTER,
@@ -495,14 +509,22 @@ async def get_agency_statement(statement_id: str, agency: dict = Depends(get_mar
     return _public(await _agency_statement(statement_id, agency["agency_id"]))
 
 
+class AgreeRequest(BaseModel):
+    # The statement version the agency looked at; a correction since is refused.
+    revision: int = Field(..., ge=1)
+
+
 @agency_router.post("/{statement_id}/agree")
-async def agree_statement(statement_id: str, agency: dict = Depends(get_marketplace_agency)):
+async def agree_statement(statement_id: str, data: AgreeRequest, agency: dict = Depends(get_marketplace_agency)):
     sysdb = get_system_db()
     actor = agency.get("contact_email") or agency["agency_id"]
+    statement = await _agency_statement(statement_id, agency["agency_id"])
+    if (statement.get("revision") or 1) != data.revision:
+        raise HTTPException(409, "Otel bu ekstrede değişiklik yaptı; güncel satırları kontrol edip yeniden onaylayın")
     updated = await sysdb.agency_statements.find_one_and_update(
-        {"id": statement_id, "agency_id": agency["agency_id"], "status": {"$in": ["issued", "resolved"]}},
+        {"id": statement_id, "agency_id": agency["agency_id"], "status": {"$in": ["issued", "resolved"]}, **_revision(statement)},
         {"$set": {"status": "agreed", "agreed_at": _now(), "agreed_by": actor},
-         "$push": {"history": _event("agreed", actor)}},
+         "$push": {"history": _event("agreed", actor, revision=data.revision)}},
         projection={"_id": 0}, return_document=ReturnDocument.AFTER,
     )
     if not updated:

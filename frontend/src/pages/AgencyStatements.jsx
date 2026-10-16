@@ -86,6 +86,8 @@ export default function AgencyStatements() {
   const [note, setNote] = useState('');
   const [preview, setPreview] = useState(null);
   const [previewEdits, setPreviewEdits] = useState({});
+  // A correction typed after the last calculation is not what the preview shows.
+  const [previewStale, setPreviewStale] = useState(false);
   const [lineEdits, setLineEdits] = useState({});
   const [noticeNote, setNoticeNote] = useState('');
   const [busy, setBusy] = useState(false);
@@ -114,6 +116,7 @@ export default function AgencyStatements() {
     try {
       const { data } = await axios.post('/marketplace/hotel/statements/preview', { ...form, adjustments: editsToAdjustments(edits) });
       setPreview(data);
+      setPreviewStale(false);
     } catch (err) { toast.error(err.response?.data?.detail || 'Ekstre hesaplanamadı.'); }
     finally { setIssuing(false); }
   };
@@ -122,7 +125,10 @@ export default function AgencyStatements() {
     if (invalidEdit(previewEdits)) return toast.error('Her düzeltme için tutar ve en az 5 karakter gerekçe girin.');
     setIssuing(true);
     try {
-      const { data } = await axios.post('/marketplace/hotel/statements', { ...form, adjustments: editsToAdjustments(previewEdits) });
+      if (previewStale) return toast.error('Düzeltmeler değişti; göndermeden önce yeniden hesaplayın.');
+      const { data } = await axios.post('/marketplace/hotel/statements', {
+        ...form, adjustments: editsToAdjustments(previewEdits), expected_net_balance: preview?.totals?.net_balance ?? null,
+      });
       toast.success(`${data.number} düzenlendi ve acenteye iletildi.`);
       setPreview(null);
       setPreviewEdits({});
@@ -130,11 +136,14 @@ export default function AgencyStatements() {
     } catch (err) { toast.error(err.response?.data?.detail || 'Ekstre düzenlenemedi.'); }
     finally { setIssuing(false); }
   };
-  const editPreviewLine = (bookingId, edit) => setPreviewEdits(current => {
-    const next = { ...current };
-    if (edit) next[bookingId] = edit; else delete next[bookingId];
-    return next;
-  });
+  const editPreviewLine = (bookingId, edit) => {
+    setPreviewStale(true);
+    setPreviewEdits(current => {
+      const next = { ...current };
+      if (edit) next[bookingId] = edit; else delete next[bookingId];
+      return next;
+    });
+  };
   const editDetailLine = (bookingId, edit) => setLineEdits(current => {
     const next = { ...current };
     if (edit) next[bookingId] = edit; else delete next[bookingId];
@@ -252,7 +261,8 @@ export default function AgencyStatements() {
             <StatementLines lines={preview.lines} currency={preview.currency} edits={previewEdits} onEdit={editPreviewLine} />
             <DialogFooter className="gap-2">
               <Button variant="outline" onClick={() => runPreview()} disabled={issuing}>Yeniden hesapla</Button>
-              <Button onClick={issue} disabled={issuing}>{issuing ? <Loader2 size={14} className="mr-2 animate-spin" /> : null}Acenteye gönder</Button>
+              {previewStale && <span className="self-center text-xs text-amber-700">Düzeltmeler değişti; göndermeden önce yeniden hesaplayın.</span>}
+              <Button onClick={issue} disabled={issuing || previewStale}>{issuing ? <Loader2 size={14} className="mr-2 animate-spin" /> : null}Acenteye gönder</Button>
             </DialogFooter>
           </div>}
         </DialogContent>

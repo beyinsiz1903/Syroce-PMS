@@ -642,10 +642,16 @@ const AgencyPortalDashboard = () => {
   const agreeStatement = async statement => {
     setStatementBusy(true);
     try {
-      await agencyApi.post(`/marketplace/v1/statements/${encodeURIComponent(statement.id)}/agree`);
+      // The version on screen: if the hotel corrected it meanwhile, the server refuses.
+      await agencyApi.post(`/marketplace/v1/statements/${encodeURIComponent(statement.id)}/agree`, { revision: statement.revision || 1 });
       toast.success(`${statement.number} onaylandı; otele iletildi.`);
       setStatements((await agencyApi.get('/marketplace/v1/statements')).data.items || []);
-    } catch (err) { toast.error(err.response?.data?.detail || 'Ekstre onaylanamadı.'); }
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Ekstre onaylanamadı.');
+      if (err.response?.status === 409) {
+        setStatements((await agencyApi.get('/marketplace/v1/statements').catch(() => ({ data: {} }))).data.items || []);
+      }
+    }
     finally { setStatementBusy(false); }
   };
   const openStatementDetail = async statement => {
