@@ -21,8 +21,11 @@ Safety contract
 * ``--tenant-id`` is mandatory: one orphan tenant id per run.
 * Default is a dry run that prints the counts.
 * ``--apply`` / ``--undo`` additionally require ``ALLOW_ORPHAN_DEACTIVATION=true``.
-* ``--undo RUN_ID`` restores the previous status of bookings still exactly as
-  that run left them; anything changed since is reported, not touched.
+* The room-night release is recorded on the booking (``nights_released``);
+  a run interrupted after cancelling finishes the release on the next run.
+* ``--undo RUN_ID`` restores bookings whose status, cancellation reason,
+  cancellation date and ``updated_at`` are all still as that run wrote them;
+  anything changed since is reported as a conflict, not touched.
 * Every run writes a summary to ``test_data_cleanup_runs``.
 
 Usage
@@ -80,42 +83,70 @@ async def survey(database, tenant_id: str) -> dict:
     return {"collections": counts, "booking_statuses": dict(statuses)}
 
 
-async def apply_run(database, tenant_id: str, run_id: str) -> dict:
+async def _release(database, tenant_id: str, booking_id: str) -> int:
+    """Release the room nights, then record that it is done. A failure leaves
+    ``nights_released: False`` so the next run finishes it."""
     from core.atomic_booking import release_booking_nights
     from core.tenant_db import tenant_context
 
+    with tenant_context(tenant_id):
+        released = await release_booking_nights(tenant_id, booking_id, reason=CLEANUP_TAG)
+    await database.bookings.update_one(
+        {"id": booking_id, "tenant_id": tenant_id, "cleanup.tag": CLEANUP_TAG},
+        {"$set": {"cleanup.nights_released": True}},
+    )
+    return released
+
+
+async def apply_run(database, tenant_id: str, run_id: str) -> dict:
     now = datetime.now(UTC).isoformat()
-    cancelled = marked = released = 0
+    cancelled = marked = released = resumed = 0
+    # 1) Earlier runs whose room-night release did not complete.
+    async for booking in database.bookings.find(
+        {"tenant_id": tenant_id, "cleanup.tag": CLEANUP_TAG, "cleanup.nights_released": False}, {"_id": 0, "id": 1}
+    ):
+        released += await _release(database, tenant_id, booking["id"])
+        resumed += 1
+    # 2) Bookings not handled yet.
     async for booking in database.bookings.find({"tenant_id": tenant_id, "cleanup.tag": {"$ne": CLEANUP_TAG}},
                                                 {"_id": 0, "id": 1, "status": 1}):
         previous = booking.get("status")
         is_open = previous in OPEN_STATUSES
-        update: dict = {"cleanup": {"tag": CLEANUP_TAG, "run_id": run_id, "previous_status": previous, "at": now}}
+        applied = ({"status": "cancelled", "cancellation_reason": CLEANUP_TAG, "cancelled_at": now, "updated_at": now}
+                   if is_open else {"status": previous})
+        marker = {"tag": CLEANUP_TAG, "run_id": run_id, "previous_status": previous, "applied": applied, "at": now}
         if is_open:
-            update.update(status="cancelled", cancellation_reason=CLEANUP_TAG, cancelled_at=now, updated_at=now)
+            marker["nights_released"] = False
         result = await database.bookings.update_one(
-            {"id": booking["id"], "tenant_id": tenant_id, "status": previous}, {"$set": update})
+            {"id": booking["id"], "tenant_id": tenant_id, "status": previous},
+            {"$set": {**(applied if is_open else {}), "cleanup": marker}})
         if not getattr(result, "modified_count", 0):
             continue  # changed meanwhile: left for the next run
         marked += 1
         if is_open:
             cancelled += 1
-            with tenant_context(tenant_id):
-                released += await release_booking_nights(tenant_id, booking["id"], reason=CLEANUP_TAG)
-    return {"marked": marked, "cancelled": cancelled, "released_nights": released}
+            released += await _release(database, tenant_id, booking["id"])
+    return {"marked": marked, "cancelled": cancelled, "released_nights": released, "resumed": resumed}
 
 
 async def undo_run(database, tenant_id: str, run_id: str) -> dict:
+    """Restore only bookings whose fields are all still exactly as this run
+    wrote them; any later change (status, reason, date, update) is a conflict."""
     restored, conflicts = 0, []
     async for booking in database.bookings.find({"tenant_id": tenant_id, "cleanup.run_id": run_id},
-                                                {"_id": 0, "id": 1, "status": 1, "cleanup": 1}):
-        previous = booking["cleanup"].get("previous_status")
-        expected = "cancelled" if previous in OPEN_STATUSES else previous
-        result = await database.bookings.update_one(
-            {"id": booking["id"], "tenant_id": tenant_id, "cleanup.run_id": run_id, "status": expected},
-            {"$set": {"status": previous}, "$unset": {"cleanup": "", "cancellation_reason": "", "cancelled_at": ""}}
-            if previous in OPEN_STATUSES else {"$unset": {"cleanup": ""}},
-        )
+                                                {"_id": 0, "id": 1, "cleanup": 1}):
+        marker = booking["cleanup"]
+        previous, applied = marker.get("previous_status"), marker.get("applied") or {}
+        if not applied:
+            conflicts.append(booking["id"])
+            continue
+        query = {"id": booking["id"], "tenant_id": tenant_id, "cleanup.run_id": run_id, **applied}
+        if previous in OPEN_STATUSES:
+            update = {"$set": {"status": previous},
+                      "$unset": {"cleanup": "", "cancellation_reason": "", "cancelled_at": ""}}
+        else:
+            update = {"$unset": {"cleanup": ""}}
+        result = await database.bookings.update_one(query, update)
         if getattr(result, "modified_count", 0):
             restored += 1
         else:

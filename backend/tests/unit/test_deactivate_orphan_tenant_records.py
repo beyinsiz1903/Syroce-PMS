@@ -65,7 +65,12 @@ class _Coll:
             hook()
         for row in self.rows:
             if _match(row, query):
-                row.update(copy.deepcopy(update.get("$set", {})))
+                for key, value in copy.deepcopy(update.get("$set", {})).items():
+                    target, *path = key.split(".")
+                    if path:
+                        row.setdefault(target, {})[path[0]] = value
+                    else:
+                        row[key] = value
                 for key in update.get("$unset", {}):
                     row.pop(key, None)
                 return SimpleNamespace(modified_count=1)
@@ -135,7 +140,7 @@ async def test_apply_cancels_open_bookings_only_and_undo_restores(world, monkeyp
     monkeypatch.setenv("ALLOW_ORPHAN_DEACTIVATION", "true")
     assert await orphan.main(["--tenant-id", T, "--apply"]) == 0
     applied = world.test_data_cleanup_runs.rows[0]["applied"]
-    assert applied == {"marked": 2, "cancelled": 1, "released_nights": 2}
+    assert applied == {"marked": 2, "cancelled": 1, "released_nights": 2, "resumed": 0}
     b1, b2 = _b(world, "b1"), _b(world, "b2")
     assert (b1["status"], b1["cancellation_reason"]) == ("cancelled", orphan.CLEANUP_TAG)
     assert b2["status"] == "checked_out" and b2["cleanup"]["tag"] == orphan.CLEANUP_TAG
@@ -168,3 +173,35 @@ async def test_booking_changed_between_read_and_write_is_left(world, monkeypatch
     world.bookings.before_write = lambda: _b(world, "b1").update(status="checked_in")
     result = await orphan.apply_run(world, T, "run-x")
     assert _b(world, "b1")["status"] == "checked_in" and result["cancelled"] == 0
+
+
+@pytest.mark.asyncio
+async def test_interrupted_release_is_finished_by_the_next_run(world, monkeypatch):
+    import core.atomic_booking as atomic
+
+    monkeypatch.setenv("ALLOW_ORPHAN_DEACTIVATION", "true")
+    monkeypatch.setattr(atomic, "release_booking_nights", AsyncMock(side_effect=RuntimeError("lock store down")))
+    with pytest.raises(RuntimeError):
+        await orphan.main(["--tenant-id", T, "--apply"])
+    b1 = _b(world, "b1")
+    assert b1["status"] == "cancelled" and b1["cleanup"]["nights_released"] is False
+
+    release = AsyncMock(return_value=2)
+    monkeypatch.setattr(atomic, "release_booking_nights", release)
+    assert await orphan.main(["--tenant-id", T, "--apply"]) == 0
+    assert release.await_count == 1 and release.await_args.args[1] == "b1"
+    assert _b(world, "b1")["cleanup"]["nights_released"] is True
+    assert world.test_data_cleanup_runs.rows[-1]["applied"]["resumed"] == 1
+
+
+@pytest.mark.asyncio
+async def test_undo_keeps_a_cancellation_edited_after_the_run(world, monkeypatch):
+    monkeypatch.setenv("ALLOW_ORPHAN_DEACTIVATION", "true")
+    await orphan.main(["--tenant-id", T, "--apply"])
+    b1 = _b(world, "b1")
+    run_id = b1["cleanup"]["run_id"]
+    b1.update(cancellation_reason="guest_request", cancelled_at="2026-10-20T10:00:00")  # still "cancelled"
+    result = await orphan.undo_run(world, T, run_id)
+    assert result["conflicts"] == ["b1"]
+    b1 = _b(world, "b1")
+    assert (b1["status"], b1["cancellation_reason"]) == ("cancelled", "guest_request")
