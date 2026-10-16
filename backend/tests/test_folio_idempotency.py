@@ -453,3 +453,33 @@ async def test_payment_refreshes_reservation_payment_state(monkeypatch, _patch, 
     )
     folio = await _patch.folios.find_one({"id": "F1"})
     assert calls == [(fake_user.tenant_id, folio["booking_id"])]
+
+
+async def test_cashier_rollback_refreshes_the_reservation_after_the_payment_is_gone(monkeypatch, _patch, fake_user):
+    """Shift closed concurrently: the cash payment is rolled back (409) and
+    the reservation must be recomputed without it, not left 'paid'."""
+    from fastapi import HTTPException
+
+    from core import booking_payment_state
+    from domains.pms import cashier_service as cs
+    from models.enums import PaymentMethod, PaymentType
+    from models.schemas import PaymentCreate
+
+    async def _shift_closed(*_a, **_kw):
+        raise HTTPException(status_code=409, detail="Vardiya kapandı")
+
+    monkeypatch.setattr(cs, "record_cash_transaction", _shift_closed)
+    seen = []
+
+    async def _refresh(database, tenant_id, booking_id):
+        seen.append(len([p for p in _patch.payments.docs if p.get("tenant_id") == tenant_id]))
+
+    monkeypatch.setattr(booking_payment_state, "refresh_booking_payment_state", _refresh)
+    with pytest.raises(HTTPException):
+        await folio_router.post_payment_to_folio(
+            folio_id="F1",
+            payment_data=PaymentCreate(amount=100.0, method=PaymentMethod.CASH, payment_type=PaymentType.DEPOSIT),
+            request=_FakeRequest(None),
+            current_user=fake_user,
+        )
+    assert seen and seen[-1] == 0  # last refresh saw the payment removed

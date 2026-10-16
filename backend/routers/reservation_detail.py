@@ -376,21 +376,25 @@ def _build_financial_summary(
     the full reservation amount so the UI never makes a partially posted stay
     look as though part of its confirmed price disappeared.
     """
+    from core.booking_payment_state import is_effective
+
+    # Failed / cancelled / rejected payment rows moved no money: the same
+    # filter as the collected amount, so balance and status cannot disagree.
     active_charges = [charge for charge in charges if not charge.get("voided")]
     total_charges = sum(charge.get("total", charge.get("amount", 0)) for charge in active_charges)
-    total_payments = sum(payment.get("amount", 0) for payment in payments if not payment.get("voided") and payment.get("method") != "discount")
+    total_payments = sum(payment.get("amount", 0) for payment in payments if is_effective(payment) and payment.get("method") != "discount")
     prepayment_total = sum(
         payment.get("amount", 0)
         for payment in payments
-        if not payment.get("voided")
+        if is_effective(payment)
         and payment.get("method") != "discount"
         and str(payment.get("payment_type") or "").lower() == "prepayment"
     )
-    total_discounts = sum(payment.get("amount", 0) for payment in payments if not payment.get("voided") and payment.get("method") == "discount")
+    total_discounts = sum(payment.get("amount", 0) for payment in payments if is_effective(payment) and payment.get("method") == "discount")
     complimentary_adjustment_total = sum(
         payment.get("amount", 0)
         for payment in payments
-        if not payment.get("voided")
+        if is_effective(payment)
         and payment.get("method") == "discount"
         and str(payment.get("payment_type") or "").lower() == "comp_adjustment"
     )
@@ -400,7 +404,7 @@ def _build_financial_summary(
     rate_correction_total = sum(
         payment.get("amount", 0)
         for payment in payments
-        if not payment.get("voided")
+        if is_effective(payment)
         and payment.get("method") == "discount"
         and str(payment.get("payment_type") or "").lower() == "rate_correction"
     )

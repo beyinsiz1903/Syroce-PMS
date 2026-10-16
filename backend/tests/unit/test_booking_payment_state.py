@@ -58,3 +58,15 @@ def test_payments_that_moved_no_money_count_nowhere(status):
     assert (state.collected_amount(bad), state.transferred_amount(bad), state.refunded_amount(bad)) == (0, 0, 0)
     assert state.payment_state(balance=8000, payments=bad) == "pending"
     assert state.collected_amount([{**CASH, "status": "paid"}, *bad]) == 8000
+
+
+def test_failed_payment_does_not_lower_the_reservation_balance():
+    from routers.reservation_detail import _build_financial_summary
+
+    booking = {"id": "b1", "total_amount": 8000, "check_in": "2026-11-20", "check_out": "2026-11-22"}
+    ok = {"amount": 3000, "method": "card", "status": "paid"}
+    failed = {"amount": 5000, "method": "card", "status": "failed"}
+    expected = _build_financial_summary(booking, [], [ok], [], [])["balance"]
+    balance = _build_financial_summary(booking, [], [ok, failed], [], [])["balance"]
+    assert balance == expected
+    assert state.payment_state(balance=balance, payments=[ok, failed]) == "partial"
