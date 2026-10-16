@@ -23,6 +23,7 @@ def world(monkeypatch):
         {"amount": 2000, "method": "city_ledger", "payment_type": "city_ledger_transfer", "processed_at": "2026-10-15T21:00:00"},
         {"amount": 500, "method": "card", "voided": True, "processed_at": "2026-10-15T22:00:00"},
         {"amount": -1000, "method": "cash", "payment_type": "refund", "status": "refunded", "processed_at": "2026-10-16T09:00:00"},
+        {"amount": 8000, "method": "card", "status": "failed", "processed_at": "2026-10-16T10:00:00"},
     ]
     sysdb = SimpleNamespace(
         marketplace_bookings=SimpleNamespace(find_one=AsyncMock(side_effect=lambda q, *a, **k:
@@ -33,20 +34,26 @@ def world(monkeypatch):
         agency_statements=SimpleNamespace(find=lambda *a, **k: _cursor([])),
     )
     tenant = SimpleNamespace(
-        bookings=SimpleNamespace(find_one=AsyncMock(return_value={"total_amount": 10000, "balance": 0, "payment_status": "transferred", "currency": "TRY"}),
+        bookings=SimpleNamespace(find_one=AsyncMock(return_value={"id": "b1", "total_amount": 10000, "balance": 10000, "payment_status": "pending", "currency": "TRY"}),
                                  find=lambda *a, **k: _cursor([{"id": "b1", "currency": "TRY", "credit_exposure_amount": 8500}])),
         payments=SimpleNamespace(find=lambda q, *a, **k: _cursor([dict(p, booking_id="b1") for p in payments])),
     )
     monkeypatch.setattr(m, "get_system_db", lambda: sysdb)
     monkeypatch.setattr(m, "db", tenant)
     monkeypatch.setattr(m, "tenant_context", lambda _t: nullcontext())
+    import routers.reservation_detail as detail
+
+    monkeypatch.setattr(detail, "_reservation_outstanding_balance", AsyncMock(return_value=1000))
     return sysdb, tenant
 
 
 @pytest.mark.asyncio
 async def test_payment_history_separates_collection_transfer_refund(world):
+    # The cached booking fields are stale (balance 10000, pending): the answer
+    # comes from the live payments; the failed card payment counts nowhere.
     result = await m.agency_reservation_payments("b1", {"agency_id": "a1"})
-    assert (result["collected_amount"], result["transferred_amount"], result["payment_status"]) == (7000.0, 2000.0, "transferred")
+    assert (result["collected_amount"], result["transferred_amount"], result["balance"], result["payment_status"]) == (
+        7000.0, 2000.0, 1000.0, "partial")
     assert [(p["label"], p["amount"], p["voided"]) for p in result["payments"]] == [
         ("Tahsilat", 8000.0, False), ("Cari hesaba aktarım", 2000.0, False), ("Tahsilat", 500.0, True), ("İade", 1000.0, False)]
     assert all("notes" not in p and "reference" not in p for p in result["payments"])
@@ -66,3 +73,32 @@ async def test_credit_overview_uses_money_actually_collected(world):
     # 8500 net exposure - 7000 collected (transfer and voided not counted) = 1500 used
     assert demo == {"limit": 10000.0, "used": 1500.0, "available": 8500.0, "currency": "TRY"}
     assert next(h for h in hotels if h["tenant_id"] == "t2")["credit"] is None
+
+
+@pytest.mark.asyncio
+async def test_list_repairs_reservations_paid_before_the_state_was_kept(monkeypatch):
+    from core import booking_payment_state
+
+    def cursor(rows):
+        cur = _cursor(rows)
+        cur.limit = lambda *_a: cur
+        return cur
+
+    old = {"id": "b1", "tenant_id": "t1", "agency_id": "a1", "status": "confirmed", "total_amount": 8000,
+           "balance": 8000, "payment_status": "pending", "created_at": "2026-10-15", "agency_completion": {"kind": "marketplace"}}
+    kept = {**old, "id": "b2", "collected_amount": 0.0}
+    sysdb = SimpleNamespace(marketplace_bookings=SimpleNamespace(find=lambda *a, **k: cursor([])),
+                            bookings=SimpleNamespace(find=lambda *a, **k: cursor([old, kept])))
+    refreshed = []
+
+    async def refresh(database, tenant_id, booking_id):
+        refreshed.append(booking_id)
+        return {"balance": 0.0, "payment_status": "paid", "collected_amount": 8000.0}
+
+    monkeypatch.setattr(m, "get_system_db", lambda: sysdb)
+    monkeypatch.setattr(m, "tenant_context", lambda _t: nullcontext())
+    monkeypatch.setattr(m, "refresh_ledger_from_pms", AsyncMock(side_effect=lambda _s, docs: docs))
+    monkeypatch.setattr(booking_payment_state, "refresh_booking_payment_state", refresh)
+    rows = {r["id"]: r for r in (await m.agency_list_reservations(None, None, None, None, 100, {"agency_id": "a1"}))["reservations"]}
+    assert refreshed == ["b1"]  # only the record without derived state
+    assert (rows["b1"]["collected_amount"], rows["b1"]["balance"], rows["b1"]["payment_status"]) == (8000.0, 0.0, "paid")

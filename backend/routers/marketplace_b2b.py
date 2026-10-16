@@ -2910,6 +2910,15 @@ async def agency_list_reservations(
     merged = {row["id"]: row for row in docs}
     for row in canonical:
         merged[row["id"]] = {**merged.get(row["id"], {}), **public_booking(row)}
+        if row.get("collected_amount") is None and row.get("status") != "cancelled":
+            # Reservations paid before payment state was derived: compute it
+            # once from their payments and store it (later reads use it).
+            from core.booking_payment_state import refresh_booking_payment_state
+
+            with tenant_context(row["tenant_id"]):
+                fresh = await refresh_booking_payment_state(db, row["tenant_id"], row["id"])
+            if fresh:
+                merged[row["id"]].update(fresh)
     docs = sorted(merged.values(), key=lambda row: str(row.get("created_at", "")), reverse=True)[:limit]
     return {"reservations": docs, "total": len(docs)}
 
@@ -2923,7 +2932,7 @@ async def agency_reservation_payments(
     agency: dict = Depends(get_marketplace_agency),
 ):
     """Payment history of the agency's own reservation (no internal notes)."""
-    from core.booking_payment_state import collected_amount, transferred_amount
+    from core.booking_payment_state import INVALID_STATUSES, compute_booking_payment_state, transferred_amount
 
     sysdb = get_system_db()
     ledger = await sysdb.marketplace_bookings.find_one(
@@ -2933,15 +2942,19 @@ async def agency_reservation_payments(
         raise HTTPException(404, "Rezervasyon bulunamadı")
     tenant_id = ledger["tenant_id"]
     with tenant_context(tenant_id):
-        booking = await db.bookings.find_one({"id": reservation_id, "tenant_id": tenant_id},
-                                             {"_id": 0, "total_amount": 1, "balance": 1, "payment_status": 1, "currency": 1})
+        booking = await db.bookings.find_one({"id": reservation_id, "tenant_id": tenant_id}, {"_id": 0})
         rows = await db.payments.find(
             {"tenant_id": tenant_id, "booking_id": reservation_id, "method": {"$ne": "discount"}},
             {"_id": 0, "amount": 1, "method": 1, "payment_type": 1, "status": 1, "voided": 1, "currency": 1,
              "processed_at": 1, "created_at": 1},
         ).sort("processed_at", 1).to_list(500)
+        # Derived from the live payments, not the cached booking fields, so
+        # reservations paid before those fields were maintained are right too.
+        live = await compute_booking_payment_state(db, tenant_id, booking, rows) if booking else {}
     items = []
     for row in rows:
+        if str(row.get("status") or "").lower() in INVALID_STATUSES - {"void", "voided"}:
+            continue  # failed / rejected / unconfirmed: no money moved
         if row.get("method") == "city_ledger" or row.get("payment_type") == "city_ledger_transfer":
             kind = "transfer"
         elif row.get("payment_type") == "refund" or row.get("status") == "refunded" or float(row.get("amount") or 0) < 0:
@@ -2957,10 +2970,10 @@ async def agency_reservation_payments(
         })
     return {
         "total_amount": (booking or {}).get("total_amount"),
-        "collected_amount": collected_amount(rows),
+        "collected_amount": live.get("collected_amount", 0.0),
         "transferred_amount": transferred_amount(rows),
-        "balance": (booking or {}).get("balance"),
-        "payment_status": (booking or {}).get("payment_status"),
+        "balance": live.get("balance"),
+        "payment_status": live.get("payment_status"),
         "currency": (booking or {}).get("currency") or ledger.get("currency"),
         "payments": items,
     }
