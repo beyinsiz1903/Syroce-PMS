@@ -28,7 +28,7 @@ def public_booking(booking):
     keys = ('id', 'tenant_id', 'agency_id', 'confirmation_code', 'status', 'room_type', 'room_id',
             'room_number', 'rate_plan_code', 'meal_plan', 'cancellation_policy', 'check_in',
             'check_out', 'total_amount', 'currency', 'guest_name', 'hotel_name', 'created_at',
-            'adults', 'children', 'payment_status', 'balance', 'net_to_hotel')
+            'adults', 'children', 'payment_status', 'balance', 'net_to_hotel', 'collected_amount')
     return {**{key: row.get(key) for key in keys},
             'integration_status': row.get('agency_completion', {}).get('status', 'unknown')}
 

@@ -2910,8 +2910,98 @@ async def agency_list_reservations(
     merged = {row["id"]: row for row in docs}
     for row in canonical:
         merged[row["id"]] = {**merged.get(row["id"], {}), **public_booking(row)}
+        if row.get("collected_amount") is None and row.get("status") != "cancelled":
+            # Reservations paid before payment state was derived: compute it
+            # once from their payments and store it (later reads use it).
+            from core.booking_payment_state import refresh_booking_payment_state
+
+            with tenant_context(row["tenant_id"]):
+                fresh = await refresh_booking_payment_state(db, row["tenant_id"], row["id"])
+            if fresh:
+                merged[row["id"]].update(fresh)
     docs = sorted(merged.values(), key=lambda row: str(row.get("created_at", "")), reverse=True)[:limit]
     return {"reservations": docs, "total": len(docs)}
+
+
+PAYMENT_KIND_LABELS = {"collection": "Tahsilat", "refund": "İade", "transfer": "Cari hesaba aktarım"}
+
+
+@router.get("/reservations/{reservation_id}/payments")
+async def agency_reservation_payments(
+    reservation_id: str,
+    agency: dict = Depends(get_marketplace_agency),
+):
+    """Payment history of the agency's own reservation (no internal notes)."""
+    from core.booking_payment_state import INVALID_STATUSES, compute_booking_payment_state, transferred_amount
+
+    sysdb = get_system_db()
+    ledger = await sysdb.marketplace_bookings.find_one(
+        {"id": reservation_id, "agency_id": agency["agency_id"]}, {"_id": 0, "tenant_id": 1, "currency": 1}
+    )
+    if not ledger:
+        raise HTTPException(404, "Rezervasyon bulunamadı")
+    tenant_id = ledger["tenant_id"]
+    with tenant_context(tenant_id):
+        booking = await db.bookings.find_one({"id": reservation_id, "tenant_id": tenant_id}, {"_id": 0})
+        rows = await db.payments.find(
+            {"tenant_id": tenant_id, "booking_id": reservation_id, "method": {"$ne": "discount"}},
+            {"_id": 0, "amount": 1, "method": 1, "payment_type": 1, "status": 1, "voided": 1, "currency": 1,
+             "processed_at": 1, "created_at": 1},
+        ).sort("processed_at", 1).to_list(500)
+        # Derived from the live payments, not the cached booking fields, so
+        # reservations paid before those fields were maintained are right too.
+        live = await compute_booking_payment_state(db, tenant_id, booking, rows) if booking else {}
+    items = []
+    for row in rows:
+        if str(row.get("status") or "").lower() in INVALID_STATUSES - {"void", "voided"}:
+            continue  # failed / rejected / unconfirmed: no money moved
+        if row.get("method") == "city_ledger" or row.get("payment_type") == "city_ledger_transfer":
+            kind = "transfer"
+        elif row.get("payment_type") == "refund" or row.get("status") == "refunded" or float(row.get("amount") or 0) < 0:
+            kind = "refund"
+        else:
+            kind = "collection"
+        items.append({
+            "date": row.get("processed_at") or row.get("created_at"),
+            "kind": kind, "label": PAYMENT_KIND_LABELS[kind],
+            "amount": round(abs(float(row.get("amount") or 0)), 2),
+            "currency": row.get("currency") or (booking or {}).get("currency") or ledger.get("currency"),
+            "method": row.get("method"), "voided": row.get("voided") is True,
+        })
+    return {
+        "total_amount": (booking or {}).get("total_amount"),
+        "collected_amount": live.get("collected_amount", 0.0),
+        "transferred_amount": transferred_amount(rows),
+        "balance": live.get("balance"),
+        "payment_status": live.get("payment_status"),
+        "currency": (booking or {}).get("currency") or ledger.get("currency"),
+        "payments": items,
+    }
+
+
+@router.get("/extranet/credit")
+async def agency_credit_overview(agency: dict = Depends(get_marketplace_agency)):
+    """Credit limit, used and available per hotel; used = open net debt after
+    statement payments and money collected in the PMS."""
+    from core.agency_credit import credit_usage
+
+    sysdb = get_system_db()
+    today = datetime.now(UTC).date().isoformat()
+    contracts = await sysdb.agency_contracts.find(
+        {"agency_id": agency["agency_id"], "status": "approved", "valid_to": {"$gte": today}},
+        {"_id": 0, "tenant_id": 1, "hotel_name": 1, "contract_code": 1, "credit_limit": 1, "credit_currency": 1},
+    ).to_list(500)
+    hotels = []
+    for contract in contracts:
+        try:
+            with tenant_context(contract["tenant_id"]):
+                usage = await credit_usage(db, tenant_id=contract["tenant_id"], agency_id=agency["agency_id"],
+                                           contract=contract, statements_db=sysdb)
+        except HTTPException as exc:
+            usage = {"error": exc.detail}
+        hotels.append({"tenant_id": contract["tenant_id"], "hotel_name": contract.get("hotel_name"),
+                       "contract_code": contract.get("contract_code"), "credit": usage})
+    return {"hotels": hotels}
 
 
 @router.get("/reservations/{reservation_id}")
