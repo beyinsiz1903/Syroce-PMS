@@ -516,8 +516,15 @@ def _stress_tid() -> str:
     return tid
 
 
-async def _resolve_stress_tid_async(tid: str) -> str:
-    """Resolve E2E_STRESS_TENANT_ID from a short hotel_id to its internal UUID."""
+async def _resolve_stress_tid_async(tid: str, *, require_existing: bool = False) -> str:
+    """Resolve E2E_STRESS_TENANT_ID from a short hotel_id to its internal UUID.
+
+    Writers pass ``require_existing=True``: when no tenant matches (e.g. the
+    stress tenant was deleted) the raw hotel_id must not be used as a
+    tenant_id, or the seed writes rows owned by no hotel (production had 146
+    bookings under tenant_id "343281"). Cleanup keeps the fallback so it can
+    still sweep such leftovers.
+    """
     try:
         from core.tenant_db import get_system_db
 
@@ -526,7 +533,13 @@ async def _resolve_stress_tid_async(tid: str) -> str:
         if t and "id" in t:
             return t["id"]
     except Exception:
-        pass
+        if require_existing:
+            raise HTTPException(status_code=503, detail="Stress tenant lookup failed; nothing was written") from None
+    if require_existing:
+        raise HTTPException(
+            status_code=412,
+            detail=f"Stress tenant {tid!r} does not exist (no tenant with this id or hotel_id); refusing to write orphan data",
+        )
     return tid
 
 
@@ -2510,7 +2523,7 @@ async def stress_seed(
     All rows tagged `stress_seed=true` and `stress_prefix=<prefix>`.
     Chunked insert_many keeps memory + Atlas wire frame bounded."""
     gates = _gates(payload.target_tenant_id)
-    stress_tid = await _resolve_stress_tid_async(payload.target_tenant_id)
+    stress_tid = await _resolve_stress_tid_async(payload.target_tenant_id, require_existing=True)
 
     # Task #167 — entitle the stress tenant for the `hidden_marketplace`
     # procurement write surface (PO create/cancel) so the marketplace deep
@@ -3127,7 +3140,7 @@ async def stress_seed_pending(
             detail=("E2E_EXTERNAL_DRY_RUN != 'true' (fail-closed). On-demand stress pending seed requires the dry-run stress posture."),
         )
     stress_tid = _stress_tid()
-    stress_tid = await _resolve_stress_tid_async(stress_tid)
+    stress_tid = await _resolve_stress_tid_async(stress_tid, require_existing=True)
     prefix = payload.data_prefix or f"E2E_STRESS_{int(time.time())}_"
     now = datetime.now(UTC)
 
