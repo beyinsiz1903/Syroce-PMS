@@ -252,11 +252,12 @@ export default function NewReservationScreen() {
 
       <Card>
         <Field
-          label={tr.reservations.reservationAmount}
+          label={`${tr.reservations.reservationAmount} (TRY)`}
           value={amount}
           onChangeText={setAmount}
           keyboardType="decimal-pad"
         />
+        <Muted style={{ marginTop: spacing.sm }}>Hızlı rezervasyonda tutar Türk lirası (TRY) olarak kaydedilir.</Muted>
       </Card>
 
       <Button

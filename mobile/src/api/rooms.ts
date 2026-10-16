@@ -1,4 +1,5 @@
 import { api, apiRequest } from './client';
+import { loadRoomPages } from '../utils/roomData';
 
 export type Room = {
   id: string;
@@ -6,25 +7,25 @@ export type Room = {
   room_type?: string;
   floor?: number | string;
   status?: string;
+  room_status?: string;
+  housekeeping_status?: string;
+  hk_status?: string;
   current_booking_id?: string;
   guest_name?: string;
+  housekeeping?: {
+    state?: string;
+    task_type?: string | null;
+    assigned_to_name?: string | null;
+    started_at?: string | null;
+    elapsed_minutes?: number | null;
+  };
 };
-
-type RoomListResponse = Room[] | { rooms?: Room[]; items?: Room[] };
-
-function unwrapRooms(res: RoomListResponse): Room[] {
-  if (Array.isArray(res)) return res;
-  if (Array.isArray(res?.rooms)) return res.rooms;
-  if (Array.isArray(res?.items)) return res.items;
-  return [];
-}
 
 // GET /api/pms/rooms (pms_rooms.py)
 // Errors propagate so react-query's isError fires and the screen shows a
 // visible error + retry instead of a misleading empty room list.
 export async function listRooms(): Promise<Room[]> {
-  const res = await api.get<RoomListResponse>('/api/pms/rooms');
-  return unwrapRooms(res);
+  return loadRoomPages<Room>((params) => api.get<unknown>('/api/pms/rooms', params));
 }
 
 export async function findAvailableRoomByType(roomType: string): Promise<Room | null> {

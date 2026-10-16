@@ -20,11 +20,8 @@ export type ThemeColors = {
   vip: string;
 };
 
-// Koyu premium kimlik (2030 / Apple seviyesi operasyon merkezi). Bu palet
-// uygulamanin VARSAYILAN kimligidir: zemin neredeyse siyah-lacivert, kartlar
-// uzerine katmanlanan acik yuzeyler, primary canli mavi, durum renkleri net.
-// surfaceGlass + glassHighlight cam efekti hissini (saydam yuzey + ust isik
-// cizgisi) blur kutuphanesi gerektirmeden tasir.
+// Both schemes share the same information hierarchy. Keep the dark option
+// comfortable for a night shift, without glass effects or luminous shadows.
 export const darkTheme: ThemeColors = {
   bg: '#060B17',
   surface: '#101827',
@@ -44,24 +41,23 @@ export const darkTheme: ThemeColors = {
   vip: '#FBBF24',
 };
 
-// Acik tema — Light/System tema secimi ile aktif (koyu premium kimlik hala
-// varsayilan: themeMode default 'dark'). useResolvedScheme() === 'light' iken
-// useTheme() bu paleti dondurur; secici (ThemeModeSelector) ile opt-in.
+// Day-shift default: neutral surfaces, navy type and a single azure action
+// color. Persisted dark/system preferences remain untouched on upgrade.
 export const lightTheme: ThemeColors = {
-  bg: '#f5f7fa',
+  bg: '#F7F8FA',
   surface: '#ffffff',
   surfaceAlt: '#eef1f7',
   surfaceGlass: 'rgba(255,255,255,0.72)',
   glassHighlight: 'rgba(255,255,255,0.65)',
   border: '#e2e7f0',
-  text: '#0f172a',
-  textMuted: '#5b6478',
+  text: '#12243A',
+  textMuted: '#56657A',
   primary: '#2563EB',
   primaryText: '#ffffff',
   primarySoft: '#e6ecf8',
-  success: '#0f9d6b',
-  warning: '#d97706',
-  danger: '#dc2626',
+  success: '#087F5B',
+  warning: '#955000',
+  danger: '#B91C1C',
   info: '#0369a1',
   vip: '#a16207',
 };
@@ -76,23 +72,22 @@ export const spacing = {
   xxl: 32,
 };
 
-// Premium yuvarlama: kartlar 20-24px (Apple Wallet hissi), buton/alanlar 12px.
+// Compact operational surfaces, not oversized decorative cards.
 export const radius = {
   sm: 8,
   md: 12,
-  lg: 20,
-  xl: 24,
+  lg: 16,
+  xl: 20,
   pill: 999,
 };
 
-// Premium yumusak golge: koyu zeminde kartlari yukseltir, derinlik/katman
-// hissi verir. Web'de RN bunu box-shadow'a cevirir, native'de elevation.
+// A restrained shadow remains legible on both light and dark surfaces.
 export const cardShadow = {
   shadowColor: '#000000',
-  shadowOffset: { width: 0, height: 12 },
-  shadowOpacity: 0.35,
-  shadowRadius: 24,
-  elevation: 10,
+  shadowOffset: { width: 0, height: 2 },
+  shadowOpacity: 0.06,
+  shadowRadius: 8,
+  elevation: 2,
 };
 
 // Hareket katmani: tek kaynaktan sure/easing. Skeleton shimmer, basari

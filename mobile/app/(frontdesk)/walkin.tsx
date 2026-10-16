@@ -143,11 +143,12 @@ export default function WalkInScreen() {
 
       <Card>
         <Field
-          label={tr.walkin.rate}
+          label={`${tr.walkin.rate} (TRY)`}
           value={rate}
           onChangeText={setRate}
           keyboardType="decimal-pad"
         />
+        <Muted style={{ marginTop: spacing.sm }}>Walk-in tutarı Türk lirası (TRY) olarak kaydedilir.</Muted>
       </Card>
 
       <Button

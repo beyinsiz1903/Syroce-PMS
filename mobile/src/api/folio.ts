@@ -7,6 +7,9 @@ export type FolioCharge = {
   total?: number;
   charge_category?: string;
   posted_at?: string;
+  folio_id?: string;
+  currency?: string;
+  voided?: boolean;
 };
 
 export type FolioPayment = {
@@ -14,12 +17,21 @@ export type FolioPayment = {
   amount?: number;
   method?: string;
   processed_at?: string;
+  folio_id?: string;
+  currency?: string;
+  status?: string;
+  payment_type?: string;
+  voided?: boolean;
+  reference?: string;
 };
 
 export type Folio = {
   id: string;
   folio_number?: string;
   status?: string;
+  folio_type?: string;
+  payor_type?: string;
+  currency?: string;
   balance?: number;
   charges?: FolioCharge[];
   payments?: FolioPayment[];
@@ -61,9 +73,9 @@ function normalizeFolio(res: FolioResponse | null): Folio | null {
     charges?: FolioCharge[];
     payments?: FolioPayment[];
   };
-  if (top.id || top.folio_number || top.charges) {
+  if (top.id) {
     return {
-      id: top.id || top.folio_number || 'folio',
+      id: top.id,
       folio_number: top.folio_number,
       status: top.status,
       balance: top.balance,
@@ -72,6 +84,20 @@ function normalizeFolio(res: FolioResponse | null): Folio | null {
     };
   }
   return null;
+}
+
+// The operational payment handler targets the booking's open guest folio and
+// keeps post_payment RBAC, cashier-shift checks and idempotent retries server-side.
+export async function postBookingPayment(
+  bookingId: string,
+  body: { amount: number; method: FolioPaymentMethod; payment_type: 'interim' | 'final'; currency: string },
+  idempotencyKey: string,
+): Promise<FolioPayment> {
+  return apiRequest<FolioPayment>(`/api/frontdesk/folio/${encodeURIComponent(bookingId)}/payment`, {
+    method: 'POST',
+    body,
+    headers: { 'Idempotency-Key': idempotencyKey },
+  });
 }
 
 // ── Finance folio listing (read-only) ──────────────────────────────────────

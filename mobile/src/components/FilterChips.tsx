@@ -43,6 +43,7 @@ export const FilterChips: React.FC<FilterChipsProps> = ({ options, value, onChan
             onPress={() => onChange(opt.value)}
             accessibilityRole="button"
             accessibilityState={{ selected: active }}
+            aria-selected={active}
             style={({ pressed }) => ({
               opacity: pressed ? 0.85 : 1,
               backgroundColor: active ? c.primary : c.surface,
@@ -51,14 +52,14 @@ export const FilterChips: React.FC<FilterChipsProps> = ({ options, value, onChan
               borderRadius: radius.lg,
               paddingHorizontal: spacing.md,
               paddingVertical: spacing.sm,
-              minHeight: 36,
+              minHeight: 48,
               justifyContent: 'center',
             })}
           >
             <Text
               style={{
                 color: active ? c.primaryText : c.text,
-                fontSize: 13,
+                fontSize: 14,
                 fontWeight: '600',
               }}
             >

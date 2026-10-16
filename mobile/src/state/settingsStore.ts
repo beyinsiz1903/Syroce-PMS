@@ -45,15 +45,14 @@ export type SettingsState = {
 export const useSettingsStore = create<SettingsState>((set) => ({
   hydrated: false,
   biometricLock: false,
-  // Varsayilan koyu: marka kimligi korunur. Acik/Sistem kullanicinin opt-in
-  // secimidir (settingsStore -> useTheme uzerinden tum ekranlara yansir).
-  themeMode: 'dark',
+  // New installs use the day-shift palette; never overwrite a saved choice.
+  themeMode: 'light',
   textScale: 'standard',
   locale: 'tr',
 
   async hydrate() {
     let biometricLock = false;
-    let themeMode: ThemeMode = 'dark';
+    let themeMode: ThemeMode = 'light';
     let textScale: TextScale = 'standard';
     let locale: AppLocale = 'tr';
     try {
@@ -68,7 +67,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
         themeMode = raw as ThemeMode;
       }
     } catch {
-      // ignore — tema varsayilani koyu kalir
+      // Storage unavailable: keep the readable day-shift default.
     }
     try {
       const raw = await AsyncStorage.getItem(TEXT_SCALE_KEY);

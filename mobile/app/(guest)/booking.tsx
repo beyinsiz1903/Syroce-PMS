@@ -18,7 +18,8 @@ import {
 import { spacing, useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
 import { getGuestBookings } from '../../src/api/guestBookings';
-import { formatCurrency, formatDate, formatTime } from '../../src/utils/format';
+import { formatDate, formatTime } from '../../src/utils/format';
+import { reservationAmountLabel, reservationCurrency } from '../../src/utils/reservationPresentation';
 import { ROUTES } from '../../src/navigation/routes';
 
 function statusTone(status?: string): 'success' | 'warning' | 'info' | 'default' {
@@ -119,10 +120,10 @@ export default function GuestBookingDetail() {
         <DetailRow label={tr.guest.guests} value={`${booking.guests_count || 1}`} />
       </Card>
 
-      <Card>
+      <Card testID="guest-reservation-account-summary">
         <DetailRow
           label={tr.guest.folioSummary}
-          value={formatCurrency(booking.total_amount || 0)}
+          value={reservationAmountLabel(booking.total_amount, reservationCurrency(booking.currency))}
         />
       </Card>
 

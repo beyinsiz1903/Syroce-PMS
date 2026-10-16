@@ -22,7 +22,8 @@ import { tr } from '../../src/i18n/tr';
 import { GuestBooking, getGuestBookings } from '../../src/api/guestBookings';
 import { useAuthStore } from '../../src/state/authStore';
 import { haptic } from '../../src/hooks/useHaptic';
-import { formatDate, formatCurrency } from '../../src/utils/format';
+import { formatDate } from '../../src/utils/format';
+import { reservationAmountLabel, reservationCurrency } from '../../src/utils/reservationPresentation';
 import { isOffline } from '../../src/utils/errors';
 import { ROUTES } from '../../src/navigation/routes';
 
@@ -166,11 +167,11 @@ function BookingCard({ b, onPress }: { b: GuestBooking; onPress: () => void }) {
               {tr.guest.confirmation}: {b.confirmation_number || '—'}
             </Muted>
           </View>
-          <View style={{ alignItems: 'flex-end', gap: spacing.xs }}>
+          <View style={{ alignItems: 'flex-end', gap: spacing.xs, maxWidth: '46%', flexShrink: 1 }}>
             <Badge label={statusLabel(b.status)} tone={statusTone(b.status)} />
             {typeof b.total_amount === 'number' ? (
-              <Body style={{ color: c.textMuted, fontSize: 13 }}>
-                {formatCurrency(b.total_amount)}
+              <Body testID={`guest-reservation-total-${b.id}`} style={{ color: c.textMuted, fontSize: 13, textAlign: 'right' }}>
+                {reservationAmountLabel(b.total_amount, reservationCurrency(b.currency))}
               </Body>
             ) : null}
           </View>

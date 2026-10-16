@@ -19,10 +19,12 @@ import {
   getLastPushStatus,
   type PushRegistrationStatus,
 } from '../../src/notifications/push';
+import { demoPreviewEnabled } from '../../src/utils/previewMode';
 
 export default function MoreScreen() {
   const c = useTheme();
   const router = useRouter();
+  const demoPreview = demoPreviewEnabled(__DEV__, process.env.EXPO_PUBLIC_PREVIEW_MODE, process.env.EXPO_PUBLIC_API_URL);
   const { user, logout } = useAuthStore();
   const deptAccess = useAuthStore((s) => s.deptAccess);
   const biometricLock = useSettingsStore((s) => s.biometricLock);
@@ -100,7 +102,44 @@ export default function MoreScreen() {
         {user?.hotel_id ? <Muted>Otel ID: {user.hotel_id}</Muted> : null}
       </Card>
 
-      <RoleSwitcher />
+      {!demoPreview ? <RoleSwitcher /> : (
+        <Card accent={c.warning}><Muted>Salt okunur tasarım önizlemesi. Bu demo günlük PMS ekranlarını kapsar; diğer rol deneyimleri burada doğrulanmaz.</Muted></Card>
+      )}
+
+      <Card style={{ gap: spacing.sm }}>
+        <H2>Operasyon kısayolları</H2>
+        <Muted>Günlük sekmelerin dışında kalan araçlar.</Muted>
+        <Button
+          title={tr.tabs.bookings}
+          icon="reader-outline"
+          variant="secondary"
+          onPress={() => router.push(ROUTES.reservations)}
+          testID="more-reservations"
+          fullWidth
+        />
+        <Button
+          title={tr.availability.title}
+          icon="calendar-outline"
+          variant="secondary"
+          onPress={() => router.push(ROUTES.availability)}
+          fullWidth
+        />
+        <Button
+          title={tr.tabs.guests}
+          icon="people-outline"
+          variant="secondary"
+          onPress={() => router.push(ROUTES.frontdeskGuests)}
+          fullWidth
+        />
+          <Button
+            title={tr.manager.reportsTitle}
+            icon="bar-chart-outline"
+            variant="secondary"
+            onPress={() => router.push(ROUTES.frontdeskReports)}
+            testID="more-reports"
+            fullWidth
+          />
+      </Card>
 
       <ThemeModeSelector />
 

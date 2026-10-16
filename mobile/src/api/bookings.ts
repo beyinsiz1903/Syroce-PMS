@@ -13,6 +13,21 @@ export type Booking = {
   total_amount?: number;
   paid_amount?: number;
   balance?: number;
+  collected_amount?: number;
+  currency?: string;
+  booking_number?: string;
+  adults?: number;
+  children?: number;
+  guest_phone?: string;
+  guest_email?: string;
+  channel?: string;
+  source_channel?: string;
+  booking_source?: string;
+  ota_channel?: string;
+  agency_id?: string;
+  agency_name?: string;
+  company_id?: string;
+  payment_model?: string;
   vip_status?: boolean;
   special_requests?: string;
   no_show_risk?: number;
@@ -117,20 +132,18 @@ export async function getNoShowRisk(): Promise<NoShowRiskEntry[]> {
   return out;
 }
 
-// GET /api/pms/bookings (pms_bookings.py)
+// The PMS list ignores `room_number`. Filter the tenant-scoped, enriched
+// in-house response exactly so a lookup cannot select another room's guest.
 export async function searchBookingByRoom(roomNumber: string): Promise<Booking[]> {
-  const res = await api.get<BookingListResponse>('/api/pms/bookings', {
-    room_number: roomNumber,
-    status: 'checked_in',
-  });
-  return unwrap(res, ['bookings', 'items']);
+  const items = await getInHouse();
+  return items.filter((booking) => booking.room_number?.trim() === roomNumber.trim() && booking.status === 'checked_in');
 }
 
-// GET /api/pms/bookings?id=<id> (no per-id GET; use list filter as best-effort)
+// Tenant-scoped exact lookup. The list endpoint ignores an `id` query param;
+// selecting its first row can open or check out a different reservation.
 export async function getBooking(id: string): Promise<Booking | null> {
-  const res = await api.get<BookingListResponse>('/api/pms/bookings', { id });
-  const items = unwrap(res, ['bookings', 'items']);
-  return items.find((b) => b.id === id) || items[0] || null;
+  const res = await api.get<Booking>(`/api/pms/bookings/${encodeURIComponent(id)}`);
+  return res?.id === id ? res : null;
 }
 
 // POST /api/frontdesk/checkin/{booking_id}

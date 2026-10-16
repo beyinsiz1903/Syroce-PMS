@@ -7,6 +7,7 @@ import { radius, spacing, useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
 import { useAuthStore } from '../../src/state/authStore';
 import { haptic } from '../../src/hooks/useHaptic';
+import { demoPreviewEnabled } from '../../src/utils/previewMode';
 
 export default function LoginScreen() {
   const c = useTheme();
@@ -16,6 +17,15 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [twoFactorCode, setTwoFactorCode] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  // Development-only preview is explicitly isolated from the live PMS.
+  const demoPreview = demoPreviewEnabled(__DEV__, process.env.EXPO_PUBLIC_PREVIEW_MODE, process.env.EXPO_PUBLIC_API_URL);
+  const onDemoSignIn = async () => {
+    setPassword('');
+    setSubmitting(true);
+    try { await login('demo@syroce.local', 'demo-mobile'); }
+    catch { haptic.error(); }
+    finally { setSubmitting(false); }
+  };
 
   const onSubmit = async () => {
     setSubmitting(true);
@@ -56,6 +66,15 @@ export default function LoginScreen() {
               <Muted style={{ textAlign: 'center' }}>{tr.auth.title}</Muted>
             </View>
 
+            {demoPreview ? (
+              <Card style={{ gap: spacing.lg }}>
+                <Body style={{ fontWeight: '700', fontSize: 20 }}>Mobil tasarım önizlemesi</Body>
+                <Muted>Salt okunur demo · Tüm misafirler, tutarlar ve rezervasyonlar örnektir.</Muted>
+                <Muted>Canlı PMS kullanıcı bilgilerinizi girmeniz gerekmez. Bu önizleme canlı sisteme veri göndermez.</Muted>
+                {error ? <Body style={{ color: c.danger }} accessibilityLiveRegion="polite">{error}</Body> : null}
+                <Button title="Demo ile önizle" onPress={onDemoSignIn} loading={submitting || loading} testID="preview-demo-login" fullWidth />
+              </Card>
+            ) : (
             <Card style={{ padding: spacing.xl, borderRadius: radius.lg, gap: spacing.md }}>
               {pendingTwoFactorToken ? (
                 <>
@@ -125,6 +144,7 @@ export default function LoginScreen() {
                 fullWidth
               />
             </Card>
+            )}
           </View>
         </ScrollView>
       </KeyboardAvoidingView>

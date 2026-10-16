@@ -182,14 +182,46 @@ def _hk_estimate_for(room: dict) -> int:
     )
 
 
-async def _enrich_rooms_with_housekeeping(tenant_id: str, rooms: list[dict]) -> list[dict]:
+async def _enrich_rooms_with_housekeeping(tenant_id: str, rooms: list[dict], *, refresh_status: bool = False) -> list[dict]:
     """Aktif housekeeping görevlerinden gerçek süre/personel/ilerleme bilgisini
     her oda için `housekeeping` subdoc'una ekler. Mobil HK uygulaması
     `/api/housekeeping/start-cleaning/{room_id}` çağırdığında oda belgesinde
     `current_task_id` + `cleaning_started_at` set edilir; burada o görevi
     okuyup canlı durum çıkarıyoruz. Cache'lenmemeli — anlık gösterim için.
     """
-    target_rooms = [r for r in rooms if r.get("status") in ("dirty", "cleaning")]
+    # Cached room snapshots can predate a mobile task completion (which writes
+    # housekeeping_status/room_status) or a maintenance block. Refresh these
+    # operational fields in one tenant-scoped read, without mutating the cache
+    # itself or including guest/financial data.
+    rooms = [dict(room) for room in rooms]
+    status_fields = ("status", "room_status", "housekeeping_status", "hk_status")
+    if refresh_status:
+        room_ids = [room["id"] for room in rooms if room.get("id")]
+        if room_ids:
+            fields = (*status_fields, "cleaning_started_at", "current_task_id", "assigned_cleaner")
+            projection = {"_id": 0, "id": 1, **dict.fromkeys(fields, 1)}
+            current_by_id = {
+                room["id"]: room
+                async for room in db.rooms.find({
+                    "tenant_id": tenant_id,
+                    "id": {"$in": room_ids},
+                    "$and": [
+                        {"$or": [{"is_active": True}, {"is_active": {"$exists": False}}]},
+                        {"$or": [{"is_virtual": False}, {"is_virtual": {"$exists": False}}]},
+                    ],
+                }, projection)
+            }
+            # A cache hit must not resurrect deleted, inactive or virtual rooms.
+            rooms = [room for room in rooms if room.get("id") in current_by_id]
+            for room in rooms:
+                current = current_by_id[room["id"]]
+                for field in fields:
+                    if field in current:
+                        room[field] = current[field]
+                    else:
+                        room.pop(field, None)
+
+    target_rooms = [r for r in rooms if any(r.get(field) in ("dirty", "cleaning") for field in status_fields)]
     if not target_rooms:
         return rooms
 
@@ -256,10 +288,12 @@ async def _enrich_rooms_with_housekeeping(tenant_id: str, rooms: list[dict]) -> 
             "started_at": None,
             "assigned_to_name": room.get("assigned_cleaner"),
             "task_id": room.get("current_task_id"),
+            "task_type": None,
             "priority": None,
         }
         if task:
             hk["task_id"] = task.get("id") or hk["task_id"]
+            hk["task_type"] = task.get("task_type")
             hk["assigned_to_name"] = task.get("assigned_to_name") or task.get("assigned_to") or hk["assigned_to_name"]
             hk["estimated_minutes"] = task.get("estimated_minutes") or estimated
             hk["priority"] = task.get("priority")
@@ -278,7 +312,7 @@ async def _enrich_rooms_with_housekeeping(tenant_id: str, rooms: list[dict]) -> 
                         hk["progress_pct"] = round(min(100.0, max(0.0, pct)), 1)
                 except (ValueError, TypeError):
                     pass
-        elif room.get("status") == "cleaning" and room.get("cleaning_started_at"):
+        elif any(room.get(field) == "cleaning" for field in status_fields) and room.get("cleaning_started_at"):
             # Task kaydı yoksa bile oda alanından çıkar
             try:
                 started_raw = room["cleaning_started_at"]
@@ -326,10 +360,12 @@ async def get_rooms(
             if redis_cache:
                 cache_key = f"rooms:{current_user.tenant_id}:limit{limit}:nv"
                 cached = redis_cache.get(cache_key)
-                if cached:
+                if cached and len(cached) >= limit:
                     # Filter virtual from cached data
                     base = [r for r in cached if not r.get("is_virtual")]
-                    return await _enrich_rooms_with_housekeeping(current_user.tenant_id, base)
+                    enriched = await _enrich_rooms_with_housekeeping(current_user.tenant_id, base, refresh_status=True)
+                    if len(enriched) == len(base):
+                        return enriched
         except Exception:
             logger.debug("pms_rooms: redis cache read failed", exc_info=True)
 
@@ -337,11 +373,15 @@ async def get_rooms(
         from cache_warmer import cache_warmer
 
         if cache_warmer:
-            cached_data = cache_warmer.get_cached(f"rooms:{current_user.tenant_id}")
-            if cached_data:
+            cached_data = cache_warmer.get_cached(f"rooms:{current_user.tenant_id}", require_complete=True)
+            # A short cached list proves only its warm-time count. Bulk room
+            # inserts can append inventory before that snapshot expires, so
+            # only a fresh DB page may establish pagination completion.
+            if cached_data is not None and len(cached_data) >= limit:
                 # Process cached data quickly
                 rooms = []
-                for room in cached_data[:limit]:  # Apply limit to cached data
+                for cached_room in cached_data[:limit]:  # Apply limit to cached data
+                    room = dict(cached_room)
                     # Skip virtual rooms
                     if room.get("is_virtual"):
                         continue
@@ -363,7 +403,12 @@ async def get_rooms(
                         room["capacity"] = 2
 
                     rooms.append(room)
-                return await _enrich_rooms_with_housekeeping(current_user.tenant_id, rooms)
+                enriched = await _enrich_rooms_with_housekeeping(current_user.tenant_id, rooms, refresh_status=True)
+                if len(enriched) == len(rooms):
+                    return enriched
+                # A deleted room must not turn a full first page into a short
+                # page; mobile readers use that boundary to prove completion.
+                cache_warmer.invalidate(f"rooms:{current_user.tenant_id}")
 
     # Build query with filters
     # Backward compatible: old room docs may not have is_active field.
@@ -400,6 +445,9 @@ async def get_rooms(
         "room_number": 1,
         "room_type": 1,
         "status": 1,
+        "room_status": 1,
+        "housekeeping_status": 1,
+        "hk_status": 1,
         "floor": 1,
         "capacity": 1,
         "max_occupancy": 1,
@@ -456,7 +504,7 @@ async def get_rooms(
             from redis_cache import redis_cache
 
             if redis_cache:
-                cache_key = f"rooms:{current_user.tenant_id}:limit{limit}"
+                cache_key = f"rooms:{current_user.tenant_id}:limit{limit}:nv"
                 redis_cache.set(cache_key, rooms, ttl=30)
         except Exception:
             logger.debug("pms_rooms: redis cache write failed", exc_info=True)

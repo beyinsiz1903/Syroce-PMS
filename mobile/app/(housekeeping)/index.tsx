@@ -43,8 +43,12 @@ import {
   updateRoomStatus,
 } from '../../src/api/rooms';
 import { completeTask, reportIssue, startTask } from '../../src/api/housekeeping';
+import { getInHouse } from '../../src/api/bookings';
 import { haptic } from '../../src/hooks/useHaptic';
 import { errorMessage, isOffline } from '../../src/utils/errors';
+import { useAuthStore } from '../../src/state/authStore';
+import { useOnline } from '../../src/hooks/useOnline';
+import { canConfirmRoomInspection, cleaningElapsedMinutes, indexBookingsByRoomNumber, roomNumberKey, roomPresentation, RoomPresentation } from '../../src/utils/roomPresentation';
 
 // Animasyon native driver yalniz native'de; Expo Web'de false (RN web kurali).
 const USE_NATIVE_DRIVER = Platform.OS !== 'web';
@@ -53,7 +57,6 @@ const USE_NATIVE_DRIVER = Platform.OS !== 'web';
 // available, occupied, dirty, cleaning, inspected, maintenance, out_of_order.
 // We expose the ones a housekeeper flips by hand.
 const STATUS_OPTIONS = [
-  'available',
   'dirty',
   'cleaning',
   'inspected',
@@ -72,12 +75,12 @@ type BadgeTone = 'default' | 'success' | 'warning' | 'danger' | 'info' | 'primar
 // Lifecycle buckets — every room lands in exactly one section so the screen is
 // a complete worklist (no room silently hidden) and a housekeeper can read it
 // top-to-bottom: ne yapilacak → ne yapiliyor → ne bitti.
-type SectionKey = 'todo' | 'progress' | 'done';
-function bucketForRoom(status: string | undefined): SectionKey {
-  const s = (status || '').toLowerCase();
-  if (s === 'cleaning' || s === 'inspection') return 'progress';
-  if (s === 'inspected' || s === 'clean' || s === 'available') return 'done';
-  return 'todo'; // dirty, occupied, maintenance, out_of_order, bilinmeyen
+type SectionKey = 'todo' | 'progress' | 'done' | 'blocked';
+function bucketForRoom(state: RoomPresentation): SectionKey {
+  if (state.blockedStatus) return 'blocked';
+  if (state.isReady) return 'done';
+  if (state.cleaning === 'cleaning' || state.cleaning === 'inspection') return 'progress';
+  return 'todo';
 }
 
 function roomStatusTone(status: string | undefined): BadgeTone {
@@ -99,20 +102,6 @@ function roomStatusTone(status: string | undefined): BadgeTone {
     default:
       return 'default';
   }
-}
-
-// "Temizlik suresi": en eski acik gorevin olusturuldugu andan bu yana gecen
-// gercek sure (task.created_at backend verisi). Gorev yoksa null (rozet cizilmez).
-function elapsedFromTasks(tasks: RoomTask[]): number | null {
-  let oldest = Number.POSITIVE_INFINITY;
-  for (const t of tasks) {
-    if (!t.created_at) continue;
-    const ts = Date.parse(t.created_at);
-    if (!Number.isNaN(ts) && ts < oldest) oldest = ts;
-  }
-  if (!Number.isFinite(oldest)) return null;
-  const mins = Math.max(0, Math.round((Date.now() - oldest) / 60000));
-  return mins;
 }
 
 function formatDuration(mins: number): string {
@@ -162,10 +151,15 @@ function priorityTone(p?: string | null): BadgeTone {
 
 // ── Room card ───────────────────────────────────────────────────────────────
 // Tek dokunusla calisan, buyuk dokunma alanli (>=48px) kart. "Temizlendi"
-// SADECE backend 200 dondukten SONRA yesil + onay animasyonu oynatir (sahte
-// basari yok); animasyon bitince kart optimistik olarak "Tamamlananlar"a tasinir.
+// Basari animasyonu sadece gercek gorev tamamlanmasindan sonra oynatilir.
+// Temizligin bitmesi odanin son kontrolunun tamamlandigi anlamina gelmez.
 const RoomCard: React.FC<{
   room: Room;
+  presentation: RoomPresentation;
+  occupancyKnown: boolean;
+  actionsDisabled: boolean;
+  canCompleteCleaning: boolean;
+  assignee: string;
   openCount: number;
   durationMin: number | null;
   priority: string | null;
@@ -174,11 +168,15 @@ const RoomCard: React.FC<{
   onStatus: (r: Room) => void;
   onAssign: (r: Room) => void;
   onMarkClean: (r: Room) => Promise<boolean>;
-  onCommitClean: (r: Room) => void;
   onReport: (r: Room, kind: 'minibar' | 'fault') => Promise<boolean>;
   onDamage: (r: Room) => void;
 }> = ({
   room,
+  presentation,
+  occupancyKnown,
+  actionsDisabled,
+  canCompleteCleaning,
+  assignee,
   openCount,
   durationMin,
   priority,
@@ -187,20 +185,31 @@ const RoomCard: React.FC<{
   onStatus,
   onAssign,
   onMarkClean,
-  onCommitClean,
   onReport,
   onDamage,
 }) => {
   const c = useTheme();
-  const accent = roomStatusColor(room.status, c);
-  const key = (room.status || '').toLowerCase() as keyof typeof tr.housekeeping.statuses;
-  const label = tr.housekeeping.statuses[key] || room.status || '—';
+  const accent = presentation.blockedStatus ? c.danger : roomStatusColor(room.status, c);
+  const key = presentation.blockedStatus || (presentation.cleaning === 'ready' ? 'inspected' : presentation.cleaning);
+  const label = key === 'unknown' || key === 'blocked' ? tr.housekeeping.statusUnknown : tr.housekeeping.statuses[key];
+  const occupancyLabel = presentation.occupancy === 'blocked' ? tr.housekeeping.statusBlocked
+    : presentation.occupancy === 'occupied' ? tr.housekeeping.statuses.occupied
+    : occupancyKnown && presentation.occupancy === 'vacant' ? tr.housekeeping.statuses.available : tr.housekeeping.statusUnknown;
 
   const [busy, setBusy] = useState<null | 'clean' | 'minibar' | 'fault'>(null);
   const [confirm, setConfirm] = useState<null | 'minibar' | 'fault'>(null);
   const [error, setError] = useState(false);
   const [celebrate, setCelebrate] = useState(false);
+  const [cleanConfirm, setCleanConfirm] = useState(false);
   const overlay = useRef(new Animated.Value(0)).current;
+  const actionPending = useRef(false);
+  const celebrationTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reportTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => () => {
+    if (celebrationTimer.current) clearTimeout(celebrationTimer.current);
+    if (reportTimer.current) clearTimeout(reportTimer.current);
+  }, []);
 
   useEffect(() => {
     if (!celebrate) return;
@@ -215,16 +224,23 @@ const RoomCard: React.FC<{
   }, [celebrate, overlay]);
 
   const handleClean = async () => {
-    if (busy || celebrate) return;
+    if (actionPending.current || busy || celebrate) return;
+    if (!canCompleteCleaning || actionsDisabled) return;
+    actionPending.current = true;
+    setCleanConfirm(false);
     setError(false);
     setBusy('clean');
     const ok = await onMarkClean(room);
+    actionPending.current = false;
     setBusy(null);
     if (ok) {
       haptic.success();
       setCelebrate(true);
       // Onay animasyonu gorunur kalsin, sonra kart bolumler arasi tasinsin.
-      setTimeout(() => onCommitClean(room), 950);
+      celebrationTimer.current = setTimeout(() => {
+        setCelebrate(false);
+        overlay.setValue(0);
+      }, 950);
     } else {
       haptic.error();
       setError(true);
@@ -232,15 +248,18 @@ const RoomCard: React.FC<{
   };
 
   const handleReport = async (kind: 'minibar' | 'fault') => {
-    if (busy || celebrate) return;
+    if (actionPending.current || busy || celebrate || actionsDisabled) return;
+    actionPending.current = true;
     setError(false);
     setBusy(kind);
     const ok = await onReport(room, kind);
+    actionPending.current = false;
     setBusy(null);
     if (ok) {
       haptic.success();
       setConfirm(kind);
-      setTimeout(() => setConfirm(null), 2500);
+      if (reportTimer.current) clearTimeout(reportTimer.current);
+      reportTimer.current = setTimeout(() => setConfirm(null), 2500);
     } else {
       haptic.error();
       setError(true);
@@ -249,19 +268,10 @@ const RoomCard: React.FC<{
 
   return (
     <View style={{ marginBottom: spacing.sm }}>
-      <Pressable
-        onPress={() => onOpenTasks(room)}
-        accessibilityLabel={
-          `Oda ${room.room_number}, durum ${label}` +
-          (openCount ? `, ${openCount} ${tr.housekeeping.openTasks}` : '')
-        }
-        accessibilityHint={tr.housekeeping.viewTasks}
-        style={({ pressed }) => ({ opacity: pressed ? 0.92 : 1 })}
-      >
         <Card style={{ borderLeftWidth: 4, borderLeftColor: accent }}>
           {/* Baslik: oda + durum */}
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-            <View style={{ flex: 1, paddingRight: spacing.sm }}>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', gap: spacing.sm }}>
+            <View style={{ flex: 1, minWidth: 110, paddingRight: spacing.sm }}>
               <H2>Oda {room.room_number}</H2>
               <Muted>
                 {room.room_type || '—'} · {tr.housekeeping.floor} {room.floor ?? '—'}
@@ -272,13 +282,21 @@ const RoomCard: React.FC<{
                 </Muted>
               ) : null}
             </View>
-            <View style={{ alignItems: 'flex-end', gap: spacing.xs }}>
-              <Badge label={label} tone={roomStatusTone(room.status)} />
+            <View style={{ alignItems: 'flex-end', gap: spacing.xs, flexShrink: 1 }}>
+              <Badge label={`${tr.rooms.occupancyLabel}: ${occupancyLabel}`} tone={presentation.occupancy === 'blocked' ? 'danger' : presentation.occupancy === 'occupied' ? 'primary' : 'default'} />
+              <Badge label={`${tr.rooms.cleaningLabel}: ${presentation.isReady && occupancyKnown ? tr.rooms.statusReady : label}`} tone={presentation.isReady && occupancyKnown ? 'success' : roomStatusTone(key)} />
               {openCount > 0 ? (
                 <Badge label={`${openCount} ${tr.housekeeping.openTasks}`} tone="info" />
               ) : null}
             </View>
           </View>
+
+          {assignee ? (
+            <View style={{ flexDirection: 'row', gap: spacing.xs, alignItems: 'center', marginTop: spacing.sm }}>
+              <Ionicons name="person-outline" size={15} color={c.textMuted} />
+              <Muted>{tr.housekeeping.assignee}: {assignee}</Muted>
+            </View>
+          ) : null}
 
           {/* Bilgi seridi: oncelik + temizlik suresi */}
           {priority || durationMin !== null ? (
@@ -297,7 +315,7 @@ const RoomCard: React.FC<{
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                   <Ionicons name="time-outline" size={14} color={c.textMuted} />
                   <Muted>
-                    {tr.housekeeping.durationLabel}: {formatDuration(durationMin)}
+                    {room.housekeeping?.task_type === 'cleaning' ? tr.housekeeping.durationLabel : tr.housekeeping.taskDurationLabel}: {formatDuration(durationMin)}
                   </Muted>
                 </View>
               ) : null}
@@ -307,37 +325,37 @@ const RoomCard: React.FC<{
           {/* Tek dokunus aksiyonlari */}
           {showActions ? (
             <View style={{ marginTop: spacing.md, gap: spacing.sm }}>
-              <Button
+              {canCompleteCleaning ? <Button
                 title={tr.housekeeping.markClean}
                 variant="success"
                 icon="checkmark-circle"
                 fullWidth
                 loading={busy === 'clean'}
-                disabled={busy !== null || celebrate}
-                onPress={handleClean}
+                disabled={busy !== null || celebrate || actionsDisabled}
+                onPress={() => setCleanConfirm(true)}
                 testID="hk-room-clean"
                 style={{ minHeight: 56 }}
-              />
-              <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+              /> : null}
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}>
                 <Button
                   title={tr.housekeeping.minibarMissing}
                   variant="secondary"
                   icon="wine-outline"
                   loading={busy === 'minibar'}
-                  disabled={busy !== null || celebrate}
+                  disabled={busy !== null || celebrate || actionsDisabled}
                   onPress={() => void handleReport('minibar')}
                   testID="hk-room-minibar"
-                  style={{ flex: 1 }}
+                  style={{ flex: 1, minWidth: 150 }}
                 />
                 <Button
                   title={tr.housekeeping.reportFault}
                   variant="secondary"
                   icon="construct-outline"
                   loading={busy === 'fault'}
-                  disabled={busy !== null || celebrate}
+                  disabled={busy !== null || celebrate || actionsDisabled}
                   onPress={() => void handleReport('fault')}
                   testID="hk-room-fault"
-                  style={{ flex: 1 }}
+                  style={{ flex: 1, minWidth: 150 }}
                 />
               </View>
               <Button
@@ -366,29 +384,38 @@ const RoomCard: React.FC<{
           ) : (
             <View style={{ marginTop: spacing.md, flexDirection: 'row', alignItems: 'center', gap: spacing.xs }}>
               <Ionicons name="checkmark-done-circle" size={18} color={c.success} />
-              <Muted>{tr.housekeeping.statuses.inspected}</Muted>
+              <Muted>{tr.rooms.statusReady}</Muted>
             </View>
           )}
 
           {/* İkincil: durum + gorev (e2e affordance + guc kullanicilari) */}
-          <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm }}>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.sm }}>
             <Button
               title={tr.housekeeping.changeStatus}
               variant="ghost"
               onPress={() => onStatus(room)}
               testID="hk-room-status"
-              style={{ flex: 1, minHeight: 40, paddingVertical: spacing.xs }}
+              disabled={busy !== null || celebrate || !occupancyKnown || actionsDisabled}
+              style={{ flex: 1, minWidth: 150, minHeight: 48 }}
             />
             <Button
               title={tr.housekeeping.assignTask}
               variant="ghost"
               onPress={() => onAssign(room)}
               testID="hk-room-assign"
-              style={{ flex: 1, minHeight: 40, paddingVertical: spacing.xs }}
+              disabled={busy !== null || celebrate || actionsDisabled}
+              style={{ flex: 1, minWidth: 150, minHeight: 48 }}
             />
           </View>
+          <Button title={tr.housekeeping.viewTasks} icon="list-outline" variant="secondary" fullWidth
+            onPress={() => onOpenTasks(room)} disabled={busy !== null || celebrate} style={{ marginTop: spacing.sm }} />
         </Card>
-      </Pressable>
+
+      <ActionSheet visible={cleanConfirm} onClose={() => setCleanConfirm(false)} title={`${tr.housekeeping.confirmComplete} · ${room.room_number}`}>
+        <Muted>{tr.housekeeping.confirmCompleteHint}</Muted>
+        <Button title={tr.housekeeping.completeTask} onPress={() => void handleClean()} fullWidth />
+        <Button title={tr.app.cancel} variant="secondary" onPress={() => setCleanConfirm(false)} fullWidth />
+      </ActionSheet>
 
       {/* Basari katmani: backend onayindan SONRA yesile doner + onay isareti */}
       {celebrate ? (
@@ -417,9 +444,14 @@ const RoomCard: React.FC<{
 export default function RoomsScreen() {
   const c = useTheme();
   const qc = useQueryClient();
+  const online = useOnline();
+  const userName = useAuthStore((state) => state.user?.name);
   const [floor, setFloor] = useState<string>('all');
   const rooms = useQuery({ queryKey: ['rooms'], queryFn: listRooms });
   const roomTasks = useQuery({ queryKey: ['room-tasks'], queryFn: listRoomTasks });
+  const inhouse = useQuery({ queryKey: ['hk-inhouse'], queryFn: getInHouse });
+  const bookingByRoomNo = useMemo(() => indexBookingsByRoomNumber(inhouse.data || []), [inhouse.data]);
+  const occupancyKnown = inhouse.isSuccess && !inhouse.isError;
 
   // Open tasks grouped by room_id → powers the per-card badge + detail sheet.
   const tasksByRoom = useMemo(() => {
@@ -436,11 +468,17 @@ export default function RoomsScreen() {
   // ── Sheet state ──────────────────────────────────────────────────────────
   const [tasksRoom, setTasksRoom] = useState<Room | null>(null);
   const [statusRoom, setStatusRoom] = useState<Room | null>(null);
+  const [statusSelection, setStatusSelection] = useState<StatusOption | null>(null);
+  const [statusPending, setStatusPending] = useState(false);
+  const statusRequestPending = useRef(false);
+  const [statusError, setStatusError] = useState(false);
+  const [completeConfirm, setCompleteConfirm] = useState<RoomTask | null>(null);
   const [assignRoom, setAssignRoom] = useState<Room | null>(null);
   const [staffSel, setStaffSel] = useState<HkStaff | null>(null);
   const [taskType, setTaskType] = useState<TaskType>('cleaning');
   const [priority, setPriority] = useState<Priority>('normal');
   const [submitting, setSubmitting] = useState(false);
+  const [assignError, setAssignError] = useState(false);
   const staff = useQuery({
     queryKey: ['hk-staff'],
     queryFn: listHousekeepingStaff,
@@ -453,6 +491,7 @@ export default function RoomsScreen() {
     setStaffSel(null);
     setTaskType('cleaning');
     setPriority('normal');
+    setAssignError(false);
   };
   const closeAssign = () => {
     if (submitting) return;
@@ -460,9 +499,10 @@ export default function RoomsScreen() {
   };
 
   const submitAssign = async () => {
-    if (!assignRoom) return;
+    if (!assignRoom || submitting || !online) return;
     if (!staffSel) return;
     setSubmitting(true);
+    setAssignError(false);
     try {
       await createQuickTask({
         room_id: assignRoom.id,
@@ -477,6 +517,7 @@ export default function RoomsScreen() {
       qc.invalidateQueries({ queryKey: ['room-tasks'] });
     } catch {
       haptic.error();
+      setAssignError(true);
     } finally {
       setSubmitting(false);
     }
@@ -508,20 +549,9 @@ export default function RoomsScreen() {
 
   const completeMut = useMutation({
     mutationFn: (taskId: string) => completeTask(taskId),
-    onMutate: async (taskId: string) => {
-      haptic.tap();
-      await qc.cancelQueries({ queryKey: ['room-tasks'] });
-      const prev = qc.getQueryData<RoomTask[]>(['room-tasks']);
-      qc.setQueryData<RoomTask[]>(['room-tasks'], (data) =>
-        (data || []).filter((t) => t.id !== taskId),
-      );
-      return { prev };
-    },
-    onError: (_e, _v, ctx) => {
-      if (ctx?.prev) qc.setQueryData(['room-tasks'], ctx.prev);
-      haptic.error();
-    },
-    onSuccess: () => haptic.success(),
+    onMutate: () => { haptic.tap(); },
+    onError: () => haptic.error(),
+    onSuccess: () => { haptic.success(); setCompleteConfirm(null); },
     onSettled: () => {
       qc.invalidateQueries({ queryKey: ['room-tasks'] });
       qc.invalidateQueries({ queryKey: ['rooms'] });
@@ -587,51 +617,51 @@ export default function RoomsScreen() {
   }, [tasksByRoom]);
 
   const sections = useMemo(() => {
-    const buckets: Record<SectionKey, Room[]> = { todo: [], progress: [], done: [] };
-    for (const r of filtered) buckets[bucketForRoom(r.status)].push(r);
+    const buckets: Record<SectionKey, Room[]> = { todo: [], progress: [], done: [], blocked: [] };
+    for (const r of filtered) {
+      const state = roomPresentation(r, !!bookingByRoomNo[roomNumberKey(r.room_number)], tasksByRoom.get(r.id) || []);
+      const bucket = (!occupancyKnown || !roomTasks.isSuccess) && state.isReady ? 'todo' : bucketForRoom(state);
+      buckets[bucket].push(r);
+    }
     (Object.keys(buckets) as SectionKey[]).forEach((k) => buckets[k].sort(sortByUrgency));
     return [
       { key: 'todo' as const, title: tr.housekeeping.sectionTodo, data: buckets.todo },
       { key: 'progress' as const, title: tr.housekeeping.sectionProgress, data: buckets.progress },
+      { key: 'blocked' as const, title: tr.housekeeping.sectionBlocked, data: buckets.blocked },
       { key: 'done' as const, title: tr.housekeeping.sectionDone, data: buckets.done },
     ];
-  }, [filtered, sortByUrgency]);
+  }, [filtered, sortByUrgency, bookingByRoomNo, tasksByRoom, occupancyKnown, roomTasks.isSuccess]);
 
-  // Ready = sellable/clean rooms across the whole property (not floor-filtered)
-  // so the progress hero reflects the full picture.
+  // Ready requires a completed inspection, known vacancy, and no open task.
   const readyCount = useMemo(
     () =>
-      (rooms.data || []).filter((r) =>
-        ['available', 'inspected', 'clean'].includes((r.status || '').toLowerCase()),
-      ).length,
-    [rooms.data],
+      occupancyKnown && roomTasks.isSuccess ? (rooms.data || []).filter((r) =>
+        roomPresentation(r, !!bookingByRoomNo[roomNumberKey(r.room_number)], tasksByRoom.get(r.id) || []).isReady,
+      ).length : 0,
+    [rooms.data, bookingByRoomNo, tasksByRoom, occupancyKnown, roomTasks.isSuccess],
   );
   const totalCount = (rooms.data || []).length;
   const readyPct = totalCount > 0 ? Math.round((readyCount / totalCount) * 100) : 0;
 
-  const offline = rooms.isError && isOffline(rooms.error);
+  const offline = !online || rooms.fetchStatus === 'paused' || (rooms.isError && isOffline(rooms.error));
 
-  // ── One-tap "Temizlendi" — PUT first, celebrate only on a real 200 ───────
-  // Returns success so the card can gate its green/check animation on the
-  // backend response (no fake success). The cross-section move (cache flip) is
-  // committed by `commitClean` AFTER the celebration plays.
+  // Complete only the caller's active cleaning task. Never promote cleaning
+  // directly to inspected or overwrite the room's occupancy status.
   const markClean = async (r: Room): Promise<boolean> => {
+    const presentation = roomPresentation(r, !!bookingByRoomNo[roomNumberKey(r.room_number)], tasksByRoom.get(r.id) || []);
+    const task = (tasksByRoom.get(r.id) || []).find((item) => item.task_type === 'cleaning' && item.status === 'in_progress' && item.assigned_to === userName);
+    if (!task || presentation.blockedStatus || !occupancyKnown || !online) return false;
     try {
-      await updateRoomStatus(r.id, 'inspected');
+      await completeTask(task.id);
+      qc.invalidateQueries({ queryKey: ['rooms'] });
+      qc.invalidateQueries({ queryKey: ['room-tasks'] });
+      qc.invalidateQueries({ queryKey: ['my-tasks'] });
+      qc.invalidateQueries({ queryKey: ['frontdesk-rooms'] });
       return true;
     } catch {
       return false;
     }
   };
-  const commitClean = (r: Room) => {
-    qc.setQueryData<Room[]>(['rooms'], (data) =>
-      (data || []).map((x) => (x.id === r.id ? { ...x, status: 'inspected' } : x)),
-    );
-    qc.invalidateQueries({ queryKey: ['rooms'] });
-    qc.invalidateQueries({ queryKey: ['room-tasks'] });
-    qc.invalidateQueries({ queryKey: ['my-tasks'] });
-  };
-
   // Minibar Eksik / Ariza Bildir → gercek "report-issue" kaydi. Ariza türü
   // backend'de ek bir muhendislik gorevi de acar. Basari yaniti await edilir.
   const reportQuick = async (r: Room, kind: 'minibar' | 'fault'): Promise<boolean> => {
@@ -647,6 +677,7 @@ export default function RoomsScreen() {
       });
       qc.invalidateQueries({ queryKey: ['room-tasks'] });
       qc.invalidateQueries({ queryKey: ['my-tasks'] });
+      qc.invalidateQueries({ queryKey: ['rooms'] });
       return true;
     } catch {
       return false;
@@ -662,26 +693,57 @@ export default function RoomsScreen() {
     });
   };
 
-  // Status flips are applied straight from the status sheet (optimistic + PUT).
+  const statusesForRoom = (room: Room, hasBooking: boolean, tasks: RoomTask[]): StatusOption[] => {
+    const state = roomPresentation(room, hasBooking, tasks);
+    if (state.blockedStatus || state.occupancy === 'occupied') return ['maintenance', 'out_of_order'];
+    if (state.occupancy === 'unknown') return [];
+    return STATUS_OPTIONS.filter((status) => status !== 'inspected' || canConfirmRoomInspection(room, hasBooking, tasks));
+  };
+  const allowedStatuses = (room: Room): StatusOption[] => {
+    if (!occupancyKnown || !roomTasks.isSuccess || !online) return [];
+    const current = (rooms.data || []).find((item) => item.id === room.id);
+    return current ? statusesForRoom(current, !!bookingByRoomNo[roomNumberKey(current.room_number)], tasksByRoom.get(current.id) || []) : [];
+  };
+
+  // Only commit after confirmation and the server response; a failed update
+  // leaves the sheet open with an explicit retryable error.
   const applyStatus = async (r: Room, s: StatusOption) => {
-    const prev = qc.getQueryData<Room[]>(['rooms']) || [];
-    qc.setQueryData<Room[]>(['rooms'], (data) =>
-      (data || []).map((x) => (x.id === r.id ? { ...x, status: s } : x)),
-    );
-    setStatusRoom(null);
+    if (statusRequestPending.current || !allowedStatuses(r).includes(s)) return;
+    statusRequestPending.current = true;
+    setStatusPending(true);
+    setStatusError(false);
     try {
+      // The room may have been occupied or blocked while the confirmation
+      // sheet was open. Validate fresh room, occupancy and task data together.
+      const [currentRooms, currentBookings, currentTasks] = await Promise.all([listRooms(), getInHouse(), listRoomTasks()]);
+      qc.setQueryData(['rooms'], currentRooms);
+      qc.setQueryData(['hk-inhouse'], currentBookings);
+      qc.setQueryData(['room-tasks'], currentTasks);
+      const current = currentRooms.find((item) => item.id === r.id);
+      const currentBookingByRoom = indexBookingsByRoomNumber(currentBookings);
+      if (!current || !statusesForRoom(current, !!currentBookingByRoom[roomNumberKey(current.room_number)], currentTasks.filter((task) => task.room_id === r.id)).includes(s)) {
+        throw new Error(tr.housekeeping.roomActionBlocked);
+      }
       await updateRoomStatus(r.id, s);
       haptic.success();
+      setStatusRoom(null);
+      setStatusSelection(null);
       qc.invalidateQueries({ queryKey: ['rooms'] });
+      qc.invalidateQueries({ queryKey: ['frontdesk-rooms'] });
     } catch {
-      qc.setQueryData<Room[]>(['rooms'], prev);
       haptic.error();
+      setStatusError(true);
+    } finally {
+      statusRequestPending.current = false;
+      setStatusPending(false);
     }
   };
 
   const openStatus = (r: Room) => {
     haptic.tap();
     setStatusRoom(r);
+    setStatusSelection(null);
+    setStatusError(false);
   };
   const openTasks = (r: Room) => {
     haptic.tap();
@@ -697,7 +759,7 @@ export default function RoomsScreen() {
       case 'maintenance':
         return tr.housekeeping.taskMaintenance;
       default:
-        return t || tr.housekeeping.taskCleaning;
+        return tr.housekeeping.taskOther;
     }
   };
 
@@ -711,7 +773,7 @@ export default function RoomsScreen() {
       <View style={{ height: spacing.md }} />
       <OfflineBanner visible={!!offline} />
 
-      {totalCount > 0 ? (
+      {totalCount > 0 && occupancyKnown && roomTasks.isSuccess ? (
         <Card accent={c.primary} style={{ marginBottom: spacing.sm }}>
           <View
             style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}
@@ -750,7 +812,13 @@ export default function RoomsScreen() {
 
       {/* Room data loads fine but task fetch failed: surface it instead of
           silently showing rooms with no task badges. */}
-      {roomTasks.isError && !rooms.isError && !isOffline(roomTasks.error) ? (
+      {inhouse.isError ? (
+        <Card accent={c.warning}>
+          <Muted>{tr.housekeeping.occupancyUnavailable}</Muted>
+          <Button title={tr.app.retry} variant="outline" onPress={() => inhouse.refetch()} fullWidth />
+        </Card>
+      ) : null}
+      {roomTasks.isError && !rooms.isError ? (
         <Card accent={c.danger}>
           <Muted>{tr.housekeeping.tasksLoadError}</Muted>
           <View style={{ height: spacing.sm }} />
@@ -764,7 +832,12 @@ export default function RoomsScreen() {
         </Card>
       ) : null}
 
-      {rooms.isLoading ? (
+      {offline && !rooms.data ? (
+        <Card accent={c.warning}>
+          <Muted>{tr.app.offline}</Muted>
+          <Button title={tr.app.retry} variant="outline" onPress={() => { rooms.refetch(); roomTasks.refetch(); inhouse.refetch(); }} fullWidth />
+        </Card>
+      ) : rooms.isLoading ? (
         <View style={{ gap: spacing.sm }}>
           <SkeletonCard />
           <SkeletonCard />
@@ -811,32 +884,42 @@ export default function RoomsScreen() {
               <Muted style={{ marginBottom: spacing.sm }}>{tr.housekeeping.sectionEmpty}</Muted>
             ) : null
           }
-          renderItem={({ item, section }) => (
+          renderItem={({ item, section }) => {
+            const tasks = tasksByRoom.get(item.id) || [];
+            const presentation = roomPresentation(item, !!bookingByRoomNo[roomNumberKey(item.room_number)], tasks);
+            const assignee = item.housekeeping?.assigned_to_name || Array.from(new Set(tasks.map((task) => task.assigned_to).filter(Boolean))).join(', ');
+            return (
             <RoomCard
               room={item}
+              presentation={presentation}
+              occupancyKnown={occupancyKnown && roomTasks.isSuccess}
+              actionsDisabled={offline}
+              canCompleteCleaning={occupancyKnown && roomTasks.isSuccess && !presentation.blockedStatus && tasks.some((task) => task.task_type === 'cleaning' && task.status === 'in_progress' && task.assigned_to === userName)}
+              assignee={assignee}
               openCount={(tasksByRoom.get(item.id) || []).length}
-              durationMin={elapsedFromTasks(tasksByRoom.get(item.id) || [])}
+              durationMin={cleaningElapsedMinutes(item.housekeeping?.elapsed_minutes)}
               priority={topPriority(tasksByRoom.get(item.id) || [])}
               showActions={section.key !== 'done'}
               onOpenTasks={openTasks}
               onStatus={openStatus}
               onAssign={openAssign}
               onMarkClean={markClean}
-              onCommitClean={commitClean}
               onReport={reportQuick}
               onDamage={goDamage}
             />
-          )}
+          ); }}
           contentContainerStyle={{ paddingBottom: spacing.xxl }}
           refreshControl={
             <RefreshControl
               refreshing={
                 (rooms.isFetching && !rooms.isLoading) ||
                 (roomTasks.isFetching && !roomTasks.isLoading)
+                || (inhouse.isFetching && !inhouse.isLoading)
               }
               onRefresh={() => {
                 rooms.refetch();
                 roomTasks.refetch();
+                inhouse.refetch();
               }}
               tintColor={c.primary}
             />
@@ -861,6 +944,7 @@ export default function RoomsScreen() {
             const inProgress = (t.status || '').toLowerCase() === 'in_progress';
             const pending = startMut.isPending && startMut.variables === t.id;
             const finishing = completeMut.isPending && completeMut.variables === t.id;
+            const owned = !!userName && t.assigned_to === userName;
             return (
               <Card key={t.id}>
                 <View
@@ -887,6 +971,7 @@ export default function RoomsScreen() {
                     {t.notes}
                   </Muted>
                 ) : null}
+                {!owned ? <Muted style={{ marginTop: spacing.sm }}>{tr.housekeeping.onlyOwnTasks}</Muted> : null}
                 <View style={{ marginTop: spacing.sm }}>
                   <SegmentedActions>
                     {!inProgress ? (
@@ -898,18 +983,18 @@ export default function RoomsScreen() {
                         bg={c.primary}
                         fg={c.primaryText}
                         loading={pending}
-                        disabled={finishing}
+                        disabled={!owned || offline || startMut.isPending || completeMut.isPending}
                       />
                     ) : null}
                     <ActionButton
                       testID={`hk-task-complete-${t.id}`}
                       label={tr.housekeeping.completeTask}
                       icon="checkmark-done"
-                      onPress={() => completeMut.mutate(t.id)}
+                      onPress={() => { completeMut.reset(); setCompleteConfirm(t); }}
                       bg={c.success}
                       fg="#ffffff"
                       loading={finishing}
-                      disabled={pending}
+                      disabled={!owned || offline || !inProgress || startMut.isPending || completeMut.isPending}
                     />
                   </SegmentedActions>
                 </View>
@@ -917,6 +1002,7 @@ export default function RoomsScreen() {
             );
           })
         )}
+        {startMut.isError ? <Text accessibilityRole="alert" style={{ color: c.danger }}>{tr.housekeeping.taskActionError}</Text> : null}
 
         <View style={{ marginTop: spacing.sm }}>
           <Button
@@ -932,36 +1018,54 @@ export default function RoomsScreen() {
         </View>
       </ActionSheet>
 
+      <ActionSheet visible={completeConfirm !== null} onClose={() => { if (!completeMut.isPending) setCompleteConfirm(null); }} title={tr.housekeeping.confirmComplete}>
+        <Muted>{tr.housekeeping.confirmCompleteHint}</Muted>
+        {completeMut.isError ? <Text accessibilityRole="alert" style={{ color: c.danger }}>{tr.housekeeping.taskActionError}</Text> : null}
+        <Button title={tr.housekeeping.completeTask} loading={completeMut.isPending} disabled={offline} fullWidth onPress={() => {
+          if (completeConfirm && !completeMut.isPending && completeConfirm.assigned_to === userName) completeMut.mutate(completeConfirm.id);
+        }} />
+        <Button title={tr.app.cancel} variant="secondary" disabled={completeMut.isPending} fullWidth onPress={() => setCompleteConfirm(null)} />
+      </ActionSheet>
+
       {/* ── Status-change sheet ───────────────────────────────────────────── */}
       <ActionSheet
         visible={statusRoom !== null}
-        onClose={() => setStatusRoom(null)}
+        onClose={() => { if (!statusPending) setStatusRoom(null); }}
         title={
           tr.housekeeping.changeStatus + (statusRoom ? ` · Oda ${statusRoom.room_number}` : '')
         }
         testID="hk-status-modal"
       >
-        {STATUS_OPTIONS.map((s) => {
-          const active = (statusRoom?.status || '').toLowerCase() === s;
+        <Muted>{tr.housekeeping.roomActionBlocked}</Muted>
+        {(statusRoom ? allowedStatuses(statusRoom) : []).map((s) => {
+          const active = statusSelection === s;
           return (
             <Button
               key={s}
-              title={tr.housekeeping.statuses[s] || s}
+              title={s === 'inspected' ? tr.housekeeping.inspectionConfirm : tr.housekeeping.statuses[s]}
               variant={active ? 'primary' : 'secondary'}
-              onPress={() => {
-                const r = statusRoom;
-                if (r) void applyStatus(r, s);
-              }}
+              onPress={() => setStatusSelection(s)}
+              disabled={statusPending}
               testID={`hk-status-option-${s}`}
               fullWidth
             />
           );
         })}
+        {statusSelection ? (
+          <View style={{ gap: spacing.sm, marginTop: spacing.md }}>
+            <Muted>{statusSelection === 'inspected' ? tr.housekeeping.confirmInspection : tr.housekeeping.confirmStatusHint}</Muted>
+            <Button title={tr.app.confirm} loading={statusPending} fullWidth onPress={() => {
+              if (statusRoom && statusSelection) void applyStatus(statusRoom, statusSelection);
+            }} />
+          </View>
+        ) : null}
+        {statusError ? <Text accessibilityRole="alert" style={{ color: c.danger }}>{tr.housekeeping.actionError}</Text> : null}
         <View style={{ marginTop: spacing.sm }}>
           <Button
             title={tr.app.cancel}
             variant="secondary"
             onPress={() => setStatusRoom(null)}
+            disabled={statusPending}
             testID="hk-status-cancel"
             fullWidth
           />
@@ -1003,24 +1107,24 @@ export default function RoomsScreen() {
                 <Pressable
                   key={`${keyVal}-${idx}`}
                   onPress={() => setStaffSel(s)}
+                  accessibilityRole="radio"
+                  accessibilityLabel={s.name}
+                  accessibilityState={{ selected: sel, disabled: submitting }}
+                  disabled={submitting}
                   testID="hk-staff-option"
                   style={{
                     borderWidth: 1,
                     borderColor: sel ? c.primary : c.border,
                     backgroundColor: sel ? c.primary : c.surface,
                     borderRadius: radius.md,
-                    paddingVertical: spacing.sm,
+                    paddingVertical: spacing.md,
+                    minHeight: 48,
                     paddingHorizontal: spacing.md,
                   }}
                 >
                   <Text style={{ color: sel ? c.primaryText : c.text, fontWeight: '600' }}>
                     {s.name}
                   </Text>
-                  {s.role ? (
-                    <Text style={{ color: sel ? c.primaryText : c.textMuted, fontSize: 12 }}>
-                      {s.role}
-                    </Text>
-                  ) : null}
                 </Pressable>
               );
             })}
@@ -1035,6 +1139,7 @@ export default function RoomsScreen() {
               title={taskTypeLabel(t)}
               variant={taskType === t ? 'primary' : 'secondary'}
               onPress={() => setTaskType(t)}
+              disabled={submitting}
               testID={`hk-task-type-${t}`}
               style={{ flexShrink: 0 }}
             />
@@ -1049,17 +1154,20 @@ export default function RoomsScreen() {
               title={priorityLabel(p)}
               variant={priority === p ? 'primary' : 'secondary'}
               onPress={() => setPriority(p)}
+              disabled={submitting}
               testID={`hk-priority-${p}`}
               style={{ flexShrink: 0 }}
             />
           ))}
         </View>
+        {assignError ? <Text accessibilityRole="alert" style={{ color: c.danger, marginTop: spacing.sm }}>{tr.housekeeping.assignError}</Text> : null}
 
         <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.lg }}>
           <Button
             title={tr.app.cancel}
             variant="secondary"
             onPress={closeAssign}
+            disabled={submitting}
             testID="hk-assign-cancel"
             style={{ flex: 1 }}
           />
@@ -1067,7 +1175,8 @@ export default function RoomsScreen() {
             title={tr.housekeeping.assignSubmit}
             variant="primary"
             onPress={() => void submitAssign()}
-            disabled={submitting || !staffSel}
+            disabled={submitting || !staffSel || offline}
+            loading={submitting}
             testID="hk-assign-submit"
             style={{ flex: 1 }}
           />

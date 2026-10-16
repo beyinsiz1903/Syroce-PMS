@@ -3,7 +3,7 @@ export const tabs = {
   guests: 'Misafirler',
   rooms: 'Odalar',
   damage: 'Hasar',
-  more: 'Daha',
+  more: 'Diğer',
   settings: 'Ayarlar',
   overview: 'Özet',
   home: 'Ana Sayfa',

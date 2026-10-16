@@ -11,56 +11,28 @@ import { radius, roomStatusColor, spacing, useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
 import { listRooms, listRoomTasks, Room, RoomTask } from '../../src/api/rooms';
 import { Booking, getInHouse } from '../../src/api/bookings';
-import { formatCurrency } from '../../src/utils/format';
+import { reservationAmountLabel, reservationCurrency } from '../../src/utils/reservationPresentation';
 import { errorMessage, isOffline } from '../../src/utils/errors';
 import { ROUTES } from '../../src/navigation/routes';
 import { asArray } from '../../src/utils/queryData';
+import { useOnline } from '../../src/hooks/useOnline';
 import {
   effectiveRoomStatus,
   indexBookingsByRoomNumber,
   roomNumberKey,
+  roomPresentation,
+  RoomCleaning,
 } from '../../src/utils/roomPresentation';
 
 type StatusTone = 'success' | 'primary' | 'warning' | 'info' | 'danger' | 'default';
 
-const CATEGORY: Record<string, string[]> = {
-  available: ['available', 'clean', 'inspected'],
-  occupied: ['occupied'],
-  dirty: ['dirty'],
-  cleaning: ['cleaning', 'inspection'],
-  maintenance: ['maintenance', 'out_of_order'],
-};
-
-function statusCategory(status?: string): string {
-  const s = (status || '').toLowerCase();
-  for (const [cat, list] of Object.entries(CATEGORY)) {
-    if (list.includes(s)) return cat;
-  }
-  return 'other';
-}
-
-function statusTone(status?: string): StatusTone {
-  switch (statusCategory(status)) {
-    case 'available':
-      return 'success';
-    case 'occupied':
-      return 'primary';
-    case 'dirty':
-      return 'warning';
-    case 'cleaning':
-      return 'info';
-    case 'maintenance':
-      return 'danger';
-    default:
-      return 'default';
-  }
-}
-
 function statusLabel(status?: string): string {
   switch ((status || '').toLowerCase()) {
     case 'available':
-    case 'clean':
       return tr.rooms.statusAvailable;
+    case 'clean':
+    case 'inspection':
+      return tr.rooms.statusInspection;
     case 'inspected':
       return tr.rooms.statusInspected;
     case 'occupied':
@@ -68,16 +40,20 @@ function statusLabel(status?: string): string {
     case 'dirty':
       return tr.rooms.statusDirty;
     case 'cleaning':
-    case 'inspection':
       return tr.rooms.statusCleaning;
     case 'maintenance':
       return tr.rooms.statusMaintenance;
     case 'out_of_order':
       return tr.rooms.statusOutOfOrder;
     default:
-      return status || '—';
+      return tr.rooms.statusUnknown;
   }
 }
+
+const CLEANING_LABELS: Record<RoomCleaning, string> = {
+  dirty: tr.rooms.statusDirty, cleaning: tr.rooms.statusCleaning, inspection: tr.rooms.statusInspection,
+  inspected: tr.rooms.statusInspected, ready: tr.rooms.statusReady, blocked: tr.rooms.statusBlocked, unknown: tr.rooms.statusUnknown,
+};
 
 // Whole nights between two ISO dates; null when either side is missing/invalid.
 function nightsBetween(checkIn?: string, checkOut?: string): number | null {
@@ -91,28 +67,41 @@ function nightsBetween(checkIn?: string, checkOut?: string): number | null {
 
 const STATUS_FILTERS: FilterChipOption[] = [
   { value: '', label: tr.rooms.statusAll },
-  { value: 'available', label: tr.rooms.statusAvailable },
+  { value: 'vacant', label: tr.rooms.vacant },
   { value: 'occupied', label: tr.rooms.statusOccupied },
+  { value: 'blocked', label: tr.rooms.statusBlocked },
+];
+const CLEANING_FILTERS: FilterChipOption[] = [
+  { value: '', label: tr.rooms.statusAll },
   { value: 'dirty', label: tr.rooms.statusDirty },
   { value: 'cleaning', label: tr.rooms.statusCleaning },
-  { value: 'maintenance', label: tr.rooms.statusMaintenance },
+  { value: 'inspection', label: tr.rooms.statusInspection },
+  { value: 'ready', label: tr.rooms.statusReady },
 ];
 
 function RoomCard({
   room,
   booking,
   taskCount,
+  tasks,
+  occupancyKnown,
   onPress,
 }: {
   room: Room;
   booking?: Booking;
   taskCount: number;
+  tasks: RoomTask[];
+  occupancyKnown: boolean;
   onPress?: () => void;
 }) {
   const c = useTheme();
   const effectiveStatus = effectiveRoomStatus(room.status, !!booking);
-  const accent = roomStatusColor(effectiveStatus, c);
-  const occupied = statusCategory(effectiveStatus) === 'occupied';
+  const state = roomPresentation(room, !!booking, tasks);
+  const accent = state.blockedStatus ? c.danger : roomStatusColor(effectiveStatus, c);
+  const occupied = state.occupancy === 'occupied';
+  const occupancyLabel = state.occupancy === 'blocked' ? tr.rooms.statusBlocked : occupied ? tr.rooms.statusOccupied
+    : occupancyKnown && state.occupancy === 'vacant' ? tr.rooms.vacant : tr.rooms.statusUnknown;
+  const cleaning = state.isReady && !occupancyKnown ? 'inspected' : state.cleaning;
   const guest = booking?.guest_name || room.guest_name;
   const balance = booking?.balance;
   const nights = nightsBetween(booking?.check_in, booking?.check_out);
@@ -139,10 +128,11 @@ function RoomCard({
             </Muted>
           ) : null}
           <Body style={{ color: c.textMuted, fontSize: 13, marginTop: spacing.xs }} numberOfLines={1}>
-            {occupied ? guest || '—' : tr.rooms.vacant}
+            {occupied ? guest || tr.rooms.statusOccupied : occupancyLabel}
           </Body>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs, marginTop: spacing.sm }}>
-            <Badge label={statusLabel(effectiveStatus)} tone={statusTone(effectiveStatus)} />
+            <Badge label={`${tr.rooms.occupancyLabel}: ${occupancyLabel}`} tone={state.occupancy === 'blocked' ? 'danger' : occupied ? 'primary' : 'default'} />
+            <Badge label={`${tr.rooms.cleaningLabel}: ${state.blockedStatus ? statusLabel(state.blockedStatus) : CLEANING_LABELS[cleaning]}`} tone={state.blockedStatus ? 'danger' : cleaning === 'ready' ? 'success' : cleaning === 'dirty' || cleaning === 'inspection' ? 'warning' : 'info'} />
             {taskCount > 0 ? (
               <View
                 style={{
@@ -166,19 +156,21 @@ function RoomCard({
 
         {/* Right: stay & balance (real in-house data) */}
         {occupied && (balance !== undefined || nights !== null) ? (
-          <View style={{ alignItems: 'flex-end', gap: spacing.xs }}>
+          <View style={{ alignItems: 'flex-end', gap: spacing.xs, maxWidth: '45%' }}>
             {balance !== undefined ? (
               <>
                 <Muted style={{ fontSize: 11 }}>{tr.rooms.balance}</Muted>
                 <Text
+                  testID={`room-booking-balance-${room.id}`}
                   style={{
                     color: balance > 0 ? c.warning : c.text,
                     fontSize: 16,
                     fontWeight: '800',
+                    textAlign: 'right',
                   }}
-                  numberOfLines={1}
+                  numberOfLines={3}
                 >
-                  {formatCurrency(balance)}
+                  {reservationAmountLabel(balance, reservationCurrency(booking?.currency))}
                 </Text>
               </>
             ) : null}
@@ -187,35 +179,26 @@ function RoomCard({
             ) : null}
           </View>
         ) : null}
-        {onPress ? (
-          <View style={{ alignSelf: 'center', alignItems: 'flex-end', gap: 4 }}>
-            <Ionicons name="chevron-forward" size={18} color={c.textMuted} />
-            <Muted style={{ fontSize: 10 }}>{booking ? tr.rooms.openStay : tr.rooms.reserveRoom}</Muted>
-          </View>
-        ) : null}
       </View>
+      {onPress ? (
+        <Button title={booking ? tr.rooms.openStay : tr.rooms.availableToReserve}
+          variant="secondary" icon={booking ? 'arrow-forward-outline' : 'add-outline'}
+          accessibilityLabel={`${tr.rooms.title} ${room.room_number} · ${booking ? tr.rooms.openStay : tr.rooms.availableToReserve}`}
+          onPress={onPress} testID="smoke-room-card" fullWidth style={{ marginTop: spacing.md, minHeight: 48 }} />
+      ) : null}
     </Card>
   );
 
-  if (!onPress) return content;
-  return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityLabel={`${tr.rooms.title} ${room.room_number}${guest ? ` · ${guest}` : ''}`}
-      testID="smoke-room-card"
-      style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1 })}
-    >
-      {content}
-    </Pressable>
-  );
+  return content;
 }
 
 export default function RoomsScreen() {
   const c = useTheme();
   const router = useRouter();
+  const online = useOnline();
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('');
+  const [cleaningFilter, setCleaningFilter] = useState('');
   const [floor, setFloor] = useState('');
 
   const roomsQ = useQuery({ queryKey: ['frontdesk-rooms'], queryFn: listRooms });
@@ -231,6 +214,12 @@ export default function RoomsScreen() {
     for (const t of tasks as RoomTask[]) {
       if (t.room_id) map[t.room_id] = (map[t.room_id] || 0) + 1;
     }
+    return map;
+  }, [tasks]);
+
+  const tasksByRoom = useMemo(() => {
+    const map: Record<string, RoomTask[]> = {};
+    for (const task of tasks) if (task.room_id) (map[task.room_id] ||= []).push(task);
     return map;
   }, [tasks]);
 
@@ -256,17 +245,23 @@ export default function RoomsScreen() {
     const m: Record<string, number> = {};
     for (const r of allRooms) {
       const booking = bookingByRoomNo[roomNumberKey(r.room_number)];
-      const cat = statusCategory(effectiveRoomStatus(r.status, !!booking));
+      const presentation = roomPresentation(r, !!booking, tasksByRoom[r.id] || []);
+      const cat = presentation.blockedStatus ? 'maintenance' : presentation.occupancy === 'occupied' ? 'occupied' : presentation.occupancy === 'vacant' ? 'available' : 'other';
       m[cat] = (m[cat] || 0) + 1;
+      if (presentation.cleaning === 'dirty') m.dirty = (m.dirty || 0) + 1;
+      if (presentation.cleaning === 'cleaning') m.cleaning = (m.cleaning || 0) + 1;
     }
     return m;
-  }, [allRooms, bookingByRoomNo]);
+  }, [allRooms, bookingByRoomNo, tasksByRoom]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return allRooms.filter((r) => {
       const b = bookingByRoomNo[roomNumberKey(r.room_number)];
-      if (status && statusCategory(effectiveRoomStatus(r.status, !!b)) !== status) return false;
+      const presentation = roomPresentation(r, !!b, tasksByRoom[r.id] || []);
+      if (status && presentation.occupancy !== status) return false;
+      if (cleaningFilter && presentation.cleaning !== cleaningFilter) return false;
+      if (cleaningFilter === 'ready' && (!inhouseQ.isSuccess || !tasksQ.isSuccess)) return false;
       if (floor && String(r.floor ?? '') !== floor) return false;
       if (q) {
         const hay = `${r.room_number || ''} ${r.guest_name || ''} ${b?.guest_name || ''} ${r.room_type || ''}`.toLowerCase();
@@ -274,11 +269,11 @@ export default function RoomsScreen() {
       }
       return true;
     });
-  }, [allRooms, search, status, floor, bookingByRoomNo]);
+  }, [allRooms, search, status, cleaningFilter, floor, bookingByRoomNo, tasksByRoom, inhouseQ.isSuccess, tasksQ.isSuccess]);
 
   const refreshing = roomsQ.isFetching && !roomsQ.isLoading;
-  const offline = roomsQ.isError && isOffline(roomsQ.error);
-  const hasFilters = !!(search || status || floor);
+  const offline = !online || roomsQ.fetchStatus === 'paused' || (roomsQ.isError && isOffline(roomsQ.error));
+  const hasFilters = !!(search || status || cleaningFilter || floor);
 
   const onRefresh = () => {
     roomsQ.refetch();
@@ -289,6 +284,7 @@ export default function RoomsScreen() {
   const clearFilters = () => {
     setSearch('');
     setStatus('');
+    setCleaningFilter('');
     setFloor('');
   };
 
@@ -325,7 +321,7 @@ export default function RoomsScreen() {
   };
 
   const summaryPills: { cat: string; label: string; tone: StatusTone }[] = [
-    { cat: 'available', label: tr.rooms.statusAvailable, tone: 'success' },
+    { cat: 'available', label: tr.rooms.vacant, tone: 'default' },
     { cat: 'occupied', label: tr.rooms.statusOccupied, tone: 'primary' },
     { cat: 'dirty', label: tr.rooms.statusDirty, tone: 'warning' },
     { cat: 'cleaning', label: tr.rooms.statusCleaning, tone: 'info' },
@@ -336,12 +332,13 @@ export default function RoomsScreen() {
     <View style={{ flex: 1, backgroundColor: c.bg }}>
       <View style={[{ flex: 1, padding: spacing.lg }, webCenter]}>
       <H1>{tr.rooms.title}</H1>
+      <Muted style={{ marginTop: spacing.xs }}>{tr.rooms.subtitle}</Muted>
       <View style={{ height: spacing.sm }} />
 
       {allRooms.length > 0 ? (
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs, marginBottom: spacing.sm }}>
           {summaryPills
-            .filter((p) => (counts[p.cat] || 0) > 0)
+            .filter((p) => (counts[p.cat] || 0) > 0 && (p.cat !== 'available' || inhouseQ.isSuccess))
             .map((p) => (
               <KpiPill key={p.cat} label={`${p.label} ${counts[p.cat] || 0}`} tone={p.tone === 'primary' ? 'default' : p.tone} />
             ))}
@@ -356,14 +353,17 @@ export default function RoomsScreen() {
         testID="smoke-rooms-search"
       />
       <View style={{ height: spacing.sm }} />
+      <Muted style={{ marginBottom: spacing.xs }}>{tr.rooms.occupancyLabel}</Muted>
       <FilterChips options={STATUS_FILTERS} value={status} onChange={setStatus} />
+      <Muted style={{ marginTop: spacing.sm, marginBottom: spacing.xs }}>{tr.rooms.cleaningLabel}</Muted>
+      <FilterChips options={CLEANING_FILTERS} value={cleaningFilter} onChange={setCleaningFilter} />
       {floorOptions.length > 1 ? (
         <View style={{ marginTop: spacing.xs }}>
           <FilterChips options={floorOptions} value={floor} onChange={setFloor} />
         </View>
       ) : null}
       {hasFilters ? (
-        <Pressable onPress={clearFilters} style={{ paddingVertical: spacing.sm }}>
+        <Pressable onPress={clearFilters} accessibilityRole="button" accessibilityLabel={tr.rooms.clearFilters} style={{ paddingVertical: spacing.sm, minHeight: 48, justifyContent: 'center' }}>
           <Muted style={{ color: c.primary }}>{tr.rooms.clearFilters}</Muted>
         </Pressable>
       ) : (
@@ -372,7 +372,19 @@ export default function RoomsScreen() {
 
       <OfflineBanner visible={offline} />
 
-      {roomsQ.isLoading ? (
+      {inhouseQ.isError || tasksQ.isError ? (
+        <Card accent={c.warning} style={{ marginBottom: spacing.sm }}>
+          <Muted>{inhouseQ.isError ? tr.rooms.inhouseLoadError : tr.rooms.tasksLoadError}</Muted>
+          <Button title={tr.app.retry} variant="ghost" onPress={onRefresh} />
+        </Card>
+      ) : null}
+
+      {offline && !roomsQ.data ? (
+        <Card accent={c.warning}>
+          <Muted>{tr.app.offline}</Muted>
+          <Button title={tr.app.retry} icon="refresh" variant="outline" onPress={onRefresh} fullWidth />
+        </Card>
+      ) : roomsQ.isLoading ? (
         <View style={{ gap: spacing.sm }}>
           <SkeletonCard />
           <SkeletonCard />
@@ -406,12 +418,15 @@ export default function RoomsScreen() {
           }
           renderItem={({ item }) => {
             const booking = bookingByRoomNo[roomNumberKey(item.room_number)];
+            const state = roomPresentation(item, !!booking, tasksByRoom[item.id] || []);
             return (
               <RoomCard
                 room={item}
                 booking={booking}
                 taskCount={taskCountByRoom[item.id] || 0}
-                onPress={booking?.id ? () => openBooking(booking) : () => openNewReservation(item)}
+                tasks={tasksByRoom[item.id] || []}
+                occupancyKnown={inhouseQ.isSuccess && tasksQ.isSuccess}
+                onPress={booking?.id ? () => openBooking(booking) : inhouseQ.isSuccess && state.occupancy === 'vacant' ? () => openNewReservation(item) : undefined}
               />
             );
           }}

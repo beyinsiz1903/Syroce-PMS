@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ScrollView, View } from 'react-native';
+import { RefreshControl, ScrollView, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -18,12 +19,13 @@ import {
   webCenter,
 } from '../../src/components/ui';
 import { OfflineBanner } from '../../src/components/OfflineBanner';
-import { spacing, useTheme } from '../../src/theme';
+import { radius, spacing, useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
 import {
   cancelReservation,
   getReservationDetailsEnhanced,
   getReservationOtaDetails,
+  getReservationFullDetail,
   overrideRate,
   ReservationUpdate,
   updateReservation,
@@ -31,24 +33,28 @@ import {
 import { assignRoom } from '../../src/api/bookings';
 import { getAvailability, AvailabilityRoom } from '../../src/api/availability';
 import { roomPanelView } from '../../src/utils/availabilityFilters';
-import { formatCurrency, formatDate, formatTime } from '../../src/utils/format';
+import { formatDate } from '../../src/utils/format';
 import { errorMessage, isOffline } from '../../src/utils/errors';
 import { haptic } from '../../src/hooks/useHaptic';
-import {
-  getFolioForBooking,
-  postFolioPayment,
-} from '../../src/api/folio';
+import { postBookingPayment } from '../../src/api/folio';
 import {
   SIMPLE_PAYMENT_METHODS,
   parsePaymentAmount,
   paymentAmountError,
-  paymentTypeForAmount,
+  paymentAttemptForInput,
+  type PaymentAttempt,
   type SimplePaymentMethod,
 } from '../../src/utils/paymentEntry';
 import {
   reservationMoneySummary,
   reservationStatusLabel,
   reservationStatusTone,
+  reservationAmountLabel,
+  reservationCurrency,
+  reservationSourceLabel,
+  paymentMethodLabel as movementMethodLabel,
+  paymentStatusLabel,
+  hasSeparatePayer,
 } from '../../src/utils/reservationPresentation';
 
 // DD.MM.YYYY → YYYY-MM-DD (same normaliser the list screen uses). Returns
@@ -78,7 +84,7 @@ function toDisplayDate(iso?: string): string {
 function Row({ label, value }: { label: string; value?: string | number | null }) {
   if (value === undefined || value === null || value === '') return null;
   return (
-    <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: spacing.md, marginTop: 2 }}>
+    <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: spacing.md, paddingVertical: spacing.xs }}>
       <Muted style={{ flexShrink: 1 }}>{label}</Muted>
       <Body style={{ textAlign: 'right', flexShrink: 1 }}>{value}</Body>
     </View>
@@ -101,6 +107,7 @@ export default function ReservationDetailScreen() {
     guest_phone?: string;
     guest_email?: string;
     booking_number?: string;
+    panel?: string;
   }>();
 
   const id = String(p.id || '');
@@ -115,47 +122,56 @@ export default function ReservationDetailScreen() {
     queryFn: () => getReservationOtaDetails(id),
     enabled: !!id,
   });
-  const folio = useQuery({
-    queryKey: ['reservation-folio', id],
-    queryFn: () => getFolioForBooking(id),
+  const detail = useQuery({
+    queryKey: ['reservation-full', id],
+    queryFn: () => getReservationFullDetail(id),
     enabled: !!id,
   });
 
   const offline =
+    detail.fetchStatus === 'paused' ||
     (enhanced.isError && isOffline(enhanced.error)) ||
     (ota.isError && isOffline(ota.error)) ||
-    (folio.isError && isOffline(folio.error));
+    (detail.isError && isOffline(detail.error));
 
-  const bookingTotal = p.total_amount ? Number(p.total_amount) : undefined;
-  const bookingPaid = p.paid_amount ? Number(p.paid_amount) : undefined;
-  const bookingBalance =
-    p.balance && p.balance !== ''
-      ? Number(p.balance)
-      : bookingTotal != null && bookingPaid != null
-      ? bookingTotal - bookingPaid
-      : undefined;
+  const booking = detail.data?.booking;
+  const guest = detail.data?.guest;
+  const guestName = guest?.name || [guest?.first_name, guest?.last_name].filter(Boolean).join(' ') || booking?.guest_name || p.guest_name;
+  const roomNumber = detail.data?.room?.room_number || booking?.room_number || p.room_number;
+  const roomType = detail.data?.room?.room_type || booking?.room_type || p.room_type;
+  const stayCheckIn = booking?.check_in || p.check_in;
+  const stayCheckOut = booking?.check_out || p.check_out;
+  const currency = reservationCurrency(booking?.currency);
+  const amountLabel = (value: unknown) => reservationAmountLabel(value, currency);
 
   const rate = enhanced.data?.rate_breakdown;
   const commission = enhanced.data?.commission;
   const policy = enhanced.data?.cancellation_policy;
   const otaData = ota.data;
-  const currentStatus = enhanced.data?.status || p.status;
+  const currentStatus = booking?.status || enhanced.data?.status || p.status;
+  const source = booking?.ota_channel || booking?.source_channel || booking?.channel || booking?.booking_source || booking?.source || otaData?.ota_channel || otaData?.source_of_booking;
+  const separatePayer = hasSeparatePayer({ ...booking, payment_model: booking?.payment_model || otaData?.payment_model || undefined, folios: detail.data?.folios });
+  const readOnly = detail.data?.read_only === true;
+  const pricingIssue = detail.data?.summary?.pricing_reconciliation_required === true;
+  const canManage = !!booking && detail.isSuccess && !detail.isFetching && !readOnly && !offline;
   const money = reservationMoneySummary({
-    bookingTotal,
-    bookingPaid,
-    bookingBalance,
-    rateBase: rate?.base_rate,
+    summaryTotal: detail.data?.summary?.gross_total,
+    summaryBalance: detail.data?.summary?.reservation_total_due,
+    bookingTotal: booking?.total_amount ?? p.total_amount,
+    bookingCollected: booking?.collected_amount,
+    bookingBalance: booking?.balance,
     rateTotal: rate?.total_amount,
-    folioBalance: folio.data?.balance,
-    charges: folio.data?.charges,
-    payments: folio.data?.payments,
+    charges: detail.data?.charges,
+    payments: detail.data?.payments,
+    currency,
   });
+  const canTakePayment = canManage && !separatePayer && !pricingIssue && !!currency && money.balance !== undefined && money.balance > 0;
 
   const qc = useQueryClient();
 
   // Which inline action panel is open ('' = none). Only one at a time keeps the
   // detail screen readable on a phone.
-  const [panel, setPanel] = useState<'' | 'dates' | 'room' | 'rate' | 'guests' | 'payment'>('');
+  const [panel, setPanel] = useState<'' | 'dates' | 'room' | 'rate' | 'guests' | 'payment'>(p.panel === 'payment' ? 'payment' : '');
   const [actionError, setActionError] = useState<string | null>(null);
   // Inline success banner (NOT Alert.alert — a no-op on Expo Web). Cleared when
   // a new panel opens or another action starts.
@@ -169,12 +185,15 @@ export default function ReservationDetailScreen() {
   const [reason, setReason] = useState('');
   const [rooms, setRooms] = useState<AvailabilityRoom[]>([]);
   const [roomsLoading, setRoomsLoading] = useState(false);
+  const [roomsError, setRoomsError] = useState<string | null>(null);
+  const [roomsRetry, setRoomsRetry] = useState(0);
   const [adults, setAdults] = useState('');
   const [children, setChildren] = useState('');
   const [specialRequests, setSpecialRequests] = useState('');
   const [paymentAmount, setPaymentAmount] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<SimplePaymentMethod>('card');
-  const paymentAttempt = useRef<{ fingerprint: string; key: string } | null>(null);
+  const paymentAttempt = useRef<PaymentAttempt | null>(null);
+  const paymentIssue = paymentAmountError(parsePaymentAmount(paymentAmount), money.balance);
   // Room-change availability window. Defaults to the reservation's own dates
   // but the operator can edit it to check a different window without first
   // saving a date change.
@@ -197,6 +216,11 @@ export default function ReservationDetailScreen() {
     qc.invalidateQueries({ queryKey: ['reservation-enhanced', id] });
     qc.invalidateQueries({ queryKey: ['reservation-ota', id] });
     qc.invalidateQueries({ queryKey: ['reservation-folio', id] });
+    qc.invalidateQueries({ queryKey: ['reservation-full', id] });
+    qc.invalidateQueries({ queryKey: ['arrivals-today'] });
+    qc.invalidateQueries({ queryKey: ['departures-today'] });
+    qc.invalidateQueries({ queryKey: ['inhouse'] });
+    qc.invalidateQueries({ queryKey: ['calendar', 'reservations'] });
   };
 
   const closePanel = () => {
@@ -212,12 +236,23 @@ export default function ReservationDetailScreen() {
     if (next === 'guests') {
       // Prefill from the OTA-details payload so an edit to one field never
       // clobbers the others (PUT only writes the fields that changed).
-      setAdults(otaData?.adults != null ? String(otaData.adults) : '');
-      setChildren(otaData?.children != null ? String(otaData.children) : '');
-      setSpecialRequests(otaData?.special_requests || '');
+      const currentAdults = booking?.adults ?? otaData?.adults;
+      const currentChildren = booking?.children ?? otaData?.children;
+      setAdults(currentAdults != null ? String(currentAdults) : '');
+      setChildren(currentChildren != null ? String(currentChildren) : '');
+      setSpecialRequests(booking?.special_requests ?? otaData?.special_requests ?? '');
     }
+    if (next === 'dates') {
+      setCheckIn(toDisplayDate(stayCheckIn));
+      setCheckOut(toDisplayDate(stayCheckOut));
+    }
+    if (next === 'room') {
+      setRoomCheckIn(toDisplayDate(stayCheckIn));
+      setRoomCheckOut(toDisplayDate(stayCheckOut));
+    }
+    if (next === 'rate') setNewRate(booking?.total_amount != null ? String(booking.total_amount) : '');
     if (next === 'payment') {
-      const current = money.balance ?? 0;
+      const current = canTakePayment ? money.balance ?? 0 : 0;
       setPaymentAmount(current > 0 ? String(Math.round(current * 100) / 100) : '');
     }
   };
@@ -232,18 +267,23 @@ export default function ReservationDetailScreen() {
     if (!ci || !co || co <= ci) {
       setRooms([]);
       setRoomsLoading(false);
+      setRoomsError(null);
       return;
     }
     let cancelled = false;
     setRoomsLoading(true);
+    setRoomsError(null);
     getAvailability(ci, co)
       .then((rs) => {
         // Store the raw rooms; roomPanelView() is the single source of truth
         // that filters down to available === true before they're rendered.
         if (!cancelled) setRooms(rs);
       })
-      .catch(() => {
-        if (!cancelled) setRooms([]);
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setRooms([]);
+          setRoomsError(errorMessage(error, tr.reservations.roomsLoadError));
+        }
       })
       .finally(() => {
         if (!cancelled) setRoomsLoading(false);
@@ -251,7 +291,7 @@ export default function ReservationDetailScreen() {
     return () => {
       cancelled = true;
     };
-  }, [panel, roomCheckIn, roomCheckOut]);
+  }, [panel, roomCheckIn, roomCheckOut, roomsRetry]);
 
   const datesMutation = useMutation({
     mutationFn: () => {
@@ -360,33 +400,37 @@ export default function ReservationDetailScreen() {
 
   const paymentMutation = useMutation({
     mutationFn: async () => {
-      const folioData = folio.data;
-      if (!folioData?.id) throw new Error(tr.reservations.paymentNoFolio);
-      const currentBalance = money.balance ?? 0;
-      if (currentBalance <= 0) throw new Error(tr.reservations.paymentNoBalance);
+      if (!canTakePayment || !currency) throw new Error(tr.reservations.paymentUnavailable);
+      // Confirm the amount and payer against a fresh server read before a
+      // financial write, including when this screen has been open a while.
+      const latest = await getReservationFullDetail(id);
+      if (latest) qc.setQueryData(['reservation-full', id], latest);
+      const latestCurrency = reservationCurrency(latest?.booking.currency);
+      const currentBalance = latest?.summary?.reservation_total_due;
+      if (!latest || ['cancelled', 'canceled'].includes(latest.booking.status || '') || latest.read_only || latest.summary?.pricing_reconciliation_required || latestCurrency !== currency || hasSeparatePayer({ ...latest.booking, folios: latest.folios }) || typeof currentBalance !== 'number' || !Number.isFinite(currentBalance)) {
+        throw new Error(tr.reservations.paymentUnavailable);
+      }
       const amount = parsePaymentAmount(paymentAmount);
       const amountIssue = paymentAmountError(amount, currentBalance);
       if (amountIssue === 'invalid') throw new Error(tr.reservations.paymentInvalid);
       if (amountIssue === 'overpayment') throw new Error(tr.reservations.paymentOver);
+      if (amountIssue === 'no_balance') throw new Error(tr.reservations.paymentNoBalance);
+      if (amountIssue) throw new Error(tr.reservations.paymentUnavailable);
       const safeAmount = amount as number;
-      const paymentType = paymentTypeForAmount(safeAmount, currentBalance);
-      const fingerprint = `${id}|${folioData.id}|${safeAmount}|${paymentMethod}|${paymentType}`;
-      if (!paymentAttempt.current || paymentAttempt.current.fingerprint !== fingerprint) {
-        paymentAttempt.current = {
-          fingerprint,
-          key: `mobile-payment-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`,
-        };
-      }
-      return postFolioPayment(
-        folioData.id,
-        { amount: safeAmount, method: paymentMethod, payment_type: paymentType },
+      paymentAttempt.current = paymentAttemptForInput(paymentAttempt.current,
+        { bookingId: id, currency, amount: safeAmount, method: paymentMethod, balance: currentBalance },
+        () => `mobile-payment-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`,
+      );
+      return postBookingPayment(
+        id,
+        { amount: safeAmount, method: paymentMethod, payment_type: paymentAttempt.current.paymentType, currency },
         paymentAttempt.current.key,
       );
     },
     onSuccess: async () => {
       haptic.success();
       paymentAttempt.current = null;
-      await folio.refetch();
+      await detail.refetch();
       refreshAll();
       closePanel();
       setSuccessMsg(tr.reservations.paymentSaved);
@@ -394,6 +438,7 @@ export default function ReservationDetailScreen() {
     onError: (e: unknown) => {
       haptic.error();
       setActionError(errorMessage(e, tr.reservations.actionError));
+      void detail.refetch();
     },
   });
 
@@ -421,12 +466,14 @@ export default function ReservationDetailScreen() {
     <ScrollView
       style={{ flex: 1, backgroundColor: c.bg }}
       contentContainerStyle={[{ padding: spacing.lg, gap: spacing.md, paddingBottom: spacing.xxl }, webCenter]}
+      refreshControl={<RefreshControl refreshing={detail.isRefetching} onRefresh={() => { void detail.refetch(); void enhanced.refetch(); void ota.refetch(); }} tintColor={c.primary} />}
+      keyboardShouldPersistTaps="handled"
     >
       <OfflineBanner visible={offline} />
 
       <DetailHeader
-        title={p.guest_name || tr.reservations.guest}
-        subtitle={p.booking_number ? `#${p.booking_number}` : undefined}
+        title={guestName || tr.reservations.guest}
+        subtitle={booking?.booking_number || p.booking_number ? `#${booking?.booking_number || p.booking_number}` : tr.reservations.detailTitle}
         badges={
           <>
             {currentStatus ? (
@@ -435,9 +482,10 @@ export default function ReservationDetailScreen() {
                 tone={reservationStatusTone(currentStatus)}
               />
             ) : null}
-            {p.room_number ? (
-              <Badge label={`${tr.reservations.room} ${p.room_number}`} tone="default" icon="bed" />
+            {roomNumber ? (
+              <Badge label={`${tr.reservations.room} ${roomNumber}`} tone="default" icon="bed" />
             ) : null}
+            {source ? <Badge label={reservationSourceLabel(source)} tone="info" icon="globe-outline" /> : null}
           </>
         }
       />
@@ -449,19 +497,66 @@ export default function ReservationDetailScreen() {
       ) : null}
 
       <Card>
-        <H2>{tr.reservations.stay}</H2>
-        <Body style={{ marginTop: spacing.xs }}>
-          {formatDate(p.check_in)} {formatTime(p.check_in)} → {formatDate(p.check_out)}{' '}
-          {formatTime(p.check_out)}
-        </Body>
-        <Muted style={{ marginTop: 2 }}>
-          {tr.reservations.room} {p.room_number || '—'} · {p.room_type || ''}
-        </Muted>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+          <Ionicons name="bed-outline" size={22} color={c.primary} />
+          <H2>{tr.reservations.stay}</H2>
+        </View>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.lg, marginTop: spacing.lg }}>
+          <View style={{ flex: 1, minWidth: 120 }}>
+            <Muted>{tr.reservations.arrival}</Muted>
+            <Body style={{ fontWeight: '700', marginTop: spacing.xs }}>{formatDate(stayCheckIn)}</Body>
+          </View>
+          <View style={{ flex: 1, minWidth: 120 }}>
+            <Muted>{tr.reservations.departure}</Muted>
+            <Body style={{ fontWeight: '700', marginTop: spacing.xs }}>{formatDate(stayCheckOut)}</Body>
+          </View>
+        </View>
+        <Divider />
+        <Row label={tr.reservations.room} value={[roomNumber, roomType].filter(Boolean).join(' · ') || '—'} />
+        <Row label={tr.reservations.source} value={reservationSourceLabel(source)} />
+        {otaData?.adults != null ? <Row label={tr.reservations.guestCount} value={`${otaData.adults} ${tr.reservations.adults}${otaData.children ? ` · ${otaData.children} ${tr.reservations.children}` : ''}`} /> : null}
       </Card>
 
-      {!isCancelled ? (
+      <Card accent={money.balance !== undefined && money.balance > 0 ? c.warning : c.primary}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+          <Ionicons name="wallet-outline" size={22} color={c.primary} />
+          <H2>{tr.reservations.accountSummary}</H2>
+        </View>
+        {detail.isLoading ? <SkeletonCard /> : detail.isError || !detail.data ? (
+          <View style={{ gap: spacing.sm, marginTop: spacing.md }}>
+            <Body style={{ color: c.danger }}>{errorMessage(detail.error, tr.reservations.detailError)}</Body>
+            <Button title={tr.reservations.retry} variant="secondary" onPress={() => { void detail.refetch(); }} fullWidth />
+          </View>
+        ) : (
+          <View style={{ marginTop: spacing.md, gap: spacing.md }}>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md }}>
+              <View style={{ flex: 1, minWidth: 120 }}>
+                <Muted>{tr.reservations.reservationTotal}</Muted>
+                <Body testID="reservation-account-total" style={{ fontSize: 19, fontWeight: '700', marginTop: spacing.xs }}>{amountLabel(money.total)}</Body>
+              </View>
+              <View style={{ flex: 1, minWidth: 120 }}>
+                <Muted>{tr.reservations.collectedTotal}</Muted>
+                <Body testID="reservation-account-collected" style={{ fontSize: 19, fontWeight: '700', marginTop: spacing.xs }}>{amountLabel(money.paid)}</Body>
+              </View>
+            </View>
+            <View style={{ backgroundColor: c.surfaceAlt, borderRadius: radius.md, padding: spacing.lg, gap: spacing.xs }}>
+              <Muted>{tr.reservations.reservationBalance}</Muted>
+              <Body testID="reservation-account-balance" style={{ fontSize: 28, lineHeight: 36, fontWeight: '800', color: money.balance !== undefined && money.balance > 0 ? c.warning : c.text }}>{amountLabel(money.balance)}</Body>
+            </View>
+            <Muted>{separatePayer ? tr.reservations.payerBreakdownUnavailable : tr.reservations.accountSummaryHint}</Muted>
+            {!currency ? <Muted style={{ color: c.warning }}>{tr.reservations.currencyUnavailable}</Muted> : null}
+            {pricingIssue ? <Muted style={{ color: c.danger }}>{tr.reservations.pricingReviewRequired}</Muted> : null}
+            {readOnly ? <Muted>{tr.reservations.readOnly}</Muted> : null}
+          </View>
+        )}
+      </Card>
+
+      {!isCancelled && canManage ? (
         <Card>
           <H2>{tr.reservations.manage}</H2>
+          <View style={{ marginTop: spacing.md }}>
+            <Button title={tr.reservations.takePayment} icon="card-outline" variant={panel === 'payment' ? 'primary' : 'success'} onPress={() => openPanel('payment')} fullWidth />
+          </View>
           {actionError ? (
             <Body style={{ color: c.danger, marginTop: spacing.sm }}>{actionError}</Body>
           ) : null}
@@ -469,29 +564,31 @@ export default function ReservationDetailScreen() {
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.md }}>
             <Button
               title={tr.reservations.editDates}
+              icon="calendar-outline"
+              style={{ flexGrow: 1, flexBasis: '45%' }}
               variant={panel === 'dates' ? 'primary' : 'secondary'}
               onPress={() => openPanel('dates')}
             />
             <Button
               title={tr.reservations.changeRoom}
+              icon="bed-outline"
+              style={{ flexGrow: 1, flexBasis: '45%' }}
               variant={panel === 'room' ? 'primary' : 'secondary'}
               onPress={() => openPanel('room')}
             />
             <Button
               title={tr.reservations.overrideRate}
+              icon="pricetag-outline"
+              style={{ flexGrow: 1, flexBasis: '45%' }}
               variant={panel === 'rate' ? 'primary' : 'secondary'}
               onPress={() => openPanel('rate')}
             />
             <Button
               title={tr.reservations.editGuests}
+              icon="people-outline"
+              style={{ flexGrow: 1, flexBasis: '45%' }}
               variant={panel === 'guests' ? 'primary' : 'secondary'}
               onPress={() => openPanel('guests')}
-            />
-            <Button
-              title={tr.reservations.takePayment}
-              icon="card-outline"
-              variant={panel === 'payment' ? 'primary' : 'success'}
-              onPress={() => openPanel('payment')}
             />
           </View>
 
@@ -521,7 +618,7 @@ export default function ReservationDetailScreen() {
           {panel === 'rate' ? (
             <View style={{ marginTop: spacing.md, gap: spacing.sm }}>
               <Field
-                label={tr.reservations.newRate}
+                label={`${tr.reservations.newRate}${currency ? ` (${currency})` : ''}`}
                 value={newRate}
                 onChangeText={setNewRate}
                 keyboardType="decimal-pad"
@@ -586,6 +683,11 @@ export default function ReservationDetailScreen() {
               <Muted>{tr.reservations.selectRoom}</Muted>
               {!roomDatesValid ? (
                 <Body style={{ color: c.textMuted }}>{tr.reservations.invalidDates}</Body>
+              ) : roomsError ? (
+                <View style={{ gap: spacing.sm }}>
+                  <Body style={{ color: c.danger }}>{roomsError}</Body>
+                  <Button title={tr.reservations.retry} variant="secondary" onPress={() => setRoomsRetry((value) => value + 1)} fullWidth />
+                </View>
               ) : roomView.kind === 'loading' ? (
                 <Body style={{ color: c.textMuted }}>{tr.reservations.loadingRooms}</Body>
               ) : roomView.kind === 'empty' ? (
@@ -608,24 +710,25 @@ export default function ReservationDetailScreen() {
 
           {panel === 'payment' ? (
             <View style={{ marginTop: spacing.md, gap: spacing.sm }}>
-              {folio.isLoading ? (
-                <SkeletonCard />
-              ) : folio.isError ? (
-                <Body style={{ color: c.danger }}>
-                  {errorMessage(folio.error, tr.reservations.paymentNoFolio)}
+              {!canTakePayment ? (
+                <Body style={{ color: c.textMuted }}>
+                  {separatePayer ? tr.reservations.payerBreakdownUnavailable : !currency ? tr.reservations.currencyUnavailable : pricingIssue ? tr.reservations.pricingReviewRequired : money.balance === undefined ? tr.reservations.paymentBalanceUnknown : tr.reservations.paymentNoBalance}
                 </Body>
               ) : (
                 <>
+                  <H2>{tr.reservations.guestCollection}</H2>
+                  <Muted>{tr.reservations.guestCollectionHint}</Muted>
                   <Row
                     label={tr.reservations.paymentBalance}
-                    value={formatCurrency(money.balance ?? 0)}
+                    value={amountLabel(money.balance)}
                   />
                   <Field
-                    label={tr.reservations.paymentAmount}
+                    label={`${tr.reservations.paymentAmount} (${currency})`}
                     value={paymentAmount}
                     onChangeText={setPaymentAmount}
                     keyboardType="decimal-pad"
                   />
+                  {paymentAmount && paymentIssue ? <Muted accessibilityLiveRegion="polite" style={{ color: c.danger }}>{paymentIssue === 'overpayment' ? tr.reservations.paymentOver : tr.reservations.paymentInvalid}</Muted> : null}
                   <Muted>{tr.reservations.paymentMethod}</Muted>
                   <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}>
                     {SIMPLE_PAYMENT_METHODS.map((method) => (
@@ -645,6 +748,7 @@ export default function ReservationDetailScreen() {
                     variant="success"
                     onPress={() => paymentMutation.mutate()}
                     loading={paymentMutation.isPending}
+                    disabled={paymentIssue !== null}
                     fullWidth
                   />
                 </>
@@ -688,40 +792,54 @@ export default function ReservationDetailScreen() {
         </Card>
       ) : null}
 
-      {p.guest_phone || p.guest_email ? (
+      {guest?.phone || guest?.email || booking?.guest_phone || booking?.guest_email || p.guest_phone || p.guest_email ? (
         <Card>
           <H2>{tr.reservations.contact}</H2>
-          <Row label={tr.guests.phone} value={p.guest_phone} />
-          <Row label={tr.guests.contact} value={p.guest_email} />
+          <Row label={tr.guests.phone} value={guest?.phone || booking?.guest_phone || p.guest_phone} />
+          <Row label={tr.guests.contact} value={guest?.email || booking?.guest_email || p.guest_email} />
         </Card>
       ) : null}
+
+      <Card>
+        <H2>{tr.reservations.paymentHistory}</H2>
+        <Muted style={{ marginTop: spacing.xs }}>{tr.reservations.paymentHistoryHint}</Muted>
+        {detail.isLoading ? <SkeletonCard /> : detail.isError || !Array.isArray(detail.data?.payments) ? (
+          <Muted style={{ marginTop: spacing.md }}>{tr.reservations.paymentHistoryUnavailable}</Muted>
+        ) : detail.data.payments.length === 0 ? (
+          <Muted style={{ marginTop: spacing.md }}>{tr.reservations.noPayments}</Muted>
+        ) : [...detail.data.payments].sort((a, b) => (b.processed_at || '').localeCompare(a.processed_at || '')).map((payment, index) => {
+          const payer = detail.data?.folios?.find((item) => item.id === payment.folio_id);
+          const payerLabel = payer?.payor_type || payer?.folio_type;
+          return (
+            <View key={payment.id || index} style={{ paddingTop: spacing.md, marginTop: spacing.md, borderTopWidth: 1, borderTopColor: c.border, gap: spacing.xs }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: spacing.md }}>
+                <View style={{ flex: 1 }}>
+                  <Body style={{ fontWeight: '700' }}>{movementMethodLabel(payment.method)}</Body>
+                  <Muted>{payment.processed_at ? formatDate(payment.processed_at) : tr.reservations.dateUnavailable} · {paymentStatusLabel(payment)}</Muted>
+                </View>
+                <Body style={{ fontWeight: '700', flexShrink: 1 }}>{reservationAmountLabel(payment.amount, payment.currency || currency)}</Body>
+              </View>
+              {payerLabel ? <Muted>{tr.reservations.account}: {payerLabel === 'guest' ? tr.reservations.guestAccount : payerLabel === 'agency' ? tr.reservations.agencyAccount : payerLabel === 'company' ? tr.reservations.companyAccount : payerLabel}</Muted> : <Muted>{tr.reservations.accountUnspecified}</Muted>}
+              {payment.reference ? <Muted>{tr.reservations.reference}: {payment.reference}</Muted> : null}
+            </View>
+          );
+        })}
+      </Card>
 
       {enhanced.isLoading ? (
         <SkeletonCard />
       ) : (
         <Card>
           <H2>{tr.reservations.rateBreakdown}</H2>
-          {enhanced.isError && !offline ? (
+          {enhanced.isError ? (
             <Muted style={{ marginTop: spacing.xs, color: c.danger }}>
               {errorMessage(enhanced.error, tr.reservations.loadError)}
             </Muted>
           ) : null}
           <Row
             label={tr.reservations.baseRate}
-            value={rate?.base_rate != null ? formatCurrency(rate.base_rate) : undefined}
+            value={rate?.base_rate != null ? amountLabel(rate.base_rate) : undefined}
           />
-          <Row
-            label={tr.reservations.total}
-            value={
-              money.total != null ? formatCurrency(money.total) : undefined
-            }
-          />
-          {money.paid != null ? (
-            <Row label={tr.reservations.paid} value={formatCurrency(money.paid)} />
-          ) : null}
-          {money.balance != null ? (
-            <Row label={tr.reservations.balance} value={formatCurrency(money.balance)} />
-          ) : null}
           <Row label={tr.reservations.rateType} value={rate?.rate_type} />
           <Row label={tr.reservations.marketSegment} value={rate?.market_segment} />
           {policy?.type ? (
@@ -745,16 +863,26 @@ export default function ReservationDetailScreen() {
             label={tr.reservations.commissionAmount}
             value={
               commission.commission_amount != null
-                ? formatCurrency(commission.commission_amount)
+                ? amountLabel(commission.commission_amount)
                 : undefined
             }
           />
           <Row
             label={tr.reservations.netRevenue}
             value={
-              commission.net_revenue != null ? formatCurrency(commission.net_revenue) : undefined
+              commission.net_revenue != null ? amountLabel(commission.net_revenue) : undefined
             }
           />
+        </Card>
+      ) : null}
+
+      {booking?.agency_name || detail.data?.company ? (
+        <Card>
+          <H2>{tr.reservations.payerInformation}</H2>
+          <Row label={tr.reservations.agencyAccount} value={booking?.agency_name} />
+          <Row label={tr.reservations.companyAccount} value={detail.data?.company?.name || detail.data?.company?.company_name} />
+          <Row label={tr.reservations.paymentModel} value={booking?.payment_model || otaData?.payment_model} />
+          <Muted style={{ marginTop: spacing.sm }}>{tr.reservations.payerBreakdownUnavailable}</Muted>
         </Card>
       ) : null}
 
@@ -763,7 +891,7 @@ export default function ReservationDetailScreen() {
       ) : (
         <Card>
           <H2>{tr.reservations.specialRequests}</H2>
-          {ota.isError && !offline ? (
+          {ota.isError ? (
             <Muted style={{ marginTop: spacing.xs, color: c.danger }}>
               {errorMessage(ota.error, tr.reservations.loadError)}
             </Muted>
@@ -779,12 +907,12 @@ export default function ReservationDetailScreen() {
             </>
           ) : null}
           {otaData?.source_of_booking ? (
-            <Row label={tr.reservations.source} value={otaData.source_of_booking} />
+            <Row label={tr.reservations.source} value={reservationSourceLabel(otaData.source_of_booking)} />
           ) : null}
         </Card>
       )}
 
-      {!ota.isLoading ? (
+      {ota.isSuccess && otaData ? (
         <Card>
           <H2>{tr.reservations.extraCharges}</H2>
           {otaData?.extra_charges && otaData.extra_charges.length > 0 ? (
@@ -802,7 +930,7 @@ export default function ReservationDetailScreen() {
                   <Body>{ch.charge_name || '—'}</Body>
                   {ch.notes ? <Muted>{ch.notes}</Muted> : null}
                 </View>
-                <Body>{formatCurrency(ch.charge_amount)}</Body>
+                <Body>{amountLabel(ch.charge_amount)}</Body>
               </View>
             ))
           ) : (
