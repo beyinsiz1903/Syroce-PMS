@@ -1,6 +1,8 @@
 import { NAV_ITEMS } from '@/config/navItems';
 import {
   canAccessNavItem,
+  hasSuperAdminRole,
+  roleValue,
   supplementalModuleNavItems,
 } from '@/utils/moduleAccess';
 
@@ -10,41 +12,102 @@ import {
  * böylece bir kullanıcı üst menüde farklı, uygulama merkezinde farklı bir liste
  * görmez.
  */
-export function accessibleNavigationItems({
-  user,
-  tenant,
-  isSuperAdmin = false,
-  hasModule = () => true,
-}) {
-  const hiddenGroups = new Set(tenant?.hidden_nav_groups || []);
-  const hiddenItems = new Set(tenant?.hidden_nav_items || []);
-  const visibleItems = new Set(tenant?.visible_nav_items || []);
-  const itemLabels = tenant?.nav_item_labels || {};
-  const userRoles = new Set([
-    user?.role,
-    ...(Array.isArray(user?.roles) ? user.roles : []),
-  ].filter(Boolean).map((role) => String(role).trim().toLowerCase()));
+// Why a page is not in the menu, checked in this order (first failing rule
+// wins). Module screens show the same reason next to the module, so "I
+// enabled it but it is not in the menu" is answered where it is asked.
+export const NAV_HIDDEN_REASONS = {
+  hidden_link: 'Menüde gösterilmeyen bağlantı',
+  staff_scope: 'Personelin yetki kapsamı dışında',
+  hidden_item: 'Tesis menüsünde gizlenmiş',
+  not_in_property_list: 'Tesis profilinin menü listesinde yok',
+  hidden_group: 'Menü grubu gizlenmiş',
+  platform_only: 'Yalnız platform yöneticisi',
+  chain_only: 'Yalnız zincir otellerde',
+  role: 'Kullanıcının rolü uygun değil',
+  not_in_plan: 'Pakette yok',
+  module_disabled: 'Yönetici modülü kapattı',
+  module_off: 'Modül kapalı',
+};
 
-  return [...NAV_ITEMS, ...supplementalModuleNavItems(user)].filter((item) => {
-    if (!canAccessNavItem(user, item)) return false;
-    // Property-level navigation choices describe the hotel's workspace and
-    // must be honoured for administrators too. Platform-only entries remain
-    // available through their explicit super-admin routes.
-    if (hiddenItems.has(item.key)) return false;
-    if (visibleItems.size > 0 && !visibleItems.has(item.key)) return false;
-    if (item.navGroup && hiddenGroups.has(item.navGroup)) return false;
-    if (item.requireSuperAdmin && !isSuperAdmin) return false;
-    if (item.requireChain && !tenant?.chain_id) return false;
-    if (
-      Array.isArray(item.allowedRoles)
-      && !isSuperAdmin
-      && !item.allowedRoles.some((role) => userRoles.has(String(role).trim().toLowerCase()))
-    ) return false;
-    if (Array.isArray(item.anyModuleKeys) && item.anyModuleKeys.length) {
-      if (!item.anyModuleKeys.some((key) => hasModule(key))) return false;
-    } else if (item.moduleKey && !(isSuperAdmin && item.requireSuperAdmin) && !hasModule(item.moduleKey)) return false;
-    return true;
-  }).map((item) => itemLabels[item.key] ? { ...item, label: itemLabels[item.key] } : item);
+function navigationContext({ user, tenant, isSuperAdmin = false, hasModule = () => true, moduleOffReason }) {
+  return {
+    user,
+    tenant,
+    isSuperAdmin,
+    hasModule,
+    moduleOffReason: moduleOffReason || (() => 'module_off'),
+    hiddenGroups: new Set(tenant?.hidden_nav_groups || []),
+    hiddenItems: new Set(tenant?.hidden_nav_items || []),
+    visibleItems: new Set(tenant?.visible_nav_items || []),
+    userRoles: new Set([
+      user?.role,
+      ...(Array.isArray(user?.roles) ? user.roles : []),
+    ].filter(Boolean).map((role) => String(role).trim().toLowerCase())),
+  };
+}
+
+function hiddenReason(item, ctx) {
+  // canAccessNavItem bundles several refusals; name the general ones first so
+  // a deliberately hidden link or a role limit is not reported as a missing
+  // staff scope. Visibility is unchanged: every rule still has to pass.
+  if (!item || item.hidden) return 'hidden_link';
+  const platformUser = hasSuperAdminRole(ctx.user);
+  if (item.requireSuperAdmin && !platformUser) return 'platform_only';
+  if (item.allowedRoles?.length && !platformUser && !item.allowedRoles.includes(roleValue(ctx.user))) return 'role';
+  if (!canAccessNavItem(ctx.user, item)) return 'staff_scope';
+  // Property-level navigation choices describe the hotel's workspace and
+  // must be honoured for administrators too. Platform-only entries remain
+  // available through their explicit super-admin routes.
+  if (ctx.hiddenItems.has(item.key)) return 'hidden_item';
+  if (ctx.visibleItems.size > 0 && !ctx.visibleItems.has(item.key)) return 'not_in_property_list';
+  if (item.navGroup && ctx.hiddenGroups.has(item.navGroup)) return 'hidden_group';
+  if (item.requireSuperAdmin && !ctx.isSuperAdmin) return 'platform_only';
+  if (item.requireChain && !ctx.tenant?.chain_id) return 'chain_only';
+  if (
+    Array.isArray(item.allowedRoles)
+    && !ctx.isSuperAdmin
+    && !item.allowedRoles.some((role) => ctx.userRoles.has(String(role).trim().toLowerCase()))
+  ) return 'role';
+  if (Array.isArray(item.anyModuleKeys) && item.anyModuleKeys.length) {
+    if (!item.anyModuleKeys.some((key) => ctx.hasModule(key))) return ctx.moduleOffReason(item.anyModuleKeys[0]);
+  } else if (item.moduleKey && !(ctx.isSuperAdmin && item.requireSuperAdmin) && !ctx.hasModule(item.moduleKey)) {
+    return ctx.moduleOffReason(item.moduleKey);
+  }
+  return null;
+}
+
+/** One menu decision with its reason: { visible, reason, reasonLabel }. */
+export function explainNavigationItem(item, options) {
+  const reason = hiddenReason(item, navigationContext(options));
+  return { visible: !reason, reason, reasonLabel: reason ? NAV_HIDDEN_REASONS[reason] || reason : null };
+}
+
+/**
+ * Menu pages a module opens, each with its decision: pages tied to the module
+ * (moduleKey / anyModuleKeys) and the module's own workspace (``modulePath``,
+ * e.g. the module store, which has no moduleKey). Hidden links and platform
+ * pages are not hotel menu pages.
+ */
+export function moduleNavigationStatus(moduleKey, options, { modulePath } = {}) {
+  const ctx = navigationContext(options);
+  const pathOf = (path) => String(path || '').split('?')[0];
+  return NAV_ITEMS
+    .filter((item) => item.moduleKey === moduleKey
+      || (item.anyModuleKeys || []).includes(moduleKey)
+      || (modulePath && pathOf(item.path) === pathOf(modulePath)))
+    .filter((item) => !item.hidden && !item.requireSuperAdmin)
+    .map((item) => {
+      const reason = hiddenReason(item, ctx);
+      return { key: item.key, label: item.label, path: item.path, visible: !reason, reason, reasonLabel: reason ? NAV_HIDDEN_REASONS[reason] || reason : null };
+    });
+}
+
+export function accessibleNavigationItems(options) {
+  const ctx = navigationContext(options);
+  const itemLabels = options?.tenant?.nav_item_labels || {};
+  return [...NAV_ITEMS, ...supplementalModuleNavItems(options?.user)]
+    .filter((item) => !hiddenReason(item, ctx))
+    .map((item) => itemLabels[item.key] ? { ...item, label: itemLabels[item.key] } : item);
 }
 
 export function navigationItemsByGroup(items) {

@@ -21,7 +21,6 @@ from common.request_context import get_client_ip, get_user_agent
 from core.database import db
 from core.entitlement import effective_tenant_modules, effective_tenant_modules_many
 from core.helpers import (
-    AGENCY_EXTRANET_MODULE,
     get_tenant_modules,
     require_super_admin_guard,
 )
@@ -227,6 +226,43 @@ def _safe_context_user(
         }
     )
     return User(**safe).model_dump(exclude={"password"})
+
+
+def _module_preferences(tenant_doc: dict) -> dict[str, bool]:
+    """The hotel's own module decisions, kept apart from the effective map
+    (plan defaults, store access): a key in ``modules`` is not proof that an
+    administrator chose it — plan resets store defaults there too.
+    ``module_choice_keys`` records which stored flags were chosen. Records
+    written before it existed have no such record: only the module publish
+    history (``module_control_changes``, real changes only) is trusted
+    there, and only while its recorded value still matches the stored flag.
+    ``_module_preferences_known`` is false so screens stay neutral about
+    flags whose origin is unknown or whose publish evidence is stale."""
+    own = tenant_doc.get("modules") if isinstance(tenant_doc.get("modules"), dict) else {}
+    chosen = tenant_doc.get("module_choice_keys")
+    if not isinstance(chosen, list):
+        history = tenant_doc.get("module_control_changes")
+        if not isinstance(history, dict):
+            return {}
+        # Older plan resets replaced the flags without clearing their publish
+        # history. A previous enable is not evidence of a later manual disable
+        # (or vice versa); do not guess when the recorded result no longer fits.
+        chosen = [
+            key for key, change in history.items()
+            if key in own
+            and isinstance(change, dict)
+            and isinstance(change.get("enabled"), bool)
+            and change["enabled"] == bool(own[key])
+        ]
+    return {key: bool(own[key]) for key in chosen if key in own}
+
+
+def _module_preferences_known(tenant_doc: dict) -> bool:
+    return isinstance(tenant_doc.get("module_choice_keys"), list)
+
+
+def _plan_defaults_for(tier: str, plan: str | None = None) -> dict[str, bool]:
+    return get_tenant_modules({"subscription_tier": tier, "subscription_plan": plan} if plan else {"subscription_tier": tier})
 
 
 async def _tenant_session_payload(tenant_doc: dict) -> dict:
@@ -995,6 +1031,8 @@ async def list_tenants(
 
     # Merge defaults for backward compatibility
     for tenant, modules in zip(tenants, await effective_tenant_modules_many(tenants)):
+        tenant["module_preferences"] = _module_preferences(tenant)
+        tenant["module_preferences_known"] = _module_preferences_known(tenant)
         tenant["modules"] = modules
 
     return {
@@ -1175,6 +1213,10 @@ async def create_tenant(payload: TenantRegister, current_user: User = Depends(re
     tenant_dict["phone"] = payload.phone
     tenant_dict["description"] = payload.description or ""
     tenant_dict["dashboard_layout"] = dashboard_layout
+    # Stored flags that differ from the plan are the setup's choices (profile
+    # or operator); the rest are plan defaults written for completeness.
+    plan_defaults = _plan_defaults_for(tier, normalized_plan)
+    tenant_dict["module_choice_keys"] = sorted(key for key, value in combined_modules.items() if bool(value) != bool(plan_defaults.get(key, False)))
     tenant_dict["hidden_nav_groups"] = nav_config.get("hidden_nav_groups", [])
     tenant_dict["hidden_nav_items"] = nav_config.get("hidden_nav_items", [])
     tenant_dict["visible_nav_items"] = nav_config.get("visible_nav_items", [])
@@ -1293,16 +1335,28 @@ async def update_tenant_modules(
     if not before:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Hotel not found")
 
-    # Screens send the whole map they showed, computed values included. An
-    # Agency Extranet value the hotel never set explicitly is computed
-    # (channel manager / store subscription): saved unchanged it is an echo,
-    # not a decision, and stays computed. Only a changed value is stored.
-    modules_to_save = dict(payload.modules)
-    own_modules = before.get("modules")
-    if AGENCY_EXTRANET_MODULE in modules_to_save and not (isinstance(own_modules, dict) and AGENCY_EXTRANET_MODULE in own_modules):
-        shown = (await effective_tenant_modules(before)).get(AGENCY_EXTRANET_MODULE, False)
-        if bool(modules_to_save[AGENCY_EXTRANET_MODULE]) == bool(shown):
-            modules_to_save.pop(AGENCY_EXTRANET_MODULE)
+    # Screens send the whole map they showed: plan defaults, store access and
+    # derived values (Agency Extranet) included. A value the hotel never
+    # stored and that comes back exactly as shown is an echo, not a decision:
+    # it stays computed (follows the plan, the store, the channel manager).
+    # Stored choices are kept; a changed value is stored as the admin's choice.
+    own_modules = before.get("modules") if isinstance(before.get("modules"), dict) else {}
+    shown = await effective_tenant_modules(before)
+    modules_to_save = {
+        key: bool(value)
+        for key, value in payload.modules.items()
+        if key in own_modules or bool(value) != bool(shown.get(key, False))
+    }
+    # Which stored flags are the administrator's choices: earlier choices plus
+    # what this save changed (a plan reset stores defaults, not choices).
+    # Records without module_choice_keys (written before it) stay without it:
+    # their old flags' origin is unknown, and this save's real changes land
+    # in module_control_changes, which _module_preferences trusts there.
+    previous_choices = before.get("module_choice_keys")
+    module_choice_keys = None
+    if isinstance(previous_choices, list):
+        choices = set(previous_choices) | {key for key, value in payload.modules.items() if bool(value) != bool(shown.get(key, False))}
+        module_choice_keys = sorted(choices & set(modules_to_save))
 
     before_modules = get_tenant_modules(before)
     after_modules = get_tenant_modules({**before, "modules": modules_to_save})
@@ -1328,6 +1382,8 @@ async def update_tenant_modules(
         "module_control_updated_by": current_user.id,
         "module_control_updated_by_name": actor_name,
     }}
+    if module_choice_keys is not None:
+        update_doc["$set"]["module_choice_keys"] = module_choice_keys
     # Kanal yoneticisi altyapisi secimi yalnizca explicit gonderildiyse yazilir
     # (modules yazimini bozmadan). None gonderilirse secim temizlenir -> auto-detect.
     if "channel_manager_provider" in payload.model_fields_set:
@@ -1367,6 +1423,8 @@ async def update_tenant_modules(
             detail="Hotel not found",
         )
 
+    tenant_doc["module_preferences"] = _module_preferences(tenant_doc)
+    tenant_doc["module_preferences_known"] = _module_preferences_known(tenant_doc)
     tenant_doc["modules"] = await effective_tenant_modules(tenant_doc)
     await log_audit_event(
         tenant_id=tenant_doc.get("id") or tenant_id,
@@ -1487,13 +1545,17 @@ async def update_tenant_tier(tenant_id: str, payload: dict, current_user: User =
     }
 
     if reset_modules:
+        # Defaults, not choices: the module screens must say "not in plan".
         update_data["modules"] = get_plan_default_modules(new_tier)
+        update_data["module_choice_keys"] = []
 
     await db.tenants.update_one({"id": tenant_id}, {"$set": update_data})
     _invalidate_admin_tenants_cache(getattr(current_user, "tenant_id", None))  # v95.3
 
     updated_tenant = await db.tenants.find_one({"id": tenant_id}, {"_id": 0})
     if updated_tenant:
+        updated_tenant["module_preferences"] = _module_preferences(updated_tenant)
+        updated_tenant["module_preferences_known"] = _module_preferences_known(updated_tenant)
         updated_tenant["modules"] = await effective_tenant_modules(updated_tenant)
 
     return {
