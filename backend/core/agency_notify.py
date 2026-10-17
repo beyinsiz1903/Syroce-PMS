@@ -78,14 +78,21 @@ async def notify_hotel(
     message: str,
     action_url: str,
     metadata: dict | None = None,
+    database=None,
 ) -> None:
-    """Add a bell-center notification for the hotel's staff."""
+    """Add a bell-center notification for the hotel's staff.
+
+    ``database``: an explicit handle (scheduled jobs run outside the API's
+    tenant-scoped connection); the row carries ``tenant_id`` either way."""
     try:
-        from core.database import db
+        from contextlib import nullcontext
+
+        from core.database import db as tenant_db
         from core.tenant_db import tenant_context
 
-        with tenant_context(tenant_id):
-            await db.notifications.insert_one(
+        target = database if database is not None else tenant_db
+        with tenant_context(tenant_id) if database is None else nullcontext():
+            await target.notifications.insert_one(
                 {
                     "id": str(uuid.uuid4()),
                     "tenant_id": tenant_id,

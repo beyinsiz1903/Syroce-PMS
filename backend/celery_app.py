@@ -170,6 +170,13 @@ celery_app.conf.update(
             "task": "celery_tasks.purge_expired_call_recordings_task",
             "schedule": crontab(hour=2, minute=30),
         },
+        # Agency extranet: last month's hotel–agency statements, issued as
+        # "system" on the 1st at 00:30 UTC (03:30 Istanbul). Idempotent: a
+        # period already covered (by either party or a rerun) is skipped.
+        "agency-monthly-statements": {
+            "task": "celery_tasks.agency_monthly_statements_task",
+            "schedule": crontab(day_of_month=1, hour=0, minute=30),
+        },
         # Data archival - runs weekly on Sunday at 3 AM
         "archive-old-data": {
             "task": "celery_tasks.archive_old_data_task",

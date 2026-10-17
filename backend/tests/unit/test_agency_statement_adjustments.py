@@ -119,7 +119,7 @@ async def test_correcting_a_disputed_statement_asks_the_agency_again(issued):
 async def test_concurrent_change_makes_the_correction_miss(issued, monkeypatch, meanwhile):
     stale = copy.deepcopy(issued.doc)
     issued.doc.update(meanwhile)  # agency disputed / another correction after our read
-    monkeypatch.setattr(st, "_hotel_statement", AsyncMock(return_value=stale))
+    monkeypatch.setattr(st, "_load", AsyncMock(return_value=stale))
     with pytest.raises(HTTPException) as exc:
         await st.adjust_statement_line("s1", st.LineAdjustment(booking_id="b1", amount=-300, reason="Erken çıkış"), USER)
     assert exc.value.status_code == 409 and "adjustment" not in issued.doc["lines"][0]
@@ -169,7 +169,7 @@ async def test_payment_checked_against_an_old_balance_cannot_settle_a_corrected_
     issued.doc["status"] = "issued"
     await st.adjust_statement_line("s1", st.LineAdjustment(booking_id="b1", amount=50, reason="Minibar ücreti"), USER)
     issued.doc["status"] = "agreed"  # agency agreed again, to the new version
-    monkeypatch.setattr(st, "_hotel_statement", AsyncMock(return_value=stale))
+    monkeypatch.setattr(st, "_load", AsyncMock(return_value=stale))
     with pytest.raises(HTTPException) as exc:
         await st.record_payment("s1", st.PaymentCreate(amount=100, direction="agency_to_hotel", paid_at="2026-11-30"), USER)
     assert exc.value.status_code == 409 and issued.doc["payments"] == [] and outstanding(issued.doc) == 150.0
