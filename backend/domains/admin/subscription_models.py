@@ -614,6 +614,18 @@ def get_plan_default_modules(tier: str) -> dict[str, bool]:
     return modules
 
 
+def _sync_plan_features() -> None:
+    """A plan's advertised features are exactly the modules it includes
+    (get_plan_default_modules): /subscription/plans and /subscription/features
+    never list a paid add-on (Quick-ID, AI modules, Academy...) as included."""
+    for tier, plan in SUBSCRIPTION_PLANS.items():
+        defaults = get_plan_default_modules(tier.value)
+        plan.features = [flag for flag in FeatureFlag if defaults.get(flag.value)]
+
+
+_sync_plan_features()
+
+
 def get_feature_comparison() -> dict[str, dict[str, bool]]:
     """Get feature comparison across all tiers"""
     comparison = {}

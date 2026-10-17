@@ -177,8 +177,13 @@ def _offline(monkeypatch, tenants, subscriptions):
     async def has(tenant_id, module):
         return (tenant_id, module) in subscriptions
 
+    async def products(tenant_ids):
+        queries.append("products")
+        return {tid: {m for t, m in subscriptions if t == tid} for tid in tenant_ids}
+
     monkeypatch.setattr(entitlement, "db", SimpleNamespace(tenants=Tenants()))
     monkeypatch.setattr(subs, "subscribed_tenant_ids", subscribed)
+    monkeypatch.setattr(subs, "active_products_by_tenant", products)
     monkeypatch.setattr(subs, "tenant_has_module", has)
     monkeypatch.setattr(subs, "_db", _NoDB)
     return queries
@@ -199,12 +204,12 @@ async def test_transition_uses_effective_channel_manager_access(monkeypatch, mod
 
 
 @pytest.mark.asyncio
-async def test_lists_resolve_subscriptions_in_two_queries(monkeypatch):
+async def test_lists_resolve_subscriptions_in_one_query(monkeypatch):
     docs = [{"id": f"t{i}", "subscription_tier": "basic", "modules": {"channel_manager": False}} for i in range(50)]
     queries = _offline(monkeypatch, {}, {("t3", "channel_manager"), ("t7", "agency_extranet")})
     result = await entitlement.effective_tenant_modules_many(docs)
     assert [i for i, mods in enumerate(result) if mods["agency_extranet"]] == [3, 7]
-    assert len(queries) == 2
+    assert len(queries) == 1
 
 
 @pytest.mark.asyncio
@@ -306,3 +311,17 @@ async def test_changing_agency_extranet_is_stored_as_a_decision(monkeypatch):
     tenants_router, state = _admin_patch_env(monkeypatch, {"agency_extranet": True}, set())
     await _save(tenants_router, {"agency_extranet": True, "spa": True})                # explicit stays
     assert state["modules"]["agency_extranet"] is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("flags,bought", [
+    ({"quick_id_integration": True}, set()),        # store product flag on the hotel
+    ({}, {"quick_id_integration"}),                 # active store subscription
+])
+async def test_store_alias_shows_as_the_canonical_module(monkeypatch, flags, bought):
+    """Reviewer's case: the store enables quick_id_integration; the server
+    accepts it as quick_id, so the session must say quick_id=true."""
+    _offline(monkeypatch, {"t1": flags}, {("t1", key) for key in bought})
+    doc = {"id": "t1", "subscription_tier": "basic", "modules": flags}
+    assert (await entitlement.effective_tenant_modules(doc))["quick_id"] is True
+    assert (await entitlement.effective_tenant_modules({"id": "t1", "subscription_tier": "basic", "modules": {}}))["quick_id"] is (bool(bought))

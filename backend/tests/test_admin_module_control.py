@@ -8,6 +8,17 @@ from domains.admin.schemas import TenantModulesUpdate
 from models.schemas import User
 
 
+@pytest.fixture(autouse=True)
+def _no_store_subscriptions(monkeypatch):
+    """Session and module responses resolve store products for the effective
+    module map (core.entitlement.effective_tenant_modules); none here."""
+    async def none(_tenant_ids):
+        return {}
+
+    monkeypatch.setattr("core.subscriptions.active_products_by_tenant", none)
+
+
+
 @pytest.mark.asyncio
 async def test_superadmin_module_update_uses_system_db_for_cross_tenant_audit():
     """Publishing another hotel's modules must not hit request-scoped audit DB."""

@@ -8,6 +8,10 @@ import pytest
 from core import entitlement
 
 
+async def _empty_products():
+    return {}
+
+
 def _tenants(monkeypatch, doc):
     import core.subscriptions as subs
 
@@ -26,6 +30,7 @@ def _tenants(monkeypatch, doc):
 
     monkeypatch.setattr(entitlement, "db", SimpleNamespace(tenants=Tenants()))
     monkeypatch.setattr(subs, "subscribed_tenant_ids", none)
+    monkeypatch.setattr(subs, "active_products_by_tenant", lambda *_a: _empty_products())
     monkeypatch.setattr(subs, "tenant_has_module", no)
     return seen
 
@@ -101,6 +106,7 @@ async def test_observe_mode_guard_counts_modules_that_come_with_the_plan(monkeyp
     monkeypatch.setattr(subs, "_db", lambda: SimpleNamespace(tenants=Tenants()))
     monkeypatch.setattr(enforcement, "tenant_has_module", no)
     monkeypatch.setattr(subs, "subscribed_tenant_ids", none)
+    monkeypatch.setattr(subs, "active_products_by_tenant", lambda *_a: _empty_products())
     assert await enforcement._module_enabled("t1", included) is True
     assert await enforcement._module_enabled("t1", "not_a_module") is False
 
@@ -138,6 +144,7 @@ async def test_plan_access_is_the_base_edition_not_pro(monkeypatch, flags, expec
     monkeypatch.setattr(enforcement, "tenant_has_module", flag_only)
     monkeypatch.setattr(subs, "_db", lambda: SimpleNamespace(tenants=Tenants()))
     monkeypatch.setattr(subs, "subscribed_tenant_ids", none)
+    monkeypatch.setattr(subs, "active_products_by_tenant", lambda *_a: _empty_products())
 
     assert await enforcement.get_tenant_active_editions("t1", "housekeeping") == [expected_edition]
     pro = expected_edition == "pro"
@@ -158,3 +165,25 @@ async def test_plan_modules_serves_what_the_server_enforces():
         doc = {"subscription_plan": "pms_lite"} if tier == "pms_lite" else {"subscription_tier": tier}
         enforced = get_tenant_modules(doc)
         assert {k: v for k, v in enforced.items() if k in defaults} == defaults
+
+
+@pytest.mark.asyncio
+async def test_catalogue_carries_derived_agency_extranet():
+    """Reviewer's case: the create form sent agency_extranet=false next to
+    channel_manager=true because the catalogue lacked the derived key."""
+    from domains.admin.router.subscription import get_plan_module_defaults
+
+    body = await get_plan_module_defaults()
+    for tier, defaults in body["defaults_by_tier"].items():
+        assert defaults["agency_extranet"] == defaults.get("channel_manager", False), tier
+
+
+def test_plans_and_features_never_list_paid_add_ons():
+    from domains.admin.subscription_models import SUBSCRIPTION_PLANS, get_feature_comparison
+
+    paid = {"quick_id", "academy", "ai_chatbot", "ai_pricing", "ai_whatsapp", "ai_predictive", "ai_reputation", "ai_revenue_autopilot", "ai_social_radar"}
+    for plan in SUBSCRIPTION_PLANS.values():
+        assert not paid & {flag.value for flag in plan.features}
+    comparison = get_feature_comparison()
+    assert not any(comparison[key][tier] for key in paid for tier in comparison[key])
+    assert comparison["ai"]["enterprise"] is True

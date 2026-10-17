@@ -9,6 +9,13 @@ import domains.admin.router.subscription as sub_router
 from domains.admin.router.subscription import _get_full_entitlements
 
 
+@pytest.fixture(autouse=True)
+def _no_store_subscriptions(monkeypatch):
+    """/subscription/current resolves store products for the effective module
+    map (core.entitlement.effective_tenant_modules); these tests have none."""
+    monkeypatch.setattr("core.subscriptions.active_products_by_tenant", AsyncMock(return_value={}))
+
+
 def _mock_quota_usage(*docs):
     cursor = MagicMock()
     cursor.to_list = AsyncMock(return_value=list(docs))

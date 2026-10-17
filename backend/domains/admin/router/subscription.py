@@ -247,12 +247,17 @@ async def get_plan_module_defaults():
     ``defaults_by_tier`` is the single source of plan scope: exactly what
     get_tenant_modules starts from (submodules and PMS Lite included). The
     admin screens read it instead of computing tiers themselves."""
+    from core.helpers import get_tenant_modules
+
     tiers = [tier.value for tier in SubscriptionTier]
     return {
         "plan_modules": PLAN_MODULE_DEFAULTS,
         "tiers": tiers,
         "all_module_keys": get_all_module_keys(),
-        "defaults_by_tier": {tier: get_plan_default_modules(tier) for tier in [*tiers, "pms_lite"]},
+        "defaults_by_tier": {
+            tier: get_tenant_modules({"subscription_plan": "pms_lite"} if tier == "pms_lite" else {"subscription_tier": tier})
+            for tier in [*tiers, "pms_lite"]
+        },
     }
 
 
