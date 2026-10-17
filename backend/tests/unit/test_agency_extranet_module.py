@@ -333,6 +333,24 @@ async def test_module_screens_get_the_hotels_own_choices_apart_from_defaults(mon
     what the hotel stored, so a screen can tell "not in plan" from "disabled"."""
     tenants_router, _state = _admin_patch_env(monkeypatch, {"spa": False}, set())
     body = await _save(tenants_router, {"spa": False, "pms": True})
-    assert body["module_preferences"] == {"spa": False, "pms": True}
+    assert body["module_preferences"] == {"spa": False}     # pms=true came back as shown: an echo
     assert body["modules"]["housekeeping"] is True        # plan default, not a choice
     assert "housekeeping" not in body["module_preferences"]
+
+
+@pytest.mark.asyncio
+async def test_publishing_one_module_does_not_turn_echoed_defaults_into_choices(monkeypatch):
+    """Reviewer's case: a Mini hotel with no stored choices enables only SPA;
+    the screen sends the whole map. Only spa is stored, so maintenance stays
+    'not in plan' (computed), not 'disabled by the admin'."""
+    tenants_router, state = _admin_patch_env(monkeypatch, {}, set())
+    shown = await entitlement.effective_tenant_modules({"id": "t1", "subscription_tier": "basic", "modules": {}})
+    sent = {**shown, "spa": True}
+    body = await _save(tenants_router, sent)
+    assert state["modules"] == {"spa": True}
+    assert body["module_preferences"] == {"spa": True}
+    assert "maintenance" not in body["module_preferences"]
+    # A stored choice stays stored even when sent back unchanged.
+    tenants_router, state = _admin_patch_env(monkeypatch, {"maintenance": False}, set())
+    await _save(tenants_router, {"maintenance": False, "spa": True})
+    assert state["modules"] == {"maintenance": False, "spa": True}

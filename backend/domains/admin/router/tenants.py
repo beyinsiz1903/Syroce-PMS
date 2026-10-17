@@ -21,7 +21,6 @@ from common.request_context import get_client_ip, get_user_agent
 from core.database import db
 from core.entitlement import effective_tenant_modules, effective_tenant_modules_many
 from core.helpers import (
-    AGENCY_EXTRANET_MODULE,
     get_tenant_modules,
     require_super_admin_guard,
 )
@@ -1302,16 +1301,18 @@ async def update_tenant_modules(
     if not before:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Hotel not found")
 
-    # Screens send the whole map they showed, computed values included. An
-    # Agency Extranet value the hotel never set explicitly is computed
-    # (channel manager / store subscription): saved unchanged it is an echo,
-    # not a decision, and stays computed. Only a changed value is stored.
-    modules_to_save = dict(payload.modules)
-    own_modules = before.get("modules")
-    if AGENCY_EXTRANET_MODULE in modules_to_save and not (isinstance(own_modules, dict) and AGENCY_EXTRANET_MODULE in own_modules):
-        shown = (await effective_tenant_modules(before)).get(AGENCY_EXTRANET_MODULE, False)
-        if bool(modules_to_save[AGENCY_EXTRANET_MODULE]) == bool(shown):
-            modules_to_save.pop(AGENCY_EXTRANET_MODULE)
+    # Screens send the whole map they showed: plan defaults, store access and
+    # derived values (Agency Extranet) included. A value the hotel never
+    # stored and that comes back exactly as shown is an echo, not a decision:
+    # it stays computed (follows the plan, the store, the channel manager).
+    # Stored choices are kept; a changed value is stored as the admin's choice.
+    own_modules = before.get("modules") if isinstance(before.get("modules"), dict) else {}
+    shown = await effective_tenant_modules(before)
+    modules_to_save = {
+        key: bool(value)
+        for key, value in payload.modules.items()
+        if key in own_modules or bool(value) != bool(shown.get(key, False))
+    }
 
     before_modules = get_tenant_modules(before)
     after_modules = get_tenant_modules({**before, "modules": modules_to_save})
