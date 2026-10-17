@@ -95,6 +95,30 @@ describe('PerformanceReport safety', () => {
 describe('PerformanceReport readability and financial context', () => {
   afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
+  it('refreshes financial balances after a payment without resetting the selected period', async () => {
+    const api = { get: vi.fn().mockResolvedValue({ data: reportOf() }) };
+    const { rerender } = render(<PerformanceReport side="hotel" api={api} path="/r" refreshKey={0} />);
+    await screen.findByTestId('performance-row-a1-TRY');
+    fireEvent.change(screen.getByLabelText('Giriş tarihi başlangıç'), { target: { value: '2026-09-01' } });
+    await waitFor(() => expect(api.get).toHaveBeenLastCalledWith('/r', { params: expect.objectContaining({ period_start: '2026-09-01' }) }));
+    const previous = api.get.mock.calls.length;
+    rerender(<PerformanceReport side="hotel" api={api} path="/r" refreshKey={1} />);
+    await waitFor(() => expect(api.get.mock.calls.length).toBe(previous + 1));
+    expect(screen.getByLabelText('Giriş tarihi başlangıç')).toHaveValue('2026-09-01');
+  });
+
+  it('explains zero October sales with future November reservations and opens the forward view', async () => {
+    const data = reportOf();
+    data.rows[0].performance = { bookings: 0, gross: 0, commission: 0, net_to_hotel: 0 };
+    data.totals[0].performance = data.rows[0].performance;
+    render(<PerformanceReport side="agency" api={{ get: vi.fn().mockResolvedValue({ data }) }} path="/r" />);
+    const button = await screen.findByRole('button', { name: 'Gelecek rezervasyonları göster' });
+    expect(screen.getByText(/gelecek 90 günde 2 rezervasyon var/)).toBeTruthy();
+    fireEvent.click(button);
+    expect(screen.getByRole('tab', { name: 'Gelecek satışlar' })).toHaveAttribute('data-state', 'active');
+    expect(screen.getByTestId('performance-row-a1-TRY')).toHaveTextContent('16.000,00 TRY');
+  });
+
   it('keeps opposing unbilled amounts and payment notices separate, not netted or added', async () => {
     const data = reportOf();
     data.rows[0].unbilled = { bookings: 2, agency_owes_hotel: 8000, hotel_owes_agency: 8000 };

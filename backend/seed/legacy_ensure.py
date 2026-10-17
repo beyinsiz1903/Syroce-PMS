@@ -252,6 +252,8 @@ async def ensure_agencies_seeded(db):
             "tenant_id": tid,
             **adef,
             "status": "active",
+            "is_demo": True,
+            "record_source": "demo_seed",
             "created_at": (now - timedelta(days=180 + idx * 30)).isoformat(),
         }
         agencies.append(agency)

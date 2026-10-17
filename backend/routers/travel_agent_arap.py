@@ -14,6 +14,8 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from core.agency_record_classification import archived_agency as _archived_agency
+from core.agency_record_classification import readonly_finance
 from core.database import db
 from core.security import get_current_user
 from core.tenant_currency import get_tenant_currency
@@ -100,6 +102,35 @@ def _invalidate_arap(tenant_id: str):
 router = APIRouter(prefix="/api/agent-arap", tags=["travel-agent-arap"])
 
 
+def _local_booking_query(tenant_id: str, agency_ids: list[str]) -> dict:
+    return {"tenant_id": tenant_id, "agency_id": {"$in": agency_ids}, "status": {"$nin": ["cancelled"]},
+            "marketplace_agency_id": {"$in": [None, ""]}, "origin": {"$ne": "syroce_marketplace"},
+            "channel": {"$ne": "marketplace"}, "source_channel": {"$ne": "marketplace"}}
+
+
+async def _writable_local_agency(tenant_id: str, agency_id: str) -> dict:
+    from core.agency_finance_directory import linked_extranet_id
+
+    agency = await db.agencies.find_one({"tenant_id": tenant_id, "id": agency_id})
+    if await linked_extranet_id(_sys_db, tenant_id, agency_id, agency):
+        raise HTTPException(409, "Extranet acentesinin ödemesi ortak ekstre üzerinden kaydedilmelidir; Acente Defteri > Mutabakat ve ödeme bölümünü kullanın.")
+    if not agency:
+        raise HTTPException(404, "Agency not found")
+    if readonly_finance(agency):
+        raise HTTPException(409, "Arşivlenmiş/test acentesine yeni finans işlemi kaydedilemez; önce acente durumunu kontrol edin.")
+    return agency
+
+
+@router.get("/extranet-agencies")
+async def get_extranet_agencies(current_user: User = Depends(get_current_user),
+                                _perm=Depends(require_op("view_finance_reports"))):
+    from core.agency_finance_directory import extranet_directory
+    from routers.marketplace_b2b import _require_hotel_admin
+
+    tenant_id = _require_hotel_admin(current_user)
+    return await extranet_directory(_sys_db, tenant_id, today=datetime.now(UTC).date())
+
+
 def _currency_code(value: Any, fallback: str = "TRY") -> str:
     code = str(value or fallback or "TRY").strip().upper()
     return code if len(code) == 3 and code.isalpha() else str(fallback or "TRY").upper()
@@ -173,6 +204,7 @@ async def _get_agency_ledger(
     tenant_id: str,
     agency_id: str | None = None,
     db_handle=None,
+    include_archived: bool = False,
 ) -> list[dict]:
     """Agency ledger'ı hesaplar.
 
@@ -189,7 +221,16 @@ async def _get_agency_ledger(
 
     agencies = await _db.agencies.find(
         {**match, "status": {"$ne": "deleted"}},
-    ).to_list(500)
+    ).to_list(None)
+    if agencies:
+        from core.agency_finance_directory import finance_partners
+
+        partners = await finance_partners(_db if db_handle is not None else _sys_db, tenant_id)
+        for agency in agencies:
+            agency["extranet_agency_id"] = next((aid for aid in (
+                agency.get("migrated_to_marketplace_agency_id"), agency.get("marketplace_agency_id"), agency.get("id"),
+            ) if aid in partners), None)
+    agencies = [agency for agency in agencies if include_archived or not (_archived_agency(agency) or agency.get("extranet_agency_id"))]
 
     if not agencies:
         return []
@@ -202,7 +243,7 @@ async def _get_agency_ledger(
     import asyncio as _asyncio
 
     bookings_pipe = [
-        {"$match": {"tenant_id": tenant_id, "agency_id": {"$in": aids}, "status": {"$nin": ["cancelled"]}}},
+        {"$match": _local_booking_query(tenant_id, aids)},
         {
             "$group": {
                 "_id": {
@@ -244,9 +285,9 @@ async def _get_agency_ledger(
     ]
 
     bookings_agg, txns_agg, plans_agg = await _asyncio.gather(
-        _db.bookings.aggregate(bookings_pipe).to_list(len(aids) + 10),
-        _db.agency_transactions.aggregate(txns_pipe).to_list(len(aids) + 10),
-        _db.agency_payment_plans.aggregate(plans_pipe).to_list(len(aids) + 10),
+        _db.bookings.aggregate(bookings_pipe).to_list(None),
+        _db.agency_transactions.aggregate(txns_pipe).to_list(None),
+        _db.agency_payment_plans.aggregate(plans_pipe).to_list(None),
     )
 
     book_by: dict[str, dict[str, dict]] = {}
@@ -306,6 +347,10 @@ async def _get_agency_ledger(
                 "contact_phone": agency.get("contact_phone", ""),
                 "commission_rate": agency.get("commission_rate", 10),
                 "status": agency.get("status", "active"),
+                "archived": _archived_agency(agency) or bool(agency.get("extranet_agency_id")),
+                "readonly_finance": readonly_finance(agency) or bool(agency.get("extranet_agency_id")),
+                "extranet_agency_id": agency.get("extranet_agency_id"),
+                "finance_source": "local_legacy",
                 "currency": tenant_currency,
                 "total_bookings": sum(int(row.get("count", 0) or 0) for row in booking_currencies.values()),
                 "total_bookings_revenue": round(revenue_by_currency.get(tenant_currency, 0), 2),
@@ -337,8 +382,9 @@ async def _get_agency_ledger(
 async def get_summary(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_finance_reports")),  # v80 Bug DP: agency A/R aging
+    include_archived: bool = False,
 ):
-    ledger = await _get_agency_ledger(current_user.tenant_id)
+    ledger = await _get_agency_ledger(current_user.tenant_id, include_archived=include_archived)
     tenant_currency, _ = await get_tenant_currency(current_user.tenant_id)
     tenant_currency = _currency_code(tenant_currency)
 
@@ -385,8 +431,8 @@ async def get_summary(
 
 
 @router.get("/aging")
-async def get_aging_report(current_user: User = Depends(get_current_user)):
-    ledger = await _get_agency_ledger(current_user.tenant_id)
+async def get_aging_report(current_user: User = Depends(get_current_user), include_archived: bool = False):
+    ledger = await _get_agency_ledger(current_user.tenant_id, include_archived=include_archived)
     tenant_currency, _ = await get_tenant_currency(current_user.tenant_id)
     tenant_currency = _currency_code(tenant_currency)
 
@@ -725,7 +771,7 @@ async def get_agency_transactions(
 
     bookings = (
         await db.bookings.find(
-            {"tenant_id": current_user.tenant_id, "agency_id": agency_id, "status": {"$nin": ["cancelled"]}},
+            _local_booking_query(current_user.tenant_id, [agency_id]),
             {"_id": 0, "id": 1, "guest_name": 1, "check_in": 1, "check_out": 1, "total_amount": 1, "currency": 1, "status": 1, "created_at": 1},
         )
         .sort("created_at", -1)
@@ -765,9 +811,7 @@ async def record_payment(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("post_payment")),  # v94 DW
 ):
-    agency = await db.agencies.find_one({"tenant_id": current_user.tenant_id, "id": req.agency_id})
-    if not agency:
-        raise HTTPException(status_code=404, detail="Agency not found")
+    await _writable_local_agency(current_user.tenant_id, req.agency_id)
     tenant_currency, _ = await get_tenant_currency(current_user.tenant_id)
     currency = _currency_code(req.currency, tenant_currency)
 
@@ -815,9 +859,7 @@ async def create_payment_plan(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("post_payment")),  # v94 DW
 ):
-    agency = await db.agencies.find_one({"tenant_id": current_user.tenant_id, "id": req.agency_id})
-    if not agency:
-        raise HTTPException(status_code=404, detail="Agency not found")
+    agency = await _writable_local_agency(current_user.tenant_id, req.agency_id)
     tenant_currency, _ = await get_tenant_currency(current_user.tenant_id)
     currency = _currency_code(req.currency, tenant_currency)
 
@@ -874,6 +916,8 @@ async def update_installment(
     if not plan:
         raise HTTPException(status_code=404, detail="Payment plan not found")
 
+    await _writable_local_agency(current_user.tenant_id, plan["agency_id"])
+
     installments = plan.get("installments", [])
     if req.installment_index >= len(installments):
         raise HTTPException(status_code=400, detail="Invalid installment index")
@@ -921,7 +965,7 @@ async def get_agency_statement(
     agency_id: str,
     current_user: User = Depends(get_current_user),
 ):
-    ledger = await _get_agency_ledger(current_user.tenant_id, agency_id)
+    ledger = await _get_agency_ledger(current_user.tenant_id, agency_id, include_archived=True)
     if not ledger:
         raise HTTPException(status_code=404, detail="Agency not found")
 
@@ -937,7 +981,7 @@ async def get_agency_statement(
 
     bookings = (
         await db.bookings.find(
-            {"tenant_id": current_user.tenant_id, "agency_id": agency_id, "status": {"$nin": ["cancelled"]}},
+            _local_booking_query(current_user.tenant_id, [agency_id]),
             {"_id": 0, "id": 1, "guest_name": 1, "check_in": 1, "check_out": 1, "total_amount": 1, "currency": 1, "created_at": 1},
         )
         .sort("created_at", 1)
