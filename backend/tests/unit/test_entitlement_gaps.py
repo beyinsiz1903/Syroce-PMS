@@ -76,3 +76,31 @@ async def _academy_status(monkeypatch, licensed):
 async def test_academy_has_no_bypass(monkeypatch):
     assert await _academy_status(monkeypatch, licensed=False) == 403
     assert await _academy_status(monkeypatch, licensed=True) == 200
+
+
+@pytest.mark.asyncio
+async def test_observe_mode_guard_counts_modules_that_come_with_the_plan(monkeypatch):
+    """Switching ENTITLEMENT_ENFORCEMENT_MODE to enforce must not refuse a
+    module the plan includes just because the hotel has no explicit flag."""
+    import core.database as database
+    import core.subscriptions as subs
+    from core.entitlements import enforcement
+    from domains.admin.subscription_models import get_plan_default_modules
+
+    included = next(key for key in ("spa", "hr", "mice", "housekeeping") if get_plan_default_modules("enterprise").get(key))
+
+    class Tenants:
+        async def find_one(self, *_a, **_k):
+            return {"subscription_tier": "enterprise", "modules": {}}
+
+    async def no(*_a, **_k):
+        return False
+
+    async def none(*_a, **_k):
+        return set()
+
+    monkeypatch.setattr(database, "_raw_db", SimpleNamespace(tenants=Tenants()))
+    monkeypatch.setattr(enforcement, "tenant_has_module", no)
+    monkeypatch.setattr(subs, "subscribed_tenant_ids", none)
+    assert await enforcement._module_enabled("t1", included) is True
+    assert await enforcement._module_enabled("t1", "not_a_module") is False
