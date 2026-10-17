@@ -81,13 +81,14 @@ describe('AdminModuleControlCenter', () => {
   });
 
   it.each([
-    [{}, 'Pakette yok'],                              // plan default only: not an admin choice
-    [{ maintenance: false }, 'Yönetici modülü kapattı'], // stored choice
-  ])('tells "not in plan" from "disabled by admin" (preferences %o)', async (preferences, reason) => {
+    [{}, true, 'Pakette yok'],                              // plan default only: not an admin choice
+    [{ maintenance: false }, true, 'Yönetici modülü kapattı'], // stored choice
+    [{}, false, 'Modül kapalı'],                            // older record: origin unknown, stay neutral
+  ])('tells "not in plan" from "disabled by admin" (preferences %o, known %s)', async (preferences, known, reason) => {
     axios.get.mockImplementation((url) => {
       if (url.endsWith('/admin/tenants')) return Promise.resolve({ data: { tenants: [{
         id: 'hotel-3', property_name: 'Mini Otel', subscription_tier: 'mini',
-        modules: { pms: true, maintenance: false }, module_preferences: preferences,
+        modules: { pms: true, maintenance: false }, module_preferences: preferences, module_preferences_known: known,
       }] } });
       return Promise.resolve({ data: {} });
     });

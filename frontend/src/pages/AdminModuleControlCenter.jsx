@@ -179,10 +179,13 @@ export default function AdminModuleControlCenter() {
       hasModule: (key) => stateOf(key).enabled,
       // Off by the administrator only if the hotel stored that choice or the
       // draft turns it off; the effective map also carries plan defaults.
+      // Records older than the choice record: an untouched flag's origin is
+      // unknown, so the reason stays neutral ("Modül kapalı").
       moduleOffReason: (key) => {
         const chosen = Object.prototype.hasOwnProperty.call(selected?.module_preferences || {}, key);
         const turnedOffInDraft = draft[key] === false && baseline[key] !== false;
-        return chosen || turnedOffInDraft ? 'module_disabled' : 'not_in_plan';
+        if (chosen || turnedOffInDraft) return 'module_disabled';
+        return selected?.module_preferences_known === false ? 'module_off' : 'not_in_plan';
       },
     };
   }, [previewTenant, planReady, selected, draft, baseline]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -206,8 +209,14 @@ export default function AdminModuleControlCenter() {
       const response = await axios.patch(`/admin/tenants/${selectedId}/modules`, { modules: draft });
       const published = response.data?.modules || draft;
       const preferences = response.data?.module_preferences;
+      const known = response.data?.module_preferences_known;
       setTenants((items) => items.map((tenant) => (
-        tenantId(tenant) === selectedId ? { ...tenant, modules: published, ...(preferences ? { module_preferences: preferences } : {}) } : tenant
+        tenantId(tenant) === selectedId ? {
+          ...tenant,
+          modules: published,
+          ...(preferences ? { module_preferences: preferences } : {}),
+          ...(typeof known === 'boolean' ? { module_preferences_known: known } : {}),
+        } : tenant
       )));
       setBaseline({ ...published });
       toast.success(`${changes.length} modül değişikliği yayınlandı.`);

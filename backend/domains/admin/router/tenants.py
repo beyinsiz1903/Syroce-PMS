@@ -232,13 +232,20 @@ def _module_preferences(tenant_doc: dict) -> dict[str, bool]:
     """The hotel's own module decisions, kept apart from the effective map
     (plan defaults, store access): a key in ``modules`` is not proof that an
     administrator chose it — plan resets store defaults there too.
-    ``module_choice_keys`` records which stored flags were chosen; records
-    without it (written before it existed) count every stored flag."""
+    ``module_choice_keys`` records which stored flags were chosen. Records
+    written before it existed have no such record: only the module publish
+    history (``module_control_changes``, real changes only) is trusted
+    there, and ``_module_preferences_known`` is false so screens stay
+    neutral about the other flags."""
     own = tenant_doc.get("modules") if isinstance(tenant_doc.get("modules"), dict) else {}
     chosen = tenant_doc.get("module_choice_keys")
-    if isinstance(chosen, list):
-        return {key: bool(own[key]) for key in chosen if key in own}
-    return {key: bool(value) for key, value in own.items()}
+    if not isinstance(chosen, list):
+        chosen = list((tenant_doc.get("module_control_changes") or {}).keys())
+    return {key: bool(own[key]) for key in chosen if key in own}
+
+
+def _module_preferences_known(tenant_doc: dict) -> bool:
+    return isinstance(tenant_doc.get("module_choice_keys"), list)
 
 
 def _plan_defaults_for(tier: str, plan: str | None = None) -> dict[str, bool]:
@@ -1012,6 +1019,7 @@ async def list_tenants(
     # Merge defaults for backward compatibility
     for tenant, modules in zip(tenants, await effective_tenant_modules_many(tenants)):
         tenant["module_preferences"] = _module_preferences(tenant)
+        tenant["module_preferences_known"] = _module_preferences_known(tenant)
         tenant["modules"] = modules
 
     return {
@@ -1328,10 +1336,14 @@ async def update_tenant_modules(
     }
     # Which stored flags are the administrator's choices: earlier choices plus
     # what this save changed (a plan reset stores defaults, not choices).
+    # Records without module_choice_keys (written before it) stay without it:
+    # their old flags' origin is unknown, and this save's real changes land
+    # in module_control_changes, which _module_preferences trusts there.
     previous_choices = before.get("module_choice_keys")
-    choices = set(previous_choices) if isinstance(previous_choices, list) else set(own_modules)
-    choices |= {key for key, value in payload.modules.items() if bool(value) != bool(shown.get(key, False))}
-    module_choice_keys = sorted(choices & set(modules_to_save))
+    module_choice_keys = None
+    if isinstance(previous_choices, list):
+        choices = set(previous_choices) | {key for key, value in payload.modules.items() if bool(value) != bool(shown.get(key, False))}
+        module_choice_keys = sorted(choices & set(modules_to_save))
 
     before_modules = get_tenant_modules(before)
     after_modules = get_tenant_modules({**before, "modules": modules_to_save})
@@ -1352,12 +1364,13 @@ async def update_tenant_modules(
 
     update_doc = {"$set": {
         "modules": modules_to_save,
-        "module_choice_keys": module_choice_keys,
         "module_control_changes": module_change_log,
         "module_control_updated_at": now,
         "module_control_updated_by": current_user.id,
         "module_control_updated_by_name": actor_name,
     }}
+    if module_choice_keys is not None:
+        update_doc["$set"]["module_choice_keys"] = module_choice_keys
     # Kanal yoneticisi altyapisi secimi yalnizca explicit gonderildiyse yazilir
     # (modules yazimini bozmadan). None gonderilirse secim temizlenir -> auto-detect.
     if "channel_manager_provider" in payload.model_fields_set:
@@ -1398,6 +1411,7 @@ async def update_tenant_modules(
         )
 
     tenant_doc["module_preferences"] = _module_preferences(tenant_doc)
+    tenant_doc["module_preferences_known"] = _module_preferences_known(tenant_doc)
     tenant_doc["modules"] = await effective_tenant_modules(tenant_doc)
     await log_audit_event(
         tenant_id=tenant_doc.get("id") or tenant_id,
@@ -1528,6 +1542,7 @@ async def update_tenant_tier(tenant_id: str, payload: dict, current_user: User =
     updated_tenant = await db.tenants.find_one({"id": tenant_id}, {"_id": 0})
     if updated_tenant:
         updated_tenant["module_preferences"] = _module_preferences(updated_tenant)
+        updated_tenant["module_preferences_known"] = _module_preferences_known(updated_tenant)
         updated_tenant["modules"] = await effective_tenant_modules(updated_tenant)
 
     return {

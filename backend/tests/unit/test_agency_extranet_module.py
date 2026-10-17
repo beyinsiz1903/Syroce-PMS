@@ -254,17 +254,17 @@ async def test_session_payload_carries_the_same_decision(monkeypatch):
 
 # ── Saving other modules must not freeze a computed Agency Extranet value ──
 
-def _admin_patch_env(monkeypatch, stored_modules, subscriptions):
+def _admin_patch_env(monkeypatch, stored_modules, subscriptions, extra=None):
     from domains.admin.router import tenants as tenants_router
 
-    state = {"modules": dict(stored_modules)}
+    state = {"modules": dict(stored_modules), **(extra or {})}
 
     class Tenants:
         async def find_one(self, *_a, **_k):
-            return {"id": "t1", "subscription_tier": "basic", "modules": dict(state["modules"])}
+            return {"id": "t1", "subscription_tier": "basic", **{k: (dict(v) if isinstance(v, dict) else v) for k, v in state.items()}}
 
         async def update_one(self, _query, update):
-            state["modules"] = dict(update["$set"]["modules"])
+            state.update(update["$set"])
             return SimpleNamespace(matched_count=1)
 
     async def noop(*_a, **_k):
@@ -331,9 +331,10 @@ async def test_store_alias_shows_as_the_canonical_module(monkeypatch, flags, bou
 async def test_module_screens_get_the_hotels_own_choices_apart_from_defaults(monkeypatch):
     """The effective map carries plan defaults; module_preferences carries only
     what the hotel stored, so a screen can tell "not in plan" from "disabled"."""
-    tenants_router, _state = _admin_patch_env(monkeypatch, {"spa": False}, set())
+    tenants_router, _state = _admin_patch_env(monkeypatch, {"spa": False}, set(), {"module_choice_keys": ["spa"]})
     body = await _save(tenants_router, {"spa": False, "pms": True})
     assert body["module_preferences"] == {"spa": False}     # pms=true came back as shown: an echo
+    assert body["module_preferences_known"] is True
     assert body["modules"]["housekeeping"] is True        # plan default, not a choice
     assert "housekeeping" not in body["module_preferences"]
 
@@ -343,7 +344,7 @@ async def test_publishing_one_module_does_not_turn_echoed_defaults_into_choices(
     """Reviewer's case: a Mini hotel with no stored choices enables only SPA;
     the screen sends the whole map. Only spa is stored, so maintenance stays
     'not in plan' (computed), not 'disabled by the admin'."""
-    tenants_router, state = _admin_patch_env(monkeypatch, {}, set())
+    tenants_router, state = _admin_patch_env(monkeypatch, {}, set(), {"module_choice_keys": []})
     shown = await entitlement.effective_tenant_modules({"id": "t1", "subscription_tier": "basic", "modules": {}})
     sent = {**shown, "spa": True}
     body = await _save(tenants_router, sent)
@@ -351,9 +352,10 @@ async def test_publishing_one_module_does_not_turn_echoed_defaults_into_choices(
     assert body["module_preferences"] == {"spa": True}
     assert "maintenance" not in body["module_preferences"]
     # A stored choice stays stored even when sent back unchanged.
-    tenants_router, state = _admin_patch_env(monkeypatch, {"maintenance": False}, set())
+    tenants_router, state = _admin_patch_env(monkeypatch, {"maintenance": False}, set(), {"module_choice_keys": ["maintenance"]})
     await _save(tenants_router, {"maintenance": False, "spa": True})
     assert state["modules"] == {"maintenance": False, "spa": True}
+    assert state["module_choice_keys"] == ["maintenance", "spa"]
 
 
 @pytest.mark.asyncio
@@ -405,8 +407,26 @@ class _Store:
         return SimpleNamespace(matched_count=1)
 
 
-def test_legacy_records_without_choice_keys_keep_their_stored_flags():
-    from domains.admin.router.tenants import _module_preferences
+def test_records_without_choice_keys_claim_only_what_history_proves():
+    """Reviewer's case: older records stored plan defaults as flags; their
+    origin is unknown. Only the publish history counts as a choice there,
+    and the response says the rest is unknown (neutral reason on screen)."""
+    from domains.admin.router.tenants import _module_preferences, _module_preferences_known
 
-    assert _module_preferences({"modules": {"spa": True, "hr": False}}) == {"spa": True, "hr": False}
-    assert _module_preferences({"modules": {"spa": True, "hr": False}, "module_choice_keys": ["spa"]}) == {"spa": True}
+    legacy = {"modules": {"spa": True, "maintenance": False}}
+    assert _module_preferences(legacy) == {}
+    assert _module_preferences_known(legacy) is False
+    with_history = {**legacy, "module_control_changes": {"spa": {"enabled": True}}}
+    assert _module_preferences(with_history) == {"spa": True}
+    recorded = {**legacy, "module_choice_keys": ["maintenance"]}
+    assert _module_preferences(recorded) == {"maintenance": False}
+    assert _module_preferences_known(recorded) is True
+
+
+@pytest.mark.asyncio
+async def test_saving_a_legacy_record_keeps_it_legacy_and_records_history(monkeypatch):
+    tenants_router, state = _admin_patch_env(monkeypatch, {"maintenance": False, "spa": False}, set())
+    body = await _save(tenants_router, {"maintenance": False, "spa": True})
+    assert "module_choice_keys" not in state                 # old flags' origin stays unknown
+    assert body["module_preferences"] == {"spa": True}       # the real change, from history
+    assert body["module_preferences_known"] is False
