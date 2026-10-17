@@ -40,4 +40,9 @@ def test_sapanca_kartepe_navigation_is_fail_closed_to_requested_workspaces():
         "unified_rate_manager",
         "wbe_settings",
         "settings",
+        # Agency Extranet hotel pages (product decision, #1339); still gated by
+        # the agency_extranet module.
+        "incoming_agency_contracts",
+        "agency_statements",
+        "agency_readiness",
     }
