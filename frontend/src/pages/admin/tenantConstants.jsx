@@ -1,3 +1,4 @@
+import { planIncludes } from '@/lib/planCatalog';
 import { Home, Building2, Zap, Crown, Settings2, BarChart3, Bot, Users, Mail, Shield, Sparkles, BedDouble, PlugZap, FileText, TrendingUp, Smartphone, QrCode } from 'lucide-react';
 
 export const PLANS = {
@@ -148,20 +149,15 @@ export const MODULE_GROUPS = [
   },
   {
     id: 'ops_security',
-    title: 'Operasyon, Güvenlik & Analitik',
+    title: 'Gelişmiş Analitik',
     icon: Shield,
     color: 'rose',
-    description: 'Gelişmiş analitik ve altyapı/operasyon panelleri. "Gelişmiş Analitik & Altyapı" bu bölümün ana anahtarıdır.',
+    // Platform screens (system health, security hardening, encryption, runtime
+    // cockpit, incidents, control plane, lockdown, data model) are not hotel
+    // products: they are super-admin pages and are not sold or switched here.
+    description: 'Gelişmiş analitik raporları.',
     items: [
       { key: 'advanced_analytics', label: 'Gelişmiş Analitik & Altyapı', hint: 'Analitik raporlar + altyapı/operasyon panellerinin ana anahtarı', tier: 'enterprise' },
-      { key: 'system_health', label: 'Sistem Sağlığı', hint: 'Canlı çalışma ve operasyon izleme konsolu', tier: 'enterprise' },
-      { key: 'security_hardening', label: 'Güvenlik Sertleştirme', hint: 'Güvenlik kontrol paneli', tier: 'enterprise' },
-      { key: 'encryption_management', label: 'Şifreleme Yönetimi', hint: 'Anahtar rotasyonu & şifreleme', tier: 'enterprise' },
-      { key: 'runtime_cockpit', label: 'Canlı Sistem Konsolu', hint: 'Canlı sistem komutası', tier: 'enterprise' },
-      { key: 'operator_incident', label: 'Operatör Olay Paneli', hint: 'Olay yönetimi', tier: 'enterprise' },
-      { key: 'control_plane', label: 'Platform Yönetimi', hint: 'Merkezi platform yönetimi', tier: 'enterprise' },
-      { key: 'lockdown', label: 'Acil Kilitleme Modu', hint: 'Acil durumda sistemi güvenli moda alma', tier: 'enterprise' },
-      { key: 'data_model', label: 'Veri Modeli', hint: 'Şema ve eşleme yönetimi', tier: 'enterprise' },
     ],
   },
   {
@@ -308,19 +304,11 @@ export const ROLE_LABELS = {
   staff: 'Personel',
 };
 
-export const tierRank = { mini: 0, basic: 1, professional: 2, enterprise: 3 };
-
-const PMS_LITE_MODULE_KEYS = new Set([
-  'pms', 'reservation_calendar', 'dashboard', 'guests', 'housekeeping', 'settings',
-]);
-
+// Plan scope comes from the server only (lib/planCatalog): the map the server
+// enforces. Before it has loaded nothing counts as included; screens that need
+// it wait for usePlanCatalog().ready.
 export const isModuleIncludedInPlan = (moduleItem, tenantTier) => {
-  // Add-on modules are never "included" in any plan — they're always
-  // upsell items that super_admin enables per-tenant.
+  // Paid add-ons are never "included" in any plan.
   if (moduleItem.alwaysPaid || moduleItem.addon || moduleItem.tier === 'addon') return false;
-  if (tenantTier === 'pms_lite') return PMS_LITE_MODULE_KEYS.has(moduleItem.key);
-  const moduleTier = moduleItem.tier || 'enterprise';
-  // Higher tier always includes lower-tier modules; Mini (rank 0) is the
-  // minimum baseline matching Elektraweb Mini's feature set.
-  return tierRank[tenantTier] >= tierRank[moduleTier];
+  return planIncludes(tenantTier, moduleItem.key);
 };

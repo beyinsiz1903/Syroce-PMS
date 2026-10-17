@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { NAV_ITEMS } from '@/config/navItems';
 import { MODULE_GROUPS, isModuleIncludedInPlan } from '../tenantConstants';
+import { setPlanCatalogForTests } from '@/lib/planCatalog';
 
 const items = MODULE_GROUPS.flatMap(group => group.items);
 const keys = new Set(items.map(item => item.key));
@@ -41,7 +42,27 @@ describe('tenant module catalogue parity', () => {
     expect(isModuleIncludedInPlan(items.find(item => item.key === 'quick_id'), 'enterprise')).toBe(false);
   });
 
+  it('decides plan scope from the server catalogue only, never by itself', () => {
+    setPlanCatalogForTests(null);
+    expect(isModuleIncludedInPlan(items.find(item => item.key === 'pms'), 'enterprise')).toBe(false);
+    setPlanCatalogForTests({ professional: { pms: true }, enterprise: { pms: true, ai: true } });
+    expect(isModuleIncludedInPlan(items.find(item => item.key === 'pms'), 'pro')).toBe(true); // legacy alias
+    expect(isModuleIncludedInPlan(items.find(item => item.key === 'ai'), 'enterprise')).toBe(true);
+    // A paid add-on stays paid even if a catalogue were to grant it.
+    setPlanCatalogForTests({ enterprise: { ai_chatbot: true, quick_id: true } });
+    expect(isModuleIncludedInPlan(items.find(item => item.key === 'ai_chatbot'), 'enterprise')).toBe(false);
+    expect(isModuleIncludedInPlan(items.find(item => item.key === 'quick_id'), 'enterprise')).toBe(false);
+  });
+
+  it('keeps platform screens out of the hotel product catalogue', () => {
+    for (const key of ['system_health', 'security_hardening', 'encryption_management', 'runtime_cockpit', 'operator_incident', 'control_plane', 'lockdown', 'data_model']) {
+      expect(keys.has(key)).toBe(false);
+    }
+  });
+
   it('keeps legacy PMS Lite narrower than the later Mini commercial tier', () => {
+    // Excerpt of the server's defaults_by_tier.pms_lite.
+    setPlanCatalogForTests({ pms_lite: { pms: true, invoices_basic: false, channel_manager_lite: false } });
     expect(isModuleIncludedInPlan(items.find(item => item.key === 'pms'), 'pms_lite')).toBe(true);
     expect(isModuleIncludedInPlan(items.find(item => item.key === 'invoices_basic'), 'pms_lite')).toBe(false);
     expect(isModuleIncludedInPlan(items.find(item => item.key === 'channel_manager_lite'), 'pms_lite')).toBe(false);

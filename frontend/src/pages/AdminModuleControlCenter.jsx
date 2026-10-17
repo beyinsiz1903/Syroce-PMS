@@ -13,12 +13,15 @@ import {
   PRODUCT_MODULES, moduleCounts, moduleIntegrationLabel, moduleSetupLabel, moduleUsageLabel,
   moduleWorkspaceLabel, resolveModuleState,
 } from '@/lib/moduleCatalog';
+import { usePlanCatalog } from '@/lib/planCatalog';
 import { persistEnteredTenantContext } from '@/lib/adminTenantContext';
 
 const tenantId = (tenant) => tenant?.id || tenant?._id;
 
 export default function AdminModuleControlCenter() {
   const navigate = useNavigate();
+  // "Included in plan" comes from the server catalog; recompute when it loads.
+  const { ready: planReady } = usePlanCatalog();
   const [tenants, setTenants] = useState([]);
   const [selectedId, setSelectedId] = useState('');
   const [draft, setDraft] = useState({});
@@ -158,7 +161,7 @@ export default function AdminModuleControlCenter() {
   )), [baseline, draft]);
 
   const previewTenant = useMemo(() => ({ ...selected, modules: draft }), [draft, selected]);
-  const counts = useMemo(() => moduleCounts(previewTenant || {}), [previewTenant]);
+  const counts = useMemo(() => moduleCounts(previewTenant || {}), [previewTenant, planReady]); // eslint-disable-line react-hooks/exhaustive-deps
   const visibleModules = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase('tr-TR');
     return PRODUCT_MODULES.filter((item) => {
@@ -169,7 +172,7 @@ export default function AdminModuleControlCenter() {
       if (!needle) return true;
       return `${item.label} ${item.hint || ''} ${item.groupTitle}`.toLocaleLowerCase('tr-TR').includes(needle);
     });
-  }, [filter, previewTenant, query]);
+  }, [filter, previewTenant, query, planReady]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const publish = async () => {
     if (!selected || changes.length === 0) return;

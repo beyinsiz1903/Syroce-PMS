@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 
 import { PLANS, MODULE_GROUPS, isModuleIncludedInPlan } from './admin/tenantConstants';
+import { usePlanCatalog } from '@/lib/planCatalog';
 import CreateTenantModal from './admin/CreateTenantModal';
 import EditTenantModal from './admin/EditTenantModal';
 import TeamManagementModal from './admin/TeamManagementModal';
@@ -59,6 +60,7 @@ const PlanBadge = ({ tier }) => {
 
 const AdminTenants = ({ user, tenant, onLogout }) => {
   const { t: _t } = useTranslation();
+  usePlanCatalog(); // re-render "included in plan" badges once the server catalog loads
   const navigate = useNavigate();
   const [saving, setSaving] = useState(false);
   const [filter, setFilter] = useState('');

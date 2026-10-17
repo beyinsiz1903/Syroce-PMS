@@ -19,6 +19,17 @@ from domains.admin.router.tenants import (
 from models.schemas import User
 
 
+@pytest.fixture(autouse=True)
+def _no_store_subscriptions(monkeypatch):
+    """Session and module responses resolve store products for the effective
+    module map (core.entitlement.effective_tenant_modules); none here."""
+    async def none(_tenant_ids):
+        return {}
+
+    monkeypatch.setattr("core.subscriptions.active_products_by_tenant", none)
+
+
+
 def _user_doc(role="super_admin"):
     return {
         "id": "super-1",

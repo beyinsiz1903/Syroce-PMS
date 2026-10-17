@@ -3,6 +3,9 @@ import axios from 'axios';
 
 const EntitlementContext = createContext(null);
 
+// For components that may render outside the provider (tests, embeds).
+export const useOptionalEntitlements = () => useContext(EntitlementContext);
+
 export const useEntitlements = () => {
   const context = useContext(EntitlementContext);
   if (!context) {

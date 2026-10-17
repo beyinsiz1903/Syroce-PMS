@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import CreateTenantModal from '@/pages/admin/CreateTenantModal';
+import { setPlanCatalogForTests } from '@/lib/planCatalog';
 import axios from 'axios';
 
 vi.mock('axios', () => ({
@@ -10,6 +11,12 @@ vi.mock('axios', () => ({
     post: vi.fn(),
   },
 }));
+
+// What the server's /subscription/plan-modules returns (excerpt): the only
+// source of plan scope; paid add-ons (AI, Quick-ID) are never included.
+const PLAN_CATALOG = {
+  basic: { pms: true, reservation_calendar: true, dashboard: true, guests: true, housekeeping: true, reports: true, ai: false, ai_chatbot: false, quick_id: false },
+};
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key) => key }),
@@ -60,12 +67,16 @@ const reachInstallationSummary = async () => {
 describe('CreateTenantModal professional module wizard', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    setPlanCatalogForTests(null);
     axios.get.mockImplementation((url) => {
       if (url === '/admin/property-types') {
         return Promise.resolve({ data: { property_types: [CAMPING_PROFILE] } });
       }
       if (url === '/admin/chains') {
         return Promise.resolve({ data: { chains: [] } });
+      }
+      if (url === '/subscription/plan-modules') {
+        return Promise.resolve({ data: { defaults_by_tier: PLAN_CATALOG } });
       }
       return Promise.reject(new Error(`Unexpected GET ${url}`));
     });
@@ -125,5 +136,19 @@ describe('CreateTenantModal professional module wizard', () => {
     fireEvent.click(screen.getByTestId('create-tenant-submit'));
     expect(await screen.findByText('Liste fiyatı değiştirildiğinde fiyat değişikliği nedeni zorunludur')).toBeInTheDocument();
     expect(axios.post).not.toHaveBeenCalled();
+  });
+
+  it('does not compute module defaults before the server plan catalogue has loaded', async () => {
+    axios.get.mockImplementation((url) => {
+      if (url === '/admin/property-types') return Promise.resolve({ data: { property_types: [CAMPING_PROFILE] } });
+      if (url === '/admin/chains') return Promise.resolve({ data: { chains: [] } });
+      if (url === '/subscription/plan-modules') return Promise.reject(new Error('offline'));
+      return Promise.reject(new Error(`Unexpected GET ${url}`));
+    });
+    render(<CreateTenantModal open onOpenChange={() => {}} onSuccess={() => {}} />);
+    await waitFor(() => expect(screen.getByText('Kamp Alanı / Glamping')).toBeInTheDocument());
+    fireEvent.click(screen.getByText('Kamp Alanı / Glamping'));
+    expect(await screen.findByTestId('plan-catalog-error')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Devam/ })).toBeDisabled();
   });
 });

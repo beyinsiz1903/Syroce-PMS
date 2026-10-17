@@ -230,14 +230,20 @@ async def _check_module_access(tenant_id: str, module: str) -> bool:
         if not tenant_doc:
             return True
 
-        modules = await effective_tenant_modules({"id": tenant_id, **tenant_doc})
-        if modules.get(module, False):
-            return True
-
-        # Fall back to marketplace subscription check.
+        # Same decision as effective_tenant_modules, without its store query on
+        # every gated request: plan + flags, then aliases and subscriptions
+        # (tenant_has_module), then the Agency Extranet transition.
+        from core.helpers import AGENCY_EXTRANET_MODULE, get_tenant_modules
         from core.subscriptions import tenant_has_module
 
-        return await tenant_has_module(tenant_id, module)
+        if get_tenant_modules(tenant_doc).get(module, False):
+            return True
+        if await tenant_has_module(tenant_id, module):
+            return True
+        own = tenant_doc.get("modules")
+        if module == AGENCY_EXTRANET_MODULE and not (isinstance(own, dict) and module in own):
+            return await _check_module_access(tenant_id, "channel_manager")
+        return False
     except Exception as e:
         # Fail CLOSED on errors so a transient DB outage cannot
         # silently grant access to paid modules. The middleware only
@@ -247,30 +253,44 @@ async def _check_module_access(tenant_id: str, module: str) -> bool:
 
 
 async def effective_tenant_modules_many(tenant_docs: list[dict]) -> list[dict[str, bool]]:
-    """Module map per tenant as the server enforces it: plan + module flags
-    (get_tenant_modules) plus Agency Extranet reached through a store
-    subscription — its own, or, until set explicitly, the channel manager's.
-    Menus, sessions and the module screens use this so they show what the
-    server allows. Two queries for the whole list."""
+    """Module map per tenant as the server enforces it (tenant_has_module):
+    plan + module flags (get_tenant_modules), store product aliases mapped
+    to their canonical key (e.g. quick_id_integration -> quick_id), and Agency
+    Extranet reached through a store subscription — its own, or, until set
+    explicitly, the channel manager's. Menus, sessions and the module screens
+    use this so they show what the server allows. One query for the list."""
+    from core import subscriptions
     from core.helpers import AGENCY_EXTRANET_MODULE as AE
     from core.helpers import get_tenant_modules
-    from core.subscriptions import subscribed_tenant_ids
+
+    def own_flags(doc):
+        own = doc.get("modules")
+        return own if isinstance(own, dict) else {}
+
+    def aliases(key):
+        return subscriptions.MODULE_ALIASES.get(key, [key])
 
     results = [get_tenant_modules(doc) for doc in tenant_docs]
-    pending = [(doc, mods) for doc, mods in zip(tenant_docs, results) if doc.get("id") and not mods.get(AE)]
-    if not pending:
-        return results
+    for doc, mods in zip(tenant_docs, results):
+        own = own_flags(doc)
+        for canonical, names in subscriptions.MODULE_ALIASES.items():
+            if not mods.get(canonical) and any(own.get(name) for name in names):
+                mods[canonical] = True
 
-    def explicit(doc):
-        own = doc.get("modules")
-        return isinstance(own, dict) and AE in own
-
-    own_sub = await subscribed_tenant_ids([doc["id"] for doc, _ in pending], AE)
-    inheriting = [doc["id"] for doc, _ in pending if not explicit(doc) and doc["id"] not in own_sub]
-    cm_sub = await subscribed_tenant_ids(inheriting, "channel_manager") if inheriting else set()
-    for doc, mods in pending:
-        if doc["id"] in own_sub or doc["id"] in cm_sub:
-            mods[AE] = True
+    open_keys = [*subscriptions.MODULE_ALIASES, AE]
+    ids = [doc["id"] for doc, mods in zip(tenant_docs, results) if doc.get("id") and any(not mods.get(key) for key in open_keys)]
+    products = await subscriptions.active_products_by_tenant(ids) if ids else {}
+    for doc, mods in zip(tenant_docs, results):
+        bought = products.get(doc.get("id"), set())
+        if not bought:
+            continue
+        for canonical in subscriptions.MODULE_ALIASES:
+            if not mods.get(canonical) and bought & set(aliases(canonical)):
+                mods[canonical] = True
+        if not mods.get(AE):
+            inherits = AE not in own_flags(doc)
+            if bought & set(aliases(AE)) or (inherits and bought & set(aliases("channel_manager"))):
+                mods[AE] = True
     return results
 
 

@@ -25,7 +25,8 @@ def test_pms_lite_plan_wins_over_a_legacy_basic_tier():
     assert modules["reports"] is False
     assert modules["marketplace"] is False
     assert modules["pms.cashier"] is False
-    assert modules["quick_id"] is True
+    # Quick-ID is a paid add-on: never part of a plan, PMS Lite included.
+    assert modules["quick_id"] is False
 
 
 def test_explicit_tenant_choice_still_overrides_pms_lite_default():
@@ -35,3 +36,13 @@ def test_explicit_tenant_choice_still_overrides_pms_lite_default():
     })
 
     assert modules["quick_id"] is True
+
+
+def test_paid_add_ons_are_never_plan_defaults():
+    """Price list: Quick-ID and the individual AI modules are paid add-ons in
+    every plan; the AI master switch stays part of Enterprise."""
+    for tier in ("pms_lite", "mini", "basic", "professional", "enterprise"):
+        modules = get_plan_default_modules(tier)
+        assert modules["quick_id"] is False
+        assert not any(modules[key] for key in modules if key.startswith("ai_"))
+    assert get_plan_default_modules("enterprise")["ai"] is True

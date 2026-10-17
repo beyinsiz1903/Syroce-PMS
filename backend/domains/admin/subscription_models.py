@@ -180,7 +180,7 @@ PLAN_MODULE_DEFAULTS: dict[str, dict[str, bool]] = {
         "ai_social_radar": False,
         # OPERATIONS ADD-ONS
         "room_qr_requests": True,
-        "quick_id": True,  # Mini'de açık (Quick-ID = KBS akışı için kritik)
+        "quick_id": False,  # paid add-on (price list), never included in a plan
         "marketplace": False,
         "af_sadakat": False,
         # ADD-ON MODULES
@@ -247,7 +247,7 @@ PLAN_MODULE_DEFAULTS: dict[str, dict[str, bool]] = {
         "ai_social_radar": False,
         # OPERATIONS ADD-ONS
         "room_qr_requests": True,
-        "quick_id": True,  # Basic'te de açık (KBS akışına bağlı)
+        "quick_id": False,  # paid add-on (price list), never included in a plan
         "marketplace": False,
         "af_sadakat": False,
         # ADD-ON MODULES (sold separately, super-admin enables per-tenant)
@@ -314,7 +314,7 @@ PLAN_MODULE_DEFAULTS: dict[str, dict[str, bool]] = {
         "ai_social_radar": False,
         # OPERATIONS ADD-ONS
         "room_qr_requests": True,
-        "quick_id": True,
+        "quick_id": False,  # paid add-on (price list), never included in a plan
         "marketplace": False,
         "af_sadakat": False,
         # ADD-ON MODULES (sold separately, super-admin enables per-tenant)
@@ -372,16 +372,17 @@ PLAN_MODULE_DEFAULTS: dict[str, dict[str, bool]] = {
         "audit_trail": True,
         # AI - Açık
         "ai": True,
-        "ai_chatbot": True,
-        "ai_pricing": True,
-        "ai_whatsapp": True,
-        "ai_predictive": True,
-        "ai_reputation": True,
-        "ai_revenue_autopilot": True,
-        "ai_social_radar": True,
+        # Individual AI modules are paid add-ons even in Enterprise (price list).
+        "ai_chatbot": False,
+        "ai_pricing": False,
+        "ai_whatsapp": False,
+        "ai_predictive": False,
+        "ai_reputation": False,
+        "ai_revenue_autopilot": False,
+        "ai_social_radar": False,
         # OPERATIONS ADD-ONS
         "room_qr_requests": True,
-        "quick_id": True,
+        "quick_id": False,  # paid add-on (price list), never included in a plan
         "marketplace": True,
         "af_sadakat": True,
         # ADD-ON MODULES (sold separately, super-admin enables per-tenant)
@@ -603,11 +604,6 @@ def get_plan_default_modules(tier: str) -> dict[str, bool]:
             "guests": True,
             "housekeeping": True,
             "settings": True,
-            # Quick-ID is part of the core front-desk/KBS flow in every
-            # commercial tier.  Keeping it off only for the legacy Lite
-            # alias made the mobile quick action visible but caused the scan
-            # request to fail at the entitlement middleware.
-            "quick_id": True,
         })
     else:
         modules = PLAN_MODULE_DEFAULTS.get(tier_lower, PLAN_MODULE_DEFAULTS["basic"]).copy()
@@ -616,6 +612,18 @@ def get_plan_default_modules(tier: str) -> dict[str, bool]:
     modules.update(dict.fromkeys(ALL_SUBMODULE_KEYS, False))
     modules.update(dict.fromkeys(SUBMODULE_KEYS_BY_TIER[tier_lower], True))
     return modules
+
+
+def _sync_plan_features() -> None:
+    """A plan's advertised features are exactly the modules it includes
+    (get_plan_default_modules): /subscription/plans and /subscription/features
+    never list a paid add-on (Quick-ID, AI modules, Academy...) as included."""
+    for tier, plan in SUBSCRIPTION_PLANS.items():
+        defaults = get_plan_default_modules(tier.value)
+        plan.features = [flag for flag in FeatureFlag if defaults.get(flag.value)]
+
+
+_sync_plan_features()
 
 
 def get_feature_comparison() -> dict[str, dict[str, bool]]:
