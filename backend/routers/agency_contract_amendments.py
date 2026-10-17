@@ -188,6 +188,14 @@ async def _approve(contract_id: str, amendment_id: str, data: AmendmentApprove, 
     if data.credit_limit is not None and not data.credit_currency:
         raise HTTPException(422, "Kredi limiti için kredi para birimi zorunludur")
     changes = dict(amendment["changes"])
+    # Re-checked now: a proposal may wait for days, and terms that are no
+    # longer valid would leave an "approved" contract no sale can use.
+    valid_from = changes.get("valid_from", contract.get("valid_from"))
+    valid_to = changes.get("valid_to", contract.get("valid_to"))
+    if "valid_from" in changes or "valid_to" in changes:
+        _validate_dates(valid_from, valid_to)
+    if valid_to and valid_to < datetime.now(UTC).date().isoformat():
+        raise HTTPException(409, "Teklifteki bitiş tarihi geçti; güncel tarihlerle yeni bir teklif gönderin")
     updates = {**changes, "updated_at": _now(), "pending_amendment": None,
                "terms_version": (contract.get("terms_version") or 1) + 1}
     if "commission_pct" in changes:

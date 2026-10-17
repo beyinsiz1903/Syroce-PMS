@@ -48,3 +48,26 @@ describe('ContractAmendmentPanel', () => {
     await waitFor(() => expect(api.post).toHaveBeenCalledWith('/b/x2/withdraw', {}));
   });
 });
+
+describe('apiErrorText', () => {
+  it('turns FastAPI validation lists into text and keeps plain messages', async () => {
+    const { default: apiErrorText } = await import('@/utils/apiErrorText');
+    expect(apiErrorText({ response: { data: { detail: [{ loc: ['body', 'credit_limit'], msg: 'Input should be greater than or equal to 0' }] } } }))
+      .toBe('Input should be greater than or equal to 0');
+    expect(apiErrorText({ response: { data: { detail: 'Teklif eş zamanlı sonuçlandı' } } })).toBe('Teklif eş zamanlı sonuçlandı');
+    expect(apiErrorText({}, 'Yedek')).toBe('Yedek');
+  });
+});
+
+describe('ContractAmendmentPanel limit check', () => {
+  afterEach(() => { cleanup(); vi.clearAllMocks(); });
+
+  it('does not send a negative credit limit', async () => {
+    const pending = { ...contract, pending_amendment: { id: 'x3', proposed_by_side: 'agency', changes: { payment_terms: 'on_arrival' } } };
+    const api = { post: vi.fn() };
+    render(<ContractAmendmentPanel side="hotel" api={api} base="/b" contract={pending} />);
+    await userEvent.type(screen.getByLabelText(/Kredi limiti/), '-1');
+    await userEvent.click(screen.getByText('Değişikliği onayla'));
+    expect(api.post).not.toHaveBeenCalled();
+  });
+});

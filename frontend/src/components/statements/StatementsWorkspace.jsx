@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
+import apiErrorText from '@/utils/apiErrorText';
 import { Loader2, Plus, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -134,7 +135,7 @@ export default function StatementsWorkspace({ side, api, base, partiesPath, titl
         : (partyData.hotels || []).map(row => ({ id: row.tenant_id, name: row.name, currency: row.currency }));
       setParties(rows);
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'Ekstreler yüklenemedi.');
+      toast.error(apiErrorText(err, 'Ekstreler yüklenemedi.'));
     } finally {
       setLoading(false);
     }
@@ -150,7 +151,7 @@ export default function StatementsWorkspace({ side, api, base, partiesPath, titl
       const { data } = await api.post(`${base}/preview`, body(edits));
       setPreview(data);
       setPreviewStale(false);
-    } catch (err) { toast.error(err.response?.data?.detail || 'Ekstre hesaplanamadı.'); }
+    } catch (err) { toast.error(apiErrorText(err, 'Ekstre hesaplanamadı.')); }
     finally { setIssuing(false); }
   };
   const openPreview = () => { setPreviewEdits({}); runPreview({}); };
@@ -164,7 +165,7 @@ export default function StatementsWorkspace({ side, api, base, partiesPath, titl
       setPreview(null);
       setPreviewEdits({});
       await load();
-    } catch (err) { toast.error(err.response?.data?.detail || 'Ekstre düzenlenemedi.'); }
+    } catch (err) { toast.error(apiErrorText(err, 'Ekstre düzenlenemedi.')); }
     finally { setIssuing(false); }
   };
   const editPreviewLine = (bookingId, edit) => { setPreviewStale(true); setPreviewEdits(current => withEdit(current, bookingId, edit)); };
@@ -176,7 +177,7 @@ export default function StatementsWorkspace({ side, api, base, partiesPath, titl
       setNoticeNote('');
       setLineEdits({});
       setPayment(emptyPayment());
-    } catch (err) { toast.error(err.response?.data?.detail || 'Ekstre açılamadı.'); }
+    } catch (err) { toast.error(apiErrorText(err, 'Ekstre açılamadı.')); }
   };
   const act = async (path, payload, success) => {
     setBusy(true);
@@ -187,7 +188,7 @@ export default function StatementsWorkspace({ side, api, base, partiesPath, titl
       await load();
       return true;
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'İşlem tamamlanamadı.');
+      toast.error(apiErrorText(err, 'İşlem tamamlanamadı.'));
       if (err.response?.status === 409) {
         try { setDetail((await api.get(`${base}/${detail.id}`)).data); } catch { /* keep the dialog */ }
       }

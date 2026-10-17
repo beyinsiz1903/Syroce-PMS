@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { toast } from 'sonner';
+import apiErrorText from '@/utils/apiErrorText';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -54,7 +55,7 @@ export default function ContractAmendmentPanel({ side, api, base, contract, onCh
       setLimit('');
       onChanged?.(data.contract);
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'İşlem tamamlanamadı.');
+      toast.error(apiErrorText(err, 'İşlem tamamlanamadı.'));
       if (err.response?.status === 409) onChanged?.();
     } finally { setBusy(false); }
   };
@@ -75,6 +76,7 @@ export default function ContractAmendmentPanel({ side, api, base, contract, onCh
 
   const approve = () => {
     const body = { note: '' };
+    if (side === 'hotel' && limit !== '' && !(Number(limit) >= 0)) return toast.error('Kredi limiti 0 veya daha büyük bir tutar olmalı.');
     if (side === 'hotel' && limit !== '') Object.assign(body, { credit_limit: Number(limit), credit_currency: contract.credit_currency || contract.currency || 'TRY' });
     call(`/${pending.id}/approve`, body, 'Değişiklik onaylandı; yeni koşullar bundan sonraki rezervasyonlara uygulanır.');
   };

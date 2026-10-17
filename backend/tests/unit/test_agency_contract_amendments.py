@@ -104,3 +104,20 @@ async def test_invalid_proposals_are_refused(world):
 def test_a_proposal_must_change_something():
     with pytest.raises(ValueError):
         am.AmendmentCreate(note="sadece not")
+
+
+@pytest.mark.asyncio
+async def test_dates_are_checked_again_when_approving(world, monkeypatch):
+    from datetime import UTC, datetime
+
+    proposed = (await am.agency_propose_amendment("c1", am.AmendmentCreate(valid_to="2026-10-18"), AGENCY))["contract"]
+
+    class _Later(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2026, 10, 19, 9, 0, tzinfo=UTC)
+
+    monkeypatch.setattr(am, "datetime", _Later)
+    with pytest.raises(HTTPException) as late:
+        await am.hotel_approve_amendment("c1", proposed["pending_amendment"]["id"], am.AmendmentApprove(), HOTEL)
+    assert late.value.status_code == 409 and _contract(world)["valid_to"] == "2027-12-31"
