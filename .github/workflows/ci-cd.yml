@@ -165,6 +165,11 @@ jobs:
           bash scripts/post_install.sh
           pip install pytest pytest-asyncio httpx pytest-cov pytest-timeout
 
+      - name: Install Nginx for widget embedding integration tests
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends nginx openssl
+
       - name: Seed test database (hard gate)
         run: |
           cd backend
@@ -234,6 +239,8 @@ jobs:
             tests/test_gl_ledger.py \
             tests/test_invoice_gl_bridge.py \
             tests/unit/test_kbs_extension_download.py \
+            tests/unit/test_agency_widget_embedding.py \
+            tests/unit/test_agency_widget_nginx.py \
             tests/integration/test_academy_cert_race_live.py \
             -v --tb=short -q --timeout=30 --junitxml=test-results.xml
         env:
@@ -480,6 +487,11 @@ jobs:
           pip install -r requirements/all.txt --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/
           bash scripts/post_install.sh
           pip install pytest pytest-asyncio httpx pytest-cov pytest-timeout
+
+      - name: Install Nginx for widget embedding integration tests
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends nginx openssl
 
       - name: Seed isolated test database
         run: |

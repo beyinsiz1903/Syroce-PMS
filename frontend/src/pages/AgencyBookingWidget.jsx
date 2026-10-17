@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import { BedDouble, CalendarDays, CheckCircle2, Loader2, MapPin, Search } from 'lucide-react';
+import apiErrorText from '@/utils/apiErrorText';
 
 const RAW_BACKEND_URL = import.meta.env.VITE_BACKEND_URL || '/api';
 const API_BASE = RAW_BACKEND_URL.endsWith('/api') ? RAW_BACKEND_URL : `${RAW_BACKEND_URL.replace(/\/+$/, '')}/api`;
@@ -32,7 +33,7 @@ export default function AgencyBookingWidget() {
   useEffect(() => { bookingAttempt.current = null; }, [selected]);
 
   useEffect(() => {
-    client.get('/marketplace/v1/widget/config').then(({ data }) => setConfig(data)).catch(error_ => setError(error_.response?.data?.detail || 'Widget yüklenemedi. Web sitesi yetkisini kontrol edin.'));
+    client.get('/marketplace/v1/widget/config').then(({ data }) => setConfig(data)).catch(error_ => setError(apiErrorText(error_, 'Widget yüklenemedi. Web sitesi yetkisini kontrol edin.')));
   }, [client]);
 
   const setChildren = count => setForm(current => ({ ...current, children: count, child_ages: Array.from({ length: count }, (_, index) => current.child_ages[index] ?? 0) }));
@@ -41,7 +42,7 @@ export default function AgencyBookingWidget() {
     try {
       const { data } = await client.post('/marketplace/v1/widget/search', form);
       setResults(data.results || []);
-    } catch (error_) { setError(error_.response?.data?.detail || 'Arama tamamlanamadı.'); }
+    } catch (error_) { setError(apiErrorText(error_, 'Arama tamamlanamadı.')); }
     finally { setLoading(false); }
   };
   const reserve = async event => {
@@ -60,9 +61,10 @@ export default function AgencyBookingWidget() {
         total_amount: selected.room.total_price,
         idempotency_key: bookingAttempt.current,
         ...guest,
+        guest_email: guest.guest_email.trim() || null,
       });
       setConfirmation(data.reservation); setSelected(null);
-    } catch (error_) { setError(error_.response?.data?.detail || 'Rezervasyon oluşturulamadı.'); }
+    } catch (error_) { setError(apiErrorText(error_, 'Rezervasyon oluşturulamadı.')); }
     finally { setLoading(false); }
   };
   const color = config?.brand_color || '#047857';
@@ -80,7 +82,7 @@ export default function AgencyBookingWidget() {
         {form.child_ages.map((age, index) => <label key={index} className="text-xs font-semibold text-slate-600">{index + 1}. çocuk yaşı<input required type="number" min="0" max="17" value={age} onChange={event => setForm(current => ({ ...current, child_ages: current.child_ages.map((item, itemIndex) => itemIndex === index ? Number(event.target.value) : item) }))} className="mt-1 h-11 w-full rounded-lg border border-slate-300 px-3 text-sm" /></label>)}
         <button disabled={loading || !config} className="flex h-11 items-center justify-center gap-2 rounded-lg font-semibold text-white disabled:opacity-50 md:col-span-6" style={{ backgroundColor: color }}>{loading ? <Loader2 className="animate-spin" size={18} /> : <Search size={18} />}Uygun tesisleri ara</button>
       </form>
-      {error && <div role="alert" className="mx-5 mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div>}
+      {error && !selected && <div role="alert" className="mx-5 mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div>}
       {confirmation && <div className="mx-5 mb-5 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-900"><div className="flex items-center gap-2 font-bold"><CheckCircle2 size={20} />Rezervasyonunuz oluşturuldu</div><p className="mt-1 text-sm">Onay kodu: <strong>{confirmation.confirmation_code}</strong></p></div>}
       <div className="space-y-4 border-t border-slate-100 bg-slate-50 p-5">
         {!loading && results.length === 0 && <div className="py-8 text-center text-sm text-slate-500"><CalendarDays className="mx-auto mb-2" />Tarihleri girerek canlı fiyat ve müsaitlik arayın.</div>}
@@ -89,6 +91,8 @@ export default function AgencyBookingWidget() {
         </article>)}
       </div>
     </section>
-    {selected && <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/55 p-4"><form onSubmit={reserve} className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-2xl"><h2 className="text-lg font-bold">Rezervasyon bilgileri</h2><p className="mb-4 text-sm text-slate-500">{selected.hotel.hotel_name} · {selected.room.room_type}</p><div className="grid gap-3 sm:grid-cols-2"><label className="text-xs font-semibold sm:col-span-2">Ad soyad *<input required minLength="2" value={guest.guest_name} onChange={event => setGuest({ ...guest, guest_name: event.target.value })} className="mt-1 h-11 w-full rounded-lg border border-slate-300 px-3" /></label><label className="text-xs font-semibold">E-posta<input type="email" value={guest.guest_email} onChange={event => setGuest({ ...guest, guest_email: event.target.value })} className="mt-1 h-11 w-full rounded-lg border border-slate-300 px-3" /></label><label className="text-xs font-semibold">Telefon<input value={guest.guest_phone} onChange={event => setGuest({ ...guest, guest_phone: event.target.value })} className="mt-1 h-11 w-full rounded-lg border border-slate-300 px-3" /></label><label className="text-xs font-semibold sm:col-span-2">Özel istek<textarea value={guest.special_requests} onChange={event => setGuest({ ...guest, special_requests: event.target.value })} className="mt-1 min-h-20 w-full rounded-lg border border-slate-300 p-3" /></label></div><div className="mt-5 flex justify-end gap-2"><button type="button" onClick={() => setSelected(null)} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold">Vazgeç</button><button disabled={loading} className="rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" style={{ backgroundColor: color }}>Rezervasyonu onayla</button></div></form></div>}
+    {selected && <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/55 p-4"><form onSubmit={reserve} className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-2xl"><h2 className="text-lg font-bold">Rezervasyon bilgileri</h2><p className="mb-4 text-sm text-slate-500">{selected.hotel.hotel_name} · {selected.room.room_type}</p>
+      {error && <div role="alert" className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div>}
+      <div className="grid gap-3 sm:grid-cols-2"><label className="text-xs font-semibold sm:col-span-2">Ad soyad *<input required minLength="2" value={guest.guest_name} onChange={event => setGuest({ ...guest, guest_name: event.target.value })} className="mt-1 h-11 w-full rounded-lg border border-slate-300 px-3" /></label><label className="text-xs font-semibold">E-posta<input type="email" value={guest.guest_email} onChange={event => setGuest({ ...guest, guest_email: event.target.value })} className="mt-1 h-11 w-full rounded-lg border border-slate-300 px-3" /></label><label className="text-xs font-semibold">Telefon<input value={guest.guest_phone} onChange={event => setGuest({ ...guest, guest_phone: event.target.value })} className="mt-1 h-11 w-full rounded-lg border border-slate-300 px-3" /></label><label className="text-xs font-semibold sm:col-span-2">Özel istek<textarea value={guest.special_requests} onChange={event => setGuest({ ...guest, special_requests: event.target.value })} className="mt-1 min-h-20 w-full rounded-lg border border-slate-300 p-3" /></label></div><div className="mt-5 flex justify-end gap-2"><button type="button" onClick={() => setSelected(null)} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold">Vazgeç</button><button disabled={loading} className="rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" style={{ backgroundColor: color }}>Rezervasyonu onayla</button></div></form></div>}
   </main>;
 }

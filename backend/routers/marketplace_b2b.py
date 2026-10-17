@@ -20,16 +20,19 @@ import csv
 import hashlib
 import html
 import io
+import ipaddress
 import json
 import logging
 import os
+import re
 import secrets
 import uuid
 from datetime import UTC, date, datetime, timedelta
+from urllib.parse import urlsplit
 
 import jwt as pyjwt
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query, Request, Response
-from pydantic import BaseModel, EmailStr, Field, model_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 
 from core.agency_completion import pending_completion, public_booking
 from core.agency_credit import assert_credit_capacity
@@ -460,6 +463,52 @@ class MarketplaceNotificationSettings(BaseModel):
     contract_updates: bool = True
 
 
+def _widget_origin(value: str) -> str:
+    """Canonical, exact origin safe for both API checks and CSP source lists."""
+    origin = str(value or "").strip()
+    if not origin or len(origin) > 2048 or re.search(r"[\s\\]", origin):
+        raise ValueError("Geçerli bir web sitesi kök adresi girin")
+    parsed = urlsplit(origin)
+    host = (parsed.hostname or "").encode("idna").decode("ascii").lower()
+    port = parsed.port  # Reject malformed/out-of-range ports, too.
+    if (
+        not host
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.path not in ("", "/")
+        or parsed.query
+        or parsed.fragment
+        or port == 0
+        or "?" in origin
+        or "#" in origin
+        or parsed.scheme not in ("https", "http")
+        or (parsed.scheme == "http" and host not in ("localhost", "127.0.0.1"))
+    ):
+        raise ValueError("Web sitesi adresi yalnız HTTPS kök adresi olmalıdır (ör. https://acente.com)")
+    try:
+        address = ipaddress.ip_address(host)
+        host = f"[{address.compressed}]" if address.version == 6 else str(address)
+    except ValueError:
+        if len(host) > 253 or not all(
+            re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", label)
+            for label in host.split(".")
+        ):
+            raise ValueError("Geçerli bir web sitesi alan adı girin") from None
+    default_port = 443 if parsed.scheme == "https" else 80
+    return f"{parsed.scheme}://{host}" + (f":{port}" if port is not None and port != default_port else "")
+
+
+def _widget_allowed_origins(agency_doc: dict) -> list[str]:
+    origins = []
+    for value in agency_doc.get("allowed_widget_origins") or []:
+        try:
+            origins.append(_widget_origin(value))
+        except (ValueError, UnicodeError):
+            # Legacy invalid entries must never broaden the browser policy.
+            continue
+    return list(dict.fromkeys(origins))
+
+
 class MarketplacePortalSettingsUpdate(BaseModel):
     name: str = Field(..., min_length=2, max_length=160)
     contact_email: EmailStr
@@ -474,12 +523,9 @@ class MarketplacePortalSettingsUpdate(BaseModel):
     def normalize_widget_origins(self):
         normalized = []
         for value in self.allowed_widget_origins:
-            origin = str(value or "").strip().rstrip("/")
-            if not origin:
+            if not str(value or "").strip():
                 continue
-            if not origin.startswith(("https://", "http://localhost", "http://127.0.0.1")):
-                raise ValueError("Web sitesi adresi HTTPS ile başlamalıdır")
-            normalized.append(origin)
+            normalized.append(_widget_origin(value))
         self.allowed_widget_origins = list(dict.fromkeys(normalized))
         return self
 
@@ -499,11 +545,8 @@ def _marketplace_widget_token(agency_doc: dict) -> str:
     )
 
 
-async def get_marketplace_widget_agency(
-    x_widget_token: str | None = Header(None, alias="X-Widget-Token"),
-    x_widget_origin: str | None = Header(None, alias="X-Widget-Origin"),
-) -> dict:
-    """Authenticate the public widget without granting extranet/API access."""
+async def _load_marketplace_widget_agency(x_widget_token: str | None) -> dict:
+    """Validate the public identifier, including revocation, on every request."""
     if not x_widget_token:
         raise HTTPException(401, "Widget erişim anahtarı eksik")
     try:
@@ -521,12 +564,22 @@ async def get_marketplace_widget_agency(
     )
     if not agency_doc:
         raise HTTPException(403, "Acente hesabı aktif değil")
-    if int(payload.get("version") or 0) != int(agency_doc.get("widget_token_version") or 1):
+    if payload.get("version") != int(agency_doc.get("widget_token_version") or 1):
         raise HTTPException(401, "Widget erişim anahtarı yenilenmiş")
+    return agency_doc
 
-    origin = str(x_widget_origin or "").strip().rstrip("/")
-    allowed = {str(item).strip().rstrip("/") for item in agency_doc.get("allowed_widget_origins") or []}
-    if not origin or origin not in allowed:
+
+async def get_marketplace_widget_agency(
+    x_widget_token: str | None = Header(None, alias="X-Widget-Token"),
+    x_widget_origin: str | None = Header(None, alias="X-Widget-Origin"),
+) -> dict:
+    """Authenticate the public widget without granting extranet/API access."""
+    agency_doc = await _load_marketplace_widget_agency(x_widget_token)
+    try:
+        origin = _widget_origin(x_widget_origin)
+    except (ValueError, UnicodeError):
+        raise HTTPException(403, "Bu web sitesi widget kullanımı için yetkilendirilmemiş") from None
+    if origin not in _widget_allowed_origins(agency_doc):
         raise HTTPException(403, "Bu web sitesi widget kullanımı için yetkilendirilmemiş")
     return {
         "agency_id": agency_doc["id"],
@@ -1378,6 +1431,11 @@ class MarketplaceReservationCreate(BaseModel):
     total_amount: float = Field(default=0, ge=0)
     external_reference: str = Field(default="", max_length=160)  # Acentenin kendi PNR/voucher kodu
     idempotency_key: str | None = Field(default=None, min_length=8, max_length=128)
+
+    @field_validator("guest_email", mode="before")
+    @classmethod
+    def normalize_optional_email(cls, value):
+        return value.strip() or None if isinstance(value, str) else value
 
     @model_validator(mode="after")
     def validate_child_ages(self):
@@ -2922,6 +2980,25 @@ async def agency_create_reservation_endpoint(
 
 
 # ─── Public agency website widget (search + create only) ────────────────
+
+
+@router.get("/widget/frame-policy", status_code=204)
+async def marketplace_widget_frame_policy(
+    x_widget_token: str | None = Header(None, alias="X-Widget-Token"),
+):
+    """Nginx auth subrequest: authorize HTML and restrict its actual ancestors.
+
+    Unlike an API call, initial iframe navigation cannot set X-Widget-Origin.
+    The browser enforces the saved allowlist via frame-ancestors instead.
+    """
+    agency_doc = await _load_marketplace_widget_agency(x_widget_token)
+    origins = _widget_allowed_origins(agency_doc)
+    if not origins:
+        raise HTTPException(403, "Widget için izinli web sitesi kaydedilmemiş")
+    return Response(status_code=204, headers={
+        "X-Widget-Frame-Policy": "frame-ancestors " + " ".join(origins) + ";",
+        "Cache-Control": "no-store",
+    })
 
 
 @router.get("/widget/config")

@@ -7,7 +7,7 @@
 // CACHE_NAME'e geçer (activate handler eskileri siler).
 // v1.4.0: tüm Vite lazy-route varlıklarının build manifestinden precache'i,
 // çevrimdışı SPA navigation fallback'i ve static/data cache ayrımı eklendi.
-const CACHE_VERSION = 'v1.4.1';
+const CACHE_VERSION = 'v1.4.2';
 const STATIC_CACHE_NAME = `hotel-pms-static-${CACHE_VERSION}`;
 const DATA_CACHE_NAME = `hotel-pms-data-${CACHE_VERSION}`;
 const CACHE_PREFIX = 'hotel-pms-';
@@ -272,6 +272,13 @@ self.addEventListener('fetch', (event) => {
   
   // Skip cross-origin requests
   if (url.origin !== self.location.origin) {
+    return;
+  }
+
+  // Widget HTML carries a live, agency-specific frame-ancestors policy. It
+  // must neither fall back to nor replace the shared offline SPA shell.
+  if (url.pathname === '/agency-widget' || url.pathname.startsWith('/api/marketplace/v1/widget/')) {
+    event.respondWith(fetch(request, { cache: 'no-store' }));
     return;
   }
 
