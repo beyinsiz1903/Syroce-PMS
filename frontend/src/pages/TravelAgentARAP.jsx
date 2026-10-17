@@ -542,6 +542,7 @@ const TravelAgentARAP = ({ user, tenant, onLogout }) => {
           </TabsContent>
 
           <TabsContent value="plans" className="space-y-4">
+            <p className="text-sm text-muted-foreground">Yerel / eski manuel ödeme planları. Extranet ödemelerini Acente Defteri'ndeki Mutabakat ve ödeme bölümünden yönetin.</p>
             {plansLoading ? (
               <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin" /></div>
             ) : paymentPlans.length === 0 ? (
@@ -559,6 +560,7 @@ const TravelAgentARAP = ({ user, tenant, onLogout }) => {
                     <div className="text-sm text-muted-foreground">
                       {t('agentArap.totalAmount')}: {money(plan.total_amount, plan.currency)} • {plan.installment_count} {t('agentArap.installments')}
                     </div>
+                    {plan.readonly_finance && <p className="text-xs text-amber-700">Geçmiş plan · salt okunur. Extranet ödemeleri ortak ekstre üzerinden yönetilir.</p>}
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-2">
@@ -584,7 +586,7 @@ const TravelAgentARAP = ({ user, tenant, onLogout }) => {
                               {money(inst.amount, plan.currency)}
                             </span>
                             {!inst.paid && plan.status === 'active' && (
-                              <Button size="sm" variant="outline" onClick={() => handleMarkInstallmentPaid(plan.id, idx)}>
+                              <Button size="sm" variant="outline" disabled={plan.readonly_finance} onClick={() => handleMarkInstallmentPaid(plan.id, idx)}>
                                 <CheckCircle2 className="w-3 h-3 mr-1" />{t('agentArap.markPaid')}
                               </Button>
                             )}
@@ -602,6 +604,10 @@ const TravelAgentARAP = ({ user, tenant, onLogout }) => {
           </TabsContent>
 
           <TabsContent value="aging" className="space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-4">
+              <p className="text-sm text-muted-foreground">Yerel / eski manuel cari yaşlandırması. Extranet acentelerinin güncel borç ve vade takibi Genel Bakış'taki ortak finans raporunda, Alacak ve takip görünümündedir.</p>
+              <Button variant="outline" onClick={() => setActiveTab('overview')}>Ortak finans raporunu aç</Button>
+            </div>
             {aging && (
               <>
                 <div className="grid grid-cols-2 md:grid-cols-5 gap-3">

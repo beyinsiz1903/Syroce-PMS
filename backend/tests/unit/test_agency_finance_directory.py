@@ -208,3 +208,20 @@ async def test_directory_endpoint_respects_hotel_role_and_current_tenant(world, 
     with pytest.raises(HTTPException) as error:
         await arap.get_extranet_agencies(user)
     assert error.value.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_migrated_payment_plan_is_readonly_and_cannot_post_an_installment(world, monkeypatch):
+    world.agencies.rows = [{"id": "old-local", "tenant_id": "t1", "migrated_to_marketplace_agency_id": "a1"}]
+    world.agency_payment_plans.rows = [{"id": "plan1", "tenant_id": "t1", "agency_id": "old-local", "status": "active", "currency": "EUR",
+                                       "installments": [{"index": 0, "amount": 100, "paid": False}]}]
+    monkeypatch.setattr(arap, "db", world)
+    monkeypatch.setattr(arap, "_sys_db", world)
+    monkeypatch.setattr(arap, "get_tenant_currency", AsyncMock(return_value=("TRY", {})))
+    plans = await arap.list_payment_plans(agency_id=None, current_user=USER)
+    assert plans[0]["readonly_finance"] is True and plans[0]["currency"] == "EUR"
+    with pytest.raises(HTTPException) as error:
+        await arap.update_installment(arap.UpdatePaymentPlanInstallment(plan_id="plan1", installment_index=0), USER)
+    assert error.value.status_code == 409
+    assert world.agency_payment_plans.rows[0]["installments"][0]["paid"] is False
+    world.agency_transactions.insert_one.assert_not_awaited()

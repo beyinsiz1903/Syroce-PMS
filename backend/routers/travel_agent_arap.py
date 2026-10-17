@@ -846,9 +846,19 @@ async def list_payment_plans(
         match["agency_id"] = agency_id
 
     plans = await db.agency_payment_plans.find(match).sort("created_at", -1).to_list(200)
+    from core.agency_finance_directory import finance_partners
+
+    partners = await finance_partners(_sys_db, current_user.tenant_id) if plans else {}
+    local = {agency["id"]: agency async for agency in db.agencies.find(
+        {"tenant_id": current_user.tenant_id, "id": {"$in": [plan["agency_id"] for plan in plans]}}, {"_id": 0},
+    )} if plans else {}
     for p in plans:
         p.pop("_id", None)
         p["currency"] = _currency_code(p.get("currency"), tenant_currency)
+        agency = local.get(p["agency_id"], {})
+        p["readonly_finance"] = not agency or readonly_finance(agency) or any(
+            aid in partners for aid in (p["agency_id"], agency.get("marketplace_agency_id"), agency.get("migrated_to_marketplace_agency_id"))
+        )
 
     return plans
 
