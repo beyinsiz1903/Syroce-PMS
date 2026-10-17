@@ -108,16 +108,19 @@ def test_a_proposal_must_change_something():
 
 @pytest.mark.asyncio
 async def test_dates_are_checked_again_when_approving(world, monkeypatch):
+    """Proposed on the 17th to end on the 18th, approved on the 19th."""
     from datetime import UTC, datetime
 
-    proposed = (await am.agency_propose_amendment("c1", am.AmendmentCreate(valid_to="2026-10-18"), AGENCY))["contract"]
+    clock = {"now": datetime(2026, 10, 17, 9, 0, tzinfo=UTC)}
 
-    class _Later(datetime):
+    class _Clock(datetime):
         @classmethod
         def now(cls, tz=None):
-            return datetime(2026, 10, 19, 9, 0, tzinfo=UTC)
+            return clock["now"]
 
-    monkeypatch.setattr(am, "datetime", _Later)
+    monkeypatch.setattr(am, "datetime", _Clock)
+    proposed = (await am.agency_propose_amendment("c1", am.AmendmentCreate(valid_to="2026-10-18"), AGENCY))["contract"]
+    clock["now"] = datetime(2026, 10, 19, 9, 0, tzinfo=UTC)
     with pytest.raises(HTTPException) as late:
         await am.hotel_approve_amendment("c1", proposed["pending_amendment"]["id"], am.AmendmentApprove(), HOTEL)
     assert late.value.status_code == 409 and _contract(world)["valid_to"] == "2027-12-31"
