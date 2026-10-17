@@ -27,7 +27,7 @@ from pydantic import BaseModel, Field, field_validator
 from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
-from core.agency_statements import apply_adjustment, build_statement, outstanding, statement_totals
+from core.agency_statements import apply_adjustment, build_statement, hotel_snapshot, outstanding, statement_totals
 from core.security import get_current_user
 from core.tenant_db import get_system_db
 from models.schemas import User
@@ -412,6 +412,8 @@ async def _issue(sysdb, tenant_id: str, data, *, issuer: str, actor: str, direct
             "issuer": issuer,
             "revision": 1,
             "agreements": agreements,
+            # What the hotel approved, for the credit control (credit_view).
+            "hotel_lines": hotel_snapshot(built["lines"]) if issuer == "hotel" else [],
             "payments": [],
             "dispute": None,
             "history": [_event("issued", actor, issuer=issuer,
@@ -447,6 +449,8 @@ async def _agree(statement_id: str, revision: int, party: Party) -> dict:
     agreements[party.side] = current
     both = all(agreements.get(side) == current for side in SIDES)
     updates: dict = {"agreements": agreements, "updated_at": _now()}
+    if party.side == "hotel":
+        updates["hotel_lines"] = hotel_snapshot(statement.get("lines") or [])
     if both:
         updates.update(status="agreed", agreed_at=_now(), agreed_by=party.actor)
     updated = await sysdb.agency_statements.find_one_and_update(
@@ -497,6 +501,7 @@ async def _resolve(statement_id: str, data: ResolveRequest, party: Party) -> dic
     updated = await sysdb.agency_statements.find_one_and_update(
         {"id": statement_id, **party.owner, **_version(statement)},
         {"$set": {"status": "resolved", "agreements": agreements,
+                  **({"hotel_lines": hotel_snapshot(statement.get("lines") or [])} if party.side == "hotel" else {}),
                   "resolution": {"note": data.note, "by": party.actor, "side": party.side, "at": _now()}},
          "$push": {"history": _event("resolved", party.actor, side=party.side, note=data.note)}},
         projection={"_id": 0}, return_document=ReturnDocument.AFTER,
@@ -525,7 +530,7 @@ async def _adjust(statement_id: str, data: LineAdjustment, party: Party) -> dict
         # dispute, payment or correction makes this write miss.
         {"id": statement_id, **party.owner, "payments.0": {"$exists": False}, **_version(statement)},
         {"$set": {"lines": lines, "totals": totals, "status": status, "updated_at": _now(), "revision": revision,
-                  "agreements": agreements},
+                  "agreements": agreements, **({"hotel_lines": hotel_snapshot(lines)} if party.side == "hotel" else {})},
          "$push": {"history": _event("line_adjusted", party.actor, side=party.side, booking_id=data.booking_id,
                                      amount=round(data.amount, 2), reason=data.reason)}},
         projection={"_id": 0}, return_document=ReturnDocument.AFTER,
@@ -547,6 +552,11 @@ async def _void(statement_id: str, data: ResolveRequest, party: Party) -> dict:
     current = await _load(statement_id, party)
     if _issuer(current) not in (party.side, "system"):
         raise HTTPException(403, f"Bu ekstreyi {SIDE_LABEL[_issuer(current)]} düzenledi; yalnız o iptal edebilir. İtiraz edebilirsiniz.")
+    if party.side == "agency" and (_agreements(current).get("hotel") is not None or current.get("hotel_lines")
+                                   or any((line.get("adjustment") or {}).get("side") == "hotel" for line in current.get("lines") or [])):
+        # Voiding would also drop what the hotel approved or charged, and the
+        # credit control relies on it: the agency disputes instead.
+        raise HTTPException(409, "Otel bu ekstreyi onayladı veya düzeltti; acente artık iptal edemez. İtiraz edin ya da iptali otelden isteyin.")
     if any(n.get("status") == "pending" for n in current.get("payment_notices") or []):
         raise HTTPException(409, "Ekstrede yanıt bekleyen ödeme bildirimi var; önce doğrulayın veya reddedin")
     updated = await sysdb.agency_statements.find_one_and_update(

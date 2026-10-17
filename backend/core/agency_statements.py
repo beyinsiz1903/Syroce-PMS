@@ -112,20 +112,41 @@ def hotel_agreed(statement: dict) -> bool:
     return agreements.get("hotel") == (statement.get("revision") or 1)
 
 
+def line_debt(line: dict) -> float:
+    """What the agency owes the hotel on one line (negative: the hotel owes)."""
+    return round(_money(line.get("agency_owes_hotel")) - _money(line.get("hotel_owes_agency")), 2)
+
+
+def hotel_snapshot(lines: list[dict]) -> list[dict]:
+    """The amounts of each line as the hotel last approved them."""
+    return [{"booking_id": line.get("booking_id"), "agency_owes_hotel": _money(line.get("agency_owes_hotel")),
+             "hotel_owes_agency": _money(line.get("hotel_owes_agency"))} for line in lines if line.get("booking_id")]
+
+
 def credit_view(statement: dict) -> dict:
-    """The statement as the hotel's credit control may trust it: a
-    correction that lowers the agency's debt counts only once the hotel
-    agreed to it (the hotel made it, or agreed to that revision). Without
-    this an agency could free its own credit limit by proposing a discount."""
-    if hotel_agreed(statement):
-        return statement
+    """The statement as the hotel's credit control may rely on it.
+
+    Until the hotel agreed to the current revision, each line counts with the
+    larger agency debt of (a) its current amounts and (b) what the hotel last
+    approved: the hotel's snapshot (``hotel_lines``) or, if it never
+    approved anything, the computed amounts before any correction. So an
+    agency can never lower its debt -- by a discount, or by removing a
+    charge the hotel added -- without the hotel. Every line also carries
+    ``credit_adjustment``: its counted debt minus its computed debt."""
+    trusted = hotel_agreed(statement)
+    snapshot = {row.get("booking_id"): row for row in statement.get("hotel_lines") or []}
     lines = []
     for line in statement.get("lines") or []:
-        adjustment = line.get("adjustment") or {}
-        untrusted = adjustment and adjustment.get("side") != "hotel" and float(adjustment.get("amount") or 0) < 0
-        if untrusted and adjustment.get("computed"):
-            line = {**{k: v for k, v in line.items() if k != "adjustment"}, **adjustment["computed"]}
-        lines.append(line)
+        computed = (line.get("adjustment") or {}).get("computed") or line
+        chosen = line
+        if not trusted:
+            baseline = snapshot.get(line.get("booking_id")) or computed
+            if line_debt(baseline) > line_debt(line):
+                chosen = {**line, "agency_owes_hotel": _money(baseline.get("agency_owes_hotel")),
+                          "hotel_owes_agency": _money(baseline.get("hotel_owes_agency"))}
+        lines.append({**chosen, "credit_adjustment": round(line_debt(chosen) - line_debt(computed), 2)})
+    if trusted:
+        return {**statement, "lines": lines}
     return {**statement, "lines": lines, "totals": statement_totals(lines)}
 
 

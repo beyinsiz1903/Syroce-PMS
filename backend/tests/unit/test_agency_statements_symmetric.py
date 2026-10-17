@@ -208,6 +208,14 @@ async def test_dispute_resolve_and_void_follow_the_issuer(world):
     assert corrected["outstanding"] == -960.0
     agreed = await st.hotel_agree_statement(issued["id"], st.AgreeRequest(revision=2), HOTEL)
     assert agreed["status"] == "agreed"
+    with pytest.raises(HTTPException) as approved:  # the hotel approved it: the agency cannot void it any more
+        await st.agency_void_statement(issued["id"], st.ResolveRequest(note="Yeniden düzenlenecek"), AGENCY)
+    assert approved.value.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_agency_voids_its_statement_while_the_hotel_has_not_acted(world):
+    issued = await _agency_issues()
     voided = await st.agency_void_statement(issued["id"], st.ResolveRequest(note="Yeniden düzenlenecek"), AGENCY)
     assert voided["status"] == "void"
 
@@ -305,3 +313,61 @@ async def test_agency_discount_frees_credit_only_once_the_hotel_agrees(world, ho
     usage = await credit_usage(database, tenant_id="t1", agency_id="a1",
                                contract={"credit_limit": 10000, "credit_currency": "TRY"}, statements_db=world)
     assert usage["used"] == (0.0 if hotel_agrees else 10000.0)
+
+
+
+def _credit_db(bookings):
+    def _cursor(rows):
+        return SimpleNamespace(to_list=AsyncMock(return_value=rows))
+
+    def _find(query, *_a, **_k):
+        named = {b for cond in query.get("$or", []) for b in (cond.get("id") or {}).get("$in", [])}
+        return _cursor([b for b in bookings if b["status"] != "cancelled" or b["id"] in named])
+
+    return SimpleNamespace(bookings=SimpleNamespace(find=_find), payments=SimpleNamespace(find=lambda *a, **k: _cursor([])))
+
+
+async def _used(world, bookings):
+    from core.agency_credit import credit_usage
+
+    usage = await credit_usage(_credit_db(bookings), tenant_id="t1", agency_id="a1",
+                               contract={"credit_limit": 20000, "credit_currency": "TRY"}, statements_db=world)
+    return usage["used"]
+
+
+@pytest.mark.asyncio
+async def test_agency_cannot_remove_a_charge_the_hotel_added(world):
+    prepaid = {**COMMISSION, "payment_terms": "prepaid", "hotel_owes_agency": 0.0, "agency_owes_hotel": 10000.0}
+    st.build_statement.return_value = {"lines": [prepaid], "totals": statement_totals([prepaid])}
+    booking = [{"id": "b1", "status": "confirmed", "currency": "TRY", "credit_exposure_amount": 10000}]
+    issued = await st.issue_statement(st.StatementCreate(agency_id="a1", **_period()), HOTEL)
+    await st.adjust_statement_line(issued["id"], st.LineAdjustment(booking_id="b1", amount=5000, reason="Hasar bedeli"), HOTEL)
+    assert await _used(world, booking) == 15000.0
+    await st.agency_adjust_statement_line(issued["id"], st.LineAdjustment(booking_id="b1", amount=0, reason=""), AGENCY)
+    assert await _used(world, booking) == 15000.0  # the hotel has not agreed to the removal
+    await st.hotel_agree_statement(issued["id"], st.AgreeRequest(revision=3), HOTEL)
+    assert await _used(world, booking) == 10000.0
+
+
+@pytest.mark.asyncio
+async def test_agency_cannot_void_away_a_hotel_charge(world):
+    prepaid = {**COMMISSION, "payment_terms": "prepaid", "hotel_owes_agency": 0.0, "agency_owes_hotel": 10000.0}
+    st.build_statement.return_value = {"lines": [prepaid], "totals": statement_totals([prepaid])}
+    issued = await _agency_issues()
+    await st.adjust_statement_line(issued["id"], st.LineAdjustment(booking_id="b1", amount=5000, reason="Hasar bedeli"), HOTEL)
+    with pytest.raises(HTTPException) as exc:
+        await st.agency_void_statement(issued["id"], st.ResolveRequest(note="Yeniden düzenlenecek"), AGENCY)
+    assert exc.value.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_cancellation_penalty_stays_in_credit_until_the_hotel_agrees_to_a_discount(world):
+    penalty = {**COMMISSION, "status": "cancelled", "payment_terms": "prepaid", "gross": 10000.0, "penalty": 10000.0,
+               "commission": 0.0, "hotel_owes_agency": 0.0, "agency_owes_hotel": 10000.0}
+    st.build_statement.return_value = {"lines": [penalty], "totals": statement_totals([penalty])}
+    booking = [{"id": "b1", "status": "cancelled", "currency": "TRY", "credit_exposure_amount": 20000}]
+    issued = await _agency_issues()  # with the penalty, then the agency proposes -10.000
+    await st.agency_adjust_statement_line(issued["id"], st.LineAdjustment(booking_id="b1", amount=-10000, reason="Ceza affı talebi"), AGENCY)
+    assert await _used(world, booking) == 10000.0
+    await st.hotel_agree_statement(issued["id"], st.AgreeRequest(revision=2), HOTEL)
+    assert await _used(world, booking) == 0.0

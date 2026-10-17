@@ -169,27 +169,26 @@ async def _collected_by_booking(database, tenant_id: str, booking_ids: list) -> 
 
 
 async def _statement_debtor_ids(statements_db, tenant_id: str, agency_id: str) -> list[str]:
-    """Bookings a statement charges beyond their stay: a positive (agency
-    owes more) correction, or a cancelled / no-show line the agency owes."""
+    """Bookings a statement may charge beyond their stay, read even when
+    cancelled or paid: any corrected line, any cancelled / no-show line
+    (penalty), and any line of a hotel-approved snapshot. credit_view then
+    decides what is owed; a line owing nothing adds nothing."""
     if statements_db is None:
         from core.tenant_db import get_system_db
 
         statements_db = get_system_db()
-    # Only charges the hotel can rely on: a positive correction (the agency
-    # owes more) counts whoever made it; see credit_view for reductions.
     rows = await statements_db.agency_statements.find(
         {"tenant_id": tenant_id, "agency_id": agency_id, "status": {"$ne": "void"},
-         "$or": [{"lines.adjustment.amount": {"$gt": 0}},
-                 {"lines": {"$elemMatch": {"status": {"$in": ["cancelled", "no_show"]}, "agency_owes_hotel": {"$gt": 0}}}}]},
-        {"_id": 0, "lines.booking_id": 1, "lines.status": 1, "lines.agency_owes_hotel": 1, "lines.adjustment.amount": 1},
+         "$or": [{"lines.adjustment": {"$exists": True}}, {"lines.status": {"$in": ["cancelled", "no_show"]}},
+                 {"hotel_lines.0": {"$exists": True}}]},
+        {"_id": 0, "lines.booking_id": 1, "lines.status": 1, "lines.adjustment.amount": 1, "hotel_lines.booking_id": 1},
     ).to_list(None)
     ids = set()
     for row in rows:
         for line in row.get("lines") or []:
-            surcharge = float((line.get("adjustment") or {}).get("amount") or 0) > 0
-            penalty = line.get("status") in ("cancelled", "no_show") and float(line.get("agency_owes_hotel") or 0) > 0
-            if line.get("booking_id") and (surcharge or penalty):
+            if line.get("booking_id") and (line.get("adjustment") or line.get("status") in ("cancelled", "no_show")):
                 ids.add(line["booking_id"])
+        ids.update(item["booking_id"] for item in row.get("hotel_lines") or [] if item.get("booking_id"))
     return sorted(ids)
 
 
@@ -208,7 +207,7 @@ async def _settled_through_statements(statements_db, tenant_id: str, agency_id: 
         statements_db = get_system_db()
     statements = await statements_db.agency_statements.find(
         {"tenant_id": tenant_id, "agency_id": agency_id, "status": {"$ne": "void"}, "lines.booking_id": {"$in": ids}},
-        {"_id": 0, "status": 1, "totals": 1, "payments": 1, "revision": 1, "agreements": 1, "lines.booking_id": 1,
+        {"_id": 0, "status": 1, "totals": 1, "payments": 1, "revision": 1, "agreements": 1, "hotel_lines": 1, "lines.booking_id": 1,
          "lines.agency_owes_hotel": 1, "lines.hotel_owes_agency": 1, "lines.status": 1, "lines.adjustment": 1},
     ).to_list(None)
     statements = [credit_view(statement) for statement in statements]
@@ -221,7 +220,7 @@ async def _settled_through_statements(statements_db, tenant_id: str, agency_id: 
         for line in statement.get("lines") or []:
             if line.get("booking_id"):
                 owed[line["booking_id"]] = round(owed.get(line["booking_id"], 0.0) + float(line.get("agency_owes_hotel") or 0), 2)
-            amount = float((line.get("adjustment") or {}).get("amount") or 0)
+            amount = float(line.get("credit_adjustment") or 0)
             if line.get("booking_id") and abs(amount) >= 0.01:
                 adjusted[line["booking_id"]] = round(adjusted.get(line["booking_id"], 0.0) + amount, 2)
     return settled, adjusted, owed
