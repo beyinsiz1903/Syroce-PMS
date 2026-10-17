@@ -236,7 +236,11 @@ export default function StatementsWorkspace({ side, api, base, partiesPath, titl
   const canAgree = detail && ['issued', 'resolved'].includes(detail.status) && (detail.agreements || {})[side] !== revision;
   const canDispute = detail && (detail.issuer || 'hotel') !== side && ['issued', 'resolved'].includes(detail.status);
   const canResolve = detail && detail.status === 'disputed' && (detail.dispute?.by_side || 'agency') !== side;
-  const canVoid = detail && [side, 'system'].includes(detail.issuer || 'hotel') && OPEN.includes(detail.status) && !detail.payments?.length;
+  // Once the hotel approved or corrected a statement the agency disputes instead of voiding it.
+  const hotelActed = detail && ((detail.agreements || {}).hotel != null || detail.hotel_lines?.length > 0
+    || (detail.lines || []).some(line => line.adjustment?.side === 'hotel'));
+  const canVoid = detail && [side, 'system'].includes(detail.issuer || 'hotel') && OPEN.includes(detail.status) && !detail.payments?.length
+    && !(side === 'agency' && hotelActed);
   const canEditLines = detail && ADJUSTABLE.includes(detail.status) && !detail.payments?.length;
   const payable = detail && PAYABLE.includes(detail.status) && debtorOf(detail);
   const iOwe = payable && debtorOf(detail) === side;
