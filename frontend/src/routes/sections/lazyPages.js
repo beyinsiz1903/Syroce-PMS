@@ -171,6 +171,7 @@ export const IncomingAgencyContracts = lazy(() => import("@/pages/IncomingAgency
 export const AgencyManagement = lazy(() => import("@/pages/AgencyManagement"));
 export const AgencyContentDistribution = lazy(() => import("@/pages/AgencyContentDistribution"));
 export const AgencyStatements = lazy(() => import("@/pages/AgencyStatements"));
+export const AgencyReadiness = lazy(() => import("@/pages/AgencyReadiness"));
 export const AgencyPortalDashboard = lazy(() => import("@/pages/AgencyPortalDashboard"));
 export const AgencyActivate = lazy(() => import("@/pages/AgencyActivate"));
 export const AgencyRecover = lazy(() => import("@/pages/AgencyRecover"));

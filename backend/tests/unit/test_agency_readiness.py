@@ -1,0 +1,142 @@
+"""Why an agency is not selling: search outcomes and the hotel's checklist."""
+
+from datetime import date
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+
+import pytest
+
+from routers import agency_contracts
+from routers import agency_readiness as ar
+from routers import marketplace_b2b as m
+from tests.unit.test_agency_statements_symmetric import _Coll
+
+TODAY = date(2026, 10, 17)
+
+
+# ── search records why each hotel returned nothing ──────────────────
+
+
+@pytest.fixture
+def search_world(monkeypatch):
+    from core import agency_hotel_directory
+
+    contract = {"status": "approved", "commission_pct": 10, "currency": "TRY"}
+    listing = {"tenant_id": "t", "hotel_name": "Otel", "currency": "TRY", "content_agency_ids": []}
+    rooms = [{"id": rid, "tenant_id": "t", "room_type": "Standard", "capacity": 2, "base_price": 100} for rid in ("r1", "r2")]
+    database = SimpleNamespace(rooms=_Coll(rooms), bookings=_Coll(), hotel_content=_Coll())
+    monkeypatch.setattr(m, "db", database)
+    monkeypatch.setattr(m, "get_system_db", lambda: database)
+    monkeypatch.setattr(agency_contracts, "list_active_contracts", AsyncMock(return_value={"t": contract}))
+    monkeypatch.setattr(agency_hotel_directory, "hotel_profiles", AsyncMock(return_value=[listing]))
+    monkeypatch.setattr(m, "_agency_rate_plans", AsyncMock(return_value=["RO"]))
+    monkeypatch.setattr(m, "_marketplace_stay_price", AsyncMock(return_value={"sellable": True, "total_price": 200, "nightly_rates": [], "shared_availability": 5}))
+
+    async def occupancy(**kwargs):
+        return kwargs["pricing"]
+
+    monkeypatch.setattr(m, "_marketplace_occupancy_price", occupancy)
+    logged = []
+
+    async def log(agency, req, outcomes, count):
+        logged.append((outcomes, count))
+
+    monkeypatch.setattr(m, "log_agency_search", log)
+    return database, logged
+
+
+QUERY = m.MarketplaceSearchRequest(check_in="2026-11-20", check_out="2026-11-22")
+
+
+@pytest.mark.asyncio
+async def test_search_records_ok(search_world):
+    _, logged = search_world
+    await m.agency_search(QUERY, {"agency_id": "a"})
+    assert logged == [({"t": "ok"}, 1)]
+
+
+@pytest.mark.asyncio
+async def test_search_records_missing_rate_and_price(search_world, monkeypatch):
+    _, logged = search_world
+    monkeypatch.setattr(m, "_agency_rate_plans", AsyncMock(return_value=[]))
+    await m.agency_search(QUERY, {"agency_id": "a"})
+    monkeypatch.setattr(m, "_agency_rate_plans", AsyncMock(return_value=["RO"]))
+    monkeypatch.setattr(m, "_marketplace_stay_price", AsyncMock(return_value={"sellable": False, "total_price": 0, "nightly_rates": []}))
+    await m.agency_search(QUERY, {"agency_id": "a"})
+    assert [entry[0]["t"] for entry in logged] == ["no_rate", "no_price"]
+
+
+@pytest.mark.asyncio
+async def test_search_records_full_hotel_and_rooms_too_small(search_world, monkeypatch):
+    _, logged = search_world
+    monkeypatch.setattr(m, "_marketplace_stay_price", AsyncMock(return_value={"sellable": True, "total_price": 200, "nightly_rates": [], "shared_availability": 0}))
+    await m.agency_search(QUERY, {"agency_id": "a"})
+    await m.agency_search(m.MarketplaceSearchRequest(check_in="2026-11-20", check_out="2026-11-22", adults=5), {"agency_id": "a"})
+    assert [entry[0]["t"] for entry in logged] == ["no_availability", "no_room"]
+
+
+@pytest.mark.asyncio
+async def test_search_without_any_contract_is_logged(search_world, monkeypatch):
+    _, logged = search_world
+    monkeypatch.setattr(agency_contracts, "list_active_contracts", AsyncMock(return_value={}))
+    await m.agency_search(QUERY, {"agency_id": "a"})
+    assert logged == [({}, 0)]
+
+
+@pytest.mark.asyncio
+async def test_search_log_failure_never_breaks_a_search(monkeypatch):
+    monkeypatch.setattr(m, "get_system_db", lambda: SimpleNamespace())  # no collection at all
+    await m.log_agency_search({"agency_id": "a"}, QUERY, {"t": "ok"}, 1)  # must not raise
+
+
+# ── the hotel's checklist ────────────────────────────────────────────
+
+
+def _contract(agency_id, **extra):
+    return {"tenant_id": "t1", "agency_id": agency_id, "agency_name": agency_id.upper(), "contract_code": f"SOZ-{agency_id}",
+            "status": "approved", "valid_from": "2026-01-01", "valid_to": "2027-12-31", "created_at": "2026-10-01", **extra}
+
+
+@pytest.fixture
+def world():
+    recent = "2026-10-16T10:00:00+00:00"
+    return SimpleNamespace(
+        agency_contracts=_Coll([_contract("good"), _contract("norate"), _contract("ending", valid_to="2026-11-01"),
+                                _contract("pending", status="pending"), _contract("silent")]),
+        marketplace_agencies=_Coll([{"id": a, "name": a.title(), "status": "active"} for a in ("good", "norate", "ending", "pending", "silent")]),
+        users=_Coll([{"agency_id": a, "role": "marketplace_agent", "is_active": True, "last_login": recent} for a in ("good", "norate", "ending", "pending")]
+                    + [{"agency_id": "silent", "role": "marketplace_agent", "onboarding_status": "invited", "agency_invite_expires": "2026-10-01"}]),
+        marketplace_search_log=_Coll([
+            {"agency_id": "good", "at": recent, "outcomes": {"t1": "ok"}},
+            {"agency_id": "norate", "at": recent, "outcomes": {"t1": "no_rate"}},
+            {"agency_id": "norate", "at": recent, "outcomes": {"t1": "no_rate"}},
+            {"agency_id": "norate", "at": recent, "outcomes": {"t1": "no_availability"}},
+        ]),
+        marketplace_bookings=_Coll([{"tenant_id": "t1", "agency_id": "good", "status": "confirmed", "created_at": "2026-10-15"}]),
+    )
+
+
+def _row(rows, agency_id):
+    return next(row for row in rows if row["agency_id"] == agency_id)
+
+
+def _find(row, key):
+    return next(check for check in row["checks"] if check["key"] == key)
+
+
+@pytest.mark.asyncio
+async def test_checklist_explains_each_agency_and_points_to_the_fix(world):
+    credit = AsyncMock(side_effect=lambda tenant, agency, contract, sysdb: {"limit": 10000, "used": 10000 if agency == "ending" else 0,
+                                                                         "available": 0 if agency == "ending" else 10000, "currency": "TRY"})
+    rows = await ar.agency_readiness(world, "t1", TODAY, credit=credit)
+    good, norate, ending, pending, silent = (_row(rows, a) for a in ("good", "norate", "ending", "pending", "silent"))
+    assert good["status"] == "ok" and good["bookings"] == 1
+    searches = _find(norate, "searches")
+    assert searches["level"] == "error" and "Fiyat paylaşılmamış (2)" in searches["message"]
+    assert searches["action"] == {"label": "Fiyat paylaş", "path": "/unified-rate-manager"}
+    assert norate["search_reasons"] == {"no_rate": 2, "no_availability": 1}
+    assert _find(ending, "contract")["level"] == "warn" and _find(ending, "credit")["level"] == "error"
+    assert _find(pending, "contract")["action"]["path"] == "/app/incoming-agency-contracts"
+    assert _find(silent, "portal_user")["level"] == "error" and "süresi dolmuş" in _find(silent, "portal_user")["message"]
+    assert _find(silent, "searches")["level"] == "warn"
+    assert [row["status"] for row in rows][:1] == ["error"] and rows[-1]["agency_id"] == "good"  # problems first
