@@ -21,10 +21,11 @@ async def _module_enabled(tenant_id: str, module_key: str) -> bool:
     would be refused once enforcement is switched on."""
     if await tenant_has_module(tenant_id, module_key):
         return True
-    from core.database import _raw_db
+    from core import subscriptions
     from core.entitlement import _MODULE_FIELDS, effective_tenant_modules
 
-    tenant = await _raw_db.tenants.find_one({"id": tenant_id}, _MODULE_FIELDS)
+    # Same raw database handle as tenant_has_module (one seam for tests).
+    tenant = await subscriptions._db().tenants.find_one({"id": tenant_id}, _MODULE_FIELDS)
     return bool(tenant) and bool((await effective_tenant_modules({"id": tenant_id, **tenant})).get(module_key))
 
 
