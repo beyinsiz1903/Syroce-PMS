@@ -199,3 +199,26 @@ async def test_nights_show_a_full_allotment_as_no_availability(nights_world, mon
     monkeypatch.setattr(m, "_marketplace_occupancy_price", ok)
     monkeypatch.setattr(m, "_marketplace_stay_price", AsyncMock(return_value={"sellable": False, "total_price": 0, "nightly_rates": [], "reason": "agency_allotment_exhausted"}))
     assert [n["status"] for n in await ar.sellable_nights("t1", "a1", TODAY, 1)] == ["no_availability"]
+
+
+@pytest.mark.asyncio
+async def test_nights_filter_rooms_by_capacity_like_search(nights_world, monkeypatch):
+    import core.database as core_database
+
+    async def ok(**kwargs):
+        return kwargs["pricing"]
+
+    monkeypatch.setattr(m, "_marketplace_occupancy_price", ok)
+    singles = [{"id": f"s{i}", "tenant_id": "t1", "room_type": "Single", "capacity": 1, "base_price": 60} for i in range(2)]
+    monkeypatch.setattr(core_database, "db", SimpleNamespace(rooms=_Coll(singles)))
+    assert [n["status"] for n in await ar.sellable_nights("t1", "a1", TODAY, 1)] == ["no_room"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("calendar,expected", [({"stop_sell": True}, "closed"), ({"availability": 0}, "no_availability")])
+async def test_engine_names_stop_sell_and_zero_allotment(calendar, expected):
+    from routers.marketplace_b2b import pricing_rejection_category
+
+    assert m._REJECTION_CATEGORY["stop_sell"] == "closed" and m._REJECTION_CATEGORY["no_allotment"] == "no_availability"
+    reason = "stop_sell" if calendar.get("stop_sell") else "no_allotment"
+    assert pricing_rejection_category({"sellable": False, "reason": reason}, 3) == expected

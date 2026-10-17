@@ -984,12 +984,10 @@ async def _marketplace_stay_price(
             return {"sellable": False, "nightly_rates": [], "total_price": 0.0, "reason": "min_stay"}
         if row.get("max_stay") and len(dates) > int(row["max_stay"]):
             return {"sellable": False, "nightly_rates": [], "total_price": 0.0, "reason": "max_stay"}
-        if row.get("stop_sell") is True or (
-            date in agency_by_date
-            and row.get("availability") is not None
-            and int(row["availability"]) <= 0
-        ):
-            return {"sellable": False, "nightly_rates": [], "total_price": 0.0}
+        if row.get("stop_sell") is True:
+            return {"sellable": False, "nightly_rates": [], "total_price": 0.0, "reason": "stop_sell"}
+        if date in agency_by_date and row.get("availability") is not None and int(row["availability"]) <= 0:
+            return {"sellable": False, "nightly_rates": [], "total_price": 0.0, "reason": "no_allotment"}
         rate = net_prices.get(date, row.get("rate"))
         if rate is None:
             rate = fallback_rate
@@ -2416,12 +2414,13 @@ async def agency_search(
 _REJECTION_CATEGORY = {
     "agency_rate_not_shared": "no_rate", "unknown_rate_plan": "no_rate", "rate_plan_required": "no_rate",
     "missing_shared_rate_night": "no_rate",
-    "agency_allotment_exhausted": "no_availability",
+    "agency_allotment_exhausted": "no_availability", "no_allotment": "no_availability",
+    "stop_sell": "closed",
     "closed_to_arrival": "restricted", "closed_to_departure": "restricted", "min_stay": "restricted",
     "min_stay_arrival": "restricted", "max_stay": "restricted",
 }
 # Closest to selling first: the outcome shown is the best reached.
-_OUTCOME_ORDER = ("ok", "no_availability", "restricted", "no_price", "no_rate", "no_room")
+_OUTCOME_ORDER = ("ok", "no_availability", "restricted", "closed", "no_price", "no_rate", "no_room")
 
 
 def pricing_rejection_category(pricing: dict, available_rooms: int) -> str:

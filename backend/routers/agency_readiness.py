@@ -25,6 +25,7 @@ from routers.marketplace_b2b import _require_hotel_admin
 hotel_router = APIRouter(prefix="/api/marketplace/hotel/agency-readiness", tags=["Marketplace / Agency readiness (hotel)"])
 
 SEARCH_WINDOW_DAYS = 30
+PROBE_ADULTS = 2  # the night check asks what a 2-adult search would find
 RATE_PAGE = "/unified-rate-manager"
 CONTRACTS_PAGE = "/app/incoming-agency-contracts"
 STATEMENTS_PAGE = "/app/agency-statements"
@@ -222,6 +223,9 @@ async def sellable_nights(tenant_id: str, agency_id: str, start: date, days: int
             if room.get("is_active") is False or room.get("status") in {"maintenance", "out_of_order", "blocked"}:
                 continue
             room_type = room.get("room_type", "Standard")
+            # Same capacity filter as the search, for the probe's 2 adults.
+            if int(room.get("capacity", 2) or 0) < PROBE_ADULTS:
+                continue
             if _room_type_offered(room_type, listing, contract):
                 by_type.setdefault(room_type, []).append(room)
         categories, offers = [], []
@@ -238,7 +242,7 @@ async def sellable_nights(tenant_id: str, agency_id: str, start: date, days: int
                         allow_base_rate_fallback=bool(contract.get("allow_base_rate_fallback")), contract=contract)
                     # The search's own occupancy validation (2 adults, the
                     # readiness probe): a product it refuses is not sellable.
-                    pricing = await _marketplace_occupancy_price(tenant_id=tenant_id, room=typed[0], pricing=pricing, adults=2, child_ages=[])
+                    pricing = await _marketplace_occupancy_price(tenant_id=tenant_id, room=typed[0], pricing=pricing, adults=PROBE_ADULTS, child_ages=[])
                     free = len(typed) - await _occupied_room_count(tenant_id, [r.get("id") for r in typed], check_in, check_out)
                     if pricing.get("shared_availability") is not None:
                         free = min(free, pricing["shared_availability"])
