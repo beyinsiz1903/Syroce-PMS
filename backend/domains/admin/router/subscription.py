@@ -15,8 +15,8 @@ from datetime import UTC, datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from core.database import db
+from core.entitlement import effective_tenant_modules
 from core.helpers import (
-    get_tenant_modules,
     require_super_admin_guard,
 )
 from core.security import (
@@ -318,7 +318,7 @@ async def get_current_subscription(current_user: User = Depends(get_current_user
         plan = SUBSCRIPTION_PLANS.get(SubscriptionTier.BASIC)
 
     entitlements = await _get_full_entitlements(current_user.tenant_id)
-    tenant_modules = get_tenant_modules(tenant)
+    tenant_modules = await effective_tenant_modules(tenant)
     # The browser may legitimately lose its local tenant snapshot after a
     # deployment, storage cleanup, or an older session migration.  Returning a
     # schema-filtered tenant snapshot here lets the authenticated bootstrap

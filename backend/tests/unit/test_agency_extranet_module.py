@@ -1,5 +1,7 @@
 """Agency Extranet is its own module, separate from the OTA channel manager."""
 
+from types import SimpleNamespace
+
 import pytest
 
 from core import entitlement
@@ -91,8 +93,6 @@ class _NoDB:
 
 
 async def _bulk(monkeypatch, granted, **body):
-    from types import SimpleNamespace
-
     from fastapi import HTTPException
 
     from domains.channel_manager import unified_rate_manager_router as rates
@@ -103,17 +103,25 @@ async def _bulk(monkeypatch, granted, **body):
     async def access(_tenant_id, module):
         return module in granted
 
+    class PassedGate(Exception):
+        pass
+
+    def stop_after_gate(_targets):
+        # The next step after the module checks: nothing saved or sent yet.
+        raise PassedGate
+
     monkeypatch.setattr(rates, "_detect_active_provider", exely)
     monkeypatch.setattr(entitlement, "_check_module_access", access)
+    monkeypatch.setattr(rates, "_ari_write_block_for_targets", stop_after_gate)
     monkeypatch.setattr(rates, "db", _NoDB())
     request = rates.UnifiedBulkUpdateRequest(start_date="2026-12-01", end_date="2026-12-02", rate=100, update_fields=["rate"], **body)
     try:
         await rates.unified_bulk_grid_update(request, SimpleNamespace(tenant_id="t1", id="u1"), None)
     except HTTPException as exc:
         return exc.status_code, exc.detail
-    except AssertionError:
+    except PassedGate:
         return "passed_gate", None
-    return "passed_gate", None
+    raise AssertionError("the request neither stopped at the gate nor reached the next step")
 
 
 @pytest.mark.asyncio
@@ -132,8 +140,6 @@ async def test_channel_manager_only_hotel_cannot_share_rates_with_agencies(monke
 
 @pytest.mark.asyncio
 async def test_agency_rate_overrides_need_agency_extranet(monkeypatch):
-    from types import SimpleNamespace
-
     from fastapi import HTTPException
 
     from domains.channel_manager import unified_rate_manager_router as rates
@@ -150,6 +156,33 @@ async def test_agency_rate_overrides_need_agency_extranet(monkeypatch):
 
 
 # ── Transition follows effective channel-manager access ─────────────────────
+# Server checks, the session and /subscription/current share one decision.
+# No test reaches a database: tenants and subscriptions are in memory.
+
+def _offline(monkeypatch, tenants, subscriptions):
+    """tenants: {id: modules}; subscriptions: {(tenant_id, module)}."""
+    import core.subscriptions as subs
+
+    queries = []
+
+    class Tenants:
+        async def find_one(self, query, *_a, **_k):
+            tid = query.get("id")
+            return {"id": tid, "subscription_tier": "basic", "modules": tenants[tid]} if tid in tenants else None
+
+    async def subscribed(tenant_ids, module):
+        queries.append(module)
+        return {tid for tid in tenant_ids if (tid, module) in subscriptions}
+
+    async def has(tenant_id, module):
+        return (tenant_id, module) in subscriptions
+
+    monkeypatch.setattr(entitlement, "db", SimpleNamespace(tenants=Tenants()))
+    monkeypatch.setattr(subs, "subscribed_tenant_ids", subscribed)
+    monkeypatch.setattr(subs, "tenant_has_module", has)
+    monkeypatch.setattr(subs, "_db", _NoDB)
+    return queries
+
 
 @pytest.mark.parametrize("modules,subscribed,expected", [
     ({"channel_manager": False}, {"channel_manager"}, True),     # store subscription carries over
@@ -159,15 +192,56 @@ async def test_agency_rate_overrides_need_agency_extranet(monkeypatch):
 ])
 @pytest.mark.asyncio
 async def test_transition_uses_effective_channel_manager_access(monkeypatch, modules, subscribed, expected):
-    import core.subscriptions as subscriptions
-
-    class Tenants:
-        async def find_one(self, *_a, **_k):
-            return {"id": "t1", "subscription_tier": "basic", "modules": modules}
-
-    async def has(_tenant_id, module):
-        return module in subscribed
-
-    monkeypatch.setattr(entitlement, "db", type("DB", (), {"tenants": Tenants()})())
-    monkeypatch.setattr(subscriptions, "tenant_has_module", has)
+    _offline(monkeypatch, {"t1": modules}, {("t1", m) for m in subscribed})
     assert await entitlement._check_module_access("t1", "agency_extranet") is expected
+    doc = {"id": "t1", "subscription_tier": "basic", "modules": modules}
+    assert (await entitlement.effective_tenant_modules(doc))["agency_extranet"] is expected
+
+
+@pytest.mark.asyncio
+async def test_lists_resolve_subscriptions_in_two_queries(monkeypatch):
+    docs = [{"id": f"t{i}", "subscription_tier": "basic", "modules": {"channel_manager": False}} for i in range(50)]
+    queries = _offline(monkeypatch, {}, {("t3", "channel_manager"), ("t7", "agency_extranet")})
+    result = await entitlement.effective_tenant_modules_many(docs)
+    assert [i for i, mods in enumerate(result) if mods["agency_extranet"]] == [3, 7]
+    assert len(queries) == 2
+
+
+@pytest.mark.asyncio
+async def test_subscription_current_shows_inherited_agency_extranet(monkeypatch):
+    """The reviewer's case: server allowed it, /subscription/current said false."""
+    from domains.admin.router import subscription as sub_router
+
+    tenant = {"id": "t1", "subscription_tier": "basic", "modules": {"channel_manager": False}, "property_name": "Demo"}
+    _offline(monkeypatch, {"t1": tenant["modules"]}, {("t1", "channel_manager")})
+
+    class Coll:
+        def __init__(self, doc=None):
+            self.doc = doc
+
+        async def find_one(self, *_a, **_k):
+            return dict(self.doc)
+
+        async def count_documents(self, *_a, **_k):
+            return 0
+
+    async def no_entitlements(_tenant_id):
+        return {}
+
+    monkeypatch.setattr(sub_router, "db", SimpleNamespace(tenants=Coll(tenant), rooms=Coll(), users=Coll()))
+    monkeypatch.setattr(sub_router, "_get_full_entitlements", no_entitlements)
+    body = await sub_router.get_current_subscription(SimpleNamespace(tenant_id="t1", id="u1"))
+    assert body["modules"]["agency_extranet"] is True
+    assert body["tenant"]["modules"]["agency_extranet"] is True
+    assert await entitlement._check_module_access("t1", "agency_extranet") is True
+
+
+@pytest.mark.asyncio
+async def test_session_payload_carries_the_same_decision(monkeypatch):
+    from routers.auth import _with_effective_agency_extranet
+
+    _offline(monkeypatch, {}, {("t1", "channel_manager")})
+    session = await _with_effective_agency_extranet({"id": "t1", "subscription_tier": "basic", "modules": {"channel_manager": False}})
+    assert session["modules"]["agency_extranet"] is True
+    explicit_off = {"id": "t1", "subscription_tier": "basic", "modules": {"agency_extranet": False}}
+    assert (await _with_effective_agency_extranet(explicit_off))["modules"]["agency_extranet"] is False

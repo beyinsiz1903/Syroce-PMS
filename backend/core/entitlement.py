@@ -221,37 +221,56 @@ async def _check_module_access(tenant_id: str, module: str) -> bool:
        (tenant_subscriptions, status=active, end_date in the future).
     """
     try:
-        tenant_doc = await db.tenants.find_one({"id": tenant_id}, {"_id": 0, "modules": 1, "subscription_tier": 1})
+        tenant_doc = await db.tenants.find_one({"id": tenant_id}, {"_id": 0, "id": 1, "modules": 1, "subscription_tier": 1})
         if not tenant_doc:
             return True
 
-        from core.helpers import get_tenant_modules
-
-        modules = get_tenant_modules(tenant_doc)
+        modules = await effective_tenant_modules({"id": tenant_id, **tenant_doc})
         if modules.get(module, False):
             return True
 
         # Fall back to marketplace subscription check.
         from core.subscriptions import tenant_has_module
 
-        if await tenant_has_module(tenant_id, module):
-            return True
-
-        # Transition: until a hotel sets Agency Extranet explicitly it follows
-        # the hotel's effective channel-manager access, store subscription
-        # included (get_tenant_modules only sees the plan and module flags).
-        from core.helpers import AGENCY_EXTRANET_MODULE
-
-        explicit = tenant_doc.get("modules")
-        if module == AGENCY_EXTRANET_MODULE and not (isinstance(explicit, dict) and module in explicit):
-            return await _check_module_access(tenant_id, "channel_manager")
-        return False
+        return await tenant_has_module(tenant_id, module)
     except Exception as e:
         # Fail CLOSED on errors so a transient DB outage cannot
         # silently grant access to paid modules. The middleware only
         # reaches this code path when a route IS module-gated.
         logger.error(f"Entitlement check error for module={module}: {e}")
         return False
+
+
+async def effective_tenant_modules_many(tenant_docs: list[dict]) -> list[dict[str, bool]]:
+    """Module map per tenant as the server enforces it: plan + module flags
+    (get_tenant_modules) plus Agency Extranet reached through a store
+    subscription — its own, or, until set explicitly, the channel manager's.
+    Menus, sessions and the module screens use this so they show what the
+    server allows. Two queries for the whole list."""
+    from core.helpers import AGENCY_EXTRANET_MODULE as AE
+    from core.helpers import get_tenant_modules
+    from core.subscriptions import subscribed_tenant_ids
+
+    results = [get_tenant_modules(doc) for doc in tenant_docs]
+    pending = [(doc, mods) for doc, mods in zip(tenant_docs, results) if doc.get("id") and not mods.get(AE)]
+    if not pending:
+        return results
+
+    def explicit(doc):
+        own = doc.get("modules")
+        return isinstance(own, dict) and AE in own
+
+    own_sub = await subscribed_tenant_ids([doc["id"] for doc, _ in pending], AE)
+    inheriting = [doc["id"] for doc, _ in pending if not explicit(doc) and doc["id"] not in own_sub]
+    cm_sub = await subscribed_tenant_ids(inheriting, "channel_manager") if inheriting else set()
+    for doc, mods in pending:
+        if doc["id"] in own_sub or doc["id"] in cm_sub:
+            mods[AE] = True
+    return results
+
+
+async def effective_tenant_modules(tenant_doc: dict) -> dict[str, bool]:
+    return (await effective_tenant_modules_many([tenant_doc]))[0]
 
 
 async def require_tenant_module(tenant_id: str, module: str, detail: str) -> None:
@@ -406,7 +425,6 @@ async def get_tenant_entitlements(tenant_id: str) -> dict[str, Any]:
     Uses _raw_db for cross-tenant admin queries.
     """
     from core.database import _raw_db
-    from core.helpers import get_tenant_modules
     from domains.admin.subscription_models import SUBSCRIPTION_PLANS, SubscriptionTier
 
     tenant = await _raw_db.tenants.find_one({"id": tenant_id}, {"_id": 0})
@@ -422,7 +440,7 @@ async def get_tenant_entitlements(tenant_id: str) -> dict[str, Any]:
     except (ValueError, KeyError):
         plan = SUBSCRIPTION_PLANS[SubscriptionTier.BASIC]
 
-    modules = get_tenant_modules(tenant)
+    modules = await effective_tenant_modules(tenant)
 
     # Quota checks
     rooms_quota = await check_quota(tenant_id, "rooms")

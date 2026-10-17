@@ -218,10 +218,10 @@ async def get_onboarding_progress(tenant_id: str) -> dict[str, Any]:
         completed_steps = progress.get("completed_steps", {})
 
     # Get tenant modules for filtering
-    tenant = await db.tenants.find_one({"id": tenant_id}, {"_id": 0, "modules": 1, "subscription_tier": 1})
-    from core.helpers import get_tenant_modules
+    tenant = await db.tenants.find_one({"id": tenant_id}, {"_id": 0, "id": 1, "modules": 1, "subscription_tier": 1})
+    from core.entitlement import effective_tenant_modules
 
-    modules = get_tenant_modules(tenant) if tenant else {}
+    modules = await effective_tenant_modules(tenant) if tenant else {}
 
     # Filter steps to only those the tenant has modules for.
     eligible_steps = [s for s in DEFAULT_STEPS if not s.get("requires_module") or modules.get(s["requires_module"], False)]
