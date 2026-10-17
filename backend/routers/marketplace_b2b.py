@@ -183,6 +183,11 @@ async def marketplace_extranet_login(req: MarketplaceLoginRequest, request: Requ
 
     token = create_token(user["id"], None)
     await sysdb.marketplace_login_attempts.delete_many({"key": attempt_key})
+    try:
+        # Read by the admin agency list and the hotel's sales-readiness view.
+        await sysdb.users.update_one({"id": user["id"]}, {"$set": {"last_login": datetime.now(UTC).isoformat()}})
+    except Exception as exc:  # noqa: BLE001 - recording the time never blocks a login
+        logger.warning("Agency last_login update failed user=%s error=%s", user["id"], type(exc).__name__)
 
     return {
         "token": token,

@@ -57,6 +57,9 @@ class _LoginCollection:
     async def delete_many(self, query):
         self.deleted.append(query)
 
+    async def update_one(self, query, update):
+        self.updated = getattr(self, "updated", []) + [(query, update)]
+
 
 class _SettingsCollection:
     def __init__(self, rows=None):
@@ -326,6 +329,9 @@ async def test_marketplace_extranet_login_uses_core_password_verifier(monkeypatc
     assert result["token"] == "token:user-1:None"
     assert result["agency"] == {"id": "agency-1", "name": "Test Travel"}
     assert attempts.deleted
+    # The login time is kept for the admin list and the hotel's readiness view.
+    (query, update), = users.updated
+    assert query == {"id": "user-1"} and update["$set"]["last_login"][:2] == "20"
 
 
 @pytest.mark.asyncio
