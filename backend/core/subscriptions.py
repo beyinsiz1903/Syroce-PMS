@@ -52,6 +52,28 @@ MODULE_ALIASES: dict[str, list[str]] = {
 }
 
 
+async def subscribed_tenant_ids(tenant_ids: list[str], module_key: str) -> set[str]:
+    """Which of these tenants hold an active subscription for the module
+    (any aliased SKU): one query for a whole list, same rule as
+    tenant_has_module's subscription branch."""
+    if not tenant_ids:
+        return set()
+    now = datetime.now(UTC).isoformat()
+    cur = _db().tenant_subscriptions.find(
+        {
+            "tenant_id": {"$in": list(tenant_ids)},
+            "product_key": {"$in": MODULE_ALIASES.get(module_key, [module_key])},
+            "$or": [
+                {"status": "active", "end_date": None},
+                {"status": "active", "end_date": {"$gt": now}},
+                {"status": "past_due", "grace_until": {"$gt": now}},
+            ],
+        },
+        {"_id": 0, "tenant_id": 1},
+    )
+    return {doc["tenant_id"] async for doc in cur}
+
+
 async def tenant_has_module(tenant_id: str, module_key: str) -> bool:
     """Return True if tenant has access to a module either via plan or
     an active marketplace subscription (any aliased SKU counts)."""

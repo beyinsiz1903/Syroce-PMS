@@ -474,6 +474,20 @@ def _is_marketplace_identity(user_doc: dict) -> bool:
     return role == "marketplace_agent" or "marketplace_agent" in roles
 
 
+async def _with_effective_agency_extranet(tenant_doc: dict) -> dict:
+    """The session carries the hotel's raw module flags; add Agency Extranet
+    as the server enforces it (plan, channel-manager transition, store
+    subscription) so the menu matches what the API allows."""
+    from core.entitlement import effective_tenant_modules
+    from core.helpers import AGENCY_EXTRANET_MODULE
+
+    own = tenant_doc.get("modules")
+    if not isinstance(own, dict) or AGENCY_EXTRANET_MODULE in own:
+        return tenant_doc
+    enabled = (await effective_tenant_modules(tenant_doc)).get(AGENCY_EXTRANET_MODULE, False)
+    return {**tenant_doc, "modules": {**own, AGENCY_EXTRANET_MODULE: enabled}}
+
+
 @router.post("/auth/login", response_model=TokenResponse)
 async def login(data: UserLogin, request: Request, response: Response):
     """Hotel staff login via (hotel_id + username) OR legacy guest login via (email).
@@ -720,6 +734,7 @@ async def login(data: UserLogin, request: Request, response: Response):
             if not tenant_doc.get("subscription_plan"):
                 tenant_doc["subscription_plan"] = tenant_doc.get("plan") or tenant_doc.get("subscription_tier") or "core_small_hotel"
             tenant_doc["features"] = resolve_tenant_features(tenant_doc)
+            tenant_doc = await _with_effective_agency_extranet(tenant_doc)
             tenant = Tenant(**tenant_doc)
 
     await _safe_audit(
@@ -1068,6 +1083,7 @@ async def verify_2fa_login(payload: TwoFAVerifyIn, request: Request, response: R
             if not tenant_doc.get("subscription_plan"):
                 tenant_doc["subscription_plan"] = tenant_doc.get("plan") or tenant_doc.get("subscription_tier") or "core_small_hotel"
             tenant_doc["features"] = resolve_tenant_features(tenant_doc)
+            tenant_doc = await _with_effective_agency_extranet(tenant_doc)
             tenant = Tenant(**tenant_doc)
 
     await db.audit_logs.insert_one(

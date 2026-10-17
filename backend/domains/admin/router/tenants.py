@@ -19,7 +19,9 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 
 from common.request_context import get_client_ip, get_user_agent
 from core.database import db
+from core.entitlement import effective_tenant_modules, effective_tenant_modules_many
 from core.helpers import (
+    AGENCY_EXTRANET_MODULE,
     get_tenant_modules,
     require_super_admin_guard,
 )
@@ -227,9 +229,9 @@ def _safe_context_user(
     return User(**safe).model_dump(exclude={"password"})
 
 
-def _tenant_session_payload(tenant_doc: dict) -> dict:
+async def _tenant_session_payload(tenant_doc: dict) -> dict:
     source = dict(tenant_doc)
-    source["modules"] = get_tenant_modules(tenant_doc)
+    source["modules"] = await effective_tenant_modules(tenant_doc)
     safe = {key: value for key, value in source.items() if key in Tenant.model_fields}
     return Tenant(**safe).model_dump()
 
@@ -865,8 +867,8 @@ async def enter_tenant_context(
         tenant_id=actor_tenant_id,
         is_impersonating=False,
     )
-    target_payload = _tenant_session_payload(target)
-    origin_payload = _tenant_session_payload(origin)
+    target_payload = await _tenant_session_payload(target)
+    origin_payload = await _tenant_session_payload(origin)
 
     await _write_tenant_context_audit(
         sys_db=sys_db,
@@ -943,7 +945,7 @@ async def exit_tenant_context(
         tenant_id=current_user.actor_tenant_id,
         is_impersonating=False,
     )
-    origin_payload = _tenant_session_payload(origin)
+    origin_payload = await _tenant_session_payload(origin)
     target_name = current_user.impersonated_tenant_name or "Otel"
 
     await _write_tenant_context_audit(
@@ -992,8 +994,8 @@ async def list_tenants(
     )
 
     # Merge defaults for backward compatibility
-    for tenant in tenants:
-        tenant["modules"] = get_tenant_modules(tenant)
+    for tenant, modules in zip(tenants, await effective_tenant_modules_many(tenants)):
+        tenant["modules"] = modules
 
     return {
         "tenants": tenants,
@@ -1015,8 +1017,7 @@ async def get_module_report(current_user: User = Depends(require_super_admin)):
     tenants = await db.tenants.find({}, {"_id": 0}).to_list(2000)
 
     report_rows = []
-    for tenant in tenants:
-        modules = get_tenant_modules(tenant)
+    for tenant, modules in zip(tenants, await effective_tenant_modules_many(tenants)):
 
         row = {
             "tenant_id": tenant.get("id"),
@@ -1292,8 +1293,19 @@ async def update_tenant_modules(
     if not before:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Hotel not found")
 
+    # Screens send the whole map they showed, computed values included. An
+    # Agency Extranet value the hotel never set explicitly is computed
+    # (channel manager / store subscription): saved unchanged it is an echo,
+    # not a decision, and stays computed. Only a changed value is stored.
+    modules_to_save = dict(payload.modules)
+    own_modules = before.get("modules")
+    if AGENCY_EXTRANET_MODULE in modules_to_save and not (isinstance(own_modules, dict) and AGENCY_EXTRANET_MODULE in own_modules):
+        shown = (await effective_tenant_modules(before)).get(AGENCY_EXTRANET_MODULE, False)
+        if bool(modules_to_save[AGENCY_EXTRANET_MODULE]) == bool(shown):
+            modules_to_save.pop(AGENCY_EXTRANET_MODULE)
+
     before_modules = get_tenant_modules(before)
-    after_modules = get_tenant_modules({**before, "modules": payload.modules})
+    after_modules = get_tenant_modules({**before, "modules": modules_to_save})
     changed_keys = sorted({
         key for key in set(before_modules) | set(after_modules)
         if bool(before_modules.get(key)) != bool(after_modules.get(key))
@@ -1310,7 +1322,7 @@ async def update_tenant_modules(
         }
 
     update_doc = {"$set": {
-        "modules": payload.modules,
+        "modules": modules_to_save,
         "module_control_changes": module_change_log,
         "module_control_updated_at": now,
         "module_control_updated_by": current_user.id,
@@ -1355,7 +1367,7 @@ async def update_tenant_modules(
             detail="Hotel not found",
         )
 
-    tenant_doc["modules"] = get_tenant_modules(tenant_doc)
+    tenant_doc["modules"] = await effective_tenant_modules(tenant_doc)
     await log_audit_event(
         tenant_id=tenant_doc.get("id") or tenant_id,
         user_id=current_user.id,
@@ -1482,7 +1494,7 @@ async def update_tenant_tier(tenant_id: str, payload: dict, current_user: User =
 
     updated_tenant = await db.tenants.find_one({"id": tenant_id}, {"_id": 0})
     if updated_tenant:
-        updated_tenant["modules"] = get_tenant_modules(updated_tenant)
+        updated_tenant["modules"] = await effective_tenant_modules(updated_tenant)
 
     return {
         "success": True,

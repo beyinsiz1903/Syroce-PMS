@@ -651,7 +651,9 @@ const UnifiedRateManager = ({
       const detail = e.response?.data?.detail;
       const safeCode = typeof detail === 'object' && typeof detail?.error_code === 'string' ? detail.error_code : null;
       const detailStr = typeof detail === 'string' ? detail : null;
-      toast.error(safeCode ? `Güncelleme engellendi: ${safeCode}` : detailStr || 'Güncelleme hatası', { duration: 8000 });
+      // A missing module comes with a sentence saying which one and why.
+      const entitlementText = safeCode === 'ENTITLEMENT_DENIED' && typeof detail?.detail === 'string' ? detail.detail : null;
+      toast.error(entitlementText || (safeCode ? `Güncelleme engellendi: ${safeCode}` : detailStr || 'Güncelleme hatası'), { duration: 8000 });
     }
     setSaving(false);
   };

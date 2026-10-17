@@ -21,7 +21,17 @@ from core.metering import UsageEventType, record_usage
 logger = logging.getLogger(__name__)
 
 # ─── Route → Required Module Mapping ───
-ROUTE_MODULE_MAP: dict[str, str] = {
+# First matching prefix wins (insertion order): specific prefixes come first.
+# A tuple value = any one of those modules grants access.
+ROUTE_MODULE_MAP: dict[str, str | tuple[str, ...]] = {
+    # Agency Extranet (hotel side) is its own module, separate from the OTA
+    # channel manager. Agency-portal calls carry no tenant and are not gated.
+    "/api/marketplace/v1": "agency_extranet",
+    "/api/marketplace/hotel/": "agency_extranet",
+    "/api/marketplace/incoming-requests": "agency_extranet",
+    # Rates & availability: shared with agencies or pushed to OTAs; either
+    # module opens it (OTA connections and ARI pushes stay channel-manager).
+    "/api/channel-manager/unified-rate-manager": ("channel_manager", "agency_extranet"),
     "/api/channel-manager": "channel_manager",
     "/api/cm/": "channel_manager",
     "/api/webhooks/exely": "channel_manager",
@@ -187,7 +197,7 @@ async def _is_super_admin_user(user_id: str) -> bool:
     return is_sa
 
 
-def _match_route_module(path: str) -> str | None:
+def _match_route_module(path: str) -> str | tuple[str, ...] | None:
     """Find the required module for a given route path."""
     for prefix, module in ROUTE_MODULE_MAP.items():
         if path.startswith(prefix):
@@ -211,13 +221,11 @@ async def _check_module_access(tenant_id: str, module: str) -> bool:
        (tenant_subscriptions, status=active, end_date in the future).
     """
     try:
-        tenant_doc = await db.tenants.find_one({"id": tenant_id}, {"_id": 0, "modules": 1, "subscription_tier": 1})
+        tenant_doc = await db.tenants.find_one({"id": tenant_id}, {"_id": 0, "id": 1, "modules": 1, "subscription_tier": 1})
         if not tenant_doc:
             return True
 
-        from core.helpers import get_tenant_modules
-
-        modules = get_tenant_modules(tenant_doc)
+        modules = await effective_tenant_modules({"id": tenant_id, **tenant_doc})
         if modules.get(module, False):
             return True
 
@@ -231,6 +239,51 @@ async def _check_module_access(tenant_id: str, module: str) -> bool:
         # reaches this code path when a route IS module-gated.
         logger.error(f"Entitlement check error for module={module}: {e}")
         return False
+
+
+async def effective_tenant_modules_many(tenant_docs: list[dict]) -> list[dict[str, bool]]:
+    """Module map per tenant as the server enforces it: plan + module flags
+    (get_tenant_modules) plus Agency Extranet reached through a store
+    subscription — its own, or, until set explicitly, the channel manager's.
+    Menus, sessions and the module screens use this so they show what the
+    server allows. Two queries for the whole list."""
+    from core.helpers import AGENCY_EXTRANET_MODULE as AE
+    from core.helpers import get_tenant_modules
+    from core.subscriptions import subscribed_tenant_ids
+
+    results = [get_tenant_modules(doc) for doc in tenant_docs]
+    pending = [(doc, mods) for doc, mods in zip(tenant_docs, results) if doc.get("id") and not mods.get(AE)]
+    if not pending:
+        return results
+
+    def explicit(doc):
+        own = doc.get("modules")
+        return isinstance(own, dict) and AE in own
+
+    own_sub = await subscribed_tenant_ids([doc["id"] for doc, _ in pending], AE)
+    inheriting = [doc["id"] for doc, _ in pending if not explicit(doc) and doc["id"] not in own_sub]
+    cm_sub = await subscribed_tenant_ids(inheriting, "channel_manager") if inheriting else set()
+    for doc, mods in pending:
+        if doc["id"] in own_sub or doc["id"] in cm_sub:
+            mods[AE] = True
+    return results
+
+
+async def effective_tenant_modules(tenant_doc: dict) -> dict[str, bool]:
+    return (await effective_tenant_modules_many([tenant_doc]))[0]
+
+
+async def require_tenant_module(tenant_id: str, module: str, detail: str) -> None:
+    """Endpoint-level gate for one action inside a screen several modules open
+    (e.g. rates: OTA push needs the channel manager, agency sharing needs
+    Agency Extranet). Same decision and 403 shape as the middleware."""
+    from fastapi import HTTPException
+
+    if not await _check_module_access(tenant_id, module):
+        raise HTTPException(status_code=403, detail={
+            "detail": detail, "error_code": "ENTITLEMENT_DENIED",
+            "required_module": module, "upgrade_url": "/settings?tab=subscription",
+        })
 
 
 class EntitlementMiddleware:
@@ -292,16 +345,21 @@ class EntitlementMiddleware:
                 if user_id and await _is_super_admin_user(user_id):
                     allowed = True
                 else:
-                    allowed = await _check_module_access(tenant_id, required_module)
+                    candidates = required_module if isinstance(required_module, tuple) else (required_module,)
+                    allowed = False
+                    for candidate in candidates:
+                        if await _check_module_access(tenant_id, candidate):
+                            allowed = True
+                            break
                     if required_module == "academy":
                         allowed = True  # Local testing bypass
                 if not allowed:
                     resp = JSONResponse(
                         status_code=403,
                         content={
-                            "detail": f"Bu ozellik planınıza dahil degil: {required_module}",
+                            "detail": f"Bu ozellik planınıza dahil degil: {' / '.join(candidates)}",
                             "error_code": "ENTITLEMENT_DENIED",
-                            "required_module": required_module,
+                            "required_module": candidates[0] if len(candidates) == 1 else list(candidates),
                             "upgrade_url": "/settings?tab=subscription",
                         },
                     )
@@ -367,7 +425,6 @@ async def get_tenant_entitlements(tenant_id: str) -> dict[str, Any]:
     Uses _raw_db for cross-tenant admin queries.
     """
     from core.database import _raw_db
-    from core.helpers import get_tenant_modules
     from domains.admin.subscription_models import SUBSCRIPTION_PLANS, SubscriptionTier
 
     tenant = await _raw_db.tenants.find_one({"id": tenant_id}, {"_id": 0})
@@ -383,7 +440,7 @@ async def get_tenant_entitlements(tenant_id: str) -> dict[str, Any]:
     except (ValueError, KeyError):
         plan = SUBSCRIPTION_PLANS[SubscriptionTier.BASIC]
 
-    modules = get_tenant_modules(tenant)
+    modules = await effective_tenant_modules(tenant)
 
     # Quota checks
     rooms_quota = await check_quota(tenant_id, "rooms")

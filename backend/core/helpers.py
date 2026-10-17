@@ -318,6 +318,9 @@ MODULE_DEFAULTS: dict[str, bool] = {
 }
 
 
+AGENCY_EXTRANET_MODULE = "agency_extranet"
+
+
 def get_tenant_modules(tenant_doc: dict[str, Any]) -> dict[str, bool]:
     """Merge stored tenant modules with tier-based defaults."""
     from domains.admin.subscription_models import get_plan_default_modules
@@ -338,6 +341,10 @@ def get_tenant_modules(tenant_doc: dict[str, Any]) -> dict[str, bool]:
                 merged[key] = bool(value)
             except Exception:
                 continue
+    # Agency Extranet became its own module; until a tenant sets it
+    # explicitly it follows the channel manager, so no hotel loses access.
+    if not (isinstance(modules, dict) and AGENCY_EXTRANET_MODULE in modules):
+        merged[AGENCY_EXTRANET_MODULE] = bool(merged.get("channel_manager", False))
     return merged
 
 

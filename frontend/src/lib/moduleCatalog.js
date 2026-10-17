@@ -27,6 +27,7 @@ const ROUTE_OVERRIDES = {
   night_audit_basic: '/night-audit',
   channel_manager: '/channels',
   channel_manager_lite: '/channels',
+  agency_extranet: '/app/incoming-agency-contracts',
   payments_link: '/app/invoices?tab=payments',
   kbs_notify: '/app/pms?tab=kbs',
   hr: '/app/hr',
@@ -107,9 +108,20 @@ export const PRODUCT_MODULES = MODULE_GROUPS
   })))
   .filter((item, index, rows) => rows.findIndex((row) => row.key === item.key) === index);
 
+// Same rule as the server (core.helpers.get_tenant_modules): until a hotel
+// sets Agency Extranet explicitly it follows the channel manager.
+const DERIVED_FROM = { agency_extranet: 'channel_manager' };
+
 export function resolveModuleState(item, tenant = {}) {
   const modules = tenant.modules || {};
   const explicit = Object.prototype.hasOwnProperty.call(modules, item.key);
+  if (!explicit && DERIVED_FROM[item.key]) {
+    const source = PRODUCT_MODULES.find(row => row.key === DERIVED_FROM[item.key]);
+    if (source) {
+      const derived = resolveModuleState(source, tenant);
+      return { ...derived, explicit: false, path: item.path || null, launchable: derived.enabled && Boolean(item.path) };
+    }
+  }
   const tier = tenant.subscription_plan === 'pms_lite'
     ? 'pms_lite'
     : (tenant.subscription_tier || tenant.tier || 'basic');

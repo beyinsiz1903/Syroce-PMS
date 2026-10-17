@@ -35,6 +35,7 @@ from pymongo import UpdateOne
 from cache_manager import cached
 from core.audit import log_audit_event
 from core.database import db
+from core.entitlement import require_tenant_module
 from core.occupancy_pricing import (
     OccupancyPricingError,
     calculate_occupancy_quote,
@@ -977,6 +978,13 @@ async def unified_bulk_grid_update(
     # No remote ARI write is attempted, so a remote-runtime issue must not
     # prevent the hotel from maintaining its own PMS calendar.
     remote_delivery_requested = detection["provider"] != "hotelrunner" or bool(selected_channel_codes)
+
+    # The screen opens with either module; each destination needs its own,
+    # checked before anything is saved or sent.
+    if targets and remote_delivery_requested:
+        await require_tenant_module(tenant_id, "channel_manager", "OTA kanallarına fiyat göndermek için Kanal Yöneticisi modülü gerekli. Yalnız acentelere göndermeyi seçebilirsiniz.")
+    if request.agency_ids:
+        await require_tenant_module(tenant_id, "agency_extranet", "Acentelere fiyat paylaşmak için Acente Extranet modülü gerekli.")
     runtime_block = _ari_write_block_for_targets(targets) if remote_delivery_requested else ""
     if runtime_block:
         raise HTTPException(
@@ -1875,6 +1883,7 @@ async def set_agency_rate_overrides(
 ):
     """Acente bazli ozel fiyat tanimla."""
     tenant_id = current_user.tenant_id
+    await require_tenant_module(tenant_id, "agency_extranet", "Acenteye özel fiyat için Acente Extranet modülü gerekli.")
     now = datetime.now(UTC).isoformat()
     saved = 0
 
@@ -1919,6 +1928,7 @@ async def delete_agency_rate_overrides(
 ):
     """Acentenin tum ozel fiyat tanimlarini sil."""
     tenant_id = current_user.tenant_id
+    await require_tenant_module(tenant_id, "agency_extranet", "Acenteye özel fiyat için Acente Extranet modülü gerekli.")
     result = await db.agency_rate_overrides.delete_many({"tenant_id": tenant_id, "agency_id": agency_id})
     return {"deleted": result.deleted_count, "message": f"{result.deleted_count} fiyat tanimi silindi"}
 
