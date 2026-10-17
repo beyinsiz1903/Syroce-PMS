@@ -80,6 +80,11 @@ PROPERTY_PROFILES: dict[str, dict] = {
             "unified_rate_manager",
             "wbe_settings",
             "settings",
+            # Agency Extranet (hotel side): contracts, statements, sales
+            # readiness. Still shown only while the agency_extranet module is on.
+            "incoming_agency_contracts",
+            "agency_statements",
+            "agency_readiness",
         ],
         "nav_group_labels": {"system": "Kanallar"},
         "nav_item_labels": {"settings": "Yönetim"},
@@ -1246,3 +1251,23 @@ def get_hidden_nav_config(property_type: str) -> dict:
         "nav_group_labels": profile.get("nav_group_labels", {}),
         "nav_item_labels": profile.get("nav_item_labels", {}),
     }
+
+
+NAV_CONFIG_FIELDS = ("hidden_nav_groups", "hidden_nav_items", "visible_nav_items", "nav_group_labels", "nav_item_labels")
+
+
+def resolve_tenant_nav(tenant_doc: dict) -> dict:
+    """The hotel's menu configuration, read from its property profile as the
+    profile is now (``nav_profile``), not from a copy taken at creation: a
+    page added to a profile reaches every hotel on it. Records without
+    ``nav_profile`` (created before it) keep their stored lists."""
+    profile_key = tenant_doc.get("nav_profile")
+    if profile_key and get_property_profile(profile_key):
+        return get_hidden_nav_config(profile_key)
+    return {field: tenant_doc.get(field) or ([] if not field.endswith("labels") else {}) for field in NAV_CONFIG_FIELDS}
+
+
+def with_resolved_nav(tenant_doc: dict) -> dict:
+    """A copy of the tenant document whose menu fields come from its profile."""
+    return {**tenant_doc, **resolve_tenant_nav(tenant_doc)}
+

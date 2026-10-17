@@ -36,6 +36,7 @@ from core.security import (
     verify_password,
 )
 from core.tenant_db import clear_tenant_context, get_system_db, set_tenant_context
+from domains.admin.property_profiles import with_resolved_nav
 from models.enums import UserRole
 from models.schemas import (
     GuestRegister,
@@ -474,6 +475,7 @@ def _is_marketplace_identity(user_doc: dict) -> bool:
     return role == "marketplace_agent" or "marketplace_agent" in roles
 
 
+
 async def _with_effective_agency_extranet(tenant_doc: dict) -> dict:
     """The session carries the hotel's raw module flags; add Agency Extranet
     as the server enforces it (plan, channel-manager transition, store
@@ -735,6 +737,7 @@ async def login(data: UserLogin, request: Request, response: Response):
                 tenant_doc["subscription_plan"] = tenant_doc.get("plan") or tenant_doc.get("subscription_tier") or "core_small_hotel"
             tenant_doc["features"] = resolve_tenant_features(tenant_doc)
             tenant_doc = await _with_effective_agency_extranet(tenant_doc)
+            tenant_doc = with_resolved_nav(tenant_doc)
             tenant = Tenant(**tenant_doc)
 
     await _safe_audit(
@@ -1084,6 +1087,7 @@ async def verify_2fa_login(payload: TwoFAVerifyIn, request: Request, response: R
                 tenant_doc["subscription_plan"] = tenant_doc.get("plan") or tenant_doc.get("subscription_tier") or "core_small_hotel"
             tenant_doc["features"] = resolve_tenant_features(tenant_doc)
             tenant_doc = await _with_effective_agency_extranet(tenant_doc)
+            tenant_doc = with_resolved_nav(tenant_doc)
             tenant = Tenant(**tenant_doc)
 
     await db.audit_logs.insert_one(
