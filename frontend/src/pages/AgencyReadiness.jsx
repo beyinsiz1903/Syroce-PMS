@@ -19,7 +19,8 @@ const LEVEL = {
 const NIGHT = {
   ok: ['Satılabilir', 'bg-emerald-500'],
   no_rate: ['Fiyat paylaşılmamış', 'bg-red-500'],
-  no_price: ['Fiyat yok / kapalı', 'bg-red-400'],
+  no_price: ['Fiyat tanımı uygun değil', 'bg-red-400'],
+  restricted: ['Satış kısıtı', 'bg-amber-300'],
   no_availability: ['Kontenjan yok', 'bg-amber-500'],
   no_room: ['Uygun oda yok', 'bg-slate-500'],
   closed: ['Satışa kapalı', 'bg-slate-400'],

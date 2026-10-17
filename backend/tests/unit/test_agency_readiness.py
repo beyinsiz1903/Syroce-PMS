@@ -140,3 +140,62 @@ async def test_checklist_explains_each_agency_and_points_to_the_fix(world):
     assert _find(silent, "portal_user")["level"] == "error" and "süresi dolmuş" in _find(silent, "portal_user")["message"]
     assert _find(silent, "searches")["level"] == "warn"
     assert [row["status"] for row in rows][:1] == ["error"] and rows[-1]["agency_id"] == "good"  # problems first
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("reason,expected", [("agency_allotment_exhausted", "no_availability"), ("min_stay", "restricted"),
+                                             ("agency_rate_not_shared", "no_rate"), ("zero_rate_night", "no_price")])
+async def test_search_keeps_the_engine_reason(search_world, monkeypatch, reason, expected):
+    _, logged = search_world
+    monkeypatch.setattr(m, "_marketplace_stay_price", AsyncMock(return_value={"sellable": False, "total_price": 0, "nightly_rates": [], "reason": reason}))
+    await m.agency_search(QUERY, {"agency_id": "a"})
+    assert logged[-1][0]["t"] == expected
+
+
+@pytest.mark.asyncio
+async def test_expired_but_still_approved_contract_blocks_sales(world):
+    world.agency_contracts.rows = [_contract("old", valid_to="2026-10-01")]
+    world.marketplace_agencies.rows.append({"id": "old", "name": "Old", "status": "active"})
+    rows = await ar.agency_readiness(world, "t1", TODAY, credit=AsyncMock(return_value=None))
+    check = _find(_row(rows, "old"), "contract")
+    assert check["level"] == "error" and "süresi" in check["message"] and rows[0]["status"] == "error"
+
+
+@pytest.fixture
+def nights_world(monkeypatch):
+    import core.agency_hotel_directory as directory
+    import core.database as core_database
+
+    rooms = [{"id": "r1", "tenant_id": "t1", "room_type": "Standard", "capacity": 2, "base_price": 100}]
+    monkeypatch.setattr(core_database, "db", SimpleNamespace(rooms=_Coll(rooms)))
+    monkeypatch.setattr(directory, "hotel_profiles", AsyncMock(return_value=[{"tenant_id": "t1"}]))
+    monkeypatch.setattr(agency_contracts, "list_active_contracts", AsyncMock(return_value={"t1": {"status": "approved"}}))
+    monkeypatch.setattr(ar, "get_system_db", lambda: SimpleNamespace())
+    monkeypatch.setattr(m, "_agency_rate_plans", AsyncMock(return_value=["RO"]))
+    monkeypatch.setattr(m, "_occupied_room_count", AsyncMock(return_value=0))
+    monkeypatch.setattr(m, "_marketplace_stay_price", AsyncMock(return_value={"sellable": True, "total_price": 100, "nightly_rates": [], "shared_availability": 3}))
+
+
+@pytest.mark.asyncio
+async def test_nights_apply_the_occupancy_rule_like_search(nights_world, monkeypatch):
+    async def ok(**kwargs):
+        return kwargs["pricing"]
+
+    monkeypatch.setattr(m, "_marketplace_occupancy_price", ok)
+    assert [n["status"] for n in await ar.sellable_nights("t1", "a1", TODAY, 2)] == ["ok", "ok"]
+
+    async def refused(**kwargs):
+        return {**kwargs["pricing"], "sellable": False, "reason": "occupancy_rule_currency_mismatch"}
+
+    monkeypatch.setattr(m, "_marketplace_occupancy_price", refused)
+    assert [n["status"] for n in await ar.sellable_nights("t1", "a1", TODAY, 1)] == ["no_price"]
+
+
+@pytest.mark.asyncio
+async def test_nights_show_a_full_allotment_as_no_availability(nights_world, monkeypatch):
+    async def ok(**kwargs):
+        return kwargs["pricing"]
+
+    monkeypatch.setattr(m, "_marketplace_occupancy_price", ok)
+    monkeypatch.setattr(m, "_marketplace_stay_price", AsyncMock(return_value={"sellable": False, "total_price": 0, "nightly_rates": [], "reason": "agency_allotment_exhausted"}))
+    assert [n["status"] for n in await ar.sellable_nights("t1", "a1", TODAY, 1)] == ["no_availability"]

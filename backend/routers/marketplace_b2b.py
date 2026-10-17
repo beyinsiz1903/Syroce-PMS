@@ -2351,12 +2351,10 @@ async def agency_search(
         nights = (co - ci).days
         commission_pct = _contract_commission(active_contracts[tenant_id])
         available = []
-        priced, priced_but_full = False, False
+        categories = []
         for rt_data in room_types.values():
             pricing = rt_data.pop("pricing")
-            priced = priced or bool(pricing["sellable"])
-            if pricing["sellable"] and rt_data["available_rooms"] <= 0:
-                priced_but_full = True
+            categories.append(pricing_rejection_category(pricing, rt_data["available_rooms"]))
             if rt_data["available_rooms"] <= 0 or not pricing["sellable"]:
                 continue
             product = _rate_product_snapshot(rt_data["rate_plan_code"], rt_data, active_contracts[tenant_id], pricing)
@@ -2384,12 +2382,10 @@ async def agency_search(
             outcomes[tenant_id] = "no_room"
         elif not had_rates:
             outcomes[tenant_id] = "no_rate"
-        elif priced_but_full:
-            outcomes[tenant_id] = "no_availability"
-        elif not priced:
-            outcomes[tenant_id] = "no_price"
+        elif "ok" in categories:
+            outcomes[tenant_id] = "filters"  # sellable, but the agency's meal / price filters removed it
         else:
-            outcomes[tenant_id] = "filters"
+            outcomes[tenant_id] = best_outcome(categories)
         if available:
             results.append(
                 {
@@ -2414,6 +2410,32 @@ async def agency_search(
         "results": results,
         "total_hotels": len(results),
     }
+
+
+# Pricing-engine rejection -> what the hotel has to fix (readiness view).
+_REJECTION_CATEGORY = {
+    "agency_rate_not_shared": "no_rate", "unknown_rate_plan": "no_rate", "rate_plan_required": "no_rate",
+    "missing_shared_rate_night": "no_rate",
+    "agency_allotment_exhausted": "no_availability",
+    "closed_to_arrival": "restricted", "closed_to_departure": "restricted", "min_stay": "restricted",
+    "min_stay_arrival": "restricted", "max_stay": "restricted",
+}
+# Closest to selling first: the outcome shown is the best reached.
+_OUTCOME_ORDER = ("ok", "no_availability", "restricted", "no_price", "no_rate", "no_room")
+
+
+def pricing_rejection_category(pricing: dict, available_rooms: int) -> str:
+    """One room product: "ok", or why it cannot be sold. Anything else the
+    engine refuses (zero rate, currency, occupancy rule, conflicting rows)
+    is a price-definition problem: "no_price"."""
+    if pricing.get("sellable"):
+        return "ok" if available_rooms > 0 else "no_availability"
+    return _REJECTION_CATEGORY.get(pricing.get("reason"), "no_price")
+
+
+def best_outcome(categories) -> str:
+    present = set(categories)
+    return next((item for item in _OUTCOME_ORDER if item in present), "no_room")
 
 
 SEARCH_LOG_DAYS = 90

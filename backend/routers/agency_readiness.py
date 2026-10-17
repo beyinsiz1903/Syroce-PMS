@@ -30,7 +30,8 @@ CONTRACTS_PAGE = "/app/incoming-agency-contracts"
 STATEMENTS_PAGE = "/app/agency-statements"
 REASONS = {
     "no_rate": ("Fiyat paylaşılmamış", "Fiyat paylaş", RATE_PAGE),
-    "no_price": ("Fiyat yok veya satışa kapalı", "Fiyat paylaş", RATE_PAGE),
+    "no_price": ("Fiyat tanımı satışa uygun değil (sıfır fiyat, para birimi, kişi fiyatı kuralı)", "Fiyatları kontrol et", RATE_PAGE),
+    "restricted": ("Satış kısıtı (min/max konaklama, varış/çıkış kapalı)", "Kısıtları kontrol et", RATE_PAGE),
     "no_availability": ("Müsaitlik / kontenjan yok", "Kontenjan aç", RATE_PAGE),
     "no_room": ("Uygun oda tipi yok (kişi sayısı veya sözleşmedeki oda tipleri)", "Sözleşmeyi incele", CONTRACTS_PAGE),
     "closed": ("Tarih satışa kapalı", "Kapalı tarihleri kontrol et", RATE_PAGE),
@@ -76,7 +77,7 @@ async def agency_readiness(sysdb, tenant_id: str, today: date, *, credit=None) -
         # An approved contract wins; otherwise the newest one.
         if current is None or (contract.get("status") == "approved" and current.get("status") != "approved"):
             contracts[contract["agency_id"]] = contract
-    since = (datetime.now(UTC) - timedelta(days=SEARCH_WINDOW_DAYS)).isoformat()
+    since = (today - timedelta(days=SEARCH_WINDOW_DAYS)).isoformat()
     rows = []
     for agency_id, contract in contracts.items():
         agency = await sysdb.marketplace_agencies.find_one({"id": agency_id}, {"_id": 0, "name": 1, "status": 1}) or {}
@@ -122,6 +123,9 @@ async def agency_readiness(sysdb, tenant_id: str, today: date, *, credit=None) -
             checks.append(_check("contract", "error", "Sözleşme teklifi onayınızı bekliyor.", ("Sözleşmeyi incele", CONTRACTS_PAGE)))
         elif status != "approved":
             checks.append(_check("contract", "error", f"Sözleşme {'süresi dolmuş' if status == 'expired' else 'feshedilmiş'}; satış kapalı.",
+                                 ("Sözleşmeyi incele", CONTRACTS_PAGE)))
+        elif valid_to and valid_to < today:
+            checks.append(_check("contract", "error", f"Sözleşmenin süresi {valid_to.isoformat()} tarihinde doldu; satış kapalı. Uzatmak için değişiklik önerin.",
                                  ("Sözleşmeyi incele", CONTRACTS_PAGE)))
         elif valid_from and valid_from > today:
             checks.append(_check("contract", "warn", f"Sözleşme {valid_from.isoformat()} tarihinde başlıyor.", ("Sözleşmeyi incele", CONTRACTS_PAGE)))
@@ -187,7 +191,15 @@ async def sellable_nights(tenant_id: str, agency_id: str, start: date, days: int
     from core.database import db
     from core.sellable_rooms import PHYSICAL_ROOM_FILTER
     from routers.agency_contracts import list_active_contracts
-    from routers.marketplace_b2b import _agency_rate_plans, _marketplace_stay_price, _occupied_room_count, _room_type_offered
+    from routers.marketplace_b2b import (
+        _agency_rate_plans,
+        _marketplace_occupancy_price,
+        _marketplace_stay_price,
+        _occupied_room_count,
+        _room_type_offered,
+        best_outcome,
+        pricing_rejection_category,
+    )
 
     sysdb = get_system_db()
     profiles = await hotel_profiles(sysdb, [tenant_id])
@@ -212,27 +224,29 @@ async def sellable_nights(tenant_id: str, agency_id: str, start: date, days: int
             room_type = room.get("room_type", "Standard")
             if _room_type_offered(room_type, listing, contract):
                 by_type.setdefault(room_type, []).append(room)
-        status, offers = "no_room" if not by_type else "no_rate", []
+        categories, offers = [], []
         with tenant_context(tenant_id):
             for room_type, typed in by_type.items():
                 plans = await _agency_rate_plans(tenant_id, agency_id, room_type, check_in, check_out,
                                                  allow_base_rate_fallback=bool(contract.get("allow_base_rate_fallback")), contract=contract)
+                if not plans:
+                    categories.append("no_rate")
                 for plan in plans:
                     pricing = await _marketplace_stay_price(
                         tenant_id=tenant_id, agency_id=agency_id, room_type=room_type, check_in=check_in, check_out=check_out,
                         fallback_rate=float(typed[0].get("base_price") or 0), rate_plan_code=plan,
                         allow_base_rate_fallback=bool(contract.get("allow_base_rate_fallback")), contract=contract)
-                    if not pricing.get("sellable"):
-                        status = status if status in ("no_availability", "ok") else "no_price"
-                        continue
+                    # The search's own occupancy validation (2 adults, the
+                    # readiness probe): a product it refuses is not sellable.
+                    pricing = await _marketplace_occupancy_price(tenant_id=tenant_id, room=typed[0], pricing=pricing, adults=2, child_ages=[])
                     free = len(typed) - await _occupied_room_count(tenant_id, [r.get("id") for r in typed], check_in, check_out)
                     if pricing.get("shared_availability") is not None:
                         free = min(free, pricing["shared_availability"])
-                    if free > 0:
-                        status = "ok"
+                    category = pricing_rejection_category(pricing, free)
+                    categories.append(category)
+                    if category == "ok":
                         offers.append({"room_type": room_type, "rate_plan_code": plan, "price": pricing.get("total_price"), "available": free})
-                    elif status != "ok":
-                        status = "no_availability"
+        status = best_outcome(categories) if by_type else "no_room"
         nights.append({"date": check_in, "status": status, "offers": offers})
     return nights
 
