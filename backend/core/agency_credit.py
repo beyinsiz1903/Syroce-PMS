@@ -175,6 +175,8 @@ async def _statement_debtor_ids(statements_db, tenant_id: str, agency_id: str) -
         from core.tenant_db import get_system_db
 
         statements_db = get_system_db()
+    # Only charges the hotel can rely on: a positive correction (the agency
+    # owes more) counts whoever made it; see credit_view for reductions.
     rows = await statements_db.agency_statements.find(
         {"tenant_id": tenant_id, "agency_id": agency_id, "status": {"$ne": "void"},
          "$or": [{"lines.adjustment.amount": {"$gt": 0}},
@@ -198,7 +200,7 @@ async def _settled_through_statements(statements_db, tenant_id: str, agency_id: 
     ids = [booking_id for booking_id in booking_ids if booking_id]
     if not ids:
         return {}, {}, {}
-    from core.agency_statements import settled_by_booking
+    from core.agency_statements import credit_view, settled_by_booking
 
     if statements_db is None:
         from core.tenant_db import get_system_db
@@ -206,9 +208,10 @@ async def _settled_through_statements(statements_db, tenant_id: str, agency_id: 
         statements_db = get_system_db()
     statements = await statements_db.agency_statements.find(
         {"tenant_id": tenant_id, "agency_id": agency_id, "status": {"$ne": "void"}, "lines.booking_id": {"$in": ids}},
-        {"_id": 0, "status": 1, "totals": 1, "payments": 1, "lines.booking_id": 1, "lines.agency_owes_hotel": 1,
-         "lines.adjustment.amount": 1},
+        {"_id": 0, "status": 1, "totals": 1, "payments": 1, "revision": 1, "agreements": 1, "lines.booking_id": 1,
+         "lines.agency_owes_hotel": 1, "lines.hotel_owes_agency": 1, "lines.status": 1, "lines.adjustment": 1},
     ).to_list(None)
+    statements = [credit_view(statement) for statement in statements]
     settled: dict[str, float] = {}
     adjusted: dict[str, float] = {}
     owed: dict[str, float] = {}

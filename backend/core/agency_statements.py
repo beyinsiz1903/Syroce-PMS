@@ -103,6 +103,32 @@ def apply_adjustment(line: dict, amount: float, reason: str, *, actor: str | Non
     return line
 
 
+def hotel_agreed(statement: dict) -> bool:
+    """The hotel agreed to the statement's current revision (statements
+    from before agreements were tracked were issued by the hotel)."""
+    agreements = statement.get("agreements")
+    if not isinstance(agreements, dict):
+        return True
+    return agreements.get("hotel") == (statement.get("revision") or 1)
+
+
+def credit_view(statement: dict) -> dict:
+    """The statement as the hotel's credit control may trust it: a
+    correction that lowers the agency's debt counts only once the hotel
+    agreed to it (the hotel made it, or agreed to that revision). Without
+    this an agency could free its own credit limit by proposing a discount."""
+    if hotel_agreed(statement):
+        return statement
+    lines = []
+    for line in statement.get("lines") or []:
+        adjustment = line.get("adjustment") or {}
+        untrusted = adjustment and adjustment.get("side") != "hotel" and float(adjustment.get("amount") or 0) < 0
+        if untrusted and adjustment.get("computed"):
+            line = {**{k: v for k, v in line.items() if k != "adjustment"}, **adjustment["computed"]}
+        lines.append(line)
+    return {**statement, "lines": lines, "totals": statement_totals(lines)}
+
+
 def statement_totals(lines: list[dict]) -> dict:
     keys = ("gross", "penalty", "commission", "platform_fee", "net_to_hotel", "hotel_owes_agency", "agency_owes_hotel")
     totals = {key: round(sum(_money(line.get(key)) for line in lines), 2) for key in keys}

@@ -797,10 +797,26 @@ def previous_month(today: date) -> tuple[str, str]:
     return end.replace(day=1).isoformat(), end.isoformat()
 
 
+def uncovered_ranges(start: str, end: str, covered: list[tuple[str, str]]) -> list[tuple[str, str]]:
+    """Sub-ranges of [start, end] (ISO dates, inclusive) no statement covers."""
+    gaps, cursor = [], date.fromisoformat(start)
+    last = date.fromisoformat(end)
+    for begin, finish in sorted((max(b, start), min(f, end)) for b, f in covered if b <= end and f >= start):
+        begin_d, finish_d = date.fromisoformat(begin), date.fromisoformat(finish)
+        if begin_d > cursor:
+            gaps.append((cursor.isoformat(), (begin_d - timedelta(days=1)).isoformat()))
+        cursor = max(cursor, finish_d + timedelta(days=1))
+    if cursor <= last:
+        gaps.append((cursor.isoformat(), last.isoformat()))
+    return gaps
+
+
 async def auto_issue_previous_month(sysdb, today: date | None = None) -> dict:
     """Issue last month's statement for every hotel–agency–currency with
-    marketplace stays in it, unless one already covers the period (either
-    party may have issued it). Idempotent: a rerun skips what exists."""
+    marketplace stays in it. Parts of the month a statement already covers
+    (either party may have issued one, e.g. for the 1st–7th) are left out
+    and each uncovered part gets its own statement, so no stay is skipped.
+    Idempotent: a rerun finds the month covered."""
     start, end = previous_month(today or datetime.now(UTC).date())
     pairs: set[tuple[str, str, str]] = set()
     for collection, query in (
@@ -812,16 +828,29 @@ async def auto_issue_previous_month(sysdb, today: date | None = None) -> dict:
                 pairs.add((row["tenant_id"], row["agency_id"], str(row.get("currency") or "TRY").upper()))
     issued, skipped, failed = [], 0, []
     for tenant_id, agency_id, currency in sorted(pairs):
-        data = StatementCreate(agency_id=agency_id, period_start=start, period_end=end, currency=currency)
-        try:
-            statement = await _issue(sysdb, tenant_id, data, issuer="system", actor="system", direct_notify=True, skip_empty=True)
-            issued.append(statement["number"])
-        except HTTPException as exc:
-            # Already covered, nothing billable, no contract, or being issued now.
-            if exc.status_code in (400, 404, 409):
-                skipped += 1
-            else:
-                failed.append(f"{tenant_id}/{agency_id}: {exc.detail}")
+        covered = [
+            (row["period_start"], row["period_end"])
+            async for row in sysdb.agency_statements.find(
+                {"tenant_id": tenant_id, "agency_id": agency_id, "currency": currency,
+                 "period_start": {"$lte": end}, "period_end": {"$gte": start}, "status": {"$in": list(OPEN_STATUSES) + ["settled"]}},
+                {"_id": 0, "period_start": 1, "period_end": 1},
+            )
+        ]
+        gaps = uncovered_ranges(start, end, covered)
+        if not gaps:
+            skipped += 1
+            continue
+        for gap_start, gap_end in gaps:
+            data = StatementCreate(agency_id=agency_id, period_start=gap_start, period_end=gap_end, currency=currency)
+            try:
+                statement = await _issue(sysdb, tenant_id, data, issuer="system", actor="system", direct_notify=True, skip_empty=True)
+                issued.append(statement["number"])
+            except HTTPException as exc:
+                # Nothing billable in the gap, no contract, or being issued now.
+                if exc.status_code in (400, 404, 409):
+                    skipped += 1
+                else:
+                    failed.append(f"{tenant_id}/{agency_id} {gap_start}–{gap_end}: {exc.detail}")
     return {"period_start": start, "period_end": end, "issued": issued, "skipped": skipped, "failed": failed}
 
 

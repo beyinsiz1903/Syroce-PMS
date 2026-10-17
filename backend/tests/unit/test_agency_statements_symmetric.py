@@ -21,7 +21,10 @@ COMMISSION = {"booking_id": "b1", "confirmation_code": "MKT-1", "status": "confi
 def _get(doc, key):
     for part in key.split("."):
         if isinstance(doc, list):
-            doc = doc[int(part)] if part.isdigit() and int(part) < len(doc) else None
+            if part.isdigit():
+                doc = doc[int(part)] if int(part) < len(doc) else None
+            else:  # array field: the values of every element
+                doc = [item.get(part) if isinstance(item, dict) else None for item in doc]
         else:
             doc = doc.get(part) if isinstance(doc, dict) else None
     return doc
@@ -29,6 +32,10 @@ def _get(doc, key):
 
 def _match(doc, query):
     for key, cond in query.items():
+        if key == "$or":
+            if not any(_match(doc, sub) for sub in cond):
+                return False
+            continue
         value = _get(doc, key)
         if isinstance(cond, dict) and "$exists" in cond:
             if (value is not None) != cond["$exists"]:
@@ -37,7 +44,8 @@ def _match(doc, query):
             if not isinstance(value, str):
                 return False
         elif isinstance(cond, dict) and "$in" in cond:
-            if value not in cond["$in"]:
+            values = value if isinstance(value, list) else [value]
+            if not any(v in cond["$in"] for v in values):
                 return False
         elif isinstance(cond, dict) and "$elemMatch" in cond:
             if not any(_match(item, cond["$elemMatch"]) for item in value or []):
@@ -249,3 +257,51 @@ async def test_monthly_job_skips_a_period_with_nothing_owed(world, monkeypatch):
     world.bookings = _Coll()
     result = await st.auto_issue_previous_month(world, date(2026, 12, 1))
     assert result["issued"] == [] and result["skipped"] == 1 and world.agency_statements.rows == []
+
+
+def test_uncovered_ranges():
+    assert st.uncovered_ranges("2026-11-01", "2026-11-30", []) == [("2026-11-01", "2026-11-30")]
+    assert st.uncovered_ranges("2026-11-01", "2026-11-30", [("2026-11-01", "2026-11-07")]) == [("2026-11-08", "2026-11-30")]
+    assert st.uncovered_ranges("2026-11-01", "2026-11-30", [("2026-10-20", "2026-11-05"), ("2026-11-10", "2026-11-12")]) == [
+        ("2026-11-06", "2026-11-09"), ("2026-11-13", "2026-11-30")]
+    assert st.uncovered_ranges("2026-11-01", "2026-11-30", [("2026-10-01", "2026-12-31")]) == []
+
+
+@pytest.mark.asyncio
+async def test_monthly_job_bills_the_rest_of_a_partly_covered_month(world):
+    world.agency_statements.rows.append({"id": "old", "tenant_id": "t1", "agency_id": "a1", "currency": "TRY", "status": "agreed",
+                                         "period_start": "2026-11-01", "period_end": "2026-11-07", "lines": [], "payments": []})
+    world.marketplace_bookings = _Coll([{"tenant_id": "t1", "agency_id": "a1", "currency": "TRY", "check_in": "2026-11-20"}])
+    world.bookings = _Coll()
+    result = await st.auto_issue_previous_month(world, date(2026, 12, 1))
+    assert len(result["issued"]) == 1 and result["failed"] == []
+    made = world.agency_statements.rows[-1]
+    assert (made["period_start"], made["period_end"]) == ("2026-11-08", "2026-11-30")
+    again = await st.auto_issue_previous_month(world, date(2026, 12, 1))
+    assert again["issued"] == [] and again["skipped"] == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("hotel_agrees", [False, True])
+async def test_agency_discount_frees_credit_only_once_the_hotel_agrees(world, hotel_agrees):
+    """10.000 owed; the agency proposes -10.000: until the hotel agrees,
+    the credit control still counts 10.000."""
+    from core.agency_credit import credit_usage
+
+    prepaid = {**COMMISSION, "payment_terms": "prepaid", "hotel_owes_agency": 0.0, "agency_owes_hotel": 10000.0}
+    st.build_statement.return_value = {"lines": [prepaid], "totals": statement_totals([prepaid])}
+    issued = await st.agency_issue_statement(st.AgencyStatementCreate(
+        tenant_id="t1", **_period(), adjustments=[st.LineAdjustment(booking_id="b1", amount=-10000, reason="Tamamı indirim")]), AGENCY)
+    if hotel_agrees:
+        await st.hotel_agree_statement(issued["id"], st.AgreeRequest(revision=1), HOTEL)
+
+    def _cursor(rows):
+        return SimpleNamespace(to_list=AsyncMock(return_value=rows))
+
+    database = SimpleNamespace(
+        bookings=SimpleNamespace(find=lambda *a, **k: _cursor([{"id": "b1", "currency": "TRY", "credit_exposure_amount": 10000}])),
+        payments=SimpleNamespace(find=lambda *a, **k: _cursor([])),
+    )
+    usage = await credit_usage(database, tenant_id="t1", agency_id="a1",
+                               contract={"credit_limit": 10000, "credit_currency": "TRY"}, statements_db=world)
+    assert usage["used"] == (0.0 if hotel_agrees else 10000.0)
