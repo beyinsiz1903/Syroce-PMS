@@ -14,6 +14,26 @@ from models.schemas import User
 logger = logging.getLogger(__name__)
 
 
+async def _module_enabled(tenant_id: str, module_key: str) -> bool:
+    """Plan defaults + module flags + store subscription: the same decision
+    as the central check and the menu. tenant_has_module alone sees only
+    explicit flags and subscriptions, so a module that comes with the plan
+    would be refused once enforcement is switched on. Says nothing about
+    the edition (see get_tenant_active_editions)."""
+    if await tenant_has_module(tenant_id, module_key):
+        return True
+    return await _plan_includes(tenant_id, module_key)
+
+
+async def _plan_includes(tenant_id: str, module_key: str) -> bool:
+    from core import subscriptions
+    from core.entitlement import _MODULE_FIELDS, effective_tenant_modules
+
+    # Same raw database handle as tenant_has_module (one seam for tests).
+    tenant = await subscriptions._db().tenants.find_one({"id": tenant_id}, _MODULE_FIELDS)
+    return bool(tenant) and bool((await effective_tenant_modules({"id": tenant_id, **tenant})).get(module_key))
+
+
 async def get_tenant_active_editions(tenant_id: str, module_key: str) -> list[str]:
     """
     Returns the list of active edition keys (e.g. ['basic', 'pro'])
@@ -42,12 +62,16 @@ async def get_tenant_active_editions(tenant_id: str, module_key: str) -> list[st
         if pk.startswith(f"{module_key}_"):
             editions.append(pk[len(module_key) + 1 :])
 
-    # Fallback to check if module is natively enabled via legacy tenant plan
+    # No edition subscription. Using the module is not owning Pro:
     if not editions:
-        has_legacy = await tenant_has_module(tenant_id, module_key)
-        if has_legacy:
-            # We assume legacy module access maps to 'pro' for now to avoid breaking existing users.
+        if await tenant_has_module(tenant_id, module_key):
+            # An explicit module flag or legacy subscription: kept as 'pro' so
+            # existing hotels are not downgraded (unchanged behaviour).
             editions.append("pro")
+        elif await _plan_includes(tenant_id, module_key):
+            # Access that only comes with the plan is the base edition: no Pro
+            # features, base quotas.
+            editions.append("basic")
 
     return editions
 
@@ -103,7 +127,7 @@ import os
 
 def require_module(module_key: str) -> Callable:
     async def _require_module(request: Request, current_user: User = Depends(get_current_user)):
-        has_access = await tenant_has_module(current_user.tenant_id, module_key)
+        has_access = await _module_enabled(current_user.tenant_id, module_key)
         if not has_access:
             mode = os.environ.get("ENTITLEMENT_ENFORCEMENT_MODE", "observe")
             if mode == "observe":

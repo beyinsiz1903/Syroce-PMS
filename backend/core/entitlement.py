@@ -212,6 +212,11 @@ async def check_module_access(tenant_id: str, module: str) -> bool:
     return await _check_module_access(tenant_id, module)
 
 
+# Everything get_tenant_modules reads: the plan name decides PMS Lite, which
+# a projection without it would silently treat as the default tier.
+_MODULE_FIELDS = {"_id": 0, "id": 1, "modules": 1, "subscription_tier": 1, "subscription_plan": 1, "plan": 1}
+
+
 async def _check_module_access(tenant_id: str, module: str) -> bool:
     """Check if tenant has access to the required module.
 
@@ -221,7 +226,7 @@ async def _check_module_access(tenant_id: str, module: str) -> bool:
        (tenant_subscriptions, status=active, end_date in the future).
     """
     try:
-        tenant_doc = await db.tenants.find_one({"id": tenant_id}, {"_id": 0, "id": 1, "modules": 1, "subscription_tier": 1})
+        tenant_doc = await db.tenants.find_one({"id": tenant_id}, _MODULE_FIELDS)
         if not tenant_doc:
             return True
 
@@ -351,8 +356,6 @@ class EntitlementMiddleware:
                         if await _check_module_access(tenant_id, candidate):
                             allowed = True
                             break
-                    if required_module == "academy":
-                        allowed = True  # Local testing bypass
                 if not allowed:
                     resp = JSONResponse(
                         status_code=403,
