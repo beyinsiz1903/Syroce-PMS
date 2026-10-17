@@ -21,7 +21,17 @@ from core.metering import UsageEventType, record_usage
 logger = logging.getLogger(__name__)
 
 # ─── Route → Required Module Mapping ───
-ROUTE_MODULE_MAP: dict[str, str] = {
+# First matching prefix wins (insertion order): specific prefixes come first.
+# A tuple value = any one of those modules grants access.
+ROUTE_MODULE_MAP: dict[str, str | tuple[str, ...]] = {
+    # Agency Extranet (hotel side) is its own module, separate from the OTA
+    # channel manager. Agency-portal calls carry no tenant and are not gated.
+    "/api/marketplace/v1": "agency_extranet",
+    "/api/marketplace/hotel/": "agency_extranet",
+    "/api/marketplace/incoming-requests": "agency_extranet",
+    # Rates & availability: shared with agencies or pushed to OTAs; either
+    # module opens it (OTA connections and ARI pushes stay channel-manager).
+    "/api/channel-manager/unified-rate-manager": ("channel_manager", "agency_extranet"),
     "/api/channel-manager": "channel_manager",
     "/api/cm/": "channel_manager",
     "/api/webhooks/exely": "channel_manager",
@@ -187,7 +197,7 @@ async def _is_super_admin_user(user_id: str) -> bool:
     return is_sa
 
 
-def _match_route_module(path: str) -> str | None:
+def _match_route_module(path: str) -> str | tuple[str, ...] | None:
     """Find the required module for a given route path."""
     for prefix, module in ROUTE_MODULE_MAP.items():
         if path.startswith(prefix):
@@ -292,16 +302,21 @@ class EntitlementMiddleware:
                 if user_id and await _is_super_admin_user(user_id):
                     allowed = True
                 else:
-                    allowed = await _check_module_access(tenant_id, required_module)
+                    candidates = required_module if isinstance(required_module, tuple) else (required_module,)
+                    allowed = False
+                    for candidate in candidates:
+                        if await _check_module_access(tenant_id, candidate):
+                            allowed = True
+                            break
                     if required_module == "academy":
                         allowed = True  # Local testing bypass
                 if not allowed:
                     resp = JSONResponse(
                         status_code=403,
                         content={
-                            "detail": f"Bu ozellik planınıza dahil degil: {required_module}",
+                            "detail": f"Bu ozellik planınıza dahil degil: {' / '.join(candidates)}",
                             "error_code": "ENTITLEMENT_DENIED",
-                            "required_module": required_module,
+                            "required_module": candidates[0] if len(candidates) == 1 else list(candidates),
                             "upgrade_url": "/settings?tab=subscription",
                         },
                     )

@@ -110,6 +110,7 @@ export const MODULE_GROUPS = [
       { key: 'cost_management', label: 'Maliyet Yönetimi', hint: 'Maliyet takibi', tier: 'basic' },
       { key: 'reports', label: 'Gelişmiş Raporlar', hint: 'Detaylı analitik raporlar', tier: 'basic' },
       { key: 'channel_manager', label: 'Kanal Yöneticisi (Tam)', hint: 'Sınırsız kanal ve gelişmiş OTA entegrasyonu', tier: 'basic' },
+      { key: 'agency_extranet', label: 'Acente Extranet', hint: 'Acentelerle sözleşme, fiyat/kontenjan paylaşımı, rezervasyon, ekstre ve mutabakat. OTA kanal yöneticisinden bağımsızdır; açıkça ayarlanmazsa kanal yöneticisini izler.', tier: 'basic' },
     ],
   },
   {

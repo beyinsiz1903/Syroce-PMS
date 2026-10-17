@@ -43,3 +43,20 @@ describe('accessibleNavigationItems compact workspace', () => {
     expect(items.some(({ key }) => key === 'room_mapping_wizard')).toBe(true);
   });
 });
+
+describe('Agency Extranet is licensed apart from the OTA channel manager', () => {
+  const keysFor = modules => accessibleNavigationItems({ user: admin, tenant: {}, hasModule: key => modules.includes(key) })
+    .map(({ key }) => key);
+
+  it('an agency-only hotel sees the agency pages and shares rates, not the OTA pages', () => {
+    const keys = keysFor(['agency_extranet']);
+    expect(keys).toEqual(expect.arrayContaining(['incoming_agency_contracts', 'agency_statements', 'unified_rate_manager']));
+    expect(keys).not.toContain('channel_connections');
+  });
+
+  it('an OTA-only hotel keeps the rate manager but not the agency pages', () => {
+    const keys = keysFor(['channel_manager']);
+    expect(keys).toContain('unified_rate_manager');
+    expect(keys).not.toContain('incoming_agency_contracts');
+  });
+});

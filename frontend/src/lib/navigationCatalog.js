@@ -40,7 +40,9 @@ export function accessibleNavigationItems({
       && !isSuperAdmin
       && !item.allowedRoles.some((role) => userRoles.has(String(role).trim().toLowerCase()))
     ) return false;
-    if (item.moduleKey && !(isSuperAdmin && item.requireSuperAdmin) && !hasModule(item.moduleKey)) return false;
+    if (Array.isArray(item.anyModuleKeys) && item.anyModuleKeys.length) {
+      if (!item.anyModuleKeys.some((key) => hasModule(key))) return false;
+    } else if (item.moduleKey && !(isSuperAdmin && item.requireSuperAdmin) && !hasModule(item.moduleKey)) return false;
     return true;
   }).map((item) => itemLabels[item.key] ? { ...item, label: itemLabels[item.key] } : item);
 }

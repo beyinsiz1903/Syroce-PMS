@@ -58,3 +58,15 @@ describe('module operational evidence', () => {
     expect(moduleSetupLabel(item, state)).toBe('Kurulum kanıtı yok');
   });
 });
+
+describe('agency extranet module state', () => {
+  const agency = PRODUCT_MODULES.find((item) => item.key === 'agency_extranet');
+
+  it('follows the channel manager until set explicitly, like the server', () => {
+    expect(agency.path).toBe('/app/incoming-agency-contracts');
+    expect(resolveModuleState(agency, { subscription_tier: 'enterprise', modules: { channel_manager: false } }).enabled).toBe(false);
+    expect(resolveModuleState(agency, { subscription_tier: 'mini', modules: { channel_manager: true } }).enabled).toBe(true);
+    expect(resolveModuleState(agency, { subscription_tier: 'enterprise', modules: { channel_manager: true, agency_extranet: false } }).enabled).toBe(false);
+    expect(resolveModuleState(agency, { subscription_tier: 'mini', modules: { channel_manager: false, agency_extranet: true } }).enabled).toBe(true);
+  });
+});
