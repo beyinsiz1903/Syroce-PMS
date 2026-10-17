@@ -12,6 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import StatementsWorkspace from '@/components/statements/StatementsWorkspace';
+import PerformanceReport from '@/components/statements/PerformanceReport';
 import ContractAmendmentPanel from '@/components/contracts/ContractAmendmentPanel';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useTranslation } from 'react-i18next';
@@ -1095,6 +1096,7 @@ const AgencyPortalDashboard = () => {
           </TabsContent>
 
           {portalMode === 'marketplace' && <TabsContent value="finance" className="mt-4 space-y-4">
+            <PerformanceReport side="agency" api={agencyApi} path="/marketplace/v1/reports/hotel-performance" />
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm"><div><h2 className="font-semibold text-slate-900">Dönem mutabakat özeti</h2><p className="text-xs leading-5 text-slate-500">Giriş tarihine göre brüt satış, acente komisyonu, platform hizmet bedeli ve otellere aktarılacak net tutar. Otelin PMS'te yaptığı iptal, no-show ve tutar değişiklikleri yansıtılır.</p></div>
               <div className="flex flex-wrap items-end gap-2">
                 <div><Label htmlFor="recon-start" className="text-xs">Başlangıç</Label><Input id="recon-start" type="date" value={reconPeriod.start} onChange={e => setReconPeriod(current => ({ ...current, start: e.target.value }))} className="h-9" /></div>
