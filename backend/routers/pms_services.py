@@ -26,8 +26,10 @@ from core.database import db
 from core.security import get_current_user
 from models.schemas import User
 from modules.pms_core.module_scope_service import require_module_scope
-from modules.pms_core.role_permission_service import require_module as require_module_v101  # v101 DW
-from modules.pms_core.role_permission_service import require_op  # v101 DW
+from modules.pms_core.role_permission_service import (
+    require_module_role,  # v101 DW
+    require_op,  # v101 DW
+)
 
 try:
     from cache_manager import cached
@@ -78,7 +80,7 @@ async def update_room_service(
     service_id: str,
     updates: dict[str, Any],
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
+    _perm=Depends(require_module_role("frontdesk")),  # v101 DW
 ):
     if not isinstance(updates, dict):
         raise HTTPException(status_code=400, detail="Gecersiz guncelleme verisi")
@@ -441,7 +443,7 @@ async def get_group_reservations(page: int = 1, page_size: int = 50, current_use
 async def create_group_reservation(
     group_data: dict,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
+    _perm=Depends(require_module_role("frontdesk")),  # v101 DW
 ):
     from core.helpers import strip_reserved
 
@@ -456,7 +458,7 @@ async def create_group_reservation(
 async def delete_group_reservation(
     group_id: str,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
+    _perm=Depends(require_module_role("frontdesk")),  # v101 DW
 ):
     result = await db.group_reservations.delete_one({"id": group_id, "tenant_id": current_user.tenant_id})
     if result.deleted_count == 0:

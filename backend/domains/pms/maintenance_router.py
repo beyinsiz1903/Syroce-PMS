@@ -16,12 +16,9 @@ from core.security import (
 from models.schemas import MaintenanceAsset, MaintenanceWorkOrder, PreventiveMaintenancePlan, SensorAlert, User
 from modules.pms_core.role_permission_service import (  # v99 DW
     require_any_module,
+    require_module_role,
     require_op,  # v98 DW
 )
-from modules.pms_core.role_permission_service import (
-    require_module as require_module_v99,
-)
-from modules.pms_core.role_permission_service import require_module as require_module_v101  # v101 DW
 
 logger = logging.getLogger(__name__)
 
@@ -133,7 +130,7 @@ async def get_maintenance_work_orders(
     room_id: str | None = None,
     priority: str | None = None,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v99("housekeeping")),
+    _perm=Depends(require_module_role("housekeeping")),
 ):
     """List maintenance work orders with basic filters"""
     query = {"tenant_id": current_user.tenant_id}
@@ -154,7 +151,7 @@ async def update_maintenance_work_order(
     status: str | None = None,
     priority: str | None = None,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v99("housekeeping")),  # v99 DW
+    _perm=Depends(require_module_role("housekeeping")),  # v99 DW
 ):
     """Update status/priority of a maintenance work order"""
     updates: dict = {}
@@ -261,7 +258,7 @@ async def technician_submit_task(
     parts_used: list[dict] | None = None,
     photo_urls: list[str] | None = None,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v101("housekeeping")),  # v101 DW
+    _perm=Depends(require_module_role("housekeeping")),  # v101 DW
 ):
     """Mobile technician app - submit task update"""
     task = await db.maintenance_tasks.find_one({"id": task_id, "tenant_id": current_user.tenant_id})
@@ -297,7 +294,7 @@ async def get_repeat_issues(
     days: int = 90,
     min_occurrences: int = 3,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v99("housekeeping")),
+    _perm=Depends(require_module_role("housekeeping")),
 ):
     """
     Detect repeat issues
@@ -362,7 +359,7 @@ async def get_repeat_issues(
 async def get_maintenance_sla(
     days: int = 30,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v99("housekeeping")),
+    _perm=Depends(require_module_role("housekeeping")),
 ):
     """
     SLA measurement for maintenance
@@ -479,7 +476,7 @@ async def create_or_update_part(
 @cached(ttl=180, key_prefix="maintenance_tasks")  # Cache for 3 min
 async def get_maintenance_tasks(
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v99("housekeeping")),
+    _perm=Depends(require_module_role("housekeeping")),
 ):
     """Get all maintenance tasks"""
     try:

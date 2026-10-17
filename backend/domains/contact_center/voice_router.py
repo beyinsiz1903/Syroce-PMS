@@ -41,7 +41,7 @@ from domains.contact_center.voice_ingest import (
 )
 from domains.contact_center.voice_provider import TwilioVoiceProvider
 from models.schemas import User
-from modules.pms_core.role_permission_service import require_module, require_op
+from modules.pms_core.role_permission_service import require_module_role, require_op
 from security.field_encryption import get_field_encryption_service
 
 logger = logging.getLogger(__name__)
@@ -169,7 +169,7 @@ async def _notify_incoming_call(tenant_id: str, call_id: str) -> None:
 @router.post("/contact-center/voice/token")
 async def issue_voice_token(
     current_user: User = Depends(get_current_user),
-    _mod=Depends(require_module("contact_center")),
+    _mod=Depends(require_module_role("contact_center")),
     _perm=Depends(require_op("manage_contact_center")),
 ):
     """WebRTC softphone için kısa-ömürlü Twilio AccessToken üretir.
@@ -259,7 +259,7 @@ async def list_calls(
     date_to: str | None = None,
     search: str | None = None,
     current_user: User = Depends(get_current_user),
-    _mod=Depends(require_module("contact_center")),
+    _mod=Depends(require_module_role("contact_center")),
 ):
     """Kiracıya ait sesli çağrı kayıtlarını listeler (allowlist DTO) ve filtreleme/arama desteği sunar."""
     from domains.contact_center.router import _can_reveal_phone
@@ -325,7 +325,7 @@ async def get_analytics_summary(
     date_from: str | None = None,
     date_to: str | None = None,
     current_user: User = Depends(get_current_user),
-    _mod=Depends(require_module("contact_center")),
+    _mod=Depends(require_module_role("contact_center")),
 ):
     """Çağrı merkezi performans özet istatistiklerini ve saatlik hacim grafiğini hesaplar."""
     tz_doc = {}
@@ -464,7 +464,7 @@ async def get_analytics_summary(
 async def get_call_guest_360(
     call_id: str,
     current_user: User = Depends(get_current_user),
-    _mod=Depends(require_module("contact_center")),
+    _mod=Depends(require_module_role("contact_center")),
 ):
     call_doc = await db.contact_center_calls.find_one({"id": call_id, "tenant_id": current_user.tenant_id})
     if not call_doc:
@@ -550,7 +550,7 @@ async def transfer_live_call(
     call_sid: str,
     payload: CallTransfer,
     current_user: User = Depends(get_current_user),
-    _mod=Depends(require_module("contact_center")),
+    _mod=Depends(require_module_role("contact_center")),
     _perm=Depends(require_op("manage_contact_center")),
 ):
     """Aktif bir çağrıyı başka bir hedefe yönlendirir (Twilio REST API)."""
@@ -623,7 +623,7 @@ async def send_whatsapp_during_call(
     call_sid: str,
     payload: CallWhatsApp,
     current_user: User = Depends(get_current_user),
-    _mod=Depends(require_module("contact_center")),
+    _mod=Depends(require_module_role("contact_center")),
     _perm=Depends(require_op("manage_contact_center")),
 ):
     """Çağrı esnasında müşteriye tek tıkla şablon gönderir (Cross-Channel)."""
@@ -692,7 +692,7 @@ async def update_call(
     call_id: str,
     payload: CallUpdate,
     current_user: User = Depends(get_current_user),
-    _mod=Depends(require_module("contact_center")),
+    _mod=Depends(require_module_role("contact_center")),
 ):
     """Çağrı kaydına not veya disposition ekler."""
     doc = await db.contact_center_calls.find_one({"id": call_id, "tenant_id": current_user.tenant_id})
@@ -716,7 +716,7 @@ async def update_call(
 async def get_call_recording(
     call_id: str,
     current_user: User = Depends(get_current_user),
-    _mod=Depends(require_module("contact_center")),
+    _mod=Depends(require_module_role("contact_center")),
 ):
     """Şifreli çağrı kaydını (at-read) çözer ve ses dosyası olarak döner."""
     from shared_kernel.audit_helper import audit_log
@@ -873,7 +873,7 @@ def _voice_number_dto(doc: dict) -> dict:
 async def list_voice_numbers(
     tenant_id: str | None = None,
     current_user: User = Depends(get_current_user),
-    _mod=Depends(require_module("contact_center")),
+    _mod=Depends(require_module_role("contact_center")),
     _perm=Depends(require_op("manage_contact_center")),
 ):
     """Numara→otel/ajan eşlemelerini listeler (allowlist DTO).
@@ -896,7 +896,7 @@ async def list_voice_numbers(
 async def create_voice_number(
     payload: VoiceNumberCreate,
     current_user: User = Depends(get_current_user),
-    _mod=Depends(require_module("contact_center")),
+    _mod=Depends(require_module_role("contact_center")),
     _perm=Depends(require_op("manage_contact_center")),
 ):
     """Yeni numara→otel/ajan eşlemesi oluşturur.
@@ -933,7 +933,7 @@ async def update_voice_number(
     number_id: str,
     payload: VoiceNumberUpdate,
     current_user: User = Depends(get_current_user),
-    _mod=Depends(require_module("contact_center")),
+    _mod=Depends(require_module_role("contact_center")),
     _perm=Depends(require_op("manage_contact_center")),
 ):
     """Mevcut eşlemeyi günceller (kapsam-filtreli). Bulunamazsa 404; ``to_number``
@@ -967,7 +967,7 @@ async def update_voice_number(
 async def delete_voice_number(
     number_id: str,
     current_user: User = Depends(get_current_user),
-    _mod=Depends(require_module("contact_center")),
+    _mod=Depends(require_module_role("contact_center")),
     _perm=Depends(require_op("manage_contact_center")),
 ):
     """Eşlemeyi siler (kapsam-filtreli). Bulunamazsa 404."""
@@ -1450,7 +1450,7 @@ def _dec(svc, val: str | None) -> str | None:
 async def create_queue(
     payload: QueueConfigCreate,
     current_user: User = Depends(get_current_user),
-    _mod=Depends(require_module("contact_center")),
+    _mod=Depends(require_module_role("contact_center")),
     _perm=Depends(require_op("manage_contact_center")),
 ):
     existing = await db.contact_center_queues.find_one({"tenant_id": current_user.tenant_id, "extension": payload.extension})
@@ -1484,7 +1484,7 @@ async def create_queue(
 @router.get("/contact-center/queues")
 async def list_queues(
     current_user: User = Depends(get_current_user),
-    _mod=Depends(require_module("contact_center")),
+    _mod=Depends(require_module_role("contact_center")),
     _perm=Depends(require_op("manage_contact_center")),
 ):
     cursor = db.contact_center_queues.find({"tenant_id": current_user.tenant_id})
@@ -1498,7 +1498,7 @@ async def list_queues(
 async def get_queue(
     queue_id: str,
     current_user: User = Depends(get_current_user),
-    _mod=Depends(require_module("contact_center")),
+    _mod=Depends(require_module_role("contact_center")),
     _perm=Depends(require_op("manage_contact_center")),
 ):
     doc = await db.contact_center_queues.find_one({"id": queue_id, "tenant_id": current_user.tenant_id})
@@ -1513,7 +1513,7 @@ async def update_queue(
     queue_id: str,
     payload: QueueConfigUpdate,
     current_user: User = Depends(get_current_user),
-    _mod=Depends(require_module("contact_center")),
+    _mod=Depends(require_module_role("contact_center")),
     _perm=Depends(require_op("manage_contact_center")),
 ):
     doc = await db.contact_center_queues.find_one({"id": queue_id, "tenant_id": current_user.tenant_id})
@@ -1544,7 +1544,7 @@ async def update_queue(
 async def delete_queue(
     queue_id: str,
     current_user: User = Depends(get_current_user),
-    _mod=Depends(require_module("contact_center")),
+    _mod=Depends(require_module_role("contact_center")),
     _perm=Depends(require_op("manage_contact_center")),
 ):
     res = await db.contact_center_queues.delete_one({"id": queue_id, "tenant_id": current_user.tenant_id})
@@ -1594,7 +1594,7 @@ async def _delayed_wrap_up_expiration(tenant_id: str, agent_id: str) -> None:
 async def update_agent_state(
     payload: AgentStateUpdate,
     current_user: User = Depends(get_current_user),
-    _mod=Depends(require_module("contact_center")),
+    _mod=Depends(require_module_role("contact_center")),
 ):
     doc = await set_agent_presence_state(current_user.tenant_id, current_user.id, payload.state)
     res = dict(doc)
@@ -1605,7 +1605,7 @@ async def update_agent_state(
 @router.get("/contact-center/agents/my-state")
 async def get_my_state(
     current_user: User = Depends(get_current_user),
-    _mod=Depends(require_module("contact_center")),
+    _mod=Depends(require_module_role("contact_center")),
 ):
     state_doc = await db.contact_center_agent_states.find_one({"tenant_id": current_user.tenant_id, "agent_id": current_user.id, "ended_at": None})
     if not state_doc:
@@ -1619,7 +1619,7 @@ async def get_my_state(
 @router.get("/contact-center/agents/states")
 async def list_agents_states(
     current_user: User = Depends(get_current_user),
-    _mod=Depends(require_module("contact_center")),
+    _mod=Depends(require_module_role("contact_center")),
     _perm=Depends(require_op("manage_contact_center")),
 ):
     pipeline = [
@@ -1987,7 +1987,7 @@ class CallDispositionPayload(BaseModel):
 @router.get("/supervisor/dashboard")
 async def get_supervisor_dashboard(
     current_user: User = Depends(get_current_user),
-    _mod=Depends(require_module("contact_center")),
+    _mod=Depends(require_module_role("contact_center")),
 ):
     if current_user.role not in {"supervisor", "admin", "super_admin"}:
         raise HTTPException(status_code=403, detail="Yalnızca yönetici veya supervisor bu işlemi gerçekleştirebilir.")
@@ -2089,7 +2089,7 @@ async def get_supervisor_dashboard(
 @router.get("/supervisor/agents")
 async def get_supervisor_agents(
     current_user: User = Depends(get_current_user),
-    _mod=Depends(require_module("contact_center")),
+    _mod=Depends(require_module_role("contact_center")),
 ):
     if current_user.role not in {"supervisor", "admin", "super_admin"}:
         raise HTTPException(status_code=403, detail="Yalnızca yönetici veya supervisor bu işlemi gerçekleştirebilir.")
@@ -2150,7 +2150,7 @@ async def get_supervisor_agents(
 async def post_supervisor_action(
     payload: SupervisorActionPayload,
     current_user: User = Depends(get_current_user),
-    _mod=Depends(require_module("contact_center")),
+    _mod=Depends(require_module_role("contact_center")),
 ):
     if current_user.role not in {"supervisor", "admin", "super_admin"}:
         raise HTTPException(status_code=403, detail="Yalnızca yönetici veya supervisor bu işlemi gerçekleştirebilir.")
@@ -2214,7 +2214,7 @@ async def post_supervisor_action(
 async def post_supervisor_intervene(
     payload: IntervenePayload,
     current_user: User = Depends(get_current_user),
-    _mod=Depends(require_module("contact_center")),
+    _mod=Depends(require_module_role("contact_center")),
 ):
     if current_user.role not in {"supervisor", "admin", "super_admin"}:
         raise HTTPException(status_code=403, detail="Yalnızca yönetici veya supervisor bu işlemi gerçekleştirebilir.")
@@ -2239,7 +2239,7 @@ async def post_supervisor_intervene(
 async def post_agent_disposition(
     payload: CallDispositionPayload,
     current_user: User = Depends(get_current_user),
-    _mod=Depends(require_module("contact_center")),
+    _mod=Depends(require_module_role("contact_center")),
 ):
     tenant_id = current_user.tenant_id
 
@@ -2272,7 +2272,7 @@ async def post_agent_disposition(
 @router.get("/callbacks")
 async def get_callbacks(
     current_user: User = Depends(get_current_user),
-    _mod=Depends(require_module("contact_center")),
+    _mod=Depends(require_module_role("contact_center")),
 ):
     cursor = db.contact_center_callbacks.find({"tenant_id": current_user.tenant_id, "status": "pending"}).sort("abandoned_at", -1)
     docs = await cursor.to_list(length=100)
@@ -2286,7 +2286,7 @@ async def get_callbacks(
 async def post_callback_assign(
     callback_id: str,
     current_user: User = Depends(get_current_user),
-    _mod=Depends(require_module("contact_center")),
+    _mod=Depends(require_module_role("contact_center")),
 ):
     res = await db.contact_center_callbacks.update_one(
         {"id": callback_id, "tenant_id": current_user.tenant_id, "status": "pending"}, {"$set": {"status": "assigned", "assigned_agent_id": current_user.id, "assigned_at": datetime.now(UTC)}}
@@ -2301,7 +2301,7 @@ async def post_callback_complete(
     callback_id: str,
     result: str = "completed",
     current_user: User = Depends(get_current_user),
-    _mod=Depends(require_module("contact_center")),
+    _mod=Depends(require_module_role("contact_center")),
 ):
     res = await db.contact_center_callbacks.update_one({"id": callback_id, "tenant_id": current_user.tenant_id}, {"$set": {"status": "completed", "resolved_at": datetime.now(UTC), "result": result}})
     if not getattr(res, "matched_count", 0):

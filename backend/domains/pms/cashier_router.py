@@ -13,8 +13,10 @@ from core.folio_ledger_service import FolioLedgerService
 from core.security import get_current_user
 from core.tenant_db import get_current_tenant_id, get_system_db
 from models.schemas import User
-from modules.pms_core.role_permission_service import require_module as require_module_v99  # v99 DW
-from modules.pms_core.role_permission_service import require_op  # v94 DW
+from modules.pms_core.role_permission_service import (
+    require_module_role,  # v99 DW
+    require_op,  # v94 DW
+)
 
 logger = logging.getLogger(__name__)
 
@@ -1100,7 +1102,7 @@ async def get_laundry_orders(skip: int = 0, limit: int = 100, status: str = None
 async def create_laundry_order(
     body: dict = Body(...),
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v99("pos")),  # v99 DW
+    _perm=Depends(require_module_role("pos")),  # v99 DW
 ):
     if not body.get("room_number"):
         raise HTTPException(status_code=400, detail="Oda numarasi gerekli")
@@ -1154,7 +1156,7 @@ async def update_laundry_order(
     order_id: str,
     body: dict = Body(...),
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v99("pos")),  # v99 DW
+    _perm=Depends(require_module_role("pos")),  # v99 DW
 ):
     update_fields = {k: v for k, v in body.items() if k not in ("id", "tenant_id")}
     update_fields["updated_at"] = datetime.utcnow().isoformat()
@@ -1263,7 +1265,7 @@ async def update_laundry_order(
 async def delete_laundry_order(
     order_id: str,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v99("pos")),  # v99 DW
+    _perm=Depends(require_module_role("pos")),  # v99 DW
 ):
     result = await db.tenant_settings.update_one(
         {"tenant_id": current_user.tenant_id},
@@ -1344,7 +1346,7 @@ async def get_laundry_items(current_user: User = Depends(get_current_user)):
 async def create_laundry_item(
     body: dict = Body(...),
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v99("pos")),  # v99 DW
+    _perm=Depends(require_module_role("pos")),  # v99 DW
 ):
     code = (body.get("code") or "").strip().lower()
     name = (body.get("name") or "").strip()
@@ -1380,7 +1382,7 @@ async def update_laundry_item(
     item_id: str,
     body: dict = Body(...),
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v99("pos")),  # v99 DW
+    _perm=Depends(require_module_role("pos")),  # v99 DW
 ):
     set_fields = {}
     if "name" in body:
@@ -1413,7 +1415,7 @@ async def update_laundry_item(
 async def delete_laundry_item(
     item_id: str,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v99("pos")),  # v99 DW
+    _perm=Depends(require_module_role("pos")),  # v99 DW
 ):
     result = await db.tenant_settings.update_one(
         {"tenant_id": current_user.tenant_id},

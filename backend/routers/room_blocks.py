@@ -16,7 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from core.security import get_current_user
-from modules.pms_core.role_permission_service import require_module as require_module_v101  # v101 DW
+from modules.pms_core.role_permission_service import require_module_role  # v101 DW
 
 logger = logging.getLogger("routers.room_blocks")
 
@@ -35,7 +35,7 @@ class RoomBlockRequest(BaseModel):
 async def apply_room_block(
     req: RoomBlockRequest,
     current_user=Depends(get_current_user),
-    _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
+    _perm=Depends(require_module_role("frontdesk")),  # v101 DW
 ):
     """Block a room for OOO/OOS/Maintenance.
     Uses the same room_night_locks table as bookings (INV-5)."""
@@ -63,7 +63,7 @@ async def release_room_block(
     start_date: str | None = None,
     end_date: str | None = None,
     current_user=Depends(get_current_user),
-    _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
+    _perm=Depends(require_module_role("frontdesk")),  # v101 DW
 ):
     """Release an OOO/OOS/Maintenance block."""
     if block_type not in ("ooo", "oos", "maintenance"):

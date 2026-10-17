@@ -11,10 +11,8 @@ from core.security import get_current_user
 from models.schemas import User, _ensure_hotel_context
 from modules.pms_core.role_permission_service import (
     RolePermissionService,
+    require_module_role,
     require_op,
-)
-from modules.pms_core.role_permission_service import (
-    require_module as require_module_v97,
 )
 
 from ._common import (
@@ -32,7 +30,7 @@ async def cancel_reservation(
     booking_id: str,
     body: CancelReservationRequest,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
+    _perm=Depends(require_module_role("frontdesk")),  # v97 DW
 ):
     _role_permissions.enforce_user_permission(current_user, "edit_booking")
     _ensure_hotel_context(current_user)

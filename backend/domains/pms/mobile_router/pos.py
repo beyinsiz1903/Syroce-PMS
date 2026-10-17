@@ -21,7 +21,7 @@ from core.database import db
 from core.security import get_current_user, security
 from domains.pms.pos_extensions._idem import idempotent_insert
 from modules.pms_core.role_permission_service import (
-    require_module,  # v89 DW
+    require_module_role,  # v89 DW
 )
 
 # ============================================================================
@@ -122,7 +122,7 @@ router = APIRouter(prefix="/api", tags=["mobile"])
 async def create_quick_order_mobile(
     request: QuickOrderRequest,
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    _perm=Depends(require_module("pos")),  # v89 DW
+    _perm=Depends(require_module_role("pos")),  # v89 DW
 ):
     """Create a quick POS order from mobile"""
     current_user = await get_current_user(credentials)
@@ -271,7 +271,7 @@ async def update_menu_item_price_mobile(
     item_id: str,
     request: MenuPriceUpdateRequest,
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    _perm=Depends(require_module("pos")),  # v89 DW
+    _perm=Depends(require_module_role("pos")),  # v89 DW
 ):
     """Update menu item price from mobile"""
     current_user = await get_current_user(credentials)

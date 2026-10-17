@@ -11,8 +11,7 @@ from core.helpers import require_module
 from core.security import get_current_user
 from models.enums import UserRole
 from models.schemas import User
-from modules.pms_core.role_permission_service import require_module as require_module_v101
-from modules.pms_core.role_permission_service import require_op
+from modules.pms_core.role_permission_service import require_module_role, require_op
 
 from ._common import (
     DEFAULT_PUSH_CHANNELS,
@@ -143,7 +142,7 @@ async def get_staff_mobile_dashboard(
 async def mobile_quick_checkin(
     booking_id: str,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
+    _perm=Depends(require_module_role("frontdesk")),  # v101 DW
 ):
     """Quick check-in from mobile — atomic transaction."""
     from core.atomic_checkin_checkout import CheckInError, check_in_booking_atomic

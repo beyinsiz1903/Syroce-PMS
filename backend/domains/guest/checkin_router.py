@@ -20,8 +20,10 @@ from core.database import db
 from core.security import get_current_user
 from domains.guest.checkin_id_photo_storage import load_id_photo, save_id_photo
 from models.schemas import User
-from modules.pms_core.role_permission_service import MODULE_ROLES  # v97 DW
-from modules.pms_core.role_permission_service import require_module as require_module_v97  # v97 DW
+from modules.pms_core.role_permission_service import (
+    MODULE_ROLES,  # v97 DW
+    require_module_role,  # v97 DW
+)
 from security.upload_validator import MAX_IMAGE_BYTES
 
 logger = logging.getLogger("domains.guest.checkin_router")
@@ -419,7 +421,7 @@ async def list_online_checkin_id_photos(
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v97("frontdesk")),
+    _perm=Depends(require_module_role("frontdesk")),
 ):
     """Task #86 — Bekleyen kimlik fotoğrafları listesi (resepsiyon paneli).
 
@@ -494,7 +496,7 @@ async def download_online_checkin_id_photo(
         max_length=500,
     ),
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v97("frontdesk")),  # staff-only access
+    _perm=Depends(require_module_role("frontdesk")),  # staff-only access
 ):
     """Download a guest's encrypted ID photo as image bytes (staff only).
 
@@ -640,7 +642,7 @@ async def manual_delete_online_checkin_id_photo(
         max_length=500,
     ),
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v97("frontdesk")),
+    _perm=Depends(require_module_role("frontdesk")),
 ):
     """Task #86 — Bir kimlik fotoğrafını süresinden önce manuel sil.
 
@@ -691,7 +693,7 @@ async def manual_delete_online_checkin_id_photo(
 async def bulk_delete_online_checkin_id_photos(
     payload: dict,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v97("frontdesk")),
+    _perm=Depends(require_module_role("frontdesk")),
 ):
     """Task #86 — KVKK silme talebi için booking_id veya guest_id
     bazlı toplu manuel silme.
@@ -822,7 +824,7 @@ async def _build_retention_setting_response(tenant_id: str) -> dict:
 @router.get("/checkin/online/settings/id-photo-retention")
 async def get_id_photo_retention_setting(
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v97("frontdesk")),
+    _perm=Depends(require_module_role("frontdesk")),
 ):
     """Task #124 — Tenant'ın efektif kimlik fotoğrafı saklama süresi.
 
@@ -837,7 +839,7 @@ async def get_id_photo_retention_setting(
 async def update_id_photo_retention_setting(
     payload: dict,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v97("frontdesk")),
+    _perm=Depends(require_module_role("frontdesk")),
 ):
     """Task #124 — Tenant'a özel saklama süresini set et / sıfırla.
 
@@ -928,7 +930,7 @@ async def update_id_photo_retention_setting(
 async def accept_upsell_offer(
     data: dict,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
+    _perm=Depends(require_module_role("frontdesk")),  # v97 DW
 ):
     """Upsell teklifini kabul et"""
     offer_id = data.get("offer_id")

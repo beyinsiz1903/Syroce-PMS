@@ -9,8 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from core.database import db
 from core.security import get_current_user
 from models.schemas import User, _ensure_hotel_context
-from modules.pms_core.role_permission_service import require_module as require_module_v99
-from modules.pms_core.role_permission_service import require_op
+from modules.pms_core.role_permission_service import require_module_role, require_op
 
 from ._common import (
     HotelSettingsUpdate,
@@ -68,7 +67,7 @@ async def update_room_housekeeping_status(
     room_id: str,
     data: RoomStatusUpdate,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v99("housekeeping")),  # v99 DW
+    _perm=Depends(require_module_role("housekeeping")),  # v99 DW
 ):
     """Update housekeeping status of a room."""
     _ensure_hotel_context(current_user)

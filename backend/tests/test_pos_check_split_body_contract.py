@@ -54,7 +54,7 @@ def client(monkeypatch):
         return None
 
     app.dependency_overrides[get_current_user] = _fake_user
-    # The route declares `_perm=Depends(require_module_v99("pos"))`; resolve
+    # The route declares `_perm=Depends(require_module_role("pos"))`; resolve
     # the actual dep callable from the route signature so we can override it.
     for route in app.routes:
         if getattr(route, "path", "") == "/api/pos/check-split":

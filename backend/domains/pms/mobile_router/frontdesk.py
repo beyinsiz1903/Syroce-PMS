@@ -19,7 +19,7 @@ from pydantic import BaseModel
 
 from core.database import db
 from core.security import get_current_user, security
-from modules.pms_core.role_permission_service import require_module as require_module_v92  # v92 DW
+from modules.pms_core.role_permission_service import require_module_role  # v92 DW
 
 # ============================================================================
 # MOBILE ENDPOINTS - Department-Based Mobile Dashboard APIs
@@ -117,7 +117,7 @@ _NO_SHOW_ELIGIBLE_STATUSES = {"confirmed", "guaranteed", "reserved"}
 @router.get("/frontdesk/mobile/early-checkin-requests")
 async def get_early_checkin_requests_mobile(
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    _perm=Depends(require_module_v92("frontdesk")),
+    _perm=Depends(require_module_role("frontdesk")),
 ):
     """Get early check-in requests for front desk mobile"""
     current_user = await get_current_user(credentials)
@@ -158,7 +158,7 @@ async def get_early_checkin_requests_mobile(
 @router.get("/frontdesk/mobile/late-checkout-requests")
 async def get_late_checkout_requests_mobile(
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    _perm=Depends(require_module_v92("frontdesk")),
+    _perm=Depends(require_module_role("frontdesk")),
 ):
     """Get late checkout requests for front desk mobile"""
     current_user = await get_current_user(credentials)
@@ -207,7 +207,7 @@ async def get_late_checkout_requests_mobile(
 async def process_no_show_mobile(
     request: ProcessNoShowRequest,
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    _perm=Depends(require_module_v92("frontdesk")),  # v92 DW
+    _perm=Depends(require_module_role("frontdesk")),  # v92 DW
 ):
     """Process no-show for a booking"""
     current_user = await get_current_user(credentials)
@@ -287,7 +287,7 @@ async def process_no_show_mobile(
 async def change_room_mobile(
     request: ChangeRoomRequest,
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    _perm=Depends(require_module_v92("frontdesk")),  # v92 DW
+    _perm=Depends(require_module_role("frontdesk")),  # v92 DW
 ):
     """Change room for a booking"""
     current_user = await get_current_user(credentials)

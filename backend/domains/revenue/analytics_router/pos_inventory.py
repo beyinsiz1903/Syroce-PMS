@@ -18,7 +18,7 @@ from fastapi.security import HTTPAuthorizationCredentials
 from core.database import db
 from core.security import get_current_user, security
 from core.tenant_currency import get_tenant_currency
-from modules.pms_core.role_permission_service import require_module as require_module_rbac  # v89 DW
+from modules.pms_core.role_permission_service import require_module_role  # v89 DW
 from modules.pms_core.role_permission_service import require_role as _require_role
 
 # v67 Bug DD: frontdesk/* endpoint'lerinde RBAC eksikti — HK kullanıcı guest PII (search-bookings),
@@ -147,7 +147,7 @@ async def get_inventory_movements(
 async def create_inventory_movement(
     movement_data: dict,
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    _perm=Depends(require_module_rbac("pos")),  # v89 DW
+    _perm=Depends(require_module_role("pos")),  # v89 DW
 ):
     """Create a new inventory movement"""
     current_user = await get_current_user(credentials)

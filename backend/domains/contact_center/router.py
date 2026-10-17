@@ -5,7 +5,7 @@ Domain Router: Syroce Contact Center (omnichannel) — Faz 1 (WhatsApp MVP).
 1. Entitlement: ``/api/contact-center/`` yolu ROUTE_MODULE_MAP üzerinden
    ``contact_center`` modülüne bağlı (kiracı planı/abonelik kontrolü ASGI
    middleware'de — entitled değilse 403 ENTITLEMENT_DENIED).
-2. RBAC: ``require_module("contact_center")`` rol allowlist'i (call_center_agent,
+2. RBAC: ``require_module_role("contact_center")`` rol allowlist'i (call_center_agent,
    front_desk/resepsiyon, supervisor, admin, super_admin). Gönderim ucu ayrıca
    ``require_op("manage_contact_center")`` ile MANAGE_CONTACT_CENTER ister.
 
@@ -36,7 +36,7 @@ from models.enums import MessageDirection, MessageStatus
 from models.schemas import User
 from modules.pms_core.role_permission_service import (
     RolePermissionService,
-    require_module,
+    require_module_role,
     require_op,
 )
 from security.field_encryption import get_field_encryption_service
@@ -108,7 +108,7 @@ async def _is_within_session_window(tenant_id: str, conversation_id: str) -> boo
 @router.get("/contact-center/health")
 async def contact_center_health(
     current_user: User = Depends(get_current_user),
-    _mod=Depends(require_module("contact_center")),
+    _mod=Depends(require_module_role("contact_center")),
 ):
     """Modül + sağlayıcı sağlığı (sır/PII içermez)."""
     provider = get_communication_provider("whatsapp")
@@ -126,7 +126,7 @@ async def list_conversations(
     status: str | None = None,
     limit: int = 50,
     current_user: User = Depends(get_current_user),
-    _mod=Depends(require_module("contact_center")),
+    _mod=Depends(require_module_role("contact_center")),
 ):
     """Kiracıya ait konuşmaları listeler (allowlist DTO, telefon maskeli).
 
@@ -150,7 +150,7 @@ async def get_conversation(
     msg_limit: int = 100,
     reveal_phone: bool = False,
     current_user: User = Depends(get_current_user),
-    _mod=Depends(require_module("contact_center")),
+    _mod=Depends(require_module_role("contact_center")),
 ):
     """Tek konuşma + mesajları (okuma sınırında decrypt, allowlist DTO).
 
@@ -188,7 +188,7 @@ async def send_conversation_message(
     conversation_id: str,
     payload: SendWhatsAppMessage,
     current_user: User = Depends(get_current_user),
-    _mod=Depends(require_module("contact_center")),
+    _mod=Depends(require_module_role("contact_center")),
     _perm=Depends(require_op("manage_contact_center")),
 ):
     """Konuşmaya WhatsApp yanıtı gönderir (MANAGE_CONTACT_CENTER kapılı).
@@ -330,7 +330,7 @@ class LinkConversationPayload(BaseModel):
 async def read_conversation(
     conversation_id: str,
     current_user: User = Depends(get_current_user),
-    _mod=Depends(require_module("contact_center")),
+    _mod=Depends(require_module_role("contact_center")),
 ):
     """Mark a conversation as read by resetting unread_count to 0."""
     res = await db.contact_center_conversations.update_one({"id": conversation_id, "tenant_id": current_user.tenant_id}, {"$set": {"unread_count": 0, "updated_at": datetime.now(UTC)}})
@@ -344,7 +344,7 @@ async def assign_conversation(
     conversation_id: str,
     payload: AssignConversationPayload,
     current_user: User = Depends(get_current_user),
-    _mod=Depends(require_module("contact_center")),
+    _mod=Depends(require_module_role("contact_center")),
     _perm=Depends(require_op("manage_contact_center")),
 ):
     """Assign or unassign a conversation to an agent."""
@@ -368,7 +368,7 @@ async def assign_conversation(
 async def close_conversation(
     conversation_id: str,
     current_user: User = Depends(get_current_user),
-    _mod=Depends(require_module("contact_center")),
+    _mod=Depends(require_module_role("contact_center")),
     _perm=Depends(require_op("manage_contact_center")),
 ):
     """Close the conversation."""
@@ -390,7 +390,7 @@ async def link_conversation(
     conversation_id: str,
     payload: LinkConversationPayload,
     current_user: User = Depends(get_current_user),
-    _mod=Depends(require_module("contact_center")),
+    _mod=Depends(require_module_role("contact_center")),
     _perm=Depends(require_op("manage_contact_center")),
 ):
     """Link the conversation to a guest and/or booking (reservation)."""

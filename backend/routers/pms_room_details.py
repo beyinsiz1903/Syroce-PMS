@@ -20,7 +20,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from core.database import db
 from core.security import get_current_user
 from models.schemas import User
-from modules.pms_core.role_permission_service import require_module as require_module_v101  # v101 DW
+from modules.pms_core.role_permission_service import require_module_role  # v101 DW
 
 try:
     from cache_manager import cached
@@ -163,7 +163,7 @@ async def add_room_note(
     description: str,
     priority: str = "normal",
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
+    _perm=Depends(require_module_role("frontdesk")),  # v101 DW
 ):
     """Add a note to a room"""
     note = RoomNote(tenant_id=current_user.tenant_id, room_id=room_id, note_type=note_type, description=description, priority=priority, created_by=current_user.name)
@@ -182,7 +182,7 @@ async def update_minibar(
     items_consumed: dict[str, int] = {},
     total_value: float = 0.0,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
+    _perm=Depends(require_module_role("frontdesk")),  # v101 DW
 ):
     """Update mini-bar status"""
     update = MiniBarUpdate(tenant_id=current_user.tenant_id, room_id=room_id, updated_by=current_user.name, items_restocked=items_restocked, items_consumed=items_consumed, total_value=total_value)

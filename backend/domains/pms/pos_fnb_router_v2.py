@@ -11,9 +11,10 @@ from common.context import OperationContext
 from common.response import from_service_result
 from core.security import get_current_user
 from domains.pms.pos_fnb.pos_fnb_service_v2 import pos_fnb_service_v2
-from modules.pms_core.role_permission_service import require_module as require_module_v99  # v99 DW
-from modules.pms_core.role_permission_service import require_module as require_module_v101  # v101 DW
-from modules.pms_core.role_permission_service import require_op  # v98 DW
+from modules.pms_core.role_permission_service import (
+    require_module_role,  # v99 DW
+    require_op,  # v98 DW
+)
 
 
 def _ok_payload(result):
@@ -30,7 +31,7 @@ router = APIRouter(prefix="/api/pos/v2", tags=["POS & F&B v2"])
 
 
 @router.get("/session")
-async def pos_session(user=Depends(get_current_user), _perm=Depends(require_module_v99("pos"))):
+async def pos_session(user=Depends(get_current_user), _perm=Depends(require_module_role("pos"))):
     ctx = OperationContext.from_user(user)
     return {"tenant_id": ctx.tenant_id, "actor_id": ctx.actor_id}
 
@@ -95,7 +96,7 @@ class CheckoutQuoteRequest(BaseModel):
 
 
 @router.post("/checkout/quote")
-async def checkout_quote(req: CheckoutQuoteRequest, user=Depends(get_current_user), _perm=Depends(require_module_v99("pos"))):
+async def checkout_quote(req: CheckoutQuoteRequest, user=Depends(get_current_user), _perm=Depends(require_module_role("pos"))):
     from domains.pms.pos_fnb.checkout_benefits import quote_checkout
 
     ctx = OperationContext.from_user(user)
@@ -177,7 +178,7 @@ class CloseTabRequest(BaseModel):
 async def create_order(
     req: CreateOrderRequest,
     user=Depends(get_current_user),
-    _perm=Depends(require_module_v99("pos")),  # v99 DW
+    _perm=Depends(require_module_role("pos")),  # v99 DW
 ):
     ctx = OperationContext.from_user(user)
     items_dicts = [item.model_dump() for item in req.items]
@@ -192,7 +193,7 @@ async def create_order(
 async def close_order(
     req: CloseOrderRequest,
     user=Depends(get_current_user),
-    _perm=Depends(require_module_v99("pos")),  # v99 DW
+    _perm=Depends(require_module_role("pos")),  # v99 DW
 ):
     ctx = OperationContext.from_user(user)
     result = await pos_fnb_service_v2.close_order(
@@ -248,7 +249,7 @@ async def refund_order(
 async def get_order(
     order_id: str,
     user=Depends(get_current_user),
-    _perm=Depends(require_module_v99("pos")),
+    _perm=Depends(require_module_role("pos")),
 ):
     ctx = OperationContext.from_user(user)
     result = await pos_fnb_service_v2.get_order(ctx, order_id)
@@ -262,7 +263,7 @@ async def add_order_items(
     order_id: str,
     req: AddOrderItemsRequest,
     user=Depends(get_current_user),
-    _perm=Depends(require_module_v99("pos")),
+    _perm=Depends(require_module_role("pos")),
 ):
     ctx = OperationContext.from_user(user)
     result = await pos_fnb_service_v2.add_order_items(
@@ -282,7 +283,7 @@ async def transfer_order_table(
     order_id: str,
     req: TransferOrderTableRequest,
     user=Depends(get_current_user),
-    _perm=Depends(require_module_v99("pos")),
+    _perm=Depends(require_module_role("pos")),
 ):
     ctx = OperationContext.from_user(user)
     result = await pos_fnb_service_v2.transfer_order_table(ctx, order_id, req.to_table_number)
@@ -314,7 +315,7 @@ async def adjust_order_total(
 async def pos_operations_summary(
     outlet_id: str | None = None,
     user=Depends(get_current_user),
-    _perm=Depends(require_module_v99("pos")),
+    _perm=Depends(require_module_role("pos")),
 ):
     """Live manager board: open checks, kitchen SLA and cashier reconciliation."""
     from datetime import UTC, datetime
@@ -431,7 +432,7 @@ async def adjust_stock(
 async def reserve_table(
     req: TableReserveRequest,
     user=Depends(get_current_user),
-    _perm=Depends(require_module_v101("pos")),  # v101 DW
+    _perm=Depends(require_module_role("pos")),  # v101 DW
 ):
     ctx = OperationContext.from_user(user)
     result = await pos_fnb_service_v2.reserve_table(ctx, req.outlet_id, req.table_number, req.guest_name, req.reservation_time, req.party_size)
@@ -444,7 +445,7 @@ async def reserve_table(
 async def open_tab(
     req: OpenTabRequest,
     user=Depends(get_current_user),
-    _perm=Depends(require_module_v99("pos")),  # v99 DW
+    _perm=Depends(require_module_role("pos")),  # v99 DW
 ):
     ctx = OperationContext.from_user(user)
     items_dicts = [item.model_dump() for item in req.items]
@@ -460,7 +461,7 @@ async def open_tab(
 async def close_tab(
     req: CloseTabRequest,
     user=Depends(get_current_user),
-    _perm=Depends(require_module_v99("pos")),  # v99 DW
+    _perm=Depends(require_module_role("pos")),  # v99 DW
 ):
     ctx = OperationContext.from_user(user)
     result = await pos_fnb_service_v2.close_tab(ctx, req.transaction_id, req.payment_method)

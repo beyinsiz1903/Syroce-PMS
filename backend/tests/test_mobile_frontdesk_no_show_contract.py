@@ -8,7 +8,7 @@ def test_mobile_frontdesk_request_lists_require_frontdesk_access():
         frontdesk.get_early_checkin_requests_mobile,
         frontdesk.get_late_checkout_requests_mobile,
     ):
-        assert 'require_module_v92("frontdesk")' in inspect.getsource(handler)
+        assert 'require_module_role("frontdesk")' in inspect.getsource(handler)
 
 
 def test_mobile_no_show_is_compare_and_set_before_financial_side_effects():

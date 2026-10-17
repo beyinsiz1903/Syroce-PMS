@@ -15,7 +15,7 @@ from domains.contact_center.quality_models import (
     ScorecardConfigResponse,
 )
 from models.schemas import User
-from modules.pms_core.role_permission_service import require_module
+from modules.pms_core.role_permission_service import require_module_role
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/contact-center", tags=["contact-center-quality"])
@@ -33,7 +33,7 @@ def _require_supervisor(current_user: User):
 @router.get("/quality/scorecards", response_model=list[ScorecardConfigResponse])
 async def get_scorecards(
     current_user: User = Depends(get_current_user),
-    _mod=Depends(require_module("contact_center")),
+    _mod=Depends(require_module_role("contact_center")),
 ):
     """Retrieve all scorecard templates for the tenant."""
     cursor = db.contact_center_quality_scorecards.find({"tenant_id": current_user.tenant_id})
@@ -47,7 +47,7 @@ async def get_scorecards(
 async def post_scorecard(
     payload: ScorecardConfigCreate,
     current_user: User = Depends(get_current_user),
-    _mod=Depends(require_module("contact_center")),
+    _mod=Depends(require_module_role("contact_center")),
 ):
     """Create or update a scorecard template (supervisor/admin only)."""
     _require_supervisor(current_user)
@@ -77,7 +77,7 @@ async def post_call_evaluation(
     call_id: str,
     payload: CallEvaluationCreate,
     current_user: User = Depends(get_current_user),
-    _mod=Depends(require_module("contact_center")),
+    _mod=Depends(require_module_role("contact_center")),
 ):
     """Evaluate a call using a scorecard template (supervisor/admin only)."""
     _require_supervisor(current_user)
@@ -137,7 +137,7 @@ async def post_call_evaluation(
 async def get_call_evaluations(
     call_id: str,
     current_user: User = Depends(get_current_user),
-    _mod=Depends(require_module("contact_center")),
+    _mod=Depends(require_module_role("contact_center")),
 ):
     """Retrieve all evaluations submitted for a call."""
     cursor = db.contact_center_quality_evaluations.find({"call_id": call_id, "tenant_id": current_user.tenant_id})
@@ -153,7 +153,7 @@ async def get_quality_trends(
     end_date: str | None = None,
     agent_id: str | None = None,
     current_user: User = Depends(get_current_user),
-    _mod=Depends(require_module("contact_center")),
+    _mod=Depends(require_module_role("contact_center")),
 ):
     """Retrieve quality trends for supervisor dashboard (supervisor/admin only)."""
     _require_supervisor(current_user)

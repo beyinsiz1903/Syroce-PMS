@@ -6,7 +6,7 @@ Tests: Task #86 — Bekleyen Kimlik Fotoğrafları paneli için backend uçları
   DELETE /api/checkin/online/id-photos/{photo_id}    — manuel tek silme
   POST   /api/checkin/online/id-photos/bulk-delete   — KVKK toplu silme
 
-Tüm uçlar `require_module_v97("frontdesk")` ile korunur. Tenant izolasyonu
+Tüm uçlar `require_module_role("frontdesk")` ile korunur. Tenant izolasyonu
 kritik: hiçbir sorgu/silme `current_user.tenant_id` dışına çıkmamalı.
 
 Motor cursor'u yerine `MagicMock`/`AsyncMock` kullanılır; gerçek MongoDB
