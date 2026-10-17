@@ -3248,3 +3248,22 @@ async def _purge_expired_call_recordings_async():
         return await purge_expired_recordings(db)
     finally:
         client.close()
+
+
+@celery_app.task(name="celery_tasks.agency_monthly_statements_task")
+def agency_monthly_statements_task():
+    """Issue last month's agency statements (see routers.agency_statements)."""
+    return asyncio.run(_agency_monthly_statements_async())
+
+
+async def _agency_monthly_statements_async():
+    from routers.agency_statements import auto_issue_previous_month
+
+    db, client = get_db()
+    try:
+        result = await auto_issue_previous_month(db)
+        logger.info("Monthly agency statements: %s issued, %s skipped, %s failed",
+                    len(result["issued"]), result["skipped"], len(result["failed"]))
+        return result
+    finally:
+        client.close()

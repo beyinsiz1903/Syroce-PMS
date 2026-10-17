@@ -68,7 +68,7 @@ async def test_payment_refused_before_agency_agrees(monkeypatch):
 @pytest.mark.asyncio
 async def test_dispute_must_reference_statement_lines(monkeypatch):
     sysdb = SimpleNamespace(agency_statements=SimpleNamespace(
-        find_one=AsyncMock(return_value={"id": "s1", "lines": [{"booking_id": "b1"}]}), find_one_and_update=AsyncMock()))
+        find_one=AsyncMock(return_value={"id": "s1", "status": "issued", "lines": [{"booking_id": "b1"}]}), find_one_and_update=AsyncMock()))
     monkeypatch.setattr(agency_statements, "get_system_db", lambda: sysdb)
     with pytest.raises(HTTPException) as exc:
         await agency_statements.dispute_statement(
@@ -87,8 +87,7 @@ async def test_agree_only_from_issued_or_resolved(monkeypatch):
     with pytest.raises(HTTPException) as exc:
         await agency_statements.agree_statement("s1", agency_statements.AgreeRequest(revision=1), {"agency_id": "a1"})
     assert exc.value.status_code == 409
-    query = sysdb.agency_statements.find_one_and_update.await_args.args[0]
-    assert query["status"] == {"$in": ["issued", "resolved"]}
+    sysdb.agency_statements.find_one_and_update.assert_not_awaited()
 
 
 # ── consistency: concurrent payments, overlapping periods, stale commission ──
@@ -139,14 +138,14 @@ async def test_concurrent_payments_cannot_leave_a_paid_statement_open(monkeypatc
 
     # Both requests read the statement before either writes.
     stale = dict(doc, payments=[])
-    monkeypatch.setattr(agency_statements, "_hotel_statement", AsyncMock(return_value=stale))
+    monkeypatch.setattr(agency_statements, "_load", AsyncMock(return_value=stale))
     await agency_statements.record_payment("s1", payment, USER)
     with pytest.raises(HTTPException) as exc:
         await agency_statements.record_payment("s1", payment, USER)
     assert exc.value.status_code == 409
 
     # The retry reads the fresh statement and settles it.
-    monkeypatch.setattr(agency_statements, "_hotel_statement", AsyncMock(side_effect=lambda *_a: dict(doc)))
+    monkeypatch.setattr(agency_statements, "_load", AsyncMock(side_effect=lambda *_a: dict(doc)))
     settled = await agency_statements.record_payment("s1", payment, USER)
     assert settled["status"] == "settled" and len(doc["payments"]) == 2
 
@@ -162,19 +161,21 @@ async def test_overlapping_period_and_already_billed_stays_are_refused(monkeypat
                 return {"number": "EKS-1", "period_start": "2026-10-01", "period_end": "2026-10-31"} if overlap else None
             return {"number": "EKS-1", "lines": [{"booking_id": "b1", "confirmation_code": "MKT-1"}]}
 
-    sysdb = SimpleNamespace(agency_statements=_Store())
+    sysdb = SimpleNamespace(agency_statements=_Store(),
+                            agency_contracts=SimpleNamespace(find_one=AsyncMock(return_value={"agency_name": "A", "hotel_name": "H"})),
+                            agency_statement_locks=SimpleNamespace(insert_one=AsyncMock(), delete_one=AsyncMock()))
     monkeypatch.setattr(agency_statements, "build_statement", AsyncMock(return_value={"lines": [{"booking_id": "b1"}], "totals": {}}))
     data = agency_statements.StatementCreate(agency_id="a1", period_start="2026-10-15", period_end="2026-11-15", currency="TRY")
 
     overlap = True
     with pytest.raises(HTTPException) as exc:
-        await agency_statements._issue_statement_locked(sysdb, "t1", data, {}, USER)
+        await agency_statements._issue(sysdb, "t1", data, issuer="hotel", actor=USER.email)
     assert exc.value.status_code == 409 and "çakışıyor" in exc.value.detail
     assert queries[0]["period_start"] == {"$lte": "2026-11-15"} and queries[0]["period_end"] == {"$gte": "2026-10-15"}
 
     overlap = False
     with pytest.raises(HTTPException) as exc:
-        await agency_statements._issue_statement_locked(sysdb, "t1", data, {}, USER)
+        await agency_statements._issue(sysdb, "t1", data, issuer="hotel", actor=USER.email)
     assert "MKT-1 zaten EKS-1" in exc.value.detail
 
 

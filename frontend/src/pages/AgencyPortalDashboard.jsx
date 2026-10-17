@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import StatementsWorkspace from '@/components/statements/StatementsWorkspace';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useTranslation } from 'react-i18next';
 const RAW_BACKEND_URL = import.meta.env.VITE_BACKEND_URL || '/api';
@@ -92,8 +93,6 @@ const PAYMENT_TERMS_LABELS = { prepaid: 'Ön ödemeli', on_arrival: 'Girişte', 
 const CONTRACT_STATUS_LABELS = { approved: 'Onaylandı', pending: 'Otel onayı bekleniyor', rejected: 'Reddedildi', expired: 'Süresi doldu', terminated: 'Sonlandırıldı', withdrawn: 'Geri çekildi' };
 const toggleFilter = (values, value) => values.includes(value) ? values.filter(item => item !== value) : [...values, value];
 const resizeChildAges = (ages, count) => Array.from({ length: count }, (_, index) => ages?.[index] ?? 0);
-const STATEMENT_LINE_STATUS = { confirmed: 'Onaylı', guaranteed: 'Garantili', checked_in: 'Konaklıyor', checked_out: 'Çıkış yaptı', cancelled: 'İptal', no_show: 'Gelmedi', pending: 'Beklemede' };
-const STATEMENT_TERMS = { prepaid: 'Ön ödemeli', on_arrival: 'Girişte', net_7: '7 gün vadeli', net_15: '15 gün vadeli', net_30: '30 gün vadeli' };
 export const PAYMENT_STATUS_LABELS = {
   paid: 'Ödendi', partial: 'Kısmen ödendi', pending: 'Ödeme bekleniyor', unpaid: 'Ödeme bekleniyor',
   transferred: 'Cari hesaba aktarıldı', refunded: 'İade edildi',
@@ -160,14 +159,6 @@ const AgencyPortalDashboard = () => {
   const [reservationsLoading, setReservationsLoading] = useState(false);
   const [reconciliation, setReconciliation] = useState(null);
   const [notices, setNotices] = useState([]);
-  const [statements, setStatements] = useState([]);
-  const [paymentNotice, setPaymentNotice] = useState(null);
-  const [paymentNoticeBusy, setPaymentNoticeBusy] = useState(false);
-  const [disputeTarget, setDisputeTarget] = useState(null);
-  const [statementDetail, setStatementDetail] = useState(null);
-  const [disputeReason, setDisputeReason] = useState('');
-  const [disputeIds, setDisputeIds] = useState([]);
-  const [statementBusy, setStatementBusy] = useState(false);
   const [reconPeriod, setReconPeriod] = useState(() => {
     const startDate = new Date(); startDate.setDate(startDate.getDate() - 30);
     return { start: toDateInput(startDate), end: toDateInput(new Date()) };
@@ -610,72 +601,6 @@ const AgencyPortalDashboard = () => {
     }
     return { period_start: reconPeriod.start, period_end: reconPeriod.end };
   };
-  const NOTICE_STATUS = { pending: 'Otel doğrulaması bekleniyor', verified: 'Doğrulandı', rejected: 'Reddedildi' };
-  const openPaymentNotice = statement => {
-    const pending = (statement.payment_notices || []).filter(n => n.status === 'pending').reduce((sum, n) => sum + Number(n.amount || 0), 0);
-    setPaymentNotice({ statement, amount: Math.max(0, Number(statement.outstanding || 0) - pending).toFixed(2),
-      paid_at: toDateInput(new Date()), reference: '', method: 'bank_transfer', file: null });
-  };
-  const submitPaymentNotice = async event => {
-    event.preventDefault();
-    const form = new FormData();
-    form.append('amount', paymentNotice.amount);
-    form.append('paid_at', paymentNotice.paid_at);
-    form.append('reference', paymentNotice.reference.trim());
-    form.append('method', paymentNotice.method);
-    if (paymentNotice.file) form.append('proof', paymentNotice.file);
-    setPaymentNoticeBusy(true);
-    try {
-      await agencyApi.post(`/marketplace/v1/statements/${paymentNotice.statement.id}/payment-notices`, form);
-      toast.success('Ödeme bildiriminiz otele iletildi. Otel doğruladığında bakiye ve krediniz güncellenir.');
-      setPaymentNotice(null);
-      setStatements((await agencyApi.get('/marketplace/v1/statements')).data.items || []);
-    } catch (err) { toast.error(err.response?.data?.detail || 'Ödeme bildirimi gönderilemedi.'); }
-    finally { setPaymentNoticeBusy(false); }
-  };
-  const openPaymentProof = async (statement, notice) => {
-    try {
-      const { data } = await agencyApi.get(`/marketplace/v1/statements/${statement.id}/payment-notices/${notice.id}/proof`, { responseType: 'blob' });
-      window.open(URL.createObjectURL(data), '_blank', 'noopener');
-    } catch { toast.error('Dekont açılamadı.'); }
-  };
-  const agreeStatement = async statement => {
-    setStatementBusy(true);
-    try {
-      // The version on screen: if the hotel corrected it meanwhile, the server refuses.
-      await agencyApi.post(`/marketplace/v1/statements/${encodeURIComponent(statement.id)}/agree`, { revision: statement.revision || 1 });
-      toast.success(`${statement.number} onaylandı; otele iletildi.`);
-      setStatements((await agencyApi.get('/marketplace/v1/statements')).data.items || []);
-    } catch (err) {
-      toast.error(err.response?.data?.detail || 'Ekstre onaylanamadı.');
-      if (err.response?.status === 409) {
-        setStatements((await agencyApi.get('/marketplace/v1/statements').catch(() => ({ data: {} }))).data.items || []);
-      }
-    }
-    finally { setStatementBusy(false); }
-  };
-  const openStatementDetail = async statement => {
-    try {
-      const { data } = await agencyApi.get(`/marketplace/v1/statements/${encodeURIComponent(statement.id)}`);
-      setStatementDetail(data);
-    } catch (err) { toast.error(err.response?.data?.detail || 'Ekstre açılamadı.'); }
-  };
-  const openDispute = async statement => {
-    try {
-      const { data } = await agencyApi.get(`/marketplace/v1/statements/${encodeURIComponent(statement.id)}`);
-      setDisputeTarget(data); setDisputeReason(''); setDisputeIds([]);
-    } catch (err) { toast.error(err.response?.data?.detail || 'Ekstre açılamadı.'); }
-  };
-  const submitDispute = async () => {
-    setStatementBusy(true);
-    try {
-      await agencyApi.post(`/marketplace/v1/statements/${encodeURIComponent(disputeTarget.id)}/dispute`, { reason: disputeReason.trim(), booking_ids: disputeIds });
-      toast.success('İtirazınız otele iletildi.');
-      setDisputeTarget(null);
-      setStatements((await agencyApi.get('/marketplace/v1/statements')).data.items || []);
-    } catch (err) { toast.error(err.response?.data?.detail || 'İtiraz gönderilemedi.'); }
-    finally { setStatementBusy(false); }
-  };
   const openPaymentHistory = async reservation => {
     setPaymentHistory({ reservation, loading: true });
     try {
@@ -690,7 +615,6 @@ const AgencyPortalDashboard = () => {
     const params = reconPeriodParams();
     if (!params) return;
     setReconciliation(null);
-    agencyApi.get('/marketplace/v1/statements').then(({ data }) => setStatements(data.items || [])).catch(() => setStatements([]));
     agencyApi.get('/marketplace/v1/extranet/credit').then(({ data }) => setCreditOverview(data.hotels || [])).catch(() => setCreditOverview([]));
     try { const { data } = await agencyApi.get('/marketplace/v1/reconciliation/agency', { params }); setReconciliation(data); }
     catch (err) {
@@ -1195,31 +1119,10 @@ const AgencyPortalDashboard = () => {
                 </div>)}
               </CardContent>
             </Card>}
-            <Card data-testid="agency-statements">
-              <CardHeader className="pb-2"><CardTitle className="text-base">Otellerin dönem ekstreleri</CardTitle><p className="text-xs text-slate-500">Otelin düzenlediği ekstreyi kontrol edip onaylayın veya satır belirterek itiraz edin.</p></CardHeader>
-              <CardContent className="space-y-2">
-                {statements.length === 0 ? <p className="text-sm text-slate-400">Henüz ekstre yok.</p> : statements.map(statement => (
-                  <div key={statement.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3">
-                    <div>
-                      <div className="text-sm font-medium">{statement.number} · {statement.hotel_name}</div>
-                      <div className="text-xs text-slate-500">{statement.period_start} – {statement.period_end} · {statement.status} · {Number(statement.outstanding) > 0 ? `Ödemeniz: ${formatAgencyMoney(statement.outstanding, statement.currency)}` : Number(statement.outstanding) < 0 ? `Otel ödeyecek: ${formatAgencyMoney(-statement.outstanding, statement.currency)}` : 'Bakiye yok'}</div>
-                    </div>
-                    {['issued', 'resolved'].includes(statement.status) && <div className="flex gap-2">
-                      <Button size="sm" variant="outline" onClick={() => openStatementDetail(statement)}>Satırlar</Button>
-                      <Button size="sm" onClick={() => agreeStatement(statement)} disabled={statementBusy}>Mutabıkız</Button>
-                      <Button size="sm" variant="outline" onClick={() => openDispute(statement)} disabled={statementBusy}>İtiraz et</Button>
-                    </div>}
-                    {['agreed', 'resolved'].includes(statement.status) && Number(statement.outstanding) > 0 && <Button size="sm" variant="outline" onClick={() => openPaymentNotice(statement)} data-testid={`report-payment-${statement.id}`}><WalletCards size={13} className="mr-1" />Ödeme bildir</Button>}
-                    {(statement.payment_notices || []).length > 0 && <div className="w-full space-y-1 border-t pt-2">
-                      {statement.payment_notices.map(notice => <div key={notice.id} className="flex flex-wrap items-center justify-between gap-2 text-xs">
-                        <span>{notice.paid_at} · {formatAgencyMoney(notice.amount, statement.currency)} · ref {notice.reference}</span>
-                        <span className="flex items-center gap-2">{notice.has_proof && <button type="button" className="underline" onClick={() => openPaymentProof(statement, notice)}>Dekont</button>}<span className={notice.status === 'verified' ? 'text-emerald-700' : notice.status === 'rejected' ? 'text-red-700' : 'text-amber-700'}>{NOTICE_STATUS[notice.status] || notice.status}{notice.status === 'rejected' && notice.note ? `: ${notice.note}` : ''}</span></span>
-                      </div>)}
-                    </div>}
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
+            <div data-testid="agency-statements">
+              <StatementsWorkspace side="agency" api={agencyApi} base="/marketplace/v1/statements" partiesPath="/marketplace/v1/statements/hotels"
+                title="Dönem ekstreleri" description="Ekstreyi siz, otel veya her ayın 1'inde sistem düzenler; iki taraf onaylar. Borçlu taraf ödemeyi dekontla bildirir, alacaklı doğrular. Girişte ödemeli satışlarınızın komisyonu için ekstreyi kendiniz düzenleyebilirsiniz." />
+            </div>
           </TabsContent>}
 
           {portalMode === 'marketplace' && <TabsContent value="contracts" className="mt-4 space-y-4">
@@ -1508,44 +1411,6 @@ const AgencyPortalDashboard = () => {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={Boolean(statementDetail)} onOpenChange={open => !open && setStatementDetail(null)}>
-        <DialogContent className="max-w-2xl" data-testid="agency-statement-detail">
-          <DialogHeader>
-            <DialogTitle>{statementDetail?.number} · {statementDetail?.hotel_name}</DialogTitle>
-            <p className="text-sm text-slate-500">{statementDetail?.period_start} – {statementDetail?.period_end}</p>
-          </DialogHeader>
-          <div className="max-h-80 divide-y overflow-y-auto rounded border text-xs">
-            {(statementDetail?.lines || []).map(line => <div key={line.booking_id} className="flex flex-wrap items-start justify-between gap-2 p-2">
-              <div><div className="font-medium">{line.confirmation_code} · {line.guest_name}</div><div className="text-slate-500">{line.check_in} · {STATEMENT_LINE_STATUS[line.status] || line.status} · {STATEMENT_TERMS[line.payment_terms] || line.payment_terms}</div>
-                {line.adjustment && <div className="text-amber-700">Otel düzeltmesi {line.adjustment.amount > 0 ? '+' : '−'}{formatAgencyMoney(Math.abs(line.adjustment.amount), statementDetail.currency)} · {line.adjustment.reason}</div>}</div>
-              <div className="text-right">{Number(line.agency_owes_hotel) > 0 ? `Siz ödeyeceksiniz: ${formatAgencyMoney(line.agency_owes_hotel, statementDetail.currency)}` : Number(line.hotel_owes_agency) > 0 ? `Otel ödeyecek: ${formatAgencyMoney(line.hotel_owes_agency, statementDetail.currency)}` : '—'}</div>
-            </div>)}
-          </div>
-          <DialogFooter><Button variant="outline" onClick={() => setStatementDetail(null)}>Kapat</Button></DialogFooter>
-        </DialogContent>
-      </Dialog>
-      <Dialog open={Boolean(disputeTarget)} onOpenChange={open => !open && !statementBusy && setDisputeTarget(null)}>
-        <DialogContent className="max-w-lg" data-testid="agency-dispute-dialog">
-          <DialogHeader>
-            <DialogTitle>{disputeTarget?.number} ekstresine itiraz</DialogTitle>
-            <p className="text-sm text-slate-500">İtiraz ettiğiniz rezervasyonları işaretleyin ve gerekçenizi yazın.</p>
-          </DialogHeader>
-          <div className="max-h-56 space-y-1 overflow-y-auto">
-            {(disputeTarget?.lines || []).map(line => (
-              <label key={line.booking_id} className="flex items-center gap-2 rounded border p-2 text-xs">
-                <input type="checkbox" checked={disputeIds.includes(line.booking_id)} onChange={() => setDisputeIds(ids => ids.includes(line.booking_id) ? ids.filter(id => id !== line.booking_id) : [...ids, line.booking_id])} />
-                <span className="flex-1">{line.confirmation_code} · {line.check_in} · {line.guest_name} · {STATEMENT_LINE_STATUS[line.status] || line.status}{line.adjustment ? ` · otel düzeltmesi ${line.adjustment.amount > 0 ? '+' : '−'}${formatAgencyMoney(Math.abs(line.adjustment.amount), disputeTarget.currency)}` : ''}</span>
-                <span>{formatAgencyMoney(line.gross, disputeTarget.currency)}</span>
-              </label>
-            ))}
-          </div>
-          <textarea className="min-h-20 w-full rounded-md border p-2 text-sm" placeholder="İtiraz gerekçesi (en az 5 karakter)" value={disputeReason} maxLength={1000} onChange={e => setDisputeReason(e.target.value)} />
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDisputeTarget(null)} disabled={statementBusy}>Vazgeç</Button>
-            <Button variant="destructive" onClick={submitDispute} disabled={statementBusy || disputeReason.trim().length < 5}>İtirazı gönder</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       <Dialog open={Boolean(cancelTarget)} onOpenChange={open => !open && !cancelLoading && setCancelTarget(null)}>
         <DialogContent className="max-w-md" data-testid="agency-cancellation-dialog">
@@ -1601,22 +1466,6 @@ const AgencyPortalDashboard = () => {
               </div>)}
             </div>}
           </div>}
-        </DialogContent>
-      </Dialog>
-      <Dialog open={Boolean(paymentNotice)} onOpenChange={open => !open && !paymentNoticeBusy && setPaymentNotice(null)}>
-        <DialogContent className="max-w-md">
-          <DialogHeader><DialogTitle>Ödeme bildir · {paymentNotice?.statement?.number}</DialogTitle></DialogHeader>
-          {paymentNotice && <form onSubmit={submitPaymentNotice} className="space-y-3" data-testid="payment-notice-form">
-            <p className="text-xs text-slate-500">Bildirim otel doğrulayana kadar bakiyenizi ve kredinizi değiştirmez.</p>
-            <div className="grid grid-cols-2 gap-3">
-              <div><Label htmlFor="notice-amount">Tutar ({paymentNotice.statement.currency})</Label><Input id="notice-amount" type="number" min="0.01" step="0.01" required value={paymentNotice.amount} onChange={e => setPaymentNotice(n => ({ ...n, amount: e.target.value }))} /></div>
-              <div><Label htmlFor="notice-date">Ödeme tarihi</Label><Input id="notice-date" type="date" required max={toDateInput(new Date())} value={paymentNotice.paid_at} onChange={e => setPaymentNotice(n => ({ ...n, paid_at: e.target.value }))} /></div>
-            </div>
-            <div><Label htmlFor="notice-ref">Banka referansı / açıklama</Label><Input id="notice-ref" required minLength={3} maxLength={120} value={paymentNotice.reference} onChange={e => setPaymentNotice(n => ({ ...n, reference: e.target.value }))} /></div>
-            <div><Label htmlFor="notice-method">Yöntem</Label><select id="notice-method" className="mt-1 flex h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm" value={paymentNotice.method} onChange={e => setPaymentNotice(n => ({ ...n, method: e.target.value }))}><option value="bank_transfer">Havale / EFT</option><option value="card">Kart</option><option value="cash">Nakit</option><option value="other">Diğer</option></select></div>
-            <div><Label htmlFor="notice-proof">Dekont (PDF, JPG, PNG — en fazla 5 MB)</Label><Input id="notice-proof" type="file" accept="application/pdf,image/jpeg,image/png,image/webp" onChange={e => setPaymentNotice(n => ({ ...n, file: e.target.files?.[0] || null }))} /></div>
-            <DialogFooter><Button type="button" variant="outline" disabled={paymentNoticeBusy} onClick={() => setPaymentNotice(null)}>Vazgeç</Button><Button type="submit" disabled={paymentNoticeBusy}>{paymentNoticeBusy ? 'Gönderiliyor…' : 'Bildir'}</Button></DialogFooter>
-          </form>}
         </DialogContent>
       </Dialog>
       <Dialog open={Boolean(voucherEmailTarget)} onOpenChange={open => !open && !voucherEmailLoading && setVoucherEmailTarget(null)}>
