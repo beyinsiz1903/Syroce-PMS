@@ -229,11 +229,20 @@ def _safe_context_user(
 
 
 def _module_preferences(tenant_doc: dict) -> dict[str, bool]:
-    """The hotel's own module decisions (stored flags), kept apart from the
-    effective map, which also carries plan defaults and store access: a key
-    in ``modules`` is not proof that an administrator chose it."""
-    own = tenant_doc.get("modules")
-    return {key: bool(value) for key, value in own.items()} if isinstance(own, dict) else {}
+    """The hotel's own module decisions, kept apart from the effective map
+    (plan defaults, store access): a key in ``modules`` is not proof that an
+    administrator chose it — plan resets store defaults there too.
+    ``module_choice_keys`` records which stored flags were chosen; records
+    without it (written before it existed) count every stored flag."""
+    own = tenant_doc.get("modules") if isinstance(tenant_doc.get("modules"), dict) else {}
+    chosen = tenant_doc.get("module_choice_keys")
+    if isinstance(chosen, list):
+        return {key: bool(own[key]) for key in chosen if key in own}
+    return {key: bool(value) for key, value in own.items()}
+
+
+def _plan_defaults_for(tier: str, plan: str | None = None) -> dict[str, bool]:
+    return get_tenant_modules({"subscription_tier": tier, "subscription_plan": plan} if plan else {"subscription_tier": tier})
 
 
 async def _tenant_session_payload(tenant_doc: dict) -> dict:
@@ -1183,6 +1192,10 @@ async def create_tenant(payload: TenantRegister, current_user: User = Depends(re
     tenant_dict["phone"] = payload.phone
     tenant_dict["description"] = payload.description or ""
     tenant_dict["dashboard_layout"] = dashboard_layout
+    # Stored flags that differ from the plan are the setup's choices (profile
+    # or operator); the rest are plan defaults written for completeness.
+    plan_defaults = _plan_defaults_for(tier, normalized_plan)
+    tenant_dict["module_choice_keys"] = sorted(key for key, value in combined_modules.items() if bool(value) != bool(plan_defaults.get(key, False)))
     tenant_dict["hidden_nav_groups"] = nav_config.get("hidden_nav_groups", [])
     tenant_dict["hidden_nav_items"] = nav_config.get("hidden_nav_items", [])
     tenant_dict["visible_nav_items"] = nav_config.get("visible_nav_items", [])
@@ -1313,6 +1326,12 @@ async def update_tenant_modules(
         for key, value in payload.modules.items()
         if key in own_modules or bool(value) != bool(shown.get(key, False))
     }
+    # Which stored flags are the administrator's choices: earlier choices plus
+    # what this save changed (a plan reset stores defaults, not choices).
+    previous_choices = before.get("module_choice_keys")
+    choices = set(previous_choices) if isinstance(previous_choices, list) else set(own_modules)
+    choices |= {key for key, value in payload.modules.items() if bool(value) != bool(shown.get(key, False))}
+    module_choice_keys = sorted(choices & set(modules_to_save))
 
     before_modules = get_tenant_modules(before)
     after_modules = get_tenant_modules({**before, "modules": modules_to_save})
@@ -1333,6 +1352,7 @@ async def update_tenant_modules(
 
     update_doc = {"$set": {
         "modules": modules_to_save,
+        "module_choice_keys": module_choice_keys,
         "module_control_changes": module_change_log,
         "module_control_updated_at": now,
         "module_control_updated_by": current_user.id,
@@ -1498,7 +1518,9 @@ async def update_tenant_tier(tenant_id: str, payload: dict, current_user: User =
     }
 
     if reset_modules:
+        # Defaults, not choices: the module screens must say "not in plan".
         update_data["modules"] = get_plan_default_modules(new_tier)
+        update_data["module_choice_keys"] = []
 
     await db.tenants.update_one({"id": tenant_id}, {"$set": update_data})
     _invalidate_admin_tenants_cache(getattr(current_user, "tenant_id", None))  # v95.3

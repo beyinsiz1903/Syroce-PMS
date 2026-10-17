@@ -402,6 +402,7 @@ async def upgrade_subscription(
                 "subscription_status": "active",
                 "billing_cycle": billing_cycle,
                 "modules": new_modules,
+                "module_choice_keys": [],  # plan defaults, not admin choices
                 "subscription_valid_until": (datetime.now(UTC) + timedelta(days=365 if billing_cycle == "yearly" else 30)).isoformat(),
                 "last_billing_date": datetime.now(UTC).isoformat(),
             }
@@ -478,6 +479,7 @@ async def change_subscription_plan(
                 "subscription_status": "active",
                 "billing_cycle": payload.billing_cycle,
                 "modules": new_modules,
+                "module_choice_keys": [],  # plan defaults, not admin choices
                 "subscription_valid_until": (now + timedelta(days=valid_days)).isoformat(),
                 "last_billing_date": now.isoformat(),
                 "updated_at": now.isoformat(),

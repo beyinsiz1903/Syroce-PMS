@@ -354,3 +354,59 @@ async def test_publishing_one_module_does_not_turn_echoed_defaults_into_choices(
     tenants_router, state = _admin_patch_env(monkeypatch, {"maintenance": False}, set())
     await _save(tenants_router, {"maintenance": False, "spa": True})
     assert state["modules"] == {"maintenance": False, "spa": True}
+
+
+@pytest.mark.asyncio
+async def test_plan_reset_stores_defaults_not_admin_choices(monkeypatch):
+    """Reviewer's case: Basic -> Mini with "reset modules to plan defaults".
+    The defaults are stored for access, but they are not choices: maintenance
+    must read 'not in plan', also after reloading the list."""
+    from domains.admin.router import tenants as tenants_router
+
+    record = {"id": "t1", "subscription_tier": "basic", "modules": {"maintenance": True, "spa": True}}
+
+    class Tenants:
+        async def find_one(self, *_a, **_k):
+            return dict(record)
+
+        async def update_one(self, _query, update):
+            record.update(update["$set"])
+            return SimpleNamespace(matched_count=1)
+
+    _offline(monkeypatch, {}, set())
+    monkeypatch.setattr(tenants_router, "db", SimpleNamespace(tenants=Tenants()))
+    monkeypatch.setattr(tenants_router, "_invalidate_admin_tenants_cache", lambda *_a: None)
+    admin = SimpleNamespace(id="sa", tenant_id="ops")
+    body = await tenants_router.update_tenant_tier("t1", {"tier": "mini", "reset_modules": True}, admin)
+
+    assert record["module_choice_keys"] == []
+    assert body["tenant"]["module_preferences"] == {}                 # nothing chosen
+    assert tenants_router._module_preferences(record) == {}           # same after reload
+    assert record["modules"]["maintenance"] is False                  # access: Mini defaults
+
+    # A later save of the whole map keeps them defaults; only a change is a choice.
+    tenants_router2, state = _admin_patch_env(monkeypatch, record["modules"], set())
+    state_doc = {"subscription_tier": "mini", "modules": dict(record["modules"]), "module_choice_keys": []}
+    monkeypatch.setattr(tenants_router2, "get_system_db", lambda: SimpleNamespace(tenants=_Store(state_doc)))
+    shown = await entitlement.effective_tenant_modules({"id": "t1", **state_doc})
+    body = await _save(tenants_router2, {**shown, "spa": True})
+    assert body["module_preferences"] == {"spa": True}
+
+
+class _Store:
+    def __init__(self, doc):
+        self.doc = doc
+
+    async def find_one(self, *_a, **_k):
+        return {"id": "t1", **self.doc}
+
+    async def update_one(self, _query, update):
+        self.doc.update(update["$set"])
+        return SimpleNamespace(matched_count=1)
+
+
+def test_legacy_records_without_choice_keys_keep_their_stored_flags():
+    from domains.admin.router.tenants import _module_preferences
+
+    assert _module_preferences({"modules": {"spa": True, "hr": False}}) == {"spa": True, "hr": False}
+    assert _module_preferences({"modules": {"spa": True, "hr": False}, "module_choice_keys": ["spa"]}) == {"spa": True}
