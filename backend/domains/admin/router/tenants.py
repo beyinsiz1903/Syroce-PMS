@@ -61,7 +61,15 @@ def _invalidate_admin_tenants_cache(tenant_id: str | None) -> None:
 
 
 require_super_admin = require_super_admin_guard()
-from domains.admin.property_profiles import get_all_property_types, get_hidden_nav_config, get_modules_for_property_type, get_property_profile, get_property_special_settings
+from domains.admin.property_profiles import (
+    get_all_property_types,
+    get_hidden_nav_config,
+    get_modules_for_property_type,
+    get_property_profile,
+    get_property_special_settings,
+    resolve_tenant_nav,
+    with_resolved_nav,
+)
 from domains.admin.subscription_models import get_plan_default_modules
 from models.enums import ROLE_PERMISSIONS, Permission, UserRole
 from models.schemas import Tenant, TenantRegister, User
@@ -266,7 +274,7 @@ def _plan_defaults_for(tier: str, plan: str | None = None) -> dict[str, bool]:
 
 
 async def _tenant_session_payload(tenant_doc: dict) -> dict:
-    source = dict(tenant_doc)
+    source = with_resolved_nav(dict(tenant_doc))
     source["modules"] = await effective_tenant_modules(tenant_doc)
     safe = {key: value for key, value in source.items() if key in Tenant.model_fields}
     return Tenant(**safe).model_dump()
@@ -1031,6 +1039,7 @@ async def list_tenants(
 
     # Merge defaults for backward compatibility
     for tenant, modules in zip(tenants, await effective_tenant_modules_many(tenants)):
+        tenant.update(resolve_tenant_nav(tenant))
         tenant["module_preferences"] = _module_preferences(tenant)
         tenant["module_preferences_known"] = _module_preferences_known(tenant)
         tenant["modules"] = modules
@@ -1213,6 +1222,10 @@ async def create_tenant(payload: TenantRegister, current_user: User = Depends(re
     tenant_dict["phone"] = payload.phone
     tenant_dict["description"] = payload.description or ""
     tenant_dict["dashboard_layout"] = dashboard_layout
+    # The menu follows the property profile as it is now (resolve_tenant_nav);
+    # the lists below are kept as a snapshot for older readers.
+    if profile:
+        tenant_dict["nav_profile"] = property_type
     # Stored flags that differ from the plan are the setup's choices (profile
     # or operator); the rest are plan defaults written for completeness.
     plan_defaults = _plan_defaults_for(tier, normalized_plan)
@@ -1423,6 +1436,7 @@ async def update_tenant_modules(
             detail="Hotel not found",
         )
 
+    tenant_doc.update(resolve_tenant_nav(tenant_doc))
     tenant_doc["module_preferences"] = _module_preferences(tenant_doc)
     tenant_doc["module_preferences_known"] = _module_preferences_known(tenant_doc)
     tenant_doc["modules"] = await effective_tenant_modules(tenant_doc)
@@ -1554,6 +1568,7 @@ async def update_tenant_tier(tenant_id: str, payload: dict, current_user: User =
 
     updated_tenant = await db.tenants.find_one({"id": tenant_id}, {"_id": 0})
     if updated_tenant:
+        updated_tenant.update(resolve_tenant_nav(updated_tenant))
         updated_tenant["module_preferences"] = _module_preferences(updated_tenant)
         updated_tenant["module_preferences_known"] = _module_preferences_known(updated_tenant)
         updated_tenant["modules"] = await effective_tenant_modules(updated_tenant)

@@ -23,6 +23,7 @@ from core.security import (
     _is_super_admin,
     get_current_user,
 )
+from domains.admin.property_profiles import with_resolved_nav
 from modules.pms_core.role_permission_service import require_op  # v90 DW
 
 try:
@@ -341,7 +342,7 @@ async def get_current_subscription(current_user: User = Depends(get_current_user
     # silently hiding module groups.
     tenant_snapshot = Tenant(
         **{
-            **tenant,
+            **with_resolved_nav(tenant),
             "modules": tenant_modules,
         }
     ).model_dump(mode="json")
