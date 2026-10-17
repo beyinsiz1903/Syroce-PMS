@@ -105,14 +105,14 @@ export function StatementLines({ lines, currency, highlight = [], edits, onEdit 
 
 const emptyPayment = () => ({ amount: '', paid_at: localDate(new Date()), method: 'bank_transfer', reference: '', file: null });
 
-export default function StatementsWorkspace({ side, api, base, partiesPath, title, description }) {
+export default function StatementsWorkspace({ side, api, base, partiesPath, title, description, fixedPartyId = '', initialCurrency = 'TRY', onChanged }) {
   const counterpart = PARTY[other(side)];
   const sendLabel = side === 'hotel' ? 'Acenteye gönder' : 'Otele gönder';
   const partyKey = side === 'hotel' ? 'agency_id' : 'tenant_id';
   const [items, setItems] = useState([]);
   const [parties, setParties] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [form, setForm] = useState({ party: '', period_start: monthStart(), period_end: monthEnd(), currency: 'TRY' });
+  const [form, setForm] = useState({ party: fixedPartyId, period_start: monthStart(), period_end: monthEnd(), currency: initialCurrency });
   const [issuing, setIssuing] = useState(false);
   const [preview, setPreview] = useState(null);
   const [previewEdits, setPreviewEdits] = useState({});
@@ -128,18 +128,20 @@ export default function StatementsWorkspace({ side, api, base, partiesPath, titl
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [{ data: list }, { data: partyData }] = await Promise.all([api.get(base), api.get(partiesPath)]);
-      setItems(list.items || []);
+      const [{ data: list }, { data: partyData }] = await Promise.all([
+        fixedPartyId && side === 'hotel' ? api.get(base, { params: { agency_id: fixedPartyId } }) : api.get(base), api.get(partiesPath),
+      ]);
+      setItems((list.items || []).filter(row => !fixedPartyId || row[partyKey] === fixedPartyId));
       const rows = side === 'hotel'
         ? (partyData.agencies || []).map(row => ({ id: row.id, name: row.name }))
         : (partyData.hotels || []).map(row => ({ id: row.tenant_id, name: row.name, currency: row.currency }));
-      setParties(rows);
+      setParties(rows.filter(row => !fixedPartyId || row.id === fixedPartyId));
     } catch (err) {
       toast.error(apiErrorText(err, 'Ekstreler yüklenemedi.'));
     } finally {
       setLoading(false);
     }
-  }, [api, base, partiesPath, side]);
+  }, [api, base, partiesPath, side, fixedPartyId, partyKey]);
   useEffect(() => { load(); }, [load]);
 
   const body = edits => ({ [partyKey]: form.party, period_start: form.period_start, period_end: form.period_end, currency: form.currency, adjustments: editsToAdjustments(edits) });
@@ -165,6 +167,7 @@ export default function StatementsWorkspace({ side, api, base, partiesPath, titl
       setPreview(null);
       setPreviewEdits({});
       await load();
+      onChanged?.();
     } catch (err) { toast.error(apiErrorText(err, 'Ekstre düzenlenemedi.')); }
     finally { setIssuing(false); }
   };
@@ -186,6 +189,7 @@ export default function StatementsWorkspace({ side, api, base, partiesPath, titl
       setDetail(data);
       toast.success(success);
       await load();
+      onChanged?.();
       return true;
     } catch (err) {
       toast.error(apiErrorText(err, 'İşlem tamamlanamadı.'));
@@ -258,7 +262,7 @@ export default function StatementsWorkspace({ side, api, base, partiesPath, titl
         </CardHeader>
         <CardContent className="grid gap-3 sm:grid-cols-5">
           <div className="sm:col-span-2"><Label htmlFor={`st-party-${side}`}>{side === 'hotel' ? 'Acente' : 'Otel'}</Label>
-            <select id={`st-party-${side}`} className="h-10 w-full rounded-md border px-3 text-sm" value={form.party} onChange={e => {
+            <select id={`st-party-${side}`} disabled={Boolean(fixedPartyId)} className="h-10 w-full rounded-md border px-3 text-sm" value={form.party} onChange={e => {
               const chosen = parties.find(row => row.id === e.target.value);
               setForm(f => ({ ...f, party: e.target.value, currency: chosen?.currency || f.currency }));
             }}>

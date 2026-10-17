@@ -131,7 +131,7 @@ function ReportTable({ rows, view, partyLabel, report }) {
   </div>;
 }
 
-export default function PerformanceReport({ side, api, path }) {
+export default function PerformanceReport({ side, api, path, refreshKey = 0 }) {
   const partyLabel = side === 'hotel' ? 'Acente' : 'Otel';
   const [period, setPeriod] = useState({ start: firstOfMonth(), end: localDate(new Date()) });
   const [report, setReport] = useState(null);
@@ -162,10 +162,12 @@ export default function PerformanceReport({ side, api, path }) {
       }
     } finally { if (request === latest.current) setLoading(false); }
   }, [api, path, start, end]);
-  useEffect(() => { load(); return () => { latest.current += 1; }; }, [load]);
+  useEffect(() => { load(); return () => { latest.current += 1; }; }, [load, refreshKey]);
 
   const rows = report?.rows || [];
   const totals = report?.totals || [];
+  const futureBookings = rows.reduce((count, row) => count + Number(row.forward?.['90']?.bookings || 0), 0);
+  const periodBookings = rows.reduce((count, row) => count + Number(row.performance?.bookings || 0), 0);
   const download = () => {
     const blob = new Blob(['\ufeff' + toCsv(report, partyLabel)], { type: 'text/csv;charset=utf-8' });
     const link = document.createElement('a');
@@ -193,6 +195,10 @@ export default function PerformanceReport({ side, api, path }) {
 
     {error && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">{error}</div>}
     {loading && <div role="status" className="flex items-center gap-2 rounded-lg border bg-white p-4 text-sm text-slate-500"><Loader2 size={16} className="animate-spin" />Seçilen dönemin raporu yükleniyor…</div>}
+    {report && periodBookings === 0 && futureBookings > 0 && <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
+      <p>Seçilen giriş döneminde konaklama satışı yok; gelecek 90 günde {futureBookings} rezervasyon var. Üstteki satış tutarının sıfır olması bu rezervasyonların kaybolduğu anlamına gelmez.</p>
+      <Button variant="outline" onClick={() => setView('forward')}>Gelecek rezervasyonları göster</Button>
+    </div>}
 
     {totals.map(total => {
       const r = total.receivables || {}, overdue = overdueOf(r.aging);

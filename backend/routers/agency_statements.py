@@ -914,14 +914,13 @@ async def list_hotel_statements(
 
 @hotel_router.get("/agencies")
 async def statement_agencies(current_user: User = Depends(get_current_user)):
-    """Marketplace agencies this hotel has (or had) a contract with."""
+    """The same hotel-scoped directory as Acente Defteri, including history."""
+    from core.agency_finance_directory import finance_partners
+
     tenant_id = _require_hotel_admin(current_user)
-    rows = await get_system_db().agency_contracts.find(
-        {"tenant_id": tenant_id, "contract_code": {"$type": "string"}, "status": {"$in": ["approved", "terminated", "expired"]}},
-        {"_id": 0, "agency_id": 1, "agency_name": 1},
-    ).to_list(500)
-    unique = {row["agency_id"]: row.get("agency_name") for row in rows if row.get("agency_id")}
-    return {"agencies": [{"id": key, "name": name} for key, name in sorted(unique.items(), key=lambda item: str(item[1]))]}
+    partners = await finance_partners(get_system_db(), tenant_id)
+    return {"agencies": [{"id": row["id"], "name": row.get("name") or row["id"]}
+                         for row in sorted(partners.values(), key=lambda row: str(row.get("name") or row["id"]))]}
 
 
 @hotel_router.get("/{statement_id}")

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { Link } from 'react-router-dom';
@@ -21,6 +21,8 @@ import { useTranslation } from 'react-i18next';
 import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 import { paymentMethodLabel } from '@/lib/accountingLabels';
 import { moneyInputProps, parseMoneyInput } from '@/lib/moneyInput';
+import ExtranetFinanceDirectory from '@/components/agency/ExtranetFinanceDirectory';
+import PerformanceReport from '@/components/statements/PerformanceReport';
 
 const CURRENCIES = ['TRY', 'EUR', 'USD', 'GBP'];
 
@@ -33,6 +35,8 @@ const TravelAgentARAP = ({ user, tenant, onLogout }) => {
   const [aging, setAging] = useState(null);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [includeArchived, setIncludeArchived] = useState(false);
+  const [financeVersion, setFinanceVersion] = useState(0);
 
   const [selectedAgency, setSelectedAgency] = useState(null);
   const [agencyTxns, setAgencyTxns] = useState(null);
@@ -53,22 +57,28 @@ const TravelAgentARAP = ({ user, tenant, onLogout }) => {
   const [planSaving, setPlanSaving] = useState(false);
 
   const [stmtDialog, setStmtDialog] = useState(false);
+  const summaryRequest = useRef(0);
 
   const loadSummary = useCallback(async () => {
+    const request = ++summaryRequest.current;
     setLoading(true);
+    setSummary(null);
+    setAging(null);
     try {
       const [sumRes, agingRes] = await Promise.all([
-        axios.get('/agent-arap/summary'),
-        axios.get('/agent-arap/aging'),
+        axios.get('/agent-arap/summary', { params: { include_archived: includeArchived } }),
+        axios.get('/agent-arap/aging', { params: { include_archived: includeArchived } }),
       ]);
-      setSummary(sumRes.data);
-      setAging(agingRes.data);
+      if (request === summaryRequest.current) {
+        setSummary(sumRes.data);
+        setAging(agingRes.data);
+      }
     } catch {
-      toast.error(t('agentArap.loadError'));
+      if (request === summaryRequest.current) toast.error(t('agentArap.loadError'));
     } finally {
-      setLoading(false);
+      if (request === summaryRequest.current) setLoading(false);
     }
-  }, [t]);
+  }, [t, includeArchived]);
 
   const loadTransactions = async (agencyId) => {
     setTxnLoading(true);
@@ -109,6 +119,7 @@ const TravelAgentARAP = ({ user, tenant, onLogout }) => {
 
   useEffect(() => {
     loadSummary();
+    return () => { summaryRequest.current += 1; };
   }, [loadSummary]);
 
   useEffect(() => {
@@ -252,7 +263,7 @@ const TravelAgentARAP = ({ user, tenant, onLogout }) => {
               <div className="space-y-1">
                 <p className="font-semibold text-slate-900 dark:text-slate-100">Operasyon ve finans ekranı</p>
                 <p className="max-w-4xl text-sm leading-6 text-slate-600 dark:text-slate-300">
-                  Bu ekran, Acente Yönetimi'nde tanımlanan B2B acentelere bağlı rezervasyonların komisyonunu, yapılan ödemeleri, taksit planlarını ve vade yaşlandırmasını yönetir. HotelRunner üzerinden gelen Expedia, Agoda gibi OTA rezervasyonları burada otomatik cari hesap oluşturmaz.
+                  Acente Defteri'nde Extranet acenteleri sözleşme ve ortak ekstreleriyle listelenir. Mutabakat ve ödeme işlemleri acenteyle aynı kayda işlenir. Eski manuel cariler ayrıca gösterilir; bu iki kaynağın tutarları birbirine eklenmez. HotelRunner üzerinden gelen OTA rezervasyonları otomatik cari oluşturmaz.
                 </p>
               </div>
             </div>
@@ -265,7 +276,7 @@ const TravelAgentARAP = ({ user, tenant, onLogout }) => {
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList>
+          <TabsList className="h-auto max-w-full flex-wrap justify-start gap-1">
             <TabsTrigger value="overview">{t('agentArap.tabOverview')}</TabsTrigger>
             <TabsTrigger value="ledger">{t('agentArap.tabLedger')}</TabsTrigger>
             <TabsTrigger value="plans">{t('agentArap.tabPlans')}</TabsTrigger>
@@ -273,6 +284,9 @@ const TravelAgentARAP = ({ user, tenant, onLogout }) => {
           </TabsList>
 
           <TabsContent value="overview" className="space-y-6">
+            <h2 className="text-lg font-semibold">Extranet · ortak finans raporu</h2>
+            <PerformanceReport side="hotel" api={axios} path="/marketplace/hotel/reports/agency-performance" refreshKey={financeVersion} />
+            <h2 className="text-lg font-semibold">Yerel / eski manuel cari özeti</h2>
             {summary && (
               <>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -400,10 +414,16 @@ const TravelAgentARAP = ({ user, tenant, onLogout }) => {
             </div>
 
             <div className="space-y-3">
+              <ExtranetFinanceDirectory searchTerm={searchTerm} onChanged={() => setFinanceVersion(value => value + 1)} />
+              <div className="flex flex-wrap items-center justify-between gap-3 pt-4">
+                <h2 className="text-lg font-semibold">Yerel / eski manuel cariler</h2>
+                <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={includeArchived} onChange={e => setIncludeArchived(e.target.checked)} />Pasif / test / örnek kayıtları göster</label>
+              </div>
+              <p className="text-xs text-muted-foreground">Bu bölüm yalnız eski manuel hareketleri gösterir; Extranet satışları dahil değildir. Pasif ve test/örnek kayıtlar varsayılan olarak gizlidir, silinmez. Yerel özetler seçili görünürlük kapsamındadır; geçmiş borçları kontrol etmek için arşiv kayıtlarını açın.</p>
               {filteredAgencies.map(a => (
                 <Card key={a.agency_id} className="overflow-hidden">
                   <div
-                    className="flex items-center justify-between p-4 cursor-pointer hover:bg-muted/50"
+                    className="flex flex-col gap-4 p-4 cursor-pointer hover:bg-muted/50 lg:flex-row lg:items-center lg:justify-between"
                     onClick={() => {
                       if (selectedAgency === a.agency_id) {
                         setSelectedAgency(null);
@@ -413,30 +433,30 @@ const TravelAgentARAP = ({ user, tenant, onLogout }) => {
                       }
                     }}
                   >
-                    <div className="flex items-center gap-3">
+                    <div className="flex min-w-0 items-center gap-3">
                       {selectedAgency === a.agency_id ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
                       <Building2 className="w-5 h-5 text-blue-500" />
-                      <div>
-                        <div className="font-medium">{a.agency_name}</div>
-                        <div className="text-xs text-muted-foreground">
+                      <div className="min-w-0 break-words">
+                        <div className="font-medium">{a.agency_name} {a.archived && <Badge variant="secondary">{a.extranet_agency_id ? 'Extranet öncesi yerel geçmiş' : a.readonly_finance ? 'Arşiv / salt okunur' : 'Pasif acente'}</Badge>}</div>
+                        <div className="break-all text-xs text-muted-foreground">
                           {a.contact_name} • {a.contact_email} • {t('agentArap.commissionRate')}: {a.commission_rate}%
                         </div>
                       </div>
                     </div>
-                    <div className="flex items-center gap-4">
+                    <div className="flex min-w-0 flex-wrap items-center gap-4">
                       <div className="text-right">
                         <div className="text-sm text-muted-foreground">{t('agentArap.balance')}</div>
                         <div className={`font-bold ${Object.values(a.balance_by_currency || {}).some(value => Number(value) > 0) || a.balance > 0 ? 'text-red-600' : 'text-green-600'}`}>{moneyBreakdown(a.balance_by_currency, a.balance, a.currency)}</div>
                       </div>
-                      <div className="flex gap-2">
-                        <Button size="sm" variant="outline" onClick={e => { e.stopPropagation(); openPaymentDialog(a); }}>
+                      <div className="flex flex-wrap gap-2">
+                        <Button size="sm" variant="outline" disabled={a.readonly_finance} onClick={e => { e.stopPropagation(); openPaymentDialog(a); }}>
                           <CreditCard className="w-3 h-3 mr-1" />{t('agentArap.recordPayment')}
                         </Button>
                         <Button size="sm" variant="outline" onClick={e => { e.stopPropagation(); loadStatement(a.agency_id); }}>
                           <FileText className="w-3 h-3 mr-1" />{t('agentArap.statement')}
                         </Button>
                         {(Object.values(a.balance_by_currency || {}).some(value => Number(value) > 0) || a.balance > 0) && (
-                          <Button size="sm" variant="outline" onClick={e => { e.stopPropagation(); openPlanDialog(a); }}>
+                          <Button size="sm" variant="outline" disabled={a.archived} onClick={e => { e.stopPropagation(); openPlanDialog(a); }}>
                             <Calendar className="w-3 h-3 mr-1" />{t('agentArap.createPlan')}
                           </Button>
                         )}
@@ -522,6 +542,7 @@ const TravelAgentARAP = ({ user, tenant, onLogout }) => {
           </TabsContent>
 
           <TabsContent value="plans" className="space-y-4">
+            <p className="text-sm text-muted-foreground">Yerel / eski manuel ödeme planları. Extranet ödemelerini Acente Defteri'ndeki Mutabakat ve ödeme bölümünden yönetin.</p>
             {plansLoading ? (
               <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin" /></div>
             ) : paymentPlans.length === 0 ? (
@@ -539,6 +560,7 @@ const TravelAgentARAP = ({ user, tenant, onLogout }) => {
                     <div className="text-sm text-muted-foreground">
                       {t('agentArap.totalAmount')}: {money(plan.total_amount, plan.currency)} • {plan.installment_count} {t('agentArap.installments')}
                     </div>
+                    {plan.readonly_finance && <p className="text-xs text-amber-700">Geçmiş plan · salt okunur. Extranet ödemeleri ortak ekstre üzerinden yönetilir.</p>}
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-2">
@@ -564,7 +586,7 @@ const TravelAgentARAP = ({ user, tenant, onLogout }) => {
                               {money(inst.amount, plan.currency)}
                             </span>
                             {!inst.paid && plan.status === 'active' && (
-                              <Button size="sm" variant="outline" onClick={() => handleMarkInstallmentPaid(plan.id, idx)}>
+                              <Button size="sm" variant="outline" disabled={plan.readonly_finance} onClick={() => handleMarkInstallmentPaid(plan.id, idx)}>
                                 <CheckCircle2 className="w-3 h-3 mr-1" />{t('agentArap.markPaid')}
                               </Button>
                             )}
@@ -582,6 +604,10 @@ const TravelAgentARAP = ({ user, tenant, onLogout }) => {
           </TabsContent>
 
           <TabsContent value="aging" className="space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-4">
+              <p className="text-sm text-muted-foreground">Yerel / eski manuel cari yaşlandırması. Extranet acentelerinin güncel borç ve vade takibi Genel Bakış'taki ortak finans raporunda, Alacak ve takip görünümündedir.</p>
+              <Button variant="outline" onClick={() => setActiveTab('overview')}>Ortak finans raporunu aç</Button>
+            </div>
             {aging && (
               <>
                 <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
