@@ -245,3 +245,64 @@ async def test_session_payload_carries_the_same_decision(monkeypatch):
     assert session["modules"]["agency_extranet"] is True
     explicit_off = {"id": "t1", "subscription_tier": "basic", "modules": {"agency_extranet": False}}
     assert (await _with_effective_agency_extranet(explicit_off))["modules"]["agency_extranet"] is False
+
+
+# ── Saving other modules must not freeze a computed Agency Extranet value ──
+
+def _admin_patch_env(monkeypatch, stored_modules, subscriptions):
+    from domains.admin.router import tenants as tenants_router
+
+    state = {"modules": dict(stored_modules)}
+
+    class Tenants:
+        async def find_one(self, *_a, **_k):
+            return {"id": "t1", "subscription_tier": "basic", "modules": dict(state["modules"])}
+
+        async def update_one(self, _query, update):
+            state["modules"] = dict(update["$set"]["modules"])
+            return SimpleNamespace(matched_count=1)
+
+    async def noop(*_a, **_k):
+        return None
+
+    _offline(monkeypatch, {}, subscriptions)
+    monkeypatch.setattr(tenants_router, "get_system_db", lambda: SimpleNamespace(tenants=Tenants()))
+    monkeypatch.setattr(tenants_router, "_invalidate_admin_tenants_cache", lambda *_a: None)
+    monkeypatch.setattr("core.helpers.invalidate_tenant_doc_cache", lambda *_a: None)
+    monkeypatch.setattr("core.audit.log_audit_event", noop)
+    return tenants_router, state
+
+
+async def _save(tenants_router, modules):
+    from domains.admin.schemas import TenantModulesUpdate
+
+    admin = SimpleNamespace(id="sa", name="SA", email="sa@x", tenant_id="ops")
+    return await tenants_router.update_tenant_modules("t1", TenantModulesUpdate(modules=modules), admin)
+
+
+@pytest.mark.asyncio
+async def test_saving_another_module_keeps_inherited_agency_extranet_computed(monkeypatch):
+    """The reviewer's case: inherited from a channel-manager subscription,
+    the admin enables SPA only; the screen echoes agency_extranet=true."""
+    subscriptions = {("t1", "channel_manager")}
+    tenants_router, state = _admin_patch_env(monkeypatch, {"channel_manager": False}, subscriptions)
+    await _save(tenants_router, {"channel_manager": False, "spa": True, "agency_extranet": True})
+    assert "agency_extranet" not in state["modules"]          # not frozen
+    assert state["modules"]["spa"] is True
+    _offline(monkeypatch, {"t1": state["modules"]}, subscriptions)
+    assert await entitlement._check_module_access("t1", "agency_extranet") is True
+    subscriptions.clear()                                      # subscription removed
+    assert await entitlement._check_module_access("t1", "agency_extranet") is False
+
+
+@pytest.mark.asyncio
+async def test_changing_agency_extranet_is_stored_as_a_decision(monkeypatch):
+    tenants_router, state = _admin_patch_env(monkeypatch, {"channel_manager": True}, set())
+    await _save(tenants_router, {"channel_manager": True, "agency_extranet": False})   # shown true → off
+    assert state["modules"]["agency_extranet"] is False
+    tenants_router, state = _admin_patch_env(monkeypatch, {"channel_manager": False}, set())
+    await _save(tenants_router, {"channel_manager": False, "agency_extranet": True})   # shown false → on
+    assert state["modules"]["agency_extranet"] is True
+    tenants_router, state = _admin_patch_env(monkeypatch, {"agency_extranet": True}, set())
+    await _save(tenants_router, {"agency_extranet": True, "spa": True})                # explicit stays
+    assert state["modules"]["agency_extranet"] is True

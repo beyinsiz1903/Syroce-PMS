@@ -4,8 +4,17 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from fastapi import HTTPException
 
-from domains.channel_manager import unified_rate_manager_router as rate_router
 from domains.channel_manager import channel_connections_router as connections_router
+from domains.channel_manager import unified_rate_manager_router as rate_router
+
+
+@pytest.fixture(autouse=True)
+def _licensed_for_both(monkeypatch):
+    """These tests cover delivery behaviour, not licensing: the hotel holds
+    both modules. The module gate still runs, without a database."""
+    from core import entitlement
+
+    monkeypatch.setattr(entitlement, "_check_module_access", AsyncMock(return_value=True))
 
 
 @pytest.mark.asyncio
