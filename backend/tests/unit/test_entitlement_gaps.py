@@ -103,3 +103,45 @@ async def test_observe_mode_guard_counts_modules_that_come_with_the_plan(monkeyp
     monkeypatch.setattr(subs, "subscribed_tenant_ids", none)
     assert await enforcement._module_enabled("t1", included) is True
     assert await enforcement._module_enabled("t1", "not_a_module") is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("flags,expected_edition", [
+    ({}, "basic"),                         # access only through the plan
+    ({"housekeeping": True}, "pro"),       # explicit flag: unchanged legacy behaviour
+])
+async def test_plan_access_is_the_base_edition_not_pro(monkeypatch, flags, expected_edition):
+    """Reviewer's case: a Mini / PMS Lite hotel with housekeeping only from its
+    plan must not get Pro features or the Pro quota."""
+    import core.subscriptions as subs
+    from core.entitlements import enforcement
+
+    class Cursor:
+        async def to_list(self, *_a):
+            return []
+
+    class Subscriptions:
+        def find(self, *_a, **_k):
+            return Cursor()
+
+    class Tenants:
+        async def find_one(self, *_a, **_k):
+            return {"subscription_plan": "pms_lite", "subscription_tier": "mini", "modules": flags}
+
+    async def flag_only(_tenant_id, module):
+        return bool(flags.get(module))
+
+    async def none(*_a, **_k):
+        return set()
+
+    monkeypatch.setattr(enforcement, "db", SimpleNamespace(tenant_subscriptions=Subscriptions()))
+    monkeypatch.setattr(enforcement, "tenant_has_module", flag_only)
+    monkeypatch.setattr(subs, "_db", lambda: SimpleNamespace(tenants=Tenants()))
+    monkeypatch.setattr(subs, "subscribed_tenant_ids", none)
+
+    assert await enforcement.get_tenant_active_editions("t1", "housekeeping") == [expected_edition]
+    pro = expected_edition == "pro"
+    assert await enforcement.tenant_has_feature("t1", "housekeeping", "quality_control") is pro
+    assert await enforcement.tenant_has_feature("t1", "housekeeping", "advanced_reporting") is pro
+    assert await enforcement.get_tenant_limit("t1", "housekeeping", "active_tasks") == (1000 if pro else 100)
+    assert await enforcement._module_enabled("t1", "housekeeping") is True
