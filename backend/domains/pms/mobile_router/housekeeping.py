@@ -20,7 +20,7 @@ from pydantic import BaseModel
 from core.database import db
 from core.security import _is_super_admin, get_current_user, security
 from modules.pms_core.role_permission_service import (
-    require_module,  # v89 DW
+    require_module_role,  # v89 DW
 )
 
 # ============================================================================
@@ -135,7 +135,7 @@ def _can_override_cleaning_timer(user: Any) -> bool:
 @router.get("/housekeeping/mobile/sla-delayed-rooms")
 async def get_sla_delayed_rooms_mobile(
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    _perm=Depends(require_module("housekeeping")),
+    _perm=Depends(require_module_role("housekeeping")),
 ):
     """Get rooms with SLA delays for housekeeping mobile"""
     current_user = await get_current_user(credentials)
@@ -182,7 +182,7 @@ async def get_sla_delayed_rooms_mobile(
 @router.get("/housekeeping/mobile/team-assignments")
 async def get_team_assignments_mobile(
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    _perm=Depends(require_module("housekeeping")),
+    _perm=Depends(require_module_role("housekeeping")),
 ):
     """Get team assignment overview for housekeeping mobile"""
     current_user = await get_current_user(credentials)
@@ -221,7 +221,7 @@ async def get_team_assignments_mobile(
 @router.get("/housekeeping/mobile/staff")
 async def list_housekeeping_staff(
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    _perm=Depends(require_module("housekeeping")),  # v89 DW
+    _perm=Depends(require_module_role("housekeeping")),  # v89 DW
 ):
     """List tenant staff who can receive a housekeeping task assignment.
 
@@ -256,7 +256,7 @@ async def list_housekeeping_staff(
 async def create_quick_task_mobile(
     request: QuickTaskRequest,
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    _perm=Depends(require_module("housekeeping")),  # v89 DW
+    _perm=Depends(require_module_role("housekeeping")),  # v89 DW
 ):
     """Create a quick housekeeping task from mobile"""
     current_user = await get_current_user(credentials)
@@ -338,7 +338,7 @@ _DONE_TASK_STATUSES = {"completed", "done", "cancelled", "verified", "closed"}
 @router.get("/housekeeping/mobile/room-tasks")
 async def list_room_open_tasks(
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    _perm=Depends(require_module("housekeeping")),  # v89 DW
+    _perm=Depends(require_module_role("housekeeping")),  # v89 DW
 ):
     """Open housekeeping tasks for every room, so the room grid can badge each
     card with its open-task count and list the tasks on tap.
@@ -385,7 +385,7 @@ async def list_room_open_tasks(
 async def get_inspection_checklist_template(
     room_type: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    _perm=Depends(require_module("housekeeping")),
+    _perm=Depends(require_module_role("housekeeping")),
 ):
     """Get inspection checklist template"""
     await get_current_user(credentials)
@@ -434,7 +434,7 @@ async def create_room_inspection(
     notes: str | None = None,
     maintenance_required: bool = False,
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    _perm=Depends(require_module("housekeeping")),  # v89 DW
+    _perm=Depends(require_module_role("housekeeping")),  # v89 DW
 ):
     """Create room inspection record"""
     current_user = await get_current_user(credentials)
@@ -514,7 +514,7 @@ async def create_lost_found_item(
     storage_number: str | None = None,
     notes: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    _perm=Depends(require_module("housekeeping")),  # v89 DW
+    _perm=Depends(require_module_role("housekeeping")),  # v89 DW
 ):
     """Register lost & found item"""
     current_user = await get_current_user(credentials)
@@ -553,7 +553,7 @@ async def create_lost_found_item(
 async def get_lost_found_items(
     status: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    _perm=Depends(require_module("housekeeping")),
+    _perm=Depends(require_module_role("housekeeping")),
 ):
     """Get lost & found items"""
     current_user = await get_current_user(credentials)
@@ -602,7 +602,7 @@ async def claim_lost_found_item(
     guest_id: str | None = None,
     notes: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    _perm=Depends(require_module("housekeeping")),  # v89 DW
+    _perm=Depends(require_module_role("housekeeping")),  # v89 DW
 ):
     """Mark item as claimed"""
     current_user = await get_current_user(credentials)
@@ -628,7 +628,7 @@ async def assign_hk_tasks(
     room_ids: list[str],
     notes: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    _perm=Depends(require_module("housekeeping")),  # v89 DW
+    _perm=Depends(require_module_role("housekeeping")),  # v89 DW
 ):
     """Assign rooms to housekeeping staff"""
     current_user = await get_current_user(credentials)
@@ -686,7 +686,7 @@ async def assign_hk_tasks(
 async def get_staff_assignments(
     assignment_date: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    _perm=Depends(require_module("housekeeping")),
+    _perm=Depends(require_module_role("housekeeping")),
 ):
     """Get staff task assignments"""
     current_user = await get_current_user(credentials)
@@ -735,7 +735,7 @@ async def start_cleaning_timer(
     room_number: str,
     task_type: str = "checkout",
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    _perm=Depends(require_module("housekeeping")),  # v89 DW
+    _perm=Depends(require_module_role("housekeeping")),  # v89 DW
 ):
     """Start cleaning timer"""
     current_user = await get_current_user(credentials)
@@ -775,7 +775,7 @@ async def stop_cleaning_timer(
     room_id: str,
     notes: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    _perm=Depends(require_module("housekeeping")),  # v89 DW
+    _perm=Depends(require_module_role("housekeeping")),  # v89 DW
 ):
     """Stop cleaning timer"""
     current_user = await get_current_user(credentials)
@@ -836,7 +836,7 @@ async def report_maintenance_from_hk(
     priority: str = "normal",
     photos: list[str] | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    _perm=Depends(require_module("housekeeping")),  # v89 DW
+    _perm=Depends(require_module_role("housekeeping")),  # v89 DW
 ):
     """Report maintenance issue from housekeeping"""
     current_user = await get_current_user(credentials)
@@ -871,7 +871,7 @@ async def report_maintenance_from_hk(
 async def get_hk_daily_report(
     report_date: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    _perm=Depends(require_module("housekeeping")),
+    _perm=Depends(require_module_role("housekeeping")),
 ):
     """Get housekeeping daily report"""
     current_user = await get_current_user(credentials)

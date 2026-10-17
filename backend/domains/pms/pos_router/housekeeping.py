@@ -20,7 +20,7 @@ from pydantic import BaseModel
 from core.database import db
 from core.security import get_current_user, security
 from modules.pms_core.role_permission_service import (
-    require_module,  # v89 DW
+    require_module_role,  # v89 DW
 )
 
 # ============= POS / F&B ENDPOINTS =============
@@ -290,7 +290,7 @@ async def get_status_change_logs(room_id: str | None = None, limit: int = 50, cr
 async def create_lost_found_item(
     item: LostFoundItemCreate,
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    _perm=Depends(require_module("housekeeping")),  # v89 DW
+    _perm=Depends(require_module_role("housekeeping")),  # v89 DW
 ):
     """Create a new lost and found item"""
     current_user = await get_current_user(credentials)

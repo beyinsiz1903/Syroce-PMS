@@ -40,10 +40,8 @@ from modules.platform_scaling.revenue_ml import (
 from modules.pms_core.chain_access import resolve_chain_properties, tenant_id_from_document
 from modules.pms_core.role_permission_service import (
     RolePermissionService,
+    require_module_role,  # v101 DW
     require_op,  # v73 Bug DI
-)
-from modules.pms_core.role_permission_service import (
-    require_module as require_module_v101,  # v101 DW
 )
 from security.encrypted_lookup import build_user_email_query, decrypt_user_doc, encrypt_user_doc
 
@@ -337,7 +335,7 @@ async def api_create_chain_team_member(
 async def api_cross_property_search(
     req: CrossPropertySearchReq,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
+    _perm=Depends(require_module_role("frontdesk")),  # v101 DW
 ):
     """Search availability across all properties."""
     return await crs.search_availability_cross_property(current_user, req.check_in, req.check_out, req.room_type, req.guests)
@@ -347,7 +345,7 @@ async def api_cross_property_search(
 async def api_transfer_reservation(
     req: TransferReservationReq,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
+    _perm=Depends(require_module_role("frontdesk")),  # v101 DW
 ):
     """Transfer reservation to another property."""
     if req.financial_handling == "retain_and_settle":
@@ -382,7 +380,7 @@ async def api_reverse_transfer(
     transfer_id: str,
     req: ReverseTransferReq,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v101("frontdesk")),
+    _perm=Depends(require_module_role("frontdesk")),
 ):
     """Reverse an eligible transfer; changed stays must be transferred anew."""
     # Reversal can void an open inter-property receivable/payable.  Require

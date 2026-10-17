@@ -22,7 +22,7 @@ from core.security import (
     get_current_user,
 )
 from models.schemas import User
-from modules.pms_core.role_permission_service import require_module as require_module_v99  # v99 DW
+from modules.pms_core.role_permission_service import require_module_role  # v99 DW
 
 from .kitchen_numbering import next_kitchen_order_number as _shared_next_kitchen_order_number
 
@@ -465,7 +465,7 @@ router = APIRouter(prefix="/api", tags=["PMS / POS & F&B"], dependencies=[Depend
 async def get_kitchen_orders(
     status: str | None = None,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v99("pos")),
+    _perm=Depends(require_module_role("pos")),
 ):
     statuses = status.split(",") if status else None
     orders = await _get_active_kitchen_orders(current_user.tenant_id, statuses=statuses)
@@ -547,7 +547,7 @@ async def _ensure_kitchen_idemp_index() -> bool:
 async def create_kitchen_order(
     order_data: dict,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v99("pos")),
+    _perm=Depends(require_module_role("pos")),
 ):
     if not order_data.get("items"):
         raise HTTPException(status_code=400, detail="Order items required")
@@ -623,7 +623,7 @@ async def update_kitchen_order_status_v2(
     order_id: str,
     status: str,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v99("pos")),
+    _perm=Depends(require_module_role("pos")),
 ):
     allowed_transitions = {
         "pending": {"pending", "preparing"},
@@ -672,7 +672,7 @@ async def update_kitchen_order_status_v2(
 async def complete_kitchen_order(
     order_id: str,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v99("pos")),  # v99 DW
+    _perm=Depends(require_module_role("pos")),  # v99 DW
 ):
     # SECURITY: tenant_id filter is mandatory. Without it, any authenticated
     # user can mark another tenant's kitchen_order as ready (cross-tenant
@@ -716,7 +716,7 @@ async def update_kitchen_order_status(
     order_id: str,
     new_status: str,  # preparing, ready, served
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v99("pos")),  # v99 DW
+    _perm=Depends(require_module_role("pos")),  # v99 DW
 ):
     """Update kitchen order status from KDS"""
     updates = {"status": new_status}

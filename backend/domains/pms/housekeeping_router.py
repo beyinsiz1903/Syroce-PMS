@@ -22,8 +22,10 @@ from core.security import (
     security,
 )
 from models.schemas import ReportIssueRequest, UploadPhotoRequest, User
-from modules.pms_core.role_permission_service import require_module as require_module_v99  # v99 DW
-from modules.pms_core.role_permission_service import require_op  # v99 DW
+from modules.pms_core.role_permission_service import (
+    require_module_role,  # v99 DW
+    require_op,  # v99 DW
+)
 
 logger = logging.getLogger(__name__)
 
@@ -126,7 +128,7 @@ async def upload_room_photo(
     quality_score: int | None = Form(None),
     notes: str | None = Form(None),
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v99("housekeeping")),  # v99 DW
+    _perm=Depends(require_module_role("housekeeping")),  # v99 DW
 ):
     """
     Upload a housekeeping photo (before/after/issue) with optional quality metadata.
@@ -251,7 +253,7 @@ async def get_my_housekeeping_tasks(
 async def start_housekeeping_task(
     task_id: str,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v99("housekeeping")),  # v99 DW
+    _perm=Depends(require_module_role("housekeeping")),  # v99 DW
 ):
     """Start working on a task"""
     task = await db.housekeeping_tasks.find_one({"id": task_id, "tenant_id": current_user.tenant_id, "assigned_to": current_user.name})
@@ -279,7 +281,7 @@ async def complete_housekeeping_task(
     notes: str = None,
     photos: list = [],
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v99("housekeeping")),  # v99 DW
+    _perm=Depends(require_module_role("housekeeping")),  # v99 DW
 ):
     """Complete a housekeeping task"""
     task = await db.housekeeping_tasks.find_one({"id": task_id, "tenant_id": current_user.tenant_id, "assigned_to": current_user.name})
@@ -309,7 +311,7 @@ async def complete_housekeeping_task(
 async def delete_housekeeping_task(
     task_id: str,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v99("housekeeping")),  # v99 DW
+    _perm=Depends(require_module_role("housekeeping")),  # v99 DW
 ):
     task = await db.housekeeping_tasks.find_one({"id": task_id, "tenant_id": current_user.tenant_id})
     if not task:
@@ -324,7 +326,7 @@ async def delete_housekeeping_task(
 async def report_housekeeping_issue(
     request: ReportIssueRequest,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v99("housekeeping")),  # v99 DW
+    _perm=Depends(require_module_role("housekeeping")),  # v99 DW
 ):
     """Report maintenance or cleaning issue"""
     issue = {
@@ -397,7 +399,7 @@ async def report_housekeeping_issue(
 async def upload_housekeeping_photo(
     request: UploadPhotoRequest,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v99("housekeeping")),  # v99 DW
+    _perm=Depends(require_module_role("housekeeping")),  # v99 DW
 ):
     """Upload photo for housekeeping task"""
     photo_record = {
@@ -1015,7 +1017,7 @@ async def update_cleaning_request_status(
     request_id: str,
     update_data: CleaningRequestStatusUpdate,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v99("housekeeping")),  # v99 DW
+    _perm=Depends(require_module_role("housekeeping")),  # v99 DW
 ):
     """
     Update cleaning request status

@@ -12,7 +12,7 @@ Extracted from server.py for modularity.
 """
 import logging
 
-from modules.pms_core.role_permission_service import require_module as require_module_v99  # v99 DW
+from modules.pms_core.role_permission_service import require_module_role  # v99 DW
 
 logger = logging.getLogger(__name__)
 import uuid
@@ -85,7 +85,7 @@ async def start_cleaning_timer(
     room_id: str,
     staff_info: dict = {},
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v99("housekeeping")),  # v99 DW
+    _perm=Depends(require_module_role("housekeeping")),  # v99 DW
 ):
     """Start cleaning timer for a room"""
     room = await db.rooms.find_one({"id": room_id, "tenant_id": current_user.tenant_id})
@@ -135,7 +135,7 @@ async def complete_cleaning_timer(
     task_id: str,
     completion_data: dict = {},
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v99("housekeeping")),  # v99 DW
+    _perm=Depends(require_module_role("housekeeping")),  # v99 DW
 ):
     """Complete cleaning timer and update room status"""
     task = await db.housekeeping_tasks.find_one({"id": task_id, "tenant_id": current_user.tenant_id})

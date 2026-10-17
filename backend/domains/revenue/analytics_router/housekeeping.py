@@ -17,7 +17,7 @@ from fastapi.security import HTTPAuthorizationCredentials
 
 from core.database import db
 from core.security import get_current_user, security
-from modules.pms_core.role_permission_service import require_module as require_module_rbac  # v89 DW
+from modules.pms_core.role_permission_service import require_module_role  # v89 DW
 from modules.pms_core.role_permission_service import require_role as _require_role
 
 # v67 Bug DD: frontdesk/* endpoint'lerinde RBAC eksikti — HK kullanıcı guest PII (search-bookings),
@@ -55,7 +55,7 @@ async def upload_room_photo(
     room_id: str,
     photo_data: dict,
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    _perm=Depends(require_module_rbac("housekeeping")),  # v89 DW
+    _perm=Depends(require_module_role("housekeeping")),  # v89 DW
 ):
     """Upload a photo for room inspection"""
     current_user = await get_current_user(credentials)
@@ -96,7 +96,7 @@ async def complete_room_checklist(
     room_id: str,
     checklist_data: dict,
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    _perm=Depends(require_module_rbac("housekeeping")),  # v89 DW
+    _perm=Depends(require_module_role("housekeeping")),  # v89 DW
 ):
     """Complete room cleaning checklist"""
     current_user = await get_current_user(credentials)
@@ -124,7 +124,7 @@ async def update_lost_found_status(
     item_id: str,
     status_data: dict,
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    _perm=Depends(require_module_rbac("housekeeping")),  # v89 DW
+    _perm=Depends(require_module_role("housekeeping")),  # v89 DW
 ):
     """Update lost & found item status"""
     current_user = await get_current_user(credentials)
@@ -149,7 +149,7 @@ async def transfer_lost_found_item(
     item_id: str,
     transfer_data: dict,
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    _perm=Depends(require_module_rbac("housekeeping")),  # v89 DW
+    _perm=Depends(require_module_role("housekeeping")),  # v89 DW
 ):
     """Transfer lost & found item to another department/location"""
     current_user = await get_current_user(credentials)
@@ -201,7 +201,7 @@ async def get_lost_found_history(item_id: str, credentials: HTTPAuthorizationCre
 async def qr_room_access(
     access_data: dict,
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    _perm=Depends(require_module_rbac("housekeeping")),  # v89 DW
+    _perm=Depends(require_module_role("housekeeping")),  # v89 DW
 ):
     """Record room access via QR code (start/end cleaning)"""
     current_user = await get_current_user(credentials)

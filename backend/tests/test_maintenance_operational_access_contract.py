@@ -6,10 +6,10 @@ from domains.pms import maintenance_router
 def test_sensitive_maintenance_reads_are_not_login_only():
     """Costs, staff activity and asset health must use their write-side permission."""
     expected_permissions = {
-        maintenance_router.get_maintenance_work_orders: 'require_module_v99("housekeeping")',
-        maintenance_router.get_repeat_issues: 'require_module_v99("housekeeping")',
-        maintenance_router.get_maintenance_sla: 'require_module_v99("housekeeping")',
-        maintenance_router.get_maintenance_tasks: 'require_module_v99("housekeeping")',
+        maintenance_router.get_maintenance_work_orders: 'require_module_role("housekeeping")',
+        maintenance_router.get_repeat_issues: 'require_module_role("housekeeping")',
+        maintenance_router.get_maintenance_sla: 'require_module_role("housekeeping")',
+        maintenance_router.get_maintenance_tasks: 'require_module_role("housekeeping")',
         maintenance_router.get_maintenance_parts_inventory: 'require_op("manage_sales")',
         maintenance_router.list_maintenance_assets: 'require_op("view_system_diagnostics")',
         maintenance_router.list_preventive_plans: 'require_op("view_system_diagnostics")',

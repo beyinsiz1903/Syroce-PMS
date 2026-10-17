@@ -24,7 +24,7 @@ from core.security import (
     get_current_user,
 )
 from models.schemas import Order, OrderCreate, User
-from modules.pms_core.role_permission_service import require_module as require_module_v99  # v99 DW
+from modules.pms_core.role_permission_service import require_module_role  # v99 DW
 
 try:
     from websocket_server import broadcast_kitchen_orders
@@ -468,7 +468,7 @@ router = APIRouter(prefix="/api", tags=["PMS / POS & F&B"])
 async def create_order(
     order_data: OrderCreate,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v99("pos")),  # v99 DW
+    _perm=Depends(require_module_role("pos")),  # v99 DW
 ):
     order = Order(tenant_id=current_user.tenant_id, **order_data.model_dump())
     order_dict = order.model_dump()

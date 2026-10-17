@@ -15,7 +15,7 @@ from pydantic import BaseModel
 from core.database import db
 from core.security import get_current_user, security
 from models.schemas import User
-from modules.pms_core.role_permission_service import require_module as require_module_v92
+from modules.pms_core.role_permission_service import require_module_role
 
 router = APIRouter(tags=["pos_spa_gym"])
 
@@ -53,7 +53,7 @@ class SpaReservationCreateRequest(BaseModel):
 
 @router.get("/pos/spa/resources")
 async def get_spa_resources(
-    resource_type: str | None = None, credentials: HTTPAuthorizationCredentials = Depends(security), current_user: User = Depends(get_current_user), _perm=Depends(require_module_v92("pos"))
+    resource_type: str | None = None, credentials: HTTPAuthorizationCredentials = Depends(security), current_user: User = Depends(get_current_user), _perm=Depends(require_module_role("pos"))
 ):
     """List SPA/Gym resources (therapists, cabins, etc.)"""
     query = {"tenant_id": current_user.tenant_id}
@@ -66,7 +66,7 @@ async def get_spa_resources(
 
 @router.post("/pos/spa/resources")
 async def create_spa_resource(
-    req: SpaResourceCreateRequest, credentials: HTTPAuthorizationCredentials = Depends(security), current_user: User = Depends(get_current_user), _perm=Depends(require_module_v92("pos"))
+    req: SpaResourceCreateRequest, credentials: HTTPAuthorizationCredentials = Depends(security), current_user: User = Depends(get_current_user), _perm=Depends(require_module_role("pos"))
 ):
     doc = {"id": str(uuid.uuid4()), "tenant_id": current_user.tenant_id, "name": req.name, "type": req.type, "status": req.status, "created_at": datetime.now(UTC).isoformat()}
     await db.pos_spa_resources.insert_one(doc)
@@ -79,7 +79,7 @@ async def create_spa_resource(
 
 @router.get("/pos/spa/memberships")
 async def get_spa_memberships(
-    status: str | None = None, credentials: HTTPAuthorizationCredentials = Depends(security), current_user: User = Depends(get_current_user), _perm=Depends(require_module_v92("pos"))
+    status: str | None = None, credentials: HTTPAuthorizationCredentials = Depends(security), current_user: User = Depends(get_current_user), _perm=Depends(require_module_role("pos"))
 ):
     query = {"tenant_id": current_user.tenant_id}
     if status:
@@ -91,7 +91,7 @@ async def get_spa_memberships(
 
 @router.post("/pos/spa/memberships")
 async def create_spa_membership(
-    req: SpaMembershipCreateRequest, credentials: HTTPAuthorizationCredentials = Depends(security), current_user: User = Depends(get_current_user), _perm=Depends(require_module_v92("pos"))
+    req: SpaMembershipCreateRequest, credentials: HTTPAuthorizationCredentials = Depends(security), current_user: User = Depends(get_current_user), _perm=Depends(require_module_role("pos"))
 ):
     doc = {
         "id": str(uuid.uuid4()),
@@ -114,7 +114,7 @@ async def create_spa_membership(
 
 @router.get("/pos/spa/reservations")
 async def get_spa_reservations(
-    res_date: str | None = None, credentials: HTTPAuthorizationCredentials = Depends(security), current_user: User = Depends(get_current_user), _perm=Depends(require_module_v92("pos"))
+    res_date: str | None = None, credentials: HTTPAuthorizationCredentials = Depends(security), current_user: User = Depends(get_current_user), _perm=Depends(require_module_role("pos"))
 ):
     query = {"tenant_id": current_user.tenant_id}
     if res_date:
@@ -126,7 +126,7 @@ async def get_spa_reservations(
 
 @router.post("/pos/spa/reservations")
 async def create_spa_reservation(
-    req: SpaReservationCreateRequest, credentials: HTTPAuthorizationCredentials = Depends(security), current_user: User = Depends(get_current_user), _perm=Depends(require_module_v92("pos"))
+    req: SpaReservationCreateRequest, credentials: HTTPAuthorizationCredentials = Depends(security), current_user: User = Depends(get_current_user), _perm=Depends(require_module_role("pos"))
 ):
     """Create a SPA reservation, ensuring the therapist or cabin isn't double-booked."""
 
@@ -172,7 +172,7 @@ async def update_spa_reservation_status(
     status: str,  # 'in_progress', 'completed', 'cancelled', 'no_show'
     credentials: HTTPAuthorizationCredentials = Depends(security),
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v92("pos")),
+    _perm=Depends(require_module_role("pos")),
 ):
     valid_statuses = ["confirmed", "in_progress", "completed", "cancelled", "no_show"]
     if status not in valid_statuses:
@@ -195,7 +195,7 @@ async def charge_spa_reservation(
     folio_id: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security),
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v92("pos")),
+    _perm=Depends(require_module_role("pos")),
 ):
     """
     Charges a completed SPA reservation to a folio, simulating POS Folio transfer.

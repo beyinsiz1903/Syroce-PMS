@@ -120,7 +120,7 @@ OPERATION_PERMISSIONS = {
     "manage_quality": [Permission.ASSIGN_TASK],
 }
 
-# v89: module → roles mapping for require_module() helper
+# v89: module → roles mapping for require_module_role() helper
 MODULE_ROLES = {
     "housekeeping": {UserRole.HOUSEKEEPING, UserRole.SUPERVISOR, UserRole.ADMIN, UserRole.SUPER_ADMIN},
     "maintenance": {UserRole.SUPERVISOR, UserRole.ADMIN, UserRole.SUPER_ADMIN},
@@ -174,8 +174,10 @@ def require_op(operation: str):
     return _dep
 
 
-def require_module(module: str):
-    """v89: FastAPI dependency factory — module-based access (role allowlist).
+def require_module_role(module: str):
+    """v89: FastAPI dependency factory — which ROLES may use a module area
+    (role allowlist from MODULE_ROLES). Not a licence check: the hotel's
+    module licence is enforced by core.entitlement / core.helpers.require_module.
 
     Used for cross-domain endpoints where multiple roles legitimately operate
     (e.g. housekeeping mobile usable by HK + MANAGER + ADMIN).

@@ -12,7 +12,7 @@ Routes:
 
 import logging
 
-from modules.pms_core.role_permission_service import require_module as require_module_v92  # v92 DW
+from modules.pms_core.role_permission_service import require_module_role  # v92 DW
 
 logger = logging.getLogger(__name__)
 from datetime import UTC, datetime
@@ -38,7 +38,7 @@ security = HTTPBearer()
 async def add_to_room_queue(
     queue_data: dict,
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    _perm=Depends(require_module_v92("frontdesk")),  # v92 DW
+    _perm=Depends(require_module_role("frontdesk")),  # v92 DW
 ):
     """Add guest to room queue (early arrival waiting list)"""
     current_user = await get_current_user(credentials)
@@ -108,7 +108,7 @@ async def assign_queue_priority(
     queue_id: str,
     priority: int,
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    _perm=Depends(require_module_v92("frontdesk")),  # v92 DW
+    _perm=Depends(require_module_role("frontdesk")),  # v92 DW
 ):
     """Manually assign priority to queue entry"""
     current_user = await get_current_user(credentials)

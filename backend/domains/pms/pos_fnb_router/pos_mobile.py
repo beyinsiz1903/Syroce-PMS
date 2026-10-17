@@ -24,8 +24,7 @@ from core.security import (
     security,
 )
 from core.tenant_currency import get_tenant_currency
-from modules.pms_core.role_permission_service import require_module  # v89 DW
-from modules.pms_core.role_permission_service import require_module as require_module_v92  # v92 DW
+from modules.pms_core.role_permission_service import require_module_role  # v89 DW
 
 try:
     from websocket_server import broadcast_kitchen_orders
@@ -607,7 +606,7 @@ async def update_order_status(
     order_id: str,
     request: UpdateOrderStatusRequest,
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    _perm=Depends(require_module_v92("pos")),  # v92 DW
+    _perm=Depends(require_module_role("pos")),  # v92 DW
 ):
     """
     Update order status (pending → preparing → ready → served)
@@ -1063,7 +1062,7 @@ async def get_low_stock_alerts(credentials: HTTPAuthorizationCredentials = Depen
 async def adjust_stock(
     request: StockAdjustRequest,
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    _perm=Depends(require_module("pos")),  # v89 DW
+    _perm=Depends(require_module_role("pos")),  # v89 DW
 ):
     """
     Adjust stock levels (in/out/adjustment)

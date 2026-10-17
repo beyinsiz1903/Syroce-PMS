@@ -9,8 +9,10 @@ from pydantic import BaseModel
 from core.security import get_current_user
 from models.schemas import User
 from modules.guest_journey.guest_journey_service import GuestJourneyService
-from modules.pms_core.role_permission_service import require_module as require_module_v100  # v100 DW
-from modules.pms_core.role_permission_service import require_op  # v100 DW
+from modules.pms_core.role_permission_service import (
+    require_module_role,  # v100 DW
+    require_op,  # v100 DW
+)
 
 router = APIRouter(prefix="/api/guest-journey", tags=["guest-journey"])
 journey_svc = GuestJourneyService()
@@ -97,7 +99,7 @@ async def api_create_guest_request(req: GuestRequestCreate, current_user: User =
 async def api_update_request_status(
     req: RequestStatusUpdate,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v100("frontdesk")),  # v100 DW
+    _perm=Depends(require_module_role("frontdesk")),  # v100 DW
 ):
     """Update guest request status."""
     result = await journey_svc.update_request_status(current_user.tenant_id, req.request_id, req.new_status, current_user.id, req.notes)
@@ -110,7 +112,7 @@ async def api_update_request_status(
 async def api_assign_request(
     req: AssignRequestBody,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v100("frontdesk")),  # v100 DW
+    _perm=Depends(require_module_role("frontdesk")),  # v100 DW
 ):
     """Assign a guest request to staff."""
     result = await journey_svc.assign_request(current_user.tenant_id, req.request_id, req.assignee_id, current_user.id)

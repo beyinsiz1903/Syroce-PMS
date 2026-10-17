@@ -12,8 +12,7 @@ from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException
 from pymongo.errors import DuplicateKeyError
 
-from modules.pms_core.role_permission_service import require_module as require_module_v99  # v99 DW
-from modules.pms_core.role_permission_service import require_module as require_module_v101  # v101 DW
+from modules.pms_core.role_permission_service import require_module_role  # v99 DW
 
 
 def _jsonable(value):
@@ -219,7 +218,7 @@ async def get_housekeeping_checklist(current_user: User = Depends(get_current_us
 async def start_room_cleaning(
     room_id: str,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v99("housekeeping")),  # v99 DW
+    _perm=Depends(require_module_role("housekeeping")),  # v99 DW
 ):
     result = await db.rooms.update_one(
         {"id": room_id, "tenant_id": current_user.tenant_id}, {"$set": {"housekeeping_status": "cleaning", "hk_status": "cleaning", "cleaning_started_at": datetime.now(UTC).isoformat()}}
@@ -242,7 +241,7 @@ async def complete_room_cleaning(
     room_id: str,
     completion_data: dict,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v99("housekeeping")),  # v99 DW
+    _perm=Depends(require_module_role("housekeeping")),  # v99 DW
 ):
     result = await db.rooms.update_one(
         {"id": room_id, "tenant_id": current_user.tenant_id},
@@ -745,7 +744,7 @@ async def get_tasks(department: str = None, status: str = None, priority: str = 
 async def create_task(
     request: CreateTaskRequest,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
+    _perm=Depends(require_module_role("frontdesk")),  # v101 DW
 ):
     """Create new task"""
     # Priority order for sorting
@@ -942,7 +941,7 @@ async def assign_task(
     task_id: str,
     request: AssignTaskRequest,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
+    _perm=Depends(require_module_role("frontdesk")),  # v101 DW
 ):
     """Assign task to user"""
     task = await db.tasks.find_one({"id": task_id, "tenant_id": current_user.tenant_id})
@@ -992,7 +991,7 @@ async def update_task_status(
     task_id: str,
     request: UpdateTaskStatusRequest,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
+    _perm=Depends(require_module_role("frontdesk")),  # v101 DW
 ):
     """Update task status"""
     task = await db.tasks.find_one({"id": task_id, "tenant_id": current_user.tenant_id})
@@ -1070,7 +1069,7 @@ async def create_engineering_maintenance_request(
     priority: str = "normal",
     room_id: str = None,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v101("housekeeping")),  # v101 DW
+    _perm=Depends(require_module_role("housekeeping")),  # v101 DW
 ):
     """Create engineering/maintenance request"""
     task_request = CreateTaskRequest(department="engineering", task_type="repair", title=title, description=description, priority=priority, location=location, room_id=room_id)
@@ -1086,7 +1085,7 @@ async def create_housekeeping_cleaning_request(
     priority: str = "normal",
     special_instructions: str = None,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v99("housekeeping")),  # v99 DW
+    _perm=Depends(require_module_role("housekeeping")),  # v99 DW
 ):
     """Create housekeeping cleaning request"""
     room = await db.rooms.find_one({"id": room_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
@@ -1117,7 +1116,7 @@ async def create_fnb_service_request(
     priority: str = "normal",
     due_date: str = None,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v99("pos")),  # v99 DW
+    _perm=Depends(require_module_role("pos")),  # v99 DW
 ):
     """Create F&B service request"""
     task_request = CreateTaskRequest(department="fnb", task_type=request_type, title=title, description=description, priority=priority, location=location, due_date=due_date)

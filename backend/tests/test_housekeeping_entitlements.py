@@ -72,7 +72,7 @@ def override_auth(test_app):
 
 @pytest.fixture
 def mock_require_module():
-    with patch("routers.housekeeping.require_module_v99") as m_mod, \
+    with patch("routers.housekeeping.require_module_role") as m_mod, \
          patch("routers.housekeeping.require_op") as m_op:
         def fake_dep(mod):
             async def dep(): return True

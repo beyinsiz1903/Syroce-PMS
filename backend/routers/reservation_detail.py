@@ -30,9 +30,9 @@ from modules.pms_core.guest_identity import find_existing_guest_by_identity
 from modules.pms_core.reporting_financials import stamp_reporting_values
 from modules.pms_core.role_permission_service import (
     RolePermissionService,
+    require_module_role,  # v97 DW
     require_op,  # v97 DW
 )
-from modules.pms_core.role_permission_service import require_module as require_module_v97  # v97 DW
 from modules.reservations.services.create_reservation_service import (
     CreateReservationService,
 )
@@ -2044,7 +2044,7 @@ async def record_payment(
 async def complete_pending_room_charge(
     booking_id: str,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v97("frontdesk")),
+    _perm=Depends(require_module_role("frontdesk")),
 ):
     """Repair a historical folio credit caused by a missing final room charge.
 
@@ -2676,7 +2676,7 @@ async def add_reservation_note(
     booking_id: str,
     data: NoteCreate,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
+    _perm=Depends(require_module_role("frontdesk")),  # v97 DW
 ):
     """Add a note to a reservation."""
     _ensure_hotel_context(current_user)
@@ -2717,7 +2717,7 @@ async def room_change(
     booking_id: str,
     data: RoomChangeRequest,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
+    _perm=Depends(require_module_role("frontdesk")),  # v97 DW
 ):
     """Change the room for a reservation with full audit trail."""
     _enforce_perm(current_user, "edit_booking")  # Bug CP Round-4
@@ -2846,7 +2846,7 @@ async def early_checkin(
     booking_id: str,
     data: EarlyCheckinRequest,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
+    _perm=Depends(require_module_role("frontdesk")),  # v97 DW
 ):
     """Process early check-in with optional extra charge — atomic transaction."""
     _enforce_perm(current_user, "checkin")  # Bug CP Round-4
@@ -2930,7 +2930,7 @@ async def late_checkout(
     booking_id: str,
     data: LateCheckoutRequest,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
+    _perm=Depends(require_module_role("frontdesk")),  # v97 DW
 ):
     """Process late check-out with optional extra charge."""
     _enforce_perm(current_user, "checkout")  # Bug CP Round-4
@@ -3003,7 +3003,7 @@ async def late_checkout(
 async def mark_noshow(
     booking_id: str,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
+    _perm=Depends(require_module_role("frontdesk")),  # v97 DW
 ):
     """Mark a reservation as no-show."""
     _enforce_perm(current_user, "edit_booking")  # Bug CP Round-4
@@ -3055,7 +3055,7 @@ async def update_vip_status(
     booking_id: str,
     vip: bool = True,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
+    _perm=Depends(require_module_role("frontdesk")),  # v97 DW
 ):
     """Toggle VIP status for the guest of a reservation."""
     _enforce_perm(current_user, "edit_booking")  # Bug CP Round-4
@@ -4561,7 +4561,7 @@ async def update_reservation_guest(
     booking_id: str,
     data: GuestUpdate,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
+    _perm=Depends(require_module_role("frontdesk")),  # v97 DW
 ):
     """Update guest information for a reservation."""
     _enforce_perm(current_user, "edit_booking")  # Bug CP Round-4
@@ -4956,7 +4956,7 @@ async def create_group_booking(
     data: GroupBookingCreate,
     request: Request,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
+    _perm=Depends(require_module_role("frontdesk")),  # v97 DW
 ):
     """Create a new group booking.
 
@@ -5200,7 +5200,7 @@ async def add_room_to_group(
     group_id: str,
     data: GroupBookingAddRoom,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
+    _perm=Depends(require_module_role("frontdesk")),  # v97 DW
 ):
     """Add a booking/room to a group."""
     _enforce_perm(current_user, "create_booking")  # Bug CP Round-4
@@ -5236,7 +5236,7 @@ async def add_room_to_group(
 async def group_check_in_all(
     group_id: str,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
+    _perm=Depends(require_module_role("frontdesk")),  # v97 DW
 ):
     """Check-in all reservations in a group — each via atomic transaction."""
     _enforce_perm(current_user, "checkin")  # Bug CP Round-4
@@ -5286,7 +5286,7 @@ async def group_check_in_all(
 async def group_check_out_all(
     group_id: str,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
+    _perm=Depends(require_module_role("frontdesk")),  # v97 DW
 ):
     """Check-out all reservations in a group — each via atomic transaction."""
     _enforce_perm(current_user, "checkout")  # Bug CP Round-4
@@ -5341,7 +5341,7 @@ async def add_communication_log(
     booking_id: str,
     data: CommunicationLogCreate,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
+    _perm=Depends(require_module_role("frontdesk")),  # v97 DW
 ):
     """Add a communication log entry for a reservation."""
     _ensure_hotel_context(current_user)
@@ -5735,7 +5735,7 @@ async def add_reservation_guest(
     booking_id: str,
     data: ReservationGuestCreate,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v97("frontdesk")),
+    _perm=Depends(require_module_role("frontdesk")),
 ):
     _enforce_perm(current_user, "edit_booking")
     _ensure_hotel_context(current_user)
@@ -5826,7 +5826,7 @@ async def unlink_reservation_guest(
     booking_id: str,
     guest_id: str,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v97("frontdesk")),
+    _perm=Depends(require_module_role("frontdesk")),
 ):
     _enforce_perm(current_user, "edit_booking")
     tid = current_user.tenant_id

@@ -9,8 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from core.database import db
 from core.security import get_current_user
 from models.schemas import User, _ensure_hotel_context
-from modules.pms_core.role_permission_service import require_module as require_module_v99
-from modules.pms_core.role_permission_service import require_module as require_module_v101
+from modules.pms_core.role_permission_service import require_module_role
 
 from ._common import (
     LostFoundCreate,
@@ -85,7 +84,7 @@ async def get_wake_up_calls(
 async def create_wake_up_call(
     data: WakeUpCallCreate,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
+    _perm=Depends(require_module_role("frontdesk")),  # v101 DW
 ):
     """Create a new wake-up call."""
     _ensure_hotel_context(current_user)
@@ -119,7 +118,7 @@ async def update_wake_up_call(
     call_id: str,
     data: WakeUpCallUpdate,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
+    _perm=Depends(require_module_role("frontdesk")),  # v101 DW
 ):
     """Update a wake-up call status."""
     _ensure_hotel_context(current_user)
@@ -178,7 +177,7 @@ async def update_wake_up_call(
 async def delete_wake_up_call(
     call_id: str,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
+    _perm=Depends(require_module_role("frontdesk")),  # v101 DW
 ):
     """Delete a wake-up call."""
     _ensure_hotel_context(current_user)
@@ -240,7 +239,7 @@ async def get_lost_found_items(
 async def create_lost_found_item(
     data: LostFoundCreate,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v99("housekeeping")),  # v99 DW
+    _perm=Depends(require_module_role("housekeeping")),  # v99 DW
 ):
     """Register a new lost & found item."""
     _ensure_hotel_context(current_user)
@@ -276,7 +275,7 @@ async def update_lost_found_item(
     item_id: str,
     data: LostFoundUpdate,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v99("housekeeping")),  # v99 DW
+    _perm=Depends(require_module_role("housekeeping")),  # v99 DW
 ):
     """Update a lost & found item."""
     _ensure_hotel_context(current_user)
@@ -313,7 +312,7 @@ async def update_lost_found_item(
 async def delete_lost_found_item(
     item_id: str,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v99("housekeeping")),  # v99 DW
+    _perm=Depends(require_module_role("housekeeping")),  # v99 DW
 ):
     """Delete a lost & found item."""
     _ensure_hotel_context(current_user)
@@ -333,7 +332,7 @@ async def match_guest_to_item(
     guest_contact: str = "",
     booking_id: str = "",
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v99("housekeeping")),  # v99 DW
+    _perm=Depends(require_module_role("housekeeping")),  # v99 DW
 ):
     """Match a guest to a lost & found item."""
     _ensure_hotel_context(current_user)

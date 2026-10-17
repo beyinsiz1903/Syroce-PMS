@@ -36,9 +36,10 @@ from models.schemas import (
     UpdateSupplierCreditRequest,
     User,
 )
-from modules.pms_core.role_permission_service import require_module as require_module_v92  # v92 DW
-from modules.pms_core.role_permission_service import require_module as require_module_v99  # v99 DW
-from modules.pms_core.role_permission_service import require_op  # v95 DW
+from modules.pms_core.role_permission_service import (
+    require_module_role,  # v92 DW
+    require_op,  # v95 DW
+)
 
 router = APIRouter(prefix="/api", tags=["pos-marketplace"])
 
@@ -293,7 +294,7 @@ async def create_menu_item(
 async def create_pos_transaction_with_menu(
     request: CreatePOSTransactionWithMenuRequest,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v99("pos")),  # v99 DW
+    _perm=Depends(require_module_role("pos")),  # v99 DW
 ):
     """Create POS transaction with menu item breakdown"""
     # Verify outlet
@@ -681,7 +682,7 @@ async def update_order_status_mobile(
     order_id: str,
     new_status: str,
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    _perm=Depends(require_module_v92("pos")),  # v92 DW
+    _perm=Depends(require_module_role("pos")),  # v92 DW
 ):
     """Update order status"""
     current_user = await get_current_user(credentials)

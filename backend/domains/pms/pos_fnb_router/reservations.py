@@ -14,7 +14,7 @@ from pydantic import BaseModel
 from core.database import db
 from core.security import get_current_user, security
 from models.schemas import User
-from modules.pms_core.role_permission_service import require_module as require_module_v92
+from modules.pms_core.role_permission_service import require_module_role
 
 router = APIRouter(tags=["pos_reservations"])
 
@@ -35,7 +35,7 @@ async def get_reservations(
     res_date: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security),
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v92("pos")),
+    _perm=Depends(require_module_role("pos")),
 ):
     """Get upcoming table reservations for the POS staff."""
     query = {"tenant_id": current_user.tenant_id}
@@ -50,7 +50,7 @@ async def get_reservations(
 
 @router.post("/pos/reservations")
 async def create_reservation(
-    req: ReservationCreateRequest, credentials: HTTPAuthorizationCredentials = Depends(security), current_user: User = Depends(get_current_user), _perm=Depends(require_module_v92("pos"))
+    req: ReservationCreateRequest, credentials: HTTPAuthorizationCredentials = Depends(security), current_user: User = Depends(get_current_user), _perm=Depends(require_module_role("pos"))
 ):
     """Create a new table reservation."""
 
@@ -89,7 +89,7 @@ async def update_reservation_status(
     status: str,  # 'seated', 'cancelled', 'completed'
     credentials: HTTPAuthorizationCredentials = Depends(security),
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v92("pos")),
+    _perm=Depends(require_module_role("pos")),
 ):
     valid_statuses = ["confirmed", "seated", "completed", "cancelled"]
     if status not in valid_statuses:

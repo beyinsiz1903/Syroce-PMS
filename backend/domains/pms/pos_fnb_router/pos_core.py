@@ -34,9 +34,10 @@ from domains.pms.pos_extensions._idem import ensure_compound_unique, ensure_idem
 from domains.pms.pos_fnb_router.kitchen_numbering import next_kitchen_order_number
 from models.enums import ChargeCategory, FolioStatus
 from models.schemas import CreatePOSTransactionRequest, FolioCharge, User
-from modules.pms_core.role_permission_service import require_module as require_module_v92  # v92 DW
-from modules.pms_core.role_permission_service import require_module as require_module_v99  # v99 DW
-from modules.pms_core.role_permission_service import require_op  # v89 DW
+from modules.pms_core.role_permission_service import (
+    require_module_role,  # v92 DW
+    require_op,  # v89 DW
+)
 
 try:
     from websocket_server import broadcast_kitchen_orders
@@ -842,7 +843,7 @@ router = APIRouter(prefix="/api", tags=["PMS / POS & F&B"])
 async def create_pos_transaction(
     request: CreatePOSTransactionRequest,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v99("pos")),  # v99 DW
+    _perm=Depends(require_module_role("pos")),  # v99 DW
 ):
     """Create POS transaction"""
     transaction = {
@@ -875,7 +876,7 @@ async def split_check(
     # caused 400 "no valid item indices" regressions (CI 2026-05-25).
     split_details: dict | None = Body(default=None, embed=True),
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v99("pos")),  # v99 DW
+    _perm=Depends(require_module_role("pos")),  # v99 DW
 ):
     """
     Split restaurant check
@@ -1020,7 +1021,7 @@ async def transfer_table(
     transfer_all: bool = True,
     items_to_transfer: list[Any] | None = None,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v99("pos")),  # v99 DW
+    _perm=Depends(require_module_role("pos")),  # v99 DW
 ):
     """Transfer items from one table to another with hardened consistency.
     Note: Real atomic Mongo transactions are not used here due to replica set constraints.
@@ -1582,7 +1583,7 @@ async def validate_room_charge(
     amount: float,
     category: str,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v99("pos")),  # v99 DW
+    _perm=Depends(require_module_role("pos")),  # v99 DW
 ):
     """
     Validate if room charge is allowed
@@ -1638,7 +1639,7 @@ async def validate_room_charge(
 async def create_pos_order(
     data: POSOrderCreateRequest,
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    _perm=Depends(require_module_v92("pos")),  # v92 DW
+    _perm=Depends(require_module_role("pos")),  # v92 DW
 ):
     """Create a POS order with detailed items.
 

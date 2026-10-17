@@ -13,7 +13,7 @@ from pydantic import BaseModel
 
 from core.database import db
 from core.security import get_current_user, security
-from modules.pms_core.role_permission_service import require_module as require_module_v92  # v92 DW
+from modules.pms_core.role_permission_service import require_module_role  # v92 DW
 
 router = APIRouter(prefix="/api", tags=["rms-revenue"])
 
@@ -77,7 +77,7 @@ class InventoryItemCreate(BaseModel):
 async def create_inventory_item(
     item: InventoryItemCreate,
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    _perm=Depends(require_module_v92("housekeeping")),  # v92 DW
+    _perm=Depends(require_module_role("housekeeping")),  # v92 DW
 ):
     """Create a new inventory item"""
     current_user = await get_current_user(credentials)
@@ -115,7 +115,7 @@ async def record_inventory_usage(
     item_id: str,
     usage: InventoryUsage,
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    _perm=Depends(require_module_v92("housekeeping")),  # v92 DW
+    _perm=Depends(require_module_role("housekeeping")),  # v92 DW
 ):
     """Record inventory usage"""
     current_user = await get_current_user(credentials)

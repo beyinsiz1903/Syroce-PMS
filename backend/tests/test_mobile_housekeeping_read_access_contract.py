@@ -15,4 +15,4 @@ def test_mobile_housekeeping_operational_reads_require_housekeeping_access():
     )
 
     for handler in handlers:
-        assert 'require_module("housekeeping")' in inspect.getsource(handler)
+        assert 'require_module_role("housekeeping")' in inspect.getsource(handler)

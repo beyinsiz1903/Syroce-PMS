@@ -25,9 +25,9 @@ from modules.pms_core.pms_dashboard_service import PMSDashboardService
 from modules.pms_core.reservation_state_machine import ReservationStateMachine
 from modules.pms_core.role_permission_service import (
     RolePermissionService,
+    require_module_role,  # v101 DW
     require_op,  # v90 DW
 )
-from modules.pms_core.role_permission_service import require_module as require_module_v101  # v101 DW
 from shared_kernel.idempotency import (
     claim_idempotency,
     complete_idempotency,
@@ -479,7 +479,7 @@ async def api_no_show(req: NoShowRequest, current_user: User = Depends(get_curre
 async def api_late_checkout(
     req: LateCheckoutRequest,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
+    _perm=Depends(require_module_role("frontdesk")),  # v101 DW
 ):
     """Request late checkout with optional charge."""
     result = await front_desk.request_late_checkout(current_user.tenant_id, req.booking_id, req.requested_time, req.charge, current_user.id)
@@ -500,7 +500,7 @@ async def api_late_checkout(
 async def api_early_checkin(
     req: EarlyCheckinRequest,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
+    _perm=Depends(require_module_role("frontdesk")),  # v101 DW
 ):
     """Request early check-in."""
     result = await front_desk.request_early_checkin(current_user.tenant_id, req.booking_id, req.requested_time, current_user.id)
