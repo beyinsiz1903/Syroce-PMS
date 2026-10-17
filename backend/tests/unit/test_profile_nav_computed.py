@@ -1,5 +1,6 @@
 """The hotel menu follows its property profile as it is now, not a copy."""
 
+from copy import deepcopy
 from types import SimpleNamespace
 
 import pytest
@@ -63,11 +64,12 @@ def test_links_only_untouched_copies():
 
 
 class _Tenants:
-    def __init__(self, docs):
+    def __init__(self, docs, before_update=None):
         self.docs = docs
+        self.before_update = before_update
 
     def find(self, *_a, **_k):
-        docs = [dict(doc) for doc in self.docs]
+        docs = deepcopy(self.docs)
 
         async def gen():
             for doc in docs:
@@ -75,13 +77,24 @@ class _Tenants:
         return gen()
 
     async def update_one(self, query, update):
+        if self.before_update:
+            self.before_update(self.docs)
+            self.before_update = None
         for doc in self.docs:
-            if doc["id"] == query["id"] and "nav_profile" not in doc and all(
-                doc.get(k) == v for k, v in query.items() if k not in ("id", "nav_profile") and not isinstance(v, dict)
-            ):
-                doc.update(update["$set"])
+            if self._matches(doc, query):
+                doc.update(deepcopy(update["$set"]))
                 return SimpleNamespace(modified_count=1)
         return SimpleNamespace(modified_count=0)
+
+    @staticmethod
+    def _matches(doc, query):
+        for key, expected in query.items():
+            if isinstance(expected, dict) and "$exists" in expected:
+                if (key in doc) != expected["$exists"]:
+                    return False
+            elif doc.get(key) != expected:
+                return False
+        return True
 
     async def update_many(self, query, update):
         count = 0
@@ -121,3 +134,64 @@ async def test_dry_run_writes_nothing_apply_links_and_undo_restores():
 
     undone = await run(db, apply=False, undo=applied["run_id"])
     assert undone["unlinked"] == 1 and "nav_profile" not in db.tenants.docs[0]
+
+
+@pytest.mark.parametrize("new_type", ["pension", None])
+@pytest.mark.asyncio
+async def test_link_skips_a_property_type_changed_after_read(new_type):
+    from scripts.link_tenant_nav_profiles import run
+
+    original = _copy_of("city_hotel", property_type="city_hotel")
+    db = SimpleNamespace(
+        tenants=_Tenants([deepcopy(original)], before_update=lambda docs: docs[0].update(property_type=new_type)),
+        nav_profile_link_runs=_Runs(),
+    )
+
+    result = await run(db, apply=True, undo=None)
+
+    assert result["linked"] == 0
+    assert result["skipped_changed"] == 1
+    assert db.tenants.docs[0] == {**original, "property_type": new_type}
+
+
+@pytest.mark.asyncio
+async def test_link_skips_a_property_type_removed_after_read():
+    from scripts.link_tenant_nav_profiles import run
+
+    original = _copy_of("city_hotel", property_type="city_hotel")
+    db = SimpleNamespace(
+        tenants=_Tenants([deepcopy(original)], before_update=lambda docs: docs[0].pop("property_type")),
+        nav_profile_link_runs=_Runs(),
+    )
+
+    result = await run(db, apply=True, undo=None)
+
+    assert result["linked"] == 0
+    assert result["skipped_changed"] == 1
+    assert db.tenants.docs[0] == {key: value for key, value in original.items() if key != "property_type"}
+
+
+@pytest.mark.asyncio
+async def test_link_still_skips_labels_changed_after_read():
+    from scripts.link_tenant_nav_profiles import run
+
+    original = _copy_of("city_hotel", property_type="city_hotel")
+    changed_labels = {"settings": "Custom management"}
+    db = SimpleNamespace(
+        tenants=_Tenants([deepcopy(original)], before_update=lambda docs: docs[0].update(nav_item_labels=changed_labels)),
+        nav_profile_link_runs=_Runs(),
+    )
+
+    result = await run(db, apply=True, undo=None)
+
+    assert result["linked"] == 0
+    assert result["skipped_changed"] == 1
+    assert db.tenants.docs[0] == {**original, "nav_item_labels": changed_labels}
+
+
+def test_link_filter_checks_raw_property_type_before_alias_resolution():
+    from scripts.link_tenant_nav_profiles import _cas_filter, decide
+
+    original = _copy_of("boutique_hotel", property_type="boutique")
+    assert decide(original) == ("link", "boutique_hotel")
+    assert _cas_filter(original)["property_type"] == "boutique"

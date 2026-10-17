@@ -18,8 +18,8 @@ Safety contract
 ---------------
 * Default is a dry run that prints every hotel and the decision.
 * ``--apply`` / ``--undo`` additionally require ``ALLOW_NAV_PROFILE_LINK=true``.
-* ``--apply`` writes with a compare-and-set on the lists it compared and on
-  ``nav_profile`` still being absent; changed hotels are skipped.
+* ``--apply`` writes with a compare-and-set on the property type and lists it
+  compared, and on ``nav_profile`` still being absent; changed hotels are skipped.
 * ``--undo <run_id>`` removes ``nav_profile`` only where this run set it.
 * Every run writes a summary to ``nav_profile_link_runs``.
 
@@ -92,7 +92,9 @@ def _cas_filter(tenant: dict) -> dict:
     from domains.admin.property_profiles import NAV_CONFIG_FIELDS
 
     query = {"id": tenant["id"], "nav_profile": {"$exists": False}}
-    for field in NAV_CONFIG_FIELDS:
+    # The selected profile depends on this exact stored type, before aliases
+    # are resolved. Reject an onboarding edit between the read and the write.
+    for field in ("property_type", *NAV_CONFIG_FIELDS):
         query[field] = tenant[field] if field in tenant else {"$exists": False}
     return query
 
