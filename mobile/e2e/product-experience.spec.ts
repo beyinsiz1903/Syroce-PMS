@@ -59,6 +59,8 @@ async function installFixtures(page: Page, options: Partial<World> = {}) {
     if (path === '/api/mobile/hub/my-tasks') return reply({ tasks: [], count: 0, by_kind: { housekeeping: 0, maintenance: 0 } });
     if (path === '/api/mobile/hub/feed') return reply({ items: [], count: 0, has_more: false, unread_count: 0 });
     if (path === '/api/messaging/internal/conversations') return reply({ conversations: [], total_count: 0 });
+    if (path === '/api/messaging/guest-requests/access') return reply({ can_view: true });
+    if (path === '/api/messaging/guest-requests/threads') return reply({ threads: [], total_unread: 0 });
     if (path === '/api/arrivals/today') return reply(world.failArrivals ? { detail: 'fixture outage' } : { arrivals: [currentArrival] }, world.failArrivals ? 503 : 200);
     if (path === '/api/unified/today-departures') return reply({ departures: [currentInhouse] });
     if (path === '/api/unified/in-house') return reply({ in_house: [currentInhouse], count: 1 });

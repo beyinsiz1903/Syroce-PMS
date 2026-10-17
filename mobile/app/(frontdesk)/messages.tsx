@@ -1,3 +1,2 @@
-// Keep staff messages one tap away in the operational shell. Reuse the
-// existing tenant-scoped messaging screen; never duplicate its API or state.
+// The operational shell shares the room/QR guest-request inbox with home.
 export { default } from '../(home)/messages';

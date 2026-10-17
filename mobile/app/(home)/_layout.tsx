@@ -133,7 +133,8 @@ export default function HomeLayout() {
       <Tabs.Screen
         name="messages"
         options={{
-          title: tr.tabs.messages,
+          title: tr.hub.messagesTitle,
+          tabBarLabel: 'Talepler',
           tabBarButtonTestID: 'smoke-tab-messages',
           tabBarIcon: tabIcon('chatbubble-ellipses', 'chatbubble-ellipses-outline'),
         }}

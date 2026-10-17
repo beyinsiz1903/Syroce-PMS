@@ -4,7 +4,7 @@ import { defineConfig } from '@playwright/test';
 // fixtures. No credentials, live reservations, email or financial writes.
 export default defineConfig({
   testDir: '.',
-  testMatch: /product-experience\.spec\.ts$/,
+  testMatch: /(product-experience|guest-requests)\.spec\.ts$/,
   workers: 1,
   timeout: 60000,
   expect: { timeout: 15000 },

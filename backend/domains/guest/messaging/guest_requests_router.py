@@ -92,11 +92,12 @@ async def get_guest_request_thread(
     room_id: str,
     current_user: User = Depends(gr.require_guest_request_access),
 ):
-    """Bir odanın tam mesaj geçmişi (personel: oda-scoped, tüm booking'ler)."""
+    """Bir odanın en güncel 300 mesajı (personel: oda-scoped, kronolojik)."""
     messages = await gr.get_thread_messages(
         current_user.tenant_id,
         room_id,
         viewer_user_id=current_user.id,
+        latest=True,
     )
     room_number = None
     for m in reversed(messages):

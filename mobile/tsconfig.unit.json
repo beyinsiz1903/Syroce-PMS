@@ -12,6 +12,8 @@
     "types": ["node"]
   },
   "include": [
+    "src/utils/guestRequests.ts",
+    "src/utils/__tests__/guestRequests.test.ts",
     "src/api/__tests__/quickid.test.ts",
     "src/utils/quickidResponse.ts",
     "src/components/datePickerUtils.ts",
