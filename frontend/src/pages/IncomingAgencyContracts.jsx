@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import ContractAmendmentPanel from '@/components/contracts/ContractAmendmentPanel';
 import {
   Handshake, Clock, CheckCircle2, XCircle, Ban, RefreshCw, Building2,
   Percent, Calendar, CreditCard, Globe, FileText, AlertTriangle, Loader2,
@@ -45,7 +46,7 @@ const StatusBadge = ({ status }) => {
   );
 };
 
-const ContractCard = ({ contract, onApprove, onReject, onTerminate }) => {
+const ContractCard = ({ contract, onApprove, onReject, onTerminate, onChanged }) => {
   const cp = contract.cancellation_policy || {};
   const isPending = contract.status === 'pending';
   const isApproved = contract.status === 'approved';
@@ -163,6 +164,10 @@ const ContractCard = ({ contract, onApprove, onReject, onTerminate }) => {
               </Button>
             )}
           </div>
+        )}
+        {(isApproved || contract.pending_amendment) && (
+          <ContractAmendmentPanel side="hotel" api={axios} base={`/marketplace/incoming-requests/${contract.id}/amendments`}
+            contract={contract} onChanged={onChanged} />
         )}
       </CardContent>
     </Card>
@@ -510,6 +515,7 @@ const IncomingAgencyContracts = ({ user, tenant, onLogout }) => {
                       onApprove={openApprove}
                       onReject={openReject}
                       onTerminate={openTerminate}
+                      onChanged={() => fetchContracts({ silent: true })}
                     />
                   ))}
                 </div>

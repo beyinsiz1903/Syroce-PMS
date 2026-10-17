@@ -12,6 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import StatementsWorkspace from '@/components/statements/StatementsWorkspace';
+import ContractAmendmentPanel from '@/components/contracts/ContractAmendmentPanel';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useTranslation } from 'react-i18next';
 const RAW_BACKEND_URL = import.meta.env.VITE_BACKEND_URL || '/api';
@@ -1154,7 +1155,9 @@ const AgencyPortalDashboard = () => {
             </Card>
             {contractsLoading ? <Card><CardContent className="py-10 text-center"><Loader2 className="mx-auto animate-spin" /></CardContent></Card> : contracts.map(contract => <Card key={contract.id}><CardContent className="flex flex-wrap items-center justify-between gap-3 py-4"><div><div className="font-semibold">{contract.hotel_name}</div><div className="text-xs text-slate-500">{contract.contract_code} · {formatDate(contract.valid_from)} – {formatDate(contract.valid_to)} · {PAYMENT_TERMS_LABELS[contract.payment_terms] || contract.payment_terms}</div></div><div className="text-right"><Badge className={contract.status === 'approved' ? 'bg-emerald-600' : contract.status === 'pending' ? 'bg-amber-500' : 'bg-slate-500'}>{contract.status === 'approved' ? 'Onaylandı' : contract.status === 'pending' ? 'Otel onayı bekleniyor' : (CONTRACT_STATUS_LABELS[contract.status] || contract.status)}</Badge><div className="mt-1 text-sm font-semibold">%{Math.round(Number(contract.commission_pct))} komisyon</div>{contract.status === 'pending' && (withdrawingId === contract.id
               ? <div className="mt-2 flex justify-end gap-2"><Button size="sm" variant="outline" disabled={withdrawBusy} onClick={() => setWithdrawingId(null)}>Vazgeç</Button><Button size="sm" variant="destructive" disabled={withdrawBusy} onClick={() => withdrawContract(contract)} data-testid={`confirm-withdraw-${contract.id}`}>Evet, geri çek</Button></div>
-              : <Button size="sm" variant="outline" className="mt-2" onClick={() => setWithdrawingId(contract.id)} data-testid={`withdraw-${contract.id}`}>Teklifi geri çek</Button>)}</div></CardContent></Card>)}
+              : <Button size="sm" variant="outline" className="mt-2" onClick={() => setWithdrawingId(contract.id)} data-testid={`withdraw-${contract.id}`}>Teklifi geri çek</Button>)}</div>
+              {(contract.status === 'approved' || contract.pending_amendment) && <div className="w-full"><ContractAmendmentPanel side="agency" api={agencyApi}
+                base={`/marketplace/v1/contracts/${encodeURIComponent(contract.id)}/amendments`} contract={contract} onChanged={() => loadContracts()} /></div>}</CardContent></Card>)}
           </TabsContent>}
 
           {/* Content Tab */}
