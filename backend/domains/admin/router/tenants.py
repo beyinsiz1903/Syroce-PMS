@@ -229,6 +229,14 @@ def _safe_context_user(
     return User(**safe).model_dump(exclude={"password"})
 
 
+def _module_preferences(tenant_doc: dict) -> dict[str, bool]:
+    """The hotel's own module decisions (stored flags), kept apart from the
+    effective map, which also carries plan defaults and store access: a key
+    in ``modules`` is not proof that an administrator chose it."""
+    own = tenant_doc.get("modules")
+    return {key: bool(value) for key, value in own.items()} if isinstance(own, dict) else {}
+
+
 async def _tenant_session_payload(tenant_doc: dict) -> dict:
     source = dict(tenant_doc)
     source["modules"] = await effective_tenant_modules(tenant_doc)
@@ -995,6 +1003,7 @@ async def list_tenants(
 
     # Merge defaults for backward compatibility
     for tenant, modules in zip(tenants, await effective_tenant_modules_many(tenants)):
+        tenant["module_preferences"] = _module_preferences(tenant)
         tenant["modules"] = modules
 
     return {
@@ -1367,6 +1376,7 @@ async def update_tenant_modules(
             detail="Hotel not found",
         )
 
+    tenant_doc["module_preferences"] = _module_preferences(tenant_doc)
     tenant_doc["modules"] = await effective_tenant_modules(tenant_doc)
     await log_audit_event(
         tenant_id=tenant_doc.get("id") or tenant_id,
@@ -1494,6 +1504,7 @@ async def update_tenant_tier(tenant_id: str, payload: dict, current_user: User =
 
     updated_tenant = await db.tenants.find_one({"id": tenant_id}, {"_id": 0})
     if updated_tenant:
+        updated_tenant["module_preferences"] = _module_preferences(updated_tenant)
         updated_tenant["modules"] = await effective_tenant_modules(updated_tenant)
 
     return {

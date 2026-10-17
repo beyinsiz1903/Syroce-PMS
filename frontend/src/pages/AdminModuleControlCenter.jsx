@@ -177,9 +177,15 @@ export default function AdminModuleControlCenter() {
       user: HOTEL_ADMIN_VIEW,
       tenant: previewTenant || {},
       hasModule: (key) => stateOf(key).enabled,
-      moduleOffReason: (key) => (stateOf(key).explicit ? 'module_disabled' : 'not_in_plan'),
+      // Off by the administrator only if the hotel stored that choice or the
+      // draft turns it off; the effective map also carries plan defaults.
+      moduleOffReason: (key) => {
+        const chosen = Object.prototype.hasOwnProperty.call(selected?.module_preferences || {}, key);
+        const turnedOffInDraft = draft[key] === false && baseline[key] !== false;
+        return chosen || turnedOffInDraft ? 'module_disabled' : 'not_in_plan';
+      },
     };
-  }, [previewTenant, planReady]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [previewTenant, planReady, selected, draft, baseline]); // eslint-disable-line react-hooks/exhaustive-deps
   const counts = useMemo(() => moduleCounts(previewTenant || {}), [previewTenant, planReady]); // eslint-disable-line react-hooks/exhaustive-deps
   const visibleModules = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase('tr-TR');
@@ -199,8 +205,9 @@ export default function AdminModuleControlCenter() {
     try {
       const response = await axios.patch(`/admin/tenants/${selectedId}/modules`, { modules: draft });
       const published = response.data?.modules || draft;
+      const preferences = response.data?.module_preferences;
       setTenants((items) => items.map((tenant) => (
-        tenantId(tenant) === selectedId ? { ...tenant, modules: published } : tenant
+        tenantId(tenant) === selectedId ? { ...tenant, modules: published, ...(preferences ? { module_preferences: preferences } : {}) } : tenant
       )));
       setBaseline({ ...published });
       toast.success(`${changes.length} modül değişikliği yayınlandı.`);
@@ -380,7 +387,7 @@ export default function AdminModuleControlCenter() {
                         <div><dt className="text-slate-500">Kullanım</dt><dd className="mt-0.5 font-semibold text-slate-800">{moduleUsageLabel(item, statusData.usage || {})}</dd></div>
                         <div><dt className="text-slate-500">Kullanıcı kapsamı</dt><dd className="mt-0.5 font-semibold text-slate-800">Tesis: {statusData.usage?.current_resources?.active_users ?? 'ölçülmüyor'} aktif</dd></div>
                         <div><dt className="text-slate-500">Yetkilendirme</dt><dd className="mt-0.5 font-semibold text-slate-800">Rol ve kullanıcı izni ayrıca uygulanır</dd></div>
-                        <MenuStatus pages={moduleNavigationStatus(item.key, menuOptions)} />
+                        <MenuStatus pages={moduleNavigationStatus(item.key, menuOptions, { modulePath: item.path })} />
                         <div className="col-span-2"><dt className="text-slate-500">Son değişiklik</dt><dd className="mt-0.5 font-semibold text-slate-800">{selected?.module_control_changes?.[item.key]?.changed_at ? `${new Intl.DateTimeFormat('tr-TR', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(selected.module_control_changes[item.key].changed_at))} · ${selected.module_control_changes[item.key].changed_by_name || selected.module_control_changes[item.key].changed_by || 'Sistem'}` : 'Kayıt yok'}</dd></div>
                       </dl>
                       {state.launchable && (

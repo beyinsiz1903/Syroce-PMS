@@ -79,5 +79,23 @@ describe('AdminModuleControlCenter', () => {
     expect(status).toHaveTextContent(/1\/\d+ sayfa görünür/);
     expect(status).toHaveTextContent('Tesis profilinin menü listesinde yok');
   });
+
+  it.each([
+    [{}, 'Pakette yok'],                              // plan default only: not an admin choice
+    [{ maintenance: false }, 'Yönetici modülü kapattı'], // stored choice
+  ])('tells "not in plan" from "disabled by admin" (preferences %o)', async (preferences, reason) => {
+    axios.get.mockImplementation((url) => {
+      if (url.endsWith('/admin/tenants')) return Promise.resolve({ data: { tenants: [{
+        id: 'hotel-3', property_name: 'Mini Otel', subscription_tier: 'mini',
+        modules: { pms: true, maintenance: false }, module_preferences: preferences,
+      }] } });
+      return Promise.resolve({ data: {} });
+    });
+    render(<AdminModuleControlCenter />);
+    await screen.findByText('Mini Otel');
+    fireEvent.change(screen.getByPlaceholderText(/ara/i), { target: { value: 'Bakım Yönetimi' } });
+    const status = await screen.findByTestId('module-menu-status');
+    expect(status).toHaveTextContent(reason);
+  });
 });
 

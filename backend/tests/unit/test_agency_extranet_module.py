@@ -325,3 +325,14 @@ async def test_store_alias_shows_as_the_canonical_module(monkeypatch, flags, bou
     doc = {"id": "t1", "subscription_tier": "basic", "modules": flags}
     assert (await entitlement.effective_tenant_modules(doc))["quick_id"] is True
     assert (await entitlement.effective_tenant_modules({"id": "t1", "subscription_tier": "basic", "modules": {}}))["quick_id"] is (bool(bought))
+
+
+@pytest.mark.asyncio
+async def test_module_screens_get_the_hotels_own_choices_apart_from_defaults(monkeypatch):
+    """The effective map carries plan defaults; module_preferences carries only
+    what the hotel stored, so a screen can tell "not in plan" from "disabled"."""
+    tenants_router, _state = _admin_patch_env(monkeypatch, {"spa": False}, set())
+    body = await _save(tenants_router, {"spa": False, "pms": True})
+    assert body["module_preferences"] == {"spa": False, "pms": True}
+    assert body["modules"]["housekeeping"] is True        # plan default, not a choice
+    assert "housekeeping" not in body["module_preferences"]

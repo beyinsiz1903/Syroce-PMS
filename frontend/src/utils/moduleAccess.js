@@ -359,12 +359,12 @@ export const SUPPLEMENTAL_MODULE_NAV_ITEMS = Object.freeze([
   { key: 'tasks_workspace', label: 'Görevler', path: '/app/tasks', navGroup: 'operations', navSection: 'daily', moduleScopes: ['tasks'] },
 ]);
 
-function roleValue(user) {
+export function roleValue(user) {
   const rawRole = typeof user?.role === 'string' ? user.role : user?.role?.value;
   return typeof rawRole === 'string' ? rawRole.trim().toLowerCase() : '';
 }
 
-function hasSuperAdminRole(user) {
+export function hasSuperAdminRole(user) {
   if (roleValue(user) === 'super_admin') return true;
   if (!Array.isArray(user?.roles)) return false;
 

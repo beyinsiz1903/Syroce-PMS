@@ -95,3 +95,20 @@ describe('explainNavigationItem: one menu decision with its reason', () => {
     expect(moduleNavigationStatus('agency_extranet', options()).some((row) => row.key === 'unified_rate_manager')).toBe(true);
   });
 });
+
+describe('menu explanations: review cases', () => {
+  const page = (key) => NAV_ITEMS_FOR_TEST.find((item) => item.key === key);
+  const fullAdmin = { user: admin, tenant: {}, hasModule: () => true };
+
+  it('reports a deliberately hidden link as such, not as a missing staff scope', () => {
+    expect(explainNavigationItem(page('cm_dashboard'), fullAdmin)).toMatchObject({ visible: false, reason: 'hidden_link' });
+  });
+
+  it('maps modules to their real workspace pages', () => {
+    const mailing = moduleNavigationStatus('mailing', fullAdmin, { modulePath: '/app/mailing' });
+    expect(mailing.map(({ key }) => key)).toContain('mailing');
+    expect(mailing.find(({ key }) => key === 'mailing').visible).toBe(true);
+    const store = moduleNavigationStatus('marketplace', fullAdmin, { modulePath: '/app/module-store' });
+    expect(store.map(({ key }) => key)).toEqual(['module_store']);
+  });
+});

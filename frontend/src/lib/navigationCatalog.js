@@ -1,6 +1,8 @@
 import { NAV_ITEMS } from '@/config/navItems';
 import {
   canAccessNavItem,
+  hasSuperAdminRole,
+  roleValue,
   supplementalModuleNavItems,
 } from '@/utils/moduleAccess';
 
@@ -14,6 +16,7 @@ import {
 // wins). Module screens show the same reason next to the module, so "I
 // enabled it but it is not in the menu" is answered where it is asked.
 export const NAV_HIDDEN_REASONS = {
+  hidden_link: 'Menüde gösterilmeyen bağlantı',
   staff_scope: 'Personelin yetki kapsamı dışında',
   hidden_item: 'Tesis menüsünde gizlenmiş',
   not_in_property_list: 'Tesis profilinin menü listesinde yok',
@@ -44,6 +47,13 @@ function navigationContext({ user, tenant, isSuperAdmin = false, hasModule = () 
 }
 
 function hiddenReason(item, ctx) {
+  // canAccessNavItem bundles several refusals; name the general ones first so
+  // a deliberately hidden link or a role limit is not reported as a missing
+  // staff scope. Visibility is unchanged: every rule still has to pass.
+  if (!item || item.hidden) return 'hidden_link';
+  const platformUser = hasSuperAdminRole(ctx.user);
+  if (item.requireSuperAdmin && !platformUser) return 'platform_only';
+  if (item.allowedRoles?.length && !platformUser && !item.allowedRoles.includes(roleValue(ctx.user))) return 'role';
   if (!canAccessNavItem(ctx.user, item)) return 'staff_scope';
   // Property-level navigation choices describe the hotel's workspace and
   // must be honoured for administrators too. Platform-only entries remain
@@ -72,12 +82,20 @@ export function explainNavigationItem(item, options) {
   return { visible: !reason, reason, reasonLabel: reason ? NAV_HIDDEN_REASONS[reason] || reason : null };
 }
 
-/** Menu pages a module opens (direct or shared), each with its decision. */
-export function moduleNavigationStatus(moduleKey, options) {
+/**
+ * Menu pages a module opens, each with its decision: pages tied to the module
+ * (moduleKey / anyModuleKeys) and the module's own workspace (``modulePath``,
+ * e.g. the module store, which has no moduleKey). Hidden links and platform
+ * pages are not hotel menu pages.
+ */
+export function moduleNavigationStatus(moduleKey, options, { modulePath } = {}) {
   const ctx = navigationContext(options);
+  const pathOf = (path) => String(path || '').split('?')[0];
   return NAV_ITEMS
-    .filter((item) => item.moduleKey === moduleKey || (item.anyModuleKeys || []).includes(moduleKey))
-    .filter((item) => !item.requireSuperAdmin)
+    .filter((item) => item.moduleKey === moduleKey
+      || (item.anyModuleKeys || []).includes(moduleKey)
+      || (modulePath && pathOf(item.path) === pathOf(modulePath)))
+    .filter((item) => !item.hidden && !item.requireSuperAdmin)
     .map((item) => {
       const reason = hiddenReason(item, ctx);
       return { key: item.key, label: item.label, path: item.path, visible: !reason, reason, reasonLabel: reason ? NAV_HIDDEN_REASONS[reason] || reason : null };
