@@ -14,6 +14,11 @@ import {
   moduleWorkspaceLabel, resolveModuleState,
 } from '@/lib/moduleCatalog';
 import { usePlanCatalog } from '@/lib/planCatalog';
+import { moduleNavigationStatus } from '@/lib/navigationCatalog';
+
+// The menu is judged as the hotel's administrator sees it; staff roles and
+// scopes narrow it further and are managed on the users screen.
+const HOTEL_ADMIN_VIEW = { role: 'admin' };
 import { persistEnteredTenantContext } from '@/lib/adminTenantContext';
 
 const tenantId = (tenant) => tenant?.id || tenant?._id;
@@ -161,6 +166,20 @@ export default function AdminModuleControlCenter() {
   )), [baseline, draft]);
 
   const previewTenant = useMemo(() => ({ ...selected, modules: draft }), [draft, selected]);
+  // Same menu decision as the hotel shell (lib/navigationCatalog), against
+  // the draft, with the reason a page stays out of the menu.
+  const menuOptions = useMemo(() => {
+    const stateOf = (key) => {
+      const row = PRODUCT_MODULES.find((item) => item.key === key);
+      return row ? resolveModuleState(row, previewTenant || {}) : { enabled: previewTenant?.modules?.[key] === true, explicit: key in (previewTenant?.modules || {}) };
+    };
+    return {
+      user: HOTEL_ADMIN_VIEW,
+      tenant: previewTenant || {},
+      hasModule: (key) => stateOf(key).enabled,
+      moduleOffReason: (key) => (stateOf(key).explicit ? 'module_disabled' : 'not_in_plan'),
+    };
+  }, [previewTenant, planReady]); // eslint-disable-line react-hooks/exhaustive-deps
   const counts = useMemo(() => moduleCounts(previewTenant || {}), [previewTenant, planReady]); // eslint-disable-line react-hooks/exhaustive-deps
   const visibleModules = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase('tr-TR');
@@ -361,6 +380,7 @@ export default function AdminModuleControlCenter() {
                         <div><dt className="text-slate-500">Kullanım</dt><dd className="mt-0.5 font-semibold text-slate-800">{moduleUsageLabel(item, statusData.usage || {})}</dd></div>
                         <div><dt className="text-slate-500">Kullanıcı kapsamı</dt><dd className="mt-0.5 font-semibold text-slate-800">Tesis: {statusData.usage?.current_resources?.active_users ?? 'ölçülmüyor'} aktif</dd></div>
                         <div><dt className="text-slate-500">Yetkilendirme</dt><dd className="mt-0.5 font-semibold text-slate-800">Rol ve kullanıcı izni ayrıca uygulanır</dd></div>
+                        <MenuStatus pages={moduleNavigationStatus(item.key, menuOptions)} />
                         <div className="col-span-2"><dt className="text-slate-500">Son değişiklik</dt><dd className="mt-0.5 font-semibold text-slate-800">{selected?.module_control_changes?.[item.key]?.changed_at ? `${new Intl.DateTimeFormat('tr-TR', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(selected.module_control_changes[item.key].changed_at))} · ${selected.module_control_changes[item.key].changed_by_name || selected.module_control_changes[item.key].changed_by || 'Sistem'}` : 'Kayıt yok'}</dd></div>
                       </dl>
                       {state.launchable && (
@@ -380,5 +400,23 @@ export default function AdminModuleControlCenter() {
 
       <footer className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white p-3 text-xs text-slate-600"><ShieldCheck className="h-4 w-4 text-emerald-600" /> Yayınlama mevcut yetkilendirme API’sini kullanır; kullanıcı rol ve izinleri ayrıca uygulanmaya devam eder.</footer>
     </main>
+  );
+}
+
+function MenuStatus({ pages }) {
+  if (!pages.length) {
+    return <div className="col-span-2"><dt className="text-slate-500">Menüde</dt><dd className="mt-0.5 font-semibold text-slate-800">Kendi menü sayfası yok</dd></div>;
+  }
+  const hidden = pages.filter((page) => !page.visible);
+  return (
+    <div className="col-span-2" data-testid="module-menu-status">
+      <dt className="text-slate-500">Menüde (otel yöneticisi)</dt>
+      <dd className="mt-0.5 font-semibold text-slate-800">{pages.length - hidden.length}/{pages.length} sayfa görünür</dd>
+      {hidden.length > 0 && (
+        <ul className="mt-1 space-y-0.5 font-normal text-slate-600">
+          {hidden.map((page) => <li key={page.key}>{page.label}: <span className="text-amber-800">{page.reasonLabel}</span></li>)}
+        </ul>
+      )}
+    </div>
   );
 }

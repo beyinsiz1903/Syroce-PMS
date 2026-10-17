@@ -62,4 +62,22 @@ describe('AdminModuleControlCenter', () => {
     expect(screen.getByLabelText('Takip tarihi')).toBeInTheDocument();
     expect(screen.getByLabelText('Yönetici notu')).toBeInTheDocument();
   });
+
+  it('says why an enabled module is not in the menu (property allow-list)', async () => {
+    axios.get.mockImplementation((url) => {
+      if (url.endsWith('/admin/tenants')) return Promise.resolve({ data: { tenants: [{
+        id: 'hotel-2', property_name: 'Sapanca Oteli', subscription_tier: 'basic',
+        modules: { pms: true, channel_manager: true, agency_extranet: true },
+        visible_nav_items: ['dashboard', 'incoming_agency_contracts'],
+      }] } });
+      return Promise.resolve({ data: {} });
+    });
+    render(<AdminModuleControlCenter />);
+    await screen.findByText('Sapanca Oteli');
+    fireEvent.change(screen.getByPlaceholderText(/ara/i), { target: { value: 'Acente Extranet' } });
+    const status = await screen.findByTestId('module-menu-status');
+    expect(status).toHaveTextContent(/1\/\d+ sayfa görünür/);
+    expect(status).toHaveTextContent('Tesis profilinin menü listesinde yok');
+  });
 });
+
