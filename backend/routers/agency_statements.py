@@ -27,7 +27,7 @@ from pydantic import BaseModel, Field, field_validator
 from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
-from core.agency_statements import apply_adjustment, build_statement, hotel_snapshot, outstanding, statement_totals
+from core.agency_statements import apply_adjustment, build_statement, hotel_agreed, hotel_snapshot, outstanding, statement_totals
 from core.security import get_current_user
 from core.tenant_db import get_system_db
 from models.schemas import User
@@ -530,7 +530,7 @@ async def _adjust(statement_id: str, data: LineAdjustment, party: Party) -> dict
         # dispute, payment or correction makes this write miss.
         {"id": statement_id, **party.owner, "payments.0": {"$exists": False}, **_version(statement)},
         {"$set": {"lines": lines, "totals": totals, "status": status, "updated_at": _now(), "revision": revision,
-                  "agreements": agreements, **({"hotel_lines": hotel_snapshot(lines)} if party.side == "hotel" else {})},
+                  "agreements": agreements, **_hotel_lines_after_change(statement, lines, party)},
          "$push": {"history": _event("line_adjusted", party.actor, side=party.side, booking_id=data.booking_id,
                                      amount=round(data.amount, 2), reason=data.reason)}},
         projection={"_id": 0}, return_document=ReturnDocument.AFTER,
@@ -543,6 +543,18 @@ async def _adjust(statement_id: str, data: LineAdjustment, party: Party) -> dict
     await _notify(sysdb, updated, _other(party.side), "ekstrede düzeltme yapıldı",
                   f"{what}. Yeni bakiye {outstanding(updated):.2f} {updated['currency']}. Lütfen yeniden kontrol edin.")
     return _public(updated)
+
+
+def _hotel_lines_after_change(statement: dict, new_lines: list[dict], party: Party) -> dict:
+    """What the hotel approved, after a line correction: the hotel's own
+    correction is approved by definition; an agency correction to a version
+    the hotel had approved keeps that version (statements from before the
+    snapshot existed get it here, before their first agency change)."""
+    if party.side == "hotel":
+        return {"hotel_lines": hotel_snapshot(new_lines)}
+    if hotel_agreed(statement):
+        return {"hotel_lines": hotel_snapshot(statement.get("lines") or [])}
+    return {}
 
 
 async def _void(statement_id: str, data: ResolveRequest, party: Party) -> dict:
@@ -559,14 +571,19 @@ async def _void(statement_id: str, data: ResolveRequest, party: Party) -> dict:
         raise HTTPException(409, "Otel bu ekstreyi onayladı veya düzeltti; acente artık iptal edemez. İtiraz edin ya da iptali otelden isteyin.")
     if any(n.get("status") == "pending" for n in current.get("payment_notices") or []):
         raise HTTPException(409, "Ekstrede yanıt bekleyen ödeme bildirimi var; önce doğrulayın veya reddedin")
+    if current["status"] not in OPEN_STATUSES or current.get("payments"):
+        raise HTTPException(409, "Ödeme kaydı olan veya kapanmış ekstre iptal edilemez")
     updated = await sysdb.agency_statements.find_one_and_update(
-        {"id": statement_id, **party.owner, "status": {"$in": list(OPEN_STATUSES)}, "payments.0": {"$exists": False}},
+        # Written over the version checked above: a correction or agreement
+        # by the other party meanwhile makes this miss.
+        {"id": statement_id, **party.owner, "payments.0": {"$exists": False}, **_version(current),
+         "hotel_lines": current.get("hotel_lines")},
         {"$set": {"status": "void", "voided": {"note": data.note, "by": party.actor, "side": party.side, "at": _now()}},
          "$push": {"history": _event("void", party.actor, side=party.side, note=data.note)}},
         projection={"_id": 0}, return_document=ReturnDocument.AFTER,
     )
     if not updated:
-        raise HTTPException(409, "Ödeme kaydı olan veya kapanmış ekstre iptal edilemez")
+        raise HTTPException(409, "Ekstre eş zamanlı değişti; yenileyip tekrar deneyin")
     await _notify(sysdb, updated, _other(party.side), "ekstre iptal edildi", data.note)
     return _public(updated)
 

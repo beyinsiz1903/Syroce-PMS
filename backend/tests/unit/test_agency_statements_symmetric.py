@@ -371,3 +371,34 @@ async def test_cancellation_penalty_stays_in_credit_until_the_hotel_agrees_to_a_
     assert await _used(world, booking) == 10000.0
     await st.hotel_agree_statement(issued["id"], st.AgreeRequest(revision=2), HOTEL)
     assert await _used(world, booking) == 0.0
+
+
+@pytest.mark.asyncio
+async def test_legacy_statement_keeps_the_hotel_charge_when_the_agency_first_changes_it(world):
+    """Issued before agreements / hotel snapshots existed, with a hotel
+    +5.000 correction (no 'side' recorded then)."""
+    from core.agency_statements import apply_adjustment
+
+    prepaid = {**COMMISSION, "payment_terms": "prepaid", "hotel_owes_agency": 0.0, "agency_owes_hotel": 10000.0}
+    charged = apply_adjustment(prepaid, 5000, "Hasar bedeli")
+    charged["adjustment"].pop("side", None)
+    world.agency_statements.rows.append({"id": "old", "tenant_id": "t1", "agency_id": "a1", "number": "EKS-1", "currency": "TRY",
+                                         "status": "issued", "revision": 2, "lines": [charged], "totals": statement_totals([charged]),
+                                         "payments": [], "history": []})
+    booking = [{"id": "b1", "status": "confirmed", "currency": "TRY", "credit_exposure_amount": 10000}]
+    assert await _used(world, booking) == 15000.0
+    await st.agency_adjust_statement_line("old", st.LineAdjustment(booking_id="b1", amount=0, reason=""), AGENCY)
+    assert await _used(world, booking) == 15000.0
+
+
+@pytest.mark.asyncio
+async def test_agency_void_misses_when_the_hotel_corrects_meanwhile(world, monkeypatch):
+    issued = await _agency_issues()
+    stale = await world.agency_statements.find_one({"id": issued["id"]})  # the agency's void read this
+    await st.adjust_statement_line(issued["id"], st.LineAdjustment(booking_id="b1", amount=5000, reason="Hasar bedeli"), HOTEL)
+    monkeypatch.setattr(st, "_load", AsyncMock(return_value=stale))
+    with pytest.raises(HTTPException) as exc:
+        await st.agency_void_statement(issued["id"], st.ResolveRequest(note="Yeniden düzenlenecek"), AGENCY)
+    assert exc.value.status_code == 409
+    current = await world.agency_statements.find_one({"id": issued["id"]})
+    assert current["status"] != "void" and current["revision"] == 2
