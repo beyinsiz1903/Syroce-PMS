@@ -423,6 +423,50 @@ def test_records_without_choice_keys_claim_only_what_history_proves():
     assert _module_preferences_known(recorded) is True
 
 
+@pytest.mark.parametrize("stored,history_entry,expected", [
+    (False, {"enabled": True}, {}),  # enabled earlier, then reset to plan defaults
+    (True, {"enabled": False}, {}),  # disabled earlier, then enabled outside that publish
+    (False, {"enabled": False}, {"spa": False}),
+    (True, {"enabled": True}, {"spa": True}),
+    (False, {}, {}),
+    (False, None, {}),
+    (False, {"enabled": "false"}, {}),
+    (True, {"enabled": 1}, {}),
+])
+def test_legacy_history_must_prove_the_current_module_value(stored, history_entry, expected):
+    from domains.admin.router.tenants import _module_preferences, _module_preferences_known
+
+    legacy = {"modules": {"spa": stored}, "module_control_changes": {"spa": history_entry}}
+    before_access = get_tenant_modules(legacy)
+
+    assert _module_preferences(legacy) == expected
+    assert _module_preferences_known(legacy) is False
+    assert get_tenant_modules(legacy) == before_access  # explaining access must not change it
+    assert legacy["modules"]["spa"] is stored
+    # New explicit choice records remain authoritative even with old history.
+    recorded = {**legacy, "module_choice_keys": ["spa"]}
+    assert _module_preferences(recorded) == {"spa": stored}
+    assert _module_preferences_known(recorded) is True
+
+
+@pytest.mark.asyncio
+async def test_publishing_another_module_does_not_revive_stale_legacy_evidence(monkeypatch):
+    stale_history = {"spa": {"enabled": True, "changed_by": "earlier-admin"}}
+    tenants_router, state = _admin_patch_env(
+        monkeypatch, {"spa": False, "mice": False}, set(),
+        {"module_control_changes": stale_history},
+    )
+    body = await _save(tenants_router, {"spa": False, "mice": True})
+
+    assert body["modules"]["spa"] is False
+    assert body["modules"]["mice"] is True
+    assert body["module_preferences"] == {"mice": True}
+    assert body["module_preferences_known"] is False
+    assert "module_choice_keys" not in state
+    assert state["module_control_changes"]["spa"] == stale_history["spa"]
+    assert tenants_router._module_preferences(state) == {"mice": True}  # same after reload
+
+
 @pytest.mark.asyncio
 async def test_saving_a_legacy_record_keeps_it_legacy_and_records_history(monkeypatch):
     tenants_router, state = _admin_patch_env(monkeypatch, {"maintenance": False, "spa": False}, set())

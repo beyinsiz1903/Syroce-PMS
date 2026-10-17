@@ -235,12 +235,25 @@ def _module_preferences(tenant_doc: dict) -> dict[str, bool]:
     ``module_choice_keys`` records which stored flags were chosen. Records
     written before it existed have no such record: only the module publish
     history (``module_control_changes``, real changes only) is trusted
-    there, and ``_module_preferences_known`` is false so screens stay
-    neutral about the other flags."""
+    there, and only while its recorded value still matches the stored flag.
+    ``_module_preferences_known`` is false so screens stay neutral about
+    flags whose origin is unknown or whose publish evidence is stale."""
     own = tenant_doc.get("modules") if isinstance(tenant_doc.get("modules"), dict) else {}
     chosen = tenant_doc.get("module_choice_keys")
     if not isinstance(chosen, list):
-        chosen = list((tenant_doc.get("module_control_changes") or {}).keys())
+        history = tenant_doc.get("module_control_changes")
+        if not isinstance(history, dict):
+            return {}
+        # Older plan resets replaced the flags without clearing their publish
+        # history. A previous enable is not evidence of a later manual disable
+        # (or vice versa); do not guess when the recorded result no longer fits.
+        chosen = [
+            key for key, change in history.items()
+            if key in own
+            and isinstance(change, dict)
+            and isinstance(change.get("enabled"), bool)
+            and change["enabled"] == bool(own[key])
+        ]
     return {key: bool(own[key]) for key in chosen if key in own}
 
 
