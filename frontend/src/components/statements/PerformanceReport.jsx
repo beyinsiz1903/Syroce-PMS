@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Download, Loader2, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -21,17 +21,25 @@ function Stat({ label, value, tone = '' }) {
   return <div className="rounded-lg border p-3"><div className="text-xs text-slate-500">{label}</div><div className={`text-base font-semibold ${tone}`}>{value}</div></div>;
 }
 
-function toCsv(report, partyLabel) {
-  const header = [partyLabel, 'Para birimi', 'Rezervasyon', 'İptal', 'İptal oranı', 'Oda-gece', 'Brüt satış', 'Komisyon', 'Satışların otele net tutarı',
+// A text cell starting like a formula would run in a spreadsheet: prefix it.
+const CSV_FORMULA_LEAD = /^[=+\-@\t\r]/;
+export const csvCell = value => {
+  let text = String(value ?? '');
+  if (typeof value === 'string' && CSV_FORMULA_LEAD.test(text)) text = `'${text}`;
+  return `"${text.replaceAll('"', '""')}"`;
+};
+
+export function toCsv(report, partyLabel) {
+  const header = [partyLabel, 'Para birimi', 'Rezervasyon', 'İptal', 'No-show', 'İptal oranı', 'Oda-gece', 'Brüt satış', 'Komisyon', 'Satışların otele net tutarı', 'İptal/no-show cezası',
     'Açık: acente→otel', 'Açık: otel→acente', 'Vadesi gelmemiş', 'Vadesi geçen 1-30', '31-60', '61-90', '90+', 'Mutabakat bekleyen',
     'Faturalanmamış acente→otel', 'Faturalanmamış otel→acente', 'Bekleyen bildirim', 'Gelecek 30 gün', 'Gelecek 60 gün', 'Gelecek 90 gün', 'Son 7 gün yeni', 'Son 7 gün iptal'];
-  const rows = report.rows.map(row => {
+  const rows = (report.rows || []).map(row => {
     const { performance: p, receivables: r, unbilled: u, forward: f, pickup_7d: k } = row;
-    return [row.party_name || row.party_id, row.currency, p.bookings, p.cancelled, p.cancel_rate, p.room_nights, p.gross, p.commission, p.net_to_hotel,
+    return [row.party_name || row.party_id, row.currency, p.bookings, p.cancelled, p.no_show || 0, p.cancel_rate, p.room_nights, p.gross, p.commission, p.net_to_hotel, p.penalty || 0,
       r.agency_owes_hotel, r.hotel_owes_agency, r.aging.not_due, r.aging.overdue_1_30, r.aging.overdue_31_60, r.aging.overdue_61_90, r.aging.overdue_90_plus,
       r.awaiting_agreement, u.agency_owes_hotel, u.hotel_owes_agency, r.pending_notices.count, f['30'].bookings, f['60'].bookings, f['90'].bookings, k.bookings, k.cancelled];
   });
-  return [header, ...rows].map(cells => cells.map(cell => `"${String(cell ?? '').replaceAll('"', '""')}"`).join(';')).join('\n');
+  return [header, ...rows].map(cells => cells.map(csvCell).join(';')).join('\n');
 }
 
 export default function PerformanceReport({ side, api, path }) {
@@ -40,14 +48,18 @@ export default function PerformanceReport({ side, api, path }) {
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(false);
 
+  // Only the latest request may fill the table: a slower answer for dates
+  // the user already changed is dropped.
+  const latest = useRef(0);
   const load = useCallback(async () => {
+    const request = ++latest.current;
     setLoading(true);
     try {
       const { data } = await api.get(path, { params: { period_start: period.start, period_end: period.end } });
-      setReport(data);
+      if (request === latest.current) setReport(data);
     } catch (err) {
-      toast.error(apiErrorText(err, 'Rapor yüklenemedi.'));
-    } finally { setLoading(false); }
+      if (request === latest.current) toast.error(apiErrorText(err, 'Rapor yüklenemedi.'));
+    } finally { if (request === latest.current) setLoading(false); }
   }, [api, path, period.start, period.end]);
   useEffect(() => { load(); }, [load]);
 
@@ -86,7 +98,7 @@ export default function PerformanceReport({ side, api, path }) {
               <Stat label="Brüt satış" value={money(total.performance?.gross, total.currency)} />
               <Stat label="Acente komisyonu" value={money(total.performance?.commission, total.currency)} />
               <Stat label="Satışların otele net tutarı" value={money(total.performance?.net_to_hotel, total.currency)} />
-              <Stat label="İptal oranı" value={pct(total.performance?.cancel_rate)} />
+              <Stat label="İptal oranı · ceza geliri" value={`${pct(total.performance?.cancel_rate)} · ${money(total.performance?.penalty, total.currency)}`} />
               <Stat label="Açık: acente → otel" value={money(r.agency_owes_hotel, total.currency)} />
               <Stat label="Açık: otel → acente" value={money(r.hotel_owes_agency, total.currency)} />
               <Stat label="Vadesi geçen" value={money(overdue, total.currency)} tone={overdue > 0 ? 'text-red-700' : ''} />
@@ -103,7 +115,7 @@ export default function PerformanceReport({ side, api, path }) {
               <thead className="bg-slate-50 text-left dark:bg-slate-900">
                 <tr>
                   <th className="p-2">{partyLabel}</th><th className="text-right">Rez.</th><th className="text-right">Oda-gece</th><th className="text-right">Brüt</th>
-                  <th className="text-right">Komisyon</th><th className="text-right">Otele net</th><th className="text-right">İptal</th>
+                  <th className="text-right">Komisyon</th><th className="text-right">Otele net</th><th className="text-right">İptal / no-show</th>
                   <th className="text-right">Açık acente→otel</th><th className="text-right">Açık otel→acente</th><th className="text-right">Vadesi geçen</th>
                   <th className="text-right">Mutabakat bekleyen</th><th className="text-right">Faturalanmamış</th><th className="text-right">Bekleyen bildirim</th>
                   <th className="text-right">Gelecek 30/60/90</th><th className="p-2 text-right">Son 7 gün</th>
@@ -118,7 +130,7 @@ export default function PerformanceReport({ side, api, path }) {
                       <td className="p-2 font-medium">{row.party_name || row.party_id}<div className="text-slate-400">{row.currency}</div></td>
                       <td className="text-right">{p.bookings}</td><td className="text-right">{p.room_nights}</td>
                       <td className="text-right">{money(p.gross, '')}</td><td className="text-right">{money(p.commission, '')}</td>
-                      <td className="text-right">{money(p.net_to_hotel, '')}</td><td className="text-right">{p.cancelled} ({pct(p.cancel_rate)})</td>
+                      <td className="text-right">{money(p.net_to_hotel, '')}</td><td className="text-right">{p.cancelled} ({pct(p.cancel_rate)}){p.no_show ? ` · ${p.no_show} no-show` : ''}{p.penalty ? <div className="text-slate-500">ceza {money(p.penalty, '')}</div> : null}</td>
                       <td className="text-right">{money(r.agency_owes_hotel, '')}</td><td className="text-right">{money(r.hotel_owes_agency, '')}</td>
                       <td className={`text-right ${overdue > 0 ? 'font-semibold text-red-700' : ''}`}>{money(overdue, '')}</td>
                       <td className="text-right">{money(r.awaiting_agreement, '')}</td>

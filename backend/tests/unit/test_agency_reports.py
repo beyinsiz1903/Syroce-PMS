@@ -64,6 +64,7 @@ async def test_hotel_view_per_agency_and_currency(world):
     a1 = _row(report, "a1")
     perf = a1["performance"]
     assert (perf["bookings"], perf["cancelled"], perf["room_nights"], perf["gross"]) == (2, 1, 4, 16000.0)
+    assert perf["penalty"] == 4000.0  # b3 late cancellation, apart from sales
     assert (perf["commission"], perf["net_to_hotel"], perf["cancel_rate"]) == (2400.0, 13600.0, 0.3333)
     assert a1["party_name"] == "Acente Bir"
     # b1 prepaid 6.800 + b3 late-cancel penalty 4.000 not on any statement yet; b2 is billed
@@ -88,3 +89,14 @@ async def test_agency_view_lists_hotels(world):
     report = await build_report(world, side="agency", scope={"agency_id": "a1"}, period_start="2026-12-01", period_end="2026-12-31", today=TODAY)
     assert [(row["party_id"], row["party_name"], row["currency"]) for row in report["rows"]] == [("t1", "Demo Otel", "TRY")]
     assert report["rows"][0]["receivables"]["hotel_owes_agency"] == 1200.0
+
+
+@pytest.mark.asyncio
+async def test_no_show_is_not_a_sale(world):
+    world.marketplace_bookings.rows.append(_booking("b7", status="no_show", check_in="2026-12-12", total=8000))
+    world.marketplace_bookings.rows[-1]["cancellation_policy"] = {"free_until_days_before": 7, "penalty_pct": 50, "no_show_penalty_pct": 0}
+    report = await build_report(world, side="hotel", scope={"tenant_id": "t1"}, period_start="2026-12-01", period_end="2026-12-31", today=TODAY)
+    perf = _row(report, "a1")["performance"]
+    assert (perf["bookings"], perf["room_nights"], perf["gross"], perf["no_show"]) == (2, 4, 16000.0, 1)
+    assert perf["penalty"] == 4000.0  # the zero no-show penalty adds nothing
+    assert perf["cancel_rate"] == 0.25

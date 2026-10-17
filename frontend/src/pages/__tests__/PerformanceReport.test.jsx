@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
-import PerformanceReport from '@/components/statements/PerformanceReport';
+import PerformanceReport, { csvCell, toCsv } from '@/components/statements/PerformanceReport';
 
 const section = (extra = {}) => ({
   performance: { bookings: 2, cancelled: 1, room_nights: 4, gross: 16000, commission: 2400, net_to_hotel: 13600, cancel_rate: 0.3333 },
@@ -43,5 +43,32 @@ describe('PerformanceReport', () => {
     const api = { get: vi.fn(() => Promise.resolve({ data: { detail: 'x' } })) };
     render(<PerformanceReport side="agency" api={api} path="/r" />);
     await waitFor(() => expect(screen.getByText('Henüz satış yok.')).toBeTruthy());
+  });
+});
+
+describe('PerformanceReport safety', () => {
+  afterEach(() => { cleanup(); vi.clearAllMocks(); });
+
+  it('neutralises formulas in CSV text cells but keeps negative numbers', () => {
+    expect(csvCell('=1+1')).toBe(`"'=1+1"`);
+    expect(csvCell('@SUM(A1)')).toBe(`"'@SUM(A1)"`);
+    expect(csvCell(-1200)).toBe('"-1200"');
+    const csv = toCsv({ rows: [{ party_id: 'a1', party_name: '=HYPERLINK("x")', currency: 'TRY', ...section() }] }, 'Acente');
+    expect(csv).toContain(`"'=HYPERLINK(""x"")"`);
+  });
+
+  it('keeps the latest period when an older answer arrives late', async () => {
+    let resolveOld;
+    const api = { get: vi.fn((_path, { params }) => (params.period_start === '2026-08-01'
+      ? Promise.resolve({ data: { rows: [{ party_id: 'aug', party_name: 'Ağustos', currency: 'TRY', ...section() }], totals: [] } })
+      : new Promise(resolve => { resolveOld = () => resolve({ data: { rows: [{ party_id: 'sep', party_name: 'Eylül', currency: 'TRY', ...section() }], totals: [] } }); }))) };
+    const { fireEvent } = await import('@testing-library/react');
+    render(<PerformanceReport side="hotel" api={api} path="/r" />);
+    fireEvent.change(screen.getByLabelText('Giriş tarihi başlangıç'), { target: { value: '2026-08-01' } });
+    expect(await screen.findByText('Ağustos')).toBeTruthy();
+    resolveOld();  // the first (older) request answers last
+    await new Promise(r => setTimeout(r, 0));
+    expect(screen.queryByText('Eylül')).toBeNull();
+    expect(screen.getByText('Ağustos')).toBeTruthy();
   });
 });

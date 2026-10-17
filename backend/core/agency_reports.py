@@ -72,7 +72,11 @@ def _empty_row(key: tuple, name: str | None) -> dict:
     party_id, currency = key
     return {
         "party_id": party_id, "party_name": name, "currency": currency,
-        "performance": {"bookings": 0, "cancelled": 0, "room_nights": 0, "gross": 0.0, "commission": 0.0, "net_to_hotel": 0.0, "cancel_rate": 0.0},
+        # bookings / room nights / gross / commission / net: stays only.
+        # Cancellations and no-shows are counted apart; what they earn is the
+        # penalty, also apart (the statement formula).
+        "performance": {"bookings": 0, "cancelled": 0, "no_show": 0, "room_nights": 0, "gross": 0.0, "commission": 0.0,
+                        "net_to_hotel": 0.0, "penalty": 0.0, "cancel_rate": 0.0},
         # Positive: the agency owes the hotel; each side shown separately.
         "receivables": {"agency_owes_hotel": 0.0, "hotel_owes_agency": 0.0, "awaiting_agreement": 0.0,
                         "aging": dict.fromkeys(BUCKETS, 0.0), "open_statements": 0,
@@ -127,8 +131,9 @@ async def build_report(sysdb, *, side: str, scope: dict, period_start: str, peri
         line = statement_line(booking, pms.get(booking.get("id")))
         if check_in and start <= check_in <= end:
             perf = row["performance"]
-            if booking.get("status") == "cancelled":
-                perf["cancelled"] += 1
+            if cancelled:
+                perf["cancelled" if booking.get("status") == "cancelled" else "no_show"] += 1
+                perf["penalty"] = round(perf["penalty"] + _money(line.get("penalty")), 2)
             else:
                 perf["bookings"] += 1
                 perf["room_nights"] += _nights(booking)
@@ -183,7 +188,7 @@ async def build_report(sysdb, *, side: str, scope: dict, period_start: str, peri
     for row in rows.values():
         row["party_name"] = row["party_name"] or names.get(row["party_id"])
         perf = row["performance"]
-        total = perf["bookings"] + perf["cancelled"]
+        total = perf["bookings"] + perf["cancelled"] + perf["no_show"]
         perf["cancel_rate"] = round(perf["cancelled"] / total, 4) if total else 0.0
 
     ordered = sorted(rows.values(), key=lambda row: (row["currency"], -row["performance"]["gross"], str(row["party_name"])))
@@ -208,6 +213,6 @@ def _totals(rows: list[dict]) -> list[dict]:
             add(total.setdefault(section, {}), row[section])
     for total in by_currency.values():
         perf = total.get("performance", {})
-        count = perf.get("bookings", 0) + perf.get("cancelled", 0)
+        count = perf.get("bookings", 0) + perf.get("cancelled", 0) + perf.get("no_show", 0)
         perf["cancel_rate"] = round(perf.get("cancelled", 0) / count, 4) if count else 0.0
     return list(by_currency.values())
