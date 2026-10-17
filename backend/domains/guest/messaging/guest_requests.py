@@ -388,6 +388,7 @@ async def get_thread_messages(
     null_booking_only: bool = False,
     since: datetime | None = None,
     limit: int = 300,
+    latest: bool = False,
     viewer_user_id: str | None = None,
     guest_session_id: str | None = None,
 ) -> list[dict]:
@@ -398,6 +399,8 @@ async def get_thread_messages(
     booking'siz mesajlar (misafir tarafı, aktif booking yoksa: önceki bir
     booking'e bağlı mesajlar gizlenir). ``since`` verilirse zaman penceresi
     uygular (booking yoksa misafir tarafı 24s fallback).
+    ``latest`` personel gelen kutusunda en güncel pencereyi seçer; çıktı yine
+    kronolojiktir. Uzun oda geçmişi yeni misafir taleplerini gizlememelidir.
     """
     query: dict[str, Any] = {"tenant_id": tenant_id, "room_id": room_id}
     if booking_id is not None:
@@ -407,9 +410,11 @@ async def get_thread_messages(
     if since is not None:
         query["created_at"] = {"$gte": since}
     raw_messages: list[dict] = []
-    cursor = raw_db[GR_COLL].find(query).sort("created_at", 1).limit(int(limit))
+    cursor = raw_db[GR_COLL].find(query).sort("created_at", -1 if latest else 1).limit(int(limit))
     async for msg in cursor:
         raw_messages.append(msg)
+    if latest:
+        raw_messages.reverse()
 
     labels = await _load_request_labels(
         tenant_id,

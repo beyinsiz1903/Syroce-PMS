@@ -114,7 +114,8 @@ export default function FrontDeskLayout() {
       <Tabs.Screen
         name="messages"
         options={{
-          title: tr.tabs.messages,
+          title: tr.hub.messagesTitle,
+          tabBarLabel: 'Talepler',
           tabBarButtonTestID: 'frontdesk-tab-messages',
           tabBarIcon: tabIcon('chatbubble', 'chatbubble-outline'),
         }}
