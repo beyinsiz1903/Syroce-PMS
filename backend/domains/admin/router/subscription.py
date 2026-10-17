@@ -242,8 +242,18 @@ async def get_subscription_plans():
 @router.get("/subscription/plan-modules")
 async def get_plan_module_defaults():
     """Get default module mapping for each subscription tier.
-    Used by admin panel to show which modules are included per plan."""
-    return {"plan_modules": PLAN_MODULE_DEFAULTS, "tiers": [tier.value for tier in SubscriptionTier], "all_module_keys": get_all_module_keys()}
+    Used by admin panel to show which modules are included per plan.
+
+    ``defaults_by_tier`` is the single source of plan scope: exactly what
+    get_tenant_modules starts from (submodules and PMS Lite included). The
+    admin screens read it instead of computing tiers themselves."""
+    tiers = [tier.value for tier in SubscriptionTier]
+    return {
+        "plan_modules": PLAN_MODULE_DEFAULTS,
+        "tiers": tiers,
+        "all_module_keys": get_all_module_keys(),
+        "defaults_by_tier": {tier: get_plan_default_modules(tier) for tier in [*tiers, "pms_lite"]},
+    }
 
 
 # ── GET /subscription/features ──

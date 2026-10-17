@@ -145,3 +145,16 @@ async def test_plan_access_is_the_base_edition_not_pro(monkeypatch, flags, expec
     assert await enforcement.tenant_has_feature("t1", "housekeeping", "advanced_reporting") is pro
     assert await enforcement.get_tenant_limit("t1", "housekeeping", "active_tasks") == (1000 if pro else 100)
     assert await enforcement._module_enabled("t1", "housekeeping") is True
+
+
+@pytest.mark.asyncio
+async def test_plan_modules_serves_what_the_server_enforces():
+    from core.helpers import get_tenant_modules
+    from domains.admin.router.subscription import get_plan_module_defaults
+
+    body = await get_plan_module_defaults()
+    assert set(body["defaults_by_tier"]) == {"mini", "basic", "professional", "enterprise", "pms_lite"}
+    for tier, defaults in body["defaults_by_tier"].items():
+        doc = {"subscription_plan": "pms_lite"} if tier == "pms_lite" else {"subscription_tier": tier}
+        enforced = get_tenant_modules(doc)
+        assert {k: v for k, v in enforced.items() if k in defaults} == defaults

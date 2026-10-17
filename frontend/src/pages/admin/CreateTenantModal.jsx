@@ -11,6 +11,7 @@ import {
   SlidersHorizontal, Search, ChevronDown, Info,
 } from 'lucide-react';
 import { MODULE_GROUPS, PLANS, isModuleIncludedInPlan } from './tenantConstants';
+import { usePlanCatalog } from '@/lib/planCatalog';
 import { useTranslation } from 'react-i18next';
 
 const ICON_MAP = {
@@ -138,6 +139,8 @@ const buildDefaultModules = (profile, tier) => {
 
 const CreateTenantModal = ({ open, onOpenChange, onSuccess }) => {
   const { t } = useTranslation();
+  // Plan scope comes from the server; defaults and prices wait for it.
+  const { ready: planReady, error: planError, retry: retryPlanCatalog } = usePlanCatalog();
   const [step, setStep] = useState(1);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
@@ -211,9 +214,9 @@ const CreateTenantModal = ({ open, onOpenChange, onSuccess }) => {
   // step 3 shows the correct baseline (unless they already touched modules).
   const [modulesTouched, setModulesTouched] = useState(false);
   useEffect(() => {
-    if (!selectedType || modulesTouched) return;
+    if (!selectedType || modulesTouched || !planReady) return;
     setModulesMap(buildDefaultModules(selectedType, form.subscription_tier));
-  }, [form.subscription_tier, selectedType, modulesTouched]);
+  }, [form.subscription_tier, selectedType, modulesTouched, planReady]);
 
   const toggleModule = (key) => {
     setModulesTouched(true);
@@ -389,7 +392,8 @@ const CreateTenantModal = ({ open, onOpenChange, onSuccess }) => {
       lineItems: pricedItems,
       usageNotes: pricedItems.filter((item) => item.usage_note).map((item) => item.usage_note),
     };
-  }, [chainMode, finalMonthly, finalSetup, form.subscription_tier, modulesMap]);
+  // planReady: isModuleIncludedInPlan reads the server catalogue loaded behind it.
+  }, [chainMode, finalMonthly, finalSetup, form.subscription_tier, modulesMap, planReady]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggleExpandedModuleGroup = (groupId) => {
     setExpandedModuleGroups((current) => (
@@ -510,9 +514,15 @@ const CreateTenantModal = ({ open, onOpenChange, onSuccess }) => {
               )}
 
               {error && <div className="p-2 rounded bg-red-50 text-red-700 text-sm">{error}</div>}
+              {planError && (
+                <div className="flex items-center justify-between gap-2 rounded bg-amber-50 p-2 text-sm text-amber-800" data-testid="plan-catalog-error">
+                  Paket kapsamı sunucudan alınamadı; modül varsayılanları hesaplanamıyor.
+                  <Button size="sm" variant="outline" onClick={retryPlanCatalog}>Tekrar dene</Button>
+                </div>
+              )}
 
               <div className="flex justify-end pt-2">
-                <Button onClick={goToStep2} disabled={!selectedType} className="gap-1.5">
+                <Button onClick={goToStep2} disabled={!selectedType || !planReady} className="gap-1.5">
                   Devam <ArrowRight size={15} />
                 </Button>
               </div>
@@ -888,7 +898,7 @@ const CreateTenantModal = ({ open, onOpenChange, onSuccess }) => {
                 <div className="flex items-center gap-3">
                   <div className="hidden text-right text-xs sm:block"><div className="font-semibold text-slate-900">€{quote.finalMonthly}/ay</div><div className="text-slate-500">Kurulum €{quote.finalSetup}</div></div>
                   <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>{t('cm.pages_admin_CreateTenantModal.iptal_25174')}</Button>
-                  <Button data-testid="create-tenant-submit" onClick={handleSubmit} disabled={saving}>
+                  <Button data-testid="create-tenant-submit" onClick={handleSubmit} disabled={saving || !planReady}>
                     {saving ? 'Oluşturuluyor...' : 'Tesis Oluştur'}
                   </Button>
                 </div>

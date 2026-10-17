@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Pencil, Check, Globe, Phone, Star, Building2, Users, X, Mail, CreditCard, Loader2, ScanLine, Crown, AlertTriangle, ShieldAlert, Cake, Repeat, BedDouble, CalendarDays, UserCircle2, CalendarClock, Clock, Moon, Wallet, StickyNote, Tag, CheckCircle2, Activity , UserPlus, LogOut} from 'lucide-react';
 import { fmtDate, fmtDateTime, fmtTL, fmtCurrency, Avatar, EmptyState, translateValue, translateView, SectionHeader, StatCard, InfoLine, reservationNights } from './helpers';
 import QuickIdScanDialog from '@/components/QuickIdScanDialog';
+import { useOptionalEntitlements } from '@/context/EntitlementContext';
 import api from '@/api/axios';
 const ALERT_LEVEL_BG = {
   danger: 'bg-red-50 border-red-300 text-red-800',
@@ -517,7 +518,10 @@ export function GuestsTab({
   onRefresh,
   readOnly = false,
 }) {
-  const quickIdOn = isQuickIdEnabled();
+  // Quick-ID is a paid add-on: show the scan only where the server allows it
+  // (same decision as the menu); the cached map is a fallback outside it.
+  const entitlements = useOptionalEntitlements();
+  const quickIdOn = entitlements ? entitlements.hasModule('quick_id') : isQuickIdEnabled();
   const [editingId, setEditingId] = useState(null);
   const [addingGuest, setAddingGuest] = useState(false);
   const [form, setForm] = useState({});
