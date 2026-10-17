@@ -234,13 +234,37 @@ async def _check_module_access(tenant_id: str, module: str) -> bool:
         # Fall back to marketplace subscription check.
         from core.subscriptions import tenant_has_module
 
-        return await tenant_has_module(tenant_id, module)
+        if await tenant_has_module(tenant_id, module):
+            return True
+
+        # Transition: until a hotel sets Agency Extranet explicitly it follows
+        # the hotel's effective channel-manager access, store subscription
+        # included (get_tenant_modules only sees the plan and module flags).
+        from core.helpers import AGENCY_EXTRANET_MODULE
+
+        explicit = tenant_doc.get("modules")
+        if module == AGENCY_EXTRANET_MODULE and not (isinstance(explicit, dict) and module in explicit):
+            return await _check_module_access(tenant_id, "channel_manager")
+        return False
     except Exception as e:
         # Fail CLOSED on errors so a transient DB outage cannot
         # silently grant access to paid modules. The middleware only
         # reaches this code path when a route IS module-gated.
         logger.error(f"Entitlement check error for module={module}: {e}")
         return False
+
+
+async def require_tenant_module(tenant_id: str, module: str, detail: str) -> None:
+    """Endpoint-level gate for one action inside a screen several modules open
+    (e.g. rates: OTA push needs the channel manager, agency sharing needs
+    Agency Extranet). Same decision and 403 shape as the middleware."""
+    from fastapi import HTTPException
+
+    if not await _check_module_access(tenant_id, module):
+        raise HTTPException(status_code=403, detail={
+            "detail": detail, "error_code": "ENTITLEMENT_DENIED",
+            "required_module": module, "upgrade_url": "/settings?tab=subscription",
+        })
 
 
 class EntitlementMiddleware:
