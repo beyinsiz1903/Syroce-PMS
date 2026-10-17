@@ -478,7 +478,26 @@ async def test_marketplace_price_honors_agency_stop_sell(monkeypatch):
         fallback_rate=2000,
     )
 
-    assert result == {"sellable": False, "nightly_rates": [], "total_price": 0.0}
+    # The reason tells the hotel's readiness view "closed", not a price problem.
+    assert result == {"sellable": False, "nightly_rates": [], "total_price": 0.0, "reason": "stop_sell"}
+
+
+@pytest.mark.asyncio
+async def test_marketplace_price_names_a_zero_agency_allotment(monkeypatch):
+    fake_db = SimpleNamespace(
+        agency_rate_calendar=_Collection([{"date": "2026-09-25", "rate": 900, "availability": 0}]),
+        hr_rate_calendar=_Collection([]),
+        rate_calendar=_Collection([]),
+    )
+    monkeypatch.setattr(marketplace_b2b, "db", fake_db)
+
+    result = await marketplace_b2b._marketplace_stay_price(
+        tenant_id="hotel-1", agency_id="agency-1", room_type="Standard",
+        check_in="2026-09-25", check_out="2026-09-26", fallback_rate=2000,
+    )
+
+    assert result == {"sellable": False, "nightly_rates": [], "total_price": 0.0, "reason": "no_allotment"}
+    assert marketplace_b2b.pricing_rejection_category(result, 3) == "no_availability"
 
 
 @pytest.mark.asyncio

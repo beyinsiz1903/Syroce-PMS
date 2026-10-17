@@ -984,12 +984,10 @@ async def _marketplace_stay_price(
             return {"sellable": False, "nightly_rates": [], "total_price": 0.0, "reason": "min_stay"}
         if row.get("max_stay") and len(dates) > int(row["max_stay"]):
             return {"sellable": False, "nightly_rates": [], "total_price": 0.0, "reason": "max_stay"}
-        if row.get("stop_sell") is True or (
-            date in agency_by_date
-            and row.get("availability") is not None
-            and int(row["availability"]) <= 0
-        ):
-            return {"sellable": False, "nightly_rates": [], "total_price": 0.0}
+        if row.get("stop_sell") is True:
+            return {"sellable": False, "nightly_rates": [], "total_price": 0.0, "reason": "stop_sell"}
+        if date in agency_by_date and row.get("availability") is not None and int(row["availability"]) <= 0:
+            return {"sellable": False, "nightly_rates": [], "total_price": 0.0, "reason": "no_allotment"}
         rate = net_prices.get(date, row.get("rate"))
         if rate is None:
             rate = fallback_rate
@@ -2202,6 +2200,7 @@ async def agency_search(
     )
     partner_tenant_ids = list(active_contracts)
     if not partner_tenant_ids:
+        await log_agency_search(agency, req, {}, 0)
         return {"check_in": req.check_in, "check_out": req.check_out, "results": [], "total_hotels": 0, "message": "Henüz onaylı sözleşmeniz olan otel yok."}
 
     sysdb = get_system_db()
@@ -2219,6 +2218,8 @@ async def agency_search(
 
     capacity_needed = max(1, req.adults + req.children)
     results: list[dict] = []
+    # Why each hotel returned nothing, for the hotel's sales-readiness view.
+    outcomes: dict[str, str] = {}
 
     for listing in listings:
         tenant_id = listing["tenant_id"]
@@ -2240,6 +2241,7 @@ async def agency_search(
         content_visible = catalogue_visible_to(listing, agency["agency_id"])
         # Tarih engeli kontrolü
         if any(d in listing.get("blocked_dates", []) for d in _date_range(req.check_in, req.check_out)):
+            outcomes[tenant_id] = "closed"
             continue
 
         with tenant_context(tenant_id):
@@ -2257,6 +2259,7 @@ async def agency_search(
                 room_meals |= _normalized_tokens([room.get("meal_plan"), room.get("board_type")])
                 room_meals |= _normalized_tokens(room.get("amenities")) & known_meals
             if not requested_amenities.issubset(listing_amenities | room_amenities):
+                outcomes[tenant_id] = "filters"
                 continue
             # Board filtering is applied to the selected rate product below,
             # not to hotel-level amenities (a hotel may sell both RO and BB).
@@ -2298,6 +2301,7 @@ async def agency_search(
                 rt_data["total_rooms"] += 1
                 rt_data["_room_ids"].append(r.get("id"))
 
+            had_rooms = bool(room_types)
             # One offer per room type AND rate plan. Never overwrite by date alone.
             products = {}
             for rt_data in room_types.values():
@@ -2310,6 +2314,7 @@ async def agency_search(
                         continue
                     products[(rt_data["room_type"], plan)] = {**rt_data, "rate_plan_code": plan}
             room_types = products
+            had_rates = bool(products)
             for rt_data in room_types.values():
                 # Half-open hotel-night overlap; a same-day departure does not
                 # consume the arriving guest's room-night.
@@ -2344,8 +2349,10 @@ async def agency_search(
         nights = (co - ci).days
         commission_pct = _contract_commission(active_contracts[tenant_id])
         available = []
+        categories = []
         for rt_data in room_types.values():
             pricing = rt_data.pop("pricing")
+            categories.append(pricing_rejection_category(pricing, rt_data["available_rooms"]))
             if rt_data["available_rooms"] <= 0 or not pricing["sellable"]:
                 continue
             product = _rate_product_snapshot(rt_data["rate_plan_code"], rt_data, active_contracts[tenant_id], pricing)
@@ -2368,6 +2375,16 @@ async def agency_search(
             )
 
         if available:
+            outcomes[tenant_id] = "ok"
+        elif not had_rooms:
+            outcomes[tenant_id] = "no_room"
+        elif not had_rates:
+            outcomes[tenant_id] = "no_rate"
+        elif "ok" in categories:
+            outcomes[tenant_id] = "filters"  # sellable, but the agency's meal / price filters removed it
+        else:
+            outcomes[tenant_id] = best_outcome(categories)
+        if available:
             results.append(
                 {
                     "tenant_id": tenant_id,
@@ -2384,12 +2401,66 @@ async def agency_search(
                 }
             )
 
+    await log_agency_search(agency, req, outcomes, len(results))
     return {
         "check_in": req.check_in,
         "check_out": req.check_out,
         "results": results,
         "total_hotels": len(results),
     }
+
+
+# Pricing-engine rejection -> what the hotel has to fix (readiness view).
+_REJECTION_CATEGORY = {
+    "agency_rate_not_shared": "no_rate", "unknown_rate_plan": "no_rate", "rate_plan_required": "no_rate",
+    "missing_shared_rate_night": "no_rate",
+    "agency_allotment_exhausted": "no_availability", "no_allotment": "no_availability",
+    "stop_sell": "closed",
+    "closed_to_arrival": "restricted", "closed_to_departure": "restricted", "min_stay": "restricted",
+    "min_stay_arrival": "restricted", "max_stay": "restricted",
+}
+# Closest to selling first: the outcome shown is the best reached.
+_OUTCOME_ORDER = ("ok", "no_availability", "restricted", "closed", "no_price", "no_rate", "no_room")
+
+
+def pricing_rejection_category(pricing: dict, available_rooms: int) -> str:
+    """One room product: "ok", or why it cannot be sold. Anything else the
+    engine refuses (zero rate, currency, occupancy rule, conflicting rows)
+    is a price-definition problem: "no_price"."""
+    if pricing.get("sellable"):
+        return "ok" if available_rooms > 0 else "no_availability"
+    return _REJECTION_CATEGORY.get(pricing.get("reason"), "no_price")
+
+
+def best_outcome(categories) -> str:
+    present = set(categories)
+    return next((item for item in _OUTCOME_ORDER if item in present), "no_room")
+
+
+SEARCH_LOG_DAYS = 90
+_search_log_indexed = False
+
+
+async def log_agency_search(agency: dict, req, outcomes: dict, result_count: int) -> None:
+    """Record one agency search and, per hotel considered, why it returned
+    nothing ("ok", "no_rate", "no_price", "no_availability", "no_room",
+    "closed", "filters"). Never fails the search. Kept 90 days."""
+    global _search_log_indexed
+    try:
+        sysdb = get_system_db()
+        if not _search_log_indexed:
+            await sysdb.marketplace_search_log.create_index("expires_at", expireAfterSeconds=0)
+            await sysdb.marketplace_search_log.create_index([("tenant_ids", 1), ("at", -1)])
+            _search_log_indexed = True
+        now = datetime.now(UTC)
+        await sysdb.marketplace_search_log.insert_one({
+            "id": str(uuid.uuid4()), "agency_id": agency.get("agency_id"), "at": now.isoformat(),
+            "expires_at": now + timedelta(days=SEARCH_LOG_DAYS),
+            "check_in": req.check_in, "check_out": req.check_out, "adults": req.adults, "children": req.children,
+            "results": result_count, "outcomes": outcomes, "tenant_ids": sorted(outcomes),
+        })
+    except Exception as exc:  # noqa: BLE001 - logging must never break a search
+        logger.warning("Agency search log failed agency=%s error=%s", agency.get("agency_id"), type(exc).__name__)
 
 
 @router.get("/hotels/{tenant_id}/availability")
