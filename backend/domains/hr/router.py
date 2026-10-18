@@ -3123,7 +3123,8 @@ async def close_job_posting(
 
 # ============= F&B COMPLETE SUITE =============
 
-# Separate mount: restaurant staff never need access to HR records.
+# Separate mount: restaurant staff never need access to HR records. The POS
+# role/licence guards do not replace the operation guard on cost/config data.
 from core.entitlements.enforcement import require_module as require_licensed_module
 from modules.pms_core.role_permission_service import require_module_role
 
@@ -3171,7 +3172,7 @@ def _enrich_recipe_cost(recipe: dict, ingredient_map: dict[str, dict]):
 async def create_recipe(
     recipe_data: dict,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_role("pos")),
+    _perm=Depends(require_op("manage_sales")),
 ):
     ingredient_map, _ = await _get_ingredient_map(current_user.tenant_id)
 
@@ -3197,7 +3198,7 @@ async def create_recipe(
 @fnb_router.get("/fnb/recipes")
 async def get_recipes(
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_role("pos")),
+    _perm=Depends(require_op("manage_sales")),
 ):
     ingredient_map, _ = await _get_ingredient_map(current_user.tenant_id)
     recipes = await db.recipes.find({"tenant_id": current_user.tenant_id, "active": True}, {"_id": 0}).sort("dish_name", 1).to_list(200)
@@ -3213,7 +3214,7 @@ async def get_recipes(
 async def get_recipe(
     recipe_id: str,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_role("pos")),
+    _perm=Depends(require_op("manage_sales")),
 ):
     recipe = await db.recipes.find_one({"tenant_id": current_user.tenant_id, "id": recipe_id}, {"_id": 0})
     if not recipe:
@@ -3228,7 +3229,7 @@ async def update_recipe(
     recipe_id: str,
     recipe_data: dict,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_role("pos")),
+    _perm=Depends(require_op("manage_sales")),
 ):
     recipe = await db.recipes.find_one({"tenant_id": current_user.tenant_id, "id": recipe_id})
     if not recipe:
@@ -3249,7 +3250,7 @@ async def update_recipe(
 async def create_beo(
     beo_data: dict,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_role("pos")),
+    _perm=Depends(require_op("manage_sales")),
 ):
     beo = {**{key: value for key, value in beo_data.items() if key not in {'_id', 'id', 'tenant_id'}}, "id": str(uuid.uuid4()), "tenant_id": current_user.tenant_id, "status": "confirmed", "created_at": datetime.now(UTC).isoformat()}
     await db.banquet_event_orders.insert_one(beo)
@@ -3262,7 +3263,7 @@ async def create_beo(
 @fnb_router.get("/fnb/ingredients")
 async def list_ingredients(
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_role("pos")),
+    _perm=Depends(require_op("manage_sales")),
 ):
     ingredients = await db.ingredients.find({"tenant_id": current_user.tenant_id}, {"_id": 0}).sort("name", 1).to_list(500)
 
@@ -3282,7 +3283,7 @@ async def list_ingredients(
 async def add_ingredient(
     ing_data: dict,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_role("pos")),
+    _perm=Depends(require_op("manage_sales")),
 ):
     ingredient = {
         "id": str(uuid.uuid4()),
@@ -3308,7 +3309,7 @@ async def update_ingredient(
     ingredient_id: str,
     ing_data: dict,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_role("pos")),
+    _perm=Depends(require_op("manage_sales")),
 ):
     ingredient = await db.ingredients.find_one({"tenant_id": current_user.tenant_id, "id": ingredient_id})
     if not ingredient:
