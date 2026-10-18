@@ -290,6 +290,26 @@ async def test_monthly_job_bills_the_rest_of_a_partly_covered_month(world):
 
 
 @pytest.mark.asyncio
+async def test_monthly_job_bills_stays_booked_after_the_months_statement(world):
+    """November was billed and settled; b2 was booked into November later.
+    The job issues one supplement holding b2 only; a rerun finds it billed."""
+    world.agency_statements.rows.append({"id": "old", "number": "EKS-2026-0001", "tenant_id": "t1", "agency_id": "a1", "currency": "TRY",
+                                         "status": "settled", "period_start": "2026-11-01", "period_end": "2026-11-30",
+                                         "lines": [{"booking_id": "b1"}], "payments": []})
+    world.marketplace_bookings = _Coll([{"tenant_id": "t1", "agency_id": "a1", "currency": "TRY", "check_in": "2026-11-21"}])
+    world.bookings = _Coll()
+    late = {**COMMISSION, "booking_id": "b2", "confirmation_code": "MKT-2"}
+    st.build_statement.return_value = {"lines": [{**COMMISSION}, late], "totals": statement_totals([{**COMMISSION}, late])}
+    result = await st.auto_issue_previous_month(world, date(2026, 12, 1))
+    assert len(result["issued"]) == 1 and result["failed"] == []
+    made = world.agency_statements.rows[-1]
+    assert [line["booking_id"] for line in made["lines"]] == ["b2"]
+    assert made["supplement_of"] == ["EKS-2026-0001"]
+    again = await st.auto_issue_previous_month(world, date(2026, 12, 1))
+    assert again["issued"] == []
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("hotel_agrees", [False, True])
 async def test_agency_discount_frees_credit_only_once_the_hotel_agrees(world, hotel_agrees):
     """10.000 owed; the agency proposes -10.000: until the hotel agrees,

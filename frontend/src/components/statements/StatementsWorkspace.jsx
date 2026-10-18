@@ -287,7 +287,7 @@ export default function StatementsWorkspace({ side, api, base, partiesPath, titl
               {items.map(statement => (
                 <button type="button" key={statement.id} onClick={() => open(statement)} className="flex w-full flex-wrap items-center justify-between gap-3 p-4 text-left hover:bg-slate-50">
                   <div>
-                    <div className="font-medium">{statement.number} · {side === 'hotel' ? statement.agency_name : statement.hotel_name}</div>
+                    <div className="font-medium">{statement.number} · {side === 'hotel' ? statement.agency_name : statement.hotel_name}{statement.supplement_of?.length ? <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-[11px] text-amber-800" data-testid={`supplement-${statement.number}`}>Ek ekstre ({statement.supplement_of.join(', ')})</span> : null}</div>
                     <div className="text-xs text-slate-500">{statement.period_start} – {statement.period_end} · {issuerText(statement, side)}{statement.totals ? ` · ${statement.totals.bookings} konaklama · ${(statement.totals.cancelled || 0) + (statement.totals.no_show || 0)} iptal/no-show` : ''}</div>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
@@ -308,6 +308,11 @@ export default function StatementsWorkspace({ side, api, base, partiesPath, titl
           {preview && <div data-testid="statement-preview" className="space-y-3">
             <DialogHeader>
               <DialogTitle>Önizleme · {side === 'hotel' ? preview.agency_name : preview.hotel_name}</DialogTitle>
+              {preview.supplement_of?.length > 0 && (
+                <p className="rounded bg-amber-50 p-2 text-xs text-amber-800" data-testid="statement-preview-supplement">
+                  Bu dönemde {preview.supplement_of.join(', ')} ekstresi var; yalnız henüz hiçbir ekstrede olmayan rezervasyonlar alındı (ek ekstre).
+                </p>
+              )}
               <p className="text-sm text-slate-500">{preview.period_start} – {preview.period_end} · {balanceText(preview.outstanding, preview.currency)}{preview.totals?.adjustments ? ` · düzeltmeler ${money(preview.totals.adjustments, preview.currency)}` : ''}</p>
               <p className="text-xs text-slate-500">Henüz kaydedilmedi; {counterpart} bilgilendirilmedi. Düzeltmek istediğiniz satırın kutucuğunu işaretleyin.</p>
             </DialogHeader>
