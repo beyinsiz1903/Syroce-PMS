@@ -41,7 +41,11 @@ export default function AdminModuleControlCenter() {
   // Setup and recent use per module, from the hotel's own data (published
   // module state, not the draft). Loaded on its own: a failure here leaves
   // the licence and usage summary intact and the cards stay neutral.
-  const [readiness, setReadiness] = useState({});
+  const [readinessResult, setReadinessResult] = useState(null);
+  const [readinessRevision, setReadinessRevision] = useState(0);
+  const readinessCurrent = readinessResult?.tenantId === selectedId && readinessResult?.baseline === baseline;
+  const readiness = readinessCurrent ? readinessResult.modules : {};
+  const readinessError = readinessCurrent ? readinessResult.error : '';
   const [statusLoading, setStatusLoading] = useState(false);
   const [statusError, setStatusError] = useState('');
   const [catalogOpen, setCatalogOpen] = useState(false);
@@ -144,12 +148,13 @@ export default function AdminModuleControlCenter() {
   useEffect(() => {
     if (!selectedId) return undefined;
     let active = true;
-    setReadiness({});
+    const context = { tenantId: selectedId, baseline, modules: {}, error: '', loading: true };
+    setReadinessResult(context);
     axios.get(`/admin/tenants/${selectedId}/module-readiness`)
-      .then((response) => { if (active) setReadiness(response.data?.modules || {}); })
-      .catch(() => { if (active) setReadiness({}); });
+      .then((response) => { if (active) setReadinessResult({ ...context, loading: false, modules: response.data?.modules || {} }); })
+      .catch(() => { if (active) setReadinessResult({ ...context, loading: false, error: 'Kurulum durumu alınamadı. Lisans ve kullanım özeti etkilenmedi.' }); });
     return () => { active = false; };
-  }, [selectedId, baseline]);
+  }, [selectedId, baseline, readinessRevision]);
 
   useEffect(() => {
     if (!selectedId) return undefined;
@@ -345,6 +350,14 @@ export default function AdminModuleControlCenter() {
               <ArrowLeftRight className="h-5 w-5 shrink-0" /><span><strong>{changes.length} taslak değişiklik</strong> var. Etki yalnızca seçili otele uygulanacak.</span>
             </div>
           )}
+
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-600">
+            <p>Kurulum kanıtları yayınlanan modül durumuna aittir; taslak değişiklikler henüz uygulanmaz.</p>
+            <Button size="sm" variant="outline" onClick={() => setReadinessRevision(value => value + 1)} disabled={readinessCurrent && readinessResult.loading}>
+              Kurulum kontrollerini yenile
+            </Button>
+            {readinessError && <p role="alert" className="w-full text-amber-800" data-testid="readiness-load-error">{readinessError}</p>}
+          </div>
 
           <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm" aria-label="Seçili tesisin lisans ve kullanım özeti">
             <div className="flex flex-wrap items-start justify-between gap-2">

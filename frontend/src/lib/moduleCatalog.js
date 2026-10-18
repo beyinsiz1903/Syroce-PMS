@@ -160,12 +160,15 @@ const READINESS_LABELS = {
   unknown: 'Kontrol tanımlı değil',
 };
 
-export const missingSetup = (readiness) => (readiness?.setup || []).filter((row) => !row.ok);
+export const missingSetup = (readiness) => (readiness?.setup || []).filter((row) => row.ok === false);
 
 export function moduleIntegrationLabel(item, state, readiness) {
   if (!INTEGRATION_REQUIRED_MODULES.has(item.key)) return 'Entegrasyon gerektirmiyor';
   if (!state.enabled) return 'Erişim kapalı';
-  if (readiness?.setup?.length) return missingSetup(readiness).length ? 'Bağlantı / ayar eksik' : 'Bağlantı kurulu';
+  if (readiness?.status === 'off') return 'Yayınlanan durumda kapalı';
+  if (readiness?.setup?.some(row => row.ok == null)) return 'Bağlantı ayarı doğrulanamadı';
+  // Stored setup is not a live provider check; credentials can be expired.
+  if (readiness?.setup?.length) return missingSetup(readiness).length ? 'Bağlantı / ayar eksik' : 'Bağlantı ayarı mevcut · canlı test yapılmadı';
   return 'Sağlık verisi bekleniyor';
 }
 
@@ -176,6 +179,8 @@ export function moduleIntegrationLabel(item, state, readiness) {
 export function moduleSetupLabel(item, state, readiness) {
   if (!state.enabled) return 'Erişim kapalı';
   if (readiness) {
+    if (readiness.status === 'off') return 'Yayınlanan durumda kapalı';
+    if (readiness.status === 'unknown' && [...(readiness.setup || []), ...(readiness.usage || [])].some(row => row.ok == null)) return 'Durum doğrulanamadı';
     if (readiness.view) return 'Kurulum gerektirmiyor';
     if (readiness.status === 'incomplete') return `Kurulum eksik (${missingSetup(readiness).length})`;
     return READINESS_LABELS[readiness.status] || 'Kontrol tanımlı değil';
@@ -189,7 +194,7 @@ export function moduleWorkspaceLabel(item, state) {
 }
 
 export function moduleUsageLabel(item, usage = {}, readiness) {
-  if (readiness?.usage?.length) return readiness.usage.map((row) => `${row.label}: ${row.ok ? 'var' : 'yok'}`).join(' · ');
+  if (readiness?.usage?.length) return readiness.usage.map((row) => `${row.label}: ${row.ok == null ? 'kontrol edilemedi' : row.ok ? 'var' : 'yok'}`).join(' · ');
   const events = usage.events || {};
   const eventKeys = MODULE_USAGE_EVENTS[item.key] || [];
   if (!eventKeys.length) return 'Modül bazlı ölçüm yok';

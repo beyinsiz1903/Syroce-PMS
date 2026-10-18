@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import axios from 'axios';
 import AdminModuleControlCenter from '../AdminModuleControlCenter';
@@ -116,5 +116,61 @@ describe('AdminModuleControlCenter', () => {
     expect(await screen.findByTestId('module-setup-spa')).toHaveTextContent('Kurulum eksik (1)');
     expect(screen.getByTestId('module-missing-spa')).toHaveTextContent('Terapist');
   });
-});
 
+  it('keeps licence/usage visible when readiness fails and can retry independently', async () => {
+    const original = axios.get.getMockImplementation();
+    let fail = true;
+    axios.get.mockImplementation(url => {
+      if (url.endsWith('/module-readiness')) return fail
+        ? Promise.reject(new Error('readiness offline'))
+        : Promise.resolve({ data: { modules: { pms: { status: 'idle', setup: [], usage: [] } } } });
+      return original(url);
+    });
+    render(<AdminModuleControlCenter />);
+    expect(await screen.findByTestId('readiness-load-error')).toHaveTextContent('Lisans ve kullanım özeti etkilenmedi');
+    expect(await screen.findByText('2')).toBeInTheDocument();
+    expect(screen.getAllByText(/Son 30 günde 4 işlem/).length).toBeGreaterThan(0);
+    fail = false;
+    fireEvent.click(screen.getByRole('button', { name: 'Kurulum kontrollerini yenile' }));
+    await waitFor(() => expect(screen.queryByTestId('readiness-load-error')).not.toBeInTheDocument());
+    expect(await screen.findByTestId('module-setup-pms')).toHaveTextContent('Kuruldu · son dönemde kullanılmıyor');
+  });
+
+  it('does not present failed checks as missing configuration', async () => {
+    const original = axios.get.getMockImplementation();
+    axios.get.mockImplementation(url => url.endsWith('/module-readiness') ? Promise.resolve({ data: { modules: {
+      pms: { status: 'unknown', setup: [{ key: 'rooms', label: 'Odalar tanımlı', ok: null }], usage: [] },
+    } } }) : original(url));
+    render(<AdminModuleControlCenter />);
+    expect(await screen.findByTestId('module-setup-pms')).toHaveTextContent('Durum doğrulanamadı');
+    expect(screen.queryByTestId('module-missing-pms')).not.toBeInTheDocument();
+  });
+
+  it('never replaces the selected hotel setup with a previous hotel response', async () => {
+    let delayed = false;
+    const replies = [];
+    axios.get.mockImplementation(url => {
+      if (url.endsWith('/admin/tenants')) return Promise.resolve({ data: { tenants: [
+        { id: 'first', property_name: 'İlk Otel', modules: { spa: true } },
+        { id: 'second', property_name: 'İkinci Otel', modules: { spa: true } },
+      ] } });
+      if (url.includes('/first/module-readiness')) return delayed ? new Promise(resolve => replies.push(resolve))
+        : Promise.resolve({ data: { modules: { spa: { status: 'active', setup: [], usage: [] } } } });
+      if (url.includes('/second/module-readiness')) return Promise.resolve({ data: { modules: { spa: {
+        status: 'incomplete', setup: [{ key: 'rooms', label: 'İkinci otelin SPA odası eksik', ok: false }], usage: [],
+      } } } });
+      return Promise.resolve({ data: {} });
+    });
+    render(<AdminModuleControlCenter />);
+    fireEvent.change(screen.getByPlaceholderText(/ara/i), { target: { value: 'SPA' } });
+    expect(await screen.findByTestId('module-setup-spa')).toHaveTextContent('Kuruldu · kullanımda');
+    delayed = true;
+    fireEvent.click(screen.getByRole('button', { name: 'Kurulum kontrollerini yenile' }));
+    await waitFor(() => expect(replies.length).toBeGreaterThan(0));
+    fireEvent.click(screen.getByRole('button', { name: /İkinci Otel/ }));
+    expect(await screen.findByTestId('module-missing-spa')).toHaveTextContent('İkinci otelin SPA odası eksik');
+    await act(async () => replies.forEach(resolve => resolve({ data: { modules: { spa: { status: 'active', setup: [], usage: [] } } } })));
+    expect(screen.getByTestId('module-setup-spa')).toHaveTextContent('Kurulum eksik (1)');
+    expect(screen.getByTestId('module-missing-spa')).toHaveTextContent('İkinci otelin SPA odası eksik');
+  });
+});

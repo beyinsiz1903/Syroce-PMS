@@ -87,7 +87,21 @@ describe('module readiness labels (server evidence)', () => {
     expect(moduleSetupLabel(spa, on, { status: 'ready', view: true })).toBe('Kurulum gerektirmiyor');
     expect(moduleUsageLabel(spa, {}, { usage: [{ label: 'Son 30 günde randevu', ok: false }] })).toBe('Son 30 günde randevu: yok');
     expect(moduleIntegrationLabel(cm, on, { setup: [{ ok: true }, { ok: false }] })).toBe('Bağlantı / ayar eksik');
-    expect(moduleIntegrationLabel(cm, on, { setup: [{ ok: true }] })).toBe('Bağlantı kurulu');
+    expect(moduleIntegrationLabel(cm, on, { setup: [{ ok: true }] })).toBe('Bağlantı ayarı mevcut · canlı test yapılmadı');
+  });
+
+  it('does not claim that an unavailable check is missing or working', () => {
+    const unavailable = { status: 'unknown', setup: [{ key: 'connection', ok: null }], usage: [{ label: 'Son kullanım', ok: null }] };
+    expect(missingSetup(unavailable)).toEqual([]);
+    expect(moduleSetupLabel(cm, on, unavailable)).toBe('Durum doğrulanamadı');
+    expect(moduleIntegrationLabel(cm, on, unavailable)).toBe('Bağlantı ayarı doğrulanamadı');
+    expect(moduleUsageLabel(cm, {}, unavailable)).toBe('Son kullanım: kontrol edilemedi');
+  });
+
+  it('distinguishes an unpublished enable from published readiness', () => {
+    const publishedOff = { status: 'off', setup: [], usage: [] };
+    expect(moduleSetupLabel(cm, on, publishedOff)).toBe('Yayınlanan durumda kapalı');
+    expect(moduleIntegrationLabel(cm, on, publishedOff)).toBe('Yayınlanan durumda kapalı');
   });
 
   it('has a server readiness rule for every product module', () => {
