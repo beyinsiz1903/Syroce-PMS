@@ -57,9 +57,13 @@ class ReportAutomation:
         return html
 
     async def send_flash_report_email(self, tenant_id: str, recipients: list):
-        """Flash report'u email ile gönder"""
-        logger.info(f"📧 Sending flash report to {len(recipients)} recipients")
-        return True
+        """Legacy boolean adapter; use the canonical data and provider result."""
+        from types import SimpleNamespace
+
+        from routers.reports_pkg.flash_email import email_daily_flash
+
+        result = await email_daily_flash({"recipients": recipients}, SimpleNamespace(tenant_id=tenant_id))
+        return bool(result.get("success") and not result.get("recipients_failed"))
 
 
 # Global

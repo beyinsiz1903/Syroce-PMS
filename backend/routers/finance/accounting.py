@@ -1312,9 +1312,8 @@ async def get_transfer_history(
     # within the transfer so multi-line documents preserve every line; for
     # the legacy single-line case the response still exposes the top-level
     # `source_*`/`destination_*` fields for backwards compatibility.
-    # Tenant-scoped at the query level; date filter is inclusive on ISO
-    # `created_at` strings (lexicographic compare is safe because all rows
-    # are written with `.isoformat()` in UTC).
+    # Tenant-scoped at the query level; date filters support ISO/BSON UTC
+    # timestamps and include the whole final day for date-only inputs.
     if limit < 1:
         limit = 1
     elif limit > 5000:
@@ -1325,41 +1324,69 @@ async def get_transfer_history(
         "movement_type": {"$in": ["transfer_out", "transfer_in"]},
         "transfer_id": {"$ne": None},
     }
-    if start_date and end_date:
-        query["created_at"] = {"$gte": start_date, "$lte": end_date}
-    elif start_date:
-        query["created_at"] = {"$gte": start_date}
-    elif end_date:
-        query["created_at"] = {"$lte": end_date}
+    def timestamp(value):
+        if isinstance(value, datetime):
+            return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        return parsed.replace(tzinfo=UTC) if parsed.tzinfo is None else parsed.astimezone(UTC)
 
-    # Pull legs. A multi-line transfer writes 2*N rows per transfer_id, so
-    # cap generously (200x) to keep up to `limit` complete documents in the
-    # common case (documents typically <=10 lines).
-    fetch_cap = max(limit * 4, min(limit * 200, 20000))
-    rows = await db.stock_movements.find(query, {"_id": 0}).sort("created_at", -1).to_list(fetch_cap)
+    def sort_timestamp(row):
+        try:
+            return timestamp(row.get("created_at"))
+        except (TypeError, ValueError, OverflowError):
+            return datetime.min.replace(tzinfo=UTC)
+
+    if start_date or end_date:
+        try:
+            first = timestamp(start_date) if start_date else None
+            last = timestamp(end_date) if end_date else None
+            end_operator = "$lte"
+            if end_date and len(end_date) == 10:
+                last += timedelta(days=1)
+                end_operator = "$lt"
+            if first and last and (first > last or first == last and end_operator == "$lt"):
+                raise ValueError("Bitiş tarihi başlangıç tarihinden önce olamaz")
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise HTTPException(422, "Geçersiz transfer raporu tarih aralığı") from exc
+        converted = {"$convert": {"input": "$created_at", "to": "date", "onError": None, "onNull": None}}
+        clauses = [{"$ne": [converted, None]}]
+        if first:
+            clauses.append({"$gte": [converted, first]})
+        if last:
+            clauses.append({end_operator: [converted, last]})
+        query["$expr"] = {"$and": clauses}
+
+    # Limit complete transfer documents after grouping, never their source legs.
+    rows = await db.stock_movements.find(query, {"_id": 0}).to_list(None)
 
     # Resolve item names for readability without an extra round-trip per row.
     item_ids = {r.get("item_id") for r in rows if r.get("item_id")}
     item_ids.update(r.get("counterpart_item_id") for r in rows if r.get("counterpart_item_id"))
     item_ids.discard(None)
     name_by_id: dict[str, str] = {}
+    currency_by_id: dict[str, str] = {}
+    unit_by_id: dict[str, str] = {}
+    fallback_currency, _ = await get_tenant_currency(current_user.tenant_id)
     if item_ids:
         items_cursor = db.inventory_items.find(
             {
                 "tenant_id": current_user.tenant_id,
                 "id": {"$in": list(item_ids)},
             },
-            {"_id": 0, "id": 1, "name": 1, "location": 1},
+            {"_id": 0, "id": 1, "name": 1, "location": 1, "currency": 1, "unit": 1},
         )
         async for it in items_cursor:
             label = it.get("name") or ""
             loc = it.get("location")
             name_by_id[it["id"]] = f"{label} ({loc})" if loc else label
+            if it.get("currency"):
+                currency_by_id[it["id"]] = currency_code(it["currency"])
+            unit_by_id[it["id"]] = str(it.get("unit") or "").strip()
 
     # First pass: bucket legs by transfer_id, then within each bucket pair
     # them by (source_item_id, destination_item_id). Quantities for the same
-    # pair are summed so a document that legitimately repeats the same line
-    # (allowed by the bulk endpoint) collapses to one reconciliation row.
+    # pair/cost/currency are summed. Repeated lines at different costs must
+    # remain separate, otherwise using the first cost corrupts valuation.
     legs_by_tid: dict[str, list[dict]] = {}
     for row in rows:
         tid = row.get("transfer_id")
@@ -1371,7 +1398,7 @@ async def get_transfer_history(
     for tid, legs in legs_by_tid.items():
         # Earliest leg drives the document header so all legs of one
         # document share a single created_at/reference/etc.
-        header_leg = min(legs, key=lambda r: r.get("created_at") or "")
+        header_leg = min(legs, key=sort_timestamp)
         header = {
             "transfer_id": tid,
             "reference": header_leg.get("reference"),
@@ -1381,7 +1408,7 @@ async def get_transfer_history(
         }
 
         # Pair legs into reconciliation lines.
-        pair_acc: dict[tuple[str | None, str | None], dict[str, Any]] = {}
+        pair_acc: dict[tuple, dict[str, Any]] = {}
         for leg in legs:
             mt = leg.get("movement_type")
             if mt == "transfer_out":
@@ -1392,7 +1419,9 @@ async def get_transfer_history(
                 src = leg.get("counterpart_item_id")
             else:
                 continue
-            key = (src, dst)
+            unit_cost = money(leg.get("unit_cost") or 0)
+            currency = currency_code(leg.get("currency") or currency_by_id.get(src) or fallback_currency)
+            key = (src, dst, unit_cost, currency)
             entry = pair_acc.setdefault(
                 key,
                 {
@@ -1400,37 +1429,51 @@ async def get_transfer_history(
                     "source_item_name": name_by_id.get(src),
                     "destination_item_id": dst,
                     "destination_item_name": name_by_id.get(dst),
-                    "_out_qty": 0.0,
-                    "_in_qty": 0.0,
-                    "unit_cost": float(leg.get("unit_cost") or 0),
+                    "_out_qty": money(0),
+                    "_in_qty": money(0),
+                    "unit_cost": unit_cost,
+                    "currency": currency,
                 },
             )
-            q = float(leg.get("quantity") or 0)
+            q = money(leg.get("quantity") or 0)
             if mt == "transfer_out":
                 entry["_out_qty"] += q
             else:
                 entry["_in_qty"] += q
 
         lines_out: list[dict[str, Any]] = []
-        total_qty = 0.0
-        total_value = 0.0
+        total_qty = money(0)
+        total_value_by_currency = {}
         for entry in pair_acc.values():
             # The canonical quantity for a line is the out-leg sum (both
             # legs should agree; out leg is what was decremented from the
             # source warehouse).
             qty = entry["_out_qty"] or entry["_in_qty"]
             unit_cost = entry["unit_cost"]
+            source_unit = unit_by_id.get(entry["source_item_id"], "")
+            destination_unit = unit_by_id.get(entry["destination_item_id"], "")
+            # Legacy audit legs do not retain the conversion factor. Do not
+            # declare 5 kg -> 20 pieces corrupt, nor invent proof of balance.
+            unknown_conversion = bool(source_unit and destination_unit and source_unit != destination_unit
+                and entry["_out_qty"] and entry["_in_qty"])
             line = {
                 "source_item_id": entry["source_item_id"],
                 "source_item_name": entry["source_item_name"],
                 "destination_item_id": entry["destination_item_id"],
                 "destination_item_name": entry["destination_item_name"],
-                "quantity": qty,
-                "unit_cost": unit_cost,
+                "quantity": float(qty),
+                "out_quantity": float(entry["_out_qty"]),
+                "in_quantity": float(entry["_in_qty"]),
+                "balanced": None if unknown_conversion else entry["_out_qty"] == entry["_in_qty"],
+                "quantity_difference": None if unknown_conversion else float(entry["_out_qty"] - entry["_in_qty"]),
+                "source_unit": source_unit,
+                "destination_unit": destination_unit,
+                "unit_cost": float(unit_cost),
+                "currency": entry["currency"],
             }
             lines_out.append(line)
             total_qty += qty
-            total_value += qty * unit_cost
+            add_amount(total_value_by_currency, entry["currency"], qty * unit_cost)
 
         # Stable line ordering by source/destination for deterministic output.
         lines_out.sort(
@@ -1447,14 +1490,16 @@ async def get_transfer_history(
         header.update(
             {
                 "line_count": len(lines_out),
-                "total_quantity": total_qty,
-                "total_value": total_value,
+                "total_quantity": float(total_qty),
+                "total_value": single_amount(total_value_by_currency),
+                "total_value_by_currency": rounded_totals(total_value_by_currency),
+                "balanced": False if any(line["balanced"] is False for line in lines_out) else (None if any(line["balanced"] is None for line in lines_out) else True),
                 "lines": lines_out,
                 "source_item_id": first["source_item_id"] if single else None,
                 "source_item_name": first["source_item_name"] if single else None,
                 "destination_item_id": first["destination_item_id"] if single else None,
                 "destination_item_name": first["destination_item_name"] if single else None,
-                "quantity": first["quantity"] if single else total_qty,
+                "quantity": first["quantity"] if single else float(total_qty),
                 "unit_cost": first["unit_cost"] if single else 0.0,
             }
         )
@@ -1462,13 +1507,15 @@ async def get_transfer_history(
 
     transfers = sorted(
         grouped.values(),
-        key=lambda t: t.get("created_at") or "",
+        key=sort_timestamp,
         reverse=True,
     )[:limit]
 
     return {
         "transfers": transfers,
         "count": len(transfers),
+        "total_count": len(grouped),
+        "has_more": len(grouped) > len(transfers),
         "filters": {
             "start_date": start_date,
             "end_date": end_date,

@@ -17,7 +17,7 @@ from core.database import db
 from core.helpers import require_module
 from core.security import get_current_user
 from models.schemas import User
-from modules.pms_core.report_money import resolve_ledger_currencies
+from modules.pms_core.report_money import money, resolve_ledger_currencies, rounded
 from modules.pms_core.reporting_financials import (
     REPORTING_CURRENCY,
     deduplicate_report_payments,
@@ -124,23 +124,29 @@ def _currency_code(value, fallback: str = "TRY") -> str:
 
 
 def _add_currency_amount(target: dict[str, float], currency, amount) -> None:
+    from modules.pms_core.report_money import add_amount
+
     code = _currency_code(currency)
-    target[code] = target.get(code, 0.0) + float(amount or 0)
+    add_amount(target, code, amount or 0)
 
 
 def _currency_breakdown(rows: list[dict], amount_getter, currency_getter) -> dict[str, float]:
+    from modules.pms_core.report_money import rounded_totals
+
     totals: dict[str, float] = {}
     for row in rows:
         _add_currency_amount(totals, currency_getter(row), amount_getter(row))
-    return {code: round(amount, 2) for code, amount in sorted(totals.items()) if round(amount, 2) != 0}
+    return {code: amount for code, amount in rounded_totals(totals).items() if amount != 0}
 
 
 def _merge_currency_breakdowns(*breakdowns: dict[str, float]) -> dict[str, float]:
+    from modules.pms_core.report_money import rounded_totals
+
     totals: dict[str, float] = {}
     for breakdown in breakdowns:
         for currency, amount in (breakdown or {}).items():
             _add_currency_amount(totals, currency, amount)
-    return {code: round(amount, 2) for code, amount in sorted(totals.items()) if round(amount, 2) != 0}
+    return {code: amount for code, amount in rounded_totals(totals).items() if amount != 0}
 
 
 def _single_currency_amount(breakdown: dict[str, float]) -> float:
@@ -1111,7 +1117,6 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
             room_charges_by_day[charge_day] = room_charges_by_day.get(charge_day, 0.0) + amount
             _add_currency_amount(room_charges_by_day_currency.setdefault(charge_day, {}), charge_currency(charge), amount)
     accrued_room_by_day_currency: dict[str, dict[str, float]] = {}
-    sold_room_nights_by_day_currency: dict[str, dict[str, float]] = {}
     for metric in metric_rows:
         day = str(metric.get("date"))
         for booking in all_bk:
@@ -1123,12 +1128,6 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
                     currency,
                     allocated_revenue,
                 )
-                if allocated_revenue > 0:
-                    _add_currency_amount(
-                        sold_room_nights_by_day_currency.setdefault(day, {}),
-                        currency,
-                        1,
-                    )
 
     today_room_revenue = round(room_charges_by_day.get(target_day, 0.0), 2)
     daily_period_charges = charges_between(today_start, next_day)
@@ -1274,14 +1273,12 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
     period_room_nights = int(period_performance.get("sold_room_nights") or 0)
     period_capacity = int(period_performance.get("available_room_nights") or 0)
     daily_performance["room_revenue_by_currency"] = today_room_revenue_by_currency
-    daily_currency_room_nights = sold_room_nights_by_day_currency.get(target_day, {})
     daily_performance["adr_by_currency"] = {
-        code: round(amount / daily_currency_room_nights.get(code, daily_room_nights), 2)
+        code: rounded(money(amount) / daily_room_nights)
         for code, amount in today_room_revenue_by_currency.items()
-        if daily_currency_room_nights.get(code, daily_room_nights)
     } if daily_room_nights else {}
     daily_performance["revpar_by_currency"] = {
-        code: round(amount / daily_capacity, 2) for code, amount in today_room_revenue_by_currency.items()
+        code: rounded(money(amount) / daily_capacity) for code, amount in today_room_revenue_by_currency.items()
     } if daily_capacity else {}
     daily_performance["room_revenue"] = _single_currency_amount(today_room_revenue_by_currency)
     daily_performance["adr"] = _single_currency_amount(daily_performance["adr_by_currency"])
@@ -1292,16 +1289,12 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
         period_performance["revenue_source"],
     )
     period_performance["room_revenue_by_currency"] = period_room_revenue_by_currency
-    period_currency_room_nights = _merge_currency_breakdowns(*(
-        sold_room_nights_by_day_currency.get(day, {}) for day in month_days
-    ))
     period_performance["adr_by_currency"] = {
-        code: round(amount / period_currency_room_nights.get(code, period_room_nights), 2)
+        code: rounded(money(amount) / period_room_nights)
         for code, amount in period_room_revenue_by_currency.items()
-        if period_currency_room_nights.get(code, period_room_nights)
     } if period_room_nights else {}
     period_performance["revpar_by_currency"] = {
-        code: round(amount / period_capacity, 2) for code, amount in period_room_revenue_by_currency.items()
+        code: rounded(money(amount) / period_capacity) for code, amount in period_room_revenue_by_currency.items()
     } if period_capacity else {}
     period_performance["room_revenue"] = _single_currency_amount(period_room_revenue_by_currency)
     period_performance["adr"] = _single_currency_amount(period_performance["adr_by_currency"])
@@ -1373,7 +1366,7 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
         received_currency = str(received.get("currency") or "TRY").upper()
         received_amount = float(received.get("amount") or 0)
         ledger_currency = str(p.get("currency") or payment_booking.get("currency") or "TRY").upper()
-        received_payment_totals_by_currency[received_currency] = received_payment_totals_by_currency.get(received_currency, 0) + received_amount
+        _add_currency_amount(received_payment_totals_by_currency, received_currency, received_amount)
         reporting_amount = reporting_collection_amount(p)
         if reporting_amount is None:
             payment_conversion_issues.append({
@@ -1383,11 +1376,11 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
                 "reason": "historical_exchange_rate_missing",
             })
         else:
-            total_paid += reporting_amount
-            payment_totals_by_currency[REPORTING_CURRENCY] = payment_totals_by_currency.get(REPORTING_CURRENCY, 0) + reporting_amount
+            total_paid = money(total_paid) + money(reporting_amount)
+            _add_currency_amount(payment_totals_by_currency, REPORTING_CURRENCY, reporting_amount)
             method_totals = payment_totals_by_method_currency.setdefault(method, {})
-            method_totals[REPORTING_CURRENCY] = method_totals.get(REPORTING_CURRENCY, 0) + reporting_amount
-            payment_methods[method] = payment_methods.get(method, 0) + reporting_amount
+            _add_currency_amount(method_totals, REPORTING_CURRENCY, reporting_amount)
+            payment_methods[method] = money(payment_methods.get(method, 0)) + money(reporting_amount)
         payment_rows.append(
             {
                 "id": p.get("id"),
@@ -1395,11 +1388,11 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
                 "folio_id": p.get("folio_id"),
                 "room_number": str(p.get("room_number") or payment_booking.get("room_number") or room_map.get(str(payment_booking.get("room_id"))) or "?").strip() or "?",
                 "guest_name": _guest_display_name(guests_by_id.get(str(payment_booking.get("guest_id"))), payment_booking) if payment_booking else None,
-                "amount": round(amt, 2),
+                "amount": rounded(amt),
                 "currency": ledger_currency,
-                "received_amount": round(received_amount, 2),
+                "received_amount": rounded(received_amount),
                 "received_currency": received_currency,
-                "reporting_amount": round(reporting_amount, 2) if reporting_amount is not None else None,
+                "reporting_amount": rounded(reporting_amount) if reporting_amount is not None else None,
                 "reporting_currency": REPORTING_CURRENCY,
                 "conversion_missing": reporting_amount is None,
                 "exchange_rate": p.get("exchange_rate"),
@@ -1413,7 +1406,7 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
                 "processed_at": p.get("processed_at") or p.get("payment_date") or p.get("date") or p.get("created_at"),
             }
         )
-    payment_methods = {method: round(amount, 2) for method, amount in payment_methods.items()}
+    payment_methods = {method: rounded(amount) for method, amount in payment_methods.items()}
 
     # The accounting-day summary above intentionally follows business_date.
     # The cash-movements screen is an operational audit trail and must instead
@@ -1442,8 +1435,8 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
                 }
             )
         else:
-            cash_movement_total += reporting_amount
-            cash_movement_methods[method] = cash_movement_methods.get(method, 0) + reporting_amount
+            cash_movement_total = money(cash_movement_total) + money(reporting_amount)
+            cash_movement_methods[method] = money(cash_movement_methods.get(method, 0)) + money(reporting_amount)
         cash_movement_rows.append(
             {
                 "id": p.get("id"),
@@ -1461,11 +1454,11 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
                 )
                 if payment_booking
                 else None,
-                "amount": round(amount, 2),
+                "amount": rounded(amount),
                 "currency": str(p.get("currency") or payment_booking.get("currency") or "TRY").upper(),
-                "received_amount": round(float(received.get("amount") or 0), 2),
+                "received_amount": rounded(received.get("amount") or 0),
                 "received_currency": str(received.get("currency") or "TRY").upper(),
-                "reporting_amount": round(reporting_amount, 2) if reporting_amount is not None else None,
+                "reporting_amount": rounded(reporting_amount) if reporting_amount is not None else None,
                 "reporting_currency": REPORTING_CURRENCY,
                 "conversion_missing": reporting_amount is None,
                 "exchange_rate": p.get("exchange_rate"),
@@ -1483,8 +1476,8 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
         "received_totals_by_currency": _currency_breakdown(
             cash_movement_rows, lambda row: row["received_amount"], lambda row: row["received_currency"],
         ),
-        "by_method": {method: round(value, 2) for method, value in cash_movement_methods.items()},
-        "total_paid": round(cash_movement_total, 2),
+        "by_method": {method: rounded(value) for method, value in cash_movement_methods.items()},
+        "total_paid": rounded(cash_movement_total),
         "transaction_count": len(cash_movement_rows),
         "rows": sorted(cash_movement_rows, key=lambda row: str(row.get("processed_at") or "")),
         "reporting_currency": REPORTING_CURRENCY,
@@ -1496,12 +1489,12 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
     daily_charges = daily_period_charges
     charge_totals_by_currency = _currency_breakdown(daily_charges, charge_amount, charge_currency)
     balance_change_by_currency = {
-        code: round(charge_totals_by_currency.get(code, 0) - ledger_payment_totals_by_currency.get(code, 0), 2)
+        code: rounded(money(charge_totals_by_currency.get(code, 0)) - money(ledger_payment_totals_by_currency.get(code, 0)))
         for code in set(charge_totals_by_currency) | set(ledger_payment_totals_by_currency)
     }
     uncollected_by_currency = {code: max(amount, 0) for code, amount in balance_change_by_currency.items()}
     charge_total = _single_currency_amount(charge_totals_by_currency)
-    total_paid = round(total_paid, 2)
+    total_paid = rounded(total_paid)
     cash_breakdown = payment_totals_by_method_currency.get("cash", {})
     cash_total = _single_currency_amount(cash_breakdown)
     non_cash_breakdown = _merge_currency_breakdowns(*(
@@ -1573,7 +1566,12 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
     prev_performance = _period_performance(prev_metrics, prev_room_charges_by_day)
     prev_revenue = sum(charge_amount(charge) for charge in previous_charges)
     prev_revenue_by_currency = _currency_breakdown(previous_charges, charge_amount, charge_currency)
-    prev_adr = prev_performance["adr"]
+    prev_room_by_currency = _currency_breakdown(
+        [charge for charge in previous_charges if charge_category(charge) == "room"], charge_amount, charge_currency,
+    ) if prev_performance["revenue_source"] == "posted" else _merge_currency_breakdowns(*(row.get("revenue_by_currency", {}) for row in prev_metrics))
+    prev_sold_nights = prev_performance["sold_room_nights"]
+    prev_adr_by_currency = {code: rounded(money(amount) / prev_sold_nights) if prev_sold_nights else 0 for code, amount in prev_room_by_currency.items()}
+    prev_adr = _single_currency_amount(prev_adr_by_currency)
     ly_charges = charges_between(last_year_start, last_year_end)
     ly_revenue = sum(charge_amount(charge) for charge in ly_charges)
     ly_revenue_by_currency = _currency_breakdown(ly_charges, charge_amount, charge_currency)
@@ -1631,6 +1629,7 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
             "prev_month_revenue_by_currency": prev_revenue_by_currency,
             "prev_month_bookings": len(prev_bookings),
             "prev_month_adr": prev_adr,
+            "prev_month_adr_by_currency": prev_adr_by_currency,
             "prev_period_occupancy": prev_performance["occupancy_percentage"],
             "prev_period_revpar": prev_performance["revpar"],
             "last_year_revenue": round(ly_revenue, 2),
@@ -1661,9 +1660,9 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
             "total_pending": pending_invoices,
             "transaction_count": len(payment_rows),
             "rows": sorted(payment_rows, key=lambda row: str(row.get("processed_at") or "")),
-            "totals_by_currency": {code: round(amount, 2) for code, amount in payment_totals_by_currency.items()},
+            "totals_by_currency": {code: rounded(amount) for code, amount in payment_totals_by_currency.items()},
             "reporting_currency": REPORTING_CURRENCY,
-            "received_totals_by_currency": {code: round(amount, 2) for code, amount in received_payment_totals_by_currency.items()},
+            "received_totals_by_currency": {code: rounded(amount) for code, amount in received_payment_totals_by_currency.items()},
             "conversion_issue_count": len(payment_conversion_issues),
             "conversion_issues": payment_conversion_issues,
             "totals_by_method_currency": {
@@ -1729,7 +1728,7 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
             "adr": analysis_adr,
             "revpar": analysis_revpar,
             "collections": total_paid,
-            "collections_by_currency": {code: round(amount, 2) for code, amount in payment_totals_by_currency.items()},
+            "collections_by_currency": {code: rounded(amount) for code, amount in payment_totals_by_currency.items()},
             "adr_by_currency": daily_performance["adr_by_currency"],
             "revpar_by_currency": daily_performance["revpar_by_currency"],
         },

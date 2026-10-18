@@ -359,6 +359,7 @@ export default function ReportScheduler() {
         <KpiCard icon={XCircle} label={t('cm.pages_ReportScheduler.basarisiz')} value={stats.totalFailed} intent="danger" />
       </div>
       <p className="text-xs text-slate-500">Gönderim göstergeleri son 100 geçmiş kaydını kapsar; kısmi gönderimler başarısızlara dahildir.</p>
+      <p className="text-xs text-slate-500">Zamanlama kartlarındaki e-posta sayaçları, kayıtlı alıcı sonuçlarından hesaplanır. Rapor hazırlama/kayıt hataları gerçek e-posta teslimat hatası sayılmaz.</p>
 
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
