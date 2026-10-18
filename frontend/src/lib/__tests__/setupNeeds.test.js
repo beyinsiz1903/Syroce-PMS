@@ -33,4 +33,11 @@ describe('needs-based plan recommendation', () => {
   it('reports needs no plan covers instead of guessing', () => {
     expect(recommendTier(['ota'], { mini: {}, basic: {}, professional: {}, enterprise: {} })).toMatchObject({ tier: 'mini', uncovered: ['channel_manager'] });
   });
+
+  it('recommends the plan for restaurant basics and grants the corresponding Basic SKU', () => {
+    expect(recommendTier(['restaurant'], CATALOG)).toMatchObject({ tier: 'professional', uncovered: [] });
+    expect(applyNeeds({ pos_basic: false, pos_fnb: false }, ['restaurant'])).toEqual({
+      pos_basic: true, pos_fnb: false, pos_fnb_basic: true,
+    });
+  });
 });

@@ -50,7 +50,7 @@ async def get_tenant_active_editions(tenant_id: str, module_key: str) -> list[st
                 {"end_date": None},
                 {"end_date": {"$gt": now.isoformat()}},
             ],
-            "product_key": {"$regex": f"^{module_key}_"},
+            "product_key": {"$regex": f"^{module_key}(?:_|$)"},
         },
         {"_id": 0, "product_key": 1},
     ).to_list(100)
@@ -59,12 +59,23 @@ async def get_tenant_active_editions(tenant_id: str, module_key: str) -> list[st
     for sub in subs:
         pk = sub.get("product_key", "")
         # e.g. pos_fnb_pro -> edition is 'pro'
-        if pk.startswith(f"{module_key}_"):
+        if pk == module_key:
+            # Legacy full-module subscriptions keep their Pro access even
+            # when a newer onboarding Basic flag is also present.
+            editions.append("pro")
+        elif pk.startswith(f"{module_key}_"):
             editions.append(pk[len(module_key) + 1 :])
 
     # No edition subscription. Using the module is not owning Pro:
     if not editions:
         if await tenant_has_module(tenant_id, module_key):
+            if module_key == "pos_fnb":
+                tenant = await db.tenants.find_one({"id": tenant_id}, {"_id": 0, "modules": 1})
+                flags = (tenant or {}).get("modules")
+                if isinstance(flags, dict) and flags.get("pos_fnb_basic") and not (flags.get("pos_fnb") or flags.get("pos_fnb_pro")):
+                    # The creation wizard explicitly grants the Basic SKU.
+                    # It opens POS, but not KDS/inventory or the Pro quotas.
+                    return ["basic"]
             # An explicit module flag or legacy subscription: kept as 'pro' so
             # existing hotels are not downgraded (unchanged behaviour).
             editions.append("pro")

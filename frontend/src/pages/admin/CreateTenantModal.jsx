@@ -12,7 +12,8 @@ import {
 } from 'lucide-react';
 import { MODULE_GROUPS, PLANS, isModuleIncludedInPlan } from './tenantConstants';
 import { usePlanCatalog } from '@/lib/planCatalog';
-import { NEEDS, TIER_ORDER, applyNeeds, recommendTier } from '@/lib/setupNeeds';
+import { NEEDS, TIER_ORDER, applyNeeds, needModules, recommendTier } from '@/lib/setupNeeds';
+import { fromMinorUnits, parseFinancialDecimal, toMinorUnits } from '@/lib/financialInput';
 import { useTranslation } from 'react-i18next';
 
 const ICON_MAP = {
@@ -112,6 +113,8 @@ const PROPERTY_CATEGORIES = [
 // - PMS sub-tab keys (`pms.<tab>`) default to true unless explicitly hidden by
 //   profile.hidden_nav_items (only relevant for PMS sub-tabs we ship).
 const PMS_SUBKEYS = MODULE_GROUPS.find(g => g.id === 'pms_submodules')?.items.map(i => i.key) || [];
+const NEGOTIATED_MODULES = MODULE_GROUPS.flatMap((group) => group.items).filter((item) => item.quoteRequired);
+const hasPrice = (value) => parseFinancialDecimal(value) !== null;
 
 const buildDefaultModules = (profile, tier) => {
   const result = {};
@@ -152,7 +155,7 @@ const CreateTenantModal = ({ open, onOpenChange, onSuccess }) => {
   const [error, setError] = useState(null);
   const [propertyTypes, setPropertyTypes] = useState([]);
   const [selectedType, setSelectedType] = useState(null);
-  const [modulesMap, setModulesMap] = useState({});
+  const [moduleOverrides, setModuleOverrides] = useState({});
   const [advancedModulesOpen, setAdvancedModulesOpen] = useState(false);
   const [moduleSearch, setModuleSearch] = useState('');
   const [showSelectedModulesOnly, setShowSelectedModulesOnly] = useState(false);
@@ -160,6 +163,7 @@ const CreateTenantModal = ({ open, onOpenChange, onSuccess }) => {
   const [finalMonthly, setFinalMonthly] = useState(null);
   const [finalSetup, setFinalSetup] = useState(null);
   const [overrideReason, setOverrideReason] = useState('');
+  const [negotiatedPrices, setNegotiatedPrices] = useState({});
   // Kanal yoneticisi altyapisi secimi (super_admin). '' = otomatik tespit.
   const [channelProvider, setChannelProvider] = useState('');
   const [chains, setChains] = useState([]);
@@ -193,6 +197,13 @@ const CreateTenantModal = ({ open, onOpenChange, onSuccess }) => {
   }, [open]);
 
   const handleChange = (field, value) => setForm((p) => ({ ...p, [field]: value }));
+  const modulesTouched = Object.keys(moduleOverrides).length > 0;
+  // Preserve only deliberate per-key overrides. A change to an unrelated
+  // module must not freeze future needs or plan defaults for the whole form.
+  const modulesMap = useMemo(() => {
+    if (!selectedType || !planReady) return {};
+    return { ...applyNeeds(buildDefaultModules(selectedType, form.subscription_tier), needs), ...moduleOverrides };
+  }, [selectedType, planReady, form.subscription_tier, needs, moduleOverrides]);
 
   const selectPropertyType = (typeKey) => {
     const pt = propertyTypes.find(p => p.key === typeKey);
@@ -205,24 +216,13 @@ const CreateTenantModal = ({ open, onOpenChange, onSuccess }) => {
       subscription_tier: tier,
       total_rooms: prev.total_rooms || pt.room_range?.min || '',
     }));
-    // Recompute module defaults for this property type + tier and reset the
-    // "touched" flag so a subsequent tier change in step 2 will refresh the
-    // baseline (otherwise stale defaults persist into step 3).
-    setModulesMap(applyNeeds(buildDefaultModules(pt, tier), needs));
-    setModulesTouched(false);
+    setModuleOverrides({});
+    setTierTouched(false);
     setAdvancedModulesOpen(false);
     setModuleSearch('');
     setShowSelectedModulesOnly(false);
     setExpandedModuleGroups([]);
   };
-
-  // When operator changes the tier in step 2, refresh module defaults so
-  // step 3 shows the correct baseline (unless they already touched modules).
-  const [modulesTouched, setModulesTouched] = useState(false);
-  useEffect(() => {
-    if (!selectedType || modulesTouched || !planReady) return;
-    setModulesMap(applyNeeds(buildDefaultModules(selectedType, form.subscription_tier), needs));
-  }, [form.subscription_tier, selectedType, modulesTouched, planReady, needs]);
 
   // Lowest plan covering the needs (never below the property type's).
   const recommendation = useMemo(
@@ -233,21 +233,24 @@ const CreateTenantModal = ({ open, onOpenChange, onSuccess }) => {
     if (!planReady || tierTouched || !selectedType) return;
     setForm((prev) => (prev.subscription_tier === recommendation.tier ? prev : { ...prev, subscription_tier: recommendation.tier }));
   }, [recommendation.tier, planReady, tierTouched, selectedType]);
-  const toggleNeed = (id) => setNeeds((current) => (current.includes(id) ? current.filter((x) => x !== id) : [...current, id]));
+  const toggleNeed = (id) => {
+    // The latest explicit need choice supersedes an older override for that
+    // need only; all unrelated custom choices remain intact.
+    setModuleOverrides((current) => Object.fromEntries(Object.entries(current).filter(([key]) => !needModules([id]).includes(key))));
+    setNeeds((current) => (current.includes(id) ? current.filter((x) => x !== id) : [...current, id]));
+  };
   const tierBelowNeeds = TIER_ORDER.indexOf(form.subscription_tier) < TIER_ORDER.indexOf(recommendation.tier);
 
   const toggleModule = (key) => {
-    setModulesTouched(true);
-    setModulesMap((prev) => {
-      const next = { ...prev, [key]: !prev[key] };
-      if (key.startsWith('ai_') && !prev[key]) next.ai = true;
+    setModuleOverrides((prev) => {
+      const next = { ...prev, [key]: !modulesMap[key] };
+      if (key.startsWith('ai_') && !modulesMap[key]) next.ai = true;
       return next;
     });
   };
 
   const setGroupAll = (group, value) => {
-    setModulesTouched(true);
-    setModulesMap((prev) => {
+    setModuleOverrides((prev) => {
       const next = { ...prev };
       group.items.forEach((item) => { next[item.key] = value; });
       return next;
@@ -256,8 +259,7 @@ const CreateTenantModal = ({ open, onOpenChange, onSuccess }) => {
 
   const resetModulesToDefaults = () => {
     if (!selectedType) return;
-    setModulesTouched(false);
-    setModulesMap(applyNeeds(buildDefaultModules(selectedType, form.subscription_tier), needs));
+    setModuleOverrides({});
   };
 
   const goToStep2 = () => {
@@ -287,6 +289,10 @@ const CreateTenantModal = ({ open, onOpenChange, onSuccess }) => {
   };
 
   const handleSubmit = async () => {
+    if (quote.pendingPricing.length > 0) {
+      setError('Seçilen İK / otopark modülleri için aylık tutar, kurulum tutarı ve fiyat gerekçesi girin');
+      return;
+    }
     if (quote.finalMonthly < 0 || quote.finalSetup < 0 || !Number.isFinite(quote.finalMonthly) || !Number.isFinite(quote.finalSetup)) {
       setError('Nihai fiyatlar sıfır veya daha büyük geçerli sayılar olmalıdır');
       return;
@@ -316,6 +322,7 @@ const CreateTenantModal = ({ open, onOpenChange, onSuccess }) => {
         final_setup_total: quote.finalSetup,
         override_reason: overrideReason.trim() || null,
         line_items: quote.lineItems,
+        negotiated_addon_prices: quote.negotiatedPrices,
       };
       payload.channel_manager_provider = channelProvider || null;
       payload.chain_mode = chainMode;
@@ -340,8 +347,7 @@ const CreateTenantModal = ({ open, onOpenChange, onSuccess }) => {
     setChainId('');
     setChainName('');
     setError(null);
-    setModulesMap({});
-    setModulesTouched(false);
+    setModuleOverrides({});
     setNeeds([]);
     setTierTouched(false);
     setAdvancedModulesOpen(false);
@@ -351,6 +357,7 @@ const CreateTenantModal = ({ open, onOpenChange, onSuccess }) => {
     setFinalMonthly(null);
     setFinalSetup(null);
     setOverrideReason('');
+    setNegotiatedPrices({});
     setForm({
       property_name: '', property_type: '', email: '', password: '', name: '', phone: '',
       address: '', location: '', total_rooms: '', description: '', subscription_tier: 'basic', subscription_days: 30,
@@ -386,22 +393,35 @@ const CreateTenantModal = ({ open, onOpenChange, onSuccess }) => {
 
   const quote = useMemo(() => {
     const baseMonthly = PLANS[form.subscription_tier]?.monthlyPrice || 0;
+    const manualItems = NEGOTIATED_MODULES.filter((item) => modulesMap[item.key]);
+    const pendingPricing = manualItems.filter((item) => {
+      const price = negotiatedPrices[item.key];
+      return !hasPrice(price?.monthly) || !hasPrice(price?.setup) || !price?.reason?.trim();
+    });
+    const resolvedPrices = Object.fromEntries(manualItems
+      .filter((item) => !pendingPricing.includes(item))
+      .map((item) => [item.key, {
+        monthly: parseFinancialDecimal(negotiatedPrices[item.key].monthly),
+        setup: parseFinancialDecimal(negotiatedPrices[item.key].setup),
+        reason: negotiatedPrices[item.key].reason.trim(),
+      }]));
     const pricedItems = MODULE_GROUPS.flatMap((group) => group.items)
-      .filter((item) => (modulesMap[item.key] || (item.key === 'multi_property' && chainMode !== 'standalone')) && item.monthly != null)
+      .filter((item) => (modulesMap[item.key] || (item.key === 'multi_property' && chainMode !== 'standalone')) && (item.monthly != null || resolvedPrices[item.key]))
       .map((item) => {
         const included = isModuleIncludedInPlan(item, form.subscription_tier);
+        const negotiated = resolvedPrices[item.key];
         return {
           module_key: item.key,
           label: item.label,
-          monthly: included ? 0 : item.monthly,
-          setup: included ? 0 : (item.setup || 0),
+          monthly: included ? 0 : (negotiated?.monthly ?? item.monthly),
+          setup: included ? 0 : (negotiated?.setup ?? item.setup ?? 0),
           included,
           usage_note: item.usageNote || null,
         };
       });
-    const addonMonthly = pricedItems.reduce((sum, item) => sum + item.monthly, 0);
-    const listMonthly = baseMonthly + addonMonthly;
-    const listSetup = pricedItems.reduce((sum, item) => sum + item.setup, 0);
+    const addonMonthly = fromMinorUnits(pricedItems.reduce((sum, item) => sum + toMinorUnits(item.monthly), 0));
+    const listMonthly = fromMinorUnits(toMinorUnits(baseMonthly) + toMinorUnits(addonMonthly));
+    const listSetup = fromMinorUnits(pricedItems.reduce((sum, item) => sum + toMinorUnits(item.setup), 0));
     const resolvedMonthly = finalMonthly === null ? listMonthly : Number(finalMonthly);
     const resolvedSetup = finalSetup === null ? listSetup : Number(finalSetup);
     return {
@@ -410,10 +430,11 @@ const CreateTenantModal = ({ open, onOpenChange, onSuccess }) => {
       finalSetup: resolvedSetup,
       isOverridden: resolvedMonthly !== listMonthly || resolvedSetup !== listSetup,
       lineItems: pricedItems,
+      manualItems, pendingPricing, negotiatedPrices: resolvedPrices,
       usageNotes: pricedItems.filter((item) => item.usage_note).map((item) => item.usage_note),
     };
   // planReady: isModuleIncludedInPlan reads the server catalogue loaded behind it.
-  }, [chainMode, finalMonthly, finalSetup, form.subscription_tier, modulesMap, planReady]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [chainMode, finalMonthly, finalSetup, form.subscription_tier, modulesMap, negotiatedPrices, planReady]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggleExpandedModuleGroup = (groupId) => {
     setExpandedModuleGroups((current) => (
@@ -591,7 +612,7 @@ const CreateTenantModal = ({ open, onOpenChange, onSuccess }) => {
                 <div className="col-span-2 rounded-lg border border-indigo-200 bg-indigo-50 p-3 space-y-2" data-testid="create-tenant-needs">
                   <div>
                     <Label>Tesisin ihtiyaçları</Label>
-                    <p className="text-[11px] text-slate-500 mt-0.5">İşaretledikleriniz modülleri açar ve uygun planı önerir. Ücretli ekler planı yükseltmez, teklife eklenir.</p>
+                    <p className="text-[11px] text-slate-500 mt-0.5">İşaretledikleriniz modülleri açar ve uygun planı önerir. Ücretli ekler planı yükseltmez, teklife eklenir. İK ve otopark için son adımda ayrıca fiyat ve gerekçe girilmelidir.</p>
                   </div>
                   {['Satış', 'Tesiste', 'İşletme'].map((group) => (
                     <div key={group} className="flex flex-wrap items-center gap-1.5">
@@ -601,7 +622,7 @@ const CreateTenantModal = ({ open, onOpenChange, onSuccess }) => {
                         return (
                           <button type="button" key={need.id} data-testid={`need-${need.id}`} aria-pressed={on} onClick={() => toggleNeed(need.id)}
                             className={`rounded-full border px-2.5 py-1 text-xs ${on ? 'border-indigo-500 bg-indigo-600 text-white' : 'border-slate-200 bg-white text-slate-700'}`}>
-                            {need.label}{need.paid ? ' · ek' : ''}
+                            {need.label}{NEGOTIATED_MODULES.some((item) => need.modules.includes(item.key)) ? ' · fiyat gerekli' : need.paid ? ' · ek' : ''}
                           </button>
                         );
                       })}
@@ -887,6 +908,8 @@ const CreateTenantModal = ({ open, onOpenChange, onSuccess }) => {
                                               <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-[9px] font-semibold text-emerald-700">Pakete dahil</span>
                                             ) : item.monthly != null ? (
                                               <span className="rounded-full bg-indigo-100 px-1.5 py-0.5 text-[9px] font-semibold text-indigo-700">€{item.monthly}/ay</span>
+                                            ) : item.quoteRequired ? (
+                                              <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-semibold text-amber-700">Ayrı fiyat gerekli</span>
                                             ) : null}
                                             {!isModuleIncludedInPlan(item, form.subscription_tier) && item.setup > 0 && (
                                               <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-semibold text-amber-700">Kurulum €{item.setup}</span>
@@ -919,14 +942,38 @@ const CreateTenantModal = ({ open, onOpenChange, onSuccess }) => {
                   <h3 className="text-sm font-semibold text-slate-900">Ticari teklif özeti</h3>
                   <p className="mt-0.5 text-[11px] text-slate-500">Bu kayıt yalnızca teklif niteliğindedir; ödeme veya tahsilat başlatmaz.</p>
                 </div>
+                {quote.manualItems.map((item) => (
+                  <fieldset key={item.key} className="rounded-lg border border-amber-200 bg-amber-50 p-3 space-y-2" data-testid={`negotiated-quote-${item.key}`}>
+                    <legend className="px-1 text-xs font-semibold text-slate-800">{item.label} — ayrı teklif</legend>
+                    <p className="text-[11px] text-slate-600">Bu ürünün sabit EUR fiyatı yok. Anlaşılan EUR tutarını ve gerekçesini girin; TRY mağaza fiyatı otomatik çevrilmez. Ücretsiz verilecekse 0 girip gerekçesini belirtin.</p>
+                    <div className="grid grid-cols-2 gap-3">
+                      {['monthly', 'setup'].map((field) => (
+                        <label key={field} className="text-xs text-slate-700">
+                          {field === 'monthly' ? 'Aylık (€) *' : 'Kurulum (€) *'}
+                          <input data-testid={`negotiated-${item.key}-${field}`} type="text" inputMode="decimal" autoComplete="off" placeholder="0,00" className="mt-1 w-full rounded-lg border bg-white px-3 py-2 text-sm"
+                            value={negotiatedPrices[item.key]?.[field] ?? ''}
+                            onChange={(event) => setNegotiatedPrices((current) => ({ ...current, [item.key]: { ...current[item.key], [field]: event.target.value } }))} />
+                        </label>
+                      ))}
+                    </div>
+                    <label className="block text-xs text-slate-700">Fiyat gerekçesi / anlaşma notu *
+                      <textarea data-testid={`negotiated-${item.key}-reason`} maxLength={1000} className="mt-1 w-full rounded-lg border bg-white px-3 py-2 text-sm"
+                        value={negotiatedPrices[item.key]?.reason ?? ''}
+                        onChange={(event) => setNegotiatedPrices((current) => ({ ...current, [item.key]: { ...current[item.key], reason: event.target.value } }))} />
+                    </label>
+                  </fieldset>
+                ))}
+                {quote.pendingPricing.length > 0 && (
+                  <p data-testid="quote-pricing-incomplete" className="rounded-lg bg-amber-50 p-2 text-xs text-amber-800">Teklif tamamlanmadı: {quote.pendingPricing.map((item) => item.label).join(', ')} için tutar ve gerekçe gereklidir. Aşağıdaki ara toplam bu ürünleri içermez; oluşturma kapalıdır.</p>
+                )}
                 <div className="space-y-1.5 text-xs">
                   <div className="flex justify-between"><span>{PLANS[form.subscription_tier]?.label} paket bedeli</span><strong>€{quote.baseMonthly}/ay</strong></div>
-                  {quote.lineItems.filter((item) => !item.included && (item.monthly || item.setup)).map((item) => (
+                  {quote.lineItems.filter((item) => !item.included && (item.monthly || item.setup || negotiatedPrices[item.module_key])).map((item) => (
                     <div key={item.module_key} className="flex justify-between gap-3 text-slate-600">
-                      <span>{item.label}</span><span>{item.monthly ? `€${item.monthly}/ay` : ''}{item.monthly && item.setup ? ' + ' : ''}{item.setup ? `€${item.setup} kurulum` : ''}</span>
+                      <span>{item.label}</span><span>€{item.monthly}/ay{item.setup ? ` + €${item.setup} kurulum` : ''}</span>
                     </div>
                   ))}
-                  <div className="flex justify-between border-t pt-2"><span>Liste aylık toplamı</span><strong>€{quote.listMonthly}/ay</strong></div>
+                  <div className="flex justify-between border-t pt-2"><span>{quote.pendingPricing.length ? 'Bilinen aylık ara toplam' : 'Liste aylık toplamı'}</span><strong>€{quote.listMonthly}/ay</strong></div>
                   <div className="flex justify-between"><span>Liste kurulum toplamı</span><strong>€{quote.listSetup}</strong></div>
                 </div>
                 {quote.usageNotes.length > 0 && (
@@ -935,8 +982,8 @@ const CreateTenantModal = ({ open, onOpenChange, onSuccess }) => {
                   </div>
                 )}
                 <div className="grid grid-cols-2 gap-3">
-                  <div><Label>Nihai aylık (€)</Label><input data-testid="final-monthly-total" type="number" min="0" step="0.01" className="mt-1 w-full rounded-lg border px-3 py-2 text-sm" value={finalMonthly === null ? quote.listMonthly : finalMonthly} onChange={(event) => setFinalMonthly(event.target.value)} /></div>
-                  <div><Label>Nihai kurulum (€)</Label><input data-testid="final-setup-total" type="number" min="0" step="0.01" className="mt-1 w-full rounded-lg border px-3 py-2 text-sm" value={finalSetup === null ? quote.listSetup : finalSetup} onChange={(event) => setFinalSetup(event.target.value)} /></div>
+                  <div><Label>Nihai aylık (€)</Label><input data-testid="final-monthly-total" disabled={quote.pendingPricing.length > 0} type="number" min="0" step="0.01" className="mt-1 w-full rounded-lg border px-3 py-2 text-sm" value={finalMonthly === null ? quote.listMonthly : finalMonthly} onChange={(event) => setFinalMonthly(event.target.value)} /></div>
+                  <div><Label>Nihai kurulum (€)</Label><input data-testid="final-setup-total" disabled={quote.pendingPricing.length > 0} type="number" min="0" step="0.01" className="mt-1 w-full rounded-lg border px-3 py-2 text-sm" value={finalSetup === null ? quote.listSetup : finalSetup} onChange={(event) => setFinalSetup(event.target.value)} /></div>
                 </div>
                 {quote.isOverridden && (
                   <div><Label>Fiyat değişikliği nedeni *</Label><textarea data-testid="quote-override-reason" className="mt-1 min-h-20 w-full rounded-lg border px-3 py-2 text-sm" value={overrideReason} onChange={(event) => setOverrideReason(event.target.value)} placeholder="İndirim/onay gerekçesini yazın" /></div>
@@ -950,9 +997,9 @@ const CreateTenantModal = ({ open, onOpenChange, onSuccess }) => {
                   <ChevronLeft size={15} /> Geri
                 </Button>
                 <div className="flex items-center gap-3">
-                  <div className="hidden text-right text-xs sm:block"><div className="font-semibold text-slate-900">€{quote.finalMonthly}/ay</div><div className="text-slate-500">Kurulum €{quote.finalSetup}</div></div>
+                  <div className="hidden text-right text-xs sm:block">{quote.pendingPricing.length ? <span>Ek ürün fiyatı bekleniyor</span> : <><div className="font-semibold text-slate-900">€{quote.finalMonthly}/ay</div><div className="text-slate-500">Kurulum €{quote.finalSetup}</div></>}</div>
                   <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>{t('cm.pages_admin_CreateTenantModal.iptal_25174')}</Button>
-                  <Button data-testid="create-tenant-submit" onClick={handleSubmit} disabled={saving || !planReady}>
+                  <Button data-testid="create-tenant-submit" onClick={handleSubmit} disabled={saving || !planReady || quote.pendingPricing.length > 0}>
                     {saving ? 'Oluşturuluyor...' : 'Tesis Oluştur'}
                   </Button>
                 </div>

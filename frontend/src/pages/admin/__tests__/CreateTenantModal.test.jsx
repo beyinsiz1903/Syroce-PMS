@@ -17,7 +17,7 @@ vi.mock('axios', () => ({
 const PLAN_CATALOG = {
   mini: { pms: true, reservation_calendar: true, dashboard: true, guests: true, housekeeping: true, channel_manager: false, agency_extranet: false, invoices: false, quick_id: false },
   basic: { pms: true, reservation_calendar: true, dashboard: true, guests: true, housekeeping: true, reports: true, ai: false, ai_chatbot: false, quick_id: false, channel_manager: true, agency_extranet: true, invoices: false },
-  professional: { pms: true, reservation_calendar: true, dashboard: true, guests: true, housekeeping: true, reports: true, channel_manager: true, agency_extranet: true, invoices: true, quick_id: false },
+  professional: { pms: true, reservation_calendar: true, dashboard: true, guests: true, housekeeping: true, reports: true, channel_manager: true, agency_extranet: true, invoices: true, quick_id: false, pos_basic: true },
   enterprise: { pms: true, channel_manager: true, agency_extranet: true, invoices: true, quick_id: false },
 };
 
@@ -171,5 +171,135 @@ describe('CreateTenantModal professional module wizard', () => {
     fireEvent.change(tier, { target: { value: 'basic' } });            // operator overrides
     expect(screen.getByTestId('create-tenant-tier-below-needs')).toBeInTheDocument();
   });
-});
 
+  it('applies a newly selected need after unrelated module customization', async () => {
+    await reachInstallationSummary();
+    fireEvent.click(screen.getByTestId('tenant-module-customize-toggle'));
+    fireEvent.click(screen.getByRole('button', { name: /Operasyon & Entegrasyon Modülleri/ }));
+    fireEvent.click(screen.getByLabelText(/Kimlik Tarama \(Quick-ID\)/));
+    fireEvent.click(screen.getByRole('button', { name: /Geri/ }));
+    fireEvent.click(screen.getByTestId('need-spa'));
+    fireEvent.click(screen.getByTestId('create-tenant-next-modules'));
+    axios.post.mockResolvedValue({ data: { success: true } });
+    fireEvent.click(screen.getByTestId('create-tenant-submit'));
+    await waitFor(() => expect(axios.post).toHaveBeenCalled());
+    const payload = axios.post.mock.calls[0][1];
+    expect(payload.modules.quick_id).toBe(true);
+    expect(payload.modules.spa).toBe(true);
+    expect(payload.commercial_quote.list_monthly_total).toBe(137);
+    expect(payload.commercial_quote.list_setup_total).toBe(99);
+  });
+
+  it('restaurant need grants the actual Basic POS SKU without granting Pro', async () => {
+    await reachInstallationSummary();
+    fireEvent.click(screen.getByRole('button', { name: /Geri/ }));
+    fireEvent.click(screen.getByTestId('need-restaurant'));
+    await waitFor(() => expect(screen.getByTestId('create-tenant-tier')).toHaveValue('professional'));
+    fireEvent.click(screen.getByTestId('create-tenant-next-modules'));
+    axios.post.mockResolvedValue({ data: { success: true } });
+    fireEvent.click(screen.getByTestId('create-tenant-submit'));
+    await waitFor(() => expect(axios.post).toHaveBeenCalled());
+    const payload = axios.post.mock.calls[0][1];
+    expect(payload.modules.pos_basic).toBe(true);
+    expect(payload.modules.pos_fnb_basic).toBe(true);
+    expect(payload.modules.pos_fnb).toBe(false);
+    expect(payload.commercial_quote.list_monthly_total).toBe(299);
+  });
+
+  it('requires explicit EUR pricing and reasons for unpriced paid extras', async () => {
+    await reachInstallationSummary();
+    fireEvent.click(screen.getByRole('button', { name: /Geri/ }));
+    fireEvent.click(screen.getByTestId('need-staff'));
+    fireEvent.click(screen.getByTestId('need-parking'));
+    fireEvent.click(screen.getByTestId('create-tenant-next-modules'));
+    expect(screen.getByTestId('quote-pricing-incomplete')).toBeInTheDocument();
+    expect(screen.getByTestId('create-tenant-submit')).toBeDisabled();
+    fireEvent.click(screen.getByTestId('create-tenant-submit'));
+    expect(axios.post).not.toHaveBeenCalled();
+    for (const [key, monthly, setup] of [['hr', '12,34', '0'], ['parking', '23.45', '30,10']]) {
+      fireEvent.change(screen.getByTestId(`negotiated-${key}-monthly`), { target: { value: monthly } });
+      fireEvent.change(screen.getByTestId(`negotiated-${key}-setup`), { target: { value: setup } });
+      expect(screen.getByTestId('create-tenant-submit')).toBeDisabled();
+      fireEvent.change(screen.getByTestId(`negotiated-${key}-reason`), { target: { value: 'Tesis ile onaylanan EUR teklifi' } });
+    }
+    expect(screen.queryByTestId('quote-pricing-incomplete')).not.toBeInTheDocument();
+    expect(screen.getByTestId('create-tenant-submit')).toBeEnabled();
+    axios.post.mockResolvedValue({ data: { success: true } });
+    fireEvent.click(screen.getByTestId('create-tenant-submit'));
+    await waitFor(() => expect(axios.post).toHaveBeenCalled());
+    const payload = axios.post.mock.calls[0][1];
+    expect(payload.modules.hr).toBe(true);
+    expect(payload.modules.parking).toBe(true);
+    expect(payload.commercial_quote.line_items).toEqual(expect.arrayContaining([
+      expect.objectContaining({ module_key: 'hr', monthly: 12.34, setup: 0 }),
+      expect.objectContaining({ module_key: 'parking', monthly: 23.45, setup: 30.1 }),
+    ]));
+    expect(payload.commercial_quote.list_monthly_total).toBe(114.79);
+    expect(payload.commercial_quote.list_setup_total).toBe(30.1);
+    expect(payload.commercial_quote.negotiated_addon_prices).toEqual({
+      hr: { monthly: 12.34, setup: 0, reason: 'Tesis ile onaylanan EUR teklifi' },
+      parking: { monthly: 23.45, setup: 30.1, reason: 'Tesis ile onaylanan EUR teklifi' },
+    });
+  });
+
+  it('removes a deselected need without losing unrelated explicit module choices', async () => {
+    await reachInstallationSummary();
+    fireEvent.click(screen.getByRole('button', { name: /Geri/ }));
+    fireEvent.click(screen.getByTestId('need-spa'));
+    fireEvent.click(screen.getByTestId('create-tenant-next-modules'));
+    fireEvent.click(screen.getByTestId('tenant-module-customize-toggle'));
+    fireEvent.click(screen.getByRole('button', { name: /Operasyon & Entegrasyon Modülleri/ }));
+    fireEvent.click(screen.getByLabelText(/Kimlik Tarama \(Quick-ID\)/));
+    fireEvent.click(screen.getByRole('button', { name: /Geri/ }));
+    fireEvent.click(screen.getByTestId('need-spa'));
+    fireEvent.click(screen.getByTestId('create-tenant-next-modules'));
+    axios.post.mockResolvedValue({ data: { success: true } });
+    fireEvent.click(screen.getByTestId('create-tenant-submit'));
+    await waitFor(() => expect(axios.post).toHaveBeenCalled());
+    const payload = axios.post.mock.calls[0][1];
+    expect(payload.modules.spa).toBe(false);
+    expect(payload.modules.quick_id).toBe(true);
+    expect(payload.commercial_quote.list_monthly_total).toBe(98);
+  });
+
+  it('drops pricing requirements when an unpriced extra is deselected', async () => {
+    await reachInstallationSummary();
+    fireEvent.click(screen.getByRole('button', { name: /Geri/ }));
+    fireEvent.click(screen.getByTestId('need-staff'));
+    fireEvent.click(screen.getByTestId('create-tenant-next-modules'));
+    expect(screen.getByTestId('create-tenant-submit')).toBeDisabled();
+    fireEvent.change(screen.getByTestId('negotiated-hr-monthly'), { target: { value: '100' } });
+    fireEvent.click(screen.getByRole('button', { name: /Geri/ }));
+    fireEvent.click(screen.getByTestId('need-staff'));
+    fireEvent.click(screen.getByTestId('create-tenant-next-modules'));
+    axios.post.mockResolvedValue({ data: { success: true } });
+    fireEvent.click(screen.getByTestId('create-tenant-submit'));
+    await waitFor(() => expect(axios.post).toHaveBeenCalled());
+    expect(axios.post.mock.calls[0][1].modules.hr).toBe(false);
+    expect(axios.post.mock.calls[0][1].commercial_quote.negotiated_addon_prices).toEqual({});
+  });
+
+  it('accepts an intentional free extra only with a reason, and rejects negative pricing', async () => {
+    await reachInstallationSummary();
+    fireEvent.click(screen.getByRole('button', { name: /Geri/ }));
+    fireEvent.click(screen.getByTestId('need-staff'));
+    fireEvent.click(screen.getByTestId('create-tenant-next-modules'));
+    fireEvent.change(screen.getByTestId('negotiated-hr-monthly'), { target: { value: '0' } });
+    fireEvent.change(screen.getByTestId('negotiated-hr-setup'), { target: { value: '0' } });
+    fireEvent.change(screen.getByTestId('negotiated-hr-reason'), { target: { value: '   ' } });
+    expect(screen.getByTestId('create-tenant-submit')).toBeDisabled();
+    fireEvent.change(screen.getByTestId('negotiated-hr-reason'), { target: { value: 'Pilot dönemi ücretsiz kullanım onayı' } });
+    expect(screen.getByTestId('create-tenant-submit')).toBeEnabled();
+    fireEvent.change(screen.getByTestId('negotiated-hr-monthly'), { target: { value: '-1' } });
+    expect(screen.getByTestId('create-tenant-submit')).toBeDisabled();
+    fireEvent.change(screen.getByTestId('negotiated-hr-monthly'), { target: { value: '1.001' } });
+    expect(screen.getByTestId('create-tenant-submit')).toBeDisabled();
+    fireEvent.change(screen.getByTestId('negotiated-hr-monthly'), { target: { value: '0' } });
+    axios.post.mockResolvedValue({ data: { success: true } });
+    fireEvent.click(screen.getByTestId('create-tenant-submit'));
+    await waitFor(() => expect(axios.post).toHaveBeenCalled());
+    expect(axios.post.mock.calls[0][1].commercial_quote.line_items).toEqual(expect.arrayContaining([
+      expect.objectContaining({ module_key: 'hr', monthly: 0, setup: 0, included: false }),
+    ]));
+  });
+});

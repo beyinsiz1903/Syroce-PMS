@@ -11,7 +11,9 @@ export const NEEDS = [
   { group: 'Satış', id: 'ota', label: "OTA'lar (Booking, Expedia…)", modules: ['channel_manager'] },
   { group: 'Satış', id: 'agencies', label: 'Acenteler (Acente Extranet)', modules: ['agency_extranet'] },
   { group: 'Satış', id: 'website', label: 'Kendi web sitesinden rezervasyon', modules: ['booking_engine'] },
-  { group: 'Tesiste', id: 'restaurant', label: 'Restoran / bar', modules: ['pos_basic'] },
+  // The commercial plan includes pos_basic; POS endpoints use the canonical
+  // pos_fnb entitlement. Its explicit Basic SKU grants access, not Pro features.
+  { group: 'Tesiste', id: 'restaurant', label: 'Restoran / bar', modules: ['pos_basic', 'pos_fnb_basic'], planModules: ['pos_basic'] },
   { group: 'Tesiste', id: 'spa', label: 'SPA', modules: ['spa'], paid: true },
   { group: 'Tesiste', id: 'events', label: 'Toplantı / etkinlik', modules: ['mice'], paid: true },
   { group: 'Tesiste', id: 'parking', label: 'Transfer / otopark', modules: ['parking'], paid: true },
@@ -37,7 +39,7 @@ export function recommendTier(needIds, catalog, minTier = 'mini') {
   for (const id of needIds) {
     const need = BY_ID[id];
     if (!need || need.paid) continue;
-    for (const key of need.modules) {
+    for (const key of need.planModules || need.modules) {
       const first = TIER_ORDER.findIndex((name) => catalog?.[name]?.[key] === true);
       if (first < 0) { uncovered.push(key); continue; }
       if (first > tier) tier = first;

@@ -170,6 +170,73 @@ async def test_legacy_plan_included_module_allowed(_patch_db):
     # Legacy plan acts as 'pro'
     assert client.get("/api/fnb/kitchen-display").status_code != 403
 
+
+@pytest.mark.asyncio
+async def test_onboarding_basic_sku_opens_pos_without_pro_features(_patch_db):
+    from core import entitlement
+    from core.entitlements.enforcement import get_tenant_active_editions, get_tenant_limit, tenant_has_feature
+
+    await _patch_db.tenants.insert_one({
+        "id": "tenant-A", "subscription_tier": "professional",
+        "modules": {"pos_basic": True, "pos_fnb": False, "pos_fnb_basic": True},
+    })
+    assert await entitlement.check_module_access("tenant-A", "pos_fnb") is True
+    assert (await entitlement.effective_tenant_modules({
+        "id": "tenant-A", "subscription_tier": "professional",
+        "modules": {"pos_basic": True, "pos_fnb": False, "pos_fnb_basic": True},
+    }))["pos_fnb"] is True
+    assert await get_tenant_active_editions("tenant-A", "pos_fnb") == ["basic"]
+    assert await get_tenant_limit("tenant-A", "pos_fnb", "outlets") == 1
+    assert await get_tenant_limit("tenant-A", "pos_fnb", "devices") == 3
+    for feature in ("kds", "inventory", "multi_outlet", "mobile_waiter"):
+        assert await tenant_has_feature("tenant-A", "pos_fnb", feature) is False
+
+    client = TestClient(setup_fake_app())
+    assert client.post("/api/pos/transaction").status_code == 422  # Body validation, not a licence refusal.
+    assert client.get("/api/fnb/kitchen-display").status_code == 403
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("product_key", ["pos_fnb_pro", "pos_fnb"])
+async def test_active_pro_or_legacy_store_upgrade_wins_over_onboarding_basic(_patch_db, product_key):
+    from core.entitlements.enforcement import get_tenant_limit, tenant_has_feature
+
+    await _patch_db.tenants.insert_one({
+        "id": "tenant-A", "modules": {"pos_fnb": False, "pos_fnb_basic": True},
+    })
+    await _patch_db.tenant_subscriptions.insert_one({
+        "tenant_id": "tenant-A", "product_key": product_key, "status": "active", "end_date": None,
+    })
+    assert await tenant_has_feature("tenant-A", "pos_fnb", "kds") is True
+    assert await get_tenant_limit("tenant-A", "pos_fnb", "outlets") == 5
+
+
+@pytest.mark.asyncio
+async def test_explicit_legacy_pro_flag_is_not_downgraded_by_basic_sku(_patch_db):
+    from core.entitlements.enforcement import get_tenant_active_editions
+
+    await _patch_db.tenants.insert_one({
+        "id": "tenant-A", "modules": {"pos_fnb": True, "pos_fnb_basic": True},
+    })
+    assert await get_tenant_active_editions("tenant-A", "pos_fnb") == ["pro"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status,days", [("active", -1), ("cancelled", 5)])
+async def test_expired_or_cancelled_upgrade_keeps_only_onboarding_basic(_patch_db, status, days):
+    from core.entitlements.enforcement import get_tenant_active_editions, get_tenant_limit, tenant_has_feature
+
+    await _patch_db.tenants.insert_one({
+        "id": "tenant-A", "modules": {"pos_fnb": False, "pos_fnb_basic": True},
+    })
+    await _patch_db.tenant_subscriptions.insert_one({
+        "tenant_id": "tenant-A", "product_key": "pos_fnb_pro", "status": status,
+        "end_date": (datetime.now(UTC) + timedelta(days=days)).isoformat(),
+    })
+    assert await get_tenant_active_editions("tenant-A", "pos_fnb") == ["basic"]
+    assert await tenant_has_feature("tenant-A", "pos_fnb", "kds") is False
+    assert await get_tenant_limit("tenant-A", "pos_fnb", "outlets") == 1
+
 @pytest.mark.asyncio
 async def test_outlet_quota_limit_under(_patch_db, monkeypatch):
     # Mock require_op logic out
