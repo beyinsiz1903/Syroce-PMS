@@ -46,7 +46,10 @@ ROUTE_MODULE_MAP: dict[str, str | tuple[str, ...]] = {
     "/api/groups/": "group_sales",
     "/api/loyalty/": "loyalty_program",
     "/api/analytics/gm": "gm_dashboards",
-    "/api/marketplace/": "channel_manager",
+    # The remaining /api/marketplace/* routes are the hotel supplies market
+    # (products, stock, purchase orders, suppliers, deliveries). It is not a
+    # channel-manager product: every route carries the opt-in
+    # hidden_marketplace feature check itself (domains/pms/marketplace_router).
     # Marketplace-purchased integration. Aliases (quick_id_integration)
     # are resolved inside core.subscriptions.tenant_has_module.
     "/api/quick-id/": "quick_id",

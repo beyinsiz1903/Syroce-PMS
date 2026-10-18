@@ -29,7 +29,7 @@ def test_without_explicit_modules_it_follows_the_plan_channel_manager():
     ("/api/marketplace/hotel/statements/s1", "agency_extranet"),
     ("/api/marketplace/hotel/agency-readiness", "agency_extranet"),
     ("/api/marketplace/incoming-requests/c1/approve", "agency_extranet"),
-    ("/api/marketplace/products", "channel_manager"),  # hotel supplies market: unchanged here
+    ("/api/marketplace/products", None),  # supplies market: its own hidden_marketplace feature
     ("/api/channel-manager/unified-rate-manager/agency-rates", ("channel_manager", "agency_extranet")),
     ("/api/channel-manager/connections", "channel_manager"),
 ])

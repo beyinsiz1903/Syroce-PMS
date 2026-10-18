@@ -1,12 +1,9 @@
-"""F8 § 98 (Wave 3) — Marketplace lifecycle: deployed routes + the one
-feature-flag-gated write surface.
+"""F8 § 98 (Wave 3) — Marketplace lifecycle: deployed, opt-in supplies routes.
 
 Accurate contract (verified against backend/domains/pms/marketplace_router.py):
-  - The marketplace inventory/PO/supplier routes ARE registered (deployed);
-    most are gated by RBAC (require_op / role guards), NOT by a feature flag.
-  - Only `POST /api/marketplace/purchase-orders` is additionally gated behind
-    the `hidden_marketplace` feature flag (intentionally-undeployed write
-    surface for tenants that have not opted in).
+  - The marketplace inventory/PO/supplier routes ARE registered (deployed).
+  - All supplies routes require the `hidden_marketplace` feature flag, with
+    their operation/role guards preserved. POS and Agency Extranet are separate.
 
 The marketplace deep-lifecycle stress spec's P2 "module-blocked" for the
 stress tenant therefore reflects RBAC/feature gating on a *deployed* surface,

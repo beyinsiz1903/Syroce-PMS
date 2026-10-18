@@ -13,18 +13,10 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter
 from pydantic import BaseModel, ConfigDict, Field
 
 from core.database import db
-from core.helpers import (
-    require_feature,
-)
-from core.security import (
-    get_current_user,
-)
-from models.schemas import Order, OrderCreate, User
-from modules.pms_core.role_permission_service import require_module_role  # v99 DW
 
 try:
     from websocket_server import broadcast_kitchen_orders
@@ -460,26 +452,6 @@ async def _build_menu_engineering(
     }
 
 
-router = APIRouter(prefix="/api", tags=["PMS / POS & F&B"])
-
-
-# ── POST /marketplace/orders ──
-@router.post("/marketplace/orders", response_model=Order, dependencies=[Depends(require_feature("hidden_marketplace"))])
-async def create_order(
-    order_data: OrderCreate,
-    current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_role("pos")),  # v99 DW
-):
-    order = Order(tenant_id=current_user.tenant_id, **order_data.model_dump())
-    order_dict = order.model_dump()
-    order_dict["created_at"] = order_dict["created_at"].isoformat()
-    await db.orders.insert_one(order_dict)
-    return order
-
-
-# ── GET /marketplace/orders ──
-@router.get("/marketplace/orders", response_model=list[Order], dependencies=[Depends(require_feature("hidden_marketplace"))])
-@cached(ttl=300, key_prefix="marketplace_orders")  # Cache for 5 min
-async def get_orders(current_user: User = Depends(get_current_user)):
-    orders = await db.orders.find({"tenant_id": current_user.tenant_id}, {"_id": 0}).to_list(1000)
-    return orders
+# Compatibility for legacy imports only. Supplies orders are mounted separately
+# from supplies_orders_router, never under the POS licence or user scope.
+router = APIRouter()

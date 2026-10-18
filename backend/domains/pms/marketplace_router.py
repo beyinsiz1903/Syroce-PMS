@@ -43,6 +43,12 @@ from modules.pms_core.role_permission_service import (
 
 router = APIRouter(prefix="/api", tags=["pos-marketplace"])
 
+# Hotel supplies market (products, stock, purchase orders, suppliers,
+# deliveries, warehouses): an opt-in feature granted per hotel. Every
+# /marketplace/* route here requires it; the central middleware no longer
+# ties this market to the channel manager.
+_SUPPLIES_FEATURE = [Depends(require_feature("hidden_marketplace"))]
+
 _POS_CATEGORY_ALIASES = {
     "Ana Yemek": "food",
     "Başlangıç": "appetizer",
@@ -928,7 +934,7 @@ async def get_marketplace_products(category: str = None, current_user: User = De
     return {"products": products, "count": len(products)}
 
 
-@router.post("/marketplace/products")
+@router.post("/marketplace/products", dependencies=_SUPPLIES_FEATURE)
 async def create_marketplace_product(
     request: CreateMarketplaceProductRequest,
     current_user: User = Depends(get_current_user),
@@ -952,7 +958,7 @@ async def create_marketplace_product(
     return product
 
 
-@router.get("/marketplace/inventory")
+@router.get("/marketplace/inventory", dependencies=_SUPPLIES_FEATURE)
 async def get_inventory(location: str = None, current_user: User = Depends(get_current_user)):
     """Get current inventory levels"""
     query = {"tenant_id": current_user.tenant_id}
@@ -964,7 +970,7 @@ async def get_inventory(location: str = None, current_user: User = Depends(get_c
     return {"inventory": inventory, "count": len(inventory)}
 
 
-@router.post("/marketplace/inventory/adjust")
+@router.post("/marketplace/inventory/adjust", dependencies=_SUPPLIES_FEATURE)
 async def adjust_inventory(
     request: AdjustInventoryRequest,
     current_user: User = Depends(get_current_user),
@@ -1007,7 +1013,7 @@ async def adjust_inventory(
     return {"message": "Inventory adjusted successfully"}
 
 
-@router.get("/marketplace/purchase-orders")
+@router.get("/marketplace/purchase-orders", dependencies=_SUPPLIES_FEATURE)
 async def get_purchase_orders(status: str = None, current_user: User = Depends(get_current_user)):
     """Get purchase orders"""
     query = {"tenant_id": current_user.tenant_id}
@@ -1125,7 +1131,7 @@ async def cancel_purchase_order(
     return po
 
 
-@router.post("/marketplace/purchase-orders/{po_id}/approve")
+@router.post("/marketplace/purchase-orders/{po_id}/approve", dependencies=_SUPPLIES_FEATURE)
 async def approve_purchase_order(
     po_id: str,
     current_user: User = Depends(get_current_user),
@@ -1142,7 +1148,7 @@ async def approve_purchase_order(
     return {"message": "Purchase order approved successfully"}
 
 
-@router.post("/marketplace/purchase-orders/{po_id}/receive")
+@router.post("/marketplace/purchase-orders/{po_id}/receive", dependencies=_SUPPLIES_FEATURE)
 async def receive_purchase_order(
     po_id: str,
     request: ReceivePurchaseOrderRequest,
@@ -1170,7 +1176,7 @@ async def receive_purchase_order(
     return {"message": "Purchase order received and inventory updated"}
 
 
-@router.get("/marketplace/deliveries")
+@router.get("/marketplace/deliveries", dependencies=_SUPPLIES_FEATURE)
 async def get_deliveries(status: str = None, current_user: User = Depends(get_current_user)):
     """Get delivery tracking"""
     query = {"tenant_id": current_user.tenant_id}
@@ -1182,7 +1188,7 @@ async def get_deliveries(status: str = None, current_user: User = Depends(get_cu
     return {"deliveries": deliveries, "count": len(deliveries)}
 
 
-@router.post("/marketplace/deliveries")
+@router.post("/marketplace/deliveries", dependencies=_SUPPLIES_FEATURE)
 async def create_delivery(
     request: CreateDeliveryRequest,
     current_user: User = Depends(get_current_user),
@@ -1205,7 +1211,7 @@ async def create_delivery(
     return delivery
 
 
-@router.get("/marketplace/stock-alerts")
+@router.get("/marketplace/stock-alerts", dependencies=_SUPPLIES_FEATURE)
 async def get_stock_alerts(current_user: User = Depends(get_current_user)):
     """Get low stock alerts"""
     # Get all inventory items
@@ -1238,7 +1244,7 @@ async def get_stock_alerts(current_user: User = Depends(get_current_user)):
 
 
 # 1. SUPPLIER MANAGEMENT WITH CREDIT LIMITS
-@router.get("/marketplace/suppliers")
+@router.get("/marketplace/suppliers", dependencies=_SUPPLIES_FEATURE)
 async def get_suppliers(status: str = None, current_user: User = Depends(get_current_user)):
     """Get all suppliers with credit limit info"""
     query = {"tenant_id": current_user.tenant_id}
@@ -1250,7 +1256,7 @@ async def get_suppliers(status: str = None, current_user: User = Depends(get_cur
     return {"suppliers": suppliers, "count": len(suppliers)}
 
 
-@router.post("/marketplace/suppliers")
+@router.post("/marketplace/suppliers", dependencies=_SUPPLIES_FEATURE)
 async def create_supplier(
     request: CreateSupplierRequest,
     current_user: User = Depends(get_current_user),
@@ -1277,7 +1283,7 @@ async def create_supplier(
     return supplier
 
 
-@router.put("/marketplace/suppliers/{supplier_id}/credit")
+@router.put("/marketplace/suppliers/{supplier_id}/credit", dependencies=_SUPPLIES_FEATURE)
 async def update_supplier_credit(
     supplier_id: str,
     request: UpdateSupplierCreditRequest,
@@ -1300,7 +1306,7 @@ async def update_supplier_credit(
     return {"message": "Supplier credit updated successfully", "credit_limit": request.credit_limit, "available_credit": available_credit}
 
 
-@router.get("/marketplace/suppliers/{supplier_id}/credit-status")
+@router.get("/marketplace/suppliers/{supplier_id}/credit-status", dependencies=_SUPPLIES_FEATURE)
 async def get_supplier_credit_status(supplier_id: str, current_user: User = Depends(get_current_user)):
     """Get supplier credit status and outstanding balance"""
     supplier = await db.suppliers.find_one({"id": supplier_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
@@ -1327,7 +1333,7 @@ async def get_supplier_credit_status(supplier_id: str, current_user: User = Depe
 
 
 # 2. GM APPROVAL WORKFLOW FOR PURCHASE ORDERS
-@router.post("/marketplace/purchase-orders/{po_id}/submit-for-approval")
+@router.post("/marketplace/purchase-orders/{po_id}/submit-for-approval", dependencies=_SUPPLIES_FEATURE)
 async def submit_po_for_approval(
     po_id: str,
     current_user: User = Depends(get_current_user),
@@ -1364,7 +1370,7 @@ async def submit_po_for_approval(
     return {"message": "Purchase order submitted for GM approval", "approval_request_id": approval_request["id"]}
 
 
-@router.get("/marketplace/approvals/pending")
+@router.get("/marketplace/approvals/pending", dependencies=_SUPPLIES_FEATURE)
 async def get_pending_approvals(current_user: User = Depends(get_current_user)):
     """Get all pending approval requests (for GM)"""
     approvals = await db.approval_requests.find({"tenant_id": current_user.tenant_id, "status": "pending"}, {"_id": 0}).sort("requested_at", -1).to_list(100)
@@ -1372,7 +1378,7 @@ async def get_pending_approvals(current_user: User = Depends(get_current_user)):
     return {"approvals": approvals, "count": len(approvals)}
 
 
-@router.post("/marketplace/purchase-orders/{po_id}/approve")
+@router.post("/marketplace/purchase-orders/{po_id}/approve", dependencies=_SUPPLIES_FEATURE)
 async def approve_purchase_order_by_gm(
     po_id: str,
     request: ApprovePurchaseOrderRequest,
@@ -1409,7 +1415,7 @@ async def approve_purchase_order_by_gm(
     return {"message": "Purchase order approved successfully"}
 
 
-@router.post("/marketplace/purchase-orders/{po_id}/reject")
+@router.post("/marketplace/purchase-orders/{po_id}/reject", dependencies=_SUPPLIES_FEATURE)
 async def reject_purchase_order(
     po_id: str,
     request: RejectPurchaseOrderRequest,
@@ -1435,7 +1441,7 @@ async def reject_purchase_order(
 
 
 # 3. WAREHOUSE / DEPOT STOCK TRACKING
-@router.get("/marketplace/warehouses")
+@router.get("/marketplace/warehouses", dependencies=_SUPPLIES_FEATURE)
 async def get_warehouses(current_user: User = Depends(get_current_user)):
     """Get all warehouses/depots"""
     warehouses = await db.warehouses.find({"tenant_id": current_user.tenant_id}, {"_id": 0}).to_list(100)
@@ -1443,7 +1449,7 @@ async def get_warehouses(current_user: User = Depends(get_current_user)):
     return {"warehouses": warehouses, "count": len(warehouses)}
 
 
-@router.post("/marketplace/warehouses")
+@router.post("/marketplace/warehouses", dependencies=_SUPPLIES_FEATURE)
 async def create_warehouse(
     request: CreateWarehouseRequest,
     current_user: User = Depends(get_current_user),
@@ -1467,7 +1473,7 @@ async def create_warehouse(
     return warehouse
 
 
-@router.get("/marketplace/warehouses/{warehouse_id}/inventory")
+@router.get("/marketplace/warehouses/{warehouse_id}/inventory", dependencies=_SUPPLIES_FEATURE)
 async def get_warehouse_inventory(warehouse_id: str, current_user: User = Depends(get_current_user)):
     """Get inventory for specific warehouse"""
     warehouse = await db.warehouses.find_one({"id": warehouse_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
@@ -1491,7 +1497,7 @@ async def get_warehouse_inventory(warehouse_id: str, current_user: User = Depend
     return {"warehouse": warehouse, "inventory": inventory, "total_items": total_items, "item_count": len(inventory)}
 
 
-@router.get("/marketplace/stock-summary")
+@router.get("/marketplace/stock-summary", dependencies=_SUPPLIES_FEATURE)
 async def get_stock_summary_by_warehouse(current_user: User = Depends(get_current_user)):
     """Get stock summary across all warehouses"""
     warehouses = await db.warehouses.find({"tenant_id": current_user.tenant_id}, {"_id": 0}).to_list(100)
@@ -1519,7 +1525,7 @@ async def get_stock_summary_by_warehouse(current_user: User = Depends(get_curren
 
 
 # 4. SHIPPING & DELIVERY TRACKING WITH CARRIER
-@router.put("/marketplace/deliveries/{delivery_id}/update-status")
+@router.put("/marketplace/deliveries/{delivery_id}/update-status", dependencies=_SUPPLIES_FEATURE)
 async def update_delivery_status(
     delivery_id: str,
     request: UpdateDeliveryStatusRequest,
@@ -1547,7 +1553,7 @@ async def update_delivery_status(
     return {"message": "Delivery status updated successfully", "new_status": request.status, "tracking_event": tracking_event}
 
 
-@router.get("/marketplace/deliveries/{delivery_id}/tracking")
+@router.get("/marketplace/deliveries/{delivery_id}/tracking", dependencies=_SUPPLIES_FEATURE)
 async def get_delivery_tracking(delivery_id: str, current_user: User = Depends(get_current_user)):
     """Get full tracking history for delivery"""
     delivery = await db.deliveries.find_one({"id": delivery_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
@@ -1567,7 +1573,7 @@ async def get_delivery_tracking(delivery_id: str, current_user: User = Depends(g
     }
 
 
-@router.get("/marketplace/deliveries/in-transit")
+@router.get("/marketplace/deliveries/in-transit", dependencies=_SUPPLIES_FEATURE)
 async def get_in_transit_deliveries(current_user: User = Depends(get_current_user)):
     """Get all in-transit deliveries"""
     deliveries = await db.deliveries.find({"tenant_id": current_user.tenant_id, "status": "in_transit"}, {"_id": 0}).sort("estimated_delivery", 1).to_list(100)
