@@ -34,7 +34,8 @@ async def test_mtd_cost_summary_reads_all_cost_and_revenue_rows(monkeypatch):
     monkeypatch.setattr(
         reports,
         "db",
-        SimpleNamespace(purchase_orders=purchase_orders, folio_charges=folio_charges),
+        SimpleNamespace(purchase_orders=purchase_orders, folio_charges=folio_charges,
+            **{key: _Collection() for key in ("extra_charges", "pos_orders", "pos_transactions", "pos_menu_transactions", "transactions")}),
     )
 
     async def business_day(*_args, **_kwargs):

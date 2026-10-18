@@ -13,6 +13,7 @@ try:
 except ImportError:
     Workbook = None
 
+from core.business_date_service import ensure_business_date_initialized
 from core.database import db
 from core.security import get_current_user
 from models.schemas import (
@@ -20,6 +21,7 @@ from models.schemas import (
 )
 from modules.folio.services.folio_balance_read_service import FolioBalanceReadService
 from modules.folio.services.open_folio_service import OpenFolioService
+from modules.pms_core.report_money import add_amount, rounded_totals, single_amount
 from modules.pms_core.role_permission_service import require_op
 
 try:
@@ -44,6 +46,7 @@ async def get_expense_summary(
     date: str | None = None,  # YYYY-MM-DD
     period: str = "today",  # today, week, month
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),
 ):
     """
     Get expense summary with categories
@@ -53,121 +56,84 @@ async def get_expense_summary(
         if date:
             target_date = datetime.fromisoformat(date).date()
         else:
-            target_date = datetime.now(UTC).date()
+            state = await ensure_business_date_initialized(db, current_user.tenant_id)
+            target_date = datetime.fromisoformat(str(state["business_date"])[:10]).date()
 
         # Calculate date range
         if period == "today":
             start_date = target_date
             end_date = target_date
         elif period == "week":
-            start_date = target_date - timedelta(days=7)
+            start_date = target_date - timedelta(days=6)
             end_date = target_date
-        else:  # month
+        elif period == "month":
             start_date = target_date.replace(day=1)
             end_date = target_date
+        else:
+            raise HTTPException(422, "Dönem today, week veya month olmalıdır")
 
-        # Sample expense data (in production, fetch from expenses collection)
-        expenses = {
-            "fnb_costs": {"amount": 15420.50, "category": "F&B Maliyetleri", "breakdown": {"food_purchases": 8500.00, "beverages": 4200.50, "supplies": 2720.00}},
-            "housekeeping_expenses": {"amount": 8750.00, "category": "Temizlik Giderleri", "breakdown": {"cleaning_supplies": 3200.00, "laundry": 4050.00, "equipment": 1500.00}},
-            "maintenance_costs": {"amount": 5600.00, "category": "Teknik Maliyetler", "breakdown": {"repairs": 3200.00, "parts": 1800.00, "preventive": 600.00}},
-            "staff_costs": {"amount": 45800.00, "category": "Personel Maliyetleri", "breakdown": {"hourly_wages": 28500.00, "overtime": 8200.00, "benefits": 9100.00}, "hourly_rate_avg": 85.50},
-            "utilities": {"amount": 12300.00, "category": "Enerji & Utilities", "breakdown": {"electricity": 7200.00, "water": 2800.00, "gas": 2300.00}},
-            "procurement": {"amount": 9850.00, "category": "Satın Alma", "breakdown": {"supplies": 5200.00, "equipment": 3150.00, "other": 1500.00}},
-        }
+        from core.tenant_currency import get_tenant_currency
+        from modules.pms_core.reporting_financials import report_payment_period_match
 
-        # Calculate totals
-        total_expenses = sum(cat["amount"] for cat in expenses.values())
+        tenant_currency, _ = await get_tenant_currency(current_user.tenant_id)
+        rows = await db.expenses.find({"tenant_id": current_user.tenant_id,
+            **report_payment_period_match(start_date.isoformat(), end_date.isoformat(), date_fields=("date", "expense_date", "created_at"))}, {"_id": 0}).to_list(None)
+        totals, categories = {}, {}
+        for row in rows:
+            amount = row.get("total_amount", row.get("amount", 0))
+            category = str(row.get("category") or "other")
+            add_amount(totals, row.get("currency") or tenant_currency, amount)
+            add_amount(categories.setdefault(category, {}), row.get("currency") or tenant_currency, amount)
+        expenses = {key: {"category": key, "amount": single_amount(values), "by_currency": rounded_totals(values), "breakdown": {}} for key, values in categories.items()}
+        total_expenses = single_amount(totals)
 
         # Calculate daily average for the period
         days_in_period = (end_date - start_date).days + 1
-        daily_avg = total_expenses / days_in_period if days_in_period > 0 else 0
+        daily_avg = total_expenses / days_in_period if total_expenses is not None else None
 
         return {
             "period": period,
             "start_date": start_date.isoformat(),
             "end_date": end_date.isoformat(),
-            "total_expenses": round(total_expenses, 2),
-            "daily_average": round(daily_avg, 2),
+            "total_expenses": total_expenses,
+            "by_currency": rounded_totals(totals),
+            "daily_average": round(daily_avg, 2) if daily_avg is not None else None,
             "categories": expenses,
-            "top_expense": max(expenses.items(), key=lambda x: x[1]["amount"])[1]["category"],
+            "top_expense": max(expenses.values(), key=lambda item: item["amount"])["category"] if expenses and len(totals) <= 1 else None,
+            "source": "expense_accruals",
         }
 
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get expense summary: {str(e)}")
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(422, "Geçersiz tarih veya tutar") from exc
 
 
 @router.get("/finance/cash-flow-dashboard")
 @cached(ttl=180, key_prefix="finance_cash_flow_dashboard")  # Tur 3: was 5.5s, cache 3 min
-async def get_cash_flow_dashboard(current_user: User = Depends(get_current_user)):
+async def get_cash_flow_dashboard(current_user: User = Depends(get_current_user), _perm=Depends(require_op("view_finance_reports"))):
     """
     Comprehensive cash flow dashboard for Finance Manager
     Shows: today's cash in/out, weekly plan, bank balances, risk alerts
     """
-    try:
-        today = datetime.now(UTC).date()
-        today_str = today.isoformat()
+    from routers.finance.mobile import get_cash_flow_summary_mobile
 
-        # Today's cash inflow (collections)
-        today_checkins = await db.bookings.find({"check_in": today_str, "tenant_id": current_user.tenant_id}, {"_id": 0, "total_amount": 1, "paid_amount": 1}).to_list(200)
-
-        today_collections = sum(b.get("paid_amount", 0) for b in today_checkins)
-
-        # Today's cash outflow (expenses - sample data)
-        today_expenses = {"staff_payments": 8500.00, "supplier_payments": 12300.00, "utility_bills": 3200.00, "other": 1500.00}
-        today_outflow = sum(today_expenses.values())
-
-        # Net cash flow
-        net_cash_flow = today_collections - today_outflow
-
-        # Weekly forecast (next 7 days)
-        weekly_forecast = []
-        for i in range(7):
-            date = today + timedelta(days=i)
-            date_str = date.isoformat()
-
-            # Expected collections (check-ins + ongoing bookings)
-            expected_checkins = await db.bookings.count_documents({"check_in": date_str, "tenant_id": current_user.tenant_id})
-
-            expected_checkouts = await db.bookings.count_documents({"check_out": date_str, "tenant_id": current_user.tenant_id})
-
-            # Simplified forecast
-            expected_inflow = expected_checkins * 1500 + expected_checkouts * 500
-            expected_outflow = 15000 if date.weekday() == 4 else 8000  # Friday = payroll
-
-            weekly_forecast.append(
-                {
-                    "date": date_str,
-                    "day_name": date.strftime("%a"),
-                    "expected_inflow": round(expected_inflow, 2),
-                    "expected_outflow": round(expected_outflow, 2),
-                    "net": round(expected_inflow - expected_outflow, 2),
-                }
-            )
-
-        # Bank balances (sample - in production, integrate with bank API)
-        bank_balances = [
-            {"bank": "Garanti BBVA", "account": "****3421", "balance": 285600.50, "currency": "TRY"},
-            {"bank": "İş Bankası", "account": "****7832", "balance": 142300.00, "currency": "TRY"},
-            {"bank": "Akbank", "account": "****1259", "balance": 95800.75, "currency": "TRY"},
-        ]
-        total_bank_balance = sum(b["balance"] for b in bank_balances)
-
-        return {
-            "today": {
-                "date": today_str,
-                "cash_inflow": round(today_collections, 2),
-                "cash_outflow": round(today_outflow, 2),
-                "net_cash_flow": round(net_cash_flow, 2),
-                "outflow_breakdown": today_expenses,
-            },
-            "weekly_forecast": weekly_forecast,
-            "bank_balances": {"accounts": bank_balances, "total": round(total_bank_balance, 2)},
-            "status": "positive" if net_cash_flow > 0 else "negative",
-        }
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get cash flow dashboard: {str(e)}")
+    payload = await get_cash_flow_summary_mobile.__wrapped__(current_user=current_user)
+    today = payload["today"]
+    banks = [{"bank": row["bank_name"], "account": row["account_number"], "balance": row["current_balance"], "currency": row["currency"],
+              "last_sync": row["last_sync"]} for row in payload["bank_balances"]]
+    bank_totals = {}
+    for bank in banks:
+        add_amount(bank_totals, bank["currency"], bank["balance"])
+    return {
+        "today": {**today, "net_cash_flow": today["net_flow"]},
+        "weekly_forecast": [{**day, "expected_inflow": day["expected_collections"], "expected_outflow": day["expected_payments"],
+                             "net": single_amount({code: day["collections_by_currency"].get(code, 0) - day["payments_by_currency"].get(code, 0)
+                                                   for code in set(day["collections_by_currency"]) | set(day["payments_by_currency"])})} for day in payload["weekly_plan"]],
+        "bank_balances": {"accounts": banks, "total": single_amount(bank_totals), "by_currency": rounded_totals(bank_totals), "available": bool(banks)},
+        "status": "mixed_currency" if today["net_flow"] is None else "positive" if today["net_flow"] > 0 else "negative" if today["net_flow"] < 0 else "balanced",
+        "source": "payment_and_cash_flow_ledgers",
+    }
 
 
 @router.get("/finance/risk-alerts")

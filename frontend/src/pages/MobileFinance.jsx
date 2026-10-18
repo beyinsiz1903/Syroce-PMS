@@ -158,6 +158,9 @@ const MobileFinance = ({ user }) => {
   };
 
   const formatCurrency = (amount, currency = cachedTenantCurrency()) => formatMoney(amount, currency);
+  const formatTotals = (totals, fallback, currency) => Object.keys(totals || {}).length
+    ? Object.entries(totals).map(([code, amount]) => formatCurrency(amount, code)).join(' · ')
+    : fallback == null ? '—' : formatCurrency(fallback, currency);
   const formatBreakdown = (totals, fallbackAmount = 0, fallbackCurrency = cachedTenantCurrency()) => {
     const entries = Object.entries(totals || {}).filter(([, amount]) => Math.abs(Number(amount || 0)) > 0.001);
     if (!entries.length) return formatCurrency(fallbackAmount, fallbackCurrency);
@@ -465,7 +468,7 @@ const MobileFinance = ({ user }) => {
                 <div>
                   <p className="text-xs text-indigo-600 font-medium">AYIN MALİYETİ</p>
                   <p className="text-2xl font-bold text-indigo-700">
-                    {formatCurrency(monthlyCosts?.total_costs || 0)}
+                    {formatTotals(monthlyCosts?.totals_by_currency, monthlyCosts?.total_costs, monthlyCosts?.currency)}
                   </p>
                 </div>
                 <Calendar className="w-10 h-10 text-indigo-300" />
@@ -607,7 +610,7 @@ const MobileFinance = ({ user }) => {
                   </div>
                 </div>
                 <p className="font-bold text-green-700 text-lg">
-                  {formatCurrency(cashFlowData.today?.cash_inflow || 0)}
+                  {formatTotals(cashFlowData.today?.inflow_by_currency, cashFlowData.today?.cash_inflow, cashFlowData.today?.currency)}
                 </p>
               </div>
               
@@ -620,7 +623,7 @@ const MobileFinance = ({ user }) => {
                   </div>
                 </div>
                 <p className="font-bold text-red-700 text-lg">
-                  {formatCurrency(cashFlowData.today?.cash_outflow || 0)}
+                  {formatTotals(cashFlowData.today?.outflow_by_currency, cashFlowData.today?.cash_outflow, cashFlowData.today?.currency)}
                 </p>
               </div>
 
@@ -631,7 +634,7 @@ const MobileFinance = ({ user }) => {
                 <p className={`font-bold text-xl ${
                   (cashFlowData.today?.net_flow || 0) >= 0 ? 'text-green-700' : 'text-red-700'
                 }`}>
-                  {formatCurrency(cashFlowData.today?.net_flow || 0)}
+                  {formatTotals(cashFlowData.today?.net_by_currency, cashFlowData.today?.net_flow, cashFlowData.today?.currency)}
                 </p>
               </div>
             </CardContent>

@@ -40,6 +40,7 @@ async def test_finance_snapshot_reads_complete_financial_collections(monkeypatch
         payments=payments,
         folio_charges=charges,
         accounting_invoices=invoices,
+        extra_charges=_Collection([]), pos_orders=_Collection([]), pos_transactions=_Collection([]), pos_menu_transactions=_Collection([]), transactions=_Collection([]),
     )
     monkeypatch.setattr(reports, "db", fake_db)
     monkeypatch.setattr(reports, "_enforce", lambda *_args, **_kwargs: None)
@@ -75,6 +76,7 @@ async def test_finance_snapshot_groups_only_effective_daily_collections(monkeypa
         payments=payments,
         folio_charges=_Collection([]),
         accounting_invoices=_Collection([]),
+        extra_charges=_Collection([]), pos_orders=_Collection([]), pos_transactions=_Collection([]), pos_menu_transactions=_Collection([]), transactions=_Collection([]),
     )
     monkeypatch.setattr(reports, "db", fake_db)
     monkeypatch.setattr(reports, "_enforce", lambda *_args, **_kwargs: None)

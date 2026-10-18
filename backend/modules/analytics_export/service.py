@@ -7,7 +7,7 @@ import csv
 import io
 import logging
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +32,6 @@ REPORT_TYPES = [
     "messaging_delivery_performance",
     "autopilot_decisions",
     "audit_summary",
-    "property_comparison",
     "management_summary",
 ]
 
@@ -81,6 +80,18 @@ class AnalyticsExportService:
     async def create_export(self, tenant_id: str, report_type: str, export_format: str, filters: dict, user_id: str) -> dict:
         if report_type not in REPORT_TYPES:
             return {"success": False, "error": f"Unknown report type: {report_type}"}
+        if export_format not in (ExportFormat.CSV, ExportFormat.EXCEL, ExportFormat.JSON):
+            return {"success": False, "error": "Supported formats: csv, excel, json"}
+        try:
+            first = date.fromisoformat(filters.get("date_from") or (datetime.now(UTC).date() - timedelta(days=29)).isoformat())
+            last = date.fromisoformat(filters.get("date_to") or datetime.now(UTC).date().isoformat())
+            if first > last:
+                raise ValueError("Start date must not follow end date")
+        except (TypeError, ValueError) as exc:
+            return {"success": False, "error": f"Invalid report period: {exc}"}
+        if filters.get("property_id") and filters["property_id"] != tenant_id:
+            return {"success": False, "error": "Property filter must match the authorized tenant"}
+        filters = {**filters, "date_from": first.isoformat(), "date_to": last.isoformat()}
 
         job = new_export_job(tenant_id, report_type, export_format, filters, user_id)
         await self.db.analytics_export_jobs.insert_one(job)
@@ -108,9 +119,9 @@ class AnalyticsExportService:
             elif export_format == ExportFormat.JSON:
                 import json
 
-                content = json.dumps({"headers": headers, "rows": rows}, ensure_ascii=False, indent=2)
+                content = json.dumps({"headers": headers, "rows": rows}, ensure_ascii=False, indent=2, default=str)
             else:
-                content = self._to_csv(headers, rows)  # excel uses csv for now
+                content = self._to_xlsx(headers, rows)
 
             await self.db.analytics_export_jobs.update_one(
                 {"id": job_id},
@@ -163,16 +174,22 @@ class AnalyticsExportService:
         elif report_type == "management_summary":
             return await self._management_summary(tenant_id, date_from, date_to)
         else:
-            return {"headers": [], "rows": []}
+            raise ValueError("Report has no data builder")
+
+    @staticmethod
+    def _period(field, date_from, date_to):
+        first = datetime.combine(date.fromisoformat(date_from), datetime.min.time(), UTC)
+        after = datetime.combine(date.fromisoformat(date_to) + timedelta(days=1), datetime.min.time(), UTC)
+        return {"$or": [{field: {"$gte": date_from, "$lt": after.date().isoformat()}}, {field: {"$gte": first, "$lt": after}}]}
 
     async def _revenue_ml_data(self, tenant_id, date_from, date_to) -> dict:
-        snapshots = await self.db.ml_snapshots.find({"tenant_id": tenant_id, "model_type": "revenue_ml", "created_at": {"$gte": date_from}}, {"_id": 0}).sort("created_at", -1).to_list(100)
+        snapshots = await self.db.ml_snapshots.find({"tenant_id": tenant_id, "model_type": "revenue_ml", **self._period("created_at", date_from, date_to)}, {"_id": 0}).sort("created_at", -1).to_list(None)
         headers = ["Date", "Model Type", "Confidence", "Snapshot ID"]
         rows = [[s.get("created_at", ""), s.get("model_type", ""), s.get("confidence_avg", ""), s.get("id", "")] for s in snapshots]
         return {"headers": headers, "rows": rows}
 
     async def _operational_ai_data(self, tenant_id, date_from, date_to) -> dict:
-        snapshots = await self.db.ml_snapshots.find({"tenant_id": tenant_id, "model_type": "operational_ai", "created_at": {"$gte": date_from}}, {"_id": 0}).sort("created_at", -1).to_list(100)
+        snapshots = await self.db.ml_snapshots.find({"tenant_id": tenant_id, "model_type": "operational_ai", **self._period("created_at", date_from, date_to)}, {"_id": 0}).sort("created_at", -1).to_list(None)
         headers = ["Date", "Model Type", "Confidence", "Snapshot ID"]
         rows = [[s.get("created_at", ""), s.get("model_type", ""), s.get("confidence_avg", ""), s.get("id", "")] for s in snapshots]
         return {"headers": headers, "rows": rows}
@@ -180,14 +197,14 @@ class AnalyticsExportService:
     async def _guest_data(self, tenant_id) -> dict:
         from security.encrypted_lookup import decrypt_guest_doc
 
-        guests = await self.db.guests.find({"tenant_id": tenant_id}, {"_id": 0, "id": 1, "name": 1, "email": 1, "total_stays": 1, "total_revenue": 1}).to_list(500)
+        guests = await self.db.guests.find({"tenant_id": tenant_id}, {"_id": 0, "id": 1, "name": 1, "email": 1, "total_stays": 1, "total_revenue": 1}).to_list(None)
         guests = [decrypt_guest_doc(g) for g in guests]
-        headers = ["Guest ID", "Name", "Email", "Total Stays", "Total Revenue"]
+        headers = ["Guest ID", "Name", "Email", "Total Stays (lifetime)", "Legacy revenue (currency unverified; not a financial total)"]
         rows = [[g.get("id", ""), g.get("name", ""), g.get("email", ""), g.get("total_stays", 0), g.get("total_revenue", 0)] for g in guests]
         return {"headers": headers, "rows": rows}
 
     async def _messaging_data(self, tenant_id, date_from, date_to) -> dict:
-        logs = await self.db.messaging_delivery_logs.find({"tenant_id": tenant_id, "created_at": {"$gte": date_from}}, {"_id": 0}).sort("created_at", -1).to_list(500)
+        logs = await self.db.messaging_delivery_logs.find({"tenant_id": tenant_id, **self._period("created_at", date_from, date_to)}, {"_id": 0}).sort("created_at", -1).to_list(None)
         # Recipient is sealed at rest (recipient_enc); decrypt at this read
         # boundary, dual-read fallback to legacy plaintext for un-migrated rows.
         from modules.messaging.recipient_crypto import reveal_recipient
@@ -197,16 +214,16 @@ class AnalyticsExportService:
         return {"headers": headers, "rows": rows}
 
     async def _autopilot_data(self, tenant_id, date_from, date_to) -> dict:
-        items = await self.db.revenue_approval_queue.find({"tenant_id": tenant_id, "created_at": {"$gte": date_from}}, {"_id": 0}).sort("created_at", -1).to_list(500)
-        headers = ["Date", "Room Type", "Target Date", "Current Price", "Recommended", "Confidence", "Status"]
+        items = await self.db.revenue_approval_queue.find({"tenant_id": tenant_id, **self._period("created_at", date_from, date_to)}, {"_id": 0}).sort("created_at", -1).to_list(None)
+        headers = ["Date", "Room Type", "Target Date", "Current Price", "Recommended", "Confidence", "Status", "Currency"]
         rows = [
-            [i.get("created_at", ""), i.get("room_type", ""), i.get("target_date", ""), i.get("current_price", ""), i.get("recommended_price", ""), i.get("confidence", ""), i.get("status", "")]
+            [i.get("created_at", ""), i.get("room_type", ""), i.get("target_date", ""), i.get("current_price", ""), i.get("recommended_price", ""), i.get("confidence", ""), i.get("status", ""), i.get("currency") or "UNKNOWN"]
             for i in items
         ]
         return {"headers": headers, "rows": rows}
 
     async def _audit_data(self, tenant_id, date_from, date_to) -> dict:
-        audits = await self.db.audit_logs.find({"tenant_id": tenant_id, "timestamp": {"$gte": date_from}}, {"_id": 0}).sort("timestamp", -1).to_list(500)
+        audits = await self.db.audit_logs.find({"tenant_id": tenant_id, **self._period("timestamp", date_from, date_to)}, {"_id": 0}).sort("timestamp", -1).to_list(None)
         headers = ["Timestamp", "User", "Action", "Entity Type", "Entity ID"]
         rows = [[a.get("timestamp", ""), a.get("user_id", ""), a.get("action", ""), a.get("entity_type", ""), a.get("entity_id", "")] for a in audits]
         return {"headers": headers, "rows": rows}
@@ -216,13 +233,13 @@ class AnalyticsExportService:
         headers = ["Metric", "Value", "Period"]
         rows = []
         # messaging stats
-        msg_count = await self.db.messaging_delivery_logs.count_documents({"tenant_id": tenant_id, "created_at": {"$gte": date_from}})
-        rows.append(["Total Messages Sent", msg_count, f"{date_from} - {date_to}"])
+        msg_count = await self.db.messaging_delivery_logs.count_documents({"tenant_id": tenant_id, **self._period("created_at", date_from, date_to)})
+        rows.append(["Messaging Delivery Records", msg_count, f"{date_from} - {date_to}"])
         # autopilot stats
-        ap_count = await self.db.revenue_approval_queue.count_documents({"tenant_id": tenant_id, "created_at": {"$gte": date_from}})
+        ap_count = await self.db.revenue_approval_queue.count_documents({"tenant_id": tenant_id, **self._period("created_at", date_from, date_to)})
         rows.append(["Autopilot Decisions", ap_count, f"{date_from} - {date_to}"])
         # ML runs
-        ml_count = await self.db.ml_execution_jobs.count_documents({"tenant_id": tenant_id, "created_at": {"$gte": date_from}})
+        ml_count = await self.db.ml_execution_jobs.count_documents({"tenant_id": tenant_id, **self._period("created_at", date_from, date_to)})
         rows.append(["ML Model Runs", ml_count, f"{date_from} - {date_to}"])
         return {"headers": headers, "rows": rows}
 
@@ -236,6 +253,19 @@ class AnalyticsExportService:
         safe_writerow(writer, headers)
         for r in rows:
             safe_writerow(writer, r)
+        return output.getvalue()
+
+    def _to_xlsx(self, headers: list, rows: list) -> bytes:
+        from openpyxl import Workbook
+
+        from core.csv_safe import xlsx_safe
+        from core.utils import _xlsx_sanitize_str
+
+        workbook = Workbook()
+        for row in [headers, *rows]:
+            workbook.active.append([value.isoformat() if isinstance(value, datetime) else xlsx_safe(_xlsx_sanitize_str(value)) if isinstance(value, str) else value for value in row])
+        output = io.BytesIO()
+        workbook.save(output)
         return output.getvalue()
 
     async def get_export_history(self, tenant_id: str, limit: int = 20) -> list:

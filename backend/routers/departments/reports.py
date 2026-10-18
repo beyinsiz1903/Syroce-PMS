@@ -20,15 +20,16 @@ from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPBearer
 from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
 
-from core.business_date_service import accounting_day_match, accounting_period_match, ensure_business_date_initialized
+from core.business_date_service import ensure_business_date_initialized
 from core.csv_safe import xlsx_safe
 from core.database import db
 from core.helpers import require_module
 from core.security import get_current_user
 from core.utils import _XLSX_MAX_CELL_LEN, _xlsx_sanitize_str, calculate_folio_balance, create_excel_workbook, excel_response
 from models.schemas import User
-from modules.pms_core.report_money import add_amount, currency_code, rounded, rounded_totals, single_amount
-from modules.pms_core.reporting_financials import REPORTING_CURRENCY, reporting_collection_summary
+from modules.pms_core.report_money import add_amount, currency_code, resolve_ledger_currencies, rounded, rounded_totals, single_amount
+from modules.pms_core.reporting_financials import REPORTING_CURRENCY, report_payment_day_match, report_payment_period_match, reporting_collection_summary
+from modules.pms_core.reporting_ledger import charge_amount, charge_category, posted_revenue_rows
 from modules.pms_core.role_permission_service import RolePermissionService, require_op
 from modules.pms_core.stay_night_metrics import NON_COMMERCIAL_STATUSES, allocated_revenue_for_night, as_date, booking_nights, load_stay_night_metrics
 
@@ -457,8 +458,6 @@ async def get_finance_snapshot(
     _enforce(current_user, "view_finance_reports")  # Bug CU
     business_state = await ensure_business_date_initialized(db, current_user.tenant_id)
     today = datetime.fromisoformat(str(business_state["business_date"])[:10]).date()
-    today_start = datetime.combine(today, datetime.min.time()).replace(tzinfo=UTC)
-    today_end = datetime.combine(today, datetime.max.time()).replace(tzinfo=UTC)
 
     # 1. Calculate Total Pending AR from company folios
     company_folios = await db.folios.find(
@@ -504,50 +503,33 @@ async def get_finance_snapshot(
     todays_payments = await db.payments.find(
         {
             "tenant_id": current_user.tenant_id,
-            **accounting_day_match(
-                today.isoformat(),
-                {"payment_date": today.isoformat()},
-                {"processed_at": {"$gte": today_start.isoformat(), "$lte": today_end.isoformat()}},
-            ),
+            **report_payment_day_match(today.isoformat()),
         }
     ).to_list(None)
 
+    todays_payments = await resolve_ledger_currencies(todays_payments, current_user.tenant_id, database=db, fallback_currency=REPORTING_CURRENCY)
     today_summary = reporting_collection_summary(todays_payments)
 
     # 3. Calculate MTD (Month-to-Date) Collections
     month_start = today.replace(day=1)
-    month_start_dt = datetime.combine(month_start, datetime.min.time()).replace(tzinfo=UTC)
 
     mtd_payments = await db.payments.find(
         {
             "tenant_id": current_user.tenant_id,
-            **accounting_period_match(
-                month_start.isoformat(),
-                today.isoformat(),
-                {"processed_at": {"$gte": month_start_dt.isoformat(), "$lte": today_end.isoformat()}},
-            ),
+            **report_payment_period_match(month_start.isoformat(), today.isoformat()),
         }
     ).to_list(None)
 
+    mtd_payments = await resolve_ledger_currencies(mtd_payments, current_user.tenant_id, database=db, fallback_currency=REPORTING_CURRENCY)
     mtd_summary = reporting_collection_summary(mtd_payments)
     mtd_collections = float(mtd_summary["amount"])
 
     # 4. Calculate Collection Rate (MTD Collections / MTD Revenue)
-    mtd_charges = await db.folio_charges.find(
-        {
-            "tenant_id": current_user.tenant_id,
-            "voided": {"$ne": True},
-            "$or": [
-                {"business_date": {"$gte": month_start.isoformat(), "$lte": today.isoformat()}},
-                {"business_date": {"$exists": False}, "date": {"$gte": month_start_dt.isoformat(), "$lte": today_end.isoformat()}},
-                {"business_date": None, "date": {"$gte": month_start_dt.isoformat(), "$lte": today_end.isoformat()}},
-            ],
-        }
-    ).to_list(None)
+    mtd_charges = await posted_revenue_rows(current_user.tenant_id, month_start, today, database=db, fallback_currency=REPORTING_CURRENCY)
 
     mtd_revenue_by_currency = {}
     for charge in mtd_charges:
-        add_amount(mtd_revenue_by_currency, charge.get("currency"), charge.get("total") if charge.get("total") is not None else charge.get("amount", 0))
+        add_amount(mtd_revenue_by_currency, charge.get("currency"), charge_amount(charge))
     # A ratio is meaningful only in one currency, and is unknown if some
     # collections could not be converted with immutable historical evidence.
     mtd_revenue = float(mtd_revenue_by_currency.get(REPORTING_CURRENCY, 0))
@@ -860,13 +842,14 @@ async def _compute_mtd_cost_summary(tenant_id: str) -> dict:
     today = datetime.fromisoformat(str(business_state["business_date"])[:10]).date()
     month_start = today.replace(day=1)
     month_start_dt = datetime.combine(month_start, datetime.min.time()).replace(tzinfo=UTC)
-    today_end = datetime.combine(today, datetime.max.time()).replace(tzinfo=UTC)
+    next_day = today + timedelta(days=1)
 
     purchase_orders = await db.purchase_orders.find(
         {
             "tenant_id": tenant_id,
             "status": {"$in": ["approved", "received", "completed"]},
-            "created_at": {"$gte": month_start_dt.isoformat(), "$lte": today_end.isoformat()},
+            "$or": [{"created_at": {"$gte": month_start.isoformat(), "$lt": next_day.isoformat()}},
+                    {"created_at": {"$gte": month_start_dt, "$lt": datetime.combine(next_day, datetime.min.time(), UTC)}}],
         }
     # Cost and revenue totals are control figures; never silently truncate a
     # high-volume property's purchase ledger.
@@ -919,25 +902,15 @@ async def _compute_mtd_cost_summary(tenant_id: str) -> dict:
 
     per_room_cost = (total_mtd_costs / total_room_nights) if total_room_nights > 0 else 0
 
-    mtd_charges = await db.folio_charges.find(
-        {
-            "tenant_id": tenant_id,
-            "voided": {"$ne": True},
-            "charge_category": {"$in": ["room", "accommodation", "room_charge"]},
-            "$or": [
-                {"business_date": {"$gte": month_start.isoformat(), "$lte": today.isoformat()}},
-                {"business_date": {"$exists": False}, "date": {"$gte": month_start_dt.isoformat(), "$lte": today_end.isoformat()}},
-                {"business_date": None, "date": {"$gte": month_start_dt.isoformat(), "$lte": today_end.isoformat()}},
-            ],
-        }
-    ).to_list(None)
-
-    total_revenue = sum(float(charge.get("total") if charge.get("total") is not None else charge.get("amount") or 0) for charge in mtd_charges)
-    revenue_by_currency = {}
+    mtd_charges = await posted_revenue_rows(tenant_id, month_start, today, database=db, fallback_currency=REPORTING_CURRENCY)
+    total_revenue = sum(charge_amount(charge) for charge in mtd_charges)
+    revenue_by_currency, room_revenue_by_currency = {}, {}
     for charge in mtd_charges:
-        add_amount(revenue_by_currency, charge.get("currency"), charge.get("total") if charge.get("total") is not None else charge.get("amount", 0))
+        add_amount(revenue_by_currency, charge.get("currency"), charge_amount(charge))
+        if charge_category(charge) == "room":
+            add_amount(room_revenue_by_currency, charge.get("currency"), charge_amount(charge))
 
-    mtd_revpar = (total_revenue / total_available_room_days) if total_available_room_days > 0 else 0
+    mtd_revpar = (sum(float(value) for value in room_revenue_by_currency.values()) / total_available_room_days) if total_available_room_days > 0 else 0
 
     # 5. Calculate Cost to Revenue Ratio
     cost_to_revenue_ratio = (total_mtd_costs / total_revenue * 100) if total_revenue > 0 else 0
@@ -983,8 +956,8 @@ async def _compute_mtd_cost_summary(tenant_id: str) -> dict:
             "total_room_nights": total_room_nights,
             "cost_per_room_night": single_amount({code: amount / total_room_nights if total_room_nights else 0 for code, amount in costs_by_currency.items()}),
             "cost_per_room_night_by_currency": {code: rounded(amount / total_room_nights) if total_room_nights else 0 for code, amount in costs_by_currency.items()},
-            "mtd_revpar": single_amount({code: amount / total_available_room_days if total_available_room_days else 0 for code, amount in revenue_by_currency.items()}),
-            "mtd_revpar_by_currency": {code: rounded(amount / total_available_room_days) if total_available_room_days else 0 for code, amount in revenue_by_currency.items()},
+            "mtd_revpar": single_amount({code: float(amount) / total_available_room_days if total_available_room_days else 0 for code, amount in room_revenue_by_currency.items()}),
+            "mtd_revpar_by_currency": {code: rounded(float(amount) / total_available_room_days) if total_available_room_days else 0 for code, amount in room_revenue_by_currency.items()},
             "cost_to_revpar_ratio": None if mixed else (round((per_room_cost / mtd_revpar * 100), 1) if mtd_revpar > 0 else 0),
         },
         "financial_metrics": {

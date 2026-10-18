@@ -18,8 +18,6 @@ except ImportError:
     Workbook = None
 
 from core.business_date_service import (
-    accounting_day_match,
-    accounting_period_match,
     ensure_business_date_initialized,
     stamp_open_business_date,
 )
@@ -28,10 +26,14 @@ from core.security import get_current_user
 from models.enums import RiskLevel
 from modules.folio.services.folio_balance_read_service import FolioBalanceReadService
 from modules.folio.services.open_folio_service import OpenFolioService
+from modules.pms_core.report_money import add_amount, currency_code, resolve_ledger_currencies, rounded_totals, single_amount
 from modules.pms_core.reporting_financials import (
+    NON_CASH_PAYMENT_METHODS,
     REPORTING_CURRENCY,
-    is_non_cash_adjustment,
+    deduplicate_report_payments,
     is_valid_payment,
+    report_payment_day_match,
+    report_payment_period_match,
     reporting_collection_amount,
     stamp_reporting_values,
 )
@@ -62,7 +64,7 @@ _FX_RECEIPT_RE = re.compile(
 def _received_payment_amount(payment: dict) -> tuple[float, str]:
     if payment.get("received_amount") is not None and payment.get("received_currency"):
         try:
-            return float(payment["received_amount"]), str(payment["received_currency"]).upper()
+            return float(payment["received_amount"]), currency_code(payment["received_currency"])
         except (TypeError, ValueError):
             pass
     match = _FX_RECEIPT_RE.search(str(payment.get("notes") or ""))
@@ -71,20 +73,35 @@ def _received_payment_amount(payment: dict) -> tuple[float, str]:
             return float(match.group(1).replace(",", ".")), match.group(2).upper()
         except ValueError:
             pass
-    return float(payment.get("amount") or 0), str(payment.get("currency") or "TRY").upper()
+    return float(payment.get("amount") or 0), currency_code(payment.get("currency"))
 
 
 def _received_collection_amount(payment: dict) -> tuple[float, str]:
     """Return the received-currency amount with the standard refund sign."""
     amount, currency = _received_payment_amount(payment)
-    if str(payment.get("payment_type") or "").lower() == "refund" and amount > 0:
+    if str(payment.get("payment_type") or "").strip().lower() == "refund" and amount > 0:
         amount = -amount
     return amount, currency
 
 
 def _is_reportable_collection(payment: dict) -> bool:
     """Exclude voids and folio-only adjustments from cash collection reports."""
-    return is_valid_payment(payment) and not is_non_cash_adjustment(payment)
+    method = str(payment.get("payment_method") or payment.get("method") or "").strip().lower()
+    return is_valid_payment(payment) and method not in NON_CASH_PAYMENT_METHODS
+
+
+async def _collection_rows(query: dict, tenant_id: str) -> list[dict]:
+    rows = deduplicate_report_payments(await db.payments.find(query).to_list(None))
+    return await resolve_ledger_currencies(rows, tenant_id, database=db, fallback_currency=REPORTING_CURRENCY)
+
+
+def _month_bounds(year: int, month: int) -> tuple[datetime, datetime]:
+    try:
+        start = datetime(year, month, 1, tzinfo=UTC)
+        end = datetime(year + 1, 1, 1, tzinfo=UTC) if month == 12 else datetime(year, month + 1, 1, tzinfo=UTC)
+        return start, end
+    except ValueError as exc:
+        raise HTTPException(422, "Geçersiz yıl veya ay") from exc
 
 
 class RecordPaymentRequest(BaseModel):
@@ -121,14 +138,9 @@ async def get_daily_collections_mobile(
     business_day = target_date.date().isoformat()
     payment_query = {
         "tenant_id": current_user.tenant_id,
-        **accounting_day_match(
-            business_day,
-            {"processed_at": {"$regex": f"^{business_day}"}},
-            {"payment_date": business_day},
-            {"date": business_day},
-        ),
+        **report_payment_day_match(business_day),
     }
-    async for payment in db.payments.find(payment_query):
+    for payment in await _collection_rows(payment_query, current_user.tenant_id):
         if not _is_reportable_collection(payment):
             continue
         received_amount, currency = _received_collection_amount(payment)
@@ -176,17 +188,9 @@ async def get_monthly_collections_mobile(
 
     business_state = await ensure_business_date_initialized(db, current_user.tenant_id)
     today = datetime.fromisoformat(str(business_state["business_date"])[:10])
-    target_year = year or today.year
-    target_month = month or today.month
-
-    # First day of month
-    start_of_month = datetime(target_year, target_month, 1, tzinfo=UTC)
-
-    # First day of next month
-    if target_month == 12:
-        end_of_month = datetime(target_year + 1, 1, 1, tzinfo=UTC)
-    else:
-        end_of_month = datetime(target_year, target_month + 1, 1, tzinfo=UTC)
+    target_year = year if year is not None else today.year
+    target_month = month if month is not None else today.month
+    start_of_month, end_of_month = _month_bounds(target_year, target_month)
 
     # Get payments for the month
     total_collected = 0.0
@@ -197,14 +201,9 @@ async def get_monthly_collections_mobile(
     last_business_day = (end_of_month - timedelta(days=1)).date().isoformat()
     payment_query = {
         "tenant_id": current_user.tenant_id,
-        **accounting_period_match(
-            start_of_month.date().isoformat(),
-            last_business_day,
-            {"processed_at": {"$gte": start_of_month.isoformat(), "$lt": end_of_month.isoformat()}},
-            {"created_at": {"$gte": start_of_month.isoformat(), "$lt": end_of_month.isoformat()}},
-        ),
+        **report_payment_period_match(start_of_month.date().isoformat(), last_business_day),
     }
-    async for payment in db.payments.find(payment_query):
+    for payment in await _collection_rows(payment_query, current_user.tenant_id):
         if not _is_reportable_collection(payment):
             continue
         received_amount, currency = _received_collection_amount(payment)
@@ -229,25 +228,12 @@ async def get_profit_loss_report_v2(
     _perm=Depends(require_op("view_finance_reports")),  # v102 DW finance leak fix
 ):
     """Get Profit & Loss (P&L) report"""
-    await get_current_user(credentials)
+    current_user = await get_current_user(credentials)
+    from routers.finance.accounting import get_profit_loss_report
 
-    if not start_date:
-        # Default to current month
-        start_date = datetime.now(UTC).replace(day=1, hour=0, minute=0, second=0)
-    else:
-        start_date = datetime.fromisoformat(start_date)
-
-    if not end_date:
-        # End of current month
-        if start_date.month == 12:
-            end_date = datetime(start_date.year + 1, 1, 1, tzinfo=UTC) - timedelta(days=1)
-        else:
-            end_date = datetime(start_date.year, start_date.month + 1, 1, tzinfo=UTC) - timedelta(days=1)
-    else:
-        end_date = datetime.fromisoformat(end_date)
-
-    # REVENUE
-    # Room Revenue
+    state = await ensure_business_date_initialized(db, current_user.tenant_id)
+    day = datetime.fromisoformat(str(state["business_date"])[:10]).date()
+    return await get_profit_loss_report(start_date or day.replace(day=1).isoformat(), end_date or day.isoformat(), current_user=current_user)
 
 
 @router.get("/finance/cashier-shift-report")
@@ -271,64 +257,48 @@ async def get_cashier_shift_report(
     business_day = target_date.date().isoformat()
     query = {
         "tenant_id": current_user.tenant_id,
-        **accounting_day_match(
-            business_day,
-            {"processed_at": {"$regex": f"^{business_day}"}},
-            {"payment_date": business_day},
-            {"date": business_day},
-        ),
+        **report_payment_day_match(business_day),
     }
 
     if cashier_name:
         query["created_by"] = cashier_name
 
     # Get all payments/transactions
-    total_cash = 0
-    total_card = 0
-    total_transfer = 0
-    total_other = 0
     transaction_count = 0
     totals_by_currency: dict[str, float] = {}
     methods_by_currency: dict[str, dict[str, float]] = {}
+    counts_by_currency = {}
 
-    async for payment in db.payments.find(query):
+    for payment in await _collection_rows(query, current_user.tenant_id):
         if not _is_reportable_collection(payment):
             continue
         amount, currency = _received_collection_amount(payment)
-        method = payment.get("payment_method") or payment.get("method") or "cash"
+        method = str(payment.get("payment_method") or payment.get("method") or "cash").strip().lower()
+        method = {"bank_transfer": "transfer", "credit_card": "card"}.get(method, method)
+        method = method if method in {"cash", "card", "transfer"} else "other"
         totals_by_currency[currency] = totals_by_currency.get(currency, 0) + amount
         method_totals = methods_by_currency.setdefault(method, {})
         method_totals[currency] = method_totals.get(currency, 0) + amount
 
-        if method == "cash":
-            total_cash += amount
-        elif method == "card":
-            total_card += amount
-        elif method == "transfer":
-            total_transfer += amount
-        else:
-            total_other += amount
-
+        counts_by_currency[currency] = counts_by_currency.get(currency, 0) + 1
         transaction_count += 1
 
-    total_collected = total_cash + total_card + total_transfer + total_other
+    averages = {code: amount / counts_by_currency[code] for code, amount in totals_by_currency.items()}
 
     # Get opening and closing balance (if tracked)
-    opening_balance = 0  # Should be from shift start record
-    expected_closing = opening_balance + total_cash
-
-    # Calculate variances
-    variance = 0  # Would be: actual_closing - expected_closing
+    # This endpoint selects payments by day/name, not a counted cashier shift.
+    # No opening count or physical closing evidence means UNKNOWN, not zero
+    # and not a fabricated "balanced" reconciliation.
 
     return {
         "shift_date": target_date.date().isoformat(),
         "cashier_name": cashier_name or "All Cashiers",
-        "opening_balance": opening_balance,
-        "collections": {"cash": total_cash, "card": total_card, "transfer": total_transfer, "other": total_other, "total": total_collected},
-        "expected_closing_balance": expected_closing,
-        "variance": variance,
+        "opening_balance": None,
+        "collections": {**{method: single_amount(methods_by_currency.get(method, {})) for method in ("cash", "card", "transfer", "other")}, "total": single_amount(totals_by_currency)},
+        "expected_closing_balance": None, "total_paid_out": None,
+        "variance": None, "balance_status": "physical_shift_count_not_available", "basis": "daily_payment_movements",
         "transaction_count": transaction_count,
-        "average_transaction": total_collected / transaction_count if transaction_count > 0 else 0,
+        "average_transaction": single_amount(averages), "average_by_currency": rounded_totals(averages),
         "totals_by_currency": {key: round(value, 2) for key, value in totals_by_currency.items()},
         "payment_methods_by_currency": {
             method: {key: round(value, 2) for key, value in totals.items()}
@@ -353,7 +323,6 @@ async def get_pending_receivables_mobile(
     receivables = []
 
     today = datetime.now(UTC)
-
     open_folios = await db.folios.find({"tenant_id": current_user.tenant_id, "status": "open", "balance": {"$gt": 0}}).to_list(length=None)
 
     # Batch-fetch all related bookings in one query
@@ -431,44 +400,37 @@ async def get_monthly_costs_mobile(
     """Get monthly costs for finance mobile dashboard"""
     current_user = await get_current_user(credentials)
 
-    today = datetime.now(UTC)
-    target_year = year or today.year
-    target_month = month or today.month
-
-    # First day of month
-    start_of_month = datetime(target_year, target_month, 1, tzinfo=UTC)
-
-    # First day of next month
-    if target_month == 12:
-        end_of_month = datetime(target_year + 1, 1, 1, tzinfo=UTC)
-    else:
-        end_of_month = datetime(target_year, target_month + 1, 1, tzinfo=UTC)
-
-    # Get expenses for the month
-    total_costs = 0.0
-    costs_by_category = {}
-
-    last_day = (end_of_month - timedelta(days=1)).date().isoformat()
-    expense_query = {
-        "tenant_id": current_user.tenant_id,
-        **accounting_period_match(
-            start_of_month.date().isoformat(),
-            last_day,
-            {"date": {"$gte": start_of_month.isoformat(), "$lt": end_of_month.isoformat()}},
-            {"expense_date": {"$gte": start_of_month.isoformat(), "$lt": end_of_month.isoformat()}},
-        ),
-    }
-    async for expense in db.expenses.find(expense_query):
-        amount = expense.get("total_amount", expense.get("amount", 0))
-        total_costs += amount
-
-        category = expense.get("category", "other")
-        costs_by_category[category] = costs_by_category.get(category, 0) + amount
+    state = await ensure_business_date_initialized(db, current_user.tenant_id)
+    today = datetime.fromisoformat(str(state["business_date"])[:10])
+    target_year = year if year is not None else today.year
+    target_month = month if month is not None else today.month
+    start_of_month, end_of_month = _month_bounds(target_year, target_month)
 
     from core.tenant_currency import get_tenant_currency
 
     currency, _ = await get_tenant_currency(current_user.tenant_id)
-    return {"year": target_year, "month": target_month, "total_costs": total_costs, "costs_by_category": costs_by_category, "currency": currency}
+
+    # Get expenses for the month
+    totals, categories = {}, {}
+
+    last_day = (end_of_month - timedelta(days=1)).date().isoformat()
+    expense_query = {
+        "tenant_id": current_user.tenant_id,
+        **report_payment_period_match(
+            start_of_month.date().isoformat(),
+            last_day,
+            date_fields=("date", "expense_date", "created_at"),
+        ),
+    }
+    async for expense in db.expenses.find(expense_query):
+        amount = expense.get("total_amount", expense.get("amount", 0))
+        category = expense.get("category", "other")
+        add_amount(totals, expense.get("currency") or currency, amount)
+        add_amount(categories.setdefault(category, {}), expense.get("currency") or currency, amount)
+    return {"year": target_year, "month": target_month, "total_costs": single_amount(totals),
+        "totals_by_currency": rounded_totals(totals), "costs_by_category": {key: single_amount(value) for key, value in categories.items()},
+        "categories_by_currency": {key: rounded_totals(value) for key, value in categories.items()}, "currency": next(iter(totals)) if len(totals) == 1 else currency,
+        "mixed_currency": len(totals) > 1}
 
 
 @router.post("/finance/mobile/record-payment")
@@ -604,55 +566,41 @@ async def get_cash_flow_summary_mobile(
     """
     business_state = await ensure_business_date_initialized(db, current_user.tenant_id)
     today = datetime.fromisoformat(str(business_state["business_date"])[:10]).date()
-    start_of_day = datetime.combine(today, datetime.min.time()).replace(tzinfo=UTC)
-    end_of_day = datetime.combine(today, datetime.max.time()).replace(tzinfo=UTC)
     from core.tenant_currency import get_tenant_currency
 
     tenant_currency, _ = await get_tenant_currency(current_user.tenant_id)
 
     # Today's cash inflow (payments received)
-    today_inflow = 0.0
     inflow_count = 0
     inflow_by_currency: dict[str, float] = {}
     payment_query = {
         "tenant_id": current_user.tenant_id,
-        **accounting_day_match(
-            today.isoformat(),
-            {"processed_at": {"$regex": f"^{today.isoformat()}"}},
-            {"payment_date": today.isoformat()},
-            {"date": today.isoformat()},
-        ),
+        **report_payment_day_match(today.isoformat()),
     }
-    async for payment in db.payments.find(payment_query):
+    for payment in await _collection_rows(payment_query, current_user.tenant_id):
         if not _is_reportable_collection(payment):
             continue
         amount, currency = _received_collection_amount(payment)
-        today_inflow += amount
-        inflow_by_currency[currency] = inflow_by_currency.get(currency, 0) + amount
+        add_amount(inflow_by_currency, currency, amount)
         inflow_count += 1
 
     # Today's cash outflow (expenses)
-    today_outflow = 0.0
     outflow_count = 0
     outflow_by_currency: dict[str, float] = {}
     expense_query = {
         "tenant_id": current_user.tenant_id,
-        "paid": True,
-        **accounting_day_match(
-            today.isoformat(),
-            {"date": {"$gte": start_of_day.isoformat(), "$lte": end_of_day.isoformat()}},
-            {"expense_date": {"$gte": start_of_day.isoformat(), "$lte": end_of_day.isoformat()}},
-        ),
+        "transaction_type": "expense",
+        **report_payment_day_match(today.isoformat()),
     }
-    async for expense in db.expenses.find(expense_query):
-        amount = expense.get("total_amount", expense.get("amount", 0))
+    # Cash flow postings, not expense accruals or a synthetic paid flag.
+    async for expense in db.cash_flow.find(expense_query):
+        amount = expense.get("amount", 0)
         currency = str(expense.get("currency") or tenant_currency).upper()
-        today_outflow += amount
-        outflow_by_currency[currency] = outflow_by_currency.get(currency, 0) + amount
+        add_amount(outflow_by_currency, currency, amount)
         outflow_count += 1
 
     # Net cash flow today
-    net_flow = today_inflow - today_outflow
+    inflow_by_currency, outflow_by_currency = rounded_totals(inflow_by_currency), rounded_totals(outflow_by_currency)
     net_by_currency = {
         currency: round(inflow_by_currency.get(currency, 0) - outflow_by_currency.get(currency, 0), 2)
         for currency in set(inflow_by_currency) | set(outflow_by_currency)
@@ -662,33 +610,48 @@ async def get_cash_flow_summary_mobile(
     weekly_dates = [(today + timedelta(days=d)).isoformat() for d in range(7)]
     bookings_by_date: dict[str, list[str]] = {d: [] for d in weekly_dates}
     async for booking in db.bookings.find(
-        {"tenant_id": current_user.tenant_id, "check_out": {"$in": weekly_dates}, "status": {"$in": ["confirmed", "guaranteed", "checked_in"]}}, {"_id": 0, "id": 1, "check_out": 1}
+        {"tenant_id": current_user.tenant_id, "$or": [
+            {"check_out": {"$gte": weekly_dates[0], "$lt": (today + timedelta(days=7)).isoformat()}},
+            {"check_out": {"$gte": datetime.combine(today, datetime.min.time(), UTC), "$lt": datetime.combine(today + timedelta(days=7), datetime.min.time(), UTC)}}],
+            "status": {"$in": ["confirmed", "guaranteed", "checked_in", "in_house"]}}, {"_id": 0, "id": 1, "check_out": 1}
     ):
-        co = booking.get("check_out")
+        co = str(booking.get("check_out") or "")[:10]
         if co in bookings_by_date and booking.get("id"):
             bookings_by_date[co].append(booking["id"])
 
     all_booking_ids = [bid for ids in bookings_by_date.values() for bid in ids]
-    folios_by_booking: dict[str, float] = {}
+    folios_by_booking = {}
     if all_booking_ids:
-        async for folio in db.folios.find({"tenant_id": current_user.tenant_id, "booking_id": {"$in": all_booking_ids}, "status": "open"}, {"_id": 0, "booking_id": 1, "balance": 1}):
-            folios_by_booking[folio.get("booking_id")] = folio.get("balance", 0)
+        async for folio in db.folios.find({"tenant_id": current_user.tenant_id, "booking_id": {"$in": all_booking_ids}, "status": "open"}, {"_id": 0, "booking_id": 1, "balance": 1, "currency": 1}):
+            add_amount(folios_by_booking.setdefault(folio.get("booking_id"), {}), folio.get("currency") or tenant_currency, max(float(folio.get("balance") or 0), 0))
 
-    invoices_by_due: dict[str, float] = dict.fromkeys(weekly_dates, 0.0)
-    async for invoice in db.accounting_invoices.find({"tenant_id": current_user.tenant_id, "due_date": {"$in": weekly_dates}, "status": "pending"}, {"_id": 0, "due_date": 1, "total": 1}):
-        d = invoice.get("due_date")
+    invoices_by_due = {day: {} for day in weekly_dates}
+    # Sales invoices are receivables, not supplier payments. The payment plan
+    # uses unpaid expense obligations and deducts partial payments.
+    async for invoice in db.expenses.find({"tenant_id": current_user.tenant_id,
+        "$or": [{"due_date": {"$gte": weekly_dates[0], "$lt": (today + timedelta(days=7)).isoformat()}},
+                {"due_date": {"$gte": datetime.combine(today, datetime.min.time(), UTC), "$lt": datetime.combine(today + timedelta(days=7), datetime.min.time(), UTC)}}],
+        "payment_status": {"$in": ["pending", "partial"]}}, {"_id": 0}):
+        d = str(invoice.get("due_date") or "")[:10]
         if d in invoices_by_due:
-            invoices_by_due[d] += invoice.get("total", 0)
+            amount = max(float(invoice.get("total_amount", invoice.get("amount", 0)) or 0) - float(invoice.get("amount_paid") or 0), 0)
+            add_amount(invoices_by_due[d], invoice.get("currency") or tenant_currency, amount)
 
     weekly_plan = []
     for days_ahead in range(7):
         target_date = today + timedelta(days=days_ahead)
         d_iso = target_date.isoformat()
         ids = bookings_by_date.get(d_iso, [])
-        expected_collections = sum(folios_by_booking.get(bid, 0) for bid in ids if bid in folios_by_booking)
+        expected_collections = {}
+        for bid in ids:
+            for code, value in folios_by_booking.get(bid, {}).items():
+                add_amount(expected_collections, code, value)
         checkout_count = sum(1 for bid in ids if bid in folios_by_booking)
         weekly_plan.append(
-            {"date": d_iso, "day_name": target_date.strftime("%A"), "expected_collections": expected_collections, "expected_payments": invoices_by_due[d_iso], "checkout_count": checkout_count}
+            {"date": d_iso, "day_name": target_date.strftime("%A"), "expected_collections": single_amount(expected_collections),
+             "collections_by_currency": rounded_totals(expected_collections), "payments_by_currency": rounded_totals(invoices_by_due[d_iso]),
+             "expected_payments": single_amount(invoices_by_due[d_iso]), "checkout_count": checkout_count,
+             "basis": "open_folio_balances_and_unpaid_expenses"}
         )
 
     # Bank balance summaries
@@ -697,18 +660,20 @@ async def get_cash_flow_summary_mobile(
         bank_balances.append(
             {
                 "bank_name": bank.get("bank_name"),
-                "account_number": bank.get("account_number")[-4:],  # Last 4 digits
-                "currency": bank.get("currency", "TRY"),
-                "current_balance": bank.get("current_balance", 0),
+                "account_number": str(bank.get("account_number") or "")[-4:],
+                "currency": currency_code(bank.get("currency"), tenant_currency),
+                "current_balance": bank.get("current_balance") if bank.get("current_balance") is not None else bank.get("balance", 0),
                 "available_balance": bank.get("available_balance", 0),
-                "last_sync": bank.get("last_sync").isoformat() if bank.get("last_sync") else None,
+                "last_sync": bank["last_sync"].isoformat() if isinstance(bank.get("last_sync"), datetime) else bank.get("last_sync"),
             }
         )
 
     total_bank_balance = sum(b["current_balance"] for b in bank_balances if b["currency"] == "TRY")
 
     return {
-        "today": {"date": today.isoformat(), "cash_inflow": today_inflow, "cash_outflow": today_outflow, "net_flow": net_flow, "inflow_count": inflow_count, "outflow_count": outflow_count, "currency": tenant_currency, "inflow_by_currency": {key: round(value, 2) for key, value in inflow_by_currency.items()}, "outflow_by_currency": {key: round(value, 2) for key, value in outflow_by_currency.items()}, "net_by_currency": net_by_currency},
+        "today": {"date": today.isoformat(), "cash_inflow": single_amount(inflow_by_currency), "cash_outflow": single_amount(outflow_by_currency),
+            "net_flow": single_amount(net_by_currency), "inflow_count": inflow_count, "outflow_count": outflow_count, "currency": tenant_currency,
+            "inflow_by_currency": inflow_by_currency, "outflow_by_currency": outflow_by_currency, "net_by_currency": net_by_currency},
         "weekly_plan": weekly_plan,
         "bank_balances": bank_balances,
         "total_bank_balance_try": total_bank_balance,

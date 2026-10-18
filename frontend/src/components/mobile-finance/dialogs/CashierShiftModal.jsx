@@ -20,7 +20,7 @@ export default function CashierShiftModal(props) {
     const entries = Object.entries(totals || {}).filter(([, amount]) => Number(amount) !== 0);
     return entries.length
       ? entries.map(([currency, amount]) => formatCurrency(amount, currency)).join(' · ')
-      : formatCurrency(fallback, shiftReportData?.currency);
+      : fallback == null ? 'Doğrulanmadı' : formatCurrency(fallback, shiftReportData?.currency);
   };
   const collections = shiftReportData?.collections || {};
   return (
@@ -45,20 +45,20 @@ export default function CashierShiftModal(props) {
                   </div>
                   <div>
                     <p className="text-xs text-gray-600">Vardiya</p>
-                    <p className="font-bold text-gray-900">{shiftReportData.shift_name || 'Gündüz'}</p>
+                    <p className="font-bold text-gray-900">{shiftReportData.shift_name || 'Günlük ödeme hareketleri'}</p>
                   </div>
                   <div>
                     <p className="text-xs text-gray-600">{t('cm.components_mobilefinance_dialogs_CashierShiftModal.baslangic')}</p>
                     <p className="text-sm font-medium">
                       <Clock className="w-3 h-3 inline mr-1" />
-                      {shiftReportData.shift_start ? new Date(shiftReportData.shift_start).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }) : '08:00'}
+                      {shiftReportData.shift_start ? new Date(shiftReportData.shift_start).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }) : 'Vardiya seçilmedi'}
                     </p>
                   </div>
                   <div>
                     <p className="text-xs text-gray-600">{t('cm.components_mobilefinance_dialogs_CashierShiftModal.bitis')}</p>
                     <p className="text-sm font-medium">
                       <Clock className="w-3 h-3 inline mr-1" />
-                      {shiftReportData.shift_end ? new Date(shiftReportData.shift_end).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }) : 'Devam Ediyor'}
+                      {shiftReportData.shift_end ? new Date(shiftReportData.shift_end).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }) : 'Vardiya seçilmedi'}
                     </p>
                   </div>
                 </div>
@@ -74,7 +74,7 @@ export default function CashierShiftModal(props) {
                 <div className="flex justify-between p-3 bg-blue-50 rounded">
                   <span className="text-gray-700">{t('cm.components_mobilefinance_dialogs_CashierShiftModal.acilis_bakiyesi')}</span>
                   <span className="font-bold text-blue-700">
-                    {formatCurrency(shiftReportData.opening_balance || 0)}
+                    {shiftReportData.opening_balance == null ? 'Doğrulanmadı' : formatCurrency(shiftReportData.opening_balance)}
                   </span>
                 </div>
                 <div className="flex justify-between p-3 bg-green-50 rounded">
@@ -86,13 +86,13 @@ export default function CashierShiftModal(props) {
                 <div className="flex justify-between p-3 bg-red-50 rounded">
                   <span className="text-gray-700">{t('cm.components_mobilefinance_dialogs_CashierShiftModal.odemeler')}</span>
                   <span className="font-bold text-red-700">
-                    -{formatCurrency(shiftReportData.total_paid_out || 0, shiftReportData.currency)}
+                    {shiftReportData.total_paid_out == null ? 'Doğrulanmadı' : formatCurrency(shiftReportData.total_paid_out, shiftReportData.currency)}
                   </span>
                 </div>
                 <div className="flex justify-between p-4 bg-indigo-100 rounded-lg border-2 border-indigo-300">
                   <span className="font-bold text-indigo-900">{t('cm.components_mobilefinance_dialogs_CashierShiftModal.beklenen_bakiye')}</span>
                   <span className="font-bold text-2xl text-indigo-700">
-                    {formatCurrency(shiftReportData.expected_closing_balance ?? shiftReportData.expected_balance ?? 0, shiftReportData.currency)}
+                    {shiftReportData.expected_closing_balance == null && shiftReportData.expected_balance == null ? 'Doğrulanmadı' : formatCurrency(shiftReportData.expected_closing_balance ?? shiftReportData.expected_balance, shiftReportData.currency)}
                   </span>
                 </div>
             
@@ -111,7 +111,7 @@ export default function CashierShiftModal(props) {
                       <span className={`font-bold ${
                         Math.abs(shiftReportData.variance || 0) < 0.01 ? 'text-green-700' : 'text-red-700'
                       }`}>
-                        {shiftReportData.variance >= 0 ? '+' : ''}{formatCurrency(shiftReportData.variance || 0)}
+                        {shiftReportData.variance == null ? 'Doğrulanmadı' : `${shiftReportData.variance >= 0 ? '+' : ''}${formatCurrency(shiftReportData.variance)}`}
                       </span>
                     </div>
                   </>
@@ -135,19 +135,19 @@ export default function CashierShiftModal(props) {
                   <div className="text-center p-3 bg-blue-50 rounded">
                     <p className="text-xs text-blue-600">Check-in</p>
                     <p className="text-2xl font-bold text-blue-900">
-                      {shiftReportData.checkin_count || 0}
+                      {shiftReportData.checkin_count ?? 'Doğrulanmadı'}
                     </p>
                   </div>
                   <div className="text-center p-3 bg-indigo-50 rounded">
                     <p className="text-xs text-indigo-600">Check-out</p>
                     <p className="text-2xl font-bold text-indigo-900">
-                      {shiftReportData.checkout_count || 0}
+                      {shiftReportData.checkout_count ?? 'Doğrulanmadı'}
                     </p>
                   </div>
                   <div className="text-center p-3 bg-amber-50 rounded">
                     <p className="text-xs text-amber-600">{t('cm.components_mobilefinance_dialogs_CashierShiftModal.ort_islem')}</p>
                     <p className="text-2xl font-bold text-amber-900">
-                      {formatCurrency(shiftReportData.average_transaction || 0)}
+                      {formatTotals(shiftReportData.average_by_currency, shiftReportData.average_transaction)}
                     </p>
                   </div>
                 </div>

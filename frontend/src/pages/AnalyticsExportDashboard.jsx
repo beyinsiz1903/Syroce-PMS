@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useBusinessDate } from '@/hooks/useBusinessDate';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
@@ -80,6 +81,14 @@ export default function AnalyticsExportDashboard() {
   const [loadError, setLoadError] = useState(null);
   const [generating, setGenerating] = useState({});
   const [generatedData, setGeneratedData] = useState(null);
+  const businessDate = useBusinessDate();
+  const [range, setRange] = useState(null);
+  const endDate = range?.end ?? businessDate;
+  const start = new Date(`${businessDate}T00:00:00Z`);
+  start.setUTCDate(start.getUTCDate() - 29);
+  const startDate = range?.start ?? start.toISOString().slice(0, 10);
+  const generationId = useRef(0);
+  useEffect(() => { generationId.current += 1; setGeneratedData(null); }, [startDate, endDate]);
   const load = useCallback(async () => {
     setLoading(true);
     setLoadError(null);
@@ -99,6 +108,8 @@ export default function AnalyticsExportDashboard() {
     load();
   }, [load]);
   const generate = async (reportType, format = 'csv') => {
+    if (!startDate || !endDate || startDate > endDate) return toast.error('Geçerli bir tarih aralığı seçin.');
+    const id = ++generationId.current;
     setGenerating(p => ({
       ...p,
       [reportType]: true
@@ -108,9 +119,11 @@ export default function AnalyticsExportDashboard() {
         method: 'POST',
         body: JSON.stringify({
           report_type: reportType,
-          export_format: format
+          export_format: format,
+          filters: { date_from: startDate, date_to: endDate },
         })
       });
+      if (id !== generationId.current) return;
       if (result && (result.success || result.headers || result.rows)) {
         setGeneratedData(result);
         toast.success('Rapor hazır.');
@@ -135,14 +148,15 @@ export default function AnalyticsExportDashboard() {
       return;
     }
     try {
-      const csv = buildCsv(data.headers, data.rows);
-      const blob = new Blob([csv], {
-        type: 'text/csv;charset=utf-8;'
+      const isJson = data.format === 'json';
+      const content = isJson ? JSON.stringify({ headers: data.headers, rows: data.rows }, null, 2) : buildCsv(data.headers, data.rows);
+      const blob = new Blob([content], {
+        type: isJson ? 'application/json;charset=utf-8;' : 'text/csv;charset=utf-8;'
       });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${data.report_type || 'export'}.csv`;
+      a.download = `${data.report_type || 'export'}.${isJson ? 'json' : 'csv'}`;
       a.click();
       URL.revokeObjectURL(url);
     } catch (e) {
@@ -176,6 +190,11 @@ export default function AnalyticsExportDashboard() {
         </Button>
       </div>
 
+      <div className="flex flex-wrap gap-3 text-sm">
+        <label>Başlangıç<input aria-label="Dışa aktarma başlangıcı" className="ml-2 rounded border p-2" type="date" max={endDate} value={startDate} onChange={e => setRange({start: e.target.value, end: endDate})} /></label>
+        <label>Bitiş<input aria-label="Dışa aktarma bitişi" className="ml-2 rounded border p-2" type="date" min={startDate} value={endDate} onChange={e => setRange({start: startDate, end: e.target.value})} /></label>
+      </div>
+      <p className="text-xs text-muted-foreground">İşlem raporları seçilen dönemi kapsar. Misafir özeti yaşam boyu kayıt alanlarıdır; eski para birimsiz gelir alanı finansal toplam yerine kullanılamaz.</p>
       <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
         {reports.map(r => {
         const Icon = REPORT_ICONS[r.type] || FileText;
@@ -220,7 +239,7 @@ export default function AnalyticsExportDashboard() {
           </CardHeader>
           <CardContent>
             <p className="text-sm text-slate-500 mb-2">
-              {generatedData.report_type} · {generatedData.row_count ?? (generatedData.rows?.length || 0)} satır
+              {generatedData.report_type} · {generatedData.row_count ?? (generatedData.rows?.length || 0)} satır · {startDate} – {endDate}. Önizlemede ilk 10 satır; indirme tüm satırları içerir.
             </p>
             {generatedData.headers && <div className="overflow-x-auto">
                 <table className="w-full text-xs border">
