@@ -44,6 +44,13 @@ SIDE_LABEL = {"hotel": "otel", "agency": "acente", "system": "sistem"}
 LOCK_TTL_SECONDS = 120
 
 
+class _StatementIssueBusy(HTTPException):
+    """Expected contention, unlike a booking that needs reconciliation."""
+
+    def __init__(self):
+        super().__init__(409, "Bu otel–acente için başka bir ekstre şu an düzenleniyor; birazdan tekrar deneyin")
+
+
 def _now() -> str:
     return datetime.now(UTC).isoformat()
 
@@ -283,7 +290,13 @@ async def _overlapping_statements(sysdb, tenant_id: str, data) -> list[dict]:
         "tenant_id": tenant_id, "agency_id": data.agency_id, "currency": data.currency,
         "period_start": {"$lte": data.period_end}, "period_end": {"$gte": data.period_start},
         "status": {"$in": list(OPEN_STATUSES) + ["settled"]},
-    }, {"_id": 0, "number": 1, "lines.booking_id": 1}).to_list(None)
+    }, {"_id": 0, "number": 1, "period_start": 1, "period_end": 1, "lines.booking_id": 1}).to_list(None)
+
+
+def _billed_stay_conflict(statement: dict, lines: list[dict]) -> HTTPException:
+    codes = sorted({line.get("confirmation_code") or line["booking_id"] for line in lines if line.get("booking_id")})
+    return HTTPException(409, f"{', '.join(codes)} zaten {statement.get('number') or statement.get('id') or '?'} ekstresinde; "
+                         "yeniden ekstrelemeden önce rezervasyon değişikliğini ilgili ekstreyle uzlaştırın")
 
 
 @asynccontextmanager
@@ -300,9 +313,9 @@ async def _issue_lock(sysdb, tenant_id: str, agency_id: str, currency: str):
             stale_before = datetime.fromtimestamp(datetime.now(UTC).timestamp() - LOCK_TTL_SECONDS, UTC).isoformat()
             removed = await sysdb.agency_statement_locks.delete_one({"_id": key, "created_at": {"$lt": stale_before}})
             if not removed.deleted_count:
-                raise HTTPException(409, "Bu otel–acente için başka bir ekstre şu an düzenleniyor; birazdan tekrar deneyin") from None
+                raise _StatementIssueBusy() from None
     else:
-        raise HTTPException(409, "Bu otel–acente için başka bir ekstre şu an düzenleniyor; birazdan tekrar deneyin")
+        raise _StatementIssueBusy()
     try:
         yield
     finally:
@@ -351,6 +364,19 @@ async def _build_checked(sysdb, tenant_id: str, data, actor: str, side: str) -> 
     # settled one issued before later bookings arrived) can be billed again
     # for the stays none of them contains. Each stay is billed once.
     overlapping = await _overlapping_statements(sysdb, tenant_id, data)
+    current_lines = {line["booking_id"]: line for line in built["lines"] if line.get("booking_id")}
+    for statement in overlapping:
+        # Overlapping PERIODS do not prove that a booking still belongs to
+        # its old statement. A wide request may include both the old dates
+        # and the new dates; do not hide that reconciliation conflict while
+        # filtering already-billed stays out of the supplement.
+        begin, end = statement.get("period_start"), statement.get("period_end")
+        moved = [current_lines[line["booking_id"]] for line in statement.get("lines") or []
+                 if line.get("booking_id") in current_lines
+                 and begin and end and current_lines[line["booking_id"]].get("check_in")
+                 and not begin <= str(current_lines[line["booking_id"]]["check_in"])[:10] <= end]
+        if moved:
+            raise _billed_stay_conflict(statement, moved)
     covered = {line.get("booking_id") for statement in overlapping for line in statement.get("lines") or []}
     supplement_of = sorted(statement.get("number") or statement.get("id") or "?" for statement in overlapping)
     if covered:
@@ -364,8 +390,7 @@ async def _build_checked(sysdb, tenant_id: str, data, actor: str, side: str) -> 
         {"_id": 0, "number": 1, "lines.booking_id": 1, "lines.confirmation_code": 1},
     )
     if billed:
-        codes = sorted({line.get("confirmation_code") or line["booking_id"] for line in billed.get("lines", []) if line.get("booking_id") in ids})
-        raise HTTPException(409, f"{', '.join(codes)} zaten {billed['number']} ekstresinde; önce o ekstreyi iptal edin")
+        raise _billed_stay_conflict(billed, [line for line in billed.get("lines", []) if line.get("booking_id") in ids])
     lines = _with_adjustments(built["lines"], data.adjustments, actor, side)
     return {"lines": lines, "totals": statement_totals(lines), "supplement_of": supplement_of}
 
@@ -872,9 +897,12 @@ async def auto_issue_previous_month(sysdb, today: date | None = None) -> dict:
             try:
                 statement = await _issue(sysdb, tenant_id, data, issuer="system", actor="system", direct_notify=True, skip_empty=True)
                 issued.append(statement["number"])
+            except _StatementIssueBusy:
+                skipped += 1  # another issuer is handling this pair
             except HTTPException as exc:
-                # Nothing billable in the gap, no contract, or being issued now.
-                if exc.status_code in (400, 404, 409):
+                # Nothing billable, or no contract. A 409 reconciliation
+                # conflict needs an operator; never hide it as a normal skip.
+                if exc.status_code in (400, 404):
                     skipped += 1
                 else:
                     failed.append(f"{tenant_id}/{agency_id} {gap_start}–{gap_end}: {exc.detail}")

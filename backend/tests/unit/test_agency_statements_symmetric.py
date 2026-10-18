@@ -310,6 +310,58 @@ async def test_monthly_job_bills_stays_booked_after_the_months_statement(world):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("issuer", ["hotel", "agency"])
+@pytest.mark.parametrize("with_new_stay", [False, True])
+async def test_supplement_does_not_hide_a_stay_moved_out_of_its_original_statement(world, issuer, with_new_stay):
+    # The requested period overlaps the old statement, but b1 moved OUT of
+    # that statement's period. It must be reconciled, not silently filtered.
+    world.agency_statements.rows.append({
+        "id": "old", "number": "EKS-OLD", "tenant_id": "t1", "agency_id": "a1", "currency": "TRY",
+        "period_start": "2026-11-01", "period_end": "2026-11-07", "status": "settled",
+        "lines": [{**COMMISSION, "check_in": "2026-11-05"}], "payments": [],
+    })
+    lines = [dict(COMMISSION)]  # current check-in: November 21
+    if with_new_stay:
+        lines.append({**COMMISSION, "booking_id": "b2", "confirmation_code": "MKT-2"})
+    st.build_statement.return_value = {"lines": lines, "totals": statement_totals(lines)}
+    data = st.StatementCreate(agency_id="a1", **_period())
+    with pytest.raises(HTTPException) as conflict:
+        await st._preview(world, "t1", data, "tester", issuer)
+    assert conflict.value.status_code == 409
+    assert "MKT-1" in conflict.value.detail and "EKS-OLD" in conflict.value.detail
+    with pytest.raises(HTTPException) as conflict:
+        await st._issue(world, "t1", data, issuer=issuer, actor="tester")
+    assert conflict.value.status_code == 409
+    assert len(world.agency_statements.rows) == 1
+
+
+@pytest.mark.asyncio
+async def test_monthly_job_reports_a_moved_billed_stay_as_failure_not_successful_skip(world):
+    world.agency_statements.rows.append({
+        "id": "old", "number": "EKS-OCT", "tenant_id": "t1", "agency_id": "a1", "currency": "TRY",
+        "period_start": "2026-10-01", "period_end": "2026-10-31", "status": "settled",
+        "lines": [{**COMMISSION, "check_in": "2026-10-21"}], "payments": [],
+    })
+    world.marketplace_bookings = _Coll([{"tenant_id": "t1", "agency_id": "a1", "currency": "TRY", "check_in": "2026-11-21"}])
+    world.bookings = _Coll()
+    result = await st.auto_issue_previous_month(world, date(2026, 12, 1))
+    assert result["issued"] == [] and result["skipped"] == 0
+    assert len(result["failed"]) == 1 and "EKS-OCT" in result["failed"][0]
+
+
+@pytest.mark.asyncio
+async def test_monthly_job_can_retry_a_busy_issuer_without_recording_a_business_failure(world, monkeypatch):
+    from pymongo.errors import DuplicateKeyError
+
+    world.marketplace_bookings = _Coll([{"tenant_id": "t1", "agency_id": "a1", "currency": "TRY", "check_in": "2026-11-21"}])
+    world.bookings = _Coll()
+    monkeypatch.setattr(world.agency_statement_locks, "insert_one", AsyncMock(side_effect=DuplicateKeyError("busy")))
+    monkeypatch.setattr(world.agency_statement_locks, "delete_one", AsyncMock(return_value=SimpleNamespace(deleted_count=0)))
+    result = await st.auto_issue_previous_month(world, date(2026, 12, 1))
+    assert result["issued"] == [] and result["skipped"] == 1 and result["failed"] == []
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("hotel_agrees", [False, True])
 async def test_agency_discount_frees_credit_only_once_the_hotel_agrees(world, hotel_agrees):
     """10.000 owed; the agency proposes -10.000: until the hotel agrees,
