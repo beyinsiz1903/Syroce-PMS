@@ -13,6 +13,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import StatementsWorkspace from '@/components/statements/StatementsWorkspace';
 import PerformanceReport from '@/components/statements/PerformanceReport';
+import PendingActionsList from '@/components/pending/PendingActionsList';
 import ContractAmendmentPanel from '@/components/contracts/ContractAmendmentPanel';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useTranslation } from 'react-i18next';
@@ -319,8 +320,30 @@ const AgencyPortalDashboard = () => {
       // Notices are informational; the portal stays usable without them.
     }
   };
+  // Tabs are controlled so the pending list can open the screen that handles
+  // an item. Load on activation, not on click: Radix switches tabs on
+  // mousedown, the page height then changes and the mouseup may miss the
+  // trigger, so a click handler would not run (tab open, content empty).
+  const [tab, setTab] = useState('search');
+  const openTab = value => {
+    setTab(value);
+    loadPending();
+    ({
+      reservations: loadReservations, content: () => loadContent(), finance: loadReconciliation,
+      contracts: loadContracts, settings: loadPortalSettings,
+    })[value]?.();
+  };
+  // What waits for this agency (or for its hotels), in one list.
+  const [pending, setPending] = useState(null);
+  const loadPending = async () => {
+    try {
+      setPending((await agencyApi.get('/marketplace/v1/pending-actions')).data);
+    } catch {
+      // Informational; the tabs keep working without it.
+    }
+  };
   useEffect(() => {
-    if (token && portalMode === 'marketplace') loadNotices();
+    if (token && portalMode === 'marketplace') { loadNotices(); loadPending(); }
   }, [token, portalMode]); // eslint-disable-line react-hooks/exhaustive-deps
   const markNoticeRead = async notice => {
     try {
@@ -905,13 +928,15 @@ const AgencyPortalDashboard = () => {
             </CardContent>
           </Card>
         )}
-        {/* Load on activation, not on click: Radix switches tabs on mousedown,
-            the page height then changes and the mouseup may miss the trigger,
-            so a click handler would not run (tab open, content empty). */}
-        <Tabs defaultValue="search" className="w-full" onValueChange={value => ({
-          reservations: loadReservations, content: () => loadContent(), finance: loadReconciliation,
-          contracts: loadContracts, settings: loadPortalSettings,
-        })[value]?.()}>
+        {portalMode === 'marketplace' && pending && (pending.yours?.length > 0 || pending.theirs?.length > 0) && (
+          <Card className="border-amber-200 shadow-sm" data-testid="agency-pending-card">
+            <CardHeader className="pb-2"><CardTitle className="text-base">Bekleyen işler</CardTitle></CardHeader>
+            <CardContent>
+              <PendingActionsList data={pending} onOpen={item => openTab(item.target === 'contracts' ? 'contracts' : 'finance')} />
+            </CardContent>
+          </Card>
+        )}
+        <Tabs value={tab} className="w-full" onValueChange={openTab}>
           <TabsList className={`grid w-full ${portalMode === 'marketplace' ? 'grid-cols-2 lg:grid-cols-6' : 'grid-cols-1 sm:grid-cols-3'} h-auto gap-1 rounded-xl border border-slate-200 bg-white p-1.5 shadow-sm`}>
             <TabsTrigger value="search" data-testid="tab-search" className="min-h-10 rounded-lg data-[state=active]:bg-slate-900 data-[state=active]:text-white">{t('cm.pages_AgencyPortalDashboard.musaitlik_ara')}</TabsTrigger>
             <TabsTrigger value="reservations" data-testid="tab-reservations" className="min-h-10 rounded-lg data-[state=active]:bg-slate-900 data-[state=active]:text-white">Rezervasyonlarım</TabsTrigger>

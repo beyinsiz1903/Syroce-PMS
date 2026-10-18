@@ -7,7 +7,7 @@ import pytest
 
 from domains.admin.property_profiles import get_hidden_nav_config, resolve_tenant_nav, with_resolved_nav
 
-AGENCY_PAGES = {"incoming_agency_contracts", "agency_statements", "agency_readiness"}
+AGENCY_PAGES = {"incoming_agency_contracts", "agency_statements", "agency_readiness", "agency_pending"}
 
 
 def test_sapanca_compact_profile_lists_the_agency_extranet_pages():

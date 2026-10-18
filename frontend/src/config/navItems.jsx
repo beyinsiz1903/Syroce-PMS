@@ -792,6 +792,16 @@ export const NAV_ITEMS = [
     navSection: "agency_extranet",
   },
   {
+    key: "agency_pending",
+    label: "Bekleyen İşler",
+    path: "/app/agency-pending",
+    moduleKey: "agency_extranet",
+    tier: "basic",
+    group: "core",
+    navGroup: "sales",
+    navSection: "agency_extranet",
+  },
+  {
     key: "agency_readiness",
     label: "Acente Satış Durumu",
     path: "/app/agency-readiness",
