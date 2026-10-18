@@ -47,6 +47,9 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
   const [cashFlow, setCashFlow] = useState(null);
   const [dashboard, setDashboard] = useState(null);
   const [reports, setReports] = useState({ profitLoss: null, vat: null, balanceSheet: null });
+  const [reportsLoading, setReportsLoading] = useState(false);
+  const [reportsError, setReportsError] = useState('');
+  const reportsRequestId = useRef(0);
   const [loading, setLoading] = useState(true);
   const [openDialog, setOpenDialog] = useState(null);
   const [viewingInvoice, setViewingInvoice] = useState(null);
@@ -59,7 +62,7 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
     try {
       const [invoicesRes, dashRes] = await Promise.all([
         axios.get('/accounting/invoices'),
-        axios.get('/accounting/dashboard'),
+        axios.get('/accounting/dashboard', { params: { nocache: true } }),
       ]);
       setInvoices(invoicesRes.data || []);
       setDashboard(dashRes.data || null);
@@ -74,7 +77,7 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
 
   const refreshDashboard = useCallback(async () => {
     try {
-      const r = await axios.get('/accounting/dashboard');
+      const r = await axios.get('/accounting/dashboard', { params: { nocache: true } });
       setDashboard(r.data || null);
     } catch { /* non-fatal */ }
   }, []);
@@ -183,20 +186,29 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
   }, [t]);
 
   const loadReports = useCallback(async () => {
+    if (!dashboard?.business_date) return;
+    const id = ++reportsRequestId.current;
+    setReportsLoading(true);
+    setReportsError('');
+    setReports({ profitLoss: null, vat: null, balanceSheet: null });
     try {
-      const today = new Date();
-      const monthStart = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0];
-      const monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0).toISOString().split('T')[0];
+      // ISO business-day strings avoid local-midnight -> previous UTC day drift.
+      const monthEnd = dashboard.business_date.slice(0, 10);
+      const monthStart = `${monthEnd.slice(0, 7)}-01`;
       const [plRes, vatRes, bsRes] = await Promise.all([
-        axios.get(`/accounting/reports/profit-loss?start_date=${monthStart}&end_date=${monthEnd}`),
-        axios.get(`/accounting/reports/vat-report?start_date=${monthStart}&end_date=${monthEnd}`),
-        axios.get('/accounting/reports/balance-sheet'),
+        axios.get('/accounting/reports/profit-loss', { params: { start_date: monthStart, end_date: monthEnd, nocache: true } }),
+        axios.get('/accounting/reports/vat-report', { params: { start_date: monthStart, end_date: monthEnd } }),
+        axios.get('/accounting/reports/balance-sheet', { params: { nocache: true } }),
       ]);
-      setReports({ profitLoss: plRes.data, vat: vatRes.data, balanceSheet: bsRes.data });
+      if (id === reportsRequestId.current) setReports({ profitLoss: plRes.data, vat: vatRes.data, balanceSheet: bsRes.data });
     } catch (error) {
-      toast.error(t('common.loadFailed') || 'Yüklenemedi');
+      if (id === reportsRequestId.current) setReportsError(error?.response?.data?.detail || error?.message || 'Raporlar yüklenemedi');
+    } finally {
+      if (id === reportsRequestId.current) setReportsLoading(false);
     }
-  }, [t]);
+  }, [dashboard?.business_date]);
+
+  useEffect(() => () => { ++reportsRequestId.current; }, [loadReports]);
 
   useEffect(() => {
     if (activeSection === 'expenses') { loadExpenses(); loadSuppliers(); }
@@ -214,7 +226,7 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
       await axios.put(`/accounting/invoices/${invoiceId}`, { status: newStatus });
       toast.success(t('messages.success.saved') || 'Kaydedildi');
       try {
-        const dashRes = await axios.get('/accounting/dashboard');
+        const dashRes = await axios.get('/accounting/dashboard', { params: { nocache: true } });
         setDashboard(dashRes.data || null);
       } catch { /* non-fatal */ }
     } catch (error) {
@@ -291,10 +303,10 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
     );
   }
 
-  const money = (value, currency) => formatCurrency(
-    value || 0,
+  const money = (value, currency) => value == null ? '—' : formatCurrency(
+    value,
     currency || dashboard?.currency || tenantCurrency,
-    { decimals: 2 },
+    { decimals: 2, compactDecimals: false },
   );
   const moneyTotals = (totals, fallbackValue) => {
     const entries = Object.entries(totals || {}).filter(([, value]) => Number(value) !== 0);
@@ -316,9 +328,13 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
         </div>
 
         {dashboard && (
-          <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
+          <p className="text-sm text-gray-500">İş günü: {dashboard.business_date || '—'} · Satış/gider dönemi: {dashboard.period?.start || '—'} – {dashboard.period?.end || '—'}. Açık borçlar tüm dönemleri kapsar. Ödenmiş belge toplamı, ödeme tarihine göre nakit tahsilat değildir.</p>
+        )}
+        {dashboard?.unknown_bank_balance_count > 0 && <p role="alert" className="text-sm text-amber-700">{dashboard.unknown_bank_balance_count} banka hesabının bakiyesi bilinmiyor; banka toplamı yalnızca bilinen bakiyeleri içerir.</p>}
+        {dashboard && (
+          <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4 [&>div]:min-w-0 [&>div]:break-words [&>div]:tabular-nums">
             <Card>
-              <CardHeader className="pb-2"><CardTitle className="text-sm text-gray-600">{t('invoice.kpi.collected')}</CardTitle></CardHeader>
+              <CardHeader className="pb-2"><CardTitle className="text-sm text-gray-600">{t('invoice.kpi.paidDocuments', 'Ödenmiş satış belgeleri')}</CardTitle></CardHeader>
               <CardContent><div className="text-2xl font-bold text-green-600">{moneyTotals(dashboard.collected_income_by_currency, dashboard.collected_income ?? dashboard.monthly_income)}</div></CardContent>
             </Card>
             <Card>
@@ -341,7 +357,7 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
               <CardHeader className="pb-2"><CardTitle className="text-sm text-gray-600">{t('dashboard.overdue')}</CardTitle></CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold text-red-600">{dashboard.overdue_invoices ?? 0}</div>
-                {(dashboard.overdue_amount ?? 0) > 0 && (
+                {(Object.values(dashboard.overdue_amount_by_currency || {}).some(value => Number(value) > 0) || (dashboard.overdue_amount ?? 0) > 0) && (
                   <div className="text-xs text-gray-500 mt-1">{moneyTotals(dashboard.overdue_amount_by_currency, dashboard.overdue_amount)}</div>
                 )}
               </CardContent>
@@ -566,17 +582,23 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
           </TabsContent>
 
           <TabsContent value="reports" className="space-y-6">
-            <h2 className="text-2xl font-bold">{t('invoice.reports.title')}</h2>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h2 className="text-2xl font-bold">{t('invoice.reports.title')}</h2>
+              <Button variant="outline" onClick={loadReports} disabled={reportsLoading || !dashboard?.business_date}>Raporları yenile</Button>
+            </div>
+            <p className="text-sm text-gray-500">Belge dönemi: {dashboard?.business_date?.slice(0, 7)}-01 – {dashboard?.business_date}. Para birimleri birbirine eklenmez.</p>
+            {reportsLoading && <p role="status">Raporlar hesaplanıyor…</p>}
+            {reportsError && <p role="alert" className="text-sm text-red-600">Raporlar yüklenemedi: {String(reportsError)}</p>}
 
             {reports.profitLoss && (
               <Card>
                 <CardHeader>
                   <CardTitle>{t('invoice.reports.profitLoss')}</CardTitle>
-                  <div className="text-sm text-gray-500">{t('invoice.reports.thisMonth')}</div>
+                  <div className="text-sm text-gray-500">Fatura tarihine göre ödenmiş satış belgeleri eksi gider tahakkukları. Nakit akışı veya genel muhasebe gelir tablosu değildir.</div>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-4">
-                    <div className="grid grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 gap-4 lg:grid-cols-3 [&>div]:min-w-0 [&>div]:break-words">
                       <div><div className="text-sm text-gray-600">{t('invoice.reports.totalRevenue')}</div><div className="text-3xl font-bold text-green-600">{moneyTotals(reports.profitLoss.total_revenue_by_currency, reports.profitLoss.total_revenue)}</div></div>
                       <div><div className="text-sm text-gray-600">{t('invoice.reports.totalExpenses')}</div><div className="text-3xl font-bold text-red-600">{moneyTotals(reports.profitLoss.total_expenses_by_currency, reports.profitLoss.total_expenses)}</div></div>
                       <div><div className="text-sm text-gray-600">{t('invoice.reports.grossProfit')}</div><div className="text-3xl font-bold text-blue-600">{moneyTotals(reports.profitLoss.gross_profit_by_currency, reports.profitLoss.gross_profit)}</div></div>
@@ -607,10 +629,10 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
               <Card>
                 <CardHeader>
                   <CardTitle>{t('invoice.reports.vat')}</CardTitle>
-                  <div className="text-sm text-gray-500">{t('invoice.reports.thisMonth')}</div>
+                  <div className="text-sm text-gray-500">Geçerli satış/gider belgelerinin KDV tutarları; nakit tahsilatı göstermez.</div>
                 </CardHeader>
                 <CardContent>
-                  <div className="grid grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 gap-4 lg:grid-cols-3 [&>div]:min-w-0 [&>div]:break-words">
                     <div><div className="text-sm text-gray-600">{t('invoice.reports.vatCollected')}</div><div className="text-2xl font-bold text-green-600">{moneyTotals(reports.vat.sales_vat_by_currency, reports.vat.sales_vat)}</div></div>
                     <div><div className="text-sm text-gray-600">{t('invoice.reports.vatPaid')}</div><div className="text-2xl font-bold text-blue-600">{moneyTotals(reports.vat.purchase_vat_by_currency, reports.vat.purchase_vat)}</div></div>
                     <div><div className="text-sm text-gray-600">{t('invoice.reports.vatPayable')}</div><div className="text-2xl font-bold text-red-600">{moneyTotals(reports.vat.vat_payable_by_currency, reports.vat.vat_payable)}</div></div>
@@ -621,7 +643,10 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
 
             {reports.balanceSheet && (
               <Card>
-                <CardHeader><CardTitle>{t('invoice.reports.balanceSheet')}</CardTitle></CardHeader>
+                <CardHeader><CardTitle>Operasyonel varlık ve borç özeti</CardTitle>
+                  <p className="text-sm text-gray-500">Anlık banka, stok ve belge bakiyeleri. Resmî bilanço için genel muhasebe raporunu kullanın.</p>
+                  {reports.balanceSheet.complete === false && <p role="alert" className="text-sm text-amber-700">Banka bakiyesi eksik; varlık ve net pozisyon toplamları kısmi sonuçtur.</p>}
+                </CardHeader>
                 <CardContent>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <div>
@@ -641,9 +666,9 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
                       </div>
                     </div>
                     <div>
-                      <div className="font-semibold mb-3">{t('invoice.reports.equity')}</div>
+                      <div className="font-semibold mb-3">Operasyonel net pozisyon</div>
                       <div className="space-y-2 text-sm">
-                        <div className="flex justify-between pt-2 border-t font-bold"><span>{t('invoice.reports.totalEquity')}:</span><span className="text-green-600 text-right">{moneyTotals(reports.balanceSheet.equity.total_by_currency, reports.balanceSheet.equity.total)}</span></div>
+                        <div className="flex justify-between pt-2 border-t font-bold"><span>Net operasyonel pozisyon:</span><span className="text-green-600 text-right">{moneyTotals(reports.balanceSheet.equity.total_by_currency, reports.balanceSheet.equity.total)}</span></div>
                       </div>
                     </div>
                   </div>

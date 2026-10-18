@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { reportAmountLabel, reportCountLabel, reportCurrencyBuckets } from '../reportPresentation';
+import { reportAmountLabel, reportCountLabel, reportCurrencyBuckets, reportMoneyTotalsLabel } from '../reportPresentation';
 
 test('reports preserve actual zero but never invent a missing or invalid count', () => {
   assert.equal(reportCountLabel(0), '0');
@@ -15,6 +15,15 @@ test('collection amounts require both an explicit API amount and currency', () =
   assert.match(reportAmountLabel(125, 'EUR'), /€/);
   for (const currency of [undefined, null, '', 'EURO']) assert.equal(reportAmountLabel(125, currency), '—');
   for (const amount of [undefined, null, '', '0', false, NaN, Infinity]) assert.equal(reportAmountLabel(amount, 'EUR'), '—');
+});
+
+test('folio totals preserve currencies, real zero and unavailable balances', () => {
+  const text = reportMoneyTotalsLabel({ EUR: 80.25, TRY: 100.49 }, null);
+  assert.match(text, /€.*80,25/);
+  assert.match(text, /₺.*100,49/);
+  assert.equal(reportMoneyTotalsLabel(undefined, null, 'TRY'), '—');
+  assert.match(reportMoneyTotalsLabel({}, undefined, 'EUR'), /€.*0,00/);
+  assert.equal(reportMoneyTotalsLabel(undefined, 100, undefined), '—');
 });
 
 test('missing currency breakdown remains unknown; an explicit empty map is a real empty state', () => {

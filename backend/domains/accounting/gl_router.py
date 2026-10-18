@@ -1518,6 +1518,41 @@ async def list_journal(
     return {"entries": rows}
 
 
+def _posted_journal_query(tenant_id, start, end):
+    query = {"tenant_id": tenant_id, "status": "posted"}
+    dates = {}
+    if start:
+        dates["$gte"] = normalize_posting_date(start)
+    if end:
+        dates["$lte"] = normalize_posting_date(end)
+    if start and end and dates["$gte"] > dates["$lte"]:
+        raise GLPeriodError("Bitiş tarihi başlangıç tarihinden önce olamaz")
+    if dates:
+        query["date"] = dates
+    return query
+
+
+@router.get("/reports/journal")
+async def journal_report(
+    start: str | None = Query(None),
+    end: str | None = Query(None),
+    limit: int = Query(200, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
+    current_user: User = Depends(get_current_user),
+):
+    """Posted-only report; pagination is explicit and matches the export cohort."""
+    _require_role(current_user, _READ_ROLES)
+    try:
+        query = _posted_journal_query(_tenant_of(current_user), start, end)
+    except GLPeriodError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    entries, total = await asyncio.gather(
+        db.gl_journal_entries.find(query, {"_id": 0}).sort([("date", 1), ("posting_sequence", 1), ("id", 1)]).skip(offset).limit(limit).to_list(limit),
+        db.gl_journal_entries.count_documents(query),
+    )
+    return {"entries": entries, "total": total, "limit": limit, "offset": offset, "has_more": offset + len(entries) < total}
+
+
 @router.get("/journal/{entry_id}")
 async def get_journal(entry_id: str, current_user: User = Depends(get_current_user)):
     _require_role(current_user, _READ_ROLES)
@@ -3182,15 +3217,11 @@ async def _export_rows(tenant_id: str, report: str, start: str | None, end: str 
         data = await compute_balance_sheet(db, tenant_id, as_of=as_of)
         section_names = {"assets": "Varlık", "liabilities": "Yükümlülük", "equity": "Özkaynak"}
         rows = [[section_names[section], row["account_code"], row["account_name"], row["amount"]] for section in ("assets", "liabilities", "equity") for row in data[section]]
+        if data.get("current_earnings", {}).get("amount"):
+            rows.append(["Özkaynak", "—", "Dönem net sonucu", data["current_earnings"]["amount"]])
         return "Bilanço", ["Bölüm", "Hesap Kodu", "Hesap Adı", "Tutar"], rows
-    query: dict = {"tenant_id": tenant_id, "status": "posted"}
-    if start or end:
-        query["date"] = {}
-        if start:
-            query["date"]["$gte"] = start
-        if end:
-            query["date"]["$lte"] = end
-    entries = await db.gl_journal_entries.find(query, {"_id": 0}).sort([("date", 1), ("posting_sequence", 1)]).to_list(100000)
+    query = _posted_journal_query(tenant_id, start, end)
+    entries = await db.gl_journal_entries.find(query, {"_id": 0}).sort([("date", 1), ("posting_sequence", 1), ("id", 1)]).to_list(None)
     rows = [
         [
             entry.get("entry_no"),
@@ -3224,7 +3255,10 @@ async def export_gl_report(
 ):
     _require_role(current_user, _READ_ROLES)
     tenant_id = _tenant_of(current_user)
-    title, headers, rows = await _export_rows(tenant_id, report, start, end, as_of)
+    try:
+        title, headers, rows = await _export_rows(tenant_id, report, start, end, as_of)
+    except GLPeriodError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     if format == "pdf" and len(rows) > 10000:
         raise HTTPException(status_code=413, detail="PDF dışa aktarma 10.000 satırla sınırlıdır; Excel kullanın")
     filename = f"gl-{report}-{as_of or end or datetime.now(UTC).date().isoformat()}"

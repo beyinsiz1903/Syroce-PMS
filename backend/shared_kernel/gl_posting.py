@@ -497,7 +497,7 @@ async def compute_trial_balance(db, tenant_id: str, as_of: str | None = None) ->
     q: dict = {"tenant_id": tenant_id, "status": "posted"}
     if as_of:
         q["date"] = {"$lte": as_of}
-    entries = await db.gl_journal_entries.find(q, {"_id": 0}).to_list(100000)
+    entries = await db.gl_journal_entries.find(q, {"_id": 0}).to_list(None)
 
     agg: dict[str, dict] = {}
     for e in entries:
@@ -509,7 +509,7 @@ async def compute_trial_balance(db, tenant_id: str, as_of: str | None = None) ->
             row["debit_minor"] += int(debit_minor) if debit_minor is not None else _money_to_minor(ln.get("debit", 0))
             row["credit_minor"] += int(credit_minor) if credit_minor is not None else _money_to_minor(ln.get("credit", 0))
 
-    accts = await db.gl_accounts.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(5000)
+    accts = await db.gl_accounts.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(None)
     type_by_code = {a["code"]: a.get("type") for a in accts}
     name_by_code = {a["code"]: a.get("name") for a in accts}
     normal_balance_by_code = {a["code"]: a.get("normal_balance") or normal_balance(a.get("type")) for a in accts}
@@ -567,11 +567,11 @@ async def compute_income_statement(
         if end:
             date_query["$lte"] = normalize_posting_date(end)
         query["date"] = date_query
-    entries = await db.gl_journal_entries.find(query, {"_id": 0}).to_list(100000)
+    entries = await db.gl_journal_entries.find(query, {"_id": 0}).to_list(None)
     accounts = await db.gl_accounts.find(
         {"tenant_id": tenant_id, "type": {"$in": ["revenue", "expense"]}},
         {"_id": 0},
-    ).to_list(5000)
+    ).to_list(None)
     account_by_code = {account["code"]: account for account in accounts}
     activity: dict[str, dict[str, int]] = {}
     for entry in entries:
