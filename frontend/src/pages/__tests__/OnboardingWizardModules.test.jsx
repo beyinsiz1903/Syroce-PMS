@@ -10,9 +10,9 @@ vi.mock('react-router-dom', () => ({ useNavigate: () => navigate }));
 
 const progress = { steps: [], completed: 3, total: 13, progress_pct: 23, is_tenant_admin: true };
 
-function mockApi(readiness) {
+function mockApi(readiness, progressData = progress) {
   axios.get.mockImplementation((url) => {
-    if (url === '/onboarding/progress') return Promise.resolve({ data: progress });
+    if (url === '/onboarding/progress') return Promise.resolve({ data: progressData });
     if (url === '/modules/readiness') return readiness;
     return Promise.resolve({ data: {} });
   });
@@ -42,7 +42,7 @@ describe('OnboardingWizard modules step', () => {
   });
 
   it('explains that module setup is for the hotel administrator', async () => {
-    mockApi(Promise.reject({ response: { status: 403 } }));
+    mockApi(Promise.reject({ response: { status: 403 } }), { ...progress, is_tenant_admin: false });
     render(<OnboardingWizard user={{ role: 'front_desk' }} tenant={{ id: 't1' }} />);
     await openModulesStep();
     expect(await screen.findByText('Modül kurulumunu otel yöneticisi görebilir.')).toBeInTheDocument();
