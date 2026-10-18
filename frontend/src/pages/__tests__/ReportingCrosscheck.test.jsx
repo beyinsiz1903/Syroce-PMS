@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import axios from 'axios';
 import CostAnalyticsView from '@/components/cost/CostAnalyticsView';
@@ -6,6 +6,7 @@ import AnalyticsExportDashboard from '../AnalyticsExportDashboard';
 import NoShowAnalytics from '../NoShowAnalytics';
 import CashFlowModal from '@/components/mobile-finance/dialogs/CashFlowModal';
 import CashierShiftModal from '@/components/mobile-finance/dialogs/CashierShiftModal';
+import ReportsModal from '@/components/mobile-finance/dialogs/ReportsModal';
 
 vi.mock('axios', () => ({ default: { get: vi.fn() } }));
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn(), warning: vi.fn() } }));
@@ -13,6 +14,11 @@ const { translate } = vi.hoisted(() => ({ translate: (key, options) => options?.
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: translate, i18n: { language: 'tr' } }) }));
 vi.mock('@/hooks/useBusinessDate', () => ({ useBusinessDate: () => '2026-10-02' }));
 vi.mock('@/components/MaybeLayout', () => ({ default: ({ children }) => <>{children}</> }));
+vi.mock('@/components/ui/select', () => ({
+  Select: ({ value, onValueChange, children }) => <select aria-label="Rapor dönemi" value={value} onChange={e => onValueChange(e.target.value)}>{children}</select>,
+  SelectContent: ({ children }) => <>{children}</>, SelectItem: ({ value, children }) => <option value={value}>{children}</option>,
+  SelectTrigger: () => null, SelectValue: () => null,
+}));
 vi.mock('recharts', () => ({
   ResponsiveContainer: ({ children }) => <div>{children}</div>, BarChart: ({ children }) => <div>{children}</div>,
   PieChart: ({ children }) => <div>{children}</div>, Pie: ({ children }) => <div>{children}</div>,
@@ -94,5 +100,36 @@ describe('Reporting cross-page integrity', () => {
     expect((await screen.findAllByText('Doğrulanmadı')).length).toBeGreaterThanOrEqual(5);
     expect(screen.queryByText('TRY:0')).not.toBeInTheDocument();
     expect(screen.getAllByText('EUR:20 · TRY:100').length).toBe(2);
+  });
+
+  it('closes the report without pretending to close a cashier shift', async () => {
+    const close = vi.fn();
+    render(<CashierShiftModal cashierShiftModalOpen setCashierShiftModalOpen={close} formatCurrency={value => String(value)} shiftReportData={{ transaction_count: 0 }} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Raporu kapat' }));
+    expect(close).toHaveBeenCalledWith(false);
+  });
+
+  it('keeps absent monthly metrics unknown and formats the daily average in its reporting currency', () => {
+    render(<ReportsModal reportsModalOpen setReportsModalOpen={() => {}} formatCurrency={(value, currency) => `${currency || 'EUR'}:${value}`} formatPercent={value => `${value}%`}
+      dailyCollections={{ total_collected: 100, average_transaction: 50, payment_count: 2, reporting_currency: 'TRY' }}
+      monthlyCollections={{ total_collected: 100, reporting_currency: 'TRY' }} monthlyCosts={{ total_costs: 40, currency: 'TRY' }} />);
+    expect(screen.getByText('TRY:50')).toBeInTheDocument();
+    expect(screen.getAllByText('—')).toHaveLength(3);
+    expect(screen.queryByText('EUR:0')).not.toBeInTheDocument();
+    expect(screen.queryByText('0%')).not.toBeInTheDocument();
+  });
+
+  it.each([false, true])('does not let an outdated no-show response overwrite the selected period (old error: %s)', async (oldError) => {
+    let resolveOld, rejectOld;
+    const old = new Promise((resolve, reject) => { resolveOld = resolve; rejectOld = reject; });
+    const data = amount => ({ channels: [], top3_worst: [], total_loss: amount, loss_by_currency: { TRY: amount }, total_no_shows: 1 });
+    axios.get.mockImplementation(url => url.endsWith('days=30') ? old : Promise.resolve({ data: data(90) }));
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    render(<NoShowAnalytics embedded />);
+    await waitFor(() => expect(axios.get).toHaveBeenCalledWith('/pms/channel-loss-analytics?days=30'));
+    fireEvent.change(screen.getByLabelText('Rapor dönemi'), { target: { value: '90' } });
+    expect(await screen.findByTestId('ch-total-loss')).toHaveTextContent('90,00');
+    await act(async () => { if (oldError) rejectOld(new Error('old failure')); else resolveOld({ data: data(30) }); });
+    expect(screen.getByTestId('ch-total-loss')).toHaveTextContent('90,00');
   });
 });

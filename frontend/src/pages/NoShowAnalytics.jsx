@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
 import MaybeLayout from '@/components/MaybeLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -63,20 +63,23 @@ const ChannelLossTab = ({ period }) => {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const requestId = useRef(0);
 
   const load = useCallback(() => {
+    const id = ++requestId.current;
     setLoading(true);
     setError('');
     axios.get(`/pms/channel-loss-analytics?days=${period}`)
-      .then(r => setData(r.data))
+      .then(r => { if (id === requestId.current) setData(r.data); })
       .catch(e => {
+        if (id !== requestId.current) return;
         console.error(e);
         setData(null);
         setError('Kanal kaybı verileri yüklenemedi. Lütfen yeniden deneyin.');
       })
-      .finally(() => setLoading(false));
+      .finally(() => { if (id === requestId.current) setLoading(false); });
   }, [period]);
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(); return () => { requestId.current += 1; }; }, [load]);
 
   if (loading) return <Loader />;
   if (error) return <ErrorState message={error} onRetry={load} />;
@@ -249,20 +252,23 @@ const OverbookingHeatmapTab = ({ period }) => {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const requestId = useRef(0);
 
   const load = useCallback(() => {
+    const id = ++requestId.current;
     setLoading(true);
     setError('');
     axios.get(`/pms/overbooking-heatmap?days=${period}`)
-      .then(r => setData(r.data))
+      .then(r => { if (id === requestId.current) setData(r.data); })
       .catch(e => {
+        if (id !== requestId.current) return;
         console.error(e);
         setData(null);
         setError('Fazla satış risk haritası yüklenemedi. Lütfen yeniden deneyin.');
       })
-      .finally(() => setLoading(false));
+      .finally(() => { if (id === requestId.current) setLoading(false); });
   }, [period]);
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(); return () => { requestId.current += 1; }; }, [load]);
 
   if (loading) return <Loader />;
   if (error) return <ErrorState message={error} onRetry={load} />;
@@ -712,26 +718,31 @@ const PredictionTab = () => {
   const [error, setError] = useState('');
   const [daysAhead, setDaysAhead] = useState('7');
   const [batchRisk, setBatchRisk] = useState({});
+  const requestId = useRef(0);
 
   const load = useCallback(() => {
+    const id = ++requestId.current;
     setLoading(true);
     setError('');
     axios.get(`/pms/noshow-prediction?days_ahead=${daysAhead}`)
       .then(async (r) => {
+        if (id !== requestId.current) return;
         const predictions = r.data?.predictions || [];
         const ids = predictions.map((item) => item.booking_id).filter(Boolean);
         const bulk = ids.length ? await axios.post('/pms/no-show-risk/bulk', { booking_ids: ids }) : { data: { results: {} } };
+        if (id !== requestId.current) return;
         setBatchRisk(bulk.data?.results || {});
         setData(r.data);
       })
       .catch(e => {
+        if (id !== requestId.current) return;
         console.error(e);
         setData(null);
         setError('No-show tahminleri yüklenemedi. Lütfen yeniden deneyin.');
       })
-      .finally(() => setLoading(false));
+      .finally(() => { if (id === requestId.current) setLoading(false); });
   }, [daysAhead]);
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(); return () => { requestId.current += 1; }; }, [load]);
 
   if (loading) return <Loader />;
   if (error) return <ErrorState message={error} onRetry={load} />;

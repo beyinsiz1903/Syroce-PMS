@@ -251,3 +251,4 @@ async def test_cashier_report_never_claims_an_uncounted_shift_balanced(ledger_db
     assert result["opening_balance"] is None and result["variance"] is None
     assert result["collections"]["total"] is None and result["collections"]["transfer"] == 100
     assert result["average_transaction"] is None
+    assert result["payment_method_counts"] == {"transfer": 1, "cash": 1}

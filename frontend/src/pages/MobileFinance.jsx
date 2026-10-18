@@ -157,7 +157,7 @@ const MobileFinance = ({ user }) => {
     }
   };
 
-  const formatCurrency = (amount, currency = cachedTenantCurrency()) => formatMoney(amount, currency);
+  const formatCurrency = (amount, currency = cachedTenantCurrency()) => formatMoney(amount, currency, { decimals: 2 });
   const formatTotals = (totals, fallback, currency) => Object.keys(totals || {}).length
     ? Object.entries(totals).map(([code, amount]) => formatCurrency(amount, code)).join(' · ')
     : fallback == null ? '—' : formatCurrency(fallback, currency);

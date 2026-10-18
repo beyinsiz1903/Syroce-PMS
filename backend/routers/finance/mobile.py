@@ -268,6 +268,7 @@ async def get_cashier_shift_report(
     totals_by_currency: dict[str, float] = {}
     methods_by_currency: dict[str, dict[str, float]] = {}
     counts_by_currency = {}
+    method_counts: dict[str, int] = {}
 
     for payment in await _collection_rows(query, current_user.tenant_id):
         if not _is_reportable_collection(payment):
@@ -281,6 +282,7 @@ async def get_cashier_shift_report(
         method_totals[currency] = method_totals.get(currency, 0) + amount
 
         counts_by_currency[currency] = counts_by_currency.get(currency, 0) + 1
+        method_counts[method] = method_counts.get(method, 0) + 1
         transaction_count += 1
 
     averages = {code: amount / counts_by_currency[code] for code, amount in totals_by_currency.items()}
@@ -298,6 +300,7 @@ async def get_cashier_shift_report(
         "expected_closing_balance": None, "total_paid_out": None,
         "variance": None, "balance_status": "physical_shift_count_not_available", "basis": "daily_payment_movements",
         "transaction_count": transaction_count,
+        "payment_method_counts": method_counts,
         "average_transaction": single_amount(averages), "average_by_currency": rounded_totals(averages),
         "totals_by_currency": {key: round(value, 2) for key, value in totals_by_currency.items()},
         "payment_methods_by_currency": {

@@ -1,5 +1,4 @@
 import React from 'react';
-import { toast } from 'sonner';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -172,7 +171,7 @@ export default function CashierShiftModal(props) {
                              method === 'check' ? 'Çek' : method}
                           </p>
                           <p className="text-xs text-gray-500">
-                            {shiftReportData.payment_method_counts?.[method] ?? data.count ?? 0} {t('cm.components_mobilefinance_dialogs_CashierShiftModal.islem')}
+                            {shiftReportData.payment_method_counts?.[method] ?? data?.count ?? '—'} {t('cm.components_mobilefinance_dialogs_CashierShiftModal.islem')}
                           </p>
                         </div>
                         <p className="font-bold text-lg text-indigo-700">
@@ -199,10 +198,10 @@ export default function CashierShiftModal(props) {
 
             <Button 
               className="w-full bg-indigo-600 hover:bg-indigo-700"
-              onClick={() => toast.success('Vardiya raporu kapatıldı!')}
+              onClick={() => setCashierShiftModalOpen(false)}
             >
               <CheckCircle className="w-4 h-4 mr-2" />
-              {t('cm.components_mobilefinance_dialogs_CashierShiftModal.vardiya_kapat')}
+              {t('common.closeReport', { defaultValue: 'Raporu kapat' })}
             </Button>
           </div>
         ) : (
