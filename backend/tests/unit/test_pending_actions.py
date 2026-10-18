@@ -48,11 +48,42 @@ def test_dispute_is_answered_by_the_other_side():
     assert owners(statement_items(disputed, "agency", TODAY)) == [("dispute", "theirs")]
 
 
-def test_payment_notice_is_verified_by_the_payee_and_hides_the_payment_item():
-    notice = {"id": "n1", "status": "pending", "direction": "agency_to_hotel", "amount": 400, "reference": "EFT-1"}
+def test_full_payment_notice_is_verified_by_the_payee_and_hides_the_payment_item():
+    notice = {"id": "n1", "status": "pending", "direction": "agency_to_hotel", "amount": 1000, "reference": "EFT-1"}
     agreed = statement(status="agreed", agreements={"hotel": 1, "agency": 1}, payment_notices=[notice])
     assert owners(statement_items(agreed, "hotel", TODAY)) == [("payment_notice", "yours")]
     assert owners(statement_items(agreed, "agency", TODAY)) == [("payment_notice", "theirs")]
+
+
+@pytest.mark.parametrize("balance,direction,debtor,payee", [
+    (1000, "agency_to_hotel", "agency", "hotel"), (-1000, "hotel_to_agency", "hotel", "agency"),
+])
+def test_partial_notice_keeps_the_unreported_balance_visible(balance, direction, debtor, payee):
+    notices = [{"id": "n1", "status": "pending", "direction": direction, "amount": 400},
+               {"id": "n2", "status": "verified", "direction": direction, "amount": 100}]
+    doc = statement(status="agreed", totals={"net_balance": balance}, payment_notices=notices,
+                    payments=[{"amount": 100, "direction": direction}], agreed_at="2026-10-01")
+    items = statement_items(doc, debtor, TODAY)
+    payment = next(item for item in items if item["kind"] == "payment")
+    assert (payment["owner"], payment["amount"], payment["overdue"]) == ("yours", 500, True)
+    assert owners(items) == [("payment_notice", "theirs"), ("payment", "yours")]
+    assert owners(statement_items(doc, payee, TODAY)) == [("payment_notice", "yours"), ("payment", "theirs")]
+
+
+def test_opposite_direction_notice_does_not_hide_what_is_still_owed():
+    doc = statement(status="agreed", payment_notices=[{"id": "n1", "status": "pending", "direction": "hotel_to_agency", "amount": 400}])
+    assert next(item for item in statement_items(doc, "agency", TODAY) if item["kind"] == "payment")["amount"] == 1000
+
+
+def test_multiple_and_legacy_notices_only_reserve_their_reported_amounts():
+    doc = statement(status="resolved", payment_notices=[
+        {"id": "n1", "status": "pending", "amount": 300},
+        {"id": "n2", "status": "pending", "amount": 200},
+        {"id": "n3", "status": "rejected", "amount": 100},
+    ])
+    assert next(item for item in statement_items(doc, "agency", TODAY) if item["kind"] == "payment")["amount"] == 500
+    doc["payment_notices"].append({"id": "n4", "status": "pending", "amount": 600})
+    assert all(item["kind"] != "payment" for item in statement_items(doc, "agency", TODAY))
 
 
 def test_open_balance_is_the_debtors_to_pay_with_its_due_date():
@@ -112,3 +143,17 @@ async def test_lists_split_yours_and_theirs_scoped_to_the_party():
     assert agency["counts"]["yours"] == 2 and agency["counts"]["theirs"] == 2
     with pytest.raises(ValueError):
         await pending_actions(db, side="x", scope={}, today=TODAY)
+
+
+@pytest.mark.asyncio
+async def test_legacy_bson_dates_and_iso_strings_sort_without_crashing():
+    from datetime import UTC, datetime
+    from types import SimpleNamespace
+
+    db = SimpleNamespace(agency_contracts=_Coll([]), agency_statements=_Coll([
+        statement(id="later", issued_at="2026-10-12T10:00:00+00:00"),
+        statement(id="earlier", issued_at=datetime(2026, 10, 10, tzinfo=UTC)),
+        statement(id="overdue", status="agreed", agreed_at="2026-10-01"),
+    ]))
+    result = await pending_actions(db, side="agency", scope={"agency_id": "a1"}, today=TODAY)
+    assert [item["record_id"] for item in result["yours"]] == ["overdue", "earlier", "later"]

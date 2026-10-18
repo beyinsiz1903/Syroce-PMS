@@ -13,7 +13,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import StatementsWorkspace from '@/components/statements/StatementsWorkspace';
 import PerformanceReport from '@/components/statements/PerformanceReport';
-import PendingActionsList from '@/components/pending/PendingActionsList';
+import PendingActionsContent from '@/components/pending/PendingActionsContent';
+import usePendingActions from '@/components/pending/usePendingActions';
 import ContractAmendmentPanel from '@/components/contracts/ContractAmendmentPanel';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useTranslation } from 'react-i18next';
@@ -325,6 +326,11 @@ const AgencyPortalDashboard = () => {
   // mousedown, the page height then changes and the mouseup may miss the
   // trigger, so a click handler would not run (tab open, content empty).
   const [tab, setTab] = useState('search');
+  const pending = usePendingActions({
+    api: agencyApi, path: '/marketplace/v1/pending-actions',
+    enabled: Boolean(token) && portalMode === 'marketplace', sessionKey: token,
+  });
+  const loadPending = pending.reload;
   const openTab = value => {
     setTab(value);
     loadPending();
@@ -333,17 +339,8 @@ const AgencyPortalDashboard = () => {
       contracts: loadContracts, settings: loadPortalSettings,
     })[value]?.();
   };
-  // What waits for this agency (or for its hotels), in one list.
-  const [pending, setPending] = useState(null);
-  const loadPending = async () => {
-    try {
-      setPending((await agencyApi.get('/marketplace/v1/pending-actions')).data);
-    } catch {
-      // Informational; the tabs keep working without it.
-    }
-  };
   useEffect(() => {
-    if (token && portalMode === 'marketplace') { loadNotices(); loadPending(); }
+    if (token && portalMode === 'marketplace') loadNotices();
   }, [token, portalMode]); // eslint-disable-line react-hooks/exhaustive-deps
   const markNoticeRead = async notice => {
     try {
@@ -670,6 +667,7 @@ const AgencyPortalDashboard = () => {
       toast.success(`${contract.contract_code} teklifi geri çekildi.`);
       setWithdrawingId(null);
       await loadContracts();
+      await loadPending();
     } catch (err) { toast.error(err.response?.data?.detail || 'Teklif geri çekilemedi.'); }
     finally { setWithdrawBusy(false); }
   };
@@ -693,6 +691,7 @@ const AgencyPortalDashboard = () => {
       });
       setSelectedHotelIds([]);
       await loadContracts();
+      await loadPending();
     } catch (err) { toast.error(err.response?.data?.detail || 'Sözleşme teklifi gönderilemedi.'); }
     finally { setProposing(false); }
   };
@@ -928,11 +927,13 @@ const AgencyPortalDashboard = () => {
             </CardContent>
           </Card>
         )}
-        {portalMode === 'marketplace' && pending && (pending.yours?.length > 0 || pending.theirs?.length > 0) && (
+        {portalMode === 'marketplace' && (
           <Card className="border-amber-200 shadow-sm" data-testid="agency-pending-card">
-            <CardHeader className="pb-2"><CardTitle className="text-base">Bekleyen işler</CardTitle></CardHeader>
+            <CardHeader className="flex flex-row items-center justify-between pb-2"><CardTitle className="text-base">Bekleyen işler</CardTitle>
+              <Button size="sm" variant="outline" onClick={loadPending} disabled={pending.loading}>Yenile</Button>
+            </CardHeader>
             <CardContent>
-              <PendingActionsList data={pending} onOpen={item => openTab(item.target === 'contracts' ? 'contracts' : 'finance')} />
+              <PendingActionsContent {...pending} onRetry={loadPending} onOpen={item => openTab(item.target === 'contracts' ? 'contracts' : 'finance')} />
             </CardContent>
           </Card>
         )}
@@ -1149,6 +1150,7 @@ const AgencyPortalDashboard = () => {
             </Card>}
             <div data-testid="agency-statements">
               <StatementsWorkspace side="agency" api={agencyApi} base="/marketplace/v1/statements" partiesPath="/marketplace/v1/statements/hotels"
+                onChanged={loadPending}
                 title="Dönem ekstreleri" description="Ekstreyi siz, otel veya her ayın 1'inde sistem düzenler; iki taraf onaylar. Borçlu taraf ödemeyi dekontla bildirir, alacaklı doğrular. Girişte ödemeli satışlarınızın komisyonu için ekstreyi kendiniz düzenleyebilirsiniz." />
             </div>
           </TabsContent>}
@@ -1184,7 +1186,7 @@ const AgencyPortalDashboard = () => {
               ? <div className="mt-2 flex justify-end gap-2"><Button size="sm" variant="outline" disabled={withdrawBusy} onClick={() => setWithdrawingId(null)}>Vazgeç</Button><Button size="sm" variant="destructive" disabled={withdrawBusy} onClick={() => withdrawContract(contract)} data-testid={`confirm-withdraw-${contract.id}`}>Evet, geri çek</Button></div>
               : <Button size="sm" variant="outline" className="mt-2" onClick={() => setWithdrawingId(contract.id)} data-testid={`withdraw-${contract.id}`}>Teklifi geri çek</Button>)}</div>
               {(contract.status === 'approved' || contract.pending_amendment) && <div className="w-full"><ContractAmendmentPanel side="agency" api={agencyApi}
-                base={`/marketplace/v1/contracts/${encodeURIComponent(contract.id)}/amendments`} contract={contract} onChanged={() => loadContracts()} /></div>}</CardContent></Card>)}
+                base={`/marketplace/v1/contracts/${encodeURIComponent(contract.id)}/amendments`} contract={contract} onChanged={() => { loadContracts(); loadPending(); }} /></div>}</CardContent></Card>)}
           </TabsContent>}
 
           {/* Content Tab */}

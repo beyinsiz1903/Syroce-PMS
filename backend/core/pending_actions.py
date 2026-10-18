@@ -10,8 +10,8 @@ every open item is reported once, either as **yours** (this side must act) or
   current revision (each line correction bumps the revision);
 * dispute — the side that did not raise it answers;
 * payment notice — the payee verifies a pending notice;
-* payment — an agreed statement with an open balance and no pending notice:
-  the debtor pays, due on agreement date + payment term (core.agency_reports).
+* payment — the open balance not already covered by pending notices in the
+  debt's direction, due on agreement date + payment term (core.agency_reports).
 
 The same rules as the routers that act on them (agency_contracts,
 agency_contract_amendments, agency_statements); nothing here writes.
@@ -106,20 +106,25 @@ def statement_items(statement: dict, side: str, today: date) -> list[dict]:
         items.append(_item("payment_notice", owner, statement, side, since=notice.get("reported_at"),
                            amount=notice.get("amount"), notice_id=notice.get("id"), payment_ref=notice.get("reference"), **common))
 
-    if status in PAYABLE and not pending:
+    if status in PAYABLE:
         balance = outstanding(statement)
-        if abs(balance) >= 0.01:
+        direction = "agency_to_hotel" if balance > 0 else "hotel_to_agency"
+        reported = sum(float(n.get("amount") or 0) for n in pending
+                       if (n.get("direction") or "agency_to_hotel") == direction)
+        unreported = round(max(0.0, abs(balance) - reported), 2)
+        if unreported >= 0.01:
             debtor = "agency" if balance > 0 else "hotel"
             due = due_date(statement)
             items.append(_item("payment", "yours" if debtor == side else "theirs", statement, side,
-                               since=statement.get("agreed_at"), amount=round(abs(balance), 2),
+                               since=statement.get("agreed_at"), amount=unreported,
                                due_date=due.isoformat() if due else None,
                                overdue=bool(due and due < today), **common))
     return items
 
 
 def _sort_key(item: dict):
-    return (not item.get("overdue"), item.get("due_date") or "9999", item.get("since") or "")
+    # Legacy Mongo records may carry BSON datetimes alongside ISO strings.
+    return (not item.get("overdue"), str(item.get("due_date") or "9999"), str(item.get("since") or ""))
 
 
 async def pending_actions(sysdb, *, side: str, scope: dict, today: date) -> dict:
