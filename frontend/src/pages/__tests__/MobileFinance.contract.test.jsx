@@ -66,4 +66,14 @@ describe('MobileFinance modal contract', () => {
     expect(await screen.findByText('Risk Yönetimi')).toBeInTheDocument();
     expect(screen.getByText('Review')).toBeInTheDocument();
   });
+
+  it('preserves cents on finance amounts above one thousand', async () => {
+    const defaultGet = get.getMockImplementation();
+    get.mockImplementation(url => url === '/finance/mobile/daily-collections'
+      ? Promise.resolve({ data: { total_collected: 1000.49, totals_by_currency: { TRY: 1000.49 }, payment_count: 1 } })
+      : defaultGet(url));
+    render(<MemoryRouter><MobileFinance user={{ name: 'Test Operator' }} /></MemoryRouter>);
+    expect((await screen.findAllByText('₺1.000,49')).length).toBeGreaterThan(0);
+    expect(screen.queryByText('₺1.000')).not.toBeInTheDocument();
+  });
 });

@@ -35,15 +35,15 @@ export default function ReportsModal(props) {
             <CardContent className="space-y-2">
               <div className="flex justify-between">
                 <span className="text-gray-600">{t('cm.components_mobilefinance_dialogs_ReportsModal.bugun_tahsilat')}</span>
-                <span className="font-bold text-green-700">{formatTotals(dailyCollections?.totals_by_currency, dailyCollections?.total_collected, dailyCollections?.currency)}</span>
+                <span className="font-bold text-green-700">{formatTotals(dailyCollections?.totals_by_currency, dailyCollections?.total_collected, dailyCollections?.reporting_currency || dailyCollections?.currency)}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-600">{t('cm.components_mobilefinance_dialogs_ReportsModal.islem_sayisi')}</span>
-                <span className="font-bold">{dailyCollections?.payment_count || 0}</span>
+                <span className="font-bold">{dailyCollections?.payment_count ?? '—'}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-600">{t('cm.components_mobilefinance_dialogs_ReportsModal.ortalama_islem')}</span>
-                <span className="font-bold">{formatCurrency(dailyCollections?.average_transaction || 0)}</span>
+                <span className="font-bold">{dailyCollections?.average_transaction == null ? '—' : formatCurrency(dailyCollections.average_transaction, dailyCollections.reporting_currency || dailyCollections.currency)}</span>
               </div>
             </CardContent>
           </Card>
@@ -55,19 +55,19 @@ export default function ReportsModal(props) {
             <CardContent className="space-y-2">
               <div className="flex justify-between">
                 <span className="text-gray-600">{t('cm.components_mobilefinance_dialogs_ReportsModal.toplam_tahsilat')}</span>
-                <span className="font-bold text-green-700">{formatTotals(monthlyCollections?.totals_by_currency, monthlyCollections?.total_collected, monthlyCollections?.currency)}</span>
+                <span className="font-bold text-green-700">{formatTotals(monthlyCollections?.totals_by_currency, monthlyCollections?.total_collected, monthlyCollections?.reporting_currency || monthlyCollections?.currency)}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-600">{t('cm.components_mobilefinance_dialogs_ReportsModal.beklenen_tutar')}</span>
-                <span className="font-bold">{formatCurrency(monthlyCollections?.total_expected || 0)}</span>
+                <span className="font-bold">{formatTotals(monthlyCollections?.expected_by_currency, monthlyCollections?.total_expected, monthlyCollections?.reporting_currency || monthlyCollections?.currency)}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-600">{t('cm.components_mobilefinance_dialogs_ReportsModal.tahsilat_orani')}</span>
-                <span className="font-bold text-blue-700">{formatPercent(monthlyCollections?.collection_rate || 0)}</span>
+                <span className="font-bold text-blue-700">{monthlyCollections?.collection_rate == null ? '—' : formatPercent(monthlyCollections.collection_rate)}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-600">Kalan Alacak:</span>
-                <span className="font-bold text-amber-700">{formatCurrency(monthlyCollections?.outstanding || 0)}</span>
+                <span className="font-bold text-amber-700">{formatTotals(monthlyCollections?.outstanding_by_currency, monthlyCollections?.outstanding, monthlyCollections?.reporting_currency || monthlyCollections?.currency)}</span>
               </div>
             </CardContent>
           </Card>
