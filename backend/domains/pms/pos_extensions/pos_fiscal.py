@@ -108,6 +108,16 @@ async def _submit(job: dict) -> dict:
     return {"driver": driver, "ok": False, "reason": "unknown fiscal driver"}
 
 
+@router.get('/readiness')
+async def readiness(current_user: User = Depends(get_current_user)):
+    try:
+        driver = _resolve_driver()
+    except HTTPException as exc:
+        return {'certified': False, 'can_simulate': False, 'reason': str(exc.detail)}
+    return {'driver': driver, 'certified': False, 'can_simulate': driver == 'simulator',
+            'reason': 'Sertifikalı mali cihaz sürücüsü kurulu değil. Gerçek mali fiş/Z raporu fiziksel ÖKC üzerinden alınmalıdır.'}
+
+
 @router.post("/jobs")
 async def enqueue(body: FiscalJobCreate, current_user: User = Depends(get_current_user)):
     # Verify referenced order belongs to this tenant (no mutation).

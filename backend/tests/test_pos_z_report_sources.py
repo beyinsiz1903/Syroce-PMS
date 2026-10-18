@@ -109,6 +109,7 @@ async def test_z_report_merges_waiter_orders_and_legacy_transactions(monkeypatch
         ]
     )
     fake_db = SimpleNamespace(
+        hotel_settings=SimpleNamespace(find_one=AsyncMock(return_value={'currency': 'TRY'})),
         pos_transactions=finalized_transactions,
         pos_orders=orders,
         pos_menu_transactions=menu_transactions,

@@ -4,6 +4,8 @@ import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, RefreshCw } from "lucide-react";
 import { parseMoneyInput } from '@/lib/moneyInput';
+import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
+const money = (value, currency = cachedTenantCurrency()) => formatCurrency(value, currency, { decimals: 2 });
 const TABS = [{ id: "stock", label: "Stok kurtarma" }, {
   id: "currency",
   label: "Çoklu Döviz"
@@ -111,7 +113,7 @@ const LABELS = {
   stock_consumption_status: 'Stok tüketimi', stock_restore_status: 'İade stoğu',
   stock_consumption_status_error: 'Tüketim hatası', stock_restore_status_error: 'İade hatası',
 };
-const STATES = { pending: 'Bekliyor', queued: 'Kuyrukta', completed: 'Tamamlandı', failed: 'Başarısız',
+const STATES = { pending: 'Bekliyor', dispatching: 'Baskı sonucu bekleniyor', queued: 'Kuyrukta', completed: 'Tamamlandı', failed: 'Başarısız',
   sent: 'Gönderildi', printed: 'Yazdırıldı', running: 'Çalışıyor', open: 'Açık', closed: 'Kapalı',
   percent: 'Yüzde', amount: 'Tutar', cash: 'Nakit', card: 'Kart', simulated: 'Simülasyon' };
 function Cell({ value }) {
@@ -168,13 +170,14 @@ function CurrencyTab() {
   return <>
       <Section title={t("cm.pages_POSExtensions.kur_tan\u0131mla")}>
         <Input label={t("cm.pages_POSExtensions.d\xF6viz_kodu")} value={code} onChange={setCode} placeholder={t("cm.pages_POSExtensions.usd_eur_gbp")} />
-        <Input label={t("cm.pages_POSExtensions.try_kar\u015F\u0131l\u0131\u011F\u0131")} value={rate} onChange={setRate} money />
+        <Input label={`1 birim dövizin ${cachedTenantCurrency()} karşılığı`} value={rate} onChange={setRate} money />
         <div className="flex gap-2 mt-2">
           <Btn onClick={async () => {
           const r = await apiFetch("/api/pos/ext/currency/rates", {
             method: "POST",
             body: JSON.stringify({
               currency_code: code,
+              base_currency: cachedTenantCurrency(),
               rate_to_base: parseMoneyInput(rate)
             })
           });
@@ -258,7 +261,7 @@ function CouponsTab() {
       }}>{t("cm.pages_POSExtensions.kaydet")}</Btn>
       </Section>
       <Section title={t("cm.pages_POSExtensions.do\u011Frula")}>
-        <Input label={t("cm.pages_POSExtensions.tutar_tl")} value={validateAmount} onChange={setValidateAmount} money />
+        <Input label={`Tutar (${cachedTenantCurrency()})`} value={validateAmount} onChange={setValidateAmount} money />
         <Btn variant="outline" onClick={async () => {
         const r = await apiFetch("/api/pos/ext/coupons/validate", {
           method: "POST",
@@ -298,9 +301,10 @@ function LoyaltyTab() {
     </>;
 }
 function ShiftsTab() {
+  const currency = cachedTenantCurrency();
   const [outlet, setOutlet] = useState("");
   const [opening, setOpening] = useState("500");
-  const [counted, setCounted] = useState("");
+  const [counted, setCounted] = useState({});
   const [shifts, setShifts] = useState([]);
   const [outlets, setOutlets] = useState([]);
   const [message, setMessage] = useState("");
@@ -342,8 +346,8 @@ function ShiftsTab() {
       <Section title={t("cm.pages_POSExtensions.vardiyalar")}>
         {shifts.length === 0 ? <p className="text-sm text-gray-500">Henüz vardiya kaydı yok.</p> : <div className="space-y-3">
           {shifts.map(shift => <div key={shift.id} className="rounded-lg border p-3">
-            <div className="flex items-start justify-between gap-3"><div><strong>{outlets.find(row => row.id === shift.outlet_id)?.outlet_name || outlets.find(row => row.id === shift.outlet_id)?.name || 'Satış noktası'}</strong><p className="text-xs text-gray-500">{shift.status === 'open' ? 'Açık vardiya' : 'Kapanmış vardiya'} · Açılış nakdi {Number(shift.opening_cash || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })} TL</p></div><span className={`rounded-full px-2 py-1 text-xs font-semibold ${shift.status === 'open' ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-700'}`}>{shift.status === 'open' ? 'Açık' : 'Kapalı'}</span></div>
-            {shift.status === 'open' ? <div className="mt-3 flex items-end gap-2"><div className="flex-1"><Input label="Sayılan kasa toplamı" value={counted} onChange={setCounted} money /></div><Btn disabled={!Number.isFinite(parseMoneyInput(counted))} onClick={async () => { const response = await apiFetch(`/api/pos/ext/shifts/${shift.id}/close`, { method: 'POST', body: JSON.stringify({ counted_cash_total: parseMoneyInput(counted) }) }); setMessage(response.ok ? `Vardiya kapandı. Kasa farkı: ${Number(response.body?.shift?.variance || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })} TL` : response.body?.detail || 'Vardiya kapatılamadı.'); if (response.ok) setCounted(''); await load(); }}>Sayımı Onayla ve Kapat</Btn></div> : <div className="mt-2 grid grid-cols-3 gap-2 text-sm"><div><span className="text-gray-500">Beklenen</span><strong className="block">{Number(shift.expected_cash_total || 0).toLocaleString('tr-TR')} TL</strong></div><div><span className="text-gray-500">Sayılan</span><strong className="block">{Number(shift.counted_cash_total || 0).toLocaleString('tr-TR')} TL</strong></div><div><span className="text-gray-500">Fark</span><strong className={`block ${Number(shift.variance || 0) === 0 ? 'text-emerald-700' : 'text-red-700'}`}>{Number(shift.variance || 0).toLocaleString('tr-TR')} TL</strong></div></div>}
+            <div className="flex items-start justify-between gap-3"><div><strong>{outlets.find(row => row.id === shift.outlet_id)?.outlet_name || outlets.find(row => row.id === shift.outlet_id)?.name || 'Satış noktası'}</strong><p className="text-xs text-gray-500">{shift.status === 'open' ? 'Açık vardiya' : 'Kapanmış vardiya'} · Açılış nakdi {money(shift.opening_cash || 0, shift.currency || currency)}</p></div><span className={`rounded-full px-2 py-1 text-xs font-semibold ${shift.status === 'open' ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-700'}`}>{shift.status === 'open' ? 'Açık' : 'Kapalı'}</span></div>
+            {shift.status === 'open' ? <div className="mt-3 flex items-end gap-2"><div className="flex-1"><Input label={`Sayılan kasa toplamı (${shift.currency || currency})`} value={counted[shift.id] || ''} onChange={value => setCounted(previous => ({ ...previous, [shift.id]: value }))} money /></div><Btn disabled={!Number.isFinite(parseMoneyInput(counted[shift.id] || ''))} onClick={async () => { const response = await apiFetch(`/api/pos/ext/shifts/${shift.id}/close`, { method: 'POST', body: JSON.stringify({ counted_cash_total: parseMoneyInput(counted[shift.id]) }) }); setMessage(response.ok ? `Vardiya kapandı. Kasa farkı: ${money(response.body?.shift?.variance || 0, response.body?.shift?.currency || shift.currency || currency)}` : response.body?.detail || 'Vardiya kapatılamadı.'); if (response.ok) setCounted(previous => ({ ...previous, [shift.id]: '' })); await load(); }}>Sayımı Onayla ve Kapat</Btn></div> : <div className="mt-2 grid grid-cols-3 gap-2 text-sm"><div><span className="text-gray-500">Beklenen</span><strong className="block">{money(shift.expected_cash_total || 0, shift.currency || currency)}</strong></div><div><span className="text-gray-500">Sayılan</span><strong className="block">{money(shift.counted_cash_total || 0, shift.currency || currency)}</strong></div><div><span className="text-gray-500">Fark</span><strong className={`block ${Number(shift.variance || 0) === 0 ? 'text-emerald-700' : 'text-red-700'}`}>{money(shift.variance || 0, shift.currency || currency)}</strong></div></div>}
           </div>)}
         </div>}
       </Section>
@@ -351,13 +355,15 @@ function ShiftsTab() {
 }
 function BarcodeTab() {
   const [barcode, setBarcode] = useState("");
-  const [name, setName] = useState("");
-  const [price, setPrice] = useState("");
+  const [menuItems, setMenuItems] = useState([]);
+  const [menuItemId, setMenuItemId] = useState('');
   const [lookupResult, setLookupResult] = useState(null);
   const [maps, setMaps] = useState([]);
   const load = async () => {
     const r = await apiFetch("/api/pos/ext/barcode/map?limit=50");
     if (r.ok) setMaps(r.body.mappings || []);
+    const items = await apiFetch('/api/pos/menu-items');
+    if (items.ok) setMenuItems(Array.isArray(items.body) ? items.body : items.body.menu_items || []);
   };
   useEffect(() => {
     load();
@@ -365,16 +371,15 @@ function BarcodeTab() {
   return <>
       <Section title={t("cm.pages_POSExtensions.barkod_e\u015Fle")}>
         <Input label={t("cm.pages_POSExtensions.barkod")} value={barcode} onChange={setBarcode} placeholder="8690000000000" />
-        <Input label={t("cm.pages_POSExtensions.\xFCr\xFCn_ad\u0131")} value={name} onChange={setName} />
-        <Input label={t("cm.pages_POSExtensions.birim_fiyat")} value={price} onChange={setPrice} money />
+        <label className="block text-sm">Menü ürünü<select className="my-2 block w-full rounded border p-2" value={menuItemId} onChange={event => setMenuItemId(event.target.value)}><option value="">Ürün seçin</option>{menuItems.map(item => <option key={item.id} value={item.id}>{item.item_name || item.name} · {item.outlet_id}</option>)}</select></label>
+        <p className="mb-2 text-xs text-gray-500">Fiyat ve KDV menüden alınır. Barkod için ayrı satış fiyatı tanımlanmaz.</p>
         <div className="flex gap-2 mt-2">
-          <Btn onClick={async () => {
+          <Btn disabled={!barcode || !menuItemId} onClick={async () => {
           await apiFetch("/api/pos/ext/barcode/map", {
             method: "POST",
             body: JSON.stringify({
               barcode,
-              name,
-              unit_price: parseMoneyInput(price)
+              menu_item_id: menuItemId
             })
           });
           await load();
@@ -428,9 +433,13 @@ function PrintTab() {
 }
 function FiscalTab() {
   const [jobs, setJobs] = useState([]);
+  const [readiness, setReadiness] = useState(null);
+  const [lastResult, setLastResult] = useState(null);
   const load = async () => {
     const r = await apiFetch("/api/pos/ext/fiscal/jobs?limit=20");
     if (r.ok) setJobs(r.body.jobs || []);
+    const status = await apiFetch('/api/pos/ext/fiscal/readiness');
+    setReadiness(status.ok ? status.body : null);
   };
   useEffect(() => {
     load();
@@ -438,14 +447,17 @@ function FiscalTab() {
   return <>
       <Section title={t("cm.pages_POSExtensions.mali_yaz\u0131c\u0131_\xF6kc_durumu")}>
         <p className="text-sm text-gray-700">Mali cihaz işlemleri onaylı cihaz entegrasyonu gerektirir. Simülasyon çıktısı mali belge değildir. Üretimde uygun sürücü yoksa işlem engellenir; hata aşağıdaki işlem geçmişinde gösterilir.</p>
+        <p role="status" className="mt-2 text-sm text-amber-800">{readiness?.reason || 'Mali cihaz hazırlığı doğrulanamadı; gerçek Z raporu oluşturulamaz.'}</p>
         <div className="mt-2">
-          <Btn variant="outline" onClick={async () => {
-          await apiFetch("/api/pos/ext/fiscal/eod", {
+          <Btn variant="outline" disabled={!readiness?.can_simulate} onClick={async () => {
+          const result = await apiFetch("/api/pos/ext/fiscal/eod", {
             method: "POST"
           });
+          setLastResult(result.body);
           await load();
-        }}>Gün Sonu Z Raporu Oluştur</Btn>
+        }}>Z raporu simülasyonu (mali belge değildir)</Btn>
         </div>
+        {lastResult && <ResultTable data={lastResult} />}
       </Section>
       <Section title={t("cm.pages_POSExtensions.bekleyen_fiscal_i_\u015F_kuyru\u011Fu")}><ResultTable data={jobs} /></Section>
     </>;

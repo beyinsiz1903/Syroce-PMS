@@ -310,6 +310,7 @@ async def create_menu_item(
         "description": item.description,
         "cost": item.cost,
         "available": item.available,
+        'is_active': True,
         "image_url": item.image_url,
         "tax_rate": item.tax_rate,
         "outlet_id": item.outlet_id,

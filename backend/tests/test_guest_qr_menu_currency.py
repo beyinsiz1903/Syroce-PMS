@@ -21,7 +21,10 @@ def _guest_menu_db(items, *, outlet=True, table=True):
     outlets.find_one = AsyncMock(return_value={"id": "outlet-1"} if outlet else None)
     tables = MagicMock()
     tables.find_one = AsyncMock(return_value={"id": "table-1"} if table else None)
-    return SimpleNamespace(pos_menu_items=items, pos_outlets=outlets, table_layouts=tables)
+    rules = MagicMock()
+    rules.find.return_value.sort.return_value = _cursor([])
+    return SimpleNamespace(pos_menu_items=items, pos_outlets=outlets, table_layouts=tables,
+                           pos_happy_hour_rules=rules)
 
 
 @pytest.mark.asyncio
@@ -67,7 +70,7 @@ async def test_empty_public_menu_still_exposes_tenant_currency(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_guest_order_rejects_mixed_currency_cart(monkeypatch):
+async def test_public_menu_does_not_relabel_foreign_currency_items(monkeypatch):
     items = MagicMock()
     items.find.return_value = _cursor(
         [
@@ -82,18 +85,5 @@ async def test_guest_order_rejects_mixed_currency_cart(monkeypatch):
         AsyncMock(return_value=("EUR", "€")),
     )
 
-    with pytest.raises(guest_menu.HTTPException) as exc_info:
-        await guest_menu.place_guest_order(
-            "tenant-eur",
-            "outlet-1",
-            guest_menu.GuestOrderRequest(
-                table_id="T1",
-                items=[
-                    {"item_id": "coffee", "quantity": 1},
-                    {"item_id": "tea", "quantity": 1},
-                ],
-            ),
-        )
-
-    assert exc_info.value.status_code == 400
-    assert "Farklı para birimlerindeki" in exc_info.value.detail
+    result = await guest_menu.get_guest_menu('tenant-eur', 'outlet-1')
+    assert [item['id'] for category in result['categories'] for item in category['items']] == ['coffee']

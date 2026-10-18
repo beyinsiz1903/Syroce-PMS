@@ -39,6 +39,7 @@ _SENSITIVE_READ_PREFIXES = (
 
 # Paths that don't require tenant context
 _PUBLIC_PREFIXES = (
+    '/api/public/fnb/',  # Signed-table guest capability, not the visitor's PMS cookie tenant.
     "/health",
     "/api/docs",
     "/api/redoc",

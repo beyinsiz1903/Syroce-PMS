@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import { AlertTriangle, Banknote, Clock3, CreditCard, Loader2, RefreshCw, ReceiptText, Utensils } from 'lucide-react';
 import { toast } from 'sonner';
@@ -13,25 +13,32 @@ const paymentLabels = { cash: 'Nakit', card: 'Kredi kartı', room_charge: 'Oda h
 
 export default function POSOperations({ outletId }) {
   const [data, setData] = useState({ open_orders: [], payment_methods: {} });
+  const [loaded, setLoaded] = useState(false);
+  const requestRef = useRef(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [selected, setSelected] = useState(null);
   const [adjustment, setAdjustment] = useState({ adjustment_type: 'discount', calculation: 'percentage', value: '', reason: '' });
   const [saving, setSaving] = useState(false);
-  const currency = cachedTenantCurrency();
+  const currency = data.currency || cachedTenantCurrency();
 
   const load = useCallback(async () => {
+    const requestId = ++requestRef.current;
     setLoading(true); setError('');
     try {
       const params = outletId ? { outlet_id: outletId } : {};
       const response = await axios.get('/pos/v2/operations/summary', { params });
+      if (requestId !== requestRef.current) return;
       setData(response.data || { open_orders: [], payment_methods: {} });
+      setLoaded(true);
     } catch (err) {
-      setError(err?.response?.data?.detail || 'POS operasyon özeti yüklenemedi.');
-    } finally { setLoading(false); }
+      if (requestId !== requestRef.current) return;
+      const detail = err?.response?.data?.detail;
+      setError(typeof detail === 'string' ? detail : detail?.message || detail?.detail || 'POS operasyon özeti yüklenemedi.');
+    } finally { if (requestId === requestRef.current) setLoading(false); }
   }, [outletId]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { setLoaded(false); setSelected(null); load(); return () => { requestRef.current += 1; }; }, [load]);
   useEffect(() => {
     const timer = window.setInterval(load, 30000);
     return () => window.clearInterval(timer);
@@ -55,6 +62,13 @@ export default function POSOperations({ outletId }) {
     } catch (err) { toast.error(err?.response?.data?.detail?.message || err?.response?.data?.detail || 'Düzeltme uygulanamadı.'); }
     finally { setSaving(false); }
   };
+
+  if (error || !loaded) return <div className="rounded-xl border p-5" data-testid="pos-operations">
+    <h2 className="font-bold">Canlı Operasyon ve Kasa</h2>
+    <p className="my-3 text-sm" role={error ? 'alert' : 'status'}>{error || 'POS verileri yükleniyor…'}</p>
+    {error && <p className="mb-3 text-sm text-gray-500">Veri doğrulanamadı; sıfır satış veya boş adisyon olarak gösterilmedi.</p>}
+    <Button variant="outline" onClick={load} disabled={loading}>Yeniden dene</Button>
+  </div>;
 
   return <div className="space-y-4" data-testid="pos-operations">
     <div className="flex items-center justify-between gap-3"><div><h2 className="text-base font-bold text-gray-900">Canlı Operasyon ve Kasa</h2><p className="text-sm text-gray-500">Açık adisyon, mutfak SLA ve iş günü tahsilat mutabakatı</p></div><Button variant="outline" size="sm" onClick={load} disabled={loading}>{loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}Yenile</Button></div>

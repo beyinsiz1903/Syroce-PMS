@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime, time
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
@@ -59,6 +60,17 @@ def _within_window(now: datetime, start: time, end: time) -> bool:
     return t >= start or t <= end
 
 
+async def hotel_local_time(database, tenant_id: str, instant: datetime) -> datetime:
+    settings_collection = getattr(database, 'hotel_settings', None)
+    settings = await settings_collection.find_one({'tenant_id': tenant_id}, {'_id': 0, 'timezone': 1}) if settings_collection is not None else None
+    timezone_name = (settings or {}).get('timezone') or 'Europe/Istanbul'
+    try:
+        zone = ZoneInfo(timezone_name)
+    except (ZoneInfoNotFoundError, ValueError, TypeError):
+        raise HTTPException(422, 'Tesis saat dilimi geçersiz; kampanya uygulanmadı.') from None
+    return (instant if instant.tzinfo else instant.replace(tzinfo=UTC)).astimezone(zone)
+
+
 def _rule_matches(rule: dict, now: datetime, outlet_id: str | None, item: dict) -> bool:
     if not rule.get("active", True):
         return False
@@ -67,13 +79,17 @@ def _rule_matches(rule: dict, now: datetime, outlet_id: str | None, item: dict) 
     if rule.get("outlet_id"):
         if not outlet_id or rule["outlet_id"] != outlet_id:
             return False
+    # For an overnight rule, the early-morning tail belongs to the day on
+    # which the window STARTED, not the next day's weekday selector.
     dow = now.weekday()
-    if dow not in (rule.get("days_of_week") or []):
-        return False
     try:
         st = _parse_hhmm(rule["start_time"])
         et = _parse_hhmm(rule["end_time"])
     except HTTPException:
+        return False
+    if st > et and now.time().replace(tzinfo=None) <= et:
+        dow = (dow - 1) % 7
+    if dow not in (rule.get('days_of_week') or []):
         return False
     if not _within_window(now, st, et):
         return False
@@ -144,7 +160,8 @@ async def apply_rules(body: ApplyRequest, current_user: User = Depends(get_curre
         except Exception:
             raise HTTPException(status_code=400, detail="invalid 'at' timestamp")
 
-    active = await db.pos_happy_hour_rules.find({"tenant_id": current_user.tenant_id, "active": True}, {"_id": 0}).to_list(200)
+    now = await hotel_local_time(db, current_user.tenant_id, now)
+    active = await db.pos_happy_hour_rules.find({"tenant_id": current_user.tenant_id, "active": True}, {"_id": 0}).sort('created_at', 1).to_list(200)
 
     out = []
     total_orig = 0.0

@@ -171,6 +171,11 @@ def _render_receipt(payload: dict, codepage: str = _DEFAULT_CODEPAGE, table_id: 
         line = f"{qty}x {name:<24} {line_total:>7.2f}"
         out += _enc(line, cp) + _NL
     out += b"-" * 32 + _NL
+    if payload.get('currency'):
+        out += _enc(f"Para birimi: {payload['currency']}", cp) + _NL
+    for field, label in (('discount_amount', 'Indirim'), ('service_charge_amount', 'Servis'), ('tax_amount', 'KDV'), ('tip_amount', 'Bahsis'), ('refunded_amount', 'Iade')):
+        if payload.get(field):
+            out += _enc(f"{label}: {float(payload[field]):.2f}", cp) + _NL
     total = float(payload.get("total") or 0)
     out += _BOLD_ON + _enc(f"TOTAL {total:>26.2f}", cp) + _BOLD_OFF + _NL
     if payload.get("footer"):
@@ -193,7 +198,7 @@ def _render_kitchen(payload: dict, codepage: str = _DEFAULT_CODEPAGE, table_id: 
         out += _enc(f"Masa: {payload['table']}", cp) + _NL
     out += b"-" * 32 + _NL + _ALIGN_LEFT
     for item in payload.get("items") or []:
-        out += _enc(f"{int(item.get('quantity') or 1)}x {str(item.get('name', ''))[:28]}", cp) + _NL
+        out += _enc(f"{int(item.get('quantity') or 1)}x {str(item.get('item_name') or item.get('name') or '')[:28]}", cp) + _NL
         notes = item.get("special_instructions")
         if notes:
             out += _enc(f"  >> {str(notes)[:28]}", cp) + _NL
@@ -302,6 +307,8 @@ async def _dispatch(job: dict) -> dict:
 
     if printer and not printer.get("enabled", True):
         return {"driver": "disabled", "ok": False, "reason": "printer disabled"}
+    if not printer and job.get('routing_warning'):
+        return {'driver': 'unmapped', 'ok': False, 'reason': 'Mutfak yazıcısı eşlenmemiş; KDS kaydı mevcut ama fiziksel baskı yapılmadı.'}
 
     driver = ((printer.get("driver") if printer else None) or os.environ.get("POS_PRINT_DRIVER") or "simulator").lower()
 
@@ -427,24 +434,9 @@ async def enqueue_print_job(
     }
     saved, replayed = await idempotent_insert(db.print_jobs, tenant_id, idempotency_key, job)
     if auto_dispatch and not replayed:
-        disp_job = saved if saved.get("rendered_bytes") else {**saved, "rendered_bytes": rendered}
-        result = await _dispatch(disp_job)
-        new_status = "sent" if result.get("ok") else "failed"
-        try:
-            await db.print_jobs.update_one(
-                {"id": saved["id"], "tenant_id": tenant_id},
-                {
-                    "$set": {
-                        "status": new_status,
-                        "dispatched_at": _now(),
-                        "dispatch_result": result,
-                    }
-                },
-            )
-            saved["status"] = new_status
-            saved["dispatch_result"] = result
-        except Exception as exc:  # pragma: no cover - defensive
-            logger.warning("print job status update failed: %s", exc)
+        result = await _dispatch_once(tenant_id, saved['id'])
+        saved['status'] = result.get('status', result.get('job_status'))
+        saved['dispatch_result'] = result.get('result')
     return saved, replayed
 
 
@@ -470,7 +462,7 @@ async def enqueue(body: PrintJobCreate, current_user: User = Depends(get_current
 
 @router.get("/jobs")
 async def list_jobs(
-    status: str | None = Query(default=None, pattern="^(pending|sent|failed|cancelled)$"),
+    status: str | None = Query(default=None, pattern="^(pending|dispatching|sent|failed|cancelled)$"),
     limit: int = Query(default=50, ge=1, le=500),
     current_user: User = Depends(get_current_user),
 ):
@@ -483,16 +475,27 @@ async def list_jobs(
 
 @router.post("/jobs/{job_id}/dispatch")
 async def dispatch_job(job_id: str, current_user: User = Depends(get_current_user)):
-    job = await db.print_jobs.find_one({"id": job_id, "tenant_id": current_user.tenant_id})
+    return await _dispatch_once(current_user.tenant_id, job_id)
+
+
+async def _dispatch_once(tenant_id: str, job_id: str):
+    job = await db.print_jobs.find_one({"id": job_id, "tenant_id": tenant_id})
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-    if job["status"] in ("sent", "cancelled"):
-        return {"success": True, "job_status": job["status"], "idempotent": True}
-
-    result = await _dispatch(job)
+    claimed = await db.print_jobs.update_one({'id': job_id, 'tenant_id': tenant_id, 'status': 'pending'},
+        {'$set': {'status': 'dispatching', 'dispatch_started_at': _now()}})
+    if claimed.matched_count != 1:
+        fresh = await db.print_jobs.find_one({'id': job_id, 'tenant_id': tenant_id})
+        return {'success': fresh['status'] == 'sent', 'job_status': fresh['status'], 'idempotent': True,
+                'result': fresh.get('dispatch_result'),
+                'message': 'Belirsiz/başarısız baskı otomatik tekrarlanmaz. Cihazı kontrol edin; gerekiyorsa yeni kopya baskısı isteyin.'}
+    try:
+        result = await _dispatch(job)
+    except Exception as exc:
+        result = {'ok': False, 'reason': f'Baskı sonucu doğrulanamadı: {exc}'}
     new_status = "sent" if result.get("ok") else "failed"
     await db.print_jobs.update_one(
-        {"id": job_id, "tenant_id": current_user.tenant_id},
+        {"id": job_id, "tenant_id": tenant_id, 'status': 'dispatching'},
         {
             "$set": {
                 "status": new_status,
@@ -501,7 +504,7 @@ async def dispatch_job(job_id: str, current_user: User = Depends(get_current_use
             }
         },
     )
-    return {"success": True, "status": new_status, "result": result}
+    return {"success": bool(result.get('ok')), "status": new_status, "result": result}
 
 
 @router.delete("/jobs/{job_id}")
@@ -583,6 +586,7 @@ async def printers_status(current_user: User = Depends(get_current_user)):
         reason = (r.get("dispatch_result") or {}).get("reason")
         statuses[pid] = {
             "job_status": r.get("status"),
+            'driver': (r.get('dispatch_result') or {}).get('driver'),
             "conditions": conditions,
             "blocking": bool(printer_status.get("blocking")),
             "reason": reason,
@@ -631,7 +635,7 @@ async def test_printer(printer_id: str, current_user: User = Depends(get_current
         auto_dispatch=True,
     )
     return {
-        "success": True,
+        "success": saved.get('status') == 'sent',
         "status": saved.get("status"),
         "result": saved.get("dispatch_result"),
     }

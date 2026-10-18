@@ -5,6 +5,7 @@ Wraps service methods to automatically log audit events.
 """
 
 import functools
+import inspect
 import logging
 import time
 import uuid
@@ -49,16 +50,20 @@ def audited(
     target_type    : str   — e.g. "pos_transaction", "booking"
     severity       : str   — info | warning | critical
     capture_before : bool  — if True, will snapshot target before mutation
-    require_reason : bool  — if True, kwargs must contain 'reason'
+    require_reason : bool  — if True, the bound 'reason' must be non-blank
     """
 
     def decorator(fn: Callable):
+        signature = inspect.signature(fn)
+
         @functools.wraps(fn)
         async def wrapper(self, ctx, *args, **kwargs):
             from common.result import ServiceResult
 
             # Enforce reason for critical operations
-            if require_reason and not kwargs.get("reason"):
+            bound = signature.bind(self, ctx, *args, **kwargs)
+            reason = bound.arguments.get("reason")
+            if require_reason and (not isinstance(reason, str) or not reason.strip()):
                 return ServiceResult.fail(
                     f"Operation '{operation_name}' requires a reason",
                     "REASON_REQUIRED",
@@ -112,7 +117,7 @@ def audited(
                 "severity": severity,
                 "before_snapshot": before_snapshot,
                 "after_snapshot": after_snapshot,
-                "override_reason": kwargs.get("reason"),
+                "override_reason": reason.strip() if isinstance(reason, str) else reason,
                 "correlation_id": correlation_id,
                 "duration_ms": duration_ms,
                 "ip_address": getattr(ctx, "ip_address", None),

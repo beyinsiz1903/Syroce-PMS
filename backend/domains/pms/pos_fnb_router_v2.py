@@ -258,6 +258,49 @@ async def get_order(
     return _ok_payload(result)
 
 
+@router.get('/orders/{order_id}/receipt')
+async def get_receipt(order_id: str, user=Depends(get_current_user), _perm=Depends(require_module_role('pos'))):
+    from domains.pms.pos_fnb.receipts import receipt_payload
+    return await receipt_payload(pos_fnb_service_v2._db, user.tenant_id, order_id)
+
+
+class PrintReceiptRequest(BaseModel):
+    printer_id: str = Field(min_length=1, max_length=128)
+    idempotency_key: str = Field(min_length=8, max_length=128)
+
+
+@router.get('/receipts')
+async def recent_receipts(outlet_id: str | None = None, user=Depends(get_current_user), _perm=Depends(require_module_role('pos'))):
+    query = {'tenant_id': user.tenant_id, 'status': 'completed'}
+    if outlet_id:
+        query['outlet_id'] = outlet_id
+    rows = await pos_fnb_service_v2._db.pos_transactions.find(query, {'_id': 0, 'order_id': 1, 'order_number': 1,
+        'transaction_date': 1, 'total_amount': 1, 'refunded_amount': 1, 'currency': 1, 'checkout_quote.base_currency': 1}).sort('created_at', -1).to_list(30)
+    return {'receipts': rows}
+
+
+@router.post('/orders/{order_id}/receipt/print')
+async def print_receipt(order_id: str, req: PrintReceiptRequest, user=Depends(get_current_user), _perm=Depends(require_module_role('pos'))):
+    from domains.pms.pos_extensions.pos_print_spool import dispatch_job, enqueue_print_job
+    from domains.pms.pos_fnb.receipts import receipt_payload
+    database = pos_fnb_service_v2._db
+    payload = await receipt_payload(database, user.tenant_id, order_id)
+    printer = await database.pos_printers.find_one({'tenant_id': user.tenant_id, 'printer_id': req.printer_id, 'enabled': {'$ne': False}}, {'_id': 0})
+    if not printer:
+        raise HTTPException(404, 'Etkin yazıcı bulunamadı.')
+    from domains.pms.pos_fnb.checkout_benefits import fingerprint
+    job, _ = await enqueue_print_job(tenant_id=user.tenant_id, kind='receipt', payload=payload,
+        printer_id=req.printer_id, created_by=user.id,
+        idempotency_key='receipt:' + fingerprint([order_id, req.printer_id, req.idempotency_key]))
+    result = await dispatch_job(job['id'], user)
+    success = result.get('status', result.get('job_status')) == 'sent'
+    simulated = (result.get('result') or {}).get('driver') == 'simulator'
+    return {'success': success, 'job_id': job['id'], 'status': result.get('status', result.get('job_status')),
+            'simulated': simulated,
+            'message': 'Simülasyon tamamlandı; gerçek baskı yapılmadı.' if success and simulated else
+                       'Fiş yazıcıya gönderildi.' if success else 'Baskı başarısız veya belirsiz. Yeniden baskıda kopya çıkabilir; yazıcı kuyruğunu kontrol edin.'}
+
+
 @router.post("/orders/{order_id}/items")
 async def add_order_items(
     order_id: str,
@@ -323,6 +366,7 @@ async def pos_operations_summary(
     from core.database import db
 
     tenant_id = user.tenant_id
+    currency_settings = await db.hotel_settings.find_one({'tenant_id': tenant_id}, {'_id': 0, 'currency': 1}) or {}
     settings = await db.tenant_settings.find_one({"tenant_id": tenant_id}, {"_id": 0, "business_date": 1})
     business_date = str((settings or {}).get("business_date") or datetime.now(UTC).date().isoformat())
     order_query = {"tenant_id": tenant_id, "status": {"$in": ["pending", "preparing", "ready"]}, "payment_status": {"$ne": "paid"}}
@@ -356,6 +400,7 @@ async def pos_operations_summary(
             payments[method] = round(payments.get(method, 0) + float(part.get("amount") or 0), 2)
     return {
         "business_date": business_date,
+        'currency': str(currency_settings.get('currency') or 'TRY').upper(),
         "open_orders": open_orders,
         "open_check_count": len(open_orders),
         "open_check_total": round(sum(float(row.get("grand_total") or 0) for row in open_orders), 2),

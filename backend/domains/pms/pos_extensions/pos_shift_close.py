@@ -100,6 +100,7 @@ async def _expected_cash_for_shift(tenant_id: str, shift: dict) -> dict:
 @router.post("/open")
 async def open_shift(body: ShiftOpen, current_user: User = Depends(get_current_user)):
     await _ensure_shift_indexes()
+    settings = await db.hotel_settings.find_one({'tenant_id': current_user.tenant_id}, {'_id': 0, 'currency': 1}) or {}
     cashier = body.cashier_id or current_user.id
     doc = {
         "id": str(uuid.uuid4()),
@@ -107,6 +108,7 @@ async def open_shift(body: ShiftOpen, current_user: User = Depends(get_current_u
         "outlet_id": body.outlet_id,
         "cashier_id": cashier,
         "opening_cash": float(body.opening_cash),
+        'currency': str(settings.get('currency') or 'TRY').upper(),
         "status": "open",
         "opened_at": _now(),
         "opened_by": current_user.id,

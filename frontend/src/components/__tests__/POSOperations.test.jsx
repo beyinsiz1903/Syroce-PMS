@@ -26,4 +26,12 @@ describe('POSOperations', () => {
     expect(screen.getByText('Net tahsilat')).toBeInTheDocument();
     expect(axios.get).toHaveBeenCalledWith('/pos/v2/operations/summary', { params: { outlet_id: 'outlet-1' } });
   });
+
+  it('never describes a license failure as an empty restaurant', async () => {
+    axios.get.mockRejectedValue({ response: { status: 403, data: { detail: 'POS lisansı etkin değil' } } });
+    render(<POSOperations outletId="outlet-1" />);
+    expect(await screen.findByRole('alert')).toHaveTextContent('POS lisansı etkin değil');
+    expect(screen.queryByText(/Açık adisyon yok/)).not.toBeInTheDocument();
+    expect(screen.queryByText('Net tahsilat')).not.toBeInTheDocument();
+  });
 });

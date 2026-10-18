@@ -54,6 +54,10 @@ async def _latest_rate(tenant_id: str, code: str) -> dict | None:
 # ── Endpoints ───────────────────────────────────────────────────────
 @router.post("/rates")
 async def upsert_rate(body: ExchangeRateUpsert, current_user: User = Depends(get_current_user)):
+    settings = await db.hotel_settings.find_one({'tenant_id': current_user.tenant_id}, {'_id': 0, 'currency': 1})
+    currency = str((settings or {}).get('currency') or 'TRY').upper()
+    if body.base_currency.upper() != currency:
+        raise HTTPException(422, 'Kurun baz para birimi tesis para birimiyle aynı olmalıdır.')
     doc = {
         "id": str(uuid.uuid4()),
         "tenant_id": current_user.tenant_id,

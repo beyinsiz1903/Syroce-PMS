@@ -1409,6 +1409,13 @@ async def get_table_layout(outlet_id: str, current_user: User = Depends(get_curr
                 }
             )
 
+    from domains.pms.pos_fnb.guest_qr import table_token
+
+    raw_by_id = {row.get('id'): row for row in raw_tables}
+    for table in tables:
+        source = raw_by_id.get(table['id'], table)
+        table['guest_qr_token'] = table_token(current_user.tenant_id, outlet_id, source) if table.get('id') else None
+
     return {
         "outlet_id": outlet_id,
         "total_tables": len(tables),

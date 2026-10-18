@@ -17,11 +17,11 @@ class _Collection:
         for doc in self.docs:
             if any(doc.get(key) != value for key, value in query.items() if not key.startswith("$")):
                 continue
-            amount = query["$expr"]["$lte"][0]["$add"][1]
+            amount = query["$expr"]["$lte"][0]['$round'][0]["$add"][1]
             ceiling = query["$expr"]["$lte"][1]
-            if float(doc.get("refunded_amount") or 0) + amount > ceiling:
+            if round(float(doc.get("refunded_amount") or 0) + amount, 2) > ceiling:
                 return None
-            doc["refunded_amount"] = float(doc.get("refunded_amount") or 0) + amount
+            doc["refunded_amount"] = round(float(doc.get("refunded_amount") or 0) + amount, 2)
             doc["refund_status"] = "full" if doc["refunded_amount"] >= ceiling else "partial"
             return dict(doc)
         return None

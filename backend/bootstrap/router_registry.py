@@ -85,7 +85,12 @@ def _router_dependencies(module_path: str, declared: list | None, attr: str = "r
     # public sub-router is exempt; the CRM router keeps its module guard.
     if module_path == "domains.sales.crm_router" and attr == "public_leads_router":
         return dependencies
+    if module_path == 'domains.hr.router' and attr == 'fnb_router':
+        return [*dependencies, Depends(require_module_scope('pos'))]
     scope = ROUTER_MODULE_SCOPES.get(module_path)
+    if module_path == 'domains.pms.pos_fnb_router_v2' or module_path.startswith('domains.pms.pos_extensions.'):
+        from core.entitlements.enforcement import require_module
+        dependencies.append(Depends(require_module('pos_fnb')))
     if scope:
         dependencies.append(
             Depends(
@@ -191,6 +196,7 @@ _EXTRACTED_ROUTERS: list[tuple[str, str, list[str], str | None, list | None]] = 
     ("domains.revenue.rms_router", "router", ["rms-revenue"], None, None),
     ("domains.guest.experience_router", "router", ["guest-experience"], None, None),
     ("domains.hr.router", "router", ["hr-operations"], None, None),
+    ("domains.hr.router", "fnb_router", ["F&B configuration"], None, None),
     # Phase B - Wave 2 domain routers
     ("domains.ai.router", "router", ["AI / ML"], None, None),
     ("domains.pms.night_audit_router", "router", ["PMS / Night Audit"], None, None),
@@ -204,6 +210,7 @@ _EXTRACTED_ROUTERS: list[tuple[str, str, list[str], str | None, list | None]] = 
     ("domains.pms.dashboard_router", "router", ["PMS / Dashboard"], None, None),
     ("domains.pms.frontdesk_router", "router", ["PMS / Front Desk"], None, None),
     ("domains.pms.pos_fnb_router", "router", ["PMS / POS & F&B"], None, None),
+    ("domains.pms.pos_fnb_router.guest_menu", "router", ["Public restaurant QR"], None, None),
     ("domains.pms.housekeeping_router", "router", ["PMS / Housekeeping"], None, None),
     ("domains.pms.maintenance_router", "router", ["PMS / Maintenance"], None, None),
     ("domains.guest.operations_router", "router", ["Guest / Operations"], None, None),

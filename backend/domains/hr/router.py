@@ -3123,6 +3123,12 @@ async def close_job_posting(
 
 # ============= F&B COMPLETE SUITE =============
 
+# Separate mount: restaurant staff never need access to HR records.
+from core.entitlements.enforcement import require_module as require_licensed_module
+from modules.pms_core.role_permission_service import require_module_role
+
+fnb_router = APIRouter(prefix='/api', dependencies=[Depends(require_licensed_module('pos_fnb')), Depends(require_module_role('pos'))])
+
 
 async def _get_ingredient_map(tenant_id: str):
     ingredients = await db.ingredients.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(1000)
@@ -3161,11 +3167,11 @@ def _enrich_recipe_cost(recipe: dict, ingredient_map: dict[str, dict]):
     return recipe
 
 
-@router.post("/fnb/recipes")
+@fnb_router.post("/fnb/recipes")
 async def create_recipe(
     recipe_data: dict,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("manage_sales")),  # v99 DW
+    _perm=Depends(require_module_role("pos")),
 ):
     ingredient_map, _ = await _get_ingredient_map(current_user.tenant_id)
 
@@ -3188,10 +3194,10 @@ async def create_recipe(
     return {"success": True, "recipe_id": recipe["id"], "gp_percentage": recipe["gp_percentage"], "total_cost": recipe["total_cost"]}
 
 
-@router.get("/fnb/recipes")
+@fnb_router.get("/fnb/recipes")
 async def get_recipes(
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("manage_sales")),
+    _perm=Depends(require_module_role("pos")),
 ):
     ingredient_map, _ = await _get_ingredient_map(current_user.tenant_id)
     recipes = await db.recipes.find({"tenant_id": current_user.tenant_id, "active": True}, {"_id": 0}).sort("dish_name", 1).to_list(200)
@@ -3203,11 +3209,11 @@ async def get_recipes(
     return {"recipes": enriched, "total": len(enriched), "avg_gp": round(avg_gp, 1), "avg_food_cost": round(avg_food_cost, 2)}
 
 
-@router.get("/fnb/recipes/{recipe_id}")
+@fnb_router.get("/fnb/recipes/{recipe_id}")
 async def get_recipe(
     recipe_id: str,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("manage_sales")),
+    _perm=Depends(require_module_role("pos")),
 ):
     recipe = await db.recipes.find_one({"tenant_id": current_user.tenant_id, "id": recipe_id}, {"_id": 0})
     if not recipe:
@@ -3217,18 +3223,20 @@ async def get_recipe(
     return {"recipe": recipe}
 
 
-@router.put("/fnb/recipes/{recipe_id}")
+@fnb_router.put("/fnb/recipes/{recipe_id}")
 async def update_recipe(
     recipe_id: str,
     recipe_data: dict,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("manage_sales")),  # v96 DW
+    _perm=Depends(require_module_role("pos")),
 ):
     recipe = await db.recipes.find_one({"tenant_id": current_user.tenant_id, "id": recipe_id})
     if not recipe:
         raise HTTPException(status_code=404, detail="Recipe not found")
 
-    updated = {**recipe, **recipe_data}
+    allowed = {'dish_name', 'category', 'portion_size', 'preparation_time', 'ingredients', 'selling_price', 'active', 'notes', 'menu_item_id'}
+    updated = {**recipe, **{key: value for key, value in recipe_data.items() if key in allowed}}
+    updated.pop('_id', None)
     ingredient_map, _ = await _get_ingredient_map(current_user.tenant_id)
     updated = _enrich_recipe_cost(updated, ingredient_map)
 
@@ -3237,13 +3245,13 @@ async def update_recipe(
     return {"success": True, "recipe": updated}
 
 
-@router.post("/fnb/beo")
+@fnb_router.post("/fnb/beo")
 async def create_beo(
     beo_data: dict,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("manage_sales")),  # v99 DW
+    _perm=Depends(require_module_role("pos")),
 ):
-    beo = {"id": str(uuid.uuid4()), "tenant_id": current_user.tenant_id, **beo_data, "status": "confirmed", "created_at": datetime.now(UTC).isoformat()}
+    beo = {**{key: value for key, value in beo_data.items() if key not in {'_id', 'id', 'tenant_id'}}, "id": str(uuid.uuid4()), "tenant_id": current_user.tenant_id, "status": "confirmed", "created_at": datetime.now(UTC).isoformat()}
     await db.banquet_event_orders.insert_one(beo)
     return {"success": True, "beo_id": beo["id"], "message": "BEO olusturuldu"}
 
@@ -3251,10 +3259,10 @@ async def create_beo(
 # NOTE: Kitchen Display System endpoints moved to pos_fnb_router.py
 
 
-@router.get("/fnb/ingredients")
+@fnb_router.get("/fnb/ingredients")
 async def list_ingredients(
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("manage_sales")),
+    _perm=Depends(require_module_role("pos")),
 ):
     ingredients = await db.ingredients.find({"tenant_id": current_user.tenant_id}, {"_id": 0}).sort("name", 1).to_list(500)
 
@@ -3270,11 +3278,11 @@ async def list_ingredients(
     return {"ingredients": ingredients, "summary": {"total_items": len(ingredients), "low_stock": len(low_stock), "inventory_value": round(total_value, 2), "categories": categories}}
 
 
-@router.post("/fnb/ingredients")
+@fnb_router.post("/fnb/ingredients")
 async def add_ingredient(
     ing_data: dict,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("manage_sales")),  # v99 DW
+    _perm=Depends(require_module_role("pos")),
 ):
     ingredient = {
         "id": str(uuid.uuid4()),
@@ -3295,18 +3303,20 @@ async def add_ingredient(
     return {"success": True, "ingredient": ingredient}
 
 
-@router.put("/fnb/ingredients/{ingredient_id}")
+@fnb_router.put("/fnb/ingredients/{ingredient_id}")
 async def update_ingredient(
     ingredient_id: str,
     ing_data: dict,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("manage_sales")),  # v99 DW
+    _perm=Depends(require_module_role("pos")),
 ):
     ingredient = await db.ingredients.find_one({"tenant_id": current_user.tenant_id, "id": ingredient_id})
     if not ingredient:
         raise HTTPException(status_code=404, detail="Ingredient not found")
 
-    updated = {**ingredient, **ing_data}
+    allowed = {'name', 'category', 'unit', 'current_stock', 'par_level', 'reorder_point', 'unit_cost', 'supplier', 'last_order_date'}
+    updated = {**ingredient, **{key: value for key, value in ing_data.items() if key in allowed}}
+    updated.pop('_id', None)
     await db.ingredients.update_one({"tenant_id": current_user.tenant_id, "id": ingredient_id}, {"$set": updated})
     updated.pop("_id", None)
     return {"success": True, "ingredient": updated}

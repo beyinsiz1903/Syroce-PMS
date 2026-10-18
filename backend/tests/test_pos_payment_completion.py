@@ -27,7 +27,7 @@ class Collection:
                 return SimpleNamespace(matched_count=1, modified_count=1)
         return SimpleNamespace(matched_count=0, modified_count=0)
 
-    async def update_many(self, _query, update):
+    async def update_many(self, _query, update, **_kwargs):
         for doc in self.docs:
             doc.update(update.get("$set", {}))
         return SimpleNamespace(matched_count=len(self.docs), modified_count=len(self.docs))
@@ -62,6 +62,10 @@ async def test_void_line_recalculates_order_and_cancels_kitchen(monkeypatch):
     kitchen = Collection([{"id": "k-1", "tenant_id": "tenant-1", "order_id": "order-1", "line_id": "line-1", "status": "pending"}])
     service = PosFnbServiceV2()
     service._db = SimpleNamespace(pos_orders=orders, kitchen_orders=kitchen, pos_order_item_voids=Collection())
+    service._db.client = object()
+    async def transaction(**kwargs):
+        return await kwargs['callback'](None)
+    monkeypatch.setattr('domains.pms.pos_fnb.pos_fnb_service_v2.with_resource_locks', transaction)
     monkeypatch.setattr(service, "_broadcast_kitchen_queue", lambda _tenant: _none())
     method = PosFnbServiceV2.void_order_item.__wrapped__
     result = await method(service, context(), "order-1", 0, "Yanlış ürün")

@@ -88,9 +88,26 @@ def test_hr_router_delegates_read_only_profile_authorization_to_record_level_rba
 
 
 def test_provider_and_public_webhook_routers_are_not_user_scope_wrapped():
+    assert router_registry._router_dependencies('domains.pms.pos_fnb_router.guest_menu', None) == []
     assert router_registry._router_dependencies("domains.channel_manager.providers.hotelrunner_webhook", None) == []
     assert router_registry._router_dependencies("domains.channel_manager.providers.exely.exely_webhook_router", None) == []
     assert router_registry._router_dependencies("domains.contact_center.voice_router", None) == []
+
+
+def test_fnb_configuration_uses_pos_scope_without_granting_hr():
+    user = {'role': 'staff', 'module_scopes': ['pos']}
+    dependency = router_registry._router_dependencies('domains.hr.router', None, 'fnb_router')[0].dependency
+    assert asyncio.run(dependency(request=_request('/api/fnb/recipes'), current_user=user)) is user
+    hr_dependency = _dependency_for('domains.hr.router')
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(hr_dependency(request=_request('/api/hr/staff'), current_user=user))
+    assert exc.value.status_code == 403
+
+
+def test_pos_v2_and_extension_mounts_are_licensed_too():
+    for path in ('domains.pms.pos_fnb_router_v2', 'domains.pms.pos_extensions.pos_print_spool'):
+        dependencies = router_registry._router_dependencies(path, None)
+        assert len(dependencies) == 2  # licensed module + user module scope
 
 
 def test_declared_dependencies_are_preserved_when_module_scope_is_added():
