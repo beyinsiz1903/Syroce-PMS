@@ -1368,7 +1368,7 @@ async def get_table_layout(outlet_id: str, current_user: User = Depends(get_curr
                 "current_transaction_id": transaction.get("id") if transaction else None,
                 "server_assigned": table.get("server_assigned"),
                 "current_order_id": order.get("id") if order else None,
-                "current_bill": round(active_bill.get("total_amount", active_bill.get("grand_total", 0)), 2) if active_bill else 0,
+                "current_bill": round(transaction.get('total_amount', 0) if transaction else order.get('grand_total', order.get('total_amount', 0)), 2) if active_bill else 0,
                 "guest_count": transaction.get("guests", 0) if transaction else 0,
                 "duration_minutes": calculate_table_duration(
                     (transaction or {}).get("opened_at")

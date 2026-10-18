@@ -24,6 +24,8 @@ from domains.pms.pos_fnb.order_pricing import allocate_parts, reprice_order
 from domains.pms.pos_fnb.pos_fnb_service_v2 import PosFnbServiceV2
 from domains.pms.pos_fnb.receipts import receipt_payload
 from domains.pms.pos_fnb_router import guest_menu
+from domains.pms.pos_fnb_router import pos_core as table_router
+from domains.pms import pos_fnb_router_v2
 from domains.pms.pos_router import pos_core
 
 
@@ -198,6 +200,11 @@ async def test_legacy_refund_on_later_day_hydrates_only_reversal_for_that_day(db
 
 @pytest_asyncio.fixture
 async def guest(db, service, monkeypatch):
+    class FixedClock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2026, 10, 18, 12, tzinfo=UTC)
+    monkeypatch.setattr(guest_menu, 'datetime', FixedClock)
     await menu(db)
     await db.table_layouts.insert_one({'tenant_id': 't', 'outlet_id': 'bar', 'id': 'table', 'table_number': '1', 'status': 'available'})
     monkeypatch.setattr(guest_menu, 'db', db)
@@ -388,3 +395,37 @@ async def test_guest_rate_limit_cannot_be_bypassed_by_retrying_a_rejected_intent
         result = await guest.post('/api/public/fnb/t/bar/order', json=guest_body('guest-limit-eleven'))
         assert result.status_code == 429
     assert (await db.pos_orders.find_one({}))['grand_total'] == 1100
+
+
+@pytest.mark.asyncio
+async def test_table_bill_uses_tax_discount_and_service_total_not_subtotal(service, db, monkeypatch):
+    await menu(db)
+    await db.table_layouts.insert_one({'id': 'table', 'tenant_id': 't', 'outlet_id': 'bar', 'table_number': '1', 'status': 'available'})
+    created = await service.create_order(ctx(), 'bar', '1', [{'item_id': 'tea', 'quantity': 1}])
+    await service.apply_order_adjustment(ctx(), created.data['order_id'], 'discount', 'percentage', 10, 'Misafir indirimi')
+    monkeypatch.setattr(table_router, 'db', db)
+    result = await table_router.get_table_layout('bar', SimpleNamespace(tenant_id='t', id='manager'))
+    assert result['tables'][0]['current_bill'] == 99  # subtotal=100 is not the payable bill
+
+
+@pytest.mark.asyncio
+async def test_operations_does_not_truncate_counts_or_call_legacy_unknown_prices_zero(db, monkeypatch):
+    monkeypatch.setattr('core.database.db', db)
+    await db.pos_orders.insert_many([{'id': str(index), 'tenant_id': 't', 'status': 'pending',
+        'payment_status': 'unpaid', 'grand_total': 10, 'currency': 'EUR'} for index in range(501)])
+    await db.kitchen_orders.insert_many([{'tenant_id': 't', 'status': 'pending'} for _ in range(1001)])
+    result = await pos_fnb_router_v2.pos_operations_summary(None, SimpleNamespace(tenant_id='t'))
+    assert result['open_check_count'] == 501 and result['open_check_total'] == 5010
+    assert result['kitchen_open_count'] == 1001
+    await db.pos_orders.insert_one({'id': 'legacy', 'tenant_id': 't', 'status': 'pending', 'total_amount': 50})
+    result = await pos_fnb_router_v2.pos_operations_summary(None, SimpleNamespace(tenant_id='t'))
+    assert result['pricing_unverified_count'] == 1 and result['open_check_total'] is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('amount', [None, 'invalid', -1, float('inf')])
+async def test_malformed_old_order_cannot_close_as_zero_or_negative(service, db, amount):
+    await db.pos_orders.insert_one({'tenant_id': 't', 'id': 'old', 'status': 'pending', 'payment_status': 'unpaid', 'grand_total': amount})
+    result = await service.close_order(ctx(), 'old')
+    assert not result.ok and result.code == 'ORDER_PRICING_INVALID'
+    assert await db.pos_transactions.count_documents({}) == 0

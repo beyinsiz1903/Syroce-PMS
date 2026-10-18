@@ -362,6 +362,7 @@ async def pos_operations_summary(
 ):
     """Live manager board: open checks, kitchen SLA and cashier reconciliation."""
     from datetime import UTC, datetime
+    from math import isfinite
 
     from core.database import db
 
@@ -376,9 +377,17 @@ async def pos_operations_summary(
         order_query["outlet_id"] = outlet_id
         tx_query["outlet_id"] = outlet_id
         kitchen_query["outlet_id"] = outlet_id
-    open_orders = await db.pos_orders.find(order_query, {"_id": 0}).sort("created_at", 1).limit(500).to_list(500)
+    open_orders = await db.pos_orders.find(order_query, {"_id": 0}).sort("created_at", 1).to_list(None)
     transactions = await db.pos_transactions.find(tx_query, {"_id": 0}).to_list(None)
-    kitchen = await db.kitchen_orders.find(kitchen_query, {"_id": 0}).sort("ordered_at", 1).limit(1000).to_list(1000)
+    kitchen = await db.kitchen_orders.find(kitchen_query, {"_id": 0}).sort("ordered_at", 1).to_list(None)
+    unverified = 0
+    for row in open_orders:
+        try:
+            valid = row.get('grand_total') is not None and isfinite(float(row['grand_total'])) and float(row['grand_total']) >= 0
+        except (TypeError, ValueError):
+            valid = False
+        if not valid or (row.get('currency') and row['currency'] != currency_settings.get('currency', 'TRY')):
+            unverified += 1
     now = datetime.now(UTC)
     overdue_kitchen = 0
     for ticket in kitchen:
@@ -403,7 +412,8 @@ async def pos_operations_summary(
         'currency': str(currency_settings.get('currency') or 'TRY').upper(),
         "open_orders": open_orders,
         "open_check_count": len(open_orders),
-        "open_check_total": round(sum(float(row.get("grand_total") or 0) for row in open_orders), 2),
+        "open_check_total": None if unverified else round(sum(float(row['grand_total']) for row in open_orders), 2),
+        'pricing_unverified_count': unverified,
         "kitchen_open_count": len(kitchen),
         "kitchen_overdue_count": overdue_kitchen,
         "payment_methods": payments,

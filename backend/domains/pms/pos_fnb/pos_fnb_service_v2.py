@@ -487,7 +487,11 @@ class PosFnbServiceV2:
 
         now = datetime.now(UTC)
         business_date = await self._business_date(ctx.tenant_id, now)
-        if 'grand_total' not in order or not math.isfinite(float(order.get('grand_total') or 0)):
+        try:
+            valid_total = order.get('grand_total') is not None and math.isfinite(float(order['grand_total'])) and float(order['grand_total']) >= 0
+        except (ValueError, TypeError):
+            valid_total = False
+        if not valid_total:
             return ServiceResult.fail('Adisyon fiyat yapısı doğrulanamadı; eski kaydı sıfır tutarla kapatmak engellendi.', 'ORDER_PRICING_INVALID')
         grand_total = order.get("grand_total", 0)
         checkout_quote = None

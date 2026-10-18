@@ -34,4 +34,12 @@ describe('POSOperations', () => {
     expect(screen.queryByText(/Açık adisyon yok/)).not.toBeInTheDocument();
     expect(screen.queryByText('Net tahsilat')).not.toBeInTheDocument();
   });
+
+  it('does not turn an unverifiable historical bill into a zero amount', async () => {
+    axios.get.mockResolvedValue({ data: { pricing_unverified_count: 1, open_check_total: null,
+      open_orders: [{ id: 'old', order_number: 'OLD', status: 'pending' }] } });
+    render(<POSOperations outletId="outlet-1" />);
+    expect(await screen.findByRole('alert')).toHaveTextContent('eski adisyonun tutarı');
+    expect(screen.getAllByText('Doğrulanamadı')).toHaveLength(2);
+  });
 });
