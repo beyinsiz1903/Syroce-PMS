@@ -152,7 +152,7 @@ def _merge_currency_breakdowns(*breakdowns: dict[str, float]) -> dict[str, float
 def _single_currency_amount(breakdown: dict[str, float]) -> float:
     """Legacy scalar compatibility without ever adding unlike currencies."""
     values = [float(amount) for amount in (breakdown or {}).values() if float(amount) != 0]
-    return round(values[0], 2) if len(values) == 1 else 0.0
+    return rounded(values[0]) if len(values) == 1 else 0.0
 
 
 def _normalized_room_status(value) -> str:
@@ -1167,12 +1167,13 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
     revenue_trend = []
     for row in metric_rows:
         day = row["date"]
+        day_revenue_by_currency = _merge_currency_breakdowns(charges_by_day_currency.get(day, {}))
         revenue_trend.append(
             {
                 "date": day,
                 "label": datetime.fromisoformat(day).strftime("%d %b"),
-                "revenue": round(charges_by_day.get(day, 0.0), 2),
-                "revenue_by_currency": charges_by_day_currency.get(day, {}),
+                "revenue": _single_currency_amount(day_revenue_by_currency),
+                "revenue_by_currency": day_revenue_by_currency,
             }
         )
 
@@ -1334,7 +1335,7 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
             _add_currency_amount(room_type_occ[rt]["revenue_by_currency"], charge_currency(charge), charge_amount(charge))
     for rt in room_type_occ:
         room_type_occ[rt]["revenue_by_currency"] = {
-            code: round(amount, 2) for code, amount in sorted(room_type_occ[rt]["revenue_by_currency"].items())
+            code: rounded(amount) for code, amount in sorted(room_type_occ[rt]["revenue_by_currency"].items())
         }
         room_type_occ[rt]["revenue"] = _single_currency_amount(room_type_occ[rt]["revenue_by_currency"])
 
@@ -1649,7 +1650,7 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
                 for source, totals in source_revenue_by_currency.items()
             },
             "revenue_by_currency": {
-                source: {code: round(amount, 2) for code, amount in sorted(totals.items())}
+                source: {code: rounded(amount) for code, amount in sorted(totals.items())}
                 for source, totals in source_revenue_by_currency.items()
             },
         },
@@ -1666,7 +1667,7 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
             "conversion_issue_count": len(payment_conversion_issues),
             "conversion_issues": payment_conversion_issues,
             "totals_by_method_currency": {
-                method: {code: round(amount, 2) for code, amount in totals.items()}
+                method: {code: rounded(amount) for code, amount in totals.items()}
                 for method, totals in payment_totals_by_method_currency.items()
             },
             "currency_exchanges": currency_exchanges,

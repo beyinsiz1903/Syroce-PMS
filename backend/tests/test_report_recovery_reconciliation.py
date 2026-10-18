@@ -158,8 +158,24 @@ async def test_flash_pdf_email_and_screen_keep_the_selected_business_date_and_na
     assert not result["success"]
 
 
-async def test_cent_rounding_is_shared_by_daily_standard_flash_scheduler_and_basic(ledger_db):
-    await ledger_db.folio_charges.insert_one({"tenant_id": "A", "business_date": "2026-10-07", "total": 2.675, "currency": "TRY", "category": "room"})
+@pytest.mark.parametrize("amount,expected", [(2.675, 2.68), (2.665, 2.67)])
+async def test_cent_rounding_is_shared_by_daily_standard_flash_scheduler_and_basic(ledger_db, amount, expected):
+    await ledger_db.rooms.insert_one({"tenant_id": "A", "id": "r", "room_type": "standard"})
+    await ledger_db.bookings.insert_one(
+        {
+            "tenant_id": "A",
+            "id": "b",
+            "room_id": "r",
+            "room_type": "standard",
+            "booking_source": "direct",
+            "check_in": "2026-10-07",
+            "check_out": "2026-10-08",
+            "status": "checked_out",
+            "currency": "TRY",
+            "total_amount": amount,
+        }
+    )
+    await ledger_db.folio_charges.insert_one({"tenant_id": "A", "booking_id": "b", "business_date": "2026-10-07", "total": amount, "currency": "TRY", "category": "room"})
     standard = await standard_reports.get_revenue_report.__wrapped__("2026-10-07", "2026-10-07", USER)
     daily = await standard_reports.get_daily_summary.__wrapped__("2026-10-07", USER)
     flash = await flash_email.get_daily_flash_report.__wrapped__("2026-10-07", USER)
@@ -170,9 +186,13 @@ async def test_cent_rounding_is_shared_by_daily_standard_flash_scheduler_and_bas
         == daily["gross_posted_revenue_by_currency"]
         == flash["revenue"]["total_revenue_by_currency"]
         == basic["summary"]["today_revenue_by_currency"]
-        == {"TRY": 2.68}
+        == {"TRY": expected}
     )
-    assert next(row["value"] for row in scheduled["rows"] if row["label"] == "Toplam gelir (para birimine göre)") == "TRY 2.68"
+    assert next(row["value"] for row in scheduled["rows"] if row["label"] == "Toplam gelir (para birimine göre)") == f"TRY {expected:.2f}"
+    assert basic["booking_sources"]["revenue_by_currency"]["direct"] == {"TRY": expected}
+    assert basic["room_type_occupancy"]["Standart"]["revenue_by_currency"] == {"TRY": expected}
+    assert basic["revenue_trend"][0]["revenue_by_currency"] == {"TRY": expected}
+    assert basic["revenue_trend"][0]["revenue"] == expected
 
 
 async def test_transfer_report_never_cuts_a_document_in_the_middle(ledger_db):
@@ -333,13 +353,15 @@ async def test_adr_half_cent_rounding_is_consistent(ledger_db):
     assert standard["adr_by_currency"] == basic["summary"]["adr_by_currency"] == flash["revenue"]["adr_by_currency"] == {"TRY": 2.68}
 
 
-async def test_collection_rounding_and_refunds_match_report_totals(ledger_db):
-    payment = {"tenant_id": "A", "id": "p", "business_date": "2026-10-07", "processed_at": "2026-10-07", "amount": 2.675, "currency": "TRY", "method": "cash"}
+@pytest.mark.parametrize("amount,expected", [(2.675, 2.68), (2.665, 2.67)])
+async def test_collection_rounding_and_refunds_match_report_totals(ledger_db, amount, expected):
+    payment = {"tenant_id": "A", "id": "p", "business_date": "2026-10-07", "processed_at": "2026-10-07", "amount": amount, "currency": "TRY", "method": "cash"}
     await ledger_db.payments.insert_one(dict(payment))
     core = reporting_collection_summary([payment])
     daily = await standard_reports.get_daily_summary.__wrapped__("2026-10-07", USER)
     basic = await dashboard_lists._basic_dashboard_impl.__wrapped__(USER, True, "2026-10-07", "daily")
-    assert core["amount"] == core["by_method"]["cash"]["amount"] == daily["collections"] == basic["payments"]["total_paid"] == basic["cash_movements"]["total_paid"] == 2.68
+    assert core["amount"] == core["by_method"]["cash"]["amount"] == daily["collections"] == basic["payments"]["total_paid"] == basic["cash_movements"]["total_paid"] == expected
+    assert basic["payments"]["totals_by_method_currency"]["cash"]["TRY"] == expected
 
 
 @pytest.mark.parametrize("payment_type,amount,expected", [("rate_correction", -20, 120), ("refund", 20, 120), ("discount", 20, 80)])

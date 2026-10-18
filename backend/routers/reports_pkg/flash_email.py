@@ -107,7 +107,7 @@ def _rounded_currency(total: dict[str, float]) -> dict[str, float]:
 
 def _single_currency(total: dict[str, float]) -> float | None:
     values = [amount for amount in total.values() if amount != 0]
-    return round(values[0], 2) if len(values) == 1 else (0.0 if not values else None)
+    return rounded(values[0]) if len(values) == 1 else (0.0 if not values else None)
 
 
 @sub_router.get("/reports/migration-observability")
