@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
+from decimal import Decimal
 from typing import Literal
 
 from fastapi import HTTPException
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
 from models.enums import (
     UserRole,
@@ -141,6 +142,23 @@ class CommercialQuoteLineItem(BaseModel):
     usage_note: str | None = Field(default=None, max_length=500)
 
 
+class NegotiatedAddonPrice(BaseModel):
+    """An explicit EUR agreement, not an inferred conversion of store prices."""
+
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False, str_strip_whitespace=True)
+    monthly: float = Field(ge=0)
+    setup: float = Field(ge=0)
+    reason: str = Field(min_length=1, max_length=1000)
+
+    @field_validator("monthly", "setup")
+    @classmethod
+    def require_cents(cls, value):
+        cents = Decimal(str(value)) * 100
+        if cents != cents.to_integral_value():
+            raise ValueError("Fiyat en fazla iki ondalık basamak içerebilir")
+        return value
+
+
 class CommercialQuote(BaseModel):
     model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
     pricing_version: str = Field(min_length=1, max_length=40)
@@ -155,6 +173,7 @@ class CommercialQuote(BaseModel):
     final_setup_total: float = Field(ge=0)
     override_reason: str | None = Field(default=None, max_length=1000)
     line_items: list[CommercialQuoteLineItem] = Field(default_factory=list, max_length=100)
+    negotiated_addon_prices: dict[Literal["hr", "parking"], NegotiatedAddonPrice] = Field(default_factory=dict)
     quoted_at: datetime | None = None
     quoted_by: str | None = None
 

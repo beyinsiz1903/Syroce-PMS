@@ -1,10 +1,10 @@
+from datetime import UTC, datetime
+
 import pytest
 from fastapi import HTTPException
 from pydantic import ValidationError
 
 from core import provider_credential_vault
-from datetime import UTC, datetime
-
 from domains.admin.router.tenants import _build_commercial_quote, _validate_provider_credentials, router
 from models.schemas.identity import TenantRegister
 
@@ -76,6 +76,94 @@ def test_backend_rejects_tampered_list_totals():
     payload = TenantRegister(**_tenant_payload(commercial_quote=_quote(addon_monthly=0, list_monthly_total=79, final_monthly_total=79)))
     with pytest.raises(HTTPException, match="fiyat kataloğuyla eşleşmiyor"):
         _build_commercial_quote(payload.commercial_quote, {"ai_chatbot": True}, "basic", "super-1", datetime.now(UTC))
+
+
+@pytest.mark.parametrize("key", ["hr", "parking"])
+def test_unpriced_addon_cannot_be_granted_without_an_explicit_quote(key):
+    payload = TenantRegister(**_tenant_payload(commercial_quote=_quote(addon_monthly=0, list_monthly_total=79, final_monthly_total=79)))
+    with pytest.raises(HTTPException, match="fiyat gerekçesi zorunludur") as error:
+        _build_commercial_quote(payload.commercial_quote, {key: True}, "basic", "super-1", datetime.now(UTC))
+    assert error.value.status_code == 400
+
+
+def test_negotiated_addons_are_recalculated_and_audited_in_eur():
+    agreed = {
+        "hr": {"monthly": 25, "setup": 0, "reason": "  Tesis ile onaylanan teklif  "},
+        "parking": {"monthly": 15, "setup": 30, "reason": "Otopark anlaşması"},
+    }
+    payload = TenantRegister(**_tenant_payload(commercial_quote=_quote(
+        addon_monthly=40, list_monthly_total=119, list_setup_total=30,
+        final_monthly_total=119, final_setup_total=30, negotiated_addon_prices=agreed,
+    )))
+    quote = _build_commercial_quote(payload.commercial_quote, {"hr": True, "parking": True}, "basic", "super-1", datetime.now(UTC))
+    assert quote["currency"] == "EUR"
+    assert quote["list_monthly_total"] == 119
+    assert quote["list_setup_total"] == 30
+    assert quote["quoted_by"] == "super-1"
+    assert quote["negotiated_addon_prices"]["hr"]["reason"] == "Tesis ile onaylanan teklif"
+    rows = {row["module_key"]: row for row in quote["line_items"]}
+    assert set(rows) == {"hr", "parking"}  # Ignore the client's stale/fake line_items.
+    assert rows["hr"]["monthly"] == 25
+    assert rows["parking"]["setup"] == 30
+    assert all(row["pricing_source"] == "negotiated_eur" and row["pricing_reason"] for row in rows.values())
+
+
+@pytest.mark.parametrize("price", [
+    {"monthly": -1, "setup": 0, "reason": "agreement"},
+    {"monthly": float("nan"), "setup": 0, "reason": "agreement"},
+    {"monthly": 1, "setup": float("inf"), "reason": "agreement"},
+    {"monthly": 1, "setup": 0, "reason": "   "},
+    {"monthly": 1.001, "setup": 0, "reason": "agreement"},
+    {"monthly": 1, "reason": "agreement"},
+])
+def test_negotiated_price_rejects_invalid_missing_or_unaudited_values(price):
+    with pytest.raises(ValidationError):
+        TenantRegister(**_tenant_payload(commercial_quote=_quote(negotiated_addon_prices={"hr": price})))
+
+
+def test_negotiated_price_does_not_override_fixed_catalogue_addons():
+    with pytest.raises(ValidationError):
+        TenantRegister(**_tenant_payload(commercial_quote=_quote(negotiated_addon_prices={
+            "spa": {"monthly": 1, "setup": 0, "reason": "cannot bypass catalogue"},
+        })))
+
+
+def test_negotiated_addon_rejects_tampered_totals_and_unselected_modules():
+    payload = TenantRegister(**_tenant_payload(commercial_quote=_quote(
+        addon_monthly=0, list_monthly_total=79, final_monthly_total=79,
+        negotiated_addon_prices={"hr": {"monthly": 25, "setup": 0, "reason": "agreement"}},
+    )))
+    with pytest.raises(HTTPException, match="fiyat kataloğuyla eşleşmiyor"):
+        _build_commercial_quote(payload.commercial_quote, {"hr": True}, "basic", "super-1", datetime.now(UTC))
+    with pytest.raises(HTTPException, match="yalnız seçili modül"):
+        _build_commercial_quote(payload.commercial_quote, {"hr": False}, "basic", "super-1", datetime.now(UTC))
+
+
+def test_intentional_free_addon_still_has_audited_price_line():
+    payload = TenantRegister(**_tenant_payload(commercial_quote=_quote(
+        addon_monthly=0, list_monthly_total=79, final_monthly_total=79,
+        negotiated_addon_prices={"hr": {"monthly": 0, "setup": 0, "reason": "Pilot dönemi ücretsiz kullanım onayı"}},
+    )))
+    quote = _build_commercial_quote(payload.commercial_quote, {"hr": True}, "basic", "super-1", datetime.now(UTC))
+    assert quote["list_monthly_total"] == 79
+    assert quote["line_items"][0]["module_key"] == "hr"
+    assert quote["line_items"][0]["monthly"] == 0
+    assert quote["line_items"][0]["pricing_reason"] == "Pilot dönemi ücretsiz kullanım onayı"
+
+
+def test_negotiated_amounts_preserve_cents_in_totals():
+    payload = TenantRegister(**_tenant_payload(commercial_quote=_quote(
+        addon_monthly=35.79, list_monthly_total=114.79, list_setup_total=30.1,
+        final_monthly_total=114.79, final_setup_total=30.1,
+        negotiated_addon_prices={
+            "hr": {"monthly": 12.34, "setup": 0, "reason": "agreement"},
+            "parking": {"monthly": 23.45, "setup": 30.1, "reason": "agreement"},
+        },
+    )))
+    quote = _build_commercial_quote(payload.commercial_quote, {"hr": True, "parking": True}, "basic", "super-1", datetime.now(UTC))
+    assert quote["addon_monthly"] == 35.79
+    assert quote["list_monthly_total"] == 114.79
+    assert quote["list_setup_total"] == 30.1
 
 
 def test_provider_credentials_are_allowlisted_and_trimmed():

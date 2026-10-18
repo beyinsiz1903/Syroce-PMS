@@ -13,6 +13,7 @@ import logging
 import os
 import uuid
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 
 import jwt
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
@@ -115,6 +116,9 @@ PLAN_MONTHLY_PRICES = {"mini": 35.0, "basic": 79.0, "professional": 299.0, "ente
 PLAN_LABELS = {"mini": "Mini", "basic": "Basic", "professional": "Professional", "enterprise": "Enterprise"}
 TIER_RANK = {"mini": 0, "basic": 1, "professional": 2, "enterprise": 3}
 COMMERCIAL_PRICING_VERSION = "2026-08-23"
+# These products have no fixed EUR onboarding price. Never invent a price,
+# silently convert the store's TRY prices, or grant them as a zero-price extra.
+NEGOTIATED_COMMERCIAL_ADDONS = {"hr": "İnsan Kaynakları (İK)", "parking": "Otopark"}
 COMMERCIAL_ADDONS = {
     "quick_id": ("Kimlik Tarama (Quick-ID)", 19.0, 0.0, None, "Kullanım/OCR sağlayıcı bedeli ayrıca yansıtılır."),
     "ai_chatbot": ("AI Chatbot", 49.0, 0.0, None, None),
@@ -149,17 +153,24 @@ def _build_commercial_quote(payload_quote, modules: dict[str, bool], tier: str, 
     if payload_quote.plan_key != tier or payload_quote.pricing_version != COMMERCIAL_PRICING_VERSION:
         raise HTTPException(status_code=400, detail="Teklif planı veya fiyat sürümü geçersiz")
 
+    negotiated = payload_quote.negotiated_addon_prices
+    for key, label in NEGOTIATED_COMMERCIAL_ADDONS.items():
+        if modules.get(key) and key not in negotiated:
+            raise HTTPException(status_code=400, detail=f"{label} için aylık tutar, kurulum tutarı ve fiyat gerekçesi zorunludur")
+        if key in negotiated and not modules.get(key):
+            raise HTTPException(status_code=400, detail=f"{label} fiyatı yalnız seçili modül için kaydedilebilir")
+
     line_items = []
-    addon_monthly = 0.0
-    setup_total = 0.0
+    addon_monthly = Decimal("0")
+    setup_total = Decimal("0")
     for key, (label, monthly, setup, included_tier, usage_note) in COMMERCIAL_ADDONS.items():
         if not modules.get(key):
             continue
         included = included_tier is not None and TIER_RANK[tier] >= TIER_RANK[included_tier]
         charged_monthly = 0.0 if included else monthly
         charged_setup = 0.0 if included else setup
-        addon_monthly += charged_monthly
-        setup_total += charged_setup
+        addon_monthly += Decimal(str(charged_monthly))
+        setup_total += Decimal(str(charged_setup))
         line_items.append(
             {
                 "module_key": key,
@@ -171,8 +182,24 @@ def _build_commercial_quote(payload_quote, modules: dict[str, bool], tier: str, 
             }
         )
 
+    for key, price in negotiated.items():
+        addon_monthly += Decimal(str(price.monthly))
+        setup_total += Decimal(str(price.setup))
+        line_items.append({
+            "module_key": key,
+            "label": NEGOTIATED_COMMERCIAL_ADDONS[key],
+            "monthly": price.monthly,
+            "setup": price.setup,
+            "included": False,
+            "usage_note": None,
+            "pricing_source": "negotiated_eur",
+            "pricing_reason": price.reason,
+        })
+
     base_monthly = PLAN_MONTHLY_PRICES[tier]
-    monthly_total = base_monthly + addon_monthly
+    monthly_total = float(Decimal(str(base_monthly)) + addon_monthly)
+    addon_monthly = float(addon_monthly)
+    setup_total = float(setup_total)
     supplied = (payload_quote.base_monthly, payload_quote.addon_monthly, payload_quote.list_monthly_total, payload_quote.list_setup_total)
     expected = (base_monthly, addon_monthly, monthly_total, setup_total)
     if any(abs(actual - wanted) > 0.001 for actual, wanted in zip(supplied, expected, strict=True)):
@@ -191,6 +218,7 @@ def _build_commercial_quote(payload_quote, modules: dict[str, bool], tier: str, 
         "final_setup_total": payload_quote.final_setup_total,
         "override_reason": (payload_quote.override_reason or "").strip() or None,
         "line_items": line_items,
+        "negotiated_addon_prices": {key: price.model_dump() for key, price in negotiated.items()},
         "quoted_at": quoted_at.isoformat(),
         "quoted_by": actor_id,
     }
