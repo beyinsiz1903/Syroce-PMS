@@ -338,9 +338,11 @@ async def get_pending_ar_details(
 ):
     tenant_id = current_user.tenant_id
     company = await db.companies.find_one({"id": company_id, "tenant_id": tenant_id}, {"_id": 0})
-    if not company:
-        raise HTTPException(404, "Cari hesap bulunamadı")
     day, rows = await _company_receivable_rows(tenant_id, company_id=company_id)
+    if not company:
+        if not rows:
+            raise HTTPException(404, "Cari hesap bulunamadı")
+        company = {"name": "Şirket kaydı bulunamadı"}
     totals = row_totals(rows)
     return {"company": {"id": company_id, **{key: company.get(key) for key in ("name", "contact_person", "contact_email", "contact_phone")}},
             "folios": [{**row, "check_out": row["checkout_date"], "folio_number": row["folio_number"] or f'F-{row["folio_id"][:8]}'} for row in rows],

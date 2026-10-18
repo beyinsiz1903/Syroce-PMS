@@ -87,6 +87,8 @@ async def test_company_summary_detail_and_aging_have_no_mixed_scalar(ledger_db):
     await ledger_db.companies.insert_one({"tenant_id": "A", "id": "c", "name": "Company"})
     result = await folio.get_pending_ar.__wrapped__(current_user=USER)
     assert result[0]["total_outstanding_by_currency"] == {"EUR": 80, "TRY": 80}
+    detail = await folio.get_pending_ar_details("c", current_user=USER)
+    assert detail["total_outstanding_by_currency"] == result[0]["total_outstanding_by_currency"]
     assert result[0]["total_outstanding"] is None
     details = await folio.get_pending_ar_details("c", current_user=USER)
     assert details["total_outstanding_by_currency"] == result[0]["total_outstanding_by_currency"]
@@ -112,6 +114,9 @@ async def test_company_ar_preserves_debt_with_missing_company_metadata(ledger_db
     result = await folio.get_pending_ar.__wrapped__(current_user=USER)
     assert result[0]["company_name"] == "Şirket kaydı bulunamadı"
     assert result[0]["total_outstanding_by_currency"] == {"EUR": 80, "TRY": 80}
+    detail = await folio.get_pending_ar_details("c", current_user=USER)
+    assert detail["company"]["name"] == "Şirket kaydı bulunamadı"
+    assert detail["total_outstanding_by_currency"] == result[0]["total_outstanding_by_currency"]
 
 
 async def test_receivable_totals_include_more_than_five_thousand_folios(ledger_db):
