@@ -1793,8 +1793,7 @@ async def get_cash_flow(start_date: str | None = None, end_date: str | None = No
     if start_date or end_date:
         if not start_date or not end_date:
             raise HTTPException(status_code=422, detail="Başlangıç ve bitiş tarihi birlikte verilmelidir.")
-        start_bound, end_bound = _report_date_bounds(start_date, end_date)
-        query["date"] = {"$gte": start_bound, "$lte": end_bound}
+        query.update(_document_period("date", start_date, end_date))
     if transaction_type:
         query["transaction_type"] = transaction_type
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'sonner';
@@ -54,6 +54,8 @@ const MobileFinance = ({ user }) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+  const requestId = useRef(0);
   const [dailyCollections, setDailyCollections] = useState(null);
   const [monthlyCollections, setMonthlyCollections] = useState(null);
   const [pendingReceivables, setPendingReceivables] = useState(null);
@@ -92,11 +94,14 @@ const MobileFinance = ({ user }) => {
 
   useEffect(() => {
     loadData();
+    return () => { requestId.current += 1; };
   }, []);
 
   const loadData = async () => {
+    const id = ++requestId.current;
     try {
       setLoading(true);
+      setLoadError(false);
       
       const [
         dailyRes, 
@@ -110,18 +115,19 @@ const MobileFinance = ({ user }) => {
         dailyExpensesRes,
         bankBalancesRes
       ] = await Promise.all([
-        axios.get('/finance/mobile/daily-collections'),
-        axios.get('/finance/mobile/monthly-collections'),
-        axios.get('/finance/mobile/pending-receivables'),
+        axios.get('/finance/mobile/daily-collections', { params: { nocache: true } }),
+        axios.get('/finance/mobile/monthly-collections', { params: { nocache: true } }),
+        axios.get('/finance/mobile/pending-receivables', { params: { nocache: true } }),
         axios.get('/finance/mobile/monthly-costs'),
         axios.get('/notifications/mobile/finance'),
-        axios.get('/accounting/invoices').catch(() => ({ data: { invoices: [] } })),
+        axios.get('/finance/mobile/invoices').catch(() => ({ data: { invoices: [] } })),
         axios.get('/finance/mobile/cash-flow-summary').catch(() => ({ data: null })),
-        axios.get('/finance/mobile/risk-alerts').catch(() => ({ data: null })),
+        axios.get('/finance/mobile/risk-alerts', { params: { nocache: true } }).catch(() => ({ data: null })),
         axios.get('/finance/mobile/daily-expenses').catch(() => ({ data: null })),
         axios.get('/finance/mobile/bank-balances').catch(() => ({ data: null }))
       ]);
 
+      if (id !== requestId.current) return;
       setDailyCollections(dailyRes.data);
       setMonthlyCollections(monthlyRes.data);
       setPendingReceivables(receivablesRes.data);
@@ -133,11 +139,15 @@ const MobileFinance = ({ user }) => {
       setDailyExpenses(dailyExpensesRes.data);
       setBankBalances(bankBalancesRes.data);
     } catch (error) {
+      if (id !== requestId.current) return;
+      setLoadError(true);
       console.error('Failed to load finance data:', error);
       toast.error('Veri yükleme hatası');
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (id === requestId.current) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   };
 
@@ -206,10 +216,10 @@ const MobileFinance = ({ user }) => {
   const loadRiskDetails = async () => {
     try {
       const [alertsRes, overdueRes, violationsRes, suspiciousRes] = await Promise.all([
-        axios.get('/finance/mobile/risk-alerts'),
-        axios.get('/finance/mobile/overdue-accounts?min_days=7'),
-        axios.get('/finance/mobile/credit-limit-violations'),
-        axios.get('/finance/mobile/suspicious-receivables')
+        axios.get('/finance/mobile/risk-alerts', { params: { nocache: true } }),
+        axios.get('/finance/mobile/overdue-accounts?min_days=7', { params: { nocache: true } }),
+        axios.get('/finance/mobile/credit-limit-violations', { params: { nocache: true } }),
+        axios.get('/finance/mobile/suspicious-receivables', { params: { nocache: true } })
       ]);
       
       setRiskAlerts(alertsRes.data);
@@ -242,6 +252,7 @@ const MobileFinance = ({ user }) => {
       
       const res = await axios.get(`/finance/mobile/invoices?${params.toString()}`);
       setEnhancedInvoices(res.data.invoices || []);
+      setAllInvoices(res.data.invoices || []);
       setInvoicesModalOpen(true);
     } catch (error) {
       toast.error('Faturalar yüklenemedi');
@@ -302,6 +313,13 @@ const MobileFinance = ({ user }) => {
         </div>
       </div>
     );
+  }
+
+  if (loadError) {
+    return <div role="alert" className="m-4 rounded-lg border border-red-200 bg-red-50 p-6 text-red-800">
+      <p>Finans raporları doğrulanamadı. Gösterilmeyen tutarlar sıfır bakiye değildir.</p>
+      <Button className="mt-3" onClick={loadData}>Yeniden dene</Button>
+    </div>;
   }
 
   const ctx = {
@@ -437,7 +455,7 @@ const MobileFinance = ({ user }) => {
                     {formatBreakdown(monthlyCollections?.totals_by_currency, monthlyCollections?.total_collected || 0)}
                   </p>
                   <p className="text-xs text-blue-600 mt-1">
-                    Oran: {formatPercent(monthlyCollections?.collection_rate || 0)}
+                    Tahsilat oranı: {monthlyCollections?.collection_rate == null ? '—' : formatPercent(monthlyCollections.collection_rate)}
                   </p>
                 </div>
                 <TrendingUp className="w-10 h-10 text-blue-300" />
@@ -454,7 +472,7 @@ const MobileFinance = ({ user }) => {
                     {formatBreakdown(pendingReceivables?.totals_by_currency, pendingReceivables?.total_pending || 0)}
                   </p>
                   <p className="text-xs text-amber-600 mt-1">
-                    {pendingReceivables?.receivables_count || 0} fatura
+                    {pendingReceivables?.receivables_count || 0} açık folyo
                   </p>
                 </div>
                 <Receipt className="w-10 h-10 text-amber-300" />
@@ -476,6 +494,14 @@ const MobileFinance = ({ user }) => {
             </CardContent>
           </Card>
         </div>
+
+        {(dailyCollections?.conversion_issue_count > 0 || monthlyCollections?.conversion_issue_count > 0) && (
+          <div role="status" className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+            Bazı döviz tahsilatlarının kayıt anındaki TRY karşılığı yok; TRY tahsilat toplamına eklenmedi.
+            <p>Bugün alınan: {formatTotals(dailyCollections?.received_totals_by_currency, null)}</p>
+            <p>Bu ay alınan: {formatTotals(monthlyCollections?.received_totals_by_currency, null)}</p>
+          </div>
+        )}
 
         {/* Pending Receivables */}
         {pendingReceivables?.receivables && pendingReceivables.receivables.length > 0 && (
@@ -502,17 +528,22 @@ const MobileFinance = ({ user }) => {
                     )}
                   </div>
                   <div className="text-right">
-                    <p className="font-bold text-amber-700">{formatCurrency(receivable.balance, receivable.currency)}</p>
+                    <p className="font-bold text-amber-700">{formatTotals(receivable.balance_by_currency, receivable.balance, receivable.currency)}</p>
                     <Button
                       size="sm"
+                      title={receivable.mixed_currency || receivable.manual_collection_allowed === false ? 'Farklı para birimlerini folyo ayrıntısından ayrı ayrı inceleyin.' : undefined}
                       onClick={() => {
+                        if (receivable.mixed_currency || receivable.manual_collection_allowed === false) {
+                          navigate(`/folio-detail/${encodeURIComponent(receivable.folio_id)}`);
+                          return;
+                        }
                         setSelectedFolio(receivable);
                         setPaymentModalOpen(true);
                       }}
                       className="bg-green-600 hover:bg-green-700 mt-1"
                     >
                       <CreditCard className="w-3 h-3 mr-1" />
-                      Tahsilat
+                      {receivable.mixed_currency || receivable.manual_collection_allowed === false ? 'Folyo ayrıntıları' : 'Tahsilat'}
                     </Button>
                   </div>
                 </div>
@@ -566,8 +597,8 @@ const MobileFinance = ({ user }) => {
                   <div className="flex-1">
                     <p className="text-sm font-semibold text-gray-900">{alert.title}</p>
                     <p className="text-xs text-gray-600">{alert.message}</p>
-                    {alert.amount && (
-                      <p className="text-xs font-bold text-red-600 mt-1">{formatCurrency(alert.amount)}</p>
+                    {(alert.amount != null || Object.keys(alert.amounts_by_currency || {}).length > 0) && (
+                      <p className="text-xs font-bold text-red-600 mt-1">{formatTotals(alert.amounts_by_currency, alert.amount, alert.currency)}</p>
                     )}
                   </div>
                 </div>
@@ -663,16 +694,17 @@ const MobileFinance = ({ user }) => {
                     )}
                   </div>
                   <div className="text-right">
-                    <p className="font-bold text-indigo-700">{formatCurrency(bank.current_balance, bank.currency)}</p>
+                    <p className="font-bold text-indigo-700">{bank.current_balance == null ? '—' : formatCurrency(bank.current_balance, bank.currency)}</p>
                     <p className="text-xs text-gray-500">{bank.currency}</p>
                   </div>
                 </div>
               ))}
               <div className="mt-3 pt-3 border-t border-gray-200">
+                {bankBalances.unavailable_balance_count > 0 && <p role="status" className="text-xs text-amber-800">{bankBalances.unavailable_balance_count} hesabın bakiyesi alınamadı. Toplam yalnız bilinen TRY bakiyelerini içerir.</p>}
                 <div className="flex justify-between">
                   <span className="font-semibold text-gray-700">Toplam (TRY):</span>
                   <span className="font-bold text-lg text-indigo-700">
-                    {formatCurrency(bankBalances.total_balance_try || 0)}
+                    {formatCurrency(bankBalances.total_balance_try ?? 0, 'TRY')}
                   </span>
                 </div>
               </div>
@@ -681,7 +713,7 @@ const MobileFinance = ({ user }) => {
         )}
 
         {/* Daily Expenses - NEW */}
-        {dailyExpenses && dailyExpenses.total_expenses > 0 && (
+        {dailyExpenses && dailyExpenses.expense_count > 0 && (
           <Card className="bg-gradient-to-br from-rose-50 to-pink-50 border-rose-200">
             <CardHeader className="pb-3">
               <CardTitle className="text-lg flex items-center">
@@ -692,17 +724,17 @@ const MobileFinance = ({ user }) => {
             <CardContent className="space-y-2">
               <div className="flex justify-between p-2 bg-rose-100 rounded-lg">
                 <span className="font-semibold text-rose-800">Toplam Gider:</span>
-                <span className="font-bold text-rose-800">{formatCurrency(dailyExpenses.total_expenses)}</span>
+                <span className="font-bold text-rose-800">{formatTotals(dailyExpenses.totals_by_currency, dailyExpenses.total_expenses, dailyExpenses.currency)}</span>
               </div>
               <p className="text-xs text-gray-600">{dailyExpenses.expense_count} işlem</p>
               
               {dailyExpenses.expenses_by_department && Object.keys(dailyExpenses.expenses_by_department).length > 0 && (
                 <div className="mt-2 space-y-1">
                   <p className="text-xs font-semibold text-gray-700">Departman Bazlı:</p>
-                  {Object.entries(dailyExpenses.expenses_by_department).map(([dept, amount]) => (
+                  {Object.entries(dailyExpenses.departments_by_currency || {}).map(([dept, totals]) => (
                     <div key={dept} className="flex justify-between text-xs pl-2">
                       <span className="text-gray-600 capitalize">{dept}:</span>
-                      <span className="font-medium">{formatCurrency(amount)}</span>
+                      <span className="font-medium">{formatTotals(totals, null, dailyExpenses.currency)}</span>
                     </div>
                   ))}
                 </div>

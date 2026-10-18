@@ -29,7 +29,7 @@ describe('MobileFinance modal contract', () => {
       if (url === '/notifications/mobile/finance') {
         return Promise.resolve({ data: { notifications: [] } });
       }
-      if (url === '/accounting/invoices') {
+      if (url === '/finance/mobile/invoices') {
         return Promise.resolve({ data: { invoices: [] } });
       }
       if (url === '/finance/mobile/cash-flow-summary') {
@@ -75,5 +75,16 @@ describe('MobileFinance modal contract', () => {
     render(<MemoryRouter><MobileFinance user={{ name: 'Test Operator' }} /></MemoryRouter>);
     expect((await screen.findAllByText('₺1.000,49')).length).toBeGreaterThan(0);
     expect(screen.queryByText('₺1.000')).not.toBeInTheDocument();
+  });
+
+  it('does not present failed finance data as a zero balance', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const defaultGet = get.getMockImplementation();
+    get.mockImplementation(url => url === '/finance/mobile/pending-receivables'
+      ? Promise.reject(new Error('ledger unavailable')) : defaultGet(url));
+    render(<MemoryRouter><MobileFinance /></MemoryRouter>);
+    expect(await screen.findByRole('alert')).toHaveTextContent('Gösterilmeyen tutarlar sıfır bakiye değildir');
+    expect(screen.queryByText('₺0,00')).not.toBeInTheDocument();
+    vi.restoreAllMocks();
   });
 });

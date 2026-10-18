@@ -19,7 +19,7 @@ describe('Pending AR reporting safety', () => {
     const click = vi.spyOn(window.HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
     render(<PendingAR />);
     fireEvent.click(await screen.findByRole('button', { name: "Yaşlandırmayı Excel'e Aktar" }));
-    await waitFor(() => expect(axios.get).toHaveBeenCalledWith('/reports/company-aging/excel', { responseType: 'blob' }));
+    await waitFor(() => expect(axios.get).toHaveBeenCalledWith('/folio/pending-ar/excel', { responseType: 'blob' }));
     expect(createObjectURL).toHaveBeenCalledWith(blob);
     expect(click).toHaveBeenCalledOnce();
   });

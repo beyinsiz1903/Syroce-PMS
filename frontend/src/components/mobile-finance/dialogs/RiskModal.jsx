@@ -1,5 +1,6 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
+import { formatCurrencyBreakdown } from '@/lib/reportCurrency';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -24,6 +25,7 @@ export default function RiskModal(props) {
             <span>{t('cm.components_mobilefinance_dialogs_RiskModal.risk_yonetimi')}</span>
           </DialogTitle>
         </DialogHeader>
+        <p className="text-xs text-gray-600">Gecikme, PMS iş gününe göre çıkıştan beri açık kalan gün sayısıdır; sözleşme vadesi değildir. Farklı para birimleri ayrı gösterilir.</p>
     
         <Tabs defaultValue="overdue" className="w-full">
           <TabsList className="grid w-full grid-cols-4">
@@ -62,7 +64,7 @@ export default function RiskModal(props) {
                         </Badge>
                       </div>
                       <div className="text-right">
-                        <p className="font-bold text-lg text-red-700">{formatCurrency(account.balance, account.currency)}</p>
+                        <p className="font-bold text-lg text-red-700">{formatCurrencyBreakdown(account.balance_by_currency, account.balance, account.currency)}</p>
                         <Button
                           size="sm"
                           className="mt-2"
@@ -85,7 +87,7 @@ export default function RiskModal(props) {
                     <div>
                       <span className="text-gray-600">{t('cm.components_mobilefinance_dialogs_RiskModal.tutar')}</span>
                       <span className="font-bold ml-2 text-red-700">
-                        {formatCurrency(overdueAccounts.summary.total_amount)}
+                        {formatCurrencyBreakdown(overdueAccounts.summary.totals_by_currency, overdueAccounts.summary.total_amount, overdueAccounts.currency)}
                       </span>
                     </div>
                     <div>
@@ -105,6 +107,10 @@ export default function RiskModal(props) {
           </TabsContent>
       
           <TabsContent value="limits" className="space-y-2">
+            {creditViolations?.currency_mismatches?.length > 0 && <div role="alert" className="rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+              Limit para biriminden farklı borçlar otomatik çevrilmedi. Ayrı kontrol edin.
+              {creditViolations.currency_mismatches.map(row => <p key={row.company_id}>{row.company_name}: {formatCurrencyBreakdown(row.debt_by_currency)}</p>)}
+            </div>}
             <div className="flex items-center justify-between mb-2">
               <h3 className="font-semibold text-gray-900">{t('cm.components_mobilefinance_dialogs_RiskModal.kredi_limiti_asimlari')}</h3>
               {creditViolations && (
@@ -117,7 +123,7 @@ export default function RiskModal(props) {
             {creditViolations && creditViolations.violations?.length > 0 ? (
               <div className="space-y-2">
                 {creditViolations.violations.map((violation) => (
-                  <div key={violation.company_id} className={`p-3 rounded-lg border-2 ${
+                  <div key={`${violation.company_id}-${violation.currency}`} className={`p-3 rounded-lg border-2 ${
                     violation.over_limit_amount > 0 ? 'bg-red-50 border-red-300' : 'bg-yellow-50 border-yellow-300'
                   }`}>
                     <div className="flex items-start justify-between">
@@ -134,7 +140,7 @@ export default function RiskModal(props) {
                           </div>
                           <div>
                             <p className="text-gray-600">{t('cm.components_mobilefinance_dialogs_RiskModal.kullanim')}</p>
-                            <p className="font-semibold">{violation.utilization_percentage.toFixed(1)}%</p>
+                            <p className="font-semibold">{violation.utilization_percentage == null ? '—' : `${violation.utilization_percentage.toFixed(1)}%`}</p>
                           </div>
                           <div>
                             <p className="text-gray-600">Vade:</p>
@@ -193,7 +199,7 @@ export default function RiskModal(props) {
                         <p className="text-xs text-gray-500">{t('cm.components_mobilefinance_dialogs_RiskModal.odeme_sayisi')} {item.payment_history_count}</p>
                       </div>
                       <div className="text-right">
-                        <p className="font-bold text-lg text-gray-900">{formatCurrency(item.balance, item.currency)}</p>
+                        <p className="font-bold text-lg text-gray-900">{formatCurrencyBreakdown(item.balance_by_currency, item.balance, item.currency)}</p>
                         <Button
                           size="sm"
                           className="mt-2 bg-gray-900"
@@ -216,7 +222,7 @@ export default function RiskModal(props) {
                     <div>
                       <span>{t('cm.components_mobilefinance_dialogs_RiskModal.tutar_64d2c')}</span>
                       <span className="font-bold ml-2">
-                        {formatCurrency(suspiciousReceivables.summary.total_amount)}
+                        {formatCurrencyBreakdown(suspiciousReceivables.summary.totals_by_currency, suspiciousReceivables.summary.total_amount, suspiciousReceivables.currency)}
                       </span>
                     </div>
                   </div>
@@ -242,9 +248,9 @@ export default function RiskModal(props) {
                       <div className="flex-1">
                         <p className="font-bold text-gray-900">{alert.title}</p>
                         <p className="text-sm text-gray-700">{alert.message}</p>
-                        {alert.amount && (
+                        {(alert.amount != null || Object.keys(alert.amounts_by_currency || {}).length > 0) && (
                           <p className="text-sm font-bold text-red-600 mt-1">
-                            {t('cm.components_mobilefinance_dialogs_RiskModal.tutar_64d2c')} {formatCurrency(alert.amount, alert.currency)}
+                            {t('cm.components_mobilefinance_dialogs_RiskModal.tutar_64d2c')} {formatCurrencyBreakdown(alert.amounts_by_currency, alert.amount, alert.currency)}
                           </p>
                         )}
                         {alert.action_required && (

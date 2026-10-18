@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -264,4 +265,10 @@ async def test_cash_flow_reads_all_rows_before_calculating_totals(monkeypatch):
 
     assert cursor.limits == [None]
     assert result["total_income"] == 10.0
-    assert queries == [{"tenant_id": "tenant-a", "date": {"$gte": "2026-09-01T00:00:00", "$lte": "2026-09-30T23:59:59.999999"}}]
+    assert result["total_income_by_currency"] == {"TRY": 10.0}
+    # Both Mongo date representations must cover the complete first/last day.
+    # A half-open next-month bound also excludes exactly midnight in October.
+    assert queries == [{"tenant_id": "tenant-a", "$or": [
+        {"date": {"$gte": "2026-09-01", "$lt": "2026-10-01"}},
+        {"date": {"$gte": datetime(2026, 9, 1, tzinfo=UTC), "$lt": datetime(2026, 10, 1, tzinfo=UTC)}},
+    ]}]

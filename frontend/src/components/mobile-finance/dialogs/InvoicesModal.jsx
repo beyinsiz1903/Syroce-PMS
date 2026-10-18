@@ -42,8 +42,9 @@ export default function InvoicesModal(props) {
                   </Badge>
                 </div>
                 <div className="text-sm text-gray-600">
-                  <p>{t('cm.components_mobilefinance_dialogs_InvoicesModal.tutar')} {formatCurrency(invoice.total_amount, invoice.currency)}</p>
-                  <p>{t('cm.components_mobilefinance_dialogs_InvoicesModal.tarih')} {invoice.invoice_date ? new Date(invoice.invoice_date).toLocaleDateString('tr-TR') : 'N/A'}</p>
+                  <p>{t('cm.components_mobilefinance_dialogs_InvoicesModal.tutar')} {formatCurrency(invoice.total ?? invoice.total_amount, invoice.currency)}</p>
+                  <p>Kalan bakiye: {invoice.outstanding_amount == null ? '—' : formatCurrency(invoice.outstanding_amount, invoice.currency)}</p>
+                  <p>{t('cm.components_mobilefinance_dialogs_InvoicesModal.tarih')} {(invoice.created_at || invoice.invoice_date) ? new Date(invoice.created_at || invoice.invoice_date).toLocaleDateString('tr-TR') : '—'}</p>
                   {invoice.due_date && (
                     <p>Vade: {new Date(invoice.due_date).toLocaleDateString('tr-TR')}</p>
                   )}

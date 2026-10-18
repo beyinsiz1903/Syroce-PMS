@@ -1,5 +1,6 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
+import { formatCurrencyBreakdown } from '@/lib/reportCurrency';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -132,18 +133,18 @@ export default function FolioExtractModal(props) {
                 <div className="space-y-2">
                   <div className="flex justify-between">
                     <span className="text-gray-700">{t('cm.components_mobilefinance_dialogs_FolioExtractModal.toplam_harcama')}</span>
-                    <span className="font-bold">{formatCurrency(selectedFolioExtract.summary?.total_charges || 0, folioCurrency)}</span>
+                    <span className="font-bold">{formatCurrencyBreakdown(selectedFolioExtract.summary?.charges_by_currency, selectedFolioExtract.summary?.total_charges, folioCurrency)}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-700">{t('cm.components_mobilefinance_dialogs_FolioExtractModal.toplam_odeme')}</span>
-                    <span className="font-bold text-green-700">{formatCurrency(selectedFolioExtract.summary?.total_payments || 0, folioCurrency)}</span>
+                    <span className="font-bold text-green-700">{formatCurrencyBreakdown(selectedFolioExtract.summary?.payments_by_currency, selectedFolioExtract.summary?.total_payments, folioCurrency)}</span>
                   </div>
                   <div className="flex justify-between pt-2 border-t-2 border-gray-300">
                     <span className="font-bold text-lg text-gray-900">{t('cm.components_mobilefinance_dialogs_FolioExtractModal.kalan_bakiye')}</span>
                     <span className={`font-bold text-xl ${
-                      (selectedFolioExtract.summary?.current_balance || 0) > 0 ? 'text-red-700' : 'text-green-700'
+                      selectedFolioExtract.summary?.current_balance == null ? 'text-gray-900' : selectedFolioExtract.summary.current_balance > 0 ? 'text-red-700' : 'text-green-700'
                     }`}>
-                      {formatCurrency(selectedFolioExtract.summary?.current_balance || 0, folioCurrency)}
+                      {formatCurrencyBreakdown(selectedFolioExtract.summary?.balance_by_currency, selectedFolioExtract.summary?.current_balance, folioCurrency)}
                     </span>
                   </div>
                 </div>

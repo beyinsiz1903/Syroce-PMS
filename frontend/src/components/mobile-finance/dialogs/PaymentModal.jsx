@@ -28,6 +28,7 @@ export default function PaymentModal(props) {
             const formData = new FormData(e.target);
             handleRecordPayment({
               folio_id: selectedFolio.folio_id,
+              currency: selectedFolio.currency,
               amount: parseMoneyInput(formData.get('amount')),
               payment_method: formData.get('payment_method'),
               notes: formData.get('notes')
