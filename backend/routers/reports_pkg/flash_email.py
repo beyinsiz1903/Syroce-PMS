@@ -10,7 +10,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 security = HTTPBearer()
 
-from core.business_date_service import accounting_period_match, ensure_business_date_initialized
+from core.business_date_service import ensure_business_date_initialized
 from core.database import db
 from core.email import send_email
 from core.helpers import require_module
@@ -18,7 +18,9 @@ from core.security import get_current_user
 from models.schemas import User
 from modules.pms_core.report_money import amounts_text, resolve_ledger_currencies
 from modules.pms_core.report_money import currency_code as normalize_currency
+from modules.pms_core.reporting_dates import date_period_match
 from modules.pms_core.reporting_financials import deduplicate_report_payments, effective_collection
+from modules.pms_core.reporting_ledger import charge_amount, charge_category, posted_revenue_rows
 from modules.pms_core.role_permission_service import require_op
 from modules.pms_core.stay_night_metrics import NON_COMMERCIAL_STATUSES, allocated_revenue_for_night, as_date, booking_nights, booking_occupies_night, load_stay_night_metrics, stay_day_match
 
@@ -464,100 +466,80 @@ async def export_daily_flash_excel(
     return excel_response(wb, f"daily_flash_report_{target_date}.xlsx")
 
 
+async def _weekly_management_payload(current_user):
+    """One report contract for the weekly API and emailed management summary."""
+    state = await ensure_business_date_initialized(db, current_user.tenant_id)
+    week_end = as_date(state["business_date"])
+    week_start = week_end - timedelta(days=6)
+    created_match = date_period_match("created_at", week_start, week_end)
+    created_match["$or"].append({"created_at": {"$in": [None, ""]}, **date_period_match("reservation_date", week_start, week_end)})
+    bookings, charges, metrics = await asyncio.gather(
+        db.bookings.count_documents({"tenant_id": current_user.tenant_id, "status": {"$nin": list(NON_COMMERCIAL_STATUSES)}, **created_match}),
+        posted_revenue_rows(current_user.tenant_id, week_start, week_end, database=db),
+        load_stay_night_metrics(db, current_user.tenant_id, week_start, week_end, actual_only=True),
+    )
+    revenue, room_revenue = {}, {}
+    for row in charges:
+        _add_currency(revenue, _currency(row), charge_amount(row))
+        if charge_category(row) == "room":
+            _add_currency(room_revenue, _currency(row), charge_amount(row))
+    revenue, room_revenue = _rounded_currency(revenue), _rounded_currency(room_revenue)
+    occupied = sum(row["occupied_rooms"] for row in metrics)
+    sold = sum(row.get("sold_rooms", row["occupied_rooms"]) for row in metrics)
+    available = sum(row["total_rooms"] for row in metrics)
+    occupancy = round(occupied / available * 100, 2) if available else 0
+    adr = {code: round(amount / sold, 2) if sold else 0 for code, amount in room_revenue.items()}
+    revpar = {code: round(amount / available, 2) if available else 0 for code, amount in room_revenue.items()}
+    return {
+        "week_start": week_start.isoformat(), "week_ending": week_end.isoformat(),
+        "total_bookings": bookings,
+        "total_revenue": _single_currency(revenue), "total_revenue_by_currency": revenue,
+        "room_revenue": _single_currency(room_revenue), "room_revenue_by_currency": room_revenue,
+        "revenue_basis": "posted_folio_extra_and_finalized_pos_ledger",
+        "avg_occupancy_pct": occupancy,
+        "key_metrics": {"occupancy": occupancy, "adr": _single_currency(adr), "revpar": _single_currency(revpar),
+                        "adr_by_currency": adr, "revpar_by_currency": revpar},
+    }
+
+
 @sub_router.post("/reports/send-weekly-email")
 async def send_weekly_management_email(
     email_config: dict,
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    _perm=Depends(require_op("view_reports")),  # v92 DW
+    _perm=Depends(require_op("view_reports")),
 ):
-    """Send weekly management summary via email"""
     current_user = await get_current_user(credentials)
-
-    state = await ensure_business_date_initialized(db, current_user.tenant_id)
-    week_end = datetime.fromisoformat(state["business_date"][:10]).date()
-    week_start = week_end - timedelta(days=6)
-    start_key = week_start.isoformat()
-    end_key = week_end.isoformat()
-    next_key = (week_end + timedelta(days=1)).isoformat()
-
-    total_bookings = await db.bookings.count_documents(
-        {
-            "tenant_id": current_user.tenant_id,
-            "$or": [
-                {"created_at": {"$gte": start_key, "$lt": next_key}},
-                {"reservation_date": {"$gte": start_key, "$lt": next_key}},
-            ],
-            "status": {"$nin": list(NON_COMMERCIAL_STATUSES)},
-        }
-    )
-    charges = await db.folio_charges.find(
-        {
-            "tenant_id": current_user.tenant_id,
-            "voided": {"$ne": True},
-            **accounting_period_match(
-                start_key,
-                end_key,
-                {"date": {"$gte": start_key, "$lt": next_key}},
-                {"created_at": {"$gte": start_key, "$lt": next_key}},
-            ),
-        },
-        {"_id": 0, "total": 1, "amount": 1, "charge_category": 1, "charge_type": 1},
-    ).to_list(20000)
-    total_revenue = sum(float(charge.get("total") or charge.get("amount") or 0) for charge in charges)
-    room_revenue = sum(
-        float(charge.get("total") or charge.get("amount") or 0)
-        for charge in charges
-        if str(charge.get("charge_category") or charge.get("charge_type") or "").lower() in {"room", "accommodation", "room_charge"}
-    )
-    stay_metrics = await load_stay_night_metrics(db, current_user.tenant_id, week_start, week_end, actual_only=True)
-    occupied_room_nights = sum(int(item.get("occupied_rooms") or 0) for item in stay_metrics)
-    available_room_nights = sum(int(item.get("total_rooms") or 0) for item in stay_metrics)
-    occupancy = round(occupied_room_nights / available_room_nights * 100, 2) if available_room_nights else 0.0
-    adr = round(room_revenue / occupied_room_nights, 2) if occupied_room_nights else 0.0
-    revpar = round(room_revenue / available_room_nights, 2) if available_room_nights else 0.0
-
     recipient = str(email_config.get("email") or current_user.email or "").strip()
     if not recipient:
         raise HTTPException(status_code=422, detail="Rapor alıcısı e-posta adresi gerekli")
+    report_data = await _weekly_management_payload(current_user)
+    start_key, end_key = report_data["week_start"], report_data["week_ending"]
     subject = f"Haftalık Yönetim Özeti - {start_key} / {end_key}"
-    report_data = {
-        "week_start": start_key,
-        "week_ending": end_key,
-        "total_bookings": total_bookings,
-        "total_revenue": round(total_revenue, 2),
-        "room_revenue": round(room_revenue, 2),
-        "key_metrics": {"occupancy": occupancy, "adr": adr, "revpar": revpar},
-    }
+    metrics = report_data["key_metrics"]
     html = f"""
     <h2>Haftalık Yönetim Özeti</h2>
     <p><strong>Dönem:</strong> {start_key} – {end_key}</p>
     <ul>
-      <li>Yeni rezervasyon: {total_bookings}</li>
-      <li>Toplam gelir: {total_revenue:,.2f}</li>
-      <li>Oda geliri: {room_revenue:,.2f}</li>
-      <li>Doluluk: %{occupancy:.2f}</li>
-      <li>ADR: {adr:,.2f}</li>
-      <li>RevPAR: {revpar:,.2f}</li>
+      <li>Yeni rezervasyon: {report_data["total_bookings"]}</li>
+      <li>Toplam gelir: {_flash_money(report_data, "total_revenue", "TRY")}</li>
+      <li>Oda geliri: {_flash_money(report_data, "room_revenue", "TRY")}</li>
+      <li>Doluluk: %{metrics["occupancy"]:.2f}</li>
+      <li>ADR: {_flash_money(metrics, "adr", "TRY")}</li>
+      <li>RevPAR: {_flash_money(metrics, "revpar", "TRY")}</li>
     </ul>
     """
     delivery = await send_email(to=recipient, subject=subject, html=html)
     delivered = isinstance(delivery, dict) and bool(delivery.get("sent"))
-
     email_record = {
-        "id": str(uuid.uuid4()),
-        "tenant_id": current_user.tenant_id,
-        "recipient_email": recipient,
-        "subject": subject,
-        "report_type": "weekly_summary",
-        "report_data": report_data,
+        "id": str(uuid.uuid4()), "tenant_id": current_user.tenant_id,
+        "recipient_email": recipient, "subject": subject,
+        "report_type": "weekly_summary", "report_data": report_data,
         "status": "sent" if delivered else "failed",
         "sent_at": datetime.now(UTC).isoformat() if delivered else None,
         "sent_by": current_user.name,
         "provider": delivery.get("provider") if isinstance(delivery, dict) else None,
     }
-
     await db.email_reports.insert_one(email_record)
-
     if not delivered:
         raise HTTPException(status_code=502, detail="Haftalık rapor e-postası gönderilemedi")
     return {"message": "Haftalık yönetim özeti gönderildi", "email_id": email_record["id"], "recipient": recipient}
@@ -585,67 +567,21 @@ async def get_weekly_management_summary(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_reports")),
 ):
-    """Get weekly management summary report"""
-    state = await ensure_business_date_initialized(db, current_user.tenant_id)
-    week_end = datetime.fromisoformat(str(state["business_date"])[:10]).date()
-    week_start = week_end - timedelta(days=6)
-    end_exclusive = week_end + timedelta(days=1)
-
-    # Get key metrics for the week
-    total_bookings = await db.bookings.count_documents(
-        {
+    report = await _weekly_management_payload(current_user)
+    week_start = as_date(report["week_start"])
+    week_end = as_date(report["week_ending"])
+    completed_tasks, reviews = await asyncio.gather(
+        db.maintenance_tasks.count_documents({
+            "tenant_id": current_user.tenant_id, "status": "completed",
+            **date_period_match("completed_at", week_start, week_end),
+        }),
+        db.reviews.find({
             "tenant_id": current_user.tenant_id,
-            "created_at": {"$gte": week_start.isoformat(), "$lt": end_exclusive.isoformat()},
-            "status": {"$nin": list(NON_COMMERCIAL_STATUSES)},
-        }
+            **date_period_match("created_at", week_start, week_end),
+        }, {"_id": 0, "rating": 1}).to_list(None),
     )
-    charges = await db.folio_charges.find(
-        {
-            "tenant_id": current_user.tenant_id,
-            "voided": {"$ne": True},
-            "$or": [
-                {"business_date": {"$gte": week_start.isoformat(), "$lte": week_end.isoformat()}},
-                {"business_date": {"$exists": False}, "date": {"$gte": week_start.isoformat(), "$lt": end_exclusive.isoformat()}},
-                {"business_date": None, "date": {"$gte": week_start.isoformat(), "$lt": end_exclusive.isoformat()}},
-            ],
-        },
-        {"_id": 0, "total": 1, "amount": 1},
-    ).to_list(50000)
-    total_revenue = sum(float(charge.get("total") or charge.get("amount") or 0) for charge in charges)
-    metrics = await load_stay_night_metrics(db, current_user.tenant_id, week_start, week_end, actual_only=True)
-    occupied_room_nights = sum(int(row.get("occupied_rooms") or 0) for row in metrics)
-    available_room_nights = sum(int(row.get("total_rooms") or 0) for row in metrics)
-    occupied_avg = occupied_room_nights / available_room_nights * 100 if available_room_nights else 0
-
-    # Get maintenance tasks completed
-    completed_tasks = await db.maintenance_tasks.count_documents(
-        {
-            "tenant_id": current_user.tenant_id,
-            "status": "completed",
-            "completed_at": {"$gte": week_start.isoformat(), "$lt": end_exclusive.isoformat()},
-        }
-    )
-
-    # B: gerçek misafir memnuniyeti (haftalık review rating ortalaması); review yoksa fail-closed (null)
-    sat_docs = await db.reviews.find(
-        {"tenant_id": current_user.tenant_id, "created_at": {"$gte": week_start.isoformat(), "$lt": end_exclusive.isoformat()}},
-        {"_id": 0, "rating": 1},
-    ).to_list(2000)
-    sat_ratings = [r.get("rating") for r in sat_docs if isinstance(r.get("rating"), (int, float))]
-    guest_satisfaction = round(sum(sat_ratings) / len(sat_ratings), 2) if sat_ratings else None
-
-    return {
-        "week_start": week_start.isoformat(),
-        "week_ending": week_end.isoformat(),
-        "total_bookings": total_bookings,
-        "total_revenue": round(total_revenue, 2),
-        "revenue_basis": "posted_folio_charges",
-        "avg_occupancy_pct": round(occupied_avg, 2),
-        "completed_maintenance": completed_tasks,
-        "guest_satisfaction": guest_satisfaction,
-        "guest_satisfaction_available": guest_satisfaction is not None,
-        "guest_satisfaction_reviews": len(sat_ratings),
-        # top_performers: gerçek haftalık personel-performans kaynağı yok -> fail-closed (sahte personel kaldırıldı)
-        "top_performers": [],
-        "top_performers_available": False,
-    }
+    ratings = [row["rating"] for row in reviews if isinstance(row.get("rating"), (int, float))]
+    satisfaction = round(sum(ratings) / len(ratings), 2) if ratings else None
+    return {**report, "completed_maintenance": completed_tasks,
+            "guest_satisfaction": satisfaction, "guest_satisfaction_available": satisfaction is not None,
+            "guest_satisfaction_reviews": len(ratings), "top_performers": [], "top_performers_available": False}

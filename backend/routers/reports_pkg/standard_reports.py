@@ -14,6 +14,7 @@ from core.helpers import require_module
 from core.security import get_current_user
 from models.schemas import User
 from modules.pms_core.report_money import currency_code, resolve_ledger_currencies
+from modules.pms_core.reporting_dates import date_period_match
 from modules.pms_core.reporting_financials import deduplicate_report_payments, effective_collection, effective_revenue_adjustment, report_payment_day_match
 from modules.pms_core.reporting_ledger import charge_amount as _charge_amount
 from modules.pms_core.reporting_ledger import charge_category as _charge_category
@@ -174,7 +175,7 @@ async def get_revenue_report(
         for currency, amount in room_revenue_by_currency.items()
     }
     arrivals = await db.bookings.count_documents(
-        {"tenant_id": current_user.tenant_id, "check_in": {"$gte": start_date, "$lt": (end + timedelta(days=1)).isoformat()}, "status": {"$nin": list(NON_COMMERCIAL_STATUSES)}}
+        {"tenant_id": current_user.tenant_id, **date_period_match("check_in", start, end), "status": {"$nin": list(NON_COMMERCIAL_STATUSES)}}
     )
     return {
         "start_date": start_date,

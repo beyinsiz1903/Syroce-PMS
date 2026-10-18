@@ -2,6 +2,7 @@ import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ArrowLeftRight, Banknote, BarChart3, BedDouble, CreditCard, HandCoins, ReceiptText } from 'lucide-react';
 import { EmptyState, KPICard, SectionHeader, formatCurrency } from './ReportHelpers';
+import ReportConversionNotice from './ReportConversionNotice';
 
 const formatDateTime = value => value ? new Date(value).toLocaleString('tr-TR') : '-';
 const formatTime = value => value ? new Date(value).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }) : '-';
@@ -13,7 +14,7 @@ const formatPaymentMethod = method => PAYMENT_METHOD_LABELS[String(method || '')
 const ReportingAmount = ({ payments, amount }) => formatCurrency(amount || 0, payments?.reporting_currency || 'TRY');
 const ReceivedDetail = ({ row }) => {
   const receivedCurrency = row.received_currency || row.currency || 'TRY';
-  if (row.conversion_missing) return <div className="text-xs font-normal text-rose-600">Tarihsel kur eksik; toplama dahil edilmedi</div>;
+  if (row.conversion_missing) return <div className="text-xs font-normal text-rose-600">Alınan: {formatCurrency(row.received_amount ?? row.amount, receivedCurrency)}<span className="block">Tarihsel kur eksik; TL toplamına dahil edilmedi</span></div>;
   if (receivedCurrency === (row.reporting_currency || 'TRY')) return null;
   return <div className="text-xs font-normal text-gray-500">
     Alınan: {formatCurrency(row.received_amount ?? row.amount, receivedCurrency)}
@@ -21,11 +22,11 @@ const ReceivedDetail = ({ row }) => {
     {row.exchange_rate_date ? ` · ${String(row.exchange_rate_date).slice(0, 10)}` : ''}
   </div>;
 };
-const CurrencyBreakdown = ({ totals = {}, fallback }) => {
+const CurrencyBreakdown = ({ totals = {}, fallback, currency }) => {
   const entries = Object.entries(totals);
   return entries.length
     ? <>{entries.map(([code, amount]) => <span className="block" key={code}>{formatCurrency(amount, code)}</span>)}</>
-    : <>{fallback == null ? '-' : formatCurrency(fallback)}</>;
+    : <>{fallback == null ? '-' : formatCurrency(fallback, currency)}</>;
 };
 
 const BalanceEffect = ({ totals = {}, fallback }) => {
@@ -48,8 +49,9 @@ const BalanceEffect = ({ totals = {}, fallback }) => {
 };
 
 const FrontCashierReport = ({ summary, payments, reportDate }) => (
-  <div className="space-y-5" data-testid="section-front-cashier">
+  <div className="min-w-0 space-y-5" data-testid="section-front-cashier">
     <SectionHeader title="Ön Kasa Raporu" description={`${reportDate} tarihli folyo ve tahsilat özeti`} />
+    <ReportConversionNotice payments={payments} />
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
       <KPICard title="Folyo İşlem Tutarı" value={<CurrencyBreakdown totals={summary.charge_total_by_currency} fallback={summary.charge_total} />} icon={ReceiptText} color="amber" />
       <KPICard title="Toplam Tahsilat" value={<ReportingAmount payments={payments} amount={payments.total_paid} />} icon={HandCoins} color="green" />
@@ -68,11 +70,9 @@ const FrontCashierReport = ({ summary, payments, reportDate }) => (
 );
 
 const CashMovementsReport = ({ payments, reportDate }) => (
-  <div className="space-y-5" data-testid="section-cash-movements">
+  <div className="min-w-0 space-y-5" data-testid="section-cash-movements">
     <SectionHeader title="Kasa Hareketleri" description={`${reportDate} tarihinde işlenen geçerli tahsilatlar`} />
-    {payments.conversion_issue_count > 0 && <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
-      {payments.conversion_issue_count} işlemde tarihsel TL karşılığı bulunamadığı için bu işlemler toplamdan çıkarıldı. İşlem satırlarında kontrol edebilirsiniz.
-    </div>}
+    <ReportConversionNotice payments={payments} />
     <Card>
       <CardHeader className="pb-2"><CardTitle className="text-sm">Hareketler ({payments.rows?.length || 0})</CardTitle></CardHeader>
       <CardContent className="p-0 overflow-x-auto">
@@ -94,20 +94,21 @@ const CashMovementsReport = ({ payments, reportDate }) => (
 );
 
 const RateControlReport = ({ rows, reportDate }) => (
-  <div className="space-y-5" data-testid="section-rate-control">
+  <div className="min-w-0 space-y-5" data-testid="section-rate-control">
     <SectionHeader title="Oda Fiyat Kontrol Listesi" description={`${reportDate} tarihindeki rezervasyon gece fiyatı ile folyoya işlenen tutarın karşılaştırması`} />
     <Card><CardContent className="p-0 overflow-x-auto">
       {rows.length ? <table className="w-full text-sm">
         <thead><tr className="border-b bg-gray-50"><th className="text-left p-3">Oda</th><th className="text-left p-3">Oda Tipi</th><th className="text-left p-3">Misafir</th><th className="text-right p-3">Rezervasyon Gece Fiyatı</th><th className="text-right p-3">Folyoya İşlenen</th><th className="text-right p-3">Fark</th><th className="text-left p-3">Durum</th></tr></thead>
-        <tbody>{rows.map((row, index) => <tr key={row.booking_id || index} className="border-b"><td className="p-3 font-semibold">{row.room_number}</td><td className="p-3">{row.room_type || '-'}</td><td className="p-3">{row.guest_name || '-'}</td><td className="p-3 text-right">{formatCurrency(row.agreed_rate, row.currency)}</td><td className="p-3 text-right">{formatCurrency(row.posted_rate, row.currency)}</td><td className={`p-3 text-right font-semibold ${row.variance !== 0 && row.posting_status !== 'complimentary' ? 'text-rose-600' : 'text-emerald-600'}`}>{formatCurrency(row.variance, row.currency)}</td><td className="p-3">{row.posting_status === 'complimentary' ? <div><span className="font-semibold text-amber-700">Comp</span><div className="mt-0.5 text-xs text-slate-500">Neden: {row.complimentary_reason || 'Belirtilmedi'}</div></div> : row.posting_status === 'posted' ? 'İşlendi' : 'Gün sonu bekliyor'}</td></tr>)}</tbody>
+        <tbody>{rows.map((row, index) => <tr key={row.booking_id || index} className="border-b"><td className="p-3 font-semibold">{row.room_number}</td><td className="p-3">{row.room_type || '-'}</td><td className="p-3">{row.guest_name || '-'}</td><td className="p-3 text-right">{formatCurrency(row.agreed_rate, row.currency)}</td><td className="p-3 text-right"><CurrencyBreakdown totals={row.posted_rate_by_currency} fallback={row.posted_rate} currency={row.currency} /></td><td className={`p-3 text-right font-semibold ${row.variance !== 0 && row.posting_status !== 'complimentary' ? 'text-rose-600' : 'text-emerald-600'}`}>{row.currency_mismatch ? 'Para birimi uyuşmuyor' : formatCurrency(row.variance, row.currency)}</td><td className="p-3">{row.posting_status === 'complimentary' ? <div><span className="font-semibold text-amber-700">Comp</span><div className="mt-0.5 text-xs text-slate-500">Neden: {row.complimentary_reason || 'Belirtilmedi'}</div></div> : row.posting_status === 'posted' ? 'İşlendi' : 'Gün sonu bekliyor'}</td></tr>)}</tbody>
       </table> : <div className="py-12"><EmptyState icon={BedDouble} message="Seçili tarihte fiyat kontrol kaydı yok" /></div>}
     </CardContent></Card>
   </div>
 );
 
-const DailyAnalysisReport = ({ analysis }) => (
-  <div className="space-y-5" data-testid="section-daily-analysis">
+const DailyAnalysisReport = ({ analysis, payments }) => (
+  <div className="min-w-0 space-y-5" data-testid="section-daily-analysis">
     <SectionHeader title="Günlük Analiz Raporu" description={`${analysis.date || ''} tarihli operasyon ve finans özeti`} />
+    <ReportConversionNotice payments={payments} />
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
       <KPICard title="Doluluk" value={`${analysis.occupancy_percentage || 0}%`} icon={BedDouble} color="blue" />
       <KPICard title={analysis.revenue_source === 'accrued' ? 'Tahakkuk Eden Oda Geliri' : 'Folyoya İşlenen Oda Geliri'} value={<CurrencyBreakdown totals={analysis.room_revenue_by_currency} fallback={analysis.room_revenue} />} icon={ReceiptText} color="green" />
@@ -134,5 +135,5 @@ export default function ManagerDailyReports({ section, data, reportDate }) {
   if (section === 'front_cashier') return <FrontCashierReport summary={data?.front_cashier || {}} payments={data?.payments || {}} reportDate={reportDate} />;
   if (section === 'cash_movements') return <CashMovementsReport payments={data?.cash_movements || {}} reportDate={reportDate} />;
   if (section === 'rate_control') return <RateControlReport rows={data?.room_rate_control || []} reportDate={reportDate} />;
-  return <DailyAnalysisReport analysis={data?.daily_analysis || { date: reportDate }} />;
+  return <DailyAnalysisReport analysis={data?.daily_analysis || { date: reportDate }} payments={data?.payments} />;
 }

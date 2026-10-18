@@ -17,8 +17,12 @@ def report_payment_day_match(day: str) -> dict:
     return report_payment_period_match(day, day)
 
 
-def report_payment_period_match(first: str, last: str, *, date_fields=("payment_date", "date", "processed_at", "created_at")) -> dict:
-    """Accounting day first; support BSON and ISO legacy transaction dates."""
+def report_payment_period_match(first: str, last: str, *, date_fields=("payment_date", "date", "processed_at", "created_at"), use_business_date: bool = True) -> dict:
+    """Use one authoritative ISO/BSON date, with ordered legacy fallbacks.
+
+    Cash-movement audit trails explicitly opt out of accounting-day selection
+    and put processed_at first, so a payment cannot appear on two event days.
+    """
     from datetime import UTC, datetime, timedelta
 
     from core.business_date_service import accounting_period_match
@@ -30,6 +34,8 @@ def report_payment_period_match(first: str, last: str, *, date_fields=("payment_
         clauses.append({**{key: {"$in": [None, ""]} for key in previous},
             "$or": [{field: {"$gte": first, "$lt": end.date().isoformat()}}, {field: {"$gte": start, "$lt": end}}]})
         previous.append(field)
+    if not use_business_date:
+        return {"$or": clauses}
     query = accounting_period_match(first, last, *clauses)
     query["$or"][0] = {"business_date": {"$gte": first, "$lt": end.date().isoformat()}}
     query["$or"].append({"business_date": {"$gte": start, "$lt": end}})

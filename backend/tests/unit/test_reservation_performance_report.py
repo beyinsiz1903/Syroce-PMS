@@ -116,5 +116,7 @@ def test_aggregate_reservation_performance_keeps_currencies_separate():
     )
 
     assert payload["summary"]["booked_revenue_by_currency"] == {"EUR": 100.0, "USD": 120.0}
+    assert payload["summary"]["booked_revenue"] is None
     assert payload["channel_breakdown"][0]["revenue_by_currency"] == {"EUR": 100.0, "USD": 120.0}
+    assert payload["channel_breakdown"][0]["revenue"] is None
     assert {row["currency"] for row in payload["rows"]} == {"EUR", "USD"}

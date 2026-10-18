@@ -4,6 +4,33 @@ import { describe, expect, it } from 'vitest';
 import ManagerDailyReports from '../ManagerDailyReports';
 
 describe('ManagerDailyReports', () => {
+  it('does not display a USD posting as an EUR price or calculate a false difference', () => {
+    render(<ManagerDailyReports section="rate_control" reportDate="2026-10-02" data={{ room_rate_control: [{
+      booking_id: 'mismatch', room_number: '101', currency: 'EUR', agreed_rate: 100,
+      posted_rate: null, variance: null, posted_rate_by_currency: { USD: 90 }, currency_mismatch: true, posting_status: 'posted',
+    }] }} />);
+    expect(screen.getByText('Para birimi uyuşmuyor')).toBeInTheDocument();
+    expect(screen.getByText('$90.00')).toBeInTheDocument();
+    expect(screen.queryByText((text) => text.replace(/\s/g, '') === '90,00€')).not.toBeInTheDocument();
+    expect(screen.getByText('İşlendi')).toBeInTheDocument();
+  });
+
+  it.each(['front_cashier', 'daily_analysis', 'cash_movements'])('warns that %s totals exclude payments without historical FX', section => {
+    const payments = { total_paid: 0, conversion_issue_count: 1, received_totals_by_currency: { EUR: 20 } };
+    render(<ManagerDailyReports section={section} reportDate="2026-10-02" data={{ payments, cash_movements: payments }} />);
+    expect(screen.getByRole('alert')).toHaveTextContent('TL toplamı tüm tahsilatları kapsamaz');
+    expect(screen.getByRole('alert')).toHaveTextContent(/20,00/);
+  });
+
+  it('keeps the booking currency for legacy scalar and zero-valued room postings', () => {
+    render(<ManagerDailyReports section="rate_control" reportDate="2026-10-02" data={{ room_rate_control: [{
+      booking_id: 'legacy', room_number: '101', currency: 'EUR', agreed_rate: 100, posted_rate: 0, variance: -100, posting_status: 'posted',
+    }] }} />);
+    const row = screen.getAllByRole('row')[1];
+    expect(within(row).getAllByRole('cell')[4]).toHaveTextContent('€');
+    expect(within(row).getAllByRole('cell')[4]).not.toHaveTextContent('₺');
+  });
+
   it('explains negative daily balance as a prior balance collection and does not show a dollar icon', () => {
     render(<ManagerDailyReports
       section="front_cashier"
