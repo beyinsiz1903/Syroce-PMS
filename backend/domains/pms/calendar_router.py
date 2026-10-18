@@ -6,8 +6,9 @@ Extracted from legacy_routes.py — Phase B Domain Separation
 import logging
 import uuid
 from datetime import UTC, datetime, timedelta
+from statistics import median
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from core.database import db
@@ -16,7 +17,9 @@ from core.security import (
 )
 from core.tenant_currency import get_tenant_currency
 from models.schemas import CreateRateCodeRequest, GetCalendarTooltipRequest, User
+from modules.pms_core.report_money import add_amount, currency_code, rounded_totals, single_amount
 from modules.pms_core.role_permission_service import require_op  # v74 Bug DJ
+from modules.pms_core.stay_night_metrics import NON_COMMERCIAL_STATUSES, as_date
 
 logger = logging.getLogger(__name__)
 
@@ -467,21 +470,28 @@ async def get_group_bookings(
 
 
 @router.get("/deluxe/pickup-pace-analytics")
-@cached(ttl=900, key_prefix="deluxe_pickup_pace")  # Cache for 15 min
+@cached(ttl=900, key_prefix="deluxe_pickup_pace_v2")  # Cache for 15 min
 async def get_pickup_pace_analytics(
     target_date: str,
-    lookback_days: int = 90,
+    lookback_days: int = Query(90, ge=1, le=365),
     group_only: bool = False,
     company_id: str | None = None,
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_executive_reports")),  # v74 Bug DJ
 ):
     """Advanced pickup pace analytics with trend analysis"""
-    target = datetime.fromisoformat(target_date).date()
+    target = as_date(target_date)
+    if target is None:
+        raise HTTPException(422, "target_date YYYY-MM-DD formatında olmalıdır")
     today = datetime.now(UTC).date()
+    default_currency, _ = await get_tenant_currency(current_user.tenant_id)
 
     # Get bookings created in lookback period for target date
-    bookings = await db.bookings.find({"tenant_id": current_user.tenant_id, "check_in": target.isoformat(), "status": {"$in": ["confirmed", "guaranteed", "checked_in"]}}, {"_id": 0}).to_list(10000)
+    next_day = target + timedelta(days=1)
+    bookings = await db.bookings.find({"tenant_id": current_user.tenant_id,
+        "$or": [{"check_in": {"$gte": target.isoformat(), "$lt": next_day.isoformat()}},
+            {"check_in": {"$gte": datetime.combine(target, datetime.min.time(), UTC), "$lt": datetime.combine(next_day, datetime.min.time(), UTC)}}],
+        "status": {"$nin": sorted(NON_COMMERCIAL_STATUSES)}}, {"_id": 0}).to_list(None)
 
     # Optional filters: group-only and company
     if group_only:
@@ -491,16 +501,24 @@ async def get_pickup_pace_analytics(
 
     # Build daily pickup timeline
     daily_pickup = {}
+    recent = {7: 0, 14: 0, 30: 0}
     for booking in bookings:
-        created_date = datetime.fromisoformat(booking["created_at"]).date()
+        created_date = as_date(booking.get("created_at"))
+        if created_date is None or created_date > today:
+            continue
         days_before = (target - created_date).days
 
         if days_before >= 0 and days_before <= lookback_days:
             if days_before not in daily_pickup:
-                daily_pickup[days_before] = {"count": 0, "revenue": 0, "channels": {}}
+                daily_pickup[days_before] = {"count": 0, "revenue": {}, "channels": {}}
 
             daily_pickup[days_before]["count"] += 1
-            daily_pickup[days_before]["revenue"] += booking.get("total_amount", 0)
+            amount = booking.get("total_amount") if booking.get("total_amount") is not None else booking.get("total", 0)
+            add_amount(daily_pickup[days_before]["revenue"], currency_code(booking.get("currency"), default_currency), amount)
+            age = (min(today, target) - created_date).days
+            for window in recent:
+                if 0 <= age < window:
+                    recent[window] += 1
 
             channel = booking.get("ota_channel") or "direct"
             daily_pickup[days_before]["channels"][channel] = daily_pickup[days_before]["channels"].get(channel, 0) + 1
@@ -508,28 +526,31 @@ async def get_pickup_pace_analytics(
     # Create chart data
     chart_data = []
     cumulative_bookings = 0
-    cumulative_revenue = 0
+    cumulative_revenue = {}
 
     for days_before in range(lookback_days, -1, -1):
-        data = daily_pickup.get(days_before, {"count": 0, "revenue": 0})
+        data = daily_pickup.get(days_before, {"count": 0, "revenue": {}})
         cumulative_bookings += data["count"]
-        cumulative_revenue += data["revenue"]
+        for code, amount in data["revenue"].items():
+            add_amount(cumulative_revenue, code, amount)
 
         chart_data.append(
             {
                 "days_before": days_before,
                 "date": (target - timedelta(days=days_before)).isoformat(),
                 "daily_pickup": data["count"],
-                "daily_revenue": round(data["revenue"], 2),
+                "daily_revenue": single_amount(data["revenue"]),
+                "daily_revenue_by_currency": rounded_totals(data["revenue"]),
                 "cumulative_bookings": cumulative_bookings,
-                "cumulative_revenue": round(cumulative_revenue, 2),
+                "cumulative_revenue": single_amount(cumulative_revenue),
+                "cumulative_revenue_by_currency": rounded_totals(cumulative_revenue),
             }
         )
 
     # Calculate velocities
-    velocity_7 = sum(daily_pickup.get(i, {}).get("count", 0) for i in range(7)) / 7
-    velocity_14 = sum(daily_pickup.get(i, {}).get("count", 0) for i in range(14)) / 14
-    velocity_30 = sum(daily_pickup.get(i, {}).get("count", 0) for i in range(30)) / 30
+    velocity_7 = recent[7] / 7
+    velocity_14 = recent[14] / 14
+    velocity_30 = recent[30] / 30
 
     # Aggregate channel-level pickup (for direct vs OTA and other breakdowns)
     channel_pickup: dict[str, int] = {}
@@ -551,7 +572,9 @@ async def get_pickup_pace_analytics(
         "chart_data": chart_data,
         "summary": {
             "total_bookings": cumulative_bookings,
-            "total_revenue": round(cumulative_revenue, 2),
+            "total_revenue": single_amount(cumulative_revenue),
+            "total_revenue_by_currency": rounded_totals(cumulative_revenue),
+            "velocity_as_of": min(today, target).isoformat(),
             "velocity_7day": round(velocity_7, 2),
             "velocity_14day": round(velocity_14, 2),
             "velocity_30day": round(velocity_30, 2),
@@ -561,7 +584,7 @@ async def get_pickup_pace_analytics(
 
 
 @router.get("/deluxe/lead-time-analysis")
-@cached(ttl=900, key_prefix="deluxe_lead_time")  # Cache for 15 min
+@cached(ttl=900, key_prefix="deluxe_lead_time_v2")
 async def get_lead_time_analysis(
     start_date: str,
     end_date: str,
@@ -569,19 +592,25 @@ async def get_lead_time_analysis(
     _perm=Depends(require_op("view_executive_reports")),  # v74 Bug DJ
 ):
     """Analyze booking lead time patterns"""
-    start = datetime.fromisoformat(start_date).date()
-    end = datetime.fromisoformat(end_date).date()
+    start, end = as_date(start_date), as_date(end_date)
+    if start is None or end is None or end < start or (end - start).days > 365:
+        raise HTTPException(422, "Geçerli en fazla 366 günlük tarih aralığı seçin")
+    next_day = end + timedelta(days=1)
 
     bookings = await db.bookings.find(
-        {"tenant_id": current_user.tenant_id, "check_in": {"$gte": start.isoformat(), "$lte": end.isoformat()}, "status": {"$in": ["confirmed", "guaranteed", "checked_in"]}}, {"_id": 0}
-    ).to_list(10000)
+        {"tenant_id": current_user.tenant_id, "$or": [
+            {"check_in": {"$gte": start.isoformat(), "$lt": next_day.isoformat()}},
+            {"check_in": {"$gte": datetime.combine(start, datetime.min.time(), UTC), "$lt": datetime.combine(next_day, datetime.min.time(), UTC)}}],
+            "status": {"$nin": sorted(NON_COMMERCIAL_STATUSES)}}, {"_id": 0}
+    ).to_list(None)
 
     lead_times = []
     channel_lead_times = {}
 
     for booking in bookings:
-        created = datetime.fromisoformat(booking["created_at"]).date()
-        check_in = datetime.fromisoformat(booking["check_in"]).date()
+        created, check_in = as_date(booking.get("created_at")), as_date(booking.get("check_in"))
+        if created is None or check_in is None:
+            continue
         lead_time = (check_in - created).days
 
         if lead_time >= 0:
@@ -595,7 +624,7 @@ async def get_lead_time_analysis(
     # Calculate statistics
     if lead_times:
         avg_lead_time = sum(lead_times) / len(lead_times)
-        median_lead_time = sorted(lead_times)[len(lead_times) // 2]
+        median_lead_time = median(lead_times)
     else:
         avg_lead_time = 0
         median_lead_time = 0
@@ -615,11 +644,11 @@ async def get_lead_time_analysis(
     # Channel breakdown
     channel_stats = {}
     for channel, times in channel_lead_times.items():
-        channel_stats[channel] = {"avg_lead_time": round(sum(times) / len(times), 1) if times else 0, "median_lead_time": sorted(times)[len(times) // 2] if times else 0, "booking_count": len(times)}
+        channel_stats[channel] = {"avg_lead_time": round(sum(times) / len(times), 1) if times else 0, "median_lead_time": median(times) if times else 0, "booking_count": len(times)}
 
     return {
         "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
-        "overall": {"avg_lead_time": round(avg_lead_time, 1), "median_lead_time": median_lead_time, "total_bookings": len(bookings)},
+        "overall": {"avg_lead_time": round(avg_lead_time, 1), "median_lead_time": median_lead_time, "total_bookings": len(lead_times), "excluded_invalid_dates": len(bookings) - len(lead_times)},
         "distribution": distribution,
         "by_channel": channel_stats,
         "optimal_booking_window": f"{int(median_lead_time)} days" if median_lead_time > 0 else "Same day",
@@ -627,7 +656,7 @@ async def get_lead_time_analysis(
 
 
 @router.get("/deluxe/oversell-protection")
-@cached(ttl=600, key_prefix="deluxe_oversell")  # Cache for 10 min
+@cached(ttl=600, key_prefix="deluxe_oversell_v2")
 async def get_oversell_protection_map(
     start_date: str,
     end_date: str,
@@ -635,26 +664,29 @@ async def get_oversell_protection_map(
     _perm=Depends(require_op("view_executive_reports")),  # v74 Bug DJ
 ):
     """AI oversell protection heatmap"""
-    start = datetime.fromisoformat(start_date).date()
-    end = datetime.fromisoformat(end_date).date()
+    start, end = as_date(start_date), as_date(end_date)
+    if start is None or end is None or end < start or (end - start).days > 365:
+        raise HTTPException(422, "Geçerli en fazla 366 günlük tarih aralığı seçin")
 
-    rooms = await db.rooms.find({"tenant_id": current_user.tenant_id}, {"_id": 0}).to_list(1000)
+    rooms = await db.rooms.find({"tenant_id": current_user.tenant_id, "is_active": {"$ne": False}}, {"_id": 0}).to_list(None)
     total_rooms = len(rooms)
 
     protection_map = []
     current_date = start
 
     while current_date <= end:
-        start_of_day = datetime.combine(current_date, datetime.min.time())
-        end_of_day = datetime.combine(current_date, datetime.max.time())
+        start_of_day = datetime.combine(current_date, datetime.min.time(), UTC)
+        next_day = current_date + timedelta(days=1)
 
         # Count bookings
         bookings_count = await db.bookings.count_documents(
             {
                 "tenant_id": current_user.tenant_id,
                 "status": {"$in": ["confirmed", "guaranteed", "checked_in"]},
-                "check_in": {"$lte": end_of_day.isoformat()},
-                "check_out": {"$gte": start_of_day.isoformat()},
+                "$and": [
+                    {"$or": [{"check_in": {"$lt": next_day.isoformat()}}, {"check_in": {"$lt": start_of_day + timedelta(days=1)}}]},
+                    {"$or": [{"check_out": {"$gt": current_date.isoformat()}}, {"check_out": {"$gt": start_of_day}}]},
+                ],
             }
         )
 
@@ -703,7 +735,7 @@ async def get_oversell_protection_map(
     return {
         "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
         "protection_map": protection_map,
-        "summary": {"danger_days": sum(1 for d in protection_map if d["risk_level"] == "danger")},
+        "summary": {"danger_days": sum(1 for d in protection_map if d["risk_level"] in {"danger", "blackout"})},
     }
 
 

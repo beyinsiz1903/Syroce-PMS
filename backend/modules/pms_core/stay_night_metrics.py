@@ -27,6 +27,21 @@ def as_date(value) -> date | None:
 _as_date = as_date
 
 
+def stay_day_match(day: date, *, include_stayovers=True) -> dict:
+    """Mongo selection for ISO/BSON arrival, departure and overlapping stays."""
+    start = datetime.combine(day, datetime.min.time(), UTC)
+    end = start + timedelta(days=1)
+    clauses = []
+    for field in ("check_in", "check_out"):
+        clauses.extend([{field: {"$gte": day.isoformat(), "$lt": end.date().isoformat()}}, {field: {"$gte": start, "$lt": end}}])
+    if include_stayovers:
+        clauses.append({"$and": [
+            {"$or": [{"check_in": {"$lte": day.isoformat()}}, {"check_in": {"$lt": end}}]},
+            {"$or": [{"check_out": {"$gt": day.isoformat()}}, {"check_out": {"$gt": start}}]},
+        ]})
+    return {"$or": clauses}
+
+
 def booking_occupies_night(booking: dict, day: date, *, actual_only: bool = False) -> bool:
     """Return whether one booking occupies ``day`` as a hotel room-night.
 

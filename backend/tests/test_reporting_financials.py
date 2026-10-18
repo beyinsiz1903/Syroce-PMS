@@ -107,3 +107,10 @@ def test_report_keeps_refund_with_same_provider_reference():
         {"id": "refund-1", "provider_ref": "provider-42", "amount": 1000, "payment_type": "refund"},
     ]
     assert deduplicate_report_payments(rows) == rows
+
+
+def test_report_prefers_the_successful_retry_over_a_failed_duplicate():
+    failed = {"idempotency_key": "same", "status": " FAILED ", "amount": 100}
+    paid = {"idempotency_key": "same", "status": "paid", "amount": 100}
+    assert deduplicate_report_payments([failed, paid]) == [paid]
+    assert deduplicate_report_payments([paid, failed]) == [paid]

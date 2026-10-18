@@ -17,7 +17,9 @@ from core.helpers import require_module
 from core.security import get_current_user
 from core.tenant_currency import get_tenant_currency
 from models.schemas import User
-from modules.pms_core.reporting_financials import effective_collection, effective_revenue_adjustment
+from modules.pms_core.report_money import single_amount
+from modules.pms_core.reporting_financials import deduplicate_report_payments, effective_collection, effective_revenue_adjustment, report_payment_day_match
+from modules.pms_core.reporting_ledger import charge_amount, posted_revenue_rows
 from modules.pms_core.role_permission_service import require_op
 from modules.pms_core.stay_night_metrics import load_stay_night_metrics
 
@@ -43,12 +45,12 @@ def _format_breakdown(values: dict[str, float], *, empty: str = "0") -> str:
     return " · ".join(parts) or empty
 
 
-async def _currency_context(tenant_id: str, documents: list[dict], fallback: str) -> tuple[dict[str, str], dict[str, str]]:
+async def _currency_context(tenant_id: str, documents: list[dict], fallback: str) -> tuple[dict[str, str], dict[str, dict]]:
     """Resolve legacy transaction currency without per-row database queries."""
     booking_ids = {str(item.get("booking_id")) for item in documents if item.get("booking_id")}
-    folio_ids = {str(item.get("folio_id")) for item in documents if item.get("folio_id") and not item.get("booking_id")}
+    folio_ids = {str(item.get("folio_id")) for item in documents if item.get("folio_id") and not item.get("currency")}
 
-    folio_booking: dict[str, str] = {}
+    folio_booking: dict[str, dict] = {}
     if folio_ids:
         folios = await db.folios.find(
             {"tenant_id": tenant_id, "id": {"$in": list(folio_ids)}},
@@ -57,9 +59,10 @@ async def _currency_context(tenant_id: str, documents: list[dict], fallback: str
         for folio in folios:
             folio_id = str(folio.get("id") or "")
             booking_id = str(folio.get("booking_id") or "")
-            if folio_id and booking_id:
-                folio_booking[folio_id] = booking_id
-                booking_ids.add(booking_id)
+            if folio_id:
+                folio_booking[folio_id] = folio
+                if booking_id:
+                    booking_ids.add(booking_id)
 
     booking_currency: dict[str, str] = {}
     if booking_ids:
@@ -78,20 +81,26 @@ async def _currency_context(tenant_id: str, documents: list[dict], fallback: str
 def _document_currency(
     item: dict,
     booking_currency: dict[str, str],
-    folio_booking: dict[str, str],
+    folio_booking: dict[str, dict],
     fallback: str,
 ) -> str:
     if item.get("currency"):
         return _currency_code(item["currency"], fallback)
+    folio = folio_booking.get(str(item.get("folio_id"))) or {}
+    if folio.get("currency"):
+        return _currency_code(folio["currency"], fallback)
     booking_id = str(item.get("booking_id") or "")
     if not booking_id and item.get("folio_id"):
-        booking_id = folio_booking.get(str(item["folio_id"]), "")
+        booking_id = str(folio.get("booking_id") or "")
     return booking_currency.get(booking_id, fallback)
 
 
 async def _report_business_date(tenant_id: str, requested: str | None) -> str:
     if requested:
-        return datetime.fromisoformat(requested[:10]).date().isoformat()
+        try:
+            return datetime.strptime(requested, "%Y-%m-%d").date().isoformat()
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail="Tarih YYYY-MM-DD formatında olmalıdır") from exc
     state = await ensure_business_date_initialized(db, tenant_id)
     return str(state["business_date"])[:10]
 
@@ -115,6 +124,13 @@ async def _collect(tenant_id: str, business_date: str) -> dict:
     start = datetime.fromisoformat(business_date + "T00:00:00+00:00")
     end = start + timedelta(days=1)
 
+    def day_match(field):
+        # Historical data contains both BSON timestamps and ISO date strings.
+        return {"$or": [
+            {field: {"$gte": business_date, "$lt": end.date().isoformat()}},
+            {field: {"$gte": start, "$lt": end}},
+        ]}
+
     business_day = start.date()
     metrics = await load_stay_night_metrics(db, tenant_id, business_day, business_day, actual_only=True)
     metric = metrics[0] if metrics else {"total_rooms": 0, "occupied_rooms": 0, "occupancy_rate": 0}
@@ -124,29 +140,29 @@ async def _collect(tenant_id: str, business_date: str) -> dict:
     arrivals = await db.bookings.count_documents(
         {
             "tenant_id": tenant_id,
-            "check_in": {"$gte": business_date, "$lt": end.date().isoformat()},
+            **day_match("check_in"),
             "status": {"$nin": ["cancelled", "canceled", "no_show", "noshow"]},
         }
     )
     departures = await db.bookings.count_documents(
         {
             "tenant_id": tenant_id,
-            "check_out": {"$gte": business_date, "$lt": end.date().isoformat()},
+            **day_match("check_out"),
             "status": {"$nin": ["cancelled", "canceled", "no_show", "noshow"]},
         }
     )
     no_shows = await db.bookings.count_documents(
         {
             "tenant_id": tenant_id,
-            "status": "no_show",
-            "check_in": {"$gte": business_date, "$lt": end.date().isoformat()},
+            "status": {"$in": ["no_show", "noshow", "no-show"]},
+            **day_match("check_in"),
         }
     )
     cancels = await db.bookings.count_documents(
         {
             "tenant_id": tenant_id,
             "status": {"$in": ["cancelled", "canceled"]},
-            "check_in": {"$gte": business_date, "$lt": end.date().isoformat()},
+            "$or": [day_match("cancelled_at"), {"cancelled_at": {"$in": [None, ""]}, **day_match("updated_at")}],
         }
     )
 
@@ -154,13 +170,13 @@ async def _collect(tenant_id: str, business_date: str) -> dict:
     actual_checkins = await db.bookings.count_documents(
         {
             "tenant_id": tenant_id,
-            "checked_in_at": {"$gte": start.isoformat(), "$lt": end.isoformat()},
+            **day_match("checked_in_at"),
         }
     )
     actual_checkouts = await db.bookings.count_documents(
         {
             "tenant_id": tenant_id,
-            "checked_out_at": {"$gte": start.isoformat(), "$lt": end.isoformat()},
+            **day_match("checked_out_at"),
         }
     )
 
@@ -170,82 +186,51 @@ async def _collect(tenant_id: str, business_date: str) -> dict:
     payments = await db.payments.find(
         {
             "tenant_id": tenant_id,
-            **accounting_day_match(
-                business_date,
-                {"payment_date": business_date},
-                {"date": business_date},
-                {"processed_at": {"$regex": f"^{business_date}"}},
-                {"created_at": {"$regex": f"^{business_date}"}},
-            ),
+            **report_payment_day_match(business_date),
         },
         {"_id": 0},
     ).to_list(None)
     tenant_currency, _ = await get_tenant_currency(tenant_id)
     tenant_currency = _currency_code(tenant_currency)
     payment_booking_currency, payment_folio_booking = await _currency_context(tenant_id, payments, tenant_currency)
-    payments_by_method: dict[str, float] = {}
     payments_by_currency: dict[str, float] = {}
     payments_by_method_currency: dict[str, dict[str, float]] = {}
     revenue_adjustments_by_currency: dict[str, float] = {}
-    for payment in payments:
-        status = str(payment.get("status") or "paid").lower()
-        if payment.get("voided") or status in {"void", "voided", "failed", "cancelled", "rejected"}:
-            continue
+    for payment in deduplicate_report_payments(payments):
         currency = _document_currency(payment, payment_booking_currency, payment_folio_booking, tenant_currency)
         adjustment = effective_revenue_adjustment(payment)
         if adjustment:
             _add_currency(revenue_adjustments_by_currency, currency, adjustment, tenant_currency)
             continue
-        method = str(payment.get("payment_method") or payment.get("method") or "other").lower()
+        method = str(payment.get("payment_method") or payment.get("method") or "other").strip().lower()
         amount = effective_collection(payment)
         if amount == 0:
             continue
-        payments_by_method[method] = payments_by_method.get(method, 0.0) + amount
         _add_currency(payments_by_currency, currency, amount, tenant_currency)
         method_breakdown = payments_by_method_currency.setdefault(method, {})
         _add_currency(method_breakdown, currency, amount, tenant_currency)
-    payments_by_method = {method: round(amount, 2) for method, amount in payments_by_method.items()}
-    payments_total = sum(payments_by_method.values())
+    payments_by_method = {method: single_amount(values) for method, values in payments_by_method_currency.items()}
+    payments_total = single_amount(payments_by_currency)
 
-    extra_charges = await db.extra_charges.find(
-        _active_extra_charge_query(tenant_id, business_date),
-        {"_id": 0, "charge_amount": 1, "amount": 1, "currency": 1, "booking_id": 1, "folio_id": 1},
-    ).to_list(None)
-    extra_booking_currency, extra_folio_booking = await _currency_context(tenant_id, extra_charges, tenant_currency)
-    extras_by_currency: dict[str, float] = {}
-    for charge in extra_charges:
-        amount = float(charge.get("charge_amount") or charge.get("amount") or 0)
-        currency = _document_currency(charge, extra_booking_currency, extra_folio_booking, tenant_currency)
-        _add_currency(extras_by_currency, currency, amount, tenant_currency)
-    extras_total = sum(extras_by_currency.values())
-
-    posted_charges = await db.folio_charges.find(
-        {
-            "tenant_id": tenant_id,
-            "voided": {"$ne": True},
-            "$or": [
-                {"business_date": business_date},
-                {"business_date": {"$exists": False}, "date": {"$regex": f"^{business_date}"}},
-                {"business_date": None, "date": {"$regex": f"^{business_date}"}},
-            ],
-        },
-        {"_id": 0, "total": 1, "amount": 1, "currency": 1, "booking_id": 1, "folio_id": 1},
-    ).to_list(None)
+    posted_charges = await posted_revenue_rows(tenant_id, business_day, business_day, database=db, fallback_currency=tenant_currency)
     revenue_booking_currency, revenue_folio_booking = await _currency_context(tenant_id, posted_charges, tenant_currency)
+    extras_by_currency: dict[str, float] = {}
     revenue_by_currency: dict[str, float] = {}
     for charge in posted_charges:
-        amount = float(charge.get("total") or charge.get("amount") or 0)
+        amount = charge_amount(charge)
         currency = _document_currency(charge, revenue_booking_currency, revenue_folio_booking, tenant_currency)
         _add_currency(revenue_by_currency, currency, amount, tenant_currency)
+        if charge.get("report_source") == "extra":
+            _add_currency(extras_by_currency, currency, amount, tenant_currency)
     for currency, adjustment in revenue_adjustments_by_currency.items():
         _add_currency(revenue_by_currency, currency, -adjustment, tenant_currency)
-    revenue_total = sum(revenue_by_currency.values())
+    revenue_total = single_amount(revenue_by_currency)
 
-    # Acik folyolar (bakiye > 0)
+    # Current open work, not a historical balance snapshot. Match the drawer.
     open_folios = await db.folios.count_documents(
         {
             "tenant_id": tenant_id,
-            "status": {"$ne": "closed"},
+            "status": "open",
         }
     )
 
@@ -261,9 +246,16 @@ async def _collect(tenant_id: str, business_date: str) -> dict:
     # Cap %100: overbooking veya seed verisindeki cakisma durumlarinda
     # raporda imkansiz oran (ornegin %127) gostermemek icin.
     occ_rate = metric["occupancy_rate"]
+    audit = await db.night_audit_runs.find_one(
+        {"tenant_id": tenant_id, "business_date": business_date, "dry_run": {"$ne": True}},
+        {"_id": 0, "id": 1, "status": 1, "completed_at": 1}, sort=[("created_at", -1)],
+    )
 
     return {
         "business_date": business_date,
+        "audit_status": audit.get("status") if audit else "not_run",
+        "audit_run_id": audit.get("id") if audit else None,
+        "audit_completed_at": audit.get("completed_at") if audit else None,
         "rooms_total": rooms_total,
         "occupied": occupied,
         "occupancy_rate": round(occ_rate, 1),
@@ -273,20 +265,20 @@ async def _collect(tenant_id: str, business_date: str) -> dict:
         "actual_checkouts": actual_checkouts,
         "no_shows": no_shows,
         "cancels": cancels,
-        "payments_total": round(payments_total, 2),
+        "payments_total": payments_total,
         "payments_by_method": payments_by_method,
         "payments_by_currency": _rounded_breakdown(payments_by_currency),
         "payments_by_method_currency": {
             method: _rounded_breakdown(values) for method, values in sorted(payments_by_method_currency.items())
         },
-        "cash_total": round(payments_by_method.get("cash", 0.0), 2),
-        "extras_total": round(extras_total, 2),
+        "cash_total": payments_by_method.get("cash", 0.0),
+        "extras_total": single_amount(extras_by_currency),
         "extras_by_currency": _rounded_breakdown(extras_by_currency),
-        "revenue_total": round(revenue_total, 2),
+        "revenue_total": revenue_total,
         "revenue_by_currency": _rounded_breakdown(revenue_by_currency),
         "revenue_adjustments_by_currency": _rounded_breakdown(revenue_adjustments_by_currency),
         "currency": tenant_currency,
-        "revenue_basis": "posted_folio_charges",
+        "revenue_basis": "posted_ledger",
         "open_folios": open_folios,
         "open_handovers": open_handovers,
     }
@@ -319,7 +311,7 @@ th {{ background:#f3f4f6; font-weight:600; }}
 .foot {{ margin-top:24px; font-size:11px; color:#9ca3af; text-align:center; }}
 </style></head><body>
 <h1>Gun Sonu Raporu</h1>
-<div class="sub">{hotel_name} · İş Günü: <b>{data["business_date"]}</b> · Üretildi: {datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")}</div>
+<div class="sub">{escape(str(hotel_name))} · İş Günü: <b>{data["business_date"]}</b> · Üretildi: {datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")}</div>
 
 <div class="grid">
   <div class="card"><div class="label">Doluluk</div><div class="value">{data["occupancy_rate"]}%</div>
@@ -360,13 +352,15 @@ th {{ background:#f3f4f6; font-weight:600; }}
 
 
 def _html_to_pdf(html: str) -> bytes:
-    """weasyprint ile PDF; kurulu degilse HTML bytes dondur."""
+    """A PDF action must never download HTML disguised as a PDF."""
     try:
         from weasyprint import HTML  # type: ignore
-
+    except (ImportError, OSError) as exc:
+        raise HTTPException(status_code=503, detail="PDF oluşturucu kullanılamıyor; sunucu yapılandırmasını kontrol edin") from exc
+    try:
         return HTML(string=html).write_pdf()
-    except Exception:
-        return html.encode("utf-8")
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="PDF oluşturulamadı; lütfen tekrar deneyin") from exc
 
 
 class SendRequest(BaseModel):
@@ -397,11 +391,10 @@ async def download_pdf(
     data = await _collect(current_user.tenant_id, bd)
     html = _build_html(data, hotel_name=getattr(current_user, "tenant_name", None) or "Otel")
     pdf_bytes = _html_to_pdf(html)
-    is_pdf = pdf_bytes[:4] == b"%PDF"
     return StreamingResponse(
         BytesIO(pdf_bytes),
-        media_type="application/pdf" if is_pdf else "text/html",
-        headers={"Content-Disposition": f"attachment; filename=eod-{bd}.{'pdf' if is_pdf else 'html'}"},
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename=eod-{bd}.pdf"},
     )
 
 

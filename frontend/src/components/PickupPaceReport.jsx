@@ -9,6 +9,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import { bookingSourceLabel } from '@/utils/bookingSource';
+import { formatCurrencyBreakdown } from '@/lib/reportCurrency';
 
 const PickupPaceReport = () => {
   const { t } = useTranslation();
@@ -92,7 +93,7 @@ const PickupPaceReport = () => {
   return (
     <div className="space-y-4">
       {/* Filters */}
-      <div className="grid grid-cols-4 gap-3 mb-2">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-2">
         <div>
           <Label className="text-xs text-gray-600">Arrival Date (Target)</Label>
           <Input type="date" value={targetDate} onChange={(e) => setTargetDate(e.target.value)} />
@@ -105,40 +106,6 @@ const PickupPaceReport = () => {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="30">Last 30 days</SelectItem>
-      {/* Filters: group-only and company context */}
-      <div className="grid grid-cols-4 gap-3 mb-2">
-        <div>
-          <Label className="text-xs text-gray-600">Filters</Label>
-          <div className="flex items-center gap-3 mt-1 text-xs text-gray-700">
-            <label className="inline-flex items-center gap-1 cursor-pointer">
-              <input
-                type="checkbox"
-                className="rounded border-gray-300"
-                checked={groupOnly}
-                onChange={(e) => {
-                  const value = e.target.checked;
-                  setGroupOnly(value);
-                  try {
-                    localStorage.setItem('pickup_group_only', String(value));
-                  } catch (err) {
-                    console.warn('Unable to persist pickup_group_only', err);
-                  
-      toast.error('İşlem şu anda gerçekleştirilemiyor. Lütfen bağlantınızı kontrol edip tekrar deneyin.');
-    }
-                }}
-              />
-              <span>Only group bookings</span>
-            </label>
-            {companyId && (
-              <span className="px-2 py-0.5 bg-blue-50 border border-blue-200 rounded-full text-[11px]">
-                Filtered by company (Group drill-down)
-              </span>
-            )}
-          </div>
-        </div>
-      </div>
-
-
               <SelectItem value="60">Last 60 days</SelectItem>
               <SelectItem value="90">Last 90 days</SelectItem>
             </SelectContent>
@@ -151,6 +118,19 @@ const PickupPaceReport = () => {
         </div>
       </div>
 
+      <div className="flex flex-wrap items-center gap-3 text-xs text-gray-700">
+        <label className="inline-flex items-center gap-1 cursor-pointer">
+          <input type="checkbox" className="rounded border-gray-300" checked={groupOnly} onChange={e => {
+            const value = e.target.checked;
+            setGroupOnly(value);
+            try { localStorage.setItem('pickup_group_only', String(value)); }
+            catch { toast.error('Filtre tercihi kaydedilemedi'); }
+          }} />
+          <span>Only group bookings</span>
+        </label>
+        {companyId && <span className="px-2 py-0.5 bg-blue-50 border border-blue-200 rounded-full">Filtered by company (Group drill-down)</span>}
+      </div>
+
       {/* If no bookings for this arrival date, show helpful message */}
       {!loading && data && summary && summary.total_bookings === 0 && (
         <div className="text-sm text-gray-600 py-3">
@@ -160,7 +140,7 @@ const PickupPaceReport = () => {
 
       {/* Summary */}
       {summary && summary.total_bookings > 0 && (
-        <div className="grid grid-cols-4 gap-4 mb-2 text-sm">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-2 text-sm">
           <Card>
             <CardContent className="py-3">
               <div className="text-xs text-gray-500">Total Bookings</div>
@@ -170,7 +150,7 @@ const PickupPaceReport = () => {
           <Card>
             <CardContent className="py-3">
               <div className="text-xs text-gray-500">Total Revenue</div>
-              <div className="text-xl font-bold text-blue-600">${summary.total_revenue.toFixed(2)}</div>
+              <div className="text-xl font-bold text-blue-600">{formatCurrencyBreakdown(summary.total_revenue_by_currency)}</div>
             </CardContent>
           </Card>
           <Card>
@@ -246,7 +226,7 @@ const PickupPaceReport = () => {
                 <div className="px-3 py-2">{row.date}</div>
                 <div className="px-3 py-2 text-right">{row.daily_pickup}</div>
                 <div className="px-3 py-2 text-right">{row.cumulative_bookings}</div>
-                <div className="px-3 py-2 text-right">${row.cumulative_revenue.toFixed(2)}</div>
+                <div className="px-3 py-2 text-right">{formatCurrencyBreakdown(row.cumulative_revenue_by_currency)}</div>
                 <div className="px-3 py-2">
                   <div className="flex items-center gap-1">
                     <div className="h-2 bg-blue-500 rounded" style={{ width: `${bookingsRatio * 80 || 0}%` }} />

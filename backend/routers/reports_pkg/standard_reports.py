@@ -8,13 +8,13 @@ from fastapi.security import HTTPBearer
 
 security = HTTPBearer()
 
-from core.business_date_service import accounting_day_match, ensure_business_date_initialized
+from core.business_date_service import ensure_business_date_initialized
 from core.database import db
 from core.helpers import require_module
 from core.security import get_current_user
 from models.schemas import User
-from modules.pms_core.report_money import currency_code
-from modules.pms_core.reporting_financials import deduplicate_report_payments, effective_collection, effective_revenue_adjustment
+from modules.pms_core.report_money import currency_code, resolve_ledger_currencies
+from modules.pms_core.reporting_financials import deduplicate_report_payments, effective_collection, effective_revenue_adjustment, report_payment_day_match
 from modules.pms_core.reporting_ledger import charge_amount as _charge_amount
 from modules.pms_core.reporting_ledger import charge_category as _charge_category
 from modules.pms_core.reporting_ledger import posted_revenue_rows
@@ -23,6 +23,7 @@ from modules.pms_core.stay_night_metrics import (
     NON_COMMERCIAL_STATUSES,
     as_date,
     load_stay_night_metrics,
+    stay_day_match,
 )
 
 try:
@@ -206,9 +207,8 @@ async def get_daily_summary(
 ):
     target_date = _parse_date(date_str, "date_str") if date_str else await _default_business_date(current_user.tenant_id)
     day = target_date.isoformat()
-    next_day = (target_date + timedelta(days=1)).isoformat()
     bookings = await db.bookings.find(
-        {"tenant_id": current_user.tenant_id, "$or": [{"check_in": {"$gte": day, "$lt": next_day}}, {"check_out": {"$gte": day, "$lt": next_day}}, {"check_in": {"$lte": day}, "check_out": {"$gt": day}}]},
+        {"tenant_id": current_user.tenant_id, **stay_day_match(target_date)},
         {"_id": 0, "status": 1, "check_in": 1, "check_out": 1, "checked_in_at": 1, "checked_out_at": 1},
     ).to_list(None)
     arrivals = sum(1 for booking in bookings if as_date(booking.get("check_in")) == target_date and str(booking.get("status") or "").lower() not in NON_COMMERCIAL_STATUSES)
@@ -219,16 +219,11 @@ async def get_daily_summary(
     payments = await db.payments.find(
         {
             "tenant_id": current_user.tenant_id,
-            **accounting_day_match(
-                day,
-                {"processed_at": {"$regex": f"^{day}"}},
-                {"payment_date": day},
-                {"date": day},
-                {"created_at": {"$regex": f"^{day}"}},
-            ),
+            **report_payment_day_match(day),
         },
         {"_id": 0},
     ).to_list(None)
+    payments = await resolve_ledger_currencies(payments, current_user.tenant_id, database=db)
     collections_by_currency: dict[str, float] = {}
     adjustments_by_currency: dict[str, float] = {}
     for payment in deduplicate_report_payments(payments):
