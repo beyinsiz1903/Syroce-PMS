@@ -98,5 +98,23 @@ describe('AdminModuleControlCenter', () => {
     const status = await screen.findByTestId('module-menu-status');
     expect(status).toHaveTextContent(reason);
   });
+
+  it("shows each module's real setup state and what is missing", async () => {
+    axios.get.mockImplementation((url) => {
+      if (url.endsWith('/admin/tenants')) return Promise.resolve({ data: { tenants: [{
+        id: 'hotel-4', property_name: 'Kartepe', subscription_tier: 'professional', modules: { pms: true, spa: true },
+      }] } });
+      if (url.endsWith('/module-readiness')) return Promise.resolve({ data: { modules: {
+        spa: { module: 'spa', status: 'incomplete', setup: [{ key: 'spa_therapists', label: 'Terapist', ok: false, path: '/spa-wellness' }], usage: [] },
+      } } });
+      return Promise.resolve({ data: {} });
+    });
+    render(<AdminModuleControlCenter />);
+    await screen.findByText('Kartepe');
+    expect(axios.get).toHaveBeenCalledWith('/admin/tenants/hotel-4/module-readiness');
+    fireEvent.change(screen.getByPlaceholderText(/ara/i), { target: { value: 'SPA' } });
+    expect(await screen.findByTestId('module-setup-spa')).toHaveTextContent('Kurulum eksik (1)');
+    expect(screen.getByTestId('module-missing-spa')).toHaveTextContent('Terapist');
+  });
 });
 

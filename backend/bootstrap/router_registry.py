@@ -312,6 +312,8 @@ _EXTRACTED_ROUTERS: list[tuple[str, str, list[str], str | None, list | None]] = 
     ("routers.agency_reports", "agency_router", ["Marketplace / Reports (agency)"], None, None),
     ("routers.agency_pending", "hotel_router", ["Marketplace / Pending actions (hotel)"], None, None),
     ("routers.agency_pending", "agency_router", ["Marketplace / Pending actions (agency)"], None, None),
+    ("routers.module_readiness", "admin_router", ["Admin / Module readiness"], None, None),
+    ("routers.module_readiness", "hotel_router", ["Module readiness"], None, None),
     ("routers.agency_readiness", "hotel_router", ["Marketplace / Agency readiness (hotel)"], None, None),
     ("routers.agency_migration", "router", ["Marketplace v1 / Legacy migration"], None, None),
     ("routers.kbs", "router", ["KBS"], None, None),

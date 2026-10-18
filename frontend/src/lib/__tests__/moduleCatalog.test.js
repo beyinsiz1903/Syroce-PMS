@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { PRODUCT_MODULES, moduleCounts, moduleIntegrationLabel, moduleSetupLabel, moduleUsageLabel, moduleWorkspaceLabel, resolveModuleState } from '../moduleCatalog';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { PRODUCT_MODULES, missingSetup, moduleCounts, moduleIntegrationLabel, moduleSetupLabel, moduleUsageLabel, moduleWorkspaceLabel, resolveModuleState } from '../moduleCatalog';
 
 describe('module catalog', () => {
   it('contains unique product keys and omits sub-navigation flags', () => {
@@ -68,5 +70,29 @@ describe('agency extranet module state', () => {
     expect(resolveModuleState(agency, { subscription_tier: 'mini', modules: { channel_manager: true } }).enabled).toBe(true);
     expect(resolveModuleState(agency, { subscription_tier: 'enterprise', modules: { channel_manager: true, agency_extranet: false } }).enabled).toBe(false);
     expect(resolveModuleState(agency, { subscription_tier: 'mini', modules: { channel_manager: false, agency_extranet: true } }).enabled).toBe(true);
+  });
+});
+
+describe('module readiness labels (server evidence)', () => {
+  const spa = PRODUCT_MODULES.find((item) => item.key === 'spa');
+  const cm = PRODUCT_MODULES.find((item) => item.key === 'channel_manager');
+  const on = { enabled: true, path: '/x' };
+
+  it('shows what the server found instead of a fixed placeholder', () => {
+    const incomplete = { status: 'incomplete', setup: [{ key: 'spa_rooms', label: 'SPA odası', ok: true }, { key: 'spa_therapists', label: 'Terapist', ok: false }], usage: [] };
+    expect(moduleSetupLabel(spa, on, incomplete)).toBe('Kurulum eksik (1)');
+    expect(missingSetup(incomplete).map((row) => row.label)).toEqual(['Terapist']);
+    expect(moduleSetupLabel(spa, on, { status: 'active', setup: [], usage: [] })).toBe('Kuruldu · kullanımda');
+    expect(moduleSetupLabel(spa, on, { status: 'idle', setup: [], usage: [] })).toBe('Kuruldu · son dönemde kullanılmıyor');
+    expect(moduleSetupLabel(spa, on, { status: 'ready', view: true })).toBe('Kurulum gerektirmiyor');
+    expect(moduleUsageLabel(spa, {}, { usage: [{ label: 'Son 30 günde randevu', ok: false }] })).toBe('Son 30 günde randevu: yok');
+    expect(moduleIntegrationLabel(cm, on, { setup: [{ ok: true }, { ok: false }] })).toBe('Bağlantı / ayar eksik');
+    expect(moduleIntegrationLabel(cm, on, { setup: [{ ok: true }] })).toBe('Bağlantı kurulu');
+  });
+
+  it('has a server readiness rule for every product module', () => {
+    const source = readFileSync(resolve(process.cwd(), '../backend/core/module_readiness.py'), 'utf8');
+    const rules = new Set([...source.matchAll(/^ {4}"([a-z_]+)": \{/gm)].map((match) => match[1]));
+    expect(PRODUCT_MODULES.map((item) => item.key).filter((key) => !rules.has(key))).toEqual([]);
   });
 });

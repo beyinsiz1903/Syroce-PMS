@@ -11,7 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import {
   PRODUCT_MODULES, moduleCounts, moduleIntegrationLabel, moduleSetupLabel, moduleUsageLabel,
-  moduleWorkspaceLabel, resolveModuleState,
+  moduleWorkspaceLabel, resolveModuleState, missingSetup,
 } from '@/lib/moduleCatalog';
 import { usePlanCatalog } from '@/lib/planCatalog';
 import { moduleNavigationStatus } from '@/lib/navigationCatalog';
@@ -38,6 +38,10 @@ export default function AdminModuleControlCenter() {
   const [openingModule, setOpeningModule] = useState('');
   const [error, setError] = useState('');
   const [statusData, setStatusData] = useState({ entitlements: null, usage: null });
+  // Setup and recent use per module, from the hotel's own data (published
+  // module state, not the draft). Loaded on its own: a failure here leaves
+  // the licence and usage summary intact and the cards stay neutral.
+  const [readiness, setReadiness] = useState({});
   const [statusLoading, setStatusLoading] = useState(false);
   const [statusError, setStatusError] = useState('');
   const [catalogOpen, setCatalogOpen] = useState(false);
@@ -136,6 +140,16 @@ export default function AdminModuleControlCenter() {
     setDraft(next);
     setBaseline(next);
   }, [selected]);
+
+  useEffect(() => {
+    if (!selectedId) return undefined;
+    let active = true;
+    setReadiness({});
+    axios.get(`/admin/tenants/${selectedId}/module-readiness`)
+      .then((response) => { if (active) setReadiness(response.data?.modules || {}); })
+      .catch(() => { if (active) setReadiness({}); });
+    return () => { active = false; };
+  }, [selectedId, baseline]);
 
   useEffect(() => {
     if (!selectedId) return undefined;
@@ -391,9 +405,15 @@ export default function AdminModuleControlCenter() {
                       </div>
                       <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 rounded-lg border border-slate-100 bg-slate-50 p-3 text-[11px]">
                         <div><dt className="text-slate-500">Lisans</dt><dd className="mt-0.5 font-semibold text-slate-800">{state.licensed ? 'Etkin' : 'Lisans gerekli'}</dd></div>
-                        <div><dt className="text-slate-500">Kurulum</dt><dd className="mt-0.5 font-semibold text-slate-800">{moduleSetupLabel(item, state)}</dd></div>
-                        <div><dt className="text-slate-500">Entegrasyon</dt><dd className="mt-0.5 font-semibold text-slate-800">{moduleIntegrationLabel(item, state)}</dd></div>
-                        <div><dt className="text-slate-500">Kullanım</dt><dd className="mt-0.5 font-semibold text-slate-800">{moduleUsageLabel(item, statusData.usage || {})}</dd></div>
+                        <div><dt className="text-slate-500">Kurulum</dt><dd className="mt-0.5 font-semibold text-slate-800" data-testid={`module-setup-${item.key}`}>{moduleSetupLabel(item, state, readiness[item.key])}</dd></div>
+                        <div><dt className="text-slate-500">Entegrasyon</dt><dd className="mt-0.5 font-semibold text-slate-800">{moduleIntegrationLabel(item, state, readiness[item.key])}</dd></div>
+                        <div className="col-span-2"><dt className="text-slate-500">Kullanım</dt><dd className="mt-0.5 font-semibold text-slate-800">{moduleUsageLabel(item, statusData.usage || {}, readiness[item.key])}</dd></div>
+                        {state.enabled && missingSetup(readiness[item.key]).length > 0 && (
+                          <div className="col-span-2" data-testid={`module-missing-${item.key}`}>
+                            <dt className="text-slate-500">Eksik kurulum</dt>
+                            <dd><ul className="mt-0.5 list-disc pl-4 text-amber-800">{missingSetup(readiness[item.key]).map((row) => <li key={row.key}>{row.label}</li>)}</ul></dd>
+                          </div>
+                        )}
                         <div><dt className="text-slate-500">Kullanıcı kapsamı</dt><dd className="mt-0.5 font-semibold text-slate-800">Tesis: {statusData.usage?.current_resources?.active_users ?? 'ölçülmüyor'} aktif</dd></div>
                         <div><dt className="text-slate-500">Yetkilendirme</dt><dd className="mt-0.5 font-semibold text-slate-800">Rol ve kullanıcı izni ayrıca uygulanır</dd></div>
                         <MenuStatus pages={moduleNavigationStatus(item.key, menuOptions, { modulePath: item.path })} />

@@ -149,9 +149,23 @@ export function moduleCounts(tenant = {}) {
   }, { total: 0, enabled: 0, launchable: 0, needsSetup: 0 });
 }
 
-export function moduleIntegrationLabel(item, state) {
+// `readiness` is one row of the server's module readiness
+// (core.module_readiness: setup checks and recent-use evidence from the
+// hotel's own data). Without it the labels stay neutral.
+const READINESS_LABELS = {
+  off: 'Erişim kapalı',
+  idle: 'Kuruldu · son dönemde kullanılmıyor',
+  active: 'Kuruldu · kullanımda',
+  ready: 'Kuruldu',
+  unknown: 'Kontrol tanımlı değil',
+};
+
+export const missingSetup = (readiness) => (readiness?.setup || []).filter((row) => !row.ok);
+
+export function moduleIntegrationLabel(item, state, readiness) {
   if (!INTEGRATION_REQUIRED_MODULES.has(item.key)) return 'Entegrasyon gerektirmiyor';
   if (!state.enabled) return 'Erişim kapalı';
+  if (readiness?.setup?.length) return missingSetup(readiness).length ? 'Bağlantı / ayar eksik' : 'Bağlantı kurulu';
   return 'Sağlık verisi bekleniyor';
 }
 
@@ -159,8 +173,13 @@ export function moduleIntegrationLabel(item, state) {
 // prove that the tenant completed configuration, credentials or a live
 // connection. Keep that distinction explicit until setup evidence is served
 // by the module-health API.
-export function moduleSetupLabel(item, state) {
+export function moduleSetupLabel(item, state, readiness) {
   if (!state.enabled) return 'Erişim kapalı';
+  if (readiness) {
+    if (readiness.view) return 'Kurulum gerektirmiyor';
+    if (readiness.status === 'incomplete') return `Kurulum eksik (${missingSetup(readiness).length})`;
+    return READINESS_LABELS[readiness.status] || 'Kontrol tanımlı değil';
+  }
   if (!state.path) return 'Giriş noktası eksik';
   return 'Kurulum kanıtı yok';
 }
@@ -169,7 +188,8 @@ export function moduleWorkspaceLabel(item, state) {
   return state.path ? 'Çalışma alanı bağlı' : 'Giriş noktası tanımsız';
 }
 
-export function moduleUsageLabel(item, usage = {}) {
+export function moduleUsageLabel(item, usage = {}, readiness) {
+  if (readiness?.usage?.length) return readiness.usage.map((row) => `${row.label}: ${row.ok ? 'var' : 'yok'}`).join(' · ');
   const events = usage.events || {};
   const eventKeys = MODULE_USAGE_EVENTS[item.key] || [];
   if (!eventKeys.length) return 'Modül bazlı ölçüm yok';
