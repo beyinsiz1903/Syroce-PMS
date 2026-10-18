@@ -8,6 +8,7 @@ import { COLORS, KPICard, SectionHeader, EmptyState, StatBox, ROOM_STATUS_LABELS
 import { MoneyCell } from './GuestSection';
 import { formatCurrency as formatCurrencyValue } from '@/lib/currency';
 import { formatCurrencyBreakdown } from '@/lib/reportCurrency';
+import ReportConversionNotice from './ReportConversionNotice';
 const TASK_STATUS_LABELS = { completed: 'Tamamlandı', pending: 'Bekliyor', assigned: 'Atandı', open: 'Açık', new: 'Yeni', in_progress: 'Devam ediyor', inprogress: 'Devam ediyor', active: 'Devam ediyor', cleaning: 'Temizleniyor', ready: 'Hazır' };
 const TASK_TYPE_LABELS = { checkout_cleaning: 'Çıkış temizliği', stayover_cleaning: 'Konaklama temizliği', room_status: 'Oda kontrolü', deep_cleaning: 'Detaylı temizlik' };
 const PAYMENT_METHOD_LABELS = { cash: 'Nakit', credit_card: 'Kredi kartı', debit_card: 'Banka kartı', bank_transfer: 'Havale / EFT', online: 'Online ödeme' };
@@ -133,6 +134,7 @@ export const PaymentsSection = ({
   const chartCurrency = [...chartCurrencies][0] || 'TRY';
   return <div className="space-y-6" data-testid="section-payments">
     <SectionHeader title={t('common.paymentReport')} description={`${reportDate} tarihli geçerli tahsilatlar`} />
+    <ReportConversionNotice payments={payments} />
     <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
       <KPICard title="Toplam Tahsilat" value={payments.total_paid} currencyBreakdown={payments.totals_by_currency} icon={CheckCircle2} color="green" />
       <KPICard title="Bekleyen Fatura" value={payments.total_pending} icon={Clock} color="amber" />

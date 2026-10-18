@@ -11,21 +11,26 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPBearer
 
 from core.business_date_service import (
-    accounting_day_match,
-    accounting_period_match,
     ensure_business_date_initialized,
 )
 from core.database import db
 from core.helpers import require_module
 from core.security import get_current_user
 from models.schemas import User
+from modules.pms_core.report_money import resolve_ledger_currencies
 from modules.pms_core.reporting_financials import (
     REPORTING_CURRENCY,
     deduplicate_report_payments,
+    effective_folio_payment,
+    is_valid_payment,
+    report_payment_day_match,
+    report_payment_period_match,
     reporting_collection_amount,
 )
+from modules.pms_core.reporting_ledger import charge_amount as ledger_charge_amount
+from modules.pms_core.reporting_ledger import charge_category, posted_revenue_rows
 from modules.pms_core.role_permission_service import require_op
-from modules.pms_core.stay_night_metrics import calculate_stay_night_metrics, load_stay_night_metrics
+from modules.pms_core.stay_night_metrics import allocated_revenue_for_night, calculate_stay_night_metrics, load_stay_night_metrics
 
 security = HTTPBearer()
 
@@ -91,15 +96,14 @@ _FX_RECEIPT_RE = re.compile(
 def _received_payment_amount(payment: dict, fallback_currency: str = "TRY") -> dict:
     """Return the currency physically received, not the booking ledger currency."""
     def _signed(amount: float) -> float:
-        return -amount if str(payment.get("payment_type") or "").lower() == "refund" and amount > 0 else amount
+        return -amount if str(payment.get("payment_type") or "").strip().lower() == "refund" and amount > 0 else amount
 
     structured_amount = payment.get("received_amount")
     structured_currency = payment.get("received_currency")
     if structured_amount is not None and structured_currency:
         try:
             amount = float(structured_amount)
-            if amount > 0:
-                return {"amount": _signed(amount), "currency": str(structured_currency).upper()}
+            return {"amount": _signed(amount), "currency": _currency_code(structured_currency)}
         except (TypeError, ValueError):
             pass
     match = _FX_RECEIPT_RE.search(str(payment.get("notes") or ""))
@@ -283,8 +287,7 @@ def _payment_method(payment: dict) -> str:
 
 
 def _payment_is_effective(payment: dict) -> bool:
-    status = str(payment.get("status") or "paid").strip().lower()
-    return not payment.get("voided") and status not in {"void", "voided", "failed", "cancelled", "rejected"}
+    return is_valid_payment(payment)
 
 
 def _payment_is_collection(payment: dict) -> bool:
@@ -303,25 +306,6 @@ def _nightly_booking_rate(booking: dict, target_day: str, daily_rate: dict | Non
         return round(float(daily_rate.get("rate") or 0), 2)
     if booking.get("base_rate") is not None:
         return round(float(booking.get("base_rate") or 0), 2)
-    check_in = _date_part(booking.get("check_in"))
-    check_out = _date_part(booking.get("check_out"))
-    try:
-        nights = max(1, (datetime.fromisoformat(check_out) - datetime.fromisoformat(check_in)).days)
-    except (TypeError, ValueError):
-        nights = 1
-    return round(float(booking.get("total_amount") or 0) / nights, 2)
-
-
-def _allocated_booking_revenue(booking: dict) -> float:
-    """Return the accounting value allocated to one booked night.
-
-    ``base_rate`` is a pricing reference and can remain higher than the final
-    agreed reservation total after a manual price change.  Revenue reports must
-    allocate the final reservation total, otherwise the currency breakdown and
-    the scalar period total describe different money.
-    """
-    if booking.get("is_complimentary"):
-        return 0.0
     check_in = _date_part(booking.get("check_in"))
     check_out = _date_part(booking.get("check_out"))
     try:
@@ -456,6 +440,7 @@ async def get_official_guest_list(
             "guest_id": 1,
             "primary_guest_name": 1,
             "guest_name": 1,
+            "status": 1,
             "room_number": 1,
             "room_id": 1,
             "id_number": 1,
@@ -682,39 +667,10 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
         last_year_end = today_start - timedelta(days=364)
 
     charge_range_start = min(last_year_start, previous_start, trend_start).date().isoformat()
-    charge_range_start_dt = datetime.fromisoformat(charge_range_start).replace(tzinfo=UTC)
 
-    # ALL queries in parallel
-    async def get_fnb_orders():
-        # Never convert a database/query failure into a believable "0 TL".
-        # An incomplete financial report is more dangerous than a visible error.
-        return await db.pos_orders.find(
-            {
-                "tenant_id": tenant_id,
-                "status": {"$nin": ["cancelled", "canceled", "void", "voided"]},
-                **accounting_period_match(
-                    charge_range_start,
-                    target_day,
-                    {"closed_at": {"$gte": charge_range_start, "$lt": next_day.isoformat()}},
-                    {"created_at": {"$gte": charge_range_start, "$lt": next_day.isoformat()}},
-                ),
-            },
-            {
-                "_id": 0,
-                "id": 1,
-                "business_date": 1,
-                "closed_at": 1,
-                "created_at": 1,
-                "total_amount": 1,
-                "grand_total": 1,
-                "currency": 1,
-                "status": 1,
-                "payment_status": 1,
-            },
-        ).to_list(5000)
-
+    # Dataset selection is tenant-scoped. Financial totals must never be capped.
     results = await asyncio.gather(
-        db.rooms.find({"tenant_id": tenant_id}).to_list(1000),
+        db.rooms.find({"tenant_id": tenant_id}).to_list(None),
         db.bookings.find(
             {
                 "tenant_id": tenant_id,
@@ -765,7 +721,7 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
                 "complimentary_reason": 1,
                 "complimentary_original_total": 1,
             },
-        ).to_list(10000),
+        ).to_list(None),
         db.bookings.count_documents(
             {
                 "tenant_id": tenant_id,
@@ -788,7 +744,7 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
                     },
                 ],
             }
-        ).to_list(5000),
+        ).to_list(None),
         db.maintenance_tasks.count_documents({"tenant_id": tenant_id, "status": {"$in": ["open", "in_progress", "pending"]}}),
         db.maintenance_tasks.count_documents({"tenant_id": tenant_id, "status": "completed", "completed_at": {"$gte": month_start.isoformat(), "$lte": today_end.isoformat()}}),
         db.invoices.count_documents({"tenant_id": tenant_id, "payment_status": {"$in": ["pending", "partial"]}}),
@@ -813,53 +769,27 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
                 "id_type": 1,
                 "passport_number": 1,
             },
-        ).to_list(10000),
+        ).to_list(None),
         db.payments.find(
             {
                 "tenant_id": tenant_id,
-                **accounting_day_match(
-                    target_day,
-                    {"processed_at": {"$regex": f"^{target_day}"}},
-                    {"payment_date": target_day},
-                    {"date": target_day},
-                    {"created_at": {"$regex": f"^{target_day}"}},
-                    {"created_at": {"$gte": today_start.isoformat(), "$lt": next_day.isoformat()}},
-                ),
+                **report_payment_day_match(target_day),
             },
             {"_id": 0},
-        ).to_list(10000),
+        ).to_list(None),
         # Kasa hareketleri kullaniciya gercek islem tarihini vaat eder. PMS is
         # gunu gece denetimi yapilana kadar acik kalabildigi icin business_date
         # burada kullanilirsa haftalar sonraki tahsilatlar eski gunde gorunur.
         db.payments.find(
             {
                 "tenant_id": tenant_id,
-                "$or": [
-                    {"processed_at": {"$regex": f"^{target_day}"}},
-                    {"processed_at": {"$gte": today_start, "$lt": next_day}},
-                    {"processed_at": {"$gte": today_start.isoformat(), "$lt": next_day.isoformat()}},
-                    {"payment_date": target_day},
-                    {"date": target_day},
-                    {
-                        "$and": [
-                            {"processed_at": {"$in": [None, ""]}},
-                            {"payment_date": {"$in": [None, ""]}},
-                            {"date": {"$in": [None, ""]}},
-                            {"created_at": {"$regex": f"^{target_day}"}},
-                        ]
-                    },
-                    {
-                        "$and": [
-                            {"processed_at": {"$in": [None, ""]}},
-                            {"payment_date": {"$in": [None, ""]}},
-                            {"date": {"$in": [None, ""]}},
-                            {"created_at": {"$gte": today_start, "$lt": next_day}},
-                        ]
-                    },
-                ],
+                **report_payment_period_match(
+                    target_day, target_day, use_business_date=False,
+                    date_fields=("processed_at", "payment_date", "date", "created_at"),
+                ),
             },
             {"_id": 0},
-        ).to_list(10000),
+        ).to_list(None),
         db.bookings.find(
             {
                 "tenant_id": tenant_id,
@@ -870,7 +800,7 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
                 "status": {"$in": ["confirmed", "checked_in", "checked_out"]},
             },
             {"_id": 0, "total_amount": 1, "check_in": 1, "check_out": 1},
-        ).to_list(10000),
+        ).to_list(None),
         db.bookings.find(
             {
                 "tenant_id": tenant_id,
@@ -881,7 +811,7 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
                 "status": {"$in": ["confirmed", "checked_in", "checked_out"]},
             },
             {"_id": 0, "total_amount": 1, "check_in": 1, "check_out": 1},
-        ).to_list(10000),
+        ).to_list(None),
         db.room_blocks.find(
             {
                 "tenant_id": tenant_id,
@@ -891,12 +821,11 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
                 "$or": [{"end_date": {"$gt": trend_start.date().isoformat()}}, {"end_date": None}],
             },
             {"_id": 0, "room_id": 1, "start_date": 1, "end_date": 1, "status": 1, "allow_sell": 1},
-        ).to_list(10000),
-        get_fnb_orders(),
+        ).to_list(None),
     )
-    rooms, all_bk, in_house, hk_tasks, maint_open, maint_completed, pending_invoices, paid_invoices, all_guests, all_payments, cash_movement_payments, prev_bookings, ly_bookings, room_blocks, fnb_orders = results
-    all_payments = deduplicate_report_payments(all_payments)
-    cash_movement_payments = deduplicate_report_payments(cash_movement_payments)
+    rooms, all_bk, in_house, hk_tasks, maint_open, maint_completed, pending_invoices, paid_invoices, all_guests, all_payments, cash_movement_payments, prev_bookings, ly_bookings, room_blocks = results
+    all_payments = deduplicate_report_payments(await resolve_ledger_currencies(all_payments, tenant_id, database=db))
+    cash_movement_payments = deduplicate_report_payments(await resolve_ledger_currencies(cash_movement_payments, tenant_id, database=db))
 
     loaded_booking_ids = {str(booking.get("id")) for booking in all_bk if booking.get("id")}
     missing_payment_booking_ids = list(
@@ -910,7 +839,7 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
         await db.bookings.find(
             {"tenant_id": tenant_id, "id": {"$in": missing_payment_booking_ids}},
             {"_id": 0, "id": 1, "room_id": 1, "room_number": 1, "guest_id": 1, "guest_name": 1, "primary_guest_name": 1},
-        ).to_list(10000)
+        ).to_list(None)
         if missing_payment_booking_ids
         else []
     )
@@ -931,7 +860,7 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
                 "is_complimentary": 1,
                 "complimentary_reason": 1,
             },
-        ).to_list(10000)
+        ).to_list(None)
         if booking_ids
         else []
     )
@@ -958,7 +887,7 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
                 "voided": 1,
                 "comp_dates": 1,
             },
-        ).to_list(20000)
+        ).to_list(None)
         if booking_ids
         else []
     )
@@ -981,108 +910,18 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
     currency_exchanges = await db.currency_exchanges.find(
         {"tenant_id": tenant_id, "business_date": target_day, "status": "posted"},
         {"_id": 0},
-    ).sort("created_at", 1).to_list(10000)
+    ).sort("created_at", 1).to_list(None)
 
-    period_charges = await db.folio_charges.find(
-        {
-            "tenant_id": tenant_id,
-            "voided": {"$ne": True},
-            **accounting_period_match(
-                charge_range_start,
-                target_day,
-                {"date": {"$gte": charge_range_start, "$lt": next_day.date().isoformat()}},
-                {"date": {"$gte": charge_range_start_dt, "$lt": next_day}},
-                {"date": {"$exists": False}, "created_at": {"$gte": charge_range_start, "$lt": next_day.isoformat()}},
-                {"date": {"$exists": False}, "created_at": {"$gte": charge_range_start_dt, "$lt": next_day}},
-            ),
-        },
-        {
-            "_id": 0,
-            "id": 1,
-            "business_date": 1,
-            "date": 1,
-            "created_at": 1,
-            "total": 1,
-            "amount": 1,
-            "charge_category": 1,
-            "charge_type": 1,
-            "booking_id": 1,
-            "currency": 1,
-            "source_pos_order_id": 1,
-        },
-    ).to_list(50000)
+    # Same source as Flash, EOD, weekly and standard revenue: posted folio /
+    # manual extras / finalized POS transactions, with refunds and no mirrors.
     period_charges = [
-        {**row, "date": row.get("business_date") or row.get("date") or row.get("created_at")}
-        for row in period_charges
+        {**row, "date": row.get("business_date") or row.get("date") or row.get("charge_date") or row.get("posted_at") or row.get("created_at"),
+         "charge_category": charge_category(row)}
+        for row in await posted_revenue_rows(tenant_id, date_type.fromisoformat(charge_range_start), today_start.date(), database=db)
     ]
 
-    # Reservation-card extras live in ``extra_charges`` until they are moved to
-    # a folio.  Reports previously ignored that collection entirely, which made
-    # room-posted coffee/minibar/etc. disappear from both revenue and F&B.
-    extra_charge_rows = await db.extra_charges.find(
-        {
-            "tenant_id": tenant_id,
-            "voided": {"$ne": True},
-            **accounting_period_match(
-                charge_range_start,
-                target_day,
-                {"charge_date": {"$gte": charge_range_start, "$lt": next_day.isoformat()}},
-                {"charge_date": {"$gte": charge_range_start_dt, "$lt": next_day}},
-                {"date": {"$gte": charge_range_start, "$lt": next_day.isoformat()}},
-                {"date": {"$gte": charge_range_start_dt, "$lt": next_day}},
-                {"created_at": {"$gte": charge_range_start, "$lt": next_day.isoformat()}},
-                {"created_at": {"$gte": charge_range_start_dt, "$lt": next_day}},
-            ),
-        },
-        {
-            "_id": 0,
-            "id": 1,
-            "business_date": 1,
-            "charge_date": 1,
-            "date": 1,
-            "created_at": 1,
-            "total": 1,
-            "charge_amount": 1,
-            "amount": 1,
-            "category": 1,
-            "charge_category": 1,
-            "charge_type": 1,
-            "booking_id": 1,
-            "currency": 1,
-        },
-    ).to_list(20000)
-    period_charges.extend(
-        {
-            **row,
-            "date": row.get("business_date") or row.get("charge_date") or row.get("date") or row.get("created_at"),
-            "total": row.get("total") if row.get("total") is not None else row.get("charge_amount", row.get("amount", 0)),
-            "charge_category": row.get("charge_category") or row.get("category") or row.get("charge_type") or "extra",
-            "_source": "extra_charge",
-        }
-        for row in extra_charge_rows
-    )
-    represented_pos_order_ids = {
-        str(charge.get("source_pos_order_id"))
-        for charge in period_charges
-        if charge.get("source_pos_order_id")
-    }
-    period_charges.extend(
-        {
-            "id": f"pos:{order.get('id')}",
-            "date": order.get("business_date") or order.get("closed_at") or order.get("created_at"),
-            "total": order.get("total_amount") or order.get("grand_total") or 0,
-            "charge_category": "fnb",
-            "source_pos_order_id": order.get("id"),
-            "currency": order.get("currency") or "TRY",
-            "_source": "direct_pos",
-        }
-        for order in fnb_orders
-        if str(order.get("id") or "") not in represented_pos_order_ids
-        and str(order.get("status") or "").lower() in {"closed", "completed", "served", "paid"}
-    )
-
     def charge_amount(charge: dict) -> float:
-        return float(charge.get("total") or charge.get("amount") or 0)
+        return ledger_charge_amount(charge)
 
     def charge_currency(charge: dict) -> str:
         booking = booking_currency_by_id.get(str(charge.get("booking_id") or ""))
@@ -1107,7 +946,7 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
         await db.booking_guests.find(
             {"tenant_id": tenant_id, "booking_id": {"$in": booking_ids}},
             {"_id": 0},
-        ).to_list(20000)
+        ).to_list(None)
         if booking_ids
         else []
     )
@@ -1270,7 +1109,7 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
         for booking in all_bk:
             if _booking_occupied_on(booking, day):
                 currency = booking.get("currency") or "TRY"
-                allocated_revenue = _allocated_booking_revenue(booking)
+                allocated_revenue = float(allocated_revenue_for_night(booking, date_type.fromisoformat(day)))
                 _add_currency_amount(
                     accrued_room_by_day_currency.setdefault(day, {}),
                     currency,
@@ -1507,7 +1346,10 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
     total_paid = 0
     payment_totals_by_currency: dict[str, float] = {}
     received_payment_totals_by_currency: dict[str, float] = {}
-    ledger_payment_totals_by_currency: dict[str, float] = {}
+    # Balance effects include valid non-cash offsets, unlike cash collection.
+    ledger_payment_totals_by_currency = _currency_breakdown(
+        all_payments, effective_folio_payment, lambda row: row.get("currency"),
+    )
     payment_totals_by_method_currency: dict[str, dict[str, float]] = {}
     payment_conversion_issues = []
     payment_rows = []
@@ -1523,7 +1365,6 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
         received_currency = str(received.get("currency") or "TRY").upper()
         received_amount = float(received.get("amount") or 0)
         ledger_currency = str(p.get("currency") or payment_booking.get("currency") or "TRY").upper()
-        ledger_payment_totals_by_currency[ledger_currency] = ledger_payment_totals_by_currency.get(ledger_currency, 0) + amt
         received_payment_totals_by_currency[received_currency] = received_payment_totals_by_currency.get(received_currency, 0) + received_amount
         reporting_amount = reporting_collection_amount(p)
         if reporting_amount is None:
@@ -1631,6 +1472,9 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
             }
         )
     cash_movements = {
+        "received_totals_by_currency": _currency_breakdown(
+            cash_movement_rows, lambda row: row["received_amount"], lambda row: row["received_currency"],
+        ),
         "by_method": {method: round(value, 2) for method, value in cash_movement_methods.items()},
         "total_paid": round(cash_movement_total, 2),
         "transaction_count": len(cash_movement_rows),
@@ -1678,15 +1522,12 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
             payments_by_booking.get(booking_id),
         )
         room = next((r for r in rooms if str(r.get("id")) == str(booking.get("room_id"))), {})
-        posted_rate = round(
-            sum(
-                charge_amount(charge)
-                for charge in daily_charges
-                if str(charge.get("booking_id")) == str(booking.get("id"))
-                and str(charge.get("charge_category") or charge.get("charge_type") or "").lower() in {"room", "accommodation", "room_charge"}
-            ),
-            2,
-        )
+        room_postings = [charge for charge in daily_charges
+            if str(charge.get("booking_id")) == booking_id and charge_category(charge) == "room"]
+        posted_by_currency = _currency_breakdown(room_postings, charge_amount, charge_currency)
+        agreed_currency = _currency_code(booking.get("currency"))
+        currency_mismatch = any(charge_currency(charge) != agreed_currency for charge in room_postings)
+        posted_rate = None if currency_mismatch else round(sum(charge_amount(charge) for charge in room_postings), 2)
         room_rate_rows.append(
             {
                 "booking_id": booking.get("id"),
@@ -1695,14 +1536,17 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
                 "guest_name": _guest_display_name(guests_by_id.get(str(booking.get("guest_id"))), booking),
                 "agreed_rate": agreed_rate,
                 "posted_rate": posted_rate,
-                "variance": round(posted_rate - agreed_rate, 2),
-                "currency": str(booking.get("currency") or "TRY").upper(),
-                "posting_status": "complimentary" if comp_info["is_complimentary_night"] else ("posted" if posted_rate else "pending"),
+                "variance": None if currency_mismatch else round(posted_rate - agreed_rate, 2),
+                "currency": agreed_currency,
+                "posted_rate_by_currency": posted_by_currency,
+                "currency_mismatch": currency_mismatch,
+                "posting_status": "complimentary" if comp_info["is_complimentary_night"] else ("posted" if room_postings else "pending"),
                 **comp_info,
             }
         )
 
-    expected_room_revenue = round(sum(row["agreed_rate"] for row in room_rate_rows), 2)
+    expected_room_revenue_by_currency = _currency_breakdown(room_rate_rows, lambda row: row["agreed_rate"], lambda row: row["currency"])
+    expected_room_revenue = _single_currency_amount(expected_room_revenue_by_currency)
     analysis_room_revenue = daily_performance["room_revenue"]
     analysis_revenue_source = daily_performance["revenue_source"]
     analysis_adr = daily_performance["adr"]
@@ -1825,10 +1669,9 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
             "currency_exchanges": currency_exchanges,
         },
         "cash_movements": cash_movements,
-        # P1 fix: Polis bildirimi ve maliye listesinde 100 kayıt yetersiz —
-        # tüm aylık misafir listesi (cap 5000) döndürülür; frontend tarafı
-        # sayfalar / arama ile sınırlı gösterim yapar.
-        "guest_list": recent_guests_data[:5000],
+        # Return the complete selected-period guest dataset; frontend search /
+        # CSV must not silently disagree with the summary's person counts.
+        "guest_list": recent_guests_data,
         "daily_lists": {
             "in_house": daily_in_house,
             "arrivals": daily_arrivals,
@@ -1877,6 +1720,7 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
             "posted_room_revenue": today_room_revenue,
             "posted_room_revenue_by_currency": posted_room_revenue_by_currency,
             "expected_room_revenue": expected_room_revenue,
+            "expected_room_revenue_by_currency": expected_room_revenue_by_currency,
             "revenue_source": analysis_revenue_source,
             "adr": analysis_adr,
             "revpar": analysis_revpar,

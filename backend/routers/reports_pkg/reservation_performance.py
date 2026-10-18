@@ -22,6 +22,8 @@ from core.helpers import require_module
 from core.security import get_current_user
 from core.utils import create_excel_workbook, excel_response
 from models.schemas import User
+from modules.pms_core.report_money import currency_code, single_amount
+from modules.pms_core.reporting_dates import date_period_match
 from modules.pms_core.role_permission_service import require_op
 
 try:
@@ -128,7 +130,7 @@ def aggregate_reservation_performance(bookings: list[dict[str, Any]], *, start_d
     rows: list[dict[str, Any]] = []
 
     commercial_count = cancelled_count = no_show_count = 0
-    booked_revenue = cancelled_value = total_nights = lead_time_total = lead_time_count = 0.0
+    total_nights = lead_time_total = lead_time_count = 0.0
     booked_revenue_by_currency: dict[str, float] = defaultdict(float)
     cancelled_value_by_currency: dict[str, float] = defaultdict(float)
 
@@ -139,7 +141,7 @@ def aggregate_reservation_performance(bookings: list[dict[str, Any]], *, start_d
         check_out = _parse_datetime(booking.get("check_out"))
         created_at = _parse_datetime(booking.get("created_at") or booking.get("reservation_date"))
         amount = _amount(booking.get("total_amount"))
-        currency = str(booking.get("currency") or "TRY").upper()
+        currency = currency_code(booking.get("currency"))
         nights = max((check_out.date() - check_in.date()).days, 0) if check_in and check_out else 0
         is_non_commercial = status in _NON_COMMERCIAL_STATUSES
 
@@ -152,7 +154,6 @@ def aggregate_reservation_performance(bookings: list[dict[str, Any]], *, start_d
 
         if is_non_commercial:
             stat["cancelled"] += 1
-            cancelled_value += amount
             cancelled_value_by_currency[currency] += amount
             if status in {"no_show", "noshow"}:
                 no_show_count += 1
@@ -165,7 +166,6 @@ def aggregate_reservation_performance(bookings: list[dict[str, Any]], *, start_d
             stat["revenue"] += amount
             stat["revenue_by_currency"][currency] = stat["revenue_by_currency"].get(currency, 0.0) + amount
             total_nights += nights
-            booked_revenue += amount
             booked_revenue_by_currency[currency] += amount
 
         lead_days: int | None = None
@@ -207,11 +207,11 @@ def aggregate_reservation_performance(bookings: list[dict[str, Any]], *, start_d
     ]
     channels = sorted(channel_stats.values(), key=lambda item: (-item["bookings"], item["channel"].lower()))
     for item in channels:
-        item["revenue"] = round(item["revenue"], 2)
         item["revenue_by_currency"] = {key: round(value, 2) for key, value in item["revenue_by_currency"].items()}
+        item["revenue"] = single_amount(item["revenue_by_currency"])
     for daily in arrival_days.values():
-        daily["revenue"] = round(daily["revenue"], 2)
         daily["revenue_by_currency"] = {key: round(value, 2) for key, value in daily["revenue_by_currency"].items()}
+        daily["revenue"] = single_amount(daily["revenue_by_currency"])
     lead_time_breakdown = [{"bucket": key, "label": label, "count": lead_counts[key]} for key, label, *_ in _LEAD_TIME_BUCKETS]
     rows.sort(key=lambda row: (row["check_in"], row["guest_name"], row["booking_id"]))
 
@@ -221,7 +221,7 @@ def aggregate_reservation_performance(bookings: list[dict[str, Any]], *, start_d
         "summary": {
             "total_bookings": total,
             "commercial_bookings": commercial_count,
-            "booked_revenue": round(booked_revenue, 2),
+            "booked_revenue": single_amount(booked_revenue_by_currency),
             "booked_revenue_by_currency": {key: round(value, 2) for key, value in booked_revenue_by_currency.items()},
             "total_room_nights": int(total_nights),
             "average_stay": round(total_nights / commercial_count, 2) if commercial_count else 0.0,
@@ -229,7 +229,7 @@ def aggregate_reservation_performance(bookings: list[dict[str, Any]], *, start_d
             "cancelled_count": cancelled_count,
             "no_show_count": no_show_count,
             "cancellation_rate": round((cancelled_count / total) * 100, 1) if total else 0.0,
-            "cancelled_value": round(cancelled_value, 2),
+            "cancelled_value": single_amount(cancelled_value_by_currency),
             "cancelled_value_by_currency": {key: round(value, 2) for key, value in cancelled_value_by_currency.items()},
         },
         "status_breakdown": status_breakdown,
@@ -246,8 +246,6 @@ async def _reservation_performance_payload(*, tenant_id: str, start_date: date, 
     # ISO date strings compare correctly with both historic ``YYYY-MM-DD``
     # values and current full ISO datetimes.  Using a midnight timestamp as
     # the lower bound would silently exclude old date-only reservations.
-    start_key = start_date.isoformat()
-    end_exclusive_key = (end_date + timedelta(days=1)).isoformat()
     projection = {
         "_id": 0,
         "id": 1,
@@ -268,10 +266,10 @@ async def _reservation_performance_payload(*, tenant_id: str, start_date: date, 
     bookings = await db.bookings.find(
         {
             "tenant_id": tenant_id,
-            "check_in": {"$gte": start_key, "$lt": end_exclusive_key},
+            **date_period_match("check_in", start_date, end_date),
         },
         projection,
-    ).to_list(20000)
+    ).to_list(None)
     return aggregate_reservation_performance(bookings, start_date=start_date, end_date=end_date)
 
 
