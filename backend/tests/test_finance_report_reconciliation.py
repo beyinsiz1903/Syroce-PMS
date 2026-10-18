@@ -193,6 +193,33 @@ async def test_invoice_report_does_not_truncate_or_drop_end_day_or_partial_balan
     assert next(i for i in result["invoices"] if i["id"] == "partial")["outstanding_amount"] == 80
 
 
+@pytest.mark.parametrize("transaction_type", [None, "income"])
+async def test_cash_flow_month_boundaries_keep_iso_and_bson_rows_and_tenant_scope(ledger_db, transaction_type):
+    dates = ["2026-09-01", "2026-09-01T00:00:00Z", datetime(2026, 9, 1, tzinfo=UTC),
+             "2026-09-30", "2026-09-30T23:59:59.999999Z", datetime(2026, 9, 30, 23, 59, 59, 999000, tzinfo=UTC)]
+    await ledger_db.cash_flow.insert_many([
+        {"id": f"in-{index}", "tenant_id": "A", "date": day, "amount": 2 ** index, "transaction_type": "income", "currency": "TRY"}
+        for index, day in enumerate(dates)
+    ] + [
+        {"id": "eur-first", "tenant_id": "A", "date": dates[2], "amount": 5, "transaction_type": "expense", "currency": "EUR"},
+        {"id": "eur-last", "tenant_id": "A", "date": dates[4], "amount": 5, "transaction_type": "expense", "currency": "EUR"},
+        {"id": "usd", "tenant_id": "A", "date": dates[3], "amount": 3, "transaction_type": "income", "currency": "USD"},
+        {"id": "other-tenant", "tenant_id": "B", "date": dates[0], "amount": 99999, "transaction_type": "income", "currency": "TRY"},
+    ] + [
+        {"id": f"outside-{index}", "tenant_id": "A", "date": day, "amount": 99999, "transaction_type": "income", "currency": "TRY"}
+        for index, day in enumerate(["2026-08-31T23:59:59.999999Z", datetime(2026, 8, 31, 23, 59, 59, tzinfo=UTC),
+                                     "2026-10-01", datetime(2026, 10, 1, tzinfo=UTC)])
+    ])
+    result = await accounting.get_cash_flow("2026-09-01", "2026-09-30", transaction_type=transaction_type, current_user=USER)
+    expected_ids = {f"in-{index}" for index in range(6)} | {"usd"}
+    if transaction_type is None:
+        expected_ids |= {"eur-first", "eur-last"}
+    assert {row["id"] for row in result["transactions"]} == expected_ids
+    assert result["total_income"] == 63
+    assert result["total_income_by_currency"] == {"TRY": 63, "USD": 3}
+    assert result["total_expense_by_currency"] == ({"EUR": 10} if transaction_type is None else {})
+
+
 async def test_bank_report_reads_legacy_balance_and_iso_sync_without_mislabeling_fx(ledger_db):
     await ledger_db.bank_accounts.insert_many([
         {"id": "try", "tenant_id": "A", "is_active": True, "balance": 100, "currency": " TL ", "last_sync": "2026-10-01T12:00:00Z"},
