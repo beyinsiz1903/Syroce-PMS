@@ -39,9 +39,9 @@ from models.schemas import (
 )
 from modules.folio.services.folio_balance_read_service import FolioBalanceReadService
 from modules.folio.services.open_folio_service import OpenFolioService
-from modules.pms_core.receivable_reporting import receivable_rows, report_day, row_totals
+from modules.pms_core.receivable_reporting import folio_snapshots, receivable_rows, report_day, row_totals
 from modules.pms_core.report_money import add_amount, amounts_text, rounded_totals, single_amount
-from modules.pms_core.reporting_financials import is_valid_payment
+from modules.pms_core.reporting_financials import deduplicate_report_payments, is_valid_payment
 from modules.pms_core.role_permission_service import require_op
 from shared_kernel.idempotency import (
     claim_idempotency,
@@ -185,22 +185,21 @@ async def list_folios(status: str | None = None, p: PaginationParams = Depends(p
     total_q = db.folios.count_documents(query)
     folios, total = await _asyncio.gather(folios_q, total_q)
 
-    booking_ids = [f.get("booking_id") for f in folios if f.get("booking_id")]
-    booking_map = {}
-    if booking_ids:
-        bookings = await db.bookings.find(
-            {"id": {"$in": booking_ids}, "tenant_id": current_user.tenant_id}, {"_id": 0, "id": 1, "guest_name": 1, "room_number": 1, "room_id": 1, "check_in": 1, "check_out": 1, "currency": 1}
-        ).to_list(len(booking_ids))
-        booking_map = {b["id"]: b for b in bookings}
+    from core.tenant_currency import get_tenant_currency
+    currency, _ = await get_tenant_currency(current_user.tenant_id)
+    snapshots = await folio_snapshots(db, current_user.tenant_id, folios, fallback_currency=currency)
 
     for folio in folios:
-        booking = booking_map.get(folio.get("booking_id"))
+        snapshot = snapshots[folio["id"]]
+        booking = snapshot["booking"]
+        folio["currency"] = snapshot["currency"]
+        folio["balance_by_currency"] = snapshot["balance_by_currency"]
+        folio["balance"] = single_amount(snapshot["balance_by_currency"])
         if booking:
             folio["guest_name"] = booking.get("guest_name", "")
             folio["room_number"] = booking.get("room_number", "")
             folio["check_in"] = booking.get("check_in", "")
             folio["check_out"] = booking.get("check_out", "")
-            folio["currency"] = folio.get("currency") or booking.get("currency") or "TRY"
 
     return {
         "folios": folios,
@@ -215,42 +214,59 @@ async def list_folios(status: str | None = None, p: PaginationParams = Depends(p
 async def get_folio_dashboard_stats(
     current_user=Depends(get_current_user),  # v68 Bug DE: tenant-scoped cache key
     _perm=Depends(require_op("view_finance_reports")),  # v70 Bug DG: HK/FO finance leak
+    _nocache: bool = Query(False, alias="nocache"),
 ):
     """Get folio statistics for dashboard"""
 
     try:
-        # v95 — Parallel queries + server-side $sum (was to_list(1000) + Python sum, sequential)
         tid = current_user.tenant_id
-        yesterday = (datetime.now(UTC) - timedelta(days=1)).date().isoformat()
+        day, rows = await _company_receivable_rows(tid)
+        from core.tenant_currency import get_tenant_currency
+        currency, _ = await get_tenant_currency(tid)
+        now = datetime.now(UTC)
+        since = now - timedelta(hours=24)
 
-        open_folios_pipeline = [
-            # "Outstanding" means money the hotel is still owed. Zero-balance
-            # and credit/overpayment folios must not turn this KPI negative.
-            {"$match": {"tenant_id": tid, "status": "open", "balance": {"$gt": 0}}},
-            {
-                "$group": {
-                    "_id": None,
-                    "count": {"$sum": 1},
-                    "total_balance": {"$sum": {"$ifNull": ["$balance", 0]}},
-                }
-            },
-        ]
-        open_folios_q = db.folios.aggregate(open_folios_pipeline).to_list(1)
-        charges_q = db.folio_charges.count_documents({"tenant_id": tid, "business_date": {"$gte": yesterday}, "voided": {"$ne": True}})
-        payments_q = db.payments.count_documents({"tenant_id": tid, "$or": [{"processed_at": {"$gte": yesterday}}, {"payment_date": {"$gte": yesterday}}, {"date": {"$gte": yesterday}}]})
-        open_agg, recent_charges, recent_payments = await asyncio.gather(open_folios_q, charges_q, payments_q)
+        async def recent(collection, fields):
+            clauses = []
+            for field in fields:
+                clauses.extend([{field: {"$gte": since.isoformat(), "$lte": now.isoformat()}}, {field: {"$gte": since, "$lte": now}}])
+            candidates = await collection.find({"tenant_id": tid, "$or": clauses}, {"_id": 0}).to_list(None)
+            result = []
+            for row in candidates:
+                for field in fields:
+                    value = row.get(field)
+                    if not value or (isinstance(value, str) and len(value) <= 10):
+                        continue
+                    try:
+                        timestamp = value if isinstance(value, datetime) else datetime.fromisoformat(value.replace("Z", "+00:00"))
+                        timestamp = timestamp.replace(tzinfo=UTC) if timestamp.tzinfo is None else timestamp.astimezone(UTC)
+                    except (ValueError, TypeError):
+                        continue
+                    if since <= timestamp <= now:
+                        result.append(row)
+                    break
+            return result
 
-        total_open = open_agg[0]["count"] if open_agg else 0
-        total_outstanding = open_agg[0]["total_balance"] if open_agg else 0.0
-
-        return {"total_open_folios": total_open, "total_outstanding_balance": round(total_outstanding, 2), "recent_charges_24h": recent_charges, "recent_payments_24h": recent_payments}
-    except Exception as e:
-        logger.info(f"Error in folio dashboard stats: {str(e)}")
-        import traceback
-
-        traceback.print_exc()
-        # Return default values instead of raising
-        return {"total_open_folios": 0, "total_outstanding_balance": 0.0, "recent_charges_24h": 0, "recent_payments_24h": 0}
+        charges, payments, total_open = await asyncio.gather(
+            recent(db.folio_charges, ("posted_at", "created_at", "date")),
+            recent(db.payments, ("processed_at", "payment_date", "date", "created_at")),
+            db.folios.count_documents({"tenant_id": tid, "status": "open"}),
+        )
+        totals = row_totals(rows)
+        return {
+            "total_open_folios": total_open,
+            "total_outstanding_balance": single_amount(totals),
+            "outstanding_by_currency": totals,
+            "currency": next(iter(totals), currency) if len(totals) <= 1 else None,
+            "as_of_date": day.isoformat(),
+            "recent_charges_24h": sum(not row.get("voided") for row in charges),
+            "recent_payments_24h": sum(is_valid_payment(row) for row in deduplicate_report_payments(payments)),
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Folio dashboard report failed tenant=%s", current_user.tenant_id)
+        raise HTTPException(status_code=503, detail="Folyo özeti alınamadı; lütfen yeniden deneyin.") from exc
 
 
 @router.get("/folio/pending-ar")

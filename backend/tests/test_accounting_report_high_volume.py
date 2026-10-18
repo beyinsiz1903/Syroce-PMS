@@ -1,3 +1,4 @@
+from datetime import date
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -27,6 +28,7 @@ class _Collection:
 
 @pytest.mark.asyncio
 async def test_financial_summaries_never_silently_cap_source_rows(monkeypatch):
+    monkeypatch.setattr(accounting, "_report_business_day", AsyncMock(return_value=date(2026, 10, 2)))
     invoice_cursor = _Cursor([])
     expense_cursor = _Cursor([])
     bank_cursor = _Cursor([])
@@ -51,6 +53,7 @@ async def test_financial_summaries_never_silently_cap_source_rows(monkeypatch):
     await accounting.get_vat_report("2026-10-01", "2026-10-02", current_user=user)
     await accounting.get_accounting_dashboard.__wrapped__(current_user=user, _perm=None)
 
-    assert invoice_cursor.limits == [None, None, None]
+    # Dashboard revenue is monthly; its outstanding-debt cohort spans all months.
+    assert invoice_cursor.limits == [None, None, None, None]
     assert expense_cursor.limits == [None, None, None]
     assert bank_cursor.limits == [None]

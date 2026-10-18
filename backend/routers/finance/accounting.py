@@ -7,9 +7,9 @@ import re as _re
 import uuid
 from datetime import UTC, date, datetime, timedelta
 from enum import Enum
-from typing import Any
+from typing import Any, Callable
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.security import HTTPBearer
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
@@ -36,7 +36,8 @@ from models.schemas import (
 )
 from modules.folio.services.folio_balance_read_service import FolioBalanceReadService
 from modules.folio.services.open_folio_service import OpenFolioService
-from modules.pms_core.report_money import add_amount, currency_code, rounded_totals, single_amount
+from modules.pms_core.receivable_reporting import outstanding_invoice, report_day
+from modules.pms_core.report_money import add_amount, currency_code, money, rounded, rounded_totals, single_amount
 from modules.pms_core.role_permission_service import require_op
 from shared_kernel.invoice_guards import ensure_booking_invoiceable, is_status_invoiceable
 
@@ -132,14 +133,56 @@ def _invoice_currency_terms(
     return currency, exchange_rate
 
 
-def _currency_totals(records, amount_field: str, fallback_currency: str, predicate=None) -> dict[str, float]:
+def _currency_totals(records, amount_field: str | Callable[[dict], object], fallback_currency: str, predicate=None) -> dict[str, float]:
     totals: dict[str, float] = {}
     for record in records:
         if predicate is not None and not predicate(record):
             continue
         currency = _accounting_currency(record.get("currency"), fallback_currency)
-        totals[currency] = totals.get(currency, 0) + float(record.get(amount_field, 0) or 0)
-    return {currency: round(amount, 2) for currency, amount in totals.items()}
+        amount = amount_field(record) if callable(amount_field) else record.get(amount_field, 0)
+        add_amount(totals, currency, amount)
+    return rounded_totals(totals)
+
+
+_NON_POSTED_DOCUMENT_STATES = ["cancelled", "canceled", "void", "voided", "draft", "deleted"]
+
+
+def _live_documents() -> dict:
+    """Legacy missing status remains valid; void/draft/deleted documents do not."""
+    return {"status": {"$nin": _NON_POSTED_DOCUMENT_STATES}, "voided": {"$ne": True}, "deleted": {"$ne": True}}
+
+
+def _live_expenses() -> dict:
+    return {**_live_documents(), "payment_status": {"$nin": _NON_POSTED_DOCUMENT_STATES}}
+
+
+def _expense_total(expense) -> object:
+    return expense.get("total_amount") if expense.get("total_amount") is not None else expense.get("amount", 0)
+
+
+def _expense_outstanding(expense) -> float:
+    return outstanding_invoice({**expense, "total": _expense_total(expense), "status": expense.get("payment_status") or expense.get("status")})
+
+
+def _bank_balances(accounts, fallback_currency) -> tuple[dict, int]:
+    totals, unknown = {}, 0
+    for account in accounts:
+        amount = account.get("current_balance") if account.get("current_balance") is not None else account.get("balance")
+        if amount is None:
+            unknown += 1
+        else:
+            add_amount(totals, currency_code(account.get("currency"), fallback_currency), amount)
+    return rounded_totals(totals), unknown
+
+
+async def _report_business_day(tenant_id) -> date:
+    from core.business_date_service import ensure_business_date_initialized
+
+    state = await ensure_business_date_initialized(db, tenant_id)
+    day = report_day(state["business_date"])
+    if day is None:
+        raise HTTPException(status_code=503, detail="PMS iş günü belirlenemedi.")
+    return day
 
 
 def _charge_vat_rate(charge: dict[str, Any], accommodation_vat_rate: float = ACCOMMODATION_VAT_RATE) -> float:
@@ -1837,21 +1880,20 @@ async def get_profit_loss_report(
     end_date: str | None = None,
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_finance_reports")),  # v70 Bug DG
+    _nocache: bool = Query(False, alias="nocache"),
 ):
-    # Tur 3: defaults — last 30 days when params omitted
-    from datetime import date as _d
-    from datetime import timedelta as _td
-
-    if not start_date:
-        start_date = (_d.today() - _td(days=30)).isoformat()
-    if not end_date:
-        end_date = _d.today().isoformat()
-    # Only paid sales documents are realised revenue in this cash-basis view.
+    if not start_date or not end_date:
+        day = await _report_business_day(current_user.tenant_id)
+        start_date = start_date or (day - timedelta(days=30)).isoformat()
+        end_date = end_date or day.isoformat()
+    # This is paid-document revenue by issue date, NOT payment-date cash flow.
     # A paid purchase or proforma must never become hotel income.
     invoices = await db.accounting_invoices.find(
         {
             "tenant_id": current_user.tenant_id,
             "status": "paid",
+            "voided": {"$ne": True},
+            "deleted": {"$ne": True},
             "invoice_type": {"$nin": [InvoiceType.PROFORMA.value, InvoiceType.PURCHASE.value]},
             **_document_period("issue_date", start_date, end_date),
         },
@@ -1859,20 +1901,14 @@ async def get_profit_loss_report(
     ).to_list(None)
 
     # Get all expenses
-    expenses = await db.expenses.find({"tenant_id": current_user.tenant_id, **_document_period("date", start_date, end_date)}, {"_id": 0}).to_list(None)
+    expenses = await db.expenses.find({"tenant_id": current_user.tenant_id, **_live_expenses(), **_document_period("date", start_date, end_date)}, {"_id": 0}).to_list(None)
 
     from core.tenant_currency import get_tenant_currency
 
     tenant_currency, _ = await get_tenant_currency(current_user.tenant_id)
 
-    def _currency_totals(records, amount_field):
-        totals: dict[str, float] = {}
-        for record in records:
-            add_amount(totals, record.get("currency") or tenant_currency, record.get(amount_field, 0))
-        return rounded_totals(totals)
-
-    total_revenue_by_currency = _currency_totals(invoices, "total")
-    total_expenses_by_currency = _currency_totals(expenses, "total_amount")
+    total_revenue_by_currency = _currency_totals(invoices, "total", tenant_currency)
+    total_expenses_by_currency = _currency_totals(expenses, _expense_total, tenant_currency)
     gross_profit_by_currency = {
         code: round(total_revenue_by_currency.get(code, 0) - total_expenses_by_currency.get(code, 0), 2)
         for code in sorted(set(total_revenue_by_currency) | set(total_expenses_by_currency))
@@ -1897,11 +1933,19 @@ async def get_profit_loss_report(
     revenue_by_category = {}
     revenue_by_category_currency: dict[str, dict[str, float]] = {}
     for inv in invoices:
+        code = currency_code(inv.get("currency"), tenant_currency)
+        allocated = money(0)
         for item in inv.get("items") or []:
             desc = item.get("description") or "other"
-            code = currency_code(inv.get("currency"), tenant_currency)
             category_totals = revenue_by_category_currency.setdefault(desc, {})
-            category_totals[code] = round(category_totals.get(code, 0) + float(item.get("total", 0) or 0), 2)
+            amount = money(item.get("total", 0))
+            add_amount(category_totals, code, amount)
+            allocated += amount
+        # Missing legacy lines, discounts and document adjustments must remain
+        # visible instead of silently disappearing from the category total.
+        remainder = money(inv.get("total", 0)) - allocated
+        if remainder:
+            add_amount(revenue_by_category_currency.setdefault("unallocated", {}), code, remainder)
 
     # Expense breakdown
     expense_by_category = {}
@@ -1910,7 +1954,10 @@ async def get_profit_loss_report(
         cat = exp.get("category") or "other"
         code = currency_code(exp.get("currency"), tenant_currency)
         category_totals = expense_by_category_currency.setdefault(cat, {})
-        category_totals[code] = round(category_totals.get(code, 0) + float(exp.get("total_amount", 0) or 0), 2)
+        add_amount(category_totals, code, _expense_total(exp))
+
+    revenue_by_category_currency = {key: rounded_totals(values) for key, values in revenue_by_category_currency.items()}
+    expense_by_category_currency = {key: rounded_totals(values) for key, values in expense_by_category_currency.items()}
 
     revenue_by_category = {key: single_amount(values) for key, values in revenue_by_category_currency.items()}
     expense_by_category = {key: single_amount(values) for key, values in expense_by_category_currency.items()}
@@ -1935,21 +1982,18 @@ async def get_profit_loss_report(
 
 
 @router.get("/accounting/reports/vat-report")
-async def get_vat_report(start_date: str | None = None, end_date: str | None = None, current_user: User = Depends(get_current_user)):
-    # Tur 3: defaults — last 30 days when params omitted
-    from datetime import date as _d
-    from datetime import timedelta as _td
-
-    if not start_date:
-        start_date = (_d.today() - _td(days=30)).isoformat()
-    if not end_date:
-        end_date = _d.today().isoformat()
-    # Sales VAT (collected)
+async def get_vat_report(start_date: str | None = None, end_date: str | None = None, current_user: User = Depends(get_current_user), _perm=Depends(require_op("view_finance_reports"))):
+    if not start_date or not end_date:
+        day = await _report_business_day(current_user.tenant_id)
+        start_date = start_date or (day - timedelta(days=30)).isoformat()
+        end_date = end_date or day.isoformat()
+    # Sales-document VAT; neither side of this report is payment-date cash flow.
     # Proforma and purchase invoices are not output VAT.  A proforma is only
     # an offer, while a purchase invoice belongs to input VAT through AP.
     invoices = await db.accounting_invoices.find(
         {
             "tenant_id": current_user.tenant_id,
+            **_live_documents(),
             "invoice_type": {"$nin": [InvoiceType.PROFORMA.value, InvoiceType.PURCHASE.value]},
             **_document_period("issue_date", start_date, end_date),
         },
@@ -1966,8 +2010,8 @@ async def get_vat_report(start_date: str | None = None, end_date: str | None = N
             add_amount(totals, record.get("currency") or tenant_currency, record.get(field, 0))
         return rounded_totals(totals)
 
-    # Purchase VAT (paid)
-    expenses = await db.expenses.find({"tenant_id": current_user.tenant_id, **_document_period("date", start_date, end_date)}, {"_id": 0}).to_list(None)
+    # Expense-document input VAT, regardless of whether the bill is paid yet.
+    expenses = await db.expenses.find({"tenant_id": current_user.tenant_id, **_live_expenses(), **_document_period("date", start_date, end_date)}, {"_id": 0}).to_list(None)
 
     sales_vat_by_currency = _vat_totals(invoices, "total_vat")
     purchase_vat_by_currency = _vat_totals(expenses, "vat_amount")
@@ -1994,206 +2038,127 @@ async def get_vat_report(start_date: str | None = None, end_date: str | None = N
         "purchase_vat_by_currency": purchase_vat_by_currency,
         "vat_payable_by_currency": vat_payable_by_currency,
         "mixed_currency": mixed_currency,
+        "basis": "valid_sales_document_vat_minus_expense_document_vat",
     }
 
 
 @router.get("/accounting/reports/balance-sheet")
-@cached(ttl=300, key_prefix="report_balance_sheet")  # Cache for 5 minutes
+@cached(ttl=300, key_prefix="report_balance_sheet")
 async def get_balance_sheet(
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_finance_reports")),  # v70 Bug DG
+    _perm=Depends(require_op("view_finance_reports")),
+    _nocache: bool = Query(False, alias="nocache"),
 ):
+    """Operational positions, not the statutory double-entry GL balance sheet."""
     tenant_id = current_user.tenant_id
-    from core.tenant_currency import get_tenant_currency
-
     tenant_currency, _ = await get_tenant_currency(tenant_id)
-
-    async def _group_currency(collection, match, amount_expression):
-        pipeline = [
-            {"$match": match},
-            {
-                "$group": {
-                    "_id": {"$toUpper": {"$ifNull": ["$currency", tenant_currency]}},
-                    "total": {"$sum": amount_expression},
-                }
-            },
-        ]
-        rows = await collection.aggregate(pipeline).to_list(100)
-        return {str(row.get("_id") or tenant_currency).upper(): round(float(row.get("total") or 0), 2) for row in rows}
-
-    async def _sum_cash():
-        pipeline = [
-            {"$match": {"tenant_id": tenant_id}},
-            {"$group": {"_id": None, "total": {"$sum": "$balance"}}},
-        ]
-        cur = db.bank_accounts.aggregate(pipeline)
-        docs = await cur.to_list(1)
-        return docs[0]["total"] if docs else 0
-
-    async def _sum_inventory():
-        pipeline = [
-            {"$match": {"tenant_id": tenant_id}},
-            {
-                "$group": {
-                    "_id": None,
-                    "total": {
-                        "$sum": {
-                            "$multiply": [
-                                {"$ifNull": ["$quantity", 0]},
-                                {"$ifNull": ["$unit_cost", 0]},
-                            ]
-                        }
-                    },
-                }
-            },
-        ]
-        cur = db.inventory_items.aggregate(pipeline)
-        docs = await cur.to_list(1)
-        return docs[0]["total"] if docs else 0
-
-    async def _sum_receivables():
-        pipeline = [
-            {
-                "$match": {
-                    "tenant_id": tenant_id,
-                    "status": {"$in": ["pending", "partial"]},
-                }
-            },
-            {"$group": {"_id": None, "total": {"$sum": "$total"}}},
-        ]
-        cur = db.accounting_invoices.aggregate(pipeline)
-        docs = await cur.to_list(1)
-        return docs[0]["total"] if docs else 0
-
-    async def _sum_payables():
-        pipeline = [
-            {
-                "$match": {
-                    "tenant_id": tenant_id,
-                    "payment_status": "pending",
-                }
-            },
-            {"$group": {"_id": None, "total": {"$sum": "$total_amount"}}},
-        ]
-        cur = db.expenses.aggregate(pipeline)
-        docs = await cur.to_list(1)
-        return docs[0]["total"] if docs else 0
-
-    total_cash, total_inventory, total_receivables, total_payables = await asyncio.gather(_sum_cash(), _sum_inventory(), _sum_receivables(), _sum_payables())
-
-    cash_by_currency, receivables_by_currency = await asyncio.gather(
-        _group_currency(db.bank_accounts, {"tenant_id": tenant_id}, {"$ifNull": ["$balance", 0]}),
-        _group_currency(
-            db.accounting_invoices,
-            {"tenant_id": tenant_id, "status": {"$in": ["pending", "partial"]}},
-            {"$ifNull": ["$total", 0]},
-        ),
+    banks, inventory, invoices, expenses = await asyncio.gather(
+        db.bank_accounts.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(None),
+        db.inventory_items.find({"tenant_id": tenant_id, "deleted": {"$ne": True}}, {"_id": 0}).to_list(None),
+        db.accounting_invoices.find({
+            "tenant_id": tenant_id, **_live_documents(),
+            "invoice_type": {"$nin": [InvoiceType.PROFORMA.value, InvoiceType.PURCHASE.value]},
+        }, {"_id": 0}).to_list(None),
+        db.expenses.find({"tenant_id": tenant_id, **_live_expenses()}, {"_id": 0}).to_list(None),
     )
-    inventory_by_currency = {tenant_currency: round(total_inventory, 2)} if total_inventory else {}
-    payables_by_currency = {tenant_currency: round(total_payables, 2)} if total_payables else {}
-    asset_codes = set(cash_by_currency) | set(inventory_by_currency) | set(receivables_by_currency)
+    cash_by_currency, unknown_banks = _bank_balances(banks, tenant_currency)
+    inventory_by_currency = _currency_totals(
+        inventory, lambda row: money(row.get("quantity")) * money(row.get("unit_cost")), tenant_currency,
+    )
+    receivables_by_currency = _currency_totals(invoices, outstanding_invoice, tenant_currency)
+    payables_by_currency = _currency_totals(expenses, _expense_outstanding, tenant_currency)
+    # Do not invent currency buckets for paid documents with zero remaining debt.
+    receivables_by_currency = {code: value for code, value in receivables_by_currency.items() if value}
+    payables_by_currency = {code: value for code, value in payables_by_currency.items() if value}
+    asset_codes = cash_by_currency.keys() | inventory_by_currency.keys() | receivables_by_currency.keys()
     total_assets_by_currency = {
-        code: round(cash_by_currency.get(code, 0) + inventory_by_currency.get(code, 0) + receivables_by_currency.get(code, 0), 2)
+        code: rounded(money(cash_by_currency.get(code)) + money(inventory_by_currency.get(code)) + money(receivables_by_currency.get(code)))
         for code in sorted(asset_codes)
     }
-    equity_codes = asset_codes | set(payables_by_currency)
+    equity_codes = asset_codes | payables_by_currency.keys()
     total_equity_by_currency = {
-        code: round(total_assets_by_currency.get(code, 0) - payables_by_currency.get(code, 0), 2)
+        code: rounded(money(total_assets_by_currency.get(code)) - money(payables_by_currency.get(code)))
         for code in sorted(equity_codes)
     }
-
-    total_assets = total_cash + total_inventory + total_receivables
-
-    # Equity
-    total_equity = total_assets - total_payables
+    mixed_currency = len(equity_codes) > 1
+    def scalar(values, *, complete=True):
+        return None if mixed_currency or not complete else single_amount(values)
 
     return {
         "assets": {
-            "cash": round(total_cash, 2),
-            "inventory": round(total_inventory, 2),
-            "receivables": round(total_receivables, 2),
-            "total": round(total_assets, 2),
+            "cash": scalar(cash_by_currency, complete=not unknown_banks),
+            "inventory": scalar(inventory_by_currency),
+            "receivables": scalar(receivables_by_currency),
+            "total": scalar(total_assets_by_currency, complete=not unknown_banks),
             "cash_by_currency": cash_by_currency,
             "inventory_by_currency": inventory_by_currency,
             "receivables_by_currency": receivables_by_currency,
             "total_by_currency": total_assets_by_currency,
         },
         "liabilities": {
-            "payables": round(total_payables, 2),
-            "total": round(total_payables, 2),
+            "payables": scalar(payables_by_currency),
+            "total": scalar(payables_by_currency),
             "payables_by_currency": payables_by_currency,
             "total_by_currency": payables_by_currency,
         },
-        "equity": {"total": round(total_equity, 2), "total_by_currency": total_equity_by_currency},
+        "equity": {"total": scalar(total_equity_by_currency, complete=not unknown_banks), "total_by_currency": total_equity_by_currency},
+        "mixed_currency": mixed_currency,
+        "currency": next(iter(equity_codes), tenant_currency) if not mixed_currency else None,
+        "complete": not unknown_banks,
+        "unknown_bank_balance_count": unknown_banks,
+        "basis": "current_operational_positions_not_general_ledger",
+        "generated_at": datetime.now(UTC).isoformat(),
     }
 
 
 @router.get("/accounting/dashboard")
-@cached(ttl=600, key_prefix="accounting_dashboard")  # Cache for 10 minutes
+@cached(ttl=600, key_prefix="accounting_dashboard")
 async def get_accounting_dashboard(
-    current_user=Depends(get_current_user),  # v68 Bug DE: tenant-scoped cache key
-    _perm=Depends(require_op("view_finance_reports")),  # v70 Bug DG
+    current_user=Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),
+    _nocache: bool = Query(False, alias="nocache"),
 ):
-
-    # Get current month data
-    today = datetime.now(UTC)
-    month_start = today.replace(day=1, hour=0, minute=0, second=0).isoformat()
-    month_end = today.isoformat()
-
-    # Keep dashboard income/receivable figures aligned with the report ledger:
-    # purchase and proforma documents are never hotel sales.
-    invoices = await db.accounting_invoices.find(
-        {
-            "tenant_id": current_user.tenant_id,
-            "invoice_type": {"$nin": [InvoiceType.PROFORMA.value, InvoiceType.PURCHASE.value]},
-            "issue_date": {"$gte": month_start, "$lte": month_end},
-        },
-        {"_id": 0},
-    ).to_list(None)
-
-    expenses = await db.expenses.find({"tenant_id": current_user.tenant_id, "date": {"$gte": month_start, "$lte": month_end}}, {"_id": 0}).to_list(None)
-
-    # Never combine nominal amounts from different currencies.  Keep the legacy
-    # scalar fields for older clients, and expose currency-safe breakdowns for
-    # current clients.
+    day = await _report_business_day(current_user.tenant_id)
+    month_start, month_end = day.replace(day=1).isoformat(), day.isoformat()
+    sales_query = {
+        "tenant_id": current_user.tenant_id,
+        **_live_documents(),
+        "invoice_type": {"$nin": [InvoiceType.PROFORMA.value, InvoiceType.PURCHASE.value]},
+    }
+    invoices, open_invoices, expenses, banks = await asyncio.gather(
+        db.accounting_invoices.find({**sales_query, **_document_period("issue_date", month_start, month_end)}, {"_id": 0}).to_list(None),
+        db.accounting_invoices.find({**sales_query, "status": {"$nin": [*_NON_POSTED_DOCUMENT_STATES, "paid"]}}, {"_id": 0}).to_list(None),
+        db.expenses.find({"tenant_id": current_user.tenant_id, **_live_expenses(), **_document_period("date", month_start, month_end)}, {"_id": 0}).to_list(None),
+        db.bank_accounts.find({"tenant_id": current_user.tenant_id}, {"_id": 0}).to_list(None),
+    )
     cur_code, cur_symbol = await get_tenant_currency(current_user.tenant_id)
-
     collected_by_currency = _currency_totals(invoices, "total", cur_code, lambda inv: inv.get("status") == "paid")
     accrued_by_currency = _currency_totals(invoices, "total", cur_code)
-    pending_by_currency = _currency_totals(invoices, "total", cur_code, lambda inv: inv.get("status") in ("pending", "partial"))
-    overdue_by_currency = _currency_totals(invoices, "total", cur_code, lambda inv: inv.get("status") == "overdue")
-    expenses_by_currency = _currency_totals(expenses, "total_amount", cur_code)
-
-    collected_income = collected_by_currency.get(cur_code, 0)
-    accrued_revenue = accrued_by_currency.get(cur_code, 0)
-    pending_amount = pending_by_currency.get(cur_code, 0)
-    overdue_amount = overdue_by_currency.get(cur_code, 0)
-    total_expenses = expenses_by_currency.get(cur_code, 0)
+    pending = [inv for inv in open_invoices if outstanding_invoice(inv) > 0]
+    overdue = [inv for inv in pending if (
+        (report_day(inv.get("due_date")) is not None and report_day(inv["due_date"]) < day)
+        or (report_day(inv.get("due_date")) is None and inv.get("status") == "overdue")
+    )]
+    pending_by_currency = _currency_totals(pending, outstanding_invoice, cur_code)
+    overdue_by_currency = _currency_totals(overdue, outstanding_invoice, cur_code)
+    expenses_by_currency = _currency_totals(expenses, _expense_total, cur_code)
     net_income_by_currency = {
-        code: round(collected_by_currency.get(code, 0) - expenses_by_currency.get(code, 0), 2)
-        for code in set(collected_by_currency) | set(expenses_by_currency)
+        code: rounded(money(collected_by_currency.get(code)) - money(expenses_by_currency.get(code)))
+        for code in collected_by_currency.keys() | expenses_by_currency.keys()
     }
-    pending_invoices = len([inv for inv in invoices if inv.get("status") == "pending"])
-    overdue_invoices = len([inv for inv in invoices if inv.get("status") == "overdue"])
-
-    # Get bank balances
-    bank_accounts = await db.bank_accounts.find({"tenant_id": current_user.tenant_id}, {"_id": 0}).to_list(None)
-    bank_balance_by_currency = _currency_totals(bank_accounts, "balance", cur_code)
-    total_bank_balance = bank_balance_by_currency.get(cur_code, 0)
-
+    bank_balance_by_currency, unknown_banks = _bank_balances(banks, cur_code)
+    # Legacy dashboard scalars explicitly describe only the tenant currency.
     return {
-        # Backward-compat field (paid invoices only).
-        "monthly_income": round(collected_income, 2),
-        # New explicit fields:
-        "collected_income": round(collected_income, 2),
-        "accrued_revenue": round(accrued_revenue, 2),
-        "pending_amount": round(pending_amount, 2),
-        "overdue_amount": round(overdue_amount, 2),
-        "monthly_expenses": round(total_expenses, 2),
-        "net_income": round(collected_income - total_expenses, 2),
-        "pending_invoices": pending_invoices,
-        "overdue_invoices": overdue_invoices,
-        "total_bank_balance": round(total_bank_balance, 2),
+        "monthly_income": collected_by_currency.get(cur_code, 0),
+        "collected_income": collected_by_currency.get(cur_code, 0),
+        "accrued_revenue": accrued_by_currency.get(cur_code, 0),
+        "pending_amount": pending_by_currency.get(cur_code, 0),
+        "overdue_amount": overdue_by_currency.get(cur_code, 0),
+        "monthly_expenses": expenses_by_currency.get(cur_code, 0),
+        "net_income": net_income_by_currency.get(cur_code, 0),
+        "pending_invoices": len(pending),
+        "overdue_invoices": len(overdue),
+        "total_bank_balance": bank_balance_by_currency.get(cur_code, 0) if not unknown_banks else None,
         "collected_income_by_currency": collected_by_currency,
         "accrued_revenue_by_currency": accrued_by_currency,
         "pending_amount_by_currency": pending_by_currency,
@@ -2201,8 +2166,13 @@ async def get_accounting_dashboard(
         "monthly_expenses_by_currency": expenses_by_currency,
         "net_income_by_currency": net_income_by_currency,
         "bank_balance_by_currency": bank_balance_by_currency,
+        "unknown_bank_balance_count": unknown_banks,
         "currency": cur_code,
         "currency_symbol": cur_symbol,
+        "period": {"start": month_start, "end": month_end},
+        "business_date": day.isoformat(),
+        "income_basis": "paid_sales_documents_by_issue_date_not_payment_date",
+        "receivables_scope": "all_open_sales_documents",
     }
 
 

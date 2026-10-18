@@ -109,7 +109,9 @@ export type FolioListItem = {
   id: string;
   folio_number?: string;
   status?: string;
-  balance?: number;
+  balance?: number | null;
+  currency?: string;
+  balance_by_currency?: Record<string, number>;
   guest_name?: string;
   room_number?: string;
   check_in?: string;
@@ -126,8 +128,10 @@ export type FolioListResponse = {
 };
 
 export type FolioDashboardStats = {
-  total_open_folios: number;
-  total_outstanding_balance: number;
+  total_open_folios?: number;
+  total_outstanding_balance?: number | null;
+  outstanding_by_currency?: Record<string, number>;
+  currency?: string;
   recent_charges_24h?: number;
   recent_payments_24h?: number;
 };
@@ -144,12 +148,14 @@ export async function listFolios(params?: {
 
 // GET /api/folio/dashboard-stats
 export async function getFolioDashboardStats(): Promise<FolioDashboardStats> {
-  const res = await api.get<Partial<FolioDashboardStats>>('/api/folio/dashboard-stats');
+  const res = await api.get<Partial<FolioDashboardStats>>('/api/folio/dashboard-stats', { nocache: true });
   return {
-    total_open_folios: res?.total_open_folios ?? 0,
-    total_outstanding_balance: res?.total_outstanding_balance ?? 0,
-    recent_charges_24h: res?.recent_charges_24h ?? 0,
-    recent_payments_24h: res?.recent_payments_24h ?? 0,
+    total_open_folios: res?.total_open_folios,
+    total_outstanding_balance: res?.total_outstanding_balance,
+    outstanding_by_currency: res?.outstanding_by_currency,
+    currency: res?.currency,
+    recent_charges_24h: res?.recent_charges_24h,
+    recent_payments_24h: res?.recent_payments_24h,
   };
 }
 

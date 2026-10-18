@@ -27,18 +27,10 @@ class _Collection:
         return _Cursor(self.rows)
 
 
-class _AggregateCollection:
-    def __init__(self, scalar_total=0, currency_totals=None):
-        self.scalar_total = scalar_total
-        self.currency_totals = currency_totals or {}
-
-    def aggregate(self, pipeline):
-        group_id = pipeline[-1].get("$group", {}).get("_id")
-        if group_id is None:
-            rows = [{"_id": None, "total": self.scalar_total}] if self.scalar_total else []
-        else:
-            rows = [{"_id": code, "total": amount} for code, amount in self.currency_totals.items()]
-        return _Cursor(rows)
+@pytest.fixture(autouse=True)
+def business_day(monkeypatch):
+    from datetime import date
+    monkeypatch.setattr(accounting, "_report_business_day", AsyncMock(return_value=date(2026, 9, 30)))
 
 
 @pytest.fixture
@@ -185,20 +177,21 @@ async def test_balance_sheet_keeps_assets_and_equity_by_currency(monkeypatch, cu
         accounting,
         "db",
         SimpleNamespace(
-            bank_accounts=_AggregateCollection(100.0, {"TRY": 100.0}),
-            inventory_items=_AggregateCollection(50.0),
-            accounting_invoices=_AggregateCollection(20.0, {"EUR": 20.0}),
-            expenses=_AggregateCollection(10.0),
+            bank_accounts=_Collection([{"balance": 100, "currency": "TRY"}]),
+            inventory_items=_Collection([{"quantity": 5, "unit_cost": 10, "currency": "TRY"}]),
+            accounting_invoices=_Collection([{"total": 20, "currency": "EUR", "status": "pending"}]),
+            expenses=_Collection([{"total_amount": 10, "currency": "TRY", "payment_status": "pending"}]),
         ),
     )
 
-    result = await accounting.get_balance_sheet(current_user=current_user, _perm=None)
+    result = await accounting.get_balance_sheet.__wrapped__(current_user=current_user, _perm=None)
 
     assert result["assets"]["cash_by_currency"] == {"TRY": 100.0}
     assert result["assets"]["receivables_by_currency"] == {"EUR": 20.0}
     assert result["assets"]["total_by_currency"] == {"EUR": 20.0, "TRY": 150.0}
     assert result["liabilities"]["total_by_currency"] == {"TRY": 10.0}
     assert result["equity"]["total_by_currency"] == {"EUR": 20.0, "TRY": 140.0}
+    assert result["assets"]["total"] is None
 
 
 @pytest.mark.asyncio

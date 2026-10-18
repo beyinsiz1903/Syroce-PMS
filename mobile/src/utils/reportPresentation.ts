@@ -12,6 +12,16 @@ export function reportAmountLabel(amount: unknown, currency: unknown): string {
     : '—';
 }
 
+/** Currency-preserving folio summaries; null or a missing read is not zero. */
+export function reportMoneyTotalsLabel(value: unknown, amount?: unknown, currency?: unknown): string {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    const entries = Object.entries(value);
+    if (!entries.length) return reportAmountLabel(0, currency);
+    return entries.map(([code, total]) => reportAmountLabel(total, code)).join(' · ');
+  }
+  return reportAmountLabel(amount, currency);
+}
+
 export type ReportCurrencyBucket = { currency?: string; total?: number };
 export type ReportCurrencyBuckets =
   | { kind: 'unavailable'; buckets: [] }

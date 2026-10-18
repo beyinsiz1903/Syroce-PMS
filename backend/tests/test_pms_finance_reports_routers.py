@@ -254,7 +254,7 @@ class TestFinanceRouter:
         data = response.json()
         assert "total_open_folios" in data, "Response missing total_open_folios"
         assert "total_outstanding_balance" in data, "Response missing total_outstanding_balance"
-        print(f"✅ GET /api/folio/dashboard-stats works - {data.get('total_open_folios')} open folios, ${data.get('total_outstanding_balance', 0):.2f} outstanding")
+        print(f"✅ GET /api/folio/dashboard-stats works - {data.get('total_open_folios')} open folios, {data.get('outstanding_by_currency')} outstanding by currency")
     
     def test_get_folio_pending_ar(self, auth_headers):
         """GET /api/folio/pending-ar - should return AR data"""

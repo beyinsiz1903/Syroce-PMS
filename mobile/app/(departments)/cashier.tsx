@@ -33,6 +33,7 @@ import {
 } from '../../src/api/folio';
 import { formatCurrency, formatDate, formatTime } from '../../src/utils/format';
 import { getFinanceSnapshot } from '../../src/api/reports';
+import { reportCountLabel, reportMoneyTotalsLabel } from '../../src/utils/reportPresentation';
 
 const t = tr.departments.cashier;
 
@@ -124,8 +125,9 @@ const FolioCard: React.FC<{
   const accent =
     tone === 'success' ? c.success : tone === 'danger' ? c.danger : c.warning;
   const last = folio.updated_at || folio.created_at;
-  const balance = typeof folio.balance === 'number' ? folio.balance : 0;
-  const owes = balance > 0;
+  const owes = folio.balance_by_currency
+    ? Object.values(folio.balance_by_currency).some(amount => amount > 0)
+    : typeof folio.balance === 'number' && folio.balance > 0;
   return (
     <Card accent={accent} style={{ marginBottom: spacing.md, gap: spacing.sm }}>
       <Pressable
@@ -160,7 +162,7 @@ const FolioCard: React.FC<{
             gap: spacing.sm,
           }}
         >
-          <View>
+          <View style={{ flex: 1, minWidth: 0 }}>
             <Muted style={{ fontSize: 11 }}>{t.balance}</Muted>
             <Text
               style={{
@@ -170,7 +172,7 @@ const FolioCard: React.FC<{
                 marginTop: 1,
               }}
             >
-              {formatCurrency(balance)}
+              {reportMoneyTotalsLabel(folio.balance_by_currency, folio.balance, folio.currency).split(' · ').join('\n')}
             </Text>
           </View>
           {last ? (
@@ -451,15 +453,15 @@ export default function CashierScreen() {
       <View style={{ flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.md }}>
         <KpiCard
           label={t.openFolios}
-          value={String(stats?.total_open_folios ?? 0)}
+          value={reportCountLabel(statsQ.isError ? undefined : stats?.total_open_folios)}
           icon="documents-outline"
         />
-        <KpiCard
-          label={t.outstanding}
-          value={formatCurrency(stats?.total_outstanding_balance ?? 0)}
-          icon="trending-up-outline"
-          tone="warning"
-        />
+        <Card style={{ flex: 1, minWidth: 0, gap: spacing.xs }}>
+          <Muted>{t.outstanding}</Muted>
+          {(statsQ.isError ? '—' : reportMoneyTotalsLabel(stats?.outstanding_by_currency, stats?.total_outstanding_balance, stats?.currency)).split(' · ').map((amount, index) => (
+            <Text key={index} style={{ color: c.warning, fontSize: 20, fontWeight: '800' }}>{amount}</Text>
+          ))}
+        </Card>
       </View>
 
       <View style={{ marginBottom: spacing.md }}>
