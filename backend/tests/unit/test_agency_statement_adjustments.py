@@ -50,6 +50,11 @@ def _match(doc, query):
     return True
 
 
+def _no_statements(*_a, **_k):
+    """No statement overlaps the period (supplement check)."""
+    return SimpleNamespace(to_list=AsyncMock(return_value=[]))
+
+
 class _Store:
     def __init__(self, doc):
         self.doc = doc
@@ -131,7 +136,7 @@ async def test_preview_saves_nothing_and_matches_the_issue(monkeypatch):
     inserted = []
     sysdb = SimpleNamespace(
         agency_contracts=SimpleNamespace(find_one=AsyncMock(return_value={"agency_name": "Test", "hotel_name": "Demo"})),
-        agency_statements=SimpleNamespace(find_one=AsyncMock(return_value=None), insert_one=AsyncMock(side_effect=inserted.append)),
+        agency_statements=SimpleNamespace(find=_no_statements, find_one=AsyncMock(return_value=None), insert_one=AsyncMock(side_effect=inserted.append)),
     )
     monkeypatch.setattr(st, "get_system_db", lambda: sysdb)
     monkeypatch.setattr(st, "build_statement", AsyncMock(return_value=copy.deepcopy(built)))
@@ -192,7 +197,7 @@ async def test_issue_refuses_a_balance_other_than_the_preview(monkeypatch):
     built = {"lines": [dict(PREPAID)], "totals": statement_totals([PREPAID])}
     sysdb = SimpleNamespace(
         agency_contracts=SimpleNamespace(find_one=AsyncMock(return_value={"agency_name": "Test"})),
-        agency_statements=SimpleNamespace(find_one=AsyncMock(return_value=None), insert_one=AsyncMock()),
+        agency_statements=SimpleNamespace(find=_no_statements, find_one=AsyncMock(return_value=None), insert_one=AsyncMock()),
         agency_statement_locks=SimpleNamespace(insert_one=AsyncMock(), delete_one=AsyncMock()),
     )
     monkeypatch.setattr(st, "get_system_db", lambda: sysdb)
@@ -264,7 +269,7 @@ async def test_issue_refuses_different_lines_with_the_same_total(monkeypatch):
     signature = st.statement_signature({"lines": previewed, "totals": statement_totals(previewed)})
     sysdb = SimpleNamespace(
         agency_contracts=SimpleNamespace(find_one=AsyncMock(return_value={"agency_name": "Test"})),
-        agency_statements=SimpleNamespace(find_one=AsyncMock(return_value=None), insert_one=AsyncMock()),
+        agency_statements=SimpleNamespace(find=_no_statements, find_one=AsyncMock(return_value=None), insert_one=AsyncMock()),
         agency_statement_locks=SimpleNamespace(insert_one=AsyncMock(), delete_one=AsyncMock()),
     )
     monkeypatch.setattr(st, "get_system_db", lambda: sysdb)

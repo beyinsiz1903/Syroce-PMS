@@ -151,32 +151,57 @@ async def test_concurrent_payments_cannot_leave_a_paid_statement_open(monkeypatc
 
 
 @pytest.mark.asyncio
-async def test_overlapping_period_and_already_billed_stays_are_refused(monkeypatch):
+async def test_a_period_with_statements_gets_a_supplement_for_unbilled_stays_only(monkeypatch):
+    """A settled November statement was issued before b2 was booked: a new
+    November statement is allowed, holds b2 only and names the statement it
+    supplements. Nothing new -> refused; a stay moved in from another
+    period's statement -> still refused."""
+    overlapping = [{"number": "EKS-1", "lines": [{"booking_id": "b1"}]}]
+    moved_from = None
     queries = []
 
     class _Store:
-        async def find_one(self, query, *_a, **_k):
+        def find(self, query, *_a, **_k):
             queries.append(query)
-            if "period_start" in query:  # overlap check
-                return {"number": "EKS-1", "period_start": "2026-10-01", "period_end": "2026-10-31"} if overlap else None
-            return {"number": "EKS-1", "lines": [{"booking_id": "b1", "confirmation_code": "MKT-1"}]}
+            return SimpleNamespace(to_list=AsyncMock(return_value=overlapping))
 
-    sysdb = SimpleNamespace(agency_statements=_Store(),
+        async def find_one(self, query, *_a, **_k):
+            return moved_from
+
+        async def insert_one(self, doc):
+            inserted.append(doc)
+
+    inserted = []
+    sysdb = SimpleNamespace(agency_statements=_Store(), counters=SimpleNamespace(find_one_and_update=AsyncMock(return_value={"seq": 2})),
                             agency_contracts=SimpleNamespace(find_one=AsyncMock(return_value={"agency_name": "A", "hotel_name": "H"})),
                             agency_statement_locks=SimpleNamespace(insert_one=AsyncMock(), delete_one=AsyncMock()))
-    monkeypatch.setattr(agency_statements, "build_statement", AsyncMock(return_value={"lines": [{"booking_id": "b1"}], "totals": {}}))
-    data = agency_statements.StatementCreate(agency_id="a1", period_start="2026-10-15", period_end="2026-11-15", currency="TRY")
+    monkeypatch.setattr(agency_statements, "_next_number", AsyncMock(return_value="EKS-2"))
+    monkeypatch.setattr(agency_statements, "_notify_new", AsyncMock(), raising=False)
+    def line(booking_id, day):
+        return {"booking_id": booking_id, "confirmation_code": f"MKT-{booking_id}", "check_in": day, "status": "confirmed",
+                "payment_terms": "on_arrival", "gross": 4000.0, "penalty": 0.0, "commission": 600.0, "net_to_hotel": 3400.0,
+                "agency_owes_hotel": 0.0, "hotel_owes_agency": 600.0}
 
-    overlap = True
-    with pytest.raises(HTTPException) as exc:
-        await agency_statements._issue(sysdb, "t1", data, issuer="hotel", actor=USER.email)
-    assert exc.value.status_code == 409 and "çakışıyor" in exc.value.detail
-    assert queries[0]["period_start"] == {"$lte": "2026-11-15"} and queries[0]["period_end"] == {"$gte": "2026-10-15"}
+    lines = [line("b1", "2026-11-20"), line("b2", "2026-11-21")]
+    monkeypatch.setattr(agency_statements, "build_statement", AsyncMock(return_value={"lines": lines, "totals": {}}))
+    data = agency_statements.StatementCreate(agency_id="a1", period_start="2026-11-01", period_end="2026-11-30", currency="TRY")
 
-    overlap = False
-    with pytest.raises(HTTPException) as exc:
-        await agency_statements._issue(sysdb, "t1", data, issuer="hotel", actor=USER.email)
-    assert "MKT-1 zaten EKS-1" in exc.value.detail
+    preview = await agency_statements._preview(sysdb, "t1", data, USER.email, "hotel")
+    assert [line["booking_id"] for line in preview["lines"]] == ["b2"]
+    assert preview["supplement_of"] == ["EKS-1"]
+    assert queries[0]["period_start"] == {"$lte": "2026-11-30"} and queries[0]["period_end"] == {"$gte": "2026-11-01"}
+    assert "void" not in queries[0]["status"]["$in"]
+
+    overlapping = [{"number": "EKS-1", "lines": [{"booking_id": "b1"}, {"booking_id": "b2"}]}]
+    with pytest.raises(HTTPException) as nothing_new:
+        await agency_statements._preview(sysdb, "t1", data, USER.email, "hotel")
+    assert nothing_new.value.status_code == 400 and "EKS-1" in nothing_new.value.detail
+
+    overlapping = []
+    moved_from = {"number": "EKS-0", "lines": [{"booking_id": "b1", "confirmation_code": "MKT-1"}]}
+    with pytest.raises(HTTPException) as moved:
+        await agency_statements._preview(sysdb, "t1", data, USER.email, "hotel")
+    assert moved.value.status_code == 409 and "MKT-1 zaten EKS-0" in moved.value.detail
 
 
 def test_ledger_sync_takes_the_modified_commission_rate():

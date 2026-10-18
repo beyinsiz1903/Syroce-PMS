@@ -34,6 +34,22 @@ describe('StatementsWorkspace (agency side)', () => {
     expect(toastSuccess).toHaveBeenCalledWith('EKS-2026-0009 düzenlendi ve otele iletildi.');
   });
 
+  it('marks a supplementary statement in the preview and in the list', async () => {
+    const supplement = { id: 's9', number: 'EKS-2026-0009', hotel_name: 'Demo Otel', status: 'issued', issuer: 'agency', revision: 1,
+      agreements: { hotel: null, agency: 1 }, period_start: '2026-11-01', period_end: '2026-11-30', currency: 'TRY',
+      lines: [line], totals: { net_balance: -1200 }, outstanding: -1200, payments: [], payment_notices: [], supplement_of: ['EKS-2026-0001'] };
+    const api = {
+      get: vi.fn(url => Promise.resolve({ data: url.endsWith('/hotels') ? { hotels: [{ tenant_id: 't1', name: 'Demo Otel', currency: 'TRY' }] } : url === base ? { items: [supplement] } : supplement })),
+      post: vi.fn((url, body) => Promise.resolve({ data: { hotel_name: 'Demo Otel', period_start: body.period_start, period_end: body.period_end, currency: 'TRY',
+        lines: [line], totals: { net_balance: -1200 }, outstanding: -1200, signature: 'sig', supplement_of: ['EKS-2026-0001'] } })),
+    };
+    renderAgency(api);
+    expect(await screen.findByTestId('supplement-EKS-2026-0009')).toHaveTextContent('Ek ekstre (EKS-2026-0001)');
+    await userEvent.selectOptions(await screen.findByLabelText('Otel'), 't1');
+    await userEvent.click(screen.getByText('Ekstreyi önizle'));
+    expect(await screen.findByTestId('statement-preview-supplement')).toHaveTextContent('EKS-2026-0001');
+  });
+
   it('verifies the commission payment the hotel reported, and offers "Ödeme alındı" instead of reporting', async () => {
     const statement = { id: 's1', number: 'EKS-2026-0009', hotel_name: 'Demo Otel', period_start: '2026-11-01', period_end: '2026-11-30', currency: 'TRY',
       status: 'agreed', issuer: 'agency', revision: 1, agreements: { hotel: 1, agency: 1 }, outstanding: -1200, lines: [line], payments: [],

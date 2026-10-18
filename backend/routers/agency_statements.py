@@ -44,6 +44,13 @@ SIDE_LABEL = {"hotel": "otel", "agency": "acente", "system": "sistem"}
 LOCK_TTL_SECONDS = 120
 
 
+class _StatementIssueBusy(HTTPException):
+    """Expected contention, unlike a booking that needs reconciliation."""
+
+    def __init__(self):
+        super().__init__(409, "Bu otel–acente için başka bir ekstre şu an düzenleniyor; birazdan tekrar deneyin")
+
+
 def _now() -> str:
     return datetime.now(UTC).isoformat()
 
@@ -277,19 +284,19 @@ async def _statement_contract(sysdb, tenant_id: str, agency_id: str) -> dict:
     return contract
 
 
-async def _overlapping_statement(sysdb, tenant_id: str, data) -> dict | None:
-    # Any overlap would bill the same stays twice (e.g. 1-31 Oct and 15-31 Oct).
-    return await sysdb.agency_statements.find_one({
+async def _overlapping_statements(sysdb, tenant_id: str, data) -> list[dict]:
+    """Statements (not void) whose period overlaps the requested one."""
+    return await sysdb.agency_statements.find({
         "tenant_id": tenant_id, "agency_id": data.agency_id, "currency": data.currency,
         "period_start": {"$lte": data.period_end}, "period_end": {"$gte": data.period_start},
         "status": {"$in": list(OPEN_STATUSES) + ["settled"]},
-    }, {"_id": 0, "number": 1, "period_start": 1, "period_end": 1})
+    }, {"_id": 0, "number": 1, "period_start": 1, "period_end": 1, "lines.booking_id": 1}).to_list(None)
 
 
-def _overlap_error(duplicate: dict) -> HTTPException:
-    return HTTPException(
-        409, f"Bu dönem {duplicate['number']} ekstresiyle ({duplicate['period_start']} – {duplicate['period_end']}) çakışıyor; önce onu iptal edin"
-    )
+def _billed_stay_conflict(statement: dict, lines: list[dict]) -> HTTPException:
+    codes = sorted({line.get("confirmation_code") or line["booking_id"] for line in lines if line.get("booking_id")})
+    return HTTPException(409, f"{', '.join(codes)} zaten {statement.get('number') or statement.get('id') or '?'} ekstresinde; "
+                         "yeniden ekstrelemeden önce rezervasyon değişikliğini ilgili ekstreyle uzlaştırın")
 
 
 @asynccontextmanager
@@ -306,9 +313,9 @@ async def _issue_lock(sysdb, tenant_id: str, agency_id: str, currency: str):
             stale_before = datetime.fromtimestamp(datetime.now(UTC).timestamp() - LOCK_TTL_SECONDS, UTC).isoformat()
             removed = await sysdb.agency_statement_locks.delete_one({"_id": key, "created_at": {"$lt": stale_before}})
             if not removed.deleted_count:
-                raise HTTPException(409, "Bu otel–acente için başka bir ekstre şu an düzenleniyor; birazdan tekrar deneyin") from None
+                raise _StatementIssueBusy() from None
     else:
-        raise HTTPException(409, "Bu otel–acente için başka bir ekstre şu an düzenleniyor; birazdan tekrar deneyin")
+        raise _StatementIssueBusy()
     try:
         yield
     finally:
@@ -353,6 +360,29 @@ async def _build_checked(sysdb, tenant_id: str, data, actor: str, side: str) -> 
     )
     if not built["lines"]:
         raise HTTPException(400, "Bu dönemde bu para biriminde rezervasyon yok")
+    # Supplementary statement: a period that already has statements (e.g. a
+    # settled one issued before later bookings arrived) can be billed again
+    # for the stays none of them contains. Each stay is billed once.
+    overlapping = await _overlapping_statements(sysdb, tenant_id, data)
+    current_lines = {line["booking_id"]: line for line in built["lines"] if line.get("booking_id")}
+    for statement in overlapping:
+        # Overlapping PERIODS do not prove that a booking still belongs to
+        # its old statement. A wide request may include both the old dates
+        # and the new dates; do not hide that reconciliation conflict while
+        # filtering already-billed stays out of the supplement.
+        begin, end = statement.get("period_start"), statement.get("period_end")
+        moved = [current_lines[line["booking_id"]] for line in statement.get("lines") or []
+                 if line.get("booking_id") in current_lines
+                 and begin and end and current_lines[line["booking_id"]].get("check_in")
+                 and not begin <= str(current_lines[line["booking_id"]]["check_in"])[:10] <= end]
+        if moved:
+            raise _billed_stay_conflict(statement, moved)
+    covered = {line.get("booking_id") for statement in overlapping for line in statement.get("lines") or []}
+    supplement_of = sorted(statement.get("number") or statement.get("id") or "?" for statement in overlapping)
+    if covered:
+        built = {"lines": [line for line in built["lines"] if line.get("booking_id") not in covered]}
+        if not built["lines"]:
+            raise HTTPException(400, f"Bu dönemdeki rezervasyonlar zaten {', '.join(supplement_of)} ekstresinde; ekstrelenmemiş rezervasyon yok")
     # A stay moved to another period after billing must not be billed again.
     ids = [line["booking_id"] for line in built["lines"] if line.get("booking_id")]
     billed = await sysdb.agency_statements.find_one(
@@ -360,17 +390,13 @@ async def _build_checked(sysdb, tenant_id: str, data, actor: str, side: str) -> 
         {"_id": 0, "number": 1, "lines.booking_id": 1, "lines.confirmation_code": 1},
     )
     if billed:
-        codes = sorted({line.get("confirmation_code") or line["booking_id"] for line in billed.get("lines", []) if line.get("booking_id") in ids})
-        raise HTTPException(409, f"{', '.join(codes)} zaten {billed['number']} ekstresinde; önce o ekstreyi iptal edin")
+        raise _billed_stay_conflict(billed, [line for line in billed.get("lines", []) if line.get("booking_id") in ids])
     lines = _with_adjustments(built["lines"], data.adjustments, actor, side)
-    return {"lines": lines, "totals": statement_totals(lines)}
+    return {"lines": lines, "totals": statement_totals(lines), "supplement_of": supplement_of}
 
 
 async def _preview(sysdb, tenant_id: str, data, actor: str, side: str) -> dict:
     contract = await _statement_contract(sysdb, tenant_id, data.agency_id)
-    duplicate = await _overlapping_statement(sysdb, tenant_id, data)
-    if duplicate:
-        raise _overlap_error(duplicate)
     built = await _build_checked(sysdb, tenant_id, data, actor, side)
     return {"tenant_id": tenant_id, "agency_id": data.agency_id, "agency_name": contract.get("agency_name"),
             "hotel_name": contract.get("hotel_name"), "period_start": data.period_start, "period_end": data.period_end,
@@ -386,9 +412,6 @@ async def _issue(sysdb, tenant_id: str, data, *, issuer: str, actor: str, direct
         raise HTTPException(400, "Dönem bitişi başlangıçtan önce olamaz")
     contract = await _statement_contract(sysdb, tenant_id, data.agency_id)
     async with _issue_lock(sysdb, tenant_id, data.agency_id, data.currency):
-        duplicate = await _overlapping_statement(sysdb, tenant_id, data)
-        if duplicate:
-            raise _overlap_error(duplicate)
         built = await _build_checked(sysdb, tenant_id, data, actor, issuer)
         if skip_empty and not built["totals"].get("bookings") and abs(built["totals"].get("net_balance") or 0) < 0.01:
             raise HTTPException(400, "Bu dönemde hesaba katılacak tutar yok")
@@ -842,8 +865,10 @@ async def auto_issue_previous_month(sysdb, today: date | None = None) -> dict:
     """Issue last month's statement for every hotel–agency–currency with
     marketplace stays in it. Parts of the month a statement already covers
     (either party may have issued one, e.g. for the 1st–7th) are left out
-    and each uncovered part gets its own statement, so no stay is skipped.
-    Idempotent: a rerun finds the month covered."""
+    and each uncovered part gets its own statement; stays booked into a
+    covered part after its statement was issued get one supplementary
+    statement, so no stay is skipped. Idempotent: a rerun finds every stay
+    billed."""
     start, end = previous_month(today or datetime.now(UTC).date())
     pairs: set[tuple[str, str, str]] = set()
     for collection, query in (
@@ -864,17 +889,20 @@ async def auto_issue_previous_month(sysdb, today: date | None = None) -> dict:
             )
         ]
         gaps = uncovered_ranges(start, end, covered)
-        if not gaps:
-            skipped += 1
-            continue
-        for gap_start, gap_end in gaps:
+        # Then the whole month once more: only stays no statement contains yet
+        # (booked into a covered part after its statement) — a supplement.
+        ranges = [*gaps, (start, end)] if covered else gaps
+        for gap_start, gap_end in ranges:
             data = StatementCreate(agency_id=agency_id, period_start=gap_start, period_end=gap_end, currency=currency)
             try:
                 statement = await _issue(sysdb, tenant_id, data, issuer="system", actor="system", direct_notify=True, skip_empty=True)
                 issued.append(statement["number"])
+            except _StatementIssueBusy:
+                skipped += 1  # another issuer is handling this pair
             except HTTPException as exc:
-                # Nothing billable in the gap, no contract, or being issued now.
-                if exc.status_code in (400, 404, 409):
+                # Nothing billable, or no contract. A 409 reconciliation
+                # conflict needs an operator; never hide it as a normal skip.
+                if exc.status_code in (400, 404):
                     skipped += 1
                 else:
                     failed.append(f"{tenant_id}/{agency_id} {gap_start}–{gap_end}: {exc.detail}")
