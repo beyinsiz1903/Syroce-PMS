@@ -1,7 +1,9 @@
 """Canonical room-night metrics used by PMS dashboards and reports."""
 
 from datetime import UTC, date, datetime, timedelta
-from decimal import Decimal, InvalidOperation
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
+
+from modules.pms_core.report_money import add_amount, currency_code, rounded_totals, single_amount
 
 OCCUPYING_STATUSES = frozenset({"confirmed", "guaranteed", "checked_in", "in_house", "checked_out"})
 ACTUAL_OCCUPANCY_STATUSES = frozenset({"checked_in", "in_house", "checked_out"})
@@ -44,7 +46,9 @@ def booking_occupies_night(booking: dict, day: date, *, actual_only: bool = Fals
     if actual_only:
         actual_in = as_date(booking.get("checked_in_at"))
         actual_out = as_date(booking.get("checked_out_at"))
-        if actual_in and day < actual_in:
+        # A wall-clock audit timestamp outside the stay can reflect a lagging
+        # PMS business day. It must not erase that business-day occupancy.
+        if actual_in and check_in <= actual_in < check_out and day < actual_in:
             return False
         if actual_out and day >= actual_out:
             return False
@@ -60,11 +64,16 @@ def booking_nights(booking: dict) -> int:
 
 
 def allocated_revenue_for_night(booking: dict, day: date) -> Decimal:
-    """Evenly allocate a reservation total over its booked nights."""
+    """Allocate rounded cents cumulatively, preserving the full stay total."""
     nights = booking_nights(booking)
-    if not nights or not booking_occupies_night(booking, day):
+    if not nights or not booking_occupies_night(booking, day) or booking.get("is_complimentary"):
         return Decimal("0")
-    return _money(booking.get("total_amount")) / nights
+    return _allocated_nightly(_money(booking.get("total_amount")) / nights, (day - as_date(booking.get("check_in"))).days)
+
+
+def _allocated_nightly(nightly: Decimal, offset: int) -> Decimal:
+    cent = Decimal("0.01")
+    return (nightly * (offset + 1)).quantize(cent, rounding=ROUND_HALF_UP) - (nightly * offset).quantize(cent, rounding=ROUND_HALF_UP)
 
 
 def _money(value) -> Decimal:
@@ -144,6 +153,7 @@ def calculate_stay_night_metrics(
                 as_date(booking.get("checked_out_at")),
                 room_key,
                 nightly_revenue,
+                currency_code(booking.get("currency")),
             )
         )
 
@@ -162,22 +172,25 @@ def calculate_stay_night_metrics(
         total_rooms = len(active_room_keys - blocked_room_keys)
         occupied_rooms: set[str] = set()
         sold_rooms: set[str] = set()
-        revenue = Decimal("0")
-        for check_in, check_out, actual_in, actual_out, room_key, nightly_revenue in parsed:
-            actual_window_ok = not actual_only or ((not actual_in or actual_in <= day) and (not actual_out or day < actual_out))
+        revenue_by_currency = {}
+        for check_in, check_out, actual_in, actual_out, room_key, nightly_revenue, currency in parsed:
+            actual_window_ok = not actual_only or ((not actual_in or not check_in <= actual_in < check_out or actual_in <= day) and (not actual_out or day < actual_out))
             if check_in <= day < check_out and actual_window_ok:
                 occupied_rooms.add(room_key)
-                revenue += nightly_revenue
+                add_amount(revenue_by_currency, currency, _allocated_nightly(nightly_revenue, (day - check_in).days))
                 if nightly_revenue > 0:
                     sold_rooms.add(room_key)
         occupied = len(occupied_rooms)
         sold = len(sold_rooms)
-        revenue_value = round(float(revenue), 2)
+        revenue_by_currency = rounded_totals(revenue_by_currency)
+        revenue_value = single_amount(revenue_by_currency)
         occupancy_rate = round(min((occupied / total_rooms * 100), 100.0), 2) if total_rooms else 0
         # Complimentary rooms contribute to occupancy but are not sold rooms;
         # including them in ADR understated the achieved selling price.
-        adr = round(revenue_value / sold, 2) if sold else 0
-        revpar = round(revenue_value / total_rooms, 2) if total_rooms else 0
+        adr_by_currency = {code: round(amount / sold, 2) if sold else 0 for code, amount in revenue_by_currency.items()}
+        revpar_by_currency = {code: round(amount / total_rooms, 2) if total_rooms else 0 for code, amount in revenue_by_currency.items()}
+        adr = single_amount(adr_by_currency)
+        revpar = single_amount(revpar_by_currency)
         result.append(
             {
                 "date": day.isoformat(),
@@ -188,6 +201,10 @@ def calculate_stay_night_metrics(
                 "revenue": revenue_value,
                 "adr": adr,
                 "revpar": revpar,
+                "revenue_by_currency": revenue_by_currency,
+                "adr_by_currency": adr_by_currency,
+                "revpar_by_currency": revpar_by_currency,
+                "mixed_currency": revenue_value is None,
             }
         )
     return result
@@ -198,7 +215,7 @@ async def load_stay_night_metrics(db, tenant_id: str, start_date: date, end_date
     rooms = await db.rooms.find(
         {"tenant_id": tenant_id, "is_active": {"$ne": False}},
         {"_id": 0, "id": 1, "room_number": 1, "is_active": 1},
-    ).to_list(5000)
+    ).to_list(None)
     start_iso = start_date.isoformat()
     end_exclusive_date = end_date + timedelta(days=1)
     end_iso = end_exclusive_date.isoformat()
@@ -226,11 +243,12 @@ async def load_stay_night_metrics(db, tenant_id: str, start_date: date, end_date
             "check_out": 1,
             "status": 1,
             "total_amount": 1,
+            "currency": 1,
             "is_complimentary": 1,
             "checked_in_at": 1,
             "checked_out_at": 1,
         },
-    ).to_list(10000)
+    ).to_list(None)
     room_blocks = await db.room_blocks.find(
         {
             "tenant_id": tenant_id,
@@ -244,5 +262,5 @@ async def load_stay_night_metrics(db, tenant_id: str, start_date: date, end_date
             ],
         },
         {"_id": 0, "room_id": 1, "start_date": 1, "end_date": 1, "status": 1, "allow_sell": 1},
-    ).to_list(10000)
+    ).to_list(None)
     return calculate_stay_night_metrics(bookings, rooms, start_date, end_date, actual_only=actual_only, room_blocks=room_blocks)

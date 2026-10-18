@@ -441,7 +441,6 @@ async def get_housekeeping_efficiency_report(
 
 # ── GET /reports/housekeeping-efficiency/excel ──
 @router.get("/reports/housekeeping-efficiency/excel")
-@cached(ttl=900, key_prefix="report_hk_efficiency_excel")  # Cache for 15 min
 async def export_housekeeping_efficiency_excel(
     start_date: str,
     end_date: str,

@@ -6,8 +6,9 @@ cash/card collection.  Keeping the classification here prevents reports from
 silently disagreeing about the same transaction.
 """
 
-INVALID_PAYMENT_STATUSES = frozenset({"void", "voided", "failed", "cancelled", "rejected"})
+INVALID_PAYMENT_STATUSES = frozenset({"void", "voided", "failed", "cancelled", "canceled", "rejected"})
 REPORTING_CURRENCY = "TRY"
+NON_CASH_PAYMENT_METHODS = frozenset({"discount", "city_ledger", "complimentary", "correction", "ar"})
 
 
 def report_payment_identity(payment: dict) -> tuple:
@@ -57,13 +58,17 @@ def is_valid_payment(payment: dict) -> bool:
     return not payment.get("voided") and str(payment.get("status") or "paid").lower() not in INVALID_PAYMENT_STATUSES
 
 
+def _payment_method(payment: dict) -> str:
+    return str(payment.get("payment_method") or payment.get("method") or "").strip().lower()
+
+
 def is_non_cash_adjustment(payment: dict) -> bool:
-    return str(payment.get("method") or payment.get("payment_method") or "").lower() == "discount"
+    return _payment_method(payment) == "discount"
 
 
 def effective_collection(payment: dict) -> float:
     """Cash/bank/card collection amount; non-cash adjustments return zero."""
-    if not is_valid_payment(payment) or is_non_cash_adjustment(payment):
+    if not is_valid_payment(payment) or _payment_method(payment) in NON_CASH_PAYMENT_METHODS:
         return 0.0
     amount = float(payment.get("amount") or 0)
     return -amount if str(payment.get("payment_type") or "").lower() == "refund" and amount > 0 else amount
@@ -83,7 +88,7 @@ def reporting_collection_amount(payment: dict, reporting_currency: str = REPORTI
     as a conversion issue instead of silently applying today's rate to a
     historical transaction.
     """
-    if not is_valid_payment(payment) or is_non_cash_adjustment(payment):
+    if not is_valid_payment(payment) or _payment_method(payment) in NON_CASH_PAYMENT_METHODS:
         return 0.0
 
     reporting_currency = str(reporting_currency or REPORTING_CURRENCY).upper()
@@ -94,7 +99,7 @@ def reporting_collection_amount(payment: dict, reporting_currency: str = REPORTI
         value = payment.get(field)
         if value is not None and (not explicit_currency or explicit_currency == reporting_currency):
             try:
-                return sign * abs(float(value))
+                return -abs(float(value)) if sign < 0 else float(value)
             except (TypeError, ValueError):
                 pass
 
@@ -105,7 +110,7 @@ def reporting_collection_amount(payment: dict, reporting_currency: str = REPORTI
     received_currency = str(payment.get("received_currency") or "").upper()
     if received_currency == reporting_currency and payment.get("received_amount") is not None:
         try:
-            return sign * abs(float(payment["received_amount"]))
+            return -abs(float(payment["received_amount"])) if sign < 0 else float(payment["received_amount"])
         except (TypeError, ValueError):
             return None
 
@@ -118,8 +123,8 @@ def reporting_collection_summary(payments: list[dict], reporting_currency: str =
     count = 0
     by_method: dict[str, dict[str, float | int]] = {}
     conversion_issues: list[dict] = []
-    for payment in payments:
-        if not is_valid_payment(payment) or is_non_cash_adjustment(payment):
+    for payment in deduplicate_report_payments(payments):
+        if not is_valid_payment(payment) or _payment_method(payment) in NON_CASH_PAYMENT_METHODS:
             continue
         amount = reporting_collection_amount(payment, reporting_currency)
         if amount is None:

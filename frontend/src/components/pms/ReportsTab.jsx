@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -11,10 +11,11 @@ import { useTranslation } from 'react-i18next';
 import ReservationReportsTab from './ReservationReportsTab';
 import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 import { formatCurrencyBreakdown } from '@/lib/reportCurrency';
+import { useBusinessDate } from '@/hooks/useBusinessDate';
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'];
 const fmtCurrency = (n, currency = cachedTenantCurrency()) => formatCurrency(n, currency, {
-  minimumFractionDigits: 0,
-  maximumFractionDigits: 0
+  decimals: 2,
+  compactDecimals: false
 });
 const ReportsTab = () => {
   const {
@@ -30,29 +31,25 @@ const ReportsTab = () => {
   const [marketSegment, setMarketSegment] = useState(null);
   const [hkEfficiency, setHkEfficiency] = useState(null);
   const [dailySummary, setDailySummary] = useState(null);
-  const getDateRange = () => {
-    const now = new Date();
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
-    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
-    return {
-      monthStart,
-      monthEnd
-    };
-  };
+  const [reportErrors, setReportErrors] = useState([]);
+  const businessDate = useBusinessDate();
+  const requestId = useRef(0);
   const loadAll = useCallback(async (force = false) => {
+    const request = ++requestId.current;
     setLoading(true);
-    const {
-      monthStart,
-      monthEnd
-    } = getDateRange();
-    const safe = p => p.catch(() => ({
-      data: null
+    const monthStart = `${businessDate.slice(0, 7)}-01`;
+    const monthEnd = businessDate;
+    const safe = p => p.catch(error => ({
+      data: null, error
     }));
     // "Yenile" butonu force=true ile çağrılır → backend cache atlanır (her endpoint'te `?nocache=1`).
     const nc = force ? '&nocache=1' : '';
     const ncQ = force ? '?nocache=1' : '';
     try {
       const [occRes, revRes, flashRes, fcRes, fc30Res, mktRes, hkRes, dsRes] = await Promise.all([safe(axios.get(`/reports/occupancy?start_date=${monthStart}&end_date=${monthEnd}${nc}`)), safe(axios.get(`/reports/revenue?start_date=${monthStart}&end_date=${monthEnd}${nc}`)), safe(axios.get(`/reports/daily-flash${ncQ}`)), safe(axios.get(`/reports/forecast?days=7${nc}`)), safe(axios.get(`/reports/forecast?days=30${nc}`)), safe(axios.get(`/reports/market-segment?start_date=${monthStart}&end_date=${monthEnd}${nc}`)), safe(axios.get(`/reports/housekeeping-efficiency?start_date=${monthStart}&end_date=${monthEnd}${nc}`)), safe(axios.get(`/reports/daily-summary${ncQ}`))]);
+      if (request !== requestId.current) return;
+      const names = ['Doluluk', 'Gelir', 'Günlük özet', '7 günlük tahmin', '30 günlük tahmin', 'Pazar segmenti', 'Kat hizmetleri', 'Günlük rapor'];
+      setReportErrors([occRes, revRes, flashRes, fcRes, fc30Res, mktRes, hkRes, dsRes].flatMap((result, index) => result.error ? [names[index]] : []));
       setOccupancy(occRes.data);
       setRevenue(revRes.data);
       setDailyFlash(flashRes.data);
@@ -64,16 +61,17 @@ const ReportsTab = () => {
     } catch {
       toast.error('Rapor verileri yuklenirken hata olustu');
     }
-    setLoading(false);
-  }, []);
+    if (request === requestId.current) setLoading(false);
+  }, [businessDate]);
   useEffect(() => {
     loadAll(false);
+    return () => { requestId.current += 1; };
   }, [loadAll]);
   const occRate = occupancy?.occupancy_rate ?? occupancy?.current_occupancy_rate ?? 0;
   const adr = revenue?.adr ?? 0;
   const revpar = revenue?.rev_par ?? revenue?.revpar ?? 0;
   const totalRevenue = revenue?.total_revenue ?? 0;
-  const totalRooms = occupancy?.total_rooms ?? 30;
+  const totalRooms = occupancy?.total_rooms ?? 0;
   const occupiedNights = occupancy?.occupied_room_nights ?? 0;
   const forecastChartData = forecast.map(f => ({
     date: f.date?.slice(5),
@@ -124,8 +122,12 @@ const ReportsTab = () => {
     rez: val.bookings,
     gece: val.nights,
     gelir: val.revenue,
-    adr: val.adr
+    adr: val.adr,
+    revenueByCurrency: val.revenue_by_currency,
+    adrByCurrency: val.adr_by_currency,
   }));
+  const marketCurrencies = new Set(mktData.flatMap(row => Object.keys(row.revenueByCurrency || {})));
+  const marketCurrency = [...marketCurrencies][0] || cachedTenantCurrency();
   const staffPerf = hkEfficiency?.staff_performance || {};
   const staffData = Object.entries(staffPerf).map(([name, perf]) => ({
     name,
@@ -143,13 +145,19 @@ const ReportsTab = () => {
         </Button>
       </div>
 
+      {reportErrors.length > 0 && <p role="alert" className="rounded-lg border border-amber-200 p-3 text-sm text-amber-800">
+        Şu raporlar alınamadı: {reportErrors.join(', ')}. Boş veya sıfır sonuç olarak değerlendirmeyin; Yenile ile tekrar deneyin.
+      </p>}
+      <p className="text-xs text-slate-500">Gerçekleşen dönem: {`${businessDate.slice(0, 7)}-01`} – {businessDate} (PMS iş günü)</p>
+      {revenue?.mixed_currency && <p className="text-xs text-slate-500">ADR ve RevPAR tutarları, her para biriminin toplam oda-geceye katkısını ayrı gösterir. Kur dönüşümü yapılmadığından tek bir birleşik ADR değildir.</p>}
+
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <Card className="border-l-4 border-l-blue-500">
           <CardContent className="pt-4 pb-3">
             <div className="flex items-center gap-2 text-sm text-gray-500 mb-1">
               <Hotel className="w-4 h-4" /> Doluluk Orani
             </div>
-            <p className="text-2xl font-bold">{occupancy ? `%${occRate.toFixed(1)}` : '...'}</p>
+            <p className="text-2xl font-bold">{occupancy ? `%${occRate.toFixed(1)}` : loading ? '...' : 'Alınamadı'}</p>
             <p className="text-xs text-gray-400">{occupiedNights}/{occupancy?.total_room_nights ?? '-'} oda/gece</p>
           </CardContent>
         </Card>
@@ -158,7 +166,7 @@ const ReportsTab = () => {
             <div className="flex items-center gap-2 text-sm text-gray-500 mb-1">
               <DollarSign className="w-4 h-4" /> ADR
             </div>
-            <p className="text-2xl font-bold">{revenue ? formatCurrencyBreakdown(revenue.adr_by_currency, adr) : '...'}</p>
+            <p className="text-2xl font-bold">{revenue ? formatCurrencyBreakdown(revenue.adr_by_currency, adr) : loading ? '...' : 'Alınamadı'}</p>
             <p className="text-xs text-gray-400">{t('cm.components_pms_ReportsTab.ortalama_gunluk_oda_fiyati')}</p>
           </CardContent>
         </Card>
@@ -167,7 +175,7 @@ const ReportsTab = () => {
             <div className="flex items-center gap-2 text-sm text-gray-500 mb-1">
               <TrendingUp className="w-4 h-4" /> RevPAR
             </div>
-            <p className="text-2xl font-bold">{revenue ? formatCurrencyBreakdown(revenue.rev_par_by_currency, revpar) : '...'}</p>
+            <p className="text-2xl font-bold">{revenue ? formatCurrencyBreakdown(revenue.rev_par_by_currency, revpar) : loading ? '...' : 'Alınamadı'}</p>
             <p className="text-xs text-gray-400">{t('cm.components_pms_ReportsTab.oda_basina_gelir')}</p>
           </CardContent>
         </Card>
@@ -176,7 +184,7 @@ const ReportsTab = () => {
             <div className="flex items-center gap-2 text-sm text-gray-500 mb-1">
               <BarChart3 className="w-4 h-4" /> {t('cm.components_pms_ReportsTab.toplam_gelir')}
             </div>
-            <p className="text-2xl font-bold">{revenue ? formatCurrencyBreakdown(revenue.total_revenue_by_currency, totalRevenue) : '...'}</p>
+            <p className="text-2xl font-bold">{revenue ? formatCurrencyBreakdown(revenue.total_revenue_by_currency, totalRevenue) : loading ? '...' : 'Alınamadı'}</p>
             <p className="text-xs text-gray-400">Folyoya işlenen · Bu ay {revenue?.bookings_count ?? 0} rezervasyon</p>
           </CardContent>
         </Card>
@@ -408,8 +416,8 @@ const ReportsTab = () => {
                             <td className="py-2 px-3 font-medium">{row.name}</td>
                             <td className="py-2 px-3 text-right">{row.rez}</td>
                             <td className="py-2 px-3 text-right">{row.gece}</td>
-                            <td className="py-2 px-3 text-right">{fmtCurrency(row.gelir)}</td>
-                            <td className="py-2 px-3 text-right">{fmtCurrency(row.adr)}</td>
+                            <td className="py-2 px-3 text-right">{formatCurrencyBreakdown(row.revenueByCurrency, row.gelir)}</td>
+                            <td className="py-2 px-3 text-right">{formatCurrencyBreakdown(row.adrByCurrency, row.adr)}</td>
                           </tr>)}
                       </tbody>
                     </table>
@@ -417,7 +425,8 @@ const ReportsTab = () => {
                 </CardContent>
               </Card>
 
-              {mktData.length > 1 && <Card>
+              {marketCurrencies.size > 1 && <p className="text-sm text-slate-600">Farklı para birimlerinin gelir payları karşılaştırılamaz; tutarlar tabloda ayrı gösterilir.</p>}
+              {mktData.length > 1 && marketCurrencies.size <= 1 && <Card>
                   <CardHeader className="pb-3">
                     <CardTitle className="text-base">Segment Gelir Grafigi</CardTitle>
                   </CardHeader>
@@ -433,7 +442,7 @@ const ReportsTab = () => {
                   }) => `${name} %${(percent * 100).toFixed(0)}`}>
                           {mktData.map((_, i) => <Cell key={_.id || i} fill={COLORS[i % COLORS.length]} />)}
                         </Pie>
-                        <Tooltip formatter={v => fmtCurrency(v)} />
+                        <Tooltip formatter={v => fmtCurrency(v, marketCurrency)} />
                       </PieChart>
                     </ResponsiveContainer>
                   </CardContent>
@@ -460,8 +469,8 @@ const ReportsTab = () => {
                               <td className="py-2 px-3 font-medium">{key === 'bar' ? 'BAR' : key === 'rack' ? 'Rack' : key}</td>
                               <td className="py-2 px-3 text-right">{val.bookings}</td>
                               <td className="py-2 px-3 text-right">{val.nights}</td>
-                              <td className="py-2 px-3 text-right">{fmtCurrency(val.revenue)}</td>
-                              <td className="py-2 px-3 text-right">{fmtCurrency(val.adr)}</td>
+                              <td className="py-2 px-3 text-right">{formatCurrencyBreakdown(val.revenue_by_currency, val.revenue)}</td>
+                              <td className="py-2 px-3 text-right">{formatCurrencyBreakdown(val.adr_by_currency, val.adr)}</td>
                             </tr>)}
                         </tbody>
                       </table>

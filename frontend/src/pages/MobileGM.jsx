@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'sonner';
@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { formatCurrency as formatMoney, cachedTenantCurrency } from '@/lib/currency';
+import { formatCurrencyBreakdown } from '@/lib/reportCurrency';
 
 const MobileGM = ({ user, tenant, embedded = false }) => {
   const { t } = useTranslation();
@@ -33,7 +34,8 @@ const MobileGM = ({ user, tenant, embedded = false }) => {
   const [dailyFlash, setDailyFlash] = useState(null);
   const [financeSnapshot, setFinanceSnapshot] = useState(null);
   const [roomStatus, setRoomStatus] = useState(null);
-  const [staffTasks, setStaffTasks] = useState(null);
+  const [staffTasks, setStaffTasks] = useState([]);
+  const [loadErrors, setLoadErrors] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
   const [dashboardModalOpen, setDashboardModalOpen] = useState(false);
   const [reportsModalOpen, setReportsModalOpen] = useState(false);
@@ -54,29 +56,37 @@ const MobileGM = ({ user, tenant, embedded = false }) => {
     status: 'active',
   };
   const [properties, setProperties] = useState([currentProperty]);
+  const requestId = useRef(0);
 
   useEffect(() => {
     // Set default property
     setSelectedProperty(currentProperty);
     loadData();
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
-  }, []);
+    return () => { requestId.current += 1; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- property identity triggers reload; request id rejects prior-tenant responses
+  }, [tenant?.id, tenant?.property_name, user?.tenant_id]);
 
-  const loadData = async () => {
+  const loadData = async (force = false) => {
+    const request = ++requestId.current;
     try {
       setLoading(true);
       
-      const [flashRes, financeRes, roomsRes, tasksRes] = await Promise.all([
-        axios.get('/reports/daily-flash'),
-        axios.get('/reports/finance-snapshot'),
+      const results = await Promise.allSettled([
+        axios.get(`/reports/daily-flash${force ? '?nocache=1' : ''}`),
+        axios.get(`/reports/finance-snapshot${force ? '?nocache=1' : ''}`),
         axios.get('/housekeeping/room-status'),
         axios.get('/pms/staff-tasks?limit=5')
       ]);
+      if (request !== requestId.current) return;
+      const names = ['Günlük gelir ve doluluk', 'Finans özeti', 'Oda durumu', 'Personel görevleri'];
+      setLoadErrors(results.flatMap((result, index) => result.status === 'rejected' ? [names[index]] : []));
+      const [flashRes, financeRes, roomsRes, tasksRes] = results.map(result => result.status === 'fulfilled' ? result.value : { data: null });
 
       setDailyFlash(flashRes.data);
       setFinanceSnapshot(financeRes.data);
       setRoomStatus(roomsRes.data);
-      setStaffTasks(tasksRes.data?.tasks || tasksRes.data || []);
+      const tasks = tasksRes.data?.tasks || tasksRes.data || [];
+      setStaffTasks(Array.isArray(tasks) ? tasks : []);
       const resolvedProperty = {
         ...currentProperty,
         rooms: Number(
@@ -91,14 +101,16 @@ const MobileGM = ({ user, tenant, embedded = false }) => {
       console.error('Failed to load GM data:', error);
       toast.error('Veri yüklenemedi');
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (request === requestId.current) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   };
 
   const handleRefresh = () => {
     setRefreshing(true);
-    loadData();
+    loadData(true);
   };
 
   const loadPickupAnalysis = async () => {
@@ -135,7 +147,7 @@ const MobileGM = ({ user, tenant, embedded = false }) => {
     }
   };
 
-  const formatCurrency = (amount, currency) => formatMoney(amount, currency || tenant?.currency || cachedTenantCurrency());
+  const formatCurrency = (amount, currency) => amount == null ? '—' : formatMoney(amount, currency || tenant?.currency || cachedTenantCurrency(), { decimals: 2, compactDecimals: false });
 
   const formatPercent = (value) => {
     return `${parseFloat(value || 0).toFixed(1)}%`;
@@ -247,18 +259,22 @@ const MobileGM = ({ user, tenant, embedded = false }) => {
           </CardContent>
         </Card>
 
+        {loadErrors.length > 0 && <p role="alert" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+          Alınamayan veriler: {loadErrors.join(', ')}. Bu alanlar sıfır/boş sonuç olarak değerlendirilmemelidir.
+        </p>}
+
         {/* Date Badge */}
         <Card className="bg-gradient-to-r from-red-50 to-pink-50">
           <CardContent className="p-3">
             <div className="text-center">
-              <p className="text-xs text-gray-600">Bugün</p>
+              <p className="text-xs text-gray-600">PMS iş günü</p>
               <p className="text-lg font-bold text-gray-900">
-                {new Date().toLocaleDateString('tr-TR', { 
+                {dailyFlash?.date ? new Date(`${dailyFlash.date}T12:00:00`).toLocaleDateString('tr-TR', {
                   weekday: 'long', 
                   year: 'numeric', 
                   month: 'long', 
                   day: 'numeric' 
-                })}
+                }) : 'İş günü alınamadı'}
               </p>
             </div>
           </CardContent>
@@ -272,7 +288,7 @@ const MobileGM = ({ user, tenant, embedded = false }) => {
                 <div>
                   <p className="text-xs text-blue-600 font-medium">DOLULUK</p>
                   <p className="text-3xl font-bold text-blue-700">
-                    {formatPercent(dailyFlash?.occupancy?.occupancy_pct || 0)}
+                    {dailyFlash ? formatPercent(dailyFlash.occupancy?.occupancy_rate || 0) : '—'}
                   </p>
                   <p className="text-xs text-blue-600 mt-1">
                     {dailyFlash?.occupancy?.occupied_rooms || 0}/{dailyFlash?.occupancy?.total_rooms || 0} oda
@@ -289,10 +305,10 @@ const MobileGM = ({ user, tenant, embedded = false }) => {
                 <div>
                   <p className="text-xs text-green-600 font-medium">GÜN GELİRİ</p>
                   <p className="text-2xl font-bold text-green-700">
-                    {formatCurrency(dailyFlash?.revenue?.total_revenue || 0)}
+                    {dailyFlash ? formatCurrencyBreakdown(dailyFlash.revenue?.total_revenue_by_currency, dailyFlash.revenue?.total_revenue) : '—'}
                   </p>
                   <p className="text-xs text-green-600 mt-1">
-                    ADR: {formatCurrency(dailyFlash?.revenue?.adr || 0)}
+                    ADR: {dailyFlash ? formatCurrencyBreakdown(dailyFlash.revenue?.adr_by_currency, dailyFlash.revenue?.adr) : '—'}
                   </p>
                 </div>
                 <DollarSign className="w-10 h-10 text-green-300" />
@@ -306,7 +322,7 @@ const MobileGM = ({ user, tenant, embedded = false }) => {
                 <div>
                   <p className="text-xs text-indigo-600 font-medium">RevPAR</p>
                   <p className="text-2xl font-bold text-indigo-700">
-                    {formatCurrency(dailyFlash?.revenue?.revpar || 0)}
+                    {dailyFlash ? formatCurrencyBreakdown(dailyFlash.revenue?.rev_par_by_currency, dailyFlash.revenue?.rev_par) : '—'}
                   </p>
                 </div>
                 <Target className="w-10 h-10 text-indigo-300" />
@@ -320,7 +336,7 @@ const MobileGM = ({ user, tenant, embedded = false }) => {
                 <div>
                   <p className="text-xs text-amber-600 font-medium">BEKLEYEN AR</p>
                   <p className="text-2xl font-bold text-amber-700">
-                    {formatCurrency(financeSnapshot?.pending_ar?.total_pending || 0)}
+                    {financeSnapshot ? formatCurrencyBreakdown(Object.fromEntries(Object.entries(financeSnapshot.pending_ar?.by_currency || {}).map(([code, bucket]) => [code, bucket.total])), financeSnapshot.pending_ar?.total) : '—'}
                   </p>
                 </div>
                 <AlertCircle className="w-10 h-10 text-amber-300" />
@@ -421,18 +437,18 @@ const MobileGM = ({ user, tenant, embedded = false }) => {
                   </p>
                 </div>
                 <p className="text-xl font-bold text-green-700">
-                  {formatCurrency(financeSnapshot.todays_collections?.total_collected || 0)}
+                  {formatCurrency(financeSnapshot.todays_collections?.amount, financeSnapshot.todays_collections?.currency)}
                 </p>
               </div>
               <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg">
                 <div>
                   <p className="text-sm font-medium text-gray-700">Aylık Tahsilat</p>
                   <p className="text-xs text-gray-500">
-                    Oran: {formatPercent(financeSnapshot.mtd_collections?.collection_rate || 0)}
+                    Oran: {financeSnapshot.mtd_collections?.collection_rate_percentage == null ? 'Kur dönüşümü doğrulanamadı' : formatPercent(financeSnapshot.mtd_collections.collection_rate_percentage)}
                   </p>
                 </div>
                 <p className="text-xl font-bold text-blue-700">
-                  {formatCurrency(financeSnapshot.mtd_collections?.total_collected || 0)}
+                  {formatCurrency(financeSnapshot.mtd_collections?.amount, financeSnapshot.mtd_collections?.currency)}
                 </p>
               </div>
             </CardContent>
@@ -440,7 +456,7 @@ const MobileGM = ({ user, tenant, embedded = false }) => {
         )}
 
         {/* Recent Tasks */}
-        {staffTasks?.tasks && staffTasks.tasks.length > 0 && (
+        {staffTasks.length > 0 && (
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-lg flex items-center">
@@ -449,7 +465,7 @@ const MobileGM = ({ user, tenant, embedded = false }) => {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
-              {staffTasks.tasks.slice(0, 5).map((task, idx) => (
+              {staffTasks.slice(0, 5).map((task, idx) => (
                 <div key={idx} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border">
                   <div className="flex-1">
                     <p className="font-medium text-gray-900 text-sm">{task.title || 'Görev'}</p>
@@ -549,19 +565,19 @@ const MobileGM = ({ user, tenant, embedded = false }) => {
                   <div className="p-3 bg-green-50 rounded-lg">
                     <p className="text-xs text-green-600 mb-1">RevPAR</p>
                     <p className="text-2xl font-bold text-green-700">
-                      {formatCurrency(dailyFlash?.revpar || 0, dailyFlash?.currency)}
+                      {formatCurrencyBreakdown(dailyFlash?.revenue?.rev_par_by_currency, dailyFlash?.revenue?.rev_par)}
                     </p>
                   </div>
                   <div className="p-3 bg-indigo-50 rounded-lg">
                     <p className="text-xs text-indigo-600 mb-1">ADR</p>
                     <p className="text-2xl font-bold text-indigo-700">
-                      {formatCurrency(dailyFlash?.adr || 0, dailyFlash?.currency)}
+                      {formatCurrencyBreakdown(dailyFlash?.revenue?.adr_by_currency, dailyFlash?.revenue?.adr)}
                     </p>
                   </div>
                   <div className="p-3 bg-amber-50 rounded-lg">
                     <p className="text-xs text-amber-600 mb-1">Günlük Gelir</p>
                     <p className="text-2xl font-bold text-amber-700">
-                      {formatCurrency(dailyFlash?.total_revenue || 0, dailyFlash?.currency)}
+                      {formatCurrencyBreakdown(dailyFlash?.revenue?.total_revenue_by_currency, dailyFlash?.revenue?.total_revenue)}
                     </p>
                   </div>
                 </div>
@@ -603,15 +619,15 @@ const MobileGM = ({ user, tenant, embedded = false }) => {
               <CardContent className="space-y-2">
                 <div className="flex justify-between">
                   <span className="text-gray-600">Bugünkü Tahsilat:</span>
-                  <span className="font-bold text-green-700">{formatCurrency(financeSnapshot?.today_collections || 0, financeSnapshot?.currency)}</span>
+                  <span className="font-bold text-green-700">{formatCurrency(financeSnapshot?.todays_collections?.amount, financeSnapshot?.todays_collections?.currency)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-600">Bekleyen Alacaklar:</span>
-                  <span className="font-bold text-amber-700">{formatCurrency(financeSnapshot?.pending_receivables || 0, financeSnapshot?.currency)}</span>
+                  <span className="font-bold text-amber-700">{formatCurrencyBreakdown(Object.fromEntries(Object.entries(financeSnapshot?.pending_ar?.by_currency || {}).map(([code, bucket]) => [code, bucket.total])), financeSnapshot?.pending_ar?.total)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-600">Aylık Toplam Gelir:</span>
-                  <span className="font-bold text-blue-700">{formatCurrency(financeSnapshot?.monthly_revenue || 0, financeSnapshot?.currency)}</span>
+                  <span className="font-bold text-blue-700">{formatCurrencyBreakdown(financeSnapshot?.mtd_collections?.revenue_by_currency)}</span>
                 </div>
               </CardContent>
             </Card>
@@ -815,15 +831,15 @@ const MobileGM = ({ user, tenant, embedded = false }) => {
                   </div>
                   <div>
                     <p className="text-gray-500">RevPAR:</p>
-                    <p className="font-bold">{formatCurrency(dailyFlash?.revpar || 0, dailyFlash?.currency)}</p>
+                    <p className="font-bold">{formatCurrencyBreakdown(dailyFlash?.revenue?.rev_par_by_currency, dailyFlash?.revenue?.rev_par)}</p>
                   </div>
                   <div>
                     <p className="text-gray-500">ADR:</p>
-                    <p className="font-bold">{formatCurrency(dailyFlash?.adr || 0, dailyFlash?.currency)}</p>
+                    <p className="font-bold">{formatCurrencyBreakdown(dailyFlash?.revenue?.adr_by_currency, dailyFlash?.revenue?.adr)}</p>
                   </div>
                   <div>
                     <p className="text-gray-500">Günlük Gelir:</p>
-                    <p className="font-bold">{formatCurrency(dailyFlash?.total_revenue || 0, dailyFlash?.currency)}</p>
+                    <p className="font-bold">{formatCurrencyBreakdown(dailyFlash?.revenue?.total_revenue_by_currency, dailyFlash?.revenue?.total_revenue)}</p>
                   </div>
                   <div>
                     <p className="text-gray-500">Gelen Misafir:</p>

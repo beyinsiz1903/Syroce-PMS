@@ -10,7 +10,7 @@ import { currencyBreakdownEntries, formatCurrencyBreakdown } from '@/lib/reportC
 export const COLORS = ['#0284C7', '#059669', '#D97706', '#E11D48', '#4F46E5', '#0EA5E9', '#10B981', '#F59E0B', '#F43F5E', '#6366F1'];
 
 export const formatCurrency = (val, currency) => {
-  return formatCurrencyValue(val, currency || cachedTenantCurrency(), { decimals: 0, compactDecimals: false });
+  return formatCurrencyValue(val, currency || cachedTenantCurrency(), { decimals: 2, compactDecimals: false });
 };
 
 export const formatNumber = (val) => {

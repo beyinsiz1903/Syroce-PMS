@@ -1,4 +1,6 @@
 import { useTranslation } from 'react-i18next';
+import { useState } from 'react';
+import { formatCurrency } from '@/lib/currency';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Area,
@@ -20,6 +22,13 @@ const gridStroke = 'var(--dash-chart-grid, #ccc)';
 const dateLabel = value => new Date(value).getDate();
 const fullDateLabel = value => new Date(value).toLocaleDateString();
 
+export const reportChartValues = (rows, fields, currency) => rows.map(row => ({
+  ...row,
+  ...Object.fromEntries(fields.map(field => [field, row[`${field}_by_currency`]
+    ? Number(row[`${field}_by_currency`][currency] ?? 0)
+    : row[field]])),
+}));
+
 export default function DashboardAnalytics({
   occupancyData,
   revenueData,
@@ -28,11 +37,27 @@ export default function DashboardAnalytics({
   currencySymbol,
 }) {
   const { t } = useTranslation();
+  const [requestedCurrency, setRequestedCurrency] = useState('');
+  const currencies = [...new Set([...revenueData, ...trendData].flatMap(row =>
+    ['revenue', 'adr', 'revpar'].flatMap(field => Object.keys(row[`${field}_by_currency`] || {}))))].sort();
+  const currency = currencies.includes(requestedCurrency) ? requestedCurrency : currencies[0];
+  const revenueChart = reportChartValues(revenueData, ['revenue'], currency);
+  const stayChart = reportChartValues(trendData, ['adr', 'revpar'], currency);
+  const financialMoney = value => currency
+    ? formatCurrency(value, currency, { locale: 'tr-TR', decimals: 2, compactDecimals: false })
+    : formatMoney(value, { decimals: 2 });
 
   return <section className="space-y-4" aria-label={t('dashboard.analyticsInsights')}>
       <h2 className="text-xl md:text-2xl font-bold" style={{ fontFamily: 'Space Grotesk' }}>
         {t('dashboard.analyticsInsights')}
       </h2>
+      {currency && <div className="flex flex-wrap items-center gap-3 text-sm">
+        <label htmlFor="dashboard-report-currency">Rapor para birimi</label>
+        <select id="dashboard-report-currency" value={currency} onChange={event => setRequestedCurrency(event.target.value)} className="rounded-md border bg-background px-3 py-2">
+          {currencies.map(code => <option key={code} value={code}>{code}</option>)}
+        </select>
+        <span className="text-muted-foreground">Finansal grafikler seçilen para birimini gösterir; kur dönüşümü yapılmaz.</span>
+      </div>}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Card>
@@ -60,15 +85,13 @@ export default function DashboardAnalytics({
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={250}>
-              <BarChart data={revenueData}>
+              <BarChart data={revenueChart}>
                 <CartesianGrid strokeDasharray="3 3" stroke={gridStroke} />
                 <XAxis dataKey="date" tick={axisTick} tickFormatter={dateLabel} />
                 <YAxis tick={axisTick} />
-                <Tooltip labelFormatter={fullDateLabel} formatter={value => formatMoney(value, { decimals: 0 })} />
+                <Tooltip labelFormatter={fullDateLabel} formatter={financialMoney} />
                 <Legend wrapperStyle={{ fontSize: '12px' }} />
-                <Bar dataKey="room_revenue" fill="#10b981" name={t('dashboard.chartRoom')} />
-                <Bar dataKey="fnb_revenue" fill="#f59e0b" name={t('dashboard.chartFnB')} />
-                <Bar dataKey="other_revenue" fill="#6366f1" name={t('dashboard.chartOther')} />
+                <Bar dataKey="revenue" fill="#10b981" name={`İşlenmiş gelir${currency ? ` (${currency})` : ''}`} />
               </BarChart>
             </ResponsiveContainer>
           </CardContent>
@@ -83,7 +106,7 @@ export default function DashboardAnalytics({
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={250}>
-              <LineChart data={trendData}>
+              <LineChart data={stayChart}>
                 <CartesianGrid strokeDasharray="3 3" stroke={gridStroke} />
                 <XAxis dataKey="date" tick={axisTick} tickFormatter={dateLabel} />
                 <YAxis yAxisId="left" tick={axisTick} />
@@ -91,7 +114,7 @@ export default function DashboardAnalytics({
                 <Tooltip labelFormatter={fullDateLabel} />
                 <Legend wrapperStyle={{ fontSize: '12px' }} />
                 <Line yAxisId="left" type="monotone" dataKey="occupied_rooms" stroke="#8b5cf6" strokeWidth={2} name={t('dashboard.occupiedRooms', 'Dolu Odalar')} />
-                <Line yAxisId="right" type="monotone" dataKey="adr" stroke="#10b981" strokeWidth={2} name={`ADR (${currencySymbol})`} />
+                <Line yAxisId="right" type="monotone" dataKey="adr" stroke="#10b981" strokeWidth={2} name={`ADR (${currency || currencySymbol})`} />
               </LineChart>
             </ResponsiveContainer>
           </CardContent>
@@ -104,11 +127,11 @@ export default function DashboardAnalytics({
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={250}>
-              <AreaChart data={trendData}>
+              <AreaChart data={stayChart}>
                 <CartesianGrid strokeDasharray="3 3" stroke={gridStroke} />
                 <XAxis dataKey="date" tick={axisTick} tickFormatter={dateLabel} />
                 <YAxis tick={axisTick} />
-                <Tooltip labelFormatter={fullDateLabel} formatter={value => formatMoney(value, { decimals: 2 })} />
+                <Tooltip labelFormatter={fullDateLabel} formatter={financialMoney} />
                 <Area type="monotone" dataKey="revpar" stroke="#f59e0b" fill="#f59e0b" fillOpacity={0.4} name="RevPAR" />
               </AreaChart>
             </ResponsiveContainer>

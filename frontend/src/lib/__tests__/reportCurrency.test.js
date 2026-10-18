@@ -17,6 +17,12 @@ describe('formatCurrencyBreakdown', () => {
     expect(formatCurrencyBreakdown({}, 250, 'EUR', 'tr-TR')).toContain('€');
   });
 
+  it('keeps cents above 1000 and does not relabel a zero EUR balance as TRY', () => {
+    expect(formatCurrencyBreakdown({ TRY: 1000.49 })).toContain('1.000,49');
+    expect(formatCurrencyBreakdown({ EUR: 0 })).toContain('€');
+    expect(formatCurrencyBreakdown({ EUR: 0 })).not.toContain('₺');
+  });
+
   it('exposes sorted entries for an explicit multi-currency presentation', () => {
     const entries = currencyBreakdownEntries({ TRY: 670441, EUR: 635.48, USD: 0 }, 'tr-TR');
 

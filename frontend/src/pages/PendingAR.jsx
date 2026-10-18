@@ -27,6 +27,8 @@ const PendingAR = ({ user, tenant, onLogout }) => {
   const { t } = useTranslation();
   const [arData, setArData] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterDays, setFilterDays] = useState('all');
 
@@ -47,79 +49,18 @@ const PendingAR = ({ user, tenant, onLogout }) => {
 
   const loadARData = async () => {
     setLoading(true);
+    setLoadError(false);
     try {
       // Prefer backend aggregated AR endpoint
       const response = await axios.get('/folio/pending-ar');
       setArData(response.data || []);
     } catch (error) {
       console.error('Failed to load AR data:', error);
-      // Fallback: try to get from companies and calculate
-      try {
-        const companiesRes = await axios.get('/companies');
-        const companies = companiesRes.data || [];
-        
-        // For each company, get their folios and calculate outstanding balance.
-        // Concurrency-limited (chunked) to avoid an N+1 request storm when the
-        // aggregated endpoint is unavailable and there are many companies.
-        const fetchCompanyAR = async (company) => {
-          try {
-            const foliosRes = await axios.get(`/folio/booking/company/${company.id}`);
-            const folios = foliosRes.data || [];
-
-            const totalOutstandingByCurrency = folios.reduce((totals, folio) => {
-              if (folio.status === 'open' && folio.balance > 0) {
-                const code = String(folio.currency || 'TRY').toUpperCase();
-                totals[code] = (totals[code] || 0) + Number(folio.balance || 0);
-              }
-              return totals;
-            }, {});
-            const totalOutstanding = Object.values(totalOutstandingByCurrency).reduce((sum, amount) => sum + amount, 0);
-
-            if (totalOutstanding > 0) {
-              // Get oldest invoice date
-              const openFolios = folios.filter(f => f.status === 'open' && f.balance > 0);
-              const oldestFolio = openFolios
-                .slice()
-                .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))[0];
-
-              return {
-                company_id: company.id,
-                company_name: company.name,
-                corporate_code: company.corporate_code,
-                contact_person: company.contact_person,
-                contact_email: company.contact_email,
-                contact_phone: company.contact_phone,
-                payment_terms: company.payment_terms,
-                total_outstanding: totalOutstanding,
-                total_outstanding_by_currency: totalOutstandingByCurrency,
-                open_folios_count: openFolios.length,
-                oldest_invoice_date: oldestFolio?.created_at,
-                days_outstanding: oldestFolio
-                  ? Math.floor((new Date() - new Date(oldestFolio.created_at)) / (1000 * 60 * 60 * 24))
-                  : 0
-              };
-            }
-            return null;
-          } catch (err) {
-            return null;
-          }
-        };
-
-        const CONCURRENCY = 5;
-        const validAR = [];
-        for (let i = 0; i < companies.length; i += CONCURRENCY) {
-          const batch = companies.slice(i, i + CONCURRENCY);
-          const batchResults = await Promise.all(batch.map(fetchCompanyAR));
-          for (const ar of batchResults) {
-            if (ar !== null) validAR.push(ar);
-          }
-        }
-        setArData(validAR);
-      } catch (fallbackError) {
-        console.error('Fallback also failed:', fallbackError);
-        toast.error('AR verileri yüklenemedi');
-        setArData([]);
-      }
+      // A financial balance must come from the authorized ledger calculation.
+      // A partial client-side fallback can hide debt or bypass an access denial.
+      setLoadError(true);
+      setArData([]);
+      toast.error('AR verileri yüklenemedi');
     } finally {
       setLoading(false);
     }
@@ -181,9 +122,24 @@ const PendingAR = ({ user, tenant, onLogout }) => {
   const totalCompanies = arData.length;
   const criticalCount = arData.filter(item => item.days_outstanding > 60).length;
 
-  const handleExportCompanyAging = () => {
-    const url = `/api/reports/company-aging/excel`;
-    window.open(url, '_blank');
+  const handleExportCompanyAging = async () => {
+    setExporting(true);
+    try {
+      const response = await axios.get('/reports/company-aging/excel', { responseType: 'blob' });
+      const url = URL.createObjectURL(response.data);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'company-aging.xlsx';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      const revoke = URL.revokeObjectURL.bind(URL);
+      setTimeout(() => revoke(url), 1000);
+    } catch {
+      toast.error('Yaşlandırma raporu indirilemedi; bakiyeler doğrulanamamış veya erişim yetkisi bulunmuyor olabilir.');
+    } finally {
+      setExporting(false);
+    }
   };
 
   const flattenAgingRows = () => {
@@ -278,6 +234,10 @@ const PendingAR = ({ user, tenant, onLogout }) => {
   return (
     <>
       <div className="p-6 space-y-6">
+        {loadError && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-4 text-red-800">
+          Alacak bakiyeleri doğrulanamadı. Gösterilmeyen tutarları sıfır bakiye olarak değerlendirmeyin.
+          <Button variant="outline" className="ml-3" onClick={loadARData}>Yeniden dene</Button>
+        </div>}
         <Tabs defaultValue="pending-ar">
           <TabsList className="mb-4">
             <TabsTrigger value="pending-ar">Bekleyen Alacaklar</TabsTrigger>
@@ -294,7 +254,7 @@ const PendingAR = ({ user, tenant, onLogout }) => {
                 </h1>
                 <p className="text-gray-600 mt-1">Kurumsal müşterilerin bekleyen fatura ve tahsilatları</p>
               </div>
-              <Button onClick={handleExportCompanyAging}>
+              <Button onClick={handleExportCompanyAging} disabled={exporting}>
                 <Download className="w-4 h-4 mr-2" />
                 Yaşlandırmayı Excel'e Aktar
               </Button>
@@ -308,7 +268,7 @@ const PendingAR = ({ user, tenant, onLogout }) => {
                     <div>
                       <div className="text-sm opacity-90">Toplam Açık Bakiye</div>
                       <div className="text-3xl font-bold mt-1">
-                        {formatCurrencyBreakdown(totalOutstandingByCurrency)}
+                        {loadError ? 'Alınamadı' : formatCurrencyBreakdown(totalOutstandingByCurrency)}
                       </div>
                     </div>
                     <DollarSign className="w-12 h-12 opacity-75" />
@@ -321,7 +281,7 @@ const PendingAR = ({ user, tenant, onLogout }) => {
                   <div className="flex items-center justify-between">
                     <div>
                       <div className="text-sm text-gray-600">Borçlu Cari Sayısı</div>
-                      <div className="text-3xl font-bold text-blue-600 mt-1">{totalCompanies}</div>
+                      <div className="text-3xl font-bold text-blue-600 mt-1">{loadError ? '—' : totalCompanies}</div>
                     </div>
                     <Building2 className="w-12 h-12 text-blue-600 opacity-50" />
                   </div>
@@ -333,7 +293,7 @@ const PendingAR = ({ user, tenant, onLogout }) => {
                   <div className="flex items-center justify-between">
                     <div>
                       <div className="text-sm text-gray-600">Kritik (60+ gün)</div>
-                      <div className="text-3xl font-bold text-red-600 mt-1">{criticalCount}</div>
+                      <div className="text-3xl font-bold text-red-600 mt-1">{loadError ? '—' : criticalCount}</div>
                     </div>
                     <AlertCircle className="w-12 h-12 text-red-600 opacity-50" />
                   </div>
@@ -346,7 +306,7 @@ const PendingAR = ({ user, tenant, onLogout }) => {
                     <div>
                       <div className="text-sm text-gray-600">Ortalama Vade Gecikmesi</div>
                       <div className="text-3xl font-bold text-amber-600 mt-1">
-                        {arData.length > 0
+                        {loadError ? '—' : arData.length > 0
                           ? Math.round(
                               arData.reduce((sum, item) => sum + item.days_outstanding, 0) / arData.length
                             )

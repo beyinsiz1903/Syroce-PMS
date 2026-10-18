@@ -34,9 +34,9 @@ describe('RevenueSection category currency handling', () => {
     />);
 
     const table = await waitFor(() => screen.getByText('Kategori').closest('table'));
-    expect(within(table).getAllByText((text) => text.replace(/\s/g, '') === '₺1.000').length).toBeGreaterThan(0);
-    expect(within(table).getAllByText((text) => text.replace(/\s/g, '') === '200€').length).toBeGreaterThan(0);
-    expect(within(table).queryByText('₺1.200')).not.toBeInTheDocument();
+    expect(within(table).getAllByText((text) => text.replace(/\s/g, '') === '₺1.000,00').length).toBeGreaterThan(0);
+    expect(within(table).getAllByText((text) => text.replace(/\s/g, '') === '200,00€').length).toBeGreaterThan(0);
+    expect(within(table).queryByText('₺1.200,00')).not.toBeInTheDocument();
   });
 
   it('does not draw one revenue trend when currencies differ between days', () => {

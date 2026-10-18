@@ -10,7 +10,7 @@ export function currencyBreakdownEntries(breakdown, locale = 'tr-TR') {
     .sort((left, right) => left.currency.localeCompare(right.currency))
     .map((entry) => ({
       ...entry,
-      formatted: formatCurrency(entry.amount, entry.currency, { locale }),
+      formatted: formatCurrency(entry.amount, entry.currency, { locale, decimals: 2, compactDecimals: false }),
     }));
 }
 
@@ -21,7 +21,12 @@ export function isMixedCurrencyBreakdown(breakdown) {
 export function formatCurrencyBreakdown(breakdown, fallbackAmount = 0, fallbackCurrency = 'TRY', locale = 'tr-TR') {
   const entries = currencyBreakdownEntries(breakdown, locale);
   if (entries.length === 0) {
-    return formatCurrency(fallbackAmount || 0, fallbackCurrency || 'TRY', { locale });
+    const zeroCurrencies = Object.entries(breakdown || {})
+      .filter(([code, value]) => code && value != null && Number(value) === 0)
+      .map(([code]) => code).sort();
+    return zeroCurrencies.length
+      ? zeroCurrencies.map(code => formatCurrency(0, code, { locale, decimals: 2, compactDecimals: false })).join(' · ')
+      : formatCurrency(fallbackAmount || 0, fallbackCurrency || 'TRY', { locale, decimals: 2, compactDecimals: false });
   }
   return entries
     .map(({ currency, formatted }) => entries.length > 1 ? `${currency}: ${formatted}` : formatted)

@@ -1,11 +1,15 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import { DollarSign } from 'lucide-react';
-import { KPICard } from '../ReportHelpers';
+import { formatCurrency, KPICard } from '../ReportHelpers';
 
 afterEach(() => cleanup());
 
 describe('KPICard currency presentation', () => {
+  it('does not hide cents on financial report values', () => {
+    expect(formatCurrency(1000.49, 'TRY')).toContain('1.000,49');
+    expect(formatCurrency(25.75, 'EUR')).toContain('25,75');
+  });
   it('labels mixed currencies separately and explains that they are not converted', () => {
     render(
       <KPICard

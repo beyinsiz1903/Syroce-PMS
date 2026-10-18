@@ -35,7 +35,8 @@ async def test_revenue_report_includes_unabsorbed_manual_extra_categories(monkey
     monkeypatch.setattr(
         standard_reports,
         "db",
-        SimpleNamespace(folio_charges=folio_charges, extra_charges=extra_charges, pos_orders=pos_orders, bookings=bookings),
+        SimpleNamespace(folio_charges=folio_charges, extra_charges=extra_charges, pos_orders=pos_orders, bookings=bookings,
+            pos_transactions=pos_orders, pos_menu_transactions=pos_orders, transactions=pos_orders),
     )
     monkeypatch.setattr(
         standard_reports,
@@ -70,7 +71,8 @@ async def test_revenue_report_never_adds_unlike_currencies_and_excludes_comp_fro
     monkeypatch.setattr(
         standard_reports,
         "db",
-        SimpleNamespace(folio_charges=folio_charges, extra_charges=empty, pos_orders=empty, bookings=bookings),
+        SimpleNamespace(folio_charges=folio_charges, extra_charges=empty, pos_orders=empty, bookings=bookings,
+            pos_transactions=empty, pos_menu_transactions=empty, transactions=empty),
     )
     monkeypatch.setattr(
         standard_reports,
@@ -106,6 +108,9 @@ async def test_posted_revenue_rows_never_silently_caps_financial_ledger_rows(mon
             folio_charges=SimpleNamespace(find=lambda *_args, **_kwargs: folio_cursor),
             extra_charges=SimpleNamespace(find=lambda *_args, **_kwargs: extra_cursor),
             pos_orders=SimpleNamespace(find=lambda *_args, **_kwargs: pos_cursor),
+            pos_transactions=SimpleNamespace(find=lambda *_args, **_kwargs: _Cursor([])),
+            pos_menu_transactions=SimpleNamespace(find=lambda *_args, **_kwargs: _Cursor([])),
+            transactions=SimpleNamespace(find=lambda *_args, **_kwargs: _Cursor([])),
         ),
     )
 
