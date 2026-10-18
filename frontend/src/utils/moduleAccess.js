@@ -149,6 +149,7 @@ const EXACT_ROUTE_SCOPES = Object.freeze({
   '/app/incoming-agency-contracts': ['channel_manager'],
   '/app/agency-statements': ['channel_manager'],
   '/app/agency-readiness': ['channel_manager'],
+  '/app/agency-pending': ['channel_manager'],
   '/agency-content': ['channel_manager'],
   '/b2b-analytics': ['channel_manager'],
   '/app/integration-hub': ['channel_manager', 'invoice'],
@@ -203,7 +204,7 @@ const ROUTE_SCOPE_OVERRIDES = Object.freeze(Object.fromEntries([
     '/app/mice', '/app/afsadakat', '/loyalty', '/group-reservations',
     '/function-space', '/suite-connecting', '/mobile/sales', '/mobile/corporate',
     '/sales-crm', '/group-sales', '/service-recovery', '/travel-agent-arap',
-    '/app/travel-agent-arap', '/app/incoming-agency-contracts', '/app/agency-statements', '/app/agency-readiness', '/agency-management',
+    '/app/travel-agent-arap', '/app/incoming-agency-contracts', '/app/agency-statements', '/app/agency-readiness', '/app/agency-pending', '/agency-management',
     '/agency-content', '/b2b-analytics', '/profile-udf', '/app/mailing',
   ]],
   [['reports'], [

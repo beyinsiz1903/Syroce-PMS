@@ -107,4 +107,11 @@ describe('IncomingAgencyContracts workspace', () => {
     expect(screen.getByTestId('agency-contract-load-error')).toHaveTextContent('Bu işlem için yetkiniz yok');
     expect(screen.queryByText('Şu an bekleyen acente talebi yok.')).not.toBeInTheDocument();
   });
+
+  it('honours the pending-centre link to the active contract tab', async () => {
+    apiGet.mockResolvedValue({ data: { contracts: [], counts: {} } });
+    render(<MemoryRouter initialEntries={['/app/incoming-agency-contracts?tab=active']}><IncomingAgencyContracts /></MemoryRouter>);
+    await waitFor(() => expect(apiGet).toHaveBeenCalledWith('/marketplace/incoming-requests', expect.objectContaining({ params: { status: 'approved' } })));
+    expect(apiGet.mock.calls.every(([, options]) => options.params.status === 'approved')).toBe(true);
+  });
 });

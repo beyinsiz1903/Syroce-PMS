@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -176,7 +176,12 @@ const ContractCard = ({ contract, onApprove, onReject, onTerminate, onChanged })
 
 const IncomingAgencyContracts = ({ user, tenant, onLogout }) => {
   const { t: _t, i18n } = useTranslation();
-  const [tab, setTab] = useState('pending');
+  const [searchParams] = useSearchParams();
+  const requestedTab = searchParams.get('tab');
+  const [tab, setTab] = useState(() => ['active', 'history'].includes(requestedTab) ? requestedTab : 'pending');
+  useEffect(() => {
+    if (['pending', 'active', 'history'].includes(requestedTab)) setTab(requestedTab);
+  }, [requestedTab]);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState('');
   const [contracts, setContracts] = useState([]);

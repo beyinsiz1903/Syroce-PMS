@@ -85,6 +85,7 @@ PROPERTY_PROFILES: dict[str, dict] = {
             "incoming_agency_contracts",
             "agency_statements",
             "agency_readiness",
+            "agency_pending",
         ],
         "nav_group_labels": {"system": "Kanallar"},
         "nav_item_labels": {"settings": "Yönetim"},

@@ -45,4 +45,5 @@ def test_sapanca_kartepe_navigation_is_fail_closed_to_requested_workspaces():
         "incoming_agency_contracts",
         "agency_statements",
         "agency_readiness",
+        "agency_pending",
     }

@@ -13,6 +13,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import StatementsWorkspace from '@/components/statements/StatementsWorkspace';
 import PerformanceReport from '@/components/statements/PerformanceReport';
+import PendingActionsContent from '@/components/pending/PendingActionsContent';
+import usePendingActions from '@/components/pending/usePendingActions';
 import ContractAmendmentPanel from '@/components/contracts/ContractAmendmentPanel';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useTranslation } from 'react-i18next';
@@ -318,6 +320,24 @@ const AgencyPortalDashboard = () => {
     } catch {
       // Notices are informational; the portal stays usable without them.
     }
+  };
+  // Tabs are controlled so the pending list can open the screen that handles
+  // an item. Load on activation, not on click: Radix switches tabs on
+  // mousedown, the page height then changes and the mouseup may miss the
+  // trigger, so a click handler would not run (tab open, content empty).
+  const [tab, setTab] = useState('search');
+  const pending = usePendingActions({
+    api: agencyApi, path: '/marketplace/v1/pending-actions',
+    enabled: Boolean(token) && portalMode === 'marketplace', sessionKey: token,
+  });
+  const loadPending = pending.reload;
+  const openTab = value => {
+    setTab(value);
+    loadPending();
+    ({
+      reservations: loadReservations, content: () => loadContent(), finance: loadReconciliation,
+      contracts: loadContracts, settings: loadPortalSettings,
+    })[value]?.();
   };
   useEffect(() => {
     if (token && portalMode === 'marketplace') loadNotices();
@@ -647,6 +667,7 @@ const AgencyPortalDashboard = () => {
       toast.success(`${contract.contract_code} teklifi geri çekildi.`);
       setWithdrawingId(null);
       await loadContracts();
+      await loadPending();
     } catch (err) { toast.error(err.response?.data?.detail || 'Teklif geri çekilemedi.'); }
     finally { setWithdrawBusy(false); }
   };
@@ -670,6 +691,7 @@ const AgencyPortalDashboard = () => {
       });
       setSelectedHotelIds([]);
       await loadContracts();
+      await loadPending();
     } catch (err) { toast.error(err.response?.data?.detail || 'Sözleşme teklifi gönderilemedi.'); }
     finally { setProposing(false); }
   };
@@ -905,13 +927,17 @@ const AgencyPortalDashboard = () => {
             </CardContent>
           </Card>
         )}
-        {/* Load on activation, not on click: Radix switches tabs on mousedown,
-            the page height then changes and the mouseup may miss the trigger,
-            so a click handler would not run (tab open, content empty). */}
-        <Tabs defaultValue="search" className="w-full" onValueChange={value => ({
-          reservations: loadReservations, content: () => loadContent(), finance: loadReconciliation,
-          contracts: loadContracts, settings: loadPortalSettings,
-        })[value]?.()}>
+        {portalMode === 'marketplace' && (
+          <Card className="border-amber-200 shadow-sm" data-testid="agency-pending-card">
+            <CardHeader className="flex flex-row items-center justify-between pb-2"><CardTitle className="text-base">Bekleyen işler</CardTitle>
+              <Button size="sm" variant="outline" onClick={loadPending} disabled={pending.loading}>Yenile</Button>
+            </CardHeader>
+            <CardContent>
+              <PendingActionsContent {...pending} onRetry={loadPending} onOpen={item => openTab(item.target === 'contracts' ? 'contracts' : 'finance')} />
+            </CardContent>
+          </Card>
+        )}
+        <Tabs value={tab} className="w-full" onValueChange={openTab}>
           <TabsList className={`grid w-full ${portalMode === 'marketplace' ? 'grid-cols-2 lg:grid-cols-6' : 'grid-cols-1 sm:grid-cols-3'} h-auto gap-1 rounded-xl border border-slate-200 bg-white p-1.5 shadow-sm`}>
             <TabsTrigger value="search" data-testid="tab-search" className="min-h-10 rounded-lg data-[state=active]:bg-slate-900 data-[state=active]:text-white">{t('cm.pages_AgencyPortalDashboard.musaitlik_ara')}</TabsTrigger>
             <TabsTrigger value="reservations" data-testid="tab-reservations" className="min-h-10 rounded-lg data-[state=active]:bg-slate-900 data-[state=active]:text-white">Rezervasyonlarım</TabsTrigger>
@@ -1124,6 +1150,7 @@ const AgencyPortalDashboard = () => {
             </Card>}
             <div data-testid="agency-statements">
               <StatementsWorkspace side="agency" api={agencyApi} base="/marketplace/v1/statements" partiesPath="/marketplace/v1/statements/hotels"
+                onChanged={loadPending}
                 title="Dönem ekstreleri" description="Ekstreyi siz, otel veya her ayın 1'inde sistem düzenler; iki taraf onaylar. Borçlu taraf ödemeyi dekontla bildirir, alacaklı doğrular. Girişte ödemeli satışlarınızın komisyonu için ekstreyi kendiniz düzenleyebilirsiniz." />
             </div>
           </TabsContent>}
@@ -1159,7 +1186,7 @@ const AgencyPortalDashboard = () => {
               ? <div className="mt-2 flex justify-end gap-2"><Button size="sm" variant="outline" disabled={withdrawBusy} onClick={() => setWithdrawingId(null)}>Vazgeç</Button><Button size="sm" variant="destructive" disabled={withdrawBusy} onClick={() => withdrawContract(contract)} data-testid={`confirm-withdraw-${contract.id}`}>Evet, geri çek</Button></div>
               : <Button size="sm" variant="outline" className="mt-2" onClick={() => setWithdrawingId(contract.id)} data-testid={`withdraw-${contract.id}`}>Teklifi geri çek</Button>)}</div>
               {(contract.status === 'approved' || contract.pending_amendment) && <div className="w-full"><ContractAmendmentPanel side="agency" api={agencyApi}
-                base={`/marketplace/v1/contracts/${encodeURIComponent(contract.id)}/amendments`} contract={contract} onChanged={() => loadContracts()} /></div>}</CardContent></Card>)}
+                base={`/marketplace/v1/contracts/${encodeURIComponent(contract.id)}/amendments`} contract={contract} onChanged={() => { loadContracts(); loadPending(); }} /></div>}</CardContent></Card>)}
           </TabsContent>}
 
           {/* Content Tab */}

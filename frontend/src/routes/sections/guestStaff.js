@@ -2,7 +2,7 @@ import {
   SelfCheckin, DigitalKey, UpsellStore, StaffMobileApp, StaffRoomServiceOrders,
   OTAMessagingHub, MessagingCenter, SalesModule, TravelAgentARAP,
   AgencyRequests, IncomingAgencyContracts, AgencyManagement,
-  AgencyContentDistribution, AgencyStatements, AgencyReadiness, B2BAnalyticsDashboard, ReportScheduler,
+  AgencyContentDistribution, AgencyStatements, AgencyReadiness, AgencyPendingActions, B2BAnalyticsDashboard, ReportScheduler,
   GuestRelationsDashboard,
 } from "./lazyPages";
 
@@ -28,6 +28,7 @@ export function guestStaffRoutes({ p }) {
     { path: "/agency-content", ...p(AgencyContentDistribution), wrapLayout: true },
     { path: "/app/agency-statements", ...p(AgencyStatements), wrapLayout: true },
     { path: "/app/agency-readiness", ...p(AgencyReadiness), wrapLayout: true },
+    { path: "/app/agency-pending", ...p(AgencyPendingActions), wrapLayout: true },
     { path: "/b2b-analytics", ...p(B2BAnalyticsDashboard), wrapLayout: true, layoutModule: "b2b-analytics" },
     { path: "/report-scheduler", ...p(ReportScheduler), wrapLayout: true, layoutModule: "report-scheduler" },
   ];
