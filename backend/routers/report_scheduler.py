@@ -544,7 +544,9 @@ async def _build_report_payload(schedule: dict, now: datetime) -> dict:
                 {"label": "Doluluk %", "value": occ},
             ]
         elif rtype in ("revenue", "adr_revpar", "financial"):
-            from routers.reports_pkg.standard_reports import _charge_amount, _charge_category, _posted_revenue_rows
+            from modules.pms_core.reporting_ledger import charge_amount as _charge_amount
+            from modules.pms_core.reporting_ledger import charge_category as _charge_category
+            from modules.pms_core.reporting_ledger import posted_revenue_rows as _posted_revenue_rows
             charges = await _posted_revenue_rows(tenant_id, day_start.date(), day_start.date(), database=raw_db)
             totals, room_totals = {}, {}
             for item in charges:

@@ -1,9 +1,10 @@
-"""Opt-in, isolated Mongo acceptance. Never connects to a non-local server."""
+"""Isolated Mongo acceptance. Runs in CI and never uses a non-local server."""
 import os
 from datetime import UTC, date, datetime
-from uuid import uuid4
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
+from urllib.parse import urlsplit
+from uuid import uuid4
 
 import pytest
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -11,15 +12,14 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from modules.pms_core.report_money import add_amount, rounded_totals
 from routers.reports_pkg.standard_reports import _posted_revenue_rows
 
-pytestmark = pytest.mark.skipif(not os.getenv("REPORT_AUDIT_MONGO_URL"), reason="requires explicit isolated local Mongo")
-
 
 @pytest.fixture
 async def ledger_db():
-    uri = os.environ["REPORT_AUDIT_MONGO_URL"]
-    if not uri.startswith("mongodb://127.0.0.1:27987/"):
-        pytest.fail("This test only permits the dedicated local audit Mongo port")
-    client = AsyncIOMotorClient(uri, serverSelectionTimeoutMS=2000)
+    uri = os.environ.get("REPORT_AUDIT_MONGO_URL") or os.environ.get("MONGO_URL", "mongodb://127.0.0.1:27017/")
+    parsed = urlsplit(uri)
+    if parsed.scheme != "mongodb" or parsed.hostname not in {"127.0.0.1", "localhost"} or parsed.port not in {27017, 27987} or "," in parsed.netloc:
+        pytest.fail("Report acceptance tests only permit a local Mongo server")
+    client = AsyncIOMotorClient(uri, serverSelectionTimeoutMS=2000, directConnection=True)
     name = "report_audit_acceptance_" + uuid4().hex
     database = client[name]
     try:
