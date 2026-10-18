@@ -1717,13 +1717,26 @@ async def get_accounting_invoices(
 ):
     query = {"tenant_id": current_user.tenant_id}
     if start_date and end_date:
-        query["issue_date"] = {"$gte": start_date, "$lte": end_date}
+        query.update(_document_period("issue_date", start_date, end_date))
+    elif start_date or end_date:
+        value = start_date or end_date
+        try:
+            boundary = date.fromisoformat(value)
+            if end_date:
+                boundary += timedelta(days=1)
+        except (ValueError, OverflowError) as exc:
+            raise HTTPException(status_code=422, detail="Geçersiz fatura tarihi") from exc
+        operator = "$gte" if start_date else "$lt"
+        query["$or"] = [
+            {"issue_date": {operator: boundary.isoformat()}},
+            {"issue_date": {operator: datetime.combine(boundary, datetime.min.time(), UTC)}},
+        ]
     if invoice_type:
         query["invoice_type"] = invoice_type
     if status:
         query["status"] = status
 
-    invoices = await db.accounting_invoices.find(query, {"_id": 0}).sort("issue_date", -1).to_list(1000)
+    invoices = await db.accounting_invoices.find(query, {"_id": 0}).sort("issue_date", -1).to_list(None)
     # Render-time scrub for legacy rows that contain XML/HTML fragments
     # (e.g. test seeds from earlier security probes). Persisted on next write.
     for inv in invoices:

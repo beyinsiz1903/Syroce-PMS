@@ -21,7 +21,8 @@ import os
 import re as _re
 import traceback
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
+from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -91,20 +92,21 @@ def _require_manager_role(user: User):
 
 REPORT_TYPES = [
     {"key": "daily_summary", "label": "Günlük Özet Raporu", "description": "Günlük doluluk, gelir ve operasyon özeti"},
-    {"key": "revenue", "label": "Gelir Raporu", "description": "Detaylı gelir analizi ve kıyaslama"},
-    {"key": "occupancy", "label": "Doluluk Raporu", "description": "Oda doluluk oranları ve trendler"},
-    {"key": "reservations", "label": "Rezervasyon Raporu", "description": "Rezervasyon listesi ve istatistikler"},
-    {"key": "guest_analytics", "label": "Misafir Analitik", "description": "Misafir profili ve dağılım raporları"},
+    {"key": "revenue", "label": "Gelir Raporu", "description": "Dönem geliri, işlem sayısı, ADR ve RevPAR; para birimleri ayrı"},
+    {"key": "occupancy", "label": "Doluluk Raporu", "description": "Gerçekleşen dolu ve satılabilir oda-gece, dönem doluluk oranı"},
+    {"key": "reservations", "label": "Rezervasyon Raporu", "description": "Giriş dönemine göre rezervasyon durum istatistikleri"},
+    {"key": "guest_analytics", "label": "Misafir Analitik", "description": "Dönemde eklenen misafirler ve anlık toplam kayıt sayısı"},
     {"key": "adr_revpar", "label": "ADR / RevPAR", "description": "Ortalama günlük fiyat ve oda başına gelir"},
     {"key": "channel_performance", "label": "Kanal Performansı", "description": "OTA ve satış kanalı bazlı analiz"},
-    {"key": "b2b_analytics", "label": "B2B Analitik", "description": "Acente ve API kullanım analitikleri"},
-    {"key": "housekeeping", "label": "Housekeeping Raporu", "description": "Kat hizmetleri performans raporu"},
-    {"key": "financial", "label": "Finansal Rapor", "description": "Genel muhasebe ve folio özeti"},
+    {"key": "b2b_analytics", "label": "B2B Analitik", "description": "Giriş dönemine göre acente rezervasyon sayıları ve durumları"},
+    {"key": "housekeeping", "label": "Housekeeping Raporu", "description": "Aktif odaların anlık temizlik durumları; geçmiş dönem performansı değildir"},
+    {"key": "financial", "label": "Finansal Satış Özeti", "description": "İşlenmiş satış/iade geliri; tahsilat veya genel muhasebe mizanı değildir"},
     {"key": "flash_report", "label": "Flash Report", "description": "Anlık operasyon durum raporu"},
 ]
 
 FREQUENCY_OPTIONS = ["daily", "weekly", "monthly"]
 FORMAT_OPTIONS = ["pdf", "csv", "link"]
+DATE_RANGE_OPTIONS = ["auto", "business_day", "last_7_days", "month_to_date", "previous_month"]
 DAYS_OF_WEEK = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
 
 
@@ -171,23 +173,33 @@ async def _get_history_for_tenant(history_id: str, user: User) -> dict:
 
 
 def _validate_schedule_fields(data: dict):
-    if data.get("report_type") and data["report_type"] not in [r["key"] for r in REPORT_TYPES]:
+    if "name" in data:
+        data["name"] = data["name"].strip()
+        if not 1 <= len(data["name"]) <= 200:
+            raise HTTPException(status_code=400, detail="Zamanlama adı 1-200 karakter olmalıdır")
+    if "report_type" in data and data["report_type"] not in [r["key"] for r in REPORT_TYPES]:
         raise HTTPException(status_code=400, detail=f"Geçersiz rapor tipi: {data['report_type']}")
-    if data.get("frequency") and data["frequency"] not in FREQUENCY_OPTIONS:
+    if "frequency" in data and data["frequency"] not in FREQUENCY_OPTIONS:
         raise HTTPException(status_code=400, detail=f"Geçersiz frekans: {data['frequency']}")
-    if data.get("format") and data["format"] not in FORMAT_OPTIONS:
+    if "format" in data and data["format"] not in FORMAT_OPTIONS:
         raise HTTPException(status_code=400, detail=f"Geçersiz format: {data['format']}")
-    if data.get("send_time") and not _TIME_RE.match(data["send_time"]):
+    if "date_range" in data and data["date_range"] not in DATE_RANGE_OPTIONS:
+        raise HTTPException(status_code=400, detail="Geçersiz rapor dönemi")
+    if "send_time" in data and not _TIME_RE.fullmatch(data["send_time"]):
         raise HTTPException(status_code=400, detail="Geçersiz saat formatı, HH:MM olmalıdır")
     if data.get("day_of_week") and data["day_of_week"] not in DAYS_OF_WEEK:
         raise HTTPException(status_code=400, detail=f"Geçersiz gün: {data['day_of_week']}")
     if data.get("day_of_month") is not None:
         if not (1 <= data["day_of_month"] <= 28):
             raise HTTPException(status_code=400, detail="Ayın günü 1-28 arası olmalıdır (kısa ayları kapsamak için)")
-    if data.get("recipients"):
-        for email in data["recipients"]:
-            if not _EMAIL_RE.match(email):
+    if "recipients" in data:
+        recipients = list(dict.fromkeys(email.strip() for email in data["recipients"]))
+        if not 1 <= len(recipients) <= 100:
+            raise HTTPException(status_code=400, detail="1-100 alıcı belirtilmelidir")
+        for email in recipients:
+            if not _EMAIL_RE.fullmatch(email):
                 raise HTTPException(status_code=400, detail=f"Geçersiz e-posta: {email}")
+        data["recipients"] = recipients
     # Frekans-bağımlı zorunlu alanlar
     freq = data.get("frequency")
     if freq == "weekly" and "frequency" in data and not data.get("day_of_week"):
@@ -259,7 +271,7 @@ async def get_report_types(
     _perm=Depends(require_op("view_reports")),
 ):
     _require_manager_role(current_user)
-    return {"report_types": REPORT_TYPES, "frequencies": FREQUENCY_OPTIONS, "formats": FORMAT_OPTIONS, "days_of_week": DAYS_OF_WEEK}
+    return {"report_types": REPORT_TYPES, "frequencies": FREQUENCY_OPTIONS, "formats": FORMAT_OPTIONS, "days_of_week": DAYS_OF_WEEK, "date_ranges": DATE_RANGE_OPTIONS}
 
 
 @router.post("/schedules")
@@ -315,7 +327,7 @@ async def list_schedules(
     _require_manager_role(current_user)
 
     cursor = db.report_schedules.find({"tenant_id": _get_tenant_id(current_user)}).sort("created_at", -1)
-    schedules = await cursor.to_list(length=200)
+    schedules = await cursor.to_list(length=None)
     return {"schedules": schedules, "total": len(schedules)}
 
 
@@ -343,7 +355,9 @@ async def update_schedule(
     schedule = await _get_schedule_for_tenant(schedule_id, current_user)
 
     updates = {k: v for k, v in body.model_dump().items() if v is not None}
-    _validate_schedule_fields(updates)
+    merged = {**schedule, **updates}
+    _validate_schedule_fields(merged)
+    updates = {key: merged[key] for key in updates}
 
     if any(k in updates for k in ("frequency", "send_time", "day_of_week", "day_of_month")):
         freq = updates.get("frequency", schedule["frequency"])
@@ -429,7 +443,7 @@ async def send_now(
 async def get_history(
     schedule_id: str | None = Query(None),
     status: str | None = Query(None),
-    limit: int = Query(50, le=200),
+    limit: int = Query(50, ge=1, le=200),
     current_user: User = Depends(get_current_user),
     _nocache: bool = Query(False, alias="nocache"),
     _perm=Depends(require_op("view_reports")),
@@ -442,9 +456,9 @@ async def get_history(
     if status:
         query["status"] = status
 
-    cursor = db.report_schedule_history.find(query).sort("sent_at", -1).limit(limit)
+    cursor = db.report_schedule_history.find(query, {"report_payload": 0, "schedule_snapshot": 0}).sort("sent_at", -1).limit(limit)
     history = await cursor.to_list(length=limit)
-    return {"history": history, "total": len(history)}
+    return {"history": history, "total": await db.report_schedule_history.count_documents(query)}
 
 
 @router.get("/history/{history_id}")
@@ -469,162 +483,172 @@ async def retry_send(
 
     entry = await _get_history_for_tenant(history_id, current_user)
 
-    if entry.get("status") != "failed":
-        raise HTTPException(status_code=400, detail="Sadece başarısız gönderimler tekrar denenebilir")
+    if entry.get("status") not in {"failed", "partial"}:
+        raise HTTPException(status_code=400, detail="Sadece başarısız veya kısmi gönderimler tekrar denenebilir")
+    if not entry.get("schedule_snapshot"):
+        raise HTTPException(status_code=409, detail="Eski kayıtta rapor ve alıcı anlık görüntüsü yok. Teslimatı doğruladıktan sonra zamanlamadan yeni gönderim başlatın.")
+    states = entry.get("delivery_states", [])
+    if any(item.get("status") == "sending" for item in states):
+        raise HTTPException(status_code=409, detail="Önceki gönderimin sonucu belirsiz. Mükerrer e-postayı önlemek için teslimatı doğrulayın; otomatik tekrar yapılmadı.")
+    if not states and entry.get("delivery_details", {}).get("sent_count", 0):
+        raise HTTPException(status_code=409, detail="Eski kayıtta alıcı bazında teslimat kanıtı yok. Mükerrer gönderimi önlemek için teslimatı doğrulayın.")
 
     schedule = await _get_schedule_for_tenant(entry["schedule_id"], current_user)
 
-    await db.report_schedule_history.update_one(
-        {"_id": history_id, "tenant_id": _get_tenant_id(current_user)},
-        {"$set": {"status": "retrying", "retry_count": entry.get("retry_count", 0) + 1}},
+    claim = await db.report_schedule_history.update_one(
+        {"_id": history_id, "tenant_id": _get_tenant_id(current_user), "status": entry["status"], "retry_count": entry.get("retry_count", 0)},
+        {"$set": {"status": "retrying"}, "$inc": {"retry_count": 1}},
     )
+    if not claim.modified_count:
+        raise HTTPException(status_code=409, detail="Gönderim başka bir işlem tarafından tekrar deneniyor")
 
     result = await _execute_schedule(schedule, triggered_by=current_user.email, history_id=history_id)
     _invalidate_scheduler_cache(_get_tenant_id(current_user))
     return result
 
 
-async def _build_report_payload(schedule: dict, now: datetime) -> dict:
-    """Rapor tipi başına gerçek veri toplar.
+def _report_period(schedule: dict, business_day: date) -> tuple[date, date]:
+    """All periods end on the PMS business calendar, never the wall clock."""
+    choice = schedule.get("date_range") or "auto"
+    if choice == "auto":
+        choice = {"weekly": "last_7_days", "monthly": "previous_month"}.get(schedule.get("frequency"), "business_day")
+    if choice == "last_7_days":
+        return business_day - timedelta(days=6), business_day
+    if choice == "month_to_date":
+        return business_day.replace(day=1), business_day
+    if choice == "previous_month":
+        last = business_day.replace(day=1) - timedelta(days=1)
+        return last.replace(day=1), last
+    if choice == "business_day":
+        return business_day, business_day
+    raise ValueError("Geçersiz rapor dönemi")
 
-    Döner: {rows: [{label, value}], generated_at, range, notes}
-    Veri toplama hataları çağırana aktarılır; hatalı/boş rapor başarıyla
-    gönderilmiş gibi kaydedilmez.
-    """
+
+def _payload_range_label(payload: dict) -> str:
+    first = payload.get("start_date") or payload.get("range") or ""
+    last = payload.get("end_date") or first
+    def display(value):
+        try:
+            return date.fromisoformat(str(value)).strftime("%d.%m.%Y")
+        except ValueError:
+            return str(value)
+    return display(first) if first == last else f"{display(first)} – {display(last)}"
+
+
+async def _build_report_payload(schedule: dict, now: datetime) -> dict:
+    """Use shared ledger and room-night contracts for the explicit period."""
     from core.business_date_service import ensure_business_date_initialized
     from core.database import _raw_db as raw_db
-    from core.tenant_currency import get_tenant_currency
     from modules.pms_core.report_money import add_amount, amounts_text
+    from modules.pms_core.reporting_dates import date_period_match
     from modules.pms_core.stay_night_metrics import load_stay_night_metrics
 
     tenant_id = schedule.get("tenant_id") or "default"
     rtype = schedule.get("report_type", "")
-    business_state = await ensure_business_date_initialized(raw_db, tenant_id)
-    today_iso = str(business_state["business_date"])[:10]
-    day_start = datetime.fromisoformat(today_iso).replace(tzinfo=UTC)
-    day_end = day_start + timedelta(days=1)
-    currency_code, _ = await get_tenant_currency(tenant_id)
-    rows: list[dict] = []
-    notes: str | None = None
+    state = await ensure_business_date_initialized(raw_db, tenant_id)
+    business_day = date.fromisoformat(str(state["business_date"])[:10])
+    first, last = _report_period(schedule, business_day)
+    booking_period = {"tenant_id": tenant_id, **date_period_match("check_in", first, last)}
+    period = first.isoformat() if first == last else f"{first.isoformat()} – {last.isoformat()}"
+    rows = []
+    notes = None
 
-    try:
-        if rtype in ("daily_summary", "occupancy", "reservations", "flash_report"):
-            arrivals = await raw_db.bookings.count_documents(
-                {
-                    "tenant_id": tenant_id,
-                    "$or": [
-                        {"check_in": today_iso},
-                        {"check_in": {"$gte": day_start, "$lt": day_end}},
-                        {"check_in": {"$gte": day_start.isoformat(), "$lt": day_end.isoformat()}},
-                    ],
-                    "status": {"$in": ["confirmed", "guaranteed", "checked_in", "in_house", "arriving"]},
-                }
-            )
-            departures = await raw_db.bookings.count_documents(
-                {
-                    "tenant_id": tenant_id,
-                    "$or": [
-                        {"check_out": today_iso},
-                        {"check_out": {"$gte": day_start, "$lt": day_end}},
-                        {"check_out": {"$gte": day_start.isoformat(), "$lt": day_end.isoformat()}},
-                    ],
-                    "status": {"$in": ["checked_in", "in_house", "checked_out", "departing"]},
-                }
-            )
-            metrics = (await load_stay_night_metrics(raw_db, tenant_id, day_start.date(), day_start.date(), actual_only=True))[0]
-            in_house = metrics["occupied_rooms"]
-            total_rooms = metrics["total_rooms"]
-            occ = metrics["occupancy_rate"]
-            rows = [
-                {"label": "PMS iş tarihi", "value": day_start.strftime("%d.%m.%Y")},
-                {"label": "Bugün gelen (arrivals)", "value": arrivals},
-                {"label": "Bugün çıkan (departures)", "value": departures},
-                {"label": "Evde olan (in-house)", "value": in_house},
-                {"label": "Toplam oda", "value": total_rooms},
-                {"label": "Doluluk %", "value": occ},
-            ]
-        elif rtype in ("revenue", "adr_revpar", "financial"):
-            from modules.pms_core.reporting_ledger import charge_amount as _charge_amount
-            from modules.pms_core.reporting_ledger import charge_category as _charge_category
-            from modules.pms_core.reporting_ledger import posted_revenue_rows as _posted_revenue_rows
-            charges = await _posted_revenue_rows(tenant_id, day_start.date(), day_start.date(), database=raw_db)
-            totals, room_totals = {}, {}
-            for item in charges:
-                amount = _charge_amount(item)
-                code = item.get("currency") or currency_code
-                add_amount(totals, code, amount)
-                if _charge_category(item) == "room":
-                    add_amount(room_totals, code, amount)
-            metrics = (await load_stay_night_metrics(raw_db, tenant_id, day_start.date(), day_start.date(), actual_only=True))[0]
-            occupied_rooms = metrics.get("sold_rooms", metrics["occupied_rooms"])
-            total_rooms = metrics["total_rooms"]
-            effective_room_totals = room_totals if room_totals else metrics.get("revenue_by_currency", {currency_code: metrics.get("revenue") or 0})
-            adr = {code: float(amount) / occupied_rooms if occupied_rooms else 0 for code, amount in effective_room_totals.items()}
-            revpar = {code: float(amount) / total_rooms if total_rooms else 0 for code, amount in effective_room_totals.items()}
-            notes = "Para birimleri ayrı gösterilir; kur dönüşümü yapılmaz. ADR, satılmış oda-gece üzerinden hesaplanır."
-            if not room_totals:
-                notes += " Oda geliri henüz işlenmediğinden ADR/RevPAR konaklama tahakkukuna dayanır."
-            rows = [
-                {"label": "PMS iş tarihi", "value": day_start.strftime("%d.%m.%Y")},
-                {"label": "Toplam gelir (para birimine göre)", "value": amounts_text(totals)},
-                {"label": "Gelir işlem sayısı", "value": len(charges)},
-                {"label": "ADR (Ortalama Günlük Fiyat)", "value": amounts_text(adr)},
-                {"label": "RevPAR (Oda Başı Gelir)", "value": amounts_text(revpar)},
-            ]
-        elif rtype == "guest_analytics":
-            new_guests = await raw_db.guests.count_documents(
-                {
-                    "tenant_id": tenant_id,
-                    "$or": [
-                        {"created_at": {"$regex": f"^{today_iso}"}},
-                        {"created_at": {"$gte": day_start, "$lt": day_end}},
-                    ],
-                }
-            )
-            total_guests = await raw_db.guests.count_documents({"tenant_id": tenant_id})
-            rows = [
-                {"label": "Bugün eklenen misafir", "value": new_guests},
-                {"label": "Toplam misafir", "value": total_guests},
-            ]
-        elif rtype == "channel_performance":
-            pipeline = [
-                {"$match": {"tenant_id": tenant_id}},
-                {"$group": {"_id": "$channel", "count": {"$sum": 1}}},
-                {"$sort": {"count": -1}},
-                {"$limit": 10},
-            ]
-            agg = await raw_db.bookings.aggregate(pipeline).to_list(length=10)
-            rows = [{"label": (a["_id"] or "Direkt"), "value": a["count"]} for a in agg]
-            if not rows:
-                notes = "Bu tenant için kanal verisi bulunamadı."
-        elif rtype == "housekeeping":
-            for st in ("clean", "dirty", "inspected", "out_of_order"):
-                cnt = await raw_db.rooms.count_documents(
-                    {
-                        "tenant_id": tenant_id,
-                        "housekeeping_status": st,
-                    }
-                )
-                rows.append({"label": f"Oda durumu — {st}", "value": cnt})
-        elif rtype == "b2b_analytics":
-            cnt = await raw_db.bookings.count_documents(
-                {
-                    "tenant_id": tenant_id,
-                    "agency_id": {"$exists": True, "$ne": None},
-                }
-            )
-            rows = [{"label": "Acente kanalı rezervasyon (toplam)", "value": cnt}]
-        else:
-            raise ValueError(f"'{rtype}' için zamanlanmış rapor hazırlayıcı tanımlı değil")
-    except Exception:
-        logger.exception("[report-scheduler] payload build failed (%s)", rtype)
-        raise
+    if rtype in ("daily_summary", "occupancy", "flash_report"):
+        arrivals = await raw_db.bookings.count_documents({
+            **booking_period, "status": {"$in": ["confirmed", "guaranteed", "checked_in", "in_house", "checked_out", "arriving"]},
+        })
+        departures = await raw_db.bookings.count_documents({
+            "tenant_id": tenant_id, **date_period_match("check_out", first, last),
+            "status": {"$in": ["checked_in", "in_house", "checked_out", "departing"]},
+        })
+        metrics = await load_stay_night_metrics(raw_db, tenant_id, first, last, actual_only=True)
+        occupied = sum(day["occupied_rooms"] for day in metrics)
+        capacity = sum(day["total_rooms"] for day in metrics)
+        rows = [
+            {"label": "Rapor dönemi", "value": period},
+            {"label": "Dönemde gelen (arrivals)", "value": arrivals},
+            {"label": "Dönemde çıkan (departures)", "value": departures},
+            {"label": "Dolu oda-gece", "value": occupied},
+            {"label": "Satılabilir oda-gece", "value": capacity},
+            {"label": "Doluluk %", "value": round(occupied / capacity * 100, 2) if capacity else 0},
+        ]
+        notes = "Gerçekleşen konaklamalar; çıkış günü oda-geceye dahil edilmez."
+    elif rtype in ("revenue", "adr_revpar", "financial"):
+        from modules.pms_core.reporting_ledger import charge_amount, charge_category, posted_revenue_rows
+
+        charges = await posted_revenue_rows(tenant_id, first, last, database=raw_db)
+        totals, room_totals = {}, {}
+        for item in charges:
+            add_amount(totals, item.get("currency"), charge_amount(item))
+            if charge_category(item) == "room":
+                add_amount(room_totals, item.get("currency"), charge_amount(item))
+        metrics = await load_stay_night_metrics(raw_db, tenant_id, first, last, actual_only=True)
+        sold_nights = sum(day.get("sold_rooms", day["occupied_rooms"]) for day in metrics)
+        capacity = sum(day["total_rooms"] for day in metrics)
+        effective_room_totals = room_totals
+        notes = "İşlenmiş satış/iade geliri; tahsilat veya genel muhasebe mizanı değildir. Para birimleri ayrı gösterilir; kur dönüşümü yapılmaz. ADR, dönem toplam oda geliri / satılmış oda-gece; RevPAR, dönem toplam oda geliri / satılabilir oda-gecedir."
+        if not room_totals:
+            effective_room_totals = {}
+            for day in metrics:
+                for code, amount in day.get("revenue_by_currency", {}).items():
+                    add_amount(effective_room_totals, code, amount)
+            notes += " Oda geliri henüz işlenmediğinden ADR/RevPAR konaklama tahakkukuna dayanır."
+        adr = {code: float(amount) / sold_nights if sold_nights else 0 for code, amount in effective_room_totals.items()}
+        revpar = {code: float(amount) / capacity if capacity else 0 for code, amount in effective_room_totals.items()}
+        rows = [
+            {"label": "Rapor dönemi", "value": period},
+            {"label": "Toplam gelir (para birimine göre)", "value": amounts_text(totals)},
+            {"label": "Gelir işlem sayısı", "value": len(charges)},
+            {"label": "ADR (Ortalama Günlük Fiyat)", "value": amounts_text(adr)},
+            {"label": "RevPAR (Oda Başı Gelir)", "value": amounts_text(revpar)},
+        ]
+    elif rtype == "guest_analytics":
+        new_guests = await raw_db.guests.count_documents({"tenant_id": tenant_id, **date_period_match("created_at", first, last)})
+        total_guests = await raw_db.guests.count_documents({"tenant_id": tenant_id})
+        rows = [
+            {"label": "Dönemde eklenen misafir", "value": new_guests},
+            {"label": "Toplam kayıtlı misafir (anlık)", "value": total_guests},
+        ]
+        notes = "Yeni misafir sayısı rapor dönemine; toplam kayıtlı misafir sayısı üretim anına aittir."
+    elif rtype == "channel_performance":
+        grouped = await raw_db.bookings.aggregate([
+            {"$match": booking_period},
+            {"$group": {"_id": "$channel", "count": {"$sum": 1}}},
+            {"$sort": {"count": -1, "_id": 1}},
+        ]).to_list(None)
+        rows = [{"label": row["_id"] or "Direkt", "value": row["count"]} for row in grouped]
+        notes = "Giriş tarihine göre tüm rezervasyonlar; iptaller dahil. Kanallar kırpılmaz."
+    elif rtype in ("b2b_analytics", "reservations"):
+        query = dict(booking_period)
+        if rtype == "b2b_analytics":
+            query["agency_id"] = {"$exists": True, "$nin": [None, ""]}
+        grouped = await raw_db.bookings.aggregate([
+            {"$match": query}, {"$group": {"_id": "$status", "count": {"$sum": 1}}}, {"$sort": {"_id": 1}},
+        ]).to_list(None)
+        rows = [{"label": "Giriş dönemindeki rezervasyon sayısı", "value": sum(row["count"] for row in grouped)}]
+        rows += [{"label": f"Rezervasyon durumu — {row['_id'] or 'belirtilmemiş'}", "value": row["count"]} for row in grouped]
+        notes = "Rezervasyon giriş tarihine göre durum istatistikleri; iptaller dahil."
+    elif rtype == "housekeeping":
+        for status in ("clean", "dirty", "inspected", "out_of_order"):
+            count = await raw_db.rooms.count_documents({"tenant_id": tenant_id, "is_active": {"$ne": False}, "housekeeping_status": status})
+            rows.append({"label": f"Oda durumu — {status}", "value": count})
+        notes = "Anlık oda durumu; geçmiş dönem performansı değildir."
+    else:
+        raise ValueError(f"'{rtype}' için zamanlanmış rapor hazırlayıcı tanımlı değil")
+
+    if rtype in ("daily_summary", "flash_report"):
+        from modules.pms_core.reporting_ledger import charge_amount, posted_revenue_rows
+
+        totals = {}
+        for item in await posted_revenue_rows(tenant_id, first, last, database=raw_db):
+            add_amount(totals, item.get("currency"), charge_amount(item))
+        rows.append({"label": "Toplam gelir (para birimine göre)", "value": amounts_text(totals)})
+        notes += " Gelir, işlenmiş satış ve iade kayıtlarından hesaplanır; tahsilat değildir. Para birimleri ayrı tutulur."
 
     return {
-        "rows": rows,
-        "generated_at": now.isoformat(),
-        "range": today_iso,
-        "notes": notes,
+        "rows": rows, "generated_at": now.isoformat(), "range": period,
+        "start_date": first.isoformat(), "end_date": last.isoformat(),
+        "business_date": business_day.isoformat(), "notes": notes,
     }
 
 
@@ -638,6 +662,8 @@ def _payload_to_csv(report_label: str, payload: dict) -> bytes:
     w = csv.writer(buf)
     safe_writerow(w, [report_label])
     safe_writerow(w, ["Üretim:", payload.get("generated_at", "")])
+    safe_writerow(w, ["Rapor dönemi:", _payload_range_label(payload)])
+    safe_writerow(w, ["Başlangıç:", payload.get("start_date", ""), "Bitiş:", payload.get("end_date", "")])
     w.writerow([])
     w.writerow(["Metrik", "Değer"])
     for r in payload.get("rows", []):
@@ -658,203 +684,139 @@ def _payload_to_pdf(report_label: str, payload: dict, html: str) -> bytes | None
         return None
 
 
-def _resolve_app_url(schedule_id: str) -> str:
+def _resolve_app_url(history_id: str) -> str:
     base = (os.environ.get("PUBLIC_APP_URL") or "").rstrip("/")
-    if not base:
+    try:
+        parsed = urlsplit(base)
+    except ValueError:
         return ""
-    return f"{base}/app/raporlar?schedule_id={schedule_id}"
+    if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:
+        return ""
+    return f"{base}/report-scheduler?history_id={history_id}"
 
 
 async def _execute_schedule(schedule: dict, triggered_by: str = "system", history_id: str | None = None):
     now = datetime.now(UTC)
-    report_type_info = next((r for r in REPORT_TYPES if r["key"] == schedule["report_type"]), None)
-    report_label = report_type_info["label"] if report_type_info else schedule["report_type"]
-    fmt = (schedule.get("format") or "pdf").lower()
-
     hid = history_id or str(uuid.uuid4())
-
-    history_entry = {
-        "_id": hid,
-        "schedule_id": schedule["_id"],
-        "schedule_name": schedule["name"],
-        "tenant_id": schedule.get("tenant_id", "default"),
-        "report_type": schedule["report_type"],
-        "report_label": report_label,
-        "format": fmt,
-        "recipients": schedule["recipients"],
-        "triggered_by": triggered_by,
-        "sent_at": now.isoformat(),
-        "status": "processing",
-        "error_message": None,
-        "retry_count": 0,
-        "delivery_details": {},
-    }
-
+    tenant_id = schedule.get("tenant_id", "default")
+    history_filter = {"_id": hid, "tenant_id": tenant_id}
+    entry = await db.report_schedule_history.find_one(history_filter) if history_id else None
+    # A retry must not adopt changed recipients, format, notes or reporting dates.
+    schedule = dict((entry or {}).get("schedule_snapshot") or schedule)
+    report_label = next((r["label"] for r in REPORT_TYPES if r["key"] == schedule["report_type"]), schedule["report_type"])
+    fmt = schedule.get("format") or "pdf"
+    states = (entry or {}).get("delivery_states") or [
+        {"recipient": recipient, "status": "pending"}
+        for recipient in dict.fromkeys(schedule.get("recipients") or [])
+    ]
     if not history_id:
-        await db.report_schedule_history.insert_one(history_entry)
+        await db.report_schedule_history.insert_one({
+            "_id": hid, "tenant_id": tenant_id, "schedule_id": schedule["_id"],
+            "schedule_name": schedule["name"], "report_type": schedule["report_type"],
+            "report_label": report_label, "format": fmt, "recipients": schedule.get("recipients", []),
+            "schedule_snapshot": schedule, "delivery_states": states,
+            "triggered_by": triggered_by, "sent_at": now.isoformat(), "status": "processing",
+            "error_message": None, "retry_count": 0, "delivery_details": {},
+        })
 
     try:
         from modules.messaging.email_service import email_service
 
-        # 1) Rapor verisini topla
-        payload = await _build_report_payload(schedule, now)
-        report_date = str(payload.get("range") or now.date().isoformat())[:10]
-        try:
-            report_date_label = datetime.fromisoformat(report_date).strftime("%d.%m.%Y")
-        except ValueError:
-            report_date_label = report_date
+        _validate_schedule_fields(schedule)
+        if not states:
+            raise ValueError("Rapor gönderimi için en az bir alıcı gereklidir")
+        if any(item["status"] == "sending" for item in states):
+            raise ValueError("Önceki teslimat sonucu belirsiz; otomatik tekrar yapılmadı")
+        payload = (entry or {}).get("report_payload")
+        if payload is None:
+            payload = await _build_report_payload(schedule, now)
+        generated_at = datetime.fromisoformat(payload.get("generated_at") or now.isoformat())
+        report_date = payload.get("start_date") or str(payload.get("range") or now.date().isoformat())[:10]
+        app_url = _resolve_app_url(hid)
+        if fmt == "link" and not app_url:
+            raise ValueError("Bağlantılı rapor için PUBLIC_APP_URL geçerli bir HTTPS adresi olmalıdır")
+        await db.report_schedule_history.update_one(history_filter, {"$set": {
+            "report_payload": payload, "schedule_snapshot": schedule, "delivery_states": states,
+            "report_range": _payload_range_label(payload), "last_attempt_at": now.isoformat(),
+        }})
 
-        # 2) E-posta içeriği
-        subject = f"Syroce Rapor: {report_label} — {report_date_label}"
-        app_url = _resolve_app_url(schedule["_id"])
-        html_content = _build_report_email_html(schedule, report_label, now, payload, app_url)
-        text_lines = [
-            report_label,
-            f"Tarih: {now.strftime('%d.%m.%Y %H:%M')}",
-            f"Format: {fmt.upper()}",
-            "",
-            "Özet:",
-        ]
-        for r in payload.get("rows", []):
-            text_lines.append(f"  • {r.get('label')}: {r.get('value')}")
+        subject = f"Syroce Rapor: {report_label} — {_payload_range_label(payload)}"
+        html_content = _build_report_email_html(schedule, report_label, generated_at, payload, app_url)
+        text_lines = [report_label, f"Rapor dönemi: {_payload_range_label(payload)}",
+                      f"Üretim: {payload.get('generated_at') or now.isoformat()}", f"Format: {fmt.upper()}", "", "Özet:"]
+        text_lines += [f"  • {row.get('label')}: {row.get('value')}" for row in payload.get("rows", [])]
         if payload.get("notes"):
             text_lines += ["", f"Not: {payload['notes']}"]
+        if fmt == "link":
+            text_lines += ["", f"Raporu görüntüle: {app_url}"]
         text_content = "\n".join(text_lines)
-
-        # 3) Ek (CSV/PDF) üret
-        attachments: list = []
         date_tag = report_date.replace("-", "")
+        attachments = []
         if fmt == "csv":
-            attachments.append(
-                (
-                    f"{schedule['report_type']}_{date_tag}.csv",
-                    "text/csv",
-                    _payload_to_csv(report_label, payload),
-                )
-            )
+            attachments.append((f"{schedule['report_type']}_{date_tag}.csv", "text/csv", _payload_to_csv(report_label, payload)))
         elif fmt == "pdf":
             pdf_bytes = _payload_to_pdf(report_label, payload, html_content)
-            if pdf_bytes:
-                attachments.append(
-                    (
-                        f"{schedule['report_type']}_{date_tag}.pdf",
-                        "application/pdf",
-                        pdf_bytes,
-                    )
-                )
-            else:
-                # PDF üretilemediyse en azından CSV ile fallback gönder.
-                attachments.append(
-                    (
-                        f"{schedule['report_type']}_{date_tag}.csv",
-                        "text/csv",
-                        _payload_to_csv(report_label, payload),
-                    )
-                )
+            if not pdf_bytes:
+                raise ValueError("PDF üretilemedi; farklı formatta dosya gönderilmedi. Tekrar deneyin veya CSV seçin.")
+            attachments.append((f"{schedule['report_type']}_{date_tag}.pdf", "application/pdf", pdf_bytes))
 
-        # 4) Gönderim
-        sent_count = 0
-        failed_recipients = []
-        mock_recipients = []
+        sent_this_attempt = failed_this_attempt = 0
         smtp_ready = email_service.mode == "production" and email_service.smtp_username and email_service.smtp_password
-        for recipient in schedule["recipients"]:
-            try:
-                if smtp_ready:
-                    # SMTP senkron — event loop'u bloklamasın.
-                    success = await asyncio.to_thread(
-                        email_service._send_email_smtp,
-                        recipient,
-                        subject,
-                        html_content,
-                        text_content,
-                        attachments,
-                    )
-                    if success:
-                        sent_count += 1
-                    else:
-                        failed_recipients.append(recipient)
-                else:
-                    # SMTP yapılandırılmamış: gerçek gönderim YOK.
-                    # Eskiden success=True dönüyordu → KPI yalan söylüyordu (bug brief P1).
-                    # Şimdi ayrı `mock` durumu olarak işaretliyoruz.
-                    logger.info(f"[MOCK] Report email -> {recipient}: {subject} (SMTP not configured)")
-                    mock_recipients.append(recipient)
-            except Exception as e:
-                logger.error(f"Email send failed to {recipient}: {e}")
-                failed_recipients.append(recipient)
+        for item in states:
+            if item["status"] in {"sent", "mock"}:
+                continue
+            # Persist intent before the external side effect. A process crash here
+            # leaves an explicit uncertain delivery, never a blind duplicate retry.
+            item["status"] = "sending"
+            await db.report_schedule_history.update_one(history_filter, {"$set": {"delivery_states": states}})
+            if smtp_ready:
+                try:
+                    success = await asyncio.to_thread(email_service._send_email_smtp, item["recipient"], subject, html_content, text_content, attachments)
+                except Exception:
+                    logger.exception("Report delivery failed")
+                    success = False
+                item["status"] = "sent" if success else "failed"
+                sent_this_attempt += int(bool(success))
+                failed_this_attempt += int(not success)
+            else:
+                item["status"] = "mock"
+            await db.report_schedule_history.update_one(history_filter, {"$set": {"delivery_states": states}})
 
-        # 5) Status hesapla
-        total = len(schedule["recipients"])
-        if mock_recipients and not failed_recipients and sent_count == 0:
-            status = "mock"
-            error_msg = "SMTP yapılandırılmadığı için gerçek e-posta gönderilmedi (mock mode)."
-        elif failed_recipients and sent_count == 0:
-            status = "failed"
-            error_msg = f"Tüm alıcılara gönderim başarısız: {', '.join(failed_recipients)}"
-        elif failed_recipients:
-            status = "partial"
-            error_msg = f"Bazı alıcılara gönderilemedi: {', '.join(failed_recipients)}"
-        else:
-            status = "sent"
-            error_msg = None
-
-        await db.report_schedule_history.update_one(
-            {"_id": hid, "tenant_id": schedule.get("tenant_id", "default")},
-            {
-                "$set": {
-                    "status": status,
-                    "error_message": error_msg,
-                    "delivery_details": {
-                        "sent_count": sent_count,
-                        "failed_count": len(failed_recipients),
-                        "failed_recipients": failed_recipients,
-                        "mock_count": len(mock_recipients),
-                        "total_recipients": total,
-                        "attachment_count": len(attachments),
-                        "report_summary": payload.get("rows", [])[:8],
-                    },
-                }
-            },
-        )
-
-        # KPI'yı sadece gerçekten gönderilen sayısı kadar artır.
-        await db.report_schedules.update_one(
-            {"_id": schedule["_id"], "tenant_id": schedule.get("tenant_id", "default")},
-            {
-                "$set": {
-                    "last_sent_at": now.isoformat(),
-                    "last_status": status,
-                    "updated_at": now.isoformat(),
-                },
-                "$inc": {
-                    "total_sent": sent_count,
-                    "total_failed": len(failed_recipients),
-                },
-            },
-        )
-
-        return {
-            "message": f"Rapor gönderimi tamamlandı ({status})",
-            "status": status,
-            "sent_count": sent_count,
-            "failed_count": len(failed_recipients),
-            "mock_count": len(mock_recipients),
-            "history_id": hid,
+        sent_count = sum(item["status"] == "sent" for item in states)
+        failed = [item["recipient"] for item in states if item["status"] == "failed"]
+        mock_count = sum(item["status"] == "mock" for item in states)
+        status = "partial" if failed and sent_count else "failed" if failed else "mock" if mock_count else "sent"
+        error_msg = f"Gönderilemeyen alıcılar: {', '.join(failed)}" if failed else (
+            "SMTP yapılandırılmadığı için gerçek e-posta gönderilmedi (mock mode)." if mock_count else None)
+        details = {
+            "sent_count": sent_count, "failed_count": len(failed), "failed_recipients": failed,
+            "mock_count": mock_count, "total_recipients": len(states), "attachment_count": len(attachments),
+            "report_summary": payload.get("rows", []),
         }
-
-    except Exception as e:
-        error_msg = f"Rapor gönderim hatası: {str(e)}"
-        logger.error(f"Schedule execution failed: {e}\n{traceback.format_exc()}")
-
-        await db.report_schedule_history.update_one(
-            {"_id": hid, "tenant_id": schedule.get("tenant_id", "default")},
-            {"$set": {"status": "failed", "error_message": error_msg}},
-        )
+        await db.report_schedule_history.update_one(history_filter, {"$set": {
+            "status": status, "error_message": error_msg, "delivery_details": details, "delivery_states": states,
+        }})
+        schedule_updates = {"last_status": status, "updated_at": now.isoformat()}
+        if sent_this_attempt:
+            schedule_updates["last_sent_at"] = now.isoformat()
         await db.report_schedules.update_one(
-            {"_id": schedule["_id"], "tenant_id": schedule.get("tenant_id", "default")},
+            {"_id": schedule["_id"], "tenant_id": tenant_id},
+            {"$set": schedule_updates, "$inc": {"total_sent": sent_this_attempt, "total_failed": failed_this_attempt}},
+        )
+        _invalidate_scheduler_cache(tenant_id)
+        return {
+            "message": f"Rapor gönderimi tamamlandı ({status})", "status": status,
+            "sent_count": sent_count, "failed_count": len(failed), "mock_count": mock_count, "history_id": hid,
+        }
+    except Exception as exc:
+        error_msg = f"Rapor gönderim hatası: {exc}"
+        logger.error("Schedule execution failed: %s\n%s", exc, traceback.format_exc())
+        await db.report_schedule_history.update_one(history_filter, {"$set": {"status": "failed", "error_message": error_msg}})
+        await db.report_schedules.update_one(
+            {"_id": schedule["_id"], "tenant_id": tenant_id},
             {"$set": {"last_status": "failed", "updated_at": now.isoformat()}, "$inc": {"total_failed": 1}},
         )
-
+        _invalidate_scheduler_cache(tenant_id)
         return {"message": error_msg, "status": "failed", "history_id": hid}
 
 
@@ -878,6 +840,7 @@ def _build_report_email_html(
     freq_label = _e(freq_labels.get(schedule.get("frequency", ""), schedule.get("frequency", "")))
     sched_name = _e(schedule.get("name", "-"))
     sched_notes = _e(schedule.get("notes")) if schedule.get("notes") else None
+    period_label = _e(_payload_range_label(payload or {}))
     report_label = _e(report_label)
     safe_app_url = _e(app_url) if app_url else ""
 
@@ -934,12 +897,13 @@ def _build_report_email_html(
             </div>
             <div class="content">
                 <p>Merhaba,</p>
-                <p>Zamanlanmış raporunuz hazır. Kısa özet aşağıdadır; detay için ekteki <strong>{fmt}</strong> dosyasını inceleyebilirsiniz.</p>
+                <p>Zamanlanmış raporunuz hazır. {"Aşağıdaki bağlantıdan yetkili hesabınızla raporu görüntüleyebilirsiniz." if schedule.get("format") == "link" else f'Özet aşağıdadır; ekteki <strong>{fmt}</strong> dosyasını inceleyebilirsiniz.'}</p>
                 <table class="meta-table">
                     <tr><td>Rapor</td><td>{report_label}</td></tr>
                     <tr><td>Frekans</td><td>{freq_label}</td></tr>
                     <tr><td>Format</td><td>{fmt}</td></tr>
-                    <tr><td>Oluşturulma</td><td>{now.strftime("%d.%m.%Y %H:%M")}</td></tr>
+                    <tr><td>Rapor dönemi</td><td>{period_label}</td></tr>
+                    <tr><td>Oluşturulma (UTC)</td><td>{now.strftime("%d.%m.%Y %H:%M")}</td></tr>
                     <tr><td>Zamanlama</td><td>{sched_name}</td></tr>
                 </table>
                 {summary_block}
