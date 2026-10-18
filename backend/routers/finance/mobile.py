@@ -3,10 +3,11 @@
 import re
 import uuid
 from datetime import UTC, datetime, timedelta
+from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from modules.pms_core.role_permission_service import require_op  # v92 DW
 
@@ -23,9 +24,9 @@ from core.business_date_service import (
 )
 from core.database import db
 from core.security import get_current_user
-from models.enums import RiskLevel
 from modules.folio.services.folio_balance_read_service import FolioBalanceReadService
 from modules.folio.services.open_folio_service import OpenFolioService
+from modules.pms_core.receivable_reporting import folio_snapshots, iso_value, outstanding_invoice, receivable_rows, report_day, row_totals
 from modules.pms_core.report_money import add_amount, currency_code, resolve_ledger_currencies, rounded_totals, single_amount
 from modules.pms_core.reporting_financials import (
     NON_CASH_PAYMENT_METHODS,
@@ -54,6 +55,28 @@ router = APIRouter()
 security = HTTPBearer()
 folio_balance_read_service = FolioBalanceReadService()
 open_folio_service = OpenFolioService()
+
+
+async def _receivables(tenant_id):
+    from core.tenant_currency import get_tenant_currency
+
+    state = await ensure_business_date_initialized(db, tenant_id)
+    day = report_day(state["business_date"])
+    currency, _ = await get_tenant_currency(tenant_id)
+    return day, currency, await receivable_rows(db, tenant_id, day, fallback_currency=currency)
+
+
+async def _enrich_receivable_guests(rows, tenant_id):
+    ids = list({r["guest_id"] for r in rows if r.get("guest_id")})
+    guests = {}
+    if ids:
+        from security.encrypted_lookup import decrypt_guest_doc
+
+        async for guest in db.guests.find({"tenant_id": tenant_id, "id": {"$in": ids}}, {"_id": 0}):
+            guests[guest["id"]] = decrypt_guest_doc(guest)
+    for row in rows:
+        guest = guests.get(row.get("guest_id"), {})
+        row.update(guest_name=guest.get("name") or row["guest_name"], guest_email=guest.get("email"), guest_phone=guest.get("phone"))
 
 _FX_RECEIPT_RE = re.compile(
     r"\[Döviz Çevirici\]\s*[\d.,]+\s+[A-Z]{2,3}\s*=\s*([\d.,]+)\s+([A-Z]{2,3})",
@@ -106,8 +129,9 @@ def _month_bounds(year: int, month: int) -> tuple[datetime, datetime]:
 
 class RecordPaymentRequest(BaseModel):
     folio_id: str
-    amount: float
-    payment_method: str
+    amount: float = Field(gt=0, allow_inf_nan=False)
+    payment_method: Literal["cash", "card", "transfer", "check"]
+    currency: str | None = None
     notes: str | None = None
 
 
@@ -117,6 +141,7 @@ async def get_daily_collections_mobile(
     date: str | None = None,
     current_user=Depends(get_current_user),  # tenant-aware cache key (Tur 2 fix)
     _perm=Depends(require_op("view_finance_reports")),  # v102 DW finance leak fix
+    _nocache: bool = Query(False, alias="nocache"),
 ):
     """Get daily collections for finance mobile dashboard"""
 
@@ -183,6 +208,7 @@ async def get_monthly_collections_mobile(
     month: int | None = None,
     current_user=Depends(get_current_user),  # tenant-aware cache key (Tur 2 fix)
     _perm=Depends(require_op("view_finance_reports")),  # v102 DW finance leak fix
+    _nocache: bool = Query(False, alias="nocache"),
 ):
     """Get monthly collections for finance mobile dashboard"""
 
@@ -314,83 +340,17 @@ async def get_cashier_shift_report(
 @router.get("/finance/mobile/pending-receivables")
 @cached(ttl=180, key_prefix="mobile_pending_receivables")
 async def get_pending_receivables_mobile(
-    current_user=Depends(get_current_user),  # tenant-aware cache key (Tur 2 fix)
-    _perm=Depends(require_op("view_finance_reports")),  # v102 DW finance leak fix
+    current_user=Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),
+    _nocache: bool = Query(False, alias="nocache"),
 ):
-    """Get pending receivables for finance mobile dashboard"""
-
-    # Get all open folios with balance
-    total_pending = 0.0
-    totals_by_currency: dict[str, float] = {}
-    overdue_amount = 0.0
-    receivables = []
-
-    today = datetime.now(UTC)
-    open_folios = await db.folios.find({"tenant_id": current_user.tenant_id, "status": "open", "balance": {"$gt": 0}}).to_list(length=None)
-
-    # Batch-fetch all related bookings in one query
-    booking_ids = [f.get("booking_id") for f in open_folios if f.get("booking_id")]
-    bookings_by_id: dict = {}
-    if booking_ids:
-        async for b in db.bookings.find(
-            {"id": {"$in": booking_ids}, "tenant_id": current_user.tenant_id},
-            {"_id": 0, "id": 1, "check_out": 1, "guest_name": 1, "room_number": 1},
-        ):
-            bookings_by_id[b["id"]] = b
-
-    for folio in open_folios:
-        balance = folio.get("balance", 0)
-        currency = str(folio.get("currency") or "TRY").upper()
-        total_pending += balance
-        totals_by_currency[currency] = totals_by_currency.get(currency, 0) + balance
-
-        # Get booking info from batch lookup
-        booking = bookings_by_id.get(folio.get("booking_id"))
-
-        is_overdue = False
-        checkout_date_str = None
-
-        if booking:
-            checkout = booking.get("check_out")
-            if checkout:
-                try:
-                    # Convert string to datetime for comparison
-                    if isinstance(checkout, str):
-                        checkout_dt = datetime.fromisoformat(checkout).replace(tzinfo=UTC)
-                        checkout_date_str = checkout
-                    else:
-                        checkout_dt = checkout if checkout.tzinfo else checkout.replace(tzinfo=UTC)
-                        checkout_date_str = checkout.isoformat()
-
-                    if checkout_dt < today:
-                        is_overdue = True
-                        overdue_amount += balance
-                except (ValueError, AttributeError):
-                    pass
-
-        receivables.append(
-            {
-                "folio_id": folio.get("id"),
-                "folio_number": folio.get("folio_number"),
-                "guest_name": booking.get("guest_name") if booking else "Unknown",
-                "balance": balance,
-                "currency": currency,
-                "is_overdue": is_overdue,
-                "checkout_date": checkout_date_str,
-                "created_at": folio.get("created_at").isoformat() if isinstance(folio.get("created_at"), datetime) else folio.get("created_at"),
-            }
-        )
-
-    # Sort by amount (highest first)
-    receivables.sort(key=lambda x: x["balance"], reverse=True)
-
-    return {
-        "total_pending": total_pending,
-        "overdue_amount": overdue_amount,
-        "receivables_count": len(receivables),
-        "receivables": receivables[:20],  # Top 20
-        "totals_by_currency": {key: round(value, 2) for key, value in totals_by_currency.items()},
-    }
+    day, currency, rows = await _receivables(current_user.tenant_id)
+    totals = row_totals(rows)
+    overdue = row_totals([r for r in rows if r["is_overdue"]])
+    return {"total_pending": single_amount(totals), "overdue_amount": single_amount(overdue),
+            "totals_by_currency": totals, "overdue_by_currency": overdue, "as_of_date": day.isoformat(),
+            "receivables_count": len(rows), "receivables": rows[:20], "returned_count": min(len(rows), 20),
+            "truncated": len(rows) > 20, "currency": currency, "basis": "posted_folio_ledger", "order": "oldest_checkout_first"}
 
 
 @router.get("/finance/mobile/monthly-costs")
@@ -419,6 +379,8 @@ async def get_monthly_costs_mobile(
     last_day = (end_of_month - timedelta(days=1)).date().isoformat()
     expense_query = {
         "tenant_id": current_user.tenant_id,
+        "voided": {"$ne": True},
+        "status": {"$nin": ["cancelled", "canceled", "voided"]},
         **report_payment_period_match(
             start_of_month.date().isoformat(),
             last_day,
@@ -455,11 +417,22 @@ async def record_payment_mobile(
     if not folio:
         raise HTTPException(status_code=404, detail="Folio not found")
 
-    booking = await db.bookings.find_one(
-        {"id": folio.get("booking_id"), "tenant_id": current_user.tenant_id},
-        {"_id": 0, "currency": 1},
-    )
-    ledger_currency = str((booking or {}).get("currency") or folio.get("currency") or "TRY").upper()
+    from core.tenant_currency import get_tenant_currency
+
+    tenant_currency, _ = await get_tenant_currency(current_user.tenant_id)
+    snapshot = (await folio_snapshots(db, current_user.tenant_id, [folio], fallback_currency=tenant_currency))[folio_id]
+    ledger_currency = snapshot["currency"]
+    if request.currency and currency_code(request.currency) != ledger_currency:
+        raise HTTPException(409, "Tahsilat para birimi folyo para birimiyle aynı olmalıdır.")
+    # The compact form has no FX quote/TRY counterpart. The cashier service
+    # books its amount in TRY: passing a foreign nominal amount would invent
+    # a 1:1 rate. Use the full folio payment workflow for foreign currencies.
+    if ledger_currency != "TRY":
+        raise HTTPException(409, "Döviz tahsilatını kur bilgisiyle ayrıntılı folyo ekranından kaydedin.")
+    if any(code != ledger_currency and balance for code, balance in snapshot["balance_by_currency"].items()):
+        raise HTTPException(409, "Birden fazla para birimi içeren folyoyu ayrıntılı folyo ekranından uzlaştırın.")
+    if folio.get("status") != "open":
+        raise HTTPException(409, "Yalnız açık folyoya tahsilat kaydedilebilir.")
 
     # Vardiya kontrolü: nakit ödemede aktif vardiya zorunlu
     from domains.pms.cashier_service import ensure_active_shift, record_cash_transaction
@@ -545,14 +518,19 @@ async def record_payment_mobile(
         _lg.getLogger(__name__).exception("cashier txn record failed")
 
     # Update folio balance
-    new_balance = folio.get("balance", 0) - amount
-    await db.folios.update_one({"id": folio_id, "tenant_id": current_user.tenant_id}, {"$set": {"balance": new_balance}})
+    snapshot = (await folio_snapshots(db, current_user.tenant_id, [folio], fallback_currency=tenant_currency))[folio_id]
+    new_balance = single_amount(snapshot["balance_by_currency"])
+    updates = {"balance_by_currency": snapshot["balance_by_currency"]}
+    if new_balance is not None:
+        updates["balance"] = new_balance
+    await db.folios.update_one({"id": folio_id, "tenant_id": current_user.tenant_id}, {"$set": updates})
 
     # Close folio if balance is zero
-    if abs(new_balance) < 0.01:
+    if new_balance is not None and abs(new_balance) < 0.01:
         await db.folios.update_one({"id": folio_id, "tenant_id": current_user.tenant_id}, {"$set": {"status": "closed", "closed_at": datetime.now(UTC), "closed_by": current_user.username}})
 
-    return {"message": "Payment recorded successfully", "payment_id": payment_id, "folio_id": folio_id, "amount": amount, "new_balance": new_balance, "folio_closed": abs(new_balance) < 0.01}
+    return {"message": "Payment recorded successfully", "payment_id": payment_id, "folio_id": folio_id, "amount": amount, "currency": ledger_currency,
+            "new_balance": new_balance, "balance_by_currency": snapshot["balance_by_currency"], "folio_closed": new_balance is not None and abs(new_balance) < 0.01}
 
 
 @router.get("/finance/mobile/cash-flow-summary")
@@ -686,610 +664,251 @@ async def get_cash_flow_summary_mobile(
 @router.get("/finance/mobile/overdue-accounts")
 @cached(ttl=180, key_prefix="mobile_overdue_accounts")  # Tur 3: was 11s, cache 3 min (tenant-aware key)
 async def get_overdue_accounts_mobile(
-    min_days: int = 7,
-    current_user=Depends(get_current_user),  # Tur 3: tenant-scoped cache key
-    _perm=Depends(require_op("view_finance_reports")),  # v102 DW finance leak fix
+    min_days: int = Query(7, ge=1),
+    current_user=Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),
+    _nocache: bool = Query(False, alias="nocache"),
 ):
-    """Get accounts overdue by more than specified days (default 7)
-    Returns with risk level classification:
-    - Normal: 0-7 days
-    - Warning: 8-14 days (Yellow)
-    - Critical: 15-30 days (Red)
-    - Suspicious: 30+ days (Black)
-    """
-    today = datetime.now(UTC)
-
-    overdue_accounts = []
-
-    # N+1 fix: tum acik folyolari, sonra tek seferde booking + guest'leri yukle
-    open_folios = await db.folios.find({"tenant_id": current_user.tenant_id, "status": "open", "balance": {"$gt": 0}}).to_list(5000)
-    booking_ids = list({f.get("booking_id") for f in open_folios if f.get("booking_id")})
-    bookings_map = {}
-    if booking_ids:
-        async for b in db.bookings.find({"tenant_id": current_user.tenant_id, "id": {"$in": booking_ids}}):
-            bookings_map[b["id"]] = b
-    guest_ids = list({b.get("guest_id") for b in bookings_map.values() if b.get("guest_id")})
-    guests_map = {}
-    if guest_ids:
-        from security.encrypted_lookup import decrypt_guest_doc
-
-        async for g in db.guests.find({"tenant_id": current_user.tenant_id, "id": {"$in": guest_ids}}):
-            guests_map[g["id"]] = decrypt_guest_doc(g)
-
-    for folio in open_folios:
-        booking = bookings_map.get(folio.get("booking_id"))
-        if booking:
-            checkout = booking.get("check_out")
-            if checkout:
-                try:
-                    if isinstance(checkout, str):
-                        checkout_date = datetime.fromisoformat(checkout).replace(tzinfo=UTC)
-                    else:
-                        checkout_date = checkout if checkout.tzinfo else checkout.replace(tzinfo=UTC)
-
-                    days_overdue = (today - checkout_date).days
-
-                    if days_overdue >= min_days:
-                        if days_overdue >= 30:
-                            risk_level = RiskLevel.SUSPICIOUS
-                            risk_color = "black"
-                        elif days_overdue >= 15:
-                            risk_level = RiskLevel.CRITICAL
-                            risk_color = "red"
-                        elif days_overdue >= 8:
-                            risk_level = RiskLevel.WARNING
-                            risk_color = "yellow"
-                        else:
-                            risk_level = RiskLevel.NORMAL
-                            risk_color = "green"
-
-                        guest = guests_map.get(booking.get("guest_id"))
-
-                        overdue_accounts.append(
-                            {
-                                "folio_id": folio.get("id"),
-                                "folio_number": folio.get("folio_number"),
-                                "booking_id": booking.get("id"),
-                                "guest_name": guest.get("name") if guest else "Unknown",
-                                "guest_email": guest.get("email") if guest else None,
-                                "guest_phone": guest.get("phone") if guest else None,
-                                "room_number": booking.get("room_number"),
-                                "checkout_date": checkout_date.date().isoformat(),
-                                "balance": folio.get("balance", 0),
-                                "days_overdue": days_overdue,
-                                "risk_level": risk_level.value,
-                                "risk_color": risk_color,
-                            }
-                        )
-                except (ValueError, AttributeError):
-                    pass
-
-    # Sort by days overdue (most critical first)
-    overdue_accounts.sort(key=lambda x: x["days_overdue"], reverse=True)
-
-    # Summary statistics
-    total_overdue = sum(acc["balance"] for acc in overdue_accounts)
-    suspicious_count = len([a for a in overdue_accounts if a["risk_level"] == "suspicious"])
-    critical_count = len([a for a in overdue_accounts if a["risk_level"] == "critical"])
-    warning_count = len([a for a in overdue_accounts if a["risk_level"] == "warning"])
-
-    return {
-        "overdue_accounts": overdue_accounts,
-        "summary": {
-            "total_count": len(overdue_accounts),
-            "total_amount": total_overdue,
-            "suspicious_count": suspicious_count,  # 30+ days
-            "critical_count": critical_count,  # 15-30 days
-            "warning_count": warning_count,  # 8-14 days
-        },
-    }
+    day, currency, rows = await _receivables(current_user.tenant_id)
+    accounts = [row for row in rows if row["days_overdue"] >= min_days]
+    await _enrich_receivable_guests(accounts, current_user.tenant_id)
+    for row in accounts:
+        days = row["days_overdue"]
+        level, color = ("suspicious", "black") if days >= 30 else ("critical", "red") if days >= 15 else ("warning", "yellow") if days >= 8 else ("normal", "green")
+        row.update(risk_level=level, risk_color=color)
+    totals = row_totals(accounts)
+    return {"overdue_accounts": accounts, "as_of_date": day.isoformat(), "currency": currency,
+            "basis": "posted_folio_ledger", "aging_basis": "days_since_checkout_not_contractual_due_date",
+            "summary": {"total_count": len(accounts), "total_amount": single_amount(totals), "totals_by_currency": totals,
+                        **{level + "_count": sum(r["risk_level"] == level for r in accounts) for level in ("suspicious", "critical", "warning")}}}
 
 
 @router.get("/finance/mobile/credit-limit-violations")
 @cached(ttl=300, key_prefix="mobile_credit_limit_violations")  # Tur 3: tenant-aware key
 async def get_credit_limit_violations_mobile(
-    current_user=Depends(get_current_user),  # Tur 3: tenant-scoped (was credentials)
-    _perm=Depends(require_op("view_finance_reports")),  # v102 DW finance leak fix
+    current_user=Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),
+    _nocache: bool = Query(False, alias="nocache"),
 ):
-    """Get companies exceeding their credit limits"""
-    violations = []
-
-    credit_limits = await db.credit_limits.find({"tenant_id": current_user.tenant_id}).to_list(10000)
-    company_ids = list({cl.get("company_id") for cl in credit_limits if cl.get("company_id")})
-
-    # N+1 fix: companies tek $in sorgusu
-    companies_map = {}
-    if company_ids:
-        async for c in db.companies.find({"tenant_id": current_user.tenant_id, "id": {"$in": company_ids}}):
-            companies_map[c["id"]] = c
-
-    # N+1 fix: company_id basina open folio toplami tek aggregation
-    debt_map = {}
-    if company_ids:
-        debt_pipeline = [
-            {
-                "$match": {
-                    "tenant_id": current_user.tenant_id,
-                    "company_id": {"$in": company_ids},
-                    "status": "open",
-                    "balance": {"$gt": 0},
-                }
-            },
-            {"$group": {"_id": "$company_id", "debt": {"$sum": "$balance"}}},
-        ]
-        async for r in db.folios.aggregate(debt_pipeline):
-            debt_map[r["_id"]] = r["debt"]
-
-    for credit_limit in credit_limits:
-        company = companies_map.get(credit_limit.get("company_id"))
+    day, tenant_currency, rows = await _receivables(current_user.tenant_id)
+    limits = await db.credit_limits.find({"tenant_id": current_user.tenant_id}, {"_id": 0}).to_list(None)
+    ids = list({limit["company_id"] for limit in limits if limit.get("company_id")})
+    companies = await db.companies.find({"tenant_id": current_user.tenant_id, "id": {"$in": ids}}, {"_id": 0}).to_list(None) if ids else []
+    company_map = {row["id"]: row for row in companies}
+    debt = {}
+    for row in rows:
+        if row.get("company_id"):
+            bucket = debt.setdefault(row["company_id"], {})
+            for code, amount in row["balance_by_currency"].items():
+                add_amount(bucket, code, amount)
+    violations, mismatches = [], []
+    for limit in limits:
+        company = company_map.get(limit.get("company_id"))
         if not company:
             continue
-
-        current_debt = debt_map.get(credit_limit.get("company_id"), 0.0)
-        credit_limit_amount = credit_limit.get("credit_limit", 0)
-        available_credit = credit_limit_amount - current_debt
-        utilization_pct = (current_debt / credit_limit_amount * 100) if credit_limit_amount > 0 else 0
-
-        # Check if exceeding limit
-        if current_debt > credit_limit_amount:
-            violations.append(
-                {
-                    "company_id": credit_limit.get("company_id"),
-                    "company_name": company.get("name"),
-                    "credit_limit": credit_limit_amount,
-                    "current_debt": current_debt,
-                    "over_limit_amount": current_debt - credit_limit_amount,
-                    "available_credit": available_credit,
-                    "utilization_percentage": utilization_pct,
-                    "payment_terms_days": credit_limit.get("payment_terms_days", 30),
-                    "contact_person": company.get("contact_person"),
-                    "contact_email": company.get("contact_email"),
-                    "contact_phone": company.get("contact_phone"),
-                }
-            )
-        # Also include companies near limit (90%+)
-        elif utilization_pct >= 90:
-            violations.append(
-                {
-                    "company_id": credit_limit.get("company_id"),
-                    "company_name": company.get("name"),
-                    "credit_limit": credit_limit_amount,
-                    "current_debt": current_debt,
-                    "over_limit_amount": 0,
-                    "available_credit": available_credit,
-                    "utilization_percentage": utilization_pct,
-                    "payment_terms_days": credit_limit.get("payment_terms_days", 30),
-                    "contact_person": company.get("contact_person"),
-                    "contact_email": company.get("contact_email"),
-                    "contact_phone": company.get("contact_phone"),
-                    "warning": "Near limit",
-                }
-            )
-
-    # Sort by over limit amount
-    violations.sort(key=lambda x: x.get("over_limit_amount", 0), reverse=True)
-
-    return {
-        "violations": violations,
-        "summary": {
-            "total_count": len(violations),
-            "over_limit_count": len([v for v in violations if v.get("over_limit_amount", 0) > 0]),
-            "near_limit_count": len([v for v in violations if v.get("warning") == "Near limit"]),
-        },
-    }
+        code = currency_code(limit.get("credit_currency") or limit.get("currency"), tenant_currency)
+        totals = rounded_totals(debt.get(limit["company_id"], {}))
+        # Historical limits without a currency are denominated in the tenant
+        # currency. Foreign debt is visible but never silently converted.
+        if any(other != code and amount for other, amount in totals.items()):
+            mismatches.append({"company_id": limit["company_id"], "company_name": company.get("name"),
+                               "currency": code, "debt_by_currency": totals, "reason": "foreign_currency_debt_not_converted"})
+        current = totals.get(code, 0)
+        maximum = float(limit.get("credit_limit") or 0)
+        utilization = current / maximum * 100 if maximum > 0 else None
+        if current <= maximum and (utilization is None or utilization < 90):
+            continue
+        row = {"company_id": limit["company_id"], "company_name": company.get("name"), "currency": code,
+               "credit_limit": maximum, "current_debt": current, "debt_by_currency": totals,
+               "over_limit_amount": round(max(current - maximum, 0), 2), "available_credit": round(maximum - current, 2),
+               "utilization_percentage": utilization, "payment_terms_days": limit.get("payment_terms_days", 30),
+               **{key: company.get(key) for key in ("contact_person", "contact_email", "contact_phone")}}
+        if current <= maximum:
+            row["warning"] = "Near limit"
+        violations.append(row)
+    violations.sort(key=lambda row: (row["currency"], -(row["utilization_percentage"] or 0), row["company_id"]))
+    return {"violations": violations, "currency_mismatches": mismatches, "as_of_date": day.isoformat(),
+            "basis": "posted_folio_ledger", "summary": {"total_count": len(violations),
+            "over_limit_count": sum(v["over_limit_amount"] > 0 for v in violations),
+            "near_limit_count": sum(v.get("warning") == "Near limit" for v in violations),
+            "currency_mismatch_count": len(mismatches)}}
 
 
 @router.get("/finance/mobile/suspicious-receivables")
 @cached(ttl=300, key_prefix="mobile_suspicious_receivables")  # Tur 3: was 10s, cache 5 min (tenant-aware key)
 async def get_suspicious_receivables_mobile(
-    current_user=Depends(get_current_user),  # Tur 3: tenant-scoped cache key
-    _perm=Depends(require_op("view_finance_reports")),  # v102 DW finance leak fix
+    current_user=Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),
+    _nocache: bool = Query(False, alias="nocache"),
 ):
-    """Get suspicious receivables list (30+ days overdue + high amounts)"""
-    today = datetime.now(UTC)
-
-    suspicious_list = []
-
-    # N+1 fix: folyolar -> bookings/guests/payment counts toplu cek
-    folios_list = await db.folios.find({"tenant_id": current_user.tenant_id, "status": "open", "balance": {"$gt": 1000}}).to_list(5000)
-    bk_ids = list({f.get("booking_id") for f in folios_list if f.get("booking_id")})
-    bookings_map = {}
-    if bk_ids:
-        async for b in db.bookings.find({"tenant_id": current_user.tenant_id, "id": {"$in": bk_ids}}):
-            bookings_map[b["id"]] = b
-    g_ids = list({b.get("guest_id") for b in bookings_map.values() if b.get("guest_id")})
-    guests_map = {}
-    if g_ids:
-        from security.encrypted_lookup import decrypt_guest_doc
-
-        async for g in db.guests.find({"tenant_id": current_user.tenant_id, "id": {"$in": g_ids}}):
-            guests_map[g["id"]] = decrypt_guest_doc(g)
-    folio_ids = [f.get("id") for f in folios_list if f.get("id")]
-    pay_count_map = {}
-    if folio_ids:
-        async for r in db.payments.aggregate(
-            [
-                {"$match": {"tenant_id": current_user.tenant_id, "folio_id": {"$in": folio_ids}}},
-                {"$group": {"_id": "$folio_id", "n": {"$sum": 1}}},
-            ]
-        ):
-            pay_count_map[r["_id"]] = r["n"]
-
-    for folio in folios_list:
-        booking = bookings_map.get(folio.get("booking_id"))
-        if booking:
-            checkout = booking.get("check_out")
-            if checkout:
-                try:
-                    if isinstance(checkout, str):
-                        checkout_date = datetime.fromisoformat(checkout).replace(tzinfo=UTC)
-                    else:
-                        checkout_date = checkout if checkout.tzinfo else checkout.replace(tzinfo=UTC)
-
-                    days_overdue = (today - checkout_date).days
-                    balance = folio.get("balance", 0)
-                    is_suspicious = (days_overdue >= 30) or (days_overdue >= 15 and balance > 5000)
-
-                    if is_suspicious:
-                        guest = guests_map.get(booking.get("guest_id"))
-                        payment_count = pay_count_map.get(folio.get("id"), 0)
-
-                        suspicious_list.append(
-                            {
-                                "folio_id": folio.get("id"),
-                                "folio_number": folio.get("folio_number"),
-                                "guest_name": guest.get("name") if guest else "Unknown",
-                                "guest_email": guest.get("email") if guest else None,
-                                "guest_phone": guest.get("phone") if guest else None,
-                                "company_id": folio.get("company_id"),
-                                "balance": balance,
-                                "checkout_date": checkout_date.date().isoformat(),
-                                "days_overdue": days_overdue,
-                                "payment_history_count": payment_count,
-                                "reason": "30+ days overdue" if days_overdue >= 30 else "High amount + 15+ days overdue",
-                            }
-                        )
-                except (ValueError, AttributeError):
-                    pass
-
-    # Sort by balance (highest first)
-    suspicious_list.sort(key=lambda x: x["balance"], reverse=True)
-
-    total_suspicious_amount = sum(s["balance"] for s in suspicious_list)
-
-    return {
-        "suspicious_receivables": suspicious_list,
-        "summary": {
-            "total_count": len(suspicious_list),
-            "total_amount": total_suspicious_amount,
-            "average_days_overdue": sum(s["days_overdue"] for s in suspicious_list) / len(suspicious_list) if suspicious_list else 0,
-        },
-    }
+    day, currency, rows = await _receivables(current_user.tenant_id)
+    # Preserve the legacy TRY thresholds only in TRY. Thirty-day ageing is
+    # meaningful in every currency, even a small EUR/USD nominal balance.
+    accounts = [r for r in rows if r["days_overdue"] >= 30 or
+                (r["days_overdue"] >= 15 and r["balance_by_currency"].get("TRY", 0) > 5000)]
+    await _enrich_receivable_guests(accounts, current_user.tenant_id)
+    for row in accounts:
+        row["payment_history_count"] = row.pop("ledger_payment_count")
+        row["reason"] = "30+ days overdue" if row["days_overdue"] >= 30 else "TRY balance > 5,000 and 15+ days overdue"
+    totals = row_totals(accounts)
+    return {"suspicious_receivables": accounts, "as_of_date": day.isoformat(), "currency": currency,
+            "basis": "posted_folio_ledger", "summary": {"total_count": len(accounts), "total_amount": single_amount(totals),
+            "totals_by_currency": totals, "average_days_overdue": sum(r["days_overdue"] for r in accounts) / len(accounts) if accounts else 0}}
 
 
 @router.get("/finance/mobile/risk-alerts")
 @cached(ttl=180, key_prefix="mobile_risk_alerts")  # Tur 3: was 11s, cache 3 min (tenant-aware key)
 async def get_risk_alerts_mobile(
-    current_user=Depends(get_current_user),  # Tur 3: tenant-scoped cache key
-    _perm=Depends(require_op("view_finance_reports")),  # v102 DW finance leak fix
+    current_user=Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),
+    _nocache: bool = Query(False, alias="nocache"),
 ):
-    """Get comprehensive risk alerts for finance dashboard"""
     alerts = []
-
-    # Get overdue accounts (7+ days) — call inner helper with current_user (cached call)
-    overdue_response = await get_overdue_accounts_mobile(min_days=7, current_user=current_user)
-    overdue_summary = overdue_response["summary"]
-
-    if overdue_summary["suspicious_count"] > 0:
-        alerts.append(
-            {
-                "id": str(uuid.uuid4()),
-                "type": "suspicious_receivables",
-                "severity": "critical",
-                "title": "Şüpheli Alacaklar",
-                "message": f"{overdue_summary['suspicious_count']} adet 30+ gün gecikmiş alacak",
-                "amount": sum(a["balance"] for a in overdue_response["overdue_accounts"] if a["risk_level"] == "suspicious"),
-                "action_required": True,
-            }
-        )
-
-    if overdue_summary["critical_count"] > 0:
-        alerts.append(
-            {
-                "id": str(uuid.uuid4()),
-                "type": "critical_overdue",
-                "severity": "high",
-                "title": "Kritik Gecikmiş Ödemeler",
-                "message": f"{overdue_summary['critical_count']} adet 15+ gün gecikmiş ödeme",
-                "amount": sum(a["balance"] for a in overdue_response["overdue_accounts"] if a["risk_level"] == "critical"),
-                "action_required": True,
-            }
-        )
-
-    # Get credit limit violations (Tur 3: pass current_user instead of credentials)
-    violations_response = await get_credit_limit_violations_mobile(current_user=current_user)
-    violations_summary = violations_response["summary"]
-
-    if violations_summary["over_limit_count"] > 0:
-        alerts.append(
-            {
-                "id": str(uuid.uuid4()),
-                "type": "credit_limit_violation",
-                "severity": "critical",
-                "title": "Kredi Limiti Aşımı",
-                "message": f"{violations_summary['over_limit_count']} firma limiti aştı",
-                "action_required": True,
-            }
-        )
-
-    if violations_summary["near_limit_count"] > 0:
-        alerts.append(
-            {
-                "id": str(uuid.uuid4()),
-                "type": "near_credit_limit",
-                "severity": "medium",
-                "title": "Limite Yaklaşan Firmalar",
-                "message": f"{violations_summary['near_limit_count']} firma limitin %90'ına ulaştı",
-                "action_required": False,
-            }
-        )
-
-    # Check for large unpaid invoices
-    large_unpaid = 0
-    large_unpaid_amount = 0.0
-    async for invoice in db.accounting_invoices.find({"tenant_id": current_user.tenant_id, "status": "pending", "total": {"$gt": 10000}}):
-        large_unpaid += 1
-        large_unpaid_amount += invoice.get("total", 0)
-
-    if large_unpaid > 0:
-        alerts.append(
-            {
-                "id": str(uuid.uuid4()),
-                "type": "large_unpaid_invoices",
-                "severity": "medium",
-                "title": "Büyük Ödenmemiş Faturalar",
-                "message": f"{large_unpaid} adet büyük fatura ödenmedi (>₺10,000)",
-                "amount": large_unpaid_amount,
-                "action_required": False,
-            }
-        )
-
-    # Sort by severity
-    severity_order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
-    alerts.sort(key=lambda x: severity_order.get(x["severity"], 999))
-
-    return {
-        "alerts": alerts,
-        "summary": {
-            "total_alerts": len(alerts),
-            "critical_count": len([a for a in alerts if a["severity"] == "critical"]),
-            "high_count": len([a for a in alerts if a["severity"] == "high"]),
-            "action_required_count": len([a for a in alerts if a.get("action_required")]),
-        },
-    }
+    overdue = await get_overdue_accounts_mobile(min_days=7, current_user=current_user, _nocache=True)
+    for level, severity, title in (("suspicious", "critical", "Şüpheli Alacaklar"), ("critical", "high", "Kritik Gecikmiş Ödemeler")):
+        rows = [r for r in overdue["overdue_accounts"] if r["risk_level"] == level]
+        if rows:
+            totals = row_totals(rows)
+            alerts.append({"id": "receivables-" + level, "type": level + "_receivables", "severity": severity, "title": title,
+                           "message": f'{len(rows)} adet gecikmiş açık folyo', "amount": single_amount(totals),
+                           "amounts_by_currency": totals, "action_required": True})
+    limits = await get_credit_limit_violations_mobile(current_user=current_user, _nocache=True)
+    for key, severity, title in (("over_limit_count", "critical", "Kredi Limiti Aşımı"), ("near_limit_count", "medium", "Limite Yaklaşan Firmalar"),
+                                 ("currency_mismatch_count", "high", "Kredi para birimi kontrolü gerekli")):
+        if limits["summary"][key]:
+            alerts.append({"id": key, "type": key, "severity": severity, "title": title,
+                           "message": f'{limits["summary"][key]} hesap için kontrol gerekli', "action_required": True})
+    unpaid = []
+    async for invoice in db.accounting_invoices.find({"tenant_id": current_user.tenant_id}, {"_id": 0}):
+        # This is the existing 10,000 TRY rule, not a cross-currency threshold.
+        if currency_code(invoice.get("currency"), overdue["currency"]) != "TRY":
+            continue
+        amount = outstanding_invoice(invoice)
+        if amount > 10000:
+            unpaid.append(amount)
+    if unpaid:
+        totals = {"TRY": round(sum(unpaid), 2)}
+        alerts.append({"id": "large-unpaid-invoices", "type": "large_unpaid_invoices", "severity": "medium",
+                       "title": "Büyük Ödenmemiş Faturalar", "message": f"{len(unpaid)} faturada kalan bakiye > 10.000 TRY",
+                       "amount": totals["TRY"], "amounts_by_currency": totals, "action_required": False})
+    alerts.sort(key=lambda row: {"critical": 0, "high": 1, "medium": 2}.get(row["severity"], 3))
+    return {"alerts": alerts, "as_of_date": overdue["as_of_date"], "summary": {"total_alerts": len(alerts),
+            "critical_count": sum(a["severity"] == "critical" for a in alerts), "high_count": sum(a["severity"] == "high" for a in alerts),
+            "action_required_count": sum(a["action_required"] for a in alerts)}}
 
 
 @router.get("/finance/mobile/daily-expenses")
 async def get_daily_expenses_mobile(
     date: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    _perm=Depends(require_op("view_finance_reports")),  # v102 DW finance leak fix
+    _perm=Depends(require_op("view_finance_reports")),
 ):
-    """Get daily expense/cost summary"""
     current_user = await get_current_user(credentials)
+    from core.tenant_currency import get_tenant_currency
 
-    if date:
-        target_date = datetime.fromisoformat(date).date()
-    else:
-        target_date = datetime.now(UTC).date()
-
-    start_of_day = datetime.combine(target_date, datetime.min.time()).replace(tzinfo=UTC)
-    end_of_day = datetime.combine(target_date, datetime.max.time()).replace(tzinfo=UTC)
-
-    # Get expenses by category
-    expenses_by_category = {}
-    expenses_by_department = {}
-    total_expenses = 0.0
-    expense_count = 0
-
-    async for expense in db.expenses.find({"tenant_id": current_user.tenant_id, "date": {"$gte": start_of_day, "$lte": end_of_day}}):
-        amount = expense.get("amount", 0)
-        category = expense.get("category", "Other")
-        department = expense.get("department", "other")
-
-        total_expenses += amount
-        expense_count += 1
-
-        expenses_by_category[category] = expenses_by_category.get(category, 0) + amount
-        expenses_by_department[department] = expenses_by_department.get(department, 0) + amount
-
-    return {
-        "date": target_date.isoformat(),
-        "total_expenses": total_expenses,
-        "expense_count": expense_count,
-        "expenses_by_category": expenses_by_category,
-        "expenses_by_department": expenses_by_department,
-    }
+    if date is None:
+        state = await ensure_business_date_initialized(db, current_user.tenant_id)
+        date = str(state["business_date"])[:10]
+    day = report_day(date)
+    if day is None:
+        raise HTTPException(422, "Geçersiz tarih")
+    currency, _ = await get_tenant_currency(current_user.tenant_id)
+    totals, categories, departments, count = {}, {}, {}, 0
+    query = {"tenant_id": current_user.tenant_id, "voided": {"$ne": True}, "status": {"$nin": ["cancelled", "canceled", "voided"]},
+             **report_payment_period_match(day.isoformat(), day.isoformat(), date_fields=("date", "expense_date", "created_at"))}
+    async for expense in db.expenses.find(query):
+        amount = expense.get("total_amount") if expense.get("total_amount") is not None else expense.get("amount", 0)
+        code = currency_code(expense.get("currency"), currency)
+        add_amount(totals, code, amount)
+        add_amount(categories.setdefault(expense.get("category") or "other", {}), code, amount)
+        add_amount(departments.setdefault(expense.get("department") or "other", {}), code, amount)
+        count += 1
+    return {"date": day.isoformat(), "currency": currency, "basis": "expense_accruals",
+            "total_expenses": single_amount(totals), "totals_by_currency": rounded_totals(totals), "expense_count": count,
+            "expenses_by_category": {k: single_amount(v) for k, v in categories.items()},
+            "categories_by_currency": {k: rounded_totals(v) for k, v in categories.items()},
+            "expenses_by_department": {k: single_amount(v) for k, v in departments.items()},
+            "departments_by_currency": {k: rounded_totals(v) for k, v in departments.items()}}
 
 
 @router.get("/finance/mobile/folio-full-extract/{folio_id}")
 async def get_folio_full_extract_mobile(
     folio_id: str,
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    _perm=Depends(require_op("view_finance_reports")),  # v102 DW finance leak fix
+    _perm=Depends(require_op("view_finance_reports")),
 ):
-    """Get full folio extract with all charges and payments"""
     current_user = await get_current_user(credentials)
+    from core.tenant_currency import get_tenant_currency
 
-    folio = await db.folios.find_one({"id": folio_id, "tenant_id": current_user.tenant_id})
-
+    folio = await db.folios.find_one({"id": folio_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
     if not folio:
-        raise HTTPException(status_code=404, detail="Folio not found")
-
-    # Get booking details
-    booking = await db.bookings.find_one({"id": folio.get("booking_id"), "tenant_id": current_user.tenant_id})
-
-    ledger_currency = str((booking or {}).get("currency") or folio.get("currency") or "TRY").upper()
-
-    # Get guest details
+        raise HTTPException(404, "Folio not found")
+    currency, _ = await get_tenant_currency(current_user.tenant_id)
+    snap = (await folio_snapshots(db, current_user.tenant_id, [folio], fallback_currency=currency))[folio_id]
+    booking = snap["booking"]
     guest = None
-    if booking:
+    if booking.get("guest_id"):
         from security.encrypted_lookup import decrypt_guest_doc
 
-        guest = decrypt_guest_doc(await db.guests.find_one({"id": booking.get("guest_id"), "tenant_id": current_user.tenant_id}))
-
-    # Get all charges
-    charges = []
-    total_charges = 0.0
-    async for charge in db.folio_charges.find({"folio_id": folio_id, "tenant_id": current_user.tenant_id, "voided": {"$ne": True}}).sort("created_at", 1):
-        charge_amount = charge.get("total", 0)
-        total_charges += charge_amount
-        charges.append(
-            {
-                "id": charge.get("id"),
-                "date": charge.get("created_at").isoformat() if charge.get("created_at") else None,
-                "category": charge.get("category"),
-                "description": charge.get("description"),
-                "quantity": charge.get("quantity", 1),
-                "unit_price": charge.get("unit_price", 0),
-                "amount": charge.get("amount", 0),
-                "tax_amount": charge.get("tax_amount", 0),
-                "total": charge_amount,
-                "currency": str(charge.get("currency") or ledger_currency).upper(),
-                "posted_by": charge.get("posted_by"),
-            }
-        )
-
-    # Get all payments
-    payments = []
-    total_payments = 0.0
-    async for payment in db.payments.find({"folio_id": folio_id, "tenant_id": current_user.tenant_id}).sort("created_at", 1):
-        payment_amount = payment.get("amount", 0)
-        total_payments += payment_amount
-        payments.append(
-            {
-                "id": payment.get("id"),
-                "date": payment.get("created_at").isoformat() if payment.get("created_at") else None,
-                "amount": payment_amount,
-                "currency": str(payment.get("currency") or ledger_currency).upper(),
-                "payment_method": payment.get("payment_method") or payment.get("method"),
-                "payment_type": payment.get("payment_type"),
-                "notes": payment.get("notes"),
-                "posted_by": payment.get("created_by"),
-            }
-        )
-
-    current_balance = total_charges - total_payments
-
-    return {
-        "folio": {
-            "id": folio.get("id"),
-            "folio_number": folio.get("folio_number"),
-            "folio_type": folio.get("folio_type"),
-            "status": folio.get("status"),
-            "currency": ledger_currency,
-            "created_at": folio.get("created_at").isoformat() if folio.get("created_at") else None,
-            "closed_at": folio.get("closed_at").isoformat() if folio.get("closed_at") else None,
-        },
-        "guest": {
-            "name": guest.get("name") if guest else "Unknown",
-            "email": guest.get("email") if guest else None,
-            "phone": guest.get("phone") if guest else None,
-            "id_number": guest.get("id_number") if guest else None,
-        }
-        if guest
-        else None,
-        "booking": {
-            "id": booking.get("id") if booking else None,
-            "room_number": booking.get("room_number") if booking else None,
-            "check_in": booking.get("check_in") if booking else None,
-            "check_out": booking.get("check_out") if booking else None,
-        }
-        if booking
-        else None,
-        "charges": charges,
-        "payments": payments,
-        "summary": {"total_charges": total_charges, "total_payments": total_payments, "current_balance": current_balance, "charge_count": len(charges), "payment_count": len(payments)},
-    }
+        guest = decrypt_guest_doc(await db.guests.find_one({"id": booking["guest_id"], "tenant_id": current_user.tenant_id}, {"_id": 0}))
+    charges = [{**{key: row.get(key) for key in ("id", "category", "description", "amount", "tax_amount", "total", "currency")}, "date": iso_value(row.get("business_date") or row.get("created_at")),
+                "quantity": row.get("quantity", 1), "unit_price": row.get("unit_price", row["total"]),
+                "posted_by": row.get("posted_by")} for row in snap["charges"]]
+    payments = [{**{key: row.get(key) for key in ("id", "amount", "currency", "payment_type", "notes")}, "date": iso_value(row.get("business_date") or row.get("payment_date") or row.get("date") or row.get("created_at")),
+                 "payment_method": row.get("payment_method") or row.get("method"), "posted_by": row.get("created_by")} for row in snap["payments"]]
+    charges.sort(key=lambda row: str(row["date"] or ""))
+    payments.sort(key=lambda row: str(row["date"] or ""))
+    return {"folio": {**{key: iso_value(folio.get(key)) for key in ("id", "folio_number", "folio_type", "status", "created_at", "closed_at")}, "currency": snap["currency"]},
+            "booking": {key: iso_value(booking.get(key)) for key in ("id", "room_number", "check_in", "check_out")} if booking else None,
+            "guest": {key: guest.get(key) for key in ("name", "email", "phone", "id_number")} if guest else ({"name": booking.get("guest_name")} if booking.get("guest_name") else None),
+            "charges": charges, "payments": payments, "summary": {
+                "total_charges": single_amount(snap["charges_by_currency"]), "total_payments": single_amount(snap["payments_by_currency"]),
+                "current_balance": single_amount(snap["balance_by_currency"]), "charges_by_currency": snap["charges_by_currency"],
+                "payments_by_currency": snap["payments_by_currency"], "balance_by_currency": snap["balance_by_currency"],
+                "basis": "posted_folio_ledger", "charge_count": len(charges), "payment_count": len(payments)}}
 
 
 @router.get("/finance/mobile/invoices")
 async def get_invoices_mobile(
-    start_date: str | None = None,
-    end_date: str | None = None,
-    unpaid_only: bool = False,
-    department: str | None = None,
-    credentials: HTTPAuthorizationCredentials = Depends(security),
-    _perm=Depends(require_op("view_finance_reports")),  # v102 DW finance leak fix
+    start_date: str | None = None, end_date: str | None = None, unpaid_only: bool = False,
+    department: str | None = None, credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_op("view_finance_reports")),
 ):
-    """Get invoices with advanced filtering (date, unpaid, department)"""
     current_user = await get_current_user(credentials)
+    from core.tenant_currency import get_tenant_currency
+    from routers.finance.accounting import _document_period
 
     query = {"tenant_id": current_user.tenant_id}
-
-    # Date filter
     if start_date or end_date:
-        date_filter = {}
-        if start_date:
-            date_filter["$gte"] = datetime.fromisoformat(start_date)
-        if end_date:
-            date_filter["$lte"] = datetime.fromisoformat(end_date)
-        query["created_at"] = date_filter
-
-    # Unpaid filter
-    if unpaid_only:
-        query["status"] = "pending"
-
-    # Department filter - will need to check items
-    invoices = []
-    total_amount = 0.0
-    unpaid_amount = 0.0
-
-    # N+1 fix: tum faturalari oku, ilgili sirketleri tek $in sorgusuyla cek
-    raw_invoices = await db.accounting_invoices.find(query).sort("created_at", -1).limit(100).to_list(100)
-    inv_company_ids = list({i.get("company_id") for i in raw_invoices if i.get("company_id")})
-    company_name_map: dict = {}
-    if inv_company_ids:
-        async for c in db.companies.find(
-            {"tenant_id": current_user.tenant_id, "id": {"$in": inv_company_ids}},
-            {"_id": 0, "id": 1, "name": 1},
-        ):
-            company_name_map[c["id"]] = c.get("name")
-
-    for invoice in raw_invoices:
-        if department:
-            items = invoice.get("items", [])
-            has_department = any(item.get("department") == department for item in items)
-            if not has_department:
-                continue
-
-        invoice_total = invoice.get("total", 0)
-        total_amount += invoice_total
-
-        if invoice.get("status") == "pending":
-            unpaid_amount += invoice_total
-
-        company_name = company_name_map.get(invoice.get("company_id")) if invoice.get("company_id") else None
-
-        invoices.append(
-            {
-                "id": invoice.get("id"),
-                "invoice_number": invoice.get("invoice_number"),
-                "invoice_type": invoice.get("invoice_type"),
-                "status": invoice.get("status"),
-                "customer_name": invoice.get("customer_name"),
-                "company_name": company_name,
-                "created_at": (invoice["created_at"].isoformat() if invoice.get("created_at") and hasattr(invoice["created_at"], "isoformat") else invoice.get("created_at")),
-                "due_date": invoice.get("due_date"),
-                "subtotal": invoice.get("subtotal", 0),
-                "vat": invoice.get("vat", 0),
-                "total": invoice_total,
-                "currency": invoice.get("currency", "TRY"),
-                "has_efatura": invoice.get("efatura_uuid") is not None,
-            }
-        )
-
-    return {"invoices": invoices, "summary": {"total_count": len(invoices), "total_amount": total_amount, "unpaid_amount": unpaid_amount, "paid_amount": total_amount - unpaid_amount}}
+        if not start_date or not end_date:
+            raise HTTPException(422, "Başlangıç ve bitiş tarihi birlikte verilmelidir.")
+        query.update(_document_period("created_at", start_date, end_date))
+    raw = await db.accounting_invoices.find(query, {"_id": 0}).sort("created_at", -1).to_list(None)
+    company_ids = list({i["company_id"] for i in raw if i.get("company_id")})
+    companies = await db.companies.find({"tenant_id": current_user.tenant_id, "id": {"$in": company_ids}}, {"_id": 0}).to_list(None) if company_ids else []
+    company_map = {c["id"]: c.get("name") for c in companies}
+    currency, _ = await get_tenant_currency(current_user.tenant_id)
+    invoices, totals, unpaid, paid = [], {}, {}, {}
+    for invoice in raw:
+        if str(invoice.get("status") or "").lower() in {"cancelled", "canceled", "void", "voided", "draft"} or invoice.get("voided"):
+            continue
+        remaining = outstanding_invoice(invoice)
+        if unpaid_only and remaining <= 0:
+            continue
+        if department and not any(item.get("department") == department for item in invoice.get("items") or []):
+            continue
+        code = currency_code(invoice.get("currency"), currency)
+        amount = float(invoice.get("total") or 0)
+        add_amount(totals, code, amount)
+        add_amount(unpaid, code, remaining)
+        add_amount(paid, code, amount - remaining)
+        invoices.append({**invoice, "created_at": iso_value(invoice.get("created_at")), "due_date": iso_value(invoice.get("due_date")),
+                         "company_name": company_map.get(invoice.get("company_id")), "currency": code,
+                         "outstanding_amount": remaining, "has_efatura": bool(invoice.get("efatura_uuid"))})
+    return {"invoices": invoices, "currency": currency, "basis": "invoice_documents_not_cash_collections",
+            "summary": {"total_count": len(invoices), "total_amount": single_amount(totals), "unpaid_amount": single_amount(unpaid),
+                        "paid_amount": single_amount(paid), "totals_by_currency": rounded_totals(totals),
+                        "unpaid_by_currency": rounded_totals(unpaid), "paid_by_currency": rounded_totals(paid)}}
 
 
 @router.get("/finance/mobile/invoice-pdf/{invoice_id}")
@@ -1391,32 +1010,21 @@ async def update_bank_balance_mobile(
 @router.get("/finance/mobile/bank-balances")
 async def get_bank_balances_mobile(
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    _perm=Depends(require_op("view_finance_reports")),  # v102 DW finance leak fix
+    _perm=Depends(require_op("view_finance_reports")),
 ):
-    """Get all bank account balances"""
     current_user = await get_current_user(credentials)
+    from core.tenant_currency import get_tenant_currency
 
-    bank_accounts = []
-    total_balance_try = 0.0
-
-    async for bank in db.bank_accounts.find({"tenant_id": current_user.tenant_id, "is_active": True}):
-        balance = bank.get("current_balance", 0)
-        bank_accounts.append(
-            {
-                "id": bank.get("id"),
-                "bank_name": bank.get("bank_name"),
-                "account_number": bank.get("account_number"),
-                "iban": bank.get("iban"),
-                "currency": bank.get("currency", "TRY"),
-                "current_balance": balance,
-                "available_balance": bank.get("available_balance", 0),
-                "account_type": bank.get("account_type", "checking"),
-                "api_enabled": bank.get("api_enabled", False),
-                "last_sync": bank.get("last_sync").isoformat() if bank.get("last_sync") else None,
-            }
-        )
-
-        if bank.get("currency") == "TRY":
-            total_balance_try += balance
-
-    return {"bank_accounts": bank_accounts, "total_balance_try": total_balance_try, "account_count": len(bank_accounts)}
+    currency, _ = await get_tenant_currency(current_user.tenant_id)
+    accounts, totals = [], {}
+    async for bank in db.bank_accounts.find({"tenant_id": current_user.tenant_id, "is_active": True}, {"_id": 0}):
+        balance = bank.get("current_balance") if bank.get("current_balance") is not None else bank.get("balance")
+        code = currency_code(bank.get("currency"), currency)
+        if balance is not None:
+            add_amount(totals, code, balance)
+        accounts.append({**{key: bank.get(key) for key in ("id", "bank_name", "account_number", "iban", "account_type", "api_enabled")},
+                         "currency": code, "current_balance": balance, "available_balance": bank.get("available_balance"),
+                         "last_sync": iso_value(bank.get("last_sync"))})
+    return {"bank_accounts": accounts, "total_balance_try": rounded_totals(totals).get("TRY", 0),
+            "totals_by_currency": rounded_totals(totals), "account_count": len(accounts),
+            "unavailable_balance_count": sum(a["current_balance"] is None for a in accounts), "basis": "stored_bank_snapshot_not_live_bank"}

@@ -25,33 +25,27 @@ async def generate_folio_number(tenant_id: str) -> str:
 
 
 async def calculate_folio_balance(folio_id: str, tenant_id: str) -> float:
-    """Folio bakiyesi (charges − payments) — server-side $sum aggregation.
+    """Use the same uncapped effective ledger as receivable reports.
 
-    - to_list cap yok: 500/1000 hard limit'lerin sessiz veri kaybını engeller.
-    - charges.total yoksa amount fallback (schema esnek).
-    - Fail-closed: Mongo hatası → exception bubble (caller karar versin).
-      Önceki fail-open (return 0.0) yanlış pozitif "ödenmiş" durumu yaratıp
-      ödenmemiş folyoların kapatılmasına yol açıyordu.
+    Database failures propagate. Invalid payments do not settle a folio,
+    refunds reverse settlement, and no cross-currency balance is fabricated.
     """
-    ch_pipe = [
-        # Older ledger rows may not have a `voided` field. They are valid
-        # unless explicitly voided; matching only `False` silently drops
-        # those legitimate charges from AR and checkout balances.
-        {"$match": {"folio_id": folio_id, "tenant_id": tenant_id, "voided": {"$ne": True}}},
-        {"$group": {"_id": None, "total": {"$sum": {"$ifNull": ["$total", "$amount"]}}}},
-    ]
-    pay_pipe = [
-        {"$match": {"folio_id": folio_id, "tenant_id": tenant_id, "voided": {"$ne": True}}},
-        {"$group": {"_id": None, "total": {"$sum": "$amount"}}},
-    ]
-    ch_doc = await db.folio_charges.aggregate(ch_pipe).to_list(1)
-    pay_doc = await db.payments.aggregate(pay_pipe).to_list(1)
-    total_charges = float(ch_doc[0]["total"]) if ch_doc else 0.0
-    total_payments = float(pay_doc[0]["total"]) if pay_doc else 0.0
-    return round(total_charges - total_payments, 2)
+    from fastapi import HTTPException
 
+    from core.tenant_currency import get_tenant_currency
+    from modules.pms_core.receivable_reporting import folio_snapshots
+    from modules.pms_core.report_money import single_amount
 
-# ── Excel Helpers ──
+    folio = await db.folios.find_one({"id": folio_id, "tenant_id": tenant_id}, {"_id": 0})
+    if not folio:
+        raise HTTPException(404, "Folio not found")
+    currency, _ = await get_tenant_currency(tenant_id)
+    snapshots = await folio_snapshots(db, tenant_id, [folio], fallback_currency=currency)
+    snapshot = snapshots[folio_id]
+    if any(code != snapshot["currency"] and amount for code, amount in snapshot["balance_by_currency"].items()):
+        raise HTTPException(409, "Folyo bakiyesinde farklı para birimleri var; önce döviz hareketlerini uzlaştırın.")
+    return single_amount(snapshot["balance_by_currency"]) or 0.0
+
 
 _XLSX_MAX_CELL_LEN = 32767
 

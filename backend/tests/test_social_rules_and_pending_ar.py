@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from copy import deepcopy
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import HTTPException
@@ -37,6 +38,16 @@ class Cursor:
     async def to_list(self, _length):
         return deepcopy(self.docs)
 
+    def __aiter__(self):
+        self._iterator = iter(deepcopy(self.docs))
+        return self
+
+    async def __anext__(self):
+        try:
+            return next(self._iterator)
+        except StopIteration:
+            raise StopAsyncIteration from None
+
 
 class Collection:
     def __init__(self, docs=()):
@@ -69,6 +80,12 @@ class Collection:
 
 def _user(tenant_id="tenant-a"):
     return SimpleNamespace(id="user-a", tenant_id=tenant_id, name="Admin", role="admin")
+
+
+@pytest.fixture(autouse=True)
+def financial_context(monkeypatch):
+    monkeypatch.setattr(folio, "ensure_business_date_initialized", AsyncMock(return_value={"business_date": "2026-10-02"}))
+    monkeypatch.setattr("core.tenant_currency.get_tenant_currency", AsyncMock(return_value=("TRY", "₺")))
 
 
 @pytest.mark.asyncio
@@ -110,6 +127,8 @@ async def test_social_rule_crud_is_persisted_and_tenant_scoped(monkeypatch):
 async def test_pending_ar_details_include_room_guest_and_reservation(monkeypatch):
     fake_db = SimpleNamespace(
         companies=Collection([{"id": "company-a", "tenant_id": "tenant-a", "name": "Acente", "contact_email": "ar@example.com"}]),
+        folio_charges=Collection([{"tenant_id": "tenant-a", "folio_id": "folio-a", "total": 6500}]),
+        payments=Collection(),
         folios=Collection([{
             "id": "folio-a", "tenant_id": "tenant-a", "company_id": "company-a", "booking_id": "booking-a",
             "folio_number": "F-100", "status": "open", "balance": 6500, "created_at": "2026-09-01T00:00:00+00:00",
@@ -123,12 +142,15 @@ async def test_pending_ar_details_include_room_guest_and_reservation(monkeypatch
 
     result = await folio.get_pending_ar_details("company-a", _user(), None)
     assert result["total_outstanding"] == 6500
-    assert result["folios"] == [{
+    expected = {
         "folio_id": "folio-a", "folio_number": "F-100", "booking_id": "booking-a",
         "reservation_number": "RES-42", "guest_name": "Ada Lovelace", "room_number": "101",
         "check_in": "2026-09-05", "check_out": "2026-09-06",
         "created_at": "2026-09-01T00:00:00+00:00", "balance": 6500.0, "currency": "TRY",
-    }]
+    }
+    assert len(result["folios"]) == 1
+    assert result["folios"][0].items() >= expected.items()
+    assert result["folios"][0]["balance_by_currency"] == {"TRY": 6500}
     assert result["total_outstanding_by_currency"] == {"TRY": 6500.0}
 
 
@@ -145,6 +167,8 @@ async def test_pending_ar_reminder_sends_real_email_and_records_audit(monkeypatc
         audits.append(kwargs)
 
     fake_db = SimpleNamespace(
+        folio_charges=Collection([{"tenant_id": "tenant-a", "folio_id": "folio-a", "total": 125.50}]),
+        payments=Collection(),
         companies=Collection([{
             "id": "company-a", "tenant_id": "tenant-a", "name": "Acente <A>",
             "contact_person": "Ali <script>", "contact_email": "ar@example.com",

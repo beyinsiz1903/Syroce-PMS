@@ -9,7 +9,7 @@ import uuid
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Request
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 from fastapi.security import HTTPBearer
 
 try:
@@ -19,7 +19,7 @@ try:
 except ImportError:
     Workbook = None
 
-from core.business_date_service import stamp_open_business_date
+from core.business_date_service import ensure_business_date_initialized, stamp_open_business_date
 from core.database import db
 from core.helpers import create_audit_log
 from core.pagination import PaginationParams, paginate
@@ -39,6 +39,8 @@ from models.schemas import (
 )
 from modules.folio.services.folio_balance_read_service import FolioBalanceReadService
 from modules.folio.services.open_folio_service import OpenFolioService
+from modules.pms_core.receivable_reporting import receivable_rows, report_day, row_totals
+from modules.pms_core.report_money import add_amount, amounts_text, rounded_totals, single_amount
 from modules.pms_core.reporting_financials import is_valid_payment
 from modules.pms_core.role_permission_service import require_op
 from shared_kernel.idempotency import (
@@ -90,6 +92,15 @@ def _normalize_currency(value: object, fallback: str = "TRY") -> str:
 
 folio_balance_read_service = FolioBalanceReadService()
 open_folio_service = OpenFolioService()
+
+
+async def _company_receivable_rows(tenant_id, company_id=None):
+    from core.tenant_currency import get_tenant_currency
+
+    state = await ensure_business_date_initialized(db, tenant_id)
+    currency, _ = await get_tenant_currency(tenant_id)
+    day = report_day(state["business_date"])
+    return day, await receivable_rows(db, tenant_id, day, fallback_currency=currency, company_id=company_id)
 
 
 def _folio_export_transactions(charges: list[dict], payments: list[dict]) -> list[dict]:
@@ -245,125 +256,78 @@ async def get_folio_dashboard_stats(
 @router.get("/folio/pending-ar")
 @cached(ttl=600, key_prefix="folio_pending_ar")  # Cache for 10 min
 async def get_pending_ar(
-    current_user=Depends(get_current_user),  # v68 Bug DE: tenant-scoped cache key
-    _perm=Depends(require_op("view_finance_reports")),  # v70 Bug DG: AR leak HK/FO
+    current_user=Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),
+    _nocache: bool = Query(False, alias="nocache"),
 ):
-    """Get pending accounts receivable (company folios with outstanding balances)"""
-
+    """Company receivables, never a sum of nominal currencies or a cached balance."""
     try:
-        # v95 — Batch lookup: was N+1 (1 query per company × ~100 companies = 4.5s).
-        # Now: 1 companies query + 1 folios query, then in-memory grouping.
-        tenant_id = current_user.tenant_id
-        companies = await db.companies.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(1000)
-        if not companies:
-            return []
-
-        company_ids = [c["id"] for c in companies]
-        company_map = {c["id"]: c for c in companies}
-
-        # Single query for all open folios with balance > 0
-        all_folios = await db.folios.find(
-            {
-                "tenant_id": tenant_id,
-                "company_id": {"$in": company_ids},
-                "status": "open",
-                "balance": {"$gt": 0},
-            },
-            {"_id": 0, "id": 1, "booking_id": 1, "folio_number": 1, "company_id": 1, "balance": 1, "currency": 1, "created_at": 1},
-        ).to_list(10000)
-
-        if not all_folios:
-            return []
-
-        booking_ids = list({f.get("booking_id") for f in all_folios if f.get("booking_id") and not f.get("currency")})
-        booking_currency = {}
-        if booking_ids:
-            bookings = await db.bookings.find(
-                {"tenant_id": tenant_id, "id": {"$in": booking_ids}},
-                {"_id": 0, "id": 1, "currency": 1},
-            ).to_list(len(booking_ids))
-            booking_currency = {b["id"]: _normalize_currency(b.get("currency")) for b in bookings}
-
-        # Group folios by company
-        folios_by_company: dict[str, list] = {}
-        for f in all_folios:
-            folios_by_company.setdefault(f["company_id"], []).append(f)
-
-        now = datetime.now(UTC)
-        ar_data = []
-
-        for cid, folios in folios_by_company.items():
-            company = company_map.get(cid)
-            if not company:
+        tid = current_user.tenant_id
+        companies = await db.companies.find({"tenant_id": tid}, {"_id": 0}).to_list(None)
+        day, rows = await _company_receivable_rows(tid)
+        grouped = {}
+        for row in rows:
+            if row.get("company_id"):
+                grouped.setdefault(row["company_id"], []).append(row)
+        known = {company["id"] for company in companies}
+        companies.extend({"id": cid, "name": "Şirket kaydı bulunamadı"} for cid in grouped if cid not in known)
+        result = []
+        for company in companies:
+            folios = grouped.get(company["id"], [])
+            if not folios:
                 continue
+            totals = row_totals(folios)
+            buckets = {key: {} for key in ("0-7", "8-14", "15-30", "30+", "unknown")}
+            ages = []
+            for row in folios:
+                created = report_day(row["created_at"])
+                age = max((day - created).days, 0) if created else None
+                ages.append((created, age))
+                key = "unknown" if age is None else "0-7" if age <= 7 else "8-14" if age <= 14 else "15-30" if age <= 30 else "30+"
+                for code, amount in row["balance_by_currency"].items():
+                    add_amount(buckets[key], code, amount)
+            known_ages = [(created, age) for created, age in ages if created is not None]
+            oldest, age = min(known_ages) if known_ages else (None, None)
+            result.append({**{key: company.get(key) for key in ("contact_person", "contact_email", "contact_phone", "corporate_code")},
+                "company_id": company["id"], "company_name": company.get("name") or "—", "payment_terms": company.get("payment_terms", "Net 30"),
+                "total_outstanding": single_amount(totals), "total_outstanding_by_currency": totals, "open_folios_count": len(folios),
+                "oldest_invoice_date": oldest.isoformat() if oldest else None, "days_outstanding": age,
+                "aging": {key: single_amount(value) for key, value in buckets.items()},
+                "aging_by_currency": {key: rounded_totals(value) for key, value in buckets.items()},
+                "unknown_age_count": sum(created is None for created, _ in ages),
+                "as_of_date": day.isoformat(), "basis": "posted_folio_ledger", "aging_basis": "folio_created_date"})
+        return sorted(result, key=lambda row: -(row["days_outstanding"] or 0))
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Company receivables could not be verified")
+        raise HTTPException(503, "Alacak bakiyeleri doğrulanamadı; yeniden deneyin.") from exc
 
-            total_outstanding_by_currency: dict[str, float] = {}
-            for folio in folios:
-                currency = _normalize_currency(folio.get("currency") or booking_currency.get(folio.get("booking_id")))
-                total_outstanding_by_currency[currency] = total_outstanding_by_currency.get(currency, 0) + float(folio.get("balance") or 0)
-            total_outstanding = sum(total_outstanding_by_currency.values())
-            if total_outstanding <= 0:
-                continue
 
-            # Aging calculation
-            aging = {"0-7": 0, "8-14": 0, "15-30": 0, "30+": 0}
-            aging_by_currency: dict[str, dict[str, float]] = {key: {} for key in aging}
-            oldest_iso = None
-            oldest_days = 0
-            for folio in folios:
-                created_at = folio.get("created_at") or now.isoformat()
-                try:
-                    folio_dt = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
-                except (ValueError, AttributeError):
-                    folio_dt = now
-                days = (now - folio_dt).days
-                balance = folio.get("balance", 0)
-                currency = _normalize_currency(folio.get("currency") or booking_currency.get(folio.get("booking_id")))
-                if days <= 7:
-                    bucket = "0-7"
-                elif days <= 14:
-                    bucket = "8-14"
-                elif days <= 30:
-                    bucket = "15-30"
-                else:
-                    bucket = "30+"
-                aging[bucket] += balance
-                aging_by_currency[bucket][currency] = aging_by_currency[bucket].get(currency, 0) + balance
-                if oldest_iso is None or created_at < oldest_iso:
-                    oldest_iso = created_at
-                    oldest_days = days
+@router.get("/folio/pending-ar/excel")
+async def export_pending_ar(
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),
+):
+    """Export exactly the company-linked open-folio cohort used on this page."""
+    from core.utils import create_excel_workbook, excel_response
 
-            ar_data.append(
-                {
-                    "company_id": cid,
-                    "company_name": company.get("name", "Unknown"),
-                    "corporate_code": company.get("corporate_code", ""),
-                    "contact_person": company.get("contact_person", ""),
-                    "contact_email": company.get("contact_email", ""),
-                    "contact_phone": company.get("contact_phone", ""),
-                    "payment_terms": company.get("payment_terms", "Net 30"),
-                    "total_outstanding": round(total_outstanding, 2),
-                    "total_outstanding_by_currency": {code: round(amount, 2) for code, amount in sorted(total_outstanding_by_currency.items())},
-                    "open_folios_count": len(folios),
-                    "oldest_invoice_date": oldest_iso,
-                    "days_outstanding": oldest_days,
-                    "aging": aging,
-                    "aging_by_currency": {
-                        bucket: {code: round(amount, 2) for code, amount in sorted(values.items())}
-                        for bucket, values in aging_by_currency.items()
-                    },
-                }
-            )
-
-        ar_data.sort(key=lambda x: x["days_outstanding"], reverse=True)
-        return ar_data
-
-    except Exception as e:
-        logger.info(f"Error in get_pending_ar: {str(e)}")
-        import traceback
-
-        traceback.print_exc()
-        return []
+    companies = await db.companies.find({"tenant_id": current_user.tenant_id}, {"_id": 0}).to_list(None)
+    company_map = {c["id"]: c for c in companies}
+    day, rows = await _company_receivable_rows(current_user.tenant_id)
+    data = []
+    for row in rows:
+        if not row.get("company_id"):
+            continue
+        company = company_map.get(row["company_id"], {"name": "Şirket kaydı bulunamadı"})
+        created = report_day(row["created_at"])
+        age = max((day - created).days, 0) if created else None
+        for code, amount in row["balance_by_currency"].items():
+            data.append([company.get("name") or "—", company.get("corporate_code") or "", row["folio_number"] or row["folio_id"],
+                         row["guest_name"], row["created_at"], age, code, amount])
+    workbook = create_excel_workbook(f"Açık Cari Folyolar — {day.isoformat()}",
+        ["Şirket", "Cari Kod", "Folyo", "Misafir", "Açılış Tarihi", "Folyo Yaşı (Gün)", "Para Birimi", "Açık Bakiye"], data)
+    return excel_response(workbook, f"company-open-folios-{day.isoformat()}.xlsx")
 
 
 @router.get("/folio/pending-ar/{company_id}")
@@ -375,62 +339,13 @@ async def get_pending_ar_details(
     tenant_id = current_user.tenant_id
     company = await db.companies.find_one({"id": company_id, "tenant_id": tenant_id}, {"_id": 0})
     if not company:
-        raise HTTPException(status_code=404, detail="Cari hesap bulunamadı")
-
-    folios = (
-        await db.folios.find(
-            {
-                "tenant_id": tenant_id,
-                "company_id": company_id,
-                "status": "open",
-                "balance": {"$gt": 0},
-            },
-            {"_id": 0},
-        )
-        .sort("created_at", 1)
-        .to_list(1000)
-    )
-    booking_ids = [folio.get("booking_id") for folio in folios if folio.get("booking_id")]
-    bookings = []
-    if booking_ids:
-        bookings = await db.bookings.find(
-            {"tenant_id": tenant_id, "id": {"$in": booking_ids}},
-            {"_id": 0, "id": 1, "reservation_number": 1, "confirmation_number": 1, "guest_name": 1, "room_number": 1, "check_in": 1, "check_out": 1, "currency": 1},
-        ).to_list(len(booking_ids))
-    booking_map = {booking["id"]: booking for booking in bookings}
-    rows = []
-    for folio in folios:
-        booking = booking_map.get(folio.get("booking_id"), {})
-        rows.append(
-            {
-                "folio_id": folio.get("id"),
-                "folio_number": folio.get("folio_number") or f"F-{str(folio.get('id') or '')[:8]}",
-                "booking_id": folio.get("booking_id"),
-                "reservation_number": booking.get("reservation_number") or booking.get("confirmation_number"),
-                "guest_name": booking.get("guest_name") or folio.get("guest_name") or "—",
-                "room_number": booking.get("room_number") or folio.get("room_number") or "—",
-                "check_in": booking.get("check_in"),
-                "check_out": booking.get("check_out"),
-                "created_at": folio.get("created_at"),
-                "balance": round(float(folio.get("balance") or 0), 2),
-                "currency": _normalize_currency(folio.get("currency") or booking.get("currency")),
-            }
-        )
-    totals_by_currency: dict[str, float] = {}
-    for row in rows:
-        totals_by_currency[row["currency"]] = totals_by_currency.get(row["currency"], 0) + row["balance"]
-    return {
-        "company": {
-            "id": company_id,
-            "name": company.get("name", ""),
-            "contact_person": company.get("contact_person", ""),
-            "contact_email": company.get("contact_email", ""),
-            "contact_phone": company.get("contact_phone", ""),
-        },
-        "folios": rows,
-        "total_outstanding": round(sum(row["balance"] for row in rows), 2),
-        "total_outstanding_by_currency": {code: round(amount, 2) for code, amount in sorted(totals_by_currency.items())},
-    }
+        raise HTTPException(404, "Cari hesap bulunamadı")
+    day, rows = await _company_receivable_rows(tenant_id, company_id=company_id)
+    totals = row_totals(rows)
+    return {"company": {"id": company_id, **{key: company.get(key) for key in ("name", "contact_person", "contact_email", "contact_phone")}},
+            "folios": [{**row, "check_out": row["checkout_date"], "folio_number": row["folio_number"] or f'F-{row["folio_id"][:8]}'} for row in rows],
+            "total_outstanding": single_amount(totals), "total_outstanding_by_currency": totals,
+            "as_of_date": day.isoformat(), "basis": "posted_folio_ledger"}
 
 
 @router.post("/folio/pending-ar/{company_id}/send-reminder")
@@ -452,7 +367,7 @@ async def send_pending_ar_reminder(
         f"<td>{html.escape(str(row['folio_number']))}</td>"
         f"<td>{html.escape(str(row['room_number']))}</td>"
         f"<td>{html.escape(str(row['guest_name']))}</td>"
-        f"<td style='text-align:right'>{row['balance']:,.2f} {html.escape(row['currency'])}</td>"
+        f"<td style='text-align:right'>{html.escape(amounts_text(row['balance_by_currency']))}</td>"
         "</tr>"
         for row in details["folios"]
     )

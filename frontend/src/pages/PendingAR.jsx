@@ -52,7 +52,7 @@ const PendingAR = ({ user, tenant, onLogout }) => {
     setLoadError(false);
     try {
       // Prefer backend aggregated AR endpoint
-      const response = await axios.get('/folio/pending-ar');
+      const response = await axios.get('/folio/pending-ar', { params: { nocache: true } });
       setArData(response.data || []);
     } catch (error) {
       console.error('Failed to load AR data:', error);
@@ -81,6 +81,7 @@ const PendingAR = ({ user, tenant, onLogout }) => {
   };
 
   const getAgingBucket = (days) => {
+    if (days == null) return { label: 'Yaş bilinmiyor', color: 'bg-gray-500' };
     if (days <= 7) return { label: '0-7 gün', color: 'bg-green-500' };
     if (days <= 14) return { label: '8-14 gün', color: 'bg-blue-500' };
     if (days <= 30) return { label: '15-30 gün', color: 'bg-yellow-500' };
@@ -89,6 +90,7 @@ const PendingAR = ({ user, tenant, onLogout }) => {
   };
 
   const getUrgencyLevel = (days) => {
+    if (days == null) return { level: 'Bilinmiyor', color: 'text-gray-600' };
     if (days <= 7) return { level: 'Düşük', color: 'text-green-600' };
     if (days <= 30) return { level: 'Orta', color: 'text-yellow-600' };
     if (days <= 60) return { level: 'Yüksek', color: 'text-amber-600' };
@@ -125,7 +127,7 @@ const PendingAR = ({ user, tenant, onLogout }) => {
   const handleExportCompanyAging = async () => {
     setExporting(true);
     try {
-      const response = await axios.get('/reports/company-aging/excel', { responseType: 'blob' });
+      const response = await axios.get('/folio/pending-ar/excel', { responseType: 'blob' });
       const url = URL.createObjectURL(response.data);
       const link = document.createElement('a');
       link.href = url;
@@ -252,7 +254,7 @@ const PendingAR = ({ user, tenant, onLogout }) => {
                 <h1 className="text-4xl font-bold" style={{ fontFamily: 'Space Grotesk' }}>
                   Alacak Hesapları
                 </h1>
-                <p className="text-gray-600 mt-1">Kurumsal müşterilerin bekleyen fatura ve tahsilatları</p>
+                <p className="text-gray-600 mt-1">Cari hesaplara bağlı açık folyolar. Yaşlandırma folyo açılışına göredir; sözleşme vadesi değildir.</p>
               </div>
               <Button onClick={handleExportCompanyAging} disabled={exporting}>
                 <Download className="w-4 h-4 mr-2" />
@@ -304,13 +306,11 @@ const PendingAR = ({ user, tenant, onLogout }) => {
                 <CardContent className="pt-6">
                   <div className="flex items-center justify-between">
                     <div>
-                      <div className="text-sm text-gray-600">Ortalama Vade Gecikmesi</div>
+                      <div className="text-sm text-gray-600">Ortalama Açık Folyo Yaşı</div>
                       <div className="text-3xl font-bold text-amber-600 mt-1">
-                        {loadError ? '—' : arData.length > 0
-                          ? Math.round(
-                              arData.reduce((sum, item) => sum + item.days_outstanding, 0) / arData.length
-                            )
-                          : 0}
+                        {loadError ? '—' : arData.some(item => item.days_outstanding != null)
+                          ? Math.round(arData.reduce((sum, item) => sum + (item.days_outstanding ?? 0), 0) / arData.filter(item => item.days_outstanding != null).length)
+                          : '—'}
                       </div>
                     </div>
                     <Clock className="w-12 h-12 text-amber-600 opacity-50" />
@@ -417,7 +417,7 @@ const PendingAR = ({ user, tenant, onLogout }) => {
                                 <div>
                                   <div className="text-gray-600">Gecikme Süresi</div>
                                   <div className="text-xl font-bold text-amber-600">
-                                    {item.days_outstanding} gün
+                                    {item.days_outstanding == null ? 'Bilinmiyor' : `${item.days_outstanding} gün`}
                                   </div>
                                 </div>
                                 <div>
@@ -623,7 +623,7 @@ const PendingAR = ({ user, tenant, onLogout }) => {
                           <td className="p-3 font-semibold">{folio.room_number}</td>
                           <td className="p-3">{folio.guest_name}</td>
                           <td className="p-3 whitespace-nowrap">{folio.check_in || '—'} → {folio.check_out || '—'}</td>
-                          <td className="p-3 text-right font-semibold text-red-600">{formatCurrency(folio.balance, folio.currency || 'TRY')}</td>
+                          <td className="p-3 text-right font-semibold text-red-600">{formatCurrencyBreakdown(folio.balance_by_currency, folio.balance, folio.currency)}</td>
                         </tr>
                       ))}
                     </tbody>
