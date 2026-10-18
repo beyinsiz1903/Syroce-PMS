@@ -6,11 +6,13 @@ from datetime import UTC, datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
 
+from core.business_date_service import ensure_business_date_initialized
 from core.database import db
 from core.security import get_current_user, security
 from models.schemas import User
+from modules.pms_core.report_money import add_amount, currency_code, rounded_totals, single_amount
 from modules.pms_core.role_permission_service import require_op
-from modules.pms_core.stay_night_metrics import load_stay_night_metrics
+from modules.pms_core.stay_night_metrics import NON_COMMERCIAL_STATUSES, as_date, load_stay_night_metrics
 
 from ._common import (
     PingTestRequest,
@@ -22,8 +24,16 @@ logger = logging.getLogger(__name__)
 sub_router = APIRouter()
 
 
+async def _trend_range(tenant_id: str, days: int):
+    if not isinstance(days, int) or not 1 <= days <= 366:
+        raise HTTPException(status_code=422, detail="Gün sayısı 1–366 arasında olmalı")
+    state = await ensure_business_date_initialized(db, tenant_id)
+    end = as_date(state["business_date"])
+    return end - timedelta(days=days - 1), end
+
+
 @sub_router.get("/analytics/7day-trend")
-@cached(ttl=600, key_prefix="analytics_7day_trend")
+@cached(ttl=600, key_prefix="analytics_7day_trend_v2")
 async def get_7day_trend(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_executive_reports")),  # v86 DV: 7-day trend exec
@@ -35,17 +45,19 @@ async def get_7day_trend(
     import asyncio as _asyncio
 
     try:
-        today = datetime.now(UTC).date()
-        days = [today - timedelta(days=i) for i in range(6, -1, -1)]
         tenant_id = current_user.tenant_id
+        _, today = await _trend_range(tenant_id, 7)
+        days = [today - timedelta(days=i) for i in range(6, -1, -1)]
 
         stay_metrics = await load_stay_night_metrics(db, tenant_id, days[0], days[-1])
         stay_by_date = {row["date"]: row for row in stay_metrics}
 
         async def _day_metrics(date):
             date_str = date.isoformat()
-            arrivals_q = db.bookings.count_documents({"check_in": date_str, "tenant_id": tenant_id})
-            departures_q = db.bookings.count_documents({"check_out": date_str, "tenant_id": tenant_id})
+            scope = {"tenant_id": tenant_id, "status": {"$nin": list(NON_COMMERCIAL_STATUSES)}}
+            period = {"$gte": date_str, "$lt": (date + timedelta(days=1)).isoformat()}
+            arrivals_q = db.bookings.count_documents({**scope, "check_in": period})
+            departures_q = db.bookings.count_documents({**scope, "check_out": period})
             arrivals, departures = await _asyncio.gather(arrivals_q, departures_q)
             stay = stay_by_date[date_str]
             return {
@@ -55,8 +67,11 @@ async def get_7day_trend(
                 "departures": departures,
                 "occupancy": stay["occupied_rooms"],
                 "revenue": stay["revenue"],
+                "revenue_by_currency": stay.get("revenue_by_currency", {}),
                 "adr": stay["adr"],
                 "revpar": stay["revpar"],
+                "adr_by_currency": stay.get("adr_by_currency", {}),
+                "revpar_by_currency": stay.get("revpar_by_currency", {}),
             }
 
         trend_data = await _asyncio.gather(*(_day_metrics(d) for d in days))
@@ -70,7 +85,8 @@ async def get_7day_trend(
                 "arrivals_change": latest["arrivals"] - previous["arrivals"],
                 "departures_change": latest["departures"] - previous["departures"],
                 "occupancy_change": latest["occupancy"] - previous["occupancy"],
-                "revenue_change": round(latest["revenue"] - previous["revenue"], 2),
+                "revenue_change": round(latest["revenue"] - previous["revenue"], 2) if latest["revenue"] is not None and previous["revenue"] is not None and set(latest["revenue_by_currency"]) == set(previous["revenue_by_currency"]) else None,
+                "revenue_change_by_currency": {code: round(latest["revenue_by_currency"].get(code, 0) - previous["revenue_by_currency"].get(code, 0), 2) for code in set(latest["revenue_by_currency"]) | set(previous["revenue_by_currency"])},
             }
         else:
             changes = {}
@@ -183,8 +199,7 @@ async def get_occupancy_trend(days: int = 30, credentials: HTTPAuthorizationCred
     """Get occupancy trend for the last N days"""
     current_user = await get_current_user(credentials)
 
-    end_date = datetime.now(UTC).date()
-    start_date = end_date - timedelta(days=max(days - 1, 0))
+    start_date, end_date = await _trend_range(current_user.tenant_id, days)
     trend_data = await load_stay_night_metrics(db, current_user.tenant_id, start_date, end_date)
 
     return {"success": True, "days": days, "trend": trend_data, "average_occupancy": round(sum(d["occupancy_rate"] for d in trend_data) / len(trend_data), 2) if trend_data else 0}
@@ -195,42 +210,32 @@ async def get_revenue_trend(days: int = 30, credentials: HTTPAuthorizationCreden
     """Get revenue trend for the last N days"""
     current_user = await get_current_user(credentials)
 
-    end_date = datetime.now(UTC)
-    start_date = end_date - timedelta(days=days)
+    from routers.reports_pkg.standard_reports import _charge_amount, _posted_revenue_rows
 
-    # Get all folios in date range
-    folios = await db.folios.find({"tenant_id": current_user.tenant_id, "created_at": {"$gte": start_date.isoformat(), "$lte": end_date.isoformat()}}).to_list(length=10000)
-
-    # Calculate daily revenue
-    trend_data = []
-    current = start_date
-
-    while current <= end_date:
-        # Sum revenue for this date
-        daily_revenue = 0
-        for folio in folios:
-            folio_date = datetime.fromisoformat(folio["created_at"].replace("Z", "+00:00"))
-            if folio_date.date() == current.date():
-                daily_revenue += folio.get("total_charges", 0)
-
-        trend_data.append({"date": current.strftime("%Y-%m-%d"), "revenue": round(daily_revenue, 2)})
-
-        current += timedelta(days=1)
-
-    total_revenue = sum(d["revenue"] for d in trend_data)
-    average_daily = round(total_revenue / len(trend_data), 2) if trend_data else 0
-
-    return {"success": True, "days": days, "trend": trend_data, "total_revenue": round(total_revenue, 2), "average_daily_revenue": average_daily}
+    start_date, end_date = await _trend_range(current_user.tenant_id, days)
+    daily_totals = {(start_date + timedelta(days=i)).isoformat(): {} for i in range(days)}
+    totals = {}
+    for row in await _posted_revenue_rows(current_user.tenant_id, start_date, end_date, database=db):
+        day = as_date(row.get("business_date") or row.get("date") or row.get("charge_date") or row.get("created_at"))
+        if day is None or day.isoformat() not in daily_totals:
+            raise HTTPException(status_code=503, detail="Gelir işleminin muhasebe tarihi doğrulanamadı")
+        code, amount = currency_code(row.get("currency")), _charge_amount(row)
+        add_amount(daily_totals[day.isoformat()], code, amount)
+        add_amount(totals, code, amount)
+    trend_data = [{"date": day, "revenue": single_amount(values), "revenue_by_currency": rounded_totals(values)} for day, values in daily_totals.items()]
+    averages = {code: float(amount) / days for code, amount in totals.items()}
+    return {"success": True, "days": days, "trend": trend_data, "total_revenue": single_amount(totals),
+        "total_revenue_by_currency": rounded_totals(totals), "average_daily_revenue": single_amount(averages),
+        "average_daily_revenue_by_currency": rounded_totals(averages), "basis": "posted_ledger", "business_date": end_date.isoformat()}
 
 
 @sub_router.get("/analytics/booking-trends")
-@cached(ttl=300, key_prefix="analytics_booking_trends")  # v95 — 5 min cache
+@cached(ttl=300, key_prefix="analytics_booking_trends_v2")
 async def get_booking_trends(days: int = 30, credentials: HTTPAuthorizationCredentials = Depends(security)):
     """Get canonical stay-night, ADR and RevPAR trends for the last N days."""
     current_user = await get_current_user(credentials)
 
-    end_date = datetime.now(UTC).date()
-    start_date = end_date - timedelta(days=max(days - 1, 0))
+    start_date, end_date = await _trend_range(current_user.tenant_id, days)
     metrics = await load_stay_night_metrics(db, current_user.tenant_id, start_date, end_date)
     trend_data = [{**row, "bookings": row["occupied_rooms"]} for row in metrics]
     total_room_nights = sum(row["occupied_rooms"] for row in metrics)

@@ -51,6 +51,10 @@ def test_room_nights_are_unique_checkout_exclusive_and_revenue_is_allocated():
         "revenue": 4000.0,
         "adr": 2000.0,
         "revpar": 2000.0,
+        "revenue_by_currency": {"TRY": 4000.0},
+        "adr_by_currency": {"TRY": 2000.0},
+        "revpar_by_currency": {"TRY": 2000.0},
+        "mixed_currency": False,
     }
     assert metrics[1]["occupied_rooms"] == 1
     assert metrics[1]["revenue"] == 1000.0

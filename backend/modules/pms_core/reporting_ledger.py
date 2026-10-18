@@ -1,0 +1,130 @@
+"""Shared, read-only accounting ledger selection for reports and workers."""
+
+import asyncio
+from datetime import UTC, date, datetime, time, timedelta
+
+from core.business_date_service import accounting_period_match
+
+
+def charge_amount(row: dict) -> float:
+    for field in ("total", "charge_amount", "amount"):
+        if row.get(field) is not None:
+            return float(row[field] or 0)
+    return 0.0
+
+
+def charge_category(row: dict) -> str:
+    category = str(row.get("charge_category") or row.get("category") or row.get("charge_type") or "other").strip().lower()
+    return "room" if category in {"room", "room_charge", "accommodation", "lodging", "konaklama"} else category
+
+
+async def posted_revenue_rows(tenant_id: str, start: date, end: date, *, database) -> list[dict]:
+    """Return posted folio, manual-extra and untransferred POS revenue once."""
+    start_text = start.isoformat()
+    next_day = (end + timedelta(days=1)).isoformat()
+    period = {"$gte": start_text, "$lt": next_day}
+    bson_period = {"$gte": datetime.combine(start, time.min, UTC), "$lt": datetime.combine(end + timedelta(days=1), time.min, UTC)}
+
+    def legacy_period(field, *missing):
+        return {**{key: {"$in": [None, ""]} for key in missing},
+            "$or": [{field: period}, {field: bson_period}]}
+    charge_query = {
+        "tenant_id": tenant_id,
+        "voided": {"$ne": True},
+        **accounting_period_match(start_text, end.isoformat(),
+            legacy_period("date"), legacy_period("charge_date", "date"), legacy_period("created_at", "date", "charge_date")),
+    }
+    projection = {
+        "_id": 0,
+        "charge_category": 1,
+        "category": 1,
+        "charge_type": 1,
+        "total": 1,
+        "charge_amount": 1,
+        "amount": 1,
+        "currency": 1,
+        "source_pos_order_id": 1,
+        "business_date": 1,
+        "date": 1,
+        "charge_date": 1,
+        "created_at": 1,
+    }
+    folio_rows, extra_rows, pos_rows = await asyncio.gather(
+        # Financial reports may cover high-volume F&B and chain properties.
+        # A hard cap silently underreports revenue, so preserve every matching
+        # ledger row instead of treating 10,000 as a reporting limit.
+        database.folio_charges.find(charge_query, projection).to_list(None),
+        database.extra_charges.find(charge_query, projection).to_list(None),
+        database.pos_orders.find(
+            {
+                "tenant_id": tenant_id,
+                "status": {"$in": ["closed", "completed", "paid"]},
+                **accounting_period_match(start_text, end.isoformat(),
+                    legacy_period("closed_at"), legacy_period("created_at", "closed_at")),
+            },
+            {"_id": 0, "id": 1, "total_amount": 1, "grand_total": 1, "currency": 1, "business_date": 1, "closed_at": 1, "created_at": 1},
+        ).to_list(None),
+    )
+    # Finalized POS ledger is authoritative; orders are only a legacy fallback.
+    # In particular, refunds belong to their own accounting day, never as a
+    # cumulative subtraction from the original order's historical sales day.
+    transaction_query = {"tenant_id": tenant_id,
+        "status": {"$in": ["completed", "closed", "paid", "refunded", "refund"]},
+        **accounting_period_match(start_text, end.isoformat(),
+            legacy_period("transaction_date"), legacy_period("created_at", "transaction_date"))}
+    transaction_sources = await asyncio.gather(
+        database.pos_transactions.find(transaction_query, {"_id": 0}).to_list(None),
+        database.pos_menu_transactions.find(transaction_query, {"_id": 0}).to_list(None),
+        database.transactions.find({**transaction_query, "$and": [{"$or": [{"category": "pos"}, {"_closure_source": "pos_menu_transactions"}]}]}, {"_id": 0}).to_list(None),
+    )
+    represented_pos_ids = {str(row["source_pos_order_id"]) for row in [*folio_rows, *extra_rows] if row.get("source_pos_order_id")}
+    settled_ids, seen_transaction_ids, order_source = set(), set(), {}
+    transaction_rows = []
+    order_currencies = {str(row.get("id")): row.get("currency") for row in pos_rows}
+    for transactions in transaction_sources:
+        for row in transactions:
+            if row.get("order_id") and row.get("currency"):
+                order_currencies[str(row["order_id"])] = row["currency"]
+    unresolved = {str(row["order_id"]) for transactions in transaction_sources for row in transactions
+        if row.get("order_id") and not row.get("currency") and not order_currencies.get(str(row["order_id"]))}
+    if unresolved:
+        # A refund may be inside this report while its original sale is not.
+        # Recover currency from the tenant-scoped source order, not from today
+        # or a different currency's sales on the selected day.
+        source_orders = await database.pos_orders.find({"tenant_id": tenant_id, "id": {"$in": sorted(unresolved)}}, {"_id": 0, "id": 1, "currency": 1}).to_list(None)
+        order_currencies.update({str(row["id"]): row.get("currency") for row in source_orders})
+    for source_index, transactions in enumerate(transaction_sources):
+        for row in transactions:
+            transaction_id = str(row.get("id") or row.get("transaction_id") or "")
+            order_id = str(row.get("order_id") or "")
+            if order_id:
+                settled_ids.add(order_id)
+                if order_source.setdefault(order_id, source_index) != source_index:
+                    continue
+            if transaction_id and transaction_id in seen_transaction_ids:
+                continue
+            if transaction_id:
+                seen_transaction_ids.add(transaction_id)
+            # Room transfers are already revenue in the folio ledger. Do not
+            # reintroduce an asynchronously reversed/voided charge as cash POS.
+            if order_id in represented_pos_ids or row.get("payment_method") == "room_charge":
+                continue
+            value = row.get("total_amount") if row.get("total_amount") is not None else row.get("amount", 0)
+            value = float(value or 0) - float(row.get("tip_amount") or 0)
+            if row.get("payment_type") == "refund" or row.get("status") in {"refunded", "refund"}:
+                value = -abs(value)
+            transaction_rows.append({"category": "fnb", "total": value,
+                "currency": row.get("currency") or order_currencies.get(order_id) or "TRY",
+                "business_date": row.get("business_date") or row.get("transaction_date"), "date": row.get("created_at")})
+    direct_pos_rows = [
+        {
+            "category": "fnb",
+            "total": row.get("grand_total") if row.get("grand_total") is not None else row.get("total_amount", 0),
+            "currency": row.get("currency") or "TRY",
+            "business_date": row.get("business_date"),
+            "date": row.get("closed_at") or row.get("created_at"),
+        }
+        for row in pos_rows
+        if str(row.get("id") or "") not in represented_pos_ids | settled_ids
+    ]
+    return [*folio_rows, *extra_rows, *transaction_rows, *direct_pos_rows]

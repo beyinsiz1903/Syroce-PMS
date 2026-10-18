@@ -24,7 +24,7 @@ const ReceivedDetail = ({ row }) => {
 const CurrencyBreakdown = ({ totals = {}, fallback }) => {
   const entries = Object.entries(totals);
   return entries.length
-    ? <>{entries.map(([code, amount]) => <div key={code}>{formatCurrency(amount, code)}</div>)}</>
+    ? <>{entries.map(([code, amount]) => <span className="block" key={code}>{formatCurrency(amount, code)}</span>)}</>
     : <>{fallback == null ? '-' : formatCurrency(fallback)}</>;
 };
 

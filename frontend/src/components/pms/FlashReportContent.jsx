@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -7,191 +7,81 @@ import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
 import { useCurrency } from '@/context/CurrencyContext';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
+import { formatCurrency } from '@/lib/currency';
+import { useBusinessDate } from '@/hooks/useBusinessDate';
 const PIE_COLORS = ['#3b82f6', '#10b981', '#8b5cf6', '#f59e0b', '#ef4444', '#6366f1'];
 
 const dateKey = value => value ? String(value).slice(0, 10) : '';
-const localDateKey = (value = new Date()) => {
-  const year = value.getFullYear();
-  const month = String(value.getMonth() + 1).padStart(2, '0');
-  const day = String(value.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-};
-const bookingArrival = booking => dateKey(booking.check_in || booking.arrival_date || booking.start_date);
-const bookingDeparture = booking => dateKey(booking.check_out || booking.departure_date || booking.end_date);
-const bookingStatus = booking => String(booking.status || '').toLowerCase();
-const nonCommercialStatuses = new Set(['cancelled', 'canceled', 'no_show', 'noshow']);
-const fnbCategories = new Set(['fnb', 'food_beverage', 'food', 'beverage', 'restaurant', 'bar', 'room_service']);
 
-const bookingNights = booking => {
-  const arrival = new Date(`${bookingArrival(booking)}T12:00:00`);
-  const departure = new Date(`${bookingDeparture(booking)}T12:00:00`);
-  const nights = Math.round((departure - arrival) / 86400000);
-  return Number.isFinite(nights) && nights > 0 ? nights : 1;
-};
-
-const activeOnDate = (booking, targetDate) => (
-  bookingArrival(booking) <= targetDate
-  && bookingDeparture(booking) > targetDate
-  && !nonCommercialStatuses.has(bookingStatus(booking))
-);
-
-export const buildFallbackFlashReport = ({ targetDate, rooms = [], bookings = [], arrivals = [], departures = [], inhouse = [] }) => {
-  const activeBookings = bookings.filter(booking => activeOnDate(booking, targetDate));
-  const occupiedIdentifiers = new Set(activeBookings.map(booking => booking.room_id || booking.room_number || booking.room_no).filter(Boolean));
-  const occupiedRooms = occupiedIdentifiers.size || activeBookings.length || inhouse.filter(booking => activeOnDate(booking, targetDate)).length;
-  const totalRooms = rooms.length;
-  const roomRevenue = activeBookings.reduce((sum, booking) => {
-    const stayTotal = Number(booking.accommodation_total ?? booking.room_total ?? booking.total_amount ?? booking.total_price ?? 0) || 0;
-    return sum + stayTotal / bookingNights(booking);
-  }, 0);
-  const collected = activeBookings.reduce((sum, booking) => (
-    sum + (Number(booking.paid_amount ?? booking.total_paid ?? 0) || 0) / bookingNights(booking)
-  ), 0);
-  const categoryRevenue = { fb: 0, spa: 0, minibar: 0, laundry: 0, other: 0 };
-  activeBookings.forEach(booking => {
-    (booking.charges || booking.folio_charges || []).forEach(charge => {
-      if (charge.voided) return;
-      const chargeDate = dateKey(charge.business_date || charge.date || charge.created_at);
-      if (chargeDate && chargeDate !== targetDate) return;
-      const category = String(charge.charge_category || charge.charge_type || 'other').toLowerCase();
-      const amount = Number(charge.total ?? charge.amount ?? 0) || 0;
-      if (fnbCategories.has(category)) categoryRevenue.fb += amount;
-      else if (category === 'spa') categoryRevenue.spa += amount;
-      else if (category === 'minibar') categoryRevenue.minibar += amount;
-      else if (category === 'laundry') categoryRevenue.laundry += amount;
-      else if (!['room', 'accommodation', 'room_charge'].includes(category)) categoryRevenue.other += amount;
-    });
-  });
-  const ancillaryRevenue = Object.values(categoryRevenue).reduce((sum, amount) => sum + amount, 0);
-  const totalRevenue = roomRevenue + ancillaryRevenue;
-  const datedArrivals = bookings.filter(booking => bookingArrival(booking) === targetDate && !nonCommercialStatuses.has(bookingStatus(booking))).length;
-  const datedDepartures = bookings.filter(booking => bookingDeparture(booking) === targetDate && !nonCommercialStatuses.has(bookingStatus(booking))).length;
-  const fallbackArrivals = datedArrivals || arrivals.filter(booking => bookingArrival(booking) === targetDate).length;
-  const fallbackDepartures = datedDepartures || departures.filter(booking => bookingDeparture(booking) === targetDate).length;
-  const fallbackInhouse = inhouse.filter(booking => activeOnDate(booking, targetDate)).length;
-  const noShowBookings = bookings.filter(booking => ['no_show', 'noshow'].includes(bookingStatus(booking)) && bookingArrival(booking) === targetDate);
-  const cancelledBookings = bookings.filter(booking => ['cancelled', 'canceled'].includes(bookingStatus(booking)) && dateKey(booking.cancelled_at || booking.canceled_at || booking.updated_at) === targetDate);
-
-  return {
-    date: targetDate,
-    occupancy: {
-      rate: totalRooms > 0 ? occupiedRooms / totalRooms * 100 : 0,
-      occupied: occupiedRooms,
-      total: totalRooms,
-      available: Math.max(0, totalRooms - occupiedRooms),
-    },
-    revenue: {
-      total: totalRevenue,
-      room: roomRevenue,
-      ...categoryRevenue,
-      collected,
-      outstanding: totalRevenue - collected,
-    },
-    kpi: {
-      adr: occupiedRooms > 0 ? roomRevenue / occupiedRooms : 0,
-      revpar: totalRooms > 0 ? roomRevenue / totalRooms : 0,
-    },
-    operations: {
-      arrivals: fallbackArrivals,
-      departures: fallbackDepartures,
-      inhouse: activeBookings.length || fallbackInhouse,
-      no_shows: noShowBookings.length,
-      walk_ins: bookings.filter(booking => bookingArrival(booking) === targetDate && ['walk_in', 'walkin'].includes(String(booking.channel || booking.booking_source || '').toLowerCase())).length,
-      cancellations: cancelledBookings.length,
-      overstays: 0,
-    },
-    attention_details: {
-      cancellations: cancelledBookings,
-      no_shows: noShowBookings,
-    },
-    scope: {
-      business_date: targetDate,
-      occupancy: 'Seçili iş gecesinde dolu ve satılabilir odalar',
-      revenue: 'Seçili iş gününe dağıtılan konaklama ve ek gelirler',
-      collections: 'Seçili iş gününe dağıtılan tahsilatlar',
-      operations: 'Seçili iş günündeki giriş, çıkış ve durum hareketleri',
-    },
-    departments: [
-      { name: 'Oda Geliri', amount: roomRevenue },
-      { name: 'Yiyecek & İçecek', amount: categoryRevenue.fb },
-      { name: 'Spa & Wellness', amount: categoryRevenue.spa },
-      { name: 'Minibar', amount: categoryRevenue.minibar },
-      { name: 'Çamaşırhane', amount: categoryRevenue.laundry },
-      { name: 'Diğer', amount: categoryRevenue.other },
-    ],
-  };
+export const selectFlashCurrency = (report, currency) => {
+  if (!report) return null;
+  const aware = Boolean(report.revenue?.total_by_currency);
+  const revenue = { ...report.revenue };
+  for (const field of ['total', 'room', 'fb', 'spa', 'minibar', 'laundry', 'other', 'collected', 'outstanding']) {
+    revenue[field] = aware ? Number(revenue[`${field}_by_currency`]?.[currency] ?? 0) : revenue[field];
+  }
+  revenue.room_revenue_breakdown = (revenue.room_revenue_breakdown || []).filter(row => !row.currency || row.currency === currency);
+  return { ...report, revenue, kpi: { ...report.kpi,
+    adr: aware ? Number(report.kpi?.adr_by_currency?.[currency] ?? 0) : report.kpi?.adr,
+    revpar: aware ? Number(report.kpi?.revpar_by_currency?.[currency] ?? 0) : report.kpi?.revpar },
+    departments: (report.departments || []).map(row => ({ ...row, amount: aware ? Number(row.amount_by_currency?.[currency] ?? 0) : row.amount })) };
 };
 
 const FlashReportContent = ({
   showDatePicker = false,
   isEmbedded = false,
   targetDate = null,
-  businessDate = null,
-  rooms,
-  bookings,
-  arrivals,
-  departures,
-  inhouse
+  businessDate = null
 }) => {
   const navigate = useNavigate();
   const {
     t
   } = useTranslation();
-  const {
-    format: fmtMoney,
-    symbol: currencySymbol,
-    code: currencyCode
-  } = useCurrency();
-  const [selectedDate, setSelectedDate] = useState(targetDate || businessDate || localDateKey());
+  const { code: tenantCurrency } = useCurrency();
+  const pmsBusinessDate = useBusinessDate();
+  const [selectedDate, setSelectedDate] = useState(targetDate || businessDate || pmsBusinessDate);
   const [reportData, setReportData] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [usingFallback, setUsingFallback] = useState(false);
+  const [requestedCurrency, setRequestedCurrency] = useState('');
   const [error, setError] = useState(null);
   const [showBreakdownModal, setShowBreakdownModal] = useState(false);
+  const requestId = useRef(0);
+  useEffect(() => { setSelectedDate(targetDate || businessDate || pmsBusinessDate); }, [targetDate, businessDate, pmsBusinessDate]);
 
-  // Props'lardan client-side fallback üretebilir miyiz? (PMSModule sekmesi → evet, standalone → hayır)
-  const hasFallbackData = Array.isArray(rooms) || Array.isArray(bookings) || Array.isArray(arrivals) || Array.isArray(departures) || Array.isArray(inhouse);
-  const loadFlashReport = useCallback(async () => {
+  const currencies = [...new Set([...Object.keys(reportData?.revenue?.total_by_currency || {}), ...Object.keys(reportData?.revenue?.collected_by_currency || {})])].sort();
+  const currencyCode = currencies.includes(requestedCurrency) ? requestedCurrency : currencies.includes(tenantCurrency) ? tenantCurrency : currencies[0] || tenantCurrency;
+  const displayReport = selectFlashCurrency(reportData, currencyCode);
+  const fmtMoney = amount => formatCurrency(amount, currencyCode, { locale: 'tr-TR', decimals: 2, compactDecimals: false });
+  const loadFlashReport = useCallback(async (force = false) => {
+    const request = ++requestId.current;
     setLoading(true);
-    setUsingFallback(false);
     setError(null);
-    const effectiveDate = targetDate || (showDatePicker ? selectedDate : businessDate) || localDateKey();
     try {
-      const url = targetDate || showDatePicker ? `/reports/flash-report?date=${targetDate || selectedDate}` : '/reports/flash-report';
+      const base = targetDate || showDatePicker ? `/reports/flash-report?date=${targetDate || selectedDate}` : '/reports/flash-report';
+      const url = force ? `${base}${base.includes('?') ? '&' : '?'}nocache=1` : base;
       const res = await axios.get(url);
+      if (request !== requestId.current) return;
       if (res.data && res.data.occupancy) {
         setReportData(res.data);
       } else {
         throw new Error('empty');
       }
     } catch (err) {
-      if (!hasFallbackData) {
-        // Standalone: yanıltıcı 0'lı rapor üretmek yerine açık hata göster
-        setReportData(null);
-        setError(err?.response?.data?.detail || err?.message || 'Sunucuya ulaşılamadı');
-        return;
-      }
-      // PMS sekmesi: gerçek prop'lardan offline fallback
-      setReportData(buildFallbackFlashReport({
-        targetDate: effectiveDate,
-        rooms,
-        bookings,
-        arrivals,
-        departures,
-        inhouse,
-      }));
-      setUsingFallback(true);
+      if (request !== requestId.current) return;
+      setReportData(null);
+      setError(err?.response?.data?.detail || err?.message || 'Sunucuya ulaşılamadı');
     } finally {
-      setLoading(false);
+      if (request === requestId.current) setLoading(false);
     }
-  }, [showDatePicker, selectedDate, targetDate, businessDate, rooms, bookings, arrivals, departures, inhouse, hasFallbackData]);
+  }, [showDatePicker, selectedDate, targetDate]);
   useEffect(() => {
     loadFlashReport();
+    return () => { requestId.current += 1; };
   }, [loadFlashReport]);
   const printReport = () => {
     const printWindow = window.open('', '_blank');
     if (!printWindow || !reportData) return;
-    const d = reportData;
+    const d = displayReport;
     const totalRev = d.revenue?.total || 0;
     const collected = Number(d.revenue?.collected || 0);
     const openBalance = Math.max(0, totalRev - collected);
@@ -251,7 +141,7 @@ const FlashReportContent = ({
             <p className="text-base font-semibold text-red-800">{t('cm.components_pms_FlashReportContent.rapor_yuklenemedi')}</p>
             <p className="text-sm text-red-700 mt-1">{error}</p>
           </div>
-          <Button variant="outline" size="sm" onClick={loadFlashReport} disabled={loading}>
+          <Button variant="outline" size="sm" onClick={() => loadFlashReport(true)} disabled={loading}>
             <RefreshCw className={`w-4 h-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} /> Tekrar Dene
           </Button>
         </CardContent>
@@ -262,7 +152,7 @@ const FlashReportContent = ({
         {t('cm.components_pms_FlashReportContent.henuz_veri_yok')}
       </div>;
   }
-  const d = reportData;
+  const d = displayReport;
   const totalRev = d.revenue?.total || 0;
   const collected = Number(d.revenue?.collected || 0);
   const outstandingDue = Math.max(0, totalRev - collected);
@@ -277,7 +167,8 @@ const FlashReportContent = ({
     const bookingId = booking.id || booking.booking_id;
     if (bookingId) navigate(`/app/pms?edit=${encodeURIComponent(bookingId)}#bookings`);
   };
-  const pieData = (d.departments || []).filter(dep => dep.amount > 0).map(dep => ({
+  const hasNegativeRevenue = (d.departments || []).some(dep => dep.amount < 0);
+  const pieData = (hasNegativeRevenue ? [] : d.departments || []).filter(dep => dep.amount > 0).map(dep => ({
     name: dep.name,
     value: dep.amount
   }));
@@ -287,11 +178,10 @@ const FlashReportContent = ({
         <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="text-sm text-gray-600">
           {t('cm.components_pms_FlashReportContent.tarih')} <span className="font-medium text-gray-900">{d.date}</span>
-          {usingFallback && <span className="ml-2 text-xs text-amber-600">{t('cm.components_pms_FlashReportContent.cevrimdisi_veri_anlik_degil')}</span>}
         </div>
         <div className="flex items-center gap-2">
           {showDatePicker && <input type="date" value={selectedDate} onChange={e => setSelectedDate(e.target.value)} className="px-3 py-1.5 border rounded-lg text-sm" data-testid="flash-date-picker" />}
-          <Button variant="outline" size="sm" onClick={loadFlashReport} disabled={loading} data-testid="flash-refresh">
+          <Button variant="outline" size="sm" onClick={() => loadFlashReport(true)} disabled={loading} data-testid="flash-refresh">
             <RefreshCw className={`w-4 h-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} /> {t('cm.components_pms_FlashReportContent.yenile')}
           </Button>
           <Button variant="outline" size="sm" onClick={printReport} data-testid="flash-print">
@@ -301,6 +191,13 @@ const FlashReportContent = ({
         </div>
       )}
 
+      {currencies.length > 0 && <label className="flex flex-wrap items-center gap-3 text-sm">
+        Rapor para birimi
+        <select value={currencyCode} onChange={event => setRequestedCurrency(event.target.value)} className="rounded-md border bg-background px-3 py-2">
+          {currencies.map(code => <option key={code} value={code}>{code}</option>)}
+        </select>
+        <span className="text-muted-foreground">Tutarlar ayrı para birimleridir; kur dönüşümü yapılmaz.</span>
+      </label>}
       <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600" data-testid="flash-scope">
         <p className="font-semibold text-slate-800">Rapor kapsamı: {d.scope?.business_date || d.date}</p>
         <p className="mt-1">Tüm göstergeler seçili iş gününe aittir. Gelir o gün kaydedilen harcamaları, tahsilat ise o gün alınan ödemeleri gösterir; farklı rezervasyon dönemlerinden avans veya borç tahsilatı içerebilir.</p>
@@ -326,7 +223,7 @@ const FlashReportContent = ({
               <div>
                 <p className="text-xs text-emerald-700 font-medium">ADR</p>
                 <p className="text-2xl font-bold text-emerald-900">{fmtMoney(d.kpi?.adr || 0)}</p>
-                <p className="text-xs text-emerald-600 mt-0.5">Dolu oda başına oda geliri</p>
+                <p className="text-xs text-emerald-600 mt-0.5">{currencies.length > 1 ? 'Seçilen para biriminin satılan oda başına katkısı' : 'Satılan oda başına oda geliri'}</p>
               </div>
               <DollarSign className="w-7 h-7 text-emerald-500" />
             </div>
@@ -432,6 +329,7 @@ const FlashReportContent = ({
                   </PieChart>
                 </ResponsiveContainer>
               </div>}
+            {hasNegativeRevenue && <p className="text-xs text-muted-foreground">İade / eksi gelir bulunduğundan pasta grafiği gösterilmez; aşağıdaki net tutarları inceleyin.</p>}
             <div className="space-y-1.5">
               {(d.departments || []).map((dep, i) => {
               const pct = totalRev > 0 ? (dep.amount || 0) / totalRev * 100 : 0;
@@ -545,14 +443,14 @@ const FlashReportContent = ({
         </Card>}
 
       <div className="text-[11px] text-gray-400 text-right">
-        Para birimi: {currencyCode} ({currencySymbol})
+        Para birimi: {currencyCode}
       </div>
 
       {showBreakdownModal && reportData?.revenue?.room_revenue_breakdown && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4 print:hidden" onClick={() => setShowBreakdownModal(false)}>
           <div className="bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between p-4 border-b">
-              <h3 className="font-semibold text-lg text-slate-800">Oda Geliri Detayları (In-House Odalar)</h3>
+              <h3 className="font-semibold text-lg text-slate-800">Rezervasyon Gece Tutarları (İşlenmiş Gelir Değildir)</h3>
               <button onClick={() => setShowBreakdownModal(false)} className="p-1 hover:bg-gray-100 rounded-full">
                 <X className="w-5 h-5 text-gray-500" />
               </button>
@@ -569,7 +467,7 @@ const FlashReportContent = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {reportData.revenue.room_revenue_breakdown.map((item, i) => (
+                  {d.revenue.room_revenue_breakdown.map((item, i) => (
                     <tr key={i} className="hover:bg-slate-50 transition-colors">
                       <td className="px-4 py-2 font-medium">{item.room_number || '?'}</td>
                       <td className="px-4 py-2">{item.guest_name || 'İsimsiz'}</td>
@@ -581,8 +479,8 @@ const FlashReportContent = ({
                 </tbody>
                 <tfoot className="bg-slate-50 sticky bottom-0 border-t border-gray-200">
                   <tr>
-                    <td colSpan={4} className="px-4 py-3 text-right font-bold text-slate-700">TOPLAM GÜNLÜK ODA GELİRİ:</td>
-                    <td className="px-4 py-3 text-right text-lg font-bold text-emerald-700">{fmtMoney(reportData.revenue.room_revenue_breakdown.reduce((sum, item) => sum + (item.daily_rate || 0), 0))}</td>
+                    <td colSpan={4} className="px-4 py-3 text-right font-bold text-slate-700">TOPLAM REZERVASYON GECE TUTARI:</td>
+                    <td className="px-4 py-3 text-right text-lg font-bold text-emerald-700">{fmtMoney(d.revenue.room_revenue_breakdown.reduce((sum, item) => sum + (item.daily_rate || 0), 0))}</td>
                   </tr>
                 </tfoot>
               </table>

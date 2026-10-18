@@ -1,6 +1,5 @@
 """Auto-split from reports.py — backward-compatible sub-router."""
 
-import asyncio
 import logging
 from datetime import date, timedelta
 
@@ -14,7 +13,11 @@ from core.database import db
 from core.helpers import require_module
 from core.security import get_current_user
 from models.schemas import User
-from modules.pms_core.reporting_financials import effective_collection, effective_revenue_adjustment
+from modules.pms_core.report_money import currency_code
+from modules.pms_core.reporting_financials import deduplicate_report_payments, effective_collection, effective_revenue_adjustment
+from modules.pms_core.reporting_ledger import charge_amount as _charge_amount
+from modules.pms_core.reporting_ledger import charge_category as _charge_category
+from modules.pms_core.reporting_ledger import posted_revenue_rows
 from modules.pms_core.role_permission_service import require_op
 from modules.pms_core.stay_night_metrics import (
     NON_COMMERCIAL_STATUSES,
@@ -69,14 +72,9 @@ def _effective_payment(payment: dict) -> float:
 
 
 def _currency_code(row: dict) -> str:
-    return str(row.get("currency") or "TRY").strip().upper() or "TRY"
+    return currency_code(row.get("currency"))
 
 
-def _charge_amount(row: dict) -> float:
-    for field in ("total", "charge_amount", "amount"):
-        if row.get(field) is not None:
-            return float(row[field] or 0)
-    return 0.0
 
 
 def _single_currency_value(totals: dict[str, float]) -> float | None:
@@ -84,67 +82,12 @@ def _single_currency_value(totals: dict[str, float]) -> float | None:
     return round(nonzero[0], 2) if len(nonzero) == 1 else (0.0 if not nonzero else None)
 
 
-async def _posted_revenue_rows(tenant_id: str, start: date, end: date) -> list[dict]:
-    """Return posted folio, manual-extra and untransferred POS revenue once."""
-    start_text = start.isoformat()
-    next_day = (end + timedelta(days=1)).isoformat()
-    charge_query = {
-        "tenant_id": tenant_id,
-        "voided": {"$ne": True},
-        "$or": [
-            {"business_date": {"$gte": start_text, "$lt": next_day}},
-            {"business_date": {"$exists": False}, "date": {"$gte": start_text, "$lt": next_day}},
-            {"business_date": None, "date": {"$gte": start_text, "$lt": next_day}},
-            {"business_date": {"$exists": False}, "charge_date": {"$gte": start_text, "$lt": next_day}},
-            {"business_date": {"$exists": False}, "created_at": {"$gte": start_text, "$lt": next_day}},
-            {"business_date": None, "created_at": {"$gte": start_text, "$lt": next_day}},
-        ],
-    }
-    projection = {
-        "_id": 0,
-        "charge_category": 1,
-        "category": 1,
-        "charge_type": 1,
-        "total": 1,
-        "charge_amount": 1,
-        "amount": 1,
-        "currency": 1,
-        "source_pos_order_id": 1,
-    }
-    folio_rows, extra_rows, pos_rows = await asyncio.gather(
-        # Financial reports may cover high-volume F&B and chain properties.
-        # A hard cap silently underreports revenue, so preserve every matching
-        # ledger row instead of treating 10,000 as a reporting limit.
-        db.folio_charges.find(charge_query, projection).to_list(None),
-        db.extra_charges.find(charge_query, projection).to_list(None),
-        db.pos_orders.find(
-            {
-                "tenant_id": tenant_id,
-                "status": {"$in": ["closed", "completed", "served", "paid"]},
-                "$or": [
-                    {"business_date": {"$gte": start_text, "$lt": next_day}},
-                    {"closed_at": {"$gte": start_text, "$lt": next_day}},
-                    {"created_at": {"$gte": start_text, "$lt": next_day}},
-                ],
-            },
-            {"_id": 0, "id": 1, "total_amount": 1, "grand_total": 1, "currency": 1},
-        ).to_list(None),
-    )
-    represented_pos_ids = {str(row["source_pos_order_id"]) for row in folio_rows if row.get("source_pos_order_id")}
-    direct_pos_rows = [
-        {
-            "category": "fnb",
-            "total": row.get("total_amount") if row.get("total_amount") is not None else row.get("grand_total", 0),
-            "currency": row.get("currency") or "TRY",
-        }
-        for row in pos_rows
-        if str(row.get("id") or "") not in represented_pos_ids
-    ]
-    return [*folio_rows, *extra_rows, *direct_pos_rows]
+async def _posted_revenue_rows(tenant_id: str, start: date, end: date, *, database=None) -> list[dict]:
+    return await posted_revenue_rows(tenant_id, start, end, database=database if database is not None else db)
 
 
 @sub_router.get("/reports/occupancy")
-@cached(ttl=600, key_prefix="report_occupancy")  # Cache for 10 minutes
+@cached(ttl=600, key_prefix="report_occupancy_v2")
 async def get_occupancy_report(
     start_date: str,
     end_date: str,
@@ -175,7 +118,7 @@ async def get_occupancy_report(
 
 
 @sub_router.get("/reports/revenue")
-@cached(ttl=600, key_prefix="report_revenue")  # Cache for 10 minutes
+@cached(ttl=600, key_prefix="report_revenue_v2")
 async def get_revenue_report(
     start_date: str | None = None,
     end_date: str | None = None,
@@ -200,7 +143,7 @@ async def get_revenue_report(
     total_revenue_by_currency: dict[str, float] = {}
     room_revenue_by_currency: dict[str, float] = {}
     for charge in revenue_rows:
-        charge_type = charge.get("charge_category") or charge.get("category") or charge.get("charge_type") or "other"
+        charge_type = _charge_category(charge)
         amount = _charge_amount(charge)
         currency = _currency_code(charge)
         revenue_by_type_currency.setdefault(charge_type, {})[currency] = revenue_by_type_currency.setdefault(charge_type, {}).get(currency, 0.0) + amount
@@ -253,7 +196,7 @@ async def get_revenue_report(
 
 
 @sub_router.get("/reports/daily-summary")
-@cached(ttl=30, key_prefix="report_daily_summary")  # Cache for 30 seconds
+@cached(ttl=30, key_prefix="report_daily_summary_v2")
 async def get_daily_summary(
     date_str: str | None = None,
     current_user: User = Depends(get_current_user),
@@ -288,7 +231,7 @@ async def get_daily_summary(
     ).to_list(None)
     collections_by_currency: dict[str, float] = {}
     adjustments_by_currency: dict[str, float] = {}
-    for payment in payments:
+    for payment in deduplicate_report_payments(payments):
         currency = _currency_code(payment)
         collections_by_currency[currency] = collections_by_currency.get(currency, 0.0) + _effective_payment(payment)
         adjustments_by_currency[currency] = adjustments_by_currency.get(currency, 0.0) + effective_revenue_adjustment(payment)
@@ -323,7 +266,7 @@ async def get_daily_summary(
 
 
 @sub_router.get("/reports/forecast")
-@cached(ttl=900, key_prefix="report_forecast")  # Cache for 15 min
+@cached(ttl=900, key_prefix="report_forecast_v2")
 async def get_forecast(
     days: int = 30,
     current_user: User = Depends(get_current_user),
@@ -344,6 +287,8 @@ async def get_forecast(
             "total_rooms": row["total_rooms"],
             "occupancy_rate": row["occupancy_rate"],
             "expected_revenue": row["revenue"],
+            "expected_revenue_by_currency": row.get("revenue_by_currency", {}),
+            "mixed_currency": row.get("mixed_currency", False),
         }
         for row in metrics
     ]

@@ -491,9 +491,10 @@ async def _build_report_payload(schedule: dict, now: datetime) -> dict:
     Veri toplama hataları çağırana aktarılır; hatalı/boş rapor başarıyla
     gönderilmiş gibi kaydedilmez.
     """
-    from core.business_date_service import accounting_day_match, ensure_business_date_initialized
+    from core.business_date_service import ensure_business_date_initialized
     from core.database import _raw_db as raw_db
     from core.tenant_currency import get_tenant_currency
+    from modules.pms_core.report_money import add_amount, amounts_text
     from modules.pms_core.stay_night_metrics import load_stay_night_metrics
 
     tenant_id = schedule.get("tenant_id") or "default"
@@ -543,41 +544,32 @@ async def _build_report_payload(schedule: dict, now: datetime) -> dict:
                 {"label": "Doluluk %", "value": occ},
             ]
         elif rtype in ("revenue", "adr_revpar", "financial"):
-            charges = await raw_db.folio_charges.find(
-                {
-                    "tenant_id": tenant_id,
-                    "voided": {"$ne": True},
-                    **accounting_day_match(
-                        today_iso,
-                        {"date": today_iso},
-                        {"date": {"$gte": day_start, "$lt": day_end}},
-                        {"created_at": {"$gte": day_start.isoformat(), "$lt": day_end.isoformat()}},
-                    ),
-                },
-                {"_id": 0, "total": 1, "amount": 1, "charge_category": 1, "charge_type": 1},
-            ).to_list(50000)
-            total = round(sum(float(item.get("total") or item.get("amount") or 0) for item in charges), 2)
-            room_revenue = round(
-                sum(
-                    float(item.get("total") or item.get("amount") or 0)
-                    for item in charges
-                    if str(item.get("charge_category") or item.get("charge_type") or "").lower()
-                    in {"room", "room_charge", "accommodation", "lodging", "konaklama"}
-                ),
-                2,
-            )
+            from modules.pms_core.reporting_ledger import charge_amount as _charge_amount
+            from modules.pms_core.reporting_ledger import charge_category as _charge_category
+            from modules.pms_core.reporting_ledger import posted_revenue_rows as _posted_revenue_rows
+            charges = await _posted_revenue_rows(tenant_id, day_start.date(), day_start.date(), database=raw_db)
+            totals, room_totals = {}, {}
+            for item in charges:
+                amount = _charge_amount(item)
+                code = item.get("currency") or currency_code
+                add_amount(totals, code, amount)
+                if _charge_category(item) == "room":
+                    add_amount(room_totals, code, amount)
             metrics = (await load_stay_night_metrics(raw_db, tenant_id, day_start.date(), day_start.date(), actual_only=True))[0]
-            occupied_rooms = metrics["occupied_rooms"]
+            occupied_rooms = metrics.get("sold_rooms", metrics["occupied_rooms"])
             total_rooms = metrics["total_rooms"]
-            effective_room_revenue = room_revenue if room_revenue else metrics["revenue"]
-            adr = round(effective_room_revenue / occupied_rooms, 2) if occupied_rooms else 0
-            revpar = round(effective_room_revenue / total_rooms, 2) if total_rooms else 0
+            effective_room_totals = room_totals if room_totals else metrics.get("revenue_by_currency", {currency_code: metrics.get("revenue") or 0})
+            adr = {code: float(amount) / occupied_rooms if occupied_rooms else 0 for code, amount in effective_room_totals.items()}
+            revpar = {code: float(amount) / total_rooms if total_rooms else 0 for code, amount in effective_room_totals.items()}
+            notes = "Para birimleri ayrı gösterilir; kur dönüşümü yapılmaz. ADR, satılmış oda-gece üzerinden hesaplanır."
+            if not room_totals:
+                notes += " Oda geliri henüz işlenmediğinden ADR/RevPAR konaklama tahakkukuna dayanır."
             rows = [
                 {"label": "PMS iş tarihi", "value": day_start.strftime("%d.%m.%Y")},
-                {"label": f"Toplam gelir ({currency_code})", "value": f"{total:,.2f}".replace(",", ".")},
-                {"label": "Folyo kayıt sayısı", "value": len(charges)},
-                {"label": "ADR (Ortalama Günlük Fiyat)", "value": adr},
-                {"label": "RevPAR (Oda Başı Gelir)", "value": revpar},
+                {"label": "Toplam gelir (para birimine göre)", "value": amounts_text(totals)},
+                {"label": "Gelir işlem sayısı", "value": len(charges)},
+                {"label": "ADR (Ortalama Günlük Fiyat)", "value": amounts_text(adr)},
+                {"label": "RevPAR (Oda Başı Gelir)", "value": amounts_text(revpar)},
             ]
         elif rtype == "guest_analytics":
             new_guests = await raw_db.guests.count_documents(

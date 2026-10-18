@@ -21,14 +21,16 @@ from fastapi.security import HTTPBearer
 from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
 
 from core.business_date_service import accounting_day_match, accounting_period_match, ensure_business_date_initialized
+from core.csv_safe import xlsx_safe
 from core.database import db
 from core.helpers import require_module
 from core.security import get_current_user
-from core.utils import _XLSX_MAX_CELL_LEN, calculate_folio_balance, create_excel_workbook, excel_response
+from core.utils import _XLSX_MAX_CELL_LEN, _xlsx_sanitize_str, calculate_folio_balance, create_excel_workbook, excel_response
 from models.schemas import User
+from modules.pms_core.report_money import add_amount, currency_code, rounded, rounded_totals, single_amount
 from modules.pms_core.reporting_financials import REPORTING_CURRENCY, reporting_collection_summary
 from modules.pms_core.role_permission_service import RolePermissionService, require_op
-from modules.pms_core.stay_night_metrics import NON_COMMERCIAL_STATUSES, as_date, booking_nights, load_stay_night_metrics
+from modules.pms_core.stay_night_metrics import NON_COMMERCIAL_STATUSES, allocated_revenue_for_night, as_date, booking_nights, load_stay_night_metrics
 
 logger = logging.getLogger(__name__)
 
@@ -84,9 +86,42 @@ security = HTTPBearer()
 router = APIRouter(prefix="/api", tags=["departments"])
 
 
+def _report_dates(start_date, end_date):
+    try:
+        start = datetime.fromisoformat(str(start_date)[:10]).date()
+        end = datetime.fromisoformat(str(end_date)[:10]).date()
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail="Tarihler YYYY-MM-DD formatında olmalı") from exc
+    if start > end:
+        raise HTTPException(status_code=422, detail="Başlangıç tarihi bitiş tarihinden sonra olamaz")
+    return start, end
+
+
+def _booking_currency_stats(bookings, field, fallback):
+    groups = {}
+    for booking in bookings:
+        nights = booking_nights(booking)
+        if not nights:
+            continue
+        key = str(booking.get(field) or fallback)
+        code = currency_code(booking.get("currency"))
+        entry = groups.setdefault(key, {"bookings": 0, "nights": 0, "revenue_by_currency": {}, "nights_by_currency": {}, "bookings_by_currency": {}})
+        entry["bookings"] += 1
+        entry["nights"] += nights
+        entry["nights_by_currency"][code] = entry["nights_by_currency"].get(code, 0) + nights
+        entry["bookings_by_currency"][code] = entry["bookings_by_currency"].get(code, 0) + 1
+        add_amount(entry["revenue_by_currency"], code, 0 if booking.get("is_complimentary") else booking.get("total_amount", 0))
+    for entry in groups.values():
+        entry["revenue_by_currency"] = rounded_totals(entry["revenue_by_currency"])
+        entry["adr_by_currency"] = {code: rounded(amount / entry["nights_by_currency"][code]) for code, amount in entry["revenue_by_currency"].items()}
+        entry["revenue"] = single_amount(entry["revenue_by_currency"])
+        entry["adr"] = single_amount(entry["adr_by_currency"])
+    return groups
+
+
 # ── GET /reports/market-segment ──
 @router.get("/reports/market-segment")
-@cached(ttl=900, key_prefix="report_market_segment")  # Cache for 15 minutes
+@cached(ttl=900, key_prefix="report_market_segment_v2")
 async def get_market_segment_report(
     start_date: str,
     end_date: str,
@@ -95,60 +130,23 @@ async def get_market_segment_report(
     _nocache: bool = Query(False, alias="nocache"),
 ):
     """Market Segment & Rate Type Performance Report"""
-    start = datetime.fromisoformat(start_date)
-    end = datetime.fromisoformat(end_date)
-
-    if start.date() > end.date():
-        raise HTTPException(status_code=422, detail="Başlangıç tarihi bitiş tarihinden sonra olamaz")
+    start, end = _report_dates(start_date, end_date)
     bookings = await db.bookings.find(
         {
             "tenant_id": current_user.tenant_id,
-            "check_in": {"$gte": start.date().isoformat(), "$lt": (end.date() + timedelta(days=1)).isoformat()},
+            "check_in": {"$gte": start.isoformat(), "$lt": (end + timedelta(days=1)).isoformat()},
             "status": {"$nin": list(NON_COMMERCIAL_STATUSES)},
         }
     ).to_list(None)
 
-    # Aggregate by market segment
-    segment_data = {}
-    rate_type_data = {}
-
-    for booking in bookings:
-        segment = booking.get("market_segment", "other")
-        rate_type = booking.get("rate_type", "bar")
-
-        # Calculate nights
-        nights = booking_nights(booking)
-        if not nights:
-            continue
-        revenue = float(booking.get("total_amount") or 0)
-
-        # Market segment aggregation
-        if segment not in segment_data:
-            segment_data[segment] = {"bookings": 0, "nights": 0, "revenue": 0}
-        segment_data[segment]["bookings"] += 1
-        segment_data[segment]["nights"] += nights
-        segment_data[segment]["revenue"] += revenue
-
-        # Rate type aggregation
-        if rate_type not in rate_type_data:
-            rate_type_data[rate_type] = {"bookings": 0, "nights": 0, "revenue": 0}
-        rate_type_data[rate_type]["bookings"] += 1
-        rate_type_data[rate_type]["nights"] += nights
-        rate_type_data[rate_type]["revenue"] += revenue
-
-    # Calculate averages
-    for segment in segment_data:
-        segment_data[segment]["adr"] = round(segment_data[segment]["revenue"] / segment_data[segment]["nights"], 2) if segment_data[segment]["nights"] > 0 else 0
-
-    for rate_type in rate_type_data:
-        rate_type_data[rate_type]["adr"] = round(rate_type_data[rate_type]["revenue"] / rate_type_data[rate_type]["nights"], 2) if rate_type_data[rate_type]["nights"] > 0 else 0
+    segment_data = _booking_currency_stats(bookings, "market_segment", "other")
+    rate_type_data = _booking_currency_stats(bookings, "rate_type", "bar")
 
     return {"start_date": start_date, "end_date": end_date, "total_bookings": len(bookings), "market_segments": segment_data, "rate_types": rate_type_data}
 
 
 # ── GET /reports/market-segment/excel ──
 @router.get("/reports/market-segment/excel")
-@cached(ttl=900, key_prefix="report_market_segment_excel")  # Cache for 15 min
 async def export_market_segment_excel(
     start_date: str,
     end_date: str,
@@ -156,7 +154,7 @@ async def export_market_segment_excel(
     _perm=Depends(require_op("view_finance_reports")),  # v84 DT: market segment export
 ):
     """Export Market Segment Report to Excel"""
-    report_data = await get_market_segment_report(start_date, end_date, current_user)
+    report_data = await get_market_segment_report.__wrapped__(start_date, end_date, current_user)
 
     # Create workbook with multiple sheets
     wb = Workbook()
@@ -165,13 +163,14 @@ async def export_market_segment_excel(
     ws1 = wb.active
     ws1.title = "Market Segments"
 
-    headers1 = ["Segment", "Bookings", "Nights", "Revenue", "ADR"]
+    headers1 = ["Segment", "Currency", "Bookings", "Nights", "Revenue", "ADR"]
     data1 = []
     for segment, stats in report_data["market_segments"].items():
-        data1.append([segment.title(), stats["bookings"], stats["nights"], round(stats["revenue"], 2), stats["adr"]])
+        for code, amount in stats["revenue_by_currency"].items():
+            data1.append([_xlsx_sanitize_str(xlsx_safe(segment.title())), code, stats["bookings_by_currency"][code], stats["nights_by_currency"][code], amount, stats["adr_by_currency"][code]])
 
     # Add title and headers
-    ws1.merge_cells("A1:E1")
+    ws1.merge_cells("A1:F1")
     title_cell = ws1["A1"]
     title_cell.value = f"Market Segment Report ({start_date} to {end_date})"
     title_cell.font = Font(size=14, bold=True)
@@ -191,12 +190,13 @@ async def export_market_segment_excel(
     # Sheet 2: Rate Types
     ws2 = wb.create_sheet("Rate Types")
 
-    headers2 = ["Rate Type", "Bookings", "Nights", "Revenue", "ADR"]
+    headers2 = ["Rate Type", "Currency", "Bookings", "Nights", "Revenue", "ADR"]
     data2 = []
     for rate_type, stats in report_data["rate_types"].items():
-        data2.append([rate_type.upper(), stats["bookings"], stats["nights"], round(stats["revenue"], 2), stats["adr"]])
+        for code, amount in stats["revenue_by_currency"].items():
+            data2.append([_xlsx_sanitize_str(xlsx_safe(rate_type.upper())), code, stats["bookings_by_currency"][code], stats["nights_by_currency"][code], amount, stats["adr_by_currency"][code]])
 
-    ws2.merge_cells("A1:E1")
+    ws2.merge_cells("A1:F1")
     title_cell = ws2["A1"]
     title_cell.value = f"Rate Type Report ({start_date} to {end_date})"
     title_cell.font = Font(size=14, bold=True)
@@ -259,27 +259,29 @@ async def _compute_company_aging(tenant_id: str) -> dict:
         {"tenant_id": tenant_id, "folio_type": "company", "status": "open"}
     ).to_list(None)
 
-    company_balances: dict[str, dict] = {}
+    company_balances: dict[tuple[str | None, str], dict] = {}
+    total_by_currency = {}
+    failed_folios = []
 
     for folio in folios:
         try:
             balance = await calculate_folio_balance(folio["id"], tenant_id)
         except Exception:
             logger.exception("calculate_folio_balance failed for folio=%s tenant=%s", folio.get("id"), tenant_id)
+            failed_folios.append(str(folio.get("id")))
             continue
 
         if balance <= 0:
             continue
 
         company_id = folio.get("company_id")
-        if not company_id:
-            continue
 
         # Task #246: tenant_id scope on company lookup (architect review #3) —
         # company ID collisions across tenants would otherwise leak metadata.
-        company = await db.companies.find_one({"id": company_id, "tenant_id": tenant_id}, {"_id": 0})
+        company = await db.companies.find_one({"id": company_id, "tenant_id": tenant_id}, {"_id": 0}) if company_id else None
         if not company:
-            continue
+            # Missing metadata must never make a real receivable disappear.
+            company = {"name": "Şirket kaydı bulunamadı", "corporate_code": "—"}
 
         aging_anchor = _coerce_to_date(folio.get("due_date") or folio.get("invoice_date") or folio.get("created_at"))
         if aging_anchor is None:
@@ -297,8 +299,12 @@ async def _compute_company_aging(tenant_id: str) -> dict:
         else:
             aging_bucket = "30+ days"
 
-        if company_id not in company_balances:
-            company_balances[company_id] = {
+        code = currency_code(folio.get("currency"))
+        group_key = (company_id, code)
+        if group_key not in company_balances:
+            company_balances[group_key] = {
+                "company_id": company_id,
+                "currency": code,
                 "company_name": company.get("name", "N/A"),
                 "corporate_code": company.get("corporate_code", "N/A"),
                 "total_balance": 0,
@@ -311,29 +317,30 @@ async def _compute_company_aging(tenant_id: str) -> dict:
                 "folio_count": 0,
             }
 
-        company_balances[company_id]["total_balance"] += balance
-        company_balances[company_id]["aging"][aging_bucket] += balance
-        company_balances[company_id]["folio_count"] += 1
+        company_balances[group_key]["total_balance"] += balance
+        company_balances[group_key]["aging"][aging_bucket] += balance
+        company_balances[group_key]["folio_count"] += 1
+        add_amount(total_by_currency, code, balance)
 
     sorted_companies = sorted(
         company_balances.values(),
-        key=lambda x: x["total_balance"],
-        reverse=True,
+        key=lambda x: (x["currency"], -x["total_balance"], x["company_name"]),
     )
-
-    total_ar = sum(c["total_balance"] for c in sorted_companies)
 
     return {
         "report_date": today.isoformat(),
-        "total_ar": round(total_ar, 2),
-        "company_count": len(sorted_companies),
+        "total_ar": single_amount(total_by_currency) if not failed_folios else None,
+        "total_ar_by_currency": rounded_totals(total_by_currency),
+        "company_count": len({key[0] for key in company_balances}),
         "companies": sorted_companies,
+        "complete": not failed_folios,
+        "failed_folio_ids": failed_folios,
     }
 
 
 # ── GET /reports/company-aging ──
 @router.get("/reports/company-aging")
-@cached(ttl=900, key_prefix="report_company_aging")  # Cache for 15 min
+@cached(ttl=900, key_prefix="report_company_aging_v2")
 async def get_company_aging_report(
     current_user: User = Depends(get_current_user),
     _perm: None = Depends(require_op("view_finance_reports")),
@@ -368,8 +375,10 @@ async def export_company_aging_excel(
         # (Task #246 — `@cached` decorated route handler MUST NOT be invoked
         # directly; cache key derivation + Depends sentinel handling are fragile).
         report_data = await _compute_company_aging(current_user.tenant_id)
+        if not report_data["complete"]:
+            raise HTTPException(status_code=503, detail="Bazı folyo bakiyeleri doğrulanamadı; eksik toplam dışa aktarılamaz")
 
-        headers = ["Company", "Corporate Code", "Total Balance", "0-7 Days", "8-14 Days", "15-30 Days", "30+ Days", "Folios"]
+        headers = ["Company", "Corporate Code", "Currency", "Total Balance", "0-7 Days", "8-14 Days", "15-30 Days", "30+ Days", "Folios"]
         data = []
 
         for company in report_data["companies"]:
@@ -377,6 +386,7 @@ async def export_company_aging_excel(
                 [
                     company["company_name"],
                     company["corporate_code"],
+                    company["currency"],
                     round(company["total_balance"], 2),
                     round(company["aging"]["0-7 days"], 2),
                     round(company["aging"]["8-14 days"], 2),
@@ -387,7 +397,8 @@ async def export_company_aging_excel(
             )
 
         # Add total row
-        data.append(["TOTAL", "", report_data["total_ar"], "", "", "", "", ""])
+        for code, total in report_data["total_ar_by_currency"].items():
+            data.append(["TOTAL", "", code, total, "", "", "", "", ""])
 
         wb = create_excel_workbook(title=f"Company Aging Report - {report_data['report_date']}", headers=headers, data=data, sheet_name="Company Aging")
 
@@ -433,10 +444,11 @@ async def export_company_aging_excel(
 
 # ── GET /reports/finance-snapshot ──
 @router.get("/reports/finance-snapshot")
-@cached(ttl=600, key_prefix="report_finance_snapshot")  # Cache for 10 min
+@cached(ttl=600, key_prefix="report_finance_snapshot_v2")
 async def get_finance_snapshot(
     current_user: User = Depends(get_current_user),
     _perm: None = Depends(require_op("view_finance_reports")),
+    _nocache: bool = Query(False, alias="nocache"),
 ):
     """
     Finance Snapshot for GM Dashboard
@@ -453,10 +465,6 @@ async def get_finance_snapshot(
         {"tenant_id": current_user.tenant_id, "folio_type": "company", "status": "open"}
     ).to_list(None)
 
-    total_pending_ar = 0
-    overdue_0_30 = 0
-    overdue_30_60 = 0
-    overdue_60_plus = 0
     overdue_invoices_count = 0
     pending_ar_by_currency: dict[str, dict[str, float | int]] = {}
 
@@ -464,7 +472,7 @@ async def get_finance_snapshot(
         balance = await calculate_folio_balance(folio["id"], current_user.tenant_id)
 
         if balance > 0:
-            currency = str(folio.get("currency") or REPORTING_CURRENCY).upper()
+            currency = currency_code(folio.get("currency"))
             bucket = pending_ar_by_currency.setdefault(
                 currency,
                 {
@@ -476,7 +484,6 @@ async def get_finance_snapshot(
                 },
             )
             bucket["total"] = float(bucket["total"]) + balance
-            total_pending_ar += balance
 
             # Calculate aging
             aging_anchor = _coerce_to_date(folio.get("due_date") or folio.get("invoice_date") or folio.get("created_at"))
@@ -487,13 +494,10 @@ async def get_finance_snapshot(
                 bucket["overdue_invoices_count"] = int(bucket["overdue_invoices_count"]) + 1
 
                 if age_days <= 30:
-                    overdue_0_30 += balance
                     bucket["0-30_days"] = float(bucket["0-30_days"]) + balance
                 elif age_days <= 60:
-                    overdue_30_60 += balance
                     bucket["30-60_days"] = float(bucket["30-60_days"]) + balance
                 else:
-                    overdue_60_plus += balance
                     bucket["60_plus_days"] = float(bucket["60_plus_days"]) + balance
 
     # 2. Calculate Today's Collections (payments received today)
@@ -541,28 +545,31 @@ async def get_finance_snapshot(
         }
     ).to_list(None)
 
-    mtd_revenue = sum(float(charge.get("total") or charge.get("amount") or 0) for charge in mtd_charges)
-    collection_rate = (mtd_collections / mtd_revenue * 100) if mtd_revenue > 0 else 0
+    mtd_revenue_by_currency = {}
+    for charge in mtd_charges:
+        add_amount(mtd_revenue_by_currency, charge.get("currency"), charge.get("total") if charge.get("total") is not None else charge.get("amount", 0))
+    # A ratio is meaningful only in one currency, and is unknown if some
+    # collections could not be converted with immutable historical evidence.
+    mtd_revenue = float(mtd_revenue_by_currency.get(REPORTING_CURRENCY, 0))
+    rate_complete = not mtd_summary["conversion_issue_count"] and not any(code != REPORTING_CURRENCY and amount for code, amount in mtd_revenue_by_currency.items())
+    collection_rate = ((mtd_collections / mtd_revenue * 100) if mtd_revenue > 0 else 0) if rate_complete else None
 
     # 5. Get Accounting Invoices (E-Fatura ready)
     pending_invoices = await db.accounting_invoices.find(
         {"tenant_id": current_user.tenant_id, "status": {"$in": ["pending", "partial"]}}
     ).to_list(None)
 
-    pending_invoice_total = sum(inv.get("total", 0) for inv in pending_invoices)
     pending_invoice_count = len(pending_invoices)
     pending_invoice_by_currency: dict[str, float] = {}
     for invoice in pending_invoices:
-        currency = str(invoice.get("currency") or REPORTING_CURRENCY).upper()
-        pending_invoice_by_currency[currency] = (
-            pending_invoice_by_currency.get(currency, 0.0) + float(invoice.get("total") or 0)
-        )
+        remaining = max(float(invoice.get("total") or 0) - float(invoice.get("amount_paid") or 0), 0)
+        add_amount(pending_invoice_by_currency, invoice.get("currency"), remaining)
 
     return {
         "report_date": today.isoformat(),
         "business_date": today.isoformat(),
         "pending_ar": {
-            "total": round(total_pending_ar, 2),
+            "total": single_amount({code: bucket["total"] for code, bucket in pending_ar_by_currency.items()}),
             "by_currency": {
                 currency: {
                     key: round(float(value), 2) if key != "overdue_invoices_count" else value
@@ -570,7 +577,7 @@ async def get_finance_snapshot(
                 }
                 for currency, totals in pending_ar_by_currency.items()
             },
-            "overdue_breakdown": {"0-30_days": round(overdue_0_30, 2), "30-60_days": round(overdue_30_60, 2), "60_plus_days": round(overdue_60_plus, 2)},
+            "overdue_breakdown": {key: single_amount({code: bucket[key] for code, bucket in pending_ar_by_currency.items()}) for key in ("0-30_days", "30-60_days", "60_plus_days")},
             "overdue_invoices_count": overdue_invoices_count,
         },
         "todays_collections": {
@@ -578,17 +585,20 @@ async def get_finance_snapshot(
         },
         "mtd_collections": {
             **mtd_summary,
-            "collection_rate_percentage": round(collection_rate, 2),
+            "collection_rate_percentage": round(collection_rate, 2) if collection_rate is not None else None,
+            "collection_rate_currency": REPORTING_CURRENCY,
+            "collection_rate_complete": rate_complete,
+            "revenue_by_currency": rounded_totals(mtd_revenue_by_currency),
         },
         "accounting_invoices": {
             "pending_count": pending_invoice_count,
-            "pending_total": round(pending_invoice_total, 2),
+            "pending_total": single_amount(pending_invoice_by_currency),
             # Preserve the established empty-state response shape. Consumers
             # only need a currency breakdown when an invoice exists.
             **(
                 {
                     "by_currency": {
-                        currency: round(total, 2) for currency, total in pending_invoice_by_currency.items()
+                        currency: rounded(total) for currency, total in pending_invoice_by_currency.items()
                     }
                 }
                 if pending_invoice_by_currency
@@ -614,15 +624,8 @@ async def export_revenue_detail_excel(
     if not start_date:
         start_date = (business_day - timedelta(days=29)).isoformat()
     _enforce(current_user, "view_finance_reports")  # Bug CU
-    start = datetime.fromisoformat(start_date)
-    end = datetime.fromisoformat(end_date)
-
-    if start.tzinfo is None:
-        start = start.replace(tzinfo=UTC)
-    if end.tzinfo is None:
-        end = end.replace(tzinfo=UTC)
-
-    next_day = (end.date() + timedelta(days=1)).isoformat()
+    start, end = _report_dates(start_date, end_date)
+    next_day = (end + timedelta(days=1)).isoformat()
     # Reservation-production detail.  Revenue is allocated once across the
     # stay nights and clipped to the requested period; checkout is exclusive.
     bookings = await db.bookings.find(
@@ -630,13 +633,16 @@ async def export_revenue_detail_excel(
             "tenant_id": current_user.tenant_id,
             "status": {"$in": ["confirmed", "guaranteed", "checked_in", "in_house", "checked_out"]},
             "check_in": {"$lt": next_day},
-            "check_out": {"$gt": start.date().isoformat()},
+            "check_out": {"$gt": start.isoformat()},
         },
         {
             "_id": 0,
             "check_in": 1,
             "check_out": 1,
             "total_amount": 1,
+            "currency": 1,
+            "is_complimentary": 1,
+            "status": 1,
             "room_type": 1,
             "rate_plan": 1,
             "rate_type": 1,
@@ -645,32 +651,31 @@ async def export_revenue_detail_excel(
         },
     ).to_list(None)
 
-    rows: dict[tuple[str, str, str], dict[str, Any]] = {}
+    rows = {}
     for b in bookings:
         ci = as_date(b.get("check_in"))
         co = as_date(b.get("check_out"))
         nights = booking_nights(b)
         if not ci or not co or not nights:
             continue
-        nightly_revenue = float(b.get("total_amount") or 0) / nights
-        cursor = max(ci, start.date())
-        stop = min(co, end.date() + timedelta(days=1))
+        cursor = max(ci, start)
+        stop = min(co, end + timedelta(days=1))
         while cursor < stop:
             room_type = str(b.get("room_type") or "Belirtilmemiş")
             rate_code = str(b.get("rate_plan") or b.get("rate_type") or "Standart")
-            key = (cursor.isoformat(), room_type, rate_code)
-            item = rows.setdefault(key, {"date": key[0], "room_type": room_type, "rate_code": rate_code, "room_nights": 0, "revenue": 0.0})
+            key = (cursor.isoformat(), room_type, rate_code, currency_code(b.get("currency")))
+            item = rows.setdefault(key, {"date": key[0], "room_type": room_type, "rate_code": rate_code, "currency": key[3], "room_nights": 0, "revenue": 0.0})
             item["room_nights"] += 1
-            item["revenue"] += nightly_revenue
+            item["revenue"] += float(allocated_revenue_for_night(b, cursor))
             cursor += timedelta(days=1)
 
     data = []
     for item in sorted(rows.values(), key=lambda row: (row["date"], row["room_type"], row["rate_code"])):
         revenue = round(item["revenue"], 2)
-        data.append([item["date"], item["room_type"], item["rate_code"], item["room_nights"], revenue, round(revenue / item["room_nights"], 2)])
+        data.append([item["date"], item["room_type"], item["rate_code"], item["currency"], item["room_nights"], revenue, round(revenue / item["room_nights"], 2)])
     wb = create_excel_workbook(
         title=f"Revenue Detail {start_date} to {end_date}",
-        headers=["Date", "Room Type", "Rate Code", "Room Nights", "Booked Revenue", "ADR"],
+        headers=["Date", "Room Type", "Rate Code", "Currency", "Room Nights", "Booked Revenue", "ADR"],
         data=data,
         sheet_name="Revenue Detail",
     )
@@ -693,26 +698,18 @@ async def export_forecast_detail_excel(
     if not end_date:
         end_date = (business_day + timedelta(days=29)).isoformat()
     _enforce(current_user, "view_finance_reports")  # Bug CU
-    start = datetime.fromisoformat(start_date).date()
-    end = datetime.fromisoformat(end_date).date()
-    if start > end:
-        raise HTTPException(status_code=422, detail="Başlangıç tarihi bitiş tarihinden sonra olamaz")
+    start, end = _report_dates(start_date, end_date)
     forecast_response = await load_stay_night_metrics(db, current_user.tenant_id, start, end)
 
-    headers = ["Date", "Expected Occupancy %", "Expected Revenue"]
+    headers = ["Date", "Expected Occupancy %", "Currency", "Expected Revenue"]
     data: list[list[Any]] = []
 
     items = forecast_response
     for item in items:
         if not isinstance(item, dict):
             continue
-        data.append(
-            [
-                item.get("date"),
-                item.get("occupancy_rate", 0),
-                item.get("revenue", 0),
-            ]
-        )
+        for code, amount in (item.get("revenue_by_currency") or {"TRY": item.get("revenue", 0)}).items():
+            data.append([item.get("date"), item.get("occupancy_rate", 0), code, amount])
 
     title = f"Forecast Detail {start_date} to {end_date}"
     wb = create_excel_workbook(
@@ -755,7 +752,7 @@ async def export_operations_daily_summary_excel(
         ["", ""],
         ["Arrivals", arrivals],
         ["Departures", departures],
-        ["In-House Guests", in_house],
+        ["Occupied Rooms", in_house],
     ]
 
     title = f"Operations Daily Summary {target.date().isoformat()}"
@@ -778,29 +775,23 @@ async def export_channel_distribution_excel(
     current_user: User = Depends(get_current_user),
     _: None = Depends(require_module("reports")),
 ):
-    if not end_date:
-        end_date = datetime.now(UTC).date().isoformat()
-    if not start_date:
-        start_date = (datetime.now(UTC) - timedelta(days=30)).date().isoformat()
     """Sales channel distribution report (OTA, Direct, Corporate, etc.)."""
     _enforce(current_user, "view_finance_reports")  # Bug CU
-    start = datetime.fromisoformat(start_date)
-    end = datetime.fromisoformat(end_date)
-
-    if start.tzinfo is None:
-        start = start.replace(tzinfo=UTC)
-    if end.tzinfo is None:
-        end = end.replace(tzinfo=UTC)
+    state = await ensure_business_date_initialized(db, current_user.tenant_id)
+    business_day = datetime.fromisoformat(str(state["business_date"])[:10]).date()
+    start, end = _report_dates(start_date or (business_day - timedelta(days=29)).isoformat(), end_date or business_day.isoformat())
+    start_date, end_date = start.isoformat(), end.isoformat()
 
     bookings = await db.bookings.find(
         {
             "tenant_id": current_user.tenant_id,
-            "status": {"$in": ["confirmed", "guaranteed", "checked_in", "checked_out"]},
-            "check_in": {"$gte": start.date().isoformat(), "$lt": (end.date() + timedelta(days=1)).isoformat()},
+            "status": {"$in": ["confirmed", "guaranteed", "checked_in", "in_house", "checked_out"]},
+            "check_in": {"$gte": start.isoformat(), "$lt": (end + timedelta(days=1)).isoformat()},
         },
         {
             "_id": 0,
             "total_amount": 1,
+            "currency": 1,
             "channel": 1,
             "booking_source": 1,
             "source_channel": 1,
@@ -813,19 +804,25 @@ async def export_channel_distribution_excel(
 
     for b in bookings:
         channel = str(b.get("ota_channel") or b.get("source_channel") or b.get("booking_source") or b.get("channel") or "DIRECT")
-        if channel not in channel_stats:
-            channel_stats[channel] = {
+        code = currency_code(b.get("currency"))
+        group_key = (channel, code)
+        if group_key not in channel_stats:
+            channel_stats[group_key] = {
                 "channel": channel,
+                "currency": code,
                 "bookings": 0,
                 "revenue": 0.0,
             }
-        channel_stats[channel]["bookings"] += 1
-        channel_stats[channel]["revenue"] += b.get("total_amount") or 0.0
+        channel_stats[group_key]["bookings"] += 1
+        channel_stats[group_key]["revenue"] += float(b.get("total_amount") or 0.0)
 
-    total_revenue = sum(v["revenue"] for v in channel_stats.values()) or 1.0
+    total_revenue = {}
+    for row in channel_stats.values():
+        add_amount(total_revenue, row["currency"], row["revenue"])
 
     headers = [
         "Channel",
+        "Currency",
         "Bookings",
         "Revenue",
         "Share %",
@@ -833,10 +830,12 @@ async def export_channel_distribution_excel(
 
     data: list[list[Any]] = []
     for key, row in sorted(channel_stats.items(), key=lambda x: x[0]):
-        share = (row["revenue"] / total_revenue) * 100.0
+        currency_total = float(total_revenue[row["currency"]])
+        share = row["revenue"] / currency_total * 100 if currency_total else 0
         data.append(
             [
                 row["channel"],
+                row["currency"],
                 row["bookings"],
                 round(row["revenue"], 2),
                 round(share, 2),
@@ -893,6 +892,8 @@ async def _compute_mtd_cost_summary(tenant_id: str) -> dict:
 
     # Aggregate costs by category
     cost_categories = {"Housekeeping": 0, "F&B": 0, "Technical": 0, "General Expenses": 0}
+    costs_by_currency = {}
+    categories_by_currency = {}
 
     total_mtd_costs = 0
 
@@ -900,6 +901,9 @@ async def _compute_mtd_cost_summary(tenant_id: str) -> dict:
         category = str(po.get("category") or "other").strip().lower()
         cost_category = category_mapping.get(category, "General Expenses")
         total_amount = float(po.get("total_amount") or 0)
+        code = currency_code(po.get("currency"))
+        add_amount(costs_by_currency, code, total_amount)
+        add_amount(categories_by_currency.setdefault(cost_category, {}), code, total_amount)
 
         cost_categories[cost_category] += total_amount
         total_mtd_costs += total_amount
@@ -928,7 +932,10 @@ async def _compute_mtd_cost_summary(tenant_id: str) -> dict:
         }
     ).to_list(None)
 
-    total_revenue = sum(float(charge.get("total") or charge.get("amount") or 0) for charge in mtd_charges)
+    total_revenue = sum(float(charge.get("total") if charge.get("total") is not None else charge.get("amount") or 0) for charge in mtd_charges)
+    revenue_by_currency = {}
+    for charge in mtd_charges:
+        add_amount(revenue_by_currency, charge.get("currency"), charge.get("total") if charge.get("total") is not None else charge.get("amount", 0))
 
     mtd_revpar = (total_revenue / total_available_room_days) if total_available_room_days > 0 else 0
 
@@ -939,38 +946,61 @@ async def _compute_mtd_cost_summary(tenant_id: str) -> dict:
     gross_profit = total_revenue - total_mtd_costs
     profit_margin = (gross_profit / total_revenue * 100) if total_revenue > 0 else 0
 
+    costs_by_currency = rounded_totals(costs_by_currency)
+    revenue_by_currency = rounded_totals(revenue_by_currency)
+    currencies = set(costs_by_currency) | set(revenue_by_currency)
+    mixed = len(currencies) > 1
+    financial_by_currency = {}
+    for code in sorted(currencies):
+        cost, revenue = costs_by_currency.get(code, 0), revenue_by_currency.get(code, 0)
+        financial_by_currency[code] = {
+            "mtd_costs": cost, "mtd_revenue": revenue, "gross_profit": rounded(revenue - cost),
+            "profit_margin_percentage": round((revenue - cost) / revenue * 100, 1) if revenue else 0,
+            "cost_to_revenue_ratio": round(cost / revenue * 100, 1) if revenue else 0,
+        }
     return {
         "report_date": today.isoformat(),
         "period": f"{month_start.isoformat()} to {today.isoformat()}",
-        "total_mtd_costs": round(total_mtd_costs, 2),
+        "currency": next(iter(currencies)) if len(currencies) == 1 else None,
+        "mixed_currency": mixed,
+        "total_mtd_costs": single_amount(costs_by_currency),
+        "total_mtd_costs_by_currency": costs_by_currency,
+        "cost_categories_by_currency": {name: rounded_totals(values) for name, values in categories_by_currency.items()},
         "cost_categories": {
-            "housekeeping": round(cost_categories["Housekeeping"], 2),
-            "fnb": round(cost_categories["F&B"], 2),
-            "technical": round(cost_categories["Technical"], 2),
-            "general_expenses": round(cost_categories["General Expenses"], 2),
+            key: single_amount(categories_by_currency.get(name, {}))
+            for key, name in (("housekeeping", "Housekeeping"), ("fnb", "F&B"), ("technical", "Technical"), ("general_expenses", "General Expenses"))
         },
         "top_3_categories": [
             {"name": cat["name"], "amount": round(cat["amount"], 2), "percentage": round((cat["amount"] / total_mtd_costs * 100), 1) if total_mtd_costs > 0 else 0} for cat in top_3_categories
-        ],
+        ] if len(costs_by_currency) <= 1 else [],
+        "top_3_categories_by_currency": {
+            code: sorted([
+                {"name": name, "amount": rounded(values.get(code, 0))}
+                for name, values in categories_by_currency.items() if code in values
+            ], key=lambda row: row["amount"], reverse=True)[:3] for code in costs_by_currency
+        },
         "per_room_metrics": {
             "total_room_nights": total_room_nights,
-            "cost_per_room_night": round(per_room_cost, 2),
-            "mtd_revpar": round(mtd_revpar, 2),
-            "cost_to_revpar_ratio": round((per_room_cost / mtd_revpar * 100), 1) if mtd_revpar > 0 else 0,
+            "cost_per_room_night": single_amount({code: amount / total_room_nights if total_room_nights else 0 for code, amount in costs_by_currency.items()}),
+            "cost_per_room_night_by_currency": {code: rounded(amount / total_room_nights) if total_room_nights else 0 for code, amount in costs_by_currency.items()},
+            "mtd_revpar": single_amount({code: amount / total_available_room_days if total_available_room_days else 0 for code, amount in revenue_by_currency.items()}),
+            "mtd_revpar_by_currency": {code: rounded(amount / total_available_room_days) if total_available_room_days else 0 for code, amount in revenue_by_currency.items()},
+            "cost_to_revpar_ratio": None if mixed else (round((per_room_cost / mtd_revpar * 100), 1) if mtd_revpar > 0 else 0),
         },
         "financial_metrics": {
-            "mtd_revenue": round(total_revenue, 2),
-            "mtd_costs": round(total_mtd_costs, 2),
-            "gross_profit": round(gross_profit, 2),
-            "profit_margin_percentage": round(profit_margin, 1),
-            "cost_to_revenue_ratio": round(cost_to_revenue_ratio, 1),
+            "mtd_revenue": single_amount(revenue_by_currency),
+            "mtd_costs": single_amount(costs_by_currency),
+            "gross_profit": None if mixed else round(gross_profit, 2),
+            "profit_margin_percentage": None if mixed else round(profit_margin, 1),
+            "cost_to_revenue_ratio": None if mixed else round(cost_to_revenue_ratio, 1),
+            "by_currency": financial_by_currency,
         },
     }
 
 
 # ── GET /reports/cost-summary ──
 @router.get("/reports/cost-summary")
-@cached(ttl=600, key_prefix="report_cost_summary")
+@cached(ttl=600, key_prefix="report_cost_summary_v2")
 async def get_cost_summary(
     current_user: User = Depends(get_current_user),
     _perm: None = Depends(require_op("view_finance_reports")),
@@ -982,7 +1012,7 @@ async def get_cost_summary(
 
 # ── GET /finance/mtd-cost-summary ──
 @router.get("/finance/mtd-cost-summary")
-@cached(ttl=600, key_prefix="finance_mtd_cost_summary")
+@cached(ttl=600, key_prefix="finance_mtd_cost_summary_v2")
 async def get_mtd_cost_summary(
     current_user: User = Depends(get_current_user),
     _perm: None = Depends(require_op("view_finance_reports")),
