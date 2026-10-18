@@ -177,6 +177,17 @@ async def test_dispatch_simulator_unaffected(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_unmapped_kitchen_printer_never_claims_success(monkeypatch):
+    class Printers:
+        async def find_one(self, *_args, **_kwargs):
+            return None
+    monkeypatch.setattr(spool.db, 'pos_printers', Printers(), raising=False)
+    result = await spool._dispatch({'tenant_id': 't', 'printer_id': 'missing', 'rendered_bytes': b'x',
+                                    'routing_warning': 'unmapped'})
+    assert result['ok'] is False and result['driver'] == 'unmapped'
+
+
+@pytest.mark.asyncio
 async def test_resolve_codepage_uses_printer_setting(monkeypatch):
     class _Printers:
         async def find_one(self, flt, proj=None):

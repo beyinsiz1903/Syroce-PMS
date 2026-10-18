@@ -1,161 +1,141 @@
-"""
-guest_menu.py
-
-Public endpoints for the QR Digital Menu and Ordering System.
-"""
-
-import uuid
-from datetime import UTC, datetime
-from typing import Any
+"""Public menu and signed-table ordering, backed by the canonical POS service."""
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
+from pymongo.errors import DuplicateKeyError
 
+from common.context import OperationContext
 from core.database import db
+from core.entitlement import require_tenant_module
 from core.tenant_currency import get_tenant_currency
-from domains.pms.pos_fnb_router.pos_core import _auto_kds_and_kot, _ensure_adisyon_counter_index, _get_pos_business_date, _next_adisyon_number
+from domains.pms.pos_extensions.pos_happy_hour import _apply_discount, _rule_matches, hotel_local_time
+from domains.pms.pos_fnb.checkout_benefits import fingerprint
+from domains.pms.pos_fnb.guest_qr import verify_table_token
+from domains.pms.pos_fnb.pos_fnb_service_v2 import PosFnbServiceV2
 
-router = APIRouter(tags=["guest_menu"])
+router = APIRouter(prefix='/api/public/fnb', tags=['guest_menu'])
+
+
+class GuestOrderItem(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    item_id: str = Field(min_length=1, max_length=128)
+    quantity: int = Field(ge=1, le=100, strict=True)
+    notes: str | None = Field(default=None, max_length=500)
 
 
 class GuestOrderRequest(BaseModel):
-    table_id: str
-    items: list[dict[str, Any]]  # [{"item_id": "...", "quantity": 1}]
-    guest_name: str | None = None
-    notes: str | None = None
+    model_config = ConfigDict(extra='forbid')
+    table_id: str = Field(min_length=1, max_length=128)
+    table_token: str = Field(min_length=1, max_length=2048)
+    idempotency_key: str = Field(min_length=8, max_length=128)
+    items: list[GuestOrderItem] = Field(min_length=1, max_length=50)
+    guest_name: str | None = Field(default=None, max_length=120)
+    notes: str | None = Field(default=None, max_length=500)
+    expected_total: float | None = Field(default=None, ge=0, allow_inf_nan=False)
 
 
-@router.get("/public/fnb/{tenant_id}/{outlet_id}/menu")
-async def get_guest_menu(tenant_id: str, outlet_id: str):
-    """Get active menu categories and items for the guest."""
-
-    outlet = await db.pos_outlets.find_one({"tenant_id": tenant_id, "id": outlet_id, "is_active": {"$ne": False}}, {"_id": 0, "id": 1})
+async def _active_outlet(tenant_id, outlet_id):
+    await require_tenant_module(tenant_id, 'pos_fnb', 'Bu tesisin restoran sipariş kanalı aktif değil.')
+    outlet = await db.pos_outlets.find_one({
+        'tenant_id': tenant_id, 'id': outlet_id, 'is_active': {'$ne': False},
+        'status': {'$nin': ['inactive', 'deleted', 'archived']},
+    }, {'_id': 0, 'id': 1})
     if not outlet:
-        raise HTTPException(status_code=404, detail="Şube bulunamadı")
+        raise HTTPException(404, 'Aktif satış noktası bulunamadı.')
+    return outlet
 
-    items = await db.pos_menu_items.find({"tenant_id": tenant_id, "outlet_id": outlet_id, "is_active": True}, {"_id": 0}).to_list(1000)
 
-    tenant_currency, _ = await get_tenant_currency(tenant_id)
-    tenant_currency = str(tenant_currency or "TRY").upper()
-
-    if not items:
-        return {"categories": [], "currency": tenant_currency}
-
+@router.get('/{tenant_id}/{outlet_id}/menu')
+async def get_guest_menu(tenant_id: str, outlet_id: str):
+    await _active_outlet(tenant_id, outlet_id)
+    items = await db.pos_menu_items.find({
+        'tenant_id': tenant_id, 'outlet_id': outlet_id, 'is_active': {'$ne': False},
+        'available': {'$ne': False}, 'status': {'$nin': ['inactive', 'deleted', 'archived']},
+    }, {'_id': 0}).to_list(1000)
+    currency, _ = await get_tenant_currency(tenant_id)
+    now = await hotel_local_time(db, tenant_id, datetime.now(UTC))
+    rules = await db.pos_happy_hour_rules.find({'tenant_id': tenant_id, 'active': True}, {'_id': 0}).sort('created_at', 1).to_list(200)
     categories = {}
     for item in items:
-        item["currency"] = str(item.get("currency") or tenant_currency).upper()
-        cat_name = item.get("category", "Diğer")
-        if cat_name not in categories:
-            categories[cat_name] = []
-        categories[cat_name].append(item)
-
-    result = []
-    for cat_name, cat_items in categories.items():
-        result.append({"name": cat_name, "items": cat_items})
-
-    return {"categories": result, "currency": tenant_currency}
-
-
-@router.post("/public/fnb/{tenant_id}/{outlet_id}/order")
-async def place_guest_order(tenant_id: str, outlet_id: str, req: GuestOrderRequest):
-    """
-    Misafir tarafından QR menü üzerinden verilen sipariş doğrudan mutfağa (KDS) düşer.
-    Ayrıca POS personeli ekranında da görünmesi için pending statüsünde bir sipariş oluşturulur.
-    """
-
-    outlet = await db.pos_outlets.find_one({"tenant_id": tenant_id, "id": outlet_id, "is_active": {"$ne": False}}, {"_id": 0, "id": 1})
-    if not outlet:
-        raise HTTPException(status_code=404, detail="Şube bulunamadı")
-    table = await db.table_layouts.find_one({"tenant_id": tenant_id, "outlet_id": outlet_id, "$or": [{"id": req.table_id}, {"table_number": req.table_id}]}, {"_id": 0, "id": 1})
-    if not table:
-        raise HTTPException(status_code=400, detail="Bu şubeye ait geçerli bir masa seçin")
-
-    # 1. Fetch items to calculate prices. Tenant-only lookup would allow a
-    # QR from one outlet to order an item from another outlet.
-    item_ids = [it["item_id"] for it in req.items]
-    db_items = await db.pos_menu_items.find({"tenant_id": tenant_id, "outlet_id": outlet_id, "id": {"$in": item_ids}, "is_active": True}).to_list(1000)
-
-    db_items_map = {str(it["id"]): it for it in db_items}
-
-    tenant_currency, _ = await get_tenant_currency(tenant_id)
-    tenant_currency = str(tenant_currency or "TRY").upper()
-    order_items = []
-    total_amount = 0.0
-    order_currencies: set[str] = set()
-
-    for it in req.items:
-        db_item = db_items_map.get(str(it["item_id"]))
-        if not db_item:
+        if str(item.get('currency') or currency).upper() != currency:
             continue
+        # A public endpoint must never expose internal cost, recipe, staffing
+        # or accounting fields from the full menu document.
+        price = float(item.get('unit_price', item.get('price', 0)))
+        for rule in rules:
+            if _rule_matches(rule, now, outlet_id, {'item_id': item['id'], 'category': item.get('category')}):
+                price = _apply_discount(price, rule)
+                break
+        public = {key: item.get(key) for key in ('id', 'category', 'description', 'image_url')}
+        public.update(item_name=item.get('item_name') or item.get('name') or 'Ürün', unit_price=price,
+                      tax_rate=float(item.get('tax_rate', .10) or 0), currency=currency)
+        categories.setdefault(item.get('category') or 'Diğer', []).append(public)
+    return {'categories': [{'name': name, 'items': rows} for name, rows in categories.items()], 'currency': currency}
 
-        qty = float(it.get("quantity", 1))
-        price = float(db_item.get("unit_price", 0))
-        total_price = qty * price
-        item_currency = str(db_item.get("currency") or tenant_currency).upper()
-        order_currencies.add(item_currency)
 
-        order_items.append(
-            {
-                "item_id": db_item["id"],
-                "item_name": db_item["item_name"],
-                "category": db_item.get("category", "Diğer"),
-                "quantity": qty,
-                "unit_price": price,
-                "total_price": total_price,
-                "currency": item_currency,
-                "notes": it.get("notes", ""),
-            }
-        )
-        total_amount += total_price
-
-    if not order_items:
-        raise HTTPException(status_code=400, detail="Sipariş kalemi bulunamadı veya geçersiz")
-    if len(order_currencies) > 1:
-        raise HTTPException(
-            status_code=400,
-            detail="Farklı para birimlerindeki ürünler aynı siparişte birleştirilemez",
-        )
-    order_currency = next(iter(order_currencies), tenant_currency)
-
-    business_date = await _get_pos_business_date(tenant_id)
-    await _ensure_adisyon_counter_index()
-    adisyon_no = await _next_adisyon_number(tenant_id, outlet_id, business_date)
-
-    order_doc = {
-        "id": str(uuid.uuid4()),
-        "tenant_id": tenant_id,
-        "outlet_id": outlet_id,
-        "source": "guest_qr",
-        "table_id": req.table_id,
-        "guest_name": req.guest_name,
-        "status": "pending",  # Pending staff approval/closure
-        "items": order_items,
-        "total_amount": total_amount,
-        "currency": order_currency,
-        "business_date": business_date,
-        "ordered_at": datetime.now(UTC).isoformat(),
-        "adisyon_no": adisyon_no,
-        "notes": req.notes,
-    }
-
-    # Atomicity could be improved, but this is a guest facing non-financial draft order
-    await db.pos_orders.insert_one(order_doc)
-
-    # Send to KDS/Kitchen
+@router.post('/{tenant_id}/{outlet_id}/order')
+async def place_guest_order(tenant_id: str, outlet_id: str, req: GuestOrderRequest):
+    await _active_outlet(tenant_id, outlet_id)
+    table = await db.table_layouts.find_one({'tenant_id': tenant_id, 'outlet_id': outlet_id, 'id': req.table_id}, {'_id': 0})
+    if not table:
+        raise HTTPException(404, 'Masa bulunamadı.')
+    verify_table_token(req.table_token, tenant_id, outlet_id, table)
+    key = 'guest-qr:' + fingerprint([tenant_id, outlet_id, req.table_id, req.idempotency_key])
+    request_hash = fingerprint(req.model_dump(exclude={'table_token'}))
+    # Persist the dispatch choice before calling the shared service. A retry
+    # must not switch from 'create' to 'append' after the table was claimed.
+    intent = {'_id': key, 'tenant_id': tenant_id, 'request_hash': request_hash,
+              'order_id': table.get('current_order_id'), 'created_at': datetime.now(UTC)}
     try:
-
-        class DummyOrder:
-            id = order_doc["id"]
-            items = order_items
-            outlet_id = outlet_id
-            table_id = req.table_id
-            notes = req.notes
-
-        await _auto_kds_and_kot(DummyOrder(), tenant_id, "Guest QR")
-    except Exception:
-        pass  # non-critical for insertion
-
-    # Cleanup _id just in case
-    order_doc.pop("_id", None)
-
-    return {"success": True, "message": "Siparişiniz mutfağa iletildi.", "order_id": order_doc["id"]}
+        await db.pos_guest_requests.insert_one(dict(intent))
+    except DuplicateKeyError:
+        intent = await db.pos_guest_requests.find_one({'_id': key, 'tenant_id': tenant_id})
+        if not intent or intent['request_hash'] != request_hash:
+            raise HTTPException(409, 'Sipariş anahtarı başka bir istek için kullanılmış.') from None
+    for collection in (db.pos_orders, db.pos_order_item_batches):
+        previous = await collection.find_one({'tenant_id': tenant_id, 'idempotency_key': key}, {'_id': 0})
+        if previous:
+            if previous.get('guest_request_hash') != request_hash:
+                raise HTTPException(409, 'Sipariş anahtarı başka bir istek için kullanılmış.')
+            return {'success': True, 'order_id': previous.get('order_id') or previous['id'], 'idempotent': True,
+                    'message': 'Siparişiniz daha önce alındı; yeniden oluşturulmadı.'}
+    # A copied physical QR must not allow unbounded kitchen spam. Replays
+    # above do not consume the limit and another table has a separate budget.
+    now = datetime.now(UTC)
+    await db.pos_guest_limits.create_index('expires_at', expireAfterSeconds=0)
+    bucket = fingerprint([tenant_id, outlet_id, table['id'], now.strftime('%Y%m%d%H%M')])
+    try:
+        await db.pos_guest_limits.update_one({'_id': bucket}, {'$setOnInsert': {
+            'tenant_id': tenant_id, 'count': 0, 'expires_at': now + timedelta(minutes=2)}}, upsert=True)
+    except DuplicateKeyError:
+        pass  # Another request initialized the same minute's bucket.
+    allowed = await db.pos_guest_limits.find_one_and_update({'_id': bucket, 'count': {'$lt': 10}}, {'$inc': {'count': 1}})
+    if not allowed:
+        raise HTTPException(429, 'Bu masa için kısa sürede çok sipariş alındı; bir dakika sonra tekrar deneyin.')
+    service = PosFnbServiceV2()
+    service._db = db
+    # Public actors can only submit priced items to this signed table. There
+    # is no public checkout/void/refund or access to private order details.
+    ctx = OperationContext(tenant_id=tenant_id, actor_id='guest-qr:' + table['id'], actor_role='guest_qr')
+    items = [{'item_id': item.item_id, 'quantity': item.quantity,
+              'special_instructions': item.notes or req.notes} for item in req.items]
+    if table.get('current_transaction_id'):
+        raise HTTPException(409, 'Bu masanın eski adisyonuna personel üzerinden sipariş ekleyin.')
+    if intent.get('order_id'):
+        target = await db.pos_orders.find_one({'id': intent['order_id'], 'tenant_id': tenant_id,
+            'outlet_id': outlet_id, 'table_number': str(table['table_number'])}, {'_id': 0, 'id': 1})
+        if not target:
+            raise HTTPException(409, 'Masanın adisyonu değişti; personelden yardım isteyin.')
+        result = await service.add_order_items(ctx, intent['order_id'], items, key,
+            guest_request_hash=request_hash, expected_table_number=str(table['table_number']), expected_total=req.expected_total)
+        order_id = intent['order_id']
+    else:
+        result = await service.create_order(ctx, outlet_id, str(table['table_number']), items,
+            guest_name=req.guest_name, idempotency_key=key, source='guest_qr',
+            guest_request_hash=request_hash, expected_total=req.expected_total)
+        order_id = (result.data or {}).get('order_id')
+    if not result.ok:
+        raise HTTPException(409 if result.code in {'PRICE_CHANGED', 'TABLE_UNAVAILABLE', 'ORDER_NOT_OPEN'} else 422, result.error)
+    return {'success': True, 'order_id': order_id, 'idempotent': bool((result.data or {}).get('idempotent')),
+            'message': 'Siparişiniz alındı ve mutfak kuyruğuna kaydedildi.'}

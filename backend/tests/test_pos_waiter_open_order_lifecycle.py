@@ -47,7 +47,7 @@ class MemoryCollection:
             return SimpleNamespace(matched_count=1, modified_count=1)
         return SimpleNamespace(matched_count=0, modified_count=0)
 
-    async def update_many(self, query, update):
+    async def update_many(self, query, update, **_kwargs):
         changed = 0
         for doc in self.docs:
             if self._matches(doc, query):
@@ -159,6 +159,9 @@ async def test_waiter_cannot_open_second_order_on_occupied_table():
 
 @pytest.mark.asyncio
 async def test_waiter_transfers_open_order_and_releases_source_table(monkeypatch):
+    async def transaction(**kwargs):
+        return await kwargs['callback'](None)
+    monkeypatch.setattr('domains.pms.pos_fnb.pos_fnb_service_v2.with_resource_locks', transaction)
     orders = MemoryCollection([{
         "id": "order-1", "tenant_id": "tenant-1", "outlet_id": "outlet-1",
         "table_number": "4", "status": "pending", "payment_status": "unpaid",
@@ -172,6 +175,7 @@ async def test_waiter_transfers_open_order_and_releases_source_table(monkeypatch
         pos_orders=orders,
         table_layouts=tables,
         kitchen_orders=MemoryCollection(),
+        client=object(),
     )
     monkeypatch.setattr(service, "_broadcast_kitchen_queue", lambda _tenant_id: _async_none())
 

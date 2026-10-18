@@ -451,6 +451,8 @@ async def get_z_report(
             outlet_id=outlet_id,
             date=report_date,
         )
+        from domains.pms.pos_fnb.reporting import category_amounts, enrich_refunds
+        all_tx, report_warnings = await enrich_refunds(db, current_user.tenant_id, all_tx)
 
         void_statuses = {"void", "voided", "cancelled", "canceled"}
         open_statuses = {"pending", "preparing", "ready", "open", "draft"}
@@ -459,15 +461,17 @@ async def get_z_report(
             if str(t.get("status") or "").lower() not in void_statuses | open_statuses
         ]
         void_tx = [t for t in all_tx if str(t.get("status") or "").lower() in void_statuses]
+        from domains.pms.pos_fnb.reporting import is_refund
+        sales = [row for row in valid_tx if not is_refund(row)]
 
-        discounts = sum(float(t.get("discount_amount", 0) or 0) for t in valid_tx)
-        service_charges = sum(float(t.get("service_charge_amount", 0) or 0) for t in valid_tx)
+        discounts = sum(float(t.get("discount_amount", 0) or 0) for t in sales)
+        service_charges = sum(float(t.get("service_charge_amount", 0) or 0) for t in sales)
         collected_sales = sum(float(t.get("total_amount", 0) or 0) - float(t.get("tip_amount", 0) or 0) for t in valid_tx)
-        gross_sales = collected_sales + discounts - service_charges
+        gross_sales = sum(float(t.get('total_amount') or 0) - float(t.get('tip_amount') or 0) for t in sales) + discounts - service_charges
         tax_total = sum(float(t.get("tax_amount", 0) or 0) for t in valid_tx)
         refunds = sum(abs(float(t.get("total_amount", 0) or 0)) for t in valid_tx
                       if t.get("payment_type") == "refund" or t.get("status") == "refunded")
-        net_sales = gross_sales - discounts + service_charges
+        net_sales = collected_sales
 
         # Odeme yontemi dagilimi (gercek). Karma odemelerde toplam tutari
         # "mixed" kovasina atmak yerine kasada tahsil edilen parcalari koru.
@@ -485,17 +489,8 @@ async def get_z_report(
         # Kategori dagilimi (gercek — items[].category)
         category_sales: dict[str, float] = {}
         for t in valid_tx:
-            for item in t.get("items") or t.get("order_items") or []:
-                cat = item.get("category") or "other"
-                line_total = item.get("total")
-                if line_total is None:
-                    line_total = item.get("total_price")
-                if line_total is None:
-                    unit_price = item.get("price")
-                    if unit_price is None:
-                        unit_price = item.get("unit_price", 0)
-                    line_total = float(unit_price or 0) * float(item.get("quantity", 1) or 1)
-                category_sales[cat] = category_sales.get(cat, 0) + float(line_total or 0)
+            for cat, amount in category_amounts(t).items():
+                category_sales[cat] = category_sales.get(cat, 0) + amount
 
         # Outlet dagilimi
         outlet_breakdown: dict[str, float] = {}
@@ -505,7 +500,10 @@ async def get_z_report(
 
         return {
             "report_date": report_date,
+            'currency': str(((await db.hotel_settings.find_one({'tenant_id': current_user.tenant_id}, {'_id': 0, 'currency': 1})) or {}).get('currency') or 'TRY').upper(),
             "report_number": f"Z-{report_date.replace('-', '')}",
+            'report_warnings': report_warnings,
+            'category_basis': 'KDV hariç ürün tutarı; iadeler düşülmüş, adisyon geneli indirim/servis ayrı gösterilmiştir.',
             "gross_sales": round(gross_sales, 2),
             "net_sales": round(net_sales, 2),
             "tax_total": round(tax_total, 2),
@@ -514,6 +512,7 @@ async def get_z_report(
             "refunds": round(refunds, 2),
             "void_amount": round(sum(float(t.get("total_amount", 0) or 0) for t in void_tx), 2),
             "transaction_count": len(valid_tx),
+            'sale_count': len(sales),
             "void_count": len(void_tx),
             "payment_methods": {k: round(v, 2) for k, v in payment_methods.items()},
             "category_sales": {k: round(v, 2) for k, v in category_sales.items()},

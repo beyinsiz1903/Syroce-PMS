@@ -156,6 +156,19 @@ async def _apply_posted(event: dict[str, Any]) -> tuple[bool, str]:
 
     db = get_system_db()
 
+    # A refund may be consumed before its original posting (workers/retries
+    # have no cross-event ordering guarantee). The durable reversal INTENT is
+    # a tombstone: never resurrect a refunded charge on a delayed delivery.
+    reversal = await db.outbox_events.find_one({
+        'tenant_id': tenant_id, 'entity_id': order_id, 'event_type': POS_CHARGE_REVERSED,
+    })
+    if reversal:
+        return await _apply_reversed({
+            'tenant_id': tenant_id,
+            'payload': {**(reversal.get('payload') or {}), 'folio_id': folio_id,
+                        'source_pos_order_id': order_id},
+        })
+
     # Fail-closed: without the dedup index we could double-post on re-delivery.
     try:
         await _ensure_folio_charge_index()
@@ -174,6 +187,9 @@ async def _apply_posted(event: dict[str, Any]) -> tuple[bool, str]:
         # Apply-time late-charge / AR guard — NEVER silently write to a
         # non-open folio.
         await _route_late_charge(db, tenant_id, folio, order_id, charges, folio_status)
+        reversal = await db.outbox_events.find_one({'tenant_id': tenant_id, 'entity_id': order_id, 'event_type': POS_CHARGE_REVERSED})
+        if reversal:
+            return await _apply_reversed({'tenant_id': tenant_id, 'payload': {**reversal.get('payload', {}), 'folio_id': folio_id, 'source_pos_order_id': order_id}})
         return True, (f"late-charge: folio {folio_id} not open (status={folio_status}); routed order {order_id} to AR/late-charge")
 
     inserted = 0
@@ -188,6 +204,12 @@ async def _apply_posted(event: dict[str, Any]) -> tuple[bool, str]:
             continue
 
     balance = await _recalc_folio_balance(db, tenant_id, folio_id)
+    # Close the check/insert race: a reversal worker can finish between the
+    # first tombstone check and our writes. Reconcile again AFTER posting and
+    # balance calculation, including when the first reversal saw no charges.
+    reversal = await db.outbox_events.find_one({'tenant_id': tenant_id, 'entity_id': order_id, 'event_type': POS_CHARGE_REVERSED})
+    if reversal:
+        return await _apply_reversed({'tenant_id': tenant_id, 'payload': {**reversal.get('payload', {}), 'folio_id': folio_id, 'source_pos_order_id': order_id}})
     if inserted:
         invalidate_financial_report_caches(tenant_id)
     return True, (f"posted {inserted} charge(s) for order {order_id} to folio {folio_id}; balance={balance}")
@@ -205,6 +227,10 @@ async def _apply_reversed(event: dict[str, Any]) -> tuple[bool, str]:
 
     db = get_system_db()
     now = _now_iso()
+
+    if not folio_id:
+        charge = await db.folio_charges.find_one({'tenant_id': tenant_id, 'source_pos_order_id': order_id})
+        folio_id = (charge or {}).get('folio_id')
 
     # Idempotent compensation: only flip charges that are not already voided.
     # Double-reversal → modified_count 0 → no-op.

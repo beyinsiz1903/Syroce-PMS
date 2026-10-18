@@ -21,6 +21,7 @@ describe('POSReports financial integrity', () => {
     vi.restoreAllMocks();
     vi.spyOn(console, 'error').mockImplementation(() => {});
     axios.get.mockImplementation((url) => {
+      if (url === '/pos/v2/receipts') return Promise.resolve({ data: { receipts: [] } });
       if (url === '/pos/z-report') {
         return Promise.resolve({
           data: {
@@ -45,7 +46,7 @@ describe('POSReports financial integrity', () => {
   it('does not describe a failed void query as an empty result', async () => {
     render(<POSReports outletId="outlet-a" />);
 
-    await waitFor(() => expect(axios.get).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(axios.get).toHaveBeenCalledTimes(3));
     expect((await screen.findAllByText('₺132,00')).length).toBeGreaterThan(0);
 
     fireEvent.click(screen.getByRole('tab', { name: /İptaller \(1\)/i }));

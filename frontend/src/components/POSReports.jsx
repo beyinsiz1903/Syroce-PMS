@@ -17,6 +17,7 @@ import { useTranslation } from 'react-i18next';
 import { useBusinessDate } from '@/hooks/useBusinessDate';
 import { formatCurrency, cachedTenantCurrency } from '@/lib/currency';
 import { formatBusinessDateForDisplay } from '@/lib/businessDateOriginCopy';
+import POSReceiptHistory from './POSReceiptHistory';
 
 const PAYMENT_LABEL = {
   cash: 'Nakit',
@@ -88,6 +89,7 @@ const POSReports = ({ outletId }) => {
 
   return (
     <div className="space-y-4">
+      <POSReceiptHistory outletId={outletId} />
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between flex-wrap gap-2">
@@ -140,6 +142,7 @@ const POSReports = ({ outletId }) => {
               </TabsList>
 
               <TabsContent value="summary" className="mt-4 space-y-4">
+                {(report.report_warnings || []).map(message => <p key={message} role="alert" className="rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">{message}</p>)}
                 <div className="bg-gradient-to-r from-amber-50 to-amber-50 p-4 rounded-lg border border-amber-200">
                   <div className="flex items-center gap-2 mb-2">
                     <Receipt className="w-5 h-5 text-amber-600" />
@@ -239,6 +242,7 @@ const POSReports = ({ outletId }) => {
               </TabsContent>
 
               <TabsContent value="category" className="mt-4">
+                <p className="mb-3 text-xs text-gray-500">{report.category_basis || 'KDV hariç ürün satışları; adisyon indirimleri ayrıca gösterilir.'}</p>
                 <div className="space-y-2">
                   {Object.keys(report.category_sales || {}).length === 0 ? (
                     <p className="text-center py-8 text-gray-500">Kategori verisi yok</p>

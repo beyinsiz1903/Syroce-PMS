@@ -1,4 +1,5 @@
 import POSRecoveryQueue from '../components/POSRecoveryQueue';
+import POSReceipt from '../components/POSReceipt';
 import { enqueueOrder, readQueue, sendQueuedOrder } from '../lib/posOfflineQueue';
 import { useTranslation } from "react-i18next";
 import { toast } from 'sonner';
@@ -53,6 +54,8 @@ const POSWaiterTerminal = () => {
   const [table, setTable] = useState(null);
   const [menuItems, setMenuItems] = useState([]);
   const [menuQuery, setMenuQuery] = useState('');
+  const [barcode, setBarcode] = useState('');
+  const [barcodeLoading, setBarcodeLoading] = useState(false);
   const [category, setCategory] = useState('all');
   const [cart, setCart] = useState([]);
   const [inhouse, setInhouse] = useState([]);
@@ -71,6 +74,7 @@ const POSWaiterTerminal = () => {
   const [splitMethods, setSplitMethods] = useState(['cash', 'card']);
   const [tipAmount, setTipAmount] = useState('0');
   const pendingKeyRef = useRef(null);
+  const refundKeyRef = useRef(null);
   const [queueScope, setQueueScope] = useState(null);
   const [queueVersion, setQueueVersion] = useState(0);
   const [couponCode, setCouponCode] = useState('');
@@ -211,6 +215,17 @@ const POSWaiterTerminal = () => {
         quantity: q
       } : null;
     }).filter(Boolean));
+  };
+  const scanBarcode = async () => {
+    if (!barcode.trim() || !outlet || barcodeLoading) return;
+    setBarcodeLoading(true);
+    try {
+      const response = await axios.get(`/pos/ext/barcode/lookup/${encodeURIComponent(barcode.trim())}`, { params: { outlet_id: outlet.id } });
+      const item = normalizeWaiterMenuItems([response.data.item])[0];
+      if (!item) throw new Error('Barkod etkin bir ürüne bağlı değil.');
+      addToCart(item); setBarcode(''); toast.success(`${item.item_name} sepete eklendi`);
+    } catch (error) { toast.error(posErrorMessage(error, error.message || 'Barkod okunamadı')); }
+    finally { setBarcodeLoading(false); }
   };
   const subtotal = cart.reduce((s, c) => s + c.unit_price * c.quantity, 0);
   const tax = cart.reduce((s, c) => s + c.unit_price * c.quantity * c.tax_rate, 0);
@@ -459,11 +474,13 @@ const POSWaiterTerminal = () => {
     if (!confirmed) return;
     setLoading(true);
     try {
+      if (refundKeyRef.current?.orderId !== lastOrder.id) refundKeyRef.current = { orderId: lastOrder.id, key: crypto.randomUUID() };
       await axios.post(`/pos/v2/orders/${lastOrder.id}/refund`, {
         reason: 'Garson terminalinden tam iade',
-        idempotency_key: globalThis.crypto?.randomUUID?.() || `pos-refund-${Date.now()}`,
+        idempotency_key: refundKeyRef.current.key,
       });
       setLastOrder(previous => ({ ...previous, refunded: true }));
+      refundKeyRef.current = null;
       toast.success('İade kaydedildi');
     } catch (error) {
       toast.error(posErrorMessage(error, 'İade kaydedilemedi'));
@@ -617,6 +634,7 @@ const POSWaiterTerminal = () => {
               </div>
             </div>
             <Input value={menuQuery} onChange={event => setMenuQuery(event.target.value)} aria-label={t("experience.menuSearch", "Menüde ürün ara")} placeholder={t("experience.menuSearch", "Menüde ürün ara")} />
+            <div className="flex gap-2"><Input aria-label="Barkod okut veya yaz" placeholder="Barkod okut veya yaz; Enter ile ekle" value={barcode} onChange={event => setBarcode(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); scanBarcode(); } }} disabled={loading || barcodeLoading} /><Button variant="outline" onClick={scanBarcode} disabled={!barcode.trim() || loading || barcodeLoading}>Barkodla ekle</Button></div>
             {loadingMenu ? <div className="py-16 flex items-center justify-center gap-2 text-gray-500"><Loader2 className="w-5 h-5 animate-spin" /> Menü yükleniyor…</div> : <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
               {visibleItems.map(item => <Card key={item.id}
                 role="button" tabIndex={item.available === false ? -1 : 0}
@@ -807,10 +825,12 @@ const POSWaiterTerminal = () => {
                   <Button variant="outline" className="w-full mt-2 border-red-200 text-red-700 hover:bg-red-50" disabled={loading || lastOrder.refunded} onClick={refundLastOrder} data-testid="refund-last-order">
                     <RotateCcw className="w-4 h-4 mr-2" />{lastOrder.refunded ? 'İade edildi' : 'Tam iade yap'}
                   </Button>
+                  <POSReceipt orderId={lastOrder.id} />
                 </CardContent>
               </Card>}
           </div>
         </div>}
+      {lastOrder && step !== STEPS.ORDER && <Card className="mt-4 border-green-200" data-testid="last-order"><CardContent className="space-y-2 p-4 text-sm"><strong>Son adisyon: {lastOrder.order_number || lastOrder.id}</strong><p>{formatCurrency(lastOrder.total_amount, lastOrder.currency || currency)}</p><POSReceipt orderId={lastOrder.id} /><Button variant="outline" className="ml-2" disabled={loading || lastOrder.refunded} onClick={refundLastOrder} data-testid="refund-last-order">{lastOrder.refunded ? 'İade edildi' : 'Tam iade yap'}</Button></CardContent></Card>}
     </div>;
 };
 export default POSWaiterTerminal;

@@ -77,7 +77,9 @@ const POSDashboard = () => {
   const [selectedOutletId, setSelectedOutletId] = useState('all');
   const [stats,           setStats]           = useState({ outlet_count: 0, menu_count: 0, today_orders: 0, today_revenue: 0 });
   const [loadingStats,    setLoadingStats]    = useState(true);
-  const [dashboardError,  setDashboardError]  = useState('');
+  const [outletsError, setOutletsError] = useState('');
+  const [summaryError, setSummaryError] = useState('');
+  const dashboardError = outletsError || summaryError;
   const { hasFeature, tenantId } = useEntitlements();
   const businessDate = useBusinessDate();
 
@@ -88,12 +90,12 @@ const POSDashboard = () => {
       const list = Array.isArray(res.data) ? res.data : (res.data.outlets || []);
       const active = list.filter(o => o.status !== 'inactive');
       setOutlets(active);
-      setDashboardError('');
+      setOutletsError('');
       return active;
     } catch (error) {
       console.error('Satış noktaları yüklenemedi:', error);
-      setDashboardError('Satış noktaları yüklenemedi. Bağlantınızı kontrol edip yeniden deneyin.');
-      return [];
+      setOutletsError('Satış noktaları yüklenemedi. Bu durum, satış noktası olmadığı anlamına gelmez.');
+      return null;
     }
   }, []);
 
@@ -114,13 +116,16 @@ const POSDashboard = () => {
       setStats(prev => ({
         ...prev,
         menu_count:    menuList.length,
-        today_orders:  zRes.data.transaction_count || 0,
+        today_orders:  zRes.data.sale_count ?? zRes.data.transaction_count ?? 0,
         today_revenue: zRes.data.gross_sales       || 0,
         currency:      zRes.data.currency || cachedTenantCurrency(),
       }));
+      setSummaryError('');
+      return true;
     } catch (error) {
       console.error('POS özeti yüklenemedi:', error);
-      setDashboardError('POS özeti güncellenemedi. Ekrandaki rakamlar güncel olmayabilir.');
+      setSummaryError('POS özeti doğrulanamadı. Lisans, yetki veya bağlantı hatası olabilir; rakamlar gösterilmedi.');
+      return false;
     } finally {
       setLoadingStats(false);
     }
@@ -185,20 +190,20 @@ const POSDashboard = () => {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <StatCard
               icon={Store}       label={t('posDashboard.outletCount', 'Satış Noktası')}
-              value={stats.outlet_count} color="amber" loading={loadingStats} testId="stat-outlets"
+              value={outletsError ? '—' : stats.outlet_count} color="amber" loading={loadingStats} testId="stat-outlets"
             />
             <StatCard
               icon={MenuIcon}    label={t('posDashboard.menuCount', 'Menü Ürünü')}
-              value={stats.menu_count}   color="green" loading={loadingStats} testId="stat-menu"
+              value={summaryError ? '—' : stats.menu_count}   color="green" loading={loadingStats} testId="stat-menu"
             />
             <StatCard
               icon={ShoppingBag} label={t('posDashboard.todaysOrders', 'Bugünkü Siparişler')}
-              value={stats.today_orders} color="purple" loading={loadingStats}
+              value={summaryError ? '—' : stats.today_orders} color="purple" loading={loadingStats}
             />
             <StatCard
               icon={TrendingUp}  label={t('posDashboard.todaysRevenue', 'Bugün Ciro')}
-              value={formatCurrency(stats.today_revenue, stats.currency || cachedTenantCurrency())}
-              sub={`${stats.today_orders} ${t('posDashboard.transactions', 'işlem')}`}
+              value={summaryError ? '—' : formatCurrency(stats.today_revenue, stats.currency || cachedTenantCurrency())}
+              sub={summaryError ? 'Veri doğrulanamadı' : `${stats.today_orders} ${t('posDashboard.transactions', 'işlem')}`}
               color="blue" loading={loadingStats} testId="stat-revenue"
             />
           </div>
@@ -228,7 +233,7 @@ const POSDashboard = () => {
                 />
               ))}
             </div>
-            {outlets.length === 0 && !loadingStats && (
+            {outlets.length === 0 && !loadingStats && !outletsError && (
               <div className="flex items-center gap-1.5 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5">
                 <AlertCircle className="w-3.5 h-3.5 shrink-0" />
                 {t('posDashboard.noOutletsHint', 'Henüz satış noktası yok — "Satış Noktaları" sekmesinden ekleyin')}
@@ -244,10 +249,9 @@ const POSDashboard = () => {
           <div className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800" role="alert">
             <span className="flex items-center gap-2"><AlertCircle className="h-4 w-4 shrink-0" />{dashboardError}</span>
             <button className="font-semibold underline underline-offset-2" onClick={async () => {
-              setDashboardError('');
-              await loadOutlets();
-              await loadStats();
-              toast.success('POS bilgileri yenilendi');
+              const outletsResult = await loadOutlets();
+              const statsResult = await loadStats();
+              if (outletsResult !== null && statsResult) toast.success('POS bilgileri yenilendi');
             }}>Yeniden dene</button>
           </div>
         )}

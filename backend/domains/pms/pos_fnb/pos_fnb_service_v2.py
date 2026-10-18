@@ -28,6 +28,7 @@ from core.outbox_service import (
     POS_CHARGE_REVERSED,
     enqueue_outbox_event,
 )
+from domains.pms.pos_fnb.order_pricing import allocate_parts, decimal, reprice_order, rounded
 
 logger = logging.getLogger(__name__)
 
@@ -115,6 +116,11 @@ class PosFnbServiceV2:
         settings = await settings_collection.find_one({"tenant_id": tenant_id}, {"_id": 0, "business_date": 1})
         return str((settings or {}).get("business_date") or now.date().isoformat())
 
+    async def _currency(self, tenant_id: str) -> str:
+        collection = getattr(self._db, 'hotel_settings', None)
+        settings = await collection.find_one({'tenant_id': tenant_id}, {'currency': 1}) if collection is not None else None
+        return str((settings or {}).get('currency') or 'TRY').upper()
+
     async def _catalog_lines(
         self, ctx: OperationContext, outlet_id: str, items: list[dict], now: datetime
     ) -> tuple[list[dict], float, float]:
@@ -127,12 +133,15 @@ class PosFnbServiceV2:
         catalog = getattr(self._db, "pos_menu_items", None)
         if catalog is None:
             raise HTTPException(status_code=503, detail="POS menu catalog is unavailable")
+        settings_collection = getattr(self._db, 'hotel_settings', None)
+        settings = await settings_collection.find_one({'tenant_id': ctx.tenant_id}, {'_id': 0, 'currency': 1}) if settings_collection is not None else None
+        currency = str((settings or {}).get('currency') or 'TRY').upper()
         rules_collection = getattr(self._db, "pos_happy_hour_rules", None)
         rules = []
         if rules_collection is not None:
             rules = await rules_collection.find(
                 {"tenant_id": ctx.tenant_id, "active": True}, {"_id": 0}
-            ).to_list(200)
+            ).sort('created_at', 1).to_list(200)
         from domains.pms.pos_extensions.pos_happy_hour import _apply_discount, _rule_matches
 
         lines: list[dict] = []
@@ -147,8 +156,10 @@ class PosFnbServiceV2:
             )
             if not menu:
                 raise HTTPException(status_code=422, detail="Menü ürünü bu satış noktasında bulunamadı")
-            if menu.get("available", menu.get("status", "active") == "active") is False:
+            if menu.get('available') is False or menu.get('is_active') is False or menu.get('status') in {'inactive', 'deleted', 'archived'}:
                 raise HTTPException(status_code=422, detail="Menü ürünü satışta değil")
+            if str(menu.get('currency') or currency).upper() != currency:
+                raise HTTPException(422, 'Menü fiyatı tesis para biriminde olmalıdır; farklı döviz sessizce çevrilmez.')
             try:
                 quantity = int(requested.get("quantity", 1))
                 price = float(menu.get("unit_price", menu.get("price")))
@@ -165,9 +176,9 @@ class PosFnbServiceV2:
                     final_price = _apply_discount(price, rule)
                     applied_rule_id = rule["id"]
                     break
-            line_total = round(quantity * final_price, 2)
+            line_total = float(rounded(decimal(quantity) * decimal(final_price)))
             subtotal += line_total
-            tax_total += round(line_total * tax_rate, 2)
+            tax_total += float(rounded(decimal(line_total) * decimal(tax_rate)))
             lines.append(
                 {
                     "line_id": str(uuid.uuid4()),
@@ -202,6 +213,9 @@ class PosFnbServiceV2:
         booking_id: str | None = None,
         order_type: str = "dine_in",
         idempotency_key: str | None = None,
+        source: str | None = None,
+        guest_request_hash: str | None = None,
+        expected_total: float | None = None,
     ) -> ServiceResult:
         from domains.pms.pos_fnb.checkout_benefits import fingerprint
         request_hash = fingerprint([outlet_id, table_number, items, guest_name, booking_id, order_type])
@@ -236,15 +250,19 @@ class PosFnbServiceV2:
                 return ServiceResult.fail(f"Table {table_number} is unavailable", "TABLE_UNAVAILABLE")
 
         now = datetime.now(UTC)
+        from domains.pms.pos_extensions.pos_happy_hour import hotel_local_time
+        pricing_now = await hotel_local_time(self._db, ctx.tenant_id, now)
         business_date = await self._business_date(ctx.tenant_id, now)
         order_id = str(uuid.uuid4())
         order_number = f"ORD-{now.strftime('%Y%m%d%H%M')}-{uuid.uuid4().hex[:4].upper()}"
 
         try:
-            order_items, total_amount, tax_amount = await self._catalog_lines(ctx, outlet_id, items, now)
+            order_items, total_amount, tax_amount = await self._catalog_lines(ctx, outlet_id, items, pricing_now)
         except HTTPException as exc:
             return ServiceResult.fail(str(exc.detail), "VALIDATION_ERROR")
         grand_total = round(total_amount + tax_amount, 2)
+        if expected_total is not None and round(float(expected_total), 2) != grand_total:
+            return ServiceResult.fail('Menü fiyatı değişti. Güncel menüyü yenileyip toplamı tekrar onaylayın.', 'PRICE_CHANGED')
 
         order_doc = {
             "id": order_id,
@@ -259,11 +277,14 @@ class PosFnbServiceV2:
             "total_amount": total_amount,
             "tax_amount": tax_amount,
             "grand_total": grand_total,
+            'currency': await self._currency(ctx.tenant_id),
             "status": "pending",
             "payment_status": "unpaid",
             "created_by": ctx.actor_id,
             "idempotency_key": idempotency_key,
             "request_hash": request_hash,
+            'source': source,
+            'guest_request_hash': guest_request_hash,
             "business_date": business_date,
             "created_at": now.isoformat(),
         }
@@ -439,6 +460,8 @@ class PosFnbServiceV2:
         checkout_options: dict | None = None,
     ) -> ServiceResult:
         from domains.pms.pos_fnb.checkout_benefits import fingerprint
+        if not math.isfinite(tip_amount) or tip_amount < 0:
+            return ServiceResult.fail('Bahşiş tutarı geçersiz', 'VALIDATION_ERROR')
         request_hash = fingerprint([order_id, payment_method, post_to_folio, booking_id, tip_amount, payments, checkout_options])
         # Idempotency
         if idempotency_key:
@@ -464,6 +487,12 @@ class PosFnbServiceV2:
 
         now = datetime.now(UTC)
         business_date = await self._business_date(ctx.tenant_id, now)
+        try:
+            valid_total = order.get('grand_total') is not None and math.isfinite(float(order['grand_total'])) and float(order['grand_total']) >= 0
+        except (ValueError, TypeError):
+            valid_total = False
+        if not valid_total:
+            return ServiceResult.fail('Adisyon fiyat yapısı doğrulanamadı; eski kaydı sıfır tutarla kapatmak engellendi.', 'ORDER_PRICING_INVALID')
         grand_total = order.get("grand_total", 0)
         checkout_quote = None
         if checkout_options is not None:
@@ -486,7 +515,7 @@ class PosFnbServiceV2:
             for part in payments:
                 method = str(part.get("method") or "").strip().lower()
                 amount = round(float(part.get("amount") or 0), 2)
-                if method not in allowed_methods or amount <= 0:
+                if method not in allowed_methods or not math.isfinite(amount) or amount <= 0:
                     return ServiceResult.fail("Karma ödeme yalnızca pozitif nakit veya kart satırları içerebilir", "VALIDATION_ERROR")
                 payment_breakdown.append({"method": method, "amount": amount})
             if round(sum(part["amount"] for part in payment_breakdown), 2) != total_with_tip:
@@ -515,6 +544,7 @@ class PosFnbServiceV2:
             "tax_amount": round(float(order.get("effective_tax_amount", order.get("tax_amount", 0)) or 0), 2),
             "tip_amount": tip_amount,
             "total_amount": total_with_tip,
+            'currency': order.get('currency') or await self._currency(ctx.tenant_id),
             "payment_method": payment_method,
             "status": "completed",
             "processed_by": ctx.actor_id,
@@ -535,7 +565,7 @@ class PosFnbServiceV2:
             txn_doc["tax_amount"] = checkout_quote["tax_amount"]
         txn_doc["request_hash"] = request_hash
         txn_doc["order_snapshot"] = {
-            field: order.get(field) for field in ("grand_total", "order_items", "discount_amount", "service_charge_amount")
+            field: order.get(field) for field in ("grand_total", "order_items", "discount_amount", "service_charge_amount", 'table_number', 'outlet_id')
         }
         if guest_signature:
             txn_doc["guest_signature"] = guest_signature
@@ -595,6 +625,8 @@ class PosFnbServiceV2:
                 "booking_id": booking_id,
                 "charges": [charge_doc],
             }
+            txn_doc['booking_id'] = booking_id
+            txn_doc['folio_id'] = folio['id']
 
         # Atomic checkout: transaction, optional IC intent and terminal order
         # state must commit together.  Persisting the sale and closing the
@@ -651,17 +683,6 @@ class PosFnbServiceV2:
                 {"$set": {"gl_bridge_status": "failed", "gl_bridge_error": str(exc)[:500]}},
             )
 
-        # Release table
-        if order.get("table_number") and order.get("outlet_id"):
-            await self._db.table_layouts.update_one(
-                {
-                    "table_number": order["table_number"],
-                    "outlet_id": order["outlet_id"],
-                    "tenant_id": ctx.tenant_id,
-                },
-                {"$set": {"status": "dirty", "current_order_id": None, "opened_at": None}},
-            )
-
         # Recipe/BOM consumption: decrement ingredient stock for recipe-linked
         # menu items. Best-effort — stock wiring must never roll back a
         # completed payment — but each decrement is individually atomic,
@@ -708,6 +729,9 @@ class PosFnbServiceV2:
         order_id: str,
         items: list[dict],
         idempotency_key: str | None = None,
+        guest_request_hash: str | None = None,
+        expected_table_number: str | None = None,
+        expected_total: float | None = None,
     ) -> ServiceResult:
         from domains.pms.pos_fnb.checkout_benefits import fingerprint
         request_hash = fingerprint([order_id, items])
@@ -729,17 +753,23 @@ class PosFnbServiceV2:
         )
         if not order:
             return ServiceResult.fail("Order not found", "NOT_FOUND")
+        if expected_table_number is not None and str(order.get('table_number')) != str(expected_table_number):
+            return ServiceResult.fail('Masanın adisyonu değişti; personelden yardım isteyin.', 'ORDER_NOT_OPEN')
         if order.get("status") not in {"pending", "preparing", "ready"} or order.get("payment_status") == "paid":
             return ServiceResult.fail("Order is not open", "ORDER_NOT_OPEN")
 
         now = datetime.now(UTC)
+        from domains.pms.pos_extensions.pos_happy_hour import hotel_local_time
+        pricing_now = await hotel_local_time(self._db, ctx.tenant_id, now)
         try:
             normalized, subtotal_delta, tax_delta = await self._catalog_lines(
-                ctx, str(order.get("outlet_id") or ""), items, now
+                ctx, str(order.get("outlet_id") or ""), items, pricing_now
             )
         except HTTPException as exc:
             return ServiceResult.fail(str(exc.detail), "VALIDATION_ERROR")
         grand_delta = round(subtotal_delta + tax_delta, 2)
+        if expected_total is not None and round(float(expected_total), 2) != grand_delta:
+            return ServiceResult.fail('Menü fiyatı değişti. Güncel menüyü yenileyip toplamı tekrar onaylayın.', 'PRICE_CHANGED')
         batch = {
             "id": str(uuid.uuid4()),
             "tenant_id": ctx.tenant_id,
@@ -748,6 +778,7 @@ class PosFnbServiceV2:
             "items_count": len(normalized),
             "amount_added": grand_delta,
             "created_at": now.isoformat(),
+            'guest_request_hash': guest_request_hash,
         }
         batch["request_hash"] = request_hash
         if idempotency_key:
@@ -796,6 +827,7 @@ class PosFnbServiceV2:
         batch: dict,
     ) -> None:
         """Persist an append batch, its order totals and kitchen rows together."""
+        pricing = reprice_order(order, [*(order.get('order_items') or []), *normalized])
 
         async def _commit(session) -> None:
             if batch.get("idempotency_key"):
@@ -804,11 +836,14 @@ class PosFnbServiceV2:
                 {
                     "id": order["id"], "tenant_id": ctx.tenant_id,
                     "status": order.get("status"), "payment_status": order.get("payment_status"),
+                    'order_items': order.get('order_items', []),
+                    'grand_total': order.get('grand_total'),
+                    'table_number': order.get('table_number'),
+                    'outlet_id': order.get('outlet_id'),
                 },
                 {
                     "$push": {"order_items": {"$each": normalized}},
-                    "$inc": {"total_amount": round(subtotal_delta, 2), "tax_amount": tax_delta, "grand_total": grand_delta},
-                    "$set": {"updated_at": batch["created_at"]},
+                    "$set": {**pricing, "updated_at": batch["created_at"]},
                 },
                 session=session,
             )
@@ -852,27 +887,32 @@ class PosFnbServiceV2:
         removed = dict(items.pop(line_index))
         if not items:
             return ServiceResult.fail("Son kalem buradan silinemez; adisyonu iptal edin", "VALIDATION_ERROR")
-        subtotal = round(sum(float(item.get("total") or 0) for item in items), 2)
-        tax = round(sum(float(item.get("total") or 0) * float(item.get("tax_rate") or 0) for item in items), 2)
-        grand_total = round(subtotal + tax, 2)
+        pricing = reprice_order(order, items)
+        grand_total = pricing['grand_total']
         now = datetime.now(UTC).isoformat()
-        await self._db.pos_orders.update_one(
-            {"id": order_id, "tenant_id": ctx.tenant_id, "payment_status": {"$ne": "paid"}},
-            {"$set": {"order_items": items, "total_amount": subtotal, "tax_amount": tax, "grand_total": grand_total, "updated_at": now}},
-        )
         kitchen_query = {"tenant_id": ctx.tenant_id, "order_id": order_id, "status": {"$nin": ["served", "cancelled"]}}
         if removed.get("line_id"):
             kitchen_query["$or"] = [{"line_id": removed["line_id"]}, {"items.line_id": removed["line_id"]}]
         else:
             kitchen_query["item_name"] = removed.get("item_name")
-        await self._db.kitchen_orders.update_many(
-            kitchen_query,
-            {"$set": {"status": "cancelled", "cancelled_at": now, "cancelled_by": ctx.actor_id, "cancel_reason": reason.strip()}},
-        )
-        await self._db.pos_order_item_voids.insert_one({
-            "id": str(uuid.uuid4()), "tenant_id": ctx.tenant_id, "order_id": order_id,
-            "line": removed, "reason": reason.strip(), "voided_at": now, "voided_by": ctx.actor_id,
-        })
+        async def commit(session):
+            changed = await self._db.pos_orders.update_one(
+                {'id': order_id, 'tenant_id': ctx.tenant_id, 'status': order.get('status'),
+                 'order_items': order.get('order_items'), 'grand_total': order.get('grand_total'), 'payment_status': {'$ne': 'paid'}},
+                {'$set': {'order_items': items, **pricing, 'updated_at': now}}, session=session)
+            if changed.matched_count != 1:
+                raise PosOrderStateChanged(order_id)
+            await self._db.kitchen_orders.update_many(kitchen_query,
+                {'$set': {'status': 'cancelled', 'cancelled_at': now, 'cancelled_by': ctx.actor_id, 'cancel_reason': reason.strip()}}, session=session)
+            await self._db.pos_order_item_voids.insert_one({
+                'id': str(uuid.uuid4()), 'tenant_id': ctx.tenant_id, 'order_id': order_id,
+                'line': removed, 'reason': reason.strip(), 'voided_at': now, 'voided_by': ctx.actor_id,
+            }, session=session)
+        try:
+            await with_resource_locks(client=self._db.client, db=self._db, tenant_id=ctx.tenant_id,
+                                      locks_collection='folio_locks', resources=[], callback=commit)
+        except PosOrderStateChanged:
+            return ServiceResult.fail('Adisyon değişti; güncel hesabı yenileyin.', 'ORDER_NOT_OPEN')
         await self._broadcast_kitchen_queue(ctx.tenant_id)
         return ServiceResult.success({"order_id": order_id, "removed_item": removed, "grand_total": grand_total})
 
@@ -889,9 +929,15 @@ class PosFnbServiceV2:
             return ServiceResult.fail("İade için yönetici yetkisi gerekir", "FORBIDDEN")
         if not reason.strip():
             return ServiceResult.fail("İade nedeni gereklidir", "VALIDATION_ERROR")
+        if amount is not None and not math.isfinite(amount):
+            return ServiceResult.fail('İade tutarı geçersiz', 'VALIDATION_ERROR')
+        from domains.pms.pos_fnb.checkout_benefits import fingerprint
+        request_hash = fingerprint([order_id, amount, reason.strip()])
         if idempotency_key:
             prior = await self._db.pos_transactions.find_one({"tenant_id": ctx.tenant_id, "idempotency_key": idempotency_key}, {"_id": 0})
             if prior:
+                if prior.get('payment_type') != 'refund' or prior.get('order_id') != order_id or prior.get('request_hash') != request_hash:
+                    raise HTTPException(409, 'İade anahtarı farklı bir işlem için kullanılmış.')
                 return ServiceResult.success({"refund_id": prior.get("id"), "idempotent": True})
         order = await self._db.pos_orders.find_one({"id": order_id, "tenant_id": ctx.tenant_id}, {"_id": 0})
         if not order:
@@ -918,34 +964,33 @@ class PosFnbServiceV2:
             "amount": -refund_amount, "total_amount": -refund_amount, "payment_method": sale.get("payment_method"),
             "payment_type": "refund", "status": "refunded", "reason": reason.strip(),
             "processed_by": ctx.actor_id, "idempotency_key": idempotency_key, "created_at": now.isoformat(),
+            'request_hash': request_hash,
         }
-        if sale.get("payment_breakdown"):
-            parts, allocated = [], 0.0
-            for index, part in enumerate(sale["payment_breakdown"]):
-                share = round(float(part["amount"]) * refund_amount / paid, 2)
-                if index == len(sale["payment_breakdown"]) - 1:
-                    share = round(refund_amount - allocated, 2)
-                allocated += share
-                parts.append({"method": part["method"], "amount": -share})
-            refund_doc["payment_breakdown"] = parts
-        updated_sale = await self._persist_refund_and_state(
+        if idempotency_key:
+            refund_doc['_id'] = fingerprint([ctx.tenant_id, 'refund', idempotency_key])
+        try:
+            updated_sale = await self._persist_refund_and_state(
             tenant_id=ctx.tenant_id,
             order_id=order_id,
             sale_id=sale["id"],
             paid=paid,
             refund_amount=refund_amount,
             refund_doc=refund_doc,
-        )
+            )
+        except DuplicateKeyError:
+            prior = await self._db.pos_transactions.find_one({'tenant_id': ctx.tenant_id, 'idempotency_key': idempotency_key})
+            if not prior or prior.get('request_hash') != request_hash or prior.get('payment_type') != 'refund':
+                raise HTTPException(409, 'İade anahtarı farklı bir işlem için kullanılmış.') from None
+            return ServiceResult.success({'refund_id': prior['id'], 'idempotent': True})
+        if updated_sale and updated_sale.get('_refund_replayed'):
+            return ServiceResult.success({'refund_id': updated_sale['_refund_replayed'], 'idempotent': True})
         if updated_sale is None:
             # Another manager completed (or consumed) the remaining refundable
             # balance after our initial read.  No refund document is inserted.
             return ServiceResult.fail("İade tutarı kalan iade edilebilir tutarı aşıyor", "REFUND_LIMIT")
         new_refunded = round(float(updated_sale.get("refunded_amount") or 0), 2)
         full_refund = new_refunded >= paid
-        if sale.get("payment_method") == "room_charge" and full_refund:
-            folio = await self._db.folios.find_one({"booking_id": order.get("booking_id"), "folio_type": "guest", "tenant_id": ctx.tenant_id}, {"_id": 0, "id": 1})
-            await self._publish_charge_reversal(ctx.tenant_id, order_id, folio.get("id") if folio else None, reason.strip())
-        elif sale.get("payment_method") != "room_charge":
+        if sale.get("payment_method") != "room_charge":
             try:
                 from core.integrations.operational_gl_bridge import post_direct_pos_refund_to_gl
 
@@ -1002,7 +1047,8 @@ class PosFnbServiceV2:
             return ServiceResult.fail("Target table is unavailable", "TABLE_UNAVAILABLE")
 
         now = datetime.now(UTC).isoformat()
-        claimed = await self._db.table_layouts.update_one(
+        async def commit(session):
+            claimed = await self._db.table_layouts.update_one(
             {
                 "tenant_id": ctx.tenant_id,
                 "outlet_id": outlet_id,
@@ -1011,23 +1057,28 @@ class PosFnbServiceV2:
                 "current_order_id": {"$in": [None]},
                 "current_transaction_id": {"$in": [None]},
             },
-            {"$set": {"status": "occupied", "current_order_id": order_id, "opened_at": order.get("created_at") or now}},
-        )
-        if getattr(claimed, "matched_count", 0) == 0:
-            return ServiceResult.fail("Target table is unavailable", "TABLE_UNAVAILABLE")
-        await self._db.pos_orders.update_one(
-            {"id": order_id, "tenant_id": ctx.tenant_id},
-            {"$set": {"table_number": target_number, "updated_at": now}},
-        )
-        await self._db.kitchen_orders.update_many(
-            {"order_id": order_id, "tenant_id": ctx.tenant_id, "status": {"$nin": ["served", "cancelled"]}},
-            {"$set": {"table_number": target_number, "updated_at": now}},
-        )
-        if source_number:
-            await self._db.table_layouts.update_one(
-                {"tenant_id": ctx.tenant_id, "outlet_id": outlet_id, "table_number": source_number, "current_order_id": order_id},
-                {"$set": {"status": "available", "current_order_id": None, "opened_at": None}},
+                {"$set": {"status": "occupied", "current_order_id": order_id, "opened_at": order.get("created_at") or now}}, session=session,
             )
+            if claimed.matched_count != 1:
+                raise PosTableUnavailable(target_number)
+            changed = await self._db.pos_orders.update_one(
+                {'id': order_id, 'tenant_id': ctx.tenant_id, 'status': order.get('status'),
+                 'payment_status': order.get('payment_status'), 'table_number': order.get('table_number'), 'outlet_id': outlet_id},
+                {'$set': {'table_number': target_number, 'updated_at': now}}, session=session)
+            if changed.matched_count != 1:
+                raise PosOrderStateChanged(order_id)
+            await self._db.kitchen_orders.update_many(
+                {'order_id': order_id, 'tenant_id': ctx.tenant_id, 'status': {'$nin': ['served', 'cancelled']}},
+                {'$set': {'table_number': target_number, 'updated_at': now}}, session=session)
+            if source_number:
+                await self._db.table_layouts.update_one(
+                    {'tenant_id': ctx.tenant_id, 'outlet_id': outlet_id, 'table_number': source_number, 'current_order_id': order_id},
+                    {'$set': {'status': 'available', 'current_order_id': None, 'opened_at': None}}, session=session)
+        try:
+            await with_resource_locks(client=self._db.client, db=self._db, tenant_id=ctx.tenant_id,
+                locks_collection='folio_locks', resources=[], callback=commit)
+        except (PosTableUnavailable, PosOrderStateChanged):
+            return ServiceResult.fail('Adisyon veya hedef masa değişti; yenileyin.', 'TABLE_UNAVAILABLE')
         await self._broadcast_kitchen_queue(ctx.tenant_id)
         return ServiceResult.success(
             {"order_id": order_id, "from_table": source_number, "to_table": target_number}
@@ -1050,30 +1101,25 @@ class PosFnbServiceV2:
             return ServiceResult.fail("Order not found", "NOT_FOUND")
         if order.get("status") not in {"pending", "preparing", "ready"} or order.get("payment_status") == "paid":
             return ServiceResult.fail("Order is not open", "ORDER_NOT_OPEN")
-        base_total = round(float(order.get("pre_adjustment_total") or 0), 2)
-        if base_total <= 0:
-            base_total = round(float(order.get("total_amount") or 0) + float(order.get("tax_amount") or 0), 2)
-        amount = round(base_total * float(value) / 100, 2) if calculation == "percentage" else round(float(value), 2)
-        if amount <= 0:
+        if not math.isfinite(value) or value <= 0 or calculation not in {'percentage', 'fixed'} or adjustment_type not in {'discount', 'service_charge'}:
             return ServiceResult.fail("Adjustment must be positive", "VALIDATION_ERROR")
-        discount = amount if adjustment_type == "discount" else round(float(order.get("discount_amount") or 0), 2)
-        service_charge = amount if adjustment_type == "service_charge" else round(float(order.get("service_charge_amount") or 0), 2)
-        if discount > base_total:
-            return ServiceResult.fail("İndirim adisyon toplamını aşamaz", "VALIDATION_ERROR")
-        grand_total = round(base_total - discount + service_charge, 2)
-        original_tax = round(float(order.get("original_tax_amount", order.get("tax_amount", 0)) or 0), 2)
-        effective_tax = round(original_tax * max(base_total - discount, 0) / base_total, 2) if base_total else 0
         now = datetime.now(UTC).isoformat()
         event = {
             "id": str(uuid.uuid4()), "type": adjustment_type, "calculation": calculation,
-            "value": float(value), "amount": amount, "reason": reason.strip(),
+            "value": float(value), "reason": reason.strip(),
             "created_at": now, "created_by": ctx.actor_id,
         }
-        await self._db.pos_orders.update_one(
-            {"tenant_id": ctx.tenant_id, "id": order_id, "payment_status": {"$ne": "paid"}},
-            {"$set": {"pre_adjustment_total": base_total, "original_tax_amount": original_tax, "effective_tax_amount": effective_tax, "discount_amount": discount, "service_charge_amount": service_charge, "grand_total": grand_total, "updated_at": now}, "$push": {"adjustments": event}},
+        pricing = reprice_order({**order, 'adjustments': [*(order.get('adjustments') or []), event]})
+        event['amount'] = pricing['discount_amount' if adjustment_type == 'discount' else 'service_charge_amount']
+        changed = await self._db.pos_orders.update_one(
+            {"tenant_id": ctx.tenant_id, "id": order_id, 'status': order.get('status'),
+             'grand_total': order.get('grand_total'), 'order_items': order.get('order_items'),
+             'adjustments': order.get('adjustments'), "payment_status": {"$ne": "paid"}},
+            {"$set": {**pricing, "updated_at": now}, "$push": {"adjustments": event}},
         )
-        return ServiceResult.success({"order_id": order_id, "grand_total": grand_total, "discount_amount": discount, "service_charge_amount": service_charge, "adjustment": event})
+        if changed.matched_count != 1:
+            return ServiceResult.fail('Adisyon değişti; güncel hesabı yenileyin.', 'ORDER_NOT_OPEN')
+        return ServiceResult.success({"order_id": order_id, **pricing, "adjustment": event})
 
     # ==================================================================
     # Atomic intent persistence — Task #389
@@ -1134,6 +1180,7 @@ class PosFnbServiceV2:
                         "status": "closed",
                         "payment_status": "paid",
                         "payment_method": txn_doc["payment_method"],
+                        **({key: txn_doc[key] for key in ('booking_id', 'folio_id') if txn_doc.get(key)}),
                         "closed_at": txn_doc["created_at"],
                         "closed_by": txn_doc["processed_by"],
                         "guest_signature": txn_doc.get("guest_signature"),
@@ -1145,6 +1192,11 @@ class PosFnbServiceV2:
             )
             if close_result.matched_count != 1:
                 raise PosOrderStateChanged(order_id)
+            snapshot = txn_doc.get('order_snapshot') or {}
+            if snapshot.get('table_number') and snapshot.get('outlet_id'):
+                await self._db.table_layouts.update_one({'tenant_id': tenant_id, 'outlet_id': snapshot['outlet_id'],
+                    'table_number': snapshot['table_number'], 'current_order_id': order_id},
+                    {'$set': {'status': 'dirty', 'current_order_id': None, 'opened_at': None}}, session=session)
 
         try:
             await with_resource_locks(
@@ -1189,6 +1241,13 @@ class PosFnbServiceV2:
         """
 
         async def _commit(session):
+            if refund_doc.get('idempotency_key'):
+                prior = await self._db.pos_transactions.find_one({'tenant_id': tenant_id,
+                    'idempotency_key': refund_doc['idempotency_key']}, session=session)
+                if prior:
+                    if prior.get('request_hash') != refund_doc.get('request_hash') or prior.get('order_id') != order_id or prior.get('payment_type') != 'refund':
+                        raise HTTPException(409, 'İade anahtarı farklı bir işlem için kullanılmış.')
+                    return {'_refund_replayed': prior['id']}
             updated_sale = await self._db.pos_transactions.find_one_and_update(
                 {
                     "tenant_id": tenant_id,
@@ -1196,13 +1255,13 @@ class PosFnbServiceV2:
                     "status": "completed",
                     "$expr": {
                         "$lte": [
-                            {"$add": [{"$ifNull": ["$refunded_amount", 0]}, refund_amount]},
+                            {'$round': [{"$add": [{"$ifNull": ["$refunded_amount", 0]}, refund_amount]}, 2]},
                             paid,
                         ]
                     },
                 },
                 [
-                    {"$set": {"refunded_amount": {"$add": [{"$ifNull": ["$refunded_amount", 0]}, refund_amount]}}},
+                    {"$set": {"refunded_amount": {'$round': [{"$add": [{"$ifNull": ["$refunded_amount", 0]}, refund_amount]}, 2]}}},
                     {
                         "$set": {
                             "refund_status": {
@@ -1217,12 +1276,59 @@ class PosFnbServiceV2:
             if not updated_sale:
                 return None
             new_refunded = round(float(updated_sale.get("refunded_amount") or 0), 2)
+            breakdown = updated_sale.get('payment_breakdown') or []
+            if breakdown:
+                used = updated_sale.get('refunded_payment_parts')
+                if used is None:
+                    # Recover actual historical allocations, not a newly
+                    # rounded estimate of the original payment proportions.
+                    prior = await self._db.pos_transactions.find({
+                        'tenant_id': tenant_id, 'original_transaction_id': sale_id,
+                        'payment_type': 'refund',
+                    }, session=session).to_list(None)
+                    methods = list(dict.fromkeys(part['method'] for part in breakdown))
+                    original = [sum(float(p['amount']) for p in breakdown if p['method'] == method) for method in methods]
+                    used = [round(sum(abs(float(p['amount'])) for row in prior for p in row.get('payment_breakdown', []) if p['method'] == method), 2) for method in methods]
+                else:
+                    methods = updated_sale['refund_payment_methods']
+                    original = [sum(float(p['amount']) for p in breakdown if p['method'] == method) for method in methods]
+                shares = allocate_parts([round(cap - consumed, 2) for cap, consumed in zip(original, used)], refund_amount)
+                refund_doc['payment_breakdown'] = [{'method': method, 'amount': -share} for method, share in zip(methods, shares) if share]
+                await self._db.pos_transactions.update_one({'tenant_id': tenant_id, 'id': sale_id}, {'$set': {
+                    'refund_payment_methods': methods,
+                    'refunded_payment_parts': [round(a + b, 2) for a, b in zip(used, shares)],
+                }}, session=session)
             # Allocate from the transaction's current cumulative balance, not
             # the caller's pre-transaction read (parallel partial refunds).
             for field in ("tax_amount", "tip_amount", "discount_amount", "service_charge_amount"):
                 original = float(updated_sale.get(field) or 0)
                 refund_doc[field] = -round(round(original * new_refunded / paid, 2)
                                            - round(original * (new_refunded - refund_amount) / paid, 2), 2)
+            categories = {}
+            for line in updated_sale.get('order_items') or updated_sale.get('items') or []:
+                category = line.get('category') or 'other'
+                value = float(line.get('total', line.get('total_price', float(line.get('unit_price', line.get('price', 0))) * float(line.get('quantity', 1)))) or 0)
+                categories[category] = categories.get(category, 0) + value
+            refund_doc['category_amounts'] = {
+                category: -round(round(value * new_refunded / paid, 2) - round(value * (new_refunded - refund_amount) / paid, 2), 2)
+                for category, value in categories.items()
+            }
+            if updated_sale.get('payment_method') == 'room_charge' and new_refunded >= paid:
+                folio_id = updated_sale.get('folio_id')
+                if not folio_id:
+                    original_event = await self._db.outbox_events.find_one({
+                        'tenant_id': tenant_id, 'event_type': POS_CHARGE_POSTED, 'entity_id': order_id,
+                    }, session=session)
+                    folio_id = (original_event or {}).get('payload', {}).get('folio_id')
+                if not folio_id:
+                    charge = await self._db.folio_charges.find_one({'tenant_id': tenant_id, 'source_pos_order_id': order_id}, session=session)
+                    folio_id = (charge or {}).get('folio_id')
+                if not folio_id:
+                    raise HTTPException(409, 'İadenin oda folyosu doğrulanamadı; hiçbir iade kaydedilmedi.')
+                await enqueue_outbox_event(self._db, session=session, tenant_id=tenant_id,
+                    event_type=POS_CHARGE_REVERSED, entity_type='folio', entity_id=order_id,
+                    payload={'tenant_id': tenant_id, 'folio_id': folio_id, 'source_pos_order_id': order_id, 'reason': refund_doc.get('reason')},
+                    idempotency_key=f'pos-refund-reversal:{tenant_id}:{order_id}')
             from domains.pms.pos_fnb.checkout_benefits import reverse_benefits
             await reverse_benefits(self._db, tenant_id, updated_sale, refund_doc, paid, new_refunded, session)
             await self._db.pos_transactions.insert_one(refund_doc, session=session)
@@ -1307,64 +1413,30 @@ class PosFnbServiceV2:
         # lifecycle state and bypass the dedicated refund/reversal workflow,
         # leaving folio/ledger invariants inconsistent. Reject with CONFLICT
         # and require an explicit refund flow for post-close reversals.
-        if order.get("status") == "closed":
+        if order.get("status") == "closed" or order.get('payment_status') in {'paid', 'partially_refunded', 'refunded'}:
             return ServiceResult.fail("Cannot void a closed order; use refund/reversal flow", "ORDER_CLOSED")
 
         now = datetime.now(UTC)
-        # SECURITY: tenant_id filter required (defense-in-depth).
-        await self._db.pos_orders.update_one(
-            {"id": order_id, "tenant_id": ctx.tenant_id},
-            {
-                "$set": {
-                    "status": "voided",
-                    "voided_at": now.isoformat(),
-                    "voided_by": ctx.actor_id,
-                    "void_reason": reason,
-                }
-            },
-        )
-
-        # Cancel all kitchen orders
-        await self._db.kitchen_orders.update_many(
-            {"order_id": order_id, "tenant_id": ctx.tenant_id},
-            {"$set": {"status": "cancelled", "cancelled_at": now.isoformat()}},
-        )
-
-        # Release table
-        if order.get("table_number") and order.get("outlet_id"):
-            await self._db.table_layouts.update_one(
-                {
-                    "table_number": order["table_number"],
-                    "outlet_id": order["outlet_id"],
-                    "tenant_id": ctx.tenant_id,
-                },
-                {"$set": {"status": "available", "current_order_id": None, "opened_at": None}},
-            )
-
+        async def commit(session):
+            result = await self._db.pos_orders.update_one({'id': order_id, 'tenant_id': ctx.tenant_id,
+                'status': order.get('status'), 'payment_status': order.get('payment_status'),
+                'order_items': order.get('order_items'), 'grand_total': order.get('grand_total'),
+                'table_number': order.get('table_number'), 'outlet_id': order.get('outlet_id')},
+                {'$set': {'status': 'voided', 'voided_at': now.isoformat(), 'voided_by': ctx.actor_id, 'void_reason': reason}}, session=session)
+            if result.matched_count != 1:
+                raise PosOrderStateChanged(order_id)
+            await self._db.kitchen_orders.update_many({'order_id': order_id, 'tenant_id': ctx.tenant_id},
+                {'$set': {'status': 'cancelled', 'cancelled_at': now.isoformat()}}, session=session)
+            if order.get('table_number') and order.get('outlet_id'):
+                await self._db.table_layouts.update_one({'tenant_id': ctx.tenant_id, 'outlet_id': order['outlet_id'],
+                    'table_number': order['table_number'], 'current_order_id': order_id},
+                    {'$set': {'status': 'available', 'current_order_id': None, 'opened_at': None}}, session=session)
+        try:
+            await with_resource_locks(client=self._db.client, db=self._db, tenant_id=ctx.tenant_id,
+                locks_collection='folio_locks', resources=[], callback=commit)
+        except PosOrderStateChanged:
+            return ServiceResult.fail('Adisyon değişti; güncel hesabı yenileyin.', 'ORDER_NOT_OPEN')
         await self._broadcast_kitchen_queue(ctx.tenant_id)
-
-        # Reverse folio posting if exists
-        if order.get("payment_status") == "paid":
-            txn = await self._db.pos_transactions.find_one({"order_id": order_id, "tenant_id": ctx.tenant_id})
-            if txn:
-                # SECURITY: tenant_id filter required (defense-in-depth).
-                await self._db.pos_transactions.update_one(
-                    {"id": txn["id"], "tenant_id": ctx.tenant_id},
-                    {"$set": {"status": "voided", "voided_at": now.isoformat(), "void_reason": reason}},
-                )
-            # Task #389 — Compensation. Publish the IC reversal event so the
-            # async consumer idempotently voids any POS folio charge posted for
-            # this order and recalculates the balance from the ledger
-            # (double-reversal safe). Resolve the folio for the recalc target.
-            folio_id = None
-            booking_id = order.get("booking_id")
-            if booking_id:
-                folio = await self._db.folios.find_one(
-                    {"booking_id": booking_id, "folio_type": "guest", "tenant_id": ctx.tenant_id},
-                    {"_id": 0, "id": 1},
-                )
-                folio_id = folio["id"] if folio else None
-            await self._publish_charge_reversal(ctx.tenant_id, order_id, folio_id, reason or "POS order voided")
 
         # Restore any ingredient stock this order consumed at close time.
         # Best-effort and idempotent (per-record reversal flag). For the

@@ -217,7 +217,8 @@ const POSTableManagement = ({ outletId = 'main_restaurant', tenantId, outletName
       const module = await import('qrcode');
       const QRCode = module?.default ?? module;
       const qrs = await Promise.all(tables.map(async (table) => {
-        const url = `${window.location.origin}/g/fnb/${encodeURIComponent(tenantId)}/${encodeURIComponent(outletId)}?table=${encodeURIComponent(table.id)}`;
+        if (!table.guest_qr_token) throw new Error('Güvenli masa QR kodu alınamadı; masaları yenileyin.');
+        const url = `${window.location.origin}/g/fnb/${encodeURIComponent(tenantId)}/${encodeURIComponent(outletId)}?table=${encodeURIComponent(table.id)}&token=${encodeURIComponent(table.guest_qr_token)}`;
         return {
           tableNumber: table.table_number,
           url,

@@ -1368,7 +1368,7 @@ async def get_table_layout(outlet_id: str, current_user: User = Depends(get_curr
                 "current_transaction_id": transaction.get("id") if transaction else None,
                 "server_assigned": table.get("server_assigned"),
                 "current_order_id": order.get("id") if order else None,
-                "current_bill": round(active_bill.get("total_amount", active_bill.get("grand_total", 0)), 2) if active_bill else 0,
+                "current_bill": round(transaction.get('total_amount', 0) if transaction else order.get('grand_total', order.get('total_amount', 0)), 2) if active_bill else 0,
                 "guest_count": transaction.get("guests", 0) if transaction else 0,
                 "duration_minutes": calculate_table_duration(
                     (transaction or {}).get("opened_at")
@@ -1408,6 +1408,13 @@ async def get_table_layout(outlet_id: str, current_user: User = Depends(get_curr
                     "duration_minutes": 0,
                 }
             )
+
+    from domains.pms.pos_fnb.guest_qr import table_token
+
+    raw_by_id = {row.get('id'): row for row in raw_tables}
+    for table in tables:
+        source = raw_by_id.get(table['id'], table)
+        table['guest_qr_token'] = table_token(current_user.tenant_id, outlet_id, source) if table.get('id') else None
 
     return {
         "outlet_id": outlet_id,

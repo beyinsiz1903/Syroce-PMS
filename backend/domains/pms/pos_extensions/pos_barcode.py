@@ -36,7 +36,14 @@ def _now() -> datetime:
 
 @router.post("/map")
 async def upsert_mapping(body: BarcodeMap, current_user: User = Depends(get_current_user)):
+    if not body.menu_item_id:
+        raise HTTPException(422, 'Barkodu mevcut bir menü ürününe bağlayın.')
+    menu_item = await db.pos_menu_items.find_one({'tenant_id': current_user.tenant_id, 'id': body.menu_item_id}, {'_id': 0})
+    if not menu_item:
+        raise HTTPException(404, 'Menü ürünü bu tesiste bulunamadı.')
     doc = body.model_dump()
+    doc.update(name=menu_item.get('item_name') or menu_item.get('name'),
+               unit_price=menu_item.get('unit_price', menu_item.get('price')), outlet_id=menu_item.get('outlet_id'))
     doc.update(
         {
             "tenant_id": current_user.tenant_id,
@@ -78,7 +85,7 @@ async def delete_mapping(barcode: str, current_user: User = Depends(get_current_
 
 
 @router.get("/lookup/{barcode}")
-async def lookup(barcode: str, current_user: User = Depends(get_current_user)):
+async def lookup(barcode: str, current_user: User = Depends(get_current_user), outlet_id: str | None = None):
     doc = await db.pos_barcode_map.find_one({"tenant_id": current_user.tenant_id, "barcode": barcode}, {"_id": 0})
     # Log every lookup for audit/fraud reasons.
     await db.pos_barcode_scans.insert_one(
@@ -93,7 +100,14 @@ async def lookup(barcode: str, current_user: User = Depends(get_current_user)):
     )
     if not doc:
         raise HTTPException(status_code=404, detail="Barcode not mapped")
-    return {"barcode": barcode, "mapping": doc}
+    query = {'tenant_id': current_user.tenant_id, 'id': doc.get('menu_item_id'),
+             'available': {'$ne': False}, 'is_active': {'$ne': False}, 'status': {'$nin': ['inactive', 'deleted', 'archived']}}
+    if outlet_id:
+        query['outlet_id'] = outlet_id
+    item = await db.pos_menu_items.find_one(query, {'_id': 0})
+    if not item:
+        raise HTTPException(422, 'Barkod bu satış noktasında etkin bir ürüne bağlı değil. Menü eşlemesini kontrol edin.')
+    return {"barcode": barcode, "mapping": doc, 'item': item}
 
 
 @router.get("/scans")

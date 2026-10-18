@@ -42,6 +42,7 @@ const DRIVER_LABELS = {
 };
 const JOB_STATUS_LABELS = {
   sent: 'Gönderildi', pending: 'Kuyrukta', failed: 'Başarısız',
+  dispatching: 'Baskı sonucu bekleniyor',
   cancelled: 'İptal Edildi', unknown: 'Bilinmiyor',
 };
 
@@ -64,7 +65,7 @@ const CONDITION_LABELS = {
   error: 'Yazıcı hatası',
 };
 
-const statusBadge = (st) => {
+export const statusBadge = (st) => {
   if (!st || (!st.job_status && !(st.conditions || []).length)) {
     return { label: 'Durum yok', className: 'bg-gray-100 text-gray-500 border border-gray-200' };
   }
@@ -80,11 +81,13 @@ const statusBadge = (st) => {
     return { label: CONDITION_LABELS.paper_near_end, className: 'bg-amber-100 text-amber-700 border border-amber-200' };
   }
   if (st.job_status === 'sent') {
+    if (st.driver === 'simulator') return { label: 'Simülasyon · gerçek baskı yok', className: 'bg-amber-100 text-amber-700 border border-amber-200' };
     return { label: 'Hazır', className: 'bg-green-100 text-green-700 border border-green-200' };
   }
   if (st.job_status === 'pending') {
     return { label: 'Kuyrukta', className: 'bg-blue-100 text-blue-700 border border-blue-200' };
   }
+  if (st.job_status === 'dispatching') return { label: 'Baskı sonucu bekleniyor', className: 'bg-amber-100 text-amber-700 border border-amber-200' };
   if (st.job_status === 'cancelled') {
     return { label: 'İptal', className: 'bg-gray-100 text-gray-500 border border-gray-200' };
   }
@@ -208,7 +211,7 @@ const POSPrinterSettings = () => {
       const reason = result.reason || result.error || '';
       alertDialog({
         message: status === 'sent'
-          ? 'Test fişi yazıcıya gönderildi.'
+          ? result.driver === 'simulator' ? 'Simülasyon tamamlandı; gerçek baskı yapılmadı.' : 'Test fişi yazıcıya gönderildi.'
           : `Test sonucu: ${JOB_STATUS_LABELS[status] || status}.${reason ? ` ${reason}` : ''}`,
       });
     } catch (err) {
