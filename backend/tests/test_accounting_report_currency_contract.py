@@ -76,6 +76,7 @@ async def test_profit_loss_does_not_add_foreign_currency_invoices(monkeypatch, c
     assert result["total_expenses_by_currency"] == {"TRY": 40.0}
     assert result["gross_profit_by_currency"] == {"EUR": 20.0, "TRY": 60.0}
     assert result["revenue_breakdown_by_currency"] == {"Room": {"EUR": 20.0, "TRY": 100.0}}
+    assert result["revenue_breakdown"]["Room"] is None
     assert result["mixed_currency"] is True
     assert result["total_revenue"] is None
     assert result["gross_profit"] is None
@@ -150,11 +151,11 @@ async def test_financial_reports_include_the_complete_final_day(monkeypatch, cur
         current_user=current_user,
     )
 
-    expected = {"$gte": "2026-09-01T00:00:00", "$lte": "2026-09-30T23:59:59.999999"}
-    assert invoices.queries[0]["issue_date"] == expected
-    assert invoices.queries[1]["issue_date"] == expected
-    assert expenses.queries[0]["date"] == expected
-    assert expenses.queries[1]["date"] == expected
+    expected = {"$gte": "2026-09-01", "$lt": "2026-10-01"}
+    assert invoices.queries[0]["$or"][0]["issue_date"] == expected
+    assert invoices.queries[1]["$or"][0]["issue_date"] == expected
+    assert expenses.queries[0]["$or"][0]["date"] == expected
+    assert expenses.queries[1]["$or"][0]["date"] == expected
 
 
 @pytest.mark.asyncio

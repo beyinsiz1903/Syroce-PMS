@@ -36,6 +36,7 @@ from models.schemas import (
 )
 from modules.folio.services.folio_balance_read_service import FolioBalanceReadService
 from modules.folio.services.open_folio_service import OpenFolioService
+from modules.pms_core.report_money import add_amount, currency_code, rounded_totals, single_amount
 from modules.pms_core.role_permission_service import require_op
 from shared_kernel.invoice_guards import ensure_booking_invoiceable, is_status_invoiceable
 
@@ -87,6 +88,14 @@ def _report_date_bounds(start_date: str, end_date: str) -> tuple[str, str]:
     if end < start:
         raise HTTPException(status_code=422, detail="Bitiş tarihi başlangıç tarihinden önce olamaz.")
     return f"{start.isoformat()}T00:00:00", f"{end.isoformat()}T23:59:59.999999"
+
+
+def _document_period(field: str, start_date: str, end_date: str) -> dict:
+    """Document/accrual dates, including bare ISO days and legacy BSON dates."""
+    _report_date_bounds(start_date, end_date)
+    first = datetime.combine(date.fromisoformat(start_date), datetime.min.time(), UTC)
+    after = datetime.combine(date.fromisoformat(end_date) + timedelta(days=1), datetime.min.time(), UTC)
+    return {"$or": [{field: {"$gte": start_date, "$lt": after.date().isoformat()}}, {field: {"$gte": first, "$lt": after}}]}
 
 
 def _withholding_fraction(value: object) -> float:
@@ -617,12 +626,27 @@ async def create_expense(
 @router.get("/accounting/expenses")
 async def get_expenses(start_date: str | None = None, end_date: str | None = None, category: str | None = None, current_user: User = Depends(get_current_user)):
     query = {"tenant_id": current_user.tenant_id}
-    if start_date and end_date:
-        query["date"] = {"$gte": start_date, "$lte": end_date}
+    if start_date or end_date:
+        try:
+            start = date.fromisoformat(start_date) if start_date else None
+            end = date.fromisoformat(end_date) if end_date else None
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(422, "Tarih YYYY-MM-DD formatında olmalıdır") from exc
+        if start and end and start > end:
+            raise HTTPException(422, "Bitiş tarihi başlangıç tarihinden önce olamaz")
+        strings, dates = {}, {}
+        if start:
+            strings["$gte"] = start.isoformat()
+            dates["$gte"] = datetime.combine(start, datetime.min.time(), UTC)
+        if end:
+            next_day = end + timedelta(days=1)
+            strings["$lt"] = next_day.isoformat()
+            dates["$lt"] = datetime.combine(next_day, datetime.min.time(), UTC)
+        query["$or"] = [{"date": strings}, {"date": dates}]
     if category:
         query["category"] = category
 
-    expenses = await db.expenses.find(query, {"_id": 0}).sort("date", -1).to_list(1000)
+    expenses = await db.expenses.find(query, {"_id": 0}).sort("date", -1).to_list(None)
     return expenses
 
 
@@ -1823,7 +1847,6 @@ async def get_profit_loss_report(
         start_date = (_d.today() - _td(days=30)).isoformat()
     if not end_date:
         end_date = _d.today().isoformat()
-    start_bound, end_bound = _report_date_bounds(start_date, end_date)
     # Only paid sales documents are realised revenue in this cash-basis view.
     # A paid purchase or proforma must never become hotel income.
     invoices = await db.accounting_invoices.find(
@@ -1831,13 +1854,13 @@ async def get_profit_loss_report(
             "tenant_id": current_user.tenant_id,
             "status": "paid",
             "invoice_type": {"$nin": [InvoiceType.PROFORMA.value, InvoiceType.PURCHASE.value]},
-            "issue_date": {"$gte": start_bound, "$lte": end_bound},
+            **_document_period("issue_date", start_date, end_date),
         },
         {"_id": 0},
     ).to_list(None)
 
     # Get all expenses
-    expenses = await db.expenses.find({"tenant_id": current_user.tenant_id, "date": {"$gte": start_bound, "$lte": end_bound}}, {"_id": 0}).to_list(None)
+    expenses = await db.expenses.find({"tenant_id": current_user.tenant_id, **_document_period("date", start_date, end_date)}, {"_id": 0}).to_list(None)
 
     from core.tenant_currency import get_tenant_currency
 
@@ -1846,9 +1869,8 @@ async def get_profit_loss_report(
     def _currency_totals(records, amount_field):
         totals: dict[str, float] = {}
         for record in records:
-            code = str(record.get("currency") or tenant_currency).upper()
-            totals[code] = totals.get(code, 0) + float(record.get(amount_field, 0) or 0)
-        return {code: round(amount, 2) for code, amount in sorted(totals.items())}
+            add_amount(totals, record.get("currency") or tenant_currency, record.get(amount_field, 0))
+        return rounded_totals(totals)
 
     total_revenue_by_currency = _currency_totals(invoices, "total")
     total_expenses_by_currency = _currency_totals(expenses, "total_amount")
@@ -1876,10 +1898,9 @@ async def get_profit_loss_report(
     revenue_by_category = {}
     revenue_by_category_currency: dict[str, dict[str, float]] = {}
     for inv in invoices:
-        for item in inv["items"]:
-            desc = item["description"]
-            revenue_by_category[desc] = revenue_by_category.get(desc, 0) + item["total"]
-            code = str(inv.get("currency") or tenant_currency).upper()
+        for item in inv.get("items") or []:
+            desc = item.get("description") or "other"
+            code = currency_code(inv.get("currency"), tenant_currency)
             category_totals = revenue_by_category_currency.setdefault(desc, {})
             category_totals[code] = round(category_totals.get(code, 0) + float(item.get("total", 0) or 0), 2)
 
@@ -1887,11 +1908,13 @@ async def get_profit_loss_report(
     expense_by_category = {}
     expense_by_category_currency: dict[str, dict[str, float]] = {}
     for exp in expenses:
-        cat = exp["category"]
-        expense_by_category[cat] = expense_by_category.get(cat, 0) + exp["total_amount"]
-        code = str(exp.get("currency") or tenant_currency).upper()
+        cat = exp.get("category") or "other"
+        code = currency_code(exp.get("currency"), tenant_currency)
         category_totals = expense_by_category_currency.setdefault(cat, {})
         category_totals[code] = round(category_totals.get(code, 0) + float(exp.get("total_amount", 0) or 0), 2)
+
+    revenue_by_category = {key: single_amount(values) for key, values in revenue_by_category_currency.items()}
+    expense_by_category = {key: single_amount(values) for key, values in expense_by_category_currency.items()}
 
     return {
         "period": {"start": start_date, "end": end_date},
@@ -1908,6 +1931,7 @@ async def get_profit_loss_report(
         "revenue_breakdown_by_currency": revenue_by_category_currency,
         "expense_breakdown_by_currency": expense_by_category_currency,
         "mixed_currency": mixed_currency,
+        "basis": "paid_sales_by_invoice_date_minus_expense_accruals",
     }
 
 
@@ -1921,7 +1945,6 @@ async def get_vat_report(start_date: str | None = None, end_date: str | None = N
         start_date = (_d.today() - _td(days=30)).isoformat()
     if not end_date:
         end_date = _d.today().isoformat()
-    start_bound, end_bound = _report_date_bounds(start_date, end_date)
     # Sales VAT (collected)
     # Proforma and purchase invoices are not output VAT.  A proforma is only
     # an offer, while a purchase invoice belongs to input VAT through AP.
@@ -1929,7 +1952,7 @@ async def get_vat_report(start_date: str | None = None, end_date: str | None = N
         {
             "tenant_id": current_user.tenant_id,
             "invoice_type": {"$nin": [InvoiceType.PROFORMA.value, InvoiceType.PURCHASE.value]},
-            "issue_date": {"$gte": start_bound, "$lte": end_bound},
+            **_document_period("issue_date", start_date, end_date),
         },
         {"_id": 0},
     ).to_list(None)
@@ -1941,12 +1964,11 @@ async def get_vat_report(start_date: str | None = None, end_date: str | None = N
     def _vat_totals(records, field):
         totals: dict[str, float] = {}
         for record in records:
-            code = str(record.get("currency") or tenant_currency).upper()
-            totals[code] = totals.get(code, 0) + float(record.get(field, 0) or 0)
-        return {code: round(amount, 2) for code, amount in sorted(totals.items())}
+            add_amount(totals, record.get("currency") or tenant_currency, record.get(field, 0))
+        return rounded_totals(totals)
 
     # Purchase VAT (paid)
-    expenses = await db.expenses.find({"tenant_id": current_user.tenant_id, "date": {"$gte": start_bound, "$lte": end_bound}}, {"_id": 0}).to_list(None)
+    expenses = await db.expenses.find({"tenant_id": current_user.tenant_id, **_document_period("date", start_date, end_date)}, {"_id": 0}).to_list(None)
 
     sales_vat_by_currency = _vat_totals(invoices, "total_vat")
     purchase_vat_by_currency = _vat_totals(expenses, "vat_amount")

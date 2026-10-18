@@ -16,7 +16,10 @@ import { toast } from 'sonner';
 import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 import { bookingSourceLabel } from '@/utils/bookingSource';
 
-const money = (amount, currency) => formatCurrency(amount, currency || cachedTenantCurrency());
+const money = (amount, currency) => formatCurrency(amount, currency || cachedTenantCurrency(), { decimals: 2 });
+const moneyTotals = (totals, value, currency) => Object.keys(totals || {}).length
+  ? Object.entries(totals).map(([code, amount]) => money(amount, code)).join(' · ')
+  : value == null ? '—' : money(value, currency);
 const channelName = (channel) => bookingSourceLabel({ channel });
 
 /* ─── Color maps ───────────────────────────────────────── */
@@ -84,13 +87,14 @@ const ChannelLossTab = ({ period }) => {
   return (
     <div className="space-y-5" data-testid="channel-loss-tab">
       <DataQualityBanner dq={data.data_quality} />
+      <p className="text-xs text-muted-foreground">Giriş tarihine göre aynı rezervasyon grubu karşılaştırılır. Tutarlar brüt rezervasyon değeridir; gerçekleşmiş zarar veya tahsilat değildir. Para birimleri toplanmaz.</p>
 
       {/* Summary row */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <Card className="border-l-4 border-l-red-500" data-testid="ch-total-loss">
           <CardContent className="pt-4 pb-3">
             <p className="text-xs font-medium text-gray-500 uppercase">{t('cm.pages_NoShowAnalytics.toplam_kayip')}</p>
-            <p className="text-2xl font-bold text-red-600 mt-1">{money(data.total_loss, data.currency)}</p>
+            <p className="text-2xl font-bold text-red-600 mt-1">{moneyTotals(data.loss_by_currency, data.total_loss, data.currency)}</p>
             <p className="text-xs text-gray-400 mt-1">{data.total_no_shows} no-show</p>
           </CardContent>
         </Card>
@@ -98,7 +102,7 @@ const ChannelLossTab = ({ period }) => {
           <CardContent className="pt-4 pb-3">
             <p className="text-xs font-medium text-gray-500 uppercase">{t('cm.pages_NoShowAnalytics.en_kotu_kanal')}</p>
             <p className="text-2xl font-bold text-gray-900 mt-1">{data.top3_worst?.[0]?.channel ? channelName(data.top3_worst[0].channel) : '-'}</p>
-            <p className="text-xs text-gray-400 mt-1">{data.top3_worst?.[0]?.total_loss?.toLocaleString(i18n.language)} {t('cm.pages_NoShowAnalytics.tl_kayip')}</p>
+            <p className="text-xs text-gray-400 mt-1">{moneyTotals(data.top3_worst?.[0]?.loss_by_currency, data.top3_worst?.[0]?.total_loss)} · no-show oranına göre</p>
           </CardContent>
         </Card>
         <Card className="border-l-4 border-l-blue-500" data-testid="ch-channels-count">
@@ -131,8 +135,8 @@ const ChannelLossTab = ({ period }) => {
                   <p className={`text-lg font-bold ${clr.text}`}>{channelName(ch.channel)}</p>
                   <div className="mt-2 space-y-1 text-xs text-gray-600">
                     <div className="flex justify-between"><span>No-show</span><span className="font-semibold">{ch.no_show_count}</span></div>
-                    <div className="flex justify-between"><span>{t('cm.pages_NoShowAnalytics.toplam_kayip_e38cc')}</span><span className="font-semibold text-red-600">-{money(ch.total_loss, ch.currency || data.currency)}</span></div>
-                    <div className="flex justify-between"><span>{t('cm.pages_NoShowAnalytics.ort_kayip')}</span><span className="font-semibold">{money(ch.avg_loss, ch.currency || data.currency)}</span></div>
+                    <div className="flex flex-wrap justify-between gap-2"><span>{t('cm.pages_NoShowAnalytics.toplam_kayip_e38cc')}</span><span className="font-semibold text-red-600">{moneyTotals(ch.loss_by_currency, ch.total_loss, ch.currency || data.currency)}</span></div>
+                    <div className="flex flex-wrap justify-between gap-2"><span>{t('cm.pages_NoShowAnalytics.ort_kayip')}</span><span className="font-semibold">{moneyTotals(ch.avg_loss_by_currency, ch.avg_loss, ch.currency || data.currency)}</span></div>
                   </div>
                 </div>
               );
@@ -147,8 +151,9 @@ const ChannelLossTab = ({ period }) => {
           <CardTitle className="text-sm font-semibold text-gray-700">{t('cm.pages_NoShowAnalytics.kanal_bazli_detay')}</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+          <p className="mb-2 text-xs text-muted-foreground sm:hidden">Tüm sütunları görmek için tabloyu yana kaydırın.</p>
+          <div className="overflow-x-auto" data-testid="channel-detail-scroll">
+            <table className="w-full min-w-[760px] text-sm tabular-nums [&_th]:whitespace-nowrap [&_td]:whitespace-nowrap">
               <thead>
                 <tr className="border-b text-left text-xs text-gray-500 uppercase tracking-wide">
                   <th className="pb-2 pr-3">Kanal</th>
@@ -169,8 +174,8 @@ const ChannelLossTab = ({ period }) => {
                       </div>
                     </td>
                     <td className="py-2.5 pr-3 text-right font-semibold">{ch.no_show_count}</td>
-                    <td className="py-2.5 pr-3 text-right text-red-600 font-semibold">-{money(ch.total_loss, ch.currency || data.currency)}</td>
-                    <td className="py-2.5 pr-3 text-right">{money(ch.avg_loss, ch.currency || data.currency)}</td>
+                    <td className="py-2.5 pr-3 text-right text-red-600 font-semibold">{moneyTotals(ch.loss_by_currency, ch.total_loss, ch.currency || data.currency)}</td>
+                    <td className="py-2.5 pr-3 text-right">{moneyTotals(ch.avg_loss_by_currency, ch.avg_loss, ch.currency || data.currency)}</td>
                     <td className="py-2.5 pr-3 text-right">
                       <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${ch.no_show_rate > 10 ? 'bg-red-100 text-red-700' : ch.no_show_rate > 5 ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'}`}>
                         {ch.no_show_rate}%
@@ -291,7 +296,7 @@ const OverbookingHeatmapTab = ({ period }) => {
         <Card className="border-l-4 border-l-amber-500" data-testid="ob-loss">
           <CardContent className="pt-4 pb-3">
             <p className="text-xs font-medium text-gray-500 uppercase">{t('cm.pages_NoShowAnalytics.overbooking_kaybi')}</p>
-            <p className="text-2xl font-bold text-amber-600 mt-1">{money(data.total_loss, data.currency)}</p>
+            <p className="text-2xl font-bold text-amber-600 mt-1">{moneyTotals(data.loss_by_currency, data.total_loss, data.currency)}</p>
           </CardContent>
         </Card>
         <Card className="border-l-4 border-l-blue-500" data-testid="ob-peak-day">
@@ -325,7 +330,7 @@ const OverbookingHeatmapTab = ({ period }) => {
                     <div className="absolute -top-12 left-1/2 -translate-x-1/2 hidden group-hover:block bg-gray-800 text-white text-[10px] px-2 py-1.5 rounded whitespace-nowrap z-20">
                       <div>{d.date}</div>
                       <div>OB: {d.overbooking_count} {t('cm.pages_NoShowAnalytics.toplam_ns')} {d.total_noshow}</div>
-                      <div>Kayıp: {money(d.loss, d.currency || data.currency)}</div>
+                      <div>Brüt değer: {moneyTotals(d.loss_by_currency, d.loss, d.currency || data.currency)}</div>
                     </div>
                   </div>
                 ))}
@@ -365,7 +370,7 @@ const OverbookingHeatmapTab = ({ period }) => {
                   </div>
                   <div className="flex-1">
                     <p className="text-sm font-medium text-gray-800">{d.date}</p>
-                    <p className="text-xs text-gray-500">{d.total_noshow} toplam no-show | {d.loss?.toLocaleString(i18n.language)} {t('cm.pages_NoShowAnalytics.tl_kayip_72ee7')}</p>
+                    <p className="text-xs text-gray-500">{d.total_noshow} toplam no-show | {moneyTotals(d.loss_by_currency, d.loss)}</p>
                   </div>
                   <div className="text-right">
                     <p className="text-lg font-bold text-red-600">{d.overbooking_count}</p>
@@ -772,12 +777,14 @@ const PredictionTab = () => {
         <Card className="border-l-4 border-l-indigo-500" data-testid="pred-potential-loss">
           <CardContent className="pt-4 pb-3">
             <p className="text-xs font-medium text-gray-500 uppercase">{t('cm.pages_NoShowAnalytics.potansiyel_kayip')}</p>
-            <p className="text-2xl font-bold text-indigo-600 mt-1">{money(data.summary?.potential_loss, data.summary?.currency || data.currency)}</p>
+            <p className="text-2xl font-bold text-indigo-600 mt-1">{moneyTotals(data.summary?.potential_loss_by_currency, data.summary?.potential_loss, data.summary?.currency || data.currency)}</p>
           </CardContent>
         </Card>
       </div>
 
       {/* Prediction table */}
+      <p className="text-xs text-muted-foreground">Kural tabanlı risk puanıdır; kesin olasılık veya gerçekleşmiş zarar değildir. Farklı döviz tutarları risk ölçütü olarak karşılaştırılmaz.</p>
+      {data.truncated && <p role="status" className="text-sm text-amber-700">{data.matched_count} rezervasyonun en riskli ilk {data.limit} kaydı gösteriliyor; özet tüm kayıtları kapsar.</p>}
       <Card data-testid="prediction-table-card">
         <CardHeader className="pb-2">
           <div className="flex items-center gap-2">

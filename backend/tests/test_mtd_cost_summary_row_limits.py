@@ -26,6 +26,7 @@ async def test_mtd_cost_summary_never_truncates_cost_or_revenue_ledger(monkeypat
         SimpleNamespace(
             purchase_orders=SimpleNamespace(find=lambda *_args, **_kwargs: purchase_cursor),
             folio_charges=SimpleNamespace(find=lambda *_args, **_kwargs: revenue_cursor),
+            **{key: SimpleNamespace(find=lambda *_a, **_k: _Cursor([])) for key in ("extra_charges", "pos_orders", "pos_transactions", "pos_menu_transactions", "transactions")},
         ),
     )
     monkeypatch.setattr(

@@ -88,6 +88,11 @@ async def posted_revenue_rows(tenant_id: str, start: date, end: date, *, databas
         database.pos_menu_transactions.find(transaction_query, {"_id": 0}).to_list(None),
         database.transactions.find({**transaction_query, "$and": [{"$or": [{"category": "pos"}, {"_closure_source": "pos_menu_transactions"}]}]}, {"_id": 0}).to_list(None),
     )
+    # The POS report enriches older refunds from their source sale. Share that
+    # read-only reconstruction so net revenue excludes the refunded tip too.
+    from domains.pms.pos_fnb.reporting import enrich_refunds
+
+    transaction_sources[0], _ = await enrich_refunds(database, tenant_id, transaction_sources[0])
     represented_pos_ids = {str(row["source_pos_order_id"]) for row in [*folio_rows, *extra_rows] if row.get("source_pos_order_id")}
     settled_ids, seen_transaction_ids, order_source = set(), set(), {}
     transaction_rows = []
@@ -121,9 +126,11 @@ async def posted_revenue_rows(tenant_id: str, start: date, end: date, *, databas
             if order_id in represented_pos_ids or row.get("payment_method") == "room_charge":
                 continue
             value = row.get("total_amount") if row.get("total_amount") is not None else row.get("amount", 0)
-            value = float(value or 0) - float(row.get("tip_amount") or 0)
+            gross = float(value or 0)
+            tip = float(row.get("tip_amount") or 0)
+            value = gross - tip
             if row.get("payment_type") == "refund" or row.get("status") in {"refunded", "refund"}:
-                value = -abs(value)
+                value = -(abs(gross) - abs(tip))
             transaction_rows.append({"category": "fnb", "total": value,
                 "currency": row.get("currency") or order_currencies.get(order_id),
                 "business_date": row.get("business_date") or row.get("transaction_date"), "date": row.get("created_at")})

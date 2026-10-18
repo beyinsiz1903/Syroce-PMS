@@ -1,8 +1,10 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import { useCurrency } from '@/context/CurrencyContext';
+import { formatCurrency } from '@/lib/currency';
+import { useBusinessDate } from '@/hooks/useBusinessDate';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -41,16 +43,6 @@ const CATEGORY_KEYS = [
   'marketing', 'rent', 'insurance', 'taxes', 'other',
 ];
 
-function todayISO() {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function monthStartISO() {
-  const d = new Date();
-  d.setDate(1);
-  return d.toISOString().slice(0, 10);
-}
-
 function daysBetween(startISO, endISO) {
   const s = new Date(startISO);
   const e = new Date(endISO);
@@ -59,19 +51,31 @@ function daysBetween(startISO, endISO) {
 }
 
 function csvEscape(value) {
-  const s = String(value ?? '');
-  if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
-  return s;
+  let s = String(value ?? '');
+  if (/^[=+\-@]/.test(s.trimStart())) s = `'${s.trimStart()}`;
+  return `"${s.replace(/"/g, '""')}"`;
 }
 
 export default function CostAnalyticsView() {
   const { t, i18n } = useTranslation();
-  const { format: fmtMoney, code: currencyCode } = useCurrency();
+  const { code: tenantCurrency } = useCurrency();
+  const businessDate = useBusinessDate();
 
   const [loading, setLoading] = useState(true);
   const [expenses, setExpenses] = useState([]);
-  const [startDate, setStartDate] = useState(monthStartISO());
-  const [endDate, setEndDate] = useState(todayISO());
+  const [range, setRange] = useState(null);
+  const startDate = range?.start ?? `${businessDate.slice(0, 7)}-01`;
+  const endDate = range?.end ?? businessDate;
+  const [selectedCurrency, setSelectedCurrency] = useState('');
+  const [loadError, setLoadError] = useState(false);
+  const requestId = useRef(0);
+  const currencies = useMemo(() => [...new Set(expenses.map(exp => {
+    const code = String(exp.currency || tenantCurrency).trim().toUpperCase();
+    return code === 'TL' ? 'TRY' : code;
+  }))].sort(), [expenses, tenantCurrency]);
+  const currencyCode = currencies.includes(selectedCurrency) ? selectedCurrency
+    : currencies.includes(tenantCurrency) ? tenantCurrency : currencies[0] || tenantCurrency;
+  const fmtMoney = value => formatCurrency(value, currencyCode, { decimals: 2 });
 
   const categoryLabel = useCallback(
     (key) => t(`costAnalytics.categories.${key}`, { defaultValue: key }),
@@ -79,42 +83,52 @@ export default function CostAnalyticsView() {
   );
 
   const loadExpenses = useCallback(async () => {
+    const id = ++requestId.current;
     try {
       setLoading(true);
+      setLoadError(false);
       const params = {};
       if (startDate) params.start_date = startDate;
       if (endDate) params.end_date = endDate;
       const res = await axios.get('/accounting/expenses', { params });
-      setExpenses(Array.isArray(res.data) ? res.data : []);
+      if (id === requestId.current) setExpenses(Array.isArray(res.data) ? res.data : []);
     } catch (err) {
       console.error('Cost analytics load failed', {
         status: err?.response?.status ?? 'NOT_RECORDED',
         type: err?.name ?? 'Error',
       });
-      toast.error(t('costAnalytics.loadError'));
-      setExpenses([]);
+      if (id === requestId.current) {
+        toast.error(t('costAnalytics.loadError'));
+        setLoadError(true);
+        setExpenses([]);
+      }
     } finally {
-      setLoading(false);
+      if (id === requestId.current) setLoading(false);
     }
   }, [startDate, endDate, t]);
 
   useEffect(() => {
     loadExpenses();
+    return () => { requestId.current += 1; };
   }, [loadExpenses]);
 
   const { totalCosts, byCategory, entriesCount } = useMemo(() => {
     const buckets = {};
     let total = 0;
+    let count = 0;
     expenses.forEach((exp) => {
+      const raw = String(exp.currency || tenantCurrency).trim().toUpperCase();
+      if ((raw === 'TL' ? 'TRY' : raw) !== currencyCode) return;
       const cat = exp.category || 'other';
       const amt = Number(exp.total_amount ?? exp.amount ?? 0) || 0;
       if (!buckets[cat]) buckets[cat] = { total: 0, count: 0 };
-      buckets[cat].total += amt;
+      buckets[cat].total = Math.round((buckets[cat].total + amt) * 100) / 100;
       buckets[cat].count += 1;
-      total += amt;
+      total = Math.round((total + amt) * 100) / 100;
+      count += 1;
     });
-    return { totalCosts: total, byCategory: buckets, entriesCount: expenses.length };
-  }, [expenses]);
+    return { totalCosts: total, byCategory: buckets, entriesCount: count };
+  }, [expenses, tenantCurrency, currencyCode]);
 
   const categoryData = useMemo(
     () =>
@@ -135,6 +149,7 @@ export default function CostAnalyticsView() {
 
   const exportCsv = useCallback(() => {
     const headers = [
+      'Currency',
       t('costAnalytics.headers.category'),
       t('costAnalytics.headers.count'),
       t('costAnalytics.headers.total'),
@@ -143,9 +158,10 @@ export default function CostAnalyticsView() {
     ];
     const rows = categoryData.map((c) => {
       const share = totalCosts > 0 ? ((c.total / totalCosts) * 100).toFixed(2) : '0';
-      return [c.name, c.count, c.total.toFixed(2), c.avg.toFixed(2), `${share}%`];
+      return [currencyCode, c.name, c.count, c.total.toFixed(2), c.avg.toFixed(2), `${share}%`];
     });
     rows.push([
+      currencyCode,
       t('costAnalytics.headers.totalRow'),
       entriesCount,
       totalCosts.toFixed(2),
@@ -159,13 +175,13 @@ export default function CostAnalyticsView() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `cost-analytics_${startDate}_${endDate}.csv`;
+    a.download = `cost-analytics_${currencyCode}_${startDate}_${endDate}.csv`;
     document.body.appendChild(a);
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
     toast.success(t('costAnalytics.exportSuccess'));
-  }, [categoryData, totalCosts, entriesCount, startDate, endDate, t]);
+  }, [categoryData, totalCosts, entriesCount, startDate, endDate, t, currencyCode]);
 
   const numberFmt = useMemo(
     () => new Intl.NumberFormat(i18n.language || 'tr-TR'),
@@ -192,7 +208,7 @@ export default function CostAnalyticsView() {
               type="date"
               value={startDate}
               max={endDate}
-              onChange={(e) => setStartDate(e.target.value)}
+              onChange={(e) => setRange({ start: e.target.value, end: endDate })}
               className="w-40"
             />
           </div>
@@ -205,22 +221,30 @@ export default function CostAnalyticsView() {
               type="date"
               value={endDate}
               min={startDate}
-              max={todayISO()}
-              onChange={(e) => setEndDate(e.target.value)}
+              max={businessDate}
+              onChange={(e) => setRange({ start: startDate, end: e.target.value })}
               className="w-40"
             />
+          </div>
+          <div>
+            <Label htmlFor="cost-currency" className="text-xs text-gray-600">Para birimi</Label>
+            <select id="cost-currency" value={currencyCode} onChange={e => setSelectedCurrency(e.target.value)} className="h-10 rounded-md border bg-background px-3 text-sm">
+              {(currencies.length ? currencies : [tenantCurrency]).map(code => <option key={code} value={code}>{code}</option>)}
+            </select>
           </div>
           <Button variant="outline" onClick={loadExpenses} disabled={loading}>
             <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
             {t('costAnalytics.refresh')}
           </Button>
-          <Button variant="outline" onClick={exportCsv} disabled={categoryData.length === 0}>
+          <Button variant="outline" onClick={exportCsv} disabled={loading || loadError || categoryData.length === 0}>
             <Download className="w-4 h-4 mr-2" />
             {t('costAnalytics.exportCsv')}
           </Button>
         </div>
       </div>
 
+      <p className="text-xs text-muted-foreground">Gider tahakkukları · {currencyCode}. Para birimleri birbirine eklenmez; oranlar ve CSV yalnız seçili para birimindedir.</p>
+      {loading ? <p role="status">Rapor yükleniyor…</p> : loadError ? <p role="alert">{t('costAnalytics.loadError')}</p> : <>
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card className="bg-gradient-to-br from-red-50 to-red-100 border-red-200">
           <CardContent className="p-5">
@@ -376,7 +400,7 @@ export default function CostAnalyticsView() {
                 return (
                   <div
                     key={cat.key}
-                    className="flex items-center justify-between p-3 bg-gray-50 rounded-md hover:bg-gray-100 transition"
+                    className="flex flex-wrap items-center justify-between gap-3 p-3 bg-gray-50 rounded-md hover:bg-gray-100 transition"
                   >
                     <div className="flex items-center gap-3 flex-1">
                       <div
@@ -422,6 +446,7 @@ export default function CostAnalyticsView() {
           </div>
         </div>
       )}
+      </>}
     </div>
   );
 }

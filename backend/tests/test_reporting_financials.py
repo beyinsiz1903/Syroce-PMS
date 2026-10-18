@@ -114,3 +114,33 @@ def test_report_prefers_the_successful_retry_over_a_failed_duplicate():
     paid = {"idempotency_key": "same", "status": "paid", "amount": 100}
     assert deduplicate_report_payments([failed, paid]) == [paid]
     assert deduplicate_report_payments([paid, failed]) == [paid]
+
+
+def test_report_identity_does_not_collapse_distinct_folios_or_payment_providers():
+    rows = [
+        {"tenant_id": "t", "folio_id": "f1", "idempotency_key": "manual-1", "amount": 100},
+        {"tenant_id": "t", "folio_id": "f2", "idempotency_key": "manual-1", "amount": 200},
+        {"tenant_id": "t", "provider": "bank-a", "provider_ref": "42", "amount": 300},
+        {"tenant_id": "t", "provider": "bank-b", "provider_ref": "42", "amount": 400},
+    ]
+    assert reporting_collection_summary(rows)["amount"] == 1000
+
+
+def test_multiple_partial_refunds_of_one_provider_payment_are_not_lost():
+    rows = [
+        {"id": "sale", "provider_ref": "sale-42", "amount": 100, "method": "card"},
+        {"id": "refund-1", "provider_ref": "sale-42", "amount": 20, "method": "card", "payment_type": "refund"},
+        {"id": "refund-2", "provider_ref": "sale-42", "amount": 30, "method": "card", "payment_type": "refund"},
+    ]
+    assert reporting_collection_summary(rows)["amount"] == 50
+
+
+def test_pending_or_authorized_payments_are_not_received_cash_or_folio_offsets():
+    from modules.pms_core.reporting_financials import effective_folio_payment
+    for status in ("pending", "processing", "authorized", "initiated", "expired"):
+        assert effective_collection({"amount": 100, "status": status}) == 0
+        assert effective_folio_payment({"amount": 100, "status": status}) == 0
+
+
+def test_reporting_normalizes_currency_aliases_and_refund_whitespace():
+    assert reporting_collection_amount({"amount": 100, "currency": " tl ", "payment_type": " REFUND "}) == -100

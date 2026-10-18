@@ -632,17 +632,19 @@ def _payload_to_csv(report_label: str, payload: dict) -> bytes:
     import csv
     import io
 
+    from core.csv_safe import safe_writerow
+
     buf = io.StringIO()
     w = csv.writer(buf)
-    w.writerow([report_label])
-    w.writerow(["Üretim:", payload.get("generated_at", "")])
+    safe_writerow(w, [report_label])
+    safe_writerow(w, ["Üretim:", payload.get("generated_at", "")])
     w.writerow([])
     w.writerow(["Metrik", "Değer"])
     for r in payload.get("rows", []):
-        w.writerow([r.get("label", ""), r.get("value", "")])
+        safe_writerow(w, [r.get("label", ""), r.get("value", "")])
     if payload.get("notes"):
         w.writerow([])
-        w.writerow(["Not:", payload["notes"]])
+        safe_writerow(w, ["Not:", payload["notes"]])
     return ("\ufeff" + buf.getvalue()).encode("utf-8")
 
 

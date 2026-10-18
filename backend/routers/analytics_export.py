@@ -91,9 +91,12 @@ async def download_export(
     if req.export_format == "json":
         media = "application/json"
         ext = "json"
+    elif req.export_format == "excel":
+        media = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        ext = "xlsx"
 
     return StreamingResponse(
-        io.BytesIO(content.encode("utf-8")),
+        io.BytesIO(content.encode("utf-8") if isinstance(content, str) else content),
         media_type=media,
         headers={"Content-Disposition": f"attachment; filename={req.report_type}.{ext}"},
     )

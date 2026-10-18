@@ -87,11 +87,11 @@ export default function CashFlowModal(props) {
                       <div className="grid grid-cols-2 gap-2 text-xs">
                         <div className="text-green-700">
                           <span className="font-medium">Tahsilat: </span>
-                          {formatCurrency(day.expected_collections)}
+                          {formatTotals(day.collections_by_currency, day.expected_collections)}
                         </div>
                         <div className="text-amber-700">
                           <span className="font-medium">{t('cm.components_mobilefinance_dialogs_CashFlowModal.odeme')} </span>
-                          {formatCurrency(day.expected_payments)}
+                          {formatTotals(day.payments_by_currency, day.expected_payments)}
                         </div>
                       </div>
                       {day.checkout_count > 0 && (

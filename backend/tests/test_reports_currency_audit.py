@@ -43,7 +43,7 @@ USER = SimpleNamespace(tenant_id="tenant-A", role="admin")
 
 @pytest.fixture
 def report_db(monkeypatch):
-    db = SimpleNamespace(**{key: Collection() for key in ("bookings", "folios", "companies", "payments", "folio_charges", "accounting_invoices", "purchase_orders")})
+    db = SimpleNamespace(**{key: Collection() for key in ("bookings", "folios", "companies", "payments", "folio_charges", "accounting_invoices", "purchase_orders", "extra_charges", "pos_orders", "pos_transactions", "pos_menu_transactions", "transactions")})
     monkeypatch.setattr(reports, "db", db)
     monkeypatch.setattr(reports, "ensure_business_date_initialized", AsyncMock(return_value={"business_date": "2026-10-15"}))
     monkeypatch.setattr(reports, "_enforce", lambda *_: None)
