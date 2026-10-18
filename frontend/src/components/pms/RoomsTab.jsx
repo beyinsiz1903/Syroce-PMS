@@ -91,20 +91,23 @@ const RoomsTab = ({
   // üzerinde de görünür (refresh butonuna gerek kalmaz). Tab gizliyken
   // uyutulur (visibilitychange).
   const refreshRef = useRef(onDataRefresh);
+  const refreshPendingRef = useRef(false);
+  const hasActiveCleaning = (rooms || []).some(r => r.status === 'dirty' || r.status === 'cleaning');
+  const canRefresh = typeof onDataRefresh === 'function';
   useEffect(() => { refreshRef.current = onDataRefresh; }, [onDataRefresh]);
   useEffect(() => {
-    if (typeof refreshRef.current !== 'function') return;
-    const hasActiveCleaning = (rooms || []).some(
-      r => r.status === 'dirty' || r.status === 'cleaning'
-    );
-    if (!hasActiveCleaning) return;
-    const id = setInterval(() => {
-      if (document.visibilityState === 'visible' && typeof refreshRef.current === 'function') {
-        refreshRef.current();
-      }
+    if (!canRefresh || !hasActiveCleaning) return;
+    const id = setInterval(async () => {
+      if (document.visibilityState !== 'visible' || refreshPendingRef.current) return;
+      refreshPendingRef.current = true;
+      try {
+        await refreshRef.current();
+      } catch {
+        // The parent reports refresh errors inline; retry on the next tick.
+      } finally { refreshPendingRef.current = false; }
     }, 30000);
     return () => clearInterval(id);
-  }, [rooms]);
+  }, [canRefresh, hasActiveCleaning]);
   const [paymentAmount, setPaymentAmount] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('cash');
   const [paymentLoading, setPaymentLoading] = useState(false);

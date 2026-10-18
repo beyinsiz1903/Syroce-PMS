@@ -132,6 +132,9 @@ const PMSModule = ({ user, tenant, onLogout }) => {
   const [rmsSuggestions, setRmsSuggestions] = useState([]);
   const [exceptions, setExceptions] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const initialDataLoadedRef = useRef(false);
+  const dataRequestRef = useRef(0);
   const [loadError, setLoadError] = useState(null);
   const [fdLoading, setFdLoading] = useState(false);
   const [fdError, setFdError] = useState(null);
@@ -219,7 +222,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
   // Per-tenant sub-tab entitlement: tenant.modules['pms.<key>'] === false
   // hides that tab. Missing/undefined = visible (backward compatible).
   // Always keeps `frontdesk` visible so the tab strip is never empty.
-  const tenantModulesMap = tenant?.modules || {};
+  const tenantModulesMap = useMemo(() => tenant?.modules || {}, [tenant?.modules]);
   const isPmsSubTabEnabled = useCallback((tabKey) => {
     if (tabKey === 'frontdesk') return true;
     return tenantModulesMap[`pms.${tabKey}`] !== false;
@@ -473,10 +476,11 @@ const PMSModule = ({ user, tenant, onLogout }) => {
     const idleFn = () => { loadAuditLogs(); loadChannelManagerData(); };
     if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
       const id = window.requestIdleCallback(idleFn, { timeout: 4000 });
-      return () => window.cancelIdleCallback?.(id);
+      return () => { dataRequestRef.current += 1; window.cancelIdleCallback?.(id); };
     }
     const t = setTimeout(idleFn, 3000);
-    return () => clearTimeout(t);
+    return () => { dataRequestRef.current += 1; clearTimeout(t); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- Bootstrap once; subsequent refreshes use callbacks and business-date events.
   }, []);
 
   useEffect(() => {
@@ -524,12 +528,21 @@ const PMSModule = ({ user, tenant, onLogout }) => {
   }, [activeTab, hasLoadedFrontdesk, hasLoadedHousekeeping, hasLoadedAllBookings]);
 
   const loadData = async (businessDateOverride = null) => {
-    setLoading(true);
-    setLoadError(null);
+    const requestId = ++dataRequestRef.current;
+    // Replacing the workspace with the initial loader unmounts RoomsTab and
+    // destroys its filters, context menu and open reservation/payment drafts.
+    // Once data exists, all refreshes must hydrate the mounted workspace.
+    if (!initialDataLoadedRef.current) {
+      setLoading(true);
+      setLoadError(null);
+    } else {
+      setRefreshing(true);
+    }
     try {
       let operationalDate = businessDateOverride || businessDate;
       if (!operationalDate && (user?.effective_permissions || []).includes('view_bookings')) {
         const businessDateResponse = await axios.get('/night-audit/business-date', { timeout: 8000 });
+        if (requestId !== dataRequestRef.current) return;
         operationalDate = businessDateResponse?.data?.business_date;
         if (operationalDate) setBusinessDate(operationalDate);
       }
@@ -552,31 +565,35 @@ const PMSModule = ({ user, tenant, onLogout }) => {
         axios.get('/pms/rooms?limit=100', { timeout: 8000 }),
         axios.get(`/pms/bookings?start_date=${today}&end_date=${futureDateStr}&limit=120`, { timeout: 8000 })
       ]);
+      if (requestId !== dataRequestRef.current) return;
       const [roomsRes, bookingsRes] = criticalResults.map((r) => (r.status === 'fulfilled' ? r.value : null));
       criticalResults.forEach((r, idx) => { if (r.status === 'rejected') console.warn('PMS critical data partial failure:', idx, r.reason); });
       if (!roomsRes && !bookingsRes) {
         setLoadError('PMS verileri zamanında alınamadı. Bağlantıyı kontrol edip yeniden deneyin.');
         return;
       }
-      if (!roomsRes || !bookingsRes) {
-        setLoadError('PMS verilerinin bir bölümü alınamadı. Görünen bilgiler eksik olabilir.');
+      setLoadError(!roomsRes || !bookingsRes
+        ? 'PMS verilerinin bir bölümü alınamadı. Görünen bilgiler eksik olabilir.' : null);
+      if (bookingsRes) {
+        const rawBookings = bookingsRes.data || [];
+        const grouped = [];
+        const seenGroupIds = new Set();
+        rawBookings.filter(b => b.group_booking_id).forEach(b => {
+          if (seenGroupIds.has(b.group_booking_id)) return;
+          const sameGroup = rawBookings.filter(x => x.group_booking_id === b.group_booking_id);
+          seenGroupIds.add(b.group_booking_id);
+          grouped.push({ type: 'group', group_booking_id: b.group_booking_id, master_booking: b, bookings: sameGroup });
+        });
+        rawBookings.filter(b => !b.group_booking_id).forEach(b => { grouped.push({ type: 'single', booking: b }); });
+        setGroupedBookings(grouped);
+        setBookings(rawBookings);
       }
-      const rawBookings = bookingsRes?.data || [];
-      const grouped = [];
-      const seenGroupIds = new Set();
-      rawBookings.filter(b => b.group_booking_id).forEach(b => {
-        if (seenGroupIds.has(b.group_booking_id)) return;
-        const sameGroup = rawBookings.filter(x => x.group_booking_id === b.group_booking_id);
-        seenGroupIds.add(b.group_booking_id);
-        grouped.push({ type: 'group', group_booking_id: b.group_booking_id, master_booking: b, bookings: sameGroup });
-      });
-      rawBookings.filter(b => !b.group_booking_id).forEach(b => { grouped.push({ type: 'single', booking: b }); });
-      setGroupedBookings(grouped);
-      setRooms(roomsRes?.data || []);
-      setBookings(bookingsRes?.data || []);
+      if (roomsRes) setRooms(roomsRes.data || []);
+      initialDataLoadedRef.current = true;
       setLoading(false);
 
       void secondaryDataPromise.then((secondaryResults) => {
+        if (requestId !== dataRequestRef.current) return;
         const [guestsRes, companiesRes, pricingRes] = secondaryResults.map((r) => (r.status === 'fulfilled' ? r.value : null));
         secondaryResults.forEach((r, idx) => { if (r.status === 'rejected') console.warn('PMS secondary data partial failure:', idx, r.reason); });
         if (guestsRes) setGuests(guestsRes.data || []);
@@ -584,9 +601,13 @@ const PMSModule = ({ user, tenant, onLogout }) => {
         if (pricingRes) setOccupancyPricingRules(pricingRes.data?.rules || {});
       });
     } catch (error) {
+      if (requestId !== dataRequestRef.current) return;
       setLoadError('PMS verileri yüklenemedi. Bağlantıyı kontrol edip yeniden deneyin.');
-      toast.error('PMS verileri yüklenemedi'); console.error('PMS data load error:', error);
-    } finally { setLoading(false); }
+      if (!initialDataLoadedRef.current) toast.error('PMS verileri yüklenemedi');
+      console.error('PMS data load error:', error);
+    } finally {
+      if (requestId === dataRequestRef.current) { setLoading(false); setRefreshing(false); }
+    }
   };
 
   const loadFrontDeskData = async () => {
@@ -670,7 +691,6 @@ const PMSModule = ({ user, tenant, onLogout }) => {
   useEffect(() => {
     if (openDialog !== 'booking') return;
     loadRateData(newBooking.channel, newBooking.company_id, newBooking.check_in);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openDialog, newBooking.channel, newBooking.company_id, newBooking.check_in]);
 
   const loadAuditLogs = async () => {
@@ -1022,10 +1042,11 @@ const PMSModule = ({ user, tenant, onLogout }) => {
 
   return (
     <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="pms" fullWidth>
-      <div className="p-3 sm:p-6 space-y-4">
+      <div className="p-3 sm:p-6 space-y-4" aria-busy={refreshing}>
+        <div role="status" className="flex h-4 items-center gap-2 text-xs text-slate-500">{refreshing && <><RefreshCw className="h-3.5 w-3.5 animate-spin" />Veriler arka planda güncelleniyor…</>}</div>
         {loadError && <div role="alert" className="flex flex-col gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 sm:flex-row sm:items-center sm:justify-between">
           <span>{loadError}</span>
-          <Button variant="outline" size="sm" onClick={() => loadData()} disabled={loading}>Yeniden dene</Button>
+          <Button variant="outline" size="sm" onClick={() => loadData()} disabled={loading || refreshing}>Yeniden dene</Button>
         </div>}
         <div className="flex flex-col justify-between gap-3 lg:flex-row lg:items-start">
           <div>
