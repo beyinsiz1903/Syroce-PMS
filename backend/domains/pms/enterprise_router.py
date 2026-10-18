@@ -568,7 +568,7 @@ async def create_purchase_order(
     return order
 
 
-@router.get("/marketplace/deliveries")
+@router.get("/marketplace/deliveries", dependencies=[Depends(require_feature("hidden_marketplace"))])
 async def get_deliveries(current_user: User = Depends(get_current_user)):
     deliveries = await db.deliveries.find({"tenant_id": current_user.tenant_id}, {"_id": 0}).sort("delivered_at", -1).to_list(100)
     return {"deliveries": deliveries}
