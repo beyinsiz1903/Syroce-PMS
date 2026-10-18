@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -61,7 +61,7 @@ const DATE_PRESETS = [{
   calc: () => {
     const d = new Date();
     const s = new Date(d);
-    s.setDate(d.getDate() - 30);
+    s.setDate(d.getDate() - 29);
     return {
       from: localISO(s),
       to: localISO(d)
@@ -73,7 +73,7 @@ const DATE_PRESETS = [{
   calc: () => {
     const d = new Date();
     const s = new Date(d);
-    s.setDate(d.getDate() - 90);
+    s.setDate(d.getDate() - 89);
     return {
       from: localISO(s),
       to: localISO(d)
@@ -144,6 +144,8 @@ const ReportBuilder = () => {
 
   // Results state
   const [reportData, setReportData] = useState(null);
+  const [resultColumns, setResultColumns] = useState([]);
+  const [resultScope, setResultScope] = useState(null);
   const [columnLabels, setColumnLabels] = useState({});
   const [summary, setSummary] = useState({});
   const [piiMasked, setPiiMasked] = useState(false);
@@ -236,15 +238,26 @@ const ReportBuilder = () => {
     filters: filters.filter(f => f.field && f.value !== '' && selectedColumns.includes(f.field)),
     date_from: dateFrom || null,
     date_to: dateTo || null,
-    sort_by: sortBy && selectedColumns.includes(sortBy) ? sortBy : null,
+    sort_by: sortBy && dataSources[selectedSource]?.columns?.[sortBy] ? sortBy : null,
     sort_order: sortOrder,
     limit: Math.max(1, Math.min(parseInt(limit, 10) || 500, maxLimit))
   });
-  const formatCurrency = value => formatCurrencyValue(value, currencyCode, {
+  const configKey = JSON.stringify(buildConfig());
+  const currentConfigKey = useRef(configKey);
+  const activeRequest = useRef({ id: 0, key: null });
+  currentConfigKey.current = configKey;
+  useEffect(() => {
+    setReportData(null);
+    setSummary({});
+    setResultScope(null);
+    if (activeRequest.current.key !== configKey) setLoading(false);
+  }, [configKey]);
+  useEffect(() => () => { activeRequest.current.id += 1; }, []);
+  const formatCurrency = (value, code = currencyCode) => formatCurrencyValue(value, code, {
     decimals: 2,
     compactDecimals: false
   });
-  const generateReport = async () => {
+  const generateReport = async (override = {}) => {
     if (!selectedSource) return toast.error(t('reportBuilder.selectSource'));
     if (selectedColumns.length === 0) return toast.error(t('reportBuilder.selectColumns'));
     if (dateFrom && dateTo && dateFrom > dateTo) return toast.error('Başlangıç tarihi bitiş tarihinden sonra olamaz');
@@ -253,13 +266,18 @@ const ReportBuilder = () => {
     setColumnLabels({});
     setSummary({});
     setPiiMasked(false);
+    const config = { ...buildConfig(), ...('sort_by' in override ? override : {}) };
+    const requestKey = JSON.stringify(config);
+    const requestId = activeRequest.current.id + 1;
+    activeRequest.current = { id: requestId, key: requestKey };
+    const isCurrentRequest = () => currentConfigKey.current === requestKey && activeRequest.current.id === requestId;
     try {
       const res = await fetchWithRetry(`/api/reports/builder/generate`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify(buildConfig())
+        body: JSON.stringify(config)
       });
       if (!res.ok) {
         let detail = '';
@@ -270,15 +288,19 @@ const ReportBuilder = () => {
         throw new Error(detail || t('reportBuilder.generateError'));
       }
       const result = await res.json();
+      if (!isCurrentRequest()) return;
       setReportData(result.data || []);
+      setResultColumns(result.columns || config.columns);
+      setResultScope({ truncated: result.truncated, matchedCount: result.matched_count, grain: result.row_grain });
       setColumnLabels(result.column_labels || {});
       setSummary(result.summary || {});
       setPiiMasked(!!result.pii_masked);
       toast.success(`${result.total_count} ${t('reportBuilder.recordsFound')}`);
     } catch (err) {
+      if (!isCurrentRequest()) return;
       toast.error(err.message || 'Rapor oluşturulurken hata oluştu');
     } finally {
-      setLoading(false);
+      if (isCurrentRequest()) setLoading(false);
     }
   };
   const exportFile = async format => {
@@ -676,18 +698,25 @@ const ReportBuilder = () => {
             </div>
           </CardHeader>
           <CardContent>
+            {resultScope?.truncated && <p role="status" className="mb-3 text-sm text-amber-800">
+              Sınırlı rapor: {resultScope.matchedCount} kaydın ilk {reportData.length} satırı alındı. Özet ve Excel/PDF yalnız bu satırları içerir. Tam rapor için tarih aralığını daraltın veya satır limitini artırın.
+            </p>}
+            {resultScope?.grain === 'folio_currency' && <p className="mb-3 text-xs text-slate-500">Her folyo ve para birimi ayrı satırdır. Farklı dövizler birbirine eklenmez.</p>}
             {Object.keys(summary).length > 0 && <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
                 {Object.entries(summary).map(([col, stats]) => {
             const colType = sourceColumns[col]?.type;
-            const fmt = colType === 'currency' ? formatCurrency : v => v?.toLocaleString(i18n.language);
+            const groups = colType === 'currency' && stats.by_currency ? Object.entries(stats.by_currency) : [[null, stats]];
             return <div key={col} className="p-3 bg-white border border-slate-200 rounded-lg border-l-4 border-l-sky-500" data-testid={`summary-${col}`}>
                       <p className="text-xs text-gray-500 font-medium">{columnLabels[col] || col}</p>
-                      <p className="text-lg font-bold text-gray-900 mt-0.5">{fmt(stats.sum)}</p>
-                      <div className="flex gap-3 mt-1 text-[10px] text-gray-400">
-                        <span>Ort: {fmt(stats.avg)}</span>
-                        <span>Min: {fmt(stats.min)}</span>
-                        <span>Max: {fmt(stats.max)}</span>
-                      </div>
+                      {groups.map(([code, values]) => {
+                        const fmt = colType === 'currency' ? v => formatCurrency(v, code || currencyCode) : v => v?.toLocaleString(i18n.language);
+                        return <div key={code || col}>
+                          <p className="text-lg font-bold text-gray-900 mt-0.5 break-words">{fmt(values.sum)}</p>
+                          <div className="flex flex-wrap gap-x-3 mt-1 text-[10px] text-gray-500">
+                            <span>Ort: {fmt(values.avg)}</span><span>Min: {fmt(values.min)}</span><span>Max: {fmt(values.max)}</span>
+                          </div>
+                        </div>;
+                      })}
                     </div>;
           })}
               </div>}
@@ -697,9 +726,11 @@ const ReportBuilder = () => {
                 <thead>
                   <tr className="bg-slate-50 border-b">
                     <th className="py-2.5 px-3 text-left text-xs font-semibold text-gray-500 w-10">#</th>
-                    {selectedColumns.map(col => <th key={col} className="py-2.5 px-3 text-left text-xs font-semibold text-gray-600 cursor-pointer hover:text-sky-600" onClick={() => {
+                    {resultColumns.map(col => <th key={col} className="py-2.5 px-3 text-left text-xs font-semibold text-gray-600 cursor-pointer hover:text-sky-600" onClick={() => {
+                  const nextOrder = sortBy === col && sortOrder === 'asc' ? 'desc' : 'asc';
                   setSortBy(col);
-                  setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc');
+                  setSortOrder(nextOrder);
+                  generateReport({ sort_by: col, sort_order: nextOrder });
                 }}>
                         <span className="flex items-center gap-1">
                           {columnLabels[col] || sourceColumns[col]?.label || col}
@@ -711,11 +742,11 @@ const ReportBuilder = () => {
                 <tbody>
                   {reportData.slice(0, 100).map((row, i) => <tr key={row.id || i} className="border-b hover:bg-sky-50/30 transition-colors">
                       <td className="py-2 px-3 text-xs text-gray-400">{i + 1}</td>
-                      {selectedColumns.map(col => {
+                      {resultColumns.map(col => {
                   const val = row[col];
                   const colType = sourceColumns[col]?.type;
                   let display;
-                  if (colType === 'currency' && typeof val === 'number') display = formatCurrency(val);else if (colType === 'boolean') display = val ? 'Evet' : 'Hayır';else if (Array.isArray(val)) display = val.join(', ');else display = val !== null && val !== undefined && val !== '' ? String(val) : '-';
+                  if (colType === 'currency' && typeof val === 'number') display = formatCurrency(val, row.currency || currencyCode);else if (colType === 'boolean') display = val ? 'Evet' : 'Hayır';else if (Array.isArray(val)) display = val.join(', ');else display = val !== null && val !== undefined && val !== '' ? String(val) : '-';
                   return <td key={col} className="py-2 px-3 text-xs text-gray-700 max-w-[200px] truncate" title={String(display)}>
                             {colType === 'select' ? <Badge variant="outline" className="text-[10px] capitalize">{display}</Badge> : display}
                           </td>;

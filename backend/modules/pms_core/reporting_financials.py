@@ -6,9 +6,29 @@ cash/card collection.  Keeping the classification here prevents reports from
 silently disagreeing about the same transaction.
 """
 
+from modules.pms_core.report_money import money
+
 INVALID_PAYMENT_STATUSES = frozenset({"void", "voided", "failed", "cancelled", "canceled", "rejected"})
 REPORTING_CURRENCY = "TRY"
 NON_CASH_PAYMENT_METHODS = frozenset({"discount", "city_ledger", "complimentary", "correction", "ar"})
+
+
+def report_payment_day_match(day: str) -> dict:
+    """Accounting day first; support BSON and ISO legacy transaction dates."""
+    from datetime import UTC, datetime, timedelta
+
+    from core.business_date_service import accounting_day_match
+
+    start = datetime.fromisoformat(day).replace(tzinfo=UTC)
+    end = start + timedelta(days=1)
+    clauses = [
+        {"$or": [{field: {"$gte": day, "$lt": end.date().isoformat()}}, {field: {"$gte": start, "$lt": end}}]}
+        for field in ("payment_date", "date", "processed_at", "created_at")
+    ]
+    query = accounting_day_match(day, *clauses)
+    query["$or"][0] = {"business_date": {"$gte": day, "$lt": end.date().isoformat()}}
+    query["$or"].append({"business_date": {"$gte": start, "$lt": end}})
+    return query
 
 
 def report_payment_identity(payment: dict) -> tuple:
@@ -24,13 +44,16 @@ def report_payment_identity(payment: dict) -> tuple:
 
 def deduplicate_report_payments(payments: list[dict]) -> list[dict]:
     """Omit retry-created duplicate ledger rows without collapsing refunds."""
-    seen: set[tuple] = set()
+    seen: dict[tuple, int] = {}
     unique: list[dict] = []
     for payment in payments:
         identity = report_payment_identity(payment)
         if identity in seen:
+            index = seen[identity]
+            if not is_valid_payment(unique[index]) and is_valid_payment(payment):
+                unique[index] = payment
             continue
-        seen.add(identity)
+        seen[identity] = len(unique)
         unique.append(payment)
     return unique
 
@@ -55,7 +78,7 @@ def stamp_reporting_values(payment: dict, reporting_currency: str = REPORTING_CU
 
 
 def is_valid_payment(payment: dict) -> bool:
-    return not payment.get("voided") and str(payment.get("status") or "paid").lower() not in INVALID_PAYMENT_STATUSES
+    return not payment.get("voided") and str(payment.get("status") or "paid").strip().lower() not in INVALID_PAYMENT_STATUSES
 
 
 def _payment_method(payment: dict) -> str:
@@ -70,8 +93,19 @@ def effective_collection(payment: dict) -> float:
     """Cash/bank/card collection amount; non-cash adjustments return zero."""
     if not is_valid_payment(payment) or _payment_method(payment) in NON_CASH_PAYMENT_METHODS:
         return 0.0
-    amount = float(payment.get("amount") or 0)
-    return -amount if str(payment.get("payment_type") or "").lower() == "refund" and amount > 0 else amount
+    return effective_folio_payment(payment)
+
+
+def effective_folio_payment(payment: dict) -> float:
+    """Signed ledger offset, including non-cash folio adjustments.
+
+    A discount reduces the folio balance but is not cash collection. Keep that
+    distinction while sharing validation and refund sign handling.
+    """
+    if not is_valid_payment(payment):
+        return 0.0
+    amount = float(money(payment.get("amount") or 0))
+    return -amount if str(payment.get("payment_type") or "").strip().lower() == "refund" and amount > 0 else amount
 
 
 def reporting_collection_amount(payment: dict, reporting_currency: str = REPORTING_CURRENCY) -> float | None:

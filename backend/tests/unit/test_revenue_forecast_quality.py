@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from decimal import Decimal
 
 from domains.revenue.forecast_router import _allocate_booking, _build_forecast_rows
 
@@ -51,3 +52,30 @@ def test_booking_allocation_includes_stay_started_before_window():
     assert daily["2026-08-24"] == {"rooms": 1.0, "revenue": 300.0}
     assert daily["2026-08-25"] == {"rooms": 1.0, "revenue": 300.0}
 
+
+def test_forecast_never_mixes_on_books_or_historical_currencies():
+    today = datetime(2026, 8, 24, tzinfo=UTC)
+    daily = {"2026-08-24": {"rooms": 2, "revenue": None, "revenue_by_currency": {"EUR": 100, "USD": 200}}}
+    history = {"2026-08-17": {"rooms": 4, "revenue": None, "revenue_by_currency": {"EUR": 200, "USD": 400}}}
+    rows, _ = _build_forecast_rows(daily, history, total_rooms=10, today=today)
+    row = rows[0]
+    assert row["rooms_forecast"] == 4
+    assert row["revenue_forecast_by_currency"] == {"EUR": 200, "USD": 400}
+    assert row["adr_by_currency"] == {"EUR": 50, "USD": 100}
+    assert row["revenue_otb"] is None and row["revenue_forecast"] is None and row["adr"] is None
+
+
+def test_forecast_preserves_cents_and_explicit_free_stays():
+    start, end = datetime(2026, 8, 24, tzinfo=UTC), datetime(2026, 8, 27, tzinfo=UTC)
+    daily = {f"2026-08-{day}": {"rooms": 0, "revenue": 0} for day in (24, 25, 26)}
+    _allocate_booking({"check_in": "2026-08-24", "check_out": "2026-08-27", "total_amount": 100, "currency": "EUR"},
+        start, end, daily, preserve_currencies=True)
+    _allocate_booking({"check_in": "2026-08-24", "check_out": "2026-08-27", "total_amount": 0, "total": 999, "currency": "USD"},
+        start, end, daily, preserve_currencies=True)
+    assert [row["revenue_by_currency"]["EUR"] for row in daily.values()] == [Decimal("33.33"), Decimal("33.34"), Decimal("33.33")]
+    assert all(row["revenue_by_currency"]["USD"] == 0 for row in daily.values())
+
+
+def test_forecast_does_not_invent_inventory_for_an_empty_property():
+    rows, _ = _build_forecast_rows({"2026-08-24": {"rooms": 0, "revenue": 0}}, {}, 0, datetime(2026, 8, 24, tzinfo=UTC))
+    assert rows[0]["occupancy_pct"] == 0 and rows[0]["rooms_forecast"] == 0

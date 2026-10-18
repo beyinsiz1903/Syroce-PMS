@@ -18,7 +18,8 @@ import {
   CartesianGrid, Legend,
 } from "recharts";
 import { useTranslation } from 'react-i18next';
-import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
+import { cachedTenantCurrency } from '@/lib/currency';
+import { formatCurrencyBreakdown } from '@/lib/reportCurrency';
 
 /**
  * Opera #5 — Forecast / Pace / Pickup raporları.
@@ -108,7 +109,7 @@ export default function ForecastReportsPage() {
     : [];
 
   return (
-    <div className="container mx-auto p-6 space-y-4 max-w-7xl">
+    <div className="container mx-auto p-4 sm:p-6 space-y-4 max-w-7xl min-w-0">
       <div>
         <h2 className="text-2xl font-semibold flex items-center gap-2">
           <TrendingUp className="h-6 w-6" /> Öngörü ve Rezervasyon Eğilimleri
@@ -119,10 +120,10 @@ export default function ForecastReportsPage() {
       </div>
 
       <Tabs value={tab} onValueChange={setTab}>
-        <TabsList>
-          <TabsTrigger value="forecast" data-testid="tab-forecast">Doluluk Tahmini</TabsTrigger>
-          <TabsTrigger value="pace" data-testid="tab-pace">Rezervasyon Hızı</TabsTrigger>
-          <TabsTrigger value="pickup" data-testid="tab-pickup">Yeni Rezervasyonlar</TabsTrigger>
+        <TabsList className="grid h-auto w-full grid-cols-3 sm:inline-flex sm:w-auto">
+          <TabsTrigger className="min-w-0 whitespace-normal px-2 text-xs sm:text-sm" value="forecast" data-testid="tab-forecast">Doluluk Tahmini</TabsTrigger>
+          <TabsTrigger className="min-w-0 whitespace-normal px-2 text-xs sm:text-sm" value="pace" data-testid="tab-pace">Rezervasyon Hızı</TabsTrigger>
+          <TabsTrigger className="min-w-0 whitespace-normal px-2 text-xs sm:text-sm" value="pickup" data-testid="tab-pickup">Yeni Rezervasyonlar</TabsTrigger>
         </TabsList>
 
         <TabsContent value="forecast">
@@ -207,10 +208,10 @@ export default function ForecastReportsPage() {
                             <TableCell className="text-right">{d.rooms_otb}</TableCell>
                             <TableCell className="text-right">{d.rooms_forecast}</TableCell>
                             <TableCell className="text-right">{d.occupancy_pct}%</TableCell>
-                            <TableCell className="text-right">{d.adr}</TableCell>
-                            <TableCell className="text-right">{d.revpar}</TableCell>
-                            <TableCell className="text-right">{d.revenue_otb}</TableCell>
-                            <TableCell className="text-right">{d.revenue_forecast}</TableCell>
+                            <TableCell className="text-right">{formatCurrencyBreakdown(d.adr_by_currency, d.adr, forecast.currency || cachedTenantCurrency())}</TableCell>
+                            <TableCell className="text-right">{formatCurrencyBreakdown(d.revpar_by_currency, d.revpar, forecast.currency || cachedTenantCurrency())}</TableCell>
+                            <TableCell className="text-right">{formatCurrencyBreakdown(d.revenue_otb_by_currency, d.revenue_otb, forecast.currency || cachedTenantCurrency())}</TableCell>
+                            <TableCell className="text-right">{formatCurrencyBreakdown(d.revenue_forecast_by_currency, d.revenue_forecast, forecast.currency || cachedTenantCurrency())}</TableCell>
                             <TableCell className="text-right">%{Math.round((d.confidence || 0) * 100)}</TableCell>
                           </TableRow>
                         ))}
@@ -352,7 +353,7 @@ export default function ForecastReportsPage() {
                       <CardContent className="pt-4">
                         <div className="text-xs text-muted-foreground">{t('cm.pages_ForecastReportsPage.toplam_gelir')}</div>
                         <div className="text-2xl font-semibold">
-                          {formatCurrency(pickup.total_revenue_picked, pickup.currency || cachedTenantCurrency())}
+                          {formatCurrencyBreakdown(pickup.total_revenue_picked_by_currency, pickup.total_revenue_picked, pickup.currency || cachedTenantCurrency())}
                         </div>
                       </CardContent>
                     </Card>
@@ -385,7 +386,7 @@ export default function ForecastReportsPage() {
                             <TableRow key={d.check_in}>
                               <TableCell>{d.check_in}</TableCell>
                               <TableCell className="text-right">{d.rooms}</TableCell>
-                              <TableCell className="text-right">{formatCurrency(d.revenue, d.currency || pickup.currency || cachedTenantCurrency())}</TableCell>
+                              <TableCell className="text-right">{formatCurrencyBreakdown(d.revenue_by_currency, d.revenue, d.currency || pickup.currency || cachedTenantCurrency())}</TableCell>
                             </TableRow>
                           ))}
                         </TableBody>

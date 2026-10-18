@@ -34,6 +34,9 @@ from pydantic import BaseModel
 
 from core.security import get_current_user
 from core.tenant_currency import get_tenant_currency
+from modules.pms_core.report_money import currency_code, money, rounded
+from modules.pms_core.reporting_financials import deduplicate_report_payments, effective_folio_payment
+from modules.pms_core.reporting_ledger import charge_amount
 from modules.pms_core.role_permission_service import require_op  # v92 DW
 
 logger = logging.getLogger(__name__)
@@ -130,7 +133,7 @@ DATA_SOURCES = {
         # charge_date, posted_at or created_at.  The builder normalizes all of
         # them so it reconciles with the cashier and standard revenue reports.
         "date_field": "business_date",
-        "date_fields": ["business_date", "charge_date", "date", "posted_at", "created_at"],
+        "date_fields": ["business_date", "date", "charge_date", "posted_at", "created_at"],
     },
     "guests": {
         "label": "Misafirler",
@@ -206,6 +209,61 @@ DATA_SOURCES = {
     },
 }
 
+# Every monetary report carries the ledger currency, even if a saved template
+# predates this column. No implicit conversion or tenant-currency relabeling.
+for _source in DATA_SOURCES.values():
+    if any(column["type"] == "currency" for column in _source["columns"].values()):
+        _source["columns"]["currency"] = {"label": "Para Birimi", "type": "text"}
+
+
+def _financial_config(config: ReportConfig) -> ReportConfig:
+    if not config.columns:
+        return config
+    columns = DATA_SOURCES.get(config.data_source, {}).get("columns", {})
+    if "currency" not in config.columns and (config.data_source == "folios" or any(columns.get(key, {}).get("type") == "currency" for key in config.columns)):
+        return config.model_copy(update={"columns": [*config.columns, "currency"]})
+    return config
+
+
+class ReportRows(list):
+    """A bounded preview/export with an explicit, non-silent result limit."""
+
+    def __init__(self, rows: list[dict], matched_count: int):
+        super().__init__(rows)
+        self.matched_count = matched_count
+
+
+def _report_summary(data: list[dict], config: ReportConfig) -> dict:
+    columns = DATA_SOURCES.get(config.data_source, {}).get("columns", {})
+    summary = {}
+
+    def stats(values):
+        total = sum(values, Decimal(0))
+        return {"sum": rounded(total), "avg": rounded(total / len(values)),
+                "min": rounded(min(values)), "max": rounded(max(values)), "count": len(values)}
+
+    for key in config.columns:
+        kind = columns.get(key, {}).get("type")
+        if kind not in {"number", "currency"}:
+            continue
+        values, groups = [], defaultdict(list)
+        for row in data:
+            value = row.get(key)
+            if not isinstance(value, (int, float, Decimal)) or isinstance(value, bool):
+                continue
+            value = money(value)
+            values.append(value)
+            groups[currency_code(row.get("currency"))].append(value)
+        if not values:
+            continue
+        if kind == "currency":
+            by_currency = {code: stats(items) for code, items in sorted(groups.items())}
+            scalar = next(iter(by_currency.values())) if len(by_currency) == 1 else dict.fromkeys(("sum", "avg", "min", "max"))
+            summary[key] = {**scalar, "count": len(values), "by_currency": by_currency}
+        else:
+            summary[key] = stats(values)
+    return summary
+
 
 # ─── Field aliases: column key → list of candidate DB field names ────────
 # İlk dolu olan değer kullanılır. Eski tenant verilerinde alternatif alan
@@ -236,8 +294,9 @@ SOURCE_FIELD_MAP: dict[str, dict[str, list[str]]] = {
     "revenue": {
         "description": ["description", "charge_name"],
         "amount": ["amount", "charge_amount", "total"],
+        "total": ["total", "charge_amount", "amount"],
         "charge_type": ["charge_category", "category", "charge_type"],
-        "date": ["business_date", "charge_date", "date", "posted_at", "created_at"],
+        "date": ["business_date", "date", "charge_date", "posted_at", "created_at"],
         "room_number": ["room_number", "room_no"],
     },
     "folios": {
@@ -472,6 +531,8 @@ def _clean_value(v):
     t = type(v).__name__
     if t == "ObjectId":
         return str(v)
+    if t == "Decimal128":
+        v = v.to_decimal()
     if isinstance(v, datetime):
         return v.isoformat()
     if isinstance(v, date):
@@ -490,19 +551,17 @@ def _clean_value(v):
 
 
 def _compute_nights(doc: dict) -> int | None:
-    if doc.get("nights"):
-        try:
-            return int(doc["nights"])
-        except (TypeError, ValueError):
-            pass
     ci, co = doc.get("check_in"), doc.get("check_out")
     if not ci or not co:
-        return None
+        try:
+            return max(int(doc["nights"]), 0) if doc.get("nights") is not None else None
+        except (TypeError, ValueError):
+            return None
     try:
         ci_d = ci if isinstance(ci, datetime) else datetime.fromisoformat(str(ci).replace("Z", "+00:00"))
         co_d = co if isinstance(co, datetime) else datetime.fromisoformat(str(co).replace("Z", "+00:00"))
         n = (co_d.date() - ci_d.date()).days
-        return max(n, 1)
+        return max(n, 0)
     except (ValueError, TypeError):
         return None
 
@@ -555,6 +614,13 @@ def _report_value(source_key: str, source_def: dict, doc: dict, column: str):
     for alias in _resolve_db_fields(source_key, column):
         candidate = doc.get(alias)
         if candidate not in (None, ""):
+            if source_def.get("columns", {}).get(column, {}).get("type") in {"number", "currency"}:
+                try:
+                    if type(candidate).__name__ == "Decimal128":
+                        candidate = candidate.to_decimal()
+                    return float(money(candidate))
+                except (ValueError, TypeError, ArithmeticError) as exc:
+                    raise HTTPException(422, f"{column} alanında geçersiz sayısal veri var; rapor eksik toplamla oluşturulmadı") from exc
             return candidate
     return None
 
@@ -605,7 +671,7 @@ def _guest_name(guest: dict | None, booking: dict | None = None) -> str | None:
     return _compose_guest_name(guest) or booking.get("guest_name") or booking.get("primary_guest_name")
 
 
-async def _enrich_report_docs(db, source_key: str, tenant_id: str, docs: list[dict]) -> list[dict]:
+async def _enrich_report_docs(db, source_key: str, tenant_id: str, docs: list[dict], default_currency: str = "TRY") -> list[dict]:
     """Resolve PMS relations and recompute financial folio totals.
 
     The operational screens use normalized room/guest/folio collections, while
@@ -615,6 +681,15 @@ async def _enrich_report_docs(db, source_key: str, tenant_id: str, docs: list[di
     if not docs:
         return docs
 
+    folio_map = {}
+    related_folio_ids = {str(doc["folio_id"]) for doc in docs if doc.get("folio_id")}
+    if source_key == "revenue" and related_folio_ids:
+        folio_map = await _find_by_ids(db.folios, tenant_id,
+            related_folio_ids, {"booking_id": 1, "currency": 1})
+        for doc in docs:
+            folio = folio_map.get(str(doc.get("folio_id"))) or {}
+            doc["booking_id"] = doc.get("booking_id") or folio.get("booking_id")
+            doc["currency"] = doc.get("currency") or folio.get("currency")
     booking_ids = {str(doc.get("booking_id")) for doc in docs if doc.get("booking_id")}
     if source_key == "reservations":
         booking_map = {str(doc.get("id")): doc for doc in docs if doc.get("id")}
@@ -632,6 +707,7 @@ async def _enrich_report_docs(db, source_key: str, tenant_id: str, docs: list[di
                 "room_type": 1,
                 "check_in": 1,
                 "check_out": 1,
+                "currency": 1,
             },
         )
 
@@ -662,6 +738,7 @@ async def _enrich_report_docs(db, source_key: str, tenant_id: str, docs: list[di
         room = room_map.get(str(room_id)) or {}
         guest_id = doc.get("guest_id") or booking.get("guest_id")
         guest = guest_map.get(str(guest_id)) or {}
+        doc["currency"] = currency_code(doc.get("currency") or booking.get("currency"), default_currency)
 
         if source_key in {"reservations", "revenue", "housekeeping", "folios"}:
             doc["room_number"] = doc.get("room_number") or doc.get("room_no") or booking.get("room_number") or room.get("room_number") or room.get("room_no") or room.get("name")
@@ -677,31 +754,38 @@ async def _enrich_report_docs(db, source_key: str, tenant_id: str, docs: list[di
         folio_ids = [str(doc.get("id")) for doc in docs if doc.get("id")]
         charges = await db.folio_charges.find(
             {"tenant_id": tenant_id, "folio_id": {"$in": folio_ids}, "voided": {"$ne": True}},
-            {"_id": 0, "folio_id": 1, "total": 1, "amount": 1},
+            {"_id": 0, "folio_id": 1, "total": 1, "charge_amount": 1, "amount": 1, "currency": 1},
         ).to_list(None)
         payments = await db.payments.find(
             {
                 "tenant_id": tenant_id,
                 "folio_id": {"$in": folio_ids},
                 "voided": {"$ne": True},
-                "status": {"$nin": ["void", "voided", "failed", "cancelled", "rejected"]},
             },
-            {"_id": 0, "folio_id": 1, "amount": 1, "payment_type": 1},
+            {"_id": 0},
         ).to_list(None)
-        charge_totals: dict[str, float] = defaultdict(float)
-        payment_totals: dict[str, float] = defaultdict(float)
+        folio_currencies = {str(doc.get("id")): doc["currency"] for doc in docs}
+        charge_totals = defaultdict(lambda: defaultdict(Decimal))
+        payment_totals = defaultdict(lambda: defaultdict(Decimal))
         for charge in charges:
-            charge_totals[str(charge.get("folio_id"))] += float(charge.get("total") or charge.get("amount") or 0)
-        for payment in payments:
-            amount = float(payment.get("amount") or 0)
-            if str(payment.get("payment_type") or "").lower() == "refund" and amount > 0:
-                amount = -amount
-            payment_totals[str(payment.get("folio_id"))] += amount
+            folio_id = str(charge.get("folio_id"))
+            code = currency_code(charge.get("currency"), folio_currencies.get(folio_id, default_currency))
+            charge_totals[folio_id][code] += money(charge_amount(charge))
+        for payment in deduplicate_report_payments(payments):
+            folio_id = str(payment.get("folio_id"))
+            code = currency_code(payment.get("currency"), folio_currencies.get(folio_id, default_currency))
+            payment_totals[folio_id][code] += money(effective_folio_payment(payment))
+        rows = []
         for doc in docs:
             folio_id = str(doc.get("id"))
-            doc["total_charges"] = round(charge_totals[folio_id], 2)
-            doc["total_payments"] = round(payment_totals[folio_id], 2)
-            doc["balance"] = round(charge_totals[folio_id] - payment_totals[folio_id], 2)
+            currencies = set(charge_totals[folio_id]) | set(payment_totals[folio_id]) or {doc["currency"]}
+            # One row per folio and ledger currency: a foreign payment must not
+            # be subtracted raw from a differently denominated charge.
+            for code in sorted(currencies):
+                charges_total, payments_total = charge_totals[folio_id][code], payment_totals[folio_id][code]
+                rows.append({**doc, "currency": code, "total_charges": rounded(charges_total),
+                    "total_payments": rounded(payments_total), "balance": rounded(charges_total - payments_total)})
+        docs = rows
 
     return docs
 
@@ -714,6 +798,7 @@ async def fetch_report_data(
     tenant_id: str,
     has_pii: bool,
     visibility_policy: dict[str, str] | None = None,
+    default_currency: str = "TRY",
 ) -> list:
     db = get_db()
     source_def = DATA_SOURCES.get(config.data_source)
@@ -797,7 +882,7 @@ async def fetch_report_data(
         if len(extra_raw) > MAX_SCAN_ROWS:
             raise HTTPException(status_code=413, detail="Ek ücret tarama sınırını aşıyor; tarih aralığını daraltın")
         raw.extend(extra_raw)
-    raw = await _enrich_report_docs(db, config.data_source, tenant_id, raw)
+    raw = await _enrich_report_docs(db, config.data_source, tenant_id, raw, default_currency)
     raw = [doc for doc in raw if _within_requested_dates(config, source_def, doc)]
     raw = [doc for doc in raw if all(_matches_report_filter(config.data_source, source_def, doc, item) for item in (config.filters or []))]
 
@@ -831,7 +916,7 @@ async def fetch_report_data(
             row[col] = v
         cleaned.append(row)
 
-    return cleaned[:safe_limit]
+    return ReportRows(cleaned[:safe_limit], len(cleaned))
 
 
 # ─── Endpoints ────────────────────────────────────────────────────────────
@@ -876,9 +961,11 @@ async def generate_report(
     has_pii = _user_has_pii_access(current_user)
     from security.guest_data_visibility import user_guest_data_visibility
     visibility_policy, policy_source = user_guest_data_visibility(current_user)
+    default_currency, _ = await get_tenant_currency(tenant_id)
+    config = _financial_config(config)
 
     try:
-        data = await fetch_report_data(config, tenant_id, has_pii, visibility_policy)
+        data = await fetch_report_data(config, tenant_id, has_pii, visibility_policy, default_currency)
     except HTTPException:
         raise
     except Exception as exc:
@@ -893,23 +980,15 @@ async def generate_report(
     source_def = DATA_SOURCES.get(config.data_source, {})
     column_labels = {col: source_def.get("columns", {}).get(col, {}).get("label", col) for col in config.columns}
 
-    summary = {}
-    for col in config.columns:
-        col_type = source_def.get("columns", {}).get(col, {}).get("type")
-        if col_type in ("number", "currency"):
-            values = [row.get(col) for row in data if isinstance(row.get(col), (int, float)) and not isinstance(row.get(col), bool)]
-            if values:
-                summary[col] = {
-                    "sum": round(sum(values), 2),
-                    "avg": round(sum(values) / len(values), 2),
-                    "min": round(min(values), 2),
-                    "max": round(max(values), 2),
-                    "count": len(values),
-                }
+    summary = _report_summary(data, config)
 
     return {
         "data": data,
         "total_count": len(data),
+        "matched_count": getattr(data, "matched_count", len(data)),
+        "truncated": getattr(data, "matched_count", len(data)) > len(data),
+        "columns": config.columns,
+        "row_grain": "folio_currency" if config.data_source == "folios" else "record",
         "column_labels": column_labels,
         "summary": summary,
         "pii_masked": _pii_is_masked(config, has_pii, visibility_policy),
@@ -1042,8 +1121,8 @@ async def export_report_excel(
     visibility_policy, _policy_source = user_guest_data_visibility(current_user)
 
     try:
-        _, currency_symbol = await get_tenant_currency(tenant_id)
-        return await _build_excel_response(config, tenant_id, has_pii, currency_symbol, visibility_policy)
+        default_currency, currency_symbol = await get_tenant_currency(tenant_id)
+        return await _build_excel_response(config, tenant_id, has_pii, currency_symbol, visibility_policy, default_currency)
     except HTTPException:
         raise
     except Exception:
@@ -1062,12 +1141,14 @@ async def _build_excel_response(
     has_pii: bool,
     currency_symbol: str = "₺",
     visibility_policy: dict[str, str] | None = None,
+    default_currency: str = "TRY",
 ):
     from openpyxl import Workbook
     from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
     from openpyxl.utils import get_column_letter
 
-    data = await fetch_report_data(config, tenant_id, has_pii, visibility_policy)
+    config = _financial_config(config)
+    data = await fetch_report_data(config, tenant_id, has_pii, visibility_policy, default_currency)
     source_def = DATA_SOURCES.get(config.data_source, {})
 
     wb = Workbook()
@@ -1094,6 +1175,10 @@ async def _build_excel_response(
         parts.append(f"Başlangıç: {config.date_from}")
     if config.date_to:
         parts.append(f"Bitiş: {config.date_to}")
+    if getattr(data, "matched_count", len(data)) > len(data):
+        parts.append(f"SINIRLI RAPOR: {data.matched_count} kaydın ilk {len(data)} satırı; toplamlar yalnız bu satırlar içindir")
+    if config.data_source == "folios":
+        parts.append("Her folyo / para birimi ayrı satırdır")
     if _pii_is_masked(config, has_pii, visibility_policy):
         parts.append("PII alanları maskelenmiştir")
     date_cell.value = " | ".join(parts) if parts else f"Oluşturma: {datetime.now(UTC).strftime('%Y-%m-%d %H:%M')}"
@@ -1133,7 +1218,7 @@ async def _build_excel_response(
 
             if col_type == "currency" and is_numeric:
                 cell.value = coerced
-                cell.number_format = f'#,##0.00 "{currency_symbol}"'
+                cell.number_format = f'#,##0.00 "{currency_code(row_data.get("currency"), default_currency)}"'
             elif col_type == "number" and is_numeric:
                 cell.value = coerced
                 cell.number_format = "#,##0"
@@ -1163,8 +1248,22 @@ async def _build_excel_response(
             cell.font = Font(bold=True, size=11)
             cell.border = Border(top=Side(style="double"))
 
+        summary = _report_summary(data, config)
+        all_currencies = {code for stats in summary.values() for code in stats.get("by_currency", {})}
+        currency_rows = {}
         for col_num, col_key in enumerate(config.columns, 1):
             col_type = source_def.get("columns", {}).get(col_key, {}).get("type")
+            if col_type == "currency":
+                groups = summary.get(col_key, {}).get("by_currency", {})
+                for code, stats in groups.items() if len(all_currencies) > 1 else []:
+                    row_number = currency_rows.setdefault(code, summary_row + 1 + len(currency_rows))
+                    cell = ws.cell(row=row_number, column=col_num, value=stats["sum"])
+                    cell.number_format = f'#,##0.00 "{code}"'
+                    cell.font = Font(bold=True, size=11)
+                    if label_col:
+                        ws.cell(row=row_number, column=label_col, value=f"TOPLAM {code}")
+                if len(groups) != 1:
+                    continue
             if col_type in ("number", "currency"):
                 # Task #246: also coerce summary-source values so Decimal/etc.
                 # don't silently exclude rows that should be summed.
@@ -1175,11 +1274,11 @@ async def _build_excel_response(
                         numeric_values.append(coerced_v)
                 if numeric_values:
                     cell = ws.cell(row=summary_row, column=col_num)
-                    cell.value = sum(numeric_values)
+                    cell.value = rounded(sum((money(value) for value in numeric_values), Decimal(0)))
                     cell.font = Font(bold=True, size=11)
                     cell.border = Border(top=Side(style="double"))
                     if col_type == "currency":
-                        cell.number_format = f'#,##0.00 "{currency_symbol}"'
+                        cell.number_format = f'#,##0.00 "{next(iter(groups))}"'
 
     # Task #253 (tur-2): belt-and-suspenders save retry. If, despite the
     # _coerce_excel_value sanitization, openpyxl still raises (future seed
@@ -1229,9 +1328,10 @@ async def export_report_pdf(
     has_pii = _user_has_pii_access(current_user)
     from security.guest_data_visibility import user_guest_data_visibility
     visibility_policy, _policy_source = user_guest_data_visibility(current_user)
-    currency_code, currency_symbol = await get_tenant_currency(tenant_id)
+    default_currency, _ = await get_tenant_currency(tenant_id)
 
-    data = await fetch_report_data(config, tenant_id, has_pii, visibility_policy)
+    config = _financial_config(config)
+    data = await fetch_report_data(config, tenant_id, has_pii, visibility_policy, default_currency)
     source_def = DATA_SOURCES.get(config.data_source, {})
 
     headers = [source_def.get("columns", {}).get(col, {}).get("label", col) for col in config.columns]
@@ -1258,7 +1358,7 @@ async def export_report_pdf(
             val = row.get(col_key, "")
             col_type = source_def.get("columns", {}).get(col_key, {}).get("type")
             if col_type == "currency" and isinstance(val, (int, float)) and not isinstance(val, bool):
-                display = f"{currency_symbol}{val:,.2f} {currency_code}"
+                display = f"{val:,.2f} {currency_code(row.get('currency'), default_currency)}"
             elif col_type == "boolean":
                 display = "Evet" if val else "Hayır"
             elif isinstance(val, list):
@@ -1270,7 +1370,12 @@ async def export_report_pdf(
 
     header_cells = "".join(f'<th style="padding:8px;background:#0F172A;color:white;font-size:{header_size}px;text-align:left;border-bottom:2px solid #0d2137;">{_e(h)}</th>' for h in headers)
 
-    date_info = ""
+    scope = ""
+    if getattr(data, "matched_count", len(data)) > len(data):
+        scope = f"SINIRLI RAPOR: {data.matched_count} kaydın ilk {len(data)} satırı."
+    if config.data_source == "folios":
+        scope += " Her folyo / para birimi ayrı satırdır."
+    date_info = f'<p>{_e(scope)}</p>' if scope else ""
     if config.date_from or config.date_to or _pii_is_masked(config, has_pii, visibility_policy):
         parts = []
         if config.date_from:
@@ -1279,7 +1384,7 @@ async def export_report_pdf(
             parts.append(f"Bitiş: {_e(config.date_to)}")
         if _pii_is_masked(config, has_pii, visibility_policy):
             parts.append("<i>PII alanları maskelenmiştir</i>")
-        date_info = f'<p style="color:#64748b;font-size:11px;margin:4px 0 12px;">{" | ".join(parts)}</p>'
+        date_info += f'<p style="color:#64748b;font-size:11px;margin:4px 0 12px;">{" | ".join(parts)}</p>'
 
     title_label = _e(source_def.get("label", "Rapor"))
     page_size = "A4 landscape" if n_cols <= PDF_FIT_COLUMNS else "A3 landscape"

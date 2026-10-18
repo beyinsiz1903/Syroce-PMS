@@ -35,8 +35,13 @@ async def test_eod_collect_does_not_truncate_financial_totals(monkeypatch):
         payments=payments,
         extra_charges=extras,
         folio_charges=charges,
+        pos_orders=_FinancialCollection(),
+        pos_transactions=_FinancialCollection(),
+        pos_menu_transactions=_FinancialCollection(),
+        transactions=_FinancialCollection(),
         folios=counts,
         shift_handovers=counts,
+        night_audit_runs=SimpleNamespace(find_one=lambda *_args, **_kwargs: _none()),
     )
     monkeypatch.setattr(eod_report, "db", fake_db)
     monkeypatch.setattr(eod_report, "load_stay_night_metrics", _empty_metrics)
@@ -52,6 +57,10 @@ async def test_eod_collect_does_not_truncate_financial_totals(monkeypatch):
 
 async def _zero():
     return 0
+
+
+async def _none():
+    return None
 
 
 async def _empty_metrics(*_args, **_kwargs):

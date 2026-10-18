@@ -10,17 +10,17 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 security = HTTPBearer()
 
-from core.business_date_service import accounting_day_match, accounting_period_match, ensure_business_date_initialized
+from core.business_date_service import accounting_period_match, ensure_business_date_initialized
 from core.database import db
 from core.email import send_email
 from core.helpers import require_module
 from core.security import get_current_user
 from models.schemas import User
-from modules.pms_core.report_money import amounts_text
+from modules.pms_core.report_money import amounts_text, resolve_ledger_currencies
 from modules.pms_core.report_money import currency_code as normalize_currency
 from modules.pms_core.reporting_financials import deduplicate_report_payments, effective_collection
 from modules.pms_core.role_permission_service import require_op
-from modules.pms_core.stay_night_metrics import NON_COMMERCIAL_STATUSES, allocated_revenue_for_night, as_date, booking_nights, booking_occupies_night, load_stay_night_metrics
+from modules.pms_core.stay_night_metrics import NON_COMMERCIAL_STATUSES, allocated_revenue_for_night, as_date, booking_nights, booking_occupies_night, load_stay_night_metrics, stay_day_match
 
 try:
     from domains.pms.night_audit_module import AuditStatus, AutomaticPosting, NightAuditRecord
@@ -148,14 +148,9 @@ async def get_flash_report(
         state = await ensure_business_date_initialized(db, current_user.tenant_id)
         target_day = as_date(state["business_date"])
     key = target_day.isoformat()
-    next_key = (target_day + timedelta(days=1)).isoformat()
     canonical = await get_daily_flash_report.__wrapped__(key, current_user)
     metric, revenue = canonical["occupancy"], canonical["revenue"]
-    bookings = await db.bookings.find({"tenant_id": current_user.tenant_id, "$or": [
-        {"check_in": {"$gte": key, "$lt": next_key}},
-        {"check_out": {"$gte": key, "$lt": next_key}},
-        {"check_in": {"$lte": key}, "check_out": {"$gt": key}},
-    ]}, {"_id": 0}).to_list(None)
+    bookings = await db.bookings.find({"tenant_id": current_user.tenant_id, **stay_day_match(target_day)}, {"_id": 0}).to_list(None)
     active = [b for b in bookings if booking_occupies_night(b, target_day, actual_only=True)]
     no_shows = [b for b in bookings if as_date(b.get("check_in")) == target_day and str(b.get("status") or "").lower() in {"no_show", "noshow"}]
     cancellations = await db.bookings.find({"tenant_id": current_user.tenant_id, "status": {"$in": ["cancelled", "canceled"]},
@@ -165,10 +160,11 @@ async def get_flash_report(
             {"cancelled_at": {"$in": [None, ""]}, "updated_at": {"$gte": datetime.combine(target_day, datetime.min.time(), tzinfo=UTC), "$lt": datetime.combine(target_day + timedelta(days=1), datetime.min.time(), tzinfo=UTC)}}]},
         {"_id": 0, "id": 1, "booking_number": 1, "guest_name": 1, "room_number": 1,
          "check_in": 1, "check_out": 1, "cancelled_at": 1, "cancellation_reason": 1, "channel": 1}).to_list(None)
-    payments = await db.payments.find({"tenant_id": current_user.tenant_id,
-        **accounting_day_match(key, {"payment_date": key}, {"date": key},
-            {"processed_at": {"$regex": f"^{key}"}}, {"created_at": {"$regex": f"^{key}"}})},
+    from modules.pms_core.reporting_financials import report_payment_day_match
+
+    payments = await db.payments.find({"tenant_id": current_user.tenant_id, **report_payment_day_match(key)},
         {"_id": 0}).to_list(None)
+    payments = await resolve_ledger_currencies(payments, current_user.tenant_id, database=db)
     collected = {}
     for payment in deduplicate_report_payments(payments):
         _add_currency(collected, _currency(payment), effective_collection(payment))
@@ -375,7 +371,6 @@ async def get_daily_flash_report(
         state = await ensure_business_date_initialized(db, current_user.tenant_id)
         target_date = datetime.fromisoformat(state["business_date"][:10]).date()
     day_key = target_date.isoformat()
-    next_key = (target_date + timedelta(days=1)).isoformat()
     metrics = await load_stay_night_metrics(db, current_user.tenant_id, target_date, target_date, actual_only=True)
     metric = metrics[0] if metrics else {"occupied_rooms": 0, "total_rooms": 0, "occupancy_rate": 0}
     total_rooms = metric["total_rooms"]
@@ -383,7 +378,7 @@ async def get_daily_flash_report(
     sold_rooms = metric.get("sold_rooms", occupied_rooms)
     occupancy_rate = metric["occupancy_rate"]
     movement_bookings = await db.bookings.find(
-        {"tenant_id": current_user.tenant_id, "$or": [{"check_in": {"$gte": day_key, "$lt": next_key}}, {"check_out": {"$gte": day_key, "$lt": next_key}}]},
+        {"tenant_id": current_user.tenant_id, **stay_day_match(target_date, include_stayovers=False)},
         {"_id": 0, "check_in": 1, "check_out": 1, "status": 1},
     ).to_list(None)
     arrivals = sum(1 for booking in movement_bookings if as_date(booking.get("check_in")) == target_date and str(booking.get("status") or "").lower() not in NON_COMMERCIAL_STATUSES)
