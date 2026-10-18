@@ -1,7 +1,7 @@
 """Read-only reporting acceptance: currencies, dates, partial debt and exports."""
+import sys
 from datetime import UTC, date, datetime
 from io import BytesIO
-import sys
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -359,7 +359,7 @@ async def test_pdf_response_is_not_json_cached_and_html_contains_correct_currenc
     report = {"date": "2026-10-01", "occupancy": {"occupied_rooms": 1, "total_rooms": 2, "occupancy_rate": 50},
         "movements": {"arrivals": 1, "departures": 0, "stayovers": 0},
         "revenue": {"total_revenue_by_currency": {"EUR": 1000.49, "TRY": 500}, "room_revenue_by_currency": {"EUR": 1000.49}, "adr_by_currency": {"EUR": 1000.49}, "rev_par_by_currency": {"EUR": 500.245}}}
-    monkeypatch.setattr(flash_email, "get_daily_flash_report", AsyncMock(return_value=report))
+    monkeypatch.setattr(flash_email, "get_daily_flash_report", SimpleNamespace(__wrapped__=AsyncMock(return_value=report)))
     monkeypatch.setattr(tenant_currency, "get_tenant_currency", AsyncMock(return_value=("TRY", "₺")))
     html = []
     class Renderer:

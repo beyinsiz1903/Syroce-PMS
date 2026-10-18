@@ -1,5 +1,5 @@
 import { useTranslation } from "react-i18next";
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
@@ -9,6 +9,8 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { formatCurrencyBreakdown } from '@/lib/reportCurrency';
+import { cachedTenantCurrency } from '@/lib/currency';
 const DEFAULT_LIMIT = 200;
 function formatDateTime(value) {
   if (!value) return '—';
@@ -35,39 +37,45 @@ export default function InventoryTransferHistory() {
   const [loading, setLoading] = useState(false);
   const [transfers, setTransfers] = useState([]);
   const [count, setCount] = useState(0);
+  const [totalCount, setTotalCount] = useState(0);
+  const [error, setError] = useState(null);
+  const requestId = useRef(0);
   const load = useCallback(async () => {
+    const request = ++requestId.current;
     setLoading(true);
+    setError(null);
     try {
       const params = {
         limit: DEFAULT_LIMIT
       };
-      if (startDate) params.start_date = new Date(startDate).toISOString();
-      if (endDate) {
-        const end = new Date(endDate);
-        end.setHours(23, 59, 59, 999);
-        params.end_date = end.toISOString();
-      }
+      if (startDate) params.start_date = startDate;
+      if (endDate) params.end_date = endDate;
       const r = await axios.get('/accounting/inventory/transfers', {
         params
       });
+      if (request !== requestId.current) return;
       setTransfers(r.data?.transfers || []);
       setCount(r.data?.count || 0);
+      setTotalCount(r.data?.total_count ?? r.data?.count ?? 0);
     } catch (e) {
+      if (request !== requestId.current) return;
       toast.error(e.response?.data?.detail || 'Transfer geçmişi yüklenemedi');
+      setError(e.response?.data?.detail || 'Transfer geçmişi yüklenemedi');
       setTransfers([]);
       setCount(0);
     } finally {
-      setLoading(false);
+      if (request === requestId.current) setLoading(false);
     }
   }, [startDate, endDate]);
   useEffect(() => {
     load();
+    return () => { requestId.current += 1; };
   }, [load]);
   const clearFilters = () => {
     setStartDate('');
     setEndDate('');
   };
-  return <div className="p-4 lg:p-6 space-y-4" data-testid="inventory-transfer-history-page">
+  return <div className="p-4 lg:p-6 space-y-4 min-w-0 w-full" data-testid="inventory-transfer-history-page">
       <PageHeader icon={ArrowRightLeft} title={t("cm.pages_InventoryTransferHistory.stok_transfer_ge\xE7mi\u015Fi")} subtitle="Depo/lokasyon arası stok transferlerinin mutabakat raporu" actions={<>
             <Button variant="outline" onClick={() => navigate('/hotel-inventory')} data-testid="back-to-inventory">
               <ArrowLeft className="w-4 h-4 mr-2" />{t("cm.pages_InventoryTransferHistory.stok_y\xF6netimine_d\xF6n")}</Button>
@@ -88,13 +96,14 @@ export default function InventoryTransferHistory() {
             </div>
             <Button variant="outline" onClick={clearFilters} disabled={!startDate && !endDate} data-testid="clear-filters">{t("cm.pages_InventoryTransferHistory.temizle")}</Button>
             <div className="ml-auto text-sm text-slate-500" data-testid="transfer-count">
-              {count}{t("cm.pages_InventoryTransferHistory.transfer")}</div>
+              {!error && (totalCount > count ? `${count} / ${totalCount} (ilk ${DEFAULT_LIMIT} belge)` : count)}{' '}{!error && t("cm.pages_InventoryTransferHistory.transfer")}</div>
           </div>
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="min-w-0">
         <CardContent className="p-0">
+          <p className="p-3 text-xs text-slate-500">Değerleme hareketin para birimini kullanır; eski kayıtta yoksa kaynak ürünün güncel para birimi, o da yoksa tesis para birimi esas alınır. Farklı birimlerde dönüşüm kaydı bulunmayan transferler doğrulanmış sayılmaz.</p>
           <div className="overflow-x-auto">
             <table className="w-full text-sm" data-testid="transfer-history-table">
               <thead className="bg-slate-50 text-slate-600">
@@ -103,23 +112,25 @@ export default function InventoryTransferHistory() {
                   <th className="text-left p-3 font-medium">{t("cm.pages_InventoryTransferHistory.kaynak")}</th>
                   <th className="text-left p-3 font-medium">{t("cm.pages_InventoryTransferHistory.hedef")}</th>
                   <th className="text-right p-3 font-medium">{t("cm.pages_InventoryTransferHistory.miktar")}</th>
+                  <th className="text-right p-3 font-medium">Değer (para birimine göre)</th>
                   <th className="text-left p-3 font-medium">{t("cm.pages_InventoryTransferHistory.referans")}</th>
                   <th className="text-left p-3 font-medium">{t("cm.pages_InventoryTransferHistory.kullan\u0131c\u0131")}</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? <tr>
-                    <td colSpan={6} className="p-6 text-center text-slate-500">
+                    <td colSpan={7} className="p-6 text-center text-slate-500">
                       <RefreshCw className="w-5 h-5 animate-spin inline mr-2" />{t("cm.pages_InventoryTransferHistory.y\xFCkleniyor")}</td>
-                  </tr> : transfers.length === 0 ? <tr>
-                    <td colSpan={6} className="p-6 text-center text-slate-500" data-testid="no-transfers">{t("cm.pages_InventoryTransferHistory.se\xE7ili_aral\u0131kta_transfer_kayd\u0131")}</td>
+                  </tr> : error ? <tr><td colSpan={7} className="p-6 text-center text-rose-700" role="alert">{error}</td></tr> : transfers.length === 0 ? <tr>
+                    <td colSpan={7} className="p-6 text-center text-slate-500" data-testid="no-transfers">{t("cm.pages_InventoryTransferHistory.se\xE7ili_aral\u0131kta_transfer_kayd\u0131")}</td>
                   </tr> : transfers.map(t => <tr key={t.transfer_id} className="border-t border-slate-100 hover:bg-slate-50" data-testid={`transfer-row-${t.transfer_id}`}>
                       <td className="p-3 whitespace-nowrap">{formatDateTime(t.created_at)}</td>
-                      <td className="p-3">{t.source_item_name || t.source_item_id || '—'}</td>
+                      <td className="p-3">{t.line_count > 1 ? <details><summary>{t.line_count} kalem · ayrıntılar</summary><ul className="mt-2 space-y-2">{(t.lines || []).map((line, index) => <li key={index}>{line.source_item_name || line.source_item_id} → {line.destination_item_name || line.destination_item_id}: {formatQty(line.quantity)}{line.balanced !== true && <span className="block">Çıkış: {formatQty(line.out_quantity)} {line.source_unit} · Giriş: {formatQty(line.in_quantity)} {line.destination_unit}</span>}</li>)}</ul></details> : t.source_item_name || t.source_item_id || '—'}</td>
                       <td className="p-3">
                         {t.destination_item_name || t.destination_item_id || '—'}
                       </td>
-                      <td className="p-3 text-right tabular-nums">{formatQty(t.quantity)}</td>
+                      <td className="p-3 text-right tabular-nums">{formatQty(t.quantity)}{t.balanced === false && <span className="block text-rose-700">Giriş/çıkış eşleşmiyor</span>}{t.balanced === null && <span className="block text-amber-700">Birim dönüşümü doğrulanamıyor</span>}{t.line_count === 1 && t.balanced !== true && t.lines?.[0] && <span className="block text-xs">Çıkış: {formatQty(t.lines[0].out_quantity)} {t.lines[0].source_unit} · Giriş: {formatQty(t.lines[0].in_quantity)} {t.lines[0].destination_unit}</span>}</td>
+                      <td className="p-3 text-right tabular-nums whitespace-nowrap">{formatCurrencyBreakdown(t.total_value_by_currency, t.total_value, cachedTenantCurrency())}</td>
                       <td className="p-3 text-slate-600">{t.reference || '—'}</td>
                       <td className="p-3 text-slate-600">{t.created_by || '—'}</td>
                     </tr>)}

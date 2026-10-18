@@ -223,7 +223,7 @@ async def test_saved_recipient_outcomes_survive_final_history_write_failure(ledg
     monkeypatch.setattr(
         scheduler,
         "db",
-        SimpleNamespace(report_schedule_history=SimpleNamespace(insert_one=history.insert_one, find_one=history.find_one, update_one=fail_final_write), report_schedules=ledger_db.report_schedules),
+        SimpleNamespace(report_schedule_history=SimpleNamespace(insert_one=history.insert_one, find_one=history.find_one, aggregate=history.aggregate, update_one=fail_final_write), report_schedules=ledger_db.report_schedules),
     )
     result = await scheduler._execute_schedule(original)
     assert result["status"] == "failed"

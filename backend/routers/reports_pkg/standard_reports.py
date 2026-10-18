@@ -13,7 +13,7 @@ from core.database import db
 from core.helpers import require_module
 from core.security import get_current_user
 from models.schemas import User
-from modules.pms_core.report_money import currency_code, resolve_ledger_currencies
+from modules.pms_core.report_money import add_amount, currency_code, money, resolve_ledger_currencies, rounded, rounded_totals
 from modules.pms_core.reporting_dates import date_period_match
 from modules.pms_core.reporting_financials import deduplicate_report_payments, effective_collection, effective_revenue_adjustment, report_payment_day_match
 from modules.pms_core.reporting_ledger import charge_amount as _charge_amount
@@ -148,12 +148,12 @@ async def get_revenue_report(
         charge_type = _charge_category(charge)
         amount = _charge_amount(charge)
         currency = _currency_code(charge)
-        revenue_by_type_currency.setdefault(charge_type, {})[currency] = revenue_by_type_currency.setdefault(charge_type, {}).get(currency, 0.0) + amount
-        total_revenue_by_currency[currency] = total_revenue_by_currency.get(currency, 0.0) + amount
+        add_amount(revenue_by_type_currency.setdefault(charge_type, {}), currency, amount)
+        add_amount(total_revenue_by_currency, currency, amount)
         if charge_type in {"room", "accommodation", "room_charge"}:
-            room_revenue_by_currency[currency] = room_revenue_by_currency.get(currency, 0.0) + amount
+            add_amount(room_revenue_by_currency, currency, amount)
     revenue_by_type_currency = {
-        category: {currency: round(amount, 2) for currency, amount in totals.items()}
+        category: rounded_totals(totals)
         for category, totals in revenue_by_type_currency.items()
     }
     # Legacy scalar fields are populated only for a true single-currency report.
@@ -162,16 +162,16 @@ async def get_revenue_report(
         value = _single_currency_value(totals)
         revenue_by_type[charge_type] = value if value is not None else 0.0
     revenue_by_type = {key: round(value, 2) for key, value in revenue_by_type.items()}
-    total_revenue_by_currency = {key: round(value, 2) for key, value in total_revenue_by_currency.items()}
-    room_revenue_by_currency = {key: round(value, 2) for key, value in room_revenue_by_currency.items()}
+    total_revenue_by_currency = rounded_totals(total_revenue_by_currency)
+    room_revenue_by_currency = rounded_totals(room_revenue_by_currency)
     total_revenue = _single_currency_value(total_revenue_by_currency)
     room_revenue = _single_currency_value(room_revenue_by_currency)
     adr_by_currency = {
-        currency: round(amount / sold_room_nights, 2) if sold_room_nights else 0.0
+        currency: rounded(money(amount) / sold_room_nights) if sold_room_nights else 0.0
         for currency, amount in room_revenue_by_currency.items()
     }
     rev_par_by_currency = {
-        currency: round(amount / available_room_nights, 2) if available_room_nights else 0.0
+        currency: rounded(money(amount) / available_room_nights) if available_room_nights else 0.0
         for currency, amount in room_revenue_by_currency.items()
     }
     arrivals = await db.bookings.count_documents(
@@ -229,21 +229,19 @@ async def get_daily_summary(
     adjustments_by_currency: dict[str, float] = {}
     for payment in deduplicate_report_payments(payments):
         currency = _currency_code(payment)
-        collections_by_currency[currency] = collections_by_currency.get(currency, 0.0) + _effective_payment(payment)
-        adjustments_by_currency[currency] = adjustments_by_currency.get(currency, 0.0) + effective_revenue_adjustment(payment)
-    collections_by_currency = {currency: round(amount, 2) for currency, amount in collections_by_currency.items()}
-    adjustments_by_currency = {currency: round(amount, 2) for currency, amount in adjustments_by_currency.items() if amount}
+        add_amount(collections_by_currency, currency, _effective_payment(payment))
+        add_amount(adjustments_by_currency, currency, effective_revenue_adjustment(payment))
+    collections_by_currency = rounded_totals(collections_by_currency)
+    adjustments_by_currency = {currency: amount for currency, amount in rounded_totals(adjustments_by_currency).items() if amount}
     posted_rows = await _posted_revenue_rows(current_user.tenant_id, target_date, target_date)
     posted_revenue_by_currency: dict[str, float] = {}
     for row in posted_rows:
         currency = _currency_code(row)
-        posted_revenue_by_currency[currency] = posted_revenue_by_currency.get(currency, 0.0) + _charge_amount(row)
-    gross_posted_revenue_by_currency = {
-        currency: round(amount, 2) for currency, amount in posted_revenue_by_currency.items()
-    }
+        add_amount(posted_revenue_by_currency, currency, _charge_amount(row))
+    gross_posted_revenue_by_currency = rounded_totals(posted_revenue_by_currency)
     for currency, adjustment in adjustments_by_currency.items():
-        posted_revenue_by_currency[currency] = posted_revenue_by_currency.get(currency, 0.0) - adjustment
-    posted_revenue_by_currency = {currency: round(amount, 2) for currency, amount in posted_revenue_by_currency.items()}
+        add_amount(posted_revenue_by_currency, currency, -adjustment)
+    posted_revenue_by_currency = rounded_totals(posted_revenue_by_currency)
     return {
         "date": target_date.isoformat(),
         "arrivals": arrivals,

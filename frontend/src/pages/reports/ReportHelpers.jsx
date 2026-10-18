@@ -41,11 +41,13 @@ const COLOR_TO_INTENT = {
   info: 'info', success: 'success', warning: 'warning', danger: 'danger', neutral: 'neutral', default: 'default',
 };
 
-export const KPICard = ({ title, value, currencyBreakdown, prevValue, prevLabel, icon: Icon, color = 'default' }) => {
+export const KPICard = ({ title, value, currencyBreakdown, prevValue, prevCurrencyBreakdown, prevLabel, icon: Icon, color = 'default' }) => {
   const intent = COLOR_TO_INTENT[color] || 'default';
   const isCurrency = /gelir|adr|rev|ciro|ödeme|tutar|tahsilat|fiyat|bakiye/i.test(title);
   const currencyEntries = currencyBreakdownEntries(currencyBreakdown);
   const hasMixedCurrencies = currencyEntries.length > 1;
+  const previousEntries = currencyBreakdownEntries(prevCurrencyBreakdown);
+  const canCompare = !currencyBreakdown || currencyEntries.length === 1 && previousEntries.length === 1 && currencyEntries[0].currency === previousEntries[0].currency;
   const displayVal = hasMixedCurrencies
     ? <div className="space-y-1.5 text-lg" data-testid="currency-breakdown">
         {currencyEntries.map(({ currency, formatted }) => (
@@ -59,7 +61,7 @@ export const KPICard = ({ title, value, currencyBreakdown, prevValue, prevLabel,
       ? formatCurrencyBreakdown(currencyBreakdown, value, cachedTenantCurrency())
     : typeof value === 'number' ? (isCurrency ? formatCurrency(value) : formatNumber(value)) : value;
   let sub = prevLabel;
-  if (!sub && !hasMixedCurrencies && prevValue !== undefined && typeof value === 'number') {
+  if (!sub && !hasMixedCurrencies && canCompare && prevValue !== undefined && typeof value === 'number') {
     const change = calcChange(value, typeof prevValue === 'number' ? prevValue : 0);
     if (Number(change.pct) > 0) {
       sub = (change.direction === 'up' ? '▲ +' : '▼ -') + change.pct + '% (önceki dönem)';

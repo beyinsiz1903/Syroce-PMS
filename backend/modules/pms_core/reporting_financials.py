@@ -6,7 +6,7 @@ cash/card collection.  Keeping the classification here prevents reports from
 silently disagreeing about the same transaction.
 """
 
-from modules.pms_core.report_money import currency_code, money
+from modules.pms_core.report_money import currency_code, money, rounded
 
 INVALID_PAYMENT_STATUSES = frozenset({"void", "voided", "failed", "cancelled", "canceled", "rejected", "pending", "processing", "initiated", "authorized", "expired", "declined", "requires_action"})
 REPORTING_CURRENCY = "TRY"
@@ -170,7 +170,7 @@ def reporting_collection_amount(payment: dict, reporting_currency: str = REPORTI
 
 def reporting_collection_summary(payments: list[dict], reporting_currency: str = REPORTING_CURRENCY) -> dict:
     """Build a single-currency collection summary without FX revaluation."""
-    total = 0.0
+    total = money(0)
     count = 0
     by_method: dict[str, dict[str, float | int]] = {}
     conversion_issues: list[dict] = []
@@ -190,27 +190,27 @@ def reporting_collection_summary(payments: list[dict], reporting_currency: str =
             continue
         if amount == 0:
             continue
-        total += amount
+        total += money(amount)
         count += 1
         method = str(payment.get("payment_method") or payment.get("method") or "other").strip().lower() or "other"
         entry = by_method.setdefault(method, {"amount": 0.0, "count": 0})
-        entry["amount"] = round(float(entry["amount"]) + amount, 2)
+        entry["amount"] = money(entry["amount"]) + money(amount)
         entry["count"] = int(entry["count"]) + 1
     return {
         "currency": str(reporting_currency or REPORTING_CURRENCY).upper(),
-        "amount": round(total, 2),
+        "amount": rounded(total),
         "payment_count": count,
-        "by_method": by_method,
+        "by_method": {method: {**entry, "amount": rounded(entry["amount"])} for method, entry in by_method.items()},
         "conversion_issue_count": len(conversion_issues),
         "conversion_issues": conversion_issues,
     }
 
 
 def effective_revenue_adjustment(payment: dict) -> float:
-    """Positive value to deduct from gross posted revenue."""
+    """Signed non-cash offset to deduct; a reversal restores revenue."""
     if not is_valid_payment(payment) or not is_non_cash_adjustment(payment):
         return 0.0
-    return abs(float(payment.get("amount") or 0))
+    return effective_folio_payment(payment)
 
 
 def adjustment_kind(payment: dict) -> str:

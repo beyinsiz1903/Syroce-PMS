@@ -39,4 +39,14 @@ describe('KPICard currency presentation', () => {
     expect(screen.queryByTestId('currency-breakdown')).not.toBeInTheDocument();
     expect(screen.queryByText('Ayrı para birimleridir; kur dönüşümü yapılmamıştır.')).not.toBeInTheDocument();
   });
+
+  it('does not compare a TRY previous period against an EUR current period', () => {
+    render(<KPICard title="Gelir" value={1000} currencyBreakdown={{ EUR: 1000 }} prevValue={100} prevCurrencyBreakdown={{ TRY: 100 }} icon={DollarSign} />);
+    expect(screen.queryByText(/900.*önceki dönem/)).not.toBeInTheDocument();
+  });
+
+  it('only computes a percentage when both monetary periods use the same currency', () => {
+    render(<KPICard title="Gelir" value={200} currencyBreakdown={{ EUR: 200 }} prevValue={100} prevCurrencyBreakdown={{ EUR: 100 }} icon={DollarSign} />);
+    expect(screen.getByText(/100.0%.*önceki dönem/)).toBeInTheDocument();
+  });
 });

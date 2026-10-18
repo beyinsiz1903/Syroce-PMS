@@ -16,7 +16,7 @@ from core.email import send_email
 from core.helpers import require_module
 from core.security import get_current_user
 from models.schemas import User
-from modules.pms_core.report_money import amounts_text, resolve_ledger_currencies
+from modules.pms_core.report_money import add_amount, amounts_text, money, resolve_ledger_currencies, rounded, rounded_totals
 from modules.pms_core.report_money import currency_code as normalize_currency
 from modules.pms_core.reporting_dates import date_period_match
 from modules.pms_core.reporting_financials import deduplicate_report_payments, effective_collection
@@ -98,16 +98,16 @@ def _currency(row: dict) -> str:
 
 
 def _add_currency(total: dict[str, float], currency: str, amount: float) -> None:
-    total[currency] = total.get(currency, 0.0) + float(amount or 0)
+    add_amount(total, currency, amount or 0)
 
 
 def _rounded_currency(total: dict[str, float]) -> dict[str, float]:
-    return {currency: round(amount, 2) for currency, amount in total.items()}
+    return rounded_totals(total)
 
 
 def _single_currency(total: dict[str, float]) -> float | None:
     values = [amount for amount in total.values() if amount != 0]
-    return round(values[0], 2) if len(values) == 1 else (0.0 if not values else None)
+    return rounded(values[0]) if len(values) == 1 else (0.0 if not values else None)
 
 
 @sub_router.get("/reports/migration-observability")
@@ -125,13 +125,7 @@ async def send_flash_report_now(
     _perm=Depends(require_op("view_reports")),  # v98 DW
 ):
     """Flash report'u şimdi gönder"""
-    from modules.analytics_export.report_automation import get_report_automation
-    from modules.messaging.email_service import email_service
-
-    automation = get_report_automation(db, email_service)
-    await automation.send_flash_report_email(current_user.tenant_id, recipients)
-
-    return {"success": True, "message": f"Flash report {len(recipients)} alıcıya gönderildi"}
+    return await email_daily_flash({"recipients": recipients}, current_user)
 
 
 @sub_router.get("/reports/flash-report")
@@ -209,6 +203,7 @@ async def get_flash_report(
 async def get_daily_flash_pdf(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_reports")),  # v85 DU: daily flash GM/CFO
+    date_str: str | None = None,
 ):
     """
     Export daily flash report as PDF
@@ -216,7 +211,7 @@ async def get_daily_flash_pdf(
     from fastapi.responses import Response
 
     try:
-        flash_data = await get_daily_flash_report(None, current_user)
+        flash_data = await get_daily_flash_report.__wrapped__(date_str, current_user)
         from core.tenant_currency import get_tenant_currency
 
         currency_code, _ = await get_tenant_currency(current_user.tenant_id)
@@ -288,12 +283,17 @@ async def email_daily_flash(
     Email daily flash report to recipients
     """
     recipients = data.get("recipients", [])
+    from core.email import _is_valid_email
 
-    if not recipients:
-        raise HTTPException(status_code=400, detail="Recipients list is required")
+    if not isinstance(recipients, list) or not 1 <= len(recipients) <= 100 or any(not _is_valid_email(recipient) for recipient in recipients):
+        raise HTTPException(status_code=400, detail="1-100 geçerli e-posta adresinden oluşan alıcı listesi gereklidir")
+    recipients = list(dict.fromkeys(recipient.strip() for recipient in recipients))
+    date_str = data.get("date_str") or data.get("date")
+    if date_str:
+        date_str = _report_date(date_str, "date_str").isoformat()
 
     try:
-        flash_data = await get_daily_flash_report(None, current_user)
+        flash_data = await get_daily_flash_report.__wrapped__(date_str, current_user)
         from core.tenant_currency import get_tenant_currency
 
         currency_code, _ = await get_tenant_currency(current_user.tenant_id)
@@ -353,6 +353,8 @@ async def email_daily_flash(
             ),
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.exception("email_daily_flash failed")
         raise HTTPException(status_code=500, detail=f"Email sending failed: {str(e)}") from e
@@ -415,8 +417,8 @@ async def get_daily_flash_report(
     })
 
     # Calculate ADR and RevPAR
-    adr_by_currency = _rounded_currency({currency: amount / sold_rooms if sold_rooms else 0 for currency, amount in room_by_currency.items()})
-    rev_par_by_currency = _rounded_currency({currency: amount / total_rooms if total_rooms else 0 for currency, amount in room_by_currency.items()})
+    adr_by_currency = _rounded_currency({currency: money(amount) / sold_rooms if sold_rooms else 0 for currency, amount in room_by_currency.items()})
+    rev_par_by_currency = _rounded_currency({currency: money(amount) / total_rooms if total_rooms else 0 for currency, amount in room_by_currency.items()})
 
     return {
         "date": day_key,
@@ -488,8 +490,8 @@ async def _weekly_management_payload(current_user):
     sold = sum(row.get("sold_rooms", row["occupied_rooms"]) for row in metrics)
     available = sum(row["total_rooms"] for row in metrics)
     occupancy = round(occupied / available * 100, 2) if available else 0
-    adr = {code: round(amount / sold, 2) if sold else 0 for code, amount in room_revenue.items()}
-    revpar = {code: round(amount / available, 2) if available else 0 for code, amount in room_revenue.items()}
+    adr = {code: rounded(money(amount) / sold) if sold else 0 for code, amount in room_revenue.items()}
+    revpar = {code: rounded(money(amount) / available) if available else 0 for code, amount in room_revenue.items()}
     return {
         "week_start": week_start.isoformat(), "week_ending": week_end.isoformat(),
         "total_bookings": bookings,

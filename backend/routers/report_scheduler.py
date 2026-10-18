@@ -172,6 +172,43 @@ async def _get_history_for_tenant(history_id: str, user: User) -> dict:
     return entry
 
 
+async def _delivery_statistics(tenant_id: str, schedule_ids: list[str]) -> dict:
+    """Derive delivery counters from durable recipient outcomes, not increments.
+
+    An exception after SMTP acceptance must not lose/double-count the delivery.
+    Legacy history uses its persisted per-recipient counts. Preparation/DB errors
+    are history statuses, not rejected e-mails.
+    """
+    states = {"$cond": [{"$isArray": "$delivery_states"}, "$delivery_states", []]}
+    sent_states = {"$filter": {"input": states, "as": "state", "cond": {"$eq": ["$$state.status", "sent"]}}}
+    as_date = lambda value: {"$convert": {"input": value, "to": "date", "onError": None, "onNull": None}}
+    rows = await db.report_schedule_history.aggregate([
+        {"$match": {"tenant_id": tenant_id, "schedule_id": {"$in": schedule_ids}}},
+        {"$project": {
+            "schedule_id": 1,
+            "sent_count": {"$cond": [{"$isArray": "$delivery_states"}, {"$size": sent_states}, {"$ifNull": ["$delivery_details.sent_count", 0]}]},
+            "failed_count": {"$cond": [{"$isArray": "$delivery_states"}, {"$sum": {"$map": {"input": states, "as": "state", "in": {
+                "$ifNull": ["$$state.failed_attempts", {"$cond": [{"$eq": ["$$state.status", "failed"]}, 1, 0]}],
+            }}}}, {"$ifNull": ["$delivery_details.failed_count", 0]}]},
+            "last_sent": {"$ifNull": [{"$max": {"$map": {"input": sent_states, "as": "state", "in": as_date("$$state.sent_at")}}}, as_date("$sent_at")]},
+        }},
+        {"$group": {"_id": "$schedule_id", "total_sent": {"$sum": "$sent_count"}, "total_failed": {"$sum": "$failed_count"},
+            "last_sent_at": {"$max": {"$cond": [{"$gt": ["$sent_count", 0]}, "$last_sent", None]}}}},
+    ]).to_list(None)
+    result = {}
+    for row in rows:
+        stamp = row.get("last_sent_at")
+        result[row["_id"]] = {
+            "total_sent": row["total_sent"], "total_failed": row["total_failed"],
+            "last_sent_at": stamp.replace(tzinfo=UTC).isoformat() if stamp else None,
+        }
+    return result
+
+
+def _with_delivery_statistics(schedule: dict, statistics: dict) -> dict:
+    return {**schedule, **statistics.get(schedule["_id"], {"total_sent": 0, "total_failed": 0, "last_sent_at": None})}
+
+
 def _validate_schedule_fields(data: dict):
     if "name" in data:
         data["name"] = data["name"].strip()
@@ -328,6 +365,8 @@ async def list_schedules(
 
     cursor = db.report_schedules.find({"tenant_id": _get_tenant_id(current_user)}).sort("created_at", -1)
     schedules = await cursor.to_list(length=None)
+    statistics = await _delivery_statistics(_get_tenant_id(current_user), [row["_id"] for row in schedules]) if schedules else {}
+    schedules = [_with_delivery_statistics(row, statistics) for row in schedules]
     return {"schedules": schedules, "total": len(schedules)}
 
 
@@ -340,7 +379,8 @@ async def get_schedule(
     _require_manager_role(current_user)
 
     schedule = await _get_schedule_for_tenant(schedule_id, current_user)
-    return {"schedule": schedule}
+    statistics = await _delivery_statistics(_get_tenant_id(current_user), [schedule_id])
+    return {"schedule": _with_delivery_statistics(schedule, statistics)}
 
 
 @router.put("/schedules/{schedule_id}")
@@ -760,11 +800,11 @@ async def _execute_schedule(schedule: dict, triggered_by: str = "system", histor
                 raise ValueError("PDF üretilemedi; farklı formatta dosya gönderilmedi. Tekrar deneyin veya CSV seçin.")
             attachments.append((f"{schedule['report_type']}_{date_tag}.pdf", "application/pdf", pdf_bytes))
 
-        sent_this_attempt = failed_this_attempt = 0
         smtp_ready = email_service.mode == "production" and email_service.smtp_username and email_service.smtp_password
         for item in states:
             if item["status"] in {"sent", "mock"}:
                 continue
+            item.setdefault("failed_attempts", 1 if item["status"] == "failed" else 0)
             # Persist intent before the external side effect. A process crash here
             # leaves an explicit uncertain delivery, never a blind duplicate retry.
             item["status"] = "sending"
@@ -776,8 +816,10 @@ async def _execute_schedule(schedule: dict, triggered_by: str = "system", histor
                     logger.exception("Report delivery failed")
                     success = False
                 item["status"] = "sent" if success else "failed"
-                sent_this_attempt += int(bool(success))
-                failed_this_attempt += int(not success)
+                if success:
+                    item["sent_at"] = datetime.now(UTC).isoformat()
+                else:
+                    item["failed_attempts"] = item.get("failed_attempts", 0) + 1
             else:
                 item["status"] = "mock"
             await db.report_schedule_history.update_one(history_filter, {"$set": {"delivery_states": states}})
@@ -796,12 +838,11 @@ async def _execute_schedule(schedule: dict, triggered_by: str = "system", histor
         await db.report_schedule_history.update_one(history_filter, {"$set": {
             "status": status, "error_message": error_msg, "delivery_details": details, "delivery_states": states,
         }})
-        schedule_updates = {"last_status": status, "updated_at": now.isoformat()}
-        if sent_this_attempt:
-            schedule_updates["last_sent_at"] = now.isoformat()
+        statistics = await _delivery_statistics(tenant_id, [schedule["_id"]])
+        schedule_updates = {"last_status": status, "updated_at": now.isoformat(), **statistics[schedule["_id"]]}
         await db.report_schedules.update_one(
             {"_id": schedule["_id"], "tenant_id": tenant_id},
-            {"$set": schedule_updates, "$inc": {"total_sent": sent_this_attempt, "total_failed": failed_this_attempt}},
+            {"$set": schedule_updates},
         )
         _invalidate_scheduler_cache(tenant_id)
         return {
@@ -814,7 +855,7 @@ async def _execute_schedule(schedule: dict, triggered_by: str = "system", histor
         await db.report_schedule_history.update_one(history_filter, {"$set": {"status": "failed", "error_message": error_msg}})
         await db.report_schedules.update_one(
             {"_id": schedule["_id"], "tenant_id": tenant_id},
-            {"$set": {"last_status": "failed", "updated_at": now.isoformat()}, "$inc": {"total_failed": 1}},
+            {"$set": {"last_status": "failed", "updated_at": now.isoformat()}},
         )
         _invalidate_scheduler_cache(tenant_id)
         return {"message": error_msg, "status": "failed", "history_id": hid}
