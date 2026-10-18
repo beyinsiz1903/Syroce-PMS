@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import { toast } from "sonner";
@@ -14,19 +14,22 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import {
   Building2, BedDouble, DollarSign, Users, CheckCircle2,
   Circle, ChevronLeft, ChevronRight, SkipForward, Loader2,
-  PartyPopper, ArrowRight, RefreshCw, AlertCircle,
+  PartyPopper, ArrowRight, RefreshCw, AlertCircle, LayoutGrid,
 } from "lucide-react";
+import ModuleSetupList, { isReadinessMap, splitReadiness } from "@/components/setup/ModuleSetupList";
 
-// 5 görünür wizard adımı; her biri backend'in 13 adımından bir veya
-// daha fazlasıyla eşleşir. UI ilerlemesi BURADAKİ 5 adıma göre hesaplanır
-// (P0: 9/13 ile 5 görünür kart kafa karışıklığını çözer).
+// Five actionable steps plus a summary. Module setup comes from readiness;
+// the other steps map to the backend's detailed onboarding progress.
 const STEP_DEFS = [
   { id: "hotel", labelKey: "onboarding.steps.hotel", labelFallback: "Otel Bilgileri", icon: Building2, related: ["hotel_info_completed"] },
   { id: "rooms", labelKey: "onboarding.steps.rooms", labelFallback: "Odalar", icon: BedDouble, related: ["rooms_configured"] },
   { id: "rates", labelKey: "onboarding.steps.rates", labelFallback: "Fiyatlar", icon: DollarSign, related: ["rates_configured"] },
   { id: "team", labelKey: "onboarding.steps.team", labelFallback: "Ekip", icon: Users, related: ["team_members_added"] },
+  // Per enabled module: what its setup still misses (server module readiness).
+  { id: "modules", labelKey: "onboarding.steps.modules", labelFallback: "Modüller", icon: LayoutGrid, related: [] },
   { id: "done", labelKey: "onboarding.steps.done", labelFallback: "Tamamlandı", icon: PartyPopper, related: [] },
 ];
+const ACTION_STEPS = STEP_DEFS.filter((def) => def.id !== "done");
 
 const PROPERTY_TYPES = [
   { v: "city_hotel", l: "Şehir Oteli" },
@@ -69,6 +72,8 @@ export default function OnboardingWizard({ user, tenant, onLogout }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
+  const progressRequest = useRef(0);
+  const readinessRequest = useRef(0);
 
   const [hotelForm, setHotelForm] = useState({
     property_name: tenant?.property_name || "",
@@ -107,21 +112,52 @@ export default function OnboardingWizard({ user, tenant, onLogout }) {
     return ADMIN.includes(role) || roles.some(r => ADMIN.includes(r));
   }, [progress, user]);
 
-  const refresh = useCallback(async () => {
-    setLoading(true); setError(null);
+  // Module setup is an administrator's view (GET /modules/readiness).
+  const [readiness, setReadiness] = useState({ modules: null, error: null, loading: true });
+  const loadReadiness = useCallback(async () => {
+    const request = ++readinessRequest.current;
+    setReadiness({ modules: null, error: null, loading: true });
     try {
-      const r = await axios.get("/onboarding/progress");
-      setProgress(r.data);
+      const r = await axios.get("/modules/readiness");
+      if (!isReadinessMap(r.data?.modules)) throw new Error("Invalid module readiness response");
+      if (request === readinessRequest.current) {
+        setReadiness({ modules: r.data.modules, error: null, loading: false });
+      }
     } catch (e) {
-      const msg = e.response?.data?.detail || e.message || "Bilinmeyen hata";
-      setError(msg);
-      toast.error("İlerleme okunamadı: " + msg);
-    } finally {
-      setLoading(false);
+      if (request === readinessRequest.current) {
+        setReadiness({ modules: null, error: e.response?.status === 403 ? "forbidden" : "failed", loading: false });
+      }
     }
   }, []);
 
-  useEffect(() => { refresh(); }, [refresh]);
+  const refresh = useCallback(async () => {
+    const request = ++progressRequest.current;
+    setLoading(true); setError(null);
+    const loadProgress = async () => {
+      try {
+        const r = await axios.get("/onboarding/progress");
+        if (request === progressRequest.current) setProgress(r.data);
+      } catch (e) {
+        if (request !== progressRequest.current) return;
+        const msg = e.response?.data?.detail || e.message || "Bilinmeyen hata";
+        setError(msg);
+        toast.error("İlerleme okunamadı: " + msg);
+      }
+    };
+    await Promise.all([loadProgress(), loadReadiness()]);
+    if (request === progressRequest.current) setLoading(false);
+  }, [loadReadiness]);
+
+  useEffect(() => {
+    refresh();
+    return () => {
+      // An earlier refresh must not overwrite a newer result or an unmounted view.
+      progressRequest.current += 1;
+      readinessRequest.current += 1;
+    };
+  }, [refresh]);
+  const moduleSplit = useMemo(() => splitReadiness(readiness.modules), [readiness.modules]);
+  const moduleStepDone = !readiness.loading && !readiness.error && moduleSplit.complete;
 
   const stepStatus = useMemo(() => {
     const map = {};
@@ -129,12 +165,21 @@ export default function OnboardingWizard({ user, tenant, onLogout }) {
     return map;
   }, [progress]);
 
-  const isStepDone = (def) =>
-    def.related.length > 0 && def.related.every(k => !!stepStatus[k]);
+  const isStepDone = (def) => {
+    if (def.id === "modules") return moduleStepDone;
+    return !error && def.related.length > 0 && def.related.every(k => !!stepStatus[k]);
+  };
+  // Setup items that point back to this wizard (rooms) open its own step.
+  const openSetup = (path) => {
+    if (path === "/app/onboarding") {
+      setStepIdx(STEP_DEFS.findIndex(d => d.id === "rooms"));
+      return;
+    }
+    navigate(path);
+  };
 
-  // P0: UI 5 görünür adımdan kendi yüzdesini hesaplar (backend 9/13 ≠ UI 5 adım).
-  const visibleDone = STEP_DEFS.filter(d => d.related.length > 0 && isStepDone(d)).length;
-  const visibleTotal = STEP_DEFS.filter(d => d.related.length > 0).length;
+  const visibleDone = ACTION_STEPS.filter(isStepDone).length;
+  const visibleTotal = ACTION_STEPS.length;
   const visiblePct = visibleTotal > 0 ? Math.round((visibleDone / visibleTotal) * 100) : 0;
   // Backend ham progress (informational/tooltip için)
   const backendDone = progress?.completed ?? 0;
@@ -247,7 +292,7 @@ export default function OnboardingWizard({ user, tenant, onLogout }) {
             {t("onboarding.welcome", "Hoş geldiniz")}
           </h1>
           <p className="text-sm text-slate-600 mt-1">
-            Sistemi 5 adımda kullanıma hazırlayın. Her adımı atlayabilir,
+            Sistemi {visibleTotal} adımda kullanıma hazırlayın. Her adımı atlayabilir,
             menüden tekrar geri dönebilirsiniz.
           </p>
         </div>
@@ -256,7 +301,9 @@ export default function OnboardingWizard({ user, tenant, onLogout }) {
         </Button>
       </div>
 
-      {/* Overall progress (UI'nın 5 görünür adımına göre) */}
+      {error && <p role="alert" className="text-sm text-amber-800">İlerleme yenilenemedi: {error}. Lütfen tekrar deneyin.</p>}
+
+      {/* Overall progress includes module setup, not the summary card. */}
       <Card>
         <CardContent className="pt-6 space-y-3">
           <div className="flex items-center justify-between">
@@ -275,8 +322,8 @@ export default function OnboardingWizard({ user, tenant, onLogout }) {
         </CardContent>
       </Card>
 
-      {/* Step strip — mobile responsive (3 sütun) → sm 5 sütun */}
-      <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+      {/* Step strip — mobile responsive (3 sütun) → sm 6 sütun */}
+      <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
         {STEP_DEFS.map((def, i) => {
           const Icon = def.icon;
           const done = isStepDone(def);
@@ -554,16 +601,66 @@ export default function OnboardingWizard({ user, tenant, onLogout }) {
         />
       )}
 
+      {currentDef.id === "modules" && (
+        <Card data-testid="onboarding-modules-step">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <LayoutGrid className="w-5 h-5 text-indigo-600" /> Modül kurulumu
+              {isStepDone(currentDef) && (
+                <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200">
+                  <CheckCircle2 className="w-3 h-3 mr-1" /> Tamamlandı
+                </Badge>
+              )}
+            </CardTitle>
+            <CardDescription>
+              Açık modüllerinizin çalışması için eksik kalanlar. Her madde, onu tamamlayan ekrana götürür;
+              ayarları tamamladıktan sonra Yenile ile yeniden kontrol edebilirsiniz.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {readiness.loading ? (
+              <p role="status" className="flex items-center gap-2 text-sm text-slate-600"><Loader2 className="w-5 h-5 animate-spin" /> Modül durumu kontrol ediliyor.</p>
+            ) : readiness.error === "forbidden" ? (
+              <p className="text-sm text-slate-600">Modül kurulumunu otel yöneticisi görebilir.</p>
+            ) : readiness.error ? (
+              <div className="flex items-center justify-between gap-2 text-sm text-amber-800">
+                Modül durumu alınamadı.
+                <Button size="sm" variant="outline" onClick={loadReadiness}><RefreshCw className="w-4 h-4 mr-1" /> Tekrar dene</Button>
+              </div>
+            ) : readiness.modules ? (
+              <>
+                <ModuleSetupList modules={readiness.modules} onOpen={openSetup} />
+                <Button size="sm" variant="ghost" onClick={loadReadiness}><RefreshCw className="w-4 h-4 mr-1" /> Yenile</Button>
+              </>
+            ) : (
+              <Loader2 className="w-5 h-5 animate-spin" />
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       {currentDef.id === "done" && (
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <PartyPopper className="w-5 h-5 text-emerald-600" /> Hazırsınız!
+              <PartyPopper className="w-5 h-5 text-emerald-600" /> {visibleDone === visibleTotal ? "Hazırsınız!" : "Kurulum özeti"}
             </CardTitle>
             <CardDescription>
-              Tebrikler — temel kurulum tamam. İleri özellikler (kanal yöneticisi,
-              fatura, gece denetimi) ilgili modülleri kullanmaya başladıkça
-              otomatik tamamlanacak.
+              {visibleDone === visibleTotal
+                ? "Temel kurulum ve açık modüllerinizin kurulum kontrolleri tamamlandı."
+                : "Kurulum ilerlemesini yukarıdan takip edebilirsiniz. Eksik veya doğrulanamayan adımlara daha sonra geri dönebilirsiniz."}
+              {" "}İleri özelliklerin kullanım bilgileri (kanal yöneticisi, fatura, gece denetimi)
+              ilgili modülleri kullanmaya başladıkça otomatik güncellenir.
+              {moduleSplit.incomplete.length > 0 && (
+                <span className="mt-2 block text-amber-800" data-testid="onboarding-modules-pending">
+                  {moduleSplit.incomplete.length} modülün kurulumu henüz eksik; “Modüller” adımından tamamlayabilirsiniz.
+                </span>
+              )}
+              {!moduleStepDone && (
+                <span className="mt-2 block text-slate-600" data-testid="onboarding-modules-unverified">
+                  Modül kurulumunun tamamı henüz doğrulanmadı. “Modüller” adımındaki durumu kontrol edin.
+                </span>
+              )}
             </CardDescription>
           </CardHeader>
           <CardContent>
