@@ -273,3 +273,24 @@ def test_physical_currency_of_negative_refunds_and_explicit_zero_is_preserved():
         "currency": "TRY",
     }
     assert dashboard_lists._received_payment_amount({"amount": 10, "currency": "EUR", "received_amount": 0, "received_currency": "USD"}) == {"amount": 0, "currency": "USD"}
+
+
+async def test_cash_exchange_keeps_event_day_separate_from_an_older_open_business_day(ledger_db):
+    await ledger_db.currency_exchanges.insert_one(
+        {
+            "tenant_id": "A",
+            "id": "fx",
+            "status": "posted",
+            "business_date": "2026-10-01",
+            "created_at": datetime(2026, 10, 2, 12, tzinfo=UTC),
+            "source_amount": 100,
+            "source_currency": "USD",
+            "target_amount": 4000,
+            "target_currency": "TRY",
+        }
+    )
+    first = await dashboard_lists._basic_dashboard_impl.__wrapped__(USER, True, "2026-10-01", "daily")
+    second = await dashboard_lists._basic_dashboard_impl.__wrapped__(USER, True, "2026-10-02", "daily")
+    assert [row["id"] for row in first["payments"]["currency_exchanges"]] == ["fx"]
+    assert first["cash_movements"]["currency_exchanges"] == []
+    assert [row["id"] for row in second["cash_movements"]["currency_exchanges"]] == ["fx"]

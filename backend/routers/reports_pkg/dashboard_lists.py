@@ -907,10 +907,18 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
         if received["amount"] > 0:
             received_payments_by_booking.setdefault(booking_id, []).append(received)
 
-    currency_exchanges = await db.currency_exchanges.find(
-        {"tenant_id": tenant_id, "business_date": target_day, "status": "posted"},
-        {"_id": 0},
-    ).sort("created_at", 1).to_list(None)
+    currency_exchanges, cash_currency_exchanges = await asyncio.gather(
+        db.currency_exchanges.find(
+            {"tenant_id": tenant_id, "status": "posted", **report_payment_period_match(
+                target_day, target_day, date_fields=("created_at",),
+            )}, {"_id": 0},
+        ).sort("created_at", 1).to_list(None),
+        db.currency_exchanges.find(
+            {"tenant_id": tenant_id, "status": "posted", **report_payment_period_match(
+                target_day, target_day, use_business_date=False, date_fields=("created_at", "business_date"),
+            )}, {"_id": 0},
+        ).sort("created_at", 1).to_list(None),
+    )
 
     # Same source as Flash, EOD, weekly and standard revenue: posted folio /
     # manual extras / finalized POS transactions, with refunds and no mirrors.
@@ -1482,11 +1490,7 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
         "reporting_currency": REPORTING_CURRENCY,
         "conversion_issue_count": len(cash_movement_conversion_issues),
         "conversion_issues": cash_movement_conversion_issues,
-        "currency_exchanges": [
-            row
-            for row in currency_exchanges
-            if str(row.get("created_at") or row.get("business_date") or "")[:10] == target_day
-        ],
+        "currency_exchanges": cash_currency_exchanges,
     }
 
     daily_charges = daily_period_charges
