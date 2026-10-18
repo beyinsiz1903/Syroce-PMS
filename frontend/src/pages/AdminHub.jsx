@@ -26,6 +26,8 @@ import {
   SlidersHorizontal,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
+import { useModuleSalesInbox } from '@/hooks/useModuleSalesInbox';
+import { MODULE_SALES_PATH } from '@/lib/moduleSalesRequests';
 
 const SECTIONS = [
   {
@@ -58,6 +60,7 @@ const SECTIONS = [
     descKey: 'adminHub.sections.modules.desc',
     descFallback: 'Özellik bayrakları, keşif, raporlar',
     items: [
+      { to: MODULE_SALES_PATH, icon: Bell, labelKey: 'adminHub.items.moduleSalesRequests', labelFallback: 'Satış ve modül talepleri', platformOnly: true },
       { to: '/admin/module-control',   icon: SlidersHorizontal, labelKey: 'adminHub.items.moduleControl',    labelFallback: 'Modül Kontrol Merkezi' },
       { to: '/admin/features',         icon: Sparkles,      labelKey: 'adminHub.items.features',         labelFallback: 'Özellik Vitrini' },
       { to: '/admin/module-discovery', icon: Compass,       labelKey: 'adminHub.items.moduleDiscovery',  labelFallback: 'Modül Keşfi' },
@@ -106,6 +109,7 @@ const SECTIONS = [
 
 export default function AdminHub({ user, tenant, onLogout }) {
   const { t } = useTranslation();
+  const salesInbox = useModuleSalesInbox(user);
 
   const sections = useMemo(() => SECTIONS, []);
 
@@ -138,7 +142,7 @@ export default function AdminHub({ user, tenant, onLogout }) {
                 </p>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {section.items.map(({ to, icon: Icon, labelKey, labelFallback }) => (
+                {section.items.filter(item => !item.platformOnly || salesInbox.enabled).map(({ to, icon: Icon, labelKey, labelFallback }) => (
                   <Link
                     key={to}
                     to={to}
@@ -154,6 +158,7 @@ export default function AdminHub({ user, tenant, onLogout }) {
                           <p className="text-sm font-medium text-gray-900 truncate">
                             {t(labelKey, labelFallback)}
                           </p>
+                          {to === MODULE_SALES_PATH && <p className="mt-1 text-xs text-slate-600">{salesInbox.error ? 'Talep sayısı alınamadı' : salesInbox.data ? `${salesInbox.data.open_count} açık · ${salesInbox.data.new_count} yeni` : 'Talep sayısı yükleniyor…'}</p>}
                         </div>
                         <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-slate-600" />
                       </CardContent>

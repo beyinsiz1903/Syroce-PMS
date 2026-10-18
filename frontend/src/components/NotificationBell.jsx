@@ -1,10 +1,12 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Bell, AlertCircle, Info, CheckCircle, AlertTriangle } from 'lucide-react';
+import { useModuleSalesInbox } from '@/hooks/useModuleSalesInbox';
+import { MODULE_SALES_PATH } from '@/lib/moduleSalesRequests';
 const API = "";
 
 // SessionStorage cache: Layout her sayfa geçişinde remount oluyor (ProtectedRoute Layout sarmıyor).
@@ -31,13 +33,22 @@ const readCache = () => {
     return null;
   }
 };
-const NotificationBell = () => {
+const NotificationBell = ({ user } = {}) => {
   const navigate = useNavigate();
   const cached = readCache();
   const [notifications, setNotifications] = useState(cached?.notifications || []);
   const [unreadCount, setUnreadCount] = useState(cached?.unread_count || 0);
   const [isOpen, setIsOpen] = useState(false);
   const markingRef = useRef(false);
+  const sales = useModuleSalesInbox(user);
+  const markingSalesRef = useRef(false);
+  const [salesReadError, setSalesReadError] = useState('');
+  const salesRows = sales.data?.notifications;
+  const salesNotifications = salesRows || [];
+  const salesUnreadIds = useMemo(() => (salesRows || []).filter(item => !item.read).map(item => item.request_id), [salesRows]);
+  const acknowledgeSales = sales.acknowledge;
+  const totalUnread = unreadCount + (sales.data?.unread_count || 0);
+  const visibleNotifications = [...salesNotifications, ...notifications].sort((left, right) => (new Date(right.created_at).getTime() || 0) - (new Date(left.created_at).getTime() || 0));
   useEffect(() => {
     const refreshVisible = () => {
       if (document.visibilityState === 'visible') loadNotifications();
@@ -63,6 +74,14 @@ const NotificationBell = () => {
       });
     }
   }, [isOpen, unreadCount]);
+  useEffect(() => {
+    if (!isOpen || !salesUnreadIds.length || markingSalesRef.current) return;
+    markingSalesRef.current = true;
+    setSalesReadError('');
+    acknowledgeSales(salesUnreadIds)
+      .catch(() => setSalesReadError('Satış bildirimleri okundu olarak kaydedilemedi. Talep kuyruğu etkilenmedi.'))
+      .finally(() => { markingSalesRef.current = false; });
+  }, [isOpen, salesUnreadIds, acknowledgeSales]);
   const loadNotifications = async () => {
     try {
       const response = await axios.get(`/notifications/list?limit=20`, {
@@ -158,11 +177,11 @@ const NotificationBell = () => {
           onClick={() => setIsOpen(true)}
           className="relative p-2 hover:bg-white/20 dark:text-gray-100"
           data-testid="notification-bell-button"
-          aria-label={unreadCount > 0 ? `Bildirimler: ${unreadCount} okunmamış` : 'Bildirimleri aç'}
+          aria-label={totalUnread > 0 ? `Bildirimler: ${totalUnread} okunmamış` : 'Bildirimleri aç'}
         >
           <Bell className="w-5 h-5" />
-          {unreadCount > 0 && <Badge className="absolute -top-1 -right-1 h-5 w-5 flex items-center justify-center p-0 bg-red-500 text-white text-xs">
-              {unreadCount > 9 ? '9+' : unreadCount}
+          {totalUnread > 0 && <Badge className="absolute -top-1 -right-1 h-5 w-5 flex items-center justify-center p-0 bg-red-500 text-white text-xs">
+              {totalUnread > 9 ? '9+' : totalUnread}
             </Badge>}
         </Button>
       </div>
@@ -175,12 +194,17 @@ const NotificationBell = () => {
               Bildirimler
             </DialogTitle>
           </DialogHeader>
+          {sales.enabled && <div className="space-y-2">
+            <Button variant="outline" size="sm" onClick={() => { setIsOpen(false); navigate(MODULE_SALES_PATH); }}>Satış ve modül taleplerini aç{sales.data ? ` (${sales.data.open_count} açık)` : ''}</Button>
+            {sales.error && <p role="alert" className="text-xs text-red-600">{sales.error} <button className="underline" onClick={sales.refresh}>Yeniden dene</button></p>}
+            {salesReadError && <p role="alert" className="text-xs text-red-600">{salesReadError}</p>}
+          </div>}
 
           <div className="space-y-2">
-            {notifications.length === 0 ? <div className="text-center py-8 text-gray-500" data-testid="notification-empty">
+            {visibleNotifications.length === 0 ? <div className="text-center py-8 text-gray-500" data-testid="notification-empty">
                 <Bell className="w-12 h-12 mx-auto mb-2 opacity-50" />
                 <p className="text-sm">Bildirim yok</p>
-              </div> : notifications.map(notif => {
+              </div> : visibleNotifications.map(notif => {
               const relatedBookingId = getRelatedBookingId(notif);
               const canOpen = Boolean(relatedBookingId || notif.action_url?.startsWith('/'));
               return <div key={notif.id} className={`p-3 rounded-lg transition-all ${notif.read ? 'bg-gray-50' : getPriorityColor(notif.priority)} ${canOpen ? 'cursor-pointer hover:shadow-sm focus-within:ring-2 focus-within:ring-blue-400' : ''}`} data-testid={`notification-item-${notif.id}`} role={canOpen ? 'button' : undefined} tabIndex={canOpen ? 0 : undefined} onClick={() => canOpen && handleNotificationClick(notif)} onKeyDown={event => {

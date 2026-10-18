@@ -11,7 +11,7 @@ describe("professional module marketplace", () => {
     expect(source).toContain('axios.post("/module-store/purchase"');
     expect(source).toContain('axios.post("/module-store/start-trial"');
     expect(source).toContain('axios.post("/module-store/request-quote"');
-    expect(source).toContain("paymentReady ? onPurchase(product, quantity) : onQuote(product)");
+    expect(source).toContain("paymentReady ? onPurchase(product, quantity) : onQuote(product, quantity)");
     expect(source).toContain('axios.get("/module-store/billing")');
     expect(source).toContain('/cancel`');
   });

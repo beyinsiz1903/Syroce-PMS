@@ -173,6 +173,9 @@ async def ensure_indexes() -> None:
         await db.marketplace_quote_request_history.create_index(
             [("request_id", 1), ("changed_at", -1)], name="idx_quote_request_history"
         )
+        await db.marketplace_quote_request_reads.create_index(
+            [("user_id", 1), ("request_id", 1)], unique=True, name="idx_quote_read_user_request"
+        )
         await db.marketplace_price_history.create_index([("product_key", 1), ("changed_at", -1)], name="idx_marketplace_price_history")
         await db.marketplace_provisioning.create_index("subscription_id", unique=True, name="uniq_marketplace_provisioning_subscription")
         await db.marketplace_setup_tasks.create_index([("tenant_id", 1), ("product_key", 1), ("status", 1)], name="idx_marketplace_setup_tasks")

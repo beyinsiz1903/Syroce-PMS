@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import axios from "axios";
@@ -36,6 +36,7 @@ function ProductCard({ product, subscription, paymentReady, buying, english, onP
   const recurring = product.billing_type === "subscription";
   const busy = buying === product.key;
   const [quantity, setQuantity] = useState(Math.max(1, Number(product.included_units || 1)));
+  const quantityValid = Number.isInteger(quantity) && quantity >= 1 && quantity <= 10000;
   const unitLabels = { property: copy(english, "tesis", "property"), room: copy(english, "oda", "room"), employee: copy(english, "çalışan", "employee"), outlet: copy(english, "satış noktası", "outlet"), user: copy(english, "kullanıcı", "user"), pack: copy(english, "paket", "pack") };
   return (
     <article className={`group relative flex h-full flex-col overflow-hidden rounded-2xl border bg-white shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-lg ${product.popular ? "border-blue-300 ring-1 ring-blue-100" : "border-slate-200"}`}>
@@ -71,12 +72,13 @@ function ProductCard({ product, subscription, paymentReady, buying, english, onP
             {!owned && product.pricing_model !== "pack" && <label className="mt-3 block text-xs text-slate-600">{copy(english, "Fiyatlandırılacak adet", "Billable quantity")} ({unitLabels[product.pricing_model] || product.pricing_model})<Input className="mt-1" type="number" min="1" value={quantity} onChange={(event) => setQuantity(Math.max(1, Number(event.target.value) || 1))} /></label>}
             <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
               {owned ? <Button variant="outline" className="sm:col-span-2" onClick={() => onLaunch(product)} disabled={!product.route_path && !product.external}><ExternalLink className="mr-2 h-4 w-4" /> {copy(english, "Modülü aç", "Open module")}</Button> : <>
-                {product.trial_days > 0 && <Button variant="outline" onClick={() => onTrial(product)} disabled={busy}><Gift className="mr-2 h-4 w-4" /> {copy(english, "Ücretsiz dene", "Start trial")}</Button>}
-                <Button className={product.trial_days > 0 ? "" : "sm:col-span-2"} onClick={() => paymentReady ? onPurchase(product, quantity) : onQuote(product)} disabled={busy}>
+                {product.trial_days > 0 && <Button variant="outline" onClick={() => onTrial(product)} disabled={Boolean(buying)}><Gift className="mr-2 h-4 w-4" /> {copy(english, "Ücretsiz dene", "Start trial")}</Button>}
+                <Button className={product.trial_days > 0 ? "" : "sm:col-span-2"} onClick={() => paymentReady ? onPurchase(product, quantity) : onQuote(product, quantity)} disabled={Boolean(buying) || !quantityValid}>
                   {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : paymentReady ? <><ShoppingBag className="mr-2 h-4 w-4" /> {copy(english, "Satın al", "Buy now")}</> : copy(english, "Teklif iste", "Request quote")}
                 </Button>
               </>}
             </div>
+            {!quantityValid && <p role="alert" className="mt-2 text-xs text-red-600">{copy(english, "Adet 1–10.000 arasında tam sayı olmalıdır.", "Quantity must be a whole number between 1 and 10,000.")}</p>}
           </div>
         </div>
       </div>
@@ -100,6 +102,8 @@ export default function ModuleStorePage() {
   const [query, setQuery] = useState("");
   const [billing, setBilling] = useState({ invoices: [], payment_methods: [] });
   const [readiness, setReadiness] = useState({});
+  const [quoteReceipt, setQuoteReceipt] = useState(null);
+  const actionInFlight = useRef(false);
 
   const load = async () => {
     setLoading(true);
@@ -122,7 +126,12 @@ export default function ModuleStorePage() {
     return products.filter(product => category === "all" || product.category === category).filter(product => !normalized || [product.name, product.name_en, product.description, product.description_en, ...(english ? (product.features_en || []) : (product.features || []))].join(" ").toLocaleLowerCase(locale).includes(normalized)).sort((a, b) => Number(b.popular || false) - Number(a.popular || false) || a.name.localeCompare(b.name, locale));
   }, [category, english, products, query]);
 
-  const withBusy = async (product, action) => { setBuying(product.key); try { await action(); } finally { setBuying(null); } };
+  const withBusy = async (product, action) => {
+    if (actionInFlight.current) return;
+    actionInFlight.current = true;
+    setBuying(product.key);
+    try { await action(); } finally { actionInFlight.current = false; setBuying(null); }
+  };
   const handlePurchase = (product, quantity = 1) => withBusy(product, async () => {
     try { const { data } = await axios.post("/module-store/purchase", { product_key: product.key, quantity }); if (!data.payment_page_url) throw new Error("missing_payment_url"); window.location.assign(data.payment_page_url); }
     catch (error) { toast.error(error?.response?.data?.detail || copy(english, "Satın alma başlatılamadı", "Purchase could not be started")); }
@@ -131,8 +140,14 @@ export default function ModuleStorePage() {
     try { await axios.post("/module-store/start-trial", { product_key: product.key }); toast.success(copy(english, `${product.trial_days} günlük deneme etkinleştirildi`, `${product.trial_days}-day trial activated`)); await load(); }
     catch (error) { toast.error(error?.response?.data?.detail || copy(english, "Deneme başlatılamadı", "Trial could not be started")); }
   });
-  const handleQuote = product => withBusy(product, async () => {
-    try { const { data } = await axios.post("/module-store/request-quote", { product_key: product.key }); const shortId = data.request_id?.slice(0, 8); toast.success(copy(english, `Talebiniz satış kuyruğuna kaydedildi${shortId ? ` · No: ${shortId}` : ''}.`, `Your request was added to the sales queue${shortId ? ` · ID: ${shortId}` : ''}.`)); }
+  const handleQuote = (product, quantity = 1) => withBusy(product, async () => {
+    setQuoteReceipt(null);
+    try {
+      const { data } = await axios.post("/module-store/request-quote", { product_key: product.key, quantity });
+      setQuoteReceipt({ ...data, product_name: english ? product.name_en || product.name : product.name, quantity });
+      const shortId = data.request_id?.slice(0, 8);
+      toast.success(copy(english, `Talebiniz süperadminin Satış ve modül talepleri ekranına kaydedildi${shortId ? ` · No: ${shortId}` : ''}.`, `Your request is in the platform administrator's Sales and module requests queue${shortId ? ` · ID: ${shortId}` : ''}.`));
+    }
     catch (error) { toast.error(error?.response?.data?.detail || copy(english, "Teklif talebi gönderilemedi", "Quote request could not be sent")); }
   });
   const handleLaunch = product => {
@@ -163,6 +178,13 @@ export default function ModuleStorePage() {
       </div>
     </section>
     <div className="mx-auto max-w-[1500px] space-y-6 px-4 py-6 sm:px-6">
+      {quoteReceipt && <div role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
+        <p className="font-semibold">{copy(english, "Teklif talebiniz kaydedildi", "Your quote request has been saved")}</p>
+        <p className="mt-1">{quoteReceipt.product_name} · {quoteReceipt.quantity} {copy(english, "adet", "units")} · {copy(english, "Talep no", "Request ID")}: <code className="break-all">{quoteReceipt.request_id}</code></p>
+        <p className="mt-1">{copy(english, "Alıcı: Süperadmin → Satış ve modül talepleri. Bu işlem satın alma veya modül aktivasyonu değildir.", "Recipient: Platform administrator → Sales and module requests. This is not a purchase or module activation.")}</p>
+        {quoteReceipt.delivery?.email === 'failed' && <p className="mt-1">{copy(english, "Ek e-posta bildirimi gönderilemedi; talebiniz kuyrukta kayıtlıdır.", "The additional email could not be sent; your request remains in the queue.")}</p>}
+        {quoteReceipt.delivery?.email === 'not_configured' && <p className="mt-1">{copy(english, "Ek e-posta kanalı yapılandırılmamış; talebiniz platform üzerinden takip edilir.", "Additional email delivery is not configured; your request is tracked in the platform.")}</p>}
+      </div>}
       {!paymentReady && <div className="flex items-start gap-3 rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-950 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-100"><ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-blue-600 dark:text-blue-300" /><div><strong>{copy(english, "Güvenli teklif akışı aktif. ", "Secure quote flow is active. ")}</strong>{copy(english, "Online ödeme bağlantısı devreye alınana kadar “Teklif iste” ile talebiniz kayıt altına alınır.", "Until online payment is enabled, Request quote records your request for the sales team.")}</div></div>}
       <Tabs value={tab} onValueChange={setTab}>
         <div className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm lg:flex-row lg:items-center lg:justify-between">

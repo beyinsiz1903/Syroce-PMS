@@ -7,6 +7,7 @@ iyzico Checkout Form üzerinden ödeme alır, başarılı ödeme sonrası
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import uuid
@@ -14,9 +15,10 @@ from datetime import UTC, datetime, timedelta
 from html import escape
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from pydantic import BaseModel, Field, field_validator
 
+from core.module_sales_requests import STATUSES, acknowledge_requests, follow_up_utc, normalize_request, quote_summary, sales_inbox, status_query
 from core.security import get_current_user
 from core.subscriptions import ensure_indexes, get_active_subscriptions
 from models.schemas import User
@@ -337,6 +339,7 @@ class StartTrialRequest(BaseModel):
 
 class QuoteRequest(BaseModel):
     product_key: str
+    quantity: int = Field(default=1, ge=1, le=10000)
     note: str | None = Field(default=None, max_length=1000)
 
 
@@ -365,6 +368,25 @@ class QuoteRequestUpdate(BaseModel):
     assignee: str | None = Field(default=None, max_length=200)
     internal_note: str | None = Field(default=None, max_length=1000)
     follow_up_at: str | None = Field(default=None, max_length=40)
+
+    @field_validator("follow_up_at")
+    @classmethod
+    def normalize_follow_up(cls, value):
+        try:
+            return follow_up_utc(value)
+        except (ValueError, TypeError) as exc:
+            raise ValueError("Geçerli bir takip tarihi girin.") from exc
+
+
+class QuoteReadRequest(BaseModel):
+    request_ids: list[str] = Field(max_length=50)
+
+    @field_validator("request_ids")
+    @classmethod
+    def validate_ids(cls, values):
+        if any(not value.strip() or len(value) > 100 for value in values):
+            raise ValueError("Geçersiz talep numarası.")
+        return values
 
 
 # ── Public catalog ──────────────────────────────────────────────
@@ -414,7 +436,7 @@ async def request_quote(
         raise HTTPException(status_code=403, detail="Tenant gerekli")
     db = _db()
     product = await db.marketplace_products.find_one(
-        {"key": payload.product_key, "active": True}, {"_id": 0, "key": 1, "name": 1, "price_try": 1}
+        {"key": payload.product_key, "active": True}, {"_id": 0}
     )
     if not product:
         raise HTTPException(status_code=404, detail="Ürün bulunamadı")
@@ -436,38 +458,47 @@ async def request_quote(
         "product_key": product["key"],
         "product_name": product["name"],
         "listed_price_try": product.get("price_try"),
+        "quantity": payload.quantity,
+        "price_snapshot": calculate_price(product, payload.quantity),
         "note": payload.note,
         "status": "new",
-        "delivery": {"admin_queue": True, "email": "not_configured"},
+        "delivery": {"admin_queue": True, "email": "pending" if sales_email else "not_configured"},
         "created_at": _now_iso(),
     }
     await db.marketplace_quote_requests.insert_one(doc)
     if sales_email:
         from core.email import send_email
 
-        result = await send_email(
-            sales_email,
-            f"Yeni modül teklif talebi · {product['name']}",
-            (
-                f"<h2>Yeni teklif talebi</h2><p><strong>Talep:</strong> {escape(request_id)}</p>"
-                f"<p><strong>Otel:</strong> {escape(str(doc['tenant_name']))} ({escape(str(current_user.tenant_id))})</p>"
-                f"<p><strong>Ürün:</strong> {escape(str(product['name']))}</p>"
-                f"<p><strong>İletişim:</strong> {escape(str(current_user.email or tenant.get('email') or 'Belirtilmedi'))}"
-                f" · {escape(str(tenant.get('phone') or 'Telefon belirtilmedi'))}</p>"
-                f"<p><strong>Not:</strong> {escape(payload.note or '—')}</p>"
-            ),
-            reply_to=current_user.email or tenant.get("email"),
-        )
+        try:
+            result = await send_email(
+                sales_email,
+                f"Yeni modül teklif talebi · {product['name']}",
+                (
+                    f"<h2>Yeni teklif talebi</h2><p><strong>Talep:</strong> {escape(request_id)}</p>"
+                    f"<p><strong>Otel:</strong> {escape(str(doc['tenant_name']))} ({escape(str(current_user.tenant_id))})</p>"
+                    f"<p><strong>Ürün:</strong> {escape(str(product['name']))}</p>"
+                    f"<p><strong>İletişim:</strong> {escape(str(current_user.email or tenant.get('email') or 'Belirtilmedi'))}"
+                    f" · {escape(str(tenant.get('phone') or 'Telefon belirtilmedi'))}</p>"
+                    f"<p><strong>Not:</strong> {escape(payload.note or '—')}</p>"
+                ),
+                reply_to=current_user.email or tenant.get("email"),
+            )
+        except Exception:
+            logger.exception("Quote email failed after durable queue insert request_id=%s", request_id)
+            result = {"sent": False, "error": "email_delivery_failed"}
         email_status = "sent" if result.get("sent") else "failed"
-        await db.marketplace_quote_requests.update_one(
-            {"id": request_id},
-            {"$set": {"delivery.email": email_status, "delivery.email_destination": sales_email,
-                      "delivery.email_provider": result.get("provider"), "delivery.email_error": result.get("error"),
-                      "delivery.updated_at": _now_iso()}},
-        )
+        try:
+            await db.marketplace_quote_requests.update_one(
+                {"id": request_id},
+                {"$set": {"delivery.email": email_status, "delivery.email_destination": sales_email,
+                          "delivery.email_provider": result.get("provider"), "delivery.email_error": result.get("error"),
+                          "delivery.updated_at": _now_iso()}},
+            )
+        except Exception:
+            logger.exception("Quote email metadata update failed request_id=%s", request_id)
         doc["delivery"]["email"] = email_status
     return {"ok": True, "request_id": request_id, "status": "new", "delivery": doc["delivery"],
-            "destination": "Süperadmin > Modül Kontrol Merkezi > Teklif talepleri"}
+            "destination": "Süperadmin > Satış ve modül talepleri"}
 
 
 # ── Purchase flow ───────────────────────────────────────────────
@@ -937,14 +968,40 @@ async def admin_setup_tasks(current_user: User = Depends(get_current_user), stat
 
 
 @router.get("/admin/quote-requests")
-async def admin_quote_requests(current_user: User = Depends(get_current_user), status_filter: str | None = None) -> dict:
+async def admin_quote_requests(
+    current_user: User = Depends(get_current_user), status_filter: str | None = None,
+    search: str = "", limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0),
+) -> dict:
     _require_platform_admin(current_user)
-    query = {"status": status_filter} if status_filter else {}
-    rows = [row async for row in _db().marketplace_quote_requests.find(query, {"_id": 0}).sort("created_at", -1).limit(200)]
-    legacy_statuses = {"contacted": "in_progress", "qualified": "in_progress", "closed": "won", "rejected": "lost"}
-    for row in rows:
-        row["status"] = legacy_statuses.get(row.get("status"), row.get("status", "new"))
-    return {"requests": rows}
+    if status_filter and status_filter not in {*STATUSES, "all", "open"}:
+        raise HTTPException(status_code=422, detail="Geçersiz teklif aşaması.")
+    if len(search) > 200:
+        raise HTTPException(status_code=422, detail="Arama en fazla 200 karakter olmalıdır.")
+    query = status_query(status_filter)
+    if search.strip():
+        import re
+        query = {"$and": [query, {"$or": [{field: {"$regex": re.escape(search.strip()), "$options": "i"}}
+            for field in ("id", "tenant_name", "tenant_id", "product_name", "product_key", "user_email", "tenant_email")]}]}
+    database = _db()
+    rows, total, summary = await asyncio.gather(
+        database.marketplace_quote_requests.find(query, {"_id": 0}).sort([("created_at", -1), ("id", 1)]).skip(offset).limit(limit).to_list(limit),
+        database.marketplace_quote_requests.count_documents(query), quote_summary(database),
+    )
+    return {"requests": [normalize_request(row) for row in rows], "total": total, "limit": limit, "offset": offset,
+            "has_more": offset + len(rows) < total, "summary": summary}
+
+
+@router.get("/admin/quote-requests/inbox")
+async def admin_quote_inbox(current_user: User = Depends(get_current_user)) -> dict:
+    _require_platform_admin(current_user)
+    return await sales_inbox(_db(), current_user.id)
+
+
+@router.post("/admin/quote-requests/acknowledge")
+async def admin_acknowledge_quotes(payload: QuoteReadRequest, current_user: User = Depends(get_current_user)) -> dict:
+    _require_platform_admin(current_user)
+    count = await acknowledge_requests(_db(), current_user.id, payload.request_ids)
+    return {"ok": True, "acknowledged": count}
 
 
 @router.patch("/admin/quote-requests/{request_id}")
