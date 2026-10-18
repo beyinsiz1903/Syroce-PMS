@@ -15,7 +15,10 @@ vi.mock('axios', () => ({
 // What the server's /subscription/plan-modules returns (excerpt): the only
 // source of plan scope; paid add-ons (AI, Quick-ID) are never included.
 const PLAN_CATALOG = {
-  basic: { pms: true, reservation_calendar: true, dashboard: true, guests: true, housekeeping: true, reports: true, ai: false, ai_chatbot: false, quick_id: false },
+  mini: { pms: true, reservation_calendar: true, dashboard: true, guests: true, housekeeping: true, channel_manager: false, agency_extranet: false, invoices: false, quick_id: false },
+  basic: { pms: true, reservation_calendar: true, dashboard: true, guests: true, housekeeping: true, reports: true, ai: false, ai_chatbot: false, quick_id: false, channel_manager: true, agency_extranet: true, invoices: false },
+  professional: { pms: true, reservation_calendar: true, dashboard: true, guests: true, housekeeping: true, reports: true, channel_manager: true, agency_extranet: true, invoices: true, quick_id: false },
+  enterprise: { pms: true, channel_manager: true, agency_extranet: true, invoices: true, quick_id: false },
 };
 
 vi.mock('react-i18next', () => ({
@@ -151,4 +154,22 @@ describe('CreateTenantModal professional module wizard', () => {
     expect(await screen.findByTestId('plan-catalog-error')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Devam/ })).toBeDisabled();
   });
+
+  it('recommends the lowest plan that covers the needs and switches their modules on', async () => {
+    render(<CreateTenantModal open onOpenChange={() => {}} onSuccess={() => {}} />);
+    await waitFor(() => expect(screen.getByText('Kamp Alanı / Glamping')).toBeInTheDocument());
+    fireEvent.click(screen.getByText('Kamp Alanı / Glamping'));
+    await waitFor(() => expect(screen.getByRole('button', { name: /Devam/ })).not.toBeDisabled());
+    fireEvent.click(screen.getByRole('button', { name: /Devam/ }));
+    const tier = await screen.findByTestId('create-tenant-tier');
+    expect(tier).toHaveValue('basic');                                 // property type's recommendation
+    fireEvent.click(screen.getByTestId('need-einvoice'));
+    await waitFor(() => expect(tier).toHaveValue('professional'));
+    expect(screen.getByTestId('create-tenant-recommendation')).toHaveTextContent('E-fatura → Professional');
+    fireEvent.click(screen.getByTestId('need-spa'));                   // paid add-on: plan stays
+    expect(tier).toHaveValue('professional');
+    fireEvent.change(tier, { target: { value: 'basic' } });            // operator overrides
+    expect(screen.getByTestId('create-tenant-tier-below-needs')).toBeInTheDocument();
+  });
 });
+

@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { MODULE_GROUPS, PLANS, isModuleIncludedInPlan } from './tenantConstants';
 import { usePlanCatalog } from '@/lib/planCatalog';
+import { NEEDS, TIER_ORDER, applyNeeds, recommendTier } from '@/lib/setupNeeds';
 import { useTranslation } from 'react-i18next';
 
 const ICON_MAP = {
@@ -140,7 +141,12 @@ const buildDefaultModules = (profile, tier) => {
 const CreateTenantModal = ({ open, onOpenChange, onSuccess }) => {
   const { t } = useTranslation();
   // Plan scope comes from the server; defaults and prices wait for it.
-  const { ready: planReady, error: planError, retry: retryPlanCatalog } = usePlanCatalog();
+  const { catalog: planCatalog, ready: planReady, error: planError, retry: retryPlanCatalog } = usePlanCatalog();
+  // What the hotel does (sales channels, outlets, operations): drives the
+  // recommended plan and the modules switched on. The operator can still
+  // pick another plan or customise modules in step 3.
+  const [needs, setNeeds] = useState([]);
+  const [tierTouched, setTierTouched] = useState(false);
   const [step, setStep] = useState(1);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
@@ -202,7 +208,7 @@ const CreateTenantModal = ({ open, onOpenChange, onSuccess }) => {
     // Recompute module defaults for this property type + tier and reset the
     // "touched" flag so a subsequent tier change in step 2 will refresh the
     // baseline (otherwise stale defaults persist into step 3).
-    setModulesMap(buildDefaultModules(pt, tier));
+    setModulesMap(applyNeeds(buildDefaultModules(pt, tier), needs));
     setModulesTouched(false);
     setAdvancedModulesOpen(false);
     setModuleSearch('');
@@ -215,8 +221,20 @@ const CreateTenantModal = ({ open, onOpenChange, onSuccess }) => {
   const [modulesTouched, setModulesTouched] = useState(false);
   useEffect(() => {
     if (!selectedType || modulesTouched || !planReady) return;
-    setModulesMap(buildDefaultModules(selectedType, form.subscription_tier));
-  }, [form.subscription_tier, selectedType, modulesTouched, planReady]);
+    setModulesMap(applyNeeds(buildDefaultModules(selectedType, form.subscription_tier), needs));
+  }, [form.subscription_tier, selectedType, modulesTouched, planReady, needs]);
+
+  // Lowest plan covering the needs (never below the property type's).
+  const recommendation = useMemo(
+    () => recommendTier(needs, planCatalog, selectedType?.recommended_tier || 'mini'),
+    [needs, planCatalog, selectedType],
+  );
+  useEffect(() => {
+    if (!planReady || tierTouched || !selectedType) return;
+    setForm((prev) => (prev.subscription_tier === recommendation.tier ? prev : { ...prev, subscription_tier: recommendation.tier }));
+  }, [recommendation.tier, planReady, tierTouched, selectedType]);
+  const toggleNeed = (id) => setNeeds((current) => (current.includes(id) ? current.filter((x) => x !== id) : [...current, id]));
+  const tierBelowNeeds = TIER_ORDER.indexOf(form.subscription_tier) < TIER_ORDER.indexOf(recommendation.tier);
 
   const toggleModule = (key) => {
     setModulesTouched(true);
@@ -239,7 +257,7 @@ const CreateTenantModal = ({ open, onOpenChange, onSuccess }) => {
   const resetModulesToDefaults = () => {
     if (!selectedType) return;
     setModulesTouched(false);
-    setModulesMap(buildDefaultModules(selectedType, form.subscription_tier));
+    setModulesMap(applyNeeds(buildDefaultModules(selectedType, form.subscription_tier), needs));
   };
 
   const goToStep2 = () => {
@@ -324,6 +342,8 @@ const CreateTenantModal = ({ open, onOpenChange, onSuccess }) => {
     setError(null);
     setModulesMap({});
     setModulesTouched(false);
+    setNeeds([]);
+    setTierTouched(false);
     setAdvancedModulesOpen(false);
     setModuleSearch('');
     setShowSelectedModulesOnly(false);
@@ -568,14 +588,48 @@ const CreateTenantModal = ({ open, onOpenChange, onSuccess }) => {
                   <Label>{t('cm.pages_admin_CreateTenantModal.aciklama')}</Label>
                   <input className="w-full border rounded-lg px-3 py-2 text-sm mt-1" value={form.description} onChange={(e) => handleChange('description', e.target.value)} placeholder={selectedType?.name_tr || 'Tesis açıklaması'} />
                 </div>
+                <div className="col-span-2 rounded-lg border border-indigo-200 bg-indigo-50 p-3 space-y-2" data-testid="create-tenant-needs">
+                  <div>
+                    <Label>Tesisin ihtiyaçları</Label>
+                    <p className="text-[11px] text-slate-500 mt-0.5">İşaretledikleriniz modülleri açar ve uygun planı önerir. Ücretli ekler planı yükseltmez, teklife eklenir.</p>
+                  </div>
+                  {['Satış', 'Tesiste', 'İşletme'].map((group) => (
+                    <div key={group} className="flex flex-wrap items-center gap-1.5">
+                      <span className="w-16 text-[11px] font-semibold text-slate-500">{group}</span>
+                      {NEEDS.filter((need) => need.group === group).map((need) => {
+                        const on = needs.includes(need.id);
+                        return (
+                          <button type="button" key={need.id} data-testid={`need-${need.id}`} aria-pressed={on} onClick={() => toggleNeed(need.id)}
+                            className={`rounded-full border px-2.5 py-1 text-xs ${on ? 'border-indigo-500 bg-indigo-600 text-white' : 'border-slate-200 bg-white text-slate-700'}`}>
+                            {need.label}{need.paid ? ' · ek' : ''}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ))}
+                  {planReady && (
+                    <p className="text-xs text-slate-700" data-testid="create-tenant-recommendation">
+                      Önerilen plan: <span className="font-semibold">{TIER_LABELS[recommendation.tier]?.label || recommendation.tier}</span>
+                      {recommendation.reasons.length > 0 && <span className="text-slate-500"> — {recommendation.reasons.map((r) => `${r.need} → ${TIER_LABELS[r.tier]?.label || r.tier}`).join(', ')}</span>}
+                    </p>
+                  )}
+                  {recommendation.uncovered.length > 0 && (
+                    <p className="text-[11px] text-amber-700">Hiçbir planda bulunmayan: {recommendation.uncovered.join(', ')}; 3. adımda ayrıca açın.</p>
+                  )}
+                </div>
                 <div>
                   <Label>Plan</Label>
-                  <select data-testid="create-tenant-tier" className="w-full border rounded-lg px-3 py-2 text-sm mt-1" value={form.subscription_tier} onChange={(e) => handleChange('subscription_tier', e.target.value)}>
+                  <select data-testid="create-tenant-tier" className="w-full border rounded-lg px-3 py-2 text-sm mt-1" value={form.subscription_tier} onChange={(e) => { setTierTouched(true); handleChange('subscription_tier', e.target.value); }}>
                     <option value="mini">Mini</option>
                     <option value="basic">Basic</option>
                     <option value="professional">Professional</option>
                     <option value="enterprise">Enterprise</option>
                   </select>
+                  {tierBelowNeeds && (
+                    <p className="text-[11px] text-red-600 mt-1" data-testid="create-tenant-tier-below-needs">
+                      Bu plan işaretlenen ihtiyaçları karşılamıyor; önerilen: {TIER_LABELS[recommendation.tier]?.label}
+                    </p>
+                  )}
                   {selectedType && form.subscription_tier !== selectedType.recommended_tier && (
                     <p className="text-[11px] text-amber-600 mt-1">
                       {t('cm.pages_admin_CreateTenantModal.bu_tesis_tipi_icin_onerilen_plan')} <span className="font-semibold">{TIER_LABELS[selectedType.recommended_tier]?.label}</span>
