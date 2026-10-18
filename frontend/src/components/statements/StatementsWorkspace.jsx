@@ -61,6 +61,13 @@ const waitingText = (statement, side) => {
 };
 
 const editsToAdjustments = edits => Object.entries(edits || {}).map(([booking_id, edit]) => ({ booking_id, amount: Number(edit.amount || 0), reason: (edit.reason || '').trim() }));
+// What a set of corrections changes on the server: a zero amount removes a
+// correction (core.agency_statements.apply_adjustment), so an opened and
+// emptied box changes nothing.
+export const editsKey = edits => JSON.stringify(editsToAdjustments(edits)
+  .filter(item => Math.abs(item.amount) >= 0.01)
+  .map(item => [item.booking_id, Math.round(item.amount * 100) / 100, item.reason])
+  .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
 const invalidEdit = edits => editsToAdjustments(edits).some(item => Number.isNaN(item.amount) || (Math.abs(item.amount) >= 0.01 && item.reason.length < 5));
 const withEdit = (current, bookingId, edit) => {
   const next = { ...current };
@@ -116,8 +123,11 @@ export default function StatementsWorkspace({ side, api, base, partiesPath, titl
   const [issuing, setIssuing] = useState(false);
   const [preview, setPreview] = useState(null);
   const [previewEdits, setPreviewEdits] = useState({});
-  // A correction typed after the last calculation is not what the preview shows.
-  const [previewStale, setPreviewStale] = useState(false);
+  // A correction typed after the last calculation is not what the preview
+  // shows. Compared by content, not by touch: undoing a change (or opening
+  // a box and leaving it empty) needs no recalculation.
+  const [calculatedKey, setCalculatedKey] = useState(editsKey({}));
+  const previewStale = Boolean(preview) && editsKey(previewEdits) !== calculatedKey;
   const [detail, setDetail] = useState(null);
   const [lineEdits, setLineEdits] = useState({});
   const [note, setNote] = useState('');
@@ -152,7 +162,7 @@ export default function StatementsWorkspace({ side, api, base, partiesPath, titl
     try {
       const { data } = await api.post(`${base}/preview`, body(edits));
       setPreview(data);
-      setPreviewStale(false);
+      setCalculatedKey(editsKey(edits));
     } catch (err) { toast.error(apiErrorText(err, 'Ekstre hesaplanamadı.')); }
     finally { setIssuing(false); }
   };
@@ -171,7 +181,7 @@ export default function StatementsWorkspace({ side, api, base, partiesPath, titl
     } catch (err) { toast.error(apiErrorText(err, 'Ekstre düzenlenemedi.')); }
     finally { setIssuing(false); }
   };
-  const editPreviewLine = (bookingId, edit) => { setPreviewStale(true); setPreviewEdits(current => withEdit(current, bookingId, edit)); };
+  const editPreviewLine = (bookingId, edit) => setPreviewEdits(current => withEdit(current, bookingId, edit));
 
   const open = async statement => {
     try {

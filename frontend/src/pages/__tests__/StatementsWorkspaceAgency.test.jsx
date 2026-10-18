@@ -50,6 +50,33 @@ describe('StatementsWorkspace (agency side)', () => {
     expect(await screen.findByTestId('statement-preview-supplement')).toHaveTextContent('EKS-2026-0001');
   });
 
+  it('asks to recalculate only when the corrections really differ from the preview', async () => {
+    const api = {
+      get: vi.fn(url => Promise.resolve({ data: url.endsWith('/hotels') ? { hotels: [{ tenant_id: 't1', name: 'Demo Otel', currency: 'TRY' }] } : { items: [] } })),
+      post: vi.fn((url, body) => Promise.resolve({ data: { hotel_name: 'Demo Otel', period_start: body.period_start, period_end: body.period_end, currency: 'TRY',
+        lines: [line], totals: { net_balance: -1200 }, outstanding: -1200, signature: 'sig' } })),
+    };
+    renderAgency(api);
+    await userEvent.selectOptions(await screen.findByLabelText('Otel'), 't1');
+    await userEvent.click(screen.getByText('Ekstreyi önizle'));
+    const box = await screen.findByLabelText(`${line.confirmation_code} satırını düzelt`);
+    const send = () => screen.getByRole('button', { name: 'Otele gönder' });
+    const warning = () => screen.queryByText('Düzeltmeler değişti; göndermeden önce yeniden hesaplayın.');
+
+    await userEvent.click(box);                               // opened, nothing typed
+    expect(warning()).toBeNull();
+    await userEvent.click(box);                               // and closed again: the reported case
+    expect(warning()).toBeNull();
+    expect(send()).not.toBeDisabled();
+
+    await userEvent.click(box);
+    await userEvent.type(screen.getByLabelText('Düzeltme tutarı'), '-100');
+    expect(warning()).not.toBeNull();                         // a real change: recalculate first
+    expect(send()).toBeDisabled();
+    await userEvent.clear(screen.getByLabelText('Düzeltme tutarı'));
+    expect(warning()).toBeNull();                             // undone: same as the preview
+  });
+
   it('verifies the commission payment the hotel reported, and offers "Ödeme alındı" instead of reporting', async () => {
     const statement = { id: 's1', number: 'EKS-2026-0009', hotel_name: 'Demo Otel', period_start: '2026-11-01', period_end: '2026-11-30', currency: 'TRY',
       status: 'agreed', issuer: 'agency', revision: 1, agreements: { hotel: 1, agency: 1 }, outstanding: -1200, lines: [line], payments: [],
