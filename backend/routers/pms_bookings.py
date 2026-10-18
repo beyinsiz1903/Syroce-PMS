@@ -6,8 +6,7 @@ Booking CRUD, approval/rejection, multi-room bookings, room move history.
 import asyncio
 import logging
 
-from modules.pms_core.role_permission_service import require_module as require_module_v97  # v97 DW
-from modules.pms_core.role_permission_service import require_module as require_module_v101  # v101 DW
+from modules.pms_core.role_permission_service import require_module_role  # v97 DW
 
 logger = logging.getLogger(__name__)
 import hashlib
@@ -859,7 +858,7 @@ async def get_booking(
 async def create_room_move_history(
     move_data: dict,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
+    _perm=Depends(require_module_role("frontdesk")),  # v101 DW
 ):
     """Log room move history for audit trail.
 
@@ -891,7 +890,7 @@ async def create_multi_room_booking(
     payload: MultiRoomBookingCreate,
     request: Request,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
+    _perm=Depends(require_module_role("frontdesk")),  # v97 DW
 ):
     """Create a multi-room booking under one group_booking_id.
 

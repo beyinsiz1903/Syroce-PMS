@@ -12,7 +12,7 @@ Extracted from server.py for modularity.
 """
 import logging
 
-from modules.pms_core.role_permission_service import require_module as require_module_v101  # v101 DW
+from modules.pms_core.role_permission_service import require_module_role  # v101 DW
 
 logger = logging.getLogger(__name__)
 from datetime import UTC, datetime
@@ -171,7 +171,7 @@ async def get_tasks_kanban(current_user: User = Depends(get_current_user)):
 async def move_task(
     data: dict,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
+    _perm=Depends(require_module_role("frontdesk")),  # v101 DW
 ):
     """
     Move task between kanban columns

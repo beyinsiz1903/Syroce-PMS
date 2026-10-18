@@ -21,8 +21,8 @@ from core.tenant_currency import get_tenant_currency
 from models.enums import UserRole
 from models.schemas import LoyaltyProgram, LoyaltyProgramCreate, LoyaltyTransaction, LoyaltyTransactionCreate, RoomService, RoomServiceCreate, User
 from modules.guest_journey import feedback_reporting_service as feedback_report
-from modules.pms_core.role_permission_service import require_module as require_module_v100  # v100 DW
 from modules.pms_core.role_permission_service import (
+    require_module_role,  # v100 DW
     require_op,  # v96 DW
     require_role,
 )
@@ -205,7 +205,7 @@ async def get_nps_by_room(
 async def earn_points(
     points_data: dict,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v100("frontdesk")),  # v100 DW
+    _perm=Depends(require_module_role("frontdesk")),  # v100 DW
 ):
     await db.loyalty_points_transactions.insert_one(
         {"id": str(uuid.uuid4()), "guest_id": points_data["guest_id"], "points": points_data["points"], "type": "earn", "created_at": datetime.now(UTC).isoformat()}
@@ -1249,7 +1249,7 @@ async def update_guest_preferences(
     dietary_restrictions: list[str] = [],
     allergies: list[str] = [],
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v100("frontdesk")),  # v100 DW
+    _perm=Depends(require_module_role("frontdesk")),  # v100 DW
 ):
     """Update or create guest preferences"""
     pref_data = {
@@ -1373,7 +1373,7 @@ async def redeem_loyalty_points(
     guest_id: str,
     request: RedeemPointsRequest,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v100("frontdesk")),  # v100 DW
+    _perm=Depends(require_module_role("frontdesk")),  # v100 DW
 ):
     """Redeem loyalty points"""
     guest = await db.guests.find_one({"id": guest_id, "tenant_id": current_user.tenant_id})

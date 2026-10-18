@@ -21,7 +21,7 @@ from core.database import db
 from core.security import get_current_user, security
 from models.schemas import User
 from modules.pms_core.role_permission_service import (
-    require_module,
+    require_module_role,
     require_op,
 )
 
@@ -204,7 +204,7 @@ async def get_gm_notifications_mobile(
 @router.get("/notifications/mobile/frontdesk")
 async def get_frontdesk_notifications_mobile(
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    _perm=Depends(require_module("frontdesk")),
+    _perm=Depends(require_module_role("frontdesk")),
 ):
     """Get notifications for front desk mobile dashboard"""
     current_user = await get_current_user(credentials)
@@ -292,7 +292,7 @@ async def get_frontdesk_notifications_mobile(
 @router.get("/notifications/mobile/housekeeping")
 async def get_housekeeping_notifications_mobile(
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    _perm=Depends(require_module("housekeeping")),
+    _perm=Depends(require_module_role("housekeeping")),
 ):
     """Get notifications for housekeeping mobile dashboard"""
     current_user = await get_current_user(credentials)
@@ -382,7 +382,7 @@ async def get_housekeeping_notifications_mobile(
 @router.get("/notifications/mobile/maintenance")
 async def get_maintenance_notifications_mobile(
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    _perm=Depends(require_module("maintenance")),
+    _perm=Depends(require_module_role("maintenance")),
 ):
     """Get notifications for maintenance mobile dashboard"""
     current_user = await get_current_user(credentials)
@@ -447,7 +447,7 @@ async def get_maintenance_notifications_mobile(
 @router.get("/notifications/mobile/fnb")
 async def get_fnb_notifications_mobile(
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    _perm=Depends(require_module("pos")),
+    _perm=Depends(require_module_role("pos")),
 ):
     """Get notifications for F&B mobile dashboard"""
     current_user = await get_current_user(credentials)

@@ -24,10 +24,9 @@ from core.database import db
 from core.report_cache import invalidate_financial_report_caches
 from core.security import get_current_user, security
 from modules.pms_core.role_permission_service import (
-    require_module,  # v89 DW
+    require_module_role,  # v89 DW
     require_op,  # v88 DW
 )
-from modules.pms_core.role_permission_service import require_module as require_module_v92  # v92 DW
 
 # ============= POS / F&B ENDPOINTS =============
 
@@ -365,7 +364,7 @@ async def scan_id_mobile(
     expiry_date: str | None = None,
     scan_image: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    _perm=Depends(require_module_v92("frontdesk")),  # v92 DW
+    _perm=Depends(require_module_role("frontdesk")),  # v92 DW
 ):
     """Scan and save ID/Passport information"""
     current_user = await get_current_user(credentials)
@@ -405,7 +404,7 @@ async def mobile_checkin(
     signature: str | None = None,
     notes: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    _perm=Depends(require_module_v92("frontdesk")),  # v92 DW
+    _perm=Depends(require_module_role("frontdesk")),  # v92 DW
 ):
     """Perform mobile check-in"""
     current_user = await get_current_user(credentials)
@@ -490,7 +489,7 @@ async def assign_room_mobile(
     room_id: str,
     notes: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    _perm=Depends(require_module("frontdesk")),  # v89 DW
+    _perm=Depends(require_module_role("frontdesk")),  # v89 DW
 ):
     """Assign room to booking (pre-checkin)"""
     current_user = await get_current_user(credentials)
@@ -683,7 +682,7 @@ async def create_guest_request_mobile(
     description: str = "",
     priority: str = "normal",
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    _perm=Depends(require_module("frontdesk")),  # v89 DW
+    _perm=Depends(require_module_role("frontdesk")),  # v89 DW
 ):
     """Create guest request"""
     current_user = await get_current_user(credentials)
@@ -758,7 +757,7 @@ async def update_guest_request_status_mobile(
     assigned_to: str | None = None,
     notes: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    _perm=Depends(require_module("frontdesk")),  # v89 DW
+    _perm=Depends(require_module_role("frontdesk")),  # v89 DW
 ):
     """Update guest request status"""
     current_user = await get_current_user(credentials)
@@ -849,7 +848,7 @@ async def void_folio_charge_mobile(
     charge_id: str,
     void_reason: str,
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    _perm=Depends(require_module("frontdesk")),  # v89 DW
+    _perm=Depends(require_module_role("frontdesk")),  # v89 DW
 ):
     """Void a folio charge"""
     current_user = await get_current_user(credentials)
@@ -950,7 +949,7 @@ async def calculate_early_late_fees(
     early_checkin_time: str | None = None,
     late_checkout_time: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    _perm=Depends(require_module("frontdesk")),  # v89 DW
+    _perm=Depends(require_module_role("frontdesk")),  # v89 DW
 ):
     """Erken giriş / geç çıkış ek ücret hesaplaması.
 

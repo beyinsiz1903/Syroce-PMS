@@ -12,7 +12,7 @@ real confirmed booking (atomic room-night locking via `create_booking_atomic`).
 
 Tenant scope + RBAC:
   - All routes are tenant-scoped (every query pins `tenant_id`).
-  - add / list / delete require `require_module("pms")`.
+  - add / list / delete require `require_module_role("pms")`.
   - promote additionally requires `require_op("manage_sales")` because it
     creates a booking (mutating, revenue-affecting surface).
 """
@@ -27,7 +27,7 @@ from pydantic import BaseModel
 from core.database import db
 from core.security import get_current_user
 from models.schemas import User
-from modules.pms_core.role_permission_service import require_module, require_op
+from modules.pms_core.role_permission_service import require_module_role, require_op
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +71,7 @@ async def list_waitlist(
     status: str | None = Query(None),
     room_type: str | None = Query(None),
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module("pms")),
+    _perm=Depends(require_module_role("pms")),
 ) -> dict:
     """List reservation waitlist entries for the caller's tenant."""
     q: dict = {"tenant_id": current_user.tenant_id}
@@ -87,7 +87,7 @@ async def list_waitlist(
 async def add_to_waitlist(
     body: ReservationWaitlistIn,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module("pms")),
+    _perm=Depends(require_module_role("pms")),
 ) -> dict:
     """Add a guest to the reservation waitlist."""
     if not body.guest_name.strip():
@@ -123,7 +123,7 @@ async def promote_waitlist_entry(
     entry_id: str,
     body: WaitlistPromoteIn,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module("pms")),
+    _perm=Depends(require_module_role("pms")),
     _perm_op=Depends(require_op("manage_sales")),
 ) -> dict:
     """Promote a waitlist entry into a confirmed booking.
@@ -229,7 +229,7 @@ async def promote_waitlist_entry(
 async def remove_waitlist_entry(
     entry_id: str,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module("pms")),
+    _perm=Depends(require_module_role("pms")),
 ) -> dict:
     """Remove a reservation waitlist entry (tenant-scoped)."""
     res = await db.reservation_waitlist.delete_one({"id": entry_id, "tenant_id": current_user.tenant_id})

@@ -14,7 +14,7 @@ from core.security import (
     get_current_user,
 )
 from models.schemas import AssignGroupRoomsRequest, CreateBlockReservationRequest, CreateGroupReservationRequest, UseBlockRoomRequest, User
-from modules.pms_core.role_permission_service import require_module as require_module_v101  # v101 DW
+from modules.pms_core.role_permission_service import require_module_role  # v101 DW
 from shared_kernel.idempotency import begin_idempotency, get_idempotency_key
 
 logger = logging.getLogger(__name__)
@@ -26,7 +26,7 @@ router = APIRouter(prefix="/api", tags=["PMS / Groups"])
 async def create_group_block(
     block_data: dict,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
+    _perm=Depends(require_module_role("frontdesk")),  # v101 DW
 ):
     """Grup bloğu oluştur"""
 
@@ -182,7 +182,7 @@ async def upload_rooming_list(
     block_id: str,
     rooming_list: list[dict],
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
+    _perm=Depends(require_module_role("frontdesk")),  # v101 DW
 ):
     """Rooming list upload (Excel'den gelen data)"""
     from domains.pms.group_sales_models import RoomingListEntry
@@ -322,7 +322,7 @@ async def release_group_block(
     block_id: str,
     release_count: int,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
+    _perm=Depends(require_module_role("frontdesk")),  # v101 DW
 ):
     """Grup bloğundan oda serbest bırak"""
     block = await db.group_blocks.find_one({"id": block_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
@@ -362,7 +362,7 @@ async def create_group_reservation(
     request: CreateGroupReservationRequest,
     http_request: Request,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
+    _perm=Depends(require_module_role("frontdesk")),  # v101 DW
 ):
     """Create new group reservation"""
     # Idempotency-Key request-replay (additive: no-op without the header).
@@ -428,7 +428,7 @@ async def assign_group_rooms(
     request: AssignGroupRoomsRequest,
     http_request: Request,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
+    _perm=Depends(require_module_role("frontdesk")),  # v101 DW
 ):
     """Assign rooms to group reservation"""
     # Idempotency-Key request-replay (additive: no-op without the header).
@@ -523,7 +523,7 @@ async def create_block_reservation(
     request: CreateBlockReservationRequest,
     http_request: Request,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
+    _perm=Depends(require_module_role("frontdesk")),  # v101 DW
 ):
     """Create room block reservation"""
     # Idempotency-Key request-replay (additive: no-op without the header).
@@ -570,7 +570,7 @@ async def use_block_room(
     request: UseBlockRoomRequest,
     http_request: Request,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
+    _perm=Depends(require_module_role("frontdesk")),  # v101 DW
 ):
     """Use a room from block reservation"""
     # Idempotency-Key request-replay (additive: no-op without the header).
@@ -657,7 +657,7 @@ async def use_block_room(
 async def release_block_reservation(
     block_id: str,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
+    _perm=Depends(require_module_role("frontdesk")),  # v101 DW
 ):
     """Release unused rooms from block"""
     block = await db.block_reservations.find_one({"id": block_id, "tenant_id": current_user.tenant_id})

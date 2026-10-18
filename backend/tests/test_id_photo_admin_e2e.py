@@ -2,7 +2,7 @@
 Task #123 — Bekleyen kimlik fotoğrafları admin uçları: canlı entegrasyon.
 
 `test_id_photo_admin.py` (Task #86) tüm uçları mock'lanmış motor cursor'ı
-ile doğruluyor: gerçek koleksiyon, `require_module_v97("frontdesk")`
+ile doğruluyor: gerçek koleksiyon, `require_module_role("frontdesk")`
 kapısı veya cross-call audit yazımı kapsam dışında. Bu dosya boşluğu
 canlı bir HTTP suite ile doldurur:
 
@@ -384,7 +384,7 @@ def test_bulk_delete_by_guest_id_removes_all_matches(
 def test_non_frontdesk_role_is_rejected_with_403(
     mongo_db, non_frontdesk_headers, demo_user_ctx,
 ):
-    """`require_module_v97("frontdesk")` kapısı: housekeeping rolü
+    """`require_module_role("frontdesk")` kapısı: housekeeping rolü
     listeleme, manuel silme ve toplu silme uçlarının hiçbirinde
     geçemez (403). Bu, modül-rol allowlist'ini canlı uçta doğrular —
     mock testlerde yalnızca handler gövdesi çağrıldığı için bu kapı

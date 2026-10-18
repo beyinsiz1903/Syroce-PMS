@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from core.database import db
 from core.security import _is_super_admin, get_current_user
 from models.schemas import User
-from modules.pms_core.role_permission_service import require_module
+from modules.pms_core.role_permission_service import require_module_role
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/contact-center", tags=["contact-center-reports"])
@@ -40,7 +40,7 @@ async def get_performance_reports(
     queue_id: str | None = None,
     agent_id: str | None = None,
     current_user: User = Depends(get_current_user),
-    _mod=Depends(require_module("contact_center")),
+    _mod=Depends(require_module_role("contact_center")),
 ):
     """Omnichannel Performance Report containing SLA, ASA, AHT, FCR, and Conversion metrics."""
     _require_supervisor(current_user)

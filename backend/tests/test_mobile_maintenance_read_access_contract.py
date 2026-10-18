@@ -16,4 +16,4 @@ def test_mobile_maintenance_reads_require_maintenance_access():
     )
 
     for handler in handlers:
-        assert 'require_module("maintenance")' in inspect.getsource(handler)
+        assert 'require_module_role("maintenance")' in inspect.getsource(handler)

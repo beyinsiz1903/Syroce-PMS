@@ -21,7 +21,7 @@ from pydantic import BaseModel
 from core.database import db
 from core.security import get_current_user, security
 from modules.pms_core.role_permission_service import (
-    require_module,  # v89 DW
+    require_module_role,  # v89 DW
 )
 from security.upload_validator import MAX_IMAGE_BYTES, validate_image_bytes
 
@@ -164,7 +164,7 @@ def _maintenance_task_filter(tenant_id: str, task_id: str | None = None) -> dict
 async def get_pm_schedule_mobile(
     days: int = 7,
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    _perm=Depends(require_module("maintenance")),
+    _perm=Depends(require_module_role("maintenance")),
 ):
     """Get preventive maintenance schedule for mobile"""
     current_user = await get_current_user(credentials)
@@ -202,7 +202,7 @@ async def get_pm_schedule_mobile(
 async def create_quick_issue_mobile(
     request: QuickIssueRequest,
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    _perm=Depends(require_module("maintenance")),  # v89 DW
+    _perm=Depends(require_module_role("maintenance")),  # v89 DW
 ):
     """Create a quick maintenance issue from mobile"""
     current_user = await get_current_user(credentials)
@@ -272,7 +272,7 @@ async def create_quick_issue_mobile(
 @router.get("/maintenance/mobile/sla-configurations")
 async def get_sla_configurations(
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    _perm=Depends(require_module("maintenance")),
+    _perm=Depends(require_module_role("maintenance")),
 ):
     """Get SLA configurations for different priorities"""
     current_user = await get_current_user(credentials)
@@ -310,7 +310,7 @@ async def update_sla_configuration(
     response_time_minutes: int,
     resolution_time_minutes: int,
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    _perm=Depends(require_module("maintenance")),  # v89 DW
+    _perm=Depends(require_module_role("maintenance")),  # v89 DW
 ):
     """Update or create SLA configuration"""
     current_user = await get_current_user(credentials)
@@ -356,7 +356,7 @@ async def update_task_status_mobile(
     new_status: str,
     reason: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    _perm=Depends(require_module("maintenance")),  # v89 DW
+    _perm=Depends(require_module_role("maintenance")),  # v89 DW
 ):
     """Update task status (complete, on_hold, waiting_parts, in_progress)"""
     current_user = await get_current_user(credentials)
@@ -409,7 +409,7 @@ async def upload_task_photo_mobile(
     photo_type: str,  # before, during, after
     description: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    _perm=Depends(require_module("maintenance")),  # v89 DW
+    _perm=Depends(require_module_role("maintenance")),  # v89 DW
 ):
     """Upload photo for maintenance task"""
     current_user = await get_current_user(credentials)
@@ -451,7 +451,7 @@ async def upload_task_photo_mobile(
 async def get_task_photos_mobile(
     task_id: str,
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    _perm=Depends(require_module("maintenance")),
+    _perm=Depends(require_module_role("maintenance")),
 ):
     """Get all photos for a task"""
     current_user = await get_current_user(credentials)
@@ -482,7 +482,7 @@ async def get_spare_parts_mobile(
     low_stock_only: bool = False,
     warehouse_location: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    _perm=Depends(require_module("maintenance")),
+    _perm=Depends(require_module_role("maintenance")),
 ):
     """Get spare parts inventory"""
     current_user = await get_current_user(credentials)
@@ -540,7 +540,7 @@ async def use_spare_part_mobile(
     quantity: int,
     notes: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    _perm=Depends(require_module("maintenance")),  # v89 DW
+    _perm=Depends(require_module_role("maintenance")),  # v89 DW
 ):
     """Record spare part usage for a task"""
     current_user = await get_current_user(credentials)
@@ -619,7 +619,7 @@ async def use_spare_part_mobile(
 async def get_asset_history_mobile(
     asset_id: str,
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    _perm=Depends(require_module("maintenance")),
+    _perm=Depends(require_module_role("maintenance")),
 ):
     """Get maintenance history for an asset with MTBF calculation"""
     current_user = await get_current_user(credentials)
@@ -688,7 +688,7 @@ async def get_asset_history_mobile(
 async def get_planned_maintenance_mobile(
     upcoming_days: int = 30,
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    _perm=Depends(require_module("maintenance")),
+    _perm=Depends(require_module_role("maintenance")),
 ):
     """Get planned maintenance calendar"""
     current_user = await get_current_user(credentials)
@@ -751,7 +751,7 @@ async def get_filtered_tasks_mobile(
     start_date: str | None = None,
     end_date: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    _perm=Depends(require_module("maintenance")),
+    _perm=Depends(require_module_role("maintenance")),
 ):
     """Get filtered maintenance tasks"""
     current_user = await get_current_user(credentials)

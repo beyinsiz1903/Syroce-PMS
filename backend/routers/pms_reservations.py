@@ -34,7 +34,7 @@ from core.tenant_currency import get_tenant_currency
 from core.utils import get_cancellation_policy_details
 from models.enums import CancellationPolicyType
 from models.schemas import User
-from modules.pms_core.role_permission_service import require_module as require_module_v92  # v92 DW
+from modules.pms_core.role_permission_service import require_module_role  # v92 DW
 from routers.pms_shared import get_guest_name
 
 router = APIRouter(prefix="/api", tags=["pms-reservations"])
@@ -453,7 +453,7 @@ async def add_extra_charge(
     booking_id: str,
     data: ExtraChargeCreate,
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    _perm=Depends(require_module_v92("frontdesk")),  # v92 DW
+    _perm=Depends(require_module_role("frontdesk")),  # v92 DW
 ):
     """Add an extra charge to a reservation"""
     current_user = await get_current_user(credentials)
@@ -481,7 +481,7 @@ async def add_extra_charge(
 async def create_multi_room_reservation(
     data: MultiRoomReservationCreate,
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    _perm=Depends(require_module_v92("frontdesk")),  # v92 DW
+    _perm=Depends(require_module_role("frontdesk")),  # v92 DW
 ):
     """Link multiple bookings as a multi-room reservation"""
     current_user = await get_current_user(credentials)

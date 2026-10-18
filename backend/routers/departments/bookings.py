@@ -12,7 +12,7 @@ Extracted from server.py for modularity.
 """
 import logging
 
-from modules.pms_core.role_permission_service import require_module as require_module_v97  # v97 DW
+from modules.pms_core.role_permission_service import require_module_role  # v97 DW
 
 logger = logging.getLogger(__name__)
 import uuid
@@ -87,7 +87,7 @@ async def assign_room_to_booking(
     booking_id: str,
     room_assignment: dict,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
+    _perm=Depends(require_module_role("frontdesk")),  # v97 DW
 ):
     """Assign a specific room to a booking"""
     room_id = room_assignment.get("room_id")

@@ -7,10 +7,10 @@ from core.database import db
 from core.security import get_current_user
 from core.tenant_currency import get_tenant_currency
 from models.schemas import User
-from modules.pms_core.role_permission_service import require_module as require_module_v97  # v97 DW
-from modules.pms_core.role_permission_service import require_module as require_module_v100  # v100 DW
-from modules.pms_core.role_permission_service import require_module as require_module_v101  # v101 DW
-from modules.pms_core.role_permission_service import require_op  # v97 DW
+from modules.pms_core.role_permission_service import (
+    require_module_role,  # v97 DW
+    require_op,  # v97 DW
+)
 
 router = APIRouter(prefix="/api", tags=["PMS / Operations"])
 
@@ -149,7 +149,7 @@ async def get_concierge_requests(
 async def create_concierge_request(
     body: dict = Body(...),
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
+    _perm=Depends(require_module_role("frontdesk")),  # v101 DW
 ):
     now = datetime.utcnow()
     req_type = (body.get("type") or "").strip()
@@ -265,7 +265,7 @@ async def update_concierge_request(
     request_id: str,
     body: dict = Body(...),
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
+    _perm=Depends(require_module_role("frontdesk")),  # v101 DW
 ):
     existing = await db.concierge_requests.find_one({"_id": request_id, "tenant_id": current_user.tenant_id})
     if not existing:
@@ -611,7 +611,7 @@ async def update_guest_preferences(
     guest_id: str,
     body: dict = Body(...),
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v100("frontdesk")),  # v100 DW
+    _perm=Depends(require_module_role("frontdesk")),  # v100 DW
 ):
     update_fields = {}
     if "preferences" in body:
@@ -667,7 +667,7 @@ async def update_guest_preferences(
 async def get_routing_rules(
     booking_id: str,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
+    _perm=Depends(require_module_role("frontdesk")),  # v97 DW
 ):
     """Bir rezervasyona tanımlı masraf yönlendirme kurallarını döner.
     Boş dönerse henüz tanım yok demektir; UI default akışı misafir folyosuna yansıtır.
@@ -690,7 +690,7 @@ async def save_routing_rules(
     booking_id: str,
     body: dict = Body(...),
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
+    _perm=Depends(require_module_role("frontdesk")),  # v97 DW
 ):
     rules = body.get("rules", [])
     for rule in rules:
@@ -782,7 +782,7 @@ async def process_walk_out(
 async def delete_concierge_request(
     request_id: str,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
+    _perm=Depends(require_module_role("frontdesk")),  # v101 DW
 ):
     result = await db.concierge_requests.delete_one({"_id": request_id, "tenant_id": current_user.tenant_id})
     if result.deleted_count == 0:
@@ -1027,7 +1027,7 @@ async def get_group_blocks(current_user: User = Depends(get_current_user)):
 async def create_group_block(
     body: dict = Body(...),
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
+    _perm=Depends(require_module_role("frontdesk")),  # v101 DW
 ):
     now = datetime.utcnow()
     doc = {
@@ -1056,7 +1056,7 @@ async def create_group_block(
 async def process_group_cutoff(
     block_id: str,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
+    _perm=Depends(require_module_role("frontdesk")),  # v101 DW
 ):
     block = await db.group_blocks.find_one({"_id": block_id, "tenant_id": current_user.tenant_id})
     if not block:
@@ -1089,7 +1089,7 @@ async def process_group_cutoff(
 async def delete_group_block(
     block_id: str,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
+    _perm=Depends(require_module_role("frontdesk")),  # v101 DW
 ):
     result = await db.group_blocks.delete_one({"_id": block_id, "tenant_id": current_user.tenant_id})
     if result.deleted_count == 0:

@@ -26,10 +26,10 @@ mock_current_user = User(
 
 # Apply dependency overrides to bypass actual DB/auth checks in unit tests
 from core.security import get_current_user
-from modules.pms_core.role_permission_service import require_module, require_op
+from modules.pms_core.role_permission_service import require_module_role, require_op
 
 app.dependency_overrides[get_current_user] = lambda: mock_current_user
-app.dependency_overrides[require_module("contact_center")] = lambda: None
+app.dependency_overrides[require_module_role("contact_center")] = lambda: None
 app.dependency_overrides[require_op("manage_contact_center")] = lambda: None
 
 @pytest.fixture
