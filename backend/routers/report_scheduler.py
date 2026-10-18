@@ -22,6 +22,7 @@ import re as _re
 import traceback
 import uuid
 from datetime import UTC, date, datetime, timedelta
+from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -685,9 +686,11 @@ def _payload_to_pdf(report_label: str, payload: dict, html: str) -> bytes | None
 
 def _resolve_app_url(history_id: str) -> str:
     base = (os.environ.get("PUBLIC_APP_URL") or "").rstrip("/")
-    if not base:
+    try:
+        parsed = urlsplit(base)
+    except ValueError:
         return ""
-    if not base.startswith("https://"):
+    if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:
         return ""
     return f"{base}/report-scheduler?history_id={history_id}"
 

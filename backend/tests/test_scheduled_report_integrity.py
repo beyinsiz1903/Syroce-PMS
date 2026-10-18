@@ -297,3 +297,9 @@ async def test_invalid_invoice_period_is_not_silently_unfiltered(first, last):
     with pytest.raises(HTTPException) as error:
         await accounting.get_accounting_invoices.__wrapped__(start_date=first, end_date=last, current_user=USER)
     assert error.value.status_code == 422
+
+
+@pytest.mark.parametrize("value", ["", "http://pms.example.test", "https://", "https://[invalid", "https://user:password@pms.example.test", "https://pms.example.test?tab=x"])
+def test_report_link_requires_a_valid_https_app_base(monkeypatch, value):
+    monkeypatch.setenv("PUBLIC_APP_URL", value)
+    assert scheduler._resolve_app_url("saved-report") == ""
