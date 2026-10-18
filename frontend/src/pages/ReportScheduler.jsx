@@ -28,6 +28,13 @@ const FORMAT_LABELS = {
   csv: "CSV",
   link: "Link"
 };
+const PERIOD_LABELS = {
+  auto: "Otomatik (günlük: iş günü · haftalık: son 7 gün · aylık: önceki ay)",
+  business_day: "PMS iş günü",
+  last_7_days: "İş günü dahil son 7 gün",
+  month_to_date: "Ay başından PMS iş gününe",
+  previous_month: "Önceki takvim ayı"
+};
 const DAY_LABELS = {
   monday: "Pazartesi",
   tuesday: "Salı",
@@ -106,7 +113,8 @@ export default function ReportScheduler() {
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
-      throw new Error(body.detail || `HTTP ${res.status}`);
+      const detail = Array.isArray(body.detail) ? body.detail.map(item => item.msg).join("; ") : body.detail;
+      throw new Error(detail || `HTTP ${res.status}`);
     }
     return res.json();
   }, []);
@@ -136,6 +144,18 @@ export default function ReportScheduler() {
   useEffect(() => {
     loadData();
   }, [loadData]);
+  useEffect(() => {
+    const historyId = new URLSearchParams(window.location.search).get("history_id");
+    if (!historyId) return;
+    let active = true;
+    api(`/api/report-scheduler/history/${encodeURIComponent(historyId)}`).then(data => {
+      if (!active) return;
+      setDetailEntry(data.entry);
+      setDetailOpen(true);
+      setTab("history");
+    }).catch(e => { if (active) setError(e.message); });
+    return () => { active = false; };
+  }, [api]);
 
   // Processing/retrying olan kayıt varsa 4 sn'de bir polling
   useEffect(() => {
@@ -255,10 +275,11 @@ export default function ReportScheduler() {
       [id]: "send"
     }));
     try {
-      await api(`/api/report-scheduler/schedules/${id}/send-now`, {
+      const result = await api(`/api/report-scheduler/schedules/${id}/send-now`, {
         method: "POST"
       });
-      loadData();
+      await loadData();
+      if (result.status === "failed" || result.status === "partial") setError(result.message);
     } catch (e) {
       setError(e.message);
     } finally {
@@ -274,10 +295,11 @@ export default function ReportScheduler() {
       [historyId]: "retry"
     }));
     try {
-      await api(`/api/report-scheduler/history/${historyId}/retry`, {
+      const result = await api(`/api/report-scheduler/history/${historyId}/retry`, {
         method: "POST"
       });
-      loadData();
+      await loadData();
+      if (result.status === "failed" || result.status === "partial") setError(result.message);
     } catch (e) {
       setError(e.message);
     } finally {
@@ -299,13 +321,14 @@ export default function ReportScheduler() {
     total: schedules.length,
     active: schedules.filter(s => s.is_active).length,
     totalSent: history.filter(h => h.status === "sent").length,
-    totalFailed: history.filter(h => h.status === "failed").length
+    totalFailed: history.filter(h => h.status === "failed" || h.status === "partial").length
   }), [schedules, history]);
   const getReportLabel = key => {
     const rt = reportTypes.find(r => r.key === key);
     return rt ? rt.label : key;
   };
-  const formInvalid = !form.name || !form.report_type || !form.recipients || form.frequency === "weekly" && !form.day_of_week || form.frequency === "monthly" && (!form.day_of_month || form.day_of_month < 1 || form.day_of_month > 28);
+  const recipientList = [...new Set(form.recipients.split(",").map(value => value.trim()).filter(Boolean))];
+  const formInvalid = !form.name.trim() || !form.report_type || !form.send_time || recipientList.length === 0 || recipientList.length > 100 || recipientList.some(value => !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(value)) || form.frequency === "weekly" && !form.day_of_week || form.frequency === "monthly" && (!form.day_of_month || form.day_of_month < 1 || form.day_of_month > 28);
   if (loading) {
     return <div className="flex items-center justify-center h-64">
         <Loader2 className="h-6 w-6 animate-spin text-slate-500" />
@@ -313,8 +336,8 @@ export default function ReportScheduler() {
       </div>;
   }
   return <TooltipProvider>
-    <div className="space-y-6 p-4 md:p-6 max-w-7xl mx-auto">
-      {error && <div className="bg-rose-50 border border-rose-200 rounded-lg p-3 flex items-center gap-2">
+    <div className="space-y-6 p-4 md:p-6 max-w-7xl mx-auto min-w-0 w-full">
+      {error && <div role="alert" className="bg-rose-50 border border-rose-200 rounded-lg p-3 flex items-center gap-2">
           <AlertTriangle className="h-4 w-4 text-rose-600 shrink-0" />
           <span className="text-sm text-rose-700 flex-1">{error}</span>
           <Button variant="ghost" size="sm" onClick={() => setError(null)}>{t('cm.pages_ReportScheduler.kapat')}</Button>
@@ -335,6 +358,7 @@ export default function ReportScheduler() {
         <KpiCard icon={CheckCircle} label={t('cm.pages_ReportScheduler.gonderilen')} value={stats.totalSent} intent="success" />
         <KpiCard icon={XCircle} label={t('cm.pages_ReportScheduler.basarisiz')} value={stats.totalFailed} intent="danger" />
       </div>
+      <p className="text-xs text-slate-500">Gönderim göstergeleri son 100 geçmiş kaydını kapsar; kısmi gönderimler başarısızlara dahildir.</p>
 
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
@@ -457,7 +481,7 @@ export default function ReportScheduler() {
                 <h3 className="font-semibold text-slate-700">{t('cm.pages_ReportScheduler.gonderim_gecmisi_bos')}</h3>
                 <p className="text-sm text-slate-500 mt-1">{t('cm.pages_ReportScheduler.zamanlamalar_calistiginda_burada_gorunec')}</p>
               </CardContent>
-            </Card> : <Card>
+            </Card> : <Card className="min-w-0">
               <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
@@ -495,7 +519,7 @@ export default function ReportScheduler() {
                                 </TooltipTrigger>
                                 <TooltipContent>Detay</TooltipContent>
                               </Tooltip>
-                              {h.status === "failed" && <Tooltip>
+                              {(h.status === "failed" || h.status === "partial") && <Tooltip>
                                   <TooltipTrigger asChild>
                                     <Button variant="ghost" size="icon" className="h-7 w-7 text-amber-600" onClick={() => handleRetry(h._id)} disabled={!!actionLoading[h._id]} aria-label={`${h.schedule_name} gönderimini tekrar dene`}>
                                       {actionLoading[h._id] === "retry" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
@@ -522,7 +546,7 @@ export default function ReportScheduler() {
           <div className="space-y-4">
             <div>
               <label className="text-sm font-medium text-slate-700">{t('cm.pages_ReportScheduler.zamanlama_adi')}</label>
-              <Input value={form.name} onChange={e => setForm(f => ({
+              <Input value={form.name} maxLength={200} onChange={e => setForm(f => ({
                 ...f,
                 name: e.target.value
               }))} placeholder={t('cm.pages_ReportScheduler.orn_gunluk_doluluk_raporu')} className="mt-1" />
@@ -578,6 +602,13 @@ export default function ReportScheduler() {
                 }))} className="mt-1" />
               </div>
             </div>
+            <div>
+              <label className="text-sm font-medium text-slate-700" htmlFor="report-period">Rapor dönemi</label>
+              <select id="report-period" className="mt-1 w-full rounded-md border border-slate-300 bg-white p-2 text-sm" value={form.date_range} onChange={e => setForm(f => ({ ...f, date_range: e.target.value }))}>
+                {Object.entries(PERIOD_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+              </select>
+              <p className="mt-1 text-xs text-slate-500">Takvim tarihi değil PMS iş günü esas alınır. Kat hizmetleri ve toplam kayıtlı misafir sayısı anlık durumdur.</p>
+            </div>
             {form.frequency === "weekly" && <div>
                 <label className="text-sm font-medium text-slate-700">{t('cm.pages_ReportScheduler.gonderim_gunu')}</label>
                 <Select value={form.day_of_week} onValueChange={v => setForm(f => ({
@@ -627,7 +658,7 @@ export default function ReportScheduler() {
       </Dialog>
 
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{t('cm.pages_ReportScheduler.gonderim_detayi')}</DialogTitle>
           </DialogHeader>
@@ -637,6 +668,10 @@ export default function ReportScheduler() {
                 <span className="font-medium">{detailEntry.schedule_name}</span>
                 <span className="text-slate-500">Rapor:</span>
                 <span>{detailEntry.report_label || detailEntry.report_type}</span>
+                <span className="text-slate-500">Rapor dönemi:</span>
+                <span>{detailEntry.report_range || "Eski kayıtta dönem bilgisi yok"}</span>
+                <span className="text-slate-500">Format:</span>
+                <span>{FORMAT_LABELS[detailEntry.format] || detailEntry.format}</span>
                 <span className="text-slate-500">{t('cm.pages_ReportScheduler.tarih_197b8')}</span>
                 <span>{detailEntry.sent_at ? new Date(detailEntry.sent_at).toLocaleString(i18n.language) : "-"}</span>
                 <span className="text-slate-500">{t('cm.pages_ReportScheduler.durum_6d192')}</span>
@@ -661,9 +696,10 @@ export default function ReportScheduler() {
                   {(detailEntry.delivery_details.failed_recipients || []).length > 0 && <div className="text-rose-600 break-all">
                       {t('cm.pages_ReportScheduler.basarisiz_alicilar')} {detailEntry.delivery_details.failed_recipients.join(", ")}
                     </div>}
-                  {(detailEntry.delivery_details.report_summary || []).length > 0 && <div className="pt-2 border-t border-slate-200">
+                  {(detailEntry.report_payload?.rows || detailEntry.delivery_details.report_summary || []).length > 0 && <div className="pt-2 border-t border-slate-200">
                       <div className="font-medium text-slate-700 mb-1">{t('cm.pages_ReportScheduler.rapor_ozeti')}</div>
-                      {detailEntry.delivery_details.report_summary.map((r, i) => <div key={r.id || i} className="text-slate-600">• {r.label}: {String(r.value)}</div>)}
+                      {(detailEntry.report_payload?.rows || detailEntry.delivery_details.report_summary).map((r, i) => <div key={r.id || i} className="text-slate-600 break-words">• {r.label}: {String(r.value)}</div>)}
+                      {detailEntry.report_payload?.notes && <p className="mt-2 text-slate-600">{detailEntry.report_payload.notes}</p>}
                     </div>}
                 </div>}
               {detailEntry.retry_count > 0 && <div className="text-xs text-slate-500">{t('cm.pages_ReportScheduler.tekrar_deneme_sayisi')} {detailEntry.retry_count}</div>}
