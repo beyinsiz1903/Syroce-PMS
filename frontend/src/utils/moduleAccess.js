@@ -250,7 +250,7 @@ const ROUTE_SCOPE_OVERRIDES = Object.freeze(Object.fromEntries([
     '/admin/tenants', '/admin/agencies', '/admin/agency-integrations', '/admin/agency-sales-locks', '/admin/autonomous-collection',
     '/admin/capx-integration', '/admin/early-warning', '/admin/features',
     '/admin/governance', '/admin/housekeeping', '/admin/integration-credentials',
-    '/admin/integrations-overview', '/admin/module-control', '/admin/module-discovery',
+    '/admin/integrations-overview', '/admin/module-control', '/admin/module-requests', '/admin/module-discovery',
     '/admin/module-health', '/admin/module-report', '/admin/pos', '/admin/quick-id',
     '/admin/rnl-auto-resolve-runs', '/admin/rnl-duplicates', '/admin/room-qr-codes',
     '/admin/site-content', '/admin/urgent-permissions', '/admin/user-roles',

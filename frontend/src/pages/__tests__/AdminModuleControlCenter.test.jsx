@@ -56,11 +56,9 @@ describe('AdminModuleControlCenter', () => {
     fireEvent.click(screen.getByTestId('manage-marketplace-prices'));
     expect(await screen.findByText('Modül mağazası fiyat ve sözleşme yönetimi')).toBeInTheDocument();
     expect(axios.get).toHaveBeenCalledWith('/module-store/admin/products');
-    expect(await screen.findByText('Restoran POS')).toBeInTheDocument();
-    expect(screen.getByLabelText('Aşama')).toHaveValue('new');
-    expect(screen.getByLabelText('Sorumlu')).toBeInTheDocument();
-    expect(screen.getByLabelText('Takip tarihi')).toBeInTheDocument();
-    expect(screen.getByLabelText('Yönetici notu')).toBeInTheDocument();
+    expect(screen.getByTestId('manage-module-sales-requests')).toBeInTheDocument();
+    expect(axios.get).not.toHaveBeenCalledWith('/module-store/admin/quote-requests');
+    expect(screen.queryByText('Teklif talepleri')).not.toBeInTheDocument();
   });
 
   it('says why an enabled module is not in the menu (property allow-list)', async () => {

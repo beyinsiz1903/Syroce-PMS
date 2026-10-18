@@ -544,7 +544,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
                 <LanguageSelector />
               </div>
               <WorkspaceTools key={scope} user={user} tenant={tenant} items={visibleNav} />
-              <NotificationBell />
+              <NotificationBell user={user} />
               <div className="hidden lg:flex"><ThemeToggle /><NightScreen /></div>
 
               <Button

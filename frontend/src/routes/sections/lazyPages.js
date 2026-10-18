@@ -135,6 +135,7 @@ export const PublicReviewPage = lazy(() => import("@/pages/PublicReviewPage"));
 export const ModuleReport = lazy(() => import("@/pages/ModuleReport"));
 export const ModuleHealthCenter = lazy(() => import("@/pages/ModuleHealthCenter"));
 export const AdminModuleControlCenter = lazy(() => import("@/pages/AdminModuleControlCenter"));
+export const AdminModuleSalesRequests = lazy(() => import("@/pages/AdminModuleSalesRequests"));
 export const UserRoleManager = lazy(() => import("@/pages/UserRoleManager"));
 export const TenantUsers = lazy(() => import("@/pages/TenantUsers"));
 export const RnlAutoResolveRuns = lazy(() => import("@/pages/admin/RnlAutoResolveRuns"));
