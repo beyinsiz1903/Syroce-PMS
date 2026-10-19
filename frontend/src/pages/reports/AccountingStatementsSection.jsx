@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { AlertTriangle, CheckCircle2, Download, FileSpreadsheet, Loader2, RefreshCw, Scale } from 'lucide-react';
 import { formatCurrency } from '@/lib/currency';
+import { validateReportDate } from '@/utils/reportExports';
 import { SectionHeader } from './ReportHelpers';
 
 const REPORTS = {
@@ -34,10 +35,12 @@ const REPORTS = {
 };
 
 const periodStart = (date, period) => {
-  if (!date || period === 'daily') return date;
-  const value = new Date(`${date}T00:00:00Z`);
-  value.setUTCDate(value.getUTCDate() - 29);
-  return value.toISOString().slice(0, 10);
+  try {
+    const value = validateReportDate(date);
+    if (period === 'daily') return date;
+    value.setUTCDate(value.getUTCDate() - 29);
+    return value.toISOString().slice(0, 10);
+  } catch { return ''; }
 };
 
 // The canonical GL posts debit/credit in TRY, even for foreign-currency hotels.
@@ -101,6 +104,8 @@ export default function AccountingStatementsSection({ type, reportDate, reportPe
     setError('');
     setData(null);
     try {
+      validateReportDate(reportDate);
+      validateReportDate(start);
       const params = ['income_statement', 'journal'].includes(type) ? { start, end: reportDate } : { as_of: reportDate };
       if (type === 'journal') Object.assign(params, { limit: 200, offset: journalOffset });
       const response = await api.get(config.endpoint, { params });

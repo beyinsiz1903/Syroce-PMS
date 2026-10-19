@@ -13,6 +13,8 @@ function shiftDate(value, days) {
   return date.toISOString().slice(0, 10);
 }
 
+export const validateReportDate = reportDate;
+
 export function defaultReportDates(report, businessDate) {
   return {
     startDate: report.id === 'forecast-detail' ? businessDate : shiftDate(businessDate, -29),

@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import api from "@/api/axios";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -11,7 +11,6 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { useToast } from "@/hooks/use-toast";
 import { TrendingUp, RefreshCw, Loader2, BarChart3 } from "lucide-react";
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -20,6 +19,29 @@ import {
 import { useTranslation } from 'react-i18next';
 import { cachedTenantCurrency } from '@/lib/currency';
 import { formatCurrencyBreakdown } from '@/lib/reportCurrency';
+import { validateReportDate } from '@/utils/reportExports';
+
+// Each tab owns its request generation and filter scope. A late response must
+// neither overwrite a newer report nor stop another tab's loading indicator.
+function useForecastReports() {
+  const [reports, setReports] = useState({});
+  const requests = useRef({ forecast: 0, pace: 0, pickup: 0 });
+  useEffect(() => () => { for (const key of Object.keys(requests.current)) ++requests.current[key]; }, []);
+  const load = useCallback(async (name, endpoint, params, scope) => {
+    const id = ++requests.current[name];
+    setReports(previous => ({ ...previous, [name]: { scope, loading: true, data: null, error: '' } }));
+    try {
+      if (name === 'pace') validateReportDate(params.target_date);
+      const { data } = await api.get(endpoint, { params });
+      if (requests.current[name] === id) setReports(previous => ({ ...previous, [name]: { scope, loading: false, data, error: '' } }));
+    } catch (error) {
+      if (requests.current[name] === id) setReports(previous => ({ ...previous, [name]: {
+        scope, loading: false, data: null, error: typeof error?.response?.data?.detail === 'string' ? error.response.data.detail : error.message || 'Rapor yüklenemedi.',
+      } }));
+    }
+  }, []);
+  return { reports, load };
+}
 
 /**
  * Opera #5 — Forecast / Pace / Pickup raporları.
@@ -28,71 +50,37 @@ import { formatCurrencyBreakdown } from '@/lib/reportCurrency';
  */
 export default function ForecastReportsPage() {
   const { t } = useTranslation();
-  const { toast } = useToast();
   const [tab, setTab] = useState("forecast");
+  const { reports, load } = useForecastReports();
 
   const [days, setDays] = useState(30);
   const [segment, setSegment] = useState("");
-  const [forecast, setForecast] = useState(null);
-
-  const [pickup, setPickup] = useState(null);
   const [pickupDays, setPickupDays] = useState(7);
-
-  const [pace, setPace] = useState(null);
   const [paceDate, setPaceDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [paceCompare, setPaceCompare] = useState(() => new Date().getFullYear() - 1);
 
-  const [loading, setLoading] = useState(false);
+  const forecastScope = JSON.stringify([days, segment]);
+  const pickupScope = JSON.stringify([pickupDays]);
+  const paceScope = JSON.stringify([paceDate, paceCompare]);
+  const scopes = { forecast: forecastScope, pickup: pickupScope, pace: paceScope };
+  const forecast = reports.forecast?.scope === forecastScope ? reports.forecast.data : null;
+  const pickup = reports.pickup?.scope === pickupScope ? reports.pickup.data : null;
+  const pace = reports.pace?.scope === paceScope ? reports.pace.data : null;
+  const active = reports[tab]?.scope === scopes[tab] ? reports[tab] : null;
+  const loading = Boolean(active?.loading);
 
-  const handleErr = useCallback((title, e) => {
-    toast({
-      title,
-      description: e?.response?.data?.detail || e.message,
-      variant: "destructive",
-    });
-  }, [toast]);
-
-  const loadForecast = useCallback(async () => {
-    setLoading(true);
-    try {
-      const { data } = await api.get("/analytics/forecast", {
-        params: { days, segment: segment || undefined },
-      });
-      setForecast(data);
-    } catch (e) { handleErr("Doluluk tahmini yüklenemedi", e); }
-    finally { setLoading(false); }
-  }, [days, segment, handleErr]);
-
-  const loadPickup = useCallback(async () => {
-    setLoading(true);
-    try {
-      const { data } = await api.get("/analytics/pickup-report", {
-        params: { period_days: pickupDays },
-      });
-      setPickup(data);
-    } catch (e) { handleErr("Rezervasyon kazanımı yüklenemedi", e); }
-    finally { setLoading(false); }
-  }, [pickupDays, handleErr]);
-
-  const loadPace = useCallback(async () => {
-    setLoading(true);
-    try {
-      const { data } = await api.get("/analytics/pace", {
-        params: { target_date: paceDate, compare_year: paceCompare || undefined },
-      });
-      setPace(data);
-    } catch (e) { handleErr("Rezervasyon hızı yüklenemedi", e); }
-    finally { setLoading(false); }
-  }, [paceDate, paceCompare, handleErr]);
+  const loadForecast = useCallback(() => load('forecast', '/analytics/forecast', { days, segment: segment || undefined }, forecastScope), [days, segment, forecastScope, load]);
+  const loadPickup = useCallback(() => load('pickup', '/analytics/pickup-report', { period_days: pickupDays }, pickupScope), [pickupDays, pickupScope, load]);
+  const loadPace = useCallback(() => load('pace', '/analytics/pace', { target_date: paceDate, compare_year: paceCompare || undefined }, paceScope), [paceDate, paceCompare, paceScope, load]);
 
   // Tab değişiminde ilk yükleme; load fonksiyonları filtre tuş vuruşlarında
   // yeniden referans alır, deps'e koyarsak istemsiz API yağmuru olur.
   // Kullanıcı filtreleri değiştirip "Yenile"ye basar.
   useEffect(() => {
-    if (tab === "forecast" && !forecast) loadForecast();
-    if (tab === "pickup" && !pickup) loadPickup();
-    if (tab === "pace" && !pace) loadPace();
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
+    if (tab === "forecast" && !active?.data && !loading) loadForecast();
+    if (tab === "pickup" && !active?.data && !loading) loadPickup();
+    if (tab === "pace" && !active?.data && !loading) loadPace();
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- Filters are applied explicitly with Refresh, not on every keystroke.
   }, [tab]);
 
   // Pace tablosu: günsayım → bu yıl + karşılaştırma yıl rooms_on_books
@@ -125,6 +113,11 @@ export default function ForecastReportsPage() {
           <TabsTrigger className="min-w-0 whitespace-normal px-2 text-xs sm:text-sm" value="pace" data-testid="tab-pace">Rezervasyon Hızı</TabsTrigger>
           <TabsTrigger className="min-w-0 whitespace-normal px-2 text-xs sm:text-sm" value="pickup" data-testid="tab-pickup">Yeni Rezervasyonlar</TabsTrigger>
         </TabsList>
+
+        {loading && <p role="status" className="py-3 text-sm text-muted-foreground">Rapor yükleniyor…</p>}
+        {active?.error && <p role="alert" className="my-3 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800">{active.error}</p>}
+        {!active && <p role="status" className="py-3 text-sm text-amber-800">Filtreler değişti. Seçili kapsam için Yenile düğmesine basın.</p>}
+        {active?.data && !(active.data.daily?.length || active.data.current?.length) && <p role="status" className="py-3 text-sm text-muted-foreground">Seçili kapsamda rapor kaydı bulunmuyor.</p>}
 
         <TabsContent value="forecast">
           <Card>
@@ -339,7 +332,7 @@ export default function ForecastReportsPage() {
 
               {pickup && (
                 <>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <Card>
                       <CardContent className="pt-4">
                         <div className="text-xs text-muted-foreground">{t('cm.pages_ForecastReportsPage.toplam_oda')}</div>
@@ -352,7 +345,7 @@ export default function ForecastReportsPage() {
                     <Card>
                       <CardContent className="pt-4">
                         <div className="text-xs text-muted-foreground">{t('cm.pages_ForecastReportsPage.toplam_gelir')}</div>
-                        <div className="text-2xl font-semibold">
+                        <div className="text-2xl font-semibold [overflow-wrap:anywhere]">
                           {formatCurrencyBreakdown(pickup.total_revenue_picked_by_currency, pickup.total_revenue_picked, pickup.currency || cachedTenantCurrency())}
                         </div>
                       </CardContent>

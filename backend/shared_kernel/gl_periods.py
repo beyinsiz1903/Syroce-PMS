@@ -24,6 +24,24 @@ def normalize_posting_date(value: str | None) -> str:
         raise GLPeriodError("Geçersiz muhasebe tarihi; YYYY-MM-DD bekleniyor") from exc
 
 
+def report_date_filter(*, start: str | None = None, end: str | None = None) -> dict:
+    """None means unbounded; an explicitly empty/invalid filter must fail closed."""
+    bounds = {}
+    for operator, value in (("$gte", start), ("$lte", end)):
+        if value is None:
+            continue
+        try:
+            day = date.fromisoformat(value)
+            if day.isoformat() != value:
+                raise ValueError("Noncanonical date")
+        except (TypeError, ValueError) as exc:
+            raise GLPeriodError("Geçersiz rapor tarihi; YYYY-MM-DD bekleniyor") from exc
+        bounds[operator] = day.isoformat()
+    if start is not None and end is not None and bounds["$gte"] > bounds["$lte"]:
+        raise GLPeriodError("Bitiş tarihi başlangıç tarihinden önce olamaz")
+    return bounds
+
+
 def calendar_periods(tenant_id: str, fiscal_year: int, *, actor: str = "system") -> list[dict]:
     if fiscal_year < 2000 or fiscal_year > 2100:
         raise GLPeriodError("Mali yıl 2000-2100 aralığında olmalıdır")

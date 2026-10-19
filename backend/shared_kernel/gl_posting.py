@@ -27,7 +27,7 @@ from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
-from shared_kernel.gl_periods import GLPeriodError, assert_gl_period_open, normalize_posting_date
+from shared_kernel.gl_periods import GLPeriodError, assert_gl_period_open, normalize_posting_date, report_date_filter
 from shared_kernel.pos_idem import ensure_compound_unique
 
 # Hesap tipleri ve normal bakiye yönü.
@@ -495,8 +495,9 @@ async def post_journal_entry(
 async def compute_trial_balance(db, tenant_id: str, as_of: str | None = None) -> dict:
     """Posted fişlerden mizan üretir (opsiyonel as_of tarihine kadar)."""
     q: dict = {"tenant_id": tenant_id, "status": "posted"}
-    if as_of:
-        q["date"] = {"$lte": as_of}
+    dates = report_date_filter(end=as_of)
+    if dates:
+        q["date"] = dates
     entries = await db.gl_journal_entries.find(q, {"_id": 0}).to_list(None)
 
     agg: dict[str, dict] = {}
@@ -560,13 +561,9 @@ async def compute_income_statement(
 ) -> dict:
     """Return revenue/expense activity for a date range using minor units."""
     query: dict = {"tenant_id": tenant_id, "status": "posted"}
-    if start or end:
-        date_query: dict = {}
-        if start:
-            date_query["$gte"] = normalize_posting_date(start)
-        if end:
-            date_query["$lte"] = normalize_posting_date(end)
-        query["date"] = date_query
+    dates = report_date_filter(start=start, end=end)
+    if dates:
+        query["date"] = dates
     entries = await db.gl_journal_entries.find(query, {"_id": 0}).to_list(None)
     accounts = await db.gl_accounts.find(
         {"tenant_id": tenant_id, "type": {"$in": ["revenue", "expense"]}},
