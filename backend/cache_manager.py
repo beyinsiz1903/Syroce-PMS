@@ -303,7 +303,7 @@ class CacheManager:
             _log_cache_failure("delete_pattern", exc)
             return False
 
-    def invalidate_tenant_cache(self, tenant_id: str, entity_type: str = None):
+    def invalidate_tenant_cache(self, tenant_id: str, entity_type: str = None, *, include_role_variants: bool = False):
         """Invalidate all cache for a tenant or specific entity type.
         Tenant_id is validated up-front to prevent any glob meta from
         leaking into the pattern (defense-in-depth alongside the
@@ -319,7 +319,14 @@ class CacheManager:
         else:
             pattern = f"cache:{tenant_id}:*"
 
-        return self.delete_pattern(pattern)
+        ok = self.delete_pattern(pattern)
+        if include_role_variants and entity_type:
+            # @cached(role_aware=True) inserts one role segment between tenant
+            # and entity. Keep the tenant/entity literal and validated; only
+            # that entire segment may vary, never another tenant's namespace.
+            role_ok = self.delete_pattern(f"cache:{tenant_id}:*:{entity_type}:*")
+            ok = bool(ok and role_ok)
+        return ok
 
     # ── Sprint 32: hardened invalidation ────────────────────────────
     # Counters are bumped on every safe_invalidate path; protected by a

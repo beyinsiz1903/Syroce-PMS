@@ -40,6 +40,7 @@ export const ChannelsSection = ({
           </select>
         </div>
       </div>
+      <p className="text-sm text-slate-600">Gelirler, dönemde işlenen kayıt ve iadelerden hesaplanır. İlgili rezervasyon sayısı; dönemde giriş yapan veya gelir kaydı bulunan farklı rezervasyonları sayar. Rezervasyonsuz POS ve eşleştirilemeyen hareketler ayrı gösterilir, rezervasyon adedi üretmez.</p>
       <div className="grid md:grid-cols-2 gap-4">
         <Card>
           <CardHeader className="pb-2"><CardTitle className="text-sm">Kaynak Dağılımı</CardTitle></CardHeader>
@@ -80,10 +81,10 @@ export const ChannelsSection = ({
       {filteredData.length > 0 && <Card>
           <CardHeader className="pb-2"><CardTitle className="text-sm">Kanal Detay Tablosu</CardTitle></CardHeader>
           <CardContent>
-            <div className="overflow-x-auto"><table className="w-full text-sm" data-testid="channel-table">
+            <div className="overflow-x-auto"><table className="w-full min-w-[640px] text-sm" data-testid="channel-table">
               <thead><tr className="border-b bg-gray-50">
                 <th className="text-left py-2 px-3 font-semibold text-gray-600">Kanal</th>
-                <th className="text-center py-2 px-3 font-semibold text-gray-600">Rezervasyon</th>
+                <th className="text-center py-2 px-3 font-semibold text-gray-600">İlgili Rezervasyon</th>
                 <th className="text-right py-2 px-3 font-semibold text-gray-600">Gelir</th>
                 <th className="text-right py-2 px-3 font-semibold text-gray-600">Ort. Tutar</th>
               </tr></thead>
@@ -92,8 +93,8 @@ export const ChannelsSection = ({
                     backgroundColor: COLORS[i % COLORS.length]
                   }} /><span className="font-medium">{src.name}</span></td>
                   <td className="py-2.5 px-3 text-center">{src.count}</td>
-                  <td className="py-2.5 px-3 text-right font-medium">{formatCurrencyBreakdown(src.revenueByCurrency, src.revenue)}</td>
-                  <td className="py-2.5 px-3 text-right text-gray-500">{src.count > 0 ? formatCurrencyBreakdown(averageBreakdown(src.revenueByCurrency, src.count), src.revenue / src.count) : '-'}</td>
+                  <td className="py-2.5 px-3 text-right whitespace-nowrap font-medium">{formatCurrencyBreakdown(src.revenueByCurrency, src.revenue)}</td>
+                  <td className="py-2.5 px-3 text-right whitespace-nowrap text-gray-500">{src.count > 0 ? formatCurrencyBreakdown(averageBreakdown(src.revenueByCurrency, src.count), src.revenue / src.count) : '-'}</td>
                 </tr>)}</tbody>
             </table></div>
           </CardContent>
@@ -106,6 +107,7 @@ export const SourcesSection = ({
   sourceData
 }) => <div className="space-y-6" data-testid="section-sources">
     <SectionHeader title="Kaynak Analizi" description="Rezervasyon kaynaklarının detaylı performans karşılaştırması" />
+    <p className="text-sm text-slate-600">Gelir kayıtları dönemdeki işlenmiş tutar ve iadeleridir. Sayı; dönemde giriş yapan veya gelir kaydı bulunan farklı rezervasyonları kapsar. Eşleştirilmemiş hareketler de gelirden düşürülmez; bunlar için rezervasyon sayısı üretilmez.</p>
     {sourceData.length > 0 ? <>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           {sourceData.map((src, i) => <Card key={src.id || i} className="border-l-4" style={{

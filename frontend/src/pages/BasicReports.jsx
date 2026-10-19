@@ -300,7 +300,7 @@ const BasicReports = ({
   const showReportControls = needsDashboard || ACCOUNTING_STATEMENT_SECTIONS.has(activeSection) || activeSection === 'flash_report';
   const requestSequenceRef = useRef(0);
   const invalidateDashboardRequest = useCallback(() => { ++requestSequenceRef.current; }, []);
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (fresh = false) => {
     const requestSequence = ++requestSequenceRef.current;
     setLoading(true);
     setError(null);
@@ -310,6 +310,7 @@ const BasicReports = ({
       const urlParams = new URLSearchParams();
       if (reportPeriod) urlParams.append('period', reportPeriod);
       if (reportDate) urlParams.append('date', reportDate);
+      if (fresh === true) urlParams.append('nocache', 'true');
       const json = await fetchJsonWithRetry(BACKEND_URL + `/api/reports/basic-dashboard?${urlParams.toString()}`, {
         credentials: 'include',
       });
@@ -454,7 +455,7 @@ const BasicReports = ({
   };
   });
   const sourceData = Object.entries(bookingSources.distribution || {}).map(([key, value]) => ({
-    name: key === 'direct' ? 'Doğrudan' : key === 'ota' ? 'Online acente' : key === 'corporate' ? 'Kurumsal' : key === 'walk_in' ? 'Kapı müşterisi' : key === 'booking_com' ? 'Booking.com' : key === 'company_direct' ? 'Şirket' : key === 'ota_import' ? 'Kanal yöneticisi' : key === 'hotelrunner' ? 'HotelRunner' : key === 'exely' ? 'Exely' : key,
+    name: key === 'unassigned' ? 'Rezervasyonla eşleştirilmemiş' : key === 'direct' ? 'Doğrudan' : key === 'ota' ? 'Online acente' : key === 'corporate' ? 'Kurumsal' : key === 'walk_in' ? 'Kapı müşterisi' : key === 'booking_com' ? 'Booking.com' : key === 'company_direct' ? 'Şirket' : key === 'ota_import' ? 'Kanal yöneticisi' : key === 'hotelrunner' ? 'HotelRunner' : key === 'exely' ? 'Exely' : key,
     count: value,
     revenue: Object.keys(bookingSources.revenue_by_currency?.[key] || {}).length <= 1 ? (bookingSources.revenue?.[key] || 0) : 0,
     revenueByCurrency: bookingSources.revenue_by_currency?.[key] || {}
@@ -550,7 +551,7 @@ const BasicReports = ({
 
   const renderContent = () => {
     if ((loading || isInitialDashboardLoad) && needsDashboard) return <ProductState state="loading" moduleName="Raporlar" showDashboardLink={false} />;
-    if (error && needsDashboard) return <ProductState state="error" moduleName="Raporlar" description={error} onRetry={fetchData} showDashboardLink={false} />;
+    if (error && needsDashboard) return <ProductState state="error" moduleName="Raporlar" description={error} onRetry={() => fetchData(true)} showDashboardLink={false} />;
 
     switch (activeSection) {
       case 'flash_report':
@@ -687,7 +688,7 @@ const BasicReports = ({
               <input type="date" className="border rounded-lg px-2 py-2 text-sm bg-white" value={reportDate} onChange={e => { reportDateEditedRef.current = true; setReportDate(e.target.value); }} />
             </div>}
             {needsDashboard && <div className="mt-2 flex gap-2">
-              <Button size="sm" variant="outline" onClick={fetchData} disabled={loading}>Yenile</Button>
+              <Button size="sm" variant="outline" onClick={() => fetchData(true)} disabled={loading}>Yenile</Button>
               {TABLE_EXPORT_SECTIONS.has(activeSection) && <Button size="sm" variant="outline" onClick={handleGenericExportCsv} disabled={loading || !!error || !data} data-testid="mobile-report-csv">CSV İndir</Button>}
             </div>}
           </div>
@@ -731,7 +732,7 @@ const BasicReports = ({
                 {TABLE_EXPORT_SECTIONS.has(activeSection) && activeSection !== 'official' && <Button onClick={handleGenericExportCsv} disabled={loading || !!error || !data} variant="outline" size="sm" className="hidden print:hidden sm:flex" data-testid="report-csv">
                   <Download className="w-3.5 h-3.5 mr-1.5" />CSV İndir
                 </Button>}
-                {needsDashboard && <Button onClick={fetchData} variant="outline" size="sm" data-testid="refresh-reports-btn" className="print:hidden">
+                {needsDashboard && <Button onClick={() => fetchData(true)} variant="outline" size="sm" data-testid="refresh-reports-btn" className="print:hidden">
                   <RefreshCw className="w-3.5 h-3.5 mr-1.5" />Yenile
                 </Button>}
               </div>

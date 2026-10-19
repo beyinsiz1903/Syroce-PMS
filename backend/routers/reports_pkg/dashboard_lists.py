@@ -15,9 +15,11 @@ from core.business_date_service import (
 )
 from core.database import db
 from core.helpers import require_module
+from core.report_cache import BASIC_DASHBOARD_CACHE_PREFIX
 from core.security import get_current_user
 from models.schemas import User
 from modules.pms_core.report_money import currency_code, money, resolve_ledger_currencies, rounded
+from modules.pms_core.reporting_dates import date_period_match
 from modules.pms_core.reporting_financials import (
     REPORTING_CURRENCY,
     deduplicate_report_payments,
@@ -226,6 +228,35 @@ def _normalized_room_type(value) -> str:
         "suitodaoturmaodasijakuzisomine": "Jakuzili ve şömineli süit",
     }
     return aliases.get(key, raw)
+
+
+async def _revenue_attribution(tenant_id: str, charges: list[dict], bookings: list[dict]) -> tuple[list[dict], dict[str, dict]]:
+    """Attribute the posting cohort, not just this period's arriving stays.
+
+    Late adjustments/refunds and folio-only charges still belong to their
+    authorized booking. Missing links remain explicitly unassigned; never
+    invent a direct booking or discard revenue from the breakdown.
+    """
+    folio_ids = sorted({str(row["folio_id"]) for row in charges if row.get("folio_id") and not row.get("booking_id")})
+    folios = await db.folios.find(
+        {"tenant_id": tenant_id, "id": {"$in": folio_ids}}, {"_id": 0, "id": 1, "booking_id": 1},
+    ).to_list(None) if folio_ids else []
+    folio_booking_ids = {str(row["id"]): row.get("booking_id") for row in folios}
+    charges = [{**row, "booking_id": row.get("booking_id") or folio_booking_ids.get(str(row.get("folio_id")))} for row in charges]
+    booking_map = {str(row["id"]): row for row in bookings if row.get("id")}
+    missing_ids = sorted({str(row["booking_id"]) for row in charges if row.get("booking_id") and str(row["booking_id"]) not in booking_map})
+    if missing_ids:
+        related = await db.bookings.find(
+            {"tenant_id": tenant_id, "id": {"$in": missing_ids}},
+            {"_id": 0, "id": 1, "room_id": 1, "room_type": 1, "booking_source": 1},
+        ).to_list(None)
+        booking_map.update({str(row["id"]): row for row in related})
+    return charges, booking_map
+
+
+def _invoice_payment_state_match(states: list[str]) -> dict:
+    """New payment_status wins; legacy invoices keep payment state in status."""
+    return {"$or": [{"payment_status": {"$in": states}}, {"payment_status": {"$in": [None, ""]}, "status": {"$in": states}}]}
 
 
 def _date_part(value) -> str:
@@ -582,6 +613,7 @@ async def get_basic_reports_dashboard(
     period: str = "monthly",
     current_user: User = Depends(get_current_user),
     _: None = Depends(require_module("basic_reporting")),
+    nocache: bool = False,
 ):
     """
     Temel Raporlar Dashboard - OPTIMIZED: Batch queries + cache (Tur 28).
@@ -592,7 +624,7 @@ async def get_basic_reports_dashboard(
     # Cache the complete tenant-scoped report, then apply the current user's
     # field policy outside the cache.  This prevents one employee's unmasked
     # response from ever being reused for another employee.
-    result = await _basic_dashboard_impl(current_user, True, date, period)
+    result = await _basic_dashboard_impl(current_user, True, date, period, _nocache=nocache)
     from copy import deepcopy
 
     from security.guest_data_visibility import guest_visibility_summary, protect_guest_row
@@ -616,11 +648,10 @@ async def get_basic_reports_dashboard(
     return result
 
 
-@cached(ttl=120, key_prefix="reports_basic_dashboard_v3", role_aware=True)
+@cached(ttl=120, key_prefix=BASIC_DASHBOARD_CACHE_PREFIX, role_aware=True)
 async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: str, period: str = "monthly"):
     today = datetime.fromisoformat(target_date[:10]).replace(tzinfo=UTC)
     today_start = today.replace(hour=0, minute=0, second=0, microsecond=0)
-    today_end = today.replace(hour=23, minute=59, second=59)
     next_day = today_start + timedelta(days=1)
     target_day = today_start.date().isoformat()
     tenant_id = current_user.tenant_id
@@ -645,6 +676,8 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
         last_year_end = today_start - timedelta(days=364)
 
     charge_range_start = min(last_year_start, previous_start, trend_start).date().isoformat()
+    live_invoice = {"status": {"$nin": ["draft", "void", "voided", "cancelled", "canceled", "deleted"]},
+        "voided": {"$ne": True}, "deleted": {"$ne": True}}
 
     # Dataset selection is tenant-scoped. Financial totals must never be capped.
     results = await asyncio.gather(
@@ -711,21 +744,22 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
             {
                 "tenant_id": tenant_id,
                 "$or": [
-                    {"created_at": {"$gte": today_start.isoformat(), "$lt": next_day.isoformat()}},
-                    {"started_at": {"$gte": today_start.isoformat(), "$lt": next_day.isoformat()}},
-                    {"completed_at": {"$gte": today_start.isoformat(), "$lt": next_day.isoformat()}},
-                    {"scheduled_date": target_day},
+                    *(date_period_match(field, today.date(), today.date()) for field in ("created_at", "started_at", "completed_at", "scheduled_date")),
                     {
-                        "status": {"$in": ["pending", "assigned", "open", "in_progress", "inprogress", "active"]},
-                        "created_at": {"$lt": next_day.isoformat()},
+                        "status": {"$in": ["pending", "assigned", "open", "new", "in_progress", "inprogress", "active", "cleaning"]},
+                        "$or": [{"created_at": {"$lt": next_day.date().isoformat()}}, {"created_at": {"$lt": next_day}}],
                     },
                 ],
             }
         ).to_list(None),
         db.maintenance_tasks.count_documents({"tenant_id": tenant_id, "status": {"$in": ["open", "in_progress", "pending"]}}),
-        db.maintenance_tasks.count_documents({"tenant_id": tenant_id, "status": "completed", "completed_at": {"$gte": month_start.isoformat(), "$lte": today_end.isoformat()}}),
-        db.invoices.count_documents({"tenant_id": tenant_id, "payment_status": {"$in": ["pending", "partial"]}}),
-        db.invoices.count_documents({"tenant_id": tenant_id, "payment_status": "paid", "created_at": {"$gte": month_start.isoformat(), "$lte": today_end.isoformat()}}),
+        db.maintenance_tasks.count_documents({"tenant_id": tenant_id, "status": "completed", **date_period_match("completed_at", month_start.date(), today.date())}),
+        db.invoices.count_documents({"tenant_id": tenant_id, **live_invoice, **_invoice_payment_state_match(["pending", "partial", "sent", "overdue", "unpaid"])}),
+        db.invoices.count_documents({"tenant_id": tenant_id, **live_invoice, "$and": [
+            _invoice_payment_state_match(["paid"]),
+            {"$or": [date_period_match("issue_date", month_start.date(), today.date()),
+                {"issue_date": {"$in": [None, ""]}, **date_period_match("created_at", month_start.date(), today.date())}]},
+        ]}),
         db.guests.find(
             {"tenant_id": tenant_id},
             {
@@ -1176,26 +1210,22 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
     hk_in_progress = sum(1 for row in housekeeping_rows if row["status"] in {"in_progress", "inprogress", "active", "cleaning"})
 
     source_distribution = {}
-    source_revenue = {}
     source_revenue_by_currency: dict[str, dict[str, float]] = {}
     source_booking_ids: dict[str, set[str]] = {}
     for bk in recent_bookings:
-        src = bk.get("booking_source", "direct")
+        src = str(bk.get("booking_source") or "direct").strip() or "direct"
         source_booking_ids.setdefault(src, set()).add(str(bk.get("id") or f"arrival:{len(source_booking_ids.get(src, set()))}"))
-    booking_source_by_id = {
-        str(booking.get("id")): booking.get("booking_source") or "direct"
-        for booking in all_bk
-        if booking.get("id")
-    }
-    for charge in charges_between(trend_start, today_start + timedelta(days=1)):
-        src = booking_source_by_id.get(str(charge.get("booking_id")))
-        if src:
-            source_revenue[src] = source_revenue.get(src, 0) + charge_amount(charge)
-            _add_currency_amount(source_revenue_by_currency.setdefault(src, {}), charge_currency(charge), charge_amount(charge))
-            source_booking_ids.setdefault(src, set()).add(str(charge.get("booking_id")))
+    report_end = today_start + timedelta(days=1)
+    attributed_charges, revenue_bookings = await _revenue_attribution(tenant_id, charges_between(trend_start, report_end), all_bk)
+    for charge in attributed_charges:
+        booking = revenue_bookings.get(str(charge.get("booking_id")))
+        src = (str(booking.get("booking_source") or "direct").strip() or "direct") if booking else "unassigned"
+        _add_currency_amount(source_revenue_by_currency.setdefault(src, {}), charge_currency(charge), charge_amount(charge))
+        ids = source_booking_ids.setdefault(src, set())
+        if booking:
+            ids.add(str(booking["id"]))
     source_distribution = {src: len(ids) for src, ids in source_booking_ids.items()}
 
-    report_end = today_start + timedelta(days=1)
     week_charges = charges_between(week_start, report_end)
     month_charges = charges_between(trend_start, report_end)
     week_revenue = sum(charge_amount(charge) for charge in week_charges)
@@ -1229,12 +1259,15 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
         rt_count = len(rt_rooms)
         rt_occ = len(rt_room_ids & occupied_room_ids)
         room_type_occ[rt_name] = {"total": rt_count, "occupied": rt_occ, "occupancy": round((rt_occ / rt_count * 100), 1) if rt_count > 0 else 0, "revenue": 0, "revenue_by_currency": {}}
-    booking_room_types = {str(booking.get("id")): _normalized_room_type(booking.get("room_type")) for booking in all_bk if booking.get("id")}
-    for charge in charges_between(trend_start, report_end):
-        rt = booking_room_types.get(str(charge.get("booking_id")))
-        if rt in room_type_occ:
-            room_type_occ[rt]["revenue"] += charge_amount(charge)
-            _add_currency_amount(room_type_occ[rt]["revenue_by_currency"], charge_currency(charge), charge_amount(charge))
+    rooms_by_id = {str(room["id"]): room for room in rooms if room.get("id")}
+    for charge in attributed_charges:
+        booking = revenue_bookings.get(str(charge.get("booking_id"))) or {}
+        room_type = booking.get("room_type") or rooms_by_id.get(str(booking.get("room_id")), {}).get("room_type")
+        rt = _normalized_room_type(room_type) if room_type else "Eşleştirilmemiş"
+        # Retired types and unassigned POS revenue have no current inventory,
+        # but still reconcile to the period ledger rather than disappearing.
+        row = room_type_occ.setdefault(rt, {"total": 0, "occupied": 0, "occupancy": 0, "revenue": 0, "revenue_by_currency": {}})
+        _add_currency_amount(row["revenue_by_currency"], charge_currency(charge), charge_amount(charge))
     for rt in room_type_occ:
         room_type_occ[rt]["revenue_by_currency"] = {
             code: rounded(amount) for code, amount in sorted(room_type_occ[rt]["revenue_by_currency"].items())
