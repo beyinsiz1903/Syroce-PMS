@@ -73,7 +73,7 @@ export const HousekeepingSection = ({
   hk,
   reportDate
 }) => <div className="space-y-6" data-testid="section-housekeeping">
-    <SectionHeader title="Kat Hizmetleri Raporu" description={`${reportDate} tarihli görevler; oda durumu sütunu güncel anlık durumu gösterir`} />
+    <SectionHeader title="Kat Hizmetleri Raporu" description={`${reportDate} tarihindeki hareketler ve o güne kadar açılmış devam eden işler; oda başına son ilgili görev gösterilir. Oda durumu sütunu güncel anlık durumdur.`} />
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
       <KPICard title="Tamamlanan" value={hk.completed || 0} icon={CheckCircle2} color="green" />
       <KPICard title="Bekleyen" value={hk.pending || 0} icon={Clock} color="amber" />
@@ -137,7 +137,7 @@ export const PaymentsSection = ({
     <ReportConversionNotice payments={payments} />
     <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
       <KPICard title="Toplam Tahsilat" value={payments.total_paid} currencyBreakdown={payments.totals_by_currency} icon={CheckCircle2} color="green" />
-      <KPICard title="Bekleyen Fatura" value={payments.total_pending} icon={Clock} color="amber" />
+      <KPICard title="Güncel Bekleyen Fatura" value={payments.total_pending} prevLabel="Tarih filtresinden bağımsız; taslak ve iptaller hariç." icon={Clock} color="amber" />
       <KPICard title={t('common.paymentMethod')} value={Object.keys(payments.totals_by_method_currency || payments.by_method || {}).length + ' ' + t('common.methodCountSuffix')} icon={CreditCard} color="blue" />
     </div>
     <div className="grid md:grid-cols-2 gap-4">
@@ -186,7 +186,7 @@ export const DepartmentsSection = ({
     t
   } = useTranslation();
   return <div className="space-y-6" data-testid="section-departments">
-    <SectionHeader title="Departman Özeti" description="Seçili gün hareketleri ile güncel açık işlerin özeti" />
+    <SectionHeader title="Departman Özeti" description="Ön büro seçili günü; teknik servis tamamlananları seçili dönemi gösterir. Açık işler ve bekleyen faturalar günceldir. Ödenmiş faturalar, seçili dönemde düzenlenip bugün ödenmiş durumda olan belgelerdir; dönemin tahsilatı değildir." />
     <div className="grid md:grid-cols-2 gap-4">
       <Card><CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><Users className="w-4 h-4 text-sky-500" />Ön Büro</CardTitle></CardHeader>
         <CardContent><div className="grid grid-cols-3 gap-3">
@@ -205,13 +205,13 @@ export const DepartmentsSection = ({
       <Card><CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><Wrench className="w-4 h-4 text-amber-500" />Teknik Servis</CardTitle></CardHeader>
         <CardContent><div className="grid grid-cols-2 gap-3">
           <StatBox label="Açık" value={maint.open || 0} color="amber" />
-          <StatBox label="Tamamlanan" value={maint.completed_month || 0} color="green" />
+          <StatBox label="Dönemde Tamamlanan" value={maint.completed_month || 0} color="green" />
         </div></CardContent>
       </Card>
       <Card><CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><ReceiptText className="w-4 h-4 text-emerald-500" />Finans</CardTitle></CardHeader>
         <CardContent><div className="grid grid-cols-2 gap-3">
-          <StatBox label="Bekleyen" value={finance.pending_invoices || 0} color="red" />
-          <StatBox label="Ödenen" value={finance.paid_invoices_month || 0} color="green" />
+          <StatBox label="Güncel Bekleyen" value={finance.pending_invoices || 0} color="red" />
+          <StatBox label="Dönemde Düzenlenen, Ödenmiş" value={finance.paid_invoices_month || 0} color="green" />
         </div></CardContent>
       </Card>
     </div>

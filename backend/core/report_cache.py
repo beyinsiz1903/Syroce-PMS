@@ -7,9 +7,11 @@ try:
 except ImportError:  # pragma: no cover - minimal workers/tests
     cache = None
 
+BASIC_DASHBOARD_CACHE_PREFIX = "reports_basic_dashboard_v4"
+
 
 def invalidate_financial_report_caches(tenant_id: str) -> None:
     if cache is None:
         return
-    for prefix in ("folio_revenue_by_category_v2", "reports_basic_dashboard_v2"):
-        cache.invalidate_tenant_cache(tenant_id, prefix)
+    for prefix in ("folio_revenue_by_category_v2", BASIC_DASHBOARD_CACHE_PREFIX):
+        cache.invalidate_tenant_cache(tenant_id, prefix, include_role_variants=True)

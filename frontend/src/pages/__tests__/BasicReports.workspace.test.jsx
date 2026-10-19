@@ -31,6 +31,17 @@ beforeEach(() => {
 });
 
 describe('Complete active report workspace', () => {
+  it('renders the unassigned revenue bucket with a human-readable name and no invented bookings', async () => {
+    fetchJson.mockResolvedValue({ ...payload('2026-10-07'), booking_sources: {
+      distribution: { unassigned: 0 }, revenue: { unassigned: 30 }, revenue_by_currency: { unassigned: { EUR: 30 } },
+    } });
+    open('channels');
+    const table = await screen.findByTestId('channel-table');
+    expect(table).toHaveTextContent('Rezervasyonla eşleştirilmemiş');
+    expect(table).toHaveTextContent('€30');
+    expect(table).not.toHaveTextContent('unassigned');
+  });
+
   it.each(REPORT_MENU.filter(item => item.id).map(item => item.id))('renders %s once with an explicit source contract', async section => {
     open(section);
     await waitFor(() => expect(screen.queryByTestId('product-state')).not.toBeInTheDocument());

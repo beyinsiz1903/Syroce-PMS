@@ -454,7 +454,7 @@ const BasicReports = ({
   };
   });
   const sourceData = Object.entries(bookingSources.distribution || {}).map(([key, value]) => ({
-    name: key === 'direct' ? 'Doğrudan' : key === 'ota' ? 'Online acente' : key === 'corporate' ? 'Kurumsal' : key === 'walk_in' ? 'Kapı müşterisi' : key === 'booking_com' ? 'Booking.com' : key === 'company_direct' ? 'Şirket' : key === 'ota_import' ? 'Kanal yöneticisi' : key === 'hotelrunner' ? 'HotelRunner' : key === 'exely' ? 'Exely' : key,
+    name: key === 'unassigned' ? 'Rezervasyonla eşleştirilmemiş' : key === 'direct' ? 'Doğrudan' : key === 'ota' ? 'Online acente' : key === 'corporate' ? 'Kurumsal' : key === 'walk_in' ? 'Kapı müşterisi' : key === 'booking_com' ? 'Booking.com' : key === 'company_direct' ? 'Şirket' : key === 'ota_import' ? 'Kanal yöneticisi' : key === 'hotelrunner' ? 'HotelRunner' : key === 'exely' ? 'Exely' : key,
     count: value,
     revenue: Object.keys(bookingSources.revenue_by_currency?.[key] || {}).length <= 1 ? (bookingSources.revenue?.[key] || 0) : 0,
     revenueByCurrency: bookingSources.revenue_by_currency?.[key] || {}
