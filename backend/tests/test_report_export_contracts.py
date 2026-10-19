@@ -163,8 +163,8 @@ def test_room_night_adr_and_revpar_round_half_up_like_the_exports():
 @pytest.mark.parametrize(
     "module,handler,kwargs,prefix",
     [
-        (standard_reports, "get_forecast", {"days": 1}, "report_forecast_v3"),
-        (standard_reports, "get_occupancy_report", {"start_date": "2026-10-07", "end_date": "2026-10-07"}, "report_occupancy_v3"),
+        (standard_reports, "get_forecast", {"days": 1}, "report_forecast_v4"),
+        (standard_reports, "get_occupancy_report", {"start_date": "2026-10-07", "end_date": "2026-10-07"}, "report_occupancy_v4"),
         (housekeeping, "get_housekeeping_efficiency_report", {"start_date": "2026-10-07", "end_date": "2026-10-07"}, "report_hk_efficiency_v2"),
     ],
 )

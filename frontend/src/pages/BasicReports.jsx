@@ -30,6 +30,7 @@ import GuestPrivacyNotice from './reports/GuestPrivacyNotice';
 import { getReportContract } from '@/lib/reportContracts';
 import { fetchJsonWithRetry } from '@/lib/fetchRetry';
 import { useBusinessDate } from '@/hooks/useBusinessDate';
+import { validateReportDate } from '@/utils/reportExports';
 const BACKEND_URL = "";
 const CSV_FORMULA_PREFIX = /^[=+\-@\t\r]/;
 const csvCell = value => {
@@ -37,7 +38,7 @@ const csvCell = value => {
   if (CSV_FORMULA_PREFIX.test(text)) text = `'${text}`;
   return `"${text.replace(/"/g, '""').replace(/\r?\n/g, ' ')}"`;
 };
-const REPORT_MENU = [{
+export const REPORT_MENU = [{
   type: 'header',
   label: 'GENEL'
 }, {
@@ -231,11 +232,12 @@ const REPORT_MENU = [{
   icon: Utensils,
   desc: 'Yiyecek & içecek'
 }];
-const SELF_CONTAINED_SECTIONS = new Set(['expenses', 'official', 'forecast_reports', 'trial_balance', 'gl_trial_balance', 'income_statement', 'balance_sheet', 'journal']);
+const SELF_CONTAINED_SECTIONS = new Set(['flash_report', 'expenses', 'official', 'forecast_reports', 'trial_balance', 'gl_trial_balance', 'income_statement', 'balance_sheet', 'journal']);
 const ACCOUNTING_STATEMENT_SECTIONS = new Set(['gl_trial_balance', 'income_statement', 'balance_sheet', 'journal']);
+const POINT_IN_TIME_SECTIONS = new Set(['gl_trial_balance', 'balance_sheet']);
 const REPORT_SECTION_IDS = new Set(REPORT_MENU.filter(item => item.id).map(item => item.id));
 const TABLE_EXPORT_SECTIONS = new Set(['guests', 'inhouse', 'front_office', 'noshow', 'housekeeping', 'payments', 'cash_movements', 'rate_control', 'official', 'police']);
-const DAILY_REPORT_SECTIONS = new Set(['inhouse', 'front_office', 'room_status', 'housekeeping', 'payments', 'front_cashier', 'cash_movements', 'rate_control', 'daily_analysis', 'official', 'police']);
+const DAILY_REPORT_SECTIONS = new Set(['flash_report', 'inhouse', 'front_office', 'room_status', 'housekeeping', 'payments', 'front_cashier', 'cash_movements', 'rate_control', 'daily_analysis', 'official', 'police']);
 const BasicReports = ({
   user,
   tenant,
@@ -243,9 +245,10 @@ const BasicReports = ({
 }) => {
   const { t } = useTranslation();
   const businessDate = useBusinessDate();
-  const [data, setData] = useState(null);
+  const [dashboardResult, setDashboardResult] = useState(null);
   const [reportPeriod, setReportPeriod] = useState("monthly");
   const [reportDate, setReportDate] = useState(businessDate);
+  const data = dashboardResult?.date === reportDate && dashboardResult?.period === reportPeriod ? dashboardResult.data : null;
   const reportDateEditedRef = useRef(false);
   const [loading, setLoading] = useState(false);
   const [reportRefreshedAt, setReportRefreshedAt] = useState(null);
@@ -277,26 +280,42 @@ const BasicReports = ({
   const [officialLoading, setOfficialLoading] = useState(false);
   const [officialError, setOfficialError] = useState(null);
   const [officialSearch, setOfficialSearch] = useState('');
+  const [officialLoadedDate, setOfficialLoadedDate] = useState(null);
+  const officialRequestRef = useRef(0);
+  const invalidateOfficialRequest = useCallback(() => { ++officialRequestRef.current; }, []);
+  useEffect(() => {
+    ++officialRequestRef.current;
+    setOfficialRows([]);
+    setOfficialPrivacy(null);
+    setOfficialLoadedDate(null);
+    setOfficialLoading(false);
+    setOfficialError(null);
+    return invalidateOfficialRequest;
+  }, [officialDate, invalidateOfficialRequest]);
   useEffect(() => {
     if (!reportDateEditedRef.current && businessDate) setReportDate(businessDate);
     if (!officialDateEditedRef.current && businessDate) setOfficialDate(businessDate);
   }, [businessDate]);
   const needsDashboard = useMemo(() => !SELF_CONTAINED_SECTIONS.has(activeSection), [activeSection]);
-  const showReportControls = needsDashboard || ACCOUNTING_STATEMENT_SECTIONS.has(activeSection);
+  const showReportControls = needsDashboard || ACCOUNTING_STATEMENT_SECTIONS.has(activeSection) || activeSection === 'flash_report';
   const requestSequenceRef = useRef(0);
+  const invalidateDashboardRequest = useCallback(() => { ++requestSequenceRef.current; }, []);
   const fetchData = useCallback(async () => {
     const requestSequence = ++requestSequenceRef.current;
     setLoading(true);
     setError(null);
+    setDashboardResult(null);
     try {
+      validateReportDate(reportDate);
       const urlParams = new URLSearchParams();
       if (reportPeriod) urlParams.append('period', reportPeriod);
       if (reportDate) urlParams.append('date', reportDate);
       const json = await fetchJsonWithRetry(BACKEND_URL + `/api/reports/basic-dashboard?${urlParams.toString()}`, {
         credentials: 'include',
       });
+      if (json?.date !== reportDate) throw new Error('Rapor yanıtının tarihi seçili tarihle eşleşmiyor.');
       if (requestSequence === requestSequenceRef.current) {
-        setData(json);
+        setDashboardResult({ date: reportDate, period: reportPeriod, data: json });
         setReportRefreshedAt(new Date().toLocaleString('tr-TR'));
       }
     } catch (err) {
@@ -313,7 +332,8 @@ const BasicReports = ({
     if (needsDashboard) {
       fetchData();
     }
-  }, [needsDashboard, fetchData]);
+    return invalidateDashboardRequest;
+  }, [needsDashboard, fetchData, invalidateDashboardRequest]);
   useEffect(() => {
     if (activeSection !== 'inhouse') return;
     let active = true;
@@ -328,28 +348,38 @@ const BasicReports = ({
     return () => { active = false; };
   }, [activeSection]);
   const fetchOfficialGuests = useCallback(async dateParam => {
+    const request = ++officialRequestRef.current;
+    const requestedDate = dateParam ?? officialDate;
     setOfficialLoading(true);
     setOfficialError(null);
+    setOfficialRows([]);
+    setOfficialPrivacy(null);
+    setOfficialLoadedDate(null);
     try {
-      const result = await fetchJsonWithRetry(BACKEND_URL + '/api/reports/official-guest-list?date=' + (dateParam || officialDate), {
+      validateReportDate(requestedDate);
+      const result = await fetchJsonWithRetry(BACKEND_URL + '/api/reports/official-guest-list?date=' + requestedDate, {
         credentials: 'include',
       });
-      setOfficialRows(result?.rows || []);
-      setOfficialPrivacy(result?.privacy || null);
+      if (result?.date !== requestedDate) throw new Error('Resmi liste yanıtının tarihi seçili tarihle eşleşmiyor.');
+      if (request === officialRequestRef.current) {
+        setOfficialRows(result?.rows || []);
+        setOfficialPrivacy(result?.privacy || null);
+        setOfficialLoadedDate(requestedDate);
+      }
     } catch (err) {
-      setOfficialError(err && err.status ? 'Resmi misafir listesi yüklenemedi' : err.message || 'Resmi misafir listesi yüklenemedi');
+      if (request === officialRequestRef.current) setOfficialError(err && err.status ? 'Resmi misafir listesi yüklenemedi' : err.message || 'Resmi misafir listesi yüklenemedi');
     } finally {
-      setOfficialLoading(false);
+      if (request === officialRequestRef.current) setOfficialLoading(false);
     }
   }, [officialDate]);
   const handleOfficialExportCsv = () => {
-    if (!filteredOfficialRows.length) return;
+    if (!filteredOfficialRows.length || officialLoadedDate !== officialDate || officialLoading || officialError) return;
     const headers = ['Rezervasyon No', 'Misafir Adı', 'T.C. Kimlik No', 'Pasaport No', 'Ülke', 'Şehir', 'Doğum Tarihi', 'Oda', 'Giriş', 'Çıkış', 'Yetişkin', 'Çocuk', 'Toplam Tutar', 'Para Birimi', 'Vergi No', 'Fatura Adresi', 'Şirket No', 'Pazar Bölümü'];
     const lines = [headers.map(csvCell).join(',')];
     filteredOfficialRows.forEach(r => {
       lines.push([r.booking_id, r.guest_name, r.national_id, r.passport_number, r.country, r.city, r.date_of_birth, r.room_number, r.check_in, r.check_out, r.adults, r.children, r.total_amount, r.currency, r.billing_tax_number, r.billing_address, r.company_id, r.market_segment].map(csvCell).join(','));
     });
-    const blob = new Blob([lines.join('\n')], {
+    const blob = new Blob(['\ufeff' + lines.join('\n')], {
       type: 'text/csv;charset=utf-8;'
     });
     const url = URL.createObjectURL(blob);
@@ -362,9 +392,11 @@ const BasicReports = ({
     URL.revokeObjectURL(url);
   };
   const handleOfficialPrint = () => {
+    if (!filteredOfficialRows.length || officialLoadedDate !== officialDate || officialLoading || officialError) return;
     const tableEl = document.querySelector('[data-testid="official-guest-table"]');
     if (!tableEl) return;
     const w = window.open('', '_blank', 'width=900,height=700');
+    if (!w) { toast.error('Yazdırma penceresi engellendi. Tarayıcıda açılır pencerelere izin verin.'); return; }
     w.document.write('<html><head><title>' + t('pms.reportLabels.officialList', 'Maliye Listesi') + ' - ' + officialDate + '</title>');
     w.document.write('<style>body{font-family:Arial,sans-serif;padding:20px;font-size:12px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #ddd;padding:6px 8px;text-align:left}th{background:#f5f5f5;font-weight:600}h1{font-size:18px;margin:0 0 4px}p{color:#666;margin:0 0 16px;font-size:12px}</style>');
     w.document.write('</head><body>');
@@ -379,8 +411,6 @@ const BasicReports = ({
     setTimeout(() => w.print(), 300);
   };
   const isInitialDashboardLoad = needsDashboard && data === null && !error;
-  if ((loading || isInitialDashboardLoad) && needsDashboard) return <ProductState state="loading" moduleName="Raporlar" showDashboardLink={false} />;
-  if (error && needsDashboard) return <ProductState state="error" moduleName="Raporlar" description={error} onRetry={fetchData} showDashboardLink={false} />;
   const s = data?.summary || {};
   const periodMetrics = data?.period_metrics || {};
   const periodActivity = data?.period_activity || {};
@@ -429,7 +459,7 @@ const BasicReports = ({
     revenue: Object.keys(bookingSources.revenue_by_currency?.[key] || {}).length <= 1 ? (bookingSources.revenue?.[key] || 0) : 0,
     revenueByCurrency: bookingSources.revenue_by_currency?.[key] || {}
   })).sort((a, b) => b.count - a.count || b.revenue - a.revenue || a.name.localeCompare(b.name, 'tr'));
-  const selectedDate = data?.date || reportDate;
+  const selectedDate = reportDate;
   const todayArrivals = dailyLists.arrivals || [];
   const todayDepartures = dailyLists.departures || [];
   const noShowGuests = guestList.filter(g => ['no_show', 'noshow'].includes(String(g.status || '').toLowerCase()));
@@ -450,7 +480,8 @@ const BasicReports = ({
     const term = searchGuest.toLowerCase();
     return (g.guest_name || '').toLowerCase().includes(term) || (g.room_number || '').toString().includes(term) || (g.guest_email || '').toLowerCase().includes(term);
   });
-  const filteredOfficialRows = officialRows.filter(r => {
+  const visibleOfficialRows = officialLoadedDate === officialDate ? officialRows : [];
+  const filteredOfficialRows = visibleOfficialRows.filter(r => {
     if (!officialSearch) return true;
     const term = officialSearch.toLowerCase();
     return (r.guest_name || '').toLowerCase().includes(term) || (r.room_number || '').toString().includes(term) || (r.national_id || '').includes(term) || (r.passport_number || '').toLowerCase().includes(term);
@@ -491,7 +522,7 @@ const BasicReports = ({
         const rowData = [];
         const cells = row.querySelectorAll('th, td');
         cells.forEach(cell => {
-          rowData.push(csvCell((cell.innerText || '').trim()));
+          rowData.push(csvCell((cell.innerText || cell.textContent || '').trim()));
         });
         csvContent += rowData.join(',') + "\n";
       });
@@ -518,6 +549,8 @@ const BasicReports = ({
   </div>;
 
   const renderContent = () => {
+    if ((loading || isInitialDashboardLoad) && needsDashboard) return <ProductState state="loading" moduleName="Raporlar" showDashboardLink={false} />;
+    if (error && needsDashboard) return <ProductState state="error" moduleName="Raporlar" description={error} onRetry={fetchData} showDashboardLink={false} />;
 
     switch (activeSection) {
       case 'flash_report':
@@ -531,7 +564,7 @@ const BasicReports = ({
       case 'forecast_reports':
         return <div data-testid="section-forecast-reports"><ForecastReportsPage /></div>;
       case 'period':
-        return <PeriodSection data={data} pc={pc} />;
+        return <PeriodSection data={data} pc={pc} reportPeriod={reportPeriod} />;
       case 'occupancy':
         return <OccupancySection data={data} s={s} periodMetrics={periodMetrics} reportPeriod={reportPeriod} />;
       case 'room_types':
@@ -564,7 +597,7 @@ const BasicReports = ({
           ? withGuestPrivacy(<ManagerDailyReports section={activeSection} data={data} reportDate={selectedDate} />)
           : <ManagerDailyReports section={activeSection} data={data} reportDate={selectedDate} />;
       case 'trial_balance':
-        return <div data-testid="section-trial-balance"><TrialBalancePage reportDate={reportDate} /></div>;
+        return <div data-testid="section-trial-balance"><TrialBalancePage reportDate={reportDate} onReportDateChange={value => { reportDateEditedRef.current = true; setReportDate(value); }} /></div>;
       case 'gl_trial_balance':
       case 'income_statement':
       case 'balance_sheet':
@@ -574,7 +607,7 @@ const BasicReports = ({
         return <OfficialSection officialDate={officialDate} setOfficialDate={value => {
           officialDateEditedRef.current = true;
           setOfficialDate(value);
-        }} officialRows={officialRows} officialPrivacy={officialPrivacy} officialLoading={officialLoading} officialError={officialError} officialSearch={officialSearch} setOfficialSearch={setOfficialSearch} fetchOfficialGuests={fetchOfficialGuests} handleOfficialExportCsv={handleOfficialExportCsv} handleOfficialPrint={handleOfficialPrint} filteredOfficialRows={filteredOfficialRows} officialTotalGuests={officialTotalGuests} officialRevenueByCurrency={officialRevenueByCurrency} />;
+        }} officialRows={visibleOfficialRows} officialPrivacy={officialPrivacy} officialLoading={officialLoading} officialError={officialError} officialSearch={officialSearch} setOfficialSearch={setOfficialSearch} fetchOfficialGuests={fetchOfficialGuests} handleOfficialExportCsv={handleOfficialExportCsv} handleOfficialPrint={handleOfficialPrint} filteredOfficialRows={filteredOfficialRows} officialTotalGuests={officialTotalGuests} officialRevenueByCurrency={officialRevenueByCurrency} />;
       case 'police':
         return withGuestPrivacy(<PoliceSection filteredGuests={selectedInHouseGuests} searchGuest={searchGuest} setSearchGuest={setSearchGuest} reportDate={selectedDate} />);
       case 'departments':
@@ -588,7 +621,9 @@ const BasicReports = ({
     }
   };
   const currentMenuItem = REPORT_MENU.find(m => m.id === activeSection);
-  const periodLabel = DAILY_REPORT_SECTIONS.has(activeSection)
+  const periodLabel = POINT_IN_TIME_SECTIONS.has(activeSection) ? 'Tarih itibarıyla'
+    : ['expenses', 'forecast_reports'].includes(activeSection) ? 'Rapor içindeki seçim'
+    : DAILY_REPORT_SECTIONS.has(activeSection) || activeSection === 'official'
     ? 'Seçili gün'
     : reportPeriod === 'daily' ? 'Seçili gün' : 'Son 30 gün';
   const normalizedReportQuery = reportQuery.trim().toLocaleLowerCase('tr-TR');
@@ -596,7 +631,7 @@ const BasicReports = ({
     ? REPORT_MENU.filter(item => item.id && `${item.labelKey ? t(item.labelKey, item.label) : item.label} ${item.desc || ''}`.toLocaleLowerCase('tr-TR').includes(normalizedReportQuery))
     : REPORT_MENU;
   return <>
-      <div className="flex min-h-[calc(100vh-64px)] bg-slate-50/70">
+      <div className="flex flex-col lg:flex-row min-h-[calc(100vh-64px)] bg-slate-50/70">
         <aside className="w-[288px] bg-white border-r border-slate-200 flex-shrink-0 hidden print:hidden lg:flex lg:flex-col" data-testid="reports-sidebar">
           <div className="p-4 border-b border-slate-100">
             <div className="flex items-center gap-2">
@@ -644,27 +679,30 @@ const BasicReports = ({
             <select value={activeSection} onChange={e => setActiveSection(e.target.value)} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white" data-testid="mobile-report-selector">
               {REPORT_MENU.filter(m => m.id).map(m => <option key={m.id} value={m.id}>{t(`cm.pages_BasicReports.${m.id}`, m.label)}</option>)}
             </select>
-            {showReportControls && <div className={`grid gap-2 mt-2 ${DAILY_REPORT_SECTIONS.has(activeSection) ? 'grid-cols-1' : 'grid-cols-2'}`}>
-              {!DAILY_REPORT_SECTIONS.has(activeSection) && <select className="border rounded-lg px-2 py-2 text-sm bg-white" value={reportPeriod} onChange={e => setReportPeriod(e.target.value)}>
+            {showReportControls && <div className={`grid gap-2 mt-2 ${DAILY_REPORT_SECTIONS.has(activeSection) || POINT_IN_TIME_SECTIONS.has(activeSection) ? 'grid-cols-1' : 'grid-cols-2'}`}>
+              {!DAILY_REPORT_SECTIONS.has(activeSection) && !POINT_IN_TIME_SECTIONS.has(activeSection) && <select className="border rounded-lg px-2 py-2 text-sm bg-white" value={reportPeriod} onChange={e => setReportPeriod(e.target.value)}>
                 <option value="monthly">Son 30 Gün</option>
                 <option value="daily">Günlük</option>
               </select>}
               <input type="date" className="border rounded-lg px-2 py-2 text-sm bg-white" value={reportDate} onChange={e => { reportDateEditedRef.current = true; setReportDate(e.target.value); }} />
             </div>}
+            {needsDashboard && <div className="mt-2 flex gap-2">
+              <Button size="sm" variant="outline" onClick={fetchData} disabled={loading}>Yenile</Button>
+              {TABLE_EXPORT_SECTIONS.has(activeSection) && <Button size="sm" variant="outline" onClick={handleGenericExportCsv} disabled={loading || !!error || !data} data-testid="mobile-report-csv">CSV İndir</Button>}
+            </div>}
           </div>
-          <div className="p-4" data-testid="reports-mobile-content">{renderContent()}</div>
         </div>
 
-        <main className="flex-1 hidden print:block lg:block overflow-y-auto" data-testid="reports-desktop-content">
-          <div className="mx-auto w-full max-w-[1520px] p-5 xl:p-7">
-            <div className="mb-5 flex min-h-12 flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-2.5 shadow-sm print:hidden">
+        <main className="min-w-0 flex-1 overflow-y-auto" data-testid="reports-desktop-content">
+          <div className="mx-auto w-full max-w-[1520px] p-4 lg:p-5 xl:p-7">
+            <div className="mb-5 hidden lg:flex min-h-12 flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-2.5 shadow-sm print:hidden">
               <div className="flex min-w-0 items-center gap-2 text-xs text-gray-400">
                 <span>Raporlar</span>
                 <ChevronRight className="w-3 h-3" />
                 <span className="text-gray-700 font-medium">{t(`cm.pages_BasicReports.${currentMenuItem?.id}`, currentMenuItem?.label || t('pms.reportLabels.overview', 'Genel Bakış'))}</span>
               </div>
               <div className="flex flex-wrap items-center justify-end gap-2">
-                {showReportControls && activeSection !== 'flash_report' && !DAILY_REPORT_SECTIONS.has(activeSection) && (
+                {showReportControls && activeSection !== 'flash_report' && !DAILY_REPORT_SECTIONS.has(activeSection) && !POINT_IN_TIME_SECTIONS.has(activeSection) && (
                 <select 
                   className="h-9 min-w-[132px] border rounded-lg px-2 text-sm bg-white"
                   value={reportPeriod}
@@ -687,10 +725,10 @@ const BasicReports = ({
                     data-testid="report-date-input"
                   />
                 </label>}
-                {activeSection !== 'official' && <Button onClick={handleGenericPrint} variant="outline" size="sm" className="hidden print:hidden sm:flex">
+                {activeSection !== 'official' && <Button onClick={handleGenericPrint} disabled={needsDashboard && (loading || !!error || !data)} variant="outline" size="sm" className="hidden print:hidden sm:flex">
                   <Printer className="w-3.5 h-3.5 mr-1.5" />Yazdır
                 </Button>}
-                {TABLE_EXPORT_SECTIONS.has(activeSection) && activeSection !== 'official' && <Button onClick={handleGenericExportCsv} variant="outline" size="sm" className="hidden print:hidden sm:flex">
+                {TABLE_EXPORT_SECTIONS.has(activeSection) && activeSection !== 'official' && <Button onClick={handleGenericExportCsv} disabled={loading || !!error || !data} variant="outline" size="sm" className="hidden print:hidden sm:flex" data-testid="report-csv">
                   <Download className="w-3.5 h-3.5 mr-1.5" />CSV İndir
                 </Button>}
                 {needsDashboard && <Button onClick={fetchData} variant="outline" size="sm" data-testid="refresh-reports-btn" className="print:hidden">
@@ -698,8 +736,8 @@ const BasicReports = ({
                 </Button>}
               </div>
             </div>
-            <ReportFrame reportName={currentMenuItem?.labelKey ? t(currentMenuItem.labelKey, currentMenuItem.label) : currentMenuItem?.label || t('pms.reportLabels.overview', 'Genel Bakış')} reportDate={activeSection === 'official' ? officialDate : selectedDate} periodLabel={periodLabel} tenant={tenant} user={user} contract={getReportContract(activeSection)} refreshedAt={needsDashboard ? reportRefreshedAt : null}>
-              {renderContent()}
+            <ReportFrame reportName={currentMenuItem?.labelKey ? t(currentMenuItem.labelKey, currentMenuItem.label) : currentMenuItem?.label || t('pms.reportLabels.overview', 'Genel Bakış')} reportDate={activeSection === 'official' ? officialDate : ['expenses', 'forecast_reports'].includes(activeSection) ? null : selectedDate} periodLabel={periodLabel} tenant={tenant} user={user} contract={getReportContract(activeSection)} refreshedAt={needsDashboard ? reportRefreshedAt : null}>
+              <div data-testid="report-active-content" data-report-section={activeSection}>{renderContent()}</div>
             </ReportFrame>
           </div>
         </main>

@@ -1,5 +1,8 @@
 import { formatCurrency } from '@/lib/currency';
 
+export const roomRevenueSourceLabel = source => source === 'mixed' ? 'İşlenmiş + tahakkuk (eksik gün/döviz)'
+  : source === 'accrued' ? 'Tahakkuk eden' : source === 'posted' ? 'Folyoya işlenmiş' : 'Kaynak bilgisi yok';
+
 export function currencyBreakdownEntries(breakdown, locale = 'tr-TR') {
   return Object.entries(breakdown || {})
     .map(([currency, amount]) => ({

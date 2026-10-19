@@ -8,6 +8,7 @@ import { ReceiptText, Calendar, TrendingUp, Utensils, RefreshCw } from 'lucide-r
 import { BarChart, Bar, Cell, ComposedChart, Line, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { COLORS, formatCurrency, KPICard, CustomTooltip, SectionHeader } from './ReportHelpers';
 import { useTranslation } from 'react-i18next';
+import { roomRevenueSourceLabel } from '@/lib/reportCurrency';
 const CATEGORY_LABELS = {
   room: 'Konaklama',
   food: 'Yiyecek',
@@ -194,7 +195,7 @@ const RevenueSection = ({
     <SectionHeader title="Gelir Raporu" description={t('cm.pages_reports_RevenueSection.detayli_gelir_analizi_ve_trendler')} />
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
       <KPICard title="Seçili Gün Folyoya İşlenen Gelir" value={s.today_revenue} currencyBreakdown={s.today_revenue_by_currency} icon={ReceiptText} color="green" />
-      <KPICard title={isDaily ? `Seçili Gün Oda Geliri (${s.room_revenue_source === 'posted' ? 'Folyoya İşlenen' : 'Tahakkuk'})` : 'Son 7 Gün Folyoya İşlenen Gelir'} value={isDaily ? s.today_room_revenue : pc.week_revenue} currencyBreakdown={isDaily ? s.today_room_revenue_by_currency : pc.week_revenue_by_currency} icon={Calendar} color="blue" />
+      <KPICard title={isDaily ? `Seçili Gün Oda Geliri (${roomRevenueSourceLabel(s.room_revenue_source)})` : 'Son 7 Gün Folyoya İşlenen Gelir'} value={isDaily ? s.today_room_revenue : pc.week_revenue} currencyBreakdown={isDaily ? s.today_room_revenue_by_currency : pc.week_revenue_by_currency} icon={Calendar} color="blue" />
       <KPICard title={isDaily ? 'Önceki Gün Folyoya İşlenen Gelir' : 'Son 30 Gün Folyoya İşlenen Gelir'} value={isDaily ? pc.prev_month_revenue : pc.month_revenue} currencyBreakdown={isDaily ? pc.prev_month_revenue_by_currency : pc.month_revenue_by_currency} prevValue={isDaily ? undefined : pc.prev_month_revenue} prevCurrencyBreakdown={pc.prev_month_revenue_by_currency} icon={TrendingUp} color="purple" />
       <KPICard title="Yiyecek ve İçecek Geliri (Seçili Gün)" value={s.fnb_revenue} currencyBreakdown={s.fnb_revenue_by_currency} icon={Utensils} color="amber" />
     </div>

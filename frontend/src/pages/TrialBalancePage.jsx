@@ -72,7 +72,7 @@ function MetricCard({ icon: Icon, label, value, sub, color = "text-foreground" }
   );
 }
 
-export default function TrialBalancePage({ reportDate }) {
+export default function TrialBalancePage({ reportDate, onReportDateChange }) {
   const { t } = useTranslation();
   const businessDate = useBusinessDate();
   const [date, setDate] = useState(() => reportDate ?? businessDate);
@@ -122,7 +122,7 @@ export default function TrialBalancePage({ reportDate }) {
             <Input
               type="date"
               value={date}
-              onChange={(e) => setDate(e.target.value)}
+              onChange={(e) => { setDate(e.target.value); onReportDateChange?.(e.target.value); }}
               className="w-[160px]"
               data-testid="input-tb-date"
             />

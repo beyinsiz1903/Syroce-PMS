@@ -17,7 +17,7 @@ from core.database import db
 from core.helpers import require_module
 from core.security import get_current_user
 from models.schemas import User
-from modules.pms_core.report_money import money, resolve_ledger_currencies, rounded
+from modules.pms_core.report_money import currency_code, money, resolve_ledger_currencies, rounded
 from modules.pms_core.reporting_financials import (
     REPORTING_CURRENCY,
     deduplicate_report_payments,
@@ -30,7 +30,8 @@ from modules.pms_core.reporting_financials import (
 from modules.pms_core.reporting_ledger import charge_amount as ledger_charge_amount
 from modules.pms_core.reporting_ledger import charge_category, posted_revenue_rows
 from modules.pms_core.role_permission_service import require_op
-from modules.pms_core.stay_night_metrics import allocated_revenue_for_night, calculate_stay_night_metrics, load_stay_night_metrics
+from modules.pms_core.room_revenue_reporting import room_period_performance
+from modules.pms_core.stay_night_metrics import calculate_stay_night_metrics, load_stay_night_metrics, room_block_overlap_match, stay_overlap_match
 
 security = HTTPBearer()
 
@@ -363,41 +364,20 @@ def _guest_link_active_on(link: dict, target_date: str) -> bool:
 
 
 def _period_performance(metric_rows: list[dict], room_charges_by_day: dict[str, float]) -> dict:
-    """Build one internally consistent occupancy/ADR/RevPAR period.
+    """Compatibility adapter; active reports pass native-currency buckets."""
+    return room_period_performance(metric_rows, {day: values if isinstance(values, dict) else {"TRY": values} for day, values in room_charges_by_day.items()})
 
-    Financial postings are authoritative only when every occupied day in the
-    requested period has a room posting.  Before night audit, the current day
-    commonly has no posting yet; returning zero ADR in that case is misleading,
-    so the canonical accrued room-night revenue is used until posting completes.
-    """
-    occupied_room_nights = sum(int(row.get("occupied_rooms") or 0) for row in metric_rows)
-    sold_room_nights = sum(int(row.get("sold_rooms", row.get("occupied_rooms")) or 0) for row in metric_rows)
-    available_room_nights = sum(int(row.get("total_rooms") or 0) for row in metric_rows)
-    accrued_room_revenue = round(sum(float(row.get("revenue") or 0) for row in metric_rows), 2)
-    posted_room_revenue = round(sum(float(room_charges_by_day.get(str(row.get("date")), 0) or 0) for row in metric_rows), 2)
-    posting_gap_days = [
-        str(row.get("date"))
-        for row in metric_rows
-        if int(row.get("occupied_rooms") or 0) > 0
-        and float(room_charges_by_day.get(str(row.get("date")), 0) or 0) == 0
-    ]
-    use_posted = bool(occupied_room_nights) and not posting_gap_days
-    room_revenue = posted_room_revenue if use_posted else accrued_room_revenue
-    return {
-        "start_date": str(metric_rows[0].get("date")) if metric_rows else None,
-        "end_date": str(metric_rows[-1].get("date")) if metric_rows else None,
-        "occupied_room_nights": occupied_room_nights,
-        "sold_room_nights": sold_room_nights,
-        "available_room_nights": available_room_nights,
-        "occupancy_percentage": round(occupied_room_nights / available_room_nights * 100, 2) if available_room_nights else 0,
-        "posted_room_revenue": posted_room_revenue,
-        "accrued_room_revenue": accrued_room_revenue,
-        "room_revenue": round(room_revenue, 2),
-        "revenue_source": "posted" if use_posted else "accrued",
-        "posting_gap_days": posting_gap_days,
-        "adr": round(room_revenue / sold_room_nights, 2) if sold_room_nights else 0,
-        "revpar": round(room_revenue / available_room_nights, 2) if available_room_nights else 0,
-    }
+
+async def _selected_report_day(value, tenant_id):
+    if value is None:
+        value = str((await ensure_business_date_initialized(db, tenant_id))["business_date"])[:10]
+    try:
+        day = date_type.fromisoformat(value)
+        if day.isoformat() != value:
+            raise ValueError("Noncanonical date")
+        return day
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail="Geçersiz rapor tarihi; YYYY-MM-DD bekleniyor") from exc
 
 
 @sub_router.get("/reports/official-guest-list")
@@ -412,14 +392,10 @@ async def get_official_guest_list(
     Verilen tarihte (veya PMS iş tarihinde) otelde konaklayan tüm misafirleri ve
     konaklama bilgilerini döner. Konaklama aralığı [giriş, çıkış) şeklindedir.
     """
-    if date:
-        try:
-            target_date = datetime.fromisoformat(date).date()
-        except ValueError as exc:
-            raise HTTPException(status_code=422, detail="Geçersiz rapor tarihi") from exc
-    else:
-        business_date_state = await ensure_business_date_initialized(db, current_user.tenant_id)
-        target_date = date_type.fromisoformat(str(business_date_state["business_date"])[:10])
+    target_date = await _selected_report_day(date, current_user.tenant_id)
+    from core.tenant_currency import get_tenant_currency
+
+    native_currency = currency_code((await get_tenant_currency(current_user.tenant_id))[0])
     from security.guest_data_visibility import guest_visibility_summary, protect_guest_row
 
     # Stays are [check-in, check-out): a departure date is not another room-night.
@@ -560,7 +536,7 @@ async def get_official_guest_list(
                     "reservation_adults": b.get("adults", 1),
                     "reservation_children": b.get("children", 0),
                     "total_amount": b.get("total_amount", 0.0) if occupant_index == 0 else 0.0,
-                    "currency": b.get("currency") or "TRY",
+                    "currency": currency_code(b.get("currency"), native_currency),
                     "billing_tax_number": b.get("billing_tax_number"),
                     "billing_address": b.get("billing_address"),
                     "company_id": b.get("company_id"),
@@ -612,14 +588,7 @@ async def get_basic_reports_dashboard(
     """
     if period not in {"daily", "monthly"}:
         raise HTTPException(status_code=422, detail="Geçersiz rapor dönemi")
-    if date:
-        try:
-            datetime.fromisoformat(date[:10])
-        except ValueError as exc:
-            raise HTTPException(status_code=422, detail="Geçersiz rapor tarihi") from exc
-    else:
-        business_date_state = await ensure_business_date_initialized(db, current_user.tenant_id)
-        date = str(business_date_state["business_date"])[:10]
+    date = (await _selected_report_day(date, current_user.tenant_id)).isoformat()
     # Cache the complete tenant-scoped report, then apply the current user's
     # field policy outside the cache.  This prevents one employee's unmasked
     # response from ever being reused for another employee.
@@ -647,7 +616,7 @@ async def get_basic_reports_dashboard(
     return result
 
 
-@cached(ttl=120, key_prefix="reports_basic_dashboard_v2", role_aware=True)
+@cached(ttl=120, key_prefix="reports_basic_dashboard_v3", role_aware=True)
 async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: str, period: str = "monthly"):
     today = datetime.fromisoformat(target_date[:10]).replace(tzinfo=UTC)
     today_start = today.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -655,6 +624,9 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
     next_day = today_start + timedelta(days=1)
     target_day = today_start.date().isoformat()
     tenant_id = current_user.tenant_id
+    from core.tenant_currency import get_tenant_currency
+
+    native_currency = currency_code((await get_tenant_currency(tenant_id))[0])
     if period == "daily":
         month_start = today_start
         trend_start = today_start
@@ -685,12 +657,11 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
                     {"check_in": {"$gte": trend_start, "$lt": next_day}},
                     {"check_out": {"$gte": trend_start.date().isoformat(), "$lt": next_day.date().isoformat()}},
                     {"check_out": {"$gte": trend_start, "$lt": next_day}},
-                    {"check_in": {"$lt": trend_start.date().isoformat()}, "check_out": {"$gt": target_day}},
-                    {"check_in": {"$lt": trend_start}, "check_out": {"$gt": today_start}},
-                    {"status": "cancelled", "cancelled_at": {"$gte": trend_start.isoformat(), "$lt": next_day.isoformat()}},
-                    {"status": "cancelled", "cancelled_at": {"$gte": trend_start, "$lt": next_day}},
-                    {"status": "cancelled", "updated_at": {"$gte": trend_start.isoformat(), "$lt": next_day.isoformat()}},
-                    {"status": "cancelled", "updated_at": {"$gte": trend_start, "$lt": next_day}},
+                    stay_overlap_match(trend_start.date(), today_start.date()),
+                    {"status": {"$in": ["cancelled", "canceled"]}, "cancelled_at": {"$gte": trend_start.isoformat(), "$lt": next_day.isoformat()}},
+                    {"status": {"$in": ["cancelled", "canceled"]}, "cancelled_at": {"$gte": trend_start, "$lt": next_day}},
+                    {"status": {"$in": ["cancelled", "canceled"]}, "updated_at": {"$gte": trend_start.isoformat(), "$lt": next_day.isoformat()}},
+                    {"status": {"$in": ["cancelled", "canceled"]}, "updated_at": {"$gte": trend_start, "$lt": next_day}},
                 ],
             },
             {
@@ -803,7 +774,7 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
                     {"check_in": {"$gte": previous_start.date().isoformat(), "$lt": previous_end.date().isoformat()}},
                     {"check_in": {"$gte": previous_start, "$lt": previous_end}},
                 ],
-                "status": {"$in": ["confirmed", "checked_in", "checked_out"]},
+                "status": {"$in": ["confirmed", "guaranteed", "checked_in", "in_house", "checked_out"]},
             },
             {"_id": 0, "total_amount": 1, "check_in": 1, "check_out": 1},
         ).to_list(None),
@@ -814,7 +785,7 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
                     {"check_in": {"$gte": last_year_start.date().isoformat(), "$lt": last_year_end.date().isoformat()}},
                     {"check_in": {"$gte": last_year_start, "$lt": last_year_end}},
                 ],
-                "status": {"$in": ["confirmed", "checked_in", "checked_out"]},
+                "status": {"$in": ["confirmed", "guaranteed", "checked_in", "in_house", "checked_out"]},
             },
             {"_id": 0, "total_amount": 1, "check_in": 1, "check_out": 1},
         ).to_list(None),
@@ -823,13 +794,14 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
                 "tenant_id": tenant_id,
                 "status": "active",
                 "allow_sell": {"$ne": True},
-                "start_date": {"$lt": next_day.date().isoformat()},
-                "$or": [{"end_date": {"$gt": trend_start.date().isoformat()}}, {"end_date": None}],
+                **room_block_overlap_match(trend_start.date(), today_start.date()),
             },
             {"_id": 0, "room_id": 1, "start_date": 1, "end_date": 1, "status": 1, "allow_sell": 1},
         ).to_list(None),
     )
     rooms, all_bk, in_house, hk_tasks, maint_open, maint_completed, pending_invoices, paid_invoices, all_guests, all_payments, cash_movement_payments, prev_bookings, ly_bookings, room_blocks = results
+    all_bk = [{**booking, "currency": currency_code(booking.get("currency"), native_currency),
+        "status": {"in_house": "checked_in", "noshow": "no_show", "canceled": "cancelled"}.get(str(booking.get("status") or "").strip().lower(), str(booking.get("status") or "").strip().lower())} for booking in all_bk]
     all_payments = deduplicate_report_payments(await resolve_ledger_currencies(all_payments, tenant_id, database=db))
     cash_movement_payments = deduplicate_report_payments(await resolve_ledger_currencies(cash_movement_payments, tenant_id, database=db))
 
@@ -1103,51 +1075,26 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
     metric_rows = calculate_stay_night_metrics(all_bk, active_rooms, trend_start.date(), today.date(), actual_only=True, room_blocks=room_blocks)
     today_metric = metric_rows[-1] if metric_rows else {}
     occupied_today = today_metric.get("occupied_rooms", 0)
-    charges_by_day: dict[str, float] = {}
-    room_charges_by_day: dict[str, float] = {}
     charges_by_day_currency: dict[str, dict[str, float]] = {}
     room_charges_by_day_currency: dict[str, dict[str, float]] = {}
     for charge in period_charges:
         charge_day = _date_part(charge.get("business_date") or charge.get("date"))
         amount = charge_amount(charge)
-        charges_by_day[charge_day] = charges_by_day.get(charge_day, 0.0) + amount
         _add_currency_amount(charges_by_day_currency.setdefault(charge_day, {}), charge_currency(charge), amount)
         category = str(charge.get("charge_category") or charge.get("charge_type") or "").lower()
         if category in {"room", "accommodation", "room_charge"}:
-            room_charges_by_day[charge_day] = room_charges_by_day.get(charge_day, 0.0) + amount
             _add_currency_amount(room_charges_by_day_currency.setdefault(charge_day, {}), charge_currency(charge), amount)
-    accrued_room_by_day_currency: dict[str, dict[str, float]] = {}
-    for metric in metric_rows:
-        day = str(metric.get("date"))
-        for booking in all_bk:
-            if _booking_occupied_on(booking, day):
-                currency = booking.get("currency") or "TRY"
-                allocated_revenue = float(allocated_revenue_for_night(booking, date_type.fromisoformat(day)))
-                _add_currency_amount(
-                    accrued_room_by_day_currency.setdefault(day, {}),
-                    currency,
-                    allocated_revenue,
-                )
-
-    today_room_revenue = round(room_charges_by_day.get(target_day, 0.0), 2)
     daily_period_charges = charges_between(today_start, next_day)
-    daily_performance = _period_performance([today_metric] if today_metric else [], room_charges_by_day)
-    period_performance = _period_performance(metric_rows, room_charges_by_day)
+    daily_performance = room_period_performance([today_metric] if today_metric else [], room_charges_by_day_currency, fallback_currency=native_currency)
+    period_performance = room_period_performance(metric_rows, room_charges_by_day_currency, fallback_currency=native_currency)
+    today_room_revenue = daily_performance["posted_room_revenue"]
     # Revenue cards are accounting reports: only posted, non-voided charges
     # belong here. Accrued room revenue remains available separately for
     # operational ADR/RevPAR until night audit posts the room charges.
     today_revenue = round(sum(charge_amount(charge) for charge in daily_period_charges), 2)
     today_revenue_by_currency = _currency_breakdown(daily_period_charges, charge_amount, charge_currency)
-    posted_room_revenue_by_currency = _merge_currency_breakdowns(room_charges_by_day_currency.get(target_day, {}))
-    accrued_room_revenue_by_currency = _merge_currency_breakdowns(accrued_room_by_day_currency.get(target_day, {}))
-    # Keep the displayed currency breakdown on the exact same basis as the
-    # scalar room revenue/ADR/RevPAR.  Falling back independently made one card
-    # show accrued revenue while its detail rows divided posted revenue.
-    today_room_revenue_by_currency = (
-        posted_room_revenue_by_currency
-        if daily_performance["revenue_source"] == "posted"
-        else accrued_room_revenue_by_currency
-    )
+    posted_room_revenue_by_currency = daily_performance["posted_room_revenue_by_currency"]
+    today_room_revenue_by_currency = daily_performance["room_revenue_by_currency"]
     fnb_revenue_by_currency = _currency_breakdown(
         [charge for charge in daily_period_charges if str(charge.get("charge_category") or charge.get("charge_type") or "").strip().lower() in FNB_CHARGE_CATEGORIES],
         charge_amount,
@@ -1253,53 +1200,8 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
     month_charges = charges_between(trend_start, report_end)
     week_revenue = sum(charge_amount(charge) for charge in week_charges)
     month_revenue = sum(charge_amount(charge) for charge in month_charges)
-    month_days = {str(row.get("date")) for row in metric_rows}
-
-    def period_revenue_breakdown(charges: list[dict], days: set[str], revenue_source: str) -> dict[str, float]:
-        non_room = _currency_breakdown(
-            [charge for charge in charges if str(charge.get("charge_category") or charge.get("charge_type") or "").strip().lower() not in ROOM_CHARGE_CATEGORIES],
-            charge_amount,
-            charge_currency,
-        )
-        room = _merge_currency_breakdowns(*(
-            (room_charges_by_day_currency if revenue_source == "posted" else accrued_room_by_day_currency).get(day, {})
-            for day in days
-        ))
-        return _merge_currency_breakdowns(non_room, room)
-
     week_revenue_by_currency = _currency_breakdown(week_charges, charge_amount, charge_currency)
     month_revenue_by_currency = _currency_breakdown(month_charges, charge_amount, charge_currency)
-    daily_room_nights = int(daily_performance.get("sold_room_nights") or 0)
-    daily_capacity = int(daily_performance.get("available_room_nights") or 0)
-    period_room_nights = int(period_performance.get("sold_room_nights") or 0)
-    period_capacity = int(period_performance.get("available_room_nights") or 0)
-    daily_performance["room_revenue_by_currency"] = today_room_revenue_by_currency
-    daily_performance["adr_by_currency"] = {
-        code: rounded(money(amount) / daily_room_nights)
-        for code, amount in today_room_revenue_by_currency.items()
-    } if daily_room_nights else {}
-    daily_performance["revpar_by_currency"] = {
-        code: rounded(money(amount) / daily_capacity) for code, amount in today_room_revenue_by_currency.items()
-    } if daily_capacity else {}
-    daily_performance["room_revenue"] = _single_currency_amount(today_room_revenue_by_currency)
-    daily_performance["adr"] = _single_currency_amount(daily_performance["adr_by_currency"])
-    daily_performance["revpar"] = _single_currency_amount(daily_performance["revpar_by_currency"])
-    period_room_revenue_by_currency = period_revenue_breakdown(
-        [charge for charge in month_charges if str(charge.get("charge_category") or charge.get("charge_type") or "").strip().lower() in ROOM_CHARGE_CATEGORIES],
-        month_days,
-        period_performance["revenue_source"],
-    )
-    period_performance["room_revenue_by_currency"] = period_room_revenue_by_currency
-    period_performance["adr_by_currency"] = {
-        code: rounded(money(amount) / period_room_nights)
-        for code, amount in period_room_revenue_by_currency.items()
-    } if period_room_nights else {}
-    period_performance["revpar_by_currency"] = {
-        code: rounded(money(amount) / period_capacity) for code, amount in period_room_revenue_by_currency.items()
-    } if period_capacity else {}
-    period_performance["room_revenue"] = _single_currency_amount(period_room_revenue_by_currency)
-    period_performance["adr"] = _single_currency_amount(period_performance["adr_by_currency"])
-    period_performance["revpar"] = _single_currency_amount(period_performance["revpar_by_currency"])
 
     # Milliyet dağılımı rezervasyon sayısını değil, rapor dönemindeki tüm
     # konaklayan kişileri (ek misafirler dahil) sayar.
@@ -1558,20 +1460,18 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
         (previous_end - timedelta(days=1)).date(),
         actual_only=True,
     )
-    prev_room_charges_by_day: dict[str, float] = {}
+    prev_room_charges_by_day = {}
     for charge in charges_between(previous_start, previous_end):
         category = str(charge.get("charge_category") or charge.get("charge_type") or "").lower()
         if category in ROOM_CHARGE_CATEGORIES:
             day = _date_part(charge.get("business_date") or charge.get("date"))
-            prev_room_charges_by_day[day] = prev_room_charges_by_day.get(day, 0.0) + charge_amount(charge)
-    prev_performance = _period_performance(prev_metrics, prev_room_charges_by_day)
+            _add_currency_amount(prev_room_charges_by_day.setdefault(day, {}), charge_currency(charge), charge_amount(charge))
+    prev_performance = room_period_performance(prev_metrics, prev_room_charges_by_day, fallback_currency=native_currency)
     prev_revenue = sum(charge_amount(charge) for charge in previous_charges)
     prev_revenue_by_currency = _currency_breakdown(previous_charges, charge_amount, charge_currency)
-    prev_room_by_currency = _currency_breakdown(
-        [charge for charge in previous_charges if charge_category(charge) == "room"], charge_amount, charge_currency,
-    ) if prev_performance["revenue_source"] == "posted" else _merge_currency_breakdowns(*(row.get("revenue_by_currency", {}) for row in prev_metrics))
-    prev_sold_nights = prev_performance["sold_room_nights"]
-    prev_adr_by_currency = {code: rounded(money(amount) / prev_sold_nights) if prev_sold_nights else 0 for code, amount in prev_room_by_currency.items()}
+    prev_adr_by_currency = prev_performance["adr_by_currency"]
+    # Preserve this endpoint's legacy mixed-currency scalar contract. Native
+    # consumers use prev_month_adr_by_currency; never sum unlike currencies.
     prev_adr = _single_currency_amount(prev_adr_by_currency)
     ly_charges = charges_between(last_year_start, last_year_end)
     ly_revenue = sum(charge_amount(charge) for charge in ly_charges)
@@ -1633,6 +1533,7 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
             "prev_month_adr_by_currency": prev_adr_by_currency,
             "prev_period_occupancy": prev_performance["occupancy_percentage"],
             "prev_period_revpar": prev_performance["revpar"],
+            "prev_period_revpar_by_currency": prev_performance["revpar_by_currency"],
             "last_year_revenue": round(ly_revenue, 2),
             "last_year_revenue_by_currency": ly_revenue_by_currency,
             "last_year_bookings": len(ly_bookings),

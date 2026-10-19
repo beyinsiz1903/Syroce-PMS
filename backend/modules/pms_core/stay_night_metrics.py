@@ -54,6 +54,17 @@ def stay_day_match(day: date, *, include_stayovers=True) -> dict:
     return {"$or": clauses}
 
 
+def room_block_overlap_match(first: date, last: date) -> dict:
+    """Allow independent ISO/BSON edges and open-ended room blocks."""
+    lower = (first.isoformat(), datetime.combine(first, datetime.min.time(), UTC))
+    stop = last + timedelta(days=1)
+    upper = (stop.isoformat(), datetime.combine(stop, datetime.min.time(), UTC))
+    return {"$or": [
+        *[{"start_date": {"$lt": end}, "end_date": {"$gt": start}} for start in lower for end in upper],
+        *[{"start_date": {"$lt": end}, "end_date": None} for end in upper],
+    ]}
+
+
 def booking_occupies_night(booking: dict, day: date, *, actual_only: bool = False) -> bool:
     """Return whether one booking occupies ``day`` as a hotel room-night.
 
@@ -244,11 +255,6 @@ async def load_stay_night_metrics(db, tenant_id: str, start_date: date, end_date
         {"tenant_id": tenant_id, "is_active": {"$ne": False}},
         {"_id": 0, "id": 1, "room_number": 1, "is_active": 1},
     ).to_list(None)
-    start_iso = start_date.isoformat()
-    end_exclusive_date = end_date + timedelta(days=1)
-    end_iso = end_exclusive_date.isoformat()
-    start_dt = datetime.combine(start_date, datetime.min.time(), tzinfo=UTC)
-    end_dt = datetime.combine(end_exclusive_date, datetime.min.time(), tzinfo=UTC)
     bookings = await db.bookings.find(
         {
             "tenant_id": tenant_id,
@@ -274,12 +280,7 @@ async def load_stay_night_metrics(db, tenant_id: str, start_date: date, end_date
             "tenant_id": tenant_id,
             "status": "active",
             "allow_sell": {"$ne": True},
-            "$or": [
-                {"start_date": {"$lt": end_iso}, "end_date": {"$gt": start_iso}},
-                {"start_date": {"$lt": end_dt}, "end_date": {"$gt": start_dt}},
-                {"start_date": {"$lt": end_iso}, "end_date": None},
-                {"start_date": {"$lt": end_dt}, "end_date": None},
-            ],
+            **room_block_overlap_match(start_date, end_date),
         },
         {"_id": 0, "room_id": 1, "start_date": 1, "end_date": 1, "status": 1, "allow_sell": 1},
     ).to_list(None)

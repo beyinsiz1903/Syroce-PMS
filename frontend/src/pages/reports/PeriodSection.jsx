@@ -8,8 +8,9 @@ import { formatCurrency, calcChange, CustomTooltip, SectionHeader } from './Repo
 import { useTranslation } from 'react-i18next';
 import { formatCurrencyBreakdown } from '@/lib/reportCurrency';
 
-const PeriodSection = ({ data, pc }) => {
+const PeriodSection = ({ data, pc, reportPeriod = 'monthly' }) => {
   const { t } = useTranslation();
+  const isDaily = reportPeriod === 'daily';
   const currencies = Array.from(new Set([
     ...Object.keys(pc.month_revenue_by_currency || {}),
     ...Object.keys(pc.prev_month_revenue_by_currency || {}),
@@ -36,25 +37,25 @@ const PeriodSection = ({ data, pc }) => {
     : `${change.direction === 'up' ? '+' : '-'}${change.pct}%`;
   return (
     <div className="space-y-6" data-testid="section-period">
-      <SectionHeader title={t('cm.pages_reports_PeriodSection.donem_karsilastirma')} description={t('cm.pages_reports_PeriodSection.haftalik_aylik_ve_onceki_donem_karsilast')} />
-      <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-3">
-        <Card className="border-l-4 border-l-sky-500"><CardContent className="p-4">
+      <SectionHeader title={t('cm.pages_reports_PeriodSection.donem_karsilastirma')} description={isDaily ? 'Seçili gün, önceki gün ve 365 gün önceki günün karşılaştırması' : t('cm.pages_reports_PeriodSection.haftalik_aylik_ve_onceki_donem_karsilast')} />
+      <div className={`grid md:grid-cols-2 ${isDaily ? 'lg:grid-cols-3' : 'lg:grid-cols-4'} gap-3`}>
+        {!isDaily && <Card className="border-l-4 border-l-sky-500"><CardContent className="p-4">
           <p className="text-[11px] text-slate-500 uppercase tracking-wide">{t('cm.pages_reports_PeriodSection.son_7_gun_gelir')}</p>
           <p className="text-2xl font-bold text-slate-900 mt-1">{formatCurrencyBreakdown(pc.week_revenue_by_currency, pc.week_revenue)}</p>
           <p className="text-xs text-slate-400 mt-1">{pc.week_bookings} rezervasyon</p>
-        </CardContent></Card>
+        </CardContent></Card>}
         <Card className="border-l-4 border-l-emerald-500"><CardContent className="p-4">
-          <p className="text-[11px] text-slate-500 uppercase tracking-wide">{t('cm.pages_reports_PeriodSection.son_30_gun_gelir')}</p>
+          <p className="text-[11px] text-slate-500 uppercase tracking-wide">{isDaily ? 'Seçili Gün Geliri' : t('cm.pages_reports_PeriodSection.son_30_gun_gelir')}</p>
           <p className="text-2xl font-bold text-slate-900 mt-1">{formatCurrencyBreakdown(pc.month_revenue_by_currency, pc.month_revenue)}</p>
           <p className="text-xs text-slate-400 mt-1">{pc.month_bookings} rezervasyon</p>
         </CardContent></Card>
         <Card className="border-l-4 border-l-indigo-500"><CardContent className="p-4">
-          <p className="text-[11px] text-slate-500 uppercase tracking-wide">{t('cm.pages_reports_PeriodSection.onceki_30_gun_gelir')}</p>
+          <p className="text-[11px] text-slate-500 uppercase tracking-wide">{isDaily ? 'Önceki Gün Geliri' : t('cm.pages_reports_PeriodSection.onceki_30_gun_gelir')}</p>
           <p className="text-2xl font-bold text-slate-900 mt-1">{formatCurrencyBreakdown(pc.prev_month_revenue_by_currency, pc.prev_month_revenue)}</p>
           <p className="text-xs text-slate-400 mt-1">{pc.prev_month_bookings} rezervasyon</p>
         </CardContent></Card>
         <Card className="border-l-4 border-l-amber-500"><CardContent className="p-4">
-          <p className="text-[11px] text-slate-500 uppercase tracking-wide">{t('cm.pages_reports_PeriodSection.gecen_yil_ayni_donem')}</p>
+          <p className="text-[11px] text-slate-500 uppercase tracking-wide">{isDaily ? '365 Gün Önceki Gün' : t('cm.pages_reports_PeriodSection.gecen_yil_ayni_donem')}</p>
           <p className="text-2xl font-bold text-slate-900 mt-1">{formatCurrencyBreakdown(pc.last_year_revenue_by_currency, pc.last_year_revenue)}</p>
           <p className="text-xs text-slate-400 mt-1">{pc.last_year_bookings} rezervasyon</p>
         </CardContent></Card>
@@ -95,7 +96,7 @@ const PeriodSection = ({ data, pc }) => {
         </Card>
         <Card className={`border-2 ${changeClasses(bookChange)}`}>
           <CardContent className="p-5 text-center">
-            <p className="text-sm font-medium text-gray-600">{t('cm.pages_reports_PeriodSection.rezervasyon_degisimi_onceki_aya_gore')}</p>
+            <p className="text-sm font-medium text-gray-600">{isDaily ? 'Rezervasyon değişimi (önceki güne göre)' : t('cm.pages_reports_PeriodSection.rezervasyon_degisimi_onceki_aya_gore')}</p>
             <p className="text-3xl font-bold mt-2">
               {changeText(bookChange)}
             </p>

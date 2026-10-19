@@ -89,7 +89,7 @@ async def _posted_revenue_rows(tenant_id: str, start: date, end: date, *, databa
 
 
 @sub_router.get("/reports/occupancy")
-@cached(ttl=600, key_prefix="report_occupancy_v3")
+@cached(ttl=600, key_prefix="report_occupancy_v4")
 async def get_occupancy_report(
     start_date: str,
     end_date: str,
@@ -260,7 +260,7 @@ async def get_daily_summary(
 
 
 @sub_router.get("/reports/forecast")
-@cached(ttl=900, key_prefix="report_forecast_v3")
+@cached(ttl=900, key_prefix="report_forecast_v4")
 async def get_forecast(
     days: int = 30,
     current_user: User = Depends(get_current_user),
