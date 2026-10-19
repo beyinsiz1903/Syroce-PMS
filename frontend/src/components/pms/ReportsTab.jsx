@@ -125,6 +125,7 @@ const ReportsTab = () => {
     adr: val.adr,
     revenueByCurrency: val.revenue_by_currency,
     adrByCurrency: val.adr_by_currency,
+    invalidAmounts: val.invalid_amounts,
   }));
   const marketCurrencies = new Set(mktData.flatMap(row => Object.keys(row.revenueByCurrency || {})));
   const marketCurrency = [...marketCurrencies][0] || cachedTenantCurrency();
@@ -393,6 +394,8 @@ const ReportsTab = () => {
         </TabsContent>
 
         <TabsContent value="market" className="space-y-4 mt-4">
+          <p className="text-sm text-muted-foreground">Giriş tarihine göre geçerli rezervasyon bedelleri; tahsilat veya muhasebeleşmiş gelir değildir. Ücretli ortalama gece bedeli, her dövizin bedelinin aynı dövizdeki ücretli gecelere bölünmesidir; ücretsiz ve sıfır bedelli geceler paydaya katılmaz.</p>
+          {(marketSegment?.invalid_amounts > 0 || marketSegment?.excluded_invalid_stays > 0) && <p role="alert" className="rounded-md border border-destructive/30 p-3 text-sm text-destructive">Veri kontrolü: {marketSegment.invalid_amounts || 0} tutar hesaplanamadı; {marketSegment.excluded_invalid_stays || 0} geçersiz konaklama hariç bırakıldı. Tutarlar eksik olabilir.</p>}
           {mktData.length > 0 ? <>
               <Card>
                 <CardHeader className="pb-3">
@@ -407,8 +410,8 @@ const ReportsTab = () => {
                           <th className="text-left py-2 px-3">Segment</th>
                           <th className="text-right py-2 px-3">{t('cm.components_pms_ReportsTab.rezervasyon')}</th>
                           <th className="text-right py-2 px-3">Gece</th>
-                          <th className="text-right py-2 px-3">Gelir</th>
-                          <th className="text-right py-2 px-3">ADR</th>
+                          <th className="text-right py-2 px-3">Rezervasyon bedeli</th>
+                          <th className="text-right py-2 px-3">Ücretli ort. gece bedeli</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -416,8 +419,8 @@ const ReportsTab = () => {
                             <td className="py-2 px-3 font-medium">{row.name}</td>
                             <td className="py-2 px-3 text-right">{row.rez}</td>
                             <td className="py-2 px-3 text-right">{row.gece}</td>
-                            <td className="py-2 px-3 text-right">{formatCurrencyBreakdown(row.revenueByCurrency, row.gelir)}</td>
-                            <td className="py-2 px-3 text-right">{formatCurrencyBreakdown(row.adrByCurrency, row.adr)}</td>
+                            <td className="py-2 px-3 text-right">{row.invalidAmounts && !Object.keys(row.revenueByCurrency || {}).length ? '—' : formatCurrencyBreakdown(row.revenueByCurrency, row.gelir, marketSegment.currency || cachedTenantCurrency())}</td>
+                            <td className="py-2 px-3 text-right">{row.invalidAmounts && !Object.keys(row.adrByCurrency || {}).length ? '—' : formatCurrencyBreakdown(row.adrByCurrency, row.adr, marketSegment.currency || cachedTenantCurrency())}</td>
                           </tr>)}
                       </tbody>
                     </table>
@@ -428,7 +431,7 @@ const ReportsTab = () => {
               {marketCurrencies.size > 1 && <p className="text-sm text-slate-600">Farklı para birimlerinin gelir payları karşılaştırılamaz; tutarlar tabloda ayrı gösterilir.</p>}
               {mktData.length > 1 && marketCurrencies.size <= 1 && <Card>
                   <CardHeader className="pb-3">
-                    <CardTitle className="text-base">Segment Gelir Grafigi</CardTitle>
+                    <CardTitle className="text-base">Segment Rezervasyon Bedeli Grafiği</CardTitle>
                   </CardHeader>
                   <CardContent>
                     <ResponsiveContainer width="100%" height={280}>
@@ -460,8 +463,8 @@ const ReportsTab = () => {
                             <th className="text-left py-2 px-3">Fiyat Tipi</th>
                             <th className="text-right py-2 px-3">{t('cm.components_pms_ReportsTab.rezervasyon_e95e9')}</th>
                             <th className="text-right py-2 px-3">Gece</th>
-                            <th className="text-right py-2 px-3">Gelir</th>
-                            <th className="text-right py-2 px-3">ADR</th>
+                            <th className="text-right py-2 px-3">Rezervasyon bedeli</th>
+                            <th className="text-right py-2 px-3">Ücretli ort. gece bedeli</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -469,8 +472,8 @@ const ReportsTab = () => {
                               <td className="py-2 px-3 font-medium">{key === 'bar' ? 'BAR' : key === 'rack' ? 'Rack' : key}</td>
                               <td className="py-2 px-3 text-right">{val.bookings}</td>
                               <td className="py-2 px-3 text-right">{val.nights}</td>
-                              <td className="py-2 px-3 text-right">{formatCurrencyBreakdown(val.revenue_by_currency, val.revenue)}</td>
-                              <td className="py-2 px-3 text-right">{formatCurrencyBreakdown(val.adr_by_currency, val.adr)}</td>
+                              <td className="py-2 px-3 text-right">{val.invalid_amounts && !Object.keys(val.revenue_by_currency || {}).length ? '—' : formatCurrencyBreakdown(val.revenue_by_currency, val.revenue, marketSegment.currency || cachedTenantCurrency())}</td>
+                              <td className="py-2 px-3 text-right">{val.invalid_amounts && !Object.keys(val.adr_by_currency || {}).length ? '—' : formatCurrencyBreakdown(val.adr_by_currency, val.adr, marketSegment.currency || cachedTenantCurrency())}</td>
                             </tr>)}
                         </tbody>
                       </table>

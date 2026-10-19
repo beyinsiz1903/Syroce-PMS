@@ -19,7 +19,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPBearer
 from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
+from openpyxl.utils import get_column_letter
 
+from common.legacy_data_normalization import normalize_dimension_label
 from core.business_date_service import ensure_business_date_initialized
 from core.csv_safe import xlsx_safe
 from core.database import db
@@ -32,8 +34,18 @@ from modules.pms_core.report_money import add_amount, currency_code, money, reso
 from modules.pms_core.reporting_dates import date_period_match
 from modules.pms_core.reporting_financials import REPORTING_CURRENCY, report_payment_day_match, report_payment_period_match, reporting_collection_summary
 from modules.pms_core.reporting_ledger import charge_amount, charge_category, posted_revenue_rows
+from modules.pms_core.reservation_reporting import reservation_value
 from modules.pms_core.role_permission_service import RolePermissionService, require_op
-from modules.pms_core.stay_night_metrics import NON_COMMERCIAL_STATUSES, allocated_revenue_for_night, as_date, booking_nights, load_stay_night_metrics, stay_day_match, stay_overlap_match
+from modules.pms_core.stay_night_metrics import (
+    NON_COMMERCIAL_STATUSES,
+    OCCUPYING_STATUSES,
+    allocated_revenue_for_night,
+    as_date,
+    booking_nights,
+    load_stay_night_metrics,
+    stay_day_match,
+    stay_overlap_match,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -112,17 +124,24 @@ def _booking_currency_stats(bookings, field, fallback, fallback_currency="TRY"):
         nights = booking_nights(booking)
         if not nights:
             continue
-        key = str(booking.get(field) or fallback)
+        key = normalize_dimension_label(booking.get(field), default=fallback)
         code = currency_code(booking.get("currency"), fallback_currency)
-        entry = groups.setdefault(key, {"bookings": 0, "nights": 0, "revenue_by_currency": {}, "nights_by_currency": {}, "bookings_by_currency": {}})
+        entry = groups.setdefault(key, {"bookings": 0, "nights": 0, "revenue_by_currency": {}, "nights_by_currency": {}, "sold_nights_by_currency": {}, "bookings_by_currency": {}, "invalid_amounts": 0, "invalid_amounts_by_currency": {}})
         entry["bookings"] += 1
         entry["nights"] += nights
         entry["nights_by_currency"][code] = entry["nights_by_currency"].get(code, 0) + nights
         entry["bookings_by_currency"][code] = entry["bookings_by_currency"].get(code, 0) + 1
-        add_amount(entry["revenue_by_currency"], code, 0 if booking.get("is_complimentary") else booking.get("total_amount", 0))
+        amount = reservation_value(booking)
+        entry["invalid_amounts"] += int(amount is None)
+        if amount is None:
+            entry["invalid_amounts_by_currency"][code] = entry["invalid_amounts_by_currency"].get(code, 0) + 1
+        if amount is not None:
+            add_amount(entry["revenue_by_currency"], code, amount)
+            if amount > 0:
+                entry["sold_nights_by_currency"][code] = entry["sold_nights_by_currency"].get(code, 0) + nights
     for entry in groups.values():
         entry["revenue_by_currency"] = rounded_totals(entry["revenue_by_currency"])
-        entry["adr_by_currency"] = {code: rounded(money(amount) / entry["nights_by_currency"][code]) for code, amount in entry["revenue_by_currency"].items()}
+        entry["adr_by_currency"] = {code: rounded(money(amount) / entry["sold_nights_by_currency"][code]) if entry["sold_nights_by_currency"].get(code) else 0 for code, amount in entry["revenue_by_currency"].items()}
         entry["revenue"] = single_amount(entry["revenue_by_currency"])
         entry["adr"] = single_amount(entry["adr_by_currency"])
     return groups
@@ -140,11 +159,15 @@ async def get_market_segment_report(
 ):
     """Market Segment & Rate Type Performance Report"""
     start, end = _report_dates(start_date, end_date)
+    if start.isoformat() != start_date or end.isoformat() != end_date or end == end.max:
+        raise HTTPException(422, "Tarihler YYYY-MM-DD formatında olmalı")
+    if (end - start).days >= 366:
+        raise HTTPException(422, "Pazar segmenti raporu en fazla 366 günlük aralıkta alınabilir")
     bookings = await db.bookings.find(
         {
             "tenant_id": current_user.tenant_id,
             **date_period_match("check_in", start, end),
-            "status": {"$nin": list(NON_COMMERCIAL_STATUSES)},
+            "status": {"$in": sorted(OCCUPYING_STATUSES)},
         }
     ).to_list(None)
 
@@ -153,7 +176,12 @@ async def get_market_segment_report(
     rate_type_data = _booking_currency_stats(bookings, "rate_type", "bar", native_currency)
 
     counted = sum(entry["bookings"] for entry in segment_data.values())
-    return {"start_date": start_date, "end_date": end_date, "total_bookings": counted, "excluded_invalid_stays": len(bookings) - counted, "market_segments": segment_data, "rate_types": rate_type_data}
+    return {"start_date": start.isoformat(), "end_date": end.isoformat(), "currency": native_currency,
+        "total_bookings": counted, "excluded_invalid_stays": len(bookings) - counted,
+        "invalid_amounts": sum(entry["invalid_amounts"] for entry in segment_data.values()),
+        "revenue_basis": "current_valid_reservation_value_not_posted_revenue_or_collection",
+        "adr_basis": "booked_value_per_paid_night_in_each_currency",
+        "market_segments": segment_data, "rate_types": rate_type_data}
 
 
 # ── GET /reports/market-segment/excel ──
@@ -174,14 +202,14 @@ async def export_market_segment_excel(
     ws1 = wb.active
     ws1.title = "Market Segments"
 
-    headers1 = ["Segment", "Currency", "Bookings", "Nights", "Revenue", "ADR"]
+    headers1 = ["Segment", "Currency", "Bookings", "Nights", "Booked value", "Paid-night average", "Paid nights", "Invalid amounts"]
     data1 = []
     for segment, stats in report_data["market_segments"].items():
-        for code, amount in stats["revenue_by_currency"].items():
-            data1.append([_xlsx_sanitize_str(xlsx_safe(segment.title())), code, stats["bookings_by_currency"][code], stats["nights_by_currency"][code], amount, stats["adr_by_currency"][code]])
+        for code in stats["bookings_by_currency"]:
+            data1.append([_xlsx_sanitize_str(xlsx_safe(segment.title())), code, stats["bookings_by_currency"][code], stats["nights_by_currency"][code], stats["revenue_by_currency"].get(code), stats["adr_by_currency"].get(code), stats["sold_nights_by_currency"].get(code, 0), stats["invalid_amounts_by_currency"].get(code, 0)])
 
     # Add title and headers
-    ws1.merge_cells("A1:F1")
+    ws1.merge_cells("A1:H1")
     title_cell = ws1["A1"]
     title_cell.value = f"Market Segment Report ({start_date} to {end_date})"
     title_cell.font = Font(size=14, bold=True)
@@ -201,13 +229,13 @@ async def export_market_segment_excel(
     # Sheet 2: Rate Types
     ws2 = wb.create_sheet("Rate Types")
 
-    headers2 = ["Rate Type", "Currency", "Bookings", "Nights", "Revenue", "ADR"]
+    headers2 = ["Rate Type", "Currency", "Bookings", "Nights", "Booked value", "Paid-night average", "Paid nights", "Invalid amounts"]
     data2 = []
     for rate_type, stats in report_data["rate_types"].items():
-        for code, amount in stats["revenue_by_currency"].items():
-            data2.append([_xlsx_sanitize_str(xlsx_safe(rate_type.upper())), code, stats["bookings_by_currency"][code], stats["nights_by_currency"][code], amount, stats["adr_by_currency"][code]])
+        for code in stats["bookings_by_currency"]:
+            data2.append([_xlsx_sanitize_str(xlsx_safe(rate_type.upper())), code, stats["bookings_by_currency"][code], stats["nights_by_currency"][code], stats["revenue_by_currency"].get(code), stats["adr_by_currency"].get(code), stats["sold_nights_by_currency"].get(code, 0), stats["invalid_amounts_by_currency"].get(code, 0)])
 
-    ws2.merge_cells("A1:F1")
+    ws2.merge_cells("A1:H1")
     title_cell = ws2["A1"]
     title_cell.value = f"Rate Type Report ({start_date} to {end_date})"
     title_cell.font = Font(size=14, bold=True)
@@ -224,6 +252,15 @@ async def export_market_segment_excel(
         for col_num, value in enumerate(row_data, 1):
             ws2.cell(row=row_num, column=col_num, value=value)
 
+    notes = wb.create_sheet("Notes")
+    notes.append(["Basis", "Current valid reservation value by arrival date, not posted revenue or collections. No FX conversion."])
+    notes.append(["Paid-night average", "Booked value / paid nights of the SAME currency. Complimentary and zero-value nights excluded from this denominator."])
+    notes.append(["Invalid stays excluded", report_data["excluded_invalid_stays"]])
+    notes.append(["Invalid amounts omitted", report_data["invalid_amounts"]])
+    for sheet in wb:
+        sheet.freeze_panes = "A3"
+        for number in range(1, sheet.max_column + 1):
+            sheet.column_dimensions[get_column_letter(number)].width = 24
     filename = f"market_segment_report_{start_date}_to_{end_date}.xlsx"
     return excel_response(wb, filename)
 

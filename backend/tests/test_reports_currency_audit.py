@@ -107,7 +107,8 @@ async def test_market_api_and_excel_keep_currency_specific_revenue_and_adr(repor
     assert row["adr_by_currency"] == {"EUR": 20, "TRY": 100}
     for _ in range(2):
         wb = await workbook(await reports.export_market_segment_excel("2026-10-01", "2026-10-15", USER))
-        assert list(wb.active.values)[1] == ("Segment", "Currency", "Bookings", "Nights", "Revenue", "ADR")
+        assert list(wb.active.values)[1] == ("Segment", "Currency", "Bookings", "Nights", "Booked value", "Paid-night average", "Paid nights", "Invalid amounts")
+        assert {row[6] for row in list(wb.active.values)[2:]} == {2}
         assert {row[1] for row in list(wb.active.values)[2:]} == {"TRY", "EUR"}
 
 

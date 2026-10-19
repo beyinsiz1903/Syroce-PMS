@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import axios from 'axios';
 import ReportsTab from '../ReportsTab';
@@ -49,5 +49,22 @@ describe('ReportsTab reporting contracts', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Gelir');
     expect(screen.getAllByText('Alınamadı')).toHaveLength(3);
     expect(screen.getByRole('alert')).toHaveTextContent('Boş veya sıfır sonuç olarak değerlendirmeyin');
+  });
+
+  it('warns about omitted market values and never turns unknown EUR money into TRY zero', async () => {
+    mockApi();
+    const get = axios.get.getMockImplementation();
+    axios.get.mockImplementation(url => url.startsWith('/reports/market-segment?') ? Promise.resolve({ data: {
+      total_bookings: 1, currency: 'EUR', invalid_amounts: 1, excluded_invalid_stays: 0,
+      market_segments: { corporate: { bookings: 1, nights: 2, revenue_by_currency: {}, adr_by_currency: {}, invalid_amounts: 1 } }, rate_types: {},
+    } }) : get(url));
+    render(<ReportsTab />);
+    await screen.findByText(/Gerçekleşen dönem:/);
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Pazar Segmenti' }), { button: 0, ctrlKey: false });
+    expect(screen.getByRole('alert')).toHaveTextContent('1 tutar hesaplanamadı');
+    expect(screen.getByText(/her dövizin bedelinin aynı dövizdeki ücretli gecelere/)).toBeInTheDocument();
+    const row = screen.getByText('Kurumsal').closest('tr');
+    expect(within(row).getAllByText('—')).toHaveLength(2);
+    expect(row).not.toHaveTextContent('₺');
   });
 });

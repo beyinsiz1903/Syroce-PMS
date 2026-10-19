@@ -86,7 +86,9 @@ def test_aggregate_reservation_performance_handles_legacy_invalid_dates_without_
     )
 
     assert payload["summary"]["total_bookings"] == 1
-    assert payload["summary"]["booked_revenue"] == 200.0
+    assert payload["summary"]["booked_revenue"] == 0.0
+    assert payload["summary"]["commercial_bookings"] == 0
+    assert payload["data_quality"]["invalid_stays"] == 1
     assert payload["rows"] == [
         {
             "booking_id": "legacy",
