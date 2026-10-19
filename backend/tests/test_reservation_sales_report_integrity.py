@@ -186,3 +186,26 @@ async def test_real_query_does_not_truncate_large_reports(ledger_db, monkeypatch
     result = await reports._reservation_performance_payload(tenant_id="A", start_date=START, end_date=END)
     assert len(result["rows"]) == result["summary"]["total_bookings"] == 1005
     assert result["summary"]["booked_revenue_by_currency"] == {"EUR": 10.05}
+
+
+@pytest.mark.parametrize("report", ["reservation", "market"])
+async def test_deploy_does_not_reuse_cached_pre_fix_calculations(monkeypatch, report):
+    from cache_manager import cache
+
+    old_prefix = "report_reservation_performance" if report == "reservation" else "report_market_segment_v3"
+    keys = []
+
+    def get(key):
+        keys.append(key)
+        return {"stale_pre_fix_calculation": True} if f":{old_prefix}:" in key else None
+
+    monkeypatch.setattr(cache, "enabled", True)
+    monkeypatch.setattr(cache, "get", get)
+    monkeypatch.setattr(cache, "set", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(reports, "_reservation_performance_payload", AsyncMock(return_value={"fresh": True}))
+    monkeypatch.setattr(segments, "db", SimpleNamespace(bookings=SimpleNamespace(find=lambda *_args: SimpleNamespace(to_list=AsyncMock(return_value=[])))))
+    monkeypatch.setattr(segments, "_native_report_currency", AsyncMock(return_value="EUR"))
+    endpoint = reports.get_reservation_performance_report if report == "reservation" else segments.get_market_segment_report
+    result = await endpoint(start_date="2026-09-01", end_date="2026-09-30", current_user=USER, _nocache=False)
+    assert not result.get("stale_pre_fix_calculation")
+    assert keys and all(f":{old_prefix}:" not in key for key in keys)

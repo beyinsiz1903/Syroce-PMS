@@ -287,7 +287,7 @@ async def _reservation_performance_payload(*, tenant_id: str, start_date: date, 
 
 
 @sub_router.get("/reports/reservation-performance")
-@cached(ttl=180, key_prefix="report_reservation_performance")
+@cached(ttl=180, key_prefix="report_reservation_performance_v2")
 async def get_reservation_performance_report(
     start_date: str | None = None,
     end_date: str | None = None,

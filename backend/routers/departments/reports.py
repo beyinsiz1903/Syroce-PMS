@@ -149,7 +149,7 @@ def _booking_currency_stats(bookings, field, fallback, fallback_currency="TRY"):
 
 # ── GET /reports/market-segment ──
 @router.get("/reports/market-segment")
-@cached(ttl=900, key_prefix="report_market_segment_v3")
+@cached(ttl=900, key_prefix="report_market_segment_v4")
 async def get_market_segment_report(
     start_date: str,
     end_date: str,

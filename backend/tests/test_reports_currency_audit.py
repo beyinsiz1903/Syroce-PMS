@@ -390,7 +390,7 @@ async def test_finance_refresh_bypasses_stale_json_cache(report_db, monkeypatch)
 
 
 @pytest.mark.parametrize("handler,kwargs,prefix", [
-    ("get_market_segment_report", {"start_date": "2026-10-01", "end_date": "2026-10-15"}, "report_market_segment_v3"),
+    ("get_market_segment_report", {"start_date": "2026-10-01", "end_date": "2026-10-15"}, "report_market_segment_v4"),
     ("get_company_aging_report", {}, "report_company_aging_v3"),
     ("get_finance_snapshot", {}, "report_finance_snapshot_v3"),
     ("get_cost_summary", {}, "report_cost_summary_v3"),
