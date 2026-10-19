@@ -12,9 +12,17 @@ const HousekeepingDetailedReports = () => {
   const [roomStatus, setRoomStatus] = useState(null);
   const [staffPerformance, setStaffPerformance] = useState([]);
   const [loading, setLoading] = useState(true);
-  useEffect(() => {
+  // Which loads failed: an HTTP error is shown as an error, never as an
+  // empty report.
+  const [loadErrors, setLoadErrors] = useState({});
+  const markError = (key, failed) => setLoadErrors(prev => ({ ...prev, [key]: failed }));
+  const loadAll = () => {
     fetchRoomStatusReport();
     fetchStaffPerformance();
+  };
+  useEffect(() => {
+    loadAll();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- yalnız ilk açılışta yüklenir
   }, []);
   const fetchRoomStatusReport = async () => {
     try {
@@ -22,10 +30,14 @@ const HousekeepingDetailedReports = () => {
         headers: {},
         credentials: "include"
       });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const data = await response.json();
       setRoomStatus(data);
+      markError('status', false);
     } catch (error) {
       console.error('Error:', error);
+      setRoomStatus(null);
+      markError('status', true);
     } finally {
       setLoading(false);
     }
@@ -36,10 +48,14 @@ const HousekeepingDetailedReports = () => {
         headers: {},
         credentials: "include"
       });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const data = await response.json();
       setStaffPerformance(data.staff_performance || []);
+      markError('performance', false);
     } catch (error) {
       console.error('Error:', error);
+      setStaffPerformance([]);
+      markError('performance', true);
     }
   };
   return <div className="p-6 space-y-6">
@@ -47,6 +63,11 @@ const HousekeepingDetailedReports = () => {
         <h1 className="text-3xl font-bold">{t('hkReports.title')}</h1>
         <p className="text-gray-600">{t('hkReports.subtitle')}</p>
       </div>
+
+      {(loadErrors.status || loadErrors.performance) && <div role="alert" className="flex items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          <span className="flex items-center gap-2"><AlertTriangle className="w-4 h-4" />{t('hkReports.loadError', 'Rapor verileri yüklenemedi; gösterilen değerler eksik olabilir.')}</span>
+          <Button size="sm" variant="outline" onClick={loadAll}>{t('hkReports.retry', 'Tekrar dene')}</Button>
+        </div>}
 
       <Tabs defaultValue="status" className="w-full">
         <TabsList className="grid w-full grid-cols-2">

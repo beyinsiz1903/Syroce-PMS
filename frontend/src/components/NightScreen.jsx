@@ -82,7 +82,7 @@ const NightScreen = () => {
           exit();
         }
       }}
-      className={`fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-black cursor-pointer select-none transition-opacity duration-300 ${
+      className={`print:hidden fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-black cursor-pointer select-none transition-opacity duration-300 ${
         visible ? 'opacity-100' : 'opacity-0'
       }`}
       data-testid="night-screen-overlay"
