@@ -1322,7 +1322,7 @@ async def get_transfer_history(
     query: dict[str, Any] = {
         "tenant_id": current_user.tenant_id,
         "movement_type": {"$in": ["transfer_out", "transfer_in"]},
-        "transfer_id": {"$ne": None},
+        "transfer_id": {"$exists": True, "$nin": [None, ""]},
     }
     def timestamp(value):
         if isinstance(value, datetime):
@@ -1336,6 +1336,7 @@ async def get_transfer_history(
         except (TypeError, ValueError, OverflowError):
             return datetime.min.replace(tzinfo=UTC)
 
+    document_bounds = {}
     if start_date or end_date:
         try:
             first = timestamp(start_date) if start_date else None
@@ -1348,16 +1349,29 @@ async def get_transfer_history(
                 raise ValueError("Bitiş tarihi başlangıç tarihinden önce olamaz")
         except (TypeError, ValueError, OverflowError) as exc:
             raise HTTPException(422, "Geçersiz transfer raporu tarih aralığı") from exc
-        converted = {"$convert": {"input": "$created_at", "to": "date", "onError": None, "onNull": None}}
-        clauses = [{"$ne": [converted, None]}]
+        document_bounds["$ne"] = None
         if first:
-            clauses.append({"$gte": [converted, first]})
+            document_bounds["$gte"] = first
         if last:
-            clauses.append({end_operator: [converted, last]})
-        query["$expr"] = {"$and": clauses}
+            document_bounds[end_operator] = last
 
-    # Limit complete transfer documents after grouping, never their source legs.
-    rows = await db.stock_movements.find(query, {"_id": 0}).to_list(None)
+    # Both date filtering and pagination operate on documents, not audit legs.
+    # A legacy out/in pair can straddle midnight: select its earliest valid
+    # timestamp, then read every leg so a filter never invents a discrepancy.
+    pipeline = [
+        {"$match": query},
+        {"$group": {"_id": "$transfer_id", "created_at": {"$min": {"$convert": {"input": "$created_at", "to": "date", "onError": None, "onNull": None}}}}},
+    ]
+    if document_bounds:
+        pipeline.append({"$match": {"created_at": document_bounds}})
+    pipeline.append({"$facet": {
+        "metadata": [{"$count": "total"}],
+        "documents": [{"$sort": {"created_at": -1, "_id": 1}}, {"$limit": limit}],
+    }})
+    page = (await db.stock_movements.aggregate(pipeline).to_list(None))[0]
+    total_count = page["metadata"][0]["total"] if page["metadata"] else 0
+    ids = [document["_id"] for document in page["documents"]]
+    rows = await db.stock_movements.find({**query, "transfer_id": {"$in": ids}}, {"_id": 0}).to_list(None) if ids else []
 
     # Resolve item names for readability without an extra round-trip per row.
     item_ids = {r.get("item_id") for r in rows if r.get("item_id")}
@@ -1398,7 +1412,7 @@ async def get_transfer_history(
     for tid, legs in legs_by_tid.items():
         # Earliest leg drives the document header so all legs of one
         # document share a single created_at/reference/etc.
-        header_leg = min(legs, key=sort_timestamp)
+        header_leg = min(legs, key=lambda row: (sort_timestamp(row) == datetime.min.replace(tzinfo=UTC), sort_timestamp(row)))
         header = {
             "transfer_id": tid,
             "reference": header_leg.get("reference"),
@@ -1514,8 +1528,8 @@ async def get_transfer_history(
     return {
         "transfers": transfers,
         "count": len(transfers),
-        "total_count": len(grouped),
-        "has_more": len(grouped) > len(transfers),
+        "total_count": total_count,
+        "has_more": total_count > len(transfers),
         "filters": {
             "start_date": start_date,
             "end_date": end_date,
@@ -1907,17 +1921,17 @@ async def get_cash_flow(start_date: str | None = None, end_date: str | None = No
     for flow in flows:
         currency = _accounting_currency(flow.get("currency"), tenant_currency)
         flow["currency"] = currency
-        amount = float(flow.get("amount", 0) or 0)
+        amount = money(flow.get("amount", 0) or 0)
         target = income_by_currency if flow.get("transaction_type") == "income" else expense_by_currency
-        target[currency] = target.get(currency, 0) + amount
+        add_amount(target, currency, amount)
 
     currencies = set(income_by_currency) | set(expense_by_currency)
     net_by_currency = {
-        code: round(income_by_currency.get(code, 0) - expense_by_currency.get(code, 0), 2)
+        code: rounded(money(income_by_currency.get(code, 0)) - money(expense_by_currency.get(code, 0)))
         for code in currencies
     }
-    income_by_currency = {code: round(value, 2) for code, value in income_by_currency.items()}
-    expense_by_currency = {code: round(value, 2) for code, value in expense_by_currency.items()}
+    income_by_currency = rounded_totals(income_by_currency)
+    expense_by_currency = rounded_totals(expense_by_currency)
 
     return {
         "transactions": flows,

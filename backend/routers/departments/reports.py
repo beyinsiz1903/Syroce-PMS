@@ -25,9 +25,11 @@ from core.csv_safe import xlsx_safe
 from core.database import db
 from core.helpers import require_module
 from core.security import get_current_user
-from core.utils import _XLSX_MAX_CELL_LEN, _xlsx_sanitize_str, calculate_folio_balance, create_excel_workbook, excel_response
+from core.utils import _XLSX_MAX_CELL_LEN, _xlsx_sanitize_str, create_excel_workbook, excel_response
 from models.schemas import User
-from modules.pms_core.report_money import add_amount, currency_code, resolve_ledger_currencies, rounded, rounded_totals, single_amount
+from modules.pms_core.receivable_reporting import folio_snapshots
+from modules.pms_core.report_money import add_amount, currency_code, money, resolve_ledger_currencies, rounded, rounded_totals, single_amount
+from modules.pms_core.reporting_dates import date_period_match
 from modules.pms_core.reporting_financials import REPORTING_CURRENCY, report_payment_day_match, report_payment_period_match, reporting_collection_summary
 from modules.pms_core.reporting_ledger import charge_amount, charge_category, posted_revenue_rows
 from modules.pms_core.role_permission_service import RolePermissionService, require_op
@@ -98,14 +100,20 @@ def _report_dates(start_date, end_date):
     return start, end
 
 
-def _booking_currency_stats(bookings, field, fallback):
+async def _native_report_currency(tenant_id):
+    from core.tenant_currency import get_tenant_currency
+
+    return currency_code((await get_tenant_currency(tenant_id))[0])
+
+
+def _booking_currency_stats(bookings, field, fallback, fallback_currency="TRY"):
     groups = {}
     for booking in bookings:
         nights = booking_nights(booking)
         if not nights:
             continue
         key = str(booking.get(field) or fallback)
-        code = currency_code(booking.get("currency"))
+        code = currency_code(booking.get("currency"), fallback_currency)
         entry = groups.setdefault(key, {"bookings": 0, "nights": 0, "revenue_by_currency": {}, "nights_by_currency": {}, "bookings_by_currency": {}})
         entry["bookings"] += 1
         entry["nights"] += nights
@@ -114,7 +122,7 @@ def _booking_currency_stats(bookings, field, fallback):
         add_amount(entry["revenue_by_currency"], code, 0 if booking.get("is_complimentary") else booking.get("total_amount", 0))
     for entry in groups.values():
         entry["revenue_by_currency"] = rounded_totals(entry["revenue_by_currency"])
-        entry["adr_by_currency"] = {code: rounded(amount / entry["nights_by_currency"][code]) for code, amount in entry["revenue_by_currency"].items()}
+        entry["adr_by_currency"] = {code: rounded(money(amount) / entry["nights_by_currency"][code]) for code, amount in entry["revenue_by_currency"].items()}
         entry["revenue"] = single_amount(entry["revenue_by_currency"])
         entry["adr"] = single_amount(entry["adr_by_currency"])
     return groups
@@ -122,7 +130,7 @@ def _booking_currency_stats(bookings, field, fallback):
 
 # ── GET /reports/market-segment ──
 @router.get("/reports/market-segment")
-@cached(ttl=900, key_prefix="report_market_segment_v2")
+@cached(ttl=900, key_prefix="report_market_segment_v3")
 async def get_market_segment_report(
     start_date: str,
     end_date: str,
@@ -135,15 +143,17 @@ async def get_market_segment_report(
     bookings = await db.bookings.find(
         {
             "tenant_id": current_user.tenant_id,
-            "check_in": {"$gte": start.isoformat(), "$lt": (end + timedelta(days=1)).isoformat()},
+            **date_period_match("check_in", start, end),
             "status": {"$nin": list(NON_COMMERCIAL_STATUSES)},
         }
     ).to_list(None)
 
-    segment_data = _booking_currency_stats(bookings, "market_segment", "other")
-    rate_type_data = _booking_currency_stats(bookings, "rate_type", "bar")
+    native_currency = await _native_report_currency(current_user.tenant_id)
+    segment_data = _booking_currency_stats(bookings, "market_segment", "other", native_currency)
+    rate_type_data = _booking_currency_stats(bookings, "rate_type", "bar", native_currency)
 
-    return {"start_date": start_date, "end_date": end_date, "total_bookings": len(bookings), "market_segments": segment_data, "rate_types": rate_type_data}
+    counted = sum(entry["bookings"] for entry in segment_data.values())
+    return {"start_date": start_date, "end_date": end_date, "total_bookings": counted, "excluded_invalid_stays": len(bookings) - counted, "market_segments": segment_data, "rate_types": rate_type_data}
 
 
 # ── GET /reports/market-segment/excel ──
@@ -242,6 +252,45 @@ def _coerce_to_date(v):
     return None
 
 
+async def _company_ledger_positions(tenant_id: str, folios: list[dict]):
+    """Read native-currency positions; never use a single-currency write guard.
+
+    A mixed ledger is readable without offsetting EUR debt against TRY credit.
+    Invalid records remain explicit, and cannot become a successful zero total.
+    """
+    if not folios:
+        return [], [], []
+    fallback_currency = await _native_report_currency(tenant_id)
+    failed = []
+    try:
+        snapshots = await folio_snapshots(db, tenant_id, folios, fallback_currency=fallback_currency)
+    except (ValueError, TypeError, ArithmeticError, KeyError):
+        logger.exception("Company ledger batch failed tenant=%s; isolating invalid folios", tenant_id)
+        snapshots = {}
+        for folio in folios:
+            try:
+                snapshots.update(await folio_snapshots(db, tenant_id, [folio], fallback_currency=fallback_currency))
+            except Exception:
+                failed.append(str(folio.get("id")))
+    except Exception:
+        # An unavailable database must fail closed once, not trigger thousands
+        # of identical per-folio retries on the same unavailable connection.
+        logger.exception("Company ledger unavailable tenant=%s", tenant_id)
+        return [], sorted({str(folio.get("id")) for folio in folios}), []
+    positions, mixed = [], []
+    for folio in folios:
+        snap = snapshots.get(folio.get("id"))
+        if snap is None:
+            failed.append(str(folio.get("id")))
+            continue
+        if any(code != snap["currency"] and value for code, value in snap["balance_by_currency"].items()):
+            mixed.append(str(folio["id"]))
+        for code, balance in snap["balance_by_currency"].items():
+            if balance > 0:
+                positions.append({"folio": folio, "currency": code, "balance": balance})
+    return positions, sorted(set(failed)), sorted(set(mixed))
+
+
 # ── Pure helper: company-aging compute (Task #246) ──
 async def _compute_company_aging(tenant_id: str) -> dict:
     """Pure async data builder for Company AR Aging Report.
@@ -262,24 +311,17 @@ async def _compute_company_aging(tenant_id: str) -> dict:
 
     company_balances: dict[tuple[str | None, str], dict] = {}
     total_by_currency = {}
-    failed_folios = []
-
-    for folio in folios:
-        try:
-            balance = await calculate_folio_balance(folio["id"], tenant_id)
-        except Exception:
-            logger.exception("calculate_folio_balance failed for folio=%s tenant=%s", folio.get("id"), tenant_id)
-            failed_folios.append(str(folio.get("id")))
-            continue
-
-        if balance <= 0:
-            continue
-
+    positions, failed_folios, mixed_folios = await _company_ledger_positions(tenant_id, folios)
+    company_cache = {}
+    for position in positions:
+        folio, balance = position["folio"], money(position["balance"])
         company_id = folio.get("company_id")
 
         # Task #246: tenant_id scope on company lookup (architect review #3) —
         # company ID collisions across tenants would otherwise leak metadata.
-        company = await db.companies.find_one({"id": company_id, "tenant_id": tenant_id}, {"_id": 0}) if company_id else None
+        if company_id and company_id not in company_cache:
+            company_cache[company_id] = await db.companies.find_one({"id": company_id, "tenant_id": tenant_id}, {"_id": 0})
+        company = company_cache.get(company_id)
         if not company:
             # Missing metadata must never make a real receivable disappear.
             company = {"name": "Şirket kaydı bulunamadı", "corporate_code": "—"}
@@ -300,7 +342,7 @@ async def _compute_company_aging(tenant_id: str) -> dict:
         else:
             aging_bucket = "30+ days"
 
-        code = currency_code(folio.get("currency"))
+        code = position["currency"]
         group_key = (company_id, code)
         if group_key not in company_balances:
             company_balances[group_key] = {
@@ -308,12 +350,12 @@ async def _compute_company_aging(tenant_id: str) -> dict:
                 "currency": code,
                 "company_name": company.get("name", "N/A"),
                 "corporate_code": company.get("corporate_code", "N/A"),
-                "total_balance": 0,
+                "total_balance": money(0),
                 "aging": {
-                    "0-7 days": 0,
-                    "8-14 days": 0,
-                    "15-30 days": 0,
-                    "30+ days": 0,
+                    "0-7 days": money(0),
+                    "8-14 days": money(0),
+                    "15-30 days": money(0),
+                    "30+ days": money(0),
                 },
                 "folio_count": 0,
             }
@@ -323,6 +365,9 @@ async def _compute_company_aging(tenant_id: str) -> dict:
         company_balances[group_key]["folio_count"] += 1
         add_amount(total_by_currency, code, balance)
 
+    for company in company_balances.values():
+        company["total_balance"] = rounded(company["total_balance"])
+        company["aging"] = {key: rounded(value) for key, value in company["aging"].items()}
     sorted_companies = sorted(
         company_balances.values(),
         key=lambda x: (x["currency"], -x["total_balance"], x["company_name"]),
@@ -336,12 +381,14 @@ async def _compute_company_aging(tenant_id: str) -> dict:
         "companies": sorted_companies,
         "complete": not failed_folios,
         "failed_folio_ids": failed_folios,
+        "mixed_ledger_folio_ids": mixed_folios,
+        "balance_basis": "posted_folio_ledger_by_currency",
     }
 
 
 # ── GET /reports/company-aging ──
 @router.get("/reports/company-aging")
-@cached(ttl=900, key_prefix="report_company_aging_v2")
+@cached(ttl=900, key_prefix="report_company_aging_v3")
 async def get_company_aging_report(
     current_user: User = Depends(get_current_user),
     _perm: None = Depends(require_op("view_finance_reports")),
@@ -445,7 +492,7 @@ async def export_company_aging_excel(
 
 # ── GET /reports/finance-snapshot ──
 @router.get("/reports/finance-snapshot")
-@cached(ttl=600, key_prefix="report_finance_snapshot_v2")
+@cached(ttl=600, key_prefix="report_finance_snapshot_v3")
 async def get_finance_snapshot(
     current_user: User = Depends(get_current_user),
     _perm: None = Depends(require_op("view_finance_reports")),
@@ -460,44 +507,45 @@ async def get_finance_snapshot(
     today = datetime.fromisoformat(str(business_state["business_date"])[:10]).date()
 
     # 1. Calculate Total Pending AR from company folios
+    native_currency = await _native_report_currency(current_user.tenant_id)
     company_folios = await db.folios.find(
         {"tenant_id": current_user.tenant_id, "folio_type": "company", "status": "open"}
     ).to_list(None)
 
-    overdue_invoices_count = 0
+    overdue_folio_ids = set()
     pending_ar_by_currency: dict[str, dict[str, float | int]] = {}
 
-    for folio in company_folios:
-        balance = await calculate_folio_balance(folio["id"], current_user.tenant_id)
-
+    positions, failed_folios, mixed_folios = await _company_ledger_positions(current_user.tenant_id, company_folios)
+    for position in positions:
+        folio, balance = position["folio"], money(position["balance"])
         if balance > 0:
-            currency = currency_code(folio.get("currency"))
+            currency = position["currency"]
             bucket = pending_ar_by_currency.setdefault(
                 currency,
                 {
-                    "total": 0.0,
-                    "0-30_days": 0.0,
-                    "30-60_days": 0.0,
-                    "60_plus_days": 0.0,
+                    "total": money(0),
+                    "0-30_days": money(0),
+                    "30-60_days": money(0),
+                    "60_plus_days": money(0),
                     "overdue_invoices_count": 0,
                 },
             )
-            bucket["total"] = float(bucket["total"]) + balance
+            bucket["total"] += balance
 
             # Calculate aging
             aging_anchor = _coerce_to_date(folio.get("due_date") or folio.get("invoice_date") or folio.get("created_at"))
             age_days = max((today - aging_anchor).days, 0) if aging_anchor else 99999
 
             if age_days > 0:  # Any overdue
-                overdue_invoices_count += 1
+                overdue_folio_ids.add(str(folio.get("id")))
                 bucket["overdue_invoices_count"] = int(bucket["overdue_invoices_count"]) + 1
 
                 if age_days <= 30:
-                    bucket["0-30_days"] = float(bucket["0-30_days"]) + balance
+                    bucket["0-30_days"] += balance
                 elif age_days <= 60:
-                    bucket["30-60_days"] = float(bucket["30-60_days"]) + balance
+                    bucket["30-60_days"] += balance
                 else:
-                    bucket["60_plus_days"] = float(bucket["60_plus_days"]) + balance
+                    bucket["60_plus_days"] += balance
 
     # 2. Calculate Today's Collections (payments received today)
     todays_payments = await db.payments.find(
@@ -507,7 +555,7 @@ async def get_finance_snapshot(
         }
     ).to_list(None)
 
-    todays_payments = await resolve_ledger_currencies(todays_payments, current_user.tenant_id, database=db, fallback_currency=REPORTING_CURRENCY)
+    todays_payments = await resolve_ledger_currencies(todays_payments, current_user.tenant_id, database=db, fallback_currency=native_currency)
     today_summary = reporting_collection_summary(todays_payments)
 
     # 3. Calculate MTD (Month-to-Date) Collections
@@ -520,12 +568,12 @@ async def get_finance_snapshot(
         }
     ).to_list(None)
 
-    mtd_payments = await resolve_ledger_currencies(mtd_payments, current_user.tenant_id, database=db, fallback_currency=REPORTING_CURRENCY)
+    mtd_payments = await resolve_ledger_currencies(mtd_payments, current_user.tenant_id, database=db, fallback_currency=native_currency)
     mtd_summary = reporting_collection_summary(mtd_payments)
     mtd_collections = float(mtd_summary["amount"])
 
     # 4. Calculate Collection Rate (MTD Collections / MTD Revenue)
-    mtd_charges = await posted_revenue_rows(current_user.tenant_id, month_start, today, database=db, fallback_currency=REPORTING_CURRENCY)
+    mtd_charges = await posted_revenue_rows(current_user.tenant_id, month_start, today, database=db, fallback_currency=native_currency)
 
     mtd_revenue_by_currency = {}
     for charge in mtd_charges:
@@ -538,29 +586,33 @@ async def get_finance_snapshot(
 
     # 5. Get Accounting Invoices (E-Fatura ready)
     pending_invoices = await db.accounting_invoices.find(
-        {"tenant_id": current_user.tenant_id, "status": {"$in": ["pending", "partial"]}}
+        {"tenant_id": current_user.tenant_id, "status": {"$in": ["pending", "partial"]}, "voided": {"$ne": True}, "deleted": {"$ne": True}}
     ).to_list(None)
 
     pending_invoice_count = len(pending_invoices)
     pending_invoice_by_currency: dict[str, float] = {}
     for invoice in pending_invoices:
-        remaining = max(float(invoice.get("total") or 0) - float(invoice.get("amount_paid") or 0), 0)
-        add_amount(pending_invoice_by_currency, invoice.get("currency"), remaining)
+        remaining = max(money(invoice.get("total")) - money(invoice.get("amount_paid") if invoice.get("amount_paid") is not None else invoice.get("paid_amount")), 0)
+        add_amount(pending_invoice_by_currency, invoice.get("currency") or native_currency, remaining)
 
     return {
         "report_date": today.isoformat(),
         "business_date": today.isoformat(),
         "pending_ar": {
-            "total": single_amount({code: bucket["total"] for code, bucket in pending_ar_by_currency.items()}),
+            "total": single_amount({code: bucket["total"] for code, bucket in pending_ar_by_currency.items()}) if not failed_folios else None,
+            "complete": not failed_folios,
+            "failed_folio_ids": failed_folios,
+            "mixed_ledger_folio_ids": mixed_folios,
+            "balance_basis": "posted_folio_ledger_by_currency",
             "by_currency": {
                 currency: {
-                    key: round(float(value), 2) if key != "overdue_invoices_count" else value
+                    key: rounded(value) if key != "overdue_invoices_count" else value
                     for key, value in totals.items()
                 }
                 for currency, totals in pending_ar_by_currency.items()
             },
             "overdue_breakdown": {key: single_amount({code: bucket[key] for code, bucket in pending_ar_by_currency.items()}) for key in ("0-30_days", "30-60_days", "60_plus_days")},
-            "overdue_invoices_count": overdue_invoices_count,
+            "overdue_invoices_count": len(overdue_folio_ids),
         },
         "todays_collections": {
             **today_summary,
@@ -768,7 +820,7 @@ async def export_channel_distribution_excel(
         {
             "tenant_id": current_user.tenant_id,
             "status": {"$in": ["confirmed", "guaranteed", "checked_in", "in_house", "checked_out"]},
-            "check_in": {"$gte": start.isoformat(), "$lt": (end + timedelta(days=1)).isoformat()},
+            **date_period_match("check_in", start, end),
         },
         {
             "_id": 0,
@@ -779,24 +831,26 @@ async def export_channel_distribution_excel(
             "source_channel": 1,
             "ota_channel": 1,
             "market_segment": 1,
+            "is_complimentary": 1,
         },
     ).to_list(None)
 
     channel_stats: dict[str, dict[str, Any]] = {}
+    native_currency = await _native_report_currency(current_user.tenant_id)
 
     for b in bookings:
         channel = str(b.get("ota_channel") or b.get("source_channel") or b.get("booking_source") or b.get("channel") or "DIRECT")
-        code = currency_code(b.get("currency"))
+        code = currency_code(b.get("currency"), native_currency)
         group_key = (channel, code)
         if group_key not in channel_stats:
             channel_stats[group_key] = {
                 "channel": channel,
                 "currency": code,
                 "bookings": 0,
-                "revenue": 0.0,
+                "revenue": money(0),
             }
         channel_stats[group_key]["bookings"] += 1
-        channel_stats[group_key]["revenue"] += float(b.get("total_amount") or 0.0)
+        channel_stats[group_key]["revenue"] += money(0 if b.get("is_complimentary") else b.get("total_amount"))
 
     total_revenue = {}
     for row in channel_stats.values():
@@ -812,15 +866,15 @@ async def export_channel_distribution_excel(
 
     data: list[list[Any]] = []
     for key, row in sorted(channel_stats.items(), key=lambda x: x[0]):
-        currency_total = float(total_revenue[row["currency"]])
+        currency_total = money(total_revenue[row["currency"]])
         share = row["revenue"] / currency_total * 100 if currency_total else 0
         data.append(
             [
                 row["channel"],
                 row["currency"],
                 row["bookings"],
-                round(row["revenue"], 2),
-                round(share, 2),
+                rounded(row["revenue"]),
+                rounded(share),
             ]
         )
 
@@ -843,6 +897,7 @@ async def _compute_mtd_cost_summary(tenant_id: str) -> dict:
     month_start = today.replace(day=1)
     month_start_dt = datetime.combine(month_start, datetime.min.time()).replace(tzinfo=UTC)
     next_day = today + timedelta(days=1)
+    native_currency = await _native_report_currency(tenant_id)
 
     purchase_orders = await db.purchase_orders.find(
         {
@@ -874,63 +929,52 @@ async def _compute_mtd_cost_summary(tenant_id: str) -> dict:
     }
 
     # Aggregate costs by category
-    cost_categories = {"Housekeeping": 0, "F&B": 0, "Technical": 0, "General Expenses": 0}
+    category_names = ("Housekeeping", "F&B", "Technical", "General Expenses")
     costs_by_currency = {}
     categories_by_currency = {}
-
-    total_mtd_costs = 0
 
     for po in purchase_orders:
         category = str(po.get("category") or "other").strip().lower()
         cost_category = category_mapping.get(category, "General Expenses")
-        total_amount = float(po.get("total_amount") or 0)
-        code = currency_code(po.get("currency"))
+        total_amount = money(po.get("total_amount") or 0)
+        code = currency_code(po.get("currency"), native_currency)
         add_amount(costs_by_currency, code, total_amount)
         add_amount(categories_by_currency.setdefault(cost_category, {}), code, total_amount)
-
-        cost_categories[cost_category] += total_amount
-        total_mtd_costs += total_amount
-
-    # 2. Sort categories to get top 3
-    sorted_categories = sorted([{"name": k, "amount": v} for k, v in cost_categories.items()], key=lambda x: x["amount"], reverse=True)
-
-    top_3_categories = sorted_categories[:3]
 
     metrics = await load_stay_night_metrics(db, tenant_id, month_start, today, actual_only=True)
     total_room_nights = sum(day["occupied_rooms"] for day in metrics)
     total_available_room_days = sum(day["total_rooms"] for day in metrics)
 
-    per_room_cost = (total_mtd_costs / total_room_nights) if total_room_nights > 0 else 0
-
-    mtd_charges = await posted_revenue_rows(tenant_id, month_start, today, database=db, fallback_currency=REPORTING_CURRENCY)
-    total_revenue = sum(charge_amount(charge) for charge in mtd_charges)
+    mtd_charges = await posted_revenue_rows(tenant_id, month_start, today, database=db, fallback_currency=native_currency)
     revenue_by_currency, room_revenue_by_currency = {}, {}
     for charge in mtd_charges:
         add_amount(revenue_by_currency, charge.get("currency"), charge_amount(charge))
         if charge_category(charge) == "room":
             add_amount(room_revenue_by_currency, charge.get("currency"), charge_amount(charge))
 
-    mtd_revpar = (sum(float(value) for value in room_revenue_by_currency.values()) / total_available_room_days) if total_available_room_days > 0 else 0
-
-    # 5. Calculate Cost to Revenue Ratio
-    cost_to_revenue_ratio = (total_mtd_costs / total_revenue * 100) if total_revenue > 0 else 0
-
-    # 6. Calculate profit margin
-    gross_profit = total_revenue - total_mtd_costs
-    profit_margin = (gross_profit / total_revenue * 100) if total_revenue > 0 else 0
-
     costs_by_currency = rounded_totals(costs_by_currency)
     revenue_by_currency = rounded_totals(revenue_by_currency)
+    categories_by_currency = {name: rounded_totals(values) for name, values in categories_by_currency.items()}
     currencies = set(costs_by_currency) | set(revenue_by_currency)
     mixed = len(currencies) > 1
     financial_by_currency = {}
     for code in sorted(currencies):
         cost, revenue = costs_by_currency.get(code, 0), revenue_by_currency.get(code, 0)
+        profit = money(revenue) - money(cost)
         financial_by_currency[code] = {
-            "mtd_costs": cost, "mtd_revenue": revenue, "gross_profit": rounded(revenue - cost),
-            "profit_margin_percentage": round((revenue - cost) / revenue * 100, 1) if revenue else 0,
-            "cost_to_revenue_ratio": round(cost / revenue * 100, 1) if revenue else 0,
+            "mtd_costs": cost, "mtd_revenue": revenue, "gross_profit": rounded(profit),
+            "profit_margin_percentage": round(float(profit / money(revenue) * 100), 1) if revenue else 0,
+            "cost_to_revenue_ratio": round(float(money(cost) / money(revenue) * 100), 1) if revenue else 0,
         }
+    only_financial = next(iter(financial_by_currency.values()), {}) if not mixed else {}
+    cost_per_room = {code: rounded(money(amount) / total_room_nights) if total_room_nights else 0 for code, amount in costs_by_currency.items()}
+    revpar = {code: rounded(money(amount) / total_available_room_days) if total_available_room_days else 0 for code, amount in room_revenue_by_currency.items()}
+    per_room_cost, mtd_revpar = single_amount(cost_per_room), single_amount(revpar)
+    cost_currency = next(iter(costs_by_currency), native_currency)
+    total_mtd_costs = money(costs_by_currency.get(cost_currency, 0))
+    top_3_categories = sorted([
+        {"name": name, "amount": categories_by_currency.get(name, {}).get(cost_currency, 0)} for name in category_names
+    ], key=lambda row: row["amount"], reverse=True)[:3] if len(costs_by_currency) <= 1 else []
     return {
         "report_date": today.isoformat(),
         "period": f"{month_start.isoformat()} to {today.isoformat()}",
@@ -938,14 +982,14 @@ async def _compute_mtd_cost_summary(tenant_id: str) -> dict:
         "mixed_currency": mixed,
         "total_mtd_costs": single_amount(costs_by_currency),
         "total_mtd_costs_by_currency": costs_by_currency,
-        "cost_categories_by_currency": {name: rounded_totals(values) for name, values in categories_by_currency.items()},
+        "cost_categories_by_currency": categories_by_currency,
         "cost_categories": {
             key: single_amount(categories_by_currency.get(name, {}))
             for key, name in (("housekeeping", "Housekeeping"), ("fnb", "F&B"), ("technical", "Technical"), ("general_expenses", "General Expenses"))
         },
         "top_3_categories": [
-            {"name": cat["name"], "amount": round(cat["amount"], 2), "percentage": round((cat["amount"] / total_mtd_costs * 100), 1) if total_mtd_costs > 0 else 0} for cat in top_3_categories
-        ] if len(costs_by_currency) <= 1 else [],
+            {"name": cat["name"], "amount": cat["amount"], "percentage": round(float(money(cat["amount"]) / total_mtd_costs * 100), 1) if total_mtd_costs > 0 else 0} for cat in top_3_categories
+        ],
         "top_3_categories_by_currency": {
             code: sorted([
                 {"name": name, "amount": rounded(values.get(code, 0))}
@@ -954,18 +998,18 @@ async def _compute_mtd_cost_summary(tenant_id: str) -> dict:
         },
         "per_room_metrics": {
             "total_room_nights": total_room_nights,
-            "cost_per_room_night": single_amount({code: amount / total_room_nights if total_room_nights else 0 for code, amount in costs_by_currency.items()}),
-            "cost_per_room_night_by_currency": {code: rounded(amount / total_room_nights) if total_room_nights else 0 for code, amount in costs_by_currency.items()},
-            "mtd_revpar": single_amount({code: float(amount) / total_available_room_days if total_available_room_days else 0 for code, amount in room_revenue_by_currency.items()}),
-            "mtd_revpar_by_currency": {code: rounded(float(amount) / total_available_room_days) if total_available_room_days else 0 for code, amount in room_revenue_by_currency.items()},
+            "cost_per_room_night": per_room_cost,
+            "cost_per_room_night_by_currency": cost_per_room,
+            "mtd_revpar": mtd_revpar,
+            "mtd_revpar_by_currency": revpar,
             "cost_to_revpar_ratio": None if mixed else (round((per_room_cost / mtd_revpar * 100), 1) if mtd_revpar > 0 else 0),
         },
         "financial_metrics": {
             "mtd_revenue": single_amount(revenue_by_currency),
             "mtd_costs": single_amount(costs_by_currency),
-            "gross_profit": None if mixed else round(gross_profit, 2),
-            "profit_margin_percentage": None if mixed else round(profit_margin, 1),
-            "cost_to_revenue_ratio": None if mixed else round(cost_to_revenue_ratio, 1),
+            "gross_profit": None if mixed else only_financial.get("gross_profit", 0),
+            "profit_margin_percentage": None if mixed else only_financial.get("profit_margin_percentage", 0),
+            "cost_to_revenue_ratio": None if mixed else only_financial.get("cost_to_revenue_ratio", 0),
             "by_currency": financial_by_currency,
         },
     }
@@ -973,7 +1017,7 @@ async def _compute_mtd_cost_summary(tenant_id: str) -> dict:
 
 # ── GET /reports/cost-summary ──
 @router.get("/reports/cost-summary")
-@cached(ttl=600, key_prefix="report_cost_summary_v2")
+@cached(ttl=600, key_prefix="report_cost_summary_v3")
 async def get_cost_summary(
     current_user: User = Depends(get_current_user),
     _perm: None = Depends(require_op("view_finance_reports")),
@@ -985,7 +1029,7 @@ async def get_cost_summary(
 
 # ── GET /finance/mtd-cost-summary ──
 @router.get("/finance/mtd-cost-summary")
-@cached(ttl=600, key_prefix="finance_mtd_cost_summary_v2")
+@cached(ttl=600, key_prefix="finance_mtd_cost_summary_v3")
 async def get_mtd_cost_summary(
     current_user: User = Depends(get_current_user),
     _perm: None = Depends(require_op("view_finance_reports")),

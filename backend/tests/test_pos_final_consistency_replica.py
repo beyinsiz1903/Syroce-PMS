@@ -17,6 +17,7 @@ from common import audit_hook
 from common.context import OperationContext
 from core import pos_folio_consumer
 from core.outbox_service import POS_CHARGE_POSTED, POS_CHARGE_REVERSED
+from domains.pms import pos_fnb_router_v2
 from domains.pms.pos_extensions import pos_barcode, pos_fiscal, pos_happy_hour, pos_print_spool
 from domains.pms.pos_fnb import pos_fnb_service_v2 as service_module
 from domains.pms.pos_fnb.guest_qr import table_token, verify_table_token
@@ -25,7 +26,6 @@ from domains.pms.pos_fnb.pos_fnb_service_v2 import PosFnbServiceV2
 from domains.pms.pos_fnb.receipts import receipt_payload
 from domains.pms.pos_fnb_router import guest_menu
 from domains.pms.pos_fnb_router import pos_core as table_router
-from domains.pms import pos_fnb_router_v2
 from domains.pms.pos_router import pos_core
 
 
@@ -41,6 +41,9 @@ async def db():
                  'pos_table_locks', 'stock_consumptions', 'pos_guest_requests'):
         await database.create_collection(name)
     await database.hotel_settings.insert_one({'tenant_id': 't', 'currency': 'EUR', 'timezone': 'Europe/Istanbul'})
+    # Fixtures below book sales on this operating day. Calendar time must not
+    # silently move a generated refund to a different report after midnight.
+    await database.tenant_settings.insert_one({'tenant_id': 't', 'business_date': '2026-10-18'})
     yield database
     await client.drop_database(database.name)
     client.close()
@@ -171,6 +174,8 @@ async def test_full_refund_clears_z_tax_categories_and_preserves_receipt_snapsho
     await paid(db)
     assert (await service.refund_order(ctx(), 'paid', 55, 'İade', 'r1')).ok
     assert (await service.refund_order(ctx(), 'paid', 55, 'İade', 'r2')).ok
+    refunds = await db.pos_transactions.find({'payment_type': 'refund'}).to_list(None)
+    assert {row['transaction_date'] for row in refunds} == {'2026-10-18'}
     monkeypatch.setattr(pos_core, 'db', db)
     report = await pos_core.get_z_report('2026-10-18', None, SimpleNamespace(tenant_id='t'))
     assert report['net_sales'] == 0 and report['tax_total'] == 0
@@ -200,10 +205,13 @@ async def test_legacy_refund_on_later_day_hydrates_only_reversal_for_that_day(db
 
 @pytest_asyncio.fixture
 async def guest(db, service, monkeypatch):
+    # Freeze only the request bucket, near the real MongoDB clock. A fixed
+    # historical instant makes expires_at already expired to its TTL monitor.
+    frozen_now = datetime.now(UTC)
     class FixedClock(datetime):
         @classmethod
         def now(cls, tz=None):
-            return datetime(2026, 10, 18, 12, tzinfo=UTC)
+            return frozen_now.astimezone(tz) if tz else frozen_now.replace(tzinfo=None)
     monkeypatch.setattr(guest_menu, 'datetime', FixedClock)
     await menu(db)
     await db.table_layouts.insert_one({'tenant_id': 't', 'outlet_id': 'bar', 'id': 'table', 'table_number': '1', 'status': 'available'})
@@ -391,6 +399,9 @@ async def test_guest_rate_limit_cannot_be_bypassed_by_retrying_a_rejected_intent
     for index in range(10):
         result = await guest.post('/api/public/fnb/t/bar/order', json=guest_body(f'guest-limit-{index}'))
         assert result.status_code == 200, result.text
+        if index == 0:
+            limiter = await db.pos_guest_limits.find_one({})
+            assert limiter['expires_at'].replace(tzinfo=UTC) > datetime.now(UTC)
     for _ in range(2):
         result = await guest.post('/api/public/fnb/t/bar/order', json=guest_body('guest-limit-eleven'))
         assert result.status_code == 429
