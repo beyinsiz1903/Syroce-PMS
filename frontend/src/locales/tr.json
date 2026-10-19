@@ -4230,6 +4230,7 @@
         "status": "Durum"
       },
       "statuses": {
+        "mixed_currency": "Farklı para birimi",
         "ok": "OK",
         "warning": "Uyarı",
         "exceeded": "Aşıldı",

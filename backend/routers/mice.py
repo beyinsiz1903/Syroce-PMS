@@ -1115,8 +1115,10 @@ async def list_events(
 
     tenant_currency = await _tenant_currency_code(current_user.tenant_id)
 
+    # The summary covers exactly the events the list is filtered to (status,
+    # period); without filters that is every event, as before.
     pipe = [
-        {"$match": {"tenant_id": current_user.tenant_id}},
+        {"$match": q},
         {"$group": {
             "_id": {"status": "$status", "currency": {"$toUpper": {"$ifNull": ["$currency", tenant_currency]}}},
             "n": {"$sum": 1},
@@ -1133,7 +1135,7 @@ async def list_events(
         cnt_resources,
     ) = await _asyncio.gather(
         db.mice_events.find(q, {"_id": 0}).sort("start_date", 1).limit(500).to_list(500),
-        db.mice_events.aggregate(pipe).to_list(20),
+        db.mice_events.aggregate(pipe).to_list(None),
         db.mice_accounts.count_documents({"tenant_id": tid, **_CLIENT_ACCT_FILTER}),
         db.mice_spaces.count_documents({"tenant_id": tid}),
         db.mice_menus.count_documents({"tenant_id": tid}),
@@ -1158,7 +1160,8 @@ async def list_events(
         "menus": cnt_menus,
         "resources": cnt_resources,
     }
-    return {"events": items, "summary": summary, "counts": counts}
+    return {"events": items, "summary": summary, "counts": counts,
+            "summary_scope": {"status": status, "date_from": date_from, "date_to": date_to}}
 
 
 async def _expand_resource_prices(

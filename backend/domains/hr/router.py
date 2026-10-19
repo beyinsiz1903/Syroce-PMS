@@ -642,15 +642,19 @@ async def get_attendance_summary(start_date: str | None = None, end_date: str | 
         default_today=await _attendance_business_date(current_user.tenant_id),
     )
     query = {"tenant_id": current_user.tenant_id, "date": {"$gte": start_dt.isoformat(), "$lte": end_dt.isoformat()}}
-    records = await db.attendance_records.find(query, {"_id": 0}).to_list(2000)
+    # Totals over every record in the range, grouped in the database: a
+    # list size never cuts the report (70 staff x 30 days = 2100 records).
+    pipeline = [
+        {"$match": {**query, "staff_id": {"$nin": [None, ""]}}},
+        {"$group": {"_id": "$staff_id", "total_hours": {"$sum": {"$ifNull": ["$total_hours", 0]}}, "days_present": {"$sum": 1}}},
+    ]
     staff_map = await _get_staff_map(current_user.tenant_id)
 
     summary: dict[str, Any] = {}
-    for record in records:
-        staff_id = record["staff_id"]
-        summary.setdefault(staff_id, {"staff_id": staff_id, "total_hours": 0, "days_present": 0, "overtime_hours": 0, "late_count": 0})
-        summary[staff_id]["total_hours"] += record.get("total_hours", 0)
-        summary[staff_id]["days_present"] += 1
+    async for row in db.attendance_records.aggregate(pipeline):
+        staff_id = row["_id"]
+        summary[staff_id] = {"staff_id": staff_id, "total_hours": round(float(row.get("total_hours") or 0), 2),
+                             "days_present": int(row.get("days_present") or 0), "overtime_hours": 0, "late_count": 0}
 
     for staff_id, data in summary.items():
         staff = staff_map.get(staff_id, {})
@@ -1290,7 +1294,7 @@ async def _build_payroll(month: str | None, tenant_id: str):
     end_dt = next_month - timedelta(days=next_month.day)
 
     query = {"tenant_id": tenant_id, "date": {"$gte": start_dt.isoformat(), "$lte": end_dt.isoformat()}}
-    records = await db.attendance_records.find(query, {"_id": 0}).to_list(5000)
+    records = await db.attendance_records.find(query, {"_id": 0}).to_list(None)  # report totals/exports: every record, no list cap
     staff_map = await _get_staff_map(tenant_id)
     rates = await _get_payroll_tax_rates(tenant_id)
     period_month = start_dt.strftime("%Y-%m")
@@ -7354,7 +7358,7 @@ async def shifts_weekly_hours(
             "status": {"$ne": "on_leave"},
         },
         {"_id": 0, "staff_id": 1, "staff_name": 1, "shift_date": 1, "start_time": 1, "end_time": 1, "crosses_midnight": 1},
-    ).to_list(5000)
+    ).to_list(None)  # report totals/exports: every record, no list cap
 
     def _hours_of(sh: dict) -> float:
         try:
@@ -7500,7 +7504,7 @@ async def attendance_department_summary(
             "date": {"$gte": start_dt.isoformat(), "$lte": end_dt.isoformat()},
         },
         {"_id": 0},
-    ).to_list(5000)
+    ).to_list(None)  # report totals/exports: every record, no list cap
     staff_dept = await _build_staff_department_map(current_user.tenant_id)
     agg: dict[str, dict] = {}
     for r in records:
@@ -7707,7 +7711,7 @@ async def export_leave_xlsx(
             {"_id": 0},
         )
         .sort("start_date", -1)
-        .to_list(5000)
+        .to_list(None)  # report totals/exports: every record, no list cap
     )
     wb = Workbook()
     ws = wb.active
@@ -7754,7 +7758,7 @@ async def export_overtime_xlsx(
             {"_id": 0},
         )
         .sort("work_date", -1)
-        .to_list(5000)
+        .to_list(None)  # report totals/exports: every record, no list cap
     )
     wb = Workbook()
     ws = wb.active

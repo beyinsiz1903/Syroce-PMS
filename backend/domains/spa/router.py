@@ -770,29 +770,36 @@ async def daily_summary(
     date: str | None = Query(None),
     current_user: User = Depends(get_current_user),
 ) -> dict:
+    from modules.pms_core.report_money import add_amount, rounded_totals, single_amount
+    from modules.pms_core.report_period import day_bounds, hotel_zone, instant_between, local_today, parse_day
+
     db = get_system_db()
-    target = date or datetime.now(UTC).date().isoformat()
-    # Use proper next-day range instead of ascii-trick string compare.
-    next_day = (datetime.fromisoformat(target) + timedelta(days=1)).date().isoformat()
+    # The hotel's local calendar day; ISO-text and BSON start times both count.
+    zone = await hotel_zone(db, current_user.tenant_id)
+    day = parse_day(date, "date") if date else local_today(zone, datetime.now(UTC))
+    lower, upper = day_bounds(day, day, zone)
     cur = db.spa_appointments.find(
-        {
-            "tenant_id": current_user.tenant_id,
-            "starts_at": {"$gte": target, "$lt": next_day},
-        },
+        {"tenant_id": current_user.tenant_id, **instant_between("starts_at", lower, upper)},
         {"_id": 0},
     )
     items = [d async for d in cur]
     by_status: dict[str, int] = {}
-    revenue = 0.0
+    revenue: dict = {}
     for a in items:
-        by_status[a["status"]] = by_status.get(a["status"], 0) + 1
-        if a["status"] == "completed":
-            revenue += float(a.get("price", 0))
+        status = a.get("status") or "unknown"
+        by_status[status] = by_status.get(status, 0) + 1
+        if status == "completed":
+            add_amount(revenue, a.get("currency") or "TRY", a.get("price") or 0)
+    by_currency = rounded_totals(revenue)
     return {
-        "date": target,
+        "date": day.isoformat(),
+        "timezone": str(zone),
         "total": len(items),
         "by_status": by_status,
-        "revenue": round(revenue, 2),
+        # Per currency, never added across currencies; the scalar only when
+        # every completed appointment is in one currency (else null).
+        "revenue_by_currency": by_currency,
+        "revenue": single_amount(revenue),
     }
 
 

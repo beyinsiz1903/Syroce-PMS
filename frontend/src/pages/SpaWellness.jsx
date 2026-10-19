@@ -21,6 +21,14 @@ import { useEntitlements } from '@/context/EntitlementContext';
 import { ModuleLoadError } from '@/components/shared/ModuleAvailabilityState';
 import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 
+// Revenue per currency as the server keeps it (never added across currencies).
+export const revenueText = (summary, format) => {
+  const byCurrency = summary?.revenue_by_currency || {};
+  const codes = Object.keys(byCurrency);
+  if (!codes.length) return format(summary?.revenue || 0);
+  return codes.map((code) => format(byCurrency[code], code)).join(' · ');
+};
+
 const STATUS = {
   scheduled: { label: 'Planlandı', cls: 'bg-sky-100 text-sky-800' },
   in_progress: { label: 'Devam Ediyor', cls: 'bg-amber-100 text-amber-800' },
@@ -220,7 +228,7 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
           <Stat label={t('cm.pages_SpaWellness.bugun_toplam')} value={summary.total} />
           <Stat label="Tamamlanan" value={summary.by_status?.completed || 0} cls="text-emerald-600" />
           <Stat label="Planlanan" value={summary.by_status?.scheduled || 0} cls="text-sky-600" />
-          <Stat label={t('cm.pages_SpaWellness.bugunku_ciro')} value={money(summary.revenue, summary.currency)} cls="text-indigo-600" />
+          <Stat label={t('cm.pages_SpaWellness.bugunku_ciro')} value={revenueText(summary, money)} cls="text-indigo-600" />
         </div>
       )}
 
