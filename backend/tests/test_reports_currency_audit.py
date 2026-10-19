@@ -385,7 +385,27 @@ async def test_finance_refresh_bypasses_stale_json_cache(report_db, monkeypatch)
     result = await reports.get_finance_snapshot(current_user=USER, _nocache=True)
     assert result["report_date"] == "2026-10-15"
     fake_cache.get.assert_not_called()
-    assert ":report_finance_snapshot_v2:" in fake_cache.set.call_args.args[0]
+    assert ":report_finance_snapshot_v3:" in fake_cache.set.call_args.args[0]
+
+
+@pytest.mark.parametrize("handler,kwargs,prefix", [
+    ("get_market_segment_report", {"start_date": "2026-10-01", "end_date": "2026-10-15"}, "report_market_segment_v3"),
+    ("get_company_aging_report", {}, "report_company_aging_v3"),
+    ("get_finance_snapshot", {}, "report_finance_snapshot_v3"),
+    ("get_cost_summary", {}, "report_cost_summary_v3"),
+    ("get_mtd_cost_summary", {}, "finance_mtd_cost_summary_v3"),
+])
+async def test_changed_financial_reports_cannot_reuse_pre_deploy_cached_totals(report_db, monkeypatch, handler, kwargs, prefix):
+    import cache_manager
+
+    fake_cache = SimpleNamespace(enabled=True, get=MagicMock(side_effect=lambda key: {"stale": True} if "_v2:" in key else None), set=MagicMock())
+    monkeypatch.setattr(cache_manager, "cache", fake_cache)
+    monkeypatch.setattr(reports, "_compute_company_aging", AsyncMock(return_value={"report_date": "2026-10-15"}))
+    monkeypatch.setattr(reports, "_compute_mtd_cost_summary", AsyncMock(return_value={"report_date": "2026-10-15"}))
+    result = await getattr(reports, handler)(current_user=USER, **kwargs)
+    assert result != {"stale": True}
+    assert f":{prefix}:" in fake_cache.get.call_args.args[0]
+    fake_cache.set.assert_called_once()
 
 
 @pytest.mark.parametrize("category", ["ROOM", "room_charge", "accommodation", "lodging", " Konaklama "])

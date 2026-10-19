@@ -130,7 +130,7 @@ def _booking_currency_stats(bookings, field, fallback, fallback_currency="TRY"):
 
 # ── GET /reports/market-segment ──
 @router.get("/reports/market-segment")
-@cached(ttl=900, key_prefix="report_market_segment_v2")
+@cached(ttl=900, key_prefix="report_market_segment_v3")
 async def get_market_segment_report(
     start_date: str,
     end_date: str,
@@ -388,7 +388,7 @@ async def _compute_company_aging(tenant_id: str) -> dict:
 
 # ── GET /reports/company-aging ──
 @router.get("/reports/company-aging")
-@cached(ttl=900, key_prefix="report_company_aging_v2")
+@cached(ttl=900, key_prefix="report_company_aging_v3")
 async def get_company_aging_report(
     current_user: User = Depends(get_current_user),
     _perm: None = Depends(require_op("view_finance_reports")),
@@ -492,7 +492,7 @@ async def export_company_aging_excel(
 
 # ── GET /reports/finance-snapshot ──
 @router.get("/reports/finance-snapshot")
-@cached(ttl=600, key_prefix="report_finance_snapshot_v2")
+@cached(ttl=600, key_prefix="report_finance_snapshot_v3")
 async def get_finance_snapshot(
     current_user: User = Depends(get_current_user),
     _perm: None = Depends(require_op("view_finance_reports")),
@@ -1017,7 +1017,7 @@ async def _compute_mtd_cost_summary(tenant_id: str) -> dict:
 
 # ── GET /reports/cost-summary ──
 @router.get("/reports/cost-summary")
-@cached(ttl=600, key_prefix="report_cost_summary_v2")
+@cached(ttl=600, key_prefix="report_cost_summary_v3")
 async def get_cost_summary(
     current_user: User = Depends(get_current_user),
     _perm: None = Depends(require_op("view_finance_reports")),
@@ -1029,7 +1029,7 @@ async def get_cost_summary(
 
 # ── GET /finance/mtd-cost-summary ──
 @router.get("/finance/mtd-cost-summary")
-@cached(ttl=600, key_prefix="finance_mtd_cost_summary_v2")
+@cached(ttl=600, key_prefix="finance_mtd_cost_summary_v3")
 async def get_mtd_cost_summary(
     current_user: User = Depends(get_current_user),
     _perm: None = Depends(require_op("view_finance_reports")),
