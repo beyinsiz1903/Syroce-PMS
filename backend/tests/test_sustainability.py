@@ -10,12 +10,13 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from routers import sustainability as module
-from tests.unit.test_sustainability_isolation_http import _DB, _user
+from tests.unit.test_sustainability_isolation_http import _DB, _stay_metrics, _user
 
 
 @pytest.fixture
 def client(monkeypatch):
     monkeypatch.setattr(module, "db", _DB())
+    monkeypatch.setattr(module, "load_stay_night_metrics", _stay_metrics)
     app = FastAPI()
     app.include_router(module.router)
     app.dependency_overrides[module.get_current_user] = lambda: _user("hotel-a")

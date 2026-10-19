@@ -27,6 +27,7 @@ from core.database import db
 from core.security import get_current_user
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_op
+from modules.pms_core.stay_night_metrics import load_stay_night_metrics
 
 router = APIRouter(prefix="/api/sustainability", tags=["Sustainability"])
 
@@ -38,7 +39,6 @@ EMISSION_FACTORS = {
     "waste": {"name": "General Waste", "scope": 3, "unit": "kg", "factor": 0.450},
 }
 ALLOCATION = "Kayıt dönemi rapor dönemini aşıyorsa tüketim gün oranında bölüştürülür (tahmin)."
-NOT_OCCUPYING = ("cancelled", "no_show", "noshow")
 MAX_REPORT_DAYS = 366
 
 
@@ -126,17 +126,11 @@ async def list_records(current_user: User = Depends(get_current_user), _perm=Dep
 
 
 async def occupied_room_nights(tenant_id: str, start: date, end: date) -> int:
-    """Nights in [start, end] covered by the hotel's bookings that occupy a room."""
-    nights = 0
-    query = {"tenant_id": tenant_id, "status": {"$nin": list(NOT_OCCUPYING)},
-             "check_in": {"$lte": end.isoformat() + "T23:59:59.999999"}, "check_out": {"$gt": start.isoformat()}}
-    async for booking in db.bookings.find(query, {"_id": 0, "check_in": 1, "check_out": 1}):
-        arrive, depart = _day(booking.get("check_in")), _day(booking.get("check_out"))
-        if not arrive or not depart:
-            continue
-        first, last_exclusive = max(arrive, start), min(depart, date.fromordinal(end.toordinal() + 1))
-        nights += max(0, (last_exclusive - first).days)
-    return nights
+    """Actually occupied room-nights in [start, end], from the same stay-night
+    calculation as the occupancy reports: in-house statuses only, the actual
+    check-in/check-out instants, ISO or BSON dates on either booking edge."""
+    rows = await load_stay_night_metrics(db, tenant_id, start, end, actual_only=True)
+    return sum(int(row.get("occupied_rooms") or 0) for row in rows)
 
 
 @router.get("/report", response_model=ReportOut)

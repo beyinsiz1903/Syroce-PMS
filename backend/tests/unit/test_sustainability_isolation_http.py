@@ -12,6 +12,7 @@ from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
 from models.schemas import User
+from modules.pms_core.stay_night_metrics import OCCUPYING_STATUSES, calculate_stay_night_metrics
 from routers import sustainability as module
 
 
@@ -70,9 +71,18 @@ class _Coll:
 
 
 class _DB:
-    def __init__(self, bookings=None):
+    def __init__(self, bookings=None, rooms=None):
         self.sustainability_records = _Coll()
         self.bookings = _Coll(bookings)
+        self.rooms = _Coll(rooms)
+
+
+async def _stay_metrics(database, tenant_id, start, end, *, actual_only=False):
+    """The real stay-night calculation over the in-memory collections (the
+    Mongo query side is covered by tests/test_sustainability_room_nights_mongo)."""
+    rooms = [d for d in database.rooms.docs if d.get("tenant_id") == tenant_id]
+    bookings = [d for d in database.bookings.docs if d.get("tenant_id") == tenant_id and d.get("status") in OCCUPYING_STATUSES]
+    return calculate_stay_night_metrics(bookings, rooms, start, end, actual_only=actual_only)
 
 
 def _user(tenant_id, role="admin"):
@@ -82,11 +92,12 @@ def _user(tenant_id, role="admin"):
 @pytest.fixture
 def setup(monkeypatch):
     fake = _DB(bookings=[
-        {"tenant_id": "hotel-a", "status": "checked_out", "check_in": "2026-10-01T14:00:00", "check_out": "2026-10-03T11:00:00"},
-        {"tenant_id": "hotel-a", "status": "cancelled", "check_in": "2026-10-01", "check_out": "2026-10-05"},
-        {"tenant_id": "hotel-b", "status": "checked_out", "check_in": "2026-10-01", "check_out": "2026-10-10"},
-    ])
+        {"tenant_id": "hotel-a", "room_id": "a1", "status": "checked_out", "check_in": "2026-10-01T14:00:00", "check_out": "2026-10-03T11:00:00"},
+        {"tenant_id": "hotel-a", "room_id": "a2", "status": "cancelled", "check_in": "2026-10-01", "check_out": "2026-10-05"},
+        {"tenant_id": "hotel-b", "room_id": "b1", "status": "checked_out", "check_in": "2026-10-01", "check_out": "2026-10-10"},
+    ], rooms=[{"tenant_id": "hotel-a", "id": "a1"}, {"tenant_id": "hotel-a", "id": "a2"}, {"tenant_id": "hotel-b", "id": "b1"}])
     monkeypatch.setattr(module, "db", fake)
+    monkeypatch.setattr(module, "load_stay_night_metrics", _stay_metrics)
     app = FastAPI()
     app.include_router(module.router)
     return app, fake
