@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import axios from 'axios';
 import RevenueSection from '../RevenueSection';
@@ -69,5 +69,55 @@ describe('RevenueSection category currency handling', () => {
     />);
 
     expect(screen.getByText('Farklı para birimleri tek grafikte toplanmaz. Oda tipi analizi tablosunda tutarlar para birimi bazında ayrı gösterilir.')).toBeInTheDocument();
+  });
+
+  it('does not let an older date request replace the current category totals', async () => {
+    let oldResult, newResult;
+    axios.get.mockClear();
+    axios.get.mockImplementationOnce(() => new Promise(resolve => { oldResult = resolve; }))
+      .mockImplementationOnce(() => new Promise(resolve => { newResult = resolve; }));
+    render(<RevenueSection data={{}} s={{}} pc={{}} roomTypeData={[]} reportPeriod="daily" reportDate="2026-10-01" />);
+    await waitFor(() => expect(axios.get).toHaveBeenCalledTimes(1));
+    fireEvent.change(screen.getByLabelText('Kategori geliri bitiş tarihi'), { target: { value: '2026-10-02' } });
+    await waitFor(() => expect(axios.get).toHaveBeenCalledTimes(2));
+    expect(screen.getByText('Yükleniyor…')).toBeInTheDocument();
+    const data = total => ({ data: { rows: [{ category: 'room', count: 1, by_currency: { EUR: { total } } }] } });
+    await act(async () => newResult(data(444)));
+    expect(screen.getByText(text => text.replace(/\s/g, '') === '444,00€')).toBeInTheDocument();
+    await act(async () => oldResult(data(999)));
+    expect(screen.queryByText(text => text.replace(/\s/g, '') === '999,00€')).not.toBeInTheDocument();
+    expect(screen.getByText(text => text.replace(/\s/g, '') === '444,00€')).toBeInTheDocument();
+  });
+
+  it('does not show an older request error on a successfully refreshed period', async () => {
+    let rejectOld;
+    axios.get.mockImplementationOnce(() => new Promise((_, reject) => { rejectOld = reject; }));
+    render(<RevenueSection data={{}} s={{}} pc={{}} roomTypeData={[]} reportPeriod="daily" reportDate="2026-10-01" />);
+    fireEvent.change(screen.getByLabelText('Kategori geliri bitiş tarihi'), { target: { value: '2026-10-02' } });
+    await screen.findByText('Konaklama');
+    await act(async () => rejectOld(new Error('Old period unavailable')));
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.getByText('Konaklama')).toBeInTheDocument();
+  });
+
+  it('rejects an empty or reversed category period without calling the API', async () => {
+    axios.get.mockClear();
+    render(<RevenueSection data={{}} s={{}} pc={{}} roomTypeData={[]} reportPeriod="daily" reportDate="2026-10-01" />);
+    await screen.findByText('Konaklama');
+    fireEvent.change(screen.getByLabelText('Kategori geliri başlangıç tarihi'), { target: { value: '2026-10-02' } });
+    expect(await screen.findByRole('alert')).toHaveTextContent('Geçerli bir tarih aralığı');
+    expect(axios.get).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText('Konaklama')).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Kategori geliri başlangıç tarihi'), { target: { value: '' } });
+    expect(screen.getByRole('alert')).toHaveTextContent('Geçerli bir tarih aralığı');
+    expect(axios.get).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows a failed request as unavailable, not an empty report', async () => {
+    axios.get.mockRejectedValueOnce({ response: { data: { detail: 'Kaynak defter alınamadı' } } });
+    render(<RevenueSection data={{}} s={{}} pc={{}} roomTypeData={[]} reportPeriod="daily" reportDate="2026-10-01" />);
+    expect(await screen.findByRole('alert')).toHaveTextContent('Kaynak defter alınamadı');
+    expect(screen.getByText('Veri alınamadı.')).toBeInTheDocument();
+    expect(screen.queryByText('Bu tarih aralığında işlem yok')).not.toBeInTheDocument();
   });
 });

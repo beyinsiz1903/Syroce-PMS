@@ -51,9 +51,9 @@ export const KPICard = ({ title, value, currencyBreakdown, prevValue, prevCurren
   const displayVal = hasMixedCurrencies
     ? <div className="space-y-1.5 text-lg" data-testid="currency-breakdown">
         {currencyEntries.map(({ currency, formatted }) => (
-          <div key={currency} className="flex items-baseline justify-between gap-3">
+          <div key={currency} className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
             <span className="text-xs font-semibold tracking-wide text-slate-500">{currency}</span>
-            <span>{formatted}</span>
+            <span className="min-w-0 [overflow-wrap:anywhere]">{formatted}</span>
           </div>
         ))}
       </div>
@@ -77,7 +77,7 @@ export const KPICard = ({ title, value, currencyBreakdown, prevValue, prevCurren
     <KpiCard
       icon={Icon}
       label={title}
-      value={displayVal}
+      value={<div className="min-w-0 [overflow-wrap:anywhere]">{displayVal}</div>}
       sub={sub}
       intent={intent}
       data-testid={`kpi-${(title || '').toString().toLowerCase().replace(/\s+/g, '-')}`}

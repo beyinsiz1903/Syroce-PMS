@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -68,7 +68,15 @@ const CategoryRevenueCard = ({ reportDate, reportPeriod }) => {
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
+  const requestId = useRef(0);
   const load = useCallback(async () => {
+    const request = ++requestId.current;
+    setData(null);
+    if (!from || !to || from > to) {
+      setError('Geçerli bir tarih aralığı seçin; başlangıç bitişten sonra olamaz.');
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError('');
     try {
@@ -78,15 +86,16 @@ const CategoryRevenueCard = ({ reportDate, reportPeriod }) => {
           date_to: to
         }
       });
-      setData(res.data);
+      if (request === requestId.current) setData(res.data);
     } catch (e) {
-      setError(e.response?.data?.detail || 'Yüklenemedi');
-      setData(null);
+      if (request === requestId.current) setError(e.response?.data?.detail || 'Yüklenemedi');
+    } finally {
+      if (request === requestId.current) setLoading(false);
     }
-    setLoading(false);
   }, [from, to]);
   useEffect(() => {
     load();
+    return () => { requestId.current += 1; };
   }, [load]);
   useEffect(() => {
     setFrom(initialFrom);
@@ -96,18 +105,18 @@ const CategoryRevenueCard = ({ reportDate, reportPeriod }) => {
   const totals = data?.totals;
   return <Card>
       <CardHeader className="pb-3">
-        <CardTitle className="text-sm flex items-center justify-between">
+        <CardTitle className="text-sm flex flex-col sm:flex-row sm:flex-wrap items-start sm:items-center justify-between gap-3">
           <span>{t('cm.pages_reports_RevenueSection.kategori_bazli_gelir')}</span>
-          <div className="flex items-end gap-2">
-            <div>
+          <div className="grid grid-cols-2 gap-2 w-full sm:flex sm:w-auto sm:flex-wrap sm:items-end">
+            <div className="min-w-0">
               <Label className="text-[10px] text-gray-500">{t('cm.pages_reports_RevenueSection.baslangic')}</Label>
-              <Input type="date" value={from} onChange={e => setFrom(e.target.value)} className="h-8 text-xs w-36" />
+              <Input type="date" aria-label="Kategori geliri başlangıç tarihi" value={from} onChange={e => setFrom(e.target.value)} className="h-8 text-xs w-full min-w-0 sm:w-36" />
             </div>
-            <div>
+            <div className="min-w-0">
               <Label className="text-[10px] text-gray-500">{t('cm.pages_reports_RevenueSection.bitis')}</Label>
-              <Input type="date" value={to} onChange={e => setTo(e.target.value)} className="h-8 text-xs w-36" />
+              <Input type="date" aria-label="Kategori geliri bitiş tarihi" value={to} onChange={e => setTo(e.target.value)} className="h-8 text-xs w-full min-w-0 sm:w-36" />
             </div>
-            <Button size="sm" variant="outline" onClick={load} disabled={loading} className="h-8">
+            <Button size="sm" variant="outline" onClick={load} disabled={loading} className="h-8 col-span-2 sm:col-auto">
               <RefreshCw className={`w-3 h-3 mr-1 ${loading ? 'animate-spin' : ''}`} />
               {t('cm.pages_reports_RevenueSection.yenile')}
             </Button>
@@ -115,7 +124,7 @@ const CategoryRevenueCard = ({ reportDate, reportPeriod }) => {
         </CardTitle>
       </CardHeader>
       <CardContent>
-        {error && <div className="text-xs text-red-600 mb-2">{error}</div>}
+        {error && <div role="alert" className="text-xs text-red-600 mb-2">{error}</div>}
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
             <thead className="bg-gray-50 text-gray-600">
@@ -131,7 +140,7 @@ const CategoryRevenueCard = ({ reportDate, reportPeriod }) => {
               </tr>
             </thead>
             <tbody>
-              {rows.length === 0 ? <tr><td colSpan={8} className="text-center p-6 text-gray-400">{t('cm.pages_reports_RevenueSection.bu_tarih_araliginda_islem_yok')}</td></tr> : rows.map(r => <tr key={r.category} className="border-t">
+              {rows.length === 0 ? <tr><td colSpan={8} className="text-center p-6 text-gray-400">{loading ? 'Yükleniyor…' : error ? 'Veri alınamadı.' : t('cm.pages_reports_RevenueSection.bu_tarih_araliginda_islem_yok')}</td></tr> : rows.map(r => <tr key={r.category} className="border-t">
                   <td className="p-2 font-medium">{CATEGORY_LABELS[r.category] || r.category}</td>
                   <td className="p-2 text-right">{r.count}</td>
                   <td className="p-2 text-right"><CategoryMoney breakdown={r.by_currency} field="subtotal" fallback={r.subtotal} /></td>
@@ -183,7 +192,7 @@ const RevenueSection = ({
   const revenueTrendCurrency = [...revenueTrendCurrencies][0] || 'TRY';
   return <div className="space-y-6" data-testid="section-revenue">
     <SectionHeader title="Gelir Raporu" description={t('cm.pages_reports_RevenueSection.detayli_gelir_analizi_ve_trendler')} />
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
       <KPICard title="Seçili Gün Folyoya İşlenen Gelir" value={s.today_revenue} currencyBreakdown={s.today_revenue_by_currency} icon={ReceiptText} color="green" />
       <KPICard title={isDaily ? `Seçili Gün Oda Geliri (${s.room_revenue_source === 'posted' ? 'Folyoya İşlenen' : 'Tahakkuk'})` : 'Son 7 Gün Folyoya İşlenen Gelir'} value={isDaily ? s.today_room_revenue : pc.week_revenue} currencyBreakdown={isDaily ? s.today_room_revenue_by_currency : pc.week_revenue_by_currency} icon={Calendar} color="blue" />
       <KPICard title={isDaily ? 'Önceki Gün Folyoya İşlenen Gelir' : 'Son 30 Gün Folyoya İşlenen Gelir'} value={isDaily ? pc.prev_month_revenue : pc.month_revenue} currencyBreakdown={isDaily ? pc.prev_month_revenue_by_currency : pc.month_revenue_by_currency} prevValue={isDaily ? undefined : pc.prev_month_revenue} prevCurrencyBreakdown={pc.prev_month_revenue_by_currency} icon={TrendingUp} color="purple" />

@@ -49,4 +49,11 @@ describe('KPICard currency presentation', () => {
     render(<KPICard title="Gelir" value={200} currencyBreakdown={{ EUR: 200 }} prevValue={100} prevCurrencyBreakdown={{ EUR: 100 }} icon={DollarSign} />);
     expect(screen.getByText(/100.0%.*önceki dönem/)).toBeInTheDocument();
   });
+
+  it('allows long native-currency values to wrap instead of being clipped inside the card', () => {
+    render(<KPICard title="Gelir" value={1234567.89} currencyBreakdown={{ EUR: 1234567.89 }} icon={DollarSign} />);
+    const amount = screen.getByText(text => text.replace(/\s/g, '').includes('1.234.567,89'));
+    expect(amount).toHaveClass('[overflow-wrap:anywhere]');
+    expect(amount).not.toHaveClass('truncate');
+  });
 });
