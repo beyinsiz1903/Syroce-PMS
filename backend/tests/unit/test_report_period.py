@@ -21,10 +21,12 @@ def test_month_bounds_include_the_whole_last_day_and_cross_the_year():
 
 def test_midnight_belongs_to_the_day_it_starts():
     lower, upper = day_bounds(date(2026, 10, 19), date(2026, 10, 19), IST)
-    query = instant_between("t", lower, upper)
-    texts = query["$or"][0]["t"]
-    assert texts == {"$gte": "2026-10-18T21:00:00+00:00", "$lt": "2026-10-19T21:00:00+00:00"}
-    assert query["$or"][1]["t"] == {"$gte": lower, "$lt": upper}               # BSON dates too
+    assert lower == datetime(2026, 10, 18, 21, tzinfo=UTC) and upper == datetime(2026, 10, 19, 21, tzinfo=UTC)
+    prefilter, exact = instant_between("t", lower, upper)["$and"]
+    assert {"t": {"$gte": lower, "$lt": upper}} in prefilter["$or"]             # BSON dates (index)
+    # Text window wide enough for any offset (-12..+14); the exact test is on instants.
+    assert {"t": {"$gte": "2026-10-18T07:00:00", "$lt": "2026-10-20T11:00:00"}} in prefilter["$or"]
+    assert "$expr" in exact
     last_second = datetime(2026, 10, 19, 20, 59, 59, tzinfo=UTC)               # 23:59:59 local
     assert lower <= last_second < upper
     assert not (lower <= datetime(2026, 10, 19, 21, tzinfo=UTC) < upper)      # next local midnight

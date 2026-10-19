@@ -99,6 +99,18 @@ async def test_spa_summary_honors_bson_start_times(ledger_db):
     assert (await spa.daily_summary('2026-10-19', USER))['total'] == 1
 
 
+async def test_spa_day_compares_instants_not_offset_text(ledger_db):
+    """Review of #1371: '2026-10-19T22:00:00+03:00' sorted after the UTC
+    upper bound as text and was dropped; the 18 Oct one was let in."""
+    await ledger_db.tenant_settings.insert_one({'tenant_id': 'A', 'timezone': 'Europe/Istanbul'})
+    rows = [('in-late', '2026-10-19T22:00:00+03:00'), ('in-early', '2026-10-19T00:00:00+03:00'), ('in-utc', '2026-10-19T20:59:59.999999+00:00'),
+            ('in-naive-utc', '2026-10-18T21:00:00'), ('in-far-offset', '2026-10-20T09:00:00+14:00'),
+            ('out-prev', '2026-10-18T22:00:00+03:00'), ('out-next', '2026-10-20T00:00:00+03:00'), ('out-garbage', 'not a date')]
+    await ledger_db.spa_appointments.insert_many([{'tenant_id': 'A', 'id': i, 'starts_at': at, 'status': 'completed', 'price': 1, 'currency': 'EUR'} for i, at in rows])
+    result = await spa.daily_summary('2026-10-19', USER)
+    assert result['total'] == 5 and result['revenue_by_currency'] == {'EUR': 5}, result
+
+
 async def test_spa_invalid_date_is_a_client_error():
     try:
         await spa.daily_summary('bad', USER)
@@ -172,6 +184,22 @@ async def test_supplier_report_does_not_add_unconverted_po_currencies(ledger_db)
     result = await procurement.credit_utilisation_report(False, USER)
     row = result['items'][0]
     assert row.get('open_total') != 200 or row.get('open_total_by_currency') == {'EUR': 100, 'USD': 100}, row
+
+
+async def test_supplier_list_does_not_compare_a_lone_foreign_currency_to_the_limit(ledger_db):
+    """Review of #1371: TRY 100 limit, only an EUR 100 open order -> the list
+    sent open_commitment=100 and the screen showed 100 % used."""
+    await ledger_db.proc_suppliers.insert_many([
+        {'tenant_id': 'A', 'id': 'eur-only', 'name': 'EUR only', 'active': True, 'credit_limit': 100, 'currency': 'TRY'},
+        {'tenant_id': 'A', 'id': 'try-only', 'name': 'TRY only', 'active': True, 'credit_limit': 100, 'currency': 'TRY'}])
+    await ledger_db.proc_purchase_orders.insert_many([
+        {'tenant_id': 'A', 'supplier_id': 'eur-only', 'status': 'sent', 'grand_total': 100, 'currency': 'EUR'},
+        {'tenant_id': 'A', 'supplier_id': 'try-only', 'status': 'sent', 'grand_total': 40, 'currency': 'TRY'}])
+    list_suppliers = getattr(procurement.list_suppliers, '__wrapped__', procurement.list_suppliers)
+    rows = {row['id']: row for row in (await list_suppliers(True, None, True, USER))['items']}
+    assert rows['eur-only']['open_commitment'] is None
+    assert rows['eur-only']['limit_currency'] == 'TRY' and rows['eur-only']['open_commitment_unconverted'] == {'EUR': 100}
+    assert rows['try-only']['open_commitment'] == 40 and rows['try-only']['open_commitment_unconverted'] == {}
 
 
 async def test_hr_payroll_reads_every_attendance_record(ledger_db):

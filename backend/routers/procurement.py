@@ -163,15 +163,18 @@ async def list_suppliers(
     if with_commitment and items:
         # Per-supplier open PO commitment (sent / partially_received; the
         # create-PO guard also counts drafts) per currency, never added
-        # across currencies. ``open_commitment`` only when single-currency.
-        from modules.pms_core.report_money import single_amount
-
+        # across currencies. ``open_commitment`` is in the credit limit's
+        # currency and only when nothing is open in another currency — a
+        # lone EUR order is not comparable to a TRY limit either.
         by_supplier = await _open_po_by_currency(current_user.tenant_id, [s.get("id") for s in items if s.get("id")],
                                                  statuses=["sent", "partially_received"])
         for s in items:
             by_currency = by_supplier.get(s.get("id"), {})
+            view = _limit_view(s.get("credit_limit"), by_currency, await _limit_currency(current_user.tenant_id, s))
+            s["limit_currency"] = view["limit_currency"]
             s["open_commitment_by_currency"] = by_currency
-            s["open_commitment"] = single_amount(by_currency)
+            s["open_commitment_unconverted"] = view["unconverted_by_currency"]
+            s["open_commitment"] = None if view["unconverted_by_currency"] else view["open_total"]
     return {"items": items, "count": len(items)}
 
 

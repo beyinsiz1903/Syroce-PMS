@@ -43,11 +43,21 @@ def day_bounds(start: date, end: date, zone: ZoneInfo) -> tuple[datetime, dateti
     return lower, upper
 
 
+# Every UTC offset in use lies within -12:00..+14:00, so a stored local text
+# for an instant in [lower, upper) sorts inside this widened text window.
+_TEXT_SLACK_BEFORE = _TEXT_SLACK_AFTER = timedelta(hours=14)
+
+
 def instant_between(field: str, lower: datetime, upper: datetime) -> dict:
-    """``field`` in [lower, upper) whether stored as ISO text or BSON date."""
-    return {"$or": [
-        {field: {"$gte": lower.isoformat(), "$lt": upper.isoformat()}},
-        {field: {"$gte": lower, "$lt": upper}},
+    """``field`` in [lower, upper) as an instant: BSON dates, UTC text and text
+    with any offset ("2026-10-19T22:00:00+03:00"). Text is not compared as
+    text alone — "…22:00+03:00" sorts after "…21:00+00:00" yet is earlier."""
+    text_window = {"$gte": (lower - _TEXT_SLACK_BEFORE).strftime("%Y-%m-%dT%H:%M:%S"),
+                   "$lt": (upper + _TEXT_SLACK_AFTER).strftime("%Y-%m-%dT%H:%M:%S")}
+    instant = {"$convert": {"input": f"${field}", "to": "date", "onError": None, "onNull": None}}
+    return {"$and": [
+        {"$or": [{field: {"$gte": lower, "$lt": upper}}, {field: text_window}]},
+        {"$expr": {"$and": [{"$gte": [instant, lower]}, {"$lt": [instant, upper]}]}},
     ]}
 
 
