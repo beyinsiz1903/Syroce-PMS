@@ -1,16 +1,26 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import axios from 'axios';
+import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Leaf, Droplet, Zap, Trash2, FileText, Upload, RefreshCw } from 'lucide-react';
-import { fetchJsonWithRetry } from '@/lib/fetchRetry';
+import apiErrorText from '@/utils/apiErrorText';
 
-const BACKEND_URL = "";
+// Report period: the current calendar month by default (was fixed to July 2026).
+const pad = (n) => String(n).padStart(2, '0');
+const localDay = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+export const currentMonth = (now = new Date()) => ({
+  start: localDay(new Date(now.getFullYear(), now.getMonth(), 1)),
+  end: localDay(new Date(now.getFullYear(), now.getMonth() + 1, 0)),
+});
 
 export default function SustainabilityReport() {
   const [factors, setFactors] = useState([]);
   const [records, setRecords] = useState([]);
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState('');
+  const [period, setPeriod] = useState(currentMonth);
   const [activeTab, setActiveTab] = useState("report"); // 'report' or 'entry'
   
   // Form state
@@ -19,51 +29,47 @@ export default function SustainabilityReport() {
   const [formStart, setFormStart] = useState("");
   const [formEnd, setFormEnd] = useState("");
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     setLoading(true);
+    setLoadError('');
     try {
-      const f = await fetchJsonWithRetry(`${BACKEND_URL}/api/sustainability/factors`);
-      setFactors(f);
-      
-      const r = await fetchJsonWithRetry(`${BACKEND_URL}/api/sustainability/records`);
-      setRecords(r);
-      
-      // Default to July 2026 for demo purposes
-      const rep = await fetchJsonWithRetry(`${BACKEND_URL}/api/sustainability/report?start_date=2026-07-01&end_date=2026-07-31`);
-      setReport(rep);
+      const [f, r, rep] = await Promise.all([
+        axios.get('/sustainability/factors'),
+        axios.get('/sustainability/records'),
+        axios.get('/sustainability/report', { params: { start_date: period.start, end_date: period.end } }),
+      ]);
+      setFactors(f.data);
+      setRecords(r.data);
+      setReport(rep.data);
     } catch (error) {
-      console.error("Error fetching sustainability data", error);
+      // A failed load is an error, not an empty report.
+      setReport(null);
+      setLoadError(apiErrorText(error, 'Sürdürülebilirlik verileri yüklenemedi.'));
     } finally {
       setLoading(false);
     }
-  };
+  }, [period.start, period.end]);
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [fetchData]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!formAmount || !formStart || !formEnd) return;
     
     try {
-      await fetch(`${BACKEND_URL}/api/sustainability/records`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          consumption_type: formType,
-          period_start: formStart,
-          period_end: formEnd,
-          amount: parseFloat(formAmount),
-          
-        })
+      await axios.post('/sustainability/records', {
+        consumption_type: formType,
+        period_start: formStart,
+        period_end: formEnd,
+        amount: parseFloat(formAmount),
       });
-      // Clear form & refresh
       setFormAmount("");
       fetchData();
       setActiveTab("report");
     } catch (err) {
-      console.error(err);
+      toast.error(apiErrorText(err, 'Kayıt eklenemedi.'));
     }
   };
 
@@ -93,7 +99,7 @@ export default function SustainabilityReport() {
           onClick={() => setActiveTab("report")}
           className={`px-4 py-2 font-medium rounded-t-lg ${activeTab === 'report' ? 'bg-green-50 text-green-700 border-b-2 border-green-600' : 'text-slate-600 hover:bg-slate-50'}`}
         >
-          Rapor Özeti (Temmuz 2026)
+          Rapor Özeti ({period.start} – {period.end})
         </button>
         <button 
           onClick={() => setActiveTab("entry")}
@@ -102,6 +108,31 @@ export default function SustainabilityReport() {
           Veri Girişi & Kanıt Yükleme
         </button>
       </div>
+
+      {activeTab === "report" && (
+        <div className="flex flex-wrap items-end gap-3" data-testid="sustainability-period">
+          <label className="text-sm">Başlangıç
+            <input type="date" className="ml-2 rounded border px-2 py-1" value={period.start} max={period.end}
+              onChange={(e) => e.target.value && setPeriod((p) => ({ ...p, start: e.target.value }))} />
+          </label>
+          <label className="text-sm">Bitiş
+            <input type="date" className="ml-2 rounded border px-2 py-1" value={period.end} min={period.start}
+              onChange={(e) => e.target.value && setPeriod((p) => ({ ...p, end: e.target.value }))} />
+          </label>
+        </div>
+      )}
+
+      {activeTab === "report" && loadError && (
+        <div role="alert" className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700" data-testid="sustainability-error">
+          {loadError} <Button size="sm" variant="outline" className="ml-2" onClick={fetchData}>Tekrar dene</Button>
+        </div>
+      )}
+
+      {activeTab === "report" && report && report.prorated_record_count > 0 && (
+        <p className="rounded bg-amber-50 p-2 text-xs text-amber-800" data-testid="sustainability-allocation">
+          {report.prorated_record_count} kaydın dönemi rapor dönemini aşıyor; tüketimi gün oranında bölüştürüldü. {report.allocation}
+        </p>
+      )}
 
       {activeTab === "report" && report && (
         <div className="space-y-6">
@@ -130,8 +161,8 @@ export default function SustainabilityReport() {
             <Card className="bg-green-50 border-green-200">
               <CardContent className="p-6 text-center">
                 <p className="text-sm font-medium text-green-700">Oda Gece Başına Emisyon</p>
-                <h3 className="text-3xl font-bold text-green-700">{report.emissions_per_room_night.toLocaleString()}</h3>
-                <p className="text-xs text-green-600">kgCO2e / Oda-Gece (Total RN: {report.total_room_nights})</p>
+                <h3 className="text-3xl font-bold text-green-700" data-testid="sustainability-per-night">{report.emissions_per_room_night == null ? 'Hesaplanamaz' : report.emissions_per_room_night.toLocaleString()}</h3>
+                <p className="text-xs text-green-600">kgCO2e / Oda-Gece (dolu oda-gece: {report.total_room_nights}{report.total_room_nights === 0 ? ' — dönemde konaklama yok' : ''})</p>
               </CardContent>
             </Card>
           </div>
