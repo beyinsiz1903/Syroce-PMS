@@ -8,23 +8,27 @@ and booked room nights all refer to the same requested stay period.
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import UTC, date, datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
 from openpyxl.styles import Font, PatternFill
 
+from common.legacy_data_normalization import normalize_dimension_label, parse_utc_datetime
 from core.business_date_service import ensure_business_date_initialized
 from core.csv_safe import xlsx_safe
 from core.database import db
 from core.helpers import require_module
 from core.security import get_current_user
+from core.tenant_currency import get_tenant_currency
 from core.utils import create_excel_workbook, excel_response
 from models.schemas import User
-from modules.pms_core.report_money import currency_code, single_amount
+from modules.pms_core.report_money import add_amount, currency_code, rounded, rounded_totals, single_amount
 from modules.pms_core.reporting_dates import date_period_match
+from modules.pms_core.reservation_reporting import reservation_value
 from modules.pms_core.role_permission_service import require_op
+from modules.pms_core.stay_night_metrics import OCCUPYING_STATUSES, as_date, booking_nights
 
 try:
     from cache_manager import cached
@@ -44,12 +48,15 @@ _STATUS_LABELS = {
     "confirmed": "Onaylandı",
     "guaranteed": "Garantili",
     "checked_in": "Giriş yaptı",
+    "in_house": "Otelde",
     "checked_out": "Çıkış yaptı",
     "cancelled": "İptal",
     "canceled": "İptal",
     "no_show": "No-show",
     "noshow": "No-show",
     "pending": "Bekliyor",
+    "draft": "Taslak",
+    "tentative": "Opsiyon",
 }
 _LEAD_TIME_BUCKETS = (
     ("same_day", "Aynı gün", 0, 0),
@@ -62,29 +69,17 @@ _LEAD_TIME_BUCKETS = (
 
 
 def _parse_datetime(value: Any) -> datetime | None:
-    if isinstance(value, datetime):
-        return value.replace(tzinfo=value.tzinfo or UTC)
-    if not value:
-        return None
-    try:
-        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-    except (TypeError, ValueError):
-        return None
-    return parsed.replace(tzinfo=parsed.tzinfo or UTC)
+    return parse_utc_datetime(value)
 
 
 def _parse_date(value: str, field: str) -> date:
     try:
-        return date.fromisoformat(value)
+        parsed = date.fromisoformat(value)
+        if parsed.isoformat() != value or parsed == date.max:
+            raise ValueError("Noncanonical or unbounded report date")
+        return parsed
     except (TypeError, ValueError) as exc:
         raise HTTPException(status_code=422, detail=f"{field} YYYY-MM-DD formatında olmalı") from exc
-
-
-def _amount(value: Any) -> float:
-    try:
-        return float(value or 0)
-    except (TypeError, ValueError):
-        return 0.0
 
 
 def _status(booking: dict[str, Any]) -> str:
@@ -92,7 +87,7 @@ def _status(booking: dict[str, Any]) -> str:
 
 
 def _channel(booking: dict[str, Any]) -> str:
-    return str(booking.get("ota_channel") or booking.get("source_channel") or booking.get("channel") or booking.get("source") or "direct").strip() or "direct"
+    return normalize_dimension_label(booking.get("ota_channel") or booking.get("source_channel") or booking.get("channel") or booking.get("source"))
 
 
 def _lead_time_bucket(days: int) -> str:
@@ -111,12 +106,12 @@ async def _resolve_report_dates(*, tenant_id: str, start_date: str | None, end_d
     start = _parse_date(start_date, "start_date") if start_date else end - timedelta(days=29)
     if start > end:
         raise HTTPException(status_code=422, detail="Başlangıç tarihi bitiş tarihinden sonra olamaz")
-    if (end - start).days > 366:
+    if (end - start).days >= 366:
         raise HTTPException(status_code=422, detail="Rezervasyon raporu en fazla 366 günlük aralıkta alınabilir")
     return start, end
 
 
-def aggregate_reservation_performance(bookings: list[dict[str, Any]], *, start_date: date, end_date: date) -> dict[str, Any]:
+def aggregate_reservation_performance(bookings: list[dict[str, Any]], *, start_date: date, end_date: date, fallback_currency: str = "TRY") -> dict[str, Any]:
     """Return a stable, display-ready reservation-report payload.
 
     Dates are parsed in Python as old import data can contain either ISO
@@ -131,19 +126,25 @@ def aggregate_reservation_performance(bookings: list[dict[str, Any]], *, start_d
 
     commercial_count = cancelled_count = no_show_count = 0
     total_nights = lead_time_total = lead_time_count = 0.0
-    booked_revenue_by_currency: dict[str, float] = defaultdict(float)
-    cancelled_value_by_currency: dict[str, float] = defaultdict(float)
+    booked_revenue_by_currency: dict = {}
+    cancelled_value_by_currency: dict = {}
+    quality = {"invalid_stays": 0, "invalid_amounts": 0, "invalid_lead_times": 0}
 
     for booking in bookings:
         status = _status(booking)
         channel = _channel(booking)
-        check_in = _parse_datetime(booking.get("check_in"))
-        check_out = _parse_datetime(booking.get("check_out"))
+        check_in = as_date(booking.get("check_in"))
+        check_out = as_date(booking.get("check_out"))
+        if check_in and not start_date <= check_in <= end_date:
+            continue
         created_at = _parse_datetime(booking.get("created_at") or booking.get("reservation_date"))
-        amount = _amount(booking.get("total_amount"))
-        currency = currency_code(booking.get("currency"))
-        nights = max((check_out.date() - check_in.date()).days, 0) if check_in and check_out else 0
+        amount = reservation_value(booking)
+        currency = currency_code(booking.get("currency"), fallback_currency)
+        nights = booking_nights(booking)
         is_non_commercial = status in _NON_COMMERCIAL_STATUSES
+        is_commercial = status in OCCUPYING_STATUSES and nights > 0
+        quality["invalid_stays"] += int(not nights)
+        quality["invalid_amounts"] += int(amount is None)
 
         status_counts[status] += 1
         stat = channel_stats.setdefault(
@@ -154,63 +155,68 @@ def aggregate_reservation_performance(bookings: list[dict[str, Any]], *, start_d
 
         if is_non_commercial:
             stat["cancelled"] += 1
-            cancelled_value_by_currency[currency] += amount
+            if amount is not None:
+                add_amount(cancelled_value_by_currency, currency, amount)
             if status in {"no_show", "noshow"}:
                 no_show_count += 1
             else:
                 cancelled_count += 1
-        else:
+        elif is_commercial:
             commercial_count += 1
             stat["commercial_bookings"] += 1
             stat["nights"] += nights
-            stat["revenue"] += amount
-            stat["revenue_by_currency"][currency] = stat["revenue_by_currency"].get(currency, 0.0) + amount
+            if amount is not None:
+                add_amount(stat["revenue_by_currency"], currency, amount)
+                add_amount(booked_revenue_by_currency, currency, amount)
             total_nights += nights
-            booked_revenue_by_currency[currency] += amount
 
         lead_days: int | None = None
         if check_in and created_at:
-            lead_days = max((check_in.date() - created_at.date()).days, 0)
-            lead_counts[_lead_time_bucket(lead_days)] += 1
-            lead_time_total += lead_days
-            lead_time_count += 1
+            candidate = (check_in - created_at.date()).days
+            if candidate >= 0:
+                lead_days = candidate
+                lead_counts[_lead_time_bucket(lead_days)] += 1
+                lead_time_total += lead_days
+                lead_time_count += 1
+            else:
+                quality["invalid_lead_times"] += 1
 
-        if check_in and start_date <= check_in.date() <= end_date:
-            day = check_in.date().isoformat()
+        if check_in:
+            day = check_in.isoformat()
             daily = arrival_days.setdefault(day, {"date": day, "reservations": 0, "commercial_reservations": 0, "revenue": 0.0, "revenue_by_currency": {}})
             daily["reservations"] += 1
-            if not is_non_commercial:
+            if is_commercial:
                 daily["commercial_reservations"] += 1
-                daily["revenue"] += amount
-                daily["revenue_by_currency"][currency] = daily["revenue_by_currency"].get(currency, 0.0) + amount
+                if amount is not None:
+                    add_amount(daily["revenue_by_currency"], currency, amount)
 
         rows.append(
             {
                 "booking_id": str(booking.get("id") or ""),
                 "guest_name": str(booking.get("guest_name") or "Misafir"),
                 "room_number": str(booking.get("room_number") or "-"),
-                "check_in": check_in.date().isoformat() if check_in else str(booking.get("check_in") or ""),
-                "check_out": check_out.date().isoformat() if check_out else str(booking.get("check_out") or ""),
+                "check_in": check_in.isoformat() if check_in else str(booking.get("check_in") or ""),
+                "check_out": check_out.isoformat() if check_out else str(booking.get("check_out") or ""),
                 "status": status,
                 "status_label": _STATUS_LABELS.get(status, status.replace("_", " ").title()),
                 "channel": channel,
-                "total_amount": round(amount, 2),
+                "total_amount": rounded(amount) if amount is not None else None,
                 "currency": currency,
                 "nights": nights,
                 "lead_time_days": lead_days,
             }
         )
 
-    total = len(bookings)
+    total = len(rows)
     status_breakdown = [
         {"status": key, "label": _STATUS_LABELS.get(key, key.replace("_", " ").title()), "count": count} for key, count in sorted(status_counts.items(), key=lambda item: (-item[1], item[0]))
     ]
     channels = sorted(channel_stats.values(), key=lambda item: (-item["bookings"], item["channel"].lower()))
     for item in channels:
-        item["revenue_by_currency"] = {key: round(value, 2) for key, value in item["revenue_by_currency"].items()}
+        item["revenue_by_currency"] = rounded_totals(item["revenue_by_currency"])
         item["revenue"] = single_amount(item["revenue_by_currency"])
     for daily in arrival_days.values():
-        daily["revenue_by_currency"] = {key: round(value, 2) for key, value in daily["revenue_by_currency"].items()}
+        daily["revenue_by_currency"] = rounded_totals(daily["revenue_by_currency"])
         daily["revenue"] = single_amount(daily["revenue_by_currency"])
     lead_time_breakdown = [{"bucket": key, "label": label, "count": lead_counts[key]} for key, label, *_ in _LEAD_TIME_BUCKETS]
     rows.sort(key=lambda row: (row["check_in"], row["guest_name"], row["booking_id"]))
@@ -218,11 +224,14 @@ def aggregate_reservation_performance(bookings: list[dict[str, Any]], *, start_d
     return {
         "start_date": start_date.isoformat(),
         "end_date": end_date.isoformat(),
+        "currency": currency_code(fallback_currency),
+        "data_quality": quality,
+        "revenue_basis": "current_valid_reservation_value_not_posted_revenue_or_collection",
         "summary": {
             "total_bookings": total,
             "commercial_bookings": commercial_count,
             "booked_revenue": single_amount(booked_revenue_by_currency),
-            "booked_revenue_by_currency": {key: round(value, 2) for key, value in booked_revenue_by_currency.items()},
+            "booked_revenue_by_currency": rounded_totals(booked_revenue_by_currency),
             "total_room_nights": int(total_nights),
             "average_stay": round(total_nights / commercial_count, 2) if commercial_count else 0.0,
             "average_lead_time": round(lead_time_total / lead_time_count, 1) if lead_time_count else 0.0,
@@ -230,7 +239,7 @@ def aggregate_reservation_performance(bookings: list[dict[str, Any]], *, start_d
             "no_show_count": no_show_count,
             "cancellation_rate": round((cancelled_count / total) * 100, 1) if total else 0.0,
             "cancelled_value": single_amount(cancelled_value_by_currency),
-            "cancelled_value_by_currency": {key: round(value, 2) for key, value in cancelled_value_by_currency.items()},
+            "cancelled_value_by_currency": rounded_totals(cancelled_value_by_currency),
         },
         "status_breakdown": status_breakdown,
         "channel_breakdown": channels,
@@ -259,6 +268,9 @@ async def _reservation_performance_payload(*, tenant_id: str, start_date: date, 
         "source": 1,
         "ota_channel": 1,
         "total_amount": 1,
+        "total": 1,
+        "rate_per_night": 1,
+        "is_complimentary": 1,
         "currency": 1,
         "created_at": 1,
         "reservation_date": 1,
@@ -270,11 +282,12 @@ async def _reservation_performance_payload(*, tenant_id: str, start_date: date, 
         },
         projection,
     ).to_list(None)
-    return aggregate_reservation_performance(bookings, start_date=start_date, end_date=end_date)
+    currency, _ = await get_tenant_currency(tenant_id)
+    return aggregate_reservation_performance(bookings, start_date=start_date, end_date=end_date, fallback_currency=currency)
 
 
 @sub_router.get("/reports/reservation-performance")
-@cached(ttl=180, key_prefix="report_reservation_performance")
+@cached(ttl=180, key_prefix="report_reservation_performance_v2")
 async def get_reservation_performance_report(
     start_date: str | None = None,
     end_date: str | None = None,
@@ -300,14 +313,18 @@ async def export_reservation_performance_excel(
     summary = payload["summary"]
     data = [
         ["Toplam rezervasyon", summary["total_bookings"]],
-        ["Gelir getiren rezervasyon", summary["commercial_bookings"]],
-        ["Rezerve gelir", " · ".join(f"{amount:.2f} {currency}" for currency, amount in summary["booked_revenue_by_currency"].items())],
+        ["Geçerli rezervasyon", summary["commercial_bookings"]],
+        ["Geçerli rezervasyon bedeli", " · ".join(f"{amount:.2f} {currency}" for currency, amount in summary["booked_revenue_by_currency"].items())],
         ["Oda/gece", summary["total_room_nights"]],
         ["Ortalama konaklama", summary["average_stay"]],
         ["Ortalama rezervasyon süresi", summary["average_lead_time"]],
         ["İptal", summary["cancelled_count"]],
         ["No-show", summary["no_show_count"]],
         ["İptal oranı %", summary["cancellation_rate"]],
+        ["Hesaplama", "Geçerli durum ve konaklamalar; ücretsiz odaların bedeli sıfır. Tahsilat veya muhasebeleşmiş gelir değildir. Dövizler çevrilmez."],
+        ["Geçersiz konaklama", payload["data_quality"]["invalid_stays"]],
+        ["Hesaplanamayan tutar", payload["data_quality"]["invalid_amounts"]],
+        ["Geçersiz rezervasyon süresi", payload["data_quality"]["invalid_lead_times"]],
     ]
     workbook = create_excel_workbook(
         title=f"Rezervasyon Performansı ({start.isoformat()} - {end.isoformat()})",
@@ -332,7 +349,7 @@ async def export_reservation_performance_excel(
 
     add_sheet(
         "Kanallar",
-        ["Kanal", "Rezervasyon", "Gelir getiren", "Gece", "Rezerve gelir", "İptal/No-show"],
+        ["Kanal", "Rezervasyon", "Geçerli", "Gece", "Geçerli rezervasyon bedeli", "İptal/No-show"],
         [[item["channel"], item["bookings"], item["commercial_bookings"], item["nights"], " · ".join(f"{amount:.2f} {currency}" for currency, amount in item["revenue_by_currency"].items()), item["cancelled"]] for item in payload["channel_breakdown"]],
     )
     add_sheet(
