@@ -20,6 +20,7 @@ from pydantic import BaseModel
 from cache_manager import cached
 from core.database import db
 from core.helpers import require_super_admin_guard
+from core.outbox_configuration import BOOKING_AVAILABILITY_EVENTS, CONFIGURATION_ERROR_PATTERN, booking_configuration_readiness, is_configuration_failure
 from core.outbox_service import STATUS_FAILED, STATUS_PENDING, STATUS_RETRY
 
 logger = logging.getLogger("routers.outbox_admin")
@@ -42,6 +43,7 @@ class RequeueResponse(BaseModel):
 class ReplayResponse(BaseModel):
     success: bool
     requeued_count: int
+    blocked_count: int = 0
     message: str
 
 
@@ -174,15 +176,37 @@ async def list_outbox_events(
     }
 
 
+@outbox_admin_router.get("/{event_id}/readiness")
+async def outbox_requeue_readiness(event_id: str):
+    event = await db.outbox_events.find_one({"id": event_id}, {"_id": 0})
+    if not event:
+        raise HTTPException(404, "Outbox olayı bulunamadı")
+    readiness = await booking_configuration_readiness(event) if is_configuration_failure(event) else {
+        "ready": True, "issues": [], "providers": [],
+    }
+    return {"event_id": event_id, **readiness,
+            "can_requeue": readiness["ready"] and event.get("status") in {STATUS_FAILED, STATUS_RETRY},
+            "note": "Bu kontrol mesaj göndermez ve teslimat kanıtı değildir; yalnız kayıtlı yapılandırmayı kontrol eder."}
+
+
 @outbox_admin_router.post("/{event_id}/requeue", response_model=RequeueResponse)
 async def requeue_event(event_id: str):
     """Requeue a single failed event for retry."""
     now = datetime.now(UTC).isoformat()
+    event = await db.outbox_events.find_one({"id": event_id, "status": {"$in": [STATUS_FAILED, STATUS_RETRY]}}, {"_id": 0})
+    if not event:
+        raise HTTPException(404, "Outbox olayı bulunamadı veya yeniden denemeye uygun değil")
+    if is_configuration_failure(event):
+        readiness = await booking_configuration_readiness(event)
+        if not readiness["ready"]:
+            raise HTTPException(409, "Önce kanal/oda eşleştirmesini düzeltin: " + ", ".join(readiness["issues"]))
 
     result = await db.outbox_events.find_one_and_update(
         {
             "id": event_id,
             "status": {"$in": [STATUS_FAILED, STATUS_RETRY]},
+            "tenant_id": event.get("tenant_id"),
+            "last_error": event.get("last_error"),
         },
         {
             "$set": {
@@ -192,6 +216,7 @@ async def requeue_event(event_id: str):
                 "attempt_count": 0,
                 "last_error": None,
                 "requeued_at": now,
+                "requeue_previous_error": event.get("last_error"),
             },
         },
         projection={"_id": 0, "id": 1},
@@ -225,6 +250,12 @@ async def replay_failed_events(
     if tenant_id:
         query["tenant_id"] = tenant_id
 
+    # Bulk replay must not bypass the per-event mapping preflight. Retain these
+    # failures until an operator repairs and explicitly checks each one.
+    configuration_failures = {"event_type": {"$in": list(BOOKING_AVAILABILITY_EVENTS)},
+                              "last_error": {"$regex": CONFIGURATION_ERROR_PATTERN}}
+    blocked_count = await db.outbox_events.count_documents({**query, **configuration_failures})
+    query["$nor"] = [configuration_failures]
     result = await db.outbox_events.update_many(
         query,
         {
@@ -249,5 +280,6 @@ async def replay_failed_events(
     return ReplayResponse(
         success=True,
         requeued_count=count,
-        message=f"{count} failed events requeued for retry",
+        blocked_count=blocked_count,
+        message=f"{count} olay kuyruğa alındı. {blocked_count} yapılandırma hatası önce tekil kontrol ve eşleştirme düzeltmesi bekliyor.",
     )

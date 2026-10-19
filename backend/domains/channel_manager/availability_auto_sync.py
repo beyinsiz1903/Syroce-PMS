@@ -25,6 +25,15 @@ from core.tenant_db import clear_tenant_context, set_tenant_context
 logger = logging.getLogger("channel_manager.availability_auto_sync")
 
 
+def _exely_wire_pair(mapping: dict) -> tuple[str, str]:
+    api_room = str(mapping.get("pms_api_room_code") or "").strip()
+    api_rate = str(mapping.get("pms_api_rate_plan_code") or "").strip()
+    if api_room and api_rate:
+        return api_room, api_rate
+    return (str(mapping.get("exely_room_code") or "").strip(),
+            str(mapping.get("exely_rate_plan_code") or "").strip())
+
+
 async def _load_authoritative_availability(
     tenant_id: str,
     room_type: str,
@@ -212,23 +221,13 @@ async def _push_to_exely(
         # warning 783 for 5003299/10009740.  Keep the configured ARI pair, and
         # use its explicit PMS API pair for the SOAP availability mutation.
         # Never combine one API alias with one non-API identifier.
-        def wire_pair(mapping):
-            api_room = str(mapping.get("pms_api_room_code") or "").strip()
-            api_rate = str(mapping.get("pms_api_rate_plan_code") or "").strip()
-            if api_room and api_rate:
-                return api_room, api_rate
-            return (
-                str(mapping.get("exely_room_code") or "").strip(),
-                str(mapping.get("exely_rate_plan_code") or "").strip(),
-            )
-
         # Inventory is room-type-wide. Sending the same inventory via multiple
         # rate plans can duplicate a booking decrement (and violates Exely's
         # certification request for one availability mapping per room type).
         seen_pairs = set()
         unique_mappings = []
         for mapping in mappings:
-            pair = wire_pair(mapping)
+            pair = _exely_wire_pair(mapping)
             rc, rp_code = pair
             if rc and rp_code and pair not in seen_pairs:
                 seen_pairs.add(pair)
@@ -236,12 +235,14 @@ async def _push_to_exely(
         if len(unique_mappings) > 1:
             logger.error("[AVAIL-AUTO-SYNC] Exely multiple availability mappings for room_type=%s", pms_room_type)
             return {"configured": True, "queued_operations": 0, "errors": ["exely_multiple_availability_mappings"]}
+        if not unique_mappings:
+            return {"configured": True, "queued_operations": 0, "errors": ["exely_room_mapping_incomplete"]}
 
         # Her mapping ve rate plan için push et
         push_count = 0
         errors = []
         for mapping in unique_mappings:
-            exely_room_code, rp_code = wire_pair(mapping)
+            exely_room_code, rp_code = _exely_wire_pair(mapping)
             if not exely_room_code or not rp_code:
                 continue
 
@@ -317,6 +318,8 @@ async def _push_to_hotelrunner(
                 seen_inv_codes.add(ic)
                 unique_mappings.append(mapping)
 
+        if not unique_mappings:
+            return {"configured": True, "queued_operations": 0, "errors": ["hotelrunner_room_mapping_incomplete"]}
         push_count = 0
         errors = []
         for mapping in unique_mappings:

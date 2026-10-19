@@ -72,6 +72,8 @@ export default function WebhookOutboxAdmin({ user, tenant, onLogout }) {
   const [deliveries, setDeliveries] = useState([]);
   const [deliveryFilter, setDeliveryFilter] = useState("retrying");
   const [loading, setLoading] = useState(false);
+  const [readiness, setReadiness] = useState({});
+  const [checkingEvent, setCheckingEvent] = useState(null);
 
   // Status cards her zaman gerekli, sekme/filtre bağımlılığı yok.
   // Tab listeleri ise sadece aktif sekmede + ilgili filtre değişiminde yüklenir.
@@ -140,7 +142,20 @@ export default function WebhookOutboxAdmin({ user, tenant, onLogout }) {
   useEffect(() => { if (tab === "dlq") loadDlq(); }, [tab, loadDlq]);
   useEffect(() => { if (tab === "deliveries") loadDeliveries(); }, [tab, loadDeliveries]);
 
+  const checkReadiness = async (eventId) => {
+    setCheckingEvent(eventId);
+    try {
+      const r = await axios.get(`/outbox/${encodeURIComponent(eventId)}/readiness`);
+      setReadiness((previous) => ({ ...previous, [eventId]: r.data }));
+    } catch {
+      setReadiness((previous) => ({ ...previous, [eventId]: { can_requeue: false, issues: ['Kontrol tamamlanamadı. Yeniden deneyin.'] } }));
+    } finally {
+      setCheckingEvent(null);
+    }
+  };
+
   const handleRequeue = async (eventId) => {
+    if (!await confirmDialog({ message: 'Bu olay kuyruğa alınacak ve worker kanala yeniden gönderim deneyebilecek. Devam edilsin mi?' })) return;
     try {
       await axios.post(`/outbox/${eventId}/requeue`);
       toast.success("Olay tekrar kuyruğa alındı");
@@ -154,7 +169,8 @@ export default function WebhookOutboxAdmin({ user, tenant, onLogout }) {
     if (!await confirmDialog({ message: "Tüm başarısız olayları tekrar kuyruğa almak istiyor musunuz?" })) return;
     try {
       const r = await axios.post("/outbox/replay");
-      toast.success(`${r.data.requeued_count} olay tekrar kuyruğa alındı`);
+      if (r.data.blocked_count > 0) toast.warning(r.data.message);
+      else toast.success(`${r.data.requeued_count} olay tekrar kuyruğa alındı`);
       loadAll();
     } catch (e) {
       toast.error("Replay başarısız: " + (e?.response?.data?.detail || e?.message));
@@ -370,11 +386,19 @@ export default function WebhookOutboxAdmin({ user, tenant, onLogout }) {
                               {String(ev.last_error).slice(0, 240)}
                             </div>
                           )}
+                          {readiness[ev.id] && <div role="status" className="mt-2 text-xs text-slate-700">
+                            {readiness[ev.id].can_requeue ? 'Yapılandırma kontrolü geçti. Bu sonuç teslimat kanıtı değildir.' : `Önce düzeltin: ${(readiness[ev.id].issues || []).join(', ')}`}
+                          </div>}
                         </div>
                         {(ev.status === "failed" || ev.status === "retry") && (
-                          <Button onClick={() => handleRequeue(ev.id)} size="sm" variant="outline">
-                            <RotateCcw className="w-3.5 h-3.5 mr-1.5" aria-hidden="true" /> Requeue
-                          </Button>
+                          <div className="flex flex-col gap-2">
+                            <Button onClick={() => checkReadiness(ev.id)} size="sm" variant="outline" disabled={checkingEvent !== null}>
+                              Yapılandırmayı kontrol et
+                            </Button>
+                            <Button onClick={() => handleRequeue(ev.id)} size="sm" variant="outline" disabled={!readiness[ev.id]?.can_requeue}>
+                              <RotateCcw className="w-3.5 h-3.5 mr-1.5" aria-hidden="true" /> Requeue
+                            </Button>
+                          </div>
                         )}
                       </div>
                     </div>
