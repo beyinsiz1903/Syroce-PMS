@@ -98,6 +98,7 @@ export default function InventoryTransferHistory() {
             <div className="ml-auto text-sm text-slate-500" data-testid="transfer-count">
               {!error && (totalCount > count ? `${count} / ${totalCount} (ilk ${DEFAULT_LIMIT} belge)` : count)}{' '}{!error && t("cm.pages_InventoryTransferHistory.transfer")}</div>
           </div>
+          <p className="mt-3 text-xs text-slate-500">Tarih filtresi transfer belgesinin ilk geçerli hareket tarihine göre çalışır; giriş ve çıkış farklı günlerde olsa da belge bütün olarak gösterilir.</p>
         </CardContent>
       </Card>
 

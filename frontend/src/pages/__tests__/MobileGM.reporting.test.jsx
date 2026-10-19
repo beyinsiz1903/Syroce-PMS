@@ -8,11 +8,11 @@ vi.mock('react-router-dom', () => ({ useNavigate: () => vi.fn() }));
 vi.mock('sonner', () => ({ toast: { error: vi.fn() } }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: key => key }) }));
 
-function mockApi({ tasksFail = false } = {}) {
+function mockApi({ tasksFail = false, ar = {} } = {}) {
   axios.get.mockImplementation((url) => {
     if (url.startsWith('/reports/daily-flash')) return Promise.resolve({ data: { date: '2026-09-15', occupancy: { occupancy_rate: 75, occupied_rooms: 3, total_rooms: 4 },
       revenue: { total_revenue: 0, total_revenue_by_currency: { EUR: 25.75, TRY: 1000.49 }, adr_by_currency: { EUR: 12.25 }, rev_par_by_currency: { EUR: 6.25 } } } });
-    if (url.startsWith('/reports/finance-snapshot')) return Promise.resolve({ data: { pending_ar: { total: null, by_currency: { EUR: { total: 42.50 } } },
+    if (url.startsWith('/reports/finance-snapshot')) return Promise.resolve({ data: { pending_ar: { total: null, by_currency: { EUR: { total: 42.50 } }, ...ar },
       todays_collections: { amount: 321.45, currency: 'TRY', payment_count: 1 }, mtd_collections: { amount: 1000.55, currency: 'TRY', collection_rate_percentage: 50 } } });
     if (url === '/pms/staff-tasks?limit=5') return tasksFail ? Promise.reject(new Error('forbidden')) : Promise.resolve({ data: { tasks: [{ id: '1', title: 'Oda kontrolü' }] } });
     return Promise.resolve({ data: {} });
@@ -49,5 +49,20 @@ describe('MobileGM report response mapping', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Yenile' }));
     await waitFor(() => expect(axios.get).toHaveBeenCalledWith('/reports/finance-snapshot?nocache=1'));
     expect(axios.get).toHaveBeenCalledWith('/reports/daily-flash?nocache=1');
+  });
+
+  it('does not display a partial balance as the complete receivable total', async () => {
+    mockApi({ ar: { complete: false, failed_folio_ids: ['bad'] } });
+    render(<MobileGM user={{}} tenant={{ id: 't' }} />);
+    expect(await screen.findByText('Veri eksik')).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('toplam eksik');
+    expect(screen.queryByText(/42,50/)).not.toBeInTheDocument();
+  });
+
+  it('shows native debt alongside a mixed-ledger reconciliation warning', async () => {
+    mockApi({ ar: { complete: true, mixed_ledger_folio_ids: ['mixed'] } });
+    render(<MobileGM user={{}} tenant={{ id: 't' }} />);
+    expect(await screen.findByText(/42,50/)).toBeInTheDocument();
+    expect(screen.getByText(/1 folyoda farklı döviz bakiyeleri/)).toHaveTextContent('mahsup edilmedi');
   });
 });

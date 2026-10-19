@@ -33,6 +33,12 @@ const MobileGM = ({ user, tenant, embedded = false }) => {
   const [loading, setLoading] = useState(true);
   const [dailyFlash, setDailyFlash] = useState(null);
   const [financeSnapshot, setFinanceSnapshot] = useState(null);
+  const arIncomplete = financeSnapshot?.pending_ar?.complete === false;
+  const mixedLedgerCount = financeSnapshot?.pending_ar?.mixed_ledger_folio_ids?.length || 0;
+  const arDisplay = arIncomplete ? 'Veri eksik' : financeSnapshot ? formatCurrencyBreakdown(
+    Object.fromEntries(Object.entries(financeSnapshot.pending_ar?.by_currency || {}).map(([code, bucket]) => [code, bucket.total])),
+    financeSnapshot.pending_ar?.total,
+  ) : '—';
   const [roomStatus, setRoomStatus] = useState(null);
   const [staffTasks, setStaffTasks] = useState([]);
   const [loadErrors, setLoadErrors] = useState([]);
@@ -332,14 +338,16 @@ const MobileGM = ({ user, tenant, embedded = false }) => {
 
           <Card className="bg-gradient-to-br from-amber-50 to-amber-100 border-amber-200">
             <CardContent className="p-4">
-              <div className="flex items-center justify-between">
+              <div className="relative">
                 <div>
                   <p className="text-xs text-amber-600 font-medium">BEKLEYEN AR</p>
-                  <p className="text-2xl font-bold text-amber-700">
-                    {financeSnapshot ? formatCurrencyBreakdown(Object.fromEntries(Object.entries(financeSnapshot.pending_ar?.by_currency || {}).map(([code, bucket]) => [code, bucket.total])), financeSnapshot.pending_ar?.total) : '—'}
+                  <p className={`${arIncomplete ? 'text-lg' : 'text-2xl'} font-bold text-amber-700`}>
+                    {arDisplay}
                   </p>
+                  {arIncomplete && <p className="mt-1 text-xs text-rose-700" role="alert">Bazı folyo bakiyeleri okunamadı; toplam eksik.</p>}
+                  {!arIncomplete && mixedLedgerCount > 0 && <p className="mt-1 text-xs text-amber-700">{mixedLedgerCount} folyoda farklı döviz bakiyeleri var; birbirinden mahsup edilmedi.</p>}
                 </div>
-                <AlertCircle className="w-10 h-10 text-amber-300" />
+                <AlertCircle className="absolute right-0 top-0 w-5 h-5 text-amber-300" />
               </div>
             </CardContent>
           </Card>
@@ -623,7 +631,7 @@ const MobileGM = ({ user, tenant, embedded = false }) => {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-600">Bekleyen Alacaklar:</span>
-                  <span className="font-bold text-amber-700">{formatCurrencyBreakdown(Object.fromEntries(Object.entries(financeSnapshot?.pending_ar?.by_currency || {}).map(([code, bucket]) => [code, bucket.total])), financeSnapshot?.pending_ar?.total)}</span>
+                  <span className="font-bold text-amber-700">{arDisplay}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-600">Aylık Toplam Gelir:</span>
