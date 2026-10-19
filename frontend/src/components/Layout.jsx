@@ -482,7 +482,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
   };
 
   return (
-    <div className="min-h-screen bg-background flex flex-col" data-testid="app-shell">
+    <div className="min-h-screen bg-background flex flex-col print:block print:min-h-0" data-testid="app-shell">
       <a href="#workspace-main" className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-[100] focus:rounded focus:bg-background focus:p-3">{t("experience.skip", "İçeriğe geç")}</a>
       <header className="print:hidden bg-white border-b border-gray-200 sticky top-0 z-50 shadow-sm shrink-0">
         <div className="px-3 py-1.5">
@@ -822,7 +822,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule, fullWidth = f
       <main
         id="workspace-main" tabIndex={-1}
         ref={mainRef}
-        className={`app-safe-bottom-padding flex-1 min-w-0 w-full mx-auto overflow-auto ${fullWidth ? 'max-w-none' : 'max-w-7xl'}`}
+        className={`app-safe-bottom-padding flex-1 min-w-0 w-full mx-auto overflow-auto print:overflow-visible print:p-0 ${fullWidth ? 'max-w-none' : 'max-w-7xl'}`}
       >
         <ErrorBoundary>
           {children}

@@ -632,7 +632,7 @@ const BasicReports = ({
     ? REPORT_MENU.filter(item => item.id && `${item.labelKey ? t(item.labelKey, item.label) : item.label} ${item.desc || ''}`.toLocaleLowerCase('tr-TR').includes(normalizedReportQuery))
     : REPORT_MENU;
   return <>
-      <div className="flex flex-col lg:flex-row min-h-[calc(100vh-64px)] bg-slate-50/70">
+      <div className="flex flex-col lg:flex-row min-h-[calc(100vh-64px)] bg-slate-50/70 print:block print:min-h-0 print:bg-white">
         <aside className="w-[288px] bg-white border-r border-slate-200 flex-shrink-0 hidden print:hidden lg:flex lg:flex-col" data-testid="reports-sidebar">
           <div className="p-4 border-b border-slate-100">
             <div className="flex items-center gap-2">
@@ -694,7 +694,7 @@ const BasicReports = ({
           </div>
         </div>
 
-        <main className="min-w-0 flex-1 overflow-y-auto" data-testid="reports-desktop-content">
+        <main className="min-w-0 flex-1 overflow-y-auto print:overflow-visible" data-testid="reports-desktop-content">
           <div className="mx-auto w-full max-w-[1520px] p-4 lg:p-5 xl:p-7">
             <div className="mb-5 hidden lg:flex min-h-12 flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-2.5 shadow-sm print:hidden">
               <div className="flex min-w-0 items-center gap-2 text-xs text-gray-400">

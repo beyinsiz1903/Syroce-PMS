@@ -17,6 +17,9 @@ const AdrRevparSection = ({ data, s, pc, periodMetrics, reportPeriod }) => {
   const capacityLabel = isDaily ? 'Satılabilir Oda' : 'Satılabilir Oda-Gecesi';
   const occupied = metrics.occupied_room_nights ?? s.occupied_rooms ?? 0;
   const capacity = metrics.available_room_nights ?? s.total_rooms ?? 0;
+  // ADR = room revenue / sold room-nights; sold can differ from occupied
+  // (complimentary / house-use stays occupy a room without being sold).
+  const sold = metrics.sold_room_nights ?? null;
   const revenueTrendCurrencies = new Set((data?.revenue_trend || []).flatMap((row) => Object.entries(row.revenue_by_currency || {})
     .filter(([, amount]) => Number(amount) !== 0)
     .map(([currency]) => currency)));
@@ -43,8 +46,12 @@ const AdrRevparSection = ({ data, s, pc, periodMetrics, reportPeriod }) => {
             <div className="flex justify-between"><span className="text-sm text-slate-600">{periodLabel} ortalaması</span><span className="font-bold text-slate-900">{formatCurrencyBreakdown(metrics.adr_by_currency, metrics.adr)}</span></div>
             <div className="flex flex-wrap justify-between gap-2"><span className="text-sm text-slate-600">{previousLabel}</span><span className="font-bold text-slate-900">{previousAdr}</span></div>
             <div className="flex justify-between"><span className="text-sm text-slate-600">{occupiedLabel}</span><span className="font-bold text-slate-900">{occupied}</span></div>
+            {sold !== null && <div className="flex justify-between" data-testid="adr-sold-nights"><span className="text-sm text-slate-600">Satılan Oda-Gecesi (ortalama fiyatın paydası)</span><span className="font-bold text-slate-900">{sold}</span></div>}
             <div className="flex justify-between"><span className="text-sm text-slate-600">Oda Geliri</span><span className="font-bold text-slate-900">{formatCurrencyBreakdown(metrics.room_revenue_by_currency, metrics.room_revenue ?? s.today_room_revenue)}</span></div>
             <div className="flex flex-wrap justify-between gap-2"><span className="text-sm text-slate-600">Gelir Kaynağı</span><span className="font-medium text-slate-700">{roomRevenueSourceLabel(metrics.revenue_source)}</span></div>
+            {sold !== null && <p className="text-xs text-slate-500" data-testid="adr-formula">
+              Ortalama fiyat = oda geliri ÷ satılan gece{sold !== occupied ? ` (${Math.abs(occupied - sold)} gece dolu ama satılmamış: ücretsiz veya kurum içi kullanım)` : ''}.
+            </p>}
           </div>
         </CardContent>
       </Card>
