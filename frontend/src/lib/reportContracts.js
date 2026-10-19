@@ -23,7 +23,7 @@ export const REPORT_CONTRACTS = {
     financialScope: 'ADR = oda geliri / satılan oda-gecesi. RevPAR = oda geliri / satılabilir oda-gecesi.',
   },
   occupancy: { ...DEFAULT_CONTRACT, dataSource: 'Satılabilir oda envanteri ve konaklama gece kayıtları', financialScope: 'Finansal tutar içermez.' },
-  forecast_reports: { ...FINANCIAL_CONTRACT, dataSource: 'Mevcut rezervasyonlar ve tarihsel konaklama geceleri', dateScope: 'Bu raporun içindeki ufuk, hedef tarih ve kazanım dönemi seçimleri', financialScope: 'Tahmin, kesinleşmiş gelir veya tahsilat değildir.' },
+  forecast_reports: { ...FINANCIAL_CONTRACT, dataSource: 'Mevcut geçerli rezervasyonlar, tarihsel konaklama geceleri ve günlük satılabilir kapasite', dateScope: 'İçerideki ufuk/hedef tarih/oluşturulma aralığı; pace bugün bilinen kayıtların birikimidir, tarihsel iptal snapshot’ı değildir.', financialScope: 'Tahmin ve rezervasyon bedeli kesinleşmiş gelir/tahsilat değildir. Ücretsiz odalar ADR paydasına ve pickup gelirine girmez.' },
   period: { ...FINANCIAL_CONTRACT, dateScope: 'Seçili dönem, önceki eş uzunluklu dönem ve 365 gün önceki karşılaştırma' },
   room_types: { ...FINANCIAL_CONTRACT, dateScope: 'Doluluk seçili güne, gelir seçili rapor dönemine aittir. Oda başı dönem geliri ADR/RevPAR değildir.', dataSource: 'Aktif oda tipleri, satışa kapalı oda aralıkları ve işlenmiş gelir kayıtları; eski tipler ve eşleşmeyen gelirler dahil' },
   guests: { ...DEFAULT_CONTRACT, dataSource: 'Seçili dönemin rezervasyon ve ek misafir kayıtları', financialScope: 'Konaklama toplamı rezervasyonda bir kez gösterilir; tahsilat değildir.' },
