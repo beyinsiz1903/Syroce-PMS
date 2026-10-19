@@ -16,11 +16,19 @@ import { toast } from 'sonner';
 import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 import { bookingSourceLabel } from '@/utils/bookingSource';
 
-const money = (amount, currency) => formatCurrency(amount, currency || cachedTenantCurrency(), { decimals: 2 });
+const money = (amount, currency) => amount == null ? '—' : formatCurrency(amount, currency || cachedTenantCurrency(), { locale: 'tr-TR', decimals: 2, compactDecimals: false });
 const moneyTotals = (totals, value, currency) => Object.keys(totals || {}).length
   ? Object.entries(totals).map(([code, amount]) => money(amount, code)).join(' · ')
   : value == null ? '—' : money(value, currency);
 const channelName = (channel) => bookingSourceLabel({ channel });
+const trendCount = (row, channel) => {
+  const value = row.counts_by_channel?.[channel] ?? row[channel];
+  return Number.isFinite(value) ? value : 0;
+};
+const ReferenceValueNotice = ({ data, overbooking = false }) => <>
+  <p className="text-xs text-muted-foreground">{data.start_date && data.end_date ? `Giriş dönemi: ${data.start_date} – ${data.end_date}. ` : ''}Giriş tarihine göre aynı rezervasyon grubu karşılaştırılır. Tutarlar brüt rezervasyon değeridir; gerçekleşmiş zarar veya tahsilat değildir. Para birimleri toplanmaz. {overbooking && 'Günlük tutarlar ve üst toplam yalnız fazla satış olarak işaretlenen no-show kayıtlarını içerir.'}</p>
+  {(data.data_quality?.invalid_amounts > 0 || data.data_quality?.invalid_dates > 0) && <p role="alert" className="rounded-md border border-destructive/30 p-3 text-sm text-destructive">{data.data_quality.invalid_amounts > 0 && `${data.data_quality.invalid_amounts} rezervasyonun tutarı hesaplanamadı. `}{data.data_quality.invalid_dates > 0 && `${data.data_quality.invalid_dates} geçersiz tarihli kayıt dönem hesaplarından çıkarıldı. `}Sonuçlar eksik olabilir; bilinmeyen tutarlar sıfır olarak değerlendirilmez.</p>}
+</>;
 
 /* ─── Color maps ───────────────────────────────────────── */
 const CHANNEL_COLORS = {
@@ -50,7 +58,7 @@ const DataQualityBanner = ({ dq }) => {
   return (
     <div className={`rounded-lg border px-4 py-2.5 flex items-center gap-2 text-sm ${colors[dq.confidence] || colors.low}`} data-testid="data-quality-banner">
       <Info className="w-4 h-4 flex-shrink-0" />
-      <span>{CONFIDENCE_ICONS[dq.confidence]} <strong>{t('cm.pages_NoShowAnalytics.guvenilirlik')} {dq.confidence === 'high' ? 'Yüksek' : dq.confidence === 'medium' ? 'Orta' : 'Düşük'}</strong> — {dq.note}</span>
+      <span>{CONFIDENCE_ICONS[dq.confidence]} <strong>Veri kapsamı: {dq.confidence === 'high' ? 'Yüksek' : dq.confidence === 'medium' ? 'Orta' : 'Düşük'}</strong> — {dq.note}</span>
     </div>
   );
 };
@@ -70,7 +78,11 @@ const ChannelLossTab = ({ period }) => {
     setLoading(true);
     setError('');
     axios.get(`/pms/channel-loss-analytics?days=${period}`)
-      .then(r => { if (id === requestId.current) setData(r.data); })
+      .then(r => {
+        if (id !== requestId.current) return;
+        if (!Array.isArray(r.data?.channels) || !Array.isArray(r.data?.top3_worst) || !Number.isFinite(r.data?.total_no_shows)) throw new Error('Invalid channel report');
+        setData(r.data);
+      })
       .catch(e => {
         if (id !== requestId.current) return;
         console.error(e);
@@ -90,14 +102,14 @@ const ChannelLossTab = ({ period }) => {
   return (
     <div className="space-y-5" data-testid="channel-loss-tab">
       <DataQualityBanner dq={data.data_quality} />
-      <p className="text-xs text-muted-foreground">Giriş tarihine göre aynı rezervasyon grubu karşılaştırılır. Tutarlar brüt rezervasyon değeridir; gerçekleşmiş zarar veya tahsilat değildir. Para birimleri toplanmaz.</p>
+      <ReferenceValueNotice data={data} />
 
       {/* Summary row */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <Card className="border-l-4 border-l-red-500" data-testid="ch-total-loss">
           <CardContent className="pt-4 pb-3">
-            <p className="text-xs font-medium text-gray-500 uppercase">{t('cm.pages_NoShowAnalytics.toplam_kayip')}</p>
-            <p className="text-2xl font-bold text-red-600 mt-1">{moneyTotals(data.loss_by_currency, data.total_loss, data.currency)}</p>
+            <p className="text-xs font-medium text-gray-500 uppercase">No-show rezervasyon bedeli</p>
+            <p className="text-2xl font-bold text-red-600 mt-1 break-words" style={{ overflowWrap: 'anywhere' }}>{moneyTotals(data.loss_by_currency, data.total_loss, data.currency)}</p>
             <p className="text-xs text-gray-400 mt-1">{data.total_no_shows} no-show</p>
           </CardContent>
         </Card>
@@ -138,8 +150,8 @@ const ChannelLossTab = ({ period }) => {
                   <p className={`text-lg font-bold ${clr.text}`}>{channelName(ch.channel)}</p>
                   <div className="mt-2 space-y-1 text-xs text-gray-600">
                     <div className="flex justify-between"><span>No-show</span><span className="font-semibold">{ch.no_show_count}</span></div>
-                    <div className="flex flex-wrap justify-between gap-2"><span>{t('cm.pages_NoShowAnalytics.toplam_kayip_e38cc')}</span><span className="font-semibold text-red-600">{moneyTotals(ch.loss_by_currency, ch.total_loss, ch.currency || data.currency)}</span></div>
-                    <div className="flex flex-wrap justify-between gap-2"><span>{t('cm.pages_NoShowAnalytics.ort_kayip')}</span><span className="font-semibold">{moneyTotals(ch.avg_loss_by_currency, ch.avg_loss, ch.currency || data.currency)}</span></div>
+                    <div className="flex flex-wrap justify-between gap-2"><span>Rezervasyon bedeli</span><span className="font-semibold text-red-600 break-words">{moneyTotals(ch.loss_by_currency, ch.total_loss, ch.currency || data.currency)}</span></div>
+                    <div className="flex flex-wrap justify-between gap-2"><span>Ortalama kayıt bedeli</span><span className="font-semibold break-words">{moneyTotals(ch.avg_loss_by_currency, ch.avg_loss, ch.currency || data.currency)}</span></div>
                   </div>
                 </div>
               );
@@ -155,14 +167,14 @@ const ChannelLossTab = ({ period }) => {
         </CardHeader>
         <CardContent>
           <p className="mb-2 text-xs text-muted-foreground sm:hidden">Tüm sütunları görmek için tabloyu yana kaydırın.</p>
-          <div className="overflow-x-auto" data-testid="channel-detail-scroll">
+          <div role="region" aria-label="No-show kanal detay tablosu" tabIndex={0} className="overflow-x-auto" data-testid="channel-detail-scroll">
             <table className="w-full min-w-[760px] text-sm tabular-nums [&_th]:whitespace-nowrap [&_td]:whitespace-nowrap">
               <thead>
                 <tr className="border-b text-left text-xs text-gray-500 uppercase tracking-wide">
                   <th className="pb-2 pr-3">Kanal</th>
                   <th className="pb-2 pr-3 text-right">No-Show</th>
-                  <th className="pb-2 pr-3 text-right">{t('cm.pages_NoShowAnalytics.toplam_kayip_e38cc')}</th>
-                  <th className="pb-2 pr-3 text-right">{t('cm.pages_NoShowAnalytics.ort_kayip_d319f')}</th>
+                  <th className="pb-2 pr-3 text-right">Rezervasyon bedeli</th>
+                  <th className="pb-2 pr-3 text-right">Ortalama kayıt bedeli</th>
                   <th className="pb-2 pr-3 text-right">No-Show %</th>
                   <th className="pb-2 text-right">{t('cm.pages_NoShowAnalytics.rez_sayisi')}</th>
                 </tr>
@@ -199,6 +211,7 @@ const ChannelLossTab = ({ period }) => {
           <CardTitle className="text-sm font-semibold text-gray-700">{t('cm.pages_NoShowAnalytics.kanal_bazli_zaman_trendi')}</CardTitle>
         </CardHeader>
         <CardContent>
+          <p className="mb-2 text-xs text-muted-foreground">Grafik seçili dönemin son 30 takvim gününü gösterir; sıfır olaylı günler de dahildir.</p>
           {data.trend?.length > 0 ? (
             <div className="space-y-4">
               {/* Legend */}
@@ -213,15 +226,15 @@ const ChannelLossTab = ({ period }) => {
               {/* Stacked bars */}
               <div className="flex items-end gap-[2px] h-36">
                 {data.trend.slice(-30).map((d, i) => {
-                  const total = (data.trend_channels || []).reduce((s, ch) => s + (d[ch] || 0), 0);
-                  const maxT = Math.max(...data.trend.slice(-30).map(t => (data.trend_channels || []).reduce((s, ch) => s + (t[ch] || 0), 0)), 1);
+                  const total = (data.trend_channels || []).reduce((s, ch) => s + trendCount(d, ch), 0);
+                  const maxT = Math.max(...data.trend.slice(-30).map(t => (data.trend_channels || []).reduce((s, ch) => s + trendCount(t, ch), 0)), 1);
                   return (
-                    <div key={d.date} className="flex-1 flex flex-col justify-end group relative" data-testid={`trend-bar-${i}`}>
+                    <div key={d.date} className="flex-1 h-full flex flex-col justify-end group relative" data-testid={`trend-bar-${i}`}>
                       <div className="absolute -top-8 left-1/2 -translate-x-1/2 hidden group-hover:block bg-gray-800 text-white text-[10px] px-2 py-1 rounded whitespace-nowrap z-10">
                         {d.date}: {total}
                       </div>
                       {(data.trend_channels || []).map(ch => {
-                        const pct = total > 0 ? ((d[ch] || 0) / maxT * 100) : 0;
+                        const pct = total > 0 ? (trendCount(d, ch) / maxT * 100) : 0;
                         return pct > 0 ? <div key={ch} className={`w-full ${getChColor(ch).bar} first:rounded-t`} style={{ height: `${pct}%`, minHeight: '2px' }} /> : null;
                       })}
                     </div>
@@ -259,7 +272,11 @@ const OverbookingHeatmapTab = ({ period }) => {
     setLoading(true);
     setError('');
     axios.get(`/pms/overbooking-heatmap?days=${period}`)
-      .then(r => { if (id === requestId.current) setData(r.data); })
+      .then(r => {
+        if (id !== requestId.current) return;
+        if (!Array.isArray(r.data?.heatmap) || !Array.isArray(r.data?.weekly_pattern) || !Number.isFinite(r.data?.total_overbookings)) throw new Error('Invalid heatmap report');
+        setData(r.data);
+      })
       .catch(e => {
         if (id !== requestId.current) return;
         console.error(e);
@@ -277,7 +294,7 @@ const OverbookingHeatmapTab = ({ period }) => {
   const maxOB = Math.max(...(data.heatmap?.map(h => h.overbooking_count) || [0]), 1);
 
   // Build calendar grid (last N days)
-  const calDays = (data.heatmap || []).slice(-60);
+  const calDays = data.heatmap || [];
   const getHeatColor = (count) => {
     if (count === 0) return 'bg-gray-100';
     const intensity = Math.min(count / maxOB, 1);
@@ -290,6 +307,7 @@ const OverbookingHeatmapTab = ({ period }) => {
   return (
     <div className="space-y-5" data-testid="heatmap-tab">
       <DataQualityBanner dq={data.data_quality} />
+      <ReferenceValueNotice data={data} overbooking />
 
       {/* Summary */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -301,8 +319,8 @@ const OverbookingHeatmapTab = ({ period }) => {
         </Card>
         <Card className="border-l-4 border-l-amber-500" data-testid="ob-loss">
           <CardContent className="pt-4 pb-3">
-            <p className="text-xs font-medium text-gray-500 uppercase">{t('cm.pages_NoShowAnalytics.overbooking_kaybi')}</p>
-            <p className="text-2xl font-bold text-amber-600 mt-1">{moneyTotals(data.loss_by_currency, data.total_loss, data.currency)}</p>
+            <p className="text-xs font-medium text-gray-500 uppercase">Fazla satış kayıt bedeli</p>
+            <p className="text-2xl font-bold text-amber-600 mt-1 break-words" style={{ overflowWrap: 'anywhere' }}>{moneyTotals(data.loss_by_currency, data.total_loss, data.currency)}</p>
           </CardContent>
         </Card>
         <Card className="border-l-4 border-l-blue-500" data-testid="ob-peak-day">
@@ -717,7 +735,6 @@ const PredictionTab = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [daysAhead, setDaysAhead] = useState('7');
-  const [batchRisk, setBatchRisk] = useState({});
   const requestId = useRef(0);
 
   const load = useCallback(() => {
@@ -725,13 +742,10 @@ const PredictionTab = () => {
     setLoading(true);
     setError('');
     axios.get(`/pms/noshow-prediction?days_ahead=${daysAhead}`)
-      .then(async (r) => {
+      .then(r => {
         if (id !== requestId.current) return;
-        const predictions = r.data?.predictions || [];
-        const ids = predictions.map((item) => item.booking_id).filter(Boolean);
-        const bulk = ids.length ? await axios.post('/pms/no-show-risk/bulk', { booking_ids: ids }) : { data: { results: {} } };
-        if (id !== requestId.current) return;
-        setBatchRisk(bulk.data?.results || {});
+        if (!Array.isArray(r.data?.predictions) || !['high_risk', 'medium_risk', 'low_risk'].every(key => Number.isFinite(r.data?.summary?.[key]))
+          || r.data.predictions.some(row => !Number.isFinite(row.risk_score) || !['high', 'medium', 'low'].includes(row.risk_level))) throw new Error('Invalid prediction report');
         setData(r.data);
       })
       .catch(e => {
@@ -751,6 +765,7 @@ const PredictionTab = () => {
   return (
     <div className="space-y-5" data-testid="prediction-tab">
       <DataQualityBanner dq={data.data_quality} />
+      <ReferenceValueNotice data={data} />
 
       {/* Controls */}
       <div className="flex items-center gap-3">
@@ -766,7 +781,7 @@ const PredictionTab = () => {
       </div>
 
       {/* Summary */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <Card className="border-l-4 border-l-red-500" data-testid="pred-high-risk">
           <CardContent className="pt-4 pb-3">
             <p className="text-xs font-medium text-gray-500 uppercase">{t('cm.pages_NoShowAnalytics.yuksek_risk')}</p>
@@ -787,8 +802,9 @@ const PredictionTab = () => {
         </Card>
         <Card className="border-l-4 border-l-indigo-500" data-testid="pred-potential-loss">
           <CardContent className="pt-4 pb-3">
-            <p className="text-xs font-medium text-gray-500 uppercase">{t('cm.pages_NoShowAnalytics.potansiyel_kayip')}</p>
-            <p className="text-2xl font-bold text-indigo-600 mt-1">{moneyTotals(data.summary?.potential_loss_by_currency, data.summary?.potential_loss, data.summary?.currency || data.currency)}</p>
+            <p className="text-xs font-medium text-gray-500 uppercase">Risk altındaki rezervasyon bedeli</p>
+            <p className="text-2xl font-bold text-indigo-600 mt-1 break-words" style={{ overflowWrap: 'anywhere' }}>{moneyTotals(data.summary?.potential_loss_by_currency, data.summary?.potential_loss, data.summary?.currency || data.currency)}</p>
+            <p className="mt-1 text-xs text-muted-foreground">Orta/yüksek puanlı kayıtların brüt bedeli; beklenen zarar değildir.</p>
           </CardContent>
         </Card>
       </div>
@@ -805,8 +821,10 @@ const PredictionTab = () => {
         </CardHeader>
         <CardContent>
           {(data.predictions || []).length > 0 ? (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+            <div>
+              <p className="mb-2 text-xs text-muted-foreground sm:hidden">Tüm sütunları görmek için tabloyu yana kaydırın.</p>
+              <div role="region" aria-label="Rezervasyon risk tablosu" tabIndex={0} className="overflow-x-auto">
+              <table className="w-full min-w-[760px] text-sm tabular-nums [&_th]:whitespace-nowrap [&_td]:whitespace-nowrap">
                 <thead>
                   <tr className="border-b text-left text-xs text-gray-500 uppercase tracking-wide">
                     <th className="pb-2 pr-3">Risk</th>
@@ -819,14 +837,13 @@ const PredictionTab = () => {
                   </tr>
                 </thead>
                 <tbody>
-                {[...(data.predictions || [])].sort((a, b) => (batchRisk[b.booking_id]?.score || b.risk_score || 0) - (batchRisk[a.booking_id]?.score || a.risk_score || 0)).map((p, i) => {
-                    const operationalRisk = batchRisk[p.booking_id];
-                    const rs = RISK_STYLES[operationalRisk?.level || p.risk_level] || RISK_STYLES.low;
+                {[...(data.predictions || [])].sort((a, b) => b.risk_score - a.risk_score).map((p, i) => {
+                    const rs = RISK_STYLES[p.risk_level] || RISK_STYLES.low;
                     return (
                       <tr key={p.booking_id} className={`border-b last:border-0 ${rs.bg}`} data-testid={`pred-row-${i}`}>
                         <td className="py-2.5 pr-3">
                           <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${rs.badge}`}>
-                            {(operationalRisk?.level || p.risk_level) === 'high' ? 'YÜKSEK' : (operationalRisk?.level || p.risk_level) === 'medium' ? 'ORTA' : 'DÜŞÜK'}
+                            {p.risk_level === 'high' ? 'YÜKSEK' : p.risk_level === 'medium' ? 'ORTA' : 'DÜŞÜK'}
                           </span>
                         </td>
                         <td className="py-2.5 pr-3 font-medium text-gray-800">{p.guest_name}</td>
@@ -837,7 +854,7 @@ const PredictionTab = () => {
                         <td className="py-2.5 text-right">
                           <div className="flex items-center justify-end gap-2">
                             <div className="w-12 h-2 bg-gray-200 rounded-full overflow-hidden">
-                              <div className={`h-full rounded-full ${(operationalRisk?.score || p.risk_score) > 60 ? 'bg-red-500' : (operationalRisk?.score || p.risk_score) > 30 ? 'bg-amber-500' : 'bg-green-500'}`} style={{ width: `${operationalRisk?.score || p.risk_score}%` }} />
+                              <div className={`h-full rounded-full ${p.risk_level === 'high' ? 'bg-red-500' : p.risk_level === 'medium' ? 'bg-amber-500' : 'bg-green-500'}`} style={{ width: `${p.risk_score}%` }} />
                             </div>
                             <span className="text-xs font-bold text-gray-700 w-6 text-right">{p.risk_score}</span>
                           </div>
@@ -847,6 +864,7 @@ const PredictionTab = () => {
                   })}
                 </tbody>
               </table>
+              </div>
             </div>
           ) : (
             <p className="text-sm text-gray-400 py-6 text-center">{t('cm.pages_NoShowAnalytics.yaklasan_rezervasyon_bulunamadi')}</p>
@@ -910,7 +928,7 @@ const Loader = () => (
 );
 const Empty = () => <p className="text-sm text-gray-400 py-6 text-center">Veri yok</p>;
 const ErrorState = ({ message, onRetry }) => (
-  <div className="flex flex-col items-center justify-center gap-3 py-12 text-center">
+  <div role="alert" className="flex flex-col items-center justify-center gap-3 py-12 text-center">
     <AlertTriangle className="h-8 w-8 text-red-500" />
     <p className="max-w-md text-sm text-red-700">{message}</p>
     <Button type="button" variant="outline" size="sm" onClick={onRetry}>

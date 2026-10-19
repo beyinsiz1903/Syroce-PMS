@@ -4,18 +4,23 @@ Domain Router: RMS Revenue
 Revenue management system, comp-set, yield management, Faz 2 sales/revenue features.
 """
 
-from datetime import UTC, datetime, timedelta
+from collections import defaultdict
+from datetime import UTC, date, datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.security import HTTPAuthorizationCredentials
 
 from cache_manager import cached
 from core.database import db
 from core.security import get_current_user, security
+from core.tenant_currency import get_tenant_currency
+from models.schemas import User
 from modules.pms_core.report_money import add_amount, currency_code, rounded_totals, single_amount
+from modules.pms_core.reporting_dates import date_period_match
 from modules.pms_core.reporting_ledger import charge_amount, posted_revenue_rows
+from modules.pms_core.reservation_reporting import reservation_value
 from modules.pms_core.role_permission_service import require_op
-from modules.pms_core.stay_night_metrics import NON_COMMERCIAL_STATUSES, as_date, load_stay_night_metrics
+from modules.pms_core.stay_night_metrics import OCCUPYING_STATUSES, as_date, booking_nights, load_stay_night_metrics
 
 router = APIRouter(prefix="/api", tags=["rms-revenue"])
 
@@ -26,118 +31,74 @@ router = APIRouter(prefix="/api", tags=["rms-revenue"])
 
 
 @router.get("/revenue/pickup-report")
-@cached(ttl=300, key_prefix="rev_pickup_report_v2")
-async def get_pickup_report(start_date: str | None = None, end_date: str | None = None, format: str = "json", credentials: HTTPAuthorizationCredentials = Depends(security), _perm=Depends(require_op("view_executive_reports"))):
-    """Get pickup report with export capability (JSON, CSV ready)"""
-    current_user = await get_current_user(credentials)
-
+@cached(ttl=300, key_prefix="rev_pickup_report_v3")
+async def get_pickup_report(
+    start_date: str | None = None, end_date: str | None = None, format: str = "json",
+    current_user: User = Depends(get_current_user), _perm=Depends(require_op("view_executive_reports")),
+    _nocache: bool = Query(False, alias="nocache"),
+):
+    """Current valid reservations by arrival day/window, not net movement pickup."""
     try:
-        start_date = datetime.combine(as_date(start_date) if start_date else datetime.now(UTC).date().replace(day=1), datetime.min.time(), UTC)
-        end_date = datetime.combine(as_date(end_date), datetime.min.time(), UTC) if end_date else start_date + timedelta(days=29)
-    except (TypeError, ValueError) as exc:
+        first = date.fromisoformat(start_date) if start_date else datetime.now(UTC).date().replace(day=1)
+        last = date.fromisoformat(end_date) if end_date else first + timedelta(days=29)
+        if (start_date and first.isoformat() != start_date) or (end_date and last.isoformat() != end_date) or last == date.max:
+            raise ValueError("Noncanonical report date")
+    except (TypeError, ValueError, OverflowError) as exc:
         raise HTTPException(422, "Tarih YYYY-MM-DD formatında olmalıdır") from exc
-    if end_date < start_date or (end_date - start_date).days > 365 or format not in {"json", "csv"}:
+    if last < first or (last - first).days >= 366 or format not in {"json", "csv"}:
         raise HTTPException(422, "Geçerli en fazla 366 günlük aralık ve json/csv formatını seçin")
-
-    # Get booking pace by arrival date
-    pickup_report = []
-
-    # Iterate through each day in range
-    current_date = start_date
-    while current_date <= end_date:
-        # Get bookings for this arrival date
-        day_bookings = []
-
-        async for booking in db.bookings.find(
-            {"tenant_id": current_user.tenant_id, "$or": [
-                {"check_in": {"$gte": current_date, "$lt": current_date + timedelta(days=1)}},
-                {"check_in": {"$gte": current_date.date().isoformat(), "$lt": (current_date + timedelta(days=1)).date().isoformat()}}],
-                "status": {"$nin": sorted(NON_COMMERCIAL_STATUSES)}}
-        ):
+    currency, _ = await get_tenant_currency(current_user.tenant_id)
+    bookings = await db.bookings.find({"tenant_id": current_user.tenant_id,
+        **date_period_match("check_in", first, last), "status": {"$in": sorted(OCCUPYING_STATUSES)}}, {"_id": 0}).to_list(None)
+    by_day = defaultdict(list)
+    invalid_stays = 0
+    for booking in bookings:
+        if not booking_nights(booking):
+            invalid_stays += 1
+            continue
+        by_day[as_date(booking.get("check_in"))].append(booking)
+    result, totals = [], {}
+    invalid_amounts = 0
+    windows_template = {"0-7_days": 0, "8-14_days": 0, "15-30_days": 0, "31-60_days": 0, "61+_days": 0, "unknown": 0}
+    for offset in range((last - first).days + 1):
+        day = first + timedelta(days=offset)
+        rows = by_day[day]
+        values, rooms, windows, currency_windows, bad = {}, {}, dict(windows_template), {}, {}
+        for booking in rows:
+            code = currency_code(booking.get("currency"), currency)
+            rooms[code] = rooms.get(code, 0) + 1
             created = as_date(booking.get("created_at"))
-            days_before = (current_date.date() - created).days if created else None
-            day_bookings.append(
-                {
-                    "booking_id": booking.get("id"),
-                    "created_at": created.isoformat() if created else None,
-                    "days_before_arrival": days_before,
-                    "room_nights": booking.get("nights", 1),
-                    "revenue": booking.get("total_amount", 0),
-                    "currency": currency_code(booking.get("currency")),
-                }
-            )
-
-        # Aggregate data
-        total_rooms = len(day_bookings)
-        revenue_by_currency = {}
-        for booking in day_bookings:
-            add_amount(revenue_by_currency, booking.get("currency"), booking["revenue"])
-        total_revenue = single_amount(revenue_by_currency)
-
-        # Group by booking window
-        booking_windows = {"0-7_days": 0, "8-14_days": 0, "15-30_days": 0, "31-60_days": 0, "61+_days": 0, "unknown": 0}
-        windows_by_currency = {}
-        rooms_by_currency = {}
-
-        for booking in day_bookings:
-            days = booking["days_before_arrival"]
-            if days is None or days < 0:
-                bucket = "unknown"
-            elif days <= 7:
-                bucket = "0-7_days"
-            elif days <= 14:
-                bucket = "8-14_days"
-            elif days <= 30:
-                bucket = "15-30_days"
-            elif days <= 60:
-                bucket = "31-60_days"
+            days_before = (day - created).days if created else -1
+            bucket = next((key for limit, key in [(7, "0-7_days"), (14, "8-14_days"), (30, "15-30_days"), (60, "31-60_days")] if 0 <= days_before <= limit), "61+_days" if days_before >= 0 else "unknown")
+            windows[bucket] += 1
+            currency_windows.setdefault(code, dict(windows_template))[bucket] += 1
+            value = reservation_value(booking)
+            if value is None:
+                invalid_amounts += 1
+                bad[code] = bad.get(code, 0) + 1
             else:
-                bucket = "61+_days"
-            booking_windows[bucket] += 1
-            code = booking["currency"]
-            windows_by_currency.setdefault(code, dict.fromkeys(booking_windows, 0))[bucket] += 1
-            rooms_by_currency[code] = rooms_by_currency.get(code, 0) + 1
-
-        pickup_report.append({"arrival_date": current_date.date().isoformat(), "total_rooms": total_rooms, "total_revenue": total_revenue,
-            "total_revenue_by_currency": rounded_totals(revenue_by_currency), "booking_windows": booking_windows,
-            "rooms_by_currency": rooms_by_currency, "booking_windows_by_currency": windows_by_currency})
-
-        current_date += timedelta(days=1)
-
-    # If CSV format requested, prepare for export
+                add_amount(values, code, value)
+                add_amount(totals, code, value)
+        result.append({"arrival_date": day.isoformat(), "total_rooms": len(rows), "total_room_nights": sum(booking_nights(booking) for booking in rows),
+            "total_revenue": None if bad and not values else single_amount(values), "total_revenue_by_currency": rounded_totals(values),
+            "booking_windows": windows, "rooms_by_currency": rooms, "booking_windows_by_currency": currency_windows, "invalid_amounts_by_currency": bad})
+    metadata = {"currency": currency, "date_range": {"start": first.isoformat(), "end": last.isoformat()},
+        "basis": "arrival_cohort_current_valid_booking_value_not_net_pickup_or_posted_revenue",
+        "data_quality": {"invalid_amounts": invalid_amounts, "invalid_stays": invalid_stays}}
     if format == "csv":
-        # Return data in CSV-friendly format
         csv_data = []
-        for row in pickup_report:
-            for currency, amount in (row["total_revenue_by_currency"] or {"TRY": 0}).items():
-                windows = row["booking_windows_by_currency"].get(currency, dict.fromkeys(row["booking_windows"], 0))
-                csv_data.append(
-                    {
-                        "Arrival Date": row["arrival_date"],
-                        "Total Rooms": row["rooms_by_currency"].get(currency, 0),
-                        "Currency": currency,
-                        "Total Revenue": amount,
-                        "0-7 Days": windows["0-7_days"],
-                        "8-14 Days": windows["8-14_days"],
-                        "15-30 Days": windows["15-30_days"],
-                        "31-60 Days": windows["31-60_days"],
-                        "61+ Days": windows["61+_days"],
-                        "Unknown": windows["unknown"],
-                    }
-                )
-
-        return {"format": "csv", "data": csv_data, "filename": f"pickup_report_{start_date.date()}_{end_date.date()}.csv"}
-
-    revenue_totals = {}
-    for row in pickup_report:
-        for currency, amount in row["total_revenue_by_currency"].items():
-            add_amount(revenue_totals, currency, amount)
-    return {
-        "format": "json",
-        "date_range": {"start": start_date.date().isoformat(), "end": end_date.date().isoformat()},
-        "pickup_report": pickup_report,
-        "summary": {"total_rooms": sum(r["total_rooms"] for r in pickup_report), "total_revenue": single_amount(revenue_totals), "total_revenue_by_currency": rounded_totals(revenue_totals)},
-    }
+        for row in result:
+            for code in (row["rooms_by_currency"] or {currency: 0}):
+                windows = row["booking_windows_by_currency"].get(code, dict(windows_template))
+                csv_data.append({"Arrival Date": row["arrival_date"], "Total Rooms": row["rooms_by_currency"].get(code, 0),
+                    "Currency": code, "Total Revenue": row["total_revenue_by_currency"].get(code, None if row["rooms_by_currency"].get(code) else 0),
+                    "0-7 Days": windows["0-7_days"], "8-14 Days": windows["8-14_days"], "15-30 Days": windows["15-30_days"],
+                    "31-60 Days": windows["31-60_days"], "61+ Days": windows["61+_days"], "Unknown": windows["unknown"],
+                    "Invalid Amounts": row["invalid_amounts_by_currency"].get(code, 0), "Value Basis": metadata["basis"]})
+        return {"format": "csv", "data": csv_data, "filename": f"pickup_report_{first}_{last}.csv", **metadata}
+    return {"format": "json", "pickup_report": result, **metadata,
+        "summary": {"total_rooms": sum(row["total_rooms"] for row in result), "total_room_nights": sum(row["total_room_nights"] for row in result),
+            "total_revenue": None if invalid_amounts and not totals else single_amount(totals), "total_revenue_by_currency": rounded_totals(totals)}}
 
 
 @router.get("/revenue/compset-analysis")

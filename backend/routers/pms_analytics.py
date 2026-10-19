@@ -12,9 +12,13 @@ from pydantic import BaseModel
 
 from core.database import db
 from core.security import get_current_user
+from core.tenant_currency import get_tenant_currency
 from models.schemas import User
-from modules.pms_core.report_money import add_amount, currency_code, money, rounded_totals, single_amount
+from modules.pms_core.noshow_reporting import arrival_cohort, booking_channel, build_channel_report, build_heatmap_report, is_no_show
+from modules.pms_core.report_money import add_amount, currency_code, rounded_totals, single_amount
+from modules.pms_core.reservation_reporting import reservation_value
 from modules.pms_core.role_permission_service import require_op  # v100 DW
+from modules.pms_core.stay_night_metrics import as_date
 
 router = APIRouter(prefix="/api", tags=["pms-analytics"])
 
@@ -44,136 +48,11 @@ async def get_channel_loss_analytics(
     days: int = Query(default=30, ge=1, le=365),
     current_user: User = Depends(get_current_user),
 ):
-    """Full channel-based no-show loss analysis with trends and data quality."""
-    tenant_id = current_user.tenant_id
-    _, _, period = _arrival_period(days)
-
-    # Get ALL bookings in period for rate calculation
-    total_bookings = await db.bookings.find(
-        {
-            "tenant_id": tenant_id,
-            **period,
-            "status": {"$nin": ["cancelled", "canceled", "draft", "pending"]},
-        },
-        {"_id": 0, "source_channel": 1, "channel": 1},
-    ).to_list(None)
-
-    # Count bookings per channel for rate calculation
-    channel_booking_counts = defaultdict(int)
-    for b in total_bookings:
-        ch = b.get("source_channel") or b.get("channel") or "direct"
-        channel_booking_counts[ch] += 1
-
-    # Get no-show bookings
-    no_shows = await db.bookings.find(
-        {
-            "tenant_id": tenant_id,
-            "status": "no_show",
-            **period,
-        },
-        {
-            "_id": 0,
-            "id": 1,
-            "no_show_at": 1,
-            "source_channel": 1,
-            "channel": 1,
-            "total_amount": 1,
-            "room_type": 1,
-            "no_show_reason": 1,
-            "check_in": 1,
-            "currency": 1,
-        },
-    ).to_list(None)
-
-    # --- Channel breakdown ---
-    ch_data = defaultdict(lambda: {"count": 0, "loss_by_currency": {}, "counts_by_currency": {}, "dates": []})
-    losses = {}
-    for b in no_shows:
-        ch = b.get("source_channel") or b.get("channel") or "direct"
-        amt = money(b.get("total_amount") or 0)
-        code = currency_code(b.get("currency"))
-        ch_data[ch]["count"] += 1
-        add_amount(ch_data[ch]["loss_by_currency"], code, amt)
-        add_amount(losses, code, amt)
-        ch_data[ch]["counts_by_currency"][code] = ch_data[ch]["counts_by_currency"].get(code, 0) + 1
-        day = _day(b.get("check_in"))
-        if day:
-            ch_data[ch]["dates"].append(day)
-
-    channels = []
-    for ch, info in ch_data.items():
-        total_ch_bookings = channel_booking_counts.get(ch, 0)
-        rate = round((info["count"] / total_ch_bookings * 100), 1) if total_ch_bookings > 0 else 0
-        averages = {code: value / info["counts_by_currency"][code] for code, value in info["loss_by_currency"].items()}
-        channels.append(
-            {
-                "channel": ch,
-                "no_show_count": info["count"],
-                "total_loss": single_amount(info["loss_by_currency"]),
-                "loss_by_currency": rounded_totals(info["loss_by_currency"]),
-                "avg_loss": single_amount(averages), "avg_loss_by_currency": rounded_totals(averages),
-                "no_show_rate": rate,
-                "total_bookings": total_ch_bookings,
-            }
-        )
-
-    channels.sort(key=lambda x: (-x["no_show_rate"], -x["no_show_count"], x["channel"]))
-
-    # Top 3 worst channels
-    top3_worst = channels[:3]
-
-    # --- Channel trend over time ---
-    ch_trend = defaultdict(lambda: defaultdict(int))
-    for b in no_shows:
-        ch = b.get("source_channel") or b.get("channel") or "direct"
-        day = _day(b.get("check_in"))
-        if day:
-            ch_trend[day][ch] += 1
-
-    trend_dates = sorted(ch_trend.keys())
-    all_channels = sorted({ch for d in ch_trend.values() for ch in d.keys()})
-    trend_data = []
-    for d in trend_dates:
-        entry = {"date": d}
-        for ch in all_channels:
-            entry[ch] = ch_trend[d].get(ch, 0)
-        trend_data.append(entry)
-
-    # --- Data quality / confidence ---
-    data_days = len({_day(b.get("check_in")) for b in no_shows if b.get("check_in")})
-    total_data_points = len(no_shows)
-
-    if total_data_points < 5:
-        confidence = "low"
-        confidence_note = "Veri yetersiz — sonuçlar gösterge niteliğindedir"
-    elif data_days < 7:
-        confidence = "medium"
-        confidence_note = f"Son {data_days} güne göre hesaplandı — daha fazla veri ile güvenilirlik artar"
-    else:
-        confidence = "high"
-        confidence_note = f"Son {data_days} günlük veriye dayanmaktadır"
-
-    return {
-        "channels": channels,
-        "top3_worst": top3_worst,
-        "trend": trend_data,
-        "trend_channels": all_channels,
-        "period_days": days,
-        "total_no_shows": len(no_shows),
-        "total_loss": single_amount(losses), "loss_by_currency": rounded_totals(losses),
-        "basis": "arrival_cohort_gross_booking_value_not_realized_loss",
-        "data_quality": {
-            "confidence": confidence,
-            "note": confidence_note,
-            "data_points": total_data_points,
-            "data_days": data_days,
-        },
-    }
-
-
-# ────────────────────────────────────────────────────────
-# 2) OVERBOOKING HEATMAP (FULL)
-# ────────────────────────────────────────────────────────
+    """Arrival-cohort no-show counts and booked reference values, not cash loss."""
+    first, last, _ = _arrival_period(days)
+    rows, invalid_dates = await arrival_cohort(db, current_user.tenant_id, first, last)
+    currency, _ = await get_tenant_currency(current_user.tenant_id)
+    return build_channel_report(rows, first, last, currency, invalid_dates=invalid_dates)
 
 
 @router.get("/pms/overbooking-heatmap")
@@ -181,156 +60,11 @@ async def get_overbooking_heatmap(
     days: int = Query(default=90, ge=7, le=365),
     current_user: User = Depends(get_current_user),
 ):
-    """Overbooking heatmap data with peak days, weekly pattern, channel overlay."""
-    tenant_id = current_user.tenant_id
-    first, _, period = _arrival_period(days)
-
-    # Get overbooking no-shows
-    overbookings = await db.bookings.find(
-        {
-            "tenant_id": tenant_id,
-            "status": "no_show",
-            "no_show_reason": "overbooking",
-            **period,
-        },
-        {
-            "_id": 0,
-            "no_show_at": 1,
-            "check_in": 1,
-            "source_channel": 1,
-            "channel": 1,
-            "total_amount": 1,
-            "room_type": 1,
-            "currency": 1,
-        },
-    ).to_list(None)
-
-    # Also get ALL no-shows for broader heatmap context
-    all_no_shows = await db.bookings.find(
-        {
-            "tenant_id": tenant_id,
-            "status": "no_show",
-            **period,
-        },
-        {
-            "_id": 0,
-            "no_show_at": 1,
-            "check_in": 1,
-            "no_show_reason": 1,
-            "source_channel": 1,
-            "channel": 1,
-            "total_amount": 1,
-            "currency": 1,
-        },
-    ).to_list(None)
-
-    # --- Heatmap: date → overbooking count ---
-    date_map = defaultdict(lambda: {"overbooking": 0, "total_noshow": 0, "losses": {}, "channels": defaultdict(int)})
-    for offset in range(days):
-        date_map[(first + timedelta(days=offset)).isoformat()]
-
-    for b in all_no_shows:
-        # Use check_in date or no_show_at date
-        day = _day(b.get("check_in") or b.get("no_show_at"))
-        if not day:
-            continue
-        date_map[day]["total_noshow"] += 1
-        add_amount(date_map[day]["losses"], b.get("currency"), b.get("total_amount") or 0)
-        if b.get("no_show_reason") == "overbooking":
-            date_map[day]["overbooking"] += 1
-            ch = b.get("source_channel") or b.get("channel") or "direct"
-            date_map[day]["channels"][ch] += 1
-
-    heatmap = []
-    for d, info in sorted(date_map.items()):
-        heatmap.append(
-            {
-                "date": d,
-                "overbooking_count": info["overbooking"],
-                "total_noshow": info["total_noshow"],
-                "loss": single_amount(info["losses"]), "loss_by_currency": rounded_totals(info["losses"]),
-                "channel_breakdown": dict(info["channels"]),
-            }
-        )
-
-    # --- Peak days (top 5 riskiest) ---
-    peak_days = sorted(heatmap, key=lambda x: -x["overbooking_count"])[:5]
-
-    # --- Weekly pattern ---
-    weekday_names = ["Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi", "Pazar"]
-    weekday_data = defaultdict(lambda: {"overbooking": 0, "total_noshow": 0, "count": 0})
-
-    for d, info in date_map.items():
-        try:
-            dt = datetime.fromisoformat(d)
-            wd = dt.weekday()
-            weekday_data[wd]["overbooking"] += info["overbooking"]
-            weekday_data[wd]["total_noshow"] += info["total_noshow"]
-            weekday_data[wd]["count"] += 1
-        except (ValueError, TypeError):
-            pass
-
-    weekly_pattern = []
-    for wd in range(7):
-        info = weekday_data[wd]
-        weekly_pattern.append(
-            {
-                "day_index": wd,
-                "day_name": weekday_names[wd],
-                "overbooking_total": info["overbooking"],
-                "noshow_total": info["total_noshow"],
-                "avg_overbooking": round(info["overbooking"] / max(info["count"], 1), 2),
-                "avg_noshow": round(info["total_noshow"] / max(info["count"], 1), 2),
-                "is_weekend": wd >= 5,
-            }
-        )
-
-    # --- Channel contribution for overbookings ---
-    ch_contrib = defaultdict(int)
-    for b in overbookings:
-        ch = b.get("source_channel") or b.get("channel") or "direct"
-        ch_contrib[ch] += 1
-
-    channel_overlay = [{"channel": ch, "count": cnt} for ch, cnt in sorted(ch_contrib.items(), key=lambda x: -x[1])]
-
-    # --- Data quality ---
-    total_ob = len(overbookings)
-    data_days = len({_day(b.get("check_in")) for b in overbookings if b.get("check_in")})
-    losses = {}
-    for booking in overbookings:
-        add_amount(losses, booking.get("currency"), booking.get("total_amount") or 0)
-
-    if total_ob < 3:
-        confidence = "low"
-        confidence_note = "Fazla satış verisi yetersiz — sonuçlar gösterge niteliğindedir"
-    elif data_days < 14:
-        confidence = "medium"
-        confidence_note = f"Son {data_days} güne dayanmaktadır"
-    else:
-        confidence = "high"
-        confidence_note = f"{total_ob} fazla satış kaydı, {data_days} gün üzerinden analiz edildi"
-
-    return {
-        "heatmap": heatmap,
-        "peak_days": peak_days,
-        "weekly_pattern": weekly_pattern,
-        "channel_overlay": channel_overlay,
-        "total_overbookings": total_ob,
-        "total_loss": single_amount(losses), "loss_by_currency": rounded_totals(losses),
-        "basis": "arrival_cohort_gross_booking_value_not_realized_loss",
-        "period_days": days,
-        "data_quality": {
-            "confidence": confidence,
-            "note": confidence_note,
-            "data_points": total_ob,
-            "data_days": data_days,
-        },
-    }
-
-
-# ────────────────────────────────────────────────────────
-# 3) ALERT RULE ENGINE (LIGHT)
-# ────────────────────────────────────────────────────────
+    """Daily OVERBOOKING reference values reconcile with the overbooking total."""
+    first, last, _ = _arrival_period(days)
+    rows, invalid_dates = await arrival_cohort(db, current_user.tenant_id, first, last)
+    currency, _ = await get_tenant_currency(current_user.tenant_id)
+    return build_heatmap_report(rows, first, last, currency, invalid_dates=invalid_dates)
 
 
 class AlertRuleCreate(BaseModel):
@@ -428,8 +162,6 @@ async def evaluate_alert_rules(
 ):
     """Evaluate all active rules against recent data and generate alerts."""
     tenant_id = current_user.tenant_id
-    _, _, period = _arrival_period(days)
-
     rules = await db.alert_rules.find(
         {"tenant_id": tenant_id, "is_active": True},
         {"_id": 0},
@@ -438,32 +170,22 @@ async def evaluate_alert_rules(
     if not rules:
         return {"alerts": [], "rules_evaluated": 0}
 
-    # Gather metrics
-    no_shows = await db.bookings.find(
-        {"tenant_id": tenant_id, "status": "no_show", **period},
-        {"_id": 0, "no_show_reason": 1, "source_channel": 1, "channel": 1, "total_amount": 1},
-    ).to_list(None)
-
-    total_bookings = await db.bookings.count_documents({"tenant_id": tenant_id, **period, "status": {"$nin": ["cancelled", "canceled", "draft", "pending"]}})
-
-    overbooking_count = sum(1 for b in no_shows if b.get("no_show_reason") == "overbooking")
+    # One arrival cohort is shared with the read-only report. A no-show alias
+    # must enter both the numerator and the eligible denominator.
+    first, last, _ = _arrival_period(days)
+    all_bookings, invalid_dates = await arrival_cohort(db, tenant_id, first, last)
+    no_shows = [booking for booking in all_bookings if is_no_show(booking)]
+    total_bookings = len(all_bookings)
+    overbooking_count = sum(1 for booking in no_shows if booking.get("no_show_reason") == "overbooking")
     noshow_count = len(no_shows)
-    noshow_rate = round((noshow_count / max(total_bookings, 1)) * 100, 1)
-
-    # Per-channel metrics
-    ch_metrics = defaultdict(lambda: {"noshow": 0, "total": 0})
-    for b in no_shows:
-        ch = b.get("source_channel") or b.get("channel") or "direct"
-        ch_metrics[ch]["noshow"] += 1
-
-    # Get total per channel
-    all_bookings = await db.bookings.find(
-        {"tenant_id": tenant_id, **period, "status": {"$nin": ["cancelled", "canceled", "draft", "pending"]}},
-        {"_id": 0, "source_channel": 1, "channel": 1},
-    ).to_list(None)
-    for b in all_bookings:
-        ch = b.get("source_channel") or b.get("channel") or "direct"
-        ch_metrics[ch]["total"] += 1
+    noshow_rate = round(noshow_count / total_bookings * 100, 1) if total_bookings else 0
+    ch_metrics = defaultdict(lambda: {"noshow": 0, "total": 0, "overbooking": 0})
+    for booking in all_bookings:
+        entry = ch_metrics[booking_channel(booking)]
+        entry["total"] += 1
+        if is_no_show(booking):
+            entry["noshow"] += 1
+            entry["overbooking"] += int(booking.get("no_show_reason") == "overbooking")
 
     metrics = {
         "overbooking_count": overbooking_count,
@@ -481,9 +203,11 @@ async def evaluate_alert_rules(
         ch_filter = rule.get("channel_filter")
 
         # Determine metric value
-        if ch_filter and metric_key == "noshow_rate":
-            ch_info = ch_metrics.get(ch_filter, {"noshow": 0, "total": 0})
-            metric_value = round((ch_info["noshow"] / max(ch_info["total"], 1)) * 100, 1)
+        if ch_filter:
+            ch_info = ch_metrics.get(booking_channel({"channel": ch_filter}), {"noshow": 0, "total": 0, "overbooking": 0})
+            filtered_metrics = {"noshow_rate": round(ch_info["noshow"] / ch_info["total"] * 100, 1) if ch_info["total"] else 0,
+                "noshow_count": ch_info["noshow"], "overbooking_count": ch_info["overbooking"]}
+            metric_value = filtered_metrics.get(metric_key, 0)
         else:
             metric_value = metrics.get(metric_key, 0)
 
@@ -512,7 +236,7 @@ async def evaluate_alert_rules(
 
             # Update trigger count
             await db.alert_rules.update_one(
-                {"id": rule["id"]},
+                {"id": rule["id"], "tenant_id": tenant_id},
                 {"$inc": {"trigger_count": 1}, "$set": {"last_triggered": now_iso}},
             )
 
@@ -524,6 +248,7 @@ async def evaluate_alert_rules(
         "rules_evaluated": len(rules),
         "metrics": metrics,
         "period_days": days,
+        "data_quality": {"invalid_dates": invalid_dates},
     }
 
 
@@ -579,20 +304,18 @@ async def get_noshow_prediction(
             "source_channel": 1,
             "channel": 1,
             "total_amount": 1,
+            "is_complimentary": 1,
+            "total": 1,
+            "rate_per_night": 1,
+            "check_out": 1,
+            "ota_channel": 1,
             "currency": 1,
         },
     ).to_list(None)
 
-    # Historical no-show patterns
-    hist_bookings = await db.bookings.find(
-        {
-            "tenant_id": tenant_id,
-            "$or": [{"check_in": {"$gte": hist_cutoff.isoformat(), "$lt": now.date().isoformat()}},
-                    {"check_in": {"$gte": datetime.combine(hist_cutoff, datetime.min.time(), UTC), "$lt": datetime.combine(now.date(), datetime.min.time(), UTC)}}],
-            "status": {"$nin": ["cancelled", "canceled", "draft", "pending"]},
-        },
-        {"_id": 0, "source_channel": 1, "channel": 1, "status": 1, "check_in": 1},
-    ).to_list(None)
+    # Use exactly the same eligible arrival cohort and legacy status aliases.
+    hist_bookings, invalid_history_dates = await arrival_cohort(db, tenant_id, hist_cutoff, now.date() - timedelta(days=1))
+    currency, _ = await get_tenant_currency(tenant_id)
 
     # Channel-based no-show rates
     ch_totals = defaultdict(int)
@@ -602,9 +325,9 @@ async def get_noshow_prediction(
     dow_noshows = defaultdict(int)
 
     for b in hist_bookings:
-        ch = b.get("source_channel") or b.get("channel") or "direct"
+        ch = booking_channel(b)
         ch_totals[ch] += 1
-        if b.get("status") == "no_show":
+        if is_no_show(b):
             ch_noshows[ch] += 1
 
         ci = _day(b.get("check_in"))
@@ -612,7 +335,7 @@ async def get_noshow_prediction(
             try:
                 dow = datetime.fromisoformat(ci).weekday()
                 dow_totals[dow] += 1
-                if b.get("status") == "no_show":
+                if is_no_show(b):
                     dow_noshows[dow] += 1
             except (ValueError, TypeError):
                 pass
@@ -627,8 +350,9 @@ async def get_noshow_prediction(
 
     # Score each upcoming booking
     predictions = []
-    for b in upcoming:
-        ch = b.get("source_channel") or b.get("channel") or "direct"
+    valid_upcoming = [booking for booking in upcoming if (day := as_date(booking.get("check_in"))) and now.date() <= day < lookahead]
+    for b in valid_upcoming:
+        ch = booking_channel(b)
         ci = _day(b.get("check_in"))
 
         # Channel factor (0-50)
@@ -646,7 +370,8 @@ async def get_noshow_prediction(
                 pass
 
         # Raw amounts in unlike currencies are not comparable risk evidence.
-        amt = float(money(b.get("total_amount") or 0))
+        amount = reservation_value(b)
+        amt = float(amount) if amount is not None else None
         amt_score = 0
 
         # Total risk score (0-100)
@@ -668,7 +393,7 @@ async def get_noshow_prediction(
                 "check_in": ci,
                 "room_type": b.get("room_type") or "-",
                 "total_amount": amt,
-                "currency": currency_code(b.get("currency")),
+                "currency": currency_code(b.get("currency"), currency),
                 "risk_score": risk_score,
                 "risk_level": risk_level,
                 "factors": {
@@ -688,7 +413,7 @@ async def get_noshow_prediction(
     low_risk = sum(1 for p in predictions if p["risk_level"] == "low")
     potential_loss = {}
     for prediction in predictions:
-        if prediction["risk_level"] in ("high", "medium"):
+        if prediction["risk_level"] in ("high", "medium") and prediction["total_amount"] is not None:
             add_amount(potential_loss, prediction["currency"], prediction["total_amount"])
 
     # Data quality
@@ -706,12 +431,16 @@ async def get_noshow_prediction(
     return {
         "predictions": predictions[:50], "matched_count": len(predictions), "truncated": len(predictions) > 50, "limit": 50,
         "risk_model": "rule_based_not_a_probability",
+        "currency": currency,
+        "start_date": now.date().isoformat(), "end_date": (lookahead - timedelta(days=1)).isoformat(),
+        "value_basis": "high_and_medium_risk_gross_booking_value_not_expected_loss",
         "summary": {
-            "total_upcoming": len(upcoming),
+            "total_upcoming": len(valid_upcoming),
             "high_risk": high_risk,
             "medium_risk": medium_risk,
             "low_risk": low_risk,
-            "potential_loss": single_amount(potential_loss), "potential_loss_by_currency": rounded_totals(potential_loss),
+            "potential_loss": None if not potential_loss and any(row["total_amount"] is None and row["risk_level"] in ("high", "medium") for row in predictions) else single_amount(potential_loss),
+            "potential_loss_by_currency": rounded_totals(potential_loss),
         },
         "historical_rates": {
             "by_channel": ch_rates,
@@ -722,5 +451,7 @@ async def get_noshow_prediction(
             "confidence": confidence,
             "note": confidence_note,
             "historical_bookings": total_hist,
+            "invalid_amounts": sum(row["total_amount"] is None for row in predictions),
+            "invalid_dates": len(upcoming) - len(valid_upcoming), "invalid_history_dates": invalid_history_dates,
         },
     }
