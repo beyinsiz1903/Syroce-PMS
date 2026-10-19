@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
 import ForecastReportsPage from '../ForecastReportsPage';
 import api from '@/api/axios';
@@ -8,7 +8,8 @@ vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: key => key }) }));
 vi.mock('recharts', () => {
   const Container = ({ children }) => <div>{children}</div>;
   const Empty = () => null;
-  return { ResponsiveContainer: Container, LineChart: Container, BarChart: Container, Line: Empty, Bar: Empty,
+  const Line = ({ dataKey, type, connectNulls }) => <span data-testid={`line-${dataKey}`} data-interpolation={type} data-connect-nulls={String(connectNulls)} />;
+  return { ResponsiveContainer: Container, LineChart: Container, BarChart: Container, Line, Bar: Empty,
     XAxis: Empty, YAxis: Empty, Tooltip: Empty, CartesianGrid: Empty, Legend: Empty };
 });
 
@@ -87,4 +88,71 @@ it('shows forecast revenue, ADR and RevPAR in their actual currencies, not as nu
   expect(table.textContent).toContain('USD:');
   expect(table.textContent).not.toContain('₺');
   expect(table.textContent).not.toContain('null');
+});
+
+it('shows comparison-only pace data and does not claim the report is empty', async () => {
+  api.get.mockResolvedValueOnce({ data: { daily: [] } }).mockResolvedValueOnce({ data: {
+    current: [], compare: [{ days_out: 2, rooms_on_books: 3 }, { days_out: 0, rooms_on_books: 5 }], as_of_date: '2026-10-18',
+  } });
+  render(<ForecastReportsPage />);
+  selectTab('pace');
+  const table = await screen.findByTestId('pace-table');
+  expect(table).toHaveTextContent('3');
+  expect(table).toHaveTextContent('5');
+  expect(screen.queryByText('Seçili kapsamda rapor kaydı bulunmuyor.')).not.toBeInTheDocument();
+  const cells = within(table).getAllByRole('row').at(-1).querySelectorAll('td');
+  expect(cells[1]).toHaveTextContent('—');
+  expect(cells[3]).toHaveTextContent('-');
+  expect(screen.getByTestId('line-karsilastirma')).toHaveAttribute('data-interpolation', 'stepAfter');
+  expect(screen.getByTestId('line-karsilastirma')).toHaveAttribute('data-connect-nulls', 'false');
+});
+
+it('keeps comparison-only lead days and leaves the unobserved current period blank', async () => {
+  api.get.mockResolvedValueOnce({ data: { daily: [] } }).mockResolvedValueOnce({ data: {
+    current: [{ days_out: 10, rooms_on_books: 1 }],
+    compare: [{ days_out: 20, rooms_on_books: 2 }, { days_out: 0, rooms_on_books: 5 }],
+  } });
+  render(<ForecastReportsPage />);
+  selectTab('pace');
+  const table = await screen.findByTestId('pace-table');
+  expect(within(table).getAllByRole('row')).toHaveLength(4);
+  expect(table).toHaveTextContent('-20');
+  expect(table).toHaveTextContent('-10');
+  const future = within(table).getAllByRole('row').at(-1);
+  expect(future.querySelectorAll('td')[1]).toHaveTextContent('—');
+  expect(future.querySelectorAll('td')[3]).toHaveTextContent('-');
+});
+
+it('displays daily capacity, overselling and forecast-only financial wording', async () => {
+  api.get.mockResolvedValue({ data: { currency: 'EUR', daily: [{ date: '2026-10-18', rooms_otb: 2, rooms_forecast: 2,
+    available_rooms: 1, overbooked_rooms: 1, occupancy_pct: 200, revenue_otb_by_currency: { EUR: 200 }, adr_by_currency: { EUR: 100 } }] } });
+  render(<ForecastReportsPage />);
+  const table = await screen.findByTestId('forecast-table');
+  expect(table).toHaveTextContent('Satılabilir Oda');
+  expect(table).toHaveTextContent('Fazla Rezervasyon');
+  expect(table).toHaveTextContent('200%');
+  expect(table).not.toHaveTextContent('Kesinleşmiş Gelir');
+  expect(screen.getByText(/kalibre edilmiş bir güven yüzdesi değildir/)).toBeInTheDocument();
+});
+
+it('rejects an invalid comparison year before making an API call', async () => {
+  api.get.mockResolvedValue({ data: { daily: [], current: [] } });
+  render(<ForecastReportsPage />);
+  selectTab('pace');
+  await waitFor(() => expect(screen.getByTestId('button-load-pace')).toBeEnabled());
+  const calls = api.get.mock.calls.length;
+  fireEvent.change(screen.getByTestId('input-pace-compare'), { target: { value: '10000' } });
+  fireEvent.click(screen.getByTestId('button-load-pace'));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Geçerli bir karşılaştırma yılı');
+  expect(api.get).toHaveBeenCalledTimes(calls);
+});
+
+it('does not show zero RevPAR or zero occupancy when commitments have no sellable inventory', async () => {
+  api.get.mockResolvedValue({ data: { currency: 'EUR', daily: [{ date: '2026-10-18', rooms_otb: 1, rooms_forecast: 1,
+    available_rooms: 0, overbooked_rooms: 1, capacity_conflict: true, occupancy_pct: null, revpar: null, adr_by_currency: { EUR: 100 } }] } });
+  render(<ForecastReportsPage />);
+  const table = await screen.findByTestId('forecast-table');
+  expect(table).toHaveTextContent('Kapasite yok');
+  expect(table).not.toHaveTextContent('null%');
+  expect(within(table).getAllByRole('row').at(-1).querySelectorAll('td')[7]).toHaveTextContent('—');
 });
