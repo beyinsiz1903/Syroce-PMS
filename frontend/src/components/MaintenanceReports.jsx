@@ -6,6 +6,14 @@ import { Badge } from '@/components/ui/badge';
 import { FileText, TrendingUp, TrendingDown, Calendar, DollarSign, Clock, CheckCircle, AlertTriangle, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
+
+// Costs per currency as the server keeps them (never added across
+// currencies); a single-currency scalar is the fallback for older payloads.
+export const costText = (byCurrency, scalar) => {
+  const codes = Object.keys(byCurrency || {});
+  if (!codes.length) return formatCurrency(scalar || 0, cachedTenantCurrency());
+  return codes.map((code) => formatCurrency(byCurrency[code], code)).join(' · ');
+};
 const MaintenanceReports = () => {
   const {
     t
@@ -16,12 +24,14 @@ const MaintenanceReports = () => {
   const [currentMonth, setCurrentMonth] = useState(new Date().toISOString().slice(0, 7));
   const [weekOffset, setWeekOffset] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   useEffect(() => {
     loadReports();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, [reportType, currentMonth, weekOffset]);
   const loadReports = async () => {
     setLoading(true);
+    setLoadError(false);
     try {
       if (reportType === 'weekly') {
         const response = await axios.get(`/maintenance/reports/weekly?week_offset=${weekOffset}`);
@@ -32,6 +42,7 @@ const MaintenanceReports = () => {
       }
     } catch (error) {
       console.error('Failed to load reports:', error);
+      setLoadError(true);
     } finally {
       setLoading(false);
     }
@@ -54,10 +65,19 @@ const MaintenanceReports = () => {
     const [year, month] = monthStr.split('-');
     return `${months[parseInt(month) - 1]} ${year}`;
   };
-  if (loading) {
+  const report = reportType === 'weekly' ? weeklyReport : monthlyReport;
+  if (loadError && !loading) {
+    // A failed load is an error to retry, never an empty or crashed report.
+    return <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+        <div className="mb-2">{t('cm.components_MaintenanceReports.yukleme_hatasi', 'Rapor yüklenemedi.')}</div>
+        <Button size="sm" variant="outline" onClick={loadReports}>{t('cm.components_MaintenanceReports.tekrar_dene', 'Tekrar dene')}</Button>
+      </div>;
+  }
+  // `report` is also empty for one render after switching weekly/monthly,
+  // before the effect starts the request.
+  if (loading || !report) {
     return <div className="text-center py-4">{t('cm.components_MaintenanceReports.yukleniyor')}</div>;
   }
-  const report = reportType === 'weekly' ? weeklyReport : monthlyReport;
   return <div className="space-y-4">
       {/* Header with Type Selector */}
       <Card>
@@ -176,15 +196,15 @@ const MaintenanceReports = () => {
             <div className="space-y-2">
               <div className="flex items-center justify-between p-2 bg-gray-50 rounded">
                 <span className="text-sm">{t('cm.components_MaintenanceReports.toplam_maliyet')}</span>
-                <span className="font-bold text-lg">{formatCurrency(monthlyReport.costs.total, monthlyReport.currency || cachedTenantCurrency())}</span>
+                <span className="font-bold text-lg">{costText(monthlyReport.costs.total_by_currency, monthlyReport.costs.total)}</span>
               </div>
               <div className="flex items-center justify-between p-2 bg-gray-50 rounded text-sm">
                 <span>{t('cm.components_MaintenanceReports.parca_maliyeti')}</span>
-                <span className="font-medium">{formatCurrency(monthlyReport.costs.parts, monthlyReport.currency || cachedTenantCurrency())}</span>
+                <span className="font-medium">{costText(monthlyReport.costs.parts_by_currency, monthlyReport.costs.parts)}</span>
               </div>
               <div className="flex items-center justify-between p-2 bg-gray-50 rounded text-sm">
                 <span>{t('cm.components_MaintenanceReports.iscilik')}</span>
-                <span className="font-medium">{formatCurrency(monthlyReport.costs.labor, monthlyReport.currency || cachedTenantCurrency())}</span>
+                <span className="font-medium">{costText(monthlyReport.costs.labor_by_currency, monthlyReport.costs.labor)}</span>
               </div>
             </div>
           </CardContent>
@@ -209,7 +229,7 @@ const MaintenanceReports = () => {
                 </div>
                 <div className="text-xs text-gray-500 mt-1">
                   {data.completed} {t('cm.components_MaintenanceReports.tamamlandi')}
-                  {reportType === 'monthly' && data.cost > 0 && ` • ${formatCurrency(data.cost, data.currency || monthlyReport.currency || cachedTenantCurrency(), { decimals: 0 })}`}
+                  {reportType === 'monthly' && Object.keys(data.cost_by_currency || {}).length > 0 && ` • ${costText(data.cost_by_currency, data.cost)}`}
                 </div>
               </div>)}
           </div>

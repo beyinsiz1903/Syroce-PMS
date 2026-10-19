@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from core.database import db
 from core.security import _is_super_admin, get_current_user
 from models.schemas import User
+from modules.pms_core.report_period import day_bounds, hotel_zone, instant_between, parse_day
 from modules.pms_core.role_permission_service import require_module_role
 
 logger = logging.getLogger(__name__)
@@ -33,6 +34,16 @@ def _safe_seconds_between(dt1, dt2) -> float:
     return abs((dt1 - dt2).total_seconds())
 
 
+async def _period(tenant_id: str, start_date: str | None, end_date: str | None):
+    """(lower, upper) UTC bounds for the hotel's local days, or None."""
+    if not start_date and not end_date:
+        return None
+    zone = await hotel_zone(db, tenant_id)
+    start = parse_day(start_date, "start_date") if start_date else date(2000, 1, 1)
+    end = parse_day(end_date, "end_date") if end_date else date(2100, 12, 31)
+    return day_bounds(start, end, zone)
+
+
 @router.get("/reports")
 async def get_performance_reports(
     start_date: str | None = None,
@@ -53,32 +64,23 @@ async def get_performance_reports(
     if agent_id:
         call_query["agent_id"] = agent_id
 
-    date_filter = {}
-    if start_date:
-        try:
-            date_filter["$gte"] = datetime.fromisoformat(start_date)
-        except ValueError:
-            pass
-    if end_date:
-        try:
-            date_filter["$lte"] = datetime.fromisoformat(end_date)
-        except ValueError:
-            pass
-    if date_filter:
-        call_query["started_at"] = date_filter
+    # Period: whole local days of the hotel, end day included; malformed -> 422.
+    period = await _period(tenant_id, start_date, end_date)
+    if period:
+        call_query = {**call_query, **instant_between("started_at", *period)}
 
-    # Fetch all calls matching criteria
-    calls_cursor = db.contact_center_calls.find(call_query)
-    calls = await calls_cursor.to_list(length=5000)
+    # Every matching call: totals are never cut by a list size.
+    calls = await db.contact_center_calls.find(call_query, {"_id": 0}).to_list(length=None)
 
-    # Fetch all dispositions for this tenant to cross-reference (ACW, FCR, Reservation link)
-    disp_cursor = db.contact_center_dispositions.find({"tenant_id": tenant_id})
-    dispositions = await disp_cursor.to_list(length=5000)
-    disp_map = {d["call_id"]: d for d in dispositions if d.get("call_id")}
+    # Dispositions of exactly these calls (ACW, FCR, reservation link).
+    call_ids = [c["id"] for c in calls if c.get("id")]
+    disp_map = {}
+    if call_ids:
+        async for d in db.contact_center_dispositions.find({"tenant_id": tenant_id, "call_id": {"$in": call_ids}}, {"_id": 0}):
+            disp_map[d["call_id"]] = d
 
     # Fetch queue configs to get SLA thresholds
-    queue_cursor = db.contact_center_queues.find({"tenant_id": tenant_id})
-    queues = await queue_cursor.to_list(length=100)
+    queues = await db.contact_center_queues.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(length=None)
     queue_map = {q["id"]: q for q in queues}
 
     # Fetch users/agents roster to map names
@@ -149,15 +151,13 @@ async def get_performance_reports(
     fcr_rate = (resolved_fcr_count / answered_count * 100.0) if answered_count > 0 else 0.0
     conversion_rate = (converted_reservations_count / total_calls * 100.0) if total_calls > 0 else 0.0
 
-    # Callbacks metrics
-    cb_query = {"tenant_id": tenant_id}
-    if start_date:
-        try:
-            cb_query["abandoned_at"] = {"$gte": datetime.fromisoformat(start_date)}
-        except ValueError:
-            pass
-    callbacks_cursor = db.contact_center_callbacks.find(cb_query)
-    callbacks = await callbacks_cursor.to_list(length=1000)
+    # Callbacks: the same period and queue as the calls.
+    cb_query: dict = {"tenant_id": tenant_id}
+    if queue_id:
+        cb_query["queue_id"] = queue_id
+    if period:
+        cb_query = {**cb_query, **instant_between("abandoned_at", *period)}
+    callbacks = await db.contact_center_callbacks.find(cb_query, {"_id": 0}).to_list(length=None)
     total_callbacks = len(callbacks)
     completed_callbacks = sum(1 for cb in callbacks if cb.get("status") == "completed")
     callback_success_rate = (completed_callbacks / total_callbacks * 100.0) if total_callbacks > 0 else 100.0

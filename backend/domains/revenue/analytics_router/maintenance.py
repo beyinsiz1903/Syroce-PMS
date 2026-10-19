@@ -17,6 +17,8 @@ from fastapi.security import HTTPAuthorizationCredentials
 
 from core.database import db
 from core.security import get_current_user, security
+from modules.pms_core.report_money import add_amount, rounded_totals, single_amount
+from modules.pms_core.report_period import day_bounds, hotel_zone, instant_between, instant_value, local_today, parse_month
 from modules.pms_core.role_permission_service import require_module_role  # v89 DW
 from modules.pms_core.role_permission_service import require_role as _require_role
 
@@ -49,18 +51,39 @@ _SYSTEM_HEALTH_TTL = 5.0  # seconds
 router = APIRouter(prefix="/api", tags=["analytics"])
 
 
+def _measured(tasks: list[dict], field: str) -> list[float]:
+    """Recorded values, zero included; missing or non-numeric left out."""
+    values = []
+    for task in tasks:
+        value = task.get(field)
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            values.append(float(value))
+    return values
+
+
+async def _fallback_currency(tenant_id: str, tasks: list[dict]) -> str:
+    """Currency of tasks stored without one: the hotel's currency."""
+    if all(task.get("currency") for task in tasks):
+        return "TRY"
+    from core.tenant_currency import get_tenant_currency
+
+    code, _symbol = await get_tenant_currency(tenant_id)
+    return code
+
+
 # ── GET /maintenance/reports/weekly ──
 @router.get("/maintenance/reports/weekly")
 async def get_weekly_maintenance_report(week_offset: int = 0, credentials: HTTPAuthorizationCredentials = Depends(security)):
     """Get weekly maintenance report"""
     current_user = await get_current_user(credentials)
 
-    today = datetime.now(UTC)
+    # Monday 00:00 to Sunday 24:00 in the hotel's calendar (report_period).
+    zone = await hotel_zone(db, current_user.tenant_id)
+    today = local_today(zone, datetime.now(UTC))
     week_start = today - timedelta(days=today.weekday() + (week_offset * 7))
     week_end = week_start + timedelta(days=6)
-
-    # Get all maintenance tasks for the week
-    query = {"tenant_id": current_user.tenant_id, "created_at": {"$gte": week_start.isoformat(), "$lte": week_end.isoformat()}}
+    lower, upper = day_bounds(week_start, week_end, zone)
+    query = {"tenant_id": current_user.tenant_id, **instant_between("created_at", lower, upper)}
 
     all_tasks = []
     async for task in db.maintenance_tasks.find(query):
@@ -83,8 +106,8 @@ async def get_weekly_maintenance_report(week_offset: int = 0, credentials: HTTPA
     sla_compliance_rate = round((sla_compliant / completed_tasks * 100) if completed_tasks > 0 else 0, 1)
     completion_rate = round((completed_tasks / total_tasks * 100) if total_tasks > 0 else 0, 1)
 
-    # Calculate average response time
-    response_times = [t.get("response_time_minutes", 0) for t in all_tasks if t.get("response_time_minutes")]
+    # Calculate average response time (0 minutes is a real measurement)
+    response_times = _measured(all_tasks, "response_time_minutes")
     avg_response_time = round(sum(response_times) / len(response_times), 1) if response_times else 0
 
     # Group by category
@@ -114,7 +137,7 @@ async def get_weekly_maintenance_report(week_offset: int = 0, credentials: HTTPA
     top_issues = sorted(issue_counts.items(), key=lambda x: x[1], reverse=True)[:5]
 
     return {
-        "period": {"start": week_start.date().isoformat(), "end": week_end.date().isoformat(), "week_number": week_start.isocalendar()[1]},
+        "period": {"start": week_start.isoformat(), "end": week_end.isoformat(), "week_number": week_start.isocalendar()[1], "timezone": str(zone)},
         "summary": {
             "total_tasks": total_tasks,
             "completed": completed_tasks,
@@ -138,20 +161,13 @@ async def get_monthly_maintenance_report(month: str | None = None, credentials: 
     """Get monthly maintenance report"""
     current_user = await get_current_user(credentials)
 
+    zone = await hotel_zone(db, current_user.tenant_id)
     if not month:
-        month = datetime.now(UTC).strftime("%Y-%m")
-
-    year, m = month.split("-")
-    month_start = datetime(int(year), int(m), 1, tzinfo=UTC)
-
-    # Calculate month end
-    if int(m) == 12:
-        month_end = datetime(int(year) + 1, 1, 1, tzinfo=UTC) - timedelta(days=1)
-    else:
-        month_end = datetime(int(year), int(m) + 1, 1, tzinfo=UTC) - timedelta(days=1)
-
-    # Get all maintenance tasks for the month
-    query = {"tenant_id": current_user.tenant_id, "created_at": {"$gte": month_start.isoformat(), "$lte": month_end.isoformat()}}
+        month = local_today(zone, datetime.now(UTC)).strftime("%Y-%m")
+    # Whole calendar month in the hotel's time zone, last day included.
+    month_start, month_end = parse_month(month)
+    lower, upper = day_bounds(month_start, month_end, zone)
+    query = {"tenant_id": current_user.tenant_id, **instant_between("created_at", lower, upper)}
 
     all_tasks = []
     async for task in db.maintenance_tasks.find(query):
@@ -165,14 +181,18 @@ async def get_monthly_maintenance_report(month: str | None = None, credentials: 
     pending_tasks = len([t for t in all_tasks if t.get("status") == "pending"])
     cancelled_tasks = len([t for t in all_tasks if t.get("status") == "cancelled"])
 
-    # Calculate costs
-    total_cost = sum(t.get("cost", 0) for t in all_tasks if t.get("cost"))
-    parts_cost = sum(t.get("parts_cost", 0) for t in all_tasks if t.get("parts_cost"))
-    labor_cost = sum(t.get("labor_cost", 0) for t in all_tasks if t.get("labor_cost"))
+    # Costs per currency; never added across currencies, never converted.
+    fallback = await _fallback_currency(current_user.tenant_id, all_tasks)
+    totals: dict[str, dict] = {"cost": {}, "parts_cost": {}, "labor_cost": {}}
+    for task in all_tasks:
+        code = task.get("currency") or fallback
+        for field, bucket in totals.items():
+            if task.get(field):
+                add_amount(bucket, code, task[field])
 
-    # Calculate times
-    response_times = [t.get("response_time_minutes", 0) for t in all_tasks if t.get("response_time_minutes")]
-    resolution_times = [t.get("resolution_time_minutes", 0) for t in all_tasks if t.get("resolution_time_minutes")]
+    # Calculate times (0 minutes is a real measurement)
+    response_times = _measured(all_tasks, "response_time_minutes")
+    resolution_times = _measured(all_tasks, "resolution_time_minutes")
 
     avg_response_time = round(sum(response_times) / len(response_times), 1) if response_times else 0
     avg_resolution_time = round(sum(resolution_times) / len(resolution_times), 1) if resolution_times else 0
@@ -184,8 +204,10 @@ async def get_monthly_maintenance_report(month: str | None = None, credentials: 
     # Group by week
     by_week = {}
     for task in all_tasks:
-        created_at = datetime.fromisoformat(task["created_at"])
-        week_num = created_at.isocalendar()[1]
+        created_at = instant_value(task.get("created_at"))
+        if created_at is None:
+            continue
+        week_num = created_at.astimezone(zone).isocalendar()[1]
         if week_num not in by_week:
             by_week[week_num] = {"total": 0, "completed": 0}
         by_week[week_num]["total"] += 1
@@ -197,9 +219,13 @@ async def get_monthly_maintenance_report(month: str | None = None, credentials: 
     for task in all_tasks:
         category = task.get("category", "other")
         if category not in by_category:
-            by_category[category] = {"count": 0, "cost": 0}
+            by_category[category] = {"count": 0, "cost_by_currency": {}}
         by_category[category]["count"] += 1
-        by_category[category]["cost"] += task.get("cost", 0)
+        if task.get("cost"):
+            add_amount(by_category[category]["cost_by_currency"], task.get("currency") or fallback, task["cost"])
+    for row in by_category.values():
+        row["cost_by_currency"] = rounded_totals(row["cost_by_currency"])
+        row["cost"] = single_amount(row["cost_by_currency"])
 
     # Most active rooms
     room_counts = {}
@@ -221,7 +247,7 @@ async def get_monthly_maintenance_report(month: str | None = None, credentials: 
                 staff_performance[staff]["completed"] += 1
 
     return {
-        "period": {"month": month, "start": month_start.date().isoformat(), "end": month_end.date().isoformat()},
+        "period": {"month": month, "start": month_start.isoformat(), "end": month_end.isoformat(), "timezone": str(zone)},
         "summary": {
             "total_tasks": total_tasks,
             "completed": completed_tasks,
@@ -233,7 +259,12 @@ async def get_monthly_maintenance_report(month: str | None = None, credentials: 
             "avg_response_time": avg_response_time,
             "avg_resolution_time": avg_resolution_time,
         },
-        "costs": {"total": round(total_cost, 2), "parts": round(parts_cost, 2), "labor": round(labor_cost, 2)},
+        # One currency: the scalar is that amount; several: null, use *_by_currency.
+        "costs": {
+            "total": single_amount(totals["cost"]), "parts": single_amount(totals["parts_cost"]), "labor": single_amount(totals["labor_cost"]),
+            "total_by_currency": rounded_totals(totals["cost"]), "parts_by_currency": rounded_totals(totals["parts_cost"]),
+            "labor_by_currency": rounded_totals(totals["labor_cost"]),
+        },
         "by_week": by_week,
         "by_category": by_category,
         "most_active_rooms": [{"room": room, "tasks": count} for room, count in most_active_rooms],
@@ -247,10 +278,12 @@ async def get_maintenance_summary(credentials: HTTPAuthorizationCredentials = De
     """Get quick maintenance summary for mobile dashboard"""
     current_user = await get_current_user(credentials)
 
-    today = datetime.now(UTC)
-
-    # Today's stats
-    today_tasks = await db.maintenance_tasks.count_documents({"tenant_id": current_user.tenant_id, "created_at": {"$regex": f"^{today.date().isoformat()}"}})
+    # "Today" and "this month" are the hotel's local calendar, for ISO-text
+    # and BSON created_at alike (a UTC-prefix match missed 00:00-03:00 local).
+    zone = await hotel_zone(db, current_user.tenant_id)
+    today = local_today(zone, datetime.now(UTC))
+    today_tasks = await db.maintenance_tasks.count_documents(
+        {"tenant_id": current_user.tenant_id, **instant_between("created_at", *day_bounds(today, today, zone))})
 
     # Active tasks
     active_tasks = await db.maintenance_tasks.count_documents({"tenant_id": current_user.tenant_id, "status": {"$in": ["pending", "in_progress"]}})
@@ -259,10 +292,10 @@ async def get_maintenance_summary(credentials: HTTPAuthorizationCredentials = De
     emergency_tasks = await db.maintenance_tasks.count_documents({"tenant_id": current_user.tenant_id, "priority": "emergency", "status": {"$ne": "completed"}})
 
     # This month's completion rate
-    month_start = today.replace(day=1)
-    month_tasks = []
-    async for task in db.maintenance_tasks.find({"tenant_id": current_user.tenant_id, "created_at": {"$gte": month_start.isoformat()}}):
-        month_tasks.append(task)
+    month_tasks = await db.maintenance_tasks.find(
+        {"tenant_id": current_user.tenant_id, **instant_between("created_at", *day_bounds(today.replace(day=1), today, zone))},
+        {"_id": 0, "status": 1},
+    ).to_list(None)
 
     completed_this_month = len([t for t in month_tasks if t.get("status") == "completed"])
     completion_rate = round((completed_this_month / len(month_tasks) * 100) if month_tasks else 0, 1)
@@ -282,8 +315,10 @@ async def get_maintenance_calendar(month: str | None = None, credentials: HTTPAu
     """Get routine maintenance calendar"""
     current_user = await get_current_user(credentials)
 
-    if not month:
-        month = datetime.now(UTC).strftime("%Y-%m")
+    if month:
+        parse_month(month)  # malformed -> 422
+    else:
+        month = local_today(await hotel_zone(db, current_user.tenant_id), datetime.now(UTC)).strftime("%Y-%m")
 
     # Gercek planli bakim kayitlari `maintenance_schedule` koleksiyonunda tutulur
     # (POST /maintenance/schedule-routine ile yazilir). Uydurma sabit takvim

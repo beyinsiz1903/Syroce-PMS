@@ -161,30 +161,17 @@ async def list_suppliers(
         query["name"] = {"$regex": _re.escape(q.replace("\x00", "")), "$options": "i"}
     items = await db.proc_suppliers.find(query, {"_id": 0}).sort("name", 1).to_list(500)
     if with_commitment and items:
-        # Per-supplier open PO commitment (matches credit-limit enforcement
-        # window in create PO: status in {sent, partially_received}). Single
-        # aggregation round-trip; map onto supplier rows for headroom UI.
-        pipeline = [
-            {
-                "$match": {
-                    "tenant_id": current_user.tenant_id,
-                    "status": {"$in": ["sent", "partially_received"]},
-                }
-            },
-            {
-                "$group": {
-                    "_id": "$supplier_id",
-                    "total": {"$sum": "$grand_total"},
-                }
-            },
-        ]
-        totals: dict[str, float] = {}
-        async for doc in db.proc_purchase_orders.aggregate(pipeline):
-            sid = doc.get("_id")
-            if sid:
-                totals[sid] = float(doc.get("total", 0) or 0)
+        # Per-supplier open PO commitment (sent / partially_received; the
+        # create-PO guard also counts drafts) per currency, never added
+        # across currencies. ``open_commitment`` only when single-currency.
+        from modules.pms_core.report_money import single_amount
+
+        by_supplier = await _open_po_by_currency(current_user.tenant_id, [s.get("id") for s in items if s.get("id")],
+                                                 statuses=["sent", "partially_received"])
         for s in items:
-            s["open_commitment"] = round(totals.get(s.get("id"), 0.0), 2)
+            by_currency = by_supplier.get(s.get("id"), {})
+            s["open_commitment_by_currency"] = by_currency
+            s["open_commitment"] = single_amount(by_currency)
     return {"items": items, "count": len(items)}
 
 
@@ -425,23 +412,61 @@ class POIn(BaseModel):
     override_credit_limit: bool = False
 
 
-async def _supplier_open_po_total(tenant_id: str, supplier_id: str) -> float:
-    """Sum grand_total of open POs (draft / sent / partially_received)."""
+OPEN_PO_STATUSES = ["draft", "sent", "partially_received"]
+
+
+async def _open_po_by_currency(tenant_id: str, supplier_ids: list[str] | None = None,
+                               statuses: list[str] | None = None) -> dict[str, dict[str, float]]:
+    """Open PO grand totals per supplier and currency. Never added across
+    currencies and never converted (modules.pms_core.report_money)."""
+    from modules.pms_core.report_money import add_amount, rounded_totals
+
     db = get_system_db()
+    match: dict = {"tenant_id": tenant_id, "status": {"$in": statuses or OPEN_PO_STATUSES}}
+    if supplier_ids is not None:
+        match["supplier_id"] = {"$in": supplier_ids}
     pipeline = [
-        {
-            "$match": {
-                "tenant_id": tenant_id,
-                "supplier_id": supplier_id,
-                "status": {"$in": ["draft", "sent", "partially_received"]},
-            }
-        },
-        {"$group": {"_id": None, "total": {"$sum": "$grand_total"}}},
+        {"$match": match},
+        {"$group": {"_id": {"supplier": "$supplier_id", "currency": {"$toUpper": {"$ifNull": ["$currency", "TRY"]}}},
+                    "total": {"$sum": "$grand_total"}}},
     ]
-    open_total = 0.0
+    raw: dict[str, dict] = {}
     async for row in db.proc_purchase_orders.aggregate(pipeline):
-        open_total = float(row.get("total", 0) or 0)
-    return round(open_total, 2)
+        sid = (row.get("_id") or {}).get("supplier")
+        if sid:
+            add_amount(raw.setdefault(sid, {}), row["_id"].get("currency"), row.get("total") or 0)
+    return {sid: rounded_totals(totals) for sid, totals in raw.items()}
+
+
+async def _limit_currency(tenant_id: str, supplier: dict) -> str:
+    """A credit limit is in the supplier's currency, else the hotel's."""
+    from modules.pms_core.report_money import currency_code
+
+    if supplier.get("currency"):
+        return currency_code(supplier["currency"])
+    from core.tenant_currency import get_tenant_currency
+
+    code, _symbol = await get_tenant_currency(tenant_id)
+    return currency_code(code)
+
+
+def _limit_view(limit, by_currency: dict[str, float], limit_currency: str, projected: float = 0.0) -> dict:
+    """Credit position in the limit's currency only; open amounts in other
+    currencies cannot be compared without a rate and are reported apart."""
+    in_limit = round(by_currency.get(limit_currency, 0.0), 2)
+    other = {code: amount for code, amount in by_currency.items() if code != limit_currency and abs(amount) >= 0.01}
+    total = round(in_limit + projected, 2)
+    view = {"limit_currency": limit_currency, "open_total": in_limit, "open_total_by_currency": by_currency,
+            "unconverted_by_currency": other, "used_pct": None, "headroom": None, "warning": False, "exceeded": False}
+    if limit is not None and float(limit) > 0:
+        view["used_pct"] = round(total / float(limit) * 100.0, 2)
+        view["headroom"] = round(float(limit) - total, 2)
+        view["warning"] = view["used_pct"] >= 80.0
+        view["exceeded"] = total > float(limit) + 1e-6
+    elif limit is not None and float(limit) == 0:
+        view["used_pct"], view["headroom"] = 0.0, 0.0
+        view["exceeded"] = view["warning"] = total > 0
+    return view
 
 
 def _po_compute(lines: list[dict], tax_rate: float) -> dict:
@@ -493,10 +518,17 @@ async def create_purchase_order(
         if override and not override_allowed:
             raise HTTPException(403, "Kredi limiti aşımı override için 'manage_credit_limit' yetkisi gerekli")
         if not override_allowed:
-            open_total = await _supplier_open_po_total(current_user.tenant_id, body.supplier_id)
+            # Compared in the limit's currency only: amounts in another
+            # currency cannot be checked against it without a rate.
+            limit_currency = await _limit_currency(current_user.tenant_id, sup)
+            po_currency = str(body.currency or "TRY").upper()
+            if po_currency != limit_currency:
+                raise HTTPException(409, f"Tedarikçi kredi limiti {limit_currency} cinsinden; {po_currency} sipariş kurla çevrilmeden denetlenemez. 'manage_credit_limit' yetkisiyle onaylayın.")
+            by_currency = (await _open_po_by_currency(current_user.tenant_id, [body.supplier_id])).get(body.supplier_id, {})
+            open_total = by_currency.get(limit_currency, 0.0)
             projected = round(open_total + totals["grand_total"], 2)
             if projected > float(credit_limit) + 1e-6:
-                raise HTTPException(409, f"Tedarikçi kredi limiti aşıldı: açık {open_total:.2f} + yeni {totals['grand_total']:.2f} = {projected:.2f} > limit {float(credit_limit):.2f}")
+                raise HTTPException(409, f"Tedarikçi kredi limiti aşıldı: açık {open_total:.2f} + yeni {totals['grand_total']:.2f} = {projected:.2f} > limit {float(credit_limit):.2f} {limit_currency}")
 
     po_no = await _next_no(current_user.tenant_id, "po", "PO")
     doc = {
@@ -583,6 +615,11 @@ async def credit_utilisation_report(
       * ``warning``  — used_pct >= 80 and <= 100
       * ``exceeded`` — open_total > limit
       * ``no_limit`` — supplier has no credit_limit configured
+      * ``mixed_currency`` — open orders in a currency other than the
+        limit's; not convertible here, so the position is not known
+
+    Amounts are per currency (``open_total_by_currency``); ``open_total``,
+    ``used_pct`` and ``headroom`` are in the limit's currency only.
     """
     db = get_system_db()
     sup_query: dict = {
@@ -593,57 +630,39 @@ async def credit_utilisation_report(
         sup_query["credit_limit"] = {"$gt": 0}
     suppliers = await db.proc_suppliers.find(
         sup_query,
-        {"_id": 0, "id": 1, "name": 1, "code": 1, "credit_limit": 1},
+        {"_id": 0, "id": 1, "name": 1, "code": 1, "credit_limit": 1, "currency": 1},
     ).to_list(2000)
-
-    pipeline = [
-        {
-            "$match": {
-                "tenant_id": current_user.tenant_id,
-                "status": {"$in": ["draft", "sent", "partially_received"]},
-            }
-        },
-        {"$group": {"_id": "$supplier_id", "total": {"$sum": "$grand_total"}}},
-    ]
-    totals: dict[str, float] = {}
-    async for row in db.proc_purchase_orders.aggregate(pipeline):
-        sid = row.get("_id")
-        if sid:
-            totals[sid] = float(row.get("total", 0) or 0)
+    open_by_supplier = await _open_po_by_currency(current_user.tenant_id, [s.get("id") for s in suppliers if s.get("id")])
 
     rows: list[dict] = []
     for s in suppliers:
         sid = s.get("id")
         limit = s.get("credit_limit")
-        open_total = round(totals.get(sid, 0.0), 2)
-        used_pct: float | None = None
-        headroom: float | None = None
-        status = "no_limit"
-        if limit is not None and float(limit) > 0:
-            used_pct = round(open_total / float(limit) * 100.0, 2)
-            headroom = round(float(limit) - open_total, 2)
-            if open_total > float(limit) + 1e-6:
-                status = "exceeded"
-            elif used_pct >= 80.0:
-                status = "warning"
-            else:
-                status = "ok"
-        elif limit is not None and float(limit) == 0:
-            headroom = 0.0
-            used_pct = 0.0
-            status = "exceeded" if open_total > 0 else "ok"
-        rows.append(
-            {
-                "supplier_id": sid,
-                "supplier_name": s.get("name"),
-                "supplier_code": s.get("code"),
-                "limit": float(limit) if limit is not None else None,
-                "open_total": open_total,
-                "headroom": headroom,
-                "used_pct": used_pct,
-                "status": status,
-            }
-        )
+        view = _limit_view(limit, open_by_supplier.get(sid, {}), await _limit_currency(current_user.tenant_id, s))
+        if limit is None:
+            status = "no_limit"
+        elif view["unconverted_by_currency"]:
+            # Open orders in another currency: the position is not known.
+            status = "mixed_currency"
+        elif view["exceeded"]:
+            status = "exceeded"
+        elif view["warning"]:
+            status = "warning"
+        else:
+            status = "ok"
+        rows.append({
+            "supplier_id": sid,
+            "supplier_name": s.get("name"),
+            "supplier_code": s.get("code"),
+            "limit": float(limit) if limit is not None else None,
+            "limit_currency": view["limit_currency"],
+            "open_total": view["open_total"],
+            "open_total_by_currency": view["open_total_by_currency"],
+            "unconverted_by_currency": view["unconverted_by_currency"],
+            "headroom": view["headroom"],
+            "used_pct": view["used_pct"],
+            "status": status,
+        })
 
     rows.sort(
         key=lambda r: (
@@ -659,6 +678,7 @@ async def credit_utilisation_report(
 async def supplier_credit_utilisation(
     supplier_id: str,
     projected_amount: float = 0.0,
+    projected_currency: str | None = None,
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_finance_reports")),
 ):
@@ -677,38 +697,25 @@ async def supplier_credit_utilisation(
       exceeded          — True when projected_total > limit
     """
     db = get_system_db()
-    sup = await db.proc_suppliers.find_one({"id": supplier_id, "tenant_id": current_user.tenant_id}, {"_id": 0, "credit_limit": 1, "name": 1})
+    sup = await db.proc_suppliers.find_one({"id": supplier_id, "tenant_id": current_user.tenant_id},
+                                           {"_id": 0, "credit_limit": 1, "name": 1, "currency": 1})
     if not sup:
         raise HTTPException(404, "Tedarikçi bulunamadı")
     limit = sup.get("credit_limit")
-    open_total = await _supplier_open_po_total(current_user.tenant_id, supplier_id)
+    limit_currency = await _limit_currency(current_user.tenant_id, sup)
     projected_amount = max(0.0, float(projected_amount or 0))
-    projected_total = round(open_total + projected_amount, 2)
-    used_pct: float | None = None
-    headroom: float | None = None
-    warning = False
-    exceeded = False
-    if limit is not None and float(limit) > 0:
-        used_pct = round(projected_total / float(limit) * 100.0, 2)
-        headroom = round(float(limit) - projected_total, 2)
-        warning = used_pct >= 80.0
-        exceeded = projected_total > float(limit) + 1e-6
-    elif limit is not None and float(limit) == 0:
-        headroom = 0.0
-        used_pct = 0.0
-        exceeded = projected_total > 0
-        warning = exceeded
+    # The projection is in the PO's currency; it counts only in the limit's.
+    comparable = projected_currency is None or str(projected_currency).upper() == limit_currency
+    by_currency = (await _open_po_by_currency(current_user.tenant_id, [supplier_id])).get(supplier_id, {})
+    view = _limit_view(limit, by_currency, limit_currency, projected_amount if comparable else 0.0)
     return {
         "supplier_id": supplier_id,
         "supplier_name": sup.get("name"),
         "limit": float(limit) if limit is not None else None,
-        "open_total": open_total,
+        **view,
         "projected_amount": round(projected_amount, 2),
-        "projected_total": projected_total,
-        "headroom": headroom,
-        "used_pct": used_pct,
-        "warning": warning,
-        "exceeded": exceeded,
+        "projected_comparable": comparable,
+        "projected_total": round(view["open_total"] + (projected_amount if comparable else 0.0), 2),
     }
 
 

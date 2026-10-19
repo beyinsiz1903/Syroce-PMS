@@ -24,7 +24,6 @@ from models.enums import UserRole
 from routers import procurement as proc_module
 from routers.procurement import router as proc_router
 
-
 # ── Fake Mongo helpers ────────────────────────────────────────────────
 
 
@@ -54,24 +53,28 @@ class _FakeFindCursor:
         return list(self._docs)
 
 
+def _currency_groups(docs, match):
+    """The (supplier, currency) grouping of procurement._open_po_by_currency."""
+    tenant = match["tenant_id"]
+    statuses = set(match["status"]["$in"])
+    wanted = match.get("supplier_id", {}).get("$in")
+    sums: dict[tuple, float] = {}
+    for d in docs:
+        if d.get("tenant_id") != tenant or d.get("status") not in statuses:
+            continue
+        if wanted is not None and d.get("supplier_id") not in wanted:
+            continue
+        key = (d.get("supplier_id"), str(d.get("currency") or "TRY").upper())
+        sums[key] = sums.get(key, 0.0) + float(d.get("grand_total", 0) or 0)
+    return [{"_id": {"supplier": sid, "currency": cur}, "total": total} for (sid, cur), total in sums.items()]
+
+
 class _FakePOs:
     def __init__(self, docs):
         self.docs = list(docs)
 
     def aggregate(self, pipeline):
-        match = pipeline[0]["$match"]
-        tenant = match["tenant_id"]
-        statuses = set(match["status"]["$in"])
-        sums: dict[str, float] = {}
-        for d in self.docs:
-            if d.get("tenant_id") != tenant:
-                continue
-            if d.get("status") not in statuses:
-                continue
-            sid = d.get("supplier_id")
-            sums[sid] = sums.get(sid, 0.0) + float(d.get("grand_total", 0) or 0)
-        rows = [{"_id": sid, "total": total} for sid, total in sums.items()]
-        return _FakeAggregateCursor(rows)
+        return _FakeAggregateCursor(_currency_groups(self.docs, pipeline[0]["$match"]))
 
 
 class _FakeSuppliers:
@@ -113,6 +116,11 @@ def _build_client(monkeypatch, *, suppliers, pos, user):
     monkeypatch.setattr(proc_module, "_indexes_ready", True, raising=False)
     fake_db = _FakeDB(suppliers, pos)
     monkeypatch.setattr(proc_module, "get_system_db", lambda: fake_db)
+
+    async def _hotel_currency(_tenant_id):
+        return "TRY", "₺"
+
+    monkeypatch.setattr("core.tenant_currency.get_tenant_currency", _hotel_currency)
 
     from core.security import get_current_user
 
@@ -261,3 +269,21 @@ def test_tenant_isolation(monkeypatch):
     items = r.json()["items"]
     assert [row["supplier_id"] for row in items] == ["s_mine"]
     assert items[0]["open_total"] == 250.0
+
+
+def test_open_orders_in_another_currency_are_not_added_to_the_limit(monkeypatch):
+    """Report audit 2026-10-19: 100 EUR + 100 USD was shown as 200 against
+    a limit. Only the limit's currency counts; the rest is shown apart."""
+    suppliers = [{"id": "s_mix", "tenant_id": "t1", "name": "Mixed", "code": "S-M",
+                  "active": True, "credit_limit": 1000.0, "currency": "EUR"}]
+    pos = [
+        {"tenant_id": "t1", "supplier_id": "s_mix", "status": "sent", "grand_total": 100.0, "currency": "EUR"},
+        {"tenant_id": "t1", "supplier_id": "s_mix", "status": "sent", "grand_total": 100.0, "currency": "USD"},
+    ]
+    client = _build_client(monkeypatch, suppliers=suppliers, pos=pos, user=_make_user())
+    row = client.get("/api/procurement/credit-utilisation").json()["items"][0]
+    assert row["limit_currency"] == "EUR"
+    assert row["open_total"] == 100.0
+    assert row["open_total_by_currency"] == {"EUR": 100.0, "USD": 100.0}
+    assert row["unconverted_by_currency"] == {"USD": 100.0}
+    assert row["status"] == "mixed_currency"

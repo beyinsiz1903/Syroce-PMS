@@ -386,7 +386,8 @@ const ProcurementPage = ({
       try {
         const r = await axios.get(`/procurement/suppliers/${supplierId}/credit-utilisation`, {
           params: {
-            projected_amount: projected
+            projected_amount: projected,
+            projected_currency: poForm.currency || undefined
           }
         });
         if (creditReqRef.current === reqId) setCreditUtil(r.data);
@@ -532,6 +533,8 @@ const ProcurementPage = ({
           const hasLimit = limit !== null && limit !== undefined && limit !== '';
           const limitNum = hasLimit ? Number(limit) : null;
           if (!hasLimit || !(limitNum > 0)) return null;
+          // null: open orders in several currencies; not comparable to the limit.
+          if (s.open_commitment === null) return null;
           const open = Number(s.open_commitment || 0);
           const pct = open / limitNum * 100;
           if (pct < 80) return null;
@@ -779,8 +782,9 @@ const ProcurementPage = ({
                 <tbody>
                   {suppliers.map(s => {
                     const limit = s.credit_limit;
+                    const mixed = s.open_commitment === null;
                     const open = Number(s.open_commitment || 0);
-                    const hasLimit = limit !== null && limit !== undefined && limit !== '';
+                    const hasLimit = !mixed && limit !== null && limit !== undefined && limit !== '';
                     const limitNum = hasLimit ? Number(limit) : null;
                     const headroom = hasLimit ? limitNum - open : null;
                     const pct = hasLimit && limitNum > 0 ? Math.min(100, open / limitNum * 100) : 0;
@@ -797,7 +801,7 @@ const ProcurementPage = ({
                           limit: limitNum.toLocaleString()
                         })}>
                             {open.toLocaleString()} / {limitNum.toLocaleString()}
-                          </span> : <span>—</span>}
+                          </span> : mixed ? <span data-testid={`supplier-open-mixed-${s.id}`}>{formatCurrencyBreakdown(s.open_commitment_by_currency, null, tenantCurrency, i18n.language)}</span> : <span>—</span>}
                       </td>
                       <td className="p-2">
                         <Badge className={s.active ? 'bg-emerald-100 text-emerald-800 border-0' : 'bg-slate-200 text-slate-600 border-0'}>
@@ -855,17 +859,21 @@ const ProcurementPage = ({
                 </tr></thead>
                 <tbody>
                   {creditReport.map(row => {
-                    const cls = row.status === 'exceeded' ? 'bg-rose-100 text-rose-800' : row.status === 'warning' ? 'bg-amber-100 text-amber-800' : row.status === 'ok' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600';
+                    const cls = row.status === 'exceeded' ? 'bg-rose-100 text-rose-800' : row.status === 'warning' || row.status === 'mixed_currency' ? 'bg-amber-100 text-amber-800' : row.status === 'ok' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600';
+                    const unconverted = row.unconverted_by_currency || {};
                     const tone = row.status === 'exceeded' ? 'text-rose-700' : row.status === 'warning' ? 'text-amber-700' : 'text-slate-700';
                     return <tr key={row.supplier_id} className="border-b hover:bg-slate-50">
                         <td className="p-2 font-mono text-xs">{row.supplier_code || '—'}</td>
                         <td className="p-2 font-medium">{row.supplier_name}</td>
-                        <td className={`p-2 text-right tabular-nums ${tone}`}>{money(row.open_total, row.currency)}</td>
+                        <td className={`p-2 text-right tabular-nums ${tone}`}>
+                          {money(row.open_total, row.limit_currency)}
+                          {Object.keys(unconverted).length > 0 && <div className="text-[11px] text-amber-700" data-testid={`credit-unconverted-${row.supplier_id}`}>+ {formatCurrencyBreakdown(unconverted, null, tenantCurrency, i18n.language)}</div>}
+                        </td>
                         <td className="p-2 text-right tabular-nums">
-                          {row.limit === null ? '—' : money(row.limit, row.currency)}
+                          {row.limit === null ? '—' : money(row.limit, row.limit_currency)}
                         </td>
                         <td className={`p-2 text-right tabular-nums ${tone}`}>
-                          {row.headroom === null ? '—' : money(row.headroom, row.currency)}
+                          {row.headroom === null ? '—' : money(row.headroom, row.limit_currency)}
                         </td>
                         <td className={`p-2 text-right tabular-nums ${tone}`}>
                           {row.used_pct === null ? '—' : `${row.used_pct.toFixed(1)}%`}

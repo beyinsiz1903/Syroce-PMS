@@ -17,14 +17,12 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from models.enums import UserRole
 from routers import procurement as proc_module
 from routers.procurement import router as proc_router
-
 
 # ── Fake Mongo helpers ────────────────────────────────────────────────
 
@@ -44,6 +42,22 @@ class _FakeAggregateCursor:
             raise StopAsyncIteration
 
 
+def _currency_groups(docs, match):
+    """The (supplier, currency) grouping of procurement._open_po_by_currency."""
+    tenant = match["tenant_id"]
+    statuses = set(match["status"]["$in"])
+    wanted = match.get("supplier_id", {}).get("$in")
+    sums: dict[tuple, float] = {}
+    for d in docs:
+        if d.get("tenant_id") != tenant or d.get("status") not in statuses:
+            continue
+        if wanted is not None and d.get("supplier_id") not in wanted:
+            continue
+        key = (d.get("supplier_id"), str(d.get("currency") or "TRY").upper())
+        sums[key] = sums.get(key, 0.0) + float(d.get("grand_total", 0) or 0)
+    return [{"_id": {"supplier": sid, "currency": cur}, "total": total} for (sid, cur), total in sums.items()]
+
+
 class _FakePOs:
     """Fake ``proc_purchase_orders`` collection.
 
@@ -57,19 +71,7 @@ class _FakePOs:
         self.inserted: list[dict] = []
 
     def aggregate(self, pipeline):
-        match = pipeline[0]["$match"]
-        statuses = set(match["status"]["$in"])
-        tenant = match["tenant_id"]
-        sup = match["supplier_id"]
-        total = sum(
-            float(d.get("grand_total", 0) or 0)
-            for d in self.docs
-            if d.get("tenant_id") == tenant
-            and d.get("supplier_id") == sup
-            and d.get("status") in statuses
-        )
-        rows = [{"_id": None, "total": total}] if total else []
-        return _FakeAggregateCursor(rows)
+        return _FakeAggregateCursor(_currency_groups(self.docs, pipeline[0]["$match"]))
 
     async def insert_one(self, doc):
         self.inserted.append(dict(doc))
@@ -136,6 +138,11 @@ def _build_client(monkeypatch, *, supplier, pos, user, override_perm=False):
 
     fake_db = _FakeDB(supplier, pos)
     monkeypatch.setattr(proc_module, "get_system_db", lambda: fake_db)
+
+    async def _hotel_currency(_tenant_id):
+        return "TRY", "₺"
+
+    monkeypatch.setattr("core.tenant_currency.get_tenant_currency", _hotel_currency)
 
     # Silence the audit logger — it would otherwise try to write to a
     # real collection.
@@ -302,3 +309,31 @@ def test_supplier_without_credit_limit_skips_guard(monkeypatch):
                     json=_po_body(qty=100, unit_cost=100.0))
     assert r.status_code == 200, r.text
     assert len(db.proc_purchase_orders.inserted) == 1
+
+
+def test_open_orders_in_another_currency_do_not_use_a_try_limit(monkeypatch):
+    """Report audit 2026-10-19: currencies were added without a rate. A
+    4000 EUR open order does not consume a 5000 TRY limit."""
+    supplier = {"id": "sup1", "tenant_id": "t1", "name": "Sup",
+                "active": True, "credit_limit": 5000.0, "currency": "TRY"}
+    existing = [{"tenant_id": "t1", "supplier_id": "sup1",
+                 "status": "sent", "grand_total": 4000.0, "currency": "EUR"}]
+    client, db = _build_client(monkeypatch, supplier=supplier,
+                               pos=existing, user=_make_user())
+    r = client.post("/api/procurement/purchase-orders",
+                    json=_po_body(qty=20, unit_cost=100.0))
+    assert r.status_code == 200, r.text
+
+
+def test_a_po_in_another_currency_than_the_limit_needs_approval(monkeypatch):
+    """It cannot be checked against the limit without a rate, so the guard
+    refuses it unless the user may override the limit."""
+    supplier = {"id": "sup1", "tenant_id": "t1", "name": "Sup",
+                "active": True, "credit_limit": 5000.0, "currency": "TRY"}
+    client, db = _build_client(monkeypatch, supplier=supplier,
+                               pos=[], user=_make_user())
+    r = client.post("/api/procurement/purchase-orders",
+                    json={**_po_body(qty=1, unit_cost=10.0), "currency": "USD"})
+    assert r.status_code == 409, r.text
+    assert "kurla" in r.json()["detail"]
+    assert db.proc_purchase_orders.inserted == []
