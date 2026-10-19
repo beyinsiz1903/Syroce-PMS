@@ -93,6 +93,8 @@ OPERATION_PERMISSIONS = {
     "manage_night_audit": [Permission.SYSTEM_SETTINGS],
     "manage_secrets": [Permission.SYSTEM_SETTINGS],
     "manage_budget_config": [Permission.SYSTEM_SETTINGS],
+    # Sustainability consumption records (energy, water, waste) per hotel.
+    "manage_sustainability": [Permission.SYSTEM_SETTINGS],
     "manage_channel_connectors": [Permission.SYSTEM_SETTINGS],
     "manage_rates": [Permission.OVERRIDE_RATE],
     "manage_pos_settings": [Permission.SYSTEM_SETTINGS],
