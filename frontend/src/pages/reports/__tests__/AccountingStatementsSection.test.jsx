@@ -8,6 +8,13 @@ vi.mock('@/api/axios', () => ({ default: { get } }));
 describe('AccountingStatementsSection', () => {
   beforeEach(() => { get.mockReset(); });
 
+  it.each(['', 'invalid', '2026-02-30'])('rejects invalid date %s without requesting unbounded accounts', async (reportDate) => {
+    render(<AccountingStatementsSection type="income_statement" reportDate={reportDate} reportPeriod="monthly" />);
+    expect(await screen.findByText(/Geçerli bir rapor tarihi seçin/)).toBeInTheDocument();
+    expect(get).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Excel' })).toBeDisabled();
+  });
+
   it('loads the real GL trial balance endpoint and renders account balances', async () => {
     get.mockResolvedValue({ data: {
       rows: [{ account_code: '100', account_name: 'Kasa', total_debit: 1500, total_credit: 500, debit_balance: 1000, credit_balance: 0 }],

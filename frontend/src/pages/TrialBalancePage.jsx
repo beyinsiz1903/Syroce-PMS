@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import api from "@/api/axios";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -8,13 +8,15 @@ import { Badge } from "@/components/ui/badge";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { useToast } from "@/hooks/use-toast";
 import {
   ClipboardCheck, RefreshCw, TrendingUp, Users, Wallet,
   CheckCircle2, AlertCircle, Building, ArrowDownToLine, ArrowUpFromLine,
 } from "lucide-react";
 import { useTranslation } from 'react-i18next';
-import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
+import { cachedTenantCurrency } from '@/lib/currency';
+import { formatCurrencyBreakdown } from '@/lib/reportCurrency';
+import { useBusinessDate } from '@/hooks/useBusinessDate';
+import { validateReportDate } from '@/utils/reportExports';
 
 /**
  * Opera #8 — Trial Balance / Daily Operations Resume.
@@ -49,7 +51,8 @@ const CATEGORY_LABELS = {
   other: "Diğer",
 };
 
-const money = (n, currency) => formatCurrency(n, currency || cachedTenantCurrency());
+const money = (n, currency, breakdown) => n == null && !Object.keys(breakdown || {}).length
+  ? '—' : formatCurrencyBreakdown(breakdown, n, currency || cachedTenantCurrency());
 
 function MetricCard({ icon: Icon, label, value, sub, color = "text-foreground" }) {
   const { t } = useTranslation();
@@ -57,12 +60,12 @@ function MetricCard({ icon: Icon, label, value, sub, color = "text-foreground" }
     <Card>
       <CardContent className="pt-6">
         <div className="flex items-start justify-between">
-          <div>
+          <div className="min-w-0 flex-1">
             <div className="text-xs text-muted-foreground">{label}</div>
-            <div className={`text-2xl font-semibold mt-1 ${color}`}>{value}</div>
-            {sub && <div className="text-xs text-muted-foreground mt-1">{sub}</div>}
+            <div className={`text-xl sm:text-2xl font-semibold mt-1 [overflow-wrap:anywhere] ${color}`}>{value}</div>
+            {sub && <div className="text-xs text-muted-foreground mt-1 [overflow-wrap:anywhere]">{sub}</div>}
           </div>
-          <Icon className="h-5 w-5 text-muted-foreground" />
+          <Icon className="h-5 w-5 shrink-0 text-muted-foreground" />
         </div>
       </CardContent>
     </Card>
@@ -71,30 +74,36 @@ function MetricCard({ icon: Icon, label, value, sub, color = "text-foreground" }
 
 export default function TrialBalancePage({ reportDate }) {
   const { t } = useTranslation();
-  const { toast } = useToast();
-  const [date, setDate] = useState(() => reportDate || new Date().toISOString().slice(0, 10));
+  const businessDate = useBusinessDate();
+  const [date, setDate] = useState(() => reportDate ?? businessDate);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const requestId = useRef(0);
 
   useEffect(() => {
-    if (reportDate) setDate(reportDate);
-  }, [reportDate]);
+    setDate(reportDate ?? businessDate);
+  }, [reportDate, businessDate]);
 
   const load = useCallback(async () => {
+    const request = ++requestId.current;
+    setData(null);
+    setError('');
+    try { validateReportDate(date); } catch (dateError) {
+      setError(dateError.message);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const r = await api.get("/trial-balance", { params: { date } });
-      setData(r.data);
+      if (request === requestId.current) setData(r.data);
     } catch (e) {
-      toast({
-        title: "Yüklenemedi",
-        description: e?.response?.data?.detail || e.message,
-        variant: "destructive",
-      });
-    } finally { setLoading(false); }
-  }, [date, toast]);
+      if (request === requestId.current) setError(e?.response?.data?.detail || e.message || 'Mutabakat yüklenemedi');
+    } finally { if (request === requestId.current) setLoading(false); }
+  }, [date]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(); return () => { requestId.current += 1; }; }, [load]);
 
   return (
     <div className="space-y-4" data-testid="operational-reconciliation-report">
@@ -127,6 +136,10 @@ export default function TrialBalancePage({ reportDate }) {
       {!data && loading && (
         <div className="text-center py-12 text-muted-foreground">{t('cm.pages_TrialBalancePage.yukleniyor')}</div>
       )}
+      {error && <div role="alert" className="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
+        <p className="font-semibold">Mutabakat raporu alınamadı</p><p>{String(error)}</p>
+        <p>Bu durum sıfır bakiye veya dengeli sonuç anlamına gelmez.</p>
+      </div>}
 
       {data && (
         <>
@@ -138,25 +151,26 @@ export default function TrialBalancePage({ reportDate }) {
 
           {/* Günlük gelir / tahsilat karşılaştırması */}
           <Card className={data.balance_check.in_balance ? "border-emerald-500" : "border-amber-500"}>
-            <CardContent className="pt-6 flex items-center gap-3">
+            <CardContent className="pt-6 flex flex-col items-start gap-3 sm:flex-row sm:items-center">
               {data.balance_check.in_balance ? (
-                <CheckCircle2 className="h-6 w-6 text-emerald-600" />
+                <CheckCircle2 className="h-6 w-6 shrink-0 text-emerald-600" />
               ) : (
-                <AlertCircle className="h-6 w-6 text-amber-600" />
+                <AlertCircle className="h-6 w-6 shrink-0 text-amber-600" />
               )}
-              <div className="flex-1">
+              <div className="min-w-0 flex-1 [overflow-wrap:anywhere]">
                 <div className="font-medium">
                   {data.balance_check.in_balance
                     ? "Günlük gelir ve tahsilat eşit"
                     : "Günlük gelir ve tahsilat farklı"}
                 </div>
                 <div className="text-xs text-muted-foreground">
-                  Fark: {money(data.balance_check.revenue_minus_payments, data.currency)}
+                  Fark: {money(data.balance_check.revenue_minus_payments, data.currency, data.balance_check.by_currency)}
+                  {data.balance_check.basis === 'net_operating_revenue_minus_collections' && ' · Net gelir − geçerli tahsilat; para birimleri ayrı karşılaştırılır'}
                   {" · "}Bu bir muhasebe dengesizliği değildir; ön ödeme, açık folyo ve farklı gün tahsilatları nedeniyle oluşabilir
                 </div>
               </div>
               {data.last_night_audit && (
-                <Badge variant="outline">
+                <Badge variant="outline" className="max-w-full whitespace-normal">
                   Son gün sonu: {data.last_night_audit.status || "—"}
                   {data.last_night_audit.audit_date ? ` · ${data.last_night_audit.audit_date.slice(0, 10)}` : ""}
                 </Badge>
@@ -165,7 +179,7 @@ export default function TrialBalancePage({ reportDate }) {
           </Card>
 
           {/* KPI grid */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
             <MetricCard
               icon={Building}
               label="Doluluk"
@@ -175,20 +189,20 @@ export default function TrialBalancePage({ reportDate }) {
             <MetricCard
               icon={TrendingUp}
               label="ADR"
-              value={money(data.revenue.adr, data.revenue.currency || data.currency)}
-              sub={`Ücretli satılan oda başına · RevPAR ${money(data.revenue.revpar, data.revenue.currency || data.currency)} · ${data.revenue.room_revenue_source === 'accrued' ? 'Tahakkuk eden' : 'Folyoya işlenen'}`}
+              value={money(data.revenue.adr, data.revenue.currency || data.currency, data.revenue.adr_by_currency)}
+              sub={`Ücretli satılan oda başına · RevPAR ${money(data.revenue.revpar, data.revenue.currency || data.currency, data.revenue.revpar_by_currency)} · ${data.revenue.room_revenue_source === 'mixed' ? 'Para birimine göre karma kaynak' : data.revenue.room_revenue_source === 'accrued' ? 'Tahakkuk eden' : 'Folyoya işlenen'}`}
             />
             <MetricCard
               icon={Wallet}
-              label={t('cm.pages_TrialBalancePage.toplam_gelir')}
-              value={money(data.revenue.total, data.revenue.currency || data.currency)}
-              sub={`Oda ${money(data.revenue.rooms, data.revenue.currency || data.currency)} · F&B ${money(data.revenue.fnb, data.revenue.currency || data.currency)}`}
+              label="Net günlük gelir"
+              value={money(data.revenue.net_total ?? data.revenue.total, data.revenue.currency || data.currency, data.revenue.net_total_by_currency || data.revenue.total_by_currency)}
+              sub={`Brüt ${money(data.revenue.total, data.revenue.currency || data.currency, data.revenue.total_by_currency)} · Fiyat düzeltmesi ${money(data.revenue.adjustments ?? 0, data.currency, data.revenue.adjustments_by_currency)}`}
               color="text-emerald-600"
             />
             <MetricCard
               icon={ArrowDownToLine}
               label={t('cm.pages_TrialBalancePage.toplam_tahsilat')}
-              value={money(data.payments.total, data.payments.currency || data.currency)}
+              value={money(data.payments.total, data.payments.currency || data.currency, data.payments.total_by_currency)}
               sub={`${Object.keys(data.payments.by_method).length} ödeme yöntemi`}
               color="text-blue-600"
             />
@@ -212,7 +226,7 @@ export default function TrialBalancePage({ reportDate }) {
               icon={Users}
               label="Otelde"
               value={data.movements.in_house}
-              sub="Otelde misafir"
+              sub="Konaklayan rezervasyon"
             />
             <MetricCard
               icon={AlertCircle}
@@ -241,7 +255,7 @@ export default function TrialBalancePage({ reportDate }) {
                   <TableBody>
                     <TableRow>
                       <TableCell className="font-medium">{t('cm.pages_TrialBalancePage.oda_geliri')}</TableCell>
-                      <TableCell className="text-right font-medium">{money(data.revenue.rooms, data.revenue.currency || data.currency)}</TableCell>
+                      <TableCell className="text-right font-medium">{money(data.revenue.rooms, data.revenue.currency || data.currency, data.revenue.rooms_by_currency)}</TableCell>
                     </TableRow>
                     {Object.keys(data.revenue.by_category).length === 0 ? (
                       <TableRow>
@@ -253,16 +267,18 @@ export default function TrialBalancePage({ reportDate }) {
                       Object.entries(data.revenue.by_category).map(([k, v]) => (
                         <TableRow key={k}>
                           <TableCell>{CATEGORY_LABELS[k] || k}</TableCell>
-                          <TableCell className="text-right">{money(v, data.revenue.currency || data.currency)}</TableCell>
+                          <TableCell className="text-right">{money(v, data.revenue.currency || data.currency, data.revenue.by_category_currency?.[k])}</TableCell>
                         </TableRow>
                       ))
                     )}
                     <TableRow className="border-t-2">
-                      <TableCell className="font-semibold">{t('cm.pages_TrialBalancePage.toplam')}</TableCell>
+                      <TableCell className="font-semibold">Brüt gelir</TableCell>
                       <TableCell className="text-right font-semibold text-emerald-700">
-                        {money(data.revenue.total, data.revenue.currency || data.currency)}
+                        {money(data.revenue.total, data.revenue.currency || data.currency, data.revenue.total_by_currency)}
                       </TableCell>
                     </TableRow>
+                    <TableRow><TableCell>Fiyat düzeltmesi (tahsilat değildir)</TableCell><TableCell className="text-right">{money(data.revenue.adjustments ?? 0, data.currency, data.revenue.adjustments_by_currency)}</TableCell></TableRow>
+                    <TableRow><TableCell className="font-semibold">Net günlük gelir</TableCell><TableCell className="text-right font-semibold">{money(data.revenue.net_total ?? data.revenue.total, data.currency, data.revenue.net_total_by_currency || data.revenue.total_by_currency)}</TableCell></TableRow>
                   </TableBody>
                 </Table>
               </CardContent>
@@ -295,7 +311,7 @@ export default function TrialBalancePage({ reportDate }) {
                         <TableRow key={k}>
                           <TableCell>{PAYMENT_LABELS[k] || k}</TableCell>
                           <TableCell className="text-right">{v.count}</TableCell>
-                          <TableCell className="text-right">{money(v.total, v.currency || data.payments.currency || data.currency)}</TableCell>
+                          <TableCell className="text-right">{money(v.total, v.currency || data.payments.currency || data.currency, v.by_currency)}</TableCell>
                         </TableRow>
                       ))
                     )}
@@ -303,7 +319,7 @@ export default function TrialBalancePage({ reportDate }) {
                       <TableCell className="font-semibold">{t('cm.pages_TrialBalancePage.toplam_29757')}</TableCell>
                       <TableCell />
                       <TableCell className="text-right font-semibold text-blue-700">
-                        {money(data.payments.total, data.payments.currency || data.currency)}
+                        {money(data.payments.total, data.payments.currency || data.currency, data.payments.total_by_currency)}
                       </TableCell>
                     </TableRow>
                   </TableBody>
@@ -316,21 +332,22 @@ export default function TrialBalancePage({ reportDate }) {
           <Card>
             <CardHeader>
               <CardTitle>Defter Durumu</CardTitle>
-              <CardDescription>Cari hesap, depozito ve açık folyo bakiyeleri.</CardDescription>
+              <CardDescription>Açık folyo alacakları ve kullanılmamış depozito bakiyeleri.</CardDescription>
             </CardHeader>
             <CardContent>
+              {data.ledger.snapshot_scope === 'current' && <p className="mb-3 text-xs text-muted-foreground" data-testid="current-ledger-scope">Defter bakiyeleri güncel durumu gösterir; seçili rapor gününün tarihsel kapanış bakiyesi değildir. Farklı dövizlerdeki borç ve avans birbirinden düşülmez.</p>}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <MetricCard
                   icon={Wallet}
-                  label="Cari Hesap Bakiyesi"
-                  value={money(data.ledger.ar_balance, data.ledger.currency || data.currency)}
-                  sub="Tahsil edilmemiş cari"
+                  label="Açık Folyo Alacağı"
+                  value={money(data.ledger.ar_balance, data.ledger.currency || data.currency, data.ledger.ar_balance_by_currency)}
+                  sub="Açık folyoların pozitif defter bakiyeleri"
                   color={data.ledger.ar_balance > 0 ? "text-amber-600" : ""}
                 />
                 <MetricCard
                   icon={ArrowDownToLine}
                   label="Depozito Bakiyesi"
-                  value={money(data.ledger.deposit_balance, data.ledger.currency || data.currency)}
+                  value={money(data.ledger.deposit_balance, data.ledger.currency || data.currency, data.ledger.deposit_balance_by_currency)}
                   sub="Henüz kullanılmamış depozito"
                 />
                 <MetricCard

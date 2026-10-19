@@ -55,6 +55,7 @@ from shared_kernel.gl_periods import (
     assert_gl_period_open,
     ensure_calendar_year_periods,
     normalize_posting_date,
+    report_date_filter,
 )
 from shared_kernel.gl_posting import (
     ACCOUNT_TYPES,
@@ -1520,13 +1521,7 @@ async def list_journal(
 
 def _posted_journal_query(tenant_id, start, end):
     query = {"tenant_id": tenant_id, "status": "posted"}
-    dates = {}
-    if start:
-        dates["$gte"] = normalize_posting_date(start)
-    if end:
-        dates["$lte"] = normalize_posting_date(end)
-    if start and end and dates["$gte"] > dates["$lte"]:
-        raise GLPeriodError("Bitiş tarihi başlangıç tarihinden önce olamaz")
+    dates = report_date_filter(start=start, end=end)
     if dates:
         query["date"] = dates
     return query
@@ -2490,7 +2485,10 @@ async def trial_balance(
 ):
     _require_role(current_user, _READ_ROLES)
     tenant_id = _tenant_of(current_user)
-    return await compute_trial_balance(db, tenant_id, as_of=as_of)
+    try:
+        return await compute_trial_balance(db, tenant_id, as_of=as_of)
+    except GLPeriodError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/statements/income-statement")
