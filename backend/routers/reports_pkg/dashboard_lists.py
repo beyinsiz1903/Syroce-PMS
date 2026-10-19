@@ -613,6 +613,7 @@ async def get_basic_reports_dashboard(
     period: str = "monthly",
     current_user: User = Depends(get_current_user),
     _: None = Depends(require_module("basic_reporting")),
+    nocache: bool = False,
 ):
     """
     Temel Raporlar Dashboard - OPTIMIZED: Batch queries + cache (Tur 28).
@@ -623,7 +624,7 @@ async def get_basic_reports_dashboard(
     # Cache the complete tenant-scoped report, then apply the current user's
     # field policy outside the cache.  This prevents one employee's unmasked
     # response from ever being reused for another employee.
-    result = await _basic_dashboard_impl(current_user, True, date, period)
+    result = await _basic_dashboard_impl(current_user, True, date, period, _nocache=nocache)
     from copy import deepcopy
 
     from security.guest_data_visibility import guest_visibility_summary, protect_guest_row

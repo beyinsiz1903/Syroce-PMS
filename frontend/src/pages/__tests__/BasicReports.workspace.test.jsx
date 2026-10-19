@@ -107,6 +107,15 @@ describe('Complete active report workspace', () => {
     expect(screen.getByTestId('mobile-report-csv')).toBeDisabled();
   });
 
+  it('explicit refresh bypasses the dashboard cache while ordinary loading still uses it', async () => {
+    open('guests');
+    await waitFor(() => expect(screen.getByTestId('report-csv')).toBeEnabled());
+    expect(fetchJson.mock.calls[0][0]).not.toContain('nocache=');
+    fireEvent.click(screen.getByTestId('refresh-reports-btn'));
+    await waitFor(() => expect(fetchJson.mock.calls.at(-1)[0]).toContain('nocache=true'));
+    await waitFor(() => expect(screen.getByTestId('report-csv')).toBeEnabled());
+  });
+
   it('refuses a response from a different dashboard date', async () => {
     fetchJson.mockResolvedValue(payload('2026-10-06'));
     open('guests');

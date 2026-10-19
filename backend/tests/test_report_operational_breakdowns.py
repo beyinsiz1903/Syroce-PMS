@@ -187,3 +187,26 @@ async def test_room_and_channel_breakdowns_reconcile_multiple_native_currencies(
     assert breakdown_totals(report, "rooms") == breakdown_totals(report, "channels") == {"EUR": 80, "USD": 25}
     assert report["room_type_occupancy"]["Suite"]["revenue"] == 0
     assert report["booking_sources"]["revenue"]["corporate"] == 0
+
+
+async def test_explicit_workspace_refresh_bypasses_cached_report_and_replaces_it(ledger_db, monkeypatch):
+    import cache_manager
+
+    from core import report_cache
+
+    memory = object.__new__(cache_manager.CacheManager)
+    memory.enabled = True
+    memory.backend = "memory"
+    memory.client = cache_manager._InMemoryTTLStore()
+    monkeypatch.setattr(cache_manager, "cache", memory)
+    monkeypatch.setattr(report_cache, "cache", memory)
+    await ledger_db.folio_charges.insert_one({"tenant_id": "A", "business_date": DAY, "total": 50, "currency": "EUR"})
+    first = await dashboard_lists.get_basic_reports_dashboard(date=DAY, period="daily", current_user=USER)
+    assert first["summary"]["today_revenue_by_currency"] == {"EUR": 50}
+    await ledger_db.folio_charges.insert_one({"tenant_id": "A", "business_date": DAY, "total": 20, "currency": "EUR"})
+    cached = await dashboard_lists.get_basic_reports_dashboard(date=DAY, period="daily", current_user=USER)
+    assert cached["summary"]["today_revenue_by_currency"] == {"EUR": 50}
+    fresh = await dashboard_lists.get_basic_reports_dashboard(date=DAY, period="daily", current_user=USER, nocache=True)
+    assert fresh["summary"]["today_revenue_by_currency"] == {"EUR": 70}
+    replaced = await dashboard_lists.get_basic_reports_dashboard(date=DAY, period="daily", current_user=USER)
+    assert replaced["summary"]["today_revenue_by_currency"] == {"EUR": 70}
