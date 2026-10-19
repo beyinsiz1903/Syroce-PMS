@@ -74,6 +74,11 @@ async def test_forecast_api_and_excel_use_property_currency_for_legacy_booking(l
     assert rows == [("2026-10-07", 100, "EUR", 20.01)]
 
 
+async def test_empty_forecast_excel_does_not_relabel_the_property_currency_as_try():
+    rows = list((await sheet(await reports.export_forecast_detail_excel("2026-10-07", "2026-10-07", USER))).values)[2:]
+    assert rows == [("2026-10-07", 0, "EUR", 0)]
+
+
 async def test_operations_excel_counts_bson_arrivals_and_departures_not_other_tenants_or_cancelled(ledger_db):
     await ledger_db.bookings.insert_many(
         [

@@ -739,12 +739,13 @@ async def export_forecast_detail_excel(
 
     headers = ["Date", "Expected Occupancy %", "Currency", "Expected Revenue"]
     data: list[list[Any]] = []
+    native_currency = await _native_report_currency(current_user.tenant_id)
 
     items = forecast_response
     for item in items:
         if not isinstance(item, dict):
             continue
-        for code, amount in (item.get("revenue_by_currency") or {"TRY": item.get("revenue", 0)}).items():
+        for code, amount in (item.get("revenue_by_currency") or {native_currency: item.get("revenue", 0)}).items():
             data.append([item.get("date"), item.get("occupancy_rate", 0), code, amount])
 
     title = f"Forecast Detail {start_date} to {end_date}"
