@@ -11,6 +11,7 @@ Sales, HR, IT/Security department dashboards.
 Extracted from server.py for modularity.
 """
 import logging
+import math
 
 from modules.pms_core.role_permission_service import require_module_role  # v99 DW
 
@@ -25,7 +26,9 @@ from core.database import db
 from core.security import get_current_user
 from core.utils import create_excel_workbook, excel_response
 from models.schemas import User
+from modules.pms_core.reporting_dates import date_period_match
 from modules.pms_core.role_permission_service import RolePermissionService, require_op
+from modules.pms_core.stay_night_metrics import as_date
 
 _role_perm = RolePermissionService()
 
@@ -370,7 +373,7 @@ async def get_staff_detailed_statistics(
 
 # ── GET /reports/housekeeping-efficiency ──
 @router.get("/reports/housekeeping-efficiency")
-@cached(ttl=600, key_prefix="report_hk_efficiency")  # Cache for 10 min
+@cached(ttl=600, key_prefix="report_hk_efficiency_v2")
 async def get_housekeeping_efficiency_report(
     start_date: str,
     end_date: str,
@@ -379,12 +382,11 @@ async def get_housekeeping_efficiency_report(
     _nocache: bool = Query(False, alias="nocache"),
 ):
     """Housekeeping Efficiency Report"""
-    start = datetime.fromisoformat(start_date)
-    end = datetime.fromisoformat(end_date)
-    if start.date() > end.date():
+    start, end = as_date(start_date), as_date(end_date)
+    if not start or not end:
+        raise HTTPException(status_code=422, detail="Tarihler YYYY-MM-DD formatında olmalı")
+    if start > end:
         raise HTTPException(status_code=422, detail="Başlangıç tarihi bitiş tarihinden sonra olamaz")
-    start_key = start.date().isoformat()
-    end_exclusive = (end.date() + timedelta(days=1)).isoformat()
 
     # Efficiency belongs to the completion day, not the day a task happened to
     # be created. Legacy rows without completed_at retain a created_at fallback.
@@ -395,14 +397,13 @@ async def get_housekeeping_efficiency_report(
                 {"$or": [{"status": "completed"}, {"task_status": "completed"}]},
                 {
                     "$or": [
-                        {"completed_at": {"$gte": start_key, "$lt": end_exclusive}},
-                        {"completed_at": {"$exists": False}, "created_at": {"$gte": start_key, "$lt": end_exclusive}},
-                        {"completed_at": None, "created_at": {"$gte": start_key, "$lt": end_exclusive}},
+                        date_period_match("completed_at", start, end),
+                        {"$and": [{"completed_at": {"$in": [None, ""]}}, date_period_match("created_at", start, end)]},
                     ]
                 },
             ],
         }
-    ).to_list(10000)
+    ).to_list(None)
 
     # Aggregate by assigned staff
     staff_performance = {}
@@ -412,22 +413,27 @@ async def get_housekeeping_efficiency_report(
         task_type = task.get("task_type", "cleaning")
 
         if assigned_to not in staff_performance:
-            staff_performance[assigned_to] = {"tasks_completed": 0, "by_type": {}, "total_minutes": 0.0}
+            staff_performance[assigned_to] = {"tasks_completed": 0, "by_type": {}, "total_minutes": 0.0, "timed_tasks": 0, "missing_duration_tasks": 0}
 
         staff_performance[assigned_to]["tasks_completed"] += 1
-        staff_performance[assigned_to]["total_minutes"] += float(task.get("duration_minutes") or 0)
+        duration = _task_duration_minutes(task)
+        if duration is None:
+            staff_performance[assigned_to]["missing_duration_tasks"] += 1
+        else:
+            staff_performance[assigned_to]["total_minutes"] += duration
+            staff_performance[assigned_to]["timed_tasks"] += 1
 
         if task_type not in staff_performance[assigned_to]["by_type"]:
             staff_performance[assigned_to]["by_type"][task_type] = 0
         staff_performance[assigned_to]["by_type"][task_type] += 1
 
     # Calculate daily averages
-    date_range_days = (end.date() - start.date()).days + 1
+    date_range_days = (end - start).days + 1
 
     for staff in staff_performance:
         staff_performance[staff]["daily_average"] = round(staff_performance[staff]["tasks_completed"] / date_range_days, 2)
-        completed = staff_performance[staff]["tasks_completed"]
-        staff_performance[staff]["average_minutes"] = round(staff_performance[staff]["total_minutes"] / completed, 1) if completed else 0
+        timed = staff_performance[staff]["timed_tasks"]
+        staff_performance[staff]["average_minutes"] = round(staff_performance[staff]["total_minutes"] / timed, 1) if timed else None
 
     return {
         "start_date": start_date,
@@ -448,16 +454,38 @@ async def export_housekeeping_efficiency_excel(
     _perm=Depends(require_op("view_executive_reports")),  # v85 DU: HK efficiency excel
 ):
     """Export Housekeeping Efficiency Report to Excel"""
-    report_data = await get_housekeeping_efficiency_report(start_date, end_date, current_user)
+    report_data = await get_housekeeping_efficiency_report.__wrapped__(start_date, end_date, current_user)
 
-    headers = ["Staff Member", "Tasks Completed", "Daily Average", "Average Minutes", "Cleaning", "Maintenance", "Inspection"]
+    headers = ["Staff Member", "Tasks Completed", "Daily Average", "Average Minutes (Measured Tasks)", "Cleaning", "Maintenance", "Inspection", "Measured Tasks", "Duration Unknown"]
     data = []
 
     for staff, performance in report_data["staff_performance"].items():
         by_type = performance["by_type"]
-        data.append([staff, performance["tasks_completed"], performance["daily_average"], performance["average_minutes"], by_type.get("cleaning", 0), by_type.get("maintenance", 0), by_type.get("inspection", 0)])
+        data.append([staff, performance["tasks_completed"], performance["daily_average"], performance["average_minutes"], by_type.get("cleaning", 0), by_type.get("maintenance", 0), by_type.get("inspection", 0), performance["timed_tasks"], performance["missing_duration_tasks"]])
 
     wb = create_excel_workbook(title=f"Housekeeping Efficiency Report ({start_date} to {end_date})", headers=headers, data=data, sheet_name="HK Efficiency")
 
     filename = f"housekeeping_efficiency_{start_date}_to_{end_date}.xlsx"
     return excel_response(wb, filename)
+
+
+def _task_duration_minutes(task):
+    """Unknown duration is not zero; use the timer timestamps when available."""
+    value = task.get("duration_minutes")
+    if value not in (None, ""):
+        try:
+            minutes = float(value)
+            if math.isfinite(minutes) and minutes >= 0:
+                return minutes
+        except (ValueError, TypeError):
+            pass
+    try:
+        stamps = []
+        for field in ("started_at", "completed_at"):
+            value = task.get(field)
+            stamp = value if isinstance(value, datetime) else datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+            stamps.append(stamp if stamp.tzinfo else stamp.replace(tzinfo=UTC))
+        minutes = (stamps[1] - stamps[0]).total_seconds() / 60
+        return minutes if minutes >= 0 else None
+    except (ValueError, TypeError, OverflowError):
+        return None

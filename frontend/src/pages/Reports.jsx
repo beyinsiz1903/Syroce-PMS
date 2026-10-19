@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import NightAuditModule from "@/components/NightAuditModule";
 import axios from 'axios';
@@ -30,10 +30,12 @@ import {
 import { normalizeFeatures } from '@/utils/featureFlags';
 import { useTranslation } from 'react-i18next';
 import { useBusinessDate } from '@/hooks/useBusinessDate';
+import { defaultReportDates, reportDownloadError, reportDownloadUrl } from '@/utils/reportExports';
 
 const Reports = ({ user, tenant, onLogout }) => {
   const { t, i18n } = useTranslation();
   const [loading, setLoading] = useState(false);
+  const downloadBusy = useRef(false);
   const navigate = useNavigate();
   const [selectedReports, setSelectedReports] = useState([]);
   const [showSelector, setShowSelector] = useState(false);
@@ -169,86 +171,73 @@ const Reports = ({ user, tenant, onLogout }) => {
   const addReport = (reportId) => {
     const report = availableReports.find(r => r.id === reportId);
     if (report && !selectedReports.find(r => r.id === reportId)) {
-      setSelectedReports([...selectedReports, {
-        ...report,
-        startDate: (() => {
-          const date = new Date(`${businessDate}T12:00:00`);
-          date.setDate(date.getDate() - 29);
-          return date.toISOString().split('T')[0];
-        })(),
-        endDate: businessDate,
-        reportDate: businessDate
-      }]);
+      setSelectedReports(current => current.some(item => item.id === reportId) ? current : [...current, { ...report, ...defaultReportDates(report, businessDate) }]);
     }
     setShowSelector(false);
   };
 
   const removeReport = (reportId) => {
-    setSelectedReports(selectedReports.filter(r => r.id !== reportId));
+    setSelectedReports(current => current.filter(r => r.id !== reportId));
   };
 
   const updateReportDate = (reportId, field, value) => {
-    setSelectedReports(selectedReports.map(r => 
+    setSelectedReports(current => current.map(r =>
       r.id === reportId ? { ...r, [field]: value } : r
     ));
   };
 
-  const handleDownloadReport = async (report) => {
-    setLoading(true);
+  const downloadReport = async (report, url) => {
     try {
-      let url = report.endpoint;
-      
-      // Add date parameters if needed
-      if (report.needsDateRange) {
-        url += `?start_date=${report.startDate}&end_date=${report.endDate}`;
-      } else if (report.singleDateParam) {
-        url += `?${report.singleDateParam}=${report.reportDate}`;
+      const response = await axios.get(url, { responseType: 'blob' });
+      const type = response.headers?.['content-type'] || response.data?.type || '';
+      if (/json|text\/html/i.test(type)) {
+        const error = new Error('Invalid report response');
+        error.response = response;
+        throw error;
       }
-      
-      const response = await axios.get(url, {
-        responseType: 'blob'
-      });
-      
-      // Create download link
-      const blob = new Blob([response.data], { 
-        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+      const blob = new Blob([response.data], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
       });
       const downloadUrl = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = downloadUrl;
-      
-      // Get filename from content-disposition header or use default
-      const contentDisposition = response.headers['content-disposition'];
+      const contentDisposition = response.headers?.['content-disposition'];
       let filename = `${report.name.replace(/\s+/g, '_')}.xlsx`;
       if (contentDisposition) {
         const filenameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
-        if (filenameMatch && filenameMatch[1]) {
-          filename = filenameMatch[1].replace(/['"]/g, '');
-        }
+        if (filenameMatch && filenameMatch[1]) filename = filenameMatch[1].replace(/['"]/g, '');
       }
-      
       link.download = filename;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      window.URL.revokeObjectURL(downloadUrl);
-      
+      window.setTimeout(() => window.URL.revokeObjectURL(downloadUrl), 1000);
       toast.success(`${report.name} ${t('reports.downloadSuccess')}!`);
     } catch (error) {
-      console.error('Failed to download report:', error);
-      toast.error(t('reports.downloadFailed'));
+      toast.error(`${report.name}: ${await reportDownloadError(error)}`);
+    }
+  };
+
+  const handleDownloadReports = async (reports) => {
+    if (downloadBusy.current) return;
+    let downloads;
+    try {
+      downloads = reports.map(report => ({ report, url: reportDownloadUrl(report) }));
+    } catch (error) {
+      toast.error(error.message);
+      return;
+    }
+    downloadBusy.current = true;
+    setLoading(true);
+    try {
+      for (const { report, url } of downloads) await downloadReport(report, url);
     } finally {
+      downloadBusy.current = false;
       setLoading(false);
     }
   };
 
-  const handleDownloadAll = async () => {
-    for (const report of selectedReports) {
-      await handleDownloadReport(report);
-      // Small delay between downloads
-      await new Promise(resolve => setTimeout(resolve, 500));
-    }
-  };
+  const handleDownloadAll = () => handleDownloadReports(selectedReports);
 
   if (isReportsLite) {
     return (
@@ -283,13 +272,13 @@ const Reports = ({ user, tenant, onLogout }) => {
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900 mb-2 flex items-center gap-3">
             <FileSpreadsheet className="w-8 h-8 text-green-600" />
-            Excel Reports
+            Excel Raporları
           </h1>
           <p className="text-gray-600">{t('reports.addReportDesc')}</p>
         </div>
 
         {/* Section Tabs */}
-        <div className="mb-4 flex gap-2 border-b pb-2 text-sm">
+        <div className="mb-4 flex flex-wrap gap-2 border-b pb-2 text-sm">
           {showExcelSection && (
             <button
               type="button"
@@ -338,13 +327,13 @@ const Reports = ({ user, tenant, onLogout }) => {
                   className="bg-blue-600 hover:bg-blue-700"
                 >
                   <Plus className="w-4 h-4 mr-2" />
-                  Add Report to Download
+                  Rapor Ekle
                 </Button>
               ) : (
                 <Card className="border-2 border-blue-500">
                   <CardHeader>
                     <div className="flex items-center justify-between">
-                      <CardTitle className="text-lg">Select Report</CardTitle>
+                      <CardTitle className="text-lg">Rapor Seçin</CardTitle>
                       <Button 
                         variant="ghost" 
                         size="sm"
@@ -357,7 +346,7 @@ const Reports = ({ user, tenant, onLogout }) => {
                   <CardContent>
                     <Select onValueChange={addReport}>
                       <SelectTrigger className="w-full">
-                        <SelectValue placeholder="Choose a report..." />
+                        <SelectValue placeholder="Bir rapor seçin..." />
                       </SelectTrigger>
                       <SelectContent>
                         {visibleReports
@@ -383,7 +372,7 @@ const Reports = ({ user, tenant, onLogout }) => {
             {/* {t('reports.selectedReports')} */}
             {selectedReports.length > 0 && (
               <div>
-                <div className="mb-4 flex items-center justify-between">
+                <div className="mb-4 flex flex-wrap gap-3 items-center justify-between">
                   <h2 className="text-lg font-semibold text-gray-900">
                     {t('reports.selectedReports')} ({selectedReports.length})
                   </h2>
@@ -401,13 +390,13 @@ const Reports = ({ user, tenant, onLogout }) => {
                   {selectedReports.map(report => (
                     <Card key={report.id} className="border-l-4 border-l-green-500">
                       <CardContent className="pt-6">
-                        <div className="flex items-start justify-between gap-4">
+                        <div className="flex flex-col sm:flex-row items-start justify-between gap-4">
                           {/* Report Info */}
-                          <div className="flex items-start gap-3 flex-1">
+                          <div className="flex items-start gap-3 flex-1 min-w-0 w-full">
                             <div className="mt-1">
                               <report.icon className="w-5 h-5 text-gray-600" />
                             </div>
-                            <div className="flex-1">
+                            <div className="flex-1 min-w-0">
                               <h3 className="font-semibold text-gray-900 mb-1">
                                 {report.name}
                               </h3>
@@ -417,21 +406,25 @@ const Reports = ({ user, tenant, onLogout }) => {
 
                               {/* Date Range Inputs */}
                               {report.needsDateRange && (
-                                <div className="grid grid-cols-2 gap-3 max-w-md">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-md">
                                   <div>
-                                    <Label className="text-xs text-gray-600">Start Date</Label>
+                                    <Label className="text-xs text-gray-600">Başlangıç Tarihi</Label>
                                     <Input
                                       type="date"
                                       value={report.startDate}
+                                      disabled={loading}
+                                      aria-label={`${report.name} başlangıç tarihi`}
                                       onChange={(e) => updateReportDate(report.id, 'startDate', e.target.value)}
                                       className="mt-1 h-9"
                                     />
                                   </div>
                                   <div>
-                                    <Label className="text-xs text-gray-600">End Date</Label>
+                                    <Label className="text-xs text-gray-600">Bitiş Tarihi</Label>
                                     <Input
                                       type="date"
                                       value={report.endDate}
+                                      disabled={loading}
+                                      aria-label={`${report.name} bitiş tarihi`}
                                       onChange={(e) => updateReportDate(report.id, 'endDate', e.target.value)}
                                       className="mt-1 h-9"
                                     />
@@ -444,6 +437,8 @@ const Reports = ({ user, tenant, onLogout }) => {
                                   <Input
                                     type="date"
                                     value={report.reportDate}
+                                    disabled={loading}
+                                    aria-label={`${report.name} tarihi`}
                                     onChange={(e) => updateReportDate(report.id, 'reportDate', e.target.value)}
                                     className="mt-1 h-9"
                                   />
@@ -456,17 +451,19 @@ const Reports = ({ user, tenant, onLogout }) => {
                           <div className="flex gap-2">
                             <Button
                               size="sm"
-                              onClick={() => handleDownloadReport(report)}
+                              onClick={() => handleDownloadReports([report])}
                               disabled={loading}
                               className="bg-green-600 hover:bg-green-700 text-white"
                             >
                               <Download className="w-4 h-4 mr-1" />
-                              Download
+                              İndir
                             </Button>
                             <Button
                               size="sm"
                               variant="outline"
                               onClick={() => removeReport(report.id)}
+                              disabled={loading}
+                              aria-label={`${report.name} kaldır`}
                               className="text-red-600 hover:text-red-700 hover:bg-red-50"
                             >
                               <Trash2 className="w-4 h-4" />
@@ -487,17 +484,17 @@ const Reports = ({ user, tenant, onLogout }) => {
                   <div className="text-center">
                     <FileSpreadsheet className="w-16 h-16 text-gray-400 mx-auto mb-4" />
                     <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                      No Reports Selected
+                      Henüz Rapor Seçilmedi
                     </h3>
                     <p className="text-gray-500 mb-4">
-                      Click the &quot;Add Report to Download&quot; button to start selecting reports
+                      İndirmek istediğiniz raporları seçmek için Rapor Ekle düğmesini kullanın.
                     </p>
                     <Button 
                       onClick={() => setShowSelector(true)}
                       variant="outline"
                     >
                       <Plus className="w-4 h-4 mr-2" />
-                      Add Your First Report
+                      İlk Raporunuzu Ekleyin
                     </Button>
                   </div>
                 </CardContent>
@@ -506,7 +503,7 @@ const Reports = ({ user, tenant, onLogout }) => {
 
             {/* Official Guest List Shortcut */}
             <Card className="mt-6 border-green-200 bg-green-50/40">
-              <CardContent className="pt-6 flex items-start justify-between gap-4">
+              <CardContent className="pt-6 flex flex-col sm:flex-row items-start justify-between gap-4">
                 <div className="flex gap-3 flex-1">
                   <FileText className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
                   <div>
@@ -534,16 +531,16 @@ const Reports = ({ user, tenant, onLogout }) => {
 
             {/* Info Card */}
             <Card className="mt-6 bg-blue-50 border-blue-200">
-              <CardContent className="pt-6 flex items-start justify-between gap-4">
+              <CardContent className="pt-6 flex flex-col sm:flex-row items-start justify-between gap-4">
                 <div className="flex gap-3 flex-1">
                   <FileText className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
                   <div>
-                    <h4 className="font-semibold text-gray-900 mb-1">Export Tips</h4>
+                    <h4 className="font-semibold text-gray-900 mb-1">Dışa Aktarım Bilgileri</h4>
                     <ul className="text-sm text-gray-600 space-y-1">
-                      <li>• Select multiple reports and download them all at once</li>
-                      <li>• Date ranges are automatically set to last 30 days (adjustable)</li>
-                      <li>• Excel files include formatted tables with headers and totals</li>
-                      <li>• All financial amounts are properly formatted with currency symbols</li>
+                      <li>• Birden fazla raporu sırayla indirebilirsiniz. Tarayıcı çoklu indirme izni isteyebilir.</li>
+                      <li>• Tahmin raporu gelecek 30 günü, diğer dönem raporları son 30 günü seçer. Tarihleri değiştirebilirsiniz.</li>
+                      <li>• Gelir detayı rezervasyon tutarını konaklama gecelerine dağıtır; tahsilat veya gerçekleşmiş folyo geliri değildir.</li>
+                      <li>• Farklı para birimleri dönüştürülmeden ayrı gösterilir.</li>
                     </ul>
                   </div>
                 </div>

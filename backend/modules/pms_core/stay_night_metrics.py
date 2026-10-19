@@ -3,7 +3,7 @@
 from datetime import UTC, date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
-from modules.pms_core.report_money import add_amount, currency_code, rounded_totals, single_amount
+from modules.pms_core.report_money import add_amount, currency_code, money, rounded, rounded_totals, single_amount
 
 OCCUPYING_STATUSES = frozenset({"confirmed", "guaranteed", "checked_in", "in_house", "checked_out"})
 ACTUAL_OCCUPANCY_STATUSES = frozenset({"checked_in", "in_house", "checked_out"})
@@ -25,6 +25,18 @@ def as_date(value) -> date | None:
 
 # Backward-compatible private alias for existing callers.
 _as_date = as_date
+
+
+def stay_overlap_match(first: date, last: date) -> dict:
+    """Select overlapping nights with independent ISO/BSON storage on each edge."""
+    start_dt = datetime.combine(first, datetime.min.time(), UTC)
+    stop = last + timedelta(days=1)
+    stop_dt = datetime.combine(stop, datetime.min.time(), UTC)
+    return {"$or": [
+        {"check_out": {"$gt": lower}, "check_in": {"$lt": upper}}
+        for lower in (first.isoformat(), start_dt)
+        for upper in (stop.isoformat(), stop_dt)
+    ]}
 
 
 def stay_day_match(day: date, *, include_stayovers=True) -> dict:
@@ -116,6 +128,7 @@ def calculate_stay_night_metrics(
     *,
     actual_only: bool = False,
     room_blocks: list[dict] | None = None,
+    fallback_currency: str = "TRY",
 ) -> list[dict]:
     """Return inclusive daily metrics using ``check_in <= day < check_out``.
 
@@ -168,7 +181,7 @@ def calculate_stay_night_metrics(
                 as_date(booking.get("checked_out_at")),
                 room_key,
                 nightly_revenue,
-                currency_code(booking.get("currency")),
+                currency_code(booking.get("currency"), fallback_currency),
             )
         )
 
@@ -202,8 +215,8 @@ def calculate_stay_night_metrics(
         occupancy_rate = round(min((occupied / total_rooms * 100), 100.0), 2) if total_rooms else 0
         # Complimentary rooms contribute to occupancy but are not sold rooms;
         # including them in ADR understated the achieved selling price.
-        adr_by_currency = {code: round(amount / sold, 2) if sold else 0 for code, amount in revenue_by_currency.items()}
-        revpar_by_currency = {code: round(amount / total_rooms, 2) if total_rooms else 0 for code, amount in revenue_by_currency.items()}
+        adr_by_currency = {code: rounded(money(amount) / sold) if sold else 0 for code, amount in revenue_by_currency.items()}
+        revpar_by_currency = {code: rounded(money(amount) / total_rooms) if total_rooms else 0 for code, amount in revenue_by_currency.items()}
         adr = single_amount(adr_by_currency)
         revpar = single_amount(revpar_by_currency)
         result.append(
@@ -236,19 +249,11 @@ async def load_stay_night_metrics(db, tenant_id: str, start_date: date, end_date
     end_iso = end_exclusive_date.isoformat()
     start_dt = datetime.combine(start_date, datetime.min.time(), tzinfo=UTC)
     end_dt = datetime.combine(end_exclusive_date, datetime.min.time(), tzinfo=UTC)
-    overlap_query = {
-        "$or": [
-            {"check_out": {"$gt": start_iso}, "check_in": {"$lt": end_iso}},
-            {"check_out": {"$gt": start_dt}, "check_in": {"$lt": end_dt}},
-            {"check_out": {"$gt": start_iso}, "check_in": {"$lt": end_dt}},
-            {"check_out": {"$gt": start_dt}, "check_in": {"$lt": end_iso}},
-        ]
-    }
     bookings = await db.bookings.find(
         {
             "tenant_id": tenant_id,
             "status": {"$in": list(OCCUPYING_STATUSES)},
-            **overlap_query,
+            **stay_overlap_match(start_date, end_date),
         },
         {
             "_id": 0,
@@ -278,4 +283,9 @@ async def load_stay_night_metrics(db, tenant_id: str, start_date: date, end_date
         },
         {"_id": 0, "room_id": 1, "start_date": 1, "end_date": 1, "status": 1, "allow_sell": 1},
     ).to_list(None)
-    return calculate_stay_night_metrics(bookings, rooms, start_date, end_date, actual_only=actual_only, room_blocks=room_blocks)
+    fallback_currency = "TRY"
+    if any(not str(booking.get("currency") or "").strip() for booking in bookings):
+        from core.tenant_currency import get_tenant_currency
+
+        fallback_currency = (await get_tenant_currency(tenant_id))[0]
+    return calculate_stay_night_metrics(bookings, rooms, start_date, end_date, actual_only=actual_only, room_blocks=room_blocks, fallback_currency=fallback_currency)

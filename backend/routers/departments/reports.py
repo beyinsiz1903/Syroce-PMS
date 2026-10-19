@@ -33,7 +33,7 @@ from modules.pms_core.reporting_dates import date_period_match
 from modules.pms_core.reporting_financials import REPORTING_CURRENCY, report_payment_day_match, report_payment_period_match, reporting_collection_summary
 from modules.pms_core.reporting_ledger import charge_amount, charge_category, posted_revenue_rows
 from modules.pms_core.role_permission_service import RolePermissionService, require_op
-from modules.pms_core.stay_night_metrics import NON_COMMERCIAL_STATUSES, allocated_revenue_for_night, as_date, booking_nights, load_stay_night_metrics
+from modules.pms_core.stay_night_metrics import NON_COMMERCIAL_STATUSES, allocated_revenue_for_night, as_date, booking_nights, load_stay_night_metrics, stay_day_match, stay_overlap_match
 
 logger = logging.getLogger(__name__)
 
@@ -659,15 +659,13 @@ async def export_revenue_detail_excel(
         start_date = (business_day - timedelta(days=29)).isoformat()
     _enforce(current_user, "view_finance_reports")  # Bug CU
     start, end = _report_dates(start_date, end_date)
-    next_day = (end + timedelta(days=1)).isoformat()
     # Reservation-production detail.  Revenue is allocated once across the
     # stay nights and clipped to the requested period; checkout is exclusive.
     bookings = await db.bookings.find(
         {
             "tenant_id": current_user.tenant_id,
             "status": {"$in": ["confirmed", "guaranteed", "checked_in", "in_house", "checked_out"]},
-            "check_in": {"$lt": next_day},
-            "check_out": {"$gt": start.isoformat()},
+            **stay_overlap_match(start, end),
         },
         {
             "_id": 0,
@@ -685,6 +683,7 @@ async def export_revenue_detail_excel(
         },
     ).to_list(None)
 
+    native_currency = await _native_report_currency(current_user.tenant_id)
     rows = {}
     for b in bookings:
         ci = as_date(b.get("check_in"))
@@ -697,19 +696,22 @@ async def export_revenue_detail_excel(
         while cursor < stop:
             room_type = str(b.get("room_type") or "Belirtilmemiş")
             rate_code = str(b.get("rate_plan") or b.get("rate_type") or "Standart")
-            key = (cursor.isoformat(), room_type, rate_code, currency_code(b.get("currency")))
-            item = rows.setdefault(key, {"date": key[0], "room_type": room_type, "rate_code": rate_code, "currency": key[3], "room_nights": 0, "revenue": 0.0})
+            key = (cursor.isoformat(), room_type, rate_code, currency_code(b.get("currency"), native_currency))
+            item = rows.setdefault(key, {"date": key[0], "room_type": room_type, "rate_code": rate_code, "currency": key[3], "room_nights": 0, "sold_room_nights": 0, "revenue": money(0)})
             item["room_nights"] += 1
-            item["revenue"] += float(allocated_revenue_for_night(b, cursor))
+            if not b.get("is_complimentary") and money(b.get("total_amount")) > 0:
+                item["sold_room_nights"] += 1
+            item["revenue"] += allocated_revenue_for_night(b, cursor)
             cursor += timedelta(days=1)
 
     data = []
-    for item in sorted(rows.values(), key=lambda row: (row["date"], row["room_type"], row["rate_code"])):
-        revenue = round(item["revenue"], 2)
-        data.append([item["date"], item["room_type"], item["rate_code"], item["currency"], item["room_nights"], revenue, round(revenue / item["room_nights"], 2)])
+    for item in sorted(rows.values(), key=lambda row: (row["date"], row["room_type"], row["rate_code"], row["currency"])):
+        revenue = rounded(item["revenue"])
+        adr = rounded(money(revenue) / item["sold_room_nights"]) if item["sold_room_nights"] else 0
+        data.append([item["date"], item["room_type"], item["rate_code"], item["currency"], item["room_nights"], revenue, adr, item["sold_room_nights"]])
     wb = create_excel_workbook(
         title=f"Revenue Detail {start_date} to {end_date}",
-        headers=["Date", "Room Type", "Rate Code", "Currency", "Room Nights", "Booked Revenue", "ADR"],
+        headers=["Date", "Room Type", "Rate Code", "Currency", "Room Nights", "Booked Revenue", "ADR", "Sold Room Nights"],
         data=data,
         sheet_name="Revenue Detail",
     )
@@ -765,31 +767,26 @@ async def export_operations_daily_summary_excel(
     _: None = Depends(require_module("reports")),
 ):
     """Daily operations summary: arrivals, departures, in-house guests."""
-    target = datetime.fromisoformat(date)
-    if target.tzinfo is None:
-        target = target.replace(tzinfo=UTC)
-
-    day_key = target.date().isoformat()
-    next_key = (target.date() + timedelta(days=1)).isoformat()
+    target, _ = _report_dates(date, date)
     bookings = await db.bookings.find(
-        {"tenant_id": current_user.tenant_id, "$or": [{"check_in": {"$gte": day_key, "$lt": next_key}}, {"check_out": {"$gte": day_key, "$lt": next_key}}, {"check_in": {"$lte": day_key}, "check_out": {"$gt": day_key}}]},
+        {"tenant_id": current_user.tenant_id, **stay_day_match(target, include_stayovers=False)},
         {"_id": 0},
     ).to_list(None)
-    arrivals = sum(1 for booking in bookings if as_date(booking.get("check_in")) == target.date() and str(booking.get("status") or "").lower() not in NON_COMMERCIAL_STATUSES)
-    departures = sum(1 for booking in bookings if as_date(booking.get("check_out")) == target.date() and str(booking.get("status") or "").lower() not in NON_COMMERCIAL_STATUSES)
-    metrics = await load_stay_night_metrics(db, current_user.tenant_id, target.date(), target.date(), actual_only=True)
+    arrivals = sum(1 for booking in bookings if as_date(booking.get("check_in")) == target and str(booking.get("status") or "").lower() not in NON_COMMERCIAL_STATUSES)
+    departures = sum(1 for booking in bookings if as_date(booking.get("check_out")) == target and str(booking.get("status") or "").lower() not in NON_COMMERCIAL_STATUSES)
+    metrics = await load_stay_night_metrics(db, current_user.tenant_id, target, target, actual_only=True)
     in_house = metrics[0]["occupied_rooms"] if metrics else 0
 
     headers = ["Metric", "Value"]
     data = [
-        ["Date", target.date().isoformat()],
+        ["Date", target.isoformat()],
         ["", ""],
         ["Arrivals", arrivals],
         ["Departures", departures],
         ["Occupied Rooms", in_house],
     ]
 
-    title = f"Operations Daily Summary {target.date().isoformat()}"
+    title = f"Operations Daily Summary {target.isoformat()}"
     wb = create_excel_workbook(
         title=title,
         headers=headers,
@@ -797,7 +794,7 @@ async def export_operations_daily_summary_excel(
         sheet_name="Operations Summary",
     )
 
-    filename = f"operations_daily_summary_{target.date().isoformat()}.xlsx"
+    filename = f"operations_daily_summary_{target.isoformat()}.xlsx"
     return excel_response(wb, filename)
 
 

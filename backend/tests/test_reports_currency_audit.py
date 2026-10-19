@@ -122,7 +122,7 @@ async def test_revenue_detail_excel_does_not_combine_same_product_in_different_c
     report_db.bookings.rows = [booking(200, "TRY"), booking(40, "EUR")]
     wb = await workbook(await reports.export_revenue_detail_excel("2026-10-01", "2026-10-01", USER))
     rows = list(wb.active.values)
-    assert rows[1] == ("Date", "Room Type", "Rate Code", "Currency", "Room Nights", "Booked Revenue", "ADR")
+    assert rows[1] == ("Date", "Room Type", "Rate Code", "Currency", "Room Nights", "Booked Revenue", "ADR", "Sold Room Nights")
     assert {(row[3], row[5]) for row in rows[2:]} == {("TRY", 100), ("EUR", 20)}
     assert report_db.bookings.projections[0]["currency"] == 1
 
