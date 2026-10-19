@@ -120,7 +120,7 @@ async def get_occupancy_report(
 
 
 @sub_router.get("/reports/revenue")
-@cached(ttl=600, key_prefix="report_revenue_v2")
+@cached(ttl=600, key_prefix="report_revenue_v3")
 async def get_revenue_report(
     start_date: str | None = None,
     end_date: str | None = None,

@@ -2,7 +2,13 @@
 
 import pytest
 
+from modules.pms_core.reporting_ledger import charge_category
 from modules.pms_core.room_revenue_reporting import room_period_performance
+
+
+@pytest.mark.parametrize("category", ["room", "rooms", "accommodation", "lodging", "konaklama", "room_charge"])
+def test_all_supported_room_categories_enter_the_same_canonical_ledger_bucket(category):
+    assert charge_category({"category": category}) == "room"
 
 
 def metric(day="2026-10-07", **extra):

@@ -46,9 +46,10 @@ async def seed_stay(db, *, currency="EUR", **extra):
     )
 
 
-async def test_zero_room_posting_does_not_resurrect_accrual_in_any_workspace_card(ledger_db):
+@pytest.mark.parametrize("category", ["room", "rooms"])
+async def test_zero_room_posting_does_not_resurrect_accrual_in_any_workspace_card(ledger_db, category):
     await seed_stay(ledger_db)
-    await ledger_db.folio_charges.insert_many([{"tenant_id": "A", "booking_id": "b", "business_date": "2026-10-07", "category": "room", "total": amount, "currency": "EUR"} for amount in (100, -100)])
+    await ledger_db.folio_charges.insert_many([{"tenant_id": "A", "booking_id": "b", "business_date": "2026-10-07", "category": category, "total": amount, "currency": "EUR"} for amount in (100, -100)])
     report = await dashboard()
     await ledger_db.tenant_settings.insert_one({"tenant_id": "A", "business_date": "2026-10-07"})
     daily = await night_audit_router.trial_balance(date="2026-10-07", current_user=USER)
