@@ -260,19 +260,20 @@ async def test_real_mongo_rms_reports_keep_currencies_and_never_fabricate_market
     user = SimpleNamespace(tenant_id="A")
     monkeypatch.setattr(rms, "db", ledger_db)
     monkeypatch.setattr(rms, "get_current_user", AsyncMock(return_value=user))
+    monkeypatch.setattr(rms, "get_tenant_currency", AsyncMock(return_value=("TRY", "₺")))
     monkeypatch.setattr(rms, "load_stay_night_metrics", AsyncMock(return_value=[{"occupied_rooms": 2, "sold_rooms": 2,
         "total_rooms": 10, "occupancy_rate": 20, "revenue_by_currency": {"EUR": 100, "USD": 200}}]))
     monkeypatch.setattr(rms, "posted_revenue_rows", AsyncMock(return_value=[{"currency": "EUR", "total": 100}, {"currency": "USD", "total": 200}]))
     await ledger_db.bookings.insert_many([
-        {"tenant_id": "A", "check_in": "2026-10-01", "created_at": "2026-09-01", "total_amount": 100, "currency": "EUR", "status": "confirmed"},
-        {"tenant_id": "A", "check_in": datetime(2026, 10, 1, tzinfo=UTC), "created_at": datetime(2026, 9, 2, tzinfo=UTC), "total_amount": 200, "currency": "USD", "status": "checked_out"},
+        {"tenant_id": "A", "check_in": "2026-10-01", "check_out": "2026-10-03", "created_at": "2026-09-01", "total_amount": 100, "currency": "EUR", "status": "confirmed"},
+        {"tenant_id": "A", "check_in": datetime(2026, 10, 1, tzinfo=UTC), "check_out": "2026-10-03", "created_at": datetime(2026, 9, 2, tzinfo=UTC), "total_amount": 200, "currency": "USD", "status": "checked_out"},
     ])
     await ledger_db.competitors.insert_one({"tenant_id": "A", "id": "comp", "is_active": True})
-    report = await rms.get_pickup_report.__wrapped__("2026-10-01", "2026-10-01", "json", None)
+    report = await rms.get_pickup_report.__wrapped__("2026-10-01", "2026-10-01", "json", user)
     assert report["summary"]["total_rooms"] == 2
     assert report["summary"]["total_revenue"] is None
     assert report["summary"]["total_revenue_by_currency"] == {"EUR": 100, "USD": 200}
-    csv = await rms.get_pickup_report.__wrapped__("2026-10-01", "2026-10-01", "csv", None)
+    csv = await rms.get_pickup_report.__wrapped__("2026-10-01", "2026-10-01", "csv", user)
     assert {(row["Currency"], row["Total Revenue"]) for row in csv["data"]} == {("EUR", 100), ("USD", 200)}
     assert sum(row["Total Rooms"] for row in csv["data"]) == 2
     market = await rms.get_market_share(None)

@@ -8,7 +8,7 @@ import CashFlowModal from '@/components/mobile-finance/dialogs/CashFlowModal';
 import CashierShiftModal from '@/components/mobile-finance/dialogs/CashierShiftModal';
 import ReportsModal from '@/components/mobile-finance/dialogs/ReportsModal';
 
-vi.mock('axios', () => ({ default: { get: vi.fn() } }));
+vi.mock('axios', () => ({ default: { get: vi.fn(), post: vi.fn() } }));
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn(), warning: vi.fn() } }));
 const { translate } = vi.hoisted(() => ({ translate: (key, options) => options?.defaultValue || key }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: translate, i18n: { language: 'tr' } }) }));
@@ -131,5 +131,84 @@ describe('Reporting cross-page integrity', () => {
     expect(await screen.findByTestId('ch-total-loss')).toHaveTextContent('90,00');
     await act(async () => { if (oldError) rejectOld(new Error('old failure')); else resolveOld({ data: data(30) }); });
     expect(screen.getByTestId('ch-total-loss')).toHaveTextContent('90,00');
+  });
+
+  it('does not turn an invalid successful no-show response into a zero dashboard', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    axios.get.mockResolvedValue({ data: { detail: 'broken payload' } });
+    render(<NoShowAnalytics embedded />);
+    expect(await screen.findByRole('alert')).toHaveTextContent('Kanal kaybı verileri yüklenemedi');
+    expect(screen.queryByTestId('ch-total-loss')).not.toBeInTheDocument();
+  });
+
+  it('marks omitted reference amounts and does not call sample size calibrated reliability', async () => {
+    axios.get.mockResolvedValue({ data: { channels: [], top3_worst: [], total_loss: null, loss_by_currency: {}, total_no_shows: 1,
+      start_date: '2026-09-03', end_date: '2026-10-02', data_quality: { invalid_amounts: 1, confidence: 'high', note: 'sample only' } } });
+    render(<NoShowAnalytics embedded />);
+    expect(await screen.findByRole('alert')).toHaveTextContent('1 rezervasyonun tutarı');
+    expect(screen.getByTestId('ch-total-loss')).toHaveTextContent('—');
+    expect(screen.getByTestId('data-quality-banner')).toHaveTextContent('Veri kapsamı');
+    expect(screen.getByText(/2026-09-03 – 2026-10-02/)).toBeInTheDocument();
+  });
+
+  it.each([7, 90, 365])('shows every selected heatmap day, not only the last sixty (%i)', async days => {
+    const heatmap = Array.from({ length: days }, (_, i) => ({ date: `day-${i}`, overbooking_count: 0, total_noshow: 0 }));
+    axios.get.mockImplementation(url => Promise.resolve({ data: url.includes('overbooking-heatmap')
+      ? { heatmap, total_overbookings: 0, peak_days: [], weekly_pattern: [], channel_overlay: [], total_loss: 0, loss_by_currency: { EUR: 0 } }
+      : { channels: [], top3_worst: [], total_no_shows: 0 } }));
+    render(<NoShowAnalytics embedded />);
+    fireEvent.change(screen.getByLabelText('Rapor dönemi'), { target: { value: String(days) } });
+    fireEvent.click(screen.getByTestId('tab-heatmap'));
+    await screen.findByTestId('heatmap-tab');
+    expect(screen.getAllByTestId(/^heat-cell-/)).toHaveLength(days);
+    expect(screen.getByText(/yalnız fazla satış olarak işaretlenen/)).toBeInTheDocument();
+  });
+
+  it('preserves a nested channel named date and gives trend bars a real height', async () => {
+    axios.get.mockResolvedValue({ data: { channels: [], top3_worst: [], total_loss: 100, total_no_shows: 1,
+      trend_channels: ['date'], trend: [{ date: '2026-10-02', counts_by_channel: { date: 1 } }] } });
+    render(<NoShowAnalytics embedded />);
+    const bar = await screen.findByTestId('trend-bar-0');
+    expect(bar).toHaveClass('h-full');
+    expect(bar).toHaveTextContent('2026-10-02: 1');
+    expect(bar.querySelector('[style]')).toHaveStyle({ height: '100%' });
+  });
+
+  it('rejects invalid heatmap payloads with a retry action', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    axios.get.mockResolvedValue({ data: {} });
+    render(<NoShowAnalytics embedded />);
+    fireEvent.click(screen.getByTestId('tab-heatmap'));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Fazla satış risk haritası yüklenemedi');
+    expect(screen.getByRole('button', { name: 'Yeniden dene' })).toBeInTheDocument();
+  });
+
+  it('uses the same risk model for summary, row badge, order, score and bar even for zero scores', async () => {
+    axios.get.mockResolvedValue({ data: { predictions: [
+      { booking_id: 'high', guest_name: 'High guest', risk_score: 80, risk_level: 'high', total_amount: 100, currency: 'EUR' },
+      { booking_id: 'zero', guest_name: 'Zero guest', risk_score: 0, risk_level: 'low', total_amount: null, currency: 'USD' },
+    ], summary: { high_risk: 1, medium_risk: 0, low_risk: 1, potential_loss_by_currency: { EUR: 100 } } } });
+    axios.post.mockResolvedValue({ data: { results: { high: { score: 0, level: 'low' }, zero: { score: 90, level: 'high' } } } });
+    render(<NoShowAnalytics embedded />);
+    fireEvent.click(screen.getByTestId('tab-prediction'));
+    const row = await screen.findByTestId('pred-row-0');
+    expect(row).toHaveTextContent('High guest');
+    expect(row).toHaveTextContent('YÜKSEK');
+    expect(row.querySelector('[style]')).toHaveStyle({ width: '80%' });
+    expect(screen.getByTestId('pred-row-1')).toHaveTextContent('DÜŞÜK');
+    expect(screen.getByTestId('pred-row-1').querySelector('[style]')).toHaveStyle({ width: '0%' });
+    expect(screen.getByTestId('pred-high-risk')).toHaveTextContent('1');
+    expect(screen.getByTestId('pred-potential-loss')).toHaveTextContent('Risk altındaki rezervasyon bedeli');
+    expect(screen.getByRole('region', { name: 'Rezervasyon risk tablosu' })).toHaveAttribute('tabIndex', '0');
+    expect(axios.post).not.toHaveBeenCalled();
+  });
+
+  it('shows a retry error rather than zero risk for a malformed prediction response', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    axios.get.mockResolvedValue({ data: { detail: 'broken prediction' } });
+    render(<NoShowAnalytics embedded />);
+    fireEvent.click(screen.getByTestId('tab-prediction'));
+    expect(await screen.findByRole('alert')).toHaveTextContent('No-show tahminleri yüklenemedi');
+    expect(screen.queryByTestId('pred-low-risk')).not.toBeInTheDocument();
   });
 });
