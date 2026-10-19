@@ -800,7 +800,11 @@ async def _execute_schedule(schedule: dict, triggered_by: str = "system", histor
                 raise ValueError("PDF üretilemedi; farklı formatta dosya gönderilmedi. Tekrar deneyin veya CSV seçin.")
             attachments.append((f"{schedule['report_type']}_{date_tag}.pdf", "application/pdf", pdf_bytes))
 
-        smtp_ready = email_service.mode == "production" and email_service.smtp_username and email_service.smtp_password
+        production = email_service.mode == "production"
+        smtp_ready = production and email_service.smtp_username and email_service.smtp_password
+        # In production a missing SMTP login is a failed delivery, never a
+        # "simulation": nothing reached the recipient (report audit 2026-10-19).
+        smtp_missing = production and not smtp_ready
         for item in states:
             if item["status"] in {"sent", "mock"}:
                 continue
@@ -820,6 +824,10 @@ async def _execute_schedule(schedule: dict, triggered_by: str = "system", histor
                     item["sent_at"] = datetime.now(UTC).isoformat()
                 else:
                     item["failed_attempts"] = item.get("failed_attempts", 0) + 1
+            elif smtp_missing:
+                item["status"] = "failed"
+                item["reason"] = "smtp_not_configured"
+                item["failed_attempts"] = item.get("failed_attempts", 0) + 1
             else:
                 item["status"] = "mock"
             await db.report_schedule_history.update_one(history_filter, {"$set": {"delivery_states": states}})
@@ -828,7 +836,11 @@ async def _execute_schedule(schedule: dict, triggered_by: str = "system", histor
         failed = [item["recipient"] for item in states if item["status"] == "failed"]
         mock_count = sum(item["status"] == "mock" for item in states)
         status = "partial" if failed and sent_count else "failed" if failed else "mock" if mock_count else "sent"
-        error_msg = f"Gönderilemeyen alıcılar: {', '.join(failed)}" if failed else (
+        if failed and smtp_missing:
+            error_msg = f"E-posta sunucusu (SMTP) kullanıcı adı/parolası yapılandırılmamış; rapor gönderilmedi. Alıcılar: {', '.join(failed)}"
+        else:
+            error_msg = None
+        error_msg = error_msg or (f"Gönderilemeyen alıcılar: {', '.join(failed)}" if failed else None) or (
             "SMTP yapılandırılmadığı için gerçek e-posta gönderilmedi (mock mode)." if mock_count else None)
         details = {
             "sent_count": sent_count, "failed_count": len(failed), "failed_recipients": failed,

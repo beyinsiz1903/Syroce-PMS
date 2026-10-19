@@ -303,3 +303,20 @@ async def test_invalid_invoice_period_is_not_silently_unfiltered(first, last):
 def test_report_link_requires_a_valid_https_app_base(monkeypatch, value):
     monkeypatch.setenv("PUBLIC_APP_URL", value)
     assert scheduler._resolve_app_url("saved-report") == ""
+
+
+async def test_production_without_smtp_login_is_a_failed_delivery_not_a_simulation(ledger_db, monkeypatch):
+    """Report audit 2026-10-19: production ran 40 daily reports as "mock"
+    because the SMTP login was empty; no recipient received anything."""
+    original = schedule()
+    await ledger_db.report_schedules.insert_one(original)
+    monkeypatch.setattr(email_service, "smtp_username", "")
+    monkeypatch.setattr(email_service, "smtp_password", "")
+    result = await scheduler._execute_schedule(original)
+    assert result["status"] == "failed" and result["sent_count"] == 0 and result["mock_count"] == 0
+    history = await ledger_db.report_schedule_history.find_one({"_id": result["history_id"]})
+    assert "SMTP" in history["error_message"] and "yapılandırılmamış" in history["error_message"]
+    assert {d["reason"] for d in history["delivery_states"]} == {"smtp_not_configured"}
+    saved = await ledger_db.report_schedules.find_one({"_id": "schedule"})
+    assert saved["last_status"] == "failed" and not saved.get("last_sent_at")
+    email_service._send_email_smtp.assert_not_called()
