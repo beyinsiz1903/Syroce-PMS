@@ -12,6 +12,7 @@ from modules.pms_core.receivable_reporting import folio_snapshots
 from modules.pms_core.report_money import add_amount, currency_code, money, resolve_ledger_currencies, rounded, rounded_totals, single_amount
 from modules.pms_core.reporting_financials import NON_CASH_PAYMENT_METHODS, deduplicate_report_payments, effective_collection, effective_revenue_adjustment, is_valid_payment, report_payment_day_match
 from modules.pms_core.reporting_ledger import charge_amount, charge_category, posted_revenue_rows
+from modules.pms_core.room_revenue_reporting import reconcile_room_revenue
 from modules.pms_core.stay_night_metrics import ACTUAL_OCCUPANCY_STATUSES, as_date, booking_occupies_night, load_stay_night_metrics, stay_day_match
 
 ROOM_CATEGORIES = {"room", "rooms", "room_charge", "accommodation", "lodging", "konaklama"}
@@ -26,13 +27,11 @@ def _scalar_currency(totals, fallback):
 def daily_revenue_summary(metric_rows, charges_by_cat, *, fallback_currency="TRY"):
     """Accrue only currencies with no room posting, never resurrect a zero net."""
     categories, posted_rooms, accrued_rooms = {}, {}, {}
-    room_postings = set()
     for row in charges_by_cat:
         category = str(row.get("_id") or "other").strip().lower()
         code = currency_code(row.get("currency"), fallback_currency)
         if category in ROOM_CATEGORIES:
             add_amount(posted_rooms, code, row.get("total", 0))
-            room_postings.add(code)
         else:
             add_amount(categories.setdefault(category, {}), code, row.get("total", 0))
     for metric in metric_rows:
@@ -44,11 +43,8 @@ def daily_revenue_summary(metric_rows, charges_by_cat, *, fallback_currency="TRY
     occupied = sum(int(row.get("occupied_rooms") or 0) for row in metric_rows)
     sold = sum(int(row.get("sold_rooms") or 0) for row in metric_rows)
     capacity = sum(int(row.get("total_rooms") or 0) for row in metric_rows)
-    rooms, sources, fnb, other = {}, {}, {}, {}
-    for code in posted_rooms.keys() | accrued_rooms.keys():
-        accrue = code not in room_postings and occupied > 0 and money(accrued_rooms.get(code, 0)) != 0
-        rooms[code] = accrued_rooms.get(code, 0) if accrue else posted_rooms.get(code, 0)
-        sources[code] = "accrued" if accrue else "posted"
+    rooms, sources = reconcile_room_revenue(posted_rooms, accrued_rooms, occupied)
+    fnb, other = {}, {}
     for category, totals in categories.items():
         for code, value in totals.items():
             add_amount(fnb if category in FNB_CATEGORIES else other, code, value)

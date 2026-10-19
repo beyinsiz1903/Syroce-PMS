@@ -16,7 +16,7 @@ def charge_amount(row: dict) -> float:
 
 def charge_category(row: dict) -> str:
     category = str(row.get("charge_category") or row.get("category") or row.get("charge_type") or "other").strip().lower()
-    return "room" if category in {"room", "room_charge", "accommodation", "lodging", "konaklama"} else category
+    return "room" if category in {"room", "rooms", "room_charge", "accommodation", "lodging", "konaklama"} else category
 
 
 async def posted_revenue_rows(tenant_id: str, start: date, end: date, *, database, fallback_currency: str | None = None) -> list[dict]:

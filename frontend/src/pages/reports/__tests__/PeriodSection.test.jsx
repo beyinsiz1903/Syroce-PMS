@@ -3,6 +3,14 @@ import { describe, expect, it } from 'vitest';
 import PeriodSection from '../PeriodSection';
 
 describe('PeriodSection', () => {
+  it('labels one-day comparisons as days instead of falsely claiming seven or thirty-day totals', () => {
+    render(<PeriodSection reportPeriod="daily" data={{}} pc={{}} />);
+    expect(screen.getByText('Seçili Gün Geliri')).toBeInTheDocument();
+    expect(screen.getByText('Önceki Gün Geliri')).toBeInTheDocument();
+    expect(screen.getByText('365 Gün Önceki Gün')).toBeInTheDocument();
+    expect(screen.getByText('Rezervasyon değişimi (önceki güne göre)')).toBeInTheDocument();
+    expect(screen.queryByText('cm.pages_reports_PeriodSection.son_7_gun_gelir')).not.toBeInTheDocument();
+  });
   it('compares mixed-currency revenue per currency instead of calculating a false combined percentage', () => {
     render(<PeriodSection
       data={{ revenue_trend: [] }}

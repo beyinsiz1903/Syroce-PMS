@@ -223,7 +223,7 @@ def test_additional_guest_link_respects_its_checkout_date():
     assert _guest_link_active_on(link, "2026-09-23") is False
 
 
-def test_period_performance_uses_accrued_revenue_until_all_room_nights_are_posted():
+def test_period_performance_combines_posted_and_missing_day_accrual():
     metrics = [
         {"date": "2026-09-22", "occupied_rooms": 2, "total_rooms": 10, "revenue": 2000},
         {"date": "2026-09-23", "occupied_rooms": 1, "total_rooms": 10, "revenue": 1500},
@@ -231,7 +231,7 @@ def test_period_performance_uses_accrued_revenue_until_all_room_nights_are_poste
 
     result = _period_performance(metrics, {"2026-09-22": 2000})
 
-    assert result["revenue_source"] == "accrued"
+    assert result["revenue_source"] == "mixed"
     assert result["room_revenue"] == 3500
     assert result["posting_gap_days"] == ["2026-09-23"]
     assert result["adr"] == 1166.67

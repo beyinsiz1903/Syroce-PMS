@@ -5,13 +5,14 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
 } from 'recharts';
 import { formatCurrency, formatPercent, KPICard, CustomTooltip, SectionHeader } from './ReportHelpers';
-import { formatCurrencyBreakdown } from '@/lib/reportCurrency';
+import { formatCurrencyBreakdown, roomRevenueSourceLabel } from '@/lib/reportCurrency';
 
 const AdrRevparSection = ({ data, s, pc, periodMetrics, reportPeriod }) => {
   const isDaily = reportPeriod === 'daily';
   const metrics = periodMetrics || s;
   const periodLabel = isDaily ? 'Seçili Gün' : '30 Gün';
   const previousLabel = isDaily ? 'Önceki gün ortalama oda fiyatı' : 'Önceki 30 gün ortalama oda fiyatı';
+  const previousAdr = pc.prev_month_adr_by_currency ? formatCurrencyBreakdown(pc.prev_month_adr_by_currency, pc.prev_month_adr) : 'Döviz bilgisi mevcut değil';
   const occupiedLabel = isDaily ? 'Dolu Oda' : 'Dolu Oda-Gecesi';
   const capacityLabel = isDaily ? 'Satılabilir Oda' : 'Satılabilir Oda-Gecesi';
   const occupied = metrics.occupied_room_nights ?? s.occupied_rooms ?? 0;
@@ -26,7 +27,7 @@ const AdrRevparSection = ({ data, s, pc, periodMetrics, reportPeriod }) => {
   <div className="space-y-6" data-testid="section-adr-revpar">
     <SectionHeader title="Oda Gelir Performansı" description="Satılan oda fiyatı ile satılabilir oda başına gelirin anlaşılır karşılaştırması" />
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-      <KPICard title={`Satılan Oda Başına Ortalama Fiyat (${periodLabel})`} value={metrics.adr} currencyBreakdown={metrics.adr_by_currency} prevLabel={hasMultipleCurrencies ? 'Para birimi bazında ayrı hesaplanır' : `${previousLabel}: ${formatCurrency(pc.prev_month_adr)}`} icon={TrendingUp} color="blue" />
+      <KPICard title={`Satılan Oda Başına Ortalama Fiyat (${periodLabel})`} value={metrics.adr} currencyBreakdown={metrics.adr_by_currency} prevLabel={hasMultipleCurrencies ? 'Para birimi bazında ayrı hesaplanır' : `${previousLabel}: ${previousAdr}`} icon={TrendingUp} color="blue" />
       <KPICard title={`Satılabilir Oda Başına Gelir (${periodLabel})`} value={metrics.revpar} currencyBreakdown={metrics.revpar_by_currency} icon={BarChart3} color="green" />
       <KPICard title={occupiedLabel} value={occupied} icon={BedDouble} color="purple" />
       <KPICard title={capacityLabel} value={capacity} icon={Hotel} color="cyan" />
@@ -40,10 +41,10 @@ const AdrRevparSection = ({ data, s, pc, periodMetrics, reportPeriod }) => {
           <h3 className="text-sm font-semibold text-slate-900 mb-3">Ortalama Oda Fiyatı Detayı</h3>
           <div className="space-y-3">
             <div className="flex justify-between"><span className="text-sm text-slate-600">{periodLabel} ortalaması</span><span className="font-bold text-slate-900">{formatCurrencyBreakdown(metrics.adr_by_currency, metrics.adr)}</span></div>
-            <div className="flex justify-between"><span className="text-sm text-slate-600">{previousLabel}</span><span className="font-bold text-slate-900">{formatCurrency(pc.prev_month_adr)}</span></div>
+            <div className="flex flex-wrap justify-between gap-2"><span className="text-sm text-slate-600">{previousLabel}</span><span className="font-bold text-slate-900">{previousAdr}</span></div>
             <div className="flex justify-between"><span className="text-sm text-slate-600">{occupiedLabel}</span><span className="font-bold text-slate-900">{occupied}</span></div>
             <div className="flex justify-between"><span className="text-sm text-slate-600">Oda Geliri</span><span className="font-bold text-slate-900">{formatCurrencyBreakdown(metrics.room_revenue_by_currency, metrics.room_revenue ?? s.today_room_revenue)}</span></div>
-            <div className="flex justify-between"><span className="text-sm text-slate-600">Gelir Kaynağı</span><span className="font-medium text-slate-700">{metrics.revenue_source === 'posted' ? 'Folyoya işlenmiş' : 'Tahakkuk eden'}</span></div>
+            <div className="flex flex-wrap justify-between gap-2"><span className="text-sm text-slate-600">Gelir Kaynağı</span><span className="font-medium text-slate-700">{roomRevenueSourceLabel(metrics.revenue_source)}</span></div>
           </div>
         </CardContent>
       </Card>
