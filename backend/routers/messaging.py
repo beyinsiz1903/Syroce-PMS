@@ -191,6 +191,8 @@ async def get_messaging_settings(current_user: User = Depends(get_current_user))
                 "is_sandbox": cfg.get("is_sandbox", False),
                 "enabled": cfg.get("enabled", True),
                 "health_status": cfg.get("health_status", "unknown"),
+                "health_error": cfg.get("health_error"),
+                "health_error_code": cfg.get("health_error_code"),
                 "credentials": masked,
             }
         elif pt == "whatsapp":
@@ -269,6 +271,8 @@ async def save_email_settings(
                     "credentials_encrypted": creds_encrypted,
                     "is_sandbox": sandbox,
                     "health_status": "unknown",
+                    "health_error": None,
+                    "health_error_code": None,
                     "enabled": req.enabled,
                     "updated_at": now,
                 }

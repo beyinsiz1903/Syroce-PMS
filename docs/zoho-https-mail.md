@@ -7,6 +7,19 @@ SMTP'ye otomatik geri dönüş yapılmaz.
 
 ## OAuth hazırlığı
 
+### Önceki kurulum nereden kontrol edilir?
+
+Avrupa bölgesi hesabı için `https://api-console.zoho.eu/` üzerindeki uygulama
+listesini kontrol edin. Bir OAuth istemcisi bulunması, PMS'de geçerli refresh
+token'ın da kayıtlı olduğunu tek başına kanıtlamaz. PMS Ayarlar formunda Zoho
+yöntemini seçerek Client ID ve hesap kimliğini kontrol edebilirsiniz; yalnız
+inceleme yapıyorsanız Kaydet'e basmayın. Gizli alanların maskesi tek başına
+bağlantının çalıştığı anlamına gelmez. Yeni istemci oluşturmayın veya mevcut
+yetkiyi iptal etmeyin; önce var olan kaydı doğrulayın. Anahtarları ekran
+görüntüsüne, destek mesajına veya Git'e koymayın.
+
+### Yeni yetkilendirme gerekiyorsa
+
 1. Gönderen hesabın bölgesindeki Zoho API Console'da bir OAuth istemcisi
    oluşturun. Tek işletmenin kendi hesabı için Self Client kullanılabilir.
 2. Yalnız `ZohoMail.accounts.READ,ZohoMail.messages.CREATE` kapsamlarıyla

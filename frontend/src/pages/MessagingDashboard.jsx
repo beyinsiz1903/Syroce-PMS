@@ -107,7 +107,7 @@ function ConnectionBadge({ provider, channel }) {
 // ════════════════════════════════════════════════
 // Settings Tab
 // ════════════════════════════════════════════════
-function SettingsTab({ onChanged }) {
+export function SettingsTab({ onChanged }) {
   const { t, i18n } = useTranslation();
   const [settings, setSettings] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -227,6 +227,9 @@ function SettingsTab({ onChanged }) {
               <ConnectionBadge provider={settings?.email} channel="email" />
             </div>
           </div>
+          {settings?.email?.health_error && <div role="alert" className="mb-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
+            {settings.email.health_error}
+          </div>}
           <div className="mb-4">
             <Label htmlFor="email-transport">Gönderim yöntemi</Label>
             <select id="email-transport" className="block w-full border rounded-md p-2" value={emailForm.email_transport}
@@ -234,6 +237,10 @@ function SettingsTab({ onChanged }) {
               <option value="smtp">SMTP</option>
               <option value="zoho_api">Zoho Mail HTTPS API (443)</option>
             </select>
+            {emailForm.email_transport === 'smtp' && <p className="mt-2 text-sm text-slate-600">
+              SMTP çıkışı kısıtlı sunucularda (ör. DigitalOcean Droplet) Zoho için HTTPS API (443) kullanın.
+              Port veya parola değiştirmek ağ engelini çözmez. Yöntem değişikliği için Zoho OAuth yetkilendirmesi gerekir; otomatik geçiş yapılmaz.
+            </p>}
           </div>
           {emailForm.email_transport === 'zoho_api' && <div className="mb-4 space-y-3">
             <p className="text-sm text-slate-600">SMTP şifresi yerine Zoho OAuth bilgileri gerekir. İzinler: ZohoMail.messages.CREATE ve ZohoMail.accounts.READ. Yöntem değişikliği simülasyon modunda kaydedilir. Boş gizli alanlar mevcut değerleri korur. Gönderen görünen adı Zoho hesabından yönetilir.</p>

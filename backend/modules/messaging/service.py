@@ -267,6 +267,8 @@ class MessagingService:
             await self.db.messaging_delivery_logs.update_one(
                 {"id": log_doc["id"], "tenant_id": tenant_id},
                 {"$set": {"status": DeliveryStatus.UNKNOWN.value, "error_message": result.get("error"),
+                          "error_class": result.get("error_class"), "error_code": result.get("error_code"),
+                          "delivery_stage": result.get("delivery_stage"),
                           "next_retry_at": None, "updated_at": datetime.now(UTC).isoformat()}},
             )
             return {"success": False, "outcome_unknown": True, "error": result.get("error"), "delivery_id": log_doc["id"]}
@@ -287,15 +289,19 @@ class MessagingService:
         else:
             self._provider_errors[provider_type] = self._provider_errors.get(provider_type, 0) + 1
             error_class = result.get("error_class", "unknown_error")
+            log_doc.update(error_message=result.get("error"), error_class=error_class,
+                           error_code=result.get("error_code"), delivery_stage=result.get("delivery_stage"))
             next_retry = datetime.now(UTC) + timedelta(minutes=2)
             await self.db.messaging_delivery_logs.update_one(
-                {"id": log_doc["id"]},
+                {"id": log_doc["id"], "tenant_id": tenant_id},
                 {
                     "$set": {
                         "status": DeliveryStatus.FAILED.value,
                         "error_message": result.get("error"),
                         "error_class": error_class,
-                        "next_retry_at": next_retry.isoformat(),
+                        "error_code": result.get("error_code"),
+                        "delivery_stage": result.get("delivery_stage"),
+                        "next_retry_at": next_retry.isoformat() if result.get("retryable", True) else None,
                         "updated_at": datetime.now(UTC).isoformat(),
                     }
                 },
@@ -335,7 +341,9 @@ class MessagingService:
                 fb_log["delivered_at"] = datetime.now(UTC).isoformat()
                 await self.db.messaging_delivery_logs.insert_one(seal_delivery_log(fb_log))
                 return {"success": True, "delivery_id": fb_log["id"], "fallback_channel": fb_channel, "provider_message_id": result.get("provider_message_id")}
-        return {"success": False, "error": original_log.get("error_message", "All channels failed"), "delivery_id": original_log["id"]}
+        return {"success": False, "error": original_log.get("error_message", "All channels failed"),
+                "error_class": original_log.get("error_class"), "error_code": original_log.get("error_code"),
+                "delivery_id": original_log["id"]}
 
     # ── retry failed ──
 
@@ -378,18 +386,25 @@ class MessagingService:
                 {"id": delivery_id, "tenant_id": tenant_id},
                 {"$set": {"status": DeliveryStatus.UNKNOWN.value, "next_retry_at": None,
                           "retry_count": new_count, "error_message": result.get("error"),
+                          "error_class": result.get("error_class"), "error_code": result.get("error_code"),
+                          "delivery_stage": result.get("delivery_stage"),
                           "updated_at": datetime.now(UTC).isoformat()}},
             )
             return {"success": False, "outcome_unknown": True, "delivery_id": delivery_id}
 
         if result.get("success"):
             await self.db.messaging_delivery_logs.update_one(
-                {"id": delivery_id},
+                {"id": delivery_id, "tenant_id": tenant_id},
                 {
                     "$set": {
                         "status": DeliveryStatus.SENT.value,
                         "retry_count": new_count,
                         "provider_message_id": result.get("provider_message_id"),
+                        "next_retry_at": None,
+                        "error_message": None,
+                        "error_class": None,
+                        "error_code": None,
+                        "delivery_stage": None,
                         "sent_at": datetime.now(UTC).isoformat(),
                         "updated_at": datetime.now(UTC).isoformat(),
                     }
@@ -399,13 +414,16 @@ class MessagingService:
         else:
             next_retry = datetime.now(UTC) + timedelta(minutes=2**new_count)
             await self.db.messaging_delivery_logs.update_one(
-                {"id": delivery_id},
+                {"id": delivery_id, "tenant_id": tenant_id},
                 {
                     "$set": {
                         "status": "failed",
                         "retry_count": new_count,
                         "error_message": result.get("error"),
-                        "next_retry_at": next_retry.isoformat(),
+                        "error_class": result.get("error_class"),
+                        "error_code": result.get("error_code"),
+                        "delivery_stage": result.get("delivery_stage"),
+                        "next_retry_at": next_retry.isoformat() if result.get("retryable", True) else None,
                         "updated_at": datetime.now(UTC).isoformat(),
                     }
                 },
@@ -477,8 +495,9 @@ class MessagingService:
             )
             health = await provider.check_health(decrypted_creds, mode)
             await self.db.messaging_provider_configs.update_one(
-                {"id": cfg["id"]},
-                {"$set": {"health_status": health.get("status"), "last_health_check": health.get("checked_at")}},
+                {"id": cfg["id"], "tenant_id": tenant_id},
+                {"$set": {"health_status": health.get("status"), "last_health_check": health.get("checked_at"),
+                          "health_error": health.get("error"), "health_error_code": health.get("error_code")}},
             )
             results.append({"provider_type": pt, "config_id": cfg["id"], "mode": mode, **health})
         return results

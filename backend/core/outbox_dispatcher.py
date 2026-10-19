@@ -168,8 +168,10 @@ async def dispatch_outbox_event(event: dict[str, Any]) -> tuple[bool, str]:
                 # replaying the identical booking payload. Keep it visible as
                 # failed for operator correction, without wasting five retries.
                 # Mixed/unknown outcomes remain retryable for the other target.
+                from core.outbox_configuration import CONFIGURATION_ERRORS
+
                 classification = "permanent" if all(
-                    item == "DEFINITIVE_REJECTION" for item in legacy_errors
+                    item == "DEFINITIVE_REJECTION" or item in CONFIGURATION_ERRORS for item in legacy_errors
                 ) else "retryable"
                 return False, f"{classification}: legacy channel availability sync failed: {detail[:400]}"
             if configured and queued == 0:

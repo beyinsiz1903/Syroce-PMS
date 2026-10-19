@@ -4,9 +4,11 @@ No third-party intermediaries (no SendGrid, no Twilio).
 Supports sandbox/test/live modes.
 """
 
+import asyncio
 import logging
 import os
 import smtplib
+import ssl
 import time
 from datetime import UTC, datetime
 from email.mime.multipart import MIMEMultipart
@@ -42,7 +44,7 @@ class BaseProvider:
             return "rate_limit"
         if "invalid" in lower or "not found" in lower or "404" in lower or "550" in lower:
             return "invalid_recipient"
-        if "timeout" in lower:
+        if "timeout" in lower or "timed out" in lower:
             return "timeout"
         if "bounce" in lower:
             return "bounce"
@@ -60,23 +62,85 @@ class SMTPEmailProvider(BaseProvider):
             from .zoho_mail import send
 
             return await send(recipient, body, subject, creds)
+        if mode in (ProviderMode.TEST, ProviderMode.SANDBOX):
+            return {
+                "success": True, "provider_message_id": f"sandbox_{time.time_ns()}",
+                "error": None, "mode": mode, "latency_ms": 5,
+                "note": "[SANDBOX] E-posta simüle edildi; gerçek gönderim yapılmadı.",
+            }
+        # DNS, connect, STARTTLS and SMTP are synchronous. Never block every
+        # request handled by this ASGI event loop during the SMTP timeout.
+        return await asyncio.to_thread(self._send_smtp, recipient, body, subject, creds)
+
+    @staticmethod
+    def _open_smtp(creds: dict, timeout: int):
+        from integrations.xchange.safety import assert_safe_host
+
+        host = creds.get("smtp_host", "")
+        port = int(creds.get("smtp_port", 587))
+        pinned_ip = assert_safe_host(host, port)
+        server = smtplib.SMTP(pinned_ip, port, timeout=timeout)
+        # The TCP destination remains DNS-pinned. Certificate verification/SNI
+        # must use the configured hostname, not that public IP address.
+        server._host = host
+        return server
+
+    def _smtp_failure(self, exc: Exception, stage: str) -> dict:
+        from integrations.xchange.safety import EgressDenied
+
+        definitive_rejection = isinstance(exc, (smtplib.SMTPResponseException, smtplib.SMTPRecipientsRefused))
+        unknown = stage == "submit" and not definitive_rejection
+        error_class = self.classify_error(str(exc))
+        error_code = "smtp_error"
+        error = "SMTP işlemi tamamlanamadı. E-posta ayarlarını ve sunucu bağlantısını kontrol edin."
+        if isinstance(exc, EgressDenied):
+            error_class, error_code = "configuration_error", "smtp_egress_denied"
+            error = "SMTP sunucusuna erişim güvenli ağ politikası tarafından engellendi. Sistem yöneticisine başvurun."
+        elif isinstance(exc, TimeoutError):
+            error_class, error_code = "timeout", f"smtp_{stage}_timeout"
+            error = "SMTP bağlantısı zaman aşımına uğradı. Sunucunun dış ağ/SMTP erişimini kontrol edin; SMTP çıkışı kısıtlıysa Zoho HTTPS API kullanın."
+        elif isinstance(exc, ssl.SSLError):
+            error_class, error_code = "configuration_error", "smtp_tls_error"
+            error = "SMTP TLS doğrulaması başarısız. Sunucu adını ve sertifikasını kontrol edin; TLS doğrulamasını kapatmayın."
+        elif isinstance(exc, smtplib.SMTPAuthenticationError):
+            error_class, error_code = "authentication_error", "smtp_authentication_error"
+            error = "SMTP kimlik doğrulaması başarısız. Kullanıcı adı ve uygulama parolasını kontrol edin; bunlar Zoho OAuth anahtarı yerine geçmez."
+        elif isinstance(exc, (smtplib.SMTPRecipientsRefused, smtplib.SMTPSenderRefused)):
+            error_class, error_code = "invalid_recipient", "smtp_address_rejected"
+            error = "SMTP sunucusu gönderen veya alıcı adresini reddetti."
+        elif isinstance(exc, smtplib.SMTPResponseException):
+            error_class = "temporary_rejection" if 400 <= exc.smtp_code < 500 else "provider_rejection"
+            error_code = "smtp_rejected"
+            error = "SMTP sunucusu işlemi reddetti. Posta sağlayıcısının gönderim kurallarını kontrol edin."
+        elif isinstance(exc, OSError):
+            error_class, error_code = "connection_error", "smtp_connection_error"
+            error = "SMTP sunucusuna bağlantı kurulamadı. DNS, güvenlik duvarı ve dış ağ erişimini kontrol edin."
+        if unknown:
+            error_code = "smtp_delivery_unknown"
+            error = "SMTP gönderiminin sonucu belirsiz. Çift gönderimi önlemek için yeniden denemeyin; gönderen hesabındaki Gönderilenler kaydını kontrol edin."
+        # Do not attach exception locals (message body, recipient, credentials)
+        # to Sentry for expected transport/configuration failures.
+        logger.warning("SMTP operation failed stage=%s error_class=%s exception=%s", stage, error_class, type(exc).__name__)
+        return {"success": False, "outcome_unknown": unknown, "error": error,
+                "error_class": error_class, "error_code": error_code, "delivery_stage": stage,
+                "retryable": not unknown and error_class not in {"authentication_error", "configuration_error", "invalid_recipient", "provider_rejection"},
+                "provider_message_id": None}
+
+    @staticmethod
+    def _close_smtp(server):
+        if server is not None:
+            try:
+                server.close()
+            except Exception:
+                logger.debug("SMTP close failed")
+
+    def _send_smtp(self, recipient: str, body: str, subject: str | None, creds: dict) -> dict:
         smtp_host = creds.get("smtp_host", "")
-        smtp_port = int(creds.get("smtp_port", 587))
         smtp_username = creds.get("smtp_username", "")
         smtp_password = creds.get("smtp_password", "")
         from_email = creds.get("from_email", "")
         from_name = creds.get("from_name", "Otel")
         use_tls = creds.get("use_tls", True)
-
-        if mode == ProviderMode.TEST or mode == ProviderMode.SANDBOX:
-            return {
-                "success": True,
-                "provider_message_id": f"sandbox_{int(time.time())}",
-                "error": None,
-                "mode": mode,
-                "latency_ms": 5,
-                "note": f"[SANDBOX] Email {recipient} adresine gonderildi (simule)",
-            }
 
         if not smtp_host or not smtp_username or not smtp_password or not from_email:
             return {
@@ -84,23 +148,14 @@ class SMTPEmailProvider(BaseProvider):
                 "error": "SMTP yapilandirmasi eksik (host, username, password, from_email gerekli)",
                 "provider_message_id": None,
                 "error_class": "authentication_error",
+                "error_code": "smtp_configuration_missing",
+                "delivery_stage": "prepare",
+                "retryable": False,
             }
 
-        # v109 round-7 follow-up: validate tenant-supplied SMTP host against
-        # SSRF/DNS-rebinding policy. Connect to pinned IP, not the hostname.
-        from integrations.xchange.safety import EgressDenied, assert_safe_host
-
-        try:
-            pinned_ip = assert_safe_host(smtp_host, smtp_port)
-        except EgressDenied as eg:
-            return {
-                "success": False,
-                "error": f"SMTP host izinli ag listesinde degil: {eg}",
-                "provider_message_id": None,
-                "error_class": "configuration_error",
-            }
-
-        start = time.time()
+        start = time.monotonic()
+        server = None
+        stage = "prepare"
         try:
             msg = MIMEMultipart("alternative")
             msg["Subject"] = subject or "Otel Bilgilendirme"
@@ -113,30 +168,33 @@ class SMTPEmailProvider(BaseProvider):
             else:
                 msg.attach(MIMEText(body, "plain", "utf-8"))
 
-            server = smtplib.SMTP(pinned_ip, smtp_port, timeout=15)
+            stage = "connect"
+            server = self._open_smtp(creds, timeout=15)
             if use_tls:
-                server.starttls()
+                stage = "tls"
+                server.starttls(context=ssl.create_default_context())
+            stage = "authenticate"
             server.login(smtp_username, smtp_password)
+            stage = "submit"
             server.sendmail(from_email, recipient, msg.as_string())
-            server.quit()
+            # A failed QUIT after sendmail acceptance must not turn a delivered
+            # message into a retryable failure (which creates duplicates).
+            try:
+                server.quit()
+            except Exception:
+                logger.warning("SMTP accepted message but connection teardown failed")
 
-            latency_ms = round((time.time() - start) * 1000, 2)
+            latency_ms = round((time.monotonic() - start) * 1000, 2)
             return {
                 "success": True,
-                "provider_message_id": f"smtp_{int(time.time())}",
+                "provider_message_id": f"smtp_{time.time_ns()}",
                 "error": None,
                 "latency_ms": latency_ms,
             }
         except Exception as e:
-            logger.exception("SMTP send error")
-            err_str = str(e)[:300]
-            return {
-                "success": False,
-                "error": err_str,
-                "provider_message_id": None,
-                "error_class": self.classify_error(err_str),
-                "latency_ms": round((time.time() - start) * 1000, 2),
-            }
+            return {**self._smtp_failure(e, stage), "latency_ms": round((time.monotonic() - start) * 1000, 2)}
+        finally:
+            self._close_smtp(server)
 
     async def check_health(self, credentials: dict, mode: str = ProviderMode.LIVE) -> dict[str, Any]:
         if mode in (ProviderMode.TEST, ProviderMode.SANDBOX):
@@ -145,27 +203,34 @@ class SMTPEmailProvider(BaseProvider):
             from .zoho_mail import check_health
 
             return {**await check_health(credentials), "checked_at": datetime.now(UTC).isoformat()}
+        return await asyncio.to_thread(self._check_smtp_health, credentials)
+
+    def _check_smtp_health(self, credentials: dict) -> dict:
         smtp_host = credentials.get("smtp_host", "")
-        smtp_port = int(credentials.get("smtp_port", 587))
         smtp_username = credentials.get("smtp_username", "")
         smtp_password = credentials.get("smtp_password", "")
-        if not smtp_host or not smtp_username:
+        if not smtp_host or not smtp_username or not smtp_password:
             return {"status": "unhealthy", "error": "SMTP bilgileri eksik", "checked_at": datetime.now(UTC).isoformat()}
-        # v109 round-7 follow-up: validate tenant SMTP host (rebinding-safe).
-        from integrations.xchange.safety import EgressDenied, assert_safe_host
-
+        server = None
+        stage = "connect"
         try:
-            pinned_ip = assert_safe_host(smtp_host, smtp_port)
-        except EgressDenied as eg:
-            return {"status": "unhealthy", "error": f"egress_denied: {eg}", "checked_at": datetime.now(UTC).isoformat()}
-        try:
-            server = smtplib.SMTP(pinned_ip, smtp_port, timeout=10)
-            server.starttls()
+            server = self._open_smtp(credentials, timeout=10)
+            if credentials.get("use_tls", True):
+                stage = "tls"
+                server.starttls(context=ssl.create_default_context())
+            stage = "authenticate"
             server.login(smtp_username, smtp_password)
-            server.quit()
+            try:
+                server.quit()
+            except Exception:
+                logger.debug("SMTP health connection teardown failed")
             return {"status": "healthy", "checked_at": datetime.now(UTC).isoformat()}
         except Exception as e:
-            return {"status": "unhealthy", "error": str(e)[:200], "checked_at": datetime.now(UTC).isoformat()}
+            failure = self._smtp_failure(e, stage)
+            return {"status": "unhealthy", "error": failure["error"], "error_class": failure["error_class"],
+                    "error_code": failure["error_code"], "checked_at": datetime.now(UTC).isoformat()}
+        finally:
+            self._close_smtp(server)
 
 
 class WhatsAppProvider(BaseProvider):

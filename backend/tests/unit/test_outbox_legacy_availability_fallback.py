@@ -113,7 +113,7 @@ async def test_booking_event_also_delivers_to_legacy_provider_when_generic_job_e
 
 
 @pytest.mark.asyncio
-async def test_booking_event_retries_when_legacy_provider_accepts_no_work():
+async def test_booking_event_requires_configuration_repair_when_mapping_is_missing():
     cm_result = {
         "handled": True,
         "sync_jobs_created": 0,
@@ -140,7 +140,7 @@ async def test_booking_event_retries_when_legacy_provider_accepts_no_work():
         success, message = await dispatch_outbox_event(_booking_event())
 
     assert success is False
-    assert message.startswith("retryable: legacy channel availability sync failed")
+    assert message.startswith("permanent: legacy channel availability sync failed")
     assert "exely_room_mapping_missing" in message
 
 
