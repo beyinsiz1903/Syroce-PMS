@@ -5,6 +5,36 @@ from __future__ import annotations
 import pytest
 
 
+def test_legacy_audit_details_and_snapshots_are_normalized_and_protected():
+    from routers.audit_timeline import _normalize_audit_record
+
+    original = {
+        "user_id": "operator-42", "action": "room.updated", "entity_id": "room-203",
+        "before_value": {"room_status": "dirty", "password": "old-secret"},
+        "after_value": {"room_status": "clean", "password": "new-secret"},
+        "details": "Oda temizlendi token=private-value",
+        "metadata": {"room_number": "203", "refresh_token": "private-token"},
+    }
+    result = _normalize_audit_record(original, {"role": "admin"})
+    assert result["actor_id"] == "operator-42"
+    assert result["target_id"] == "room-203"
+    assert result["before_snapshot"]["room_status"] == "dirty"
+    assert result["after_snapshot"]["room_status"] == "clean"
+    assert "private-value" not in result["details"]
+    for field in ("before_snapshot", "before_value", "after_snapshot", "after_value", "metadata"):
+        assert "secret" not in str(result[field])
+        assert "private-token" not in str(result[field])
+    # Reading historical logs must not mutate the stored chain payload.
+    assert original["before_value"]["password"] == "old-secret"
+
+
+def test_canonical_audit_snapshots_take_precedence_over_legacy_aliases():
+    from routers.audit_timeline import _normalize_audit_record
+
+    result = _normalize_audit_record({"before_snapshot": {}, "before_value": {"status": "dirty"}}, {"role": "admin"})
+    assert result["before_snapshot"] == {}
+
+
 def test_signed_export_is_verifiable_and_tamper_evident():
     from core.audit_export import build_signed_export, verify_signed_export
 
@@ -50,6 +80,7 @@ def test_entity_query_links_reservation_aliases_without_cross_tenant_scope():
 
 def test_entity_query_rejects_unsupported_or_unbounded_entity_types():
     from fastapi import HTTPException
+
     from routers.audit_timeline import _entity_timeline_query
 
     with pytest.raises(HTTPException) as unsupported:

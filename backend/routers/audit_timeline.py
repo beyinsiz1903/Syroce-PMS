@@ -145,9 +145,16 @@ def _normalize_audit_record(log: dict, current_user) -> dict:
     normalized["entity_type"] = log.get("entity_type") or normalized["target_type"]
     normalized["target_id"] = log.get("target_id") or log.get("entity_id")
     normalized["entity_id"] = log.get("entity_id") or normalized["target_id"]
+    normalized["actor_id"] = log.get("actor_id") or log.get("user_id")
+    # Older domain writers use before_value/after_value. Expose them through
+    # the canonical UI fields without rewriting immutable historical records.
+    if normalized.get("before_snapshot") is None:
+        normalized["before_snapshot"] = log.get("before_value")
+    if normalized.get("after_snapshot") is None:
+        normalized["after_snapshot"] = log.get("after_value")
     normalized["result_status"] = log.get("result_status") or "success"
     normalized["severity"] = log.get("severity") or "info"
-    for field in ("metadata", "before_snapshot", "after_snapshot", "override_reason"):
+    for field in ("metadata", "before_snapshot", "after_snapshot", "before_value", "after_value", "override_reason", "details"):
         if field in normalized:
             normalized[field] = _protect_audit_value(normalized[field], current_user)
     return normalized
