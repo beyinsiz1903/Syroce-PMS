@@ -19,6 +19,7 @@ import {
   webCenter,
 } from '../../src/components/ui';
 import { OfflineBanner } from '../../src/components/OfflineBanner';
+import { invalidateRoomOccupancy } from '../../src/cache/roomOccupancy';
 import { radius, spacing, useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
 import {
@@ -217,9 +218,7 @@ export default function ReservationDetailScreen() {
     qc.invalidateQueries({ queryKey: ['reservation-ota', id] });
     qc.invalidateQueries({ queryKey: ['reservation-folio', id] });
     qc.invalidateQueries({ queryKey: ['reservation-full', id] });
-    qc.invalidateQueries({ queryKey: ['arrivals-today'] });
-    qc.invalidateQueries({ queryKey: ['departures-today'] });
-    qc.invalidateQueries({ queryKey: ['inhouse'] });
+    void invalidateRoomOccupancy(qc);
     qc.invalidateQueries({ queryKey: ['calendar', 'reservations'] });
   };
 

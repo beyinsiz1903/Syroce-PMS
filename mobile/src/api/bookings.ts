@@ -1,4 +1,6 @@
 import { api, apiRequest } from './client';
+import { queryClient } from '../cache/queryClient';
+import { invalidateRoomOccupancy } from '../cache/roomOccupancy';
 
 export type Booking = {
   id: string;
@@ -148,23 +150,29 @@ export async function getBooking(id: string): Promise<Booking | null> {
 
 // POST /api/frontdesk/checkin/{booking_id}
 export async function checkin(bookingId: string): Promise<unknown> {
-  return api.post(`/api/frontdesk/checkin/${bookingId}`, {});
+  const result = await api.post(`/api/frontdesk/checkin/${bookingId}`, {});
+  await invalidateRoomOccupancy(queryClient);
+  return result;
 }
 
 // POST /api/frontdesk/assign-room  body: { booking_id, room_id }
 export async function assignRoom(bookingId: string, roomId: string): Promise<unknown> {
-  return api.post('/api/frontdesk/assign-room', {
+  const result = await api.post('/api/frontdesk/assign-room', {
     booking_id: bookingId,
     room_id: roomId,
   });
+  await invalidateRoomOccupancy(queryClient);
+  return result;
 }
 
 // POST /api/frontdesk/checkout/{booking_id}
 export async function checkout(bookingId: string, force = false): Promise<unknown> {
-  return api.post(
+  const result = await api.post(
     `/api/frontdesk/checkout/${bookingId}?force=${force}&auto_close_folios=true`,
     {},
   );
+  await invalidateRoomOccupancy(queryClient);
+  return result;
 }
 
 export type WalkInPayload = {
@@ -180,12 +188,14 @@ export type WalkInPayload = {
 
 // POST /api/frontdesk/v2/walk-in (frontdesk_router_v2.py)
 export async function walkInQuick(payload: WalkInPayload): Promise<unknown> {
-  return api.post('/api/frontdesk/v2/walk-in', {
+  const result = await api.post('/api/frontdesk/v2/walk-in', {
     nights: 1,
     rate_amount: 0,
     payment_method: 'cash',
     ...payload,
   });
+  await invalidateRoomOccupancy(queryClient);
+  return result;
 }
 
 export type QuickBookingPayload = {

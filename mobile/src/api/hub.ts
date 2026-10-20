@@ -81,6 +81,7 @@ export type TodayDigest = {
   occupancy_pct: number;
   occupied_rooms: number;
   total_rooms: number;
+  occupancy_basis?: 'current_room_state';
   check_ins: number;
   check_outs: number;
   open_faults: number;

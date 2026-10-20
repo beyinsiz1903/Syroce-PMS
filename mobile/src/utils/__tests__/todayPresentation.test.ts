@@ -36,6 +36,7 @@ test('Today shows unverified currency explicitly and never fabricates a debt amo
 });
 
 test('occupancy requires the complete server snapshot and accepts a genuine zero', () => {
+  assert.deepEqual(todayOccupancy({ occupancy_pct: 29.4, occupied_rooms: 5, total_rooms: 17, occupancy_basis: 'current_room_state' }), { percentage: 29.4, occupied: 5, total: 17 });
   assert.deepEqual(todayOccupancy({ occupancy_pct: 25, occupied_rooms: 1, total_rooms: 4 }), { percentage: 25, occupied: 1, total: 4 });
   assert.deepEqual(todayOccupancy({ occupancy_pct: 0, occupied_rooms: 0, total_rooms: 4 }), { percentage: 0, occupied: 0, total: 4 });
   assert.deepEqual(todayOccupancy({ occupancy_pct: 14.3, occupied_rooms: 1, total_rooms: 7, currency: 'USD' }), { percentage: 14.3, occupied: 1, total: 7 });
