@@ -86,11 +86,36 @@ export function summarizeUserAgent(userAgent) {
 
 export function friendlyAction(event) {
   if (event.action && event.action.includes(" /api/")) {
-    const verbs = { POST: "oluşturdu / işlem yaptı", PUT: "güncelledi", PATCH: "değiştirdi", DELETE: "sildi" };
-    const verb = verbs[event.http_method] || "işlem yaptı";
-    return `${auditEntityLabel(event.target_type)}: ${verb}`;
+    const path = auditRequestPath(event);
+    const parts = path.split("/").filter(Boolean);
+    const operation = parts.at(-1);
+    const operations = {
+      'check-in': 'Giriş (check-in) işlemi', checkin: 'Giriş (check-in) işlemi',
+      'check-out': 'Çıkış (check-out) işlemi', checkout: 'Çıkış (check-out) işlemi',
+      'assign-room': 'Oda atama işlemi', cancel: 'İptal işlemi',
+      refresh: 'Oturum yenileme isteği', login: 'Oturum açma isteği', logout: 'Oturum kapatma isteği',
+    };
+    if (Object.hasOwn(operations, operation)) return operations[operation];
+    const resource = parts.find(part => ['bookings', 'reservations', 'rooms', 'payments', 'folios'].includes(part));
+    const labels = { bookings: 'Rezervasyon', reservations: 'Rezervasyon', rooms: 'Oda', payments: 'Ödeme', folios: 'Folyo' };
+    const method = event.http_method || event.action.split(' ')[0];
+    // POST can mean creation, search, export or a command. Only a collection
+    // POST is labelled creation; the response badge remains the source of outcome.
+    if (method === 'POST' && resource && operation === resource) return `${labels[resource]} oluşturma isteği`;
+    const verbs = { GET: 'görüntüleme isteği', PUT: 'güncelleme isteği', PATCH: 'değişiklik isteği', DELETE: 'silme isteği' };
+    return `${labels[resource] || auditEntityLabel(event.target_type)}: ${verbs[method] || 'API işlem isteği'}`;
   }
   return auditActionLabel(event.operation_name || event.action);
+}
+
+export function auditRequestPath(event) {
+  // Never display query strings: they can contain tokens or guest input.
+  const value = event.http_path || event.action?.match(/^[A-Z]+ (\/api\/\S+)/)?.[1] || '';
+  return String(value).split(/[?#]/)[0];
+}
+
+export function auditActorLabel(event) {
+  return event.actor_name || event.user_name || event.actor_id || event.user_id || 'Sistem';
 }
 function SeverityBadge({
   severity
@@ -108,21 +133,23 @@ function SeverityBadge({
 function DiffView({
   before,
   after,
-  t
 }) {
   if (!before && !after) return null;
-  return <div className="grid grid-cols-2 gap-2 mt-2 text-xs">
-      {before && <div className="bg-red-950/30 border border-red-900/30 rounded p-2">
-          <p className="text-red-400 font-mono mb-1">{t("cm.pages_AuditTimelinePage.before")}</p>
-          <pre className="text-zinc-400 overflow-auto max-h-24">{JSON.stringify(before, null, 2)}</pre>
-        </div>}
-      {after && <div className="bg-emerald-950/30 border border-emerald-900/30 rounded p-2">
-          <p className="text-emerald-400 font-mono mb-1">{t("cm.pages_AuditTimelinePage.after")}</p>
-          <pre className="text-zinc-400 overflow-auto max-h-24">{JSON.stringify(after, null, 2)}</pre>
-        </div>}
-    </div>;
+  const labels = { status: 'Durum', room_status: 'Oda durumu', housekeeping_status: 'Temizlik durumu', room_number: 'Oda numarası', room_id: 'Oda kimliği', check_in: 'Giriş tarihi', check_out: 'Çıkış tarihi', total_amount: 'Toplam tutar', currency: 'Para birimi', balance: 'Bakiye', amount: 'Tutar' };
+  const values = { dirty: 'Kirli', clean: 'Temiz', cleaning: 'Temizleniyor', inspected: 'Kontrol edildi', available: 'Müsait', occupied: 'Konaklanıyor', checked_in: 'Giriş yapıldı', checked_out: 'Çıkış yapıldı', cancelled: 'İptal edildi', confirmed: 'Onaylandı' };
+  const display = value => value === undefined ? 'Kaydedilmemiş' : value === null ? 'Boş' : typeof value === 'object' ? JSON.stringify(value) : Object.hasOwn(values, value) ? values[value] : String(value);
+  const left = before && typeof before === 'object' && !Array.isArray(before) ? before : before == null ? {} : { value: before };
+  const right = after && typeof after === 'object' && !Array.isArray(after) ? after : after == null ? {} : { value: after };
+  const fields = [...new Set([...Object.keys(left), ...Object.keys(right)])].filter(key => JSON.stringify(left[key]) !== JSON.stringify(right[key]));
+  return <div className="mt-2 overflow-x-auto">
+    <table className="w-full table-fixed text-xs text-gray-800">
+      <thead><tr className="bg-gray-50 text-left"><th className="p-2">Alan</th><th className="p-2">Önceki değer</th><th className="p-2">Sonraki değer</th></tr></thead>
+      <tbody>{fields.map(key => <tr key={key} className="border-t align-top"><th className="p-2 text-left font-medium break-all">{Object.hasOwn(labels, key) ? labels[key] : key}</th><td className="p-2 break-all whitespace-pre-wrap">{display(left[key])}</td><td className="p-2 break-all whitespace-pre-wrap">{display(right[key])}</td></tr>)}</tbody>
+    </table>
+    {!fields.length && <p className="text-gray-500 p-2">Kayıtlı önceki ve sonraki değerler aynı.</p>}
+  </div>;
 }
-function TimelineEvent({
+export function TimelineEvent({
   event,
   expanded,
   onToggle,
@@ -144,8 +171,8 @@ function TimelineEvent({
           </div>
           <div className="flex items-center gap-3 mt-1 text-[11px] text-gray-500 flex-wrap">
             <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{time}</span>
-            <span className="flex items-center gap-1"><User className="w-3 h-3" />{event.actor_role || event.actor_id || "Sistem"}</span>
-            {event.target_id && <span className="font-mono">{event.target_id.substring(0, 8)}...</span>}
+            <span className="flex items-center gap-1 break-all"><User className="w-3 h-3 shrink-0" />{auditActorLabel(event)}{event.actor_role ? ` · ${event.actor_role}` : ''}</span>
+            {event.target_id && <span className="font-mono break-all">{String(event.target_id).startsWith('/api/') ? auditRequestPath(event) || String(event.target_id).split(/[?#]/)[0] : String(event.target_id)}</span>}
             {event.ip_address && <span data-testid="event-ip" className="flex items-center gap-1 font-mono" title={t("cm.pages_AuditTimelinePage.ip_adresi")}>
                 <Globe className="w-3 h-3" />{event.ip_address}
               </span>}
@@ -155,11 +182,20 @@ function TimelineEvent({
             {event.duration_ms && <span>{event.duration_ms}{t("cm.pages_AuditTimelinePage.ms")}</span>}
           </div>
         </div>
-        {(event.before_snapshot || event.after_snapshot) && <Button size="sm" variant="ghost" className="h-6 text-xs text-gray-500" onClick={onToggle}>
+        <Button size="sm" variant="ghost" className="h-8 text-xs text-gray-600 shrink-0" aria-expanded={expanded} onClick={onToggle}>
+            Ayrıntılar
             {expanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
-          </Button>}
+          </Button>
       </div>
-      {expanded && <DiffView before={event.before_snapshot} after={event.after_snapshot} t={t} />}
+      {event.details && typeof event.details === 'string' && <p className="mt-2 text-sm text-gray-700 whitespace-pre-wrap break-words">{event.details}</p>}
+      {expanded && <div className="mt-2 rounded border border-gray-200 bg-white p-3 text-xs text-gray-700 space-y-2 break-words">
+        <p><strong>İşlem:</strong> {auditRequestPath(event) ? friendlyAction(event) : event.operation_name || event.action || 'Belirtilmemiş'}</p>
+        {auditRequestPath(event) && <p className="break-all"><strong>İstek:</strong> {event.http_method || event.action?.split(' ')[0]} {auditRequestPath(event)}{event.http_status ? ` · HTTP ${event.http_status}` : ''}</p>}
+        {event.override_reason && <p><strong>Gerekçe:</strong> {event.override_reason}</p>}
+        {event.metadata && <div><strong>Ek bilgiler</strong><pre className="whitespace-pre-wrap break-all max-h-64 overflow-auto">{JSON.stringify(event.metadata, null, 2)}</pre></div>}
+        {!event.before_snapshot && !event.after_snapshot && <p className="text-gray-500">Bu kayıtta önceki/sonraki değerler tutulmamış; değişen alanlar doğrulanamıyor.</p>}
+        <DiffView before={event.before_snapshot} after={event.after_snapshot} t={t} />
+      </div>}
     </div>;
 }
 export default function AuditTimelinePage({
