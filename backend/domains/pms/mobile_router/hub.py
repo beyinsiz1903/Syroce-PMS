@@ -25,6 +25,7 @@ from pydantic import BaseModel
 from core.database import db
 from core.security import _is_super_admin, get_current_user, security
 from core.spa_mice_authz import PROCUREMENT_ROLES, _user_role
+from domains.pms.room_occupancy import load_current_room_occupancy
 from models.schemas import User
 from modules.pms_core.role_permission_service import RolePermissionService
 
@@ -379,8 +380,9 @@ async def get_today_digest(
         return response
 
     # ── HUB "Bugün" operasyon KPI'ları (Task #507) ──────────────────────────
-    # Doluluk / giriş / çıkış / açık arıza, GM snapshot'ı (dashboard_router/gm.py
-    # `_compute_period_metrics` + snapshot) ile birebir aynı mantıkla, ama
+    # Occupancy is the current physical room state, like the mobile Rooms
+    # screen, NOT a booked-night forecast or a date-filtered stay count.
+    # Arrivals/departures retain their separate daily movement semantics.
     # tenant-scoped ve tek tarih (bugün) için hesaplanır. SADECE gerçek veri:
     # uydurma/placeholder yok. Açık arıza iki koleksiyona yayılır (maintenance_
     # tasks + tasks(department=maintenance)) — gm.py ile aynı non-terminal küme.
@@ -389,23 +391,14 @@ async def get_today_digest(
     today_iso = datetime.now(UTC).date().isoformat()
     NON_TERMINAL_FAULT = ["completed", "done", "closed", "cancelled", "resolved"]
     (
-        total_rooms,
-        occupied_rooms,
+        occupancy,
         check_ins,
         check_outs,
         open_faults_mt,
         open_faults_tasks,
         tenant_doc,
     ) = await asyncio.gather(
-        db.rooms.count_documents({"tenant_id": tid}),
-        db.bookings.count_documents(
-            {
-                "tenant_id": tid,
-                "check_in": {"$lte": today_iso},
-                "check_out": {"$gt": today_iso},
-                "status": {"$nin": ["cancelled", "no_show"]},
-            }
-        ),
+        load_current_room_occupancy(db, tid),
         db.bookings.count_documents(
             {
                 "tenant_id": tid,
@@ -436,14 +429,11 @@ async def get_today_digest(
         db.tenants.find_one({"id": tid}, {"_id": 0, "property_name": 1}),
     )
     open_faults = open_faults_mt + open_faults_tasks
-    occupancy_pct = round((occupied_rooms / total_rooms * 100) if total_rooms > 0 else 0, 1)
     hotel_name = (tenant_doc or {}).get("property_name") or None
 
     response.update(
         {
-        "occupancy_pct": occupancy_pct,
-        "occupied_rooms": occupied_rooms,
-        "total_rooms": total_rooms,
+        **occupancy,
         "check_ins": check_ins,
         "check_outs": check_outs,
         "open_faults": open_faults,

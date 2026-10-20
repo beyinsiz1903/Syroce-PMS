@@ -154,11 +154,11 @@ export default function TodayScreen() {
   const [allRisks, setAllRisks] = useState(false);
   const arrivals = useQuery({ queryKey: ['arrivals-today'], queryFn: getTodayArrivals });
   const departures = useQuery({ queryKey: ['departures-today'], queryFn: getTodayDepartures });
-  const inhouse = useQuery({ queryKey: ['inhouse'], queryFn: getInHouse });
+  const inhouse = useQuery({ queryKey: ['frontdesk-inhouse-rooms'], queryFn: getInHouse });
   const noshows = useQuery({ queryKey: ['noshow-today'], queryFn: getNoShowRisk });
   // The header already uses this staff-safe digest. Reuse the same cache for
   // the person's urgent tasks and any executive occupancy fields supplied by RBAC.
-  const digest = useQuery({ queryKey: ['hub-today'], queryFn: getToday, staleTime: 5 * 60 * 1000 });
+  const digest = useQuery({ queryKey: ['hub-today'], queryFn: getToday });
   const queries = [arrivals, departures, inhouse, noshows, digest];
   const refreshing = queries.some((query) => query.isFetching && !query.isPending);
   const offline = !online || queries.some((query) => query.fetchStatus === 'paused' || (query.isError && isOffline(query.error)));
