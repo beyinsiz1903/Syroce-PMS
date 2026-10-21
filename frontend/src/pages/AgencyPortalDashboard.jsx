@@ -16,6 +16,7 @@ import PerformanceReport from '@/components/statements/PerformanceReport';
 import PendingActionsContent from '@/components/pending/PendingActionsContent';
 import usePendingActions from '@/components/pending/usePendingActions';
 import ContractAmendmentPanel from '@/components/contracts/ContractAmendmentPanel';
+import ContractInitialOffer from '@/components/contracts/ContractInitialOffer';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useTranslation } from 'react-i18next';
 const RAW_BACKEND_URL = import.meta.env.VITE_BACKEND_URL || '/api';
@@ -189,6 +190,8 @@ const AgencyPortalDashboard = () => {
   const [widgetOriginsText, setWidgetOriginsText] = useState('');
   const [contracts, setContracts] = useState([]);
   const [contractHotels, setContractHotels] = useState([]);
+  const [partnershipRequests, setPartnershipRequests] = useState([]);
+  const [contractDecisionBusy, setContractDecisionBusy] = useState(false);
   const [selectedHotelIds, setSelectedHotelIds] = useState([]);
   const [proposing, setProposing] = useState(false);
   const [contractsLoading, setContractsLoading] = useState(false);
@@ -648,12 +651,14 @@ const AgencyPortalDashboard = () => {
     if (portalMode !== 'marketplace') return;
     setContractsLoading(true);
     try {
-      const [{ data: contractData }, { data: hotelData }] = await Promise.all([
+      const [{ data: contractData }, { data: hotelData }, { data: requestData }] = await Promise.all([
         agencyApi.get('/marketplace/v1/contracts/mine'),
         agencyApi.get('/marketplace/v1/contracts/hotel-candidates'),
+        agencyApi.get('/marketplace/v1/partnership-requests'),
       ]);
       setContracts(contractData.contracts || []);
       setContractHotels(hotelData.hotels || []);
+      setPartnershipRequests(requestData.requests || []);
       setContractForm(current => ({ ...current, commission_pct: current.commission_pct || String(Math.round(Number(agencyInfo?.default_commission_pct ?? 12)) || 12) }));
     } catch (err) { toast.error(err.response?.data?.detail || 'Sözleşmeler yüklenemedi.'); }
     finally { setContractsLoading(false); }
@@ -670,6 +675,21 @@ const AgencyPortalDashboard = () => {
       await loadPending();
     } catch (err) { toast.error(err.response?.data?.detail || 'Teklif geri çekilemedi.'); }
     finally { setWithdrawBusy(false); }
+  };
+  const acceptCounteroffer = async contract => {
+    setContractDecisionBusy(true);
+    try {
+      await agencyApi.post(`/marketplace/v1/contracts/${encodeURIComponent(contract.id)}/accept`);
+      toast.success('Karşı teklif onaylandı. Sözleşme geçerlilik tarihlerinde satış açılabilir.');
+      await loadContracts(); await loadPending();
+    } catch (err) { toast.error(err.response?.data?.detail || 'Karşı teklif onaylanamadı.'); }
+    finally { setContractDecisionBusy(false); }
+  };
+  const declinePartnership = async request => {
+    setContractDecisionBusy(true);
+    try { await agencyApi.post(`/marketplace/v1/partnership-requests/${encodeURIComponent(request.id)}/decline`); await loadContracts(); }
+    catch (err) { toast.error(err.response?.data?.detail || 'Talep reddedilemedi.'); }
+    finally { setContractDecisionBusy(false); }
   };
   const proposeContract = async event => {
     event.preventDefault();
@@ -1156,6 +1176,7 @@ const AgencyPortalDashboard = () => {
           </TabsContent>}
 
           {portalMode === 'marketplace' && <TabsContent value="contracts" className="mt-4 space-y-4">
+            {partnershipRequests.length > 0 && <Card data-testid="hotel-partnership-requests"><CardHeader><CardTitle>Otellerden gelen çalışma talepleri</CardTitle></CardHeader><CardContent className="space-y-3">{partnershipRequests.map(request => <div key={request.id} className="rounded-lg border p-3"><h3 className="font-semibold">{request.hotel_name}</h3><p className="text-sm my-2">{request.message}</p><div className="flex gap-2"><Button disabled={contractDecisionBusy} onClick={() => {setSelectedHotelIds([request.tenant_id]); document.getElementById('contract-rate')?.focus(); toast.info('Şartlarınızı aşağıdaki formdan bu otele teklif olarak gönderin.');}}>Şartlarımı teklif et</Button><Button disabled={contractDecisionBusy} variant="outline" onClick={() => declinePartnership(request)}>Talebi reddet</Button></div></div>)}</CardContent></Card>}
             <Card><CardHeader><CardTitle>Otel bazlı sözleşme teklifi</CardTitle></CardHeader><CardContent><p className="mb-4 text-sm text-slate-600">Komisyon her otelle ayrı kararlaştırılır. Teklif oranı satışta ancak otel onayladıktan sonra kullanılır.</p><form onSubmit={proposeContract} className="grid gap-3 md:grid-cols-3"><div><Label htmlFor="contract-rate">Teklif edilen komisyon (%)</Label><Input id="contract-rate" required type="number" min="0" max="100" step="1" inputMode="numeric" value={contractForm.commission_pct} onChange={event => { const raw = event.target.value; setContractForm(current => ({ ...current, commission_pct: raw === '' ? '' : String(Math.min(100, Math.max(0, Math.round(Number(raw))))) })); }} /></div><div><Label htmlFor="contract-payment">Ödeme vadesi</Label><select id="contract-payment" value={contractForm.payment_terms} onChange={event => setContractForm(current => ({ ...current, payment_terms: event.target.value }))} className="mt-1 flex h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm"><option value="prepaid">Ön ödemeli</option><option value="on_arrival">Girişte</option><option value="net_7">7 gün</option><option value="net_15">15 gün</option><option value="net_30">30 gün</option></select></div><div><Label htmlFor="contract-from">Başlangıç</Label><Input id="contract-from" required type="date" value={contractForm.valid_from} onChange={event => setContractForm(current => ({ ...current, valid_from: event.target.value }))} /></div><div><Label htmlFor="contract-to">Bitiş</Label><Input id="contract-to" required type="date" value={contractForm.valid_to} onChange={event => setContractForm(current => ({ ...current, valid_to: event.target.value }))} /></div><div className="flex items-end"><Button type="submit" disabled={proposing || !selectedHotelIds.length} className="w-full bg-emerald-700 hover:bg-emerald-800" data-testid="propose-selected-hotels">{proposing && <Loader2 size={14} className="mr-2 animate-spin" />}Seçili otellere teklif gönder ({selectedHotelIds.length})</Button></div></form></CardContent></Card>
             <Card data-testid="hotel-candidates"><CardHeader className="pb-2"><CardTitle className="text-base">Oteller</CardTitle><p className="text-xs text-slate-500">Tüm Syroce otelleri listelenir. Fiyat, kontenjan ve fotoğraf galerisi otel sözleşmeyi onayladıktan sonra açılır.</p></CardHeader>
               <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -1182,9 +1203,10 @@ const AgencyPortalDashboard = () => {
                 })}
               </CardContent>
             </Card>
-            {contractsLoading ? <Card><CardContent className="py-10 text-center"><Loader2 className="mx-auto animate-spin" /></CardContent></Card> : contracts.map(contract => <Card key={contract.id}><CardContent className="flex flex-wrap items-center justify-between gap-3 py-4"><div><div className="font-semibold">{contract.hotel_name}</div><div className="text-xs text-slate-500">{contract.contract_code} · {formatDate(contract.valid_from)} – {formatDate(contract.valid_to)} · {PAYMENT_TERMS_LABELS[contract.payment_terms] || contract.payment_terms}</div></div><div className="text-right"><Badge className={contract.status === 'approved' ? 'bg-emerald-600' : contract.status === 'pending' ? 'bg-amber-500' : 'bg-slate-500'}>{contract.status === 'approved' ? 'Onaylandı' : contract.status === 'pending' ? 'Otel onayı bekleniyor' : (CONTRACT_STATUS_LABELS[contract.status] || contract.status)}</Badge><div className="mt-1 text-sm font-semibold">%{Math.round(Number(contract.commission_pct))} komisyon</div>{contract.status === 'pending' && (withdrawingId === contract.id
+            {contractsLoading ? <Card><CardContent className="py-10 text-center"><Loader2 className="mx-auto animate-spin" /></CardContent></Card> : contracts.map(contract => <Card key={contract.id}><CardContent className="flex flex-wrap items-center justify-between gap-3 py-4"><div><div className="font-semibold">{contract.hotel_name}</div><div className="text-xs text-slate-500">{contract.contract_code} · {formatDate(contract.valid_from)} – {formatDate(contract.valid_to)} · {PAYMENT_TERMS_LABELS[contract.payment_terms] || contract.payment_terms}</div></div><div className="text-right"><Badge className={contract.status === 'approved' ? 'bg-emerald-600' : contract.status === 'pending' ? 'bg-amber-500' : 'bg-slate-500'}>{contract.status === 'approved' ? 'Onaylandı' : contract.status === 'pending' ? (contract.awaiting_party === 'agency' ? 'Onayınız bekleniyor' : 'Otel onayı bekleniyor') : (CONTRACT_STATUS_LABELS[contract.status] || contract.status)}</Badge><div className="mt-1 text-sm font-semibold">%{Math.round(Number(contract.commission_pct))} komisyon</div>{contract.status === 'pending' && (withdrawingId === contract.id
               ? <div className="mt-2 flex justify-end gap-2"><Button size="sm" variant="outline" disabled={withdrawBusy} onClick={() => setWithdrawingId(null)}>Vazgeç</Button><Button size="sm" variant="destructive" disabled={withdrawBusy} onClick={() => withdrawContract(contract)} data-testid={`confirm-withdraw-${contract.id}`}>Evet, geri çek</Button></div>
               : <Button size="sm" variant="outline" className="mt-2" onClick={() => setWithdrawingId(contract.id)} data-testid={`withdraw-${contract.id}`}>Teklifi geri çek</Button>)}</div>
+              <ContractInitialOffer key={contract.updated_at} contract={contract} busy={contractDecisionBusy} onAccept={acceptCounteroffer} />
               {(contract.status === 'approved' || contract.pending_amendment) && <div className="w-full"><ContractAmendmentPanel side="agency" api={agencyApi}
                 base={`/marketplace/v1/contracts/${encodeURIComponent(contract.id)}/amendments`} contract={contract} onChanged={() => { loadContracts(); loadPending(); }} /></div>}</CardContent></Card>)}
           </TabsContent>}

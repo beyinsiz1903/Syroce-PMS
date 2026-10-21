@@ -67,7 +67,7 @@ async def test_legacy_availability_uses_distributed_plans_not_base_price(monkeyp
         rooms=collection([{'id': 'r', 'room_type': 's', 'capacity': 2, 'base_price': 99}]),
         bookings=SimpleNamespace(count_documents=AsyncMock(return_value=0)),
         tenants=SimpleNamespace(find_one=AsyncMock(return_value={'currency': 'TRY'})),
-        agency_contracts=SimpleNamespace(find_one=AsyncMock(return_value=None)),
+        agency_contracts=SimpleNamespace(find_one=AsyncMock(return_value={'id': 'signed-legacy', 'contract_type': 'commission', 'commission_rate': 0})),
         agency_rate_calendar=collection(rows), hr_rate_calendar=collection([]), rate_calendar=collection([]),
     )
     monkeypatch.setattr(portal, 'db', database)

@@ -1,6 +1,7 @@
 """Agency Extranet is its own module, separate from the OTA channel manager."""
 
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -113,6 +114,9 @@ async def _bulk(monkeypatch, granted, **body):
     monkeypatch.setattr(rates, "_detect_active_provider", exely)
     monkeypatch.setattr(entitlement, "_check_module_access", access)
     monkeypatch.setattr(rates, "_ari_write_block_for_targets", stop_after_gate)
+    # This fixture isolates module licensing; contract authorization is tested
+    # with absent, expired and cross-tenant contracts in the partnership suite.
+    monkeypatch.setattr(rates, '_require_contracted_agency_targets', AsyncMock())
     monkeypatch.setattr(rates, "db", _NoDB())
     request = rates.UnifiedBulkUpdateRequest(start_date="2026-12-01", end_date="2026-12-02", rate=100, update_fields=["rate"], **body)
     try:

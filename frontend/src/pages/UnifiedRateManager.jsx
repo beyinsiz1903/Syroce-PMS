@@ -16,6 +16,7 @@ import { CalendarGridView } from './rate-manager/CalendarGridView';
 import { StopSalePanel } from './rate-manager/StopSalePanel';
 import { UPDATE_FIELDS, usesExpandedAriLayout } from './rate-manager/constants';
 import { useTranslation } from 'react-i18next';
+import { Link } from 'react-router-dom';
 const UNIFIED_PREFIX = '/channel-manager/unified-rate-manager';
 
 export const verifiedProviderChannels = providerStatus => {
@@ -209,13 +210,13 @@ const UnifiedRateManager = ({
       });
       if (requestId !== gridRequestRef.current) return;
       setGrid(data.grid || []);
-      if (!agenciesOnlyRef.current) {
+      if (!agenciesOnlyRef.current || provider === 'agency') {
         setRoomTypes(data.room_types || []);
         setRatePlans(data.rate_plans || []);
       }
       if (data.pricing_settings) setPricingSettings(data.pricing_settings);
       if (data.occupancy_pricing_rules) setOccupancyPricingRules(data.occupancy_pricing_rules);
-      if (data.currency && !agenciesOnlyRef.current) setCurrency(data.currency);
+      if (data.currency && (!agenciesOnlyRef.current || provider === 'agency')) setCurrency(data.currency);
     } catch {
       if (requestId === gridRequestRef.current) toast.error('Veriler yüklenemedi');
     } finally {
@@ -633,8 +634,8 @@ const UnifiedRateManager = ({
         selected_days: allDays ? null : Array.from(selectedDays),
         update_fields: Array.from(enabledFields),
         agency_ids: agencyIds,
-        agencies_only: agenciesOnly,
-        channel_codes: agenciesOnly ? [] : Array.from(selectedChannelCodes),
+        agencies_only: agenciesOnly || provider === 'agency',
+        channel_codes: agenciesOnly || provider === 'agency' ? [] : Array.from(selectedChannelCodes),
       }, {
         headers
       });
@@ -770,6 +771,7 @@ const UnifiedRateManager = ({
           <p className="text-sm text-zinc-500 text-center max-w-md">
             {providerErrorCopy.description}
           </p>
+          <Button onClick={() => {setProvider('agency'); setProviderConfigurationError(null);}}>Kanal yöneticisi olmadan acente dağıtımına geç</Button>
         </div>
       </MaybeLayout>;
   }
@@ -796,7 +798,7 @@ const UnifiedRateManager = ({
                   {count > 1 ? `${count} kanal bağlantısı` : 'Kanal bağlantısı'}: {cfg.label}
                 </Badge>;
           }) : <Badge className="bg-zinc-600 text-white" data-testid="unified-push-badge-default">
-                Kanal Yöneticisi
+                {provider === 'agency' ? 'Acente Dağıtımı' : 'Kanal Yöneticisi'}
               </Badge>}
             {selectedAgencies.size > 0 && <Badge className="bg-slate-600 text-white" data-testid="unified-agency-badge">
                 <Building2 className="w-3 h-3 mr-1" />
@@ -873,7 +875,7 @@ const UnifiedRateManager = ({
                   {agenciesLoading ? <p className="text-xs text-zinc-400 text-center py-3" data-testid="agency-panel-loading">
                       Acenteler yükleniyor...
                     </p> : agencies.length === 0 ? <p className="text-xs text-zinc-400 text-center py-3">
-                      {t('cm.pages_UnifiedRateManager.henuz_aktif_acente_tanimlanmamis')}
+                      Yürürlükte sözleşmesi olan acente bulunmuyor. <Link className="underline" to="/app/incoming-agency-contracts">Acente ağını keşfedin ve şartlarını isteyin.</Link> Sözleşme onaylanmadan fiyat ve müsaitlik gönderilemez.
                     </p> : <>
                       {provider && provider !== 'agency' && <label className="flex items-start gap-2 cursor-pointer rounded border border-sky-200 bg-sky-50 p-2 text-xs text-sky-900" data-testid="agencies-only-toggle">
                         <Checkbox checked={agenciesOnly} onCheckedChange={value => switchAgenciesOnly(Boolean(value))} />

@@ -911,6 +911,9 @@ async def agency_portal_content(current_user: User = Depends(get_current_user)):
     tenant_id = current_user.tenant_id
 
     # Check if content is published to this agency
+    today = datetime.now(UTC).date().isoformat()
+    if not await _legacy_active_contract(db, tenant_id, agency_id, today, None):
+        return {"published": False, "hotel_content": None}
     agency = await db.agencies.find_one({"id": agency_id, "tenant_id": tenant_id}, {"_id": 0})
     if not agency or not agency.get("published_content"):
         return {"published": False, "hotel_content": None}
@@ -1049,6 +1052,8 @@ async def agency_portal_availability(
     tenant_id = current_user.tenant_id
     ci, co = _parse_stay_dates(check_in, check_out)
     nights = (co - ci).days
+    if not await _legacy_active_contract(db, tenant_id, current_user.agency_id, check_in, check_out):
+        raise HTTPException(403, 'Bu tarihler için geçerli acente sözleşmesi olmadan fiyat ve müsaitlik görüntülenemez')
 
     # Get all room types for this hotel
     rooms = await db.rooms.find({"tenant_id": tenant_id, **PHYSICAL_ROOM_FILTER}, {"_id": 0}).to_list(1000)
@@ -1162,6 +1167,8 @@ async def agency_portal_create_reservation(
 
     ci_date, co_date = _parse_stay_dates(data.check_in, data.check_out)
     nights = (co_date - ci_date).days
+    if not await _legacy_active_contract(db, tenant_id, agency_id, data.check_in, data.check_out):
+        raise HTTPException(403, 'Bu tarihler için geçerli acente sözleşmesi olmadan yeni rezervasyon oluşturulamaz')
 
     # Find an available room of the requested type
     rooms = await db.rooms.find({"tenant_id": tenant_id, "room_type": data.room_type_id, **PHYSICAL_ROOM_FILTER}, {"_id": 0}).to_list(500)

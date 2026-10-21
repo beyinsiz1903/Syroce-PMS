@@ -112,6 +112,6 @@ describe('IncomingAgencyContracts workspace', () => {
     apiGet.mockResolvedValue({ data: { contracts: [], counts: {} } });
     render(<MemoryRouter initialEntries={['/app/incoming-agency-contracts?tab=active']}><IncomingAgencyContracts /></MemoryRouter>);
     await waitFor(() => expect(apiGet).toHaveBeenCalledWith('/marketplace/incoming-requests', expect.objectContaining({ params: { status: 'approved' } })));
-    expect(apiGet.mock.calls.every(([, options]) => options.params.status === 'approved')).toBe(true);
+    expect(apiGet.mock.calls.filter(([path]) => path === '/marketplace/incoming-requests').every(([, options]) => options.params.status === 'approved')).toBe(true);
   });
 });
