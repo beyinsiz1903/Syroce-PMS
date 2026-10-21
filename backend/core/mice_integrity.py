@@ -39,6 +39,18 @@ def space_leaves(space_id: str, spaces: dict, visited: frozenset | None = None) 
     return leaves
 
 
+def seating_needs_review(plan, booking, space, event_pax=0):
+    if not booking or not space or space.get("active") is False:
+        return True
+    if any(plan.get(key) != booking.get(key) for key in ("space_id", "starts_at", "ends_at")):
+        return True
+    style = booking.get("setup_style") or "theatre"
+    pax = int(booking.get("expected_pax") or event_pax or 0)
+    capacity = int(space.get(f"capacity_{style}") or 0)
+    seats = sum(int(table["seats"]) for table in plan.get("tables") or [])
+    return plan.get("setup_style") != style or plan.get("expected_pax") != pax or not capacity or seats < pax or seats > capacity
+
+
 def price_breakdown(subtotal, policy: dict) -> dict:
     """Net catalog prices; discount → service → tax. No inferred legal rate.
 

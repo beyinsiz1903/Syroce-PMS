@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock
 import pytest
 from fastapi import HTTPException
 
-from core.mice_integrity import space_leaves
+from core.mice_integrity import seating_needs_review, space_leaves
 from domains.notifications_router import _visibility_filter
 from domains.pms.notification_router import _notification_scope
 from routers import mice, mice_documents, mice_seating
@@ -115,6 +115,21 @@ def test_layout_rejects_overlap_bounds_duplicate_labels_and_capacity(tables, cap
     with pytest.raises(HTTPException) as error:
         mice_seating.validate_layout(body, pax, capacity)
     assert error.value.status_code == status
+
+
+def test_layout_decimal_coordinates_allow_a_table_exactly_on_the_boundary():
+    body = mice_seating.SeatingIn(booking_index=0, width=.3, height=1, tables=[{"label": "T", "seats": 1, "x": .1, "y": 0, "width": .2, "height": 1}], expected_revision="revision")
+    mice_seating.validate_layout(body, 1, 1)
+
+
+@pytest.mark.parametrize("changed_booking,changed_space,expected", [
+    ({}, {}, False), ({"expected_pax": 12}, {}, True),
+    ({"setup_style": "banquet"}, {}, True), ({}, {"capacity_theatre": 5}, True),
+])
+def test_seating_review_tracks_pax_setup_and_current_capacity(changed_booking, changed_space, expected):
+    booking = {"space_id": "hall", "starts_at": "2026-10-21T10:00", "ends_at": "2026-10-21T12:00", "expected_pax": 8, "setup_style": "theatre"}
+    plan = {**booking, "tables": [{"seats": 8}]}
+    assert bool(seating_needs_review(plan, {**booking, **changed_booking}, {"capacity_theatre": 20, "capacity_banquet": 20, **changed_space})) is expected
 
 
 @pytest.mark.asyncio

@@ -22,8 +22,8 @@ export default function SeatingPlan({ eventId, canManage, onChanged }) {
     {error && <p role="alert" className="text-xs">{error}</p>}
     {data && <><p className="text-xs text-muted-foreground">{data.notice}</p>{data.bookings.map((b, i) => {
       const plan = data.plans.find(p => p.booking_index === i);
-      const stale = plan && (plan.space_id !== b.space_id || plan.starts_at !== b.starts_at || plan.ends_at !== b.ends_at);
-      return <div key={i} className="space-y-2 border-t pt-2"><p className="text-sm">{b.space_name} · {b.starts_at.slice(0, 16)}</p>{stale && <p role="alert" className="text-xs">Salon veya saat değişmiş. Eski çizimi kullanmayın; yerleşimi yeniden doğrulayın.</p>}{plan && <LayoutDrawing plan={plan} />}{canManage && <Button type="button" size="sm" variant="outline" onClick={() => edit(i, plan)}>Yerleşimi düzenle</Button>}</div>;
+      const stale = plan && (plan.needs_review || plan.space_id !== b.space_id || plan.starts_at !== b.starts_at || plan.ends_at !== b.ends_at);
+      return <div key={i} className="space-y-2 border-t pt-2"><p className="text-sm">{b.space_name} · {b.starts_at.slice(0, 16)}</p>{stale && <p role="alert" className="text-xs">Salon, saat, kişi veya düzen kapasitesi değişmiş. Eski çizimi kullanmayın; yerleşimi yeniden doğrulayın.</p>}{plan && <LayoutDrawing plan={plan} />}{canManage && <Button type="button" size="sm" variant="outline" onClick={() => edit(i, plan)}>Yerleşimi düzenle</Button>}</div>;
     })}</>}
     {form && <form className="space-y-2" onSubmit={e => { e.preventDefault(); run(async () => { await axios.put(`/mice/events/${eventId}/seating-plan`, form); await load(); setForm(null); await onChanged?.(); }); }}>
       <div className="grid grid-cols-2 gap-2">{['width', 'height'].map(k => <label key={k} className="text-xs">Salon {k === 'width' ? 'genişliği' : 'derinliği'} (m)<Input required type="number" min="0.1" max="100" step="0.1" value={form[k]} onChange={e => setForm({ ...form, [k]: Number(e.target.value) })} /></label>)}</div>

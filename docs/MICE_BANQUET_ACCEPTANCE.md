@@ -77,7 +77,7 @@ Kalan geliştirme ve kabul kapsamı:
 
 ## Doğrulama yöntemi
 
-Son birleşik yerel test turu: 187 backend testi, 35 frontend testi ve 18 masaüstü/telefon tarayıcı testi geçti. Backend turu gerçek MongoDB, yerel HTTP sunucusu ve gerçek BEO PDF üretimini içerdi; atlanan test yoktu. Üretim derlemesi, Ruff, değişen arayüzlerin ESLint kontrolü, import sınırı, atlama bütçesi ve tema kontrolü başarılıydı. Bu sayılar tüm PMS testlerinin veya canlı kabulün tamamı değildir.
+Son birleşik yerel test turu: 192 backend testi, 36 frontend testi ve 18 masaüstü/telefon tarayıcı testi geçti. Backend turu gerçek MongoDB, yerel HTTP sunucusu ve gerçek BEO PDF üretimini içerdi; atlanan test yoktu. Üretim derlemesi, Ruff, değişen arayüzlerin ESLint kontrolü, import sınırı, atlama bütçesi ve tema kontrolü başarılıydı. Bu sayılar tüm PMS testlerinin veya canlı kabulün tamamı değildir.
 
 Birleşmiş temel: #1379 veri bütünlüğü, #1380 ticari belge/fiyat/maliyet, #1381 salon ve departman operasyonları. Bu devam dalı finans, satış dönüşümü, grup, reçete, masa planı ve departman teslim takibini ekler. Üretim ayarı veya canlı kayıt değiştirilmez.
 

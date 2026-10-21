@@ -36,7 +36,7 @@ from core.booking_atomicity import (
 )
 from core.entitlements.enforcement import get_tenant_limit, require_feature
 from core.entitlements.quota import release_quota, reserve_quota
-from core.mice_integrity import instant, local_instant, money, overlaps, peak_usage, price_breakdown, protect_paid_schedule, rounded, space_leaves
+from core.mice_integrity import instant, local_instant, money, overlaps, peak_usage, price_breakdown, protect_paid_schedule, rounded, seating_needs_review, space_leaves
 from core.mice_operations import can_manage_operations, can_work_task, task_notice
 from core.security import JWT_ALGORITHM, JWT_SECRET, get_current_user
 from core.spa_mice_authz import require_catalog, require_finance, require_mice_ops
@@ -2275,7 +2275,7 @@ async def beo(event_id: str, current_user: User = Depends(get_current_user)) -> 
         "technical_requirements": event.get("technical_requirements") or None,
         "staff_assignments": event.get("staff_assignments") or [],
         "entertainment": event.get("entertainment") or None,
-        "seating_plans": [{**p, "needs_review": p.get("booking_index", 0) >= len(event.get("space_bookings") or []) or any(p.get(k) != (event.get("space_bookings") or [])[p.get("booking_index", 0)].get(k) for k in ("space_id", "starts_at", "ends_at"))} for p in event.get("seating_plans") or []],
+        "seating_plans": [{**p, "needs_review": seating_needs_review(p, event["space_bookings"][p["booking_index"]] if p["booking_index"] < len(event.get("space_bookings") or []) else None, spaces_by_id.get(p["space_id"]), event.get("expected_pax"))} for p in event.get("seating_plans") or []],
     }
 
 
@@ -2593,7 +2593,7 @@ def _beo_html(payload: dict) -> str:
     for plan in payload.get("seating_plans") or []:
         seating_html += "<h2>Masa yerleşimi (metre)</h2>"
         if plan.get("needs_review"):
-            seating_html += "<p><strong>UYARI: Salon/saat değişmiş; bu çizim yeniden doğrulanmalıdır.</strong></p>"
+            seating_html += "<p><strong>UYARI: Salon, saat, kişi veya düzen kapasitesi değişmiş; bu çizim yeniden doğrulanmalıdır.</strong></p>"
         seating_html += f"<p>Salon satırı {int(plan.get('booking_index', 0)) + 1} · {_e(str(plan.get('width')))} × {_e(str(plan.get('height')))} m. Operasyon çizimidir; yangın güvenliği onayı değildir.</p>"
         seating_html += "<table><tr><th>Masa</th><th>Kişi</th><th>X / Y (m)</th><th>Genişlik / Derinlik (m)</th></tr>"
         for table in plan.get("tables") or []:

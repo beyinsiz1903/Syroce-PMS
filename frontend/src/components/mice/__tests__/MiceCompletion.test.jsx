@@ -81,6 +81,14 @@ describe('MICE financial and operations completion', () => {
     expect(axios.post).toHaveBeenCalledExactlyOnceWith('/mice/events/event/stock-consumptions', { order_id: 'production', line_index: 0, recipe_id: 'recipe', batches: 2, reason: 'Synthetic actual use' });
   });
 
+  it('warns a read-only operator when an existing layout needs capacity review', async () => {
+    axios.get.mockResolvedValue({ data: { expected_revision: 'new', bookings: [{ space_id: 'hall', space_name: 'Hall', starts_at: '2026-10-21T10:00', ends_at: '2026-10-21T12:00' }], plans: [{ booking_index: 0, needs_review: true, space_id: 'hall', starts_at: '2026-10-21T10:00', ends_at: '2026-10-21T12:00', width: 10, height: 10, tables: [] }] } });
+    render(<SeatingPlan eventId="event" canManage={false} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Yerleşimleri yükle' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('kişi veya düzen kapasitesi değişmiş');
+    expect(screen.queryByRole('button', { name: 'Yerleşimi düzenle' })).not.toBeInTheDocument();
+  });
+
   it('lets only an assigned staff task expose partial handover actions', async () => {
     promptDialog.mockResolvedValue('2');
     axios.get.mockResolvedValue({ data: { event_status: 'confirmed', tasks: [{ id: 'task', kind: 'equipment', title: 'Chairs', department: 'banquet', quantity: 10, status: 'pending', can_transition: true }], equipment: [] } });

@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
 from core.entitlements.enforcement import require_feature
+from core.mice_integrity import money, seating_needs_review
 from core.security import get_current_user
 from core.spa_mice_authz import require_mice_ops
 from core.tenant_db import get_system_db
@@ -40,10 +41,10 @@ def validate_layout(body, pax, capacity):
     if seats < pax or not capacity or seats > capacity:
         raise HTTPException(409, "Koltuk sayısı beklenen kişiden az veya salon düzen kapasitesinden fazla olamaz")
     for i, table in enumerate(body.tables):
-        if table.x + table.width > body.width or table.y + table.height > body.height:
+        if money(table.x) + money(table.width) > money(body.width) or money(table.y) + money(table.height) > money(body.height):
             raise HTTPException(422, "Masa ölçüleri salon sınırlarını aşıyor")
         for other in body.tables[i + 1:]:
-            if table.x < other.x + other.width and other.x < table.x + table.width and table.y < other.y + other.height and other.y < table.y + table.height:
+            if money(table.x) < money(other.x) + money(other.width) and money(other.x) < money(table.x) + money(table.width) and money(table.y) < money(other.y) + money(other.height) and money(other.y) < money(table.y) + money(table.height):
                 raise HTTPException(409, "Masa alanları üst üste gelemez")
 
 
@@ -53,9 +54,10 @@ async def seating_plans(event_id: str, current_user: User = Depends(get_current_
     event = await db.mice_events.find_one({"tenant_id": tid, "id": event_id}, {"_id": 0})
     if not event:
         raise HTTPException(404, "Etkinlik bulunamadı")
-    spaces = {s["id"]: s.get("name") for s in await db.mice_spaces.find({"tenant_id": tid}, {"_id": 0, "id": 1, "name": 1}).to_list(None)}
-    return {"bookings": [{**b, "space_name": spaces.get(b["space_id"], b["space_id"])} for b in event.get("space_bookings") or []],
-            "plans": event.get("seating_plans") or [], "expected_revision": event.get("updated_at") or event.get("created_at"),
+    spaces = {s["id"]: s for s in await db.mice_spaces.find({"tenant_id": tid}, {"_id": 0}).to_list(None)}
+    bookings = event.get("space_bookings") or []
+    return {"bookings": [{**b, "space_name": spaces.get(b["space_id"], {}).get("name", b["space_id"])} for b in bookings],
+            "plans": [{**p, "needs_review": seating_needs_review(p, bookings[p["booking_index"]] if p["booking_index"] < len(bookings) else None, spaces.get(p["space_id"]), event.get("expected_pax"))} for p in event.get("seating_plans") or []], "expected_revision": event.get("updated_at") or event.get("created_at"),
             "notice": "Ölçüler metredir. Bu operasyon çizimi kaçış yolu, erişilebilirlik veya yangın güvenliği onayı yerine geçmez; tesis yetkilisi kontrol etmelidir."}
 
 
@@ -75,7 +77,7 @@ async def save_seating_plan(event_id: str, body: SeatingIn, current_user: User =
     capacity = int((space or {}).get(f"capacity_{booking.get('setup_style') or 'theatre'}") or 0)
     validate_layout(body, int(booking.get("expected_pax") or event.get("expected_pax") or 0), capacity)
     now = datetime.now(UTC).isoformat()
-    plan = {**body.model_dump(exclude={"expected_revision"}), "space_id": booking["space_id"], "starts_at": booking["starts_at"], "ends_at": booking["ends_at"], "recorded_at": now, "recorded_by": current_user.username}
+    plan = {**body.model_dump(exclude={"expected_revision"}), "space_id": booking["space_id"], "starts_at": booking["starts_at"], "ends_at": booking["ends_at"], "setup_style": booking.get("setup_style") or "theatre", "expected_pax": int(booking.get("expected_pax") or event.get("expected_pax") or 0), "recorded_at": now, "recorded_by": current_user.username}
     plans = [p for p in event.get("seating_plans") or [] if p["booking_index"] != body.booking_index]
     result = await db.mice_events.update_one({"tenant_id": tid, "id": event_id, "updated_at": event.get("updated_at"), "signature": None}, {"$set": {"seating_plans": [*plans, plan], "updated_at": now}})
     if result.matched_count != 1:
