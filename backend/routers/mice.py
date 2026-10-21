@@ -2234,7 +2234,7 @@ class AmendmentIn(MiceInput):
     expected_revision: str = Field(min_length=1)
 
 
-@router.post("/events/{event_id}/amendment")
+@router.post("/events/{event_id}/amendment", dependencies=[Depends(require_feature("mice", "banquet_operations"))])
 async def begin_beo_amendment(event_id: str, body: AmendmentIn, current_user: User = Depends(get_current_user), _perm=Depends(require_op("manage_sales"))):
     require_mice_ops(current_user)
     db = get_system_db()
@@ -3384,7 +3384,7 @@ class SignatureSubmitIn(MiceInput):
     user_agent: str | None = Field(None, max_length=500)
 
 
-@router.post("/events/{event_id}/signature/request")
+@router.post("/events/{event_id}/signature/request", dependencies=[Depends(require_feature("mice", "banquet_operations"))])
 async def create_beo_signature_request(
     event_id: str,
     payload: SignatureRequestIn,

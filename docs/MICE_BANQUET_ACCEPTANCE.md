@@ -72,9 +72,11 @@ Mutfak emri menü ve alerjen içeriğini gönderildiği haliyle saklar. Aynı i�
 
 ## Doğrulama yöntemi
 
-Son birleşik yerel test turu: 145 backend testi, 36 frontend testi ve 12 masaüstü/telefon tarayıcı testi geçti. Backend turu gerçek BEO PDF üretimini de içerdi; atlanan test yoktu. Üretim derlemesi, Ruff, değişen arayüzlerin ESLint kontrolü ve tema kontrolü başarılıydı. Bu sayılar tüm PMS testlerinin veya canlı kabulün tamamı değildir.
+Son birleşik yerel test turu: 146 backend testi, 36 frontend testi ve 12 masaüstü/telefon tarayıcı testi geçti. Backend turu gerçek BEO PDF üretimini de içerdi; atlanan test yoktu. Üretim derlemesi, Ruff, değişen arayüzlerin ESLint kontrolü ve tema kontrolü başarılıydı. Bu sayılar tüm PMS testlerinin veya canlı kabulün tamamı değildir.
 
-PR sırası: #1379 temel bütünlük → #1380 ticari belge/fiyat/maliyet → salon ve departman operasyonları. Son paket, feature dalını hedefleyen bağlı PR'lerde sessizce atlanan CI tetikleyicisini de düzeltir; dağıtım koşulları değişmez.
+PR sırası: #1379 temel bütünlük → #1380 ticari belge/fiyat/maliyet → #1381 salon ve departman operasyonları. #1379 birleştirildi; #1380 main üzerine yeniden tabanlandı. Son paket, feature dalını hedefleyen bağlı PR'lerde sessizce atlanan CI tetikleyicisini de düzeltir; yalnız PR testlerinde eski tur yeni turla değiştirilir, dağıtım koşulları değişmez.
+
+CI sırasında yayınlanan SDK uyumluluk yamaları için mobil `expo` ve `expo-router` bağımlılıkları güncellendi. Mobil yapılandırma/TypeScript, 185 birim testi ve Expo Doctor 21/21 kontrolü yerelde geçti. Yeni IPA veya mağaza yayını yapılmadı.
 
 Backend testleri gerçek kurum, e-posta veya misafir kaydı göndermez. Yerel MongoDB kabul veritabanı her çalışmada benzersiz ad alır ve yalnız o veritabanı temizlenir. Replica set üzerinde salon yarışında bir işlem kazanmalı; standalone MongoDB üzerinde atomik garanti verilemiyorsa iki işlem de kapalı kalmalıdır.
 

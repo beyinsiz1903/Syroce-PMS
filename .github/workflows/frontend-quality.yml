@@ -6,6 +6,10 @@ on:
     # Do not silently skip quality gates on stacked/feature-targeted PRs.
     pull_request: {}
 
+concurrency:
+    group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+    cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
     NODE_VERSION: '22'
     NILVERA_ENABLED: "false"
