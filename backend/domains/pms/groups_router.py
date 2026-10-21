@@ -14,6 +14,8 @@ from core.security import (
     get_current_user,
 )
 from models.schemas import AssignGroupRoomsRequest, CreateBlockReservationRequest, CreateGroupReservationRequest, UseBlockRoomRequest, User
+from modules.pms_core.report_money import money, rounded
+from modules.pms_core.reporting_financials import deduplicate_report_payments, effective_folio_payment, is_valid_payment
 from modules.pms_core.role_permission_service import require_module_role  # v101 DW
 from shared_kernel.idempotency import begin_idempotency, get_idempotency_key
 
@@ -52,6 +54,11 @@ async def create_group_block(
         raise HTTPException(status_code=400, detail="Toplam oda sayısı geçerli bir sayı olmalıdır")
     if total_rooms <= 0:
         raise HTTPException(status_code=400, detail="Toplam oda sayısı 0'dan büyük olmalıdır")
+    from core.tenant_currency import get_tenant_currency
+    default_currency, _ = await get_tenant_currency(current_user.tenant_id)
+    currency = str(block_data.get("currency") or default_currency).strip().upper()
+    if len(currency) != 3 or not currency.isascii() or not currency.isalpha():
+        raise HTTPException(422, "Grup para birimi 3 harfli kod olmalıdır")
 
     # Create group block
     block = {
@@ -66,6 +73,7 @@ async def create_group_block(
         "check_out": check_out,
         "total_rooms": total_rooms,
         "rooms_picked_up": 0,
+        "currency": currency,
         "room_breakdown": block_data.get("room_breakdown", {}),
         "group_rate": block_data.get("group_rate") or block_data.get("rate_per_room", 100),
         "room_type": block_data.get("room_type", "Standard"),
@@ -87,6 +95,7 @@ async def create_group_block(
             "tenant_id": current_user.tenant_id,
             "group_block_id": block["id"],
             "folio_type": "group_master",
+            "currency": currency,
             "total_charges": 0.0,
             "total_payments": 0.0,
             "balance": 0.0,
@@ -279,25 +288,27 @@ async def get_group_master_folio(block_id: str, current_user: User = Depends(get
         raise HTTPException(status_code=404, detail="Grup bloğu bulunamadı")
 
     # Get master folio
-    master_folio = await db.folios.find_one({"group_block_id": block_id, "folio_type": "group_master"}, {"_id": 0})
+    master_folio = await db.folios.find_one({"tenant_id": current_user.tenant_id, "group_block_id": block_id, "folio_type": "group_master"}, {"_id": 0})
 
     if not master_folio:
         return {"block_id": block_id, "has_master_folio": False, "message": "Bu grup için master folio oluşturulmamış"}
 
     # Get all charges on master folio
-    charges = await db.folio_charges.find({"folio_id": master_folio["id"], "voided": False}, {"_id": 0}).to_list(1000)
+    charges = await db.folio_charges.find({"tenant_id": current_user.tenant_id, "folio_id": master_folio["id"], "voided": {"$ne": True}}, {"_id": 0}).to_list(None)
 
-    total_charges = sum([c.get("total", c.get("amount", 0)) for c in charges])
+    total_charges = sum((money(c.get("total", c.get("amount", 0))) for c in charges), money(0))
 
     # Get payments
-    payments = await db.payments.find({"folio_id": master_folio["id"]}, {"_id": 0}).to_list(1000)
-
-    total_payments = sum([p.get("amount", 0) for p in payments])
+    payments = [p for p in deduplicate_report_payments(await db.payments.find({"tenant_id": current_user.tenant_id, "folio_id": master_folio["id"]}, {"_id": 0}).to_list(None)) if is_valid_payment(p)]
+    currencies = {str(code).strip().upper() for code in [master_folio.get("currency"), block.get("currency"), *(r.get("currency") for r in [*charges, *payments])] if code}
+    if len(currencies) > 1:
+        raise HTTPException(409, "Grup ana folyosunda farklı dövizler var; toplamdan önce kayıtları mutabık hale getirin")
+    currency = next(iter(currencies), None)
+    total_payments = sum((money(effective_folio_payment(p)) for p in payments), money(0))
 
     balance = total_charges - total_payments
 
-    # Update folio totals
-    await db.folios.update_one({"id": master_folio["id"]}, {"$set": {"total_charges": total_charges, "total_payments": total_payments, "balance": balance}})
+    # Read canonical rows without overwriting concurrently updated cached totals.
 
     return {
         "block_id": block_id,
@@ -305,9 +316,10 @@ async def get_group_master_folio(block_id: str, current_user: User = Depends(get
         "has_master_folio": True,
         "folio": {
             "id": master_folio["id"],
-            "total_charges": round(total_charges, 2),
-            "total_payments": round(total_payments, 2),
-            "balance": round(balance, 2),
+            "currency": currency,
+            "total_charges": rounded(total_charges),
+            "total_payments": rounded(total_payments),
+            "balance": rounded(balance),
             "status": master_folio.get("status", "open"),
         },
         "charges": charges,

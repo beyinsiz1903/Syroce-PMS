@@ -230,11 +230,11 @@ async def update_opportunity(
 ):
     require_mice_ops(current_user)
     res = await db.mice_opportunities.update_one(
-        {"_kind": _NOT_LEAD, "id": opp_id, "tenant_id": current_user.tenant_id},
+        {"_kind": _NOT_LEAD, "id": opp_id, "tenant_id": current_user.tenant_id, "converted_event_id": None},
         {"$set": {**await _currency_payload(payload, current_user.tenant_id), "updated_at": datetime.now(UTC).isoformat()}},
     )
     if res.matched_count == 0:
-        raise HTTPException(404, "Opportunity not found")
+        raise HTTPException(409, "Fırsat bulunamadı veya etkinliğe dönüştürüldü; bağlı etkinlikten devam edin")
     return {"ok": True}
 
 
@@ -245,7 +245,7 @@ async def delete_opportunity(
     _perm=Depends(require_op("manage_sales")),  # v95 DW
 ):
     require_mice_ops(current_user)
-    res = await db.mice_opportunities.delete_one({"_kind": _NOT_LEAD, "id": opp_id, "tenant_id": current_user.tenant_id})
+    res = await db.mice_opportunities.delete_one({"_kind": _NOT_LEAD, "id": opp_id, "tenant_id": current_user.tenant_id, "converted_event_id": None})
     if res.deleted_count == 0:
         raise HTTPException(404, "Opportunity not found")
     return {"ok": True}
@@ -266,6 +266,26 @@ async def transition_stage(
         raise HTTPException(404, "Opportunity not found")
     if o.get("stage") == payload.to_stage:
         return {"ok": True, "unchanged": True}
+    allowed = {"lead": {"qualified", "lost"}, "qualified": {"lead", "proposal", "lost"}, "proposal": {"qualified", "contract", "lost"}, "contract": {"proposal", "won", "lost"}}
+    if payload.to_stage not in allowed.get(o.get("stage", "lead"), set()):
+        raise HTTPException(409, "Satış aşaması atlanamaz veya kapanmış fırsat yeniden açılamaz")
+    if payload.to_stage == "lost" and len((payload.reason or "").strip()) < 10:
+        raise HTTPException(422, "Kaybetme gerekçesi en az 10 karakter olmalıdır")
+    event_id = payload.won_event_id or o.get("converted_event_id")
+    if payload.to_stage == "won":
+        event = await db.mice_events.find_one({"tenant_id": current_user.tenant_id, "id": event_id, "sales_opportunity_id": opp_id, "status": {"$in": ["definite", "confirmed", "completed"]}})
+        if not event:
+            raise HTTPException(409, "Kazanıldı için bu fırsattan dönüştürülmüş kesin etkinlik gereklidir")
+        if payload.group_block_id and payload.group_block_id != event.get("group_block_id"):
+            raise HTTPException(409, "Grup bloğu etkinlik bağlantısıyla aynı olmalıdır")
+        payload.won_event_id = event_id
+        payload.group_block_id = event.get("group_block_id")
+    elif payload.won_event_id or payload.group_block_id:
+        raise HTTPException(422, "Finansal bağlantıları yalnız kazanılan etkinlikten devralın")
+    if payload.to_stage == "lost" and o.get("converted_event_id"):
+        linked = await db.mice_events.find_one({"tenant_id": current_user.tenant_id, "id": o["converted_event_id"]})
+        if linked and linked.get("status") != "cancelled":
+            raise HTTPException(409, "Önce bağlı etkinliğin iptal akışını tamamlayın")
 
     now = datetime.now(UTC).isoformat()
     update: dict[str, Any] = {
@@ -281,8 +301,8 @@ async def transition_stage(
         update["closed_at"] = now
         update["close_reason"] = payload.reason
 
-    await db.mice_opportunities.update_one(
-        {"_kind": _NOT_LEAD, "id": opp_id, "tenant_id": current_user.tenant_id},
+    result = await db.mice_opportunities.update_one(
+        {"_kind": _NOT_LEAD, "id": opp_id, "tenant_id": current_user.tenant_id, "stage": o.get("stage"), "updated_at": o.get("updated_at")},
         {
             "$set": update,
             "$push": {
@@ -295,6 +315,8 @@ async def transition_stage(
             },
         },
     )
+    if not result.matched_count:
+        raise HTTPException(409, "Fırsat başka kullanıcı tarafından değişti; yenileyin")
 
     try:
         await log_audit_event(
@@ -310,6 +332,22 @@ async def transition_stage(
         pass
 
     return {"ok": True, "stage": payload.to_stage}
+
+
+@router.get("/opportunities/{opp_id}/event-draft", dependencies=[Depends(require_feature("mice", "proposals_contracts"))])
+async def opportunity_event_draft(opp_id: str, current_user: User = Depends(get_current_user), _perm=Depends(require_op("manage_sales"))):
+    require_mice_ops(current_user)
+    opp = await db.mice_opportunities.find_one({"tenant_id": current_user.tenant_id, "id": opp_id, "_kind": _NOT_LEAD}, {"_id": 0})
+    if not opp or opp.get("stage") == "lost":
+        raise HTTPException(404, "Açık satış fırsatı bulunamadı")
+    if opp.get("converted_event_id"):
+        return {"event_id": opp["converted_event_id"]}
+    account = await db.mice_accounts.find_one({"tenant_id": current_user.tenant_id, "id": opp.get("account_id")}, {"_id": 0}) if opp.get("account_id") else None
+    return {"draft": {"name": opp["title"], "client_name": (account or {}).get("name", ""), "client_account_id": opp.get("account_id") or "",
+                      "client_email": (account or {}).get("email") or "", "client_phone": (account or {}).get("phone") or "",
+                      "sales_opportunity_id": opp_id, "currency": opp.get("currency"), "event_type": opp.get("event_type") or "meeting",
+                      "expected_pax": opp.get("pax", 0), "start_date": (opp.get("expected_start") or "")[:10], "end_date": (opp.get("expected_end") or opp.get("expected_start") or "")[:10],
+                      "notes": opp.get("notes") or ""}, "notice": "Tahmini fırsat tutarı gerçek satışa aktarılmaz; salon/kaynak seçip sunucu teklifini doğrulayın."}
 
 
 def _stage_default_probability(stage: str, current: int) -> int:

@@ -16,7 +16,7 @@ const CAPACITIES = [
   ['capacity_u_shape', 'U şekli'], ['capacity_boardroom', 'Yönetim kurulu'],
 ];
 const emptySpace = () => ({ name: '', location: '', area_m2: 0, hourly_rate: 0,
-  daily_rate: 0, currency: cachedTenantCurrency(), active: true, amenities: [],
+  daily_rate: 0, currency: cachedTenantCurrency(), active: true, amenities: [], component_space_ids: [],
   ...Object.fromEntries(CAPACITIES.map(([key]) => [key, 0])) });
 
 export default function SpacesView({ spaces, reload, canManage, limitReached }) {
@@ -66,6 +66,7 @@ export default function SpacesView({ spaces, reload, canManage, limitReached }) 
           </div>
           <p className="text-sm text-muted-foreground">{space.location || 'Konum belirtilmedi'} · {space.area_m2} m²</p>
           {space.active === false && <Badge variant="outline">Pasif — yeni etkinliklerde seçilemez</Badge>}
+          {space.component_space_ids?.length > 0 && <p className="text-xs">Birleşik alan: {space.component_space_ids.map(id => spaces.find(s => s.id === id)?.name || id).join(' + ')}</p>}
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="grid grid-cols-3 gap-2">
@@ -90,6 +91,7 @@ export default function SpacesView({ spaces, reload, canManage, limitReached }) 
             value={form.currency} onChange={e => setForm({ ...form, currency: e.target.value.toUpperCase() })} /></label>
         </div>
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.active} onChange={e => setForm({ ...form, active: e.target.checked })} />Aktif</label>
+        <fieldset className="space-y-2 rounded border p-3"><legend className="text-sm">Birleşik salonun fiziksel bileşenleri (isteğe bağlı)</legend><p className="text-xs text-muted-foreground">Boş bırakırsanız bağımsız salon olur. A+B tutulduğunda A ve B ayrı ayrı satılamaz. Etkinlik geçmişi oluşunca bileşim değiştirilemez.</p>{spaces.filter(s => s.id !== editing && s.active !== false).map(s => <label key={s.id} className="flex items-center gap-2 text-xs"><input type="checkbox" checked={form.component_space_ids?.includes(s.id) || false} onChange={e => setForm({ ...form, component_space_ids: e.target.checked ? [...(form.component_space_ids || []), s.id] : form.component_space_ids.filter(id => id !== s.id) })} />{s.name}</label>)}</fieldset>
         <div className="flex justify-end gap-2"><Button type="button" variant="outline" disabled={saving} onClick={() => setForm(null)}>Vazgeç</Button><Button type="submit" disabled={saving}>{saving ? 'Kaydediliyor…' : 'Kaydet'}</Button></div>
       </form>
     </Modal>}

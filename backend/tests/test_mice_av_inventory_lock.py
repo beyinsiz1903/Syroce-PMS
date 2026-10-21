@@ -131,6 +131,12 @@ async def _delete_resource(client: httpx.AsyncClient, headers: dict, rid: str) -
         await client.delete(f"/api/mice/resources/{rid}", headers=headers)
 
 
+async def _delete_spaces(client, headers, space_ids):
+    for space_id in space_ids:
+        response = await client.delete(f"/api/mice/spaces/{space_id}", headers=headers)
+        assert response.status_code == 200, response.text
+
+
 async def _committed_usage(
     client: httpx.AsyncClient, headers: dict, inventory_id: str,
     env_start: datetime, env_end: datetime,
@@ -170,12 +176,15 @@ async def test_concurrent_create_only_one_wins_for_single_stock():
     start = datetime(2027, 6, 1, 9, 0, tzinfo=timezone.utc)
     end = start + timedelta(hours=4)
     created_events: list[str] = []
+    created_spaces: list[str] = []
     resource_id = ""
     async with httpx.AsyncClient(base_url=API_URL, timeout=40) as client:
         headers = await _login(client)
         try:
             space_a = await _create_space(client, headers, f"AVlock-A-{suffix}")
+            created_spaces.append(space_a)
             space_b = await _create_space(client, headers, f"AVlock-B-{suffix}")
+            created_spaces.append(space_b)
             inv_name = f"Dev Ekran {suffix}"
             resource_id = await _create_av_resource(client, headers, inv_name, 1)
 
@@ -217,6 +226,7 @@ async def test_concurrent_create_only_one_wins_for_single_stock():
             for eid in created_events:
                 await _delete_event(client, headers, eid)
             await _delete_resource(client, headers, resource_id)
+            await _delete_spaces(client, headers, created_spaces)
 
 
 @pytest.mark.asyncio
@@ -227,12 +237,15 @@ async def test_sequential_second_event_rejected_when_stock_exhausted():
     start = datetime(2027, 7, 1, 9, 0, tzinfo=timezone.utc)
     end = start + timedelta(hours=4)
     created_events: list[str] = []
+    created_spaces: list[str] = []
     resource_id = ""
     async with httpx.AsyncClient(base_url=API_URL, timeout=40) as client:
         headers = await _login(client)
         try:
             space_a = await _create_space(client, headers, f"AVseq-A-{suffix}")
+            created_spaces.append(space_a)
             space_b = await _create_space(client, headers, f"AVseq-B-{suffix}")
+            created_spaces.append(space_b)
             inv_name = f"Kürsü {suffix}"
             resource_id = await _create_av_resource(client, headers, inv_name, 1)
 
@@ -256,6 +269,7 @@ async def test_sequential_second_event_rejected_when_stock_exhausted():
             for eid in created_events:
                 await _delete_event(client, headers, eid)
             await _delete_resource(client, headers, resource_id)
+            await _delete_spaces(client, headers, created_spaces)
 
 
 @pytest.mark.asyncio
@@ -268,12 +282,15 @@ async def test_concurrent_status_promotion_only_one_wins():
     start = datetime(2027, 8, 1, 9, 0, tzinfo=timezone.utc)
     end = start + timedelta(hours=4)
     created_events: list[str] = []
+    created_spaces: list[str] = []
     resource_id = ""
     async with httpx.AsyncClient(base_url=API_URL, timeout=40) as client:
         headers = await _login(client)
         try:
             space_a = await _create_space(client, headers, f"AVst-A-{suffix}")
+            created_spaces.append(space_a)
             space_b = await _create_space(client, headers, f"AVst-B-{suffix}")
+            created_spaces.append(space_b)
             inv_name = f"Projeksiyon {suffix}"
             resource_id = await _create_av_resource(client, headers, inv_name, 1)
 
@@ -312,3 +329,4 @@ async def test_concurrent_status_promotion_only_one_wins():
             for eid in created_events:
                 await _delete_event(client, headers, eid)
             await _delete_resource(client, headers, resource_id)
+            await _delete_spaces(client, headers, created_spaces)

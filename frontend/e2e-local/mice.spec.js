@@ -1,3 +1,4 @@
+/* global window */
 import { test, expect } from '@playwright/test';
 
 test.beforeEach(async ({ page }) => {
@@ -86,4 +87,38 @@ test('BEO print isolates the document and hides actions', async ({ page }, testI
   await expect(document).toBeVisible();
   await expect(document.getByRole('button', { name: 'PDF İndir' })).not.toBeVisible();
   await page.screenshot({ path: testInfo.outputPath('mice-beo-print.png'), fullPage: true });
+});
+
+test('actual collection form records a confirmed receipt', async ({ page }) => {
+  page.on('dialog', dialog => dialog.accept());
+  await page.getByTitle('BEO', { exact: true }).click();
+  await page.getByLabel('Tutar (TRY)', { exact: true }).fill('100');
+  await page.getByLabel('Makbuz / banka referansı', { exact: true }).fill('SYNTHETIC-1');
+  await page.getByLabel('Açıklama / iade gerekçesi', { exact: true }).fill('Yalnız yapay test makbuzu');
+  await page.getByRole('button', { name: 'Gerçek hareketi kaydet', exact: true }).click();
+  await expect(page.getByText(/Muhasebe: synthetic-journal/)).toBeVisible();
+});
+
+test('measured seating plan saves an integer chair count', async ({ page }, testInfo) => {
+  await page.getByTitle('BEO', { exact: true }).click();
+  await page.getByRole('button', { name: 'Yerleşimleri yükle', exact: true }).click();
+  await page.getByRole('button', { name: 'Yerleşimi düzenle', exact: true }).click();
+  await page.getByRole('button', { name: 'Masa ekle', exact: true }).click();
+  await page.getByLabel('Kişi', { exact: true }).fill('10');
+  await page.getByRole('button', { name: 'Yerleşimi doğrula / kaydet', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Masa ekle', exact: true })).not.toBeVisible();
+  await expect(page.getByRole('img', { name: 'Ölçekli masa yerleşimi' })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath('mice-seating.png'), fullPage: true });
+});
+
+test('recipe consumption is connected to actual production', async ({ page }) => {
+  page.on('dialog', dialog => dialog.accept());
+  await page.getByTitle('BEO', { exact: true }).click();
+  await page.getByRole('button', { name: 'Tamamlanan üretimleri / sarfları yükle', exact: true }).click();
+  await page.getByRole('combobox', { name: 'Tamamlanan üretim satırı', exact: true }).selectOption('production|0');
+  await page.getByRole('combobox', { name: 'Fiilen kullanılan reçete', exact: true }).selectOption('recipe');
+  await page.getByLabel('Tüketilen reçete partisi', { exact: true }).fill('2');
+  await page.getByLabel('Sarf açıklaması', { exact: true }).fill('Yalnız yapay reçete sarfı');
+  await page.getByRole('button', { name: 'Stoktan düş / maliyete ekle', exact: true }).click();
+  await expect(page.getByText(/Örnek reçete · 2 parti/)).toBeVisible();
 });

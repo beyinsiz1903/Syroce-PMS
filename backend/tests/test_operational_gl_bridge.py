@@ -77,6 +77,20 @@ async def test_night_audit_bridge_is_disabled_until_configured(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_night_audit_does_not_post_mice_settlements_twice(monkeypatch):
+    database = SimpleNamespace(
+        gl_operational_mappings=_collection(one={**bridge.DEFAULT_MAPPING, "enabled": True}),
+        folio_charges=_collection(),
+        payments=_collection(rows=[{"amount": 90, "method": "cash", "mice_event_id": "event", "gl_journal_entry_id": "already-posted"}]),
+        night_audit_runs=_collection(),
+    )
+    post = AsyncMock()
+    monkeypatch.setattr(bridge, "post_journal_entry", post)
+    assert await bridge.post_night_audit_daily_to_gl(database, "tenant-a", "2026-10-21", run_id="run") == {"status": "skipped", "reason": "no_activity"}
+    post.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_direct_pos_bridge_posts_settlement_revenue_and_tax(monkeypatch):
     mapping = {**bridge.DEFAULT_MAPPING, "tenant_id": "tenant-a", "enabled": True}
     database = SimpleNamespace(

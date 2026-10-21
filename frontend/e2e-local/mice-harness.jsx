@@ -20,6 +20,9 @@ await i18n.use(initReactI18next).init({ lng: 'tr', fallbackLng: 'tr', resources:
 const event = { id: 'demo-event', name: 'Örnek Konferans', client_name: 'Örnek Şirket', expected_pax: 40, event_type: 'conference', status: 'lead', currency: 'TRY', start_date: '2026-10-21', end_date: '2026-10-21', space_bookings: [], resources: [{ name: 'Örnek öğle yemeği', type: 'fb', quantity: 40, unit: 'pax', unit_price: 300 }], agenda: [], payment_schedule: [], totals: { space_total: 0, resources_total: 12000, grand_total: 12000 } };
 let spaces = [{ id: 'demo-hall', name: 'Örnek Balo Salonu', location: 'Zemin kat', area_m2: 200, capacity_theatre: 120, capacity_banquet: 80, capacity_classroom: 60, hourly_rate: 1000, daily_rate: 6000, currency: 'TRY', active: true }];
 const tasks = [];
+const payments = [];
+let plans = [];
+const consumptions = [];
 window.__miceCalls = [];
 axios.defaults.adapter = async config => {
   window.__miceCalls.push({ method: config.method, url: config.url, data: config.data });
@@ -34,10 +37,19 @@ axios.defaults.adapter = async config => {
   else if (config.url === '/mice/accounts') data = { accounts: [] };
   else if (config.url === '/mice/menus') data = { menus: [] };
   else if (config.url === '/mice/resources') data = { resources: [] };
+  else if (config.url === '/groups/blocks') data = { blocks: [] };
   else if (config.url === '/mice/diary') data = { events: [event] };
   else if (config.url === '/mice/events/demo-event/beo') data = { event, spaces: [], resources: event.resources, agenda: [], payment_schedule: [] };
   else if (config.url === '/mice/events/demo-event') data = event;
   else if (config.url === '/mice/events/demo-event/documents') data = { documents: [] };
+  else if (config.url === '/mice/events/demo-event/settlements') {
+    if (config.method === 'post') { payments.push({ ...body, id: `payment-${payments.length}`, payment_type: body.kind === 'refund' ? 'refund' : 'deposit', business_date: '2026-10-21', gl_journal_entry_id: 'synthetic-journal' }); data = { payment: payments.at(-1) }; }
+    else data = { payments, currency: 'TRY', bank_accounts: [], totals: { net_collected: payments.reduce((sum, p) => sum + p.amount, 0), outstanding: 12000 - payments.reduce((sum, p) => sum + p.amount, 0), customer_credit: 0 }, notice: 'Yapay test tahsilatı' };
+  }
+  else if (config.url === '/mice/events/demo-event/seating-plans') data = { plans, bookings: [{ space_id: 'demo-hall', space_name: 'Örnek Balo Salonu', starts_at: '2026-10-21T10:00', ends_at: '2026-10-21T12:00' }], expected_revision: 'synthetic-revision' };
+  else if (config.url === '/mice/events/demo-event/seating-plan') { plans = [{ ...body, space_id: 'demo-hall', starts_at: '2026-10-21T10:00', ends_at: '2026-10-21T12:00' }]; data = { plan: plans[0] }; }
+  else if (config.url === '/mice/events/demo-event/consumption-options') data = { consumptions, recipes: [{ id: 'recipe', menu_item_name: 'Örnek reçete', serving_size: 4 }], orders: [{ id: 'production', lines: [{ name: 'Örnek üretim', quantity: 8, unit: 'pax' }] }] };
+  else if (config.url === '/mice/events/demo-event/stock-consumptions') { consumptions.push({ id: 'consumption', recipe_snapshot: { name: 'Örnek reçete' }, batches: body.batches, total_cost: 12, currency: 'TRY' }); data = { consumption: consumptions.at(-1) }; }
   else if (config.url === '/mice/events/demo-event/tasks') {
     if (config.method === 'post') { tasks.push({ ...body, id: `task-${tasks.length}`, status: 'pending' }); data = tasks.at(-1); }
     else data = { tasks, equipment: [], event_status: 'definite', notice: 'Yalnız örnek görev verisi' };

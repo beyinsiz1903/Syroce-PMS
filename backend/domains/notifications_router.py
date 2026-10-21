@@ -7,36 +7,16 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, Depends
 
 from core.database import db
+from core.notification_visibility import role_value
+from core.notification_visibility import visibility_filter as _visibility_filter
 from core.security import get_current_user
 from models.schemas import User
 
 router = APIRouter(prefix="/api/notifications", tags=["Notifications"])
 
 
-def _role_value(user: User) -> str:
-    """Return the user's role as a plain string (Enum-tolerant)."""
-    return getattr(user.role, "value", str(user.role))
-
-
-def _visibility_filter(user: User) -> dict:
-    """Filter clause that respects optional ``target_roles`` targeting.
-
-    Notifications without ``target_roles`` (or with an empty list) stay
-    tenant-broadcast — visible to every user, preserving the historical
-    behaviour. Notifications that DO carry ``target_roles`` are limited
-    to the listed roles. This is what lets compliance/manager-only
-    alarms (e.g. KVKK ID-photo burst alerts written by
-    ``workers/id_photo_view_alert.py``) avoid leaking to clerks and
-    front-desk staff while still using the shared notification bell.
-    """
-    return {
-        "$or": [
-            {"target_roles": {"$exists": False}},
-            {"target_roles": None},
-            {"target_roles": {"$size": 0}},
-            {"target_roles": _role_value(user)},
-        ],
-    }
+def _role_value(user):
+    return role_value(user)
 
 
 @router.get("/list")

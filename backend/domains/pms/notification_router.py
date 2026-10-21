@@ -15,6 +15,7 @@ from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel
 
 from core.database import db
+from core.notification_visibility import visibility_filter as _visibility_filter
 from core.security import (
     get_current_user,
     security,
@@ -31,7 +32,7 @@ DEFAULT_PUSH_CHANNELS = ["reservations", "housekeeping", "maintenance", "system"
 # few seconds; the underlying Mongo query (no index on user_id+created_at) costs
 # ~1s on the first call. A 10-second TTL keeps the UI responsive while cutting
 # DB load by ~10x and stays well below "user perceives stale" threshold.
-_NOTIF_LIST_CACHE: dict[tuple[str, bool, int], tuple[float, dict]] = {}
+_NOTIF_LIST_CACHE: dict[tuple, tuple[float, dict]] = {}
 _NOTIF_LIST_TTL_SEC = 10.0
 
 # Index creation guard: serialize first-request concurrency with a Lock and
@@ -544,7 +545,7 @@ async def get_notifications_list(unread_only: bool = False, limit: int = 50, cre
     """
     current_user = await get_current_user(credentials)
 
-    cache_key = (current_user.id, unread_only, limit)
+    cache_key = (current_user.id, current_user.tenant_id, str(current_user.role), unread_only, limit)
     now = time.monotonic()
     cached = _NOTIF_LIST_CACHE.get(cache_key)
     if cached and (now - cached[0]) < _NOTIF_LIST_TTL_SEC:
@@ -552,12 +553,7 @@ async def get_notifications_list(unread_only: bool = False, limit: int = 50, cre
 
     await _ensure_notif_indexes()
 
-    query = {
-        "$or": [
-            {"user_id": current_user.id},
-            {"tenant_id": current_user.tenant_id, "user_id": None},  # System-wide notifications
-        ]
-    }
+    query = _notification_scope(current_user)
 
     if unread_only:
         query["read"] = False
@@ -607,6 +603,13 @@ async def get_notifications_list(unread_only: bool = False, limit: int = 50, cre
     return result
 
 
+def _notification_scope(user):
+    return {"tenant_id": user.tenant_id, "$and": [
+        {"$or": [{"user_id": user.id}, {"user_id": None}, {"target_user_ids": user.id}]},
+        _visibility_filter(user),
+    ]}
+
+
 # 4. PUT /api/notifications/{notification_id}/mark-read - Mark as read
 
 
@@ -622,12 +625,14 @@ async def mark_notification_read(
     current_user = await get_current_user(credentials)
 
     result = await db.notifications.update_one(
-        {"id": notification_id, "$or": [{"user_id": current_user.id}, {"tenant_id": current_user.tenant_id}]}, {"$set": {"read": True, "read_at": datetime.now(UTC).isoformat()}}
+        {"id": notification_id, **_notification_scope(current_user)}, {"$set": {"read": True, "read_at": datetime.now(UTC).isoformat()}}
     )
 
-    if result.modified_count == 0:
+    if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Notification not found")
 
+    for key in [k for k in _NOTIF_LIST_CACHE if k[0] == current_user.id]:
+        _NOTIF_LIST_CACHE.pop(key, None)
     return {"message": "Bildirim okundu olarak işaretlendi", "notification_id": notification_id}
 
 
@@ -652,10 +657,7 @@ async def mark_all_notifications_read(
     result = await db.notifications.update_many(
         {
             "read": False,
-            "$or": [
-                {"user_id": current_user.id},
-                {"tenant_id": current_user.tenant_id, "user_id": None},
-            ],
+            **_notification_scope(current_user),
         },
         {"$set": {"read": True, "read_at": datetime.now(UTC).isoformat()}},
     )

@@ -15,6 +15,7 @@ const EventFormModal = ({
   eventTab,
   setEventTab,
   accounts,
+  groupBlocks = [],
   accountById,
   spaces,
   menus,
@@ -117,6 +118,8 @@ const EventFormModal = ({
               ...form,
               reservation_id: e.target.value
             })} /></Field>
+            <Field label="Grup oda bloğu / ana folyo"><select className="w-full rounded border px-2 py-1.5" disabled={Boolean(editing)} value={form.group_block_id || ''} onChange={e => setForm({ ...form, group_block_id: e.target.value, reservation_id: e.target.value ? '' : form.reservation_id })}><option value="">— Seçilmedi —</option>{groupBlocks.map(g => <option key={g.id} value={g.id}>{g.group_name} · {g.currency || 'Para birimi tanımsız'}</option>)}{form.group_block_id && !groupBlocks.some(g => g.id === form.group_block_id) && <option value={form.group_block_id}>Bağlı grup: {form.group_block_id}</option>}</select></Field>
+            {form.sales_opportunity_id && <p className="text-xs text-muted-foreground">Satış fırsatından dönüştürülüyor. Tahmini fırsat tutarı satışa otomatik eklenmez.</p>}
             <Field label="Başlangıç Tarihi"><Input type="date" required value={form.start_date} onChange={e => setForm({
               ...form,
               start_date: e.target.value
