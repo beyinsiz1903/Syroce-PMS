@@ -3,8 +3,8 @@ name: Syroce PMS CI/CD Pipeline
 on:
   push:
     branches: [main, develop, staging]
-  pull_request:
-    branches: [main, develop]
+  # Stacked PRs need the same gates even when their base is a feature branch.
+  pull_request: {}
 
 env:
   PYTHON_VERSION: '3.11'

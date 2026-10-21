@@ -30,12 +30,17 @@ const LANE_HEIGHT = 28;
 const fmtDate = (d) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
+export const bookingWindow = booking => [
+  new Date(new Date(booking.starts_at).getTime() - (booking.setup_minutes || 0) * 60000),
+  new Date(new Date(booking.ends_at).getTime() + (booking.teardown_minutes || 0) * 60000),
+];
+
 export function bookedSpacesOnDate(events, dateStr) {
   const start = new Date(`${dateStr}T00:00:00`);
   const end = new Date(start); end.setDate(end.getDate() + 1);
   const ids = new Set();
   events.filter(e => ['tentative', 'definite', 'confirmed', 'completed'].includes(e.status)).forEach(event => {
-    (event.space_bookings || []).forEach(b => { if (new Date(b.starts_at) < end && new Date(b.ends_at) > start) ids.add(b.space_id); });
+    (event.space_bookings || []).forEach(b => { const [s, e] = bookingWindow(b); if (s < end && e > start) ids.add(b.space_id); });
   });
   return ids;
 }
@@ -164,8 +169,7 @@ const DiaryView = ({ spaceById, spaces }) => {
     items.filter(e => ['tentative', 'definite', 'confirmed', 'completed'].includes(e.status)).forEach((ev) => {
       (ev.space_bookings || []).forEach((sb) => {
         if (!sb.starts_at || !sb.ends_at) return;
-        const s = new Date(sb.starts_at);
-        const e = new Date(sb.ends_at);
+        const [s, e] = bookingWindow(sb);
         if (Number.isNaN(s.getTime()) || Number.isNaN(e.getTime())) return;
         if (!(s < dayEnd && e > dayStart)) return;
         const startH = (s - dayStart) / 3600000;
@@ -397,7 +401,7 @@ const DiaryView = ({ spaceById, spaces }) => {
                           const overflowRight = b.endH > GANTT_END_HOUR;
                           const cls = STATUS[b.ev.status]?.cls || 'bg-slate-100 text-slate-700';
                           const total = (b.ev.totals?.grand_total || 0).toLocaleString('tr-TR');
-                          const range = `${hhmm(b.sb.starts_at)}–${hhmm(b.sb.ends_at)}`;
+                          const range = `${hhmm(b.sb.starts_at)}–${hhmm(b.sb.ends_at)} · hazırlık ${b.sb.setup_minutes || 0}/${b.sb.teardown_minutes || 0} dk`;
                           const isSel = selectedBar
                             && selectedBar.ev.id === b.ev.id
                             && selectedBar.sb.space_id === b.sb.space_id

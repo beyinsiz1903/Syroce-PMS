@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { Card, CardContent } from '@/components/ui/card';
@@ -8,6 +8,7 @@ import { Send, ChefHat, RefreshCw, Check, CheckCheck } from 'lucide-react';
 import { promptDialog } from '@/lib/dialogs';
 import { Info, Modal } from '../_shared';
 import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
+import FnbSnapshot from '../FnbSnapshot';
 
 const SENDABLE_STATUSES = new Set([
   'tentative', 'definite', 'confirmed', 'completed',
@@ -18,19 +19,23 @@ const ORDER_STATUS_META = {
   sent: { intent: 'warning', label: 'Gönderildi' },
   acknowledged: { intent: 'info', label: 'Onaylandı' },
   completed: { intent: 'success', label: 'Tamamlandı' },
+  cancel_requested: { intent: 'warning', label: 'İptal onayı bekliyor' },
+  cancelled: { intent: 'neutral', label: 'İptal edildi' },
 };
 
-const FnbOrderModal = ({ event, onClose }) => {
+const FnbOrderModal = ({ event, onClose, canManage = true }) => {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [transitioningId, setTransitioningId] = useState(null);
+  const sendKey = useRef(crypto.randomUUID());
+  const sendPayload = useRef('');
 
   const fnbLineCount = (event.resources || []).filter(
     (r) => r.type === 'fb',
   ).length;
   const statusOk = SENDABLE_STATUSES.has(event.status);
-  const canSend = statusOk && fnbLineCount > 0 && !sending;
+  const canSend = canManage && statusOk && fnbLineCount > 0 && !sending;
 
   const loadOrders = useCallback(async () => {
     setLoading(true);
@@ -55,22 +60,35 @@ const FnbOrderModal = ({ event, onClose }) => {
       confirmText: 'Gönder',
     });
     if (note === null || note === undefined) return;
-    const idempotencyKey = globalThis.crypto?.randomUUID?.()
-      || `fnb-order-send-${event.id}-${Date.now()}-${Math.random()}`;
+    const payload = { target: 'kitchen', note: note ? String(note) : null, ...(orders.find(o => o.status === 'cancelled') ? { replaces_order_id: orders.find(o => o.status === 'cancelled').id } : {}) };
+    const serialized = JSON.stringify(payload);
+    if (sendPayload.current && sendPayload.current !== serialized) sendKey.current = crypto.randomUUID();
+    sendPayload.current = serialized;
+    const idempotencyKey = sendKey.current;
     try {
       setSending(true);
-      await axios.post(
+      const response = await axios.post(
         `/mice/events/${event.id}/fnb-order/send`,
-        { target: 'kitchen', note: note ? String(note) : null },
+        payload,
         { headers: { 'Idempotency-Key': idempotencyKey } },
       );
-      toast.success('F&B siparişi mutfağa gönderildi');
+      toast.success(response.data.replayed ? 'Bu üretim sürümü zaten kayıtlı' : 'F&B siparişi mutfağa gönderildi');
+      sendKey.current = crypto.randomUUID();
       await loadOrders();
     } catch (err) {
       toast.error(err?.response?.data?.detail || 'Sipariş gönderilemedi');
     } finally {
       setSending(false);
     }
+  };
+
+  const cancelOrder = async order => {
+    const reason = await promptDialog({ title: 'Üretim iptal talebi', message: 'Mutfak iptali ayrıca kabul edecek. En az 10 karakter gerekçe girin.' });
+    if (!reason) return;
+    setTransitioningId(order.id);
+    try { await axios.post(`/mice/events/${event.id}/fnb-orders/${order.id}/cancel`, { reason }); await loadOrders(); }
+    catch (error) { toast.error(error.response?.data?.detail || 'İptal talebi kaydedilemedi'); }
+    finally { setTransitioningId(null); }
   };
 
   const transitionOrder = async (order, target, successMsg) => {
@@ -191,13 +209,15 @@ const FnbOrderModal = ({ event, onClose }) => {
                           )}
                         </div>
                       )}
-                      {(o.status === 'sent' || o.status === 'acknowledged') && (
+                      <FnbSnapshot order={o} />
+                      {canManage && o.status === 'cancel_requested' && <Button size="sm" disabled={transitioningId != null} onClick={() => transitionOrder(o, 'cancelled', 'Mutfak iptali kabul etti')}>İptali kabul et</Button>}
+                      {canManage && (o.status === 'sent' || o.status === 'acknowledged') && (
                         <div className="flex justify-end gap-2 pt-1">
                           {o.status === 'sent' && (
                             <Button
                               size="sm"
                               onClick={() => acknowledge(o)}
-                              disabled={busy}
+                              disabled={transitioningId != null || Boolean(o.needs_review && o.event_fingerprint)}
                             >
                               {busy
                                 ? <RefreshCw className="w-4 h-4 mr-1 animate-spin" />
@@ -209,7 +229,7 @@ const FnbOrderModal = ({ event, onClose }) => {
                             <Button
                               size="sm"
                               onClick={() => complete(o)}
-                              disabled={busy}
+                              disabled={transitioningId != null || Boolean(o.needs_review && o.event_fingerprint)}
                             >
                               {busy
                                 ? <RefreshCw className="w-4 h-4 mr-1 animate-spin" />
@@ -217,6 +237,7 @@ const FnbOrderModal = ({ event, onClose }) => {
                               Tamamla
                             </Button>
                           )}
+                          <Button size="sm" variant="outline" disabled={transitioningId != null} onClick={() => cancelOrder(o)}>İptal talebi</Button>
                         </div>
                       )}
                     </CardContent>

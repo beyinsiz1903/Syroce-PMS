@@ -306,7 +306,7 @@ const MicePage = ({
       start_date: ev.start_date,
       end_date: ev.end_date,
       space_bookings: ev.space_bookings?.length ? ev.space_bookings : blankEvent.space_bookings,
-      resources: ev.resources || [],
+      resources: (ev.resources || []).map(r => ({ ...r, quantity_mode: 'explicit' })),
       agenda: ev.agenda || [],
       payment_schedule: ev.payment_schedule || [],
       notes: ev.notes || '',
@@ -595,6 +595,7 @@ const MicePage = ({
   const addRes = () => setForm({
     ...form,
     resources: [...form.resources, {
+      quantity_mode: 'explicit',
       menu_id: '',
       inventory_id: '',
       name: '',
@@ -860,7 +861,7 @@ const MicePage = ({
 
         <TabsContent value="kitchen-board">
           {visitedMiceTabs.has('kitchen-board') && <Suspense fallback={<div className="p-6 text-sm text-slate-500">{t('cm.pages_MicePage.yukleniyor_b597b')}</div>}>
-              <KitchenBoardTab />
+              <KitchenBoardTab canManage={canMice} active={activeTab === 'kitchen-board'} />
             </Suspense>}
         </TabsContent>
 
@@ -952,9 +953,9 @@ const MicePage = ({
         </TabsContent>
 
         <TabsContent value="competitors">
-          <Suspense fallback={<div className="p-6 text-sm text-slate-500">{t('cm.pages_MicePage.yukleniyor_b597b')}</div>}>
+          {visitedMiceTabs.has('competitors') && <Suspense fallback={<div className="p-6 text-sm text-slate-500">{t('cm.pages_MicePage.yukleniyor_b597b')}</div>}>
             <BanquetCompetitorTab />
-          </Suspense>
+          </Suspense>}
         </TabsContent>
         {hasAdvancedReporting && <TabsContent value="readiness"><ReadinessPanel events={events} totalCount={totalCount} onOpen={openEdit} /></TabsContent>}
       </Tabs>
@@ -972,7 +973,7 @@ const MicePage = ({
       {kitchenData && <KitchenModal kitchenData={kitchenData} onClose={() => setKitchenData(null)} />}
 
       {/* Send F&B order to kitchen modal */}
-      {fnbOrderEvent && <FnbOrderModal event={fnbOrderEvent} onClose={() => setFnbOrderEvent(null)} />}
+      {fnbOrderEvent && <FnbOrderModal event={fnbOrderEvent} canManage={canMice} onClose={() => setFnbOrderEvent(null)} />}
 
       {/* Entity history drawer */}
       {historyEvent && <EntityHistoryDrawer entityType="mice_event" entityId={historyEvent.id} title={`${historyEvent.name} (${historyEvent.start_date})`} onClose={() => setHistoryEvent(null)} />}

@@ -13,6 +13,8 @@ Mirrors the Opera/Protel banquet management spine:
 
 from __future__ import annotations
 
+import hashlib
+import json
 import uuid
 from datetime import UTC, date, datetime, timedelta
 from decimal import ROUND_CEILING, Decimal
@@ -833,6 +835,8 @@ class SpaceBookingIn(MiceInput):
     ends_at: datetime
     setup_style: str = "theatre"  # theatre/classroom/banquet/cocktail/u_shape/boardroom
     expected_pax: int = Field(0, ge=0)
+    setup_minutes: int = Field(0, ge=0, le=1440)
+    teardown_minutes: int = Field(0, ge=0, le=1440)
 
     @model_validator(mode="after")
     def valid_interval(self):
@@ -851,6 +855,7 @@ class ResourceLineIn(MiceInput):
     name: str
     type: str = "fb"  # fb / av / decor / other
     quantity: float = Field(1, ge=0)
+    quantity_mode: str | None = Field(None, pattern="^(explicit|event_pax)$")
     unit: str = "pax"  # pax / unit / hour
     unit_price: float = Field(0, ge=0)
     currency: str | None = Field(None, min_length=3, max_length=3, pattern=r"^[A-Za-z]{3}$")
@@ -1088,11 +1093,11 @@ async def _check_resource_inventory_conflict(
     inventories = {i["id"]: i for i in _l}
 
     # Build a per-inventory requested quantity map for this event.
-    requested: dict[str, float] = {}
+    requested: dict[str, Decimal] = {}
     for r in resources:
         iid = r.get("inventory_id")
         if iid:
-            requested[iid] = requested.get(iid, 0) + float(r.get("quantity") or 0)
+            requested[iid] = requested.get(iid, Decimal(0)) + money(r.get("quantity"))
 
     # Aggregate currently-committed usage from other active events whose
     # bookings overlap this event's envelope.
@@ -1106,11 +1111,11 @@ async def _check_resource_inventory_conflict(
 
     allocations: dict[str, list] = {iid: [] for iid in inv_ids}
     async for ev in db.mice_events.find(q, session=session):
-        quantities: dict[str, float] = {}
+        quantities: dict[str, Decimal] = {}
         for r in ev.get("resources", []):
             iid = r.get("inventory_id")
             if iid in allocations:
-                quantities[iid] = quantities.get(iid, 0) + float(r.get("quantity") or 0)
+                quantities[iid] = quantities.get(iid, Decimal(0)) + money(r.get("quantity"))
         for iid, quantity in quantities.items():
             allocations[iid].append((ev.get("space_bookings", []), quantity))
 
@@ -1122,7 +1127,7 @@ async def _check_resource_inventory_conflict(
             return "Seçilen envanter pasife alınmış; etkinlik planını yenileyin"
         if inv.get("currency") and any(r.get("currency") and r["currency"] != inv["currency"].upper() for r in resources if r.get("inventory_id") == iid):
             return "Envanter para birimi değişti; teklifi yenileyin"
-        stock = float(inv.get("total_stock") or 0)
+        stock = money(inv.get("total_stock"))
         used = peak_usage(bookings, allocations[iid])
         if used + want > stock:
             return f"{inv['name']} envanteri yetersiz: stok {stock:g}, bu zaman aralığında zaten {used:g} ayrılmış, talep {want:g}."
@@ -1158,8 +1163,6 @@ def _event_lock_resources(
 async def _check_space_conflict(tenant_id: str, bookings: list[dict], exclude_event_id: str | None = None, session=None) -> str | None:
     db = get_system_db()
     for sb in bookings:
-        s_iso = sb["starts_at"] if isinstance(sb["starts_at"], str) else sb["starts_at"].isoformat()
-        e_iso = sb["ends_at"] if isinstance(sb["ends_at"], str) else sb["ends_at"].isoformat()
         q = {
             "tenant_id": tenant_id,
             "status": {"$in": ["tentative", "definite", "confirmed"]},
@@ -1171,8 +1174,8 @@ async def _check_space_conflict(tenant_id: str, bookings: list[dict], exclude_ev
             for other in ev.get("space_bookings", []):
                 if other.get("space_id") != sb["space_id"]:
                     continue
-                if overlaps({"starts_at": s_iso, "ends_at": e_iso}, other):
-                    return f"Mekan çakışması: {ev.get('name')} ({other['starts_at'][:16]})"
+                if overlaps(sb, other):
+                    return f"Mekan çakışması (kurulum/söküm dahil): {ev.get('name')} ({other['starts_at'][:16]})"
     return None
 
 
@@ -1287,14 +1290,15 @@ async def _expand_resource_prices(
                 if catalog_item.get("price_per_person"):
                     line["unit_price"] = catalog_item["price_per_person"]
                     line["unit"] = "pax"
-                    if line.get("quantity") is None or line["quantity"] == 1:
+                    if line.get("quantity_mode") == "event_pax" or (line.get("quantity_mode") is None and (line.get("quantity") is None or line["quantity"] == 1)):
                         line["quantity"] = pax
                 elif catalog_item.get("flat_price"):
                     line["unit_price"] = catalog_item["flat_price"]
                     line["unit"] = "unit"
-                    line["quantity"] = max(1, line.get("quantity") or 1)
+                    line["quantity"] = 1 if line.get("quantity") is None else line["quantity"]
                 line["name"] = line.get("name") or catalog_item["name"]
                 line["type"] = catalog_item.get("type", line.get("type", "fb"))
+                line["menu_snapshot"] = {key: catalog_item.get(key) for key in ("courses", "allergens", "dietary_tags", "prep_lead_minutes")}
         elif r.get("inventory_id"):
             catalog_item = await db.mice_resources.find_one({"id": r["inventory_id"], "tenant_id": tenant_id})
             if catalog_item:
@@ -1308,6 +1312,8 @@ async def _expand_resource_prices(
             raise HTTPException(422, f"{catalog_item.get('name')} pasif; başka kaynak seçin")
         if r.get("menu_id") and int((catalog_item or {}).get("min_guests") or 0) > pax:
             raise HTTPException(422, "Menünün minimum kişi sayısı karşılanmıyor")
+        if r.get("quantity_mode") == "event_pax" and (not r.get("menu_id") or not (catalog_item or {}).get("price_per_person")):
+            raise HTTPException(422, "Etkinlik kişi sayısı modu yalnız kişi başı fiyatlı menüler içindir")
         # Catalog prices inherit the tenant currency only for truly legacy
         # rows. A free-form line is authored inside the event and therefore
         # inherits the event currency itself.
@@ -1324,6 +1330,7 @@ async def _expand_resource_prices(
                 ),
             )
         line["currency"] = event_currency
+        line["quantity_mode"] = "explicit"
         out.append(line)
     return out
 
@@ -1989,6 +1996,8 @@ async def delete_event(
     require_mice_ops(current_user)
     db = get_system_db()
     before = await db.mice_events.find_one({"id": event_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
+    if before and (before.get("operations_tasks") or await db.mice_fnb_orders.find_one({"tenant_id": current_user.tenant_id, "event_id": event_id})):
+        raise HTTPException(409, "Görev veya mutfak üretim geçmişi olan etkinlik silinemez; iptal akışını kullanın")
     if before and (before.get("gl_posting_state") == "pending" or before.get("document_history") or before.get("gl_journal_entry_id") or before.get("signature") or any(p.get("paid") for p in before.get("payment_schedule", []))
                    or (before.get("status") == "completed" and before.get("reservation_id") and (before.get("totals") or {}).get("grand_total", 0) > 0)):
         raise HTTPException(409, "Belge sürümü bulunan, imzalı, ödemeli veya muhasebeleşmiş etkinlik silinemez; iptal akışını kullanın")
@@ -1998,7 +2007,7 @@ async def delete_event(
     # reservation; deleting them without releasing leaks that slot forever.
     was_active = (before or {}).get("status") in ACTIVE_QUOTA_STATUSES
 
-    res = await db.mice_events.delete_one({"id": event_id, "tenant_id": current_user.tenant_id, "updated_at": (before or {}).get("updated_at"), "status": (before or {}).get("status")})
+    res = await db.mice_events.delete_one({"id": event_id, "tenant_id": current_user.tenant_id, "updated_at": (before or {}).get("updated_at"), "status": (before or {}).get("status"), "last_kitchen_dispatch_at": (before or {}).get("last_kitchen_dispatch_at")})
     if not res.deleted_count:
         raise HTTPException(409 if before else 404, "Etkinlik değişti; yenileyin" if before else "Etkinlik bulunamadı")
 
@@ -2040,12 +2049,17 @@ async def diary(
         date_from = today.isoformat()
     if not date_to:
         date_to = (today + _td(days=30)).isoformat()
+    try:
+        if date.fromisoformat(date_from) > date.fromisoformat(date_to):
+            raise ValueError("date range")
+    except ValueError:
+        raise HTTPException(422, "Geçerli takvim tarih aralığı girin") from None
     db = get_system_db()
     cur = db.mice_events.find(
         {
             "tenant_id": current_user.tenant_id,
-            "start_date": {"$lte": date_to},
-            "end_date": {"$gte": date_from},
+            "start_date": {"$lte": (date.fromisoformat(date_to) + timedelta(days=1)).isoformat()},
+            "end_date": {"$gte": (date.fromisoformat(date_from) - timedelta(days=1)).isoformat()},
         },
         {
             "_id": 0,
@@ -2088,6 +2102,8 @@ async def beo(event_id: str, current_user: User = Depends(get_current_user)) -> 
                 "ends_at": sb["ends_at"],
                 "setup_style": sb.get("setup_style"),
                 "expected_pax": sb.get("expected_pax"),
+                "setup_minutes": sb.get("setup_minutes", 0),
+                "teardown_minutes": sb.get("teardown_minutes", 0),
             }
         )
     return {
@@ -2150,6 +2166,8 @@ async def _store_document(event: dict, user: User, reason: str, request_id: str,
     history = event.get("document_history") or []
     replay = next((d for d in history if d.get("request_id") == request_id), None)
     if replay:
+        if replay.get("reason") != reason:
+            raise HTTPException(409, "Aynı belge istek anahtarı farklı içerikle kullanılamaz")
         return replay
     if len(history) >= 25:
         raise HTTPException(409, "Bu etkinlik 25 belge sürümüne ulaştı; geçmişi koruyarak yeni etkinlik açın")
@@ -2264,6 +2282,7 @@ class EventActualsIn(MiceInput):
     guaranteed_pax: int = Field(0, ge=0)
     budget_cost: float = Field(0, ge=0)
     costs: list[ActualCostLineIn] = Field(default_factory=list, max_length=100)
+    costs_complete: bool = False
     notes: str = Field("", max_length=2000)
     expected_revision: str | None = None
 
@@ -2281,7 +2300,7 @@ async def get_event_actuals(event_id: str, current_user: User = Depends(get_curr
     return {"actuals": actuals, "currency": event.get("currency"), "expected_revision": _revision(event),
             "report": {"quoted_net_revenue": quoted_net, "actual_cost": total_cost if actuals is not None else None,
                        "budget_cost": (actuals or {}).get("budget_cost"),
-                       "quote_based_contribution": round(quoted_net - total_cost, 2) if actuals is not None else None},
+                       "quote_based_contribution": round(quoted_net - total_cost, 2) if (actuals or {}).get("costs_complete") else None},
             "notice": "Teklif bazlı katkı analizi; gerçekleşmiş gelir, muhasebe kârı, tahsilat veya fatura değildir. Maliyetler etkinlik para biriminde ve vergi hariç girilir."}
 
 
@@ -2791,10 +2810,11 @@ async def kitchen_ticket(event_id: str, current_user: User = Depends(get_current
         m = menus.get(r["menu_id"])
         if not m:
             continue
+        m = {**m, **(r.get("menu_snapshot") or {})}
         qty = float(r["quantity"]) if r.get("quantity") is not None else pax
         if qty <= 0:
             continue
-        prep = m.get("prep_lead_minutes", 30)
+        prep = m.get("prep_lead_minutes") or 0
         prep_by = None
         if earliest:
             try:
@@ -2816,6 +2836,7 @@ async def kitchen_ticket(event_id: str, current_user: User = Depends(get_current
                 "prep_lead_minutes": prep,
                 "prep_by": prep_by,
                 "notes": r.get("notes"),
+                "menu_snapshot": r.get("menu_snapshot"),
             }
         )
     return {
@@ -2830,15 +2851,24 @@ async def kitchen_ticket(event_id: str, current_user: User = Depends(get_current
 
 
 # ── F&B order send (BEO → kitchen production order) ─────────────
-class FnbOrderSendRequest(BaseModel):
+class FnbOrderSendRequest(MiceInput):
     """Send the event's F&B lines to the kitchen as a production order.
 
     `target` lets the banquet team route the order to a specific outlet /
     kitchen; `note` is a free-text production instruction.
     """
 
-    target: str = "kitchen"  # kitchen / restaurant / outlet code
-    note: str | None = None
+    target: str = Field("kitchen", min_length=1, max_length=100)
+    note: str | None = Field(None, max_length=2000)
+    replaces_order_id: str | None = Field(None, min_length=1, max_length=100)
+
+
+def _fnb_fingerprint(event: dict) -> str:
+    # Includes service times, pax and operational details, not payment/audit
+    # timestamps. Financial annotations alone must not mark a meal obsolete.
+    payload = {key: event.get(key) for key in ("expected_pax", "space_bookings", "agenda", "technical_requirements", "notes")}
+    payload["lines"] = _build_fnb_lines(event)
+    return hashlib.sha256(json.dumps(payload, sort_keys=True, default=str).encode()).hexdigest()
 
 
 def _build_fnb_lines(event: dict) -> list[dict]:
@@ -2861,6 +2891,7 @@ def _build_fnb_lines(event: dict) -> list[dict]:
                 "unit": r.get("unit") or "pax",
                 "unit_price": float(r.get("unit_price") or 0),
                 "notes": r.get("notes"),
+                "menu_snapshot": r.get("menu_snapshot"),
             }
         )
     return lines
@@ -2929,6 +2960,8 @@ async def send_fnb_order(
             "tenant_id": tenant_id,
             "event_id": event_id,
             "event_name": event.get("name"),
+            "event_fingerprint": _fnb_fingerprint(event),
+            "source_revision": _revision(event),
             "target": body.target,
             "status": "sent",
             "expected_pax": int(event.get("expected_pax") or 0),
@@ -2939,7 +2972,44 @@ async def send_fnb_order(
             "sent_at": datetime.now(UTC).isoformat(),
             "sent_by": current_user.username,
         }
-        await db.mice_fnb_orders.insert_one(order)
+        fingerprint = order["event_fingerprint"]
+        order["replaces_order_id"] = body.replaces_order_id
+        order["_id"] = f"mice-fnb:{uuid.uuid5(uuid.NAMESPACE_URL, repr((tenant_id, event_id, body.target, fingerprint, body.note, body.replaces_order_id)))}"
+
+        async def persist_order(session):
+            current = await db.mice_events.find_one({"id": event_id, "tenant_id": tenant_id}, session=session)
+            if not current or _fnb_fingerprint(current) != fingerprint or current.get("status") not in {"tentative", "definite", "confirmed", "completed"}:
+                raise HTTPException(409, "Etkinlik üretim bilgileri değişti; yenileyip tekrar gönderin")
+            if body.replaces_order_id:
+                prior = await db.mice_fnb_orders.find_one({"id": body.replaces_order_id, "tenant_id": tenant_id, "event_id": event_id, "target": body.target}, session=session)
+                if not prior or prior.get("status") != "cancelled":
+                    raise HTTPException(409, "Yeni sürüm için önce yerine geçilen emrin iptalini mutfağa onaylatın")
+            replay = await db.mice_fnb_orders.find_one({"_id": order["_id"], "tenant_id": tenant_id}, {"_id": 0}, session=session)
+            if replay:
+                if replay.get("status") == "cancelled":
+                    raise HTTPException(409, "Bu üretim sürümü iptal edilmiş; yerine geçilen sipariş numarasıyla yeni sürüm gönderin")
+                return {**replay, "replayed": True}
+            active = await db.mice_fnb_orders.find_one({"tenant_id": tenant_id, "event_id": event_id, "target": body.target,
+                "status": {"$in": ["sent", "acknowledged", "cancel_requested"]}}, session=session)
+            if active:
+                raise HTTPException(409, "Bu mutfakta önceki üretim emri açık; iptalini mutfağa onaylatıp yeni sürümü gönderin")
+            # Touch the event inside this transaction: concurrent cancellation
+            # or revision must serialize with dispatch, not cause write skew.
+            await db.mice_events.update_one({"id": event_id, "tenant_id": tenant_id}, {"$set": {"last_kitchen_dispatch_at": order["sent_at"]}}, session=session)
+            await db.mice_fnb_orders.insert_one(order.copy(), session=session)
+            return order
+
+        try:
+            order = await with_resource_locks(client=db.client, db=db, tenant_id=tenant_id, locks_collection="mice_locks",
+                                               resources=[("dispatch", event_id)], callback=persist_order)
+        except Exception as exc:
+            if isinstance(exc, HTTPException):
+                raise
+            if isinstance(exc, DuplicateKeyError):
+                raise HTTPException(409, "Üretim emri eşzamanlı gönderildi; sipariş listesini yenileyin") from exc
+            if is_replica_set_unavailable(exc):
+                raise HTTPException(503, "Mutfak gönderimi atomik garanti için Mongo replica set gerektiriyor") from exc
+            raise
         order.pop("_id", None)
         await log_audit_event(
             tenant_id=tenant_id,
@@ -2976,11 +3046,14 @@ async def list_fnb_orders(
     404s when the event belongs to another tenant so a cross-tenant id can't
     confirm/deny the existence of another hotel's event."""
     db = get_system_db()
-    event = await db.mice_events.find_one({"id": event_id, "tenant_id": current_user.tenant_id}, {"_id": 1})
+    event = await db.mice_events.find_one({"id": event_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
     if not event:
         raise HTTPException(404, "Etkinlik bulunamadı")
     cur = db.mice_fnb_orders.find({"tenant_id": current_user.tenant_id, "event_id": event_id}, {"_id": 0}).sort("sent_at", -1)
     orders = await cur.to_list(length=None)
+    for order in orders:
+        order["needs_review"] = event.get("status") == "cancelled" or order.get("event_fingerprint") != _fnb_fingerprint(event)
+        order["event_status"] = event.get("status")
     return {"orders": orders}
 
 
@@ -3001,11 +3074,16 @@ async def list_open_fnb_orders(
     cur = db.mice_fnb_orders.find(
         {
             "tenant_id": current_user.tenant_id,
-            "status": {"$in": ["sent", "acknowledged"]},
+            "status": {"$in": ["sent", "acknowledged", "cancel_requested"]},
         },
         {"_id": 0},
     ).sort("sent_at", 1)
     orders = await cur.to_list(length=None)
+    events = {e["id"]: e async for e in db.mice_events.find({"tenant_id": current_user.tenant_id, "id": {"$in": list({o["event_id"] for o in orders})}}, {"_id": 0})}
+    for order in orders:
+        event = events.get(order["event_id"])
+        order["needs_review"] = not event or event.get("status") == "cancelled" or order.get("event_fingerprint") != _fnb_fingerprint(event)
+        order["event_status"] = (event or {}).get("status", "missing")
     return {"orders": orders, "count": len(orders)}
 
 
@@ -3016,6 +3094,7 @@ async def list_open_fnb_orders(
 _FNB_ORDER_TRANSITIONS: dict[str, str] = {
     "sent": "acknowledged",
     "acknowledged": "completed",
+    "cancel_requested": "cancelled",
 }
 
 
@@ -3053,7 +3132,7 @@ async def transition_fnb_order(
     db = get_system_db()
     tenant_id = current_user.tenant_id
 
-    event = await db.mice_events.find_one({"id": event_id, "tenant_id": tenant_id}, {"_id": 1})
+    event = await db.mice_events.find_one({"id": event_id, "tenant_id": tenant_id}, {"_id": 0})
     if not event:
         raise HTTPException(404, "Etkinlik bulunamadı")
 
@@ -3074,6 +3153,8 @@ async def transition_fnb_order(
             409,
             f"Geçersiz durum geçişi: '{current}' → '{target}'. İzin verilen sonraki durum: '{expected}'.",
         )
+    if target != "cancelled" and (event.get("status") == "cancelled" or (order.get("event_fingerprint") and order["event_fingerprint"] != _fnb_fingerprint(event))):
+        raise HTTPException(409, "Etkinlik iptal edilmiş veya üretim bilgileri değişmiş; önce eski siparişi iptal edip yeni sürümü gönderin")
 
     now_iso = datetime.now(UTC).isoformat()
     set_fields: dict[str, Any] = {"status": target}
@@ -3083,12 +3164,28 @@ async def transition_fnb_order(
     elif target == "completed":
         set_fields["completed_at"] = now_iso
         set_fields["completed_by"] = current_user.username
+    elif target == "cancelled":
+        set_fields["cancelled_at"] = now_iso
+        set_fields["cancelled_by"] = current_user.username
     if body.note is not None:
         set_fields[f"{target}_note"] = body.note
 
-    result = await db.mice_fnb_orders.update_one({"id": order_id, "tenant_id": tenant_id, "status": current}, {"$set": set_fields})
-    if not result.matched_count:
-        raise HTTPException(409, "Mutfak siparişi başka bir kullanıcı tarafından değiştirildi; yenileyin")
+    async def transition_locked(session):
+        fresh = await db.mice_events.find_one({"id": event_id, "tenant_id": tenant_id}, session=session)
+        if not fresh:
+            raise HTTPException(404, "Etkinlik bulunamadı")
+        if target != "cancelled" and (fresh.get("status") == "cancelled" or (order.get("event_fingerprint") and order["event_fingerprint"] != _fnb_fingerprint(fresh))):
+            raise HTTPException(409, "Etkinlik üretim bilgileri değişti; önce eski emri iptal edin")
+        await db.mice_events.update_one({"id": event_id, "tenant_id": tenant_id}, {"$set": {"last_kitchen_action_at": now_iso}}, session=session)
+        result = await db.mice_fnb_orders.update_one({"id": order_id, "tenant_id": tenant_id, "status": current}, {"$set": set_fields}, session=session)
+        if not result.matched_count:
+            raise HTTPException(409, "Mutfak siparişi başka bir kullanıcı tarafından değiştirildi; yenileyin")
+    try:
+        await with_resource_locks(client=db.client, db=db, tenant_id=tenant_id, locks_collection="mice_locks", resources=[("dispatch", event_id)], callback=transition_locked)
+    except Exception as exc:
+        if is_replica_set_unavailable(exc):
+            raise HTTPException(503, "Mutfak geçişi atomik garanti için Mongo replica set gerektiriyor") from exc
+        raise
 
     updated = await db.mice_fnb_orders.find_one({"id": order_id, "tenant_id": tenant_id}, {"_id": 0})
     await log_audit_event(
@@ -3105,6 +3202,116 @@ async def transition_fnb_order(
     return updated
 
 
+class FnbCancelIn(MiceInput):
+    reason: str = Field(min_length=10, max_length=1000)
+
+
+@router.post("/events/{event_id}/fnb-orders/{order_id}/cancel")
+async def request_fnb_cancellation(event_id: str, order_id: str, body: FnbCancelIn, current_user: User = Depends(get_current_user), _perm=Depends(require_op("manage_sales"))):
+    require_mice_ops(current_user)
+    db = get_system_db()
+    order = await db.mice_fnb_orders.find_one({"tenant_id": current_user.tenant_id, "event_id": event_id, "id": order_id}, {"_id": 0})
+    if not order:
+        raise HTTPException(404, "Sipariş bulunamadı")
+    if order["status"] in {"cancel_requested", "cancelled"}:
+        return {"ok": True, "already_requested": True}
+    if order["status"] not in {"sent", "acknowledged"}:
+        raise HTTPException(409, "Tamamlanan üretim iptal edilemez; gerçekleşen maliyet kaydıyla düzeltin")
+    result = await db.mice_fnb_orders.update_one({"id": order_id, "tenant_id": current_user.tenant_id, "status": order["status"]},
+        {"$set": {"status": "cancel_requested", "cancel_reason": body.reason, "cancel_requested_at": datetime.now(UTC).isoformat(), "cancel_requested_by": current_user.username}})
+    if not result.matched_count:
+        raise HTTPException(409, "Sipariş değişti; yenileyin")
+    await log_audit_event(tenant_id=current_user.tenant_id, user_id=current_user.username, action="fnb.cancel_request", entity_type="mice_event", entity_id=event_id, details=body.reason, db=db)
+    return {"ok": True, "notice": "İptal talebi mutfak panosunda; mutfak onaylayana kadar iptal tamamlanmadı"}
+
+
+class OperationTaskIn(MiceInput):
+    title: str = Field(min_length=1, max_length=200)
+    department: str = Field(pattern="^(banquet|kitchen|av|housekeeping|security|other)$")
+    owner_name: str = Field(min_length=1, max_length=200)
+    due_at: datetime | None = None
+    notes: str = Field("", max_length=1000)
+    kind: str = Field("task", pattern="^(task|equipment)$")
+    inventory_id: str | None = None
+    quantity: float = Field(1, gt=0)
+    client_request_id: str = Field(min_length=8, max_length=100)
+
+
+class OperationTaskTransitionIn(MiceInput):
+    status: str = Field(pattern="^(acknowledged|completed|cancelled)$")
+    reason: str = Field("", max_length=1000)
+
+
+@router.get("/events/{event_id}/tasks", dependencies=[Depends(require_feature("mice", "banquet_operations"))])
+async def list_operation_tasks(event_id: str, current_user: User = Depends(get_current_user)):
+    event = await get_system_db().mice_events.find_one({"id": event_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
+    if not event:
+        raise HTTPException(404, "Etkinlik bulunamadı")
+    return {"tasks": event.get("operations_tasks") or [], "event_status": event["status"],
+            "equipment": [{"id": r["inventory_id"], "name": r["name"], "quantity": r.get("quantity", 0)} for r in event.get("resources", []) if r.get("inventory_id")],
+            "notice": "Ekipman teslimi/iadesi işlem kaydıdır; rezerve stok miktarını veya kasa bakiyesini değiştirmez."}
+
+
+@router.post("/events/{event_id}/tasks", dependencies=[Depends(require_feature("mice", "banquet_operations"))])
+async def create_operation_task(event_id: str, body: OperationTaskIn, current_user: User = Depends(get_current_user), _perm=Depends(require_op("manage_sales"))):
+    require_mice_ops(current_user)
+    db = get_system_db()
+    event = await db.mice_events.find_one({"id": event_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
+    if not event:
+        raise HTTPException(404, "Etkinlik bulunamadı")
+    tasks = event.get("operations_tasks") or []
+    existing = next((t for t in tasks if t.get("client_request_id") == body.client_request_id), None)
+    if existing:
+        if any(existing.get(k) != v for k, v in body.model_dump(mode="json").items()):
+            raise HTTPException(409, "Bu görev isteği daha önce kaydedildi; listeyi yenileyin ve farklı görev için yeni form açın")
+        return existing
+    if event["status"] in {"cancelled", "completed"} or len(tasks) >= 100:
+        raise HTTPException(409, "Kapanmış etkinliğe veya 100 görevden fazla görev eklenemez")
+    if body.kind == "equipment":
+        reserved = sum((money(r.get("quantity")) for r in event.get("resources", []) if r.get("inventory_id") == body.inventory_id and body.inventory_id), Decimal(0))
+        assigned = sum((money(t["quantity"]) for t in tasks if t.get("inventory_id") == body.inventory_id and t.get("kind") == "equipment" and t["status"] != "cancelled"), Decimal(0))
+        if not body.inventory_id or reserved < assigned + money(body.quantity):
+            raise HTTPException(409, "Teslim planı etkinliğe ayrılan ekipman miktarını aşamaz")
+    task = {**body.model_dump(mode="json"), "id": str(uuid.uuid4()), "status": "pending", "created_at": datetime.now(UTC).isoformat(), "created_by": current_user.username}
+    result = await db.mice_events.update_one({"id": event_id, "tenant_id": current_user.tenant_id, "updated_at": event.get("updated_at"), "operations_tasks": event.get("operations_tasks")},
+        {"$push": {"operations_tasks": task}, "$set": {"updated_at": task["created_at"]}})
+    if not result.matched_count:
+        raise HTTPException(409, "Etkinlik veya görev listesi değişti; yenileyin")
+    await log_audit_event(tenant_id=current_user.tenant_id, user_id=current_user.username, action="mice.task.create", entity_type="mice_event", entity_id=event_id, details=body.title, after_value=task, db=db)
+    return task
+
+
+@router.post("/events/{event_id}/tasks/{task_id}/transition", dependencies=[Depends(require_feature("mice", "banquet_operations"))])
+async def transition_operation_task(event_id: str, task_id: str, body: OperationTaskTransitionIn, current_user: User = Depends(get_current_user), _perm=Depends(require_op("manage_sales"))):
+    require_mice_ops(current_user)
+    db = get_system_db()
+    event = await db.mice_events.find_one({"id": event_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
+    tasks = (event or {}).get("operations_tasks") or []
+    idx = next((i for i, t in enumerate(tasks) if t["id"] == task_id), None)
+    if idx is None:
+        raise HTTPException(404, "Görev bulunamadı")
+    task = tasks[idx]
+    if task["status"] == body.status:
+        return {"ok": True, "unchanged": True}
+    allowed = {"pending": {"acknowledged", "cancelled"}, "acknowledged": {"completed", "cancelled"}}
+    if body.status not in allowed.get(task["status"], set()):
+        raise HTTPException(409, "Görev adımı atlanamaz veya kapanmış görev yeniden açılamaz")
+    if body.status == "cancelled" and len(body.reason.strip()) < 10:
+        raise HTTPException(422, "İptal için en az 10 karakter gerekçe girin")
+    if task["kind"] == "equipment" and task["status"] == "acknowledged" and body.status == "cancelled":
+        raise HTTPException(409, "Teslim edilen ekipman iptal edilemez; iade alındı işlemini kullanın")
+    if event["status"] == "cancelled" and body.status != "cancelled" and not (task["kind"] == "equipment" and body.status == "completed"):
+        raise HTTPException(409, "İptal edilen etkinlikte yalnız iptal veya teslim edilmiş ekipmanın iadesi kaydedilebilir")
+    now = datetime.now(UTC).isoformat()
+    updated = {**task, "status": body.status, f"{body.status}_at": now, f"{body.status}_by": current_user.username, f"{body.status}_note": body.reason}
+    result = await db.mice_events.update_one({"id": event_id, "tenant_id": current_user.tenant_id, "updated_at": event.get("updated_at"), f"operations_tasks.{idx}": task},
+        {"$set": {f"operations_tasks.{idx}": updated, "updated_at": now}})
+    if not result.matched_count:
+        raise HTTPException(409, "Görev başka kullanıcı tarafından değiştirildi; yenileyin")
+    await log_audit_event(tenant_id=current_user.tenant_id, user_id=current_user.username, action="mice.task.transition", entity_type="mice_event", entity_id=event_id, details=f"{task['title']}: {task['status']} → {body.status}", db=db)
+    return {"ok": True, "task": updated}
+
+
 # ── Daily operations sheet (banquet team daily ops) ─────────────
 @router.get("/ops-sheet")
 async def ops_sheet(
@@ -3119,12 +3326,18 @@ async def ops_sheet(
         from datetime import date as _d
 
         date = _d.today().isoformat()
+    try:
+        day_start = datetime.fromisoformat(date)
+        if len(date) != 10:
+            raise ValueError("date only")
+    except ValueError:
+        raise HTTPException(422, "Geçerli operasyon tarihi girin") from None
     db = get_system_db()
     q = {
         "tenant_id": current_user.tenant_id,
         "status": {"$in": ["definite", "confirmed", "completed"]},
-        "start_date": {"$lte": date},
-        "end_date": {"$gte": date},
+        "start_date": {"$lte": (day_start + timedelta(days=1)).date().isoformat()},
+        "end_date": {"$gte": (day_start - timedelta(days=1)).date().isoformat()},
     }
     _l = await db.mice_spaces.find({"tenant_id": current_user.tenant_id}).to_list(length=None)
     spaces_by_id = {s["id"]: s for s in _l}
@@ -3146,6 +3359,8 @@ async def ops_sheet(
                     "ends_at": sb["ends_at"],
                     "setup_style": sb.get("setup_style"),
                     "expected_pax": sb.get("expected_pax"),
+                    "setup_minutes": sb.get("setup_minutes", 0),
+                    "teardown_minutes": sb.get("teardown_minutes", 0),
                     "agenda_summary": [{"starts_at": a["starts_at"], "title": a["title"], "kind": a.get("kind")} for a in (ev.get("agenda") or []) if str(a.get("starts_at", "")).startswith(date)],
                 }
             )

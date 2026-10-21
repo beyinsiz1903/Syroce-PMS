@@ -64,6 +64,19 @@ test('customer approval requires name and consent', async ({ page }, testInfo) =
   await expect(page.getByText('Müşteri onayı kaydedildi. Teşekkür ederiz.')).toBeVisible();
 });
 
+test('department task creation acknowledgement and completion are connected', async ({ page }, testInfo) => {
+  await page.getByTitle('BEO', { exact: true }).click();
+  await page.getByRole('button', { name: 'Yeni görev / teslim planı' }).click();
+  await page.getByLabel('Görev başlığı', { exact: true }).fill('Yapay AV kontrolü');
+  await page.getByLabel('Sorumlu kişi', { exact: true }).fill('Örnek teknik ekip');
+  await page.getByRole('button', { name: 'Görevi kaydet', exact: true }).click();
+  await expect(page.getByText(/Yapay AV kontrolü · Banket/)).toBeVisible();
+  await page.getByRole('button', { name: 'Görevi teslim al', exact: true }).click();
+  await page.getByRole('button', { name: 'Görevi tamamla', exact: true }).click();
+  await expect(page.getByRole('dialog').getByText('Tamamlandı', { exact: true })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath('mice-department-tasks.png'), fullPage: true });
+});
+
 test('BEO print isolates the document and hides actions', async ({ page }, testInfo) => {
   await page.getByTitle('BEO', { exact: true }).click();
   const document = page.getByRole('dialog');

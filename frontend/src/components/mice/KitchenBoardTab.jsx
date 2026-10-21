@@ -7,18 +7,22 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import { ChefHat, RefreshCw, Check, CheckCheck } from 'lucide-react';
 import { Info } from './_shared';
 import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
+import FnbSnapshot from './FnbSnapshot';
+import { promptDialog } from '@/lib/dialogs';
 
 // Lifecycle: sent → acknowledged → completed (mirrors backend transitions).
 const ORDER_STATUS_META = {
   sent: { intent: 'warning', label: 'Gönderildi' },
   acknowledged: { intent: 'info', label: 'Onaylandı' },
   completed: { intent: 'success', label: 'Tamamlandı' },
+  cancel_requested: { intent: 'warning', label: 'İptal onayı bekliyor' },
+  cancelled: { intent: 'neutral', label: 'İptal edildi' },
 };
 
 // Auto-refresh interval for the live kitchen board (ms).
 const AUTO_REFRESH_MS = 30000;
 
-const KitchenBoardTab = () => {
+const KitchenBoardTab = ({ canManage = true, active = true }) => {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [transitioningId, setTransitioningId] = useState(null);
@@ -44,10 +48,19 @@ const KitchenBoardTab = () => {
   }, [loadOrders]);
 
   useEffect(() => {
-    if (!autoRefresh) return undefined;
-    const id = setInterval(() => loadOrders(false), AUTO_REFRESH_MS);
+    if (!autoRefresh || !active) return undefined;
+    const id = setInterval(() => { if (!document.hidden) loadOrders(false); }, AUTO_REFRESH_MS);
     return () => clearInterval(id);
-  }, [autoRefresh, loadOrders]);
+  }, [autoRefresh, active, loadOrders]);
+
+  const cancelOrder = async order => {
+    const reason = await promptDialog({ title: 'Üretim iptal talebi', message: 'Mutfak iptali ayrıca kabul edecek. En az 10 karakter gerekçe girin.' });
+    if (!reason) return;
+    setTransitioningId(order.id);
+    try { await axios.post(`/mice/events/${order.event_id}/fnb-orders/${order.id}/cancel`, { reason }); await loadOrders(false); }
+    catch (error) { toast.error(error.response?.data?.detail || 'İptal talebi kaydedilemedi'); }
+    finally { setTransitioningId(null); }
+  };
 
   const transitionOrder = async (order, target, successMsg) => {
     try {
@@ -152,23 +165,26 @@ const KitchenBoardTab = () => {
                       {o.acknowledged_at.slice(0, 16).replace('T', ' ')}
                     </div>
                   )}
+                  <FnbSnapshot order={o} />
                   <div className="flex justify-end gap-2 pt-1">
-                    {o.status === 'sent' && (
-                      <Button size="sm" onClick={() => acknowledge(o)} disabled={busy}>
+                    {canManage && o.status === 'sent' && (
+                      <Button size="sm" onClick={() => acknowledge(o)} disabled={transitioningId != null || Boolean(o.needs_review && o.event_fingerprint)}>
                         {busy
                           ? <RefreshCw className="w-4 h-4 mr-1 animate-spin" />
                           : <Check className="w-4 h-4 mr-1" />}
                         Onayla
                       </Button>
                     )}
-                    {o.status === 'acknowledged' && (
-                      <Button size="sm" onClick={() => complete(o)} disabled={busy}>
+                    {canManage && o.status === 'acknowledged' && (
+                      <Button size="sm" onClick={() => complete(o)} disabled={transitioningId != null || Boolean(o.needs_review && o.event_fingerprint)}>
                         {busy
                           ? <RefreshCw className="w-4 h-4 mr-1 animate-spin" />
                           : <CheckCheck className="w-4 h-4 mr-1" />}
                         Tamamla
                       </Button>
                     )}
+                    {canManage && ['sent', 'acknowledged'].includes(o.status) && <Button size="sm" variant="outline" disabled={transitioningId != null} onClick={() => cancelOrder(o)}>İptal talebi</Button>}
+                    {canManage && o.status === 'cancel_requested' && <Button size="sm" disabled={transitioningId != null} onClick={() => transitionOrder(o, 'cancelled', 'Mutfak iptali kabul etti')}>İptali kabul et</Button>}
                   </div>
                 </CardContent>
               </Card>

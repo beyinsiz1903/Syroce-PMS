@@ -3,8 +3,8 @@ name: Frontend Quality Gates
 on:
     push:
         branches: [main, develop, staging]
-    pull_request:
-        branches: [main, develop]
+    # Do not silently skip quality gates on stacked/feature-targeted PRs.
+    pull_request: {}
 
 env:
     NODE_VERSION: '22'

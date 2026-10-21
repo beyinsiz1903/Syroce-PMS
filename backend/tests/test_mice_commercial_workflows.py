@@ -92,7 +92,7 @@ async def test_actuals_are_not_revenue_or_cash_and_stale_save_is_rejected(wired)
     original = await event(wired)
     before = await mice.get_event_actuals("event", USER)
     assert before["report"]["actual_cost"] is None
-    body = mice.EventActualsIn(actual_pax=18, guaranteed_pax=20, budget_cost=30,
+    body = mice.EventActualsIn(actual_pax=18, guaranteed_pax=20, budget_cost=30, costs_complete=True,
                               costs=[{"name": "Consumed meals", "category": "food", "quantity": 18, "unit_cost": 2.5}], expected_revision=original["created_at"])
     await mice.save_event_actuals("event", body, USER)
     report = await mice.get_event_actuals("event", USER)

@@ -1,5 +1,5 @@
 """Pure financial and scheduling contracts for banquet operations."""
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 
 
@@ -38,7 +38,13 @@ def instant(value):
     return datetime.fromisoformat(value.replace("Z", "+00:00")) if isinstance(value, str) else value
 
 
+def occupancy_window(booking: dict) -> dict:
+    return {"starts_at": instant(booking["starts_at"]) - timedelta(minutes=booking.get("setup_minutes", 0)),
+            "ends_at": instant(booking["ends_at"]) + timedelta(minutes=booking.get("teardown_minutes", 0))}
+
+
 def overlaps(left, right) -> bool:
+    left, right = occupancy_window(left), occupancy_window(right)
     a, b = instant(left["starts_at"]), instant(left["ends_at"])
     c, d = instant(right["starts_at"]), instant(right["ends_at"])
     # Naive legacy entries are venue-local wall times. For mixed legacy rows
@@ -69,12 +75,13 @@ def protect_paid_schedule(previous: list, proposed: list) -> None:
                 raise ValueError("Ödenmiş taksit silinemez, taşınamaz veya değiştirilemez")
 
 
-def peak_usage(windows: list, allocations: list) -> float:
+def peak_usage(windows: list, allocations: list) -> Decimal:
     """Peak concurrent inventory, not sum of unrelated bookings in an envelope."""
     all_windows = windows + [w for bookings, _qty in allocations for w in bookings]
     zone = next((instant(w["starts_at"]).tzinfo for w in all_windows if instant(w["starts_at"]).tzinfo), UTC)
 
     def interval(w):
+        w = occupancy_window(w)
         values = [instant(w[k]) for k in ("starts_at", "ends_at")]
         return tuple(v.replace(tzinfo=zone) if v.tzinfo is None else v for v in values)
 
@@ -82,4 +89,4 @@ def peak_usage(windows: list, allocations: list) -> float:
     others = [([interval(w) for w in bookings], qty) for bookings, qty in allocations]
     points = {s for s, _e in desired}
     points.update(s for spans, _qty in others for s, _e in spans if any(a <= s < b for a, b in desired))
-    return max((sum(qty for spans, qty in others if any(s <= p < e for s, e in spans)) for p in points), default=0)
+    return max((sum((money(qty) for spans, qty in others if any(s <= p < e for s, e in spans)), Decimal(0)) for p in points), default=Decimal(0))
