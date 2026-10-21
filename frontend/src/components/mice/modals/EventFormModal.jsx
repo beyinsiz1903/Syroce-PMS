@@ -142,7 +142,8 @@ const EventFormModal = ({
                 <Plus className="w-3 h-3 mr-1" /> Mekan Ekle
               </Button>
             </div>
-            {form.space_bookings.map((sb, i) => <div key={sb.id || i} className="grid grid-cols-12 gap-1 mb-1.5 items-center">
+            <p className="mb-2 text-xs text-muted-foreground">Kurulum ve söküm tamponları salon/stok müsaitliğini bloke eder; kira yalnız servis süresinden hesaplanır. Saatleri tesisin yerel saatine göre girin.</p>
+            {form.space_bookings.map((sb, i) => <div key={sb.id || i} className="grid grid-cols-12 gap-1 mb-3 items-center rounded border p-2">
                 <select className="col-span-3 border rounded px-1 py-1 text-xs" value={sb.space_id} onChange={e => setSb(i, {
               space_id: e.target.value
             })}>
@@ -162,6 +163,7 @@ const EventFormModal = ({
                 </select>
                 <Input className="col-span-1 text-xs" aria-label={`Salon ${i + 1} kişi sayısı`} type="number" min="0" value={sb.expected_pax ?? form.expected_pax} onChange={e => setSb(i, { expected_pax: Number(e.target.value) })} />
                 <Button type="button" size="sm" variant="ghost" className="col-span-1" onClick={() => rmSb(i)}><Trash2 className="w-3 h-3" /></Button>
+                {[['setup_minutes', 'Kurulum (dk)'], ['teardown_minutes', 'Söküm (dk)']].map(([key, label]) => <label key={key} className="col-span-6 text-xs">{label}<Input type="number" min="0" max="1440" step="1" value={sb[key] || 0} onChange={e => setSb(i, { [key]: Number(e.target.value) })} /></label>)}
               </div>)}
           </div>
           <div>

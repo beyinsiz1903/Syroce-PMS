@@ -94,6 +94,7 @@ def env(monkeypatch):
     fake_db = _FakeDB()
     monkeypatch.setattr(mice_router, "get_system_db", lambda: fake_db)
     monkeypatch.setattr(mice_router, "_tenant_currency_code", AsyncMock(return_value="TRY"))
+    monkeypatch.setattr("core.entitlements.enforcement.tenant_has_feature", AsyncMock(return_value=True))
 
     # Patch with_resource_locks to directly call the callback (standalone fallback or direct callback execution)
     async def _fake_locks(*args, callback, **kwargs):
@@ -164,6 +165,15 @@ def test_signature_workflow_happy_path(env):
     audit_row = env.db.audit_logs.inserted[0]
     assert audit_row["action"] == "beo.sign"
     assert audit_row["entity_id"] == _EVENT_ID
+
+
+def test_approval_request_and_amendment_require_banquet_when_enforced(env, monkeypatch):
+    monkeypatch.setenv("ENTITLEMENT_ENFORCEMENT_MODE", "enforce")
+    monkeypatch.setattr("core.entitlements.enforcement.tenant_has_feature", AsyncMock(return_value=False))
+    for suffix, body in [("signature/request", {"client_email": "client@example.com"}),
+                         ("amendment", {"reason": "Customer requested a change", "expected_revision": "revision"})]:
+        response = env.client.post(f"/api/mice/events/{_EVENT_ID}/{suffix}", json=body)
+        assert response.status_code == 403, response.text
 
 
 def test_public_verify_invalid_token_returns_400(env):

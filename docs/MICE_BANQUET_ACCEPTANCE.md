@@ -13,9 +13,9 @@ Pazar karşılaştırmasında [Amadeus Delphi](https://www.amadeus-hospitality.c
 | Alan | Kullanıcı işlemleri | Bu daldaki durum | Kalan kabul |
 | --- | --- | --- | --- |
 | Etkinlik listesi | Arama, durum/tarih filtresi, sayfalama, oluşturma, düzenleme, durum geçişi, silme, geçmiş | Filtre kapsamı, toplam kayıt sayısı, açık pipeline ve geçerli durum seçenekleri düzeltildi | Büyük canlı otel listesinde performans ve görev bazlı yetkiler |
-| Etkinlik formu | Müşteri, tarih, salon, kapasite, kaynak, program, teknik gereksinim, personel, ödeme planı | Ters/çakışan aralık, negatif/sonlu olmayan tutar ve sahte ödeme engelleri; kayıt tekrarına karşı istek kimliği | Kurulum/söküm tamponları ve zaman dilimi göçü |
+| Etkinlik formu | Müşteri, tarih, salon, kapasite, kaynak, program, teknik gereksinim, personel, ödeme planı | Kurulum/söküm tamponlarıyla salon ve stok müsaitliği; servis süresinden kira; girdi, tekrar ve ödeme korumaları | Tesis saat diliminde ortak veri göçü |
 | Mekanlar | Ekle, düzenle, sil, pasiflik, düzen kapasiteleri, kira tarifesi | Etkinlikle aynı `mice_spaces` kataloğunda doğrudan yönetim eklendi | Bölünebilir/birleşebilir salonlar, çizim ve masa yerleşimi |
-| Function Diary | Aylık, liste, gün bazlı saat çizelgesi, tarih gezinme | İptal/lead kayıtları doluluk sayılmıyor; salonun gerçek kullanım günü ve gece saatleri hesaba katılıyor | Tüm zaman dilimleri, tamponlar, sürükle bırak ve çakışma önizlemesi |
+| Function Diary | Aylık, liste, gün bazlı saat çizelgesi, tarih gezinme | İptal/lead doluluk sayılmıyor; kurulum/söküm tamponları önceki/sonraki günde de müsaitliği etkiliyor | Tüm zaman dilimleri, sürükle bırak ve çakışma önizlemesi |
 | Müşteriler | Kurumsal hesap oluştur/düzenle/sil, ilgili kişi ekleme/listeleme | Eksik hesap düzenleme arayüzü bağlandı | İlgili kişi düzenleme/silme arayüzü, tek birincil kişi kuralı, gelişmiş CRM takibi |
 | Menüler | Ekle/düzenle/sil, fiyat, alerjen, diyet, asgari kişi, hazırlık süresi | Servis sırası/içerik düzenleme eklendi; çift fiyat tabanı engellendi | Kişiye özel diyet sayıları ve reçete maliyeti |
 | Envanter | Ekle/düzenle/sil, stok ve birim fiyat | Eksik düzenleme bağlandı; eşzamanlı en yüksek kullanım ve aktif tahsis koruması | Tedarikçi kiralama, sevkiyat/iade, dış mekan için ayrı kullanım penceresi |
@@ -25,8 +25,8 @@ Pazar karşılaştırmasında [Amadeus Delphi](https://www.amadeus-hospitality.c
 | BEO | Görüntüle, PDF indir/gönder, yazdır, sürüm kaydet, müşteri onayı, revizyon aç, muhasebeleştir | Kayıtlı içerikten PDF, atomik sürüm numarası, eski onayın arşivlenmesi ve yeni onay gereksinimi | Ayrıntılı satır farkı ve departman teslim/onay takibi |
 | Katılım ve maliyet | Gerçek/garanti kişi, bütçe, tüketim ve personel maliyeti gir, teklif bazlı katkıyı gör | Finans yetkisi ve gelişmiş raporlama özelliğiyle korunur; veri eksikse maliyeti sıfır olarak sunmaz | Reçeteden otomatik sarf, bordro maliyeti, gerçekleşmiş muhasebe geliriyle kârlılık |
 | Müşteri onay sayfası | Bağlantıyla görüntüle, ad ve açık rıza ile onayla | Özel, süreli bağlantı; genel değişiklik eski daveti iptal eder; imzalı kayıt kilitlenir | Nitelikli elektronik imza sağlayıcısı entegrasyonu ayrı kapsamdır |
-| Mutfak siparişleri | Gönder, listele, teslim alındı, tamamla | Sıfır miktarın tüm kişi sayısına dönüşmesi önlendi; durum yazımı karşılaştırmalı; sipariş dövizi korunuyor | Etkinlik değişikliği/iptali sonrası revizyon ve iptal iş emri |
-| Günlük operasyon | Tarih seç, fonksiyonları görüntüle/yazdır | Başka günün salon saatleri seçilen güne taşınmıyor | Departman bazlı görev atama, teslim ve gerçekleşen kişi/sarf kaydı |
+| Mutfak siparişleri | Gönder, listele, teslim alındı, tamamla, iptal talebi, iptali kabul et, yeni sürüm gönder | Aynı içerik tek emir; değişen/iptal etkinlik için uyarı; açık eski emir iptal edilmeden revizyon gönderilemez; kayıtlı içerik/alerjen dökümü gösterilir | Gerçek mutfak ekibi kabulü, kişi bazlı diyet dağılımı ve otomatik reçete/stok sarfı |
+| Günlük operasyon | Tarih seç, fonksiyonları görüntüle/yazdır; BEO'dan görev ve ekipman teslim/iade planı | Görev atama, teslim alma, tamamlama ve gerekçeli iptal; rezervasyon miktarını aşmayan ekipman planı | Departmana özel kullanıcı/izin matrisi, otomatik bildirim, kısmi teslim ve iade |
 | Operasyon kontrolü | Eksikleri ve ödeme planı durumunu incele, etkinliği aç | Sorumlu, iletişim, salon, program ve gecikmiş plan satırı kontrolleri eklendi | Gerçek banka/kasa mutabakatı değildir; sayfa kapsamı açıkça belirtilir |
 
 ## Düzeltilen veri ve hesap sözleşmeleri
@@ -54,26 +54,36 @@ Satış teklifi net salon ve kaynak fiyatlarından hesaplanır. İsteğe bağlı
 
 Ödeme takvimindeki ödendi işareti kasa/banka hareketi üretmez. Bağlı rezervasyon varsa doğrudan yevmiye oluşturma kapalıdır; tamamlanma folyo devrini kullanır. Bağımsız etkinlik yevmiyesinde vergi 391, net gelir/servis 600 hesabına ayrılır; hesapların aktif olması gerekir. Aktarım süresince satış düzenlemesi kilitlenir, belirsiz sonuç aynı anahtar/kurla tekrar edilir. Gerçek tahsilat/iade ve folyo bakiyesi için canlı mutabakat halen gereklidir.
 
-Her etkinlikte en fazla 25 değişmez BEO içerik sürümü saklanır. Onay bağlantısı belirli sürüme bağlıdır. Muhasebeleşmemiş açık onaylı etkinliğe gerekçeli revizyon açılınca eski belge ve müşteri onayı arşivde kalır; yeni içeriğe otomatik onay taşınmaz. Bu geçmişi bulunan etkinlik silinemez. Katılım/maliyet analizi gerçekleşmiş gelir veya muhasebe kârı değil, vergisiz teklif üzerinden katkı hesabıdır.
+Her etkinlikte en fazla 25 değişmez BEO içerik sürümü saklanır. Onay bağlantısı belirli sürüme bağlıdır. Muhasebeleşmemiş açık onaylı etkinliğe gerekçeli revizyon açılınca eski belge ve müşteri onayı arşivde kalır; yeni içeriğe otomatik onay taşınmaz. Bu geçmişi bulunan etkinlik silinemez. Katılım/maliyet analizi gerçekleşmiş gelir veya muhasebe kârı değil, vergisiz teklif üzerinden katkı hesabıdır. Tüm maliyetlerin girildiği ayrıca onaylanmadan katkı tutarı gösterilmez.
+
+Kurulum ve söküm tamponları salonun yanı sıra ayrılan envanterin müsaitliğine de dahildir; kira yalnız servis süresindendir. Yeni arayüzde açıkça girilen 0 veya 1 menü miktarı korunur. Eski API istemcilerinin kişi başı menüde `quantity=1` ile tam etkinlik pax seçme sözleşmesi yalnız `quantity_mode` belirtilmemiş isteklerde korunur; yeni arayüz `explicit` gönderir.
+
+Mutfak emri menü ve alerjen içeriğini gönderildiği haliyle saklar. Aynı içerik tekrar gönderildiğinde ikinci üretim emri oluşmaz. Revizyon öncesinde açık eski emir için iptal talebi gönderilir ve mutfak iptali kabul eder; yeni sürüm eski emri referanslayabilir. Departman görevleri ve ekipman teslim/iade kayıtları BEO'dan yönetilir; fiziksel stok sayımı veya gerçek tahsilat yerine geçmez.
 
 Üst düzey ürün için kalan geliştirme sırası:
 
 1. Gerçek tahsilat–iade sözleşmesi; karma vergi, minimum harcama, komisyon ve ters kayıt kuralları.
 2. Sürümler arası satır farkı ve müşteri/departmanlara değişiklik bildirimi.
-3. Birleşen/bölünen salon hiyerarşisi, kurulum/söküm tamponları ve tesisin saat diliminde ortak takvim.
+3. Birleşen/bölünen salon hiyerarşisi ve tesisin saat diliminde ortak takvim.
 4. Reçeteden stok sarfı ve personel/bordro maliyetiyle gerçekleşmiş muhasebe kârlılığı.
-5. Mutfak revizyonu/iptali, ekipman teslim/iade ve departman görev/onay süreçleri.
+5. Departmanlara özel görev yetkileri, otomatik bildirim ve kısmi ekipman teslim/iade süreçleri.
 6. Fırsat–teklif–etkinlik–grup oda bloğu dönüşümünün tek kayıt üzerinden yürütülmesi.
 7. Mobil operasyon, çok tesis, erişilebilirlik ve tüm dillerde metin/çıktı kabulü.
 
 ## Doğrulama yöntemi
 
-Son birleşik yerel test turu: 134 backend testi, 33 frontend testi ve 10 masaüstü/telefon tarayıcı testi geçti. Backend turu gerçek BEO PDF üretimini de içerdi; atlanan test yoktu. Üretim derlemesi, Ruff, değişen arayüzlerin ESLint kontrolü ve tema kontrolü başarılıydı. Bu sayılar tüm PMS testlerinin veya canlı kabulün tamamı değildir.
+Son birleşik yerel test turu: 146 backend testi, 36 frontend testi ve 12 masaüstü/telefon tarayıcı testi geçti. Backend turu gerçek BEO PDF üretimini de içerdi; atlanan test yoktu. Üretim derlemesi, Ruff, değişen arayüzlerin ESLint kontrolü ve tema kontrolü başarılıydı. Bu sayılar tüm PMS testlerinin veya canlı kabulün tamamı değildir.
+
+PR sırası: #1379 temel bütünlük → #1380 ticari belge/fiyat/maliyet → #1381 salon ve departman operasyonları. #1379 birleştirildi; #1380 main üzerine yeniden tabanlandı. Son paket, feature dalını hedefleyen bağlı PR'lerde sessizce atlanan CI tetikleyicisini de düzeltir; yalnız PR testlerinde eski tur yeni turla değiştirilir, dağıtım koşulları değişmez.
+
+CI sırasında yayınlanan SDK uyumluluk yamaları için mobil `expo` ve `expo-router` bağımlılıkları güncellendi. Mobil yapılandırma/TypeScript, 185 birim testi ve Expo Doctor 21/21 kontrolü yerelde geçti. Yeni IPA veya mağaza yayını yapılmadı.
 
 Backend testleri gerçek kurum, e-posta veya misafir kaydı göndermez. Yerel MongoDB kabul veritabanı her çalışmada benzersiz ad alır ve yalnız o veritabanı temizlenir. Replica set üzerinde salon yarışında bir işlem kazanmalı; standalone MongoDB üzerinde atomik garanti verilemiyorsa iki işlem de kapalı kalmalıdır.
 
 - `backend/tests/unit/test_mice_integrity.py`: girdi, zaman, para, değişmez ödeme ve fiyat koruması.
 - `backend/tests/test_mice_mongo_acceptance.py`: gerçek sorgular, tesis ayrımı, stok, ödeme, durum yarışı, folyo tekilleştirme, rakip dövizi ve operasyon günü.
+- `backend/tests/test_mice_commercial_workflows.py`: değişmez belge, onay revizyonu, fiyat bileşenleri, maliyet ve muhasebe aktarım korumaları.
+- `backend/tests/test_mice_function_operations.py`: hazırlık tamponları, görev/ekipman adımları, mutfak iptal/revizyonu ve paralel gönderim.
 - Mevcut MICE döviz, kota, BEO PDF/e-posta ve müşteri onay regresyon testleri.
 - `frontend/src/components/mice/__tests__/MiceWorkflow.test.jsx` ve mevcut MICE sayfa/sipariş testleri.
 - `frontend/playwright.mice-local.config.js`: masaüstü ve telefon boyutunda gerçek Chrome; yapay API cevaplarıyla salon, etkinlik, teklif, kontrol listesi, müşteri onayı ve yazdırma yüzeyleri. Bu, gerçek backend ile uçtan uca canlı kabul değildir.

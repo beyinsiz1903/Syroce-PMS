@@ -8,6 +8,8 @@ import { eventReadiness } from '../ReadinessPanel';
 import PublicMiceBeoPage from '@/pages/PublicMiceBeoPage';
 import QuoteTotals from '../QuoteTotals';
 import EventCommercialPanel from '../EventCommercialPanel';
+import OperationTasks from '../OperationTasks';
+import FnbSnapshot from '../FnbSnapshot';
 
 vi.mock('axios', () => ({ default: { get: vi.fn(), post: vi.fn(), put: vi.fn(), delete: vi.fn() } }));
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
@@ -55,6 +57,30 @@ describe('Function diary availability', () => {
   it('ignores terminal events in the readiness list', () => {
     expect(eventReadiness({ status: 'cancelled' }, '2026-10-21')).toEqual([]);
     expect(eventReadiness({ status: 'lead', totals: { grand_total: 100 } }, '2026-10-21')).toContain('Ödeme planı eksik');
+  });
+  it('includes the setup time on the preceding calendar day', () => {
+    const events = [{ status: 'confirmed', space_bookings: [{ space_id: 'hall', starts_at: '2026-10-21T00:15', ends_at: '2026-10-21T01:00', setup_minutes: 60 }] }];
+    expect(bookedSpacesOnDate(events, '2026-10-20').has('hall')).toBe(true);
+  });
+});
+
+describe('Departmental operations', () => {
+  it('records a department task through its scoped API without changing revenue', async () => {
+    axios.get.mockResolvedValue({ data: { tasks: [], equipment: [], event_status: 'definite' } });
+    axios.post.mockResolvedValue({ data: { id: 'task' } });
+    render(<OperationTasks eventId="event" canManage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Yeni görev / teslim planı' }));
+    fireEvent.change(screen.getByLabelText('Görev başlığı'), { target: { value: 'Sahneyi hazırla' } });
+    fireEvent.change(screen.getByLabelText('Sorumlu kişi'), { target: { value: 'Yapay teknisyen' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Görevi kaydet' }));
+    await waitFor(() => expect(axios.post).toHaveBeenCalledWith('/mice/events/event/tasks', expect.objectContaining({ title: 'Sahneyi hazırla', owner_name: 'Yapay teknisyen', client_request_id: expect.any(String) })));
+    expect(axios.post.mock.calls.every(([url]) => !url.includes('payment'))).toBe(true);
+  });
+  it('shows the frozen meal and allergens with a revision warning', () => {
+    render(<FnbSnapshot order={{ needs_review: true, lines: [{ name: 'Örnek menü', quantity: 20, unit: 'pax', menu_snapshot: { allergens: ['milk'], dietary_tags: ['vegetarian'], courses: [{ name: 'Çorba' }] } }] }} />);
+    expect(screen.getByRole('alert')).toHaveTextContent('teyit edin');
+    expect(screen.getByText('Alerjenler: milk')).toBeInTheDocument();
+    expect(screen.getByText('1. Çorba')).toBeInTheDocument();
   });
 });
 

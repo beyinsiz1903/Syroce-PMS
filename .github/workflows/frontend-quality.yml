@@ -3,8 +3,12 @@ name: Frontend Quality Gates
 on:
     push:
         branches: [main, develop, staging]
-    pull_request:
-        branches: [main, develop]
+    # Do not silently skip quality gates on stacked/feature-targeted PRs.
+    pull_request: {}
+
+concurrency:
+    group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+    cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
     NODE_VERSION: '22'

@@ -7,7 +7,7 @@ import { formatCurrency } from '@/lib/currency';
 import { promptDialog } from '@/lib/dialogs';
 import apiErrorText from '@/utils/apiErrorText';
 
-const emptyActuals = { actual_pax: 0, guaranteed_pax: 0, budget_cost: 0, costs: [], notes: '' };
+const emptyActuals = { actual_pax: 0, guaranteed_pax: 0, budget_cost: 0, costs: [], costs_complete: false, notes: '' };
 export default function EventCommercialPanel({ eventId, canManage, canFinance, canActuals, refreshKey, onChanged }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
@@ -92,6 +92,7 @@ export default function EventCommercialPanel({ eventId, canManage, canFinance, c
       </div>)}
       <Button type="button" size="sm" variant="outline" disabled={actuals.costs.length >= 100} onClick={() => setActuals({ ...actuals, costs: [...actuals.costs, { name: '', category: 'food', quantity: 1, unit_cost: 0 }] })}>Maliyet kalemi ekle</Button>
       <label className="block text-xs">Analiz notu<Input maxLength={2000} value={actuals.notes} onChange={e => setActuals({ ...actuals, notes: e.target.value })} /></label>
+      <label className="flex items-start gap-2 text-xs"><input type="checkbox" checked={actuals.costs_complete} onChange={e => setActuals({ ...actuals, costs_complete: e.target.checked })} />Tüm yiyecek, içecek, personel ve diğer maliyetleri girdim. Teklif bazlı katkıyı hesapla.</label>
       {report && <p className="text-sm">Vergisiz teklif: {formatCurrency(report.report.quoted_net_revenue, report.currency)} · Kayıtlı maliyet: {report.report.actual_cost == null ? 'Henüz girilmedi' : formatCurrency(report.report.actual_cost, report.currency)} · Teklif bazlı katkı: {report.report.quote_based_contribution == null ? 'Henüz hesaplanamaz' : formatCurrency(report.report.quote_based_contribution, report.currency)}</p>}
       <Button disabled={busy} type="submit">Katılım ve maliyeti kaydet</Button>
     </form>}

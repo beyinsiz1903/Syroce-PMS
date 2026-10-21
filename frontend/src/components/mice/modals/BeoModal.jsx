@@ -10,6 +10,7 @@ import { promptDialog } from '@/lib/dialogs';
 import { Info, Modal } from '../_shared';
 import QuoteTotals from '../QuoteTotals';
 import EventCommercialPanel from '../EventCommercialPanel';
+import OperationTasks from '../OperationTasks';
 import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 const downloadBeoPdf = async (eventId, eventName) => {
   try {
@@ -235,6 +236,7 @@ const BeoModal = ({
 
       <Card><CardContent className="p-3"><QuoteTotals totals={beoData.event.totals} currency={beoData.event.currency || cachedTenantCurrency()} /></CardContent></Card>
       <div data-mice-screen-only><EventCommercialPanel eventId={beoData.event.id} canManage={canRequestApproval} canFinance={canFinance} canActuals={canActuals} refreshKey={approvalLink} onChanged={onChanged} /></div>
+      <div data-mice-screen-only><OperationTasks eventId={beoData.event.id} canManage={canRequestApproval} /></div>
 
       {approvalLink && <label data-mice-screen-only className="block space-y-1 text-xs">Müşteriye özel onay bağlantısı — otomatik gönderilmez<Input readOnly value={approvalLink} onFocus={e => e.target.select()} /></label>}
       <div className="text-right flex flex-wrap justify-end gap-2">
