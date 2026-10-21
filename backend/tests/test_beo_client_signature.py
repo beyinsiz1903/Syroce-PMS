@@ -7,8 +7,10 @@ Locks in regressions for:
 """
 from __future__ import annotations
 
+from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import jwt
 import pytest
@@ -36,6 +38,8 @@ _BASE_EVENT = {
 
 
 class _FakeCursor:
+    async def to_list(self, length=None):
+        return list(self._docs)
     def __init__(self, docs): self._docs = list(docs)
     def __aiter__(self):
         self._it = iter(self._docs); return self
@@ -46,7 +50,7 @@ class _FakeCursor:
 
 class _EventsCollection:
     def __init__(self, events):
-        self._events = {e["id"]: dict(e) for e in events}
+        self._events = {e["id"]: deepcopy(e) for e in events}
 
     async def find_one(self, flt, _proj=None):
         for e in self._events.values():
@@ -59,6 +63,8 @@ class _EventsCollection:
             if e["id"] == flt.get("id") and e["tenant_id"] == flt.get("tenant_id"):
                 if "$set" in update:
                     e.update(update["$set"])
+                for key, value in update.get("$push", {}).items():
+                    e.setdefault(key, []).append(deepcopy(value))
                 return SimpleNamespace(matched_count=1, modified_count=1)
         return SimpleNamespace(matched_count=0, modified_count=0)
 
@@ -87,6 +93,7 @@ class _FakeDB:
 def env(monkeypatch):
     fake_db = _FakeDB()
     monkeypatch.setattr(mice_router, "get_system_db", lambda: fake_db)
+    monkeypatch.setattr(mice_router, "_tenant_currency_code", AsyncMock(return_value="TRY"))
 
     # Patch with_resource_locks to directly call the callback (standalone fallback or direct callback execution)
     async def _fake_locks(*args, callback, **kwargs):

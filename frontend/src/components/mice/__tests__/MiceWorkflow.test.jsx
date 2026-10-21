@@ -6,10 +6,12 @@ import SpacesView from '../SpacesView';
 import { bookedSpacesOnDate } from '../DiaryView';
 import { eventReadiness } from '../ReadinessPanel';
 import PublicMiceBeoPage from '@/pages/PublicMiceBeoPage';
+import QuoteTotals from '../QuoteTotals';
+import EventCommercialPanel from '../EventCommercialPanel';
 
 vi.mock('axios', () => ({ default: { get: vi.fn(), post: vi.fn(), put: vi.fn(), delete: vi.fn() } }));
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
-vi.mock('@/lib/dialogs', () => ({ confirmDialog: vi.fn().mockResolvedValue(true) }));
+vi.mock('@/lib/dialogs', () => ({ confirmDialog: vi.fn().mockResolvedValue(true), promptDialog: vi.fn().mockResolvedValue('Test belge sürümü') }));
 
 beforeEach(() => { vi.clearAllMocks(); });
 
@@ -74,5 +76,30 @@ describe('Public BEO approval', () => {
     fireEvent.click(action);
     await waitFor(() => expect(axios.post).toHaveBeenCalledWith('/mice/public/beo/sign', expect.objectContaining({ token: 'private-test-token', signature_name: 'Test Müşteri' })));
     expect(await screen.findByText(/Müşteri onayı kaydedildi/)).toBeInTheDocument();
+  });
+});
+
+describe('Versioned commercial workflows', () => {
+  it('shows the server-owned discount service and tax without recalculating them', () => {
+    render(<QuoteTotals totals={{ subtotal: 100, discount_total: 10, net_total: 90, service_total: 9, tax_total: 19.8, grand_total: 118.8 }} currency="EUR" />);
+    expect(screen.getByText('İndirim (−)')).toBeInTheDocument();
+    expect(screen.getByText('Servis (+)')).toBeInTheDocument();
+    expect(screen.getByText('Vergi (+)')).toBeInTheDocument();
+    expect(screen.getByText('Ödenecek toplam').nextSibling).toHaveTextContent('118,80');
+  });
+  it('issues a version with concurrency revision and a replay key', async () => {
+    axios.get.mockImplementation(url => Promise.resolve({ data: url.endsWith('/documents') ? { documents: [] } : { id: 'event', status: 'definite', updated_at: 'revision-a' } }));
+    axios.post.mockResolvedValue({ data: { number: 1 } });
+    render(<EventCommercialPanel eventId="event" canManage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'BEO sürümü kaydet' }));
+    await waitFor(() => expect(axios.post).toHaveBeenCalledWith('/mice/events/event/documents', expect.objectContaining({ reason: 'Test belge sürümü', expected_revision: 'revision-a', client_request_id: expect.any(String) })));
+  });
+  it('does not expose costs or financial controls to an operations reader', async () => {
+    axios.get.mockImplementation(url => Promise.resolve({ data: url.endsWith('/documents') ? { documents: [] } : { id: 'event', status: 'definite' } }));
+    render(<EventCommercialPanel eventId="event" canManage={false} canFinance={false} />);
+    await screen.findByText('Henüz kayıtlı belge sürümü yok.');
+    expect(screen.queryByRole('button', { name: 'Katılım / maliyet analizi' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'BEO sürümü kaydet' })).not.toBeInTheDocument();
+    expect(axios.get).not.toHaveBeenCalledWith('/mice/events/event/actuals');
   });
 });

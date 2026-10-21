@@ -33,7 +33,7 @@ from core.booking_atomicity import (
 )
 from core.entitlements.enforcement import get_tenant_limit, require_feature
 from core.entitlements.quota import release_quota, reserve_quota
-from core.mice_integrity import instant, money, overlaps, peak_usage, protect_paid_schedule, rounded
+from core.mice_integrity import instant, money, overlaps, peak_usage, price_breakdown, protect_paid_schedule, rounded
 from core.security import JWT_ALGORITHM, JWT_SECRET, get_current_user
 from core.spa_mice_authz import require_catalog, require_finance, require_mice_ops
 from core.tenant_currency import get_tenant_currency
@@ -936,6 +936,13 @@ class EntertainmentIn(MiceInput):
     fee: float = Field(0, ge=0)
 
 
+class PricingPolicyIn(MiceInput):
+    discount_percent: float = Field(0, ge=0, le=100)
+    service_percent: float = Field(0, ge=0, le=100)
+    tax_percent: float = Field(0, ge=0, le=100)
+    tax_on_service: bool = True
+
+
 class EventIn(MiceInput):
     client_request_id: str | None = None
     expected_revision: str | None = None
@@ -951,6 +958,7 @@ class EventIn(MiceInput):
     status: str = "lead"
     currency: str | None = Field(None, min_length=3, max_length=3, pattern=r"^[A-Za-z]{3}$")
     expected_pax: int = Field(0, ge=0)
+    pricing: PricingPolicyIn | None = None
     start_date: date
     end_date: date
     space_bookings: list[SpaceBookingIn] = Field(default_factory=list)
@@ -1003,11 +1011,14 @@ def _compute_totals(event: dict, spaces_by_id: dict[str, dict]) -> dict:
         amount = money(rates.get("daily_rate")) * days if hours >= 6 else money(rates.get("hourly_rate")) * hours
         space_total += money(rounded(amount))
     resources_total = sum((money(_line_total(r)) for r in event.get("resources", [])), Decimal(0))
-    return {
+    totals = {
         "space_total": rounded(space_total),
         "resources_total": rounded(resources_total),
         "grand_total": rounded(space_total + resources_total),
     }
+    if event.get("pricing") is not None:
+        totals.update(price_breakdown(space_total + resources_total, event["pricing"]))
+    return totals
 
 
 # ── Setup-style capacity validation ─────────────────────────────
@@ -1214,7 +1225,7 @@ async def list_events(
         }},
     ]
     tid = current_user.tenant_id
-    event_cursor = db.mice_events.find(q, {"_id": 0}).sort([("start_date", 1), ("id", 1)])
+    event_cursor = db.mice_events.find(q, {"_id": 0, "document_history": 0, "actuals": 0}).sort([("start_date", 1), ("id", 1)])
     if offset:
         event_cursor = event_cursor.skip(offset)
     (
@@ -1381,9 +1392,9 @@ async def quote_event(body: EventIn, current_user: User = Depends(get_current_us
             raise HTTPException(404, "Etkinlik bulunamadı")
     _snapshot_space_rates(bookings, spaces, (previous or {}).get("space_bookings"))
     resources = await _expand_resource_prices(tid, [r.model_dump() for r in body.resources], body.expected_pax, currency, tenant_currency)
-    totals = _compute_totals({"space_bookings": bookings, "resources": resources}, spaces)
+    totals = _compute_totals({"space_bookings": bookings, "resources": resources, "pricing": body.pricing.model_dump() if body.pricing else None}, spaces)
     return {"currency": currency, "totals": totals, "payment_schedule_total": rounded(sum((money(p.amount) for p in body.payment_schedule), Decimal(0))),
-            "notice": "Salon ve kaynak satış bedeli; müsaitlik garantisi veya tahsilat değildir. Vergi/servis bedeli ayrıca tanımlanmamıştır."}
+            "notice": "Net katalog fiyatı − indirim + servis + tanımlanan vergi. Oranlar tesis tarafından belirlenir; bu teklif fatura, müsaitlik garantisi veya tahsilat değildir." if body.pricing else "Salon ve kaynak satış bedeli; müsaitlik garantisi veya tahsilat değildir. Vergi/servis bedeli ayrıca tanımlanmamıştır."}
 
 
 @router.post("/events")
@@ -1554,7 +1565,7 @@ async def get_event(
     current_user: User = Depends(get_current_user),
 ) -> dict:
     db = get_system_db()
-    ev = await db.mice_events.find_one({"id": event_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
+    ev = await db.mice_events.find_one({"id": event_id, "tenant_id": current_user.tenant_id}, {"_id": 0, "actuals": 0, "document_history": 0})
     if not ev:
         raise HTTPException(404, "Etkinlik bulunamadı")
     ev["currency"] = _normalize_currency(ev.get("currency"), await _tenant_currency_code(current_user.tenant_id))
@@ -1595,7 +1606,7 @@ async def _update_event_impl(
         raise HTTPException(409, "Etkinlik siz formu açtıktan sonra değişti; yenileyip tekrar deneyin")
     if existing.get("status") != body.status:
         raise HTTPException(409, "Durum değişikliği için etkinlik durum işlemini kullanın")
-    if existing.get("status") in {"completed", "cancelled"} or existing.get("signature") or existing.get("gl_journal_entry_id"):
+    if existing.get("status") in {"completed", "cancelled"} or existing.get("signature") or existing.get("gl_journal_entry_id") or existing.get("gl_posting_state") == "pending":
         raise HTTPException(409, "Kapanmış, imzalanmış veya muhasebeleştirilmiş etkinlik değiştirilemez")
     try:
         protect_paid_schedule(existing.get("payment_schedule") or [], body.model_dump(mode="json")["payment_schedule"])
@@ -1631,6 +1642,7 @@ async def _update_event_impl(
     update["totals"] = _compute_totals(update, spaces_by_id)
     # An unsigned approval link belongs to one version, not future edits.
     update["signature_request"] = None
+    update["active_document_id"] = None
 
     holds_active = body.status in {"tentative", "definite", "confirmed"}
     space_ids = [b["space_id"] for b in bookings if b.get("space_id")]
@@ -1749,6 +1761,8 @@ async def change_status(
     if not event:
         raise HTTPException(404, "Etkinlik bulunamadı")
     cur_status = event.get("status", "lead")
+    if event.get("gl_posting_state") == "pending" or (body.status == "cancelled" and event.get("gl_journal_entry_id")):
+        raise HTTPException(409, "Muhasebe aktarımı sürüyor veya ters muhasebe kaydı gerekiyor; etkinlik durumu değiştirilemez")
     if cur_status == "cancelled" and body.status == "lead" and (event.get("signature") or event.get("gl_journal_entry_id")):
         raise HTTPException(409, "İmzalı veya muhasebeleşmiş sürüm yeniden açılamaz; yeni etkinlik/sözleşme gerekir")
     if body.status == "cancelled" and event.get("gl_journal_entry_id"):
@@ -1813,7 +1827,7 @@ async def change_status(
         if inv_err:
             raise HTTPException(409, inv_err)
         # IMPORTANT: tenant_id in write filter (cross-tenant safety).
-        result = await db.mice_events.update_one({"id": event_id, "tenant_id": tenant_id, "status": cur_status}, {"$set": update}, session=session)
+        result = await db.mice_events.update_one({"id": event_id, "tenant_id": tenant_id, "status": cur_status, "updated_at": event.get("updated_at")}, {"$set": update}, session=session)
         if getattr(result, "matched_count", getattr(result, "modified_count", 0)) == 0:
             raise HTTPException(409, "Etkinlik durumu değişti; sayfayı yenileyin")
 
@@ -1863,7 +1877,7 @@ async def change_status(
     else:
         # IMPORTANT: tenant_id in write filter (cross-tenant safety).
         try:
-            result = await db.mice_events.update_one({"id": event_id, "tenant_id": tenant_id, "status": cur_status}, {"$set": update})
+            result = await db.mice_events.update_one({"id": event_id, "tenant_id": tenant_id, "status": cur_status, "updated_at": event.get("updated_at")}, {"$set": update})
             if getattr(result, "matched_count", getattr(result, "modified_count", 0)) == 0:
                 raise HTTPException(409, "Etkinlik durumu değişti; sayfayı yenileyin")
         except Exception as se:
@@ -1975,18 +1989,18 @@ async def delete_event(
     require_mice_ops(current_user)
     db = get_system_db()
     before = await db.mice_events.find_one({"id": event_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
-    if before and (before.get("gl_journal_entry_id") or before.get("signature") or any(p.get("paid") for p in before.get("payment_schedule", []))
+    if before and (before.get("gl_posting_state") == "pending" or before.get("document_history") or before.get("gl_journal_entry_id") or before.get("signature") or any(p.get("paid") for p in before.get("payment_schedule", []))
                    or (before.get("status") == "completed" and before.get("reservation_id") and (before.get("totals") or {}).get("grand_total", 0) > 0)):
-        raise HTTPException(409, "İmzalı, ödemeli veya muhasebeleşmiş etkinlik silinemez")
+        raise HTTPException(409, "Belge sürümü bulunan, imzalı, ödemeli veya muhasebeleşmiş etkinlik silinemez; iptal akışını kullanın")
 
     # Capture quota-relevant state BEFORE deletion so we know whether a
     # release is needed.  Events in ACTIVE_QUOTA_STATUSES hold a ledger
     # reservation; deleting them without releasing leaks that slot forever.
     was_active = (before or {}).get("status") in ACTIVE_QUOTA_STATUSES
 
-    res = await db.mice_events.delete_one({"id": event_id, "tenant_id": current_user.tenant_id})
+    res = await db.mice_events.delete_one({"id": event_id, "tenant_id": current_user.tenant_id, "updated_at": (before or {}).get("updated_at"), "status": (before or {}).get("status")})
     if not res.deleted_count:
-        raise HTTPException(404, "Etkinlik bulunamadı")
+        raise HTTPException(409 if before else 404, "Etkinlik değişti; yenileyin" if before else "Etkinlik bulunamadı")
 
     # Release the quota slot only when the event was actively counted in the
     # ledger at deletion time.  Cancelled / completed events were already
@@ -2096,6 +2110,11 @@ async def beo(event_id: str, current_user: User = Depends(get_current_user)) -> 
                 "end_date",
                 "notes",
                 "totals",
+                "pricing",
+                "updated_at",
+                "created_at",
+                "signature",
+                "gl_journal_entry_id",
                 "lost_reason",
             )
             if k in event
@@ -2110,6 +2129,181 @@ async def beo(event_id: str, current_user: User = Depends(get_current_user)) -> 
         "staff_assignments": event.get("staff_assignments") or [],
         "entertainment": event.get("entertainment") or None,
     }
+
+
+class DocumentIssueIn(MiceInput):
+    reason: str = Field(min_length=5, max_length=500)
+    expected_revision: str | None = None
+    client_request_id: str = Field(min_length=8, max_length=100)
+
+
+def _revision(event: dict) -> str | None:
+    return event.get("updated_at") or event.get("created_at")
+
+
+async def _store_document(event: dict, user: User, reason: str, request_id: str, extra: dict | None = None) -> dict:
+    """One CAS writes a bounded immutable snapshot and its approval request.
+
+    Embedded history avoids an extra Atlas collection and makes version numbers
+    and customer links atomic with the event. Never recursively snapshot history.
+    """
+    history = event.get("document_history") or []
+    replay = next((d for d in history if d.get("request_id") == request_id), None)
+    if replay:
+        return replay
+    if len(history) >= 25:
+        raise HTTPException(409, "Bu etkinlik 25 belge sürümüne ulaştı; geçmişi koruyarak yeni etkinlik açın")
+    snapshot = await beo(event["id"], user)
+    if _revision(snapshot["event"]) != _revision(event):
+        raise HTTPException(409, "Etkinlik değişti; yenileyin")
+    for key in ("signature", "gl_journal_entry_id"):
+        snapshot["event"].pop(key, None)
+    record = {"id": str(uuid.uuid4()), "number": len(history) + 1, "reason": reason,
+              "request_id": request_id, "issued_at": datetime.now(UTC).isoformat(),
+              "issued_by": user.username, "source_revision": _revision(event), "snapshot": snapshot}
+    snapshot["document"] = {k: record[k] for k in ("id", "number", "issued_at", "reason")}
+    values = {"active_document_id": record["id"], "updated_at": record["issued_at"], **(extra or {})}
+    if values.get("signature_request"):
+        values["signature_request"]["document_id"] = record["id"]
+    result = await get_system_db().mice_events.update_one(
+        {"id": event["id"], "tenant_id": user.tenant_id, "updated_at": event.get("updated_at"),
+         "document_history": event.get("document_history"), "status": event["status"], "signature": event.get("signature")},
+        {"$set": values, "$push": {"document_history": record}},
+    )
+    if not result.matched_count:
+        raise HTTPException(409, "Etkinlik değişti; yenileyip tekrar deneyin")
+    _invalidate_mice_events_cache(user.tenant_id)
+    return record
+
+
+@router.get("/events/{event_id}/documents", dependencies=[Depends(require_feature("mice", "banquet_operations"))])
+async def list_beo_documents(event_id: str, current_user: User = Depends(get_current_user)):
+    event = await get_system_db().mice_events.find_one({"id": event_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
+    if not event:
+        raise HTTPException(404, "Etkinlik bulunamadı")
+    return {"documents": [{**{k: v for k, v in row.items() if k in {"id", "number", "reason", "issued_at", "issued_by", "source_revision", "amendment_reason"}},
+                           **({"signature": {k: v for k, v in row["signature"].items() if k in {"name", "signed_at", "document_id"}}} if row.get("signature") else {})} for row in reversed(event.get("document_history") or [])],
+            "active_document_id": event.get("active_document_id")}
+
+
+@router.post("/events/{event_id}/documents", dependencies=[Depends(require_feature("mice", "banquet_operations"))])
+async def issue_beo_document(event_id: str, body: DocumentIssueIn, current_user: User = Depends(get_current_user), _perm=Depends(require_op("manage_sales"))):
+    require_mice_ops(current_user)
+    event = await get_system_db().mice_events.find_one({"id": event_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
+    if not event:
+        raise HTTPException(404, "Etkinlik bulunamadı")
+    if event.get("signature") or event.get("status") in {"completed", "cancelled"}:
+        raise HTTPException(409, "Onaylı veya kapanmış belge için yeni sürüm oluşturulamaz")
+    if body.expected_revision and body.expected_revision != _revision(event) and not any(d.get("request_id") == body.client_request_id for d in event.get("document_history", [])):
+        raise HTTPException(409, "Etkinlik değişti; yenileyin")
+    record = await _store_document(event, current_user, body.reason, body.client_request_id)
+    return {k: v for k, v in record.items() if k != "snapshot"}
+
+
+@router.get("/events/{event_id}/documents/{document_id}/pdf", dependencies=[Depends(require_feature("mice", "banquet_operations"))])
+async def beo_document_pdf(event_id: str, document_id: str, current_user: User = Depends(get_current_user)):
+    from fastapi.responses import Response
+    event = await get_system_db().mice_events.find_one({"id": event_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
+    record = next((d for d in (event or {}).get("document_history", []) if d["id"] == document_id), None)
+    if not record:
+        raise HTTPException(404, "Belge bulunamadı")
+    return Response(_beo_pdf_bytes(record["snapshot"]), media_type="application/pdf",
+                    headers={"Content-Disposition": f'attachment; filename="beo-{event_id}-v{record["number"]}.pdf"'})
+
+
+class AmendmentIn(MiceInput):
+    reason: str = Field(min_length=10, max_length=500)
+    expected_revision: str = Field(min_length=1)
+
+
+@router.post("/events/{event_id}/amendment")
+async def begin_beo_amendment(event_id: str, body: AmendmentIn, current_user: User = Depends(get_current_user), _perm=Depends(require_op("manage_sales"))):
+    require_mice_ops(current_user)
+    db = get_system_db()
+    event = await db.mice_events.find_one({"id": event_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
+    if not event:
+        raise HTTPException(404, "Etkinlik bulunamadı")
+    if not event.get("signature") or event.get("status") in {"completed", "cancelled"} or event.get("gl_journal_entry_id") or event.get("gl_posting_state") == "pending":
+        raise HTTPException(409, "Yalnız açık, müşteri onaylı ve muhasebeleştirilmemiş etkinlik revize edilebilir")
+    if body.expected_revision != _revision(event):
+        raise HTTPException(409, "Etkinlik değişti; yenileyin")
+    doc_id = (event.get("signature_request") or {}).get("document_id")
+    if not doc_id:
+        raise HTTPException(409, "Eski onayın sürüm kaydı yok; onayı değiştirmeden yeni etkinlik açın")
+    history = event.get("document_history") or []
+    if not any(d["id"] == doc_id for d in history):
+        raise HTTPException(409, "Onaylanan sürüm bulunamadı")
+    # Preserve the accepted document and its signature. New edits require a NEW
+    # customer acceptance; this never silently carries an old signature forward.
+    for row in history:
+        if row["id"] == doc_id:
+            row["signature"] = event["signature"]
+            row["amendment_reason"] = body.reason
+    result = await db.mice_events.update_one(
+        {"id": event_id, "tenant_id": current_user.tenant_id, "updated_at": event.get("updated_at"), "signature": event["signature"]},
+        {"$set": {"document_history": history, "signature": None, "signature_request": None, "active_document_id": None,
+                  "status": "definite", "updated_at": datetime.now(UTC).isoformat()}},
+    )
+    if not result.matched_count:
+        raise HTTPException(409, "Etkinlik değişti; yenileyin")
+    await log_audit_event(tenant_id=current_user.tenant_id, user_id=current_user.username, action="beo.amendment",
+                          entity_type="mice_event", entity_id=event_id, details=body.reason, db=db)
+    _invalidate_mice_events_cache(current_user.tenant_id)
+    return {"ok": True, "notice": "Önceki onay arşivlendi; düzenleme sonrasında yeni müşteri onayı gerekir"}
+
+
+class ActualCostLineIn(MiceInput):
+    name: str = Field(min_length=1, max_length=200)
+    category: str = Field(pattern="^(food|beverage|staff|equipment|entertainment|other)$")
+    quantity: float = Field(ge=0)
+    unit_cost: float = Field(ge=0)
+
+
+class EventActualsIn(MiceInput):
+    actual_pax: int = Field(ge=0)
+    guaranteed_pax: int = Field(0, ge=0)
+    budget_cost: float = Field(0, ge=0)
+    costs: list[ActualCostLineIn] = Field(default_factory=list, max_length=100)
+    notes: str = Field("", max_length=2000)
+    expected_revision: str | None = None
+
+
+@router.get("/events/{event_id}/actuals", dependencies=[Depends(require_feature("mice", "advanced_reporting"))])
+async def get_event_actuals(event_id: str, current_user: User = Depends(get_current_user), _perm=Depends(require_op("view_finance_reports"))):
+    require_finance(current_user)
+    event = await get_system_db().mice_events.find_one({"id": event_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
+    if not event:
+        raise HTTPException(404, "Etkinlik bulunamadı")
+    actuals = event.get("actuals")
+    total_cost = rounded(sum((money(line["quantity"]) * money(line["unit_cost"]) for line in (actuals or {}).get("costs", [])), Decimal(0)))
+    totals = event.get("totals") or {}
+    quoted_net = rounded(money(totals.get("grand_total", 0)) - money(totals.get("tax_total", 0)))
+    return {"actuals": actuals, "currency": event.get("currency"), "expected_revision": _revision(event),
+            "report": {"quoted_net_revenue": quoted_net, "actual_cost": total_cost if actuals is not None else None,
+                       "budget_cost": (actuals or {}).get("budget_cost"),
+                       "quote_based_contribution": round(quoted_net - total_cost, 2) if actuals is not None else None},
+            "notice": "Teklif bazlı katkı analizi; gerçekleşmiş gelir, muhasebe kârı, tahsilat veya fatura değildir. Maliyetler etkinlik para biriminde ve vergi hariç girilir."}
+
+
+@router.put("/events/{event_id}/actuals", dependencies=[Depends(require_feature("mice", "advanced_reporting"))])
+async def save_event_actuals(event_id: str, body: EventActualsIn, current_user: User = Depends(get_current_user), _perm=Depends(require_op("view_finance_reports"))):
+    require_finance(current_user)
+    db = get_system_db()
+    event = await db.mice_events.find_one({"id": event_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
+    if not event:
+        raise HTTPException(404, "Etkinlik bulunamadı")
+    if body.expected_revision != _revision(event):
+        raise HTTPException(409, "Etkinlik değişti; yenileyin")
+    actuals = {**body.model_dump(exclude={"expected_revision"}), "recorded_by": current_user.username, "recorded_at": datetime.now(UTC).isoformat()}
+    result = await db.mice_events.update_one(
+        {"id": event_id, "tenant_id": current_user.tenant_id, "updated_at": event.get("updated_at")},
+        {"$set": {"actuals": actuals, "updated_at": actuals["recorded_at"]}},
+    )
+    if not result.matched_count:
+        raise HTTPException(409, "Etkinlik değişti; yenileyin")
+    await log_audit_event(tenant_id=current_user.tenant_id, user_id=current_user.username, action="mice.actuals",
+                          entity_type="mice_event", entity_id=event_id, details="Gerçek katılım ve maliyetler kaydedildi", before_value=event.get("actuals"), after_value=actuals, db=db)
+    return {"ok": True}
 
 
 def _beo_html(payload: dict) -> str:
@@ -2251,7 +2445,7 @@ def _beo_html(payload: dict) -> str:
 </style>
 </head><body>
   <h1>Banquet Event Order — {_e(ev.get("name") or "—")}</h1>
-  <div class="meta">Üretildi: {_e(generated_at)} UTC · Durum: {_e(ev.get("status") or "—")}</div>
+  <div class="meta">Üretildi: {_e(generated_at)} UTC · Durum: {_e(ev.get("status") or "—")} · Belge sürümü: {_e(str((payload.get("document") or {}).get("number", "Taslak")))}</div>
 
   <h2>Etkinlik Bilgileri</h2>
   <table>
@@ -2307,6 +2501,7 @@ def _beo_html(payload: dict) -> str:
   <table class="totals">
     <tr><td class='k'>Mekan Toplamı</td><td class='r'>{_money(totals.get("space_total"))}</td></tr>
     <tr><td class='k'>Kaynak Toplamı</td><td class='r'>{_money(totals.get("resources_total"))}</td></tr>
+    {''.join(f"<tr><td class='k'>{label}</td><td class='r'>{_money(totals[key])}</td></tr>" for key, label in (("discount_total", "İndirim (−)"), ("net_total", "İndirim sonrası net"), ("service_total", "Servis (+)"), ("tax_total", "Vergi (+)")) if key in totals)}
     <tr class='grand'><td class='k'>GRAND TOTAL</td><td class='r'>{_money(totals.get("grand_total"))}</td></tr>
   </table>
 
@@ -2500,7 +2695,7 @@ async def replace_payment_schedule(
     existing = await db.mice_events.find_one({"id": event_id, "tenant_id": current_user.tenant_id})
     if not existing:
         raise HTTPException(404, "Etkinlik bulunamadı")
-    if existing.get("signature") or existing.get("gl_journal_entry_id") or existing.get("status") in {"completed", "cancelled"}:
+    if existing.get("signature") or existing.get("gl_journal_entry_id") or existing.get("gl_posting_state") == "pending" or existing.get("status") in {"completed", "cancelled"}:
         raise HTTPException(409, "Kapanmış veya onaylanmış etkinliğin ödeme planı değiştirilemez")
     try:
         protect_paid_schedule(existing.get("payment_schedule") or [], [it.model_dump(mode="json") for it in body.items])
@@ -2998,10 +3193,9 @@ async def create_beo_signature_request(
     token = jwt.encode(claims, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
     # Store token in event for verification/revocation
-    await db.mice_events.update_one(
-        {"id": event_id, "tenant_id": current_user.tenant_id},
-        {"$set": {"signature_request": {"client_email": payload.client_email.strip().lower(), "expires_at": exp.isoformat(), "token": token, "created_at": datetime.now(UTC).isoformat()}}},
-    )
+    await _store_document(event, current_user, "Müşteri onayı için düzenlendi", claims["jti"], {
+        "signature_request": {"client_email": payload.client_email.strip().lower(), "expires_at": exp.isoformat(), "token": token, "created_at": datetime.now(UTC).isoformat()}
+    })
 
     return {"token": token, "signature_url": f"/public/mice/beo?token={token}"}
 
@@ -3026,6 +3220,13 @@ async def verify_public_beo(token: str):
     req = event.get("signature_request") or {}
     if req.get("token") != token:
         raise HTTPException(status_code=400, detail="Geçersiz veya iptal edilmiş imza talebi")
+
+    if req.get("document_id"):
+        document = next((d for d in event.get("document_history", []) if d["id"] == req["document_id"]), None)
+        if not document or event.get("active_document_id") != req["document_id"]:
+            raise HTTPException(400, "Belge sürümü artık geçerli değil; yeni bağlantı isteyin")
+        return {**document["snapshot"], "event": {**document["snapshot"]["event"], "status": event["status"]},
+                "signed": bool(event.get("signature")), "signature": {k: v for k, v in (event.get("signature") or {}).items() if k in {"name", "signed_at", "document_id"}}}
 
     spaces_by_id = {s["id"]: s async for s in db.mice_spaces.find({"tenant_id": tenant_id})}
     space_lines = []
@@ -3096,7 +3297,9 @@ async def sign_public_beo(payload: SignatureSubmitIn, request: Request = None):
     if req.get("token") != payload.token:
         raise HTTPException(status_code=400, detail="Geçersiz veya iptal edilmiş imza talebi")
 
-    if event.get("status") == "confirmed" and "signature" in event:
+    if req.get("document_id") and req["document_id"] != event.get("active_document_id"):
+        raise HTTPException(409, "Belge değişti; yeni onay bağlantısı isteyin")
+    if event.get("status") == "confirmed" and event.get("signature"):
         return {"success": True, "already_signed": True}
 
     cur_status = event.get("status", "lead")
@@ -3113,6 +3316,7 @@ async def sign_public_beo(payload: SignatureSubmitIn, request: Request = None):
         "updated_at": datetime.now(UTC).isoformat(),
         "confirmed_at": datetime.now(UTC).isoformat(),
         "signature": {
+            "document_id": req.get("document_id"),
             "name": payload.signature_name.strip(),
             "signed_at": datetime.now(UTC).isoformat(),
             "ip_address": request.client.host if request and request.client else None,
@@ -3174,7 +3378,7 @@ async def sign_public_beo(payload: SignatureSubmitIn, request: Request = None):
 # ─────────────────────────────────────────────────────────────────────
 # MICE / BEO -> Folio İşleme
 # ─────────────────────────────────────────────────────────────────────
-class BeoGLPostIn(BaseModel):
+class BeoGLPostIn(MiceInput):
     exchange_rate: float | None = Field(
         None,
         gt=0,
@@ -3204,6 +3408,12 @@ async def post_beo_to_folio(
     amount = round(float((event_doc.get("totals") or {}).get("grand_total", 0) or 0), 2)
     if amount <= 0:
         raise HTTPException(status_code=400, detail="Muhasebeleştirilecek etkinlik tutarı bulunamadı")
+    if event_doc.get("reservation_id"):
+        raise HTTPException(409, "Rezervasyon bağlantılı etkinlik tamamlanınca folyoya aktarılır; mükerrer gelir oluşturmamak için doğrudan yevmiye yazılamaz")
+    if event_doc.get("gl_journal_entry_id"):
+        return {"status": "success", "already_posted": True, "journal_entry_id": event_doc["gl_journal_entry_id"],
+                "currency": event_doc.get("gl_currency"), "foreign_amount": event_doc.get("gl_foreign_amount"),
+                "exchange_rate": event_doc.get("gl_exchange_rate"), "base_amount_try": event_doc.get("gl_base_amount")}
     tenant_currency = await _tenant_currency_code(tenant_id)
     event_currency = _normalize_currency(event_doc.get("currency"), tenant_currency)
     exchange_rate = payload.exchange_rate if payload else None
@@ -3216,12 +3426,30 @@ async def post_beo_to_folio(
                 status_code=409,
                 detail=f"{event_currency} etkinlik için TRY muhasebe kuru zorunludur",
             )
-        base_amount = round(amount * exchange_rate, 2)
+        base_amount = rounded(money(amount) * money(exchange_rate))
         foreign_fields = {
             "currency": event_currency,
             "foreign_amount": amount,
             "exchange_rate": exchange_rate,
         }
+    tax = money((event_doc.get("totals") or {}).get("tax_total", 0))
+    rate = money(exchange_rate) if foreign_fields else Decimal(1)
+    base_tax = rounded(tax * rate)
+    revenue = rounded(money(base_amount) - money(base_tax))
+    revenue_foreign = {**foreign_fields, "foreign_amount": rounded(money(amount) - tax)} if foreign_fields else {}
+    credit_lines = [{"account_code": "600", "credit": revenue, "memo": "Etkinlik net geliri ve servis", **revenue_foreign}] if revenue else []
+    if tax:
+        credit_lines.append({"account_code": "391", "credit": base_tax, "memo": "Etkinlik vergi tutarı", **({**foreign_fields, "foreign_amount": float(tax)} if foreign_fields else {})})
+    if event_doc.get("gl_posting_state") == "pending":
+        if event_doc.get("gl_posting_exchange_rate") != exchange_rate:
+            raise HTTPException(409, "Önceki muhasebe denemesini aynı kurla tamamlayın")
+    elif not event_doc.get("gl_journal_entry_id"):
+        claim = await db.mice_events.update_one(
+            {"id": event_id, "tenant_id": tenant_id, "updated_at": event_doc.get("updated_at"), "status": event_doc["status"]},
+            {"$set": {"gl_posting_state": "pending", "gl_posting_exchange_rate": exchange_rate, "updated_at": datetime.now(UTC).isoformat()}},
+        )
+        if not claim.matched_count:
+            raise HTTPException(409, "Etkinlik değişti; muhasebe aktarımından önce yenileyin")
     try:
         entry = await post_journal_entry(
             db,
@@ -3230,7 +3458,7 @@ async def post_beo_to_folio(
             memo=f"BEO muhasebeleştirme ({event_id})",
             lines=[
                 {"account_code": "120", "debit": base_amount, "memo": "Etkinlik alacağı", **foreign_fields},
-                {"account_code": "600", "credit": base_amount, "memo": "Etkinlik geliri", **foreign_fields},
+                *credit_lines,
             ],
             source="mice",
             source_ref=event_id,
@@ -3238,12 +3466,14 @@ async def post_beo_to_folio(
             idempotency_key=f"mice-event:{event_id}",
         )
     except GLPostingError as exc:
+        await db.mice_events.update_one({"id": event_id, "tenant_id": tenant_id, "gl_posting_state": "pending"}, {"$unset": {"gl_posting_state": "", "gl_posting_exchange_rate": ""}})
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     await db.mice_events.update_one(
         {"id": event_id, "tenant_id": tenant_id},
         {
             "$set": {
                 "gl_journal_entry_id": entry["id"],
+                "gl_posting_state": "posted",
                 "gl_posted_at": datetime.now(UTC).isoformat(),
                 "gl_currency": event_currency,
                 "gl_foreign_amount": amount if foreign_fields else None,

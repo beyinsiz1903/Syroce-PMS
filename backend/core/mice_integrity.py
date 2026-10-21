@@ -14,6 +14,26 @@ def rounded(value) -> float:
     return float(money(value).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
 
 
+def price_breakdown(subtotal, policy: dict) -> dict:
+    """Net catalog prices; discount → service → tax. No inferred legal rate.
+
+    Round each payable component to cents, then add those rounded components
+    so the screen, BEO, customer acceptance and accounting reconcile exactly.
+    """
+    base = money(rounded(subtotal))
+    rates = {key: money(policy.get(key, 0)) for key in ("discount_percent", "service_percent", "tax_percent")}
+    if any(rate > 100 for rate in rates.values()):
+        raise ValueError("Yüzde oranı 0 ile 100 arasında olmalıdır")
+    discount = money(rounded(base * rates["discount_percent"] / 100))
+    net = base - discount
+    service = money(rounded(net * rates["service_percent"] / 100))
+    taxable = net + service if policy.get("tax_on_service", True) else net
+    tax = money(rounded(taxable * rates["tax_percent"] / 100))
+    return {"subtotal": float(base), "discount_total": float(discount), "net_total": float(net),
+            "service_total": float(service), "taxable_total": float(taxable), "tax_total": float(tax),
+            "grand_total": rounded(net + service + tax)}
+
+
 def instant(value):
     return datetime.fromisoformat(value.replace("Z", "+00:00")) if isinstance(value, str) else value
 
