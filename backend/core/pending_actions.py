@@ -61,8 +61,8 @@ def contract_items(contract: dict, side: str) -> list[dict]:
     items = []
     ref = contract.get("contract_code") or contract.get("id")
     if contract.get("status") == "pending":
-        # Agencies request, hotels decide.
-        owner = "yours" if side == "hotel" else "theirs"
+        # Agency proposes; if the hotel changes terms, only the agency decides.
+        owner = "yours" if side == (contract.get('awaiting_party') or 'hotel') else "theirs"
         items.append(_item("contract_request", owner, contract, side, target="contracts", ref=ref,
                            record_id=contract.get("id"), since=contract.get("created_at"),
                            commission_pct=contract.get("commission_pct"), payment_terms=contract.get("payment_terms")))

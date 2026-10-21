@@ -13,8 +13,12 @@ def _licensed_for_both(monkeypatch):
     """These tests cover delivery behaviour, not licensing: the hotel holds
     both modules. The module gate still runs, without a database."""
     from core import entitlement
+    from routers import agency_contracts
 
     monkeypatch.setattr(entitlement, "_check_module_access", AsyncMock(return_value=True))
+    # These delivery tests operate on an already-approved contract. Separate
+    # partnership tests cover absent/expired/foreign contracts and zero writes.
+    monkeypatch.setattr(agency_contracts, 'has_active_contract', AsyncMock(return_value={'status': 'approved'}))
 
 
 @pytest.mark.asyncio

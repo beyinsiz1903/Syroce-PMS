@@ -7,7 +7,8 @@ et_xmlfile==2.0.0
 fonttools==4.61.1
 lxml==6.1.0
 openpyxl==3.1.2
-pillow==12.3.0
+# 13.0.0 fixes the image decoder/encoder vulnerabilities reported by CI.
+pillow==13.0.0
 pydyf==0.12.1
 pyphen==0.17.2
 reportlab==4.4.10

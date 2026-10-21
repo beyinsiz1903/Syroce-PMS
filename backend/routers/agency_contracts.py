@@ -383,6 +383,8 @@ async def contract_propose(
         "status": "pending",
         "commission_pct": data.commission_pct,
         "agency_proposed_commission_pct": data.commission_pct,
+        "awaiting_party": "hotel",
+        "agency_confirmed_at": _now_iso(),
         "cancellation_policy": data.cancellation_policy.model_dump(),
         "payment_terms": data.payment_terms,
         "valid_from": data.valid_from,
@@ -414,6 +416,10 @@ async def contract_propose(
             {"_id": 0, "id": 1, "status": 1, "contract_code": 1},
         )
         raise HTTPException(409, f"Bu otelle zaten {existing['status']} durumda bir sözleşmeniz var ({existing['contract_code']}). Önce onu sonlandırın/geri çekin.")
+    await sysdb.agency_partnership_requests.update_many(
+        {'tenant_id': data.tenant_id, 'agency_id': agency['agency_id'], 'status': 'pending'},
+        {'$set': {'status': 'proposal_sent', 'contract_id': contract_id, 'updated_at': _now_iso()}},
+    )
     doc.pop("_id", None)
     from core.agency_notify import notify_hotel
 
@@ -519,6 +525,23 @@ async def contract_get(
     if not doc:
         raise HTTPException(404, "Sözleşme bulunamadı")
     return {"contract": doc}
+
+
+@agency_router.post('/contracts/{contract_id}/accept')
+async def agency_accept_counteroffer(contract_id: str, agency: dict = Depends(_agency_dep)):
+    sysdb = get_system_db()
+    doc = await sysdb.agency_contracts.find_one_and_update(
+        {'id': contract_id, 'agency_id': agency['agency_id'], 'status': 'pending', 'awaiting_party': 'agency',
+         'valid_to': {'$gte': datetime.now(UTC).strftime('%Y-%m-%d')}},
+        {'$set': {'status': 'approved', 'awaiting_party': None, 'agency_confirmed_at': _now_iso(), 'updated_at': _now_iso()}},
+        projection={'_id': 0}, return_document=ReturnDocument.AFTER,
+    )
+    if not doc:
+        raise HTTPException(409, 'Onayınızı bekleyen geçerli bir otel karşı teklifi bulunamadı')
+    await sysdb.agency_contract_events.insert_one({'id': _uuid(), 'contract_id': contract_id, 'agency_id': agency['agency_id'],
+                                                  'tenant_id': doc['tenant_id'], 'event': 'agency_accepted_counteroffer',
+                                                  'actor': (agency.get('user') or {}).get('email') or agency.get('contact_email', ''), 'created_at': _now_iso()})
+    return {'ok': True, 'contract': doc}
 
 
 @agency_router.delete("/contracts/{contract_id}")
@@ -688,6 +711,94 @@ async def hotel_list_requests(
     return {"contracts": docs, "total": len(docs), "counts": counts}
 
 
+class PartnershipRequestCreate(BaseModel):
+    agency_id: str = Field(min_length=1, max_length=200)
+    message: str = Field(default='Sizinle çalışmak istiyoruz. Sözleşme şartlarınızı iletir misiniz?', min_length=5, max_length=2000)
+
+
+@hotel_router.get('/agency-candidates')
+async def hotel_agency_candidates(current_user: User = Depends(get_current_user)):
+    tenant_id = _require_hotel_user(current_user)
+    sysdb = get_system_db()
+    agencies = await sysdb.marketplace_agencies.find(
+        {'status': 'active'}, {'_id': 0, 'id': 1, 'name': 1, 'country': 1, 'city': 1, 'website': 1},
+    ).sort('name', 1).to_list(1000)
+    active_ids = set(await list_active_agencies_for_tenant(tenant_id))
+    requests = await sysdb.agency_partnership_requests.find(
+        {'tenant_id': tenant_id, 'status': 'pending'}, {'_id': 0, 'agency_id': 1, 'id': 1},
+    ).to_list(1000)
+    requested_ids = {item['agency_id'] for item in requests}
+    request_ids = {item['agency_id']: item['id'] for item in requests}
+    pending = await sysdb.agency_contracts.find(
+        {'tenant_id': tenant_id, 'status': 'pending'}, {'_id': 0, 'agency_id': 1},
+    ).to_list(1000)
+    proposed_ids = {item['agency_id'] for item in pending}
+    return {'agencies': [{**agency, 'contract_active': agency['id'] in active_ids,
+                          'request_pending': agency['id'] in requested_ids,
+                          'partnership_request_id': request_ids.get(agency['id']),
+                          'proposal_pending': agency['id'] in proposed_ids} for agency in agencies]}
+
+
+@hotel_router.post('/partnership-requests')
+async def hotel_request_partnership(data: PartnershipRequestCreate, current_user: User = Depends(get_current_user),
+                                    _perm=Depends(require_op('manage_approvals'))):
+    tenant_id = _require_hotel_user(current_user)
+    sysdb = get_system_db()
+    agency = await sysdb.marketplace_agencies.find_one({'id': data.agency_id, 'status': 'active'}, {'_id': 0, 'id': 1, 'name': 1})
+    if not agency:
+        raise HTTPException(404, 'Aktif acente bulunamadı')
+    await _auto_expire_overdue(tenant_id)
+    if await sysdb.agency_contracts.find_one({'tenant_id': tenant_id, 'agency_id': data.agency_id, 'status': {'$in': ['pending', 'approved']}}):
+        raise HTTPException(409, 'Bu acente ile zaten bir sözleşme veya bekleyen teklif var')
+    listing = await _listing_dep(tenant_id, for_proposal=True)
+    await sysdb.agency_partnership_requests.create_index(
+        [('tenant_id', 1), ('agency_id', 1)], unique=True,
+        partialFilterExpression={'status': 'pending'}, name='uniq_pending_partnership',
+    )
+    doc = {'id': _uuid(), 'tenant_id': tenant_id, 'agency_id': data.agency_id,
+           'hotel_name': listing.get('hotel_name', ''), 'agency_name': agency.get('name', ''),
+           'message': data.message.strip(), 'status': 'pending', 'created_by': current_user.id, 'created_at': _now_iso(), 'updated_at': _now_iso()}
+    try:
+        await sysdb.agency_partnership_requests.insert_one(doc)
+    except DuplicateKeyError:
+        raise HTTPException(409, 'Bu acenteden şartlar zaten istendi')
+    await _notify_contract_decision(sysdb, doc, 'çalışma talebi', doc['message'])
+    doc.pop('_id', None)
+    return {'ok': True, 'request': doc}
+
+
+@hotel_router.post('/partnership-requests/{request_id}/withdraw')
+async def hotel_withdraw_partnership(request_id: str, current_user: User = Depends(get_current_user),
+                                     _perm=Depends(require_op('manage_approvals'))):
+    tenant_id = _require_hotel_user(current_user)
+    result = await get_system_db().agency_partnership_requests.update_one(
+        {'id': request_id, 'tenant_id': tenant_id, 'status': 'pending'},
+        {'$set': {'status': 'withdrawn', 'updated_at': _now_iso()}},
+    )
+    if not result.matched_count:
+        raise HTTPException(404, 'Bekleyen çalışma talebi bulunamadı')
+    return {'ok': True}
+
+
+@agency_router.get('/partnership-requests')
+async def agency_partnership_requests(agency: dict = Depends(_agency_dep)):
+    docs = await get_system_db().agency_partnership_requests.find(
+        {'agency_id': agency['agency_id'], 'status': 'pending'}, {'_id': 0},
+    ).sort('created_at', -1).to_list(1000)
+    return {'requests': docs}
+
+
+@agency_router.post('/partnership-requests/{request_id}/decline')
+async def agency_decline_partnership(request_id: str, agency: dict = Depends(_agency_dep)):
+    result = await get_system_db().agency_partnership_requests.update_one(
+        {'id': request_id, 'agency_id': agency['agency_id'], 'status': 'pending'},
+        {'$set': {'status': 'declined', 'updated_at': _now_iso()}},
+    )
+    if not result.matched_count:
+        raise HTTPException(404, 'Bekleyen çalışma talebi bulunamadı')
+    return {'ok': True}
+
+
 @hotel_router.get("/{contract_id}")
 async def hotel_get_request(
     contract_id: str,
@@ -716,14 +827,20 @@ async def hotel_approve_request(
     # Önce mevcut komisyonu öğren (override yoksa korumak için)
     existing = await sysdb.agency_contracts.find_one(
         {"id": contract_id, "tenant_id": tenant_id},
-        {"_id": 0, "commission_pct": 1, "status": 1, "currency": 1, "valid_from": 1, "valid_to": 1},
+        {"_id": 0, "commission_pct": 1, "status": 1, "currency": 1, "valid_from": 1, "valid_to": 1,
+         "awaiting_party": 1, "allow_base_rate_fallback": 1, "agency_confirmed_at": 1, "proposed_at": 1},
     )
     if not existing:
         raise HTTPException(404, "Sözleşme bulunamadı")
     if existing["status"] != "pending":
         raise HTTPException(409, f"Bu sözleşme zaten '{existing['status']}' durumunda")
+    if existing.get('awaiting_party') == 'agency':
+        raise HTTPException(409, 'Bu karşı teklif için acentenin onayı bekleniyor')
 
     final_pct = data.commission_pct_override if data.commission_pct_override is not None else existing["commission_pct"]
+    needs_agency_acceptance = (final_pct != existing['commission_pct'] or data.contract_type != 'commission'
+                               or data.allow_base_rate_fallback != existing.get('allow_base_rate_fallback', False)
+                               or data.credit_limit is not None)
     if data.contract_type == "net_rate":
         final_pct = 0.0  # the net price already is the agency's buying price
         for season in data.season_rates:
@@ -732,10 +849,13 @@ async def hotel_approve_request(
     # ATOMIC: yalnızca status="pending" iken güncelle. Başka istek araya girip
     # durumu değiştirdiyse update düşmez.
     contract = await sysdb.agency_contracts.find_one_and_update(
-        {"id": contract_id, "tenant_id": tenant_id, "status": "pending"},
+        {"id": contract_id, "tenant_id": tenant_id, "status": "pending", "awaiting_party": {"$ne": "agency"}},
         {
             "$set": {
-                "status": "approved",
+                "status": "pending" if needs_agency_acceptance else "approved",
+                "awaiting_party": "agency" if needs_agency_acceptance else None,
+                "hotel_confirmed_at": _now_iso(),
+                "agency_confirmed_at": None if needs_agency_acceptance else existing.get('agency_confirmed_at', existing.get('proposed_at')),
                 "commission_pct": final_pct,
                 "hotel_approved_commission_pct": final_pct,
                 "allow_base_rate_fallback": data.allow_base_rate_fallback,
@@ -764,7 +884,7 @@ async def hotel_approve_request(
             "contract_id": contract_id,
             "agency_id": contract["agency_id"],
             "tenant_id": tenant_id,
-            "event": "approved",
+            "event": "counteroffered" if needs_agency_acceptance else "approved",
             "actor": current_user.email,
             "payload": {
                 "commission_pct": final_pct,
@@ -776,8 +896,8 @@ async def hotel_approve_request(
         }
     )
     await _notify_contract_decision(
-        sysdb, contract, "sözleşme onaylandı",
-        f"Komisyon %{final_pct:g}. Bu otel için satış {contract.get('valid_from')} – {contract.get('valid_to')} arasında açık. {data.notes}".strip(),
+        sysdb, contract, "karşı teklif onayınızı bekliyor" if needs_agency_acceptance else "sözleşme onaylandı",
+        f"Komisyon %{final_pct:g}. {'Fiyat ve satış erişimi onayınıza kadar kapalı.' if needs_agency_acceptance else 'Sözleşme karşılıklı onaylandı.'} {data.notes}".strip(),
     )
     return {"ok": True, "contract": contract}
 

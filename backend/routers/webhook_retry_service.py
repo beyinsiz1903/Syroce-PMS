@@ -22,6 +22,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
+from fastapi import HTTPException
 
 from routers.ops_event_emitter import (
     SEVERITY_CRITICAL,
@@ -165,6 +166,19 @@ async def deliver_webhook_with_retry(
     last_status_code = 0
 
     for attempt in range(MAX_ATTEMPTS):
+        if event in {'rates.updated', 'availability.updated'}:
+            # Authorization is rechecked on each retry, not only when queued.
+            # Reservation notifications intentionally keep working after expiry.
+            from domains.channel_manager.unified_rate_manager_router import _require_contracted_agency_targets
+            period = data.get('date_range') or {}
+            today = datetime.now(UTC).date().isoformat()
+            try:
+                await _require_contracted_agency_targets(tenant_id, [agency_id], period.get('start') or today, period.get('end') or today)
+            except HTTPException:
+                await sysdb.webhook_deliveries.update_one({'id': delivery_id}, {'$set': {
+                    'status': 'blocked', 'last_error': 'AGENCY_CONTRACT_REQUIRED', 'completed_at': _now_iso(),
+                }})
+                return {'delivery_id': delivery_id, 'status': 'blocked', 'error': 'AGENCY_CONTRACT_REQUIRED'}
         attempt_start = _now_iso()
         attempt_error = None
         attempt_status_code = 0

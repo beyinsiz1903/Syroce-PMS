@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import ContractAmendmentPanel from '@/components/contracts/ContractAmendmentPanel';
+import AgencyPartnerDirectory from '@/components/contracts/AgencyPartnerDirectory';
 import {
   Handshake, Clock, CheckCircle2, XCircle, Ban, RefreshCw, Building2,
   Percent, Calendar, CreditCard, Globe, FileText, AlertTriangle, Loader2,
@@ -144,7 +145,7 @@ const ContractCard = ({ contract, onApprove, onReject, onTerminate, onChanged })
 
         {(isPending || isApproved) && (
           <div className="flex gap-2 pt-1">
-            {isPending && (
+            {isPending && contract.awaiting_party !== 'agency' && (
               <>
                 <Button data-testid="approve-btn" size="sm" className="flex-1 bg-emerald-600 hover:bg-emerald-500"
                         onClick={() => onApprove(contract)}>
@@ -165,6 +166,7 @@ const ContractCard = ({ contract, onApprove, onReject, onTerminate, onChanged })
             )}
           </div>
         )}
+        {isPending && contract.awaiting_party === 'agency' && <p className="text-sm text-amber-700">Karşı teklifiniz acentenin onayını bekliyor. Fiyat–müsaitlik ve satış erişimi kapalı.</p>}
         {(isApproved || contract.pending_amendment) && (
           <ContractAmendmentPanel side="hotel" api={axios} base={`/marketplace/incoming-requests/${contract.id}/amendments`}
             contract={contract} onChanged={onChanged} />
@@ -298,8 +300,8 @@ const IncomingAgencyContracts = ({ user, tenant, onLogout }) => {
         body.credit_limit = limit;
         body.credit_currency = currency;
       }
-      await axios.post(`/marketplace/incoming-requests/${approveDlg.id}/approve`, body);
-      toast.success('Sözleşme onaylandı — acente artık otelinize rezervasyon yapabilir');
+      const { data } = await axios.post(`/marketplace/incoming-requests/${approveDlg.id}/approve`, body);
+      toast.success(data.contract?.awaiting_party === 'agency' ? 'Karşı teklif iletildi; acente kabul edene kadar fiyat ve satış erişimi kapalı.' : 'Sözleşme karşılıklı onaylandı; geçerlilik tarihlerinde satış açılabilir.');
       setApproveDlg(null);
       fetchContracts();
     } catch (e) {
@@ -397,6 +399,7 @@ const IncomingAgencyContracts = ({ user, tenant, onLogout }) => {
           </div>
         </div>
 
+        <AgencyPartnerDirectory />
         <div className="grid gap-3 sm:grid-cols-3" data-testid="agency-contract-summary">
           <Card className="border-amber-200 bg-amber-50/60 dark:border-amber-900 dark:bg-amber-950/20">
             <CardContent className="flex items-center justify-between p-4">

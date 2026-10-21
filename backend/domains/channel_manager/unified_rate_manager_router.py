@@ -32,7 +32,6 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from pymongo import UpdateOne
 
-from cache_manager import cached
 from core.audit import log_audit_event
 from core.database import db
 from core.entitlement import require_tenant_module
@@ -74,6 +73,10 @@ async def _active_agency_docs_for_tenant(tenant_id: str) -> list[dict]:
     from routers.agency_contracts import list_active_agencies_for_tenant
 
     contract_ids = await list_active_agencies_for_tenant(tenant_id)
+    today = datetime.now(UTC).date().isoformat()
+    legacy_contract_ids = await db.agency_contracts.distinct('agency_id', {
+        'tenant_id': tenant_id, 'is_active': True, 'start_date': {'$lte': today}, 'end_date': {'$gte': today},
+    })
     marketplace_docs: list[dict] = []
     if contract_ids:
         marketplace_docs = await get_system_db().marketplace_agencies.find(
@@ -82,7 +85,7 @@ async def _active_agency_docs_for_tenant(tenant_id: str) -> list[dict]:
         ).to_list(len(contract_ids))
 
     legacy_docs = await db.agencies.find(
-        {"tenant_id": tenant_id, "status": "active"},
+        {"tenant_id": tenant_id, "status": "active", "id": {"$in": list(set(contract_ids) | set(legacy_contract_ids))}},
         {"_id": 0, "id": 1, "name": 1, "contact_name": 1, "commission_rate": 1},
     ).to_list(200)
 
@@ -333,8 +336,7 @@ async def detect_provider(current_user: User = Depends(get_current_user)):
     provider = detection.get("provider")
     conn = detection.get("connection") or {}
     if not provider:
-        agencies = await _active_agency_docs_for_tenant(tenant_id)
-        if agencies and not detection.get("configuration_error"):
+        if not detection.get("configuration_error"):
             room_count = len(await db.rooms.distinct("room_type", {"tenant_id": tenant_id, "is_active": {"$ne": False}}))
             return {
                 "provider": "agency",
@@ -394,6 +396,8 @@ async def get_unified_grid(
         start_date = datetime.now(UTC).date().isoformat()
     if not end_date:
         end_date = (datetime.now(UTC) + timedelta(days=14)).date().isoformat()
+    if provider == 'agency':
+        return await _build_agency_grid(tenant_id, start_date, end_date)
     explicit = provider in ("hotelrunner", "exely")
     detection = await _detect_active_provider(tenant_id, prefer=provider)
 
@@ -411,8 +415,7 @@ async def get_unified_grid(
         }
 
     if not detection["provider"]:
-        agencies = await _active_agency_docs_for_tenant(tenant_id)
-        if agencies and not detection.get("configuration_error"):
+        if not detection.get("configuration_error"):
             return await _build_agency_grid(tenant_id, start_date, end_date)
         return {
             "grid": [],
@@ -488,7 +491,7 @@ async def _build_agency_grid(tenant_id, start_date, end_date):
         "rate_plans": rate_plans,
         "pricing_settings": pricing_map,
         "occupancy_pricing_rules": pricing_rules,
-        "currency": "TRY",
+        "currency": await _agency_rate_currency(tenant_id, {'provider': 'agency', 'connection': {}}, True),
         "start_date": start_date,
         "end_date": end_date,
         "provider": "agency",
@@ -873,8 +876,7 @@ async def get_unified_room_types(current_user: User = Depends(get_current_user))
     detection = await _detect_active_provider(tenant_id)
 
     if not detection["provider"]:
-        agencies = await _active_agency_docs_for_tenant(tenant_id)
-        if agencies and not detection.get("configuration_error"):
+        if not detection.get("configuration_error"):
             names = await _pms_room_type_names(tenant_id)
             pricing_docs = await db.pricing_settings.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(200)
             pricing_map, pricing_rules = _pricing_payload(pricing_docs)
@@ -927,7 +929,7 @@ async def get_unified_room_types(current_user: User = Depends(get_current_user))
 async def unified_bulk_grid_update(
     request: UnifiedBulkUpdateRequest,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_system_diagnostics")),  # v96 DW
+    _perm=Depends(require_op("manage_rates")),
 ):
     """Toplu fiyat/musaitlik guncelle. Kanal saglayiciya + acentelere push."""
     tenant_id = current_user.tenant_id
@@ -985,6 +987,7 @@ async def unified_bulk_grid_update(
         await require_tenant_module(tenant_id, "channel_manager", "OTA kanallarına fiyat göndermek için Kanal Yöneticisi modülü gerekli. Yalnız acentelere göndermeyi seçebilirsiniz.")
     if request.agency_ids:
         await require_tenant_module(tenant_id, "agency_extranet", "Acentelere fiyat paylaşmak için Acente Extranet modülü gerekli.")
+        await _require_contracted_agency_targets(tenant_id, request.agency_ids, request.start_date, request.end_date)
     runtime_block = _ari_write_block_for_targets(targets) if remote_delivery_requested else ""
     if runtime_block:
         raise HTTPException(
@@ -1685,6 +1688,21 @@ AGENCY_SUPPORTED_FIELDS = frozenset(
 )
 
 
+async def _require_contracted_agency_targets(tenant_id, agency_ids, start_date, end_date):
+    """All-or-nothing authorization, before any local or remote calendar write."""
+    from routers.agency_contracts import has_active_contract
+    active = {agency['id'] for agency in await _active_agency_docs_for_tenant(tenant_id)}
+    for agency_id in set(agency_ids or []):
+        if agency_id not in active:
+            raise HTTPException(403, 'Seçilen acentelerden en az birinin bu tarih aralığı için yürürlükte sözleşmesi yok; hiçbir hedefe gönderim yapılmadı')
+        contract = await has_active_contract(agency_id, tenant_id, start_date, end_date)
+        if not contract:
+            contract = await db.agency_contracts.find_one({'tenant_id': tenant_id, 'agency_id': agency_id,
+                'is_active': True, 'start_date': {'$lte': start_date}, 'end_date': {'$gte': end_date}}, {'_id': 0, 'id': 1})
+        if not contract:
+            raise HTTPException(403, 'Seçilen acentelerden en az birinin bu tarih aralığı için yürürlükte sözleşmesi yok; hiçbir hedefe gönderim yapılmadı')
+
+
 def _validate_agency_restrictions(agency_ids, update_fields):
     unsupported = set(update_fields) - AGENCY_SUPPORTED_FIELDS
     if agency_ids and unsupported:
@@ -1696,14 +1714,15 @@ async def _push_to_agencies(tenant_id, agency_ids, pairs, per_room_map, request,
     if not agency_ids:
         return 0
     _validate_agency_restrictions(agency_ids, update_fields)
+    await _require_contracted_agency_targets(tenant_id, agency_ids, request.start_date, request.end_date)
 
     # Verify agencies exist and are active
     active_agencies = await _active_agency_docs_for_tenant(tenant_id)
     selected_ids = set(agency_ids)
     agencies = [agency for agency in active_agencies if agency.get("id") in selected_ids]
 
-    if not agencies:
-        return 0
+    if {a['id'] for a in agencies} != selected_ids:
+        raise HTTPException(403, 'Yalnız yürürlükte sözleşmesi olan aktif acentelere fiyat ve müsaitlik paylaşılabilir')
 
     valid_agency_ids = [a["id"] for a in agencies]
 
@@ -1820,14 +1839,6 @@ async def _push_to_agencies(tenant_id, agency_ids, pairs, per_room_map, request,
     except Exception as exc:  # pragma: no cover - defensive
         logger.warning("agency rates webhook dispatch failed: %s", exc)
 
-    # Bust agency list cache so urm UI sees fresh last_rate_push timestamps
-    try:
-        from cache_manager import cache as _cache
-
-        _cache.invalidate_tenant_cache(tenant_id, "urm_agencies")
-    except Exception as exc:  # pragma: no cover - defensive
-        logger.debug("urm_agencies cache invalidate skipped: %s", exc)
-
     return len(valid_agency_ids)
 
 
@@ -1835,9 +1846,8 @@ async def _push_to_agencies(tenant_id, agency_ids, pairs, per_room_map, request,
 
 
 @router.get("/agencies")
-@cached(ttl=300, key_prefix="urm_agencies")  # 5dk cache (Tur 2 fix)
 async def list_agencies_for_rates(current_user: User = Depends(get_current_user)):
-    """Fiyat iletilecek aktif acenteleri listele."""
+    """Fiyat iletilecek sözleşmeli acenteler; kararlar beş dakika önbellekte kalmaz."""
     tenant_id = current_user.tenant_id
 
     agencies = await _active_agency_docs_for_tenant(tenant_id)
@@ -1884,6 +1894,8 @@ async def set_agency_rate_overrides(
     """Acente bazli ozel fiyat tanimla."""
     tenant_id = current_user.tenant_id
     await require_tenant_module(tenant_id, "agency_extranet", "Acenteye özel fiyat için Acente Extranet modülü gerekli.")
+    today = datetime.now(UTC).date().isoformat()
+    await _require_contracted_agency_targets(tenant_id, [item.agency_id for item in request.overrides], today, today)
     now = datetime.now(UTC).isoformat()
     saved = 0
 
