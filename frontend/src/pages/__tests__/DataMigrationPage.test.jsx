@@ -20,6 +20,8 @@ function mount(props = {}, path = '/app/data-migration') {
 async function openBatch() {
   fireEvent.click(await screen.findByRole('button', { name: /Synthetic PMS/ }));
   await screen.findByRole('region', { name: 'Seçili aktarım' });
+  // The selected batch renders before the selection request's busy state clears.
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Yenile' })).toBeEnabled());
 }
 
 beforeEach(() => {

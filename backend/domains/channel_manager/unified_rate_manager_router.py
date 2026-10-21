@@ -27,6 +27,7 @@ import asyncio
 import logging
 import uuid
 from datetime import UTC, datetime, timedelta
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -161,8 +162,8 @@ class AgencyRateOverrideRequest(BaseModel):
 
 
 class ChildAgeBandItem(BaseModel):
-    min_age: int = Field(..., ge=0, le=17)
-    max_age: int = Field(..., ge=0, le=17)
+    min_age: int = Field(..., ge=0, le=17, strict=True)
+    max_age: int = Field(..., ge=0, le=17, strict=True)
     pricing_mode: str
     value: float = Field(0, ge=0, le=1e12)
 
@@ -174,7 +175,7 @@ class PricingSettingItem(BaseModel):
     extra_adult_rate_type: str = Field("fixed", pattern="^(fixed|percentage)$")
     extra_adult_rate: float = Field(0, ge=0, le=1e12)
     extra_child_rate: float = Field(0, ge=0, le=1e12)
-    child_free_age_max: int = Field(0, ge=0, le=17)
+    child_free_age_max: int = Field(0, ge=0, le=17, strict=True)
     child_age_bands: list[ChildAgeBandItem] | None = Field(None, max_length=18)
     max_occupancy: int | None = Field(None, ge=1, le=50)
     provider_pricing_verified: bool = False
@@ -193,27 +194,34 @@ class OccupancyPricePreviewRequest(BaseModel):
     base_nightly_rate: float = Field(..., ge=0, le=1e12)
     nights: int = Field(1, ge=1, le=750)
     adults: int = Field(1, ge=1, le=50)
-    children_ages: list[int] = Field(default_factory=list, max_length=50)
+    children_ages: list[Annotated[int, Field(ge=0, le=17, strict=True)]] = Field(default_factory=list, max_length=50)
 
 
-def _pricing_payload(docs: list[dict]) -> tuple[dict[str, str], dict[str, dict]]:
+def _pricing_payload(docs: list[dict], *, provider: str | None = None) -> tuple[dict[str, str], dict[str, dict]]:
     settings: dict[str, str] = {}
     rules: dict[str, dict] = {}
     for doc in docs:
         room_type_code = doc.get("room_type_code")
         if not room_type_code:
             continue
+        policy_invalid = False
         try:
             rule = normalize_occupancy_rule(doc)
         except (OccupancyPricingError, TypeError, ValueError):
+            policy_invalid = True
             rule = normalize_occupancy_rule({"pricing_type": doc.get("pricing_type", "per_room")})
         settings[room_type_code] = rule["pricing_type"]
-        rule["provider_pricing_verified"] = bool(doc.get("provider_pricing_verified", False))
+        rule["policy_invalid"] = policy_invalid
+        rule["provider_pricing_verified"] = not policy_invalid and bool(doc.get("provider_pricing_verified", False)) and (
+            provider != "exely" or doc.get("provider_pricing_verification_source") == "operator"
+        )
         rule["provider_pricing_verified_at"] = doc.get("provider_pricing_verified_at")
         rule["provider_pricing_verified_by"] = doc.get("provider_pricing_verified_by")
         rule["provider_pricing_note"] = doc.get("provider_pricing_note")
         rule["currency"] = doc.get("currency")
-        rule["provider_sync_state"] = "VERIFIED" if rule["pricing_type"] != "per_person" or rule["provider_pricing_verified"] else "MANUAL_CONFIGURATION_REQUIRED"
+        rule["provider_sync_state"] = "INVALID_POLICY" if policy_invalid else (
+            "VERIFIED" if rule["pricing_type"] != "per_person" or rule["provider_pricing_verified"] else "MANUAL_CONFIGURATION_REQUIRED"
+        )
         rules[room_type_code] = rule
     return settings, rules
 
@@ -231,6 +239,29 @@ def _unsafe_hotelrunner_room_types(
         rule = pricing_by_code.get(local_code) or pricing_by_code.get(remote_by_local.get(local_code, ""))
         if not rule or (rule.get("pricing_type", "per_person") == "per_person" and not rule.get("provider_pricing_verified", False)):
             unsafe.append(local_code)
+    return unsafe
+
+
+def _unsafe_exely_room_types(selected_room_types: list[str], mappings: list[dict], pricing_docs: list[dict]) -> list[str]:
+    """A base-rate write cannot install an explicitly configured child policy."""
+    unsafe = []
+    for selected in selected_room_types:
+        codes = {str(selected)}
+        for mapping in mappings:
+            aliases = {str(mapping.get(key) or "") for key in ("pms_room_type", "exely_room_code", "pms_api_room_code")}
+            if codes & aliases:
+                codes |= aliases - {""}
+        rules = [doc for doc in pricing_docs if str(doc.get("room_type_code")) in codes]
+        try:
+            for rule in rules:
+                normalize_occupancy_rule(rule)
+        except (OccupancyPricingError, TypeError, ValueError):
+            unsafe.append(selected)
+            continue
+        if any(rule.get("pricing_type") == "per_person" and not (
+            rule.get("provider_pricing_verified") and rule.get("provider_pricing_verification_source") == "operator"
+        ) for rule in rules):
+            unsafe.append(selected)
     return unsafe
 
 
@@ -669,7 +700,7 @@ async def _build_exely_grid(tenant_id, conn, start_date, end_date):
                 }
             )
 
-    pricing_map, pricing_rules = _pricing_payload(pricing_docs)
+    pricing_map, pricing_rules = _pricing_payload(pricing_docs, provider="exely")
 
     currency = conn.get("currency", "TRY")
 
@@ -904,7 +935,7 @@ async def get_unified_room_types(current_user: User = Depends(get_current_user))
         rate_plans = conn.get("rate_plans", [])
         pricing_docs = await db.pricing_settings.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(200)
 
-    pricing_map, pricing_rules = _pricing_payload(pricing_docs)
+    pricing_map, pricing_rules = _pricing_payload(pricing_docs, provider=detection["provider"])
     room_types = [*room_types, *await _agency_only_room_types(tenant_id, detection["provider"], _provider_room_codes(detection))]
 
     return {
@@ -1081,6 +1112,13 @@ async def unified_bulk_grid_update(
                 status_code=409,
                 detail=(f"HotelRunner yalnız taban fiyat kabul eder. Önce HotelRunner panelindeki ek yetişkin/çocuk kurallarının Syroce ile eşleştiğini doğrulayın: {codes}"),
             )
+
+    if "rate" in update_fields and provider_pairs and any(t["provider"] == "exely" for t in targets):
+        pricing_docs = await db.pricing_settings.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(200)
+        mappings = await db.exely_room_mappings.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(200)
+        unsafe = _unsafe_exely_room_types(sorted({code for code, _ in provider_pairs}), mappings, pricing_docs)
+        if unsafe:
+            raise HTTPException(status_code=409, detail="Exely'ye taban fiyat gönderimi çocuk yaş kademelerini kurmaz. Önce kişi/çocuk kurallarını Exely paneliyle karşılaştırıp onaylayın: " + ", ".join(unsafe))
 
     # Determine which calendar collection to use
     cal_collection = "hr_rate_calendar" if provider_type == "hotelrunner" else "rate_calendar"
@@ -2023,7 +2061,7 @@ async def get_pricing_settings(current_user: User = Depends(get_current_user)):
     else:
         docs = await db.pricing_settings.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(200)
 
-    settings, rules = _pricing_payload(docs)
+    settings, rules = _pricing_payload(docs, provider=detection["provider"])
     rules = await _add_pms_rule_aliases(tenant_id, detection["provider"], rules)
     return {"settings": settings, "rules": rules}
 
@@ -2047,18 +2085,26 @@ async def update_pricing_settings(
 
     collection = "hr_pricing_settings" if detection["provider"] == "hotelrunner" else "pricing_settings"
 
+    # Reject the entire malformed policy batch before persisting any sibling.
+    normalized_items = []
     for item in request.settings:
         try:
             rule = normalize_occupancy_rule(item.model_dump())
         except OccupancyPricingError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+        normalized_items.append((item, rule))
+
+    for item, rule in normalized_items:
         existing = await db[collection].find_one(
             {"tenant_id": tenant_id, "room_type_code": item.room_type_code},
-            {"_id": 0, "provider_pricing_verified": 1},
+            {"_id": 0, "provider_pricing_verified": 1, "provider_pricing_verification_source": 1},
         )
-        verified = bool(item.provider_pricing_verified) if detection["provider"] == "hotelrunner" else True
+        verified = bool(item.provider_pricing_verified)
         rule_currency = item.currency or (await _rate_currency(tenant_id, detection) if detection["provider"] else None)
-        verification_changed = verified != bool((existing or {}).get("provider_pricing_verified", False))
+        previously_verified = bool((existing or {}).get("provider_pricing_verified", False)) and (
+            detection["provider"] != "exely" or (existing or {}).get("provider_pricing_verification_source") == "operator"
+        )
+        verification_changed = verified != previously_verified
         await db[collection].update_one(
             {"tenant_id": tenant_id, "room_type_code": item.room_type_code},
             {
@@ -2067,6 +2113,7 @@ async def update_pricing_settings(
                     "room_type_code": item.room_type_code,
                     **rule,
                     "provider_pricing_verified": verified,
+                    "provider_pricing_verification_source": "operator" if verified else None,
                     "provider_pricing_verified_at": now if verified else None,
                     "provider_pricing_verified_by": current_user.id if verified else None,
                     "provider_pricing_note": (item.provider_pricing_note or "").strip() or None,
@@ -2077,14 +2124,14 @@ async def update_pricing_settings(
             },
             upsert=True,
         )
-        if detection["provider"] == "hotelrunner" and verification_changed:
+        if detection["provider"] in {"hotelrunner", "exely"} and verification_changed:
             await log_audit_event(
                 tenant_id=tenant_id,
                 user_id=current_user.id,
-                action="hotelrunner_occupancy_pricing_attestation_updated",
-                entity_type="hr_pricing_setting",
+                action=f"{detection['provider']}_occupancy_pricing_attestation_updated",
+                entity_type="hr_pricing_setting" if detection["provider"] == "hotelrunner" else "exely_pricing_setting",
                 entity_id=item.room_type_code,
-                details="HotelRunner kişi/çocuk fiyat kuralı doğrulaması güncellendi",
+                details="Kanal yöneticisi kişi/çocuk fiyat kuralı operatör doğrulaması güncellendi",
                 after_value={"provider_pricing_verified": verified},
                 db=db,
             )

@@ -8,6 +8,7 @@ from typing import Any
 from domains.channel_manager.ari.events import ARIChangeEvent
 from domains.channel_manager.ari.outbound_service import publish_ari_event
 
+from .ari_delivery import preview_exely_ari
 from .production_safety import ari_write_block_reason
 
 
@@ -52,6 +53,23 @@ async def enqueue_exely_ari_update(
         ("restriction", "cta", cta, {"cta": cta}),
         ("restriction", "ctd", ctd, {"ctd": ctd}),
     )
+    # Validate every supplied mutation before persisting the first event. A bad
+    # rate must not leave its sibling availability update queued on its own.
+    for _event_type, operation, value, _payload in operations:
+        if value is None:
+            continue
+        preview = preview_exely_ari(operation, {
+            "tenant_id": tenant_id, "property_id": property_id,
+            "room_type_code": room_type_code, "rate_plan_code": rate_plan_code,
+            "start_date": start_date, "end_date": end_date,
+            "value": value, "currency": currency,
+        })
+        if preview.error_code:
+            return {
+                "accepted": False, "delivery_state": "blocked",
+                "queued_operation_count": 0, "provider_write_count": 0,
+                "error_code": preview.error_code,
+            }
     queued = []
     for event_type, operation, value, payload in operations:
         if value is None:

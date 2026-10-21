@@ -21,6 +21,12 @@ const tieredRule = {
 };
 
 describe('occupancy pricing', () => {
+  it('does not quote a fallback when the stored child policy failed validation', () => {
+    expect(calculateOccupancyPrice({ baseNightlyRate: 5000, nights: 1, adults: 2, childrenAges: [7], rule: { ...rule, policy_invalid: true } })).toBeNull();
+  });
+  it.each([null, undefined, '', ' ', true, false, 6.9, 17.9, -1, 18, Number.NaN, Number.POSITIVE_INFINITY])('does not price an unknown or non-child age as a free baby: %s', age => {
+    expect(calculateOccupancyPrice({ baseNightlyRate: 5000, nights: 1, adults: 2, childrenAges: [age], rule })).toBeNull();
+  });
   it('adds the third adult supplement for every night', () => {
     const quote = calculateOccupancyPrice({ baseNightlyRate: 5000, nights: 2, adults: 3, rule });
     expect(quote.nightlyTotal).toBe(6500);

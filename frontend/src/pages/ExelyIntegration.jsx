@@ -110,6 +110,9 @@ const ExelyIntegration = ({
   const [editingMappingId, setEditingMappingId] = useState(null);
   const [manualMapSaving, setManualMapSaving] = useState(false);
   const [ariWriteLoading, setAriWriteLoading] = useState(false);
+  const [syncSettingsLoading, setSyncSettingsLoading] = useState(false);
+  const [syncIntervalMinutes, setSyncIntervalMinutes] = useState(15);
+  const [statusUnavailable, setStatusUnavailable] = useState(false);
   const [manualMap, setManualMap] = useState(emptyManualMap);
   const [connectForm, setConnectForm] = useState({
     username: '',
@@ -131,6 +134,7 @@ const ExelyIntegration = ({
         data
       } = await axios.get(`/channel-manager/exely/connection`, requestConfig);
       setConnection(data);
+      setSyncIntervalMinutes(data.connection?.sync_interval_minutes ?? Math.max(3, Math.ceil((data.connection?.sync_interval_seconds || 900) / 60)));
       if (data.connection?.room_types) setRoomTypes(data.connection.room_types);
       if (data.connection?.rate_plans) setRatePlans(data.connection.rate_plans);
     } catch {
@@ -156,14 +160,15 @@ const ExelyIntegration = ({
           reservations: []
         }
       })), axios.get(`/channel-manager/exely/sync/status`, requestConfig).catch(() => ({
-        data: {}
+        data: null
       }))]);
       setMappings(mappingsRes.data.mappings || []);
       setSyncLogs(logsRes.data.logs || []);
       setReservations(localRes.data.reservations || []);
       setSyncStatus(statusRes.data);
-    } catch (e) {
-      console.error(e);
+      setStatusUnavailable(!statusRes.data);
+    } catch {
+      setStatusUnavailable(true);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, [connection?.connected]);
@@ -389,6 +394,42 @@ const ExelyIntegration = ({
       setAriWriteLoading(false);
     }
   };
+  const handleReservationSyncToggle = async () => {
+    const enabled = !connection?.connection?.auto_sync_reservations;
+    if (!(await confirmDialog({
+      message: enabled
+        ? 'Yalnız bu tesisin otomatik rezervasyon çekimi açılacak. Gelen değişiklik/iptaller PMS’ye uygulanır ve kalıcı kayıt sonrası Exely’ye teslim onayı gönderilir. Devam edilsin mi?'
+        : 'Yalnız bu tesisin otomatik rezervasyon çekimi durdurulacak. Başlamış işlem tamamlanabilir; diğer otellerin çekimi ve ARI ayarı değişmez. Devam edilsin mi?',
+      variant: enabled ? 'warning' : 'danger'
+    }))) return;
+    setSyncSettingsLoading(true);
+    try {
+      const { data } = await axios.post(`/channel-manager/exely/sync/scheduler/${enabled ? 'start' : 'stop'}`, {}, requestConfig);
+      toast.success(data.message);
+      await Promise.all([fetchConnection(), fetchAll()]);
+    } catch (error) {
+      toast.error(getExelyErrorMessage(error, 'Tesisin otomatik çekim ayarı değiştirilemedi'));
+    } finally {
+      setSyncSettingsLoading(false);
+    }
+  };
+  const handleSaveSyncInterval = async () => {
+    const minutes = Number(syncIntervalMinutes);
+    if (!Number.isInteger(minutes) || minutes < 3 || minutes > 60) {
+      toast.error('Çekim aralığı 3–60 dakika arasında tam sayı olmalıdır');
+      return;
+    }
+    setSyncSettingsLoading(true);
+    try {
+      const { data } = await axios.patch('/channel-manager/exely/sync/settings', { sync_interval_minutes: minutes }, requestConfig);
+      toast.success(data.message);
+      await Promise.all([fetchConnection(), fetchAll()]);
+    } catch (error) {
+      toast.error(getExelyErrorMessage(error, 'Çekim aralığı kaydedilemedi'));
+    } finally {
+      setSyncSettingsLoading(false);
+    }
+  };
   const isConnected = connection?.connected;
   return <>
       <div className="p-4 md:p-6 space-y-6" data-testid="exely-integration">
@@ -481,7 +522,7 @@ const ExelyIntegration = ({
                     </div>
                     <div>
                       <Label htmlFor="exely-interval">Sync Araligi (dk)</Label>
-                      <Input id="exely-interval" type="number" min={5} max={60} value={connectForm.sync_interval_minutes} onChange={e => setConnectForm(p => ({
+                      <Input id="exely-interval" type="number" min={3} max={60} value={connectForm.sync_interval_minutes} onChange={e => setConnectForm(p => ({
                     ...p,
                     sync_interval_minutes: parseInt(e.target.value) || 15
                   }))} />
@@ -526,8 +567,8 @@ const ExelyIntegration = ({
                         data-testid="exely-ari-write-toggle"
                         variant={connection.connection?.ari_write_enabled ? 'destructive' : 'default'}
                         onClick={handleAriWriteToggle}
-                        disabled={ariWriteLoading || !syncStatus?.production_safety?.ari_write_allowed}
-                        title={!syncStatus?.production_safety?.ari_write_allowed ? 'Önce global Exely ARI güvenlik anahtarı açılmalıdır' : undefined}
+                        disabled={ariWriteLoading || (!connection.connection?.ari_write_enabled && !syncStatus?.production_safety?.ari_write_allowed)}
+                        title={!connection.connection?.ari_write_enabled && !syncStatus?.production_safety?.ari_write_allowed ? 'Önce global Exely ARI güvenlik anahtarı açılmalıdır' : undefined}
                       >
                         {ariWriteLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <ArrowDownUp className="w-4 h-4 mr-2" />}
                         {connection.connection?.ari_write_enabled ? 'ARI Gönderimini Durdur' : 'ARI Gönderimini Aç'}
@@ -551,6 +592,23 @@ const ExelyIntegration = ({
                         </select>
                       </div>
                     </div>
+                    <div className="mt-4 space-y-3 rounded-lg border p-3">
+                      <div className="flex flex-wrap items-center gap-3">
+                        <Button data-testid="exely-reservation-sync-toggle" variant={connection.connection?.auto_sync_reservations ? 'destructive' : 'outline'} onClick={handleReservationSyncToggle}
+                          disabled={syncSettingsLoading || (!connection.connection?.auto_sync_reservations && !syncStatus?.production_safety?.reservation_sync_allowed)}>
+                          {syncSettingsLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                          {connection.connection?.auto_sync_reservations ? 'Bu Tesisin Otomatik Çekimini Durdur' : 'Bu Tesisin Otomatik Çekimini Aç'}
+                        </Button>
+                        <Label htmlFor="exely-saved-interval">Çekim aralığı (dakika)</Label>
+                        <Input id="exely-saved-interval" type="number" min={3} max={60} step={1} className="w-24" value={syncIntervalMinutes} disabled={syncSettingsLoading} onChange={event => setSyncIntervalMinutes(event.target.value)} />
+                        <Button variant="outline" disabled={syncSettingsLoading} onClick={handleSaveSyncInterval}>Çekim Aralığını Kaydet</Button>
+                        <Button variant="outline" onClick={() => { fetchConnection(); fetchAll(); }} disabled={syncSettingsLoading}>Durumu Yenile</Button>
+                      </div>
+                      <p className="text-xs text-muted-foreground">Ayarlar yalnız seçili tesise uygulanır. Mevcut kota/işlem kilidi dolmadan yeni çekim başlamaz. Durdurmak, başlamış bir aktarımı yarıda kesmez. El ile çekim ve ARI gönderimleri ayrı işlemlerdir.</p>
+                      {statusUnavailable && <p role="alert" className="text-sm text-destructive">Senkronizasyon durumu okunamadı. Açma işlemleri kapalı; tesis ayarını durdurabilir veya durumu yenileyebilirsiniz.</p>}
+                      {syncStatus && !syncStatus.production_safety?.reservation_sync_allowed && <p className="text-sm text-muted-foreground">Genel rezervasyon güvenlik kilidi kapalı. Tesis ayarı açık olsa da otomatik çekim ve teslim onayı çalışmaz.</p>}
+                      {syncStatus && !syncStatus.production_safety?.ari_write_allowed && <p className="text-sm text-muted-foreground">Genel ARI güvenlik kilidi kapalı. Tesis ARI ayarı açık olsa da Exely’ye fiyat veya müsaitlik gönderilmez.</p>}
+                    </div>
                     {syncStatus && <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3">
                         <div className="bg-slate-50 rounded-lg p-3 border">
                           <p className="text-xs text-slate-500">{t('cm.pages_ExelyIntegration.toplam_rezervasyon')}</p>
@@ -565,8 +623,9 @@ const ExelyIntegration = ({
                           <p className="text-lg font-bold text-red-600">{syncStatus.error_events || 0}</p>
                         </div>
                         <div className="bg-slate-50 rounded-lg p-3 border">
-                          <p className="text-xs text-slate-500">Scheduler</p>
-                          <p className="text-lg font-bold">{syncStatus.scheduler_running ? 'Aktif' : 'Durdu'}</p>
+                          <p className="text-xs text-slate-500">Tesis otomatik çekim</p>
+                          <p className="text-lg font-bold" data-testid="exely-reservation-sync-state">{!syncStatus.reservation_sync_enabled ? 'Kapalı' : !syncStatus.production_safety?.reservation_sync_allowed ? 'Güvenlik kilitli' : 'Açık'}</p>
+                          <p className="text-xs text-muted-foreground">Bu sunucudaki çalışan: {syncStatus.scheduler_running ? 'aktif' : 'aktif değil; diğer sunucular ayrıca kontrol edilir'}</p>
                         </div>
                       </div>}
                   </CardContent>

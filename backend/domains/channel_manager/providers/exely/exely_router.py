@@ -6,15 +6,16 @@ API endpoints for Exely connection management, room discovery, mapping, ARI push
 import logging
 import uuid
 from datetime import UTC, datetime, timedelta
-from typing import Literal
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, model_validator
 
 from core.database import db
 from core.secrets import get_secrets_manager
 from core.security import get_current_user
 from domains.channel_manager.providers.common_ingest import ingest_reservation, log_sync
+from domains.channel_manager.providers.exely.ari_delivery import preview_exely_ari
 from domains.channel_manager.providers.exely.ari_publish import enqueue_exely_ari_update
 from domains.channel_manager.providers.exely.errors import ExelyError
 from domains.channel_manager.providers.exely.exely_pull_worker import exely_pull_scheduler
@@ -26,6 +27,7 @@ from domains.channel_manager.providers.exely.production_safety import (
     safe_runtime_state,
 )
 from domains.channel_manager.providers.exely.provider import ExelyProvider
+from domains.channel_manager.providers.exely.scheduling import connection_pull_interval_seconds
 from domains.channel_manager.providers.exely.security import (
     EXELY_PRODUCTION_ENDPOINT_URL,
     EXELY_TEST_ENDPOINT_URL,
@@ -54,7 +56,7 @@ class ExelyConnectionSetup(BaseModel):
     property_name: str | None = None
     currency: str = "TRY"
     auto_sync_reservations: bool = True
-    sync_interval_minutes: int = 15
+    sync_interval_minutes: int = Field(default=15, ge=3, le=60, strict=True)
     mode: Literal["sandbox", "production"] = "production"
 
 
@@ -71,19 +73,46 @@ class ExelyRoomMapping(BaseModel):
 
 
 class ExelyARIUpdate(BaseModel):
-    room_type_code: str
-    rate_plan_code: str
-    start_date: str
-    end_date: str
-    availability: int | None = None
-    rate_amount: float | None = None
-    currency: str = "TRY"
-    stop_sell: bool | None = None
-    min_stay: int | None = None
-    min_los_arrival: int | None = None
-    max_stay: int | None = None
-    cta: bool | None = None
-    ctd: bool | None = None
+    room_type_code: str = Field(min_length=1, max_length=160)
+    rate_plan_code: str = Field(min_length=1, max_length=160)
+    start_date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+    end_date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+    availability: int | None = Field(default=None, ge=0, strict=True)
+    rate_amount: float | None = Field(default=None, ge=0, allow_inf_nan=False, strict=True)
+    currency: str = Field(default="TRY", pattern=r"^[A-Z]{3}$")
+    stop_sell: bool | None = Field(default=None, strict=True)
+    min_stay: int | None = Field(default=None, ge=1, strict=True)
+    min_los_arrival: int | None = Field(default=None, ge=1, strict=True)
+    max_stay: int | None = Field(default=None, ge=1, strict=True)
+    cta: bool | None = Field(default=None, strict=True)
+    ctd: bool | None = Field(default=None, strict=True)
+
+    @model_validator(mode="after")
+    def validate_mutations(self):
+        operations = {
+            "availability": self.availability, "rate": self.rate_amount,
+            "stop_sell": self.stop_sell, "min_los": self.min_stay,
+            "min_los_arrival": self.min_los_arrival, "max_los": self.max_stay,
+            "cta": self.cta, "ctd": self.ctd,
+        }
+        if all(value is None for value in operations.values()):
+            raise ValueError("EXELY_ARI_MUTATION_REQUIRED")
+        for operation, value in operations.items():
+            if value is None:
+                continue
+            result = preview_exely_ari(operation, {
+                "tenant_id": "validation", "property_id": "validation",
+                "room_type_code": self.room_type_code, "rate_plan_code": self.rate_plan_code,
+                "start_date": self.start_date, "end_date": self.end_date,
+                "value": value, "currency": self.currency,
+            })
+            if result.error_code:
+                raise ValueError(result.error_code)
+        return self
+
+
+class ExelySyncSettings(BaseModel):
+    sync_interval_minutes: int = Field(ge=3, le=60, strict=True)
 
 
 class ExelyARIWriteActivation(BaseModel):
@@ -318,7 +347,7 @@ async def update_currency(
         {"tenant_id": current_user.tenant_id, "is_active": True},
         {"$set": {"currency": payload.currency}},
     )
-    if result.modified_count == 0:
+    if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Active connection not found")
     return {"message": f"Currency updated to {payload.currency}", "currency": payload.currency}
 
@@ -605,7 +634,7 @@ async def push_ari(
 
 @router.post("/ari/bulk-push", status_code=202)
 async def bulk_push_ari(
-    updates: list[ExelyARIUpdate],
+    updates: Annotated[list[ExelyARIUpdate], Field(min_length=1, max_length=200)],
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_channel_connectors")),
 ):
@@ -1029,6 +1058,10 @@ async def verify_test_booking(
 
 @router.get("/sync/status")
 async def get_sync_status(current_user: User = Depends(get_current_user)):
+    conn = await db.exely_connections.find_one(
+        {"tenant_id": current_user.tenant_id, "is_active": True},
+        {"_id": 0, "auto_sync_reservations": 1, "sync_interval_minutes": 1, "sync_interval_seconds": 1},
+    )
     cursor = await db.exely_pull_cursors.find_one(
         {"tenant_id": current_user.tenant_id},
         {"_id": 0},
@@ -1052,6 +1085,8 @@ async def get_sync_status(current_user: User = Depends(get_current_user)):
     )
     return {
         "scheduler_running": exely_pull_scheduler.is_running,
+        "reservation_sync_enabled": bool(conn and conn.get("auto_sync_reservations")),
+        "sync_interval_seconds": connection_pull_interval_seconds(conn) if conn else None,
         "production_safety": safe_runtime_state(),
         "last_pull": cursor,
         "pending_events": pending_events,
@@ -1071,15 +1106,14 @@ async def start_scheduler(
     if runtime_block:
         raise HTTPException(status_code=503, detail=runtime_block)
 
-    conn = await db.exely_connections.find_one(
+    result = await db.exely_connections.update_one(
         {"tenant_id": current_user.tenant_id, "is_active": True},
-        {"_id": 0, "sync_interval_seconds": 1},
+        {"$set": {"auto_sync_reservations": True, "sync_settings_updated_at": datetime.now(UTC).isoformat(), "sync_settings_updated_by": current_user.name}},
     )
-    if not conn:
+    if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Exely connection not found")
-    interval = conn.get("sync_interval_seconds", 60)
-    await exely_pull_scheduler.start(interval_seconds=interval)
-    return {"message": f"Scheduler baslatildi ({interval}s aralikla)", "interval_seconds": interval}
+    await log_sync(PROVIDER, current_user.tenant_id, "reservation_sync_settings", "enabled", user_name=current_user.name)
+    return {"message": "Bu tesis için otomatik rezervasyon çekimi açıldı; ortak çalışan değiştirilmedi.", "reservation_sync_enabled": True}
 
 
 @router.post("/sync/scheduler/stop")
@@ -1087,8 +1121,30 @@ async def stop_scheduler(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_channel_connectors")),
 ):
-    await exely_pull_scheduler.stop()
-    return {"message": "Scheduler durduruldu"}
+    result = await db.exely_connections.update_one(
+        {"tenant_id": current_user.tenant_id, "is_active": True},
+        {"$set": {"auto_sync_reservations": False, "sync_settings_updated_at": datetime.now(UTC).isoformat(), "sync_settings_updated_by": current_user.name}},
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Exely connection not found")
+    await log_sync(PROVIDER, current_user.tenant_id, "reservation_sync_settings", "disabled", user_name=current_user.name)
+    return {"message": "Bu tesis için otomatik rezervasyon çekimi durduruldu. Başlamış işlem güvenle tamamlanabilir; diğer tesisler etkilenmez.", "reservation_sync_enabled": False}
+
+
+@router.patch("/sync/settings")
+async def update_sync_settings(
+    payload: ExelySyncSettings,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),
+):
+    result = await db.exely_connections.update_one(
+        {"tenant_id": current_user.tenant_id, "is_active": True},
+        {"$set": {"sync_interval_minutes": payload.sync_interval_minutes, "sync_settings_updated_at": datetime.now(UTC).isoformat(), "sync_settings_updated_by": current_user.name}},
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Exely connection not found")
+    await log_sync(PROVIDER, current_user.tenant_id, "reservation_sync_settings", "interval_updated", user_name=current_user.name)
+    return {"message": "Tesisin çekim aralığı kaydedildi; mevcut kota/işlem kilidi dolduğunda uygulanır.", "sync_interval_minutes": payload.sync_interval_minutes}
 
 
 # ── Sync Logs ────────────────────────────────────────────────────────

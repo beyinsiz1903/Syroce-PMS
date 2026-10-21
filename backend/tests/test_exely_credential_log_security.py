@@ -499,6 +499,7 @@ def test_mutation_routes_require_connector_management_permission():
         "import_reservation_to_pms",
         "start_scheduler",
         "stop_scheduler",
+        "update_sync_settings",
     )
     router_path = Path(__file__).parents[1] / "domains/channel_manager/providers/exely/exely_router.py"
     router_source = router_path.read_text(encoding="utf-8")

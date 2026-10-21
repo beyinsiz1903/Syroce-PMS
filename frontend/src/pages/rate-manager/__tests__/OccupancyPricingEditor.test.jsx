@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { OccupancyPricingEditor } from '@/pages/rate-manager/BulkUpdatePanel';
 
@@ -33,6 +33,7 @@ describe('HotelRunner occupancy pricing verification', () => {
       ],
       provider_pricing_verified: true,
     }));
+    await waitFor(() => expect(screen.getByTestId('save-occupancy-rule-STD')).toBeEnabled());
   });
 });
 
@@ -50,5 +51,36 @@ describe('occupancy rule currency', () => {
   it('stays quiet for currency-neutral rules', () => {
     editor({ pricing_type: 'per_person', base_occupancy: 2, extra_adult_rate_type: 'percentage', extra_adult_rate: 50, currency: 'USD' }, 'TRY');
     expect(screen.queryByTestId('occupancy-currency-warning-Standard')).not.toBeInTheDocument();
+  });
+});
+
+describe('Exely child policy attestation', () => {
+  const editor = (onSave, verified = false) => render(<OccupancyPricingEditor
+    roomType={{ code: 'STD', name: 'Standart' }} open onToggle={vi.fn()}
+    rule={{ pricing_type: 'per_person', base_occupancy: 2, extra_adult_rate: 1000, child_free_age_max: 6, provider_pricing_verified: verified }}
+    onSave={onSave} currentBaseRate={5000} currencySymbol="₺" currency="TRY" channelProvider="exely"
+  />);
+
+  it('does not claim to send child age bands and requires explicit operator confirmation', async () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    editor(onSave);
+    expect(screen.getByText(/Çocuk yaş kademeleri bu işlemle kanal yöneticisine gönderilmez/)).toBeInTheDocument();
+    const attestation = screen.getByTestId('exely-pricing-attestation-STD');
+    expect(attestation).not.toBeChecked();
+    fireEvent.click(attestation);
+    fireEvent.click(screen.getByTestId('save-occupancy-rule-STD'));
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ provider_pricing_verified: true }));
+    await waitFor(() => expect(screen.getByTestId('save-occupancy-rule-STD')).toBeEnabled());
+  });
+
+  it('clears the previous provider confirmation when a child policy changes', async () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    editor(onSave, true);
+    expect(screen.getByTestId('exely-pricing-attestation-STD')).toBeChecked();
+    fireEvent.click(screen.getByRole('button', { name: /0–6 ücretsiz/ }));
+    expect(screen.getByTestId('exely-pricing-attestation-STD')).not.toBeChecked();
+    fireEvent.click(screen.getByTestId('save-occupancy-rule-STD'));
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ provider_pricing_verified: false }));
+    await waitFor(() => expect(screen.getByTestId('save-occupancy-rule-STD')).toBeEnabled());
   });
 });

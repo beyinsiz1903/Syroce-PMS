@@ -508,6 +508,7 @@ const RoomTypeList = ({
 };
 
 export const OccupancyPricingEditor = ({ roomType, open, onToggle, rule, onSave, currentBaseRate, currencySymbol, currency, channelProvider }) => {
+  const providerName = channelProvider === 'exely' ? 'Exely' : 'HotelRunner';
   const normalizedRule = normalizeOccupancyRule(rule);
   const initial = {
     base_occupancy: normalizedRule.base_occupancy,
@@ -581,6 +582,7 @@ export const OccupancyPricingEditor = ({ roomType, open, onToggle, rule, onSave,
 
   return (
     <div className="border-t border-amber-100 bg-amber-50/40 px-4 py-2" data-testid={`occupancy-pricing-${roomType.code}`}>
+      {rule?.policy_invalid && <p className="mb-2 text-xs text-destructive" role="alert">Kayıtlı kişi/çocuk fiyat kuralı geçersiz; otomatik fiyat önerisi uygulanmaz. Yaş kademelerini kontrol edip yeniden kaydedin.</p>}
       <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
         <span className="text-gray-600">
           {draft.base_occupancy} yetişkin dahil · Ek yetişkin {draft.extra_adult_rate_type === 'percentage' ? `%${draft.extra_adult_rate}` : `${currencySymbol}${Number(draft.extra_adult_rate || 0).toLocaleString('tr-TR')}`}/gece
@@ -700,19 +702,19 @@ export const OccupancyPricingEditor = ({ roomType, open, onToggle, rule, onSave,
             </div>
           )}
           <p className="mt-2 text-[11px] leading-4 text-gray-500">
-            Bu kural Syroce'de oluşturulan manuel/doğrudan rezervasyonların toplamını hesaplar. HotelRunner'a taban fiyat gönderilir; HotelRunner kişi farkı ayarı da aynı olmalıdır.
+            Bu kural Syroce'de oluşturulan manuel/doğrudan rezervasyonların toplamını hesaplar. {providerName}'a taban fiyat gönderilir; kişi farkı ayarı da aynı olmalıdır. Çocuk yaş kademeleri bu işlemle kanal yöneticisine gönderilmez. Yaşlar giriş tarihindeki tamamlanmış yaş olarak girilmelidir.
           </p>
-          {channelProvider === 'hotelrunner' && (
+          {['hotelrunner', 'exely'].includes(channelProvider) && (
             <div className={`mt-3 rounded-lg border p-3 ${draft.provider_pricing_verified ? 'border-emerald-200 bg-emerald-50' : 'border-red-200 bg-red-50'}`}>
               <label className="flex cursor-pointer items-start gap-2 text-xs font-medium text-slate-800">
                 <Checkbox
                   checked={draft.provider_pricing_verified}
                   onCheckedChange={value => update('provider_pricing_verified', Boolean(value))}
-                  data-testid={`hotelrunner-pricing-attestation-${roomType.code}`}
+                  data-testid={`${channelProvider}-pricing-attestation-${roomType.code}`}
                 />
                 <span>
-                  HotelRunner panelindeki dahil yetişkin, ek yetişkin ve tüm çocuk yaş kademeleri bu değerlerle eşleşiyor.
-                  <span className="mt-1 block font-normal text-slate-600">Bu onay olmadan HotelRunner'a taban fiyat gönderimi güvenlik amacıyla durdurulur.</span>
+                  {providerName} panelindeki dahil yetişkin, ek yetişkin ve tüm çocuk yaş kademeleri bu değerlerle eşleşiyor.
+                  <span className="mt-1 block font-normal text-slate-600">{channelProvider === 'hotelrunner' ? "Bu onay olmadan HotelRunner'a taban fiyat gönderimi güvenlik amacıyla durdurulur." : 'Bu onay olmadan tanımlı kişi bazlı kural için birleşik fiyat ekranından Exely taban fiyat gönderimi durdurulur. Onay, Exely ayarlarını değiştirmez veya otomatik sertifikasyon sağlamaz.'}</span>
                 </span>
               </label>
               <Input

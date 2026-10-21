@@ -1,5 +1,96 @@
 # Exely Production Readiness
 
+## 2026-10-22 code audit — not a new provider certification
+
+The historical pilot/cutover evidence below is not proof that every current
+production property has passed live acceptance. This audit executes no provider
+reservation/ARI operations and does not enable production flags or tenant
+synchronization. The public test WSDL was inspected without credentials; schema
+inspection is not property-level certification.
+
+Tenant reservation controls now persist `auto_sync_reservations` on exactly the
+selected connection. The legacy `/sync/scheduler/start` and `/stop` routes no
+longer start/stop the process-wide worker. A started pull may finish its durable
+import/ACK; stopping automatic pulls does not disable an explicit manual pull or
+ARI. Process lifecycle and global kill switches remain deployment controls.
+
+`PATCH /sync/settings` saves a 3–60 minute interval without reconnecting or
+enabling a path. The worker streams all active connections (not just the first
+100) and uses each saved interval in the distributed tenant lease. The lease
+owner cannot bypass its own expiry. Existing leases are not deleted when an
+operator changes the interval, so a shorter interval takes effect only after the
+current quota/lease window. Poll execution may be delayed by the shared worker
+tick or provider quota. Status distinguishes tenant enablement, global safety
+gates, and the current replica's worker state; one replica's state is not proof
+of cluster-wide health.
+
+The UI allows stopping tenant reservation/ARI settings while global gates are
+closed, but cannot use those controls to reopen a global gate. Connection polling
+intervals can be changed in place. Failed status reads are displayed as unknown,
+not as zero backlog or stopped synchronization.
+
+ARI request models validate the complete bulk body before the handler queues any
+item. Shared enqueue/provider preflight also rejects invalid dates, negative or
+non-finite rates, invalid currency/LOS and non-boolean restrictions before
+persisting sibling operations or contacting Exely. Zero availability and false
+restriction values remain valid explicit updates. This is input validation, not
+an atomic transaction across a bulk request: a later infrastructure failure can
+still leave already-queued items and requires outbox reconciliation.
+
+Before production acceptance, independently verify the selected property's vault
+credentials, room/rate mappings, Redis quota health, read/import/ACK sequence,
+modification, partial/full cancellation, child/prepayment/extras scenarios, and
+each supported ARI restriction against the Exely test/production account in an
+explicitly approved observation window. Offline tests do not close those items.
+
+### Child ages and provider policy parity
+
+Explicit child ages survive SOAP parsing, normalization and the durable PMS
+booking. A single referenced guest can supply an age or date of birth; the latter
+is converted to completed years on room arrival, not today or checkout. One
+guest's birthday is never spread across multiple unidentified children. Missing
+or invalid ages stay unknown (`children_ages_complete=false`), not free infants.
+Provider amounts/currency remain authoritative and are not repriced locally.
+Unknown nonzero guest-count codes without usable age evidence block PMS import
+and ACK rather than silently losing a guest. Excessive per-room counts are
+rejected before expanding age metadata. These paths still require representative
+Exely child/infant/extra-bed test fixtures; no undocumented code alias is assumed.
+
+Shared pricing and manual booking inputs reject fractional, boolean, missing or
+out-of-range child ages; each configured inclusive age band must cover 0–17
+without overlaps/gaps. The calendar asks for completed age on arrival instead of
+prefilling unknown ages as zero. No hotel-specific free-age limit is imposed.
+
+Saving an Exely policy no longer automatically claims provider verification.
+Legacy auto-verified flags are not operator attestations. For an explicitly
+configured per-person rule, unified base-rate publishing requires an operator to
+confirm matching Exely panel rules. Changing the policy in the editor clears that
+confirmation. This does not send age bands to Exely or constitute certification.
+An invalid policy anywhere in a settings batch is rejected before sibling writes.
+Invalid stored policies are explicitly marked invalid, not exposed as verified
+free-child defaults; automatic price previews are suppressed until corrected.
+
+Previously imported reservations are not silently rewritten. A repeated
+provider version whose enriched child payload differs remains subject to the
+existing immutable-version conflict checks; resolve through an approved provider
+revision/reconciliation, not by bypassing hashes or manufacturing an ACK.
+
+### Local verification evidence
+
+- Exely/child-policy regression selection: 619 passed, 96 live/provider tests
+  deselected. Real MongoDB tenant-isolation and lease tests used a temporary
+  localhost database with synthetic records, not a property database.
+- Additional direct/agency booking regression selection: 146 passed, 12
+  deselected (some tests overlap the selection above).
+- Full frontend coverage run: 370 files, 1,814 tests passed with two workers;
+  coverage thresholds were preserved. A prior default-parallel run hit the
+  existing 5-second AdminModuleControlCenter test timeout; no timeout or
+  assertion was weakened for the successful rerun.
+- Production frontend build, route bundle budgets, theme guard, changed-source
+  Ruff/ESLint, import boundaries and test-inventory guard passed.
+- These local checks do not constitute deployment or production acceptance. No
+  production activation, reservation ACK or ARI write was performed by the audit.
+
 ## Decision boundary
 
 The Exely technical integration and test-provider pilot are complete. Discovery,

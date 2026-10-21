@@ -5,6 +5,7 @@ Parses OTA-standard XML responses from the Exely channel manager.
 
 import logging
 import re
+from datetime import datetime
 from typing import Any
 
 from defusedxml import ElementTree as safe_ET
@@ -187,6 +188,27 @@ def parse_read_rs(xml_bytes: bytes) -> dict[str, Any]:
     return {**outcome, "reservations": reservations, "count": len(reservations)}
 
 
+def _child_age_at_arrival(gc, room_stay, guest_ages, birth_dates, count):
+    age_text = _attr(gc, "Age").strip()
+    rph = _attr(gc, "ResGuestRPH")
+    if not age_text and count == 1:
+        age_text = guest_ages.get(rph, "").strip()
+    if age_text:
+        age = int(age_text) if age_text.isdigit() and len(age_text) <= 2 else None
+        return age if age is not None and 0 <= age <= 17 else None
+    # A single referenced child can use completed years at check-in. Never
+    # spread one guest's birthday to an entire count/group or use today's age.
+    if count == 1:
+        try:
+            birth = datetime.strptime(birth_dates.get(rph), "%Y-%m-%d").date()
+            arrival = datetime.strptime(_attr(room_stay.find(_ns("TimeSpan")), "Start")[:10], "%Y-%m-%d").date()
+            age = arrival.year - birth.year - ((arrival.month, arrival.day) < (birth.month, birth.day))
+            return age if 0 <= age <= 17 else None
+        except (TypeError, ValueError):
+            pass
+    return None
+
+
 def _parse_hotel_reservation(hr_el) -> dict[str, Any] | None:
     """Parse a single HotelReservation element to a dict."""
     res = {
@@ -209,6 +231,8 @@ def _parse_hotel_reservation(hr_el) -> dict[str, Any] | None:
 
     # Keep room guests keyed by RPH; the last guest is not the booking contact.
     guests_by_rph = {}
+    birth_dates_by_rph = {}
+    guest_ages_by_rph = {}
     for guest in hr_el.iter(_ns("ResGuest")):
         guest_info = {}
         for profile in guest.iter(_ns("Profile")):
@@ -231,6 +255,9 @@ def _parse_hotel_reservation(hr_el) -> dict[str, Any] | None:
         rph = _attr(guest, "ResGuestRPH")
         if rph:
             guests_by_rph[rph] = guest_info
+            customer = guest.find(f".//{_ns('Customer')}")
+            birth_dates_by_rph[rph] = _attr(customer, "BirthDate")
+            guest_ages_by_rph[rph] = _attr(guest, "Age")
         if "guest_name" not in res or _attr(guest, "PrimaryIndicator").lower() == "true":
             res.update(guest_info)
 
@@ -277,20 +304,36 @@ def _parse_hotel_reservation(hr_el) -> dict[str, Any] | None:
         # Guest counts
         adults = 0
         children = 0
+        child_ages = []
+        unknown_count_codes = []
         for gc in room_stay.iter(_ns("GuestCount")):
             age_code = _attr(gc, "AgeQualifyingCode")
             raw_count = _attr(gc, "Count", "0")
             count = int(raw_count) if raw_count.strip() and raw_count.strip().isdigit() else 0
+            # Bound expansion of optional age metadata from untrusted XML. An
+            # impossible per-room count is held for review, never acknowledged.
+            if count > 1000:
+                raise ValueError("EXELY_GUEST_COUNT_LIMIT")
+            age = _child_age_at_arrival(gc, room_stay, guest_ages_by_rph, birth_dates_by_rph, count)
 
             if age_code in {"10", "AdultBed"}:
                 adults += count
-            elif age_code == "8":
+            elif age_code == "8" or age is not None:
                 children += count
+                if age is not None:
+                    child_ages.extend([age] * count)
+            elif count:
+                unknown_count_codes.append(age_code)
             guest_info = guests_by_rph.get(_attr(gc, "ResGuestRPH"))
             if guest_info and not room.get("guest_name"):
                 room.update(guest_info)
         room["adults"] = adults
         room["children"] = children
+        if child_ages:
+            room["children_ages"] = child_ages
+            room["children_ages_complete"] = len(child_ages) == children
+        if unknown_count_codes:
+            room["unrecognized_guest_count_codes"] = unknown_count_codes
 
         # Total
         for total_el in room_stay.findall(_ns("Total")):

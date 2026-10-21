@@ -339,6 +339,8 @@ def _booking_fields(
     guest_id: str,
     booking_id: str,
 ) -> dict[str, Any]:
+    if room.get("unrecognized_guest_count_codes"):
+        raise RuntimeError("EXELY_GUEST_COUNT_CODE_UNSUPPORTED")
     check_in = str(room.get("check_in") or reservation.get("checkin_date") or "")
     check_out = str(room.get("check_out") or reservation.get("checkout_date") or "")
     try:
@@ -348,8 +350,10 @@ def _booking_fields(
     room_total = float(room.get("amount") or 0)
     if room_total <= 0 and len(reservation.get("rooms") or []) == 1:
         room_total = float(reservation.get("total") or 0)
-    adults = int(room.get("adults") or 1)
     children = int(room.get("children") or 0)
+    # Preserve a child-only room without inventing an adult, while retaining
+    # the legacy fallback for payloads that omit all guest-count information.
+    adults = int(room.get("adults") or (0 if children else 1))
     external_id = str(reservation["external_id"])
     now = _now()
     return {
@@ -365,7 +369,8 @@ def _booking_fields(
         "check_out": check_out,
         "adults": adults,
         "children": children,
-        "children_ages": [],
+        "children_ages": list(room.get("children_ages") or []),
+        "children_ages_complete": bool(room.get("children_ages_complete", not children)),
         "guests_count": adults + children,
         "total_amount": room_total,
         "currency": str(reservation.get("currency") or ""),
