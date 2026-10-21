@@ -167,7 +167,8 @@ def test_signature_workflow_happy_path(env):
     assert audit_row["entity_id"] == _EVENT_ID
 
 
-def test_approval_request_and_amendment_cannot_bypass_banquet_entitlement(env, monkeypatch):
+def test_approval_request_and_amendment_require_banquet_when_enforced(env, monkeypatch):
+    monkeypatch.setenv("ENTITLEMENT_ENFORCEMENT_MODE", "enforce")
     monkeypatch.setattr("core.entitlements.enforcement.tenant_has_feature", AsyncMock(return_value=False))
     for suffix, body in [("signature/request", {"client_email": "client@example.com"}),
                          ("amendment", {"reason": "Customer requested a change", "expected_revision": "revision"})]:
