@@ -144,6 +144,7 @@ const MicePage = ({
     status: 'lead',
     currency: cachedTenantCurrency(),
     expected_pax: 50,
+    pricing: null,
     start_date: '',
     end_date: '',
     space_bookings: [{
@@ -301,6 +302,7 @@ const MicePage = ({
       status: ev.status,
       currency: ev.currency || cachedTenantCurrency(),
       expected_pax: ev.expected_pax,
+      pricing: ev.pricing || null,
       start_date: ev.start_date,
       end_date: ev.end_date,
       space_bookings: ev.space_bookings?.length ? ev.space_bookings : blankEvent.space_bookings,
@@ -964,7 +966,7 @@ const MicePage = ({
       {showMenuForm && <MenuFormModal editingMenu={editingMenu} menuForm={menuForm} setMenuForm={setMenuForm} toggleTag={toggleTag} submitMenu={submitMenu} onClose={() => setShowMenuForm(false)} />}
 
       {/* BEO modal */}
-      {beoData && <BeoModal beoData={beoData} canFinance={canFinance} canRequestApproval={canMice} markPaid={markPaid} onClose={() => setBeoData(null)} />}
+      {beoData && <BeoModal beoData={beoData} canFinance={canFinance} canActuals={canFinance && hasAdvancedReporting} canRequestApproval={canMice} markPaid={markPaid} onChanged={async () => { await loadEvents(); await showBeo(beoData.event.id); }} onClose={() => setBeoData(null)} />}
 
       {/* Kitchen ticket modal */}
       {kitchenData && <KitchenModal kitchenData={kitchenData} onClose={() => setKitchenData(null)} />}

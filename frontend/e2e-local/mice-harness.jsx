@@ -35,6 +35,9 @@ axios.defaults.adapter = async config => {
   else if (config.url === '/mice/resources') data = { resources: [] };
   else if (config.url === '/mice/diary') data = { events: [event] };
   else if (config.url === '/mice/events/demo-event/beo') data = { event, spaces: [], resources: event.resources, agenda: [], payment_schedule: [] };
+  else if (config.url === '/mice/events/demo-event') data = event;
+  else if (config.url === '/mice/events/demo-event/documents') data = { documents: [] };
+  else if (config.url === '/mice/events/demo-event/actuals') data = { actuals: null, expected_revision: 'local-revision', currency: 'TRY', report: { quoted_net_revenue: 12000, actual_cost: null, quote_based_contribution: null } };
   else if (config.url === '/mice/public/beo/verify') data = { event: { ...event, status: 'definite' }, spaces: [], resources: event.resources, payment_schedule: [] };
   else if (config.url === '/mice/public/beo/sign') data = { success: true };
   else throw new Error(`Unmocked test endpoint: ${config.method} ${config.url}`);

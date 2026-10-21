@@ -22,7 +22,8 @@ Pazar karşılaştırmasında [Amadeus Delphi](https://www.amadeus-hospitality.c
 | Satış Pipeline | Fırsat, aşama değişikliği, faaliyet, özet | Yükleme hatası artık boş liste olarak gizlenmiyor | Fırsattan etkinliğe tek işlemli dönüşüm, sürümlü teklif, takip SLA ve kayıp neden analizi |
 | Paketler | Oluştur/düzenle/sil, kişi sayısıyla teklif hesapla | Pasif paket/minimum/maksimum kişi, negatif tutar ve ondalık hesap kontrolleri | Paket teklifini tüm satırlarıyla etkinliğe aktarma |
 | Rakip Analizi | Rakip ve fiyat kaydı, karşılaştırma | Farklı para birimleri ayrı gruplarda; pasif rakipler karşılaştırmaya alınmıyor | Fiyat güncelliği, tarih/sezon ve aynı kapsam karşılaştırması |
-| BEO | Görüntüle, PDF indir/gönder, yazdır, müşteri onayı, muhasebeleştir | Müşteri onay arayüzü ve belgeye özel yazdırma; finans butonlarında rol/durum görünürlüğü | Sürümlü BEO değişiklik listesi, departman teslim/onay takibi |
+| BEO | Görüntüle, PDF indir/gönder, yazdır, sürüm kaydet, müşteri onayı, revizyon aç, muhasebeleştir | Kayıtlı içerikten PDF, atomik sürüm numarası, eski onayın arşivlenmesi ve yeni onay gereksinimi | Ayrıntılı satır farkı ve departman teslim/onay takibi |
+| Katılım ve maliyet | Gerçek/garanti kişi, bütçe, tüketim ve personel maliyeti gir, teklif bazlı katkıyı gör | Finans yetkisi ve gelişmiş raporlama özelliğiyle korunur; veri eksikse maliyeti sıfır olarak sunmaz | Reçeteden otomatik sarf, bordro maliyeti, gerçekleşmiş muhasebe geliriyle kârlılık |
 | Müşteri onay sayfası | Bağlantıyla görüntüle, ad ve açık rıza ile onayla | Özel, süreli bağlantı; genel değişiklik eski daveti iptal eder; imzalı kayıt kilitlenir | Nitelikli elektronik imza sağlayıcısı entegrasyonu ayrı kapsamdır |
 | Mutfak siparişleri | Gönder, listele, teslim alındı, tamamla | Sıfır miktarın tüm kişi sayısına dönüşmesi önlendi; durum yazımı karşılaştırmalı; sipariş dövizi korunuyor | Etkinlik değişikliği/iptali sonrası revizyon ve iptal iş emri |
 | Günlük operasyon | Tarih seç, fonksiyonları görüntüle/yazdır | Başka günün salon saatleri seçilen güne taşınmıyor | Departman bazlı görev atama, teslim ve gerçekleşen kişi/sarf kaydı |
@@ -49,23 +50,25 @@ Pazar karşılaştırmasında [Amadeus Delphi](https://www.amadeus-hospitality.c
 
 ## Finansal sınırlar ve tamamlanması gereken işler
 
-Mevcut satış bedeli salon kiraları ve kaynak satırlarının toplamıdır. Vergi dahil/hariç fiyat, servis bedeli, indirim, minimum harcama, komisyon, gerçekleşen tüketim ve eğlence bedelinin gelir/maliyet ayrımı henüz tek bir fiyatlandırma motorunda tanımlı değildir. Bu alanlarda oran veya muhasebe politikası varsayılmadı.
+Satış teklifi net salon ve kaynak fiyatlarından hesaplanır. İsteğe bağlı politika sırası ara toplam → yüzde indirim → servis → vergidir. Servisin vergi matrahına dahil edilmesi seçilebilir; bileşenler kuruşa yuvarlanır ve ekranda/PDF'de aynı sunucu toplamı gösterilir. Oranlar varsayılmaz. Karma satır vergi oranı, vergi dahil katalog fiyatı, minimum harcama ve komisyon henüz bu motorda yoktur; teklif dökümü mali fatura yerine geçmez.
 
-Ödeme takvimindeki ödendi işareti kasa/banka hareketi üretmez. Genel Muhasebeye İşle ve bağlı PMS rezervasyonuna folyo devri ayrı yüzeylerdir; canlı kabulde aynı satışın iki kez gelirleşmediği ve gerçek folyo bakiyesine doğru geçtiği birlikte doğrulanmalıdır.
+Ödeme takvimindeki ödendi işareti kasa/banka hareketi üretmez. Bağlı rezervasyon varsa doğrudan yevmiye oluşturma kapalıdır; tamamlanma folyo devrini kullanır. Bağımsız etkinlik yevmiyesinde vergi 391, net gelir/servis 600 hesabına ayrılır; hesapların aktif olması gerekir. Aktarım süresince satış düzenlemesi kilitlenir, belirsiz sonuç aynı anahtar/kurla tekrar edilir. Gerçek tahsilat/iade ve folyo bakiyesi için canlı mutabakat halen gereklidir.
+
+Her etkinlikte en fazla 25 değişmez BEO içerik sürümü saklanır. Onay bağlantısı belirli sürüme bağlıdır. Muhasebeleşmemiş açık onaylı etkinliğe gerekçeli revizyon açılınca eski belge ve müşteri onayı arşivde kalır; yeni içeriğe otomatik onay taşınmaz. Bu geçmişi bulunan etkinlik silinemez. Katılım/maliyet analizi gerçekleşmiş gelir veya muhasebe kârı değil, vergisiz teklif üzerinden katkı hesabıdır.
 
 Üst düzey ürün için kalan geliştirme sırası:
 
-1. Vergi/servis/indirim ve gerçek tahsilat–iade sözleşmesi; hesap, tarih, döviz ve ters kayıt kuralları.
-2. Teklif ve BEO sürümleri; imzalı sürümden kontrollü ek protokol; müşteri ve departmanlara değişiklik bildirimi.
+1. Gerçek tahsilat–iade sözleşmesi; karma vergi, minimum harcama, komisyon ve ters kayıt kuralları.
+2. Sürümler arası satır farkı ve müşteri/departmanlara değişiklik bildirimi.
 3. Birleşen/bölünen salon hiyerarşisi, kurulum/söküm tamponları ve tesisin saat diliminde ortak takvim.
-4. Gerçekleşen kişi/tüketim, garanti kişi, reçete ve personel maliyetiyle etkinlik kârlılığı.
+4. Reçeteden stok sarfı ve personel/bordro maliyetiyle gerçekleşmiş muhasebe kârlılığı.
 5. Mutfak revizyonu/iptali, ekipman teslim/iade ve departman görev/onay süreçleri.
 6. Fırsat–teklif–etkinlik–grup oda bloğu dönüşümünün tek kayıt üzerinden yürütülmesi.
 7. Mobil operasyon, çok tesis, erişilebilirlik ve tüm dillerde metin/çıktı kabulü.
 
 ## Doğrulama yöntemi
 
-Son yerel test turu: 119 backend testi, 30 frontend testi ve 10 masaüstü/telefon tarayıcı testi geçti. Backend turu gerçek BEO PDF üretimini de içerdi; atlanan test yoktu. Üretim derlemesi, Ruff, değişen arayüzlerin ESLint kontrolü ve tema kontrolü başarılıydı. Bu sayılar tüm PMS testlerinin veya canlı kabulün tamamı değildir.
+Son birleşik yerel test turu: 134 backend testi, 33 frontend testi ve 10 masaüstü/telefon tarayıcı testi geçti. Backend turu gerçek BEO PDF üretimini de içerdi; atlanan test yoktu. Üretim derlemesi, Ruff, değişen arayüzlerin ESLint kontrolü ve tema kontrolü başarılıydı. Bu sayılar tüm PMS testlerinin veya canlı kabulün tamamı değildir.
 
 Backend testleri gerçek kurum, e-posta veya misafir kaydı göndermez. Yerel MongoDB kabul veritabanı her çalışmada benzersiz ad alır ve yalnız o veritabanı temizlenir. Replica set üzerinde salon yarışında bir işlem kazanmalı; standalone MongoDB üzerinde atomik garanti verilemiyorsa iki işlem de kapalı kalmalıdır.
 

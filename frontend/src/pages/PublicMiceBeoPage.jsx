@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { formatCurrency } from '@/lib/currency';
+import QuoteTotals from '@/components/mice/QuoteTotals';
 
 export default function PublicMiceBeoPage() {
   const [params] = useSearchParams();
@@ -50,7 +51,9 @@ export default function PublicMiceBeoPage() {
           {data.spaces.map((space, index) => <p key={index}>{space.space_name} · {space.starts_at?.replace('T', ' ')} – {space.ends_at?.replace('T', ' ')} · {space.setup_style}</p>)}
           {data.resources.map((line, index) => <p key={index}>{line.name} · {line.quantity} {line.unit} · {formatCurrency(Number(line.quantity) * Number(line.unit_price), data.event.currency)}</p>)}
           <p className="text-lg font-semibold">Satış bedeli: {formatCurrency(data.event.totals?.grand_total, data.event.currency)}</p>
-          <p className="text-xs text-muted-foreground">Vergi/servis bedeli ayrıca tanımlanmamıştır. Bu ekran ödeme veya tahsilat işlemi yapmaz.</p>
+          <QuoteTotals totals={data.event.totals} currency={data.event.currency} />
+          {data.document && <p>Belge sürümü: {data.document.number} · {data.document.issued_at?.slice(0, 16)}</p>}
+          <p className="text-xs text-muted-foreground">{data.event.pricing ? 'Net fiyatlara tanımlanan indirim, servis ve vergi uygulanmıştır.' : 'Vergi/servis bedeli ayrıca tanımlanmamıştır.'} Bu ekran ödeme veya tahsilat işlemi yapmaz.</p>
           {data.payment_schedule?.length > 0 && <div><h2 className="font-semibold">Ödeme planı</h2>{data.payment_schedule.map((p, index) => <p key={index}>{p.due_date} · {p.label} · {formatCurrency(p.amount, data.event.currency)}</p>)}</div>}
         </CardContent></Card>
         {data.signed ? <p role="status" className="rounded border p-4">Müşteri onayı kaydedildi. Teşekkür ederiz.</p> : !['tentative', 'definite', 'confirmed'].includes(data.event.status) ? <p role="status">Bu etkinlik şu anda müşteri onayına açık değil. Otelle görüşün.</p> : <form onSubmit={sign} className="space-y-4 rounded border p-4">

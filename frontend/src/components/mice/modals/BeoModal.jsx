@@ -8,6 +8,8 @@ import { Badge } from '@/components/ui/badge';
 import { Download, Send } from 'lucide-react';
 import { promptDialog } from '@/lib/dialogs';
 import { Info, Modal } from '../_shared';
+import QuoteTotals from '../QuoteTotals';
+import EventCommercialPanel from '../EventCommercialPanel';
 import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 const downloadBeoPdf = async (eventId, eventName) => {
   try {
@@ -79,7 +81,9 @@ const BeoModal = ({
   beoData,
   markPaid,
   canFinance = false,
+  canActuals = false,
   canRequestApproval = false,
+  onChanged,
   onClose
 }) => {
   const [sending, setSending] = useState(false);
@@ -201,6 +205,7 @@ const BeoModal = ({
 
       {beoData.payment_schedule?.length > 0 && <div>
           <h4 className="font-semibold text-sm mb-1">Ödeme Takvimi</h4>
+          <p className="mb-2 text-xs text-muted-foreground">Ödendi işareti yalnız plan beyanıdır; kasa/banka hareketi veya tahsilat makbuzu oluşturmaz. Gerçek tahsilatı PMS finans ekranından doğrulayın.</p>
           <table className="w-full text-xs border-collapse">
             <thead className="bg-slate-50"><tr>
               <th className="border p-1">Vade</th>
@@ -228,11 +233,8 @@ const BeoModal = ({
           </table>
         </div>}
 
-      <Card><CardContent className="p-3 grid grid-cols-3 gap-2 text-xs">
-        <Info l="Mekan Toplamı" v={formatCurrency(beoData.event.totals?.space_total, beoData.event.currency || cachedTenantCurrency())} />
-        <Info l="Kaynak Toplamı" v={formatCurrency(beoData.event.totals?.resources_total, beoData.event.currency || cachedTenantCurrency())} />
-        <Info l="GRAND TOTAL" v={formatCurrency(beoData.event.totals?.grand_total, beoData.event.currency || cachedTenantCurrency())} cls="text-lg text-indigo-600 font-bold" />
-      </CardContent></Card>
+      <Card><CardContent className="p-3"><QuoteTotals totals={beoData.event.totals} currency={beoData.event.currency || cachedTenantCurrency()} /></CardContent></Card>
+      <div data-mice-screen-only><EventCommercialPanel eventId={beoData.event.id} canManage={canRequestApproval} canFinance={canFinance} canActuals={canActuals} refreshKey={approvalLink} onChanged={onChanged} /></div>
 
       {approvalLink && <label data-mice-screen-only className="block space-y-1 text-xs">Müşteriye özel onay bağlantısı — otomatik gönderilmez<Input readOnly value={approvalLink} onFocus={e => e.target.select()} /></label>}
       <div className="text-right flex flex-wrap justify-end gap-2">
