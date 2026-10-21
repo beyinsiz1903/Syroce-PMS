@@ -136,20 +136,24 @@ async def _maybe_alert_unconfigured(db, pending_count: int) -> None:
 
 async def _count_claimable(db, now_iso: str) -> int:
     """Şu an claim edilebilir (backoff penceresi geçmiş) bekleyen iş sayısı."""
-    return await db.kbs_reports.count_documents(
-        {
-            "_kind": QUEUE_KIND,
-            "status": "pending",
-            "$or": [
-                {"next_retry_at": None},
-                {"next_retry_at": {"$exists": False}},
-                {"next_retry_at": {"$lte": now_iso}},
-            ],
-        }
-    )
+    from core.kbs_cloud import managed_tenants
+
+    query = {
+        "_kind": QUEUE_KIND,
+        "status": "pending",
+        "$or": [
+            {"next_retry_at": None},
+            {"next_retry_at": {"$exists": False}},
+            {"next_retry_at": {"$lte": now_iso}},
+        ],
+    }
+    managed = await managed_tenants(db)
+    if managed:
+        query["tenant_id"] = {"$nin": managed}
+    return await db.kbs_reports.count_documents(query)
 
 
-async def _claim_one(db, now: datetime) -> dict | None:
+async def _claim_one(db, now: datetime, *, tenant_id: str | None = None, recover_expired: bool = True) -> dict | None:
     """Bir bekleyen işi atomik claim et (pending → in_progress, attempts+1).
 
     find_one_and_update CAS: backoff penceresi geçmiş pending VEYA lease'i
@@ -177,6 +181,16 @@ async def _claim_one(db, now: datetime) -> dict | None:
             {"status": "in_progress", "leased_until": {"$lt": now_iso}},
         ],
     }
+    if tenant_id is not None:
+        query["tenant_id"] = tenant_id
+    else:
+        from core.kbs_cloud import managed_tenants
+
+        managed = await managed_tenants(db)
+        if managed:
+            query["tenant_id"] = {"$nin": managed}
+    if not recover_expired:
+        query["$or"] = query["$or"][:1]
     update = {
         "$set": {
             "status": "in_progress",
@@ -194,10 +208,19 @@ async def _claim_one(db, now: datetime) -> dict | None:
         return_document=ReturnDocument.AFTER,
         projection={"_id": 0},
     )
+    if job and tenant_id is None:
+        from core.kbs_cloud import config_query
+
+        if await db.kbs_cloud_configs.find_one(config_query(job["tenant_id"]), {"_id": 1}):
+            await db.kbs_reports.update_one(
+                {"tenant_id": job["tenant_id"], "id": job["id"], "status": "in_progress", "worker_id": WORKER_ID},
+                {"$set": {"status": "pending", "worker_id": None, "leased_until": None}, "$inc": {"attempts": -1}},
+            )
+            return None
     return job
 
 
-async def _complete(db, job: dict, reference: str) -> None:
+async def _complete(db, job: dict, reference: str, *, receipt_metadata: dict | None = None) -> None:
     """in_progress → done (CAS), booking bayrağı + legacy report (router pariteli)."""
     tenant_id = job["tenant_id"]
     job_id = job["id"]
@@ -219,6 +242,7 @@ async def _complete(db, job: dict, reference: str) -> None:
                 "completed_at": now_iso,
                 "updated_at": now_iso,
                 "kbs_test": is_test_ref,
+                **(receipt_metadata or {}),
             },
             "$unset": {"_open_lock": ""},
         },
@@ -379,6 +403,9 @@ async def dispatch_pending_kbs_jobs(db, *, limit: int = 50) -> dict:
     Returns: özet sözlük.
     """
     now_iso = _iso(_now())
+    from core.kbs_cloud import dispatch_cloud_jobs
+
+    cloud = await dispatch_cloud_jobs(db, limit=limit)
 
     if not kbs_dispatch_active():
         pending = await _count_claimable(db, now_iso)
@@ -388,6 +415,7 @@ async def dispatch_pending_kbs_jobs(db, *, limit: int = 50) -> dict:
             "credentials": kbs_credentials_configured(),
             "test_mode": kbs_test_mode(),
             "pending": pending,
+            "cloud": cloud,
         }
 
     sent = failed = dead = missing = 0
@@ -481,4 +509,5 @@ async def dispatch_pending_kbs_jobs(db, *, limit: int = 50) -> dict:
         "retry": failed,
         "dead": dead,
         "missing_data": missing,
+        "cloud": cloud,
     }

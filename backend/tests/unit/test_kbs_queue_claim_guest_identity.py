@@ -30,7 +30,9 @@ async def test_claim_rehydrates_the_target_occupant_not_the_primary_guest(monkey
         ),
         update_one=AsyncMock(return_value=SimpleNamespace(modified_count=1)),
     )
-    monkeypatch.setattr(kbs, "db", SimpleNamespace(kbs_reports=reports))
+    monkeypatch.setattr(kbs, "db", SimpleNamespace(
+        kbs_reports=reports, kbs_cloud_configs=SimpleNamespace(find_one=AsyncMock(return_value=None)),
+    ))
     snapshot_builder = AsyncMock(
         return_value=(
             {"id": "booking-206"},
