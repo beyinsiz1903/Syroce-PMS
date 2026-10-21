@@ -83,7 +83,7 @@ describe('MicePage entitlement usage contract', () => {
   it('renders after loading quota usage from the entitlement payload', async () => {
     render(
       <MemoryRouter>
-        <MicePage user={{}} tenant={{}} onLogout={vi.fn()} />
+        <MicePage user={{ role: 'admin' }} tenant={{}} onLogout={vi.fn()} />
       </MemoryRouter>,
     );
 
@@ -107,7 +107,7 @@ describe('MicePage entitlement usage contract', () => {
 
     render(
       <MemoryRouter>
-        <MicePage user={{}} tenant={{}} onLogout={vi.fn()} />
+        <MicePage user={{ role: 'admin' }} tenant={{}} onLogout={vi.fn()} />
       </MemoryRouter>,
     );
 
@@ -128,7 +128,7 @@ describe('MicePage entitlement usage contract', () => {
 
     render(
       <MemoryRouter>
-        <MicePage user={{}} tenant={{}} onLogout={vi.fn()} />
+        <MicePage user={{ role: 'admin' }} tenant={{}} onLogout={vi.fn()} />
       </MemoryRouter>,
     );
 

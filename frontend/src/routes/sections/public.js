@@ -5,9 +5,12 @@ import {
   AgencyBookingWidget, AgencyConnectAuthorize,
   GuestQRMenu,
 } from "./lazyPages";
+import { lazyWithPreload } from '../lazyWithPreload';
+const PublicMiceBeoPage = lazyWithPreload(() => import('@/pages/PublicMiceBeoPage'));
 
 export function publicRoutes({ pa }) {
   return [
+    { path: "/public/mice/beo", type: "public", component: PublicMiceBeoPage },
     { path: "/landing", type: "public", component: LandingPage },
     { path: "/otel-programi", type: "public", component: HotelPmsLandingPage },
     { path: "/g/room/:tenantId/:roomId", type: "public", component: RoomRequestPage },

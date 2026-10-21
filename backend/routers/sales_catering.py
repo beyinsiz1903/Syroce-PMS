@@ -17,11 +17,12 @@ from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from core.audit import log_audit_event
 from core.database import db
 from core.entitlements.enforcement import require_feature
+from core.mice_integrity import money, rounded
 from core.security import get_current_user
 from core.spa_mice_authz import require_catalog, require_mice_ops
 from core.tenant_currency import get_tenant_currency
@@ -89,8 +90,12 @@ async def _ensure_indexes() -> None:
 
 
 # ── Models ───────────────────────────────────────────────────────
-class OpportunityIn(BaseModel):
-    title: str
+class SalesInput(BaseModel):
+    model_config = ConfigDict(allow_inf_nan=False, str_strip_whitespace=True)
+
+
+class OpportunityIn(SalesInput):
+    title: str = Field(min_length=1, max_length=200)
     account_id: str | None = None
     contact_id: str | None = None
     event_type: str | None = None  # wedding/conference/corporate/...
@@ -121,17 +126,17 @@ class ActivityIn(BaseModel):
     outcome: str | None = None  # positive/neutral/negative
 
 
-class PackageItemIn(BaseModel):
+class PackageItemIn(SalesInput):
     kind: str  # space / menu / room / resource / addon
     ref_id: str | None = None  # mice_spaces / mice_menus / room_type etc
     name: str
-    quantity: float = 1
-    unit_price: float = 0
+    quantity: float = Field(1, ge=0)
+    unit_price: float = Field(0, ge=0)
     notes: str | None = None
 
 
-class PackageIn(BaseModel):
-    name: str
+class PackageIn(SalesInput):
+    name: str = Field(min_length=1, max_length=200)
     type: str = "wedding"
     description: str | None = None
     min_pax: int = Field(0, ge=0)
@@ -141,6 +146,12 @@ class PackageIn(BaseModel):
     currency: str | None = Field(None, min_length=3, max_length=3, pattern=r"^[A-Za-z]{3}$")
     items: list[PackageItemIn] = Field(default_factory=list)
     active: bool = True
+
+    @model_validator(mode="after")
+    def pax_bounds(self):
+        if self.max_pax and self.min_pax > self.max_pax:
+            raise ValueError("Minimum kişi sayısı maksimumdan büyük olamaz")
+        return self
 
 
 # ── Opportunities ────────────────────────────────────────────────
@@ -528,9 +539,14 @@ async def quote_package(
     if not pkg:
         raise HTTPException(404, "Package not found")
 
-    base = float(pkg.get("base_price", 0))
-    per_pax = float(pkg.get("per_pax_price", 0))
-    items_total = sum(float(it.get("quantity", 1)) * float(it.get("unit_price", 0)) for it in pkg.get("items", []))
+    if pkg.get("active") is False:
+        raise HTTPException(409, "Pasif paket için teklif hesaplanamaz")
+    if pax < int(pkg.get("min_pax") or 0) or (pkg.get("max_pax") and pax > int(pkg["max_pax"])):
+        raise HTTPException(422, "Kişi sayısı paketin minimum / maksimum sınırları dışında")
+
+    base = money(pkg.get("base_price", 0))
+    per_pax = money(pkg.get("per_pax_price", 0))
+    items_total = sum(money(rounded(money(it.get("quantity", 1)) * money(it.get("unit_price", 0)))) for it in pkg.get("items", []))
     subtotal = base + (per_pax * pax) + items_total
 
     return {
@@ -539,9 +555,9 @@ async def quote_package(
         "pax": pax,
         "currency": _normalize_currency(pkg.get("currency"), await _tenant_currency_code(current_user.tenant_id)),
         "breakdown": {
-            "base_price": round(base, 2),
-            "per_pax_total": round(per_pax * pax, 2),
-            "items_total": round(items_total, 2),
+            "base_price": rounded(base),
+            "per_pax_total": rounded(per_pax * pax),
+            "items_total": rounded(items_total),
         },
-        "subtotal": round(subtotal, 2),
+        "subtotal": rounded(subtotal),
     }

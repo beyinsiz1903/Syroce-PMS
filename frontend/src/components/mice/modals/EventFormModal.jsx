@@ -32,11 +32,15 @@ const EventFormModal = ({
   setPs,
   rmPs,
   submit,
+  saving = false,
+  previewQuote,
+  quotePreview,
   onClose
 }) => <Modal title={editing ? 'Etkinlik Düzenle' : 'Yeni Etkinlik'} onClose={onClose} wide>
-    <form onSubmit={submit} className="space-y-3">
+    <form noValidate onSubmit={submit} className="space-y-3">
+      {editing && form.space_bookings.some(b => b.space_id && !b.rate_snapshot) && <p className="rounded border p-2 text-xs text-muted-foreground">Bu eski kaydın bazı salon tarifeleri saklanmamış. Düzenlemede güncel katalog tarifesi uygulanır; kaydetmeden önce Tutarı Hesapla ile kontrol edin.</p>}
       <Tabs value={eventTab} onValueChange={setEventTab}>
-        <TabsList>
+        <TabsList className="h-auto flex-wrap">
           <TabsTrigger value="basics">Temel</TabsTrigger>
           <TabsTrigger value="spaces">Mekan & Kaynak</TabsTrigger>
           <TabsTrigger value="agenda">Fonksiyon Sheet</TabsTrigger>
@@ -45,7 +49,7 @@ const EventFormModal = ({
         </TabsList>
 
         <TabsContent value="basics" className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <Field label="Etkinlik Adı"><Input required value={form.name} onChange={e => setForm({
               ...form,
               name: e.target.value
@@ -89,14 +93,15 @@ const EventFormModal = ({
               </select>
             </Field>
             <Field label="Durum">
-              <select className="w-full border rounded px-2 py-1.5" value={form.status} onChange={e => setForm({
+              <select disabled={Boolean(editing)} className="w-full border rounded px-2 py-1.5" value={form.status} onChange={e => setForm({
               ...form,
               status: e.target.value
             })}>
-                {Object.entries(STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                {Object.entries(STATUS).filter(([key]) => editing || !['completed', 'cancelled'].includes(key)).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
               </select>
+              {editing && <p className="text-xs text-muted-foreground">Durum, etkinlik listesindeki geçerli adımlarla değiştirilir.</p>}
             </Field>
-            <Field label="Beklenen Pax"><Input type="number" required value={form.expected_pax} onChange={e => setForm({
+            <Field label="Beklenen Pax"><Input type="number" min="0" required value={form.expected_pax} onChange={e => setForm({
               ...form,
               expected_pax: +e.target.value
             })} /></Field>
@@ -114,7 +119,7 @@ const EventFormModal = ({
               ...form,
               start_date: e.target.value
             })} /></Field>
-            <Field label="Bitiş Tarihi"><Input type="date" required value={form.end_date} onChange={e => setForm({
+            <Field label="Bitiş Tarihi"><Input type="date" min={form.start_date} required value={form.end_date} onChange={e => setForm({
               ...form,
               end_date: e.target.value
             })} /></Field>
@@ -140,12 +145,12 @@ const EventFormModal = ({
               space_id: e.target.value
             })}>
                   <option value="">Mekan…</option>
-                  {spaces.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  {spaces.filter(s => s.active !== false || s.id === sb.space_id).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                 </select>
                 <Input className="col-span-3 text-xs" type="datetime-local" value={sb.starts_at?.slice(0, 16) || ''} onChange={e => setSb(i, {
               starts_at: e.target.value
             })} />
-                <Input className="col-span-3 text-xs" type="datetime-local" value={sb.ends_at?.slice(0, 16) || ''} onChange={e => setSb(i, {
+                <Input className="col-span-2 text-xs" type="datetime-local" min={sb.starts_at?.slice(0, 16)} value={sb.ends_at?.slice(0, 16) || ''} onChange={e => setSb(i, {
               ends_at: e.target.value
             })} />
                 <select className="col-span-2 border rounded px-1 py-1 text-xs" value={sb.setup_style} onChange={e => setSb(i, {
@@ -153,6 +158,7 @@ const EventFormModal = ({
             })}>
                   {SETUPS.map(s => <option key={s}>{s}</option>)}
                 </select>
+                <Input className="col-span-1 text-xs" aria-label={`Salon ${i + 1} kişi sayısı`} type="number" min="0" value={sb.expected_pax ?? form.expected_pax} onChange={e => setSb(i, { expected_pax: Number(e.target.value) })} />
                 <Button type="button" size="sm" variant="ghost" className="col-span-1" onClick={() => rmSb(i)}><Trash2 className="w-3 h-3" /></Button>
               </div>)}
           </div>
@@ -170,11 +176,14 @@ const EventFormModal = ({
                 menu_id: e.target.value,
                 inventory_id: '',
                 name: m?.name || r.name,
-                type: m?.type || r.type
+                type: m?.type || r.type,
+                unit_price: m ? Number(m.price_per_person || m.flat_price || 0) : r.unit_price,
+                quantity: m?.price_per_person > 0 ? form.expected_pax : r.quantity,
+                unit: m?.price_per_person > 0 ? 'pax' : 'unit'
               });
             }}>
                   <option value="">— Menü —</option>
-                  {menus.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+                  {menus.filter(m => m.active !== false).map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
                 </select>
                 <select className="col-span-3 border rounded px-1 py-1 text-xs" value={r.inventory_id || ''} onChange={e => {
               const inv = resources.find(x => x.id === e.target.value);
@@ -183,19 +192,19 @@ const EventFormModal = ({
                 menu_id: '',
                 name: inv?.name || r.name,
                 type: inv?.type || r.type,
-                unit_price: inv?.unit_price || r.unit_price
+                unit_price: inv ? Number(inv.unit_price || 0) : r.unit_price
               });
             }}>
                   <option value="">— Envanter —</option>
-                  {resources.map(x => <option key={x.id} value={x.id}>{x.name} (stok {x.total_stock})</option>)}
+                  {resources.filter(x => x.active !== false).map(x => <option key={x.id} value={x.id}>{x.name} (stok {x.total_stock})</option>)}
                 </select>
                 <Input className="col-span-2 text-xs" placeholder="Ad" value={r.name} onChange={e => setRes(i, {
               name: e.target.value
             })} />
-                <Input className="col-span-1 text-xs" type="number" placeholder="Adet" value={r.quantity} onChange={e => setRes(i, {
+                <Input className="col-span-1 text-xs" type="number" min="0" step="0.01" placeholder="Adet" value={r.quantity} onChange={e => setRes(i, {
               quantity: +e.target.value
             })} />
-                <Input className="col-span-2 text-xs" type="number" placeholder={`Birim ${form.currency || cachedTenantCurrency()}`} value={r.unit_price} onChange={e => setRes(i, {
+                <Input disabled={Boolean(r.menu_id || r.inventory_id)} title={r.menu_id || r.inventory_id ? 'Katalog fiyatı sunucuda uygulanır; serbest satır dışında doğrudan değiştirilemez' : ''} className="col-span-2 text-xs" type="number" min="0" step="0.01" placeholder={`Birim ${form.currency || cachedTenantCurrency()}`} value={r.unit_price} onChange={e => setRes(i, {
               unit_price: +e.target.value
             })} />
                 <Button type="button" size="sm" variant="ghost" className="col-span-1" onClick={() => rmRes(i)}><Trash2 className="w-3 h-3" /></Button>
@@ -257,29 +266,33 @@ const EventFormModal = ({
               Depozito + bakiye taksit planı ekleyebilirsiniz.
             </p>}
           {form.payment_schedule.map((p, i) => <div key={p.id || i} className="grid grid-cols-12 gap-1 mb-1.5 items-center">
-              <Input className="col-span-3 text-xs" type="date" value={p.due_date || ''} onChange={e => setPs(i, {
+              <Input disabled={p.paid} className="col-span-3 text-xs" type="date" value={p.due_date || ''} onChange={e => setPs(i, {
             due_date: e.target.value
           })} required />
-              <Input className="col-span-4 text-xs" placeholder="Etiket (Depozito %30)" value={p.label} onChange={e => setPs(i, {
+              <Input disabled={p.paid} className="col-span-4 text-xs" placeholder="Etiket (Depozito %30)" value={p.label} onChange={e => setPs(i, {
             label: e.target.value
           })} required />
-              <Input className="col-span-3 text-xs" type="number" placeholder={`Tutar ${form.currency || cachedTenantCurrency()}`} value={p.amount} onChange={e => setPs(i, {
+              <Input disabled={p.paid} className="col-span-3 text-xs" type="number" min="0" step="0.01" placeholder={`Tutar ${form.currency || cachedTenantCurrency()}`} value={p.amount} onChange={e => setPs(i, {
             amount: +e.target.value
           })} required />
               <label className="col-span-1 text-xs text-center flex items-center gap-1">
-                <input type="checkbox" checked={p.paid || false} onChange={e => setPs(i, {
-              paid: e.target.checked
-            })} />
+                <input type="checkbox" disabled checked={p.paid || false} readOnly />
                 Öd.
               </label>
-              <Button type="button" size="sm" variant="ghost" className="col-span-1" onClick={() => rmPs(i)}><Trash2 className="w-3 h-3" /></Button>
+              <Button disabled={form.payment_schedule.some(x => x.paid)} type="button" size="sm" variant="ghost" className="col-span-1" onClick={() => rmPs(i)}><Trash2 className="w-3 h-3" /></Button>
             </div>)}
         </TabsContent>
       </Tabs>
 
-      <div className="flex justify-end gap-2 pt-2 border-t">
-        <Button type="button" variant="ghost" onClick={onClose}>İptal</Button>
-        <Button type="submit">{editing ? 'Güncelle' : 'Oluştur'}</Button>
+      {quotePreview && <div role="status" className="rounded-lg border bg-muted p-3 text-sm">
+        <p>Salon: {formatCurrency(quotePreview.totals.space_total, quotePreview.currency)} · Kaynaklar: {formatCurrency(quotePreview.totals.resources_total, quotePreview.currency)}</p>
+        <strong>Hesaplanan satış bedeli: {formatCurrency(quotePreview.totals.grand_total, quotePreview.currency)}</strong>
+        <p className="mt-1 text-xs text-muted-foreground">{quotePreview.notice}</p>
+      </div>}
+      <div className="flex flex-wrap justify-end gap-2 pt-2 border-t">
+        <Button type="button" variant="outline" disabled={saving} onClick={previewQuote}>Tutarı Hesapla</Button>
+        <Button type="button" variant="ghost" disabled={saving} onClick={onClose}>İptal</Button>
+        <Button type="submit" disabled={saving}>{saving ? 'Kaydediliyor…' : editing ? 'Güncelle' : 'Oluştur'}</Button>
       </div>
     </form>
   </Modal>;

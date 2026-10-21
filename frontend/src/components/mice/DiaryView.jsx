@@ -22,13 +22,23 @@ const DAYS_TR = ['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz'];
 const MONTHS_TR = ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran',
                    'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'];
 
-const GANTT_START_HOUR = 6;
+const GANTT_START_HOUR = 0;
 const GANTT_END_HOUR = 24;
 const GANTT_SPAN = GANTT_END_HOUR - GANTT_START_HOUR;
 const LANE_HEIGHT = 28;
 
 const fmtDate = (d) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+export function bookedSpacesOnDate(events, dateStr) {
+  const start = new Date(`${dateStr}T00:00:00`);
+  const end = new Date(start); end.setDate(end.getDate() + 1);
+  const ids = new Set();
+  events.filter(e => ['tentative', 'definite', 'confirmed', 'completed'].includes(e.status)).forEach(event => {
+    (event.space_bookings || []).forEach(b => { if (new Date(b.starts_at) < end && new Date(b.ends_at) > start) ids.add(b.space_id); });
+  });
+  return ids;
+}
 
 const hhmm = (iso) => {
   if (!iso) return '';
@@ -77,8 +87,12 @@ const DiaryView = ({ spaceById, spaces }) => {
   const eventsByDate = useMemo(() => {
     const map = {};
     items.forEach((ev) => {
-      const start = new Date(ev.start_date);
-      const end = new Date(ev.end_date || ev.start_date);
+      const start = new Date(`${ev.start_date}T00:00:00`);
+      const end = new Date(`${ev.end_date || ev.start_date}T00:00:00`);
+      const monthStart = new Date(`${monthRange.from}T00:00:00`);
+      const monthEnd = new Date(`${monthRange.to}T00:00:00`);
+      if (start < monthStart) start.setTime(monthStart.getTime());
+      if (end > monthEnd) end.setTime(monthEnd.getTime());
       for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
         const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
         if (!map[key]) map[key] = [];
@@ -86,7 +100,7 @@ const DiaryView = ({ spaceById, spaces }) => {
       }
     });
     return map;
-  }, [items]);
+  }, [items, monthRange]);
 
   const calendarDays = useMemo(() => {
     const { year, month } = calMonth;
@@ -97,8 +111,7 @@ const DiaryView = ({ spaceById, spaces }) => {
     for (let d = 1; d <= monthRange.lastDay; d++) {
       const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
       const dayEvents = eventsByDate[dateStr] || [];
-      const bookedSpaceIds = new Set();
-      dayEvents.forEach((ev) => (ev.space_bookings || []).forEach((sb) => bookedSpaceIds.add(sb.space_id)));
+      const bookedSpaceIds = bookedSpacesOnDate(dayEvents, dateStr);
       days.push({
         day: d, dateStr, events: dayEvents,
         bookedCount: bookedSpaceIds.size,
@@ -148,7 +161,7 @@ const DiaryView = ({ spaceById, spaces }) => {
     const dayStart = new Date(y, m, d, 0, 0, 0, 0);
     const dayEnd = new Date(y, m, d + 1, 0, 0, 0, 0);
     const bySpace = {};
-    items.forEach((ev) => {
+    items.filter(e => ['tentative', 'definite', 'confirmed', 'completed'].includes(e.status)).forEach((ev) => {
       (ev.space_bookings || []).forEach((sb) => {
         if (!sb.starts_at || !sb.ends_at) return;
         const s = new Date(sb.starts_at);
@@ -176,8 +189,7 @@ const DiaryView = ({ spaceById, spaces }) => {
   const ganttBookedCount = ganttRows.filter((r) => r.bookings.length > 0).length;
 
   const selectedDayEvents = selectedDate ? (eventsByDate[selectedDate] || []) : [];
-  const selectedDayBookedIds = new Set();
-  selectedDayEvents.forEach((ev) => (ev.space_bookings || []).forEach((sb) => selectedDayBookedIds.add(sb.space_id)));
+  const selectedDayBookedIds = bookedSpacesOnDate(selectedDayEvents, selectedDate);
   const selectedDayFreeSpaces = (spaces || []).filter((s) => !selectedDayBookedIds.has(s.id));
   const selectedDayBookedSpaces = (spaces || []).filter((s) => selectedDayBookedIds.has(s.id));
 

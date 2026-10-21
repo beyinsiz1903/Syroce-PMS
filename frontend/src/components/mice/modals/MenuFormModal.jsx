@@ -2,6 +2,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Field, Modal } from '../_shared';
 import { cachedTenantCurrency } from '@/lib/currency';
+import { Plus, Trash2 } from 'lucide-react';
 
 const MenuFormModal = ({
   editingMenu,
@@ -87,6 +88,19 @@ const MenuFormModal = ({
           <Input type="number" min="0" value={menuForm.prep_lead_minutes}
             onChange={(e) => setMenuForm({ ...menuForm, prep_lead_minutes: e.target.value })} />
         </Field>
+      </div>
+      <div className="space-y-2">
+        <div className="flex items-center justify-between gap-2"><h3 className="text-sm font-medium">Menü içeriği / servis sırası</h3>
+          <Button type="button" variant="outline" size="sm" onClick={() => setMenuForm({ ...menuForm, courses: [...menuForm.courses, { course_type: 'main', name: '', description: '' }] })}><Plus className="mr-1 h-3 w-3" />Kalem ekle</Button>
+        </div>
+        {menuForm.courses.map((course, index) => <div className="space-y-2 rounded border p-2" key={index}>
+          <div className="flex gap-2"><select aria-label={`Servis ${index + 1} türü`} className="rounded border bg-background px-2" value={course.course_type} onChange={e => setMenuForm({ ...menuForm, courses: menuForm.courses.map((c, i) => i === index ? { ...c, course_type: e.target.value } : c) })}>
+            {['appetizer', 'soup', 'main', 'side', 'dessert', 'beverage', 'break'].map(type => <option key={type}>{type}</option>)}
+          </select><Input required aria-label={`Servis ${index + 1} adı`} value={course.name} onChange={e => setMenuForm({ ...menuForm, courses: menuForm.courses.map((c, i) => i === index ? { ...c, name: e.target.value } : c) })} />
+            <Button type="button" variant="ghost" aria-label={`Servis ${index + 1} sil`} onClick={() => setMenuForm({ ...menuForm, courses: menuForm.courses.filter((_, i) => i !== index) })}><Trash2 className="h-4 w-4" /></Button>
+          </div>
+          <Input aria-label={`Servis ${index + 1} açıklaması`} placeholder="İçerik / servis notu" value={course.description || ''} onChange={e => setMenuForm({ ...menuForm, courses: menuForm.courses.map((c, i) => i === index ? { ...c, description: e.target.value } : c) })} />
+        </div>)}
       </div>
       <Field label="Durum">
         <label className="flex items-center gap-2 text-sm">

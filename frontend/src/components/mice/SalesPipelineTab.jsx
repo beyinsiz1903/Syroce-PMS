@@ -12,6 +12,7 @@ import { alertDialog, confirmDialog } from '@/lib/dialogs';
 import { useTranslation } from 'react-i18next';
 import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 import { formatCurrencyBreakdown } from '@/lib/reportCurrency';
+import { ModuleLoadError } from '@/components/shared/ModuleAvailabilityState';
 
 const STAGES = [
   { key: 'lead',       label: 'Lead',      cls: 'bg-slate-100 text-slate-700' },
@@ -35,6 +36,7 @@ export default function SalesPipelineTab({ accounts = [] }) {
   const [pipeline, setPipeline] = useState(null);
   const [opps, setOpps] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
   const [stageFilter, setStageFilter] = useState('all');
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(blank);
@@ -55,7 +57,8 @@ export default function SalesPipelineTab({ accounts = [] }) {
       ]);
       setPipeline(p.data);
       setOpps(o.data?.opportunities || []);
-    } catch (e) { console.error(e); }
+      setLoadError(null);
+    } catch (e) { setLoadError(e); }
     setLoading(false);
   }, [stageFilter]);
 
@@ -98,6 +101,8 @@ export default function SalesPipelineTab({ accounts = [] }) {
   };
 
   const fmtCurrency = (value, currency = cachedTenantCurrency()) => formatCurrency(value, currency);
+
+  if (loadError) return <ModuleLoadError moduleName="MICE satış pipeline" error={loadError} onRetry={load} />;
 
   return (
     <div className="space-y-4">

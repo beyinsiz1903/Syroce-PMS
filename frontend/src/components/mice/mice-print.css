@@ -1,0 +1,29 @@
+@media print {
+  body:has([data-mice-print-root]) #root,
+  body:has([data-mice-print-root]) .mice-dialog-overlay,
+  body:has([data-mice-print-root]) [data-sonner-toaster] {
+    display: none !important;
+  }
+
+  [data-mice-print-root] {
+    position: static !important;
+    inset: auto !important;
+    transform: none !important;
+    width: 100% !important;
+    max-width: none !important;
+    max-height: none !important;
+    overflow: visible !important;
+    box-shadow: none !important;
+    border: 0 !important;
+    color: #000 !important;
+    background: #fff !important;
+  }
+
+  [data-mice-print-root] button,
+  [data-mice-print-root] input,
+  [data-mice-print-root] select,
+  [data-mice-screen-only] { display: none !important; }
+
+  [data-mice-print-root] thead { display: table-header-group; }
+  [data-mice-print-root] tr { break-inside: avoid; }
+}

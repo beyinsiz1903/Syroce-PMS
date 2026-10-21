@@ -3,6 +3,7 @@ import axios from 'axios';
 import { toast } from 'sonner';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Download, Send } from 'lucide-react';
 import { promptDialog } from '@/lib/dialogs';
@@ -77,9 +78,21 @@ const emailBeoPdf = async (eventId, eventEmail, setSending) => {
 const BeoModal = ({
   beoData,
   markPaid,
+  canFinance = false,
+  canRequestApproval = false,
   onClose
 }) => {
   const [sending, setSending] = useState(false);
+  const [approvalLink, setApprovalLink] = useState('');
+  const requestApproval = async () => {
+    const email = await promptDialog({ title: 'Müşteri Onayı', message: 'Bağlantının ait olduğu müşteri e-postası. Bu işlem e-posta göndermez.', defaultValue: beoData.event.client_email || '' });
+    if (email == null) return;
+    try {
+      const { data } = await axios.post(`/mice/events/${beoData.event.id}/signature/request`, { client_email: email, expires_in_days: 7 });
+      setApprovalLink(new URL(data.signature_url, window.location.origin).href);
+      toast.success('7 gün geçerli özel onay bağlantısı oluşturuldu; henüz gönderilmedi');
+    } catch (error) { toast.error(error.response?.data?.detail || 'Onay bağlantısı oluşturulamadı'); }
+  };
   const postToFolio = async () => {
     try {
       const currency = String(beoData.event.currency || cachedTenantCurrency()).toUpperCase();
@@ -206,8 +219,8 @@ const BeoModal = ({
                     {p.reference && <div className="text-[10px] text-gray-500 mt-0.5">Ref: {p.reference}</div>}
                   </td>
                   <td className="border p-1 text-center">
-                    {!p.paid && <Button size="sm" variant="ghost" onClick={() => markPaid(beoData.event.id, i)}>
-                        Öde
+                    {!p.paid && canFinance && <Button size="sm" variant="ghost" onClick={() => markPaid(beoData.event.id, i)}>
+                        Ödendi işaretle
                       </Button>}
                   </td>
                 </tr>)}
@@ -221,10 +234,12 @@ const BeoModal = ({
         <Info l="GRAND TOTAL" v={formatCurrency(beoData.event.totals?.grand_total, beoData.event.currency || cachedTenantCurrency())} cls="text-lg text-indigo-600 font-bold" />
       </CardContent></Card>
 
-      <div className="text-right flex justify-end gap-2">
-        <Button variant="outline" className="text-indigo-600 border-indigo-200 hover:bg-indigo-50" onClick={postToFolio}>
+      {approvalLink && <label data-mice-screen-only className="block space-y-1 text-xs">Müşteriye özel onay bağlantısı — otomatik gönderilmez<Input readOnly value={approvalLink} onFocus={e => e.target.select()} /></label>}
+      <div className="text-right flex flex-wrap justify-end gap-2">
+        {canRequestApproval && <Button variant="outline" disabled={Boolean(beoData.event.signature) || !['tentative', 'definite', 'confirmed'].includes(beoData.event.status)} onClick={requestApproval}>Müşteri Onay Bağlantısı</Button>}
+        {canFinance && <Button disabled={Boolean(beoData.event.gl_journal_entry_id) || !['definite', 'confirmed', 'completed'].includes(beoData.event.status)} variant="outline" className="text-indigo-600 border-indigo-200 hover:bg-indigo-50" onClick={postToFolio}>
           Genel Muhasebeye İşle
-        </Button>
+        </Button>}
         <Button variant="outline" onClick={() => downloadBeoPdf(beoData.event.id, beoData.event.name)}>
           <Download className="w-4 h-4 mr-1" /> PDF İndir
         </Button>
