@@ -357,6 +357,7 @@ _EXTRACTED_ROUTERS: list[tuple[str, str, list[str], str | None, list | None]] = 
     ("routers.early_warning_router", "router", ["Early Warning & Predictive"], None, None),
     ("routers.outbox_admin", "outbox_admin_router", ["Outbox Admin"], "/api", None),
     ("routers.import_admin", "import_admin_router", ["Import Admin"], "/api", None),
+    ("routers.data_migration", "router", ["Data Migration"], None, None),
     ("routers.room_qr_requests", "router", ["Room QR Requests"], None, None),
     ("routers.door_reader", "router", ["Door Reader"], None, None),
     ("domains.pms.lock_bridge.connector_router", "router", ["Lock Bridge"], None, None),

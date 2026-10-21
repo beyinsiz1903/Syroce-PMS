@@ -57,6 +57,8 @@ const EXACT_ROUTE_SCOPES = Object.freeze({
   '/app/pms': ['frontdesk'],
   '/pms': ['frontdesk'],
   '/pms-operations': ['frontdesk'],
+  // Migration is a PMS workspace; its route and API retain separate admin gates.
+  '/app/data-migration': ['frontdesk'],
   '/app/reservation-calendar': ['frontdesk'],
   '/reservation-calendar': ['frontdesk'],
   '/agency-requests': ['frontdesk'],

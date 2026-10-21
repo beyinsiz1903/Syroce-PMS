@@ -474,6 +474,7 @@ async def create_booking_atomic(
     *,
     tenant_id: str,
     booking_doc: dict[str, Any],
+    suppress_messaging: bool = False,
 ) -> dict[str, Any]:
     """
     Atomically create a booking with room-night locking.
@@ -546,8 +547,10 @@ async def create_booking_atomic(
     booking_status = booking_doc.get("status", "confirmed")
     pending = dict(booking_doc.get("messaging_pending") or {})
     pending["booking_created"] = datetime.now(UTC).isoformat()
-    booking_doc["messaging_pending"] = pending
-    if booking_status in ("confirmed", "guaranteed", "checked_in"):
+    # Trusted historical cutover callers must not replay pre-migration guest
+    # notifications. Interactive callers retain the existing default.
+    booking_doc["messaging_pending"] = {} if suppress_messaging else pending
+    if not suppress_messaging and booking_status in ("confirmed", "guaranteed", "checked_in"):
         pending["booking_confirmed"] = datetime.now(UTC).isoformat()
         if booking_status == "checked_in":
             pending["checked_in"] = pending["booking_confirmed"]

@@ -37,6 +37,9 @@ class Folio(BaseModel):
     guest_id: str | None = None
     company_id: str | None = None
     balance: float = 0.0  # Total charges - Total payments
+    opening_balance: float = 0.0  # Prior PMS closing balance, never current revenue/cash
+    opening_balance_date: str | None = None
+    opening_voucher_id: str | None = None
     notes: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     closed_at: datetime | None = None

@@ -14,6 +14,7 @@ const FolioManagementPage = () => {
   const [selectedFolio, setSelectedFolio] = useState(null);
   const [charges, setCharges] = useState([]);
   const [payments, setPayments] = useState([]);
+  const [openingBalance, setOpeningBalance] = useState(0);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [showChargeModal, setShowChargeModal] = useState(false);
@@ -107,6 +108,7 @@ const FolioManagementPage = () => {
           const folioData = await detailRes.json();
           setCharges(folioData.charges || []);
           setPayments(folioData.payments || []);
+          setOpeningBalance(Number(folioData.folio?.opening_balance || 0));
           return;
         }
       }
@@ -115,12 +117,14 @@ const FolioManagementPage = () => {
       // be loaded, show an empty folio rather than inventing nightly charges.
       setCharges([]);
       setPayments([]);
+      setOpeningBalance(0);
     } catch (error) {
       console.error('Error fetching folio details:', error);
       // Fail-closed: clear stale charges/payments so a failed load can never
       // show the previously selected folio's data as if it belonged here.
       setCharges([]);
       setPayments([]);
+      setOpeningBalance(0);
     }
   };
   const postCharge = async chargeData => {
@@ -198,7 +202,7 @@ const FolioManagementPage = () => {
   const filteredFolios = folios.filter(f => f.guest_name.toLowerCase().includes(searchTerm.toLowerCase()) || f.room_number.toLowerCase().includes(searchTerm.toLowerCase()) || f.folio_number.toLowerCase().includes(searchTerm.toLowerCase()));
   const totalCharges = charges.reduce((sum, c) => sum + (c.total || 0), 0);
   const totalPayments = payments.reduce((sum, p) => sum + (p.amount || 0), 0);
-  const balance = totalCharges - totalPayments;
+  const balance = openingBalance + totalCharges - totalPayments;
   return <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
         <div>
@@ -278,6 +282,7 @@ const FolioManagementPage = () => {
                 <p>Select a folio from the list to view details</p>
               </div> : <div className="space-y-6">
                 {/* Summary Cards */}
+                {openingBalance !== 0 && <p className="text-sm">Önceki PMS devir bakiyesi: {openingBalance.toFixed(2)} · Yeni gelir/tahsilat değildir.</p>}
                 <div className="grid grid-cols-3 gap-4">
                   <div className="bg-blue-50 p-4 rounded-lg">
                     <div className="text-sm text-gray-600">Total Charges</div>
@@ -502,7 +507,8 @@ const FolioManagementPage = () => {
       folio_number: selectedFolio.folio_number,
       booking: selectedFolio.booking,
       charges: charges,
-      payments: payments
+      payments: payments,
+      opening_balance: openingBalance
     }} onClose={() => setShowPrintableFolio(false)} />}
     </div>;
 };

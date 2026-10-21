@@ -971,6 +971,7 @@ async def _build_candidate_set(
             "currency": 1,
             "is_complimentary": 1,
             "complimentary_scope": 1,
+            "migration_cutover_date": 1,
         },
     ).to_list(5000)
     bookings_list, _future, _ended, _invalid = _partition_stays_for_business_date(

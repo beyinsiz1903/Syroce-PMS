@@ -108,6 +108,7 @@ export const Simulator = lazy(() => import("@/pages/Simulator"));
 export const MevzuatRaporlari = lazy(() => import("@/pages/MevzuatRaporlari"));
 export const SimpleAdminPanel = lazy(() => import("@/pages/SimpleAdminPanel"));
 export const MigrationObservabilityPage = lazy(() => import("@/pages/MigrationObservabilityPage"));
+export const DataMigrationPage = lazy(() => import("@/pages/DataMigrationPage"));
 export const SystemPerformanceMonitor = lazy(() => import("@/pages/SystemPerformanceMonitor"));
 export const LogViewer = lazy(() => import("@/pages/LogViewer"));
 export const NetworkTestTools = lazy(() => import("@/pages/NetworkTestTools"));

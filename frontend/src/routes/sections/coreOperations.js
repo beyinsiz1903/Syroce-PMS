@@ -5,7 +5,7 @@ import {
   PMSOperationalDashboard, FolioDetailView, HousekeepingStatusPage,
   ShiftHandoverPage, EarlyLatePricingSettings, EodReportPage, WalkinPage,
   RoomMapPage, WakeUpCallsPage, LostFoundPage, MinibarPage, PmsOperationWorkflows, TransferParkingPage,
-  OperationalEventDashboard, MigrationObservabilityPage, IntegrationHub,
+  OperationalEventDashboard, MigrationObservabilityPage, DataMigrationPage, IntegrationHub,
   AdminControlPanel, HousekeepingDashboard, POSDashboard, POSWaiterTerminal, POSExtensions, FeaturesShowcase,
   SustainabilityReport, WBESettings, FolioManagementHub,
 } from "./lazyPages";
@@ -54,6 +54,7 @@ export function coreOperationsRoutes({ p, pa, pm, modules }) {
     { path: "/guest-journey", type: "redirect", to: "/crm?tab=journeys" },
     { path: "/operational-events", ...p(OperationalEventDashboard), wrapLayout: true, layoutModule: "pms_operations" },
     { path: "/app/migration-observability", ...p(MigrationObservabilityPage), wrapLayout: true, layoutModule: "reports" },
+    { path: "/app/data-migration", ...pm(DataMigrationPage, "pms", undefined, { strict: true, allowedRoles: ['admin', 'super_admin'] }), wrapLayout: true, layoutModule: "settings" },
     { path: "/app/sustainability", ...p(SustainabilityReport), wrapLayout: true, layoutModule: "reports" },
     { path: "/app/wbe-settings", ...pm(WBESettings, "booking_engine", undefined, { strict: true }), wrapLayout: true, layoutModule: "wbe" },
     { path: "/app/folio-management", ...pm(FolioManagementHub, "folio_management"), wrapLayout: true, layoutModule: "folio_management" },

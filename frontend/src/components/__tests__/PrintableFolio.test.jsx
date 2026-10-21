@@ -28,4 +28,11 @@ describe('PrintableFolio', () => {
     fireEvent.click(screen.getByTestId('print-folio'));
     expect(window.print).toHaveBeenCalledOnce();
   });
+
+  it('önceki PMS bakiyesini yeni gelir veya ödeme satırı yapmadan ayrıca gösterir', () => {
+    render(<PrintableFolio folioData={{ folio_number: 'MIG-101', currency: 'TRY', opening_balance: 50, charges: [{ id: 'new-charge', total: 100 }], payments: [{ amount: 25 }] }} />);
+    expect(screen.getByText('Önceki PMS devir bakiyesi')).toBeInTheDocument();
+    expect(screen.getByText('Yeni gelir veya tahsilat değildir.')).toBeInTheDocument();
+    expect(screen.getAllByText(/125,00/).length).toBeGreaterThan(0);
+  });
 });

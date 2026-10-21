@@ -12,6 +12,19 @@ const routeRuntime = {
 };
 
 describe('route scope coverage', () => {
+  it('classifies migration without relaxing its PMS entitlement or administrator gates', () => {
+    const migration = getRouteConfigs(routeRuntime).find((route) => route.path === '/app/data-migration');
+
+    expect(migration).toMatchObject({
+      type: 'module',
+      moduleKey: 'pms',
+      moduleScopes: ['frontdesk'],
+      strict: true,
+      allowedRoles: ['admin', 'super_admin'],
+    });
+    expect(migration.skipModuleScopeBoundary).not.toBe(true);
+  });
+
   it('gives agency recovery screens the same scope as agency administration', () => {
     const routes = getRouteConfigs(routeRuntime);
     const agencies = routes.find((route) => route.path === '/admin/agencies');

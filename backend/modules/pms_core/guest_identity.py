@@ -83,18 +83,8 @@ def deduplicate_guest_records(records: list[dict[str, Any]]) -> list[dict[str, A
     return [guest for _tokens, guest in groups]
 
 
-async def find_existing_guest_by_identity(guest_collection, tenant_id: str, candidate: dict[str, Any]) -> dict[str, Any] | None:
-    """Find a tenant-local guest sharing a strong identity with ``candidate``.
-
-    Name-only records are deliberately not reused automatically. Document
-    number is sufficient; e-mail and phone additionally require the same name
-    when both records have a name, preventing household contact details from
-    silently joining different people.
-    """
-    candidate_tokens = guest_identity_tokens(candidate)
-    if not candidate_tokens:
-        return None
-
+def guest_identity_conditions(candidate: dict[str, Any]) -> list[dict]:
+    """Shared encrypted/plaintext candidate query for interactive and bulk use."""
     branches: list[dict] = []
     for field in ("id_number", "passport_number", "email", "phone"):
         raw = str(candidate.get(field) or "").strip()
@@ -110,7 +100,14 @@ async def find_existing_guest_by_identity(guest_collection, tenant_id: str, cand
         for variant in variants:
             if variant:
                 branches.extend(guest_pii_or_conditions(field, variant))
-    if not branches:
+    return branches
+
+
+async def find_existing_guest_by_identity(guest_collection, tenant_id: str, candidate: dict[str, Any]) -> dict[str, Any] | None:
+    """Find a tenant-local guest by strong identity, never by name alone."""
+    candidate_tokens = guest_identity_tokens(candidate)
+    branches = guest_identity_conditions(candidate)
+    if not candidate_tokens or not branches:
         return None
 
     query = {

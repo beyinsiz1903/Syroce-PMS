@@ -52,7 +52,14 @@ async def folio_snapshots(database, tenant_id, folios, *, fallback_currency):
         add_amount(snap["payments_by_currency"], code, amount)
     for snap in snapshots.values():
         charges, payments = snap["charges_by_currency"], snap["payments_by_currency"]
-        snap["balance_by_currency"] = rounded_totals({code: charges.get(code, 0) - payments.get(code, 0) for code in charges.keys() | payments.keys()})
+        # A source-PMS closing balance is neither new revenue nor a payment.
+        # Keep it separate in the folio but include it in live debt settlement.
+        from modules.pms_core.report_money import money
+
+        opening = money(snap["folio"].get("opening_balance") or 0)
+        snap["opening_by_currency"] = {snap["currency"]: opening} if opening else {}
+        snap["balance_by_currency"] = rounded_totals({code: charges.get(code, 0) - payments.get(code, 0) + (opening if code == snap["currency"] else 0)
+                                                     for code in charges.keys() | payments.keys() | snap["opening_by_currency"].keys()})
         snap["charges_by_currency"] = rounded_totals(charges)
         snap["payments_by_currency"] = rounded_totals(payments)
     return snapshots

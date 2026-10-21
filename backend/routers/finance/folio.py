@@ -584,6 +584,9 @@ async def export_folio_excel(
     total_payments = 0.0
 
     transactions = _folio_export_transactions(charges, payments)
+    if folio.get("opening_balance"):
+        transactions.insert(0, {"date": folio.get("opening_balance_date") or "", "desc": "Önceki PMS devir bakiyesi (yeni gelir/tahsilat değildir)",
+                                "type": "Devir", "amount": float(folio["opening_balance"]), "is_charge": True})
 
     for tx in transactions:
         ws.cell(row=row_num, column=1, value=tx["date"]).border = box_border
@@ -1696,7 +1699,8 @@ async def generate_folio_proforma(
         g["count"] += 1
 
     payments_total = round(sum(float(p.get("amount") or 0.0) for p in payments), 2)
-    balance = round(grand_total - payments_total, 2)
+    opening_balance = float(folio.get("opening_balance") or 0)
+    balance = round(opening_balance + grand_total - payments_total, 2)
 
     # Misafir ve booking bilgileri
     guest = None
@@ -1734,6 +1738,8 @@ async def generate_folio_proforma(
             "vat_total": round(vat_sum, 2),
             "city_tax_total": round(city_tax_sum, 2),
             "grand_total": round(grand_total, 2),
+            "opening_balance": opening_balance,
+            "opening_balance_note": "Önceki PMS bakiyesi; proforma mal/hizmet toplamına ve vergisine dahil değildir." if opening_balance else None,
             "payments_total": payments_total,
             "balance_due": balance,
         },

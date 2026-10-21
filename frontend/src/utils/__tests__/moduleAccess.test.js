@@ -54,6 +54,19 @@ describe('moduleAccess', () => {
     expect(moduleScopesForPath('/app/dashboard')).toEqual([]);
   });
 
+  it.each([
+    '/app/data-migration',
+    '/app/data-migration?batch=batch-1',
+    '/app/data-migration#cutover',
+  ])('classifies the migration workspace under PMS access: %s', (path) => {
+    const scopes = moduleScopesForPath(path);
+    expect(scopes).toEqual(['frontdesk']);
+    expect(hasAnyModuleAccess({ role: 'admin', module_scopes: ['frontdesk'] }, scopes)).toBe(true);
+    expect(hasAnyModuleAccess({ role: 'admin', module_scopes: [] }, scopes)).toBe(false);
+    expect(hasAnyModuleAccess({ role: 'admin', module_scopes: ['reports'] }, scopes)).toBe(false);
+    expect(moduleScopesForNavItem({ path, moduleKey: 'pms' })).toEqual(scopes);
+  });
+
   it('denies unclassified routes to explicit module users but preserves legacy users', () => {
     const scopedUser = { role: 'staff', module_scopes: ['tasks'] };
     const legacyAdmin = { role: 'admin' };

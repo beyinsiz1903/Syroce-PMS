@@ -60,8 +60,21 @@ async def _enqueue_single_guest(
 
         booking = await db.bookings.find_one(
             {"tenant_id": tenant_id, "id": booking_id},
-            {"_id": 0, "guest_id": 1, "kbs_reported": 1, "kbs_test": 1},
+            {"_id": 0, "guest_id": 1, "kbs_reported": 1, "kbs_test": 1, "kbs_migration_review_required": 1},
         )
+
+        if (booking or {}).get("kbs_migration_review_required"):
+            # In-house stays may already have been reported by the source PMS.
+            # A nightly sweep must not replay their historical check-in. Only
+            # the explicit official-receipt reconciliation may release this.
+            await db.kbs_alerts.update_one(
+                {"_id": f"migration-kbs:{tenant_id}:{booking_id}", "tenant_id": tenant_id},
+                {"$setOnInsert": {"id": str(uuid.uuid4()), "tenant_id": tenant_id, "booking_id": booking_id,
+                                  "kind": "migration_review_required", "action": action, "created_at": _now_iso(),
+                                  "acknowledged": False, "message": "Önceki PMS bildirimi resmi makbuzla uzlaştırılmalı; otomatik tekrar gönderilmedi."}},
+                upsert=True,
+            )
+            return None
 
         checkin_confirmed = bool((booking or {}).get("kbs_reported")) and not bool((booking or {}).get("kbs_test"))
         if action == "checkout" and guest_id and guest_id != (booking or {}).get("guest_id"):
