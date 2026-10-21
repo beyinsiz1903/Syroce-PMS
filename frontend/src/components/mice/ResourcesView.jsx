@@ -4,21 +4,23 @@ import { toast } from 'sonner';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2, Pencil } from 'lucide-react';
 import { Field, Modal } from './_shared';
 import { confirmDialog } from '@/lib/dialogs';
 import { useTranslation } from 'react-i18next';
 import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 
-const ResourcesView = ({ resources, reload }) => {
+const ResourcesView = ({ resources, reload, canManage = false }) => {
   const { t } = useTranslation();
   const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing] = useState(null);
   const [form, setForm] = useState({ name: '', type: 'av', total_stock: 1, unit: 'unit',
                                      unit_price: 0, currency: cachedTenantCurrency() });
   const create = async (e) => {
     e.preventDefault();
     try {
-      await axios.post('/mice/resources', form);
+      if (editing) await axios.put(`/mice/resources/${editing}`, form);
+      else await axios.post('/mice/resources', form);
       toast.success('Envanter eklendi');
       setShowForm(false);
       setForm({ name: '', type: 'av', total_stock: 1, unit: 'unit', unit_price: 0, currency: cachedTenantCurrency() });
@@ -35,7 +37,7 @@ const ResourcesView = ({ resources, reload }) => {
     <Card><CardContent className="p-3">
       <div className="flex justify-between items-center mb-3">
         <h3 className="font-semibold">Kaynak Envanteri (AV / Dekor)</h3>
-        <Button size="sm" onClick={() => setShowForm(true)}>
+        <Button disabled={!canManage} size="sm" onClick={() => { setEditing(null); setForm({ name: '', type: 'av', total_stock: 0, unit: 'unit', unit_price: 0, currency: cachedTenantCurrency(), active: true }); setShowForm(true); }}>
           <Plus className="w-3 h-3 mr-1" /> {t('cm.components_mice_ResourcesView.yeni_kaynak')}
         </Button>
       </div>
@@ -49,7 +51,8 @@ const ResourcesView = ({ resources, reload }) => {
                   <div className="font-semibold">{r.name}</div>
                   <div className="text-xs text-gray-500">{r.type}</div>
                 </div>
-                <Button size="sm" variant="ghost" onClick={() => remove(r.id)}>
+                <Button disabled={!canManage} size="sm" variant="ghost" aria-label={`${r.name} düzenle`} onClick={() => { setEditing(r.id); setForm({ ...r }); setShowForm(true); }}><Pencil className="w-3 h-3" /></Button>
+                <Button disabled={!canManage} size="sm" variant="ghost" onClick={() => remove(r.id)}>
                   <Trash2 className="w-3 h-3" />
                 </Button>
               </div>
@@ -65,7 +68,7 @@ const ResourcesView = ({ resources, reload }) => {
       </div>
 
       {showForm && (
-        <Modal title={t('cm.components_mice_ResourcesView.yeni_kaynak_1ed22')} onClose={() => setShowForm(false)}>
+        <Modal title={editing ? 'Kaynak Düzenle' : t('cm.components_mice_ResourcesView.yeni_kaynak_1ed22')} onClose={() => setShowForm(false)}>
           <form onSubmit={create} className="space-y-2">
             <Field label="Ad"><Input required value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
@@ -78,16 +81,16 @@ const ResourcesView = ({ resources, reload }) => {
               </Field>
               <Field label="Birim"><Input value={form.unit}
                 onChange={(e) => setForm({ ...form, unit: e.target.value })} /></Field>
-              <Field label={t('cm.components_mice_ResourcesView.toplam_stok')}><Input type="number" required value={form.total_stock}
+              <Field label={t('cm.components_mice_ResourcesView.toplam_stok')}><Input type="number" min="0" step="0.01" required value={form.total_stock}
                 onChange={(e) => setForm({ ...form, total_stock: +e.target.value })} /></Field>
-              <Field label={`Birim (${form.currency || cachedTenantCurrency()})`}><Input type="number" value={form.unit_price}
+              <Field label={`Birim (${form.currency || cachedTenantCurrency()})`}><Input type="number" min="0" step="0.01" value={form.unit_price}
                 onChange={(e) => setForm({ ...form, unit_price: +e.target.value })} /></Field>
               <Field label="Para Birimi"><Input required maxLength={3} value={form.currency}
                 onChange={(e) => setForm({ ...form, currency: e.target.value.toUpperCase() })} /></Field>
             </div>
             <div className="flex justify-end gap-2 pt-2">
               <Button type="button" variant="ghost" onClick={() => setShowForm(false)}>{t('cm.components_mice_ResourcesView.iptal')}</Button>
-              <Button type="submit">{t('cm.components_mice_ResourcesView.olustur')}</Button>
+              <Button type="submit">{editing ? 'Güncelle' : t('cm.components_mice_ResourcesView.olustur')}</Button>
             </div>
           </form>
         </Modal>

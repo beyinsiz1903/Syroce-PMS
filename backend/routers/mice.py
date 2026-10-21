@@ -15,11 +15,12 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, date, datetime, timedelta
+from decimal import ROUND_CEILING, Decimal
 from typing import Any
 
 import jwt
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pymongo.errors import DuplicateKeyError
 
 from cache_manager import cache as _cache
@@ -32,6 +33,7 @@ from core.booking_atomicity import (
 )
 from core.entitlements.enforcement import get_tenant_limit, require_feature
 from core.entitlements.quota import release_quota, reserve_quota
+from core.mice_integrity import instant, money, overlaps, peak_usage, protect_paid_schedule, rounded
 from core.security import JWT_ALGORITHM, JWT_SECRET, get_current_user
 from core.spa_mice_authz import require_catalog, require_finance, require_mice_ops
 from core.tenant_currency import get_tenant_currency
@@ -50,6 +52,10 @@ from shared_kernel.idempotency import (
 router = APIRouter(prefix="/api/mice", tags=["mice"])
 
 _indexes_ready = False
+
+
+class MiceInput(BaseModel):
+    model_config = ConfigDict(allow_inf_nan=False, str_strip_whitespace=True)
 
 
 def _normalize_currency(value: str | None, fallback: str) -> str:
@@ -145,8 +151,8 @@ async def _ensure_indexes() -> None:
 
 
 # ── Function spaces ──────────────────────────────────────────────
-class FunctionSpaceIn(BaseModel):
-    name: str
+class FunctionSpaceIn(MiceInput):
+    name: str = Field(min_length=1, max_length=200)
     location: str | None = None  # floor / wing
     area_m2: float = Field(0, ge=0)
     capacity_theatre: int = Field(0, ge=0)
@@ -196,14 +202,8 @@ async def list_spaces(current_user: User = Depends(get_current_user)) -> dict:
     tenant_currency = await _tenant_currency_code(current_user.tenant_id)
     for doc in docs:
         doc["currency"] = _normalize_currency(doc.get("currency"), tenant_currency)
-    items = docs
-    if not items:
-        try:
-            require_catalog(current_user)
-        except HTTPException:
-            return {"spaces": []}
-        items = await _seed_spaces(current_user.tenant_id)
-    return {"spaces": items}
+    # GET must never invent demo venues or bypass the purchased space quota.
+    return {"spaces": docs}
 
 
 async def _seed_spaces(tenant_id: str) -> list[dict]:
@@ -271,6 +271,7 @@ async def create_space(
     doc = {"id": space_id, "tenant_id": current_user.tenant_id, **body_dict, "created_at": datetime.now(UTC).isoformat()}
     if client_request_id:
         doc["client_request_id"] = client_request_id
+        doc["_id"] = f"mice-space-request:{uuid.uuid5(uuid.NAMESPACE_URL, repr((current_user.tenant_id, client_request_id)))}"
 
     try:
         await db.mice_spaces.insert_one(doc)
@@ -293,6 +294,18 @@ async def create_space(
     return doc
 
 
+async def _catalog_lock(db, tenant_id: str, kind: str, resource_id: str, callback):
+    await _ensure_indexes()
+    try:
+        return await with_resource_locks(client=db.client, db=db, tenant_id=tenant_id, locks_collection="mice_locks", resources=[(kind, resource_id)], callback=callback)
+    except Exception as exc:
+        if not is_replica_set_unavailable(exc):
+            raise
+        if not standalone_fallback_allowed():
+            raise HTTPException(503, "Katalog değişikliği atomik garanti gerektirir; tekrar deneyin") from exc
+        return await callback(None)
+
+
 @router.put("/spaces/{space_id}")
 async def update_space(
     space_id: str,
@@ -302,12 +315,20 @@ async def update_space(
 ) -> dict:
     require_catalog(current_user)
     db = get_system_db()
-    res = await db.mice_spaces.update_one(
-        {"id": space_id, "tenant_id": current_user.tenant_id},
-        {"$set": await _currency_payload(body, current_user.tenant_id)},
-    )
-    if not res.matched_count:
-        raise HTTPException(404, "Mekan bulunamadı")
+    data = await _currency_payload(body, current_user.tenant_id)
+    async def update_locked(session):
+        async for event in db.mice_events.find({"tenant_id": current_user.tenant_id, "status": {"$in": list(ACTIVE_QUOTA_STATUSES)}, "space_bookings.space_id": space_id}, session=session):
+            for booking in event.get("space_bookings", []):
+                if booking.get("space_id") != space_id:
+                    continue
+                cap = data.get(_SETUP_TO_CAP.get(booking.get("setup_style", "theatre")), 0)
+                pax = booking.get("expected_pax") or event.get("expected_pax") or 0
+                if not body.active or pax > cap or (event.get("currency") and event["currency"] != data["currency"]):
+                    raise HTTPException(409, "Aktif etkinliğin salon kapasitesi/para birimi ihlal edilemez; önce etkinlik planını güncelleyin")
+        result = await db.mice_spaces.update_one({"id": space_id, "tenant_id": current_user.tenant_id}, {"$set": data}, session=session)
+        if not result.matched_count:
+            raise HTTPException(404, "Mekan bulunamadı")
+    await _catalog_lock(db, current_user.tenant_id, "space", space_id, update_locked)
     _invalidate_mice_spaces_cache(current_user.tenant_id)
     return {"ok": True}
 
@@ -320,7 +341,11 @@ async def delete_space(
 ) -> dict:
     require_catalog(current_user)
     db = get_system_db()
-    res = await db.mice_spaces.delete_one({"id": space_id, "tenant_id": current_user.tenant_id})
+    async def delete_locked(session):
+        if await db.mice_events.find_one({"tenant_id": current_user.tenant_id, "space_bookings.space_id": space_id}, session=session):
+            raise HTTPException(409, "Etkinliklerde kullanılan mekan silinemez; geçmiş kayıtları korumak için pasife alın")
+        return await db.mice_spaces.delete_one({"id": space_id, "tenant_id": current_user.tenant_id}, session=session)
+    res = await _catalog_lock(db, current_user.tenant_id, "space", space_id, delete_locked)
     if res.deleted_count > 0:
         from core.entitlements.quota import release_quota
 
@@ -336,8 +361,8 @@ class MenuCourseIn(BaseModel):
     description: str | None = None
 
 
-class MenuPackageIn(BaseModel):
-    name: str
+class MenuPackageIn(MiceInput):
+    name: str = Field(min_length=1, max_length=200)
     type: str = "fb"  # fb / av / decor / ddr  (DDR = Daily Delegate Rate bundle)
     price_per_person: float = Field(0, ge=0)
     flat_price: float = Field(0, ge=0)
@@ -350,6 +375,12 @@ class MenuPackageIn(BaseModel):
     dietary_tags: list[str] = Field(default_factory=list)  # vegan/vegetarian/halal/kosher/gluten_free
     min_guests: int = Field(0, ge=0)
     prep_lead_minutes: int = Field(30, ge=0)  # kitchen lead-time
+
+    @model_validator(mode="after")
+    def one_price_basis(self):
+        if self.price_per_person > 0 and self.flat_price > 0:
+            raise ValueError("Kişi başı veya sabit fiyat seçin; ikisi aynı anda kullanılamaz")
+        return self
 
 
 @_cached(ttl=30, key_prefix="mice_menus")
@@ -369,18 +400,7 @@ async def _list_menus_cached(current_user: User) -> dict:
 
 @router.get("/menus")
 async def list_menus(current_user: User = Depends(get_current_user)) -> dict:
-    result = await _list_menus_cached(current_user=current_user)
-    if result["menus"]:
-        return result
-    # Empty: only catalog admins may bootstrap the seed; everyone else
-    # gets the empty list (NOT cached, see helper above).
-    try:
-        require_catalog(current_user)
-    except HTTPException:
-        return {"menus": []}
-    items = await _seed_menus(current_user.tenant_id)
-    _invalidate_mice_menus_cache(current_user.tenant_id)
-    return {"menus": items}
+    return await _list_menus_cached(current_user=current_user)
 
 
 async def _seed_menus(tenant_id: str) -> list[dict]:
@@ -712,8 +732,8 @@ async def delete_contact(
 
 
 # ── Resource Inventory (AV equipment, decor, linens, etc.) ──────
-class ResourceInventoryIn(BaseModel):
-    name: str
+class ResourceInventoryIn(MiceInput):
+    name: str = Field(min_length=1, max_length=200)
     type: str = "av"  # av / decor / linen / furniture / other
     total_stock: float = Field(0, ge=0)
     unit: str = "unit"  # unit / set / pcs
@@ -765,12 +785,22 @@ async def update_resource(
 ) -> dict:
     require_catalog(current_user)
     db = get_system_db()
-    res = await db.mice_resources.update_one(
-        {"id": resource_id, "tenant_id": current_user.tenant_id},
-        {"$set": await _currency_payload(body, current_user.tenant_id)},
-    )
-    if not res.matched_count:
-        raise HTTPException(404, "Kaynak bulunamadı")
+    data = await _currency_payload(body, current_user.tenant_id)
+    async def update_locked(session):
+        allocations = []
+        windows = []
+        async for event in db.mice_events.find({"tenant_id": current_user.tenant_id, "status": {"$in": list(ACTIVE_QUOTA_STATUSES)}, "resources.inventory_id": resource_id}, session=session):
+            quantity = sum(r.get("quantity", 0) or 0 for r in event.get("resources", []) if r.get("inventory_id") == resource_id)
+            if quantity and (not body.active or (event.get("currency") and event["currency"] != data["currency"])):
+                raise HTTPException(409, "Aktif etkinliğe ayrılmış envanter pasife alınamaz veya para birimi değiştirilemez")
+            allocations.append((event.get("space_bookings", []), quantity))
+            windows.extend(event.get("space_bookings", []))
+        if peak_usage(windows, allocations) > body.total_stock:
+            raise HTTPException(409, "Stok, aktif etkinliklerde aynı anda ayrılmış miktarın altına düşürülemez")
+        result = await db.mice_resources.update_one({"id": resource_id, "tenant_id": current_user.tenant_id}, {"$set": data}, session=session)
+        if not result.matched_count:
+            raise HTTPException(404, "Kaynak bulunamadı")
+    await _catalog_lock(db, current_user.tenant_id, "resource", resource_id, update_locked)
     _invalidate_mice_resources_cache(current_user.tenant_id)
     return {"ok": True}
 
@@ -783,7 +813,11 @@ async def delete_resource(
 ) -> dict:
     require_catalog(current_user)
     db = get_system_db()
-    await db.mice_resources.delete_one({"id": resource_id, "tenant_id": current_user.tenant_id})
+    async def delete_locked(session):
+        if await db.mice_events.find_one({"tenant_id": current_user.tenant_id, "status": {"$in": list(ACTIVE_QUOTA_STATUSES)}, "resources.inventory_id": resource_id}, session=session):
+            raise HTTPException(409, "Aktif etkinliğe ayrılmış envanter silinemez")
+        await db.mice_resources.delete_one({"id": resource_id, "tenant_id": current_user.tenant_id}, session=session)
+    await _catalog_lock(db, current_user.tenant_id, "resource", resource_id, delete_locked)
     _invalidate_mice_resources_cache(current_user.tenant_id)
     return {"ok": True}
 
@@ -793,39 +827,61 @@ EVENT_STATUSES = {"lead", "tentative", "definite", "confirmed", "completed", "ca
 ACTIVE_QUOTA_STATUSES = {"tentative", "definite", "confirmed"}
 
 
-class SpaceBookingIn(BaseModel):
-    space_id: str
+class SpaceBookingIn(MiceInput):
+    space_id: str = Field(min_length=1)
     starts_at: datetime
     ends_at: datetime
     setup_style: str = "theatre"  # theatre/classroom/banquet/cocktail/u_shape/boardroom
     expected_pax: int = Field(0, ge=0)
 
+    @model_validator(mode="after")
+    def valid_interval(self):
+        if (self.starts_at.tzinfo is None) != (self.ends_at.tzinfo is None):
+            raise ValueError("Başlangıç ve bitiş aynı saat dilimi biçiminde olmalıdır")
+        if self.ends_at <= self.starts_at:
+            raise ValueError("Mekan bitişi başlangıçtan sonra olmalıdır")
+        if self.setup_style not in _SETUP_TO_CAP:
+            raise ValueError("Geçersiz salon düzeni")
+        return self
 
-class ResourceLineIn(BaseModel):
+
+class ResourceLineIn(MiceInput):
     menu_id: str | None = None  # link to mice_menus catalog item
     inventory_id: str | None = None  # link to mice_resources stocked inventory
     name: str
     type: str = "fb"  # fb / av / decor / other
-    quantity: float = 1
+    quantity: float = Field(1, ge=0)
     unit: str = "pax"  # pax / unit / hour
-    unit_price: float = 0
+    unit_price: float = Field(0, ge=0)
     currency: str | None = Field(None, min_length=3, max_length=3, pattern=r"^[A-Za-z]{3}$")
     notes: str | None = None
 
+    @model_validator(mode="after")
+    def one_catalog(self):
+        if self.menu_id and self.inventory_id:
+            raise ValueError("Bir satır aynı anda menü ve envanter olamaz")
+        return self
 
-class AgendaItemIn(BaseModel):
+
+class AgendaItemIn(MiceInput):
     """Minute-level function-sheet line (Opera 'Function Sheet' equivalent)."""
 
     starts_at: datetime
     ends_at: datetime
-    title: str
+    title: str = Field(min_length=1)
     location: str | None = None  # space name or external venue
     owner: str | None = None  # responsible person/department
     kind: str = "session"  # session/meal/break/setup/teardown/transfer/av_check
     notes: str | None = None
 
+    @model_validator(mode="after")
+    def valid_interval(self):
+        if (self.starts_at.tzinfo is None) != (self.ends_at.tzinfo is None) or self.ends_at <= self.starts_at:
+            raise ValueError("Program bitişi başlangıçtan sonra ve aynı saat diliminde olmalıdır")
+        return self
 
-class PaymentScheduleItemIn(BaseModel):
+
+class PaymentScheduleItemIn(MiceInput):
     """Deposit & milestone payments (Opera deposit ledger equivalent)."""
 
     due_date: date
@@ -857,7 +913,7 @@ class TechnicalRequirementsIn(BaseModel):
     notes: str | None = None
 
 
-class StaffAssignmentIn(BaseModel):
+class StaffAssignmentIn(MiceInput):
     """A single staff member assigned to an event."""
 
     role: str  # chef / server / technician / host / security / other
@@ -868,7 +924,7 @@ class StaffAssignmentIn(BaseModel):
     notes: str | None = None
 
 
-class EntertainmentIn(BaseModel):
+class EntertainmentIn(MiceInput):
     """Music / entertainment booking attached to an event."""
 
     type: str = "none"  # dj / live_band / solo_artist / show / none
@@ -880,11 +936,12 @@ class EntertainmentIn(BaseModel):
     fee: float = Field(0, ge=0)
 
 
-class EventIn(BaseModel):
+class EventIn(MiceInput):
     client_request_id: str | None = None
+    expected_revision: str | None = None
 
-    name: str
-    client_name: str
+    name: str = Field(min_length=1, max_length=200)
+    client_name: str = Field(min_length=1, max_length=200)
     client_email: str | None = None
     client_phone: str | None = None
     client_account_id: str | None = None  # link to mice_accounts
@@ -908,30 +965,48 @@ class EventIn(BaseModel):
     staff_assignments: list[StaffAssignmentIn] = Field(default_factory=list)
     entertainment: EntertainmentIn | None = None
 
+    @model_validator(mode="after")
+    def valid_event(self):
+        if self.end_date < self.start_date:
+            raise ValueError("Etkinlik bitiş tarihi başlangıçtan önce olamaz")
+        for booking in self.space_bookings:
+            if not booking.expected_pax:
+                booking.expected_pax = self.expected_pax
+        for item in [*self.space_bookings, *self.agenda]:
+            if item.starts_at.date() < self.start_date or item.ends_at.date() > self.end_date:
+                raise ValueError("Salon ve program saatleri etkinlik tarih aralığı içinde olmalıdır")
+        for i, left in enumerate(self.space_bookings):
+            for right in self.space_bookings[i + 1:]:
+                if left.space_id == right.space_id and overlaps(left.model_dump(), right.model_dump()):
+                    raise ValueError("Aynı etkinlik içinde salon saatleri çakışıyor")
+        return self
+
 
 def _line_total(r: dict) -> float:
     unit_price = r.get("unit_price")
     quantity = r.get("quantity")
 
-    return float(0.0 if unit_price is None else unit_price) * float(1.0 if quantity is None else quantity)
+    return rounded(money(unit_price) * money(1 if quantity is None else quantity))
 
 
 def _compute_totals(event: dict, spaces_by_id: dict[str, dict]) -> dict:
-    space_total = 0.0
+    space_total = Decimal(0)
     for sb in event.get("space_bookings", []):
         sp = spaces_by_id.get(sb["space_id"])
         if not sp:
             continue
         # Use daily_rate when ≥6h, hourly_rate otherwise
-        s = datetime.fromisoformat(sb["starts_at"])
-        e = datetime.fromisoformat(sb["ends_at"])
-        hours = max(1.0, (e - s).total_seconds() / 3600.0)
-        space_total += float(sp.get("daily_rate") or 0.0) if hours >= 6 else float(sp.get("hourly_rate") or 0.0) * hours
-    resources_total = sum(_line_total(r) for r in event.get("resources", []))
+        s, e = instant(sb["starts_at"]), instant(sb["ends_at"])
+        hours = max(Decimal(1), Decimal(str((e - s).total_seconds())) / Decimal(3600))
+        days = (hours / 24).to_integral_value(rounding=ROUND_CEILING)
+        rates = sb.get("rate_snapshot") or sp
+        amount = money(rates.get("daily_rate")) * days if hours >= 6 else money(rates.get("hourly_rate")) * hours
+        space_total += money(rounded(amount))
+    resources_total = sum((money(_line_total(r)) for r in event.get("resources", [])), Decimal(0))
     return {
-        "space_total": round(space_total, 2),
-        "resources_total": round(resources_total, 2),
-        "grand_total": round(space_total + resources_total, 2),
+        "space_total": rounded(space_total),
+        "resources_total": rounded(resources_total),
+        "grand_total": rounded(space_total + resources_total),
     }
 
 
@@ -946,26 +1021,30 @@ _SETUP_TO_CAP = {
 }
 
 
-async def _validate_setup_capacity(tenant_id: str, bookings: list[dict]) -> None:
+async def _validate_setup_capacity(tenant_id: str, bookings: list[dict], *, session=None, event_currency: str | None = None) -> None:
     """Reject any space booking where expected_pax exceeds the capacity
     of the chosen setup style. Mirrors Opera S&C's setup-style guard."""
     db = get_system_db()
     space_ids = {sb["space_id"] for sb in bookings if sb.get("space_id")}
     if not space_ids:
         return
-    _l = await db.mice_spaces.find({"tenant_id": tenant_id, "id": {"$in": list(space_ids)}}).to_list(length=None)
+    _l = await db.mice_spaces.find({"tenant_id": tenant_id, "id": {"$in": list(space_ids)}}, **({"session": session} if session is not None else {})).to_list(length=None)
     spaces = {s["id"]: s for s in _l}
     for sb in bookings:
         sp = spaces.get(sb["space_id"])
         if not sp:
-            continue
+            raise HTTPException(422, "Seçilen mekan bu tesiste bulunamadı")
+        if sp.get("active") is False:
+            raise HTTPException(422, f"{sp['name']} pasif; başka mekan seçin")
+        if event_currency and sp.get("currency") and sp["currency"].upper() != event_currency:
+            raise HTTPException(409, "Salon para birimi değişti; teklifi yenileyin")
         pax = int(sb.get("expected_pax") or 0)
         style = sb.get("setup_style") or "theatre"
         cap_field = _SETUP_TO_CAP.get(style)
         if not cap_field:
             continue
         cap = int(sp.get(cap_field) or 0)
-        if pax and cap and pax > cap:
+        if pax and (not cap or pax > cap):
             raise HTTPException(
                 422,
                 f"{sp['name']} mekanı '{style}' düzeninde en fazla {cap} kişi alır (talep: {pax}). Düzeni değiştirin veya başka mekan seçin.",
@@ -985,17 +1064,14 @@ async def _check_resource_inventory_conflict(
     window overlaps any of *bookings*. If the running total + requested
     quantity exceeds `total_stock`, return a Turkish error message.
     """
-    if not bookings or not resources:
+    if not resources:
         return None
     db = get_system_db()
     inv_ids = {r["inventory_id"] for r in resources if r.get("inventory_id")}
     if not inv_ids:
         return None
-
-    # Time envelope of this event = (min start, max end) across bookings.
-    starts = [sb["starts_at"] if isinstance(sb["starts_at"], str) else sb["starts_at"].isoformat() for sb in bookings]
-    ends = [sb["ends_at"] if isinstance(sb["ends_at"], str) else sb["ends_at"].isoformat() for sb in bookings]
-    env_start, env_end = min(starts), max(ends)
+    if not bookings:
+        return "Envanter ayırmak için mekan / kullanım saatleri girilmelidir"
 
     _l = await db.mice_resources.find({"tenant_id": tenant_id, "id": {"$in": list(inv_ids)}}, session=session).to_list(length=None)
     inventories = {i["id"]: i for i in _l}
@@ -1017,29 +1093,26 @@ async def _check_resource_inventory_conflict(
     if exclude_event_id:
         q["id"] = {"$ne": exclude_event_id}
 
-    committed: dict[str, float] = dict.fromkeys(inv_ids, 0.0)
+    allocations: dict[str, list] = {iid: [] for iid in inv_ids}
     async for ev in db.mice_events.find(q, session=session):
-        # Does any of *its* bookings overlap our envelope?
-        overlaps = False
-        for sb in ev.get("space_bookings", []):
-            if sb.get("starts_at", "") < env_end and env_start < sb.get("ends_at", ""):
-                overlaps = True
-                break
-        if not overlaps:
-            continue
+        quantities: dict[str, float] = {}
         for r in ev.get("resources", []):
             iid = r.get("inventory_id")
-            if iid in committed:
-                committed[iid] += float(r.get("quantity") or 0)
+            if iid in allocations:
+                quantities[iid] = quantities.get(iid, 0) + float(r.get("quantity") or 0)
+        for iid, quantity in quantities.items():
+            allocations[iid].append((ev.get("space_bookings", []), quantity))
 
     for iid, want in requested.items():
         inv = inventories.get(iid)
         if not inv:
-            continue
+            return "Seçilen envanter bu tesiste bulunamadı"
+        if inv.get("active") is False:
+            return "Seçilen envanter pasife alınmış; etkinlik planını yenileyin"
+        if inv.get("currency") and any(r.get("currency") and r["currency"] != inv["currency"].upper() for r in resources if r.get("inventory_id") == iid):
+            return "Envanter para birimi değişti; teklifi yenileyin"
         stock = float(inv.get("total_stock") or 0)
-        if stock <= 0:
-            continue
-        used = committed.get(iid, 0.0)
+        used = peak_usage(bookings, allocations[iid])
         if used + want > stock:
             return f"{inv['name']} envanteri yetersiz: stok {stock:g}, bu zaman aralığında zaten {used:g} ayrılmış, talep {want:g}."
     return None
@@ -1087,7 +1160,7 @@ async def _check_space_conflict(tenant_id: str, bookings: list[dict], exclude_ev
             for other in ev.get("space_bookings", []):
                 if other.get("space_id") != sb["space_id"]:
                     continue
-                if other["starts_at"] < e_iso and s_iso < other["ends_at"]:
+                if overlaps({"starts_at": s_iso, "ends_at": e_iso}, other):
                     return f"Mekan çakışması: {ev.get('name')} ({other['starts_at'][:16]})"
     return None
 
@@ -1099,9 +1172,24 @@ async def list_events(
     date_from: str | None = Query(None),
     date_to: str | None = Query(None),
     current_user: User = Depends(get_current_user),
+    offset: int = 0,
+    limit: int = 500,
 ) -> dict:
     db = get_system_db()
     q: dict[str, Any] = {"tenant_id": current_user.tenant_id}
+    if offset < 0 or not 1 <= limit <= 500:
+        raise HTTPException(422, "Geçersiz sayfalama")
+    try:
+        if date_from:
+            date.fromisoformat(date_from)
+        if date_to:
+            date.fromisoformat(date_to)
+        if date_from and date_to and date_from > date_to:
+            raise ValueError("range")
+    except (ValueError, TypeError):
+        raise HTTPException(422, "Geçerli bir başlangıç/bitiş tarih aralığı girin") from None
+    if status and status not in EVENT_STATUSES:
+        raise HTTPException(422, "Geçersiz etkinlik durumu")
     if status:
         q["status"] = status
     if date_from:
@@ -1126,6 +1214,9 @@ async def list_events(
         }},
     ]
     tid = current_user.tenant_id
+    event_cursor = db.mice_events.find(q, {"_id": 0}).sort([("start_date", 1), ("id", 1)])
+    if offset:
+        event_cursor = event_cursor.skip(offset)
     (
         items,
         summary_rows,
@@ -1134,7 +1225,7 @@ async def list_events(
         cnt_menus,
         cnt_resources,
     ) = await _asyncio.gather(
-        db.mice_events.find(q, {"_id": 0}).sort("start_date", 1).limit(500).to_list(500),
+        event_cursor.limit(limit).to_list(limit),
         db.mice_events.aggregate(pipe).to_list(None),
         db.mice_accounts.count_documents({"tenant_id": tid, **_CLIENT_ACCT_FILTER}),
         db.mice_spaces.count_documents({"tenant_id": tid}),
@@ -1161,6 +1252,9 @@ async def list_events(
         "resources": cnt_resources,
     }
     return {"events": items, "summary": summary, "counts": counts,
+            "total_count": sum(row["count"] for row in summary.values()),
+            "truncated": sum(row["count"] for row in summary.values()) > len(items),
+            "offset": offset, "limit": limit,
             "summary_scope": {"status": status, "date_from": date_from, "date_to": date_to}}
 
 
@@ -1182,7 +1276,7 @@ async def _expand_resource_prices(
                 if catalog_item.get("price_per_person"):
                     line["unit_price"] = catalog_item["price_per_person"]
                     line["unit"] = "pax"
-                    if not line.get("quantity") or line["quantity"] in (0, 1):
+                    if line.get("quantity") is None or line["quantity"] == 1:
                         line["quantity"] = pax
                 elif catalog_item.get("flat_price"):
                     line["unit_price"] = catalog_item["flat_price"]
@@ -1197,6 +1291,12 @@ async def _expand_resource_prices(
                 line["unit"] = catalog_item.get("unit", line.get("unit", "unit"))
                 line["name"] = line.get("name") or catalog_item["name"]
                 line["type"] = catalog_item.get("type", line.get("type", "other"))
+        if (r.get("menu_id") or r.get("inventory_id")) and not catalog_item:
+            raise HTTPException(422, "Seçilen menü/envanter bu tesiste bulunamadı")
+        if catalog_item and catalog_item.get("active") is False:
+            raise HTTPException(422, f"{catalog_item.get('name')} pasif; başka kaynak seçin")
+        if r.get("menu_id") and int((catalog_item or {}).get("min_guests") or 0) > pax:
+            raise HTTPException(422, "Menünün minimum kişi sayısı karşılanmıyor")
         # Catalog prices inherit the tenant currency only for truly legacy
         # rows. A free-form line is authored inside the event and therefore
         # inherits the event currency itself.
@@ -1215,6 +1315,31 @@ async def _expand_resource_prices(
         line["currency"] = event_currency
         out.append(line)
     return out
+
+
+def _snapshot_space_rates(bookings: list[dict], spaces: dict, previous: list[dict] | None = None) -> None:
+    for i, booking in enumerate(bookings):
+        old = (previous or [])[i] if i < len(previous or []) else {}
+        existing_rate = old.get("rate_snapshot") if old.get("space_id") == booking["space_id"] else None
+        space = spaces.get(booking["space_id"], {})
+        booking["rate_snapshot"] = existing_rate or {
+            "hourly_rate": space.get("hourly_rate", 0), "daily_rate": space.get("daily_rate", 0),
+            "currency": space.get("currency"), "policy": "hourly_min_1h_daily_from_6h_per_24h",
+        }
+
+
+async def _validate_event_links(body: EventIn, tenant_id: str) -> None:
+    db = get_system_db()
+    if body.client_account_id and not await db.mice_accounts.find_one({"tenant_id": tenant_id, "id": body.client_account_id, **_CLIENT_ACCT_FILTER}):
+        raise HTTPException(422, "Müşteri hesabı bu tesiste bulunamadı")
+    if body.client_contact_id:
+        query = {"tenant_id": tenant_id, "id": body.client_contact_id}
+        if body.client_account_id:
+            query["account_id"] = body.client_account_id
+        if not await db.mice_contacts.find_one(query):
+            raise HTTPException(422, "İlgili kişi seçilen müşteri hesabında bulunamadı")
+    if body.reservation_id and not await db.bookings.find_one({"tenant_id": tenant_id, "id": body.reservation_id}):
+        raise HTTPException(422, "Bağlı PMS rezervasyonu bu tesiste bulunamadı")
 
 
 def _validate_space_currencies(
@@ -1238,6 +1363,29 @@ def _validate_space_currencies(
             )
 
 
+@router.post("/events/quote-preview")
+async def quote_event(body: EventIn, current_user: User = Depends(get_current_user), _perm=Depends(require_op("manage_sales")), event_id: str | None = None) -> dict:
+    """Server-owned calculation; no holds, invoices, payment or side effects."""
+    require_mice_ops(current_user)
+    tid = current_user.tenant_id
+    tenant_currency = await _tenant_currency_code(tid)
+    currency = _normalize_currency(body.currency, tenant_currency)
+    bookings = [b.model_dump(mode="json") for b in body.space_bookings]
+    await _validate_setup_capacity(tid, bookings)
+    spaces = {s["id"]: s async for s in get_system_db().mice_spaces.find({"tenant_id": tid})}
+    _validate_space_currencies(bookings, spaces, currency, tenant_currency)
+    previous = None
+    if event_id:
+        previous = await get_system_db().mice_events.find_one({"id": event_id, "tenant_id": tid})
+        if not previous:
+            raise HTTPException(404, "Etkinlik bulunamadı")
+    _snapshot_space_rates(bookings, spaces, (previous or {}).get("space_bookings"))
+    resources = await _expand_resource_prices(tid, [r.model_dump() for r in body.resources], body.expected_pax, currency, tenant_currency)
+    totals = _compute_totals({"space_bookings": bookings, "resources": resources}, spaces)
+    return {"currency": currency, "totals": totals, "payment_schedule_total": rounded(sum((money(p.amount) for p in body.payment_schedule), Decimal(0))),
+            "notice": "Salon ve kaynak satış bedeli; müsaitlik garantisi veya tahsilat değildir. Vergi/servis bedeli ayrıca tanımlanmamıştır."}
+
+
 @router.post("/events")
 async def create_event(
     body: EventIn,
@@ -1248,27 +1396,25 @@ async def create_event(
     await _ensure_indexes()
     if body.status not in EVENT_STATUSES:
         raise HTTPException(400, "Geçersiz durum")
+    if body.status in {"completed", "cancelled"}:
+        raise HTTPException(422, "Yeni etkinlik terminal durumda oluşturulamaz; durum akışını kullanın")
+    try:
+        protect_paid_schedule([], body.model_dump(mode="json")["payment_schedule"])
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
     db = get_system_db()
     tenant_id = current_user.tenant_id
     tenant_currency = await _tenant_currency_code(tenant_id)
     event_currency = _normalize_currency(body.currency, tenant_currency)
+    await _validate_event_links(body, tenant_id)
 
     client_request_id = body.client_request_id
+    if client_request_id:
+        existing_request = await db.mice_events.find_one({"tenant_id": tenant_id, "client_request_id": client_request_id}, {"_id": 0})
+        if existing_request:
+            return existing_request
     event_id = str(uuid.uuid4())
     resource_id = client_request_id or event_id
-
-    limit = None
-    reserved = False
-    if body.status in ACTIVE_QUOTA_STATUSES:
-        limit = await get_tenant_limit(tenant_id, "mice", "concurrent_events")
-        if limit is not None:
-            from core.entitlements.quota import QuotaExceededException
-
-            try:
-                await reserve_quota(tenant_id, "mice", "concurrent_events", resource_id, limit)
-                reserved = True
-            except QuotaExceededException:
-                raise HTTPException(403, "Eşzamanlı etkinlik limiti aşıldı. Lütfen paketinizi yükseltin.")
 
     bookings = [b.model_dump() for b in body.space_bookings]
     for b in bookings:
@@ -1288,13 +1434,14 @@ async def create_event(
 
     spaces_by_id = {s["id"]: s async for s in db.mice_spaces.find({"tenant_id": tenant_id})}
     _validate_space_currencies(bookings, spaces_by_id, event_currency, tenant_currency)
+    _snapshot_space_rates(bookings, spaces_by_id)
     # mode="json" ⇒ pydantic, tüm date/datetime'leri ISO string'e serileştirir;
     # bu şekilde agenda[].starts_at ve payment_schedule[].due_date BSON için
     # geçerli kalır (PyMongo native `datetime.date`'i kabul etmez).
     event_doc = {
         "id": event_id,
         "tenant_id": tenant_id,
-        **body.model_dump(mode="json", exclude={"space_bookings", "resources", "client_request_id"}),
+        **body.model_dump(mode="json", exclude={"space_bookings", "resources", "client_request_id", "expected_revision"}),
         "space_bookings": bookings,
         "resources": resources,
         "created_at": datetime.now(UTC).isoformat(),
@@ -1309,9 +1456,24 @@ async def create_event(
 
     if client_request_id:
         event_doc["client_request_id"] = client_request_id
+        event_doc["_id"] = f"mice-event-request:{uuid.uuid5(uuid.NAMESPACE_URL, repr((tenant_id, client_request_id)))}"
+
+    # Reserve only after every deterministic validation; invalid quotes must
+    # not consume the property's concurrency quota.
+    reserved = False
+    if body.status in ACTIVE_QUOTA_STATUSES:
+        limit = await get_tenant_limit(tenant_id, "mice", "concurrent_events")
+        if limit is not None:
+            from core.entitlements.quota import QuotaExceededException
+            try:
+                await reserve_quota(tenant_id, "mice", "concurrent_events", resource_id, limit)
+                reserved = True
+            except QuotaExceededException:
+                raise HTTPException(403, "Eşzamanlı etkinlik limiti aşıldı. Lütfen paketinizi yükseltin.")
 
     async def _do_insert(session) -> dict:
         if holds_active:
+            await _validate_setup_capacity(tenant_id, bookings, session=session, event_currency=event_currency)
             conflict = await _check_space_conflict(tenant_id, bookings, session=session)
             if conflict:
                 raise HTTPException(409, conflict)
@@ -1380,6 +1542,9 @@ async def create_event(
             raise se
 
     event_doc.pop("_id", None)
+    await log_audit_event(tenant_id=tenant_id, user_id=current_user.username, action="create", entity_type="mice_event", entity_id=event_id,
+                          details=f"Etkinlik oluşturuldu: {event_doc['name']}", after_value=event_doc, db=db)
+    _invalidate_mice_events_cache(tenant_id)
     return event_doc
 
 
@@ -1423,8 +1588,22 @@ async def _update_event_impl(
         raise HTTPException(400, "Geçersiz durum")
     db = get_system_db()
     tenant_id = current_user.tenant_id
+    existing = await db.mice_events.find_one({"id": event_id, "tenant_id": tenant_id}, {"_id": 0})
+    if not existing:
+        raise HTTPException(404, "Etkinlik bulunamadı")
+    if body.expected_revision and body.expected_revision != (existing.get("updated_at") or existing.get("created_at")):
+        raise HTTPException(409, "Etkinlik siz formu açtıktan sonra değişti; yenileyip tekrar deneyin")
+    if existing.get("status") != body.status:
+        raise HTTPException(409, "Durum değişikliği için etkinlik durum işlemini kullanın")
+    if existing.get("status") in {"completed", "cancelled"} or existing.get("signature") or existing.get("gl_journal_entry_id"):
+        raise HTTPException(409, "Kapanmış, imzalanmış veya muhasebeleştirilmiş etkinlik değiştirilemez")
+    try:
+        protect_paid_schedule(existing.get("payment_schedule") or [], body.model_dump(mode="json")["payment_schedule"])
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
     tenant_currency = await _tenant_currency_code(tenant_id)
     event_currency = _normalize_currency(body.currency, tenant_currency)
+    await _validate_event_links(body, tenant_id)
     bookings = [b.model_dump() for b in body.space_bookings]
     for b in bookings:
         b["starts_at"] = b["starts_at"].isoformat() if isinstance(b["starts_at"], datetime) else b["starts_at"]
@@ -1439,8 +1618,9 @@ async def _update_event_impl(
     )
     spaces_by_id = {s["id"]: s async for s in db.mice_spaces.find({"tenant_id": tenant_id})}
     _validate_space_currencies(bookings, spaces_by_id, event_currency, tenant_currency)
+    _snapshot_space_rates(bookings, spaces_by_id, existing.get("space_bookings"))
     update = {
-        **body.model_dump(mode="json", exclude={"space_bookings", "resources", "client_request_id"}),
+        **body.model_dump(mode="json", exclude={"space_bookings", "resources", "client_request_id", "expected_revision"}),
         "start_date": body.start_date.isoformat(),
         "end_date": body.end_date.isoformat(),
         "space_bookings": bookings,
@@ -1449,6 +1629,8 @@ async def _update_event_impl(
     }
     update["currency"] = event_currency
     update["totals"] = _compute_totals(update, spaces_by_id)
+    # An unsigned approval link belongs to one version, not future edits.
+    update["signature_request"] = None
 
     holds_active = body.status in {"tentative", "definite", "confirmed"}
     space_ids = [b["space_id"] for b in bookings if b.get("space_id")]
@@ -1457,6 +1639,7 @@ async def _update_event_impl(
 
     async def _do_update(session) -> dict:
         if holds_active:
+            await _validate_setup_capacity(tenant_id, bookings, session=session, event_currency=event_currency)
             conflict = await _check_space_conflict(tenant_id, bookings, exclude_event_id=event_id, session=session)
             if conflict:
                 raise HTTPException(409, conflict)
@@ -1466,9 +1649,14 @@ async def _update_event_impl(
             if inv_err:
                 raise HTTPException(409, inv_err)
         before = await db.mice_events.find_one({"id": event_id, "tenant_id": tenant_id}, {"_id": 0}, session=session)
-        res = await db.mice_events.update_one({"id": event_id, "tenant_id": tenant_id}, {"$set": update}, session=session)
+        if not before or before.get("updated_at") != existing.get("updated_at") or before.get("status") != existing.get("status"):
+            raise HTTPException(409, "Etkinlik başka bir kullanıcı tarafından değiştirildi; yenileyin")
+        res = await db.mice_events.update_one(
+            {"id": event_id, "tenant_id": tenant_id, "status": existing["status"], "updated_at": existing.get("updated_at")},
+            {"$set": update}, session=session,
+        )
         if not res.matched_count:
-            raise HTTPException(404, "Etkinlik bulunamadı")
+            raise HTTPException(409, "Etkinlik değişti; yenileyip tekrar deneyin")
         after = await db.mice_events.find_one({"id": event_id, "tenant_id": tenant_id}, {"_id": 0}, session=session)
         state["before"], state["after"] = before, after
         return after
@@ -1503,7 +1691,10 @@ async def _update_event_impl(
             if inv_err:
                 raise HTTPException(409, inv_err)
         before = await db.mice_events.find_one({"id": event_id, "tenant_id": tenant_id}, {"_id": 0})
-        res = await db.mice_events.update_one({"id": event_id, "tenant_id": tenant_id}, {"$set": update})
+        res = await db.mice_events.update_one(
+            {"id": event_id, "tenant_id": tenant_id, "status": existing["status"], "updated_at": existing.get("updated_at")},
+            {"$set": update},
+        )
         if not res.matched_count:
             raise HTTPException(404, "Etkinlik bulunamadı")
         after = await db.mice_events.find_one({"id": event_id, "tenant_id": tenant_id}, {"_id": 0})
@@ -1558,6 +1749,10 @@ async def change_status(
     if not event:
         raise HTTPException(404, "Etkinlik bulunamadı")
     cur_status = event.get("status", "lead")
+    if cur_status == "cancelled" and body.status == "lead" and (event.get("signature") or event.get("gl_journal_entry_id")):
+        raise HTTPException(409, "İmzalı veya muhasebeleşmiş sürüm yeniden açılamaz; yeni etkinlik/sözleşme gerekir")
+    if body.status == "cancelled" and event.get("gl_journal_entry_id"):
+        raise HTTPException(409, "Muhasebeleşmiş etkinlik için önce finansal ters kayıt gerekir")
     if body.status not in _MICE_TRANSITIONS.get(cur_status, set()):
         raise HTTPException(409, f"Geçersiz geçiş: {cur_status} → {body.status}")
     # Re-validate space + AV inventory conflicts whenever the target is an
@@ -1570,6 +1765,8 @@ async def change_status(
     # while still serializing concurrent contenders via the resource lock.
     needs_lock = body.status in {"tentative", "definite", "confirmed"}
     bookings = event.get("space_bookings", [])
+    if needs_lock:
+        await _validate_setup_capacity(tenant_id, bookings)
     resources = event.get("resources", [])
     space_ids = [b["space_id"] for b in bookings if b.get("space_id")]
     inv_ids = [r["inventory_id"] for r in resources if r.get("inventory_id")]
@@ -1599,6 +1796,8 @@ async def change_status(
                 raise HTTPException(403, "Eşzamanlı etkinlik limiti aşıldı. Lütfen paketinizi yükseltin.")
 
     update = {"status": body.status, "updated_at": datetime.now(UTC).isoformat()}
+    if cur_status == "cancelled" and body.status == "lead":
+        update.update(lost_reason=None, lost_at=None, signature=None, signature_request=None)
     if body.status == "cancelled":
         update["lost_reason"] = body.reason.strip()
         update["lost_at"] = datetime.now(UTC).isoformat()
@@ -1606,6 +1805,7 @@ async def change_status(
         update["completed_at"] = datetime.now(UTC).isoformat()
 
     async def _do_status(session) -> None:
+        await _validate_setup_capacity(tenant_id, bookings, session=session, event_currency=event.get("currency"))
         conflict = await _check_space_conflict(tenant_id, bookings, exclude_event_id=event_id, session=session)
         if conflict:
             raise HTTPException(409, conflict)
@@ -1613,7 +1813,9 @@ async def change_status(
         if inv_err:
             raise HTTPException(409, inv_err)
         # IMPORTANT: tenant_id in write filter (cross-tenant safety).
-        await db.mice_events.update_one({"id": event_id, "tenant_id": tenant_id}, {"$set": update}, session=session)
+        result = await db.mice_events.update_one({"id": event_id, "tenant_id": tenant_id, "status": cur_status}, {"$set": update}, session=session)
+        if getattr(result, "matched_count", getattr(result, "modified_count", 0)) == 0:
+            raise HTTPException(409, "Etkinlik durumu değişti; sayfayı yenileyin")
 
     if needs_lock:
         try:
@@ -1626,6 +1828,8 @@ async def change_status(
                 callback=_do_status,
             )
         except HTTPException:
+            if reserved:
+                await release_quota(tenant_id, "mice", "concurrent_events", resource_id)
             raise
         except Exception as exc:  # noqa: BLE001
             if not is_replica_set_unavailable(exc):
@@ -1651,7 +1855,7 @@ async def change_status(
                     await release_quota(tenant_id, "mice", "concurrent_events", resource_id)
                 raise HTTPException(409, inv_err)
             try:
-                await db.mice_events.update_one({"id": event_id, "tenant_id": tenant_id}, {"$set": update})
+                await _do_status(None)
             except Exception as se:
                 if reserved:
                     await release_quota(tenant_id, "mice", "concurrent_events", resource_id)
@@ -1659,17 +1863,29 @@ async def change_status(
     else:
         # IMPORTANT: tenant_id in write filter (cross-tenant safety).
         try:
-            await db.mice_events.update_one({"id": event_id, "tenant_id": tenant_id}, {"$set": update})
+            result = await db.mice_events.update_one({"id": event_id, "tenant_id": tenant_id, "status": cur_status}, {"$set": update})
+            if getattr(result, "matched_count", getattr(result, "modified_count", 0)) == 0:
+                raise HTTPException(409, "Etkinlik durumu değişti; sayfayı yenileyin")
         except Exception as se:
             if reserved:
                 await release_quota(tenant_id, "mice", "concurrent_events", resource_id)
             raise se
 
-    if was_counted and not will_be_counted:
-        await release_quota(tenant_id, "mice", "concurrent_events", resource_id)
     after = await db.mice_events.find_one({"id": event_id, "tenant_id": tenant_id}, {"_id": 0})
     if body.status == "completed":
-        await _post_event_to_folio(tenant_id, after)
+        try:
+            await _post_event_to_folio(tenant_id, after)
+        except Exception:
+            # A terminal event must not hide a failed financial handoff. The
+            # deterministic folio posting id also makes an uncertain retry safe.
+            await db.mice_events.update_one(
+                {"id": event_id, "tenant_id": tenant_id, "status": "completed", "updated_at": update["updated_at"]},
+                {"$set": {"status": cur_status}, "$unset": {"completed_at": ""}},
+            )
+            _invalidate_mice_events_cache(tenant_id)
+            raise
+    if was_counted and not will_be_counted:
+        await release_quota(tenant_id, "mice", "concurrent_events", resource_id)
     before_clean = {k: v for k, v in event.items() if k != "_id"}
     await log_audit_event(
         tenant_id=tenant_id,
@@ -1706,6 +1922,7 @@ async def _post_event_to_folio(tenant_id: str, event: dict) -> None:
     if existing:
         return
     posting = {
+        "_id": f"mice-charge:{tenant_id}:{event['id']}",
         "id": str(uuid.uuid4()),
         "tenant_id": tenant_id,
         "reservation_id": event["reservation_id"],
@@ -1719,7 +1936,10 @@ async def _post_event_to_folio(tenant_id: str, event: dict) -> None:
         "source": "mice_module",
         "reference": event["id"],
     }
-    await db.folio_postings.insert_one(posting)
+    try:
+        await db.folio_postings.insert_one(posting)
+    except DuplicateKeyError:
+        return  # Mongo _id is the cross-worker idempotency backstop.
     try:
         from integrations.xchange.bus import bus
         from integrations.xchange.schemas import MessageType
@@ -1755,6 +1975,9 @@ async def delete_event(
     require_mice_ops(current_user)
     db = get_system_db()
     before = await db.mice_events.find_one({"id": event_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
+    if before and (before.get("gl_journal_entry_id") or before.get("signature") or any(p.get("paid") for p in before.get("payment_schedule", []))
+                   or (before.get("status") == "completed" and before.get("reservation_id") and (before.get("totals") or {}).get("grand_total", 0) > 0)):
+        raise HTTPException(409, "İmzalı, ödemeli veya muhasebeleşmiş etkinlik silinemez")
 
     # Capture quota-relevant state BEFORE deletion so we know whether a
     # release is needed.  Events in ACTIVE_QUOTA_STATUSES hold a ledger
@@ -1769,7 +1992,7 @@ async def delete_event(
     # ledger at deletion time.  Cancelled / completed events were already
     # released during the status transition, so we must not double-release.
     if was_active:
-        await release_quota(current_user.tenant_id, "mice", "concurrent_events", event_id)
+        await release_quota(current_user.tenant_id, "mice", "concurrent_events", (before or {}).get("client_request_id") or event_id)
 
     await log_audit_event(
         tenant_id=current_user.tenant_id,
@@ -2274,6 +2497,15 @@ async def replace_payment_schedule(
 ) -> dict:
     require_mice_ops(current_user)
     db = get_system_db()
+    existing = await db.mice_events.find_one({"id": event_id, "tenant_id": current_user.tenant_id})
+    if not existing:
+        raise HTTPException(404, "Etkinlik bulunamadı")
+    if existing.get("signature") or existing.get("gl_journal_entry_id") or existing.get("status") in {"completed", "cancelled"}:
+        raise HTTPException(409, "Kapanmış veya onaylanmış etkinliğin ödeme planı değiştirilemez")
+    try:
+        protect_paid_schedule(existing.get("payment_schedule") or [], [it.model_dump(mode="json") for it in body.items])
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
     items = []
     for it in body.items:
         d = it.model_dump()
@@ -2281,9 +2513,12 @@ async def replace_payment_schedule(
         if d.get("paid_at") and hasattr(d["paid_at"], "isoformat"):
             d["paid_at"] = d["paid_at"].isoformat()
         items.append(d)
-    res = await db.mice_events.update_one({"id": event_id, "tenant_id": current_user.tenant_id}, {"$set": {"payment_schedule": items, "updated_at": datetime.now(UTC).isoformat()}})
+    res = await db.mice_events.update_one(
+        {"id": event_id, "tenant_id": current_user.tenant_id, "payment_schedule": existing.get("payment_schedule"), "updated_at": existing.get("updated_at")},
+        {"$set": {"payment_schedule": items, "updated_at": datetime.now(UTC).isoformat(), "signature_request": None}},
+    )
     if not res.matched_count:
-        raise HTTPException(404, "Etkinlik bulunamadı")
+        raise HTTPException(409, "Etkinlik veya ödeme planı değişti; yenileyin")
     _invalidate_mice_events_cache(current_user.tenant_id)
     return {"ok": True, "count": len(items)}
 
@@ -2299,12 +2534,17 @@ async def mark_payment_paid(
     require_finance(current_user)  # marking payment touches AR
     db = get_system_db()
     # Bound-check first.
-    event = await db.mice_events.find_one({"id": event_id, "tenant_id": current_user.tenant_id}, {"payment_schedule": 1})
+    event = await db.mice_events.find_one({"id": event_id, "tenant_id": current_user.tenant_id}, {"payment_schedule": 1, "status": 1})
     if not event:
         raise HTTPException(404, "Etkinlik bulunamadı")
     sched_len = len(event.get("payment_schedule") or [])
     if idx < 0 or idx >= sched_len:
         raise HTTPException(404, "Ödeme satırı bulunamadı")
+    item = event["payment_schedule"][idx]
+    if item.get("paid"):
+        return {"ok": True, "item": item, "already_paid": True}
+    if event.get("status") == "cancelled":
+        raise HTTPException(409, "İptal edilmiş etkinliğe ödeme işaretlenemez")
     # Atomic positional $set — yarış güvenli, başka bir taksitin
     # işaretlenmesini overwrite etmez.
     paid_at = datetime.now(UTC).isoformat()
@@ -2314,9 +2554,12 @@ async def mark_payment_paid(
     }
     if reference:
         set_ops[f"payment_schedule.{idx}.reference"] = reference
-    res = await db.mice_events.update_one({"id": event_id, "tenant_id": current_user.tenant_id}, {"$set": set_ops})
+    res = await db.mice_events.update_one(
+        {"id": event_id, "tenant_id": current_user.tenant_id, "status": {"$ne": "cancelled"}, f"payment_schedule.{idx}": item},
+        {"$set": {**set_ops, "updated_at": paid_at}},
+    )
     if not res.matched_count:
-        raise HTTPException(404, "Etkinlik bulunamadı")
+        raise HTTPException(409, "Ödeme takvimi değişti; yenileyip tekrar deneyin")
     # Tek satırı oku ve döndür.
     fresh = await db.mice_events.find_one({"id": event_id, "tenant_id": current_user.tenant_id}, {"payment_schedule": 1})
     _invalidate_mice_events_cache(current_user.tenant_id)
@@ -2353,7 +2596,9 @@ async def kitchen_ticket(event_id: str, current_user: User = Depends(get_current
         m = menus.get(r["menu_id"])
         if not m:
             continue
-        qty = float(r.get("quantity") or 0) or pax
+        qty = float(r["quantity"]) if r.get("quantity") is not None else pax
+        if qty <= 0:
+            continue
         prep = m.get("prep_lead_minutes", 30)
         prep_by = None
         if earliest:
@@ -2410,7 +2655,9 @@ def _build_fnb_lines(event: dict) -> list[dict]:
     for r in event.get("resources", []):
         if r.get("type") != "fb":
             continue
-        qty = float(r.get("quantity") or 0) or pax
+        qty = float(r["quantity"]) if r.get("quantity") is not None else pax
+        if qty <= 0:
+            continue
         lines.append(
             {
                 "menu_id": r.get("menu_id"),
@@ -2490,8 +2737,9 @@ async def send_fnb_order(
             "target": body.target,
             "status": "sent",
             "expected_pax": int(event.get("expected_pax") or 0),
+            "currency": _normalize_currency(event.get("currency"), await _tenant_currency_code(tenant_id)),
             "lines": lines,
-            "total": round(sum(line_["unit_price"] * line_["quantity"] for line_ in lines), 2),
+            "total": rounded(sum((money(_line_total(line_)) for line_ in lines), Decimal(0))),
             "note": body.note,
             "sent_at": datetime.now(UTC).isoformat(),
             "sent_by": current_user.username,
@@ -2643,7 +2891,9 @@ async def transition_fnb_order(
     if body.note is not None:
         set_fields[f"{target}_note"] = body.note
 
-    await db.mice_fnb_orders.update_one({"id": order_id, "tenant_id": tenant_id}, {"$set": set_fields})
+    result = await db.mice_fnb_orders.update_one({"id": order_id, "tenant_id": tenant_id, "status": current}, {"$set": set_fields})
+    if not result.matched_count:
+        raise HTTPException(409, "Mutfak siparişi başka bir kullanıcı tarafından değiştirildi; yenileyin")
 
     updated = await db.mice_fnb_orders.find_one({"id": order_id, "tenant_id": tenant_id}, {"_id": 0})
     await log_audit_event(
@@ -2686,6 +2936,9 @@ async def ops_sheet(
     rows = []
     async for ev in db.mice_events.find(q, {"_id": 0}):
         for sb in ev.get("space_bookings", []):
+            day_start = datetime.fromisoformat(date)
+            if not overlaps(sb, {"starts_at": day_start, "ends_at": day_start + timedelta(days=1)}):
+                continue
             sp = spaces_by_id.get(sb["space_id"], {})
             rows.append(
                 {
@@ -2708,12 +2961,12 @@ async def ops_sheet(
 # ── BEO Client Signature Portal ──────────────────────────────────────
 
 
-class SignatureRequestIn(BaseModel):
+class SignatureRequestIn(MiceInput):
     client_email: str
     expires_in_days: int = Field(7, ge=1, le=90)
 
 
-class SignatureSubmitIn(BaseModel):
+class SignatureSubmitIn(MiceInput):
     token: str = Field(..., min_length=1)
     signature_name: str = Field(..., min_length=1, max_length=200)
     signature_data: str = Field(..., min_length=1, max_length=100000)
@@ -2728,14 +2981,20 @@ async def create_beo_signature_request(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_sales")),
 ):
+    require_mice_ops(current_user)
     db = get_system_db()
     event = await db.mice_events.find_one({"id": event_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
     if not event:
         raise HTTPException(status_code=404, detail="Etkinlik bulunamadı")
 
+    if event.get("status") not in {"tentative", "definite", "confirmed"} or event.get("signature"):
+        raise HTTPException(409, "Bu etkinlik için yeni müşteri onayı istenemez")
+    if "@" not in payload.client_email or len(payload.client_email) > 254:
+        raise HTTPException(422, "Geçerli müşteri e-postası girin")
+
     # Generate JWT token containing the details
     exp = datetime.now(UTC) + timedelta(days=payload.expires_in_days)
-    claims = {"event_id": event_id, "tenant_id": current_user.tenant_id, "client_email": payload.client_email.strip().lower(), "exp": exp}
+    claims = {"purpose": "beo_approval", "jti": str(uuid.uuid4()), "event_id": event_id, "tenant_id": current_user.tenant_id, "client_email": payload.client_email.strip().lower(), "exp": exp}
     token = jwt.encode(claims, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
     # Store token in event for verification/revocation
@@ -2744,7 +3003,7 @@ async def create_beo_signature_request(
         {"$set": {"signature_request": {"client_email": payload.client_email.strip().lower(), "expires_at": exp.isoformat(), "token": token, "created_at": datetime.now(UTC).isoformat()}}},
     )
 
-    return {"token": token, "signature_url": f"/api/mice/public/beo/verify?token={token}"}
+    return {"token": token, "signature_url": f"/public/mice/beo?token={token}"}
 
 
 @router.get("/public/beo/verify")
@@ -2801,6 +3060,7 @@ async def verify_public_beo(token: str):
                 "end_date",
                 "notes",
                 "totals",
+                "currency",
             )
             if k in event
         },
@@ -2810,13 +3070,13 @@ async def verify_public_beo(token: str):
         "payment_schedule": event.get("payment_schedule", []),
         "technical_requirements": event.get("technical_requirements") or None,
         "staff_assignments": event.get("staff_assignments") or [],
-        "signed": event.get("status") == "confirmed" and "signature" in event,
+        "signed": bool(event.get("signature")),
         "signature": event.get("signature"),
     }
 
 
 @router.post("/public/beo/sign")
-async def sign_public_beo(payload: SignatureSubmitIn):
+async def sign_public_beo(payload: SignatureSubmitIn, request: Request = None):
     try:
         claims = jwt.decode(payload.token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
     except jwt.ExpiredSignatureError:
@@ -2855,8 +3115,8 @@ async def sign_public_beo(payload: SignatureSubmitIn):
         "signature": {
             "name": payload.signature_name.strip(),
             "signed_at": datetime.now(UTC).isoformat(),
-            "ip_address": payload.ip_address,
-            "user_agent": payload.user_agent,
+            "ip_address": request.client.host if request and request.client else None,
+            "user_agent": request.headers.get("user-agent", "")[:500] if request else None,
             "signature_data": payload.signature_data.strip(),
         },
     }
@@ -2868,7 +3128,12 @@ async def sign_public_beo(payload: SignatureSubmitIn):
         inv_err = await _check_resource_inventory_conflict(tenant_id, resources, bookings, exclude_event_id=event_id, session=session)
         if inv_err:
             raise HTTPException(409, inv_err)
-        await db.mice_events.update_one({"id": event_id, "tenant_id": tenant_id}, {"$set": update}, session=session)
+        result = await db.mice_events.update_one(
+            {"id": event_id, "tenant_id": tenant_id, "status": cur_status, "updated_at": event.get("updated_at"), "signature_request.token": payload.token},
+            {"$set": update}, session=session,
+        )
+        if not result.matched_count:
+            raise HTTPException(409, "Etkinlik veya onay bağlantısı değişti; yeni bağlantı isteyin")
 
     try:
         await with_resource_locks(
@@ -2896,7 +3161,7 @@ async def sign_public_beo(payload: SignatureSubmitIn):
         inv_err = await _check_resource_inventory_conflict(tenant_id, resources, bookings, exclude_event_id=event_id)
         if inv_err:
             raise HTTPException(409, inv_err)
-        await db.mice_events.update_one({"id": event_id, "tenant_id": tenant_id}, {"$set": update})
+        await _do_status(None)
 
     # Log audit event
     await log_audit_event(

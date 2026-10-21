@@ -11,6 +11,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { alertDialog, confirmDialog } from '@/lib/dialogs';
 import { useTranslation } from 'react-i18next';
 import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
+import { ModuleLoadError } from '@/components/shared/ModuleAvailabilityState';
 const PKG_TYPES = [{
   key: 'wedding',
   label: 'Düğün'
@@ -45,6 +46,7 @@ export default function PackagesTab() {
   } = useTranslation();
   const [packages, setPackages] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(blank);
   const [editId, setEditId] = useState(null);
@@ -60,8 +62,9 @@ export default function PackagesTab() {
         }
       });
       setPackages(r.data?.packages || []);
+      setLoadError(null);
     } catch (e) {
-      console.error(e);
+      setLoadError(e);
     }
     setLoading(false);
   }, []);
@@ -155,6 +158,7 @@ export default function PackagesTab() {
     items: form.items.filter((_, j) => j !== i)
   });
   const fmt = (value, currency = cachedTenantCurrency()) => formatCurrency(value, currency);
+  if (loadError) return <ModuleLoadError moduleName="MICE paketler" error={loadError} onRetry={load} />;
   return <div className="space-y-4">
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">

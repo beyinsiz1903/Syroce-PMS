@@ -7,22 +7,15 @@ Locks in regressions for:
 """
 from __future__ import annotations
 
-import sys
-import datetime as dt
-if not hasattr(dt, "UTC"):
-    dt.UTC = dt.timezone.utc
-
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
-from typing import Any
-import pytest
+
 import jwt
-from datetime import datetime, timedelta, timezone
-from datetime import timezone as dt_timezone
-UTC = dt_timezone.utc
-from fastapi import FastAPI, HTTPException
+import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from core.security import JWT_SECRET, JWT_ALGORITHM
+from core.security import JWT_ALGORITHM, JWT_SECRET
 from routers import mice as mice_router
 from routers.mice import router as mice_api_router
 
@@ -188,14 +181,13 @@ def test_public_verify_expired_token_returns_400(env):
 
 
 def test_sign_invalid_status_returns_409(env):
-    # Transition status to cancelled first (which is not tentative/definite/confirmed)
-    env.db.mice_events._events[_EVENT_ID]["status"] = "cancelled"
-
     req_res = env.client.post(
         f"/api/mice/events/{_EVENT_ID}/signature/request",
         json={"client_email": "client@example.com"}
     )
     token = req_res.json()["token"]
+    # A previously valid invitation cannot be used after cancellation.
+    env.db.mice_events._events[_EVENT_ID]["status"] = "cancelled"
 
     sign_res = env.client.post(
         "/api/mice/public/beo/sign",

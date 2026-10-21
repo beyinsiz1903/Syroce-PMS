@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, Suspense, lazy } from 'react';
+import { useEffect, useMemo, useRef, useState, Suspense, lazy } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -15,6 +15,8 @@ const KitchenBoardTab = lazy(() => import('@/components/mice/KitchenBoardTab'));
 import AccountsView from '@/components/mice/AccountsView';
 import DiaryView from '@/components/mice/DiaryView';
 import ResourcesView from '@/components/mice/ResourcesView';
+import SpacesView from '@/components/mice/SpacesView';
+import ReadinessPanel from '@/components/mice/ReadinessPanel';
 import { Stat } from '@/components/mice/_shared';
 // R4: Modal-bazlı render bloğu modals/ alt-paketine taşındı.
 import EventFormModal from '@/components/mice/modals/EventFormModal';
@@ -39,6 +41,8 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { useEntitlements } from '@/context/EntitlementContext';
 import { ModuleLoadError } from '@/components/shared/ModuleAvailabilityState';
+import apiErrorText from '@/utils/apiErrorText';
+import { isSuperAdmin } from '@/utils/authRoles';
 const MicePage = ({
   user,
   tenant,
@@ -59,9 +63,21 @@ const MicePage = ({
   const hasBanquet = miceFeatures.includes('banquet_operations');
   const hasProposals = miceFeatures.includes('proposals_contracts');
   const hasAdvancedReporting = miceFeatures.includes('advanced_reporting');
+  const canCatalog = isSuperAdmin(user) || ['admin', 'supervisor'].includes(user?.role);
+  const canFinance = isSuperAdmin(user) || ['admin', 'supervisor', 'front_desk', 'finance'].includes(user?.role);
+  const canMice = isSuperAdmin(user) || ['admin', 'supervisor', 'sales'].includes(user?.role);
 
   const [events, setEvents] = useState([]);
   const [summary, setSummary] = useState({});
+  const [totalCount, setTotalCount] = useState(0);
+  const [eventOffset, setEventOffset] = useState(0);
+  const [eventFilters, setEventFilters] = useState({});
+  const [draftFilters, setDraftFilters] = useState({});
+  const [search, setSearch] = useState('');
+  const [eventsBusy, setEventsBusy] = useState(false);
+  const requestSerial = useRef(0);
+  const [savingEvent, setSavingEvent] = useState(false);
+  const [quotePreview, setQuotePreview] = useState(null);
   // tab badge counts come from /mice/events response; survives lazy-loaded
   // collections so tab labels stay accurate before the user opens that tab.
   const [counts, setCounts] = useState({});
@@ -151,6 +167,7 @@ const MicePage = ({
     }
   };
   const [form, setForm] = useState(blankEvent);
+  useEffect(() => { setQuotePreview(null); }, [form]);
   const blankMenu = {
     name: '',
     type: 'fb',
@@ -178,12 +195,19 @@ const MicePage = ({
     next.add(key);
     return next;
   });
-  const loadEvents = async () => {
-    const e = await axios.get('/mice/events');
+  const loadEvents = async (filters = eventFilters, offset = eventOffset) => {
+    const serial = ++requestSerial.current;
+    setEventsBusy(true);
+    try {
+    const params = Object.fromEntries(Object.entries({ ...filters, offset: offset || '' }).filter(([, value]) => value));
+    const e = await axios.get('/mice/events', ...(Object.keys(params).length ? [{ params }] : []));
+    if (serial !== requestSerial.current) return;
     setEvents(e.data.events);
     setSummary(e.data.summary || {});
+    setTotalCount(e.data.total_count ?? e.data.events.length);
     setCounts(e.data.counts || {});
     markLoaded('events');
+    } finally { if (serial === requestSerial.current) setEventsBusy(false); }
   };
   const loadSpaces = async () => {
     const s = await axios.get('/mice/spaces');
@@ -253,16 +277,19 @@ const MicePage = ({
   const spaceById = useMemo(() => Object.fromEntries(spaces.map(s => [s.id, s])), [spaces]);
   const accountById = useMemo(() => Object.fromEntries(accounts.map(a => [a.id, a])), [accounts]);
   const openNew = () => {
+    setQuotePreview(null);
     ensureFormCollections();
     setEditing(null);
-    setForm(blankEvent);
+    setForm({ ...blankEvent, client_request_id: crypto.randomUUID() });
     setEventTab('basics');
     setShowEventForm(true);
   };
   const openEdit = ev => {
+    setQuotePreview(null);
     ensureFormCollections();
     setEditing(ev.id);
     setForm({
+      expected_revision: ev.updated_at || ev.created_at,
       name: ev.name,
       client_name: ev.client_name,
       client_email: ev.client_email || '',
@@ -297,6 +324,13 @@ const MicePage = ({
   };
   const submit = async e => {
     e.preventDefault();
+    if (savingEvent) return;
+    if (!form.name.trim() || !form.client_name.trim() || !form.start_date || !form.end_date) {
+      setEventTab('basics');
+      toast.error('Etkinlik adı, müşteri adı ve tarihleri zorunludur');
+      return;
+    }
+    setSavingEvent(true);
     try {
       // Normalize: empty datetime strings → null; entertainment.type==='none'
       // means user did not configure entertainment, so omit object entirely.
@@ -336,8 +370,8 @@ const MicePage = ({
       setShowEventForm(false);
       await loadEvents();
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'Kaydedilemedi');
-    }
+      toast.error(apiErrorText(err, 'Kaydedilemedi; tarih, saat ve zorunlu alanları kontrol edin'));
+    } finally { setSavingEvent(false); }
   };
   const changeStatus = async (id, status) => {
     let body = {
@@ -483,10 +517,11 @@ const MicePage = ({
     }
   };
   const markPaid = async (eventId, idx) => {
-    const ref = (await promptDialog({
+    const ref = await promptDialog({
       message: 'Ödeme referansı (banka/işlem no):',
       defaultValue: ''
-    })) || '';
+    });
+    if (ref == null) return;
     try {
       await axios.post(`/mice/events/${eventId}/payment-schedule/${idx}/mark-paid`, null, {
         params: ref ? {
@@ -499,6 +534,22 @@ const MicePage = ({
       if (beoData?.event?.id === eventId) showBeo(eventId);
     } catch (err) {
       toast.error(err.response?.data?.detail || 'İşaretlenemedi');
+    }
+  };
+
+  const previewQuote = async () => {
+    try {
+      // The same normalization as save: optional operation times must be null.
+      const ent = form.entertainment;
+      const { data } = await axios.post('/mice/events/quote-preview', {
+        ...form, space_bookings: omitEmptySpaceBookings(form.space_bookings),
+        entertainment: ent?.type && ent.type !== 'none' ? { ...ent, start_at: ent.start_at || null, end_at: ent.end_at || null } : null,
+        staff_assignments: form.staff_assignments.map(s => ({ ...s, start_at: s.start_at || null, end_at: s.end_at || null })),
+      }, ...(editing ? [{ params: { event_id: editing } }] : []));
+      setQuotePreview({ ...data, source: JSON.stringify(form) });
+    } catch (error) {
+      setQuotePreview(null);
+      toast.error(apiErrorText(error, 'Önce etkinlik tarihlerini ve salon / kaynak alanlarını tamamlayın'));
     }
   };
 
@@ -614,7 +665,7 @@ const MicePage = ({
   if (loadError) {
     return <ModuleLoadError moduleName="MICE & Banquet" error={loadError} onRetry={load} />;
   }
-  const totalPipelineByCurrency = Object.values(summary).reduce((totals, bucket) => {
+  const totalPipelineByCurrency = Object.entries(summary).filter(([status]) => !['completed', 'cancelled'].includes(status)).reduce((totals, [, bucket]) => {
     Object.entries(bucket.total_value_by_currency || {}).forEach(([currency, amount]) => {
       totals[currency] = (totals[currency] || 0) + Number(amount || 0);
     });
@@ -622,15 +673,16 @@ const MicePage = ({
   }, {});
   const totalPipeline = Object.values(totalPipelineByCurrency).reduce((sum, amount) => sum + amount, 0);
   const psTotal = form.payment_schedule.reduce((a, p) => a + (Number(p.amount) || 0), 0);
+  const visibleEvents = events.filter(event => `${event.name} ${event.client_name}`.toLocaleLowerCase('tr').includes(search.toLocaleLowerCase('tr')));
   return <>
     <div className="max-w-7xl mx-auto p-4 space-y-4">
       <div className="flex items-start justify-between flex-wrap gap-3">
-        <div>
+        <div className="min-w-0 max-w-full">
           <h1 className="text-2xl font-bold flex items-center gap-2">
             <CalendarDays className="w-6 h-6 text-indigo-600" />
             MICE & Banquet
           </h1>
-          <p className="text-sm text-gray-500">
+          <p className="text-sm text-gray-500 break-words">
             {t('cm.pages_MicePage.toplanti_konferans_gala_ve_dugun_etkinli')}
           </p>
         </div>
@@ -642,7 +694,7 @@ const MicePage = ({
           <Button variant="outline" onClick={load}>
             <RefreshCw className="w-4 h-4 mr-1" /> {t('cm.pages_MicePage.yenile')}
           </Button>
-          <Button onClick={openNew} disabled={eventsLimitReached} title={eventsLimitReached ? 'Eşzamanlı etkinlik limitine ulaşıldı' : ''}><Plus className="w-4 h-4 mr-1" /> {t('cm.pages_MicePage.yeni_etkinlik')}</Button>
+          <Button onClick={openNew} disabled={eventsLimitReached || !canMice} title={eventsLimitReached ? 'Eşzamanlı etkinlik limitine ulaşıldı' : ''}><Plus className="w-4 h-4 mr-1" /> {t('cm.pages_MicePage.yeni_etkinlik')}</Button>
         </div>
       </div>
 
@@ -653,7 +705,7 @@ const MicePage = ({
           <div className="flex flex-col gap-1 relative z-10">
             <span className="text-sm font-medium text-indigo-600/80 uppercase tracking-wider">{t('cm.pages_MicePage.toplam_etkinlik')}</span>
             <div className="flex items-end gap-2 mt-1">
-              <span className="text-3xl font-bold text-indigo-950">{events.length}</span>
+              <span className="text-3xl font-bold text-indigo-950">{totalCount}</span>
               <span className="text-sm font-medium text-indigo-600/70 mb-1">etkinlik</span>
             </div>
           </div>
@@ -709,7 +761,7 @@ const MicePage = ({
       </div>
 
       <Tabs value={activeTab} onValueChange={handleTabChange}>
-        <TabsList>
+        <TabsList className="h-auto flex-wrap justify-start gap-1">
           <TabsTrigger value="events">Etkinlikler</TabsTrigger>
           <TabsTrigger value="kitchen-board">Mutfak Panosu</TabsTrigger>
           <TabsTrigger value="diary">Function Diary</TabsTrigger>
@@ -720,10 +772,24 @@ const MicePage = ({
           {hasProposals && <TabsTrigger value="pipeline">{t('cm.pages_MicePage.satis_pipeline')}</TabsTrigger>}
           <TabsTrigger value="packages">Paketler</TabsTrigger>
           <TabsTrigger value="competitors">Rakip Analizi</TabsTrigger>
+          {hasAdvancedReporting && <TabsTrigger value="readiness">Operasyon Kontrolü</TabsTrigger>}
         </TabsList>
 
         <TabsContent value="events">
-          {events.length === 0 ? <EmptyState icon={CalendarDays} title={t('emptyStates.mice.eventsTitle')} description={t('emptyStates.mice.eventsDesc')} actionText={t('emptyStates.mice.eventsAction')} onAction={openNew} /> : <Card><CardContent className="p-0 overflow-x-auto">
+          <form className="mb-3 flex flex-wrap items-end gap-2" onSubmit={async e => {
+            e.preventDefault(); setEventFilters(draftFilters); setEventOffset(0);
+            try { await loadEvents(draftFilters, 0); } catch { toast.error('Filtre yüklenemedi'); }
+          }}>
+            <label className="text-xs">Etkinlik / müşteri<Input aria-label="Etkinlik veya müşteri ara" value={search} onChange={e => setSearch(e.target.value)} /></label>
+            <label className="text-xs">Durum<select aria-label="Etkinlik durumu filtresi" className="block h-10 rounded border bg-background px-2" value={draftFilters.status || ''} onChange={e => setDraftFilters({ ...draftFilters, status: e.target.value })}>
+              <option value="">Tüm durumlar</option>{Object.entries(STATUS).map(([key, value]) => <option key={key} value={key}>{value.label}</option>)}
+            </select></label>
+            <label className="text-xs">Başlangıç<Input type="date" aria-label="Filtre başlangıç" value={draftFilters.date_from || ''} onChange={e => setDraftFilters({ ...draftFilters, date_from: e.target.value })} /></label>
+            <label className="text-xs">Bitiş<Input type="date" aria-label="Filtre bitiş" min={draftFilters.date_from} value={draftFilters.date_to || ''} onChange={e => setDraftFilters({ ...draftFilters, date_to: e.target.value })} /></label>
+            <Button type="submit" variant="outline" disabled={eventsBusy}>Filtrele</Button>
+          </form>
+          <p className="mb-3 text-xs text-muted-foreground">Kartlar uygulanan tarih / durum filtresini kapsar. Pipeline, iptal ve tamamlanan işleri içermez. Metin araması yalnız bu sayfada uygulanır.</p>
+          {visibleEvents.length === 0 ? <EmptyState icon={CalendarDays} title={t('emptyStates.mice.eventsTitle')} description={t('emptyStates.mice.eventsDesc')} actionText={t('emptyStates.mice.eventsAction')} onAction={canMice && !eventsLimitReached ? openNew : undefined} /> : <Card><CardContent className="p-0 overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-slate-50 border-b text-left">
                 <tr>
@@ -734,7 +800,7 @@ const MicePage = ({
                 </tr>
               </thead>
               <tbody>
-                {events.map(ev => {
+                {visibleEvents.map(ev => {
                     const st = STATUS[ev.status] || STATUS.lead;
                     const acct = ev.client_account_id && accountById[ev.client_account_id];
                     return <tr key={ev.id} className="border-b hover:bg-slate-50">
@@ -773,11 +839,11 @@ const MicePage = ({
                         <Button size="sm" variant="ghost" title={t('cm.pages_MicePage.degisiklik_gecmisi')} onClick={() => setHistoryEvent(ev)}>
                           <HistoryIcon className="w-4 h-4" />
                         </Button>
-                        <Button size="sm" variant="ghost" onClick={() => openEdit(ev)}>{t('cm.pages_MicePage.duzenle')}</Button>
-                        {ev.status !== 'completed' && ev.status !== 'cancelled' && <select className="text-xs border rounded px-1" value={ev.status} onChange={e => changeStatus(ev.id, e.target.value)}>
-                            {Object.entries(STATUS).map(([k, v]) => <option key={k} value={k}>→ {v.label}</option>)}
+                        <Button size="sm" variant="ghost" disabled={!canMice || ['completed', 'cancelled'].includes(ev.status) || Boolean(ev.signature || ev.gl_journal_entry_id)} onClick={() => openEdit(ev)}>{t('cm.pages_MicePage.duzenle')}</Button>
+                        {ev.status !== 'completed' && <select disabled={!canMice} aria-label={`${ev.name} durum değiştir`} className="text-xs border rounded px-1" value={ev.status} onChange={e => changeStatus(ev.id, e.target.value)}>
+                            {[ev.status, ...({ lead: ['tentative', 'cancelled'], tentative: ['definite', 'cancelled', 'lead'], definite: ['confirmed', 'tentative', 'cancelled'], confirmed: [...(canFinance ? ['completed'] : []), 'cancelled'], cancelled: ['lead'] }[ev.status] || [])].map(k => <option key={k} value={k}>→ {STATUS[k]?.label || k}</option>)}
                           </select>}
-                        <Button size="sm" variant="ghost" onClick={() => remove(ev.id)}>
+                        <Button disabled={!canMice || Boolean(ev.signature || ev.gl_journal_entry_id) || ev.payment_schedule?.some(p => p.paid)} size="sm" variant="ghost" onClick={() => remove(ev.id)}>
                           <Trash2 className="w-4 h-4" />
                         </Button>
                       </td>
@@ -786,6 +852,8 @@ const MicePage = ({
               </tbody>
             </table>
           </CardContent></Card>}
+          {totalCount > 500 && <div className="mt-3 flex items-center justify-between gap-2 text-sm"><Button variant="outline" disabled={!eventOffset || eventsBusy} onClick={async () => { const next = Math.max(0, eventOffset - 500); setEventOffset(next); try { await loadEvents(eventFilters, next); } catch { toast.error('Sayfa yüklenemedi'); } }}>Önceki</Button>
+            <span>{eventOffset + 1}–{eventOffset + events.length} / {totalCount}</span><Button variant="outline" disabled={eventOffset + events.length >= totalCount || eventsBusy} onClick={async () => { const next = eventOffset + 500; setEventOffset(next); try { await loadEvents(eventFilters, next); } catch { toast.error('Sayfa yüklenemedi'); } }}>Sonraki</Button></div>}
         </TabsContent>
 
         <TabsContent value="kitchen-board">
@@ -795,45 +863,15 @@ const MicePage = ({
         </TabsContent>
 
         <TabsContent value="diary">
-          <DiaryView spaceById={spaceById} spaces={spaces} />
+          {visitedMiceTabs.has('diary') && <DiaryView spaceById={spaceById} spaces={spaces} />}
         </TabsContent>
 
         <TabsContent value="accounts">
-          <AccountsView accounts={accounts} reload={loadAccountsList} />
+          <AccountsView accounts={accounts} reload={loadAccountsList} canManage={canMice} />
         </TabsContent>
 
         <TabsContent value="spaces">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
-            <p className="text-sm text-gray-500">
-              {t('cm.pages_MicePage.toplanti_salonlari_ve_etkinlik_alanlari', 'Banket ve toplantı salonları envanteri.')}
-            </p>
-            <Button size="sm" variant="outline" onClick={() => navigate('/function-space')} data-testid="btn-go-function-space" className="w-full sm:w-auto">
-              <Building2 className="w-4 h-4 mr-1.5" /> {t('cm.pages_MicePage.salon_planlama', 'Salon Planlama')}
-            </Button>
-          </div>
-          {spaces.length === 0 && <EmptyState icon={Building2} title={t('emptyStates.mice.spacesTitle')} description={t('emptyStates.mice.spacesDesc')} />}
-          <div className="grid md:grid-cols-2 gap-3">
-            {spaces.map(s => <Card key={s.id}>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <Building2 className="w-4 h-4 text-indigo-600" /> {s.name}
-                  </CardTitle>
-                  <CardDescription>{s.location} • {s.area_m2} m²</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="grid grid-cols-3 gap-2 text-xs mb-2">
-                    {[['Tiyatro', s.capacity_theatre], ['Sınıf', s.capacity_classroom], ['Banket', s.capacity_banquet], ['Cocktail', s.capacity_cocktail], ['U Şekli', s.capacity_u_shape], ['Boardroom', s.capacity_boardroom]].filter(([, v]) => v > 0).map(([l, v]) => <div key={l} className="bg-slate-50 rounded p-1.5 text-center">
-                        <div className="text-gray-500">{l}</div>
-                        <div className="font-bold">{v}</div>
-                      </div>)}
-                  </div>
-                  <div className="text-sm">
-                    <span className="text-gray-500">Saatlik:</span> {formatCurrency(s.hourly_rate, s.currency || cachedTenantCurrency())} •{' '}
-                    <span className="text-gray-500">{t('cm.pages_MicePage.gunluk')}</span> {formatCurrency(s.daily_rate, s.currency || cachedTenantCurrency())}
-                  </div>
-                </CardContent>
-              </Card>)}
-          </div>
+          <SpacesView spaces={spaces} reload={loadSpaces} canManage={canCatalog} limitReached={spacesLimitReached} />
         </TabsContent>
 
         <TabsContent value="menus">
@@ -845,12 +883,12 @@ const MicePage = ({
               <Button size="sm" variant="outline" onClick={() => navigate('/catering')} data-testid="btn-go-catering" className="w-full sm:w-auto">
                 <UtensilsCrossed className="w-4 h-4 mr-1.5" /> {t('cm.pages_MicePage.catering_yonetimi', 'Catering Yönetimi')}
               </Button>
-              <Button size="sm" onClick={openNewMenu} className="w-full sm:w-auto">
+              <Button disabled={!canCatalog} size="sm" onClick={openNewMenu} className="w-full sm:w-auto">
                 <Plus className="w-4 h-4 mr-1" /> {t('cm.pages_MicePage.yeni_menu_paket')}
               </Button>
             </div>
           </div>
-          {menus.length === 0 && <EmptyState icon={UtensilsCrossed} title={t('emptyStates.mice.menusTitle')} description={t('emptyStates.mice.menusDesc')} actionText={t('emptyStates.mice.menusAction')} onAction={openNewMenu} />}
+          {menus.length === 0 && <EmptyState icon={UtensilsCrossed} title={t('emptyStates.mice.menusTitle')} description={t('emptyStates.mice.menusDesc')} actionText={t('emptyStates.mice.menusAction')} onAction={canCatalog ? openNewMenu : undefined} />}
           <div className="grid md:grid-cols-3 gap-3">
             {menus.map(m => <Card key={m.id}>
                 <CardHeader className="pb-2">
@@ -860,10 +898,10 @@ const MicePage = ({
                       {m.name}
                     </CardTitle>
                     <div className="flex gap-1 shrink-0">
-                      <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => openEditMenu(m)} title={t('cm.pages_MicePage.duzenle_cc6f2')}>
+                      <Button disabled={!canCatalog} size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => openEditMenu(m)} title={t('cm.pages_MicePage.duzenle_cc6f2')}>
                         <Pencil className="w-3.5 h-3.5" />
                       </Button>
-                      <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-red-600" onClick={() => removeMenu(m.id, m.name)} title={t('cm.pages_MicePage.sil')}>
+                      <Button disabled={!canCatalog} size="sm" variant="ghost" className="h-7 w-7 p-0 text-red-600" onClick={() => removeMenu(m.id, m.name)} title={t('cm.pages_MicePage.sil')}>
                         <Trash2 className="w-3.5 h-3.5" />
                       </Button>
                     </div>
@@ -896,7 +934,7 @@ const MicePage = ({
         </TabsContent>
 
         <TabsContent value="resources">
-          <ResourcesView resources={resources} reload={loadResourcesList} />
+          <ResourcesView resources={resources} reload={loadResourcesList} canManage={canCatalog} />
         </TabsContent>
 
         <TabsContent value="pipeline">
@@ -916,16 +954,17 @@ const MicePage = ({
             <BanquetCompetitorTab />
           </Suspense>
         </TabsContent>
+        {hasAdvancedReporting && <TabsContent value="readiness"><ReadinessPanel events={events} totalCount={totalCount} onOpen={openEdit} /></TabsContent>}
       </Tabs>
 
       {/* Event create/edit */}
-      {showEventForm && <EventFormModal editing={editing} form={form} setForm={setForm} eventTab={eventTab} setEventTab={setEventTab} accounts={accounts} accountById={accountById} spaces={spaces} menus={menus} resources={resources} psTotal={psTotal} addSb={addSb} setSb={setSb} rmSb={rmSb} addRes={addRes} setRes={setRes} rmRes={rmRes} addAg={addAg} setAg={setAg} rmAg={rmAg} addPs={addPs} setPs={setPs} rmPs={rmPs} submit={submit} onClose={() => setShowEventForm(false)} />}
+      {showEventForm && <EventFormModal editing={editing} form={form} setForm={value => { setQuotePreview(null); setForm(value); }} eventTab={eventTab} setEventTab={setEventTab} accounts={accounts} accountById={accountById} spaces={spaces} menus={menus} resources={resources} psTotal={psTotal} addSb={addSb} setSb={setSb} rmSb={rmSb} addRes={addRes} setRes={setRes} rmRes={rmRes} addAg={addAg} setAg={setAg} rmAg={rmAg} addPs={addPs} setPs={setPs} rmPs={rmPs} submit={submit} saving={savingEvent} quotePreview={quotePreview?.source === JSON.stringify(form) ? quotePreview : null} previewQuote={previewQuote} onClose={() => { if (!savingEvent) setShowEventForm(false); }} />}
 
       {/* Menu / Package create-edit */}
       {showMenuForm && <MenuFormModal editingMenu={editingMenu} menuForm={menuForm} setMenuForm={setMenuForm} toggleTag={toggleTag} submitMenu={submitMenu} onClose={() => setShowMenuForm(false)} />}
 
       {/* BEO modal */}
-      {beoData && <BeoModal beoData={beoData} markPaid={markPaid} onClose={() => setBeoData(null)} />}
+      {beoData && <BeoModal beoData={beoData} canFinance={canFinance} canRequestApproval={canMice} markPaid={markPaid} onClose={() => setBeoData(null)} />}
 
       {/* Kitchen ticket modal */}
       {kitchenData && <KitchenModal kitchenData={kitchenData} onClose={() => setKitchenData(null)} />}

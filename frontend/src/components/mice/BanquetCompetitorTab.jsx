@@ -205,7 +205,7 @@ const BanquetCompetitorTab = () => {
               <thead className="bg-slate-50 border-b text-left">
                 <tr>
                   <th className="p-2">Etkinlik</th>
-                  <th className="p-2">Bizim Ort. ({cachedTenantCurrency()}/pax)</th>
+                  <th className="p-2">Bizim ortalama teklif / kişi</th>
                   <th className="p-2">Rakip Min</th>
                   <th className="p-2">Rakip Ort.</th>
                   <th className="p-2">Rakip Maks</th>
@@ -215,8 +215,8 @@ const BanquetCompetitorTab = () => {
               </thead>
               <tbody>
                 {pos.map((r) => (
-                  <tr key={r.event_type} className="border-b">
-                    <td className="p-2 font-medium">{evTypeLabel[r.event_type] || r.event_type}</td>
+                  <tr key={`${r.event_type}:${r.currency}`} className="border-b">
+                    <td className="p-2 font-medium">{evTypeLabel[r.event_type] || r.event_type} · {r.currency}</td>
                     <td className="p-2">{r.our_avg_per_pax
                       ? `${formatCurrency(r.our_avg_per_pax, r.currency || cachedTenantCurrency())} (${r.events_count})`
                       : '—'}</td>

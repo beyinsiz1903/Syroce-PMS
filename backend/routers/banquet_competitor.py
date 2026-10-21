@@ -21,10 +21,11 @@ from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from core.security import get_current_user
 from core.spa_mice_authz import require_mice_ops
+from core.tenant_currency import get_tenant_currency
 from core.tenant_db import get_system_db
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_op
@@ -45,10 +46,11 @@ class CompetitorIn(BaseModel):
 
 
 class CompetitorRateIn(BaseModel):
+    model_config = ConfigDict(allow_inf_nan=False)
     event_type: str = "meeting"  # meeting/conference/wedding/gala/training/other
     season: str = "all"  # all / high / shoulder / low
     per_pax_price: float = Field(0, ge=0)
-    currency: str = "TRY"
+    currency: str = Field("TRY", min_length=3, max_length=3, pattern=r"^[A-Za-z]{3}$")
     min_pax: int = Field(0, ge=0)
     max_pax: int = Field(0, ge=0)
     package_includes: list[str] = Field(default_factory=list)
@@ -196,14 +198,15 @@ async def positioning(
     """
     db = get_system_db()
     tenant_id = current_user.tenant_id
+    tenant_currency, _symbol = await get_tenant_currency(tenant_id)
 
     # Aggregate over embedded competitor_rates arrays.
     pipe = [
-        {"$match": {"tenant_id": tenant_id, "account_type": ACCOUNT_TYPE}},
+        {"$match": {"tenant_id": tenant_id, "account_type": ACCOUNT_TYPE, "active": {"$ne": False}}},
         {"$unwind": {"path": "$competitor_rates", "preserveNullAndEmptyArrays": False}},
         {
             "$group": {
-                "_id": "$competitor_rates.event_type",
+                "_id": {"event_type": "$competitor_rates.event_type", "currency": {"$toUpper": {"$ifNull": ["$competitor_rates.currency", tenant_currency]}}},
                 "competitor_min": {"$min": "$competitor_rates.per_pax_price"},
                 "competitor_max": {"$max": "$competitor_rates.per_pax_price"},
                 "competitor_avg": {"$avg": "$competitor_rates.per_pax_price"},
@@ -211,9 +214,9 @@ async def positioning(
             }
         },
     ]
-    competitor_summary: dict[str, dict] = {}
+    competitor_summary: dict[tuple[str, str], dict] = {}
     async for r in db.mice_accounts.aggregate(pipe):
-        competitor_summary[r["_id"]] = {
+        competitor_summary[(r["_id"]["event_type"], r["_id"]["currency"])] = {
             "competitor_min": round(r.get("competitor_min") or 0, 2),
             "competitor_max": round(r.get("competitor_max") or 0, 2),
             "competitor_avg": round(r.get("competitor_avg") or 0, 2),
@@ -226,6 +229,7 @@ async def positioning(
         {
             "$project": {
                 "event_type": 1,
+                "currency": {"$toUpper": {"$ifNull": ["$currency", tenant_currency]}},
                 "per_pax": {
                     "$cond": [
                         {"$gt": ["$expected_pax", 0]},
@@ -242,24 +246,24 @@ async def positioning(
         },
         {
             "$group": {
-                "_id": "$event_type",
+                "_id": {"event_type": "$event_type", "currency": "$currency"},
                 "our_avg_per_pax": {"$avg": "$per_pax"},
                 "events_count": {"$sum": 1},
             }
         },
     ]
-    our_summary: dict[str, dict] = {}
+    our_summary: dict[tuple[str, str], dict] = {}
     async for r in db.mice_events.aggregate(our_pipe):
-        our_summary[r["_id"]] = {
+        our_summary[(r["_id"]["event_type"], r["_id"]["currency"])] = {
             "our_avg_per_pax": round(r.get("our_avg_per_pax") or 0, 2),
             "events_count": r.get("events_count") or 0,
         }
 
     event_types = sorted(set(competitor_summary) | set(our_summary))
     rows: list[dict[str, Any]] = []
-    for et in event_types:
-        cs = competitor_summary.get(et, {})
-        os_ = our_summary.get(et, {})
+    for et, currency in event_types:
+        cs = competitor_summary.get((et, currency), {})
+        os_ = our_summary.get((et, currency), {})
         our_avg = os_.get("our_avg_per_pax") or 0
         comp_avg = cs.get("competitor_avg") or 0
         position = "no_data"
@@ -273,6 +277,7 @@ async def positioning(
         rows.append(
             {
                 "event_type": et,
+                "currency": currency,
                 **cs,
                 **os_,
                 "position": position,

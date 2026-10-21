@@ -5,15 +5,16 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { Plus, Trash2, Briefcase, Check } from 'lucide-react';
+import { Plus, Trash2, Briefcase, Check, Pencil } from 'lucide-react';
 import { Field, Modal } from './_shared';
 import { confirmDialog } from '@/lib/dialogs';
 import { useTranslation } from 'react-i18next';
 import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 
-const AccountsView = ({ accounts, reload }) => {
+const AccountsView = ({ accounts, reload, canManage = false }) => {
   const { t } = useTranslation();
   const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing] = useState(null);
   const [form, setForm] = useState({ name: '', tax_no: '', city: '', industry: 'corporate',
                                      credit_limit: 0, currency: cachedTenantCurrency(), payment_terms_days: 30 });
   const [expandedId, setExpandedId] = useState(null);
@@ -23,7 +24,8 @@ const AccountsView = ({ accounts, reload }) => {
   const create = async (e) => {
     e.preventDefault();
     try {
-      await axios.post('/mice/accounts', form);
+      if (editing) await axios.put(`/mice/accounts/${editing}`, form);
+      else await axios.post('/mice/accounts', form);
       toast.success('Hesap oluşturuldu');
       setShowForm(false);
       setForm({ name: '', tax_no: '', city: '', industry: 'corporate',
@@ -61,7 +63,7 @@ const AccountsView = ({ accounts, reload }) => {
     <Card><CardContent className="p-3">
       <div className="flex justify-between items-center mb-3">
         <h3 className="font-semibold">{t('cm.components_mice_AccountsView.kurumsal_musteriler')}{accounts.length})</h3>
-        <Button size="sm" onClick={() => setShowForm(true)}>
+        <Button disabled={!canManage} size="sm" onClick={() => { setEditing(null); setForm({ name: '', tax_no: '', city: '', industry: 'corporate', credit_limit: 0, currency: cachedTenantCurrency(), payment_terms_days: 30 }); setShowForm(true); }}>
           <Plus className="w-3 h-3 mr-1" /> {t('cm.components_mice_AccountsView.yeni_hesap')}
         </Button>
       </div>
@@ -82,13 +84,14 @@ const AccountsView = ({ accounts, reload }) => {
               <Badge variant="outline" className="text-xs">
                 {a.payment_terms_days}{t('cm.components_mice_AccountsView.gun_vade')}
               </Badge>
-              <Button size="sm" variant="ghost" onClick={(e) => {
+              <Button disabled={!canManage} size="sm" variant="ghost" aria-label={`${a.name} düzenle`} onClick={e => { e.stopPropagation(); setEditing(a.id); setForm({ ...a }); setShowForm(true); }}><Pencil className="w-3 h-3" /></Button>
+              <Button disabled={!canManage} size="sm" variant="ghost" onClick={(e) => {
                 e.stopPropagation();
                 setContactForm({ account_id: a.id, name: '', title: '', email: '', phone: '', is_primary: false });
               }}>
                 <Plus className="w-3 h-3" /> {t('cm.components_mice_AccountsView.kisi')}
               </Button>
-              <Button size="sm" variant="ghost" onClick={(e) => { e.stopPropagation(); remove(a.id); }}>
+              <Button disabled={!canManage} size="sm" variant="ghost" onClick={(e) => { e.stopPropagation(); remove(a.id); }}>
                 <Trash2 className="w-3 h-3" />
               </Button>
             </div>
@@ -125,7 +128,7 @@ const AccountsView = ({ accounts, reload }) => {
       </div>
 
       {showForm && (
-        <Modal title={t('cm.components_mice_AccountsView.yeni_kurumsal_hesap')} onClose={() => setShowForm(false)}>
+        <Modal title={editing ? 'Kurumsal Hesap Düzenle' : t('cm.components_mice_AccountsView.yeni_kurumsal_hesap')} onClose={() => setShowForm(false)}>
           <form onSubmit={create} className="space-y-2">
             <Field label={t('cm.components_mice_AccountsView.sirket_adi')}><Input required value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
@@ -149,7 +152,7 @@ const AccountsView = ({ accounts, reload }) => {
             </div>
             <div className="flex justify-end gap-2 pt-2">
               <Button type="button" variant="ghost" onClick={() => setShowForm(false)}>{t('cm.components_mice_AccountsView.iptal')}</Button>
-              <Button type="submit">{t('cm.components_mice_AccountsView.olustur')}</Button>
+              <Button type="submit">{editing ? 'Güncelle' : t('cm.components_mice_AccountsView.olustur')}</Button>
             </div>
           </form>
         </Modal>
