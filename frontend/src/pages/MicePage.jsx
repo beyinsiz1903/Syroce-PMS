@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, Suspense, lazy } from 'react';
 import axios from 'axios';
+import { useLocation } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -68,6 +69,8 @@ const MicePage = ({
   const canMice = isSuperAdmin(user) || ['admin', 'supervisor', 'sales'].includes(user?.role);
 
   const [events, setEvents] = useState([]);
+  const location = useLocation();
+  const openedNotification = useRef(null);
   const [summary, setSummary] = useState({});
   const [totalCount, setTotalCount] = useState(0);
   const [eventOffset, setEventOffset] = useState(0);
@@ -84,6 +87,7 @@ const MicePage = ({
   const [spaces, setSpaces] = useState([]);
   const [menus, setMenus] = useState([]);
   const [accounts, setAccounts] = useState([]);
+  const [groupBlocks, setGroupBlocks] = useState([]);
   const [resources, setResources] = useState([]);
   // Tracks which tab payloads have been fetched so we don't refetch on
   // every tab change. Mount populates events/spaces/accounts (needed by
@@ -159,6 +163,8 @@ const MicePage = ({
     payment_schedule: [],
     notes: '',
     reservation_id: '',
+    group_block_id: '',
+    sales_opportunity_id: '',
     technical_requirements: {
       ...blankTechReq
     },
@@ -268,6 +274,7 @@ const MicePage = ({
   // Event form needs menus + resources for the selection dropdowns; load
   // them on demand the first time the form opens.
   const ensureFormCollections = () => {
+    axios.get('/groups/blocks').then(r => setGroupBlocks((r.data.blocks || []).filter(g => !['cancelled', 'released', 'completed'].includes(g.status)))).catch(() => toast.error('Grup blokları yüklenemedi; grup bağlantısı için tekrar deneyin'));
     if (!loadedTabs.has('menus')) loadMenus().catch(e => {
       console.warn('[MicePage] loadMenus (on-demand) failed:', e?.response?.status ?? e?.message);
     });
@@ -311,6 +318,8 @@ const MicePage = ({
       payment_schedule: ev.payment_schedule || [],
       notes: ev.notes || '',
       reservation_id: ev.reservation_id || '',
+      group_block_id: ev.group_block_id || '',
+      sales_opportunity_id: ev.sales_opportunity_id || '',
       technical_requirements: {
         ...blankTechReq,
         ...(ev.technical_requirements || {})
@@ -323,6 +332,15 @@ const MicePage = ({
     });
     setEventTab('basics');
     setShowEventForm(true);
+  };
+  const convertOpportunity = async opportunity => {
+    try {
+      const { data } = await axios.get(`/mice/sales/opportunities/${opportunity.id}/event-draft`);
+      if (data.event_id) { const event = await axios.get(`/mice/events/${data.event_id}`); openEdit(event.data); return; }
+      ensureFormCollections(); setEditing(null); setQuotePreview(null);
+      setForm({ ...blankEvent, ...data.draft, client_request_id: crypto.randomUUID() });
+      setEventTab('basics'); setShowEventForm(true); toast.info(data.notice);
+    } catch (e) { toast.error(apiErrorText(e, 'Fırsat etkinliğe hazırlanamadı')); }
   };
   const submit = async e => {
     e.preventDefault();
@@ -498,6 +516,15 @@ const MicePage = ({
       toast.error('BEO alınamadı');
     }
   };
+  useEffect(() => {
+    if (loading) return;
+    const id = new URLSearchParams(location.search).get('event_id');
+    const key = `${user?.tenant_id || ''}:${id}`;
+    if (!id || openedNotification.current === key) return;
+    openedNotification.current = key;
+    showBeo(id);
+    // Open once per notification target; the loader is recreated every render.
+  }, [location.search, loading, user?.tenant_id]);
   const showKitchen = async id => {
     try {
       const r = await axios.get(`/mice/events/${id}/kitchen-ticket`);
@@ -942,7 +969,7 @@ const MicePage = ({
 
         <TabsContent value="pipeline">
           {visitedMiceTabs.has('pipeline') && <Suspense fallback={<div className="p-6 text-sm text-slate-500">{t('cm.pages_MicePage.yukleniyor_b597b')}</div>}>
-              <SalesPipelineTab accounts={accounts} />
+              <SalesPipelineTab accounts={accounts} onConvert={canMice ? convertOpportunity : undefined} />
             </Suspense>}
         </TabsContent>
 
@@ -961,7 +988,7 @@ const MicePage = ({
       </Tabs>
 
       {/* Event create/edit */}
-      {showEventForm && <EventFormModal editing={editing} form={form} setForm={value => { setQuotePreview(null); setForm(value); }} eventTab={eventTab} setEventTab={setEventTab} accounts={accounts} accountById={accountById} spaces={spaces} menus={menus} resources={resources} psTotal={psTotal} addSb={addSb} setSb={setSb} rmSb={rmSb} addRes={addRes} setRes={setRes} rmRes={rmRes} addAg={addAg} setAg={setAg} rmAg={rmAg} addPs={addPs} setPs={setPs} rmPs={rmPs} submit={submit} saving={savingEvent} quotePreview={quotePreview?.source === JSON.stringify(form) ? quotePreview : null} previewQuote={previewQuote} onClose={() => { if (!savingEvent) setShowEventForm(false); }} />}
+      {showEventForm && <EventFormModal editing={editing} form={form} setForm={value => { setQuotePreview(null); setForm(value); }} eventTab={eventTab} setEventTab={setEventTab} accounts={accounts} groupBlocks={groupBlocks} accountById={accountById} spaces={spaces} menus={menus} resources={resources} psTotal={psTotal} addSb={addSb} setSb={setSb} rmSb={rmSb} addRes={addRes} setRes={setRes} rmRes={rmRes} addAg={addAg} setAg={setAg} rmAg={rmAg} addPs={addPs} setPs={setPs} rmPs={rmPs} submit={submit} saving={savingEvent} quotePreview={quotePreview?.source === JSON.stringify(form) ? quotePreview : null} previewQuote={previewQuote} onClose={() => { if (!savingEvent) setShowEventForm(false); }} />}
 
       {/* Menu / Package create-edit */}
       {showMenuForm && <MenuFormModal editingMenu={editingMenu} menuForm={menuForm} setMenuForm={setMenuForm} toggleTag={toggleTag} submitMenu={submitMenu} onClose={() => setShowMenuForm(false)} />}

@@ -198,8 +198,8 @@ async def close_shift(
     )
     difference = counted_amount - expected
     close_business_date = (await ensure_business_date_initialized(db, current_user.tenant_id))["business_date"]
-    await db.cashier_shifts.update_one(
-        {"_id": shift["_id"], "tenant_id": current_user.tenant_id},
+    closed = await db.cashier_shifts.update_one(
+        {"_id": shift["_id"], "tenant_id": current_user.tenant_id, "status": "open", "cash_in": shift.get("cash_in"), "cash_out": shift.get("cash_out"), "$or": [{"mice_pending_ids": {"$exists": False}}, {"mice_pending_ids": {"$size": 0}}]},
         {
             "$set": {
                 "status": "closed",
@@ -214,6 +214,8 @@ async def close_shift(
             }
         },
     )
+    if closed.matched_count == 0:
+        raise HTTPException(409, "Vardiya değişti veya bekleyen banket finans işlemi var; önce tamamlayıp yenileyin")
     return {
         "status": "closed",
         "counted_amount": counted_amount,
@@ -313,8 +315,8 @@ async def handover_shift(
     )
     handover_business_date = (await ensure_business_date_initialized(db, current_user.tenant_id))["business_date"]
 
-    await db.cashier_shifts.update_one(
-        {"_id": shift["_id"], "tenant_id": current_user.tenant_id},
+    handed_over = await db.cashier_shifts.update_one(
+        {"_id": shift["_id"], "tenant_id": current_user.tenant_id, "status": "open", "cash_in": shift.get("cash_in"), "cash_out": shift.get("cash_out"), "$or": [{"mice_pending_ids": {"$exists": False}}, {"mice_pending_ids": {"$size": 0}}]},
         {
             "$set": {
                 "status": "handed_over",
@@ -332,6 +334,8 @@ async def handover_shift(
             }
         },
     )
+    if handed_over.matched_count == 0:
+        raise HTTPException(409, "Vardiya değişti veya bekleyen banket finans işlemi var; devir yapılmadı")
     new_doc = {
         "_id": str(uuid.uuid4()),
         "tenant_id": current_user.tenant_id,

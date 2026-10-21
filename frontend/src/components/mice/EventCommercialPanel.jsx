@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { formatCurrency } from '@/lib/currency';
 import { promptDialog } from '@/lib/dialogs';
 import apiErrorText from '@/utils/apiErrorText';
+import EventConsumption from './EventConsumption';
 
 const emptyActuals = { actual_pax: 0, guaranteed_pax: 0, budget_cost: 0, costs: [], costs_complete: false, notes: '' };
 export default function EventCommercialPanel({ eventId, canManage, canFinance, canActuals, refreshKey, onChanged }) {
@@ -14,6 +15,7 @@ export default function EventCommercialPanel({ eventId, canManage, canFinance, c
   const [busy, setBusy] = useState(false);
   const [actuals, setActuals] = useState(null);
   const [report, setReport] = useState(null);
+  const [changes, setChanges] = useState(null);
   const requestKey = useRef(crypto.randomUUID());
   const load = async () => {
     const [event, versions] = await Promise.all([axios.get(`/mice/events/${eventId}`), axios.get(`/mice/events/${eventId}/documents`)]);
@@ -56,6 +58,7 @@ export default function EventCommercialPanel({ eventId, canManage, canFinance, c
     const anchor = window.document.createElement('a'); anchor.href = url; anchor.download = `beo-v${document.number}.pdf`;
     window.document.body.appendChild(anchor); anchor.click(); anchor.remove(); URL.revokeObjectURL(url);
   });
+  const readChanges = async id => { const r = await axios.get(`/mice/events/${eventId}/document-changes`, { params: { to_id: id } }); setChanges(r.data); };
   const readActuals = async () => {
     const response = await axios.get(`/mice/events/${eventId}/actuals`);
     setActuals({ ...emptyActuals, ...response.data.actuals, expected_revision: response.data.expected_revision }); setReport(response.data);
@@ -77,13 +80,24 @@ export default function EventCommercialPanel({ eventId, canManage, canFinance, c
     {data.documents?.map(document => <div key={document.id} className="flex flex-wrap items-center justify-between gap-2 border-t pt-2 text-xs">
       <span>v{document.number} · {document.issued_at?.slice(0, 16)} · {document.reason}{document.signature ? ' · Önceki müşteri onayı arşivlendi' : ''}</span>
       <Button variant="outline" size="sm" disabled={busy} onClick={() => download(document)}>v{document.number} PDF</Button>
+      <Button variant="outline" size="sm" disabled={busy} onClick={() => action(() => readChanges(document.id))}>Değişiklik / teslim dökümü</Button>
+      {canManage && document.id === data.active_document_id && <Button variant="outline" size="sm" disabled={busy} onClick={() => action(async () => { await axios.post(`/mice/events/${eventId}/documents/${document.id}/distribute`); await readChanges(document.id); toast.success('Sorumlu personellere uygulama içi bildirim oluşturuldu'); })}>Departmanlara bildir</Button>}
     </div>)}
+    {changes && <div className="space-y-2 rounded border p-2 text-xs">
+      <h4 className="font-semibold">{changes.from_number ? `v${changes.from_number} → v${changes.to_number}` : `İlk belge: v${changes.to_number}`}</h4>
+      {!changes.changes.length && <p>İçerik değişikliği yok.</p>}
+      <div className="max-h-64 overflow-auto">{changes.changes.map(c => <div key={c.field} className="border-b py-1"><strong>{c.field}</strong><p>Önce: {JSON.stringify(c.before) ?? '—'}</p><p>Sonra: {JSON.stringify(c.after) ?? '—'}</p></div>)}</div>
+      {changes.deliveries.map(d => <p key={d.id}>{d.department} · {d.acknowledged_at ? `Teslim alındı: ${d.acknowledged_at.slice(0, 16)}` : 'Teslim onayı bekliyor'}</p>)}
+      {changes.can_acknowledge && <Button variant="outline" size="sm" disabled={busy} onClick={() => action(async () => { await axios.post(`/mice/events/${eventId}/documents/${changes.document_id}/acknowledge`); await readChanges(changes.document_id); })}>Belgeyi inceledim / teslim aldım</Button>}
+    </div>}
+    {canFinance && canActuals && <EventConsumption eventId={eventId} onChanged={readActuals} />}
     {actuals && <form onSubmit={e => { e.preventDefault(); saveActuals(); }} className="space-y-3 border-t pt-3">
       <p className="text-xs text-muted-foreground">{report?.notice}</p>
       <div className="grid gap-2 sm:grid-cols-3">
         {[['actual_pax', 'Gerçek katılım'], ['guaranteed_pax', 'Garanti kişi (bilgi)'], ['budget_cost', 'Bütçe maliyeti (net)']].map(([key, label]) => <label key={key} className="text-xs">{label}<Input required type="number" min="0" step={key === 'budget_cost' ? '0.01' : '1'} value={actuals[key]} onChange={e => setActuals({ ...actuals, [key]: Number(e.target.value) })} /></label>)}
       </div>
       <p className="text-xs">Bu bilgiler satış fiyatını veya müşteri onayını değiştirmez. Eksik tüketim kalemleri kârı olduğundan yüksek gösterebilir.</p>
+      {report?.generated_costs?.map(c => <p className="rounded border p-2 text-xs" key={c.id}>Otomatik, değişmez maliyet: {c.name} · {formatCurrency(c.unit_cost * c.quantity, report.currency)}. Bu tutarı aşağıya tekrar elle eklemeyin.</p>)}
       {actuals.costs.map((line, index) => <div key={index} className="grid grid-cols-2 gap-2 rounded border p-2 sm:grid-cols-5">
         <label className="text-xs">Maliyet kalemi<Input required value={line.name} onChange={e => setActuals({ ...actuals, costs: actuals.costs.map((r, i) => i === index ? { ...r, name: e.target.value } : r) })} /></label>
         <label className="text-xs">Tür<select className="w-full rounded border p-2" value={line.category} onChange={e => setActuals({ ...actuals, costs: actuals.costs.map((r, i) => i === index ? { ...r, category: e.target.value } : r) })}>{[['food', 'Yiyecek'], ['beverage', 'İçecek'], ['staff', 'Personel'], ['equipment', 'Ekipman'], ['entertainment', 'Eğlence'], ['other', 'Diğer']].map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
@@ -94,6 +108,7 @@ export default function EventCommercialPanel({ eventId, canManage, canFinance, c
       <label className="block text-xs">Analiz notu<Input maxLength={2000} value={actuals.notes} onChange={e => setActuals({ ...actuals, notes: e.target.value })} /></label>
       <label className="flex items-start gap-2 text-xs"><input type="checkbox" checked={actuals.costs_complete} onChange={e => setActuals({ ...actuals, costs_complete: e.target.checked })} />Tüm yiyecek, içecek, personel ve diğer maliyetleri girdim. Teklif bazlı katkıyı hesapla.</label>
       {report && <p className="text-sm">Vergisiz teklif: {formatCurrency(report.report.quoted_net_revenue, report.currency)} · Kayıtlı maliyet: {report.report.actual_cost == null ? 'Henüz girilmedi' : formatCurrency(report.report.actual_cost, report.currency)} · Teklif bazlı katkı: {report.report.quote_based_contribution == null ? 'Henüz hesaplanamaz' : formatCurrency(report.report.quote_based_contribution, report.currency)}</p>}
+      {report && <p className="text-sm">Folyoya / muhasebeye kaydedilmiş net gelir: {report.report.posted_net_revenue == null ? 'Henüz doğrulanamıyor' : formatCurrency(report.report.posted_net_revenue, report.currency)} · Kayıtlı gelirden operasyon katkısı: {report.report.posted_revenue_less_recorded_cost == null ? 'Gelir ve tam maliyet doğrulaması bekliyor' : formatCurrency(report.report.posted_revenue_less_recorded_cost, report.currency)}</p>}
       <Button disabled={busy} type="submit">Katılım ve maliyeti kaydet</Button>
     </form>}
   </section>;

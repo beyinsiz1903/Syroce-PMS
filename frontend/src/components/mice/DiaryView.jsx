@@ -31,23 +31,33 @@ const fmtDate = (d) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
 export const bookingWindow = booking => [
-  new Date(new Date(booking.starts_at).getTime() - (booking.setup_minutes || 0) * 60000),
-  new Date(new Date(booking.ends_at).getTime() + (booking.teardown_minutes || 0) * 60000),
+  new Date(new Date(booking.starts_at.slice(0, 19)).getTime() - (booking.setup_minutes || 0) * 60000),
+  new Date(new Date(booking.ends_at.slice(0, 19)).getTime() + (booking.teardown_minutes || 0) * 60000),
 ];
 
-export function bookedSpacesOnDate(events, dateStr) {
+export function relatedSpaceIds(id, spaces = [], visited = new Set()) {
+  const leaves = (sid, seen = new Set()) => {
+    if (seen.has(sid)) return new Set([sid]);
+    const children = spaces.find(s => s.id === sid)?.component_space_ids || [];
+    return children.length ? new Set(children.flatMap(child => [...leaves(child, new Set([...seen, sid]))])) : new Set([sid]);
+  };
+  const footprint = leaves(id, visited);
+  return [id, ...spaces.filter(s => [...leaves(s.id)].some(leaf => footprint.has(leaf))).map(s => s.id)].filter((value, index, all) => all.indexOf(value) === index);
+}
+
+export function bookedSpacesOnDate(events, dateStr, spaces = []) {
   const start = new Date(`${dateStr}T00:00:00`);
   const end = new Date(start); end.setDate(end.getDate() + 1);
   const ids = new Set();
   events.filter(e => ['tentative', 'definite', 'confirmed', 'completed'].includes(e.status)).forEach(event => {
-    (event.space_bookings || []).forEach(b => { const [s, e] = bookingWindow(b); if (s < end && e > start) ids.add(b.space_id); });
+    (event.space_bookings || []).forEach(b => { const [s, e] = bookingWindow(b); if (s < end && e > start) relatedSpaceIds(b.space_id, spaces).forEach(id => ids.add(id)); });
   });
   return ids;
 }
 
 const hhmm = (iso) => {
   if (!iso) return '';
-  const d = new Date(iso);
+  const d = new Date(iso.slice(0, 19));
   if (Number.isNaN(d.getTime())) return '';
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 };
@@ -116,7 +126,7 @@ const DiaryView = ({ spaceById, spaces }) => {
     for (let d = 1; d <= monthRange.lastDay; d++) {
       const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
       const dayEvents = eventsByDate[dateStr] || [];
-      const bookedSpaceIds = bookedSpacesOnDate(dayEvents, dateStr);
+      const bookedSpaceIds = bookedSpacesOnDate(dayEvents, dateStr, spaces);
       days.push({
         day: d, dateStr, events: dayEvents,
         bookedCount: bookedSpaceIds.size,
@@ -174,7 +184,7 @@ const DiaryView = ({ spaceById, spaces }) => {
         if (!(s < dayEnd && e > dayStart)) return;
         const startH = (s - dayStart) / 3600000;
         const endH = (e - dayStart) / 3600000;
-        (bySpace[sb.space_id] || (bySpace[sb.space_id] = [])).push({ ev, sb, startH, endH });
+        relatedSpaceIds(sb.space_id, spaces).forEach(id => (bySpace[id] || (bySpace[id] = [])).push({ ev, sb, startH, endH }));
       });
     });
     return (spaces || []).map((sp) => {
@@ -193,7 +203,7 @@ const DiaryView = ({ spaceById, spaces }) => {
   const ganttBookedCount = ganttRows.filter((r) => r.bookings.length > 0).length;
 
   const selectedDayEvents = selectedDate ? (eventsByDate[selectedDate] || []) : [];
-  const selectedDayBookedIds = bookedSpacesOnDate(selectedDayEvents, selectedDate);
+  const selectedDayBookedIds = bookedSpacesOnDate(selectedDayEvents, selectedDate, spaces);
   const selectedDayFreeSpaces = (spaces || []).filter((s) => !selectedDayBookedIds.has(s.id));
   const selectedDayBookedSpaces = (spaces || []).filter((s) => selectedDayBookedIds.has(s.id));
 

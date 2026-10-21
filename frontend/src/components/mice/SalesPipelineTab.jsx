@@ -31,7 +31,7 @@ const blank = {
   source: '', notes: '',
 };
 
-export default function SalesPipelineTab({ accounts = [] }) {
+export default function SalesPipelineTab({ accounts = [], onConvert }) {
   const { t } = useTranslation();
   const [pipeline, setPipeline] = useState(null);
   const [opps, setOpps] = useState([]);
@@ -190,6 +190,7 @@ export default function SalesPipelineTab({ accounts = [] }) {
                     <td className="p-2 text-center">{o.probability}%</td>
                     <td className="p-2"><Badge className={meta.cls}>{meta.label}</Badge></td>
                     <td className="p-2 text-right whitespace-nowrap">
+                      {onConvert && o.stage !== 'lost' && <Button size="sm" variant="outline" onClick={() => onConvert(o)}>{o.converted_event_id ? 'Bağlı etkinliği aç' : 'Etkinliğe dönüştür'}</Button>}{' '}
                       <Button size="sm" variant="outline"
                               onClick={() => { setTransitionFor(o); setToStage(o.stage); }}>
                         {t('cm.components_mice_SalesPipelineTab.asama_7eeec')}
@@ -300,7 +301,7 @@ export default function SalesPipelineTab({ accounts = [] }) {
               <Select value={toStage} onValueChange={setToStage}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {STAGES.map((s) => <SelectItem key={s.key} value={s.key}>{s.label}</SelectItem>)}
+                  {STAGES.filter(s => s.key === transitionFor?.stage || ({ lead: ['qualified', 'lost'], qualified: ['lead', 'proposal', 'lost'], proposal: ['qualified', 'contract', 'lost'], contract: ['proposal', 'won', 'lost'] }[transitionFor?.stage] || []).includes(s.key)).map((s) => <SelectItem key={s.key} value={s.key}>{s.label}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>

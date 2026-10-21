@@ -238,6 +238,8 @@ class FolioHardeningService:
         payment = await db.payments.find_one({"id": payment_id, "tenant_id": tenant_id}, {"_id": 0})
         if not payment:
             return {"success": False, "error": "Payment not found"}
+        if payment.get("mice_event_id"):
+            return {"success": False, "error": "Banket tahsilatını etkinliğin kısmi/tam iade akışından düzeltin"}
         if payment.get("voided"):
             return {"success": False, "error": "Payment already voided"}
         if not reason:

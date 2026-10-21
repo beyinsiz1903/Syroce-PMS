@@ -76,6 +76,7 @@ def mock_db():
         db.mice_events.delete_one = AsyncMock()
         db.mice_events.find = MagicMock(return_value=FakeCursor([]))
         db.mice_fnb_orders.find_one = AsyncMock(return_value=None)
+        db.tenant_settings.find_one = AsyncMock(return_value={"timezone": "Europe/Istanbul"})
 
         db.audit_logs.insert_one = AsyncMock()
         db.tenant_features.find_one = AsyncMock(return_value=None)

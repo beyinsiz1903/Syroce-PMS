@@ -1,6 +1,7 @@
 """Pure financial and scheduling contracts for banquet operations."""
 from datetime import UTC, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
+from zoneinfo import ZoneInfo
 
 
 def money(value) -> Decimal:
@@ -12,6 +13,30 @@ def money(value) -> Decimal:
 
 def rounded(value) -> float:
     return float(money(value).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+
+
+def space_leaves(space_id: str, spaces: dict, visited: frozenset | None = None) -> set[str]:
+    """A combined hall occupies each physical child; siblings stay independent."""
+    visited = visited or frozenset()
+    if len(visited) >= 20:
+        raise ValueError("Birleşik salon hiyerarşisi en fazla 20 seviye olabilir")
+    if space_id in visited:
+        raise ValueError("Birleşik salon tanımında döngü var")
+    space = spaces.get(space_id)
+    if not space or space.get("active") is False:
+        raise ValueError("Birleşik salonun alt mekanlarından biri eksik veya pasif")
+    children = space.get("component_space_ids") or []
+    if len(children) != len(set(children)):
+        raise ValueError("Aynı alt mekan birden fazla seçilemez")
+    if not children:
+        return {space_id}
+    leaves = set()
+    for child in children:
+        part = space_leaves(child, spaces, visited | {space_id})
+        if leaves & part:
+            raise ValueError("Birleşik salon aynı fiziksel alanı iki kez içeriyor")
+        leaves.update(part)
+    return leaves
 
 
 def price_breakdown(subtotal, policy: dict) -> dict:
@@ -36,6 +61,18 @@ def price_breakdown(subtotal, policy: dict) -> dict:
 
 def instant(value):
     return datetime.fromisoformat(value.replace("Z", "+00:00")) if isinstance(value, str) else value
+
+
+def local_instant(value, timezone: str):
+    parsed, zone = instant(value), ZoneInfo(timezone)
+    if parsed.tzinfo is not None:
+        return parsed.astimezone(zone)
+    attached = parsed.replace(tzinfo=zone)
+    if attached.astimezone(UTC).astimezone(zone).replace(tzinfo=None) != parsed:
+        raise ValueError("Yaz/kış saati geçişinde var olmayan yerel saat; geçerli saat seçin")
+    if attached.utcoffset() != parsed.replace(tzinfo=zone, fold=1).utcoffset():
+        raise ValueError("Yaz/kış saati geçişinde belirsiz saat; açık UTC ofseti gönderin")
+    return attached
 
 
 def occupancy_window(booking: dict) -> dict:

@@ -110,6 +110,11 @@ async def post_night_audit_daily_to_gl(
 
     payment_totals: dict[str, int] = {}
     for payment in payments:
+        # Banquet settlements are already posted individually (including FX)
+        # before their canonical payment row becomes visible. Never post them
+        # a second time as part of the daily folio collection batch.
+        if payment.get("mice_event_id") and payment.get("gl_journal_entry_id"):
+            continue
         account_code = _payment_account(mapping, str(payment.get("method") or payment.get("payment_method") or "bank"))
         payment_totals[account_code] = payment_totals.get(account_code, 0) + _minor(payment.get("amount"))
     payment_total = sum(payment_totals.values())

@@ -27,6 +27,7 @@ def test_buffers_block_availability_but_do_not_increase_rent():
 
 @pytest.mark.asyncio
 async def test_real_venue_conflict_accounts_for_setup_on_adjacent_day(wired):  # noqa: F811
+    await wired.mice_spaces.insert_one({"tenant_id": "A", "id": "hall", "active": True})
     await event(wired, start_date="2026-10-21", end_date="2026-10-21", space_bookings=[{**booking("00:15", "01:00"), "setup_minutes": 60}])
     assert await mice._check_space_conflict("A", [{"space_id": "hall", "starts_at": "2026-10-20T23:30", "ends_at": "2026-10-21T00:00"}])
     rows = await mice.ops_sheet("2026-10-20", USER)

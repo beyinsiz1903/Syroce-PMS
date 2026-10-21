@@ -68,6 +68,8 @@ async def void_payment(
 
     if not payment:
         raise HTTPException(status_code=404, detail="Payment not found")
+    if payment.get("mice_event_id"):
+        raise HTTPException(409, "Banket tahsilatını etkinliğin iade akışından düzeltin")
 
     if payment.get("voided"):
         raise HTTPException(status_code=400, detail="Payment already voided")

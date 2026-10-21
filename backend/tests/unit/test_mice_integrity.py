@@ -105,6 +105,7 @@ async def test_missing_inactive_or_overcapacity_space_is_rejected(monkeypatch, s
 
 @pytest.mark.asyncio
 async def test_create_rejects_invalid_catalog_before_quota_reservation(monkeypatch):
+    monkeypatch.setattr(mice, "_property_clock", AsyncMock(side_effect=lambda body, tid: body))
     monkeypatch.setattr(mice, "_ensure_indexes", AsyncMock())
     monkeypatch.setattr(mice, "_tenant_currency_code", AsyncMock(return_value="TRY"))
     monkeypatch.setattr(mice, "get_system_db", lambda: SimpleNamespace())

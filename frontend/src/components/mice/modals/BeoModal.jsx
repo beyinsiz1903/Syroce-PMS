@@ -11,6 +11,8 @@ import { Info, Modal } from '../_shared';
 import QuoteTotals from '../QuoteTotals';
 import EventCommercialPanel from '../EventCommercialPanel';
 import OperationTasks from '../OperationTasks';
+import EventSettlements from '../EventSettlements';
+import SeatingPlan, { LayoutDrawing } from '../SeatingPlan';
 import { cachedTenantCurrency, formatCurrency } from '@/lib/currency';
 const downloadBeoPdf = async (eventId, eventName) => {
   try {
@@ -237,6 +239,9 @@ const BeoModal = ({
       <Card><CardContent className="p-3"><QuoteTotals totals={beoData.event.totals} currency={beoData.event.currency || cachedTenantCurrency()} /></CardContent></Card>
       <div data-mice-screen-only><EventCommercialPanel eventId={beoData.event.id} canManage={canRequestApproval} canFinance={canFinance} canActuals={canActuals} refreshKey={approvalLink} onChanged={onChanged} /></div>
       <div data-mice-screen-only><OperationTasks eventId={beoData.event.id} canManage={canRequestApproval} /></div>
+      {canFinance && <div data-mice-screen-only><EventSettlements eventId={beoData.event.id} /></div>}
+      <div data-mice-screen-only><SeatingPlan eventId={beoData.event.id} canManage={canRequestApproval} onChanged={onChanged} /></div>
+      {beoData.seating_plans?.map(p => <section key={p.booking_index} className="space-y-2 border p-3"><h3 className="font-semibold">Masa yerleşimi · Salon satırı {p.booking_index + 1}</h3>{p.needs_review && <p role="alert">Salon veya saat değişti; bu çizimi yeniden doğrulayın.</p>}<LayoutDrawing plan={p} /><table className="w-full text-xs"><thead><tr><th>Masa</th><th>Kişi</th><th>X / Y (m)</th><th>Genişlik / Derinlik (m)</th></tr></thead><tbody>{p.tables.map(t => <tr key={t.label}><td>{t.label}</td><td>{t.seats}</td><td>{t.x} / {t.y}</td><td>{t.width} / {t.height}</td></tr>)}</tbody></table></section>)}
 
       {approvalLink && <label data-mice-screen-only className="block space-y-1 text-xs">Müşteriye özel onay bağlantısı — otomatik gönderilmez<Input readOnly value={approvalLink} onFocus={e => e.target.select()} /></label>}
       <div className="text-right flex flex-wrap justify-end gap-2">
