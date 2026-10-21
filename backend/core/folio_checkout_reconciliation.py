@@ -43,6 +43,9 @@ async def reconcile_unposted_room_charge(
     if not booking_id:
         raise ValueError("Booking id is required for room-charge reconciliation")
     confirmed_room_total = _money(booking.get("total_amount"))
+    # Earlier source nights are represented by an opening balance, not by
+    # replayed revenue rows. Complete only the post-cutover accommodation.
+    confirmed_room_total -= _money((booking.get("migration_financial_snapshot") or {}).get("accommodation"))
     # Operational checkouts without a confirmed accommodation amount (for
     # example room-only safety tests and zero-rate stays) have nothing to
     # reconcile.  Return before touching legacy folio collections.
@@ -140,7 +143,7 @@ async def reconcile_unposted_room_charge(
     payment_total = sum((_money(payment.get("amount")) for payment in payments), start=Decimal("0"))
     await database.folios.update_one(
         {"id": folio["id"], "tenant_id": tenant_id},
-        {"$set": {"balance": float(active_charge_total - payment_total)}},
+        {"$set": {"balance": float(_money(folio.get("opening_balance")) + active_charge_total - payment_total)}},
         **query_kwargs,
     )
     return {"posted": True, "idempotent": False, "charge_id": charge["id"], "amount": float(missing_total)}

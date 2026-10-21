@@ -502,8 +502,34 @@ def _build_financial_summary(
         else None
     )
 
+    source_snapshot = booking.get("migration_financial_snapshot") or {}
+    opening_balance = float(source_snapshot.get("charged") or 0) - float(source_snapshot.get("paid") or 0)
+    if source_snapshot:
+        prior_room = float(source_snapshot.get("accommodation") or 0)
+        prior_extra = float(source_snapshot.get("charged") or 0) - prior_room
+        remaining_room = max(0, float(booking.get("total_amount") or 0) - prior_room)
+        live_extra = total_charges - reservation_price_component_total + total_extra
+        folio_balance = opening_balance + total_charges + total_extra - total_payments - total_discounts
+        reservation_total_due = opening_balance + max(remaining_room, reservation_price_component_total) + live_extra - total_payments - total_discounts
+        balance = reservation_total_due
+        additional_charge_total = prior_extra + live_extra
+        gross_total = float(booking.get("total_amount") or 0) + additional_charge_total
+        accommodation_total = float(booking.get("total_amount") or 0)
+        reconciled_reservation_price_component_total += prior_room
+        raw_pricing_difference = reconciled_reservation_price_component_total - booking_total
+        cutoff = str(booking.get("migration_cutover_date") or "")
+        expected_live_dates = {day for day in expected_dates if day >= cutoff}
+        room_plan_fully_posted = bool(expected_live_dates) and posted_room_dates == expected_live_dates
+        pricing_reconciliation_difference = round(abs(raw_pricing_difference) if room_plan_fully_posted else max(0, raw_pricing_difference), 2)
+        pricing_reconciliation_direction = "posted_above_booking" if raw_pricing_difference > .01 else "booking_above_posted" if raw_pricing_difference < -.01 and room_plan_fully_posted else None
+        total_charges += float(source_snapshot.get("charged") or 0)
+        total_payments += float(source_snapshot.get("paid") or 0)
+        room_charge_total += prior_room
     return {
         "total_amount": booking.get("total_amount", 0),
+        "opening_balance": round(opening_balance, 2),
+        "source_paid_amount": float(source_snapshot.get("paid") or 0),
+        "source_charged_amount": float(source_snapshot.get("charged") or 0),
         "total_charges": round(total_charges, 2),
         "total_payments": round(total_payments, 2),
         "prepayment_total": round(prepayment_total, 2),

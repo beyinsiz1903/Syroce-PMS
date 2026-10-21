@@ -183,6 +183,7 @@ const FolioDialog = ({ open, onClose, folio, bookingId, onFolioUpdated }) => {
             </div>
 
             <div className="border-t pt-4">
+              {Number(folio.opening_balance || 0) !== 0 && <div className="flex justify-between text-sm"><span>Önceki PMS devir bakiyesi (gelir/tahsilat değil):</span><span>{formatCurrency(folio.opening_balance, folioCurrency, { decimals: 2 })}</span></div>}
               <div className="flex justify-between text-lg font-bold">
                 <span>{t('pms.totalCharges', 'Total Charges')}:</span>
                 <span>{formatCurrency(folio.total_charges, folioCurrency, { decimals: 2 })}</span>

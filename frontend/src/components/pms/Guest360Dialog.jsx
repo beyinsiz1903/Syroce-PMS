@@ -445,6 +445,9 @@ const Guest360Dialog = ({
               <Calendar className="w-5 h-5" />
               Konaklama Geçmişi
             </CardTitle>
+            {guest360Data.migration_archive_available && <Button variant="outline" size="sm" onClick={() => navigate(`/app/data-migration?guest_id=${encodeURIComponent(guest360Data.guest.id)}`)}>
+              Önceki PMS'den taşınan geçmişi aç
+            </Button>}
             <CardDescription>
               {stayHistory.length} rezervasyon kaydı • Toplam değer {formatMoneyBreakdown(guest360Data.stats?.lifetime_value_by_currency, guest360Data.stats?.lifetime_value)}
             </CardDescription>

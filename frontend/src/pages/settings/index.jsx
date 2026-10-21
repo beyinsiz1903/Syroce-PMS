@@ -840,6 +840,9 @@ const Settings = ({
   return <>
       <div className="p-4 md:p-6 space-y-4 max-w-6xl mx-auto">
         <PageHeader icon={SettingsIcon} iconClassName="text-slate-700" title="Ayarlar" subtitle={t('settings.subtitle')} actions={<>
+              {isAdmin && <Button variant="outline" size="sm" onClick={() => window.location.assign('/app/data-migration')}>
+                <Upload className="w-4 h-4 mr-1.5" />Veri Taşıma Merkezi
+              </Button>}
               <StatusBadge intent={currentPlan.pillIntent || 'neutral'} icon={PlanIcon}>
                 {currentPlan.label}
               </StatusBadge>

@@ -272,3 +272,23 @@ async def safe_post_async(
 ) -> httpx.Response:
     """Convenience wrapper: ``safe_request_async("POST", url, ...)``."""
     return await safe_request_async("POST", url, timeout=timeout, **httpx_kwargs)
+
+
+async def safe_download_async(url: str, *, max_bytes: int, timeout: float = 15, **kwargs) -> bytes:
+    """Bounded GET with pinned DNS, TLS verification and no redirect following.
+
+    Checking Content-Length alone is insufficient (chunked/compressed bodies).
+    The decoded stream is counted before retaining more response data.
+    """
+    host, targets, _ = _resolve_targets(url)
+    async with httpx.AsyncClient(transport=_pinned_transport(host, targets), timeout=timeout, follow_redirects=False, trust_env=False) as client:
+        async with client.stream("GET", url, **kwargs) as response:
+            response.raise_for_status()
+            if 300 <= response.status_code < 400:
+                raise EgressDenied("redirect is not permitted")
+            data = bytearray()
+            async for part in response.aiter_bytes(chunk_size=65536):
+                if len(data) + len(part) > max_bytes:
+                    raise EgressDenied("response exceeds configured byte limit")
+                data.extend(part)
+            return bytes(data)

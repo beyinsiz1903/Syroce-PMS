@@ -68,7 +68,8 @@ const PrintableFolio = ({ folioData = {}, guest, room, onClose }) => {
   const payments = useMemo(() => (Array.isArray(folioData.payments) ? folioData.payments : []).filter(item => !item.voided), [folioData.payments]);
   const totalCharges = charges.reduce((sum, item) => sum + Number(item.total ?? item.charge_amount ?? item.amount ?? 0), 0);
   const totalPayments = payments.reduce((sum, item) => sum + Number(item.amount ?? 0), 0);
-  const balance = Number(folioData.balance ?? (totalCharges - totalPayments));
+  const openingBalance = Number(folioData.opening_balance ?? folioData.folio?.opening_balance ?? 0);
+  const balance = Number(folioData.balance ?? (openingBalance + totalCharges - totalPayments));
   const start = new Date(booking.check_in || booking.check_in_date);
   const end = new Date(booking.check_out || booking.check_out_date);
   const nights = Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) ? EMPTY : Math.max(0, Math.round((end - start) / 86400000));
@@ -105,6 +106,7 @@ const PrintableFolio = ({ folioData = {}, guest, room, onClose }) => {
         <FolioTable title="Harcama ve Tahakkuklar" columns={["Tarih", "Açıklama", "Tür", "Adet", "Tutar"]} empty="Kayıtlı harcama bulunmuyor." rows={charges.map(item => [dateText(item.posted_at || item.created_at || item.date), item.description || item.charge_name || 'Harcama', categoryLabel(item.charge_category || item.category || item.charge_type), item.quantity || 1, money(item.total ?? item.charge_amount ?? item.amount, currency)])} totalLabel="Toplam harcama" total={money(totalCharges, currency)} />
         <FolioTable title="Tahsilatlar" columns={["Tarih", "Ödeme yöntemi", "Referans", "Tutar"]} empty="Kayıtlı tahsilat bulunmuyor." rows={payments.map(item => [dateText(item.posted_at || item.processed_at || item.created_at), paymentLabel(item.payment_method || item.method), item.reference || EMPTY, money(item.amount, currency)])} totalLabel="Toplam tahsilat" total={money(totalPayments, currency)} />
         <section className="ml-auto max-w-md rounded-xl border-2 border-slate-300 p-4">
+          {openingBalance !== 0 && <div className="mb-3 text-sm"><div className="flex justify-between"><span>Önceki PMS devir bakiyesi</span><b>{money(openingBalance, currency)}</b></div><p className="text-xs text-slate-500">Yeni gelir veya tahsilat değildir.</p></div>}
           <div className="flex justify-between text-sm"><span>Toplam harcama</span><b>{money(totalCharges, currency)}</b></div><div className="mt-2 flex justify-between text-sm"><span>Toplam tahsilat</span><b className="text-emerald-700">{money(totalPayments, currency)}</b></div>
           <div className="mt-3 flex justify-between border-t pt-3 text-lg"><b>{balance > 0 ? 'Kalan bakiye' : balance < 0 ? 'Misafir alacağı' : 'Bakiye'}</b><b className={balance > 0 ? 'text-red-700' : 'text-emerald-700'}>{money(Math.abs(balance), currency)}</b></div>
           {Math.abs(balance) < 0.01 && <p className="mt-3 rounded-md bg-emerald-50 p-2 text-center text-sm font-semibold text-emerald-800">Hesap kapandı</p>}

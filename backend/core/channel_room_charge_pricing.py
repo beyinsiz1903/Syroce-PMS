@@ -120,7 +120,13 @@ def calculate_room_charge(
     combined_rate = vat_rate_d + accommodation_rate_d
     provider_total = is_channel_total_tax_inclusive(booking)
 
-    if explicit_daily_rate is not None:
+    cutoff = _date(booking.get("migration_cutover_date"))
+    posting_day = _date(business_date)
+    if cutoff and (posting_day is None or posting_day < cutoff):
+        # Past source nights are already represented by the opening balance.
+        # A backdated audit must not charge them a second time.
+        gross = Decimal("0.00")
+    elif explicit_daily_rate is not None:
         gross = _decimal(explicit_daily_rate).quantize(MONEY, rounding=ROUND_HALF_UP)
     else:
         gross = _nightly_gross(booking, business_date) if provider_total else _manual_nightly_gross(booking, business_date)

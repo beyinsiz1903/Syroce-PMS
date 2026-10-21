@@ -233,7 +233,18 @@ async def get_guest_360(guest_id: str, current_user: User = Depends(get_current_
     # Recent upsells
     upsell_offers = await db.upsell_offers.find({"guest_id": guest_id, "tenant_id": current_user.tenant_id}, {"_id": 0}).sort("created_at", -1).to_list(10)
 
+    from security.guest_data_visibility import user_guest_data_visibility
+    migration_policy, _ = user_guest_data_visibility(current_user)
+    migration_role = getattr(current_user, "role", "")
+    migration_role = str(getattr(migration_role, "value", migration_role))
+    migration_archive_available = False
+    if migration_role in {"admin", "super_admin"} and all(value == "full" for value in migration_policy.values()):
+        migration_archive_available = bool(await db.migration_archive.find_one(
+            {"tenant_id": current_user.tenant_id, "entity": "guests", "guest_id": guest_id}, {"_id": 1},
+        ))
+
     return {
+        "migration_archive_available": migration_archive_available,
         "guest": guest,
         "profile": profile,
         "preferences": preferences,
