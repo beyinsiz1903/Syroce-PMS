@@ -33,7 +33,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response, StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, SecretStr
 
 from core.audit import log_audit_event
 from core.business_date_service import ensure_business_date_initialized
@@ -731,6 +731,12 @@ async def kbs_queue_enqueue(
                 tenant_id, data.booking_id, data.guest_id
             )
             effective_guest_id = data.guest_id or booking.get("guest_id")
+            uncertain = await db.kbs_reports.find_one({
+                "tenant_id": tenant_id, "_kind": QUEUE_KIND, "booking_id": data.booking_id,
+                "guest_id": effective_guest_id, "action": data.action, "delivery_uncertain": True,
+            })
+            if uncertain:
+                raise HTTPException(409, "Önceki bildirimin sonucu belirsiz. Tekrar göndermeden önce kurum kaydını kontrol edin ve destekle uzlaştırın.")
             if not data.force:
                 existing = await db.kbs_reports.find_one(
                     {
@@ -1108,7 +1114,7 @@ async def kbs_queue_clear(
     if confirm != "KBS_KUYRUGUNU_TEMIZLE":
         raise HTTPException(400, "KBS kuyruğunu temizlemek için onay metni geçersiz")
 
-    queue_filter = {"_kind": QUEUE_KIND, "tenant_id": tenant_id}
+    queue_filter = {"_kind": QUEUE_KIND, "tenant_id": tenant_id, "delivery_uncertain": {"$ne": True}, "status": {"$ne": "in_progress"}}
     with tenant_context(tenant_id):
         status_rows = await db.kbs_reports.aggregate(
             [
@@ -1162,6 +1168,11 @@ async def kbs_queue_claim(
     tenant_id = current_user.tenant_id
     if not tenant_id:
         raise HTTPException(403, "Kullanıcının bir oteli (tenant_id) yok")
+
+    from core.kbs_cloud import config_query
+
+    if await db.kbs_cloud_configs.find_one(config_query(tenant_id), {"_id": 1}):
+        raise HTTPException(409, "Bu tesisin bildirimleri sunucu göndericisi tarafından yönetiliyor; tarayıcıdan gönderilemez.")
 
     now = _now()
     leased_until = now + timedelta(seconds=data.lease_seconds)
@@ -1303,6 +1314,14 @@ async def kbs_queue_claim(
             )
             raise HTTPException(409, "Maks. deneme sayısı aşıldı (dead)")
 
+    # A cloud takeover may have happened after the initial ownership check.
+    # Release before returning any payload to an external/browser sender.
+    if job and await db.kbs_cloud_configs.find_one(config_query(tenant_id), {"_id": 1}):
+        await db.kbs_reports.update_one(
+            {"tenant_id": tenant_id, "id": job_id, "status": "in_progress", "worker_id": data.worker_id},
+            {"$set": {"status": "pending", "worker_id": None, "leased_until": None}, "$inc": {"attempts": -1}},
+        )
+        raise HTTPException(409, "Gönderici sunucuya taşındı; tarayıcı işi serbest bıraktı.")
     return {"job": job}
 
 
@@ -1317,6 +1336,13 @@ class KBSQueueComplete(BaseModel):
     authority_response_code: str = Field("", max_length=100)
     authority_response_message: str = Field("", max_length=500)
     notes: str = ""
+
+
+async def _reject_external_cloud_worker(tenant_id: str) -> None:
+    from core.kbs_cloud import config_query
+
+    if await db.kbs_cloud_configs.find_one(config_query(tenant_id), {"_id": 1}):
+        raise HTTPException(409, "Sunucu gönderiminin sonucu tarayıcı veya harici worker tarafından değiştirilemez.")
 
 
 @router.post("/queue/{job_id}/complete")
@@ -1355,6 +1381,7 @@ async def kbs_queue_complete(
             "KBS_TEST_MODE açık iken kbs_reference 'TEST-' ile başlamalı",
         )
 
+    await _reject_external_cloud_worker(tenant_id)
     idem_key = get_idempotency_key(request)
     idem_lock_id: str | None = None
     if idem_key:
@@ -1547,6 +1574,7 @@ async def kbs_queue_fail(
     if not tenant_id:
         raise HTTPException(403, "Kullanıcının bir oteli (tenant_id) yok")
 
+    await _reject_external_cloud_worker(tenant_id)
     idem_key = get_idempotency_key(request)
     idem_lock_id: str | None = None
     if idem_key:
@@ -1734,6 +1762,8 @@ async def kbs_queue_requeue(
         if not job:
             raise HTTPException(404, "İş bulunamadı")
 
+        if job.get("delivery_uncertain"):
+            raise HTTPException(409, "Teslim sonucu belirsiz; kurum kaydı uzlaştırılmadan tekrar gönderilemez.")
         if job["status"] not in ("done", "failed", "dead"):
             raise HTTPException(
                 409,
@@ -2046,3 +2076,69 @@ async def kbs_setup_info(current_user: User = Depends(get_current_user)):
             "disable_env": "KBS_AUTO_ENQUEUE=0",
         },
     }
+
+
+class KBSCloudSettings(BaseModel):
+    user_tc: SecretStr = Field(default=SecretStr(""), max_length=11)
+    facility_code: str = Field("", pattern=r"^(|[0-9]{1,19})$")
+    password: SecretStr = Field(default=SecretStr(""), max_length=512)
+    enabled: bool = False
+    live_confirmed: bool = False
+
+
+@router.get("/cloud/status")
+async def kbs_cloud_status(
+    current_user: User = Depends(get_current_user), _perm=Depends(require_op("view_reports")),
+):
+    from core.kbs_cloud import config_query, public_status
+    from modules.pms_core.role_permission_service import RolePermissionService
+
+    if not current_user.tenant_id:
+        raise HTTPException(403, "Otel bağlamı gerekli")
+    status = public_status(await db.kbs_cloud_configs.find_one(config_query(current_user.tenant_id)))
+    status["can_manage"] = RolePermissionService().check_permission(
+        current_user.role, "manage_secrets", getattr(current_user, "permissions", None),
+    )
+    return status
+
+
+@router.put("/cloud/settings")
+async def kbs_cloud_save_settings(
+    data: KBSCloudSettings, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_secrets")),
+):
+    from core.kbs_cloud import save_config
+    from core.kbs_jandarma import JandarmaError
+
+    if not current_user.tenant_id:
+        raise HTTPException(403, "Otel bağlamı gerekli")
+    try:
+        result = await save_config(db, current_user.tenant_id, {
+            "user_tc": data.user_tc.get_secret_value(), "facility_code": data.facility_code,
+            "password": data.password.get_secret_value(), "enabled": data.enabled,
+            "live_confirmed": data.live_confirmed,
+        }, str(current_user.id))
+    except JandarmaError as exc:
+        raise HTTPException(409, exc.code) from None
+    await log_audit_event(
+        tenant_id=current_user.tenant_id, user_id=str(current_user.id), action="kbs.cloud.configure",
+        entity_type="kbs_cloud", entity_id=current_user.tenant_id,
+        details="Jandarma sunucu gönderimi ayarı güncellendi", db=db,
+        after_value={"enabled": result["enabled"], "verified": result["verified"]},
+    )
+    return result
+
+
+@router.post("/cloud/verify")
+async def kbs_cloud_verify(
+    current_user: User = Depends(get_current_user), _perm=Depends(require_op("manage_secrets")),
+):
+    from core.kbs_cloud import verify_config
+    from core.kbs_jandarma import JandarmaError
+
+    if not current_user.tenant_id:
+        raise HTTPException(403, "Otel bağlamı gerekli")
+    try:
+        return await verify_config(db, current_user.tenant_id)
+    except JandarmaError as exc:
+        raise HTTPException(409, exc.code) from None

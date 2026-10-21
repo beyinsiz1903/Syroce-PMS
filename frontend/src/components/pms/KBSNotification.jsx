@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { pingExtension, sendViaExtension, buildKbsBody } from '@/lib/kbsExtensionBridge';
+import KBSCloudSettings from './KBSCloudSettings';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -35,6 +36,7 @@ const getApiErrorMessage = (error, fallback) => {
 const cleanKbsError = (error, fallback = 'KBS gönderimi doğrulanamadı') => {
   const value = String(error || '').trim();
   if (!value) return fallback;
+  if (value === 'delivery_unknown_check_authority') return 'Teslim sonucu belirsiz. Mükerrer bildirim oluşturmamak için kurum kaydı kontrol edilene kadar tekrar gönderim durduruldu.';
   const cleaned = value
     .replace(/(?:&lt;|<)br\s*\/?(?:&gt;|>)/gi, ' ')
     .replace(/^jandarma_girdihatasi\s*:\s*/i, 'Jandarma veri hatası: ')
@@ -151,6 +153,7 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST, tenantId 
   const [queueLoading, setQueueLoading] = useState(false);
   const [clearingQueue, setClearingQueue] = useState(false);
   const [enqueuingId, setEnqueuingId] = useState(null);
+  const [cloudStatus, setCloudStatus] = useState(null);
 
   // KBS tarayici eklentisi (otel IP'sinden gonderim) entegrasyonu
   const [extInfo, setExtInfo] = useState({ present: false, state: 'absent', states: {}, version: '', installId: '' });
@@ -169,6 +172,7 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST, tenantId 
   const drainingRef = useRef(false);
 
   useEffect(() => {
+    setCloudStatus(null);
     try {
       setAuthority(readTenantKbsSetting('kbs_ext_authority', tenantId) === 'jandarma' ? 'jandarma' : 'polis');
       setAutoSend(readTenantKbsSetting('kbs_ext_autosend', tenantId) === '1');
@@ -281,7 +285,7 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST, tenantId 
       await axios.post(`/kbs/queue/${job.id}/requeue`, null, {
         params: { reason: 'manual_resend' },
       });
-      toast.success('Bildirim tekrar kuyruğa alındı — eklenti ile gönderin');
+      toast.success('Bildirim tekrar kuyruğa alındı — gönderim sonucunu kuyruktan takip edin');
       fetchQueue();
     } catch (err) {
       toast.error(err?.response?.data?.detail || 'Tekrar kuyruğa alma başarısız');
@@ -314,7 +318,7 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST, tenantId 
     || (authority === 'polis' ? extInfo.state : 'absent')
     || 'absent';
   // Test modu hiçbir zaman operasyonel gönderim olarak kabul edilmez.
-  const extReady = extInfo.present && authorityState === 'configured';
+  const extReady = !cloudStatus?.managed && extInfo.present && authorityState === 'configured';
 
   const newIdemKey = () => (
     (typeof crypto !== 'undefined' && crypto.randomUUID)
@@ -594,6 +598,10 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST, tenantId 
         guest_id: guest.guest_id || undefined,
       });
       const job = res.data?.job;
+      if (cloudStatus?.managed) {
+        toast.info(cloudStatus.enabled ? 'Bildirim sunucu kuyruğunda; kurum kabulünü kuyruktan takip edin.' : 'Bildirim kuyrukta bekliyor. Sunucu bağlantısı doğrulanıp etkinleştirilmeli.');
+        return;
+      }
       if (!extReady || !extInfo.installId) {
         toast.info('Bildirim kuyruğa eklendi; henüz kuruma gönderilmedi. Canlı moddaki resepsiyon eklentisi gönderecek.');
         return;
@@ -634,6 +642,10 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST, tenantId 
         if (res.data?.job) jobs.push(res.data.job);
       }
 
+      if (cloudStatus?.managed) {
+        toast.info(`${jobs.length} bildirim sunucu kuyruğunda; kurum kabulü henüz doğrulanmadı.`);
+        return;
+      }
       if (!extReady || !extInfo.installId) {
         toast.info(`${jobs.length} bildirim kuyruğa eklendi; henüz kuruma gönderilmedi.`);
         return;
@@ -851,7 +863,8 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST, tenantId 
       </div>
 
       {/* KBS tarayici eklentisi: otelin IP adresinden gonderim */}
-      <div className="rounded-lg border bg-gray-50 p-3">
+      <KBSCloudSettings key={tenantId} tenantId={tenantId} onStatusChange={setCloudStatus} />
+      {!cloudStatus?.managed && <div className="rounded-lg border bg-gray-50 p-3">
         <div className="flex items-center justify-between flex-wrap gap-2">
           <div className="text-xs font-semibold text-gray-700 flex items-center gap-2">
             <Shield className="w-4 h-4 text-gray-500" />
@@ -918,7 +931,7 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST, tenantId 
             : 'Eklenti kurulu degil. "Eklentiyi indir" ile paketi alip Chrome/Edge > Eklentiler > Gelistirici modu > Paketlenmemis yukle ile kurun. Kuyruktaki bildirimler eklenti kurulup acilana kadar bekler.'}
           {lastDrain && ` Son gonderim: ${new Date(lastDrain.at).toLocaleTimeString()} - basarili ${lastDrain.ok}, hata ${lastDrain.fail}.`}
         </p>
-      </div>
+      </div>}
 
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
@@ -1074,7 +1087,7 @@ const KBSNotification = ({ bookings = EMPTY_LIST, guests = EMPTY_LIST, tenantId 
             const room = job.payload?.room_number || '-';
             const isDuplicateAtAuthority = isRemoteAlreadyRegisteredKbsError(job.last_error);
             const isPayloadRefreshRequired = isPayloadRefreshKbsError(job.last_error);
-            const isRetryable = (job.status === 'dead' || job.status === 'failed') && !isDuplicateAtAuthority;
+            const isRetryable = (job.status === 'dead' || job.status === 'failed') && !isDuplicateAtAuthority && !job.delivery_uncertain;
             return (
               <Card key={job.id}>
                 <CardContent className="p-3 flex items-start justify-between gap-3">
