@@ -3,6 +3,18 @@ import { describe, expect, it } from 'vitest';
 import { buildRateUpdateReview, countTargetNights } from '@/pages/rate-manager/updateReview';
 
 describe('rate update review', () => {
+  it('does not describe Exely broadcast as a PMS-only update when OTA selection is unavailable', () => {
+    const review = buildRateUpdateReview({ channelProvider: 'exely', selectedChannelCodes: new Set() });
+    expect(review.warnings.join(' ')).toContain('Gönderim hedefi Exely kanal yöneticisidir');
+    expect(review.warnings.join(' ')).not.toContain('yalnızca PMS');
+    expect(review.warnings.join(' ')).toContain('teslim sonucu ayrıca doğrulanmalıdır');
+  });
+
+  it('keeps the agency-only exclusion explicit even with a connected Exely provider', () => {
+    const review = buildRateUpdateReview({ channelProvider: 'exely', agenciesOnly: true });
+    expect(review.warnings.join(' ')).toContain('kanal yöneticisine ve otel takvimine gönderilmez');
+    expect(review.warnings.join(' ')).not.toContain('Gönderim hedefi Exely');
+  });
   it('counts only selected weekdays in the inclusive date range', () => {
     expect(countTargetNights({
       dateFrom: '2026-10-05',

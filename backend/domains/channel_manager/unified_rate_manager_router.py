@@ -737,6 +737,26 @@ def _provider_room_codes(detection: dict) -> set[str]:
     return {str(item.get("code")) for item in room_types if item.get("code")}
 
 
+async def _writable_provider_room_codes(tenant_id: str, detection: dict) -> set[str]:
+    """Use the same explicit Exely ARI identifiers as the writable grid.
+
+    Discovery returns PMS API aliases, not necessarily the panel identifiers
+    used by room mappings and grid selections. Discovery alone must neither
+    reject mapped grid rooms nor authorize an unmapped room for provider writes.
+    """
+    if detection.get("provider") != "exely":
+        return _provider_room_codes(detection)
+    mappings = await db.exely_room_mappings.find(
+        {"tenant_id": tenant_id},
+        {"_id": 0, "exely_room_code": 1, "exely_rate_plan_code": 1},
+    ).to_list(100)
+    return {
+        str(row["exely_room_code"])
+        for row in mappings
+        if row.get("exely_room_code") and row.get("exely_rate_plan_code")
+    }
+
+
 async def _agency_only_room_types(tenant_id: str, provider: str, provider_codes: set[str]) -> list[dict]:
     """PMS room types the channel manager does not know, offered for agency sale only."""
     if not await _active_agency_docs_for_tenant(tenant_id):
@@ -936,7 +956,8 @@ async def get_unified_room_types(current_user: User = Depends(get_current_user))
         pricing_docs = await db.pricing_settings.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(200)
 
     pricing_map, pricing_rules = _pricing_payload(pricing_docs, provider=detection["provider"])
-    room_types = [*room_types, *await _agency_only_room_types(tenant_id, detection["provider"], _provider_room_codes(detection))]
+    provider_codes = await _writable_provider_room_codes(tenant_id, detection)
+    room_types = [*room_types, *await _agency_only_room_types(tenant_id, detection["provider"], provider_codes)]
 
     return {
         "room_types": room_types,
@@ -1084,7 +1105,7 @@ async def unified_bulk_grid_update(
     # agencies only and must never be sent to the provider.
     provider_pairs = pairs
     if provider_type in ("exely", "hotelrunner"):
-        provider_codes = _provider_room_codes(detection)
+        provider_codes = await _writable_provider_room_codes(tenant_id, detection)
         provider_pairs = [pair for pair in pairs if pair[0] in provider_codes]
         if len(provider_pairs) != len(pairs) and not request.agency_ids:
             raise HTTPException(status_code=422, detail="Yalnız acente oda tipleri için en az bir acente seçin; bu tipler kanal yöneticisine gönderilmez.")

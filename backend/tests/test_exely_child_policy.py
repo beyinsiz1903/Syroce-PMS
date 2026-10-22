@@ -212,7 +212,9 @@ async def test_unverified_child_policy_blocks_unified_rate_write_before_local_or
     docs = [{"room_type_code": "STD", "pricing_type": "per_person", "provider_pricing_verified": True}]
     database = SimpleNamespace(
         pricing_settings=SimpleNamespace(find=lambda *_args: Cursor(docs)),
-        exely_room_mappings=SimpleNamespace(find=lambda *_args: Cursor([])),
+        exely_room_mappings=SimpleNamespace(find=lambda *_args: Cursor([
+            {"exely_room_code": "STD", "exely_rate_plan_code": "BAR", "pms_room_type": "STD"},
+        ])),
     )
     monkeypatch.setattr(rates, "db", database)
     monkeypatch.setattr(rates, "_detect_active_provider", AsyncMock(return_value={"provider": "exely", "connection": {"room_types": [{"code": "STD"}]}}))

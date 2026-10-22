@@ -18,6 +18,22 @@ describe('GeneralInfoTab', () => {
     apiGet.mockResolvedValue({ data: {} });
   });
 
+  it('shows the booked category before a physical room has been assigned', async () => {
+    await act(async () => {
+      render(<GeneralInfoTab booking={{ id: 'unassigned-exely', room_type: 'Deluxe' }} guest={null} room={null} />);
+    });
+    expect(screen.getByText('Oda Tipi').parentElement).toHaveTextContent('Deluxe');
+    expect(screen.getByText('Oda No').parentElement).toHaveTextContent('-');
+  });
+
+  it('preserves the assigned room category when a room is present', async () => {
+    await act(async () => {
+      render(<GeneralInfoTab booking={{ id: 'assigned', room_type: 'Standard' }} guest={null} room={{ room_type: 'Deluxe', room_number: '201' }} />);
+    });
+    expect(screen.getByText('Oda Tipi').parentElement).toHaveTextContent('Deluxe');
+    expect(screen.getByText('Oda No').parentElement).toHaveTextContent('201');
+  });
+
   it('does not label an unverified Exely bed count as three adults and no children', async () => {
     await act(async () => {
       render(<GeneralInfoTab

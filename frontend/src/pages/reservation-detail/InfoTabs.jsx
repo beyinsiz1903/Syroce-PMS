@@ -271,7 +271,7 @@ export function GeneralInfoTab({
           <SectionHeader icon={BedDouble} title="Oda & Tarife Bilgileri" />
           <div className={`grid gap-4 ${roomImg ? 'lg:grid-cols-2' : 'grid-cols-1'}`}>
             <div className="border border-slate-200 rounded-xl bg-white px-4 py-2 shadow-sm">
-              <InfoLine label="Oda Tipi" value={room?.room_type || '-'} />
+              <InfoLine label="Oda Tipi" value={room?.room_type || booking?.room_type || '-'} />
               <InfoLine label="Oda No" value={booking?.room_number || room?.room_number || '-'} />
               {Number.isFinite(room?.floor) && <InfoLine label="Kat" value={`${room.floor}. Kat`} />}
               {translateView(room?.view) && <InfoLine label="Manzara" value={translateView(room.view)} />}

@@ -13,7 +13,8 @@ blinker==1.9.0
 brotli==1.2.0
 fastapi==0.135.1
 frozenlist==1.8.0
-graphql-core==3.2.8
+# Parser token limits and overlapping-field validation security fixes.
+graphql-core==3.2.12
 httptools==0.7.1
 # CVE-2026-104874: items-view operations in 6.7.0–6.9.0 leak C-extension
 # references. 6.9.1 includes the ownership fix.

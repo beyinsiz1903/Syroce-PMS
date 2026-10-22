@@ -3,6 +3,12 @@ import { vi } from 'vitest';
 import { ChannelList } from '../ChannelList';
 
 describe('ChannelList', () => {
+  it('does not infer disconnected Exely from its unavailable OTA catalogue', () => {
+    render(<ChannelList provider="exely" channels={[]} />);
+    expect(screen.getByTestId('rate-manager-no-active-channels')).toHaveTextContent('OTA kanal listesini sunmuyor');
+    expect(screen.queryByText('Aktif kanal bulunamadı.')).not.toBeInTheDocument();
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+  });
   it('renders only provider-verified active channels as explicit targets', () => {
     const onToggle = vi.fn();
     const onToggleAll = vi.fn();
