@@ -159,6 +159,7 @@ const TestBookingVerification = () => {
                       <div className="flex items-center gap-2">
                         <Badge className="text-xs" variant="outline">{r.state || r.status || r.ingest_action || 'unknown'}</Badge>
                         {r.checks?.guest_demographics === 'not_verified' && <Badge variant="outline">Kişi ayrımı doğrulanmadı</Badge>}
+                        {r.checks?.guest_demographics === 'passed' && <Badge variant="outline">Kişi ayrımı API ile doğrulandı</Badge>}
                       </div>
                     </div>)}
                 </div>

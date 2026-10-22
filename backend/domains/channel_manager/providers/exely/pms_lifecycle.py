@@ -371,6 +371,8 @@ def _booking_fields(
         "children": children,
         "children_ages": list(room.get("children_ages") or []),
         "children_ages_complete": bool(room.get("children_ages_complete", not children)),
+        # A new SOAP version cannot inherit verification of an older REST read.
+        "exely_demographics": None,
         "guests_count": adults + children,
         "total_amount": room_total,
         "currency": str(reservation.get("currency") or ""),
