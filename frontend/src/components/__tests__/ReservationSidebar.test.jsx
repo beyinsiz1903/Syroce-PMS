@@ -40,6 +40,16 @@ describe('ReservationSidebar quick panel', () => {
     confirmDialog.mockResolvedValue(true);
   });
 
+  it('shows the Exely total without certifying placement counts as adults', () => {
+    render(<ReservationSidebar
+      booking={{ ...booking, channel: 'exely', adults: 3, children: 0 }}
+      onClose={() => {}} getStatusLabel={() => 'Onaylandı'}
+    />);
+    expect(screen.getByText('3 kişi · ayrım doğrulanmadı')).toBeInTheDocument();
+    expect(screen.getByTestId('exely-demographics-warning')).toBeInTheDocument();
+    expect(screen.queryByText('3 yetişkin · 0 çocuk')).not.toBeInTheDocument();
+  });
+
   it('derives currency-safe operational summary values', () => {
     expect(reservationQuickPanelSummary(booking, { balance: 120, currency: 'EUR' })).toEqual({
       nights: 2,

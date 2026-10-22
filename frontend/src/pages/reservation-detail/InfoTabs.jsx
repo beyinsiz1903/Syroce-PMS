@@ -12,6 +12,8 @@ import { fmtDate, fmtDateTime, fmtTL, fmtCurrency, Avatar, EmptyState, translate
 import QuickIdScanDialog from '@/components/QuickIdScanDialog';
 import { useOptionalEntitlements } from '@/context/EntitlementContext';
 import api from '@/api/axios';
+import ExelyDemographicsNotice from '@/components/ExelyDemographicsNotice';
+import { exelyDemographicsUnverified } from '@/utils/exelyDemographics';
 const ALERT_LEVEL_BG = {
   danger: 'bg-red-50 border-red-300 text-red-800',
   warning: 'bg-amber-50 border-amber-300 text-amber-800',
@@ -256,11 +258,12 @@ export function GeneralInfoTab({
         <section className="space-y-3">
           <SectionHeader icon={UserCircle2} title="Konuk Bilgileri" />
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            <StatCard icon={Users} label="Yetişkin" value={booking?.adults ?? booking?.guests_count ?? 1} tone="sky" />
-            <StatCard icon={Users} label="Çocuk" value={booking?.children ?? 0} tone="sky" />
+            <StatCard icon={Users} label="Yetişkin" value={exelyDemographicsUnverified(booking) ? 'Doğrulanmadı' : booking?.adults ?? booking?.guests_count ?? 1} tone="sky" />
+            <StatCard icon={Users} label="Çocuk" value={exelyDemographicsUnverified(booking) ? 'Doğrulanmadı' : booking?.children ?? 0} tone="sky" />
             <StatCard icon={UserCircle2} label="Toplam Konuk" value={totalGuests} tone="indigo" />
             <StatCard icon={Tag} label="Tarife Planı" value={translateValue(booking?.rate_plan) || 'Standart'} tone="amber" />
           </div>
+          <ExelyDemographicsNotice booking={booking} />
         </section>
 
         {/* Bölüm 3: Oda & Tarife Bilgileri */}

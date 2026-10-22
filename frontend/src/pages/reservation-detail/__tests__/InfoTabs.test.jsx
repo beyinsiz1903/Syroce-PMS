@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('react-i18next', () => ({
@@ -16,6 +16,18 @@ describe('GeneralInfoTab', () => {
   beforeEach(() => {
     apiGet.mockReset();
     apiGet.mockResolvedValue({ data: {} });
+  });
+
+  it('does not label an unverified Exely bed count as three adults and no children', async () => {
+    await act(async () => {
+      render(<GeneralInfoTab
+        booking={{ id: 'synthetic-exely', channel: 'exely', adults: 3, children: 0, guests_count: 3 }}
+        guest={null} room={null}
+      />);
+    });
+    expect(screen.getAllByText('Doğrulanmadı')).toHaveLength(2);
+    expect(screen.getByTestId('exely-demographics-warning')).toBeInTheDocument();
+    expect(screen.getByText('Toplam Konuk').parentElement.parentElement).toHaveTextContent('3');
   });
 
   it('shows the explainable no-show risk score for an upcoming booking', async () => {

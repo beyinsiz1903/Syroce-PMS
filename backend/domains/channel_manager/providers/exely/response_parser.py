@@ -316,12 +316,19 @@ def _parse_hotel_reservation(hr_el) -> dict[str, Any] | None:
                 raise ValueError("EXELY_GUEST_COUNT_LIMIT")
             age = _child_age_at_arrival(gc, room_stay, guest_ages_by_rph, birth_dates_by_rph, count)
 
-            if age_code in {"10", "AdultBed"}:
-                adults += count
-            elif age_code == "8" or age is not None:
+            if age_code == "10" and age is not None and count:
+                # A demographic adult code contradicting an explicit child
+                # age is not safe to guess; retain the existing import hold.
+                unknown_count_codes.append(age_code)
+            elif age is not None:
+                # Bed placement is not a demographic category. An explicit
+                # child age must not be discarded merely due to AdultBed.
                 children += count
-                if age is not None:
-                    child_ages.extend([age] * count)
+                child_ages.extend([age] * count)
+            elif age_code in {"10", "AdultBed"}:
+                adults += count
+            elif age_code == "8":
+                children += count
             elif count:
                 unknown_count_codes.append(age_code)
             guest_info = guests_by_rph.get(_attr(gc, "ResGuestRPH"))

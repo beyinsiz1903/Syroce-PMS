@@ -1,5 +1,98 @@
 # Exely Production Readiness
 
+## 2026-10-22 follow-up release boundary
+
+Manual/test-booking pulls and the shared configuration checks retain only the
+active property's saved connection mode. Credential payloads cannot grant
+sandbox permission. No endpoint/SSRF gate or production switch is relaxed.
+
+Test-booking lookup is tenant/property scoped and finds an already-ACKed local
+record without pretending it was returned by a new Undelivered response. Import,
+ACK and demographic acceptance are separate checks. Optional exact-ID adult and
+arrival-age expectations detect a mismatch; matching stored counts alone never
+certifies the provider's demographic data. Provider/ingest failures are errors,
+not successful discovery. Unknown child ages are not inferred from notes.
+
+An explicit child age on AdultBed is retained rather than discarded as an adult.
+A contradictory numeric adult code plus a child age stays held for review.
+No-age payload shape/hashes are unchanged; already imported versions are not
+rewritten or re-ACKed. The Exely reservation sidebar and full guest summary show
+total guests with an unverified demographic warning, not a certified adult/child
+split. This conservative warning also applies to legacy Exely records until an
+independent reconciliation establishes provenance.
+
+The separate Read Reservation REST contract exposes adultCount and childAges
+(https://exely.com/dev-portal/docs/api/), but it is not integrated or activated by
+this release. The user authorized read-only access for TEST 501694 only. The
+Exely ConnectivityHub screen remained on its loading indicator, including a
+reload; no OAuth client/secret was created and no access was enabled. Do not
+claim this release fixes the provider's missing live ages or completes child
+acceptance. TEST booking 20261110-501694-1200421078 remains unreconciled.
+
+Expanded offline regression selection: 320 passed, two real-Mongo tests excluded.
+Release workflow and live revision checks must be recorded after deployment;
+offline test results are not evidence of deployment or live REST access.
+
+## 2026-10-22 approved TEST 501694 child-booking acceptance
+
+An explicitly approved synthetic booking was created through the Exely QA
+booking engine, not a real hotel: `20261110-501694-1200421078`, Deluxe,
+10–11 November 2026, two adults and one six-year-old child, Base rate USD,
+120 USD total, 0 USD prepaid, payment at check-in. The provider's confirmation
+explicitly preserves `2 adults + child 6 years`. Marketing consent was not
+selected. No real guest details or payment instrument were used.
+
+The Exely property defines half-open child ranges `[0,3)`, `[3,7)` and `[7,18)`
+(completed ages 0–2, 3–6, 7–17). These are not the same as the defaults visible in
+the PMS per-person editor. No local pricing rule was saved, no parity attestation
+was selected and no ARI/pricing changes were sent as part of this acceptance.
+Equal room totals alone do not establish child-pricing parity.
+
+The live ID-specific verification failed with `ExelyValidationError` before
+reading the provider: that route constructed a provider without the saved
+connection mode. The manual pull and unfiltered verification paths also omitted
+the mode. The local correction forwards the active connection's saved `mode` in
+all three paths. It does not infer sandbox permission from the endpoint, alter
+global gates, accept plaintext credentials or relax endpoint validation.
+
+New offline regressions reproduce the three failing entrypoints before the fix
+and retain rejection for missing/production modes targeting the test host.
+They also verify that ID-specific verification ingests only the matching booking
+with the requesting tenant/property scope. The related offline selection passed
+190 tests, with two real-Mongo tests deselected; Ruff and diff checks passed.
+This correction is local and still requires deployment and a new live check.
+
+### Live result: amount/import/ACK passed, child demographics failed
+
+The existing 15-minute scheduler imported the synthetic booking at 08:52 on
+22 October. PMS displays the same external ID, dates, 120 USD, confirmed/imported
+status and one night. The Exely delivery log independently shows successful
+creation/read at 08:52:44 and successful confirmation at 08:52:46. No manual
+import, fabricated acknowledgement or price-policy override was used.
+
+However, both the PMS quick summary and full reservation detail show three
+adults and zero children. The actual Exely delivery response explains why:
+
+```xml
+<GuestCounts>
+  <GuestCount AgeQualifyingCode="AdultBed" Count="1" ResGuestRPH="1" />
+  <GuestCount AgeQualifyingCode="AdultBed" Count="2" />
+</GuestCounts>
+```
+
+The response contains only the named primary guest, without an age or birth
+date. It has no structured child count/age despite the Exely confirmation
+showing two adults and a six-year-old child. The synthetic free-text guest note
+mentions the test age, but is not authoritative structured demographic data and
+must not be used to infer a child or rewrite an immutable provider version.
+
+The accessible Exely delivery, synchronization and PMS inventory screens were
+inspected without saving changes; no child-demographics transfer option was
+exposed. Provider-side clarification/configuration and an approved new provider
+revision or new synthetic booking are required before claiming child acceptance
+or reconciling the already-acknowledged record. Do not label this scenario passed
+merely because the amount and acknowledgement are correct.
+
 ## 2026-10-22 code audit — not a new provider certification
 
 The historical pilot/cutover evidence below is not proof that every current

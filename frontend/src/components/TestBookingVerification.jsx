@@ -6,9 +6,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
-import { FlaskConical, Loader2, CheckCircle, XCircle, AlertTriangle, Search, ArrowRight } from 'lucide-react';
+import { FlaskConical, Loader2, XCircle, AlertTriangle, Search, ArrowRight } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-const API = "";
 const STEPS = [{
   id: 1,
   title: 'Test Rezervasyon Oluşturun',
@@ -29,6 +28,8 @@ const TestBookingVerification = () => {
   const [step, setStep] = useState(1);
   const [reservationId, setReservationId] = useState('');
   const [guestName, setGuestName] = useState('');
+  const [expectedAdults, setExpectedAdults] = useState('');
+  const [expectedChildAges, setExpectedChildAges] = useState('');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
   const headers = {};
@@ -39,13 +40,22 @@ const TestBookingVerification = () => {
       const payload = {};
       if (reservationId.trim()) payload.reservation_id = reservationId.trim();
       if (guestName.trim()) payload.guest_name = guestName.trim();
+      if (expectedAdults !== '' || expectedChildAges.trim()) {
+        const ages = expectedChildAges.trim() ? expectedChildAges.split(',').map(age => age.trim()) : [];
+        if (!reservationId.trim() || !/^\d+$/.test(expectedAdults) || ages.some(age => !/^\d+$/.test(age) || Number(age) > 17)) {
+          toast.error('Karşılaştırma için rezervasyon ID, yetişkin sayısı ve 0–17 arasında tam çocuk yaşları girin.');
+          return;
+        }
+        payload.expected_adults = Number(expectedAdults);
+        payload.expected_children_ages = ages.map(Number);
+      }
       const res = await axios.post(`/channel-manager/exely/test-booking/verify`, payload, {
         headers
       });
       setResult(res.data);
       setStep(3);
       if (res.data.verification_status === 'found') {
-        toast.success(`${res.data.new_count || res.data.new_reservations?.length || 0} yeni rezervasyon bulundu!`);
+        toast.info(res.data.acceptance_status === 'mismatch' ? 'Rezervasyon bulundu; beklenen kişi bilgileri eşleşmiyor.' : 'Rezervasyon bulundu; tam kabul doğrulaması tamamlanmadı.');
       } else if (res.data.verification_status === 'error') {
         toast.error('Doğrulama sırasında hata oluştu');
       } else {
@@ -93,6 +103,17 @@ const TestBookingVerification = () => {
               <Label>{t('cm.components_TestBookingVerification.misafir_adi_opsiyonel')}</Label>
               <Input placeholder={t('cm.components_TestBookingVerification.misafir_adini_girin')} value={guestName} onChange={e => setGuestName(e.target.value)} className="mt-1" data-testid="test-booking-guest-name" />
             </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <Label htmlFor="exely-expected-adults">Beklenen yetişkin sayısı (isteğe bağlı)</Label>
+                <Input id="exely-expected-adults" type="number" min="0" max="1000" step="1" value={expectedAdults} onChange={e => setExpectedAdults(e.target.value)} />
+              </div>
+              <div>
+                <Label htmlFor="exely-expected-child-ages">Beklenen çocuk yaşları</Label>
+                <Input id="exely-expected-child-ages" placeholder="Örn. 6, 12 — çocuk yoksa boş" value={expectedChildAges} onChange={e => setExpectedChildAges(e.target.value)} />
+              </div>
+            </div>
+            <p className="text-xs text-slate-500">Giriş tarihindeki tamamlanmış yaşları yazın. Beklenen değerler yalnız karşılaştırılır; mevcut kişi ve tutar bilgilerini düzeltmez. Yeni teslim edilmemiş kayıtlar standart akışla aktarılabilir.</p>
             <div className="flex gap-2">
               <Button onClick={() => {
             setStep(2);
@@ -112,17 +133,19 @@ const TestBookingVerification = () => {
         {/* Results */}
         {result && <div className="space-y-4 mt-4" data-testid="test-booking-results">
             {/* Status Banner */}
-            <div className={`rounded-lg p-4 flex items-start gap-3 ${result.verification_status === 'found' ? 'bg-green-50 border border-green-200' : result.verification_status === 'error' ? 'bg-red-50 border border-red-200' : 'bg-yellow-50 border border-yellow-200'}`}>
-              {result.verification_status === 'found' ? <CheckCircle className="w-5 h-5 text-green-600 mt-0.5" /> : result.verification_status === 'error' ? <XCircle className="w-5 h-5 text-red-600 mt-0.5" /> : <AlertTriangle className="w-5 h-5 text-yellow-600 mt-0.5" />}
+            <div className={`rounded-lg p-4 flex items-start gap-3 ${result.verification_status === 'error' || result.acceptance_status === 'mismatch' ? 'bg-red-50 border border-red-200' : 'bg-yellow-50 border border-yellow-200'}`}>
+              {result.verification_status === 'error' ? <XCircle className="w-5 h-5 text-red-600 mt-0.5" /> : <AlertTriangle className="w-5 h-5 text-yellow-600 mt-0.5" />}
               <div>
                 <p className="font-medium text-sm">
-                  {result.verification_status === 'found' ? 'Test Rezervasyon Doğrulandı!' : result.verification_status === 'error' ? 'Doğrulama Hatası' : 'Rezervasyon Bulunamadı'}
+                  {result.verification_status === 'found' ? result.acceptance_status === 'mismatch' ? 'Kişi bilgileri eşleşmiyor' : 'Rezervasyon bulundu — tam kabul bekliyor' : result.verification_status === 'error' ? 'Doğrulama Hatası' : 'Rezervasyon Bulunamadı'}
                 </p>
                 <p className="text-xs text-gray-600 mt-1">
                   {t('cm.components_TestBookingVerification.onceki')} {result.before_count} | Sonraki: {result.after_count} {t('cm.components_TestBookingVerification.yeni')} {result.new_count}
                 </p>
               </div>
             </div>
+            {result.lookup_source === 'stored' && <p className="text-xs text-slate-600">Mevcut PMS kaydı gösteriliyor. Exely’den yeni yanıt alındığı anlamına gelmez; onaylanmış kayıtlar Undelivered listesinde bulunmayabilir.</p>}
+            {(result.warnings || []).map((warning, index) => <p key={index} className="text-xs text-amber-800">{warning}</p>)}
 
             {/* New Reservations */}
             {result.new_reservations?.length > 0 && <div>
@@ -135,6 +158,7 @@ const TestBookingVerification = () => {
                       </div>
                       <div className="flex items-center gap-2">
                         <Badge className="text-xs" variant="outline">{r.state || r.status || r.ingest_action || 'unknown'}</Badge>
+                        {r.checks?.guest_demographics === 'not_verified' && <Badge variant="outline">Kişi ayrımı doğrulanmadı</Badge>}
                       </div>
                     </div>)}
                 </div>

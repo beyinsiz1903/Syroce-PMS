@@ -16,6 +16,8 @@ import { confirmDialog } from '@/lib/dialogs';
 import { cachedTenantCurrency } from '@/lib/currency';
 import { bookingSourceLabel } from '@/utils/bookingSource';
 import { classifyGuestPayment } from '@/utils/paymentClassification';
+import ExelyDemographicsNotice from '@/components/ExelyDemographicsNotice';
+import { exelyDemographicsUnverified } from '@/utils/exelyDemographics';
 
 export const reservationQuickPanelSummary = (booking, folio) => {
   const checkIn = new Date(booking?.check_in);
@@ -260,7 +262,8 @@ const ReservationSidebar = ({
           </div>
           <div className="mt-3 space-y-2 text-sm">
             <div className="flex items-center justify-between"><span className="flex items-center gap-2 text-slate-500"><BedDouble className="h-4 w-4" /> Oda tipi</span><strong className="text-slate-800">{room?.room_type || booking.room_type || '—'}</strong></div>
-            <div className="flex items-center justify-between"><span className="flex items-center gap-2 text-slate-500"><UsersRound className="h-4 w-4" /> Misafir</span><strong className="text-slate-800">{booking.adults || 0} yetişkin · {booking.children || 0} çocuk</strong></div>
+            <div className="flex items-center justify-between"><span className="flex items-center gap-2 text-slate-500"><UsersRound className="h-4 w-4" /> Misafir</span><strong className="text-slate-800">{exelyDemographicsUnverified(booking) ? `${summary.guestCount} kişi · ayrım doğrulanmadı` : `${booking.adults || 0} yetişkin · ${booking.children || 0} çocuk`}</strong></div>
+            <ExelyDemographicsNotice booking={booking} />
           </div>
         </section>
 
