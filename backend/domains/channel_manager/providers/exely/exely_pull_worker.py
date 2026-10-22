@@ -168,6 +168,7 @@ class ExelyPullScheduler:
                     endpoint_url=creds["endpoint_url"],
                     connection_mode=conn.get("mode", ""),
                     safety_window_minutes=safety_window_minutes,
+                    **({"read_reservation_enabled": True} if conn.get("read_reservation_enabled") else {}),
                 )
             except ExelyValidationError as exc:
                 await _record_configuration_error(tenant_id, exc)
@@ -246,6 +247,7 @@ class ExelyPullScheduler:
         endpoint_url: str = "",
         connection_mode: str = "",
         safety_window_minutes: int = 5,
+        read_reservation_enabled: bool = False,
     ) -> dict[str, Any]:
         runtime_block = reservation_sync_block_reason()
         if runtime_block:
@@ -365,6 +367,15 @@ class ExelyPullScheduler:
         logger.info(f"[EXELY-PULL] Auto-import: {import_result['imported']}/{import_result['total']} imported, {import_result.get('updated', 0)} updated")
 
         logger.info("[EXELY-PULL] fetched=%d processed=%d", len(reservations), processed)
+        demographics = None
+        if read_reservation_enabled:
+            from .demographics import reconcile_pending
+
+            try:
+                demographics = await reconcile_pending(tenant_id, hotel_code)
+            except Exception as exc:
+                logger.warning("[EXELY-PULL] demographics_state=unavailable exception_class=%s", type(exc).__name__)
+                demographics = {"status": "needs_review", "error": "EXELY_READ_RECONCILIATION_UNAVAILABLE"}
         return {
             "success": True,
             "fetched": len(reservations),
@@ -373,6 +384,7 @@ class ExelyPullScheduler:
             "imported": import_result.get("imported", 0),
             "updated": import_result.get("updated", 0),
             "cancelled": import_result.get("cancelled", 0),
+            **({"demographics": demographics} if demographics is not None else {}),
         }
 
 

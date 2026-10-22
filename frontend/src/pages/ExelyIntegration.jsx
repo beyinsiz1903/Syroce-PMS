@@ -11,6 +11,7 @@ import { Switch } from '@/components/ui/switch';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Network, CheckCircle, XCircle, RefreshCw, Link2, Unlink, Building2, ArrowDownUp, CalendarCheck, Activity, AlertTriangle, Loader2, Search, Download, ExternalLink, FlaskConical, Wand2, Trash2, Plus } from 'lucide-react';
 import TestBookingVerification from '@/components/TestBookingVerification';
+import ExelyReadReservationSettings from '@/components/ExelyReadReservationSettings';
 import { useTranslation } from 'react-i18next';
 import { confirmDialog } from '@/lib/dialogs';
 const API = "";
@@ -631,7 +632,7 @@ const ExelyIntegration = ({
                   </CardContent>
                 </Card>
 
-                {/* Webhook section removed - using PULL mode only */}
+                <ExelyReadReservationSettings key={connection.connection?.id || connection.connection?.hotel_code} connection={connection.connection || {}} requestConfig={requestConfig} onChanged={fetchConnection} />
               </div>}
           </TabsContent>
 

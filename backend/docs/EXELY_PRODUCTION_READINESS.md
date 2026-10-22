@@ -1,5 +1,57 @@
 # Exely Production Readiness
 
+## 2026-10-22 Read Reservation demographic reconciliation follow-up
+
+With explicit user consent, the Exely TEST 501694 ConnectivityHub client
+`Syroce PMS TEST 501694 Read Only` was created and enabled at 10:34 Istanbul
+time. Only Read Reservation API is selected; no other API or property was
+enabled. A temporary browser OAuth session against the official TEST server
+successfully read booking `20261110-501694-1200421078` (HTTP 200 at 10:49).
+The actual response has `adultCount: 2`, `childAges: [6]`, 120 USD, the expected
+10–11 November stay and provider modification time. The temporary session was
+closed; its credentials were not saved to the browser or checked into Git.
+
+This follow-up adds a distinct encrypted secrets-manager identity
+`exely-read-reservation`, bound to tenant, property, saved connection ID and mode.
+SOAP credentials cannot be used as REST credentials. The server selects exact
+official test/production origins from saved routing state; no user URL,
+redirect, environment proxy, plaintext credential fallback or write API is used.
+OAuth tokens are ephemeral, reused within a batch and not persisted or returned.
+Production/sync kill switches still gate requests. This does not enable any
+connection automatically.
+
+The Exely connection screen now offers a scoped save consent, exact existing
+reservation probe, pause control and explicit reconciliation. Saving validates
+the remote response and local join before enabling the connection, but does not
+rewrite a PMS booking. The explicit reconciliation and the enabled scheduler's
+post-import batch share one demographic-only mutation path.
+
+Reconciliation requires the same tenant/property/booking/provider timestamp,
+currency, total, room type, stay dates and total guest count. A unique room join
+is required: SOAP and REST room-stay index bases are not guessed. Ambiguous
+identical multiroom stays require review. Only confirmed PMS bookings whose
+counts still match their source (or matching previous proof) can be changed.
+Checked-in/cancelled/checked-out and manually altered counts are not overwritten.
+Each update uses a compare-and-swap fence, increments the PMS edit version,
+reads back the result and appends a separate immutable demographic evidence row.
+Partial multiroom races return an error rather than falsely claiming all rooms
+were applied. Original SOAP payloads/hashes, version ledger, ACK state, guest
+profiles, room assignment, KBS, rates, folios, payments and invoices are untouched.
+
+Automatic batches handle at most 25 future unverified bookings per enabled
+tenant pull, rotate review failures by last attempt, and stop a batch on a
+provider/auth/quota outage. Pausing does not undo an already started operation.
+Verification provenance is invalidated by a new SOAP version and is bound to
+current PMS counts, ages, dates, room type, currency and amount. The guest summary
+and test verification read current PMS proof, not an old audit record. Booking
+cache invalidation and warmer projections retain the new fields.
+
+Release boundary: local code/tests are not live PMS acceptance. Deployment,
+explicit TEST-only credential storage and PMS readback of the corrected synthetic
+booking still need to be recorded after this change is deployed. Other properties
+remain disabled. This verifies demographic transport, not hotel-specific child
+pricing parity, legal/KBS acceptance or every commercial booking scenario.
+
 ## 2026-10-22 follow-up release boundary
 
 Manual/test-booking pulls and the shared configuration checks retain only the
@@ -21,12 +73,12 @@ total guests with an unverified demographic warning, not a certified adult/child
 split. This conservative warning also applies to legacy Exely records until an
 independent reconciliation establishes provenance.
 
-The separate Read Reservation REST contract exposes adultCount and childAges
-(https://exely.com/dev-portal/docs/api/), but it is not integrated or activated by
-this release. The user authorized read-only access for TEST 501694 only. The
+At the PR 1385 release boundary, the separate Read Reservation REST contract exposed adultCount and childAges
+(https://exely.com/dev-portal/docs/api/), but was not integrated or activated by
+that release. The user authorized read-only access for TEST 501694 only. The
 Exely ConnectivityHub screen remained on its loading indicator, including a
 reload; no OAuth client/secret was created and no access was enabled. Do not
-claim this release fixes the provider's missing live ages or completes child
+claim PR 1385 fixes the provider's missing live ages or completes child
 acceptance. TEST booking 20261110-501694-1200421078 remains unreconciled.
 
 Expanded offline regression selection: 320 passed, two real-Mongo tests excluded.

@@ -27,6 +27,7 @@ from domains.channel_manager.providers.exely.production_safety import (
     safe_runtime_state,
 )
 from domains.channel_manager.providers.exely.provider import ExelyProvider
+from domains.channel_manager.providers.exely.read_reservation_router import router as read_reservation_router
 from domains.channel_manager.providers.exely.scheduling import connection_pull_interval_seconds
 from domains.channel_manager.providers.exely.security import (
     EXELY_PRODUCTION_ENDPOINT_URL,
@@ -41,6 +42,7 @@ from modules.pms_core.role_permission_service import require_op  # v93 DW
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/channel-manager/exely", tags=["Exely Integration"])
+router.include_router(read_reservation_router)
 
 PROVIDER = "exely"
 
@@ -232,6 +234,7 @@ async def setup_connection(
         "mode": payload.mode,
         "currency": payload.currency,
         "is_active": True,
+        "read_reservation_enabled": False,
         "room_types": test_data.get("room_types", []),
         "rate_plans": test_data.get("rate_plans", []),
         "connected_at": datetime.now(UTC).isoformat(),
@@ -723,6 +726,7 @@ async def manual_pull(
             hotel_code=creds["hotel_code"],
             endpoint_url=creds["endpoint_url"],
             connection_mode=str(conn.get("mode") or ""),
+            **({"read_reservation_enabled": True} if conn.get("read_reservation_enabled") else {}),
         )
         if not result["success"]:
             error_code = str(result.get("error") or "EXELY_PROVIDER_READ_FAILED")
@@ -920,18 +924,18 @@ class TestBookingVerifyRequest(BaseModel):
         return self
 
 
-def _test_booking_summary(reservation: dict, payload: TestBookingVerifyRequest) -> dict:
+def _test_booking_summary(reservation: dict, payload: TestBookingVerifyRequest, *, demographic_rooms: list | None = None) -> dict:
     """An imported record is not evidence of provider demographic acceptance.
 
     PMSConnect bed counts can hide children. Compare expectations with the
     stored counts, but never infer ages from comments or certify REST data we
     have not read. This is read-only and does not rewrite provider versions.
     """
-    rooms = reservation.get("rooms") or []
+    rooms = demographic_rooms if demographic_rooms is not None else reservation.get("rooms") or []
     checks = {
         "pms_import": "passed" if reservation.get("pms_status") == "imported" else "pending",
         "provider_ack": "passed" if reservation.get("delivery_confirmed") is True else "pending",
-        "guest_demographics": "not_verified",
+        "guest_demographics": "passed" if demographic_rooms is not None else "not_verified",
     }
     row = {
         "external_id": reservation.get("external_id") or reservation.get("reservation_id"),
@@ -952,10 +956,30 @@ def _test_booking_summary(reservation: dict, payload: TestBookingVerifyRequest) 
             and all(type(age) is int and 0 <= age <= 17 for age in ages)
             and sorted(ages) == sorted(expected)
         ) if expected else room.get("children", None) == 0
-        checks["expected_guest_counts"] = "matches_reported_counts" if counts_match and ages_match else "mismatch"
+        checks["expected_guest_counts"] = ("matches_verified_counts" if demographic_rooms is not None else "matches_reported_counts") if counts_match and ages_match else "mismatch"
         if not counts_match or not ages_match:
             row["acceptance_status"] = "mismatch"
     return row
+
+
+async def _stored_test_booking_summary(tenant_id: str, conn: dict, reservation: dict, payload: TestBookingVerifyRequest) -> dict:
+    """Do not certify from an old audit row: inspect the current PMS documents."""
+    if conn.get("read_reservation_enabled"):
+        from .demographics import verified_booking
+
+        ids = reservation.get("pms_booking_ids") or [reservation.get("pms_booking_id")]
+        ids = [booking_id for booking_id in ids if booking_id]
+        if ids and len(ids) == len(reservation.get("rooms") or []):
+            bookings = await db.bookings.find({
+                "tenant_id": tenant_id, "property_id": str(conn.get("hotel_code") or ""),
+                "id": {"$in": ids}, "provider_group_reservation_id": reservation.get("external_id"),
+                "provider_version_key": reservation.get("provider_version_key"), "booking_source": "exely",
+            }, {"_id": 0}).to_list(len(ids))
+            if len(bookings) == len(ids) and all(verified_booking(booking) for booking in bookings):
+                return _test_booking_summary(reservation, payload, demographic_rooms=[{
+                    "adults": booking["adults"], "children": booking["children"], "children_ages": booking["children_ages"],
+                } for booking in bookings])
+    return _test_booking_summary(reservation, payload)
 
 
 @router.post("/test-booking/verify")
@@ -1025,7 +1049,7 @@ async def verify_test_booking(
         if stored:
             # ACKed reservations are no longer in Undelivered. Finding the
             # scoped stored record does NOT claim a fresh provider read.
-            verification["new_reservations"] = [_test_booking_summary(stored, payload)]
+            verification["new_reservations"] = [await _stored_test_booking_summary(tenant_id, conn, stored, payload)]
         elif payload.reservation_id:
             provider_kwargs = {
                 "username": username,
@@ -1096,7 +1120,7 @@ async def verify_test_booking(
             {**scope, "external_id": {"$in": list(new_ids)}},
             {"_id": 0},
         ).to_list(50)
-        verification["new_reservations"] = [_test_booking_summary(r, payload) for r in new_res]
+        verification["new_reservations"] = [await _stored_test_booking_summary(tenant_id, conn, r, payload) for r in new_res]
 
     # Filter by guest name if provided
     if payload.guest_name and verification["new_reservations"]:

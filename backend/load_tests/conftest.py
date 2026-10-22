@@ -8,9 +8,8 @@ import asyncio
 import os
 import sys
 import uuid
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
-from typing import List
 
 import httpx
 import pytest
@@ -22,6 +21,18 @@ if str(BACKEND_ROOT) not in sys.path:
 LOAD_TEST_SOURCE = "load_test_framework"
 
 
+def _invalidate_seeded_inventory(tenant_id: str) -> None:
+    """Raw fixture writes bypass API invalidation; evict the shared read model.
+
+    A process-local fallback cannot invalidate the independently running API.
+    Require Redis rather than silently testing an old inventory snapshot.
+    """
+    from cache_manager import cache
+
+    if cache.backend != "redis" or not cache.safe_invalidate(tenant_id, "rooms_availability"):
+        raise RuntimeError("Load fixtures require shared Redis inventory invalidation")
+
+
 @pytest.fixture(scope="session")
 def event_loop():
     loop = asyncio.new_event_loop()
@@ -31,8 +42,9 @@ def event_loop():
 
     load_dotenv(BACKEND_ROOT / ".env")
 
-    from core import database
     from motor.motor_asyncio import AsyncIOMotorClient
+
+    from core import database
 
     mongo_url = os.environ.get("MONGO_URL", "mongodb://localhost:27017/hotel_pms")
     db_name = os.environ.get("DB_NAME", "hotel_pms")
@@ -82,7 +94,7 @@ async def tenant_id(raw_db):
 
 @pytest.fixture
 async def load_test_room_factory(raw_db, tenant_id):
-    created_ids: List[str] = []
+    created_ids: list[str] = []
 
     async def _create(room_type: str = "STD", count: int = 1):
         rooms = []
@@ -96,22 +108,24 @@ async def load_test_room_factory(raw_db, tenant_id):
                 "status": "available",
                 "housekeeping_status": "clean",
                 "source": LOAD_TEST_SOURCE,
-                "created_at": datetime.now(timezone.utc).isoformat(),
+                "created_at": datetime.now(UTC).isoformat(),
             }
             await raw_db.rooms.insert_one(room)
             created_ids.append(room["id"])
             rooms.append(room)
+        _invalidate_seeded_inventory(tenant_id)
         return rooms
 
     yield _create
 
     if created_ids:
         await raw_db.rooms.delete_many({"id": {"$in": created_ids}})
+        _invalidate_seeded_inventory(tenant_id)
 
 
 @pytest.fixture
 async def load_test_booking_factory(raw_db, tenant_id):
-    created_ids: List[str] = []
+    created_ids: list[str] = []
 
     async def _create(
         room_id: str,
@@ -132,16 +146,18 @@ async def load_test_booking_factory(raw_db, tenant_id):
             "status": status,
             "total_amount": 500.0,
             "source": LOAD_TEST_SOURCE,
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
         }
         await raw_db.bookings.insert_one(booking)
         created_ids.append(booking["id"])
+        _invalidate_seeded_inventory(tenant_id)
         return booking
 
     yield _create
 
     if created_ids:
         await raw_db.bookings.delete_many({"id": {"$in": created_ids}})
+        _invalidate_seeded_inventory(tenant_id)
 
 
 @pytest.fixture(autouse=True)

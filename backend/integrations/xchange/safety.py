@@ -248,6 +248,7 @@ async def safe_request_async(
     url: str,
     *,
     timeout: float | None = None,
+    max_response_bytes: int | None = None,
     **httpx_kwargs,
 ) -> httpx.Response:
     """Make an outbound HTTP request safely (rebinding-protected).
@@ -257,11 +258,27 @@ async def safe_request_async(
     pinned to the validated IP. Raises :class:`EgressDenied` if the URL
     fails validation; ``httpx`` exceptions propagate unchanged.
     """
+    if max_response_bytes is not None and (type(max_response_bytes) is not int or max_response_bytes <= 0):
+        raise EgressDenied("invalid response byte limit")
     host, targets, _ = _resolve_targets(url)
     transport = _pinned_transport(host, targets)
     timeout_value = timeout if timeout is not None else _DEFAULT_TIMEOUT
-    async with httpx.AsyncClient(transport=transport, timeout=timeout_value) as client:
-        return await client.request(method, url, **httpx_kwargs)
+    if max_response_bytes is None:
+        async with httpx.AsyncClient(transport=transport, timeout=timeout_value) as client:
+            return await client.request(method, url, **httpx_kwargs)
+    # Opt-in bounded mode for credential-bearing JSON APIs. Existing callers
+    # retain their original behavior. Count decoded bytes before retaining them.
+    httpx_kwargs["follow_redirects"] = False
+    async with httpx.AsyncClient(transport=transport, timeout=timeout_value, follow_redirects=False, trust_env=False) as client:
+        async with client.stream(method, url, **httpx_kwargs) as response:
+            data = bytearray()
+            async for part in response.aiter_bytes(chunk_size=65536):
+                if len(data) + len(part) > max_response_bytes:
+                    raise EgressDenied("response exceeds configured byte limit")
+                data.extend(part)
+            # Bytes are already decoded; do not ask httpx to decode gzip twice.
+            headers = {key: value for key, value in response.headers.items() if key.lower() not in {"content-encoding", "content-length", "transfer-encoding"}}
+            return httpx.Response(response.status_code, headers=headers, content=bytes(data), request=response.request)
 
 
 async def safe_post_async(
