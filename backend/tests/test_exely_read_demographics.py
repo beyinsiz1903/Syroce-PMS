@@ -119,9 +119,112 @@ async def test_rest_demographics_corrects_only_counts_with_durable_readback_and_
     assert database.exely_demographic_checks.documents == first_evidence
 
 
+async def test_observed_soap_and_rest_clocks_are_independent_without_mutating_source_version(scenario):
+    database, reservation, _, remote = scenario
+    soap_version = "2026-10-22T08:38:48.677"
+    reservation["provider_version_key"] = soap_version
+    database.exely_reservations.documents[0]["provider_version_key"] = soap_version
+    database.bookings.documents[0]["provider_version_key"] = soap_version
+    sources = deepcopy((database.exely_reservations.documents, database.exely_reservation_versions.documents))
+    client = SimpleNamespace(booking=AsyncMock(return_value=remote))
+    result = await demo.reconcile_one("tenant-a", CONNECTION, NUMBER, client)
+    assert result["status"] == "verified"
+    assert client.booking.await_count == 2
+    actual = database.bookings.documents[0]
+    assert (actual["adults"], actual["children"], actual["children_ages"], actual["total_amount"]) == (2, 1, [6], 120)
+    assert actual["provider_version_key"] == soap_version
+    assert actual["exely_demographics"]["rest_modified_at"] == VERSION
+    assert actual["exely_demographics"]["rest_snapshot_hash"] == demo._rest_hash(remote)
+    assert sources == (database.exely_reservations.documents, database.exely_reservation_versions.documents)
+
+
+@pytest.mark.parametrize("value", [None, "", "garbage", "2026-10-22T05:38:43"])
+async def test_rest_revision_requires_explicit_timezone(scenario, value):
+    _, reservation, _, remote = scenario
+    remote["modifiedDateTime"] = value
+    with pytest.raises(read.ReadReservationError, match="REST_VERSION_INVALID"):
+        await demo.reconciliation_plan("tenant-a", CONNECTION, reservation, remote)
+
+
+@pytest.mark.parametrize("drift", ["version", "ages", "amount", "status", "property", "unmapped_field"])
+async def test_remote_snapshot_change_between_reads_never_changes_pms(scenario, drift):
+    database, _, _, remote = scenario
+    changed = deepcopy(remote)
+    if drift == "version":
+        changed["modifiedDateTime"] = "2026-10-22T05:38:44Z"
+    elif drift == "ages":
+        changed["roomStays"][0]["guestCount"]["childAges"] = [7]
+    elif drift == "amount":
+        changed["total"]["priceAfterTax"] = 121
+    elif drift == "status":
+        changed["status"] = "Cancelled"
+    elif drift == "property":
+        changed["propertyId"] = "999"
+    else:
+        changed["comment"] = "Changed independently of modification timestamp"
+    before = deepcopy(database.bookings.documents)
+    client = SimpleNamespace(booking=AsyncMock(side_effect=[remote, changed]))
+    with pytest.raises(read.ReadReservationError, match="REMOTE_CHANGED"):
+        await demo.reconcile_one("tenant-a", CONNECTION, NUMBER, client)
+    assert database.bookings.documents == before
+    assert database.exely_demographic_checks.documents == []
+
+
+async def test_failed_second_read_never_changes_pms(scenario):
+    database, _, _, remote = scenario
+    before = deepcopy(database.bookings.documents)
+    client = SimpleNamespace(booking=AsyncMock(side_effect=[remote, read.ReadReservationError("EXELY_READ_HTTP_503")]))
+    with pytest.raises(read.ReadReservationError, match="HTTP_503"):
+        await demo.reconcile_one("tenant-a", CONNECTION, NUMBER, client)
+    assert database.bookings.documents == before
+
+
+@pytest.mark.parametrize("drift", ["older_version", "same_version_different_snapshot"])
+async def test_rest_revision_cannot_regress_or_change_under_previously_verified_version(scenario, drift):
+    database, reservation, _, remote = scenario
+    await demo.apply_plan("tenant-a", CONNECTION, reservation, await demo.reconciliation_plan("tenant-a", CONNECTION, reservation, remote))
+    if drift == "older_version":
+        remote["modifiedDateTime"] = "2026-10-22T05:38:42Z"
+    else:
+        remote["roomStays"][0]["guestCount"]["childAges"] = [7]
+    before = deepcopy(database.bookings.documents)
+    with pytest.raises(read.ReadReservationError, match="REST_VERSION_(REGRESSED|CONFLICT)"):
+        await demo.reconciliation_plan("tenant-a", CONNECTION, reservation, remote)
+    assert database.bookings.documents == before
+
+
+async def test_newer_stable_rest_revision_uses_own_clock_and_preserves_pms_source_revision(scenario):
+    database, reservation, _, remote = scenario
+    await demo.apply_plan("tenant-a", CONNECTION, reservation, await demo.reconciliation_plan("tenant-a", CONNECTION, reservation, remote))
+    remote["modifiedDateTime"] = "2026-10-22T05:38:44Z"
+    remote["roomStays"][0]["guestCount"]["childAges"] = [7]
+    client = SimpleNamespace(booking=AsyncMock(return_value=remote))
+    result = await demo.reconcile_one("tenant-a", CONNECTION, NUMBER, client)
+    assert result["rooms"][0]["children_ages"] == [7]
+    assert database.bookings.documents[0]["provider_version_key"] == VERSION
+    assert database.bookings.documents[0]["total_amount"] == 120
+
+
+async def test_source_revision_change_during_second_rest_read_is_rejected(scenario):
+    database, _, _, remote = scenario
+    before = deepcopy(database.bookings.documents)
+    async def second_read(_number):
+        database.exely_reservations.documents[0]["provider_version_identity"] = "new-soap-revision"
+        return remote
+    client = SimpleNamespace()
+    async def booking(_number):
+        if client.booking.await_count == 2:
+            return await second_read(_number)
+        return remote
+    client.booking = AsyncMock(side_effect=booking)
+    with pytest.raises(read.ReadReservationError, match="CURRENT_VERSION_CHANGED"):
+        await demo.reconcile_one("tenant-a", CONNECTION, NUMBER, client)
+    assert database.bookings.documents == before
+
+
 @pytest.mark.parametrize("target,key,value", [
     ("remote", "propertyId", "other-property"), ("remote", "number", "other-booking"),
-    ("remote", "modifiedDateTime", "2026-10-22T05:38:44Z"), ("remote", "currencyCode", "EUR"),
+    ("remote", "modifiedDateTime", "not-a-version"), ("remote", "currencyCode", "EUR"),
     ("remote", "status", "Cancelled"), ("remote", "total", {"priceAfterTax": 121}),
     ("remote", "total", {"priceAfterTax": "NaN"}), ("remote", "roomStays", []),
     ("reservation", "tenant_id", "tenant-b"), ("reservation", "property_id", "other-property"),
@@ -265,6 +368,25 @@ async def test_setup_validates_before_saving_scoped_keys_and_never_applies_or_re
     assert "synthetic-secret" not in repr(payload)
 
 
+async def test_setup_changed_remote_snapshot_never_saves_credentials_or_enables_connection(monkeypatch, scenario):
+    database, _, _, remote = scenario
+    database.exely_connections.documents[0]["read_reservation_enabled"] = False
+    changed = {**remote, "modifiedDateTime": "2026-10-22T05:38:44Z"}
+    @asynccontextmanager
+    async def fake_client(*args):
+        yield SimpleNamespace(booking=AsyncMock(side_effect=[remote, changed]))
+    vault = SimpleNamespace(store_provider_credentials=AsyncMock())
+    monkeypatch.setattr(api, "read_client", fake_client)
+    monkeypatch.setattr(api, "require_read_allowed", lambda *_: None)
+    monkeypatch.setattr(api, "get_secrets_manager", lambda: vault)
+    payload = api.ReadSetup(client_id="synthetic-client", client_secret="synthetic-secret", reservation_id=NUMBER, confirmation="ENABLE_READ_RESERVATION:501694")
+    with pytest.raises(HTTPException) as error:
+        await api.connect_read_reservation(payload, SimpleNamespace(tenant_id="tenant-a", name="Synthetic Operator"), None)
+    assert error.value.status_code == 409 and error.value.detail == "EXELY_READ_REMOTE_CHANGED"
+    vault.store_provider_credentials.assert_not_awaited()
+    assert database.exely_connections.documents[0]["read_reservation_enabled"] is False
+
+
 async def test_explicit_test_consent_is_saved_only_after_remote_validation(monkeypatch, scenario):
     database, _, _, remote = scenario
     monkeypatch.setenv("E2E_EXTERNAL_DRY_RUN", "true")
@@ -324,8 +446,13 @@ async def test_test_booking_verification_reads_current_provenance_not_raw_bed_co
 
 
 @pytest.mark.live_mongo
-async def test_real_mongo_demographics_cas_immutable_source_and_tenant_isolation(scenario, local_mongo, monkeypatch):
+@pytest.mark.parametrize("soap_version", [VERSION, "2026-10-22T08:38:48.677"])
+async def test_real_mongo_demographics_cas_immutable_source_and_tenant_isolation(scenario, local_mongo, monkeypatch, soap_version):
     database, reservation, booking, remote = scenario
+    reservation["provider_version_key"] = soap_version
+    booking["provider_version_key"] = soap_version
+    database.exely_reservations.documents[0]["provider_version_key"] = soap_version
+    database.bookings.documents[0]["provider_version_key"] = soap_version
     for name in ("exely_connections", "exely_reservations", "exely_reservation_versions", "exely_room_mappings", "bookings"):
         await local_mongo[name].insert_many(deepcopy(getattr(database, name).documents))
     await local_mongo.bookings.insert_one({**deepcopy(booking), "tenant_id": "tenant-b"})
