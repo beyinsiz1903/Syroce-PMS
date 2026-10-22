@@ -2,7 +2,7 @@
 # Should NOT ship to production runtime images.
 # Assumes the runtime stack is also installed (e.g., paired with -r all.txt locally,
 # or via CI installing all subsets together). locust requires gevent (in worker.txt).
-black==26.3.1
+black==26.10.1
 boolean.py==5.0
 CacheControl==0.14.4
 ConfigArgParse==1.7.1
