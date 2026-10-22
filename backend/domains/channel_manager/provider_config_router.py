@@ -563,6 +563,18 @@ async def _validate_hotelrunner(creds: dict[str, str], tenant_id: str) -> list[d
 # ── Exely Validation ──────────────────────────────────────────────────
 
 
+async def _saved_exely_connection_mode(tenant_id: str, hotel_code: str) -> str:
+    """Only the trusted, active property connection may grant sandbox routing.
+
+    Arbitrary credential fields or a test-looking URL must never widen access.
+    """
+    connection = await db.exely_connections.find_one(
+        {"tenant_id": tenant_id, "hotel_code": hotel_code, "is_active": True},
+        {"_id": 0, "mode": 1},
+    )
+    return str((connection or {}).get("mode") or "")
+
+
 async def _test_exely_connection(creds: dict[str, str], tenant_id: str) -> dict[str, Any]:
     from .providers.exely import ExelyProvider
 
@@ -579,6 +591,7 @@ async def _test_exely_connection(creds: dict[str, str], tenant_id: str) -> dict[
         "tenant_id": tenant_id,
         "property_id": hotel_code,
         "connection_id": f"{tenant_id}:{hotel_code}",
+        "connection_mode": await _saved_exely_connection_mode(tenant_id, hotel_code),
     }
     if endpoint_url:
         kwargs["endpoint_url"] = endpoint_url
@@ -615,6 +628,7 @@ async def _validate_exely(creds: dict[str, str], tenant_id: str) -> list[dict[st
         "tenant_id": tenant_id,
         "property_id": hotel_code,
         "connection_id": f"{tenant_id}:{hotel_code}",
+        "connection_mode": await _saved_exely_connection_mode(tenant_id, hotel_code),
     }
     if endpoint_url:
         kwargs["endpoint_url"] = endpoint_url

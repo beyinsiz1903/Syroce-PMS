@@ -722,6 +722,7 @@ async def manual_pull(
             password=creds["password"],
             hotel_code=creds["hotel_code"],
             endpoint_url=creds["endpoint_url"],
+            connection_mode=str(conn.get("mode") or ""),
         )
         if not result["success"]:
             error_code = str(result.get("error") or "EXELY_PROVIDER_READ_FAILED")
@@ -906,6 +907,55 @@ async def import_reservation_to_pms(
 class TestBookingVerifyRequest(BaseModel):
     reservation_id: str | None = None
     guest_name: str | None = None
+    expected_adults: int | None = Field(default=None, ge=0, le=1000, strict=True)
+    expected_children_ages: list[Annotated[int, Field(ge=0, le=17, strict=True)]] | None = Field(default=None, max_length=1000)
+
+    @model_validator(mode="after")
+    def validate_demographic_expectations(self):
+        if self.expected_adults is not None or self.expected_children_ages is not None:
+            if not (self.reservation_id or "").strip():
+                raise ValueError("A reservation ID is required for demographic comparison")
+            if self.expected_adults is None or self.expected_children_ages is None:
+                raise ValueError("Supply both expected adults and child ages")
+        return self
+
+
+def _test_booking_summary(reservation: dict, payload: TestBookingVerifyRequest) -> dict:
+    """An imported record is not evidence of provider demographic acceptance.
+
+    PMSConnect bed counts can hide children. Compare expectations with the
+    stored counts, but never infer ages from comments or certify REST data we
+    have not read. This is read-only and does not rewrite provider versions.
+    """
+    rooms = reservation.get("rooms") or []
+    checks = {
+        "pms_import": "passed" if reservation.get("pms_status") == "imported" else "pending",
+        "provider_ack": "passed" if reservation.get("delivery_confirmed") is True else "pending",
+        "guest_demographics": "not_verified",
+    }
+    row = {
+        "external_id": reservation.get("external_id") or reservation.get("reservation_id"),
+        "guest_name": reservation.get("guest_name", ""),
+        "state": reservation.get("state") or reservation.get("status", ""),
+        "checks": checks,
+        "acceptance_status": "not_verified",
+    }
+    if payload.expected_adults is not None:
+        # The form describes a single-room test. A multi-room total is not a
+        # safe room-stay match, even if its aggregate counts happen to agree.
+        room = rooms[0] if len(rooms) == 1 else {}
+        ages = room.get("children_ages")
+        expected = payload.expected_children_ages
+        counts_match = bool(room) and room.get("adults") == payload.expected_adults and room.get("children") == len(expected)
+        ages_match = (
+            isinstance(ages, list)
+            and all(type(age) is int and 0 <= age <= 17 for age in ages)
+            and sorted(ages) == sorted(expected)
+        ) if expected else room.get("children", None) == 0
+        checks["expected_guest_counts"] = "matches_reported_counts" if counts_match and ages_match else "mismatch"
+        if not counts_match or not ages_match:
+            row["acceptance_status"] = "mismatch"
+    return row
 
 
 @router.post("/test-booking/verify")
@@ -935,22 +985,19 @@ async def verify_test_booking(
     if not conn:
         raise HTTPException(status_code=404, detail="Exely bağlantısı bulunamadı")
 
-    # Snapshot current state
-    before_count = await db.exely_reservations.count_documents({"tenant_id": tenant_id})
+    # Every lookup belongs to this active property, not merely this tenant.
+    scope = {"tenant_id": tenant_id, "property_id": str(conn.get("hotel_code") or "")}
+    if payload.reservation_id:
+        scope["external_id"] = payload.reservation_id
+    before_count = await db.exely_reservations.count_documents(scope)
     before_ids = set()
     existing = await db.exely_reservations.find(
-        {"tenant_id": tenant_id},
+        scope,
         {"_id": 0, "external_id": 1},
-    ).to_list(500)
+    ).to_list(None)
     before_ids = {r["external_id"] for r in existing if r.get("external_id")}
 
-    creds = await resolve_exely_credentials(tenant_id, conn, actor="exely_test_booking_verify")
-    if not creds:
-        raise HTTPException(status_code=503, detail="Exely credentials are unavailable")
-    username = creds["username"]
-    password = creds["password"]
-    hotel_code = creds["hotel_code"]
-    endpoint_url = creds["endpoint_url"]
+    stored = await db.exely_reservations.find_one(scope, {"_id": 0}) if payload.reservation_id else None
 
     verification = {
         "session_id": str(uuid.uuid4()),
@@ -958,13 +1005,28 @@ async def verify_test_booking(
         "pull_result": None,
         "new_reservations": [],
         "verification_status": "pending",
+        "acceptance_status": "not_verified",
+        "lookup_source": "stored" if stored else "undelivered_pull",
+        "warnings": ["Rezervasyonun bulunması tam kabul değildir. Yetişkin/çocuk ayrımı ve yaşlar sağlayıcının yapılandırılmış verisiyle ayrıca doğrulanmalıdır."],
         "errors": [],
     }
 
     try:
+        if not stored:
+            creds = await resolve_exely_credentials(tenant_id, conn, actor="exely_test_booking_verify")
+            if not creds:
+                raise HTTPException(status_code=503, detail="Exely credentials are unavailable")
+            username = creds["username"]
+            password = creds["password"]
+            hotel_code = creds["hotel_code"]
+            endpoint_url = creds["endpoint_url"]
         # PMSConnect only supports SelectionType=Undelivered. A supplied ID is
         # filtered locally after the canonical undelivered read.
-        if payload.reservation_id:
+        if stored:
+            # ACKed reservations are no longer in Undelivered. Finding the
+            # scoped stored record does NOT claim a fresh provider read.
+            verification["new_reservations"] = [_test_booking_summary(stored, payload)]
+        elif payload.reservation_id:
             provider_kwargs = {
                 "username": username,
                 "password": password,
@@ -972,6 +1034,7 @@ async def verify_test_booking(
                 "tenant_id": tenant_id,
                 "property_id": hotel_code,
                 "connection_id": f"{tenant_id}:{hotel_code}",
+                "connection_mode": str(conn.get("mode") or ""),
             }
             if endpoint_url:
                 provider_kwargs["endpoint_url"] = endpoint_url
@@ -990,14 +1053,11 @@ async def verify_test_booking(
                         event_type="new_booking",
                         source="test_booking_verify",
                     )
-                    verification["new_reservations"].append(
-                        {
-                            "external_id": raw_res.get("reservation_id", ""),
-                            "guest_name": raw_res.get("guest_name", ""),
-                            "ingest_action": ingest_result.get("action", "unknown"),
-                            "status": raw_res.get("status", ""),
-                        }
-                    )
+                    if ingest_result.get("success") is False or ingest_result.get("action") in {"error", "failed"}:
+                        verification["errors"].append("PMS_IMPORT_FAILED")
+                    row = _test_booking_summary(raw_res, payload)
+                    row["ingest_action"] = ingest_result.get("action", "unknown")
+                    verification["new_reservations"].append(row)
             elif not pull.success:
                 verification["errors"].append("OTA_ReadRQ: provider_read_failed")
         else:
@@ -1008,32 +1068,35 @@ async def verify_test_booking(
                 password=password,
                 hotel_code=hotel_code,
                 endpoint_url=endpoint_url,
+                connection_mode=str(conn.get("mode") or ""),
             )
             verification["pull_result"] = {
                 "success": result.get("success", False),
                 "processed": result.get("processed", 0),
                 "error": result.get("error"),
             }
+            if not result.get("success"):
+                verification["errors"].append("OTA_ReadRQ: provider_read_failed")
 
     except Exception as exc:
         verification["errors"].append(type(exc).__name__)
 
     # After state
-    after_count = await db.exely_reservations.count_documents({"tenant_id": tenant_id})
+    after_count = await db.exely_reservations.count_documents(scope)
     after_existing = await db.exely_reservations.find(
-        {"tenant_id": tenant_id},
+        scope,
         {"_id": 0, "external_id": 1, "guest_name": 1, "state": 1, "synced_at": 1},
-    ).to_list(500)
+    ).to_list(None)
     after_ids = {r["external_id"] for r in after_existing if r.get("external_id")}
     new_ids = after_ids - before_ids
 
     # Get details for newly discovered reservations
     if new_ids and not verification["new_reservations"]:
         new_res = await db.exely_reservations.find(
-            {"tenant_id": tenant_id, "external_id": {"$in": list(new_ids)}},
-            {"_id": 0, "external_id": 1, "guest_name": 1, "state": 1, "checkin_date": 1, "checkout_date": 1},
+            {**scope, "external_id": {"$in": list(new_ids)}},
+            {"_id": 0},
         ).to_list(50)
-        verification["new_reservations"] = [{"external_id": r.get("external_id"), "guest_name": r.get("guest_name"), "state": r.get("state")} for r in new_res]
+        verification["new_reservations"] = [_test_booking_summary(r, payload) for r in new_res]
 
     # Filter by guest name if provided
     if payload.guest_name and verification["new_reservations"]:
@@ -1045,10 +1108,13 @@ async def verify_test_booking(
 
     if verification["errors"]:
         verification["verification_status"] = "error"
-    elif new_ids or verification["new_reservations"]:
+    elif verification["new_reservations"]:
         verification["verification_status"] = "found"
     else:
         verification["verification_status"] = "not_found"
+
+    if any(row.get("acceptance_status") == "mismatch" for row in verification["new_reservations"]):
+        verification["acceptance_status"] = "mismatch"
 
     return verification
 

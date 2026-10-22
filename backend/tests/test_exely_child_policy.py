@@ -90,6 +90,20 @@ def test_provider_bed_label_uses_explicit_age_without_guessing_a_label_mapping()
     assert result["children_ages"] == [8]
 
 
+@pytest.mark.parametrize("age", [0, 2, 3, 6, 7, 17])
+def test_explicit_child_age_is_preserved_even_in_an_adult_bed(age):
+    result = booking(reservation(f'<GuestCount AgeQualifyingCode="AdultBed" Count="2"/><GuestCount AgeQualifyingCode="AdultBed" Age="{age}" Count="1"/>'))
+    assert result["adults"] == 2 and result["children"] == 1
+    assert result["children_ages"] == [age]
+    assert result["guests_count"] == 3
+    assert result["total_amount"] == 440
+
+
+def test_conflicting_demographic_adult_code_and_explicit_child_age_is_held():
+    with pytest.raises(RuntimeError, match="EXELY_GUEST_COUNT_CODE_UNSUPPORTED"):
+        booking(reservation('<GuestCount AgeQualifyingCode="10" Age="6" Count="1"/>'))
+
+
 def test_unknown_guest_count_code_without_age_cannot_silently_lose_a_guest_and_ack():
     raw = reservation('<GuestCount AgeQualifyingCode="AdultBed" Count="2"/><GuestCount AgeQualifyingCode="unrecognized-bed" Count="1"/>')
     with pytest.raises(RuntimeError, match="EXELY_GUEST_COUNT_CODE_UNSUPPORTED"):
