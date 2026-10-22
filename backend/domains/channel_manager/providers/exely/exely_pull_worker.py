@@ -23,6 +23,7 @@ from domains.channel_manager.providers.exely.production_safety import reservatio
 from domains.channel_manager.providers.exely.provider import ExelyProvider
 from domains.channel_manager.providers.exely.scheduling import connection_pull_interval_seconds
 from domains.channel_manager.providers.exely.security import (
+    EXELY_TEST_ENDPOINT_URL,
     exely_connection_projection,
     resolve_exely_credentials,
     safe_fingerprint,
@@ -31,6 +32,15 @@ from domains.channel_manager.providers.exely.security import (
 logger = logging.getLogger(__name__)
 
 PROVIDER = "exely"
+
+
+def _mapping_rejection_pilot_enabled(hotel_code: str, endpoint_url: str) -> bool:
+    """New negative ACK behavior is limited to the authorized certification pilot.
+
+    Do not change production properties' delivery workflow before vendor-side
+    acceptance is demonstrated. No global dry-run or transport guard is bypassed.
+    """
+    return str(hotel_code) == "501694" and str(endpoint_url).split("?", 1)[0].rstrip("/") == EXELY_TEST_ENDPOINT_URL.split("?", 1)[0].rstrip("/")
 
 # Demote transient Atlas hiccups (AutoReconnect / ServerSelectionTimeoutError
 # "No primary available for writes" / SSL handshake timeouts) from per-tick
@@ -363,7 +373,8 @@ class ExelyPullScheduler:
         await log_sync(PROVIDER, tenant_id, "scheduled_pull", "success", duration_ms, processed)
 
         # Auto-import all pending reservations to PMS + process cancellations + modifications
-        import_result = await auto_import_pending(tenant_id, provider=provider)
+        rejection_options = {"report_mapping_rejections": True} if _mapping_rejection_pilot_enabled(hotel_code, endpoint_url) else {}
+        import_result = await auto_import_pending(tenant_id, provider=provider, **rejection_options)
         logger.info(f"[EXELY-PULL] Auto-import: {import_result['imported']}/{import_result['total']} imported, {import_result.get('updated', 0)} updated")
 
         logger.info("[EXELY-PULL] fetched=%d processed=%d", len(reservations), processed)
@@ -384,6 +395,7 @@ class ExelyPullScheduler:
             "imported": import_result.get("imported", 0),
             "updated": import_result.get("updated", 0),
             "cancelled": import_result.get("cancelled", 0),
+            "mapping_rejections": import_result.get("mapping_rejections", {"sent": 0, "provider_write_count": 0}),
             **({"demographics": demographics} if demographics is not None else {}),
         }
 

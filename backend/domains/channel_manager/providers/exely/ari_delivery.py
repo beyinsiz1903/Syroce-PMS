@@ -270,7 +270,7 @@ def _validate_update(operation: str, update: dict[str, Any]) -> str:
                 if restriction in {"stop_sell", "cta", "ctd"}:
                     if not isinstance(value, bool):
                         return f"EXELY_ARI_{restriction.upper()}_INVALID"
-                elif isinstance(value, bool) or not isinstance(value, int) or value < 1:
+                elif isinstance(value, bool) or not isinstance(value, int) or value < 0:
                     return f"EXELY_ARI_{restriction.upper()}_INVALID"
         return ""
 
@@ -303,7 +303,7 @@ def _validate_update(operation: str, update: dict[str, Any]) -> str:
     elif operation in {"stop_sell", "cta", "ctd"}:
         if not isinstance(value, bool):
             return f"EXELY_ARI_{operation.upper()}_INVALID"
-    elif isinstance(value, bool) or not isinstance(value, int) or value < 1:
+    elif isinstance(value, bool) or not isinstance(value, int) or value < 0:
         return f"EXELY_ARI_{operation.upper()}_INVALID"
     return ""
 

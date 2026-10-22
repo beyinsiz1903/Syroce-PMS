@@ -50,8 +50,8 @@ Code under test: `9431b3668d33444cf58e562db3095bc1ee49c92c`, merged as `ba83ba98
 | A1 | Maximum-period availability for all mapped categories, at least two | OFFLINE batch transport; LIVE preview only, provider maximum/readback pending |
 | A1.1 | Combine equal values into periods | OFFLINE batch/compiler; actual outbound XML capture pending |
 | A1.2 | Bounded batches, not many tiny requests | OFFLINE single transport tests; live request count pending |
-| A2 | Force availability for selected dates | OFFLINE forced pilot bounds; live send pending |
-| A2.1 | Send only specified dates | OFFLINE date validation; adjacent-day provider readback pending |
+| A2 | Force availability for selected dates | LIVE post-deploy Nov10 Standard5/Deluxe5; HTTP200, provider delivery CONFIRMED, provider_verified=true; independent provider calendar readback5/5 |
+| A2.1 | Send only specified dates | LIVE same bounded request; Nov11 Standard5/Deluxe6 and Nov12 Standard7/Deluxe7 unchanged against baseline |
 | A3 | PMS create then cancel changes availability | OFFLINE lifecycle; full live PMS-origin loop pending |
 | A3.1 | Auto-send only changed category/dates on create | OFFLINE delta path; live outbox/provider evidence pending |
 | A3.2 | Restore availability on cancellation | OFFLINE stock/lock lifecycle; live readback pending |
@@ -66,11 +66,11 @@ Code under test: `9431b3668d33444cf58e562db3095bc1ee49c92c`, merged as `ba83ba98
 | P3.1 | Automatically send changed prices only | OFFLINE dedup/compiler; live comparison pending |
 | P4 | One main-bed adult occupancy only | OFFLINE base amount omits NumberOfGuests; live outbound XML and Exely occupancy interpretation pending |
 | C1 | Closed set/unset | OFFLINE boolean Open/Close; live set AND restore pending |
-| C2 | MinLOS set/unset | OFFLINE positive set; unset semantics/provider validation pending |
-| C3 | MaxLOS set/unset | OFFLINE positive set; unset semantics/provider validation pending |
+| C2 | MinLOS set/unset | OFFLINE explicit SetMinLOS/RemoveMinLOS, schema-validated; deployment and live set/remove readback pending |
+| C3 | MaxLOS set/unset | OFFLINE explicit SetMaxLOS/RemoveMaxLOS, schema-validated; deployment and live set/remove readback pending |
 | C4 | CTA set/unset | OFFLINE Arrival Open/Close; live set AND restore pending |
 | C5 | CTD set/unset | OFFLINE Departure Open/Close; live set AND restore pending |
-| C6 | MinLOSArrival set/unset | OFFLINE ArrivalDateBased; unset/provider validation pending |
+| C6 | MinLOSArrival set/unset | OFFLINE ArrivalDateBased + RemoveMinLOS schema validation; deployment and live set/remove readback pending |
 | C7 | Automatic restriction deltas only | OFFLINE delta operation preservation; live before/after pending |
 | R1 | Two categories, separate guests, comment | LIVE synthetic 1200421110 created/imported; separate guest change and updated comment visible in normal PMS detail; exact ACK/ARI subrequirements pending |
 | R1.1 | Regular read, one Reserved ACK with exact IDs/version/PMS number | OFFLINE exact ACK/fencing; new live read+ACK evidence pending |
@@ -83,7 +83,7 @@ Code under test: `9431b3668d33444cf58e562db3095bc1ee49c92c`, merged as `ba83ba98
 | R2 | Two adults and child on main bed | LIVE child case demographics; full bed/payment presentation acceptance pending |
 | R2.1 | Adults/children displayed separately | LIVE 2 adults / 1 child / age6, verified PMS readback |
 | R2.2 | Provider payment method displayed | OFFLINE PayOnArrival parser; live normal PMS UI pending |
-| R3 | Unmapped booking: no create, RequestDenied+message, no ARI; map/redeliver | **GAP**: current lifecycle holds/alarm and sends no ACK, rather than RequestDenied. Safe replay is tested, but this is not the specified rejection workflow |
+| R3 | Unmapped booking: no create, RequestDenied+message, no ARI; map/redeliver | New OFFLINE Requestdenied+Errors path, no fake PMS ID, exact version, CAS/single write, no ambiguous retry; rollout limited to TEST501694. Live provider acceptance pending. Existing temporary inventory hold remains a documented interpretation gap versus strict no-booking requirement |
 | R4 | Two undelivered bookings in one read | OFFLINE parser/lifecycle; two simultaneous new live bookings pending |
 | R4.1 | Separate ACK with own IDs/PMS numbers | OFFLINE exact per-version ACK; live two-booking evidence pending |
 | R4.2 | Availability for both bookings | OFFLINE publication path; live readback pending |
@@ -109,10 +109,29 @@ Code under test: `9431b3668d33444cf58e562db3095bc1ee49c92c`, merged as `ba83ba98
 ## Concrete execution prerequisites, not certification passes
 
 1. Clarify the UI's Exely broadcast target before publishing any one-year write; `selected_channel_codes=[]` is a HotelRunner concept, while backend Exely broadcasting does not require OTA channel selection. Never count a misleading PMS-only preview as a provider delivery.
-2. Implement or explicitly agree with Exely on R3's RequestDenied/redelivery semantics. Do not manually send a fake Reserved ACK or silently count HOLD as compliant.
-3. Validate MinLOS/MaxLOS/MinLOSArrival removal semantics with provider evidence; current UI/batch validation requires positive lengths and has no demonstrated clear action.
+2. Validate the new R3 negative ACK/redelivery path with Exely; resolve the retained temporary inventory hold's interpretation against the strict no-booking requirement. Do not manually send a fake Reserved ACK or silently count HOLD as compliant.
+3. Deploy and validate the explicit MinLOS/MaxLOS/MinLOSArrival removal commands with provider evidence. Offline WSDL-valid XML is not provider acceptance.
 4. For each new QA booking, prepare synthetic details and obtain action-time approval for the booking terms before final Book. Do not reuse the prior single-booking consent for new bookings.
 5. Coordinate a genuine Liberty Channel test booking and redelivery fixture with Exely; no external email or message was sent by this execution.
 6. Preserve baseline dates/rates/inventory/restrictions and gather both durable delivery evidence and provider-side readback for every mutation. Test restoration separately.
 
 Conclusion: **NOT CERTIFIED / execution incomplete**. Offline results are green; the full supplied provider test plan has not passed.
+
+## Post-merge deployment and bounded A2 verification
+
+- PR1390 merged as `23c705a66712875147163828d9fe6dfdd7e99772`. Deploy run `39848642838` completed successfully for that exact revision.
+- Reloaded normal PMS UI and verified the updated Exely broadcast explanation. Repeated only Nov10 availability5 for Standard and Deluxe (six mapped plan cells), without rates, restrictions, Suite or agencies. Three same-value submissions were made while obtaining durable response evidence; do not count these as three independent certification cases.
+- Inspected the final normal UI request's Response tab: HTTP200, saved6, provider exely, channel_push_count2, delivery_state CONFIRMED, task_count2, provider_verified true, provider_write_count1, error_codes[], agency_push_count0. HTTP200 alone was not treated as confirmation.
+- Independently opened TEST501694's Exely stock calendar: Nov10 PMS and online availability Standard5/Deluxe5; Nov11 Standard5/Deluxe6; Nov12 Standard7/Deluxe7. Suite remained1 throughout. Adjacent dates matched the pre-write baseline. Same-value resend demonstrates acceptance/readback, not a reservation-driven stock delta or restoration test.
+- Evidence: `/private/tmp/syroce-exely-certification-20261022/postdeploy-a2-confirmed.png` and `provider-stock-postdeploy.png` in the same directory.
+- Other outstanding rows, especially R3 RequestDenied, LOS removal and genuine channel-origin test, remain incomplete. This deployment is not full Exely certification.
+
+## 2026-10-23 follow-up implementation (not yet deployed)
+
+- Added explicit LOS removal controls to the Exely editor. Zero is a clear command, blank remains no change; the preview explicitly names each removal. SOAP serializes RemoveMinLOS/RemoveMaxLOS with no Time attribute, never SetMinLOS Time=0; arrival-based removal keeps ArrivalDateBased=true. Requests validate against the checked-in vendor WSDL in tests.
+- Exely validation accepts explicit zero for LOS; negatives, booleans and fractional values remain rejected. Unified preflight rejects removal for HotelRunner, agencies, or mixed agency targets before local calendar writes. A positive maximum must still be >= a positive minimum; clearing maximum is not a false min/max conflict.
+- Added a separate per-version mapping-rejection state machine. Missing room/rate mappings can send Requestdenied with an informative root Errors message and exact provider identity/version, without Success or a fabricated PMS confirmation. Negative ACK and successful Reserved delivery ACK remain distinct.
+- Mapping replay and rejection compete through an atomic processing-state claim. A timeout or crash after claiming is never blindly retried; ambiguous results block local replay for reconciliation. Confirmed no-network failures can be retried. A successfully rejected version can be mapped/replayed normally, still requiring durable PMS readback before Reserved ACK.
+- **Rollout safety:** automatic negative ACK is enabled only for property501694 on the exact allowlisted Exely TEST endpoint. Production hotels retain their previous behavior until TEST/provider acceptance. Runtime, quota, TLS and dry-run protections are unchanged.
+- Existing temporary unmatched inventory holds/alarms are retained, not deleted or counted as imported bookings. This is deliberately not claimed to satisfy a literal requirement for no booking/hold record. No live new negative ACK or restriction-removal request has been sent by this implementation step.
+- Verification: **459 backend tests passed**, **30 frontend tests passed**; targeted ESLint/Ruff and the production frontend build passed. One pre-existing datetime.utcnow() warning remains. The prior test rejecting min_los=0 now checks negative/boolean rejection; dedicated wire tests verify zero sends Remove rather than weakening validation silently. Strict integer request types prevent false from being coerced into a clear command.

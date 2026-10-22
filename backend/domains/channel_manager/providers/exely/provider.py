@@ -435,8 +435,8 @@ class ExelyProvider:
                     if restriction in {"stop_sell", "cta", "ctd"}:
                         if not isinstance(restriction_value, bool):
                             raise ExelyValidationError("Restriction value must be boolean", field="value")
-                    elif isinstance(restriction_value, bool) or not isinstance(restriction_value, int) or restriction_value < 1:
-                        raise ExelyValidationError("Length of stay must be a positive integer", field="value")
+                    elif isinstance(restriction_value, bool) or not isinstance(restriction_value, int) or restriction_value < 0:
+                        raise ExelyValidationError("Length of stay must be nonnegative; zero removes the restriction", field="value")
                 batch_messages.append(item)
         else:
             validate_ari_payload(room_type_code, rate_plan_code, start_date, end_date)
@@ -562,6 +562,7 @@ class ExelyProvider:
         *,
         provider_id_context: str = "",
         confirmations: list[dict[str, Any]] | None = None,
+        rejection_reason: str = "",
     ) -> ProviderResult:
         """Confirm reservation delivery via OTA_NotifReportRQ.
         Exely accepts ResStatus='Reserved' for delivery confirmation."""
@@ -584,8 +585,11 @@ class ExelyProvider:
         try:
             if not create_datetime or not last_modify_datetime:
                 raise ExelyValidationError("Exact provider acknowledgement timestamps are required")
-            acknowledgement_rows = confirmations or [{"pms_booking_id": confirmation_number, "room_stay_indexes": []}]
-            if not reservation_id or not acknowledgement_rows or any(not str(row.get("pms_booking_id") or "") for row in acknowledgement_rows):
+            rejection = res_status == "Requestdenied"
+            acknowledgement_rows = [] if rejection else (confirmations or [{"pms_booking_id": confirmation_number, "room_stay_indexes": []}])
+            if rejection and (rejection_reason != "ROOM_RATE_MAPPING_MISSING" or confirmation_number or confirmations):
+                raise ExelyValidationError("Mapping rejection cannot include a PMS confirmation")
+            if not reservation_id or (not rejection and (not acknowledgement_rows or any(not str(row.get("pms_booking_id") or "") for row in acknowledgement_rows))):
                 raise ExelyValidationError("A provider reservation and PMS confirmation are required")
             xml = build_notif_report_rq(
                 self._username,
@@ -598,6 +602,7 @@ class ExelyProvider:
                 res_status=res_status,
                 provider_id_context=provider_id_context,
                 confirmations=acknowledgement_rows,
+                rejection_reason=rejection_reason,
             )
 
             logger.info("[EXELY] operation=reservation_ack delivery_state=sending")

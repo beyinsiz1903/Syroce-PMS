@@ -156,6 +156,7 @@ def build_notif_report_rq(
     *,
     provider_id_context: str = "",
     confirmations: list[dict[str, Any]] | None = None,
+    rejection_reason: str = "",
 ) -> str:
     """Build OTA_NotifReportRQ to confirm reservation delivery to Exely.
 
@@ -169,6 +170,28 @@ def build_notif_report_rq(
         raise ValueError("Exact provider CreateDateTime and LastModifyDateTime are required")
     if res_status not in {"Reserved", "Requestdenied"}:
         raise ValueError("Unsupported Exely acknowledgement status")
+
+    if res_status == "Requestdenied":
+        # A denied reservation has no PMS confirmation. Do not manufacture one
+        # or emit Success: the WSDL puts Errors on the request, not the booking.
+        if rejection_reason != "ROOM_RATE_MAPPING_MISSING" or not reservation_id or confirmation_number or confirmations:
+            raise ValueError("Mapping rejection requires a provider reservation and no PMS confirmation")
+        rq = etree.Element(f"{{{OTA_NS}}}OTA_NotifReportRQ", attrib={"Version": "1.17"})
+        errors = etree.SubElement(rq, f"{{{OTA_NS}}}Errors")
+        etree.SubElement(errors, f"{{{OTA_NS}}}Error", attrib={"Type": "3"}).text = "Room type or rate plan is not mapped in PMS. Correct the mapping and resend the reservation."
+        details = etree.SubElement(rq, f"{{{OTA_NS}}}NotifDetails", attrib={"HotelCode": hotel_code})
+        report = etree.SubElement(details, f"{{{OTA_NS}}}HotelNotifReport")
+        reservations = etree.SubElement(report, f"{{{OTA_NS}}}HotelReservations")
+        reservation = etree.SubElement(reservations, f"{{{OTA_NS}}}HotelReservation", attrib={
+            "ResStatus": "Requestdenied", "CreateDateTime": create_datetime, "LastModifyDateTime": last_modify_datetime,
+        })
+        attributes = {"Type": "14", "ID": reservation_id}
+        if provider_id_context:
+            attributes["ID_Context"] = provider_id_context
+        etree.SubElement(reservation, f"{{{OTA_NS}}}UniqueID", attrib=attributes)
+        return _soap_envelope(username, password, hotel_code, rq)
+    if rejection_reason:
+        raise ValueError("A successful delivery cannot contain a mapping rejection")
 
     acknowledgement_rows = confirmations or [{"pms_booking_id": confirmation_number, "room_stay_indexes": []}]
     if not acknowledgement_rows or any(not str(row.get("pms_booking_id") or "") for row in acknowledgement_rows):
@@ -300,6 +323,22 @@ def build_hotel_res_notif_rq(
     return _soap_envelope(username, password, hotel_code, rq)
 
 
+def _los_attributes(operation: str, value: int) -> dict[str, str]:
+    """Zero is an explicit clear command, never SetMin/MaxLOS Time=0.
+
+    PMSConnect's LengthsOfStayType defines RemoveMinLOS/RemoveMaxLOS;
+    Time is optional and is omitted for removal. None means no change.
+    """
+    if operation not in {"min_los", "min_los_arrival", "max_los"}:
+        raise ValueError("Unsupported length-of-stay operation")
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ValueError("Length of stay must be nonnegative; zero removes the restriction")
+    suffix = "MaxLOS" if operation == "max_los" else "MinLOS"
+    if value == 0:
+        return {"MinMaxMessageType": f"Remove{suffix}"}
+    return {"Time": str(value), "MinMaxMessageType": f"Set{suffix}"}
+
+
 def build_ari_update_rq(
     username: str,
     password: str,
@@ -360,16 +399,13 @@ def build_ari_update_rq(
         los_attributes = {"ArrivalDateBased": "true"} if min_los_arrival is not None else {}
         los = etree.SubElement(msg, f"{{{OTA_NS}}}LengthsOfStay", attrib=los_attributes)
         los_value = min_los_arrival if min_los_arrival is not None else min_stay
-        los_type = "SetMaxLOS" if max_stay is not None else "SetMinLOS"
+        los_operation = "max_los" if max_stay is not None else "min_los"
         if max_stay is not None:
             los_value = max_stay
         etree.SubElement(
             los,
             f"{{{OTA_NS}}}LengthOfStay",
-            attrib={
-                "Time": str(los_value),
-                "MinMaxMessageType": los_type,
-            },
+            attrib=_los_attributes(los_operation, los_value),
         )
 
     if cta is not None:
@@ -478,10 +514,7 @@ def build_restriction_batch_rq(
             etree.SubElement(
                 los,
                 f"{{{OTA_NS}}}LengthOfStay",
-                attrib={
-                    "Time": str(value),
-                    "MinMaxMessageType": "SetMaxLOS" if operation == "max_los" else "SetMinLOS",
-                },
+                attrib=_los_attributes(operation, value),
             )
     return _soap_envelope(username, password, hotel_code, rq)
 

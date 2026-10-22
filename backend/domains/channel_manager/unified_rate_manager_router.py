@@ -30,7 +30,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StrictInt
 from pymongo import UpdateOne
 
 from core.audit import log_audit_event
@@ -106,9 +106,9 @@ class RoomTypeValuesItem(BaseModel):
     rate_plan_codes: list[str]
     rate: float | None = None
     availability: int | None = None
-    min_stay: int | None = None
-    min_los_arrival: int | None = None
-    max_stay: int | None = None
+    min_stay: StrictInt | None = None
+    min_los_arrival: StrictInt | None = None
+    max_stay: StrictInt | None = None
     stop_sell: bool | None = None
     cta: bool | None = None
     ctd: bool | None = None
@@ -130,9 +130,9 @@ class UnifiedBulkUpdateRequest(BaseModel):
     selected_days: list[int] | None = None
     rate: float | None = None
     availability: int | None = None
-    min_stay: int | None = None
-    min_los_arrival: int | None = None
-    max_stay: int | None = None
+    min_stay: StrictInt | None = None
+    min_los_arrival: StrictInt | None = None
+    max_stay: StrictInt | None = None
     stop_sell: bool | None = None
     cta: bool | None = None
     ctd: bool | None = None
@@ -977,6 +977,24 @@ async def get_unified_room_types(current_user: User = Depends(get_current_user))
 # ── Bulk Grid Update ─────────────────────────────────────────────
 
 
+def _validate_los_updates(request: UnifiedBulkUpdateRequest, provider: str) -> None:
+    """Preflight explicit Exely-only removal before local or remote writes."""
+    rows = request.per_room_values or [request]
+    for row in rows:
+        values = {}
+        for field in ("min_stay", "min_los_arrival", "max_stay"):
+            value = getattr(row, field) if field in request.update_fields else None
+            if value is None:
+                continue
+            if value < 0:
+                raise HTTPException(422, "Konaklama süresi negatif olamaz; hiçbir kayıt değiştirilmedi.")
+            if value == 0 and (provider != "exely" or request.agencies_only or request.agency_ids):
+                raise HTTPException(422, "Konaklama kısıtı kaldırma yalnız Exely hedefinde desteklenir; acente hedeflerini kaldırın. Hiçbir kayıt değiştirilmedi.")
+            values[field] = value
+        if values.get("min_stay", 0) > 0 and values.get("max_stay", 0) > 0 and values["max_stay"] < values["min_stay"]:
+            raise HTTPException(422, "Maksimum konaklama minimumdan kısa olamaz; hiçbir kayıt değiştirilmedi.")
+
+
 @router.post("/bulk-grid-update")
 async def unified_bulk_grid_update(
     request: UnifiedBulkUpdateRequest,
@@ -1099,6 +1117,7 @@ async def unified_bulk_grid_update(
     if parsed_end < parsed_start:
         raise HTTPException(status_code=422, detail="Bitiş tarihi başlangıç tarihinden önce olamaz")
     update_fields = set(request.update_fields)
+    _validate_los_updates(request, provider_type)
     _validate_agency_restrictions(request.agency_ids, update_fields)
 
     # PMS-only room types (not known to the channel manager) are sold to

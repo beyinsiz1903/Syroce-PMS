@@ -742,6 +742,8 @@ const ExelyIntegration = ({
                               <Badge variant={res.pms_status === 'imported' ? 'default' : 'secondary'}>
                                 {res.pms_status || 'pending'}
                               </Badge>
+                              {res.pms_status === 'pending_mapping' && res.mapping_rejection_state === 'SENT' && <p className="mt-1 text-xs text-amber-700">Eksik eşleşme Exely’ye bildirildi; PMS teslim onayı verilmedi.</p>}
+                              {res.pms_status === 'pending_mapping' && ['SENDING', 'AMBIGUOUS'].includes(res.mapping_rejection_state) && <p role="alert" className="mt-1 text-xs text-red-700">Bildirim sonucu doğrulanmalı. Otomatik tekrar ve PMS aktarımı durduruldu.</p>}
                             </td>
                             <td className="py-2">
                               {res.pms_status !== 'imported' && res.state === 'confirmed' ? <Button data-testid={`exely-import-btn-${i}`} size="sm" variant="outline" className="h-7 text-xs" onClick={() => handleImport(res.id || res.external_id)}>

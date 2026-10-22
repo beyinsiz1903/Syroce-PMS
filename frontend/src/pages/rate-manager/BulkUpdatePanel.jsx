@@ -190,6 +190,7 @@ export const BulkUpdatePanel = ({
                 pricingSettings={pricingSettings} occupancyPricingRules={occupancyPricingRules} saveOccupancyPricingRule={saveOccupancyPricingRule} getPricingLabel={getPricingLabel} togglePricingType={togglePricingType}
                 currencySymbol={currencySymbol} currency={currency}
                 channelProvider={channelProvider}
+                canRemoveLos={channelProvider === 'exely' && !agenciesOnly}
                 totalSelectedRoomTypes={Object.keys(selections).length}
                 wideFieldLayout={wideFieldLayout}
               />
@@ -336,11 +337,20 @@ const ApplyAllButton = ({ field, value, applyToAllSelected, totalSelectedRoomTyp
   );
 };
 
+const LosInput = ({ value, onChange, label, testId, canRemove }) => (
+  <div className="min-w-0 flex-1">
+    <Input type="number" min={canRemove ? '0' : '1'} placeholder={label} aria-label={label} value={value} onChange={e => onChange(e.target.value)} className="h-8 text-sm" data-testid={testId} />
+    {canRemove && <button type="button" className="text-[11px] text-amber-700 underline" aria-label={`${label} kısıtını kaldır`} onClick={() => onChange('0')}>
+      {String(value) === '0' ? 'Kısıt kaldırılacak' : 'Kısıtı kaldır'}
+    </button>}
+  </div>
+);
+
 const RoomTypeList = ({
   roomTypeTree, enabledFields, selections, roomValues, updateRoomValue, getDefaultValues, applyToAllSelected,
   expandedRoomTypes, toggleExpanded, isRoomTypeSelected, isRoomTypeFullySelected, isRatePlanSelected,
   toggleRoomType, toggleRatePlan, pricingSettings, occupancyPricingRules, saveOccupancyPricingRule, getPricingLabel, togglePricingType, currencySymbol, currency,
-  totalSelectedRoomTypes, channelProvider, wideFieldLayout,
+  totalSelectedRoomTypes, channelProvider, wideFieldLayout, canRemoveLos,
 }) => {
   const { t } = useTranslation();
   const [editingRule, setEditingRule] = useState(null);
@@ -420,21 +430,21 @@ const RoomTypeList = ({
               {enabledFields.has('min_stay') && (
                 <div className="flex items-center gap-1">
                   <Moon className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
-                  <Input type="number" min="1" placeholder="Min. konaklama" value={rv.min_stay} onChange={e => updateRoomValue(rt.code, 'min_stay', e.target.value)} className="h-8 text-sm" data-testid={`min-stay-input-${rt.code}`} />
+                  <LosInput label="Min. konaklama" value={rv.min_stay} onChange={value => updateRoomValue(rt.code, 'min_stay', value)} canRemove={canRemoveLos} testId={`min-stay-input-${rt.code}`} />
                   <ApplyAllButton field="min_stay" value={rv.min_stay} applyToAllSelected={applyToAllSelected} totalSelectedRoomTypes={totalSelectedRoomTypes} />
                 </div>
               )}
               {enabledFields.has('min_los_arrival') && (
                 <div className="flex items-center gap-1">
                   <Moon className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
-                  <Input type="number" min="1" placeholder="Varış bazlı min." value={rv.min_los_arrival} onChange={e => updateRoomValue(rt.code, 'min_los_arrival', e.target.value)} className="h-8 text-sm" data-testid={`min-los-arrival-input-${rt.code}`} />
+                  <LosInput label="Varış bazlı min." value={rv.min_los_arrival} onChange={value => updateRoomValue(rt.code, 'min_los_arrival', value)} canRemove={canRemoveLos} testId={`min-los-arrival-input-${rt.code}`} />
                   <ApplyAllButton field="min_los_arrival" value={rv.min_los_arrival} applyToAllSelected={applyToAllSelected} totalSelectedRoomTypes={totalSelectedRoomTypes} />
                 </div>
               )}
               {enabledFields.has('max_stay') && (
                 <div className="flex items-center gap-1">
                   <Moon className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
-                  <Input type="number" min="1" placeholder="Max. konaklama" value={rv.max_stay} onChange={e => updateRoomValue(rt.code, 'max_stay', e.target.value)} className="h-8 text-sm" data-testid={`max-stay-input-${rt.code}`} />
+                  <LosInput label="Max. konaklama" value={rv.max_stay} onChange={value => updateRoomValue(rt.code, 'max_stay', value)} canRemove={canRemoveLos} testId={`max-stay-input-${rt.code}`} />
                   <ApplyAllButton field="max_stay" value={rv.max_stay} applyToAllSelected={applyToAllSelected} totalSelectedRoomTypes={totalSelectedRoomTypes} />
                 </div>
               )}
