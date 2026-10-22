@@ -22,6 +22,13 @@ VERSION = "2026-10-22T05:38:43Z"
 NUMBER = "20261110-501694-1200421078"
 
 
+def _mock_request(http):
+    async def request(method, url, **kwargs):
+        assert kwargs.pop("max_response_bytes") == 2_000_000
+        return await http.request(method, url, **kwargs)
+    return request
+
+
 @pytest.fixture
 def scenario(monkeypatch):
     database = SimpleNamespace(**{name: _Collection() for name in (
@@ -167,7 +174,7 @@ async def test_client_uses_only_official_mode_host_token_cache_and_exact_propert
             return httpx.Response(200, json={"access_token": "synthetic-token", "expires_in": 900})
         return httpx.Response(200, json={"booking": scenario[3]})
     async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as http:
-        client = read.ReadReservationClient({**CONNECTION, "endpoint_url": "https://attacker.invalid"}, {"client_id": "synthetic-client", "client_secret": "synthetic-secret"}, http)
+        client = read.ReadReservationClient({**CONNECTION, "endpoint_url": "https://attacker.invalid"}, {"client_id": "synthetic-client", "client_secret": "synthetic-secret"}, _mock_request(http))
         await client.booking(NUMBER)
         await client.booking(NUMBER)
         with pytest.raises(read.ReadReservationError):
@@ -188,7 +195,7 @@ async def test_auth_errors_and_redirects_never_leak_provider_body_or_retry(monke
         calls.append(request)
         return httpx.Response(status, text="synthetic-secret", headers={"Location": "https://attacker.invalid"})
     async with httpx.AsyncClient(transport=httpx.MockTransport(handle), follow_redirects=False) as http:
-        client = read.ReadReservationClient(CONNECTION, {"client_id": "synthetic-client", "client_secret": "synthetic-secret"}, http)
+        client = read.ReadReservationClient(CONNECTION, {"client_id": "synthetic-client", "client_secret": "synthetic-secret"}, _mock_request(http))
         with pytest.raises(read.ReadReservationError) as error:
             await client.booking(NUMBER)
     assert str(error.value) == f"EXELY_READ_HTTP_{status}" and "synthetic-secret" not in repr(error.value)
@@ -333,6 +340,27 @@ async def test_client_rejects_invalid_or_oversize_response_without_provider_data
     monkeypatch.setenv("E2E_EXTERNAL_DRY_RUN", "false")
     monkeypatch.setattr(read, "reservation_sync_block_reason", lambda: "")
     async with httpx.AsyncClient(transport=httpx.MockTransport(lambda request: httpx.Response(200, content=body))) as http:
-        client = read.ReadReservationClient(CONNECTION, {"client_id": "synthetic", "client_secret": "synthetic"}, http)
+        client = read.ReadReservationClient(CONNECTION, {"client_id": "synthetic", "client_secret": "synthetic"}, _mock_request(http))
         with pytest.raises(read.ReadReservationError):
             await client.booking(NUMBER)
+
+
+@pytest.mark.parametrize("method", ["GET", "POST"])
+async def test_bounded_safe_request_keeps_dns_pinning_tls_host_and_rejects_large_decoded_bodies(monkeypatch, method):
+    import gzip
+
+    from integrations.xchange import safety
+
+    target = "https://connect.test.hopenapi.com/auth/token"
+    resolved = Mock(return_value=("connect.test.hopenapi.com", ("93.184.216.34",), 443))
+    monkeypatch.setattr(safety, "_resolve_targets", resolved)
+    response_body = b'{"synthetic":"body"}'
+    transport = httpx.MockTransport(lambda request: httpx.Response(200, content=gzip.compress(response_body), headers={"Content-Encoding": "gzip"}))
+    pinned = Mock(return_value=transport)
+    monkeypatch.setattr(safety, "_pinned_transport", pinned)
+    response = await safety.safe_request_async(method, target, max_response_bytes=100)
+    assert response.content == response_body and response.json() == {"synthetic": "body"}
+    resolved.assert_called_once_with(target)
+    pinned.assert_called_once_with("connect.test.hopenapi.com", ("93.184.216.34",))
+    with pytest.raises(safety.EgressDenied, match="byte limit"):
+        await safety.safe_request_async(method, target, max_response_bytes=5)

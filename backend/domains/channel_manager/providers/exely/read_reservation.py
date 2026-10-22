@@ -13,6 +13,7 @@ from typing import Any
 import httpx
 
 from core.secrets import get_secrets_manager
+from integrations.xchange import safety
 
 from .production_safety import reservation_sync_block_reason
 
@@ -46,11 +47,11 @@ def require_read_allowed() -> None:
 
 
 class ReadReservationClient:
-    def __init__(self, connection: dict[str, Any], credentials: dict[str, str], http: httpx.AsyncClient):
+    def __init__(self, connection: dict[str, Any], credentials: dict[str, str], request=None):
         self.origin = origin_for(connection)
         self.property_id = str(connection["hotel_code"])
         self._credentials = credentials
-        self._http = http
+        self._request = request or safety.safe_request_async
         self._token = ""
         self._expires_at = 0.0
         self._last_booking_read = 0.0
@@ -58,18 +59,16 @@ class ReadReservationClient:
     async def _json(self, method: str, path: str, **kwargs) -> dict[str, Any]:
         require_read_allowed()
         try:
-            async with self._http.stream(method, self.origin + path, **kwargs) as response:
-                if response.status_code != 200:
-                    code = response.status_code
-                    raise ReadReservationError(f"EXELY_READ_HTTP_{code}")
-                body = bytearray()
-                async for chunk in response.aiter_bytes():
-                    body.extend(chunk)
-                    if len(body) > 2_000_000:
-                        raise ReadReservationError("EXELY_READ_RESPONSE_TOO_LARGE")
-                result = json.loads(body)
+            response = await self._request(method, self.origin + path, timeout=20, max_response_bytes=2_000_000, follow_redirects=False, **kwargs)
+            if response.status_code != 200:
+                raise ReadReservationError(f"EXELY_READ_HTTP_{response.status_code}")
+            if len(response.content) > 2_000_000:
+                raise ReadReservationError("EXELY_READ_RESPONSE_TOO_LARGE")
+            result = json.loads(response.content)
         except ReadReservationError:
             raise
+        except safety.EgressDenied:
+            raise ReadReservationError("EXELY_READ_EGRESS_DENIED") from None
         except (httpx.HTTPError, ValueError, UnicodeError):
             raise ReadReservationError("EXELY_READ_RESPONSE_UNAVAILABLE") from None
         if not isinstance(result, dict):
@@ -112,9 +111,8 @@ class ReadReservationClient:
 
 @asynccontextmanager
 async def read_client(connection: dict[str, Any], credentials: dict[str, str]):
-    # Exact vendor origins only; no caller URL, proxy environment or redirects.
-    async with httpx.AsyncClient(timeout=20, follow_redirects=False, trust_env=False) as http:
-        yield ReadReservationClient(connection, credentials, http)
+    # The common safety layer owns pinned transport creation and cleanup.
+    yield ReadReservationClient(connection, credentials)
 
 
 async def saved_read_credentials(tenant_id: str, connection: dict[str, Any]) -> dict[str, str] | None:
