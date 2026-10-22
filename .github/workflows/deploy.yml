@@ -100,10 +100,10 @@ jobs:
             # every Compose healthcheck. Nginx remains online throughout the
             # image build instead of exposing a multi-minute hard outage.
             if ! docker compose -f docker-compose.prod.yml up -d --remove-orphans --wait --wait-timeout 180; then
-              echo "::error::Production services did not become healthy within the deployment window"
-              docker compose -f docker-compose.prod.yml ps || true
-              echo "--- backend startup diagnostics (last 250 lines) ---"
-              docker compose -f docker-compose.prod.yml logs --no-color --tail=250 backend || true
+              echo "::error::Production service startup or health verification failed"
+              docker compose -f docker-compose.prod.yml ps --all || true
+              echo "--- service startup diagnostics (last 150 lines per service; no environment dump) ---"
+              docker compose -f docker-compose.prod.yml logs --no-color --tail=150 frontend backend worker beat nginx || true
               exit 1
             fi
 

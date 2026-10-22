@@ -85,6 +85,11 @@ services:
 
   # ── Frontend (scalable) ──
   frontend:
+    # Nginx resolves backend:8001 at startup. Do not start it while the
+    # backend container is being replaced and its Docker DNS entry is absent.
+    depends_on:
+      backend:
+        condition: service_healthy
     build:
       context: ./frontend
       dockerfile: Dockerfile
