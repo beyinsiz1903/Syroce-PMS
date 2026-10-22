@@ -25,14 +25,15 @@ export const BulkUpdatePanel = ({
   totalSelectedRoomTypes, totalSelectedPlans,
   saving, handleBulkUpdate, handleReset, loading,
   activeChannels, activeChannelsStale, selectedChannelCodes, toggleChannel, toggleAllChannels, channelProvider,
+  agenciesOnly = false,
   mobileStep = 1, setMobileStep,
 }) => {
   const { t } = useTranslation();
   const [reviewOpen, setReviewOpen] = useState(false);
   const review = useMemo(() => buildRateUpdateReview({
     dateFrom, dateTo, allDays, selectedDays, selections, enabledFields, roomValues,
-    selectedChannelCodes, activeChannelsStale,
-  }), [dateFrom, dateTo, allDays, selectedDays, selections, enabledFields, roomValues, selectedChannelCodes, activeChannelsStale]);
+    selectedChannelCodes, activeChannelsStale, channelProvider, agenciesOnly,
+  }), [dateFrom, dateTo, allDays, selectedDays, selections, enabledFields, roomValues, selectedChannelCodes, activeChannelsStale, channelProvider, agenciesOnly]);
   const canContinueFromFields = enabledFields.size > 0 && Boolean(dateFrom) && Boolean(dateTo);
   const canContinueFromRooms = totalSelectedRoomTypes > 0;
   const goToStep = (step) => setMobileStep?.(Math.max(1, Math.min(3, step)));

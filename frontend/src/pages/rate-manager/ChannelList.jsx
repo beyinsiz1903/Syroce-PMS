@@ -20,7 +20,7 @@ export const ChannelList = ({ channels = [], stale = false, selectedChannelCodes
           Kanal bağlantısı doğrulanamadı. Güvenlik için kanal gönderimi kapatıldı.
         </div>}
       {normalized.length === 0 ? <p className="text-xs text-gray-400" data-testid="rate-manager-no-active-channels">
-          Aktif kanal bulunamadı.
+          {provider === 'exely' ? 'Exely bu bağlantıda OTA kanal listesini sunmuyor; bu, bağlantının kapalı olduğu anlamına gelmez.' : 'Aktif kanal bulunamadı.'}
         </p> : <div className="border-t pt-1.5 space-y-1">
           {provider === 'hotelrunner' && !stale && selectableChannels.length > 0 && <label className="flex cursor-pointer items-center gap-2 border-b border-slate-100 pb-1.5 text-xs font-medium text-slate-700">
               <Checkbox checked={allSelected} onCheckedChange={onToggleAll} data-testid="channel-select-all" />

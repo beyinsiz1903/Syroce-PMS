@@ -31,6 +31,8 @@ export const buildRateUpdateReview = ({
   roomValues = {},
   selectedChannelCodes = new Set(),
   activeChannelsStale = false,
+  channelProvider,
+  agenciesOnly = false,
 }) => {
   const errors = [];
   const warnings = [];
@@ -69,7 +71,13 @@ export const buildRateUpdateReview = ({
   });
 
   if (activeChannelsStale) warnings.push('Kanal listesi güncel değil; yayın öncesinde bağlantıları yenileyin.');
-  if ((selectedChannelCodes?.size ?? 0) === 0) warnings.push('OTA kanalı seçilmedi; değişiklik yalnızca PMS ve seçili acente kapsamına uygulanır.');
+  if (agenciesOnly || channelProvider === 'agency') {
+    warnings.push('Yalnız seçili anlaşmalı acentelere gönderilir; kanal yöneticisine ve otel takvimine gönderilmez.');
+  } else if (channelProvider === 'exely') {
+    warnings.push('Gönderim hedefi Exely kanal yöneticisidir; OTA bazlı kanal seçimi yapılmaz. Exely teslim sonucu ayrıca doğrulanmalıdır.');
+  } else if ((selectedChannelCodes?.size ?? 0) === 0) {
+    warnings.push('OTA kanalı seçilmedi; değişiklik yalnızca PMS ve seçili acente kapsamına uygulanır.');
+  }
 
   return {
     errors: [...new Set(errors)],
