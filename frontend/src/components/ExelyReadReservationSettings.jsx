@@ -28,6 +28,7 @@ export default function ExelyReadReservationSettings({ connection, requestConfig
         ({ data } = await axios.post(`${ROOT}/connect`, {
           client_id: clientId, client_secret: clientSecret,
           reservation_id: number.trim(), confirmation: `ENABLE_READ_RESERVATION:${property}`,
+          ...(property === '501694' && connection.mode === 'sandbox' ? { test_read_only_consent: 'ALLOW_TEST_READ:501694' } : {}),
         }, requestConfig));
         setResult({ status: 'configured', rooms: data.rooms });
         toast.success('Okuma bağlantısı doğrulandı ve şifreli kasaya kaydedildi. Kişi ayrımı henüz değiştirilmedi.');
@@ -74,6 +75,7 @@ export default function ExelyReadReservationSettings({ connection, requestConfig
         <Label className="flex items-start gap-2"><input type="checkbox" checked={consent} onChange={event => setConsent(event.target.checked)} disabled={busy} />
           <span>Yalnız bu tesisin rezervasyon okuma anahtarlarının Syroce PMS şifreli kasasında saklanmasını ve otomatik kişi ayrımı doğrulamasını onaylıyorum. Exely’de yalnız Read Reservation API açık olmalıdır.</span>
         </Label>
+        {property === '501694' && connection.mode === 'sandbox' && <p className="text-sm text-muted-foreground">Bu onay, genel dış bağlantı deneme kilidi açıkken de yalnız TEST 501694 için token alma ve rezervasyon okuma izni verir. Bu özel izin üretim tesislerine veya yazma API’lerine uygulanmaz; durdurma bu özel izni de kaldırır.</p>}
         <Button onClick={() => run('connect')} disabled={busy || !consent || !number.trim() || !clientId.trim() || !clientSecret.trim()}>Okuma bağlantısını doğrula ve kaydet</Button>
       </>}
       {enabled && <div className="flex flex-wrap gap-2">

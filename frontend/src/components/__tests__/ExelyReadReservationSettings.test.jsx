@@ -30,6 +30,7 @@ describe('Exely REST read-only setup and reconciliation', () => {
     fireEvent.click(save);
     await waitFor(() => expect(post).toHaveBeenCalledWith('/channel-manager/exely/read-reservation/connect', {
       client_id: 'synthetic-client', client_secret: 'synthetic-secret', reservation_id: 'synthetic-booking', confirmation: 'ENABLE_READ_RESERVATION:501694',
+      test_read_only_consent: 'ALLOW_TEST_READ:501694',
     }, {}));
     await waitFor(() => expect(onChanged).toHaveBeenCalled());
     expect(screen.getByLabelText('Read Reservation client_secret')).toHaveValue('');

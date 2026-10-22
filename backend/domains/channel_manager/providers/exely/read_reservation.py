@@ -38,17 +38,26 @@ def origin_for(connection: dict[str, Any]) -> str:
     return ORIGINS[mode]
 
 
-def require_read_allowed() -> None:
+def test_read_scope(connection: dict[str, Any]) -> str:
+    if connection.get("mode") != "sandbox" or str(connection.get("hotel_code")) != "501694" or not connection.get("tenant_id") or not connection.get("id"):
+        return ""
+    return f"{connection['tenant_id']}:{connection['id']}:501694:sandbox:read-only"
+
+
+def require_read_allowed(connection: dict[str, Any] | None = None) -> None:
     reason = reservation_sync_block_reason()
     if reason:
         raise ReadReservationError(reason)
     if os.getenv("E2E_EXTERNAL_DRY_RUN", "").lower() in {"true", "1"}:
-        raise ReadReservationError("EXELY_READ_DRY_RUN")
+        scope = test_read_scope(connection or {})
+        if not scope or (connection or {}).get("read_reservation_test_read_scope") != scope:
+            raise ReadReservationError("EXELY_READ_DRY_RUN")
 
 
 class ReadReservationClient:
     def __init__(self, connection: dict[str, Any], credentials: dict[str, str], request=None):
         self.origin = origin_for(connection)
+        self._connection = dict(connection)
         self.property_id = str(connection["hotel_code"])
         self._credentials = credentials
         self._request = request or safety.safe_request_async
@@ -57,7 +66,12 @@ class ReadReservationClient:
         self._last_booking_read = 0.0
 
     async def _json(self, method: str, path: str, **kwargs) -> dict[str, Any]:
-        require_read_allowed()
+        require_read_allowed(self._connection)
+        # Even an explicitly approved TEST exception cannot call write APIs.
+        if not ((method == "POST" and path == "/auth/token") or (
+            method == "GET" and re.fullmatch(rf"/api/read-reservation/v1/properties/{self.property_id}/bookings/[A-Za-z0-9_-]{{1,160}}", path)
+        )):
+            raise ReadReservationError("EXELY_READ_OPERATION_NOT_ALLOWED")
         try:
             response = await self._request(method, self.origin + path, timeout=20, max_response_bytes=2_000_000, follow_redirects=False, **kwargs)
             if response.status_code != 200:

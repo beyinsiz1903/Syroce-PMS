@@ -18,6 +18,37 @@ from tests.test_exely_reservation_lifecycle import _Collection, _project
 pytestmark = pytest.mark.exely_failure_stress
 
 CONNECTION = {"tenant_id": "tenant-a", "id": "conn-a", "hotel_code": "501694", "mode": "sandbox", "is_active": True, "read_reservation_enabled": True}
+
+
+@pytest.mark.parametrize("drift", [None, "tenant_id", "id", "hotel_code", "mode", "unapproved"])
+def test_dry_run_exception_is_explicit_and_bound_to_only_the_test_connection(monkeypatch, drift):
+    monkeypatch.setenv("E2E_EXTERNAL_DRY_RUN", "true")
+    monkeypatch.setattr(read, "reservation_sync_block_reason", lambda: "")
+    connection = {**CONNECTION, "read_reservation_test_read_scope": read.test_read_scope(CONNECTION)}
+    if drift == "unapproved":
+        connection.pop("read_reservation_test_read_scope")
+    elif drift:
+        connection[drift] = "different"
+    if drift:
+        with pytest.raises(read.ReadReservationError, match="EXELY_READ_DRY_RUN"):
+            read.require_read_allowed(connection)
+    else:
+        read.require_read_allowed(connection)
+        monkeypatch.setattr(read, "reservation_sync_block_reason", lambda: "EXELY_SYNC_DISABLED")
+        with pytest.raises(read.ReadReservationError, match="EXELY_SYNC_DISABLED"):
+            read.require_read_allowed(connection)
+
+
+@pytest.mark.parametrize("method,path", [("POST", "/api/write"), ("GET", "/api/read-reservation/v1/properties/999/bookings/a"), ("DELETE", "/auth/token")])
+async def test_approved_test_read_cannot_invoke_other_paths_or_methods(monkeypatch, method, path):
+    monkeypatch.setenv("E2E_EXTERNAL_DRY_RUN", "true")
+    monkeypatch.setattr(read, "reservation_sync_block_reason", lambda: "")
+    request = AsyncMock()
+    connection = {**CONNECTION, "read_reservation_test_read_scope": read.test_read_scope(CONNECTION)}
+    client = read.ReadReservationClient(connection, {}, request)
+    with pytest.raises(read.ReadReservationError, match="EXELY_READ_OPERATION_NOT_ALLOWED"):
+        await client._json(method, path)
+    request.assert_not_awaited()
 VERSION = "2026-10-22T05:38:43Z"
 NUMBER = "20261110-501694-1200421078"
 
@@ -220,7 +251,7 @@ async def test_setup_validates_before_saving_scoped_keys_and_never_applies_or_re
         yield SimpleNamespace(booking=AsyncMock(return_value=remote))
     vault = SimpleNamespace(store_provider_credentials=AsyncMock())
     monkeypatch.setattr(api, "read_client", fake_client)
-    monkeypatch.setattr(api, "require_read_allowed", lambda: None)
+    monkeypatch.setattr(api, "require_read_allowed", lambda *_: None)
     monkeypatch.setattr(api, "get_secrets_manager", lambda: vault)
     payload = api.ReadSetup(client_id="synthetic-client", client_secret="synthetic-secret", reservation_id=NUMBER, confirmation="ENABLE_READ_RESERVATION:501694")
     before = deepcopy(database.bookings.documents)
@@ -232,6 +263,28 @@ async def test_setup_validates_before_saving_scoped_keys_and_never_applies_or_re
     assert saved["provider"] == "exely-read-reservation" and saved["tenant_id"] == "tenant-a" and saved["property_id"] == "501694"
     assert saved["credentials"]["connection_id"] == "conn-a"
     assert "synthetic-secret" not in repr(payload)
+
+
+async def test_explicit_test_consent_is_saved_only_after_remote_validation(monkeypatch, scenario):
+    database, _, _, remote = scenario
+    monkeypatch.setenv("E2E_EXTERNAL_DRY_RUN", "true")
+    monkeypatch.setattr(read, "reservation_sync_block_reason", lambda: "")
+    @asynccontextmanager
+    async def fake_client(connection, credentials):
+        read.require_read_allowed(connection)
+        yield SimpleNamespace(booking=AsyncMock(return_value=remote))
+    vault = SimpleNamespace(store_provider_credentials=AsyncMock())
+    monkeypatch.setattr(api, "read_client", fake_client)
+    monkeypatch.setattr(api, "get_secrets_manager", lambda: vault)
+    payload = api.ReadSetup(client_id="synthetic-client", client_secret="synthetic-secret", reservation_id=NUMBER,
+                            confirmation="ENABLE_READ_RESERVATION:501694", test_read_only_consent="ALLOW_TEST_READ:501694")
+    await api.connect_read_reservation(payload, SimpleNamespace(tenant_id="tenant-a", name="Synthetic Operator"), None)
+    connection = database.exely_connections.documents[0]
+    assert connection["read_reservation_test_read_scope"] == read.test_read_scope(CONNECTION)
+    read.require_read_allowed(connection)
+    await api.pause_read_reservation(SimpleNamespace(tenant_id="tenant-a"), None)
+    with pytest.raises(read.ReadReservationError, match="EXELY_READ_DRY_RUN"):
+        read.require_read_allowed(database.exely_connections.documents[0])
 
 
 async def test_routes_enforce_permission_dependency_before_any_write(monkeypatch):

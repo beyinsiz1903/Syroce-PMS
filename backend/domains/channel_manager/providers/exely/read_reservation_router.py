@@ -17,6 +17,7 @@ from .read_reservation import (
     read_client,
     require_read_allowed,
     saved_read_credentials,
+    test_read_scope,
 )
 from .security import exely_connection_projection
 
@@ -28,6 +29,7 @@ class ReadSetup(BaseModel):
     client_secret: SecretStr
     reservation_id: str = Field(pattern=r"^[A-Za-z0-9_-]{1,160}$")
     confirmation: str
+    test_read_only_consent: str = ""
 
 
 class ReconcileRequest(BaseModel):
@@ -51,6 +53,12 @@ async def connect_read_reservation(payload: ReadSetup, current_user: User = Depe
     property_id = str(connection["hotel_code"])
     if payload.confirmation != f"ENABLE_READ_RESERVATION:{property_id}":
         raise HTTPException(400, "EXELY_READ_CONFIRMATION_REQUIRED")
+    scope = ""
+    if payload.test_read_only_consent:
+        scope = test_read_scope(connection)
+        if not scope or payload.test_read_only_consent != "ALLOW_TEST_READ:501694":
+            raise HTTPException(400, "EXELY_READ_TEST_CONSENT_INVALID")
+        connection = {**connection, "read_reservation_test_read_scope": scope}
     credentials = {"client_id": payload.client_id.get_secret_value(), "client_secret": payload.client_secret.get_secret_value()}
     # Validate here, not in Pydantic errors which can echo invalid raw inputs.
     if any(not value.strip() or len(value) > 4096 for value in credentials.values()):
@@ -61,7 +69,7 @@ async def connect_read_reservation(payload: ReadSetup, current_user: User = Depe
     if not reservation:
         raise HTTPException(404, "EXELY_READ_LOCAL_RESERVATION_NOT_FOUND")
     try:
-        require_read_allowed()
+        require_read_allowed(connection)
         async with read_client(connection, credentials) as client:
             remote = await client.booking(payload.reservation_id)
         plans = await reconciliation_plan(current_user.tenant_id, connection, reservation, remote)
@@ -73,7 +81,7 @@ async def connect_read_reservation(payload: ReadSetup, current_user: User = Depe
         result = await db.exely_connections.update_one({
             "tenant_id": current_user.tenant_id, "id": connection["id"], "hotel_code": connection["hotel_code"],
             "mode": connection["mode"], "is_active": True,
-        }, {"$set": {"read_reservation_enabled": True}})
+        }, {"$set": {"read_reservation_enabled": True, "read_reservation_test_read_scope": scope}})
         if result.matched_count != 1:
             raise HTTPException(409, "EXELY_READ_CONNECTION_CHANGED")
     except ReadReservationError as exc:
@@ -92,7 +100,7 @@ async def pause_read_reservation(current_user: User = Depends(get_current_user),
     connection = await active_connection(current_user)
     result = await db.exely_connections.update_one({
         "tenant_id": current_user.tenant_id, "id": connection["id"], "hotel_code": connection["hotel_code"], "is_active": True,
-    }, {"$set": {"read_reservation_enabled": False}})
+    }, {"$set": {"read_reservation_enabled": False, "read_reservation_test_read_scope": ""}})
     if result.matched_count != 1:
         raise HTTPException(409, "EXELY_READ_CONNECTION_CHANGED")
     return {"success": True, "enabled": False}
@@ -102,7 +110,7 @@ async def pause_read_reservation(current_user: User = Depends(get_current_user),
 async def reconcile_read_reservation(payload: ReconcileRequest, current_user: User = Depends(get_current_user), _perm=Depends(require_op("manage_channel_connectors"))):
     connection = await active_connection(current_user)
     try:
-        require_read_allowed()
+        require_read_allowed(connection)
         credentials = await saved_read_credentials(current_user.tenant_id, connection)
         if not credentials:
             raise ReadReservationError("EXELY_READ_NOT_CONFIGURED")
