@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections import Counter
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any
@@ -113,6 +114,11 @@ async def _build_plan(tenant_id: str, connection: dict[str, Any], reservation: d
         adults, ages = count.get("adultCount"), count.get("childAges")
         _require(type(adults) is int and 0 <= adults <= 1000 and isinstance(ages, list) and len(ages) <= 1000 and all(type(age) is int and 0 <= age <= 17 for age in ages), "EXELY_READ_GUEST_COUNTS_INVALID")
         _require(adults + len(ages) > 0 and adults + len(ages) == int(room.get("adults") or 0) + int(room.get("children") or 0), "EXELY_READ_GUEST_TOTAL_MISMATCH")
+        if room.get("children"):
+            # Fill absent bed-count demographics, but never silently choose
+            # between two contradictory structured provider child records.
+            known_ages = list(room.get("children_ages") or [])
+            _require(len(ages) == room["children"] and not (Counter(known_ages) - Counter(ages)), "EXELY_READ_STRUCTURED_DEMOGRAPHICS_CONFLICT")
         lineage = [item for item in reservation.get("room_stay_lineage") or [] if item.get("active", True) and str(item.get("index_number") or "") == str(room.get("index_number") or "")]
         _require(len(lineage) == 1, "EXELY_READ_PMS_LINEAGE_AMBIGUOUS")
         booking_id = lineage[0].get("pms_booking_id")

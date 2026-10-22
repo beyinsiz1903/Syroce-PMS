@@ -124,6 +124,15 @@ async def test_completed_child_age_boundaries_survive(scenario, age):
     assert plans[0]["proof"]["children_ages"] == [age]
 
 
+async def test_conflicting_explicit_soap_child_age_is_held_for_review(scenario):
+    database, reservation, _, remote = scenario
+    reservation["rooms"][0].update(adults=2, children=1, children_ages=[7], children_ages_complete=True)
+    database.bookings.documents[0].update(adults=2, children=1, children_ages=[7])
+    with pytest.raises(read.ReadReservationError, match="STRUCTURED_DEMOGRAPHICS_CONFLICT"):
+        await demo.reconciliation_plan("tenant-a", CONNECTION, reservation, remote)
+    assert database.bookings.documents[0]["children_ages"] == [7]
+
+
 async def test_identical_multiroom_stays_are_held_instead_of_distributing_children_by_index(scenario):
     _, reservation, _, remote = scenario
     reservation["rooms"].append(deepcopy(reservation["rooms"][0]))
