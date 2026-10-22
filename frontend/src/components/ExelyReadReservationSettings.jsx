@@ -62,7 +62,7 @@ export default function ExelyReadReservationSettings({ connection, requestConfig
       </CardDescription>
     </CardHeader>
     <CardContent className="space-y-4">
-      <p className="text-sm text-muted-foreground">PMSConnect yatak sayısı yetişkin sayısı değildir. Ayrı okuma API’siyle yetişkin ve çocuk yaşları doğrulanır. Tesis, sürüm, oda, tarih, kişi toplamı ve tutar eşleşmezse işlem durur. Fiyat, tahsilat, folyo, KBS ve Exely teslim onayı değişmez.</p>
+      <p className="text-sm text-muted-foreground">PMSConnect yatak sayısı yetişkin sayısı değildir. Ayrı okuma API’siyle yetişkin ve çocuk yaşları doğrulanır. SOAP ve REST sürümleri kendi kaynakları içinde izlenir; REST yanıtı iki kez okunarak değişmediği doğrulanır. Tesis, oda, tarih, kişi toplamı veya tutar eşleşmezse işlem durur. Fiyat, tahsilat, folyo, KBS ve Exely teslim onayı değişmez.</p>
       <div className="space-y-2">
         <Label htmlFor="exely-read-number">Doğrulanacak mevcut Exely rezervasyon numarası</Label>
         <Input id="exely-read-number" value={number} onChange={event => setNumber(event.target.value)} placeholder="Örn. YYYYMMDD-tesis-numara" disabled={busy} />

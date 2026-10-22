@@ -9,7 +9,7 @@ from core.security import get_current_user
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_op
 
-from .demographics import reconcile_one, reconciliation_plan
+from .demographics import reconcile_one, stable_reconciliation_plan
 from .read_reservation import (
     VAULT_PROVIDER,
     ReadReservationError,
@@ -71,8 +71,7 @@ async def connect_read_reservation(payload: ReadSetup, current_user: User = Depe
     try:
         require_read_allowed(connection)
         async with read_client(connection, credentials) as client:
-            remote = await client.booking(payload.reservation_id)
-        plans = await reconciliation_plan(current_user.tenant_id, connection, reservation, remote)
+            plans = await stable_reconciliation_plan(current_user.tenant_id, connection, reservation, client)
         await get_secrets_manager().store_provider_credentials(
             tenant_id=current_user.tenant_id, provider=VAULT_PROVIDER, property_id=property_id,
             credentials={**credentials, "property_id": property_id, "connection_id": str(connection["id"]), "mode": connection["mode"]},

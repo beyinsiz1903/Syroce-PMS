@@ -36,11 +36,33 @@ def _money(value: Any) -> Decimal:
         raise ReadReservationError("EXELY_READ_AMOUNT_INVALID") from None
 
 
-def _same_version(left: Any, right: Any) -> bool:
+def _rest_time(value: Any) -> datetime:
+    """REST uses offset-bearing timestamps, independent of SOAP's clock."""
     try:
-        return _provider_time(left) == _provider_time(right)
+        parsed = datetime.fromisoformat(str(value or "").replace("Z", "+00:00"))
+        _require(parsed.tzinfo is not None, "EXELY_READ_REST_VERSION_INVALID")
+        return parsed.astimezone(UTC)
     except (TypeError, ValueError):
-        return False
+        raise ReadReservationError("EXELY_READ_REST_VERSION_INVALID") from None
+
+
+def _rest_hash(remote: dict[str, Any]) -> str:
+    # Hash the full snapshot, not just counts: a same-timestamp provider change
+    # must also prevent reconciliation. Never persist the guest/contact payload.
+    try:
+        return hashlib.sha256(json.dumps(remote, sort_keys=True, allow_nan=False).encode()).hexdigest()
+    except (TypeError, ValueError):
+        raise ReadReservationError("EXELY_READ_DATA_INVALID") from None
+
+
+async def stable_reconciliation_plan(tenant_id: str, connection: dict[str, Any], reservation: dict[str, Any], client) -> list[dict[str, Any]]:
+    number = str(reservation.get("external_id") or "")
+    remote = await client.booking(number)
+    plans = await reconciliation_plan(tenant_id, connection, reservation, remote)
+    expected_hash = _rest_hash(remote)
+    latest = await client.booking(number)
+    _require(_rest_hash(latest) == expected_hash, "EXELY_READ_REMOTE_CHANGED")
+    return plans
 
 
 def _date(value: Any) -> str:
@@ -80,7 +102,14 @@ async def _build_plan(tenant_id: str, connection: dict[str, Any], reservation: d
     _require(reservation.get("tenant_id") == tenant_id and str(reservation.get("property_id")) == property_id, "EXELY_READ_LOCAL_SCOPE_MISMATCH")
     _require(str(remote.get("propertyId")) == property_id and remote.get("number") == number, "EXELY_READ_BOOKING_SCOPE_MISMATCH")
     _require(remote.get("status") == "Active" and reservation.get("state") in {"confirmed", "modified"}, "EXELY_READ_BOOKING_NOT_ACTIVE")
-    _require(_same_version(reservation.get("provider_version_key"), remote.get("modifiedDateTime")), "EXELY_READ_VERSION_MISMATCH")
+    # SOAP LastModifyDateTime and REST modifiedDateTime are NOT a shared
+    # revision identifier. The observed TEST payloads even differ by seconds
+    # after timezone conversion. Fence each source independently; never apply
+    # guessed offsets or a permissive cross-API time tolerance.
+    _require(bool(reservation.get("provider_version_key")), "EXELY_READ_SOURCE_VERSION_INVALID")
+    _provider_time(reservation["provider_version_key"])
+    rest_time = _rest_time(remote.get("modifiedDateTime"))
+    rest_hash = _rest_hash(remote)
     _require(remote.get("currencyCode") == reservation.get("currency"), "EXELY_READ_CURRENCY_MISMATCH")
     _require(_money((remote.get("total") or {}).get("priceAfterTax")) == _money(reservation.get("total")), "EXELY_READ_TOTAL_MISMATCH")
     version = await db.exely_reservation_versions.find_one({
@@ -125,6 +154,12 @@ async def _build_plan(tenant_id: str, connection: dict[str, Any], reservation: d
         _require(booking_id in (reservation.get("pms_booking_ids") or [reservation.get("pms_booking_id")]), "EXELY_READ_PMS_LINEAGE_MISMATCH")
         booking = await db.bookings.find_one({"tenant_id": tenant_id, "id": booking_id}, {"_id": 0})
         _require(bool(booking) and booking.get("property_id") == property_id and booking.get("provider_group_reservation_id") == number and booking.get("booking_source") == "exely", "EXELY_READ_PMS_SCOPE_MISMATCH")
+        previous = booking.get("exely_demographics") or {}
+        if previous.get("status") == "verified" and previous.get("source") == SOURCE:
+            previous_time = _rest_time(previous.get("rest_modified_at"))
+            _require(rest_time >= previous_time, "EXELY_READ_REST_VERSION_REGRESSED")
+            if rest_time == previous_time and previous.get("rest_snapshot_hash"):
+                _require(previous["rest_snapshot_hash"] == rest_hash, "EXELY_READ_REST_VERSION_CONFLICT")
         _require(booking.get("status") == "confirmed" and booking.get("provider_version_key") == reservation.get("provider_version_key"), "EXELY_READ_PMS_VERSION_OR_STATUS_CHANGED")
         _require(bool(mapping.get("pms_room_type")) and booking.get("room_type") == mapping["pms_room_type"], "EXELY_READ_PMS_ROOM_TYPE_CHANGED")
         _require(_date(booking.get("check_in")) == check_in and _date(booking.get("check_out")) == check_out and booking.get("currency") == reservation.get("currency") and _money(booking.get("total_amount")) == amount, "EXELY_READ_PMS_STAY_OR_AMOUNT_CHANGED")
@@ -135,6 +170,7 @@ async def _build_plan(tenant_id: str, connection: dict[str, Any], reservation: d
             "status": "verified", "source": SOURCE, "property_id": property_id,
             "reservation_id": number, "provider_version_key": booking["provider_version_key"],
             "rest_modified_at": remote["modifiedDateTime"], "rest_room_index": remote_room.get("index"),
+            "rest_snapshot_hash": rest_hash,
             "adults": adults, "children_ages": ages,
             **{key: booking[key] for key in ("check_in", "check_out", "room_type", "currency", "total_amount")},
         }
@@ -194,8 +230,7 @@ async def apply_plan(tenant_id: str, connection: dict[str, Any], reservation: di
 async def reconcile_one(tenant_id: str, connection: dict[str, Any], number: str, client) -> dict[str, Any]:
     reservation = await db.exely_reservations.find_one({"tenant_id": tenant_id, "property_id": str(connection["hotel_code"]), "external_id": number}, {"_id": 0})
     _require(bool(reservation), "EXELY_READ_LOCAL_RESERVATION_NOT_FOUND")
-    remote = await client.booking(number)
-    plans = await reconciliation_plan(tenant_id, connection, reservation, remote)
+    plans = await stable_reconciliation_plan(tenant_id, connection, reservation, client)
     return await apply_plan(tenant_id, connection, reservation, plans)
 
 
