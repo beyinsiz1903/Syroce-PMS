@@ -245,6 +245,8 @@ def _validate_update(operation: str, update: dict[str, Any]) -> str:
                 end = datetime.strptime(str(message["end_date"]), "%Y-%m-%d").date()
             except (TypeError, ValueError):
                 return "EXELY_ARI_DATE_FORMAT_INVALID"
+            if start.isoformat() != message["start_date"] or end.isoformat() != message["end_date"]:
+                return "EXELY_ARI_DATE_FORMAT_INVALID"
             if end < start:
                 return "EXELY_ARI_DATE_RANGE_INVALID"
             if operation == "availability_batch":
@@ -279,6 +281,8 @@ def _validate_update(operation: str, update: dict[str, Any]) -> str:
         start = datetime.strptime(str(update["start_date"]), "%Y-%m-%d").date()
         end = datetime.strptime(str(update["end_date"]), "%Y-%m-%d").date()
     except (TypeError, ValueError):
+        return "EXELY_ARI_DATE_FORMAT_INVALID"
+    if start.isoformat() != update["start_date"] or end.isoformat() != update["end_date"]:
         return "EXELY_ARI_DATE_FORMAT_INVALID"
     if end < start:
         return "EXELY_ARI_DATE_RANGE_INVALID"

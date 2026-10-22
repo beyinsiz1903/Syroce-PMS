@@ -2,7 +2,7 @@
 
 import uuid
 from datetime import UTC, datetime
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator, model_validator
 
@@ -33,7 +33,7 @@ class BookingCreate(BaseModel):
     origin: str | None = None
     hold_status: str | None = None
     allocation_source: str | None = None
-    children_ages: list[int] = []
+    children_ages: list[Annotated[int, Field(ge=0, le=17, strict=True)]] = Field(default_factory=list, max_length=50)
     guests_count: int = Field(..., ge=1, le=100)  # Total: adults + children
     total_amount: float = Field(..., ge=0, le=1e12)
     currency: str = Field(default="TRY", min_length=3, max_length=3, pattern=r"^[A-Za-z]{3}$")

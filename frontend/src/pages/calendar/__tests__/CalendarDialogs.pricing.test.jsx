@@ -59,6 +59,38 @@ const percentageRule = {
 };
 
 describe('NewBookingDialog pricing and prepayment', () => {
+  it('requires an explicit arrival-date child age instead of assuming a free infant', () => {
+    render(<DialogHarness
+      initial={{ ...initialDraft, children: 1, children_ages: [], guests_count: 3, base_rate: 1000 }}
+      occupancyPricingRules={percentageRule}
+    />);
+    const age = screen.getByLabelText('Çocuk 1 yaşı (giriş tarihinde)');
+    expect(age).toBeRequired();
+    expect(age).toHaveValue(null);
+    expect(age).toBeInvalid();
+    expect(screen.queryByTestId('occupancy-price-breakdown')).not.toBeInTheDocument();
+
+    fireEvent.change(age, { target: { value: '0' } });
+    expect(age).toBeValid();
+    expect(screen.getByTestId('occupancy-price-breakdown')).toHaveTextContent('0 yaş ücretsiz');
+
+    fireEvent.change(age, { target: { value: '' } });
+    expect(age).toBeInvalid();
+    expect(screen.queryByTestId('occupancy-price-breakdown')).not.toBeInTheDocument();
+    expect(JSON.parse(screen.getByTestId('booking-draft').textContent).children_ages).toEqual(['']);
+  });
+
+  it.each(['6.5', '18', '-1'])('does not quote a child age outside completed years 0–17: %s', value => {
+    render(<DialogHarness
+      initial={{ ...initialDraft, children: 1, children_ages: [''], guests_count: 3, base_rate: 1000 }}
+      occupancyPricingRules={percentageRule}
+    />);
+    const age = screen.getByLabelText('Çocuk 1 yaşı (giriş tarihinde)');
+    fireEvent.change(age, { target: { value } });
+    expect(age).toBeInvalid();
+    expect(screen.queryByTestId('occupancy-price-breakdown')).not.toBeInTheDocument();
+  });
+
   it('does not offer a payment promise to users without payment permission', () => {
     render(<DialogHarness canRecordPrepayment={false} />);
 

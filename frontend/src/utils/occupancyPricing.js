@@ -67,6 +67,8 @@ export const nightsBetween = (checkIn, checkOut) => {
 const roundMoney = value => Math.round((Number(value) + Number.EPSILON) * 100) / 100;
 
 export const calculateOccupancyPrice = ({ baseNightlyRate, nights, adults, childrenAges = [], rule }) => {
+  if (rule?.policy_invalid) return null;
+  if (!Array.isArray(childrenAges) || childrenAges.some(age => age === null || age === undefined || typeof age === 'boolean' || (typeof age === 'string' && age.trim() === ''))) return null;
   const normalized = normalizeOccupancyRule(rule);
   const base = Number(baseNightlyRate);
   const numericAges = childrenAges.map(Number);

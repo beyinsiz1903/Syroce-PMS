@@ -21,6 +21,7 @@ from domains.channel_manager.providers.exely.errors import ExelyValidationError
 from domains.channel_manager.providers.exely.normalizer import normalize_reservation
 from domains.channel_manager.providers.exely.production_safety import reservation_sync_block_reason
 from domains.channel_manager.providers.exely.provider import ExelyProvider
+from domains.channel_manager.providers.exely.scheduling import connection_pull_interval_seconds
 from domains.channel_manager.providers.exely.security import (
     exely_connection_projection,
     resolve_exely_credentials,
@@ -132,19 +133,19 @@ class ExelyPullScheduler:
             logger.warning("[EXELY-PULL] Tick blocked reason=%s", runtime_block)
             return
 
-        connections = await db.exely_connections.find(
+        connections = db.exely_connections.find(
             {"is_active": True, "auto_sync_reservations": True},
             exely_connection_projection(),
-        ).to_list(100)
+        )
 
         active_keys: list[str] = []
-        for conn in connections:
+        async for conn in connections:
             tenant_id = conn.get("tenant_id", "")
             key = safe_fingerprint(tenant_id)
             active_keys.append(key)
             try:
                 set_tenant_context(tenant_id)
-                if not await self._acquire_tenant_lease(tenant_id):
+                if not await self._acquire_tenant_lease(tenant_id, connection_pull_interval_seconds(conn)):
                     logger.info("[EXELY-PULL] tenant_tick_skipped reason=lease_held tenant=%s", key)
                     continue
                 creds = await resolve_exely_credentials(
@@ -197,7 +198,7 @@ class ExelyPullScheduler:
         # counters for connections no longer active (OUTER_LOOP_KEY preserved).
         _transient_tracker.prune(active_keys)
 
-    async def _acquire_tenant_lease(self, tenant_id: str) -> bool:
+    async def _acquire_tenant_lease(self, tenant_id: str, interval_seconds: int | None = None) -> bool:
         """Ensure only one application replica pulls a tenant per interval.
 
         The lease deliberately remains held until its expiry. Releasing it as
@@ -205,13 +206,12 @@ class ExelyPullScheduler:
         tick and consume Exely's request quota twice.
         """
         now = datetime.now(UTC)
-        lease_seconds = max(60, int(self._interval_seconds * 0.9))
+        lease_seconds = max(180, interval_seconds or self._interval_seconds)
         expires_at = now.timestamp() + lease_seconds
         query = {
             "tenant_id": tenant_id,
             "$or": [
                 {"lease_expires_at": {"$lte": now.timestamp()}},
-                {"owner_token": self._lease_owner},
                 {"lease_expires_at": {"$exists": False}},
             ],
         }

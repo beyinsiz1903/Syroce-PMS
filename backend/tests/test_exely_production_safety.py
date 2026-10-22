@@ -322,19 +322,14 @@ async def test_direct_tenant_pull_preserves_classified_provider_read_failure(mon
 async def test_scheduler_persists_invalid_saved_connection_without_raising_or_calling_provider(monkeypatch, caplog):
     """A bad saved endpoint/mode is actionable configuration, not an outage loop."""
 
+    async def connections_cursor():
+        yield {
+            "tenant_id": "synthetic-tenant", "is_active": True,
+            "auto_sync_reservations": True, "mode": "production",
+        }
+
     connections = SimpleNamespace(
-        find=lambda *_args, **_kwargs: SimpleNamespace(
-            to_list=AsyncMock(
-                return_value=[
-                    {
-                        "tenant_id": "synthetic-tenant",
-                        "is_active": True,
-                        "auto_sync_reservations": True,
-                        "mode": "production",
-                    }
-                ]
-            )
-        ),
+        find=lambda *_args, **_kwargs: connections_cursor(),
         update_one=AsyncMock(),
     )
     monkeypatch.setattr(exely_pull_worker, "db", SimpleNamespace(exely_connections=connections))

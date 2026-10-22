@@ -35,6 +35,7 @@ export const NewBookingDialog = ({
   const priceInputMode = newBooking.price_input_mode || 'nightly';
   const occupancyQuote = useMemo(() => (
     occupancyRule?.pricing_type === 'per_person' && priceInputMode !== 'total'
+    && Number(newBooking.children || 0) === (newBooking.children_ages || []).length
   )
     ? calculateOccupancyPrice({
         baseNightlyRate: newBooking.base_rate,
@@ -50,6 +51,7 @@ export const NewBookingDialog = ({
       newBooking.base_rate,
       newBooking.adults,
       newBooking.children_ages,
+      newBooking.children,
     ]);
 
   const recalculateNightlyTotal = useCallback((draft) => {
@@ -414,7 +416,7 @@ export const NewBookingDialog = ({
               onChange={(e) => setNewBooking({
                 ...newBooking,
                 children: Number(e.target.value),
-                children_ages: Array.from({ length: Number(e.target.value) }, (_, index) => newBooking.children_ages?.[index] ?? 0),
+                children_ages: Array.from({ length: Number(e.target.value) }, (_, index) => newBooking.children_ages?.[index] ?? ''),
                 guests_count: newBooking.adults + Number(e.target.value)
               })}
             />
@@ -480,15 +482,19 @@ export const NewBookingDialog = ({
           <div className="grid grid-cols-2 gap-3 rounded-md border bg-gray-50 p-3">
             {Array.from({ length: newBooking.children }).map((_, index) => (
               <div key={index}>
-                <Label>Çocuk {index + 1} yaşı</Label>
+                <Label htmlFor={`new-booking-child-age-${index}`}>Çocuk {index + 1} yaşı (giriş tarihinde)</Label>
                 <Input
+                  id={`new-booking-child-age-${index}`}
                   type="number"
                   min="0"
                   max="17"
-                  value={newBooking.children_ages?.[index] ?? 0}
+                  step="1"
+                  required
+                  placeholder="Yaşını girin"
+                  value={newBooking.children_ages?.[index] ?? ''}
                   onChange={event => {
                     const ages = [...(newBooking.children_ages || [])];
-                    ages[index] = Number(event.target.value);
+                    ages[index] = event.target.value === '' ? '' : Number(event.target.value);
                     setNewBooking({ ...newBooking, children_ages: ages });
                   }}
                 />

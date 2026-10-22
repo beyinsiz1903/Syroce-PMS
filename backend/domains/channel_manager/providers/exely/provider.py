@@ -19,6 +19,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from . import observability as obs
+from .ari_delivery import preview_exely_ari
 from .client import EXELY_DEFAULT_URL, ExelySoapTransport
 from .errors import (
     ExelyAuthError,
@@ -392,6 +393,16 @@ class ExelyProvider:
         }
         if operation not in supported:
             raise ExelyValidationError("Unsupported Exely ARI operation", field="operation")
+
+        preview = preview_exely_ari(operation, {
+            "tenant_id": self._tenant_id or "provider-validation",
+            "property_id": self._property_id,
+            "room_type_code": room_type_code, "rate_plan_code": rate_plan_code,
+            "start_date": start_date, "end_date": end_date,
+            "value": value, "currency": currency,
+        })
+        if preview.error_code:
+            raise ExelyValidationError(preview.error_code, field="operation")
 
         batch_messages: list[dict[str, Any]] = []
         if operation in {"availability_batch", "rate_batch", "restriction_batch"}:

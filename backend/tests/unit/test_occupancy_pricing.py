@@ -70,6 +70,27 @@ def test_free_child_age_and_paid_child_are_distinguished():
     assert quote["total_amount"] == 5750
 
 
+@pytest.mark.parametrize("age", [6.9, 17.9, True, False, None, "", " ", "6.9", float("nan"), float("inf"), -1, 18])
+def test_unknown_or_fractional_child_age_never_becomes_a_younger_free_child(age):
+    with pytest.raises(OccupancyPricingError):
+        calculate_occupancy_quote(base_nightly_rate=5000, nights=1, adults=2, children_ages=[age], rule=RULE)
+
+
+@pytest.mark.parametrize("age", [6.9, True, None, "6.9"])
+def test_policy_boundaries_cannot_be_silently_truncated(age):
+    with pytest.raises(OccupancyPricingError):
+        normalize_occupancy_rule({**RULE, "child_free_age_max": age})
+    with pytest.raises(OccupancyPricingError):
+        normalize_occupancy_rule({**RULE, "child_age_bands": [{"min_age": 0, "max_age": age, "pricing_mode": "free", "value": 0}]})
+
+
+@pytest.mark.parametrize(("age", "supplement"), [(0, 0), (6, 0), (7, 750), (11, 750), (12, 1500), (17, 1500)])
+def test_every_child_tier_boundary_is_inclusive_and_deterministic(age, supplement):
+    quote = calculate_occupancy_quote(base_nightly_rate=5000, nights=2, adults=2, children_ages=[age], rule=TIERED_RULE)
+    assert quote["child_supplement_nightly"] == supplement
+    assert quote["total_amount"] == (5000 + supplement) * 2
+
+
 def test_tiered_child_pricing_supports_free_half_and_adult_rates():
     quote = calculate_occupancy_quote(
         base_nightly_rate=5000,
