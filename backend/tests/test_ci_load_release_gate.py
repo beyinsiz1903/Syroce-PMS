@@ -2,7 +2,9 @@
 
 import subprocess
 from pathlib import Path
+from types import SimpleNamespace
 
+import pytest
 import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -34,3 +36,25 @@ def test_load_backend_readiness_fails_closed():
     start = next(step["run"] for step in _steps() if step.get("name") == "Start backend server")
     assert "curl --fail --silent --show-error http://localhost:8001/health/ready" in start
     assert 'if [ "$ready" -ne 1 ]' in start and "exit 1" in start
+
+
+@pytest.mark.parametrize("backend, success", [("memory", True), ("redis", False)])
+def test_raw_load_fixture_rejects_nonshared_or_failed_cache_invalidation(monkeypatch, backend, success):
+    import cache_manager
+    from load_tests.conftest import _invalidate_seeded_inventory
+
+    monkeypatch.setattr(cache_manager, "cache", SimpleNamespace(backend=backend, safe_invalidate=lambda *_: success))
+    with pytest.raises(RuntimeError, match="shared Redis"):
+        _invalidate_seeded_inventory("synthetic-tenant")
+
+
+def test_raw_load_fixture_invalidates_only_the_seeded_tenant_inventory(monkeypatch):
+    import cache_manager
+    from load_tests.conftest import _invalidate_seeded_inventory
+
+    calls = []
+    monkeypatch.setattr(cache_manager, "cache", SimpleNamespace(
+        backend="redis", safe_invalidate=lambda *args: calls.append(args) or True,
+    ))
+    _invalidate_seeded_inventory("synthetic-tenant")
+    assert calls == [("synthetic-tenant", "rooms_availability")]
