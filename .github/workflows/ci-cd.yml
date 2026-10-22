@@ -734,10 +734,11 @@ jobs:
           bash scripts/post_install.sh
           pip install pytest pytest-asyncio httpx pytest-timeout
 
-      - name: Seed test database
+      - name: Seed load-test database (hard gate)
         run: |
           cd backend
-          python scripts/create_test_user.py || python create_demo_users.py || { echo "::error::No seed script found"; exit 1; }
+          DEMO_PASSWORD=demo123 python create_demo_users.py
+          python scripts/create_test_user.py
         env:
           MONGO_URL: ${{ env.MONGO_URL }}
           DB_NAME: ${{ env.DB_NAME }}
@@ -745,14 +746,20 @@ jobs:
       - name: Start backend server
         run: |
           cd backend
-          uvicorn server:app --host 0.0.0.0 --port 8001 &
+          uvicorn server:app --host 0.0.0.0 --port 8001 > load-backend.log 2>&1 &
+          ready=0
           for i in $(seq 1 30); do
-            if curl -s http://localhost:8001/api/docs > /dev/null 2>&1; then
-              echo "Server ready"
+            if curl --fail --silent --show-error http://localhost:8001/health/ready >/dev/null; then
+              ready=1
               break
             fi
             sleep 2
           done
+          if [ "$ready" -ne 1 ]; then
+            echo "::error::Load-test backend did not become ready within 60 seconds"
+            cat load-backend.log || true
+            exit 1
+          fi
         env:
           MONGO_URL: ${{ env.MONGO_URL }}
           DB_NAME: ${{ env.DB_NAME }}
@@ -761,7 +768,9 @@ jobs:
           TESTING: "1"
 
       - name: Run CI load tests (hard gate)
+        shell: bash
         run: |
+          set -euo pipefail
           cd backend
           python -m pytest load_tests/ \
             -m ci_load \
@@ -781,6 +790,9 @@ jobs:
           JWT_SECRET: ${{ env.JWT_SECRET }}
           LOAD_TEST_API_URL: http://localhost:8001
 
+      - name: Enforce load-test result policy
+        run: python scripts/check_junit_policy.py backend/load-test-results.xml --min-tests 11 --max-skips 0
+
       - name: Upload load test results
         uses: actions/upload-artifact@v6
         if: always()
@@ -790,6 +802,7 @@ jobs:
           path: |
             backend/load-test-results.xml
             backend/load-test-output.log
+            backend/load-backend.log
 
   # ============ FRONTEND BUILD (HARD GATE) ============
   frontend-build:
