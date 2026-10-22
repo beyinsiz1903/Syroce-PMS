@@ -32,6 +32,15 @@ Code under test: `9431b3668d33444cf58e562db3095bc1ee49c92c`, merged as `ba83ba98
 - R15: cancelled only Deluxe via provider's Delete a room flow. Provider confirmed saved, left Standard active at **USD100**. Subsequent normal OTA read showed USD100 / imported. Per-room cancelled PMS status and category/date inventory restoration remain to be read back.
 - Final cleanup/cancellation: cancelled the remaining Standard through provider's normal flow, giving the synthetic certification reason. Provider confirmed `1200421110` successfully cancelled; normal OTA read showed **cancelled / cancellation_done**. No permanent personal-data delete was clicked. Evidence: `provider-cancelled.png` and `pms-cancellation-done.png` under the proof directory above. This is final cancellation **after** a partial cancellation, not a second independent all-two-rooms-at-once R14 test.
 
+## Subsequent stock investigation and actual ARI blocker
+
+- Provider availability calendar readback for Nov10/11/12 showed Standard **5/5/7**, Deluxe **5/6/7**, Suite **1/1/1** online/PMS availability. Therefore the earlier room-change failure must not be summarized as proved zero stock. Baseline screenshot: `provider-stock-baseline.png` under the proof directory.
+- Dynamic Rate settings show all room types, USD, check-in payment, and prices supplied automatically by price sources. No provider configuration was changed during this inspection.
+- Attempted A2 force upload for **Nov10 only, Standard/Deluxe availability5**, no prices/restrictions/agencies. The normal PMS bulk endpoint rejected it with HTTP422: “Yalnız acente oda tipleri için en az bir acente seçin”. Do **not** count this as provider delivery; rejection occurs before local calendar writes and provider scheduling.
+- Root cause: `_build_exely_grid` publishes explicit panel/mapping IDs such as `5003299`, but the bulk destination filter compared them to discovery API aliases such as `500157400`. Added a tenant-scoped writable-code lookup from complete explicit Exely mappings, also used by agency-only room classification. Discovery-only and incomplete mappings cannot authorize writes; HotelRunner is unchanged.
+- New tests cover distinct API/panel aliases, absent/incomplete mappings, tenant-scoped query, mapped bulk availability acceptance, unmapped/alias rejection before mutations, and unchanged HotelRunner behavior. The child-policy fixture now supplies a valid mapping so it still reaches and verifies the unchanged child-policy guard.
+- Targeted execution: **89 passed**, Ruff passed. This fix requires deployment before A2 can be retried through the live PMS. No direct database patch, fake provider ACK, external credential extraction or guard bypass was used.
+
 ## Plan matrix (all 58 numbered requirements)
 
 `OFFLINE` means related automated checks passed but the specified end-to-end provider result still needs observation. `LIVE` is limited to the named evidence. `GAP` means a demonstrated mismatch. `PENDING` is not a pass.
