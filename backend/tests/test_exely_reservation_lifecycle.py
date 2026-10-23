@@ -283,6 +283,29 @@ def test_notif_report_requires_exact_provider_timestamps():
         build_notif_report_rq("user", "password", "property", "reservation", "pms")
 
 
+def test_mapping_rejection_has_errors_exact_provider_version_and_no_fake_confirmation():
+    from pathlib import Path
+
+    xml = build_notif_report_rq("u", "p", "property", "provider-reservation", "",
+        create_datetime="2030-01-01T09:00:00Z", last_modify_datetime="2030-01-01T10:00:00Z",
+        res_status="Requestdenied", provider_id_context="context", rejection_reason="ROOM_RATE_MAPPING_MISSING")
+    ns = {"soap": SOAP_NS, "ota": OTA_NS}
+    request = etree.fromstring(xml.encode()).find("soap:Body/ota:OTA_NotifReportRQ", ns)
+    schema = etree.XMLSchema(etree.parse(str(Path(__file__).resolve().parents[2] / "wsdl.xml")).find(".//{http://www.w3.org/2001/XMLSchema}schema"))
+    schema.assertValid(request)
+    assert request.find("ota:Success", ns) is None
+    assert "not mapped" in request.find("ota:Errors/ota:Error", ns).text
+    assert request.find(".//ota:HotelReservationID", ns) is None
+    reservation = request.find(".//ota:HotelReservation", ns)
+    assert reservation.get("ResStatus") == "Requestdenied"
+    assert reservation.get("LastModifyDateTime") == "2030-01-01T10:00:00Z"
+    assert reservation.find("ota:UniqueID", ns).get("ID_Context") == "context"
+    with pytest.raises(ValueError, match="no PMS confirmation"):
+        build_notif_report_rq("u", "p", "property", "provider-reservation", "fake-pms",
+            create_datetime="2030-01-01T09:00:00Z", last_modify_datetime="2030-01-01T10:00:00Z",
+            res_status="Requestdenied", rejection_reason="ROOM_RATE_MAPPING_MISSING")
+
+
 def test_ack_parser_requires_explicit_success():
     response = f'<soap:Envelope xmlns:soap="{SOAP_NS}"><soap:Body><OTA_NotifReportRS xmlns="{OTA_NS}"/></soap:Body></soap:Envelope>'
     parsed = parse_notif_report_rs(response.encode())
@@ -520,6 +543,129 @@ async def test_mapping_replay_creates_one_booking_after_mapping_is_fixed(fake_db
     duplicate = await pms_lifecycle.process_reservation_version("tenant", current)
     assert duplicate["success"] is True
     assert len(fake_db.bookings.documents) == 1
+
+
+@pytest.mark.asyncio
+async def test_mapping_rejection_is_once_per_version_and_not_delivery_ack(fake_db, monkeypatch):
+    monkeypatch.setattr("domains.channel_manager.providers.unmatched_hold.create_unmatched_reservation_hold", AsyncMock(return_value={"booking_id": "hold", "alarm_raised": True}))
+    _, current = await _persist(fake_db, _canonical())
+    provider = SimpleNamespace(confirm_delivery=AsyncMock(return_value=SimpleNamespace(success=True, metadata={"provider_write_count": 1})))
+    results = await asyncio.gather(*(lifecycle.reject_unmapped_version(provider, "tenant", current) for _ in range(4)))
+    assert sum(row["provider_write_count"] for row in results) == 1
+    provider.confirm_delivery.assert_awaited_once()
+    call = provider.confirm_delivery.await_args
+    assert call.args == ("provider-reservation", "")
+    assert call.kwargs["res_status"] == "Requestdenied"
+    assert call.kwargs["create_datetime"] == "2030-01-01T09:00:00Z"
+    version = await fake_db.exely_reservation_versions.find_one({"version_identity": current["provider_version_identity"]})
+    assert version["ack_state"] == lifecycle.ACK_NOT_READY
+    assert version["mapping_rejection_state"] == "SENT"
+    assert fake_db.bookings.documents == []
+    assert (await lifecycle.acknowledge_durable_version(provider, current))["provider_write_count"] == 0
+    # Successful map/replay is distinct from a rejection; ordinary delivery
+    # ACK still requires durable PMS readback and no duplicate booking.
+    await _add_mapping(fake_db)
+    replay = await pms_lifecycle.process_reservation_version("tenant", current)
+    assert replay["success"] is True
+    assert len(fake_db.bookings.documents) == 1
+
+
+@pytest.mark.asyncio
+async def test_ambiguous_mapping_rejection_is_never_retried_or_replayed(fake_db, monkeypatch):
+    monkeypatch.setattr("domains.channel_manager.providers.unmatched_hold.create_unmatched_reservation_hold", AsyncMock(return_value={"booking_id": "hold", "alarm_raised": True}))
+    _, current = await _persist(fake_db, _canonical())
+    provider = SimpleNamespace(confirm_delivery=AsyncMock(side_effect=TimeoutError()))
+    result = await lifecycle.reject_unmapped_version(provider, "tenant", current)
+    assert result["reason"] == "MAPPING_REJECTION_AMBIGUOUS"
+    assert (await lifecycle.reject_unmapped_version(provider, "tenant", current))["provider_write_count"] == 0
+    await _add_mapping(fake_db)
+    replay = await pms_lifecycle.process_reservation_version("tenant", current)
+    assert replay["reason"] == "MAPPING_REJECTION_RECONCILIATION_REQUIRED"
+    assert fake_db.bookings.documents == []
+    provider.confirm_delivery.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_mapping_rejection_stale_or_wrong_tenant_never_writes(fake_db, monkeypatch):
+    monkeypatch.setattr("domains.channel_manager.providers.unmatched_hold.create_unmatched_reservation_hold", AsyncMock(return_value={"booking_id": "hold", "alarm_raised": True}))
+    _, old = await _persist(fake_db, _canonical())
+    await _persist(fake_db, _canonical("2030-01-01T11:00:00Z"), payload_hash="newer")
+    provider = SimpleNamespace(confirm_delivery=AsyncMock())
+    assert (await lifecycle.reject_unmapped_version(provider, "tenant", old))["reason"] == "STALE_VERSION"
+    assert (await lifecycle.reject_unmapped_version(provider, "other-tenant", old))["provider_write_count"] == 0
+    provider.confirm_delivery.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_mapping_replay_cannot_race_a_rejection_in_flight(fake_db, monkeypatch):
+    monkeypatch.setattr("domains.channel_manager.providers.unmatched_hold.create_unmatched_reservation_hold", AsyncMock(return_value={"booking_id": "hold", "alarm_raised": True}))
+    _, current = await _persist(fake_db, _canonical())
+
+    async def transport(*args, **kwargs):
+        await _add_mapping(fake_db)
+        replay = await pms_lifecycle.process_reservation_version("tenant", current)
+        assert replay["reason"] == "VERSION_NOT_CLAIMABLE"
+        assert fake_db.bookings.documents == []
+        return SimpleNamespace(success=True, metadata={"provider_write_count": 1})
+
+    provider = SimpleNamespace(confirm_delivery=AsyncMock(side_effect=transport))
+    assert (await lifecycle.reject_unmapped_version(provider, "tenant", current))["success"]
+    assert (await pms_lifecycle.process_reservation_version("tenant", current))["success"]
+
+
+@pytest.mark.asyncio
+async def test_pending_processor_reports_rejection_separately_from_reserved(fake_db, monkeypatch):
+    monkeypatch.setattr("domains.channel_manager.providers.unmatched_hold.create_unmatched_reservation_hold", AsyncMock(return_value={"booking_id": "hold", "alarm_raised": True}))
+    await _persist(fake_db, _canonical())
+    provider = SimpleNamespace(confirm_delivery=AsyncMock(return_value=SimpleNamespace(success=True, metadata={"provider_write_count": 1})))
+    default = await pms_lifecycle.process_pending_reservations("tenant", provider=provider)
+    assert default["mapping_rejections"] == {"sent": 0, "provider_write_count": 0}
+    provider.confirm_delivery.assert_not_awaited()
+    result = await pms_lifecycle.process_pending_reservations("tenant", provider=provider, report_mapping_rejections=True)
+    assert result["mapping_rejections"] == {"sent": 1, "provider_write_count": 1}
+    assert result["acknowledgements"]["acked"] == 0
+    assert result["imported"] == 0
+    again = await pms_lifecycle.process_pending_reservations("tenant", provider=provider, report_mapping_rejections=True)
+    assert again["mapping_rejections"] == {"sent": 0, "provider_write_count": 0}
+
+
+@pytest.mark.asyncio
+async def test_mapping_rejection_provider_wire_is_single_write_without_fake_booking():
+    provider = ExelyProvider(username="u", password="p", hotel_code="H", max_retries=5)
+    provider._transport.send_soap = AsyncMock(return_value=f'<s:Envelope xmlns:s="{SOAP_NS}"><s:Body><OTA_NotifReportRS xmlns="{OTA_NS}"><Success/></OTA_NotifReportRS></s:Body></s:Envelope>')
+    result = await provider.confirm_delivery("external", "", create_datetime="2030-01-01T09:00:00Z", last_modify_datetime="2030-01-01T10:00:00Z", res_status="Requestdenied", rejection_reason="ROOM_RATE_MAPPING_MISSING")
+    assert result.success
+    assert result.metadata["provider_write_count"] == 1
+    provider._transport.send_soap.assert_awaited_once()
+    xml = provider._transport.send_soap.await_args.args[0]
+    assert 'ResStatus="Requestdenied"' in xml
+    assert "HotelReservationID" not in xml
+    assert "Correct the mapping" in xml
+
+
+@pytest.mark.asyncio
+async def test_no_network_mapping_rejection_can_be_tried_again(fake_db, monkeypatch):
+    monkeypatch.setattr("domains.channel_manager.providers.unmatched_hold.create_unmatched_reservation_hold", AsyncMock(return_value={"booking_id": "hold", "alarm_raised": True}))
+    _, current = await _persist(fake_db, _canonical())
+    provider = SimpleNamespace(confirm_delivery=AsyncMock(side_effect=[
+        SimpleNamespace(success=False, metadata={"provider_write_count": 0}),
+        SimpleNamespace(success=True, metadata={"provider_write_count": 1}),
+    ]))
+    first = await lifecycle.reject_unmapped_version(provider, "tenant", current)
+    assert first["reason"] == "MAPPING_REJECTION_PENDING"
+    assert first["provider_write_count"] == 0
+    assert (await lifecycle.reject_unmapped_version(provider, "tenant", current))["success"]
+
+
+def test_mapping_rejection_rollout_is_limited_to_authorized_test_property():
+    from domains.channel_manager.providers.exely.exely_pull_worker import _mapping_rejection_pilot_enabled
+    from domains.channel_manager.providers.exely.security import EXELY_PRODUCTION_ENDPOINT_URL, EXELY_TEST_ENDPOINT_URL
+
+    assert _mapping_rejection_pilot_enabled("501694", EXELY_TEST_ENDPOINT_URL)
+    assert _mapping_rejection_pilot_enabled("501694", EXELY_TEST_ENDPOINT_URL + "?HotelCode=501694")
+    assert not _mapping_rejection_pilot_enabled("another-hotel", EXELY_TEST_ENDPOINT_URL)
+    assert not _mapping_rejection_pilot_enabled("501694", EXELY_PRODUCTION_ENDPOINT_URL)
+    assert not _mapping_rejection_pilot_enabled("501694", EXELY_TEST_ENDPOINT_URL.replace("https:", "http:"))
 
 
 @pytest.mark.asyncio

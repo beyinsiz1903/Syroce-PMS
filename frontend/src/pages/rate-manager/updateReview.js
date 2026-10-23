@@ -56,12 +56,17 @@ export const buildRateUpdateReview = ({
       errors.push(`${label} için müsaitlik sıfır veya pozitif tam sayı olmalıdır.`);
     }
     ['min_stay', 'min_los_arrival', 'max_stay'].forEach((field) => {
-      if (enabledFields.has(field) && (!hasValue(values[field]) || !Number.isInteger(Number(values[field])) || Number(values[field]) < 1)) {
+      const canRemove = channelProvider === 'exely' && !agenciesOnly;
+      if (enabledFields.has(field) && (!hasValue(values[field]) || !Number.isInteger(Number(values[field])) || Number(values[field]) < (canRemove ? 0 : 1))) {
         errors.push(`${label} için konaklama kısıtları pozitif tam sayı olmalıdır.`);
+      }
+      if (enabledFields.has(field) && canRemove && hasValue(values[field]) && Number(values[field]) === 0) {
+        warnings.push(`${label}: ${field === 'max_stay' ? 'Maksimum konaklama' : field === 'min_los_arrival' ? 'Varış bazlı minimum konaklama' : 'Minimum konaklama'} kısıtı kaldırılacak.`);
       }
     });
     if (enabledFields.has('min_stay') && enabledFields.has('max_stay')
       && hasValue(values.min_stay) && hasValue(values.max_stay)
+      && Number(values.min_stay) > 0 && Number(values.max_stay) > 0
       && Number(values.max_stay) < Number(values.min_stay)) {
       errors.push(`${label} için maksimum konaklama minimumdan kısa olamaz.`);
     }

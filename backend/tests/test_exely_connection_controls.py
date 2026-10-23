@@ -5,8 +5,8 @@ import os
 import uuid
 from datetime import UTC, datetime
 from types import SimpleNamespace
-from urllib.parse import urlsplit
 from unittest.mock import AsyncMock
+from urllib.parse import urlsplit
 
 import pytest
 from fastapi import FastAPI, HTTPException
@@ -220,7 +220,7 @@ async def test_internal_mixed_ari_preflight_does_not_queue_valid_sibling_of_inva
     publish.assert_not_awaited()
 
 
-@pytest.mark.parametrize(("operation", "value"), [("rate", float("nan")), ("rate", -1), ("availability", -1), ("cta", "false"), ("min_los", 0)])
+@pytest.mark.parametrize(("operation", "value"), [("rate", float("nan")), ("rate", -1), ("availability", -1), ("cta", "false"), ("min_los", -1), ("min_los", True)])
 async def test_low_level_provider_rejects_bad_single_mutation_without_network(operation, value):
     provider = ExelyProvider(username="synthetic-user", password="synthetic-password", hotel_code="synthetic-hotel")
     provider._transport.send_soap = AsyncMock()

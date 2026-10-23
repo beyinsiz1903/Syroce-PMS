@@ -25,7 +25,7 @@ from domains.channel_manager.providers.exely.lifecycle import (
     _compare_versions,
     acknowledge_durable_version,
     acknowledge_pending_versions,
-    mark_version_state,
+    reject_unmapped_version,
 )
 
 logger = logging.getLogger("exely.pms_lifecycle")
@@ -613,6 +613,8 @@ async def process_reservation_version(tenant_id: str, reservation: dict[str, Any
     if state == MALFORMED:
         return {"success": False, "reason": state, "provider_write_count": 0}
     if state == HOLD_MAPPING_REQUIRED:
+        if version_doc.get("mapping_rejection_state") in {"SENDING", "AMBIGUOUS"}:
+            return {"success": False, "reason": "MAPPING_REJECTION_RECONCILIATION_REQUIRED", "provider_write_count": 0}
         rooms = list(version_doc.get("room_stays") or [])
         mappings_ready = bool(rooms)
         for room in rooms:
@@ -621,7 +623,13 @@ async def process_reservation_version(tenant_id: str, reservation: dict[str, Any
                 break
         if not mappings_ready:
             return {"success": False, "reason": state, "provider_write_count": 0}
-        await mark_version_state(identity, processing_state=RECEIVED, mapping_state="MAPPED")
+        transition = await db.exely_reservation_versions.update_one(
+            {"version_identity": identity, "tenant_id": tenant_id, "processing_state": HOLD_MAPPING_REQUIRED,
+             "mapping_rejection_state": version_doc.get("mapping_rejection_state")},
+            {"$set": {"processing_state": RECEIVED, "mapping_state": "MAPPED"}},
+        )
+        if getattr(transition, "modified_count", 0) != 1:
+            return {"success": False, "reason": "VERSION_NOT_CLAIMABLE", "provider_write_count": 0}
         state = RECEIVED
     if state not in {RECEIVED, PMS_FAILED, PMS_PROCESSING}:
         return {"success": False, "reason": "VERSION_NOT_CLAIMABLE", "provider_write_count": 0}
@@ -889,7 +897,7 @@ async def process_reservation_version(tenant_id: str, reservation: dict[str, Any
             await heartbeat_task
 
 
-async def process_pending_reservations(tenant_id: str, provider=None, limit: int = 100) -> dict[str, Any]:
+async def process_pending_reservations(tenant_id: str, provider=None, limit: int = 100, *, report_mapping_rejections: bool = False) -> dict[str, Any]:
     reservations = await db.exely_reservations.find(
         {
             "tenant_id": tenant_id,
@@ -901,6 +909,7 @@ async def process_pending_reservations(tenant_id: str, provider=None, limit: int
     updated = 0
     cancelled = 0
     errors: list[dict[str, str]] = []
+    mapping_rejections = {"sent": 0, "provider_write_count": 0}
     for reservation in reservations:
         result = await process_reservation_version(tenant_id, reservation)
         if result.get("success"):
@@ -909,6 +918,10 @@ async def process_pending_reservations(tenant_id: str, provider=None, limit: int
             cancelled += int(result.get("cancelled", 0) > 0)
         else:
             errors.append({"reason": str(result.get("reason") or "PMS_FAILED")})
+            if report_mapping_rejections and provider is not None and result.get("reason") == HOLD_MAPPING_REQUIRED:
+                rejection = await reject_unmapped_version(provider, tenant_id, reservation)
+                mapping_rejections["sent"] += int(bool(rejection.get("success")) and rejection.get("provider_write_count", 0) > 0)
+                mapping_rejections["provider_write_count"] += int(rejection.get("provider_write_count", 0))
 
     ack_result = {"acked": 0, "failed": 0, "provider_write_count": 0}
     if provider is not None:
@@ -920,6 +933,7 @@ async def process_pending_reservations(tenant_id: str, provider=None, limit: int
         "total": len(reservations),
         "errors": errors,
         "acknowledgements": ack_result,
+        "mapping_rejections": mapping_rejections,
     }
 
 

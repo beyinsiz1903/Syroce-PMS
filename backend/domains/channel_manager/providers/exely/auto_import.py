@@ -21,9 +21,9 @@ async def auto_import_reservation(tenant_id: str, channel_res: dict[str, Any]) -
     return await process_reservation_version(tenant_id, channel_res)
 
 
-async def auto_import_pending(tenant_id: str, provider=None) -> dict[str, Any]:
+async def auto_import_pending(tenant_id: str, provider=None, *, report_mapping_rejections: bool = False) -> dict[str, Any]:
     """Apply pending versions, then ACK only versions proven durable."""
-    return await process_pending_reservations(tenant_id, provider=provider)
+    return await process_pending_reservations(tenant_id, provider=provider, report_mapping_rejections=report_mapping_rejections)
 
 
 async def process_pending_cancellations(tenant_id: str) -> int:

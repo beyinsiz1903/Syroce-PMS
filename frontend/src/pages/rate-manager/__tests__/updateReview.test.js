@@ -3,6 +3,22 @@ import { describe, expect, it } from 'vitest';
 import { buildRateUpdateReview, countTargetNights } from '@/pages/rate-manager/updateReview';
 
 describe('rate update review', () => {
+  it.each(['min_stay', 'min_los_arrival', 'max_stay'])('reviews %s removal explicitly for Exely', (field) => {
+    const input = { dateFrom: '2030-01-01', dateTo: '2030-01-01', allDays: true,
+      selections: { STD: new Set(['BAR']) }, enabledFields: new Set([field]), roomValues: { STD: { [field]: '0' } }, channelProvider: 'exely' };
+    const review = buildRateUpdateReview(input);
+    expect(review.errors).toEqual([]);
+    expect(review.warnings.join(' ')).toContain('kısıtı kaldırılacak');
+    expect(buildRateUpdateReview({ ...input, channelProvider: 'hotelrunner' }).errors.length).toBeGreaterThan(0);
+    expect(buildRateUpdateReview({ ...input, agenciesOnly: true }).errors.length).toBeGreaterThan(0);
+    expect(buildRateUpdateReview({ ...input, roomValues: { STD: { [field]: '' } } }).errors.length).toBeGreaterThan(0);
+  });
+
+  it('does not treat clearing max LOS as shorter than the retained minimum', () => {
+    const review = buildRateUpdateReview({ dateFrom: '2030-01-01', dateTo: '2030-01-01', allDays: true,
+      selections: { STD: new Set(['BAR']) }, enabledFields: new Set(['min_stay', 'max_stay']), roomValues: { STD: { min_stay: '3', max_stay: '0' } }, channelProvider: 'exely' });
+    expect(review.errors).toEqual([]);
+  });
   it('does not describe Exely broadcast as a PMS-only update when OTA selection is unavailable', () => {
     const review = buildRateUpdateReview({ channelProvider: 'exely', selectedChannelCodes: new Set() });
     expect(review.warnings.join(' ')).toContain('Gönderim hedefi Exely kanal yöneticisidir');

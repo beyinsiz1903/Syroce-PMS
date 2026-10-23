@@ -18,6 +18,7 @@ logger = logging.getLogger("exely.lifecycle")
 
 RECEIVED = "RECEIVED"
 HOLD_MAPPING_REQUIRED = "HOLD_MAPPING_REQUIRED"
+MAPPING_REJECTION_SENDING = "MAPPING_REJECTION_SENDING"
 MALFORMED = "MALFORMED"
 PMS_DURABLE = "PMS_DURABLE"
 PMS_FAILED = "PMS_FAILED"
@@ -436,6 +437,58 @@ def _ack_confirmations_match_version(version_doc: dict[str, Any]) -> bool:
         return False
     incoming_indexes = [str(room.get("index_number") or "") for room in version_doc.get("room_stays") or [] if str(room.get("index_number") or "")]
     return not incoming_indexes or sorted(confirmed_indexes) == sorted(incoming_indexes)
+
+
+async def reject_unmapped_version(provider, tenant_id: str, reservation: dict[str, Any]) -> dict[str, Any]:
+    """Report one current mapping failure without acknowledging PMS delivery.
+
+    A separate CAS/state fences this write against mapping replay. An unknown
+    outcome (including a worker crash while SENDING) is never auto-retried.
+    The local hold/alarm is deliberately retained until successful replay.
+    """
+    identity = str(reservation.get("provider_version_identity") or "")
+    query = {"tenant_id": tenant_id, "version_identity": identity}
+    version = await db.exely_reservation_versions.find_one(query, {"_id": 0})
+    if not version or version.get("processing_state") != HOLD_MAPPING_REQUIRED or version.get("mapping_state") != "ROOM_RATE_MAPPING_MISSING":
+        return {"success": False, "provider_write_count": 0, "reason": "MAPPING_REJECTION_NOT_READY"}
+    if version.get("mapping_rejection_state") in {"SENT", "SENDING", "AMBIGUOUS", "REJECTED"}:
+        return {"success": version["mapping_rejection_state"] == "SENT", "provider_write_count": 0, "reason": "MAPPING_REJECTION_" + version["mapping_rejection_state"]}
+    current_query = {"tenant_id": tenant_id, "property_id": version["property_id"], "external_id": version["provider_reservation_id"], "provider_version_identity": identity}
+    if not await db.exely_reservations.find_one(current_query, {"_id": 0, "id": 1}):
+        return {"success": False, "provider_write_count": 0, "reason": "STALE_VERSION"}
+    claim = await db.exely_reservation_versions.update_one(
+        {**query, "processing_state": HOLD_MAPPING_REQUIRED, "$or": [{"mapping_rejection_state": {"$exists": False}}, {"mapping_rejection_state": "PENDING"}]},
+        {"$set": {"processing_state": MAPPING_REJECTION_SENDING, "mapping_rejection_state": "SENDING", "mapping_rejection_started_at": datetime.now(UTC).isoformat()}},
+    )
+    if getattr(claim, "modified_count", 0) != 1:
+        return {"success": False, "provider_write_count": 0, "reason": "MAPPING_REJECTION_ALREADY_CLAIMED"}
+    await db.exely_reservations.update_one(current_query, {"$set": {"mapping_rejection_state": "SENDING"}})
+    writes = 1  # Conservative on an exception: the provider may have accepted.
+    try:
+        result = await provider.confirm_delivery(
+            version["provider_reservation_id"], "",
+            create_datetime=version["provider_created_at"],
+            last_modify_datetime=version["provider_version_key"],
+            provider_id_context=version.get("provider_reservation_id_context", ""),
+            res_status="Requestdenied", rejection_reason="ROOM_RATE_MAPPING_MISSING",
+        )
+        writes = int((getattr(result, "metadata", None) or {}).get("provider_write_count", 1))
+        if writes == 0:
+            state = "PENDING"  # No network write: a later pull may try safely.
+        elif result.success:
+            state = "SENT"
+        else:
+            error = str(getattr(result, "error_type", "") or "")
+            state = "REJECTED" if error in {"REJECTED", "AUTH_FAILED", "ExelyAuthError", "ExelyValidationError"} else "AMBIGUOUS"
+    except Exception as exc:
+        state = "AMBIGUOUS"
+        logger.error("[EXELY-LIFECYCLE] mapping_rejection_state=ambiguous exception_class=%s", type(exc).__name__)
+    await db.exely_reservation_versions.update_one(
+        {**query, "processing_state": MAPPING_REJECTION_SENDING, "mapping_rejection_state": "SENDING"},
+        {"$set": {"processing_state": HOLD_MAPPING_REQUIRED, "mapping_rejection_state": state, "mapping_rejection_finished_at": datetime.now(UTC).isoformat(), "mapping_rejection_write_count": writes}},
+    )
+    await db.exely_reservations.update_one(current_query, {"$set": {"mapping_rejection_state": state}})
+    return {"success": state == "SENT", "provider_write_count": writes, "reason": "MAPPING_REJECTION_" + state}
 
 
 async def acknowledge_durable_version(provider, reservation: dict[str, Any]) -> dict[str, Any]:
