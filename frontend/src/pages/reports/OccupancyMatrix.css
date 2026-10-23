@@ -1,0 +1,11 @@
+@media print {
+  .occupancy-matrix-print section + section { break-before: page; }
+  .occupancy-matrix-print h3 { margin: 0 0 8px; font-size: 12px; }
+  .occupancy-matrix-print table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 9px; }
+  .occupancy-matrix-print thead { display: table-header-group; }
+  .occupancy-matrix-print tr { break-inside: avoid; }
+  .occupancy-matrix-print th, .occupancy-matrix-print td { padding: 6px 3px; border: 1px solid #cbd5e1; text-align: center; }
+  .occupancy-matrix-print th:first-child { width: 120px; text-align: left; overflow-wrap: anywhere; }
+  .occupancy-matrix-print td strong, .occupancy-matrix-print td span { display: block; }
+  .occupancy-matrix-print td.excess { color: #991b1b; background: #fee2e2; print-color-adjust: exact; }
+}

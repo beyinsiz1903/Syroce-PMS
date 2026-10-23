@@ -21,11 +21,28 @@
 
 ## Simplified occupancy presentation (2026-10-23)
 
-- The default screen has six columns: date, occupancy percentage, occupied rooms, vacant rooms, sellable rooms and data basis. Previous business dates use actual occupancy. The current business date and later dates use expected occupancy, including arrivals and stayovers. Actual and expected are never added together for the same date.
+- The daily-list view has six columns: date, occupancy percentage, occupied rooms, signed net remaining rooms, sellable rooms and data basis. Previous business dates use actual occupancy. The current business date and later dates use expected occupancy, including arrivals and stayovers. Actual and expected are never added together for the same date.
 - The selected-period headline uses total occupied room-nights divided by total sellable room-nights for those displayed rows. It is a mixed actual/on-the-books view when the range crosses the business date, not a claim of fully realised occupancy or a simple average of daily percentages.
 - Separate actual/expected totals and inventory details remain behind “Hesaplama detaylarını göster”. Inventory/overbooking alerts stay visible even when details are collapsed.
 - Excel opens on “Doluluk Özeti” with the same six columns, typed dates/percentages, readable widths, frozen headings, filters and landscape printing. “Detaylar” retains all fifteen reconciliation fields and the separate original actual/expected period totals. Snapshot matching and tenant scoping are unchanged.
-- This is presentation work only. It does not change the source occupancy calculator, bookings, room blocks, accounting or financial acceptance status.
+- The initial six-column simplification was presentation-only. The matrix follow-up below also corrects forecast commitment counting; neither change mutates bookings, room blocks, accounting or financial acceptance status.
+
+### Room-type matrix follow-up
+
+- The default is now a 14-day room-type/date matrix, with the house total and every active inventory type together. Percentage, net remaining (+/−) and occupied-room indicator modes use the same rows. A separate daily list remains available. Quick 1/7/14/30-day selections apply immediately; custom inclusive ranges still allow up to 366 dates.
+- One server response builds both house and room-type scopes from the same three tenant-scoped input queries. Inputs are bucketed before type calculation to avoid querying or scanning the entire booking population separately for every type. Untyped physical rooms get an explicit row; unknown room references remain warnings rather than guessed inventory.
+- Expected demand counts distinct eligible reservation commitments, including separate bookings incorrectly assigned to the same room. Duplicate source rows for the same booking ID are still deduplicated. Actual occupancy remains unique physical rooms. This deliberate forecast correction exposes assignment conflicts as possible excess sales; it does not change ADR, revenue or accounting calculators.
+- Net remaining is capacity minus occupied/demand rooms and is never floored to zero. A type can be oversold while the house total is positive. Type warnings and red cells remain visible in that case; percentages above 100 are not capped in cells, chart or Excel.
+- The chart shows the house or the selected room type. Each matrix cell opens read-only capacity, closures, arrivals/stayovers, unassigned demand and assignment-conflict figures. No guest identities, booking mutations or channel sell-limit edits are introduced.
+- Excel accepts an explicit `view=matrix|daily` and `metric=occupancy|remaining|occupied`, bound to the existing full-data snapshot. The matrix is split into seven-date print blocks, with native percentage/numeric cells and signed remaining formats. Full group evidence stays in Details. Browser printing also uses seven-date tables, rather than squeezing a month/year into one wide page.
+- This is PMS inventory availability, not a new group-allotment, sell-limit or channel-quota engine. Existing configured physical room blocks are included. No claim is made that separate unpicked group allotments or component-room sharing are newly implemented.
+
+### Matrix verification
+
+- Backend occupancy/API/export and canonical room-night regression: 45 passed. Existing openpyxl UTC deprecation warnings remain; no test failures are suppressed.
+- Full frontend: 381 files / 1,896 tests passed. Latest targeted occupancy suite: 13 passed. Production build, changed-file ESLint/Ruff, theme/layout guards and `git diff --check` passed.
+- Browser acceptance used a local isolated preview of the actual component with synthetic data: all-type matrix, >100%/negative cells, indicator change, read-only drilldown, stale filter/export disabling, selected-type chart and immediate seven-day range selection checked. No production or provider records changed.
+- The production exporter was exercised with synthetic 14-day / 35-room / three-type inputs. Native percentage/date formats, signed remaining values, full type evidence, seven-date print blocks and snapshot mismatch rejection checked; the matrix was rendered for visual review. This is not a claim of a new live production reconciliation or completed deployment.
 
 ## Acceptance after deployment
 

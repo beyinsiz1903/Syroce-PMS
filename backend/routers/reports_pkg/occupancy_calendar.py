@@ -32,6 +32,8 @@ def date_range(start_date, end_date):
 @sub_router.get("/reports/occupancy-calendar")
 async def get_occupancy_calendar(start_date: str, end_date: str, room_type: str | None = None,
                                  output: Literal["json", "xlsx"] = "json", snapshot: str | None = None,
+                                 view: Literal["matrix", "daily"] = "matrix",
+                                 metric: Literal["occupancy", "remaining", "occupied"] = "occupancy",
                                  current_user: User = Depends(get_current_user),
                                  _: None = Depends(require_module("basic_reporting"))):
     first, last = date_range(start_date, end_date)
@@ -55,6 +57,6 @@ async def get_occupancy_calendar(start_date: str, end_date: str, room_type: str 
         raise HTTPException(409, "Doluluk verisi değişti. Ekranı yenileyip Excel çıktısını yeniden alın.")
     from modules.pms_core.occupancy_calendar_export import occupancy_workbook
 
-    buffer = occupancy_workbook(data)
+    buffer = occupancy_workbook(data, view=view, metric=metric)
     return StreamingResponse(buffer, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                              headers={"Content-Disposition": f'attachment; filename="occupancy_{start_date}_{end_date}.xlsx"'})
