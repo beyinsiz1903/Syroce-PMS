@@ -228,6 +228,7 @@ class FolioChargeRequest(BaseModel):
 
 class FolioPaymentRequest(BaseModel):
     amount: float
+    folio_id: str | None = Field(None, min_length=1, max_length=100)
     method: PaymentMethod = PaymentMethod.CASH
     payment_type: PaymentType = PaymentType.INTERIM
     reference: str | None = None
@@ -775,7 +776,11 @@ async def add_folio_payment(
 
     try:
         booking = await _ensure_booking(current_user.tenant_id, booking_id)
-        folio = await _ensure_open_folio(current_user.tenant_id, booking_id, booking.get("guest_id"))
+        from modules.pms_core.folio_selection import select_booking_folio
+
+        folio = await select_booking_folio(db, current_user.tenant_id, booking_id, payload.folio_id)
+        if not folio:
+            folio = await _ensure_open_folio(current_user.tenant_id, booking_id, booking.get("guest_id"))
         now_iso = datetime.now(UTC).isoformat()
         payment_doc = {
             "id": str(uuid.uuid4()),

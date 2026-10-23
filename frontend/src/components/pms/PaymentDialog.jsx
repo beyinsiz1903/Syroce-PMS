@@ -20,17 +20,28 @@ const PaymentDialog = ({ open, onClose, selectedBooking, paymentForm, setPayment
   const { t } = useTranslation();
   const [submitting, setSubmitting] = useState(false);
   const [folios, setFolios] = useState([]);
+  const [targetId, setTargetId] = useState('');
+  const [folioError, setFolioError] = useState('');
+  const [foliosLoading, setFoliosLoading] = useState(false);
   const submittingRef = useRef(false);
 
   useEffect(() => {
     let active = true;
+    setTargetId(''); setFolioError(''); setFolios([]);
     if (!open || !selectedBooking?.id) {
       setFolios([]);
       return () => { active = false; };
     }
+    setFoliosLoading(true);
     axios.get(`/folio/booking/${selectedBooking.id}`)
-      .then(({ data }) => { if (active) setFolios(Array.isArray(data) ? data : []); })
-      .catch(() => { if (active) setFolios([]); });
+      .then(({ data }) => { if (active) {
+        const rows = Array.isArray(data) ? data : [];
+        setFolios(rows);
+        const available = rows.filter(f => f.status === 'open');
+        if (available.length === 1) setTargetId(available[0].id);
+      } })
+      .catch(() => { if (active) setFolioError('Folyolar yüklenemedi. Ödeme ekranını yeniden açın.'); })
+      .finally(() => { if (active) setFoliosLoading(false); });
     return () => { active = false; };
   }, [open, selectedBooking?.id]);
 
@@ -38,13 +49,14 @@ const PaymentDialog = ({ open, onClose, selectedBooking, paymentForm, setPayment
     () => bookingFinancials(selectedBooking || {}, folios),
     [selectedBooking, folios],
   );
-  const balance = Math.max(0, financials.balance);
+  const target = folios.find(f => f.id === targetId && f.status === 'open');
+  const balance = Math.max(0, folios.length > 1 ? Number(target?.balance || 0) : financials.balance);
   const isPartialPayment = paymentForm.amount > 0 && paymentForm.amount < balance;
   const isOverPayment = paymentForm.amount > balance && balance > 0;
 
   const handleSubmit = async () => {
     const amount = Number(paymentForm.amount);
-    if (submittingRef.current || !selectedBooking) return;
+    if (submittingRef.current || !selectedBooking || !target || foliosLoading || folioError) return;
     if (!Number.isFinite(amount) || amount <= 0) {
       toast.error('Sıfırdan büyük ödeme tutarı gerekli');
       return;
@@ -53,8 +65,8 @@ const PaymentDialog = ({ open, onClose, selectedBooking, paymentForm, setPayment
     setSubmitting(true);
     try {
       const folioRes = await axios.get(`/folio/booking/${selectedBooking.id}`);
-      if (folioRes.data && folioRes.data.length > 0) {
-        const folio = folioRes.data[0];
+      const folio = folioRes.data?.find(f => f.id === targetId && f.status === 'open');
+      if (folio) {
         const idempotencyKey = window.crypto?.randomUUID?.() || `payment-${Date.now()}-${Math.random()}`;
         const paymentPayload = {
           ...paymentForm,
@@ -89,11 +101,19 @@ const PaymentDialog = ({ open, onClose, selectedBooking, paymentForm, setPayment
         
         {selectedBooking && (
           <div className="space-y-4">
+            <label className="block text-sm">Hedef folyo
+              <select aria-label="Ödeme hedef folyo" className="mt-1 block w-full rounded border p-2" value={targetId} onChange={e => setTargetId(e.target.value)} disabled={foliosLoading || submitting}>
+                <option value="">Folyo seçin</option>
+                {folios.filter(f => f.status === 'open').map(f => <option key={f.id} value={f.id}>{f.folio_number || f.id} · {f.folio_type || 'Misafir'} · {formatCurrency(f.balance || 0, f.currency || financials.currency)}</option>)}
+              </select>
+            </label>
+            {foliosLoading && <p role="status">Folyolar yükleniyor…</p>}
+            {folioError && <p role="alert">{folioError}</p>}
             {/* Payment Intelligence Bar */}
             {balance > 0 && (
               <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 space-y-2" data-testid="payment-intelligence">
                 <div className="flex justify-between text-xs">
-                  <span className="text-slate-500">Toplam</span>
+                  <span className="text-slate-500">Rezervasyon toplamı</span>
                   <span className="font-medium">{formatCurrency(financials.total, financials.currency, { decimals: 2 })}</span>
                 </div>
                 <div className="flex justify-between text-xs">
@@ -101,7 +121,7 @@ const PaymentDialog = ({ open, onClose, selectedBooking, paymentForm, setPayment
                   <span className="font-medium text-emerald-600">{formatCurrency(financials.paid, financials.currency, { decimals: 2 })}</span>
                 </div>
                 <div className="flex justify-between text-xs border-t pt-1.5">
-                  <span className="text-slate-700 font-semibold">Kalan</span>
+                  <span className="text-slate-700 font-semibold">{folios.length > 1 ? 'Seçilen folyo bakiyesi' : 'Kalan'}</span>
                   <span className="font-bold text-red-600">{formatCurrency(balance, financials.currency, { decimals: 2 })}</span>
                 </div>
                 {/* Quick fill button */}
@@ -171,7 +191,7 @@ const PaymentDialog = ({ open, onClose, selectedBooking, paymentForm, setPayment
               <Button variant="outline" onClick={onClose}>{t('common.cancel')}</Button>
               <Button
                 onClick={handleSubmit}
-                disabled={submitting || !Number.isFinite(Number(paymentForm.amount)) || Number(paymentForm.amount) <= 0}
+                disabled={submitting || foliosLoading || !!folioError || !target || !Number.isFinite(Number(paymentForm.amount)) || Number(paymentForm.amount) <= 0}
                 className="bg-[#C09D63] hover:bg-[#B08D55] text-white"
                 data-testid="payment-submit-btn"
               >

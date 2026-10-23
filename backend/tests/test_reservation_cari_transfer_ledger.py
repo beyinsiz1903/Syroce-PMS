@@ -13,6 +13,16 @@ from routers import reservation_detail
 
 
 def _patch_atomic_financial_helpers(monkeypatch, *, dedup_status="acquired"):
+    # The resolver now reads up to two open windows, not an arbitrary find_one.
+    # Keep this suite's one-window fixture while exercising the real resolver.
+    if hasattr(reservation_detail.db, "folios") and not hasattr(reservation_detail.db.folios, "find"):
+        collection = reservation_detail.db.folios
+        def find_folios(*_args, **_kwargs):
+            async def to_list(_limit):
+                row = await collection.find_one(*_args, **_kwargs)
+                return [{"status": "open", **row}] if row else []
+            return SimpleNamespace(to_list=to_list)
+        collection.find = find_folios
     monkeypatch.setattr(reservation_detail, "stamp_open_business_date", AsyncMock(return_value="2026-09-22"))
     claim = AsyncMock(
         return_value={
@@ -387,7 +397,7 @@ async def test_cari_transfer_duplicate_click_fails_before_financial_writes(monke
             update_one=AsyncMock(),
         ),
         folios=SimpleNamespace(
-            find_one=AsyncMock(return_value={"id": "folio-a", "booking_id": "booking-a"}),
+            find_one=AsyncMock(return_value={"id": "folio-a", "booking_id": "booking-a", "status": "open"}),
             insert_one=AsyncMock(),
         ),
         cari_accounts=SimpleNamespace(
@@ -444,7 +454,7 @@ async def test_cari_transfer_duplicate_key_is_safe_conflict(monkeypatch):
             update_one=AsyncMock(),
         ),
         folios=SimpleNamespace(
-            find_one=AsyncMock(return_value={"id": "folio-a", "booking_id": "booking-a"}),
+            find_one=AsyncMock(return_value={"id": "folio-a", "booking_id": "booking-a", "status": "open"}),
             insert_one=AsyncMock(),
         ),
         cari_accounts=SimpleNamespace(
