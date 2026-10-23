@@ -849,18 +849,27 @@ async def _get_active_bookings(tenant_id, start_date, end_date):
             "check_in": {"$lt": end_exclusive},
             "check_out": {"$gt": start_date},
         },
-        {"_id": 0, "room_id": 1, "check_in": 1, "check_out": 1},
+        {"_id": 0, "room_id": 1, "room_type": 1, "check_in": 1, "check_out": 1},
     ).to_list(10000)
 
 
+def _grid_booking_room_type(booking, room_type_by_id, known_room_types):
+    # A physical assignment is authoritative after a move/upgrade. Channel
+    # bookings without an assignment still consume their mapped PMS category.
+    assigned_type = room_type_by_id.get(booking.get("room_id"))
+    if assigned_type:
+        return assigned_type
+    mapped_type = booking.get("room_type")
+    return mapped_type if isinstance(mapped_type, str) and mapped_type in known_room_types else None
+
+
 def _count_sold(pms_room_type, day_str, room_ids_by_type, active_bookings):
-    rt_room_ids = set(room_ids_by_type.get(pms_room_type, []))
-    if not rt_room_ids:
+    if pms_room_type not in room_ids_by_type:
         return 0
+    room_type_by_id = {rid: rt for rt, ids in room_ids_by_type.items() for rid in ids}
     sold = 0
     for b in active_bookings:
-        rid = b.get("room_id")
-        if rid not in rt_room_ids:
+        if _grid_booking_room_type(b, room_type_by_id, room_ids_by_type) != pms_room_type:
             continue
         ci = (b.get("check_in") or "")[:10]
         co = (b.get("check_out") or "")[:10]
@@ -876,14 +885,14 @@ def _build_sold_count_index(room_ids_by_type, active_bookings, start_date, end_d
         for room_type, room_ids in room_ids_by_type.items()
         for room_id in room_ids
     }
-    if not room_type_by_id:
+    if not room_ids_by_type:
         return {}
 
     start = datetime.strptime(start_date, "%Y-%m-%d").date()
     end = datetime.strptime(end_date, "%Y-%m-%d").date()
     sold_counts = {}
     for booking in active_bookings:
-        room_type = room_type_by_id.get(booking.get("room_id"))
+        room_type = _grid_booking_room_type(booking, room_type_by_id, room_ids_by_type)
         if not room_type:
             continue
         try:
