@@ -427,6 +427,19 @@ async def get_unified_grid(
         start_date = datetime.now(UTC).date().isoformat()
     if not end_date:
         end_date = (datetime.now(UTC) + timedelta(days=14)).date().isoformat()
+    # Calendar reads must fail before database/provider access for malformed,
+    # inverted or unbounded ranges. The end date is an inclusive sellable night.
+    try:
+        start = datetime.strptime(start_date, "%Y-%m-%d").date()
+        end = datetime.strptime(end_date, "%Y-%m-%d").date()
+        if start.isoformat() != start_date or end.isoformat() != end_date or end.year == 9999:
+            raise ValueError
+    except ValueError as exc:
+        raise HTTPException(422, "Geçerli YYYY-MM-DD tarihleri seçin.") from exc
+    if end < start:
+        raise HTTPException(422, "Bitiş tarihi başlangıçtan önce olamaz.")
+    if (end - start).days > 365:
+        raise HTTPException(422, "Tek görünümde en fazla 366 gün seçebilirsiniz.")
     if provider == 'agency':
         return await _build_agency_grid(tenant_id, start_date, end_date)
     explicit = provider in ("hotelrunner", "exely")
