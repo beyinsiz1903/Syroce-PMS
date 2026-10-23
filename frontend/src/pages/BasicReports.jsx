@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, { lazy, Suspense, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
@@ -15,7 +15,6 @@ import OverviewSection from './reports/OverviewSection';
 import RevenueSection from './reports/RevenueSection';
 import AdrRevparSection from './reports/AdrRevparSection';
 import PeriodSection from './reports/PeriodSection';
-import DailyOccupancyReport from './reports/DailyOccupancyReport';
 import RoomTypesSection from './reports/RoomTypesSection';
 import { GuestTable } from './reports/GuestSection';
 import NationalitySection from './reports/NationalitySection';
@@ -31,6 +30,9 @@ import { getReportContract } from '@/lib/reportContracts';
 import { fetchJsonWithRetry } from '@/lib/fetchRetry';
 import { useBusinessDate } from '@/hooks/useBusinessDate';
 import { validateReportDate } from '@/utils/reportExports';
+// The matrix is a self-contained report. Keep it out of the main reports
+// chunk so unrelated reports do not pay its download/parse cost.
+const DailyOccupancyReport = lazy(() => import('./reports/DailyOccupancyReport'));
 const BACKEND_URL = "";
 const CSV_FORMULA_PREFIX = /^[=+\-@\t\r]/;
 const csvCell = value => {
@@ -567,7 +569,9 @@ const BasicReports = ({
       case 'period':
         return <PeriodSection data={data} pc={pc} reportPeriod={reportPeriod} />;
       case 'occupancy':
-        return <DailyOccupancyReport key={tenant?.id || user?.tenant_id || ''} />;
+        return <Suspense fallback={<ProductState state="loading" moduleName="Doluluk Raporu" showDashboardLink={false} />}>
+          <DailyOccupancyReport key={tenant?.id || user?.tenant_id || ''} />
+        </Suspense>;
       case 'room_types':
         return <RoomTypesSection roomTypeData={roomTypeData} />;
       case 'guests':

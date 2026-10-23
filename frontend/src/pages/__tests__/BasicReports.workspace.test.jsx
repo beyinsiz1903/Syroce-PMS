@@ -67,6 +67,26 @@ describe('Complete active report workspace', () => {
     expect(fetchJson).not.toHaveBeenCalled();
   });
 
+  it('loads the self-contained occupancy matrix only when selected and mounts one reader', async () => {
+    get.mockImplementation(async (_url, { params }) => ({ data: {
+      ...params, business_date: '2026-10-07', snapshot: 'verified', room_types: [], room_type_groups: [],
+      rows: [{ date: params.start_date, physical_rooms: 20, available_rooms: 20, expected_rooms: 10, expected_occupancy: 50 }],
+      totals: {},
+    } }));
+    open();
+    await screen.findByTestId('section-overview');
+    expect(get).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId('report-nav-occupancy'));
+    expect(await screen.findByTestId('occupancy-matrix')).toHaveTextContent('%50');
+    expect(get).toHaveBeenCalledExactlyOnceWith('/reports/occupancy-calendar', {
+      params: { start_date: '2026-10-07', end_date: '2026-10-20', room_type: '' },
+    });
+    expect(screen.queryByTestId('product-state')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('report-nav-overview'));
+    await screen.findByTestId('section-overview');
+    expect(screen.queryByTestId('occupancy-matrix')).not.toBeInTheDocument();
+  });
+
   it('keeps the daily reconciliation picker synchronized with the printable report date', async () => {
     open('trial_balance');
     await screen.findByTestId('input-tb-date');
