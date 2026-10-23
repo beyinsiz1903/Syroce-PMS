@@ -151,6 +151,15 @@ async def test_amount_uses_ledger_not_cached_balance_and_keeps_cents(ledger):
     assert not ledger.payments.rows and ledger.bookings.rows[0]['currency'] == 'TRY'
 
 
+@pytest.mark.asyncio
+async def test_legacy_unidentified_lines_still_count_as_debt_but_are_not_moved(ledger):
+    legacy = {"tenant_id": "hotel-a", "folio_id": "guest", "total": 1, "currency": "TRY"}
+    ledger.folio_charges.rows.append(legacy)
+    result = await run(ledger, request())
+    assert result['source_balance'] == 4001 and result['target_balance'] == 6000
+    assert legacy['folio_id'] == 'guest'
+
+
 @pytest.mark.parametrize("mutation,status", [
     (lambda db: db.folios.rows[0].update(status="closed"), 409),
     (lambda db: db.folios.rows[1].update(status="closed"), 409),

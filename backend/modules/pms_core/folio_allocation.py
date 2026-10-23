@@ -98,7 +98,7 @@ async def allocate_posted_debt(database, tenant_id, actor_id, body, *, session):
             raise HTTPException(409, "Çok para birimli folyo önce mutabık hale getirilmeli")
     before = {fid: money(snap["balance_by_currency"].get(currency, 0)) for fid, snap in snapshots.items()}
     rows = snapshots[source["id"]]["charges"]
-    selected = [row for row in rows if row["id"] in body.charge_ids] if body.mode == "items" else []
+    selected = [row for row in rows if row.get("id") in body.charge_ids] if body.mode == "items" else []
     if body.mode == "items" and {row["id"] for row in selected} != set(body.charge_ids):
         raise HTTPException(409, "Seçilen kalemler kaynak folyoda yok veya iptal edilmiş; yenileyin")
     if any(row.get("invoice_id") or row.get("charge_category") == "split_adjustment" or

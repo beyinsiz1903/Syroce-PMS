@@ -142,6 +142,17 @@ def _user():
 
 
 @pytest.mark.asyncio
+async def test_existing_window_debt_allocation_is_not_an_invoice_candidate(monkeypatch):
+    database = _fake_db()
+    database.folio_charges.rows.extend([{'id': f'allocation-{sign}', 'allocation_id': 'allocation',
+        'charge_category': 'split_adjustment', 'amount': 60 * sign} for sign in [-1, 1]])
+    monkeypatch.setattr(invoices, 'db', database)
+    result = await invoices.get_invoice_charges('booking-a', current_user=_user())
+    assert {item['id'] for item in result['charges']} == {'accommodation', 'folio-charge-a', 'extra-charge-a'}
+    assert sum(item['amount'] for item in result['charges']) == 120
+
+
+@pytest.mark.asyncio
 async def test_invoice_charge_list_uses_durable_charge_collections(monkeypatch):
     database = _fake_db()
     monkeypatch.setattr(invoices, "db", database)

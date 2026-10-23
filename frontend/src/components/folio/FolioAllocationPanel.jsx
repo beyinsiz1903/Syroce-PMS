@@ -25,7 +25,7 @@ export default function FolioAllocationPanel({ bookingId, currency, folios, char
   const target = open.find(folio => folio.id === targetId);
   const sourceCurrency = code(source?.currency || currency);
   const targets = open.filter(folio => folio.id !== sourceId && code(folio.currency || currency) === sourceCurrency);
-  const items = charges.filter(row => row.folio_id === sourceId && !row.voided && !row.invoice_id &&
+  const items = charges.filter(row => typeof row.id === 'string' && row.id && row.folio_id === sourceId && !row.voided && !row.invoice_id &&
     row.charge_category !== 'split_adjustment' && Number(row.total ?? row.amount) > 0 && code(row.currency || sourceCurrency) === sourceCurrency);
   const itemTotal = items.filter(row => selected.includes(row.id)).reduce((sum, row) => sum + Math.round(Number(row.total ?? row.amount) * 100), 0) / 100;
   const total = mode === 'items' ? itemTotal : parseMoneyInput(amount);
@@ -76,7 +76,8 @@ export default function FolioAllocationPanel({ bookingId, currency, folios, char
         <input type="checkbox" checked={selected.includes(row.id)} onChange={e => setSelected(previous => e.target.checked ? [...previous, row.id] : previous.filter(id => id !== row.id))} />
         <span>{row.description || row.charge_name || row.id}</span><span className="ml-auto whitespace-nowrap">{money(row.total ?? row.amount)}</span>
       </label>)}{source && items.length === 0 && <p className="text-sm">Aktarılabilir asıl masraf yok. Henüz folyoya işlenmemiş ek ücretler bu listede bulunmaz.</p>}</div>
-        : <label className="block text-sm">Aktarılacak tutar ({sourceCurrency})<input aria-label="Paylaştırma tutarı" inputMode="decimal" value={amount} onChange={e => setAmount(e.target.value)} className="ml-2 rounded border bg-background p-2" /></label>}
+        : <div className="space-y-2"><label className="block text-sm">Aktarılacak tutar ({sourceCurrency})<input aria-label="Paylaştırma tutarı" inputMode="decimal" value={amount} onChange={e => setAmount(e.target.value)} className="ml-2 rounded border bg-background p-2" /></label>
+          <p className="text-sm text-muted-foreground">Tutar modu yalnız borç payını ayırır; vergiyi/masrafı taşımaz. Ayrı folyo faturası için “Kalem seç” yöntemini kullanın. Tutar payı içeren folyodan otomatik fatura oluşturulmaz.</p></div>}
       <label className="block text-sm">İşlem açıklaması<input aria-label="Paylaştırma açıklaması" maxLength={500} value={reason} onChange={e => setReason(e.target.value)} className="mt-1 block w-full rounded border bg-background p-2" placeholder="Örn. konaklama şirkete, kişisel harcamalar misafire" /></label>
       {source && target && Number.isFinite(total) && <div className="rounded border p-3 text-sm" data-testid="allocation-preview">
         <p>Aktarılacak: {money(total)}</p><p>{label(source)}: {money(source.balance)} → {money(Number(source.balance) - total)}</p>

@@ -214,6 +214,8 @@ def folio_charge_to_invoice_items(
     accommodation_vat_rate: float = ACCOMMODATION_VAT_RATE,
 ) -> list[dict[str, Any]]:
     """Convert one folio charge to fiscal lines while preserving its total."""
+    if charge.get("allocation_id") and charge.get("charge_category") == "split_adjustment":
+        raise HTTPException(409, "Bu folyoda yalnız borç paylaştırması var; fatura için önce asıl masraf/vergi kalemlerini paylaştırın")
     category = str(charge.get("charge_category") or "other").lower()
     description = charge.get("description") or "Otel hizmeti"
     amount = round(float(charge.get("amount") or charge.get("unit_price") or 0.0), 2)
