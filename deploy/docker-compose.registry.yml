@@ -1,0 +1,13 @@
+# Overlay used only by the exact-revision Droplet deployment workflow.
+# Keep base service settings, volumes and healthchecks; replace local build
+# outputs with images published by the successful CI run. Beat uses the same
+# worker image with its existing lightweight scheduler command/environment.
+services:
+  backend:
+    image: ${DEPLOY_IMAGE_PREFIX:?CI registry prefix required}-backend:${DEPLOY_SHA:?Exact CI revision required}
+  frontend:
+    image: ${DEPLOY_IMAGE_PREFIX:?CI registry prefix required}-frontend:${DEPLOY_SHA:?Exact CI revision required}
+  worker:
+    image: ${DEPLOY_IMAGE_PREFIX:?CI registry prefix required}-worker:${DEPLOY_SHA:?Exact CI revision required}
+  beat:
+    image: ${DEPLOY_IMAGE_PREFIX:?CI registry prefix required}-worker:${DEPLOY_SHA:?Exact CI revision required}
