@@ -6,6 +6,7 @@ import { Button } from "../ui/button";
 import { Badge } from "../ui/badge";
 import { Layers, Plus, RefreshCw, User, Building2, Crown, Briefcase } from "lucide-react";
 import { useTranslation } from 'react-i18next';
+import { formatCurrency, cachedTenantCurrency } from '@/lib/currency';
 const PAYOR_OPTIONS = [{
   value: "guest",
   label: "Misafir",
@@ -31,7 +32,10 @@ function payorMeta(type) {
 }
 export default function FolioWindowsPanel({
   bookingId,
-  currentFolioId
+  currentFolioId,
+  onSelect,
+  onChanged,
+  readOnly = false,
 }) {
   const {
     t
@@ -41,6 +45,10 @@ export default function FolioWindowsPanel({
   const [showAdd, setShowAdd] = useState(false);
   const [newPayor, setNewPayor] = useState("guest");
   const [adding, setAdding] = useState(false);
+  const [editingId, setEditingId] = useState('');
+  const [accounts, setAccounts] = useState([]);
+  const [accountId, setAccountId] = useState('');
+  const [accountError, setAccountError] = useState('');
   const headers = {};
   const fetchWindows = useCallback(async () => {
     if (!bookingId) return;
@@ -62,35 +70,30 @@ export default function FolioWindowsPanel({
   useEffect(() => {
     fetchWindows();
   }, [fetchWindows]);
+  useEffect(() => {
+    let active = true;
+    if (!showAdd || !['company', 'agency'].includes(newPayor)) return () => { active = false; };
+    setAccounts([]); setAccountError('');
+    axios.get('/pms/cari-accounts').then(({ data }) => { if (active) setAccounts(data.accounts || []); })
+      .catch(() => { if (active) setAccountError('Cari hesaplar alınamadı. Yeniden açıp deneyin.'); });
+    return () => { active = false; };
+  }, [showAdd, newPayor]);
   const openWindow = async () => {
+    if (readOnly || (['company', 'agency'].includes(newPayor) && !accountId)) return;
     setAdding(true);
     try {
-      await axios.post(`/folio-windows`, {
-        booking_id: bookingId,
-        payor_type: newPayor
-      }, {
-        headers
-      });
-      toast.success("Yeni window açıldı");
+      const payload = { payor_type: newPayor, ...(['company', 'agency'].includes(newPayor) ? { cari_account_id: accountId } : {}) };
+      if (editingId) await axios.patch(`/folio-windows/${editingId}/payor`, payload);
+      else await axios.post('/folio-windows', { booking_id: bookingId, ...payload });
+      toast.success(editingId ? 'Ödeyen güncellendi' : 'Yeni folyo açıldı');
       setShowAdd(false);
-      fetchWindows();
+      setEditingId(''); setAccountId('');
+      await fetchWindows();
+      onChanged?.();
     } catch (e) {
       toast.error(e.response?.data?.detail || "Window açılamadı");
     } finally {
       setAdding(false);
-    }
-  };
-  const changePayor = async (folioId, payorType) => {
-    try {
-      await axios.patch(`/folio-windows/${folioId}/payor`, {
-        payor_type: payorType
-      }, {
-        headers
-      });
-      toast.success("Payor güncellendi");
-      fetchWindows();
-    } catch (e) {
-      toast.error(e.response?.data?.detail || "Güncellenemedi");
     }
   };
   const usedSet = new Set(windows.map(w => w.window_number).filter(n => n > 0));
@@ -101,26 +104,28 @@ export default function FolioWindowsPanel({
           <div className="flex items-center gap-2">
             <Layers className="w-4 h-4 text-blue-600" />
             <h3 className="text-sm font-semibold text-gray-800">
-              Folio Windows ({windows.length})
+              Folyo Hesapları ({windows.length})
             </h3>
           </div>
           <div className="flex gap-2">
             <Button variant="outline" size="sm" onClick={fetchWindows} disabled={loading}>
               <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
             </Button>
-            <Button size="sm" onClick={() => setShowAdd(v => !v)} disabled={!canAdd} className="bg-blue-600 hover:bg-blue-700 text-white" data-testid="window-add-btn">
+            {!readOnly && <Button size="sm" onClick={() => { setEditingId(''); setAccountId(''); setNewPayor('guest'); setShowAdd(v => !v); }} disabled={!canAdd} className="bg-blue-600 hover:bg-blue-700 text-white" data-testid="window-add-btn">
               <Plus className="w-3.5 h-3.5 mr-1" /> {t('cm.components_folio_FolioWindowsPanel.window_ekle')}
-            </Button>
+            </Button>}
           </div>
         </div>
 
-        {showAdd && canAdd && <div className="border border-blue-200 bg-blue-50 rounded-md p-3 mb-4 flex items-center gap-2">
-            <span className="text-xs text-gray-700">Payor:</span>
-            <select className="border rounded-md px-2 py-1 text-sm" value={newPayor} onChange={e => setNewPayor(e.target.value)} data-testid="window-payor-select">
+        {!readOnly && showAdd && (canAdd || editingId) && <div className="border border-blue-200 bg-blue-50 rounded-md p-3 mb-4 flex flex-wrap items-center gap-2">
+            <span className="text-xs text-gray-700">Ödeyen:</span>
+            <select aria-label="Folyo ödeyen türü" className="border rounded-md px-2 py-1 text-sm" value={newPayor} onChange={e => { setNewPayor(e.target.value); setAccountId(''); }} data-testid="window-payor-select">
               {PAYOR_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
-            <Button size="sm" onClick={openWindow} disabled={adding} className="bg-emerald-600 hover:bg-emerald-700 text-white">
-              {adding ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : "Aç"}
+            {['company', 'agency'].includes(newPayor) && <select aria-label="Folyo cari hesabı" value={accountId} onChange={e => setAccountId(e.target.value)} className="rounded border p-2"><option value="">Cari hesap seçin</option>{accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select>}
+            {accountError && <p role="alert">{accountError}</p>}
+            <Button size="sm" onClick={openWindow} disabled={adding || (!!accountError && ['company', 'agency'].includes(newPayor)) || (['company', 'agency'].includes(newPayor) && !accountId)} className="bg-emerald-600 hover:bg-emerald-700 text-white">
+              {adding ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : editingId ? 'Kaydet' : 'Aç'}
             </Button>
             <Button size="sm" variant="ghost" onClick={() => setShowAdd(false)}>{t('cm.components_folio_FolioWindowsPanel.iptal')}</Button>
           </div>}
@@ -129,7 +134,7 @@ export default function FolioWindowsPanel({
 
         {windows.length === 0 && !loading && <p className="text-sm text-gray-500 py-6 text-center">{t('cm.components_folio_FolioWindowsPanel.henuz_window_yok')}</p>}
 
-        <div className="grid gap-2">
+        <div className="grid gap-3 lg:grid-cols-2">
           {windows.map(w => {
           const meta = payorMeta(w.payor_type);
           const isCurrent = w.folio_id === currentFolioId;
@@ -148,6 +153,7 @@ export default function FolioWindowsPanel({
                       </Badge>
                       {isCurrent && <Badge className="bg-blue-100 text-blue-700 text-xs">aktif</Badge>}
                     </div>
+                    {w.cari_account_name && <p className="text-xs font-medium">{w.cari_account_name}</p>}
                     <div className="text-xs text-gray-500 mt-0.5">
                       {w.charges_count} masraf · {w.payments_count} {t('cm.components_folio_FolioWindowsPanel.odeme')}
                     </div>
@@ -157,13 +163,13 @@ export default function FolioWindowsPanel({
                   <div className="text-right">
                     <p className="text-xs text-gray-500">{t('cm.components_folio_FolioWindowsPanel.bakiye')}</p>
                     <p className={`text-sm font-bold ${w.balance > 0 ? "text-red-600" : "text-emerald-600"}`}>
-                      {(w.balance || 0).toFixed(2)}
+                      {formatCurrency(w.balance || 0, w.currency || cachedTenantCurrency())}
                     </p>
                   </div>
-                  {w.status === "open" && <select className="border rounded-md px-2 py-1 text-xs" value={w.payor_type || ""} onChange={e => changePayor(w.folio_id, e.target.value)} title={t('cm.components_folio_FolioWindowsPanel.payor_degistir')} data-testid={`window-payor-${w.window_number || 0}`}>
-                      <option value="" disabled>Payor</option>
-                      {PAYOR_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                    </select>}
+                  {!readOnly && w.status === 'open' && <div className="flex flex-col gap-1">
+                    {onSelect && <Button size="sm" variant="outline" onClick={() => onSelect(w.folio_id)}>Bu folyoyu seç</Button>}
+                    <Button size="sm" variant="outline" onClick={() => { setEditingId(w.folio_id); setNewPayor(w.payor_type || w.folio_type || 'guest'); setAccountId(w.cari_account_id || ''); setShowAdd(true); }}>Ödeyeni düzenle</Button>
+                  </div>}
                 </div>
               </div>;
         })}

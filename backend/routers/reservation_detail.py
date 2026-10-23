@@ -377,12 +377,15 @@ def _build_financial_summary(
     look as though part of its confirmed price disappeared.
     """
     from core.booking_payment_state import is_effective
+    from modules.pms_core.reporting_financials import deduplicate_report_payments, effective_collection
 
     # Failed / cancelled / rejected payment rows moved no money: the same
     # filter as the collected amount, so balance and status cannot disagree.
     active_charges = [charge for charge in charges if not charge.get("voided")]
     total_charges = sum(charge.get("total", charge.get("amount", 0)) for charge in active_charges)
     total_payments = sum(payment.get("amount", 0) for payment in payments if is_effective(payment) and payment.get("method") != "discount")
+    city_ledger_transfer_total = sum(payment.get("amount", 0) for payment in payments if is_effective(payment) and str(payment.get("method") or "").lower() in {"city_ledger", "ar", "direct_bill"})
+    cash_collection_total = sum(effective_collection(payment) for payment in deduplicate_report_payments(payments) if str(payment.get("method") or "").lower() != "direct_bill")
     prepayment_total = sum(
         payment.get("amount", 0)
         for payment in payments
@@ -532,6 +535,8 @@ def _build_financial_summary(
         "source_charged_amount": float(source_snapshot.get("charged") or 0),
         "total_charges": round(total_charges, 2),
         "total_payments": round(total_payments, 2),
+        "cash_collection_total": round(cash_collection_total, 2),
+        "city_ledger_transfer_total": round(city_ledger_transfer_total, 2),
         "prepayment_total": round(prepayment_total, 2),
         "other_payments_total": round(total_payments - prepayment_total, 2),
         "total_discounts": round(total_discounts, 2),
@@ -828,6 +833,7 @@ router = APIRouter(prefix="/api/pms", tags=["reservation-detail"])
 class PaymentRecord(BaseModel):
     # Bug CP fix — financial input validation (positive amounts, sane bounds)
     amount: float = Field(..., gt=0, le=1e9)
+    folio_id: str | None = Field(None, min_length=1, max_length=100)
     method: str = Field(..., min_length=1, max_length=50)  # cash, card, bank_transfer, online
     payment_type: str = Field("interim", max_length=50)  # prepayment, deposit, interim, final
     reference: str | None = Field(None, max_length=200)
@@ -836,6 +842,17 @@ class PaymentRecord(BaseModel):
     received_currency: str | None = Field(None, min_length=3, max_length=3)
     received_amount: float | None = Field(None, gt=0, le=1e9)
     exchange_rate: float | None = Field(None, gt=0, le=1e9)
+
+
+def _same_payment_record(existing: dict, data: PaymentRecord) -> bool:
+    return (
+        round(float(existing.get("amount") or 0), 2) == round(float(data.amount), 2)
+        and (data.folio_id is None or existing.get("folio_id") == data.folio_id)
+        and (existing.get("method") or "") == data.method
+        and (existing.get("payment_type") or "") == data.payment_type
+        and (not data.received_currency or str(existing.get("received_currency") or existing.get("currency") or "TRY").upper() == str(data.received_currency).upper())
+        and (data.received_amount is None or round(float(existing.get("received_amount") or existing.get("amount") or 0), 2) == round(float(data.received_amount), 2))
+    )
 
 
 class ChannelPricingRepairRequest(BaseModel):
@@ -848,6 +865,7 @@ class ChannelPricingRepairRequest(BaseModel):
 
 class CariTransfer(BaseModel):
     amount: float = Field(..., gt=0, le=1e9)
+    folio_id: str | None = Field(None, min_length=1, max_length=100)
     cari_account_id: str
     cari_account_name: str | None = Field(None, max_length=200)
     description: str | None = Field(None, max_length=2000)
@@ -1888,21 +1906,7 @@ async def record_payment(
             {"_id": 0},
         )
         if existing:
-            if (
-                round(float(existing.get("amount") or 0), 2) != round(float(data.amount), 2)
-                or (existing.get("method") or "") != data.method
-                or (existing.get("payment_type") or "") != data.payment_type
-                or (
-                    data.received_currency
-                    and str(existing.get("received_currency") or existing.get("currency") or "TRY").upper()
-                    != str(data.received_currency).upper()
-                )
-                or (
-                    data.received_amount is not None
-                    and round(float(existing.get("received_amount") or existing.get("amount") or 0), 2)
-                    != round(float(data.received_amount), 2)
-                )
-            ):
+            if not _same_payment_record(existing, data):
                 raise HTTPException(
                     status_code=409,
                     detail="Duplicate payment reference with different payload",
@@ -1914,13 +1918,16 @@ async def record_payment(
     # (same booking + amount + method + type, seconds apart) cannot double-credit
     # the guest. Rejected (409), not replayed: without a client reference there
     # is no verifiable intent for a deliberate identical second payment.
+    from modules.pms_core.folio_selection import select_booking_folio
+
+    target_folio = await select_booking_folio(db, tid, booking_id, data.folio_id)
     auto_lock_id = None
     if not ref_key:
         dedup = await claim_short_window_dedup(
             db,
             tenant_id=tid,
             scope=f"auto_payment_dedup:booking:{booking_id}",
-            fingerprint=f"{round(float(data.amount), 2)}|{data.method}|{data.payment_type}",
+            fingerprint=f"{round(float(data.amount), 2)}|{data.method}|{data.payment_type}|{(target_folio or {}).get('id', '')}",
         )
         if dedup["status"] == "duplicate":
             raise HTTPException(
@@ -1933,7 +1940,7 @@ async def record_payment(
     # free the auto-dedup slot so a legitimate retry is not blocked for the
     # whole window.
     try:
-        folio = await db.folios.find_one({"booking_id": booking_id, "tenant_id": tid, "status": "open"}, {"_id": 0})
+        folio = target_folio
         if not folio:
             from core.utils import generate_folio_number
 
@@ -1997,6 +2004,8 @@ async def record_payment(
                 {"_id": 0},
             )
             if existing:
+                if not _same_payment_record(existing, data):
+                    raise HTTPException(409, "Duplicate payment reference with different payload") from exc
                 await _refresh_cached_folio_balance(tid, existing["folio_id"])
                 return {"success": True, "payment": existing, "idempotent": True}
             raise HTTPException(status_code=409, detail="Duplicate payment reference") from exc
@@ -2179,10 +2188,11 @@ async def transfer_to_cari(
             detail="Cari aktarımı için seçilen cari başlangıçta çözümlenemedi",
         )
 
-    folio = await db.folios.find_one(
-        {"booking_id": booking_id, "tenant_id": tid, "status": "open"},
-        {"_id": 0},
-    )
+    from modules.pms_core.folio_selection import select_booking_folio
+
+    folio = await select_booking_folio(db, tid, booking_id, data.folio_id)
+    if folio and folio.get("cari_account_id") and folio["cari_account_id"] != _canonical_cari_account_id(cari):
+        raise HTTPException(409, "Seçilen folyo başka bir cari hesaba bağlı")
     prepared_folio_number = None
     if not folio:
         from core.utils import generate_folio_number
@@ -2193,7 +2203,7 @@ async def transfer_to_cari(
         db,
         tenant_id=tid,
         scope=f"cari_transfer:booking:{booking_id}",
-        fingerprint=f"{round(float(data.amount), 2)}|{data.cari_account_id}",
+        fingerprint=f"{round(float(data.amount), 2)}|{data.cari_account_id}|{(folio or {}).get('id', '')}",
     )
     if dedup["status"] == "duplicate":
         raise HTTPException(
@@ -2247,11 +2257,13 @@ async def transfer_to_cari(
             raise HTTPException(status_code=409, detail="Cari aktarım tutarı açık bakiyeyi aşamaz")
 
         commit_stage["name"] = "folyo hazırlama"
-        current_folio = await db.folios.find_one(
-            {"booking_id": booking_id, "tenant_id": tid, "status": "open"},
-            {"_id": 0},
-            session=session,
-        )
+        current_folio = await select_booking_folio(db, tid, booking_id, (folio or {}).get("id"), session=session)
+        if current_folio and current_folio.get("cari_account_id") and current_folio["cari_account_id"] != canonical_account_id:
+            raise HTTPException(409, "Seçilen folyo başka bir cari hesaba bağlı")
+        if data.folio_id and current_folio:
+            from modules.pms_core.folio_selection import ensure_folio_transfer_amount
+
+            await ensure_folio_transfer_amount(db, tid, current_folio, data.amount, str(current_booking.get("currency") or "TRY"), session=session)
         if not current_folio:
             current_folio = {
                 "id": str(uuid.uuid4()),
@@ -2294,6 +2306,7 @@ async def transfer_to_cari(
             "amount": data.amount,
             "method": "city_ledger",
             "payment_type": "city_ledger_transfer",
+            "currency": str(current_booking.get("currency") or "TRY").upper(),
             "status": "paid",
             "reference": f"cari-transfer:{transaction_id}",
             "cari_account_id": canonical_account_id,

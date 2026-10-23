@@ -15,7 +15,7 @@ import OverviewSection from './reports/OverviewSection';
 import RevenueSection from './reports/RevenueSection';
 import AdrRevparSection from './reports/AdrRevparSection';
 import PeriodSection from './reports/PeriodSection';
-import OccupancySection from './reports/OccupancySection';
+import DailyOccupancyReport from './reports/DailyOccupancyReport';
 import RoomTypesSection from './reports/RoomTypesSection';
 import { GuestTable } from './reports/GuestSection';
 import NationalitySection from './reports/NationalitySection';
@@ -232,7 +232,7 @@ export const REPORT_MENU = [{
   icon: Utensils,
   desc: 'Yiyecek & içecek'
 }];
-const SELF_CONTAINED_SECTIONS = new Set(['flash_report', 'expenses', 'official', 'forecast_reports', 'trial_balance', 'gl_trial_balance', 'income_statement', 'balance_sheet', 'journal']);
+const SELF_CONTAINED_SECTIONS = new Set(['occupancy', 'flash_report', 'expenses', 'official', 'forecast_reports', 'trial_balance', 'gl_trial_balance', 'income_statement', 'balance_sheet', 'journal']);
 const ACCOUNTING_STATEMENT_SECTIONS = new Set(['gl_trial_balance', 'income_statement', 'balance_sheet', 'journal']);
 const POINT_IN_TIME_SECTIONS = new Set(['gl_trial_balance', 'balance_sheet']);
 const REPORT_SECTION_IDS = new Set(REPORT_MENU.filter(item => item.id).map(item => item.id));
@@ -567,7 +567,7 @@ const BasicReports = ({
       case 'period':
         return <PeriodSection data={data} pc={pc} reportPeriod={reportPeriod} />;
       case 'occupancy':
-        return <OccupancySection data={data} s={s} periodMetrics={periodMetrics} reportPeriod={reportPeriod} />;
+        return <DailyOccupancyReport key={tenant?.id || user?.tenant_id || ''} />;
       case 'room_types':
         return <RoomTypesSection roomTypeData={roomTypeData} />;
       case 'guests':
@@ -623,7 +623,7 @@ const BasicReports = ({
   };
   const currentMenuItem = REPORT_MENU.find(m => m.id === activeSection);
   const periodLabel = POINT_IN_TIME_SECTIONS.has(activeSection) ? 'Tarih itibarıyla'
-    : ['expenses', 'forecast_reports'].includes(activeSection) ? 'Rapor içindeki seçim'
+    : ['occupancy', 'expenses', 'forecast_reports'].includes(activeSection) ? 'Rapor içindeki seçim'
     : DAILY_REPORT_SECTIONS.has(activeSection) || activeSection === 'official'
     ? 'Seçili gün'
     : reportPeriod === 'daily' ? 'Seçili gün' : 'Son 30 gün';
@@ -726,7 +726,7 @@ const BasicReports = ({
                     data-testid="report-date-input"
                   />
                 </label>}
-                {activeSection !== 'official' && <Button onClick={handleGenericPrint} disabled={needsDashboard && (loading || !!error || !data)} variant="outline" size="sm" className="hidden print:hidden sm:flex">
+                {!['occupancy', 'official'].includes(activeSection) && <Button onClick={handleGenericPrint} disabled={needsDashboard && (loading || !!error || !data)} variant="outline" size="sm" className="hidden print:hidden sm:flex">
                   <Printer className="w-3.5 h-3.5 mr-1.5" />Yazdır
                 </Button>}
                 {TABLE_EXPORT_SECTIONS.has(activeSection) && activeSection !== 'official' && <Button onClick={handleGenericExportCsv} disabled={loading || !!error || !data} variant="outline" size="sm" className="hidden print:hidden sm:flex" data-testid="report-csv">
@@ -737,7 +737,7 @@ const BasicReports = ({
                 </Button>}
               </div>
             </div>
-            <ReportFrame reportName={currentMenuItem?.labelKey ? t(currentMenuItem.labelKey, currentMenuItem.label) : currentMenuItem?.label || t('pms.reportLabels.overview', 'Genel Bakış')} reportDate={activeSection === 'official' ? officialDate : ['expenses', 'forecast_reports'].includes(activeSection) ? null : selectedDate} periodLabel={periodLabel} tenant={tenant} user={user} contract={getReportContract(activeSection)} refreshedAt={needsDashboard ? reportRefreshedAt : null}>
+            <ReportFrame reportName={currentMenuItem?.labelKey ? t(currentMenuItem.labelKey, currentMenuItem.label) : currentMenuItem?.label || t('pms.reportLabels.overview', 'Genel Bakış')} reportDate={activeSection === 'official' ? officialDate : ['occupancy', 'expenses', 'forecast_reports'].includes(activeSection) ? null : selectedDate} periodLabel={periodLabel} tenant={tenant} user={user} contract={getReportContract(activeSection)} refreshedAt={needsDashboard ? reportRefreshedAt : null}>
               <div data-testid="report-active-content" data-report-section={activeSection}>{renderContent()}</div>
             </ReportFrame>
           </div>

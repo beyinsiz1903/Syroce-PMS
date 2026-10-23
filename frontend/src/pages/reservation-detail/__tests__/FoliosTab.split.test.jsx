@@ -91,6 +91,25 @@ beforeEach(() => {
 });
 
 describe('kur çevirici', () => {
+  it('iki folyoda hedef seçmeden ödeme göndermez; seçimden sonra yalnız o folyonun bakiyesini gönderir', async () => {
+    render(<FoliosTab {...multiFolioProps()} />);
+    fireEvent.click(screen.getByTestId('btn-odeme-al'));
+    let panel = screen.getByTestId('payment-form');
+    fireEvent.click(within(panel).getByRole('button', { name: /kaydet/ }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Hedef folyoyu seçin');
+    expect(axiosPost).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText('İşlem hedef folyo'), { target: { value: 'f2' } });
+    panel = screen.getByTestId('payment-form');
+    fireEvent.click(within(panel).getByRole('button', { name: /kaydet/ }));
+    await waitFor(() => expect(axiosPost).toHaveBeenCalledWith('/pms/reservations/bk-1/record-payment', expect.objectContaining({ folio_id: 'f2', amount: 200, payment_type: 'final' })));
+  });
+
+  it('cari aktarımını tahsilattan ayrı gösterir', () => {
+    render(<FoliosTab {...singleFolioProps({ summary: { ...summary, total_payments: 10000, cash_collection_total: 4000, city_ledger_transfer_total: 6000 } })} />);
+    expect(screen.getByText('Cariye Aktarılan (tahsilat değil)')).toBeInTheDocument();
+    expect(screen.getByText('Tahsilatlar').parentElement).toHaveTextContent('4.000');
+  });
+
   it('rezervasyon ve tahsilat para birimleri arasında çapraz kur hesaplar', () => {
     const rates = { EUR: 50, USD: 40, TL: 1, TRY: 1 };
 
@@ -119,7 +138,7 @@ describe('kur çevirici', () => {
   });
 
   it('kurlar asenkron geldikten sonra EUR bakiyenin TL karşılığını otomatik doldurur', async () => {
-    axiosGet.mockResolvedValueOnce({ data: { rates: { EUR: 50, USD: 40, TL: 1, TRY: 1 } } });
+    axiosGet.mockImplementation(async url => ({ data: url === '/exchange-rates' ? { rates: { EUR: 50, USD: 40, TL: 1, TRY: 1 } } : [] }));
     render(<FoliosTab {...singleFolioProps({
       booking: { ...booking, currency: 'EUR' },
       summary: { ...summary, reservation_total_due: 145.45, balance: 145.45 },

@@ -17,7 +17,7 @@ class _Request:
 async def test_quick_payment_replay_does_not_post_twice(monkeypatch):
     """A browser retry must replay the first folio payment, not collect it twice."""
     payments = SimpleNamespace(insert_one=AsyncMock())
-    folios = SimpleNamespace(update_one=AsyncMock())
+    folios = SimpleNamespace(update_one=AsyncMock(), find_one=AsyncMock(return_value={"id": "folio-1", "status": "open"}))
     bookings = SimpleNamespace(update_one=AsyncMock())
     tenant_settings = SimpleNamespace(
         find_one=AsyncMock(return_value={"tenant_id": "tenant-1", "business_date": "2026-09-22"})
@@ -62,6 +62,7 @@ async def test_quick_payment_replay_does_not_post_twice(monkeypatch):
 
     payload = frontdesk_router.FolioPaymentRequest(
         amount=125,
+        folio_id="folio-1",
         method="card",
         payment_type="final",
         notes="Ön büro hızlı tahsilat",

@@ -1,6 +1,6 @@
 import os
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
@@ -410,11 +410,14 @@ async def test_payment_is_blocked_when_posted_room_rate_and_daily_rate_disagree(
 
 @pytest.mark.asyncio
 async def test_payment_allows_legacy_daily_allocation_when_confirmed_total_reconciles(monkeypatch):
+    monkeypatch.setattr('domains.pms.cashier_service.ensure_active_shift', AsyncMock())
+    monkeypatch.setattr('domains.pms.cashier_service.record_cash_transaction', AsyncMock())
     monkeypatch.setattr(reservation_detail, "stamp_open_business_date", AsyncMock(return_value="2026-09-22"))
     booking = {"id": "booking-a", "tenant_id": "tenant-a", "total_amount": 11500.0, "paid_amount": 11500.0}
     payments = SimpleNamespace(find_one=AsyncMock(return_value=None), insert_one=AsyncMock())
     bookings = SimpleNamespace(find_one=AsyncMock(return_value=booking), update_one=AsyncMock())
-    folios = SimpleNamespace(find_one=AsyncMock(return_value={"id": "folio-a", "status": "open"}))
+    folios = SimpleNamespace(find_one=AsyncMock(return_value={"id": "folio-a", "status": "open"}),
+                             find=Mock(return_value=SimpleNamespace(to_list=AsyncMock(return_value=[{"id": "folio-a", "status": "open"}]))))
     monkeypatch.setattr(
         reservation_detail,
         "db",

@@ -134,7 +134,7 @@ describe('financial and destructive mutation safety', () => {
   });
 
   it('blocks zero payments and posts a positive payment at most once with an idempotency key', async () => {
-    get.mockResolvedValue({ data: [{ id: 'folio-test', balance: 100 }] });
+    get.mockResolvedValue({ data: [{ id: 'folio-test', status: 'open', balance: 100 }] });
     const setPaymentForm = vi.fn();
     const props = {
       open: true,
@@ -158,6 +158,9 @@ describe('financial and destructive mutation safety', () => {
     rerender(<PaymentDialog {...positiveProps} />);
 
     const submit = screen.getByTestId('payment-submit-btn');
+    // Loading the open target is an explicit prerequisite; unknown/closed
+    // windows must not become payable just to satisfy the old synchronous test.
+    await waitFor(() => expect(submit).toBeEnabled());
     fireEvent.click(submit);
     fireEvent.click(submit);
 

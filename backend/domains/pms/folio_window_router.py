@@ -51,6 +51,7 @@ class WindowCreate(BaseModel):
     booking_id: str
     payor_type: PayorType
     payor_id: str | None = None  # guest_id / company_id / agency_id; master için None
+    cari_account_id: str | None = Field(None, min_length=1, max_length=100)
     notes: str | None = Field(default=None, max_length=500)
 
 
@@ -67,11 +68,39 @@ class WindowSummary(BaseModel):
     payments_count: int
     created_at: str | None
     closed_at: str | None
+    cari_account_id: str | None = None
+    cari_account_name: str | None = None
+    currency: str | None = None
 
 
 class PayorPatch(BaseModel):
     payor_type: PayorType
     payor_id: str | None = None
+    cari_account_id: str | None = Field(None, min_length=1, max_length=100)
+
+
+async def _validate_payor(body, tenant_id):
+    if body.cari_account_id:
+        if body.payor_id:
+            raise HTTPException(422, "Ödeyen profili veya cari hesap seçin; ikisini birlikte göndermeyin")
+        if body.payor_type not in {"company", "agency"}:
+            raise HTTPException(422, "Cari hesap yalnız şirket/acente folyosuna bağlanabilir")
+        # Reuse the same canonical/legacy-ID resolver as the actual AR transfer.
+        from routers.reservation_detail import _canonical_cari_account_id, _canonical_cari_account_name, _find_cari_account
+
+        account, _, _ = await _find_cari_account(tenant_id, body.cari_account_id)
+        if not account:
+            raise HTTPException(404, "Cari hesap bulunamadı")
+        return {"cari_account_id": _canonical_cari_account_id(account), "cari_account_name": _canonical_cari_account_name(account)}
+    if body.payor_type in {"company", "agency"} and not body.payor_id:
+        raise HTTPException(422, "Şirket/acente için bir cari hesap seçin")
+    if body.payor_id:
+        collection = {"guest": db.guests, "company": db.companies}.get(body.payor_type)
+        if collection is None:
+            raise HTTPException(422, "Acente için cari hesap seçin")
+        if not await collection.find_one({"id": body.payor_id, "tenant_id": tenant_id}, {"_id": 0, "id": 1}):
+            raise HTTPException(404, "Ödeyen bu tesiste bulunamadı")
+    return {"cari_account_id": None, "cari_account_name": None}
 
 
 def _payor_to_folio_type(payor_type: str) -> FolioType:
@@ -183,19 +212,11 @@ async def open_window(
 ):
     """Yeni window aç (auto-numbering 1-8). Race-safe: unique index + 3x retry."""
     await _ensure_indexes()
-    booking = await db.bookings.find_one({"id": body.booking_id, "tenant_id": user.tenant_id}, {"_id": 0, "id": 1})
+    booking = await db.bookings.find_one({"id": body.booking_id, "tenant_id": user.tenant_id}, {"_id": 0, "id": 1, "currency": 1})
     if not booking:
         raise HTTPException(404, "Rezervasyon bulunamadı")
 
-    # Payor doğrulama
-    if body.payor_type == "guest" and body.payor_id:
-        ok = await db.guests.find_one({"id": body.payor_id, "tenant_id": user.tenant_id}, {"_id": 0, "id": 1})
-        if not ok:
-            raise HTTPException(404, "Misafir bulunamadı")
-    elif body.payor_type == "company" and body.payor_id:
-        ok = await db.companies.find_one({"id": body.payor_id, "tenant_id": user.tenant_id}, {"_id": 0, "id": 1})
-        if not ok:
-            raise HTTPException(404, "Şirket bulunamadı")
+    payor = await _validate_payor(body, user.tenant_id)
 
     folio_type = _payor_to_folio_type(body.payor_type)
     last_err: Exception | None = None
@@ -218,6 +239,8 @@ async def open_window(
             "window_number": window_no,
             "payor_type": body.payor_type,
             "payor_id": body.payor_id,
+            **payor,
+            "currency": booking.get("currency"),
         }
         try:
             await db.folios.insert_one(doc)
@@ -257,6 +280,8 @@ async def open_window(
         payments_count=0,
         created_at=doc["created_at"],
         closed_at=None,
+        **payor,
+        currency=doc.get("currency"),
     )
 
 
@@ -269,6 +294,7 @@ async def list_windows(
     """Booking'in tüm window'larını döner (window_number'a göre sıralı).
     Legacy folios (window_number=None) eski→yeni implicit slot atanır."""
     folios = await db.folios.find({"booking_id": booking_id, "tenant_id": user.tenant_id}, {"_id": 0}).to_list(500)
+    booking = await db.bookings.find_one({"id": booking_id, "tenant_id": user.tenant_id}, {"_id": 0, "currency": 1}) if folios else None
 
     # Tek noktadan implicit slot resolve
     for f in folios:
@@ -297,6 +323,9 @@ async def list_windows(
                 payments_count=p_cnt,
                 created_at=str(f.get("created_at")) if f.get("created_at") else None,
                 closed_at=str(f.get("closed_at")) if f.get("closed_at") else None,
+                cari_account_id=f.get("cari_account_id"),
+                cari_account_name=f.get("cari_account_name"),
+                currency=f.get("currency") or (booking or {}).get("currency"),
             )
         )
     return out
@@ -316,6 +345,7 @@ async def change_payor(
     if folio.get("status") != FolioStatus.OPEN.value:
         raise HTTPException(409, "Yalnızca açık folio'nun payor'u değiştirilebilir")
 
+    payor = await _validate_payor(body, user.tenant_id)
     new_type = _payor_to_folio_type(body.payor_type)
     update = {
         "payor_type": body.payor_type,
@@ -323,6 +353,7 @@ async def change_payor(
         "folio_type": new_type.value,
         "guest_id": body.payor_id if body.payor_type == "guest" else None,
         "company_id": body.payor_id if body.payor_type == "company" else None,
+        **payor,
     }
     await db.folios.update_one({"id": folio_id, "tenant_id": user.tenant_id}, {"$set": update})
 
@@ -338,6 +369,8 @@ async def change_payor(
             "old_payor_id": folio.get("payor_id"),
             "new_payor_type": body.payor_type,
             "new_payor_id": body.payor_id,
+            "old_cari_account_id": folio.get("cari_account_id"),
+            "new_cari_account_id": payor.get("cari_account_id"),
         },
     )
 
@@ -363,4 +396,6 @@ async def change_payor(
         payments_count=p_cnt,
         created_at=str(folio.get("created_at")) if folio.get("created_at") else None,
         closed_at=str(folio.get("closed_at")) if folio.get("closed_at") else None,
+        **payor,
+        currency=folio.get("currency"),
     )

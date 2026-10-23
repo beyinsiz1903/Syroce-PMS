@@ -22,11 +22,12 @@ def report_day(value):
         return None
 
 
-async def folio_snapshots(database, tenant_id, folios, *, fallback_currency):
+async def folio_snapshots(database, tenant_id, folios, *, fallback_currency, session=None):
     """Batch-read uncapped, tenant-scoped ledger data, including legacy rows."""
     ids = list({f["id"] for f in folios if f.get("id")})
     booking_ids = list({f["booking_id"] for f in folios if f.get("booking_id")})
-    bookings = await database.bookings.find({"tenant_id": tenant_id, "id": {"$in": booking_ids}}, {"_id": 0}).to_list(None) if booking_ids else []
+    kwargs = {"session": session} if session is not None else {}
+    bookings = await database.bookings.find({"tenant_id": tenant_id, "id": {"$in": booking_ids}}, {"_id": 0}, **kwargs).to_list(None) if booking_ids else []
     booking_map = {b["id"]: b for b in bookings}
     snapshots = {}
     for folio in folios:
@@ -35,13 +36,13 @@ async def folio_snapshots(database, tenant_id, folios, *, fallback_currency):
         snapshots[folio["id"]] = {"folio": folio, "booking": booking, "currency": code, "charges": [], "payments": [], "charges_by_currency": {}, "payments_by_currency": {}}
     if not ids:
         return snapshots
-    async for row in database.folio_charges.find({"tenant_id": tenant_id, "folio_id": {"$in": ids}, "voided": {"$ne": True}}, {"_id": 0}):
+    async for row in database.folio_charges.find({"tenant_id": tenant_id, "folio_id": {"$in": ids}, "voided": {"$ne": True}}, {"_id": 0}, **kwargs):
         snap = snapshots[row["folio_id"]]
         code = currency_code(row.get("currency"), snap["currency"])
         amount = charge_amount(row)
         snap["charges"].append({**row, "currency": code, "total": amount})
         add_amount(snap["charges_by_currency"], code, amount)
-    payments = await database.payments.find({"tenant_id": tenant_id, "folio_id": {"$in": ids}}, {"_id": 0}).to_list(None)
+    payments = await database.payments.find({"tenant_id": tenant_id, "folio_id": {"$in": ids}}, {"_id": 0}, **kwargs).to_list(None)
     for row in deduplicate_report_payments(payments):
         if not is_valid_payment(row):
             continue

@@ -16,6 +16,7 @@ import { API, fmtCurrency, fmtTs, SummaryCard, FormField, SelectField, FormPanel
 import { isMoneyInput, parseMoneyInput } from '@/lib/moneyInput';
 import { parseExchangeRate, parseMoney } from '@/lib/financialInput';
 import SplitFolioDialog from '@/components/SplitFolioDialog';
+import FolioWindowsPanel from '@/components/folio/FolioWindowsPanel';
 import PrintableFolio from '@/components/PrintableFolio';
 import {
   classifyGuestPayment,
@@ -95,6 +96,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
   const [splitSourceId, setSplitSourceId] = useState('');
   const [loading, setLoading] = useState(false);
   const [actionError, setActionError] = useState('');
+  const [targetFolioId, setTargetFolioId] = useState('');
   const [reconcilingRoomCharge, setReconcilingRoomCharge] = useState(false);
   const [reconcilingStayTotal, setReconcilingStayTotal] = useState(false);
   // Currency Converter state
@@ -142,6 +144,17 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
   }, [useCurrencyConverter, manualExchangeRate, payForm.amount, currency, foreignCurrency, tcmbRates]);
 
   const folioList = useMemo(() => (Array.isArray(folios) ? folios : []), [folios]);
+  const targetFolio = folioList.find(f => f.id === targetFolioId && f.status === 'open');
+  const selectTargetFolio = id => {
+    setTargetFolioId(id);
+    const target = folioList.find(f => f.id === id && f.status === 'open');
+    if (target) {
+      const amount = String(Math.max(0, Number(target.balance) || 0));
+      setPayForm(p => ({ ...p, amount }));
+      setCariForm(p => ({ ...p, amount, cari_account_id: target.cari_account_id || '' }));
+    }
+  };
+  useEffect(() => { setTargetFolioId(''); }, [booking.id]);
 
   // Varsayılan kaynak folyo: önce misafir folyosu, yoksa açık folyo, yoksa ilk folyo.
   const defaultSourceId = useMemo(() => {
@@ -182,6 +195,16 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
   const pricingReconciliationDirection = summary?.pricing_reconciliation_direction;
   const rawFolioBalance = Number(summary?.folio_balance ?? summary?.balance) || 0;
   const reservationTotalDue = Number(summary?.reservation_total_due ?? summary?.balance) || 0;
+  const openPaymentForm = () => {
+    const balance = targetFolio ? Number(targetFolio.balance) || 0 : reservationTotalDue;
+    setPayForm(p => ({ ...p, amount: balance > 0 ? String(balance) : p.amount }));
+    setShowPayment(!showPayment);
+  };
+  const openCariForm = () => {
+    const balance = targetFolio ? Number(targetFolio.balance) || 0 : reservationTotalDue;
+    setCariForm(p => ({ ...p, amount: balance > 0 ? String(balance) : p.amount, cari_account_id: targetFolio?.cari_account_id || p.cari_account_id }));
+    setShowCari(!showCari); loadCari();
+  };
   const hasAllocatedPrepayment = pendingRoomAmount > 0.01 && reservationTotalDue <= 0.01 && rawFolioBalance < -0.01;
   const hasHistoricalRoomCredit = readOnly && pendingRoomAmount > 0.01 && Number(summary?.folio_balance) < -0.01;
   const accommodationTotal = Number(summary?.accommodation_total ?? summary?.total_amount) || 0;
@@ -346,7 +369,8 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
         <SummaryCard currency={currency} label="Konaklama" value={accommodationTotal} color="blue" />
         <SummaryCard currency={currency} label="Ekstralar" value={additionalChargeTotal} color="amber" />
         <SummaryCard currency={currency} label="Genel Toplam" value={grossTotal} color="blue" />
-        <SummaryCard currency={currency} label="Tahsilatlar" value={summary?.total_payments} color="emerald" />
+        <SummaryCard currency={currency} label="Tahsilatlar" value={summary?.cash_collection_total ?? summary?.total_payments} color="emerald" />
+        {(summary?.city_ledger_transfer_total || 0) > 0 && <SummaryCard currency={currency} label="Cariye Aktarılan (tahsilat değil)" value={summary.city_ledger_transfer_total} color="amber" />}
         <SummaryCard currency={currency} label="Kalan Bakiye" value={reservationTotalDue} color={reservationTotalDue > 0 ? 'red' : 'green'} />
         {(summary?.total_discounts || 0) > 0 && (
           <SummaryCard currency={currency} label={(summary?.complimentary_adjustment_total || 0) > 0 ? 'Comp İndirimi' : (summary?.rate_correction_total || 0) > 0 ? 'Fiyat Düzeltmesi' : 'İndirimler'} value={summary?.total_discounts} color="rose" />
@@ -382,10 +406,19 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
           )}
         </div>
       )}
+      <FolioWindowsPanel key={booking.id} bookingId={booking.id} readOnly={readOnly} onChanged={onRefresh} currentFolioId={targetFolioId} onSelect={selectTargetFolio} />
+      {!readOnly && <label className="block text-sm font-medium">Ödeme / cari aktarım hedefi
+        <select aria-label="İşlem hedef folyo" value={targetFolioId} onChange={e => selectTargetFolio(e.target.value)} className="ml-2 rounded border p-2">
+          <option value="">{folioList.filter(f => f.status === 'open').length > 1 ? 'Hedef folyoyu seçin' : 'Tek açık folyo (otomatik)'}</option>
+          {folioList.filter(f => f.status === 'open').map(f => <option key={f.id} value={f.id}>{f.folio_number} · {f.folio_type} · {fmtCurrency(f.balance, currency)}</option>)}
+        </select>
+        <p className="mt-1 text-xs font-normal text-slate-600">Birden fazla açık hesapta hedef seçimi zorunludur. Cari aktarımı tahsilat değil, alacağın ilgili cari hesaba devridir.</p>
+        <p className="mt-1 text-xs font-normal text-slate-600">Folyo Böl mevcut kalemleri/tutarı ayırır. Sonraki gece ücretleri için otomatik yönlendirme bu ekrandan henüz tanımlanmaz; yeni tahakkukları ayrıca kontrol edin.</p>
+      </label>}
       <div className="flex flex-wrap gap-2">
         {!readOnly && <>
-          <Button size="sm" disabled={pricingReconciliationRequired} onClick={() => { const bal = reservationTotalDue; setPayForm(p => ({ ...p, amount: bal > 0 ? String(bal) : p.amount })); setShowPayment(!showPayment); }} className="bg-emerald-600 hover:bg-emerald-700 text-white h-8 text-xs" data-testid="btn-odeme-al"><CreditCard className="w-3 h-3 mr-1" /> Ödeme Al</Button>
-          <Button size="sm" variant="outline" onClick={() => { const bal = reservationTotalDue; setCariForm(p => ({ ...p, amount: bal > 0 ? String(bal) : p.amount })); setShowCari(!showCari); loadCari(); }} className="h-8 text-xs border-amber-300 text-amber-700 hover:bg-amber-50" data-testid="btn-cariye-aktar"><ArrowRightLeft className="w-3 h-3 mr-1" /> Cariye Aktar</Button>
+          <Button size="sm" disabled={pricingReconciliationRequired} onClick={openPaymentForm} className="bg-emerald-600 hover:bg-emerald-700 text-white h-8 text-xs" data-testid="btn-odeme-al"><CreditCard className="w-3 h-3 mr-1" /> Ödeme Al</Button>
+          <Button size="sm" variant="outline" onClick={openCariForm} className="h-8 text-xs border-amber-300 text-amber-700 hover:bg-amber-50" data-testid="btn-cariye-aktar"><ArrowRightLeft className="w-3 h-3 mr-1" /> Cariye Aktar</Button>
           <Button size="sm" variant="outline" onClick={() => { const bal = reservationTotalDue; setAgencyForm(p => ({ ...p, amount: bal > 0 ? String(bal) : p.amount })); setShowAgency(!showAgency); }} className="h-8 text-xs border-indigo-300 text-indigo-700 hover:bg-indigo-50" data-testid="btn-acente-odemesi"><Building2 className="w-3 h-3 mr-1" /> Acente Ödemesi</Button>
           <Button size="sm" variant="outline" onClick={() => { setShowCariTransfer(!showCariTransfer); loadCari(); }} className="h-8 text-xs border-indigo-300 text-indigo-700 hover:bg-indigo-50" data-testid="btn-acenteye-aktar"><ArrowDownUp className="w-3 h-3 mr-1" /> Acenteye Aktar</Button>
           <Button size="sm" variant="outline" onClick={() => { const bal = reservationTotalDue; setReconcileForm(p => ({ ...p, amount: bal > 0 ? String(bal) : p.amount })); setShowReconcile(!showReconcile); loadCari(); }} className="h-8 text-xs border-teal-300 text-teal-700 hover:bg-teal-50" data-testid="btn-mahsuplastir"><DollarSign className="w-3 h-3 mr-1" /> Mahsuplaştır</Button>
@@ -474,6 +507,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
               toast.error('Ödeme tutarını virgül veya nokta ile doğru girin.');
               return;
             }
+            if (!targetFolioId && folioList.filter(f => f.status === 'open').length > 1) throw new Error('Hedef folyoyu seçin');
             const receivedAmount = parseMoney(foreignAmount);
             const appliedExchangeRate = parseExchangeRate(exchangeRate);
             if (useCurrencyConverter && (!Number.isFinite(receivedAmount) || receivedAmount <= 0 || !Number.isFinite(appliedExchangeRate) || appliedExchangeRate <= 0)) {
@@ -482,9 +516,10 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
             }
             await axios.post(`/pms/reservations/${booking.id}/record-payment`, {
               ...payForm,
+              ...(targetFolioId ? { folio_id: targetFolioId } : {}),
               amount,
               currency: normalizeCurrency(currency),
-              payment_type: classifyGuestPayment(amount, reservationTotalDue),
+              payment_type: classifyGuestPayment(amount, targetFolio ? Math.max(0, Number(targetFolio.balance) || 0) : reservationTotalDue),
               ...(useCurrencyConverter ? {
                 received_currency: normalizeCurrency(foreignCurrency),
                 received_amount: receivedAmount,
@@ -569,7 +604,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
             )}
           </div>
           <div className="rounded-md border border-emerald-200 bg-white/70 px-3 py-2 text-xs text-emerald-800" data-testid="payment-classification">
-            <div className="font-medium">{guestPaymentClassificationLabel(parseMoney(payForm.amount), reservationTotalDue)}</div>
+            <div className="font-medium">{guestPaymentClassificationLabel(parseMoney(payForm.amount), targetFolio ? Math.max(0, Number(targetFolio.balance) || 0) : reservationTotalDue)}</div>
             <div className="mt-0.5 text-emerald-700">Ödeme türü otomatik belirlenir. Depozito için ayrı Depozito sekmesini kullanın.</div>
           </div>
         </FormPanel>
@@ -580,7 +615,8 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
           onSubmit={() => exec(async () => {
             const amount = parseMoney(cariForm.amount);
             if (!Number.isFinite(amount) || amount <= 0) throw new Error('Tutarı virgül veya nokta ile doğru girin.');
-            await axios.post(`/pms/reservations/${booking.id}/transfer-to-cari`, { ...cariForm, amount });
+            if (!targetFolioId && folioList.filter(f => f.status === 'open').length > 1) throw new Error('Hedef folyoyu seçin');
+            await axios.post(`/pms/reservations/${booking.id}/transfer-to-cari`, { ...cariForm, amount, ...(targetFolioId ? { folio_id: targetFolioId } : {}) });
             toast.success('Cariye aktarıldı'); setShowCari(false); setCariForm({ amount: '', cari_account_id: '', description: '' });
           })}>
           <div className="grid grid-cols-2 gap-3">
