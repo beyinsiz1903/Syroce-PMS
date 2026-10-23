@@ -316,6 +316,8 @@ class FolioHardeningService:
         source_folio = await db.folios.find_one({"id": source_folio_id, "tenant_id": tenant_id}, {"_id": 0})
         if not source_folio:
             return {"success": False, "error": "Source folio not found"}
+        if source_folio.get("status") != "open":
+            return {"success": False, "error": "Only open source folios can be split"}
 
         if not charge_ids:
             return {"success": False, "error": "No charges selected for split"}

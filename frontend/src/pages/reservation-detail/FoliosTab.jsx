@@ -17,6 +17,7 @@ import { isMoneyInput, parseMoneyInput } from '@/lib/moneyInput';
 import { parseExchangeRate, parseMoney } from '@/lib/financialInput';
 import SplitFolioDialog from '@/components/SplitFolioDialog';
 import FolioWindowsPanel from '@/components/folio/FolioWindowsPanel';
+import FolioAllocationPanel from '@/components/folio/FolioAllocationPanel';
 import PrintableFolio from '@/components/PrintableFolio';
 import {
   classifyGuestPayment,
@@ -91,6 +92,8 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
   const [newCariForm, setNewCariForm] = useState({ name: '', account_type: 'agency', tax_id: '', tax_office: '', address: '', phone: '', email: '' });
   const [reconcileForm, setReconcileForm] = useState({ cari_account_id: '', amount: '', description: '' });
   const [showSplit, setShowSplit] = useState(false);
+  const [showAllocation, setShowAllocation] = useState(false);
+  const [windowRevision, setWindowRevision] = useState(0);
   const [showPrintableFolio, setShowPrintableFolio] = useState(false);
   const [printFolioId, setPrintFolioId] = useState('all');
   const [splitSourceId, setSplitSourceId] = useState('');
@@ -156,19 +159,17 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
   };
   useEffect(() => { setTargetFolioId(''); }, [booking.id]);
 
-  // Varsayılan kaynak folyo: önce misafir folyosu, yoksa açık folyo, yoksa ilk folyo.
+  // Closed/historical windows are never financial mutation sources.
   const defaultSourceId = useMemo(() => {
-    if (folioList.length === 0) return '';
-    const guest = folioList.find(f => f.folio_type === 'guest');
-    const open = folioList.find(f => f.status === 'open');
-    return (guest || open || folioList[0]).id;
+    const open = folioList.filter(f => f.status === 'open');
+    return (open.find(f => f.folio_type === 'guest') || open[0])?.id || '';
   }, [folioList]);
 
   // SplitFolioDialog tek bir folyo bekler: id, folio_number, balance ve KENDİ kalemleri.
   // charge_ids backend'de source_folio_id'den taşınır; bu yüzden kalemler folio.id ile AYNI folyoya ait olmalı.
   const splitFolio = useMemo(() => {
     const sid = splitSourceId || defaultSourceId;
-    const src = folioList.find(f => f.id === sid);
+    const src = folioList.find(f => f.id === sid && f.status === 'open');
     if (!src) return null;
     // Folio kalemleri (folio_id eşleşen) + booking kapsamlı ekstra masraflar.
     // extra_charges'ın folio_id'si yoktur; bölme sırasında backend bunları
@@ -254,6 +255,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
   const openSplit = async () => {
     // Folio zaten varsa mevcut akış aynen çalışır.
     if (folioList.length > 0) {
+      if (!defaultSourceId) { toast.error('Bölünebilecek açık folyo bulunmuyor'); return; }
       if (!splitSourceId) setSplitSourceId(defaultSourceId);
       setShowSplit(s => !s);
       return;
@@ -406,7 +408,10 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
           )}
         </div>
       )}
-      <FolioWindowsPanel key={booking.id} bookingId={booking.id} readOnly={readOnly} onChanged={onRefresh} currentFolioId={targetFolioId} onSelect={selectTargetFolio} />
+      <FolioWindowsPanel key={booking.id} bookingId={booking.id} readOnly={readOnly} onChanged={onRefresh} currentFolioId={targetFolioId} onSelect={selectTargetFolio}
+        revision={`${windowRevision}:${folioList.map(f => `${f.id}:${f.status}:${f.balance}`).join('|')}`} />
+      {!readOnly && showAllocation && <FolioAllocationPanel key={booking.id} bookingId={booking.id} currency={currency} folios={folioList} charges={charges || []}
+        onClose={() => setShowAllocation(false)} onChanged={async id => { setWindowRevision(previous => previous + 1); await onRefresh?.(); setTargetFolioId(id); }} />}
       {!readOnly && <label className="block text-sm font-medium">Ödeme / cari aktarım hedefi
         <select aria-label="İşlem hedef folyo" value={targetFolioId} onChange={e => selectTargetFolio(e.target.value)} className="ml-2 rounded border p-2">
           <option value="">{folioList.filter(f => f.status === 'open').length > 1 ? 'Hedef folyoyu seçin' : 'Tek açık folyo (otomatik)'}</option>
@@ -423,6 +428,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
           <Button size="sm" variant="outline" onClick={() => { setShowCariTransfer(!showCariTransfer); loadCari(); }} className="h-8 text-xs border-indigo-300 text-indigo-700 hover:bg-indigo-50" data-testid="btn-acenteye-aktar"><ArrowDownUp className="w-3 h-3 mr-1" /> Acenteye Aktar</Button>
           <Button size="sm" variant="outline" onClick={() => { const bal = reservationTotalDue; setReconcileForm(p => ({ ...p, amount: bal > 0 ? String(bal) : p.amount })); setShowReconcile(!showReconcile); loadCari(); }} className="h-8 text-xs border-teal-300 text-teal-700 hover:bg-teal-50" data-testid="btn-mahsuplastir"><DollarSign className="w-3 h-3 mr-1" /> Mahsuplaştır</Button>
           <Button size="sm" variant="outline" onClick={openSplit} className="h-8 text-xs border-sky-300 text-sky-700 hover:bg-sky-50" data-testid="btn-folyo-bol"><Split className="w-3 h-3 mr-1" /> Folyo Böl</Button>
+          <Button size="sm" variant="outline" onClick={() => setShowAllocation(value => !value)} className="h-8 text-xs" data-testid="btn-folyo-paylastir"><ArrowRightLeft className="w-3 h-3 mr-1" /> Hesaplar Arası Paylaştır</Button>
           {!readOnly && summary?.room_plan_fully_posted && (
             <Button size="sm" variant="outline" onClick={openPriceCorrection} className="h-8 text-xs border-amber-300 text-amber-800 hover:bg-amber-50" data-testid="btn-open-posted-stay-rate-correction"><Receipt className="w-3 h-3 mr-1" /> Fiyat Düzeltmesi</Button>
           )}
@@ -484,7 +490,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
               label="Kaynak Folyo"
               value={splitSourceId || defaultSourceId}
               onChange={setSplitSourceId}
-              options={folioList.map(f => [f.id, `${f.folio_number} (${f.folio_type || ''}) — Bakiye ${fmtCurrency(f.balance, currency)}`])}
+              options={folioList.filter(f => f.status === 'open').map(f => [f.id, `${f.folio_number} (${f.folio_type || ''}) — Bakiye ${fmtCurrency(f.balance, currency)}`])}
             />
           )}
           {splitFolio && (
