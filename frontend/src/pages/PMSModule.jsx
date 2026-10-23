@@ -15,6 +15,7 @@ import GlobalSearch from '@/components/GlobalSearch';
 import { canAccessPmsTab } from '@/utils/moduleAccess';
 import { calculateOccupancyPrice, findOccupancyRule, nightsBetween } from '@/utils/occupancyPricing';
 import { calculateBookingStats } from '@/lib/bookingStats';
+import { usePmsBookingHistory } from '@/hooks/usePmsBookingHistory';
 // Tur 5: Bundle code-split — tab içerikleri ve büyük dialog'lar lazy.
 // İlk yüklemede sadece varsayılan 'frontdesk' tab'ı indirilir; kullanıcı
 // diğer sekmelere geçince ilgili chunk talep üzerine yüklenir.
@@ -411,9 +412,12 @@ const PMSModule = ({ user, tenant, onLogout }) => {
     default_cancellation_policy: '', payment_terms: '', status: 'pending'
   });
 
-  const bookingStats = useMemo(() => {
-    return calculateBookingStats(bookings);
-  }, [bookings]);
+  const bookingHistory = usePmsBookingHistory({
+    enabled: activeTab === 'bookings' && validTabKeys.has('bookings'),
+    scopeKey: `${tenant?.id || user?.tenant_id || ''}:${user?.id || ''}`,
+  });
+  const bookingListRows = useMemo(() => bookingHistory.rows || [], [bookingHistory.rows]);
+  const bookingStats = useMemo(() => calculateBookingStats(bookingListRows), [bookingListRows]);
 
   const [newCharge, setNewCharge] = useState({ charge_type: 'food', description: '', amount: 0, quantity: 1 });
   const [newPayment, setNewPayment] = useState({ amount: 0, method: 'card', reference: '', notes: '' });
@@ -461,7 +465,6 @@ const PMSModule = ({ user, tenant, onLogout }) => {
 
   const [hasLoadedFrontdesk, setHasLoadedFrontdesk] = useState(false);
   const [hasLoadedHousekeeping, setHasLoadedHousekeeping] = useState(false);
-  const [hasLoadedAllBookings, setHasLoadedAllBookings] = useState(false);
   const [ratePlans, setRatePlans] = useState([]);
   const [packages, setPackages] = useState([]);
   const rateDataRequestRef = useRef(0);
@@ -501,34 +504,12 @@ const PMSModule = ({ user, tenant, onLogout }) => {
     if (!validTabKeys.has(activeTab)) return;
     if (activeTab === 'frontdesk' && !hasLoadedFrontdesk) { loadFrontDeskData(); setHasLoadedFrontdesk(true); }
     else if (activeTab === 'housekeeping' && !hasLoadedHousekeeping) { loadHousekeepingData(); setHasLoadedHousekeeping(true); }
-    else if (activeTab === 'bookings' && !hasLoadedAllBookings) {
-      const loadEveryBooking = async () => {
-        const allRows = [];
-        const pageSize = 1000;
-        for (let offset = 0; ; offset += pageSize) {
-          const response = await axios.get(`/pms/bookings?limit=${pageSize}&offset=${offset}&full_history=true`, { timeout: 30000 });
-          const payload = response?.data;
-          const rows = Array.isArray(payload) ? payload : (payload?.bookings || []);
-          allRows.push(...rows);
-          if (rows.length < pageSize) break;
-        }
-        return allRows;
-      };
-      loadEveryBooking()
-        .then((rows) => {
-          setBookings(rows);
-          setHasLoadedAllBookings(true);
-        })
-        .catch((error) => {
-          console.error('Tüm rezervasyonlar yüklenemedi:', error);
-          toast.error('Tüm rezervasyonlar yüklenemedi; tarih aralığındaki kayıtlar gösteriliyor');
-        });
-    }
   // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
-  }, [activeTab, hasLoadedFrontdesk, hasLoadedHousekeeping, hasLoadedAllBookings]);
+  }, [activeTab, hasLoadedFrontdesk, hasLoadedHousekeeping]);
 
   const loadData = async (businessDateOverride = null) => {
     const requestId = ++dataRequestRef.current;
+    if (initialDataLoadedRef.current) bookingHistory.refreshIfRequested();
     // Replacing the workspace with the initial loader unmounts RoomsTab and
     // destroys its filters, context menu and open reservation/payment drafts.
     // Once data exists, all refreshes must hydrate the mounted workspace.
@@ -1149,7 +1130,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
             <GuestsTab guests={guests} setOpenDialog={setOpenDialog} setSelectedGuest360={setSelectedGuest360} loadGuest360={loadGuest360} setNewBooking={setNewBooking} onGuestsChanged={loadData} t={t} />
           )}
           {activeTab === 'bookings' && (
-            <BookingsTab bookingStats={bookingStats} bookings={bookings} groupedBookings={groupedBookings} guests={guests} rooms={rooms} companies={companies} handleCheckIn={handleCheckIn} handleCheckOut={handleCheckOut} loadBookingFolios={loadBookingFolios} loadGuest360={loadGuest360} setSelectedGuest360={setSelectedGuest360} setOpenDialog={setOpenDialog} setSelectedBooking={setSelectedBooking} setSelectedBookingDetail={setSelectedBookingDetail} setReservationDetailId={setReservationDetailId} toast={toast} isLite={isLite} roomsCount={roomsCount} activeTab={activeTab} />
+            <BookingsTab bookingStats={bookingStats} bookings={bookingListRows} historyLoading={bookingHistory.loading} historyError={bookingHistory.error} retryHistory={bookingHistory.refresh} groupedBookings={groupedBookings} guests={guests} rooms={rooms} companies={companies} handleCheckIn={handleCheckIn} handleCheckOut={handleCheckOut} loadBookingFolios={loadBookingFolios} loadGuest360={loadGuest360} setSelectedGuest360={setSelectedGuest360} setOpenDialog={setOpenDialog} setSelectedBooking={setSelectedBooking} setSelectedBookingDetail={setSelectedBookingDetail} setReservationDetailId={setReservationDetailId} toast={toast} isLite={isLite} roomsCount={roomsCount} activeTab={activeTab} />
           )}
           {activeTab === 'cashier' && <TabsContent value="cashier" className="space-y-4"><CashierTab user={user} /></TabsContent>}
           {activeTab === 'upsell' && <TabsContent value="upsell" className="space-y-4"><UpsellTab bookings={bookings} /></TabsContent>}
