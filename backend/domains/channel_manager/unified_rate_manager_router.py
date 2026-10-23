@@ -826,11 +826,14 @@ async def _get_room_counts(tenant_id):
 
 
 async def _get_active_bookings(tenant_id, start_date, end_date):
+    # Grid endpoints include the last sellable night. Use the following day's
+    # exclusive boundary so date-only and timestamp-shaped arrivals both count.
+    end_exclusive = (datetime.strptime(end_date, "%Y-%m-%d").date() + timedelta(days=1)).isoformat()
     return await db.bookings.find(
         {
             "tenant_id": tenant_id,
             "status": {"$in": ["pending", "confirmed", "guaranteed", "checked_in"]},
-            "check_in": {"$lt": end_date},
+            "check_in": {"$lt": end_exclusive},
             "check_out": {"$gt": start_date},
         },
         {"_id": 0, "room_id": 1, "check_in": 1, "check_out": 1},
