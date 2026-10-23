@@ -39,4 +39,12 @@ describe('explicit payment destination', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Folyolar yüklenemedi');
     expect(screen.getByTestId('payment-submit-btn')).toBeDisabled();
   });
+
+  it.each(['closed', undefined])('does not treat a %s status as an open financial target', async status => {
+    get.mockResolvedValue({ data: [{ ...rows[0], status }] });
+    show();
+    await waitFor(() => expect(get).toHaveBeenCalledTimes(1));
+    expect(screen.getByTestId('payment-submit-btn')).toBeDisabled();
+    expect(post).not.toHaveBeenCalled();
+  });
 });

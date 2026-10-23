@@ -33,3 +33,8 @@
 - Changed-source ESLint: zero warnings. Ruff: passed. Production Vite build: passed. Theme guard and skip/test-inventory budget: passed. `git diff --check`: passed.
 - Knip remains advisory: the local invocation reports unused-code inventory and missing E2E_BASE_URL in Playwright configs; it is not counted as a passed verification.
 - These checks do not establish live acceptance, full-suite coverage thresholds or browser visual acceptance.
+
+### PR CI follow-up
+
+- The legacy FinancialMutationSafety fixture omitted folio status and clicked before the new asynchronous open-target lookup completed. Its fixture now explicitly supplies an open folio and awaits readiness; zero-payment and duplicate-submit assertions remain intact. Closed/unknown statuses have separate fail-closed tests.
+- Security CI detected PYSEC-2026-4322 in the pinned Brotli 1.2.0 decoder. The runtime pin is updated to 1.2.1, not ignored/allowlisted. A requirements regression prevents reverting to the affected version. The patched binary was installed in an isolated temporary target and compression/decompression checked without changing the host Python environment.
