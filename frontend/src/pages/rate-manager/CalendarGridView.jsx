@@ -1,5 +1,7 @@
+import { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ChevronLeft, ChevronRight, BedDouble, Lock, Calendar, RefreshCw, Loader2 } from 'lucide-react';
 
@@ -8,7 +10,38 @@ export const CalendarGridView = ({
   gridRoomType, setGridRoomType, gridRatePlan, setGridRatePlan,
   startDate, setStartDate, endDate, setEndDate,
   shiftDates, fetchGrid, loading, formatDate, currency,
-}) => (
+}) => {
+  const [rangeStart, setRangeStart] = useState(startDate);
+  const [rangeEnd, setRangeEnd] = useState(endDate);
+  const [rangeError, setRangeError] = useState('');
+  useEffect(() => {
+    setRangeStart(startDate);
+    setRangeEnd(endDate);
+    setRangeError('');
+  }, [startDate, endDate]);
+
+  const applyRange = event => {
+    event.preventDefault();
+    const start = Date.parse(`${rangeStart}T00:00:00Z`);
+    const end = Date.parse(`${rangeEnd}T00:00:00Z`);
+    if (!Number.isFinite(start) || !Number.isFinite(end)) {
+      setRangeError('Başlangıç ve bitiş tarihlerini seçin.');
+      return;
+    }
+    if (end < start) {
+      setRangeError('Bitiş tarihi başlangıçtan önce olamaz.');
+      return;
+    }
+    if ((end - start) / 86400000 > 365) {
+      setRangeError('Tek görünümde en fazla 366 gün seçebilirsiniz.');
+      return;
+    }
+    setRangeError('');
+    setStartDate(rangeStart);
+    setEndDate(rangeEnd);
+  };
+
+  return (
   <Card>
     <CardHeader className="pb-3">
       <div className="flex items-center justify-between">
@@ -24,6 +57,23 @@ export const CalendarGridView = ({
       </div>
     </CardHeader>
     <CardContent>
+      <form onSubmit={applyRange} noValidate className="mb-4 space-y-2" aria-label="Takvim tarih aralığı">
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="text-xs font-medium space-y-1">
+            <span className="block">Takvim başlangıcı</span>
+            <Input type="date" value={rangeStart} onChange={event => setRangeStart(event.target.value)}
+              aria-label="Takvim başlangıcı" className="h-9 w-full sm:w-44" />
+          </label>
+          <label className="text-xs font-medium space-y-1">
+            <span className="block">Takvim bitişi (dahil)</span>
+            <Input type="date" value={rangeEnd} onChange={event => setRangeEnd(event.target.value)}
+              aria-label="Takvim bitişi (dahil)" className="h-9 w-full sm:w-44" />
+          </label>
+          <Button type="submit" variant="outline" size="sm" disabled={loading}>Aralığı göster</Button>
+        </div>
+        <p className="text-xs text-muted-foreground">Yalnız görüntüler; fiyat, stok veya kanal kaydı değiştirmez. Tek gün için iki tarihi aynı seçin. En fazla 366 gün.</p>
+        {rangeError && <p role="alert" className="text-xs text-destructive">{rangeError}</p>}
+      </form>
       {/* Grid Filters & Date Navigation */}
       <div className="flex items-center gap-3 flex-wrap mb-4">
         <Select value={gridRoomType} onValueChange={setGridRoomType}>
@@ -169,4 +219,5 @@ export const CalendarGridView = ({
       )}
     </CardContent>
   </Card>
-);
+  );
+};
