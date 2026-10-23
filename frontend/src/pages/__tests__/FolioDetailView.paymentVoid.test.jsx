@@ -147,6 +147,8 @@ describe('FolioDetailView payment void', () => {
       { _skipAuthRetry: true },
     );
     expect(screen.getByRole('dialog', { name: 'Ödeme İadesi' })).toBeInTheDocument();
-    expect(screen.getByLabelText('Yetkili PIN *')).toHaveValue('');
+    // A recorded request is not proof that the async rejection was handled.
+    await waitFor(() => expect(screen.getByLabelText('Yetkili PIN *')).toHaveValue(''));
+    expect(post).toHaveBeenCalledTimes(1);
   });
 });
