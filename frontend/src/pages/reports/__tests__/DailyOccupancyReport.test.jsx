@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import DailyOccupancyReport from '../DailyOccupancyReport';
 
@@ -13,7 +13,7 @@ const response = params => ({ start_date: params.start_date, end_date: params.en
 beforeEach(() => { get.mockReset().mockImplementation(async (_, { params }) => ({ data: response(params) })); });
 
 describe('daily occupancy scope and exports', () => {
-  it('shows each date and separate actual/expected values with a custom range', async () => {
+  it('shows a compact daily summary and keeps the custom range/export safeguards', async () => {
     render(<DailyOccupancyReport />);
     expect(await screen.findByTestId('daily-occupancy-table')).toHaveTextContent('%70');
     fireEvent.change(screen.getByLabelText('Doluluk başlangıç'), { target: { value: '2026-11-12' } });
@@ -22,7 +22,7 @@ describe('daily occupancy scope and exports', () => {
     expect(screen.getByRole('button', { name: 'Excel İndir' })).toBeDisabled();
     fireEvent.click(screen.getByRole('button', { name: 'Göster / Yenile' }));
     await waitFor(() => expect(get).toHaveBeenLastCalledWith('/reports/occupancy-calendar', { params: { start_date: '2026-11-12', end_date: '2026-11-14', room_type: '' } }));
-    expect(await screen.findByTestId('daily-occupancy-table')).toHaveTextContent('2026-11-12');
+    expect(await screen.findByTestId('daily-occupancy-table')).toHaveTextContent('12.11.2026');
   });
 
   it('rejects a reversed range before the API', async () => {
@@ -65,5 +65,40 @@ describe('daily occupancy scope and exports', () => {
     render(<DailyOccupancyReport />);
     await screen.findByTestId('daily-occupancy-table');
     expect(screen.getByLabelText('Doluluk bitiş')).toHaveValue('2026-12-09');
+  });
+
+  it('uses one metric per date, includes todays arrivals and weights the period by capacity', async () => {
+    get.mockImplementation(async (_, { params }) => ({ data: { ...response(params), rows: [
+      { date: '2026-11-09', available_rooms: 10, actual_rooms: 5, actual_occupancy: 50, expected_rooms: null },
+      { date: '2026-11-10', available_rooms: 20, actual_rooms: 8, actual_occupancy: 40, expected_rooms: 14, expected_occupancy: 70 },
+      { date: '2026-11-11', available_rooms: 30, actual_rooms: null, expected_rooms: 3, expected_occupancy: 10 },
+    ] } }));
+    render(<DailyOccupancyReport />);
+    const table = await screen.findByTestId('daily-occupancy-table');
+    expect(within(table).getAllByRole('columnheader')).toHaveLength(6);
+    expect(within(table).getByRole('row', { name: /09.11.2026/ })).toHaveTextContent('Gerçekleşen');
+    const today = within(table).getByRole('row', { name: /10.11.2026/ });
+    expect(today).toHaveTextContent('%70');
+    expect(today).not.toHaveTextContent('%40');
+    expect(within(today).getAllByRole('cell').map(cell => cell.textContent)).toEqual(['%70', '14', '6', '20', 'Beklenen']);
+    expect(screen.getByTestId('occupancy-period-total')).toHaveTextContent('%36,67'); // 22/60, not mean(50,70,10)
+    expect(screen.queryByTestId('occupancy-details-table')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Hesaplama detaylarını göster' }));
+    expect(screen.getByTestId('occupancy-details-table')).toHaveTextContent('%40');
+    fireEvent.click(screen.getByRole('button', { name: 'Detayları gizle' }));
+    expect(screen.queryByTestId('occupancy-details-table')).not.toBeInTheDocument();
+  });
+
+  it('retains warnings above the collapsed details and never caps excess occupancy or fabricates missing values', async () => {
+    get.mockImplementation(async (_, { params }) => ({ data: { ...response(params), rows: [
+      { date: '2026-11-10', available_rooms: 2, expected_rooms: 3, expected_occupancy: 150, overbooked_rooms: 1 },
+      { date: '2026-11-11', available_rooms: 0, expected_rooms: 0, expected_occupancy: null },
+    ] } }));
+    render(<DailyOccupancyReport />);
+    const table = await screen.findByTestId('daily-occupancy-table');
+    expect(table).toHaveTextContent('%150');
+    expect(within(table).getByRole('row', { name: /11.11.2026/ })).toHaveTextContent('—');
+    expect(screen.getByRole('alert')).toHaveTextContent('1 fazla satış');
+    expect(screen.queryByTestId('occupancy-details-table')).not.toBeInTheDocument();
   });
 });

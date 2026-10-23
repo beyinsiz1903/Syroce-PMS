@@ -19,6 +19,14 @@
 - No claim that all financial mutations are globally serialised; existing transaction and cashier guards remain in place.
 - No production records, payments, provider configuration or agency messages were changed. Local regression tests use synthetic data/mocks only. Deployment and live acceptance are separate from local verification.
 
+## Simplified occupancy presentation (2026-10-23)
+
+- The default screen has six columns: date, occupancy percentage, occupied rooms, vacant rooms, sellable rooms and data basis. Previous business dates use actual occupancy. The current business date and later dates use expected occupancy, including arrivals and stayovers. Actual and expected are never added together for the same date.
+- The selected-period headline uses total occupied room-nights divided by total sellable room-nights for those displayed rows. It is a mixed actual/on-the-books view when the range crosses the business date, not a claim of fully realised occupancy or a simple average of daily percentages.
+- Separate actual/expected totals and inventory details remain behind “Hesaplama detaylarını göster”. Inventory/overbooking alerts stay visible even when details are collapsed.
+- Excel opens on “Doluluk Özeti” with the same six columns, typed dates/percentages, readable widths, frozen headings, filters and landscape printing. “Detaylar” retains all fifteen reconciliation fields and the separate original actual/expected period totals. Snapshot matching and tenant scoping are unchanged.
+- This is presentation work only. It does not change the source occupancy calculator, bookings, room blocks, accounting or financial acceptance status.
+
 ## Acceptance after deployment
 
 1. For an authorised demo tenant, choose a date range crossing the business day. Reconcile assigned/unassigned arrivals, stayovers, same-day turnover, cancelled/no-show, comp, dated blocks and overbooking against reservations.

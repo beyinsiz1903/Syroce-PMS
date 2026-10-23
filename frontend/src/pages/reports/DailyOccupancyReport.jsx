@@ -9,6 +9,7 @@ const shiftOccupancyDate = (day, offset) => {
   return value.toISOString().slice(0, 10);
 };
 const percent = value => value == null ? '—' : `%${value.toLocaleString('tr-TR', { maximumFractionDigits: 2 })}`;
+const dayLabel = day => new Date(`${day}T12:00:00Z`).toLocaleDateString('tr-TR', { timeZone: 'UTC' });
 const columns = [['date', 'Tarih'], ['physical_rooms', 'Fiziksel'], ['blocked_rooms', 'Satışa kapalı'],
   ['available_rooms', 'Satılabilir'], ['actual_rooms', 'Gerçekleşen oda'], ['actual_occupancy', 'Gerçekleşen %'],
   ['stayovers', 'Devam eden'], ['arrivals', 'Giriş'], ['expected_rooms', 'Beklenen oda'],
@@ -25,6 +26,7 @@ export default function DailyOccupancyReport() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [showDetails, setShowDetails] = useState(false);
   const request = useRef(0);
   useEffect(() => {
     if (!businessDate) return;
@@ -50,6 +52,19 @@ export default function DailyOccupancyReport() {
   }, [query]);
   const matches = result && result.query.start_date === first && result.query.end_date === last && result.query.room_type === roomType;
   const data = matches ? result.data : null;
+  // Presentation only: historical actuals, then on-the-books demand. Today
+  // uses demand so arrivals are included; never add actual + expected together.
+  const rows = data ? data.rows.map(row => {
+    const actual = row.date < data.business_date;
+    const prefix = actual ? 'actual' : 'expected';
+    const occupied = row[`${prefix}_rooms`];
+    return { ...row, occupied, occupancy: row[`${prefix}_occupancy`],
+      vacant: occupied == null ? null : Math.max(0, row.available_rooms - occupied),
+      basis: actual ? 'Gerçekleşen' : 'Beklenen' };
+  }) : [];
+  const known = rows.filter(row => row.occupied != null);
+  const nights = known.reduce((sum, row) => sum + row.occupied, 0);
+  const capacity = known.reduce((sum, row) => sum + row.available_rooms, 0);
   const apply = event => {
     event.preventDefault();
     const start = new Date(`${first}T00:00:00Z`), end = new Date(`${last}T00:00:00Z`);
@@ -93,17 +108,35 @@ export default function DailyOccupancyReport() {
     {error && <p role="alert" className="text-red-700">{error}</p>}
     {!loading && !data && !error && <p role="status">Seçtiğiniz aralığı görüntülemek için Göster düğmesine basın.</p>}
     {data && <>
-      <p className="text-sm font-medium">{data.start_date} – {data.end_date} · {data.room_type || 'Tüm tesis'} · PMS iş günü: {data.business_date}</p>
-      <p className="text-sm text-slate-600">Gerçekleşen: PMS iş gününe kadar giriş yapmış odalar (bugün henüz nihai değildir). Beklenen: iş gününden itibaren kesin rezervasyonlar ve devam eden konaklamalar. Çıkış gecesi, iptal/no-show ve opsiyonlar dahil değildir. Yüzde = oda / satılabilir kapasite; atanmamış kesin rezervasyonlar beklenene dahildir.</p>
-      <div className="grid gap-3 sm:grid-cols-2">{Object.entries(data.totals).map(([key, total]) => <div key={key} className="rounded-lg border bg-white p-4">
-        <h3>{key === 'actual' ? 'Gerçekleşen dönem doluluğu' : 'Beklenen dönem doluluğu'}</h3>
-        <strong className="text-2xl">{percent(total.occupancy)}</strong><p className="text-sm">{total.room_nights} / {total.available_room_nights} oda-gecesi</p>
-      </div>)}</div>
+      <p className="text-sm font-medium">{dayLabel(data.start_date)} – {dayLabel(data.end_date)} · {data.room_type || 'Tüm tesis'}</p>
+      <div className="flex flex-wrap items-center gap-x-8 gap-y-2 rounded-lg border bg-white p-4">
+        <div><h3 className="text-sm text-slate-600">Seçili dönem doluluğu</h3><strong className="text-3xl" data-testid="occupancy-period-total">{percent(capacity ? nights * 100 / capacity : null)}</strong></div>
+        <p className="text-sm text-slate-600">{rows.length} gün · {nights} dolu / {capacity} satılabilir oda-gecesi<br />Günlük yüzdelerin basit ortalaması değildir.</p>
+      </div>
+      <p className="text-sm text-slate-600">PMS iş günü: {dayLabel(data.business_date)}. Önceki günler gerçekleşen; iş günü ve sonrası beklenen doluluktur. Beklenen doluluğa devam eden konaklamalar ve giriş yapacak kesin rezervasyonlar dahildir.</p>
       <div className="overflow-x-auto rounded-lg border bg-white"><table className="w-full text-sm" data-testid="daily-occupancy-table">
-        <thead><tr>{columns.map(([key, label]) => <th key={key} className="whitespace-nowrap p-2 text-right">{label}</th>)}</tr></thead>
-        <tbody>{data.rows.map(row => <tr key={row.date} className="border-t">{columns.map(([key]) => <td key={key} className="whitespace-nowrap p-2 text-right">{key.endsWith('_occupancy') ? percent(row[key]) : row[key] ?? '—'}</td>)}</tr>)}</tbody>
+        <caption className="sr-only">Günlük doluluk özeti</caption>
+        <thead className="bg-slate-50"><tr>{['Tarih', 'Doluluk %', 'Dolu oda', 'Boş oda', 'Satılabilir oda', 'Veri türü'].map(label => <th key={label} scope="col" className="whitespace-nowrap p-3 text-right first:text-left">{label}</th>)}</tr></thead>
+        <tbody>{rows.map(row => <tr key={row.date} className="border-t even:bg-slate-50/50">
+          <th scope="row" className="whitespace-nowrap p-3 text-left font-normal">{dayLabel(row.date)}</th>
+          <td className="p-3 text-right font-bold">{percent(row.occupancy)}</td>
+          <td className="p-3 text-right">{row.occupied ?? '—'}</td>
+          <td className="p-3 text-right">{row.vacant ?? '—'}</td>
+          <td className="p-3 text-right">{row.available_rooms}</td>
+          <td className="whitespace-nowrap p-3 text-right text-slate-600">{row.basis}</td>
+        </tr>)}</tbody>
       </table></div>
       {data.rows.some(r => r.assignment_conflicts || r.unknown_room_references || r.occupied_blocked_rooms || r.overbooked_rooms) && <div role="alert" className="rounded border border-amber-400 p-3 text-sm">Envanter tutarsızlığı / fazla satış var; oranlar %100'e kırpılmadı. {data.rows.filter(r => r.assignment_conflicts || r.unknown_room_references || r.occupied_blocked_rooms || r.overbooked_rooms).map(r => <p key={r.date}>{r.date}: {r.assignment_conflicts} atama çakışması, {r.unknown_room_references} bilinmeyen oda, {r.occupied_blocked_rooms} satışa kapalı odada konaklama, {r.overbooked_rooms} fazla satış.</p>)}</div>}
+      <Button type="button" variant="outline" className="print:hidden" aria-expanded={showDetails} aria-controls="occupancy-details" onClick={() => setShowDetails(value => !value)}>{showDetails ? 'Detayları gizle' : 'Hesaplama detaylarını göster'}</Button>
+      {showDetails && <div id="occupancy-details" className="space-y-3">
+        <h3 className="font-semibold">Hesaplama detayları</h3>
+        <p className="text-sm text-slate-600">Gerçekleşen iş günü için henüz nihai değildir. Çıkış gecesi, iptal/no-show ve opsiyonlar dahil değildir. Atanmamış kesin rezervasyonlar beklenene dahildir. Kapasite güncel aktif oda envanterine dayanır; tarihsel envanter değildir.</p>
+        <div className="grid gap-3 sm:grid-cols-2">{Object.entries(data.totals).map(([key, total]) => <div key={key} className="rounded-lg border p-3"><h4>{key === 'actual' ? 'Gerçekleşen dönem doluluğu' : 'Beklenen dönem doluluğu'}</h4><strong>{percent(total.occupancy)}</strong><p className="text-sm">{total.room_nights} / {total.available_room_nights} oda-gecesi</p></div>)}</div>
+        <div className="overflow-x-auto rounded-lg border"><table className="w-full text-sm" data-testid="occupancy-details-table">
+          <thead><tr>{columns.map(([key, label]) => <th scope="col" key={key} className="whitespace-nowrap p-2 text-right">{label}</th>)}</tr></thead>
+          <tbody>{data.rows.map(row => <tr key={row.date} className="border-t">{columns.map(([key]) => <td key={key} className="whitespace-nowrap p-2 text-right">{key === 'date' ? dayLabel(row[key]) : key.endsWith('_occupancy') ? percent(row[key]) : row[key] ?? '—'}</td>)}</tr>)}</tbody>
+        </table></div>
+      </div>}
     </>}
   </section>;
 }

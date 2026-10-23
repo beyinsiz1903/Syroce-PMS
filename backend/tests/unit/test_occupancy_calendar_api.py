@@ -1,5 +1,5 @@
-from io import BytesIO
 import os
+from io import BytesIO
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
@@ -53,9 +53,15 @@ async def test_excel_contains_the_same_values_and_refuses_a_changed_snapshot(dat
     result = await read()
     response = await read(output='xlsx', snapshot=result['snapshot'])
     raw = b''.join([part async for part in response.body_iterator])
-    sheet = load_workbook(BytesIO(raw)).active
-    assert sheet.cell(5, 9).value == result['rows'][0]['expected_rooms']
-    assert sheet.cell(5, 10).value == result['rows'][0]['expected_occupancy']
+    workbook = load_workbook(BytesIO(raw))
+    sheet = workbook.active
+    assert sheet.title == 'Doluluk Özeti'
+    assert sheet.cell(7, 3).value == result['rows'][0]['expected_rooms']
+    assert sheet.cell(7, 2).value == result['rows'][0]['expected_occupancy'] / 100
+    assert sheet.cell(7, 2).number_format == '0.00%'
+    detail = workbook['Detaylar']
+    assert detail.cell(7, 9).value == result['rows'][0]['expected_rooms']
+    assert detail.cell(7, 10).value == result['rows'][0]['expected_occupancy'] / 100
     with pytest.raises(HTTPException) as exc:
         await read(output='xlsx', snapshot='stale')
     assert exc.value.status_code == 409
