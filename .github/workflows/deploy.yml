@@ -10,6 +10,7 @@ on:
 permissions:
   contents: read
   actions: read
+  packages: read
 
 concurrency:
   group: production-deploy
@@ -27,6 +28,8 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@v5
+        with:
+          ref: ${{ env.DEPLOY_SHA }}
 
       - name: Verify both required workflows for the exact main revision
         id: gate
@@ -55,12 +58,16 @@ jobs:
       - name: Deploy to Server
         if: steps.gate.outputs.ready == 'true'
         uses: appleboy/ssh-action@v0.1.10
+        env:
+          DEPLOY_IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/syroce
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_TOKEN: ${{ github.token }}
         with:
           host: ${{ secrets.DROPLET_IP }}
           username: root
           key: ${{ secrets.DROPLET_SSH_KEY }}
           command_timeout: 30m
-          envs: DEPLOY_SHA
+          envs: DEPLOY_SHA,DEPLOY_IMAGE_PREFIX,REGISTRY_USER,REGISTRY_TOKEN
           script: |
             set -euo pipefail
             exec 9>/var/lock/syroce-pms-deploy.lock
@@ -75,6 +82,13 @@ jobs:
             git fetch --depth=1 origin "$DEPLOY_SHA"
             git checkout --detach "$DEPLOY_SHA"
 
+            # CI already builds and publishes these exact-revision images.
+            # Rebuilding Vite/ML dependencies on the live 4 GiB host can starve
+            # the API and time out. Pull all images before touching services;
+            # registry/auth failures leave the current containers in place.
+            bash deploy/pull-ci-images.sh
+            unset REGISTRY_TOKEN
+
             # Keep the host monitor versioned with the deployment and derive
             # expected containers from Compose service identities. This avoids
             # stale hard-coded backend-2/worker-2 alarms after capacity changes.
@@ -85,21 +99,14 @@ jobs:
             # supplies backend/.env without echoing its secrets; the verifier
             # logs only redacted configuration summaries.  This prevents a
             # forgotten dev bypass from silently reaching a later deployment.
-            docker compose -f docker-compose.prod.yml run --rm --no-deps backend \
+            docker compose -f docker-compose.prod.yml -f deploy/docker-compose.registry.yml \
+              run --rm --no-deps --pull never backend \
               python scripts/verify_exely_whitelist.py --env production
-            
-            # Build sequentially while the current containers continue serving.
-            # Never tear the whole stack down before a build: worker image
-            # installation can take several minutes on this Droplet.
-            docker compose -f docker-compose.prod.yml build backend
-            docker compose -f docker-compose.prod.yml build worker
-            docker compose -f docker-compose.prod.yml build beat
-            docker compose -f docker-compose.prod.yml build frontend
 
             # Replace only services whose image/config changed, then wait for
-            # every Compose healthcheck. Nginx remains online throughout the
-            # image build instead of exposing a multi-minute hard outage.
-            if ! docker compose -f docker-compose.prod.yml up -d --remove-orphans --wait --wait-timeout 180; then
+            # every Compose healthcheck. Never fall back to local compilation.
+            if ! docker compose -f docker-compose.prod.yml -f deploy/docker-compose.registry.yml \
+              up -d --no-build --pull never --remove-orphans --wait --wait-timeout 180; then
               echo "::error::Production service startup or health verification failed"
               docker compose -f docker-compose.prod.yml ps --all || true
               echo "--- service startup diagnostics (last 150 lines per service; no environment dump) ---"
