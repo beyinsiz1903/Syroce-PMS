@@ -19,6 +19,9 @@ const BookingsTab = ({
   roomsCount,
   activeTab,
   setReservationDetailId,
+  historyLoading = false,
+  historyError = null,
+  retryHistory,
 }) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -31,6 +34,11 @@ const BookingsTab = ({
 
   return (
     <TabsContent value="bookings" className="space-y-4">
+      {historyLoading && <p role="status" className="text-sm text-slate-600">Tüm rezervasyonlar doğrulanıyor; görünen sayılar henüz nihai değil.</p>}
+      {historyError && <div role="alert" className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+        <p>{historyError}</p>
+        <Button size="sm" variant="outline" onClick={retryHistory} disabled={historyLoading} className="mt-2">Tam listeyi yeniden yükle</Button>
+      </div>}
       {isLite && roomsCount === 0 && activeTab === 'bookings' && (
         <LiteSetupBanner
           title={tc('addRoomsFirst')}
