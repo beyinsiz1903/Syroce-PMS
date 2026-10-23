@@ -1,5 +1,5 @@
-from io import BytesIO
 import os
+from io import BytesIO
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
@@ -53,9 +53,29 @@ async def test_excel_contains_the_same_values_and_refuses_a_changed_snapshot(dat
     result = await read()
     response = await read(output='xlsx', snapshot=result['snapshot'])
     raw = b''.join([part async for part in response.body_iterator])
-    sheet = load_workbook(BytesIO(raw)).active
-    assert sheet.cell(5, 9).value == result['rows'][0]['expected_rooms']
-    assert sheet.cell(5, 10).value == result['rows'][0]['expected_occupancy']
+    workbook = load_workbook(BytesIO(raw))
+    assert workbook.active.title == 'Oda Tipi Doluluk'
+    sheet = workbook['Doluluk Özeti']
+    assert sheet.title == 'Doluluk Özeti'
+    assert sheet.cell(7, 3).value == result['rows'][0]['expected_rooms']
+    assert sheet.cell(7, 2).value == result['rows'][0]['expected_occupancy'] / 100
+    assert sheet.cell(7, 2).number_format == '0.00%'
+    detail = workbook['Detaylar']
+    assert detail.cell(7, 9).value == result['rows'][0]['expected_rooms']
+    assert detail.cell(7, 10).value == result['rows'][0]['expected_occupancy'] / 100
     with pytest.raises(HTTPException) as exc:
         await read(output='xlsx', snapshot='stale')
+    assert exc.value.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_one_snapshot_covers_room_types_and_selected_excel_view(dataset):
+    result = await read()
+    assert result['room_type_groups'][0]['rows'] == result['rows']
+    response = await read(output='xlsx', snapshot=result['snapshot'], view='daily', metric='remaining')
+    workbook = load_workbook(BytesIO(b''.join([part async for part in response.body_iterator])))
+    assert workbook.active.title == 'Doluluk Özeti'
+    dataset.bookings.find.return_value.to_list.return_value = []
+    with pytest.raises(HTTPException) as exc:
+        await read(output='xlsx', snapshot=result['snapshot'])
     assert exc.value.status_code == 409

@@ -3,7 +3,6 @@ import asyncio
 import hashlib
 import json
 from datetime import date
-from io import BytesIO
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -33,6 +32,8 @@ def date_range(start_date, end_date):
 @sub_router.get("/reports/occupancy-calendar")
 async def get_occupancy_calendar(start_date: str, end_date: str, room_type: str | None = None,
                                  output: Literal["json", "xlsx"] = "json", snapshot: str | None = None,
+                                 view: Literal["matrix", "daily"] = "matrix",
+                                 metric: Literal["occupancy", "remaining", "occupied"] = "occupancy",
                                  current_user: User = Depends(get_current_user),
                                  _: None = Depends(require_module("basic_reporting"))):
     first, last = date_range(start_date, end_date)
@@ -54,29 +55,8 @@ async def get_occupancy_calendar(start_date: str, end_date: str, room_type: str 
         return data
     if snapshot != data["snapshot"]:
         raise HTTPException(409, "Doluluk verisi değişti. Ekranı yenileyip Excel çıktısını yeniden alın.")
-    from openpyxl import Workbook
+    from modules.pms_core.occupancy_calendar_export import occupancy_workbook
 
-    workbook = Workbook()
-    sheet = workbook.active
-    sheet.title = "Günlük Doluluk"
-    sheet.append(["Başlangıç", start_date, "Bitiş", end_date, "PMS iş günü", business_day.isoformat()])
-    sheet.append(["Oda tipi", room_type or "Tüm tesis"])
-    sheet.append(["Gerçekleşen: iş gününe kadar. Beklenen: iş gününden itibaren. Çıkış gecesi hariç; iptal/no-show hariç."])
-    fields = ["date", "physical_rooms", "blocked_rooms", "available_rooms", "actual_rooms", "actual_occupancy",
-              "stayovers", "arrivals", "expected_rooms", "expected_occupancy", "unassigned_rooms", "overbooked_rooms",
-              "assignment_conflicts", "unknown_room_references", "occupied_blocked_rooms"]
-    sheet.append(["Tarih", "Fiziksel", "Satışa kapalı", "Satılabilir", "Gerçekleşen oda", "Gerçekleşen %",
-                  "Devam eden", "Giriş", "Beklenen oda", "Beklenen %", "Atanmamış", "Fazla satış", "Atama çakışması", "Bilinmeyen oda", "Kapalı odada konaklama"])
-    for row in data["rows"]:
-        sheet.append([row[key] for key in fields])
-    for key, label in (("actual", "Gerçekleşen"), ("expected", "Beklenen")):
-        total = data["totals"][key]
-        sheet.append([label, "Oda-gecesi", total["room_nights"], "Satılabilir oda-gecesi", total["available_room_nights"], "Doluluk %", total["occupancy"]])
-    # User-entered room type must remain text, not an Excel formula.
-    sheet.cell(2, 2).data_type = "s"
-    sheet.freeze_panes = "A5"
-    buffer = BytesIO()
-    workbook.save(buffer)
-    buffer.seek(0)
+    buffer = occupancy_workbook(data, view=view, metric=metric)
     return StreamingResponse(buffer, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                              headers={"Content-Disposition": f'attachment; filename="occupancy_{start_date}_{end_date}.xlsx"'})
