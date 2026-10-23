@@ -107,12 +107,12 @@ async def test_non_durable_pipeline_result_never_acks(
 
 
 @pytest.mark.asyncio
-async def test_mapping_failure_creates_hold_and_alarm_but_never_acks(monkeypatch):
+async def test_mapping_failure_persists_review_and_alarm_without_booking_or_ack(monkeypatch):
     trigger = AsyncMock()
     hold = AsyncMock(
         return_value={
-            "created": True,
-            "booking_id": "opaque-hold",
+            "created": False,
+            "booking_id": None,
             "alarm_raised": True,
         }
     )
@@ -147,6 +147,7 @@ async def test_mapping_failure_creates_hold_and_alarm_but_never_acks(monkeypatch
     assert persisted is True
     trigger.assert_awaited_once()
     hold.assert_awaited_once()
+    assert hold.await_args.kwargs["create_booking_hold"] is False
 
     _patch_phase_a(
         monkeypatch,
@@ -427,7 +428,7 @@ async def test_mapping_fix_replay_creates_one_booking_and_duplicate_is_noop(monk
     )
     monkeypatch.setattr(
         "domains.channel_manager.providers.unmatched_hold.create_unmatched_reservation_hold",
-        AsyncMock(return_value={"booking_id": "hold", "alarm_raised": True}),
+        AsyncMock(return_value={"booking_id": None, "alarm_raised": True}),
     )
 
     first = await import_bridge_service.replay_reviewed_mapping_import(

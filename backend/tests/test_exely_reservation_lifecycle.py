@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from copy import deepcopy
 from datetime import UTC, datetime, timedelta
+from itertools import permutations
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -379,10 +380,41 @@ async def test_mapping_failure_requires_hold_and_alarm_and_never_acks(fake_db, m
     assert result["action"] == "hold"
     assert current["pms_status"] == "pending_mapping"
     hold.assert_awaited_once()
+    assert hold.await_args.kwargs["create_booking_hold"] is False
+    assert fake_db.bookings.documents == []
     provider = SimpleNamespace(confirm_delivery=AsyncMock())
     ack = await lifecycle.acknowledge_durable_version(provider, current)
     assert ack["provider_write_count"] == 0
     provider.confirm_delivery.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_unmapped_exely_real_hold_helper_only_raises_alarm_without_booking(fake_db, monkeypatch):
+    from domains.channel_manager.providers import unmatched_hold
+
+    alarm = AsyncMock(return_value=True)
+    monkeypatch.setattr(unmatched_hold, "_raise_unmatched_alarm", alarm)
+    # No collections are exposed: touching bookings/locks would fail this test.
+    monkeypatch.setattr(unmatched_hold, "db", SimpleNamespace())
+    result, current = await _persist(fake_db, _canonical())
+    assert result["action"] == "hold"
+    assert current["pms_status"] == "pending_mapping"
+    assert not current.get("hold_booking_id")
+    assert fake_db.bookings.documents == []
+    alarm.assert_awaited_once()
+    assert alarm.await_args.kwargs["booking_id"] == ""
+    assert alarm.await_args.kwargs["inventory_hold"] is False
+
+
+@pytest.mark.asyncio
+async def test_unmapped_exely_alarm_failure_is_not_reported_as_durable(fake_db, monkeypatch):
+    monkeypatch.setattr(
+        "domains.channel_manager.providers.unmatched_hold._raise_unmatched_alarm",
+        AsyncMock(return_value=False),
+    )
+    result, _ = await _persist(fake_db, _canonical())
+    assert result["reason"] == "MAPPING_ALARM_NOT_DURABLE"
+    assert fake_db.bookings.documents == []
 
 
 @pytest.mark.asyncio
@@ -527,6 +559,36 @@ async def test_concurrent_modify_cancel_race_keeps_newest_cancelled_state(fake_d
     )
     assert newest["processing_state"] == lifecycle.PMS_DURABLE
     assert newest["ack_state"] == lifecycle.ACK_PENDING
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("delivery_order", list(permutations(("modify", "partial", "cancel"))))
+async def test_reordered_duplicate_modifications_never_resurrect_cancelled_rooms(fake_db, delivery_order):
+    """Delayed/repeated provider deliveries must not undo a newer cancellation."""
+    await _add_mapping(fake_db, "STD", "BAR", "Standard")
+    await _add_mapping(fake_db, "DLX", "FLEX", "Deluxe")
+    _, initial = await _persist(
+        fake_db, _canonical(rooms=[_room("11"), _room("22", "DLX", "FLEX", 200)]),
+        payload_hash="initial",
+    )
+    result = await pms_lifecycle.process_reservation_version("tenant", initial)
+    assert result["success"] is True
+    original_ids = set(result["pms_booking_ids"])
+    events = {
+        "modify": (_canonical("2030-01-01T11:00:00Z", [_room("11", amount=125), _room("22", "DLX", "FLEX", 225)], "modified"), "modification"),
+        "partial": (_canonical("2030-01-01T12:00:00Z", [_room("11", amount=125)], "modified"), "modification"),
+        "cancel": (_canonical("2030-01-01T13:00:00Z", [_room("11", amount=125)], "cancelled"), "cancellation"),
+    }
+    for label in (*delivery_order, *reversed(delivery_order)):
+        canonical, event_type = events[label]
+        _, current = await _persist(fake_db, canonical, payload_hash=label, event_type=event_type)
+        await pms_lifecycle.process_reservation_version("tenant", current)
+
+    assert {row["id"] for row in fake_db.bookings.documents} == original_ids
+    assert all(row["status"] == "cancelled" for row in fake_db.bookings.documents)
+    current = await fake_db.exely_reservations.find_one({"tenant_id": "tenant", "external_id": "provider-reservation"})
+    assert current["state"] == "cancelled"
+    assert current["provider_version_key"] == "2030-01-01T13:00:00Z"
 
 
 @pytest.mark.asyncio

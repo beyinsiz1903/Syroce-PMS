@@ -1,5 +1,5 @@
 """
-Unmatched OTA Reservation Hold — shared helper (Exely + HotelRunner).
+Unmatched OTA Reservation Hold / Alert — shared helper.
 =====================================================================
 
 Bir OTA rezervasyonu (Exely/HotelRunner) oda/fiyat eslestirmesi
@@ -33,6 +33,11 @@ ONEMLI sinirlama (durust): Control Plane uyari motorunun cooldown'u trigger
 bazindadir (per-reservation degil), bu yuzden cp-alert kanali kisa pencerede
 farkli rezervasyonlar icin az-uyarabilir. Per-rezervasyon idempotency ve asil
 gorunurluk, tenant'a izole in-app bildirim (dedup_key) tarafindan saglanir.
+
+Exely and HotelRunner ingestion use create_booking_hold=False: the durable inbox
+and emergency notification replace the temporary PMS booking/sentinel locks.
+This does not reserve real inventory; neither did the sentinel locks above.
+Existing legacy holds are still cleaned by the normal successful replay path.
 """
 
 import hashlib
@@ -123,8 +128,9 @@ async def create_unmatched_reservation_hold(
     channel: str = "",
     property_id: str | None = None,
     note: str = "",
+    create_booking_hold: bool = True,
 ) -> dict[str, Any]:
-    """Eslestirilemeyen rezervasyon icin idempotent tutma + alarm olusturur.
+    """Create a hold+alarm, or only an alarm when create_booking_hold=False.
 
     Returns: {"created": bool, "booking_id": str|None, "nights_held": list,
               "idempotent": bool, "alarm_raised": bool}
@@ -144,6 +150,21 @@ async def create_unmatched_reservation_hold(
         }
 
     property_id = property_id or tenant_id
+
+    # Exely Requestdenied must not create a PMS booking or sentinel locks.
+    # Its canonical event/version is already durable in the Exely inbox;
+    # retain the operational alarm without polluting booking/financial totals.
+    # Explicit legacy callers can retain the old default behavior.
+    if not create_booking_hold:
+        alarm_raised = await _raise_unmatched_alarm(
+            provider=provider, tenant_id=tenant_id, external_id=external_id,
+            guest_name=guest_name, check_in=check_in, check_out=check_out,
+            room_type_code=room_type_code, booking_id="", inventory_hold=False,
+        )
+        return {
+            "created": False, "booking_id": None, "nights_held": [],
+            "idempotent": True, "alarm_raised": alarm_raised,
+        }
 
     # ── Idempotency: aktif bir tutma zaten var mi? ──────────────────
     with tenant_context(tenant_id):
@@ -385,6 +406,7 @@ async def _raise_unmatched_alarm(
     check_out: str,
     room_type_code: str,
     booking_id: str,
+    inventory_hold: bool = True,
 ) -> bool:
     """Idempotent ACIL alarm: in-app bildirim + websocket + Control Plane."""
     now = _now()
@@ -398,8 +420,10 @@ async def _raise_unmatched_alarm(
     notif_message = (
         f"{provider.upper()} kanalindan gelen {external_id} numarali rezervasyon "
         f"({guest_name or 'Misafir'}, {ci} -> {co}) oda/fiyat eslestirmesi "
-        f"yapilamadigi icin PMS'e aktarilamadi. Envanter korumasi icin gecici "
-        f"tutma olusturuldu. Lutfen oda tipi eslestirmesini tamamlayin."
+        f"yapilamadigi icin PMS'e aktarilamadi. "
+        + ("Envanter korumasi icin gecici tutma olusturuldu. " if inventory_hold else
+           "PMS rezervasyonu ve stok kilidi olusturulmadi; kaynak kaydi entegrasyon kuyrugunda bekliyor. ")
+        + "Lutfen oda tipi eslestirmesini tamamlayin."
     )
     try:
         with tenant_context(tenant_id):
@@ -421,7 +445,8 @@ async def _raise_unmatched_alarm(
                         "category": "channel_manager",
                         "title": ALARM_TITLE,
                         "message": notif_message,
-                        "action_url": "/channel-manager",
+                        "action_url": "/channel-manager" if inventory_hold else
+                                      ("/hotelrunner" if provider == "hotelrunner" else "/exely"),
                         "booking_id": booking_id,
                         "external_reservation_id": external_id,
                         "provider": provider,
@@ -438,18 +463,19 @@ async def _raise_unmatched_alarm(
             try:
                 from websocket_server import broadcast_booking_update
 
-                await broadcast_booking_update(
-                    {
-                        "id": booking_id,
-                        "status": UNMATCHED_HOLD_STATUS,
-                        "external_reservation_id": external_id,
-                        "provider": provider,
-                        "action_needed": True,
-                        "alarm_title": ALARM_TITLE,
-                    },
-                    event_type="unmatched_hold",
-                    tenant_id=tenant_id,
-                )
+                if booking_id:
+                    await broadcast_booking_update(
+                        {
+                            "id": booking_id,
+                            "status": UNMATCHED_HOLD_STATUS,
+                            "external_reservation_id": external_id,
+                            "provider": provider,
+                            "action_needed": True,
+                            "alarm_title": ALARM_TITLE,
+                        },
+                        event_type="unmatched_hold",
+                        tenant_id=tenant_id,
+                    )
             except Exception as exc:
                 logger.warning(
                     "[UNMATCHED-HOLD] websocket_publish_failed exception_class=%s",

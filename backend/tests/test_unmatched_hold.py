@@ -69,6 +69,30 @@ def _ext_id() -> str:
     return f"EXT-{uuid.uuid4().hex[:10]}"
 
 
+@pytest.mark.parametrize("provider", ["exely", "hotelrunner"])
+async def test_provider_alert_only_is_durable_idempotent_and_has_no_booking_or_locks(provider):
+    ext = _ext_id()
+    for _ in range(2):
+        result = await create_unmatched_reservation_hold(
+            provider=provider, tenant_id=TEST_TENANT, external_id=ext,
+            check_in=CHECK_IN, check_out=CHECK_OUT, guest_name="Synthetic Mapping Test",
+            room_type_code="MISSING", create_booking_hold=False,
+        )
+        assert result["alarm_raised"] is True
+        assert result["booking_id"] is None
+        assert result["nights_held"] == []
+        assert result["created"] is False
+    with tenant_context(TEST_TENANT):
+        assert await db.bookings.count_documents({"tenant_id": TEST_TENANT}) == 0
+        assert await db.room_night_locks.count_documents({"tenant_id": TEST_TENANT}) == 0
+        assert await db.notifications.count_documents({"tenant_id": TEST_TENANT}) == 1
+        alarm = await db.notifications.find_one({"tenant_id": TEST_TENANT, "external_reservation_id": ext})
+    assert alarm["booking_id"] == ""
+    assert alarm["action_url"] == f"/{provider}"
+    assert "tutma olusturuldu" not in alarm["message"]
+    assert "stok kilidi olusturulmadi" in alarm["message"]
+
+
 async def test_create_hold_creates_booking_locks_and_alarm():
     ext = _ext_id()
     res = await create_unmatched_reservation_hold(
