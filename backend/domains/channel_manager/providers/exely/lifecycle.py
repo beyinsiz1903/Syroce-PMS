@@ -361,20 +361,16 @@ async def persist_exely_event(
             children=int(first_room.get("children") or 0),
             channel=canonical["channel"],
             property_id=property_id,
+            create_booking_hold=False,
         )
-        if hold.get("booking_id"):
-            await db.exely_reservations.update_one(
-                {"provider_version_identity": identity},
-                {"$set": {"hold_booking_id": hold["booking_id"]}},
-            )
-        if not hold.get("booking_id") or not hold.get("alarm_raised"):
+        if not hold.get("alarm_raised"):
             await mark_version_state(
                 identity,
-                failure_code="MAPPING_HOLD_NOT_DURABLE",
+                failure_code="MAPPING_ALARM_NOT_DURABLE",
             )
             return {
                 "action": "error",
-                "reason": "MAPPING_HOLD_NOT_DURABLE",
+                "reason": "MAPPING_ALARM_NOT_DURABLE",
                 "external_id": external_id,
                 "pms_status": pms_status,
             }
@@ -444,7 +440,8 @@ async def reject_unmapped_version(provider, tenant_id: str, reservation: dict[st
 
     A separate CAS/state fences this write against mapping replay. An unknown
     outcome (including a worker crash while SENDING) is never auto-retried.
-    The local hold/alarm is deliberately retained until successful replay.
+    The durable provider inbox and mapping alarm remain available for replay;
+    no new temporary PMS booking or inventory lock is created for Exely.
     """
     identity = str(reservation.get("provider_version_identity") or "")
     query = {"tenant_id": tenant_id, "version_identity": identity}

@@ -405,8 +405,9 @@ async def replay_reviewed_mapping_import(
         children=record.get("children", 0) or 0,
         channel=record.get("source_system", "") or provider,
         property_id=property_id,
+        create_booking_hold=provider not in {"hotelrunner", "exely"},
     )
-    if not hold.get("booking_id") or not hold.get("alarm_raised"):
+    if not hold.get("alarm_raised") or (provider not in {"hotelrunner", "exely"} and not hold.get("booking_id")):
         return {"status": "failed"}
 
     room_mapping = None
@@ -638,6 +639,7 @@ async def auto_import_reservation_to_pms(
                     children=record.get("children", 0) or 0,
                     channel=record.get("source_system", "") or provider,
                     property_id=property_id,
+                    create_booking_hold=provider not in {"hotelrunner", "exely"},
                 )
                 if hold.get("booking_id"):
                     await db[COLL_IMPORTED].update_one(

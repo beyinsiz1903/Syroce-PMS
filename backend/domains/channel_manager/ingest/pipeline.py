@@ -1098,8 +1098,9 @@ async def _persist_mapping_hold(
         children=canonical.get("children", 0) or 0,
         channel=canonical.get("source_system", "") or provider,
         property_id=property_id,
+        create_booking_hold=provider not in {"hotelrunner", "exely"},
     )
-    return bool(hold.get("booking_id") and hold.get("alarm_raised"))
+    return bool(hold.get("alarm_raised") and (provider in {"hotelrunner", "exely"} or hold.get("booking_id")))
 
 
 async def _create_recon_case(

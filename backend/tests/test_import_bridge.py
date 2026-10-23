@@ -17,7 +17,7 @@ Tests the full lifecycle:
 import asyncio
 import os
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -54,6 +54,8 @@ async def _cleanup(db):
         "outbox_events",
         "reservation_notes",
         "rooms",
+        "room_night_locks",
+        "notifications",
     ]:
         await db[coll].delete_many({"tenant_id": TEST_TENANT})
 
@@ -278,7 +280,7 @@ async def test_auto_import_creates_booking():
         with patch("core.import_bridge_service.db", db), \
              patch("core.import_decision.db", db), \
              patch("core.atomic_booking.db", db):
-            from core.import_bridge_service import create_import_record, auto_import_reservation_to_pms
+            from core.import_bridge_service import auto_import_reservation_to_pms, create_import_record
             record = await create_import_record(lineage, "pending_auto_import", connector_id=TEST_CONNECTOR)
             assert record is not None
 
@@ -327,7 +329,7 @@ async def test_auto_import_pending_assignment_defers_availability_outbox():
         with patch("core.import_bridge_service.db", db), \
              patch("core.import_decision.db", db), \
              patch("core.atomic_booking.db", db):
-            from core.import_bridge_service import create_import_record, auto_import_reservation_to_pms
+            from core.import_bridge_service import auto_import_reservation_to_pms, create_import_record
 
             # This test verifies the pending-room/outbox behavior, not the
             # worker's atomic claim. CI runs a live backend worker beside the
@@ -422,7 +424,7 @@ async def test_import_uses_atomic_booking_core():
              patch("core.import_bridge_service.create_booking_atomic", new_callable=AsyncMock) as mock_atomic:
             mock_atomic.return_value = {"id": "mock-booking-id"}
 
-            from core.import_bridge_service import create_import_record, auto_import_reservation_to_pms
+            from core.import_bridge_service import auto_import_reservation_to_pms, create_import_record
             record = await create_import_record(lineage, "pending_auto_import", connector_id=TEST_CONNECTOR)
             # DIAGNOSTIC
             all_docs = await db["imported_reservations"].find().to_list(None)
@@ -476,7 +478,7 @@ async def test_duplicate_booking_not_created():
 
         with patch("core.import_bridge_service.db", db), \
              patch("core.import_decision.db", db):
-            from core.import_bridge_service import create_import_record, auto_import_reservation_to_pms
+            from core.import_bridge_service import auto_import_reservation_to_pms, create_import_record
             record = await create_import_record(lineage, "pending_auto_import", connector_id=TEST_CONNECTOR)
             success, message = await auto_import_reservation_to_pms(record["id"])
 
@@ -502,7 +504,8 @@ async def test_duplicate_booking_not_created():
 # ═══════════════════════════════════════════════════════════════════
 
 @pytest.mark.asyncio
-async def test_unmapped_room_triggers_review():
+@pytest.mark.parametrize("provider", ["exely", "hotelrunner"])
+async def test_unmapped_room_triggers_review(provider):
     client, db = await _get_db()
     try:
         await _cleanup(db)
@@ -511,7 +514,7 @@ async def test_unmapped_room_triggers_review():
             "id": str(uuid.uuid4()),
             "tenant_id": TEST_TENANT,
             "property_id": TEST_PROPERTY,
-            "provider": TEST_PROVIDER,
+            "provider": provider,
             "pms_rate_plan_id": "rate-bar",
             "provider_rate_code": "BAR",
             "is_active": True,
@@ -522,11 +525,11 @@ async def test_unmapped_room_triggers_review():
             name="idx_import_unique_ext_res", unique=True,
         )
 
-        lineage = _make_lineage()
+        lineage = _make_lineage(provider=provider)
 
         with patch("core.import_bridge_service.db", db), \
              patch("core.import_decision.db", db):
-            from core.import_bridge_service import create_import_record, auto_import_reservation_to_pms
+            from core.import_bridge_service import auto_import_reservation_to_pms, create_import_record
             record = await create_import_record(lineage, "pending_auto_import", connector_id=TEST_CONNECTOR)
             success, message = await auto_import_reservation_to_pms(record["id"])
 
@@ -537,23 +540,13 @@ async def test_unmapped_room_triggers_review():
         assert imp["import_status"] == "review_required"
         assert imp["review_reason"] == "unmapped_room_type"
 
-        # Task #394: HARD-FAIL korunur (otomatik kabul YOK) ama overbooking'i
-        # onlemek icin eslesmeyen-tutma (hold) booking + envanter kilidi olusur.
-        # GERCEK (confirmed) booking OLUSMAMALI.
-        real_count = await db[COLL_BOOKINGS].count_documents(
-            {"tenant_id": TEST_TENANT, "status": "confirmed"}
-        )
-        assert real_count == 0
-
-        assert imp.get("hold_booking_id")
-        hold = await db[COLL_BOOKINGS].find_one(
-            {"id": imp["hold_booking_id"], "tenant_id": TEST_TENANT}, {"_id": 0}
-        )
-        assert hold is not None
-        assert hold["booking_source"] == "ota_unmatched_hold"
-        assert hold["status"] == "pending_mapping"
-        assert hold["room_id"] is None
-        assert hold["action_needed"] is True
+        # Review remains durable without a synthetic PMS booking/stock claim.
+        assert await db[COLL_BOOKINGS].count_documents({"tenant_id": TEST_TENANT}) == 0
+        assert await db.room_night_locks.count_documents({"tenant_id": TEST_TENANT}) == 0
+        assert not imp.get("hold_booking_id")
+        assert await db.notifications.count_documents({
+            "tenant_id": TEST_TENANT, "external_reservation_id": lineage["external_reservation_id"],
+        }) == 1
     finally:
         await _cleanup(db)
         # Task #394: tutma kaydinin sentinel kilitlerini de temizle (residue YOK)
@@ -585,7 +578,7 @@ async def test_transient_failure_schedules_retry():
              patch("core.import_bridge_service.create_booking_atomic", new_callable=AsyncMock) as mock_atomic:
             mock_atomic.side_effect = Exception("Connection timeout during write")
 
-            from core.import_bridge_service import create_import_record, auto_import_reservation_to_pms
+            from core.import_bridge_service import auto_import_reservation_to_pms, create_import_record
             record = await create_import_record(lineage, "pending_auto_import", connector_id=TEST_CONNECTOR)
             success, message = await auto_import_reservation_to_pms(record["id"])
 
@@ -620,7 +613,7 @@ async def test_max_retries_marks_failed():
 
         with patch("core.import_bridge_service.db", db), \
              patch("core.import_decision.db", db):
-            from core.import_bridge_service import create_import_record, DEFAULT_MAX_RETRIES
+            from core.import_bridge_service import DEFAULT_MAX_RETRIES, create_import_record
             record = await create_import_record(lineage, "pending_auto_import", connector_id=TEST_CONNECTOR)
 
         # Simulate near max retries
@@ -666,7 +659,7 @@ async def test_concurrent_claim_only_one_wins():
 
         with patch("core.import_bridge_service.db", db), \
              patch("core.import_decision.db", db):
-            from core.import_bridge_service import create_import_record, auto_import_reservation_to_pms
+            from core.import_bridge_service import auto_import_reservation_to_pms, create_import_record
             record = await create_import_record(lineage, "pending_auto_import", connector_id=TEST_CONNECTOR)
 
             results = await asyncio.gather(
@@ -705,7 +698,7 @@ async def test_admin_retry_resets_import():
             from core.import_bridge_service import create_import_record
             record = await create_import_record(lineage, "failed", connector_id=TEST_CONNECTOR)
 
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         result = await db[COLL_IMPORTED].find_one_and_update(
             {"id": record["id"], "import_status": "failed"},
             {
@@ -747,7 +740,7 @@ async def test_admin_dismiss_marks_dismissed():
             from core.import_bridge_service import create_import_record
             record = await create_import_record(lineage, "review_required", connector_id=TEST_CONNECTOR)
 
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         result = await db[COLL_IMPORTED].find_one_and_update(
             {"id": record["id"], "import_status": "review_required"},
             {"$set": {"import_status": "dismissed", "updated_at": now}},
@@ -779,11 +772,11 @@ async def test_admin_approve_and_import():
         with patch("core.import_bridge_service.db", db), \
              patch("core.import_decision.db", db), \
              patch("core.atomic_booking.db", db):
-            from core.import_bridge_service import create_import_record, auto_import_reservation_to_pms
+            from core.import_bridge_service import auto_import_reservation_to_pms, create_import_record
             record = await create_import_record(lineage, "review_required", connector_id=TEST_CONNECTOR)
 
             # Admin approves: reset to pending
-            now = datetime.now(timezone.utc).isoformat()
+            now = datetime.now(UTC).isoformat()
             await db[COLL_IMPORTED].update_one(
                 {"id": record["id"]},
                 {"$set": {"import_status": "pending_auto_import", "review_reason": None, "updated_at": now}},
@@ -833,7 +826,7 @@ async def test_lineage_linked_to_booking():
         with patch("core.import_bridge_service.db", db), \
              patch("core.import_decision.db", db), \
              patch("core.atomic_booking.db", db):
-            from core.import_bridge_service import create_import_record, auto_import_reservation_to_pms
+            from core.import_bridge_service import auto_import_reservation_to_pms, create_import_record
             # Keep the row invisible to a concurrently running import worker
             # until this test owns it.  The CI suite uses a shared live MongoDB;
             # creating the row as pending allowed another pytest worker to claim
@@ -854,7 +847,7 @@ async def test_lineage_linked_to_booking():
                     "$set": {
                         "import_status": "processing",
                         "review_reason": None,
-                        "updated_at": datetime.now(timezone.utc).isoformat(),
+                        "updated_at": datetime.now(UTC).isoformat(),
                     }
                 },
                 return_document=True,

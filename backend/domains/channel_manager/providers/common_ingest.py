@@ -81,6 +81,7 @@ async def _create_unmatched_hold_for_reservation(
             children=first.get("children", 0) or 0,
             channel=channel,
             property_id=tenant_id,
+            create_booking_hold=provider not in {"hotelrunner", "exely"},
         )
         if hold.get("booking_id"):
             await col.update_one(

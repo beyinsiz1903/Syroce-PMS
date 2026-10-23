@@ -295,5 +295,5 @@ async def test_failed_mapping_event_is_retained_for_controlled_replay(tenant_id)
     alarm_count = await db.notifications.count_documents(
         {"tenant_id": tenant_id, "dedup_key": f"unmatched_mapping_{hr_number}"}
     )
-    assert hold_count == 1
+    assert hold_count == 0
     assert alarm_count == 1
