@@ -385,6 +385,7 @@ def _build_financial_summary(
     total_charges = sum(charge.get("total", charge.get("amount", 0)) for charge in active_charges)
     total_payments = sum(payment.get("amount", 0) for payment in payments if is_effective(payment) and payment.get("method") != "discount")
     city_ledger_transfer_total = sum(payment.get("amount", 0) for payment in payments if is_effective(payment) and str(payment.get("method") or "").lower() in {"city_ledger", "ar", "direct_bill"})
+    security_application_total = sum(payment.get("amount", 0) for payment in payments if is_effective(payment) and payment.get("method") == "security_deposit_application")
     cash_collection_total = sum(effective_collection(payment) for payment in deduplicate_report_payments(payments) if str(payment.get("method") or "").lower() != "direct_bill")
     prepayment_total = sum(
         payment.get("amount", 0)
@@ -537,6 +538,7 @@ def _build_financial_summary(
         "total_payments": round(total_payments, 2),
         "cash_collection_total": round(cash_collection_total, 2),
         "city_ledger_transfer_total": round(city_ledger_transfer_total, 2),
+        "security_application_total": round(security_application_total, 2),
         "prepayment_total": round(prepayment_total, 2),
         "other_payments_total": round(total_payments - prepayment_total, 2),
         "total_discounts": round(total_discounts, 2),
@@ -956,8 +958,9 @@ class CariAccountCreate(BaseModel):
     contact_person: str | None = None
     contact_email: str | None = None
     contact_phone: str | None = None
-    credit_limit: float = 0.0
-    payment_terms_days: int = 30
+    credit_limit: float = Field(0.0, ge=0, le=1e9, allow_inf_nan=False)
+    payment_terms_days: int = Field(30, ge=0, le=3650)
+    currency: str | None = Field(None, pattern=r"^[A-Z]{3}$")
 
 
 class ExtraChargeAdd(BaseModel):
@@ -1873,6 +1876,9 @@ async def record_payment(
     _perm=Depends(require_op("post_payment")),  # v97 DW
 ):
     """Record a payment on the reservation's folio."""
+    from modules.pms_core.enterprise_billing import manual_collection_method
+
+    manual_collection_method(data.method)
     _enforce_perm(current_user, "post_payment")  # Bug CP fix
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
@@ -2245,6 +2251,11 @@ async def transfer_to_cari(
             )
         canonical_account_id = _canonical_cari_account_id(current_cari)
 
+        from modules.pms_core.enterprise_billing import assert_direct_bill_capacity
+
+        assert_direct_bill_capacity(current_cari, current_booking.get("currency") or "TRY", data.amount,
+                                    current_cari.get("current_balance", 0) if current_is_city_ledger else _cari_balance(current_cari))
+
         commit_stage["name"] = "açık bakiye doğrulama"
         current_outstanding = await _reservation_outstanding_balance(
             tid,
@@ -2288,7 +2299,16 @@ async def transfer_to_cari(
             "description": data.description or f"Rezervasyon {booking_id} - Cariye aktarım",
             "posted_by": current_user.name,
             "created_at": now,
+            "currency": str(current_booking.get("currency") or "TRY").upper(),
         }
+        transaction_day = await stamp_open_business_date(db, tid, transaction)
+        try:
+            terms = int(current_cari.get("payment_terms_days", 30))
+            if not 0 <= terms <= 3650:
+                raise ValueError
+            transaction["due_date"] = (date.fromisoformat(transaction_day) + timedelta(days=terms)).isoformat()
+        except (ValueError, TypeError):
+            raise HTTPException(409, "Cari hesap vadesi/iş günü doğrulanamadı") from None
         if current_is_city_ledger:
             transaction["account_id"] = canonical_account_id
             transaction["transaction_date"] = now
@@ -2363,7 +2383,7 @@ async def transfer_to_cari(
         result = await _run_reservation_financial_transaction(
             tenant_id=tid,
             booking_id=booking_id,
-            resources=[("cari_account", data.cari_account_id)],
+            resources=[("cari_account", _canonical_cari_account_id(cari))],
             callback=_commit,
         )
     except DuplicateKeyError:
@@ -3125,6 +3145,9 @@ async def record_deposit(
     _perm=Depends(require_op("post_payment")),  # v97 DW
 ):
     """Record a deposit payment."""
+    from modules.pms_core.enterprise_billing import manual_collection_method
+
+    manual_collection_method(data.method)
     _enforce_perm(current_user, "post_payment")  # Bug CP Round-3
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
@@ -4770,6 +4793,7 @@ async def create_cari_account(
         "contact_email": data.contact_email,
         "contact_phone": data.contact_phone,
         "credit_limit": data.credit_limit,
+        "currency": data.currency,
         "payment_terms_days": data.payment_terms_days,
         "balance": 0.0,
         "current_balance": 0.0,

@@ -46,6 +46,7 @@ export function DepositsTab({ deposits, booking, onRefresh }) {
 
   return (
     <div data-testid="deposits-tab" className="space-y-4">
+      <p className="rounded border p-3 text-sm">Bu bölümdeki depozitolar konaklama ön ödemesidir ve folyo borcundan düşer. İade edilebilir hasar/ekstra güvencesi için Folyo/Ödeme → Kurumsal ödeme / ikram kontrolleri → Güvence kayıtları bölümünü kullanın. Provizyon ayrı bir banka işlemidir.</p>
       <div className="grid grid-cols-3 gap-3">
         <SummaryCard currency={currency} label={t('cm.pages_reservationdetail_DocumentTabs.toplam_depozito')} value={totalDeposits} color="blue" />
         <SummaryCard currency={currency} label="Iade Edilen" value={totalRefunded} color="amber" />

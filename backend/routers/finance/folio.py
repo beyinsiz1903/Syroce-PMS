@@ -777,6 +777,9 @@ async def _refresh_reservation_payment_state(tenant_id: str, folio: dict) -> Non
 @router.post("/folio/{folio_id}/payment", response_model=Payment)
 async def post_payment_to_folio(folio_id: str, payment_data: PaymentCreate, request: Request, current_user: User = Depends(get_current_user)):
     """Post a payment to folio"""
+    from modules.pms_core.enterprise_billing import manual_collection_method
+
+    manual_collection_method(payment_data.method)
     # Role / permission enforcement (Bug CP fix)
     from modules.pms_core.role_permission_service import RolePermissionService
 
@@ -1340,6 +1343,10 @@ async def void_payment(
         raise HTTPException(status_code=404, detail="Ödeme bulunamadı")
     if payment.get("mice_event_id"):
         raise HTTPException(409, "Banket tahsilatını etkinliğin iade akışından düzeltin")
+    if payment.get("security_fund_id") or payment.get("concession_id"):
+        raise HTTPException(409, "Bu kayıt tahsilat değildir; güvence/ikram mutabakatı üzerinden düzeltme gerekir")
+    if payment.get("provider_ref"):
+        raise HTTPException(409, "Entegre kart tahsilatı yalnız ödeme kuruluşunun doğrulanmış iade/iptal akışında düzeltilebilir")
     if payment.get("voided"):
         raise HTTPException(status_code=400, detail="Ödeme zaten iade edilmiş")
 

@@ -78,11 +78,12 @@ def summarize_shift_transactions(transactions: list[dict] | None) -> dict:
     }
 
 
-async def get_active_shift(tenant_id: str) -> dict | None:
+async def get_active_shift(tenant_id: str, *, session=None) -> dict | None:
     """Tenant'ın açık vardiyasını döner (yoksa None)."""
     return await db.cashier_shifts.find_one(
         {"tenant_id": tenant_id, "status": "open"},
         sort=[("opened_at", -1)],
+        **({"session": session} if session is not None else {}),
     )
 
 
@@ -236,6 +237,7 @@ async def record_cash_transaction(
     fx_rate: float = 1.0,
     original_amount: float | None = None,
     extra: dict | None = None,
+    session=None,
 ) -> dict | None:
     """
     Kasa hareketi yazar (cashier_shifts.transactions array'ine push) ve
@@ -267,7 +269,7 @@ async def record_cash_transaction(
         fx_rate_f = 1.0
     original_amount_f = float(original_amount) if original_amount is not None else amount_f
 
-    shift = await get_active_shift(tenant_id)
+    shift = await get_active_shift(tenant_id, **({"session": session} if session is not None else {}))
     if not shift:
         if require_open_shift and method_l in CASH_METHODS:
             raise HTTPException(
@@ -318,8 +320,10 @@ async def record_cash_transaction(
         filter_doc["transactions.idempotency_key"] = {"$ne": idempotency_key}
 
     try:
-        result = await db.cashier_shifts.update_one(filter_doc, update_doc)
+        result = await db.cashier_shifts.update_one(filter_doc, update_doc, **({"session": session} if session is not None else {}))
     except Exception as e:
+        if session is not None:
+            raise
         logger.error(f"cashier txn push failed: {e}")
         return None
 
@@ -330,6 +334,7 @@ async def record_cash_transaction(
             existing_shift = await db.cashier_shifts.find_one(
                 {"tenant_id": tenant_id, "transactions.idempotency_key": idempotency_key},
                 {"_id": 0, "transactions": 1},
+                **({"session": session} if session is not None else {}),
             )
             if existing_shift:
                 for t in existing_shift.get("transactions") or []:

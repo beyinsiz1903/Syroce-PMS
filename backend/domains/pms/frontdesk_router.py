@@ -748,6 +748,9 @@ async def add_folio_payment(
 ):
     if payload.amount <= 0:
         raise HTTPException(status_code=400, detail="amount 0'dan büyük olmalı")
+    from modules.pms_core.enterprise_billing import manual_collection_method
+
+    manual_collection_method(payload.method)
 
     amount = float(payload.amount)
     method_value = payload.method.value if hasattr(payload.method, "value") else str(payload.method)

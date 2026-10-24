@@ -67,6 +67,7 @@ export default function FolioRoutingPage() {
       <p style={{ color: "hsl(var(--muted-foreground))" }}>
         {t('cm.pages_FolioRoutingPage.bir_oda_folio_sundaki_belirli_ucretleri_')}
       </p>
+      <p className="mt-2 rounded border p-3 text-sm">Bu ekran aynı rezervasyonun açık folyolarındaki mevcut kalemleri “Uygula” ile taşır. Gelecek gece/POS ücretlerini otomatik yönlendirmez. Kalemin vergi ve muhasebe günü korunur; çakışan kurallar ve faturalı hesaplar engellenir.</p>
 
       <form onSubmit={submit} style={{ display: "grid", gap: 8, marginTop: 16, padding: 16, background: "hsl(var(--muted))", borderRadius: 8 }}>
         <h3 style={{ margin: 0 }}>{t('cm.pages_FolioRoutingPage.yeni_kural')}</h3>

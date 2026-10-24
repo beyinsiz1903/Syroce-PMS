@@ -23,7 +23,7 @@ from datetime import UTC, datetime
 from decimal import ROUND_HALF_UP, Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 import core.payments.providers  # noqa: F401  (import-time provider kaydi)
 from core.database import db
@@ -45,12 +45,13 @@ router = APIRouter(prefix="/api/payments", tags=["payments"])
 
 
 class CollectPaymentRequest(BaseModel):
-    amount: float
+    amount: float = Field(gt=0, le=1e9, allow_inf_nan=False)
     currency: str = "TRY"
+    folio_id: str | None = Field(default=None, min_length=1, max_length=100)
     vault_card_ref: str | None = None
     payment_type: PaymentType = PaymentType.INTERIM
     descriptor: str | None = None
-    metadata: dict = {}
+    metadata: dict = Field(default_factory=dict)
 
 
 def _to_minor(amount: float) -> int:
@@ -96,17 +97,14 @@ async def collect_payment(
     booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tenant_id}, {"_id": 0})
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
-    folio = await db.folios.find_one(
-        {
-            "tenant_id": tenant_id,
-            "booking_id": booking_id,
-            "status": "open",
-            "folio_type": "guest",
-        },
-        {"_id": 0},
-    )
+    from modules.pms_core.enterprise_billing import currency
+    from modules.pms_core.folio_selection import select_booking_folio
+
+    folio = await select_booking_folio(db, tenant_id, booking_id, body.folio_id)
     if not folio:
         raise HTTPException(status_code=404, detail="Acik folyo bulunamadi")
+    if currency(body.currency) != currency(folio.get("currency") or booking.get("currency")):
+        raise HTTPException(409, "Tahsilat para birimi seçili folyo ile aynı olmalı")
 
     vault_ref = body.vault_card_ref
     if not vault_ref:

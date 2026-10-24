@@ -24,6 +24,8 @@ maskeli kart tasir.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 import uuid
 from collections.abc import Awaitable, Callable
@@ -111,6 +113,32 @@ async def collect_booking_payment(
     """
     amount_major = round(amount_minor / 100.0, 2)
 
+    request_fingerprint = hashlib.sha256(json.dumps({"folio_id": folio["id"], "amount_minor": amount_minor,
+        "currency": currency.upper(), "vault_ref": vault_ref, "payment_type": payment_type}, sort_keys=True).encode()).hexdigest()
+    # Durable intent guard outlives the short-lived idempotency cache. Pending
+    # and 3DS-required outcomes must never become a new PSP call on retry.
+    prior = await db_handle.payment_intents.find_one({"tenant_id": tenant_id, "booking_id": booking_id,
+        "idempotency_key": idempotency_key, "status": {"$ne": "failed"}}, {"_id": 0})
+    if prior:
+        compatible = prior.get("request_fingerprint") == request_fingerprint if prior.get("request_fingerprint") else (
+            prior.get("folio_id") == folio["id"] and prior.get("amount_minor") == amount_minor and prior.get("currency") == currency.upper())
+        if not compatible:
+            return CollectionOutcome(status="failed", error_code="idempotency_payload_mismatch", http_status=409,
+                                     detail="Aynı işlem anahtarı farklı folyo, tutar, kart veya para birimi için kullanılamaz")
+        if prior.get("status") in {"completed", "completed_unrecorded"} and prior.get("result"):
+            return CollectionOutcome(status="replay", response=prior["result"])
+        if prior.get("status") == "completed" and prior.get("payment_id"):
+            payment = await db_handle.payments.find_one({"tenant_id": tenant_id, "id": prior["payment_id"], "voided": {"$ne": True}}, {"_id": 0})
+            if payment:
+                return CollectionOutcome(status="replay", response={"id": payment["id"], "status": "paid", "amount": amount_major,
+                    "provider": prior.get("provider"), "provider_ref": prior.get("provider_ref"), "masked_card": payment.get("masked_card"),
+                    "intent_id": prior["id"], "folio_id": folio["id"], "currency": currency.upper()})
+        if prior.get("status") == "requires_action" and prior.get("requires_action_url"):
+            return CollectionOutcome(status="requires_action", intent_id=prior["id"],
+                                     requires_action_url=prior["requires_action_url"], provider_ref=prior.get("provider_ref"))
+        return CollectionOutcome(status="in_flight", intent_id=prior.get("id"), http_status=409,
+                                 detail="Önceki tahsilat sonucu bekleniyor; yeni çekim yapılmadı. Mutabakatı kontrol edin.")
+
     # Saglayici fail-closed (yoksa/yapilandirilmamissa not_configured -> 503).
     if provider is None:
         try:
@@ -159,6 +187,8 @@ async def collect_booking_payment(
         "operation": PaymentOperation.CHARGE.value,
         "amount_minor": amount_minor,
         "currency": currency.upper(),
+        "request_fingerprint": request_fingerprint,
+        "collection_scope": scope,
         "status": "pending",
         "created_at": now_iso,
         "updated_at": now_iso,
@@ -232,17 +262,23 @@ async def collect_booking_payment(
                 "$set": {
                     "status": "requires_action",
                     "provider_ref": result.provider_ref,
+                    "requires_action_url": result.requires_action_url,
                     "updated_at": datetime.now(UTC).isoformat(),
                 }
             },
         )
-        await release_idempotency(db_handle, lock_id=lock_id)
         return CollectionOutcome(
             status="requires_action",
             intent_id=intent_id,
             requires_action_url=result.requires_action_url,
             provider_ref=result.provider_ref,
         )
+
+    if result.status == PaymentStatus.PENDING:
+        await db_handle.payment_intents.update_one({"id": intent_id, "tenant_id": tenant_id}, {"$set": {
+            "status": "pending", "provider_ref": result.provider_ref, "updated_at": datetime.now(UTC).isoformat()}})
+        return CollectionOutcome(status="in_flight", intent_id=intent_id, http_status=409,
+                                 detail="Ödeme kuruluşu sonucu bekleniyor; tekrar çekim yapılmadı")
 
     if not result.ok:
         await db_handle.payment_intents.update_one(
@@ -274,6 +310,7 @@ async def collect_booking_payment(
         "booking_id": booking_id,
         "amount": amount_major,
         "method": "card",
+        "currency": currency.upper(),
         "payment_type": payment_type,
         "status": "paid",
         "voided": False,
@@ -295,6 +332,8 @@ async def collect_booking_payment(
         "provider_ref": result.provider_ref,
         "masked_card": result.masked_card,
         "intent_id": intent_id,
+        "folio_id": folio["id"],
+        "currency": currency.upper(),
     }
     success_ctx = {
         "payment_id": payment_id,
@@ -326,6 +365,7 @@ async def collect_booking_payment(
                     "status": "completed",
                     "provider_ref": result.provider_ref,
                     "payment_id": payment_id,
+                    "result": response,
                     "updated_at": datetime.now(UTC).isoformat(),
                 }
             },
@@ -354,12 +394,15 @@ async def collect_booking_payment(
             lock_id = None
         else:
             logger.exception("tahsilat kaydi atomik yazilamadi; intent reconcile'a birakildi")
+            response = {**response, "status": "paid_unrecorded", "ledger_recorded": False,
+                        "warning": "Ödeme kuruluşu tahsil etti; folyo kaydı mutabakat bekliyor. Yeniden ödeme başlatmayın."}
             await db_handle.payment_intents.update_one(
                 {"id": intent_id, "tenant_id": tenant_id},
                 {
                     "$set": {
                         "status": "completed_unrecorded",
                         "provider_ref": result.provider_ref,
+                        "result": response,
                         "updated_at": datetime.now(UTC).isoformat(),
                     }
                 },
