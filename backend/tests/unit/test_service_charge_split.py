@@ -139,3 +139,15 @@ def test_multicomponent_tax_never_allocates_a_cent_to_zero_tax():
     for part in [left, right]:
         assert part["tax_breakdown"]["z"] == 0
         assert round(sum(part["tax_breakdown"].values()), 2) == part["tax_amount"]
+
+
+@pytest.mark.parametrize("row,extra", [
+    ({"total": 120, "amount": 120, "quantity": 2}, True),
+    ({"total": 120, "amount": 120, "tax_amount": 0, "tax_breakdown": {"vat": None}}, False),
+    ({"total": 120, "amount": 130, "tax_amount": -10}, False),
+    ({"total": "NaN"}, False),
+])
+def test_ambiguous_or_invalid_legacy_components_fail_closed(row, extra):
+    with pytest.raises(HTTPException) as error:
+        partition(row, 48, extra=extra)
+    assert error.value.status_code == 409

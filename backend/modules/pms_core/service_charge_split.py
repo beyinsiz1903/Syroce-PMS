@@ -39,6 +39,8 @@ def partition(row, amount, *, extra=False):
     # Booking extras store a unit amount, unlike posted folio net line amounts.
     if extra and row.get("amount") is not None:
         normalized["amount"] = money(row["amount"]) * money(row.get("quantity", 1))
+        if row.get("tax_amount") is None and cents(normalized["amount"]) != total:
+            raise HTTPException(409, "Eski ek ücretin birim/satır tutarı belirsiz; önce mutabakat gerekli")
     if extra and row.get("entered_amount") is not None:
         normalized["entered_amount"] = money(row["entered_amount"]) * money(row.get("quantity", 1))
     if not extra and row.get("tax_amount") is not None and row.get("amount") is not None:
@@ -49,6 +51,8 @@ def partition(row, amount, *, extra=False):
         if normalized.get(key) is None:
             continue
         original = cents(normalized[key])
+        if original < 0:
+            raise HTTPException(409, "Negatif masraf bileşeni bu akışta taşınamaz")
         part = (original * amount / total).quantize(Decimal(".01"), rounding=ROUND_HALF_UP)
         left[key], right[key] = float(original - part), float(part)
     # Rounding the net and tax independently can manufacture a cent (e.g.
@@ -65,7 +69,7 @@ def partition(row, amount, *, extra=False):
             for item in (left, right):
                 item["subtotal"] = float(money(item["amount"]) + money(item.get("discount_amount", 0)))
     if row.get("tax_breakdown") is not None:
-        if not isinstance(row["tax_breakdown"], dict) or any(isinstance(v, (dict, list, bool)) for v in row["tax_breakdown"].values()):
+        if not isinstance(row["tax_breakdown"], dict) or any(v is None or isinstance(v, (dict, list, bool)) for v in row["tax_breakdown"].values()):
             raise HTTPException(409, "Bu vergi kırılımı için kontrollü düzeltme gerekli")
         left["tax_breakdown"], right["tax_breakdown"] = {}, {}
         components = row["tax_breakdown"]
