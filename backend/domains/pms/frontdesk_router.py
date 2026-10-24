@@ -237,6 +237,7 @@ class FolioPaymentRequest(BaseModel):
     received_currency: str | None = Field(None, min_length=3, max_length=3)
     received_amount: float | None = Field(None, gt=0, le=1e9)
     exchange_rate: float | None = Field(None, gt=0, le=1e9)
+    received_to_try_rate: float | None = Field(None, gt=0, le=1e9)
 
 
 _LEGACY_CHARGE_MAP = {
@@ -761,6 +762,8 @@ async def add_folio_payment(
     from modules.pms_core.enterprise_billing import manual_collection_method
 
     manual_collection_method(payload.method)
+    if str(getattr(payload.payment_type, "value", payload.payment_type)) == "refund":
+        raise HTTPException(422, "İade tahsilat olarak kaydedilemez; ayrı iade akışını kullanın")
 
     amount = float(payload.amount)
     method_value = payload.method.value if hasattr(payload.method, "value") else str(payload.method)
@@ -789,6 +792,8 @@ async def add_folio_payment(
 
     try:
         booking = await _ensure_booking(current_user.tenant_id, booking_id)
+        if payload.currency and payload.currency.upper() != str(booking.get("currency") or "TRY").upper():
+            raise HTTPException(422, "Ödeme tutarı folyonun para biriminde olmalı; alınan dövizi ayrı alana girin")
         from modules.pms_core.folio_selection import select_booking_folio
 
         folio = await select_booking_folio(db, current_user.tenant_id, booking_id, payload.folio_id)
@@ -805,6 +810,7 @@ async def add_folio_payment(
             "received_currency": str(payload.received_currency or payload.currency or booking.get("currency") or "TRY").upper(),
             "received_amount": float(payload.received_amount if payload.received_amount is not None else amount),
             "exchange_rate": float(payload.exchange_rate if payload.exchange_rate is not None else 1),
+            "received_to_try_rate": payload.received_to_try_rate,
             "method": method_value,
             "payment_type": type_value,
             "status": "paid",
@@ -816,6 +822,9 @@ async def add_folio_payment(
         }
         await stamp_open_business_date(db, current_user.tenant_id, payment_doc)
         stamp_reporting_values(payment_doc)
+        from modules.pms_core.payment_cashier_snapshot import cashier_values
+
+        cash_snapshot = cashier_values(payment_doc)
         # Vardiya kontrolü: nakit ödemede aktif vardiya zorunlu
         from domains.pms.cashier_service import ensure_active_shift, record_cash_transaction
 
@@ -836,7 +845,7 @@ async def add_folio_payment(
         try:
             await record_cash_transaction(
                 tenant_id=current_user.tenant_id,
-                amount=amount,
+                **cash_snapshot,
                 method=method_value,
                 direction="in",
                 description=f"Folio ödemesi - Oda {booking.get('room_number', '?')}",

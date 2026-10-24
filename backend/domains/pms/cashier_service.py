@@ -27,6 +27,7 @@ from fastapi import HTTPException
 
 from core.business_date_service import stamp_open_business_date
 from core.database import db
+from modules.pms_core.reporting_financials import is_valid_payment
 
 logger = logging.getLogger(__name__)
 
@@ -178,7 +179,7 @@ async def reconcile_open_shift_payments(tenant_id: str) -> int:
     for payment in candidates:
         payment_id = str(payment.get("id") or "").strip()
         key = f"payment:{payment_id}"
-        if not payment_id or key in existing_keys or payment.get("voided"):
+        if not payment_id or key in existing_keys or not is_valid_payment(payment):
             continue
         status = str(payment.get("status") or "paid").lower()
         if status in {"void", "voided", "failed", "cancelled", "rejected"}:
@@ -192,7 +193,15 @@ async def reconcile_open_shift_payments(tenant_id: str) -> int:
         if opened_at and (event_at is None or event_at < opened_at):
             continue
 
-        amount = float(payment.get("amount") or 0)
+        from modules.pms_core.payment_cashier_snapshot import cashier_values
+        from modules.pms_core.report_money import money
+
+        try:
+            cash_snapshot = cashier_values(payment)
+            amount = float(money(payment.get("amount") or 0))
+        except HTTPException:
+            logger.warning("Cashier reconciliation skipped payment without verified FX snapshot: %s", payment_id)
+            continue
         is_refund = str(payment.get("payment_type") or "").lower() == "refund" or amount < 0
         if not str(payment.get("business_date") or "").strip():
             await db.payments.update_one(
@@ -201,7 +210,7 @@ async def reconcile_open_shift_payments(tenant_id: str) -> int:
             )
         txn = await record_cash_transaction(
             tenant_id=tenant_id,
-            amount=abs(amount),
+            **cash_snapshot,
             method="cash",
             direction="out" if is_refund else "in",
             description="Kasa ödeme mutabakatı" if not is_refund else "Kasa iade mutabakatı",

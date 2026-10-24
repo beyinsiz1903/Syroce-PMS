@@ -844,16 +844,20 @@ class PaymentRecord(BaseModel):
     received_currency: str | None = Field(None, min_length=3, max_length=3)
     received_amount: float | None = Field(None, gt=0, le=1e9)
     exchange_rate: float | None = Field(None, gt=0, le=1e9)
+    received_to_try_rate: float | None = Field(None, gt=0, le=1e9)
 
 
 def _same_payment_record(existing: dict, data: PaymentRecord) -> bool:
     return (
         round(float(existing.get("amount") or 0), 2) == round(float(data.amount), 2)
         and (data.folio_id is None or existing.get("folio_id") == data.folio_id)
+        and (data.currency is None or str(existing.get("currency") or "TRY").upper() == data.currency.upper())
         and (existing.get("method") or "") == data.method
         and (existing.get("payment_type") or "") == data.payment_type
         and (not data.received_currency or str(existing.get("received_currency") or existing.get("currency") or "TRY").upper() == str(data.received_currency).upper())
         and (data.received_amount is None or round(float(existing.get("received_amount") or existing.get("amount") or 0), 2) == round(float(data.received_amount), 2))
+        and (data.received_to_try_rate is None or existing.get("received_to_try_rate") == data.received_to_try_rate)
+        and (data.exchange_rate is None or existing.get("exchange_rate", 1) == data.exchange_rate)
     )
 
 
@@ -1880,6 +1884,8 @@ async def record_payment(
     from modules.pms_core.enterprise_billing import manual_collection_method
 
     manual_collection_method(data.method)
+    if data.payment_type not in {"prepayment", "deposit", "interim", "final"}:
+        raise HTTPException(422, "Bu ekran yalnız tahsilat kaydeder; iade ve diğer mahsuplar için ayrı işlem akışını kullanın")
     _enforce_perm(current_user, "post_payment")  # Bug CP fix
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
@@ -1928,6 +1934,14 @@ async def record_payment(
     from modules.pms_core.folio_selection import select_booking_folio
 
     target_folio = await select_booking_folio(db, tid, booking_id, data.folio_id)
+    currency = str(booking.get("currency") or (target_folio or {}).get("currency") or "TRY").upper()
+    if data.currency and data.currency.upper() != currency:
+        raise HTTPException(422, "Ödeme tutarı folyonun para biriminde olmalı; alınan dövizi ayrı alana girin")
+    from modules.pms_core.payment_cashier_snapshot import cashier_values
+
+    # Reject invalid FX before an empty folio or short-window dedup lease is
+    # created; a corrected rate must not be blocked as a double payment.
+    cashier_values({**data.model_dump(), "currency": currency})
     auto_lock_id = None
     if not ref_key:
         dedup = await claim_short_window_dedup(
@@ -1969,7 +1983,6 @@ async def record_payment(
             await release_idempotency(db, lock_id=auto_lock_id)
         raise
 
-    currency = str(booking.get("currency") or folio.get("currency") or "TRY").upper()
     payment = {
         "id": str(uuid.uuid4()),
         "tenant_id": tid,
@@ -1980,6 +1993,7 @@ async def record_payment(
         "received_currency": str(data.received_currency or currency).upper(),
         "received_amount": float(data.received_amount if data.received_amount is not None else data.amount),
         "exchange_rate": float(data.exchange_rate if data.exchange_rate is not None else 1),
+        "received_to_try_rate": data.received_to_try_rate,
         "method": data.method,
         "payment_type": data.payment_type,
         "status": "paid",
@@ -1991,6 +2005,7 @@ async def record_payment(
     }
     await stamp_open_business_date(db, tid, payment)
     stamp_reporting_values(payment)
+    cash_snapshot = cashier_values(payment)
 
     # The reservation detail dialog is one of the main front-desk payment
     # entry points.  Keep it on the same cashier contract as the dedicated
@@ -2026,7 +2041,7 @@ async def record_payment(
     try:
         await record_cash_transaction(
             tenant_id=tid,
-            amount=data.amount,
+            **cash_snapshot,
             method=method_str,
             direction="in",
             description=f"Rezervasyon ödemesi - {booking.get('reservation_number') or booking_id[:8]}",

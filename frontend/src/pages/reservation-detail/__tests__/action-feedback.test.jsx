@@ -52,6 +52,24 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe('reservation detail action feedback', () => {
+  it('requires a TRY cashier snapshot for a native foreign-currency folio payment', async () => {
+    axiosGet.mockResolvedValue({ data: [] });
+    axiosPost.mockResolvedValue({ data: { success: true } });
+    render(<FoliosTab booking={{ id: 'usd-stay', currency: 'USD' }}
+      folios={[{ id: 'usd-folio', status: 'open', folio_number: 'F-1', balance: 100, folio_type: 'guest' }]}
+      charges={[]} payments={[]} extra_charges={[]} summary={{ balance: 100, reservation_total_due: 100 }} onRefresh={vi.fn()} />);
+    fireEvent.click(screen.getByTestId('btn-odeme-al'));
+    const panel = screen.getByTestId('payment-form');
+    fireEvent.click(within(panel).getByRole('button', { name: /kaydet/i }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Alınan dövizin TL kasa kurunu girin; 1:1 kur varsayılmaz.'));
+    expect(axiosPost).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText('TL kasa kuru (1 USD = kaç TL)'), { target: { value: '50' } });
+    fireEvent.click(within(panel).getByRole('button', { name: /kaydet/i }));
+    await waitFor(() => expect(axiosPost).toHaveBeenCalledWith('/pms/reservations/usd-stay/record-payment', expect.objectContaining({
+      amount: 100, currency: 'USD', received_currency: 'USD', received_amount: 100, exchange_rate: 1, received_to_try_rate: 50,
+    })));
+  });
+
   it('reuses a service-split intent on retry and lists only compatible open targets', async () => {
     axiosPost.mockRejectedValueOnce({ response: { data: { detail: 'Bağlantı kesildi' } } })
       .mockResolvedValueOnce({ data: { success: true } });
