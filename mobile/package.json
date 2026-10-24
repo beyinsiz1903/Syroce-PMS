@@ -14,10 +14,11 @@
     "smoke:doctor": "command -v maestro >/dev/null 2>&1 && maestro --version || (echo 'Maestro CLI missing. See mobile/.maestro/README.md' && exit 127)",
     "test": "npm run test:unit",
     "test:unit": "rm -rf .unit-build && tsc -p tsconfig.unit.json && node --test $(find .unit-build -name '*.test.js')",
+    "test:preview-api": "node --test scripts/preview-api.test.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "doctor": "expo-doctor",
     "validate:config": "node scripts/validate-config.mjs",
-    "check": "npm run validate:config && npm run typecheck && npm run test:unit && npm run doctor",
+    "check": "npm run validate:config && npm run typecheck && npm run test:unit && npm run test:preview-api && npm run doctor",
     "test:e2e:smoke": "playwright test --config=e2e/playwright.config.ts"
   },
   "dependencies": {

@@ -10,6 +10,7 @@ import ThemeModeSelector from '../../src/components/ThemeModeSelector';
 import { NightScreen } from '../../src/components/NightScreen';
 import { spacing, useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
+import { LegalSupportLinks } from '../../src/components/LegalSupportLinks';
 import { useAuthStore } from '../../src/state/authStore';
 import { ROUTES } from '../../src/navigation/routes';
 import { useSettingsStore } from '../../src/state/settingsStore';
@@ -271,6 +272,7 @@ export default function GMMoreScreen() {
         />
       </ListGroup>
 
+      <LegalSupportLinks />
       <Button title={tr.more.logout} variant="danger" onPress={onLogout} fullWidth />
     </ScrollView>
   );

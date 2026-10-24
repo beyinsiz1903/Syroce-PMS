@@ -209,6 +209,7 @@ jobs:
             tests/resilience/ \
             tests/test_controlplane.py \
             tests/test_crypto_engine.py \
+            tests/unit/test_mobile_reservation_compat.py \
             tests/test_outbox_pattern.py \
             tests/test_import_bridge.py \
             tests/test_helpers.py \

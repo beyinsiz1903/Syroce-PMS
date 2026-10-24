@@ -20,6 +20,7 @@ import {
   type PushRegistrationStatus,
 } from '../../src/notifications/push';
 import { demoPreviewEnabled } from '../../src/utils/previewMode';
+import { LegalSupportLinks } from '../../src/components/LegalSupportLinks';
 
 export default function MoreScreen() {
   const c = useTheme();
@@ -198,6 +199,7 @@ export default function MoreScreen() {
         <Body>{getApiUrl()}</Body>
       </Card>
 
+      <LegalSupportLinks />
       <Button title={tr.more.logout} variant="danger" onPress={onLogout} fullWidth />
     </ScrollView>
   );

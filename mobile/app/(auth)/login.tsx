@@ -8,6 +8,7 @@ import { tr } from '../../src/i18n/tr';
 import { useAuthStore } from '../../src/state/authStore';
 import { haptic } from '../../src/hooks/useHaptic';
 import { demoPreviewEnabled } from '../../src/utils/previewMode';
+import { LegalSupportLinks } from '../../src/components/LegalSupportLinks';
 
 export default function LoginScreen() {
   const c = useTheme();
@@ -145,6 +146,7 @@ export default function LoginScreen() {
               />
             </Card>
             )}
+            <LegalSupportLinks />
           </View>
         </ScrollView>
       </KeyboardAvoidingView>

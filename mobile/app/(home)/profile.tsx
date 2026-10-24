@@ -13,6 +13,7 @@ import { radius, spacing, useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
 import { useAuthStore } from '../../src/state/authStore';
 import { ROUTES } from '../../src/navigation/routes';
+import { LegalSupportLinks } from '../../src/components/LegalSupportLinks';
 
 type ModuleEntry = {
   key: string;
@@ -185,6 +186,7 @@ export default function ProfileScreen() {
 
         <NightScreen inline />
 
+        <LegalSupportLinks />
         <Button
           title={tr.auth.logout}
           variant="danger"

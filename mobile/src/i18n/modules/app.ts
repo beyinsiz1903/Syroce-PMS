@@ -12,6 +12,9 @@ export const app = {
   error: 'Hata',
   empty: 'Kayıt bulunamadı',
   send: 'Gönder',
+  privacyPolicy: 'Gizlilik Politikası',
+  support: 'Destek',
+  externalLinkError: 'Bağlantı açılamadı. Lütfen internet bağlantınızı kontrol edip tekrar deneyin.',
   nightScreen: {
     title: 'Gece Ekranı',
     hint: 'Çıkmak için ekrana dokun',

@@ -14,21 +14,28 @@ type World = {
   reservationTotal?: number; collectedAmount?: number; omitCurrency?: boolean;
   userRole?: string;
   separatePayer?: boolean; missingMoney?: boolean; writes: Array<{ path: string; body: unknown; key?: string }>;
+  reads: string[];
+  detailFailureStatus?: number;
+  detailFailureMessage?: string;
+  mismatchedDetail?: boolean;
+  loggedOut?: boolean;
   calendarOffsets: number[];
   newPaymentAmount?: number;
   subscriptionStatus?: number;
 };
 
 async function installFixtures(page: Page, options: Partial<World> = {}) {
-  const world: World = { writes: [], calendarOffsets: [], ...options };
+  const world: World = { writes: [], reads: [], calendarOffsets: [], ...options };
   const sessionUser = { ...user, role: world.userRole || user.role };
   await page.clock.install({ time: new Date('2026-10-16T06:41:00Z') });
-  await page.addInitScript(({ user }) => {
-    localStorage.setItem('syroce.auth.token', 'isolated-ui-fixture');
-    localStorage.setItem('syroce.auth.token_issued_at', String(Date.now()));
-    localStorage.setItem('syroce.auth.user', JSON.stringify(user));
+  await page.addInitScript(({ user, loggedOut }) => {
+    if (!loggedOut) {
+      localStorage.setItem('syroce.auth.token', 'isolated-ui-fixture');
+      localStorage.setItem('syroce.auth.token_issued_at', String(Date.now()));
+      localStorage.setItem('syroce.auth.user', JSON.stringify(user));
+    }
     localStorage.setItem('theme_mode', 'light');
-  }, { user: sessionUser });
+  }, { user: sessionUser, loggedOut: world.loggedOut });
   await page.route('**/api/**', async (route) => {
     const request = route.request();
     const url = new URL(request.url());
@@ -46,7 +53,7 @@ async function installFixtures(page: Page, options: Partial<World> = {}) {
     if (request.method() === 'OPTIONS') return reply({});
     if (!['GET', 'HEAD'].includes(request.method())) {
       world.writes.push({ path, body: request.postDataJSON(), key: request.headers()['idempotency-key'] });
-    }
+    } else world.reads.push(path);
     if (path === '/api/auth/me') return reply(sessionUser);
     if (path === '/api/guest/bookings') return reply({
       active_bookings: [{ ...currentArrival, confirmation_number: 'DEMO-001', hotel: { property_name: 'The Canyon Kartepe' }, room: rooms[2] }],
@@ -82,10 +89,16 @@ async function installFixtures(page: Page, options: Partial<World> = {}) {
     if (path === '/api/reservations/search') return reply({ bookings: [currentArrival, currentInhouse], count: 2 });
     if (path.endsWith('/details-enhanced')) return reply({ booking_id: arrival.id, status: 'confirmed', rate_breakdown: { total_amount: totalAmount } });
     if (path.endsWith('/ota-details')) return reply({ booking_id: arrival.id, source_of_booking: 'direct' });
-    if (path.endsWith('/full-detail')) {
+    // Match the backend's mounted route, not merely its suffix. The old
+    // endsWith fixture incorrectly accepted /api/reservations/... as well,
+    // allowing the production 404 to pass every financial UI test.
+    if (/^\/api\/pms\/reservations\/[^/]+\/full-detail$/.test(path)) {
+      if (world.detailFailureStatus) {
+        return reply({ detail: world.detailFailureMessage || 'Not Found' }, world.detailFailureStatus);
+      }
       const record = path.includes('/booking-murat/') ? currentInhouse : currentArrival;
       return reply({
-        booking: { ...record, ...(world.separatePayer ? { agency_id: 'demo-agency', agency_name: 'Atlas Travel' } : {}) },
+        booking: { ...record, ...(world.mismatchedDetail ? { id: 'other-booking' } : {}), ...(world.separatePayer ? { agency_id: 'demo-agency', agency_name: 'Atlas Travel' } : {}) },
         guest: { name: record.guest_name }, room: rooms.find((room) => room.id === record.room_id),
         folios: [{ id: 'guest-folio', folio_type: 'guest', payor_type: 'guest', status: 'open', currency }],
         payments: [
@@ -172,7 +185,7 @@ test('Rooms distinguish occupancy, inspection and maintenance', async ({ page })
 });
 
 test('Reservation uses verified currency and payment history', async ({ page }) => {
-  await installFixtures(page, { currency: 'USD' });
+  const world = await installFixtures(page, { currency: 'USD' });
   await page.goto('/(frontdesk)/reservation?id=booking-ayse');
   await expect(page.getByText('Ayşe Yılmaz').first()).toBeVisible();
   await expect(page.getByText('Rezervasyon açık bakiyesi')).toBeVisible();
@@ -180,8 +193,89 @@ test('Reservation uses verified currency and payment history', async ({ page }) 
   await expect(page.getByText('Ödeme hareketleri')).toBeVisible();
   await expect(page.getByText('Kaydedildi')).toBeVisible();
   expect(await page.locator('body').innerText()).not.toContain('₺');
+  expect(world.reads).toContain('/api/pms/reservations/booking-ayse/full-detail');
+  expect(world.reads).not.toContain('/api/reservations/booking-ayse/full-detail');
   await capture(page, '04-reservation-payments');
 });
+
+for (const failure of [
+  { status: 404, message: 'Not Found', expected: 'Rezervasyon hesabı yüklenemedi. Lütfen tekrar deneyin.' },
+  { status: 403, message: 'Bu işlem için yetkiniz yok', expected: 'Bu işlem için yetkiniz yok' },
+  { status: 500, message: 'Internal Server Error', expected: 'Rezervasyon hesabı yüklenemedi. Lütfen tekrar deneyin.' },
+]) {
+  test(`Reservation ${failure.status} keeps unavailable money distinct from zero and allows read-only retry`, async ({ page }) => {
+    const world = await installFixtures(page, { detailFailureStatus: failure.status, detailFailureMessage: failure.message });
+    await page.goto('/(frontdesk)/reservation?id=booking-ayse&guest_name=Ayse&panel=payment');
+    const error = page.getByTestId('reservation-account-error');
+    await expect(error).toContainText(failure.expected, { timeout: 30000 });
+    await expect(page.getByTestId('reservation-account-total')).toHaveCount(0);
+    await expect(page.getByTestId('reservation-account-balance')).toHaveCount(0);
+    await expect(page.getByTestId('reservation-payment-submit')).toHaveCount(0);
+    expect(await page.locator('body').innerText()).not.toContain('Not Found');
+    expect(world.writes).toHaveLength(0);
+
+    world.detailFailureStatus = undefined;
+    await error.getByRole('button', { name: 'Tekrar dene' }).click();
+    await expect(page.getByTestId('reservation-account-total')).toContainText('8.000,00');
+    await expect(page.getByTestId('reservation-account-balance')).toContainText('5.000,00');
+    expect(world.writes).toHaveLength(0);
+  });
+}
+
+test('A successful response for a different booking cannot enable collection or expose its account', async ({ page }) => {
+  const world = await installFixtures(page, { mismatchedDetail: true });
+  await page.goto('/(frontdesk)/reservation?id=booking-ayse&panel=payment');
+  await expect(page.getByTestId('reservation-account-error')).toBeVisible();
+  await expect(page.getByTestId('reservation-account-total')).toHaveCount(0);
+  await expect(page.getByTestId('reservation-payment-submit')).toHaveCount(0);
+  expect(world.writes).toHaveLength(0);
+});
+
+test('Quick checkout failure exposes retry, never an empty account or automatic financial write', async ({ page }) => {
+  const world = await installFixtures(page, { currency: 'EUR', detailFailureStatus: 404 });
+  await page.goto('/(frontdesk)/checkout?bookingId=booking-murat');
+  await expect(page.getByTestId('checkout-error')).toContainText('Rezervasyon hesabı yüklenemedi. Lütfen tekrar deneyin.');
+  await expect(page.getByTestId('checkout-account-total')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Evet, çıkış yap' })).toHaveCount(0);
+  expect(world.writes).toHaveLength(0);
+  world.detailFailureStatus = undefined;
+  await page.getByTestId('checkout-retry').click();
+  await expect(page.getByTestId('checkout-account-total')).toContainText('8.000,00');
+  await expect(page.getByTestId('checkout-account-total')).toContainText(/€|EUR/);
+  await expect(page.getByTestId('checkout-account-balance')).toContainText('5.000,00');
+  expect(world.reads).toContain('/api/pms/reservations/booking-murat/full-detail');
+  expect(world.writes).toHaveLength(0);
+  await capture(page, 'checkout-account-recovered');
+});
+
+test('Privacy and support open public pages from login without an account or session parameters', async ({ page, context }) => {
+  const world = await installFixtures(page, { loggedOut: true });
+  await context.route('https://pms.syroce.com/privacy-policy', (route) => route.fulfill({ contentType: 'text/html', body: '<h1>Privacy Policy</h1>' }));
+  await context.route('https://pms.syroce.com/otel-programi', (route) => route.fulfill({ contentType: 'text/html', body: '<h1>Support</h1>' }));
+  await page.goto('/(auth)/login');
+  await expect(page.getByRole('textbox', { name: 'E-posta' })).toBeVisible();
+  for (const [testId, url] of [
+    ['privacy-policy-link', 'https://pms.syroce.com/privacy-policy'],
+    ['support-link', 'https://pms.syroce.com/otel-programi'],
+  ]) {
+    const opened = page.waitForEvent('popup');
+    await page.getByTestId(testId).click();
+    const popup = await opened;
+    await expect(popup).toHaveURL(url);
+    await popup.close();
+  }
+  expect(world.writes).toHaveLength(0);
+  await capture(page, 'login-privacy-support');
+});
+
+for (const path of ['/(frontdesk)/more', '/(gm)/more', '/(home)/profile', '/(housekeeping)/more', '/(guest)/more']) {
+  test(`Privacy and support remain available in ${path}`, async ({ page }) => {
+    await installFixtures(page);
+    await page.goto(path);
+    await expect(page.getByTestId('privacy-policy-link')).toBeVisible();
+    await expect(page.getByTestId('support-link')).toBeVisible();
+  });
+}
 
 for (const currency of ['USD', 'EUR']) {
   test(`${currency} API amounts survive list → detail → payment → checkout without FX or TRY relabeling`, async ({ page }) => {

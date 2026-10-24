@@ -56,6 +56,7 @@ export default function CheckoutScreen() {
     setError(null);
     setDetail(null);
     setConfirming(false);
+    selectedBookingId.current = bid;
     try {
       const result = await getReservationFullDetail(bid);
       if (version !== requestVersion.current) return;
@@ -63,7 +64,7 @@ export default function CheckoutScreen() {
       setDetail(result);
       selectedBookingId.current = bid;
     } catch (e: unknown) {
-      if (version === requestVersion.current) setError(errorMessage(e, tr.errors.generic));
+      if (version === requestVersion.current) setError(errorMessage(e, tr.reservations.detailError));
     } finally {
       if (version === requestVersion.current) setBusy(false);
     }
@@ -87,6 +88,7 @@ export default function CheckoutScreen() {
       }
       if (list.length > 1) throw new Error(tr.reservations.roomAmbiguous);
       const b = list[0];
+      selectedBookingId.current = b.id;
       const result = await getReservationFullDetail(b.id);
       if (version !== requestVersion.current) return;
       if (!result) throw new Error(tr.checkout.notFound);
@@ -94,7 +96,7 @@ export default function CheckoutScreen() {
       selectedBookingId.current = b.id;
       haptic.success();
     } catch (e: unknown) {
-      if (version === requestVersion.current) setError(errorMessage(e, tr.errors.generic));
+      if (version === requestVersion.current) setError(errorMessage(e, tr.reservations.detailError));
       haptic.error();
     } finally {
       if (version === requestVersion.current) setBusy(false);
@@ -214,8 +216,14 @@ export default function CheckoutScreen() {
       </Card>
 
       {error ? (
-        <Card accent={c.danger}>
+        <Card accent={c.danger} testID="checkout-error">
           <Body style={{ color: c.danger }}>{error}</Body>
+          <Button title={tr.app.retry} testID="checkout-retry" variant="secondary" disabled={busy} onPress={() => {
+            // Retry only the read. Never automatically replay check-out or a
+            // payment mutation whose outcome might be unknown after a timeout.
+            if (selectedBookingId.current) void loadByBookingId(selectedBookingId.current);
+            else void onLookup();
+          }} fullWidth />
         </Card>
       ) : null}
 
