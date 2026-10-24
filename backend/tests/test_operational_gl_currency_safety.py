@@ -55,11 +55,31 @@ async def test_internal_allocations_non_cash_and_pending_rows_never_become_bank_
     db = database(charges=[{"total": 500, "category": "split_adjustment", "currency": "EUR"},
                             {"total": 500, "category": "opening_balance", "currency": "TRY"}], payments=[
         {"amount": 500, "currency": "TRY", "method": method} for method in
-        ("city_ledger", "security_deposit_application", "complimentary", "discount", "correction", "direct_bill")
+        ("city_ledger", "security_deposit_application", "complimentary", "correction", "direct_bill")
     ] + [{"amount": 500, "currency": "USD", "method": "card", "status": "pending"}])
     post = AsyncMock()
     monkeypatch.setattr(bridge, "post_journal_entry", post)
     assert await bridge.post_night_audit_daily_to_gl(db, "hotel", "2026-10-23", run_id="run") == {"status": "skipped", "reason": "no_activity"}
+    post.assert_not_awaited()
+
+
+async def test_non_cash_discount_is_not_silently_omitted_from_automatic_posting(monkeypatch):
+    post = AsyncMock()
+    monkeypatch.setattr(bridge, "post_journal_entry", post)
+    with pytest.raises(bridge.OperationalGLBridgeError, match="Non-cash folio adjustments"):
+        await bridge.post_night_audit_daily_to_gl(database(payments=[
+            {"amount": 8400, "currency": "TRY", "method": "discount", "payment_type": "comp_adjustment"}]),
+            "hotel", "2026-10-23", run_id="run")
+    post.assert_not_awaited()
+
+
+async def test_already_posted_mice_adjustment_is_not_posted_twice_or_blocked(monkeypatch):
+    post = AsyncMock()
+    monkeypatch.setattr(bridge, "post_journal_entry", post)
+    result = await bridge.post_night_audit_daily_to_gl(database(payments=[
+        {"amount": 100, "currency": "TRY", "method": "discount", "payment_type": "comp_adjustment",
+         "mice_event_id": "event", "gl_journal_entry_id": "posted"}]), "hotel", "2026-10-23", run_id="run")
+    assert result == {"status": "skipped", "reason": "no_activity"}
     post.assert_not_awaited()
 
 

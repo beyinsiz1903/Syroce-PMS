@@ -13,7 +13,7 @@ from datetime import date
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 from modules.pms_core.report_money import resolve_ledger_currencies
-from modules.pms_core.reporting_financials import deduplicate_report_payments, effective_collection, report_payment_period_match
+from modules.pms_core.reporting_financials import deduplicate_report_payments, effective_collection, effective_folio_payment, is_non_cash_adjustment, report_payment_period_match
 from shared_kernel.gl_posting import GLPostingError, normalize_journal_lines, post_journal_entry, verify_journal_entry_hash
 
 
@@ -74,7 +74,7 @@ async def daily_sources(db, tenant_id, business_date):
     charges = [r for r in charges if not r.get("deleted") and not r.get("voided")
         and str(r.get("charge_category") or r.get("category") or "").strip().lower() not in {"split_adjustment", "opening_balance"}
         and (minor(r.get("total", r.get("amount"))) or minor(r.get("tax_amount")))]
-    payments = [r for r in deduplicate_report_payments(payments) if effective_collection(r)
+    payments = [r for r in deduplicate_report_payments(payments) if (effective_collection(r) or (is_non_cash_adjustment(r) and effective_folio_payment(r)))
         and not (r.get("mice_event_id") and r.get("gl_journal_entry_id"))]
     security = await db.security_fund_operations.find({"tenant_id": tenant_id, "business_date": business_date}).to_list(None)
     fund_ids = sorted({r["fund_id"] for r in security})
@@ -104,7 +104,7 @@ def build_plan(charges, payments, mapping, valuation, security=()):
 
     rates = valuation["rates_to_try"]
     rows, charge_groups, payment_groups = [], {}, {}
-    payment_base_groups = {}
+    payment_base_groups, adjustment_groups = {}, {}
     for kind, sources in (("charge", charges), ("payment", payments)):
         for source in sources:
             code = "TRY" if source["currency"] in {"TL", "TRL"} else source["currency"]
@@ -114,6 +114,23 @@ def build_plan(charges, payments, mapping, valuation, security=()):
                 raise OperationalValuationError("Stable source IDs are required for valued posting")
             row = {"kind": kind, "id": str(source["id"]), "currency": code,
                    "folio_id": source.get("folio_id"), "booking_id": source.get("booking_id")}
+            if kind == "payment" and is_non_cash_adjustment(source):
+                payment_type = str(source.get("payment_type") or "").strip().lower()
+                if payment_type not in {"discount", "comp_adjustment", "rate_correction"}:
+                    raise OperationalValuationError("Unsupported non-cash adjustment type: " + payment_type)
+                if not mapping.get("adjustment_account_code"):
+                    raise OperationalValuationError("An explicit non-cash sales-adjustment account is required")
+                if mapping["adjustment_account_code"] in {value for key, value in mapping.items()
+                        if key.endswith("_account_code") and key != "adjustment_account_code"}:
+                    raise OperationalValuationError("Non-cash sales adjustments require a separate contra-sales account")
+                value = minor(effective_folio_payment(source))
+                if not value:
+                    raise OperationalValuationError("A non-cash adjustment must have a signed amount")
+                row.update(kind="adjustment", amount_minor=value, payment_type=payment_type,
+                    concession_id=source.get("concession_id"), charge_ids=sorted(source.get("charge_ids") or []))
+                adjustment_groups[code] = adjustment_groups.get(code, 0) + value
+                rows.append(row)
+                continue
             if kind == "charge":
                 if source.get("tax_amount") is None:
                     raise OperationalValuationError("Unknown source tax must be resolved, not assumed zero: " + row["id"])
@@ -172,7 +189,7 @@ def build_plan(charges, payments, mapping, valuation, security=()):
             value.update(currency=code, foreign_amount=amount(abs(native)), exchange_rate=rates[code])
         lines.append(value)
 
-    charge_total, payment_total = 0, 0
+    charge_total, payment_total, adjustment_total = 0, 0, 0
     payment_by_account, security_by_account = {}, {}
     for code, (gross, tax, accommodation) in sorted(charge_groups.items()):
         rate = Decimal(rates[code])
@@ -191,6 +208,12 @@ def build_plan(charges, payments, mapping, valuation, security=()):
         line(mapping["receivable_account_code"], paid, code, "credit", "Folyo tahsilat kapaması", base_paid)
         payment_total += base_paid
         payment_by_account[account] = payment_by_account.get(account, 0) + base_paid
+    # Folio offsets are not receipts or a fiscal credit note. Preserve the
+    # original charge/tax rows; post a distinct contra-sales/receivable pair.
+    for code, value in sorted(adjustment_groups.items()):
+        line(mapping["adjustment_account_code"], value, code, "debit", "İkram/indirim; tahsilat değildir")
+        line(mapping["receivable_account_code"], value, code, "credit", "Nakit dışı folyo alacak kapaması")
+        adjustment_total += int((Decimal(value) * Decimal(rates[code])).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
     for movement in security:
         code = movement["currency"]
         if code not in rates:
@@ -222,11 +245,15 @@ def build_plan(charges, payments, mapping, valuation, security=()):
             normalize_journal_lines(lines)
         except GLPostingError as exc:
             raise OperationalValuationError(str(exc)) from exc
-    manifest = {"version": 1, "valuation": valuation, "mapping": {k: mapping[k] for k in sorted(mapping) if k.endswith("_account_code")},
+    # An optional new mapping must not invalidate previously sealed days that
+    # contain no adjustment. Include it only when this source batch uses it.
+    manifest = {"version": 1, "valuation": valuation, "mapping": {k: mapping[k] for k in sorted(mapping)
+                if k.endswith("_account_code") and (k != "adjustment_account_code" or adjustment_groups)},
                 "sources": sorted(rows, key=lambda r: (r["kind"], r["id"]))}
     manifest["source_hash"] = digest(manifest)
     return {"lines": lines, "manifest": manifest, "charge_total_try": amount(charge_total), "payment_total_try": amount(payment_total),
-            "payment_by_account_minor": payment_by_account, "security_settlement_by_account_minor": security_by_account}
+            "payment_by_account_minor": payment_by_account, "security_settlement_by_account_minor": security_by_account,
+            "adjustment_total_try": amount(adjustment_total)}
 
 
 async def preview_daily_valuation(db, tenant_id, run_id, valuation):
