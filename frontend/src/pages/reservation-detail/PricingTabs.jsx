@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -333,6 +333,7 @@ export function ExtraChargesTab({
   } = useTranslation();
   const [showAdd, setShowAdd] = useState(false);
   const [showSplit, setShowSplit] = useState(null);
+  const splitIntent = useRef(null);
   const [elDirection, setElDirection] = useState(null);
   const [form, setForm] = useState({
     description: '',
@@ -462,12 +463,21 @@ export function ExtraChargesTab({
     }
     setLoading(true);
     try {
-      await axios.post(`/pms/reservations/${booking.id}/split-charge`, {
+      const payload = {
         charge_id: chargeId,
         target_booking_id: splitForm.target_booking_id,
         split_amount: splitAmount,
         reason: splitForm.reason
+      };
+      const fingerprint = JSON.stringify(payload);
+      if (splitIntent.current?.fingerprint !== fingerprint) {
+        splitIntent.current = { fingerprint, requestId: crypto.randomUUID() };
+      }
+      await axios.post(`/pms/reservations/${booking.id}/split-charge`, {
+        ...payload,
+        request_id: splitIntent.current.requestId,
       });
+      splitIntent.current = null;
       toast.success('Masraf bölündü');
       setShowSplit(null);
       setSplitForm({
@@ -594,10 +604,14 @@ export function ExtraChargesTab({
                     <SelectField label={t('cm.pages_reservationdetail_PricingTabs.hedef_oda')} value={splitForm.target_booking_id} onChange={v => setSplitForm(p => ({
               ...p,
               target_booking_id: v
-            }))} options={[['', 'Seçiniz...'], ...(allBookings || []).filter(b => b.id !== booking.id).map(b => [b.id, `${b.room_number || ''} - ${b.guest_name || b.id?.slice(0, 8)}`])]} />
+            }))} options={[['', 'Seçiniz...'], ...(allBookings || []).filter(b => b.id !== booking.id && ['confirmed', 'guaranteed', 'checked_in'].includes(b.status) && (b.currency || 'TRY') === currency && !(b.is_complimentary && b.complimentary_scope === 'full')).map(b => [b.id, `${b.room_number || ''} - ${b.guest_name || b.id?.slice(0, 8)}`])]} />
                     <div className="flex items-end">
                       <Button size="sm" onClick={() => handleSplit(c.id)} disabled={loading} className="w-full h-8 text-xs bg-blue-600">{t('cm.pages_reservationdetail_PricingTabs.bol')}</Button>
                     </div>
+                  </div>
+                  <div>
+                    <label htmlFor={`service-split-reason-${c.id}`} className="text-xs font-medium">Aktarım gerekçesi</label>
+                    <Input id={`service-split-reason-${c.id}`} value={splitForm.reason} onChange={e => setSplitForm(p => ({ ...p, reason: e.target.value }))} className="h-8 text-sm" />
                   </div>
                 </div>}
             </div>)}

@@ -52,6 +52,37 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe('reservation detail action feedback', () => {
+  it('reuses a service-split intent on retry and lists only compatible open targets', async () => {
+    axiosPost.mockRejectedValueOnce({ response: { data: { detail: 'Bağlantı kesildi' } } })
+      .mockResolvedValueOnce({ data: { success: true } });
+    render(<ExtraChargesTab
+      extra_charges={[{ id: 'meal', description: 'Akşam yemeği', amount: 120, total: 120 }]}
+      charges={[]}
+      booking={{ id: 'source', currency: 'TRY' }}
+      allBookings={[
+        { id: 'target', guest_name: 'Ahmet', currency: 'TRY', status: 'checked_in' },
+        { id: 'closed', guest_name: 'Kapalı', currency: 'TRY', status: 'checked_out' },
+        { id: 'foreign', guest_name: 'Döviz', currency: 'EUR', status: 'checked_in' },
+        { id: 'comp', guest_name: 'İkram', currency: 'TRY', status: 'checked_in', is_complimentary: true, complimentary_scope: 'full' },
+      ]}
+    />);
+    fireEvent.click(screen.getByRole('button', { name: 'Akşam yemeği masrafını böl' }));
+    const select = screen.getByRole('combobox');
+    expect(within(select).getAllByRole('option')).toHaveLength(2);
+    fireEvent.change(select, { target: { value: 'target' } });
+    fireEvent.change(screen.getByRole('spinbutton'), { target: { value: '48' } });
+    fireEvent.change(screen.getByLabelText('Aktarım gerekçesi'), { target: { value: 'Ortak akşam yemeği' } });
+    const submit = screen.getByRole('button', { name: 'cm.pages_reservationdetail_PricingTabs.bol' });
+    fireEvent.click(submit);
+    await waitFor(() => expect(toast.error).toHaveBeenCalled());
+    const first = axiosPost.mock.calls[0][1];
+    expect(first).toMatchObject({ charge_id: 'meal', target_booking_id: 'target', split_amount: 48, reason: 'Ortak akşam yemeği' });
+    expect(first.request_id).toMatch(/^[a-f0-9-]{36}$/);
+    fireEvent.click(submit);
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Masraf bölündü'));
+    expect(axiosPost.mock.calls[1][1].request_id).toBe(first.request_id);
+  });
+
   it('excludes the checkout date from the chargeable nightly-rate plan', () => {
     const rates = filterDailyRatesForStay(
       [

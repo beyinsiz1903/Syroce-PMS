@@ -37,6 +37,8 @@ class Folio(BaseModel):
     guest_id: str | None = None
     company_id: str | None = None
     balance: float = 0.0  # Total charges - Total payments
+    # None preserves unknown legacy currency; never relabel historical debt.
+    currency: str | None = Field(default=None, pattern=r"^[A-Z]{3}$")
     opening_balance: float = 0.0  # Prior PMS closing balance, never current revenue/cash
     opening_balance_date: str | None = None
     opening_voucher_id: str | None = None

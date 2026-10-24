@@ -209,10 +209,22 @@ async def test_consent_is_durable_before_booking_or_messaging(harness, monkeypat
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("code", ["TRY", "USD", "EUR"])
+async def test_booking_and_initial_folio_retain_requested_currency(harness, code):
+    result = await harness.service.create(_booking(currency=code.lower()), harness.user, harness.request)
+    assert result["currency"] == code
+    assert harness.repository.insert_booking.await_args.args[1]["currency"] == code
+    assert harness.repository.insert_folio.await_args.args[0]["currency"] == code
+    assert harness.push_lifecycle.call_args.kwargs["currency"] == code
+    assert harness.repository.complete_idempotency_lock.await_args.args[2]["currency"] == code
+
+
+@pytest.mark.asyncio
 async def test_create_uses_defaults_without_writing_rate_override(harness):
     result = await harness.service.create(harness.booking, harness.user, harness.request)
 
     assert result["status"] == "confirmed"
+    assert result["currency"] == "TRY"
     assert result["channel"] == "direct"
     assert result["rate_plan"] == "Standard"
     assert result["source_channel"] == "direct"

@@ -532,6 +532,7 @@ async def _post_charge_allocations(
     now_iso: str,
     posted_by: str | None,
     *,
+    currency: str = "TRY",
     session=None,
 ) -> list[dict]:
     """Her allocation icin folio_charges insert + ilgili folio balance $inc.
@@ -554,10 +555,14 @@ async def _post_charge_allocations(
             "amount": amt,
             "tax_amount": 0.0,
             "total": amt,
+            "currency": currency,
             "posted_by": posted_by,
             "posted_at": now_iso,
             "date": now_iso,
         }
+        # Wall-clock time can be weeks ahead during controlled business-date
+        # recovery. Charge reports must follow the same open day as payments.
+        await stamp_open_business_date(db, tenant_id, charge_doc)
         # Routed flag — UI'da "şirkete yönlendirildi" rozeti için.
         if folio["id"] != default_folio["id"]:
             charge_doc["routed_from_folio_id"] = default_folio["id"]
@@ -605,6 +610,7 @@ async def add_folio_charge(
 
     booking = await _ensure_booking(current_user.tenant_id, booking_id)
     default_folio = await _ensure_open_folio(current_user.tenant_id, booking_id, booking.get("guest_id"))
+    currency = str(booking.get("currency") or default_folio.get("currency") or "TRY").upper()
     unit_price = float(payload.amount)
     quantity = float(payload.quantity)
     net_amount = round(unit_price * quantity, 2)
@@ -633,6 +639,8 @@ async def add_folio_charge(
         # Routing rules: kategori-bazlı yönlendirme + (varsa) oransal/eşit bölme.
         # Hedef yoksa veya resolve edilemezse default (misafir) folyoya düşer.
         allocations = await _resolve_routing_allocations(current_user.tenant_id, booking, category.value, default_folio, net_amount)
+        if any(str(alloc["folio"].get("currency") or currency).upper() != currency for alloc in allocations):
+            raise HTTPException(409, "Masraf farklı para birimindeki folyoya yönlendirilemez")
         is_split = len(allocations) > 1
         split_group_id = str(uuid.uuid4()) if is_split else None
         now_iso = datetime.now(UTC).isoformat()
@@ -671,6 +679,7 @@ async def add_folio_charge(
                         split_group_id,
                         now_iso,
                         current_user.name,
+                        currency=currency,
                         session=session,
                     )
                     response = _build_response(created)
@@ -718,6 +727,7 @@ async def add_folio_charge(
                 split_group_id,
                 now_iso,
                 current_user.name,
+                currency=currency,
                 session=None,
             )
             response = _build_response(created)
