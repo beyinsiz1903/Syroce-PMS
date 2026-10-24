@@ -81,6 +81,27 @@ def test_historical_actuals_and_early_checkout_do_not_become_future_commitments(
     assert [r['basis'] for r in data['rows']] == ['actual', 'on_the_books', 'on_the_books']
 
 
+def test_controlled_catchup_does_not_move_all_departures_to_wall_clock_day():
+    stay = booking(room_id='r0', status='checked_out', check_in='2026-10-01', check_out='2026-10-03',
+                   checked_in_at='2026-10-24T12:00:00Z', checked_out_at='2026-10-24T12:10:00Z')
+    data = report([stay], first=date(2026, 10, 1), last=DAY)
+    assert data['rows'][2]['departures'] == 1
+    assert data['rows'][-1]['departures'] == 0
+    assert sum(row['departures'] for row in data['rows']) == 1
+    assert data['warnings']  # Missing historical movement date is not hidden.
+    explicit = report([{**stay, 'checked_out_business_date': '2026-10-04'}], first=date(2026, 10, 1), last=DAY)
+    assert explicit['rows'][3]['departures'] == 1 and explicit['rows'][2]['departures'] == 0
+
+
+def test_virtual_room_is_not_forecast_capacity_and_does_not_change_physical_percentage():
+    virtual = {'id': 'paymaster', 'room_number': 'PM', 'room_type': 'Accounting', 'is_virtual': True}
+    data = frontdesk_forecast([ROOMS[0], virtual], [booking(room_id='r0')], [], [], [], DAY, DAY, DAY)
+    row = data['rows'][0]
+    assert row['physical_rooms'] == row['total_occupied_rooms'] == 1
+    assert row['occupancy_pct'] == 100 and row['remaining_rooms'] == 0
+    assert data['room_types'] == ['Standard']
+
+
 @pytest.mark.parametrize('status', ['cancelled', 'no_show', 'pending', 'tentative'])
 def test_non_deducting_booking_statuses_excluded(status):
     row = report([booking(status=status)])['rows'][0]

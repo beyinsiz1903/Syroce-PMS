@@ -119,6 +119,28 @@ async def test_blocked_room_capacity_is_not_subtracted_twice(ledger_db):
     assert data["occupancy"]["out_of_order"] == 1
 
 
+async def test_virtual_paymaster_is_not_reported_as_a_closed_physical_room(ledger_db):
+    await ledger_db.rooms.insert_many([
+        {"tenant_id": "A", "id": "physical"},
+        {"tenant_id": "A", "id": "paymaster", "is_virtual": True},
+    ])
+    data = await result()
+    assert data["occupancy"]["physical_rooms"] == data["occupancy"]["total_rooms"] == 1
+    assert data["occupancy"]["out_of_order"] == 0
+
+
+async def test_latest_hardened_run_replaces_stale_legacy_audit_in_daily_report(ledger_db):
+    await ledger_db.night_audit_logs.insert_one({"tenant_id": "A", "audit_date": "2026-04-22", "status": "partial"})
+    await ledger_db.night_audit_runs.insert_many([
+        {"tenant_id": "A", "id": "oct6", "business_date": "2026-10-06", "status": "completed"},
+        {"tenant_id": "A", "id": "dry", "business_date": "2026-10-07", "dry_run": True},
+        {"tenant_id": "B", "id": "other", "business_date": "2026-10-08", "status": "failed"},
+    ])
+    data = await result()
+    assert data["last_night_audit"]["id"] == "oct6"
+    assert data["last_night_audit"]["audit_date"] == "2026-10-06"
+
+
 async def test_ledger_uses_folio_positions_and_deposit_remaining_amounts_not_stale_booking_projections(ledger_db):
     await ledger_db.bookings.insert_one({"tenant_id": "A", "id": "b", "status": "checked_out", "ar_balance": 9999, "currency": "EUR"})
     await ledger_db.folios.insert_one({"tenant_id": "A", "id": "f", "booking_id": "b", "status": "open", "currency": "EUR"})

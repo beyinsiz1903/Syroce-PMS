@@ -46,6 +46,7 @@ async def test_queries_are_tenant_scoped_uncapped_and_no_pii(dataset):
         assert query['tenant_id'] == 'tenant-a'
         assert not any('guest' in field or 'email' in field for field in projection)
         collection.find.return_value.to_list.assert_awaited_once_with(None)
+    assert dataset.rooms.find.call_args.args[1]['is_virtual'] == 1
 
 
 @pytest.mark.asyncio

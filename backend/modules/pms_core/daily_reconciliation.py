@@ -90,8 +90,8 @@ async def build_daily_reconciliation(database, tenant_id: str, day: date):
         database.bookings.find({"tenant_id": tenant_id, **stay_day_match(day)}, {"_id": 0}).to_list(None),
         database.folios.find({"tenant_id": tenant_id, "status": "open"}, {"_id": 0}).to_list(None),
         database.deposits.find({"tenant_id": tenant_id, "voided": {"$ne": True}, "deleted": {"$ne": True}}, {"_id": 0}).to_list(None),
-        database.rooms.count_documents({"tenant_id": tenant_id, "is_active": {"$ne": False}}),
-        database.night_audit_logs.find_one({"tenant_id": tenant_id}, {"_id": 0}, sort=[("created_at", -1)]),
+        database.rooms.count_documents({"tenant_id": tenant_id, "is_active": {"$ne": False}, "is_virtual": {"$ne": True}}),
+        latest_night_audit(database, tenant_id),
     )
     # Category summaries may group unknown services, but reconciliation must
     # retain every custom source key so the underlying ledger stays auditable.
@@ -172,5 +172,20 @@ async def build_daily_reconciliation(database, tenant_id: str, day: date):
             "in_balance": all(money(value) == 0 for value in rounded_totals(difference).values()),
             "basis": "net_operating_revenue_minus_collections",
         },
-        "last_night_audit": {field: audit.get(field) for field in ("status", "created_at", "audit_date")} if audit else None,
+        "last_night_audit": audit,
     }
+
+
+async def latest_night_audit(database, tenant_id):
+    """Prefer current hardened runs over the retired audit log collection."""
+    run = await database.night_audit_runs.find_one(
+        {"tenant_id": tenant_id, "dry_run": {"$ne": True}}, {"_id": 0},
+        sort=[("business_date", -1), ("started_at", -1)],
+    )
+    if run:
+        return {"id": run.get("id"), "status": run.get("status"),
+                "created_at": run.get("started_at") or run.get("created_at"),
+                "audit_date": run.get("business_date"), "source": "night_audit_runs"}
+    legacy = await database.night_audit_logs.find_one({"tenant_id": tenant_id}, {"_id": 0}, sort=[("created_at", -1)])
+    return {**{field: legacy.get(field) for field in ("status", "created_at", "audit_date")},
+            "source": "night_audit_logs"} if legacy else None

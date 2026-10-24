@@ -141,7 +141,7 @@ class FrontdeskService:
             return ServiceResult.fail("Assign a room before check-in", "ROOM_ASSIGNMENT_REQUIRED")
 
         try:
-            await enforce_business_date_transition(
+            checkin_day, _scheduled_day = await enforce_business_date_transition(
                 self._db,
                 tenant_id=ctx.tenant_id,
                 booking=booking,
@@ -233,7 +233,7 @@ class FrontdeskService:
                 "tenant_id": ctx.tenant_id,
                 "status": {"$in": ["confirmed", "guaranteed"]},
             },
-            {"$set": {"status": "checked_in", "checked_in_at": checked_in_time.isoformat()}},
+            {"$set": {"status": "checked_in", "checked_in_at": checked_in_time.isoformat(), "checked_in_business_date": checkin_day.isoformat()}},
         )
         if booking_result.modified_count != 1:
             return ServiceResult.fail("Booking state changed during check-in", "CHECKIN_STATE_CONFLICT")
@@ -376,6 +376,12 @@ class FrontdeskService:
                 cached_folio_balance=round(cached_folio_balance, 2),
             )
 
+        try:
+            checkout_day, _scheduled_day = await enforce_business_date_transition(
+                self._db, tenant_id=ctx.tenant_id, booking=booking, operation="check_out", error_cls=ValueError)
+        except ValueError as exc:
+            return ServiceResult.fail(str(exc), "BUSINESS_DATE_MISMATCH")
+
         if auto_close_folios and effective_balance <= 0.01:
             for folio in folios:
                 await self._db.folios.update_one(
@@ -386,7 +392,7 @@ class FrontdeskService:
         checked_out_time = datetime.now(UTC)
         await self._db.bookings.update_one(
             {"id": booking_id, "tenant_id": ctx.tenant_id},
-            {"$set": {"status": "checked_out", "checked_out_at": checked_out_time.isoformat()}},
+            {"$set": {"status": "checked_out", "checked_out_at": checked_out_time.isoformat(), "checked_out_business_date": checkout_day.isoformat()}},
         )
         await self._db.rooms.update_one(
             {"id": booking["room_id"], "tenant_id": ctx.tenant_id},

@@ -5,11 +5,13 @@ reservations are demand, not evidence of a physically occupied room.
 """
 from datetime import date, timedelta
 
-from modules.pms_core.stay_night_metrics import as_date, booking_occupies_night
+from modules.pms_core.stay_night_metrics import as_date, booking_occupies_night, is_physical_room
 
 
 def _calendar_scope(rooms, bookings, blocks, first: date, last: date, business_day: date, room_type=None):
-    active = {str(r["id"]): r for r in rooms if r.get("id") and r.get("is_active") is not False}
+    active = {str(r["id"]): r for r in rooms if r.get("id") and is_physical_room(r)}
+    virtual_ids = {str(r["id"]) for r in rooms if r.get("id") and r.get("is_virtual")}
+    virtual_numbers = {str(r["room_number"]) for r in rooms if r.get("room_number") and r.get("is_virtual")}
     by_number = {str(r["room_number"]): rid for rid, r in active.items() if r.get("room_number")}
     types = sorted({str(r["room_type"]) for r in active.values() if r.get("room_type")})
     selected = {rid for rid, r in active.items() if not room_type or r.get("room_type") == room_type}
@@ -26,6 +28,8 @@ def _calendar_scope(rooms, bookings, blocks, first: date, last: date, business_d
         occupied, assigned, stayovers, arrivals = set(), set(), set(), set()
         unassigned = conflicts = unknown = 0
         for bid, b in unique.items():
+            if str(b.get("room_id")) in virtual_ids or (not b.get("room_id") and str(b.get("room_number")) in virtual_numbers):
+                continue
             if not booking_occupies_night(b, day):
                 continue
             if str(b.get('status') or '').strip().lower() == 'checked_out' and not booking_occupies_night(b, day, actual_only=True):
@@ -94,7 +98,7 @@ def occupancy_calendar(rooms, bookings, blocks, first: date, last: date, busines
     # booking with different room types could appear in two matrix rows.
     bookings = list({str(booking["id"]): booking for booking in bookings if booking.get("id")}.values())
     data = _calendar_scope(rooms, bookings, blocks, first, last, business_day, room_type)
-    active = {str(room["id"]): room for room in rooms if room.get("id") and room.get("is_active") is not False}
+    active = {str(room["id"]): room for room in rooms if room.get("id") and is_physical_room(room)}
     by_number = {str(room["room_number"]): rid for rid, room in active.items() if room.get("room_number")}
     room_groups = {}
     for room in active.values():

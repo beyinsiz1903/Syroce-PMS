@@ -76,6 +76,19 @@ def test_service_category_can_explicitly_identify_an_upsell():
     assert charge_category({"category": "upsell", "service_category": "spa"}) == "spa"
 
 
+def test_debt_allocation_and_opening_balance_are_not_new_sales_or_unknown_services():
+    data = build_revenue_report([
+        row(id="meal", charge_category="food", total=100, amount=100, tax_amount=0),
+        row(id="allocation-out", charge_category="split_adjustment", total=-50),
+        row(id="allocation-in", charge_category="split_adjustment", total=50),
+        row(id="opening", charge_category="opening_balance", total=500),
+    ], DAY, DAY)
+    assert data["totals_by_currency"]["TRY"]["total"] == 100
+    assert data["totals"]["count"] == 1
+    assert [item["category"] for item in data["rows"]] == ["food"]
+    assert not data["reconciliation"]["issue_count"]
+
+
 def test_detail_categories_preserve_custom_keys_without_undoing_known_aliases():
     assert charge_category({"category": "hotel-service-51"}, preserve_unknown=True) == "hotel-service-51"
     assert charge_category({"category": "mini_bar"}, preserve_unknown=True) == "minibar"

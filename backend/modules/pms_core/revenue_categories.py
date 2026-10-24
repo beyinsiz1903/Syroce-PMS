@@ -19,6 +19,13 @@ ALIASES = {
     "extra": "unclassified", "upsell": "unclassified",
 }
 FNB_CATEGORIES = frozenset({"food", "beverage", "alcohol", "fnb", "restaurant", "cafe", "room_service"})
+NON_REVENUE_CATEGORIES = frozenset({"split_adjustment", "opening_balance"})
+
+
+def is_revenue_charge(row):
+    """Debt allocation and migration opening debt are not a new sale."""
+    raw = str(row.get("charge_category") or row.get("category") or row.get("charge_type") or "").strip().lower()
+    return raw not in NON_REVENUE_CATEGORIES
 
 
 def charge_category(row, *, preserve_unknown=False):

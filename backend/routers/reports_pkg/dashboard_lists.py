@@ -34,7 +34,15 @@ from modules.pms_core.reporting_ledger import charge_category, posted_revenue_ro
 from modules.pms_core.revenue_categories import FNB_CATEGORIES as FNB_CHARGE_CATEGORIES
 from modules.pms_core.role_permission_service import require_op
 from modules.pms_core.room_revenue_reporting import room_period_performance
-from modules.pms_core.stay_night_metrics import calculate_stay_night_metrics, load_stay_night_metrics, room_block_overlap_match, stay_overlap_match
+from modules.pms_core.stay_night_metrics import (
+    calculate_stay_night_metrics,
+    is_physical_room,
+    load_stay_night_metrics,
+    reservation_party_counts,
+    room_block_overlap_match,
+    stay_overlap_match,
+    with_checkin_business_date_evidence,
+)
 
 security = HTTPBearer()
 
@@ -269,7 +277,7 @@ def _booking_occupied_on(booking: dict, target_date: str) -> bool:
     # case comparing its real timestamp with ``target_date`` hides a guest who
     # is visibly checked in. The scheduled stay plus checked-in status is the
     # canonical occupancy interval; an actual checkout can still shorten it.
-    actual_out = _date_part(booking.get("checked_out_at"))
+    actual_out = _date_part(booking.get("checked_out_business_date") or booking.get("checked_out_at"))
     if actual_out and target_date >= actual_out:
         return False
     return True
@@ -701,7 +709,9 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
                 "id_number": 1,
                 "passport_number": 1,
                 "checked_in_at": 1,
+                "checked_in_business_date": 1,
                 "checked_out_at": 1,
+                "checked_out_business_date": 1,
                 "adults": 1,
                 "children": 1,
                 "base_rate": 1,
@@ -815,6 +825,7 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
         ).to_list(None),
     )
     rooms, all_bk, in_house, hk_tasks, maint_open, maint_completed, pending_invoices, paid_invoices, all_guests, all_payments, cash_movement_payments, prev_bookings, ly_bookings, room_blocks = results
+    all_bk = await with_checkin_business_date_evidence(db, tenant_id, all_bk)
     from modules.pms_core.report_room_types import load_room_type_labels
 
     type_labels = await load_room_type_labels(db, tenant_id, rooms)
@@ -1018,7 +1029,7 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
             )
         return rows
 
-    active_rooms = [room for room in rooms if room.get("is_active") is not False]
+    active_rooms = [room for room in rooms if is_physical_room(room)]
     total_rooms = len(active_rooms)
     room_types = {}
     for r in active_rooms:
@@ -1040,6 +1051,8 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
     ALL_REVENUE_STATUSES = ("confirmed", "guaranteed", "checked_in", "checked_out")
 
     daily_in_house = []
+    in_house_bookings = []
+    physical_room_ids = {str(room.get("id")) for room in active_rooms if room.get("id")}
     daily_arrivals = []
     daily_departures = []
     for bk in all_bk:
@@ -1053,7 +1066,8 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
         if co_day == target_day and status not in ("cancelled", "no_show"):
             departures += 1
             daily_departures.extend(booking_guest_rows(bk))
-        if _booking_occupied_on(bk, target_day):
+        if _booking_occupied_on(bk, target_day) and str(bk.get("room_id")) in physical_room_ids:
+            in_house_bookings.append(bk)
             daily_in_house.extend(booking_guest_rows(bk))
         if ci_day == target_day and status == "no_show":
             no_shows += 1
@@ -1637,7 +1651,9 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
             "occupancy_percentage": occupancy_pct,
             "arrivals": arrivals,
             "departures": departures,
-            "in_house_guests": len(daily_in_house),
+            "in_house_guests": reservation_party_counts(in_house_bookings)["total"],
+            "in_house_party": reservation_party_counts(in_house_bookings),
+            "registered_guest_profiles": len(daily_in_house),
             "room_revenue": analysis_room_revenue,
             "room_revenue_by_currency": daily_performance["room_revenue_by_currency"],
             "posted_room_revenue": today_room_revenue,
