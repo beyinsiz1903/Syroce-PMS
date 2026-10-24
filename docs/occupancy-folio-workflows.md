@@ -110,6 +110,32 @@ New concession/security flows currently fail closed outside the verified
 two-decimal TRY/USD/EUR/GBP/CHF set; unsupported currency precision is not
 silently rounded or advertised as globally supported.
 
+## Front-office forecast reference layout (2026-10-24)
+
+- Reports → **Forecast / Öngörü Raporları** now opens **Ön Büro Forecast**. This is the daily operational/on-the-books report, not the statistical prediction. The existing prediction, pace and pickup tabs remain separate and retain their scope/currency guards.
+- Custom inclusive start/end dates (maximum 366 days), adjacent periods, current week/month/year/day and an optional room-type filter feed four weighted period KPIs. Five views share one response: availability, arrivals/departures, occupancy, reservation room value and stay types. A date selection in the chart highlights the same daily table row. Wide tables keep the date column visible; small screens scroll rather than hide figures.
+- Availability stacks **booked rooms**, **remaining definite group allotment**, **available rooms** and **closed physical rooms**. Both `group_blocks` and the legacy `block_reservations` inventory are read; legacy booking date aliases are normalized for this read-only report. Pickup is recomputed from linked reservations for each night, not lifetime `rooms_picked_up`/`rooms_available` counters. Tentative groups are visible but do not deduct inventory. Type-filtered groups require a validated type/breakdown; unknown allotments are not guessed.
+- The reference's default occupancy denominator is physical capacity: **53 occupied / 60 physical = 88.33%**, even if 2 rooms are closed and only 5 are available. A separately labelled sellable-capacity basis is selectable (53 / 58 = 91.38%). Period percentages use total room-nights; overbooking preserves negative remaining and values above 100%.
+- Before the PMS business day only actual room-nights count; from that day forward eligible reservation commitments count. Arrival nights are included and departure nights excluded. Cancelled/no-show/options do not deduct rooms. Day-use is separate from overnight occupancy. Comp and house-use read reservation/nightly flags; financial concession offsets are not reclassified as accommodation types.
+- Room value uses authoritative daily rates (including explicit zero/comp), otherwise a cent-preserving allocation of the stay total. It is **not collected cash or posted/fiscal revenue**. Currencies stay separate; unpicked group revenue is not invented. Missing/ambiguous prices or unknown room references cannot produce a false complete revenue/ADR total. Known zero revenue stays zero; unknown values stay blank/“Doğrulanamadı”.
+- Adults/children come from reservation counts. Known ages 0–2 are separated as infants for this report only; missing ages do not imply zero infants and do not change any pricing/child policy. Definitions and data-quality diagnostics remain visible. Capacity is current active inventory plus dated closures, not a reconstructed historical inventory ledger.
+- `GET /api/reports/frontdesk-forecast` uses tenant-scoped uncapped projections without guest identities and requires reporting permissions/module access. Excel has the selected view/basis, typed dates and amounts, separate currency columns, an availability chart, print settings and definitions/warnings. A hash of all displayed data binds export to the loaded snapshot; changes require refresh (409). Print/PDF prints the loaded scope rather than refetching different data.
+- Local browser acceptance uses only a clearly marked synthetic preview of the real component. No production inventory, reservations, payments, group allotments or provider configuration are mutated. Deployment/live reconciliation remain separate acceptance steps.
+
+### Forecast acceptance after deployment
+
+1. Open the report for an authorized demo tenant and reconcile a range crossing its PMS business day against actual/confirmed reservations and dated closures. Verify all-house and each room-type scope.
+2. Reconcile definite group blocks with night-specific pickup, partial-date pickup, tentative blocks, unknown allocations, early checkout, day-use, comp and excess sales. Unknown inventory must display a warning, not exact availability.
+3. Compare chart/table/Excel for all five views and both occupancy bases; check multiple currencies, a zero nightly price and missing/duplicate daily rates. Change data between load/export and verify refresh is required.
+4. Validate another tenant's data is inaccessible, permissions are enforced and large supported ranges remain usable. These local/unit checks do not certify a real Mongo snapshot transaction or a historical inventory reconstruction.
+
+### Local forecast verification
+
+- Focused backend forecast, occupancy calendar/API/export and canonical forecast regression: **107 passed**. Existing openpyxl UTC deprecation warnings remain visible.
+- Full frontend coverage run (two workers, unchanged thresholds/timeouts): **385 files / 1,926 tests passed**. Statements 30.99%, branches 27.65%, functions 24.23%, lines 31.74%. An earlier higher-parallelism run had two unrelated 5-second test timeouts; no assertions or timeout/coverage thresholds were weakened, and both passed in the full bounded rerun.
+- Production build, full backend Ruff, full frontend ESLint error gate, changed-source zero-warning ESLint, route bundle budgets, theme/layout, orphan, import-boundary, requirement-parity and skip/inventory guards passed. The API static import scan has zero missing distributions but still lists four previously unmapped imports; it is not a live API/worker boot certification.
+- Browser checks exercised the real component with synthetic data: stacked availability and daily table, room-type filtering, chart-to-row selection, arrivals/departures and revenue view. The isolated mock preview was removed before commit; no mock API override is shipped.
+
 ## Local verification (2026-10-23)
 
 - Backend focused regression: 160 passed, 4 warnings (occupancy, AR, window targeting, payment replay, folio split/balance/reconciliation).
