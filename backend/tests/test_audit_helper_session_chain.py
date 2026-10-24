@@ -99,5 +99,3 @@ async def test_presealed_record_is_not_reattributed_under_another_request(monkey
     assert row == before
     assert row["record_hash"] == audit_chain.compute_record_hash(row, row["seq"], row["prev_hash"])
     link.assert_not_awaited()
-
-
