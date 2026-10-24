@@ -29,6 +29,9 @@ DEFAULT_MAPPING = {
     "cash_account_code": "100",
     "card_account_code": "108",
     "bank_account_code": "102",
+    # No silent assumption about the tenant's refundable-deposit liability.
+    "security_deposit_account_code": None,
+    "accommodation_tax_account_code": None,
 }
 
 
@@ -46,12 +49,14 @@ async def get_operational_mapping(db, tenant_id: str) -> dict:
 
 
 def _payment_account(mapping: dict, method: str) -> str:
-    normalized = (method or "").lower()
+    normalized = (method or "").strip().lower()
     if normalized in {"cash", "nakit"}:
         return mapping["cash_account_code"]
     if normalized in {"card", "credit_card", "debit_card", "kredi_karti", "pos"}:
         return mapping["card_account_code"]
-    return mapping["bank_account_code"]
+    if normalized in {"bank", "bank_transfer", "transfer", "online", "eft", "wire", "havale"}:
+        return mapping["bank_account_code"]
+    raise OperationalGLBridgeError("Unmapped collection method; cannot assume a bank receipt: " + normalized)
 
 
 def _signed_line(account_code, amount_minor, side, memo):
@@ -116,6 +121,8 @@ async def post_night_audit_daily_to_gl(
                and str(row.get("charge_category") or row.get("category") or "").strip().lower() not in {"split_adjustment", "opening_balance"}]
     payments = [row for row in deduplicate_report_payments(payments)
                 if effective_collection(row) and not (row.get("mice_event_id") and row.get("gl_journal_entry_id"))]
+    if hasattr(db, "security_fund_operations") and await db.security_fund_operations.find_one({"tenant_id": tenant_id, "business_date": business_date}):
+        raise OperationalGLBridgeError("Security liability movements require the explicit source-valuation workflow")
     charges = await _require_try_source_rows(db, tenant_id, charges)
     payments = await _require_try_source_rows(db, tenant_id, payments)
 
@@ -215,6 +222,8 @@ async def post_direct_pos_to_gl(
         return {"status": "skipped", "reason": "no_activity"}
     if total <= 0 or tax < 0 or tax > total:
         raise OperationalGLBridgeError("POS total/tax values are not postable")
+    if str(transaction.get("currency") or order.get("currency") or "TRY").strip().upper() not in {"TRY", "TRL", "TL"}:
+        raise OperationalGLBridgeError("Foreign-base POS requires a source-day TRY valuation; receipt currency is not the sales currency")
     breakdown = transaction.get("payment_breakdown") or []
     if breakdown:
         settlement_lines = [
@@ -283,6 +292,8 @@ async def post_direct_pos_refund_to_gl(
     refunded = abs(_minor(refund.get("total_amount")))
     if paid <= 0 or refunded <= 0 or refunded > paid:
         raise OperationalGLBridgeError("POS refund values are not postable")
+    if str(original_transaction.get("currency") or order.get("currency") or "TRY").strip().upper() not in {"TRY", "TRL", "TL"}:
+        raise OperationalGLBridgeError("Foreign-base POS refund requires the original sealed TRY valuation")
     original_tax = _minor(order.get("tax_amount"))
     refund_tax = int((Decimal(original_tax) * Decimal(refunded) / Decimal(paid)).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
 

@@ -45,6 +45,11 @@ from core.integrations.operational_gl_bridge import (
     get_operational_mapping,
     post_night_audit_daily_to_gl,
 )
+from core.integrations.operational_gl_valuation import (
+    OperationalValuationError,
+    post_daily_valuation,
+    preview_daily_valuation,
+)
 from core.security import get_current_user
 from core.tenant_db import get_system_db
 from core.utils import create_excel_workbook, excel_response
@@ -857,6 +862,19 @@ class OperationalMappingIn(BaseModel):
     cash_account_code: str = Field("100", min_length=1, max_length=40)
     card_account_code: str = Field("108", min_length=1, max_length=40)
     bank_account_code: str = Field("102", min_length=1, max_length=40)
+    security_deposit_account_code: str | None = Field(None, min_length=1, max_length=40)
+    accommodation_tax_account_code: str | None = Field(None, min_length=1, max_length=40)
+
+
+class OperationalValuationIn(BaseModel):
+    business_date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+    base_currency: Literal["TRY"] = "TRY"
+    rates_to_try: dict[str, str] = Field(default_factory=dict, max_length=5)
+    reference: str = Field(min_length=3, max_length=240)
+
+
+class OperationalValuationPostIn(OperationalValuationIn):
+    expected_preview_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
 
 
 class IntercompanyRuleIn(BaseModel):
@@ -1822,16 +1840,27 @@ async def update_operational_gl_mapping(
 ):
     _require_role(current_user, _GL_ROLES)
     tenant_id = _tenant_of(current_user)
-    account_codes = {value.strip() for key, value in payload.model_dump().items() if key.endswith("_account_code")}
+    effective = {**await get_operational_mapping(db, tenant_id), **payload.model_dump(exclude_unset=True)}
+    account_codes = {value.strip() for key, value in effective.items() if key.endswith("_account_code") and value}
     accounts = await db.gl_accounts.find(
         {"tenant_id": tenant_id, "active": True, "code": {"$in": sorted(account_codes)}},
-        {"_id": 0, "code": 1},
+        {"_id": 0, "code": 1, "type": 1},
     ).to_list(100)
     missing = sorted(account_codes - {account["code"] for account in accounts})
     if missing:
         raise HTTPException(status_code=409, detail=f"Operasyonel köprü için eksik hesap kodları: {', '.join(missing)}")
+    types = {row["code"]: row.get("type") for row in accounts}
+    for key in ("security_deposit_account_code", "accommodation_tax_account_code"):
+        code = effective.get(key)
+        if code and types.get(code) != "liability":
+            raise HTTPException(409, "Güvence/konaklama vergisi eşlemesi aktif bir yükümlülük hesabı olmalıdır")
+    if effective.get("security_deposit_account_code") and effective["security_deposit_account_code"] in {
+        value for key, value in effective.items() if key.endswith("_account_code") and key != "security_deposit_account_code"}:
+        raise HTTPException(409, "İade edilebilir güvence hesabı satış, vergi ve tahsilat hesaplarından ayrı olmalıdır")
+    if effective.get("accommodation_tax_account_code") == effective.get("tax_account_code"):
+        raise HTTPException(409, "Konaklama vergisi kaynak KDV hesabından ayrı eşlenmelidir")
     now = _now_iso()
-    mapping = {**payload.model_dump(), "tenant_id": tenant_id, "updated_at": now, "updated_by": _actor_id(current_user)}
+    mapping = {**{key: effective[key] for key in DEFAULT_MAPPING}, "tenant_id": tenant_id, "updated_at": now, "updated_by": _actor_id(current_user)}
     await db.gl_operational_mappings.update_one(
         {"tenant_id": tenant_id},
         {"$set": mapping, "$setOnInsert": {"created_at": now}},
@@ -1857,6 +1886,7 @@ async def operational_gl_status(current_user: User = Depends(get_current_user)):
     mapping = await get_operational_mapping(db, tenant_id)
     failed_night_audits = await db.night_audit_runs.count_documents({"tenant_id": tenant_id, "gl_bridge_status": "failed"})
     failed_pos = await db.pos_transactions.count_documents({"tenant_id": tenant_id, "gl_bridge_status": "failed"})
+    unverified = await db.night_audit_runs.count_documents({"tenant_id": tenant_id, "gl_bridge_status": "posted", "gl_valued_entry_id": {"$exists": False}})
     latest = await db.night_audit_runs.find_one(
         {"tenant_id": tenant_id, "status": "completed"},
         {"_id": 0, "id": 1, "business_date": 1, "gl_bridge_status": 1, "gl_entry_no": 1},
@@ -1866,8 +1896,9 @@ async def operational_gl_status(current_user: User = Depends(get_current_user)):
         "configured": bool(mapping["enabled"]),
         "mapping": mapping,
         "failed": {"night_audit": failed_night_audits, "pos": failed_pos},
+        "source_valuation_pending": unverified,
         "latest_night_audit": latest,
-        "healthy": bool(mapping["enabled"]) and failed_night_audits == 0 and failed_pos == 0,
+        "healthy": bool(mapping["enabled"]) and failed_night_audits == 0 and failed_pos == 0 and unverified == 0,
     }
 
 
@@ -1974,7 +2005,7 @@ async def operational_reconciliation(
                 "tenant_id": tenant_id,
                 "date": selected,
                 "status": "posted",
-                "source": {"$in": ["night_audit", "pos_direct", "bank_reconciliation"]},
+                "source": {"$in": ["night_audit", "night_audit_correction", "pos_direct", "bank_reconciliation"]},
             },
             {"_id": 0},
         ).to_list(100000),
@@ -2038,6 +2069,43 @@ async def operational_reconciliation(
             continue
         linked_night_entries.append(entry)
 
+    # Only an integrity-sealed manifest rebuilt from CURRENT source rows can
+    # remove the legacy foreign-source blocker. A balanced correction or a
+    # manually edited run annotation alone is not acceptance evidence.
+    valued_plans = []
+    for run in posted_night_runs:
+        valued = entries_by_id.get(str(run.get("gl_valued_entry_id")))
+        if not valued or not valued.get("source_manifest"):
+            continue
+        try:
+            plan = await preview_daily_valuation(db, tenant_id, run["id"], valued["source_manifest"]["valuation"])
+            if plan["action"] not in {"already_posted", "already_corrected"}:
+                raise OperationalValuationError("Source journal no longer matches its valued manifest")
+            basis = next((e for e in linked_night_entries if e.get("source_ref") == run["id"]), None)
+            if not basis or not verify_journal_entry_hash(valued):
+                raise OperationalValuationError("Valued journal link/integrity mismatch")
+            combined = [basis] if valued["id"] == basis["id"] else [basis, valued]
+            actual, expected = {}, {}
+            for journal in combined:
+                for line in journal["lines"]:
+                    code = line["account_code"]
+                    actual[code] = actual.get(code, 0) + _reconciliation_minor(line.get("debit")) - _reconciliation_minor(line.get("credit"))
+            for line in plan["lines"]:
+                code = line["account_code"]
+                expected[code] = expected.get(code, 0) + _reconciliation_minor(line.get("debit")) - _reconciliation_minor(line.get("credit"))
+            if {k: v for k, v in actual.items() if v} != {k: v for k, v in expected.items() if v}:
+                raise OperationalValuationError("Valued source and combined journal account balances differ")
+            if valued["id"] != basis["id"]:
+                linked_night_entries.append(valued)
+            valued_plans.append(plan)
+        except (OperationalValuationError, GLPostingError, KeyError) as exc:
+            blockers.append({"code": "source_valuation_invalid", "record_id": run["id"], "message": str(exc)})
+    fully_valued = len(valued_plans) == len(posted_night_runs) == 1
+    if fully_valued:
+        blockers = [b for b in blockers if b["code"] != "source_currency_requires_try_valuation"]
+        payment_by_account = valued_plans[0]["payment_by_account_minor"]
+        payment_total_minor = sum(payment_by_account.values())
+
     if payment_total_minor and not posted_night_runs:
         blockers.append(
             {
@@ -2051,6 +2119,9 @@ async def operational_reconciliation(
             account = str(line.get("account_code") or "")
             if account in settlement_accounts:
                 night_gl_by_account[account] = night_gl_by_account.get(account, 0) + int(line.get("debit_minor") or 0) - int(line.get("credit_minor") or 0)
+    if fully_valued:
+        for code, value in valued_plans[0]["security_settlement_by_account_minor"].items():
+            night_gl_by_account[code] = night_gl_by_account.get(code, 0) - value
     payment_variance_minor = payment_total_minor - sum(night_gl_by_account.values())
     if payment_variance_minor:
         blockers.append(
@@ -2166,11 +2237,12 @@ async def operational_reconciliation(
         "warnings": warnings,
         "folios": {
             "payment_count": len(payments),
-            "payment_total": None if foreign_payments else _reconciliation_amount(payment_total_minor),
+            "payment_total": None if foreign_payments and not fully_valued else _reconciliation_amount(payment_total_minor),
             "payment_totals_by_currency": {code: _reconciliation_amount(amount) for code, amount in sorted(payment_by_currency.items())},
             "currency": "TRY",
             "gl_total": _reconciliation_amount(sum(night_gl_by_account.values())),
-            "variance": None if foreign_payments else _reconciliation_amount(payment_variance_minor),
+            "variance": None if foreign_payments and not fully_valued else _reconciliation_amount(payment_variance_minor),
+            "source_valuation_verified": fully_valued,
             "by_account": {code: _reconciliation_amount(amount) for code, amount in sorted(payment_by_account.items())},
         },
         "pos": {
@@ -2218,6 +2290,31 @@ async def retry_night_audit_gl_bridge(run_id: str, current_user: User = Depends(
         )
     except OperationalGLBridgeError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post("/integrations/operational/night-audit/{run_id}/valuation/preview")
+async def preview_operational_valuation(run_id: str, payload: OperationalValuationIn, current_user: User = Depends(get_current_user)):
+    _require_role(current_user, _GL_ROLES)
+    try:
+        return await preview_daily_valuation(db, _tenant_of(current_user), run_id, payload.model_dump())
+    except (OperationalValuationError, GLPostingError) as exc:
+        raise HTTPException(409, str(exc)) from exc
+
+
+@router.post("/integrations/operational/night-audit/{run_id}/valuation/post")
+async def post_operational_valuation(run_id: str, payload: OperationalValuationPostIn, current_user: User = Depends(get_current_user)):
+    _require_role(current_user, _GL_ROLES)
+    tenant_id = _tenant_of(current_user)
+    try:
+        result = await post_daily_valuation(db, tenant_id, run_id, payload.model_dump(exclude={"expected_preview_hash"}),
+            payload.expected_preview_hash, _actor_id(current_user))
+    except (OperationalValuationError, GLPostingError) as exc:
+        raise HTTPException(409, str(exc)) from exc
+    await log_audit_event(tenant_id=tenant_id, user_id=_actor_id(current_user), action="operational_source_valued",
+        entity_type="night_audit_run", entity_id=run_id,
+        details="Kaynak-gün kuru ve önizleme özeti doğrulanarak bağlı operasyonel değerleme",
+        after_value=result, db=db)
+    return result
 
 
 async def create_journal(payload: JournalIn, current_user: User = Depends(get_current_user)):
@@ -2312,6 +2409,7 @@ async def reverse_journal(
             "debit": line.get("credit", 0),
             "credit": line.get("debit", 0),
             "memo": f"Ters kayıt: {line.get('memo') or original.get('memo') or ''}".strip(),
+            **({key: line[key] for key in ("currency", "foreign_amount", "exchange_rate")} if line.get("currency") else {}),
         }
         for line in original.get("lines", [])
     ]

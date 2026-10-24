@@ -11,6 +11,7 @@ pos_extensions/_idem.py` geriye dönük uyumluluk için buradan re-export eder.
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any
 
@@ -21,6 +22,18 @@ logger = logging.getLogger(__name__)
 _INDEXES_READY: set[str] = set()
 
 
+def _collection_scope(collection) -> str:
+    # Equal collection names on separate databases/clients do NOT share an
+    # index. In particular, tenant databases and isolated acceptance fixtures
+    # must each establish their own unique constraint before accepting money.
+    database = getattr(collection, "database", None)
+    client = getattr(database, "client", None)
+    full_name = getattr(collection, "full_name", None)
+    if not isinstance(full_name, str):
+        full_name = collection.name
+    return f"{id(client if client is not None else collection)}:{full_name}"
+
+
 async def ensure_idem_index(collection, index_name: str | None = None) -> None:
     """Lazy-create a unique partial index on (tenant_id, idempotency_key).
 
@@ -29,7 +42,7 @@ async def ensure_idem_index(collection, index_name: str | None = None) -> None:
     unavailable (e.g. cluster lost permission), the atomicity guarantee is
     broken — callers can detect this by `is_idem_index_ready(collection)`.
     """
-    key = f"{collection.name}::idem"
+    key = f"{_collection_scope(collection)}::idem"
     if key in _INDEXES_READY:
         return
     try:
@@ -54,7 +67,7 @@ async def ensure_idem_index(collection, index_name: str | None = None) -> None:
 
 def is_idem_index_ready(collection) -> bool:
     """Return True when the unique idempotency index has been confirmed present."""
-    return f"{collection.name}::idem" in _INDEXES_READY
+    return f"{_collection_scope(collection)}::idem" in _INDEXES_READY
 
 
 async def idempotent_insert(
@@ -105,7 +118,8 @@ async def ensure_compound_unique(
 
     Fail-closed on real errors; tolerant only of "already exists" variants.
     """
-    cache_key = f"{collection.name}::{name or '_'.join(k for k, _ in keys)}"
+    specification = json.dumps({"keys": keys, "partial": partial_filter, "name": name}, sort_keys=True)
+    cache_key = f"{_collection_scope(collection)}::{specification}"
     if cache_key in _INDEXES_READY:
         return
     try:
