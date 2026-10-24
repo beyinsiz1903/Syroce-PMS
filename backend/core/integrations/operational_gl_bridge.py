@@ -11,7 +11,7 @@ from __future__ import annotations
 from decimal import ROUND_HALF_UP, Decimal
 
 from modules.pms_core.report_money import resolve_ledger_currencies
-from modules.pms_core.reporting_financials import deduplicate_report_payments, effective_collection, report_payment_period_match
+from modules.pms_core.reporting_financials import deduplicate_report_payments, effective_collection, effective_folio_payment, is_non_cash_adjustment, report_payment_period_match
 from shared_kernel.gl_posting import GLPostingError, post_journal_entry
 
 
@@ -32,6 +32,7 @@ DEFAULT_MAPPING = {
     # No silent assumption about the tenant's refundable-deposit liability.
     "security_deposit_account_code": None,
     "accommodation_tax_account_code": None,
+    "adjustment_account_code": None,
 }
 
 
@@ -119,6 +120,9 @@ async def post_night_audit_daily_to_gl(
     charges = [row for row in charges if not row.get("voided") and not row.get("deleted")
                and (_minor(row.get("total", row.get("amount"))) or _minor(row.get("tax_amount")))
                and str(row.get("charge_category") or row.get("category") or "").strip().lower() not in {"split_adjustment", "opening_balance"}]
+    if any(is_non_cash_adjustment(row) and effective_folio_payment(row)
+           and not (row.get("mice_event_id") and row.get("gl_journal_entry_id")) for row in payments):
+        raise OperationalGLBridgeError("Non-cash folio adjustments require the explicit source-valuation workflow")
     payments = [row for row in deduplicate_report_payments(payments)
                 if effective_collection(row) and not (row.get("mice_event_id") and row.get("gl_journal_entry_id"))]
     if hasattr(db, "security_fund_operations") and await db.security_fund_operations.find_one({"tenant_id": tenant_id, "business_date": business_date}):

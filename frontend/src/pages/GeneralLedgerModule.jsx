@@ -56,6 +56,21 @@ export const GL_ENDPOINTS = {
   fixedAssetGLMapping: '/fixed-assets/gl-mapping',
 };
 
+export function toOperationalMappingPayload(current = {}) {
+  const payload = {
+    enabled: current.enabled ?? false,
+    auto_night_audit: current.auto_night_audit ?? true,
+    auto_pos: current.auto_pos ?? true,
+  };
+  for (const [key, fallback] of Object.entries({ receivable: '120', revenue: '600', tax: '391', cash: '100', card: '108', bank: '102' })) {
+    payload[`${key}_account_code`] = current[`${key}_account_code`]?.trim() || fallback;
+  }
+  for (const key of ['security_deposit_account_code', 'accommodation_tax_account_code', 'adjustment_account_code']) {
+    payload[key] = current[key]?.trim() || null;
+  }
+  return payload;
+}
+
 const DEFAULT_NILVERA_GL_SETTINGS = {
   incoming_mode: 'review',
   outgoing_mode: 'review',
@@ -787,21 +802,25 @@ const GeneralLedgerModule = () => {
     setOperationalBusy(true);
     try {
       const current = operationalBridge?.mapping || {};
-      await axios.put(GL_ENDPOINTS.operationalMapping, {
-        enabled: true,
-        auto_night_audit: current.auto_night_audit ?? true,
-        auto_pos: current.auto_pos ?? true,
-        receivable_account_code: current.receivable_account_code || '120',
-        revenue_account_code: current.revenue_account_code || '600',
-        tax_account_code: current.tax_account_code || '391',
-        cash_account_code: current.cash_account_code || '100',
-        card_account_code: current.card_account_code || '108',
-        bank_account_code: current.bank_account_code || '102',
-      });
+      await axios.put(GL_ENDPOINTS.operationalMapping, toOperationalMappingPayload({ ...current, enabled: true }));
       toast.success('PMS/POS otomatik muhasebe köprüsü etkinleştirildi.');
       await fetchWorkspace();
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Operasyonel muhasebe köprüsü etkinleştirilemedi.');
+    } finally {
+      setOperationalBusy(false);
+    }
+  };
+
+  const saveOperationalAccounts = async () => {
+    if (!operationalBridge?.mapping || workspaceFailures.includes('PMS/POS köprüsü')) return;
+    setOperationalBusy(true);
+    try {
+      await axios.put(GL_ENDPOINTS.operationalMapping, toOperationalMappingPayload(operationalBridge.mapping));
+      toast.success('Operasyonel hesap eşlemeleri kaydedildi. Önceki mühürlü kayıtlar değiştirilmedi.');
+      await fetchWorkspace();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Hesap eşlemeleri kaydedilemedi.');
     } finally {
       setOperationalBusy(false);
     }
@@ -1894,6 +1913,29 @@ const GeneralLedgerModule = () => {
             <Card><CardContent className="pt-6"><Landmark className={`w-7 h-7 mb-3 ${operationalBridge?.healthy ? 'text-emerald-600' : 'text-amber-600'}`} /><p className="text-sm text-slate-500">PMS/POS Muhasebe Köprüsü</p>{workspaceUnavailable('PMS/POS köprüsü') ? <p className="font-semibold text-red-700">Veri alınamadı</p> : <><p className="text-lg font-bold">{operationalBridge?.healthy ? 'Sağlıklı' : operationalBridge?.configured ? 'İnceleme Gerekli' : 'Kapalı'}</p><p className="text-xs text-slate-500 mt-2">Gece: {operationalBridge?.failed?.night_audit || 0} · POS: {operationalBridge?.failed?.pos || 0} hata</p>{!operationalBridge?.configured && <Button size="sm" className="w-full mt-3" onClick={enableOperationalBridge} disabled={operationalBusy}>{operationalBusy ? 'Açılıyor...' : 'Standart Eşlemeyle Aç'}</Button>}</>}</CardContent></Card>
           </div>
           {Number(operationalBridge?.source_valuation_pending) > 0 && <p className="text-sm text-amber-800 mt-4" role="status">Kaynak-gün değerlemesi bekleyen {operationalBridge.source_valuation_pending} gece denetimi var. Dengeli fiş, tek başına döviz/vergi mutabakatının tamamlandığı anlamına gelmez.</p>}
+          <Card className="mt-4">
+            <CardHeader><CardTitle>Güvence, Vergi ve İkram Hesapları</CardTitle></CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-sm text-slate-600">Güvence gelir değildir; ikram/indirim tahsilat değildir. Ayrı hesaplar seçilmeden bu hareketler için kaynak değerlemesi tamamlanamaz. Vergi düzeltmesi ayrı mali belge akışındadır.</p>
+              <div className="grid md:grid-cols-3 gap-3">
+                {[
+                  ['security_deposit_account_code', 'İade edilebilir güvence hesabı'],
+                  ['accommodation_tax_account_code', 'Konaklama vergisi hesabı'],
+                  ['adjustment_account_code', 'İkram/indirim muhasebe hesabı'],
+                ].map(([key, label]) => (
+                  <label key={key} className="space-y-1 text-sm">
+                    <span>{label}</span>
+                    <Input aria-label={label} value={operationalBridge?.mapping?.[key] || ''}
+                      disabled={!operationalBridge?.mapping || workspaceUnavailable('PMS/POS köprüsü') || operationalBusy}
+                      onChange={(event) => setOperationalBridge((current) => ({ ...current, mapping: { ...current.mapping, [key]: event.target.value } }))} />
+                  </label>
+                ))}
+              </div>
+              <Button variant="outline" disabled={!operationalBridge?.mapping || workspaceUnavailable('PMS/POS köprüsü') || operationalBusy} onClick={saveOperationalAccounts}>
+                {operationalBusy ? 'Kaydediliyor...' : 'Operasyonel Hesapları Kaydet'}
+              </Button>
+            </CardContent>
+          </Card>
           <p className="text-xs text-slate-500 mt-4">Bu özetler AP, bütçe ve sabit kıymet alt defterlerindeki gerçek tenant verisinden okunur; örnek/sabit rakam kullanılmaz.</p>
         </TabsContent>
 

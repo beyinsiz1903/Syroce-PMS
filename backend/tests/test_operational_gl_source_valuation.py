@@ -303,3 +303,108 @@ async def test_ambiguous_duplicate_source_journals_fail_closed(ledger_db):
     with pytest.raises(v.OperationalValuationError, match="Multiple original"):
         await v.preview_daily_valuation(db, "hotel", "run", RATES)
     assert await db.gl_journal_entries.count_documents({}) == 2
+
+
+def test_non_cash_adjustment_has_no_cash_or_tax_lines_and_supports_signed_rate_corrections():
+    rows = [{"id": "comp", "currency": "TRY", "amount": 8400, "method": "discount", "payment_type": "comp_adjustment"},
+            {"id": "correction", "currency": "EUR", "amount": -10, "method": "discount", "payment_type": "rate_correction"}]
+    with pytest.raises(v.OperationalValuationError, match="sales-adjustment account"):
+        plan(payments=rows)
+    p = v.build_plan([], rows, {**MAPPING, "adjustment_account_code": "611"}, v.normalized_valuation(DAY, RATES))
+    assert p["adjustment_total_try"] == 7850 and p["payment_total_try"] == 0
+    assert p["payment_by_account_minor"] == {} and p["charge_total_try"] == 0
+    assert {r["account_code"] for r in p["lines"]} == {"611", "120"}
+    assert {r["kind"] for r in p["manifest"]["sources"]} == {"adjustment"}
+    assert p["manifest"]["mapping"]["adjustment_account_code"] == "611"
+    _, debit, credit = normalize_journal_lines(p["lines"])
+    assert debit == credit == 8950
+    with pytest.raises(v.OperationalValuationError, match="adjustment type"):
+        v.build_plan([], [{**rows[0], "payment_type": "unknown"}], {**MAPPING, "adjustment_account_code": "611"}, v.normalized_valuation(DAY, RATES))
+    with pytest.raises(v.OperationalValuationError, match="separate contra-sales"):
+        v.build_plan([], rows, {**MAPPING, "adjustment_account_code": "100"}, v.normalized_valuation(DAY, RATES))
+
+
+def test_optional_new_mapping_does_not_change_sealed_days_without_adjustments():
+    charges = [{"id": "room", "currency": "EUR", "total": 110, "tax_amount": 10}]
+    old = v.build_plan(charges, [], {k: value for k, value in MAPPING.items() if k != "adjustment_account_code"}, v.normalized_valuation(DAY, RATES))
+    new = v.build_plan(charges, [], {**MAPPING, "adjustment_account_code": "611"}, v.normalized_valuation(DAY, RATES))
+    assert old["manifest"] == new["manifest"] and old["lines"] == new["lines"]
+
+
+async def test_real_mongo_adjustment_is_source_bound_deduplicated_replay_safe_and_reconciles(ledger_db, monkeypatch):
+    from domains.accounting import gl_router as gl
+    db = ledger_db
+    old = await seed(db)
+    await db.gl_accounts.insert_one({"tenant_id": "hotel", "code": "611", "active": True, "type": "revenue", "normal_balance": "debit"})
+    await db.gl_operational_mappings.update_one({"tenant_id": "hotel"}, {"$set": {"adjustment_account_code": "611"}})
+    adjustment = {"tenant_id": "hotel", "id": "comp", "booking_id": "b", "folio_id": "f", "business_date": DAY,
+                  "amount": 10, "currency": "EUR", "method": "discount", "payment_type": "comp_adjustment", "idempotency_key": "same-comp"}
+    await db.payments.insert_many([adjustment, {**adjustment, "id": "retry"},
+        {**adjustment, "id": "pending", "idempotency_key": "pending", "status": "pending"},
+        {**adjustment, "id": "other", "tenant_id": "other"}])
+    p = await v.preview_daily_valuation(db, "hotel", "run", RATES)
+    assert p["adjustment_total_try"] == 550 and p["payment_total_try"] == 6050
+    assert sum(r["kind"] == "adjustment" for r in p["manifest"]["sources"]) == 1
+    result = await v.post_daily_valuation(db, "hotel", "run", RATES, p["preview_hash"], "finance")
+    replay = await v.post_daily_valuation(db, "hotel", "run", RATES, p["preview_hash"], "finance")
+    assert result["entry_id"] == replay["entry_id"] and replay["status"] == "already_corrected"
+    assert await db.gl_journal_entries.find_one({"id": old["id"]}, {"_id": 0}) == old
+    monkeypatch.setattr(gl, "db", db)
+    report = await gl.operational_reconciliation(DAY, SimpleNamespace(tenant_id="hotel", role="finance"))
+    assert report["healthy"] and report["folios"]["non_cash_adjustments_try"] == 550
+    assert report["folios"]["payment_total"] == report["folios"]["gl_total"] == 6050
+    await db.payments.update_many({"tenant_id": "hotel", "idempotency_key": "same-comp"}, {"$set": {"amount": 11}})
+    report = await gl.operational_reconciliation(DAY, SimpleNamespace(tenant_id="hotel", role="finance"))
+    assert not report["healthy"] and any(b["code"] == "non_cash_adjustments_unposted" for b in report["blockers"])
+
+
+async def test_real_mongo_discount_only_day_is_not_falsely_healthy_when_unposted(ledger_db, monkeypatch):
+    from domains.accounting import gl_router as gl
+    db = ledger_db
+    await db.gl_operational_mappings.insert_one({"tenant_id": "hotel", **MAPPING})
+    await db.payments.insert_one({"tenant_id": "hotel", "id": "comp", "business_date": DAY,
+        "amount": 100, "currency": "TRY", "method": "discount", "payment_type": "comp_adjustment"})
+    monkeypatch.setattr(gl, "db", db)
+    report = await gl.operational_reconciliation(DAY, SimpleNamespace(tenant_id="hotel", role="finance"))
+    assert not report["healthy"] and report["folios"]["payment_total"] == 0
+    assert report["folios"]["non_cash_adjustments_by_currency"] == {"TRY": 100}
+    assert report["folios"]["non_cash_adjustments_try"] is None
+    await db.gl_accounts.insert_many([
+        {"tenant_id": "hotel", "code": "120", "active": True},
+        {"tenant_id": "hotel", "code": "611", "active": True}])
+    await db.gl_operational_mappings.update_one({"tenant_id": "hotel"}, {"$set": {"adjustment_account_code": "611"}})
+    await db.night_audit_runs.insert_one({"tenant_id": "hotel", "id": "run", "business_date": DAY, "status": "completed"})
+    p = await v.preview_daily_valuation(db, "hotel", "run", RATES)
+    assert p["action"] == "post" and p["payment_total_try"] == p["charge_total_try"] == 0
+    await v.post_daily_valuation(db, "hotel", "run", RATES, p["preview_hash"], "u")
+    report = await gl.operational_reconciliation(DAY, SimpleNamespace(tenant_id="hotel", role="finance"))
+    assert report["healthy"] and report["folios"]["payment_total"] == report["folios"]["gl_total"] == 0
+    assert report["folios"]["non_cash_adjustments_try"] == 100
+
+
+@pytest.mark.parametrize("code,type_,normal", [("100", "asset", "debit"), ("611", "revenue", "credit"), ("600", "revenue", "debit")])
+async def test_adjustment_mapping_rejects_cash_normal_revenue_or_reused_accounts(ledger_db, monkeypatch, code, type_, normal):
+    from domains.accounting import gl_router as gl
+    db = ledger_db
+    await seed(db)
+    await db.gl_accounts.update_one({"tenant_id": "hotel", "code": "340"}, {"$set": {"type": "liability", "normal_balance": "credit"}})
+    await db.gl_accounts.update_one({"tenant_id": "hotel", "code": code},
+        {"$set": {"active": True, "type": type_, "normal_balance": normal}}, upsert=True)
+    monkeypatch.setattr(gl, "db", db)
+    with pytest.raises(HTTPException) as exc:
+        await gl.update_operational_gl_mapping(gl.OperationalMappingIn(adjustment_account_code=code), SimpleNamespace(tenant_id="hotel", role="finance", id="u"))
+    assert exc.value.status_code == 409
+    assert "İkram/indirim" in exc.value.detail
+
+
+async def test_adjustment_mapping_accepts_separate_contra_sales_account_and_logs_it(ledger_db, monkeypatch):
+    from domains.accounting import gl_router as gl
+    db = ledger_db
+    await seed(db)
+    await db.gl_accounts.update_one({"tenant_id": "hotel", "code": "340"}, {"$set": {"type": "liability", "normal_balance": "credit"}})
+    await db.gl_accounts.insert_one({"tenant_id": "hotel", "code": "611", "active": True, "type": "revenue", "normal_balance": "debit"})
+    monkeypatch.setattr(gl, "db", db)
+    monkeypatch.setattr(gl, "log_audit_event", AsyncMock())
+    result = await gl.update_operational_gl_mapping(gl.OperationalMappingIn(adjustment_account_code="611"), SimpleNamespace(tenant_id="hotel", role="finance", id="u"))
+    assert result["mapping"]["adjustment_account_code"] == "611" and result["mapping"]["enabled"]
+    assert gl.log_audit_event.await_args.kwargs["after_value"]["adjustment_account_code"] == "611"

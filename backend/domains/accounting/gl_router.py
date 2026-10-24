@@ -56,7 +56,7 @@ from core.utils import create_excel_workbook, excel_response
 from models.schemas import User
 from modules.pms_core.chain_access import resolve_chain_properties, tenant_id_from_document
 from modules.pms_core.report_money import resolve_ledger_currencies
-from modules.pms_core.reporting_financials import deduplicate_report_payments, effective_collection, report_payment_period_match
+from modules.pms_core.reporting_financials import deduplicate_report_payments, effective_collection, effective_folio_payment, is_non_cash_adjustment, report_payment_period_match
 from shared_kernel.gl_periods import (
     GLPeriodError,
     assert_gl_period_open,
@@ -864,6 +864,7 @@ class OperationalMappingIn(BaseModel):
     bank_account_code: str = Field("102", min_length=1, max_length=40)
     security_deposit_account_code: str | None = Field(None, min_length=1, max_length=40)
     accommodation_tax_account_code: str | None = Field(None, min_length=1, max_length=40)
+    adjustment_account_code: str | None = Field(None, min_length=1, max_length=40)
 
 
 class OperationalValuationIn(BaseModel):
@@ -1844,7 +1845,7 @@ async def update_operational_gl_mapping(
     account_codes = {value.strip() for key, value in effective.items() if key.endswith("_account_code") and value}
     accounts = await db.gl_accounts.find(
         {"tenant_id": tenant_id, "active": True, "code": {"$in": sorted(account_codes)}},
-        {"_id": 0, "code": 1, "type": 1},
+        {"_id": 0, "code": 1, "type": 1, "normal_balance": 1},
     ).to_list(100)
     missing = sorted(account_codes - {account["code"] for account in accounts})
     if missing:
@@ -1859,6 +1860,13 @@ async def update_operational_gl_mapping(
         raise HTTPException(409, "İade edilebilir güvence hesabı satış, vergi ve tahsilat hesaplarından ayrı olmalıdır")
     if effective.get("accommodation_tax_account_code") == effective.get("tax_account_code"):
         raise HTTPException(409, "Konaklama vergisi kaynak KDV hesabından ayrı eşlenmelidir")
+    adjustment = effective.get("adjustment_account_code")
+    if adjustment:
+        account = next(row for row in accounts if row["code"] == adjustment)
+        if account.get("type") != "revenue" or account.get("normal_balance") != "debit":
+            raise HTTPException(409, "İkram/indirim eşlemesi borç normal bakiyeli bir satış indirim hesabı olmalıdır")
+        if adjustment in {value for key, value in effective.items() if key.endswith("_account_code") and key != "adjustment_account_code"}:
+            raise HTTPException(409, "İkram/indirim hesabı gelir, alacak, vergi, güvence ve tahsilat hesaplarından ayrı olmalıdır")
     now = _now_iso()
     mapping = {**{key: effective[key] for key in DEFAULT_MAPPING}, "tenant_id": tenant_id, "updated_at": now, "updated_by": _actor_id(current_user)}
     await db.gl_operational_mappings.update_one(
@@ -2029,6 +2037,11 @@ async def operational_reconciliation(
             }
         )
 
+    adjustments = [row for row in deduplicate_report_payments(payments) if is_non_cash_adjustment(row) and effective_folio_payment(row)
+                   and not (row.get("mice_event_id") and row.get("gl_journal_entry_id"))]
+    adjustment_by_currency: dict[str, int] = {}
+    for row in await resolve_ledger_currencies(adjustments, tenant_id, database=db, fallback_currency="UNKNOWN"):
+        adjustment_by_currency[row["currency"]] = adjustment_by_currency.get(row["currency"], 0) + _reconciliation_minor(effective_folio_payment(row))
     payments = [row for row in deduplicate_report_payments(payments) if effective_collection(row)
                 and not (row.get("mice_event_id") and row.get("gl_journal_entry_id"))]
     payments = await resolve_ledger_currencies(payments, tenant_id, database=db, fallback_currency="UNKNOWN")
@@ -2105,6 +2118,9 @@ async def operational_reconciliation(
         blockers = [b for b in blockers if b["code"] != "source_currency_requires_try_valuation"]
         payment_by_account = valued_plans[0]["payment_by_account_minor"]
         payment_total_minor = sum(payment_by_account.values())
+    if adjustments and not fully_valued:
+        blockers.append({"code": "non_cash_adjustments_unposted",
+            "message": "Nakit dışı ikram/indirimler için mühürlü kaynak aktarımı doğrulanmadı; bunlar tahsilat değildir."})
 
     if payment_total_minor and not posted_night_runs:
         blockers.append(
@@ -2243,6 +2259,8 @@ async def operational_reconciliation(
             "gl_total": _reconciliation_amount(sum(night_gl_by_account.values())),
             "variance": None if foreign_payments and not fully_valued else _reconciliation_amount(payment_variance_minor),
             "source_valuation_verified": fully_valued,
+            "non_cash_adjustments_by_currency": {code: _reconciliation_amount(value) for code, value in sorted(adjustment_by_currency.items())},
+            "non_cash_adjustments_try": valued_plans[0]["adjustment_total_try"] if fully_valued else None,
             "by_account": {code: _reconciliation_amount(amount) for code, amount in sorted(payment_by_account.items())},
         },
         "pos": {
