@@ -186,7 +186,12 @@ def _integrity_payload(entry: dict) -> dict:
         "previous_entry_hash",
         "integrity_version",
     )
-    return {key: entry.get(key) for key in keys}
+    payload = {key: entry.get(key) for key in keys}
+    # Optional v1 source manifests are part of the immutable seal. Do not add
+    # a null key to pre-manifest journals: their existing hashes stay valid.
+    if "source_manifest" in entry:
+        payload["source_manifest"] = entry["source_manifest"]
+    return payload
 
 
 def compute_journal_entry_hash(entry: dict) -> str:
@@ -342,6 +347,7 @@ async def post_journal_entry(
     idempotency_key: str | None = None,
     reverses_entry_id: str | None = None,
     reversal_reason: str | None = None,
+    source_manifest: dict | None = None,
 ) -> dict:
     """Dengeli yevmiye fişini doğrular, COA'ya göre zenginleştirir ve yazar.
 
@@ -359,6 +365,7 @@ async def post_journal_entry(
                 "source_ref": source_ref,
                 "reverses_entry_id": reverses_entry_id,
                 "reversal_reason": reversal_reason,
+                **({"source_manifest": source_manifest} if source_manifest is not None else {}),
             },
             ensure_ascii=False,
             sort_keys=True,
@@ -431,6 +438,8 @@ async def post_journal_entry(
     if reverses_entry_id:
         doc["reverses_entry_id"] = reverses_entry_id
         doc["reversal_reason"] = (reversal_reason or "").strip() or None
+    if source_manifest is not None:
+        doc["source_manifest"] = source_manifest
     try:
         doc["integrity_version"] = INTEGRITY_VERSION
         doc["previous_entry_hash"] = await _previous_integrity_hash(
@@ -467,6 +476,8 @@ async def post_journal_entry(
                 {"_id": 0},
             )
             if existing:
+                if existing.get("idempotency_fingerprint") and existing["idempotency_fingerprint"] != fingerprint:
+                    raise GLPostingError("Idempotency anahtarı farklı bir fiş içeriğiyle yeniden kullanılamaz")
                 return existing
         raise
     except Exception:
