@@ -50,6 +50,8 @@ from core.tenant_db import get_system_db
 from core.utils import create_excel_workbook, excel_response
 from models.schemas import User
 from modules.pms_core.chain_access import resolve_chain_properties, tenant_id_from_document
+from modules.pms_core.report_money import resolve_ledger_currencies
+from modules.pms_core.reporting_financials import deduplicate_report_payments, effective_collection, report_payment_period_match
 from shared_kernel.gl_periods import (
     GLPeriodError,
     assert_gl_period_open,
@@ -1912,11 +1914,7 @@ async def operational_reconciliation(
     payment_query = {
         "tenant_id": tenant_id,
         "voided": {"$ne": True},
-        "$or": [
-            {"payment_date": {"$gte": selected, "$lt": next_day}},
-            {"processed_at": {"$gte": selected, "$lt": next_day}},
-            {"date": {"$gte": selected, "$lt": next_day}},
-        ],
+        **report_payment_period_match(selected, selected),
     }
     pos_query = {
         "tenant_id": tenant_id,
@@ -2000,10 +1998,31 @@ async def operational_reconciliation(
             }
         )
 
+    payments = [row for row in deduplicate_report_payments(payments) if effective_collection(row)
+                and not (row.get("mice_event_id") and row.get("gl_journal_entry_id"))]
+    payments = await resolve_ledger_currencies(payments, tenant_id, database=db, fallback_currency="UNKNOWN")
+    payment_by_currency: dict[str, int] = {}
+    for payment in payments:
+        code = payment["currency"]
+        payment_by_currency[code] = payment_by_currency.get(code, 0) + _reconciliation_minor(effective_collection(payment))
+    foreign_payments = {code for code in payment_by_currency if code not in {"TRY", "TRL"}}
+    foreign_sources = set(foreign_payments)
+    # A linked, balanced legacy journal does not prove correct TRY valuation.
+    # Immutable run currency totals expose pre-fix nominal FX aggregation.
+    for run in night_audits:
+        for code, amount in (run.get("projected_total_by_currency") or {}).items():
+            if str(code).upper() not in {"TRY", "TL", "TRL"} and _reconciliation_minor(amount):
+                foreign_sources.add(str(code).upper())
+    if foreign_sources:
+        blockers.append({"code": "source_currency_requires_try_valuation",
+            "message": "Kaynak gününe ait TRY değerlemesi doğrulanmadan yabancı/bilinmeyen dövizli kaynaklara muhasebe mutabakatı verilemez.",
+            "currencies": sorted(foreign_sources)})
     payment_by_account: dict[str, int] = {}
     for payment in payments:
+        if payment["currency"] not in {"TRY", "TRL"}:
+            continue
         account = _settlement_account(mapping, payment.get("method") or payment.get("payment_method"))
-        payment_by_account[account] = payment_by_account.get(account, 0) + _reconciliation_minor(payment.get("amount"))
+        payment_by_account[account] = payment_by_account.get(account, 0) + _reconciliation_minor(effective_collection(payment))
     payment_total_minor = sum(payment_by_account.values())
     posted_night_runs = [run for run in night_audits if run.get("gl_bridge_status") == "posted"]
     linked_night_entries: list[dict] = []
@@ -2031,7 +2050,7 @@ async def operational_reconciliation(
         for line in entry.get("lines", []):
             account = str(line.get("account_code") or "")
             if account in settlement_accounts:
-                night_gl_by_account[account] = night_gl_by_account.get(account, 0) + int(line.get("debit_minor") or 0)
+                night_gl_by_account[account] = night_gl_by_account.get(account, 0) + int(line.get("debit_minor") or 0) - int(line.get("credit_minor") or 0)
     payment_variance_minor = payment_total_minor - sum(night_gl_by_account.values())
     if payment_variance_minor:
         blockers.append(
@@ -2147,9 +2166,11 @@ async def operational_reconciliation(
         "warnings": warnings,
         "folios": {
             "payment_count": len(payments),
-            "payment_total": _reconciliation_amount(payment_total_minor),
+            "payment_total": None if foreign_payments else _reconciliation_amount(payment_total_minor),
+            "payment_totals_by_currency": {code: _reconciliation_amount(amount) for code, amount in sorted(payment_by_currency.items())},
+            "currency": "TRY",
             "gl_total": _reconciliation_amount(sum(night_gl_by_account.values())),
-            "variance": _reconciliation_amount(payment_variance_minor),
+            "variance": None if foreign_payments else _reconciliation_amount(payment_variance_minor),
             "by_account": {code: _reconciliation_amount(amount) for code, amount in sorted(payment_by_account.items())},
         },
         "pos": {

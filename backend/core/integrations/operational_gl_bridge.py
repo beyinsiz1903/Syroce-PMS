@@ -8,9 +8,10 @@ by the folio/night-audit path.
 
 from __future__ import annotations
 
-from datetime import date, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 
+from modules.pms_core.report_money import resolve_ledger_currencies
+from modules.pms_core.reporting_financials import deduplicate_report_payments, effective_collection, report_payment_period_match
 from shared_kernel.gl_posting import GLPostingError, post_journal_entry
 
 
@@ -53,6 +54,27 @@ def _payment_account(mapping: dict, method: str) -> str:
     return mapping["bank_account_code"]
 
 
+def _signed_line(account_code, amount_minor, side, memo):
+    if amount_minor < 0:
+        side = "credit" if side == "debit" else "debit"
+    return {"account_code": account_code, side: _amount(abs(amount_minor)), "memo": memo}
+
+
+async def _require_try_source_rows(db, tenant_id, rows):
+    """GL amounts are TRY. A receipt FX rate is NOT a revenue valuation rate.
+
+    Resolve legacy folio/booking currency before validation. Unknown currency
+    or foreign-ledger amounts must fail before posting the whole batch until
+    immutable source-day TRY valuations are supported. Never add EUR to TRY,
+    use today's rate, or revalue/rewrite an existing journal implicitly.
+    """
+    resolved = await resolve_ledger_currencies(rows, tenant_id, database=db, fallback_currency="UNKNOWN")
+    unsupported = sorted({row["currency"] for row in resolved if row["currency"] not in {"TRY", "TRL"}})
+    if unsupported:
+        raise OperationalGLBridgeError("Source-day TRY valuation required before GL posting: " + ", ".join(unsupported))
+    return resolved
+
+
 async def post_night_audit_daily_to_gl(
     db,
     tenant_id: str,
@@ -69,31 +91,33 @@ async def post_night_audit_daily_to_gl(
         )
         return {"status": "skipped", "reason": "not_configured"}
 
-    next_day = (date.fromisoformat(business_date) + timedelta(days=1)).isoformat()
     charges = await db.folio_charges.find(
         {
             "tenant_id": tenant_id,
             "voided": {"$ne": True},
-            "$or": [
-                {"run_id": run_id},
-                {"business_date": business_date},
-                {"date": {"$gte": business_date, "$lt": next_day}},
-            ],
+            **report_payment_period_match(business_date, business_date, date_fields=("date", "charge_date", "posted_at", "created_at")),
         },
         {"_id": 0},
-    ).to_list(100000)
+    ).to_list(None)
     payments = await db.payments.find(
         {
             "tenant_id": tenant_id,
             "voided": {"$ne": True},
-            "$or": [
-                {"payment_date": {"$gte": business_date, "$lt": next_day}},
-                {"processed_at": {"$gte": business_date, "$lt": next_day}},
-                {"date": {"$gte": business_date, "$lt": next_day}},
-            ],
+            **report_payment_period_match(business_date, business_date),
         },
         {"_id": 0},
-    ).to_list(100000)
+    ).to_list(None)
+
+    # Internal debt allocation/opening balances are not new revenue. City
+    # ledger, security applications, concessions and pending/void payments are
+    # not cash/bank receipts. Match the operational reports' classification.
+    charges = [row for row in charges if not row.get("voided") and not row.get("deleted")
+               and (_minor(row.get("total", row.get("amount"))) or _minor(row.get("tax_amount")))
+               and str(row.get("charge_category") or row.get("category") or "").strip().lower() not in {"split_adjustment", "opening_balance"}]
+    payments = [row for row in deduplicate_report_payments(payments)
+                if effective_collection(row) and not (row.get("mice_event_id") and row.get("gl_journal_entry_id"))]
+    charges = await _require_try_source_rows(db, tenant_id, charges)
+    payments = await _require_try_source_rows(db, tenant_id, payments)
 
     charge_total = sum((_minor(row.get("total", row.get("amount"))) for row in charges), 0)
     tax_total = sum((_minor(row.get("tax_amount")) for row in charges), 0)
@@ -101,7 +125,7 @@ async def post_night_audit_daily_to_gl(
         raise OperationalGLBridgeError("Night-audit tax total is outside the charge total")
     lines: list[dict] = []
     if charge_total:
-        lines.append({"account_code": mapping["receivable_account_code"], "debit": _amount(charge_total), "memo": "Günlük folio tahakkukları"})
+        lines.append(_signed_line(mapping["receivable_account_code"], charge_total, "debit", "Günlük folio tahakkukları"))
         net_revenue = charge_total - tax_total
         if net_revenue:
             lines.append({"account_code": mapping["revenue_account_code"], "credit": _amount(net_revenue), "memo": "Günlük oda/PMS geliri"})
@@ -115,14 +139,17 @@ async def post_night_audit_daily_to_gl(
         # a second time as part of the daily folio collection batch.
         if payment.get("mice_event_id") and payment.get("gl_journal_entry_id"):
             continue
-        account_code = _payment_account(mapping, str(payment.get("method") or payment.get("payment_method") or "bank"))
-        payment_totals[account_code] = payment_totals.get(account_code, 0) + _minor(payment.get("amount"))
+        method = str(payment.get("method") or payment.get("payment_method") or "").lower()
+        if method not in {"cash", "nakit", "card", "credit_card", "debit_card", "kredi_karti", "pos", "bank", "bank_transfer", "transfer", "online", "eft", "wire", "havale"}:
+            raise OperationalGLBridgeError("Unmapped collection method; cannot assume a bank receipt: " + method)
+        account_code = _payment_account(mapping, method)
+        payment_totals[account_code] = payment_totals.get(account_code, 0) + _minor(effective_collection(payment))
     payment_total = sum(payment_totals.values())
     for account_code, amount_minor in sorted(payment_totals.items()):
         if amount_minor:
-            lines.append({"account_code": account_code, "debit": _amount(amount_minor), "memo": "Günlük tahsilatlar"})
+            lines.append(_signed_line(account_code, amount_minor, "debit", "Günlük tahsilatlar"))
     if payment_total:
-        lines.append({"account_code": mapping["receivable_account_code"], "credit": _amount(payment_total), "memo": "Günlük folio tahsilat kapaması"})
+        lines.append(_signed_line(mapping["receivable_account_code"], payment_total, "credit", "Günlük folio tahsilat kapaması"))
     if not lines:
         await db.night_audit_runs.update_one(
             {"tenant_id": tenant_id, "id": run_id},
