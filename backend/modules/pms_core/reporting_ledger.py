@@ -8,12 +8,14 @@ from modules.pms_core.report_money import money, resolve_ledger_currencies, roun
 from modules.pms_core.revenue_categories import charge_category  # noqa: F401 — public shared API
 
 
-def charge_amount(row: dict) -> float:
+def charge_amount(row: dict, *, round_to_cents: bool = True) -> float:
+    """Report cents by default; validators can request unrounded evidence."""
     for field in ("total", "charge_amount", "amount"):
         if row.get(field) is not None:
+            amount = money(row[field] or 0)
             if field == "charge_amount" and row.get("report_source") == "extra":
-                return rounded(money(row[field]) * money(row.get("quantity") if row.get("quantity") is not None else 1))
-            return rounded(row[field] or 0)
+                amount *= money(row.get("quantity") if row.get("quantity") is not None else 1)
+            return rounded(amount) if round_to_cents else float(amount)
     return 0.0
 
 

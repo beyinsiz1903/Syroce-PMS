@@ -21,14 +21,15 @@ ALIASES = {
 FNB_CATEGORIES = frozenset({"food", "beverage", "alcohol", "fnb", "restaurant", "cafe", "room_service"})
 
 
-def charge_category(row):
+def charge_category(row, *, preserve_unknown=False):
+    """Normalize known aliases; detail ledgers may retain custom source keys."""
     raw = str(row.get("charge_category") or row.get("category") or row.get("charge_type") or "other").strip().lower()
     # Generic sales labels may carry an explicit service category. Never guess
     # that an upsell is room rental: it can just as easily be breakfast or SPA.
     if raw in {"upsell", "extra"}:
         service = row.get("service_category") or row.get("revenue_category")
         raw = str(service).strip().lower() if service else raw
-    return ALIASES.get(raw, raw if raw in LABELS else "unclassified")
+    return ALIASES.get(raw, raw if preserve_unknown or raw in LABELS else "unclassified")
 
 
 def revenue_department(category):

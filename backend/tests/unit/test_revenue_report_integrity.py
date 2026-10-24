@@ -76,6 +76,22 @@ def test_service_category_can_explicitly_identify_an_upsell():
     assert charge_category({"category": "upsell", "service_category": "spa"}) == "spa"
 
 
+def test_detail_categories_preserve_custom_keys_without_undoing_known_aliases():
+    assert charge_category({"category": "hotel-service-51"}, preserve_unknown=True) == "hotel-service-51"
+    assert charge_category({"category": "mini_bar"}, preserve_unknown=True) == "minibar"
+    assert charge_category({"category": "food_and_beverage"}, preserve_unknown=True) == "fnb"
+    assert charge_category({"category": "upsell"}, preserve_unknown=True) == "unclassified"
+
+
+def test_report_rounding_does_not_erase_evidence_needed_by_allocation_guards():
+    from modules.pms_core.reporting_ledger import charge_amount
+
+    source = row(total="6000.001")
+    assert charge_amount(source) == 6000
+    assert charge_amount(source, round_to_cents=False) == 6000.001
+    assert source["total"] == "6000.001"
+
+
 def test_one_scope_reconciles_categories_trend_department_and_native_currency_totals():
     data = build_revenue_report([
         row(amount=100, total=112, tax_amount=12, tax_breakdown={"vat": 10, "accommodation_tax": 2}),
