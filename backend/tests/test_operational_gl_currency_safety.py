@@ -106,3 +106,35 @@ async def test_real_mongo_daily_batch_uses_business_day_not_catchup_wall_clock(l
     assert result["charge_total"] == 110 and result["payment_total"] == 70
     assert sum(line.get("debit", 0) for line in post.await_args.kwargs["lines"]) == 180
     assert sum(line.get("credit", 0) for line in post.await_args.kwargs["lines"]) == 180
+
+
+@pytest.mark.asyncio
+async def test_reconciliation_never_calls_legacy_foreign_source_run_healthy(ledger_db, monkeypatch):
+    from domains.accounting import gl_router
+
+    monkeypatch.setattr(gl_router, "db", ledger_db)
+    await ledger_db.gl_operational_mappings.insert_one({"tenant_id": "hotel", "enabled": True})
+    await ledger_db.night_audit_runs.insert_one({"tenant_id": "hotel", "business_date": "2026-10-23",
+        "id": "legacy", "status": "completed", "gl_bridge_status": "no_activity", "projected_total_by_currency": {"TRY": 100, "EUR": 20}})
+    result = await gl_router.operational_reconciliation("2026-10-23", SimpleNamespace(tenant_id="hotel", role="admin"))
+    assert result["healthy"] is False
+    assert "source_currency_requires_try_valuation" in {item["code"] for item in result["blockers"]}
+
+
+@pytest.mark.asyncio
+async def test_reconciliation_preserves_currencies_and_uses_same_business_day_as_bridge(ledger_db, monkeypatch):
+    from domains.accounting import gl_router
+
+    monkeypatch.setattr(gl_router, "db", ledger_db)
+    await ledger_db.gl_operational_mappings.insert_one({"tenant_id": "hotel", "enabled": True})
+    await ledger_db.payments.insert_many([
+        {"tenant_id": "hotel", "business_date": "2026-10-23", "processed_at": "2026-10-24", "amount": 100, "method": "cash", "currency": "TRY"},
+        {"tenant_id": "hotel", "business_date": "2026-10-23", "processed_at": "2026-10-24", "amount": 20, "method": "cash", "currency": "EUR"},
+        {"tenant_id": "hotel", "business_date": "2026-10-22", "processed_at": "2026-10-23", "amount": 999, "method": "card", "currency": "TRY"},
+        {"tenant_id": "hotel", "business_date": "2026-10-23", "amount": 999, "method": "city_ledger", "currency": "TRY"},
+    ])
+    result = await gl_router.operational_reconciliation("2026-10-23", SimpleNamespace(tenant_id="hotel", role="admin"))
+    assert result["folios"]["payment_count"] == 2
+    assert result["folios"]["payment_totals_by_currency"] == {"EUR": 20, "TRY": 100}
+    assert result["folios"]["payment_total"] is result["folios"]["variance"] is None
+    assert not result["healthy"]
