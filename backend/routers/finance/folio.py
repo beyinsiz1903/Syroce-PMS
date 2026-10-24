@@ -966,208 +966,107 @@ async def post_payment_to_folio(folio_id: str, payment_data: PaymentCreate, requ
 
 
 @router.get("/folio/reports/revenue-by-category")
-@cached(ttl=300, key_prefix="folio_revenue_by_category_v2")  # 5 dk cache; tarih+tenant key
+@cached(ttl=30, key_prefix="posted_revenue_category_v3")
 async def revenue_by_category(
     date_from: str | None = None,
     date_to: str | None = None,
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_finance_reports")),
 ):
-    """Tarih aralığında kategori bazlı gelir raporu (void hariç).
-    Varsayılan: son 30 gün.
-    """
+    """One scope and one posted ledger for cards, categories, trend and export."""
+    import hashlib
+    import json
+
+    from modules.pms_core.report_room_types import room_revenue_by_type
+    from modules.pms_core.reporting_ledger import posted_revenue_rows
+    from modules.pms_core.revenue_report import build_revenue_report
+
     if not date_to:
-        date_to = datetime.now(UTC).date().isoformat()
-    if not date_from:
-        date_from = (datetime.now(UTC).date() - timedelta(days=30)).isoformat()
+        date_to = (await ensure_business_date_initialized(db, current_user.tenant_id))["business_date"]
     try:
-        dt_from = datetime.strptime(date_from, "%Y-%m-%d").replace(tzinfo=UTC)
-        dt_to = datetime.strptime(date_to, "%Y-%m-%d").replace(hour=23, minute=59, second=59, microsecond=999999, tzinfo=UTC)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Tarih formatı YYYY-MM-DD olmalı")
-    if dt_from > dt_to:
-        raise HTTPException(status_code=400, detail="date_from > date_to olamaz")
+        last = date.fromisoformat(date_to)
+        first = date.fromisoformat(date_from) if date_from else last - timedelta(days=29)
+        if last.isoformat() != date_to or (date_from and first.isoformat() != date_from) or last.year == 9999:
+            raise ValueError
+    except (ValueError, TypeError):
+        raise HTTPException(422, "Tarih formatı YYYY-MM-DD olmalı")
+    if first > last:
+        raise HTTPException(400, "date_from > date_to olamaz")
+    if (last - first).days > 365:
+        raise HTTPException(422, "En fazla 366 günlük aralık seçin.")
+    charges = await posted_revenue_rows(current_user.tenant_id, first, last, database=db)
+    result = build_revenue_report(charges, first, last)
+    result["room_type_revenue"] = await room_revenue_by_type(charges, current_user.tenant_id, database=db)
+    result["snapshot"] = hashlib.sha256(json.dumps(result, sort_keys=True).encode()).hexdigest()
+    return result
 
-    projection = {
-        "_id": 0,
-        "business_date": 1,
-        "charge_date": 1,
-        "date": 1,
-        "posted_at": 1,
-        "created_at": 1,
-        "charge_category": 1,
-        "charge_type": 1,
-        "category": 1,
-        "subtotal": 1,
-        "discount_amount": 1,
-        "amount": 1,
-        "charge_amount": 1,
-        "quantity": 1,
-        "vat_amount": 1,
-        "tax_amount": 1,
-        "total": 1,
-        "currency": 1,
-        "source_pos_order_id": 1,
-    }
-    date_fields = ("business_date", "charge_date", "date", "posted_at", "created_at")
-    string_start = dt_from.date().isoformat()
-    string_end = (dt_to.date() + timedelta(days=1)).isoformat()
-    date_clauses = []
-    for field in date_fields:
-        date_clauses.extend(
-            [
-                {field: {"$gte": string_start, "$lt": string_end}},
-                {field: {"$gte": dt_from, "$lte": dt_to}},
-            ]
-        )
-    query = {
-        "tenant_id": current_user.tenant_id,
-        "voided": {"$ne": True},
-        "$or": date_clauses,
-    }
-    pos_date_clauses = []
-    for field in ("business_date", "closed_at", "created_at"):
-        pos_date_clauses.extend(
-            [
-                {field: {"$gte": string_start, "$lt": string_end}},
-                {field: {"$gte": dt_from, "$lte": dt_to}},
-            ]
-        )
-    folio_rows, extra_rows, pos_rows = await asyncio.gather(
-        db.folio_charges.find(query, projection).to_list(None),
-        db.extra_charges.find(query, projection).to_list(None),
-        db.pos_orders.find(
-            {
-                "tenant_id": current_user.tenant_id,
-                "status": {"$nin": ["cancelled", "canceled", "void", "voided"]},
-                "$or": pos_date_clauses,
-            },
-            {
-                "_id": 0,
-                "id": 1,
-                "business_date": 1,
-                "closed_at": 1,
-                "created_at": 1,
-                "total_amount": 1,
-                "grand_total": 1,
-                "currency": 1,
-                "status": 1,
-            },
-        ).to_list(None),
-    )
 
-    # A POS order may already have been posted to a folio. Include direct POS
-    # revenue only when no folio row represents that order, preventing both
-    # missing restaurant revenue and double counting.
-    represented_pos_order_ids = {
-        str(row.get("source_pos_order_id"))
-        for row in folio_rows
-        if row.get("source_pos_order_id")
-    }
-    direct_pos_rows = [
-        {
-            "business_date": row.get("business_date"),
-            "date": row.get("closed_at") or row.get("created_at"),
-            "category": "fnb",
-            "total": row.get("total_amount") if row.get("total_amount") is not None else row.get("grand_total", 0),
-            "subtotal": row.get("total_amount") if row.get("total_amount") is not None else row.get("grand_total", 0),
-            "amount": row.get("total_amount") if row.get("total_amount") is not None else row.get("grand_total", 0),
-            "currency": row.get("currency") or "TRY",
-        }
-        for row in pos_rows
-        if str(row.get("id") or "") not in represented_pos_order_ids
-        and str(row.get("status") or "").lower() in {"closed", "completed", "served", "paid"}
-    ]
+@router.get("/folio/reports/revenue-by-category/excel")
+async def revenue_by_category_excel(
+    date_from: str, date_to: str, snapshot: str,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),
+):
+    from io import BytesIO
 
-    def report_day(row: dict) -> date | None:
-        value = row.get("business_date") or row.get("charge_date") or row.get("date") or row.get("posted_at") or row.get("created_at")
-        if isinstance(value, datetime):
-            return value.date()
-        if isinstance(value, date):
-            return value
-        try:
-            return date.fromisoformat(str(value)[:10])
-        except (TypeError, ValueError):
-            return None
+    from fastapi.responses import StreamingResponse
 
-    start_day, end_day = dt_from.date(), dt_to.date()
-    grouped: dict[str, dict[str, Any]] = {}
-    for row, is_extra in [
-        *((item, False) for item in folio_rows),
-        *((item, True) for item in extra_rows),
-        *((item, True) for item in direct_pos_rows),
-    ]:
-        row_day = report_day(row)
-        if row_day is None or not start_day <= row_day <= end_day:
-            continue
-        category = str(row.get("charge_category") or row.get("category") or row.get("charge_type") or "other").strip().lower()
-        quantity = float(row.get("quantity") or 1)
-        unit_amount = float(row.get("charge_amount") if row.get("charge_amount") is not None else row.get("amount") or 0)
-        total = float(row.get("total") if row.get("total") is not None else unit_amount * quantity)
-        subtotal = float(row.get("subtotal") if row.get("subtotal") is not None else (total if is_extra else unit_amount))
-        net = total if is_extra else float(row.get("amount") or total)
-        currency = _normalize_currency(row.get("currency"))
-        bucket = grouped.setdefault(
-            category,
-            {"_id": category, "count": 0, "subtotal": 0.0, "discount": 0.0, "net": 0.0, "vat": 0.0, "city_tax": 0.0, "total": 0.0, "by_currency": {}},
-        )
-        currency_bucket = bucket["by_currency"].setdefault(
-            currency,
-            {"subtotal": 0.0, "discount": 0.0, "net": 0.0, "vat": 0.0, "city_tax": 0.0, "total": 0.0},
-        )
-        values = {
-            "subtotal": subtotal,
-            "discount": float(row.get("discount_amount") or 0),
-            "net": net,
-            "vat": float(row.get("vat_amount") or 0),
-            "city_tax": float(row.get("tax_amount") or 0),
-            "total": total,
-        }
-        bucket["count"] = int(bucket["count"]) + 1
-        for field, amount in values.items():
-            bucket[field] = float(bucket[field]) + amount
-            currency_bucket[field] = float(currency_bucket[field]) + amount
+    from modules.pms_core.revenue_report import FIELDS
 
-    rows_raw = list(grouped.values())
-
-    rows = []
-    totals = {"count": 0, "subtotal": 0.0, "discount": 0.0, "net": 0.0, "vat": 0.0, "city_tax": 0.0, "total": 0.0}
-    totals_by_currency: dict[str, dict[str, float]] = {}
-    for r in rows_raw:
-        item = {
-            "category": r["_id"] or "other",
-            "count": int(r.get("count") or 0),
-            "subtotal": round(float(r.get("subtotal") or 0.0), 2),
-            "discount": round(float(r.get("discount") or 0.0), 2),
-            "net": round(float(r.get("net") or 0.0), 2),
-            "vat": round(float(r.get("vat") or 0.0), 2),
-            "city_tax": round(float(r.get("city_tax") or 0.0), 2),
-            "total": round(float(r.get("total") or 0.0), 2),
-            "by_currency": {
-                currency: {field: round(float(amount or 0), 2) for field, amount in values.items()}
-                for currency, values in sorted((r.get("by_currency") or {}).items())
-            },
-        }
-        rows.append(item)
-        totals["count"] += item["count"]
-        for k in ("subtotal", "discount", "net", "vat", "city_tax", "total"):
-            totals[k] = round(totals[k] + item[k], 2)
-        for currency, values in item["by_currency"].items():
-            currency_totals = totals_by_currency.setdefault(
-                currency,
-                {"subtotal": 0.0, "discount": 0.0, "net": 0.0, "vat": 0.0, "city_tax": 0.0, "total": 0.0},
-            )
-            for field, amount in values.items():
-                currency_totals[field] = round(currency_totals[field] + amount, 2)
-
-    rows.sort(key=lambda x: x["total"], reverse=True)
-    return {
-        "date_from": date_from,
-        "date_to": date_to,
-        "rows": rows,
-        "totals": totals,
-        "totals_by_currency": totals_by_currency,
-    }
+    # Re-read without the JSON cache: a changed ledger must return 409 rather
+    # than silently export numbers different from the report on screen.
+    result = await revenue_by_category.__wrapped__(date_from, date_to, current_user, _perm)
+    if snapshot != result["snapshot"]:
+        raise HTTPException(409, "Gelir verisi değişti; raporu yenileyip tekrar indirin.")
+    if Workbook is None:
+        raise HTTPException(503, "Excel üreticisi kullanılamıyor")
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Gelir"
+    sheet.append(["Başlangıç", date_from, "Bitiş", date_to])
+    sheet.append(["Kapsam", result["definitions"]["total"]])
+    sheet.append(["Not", result["definitions"]["net"]])
+    sheet.append(["Kategori", "Para birimi", "İşlem", "Ara toplam", "İndirim", "Kaynak net", "KDV", "Konaklama vergisi", "Diğer / ayrıştırılmamış vergi", "Açıklanamayan fark", "Toplam"])
+    for row in result["rows"]:
+        for code, values in row["by_currency"].items():
+            sheet.append([row["label"], code, values["count"], *[values[field] for field in FIELDS]])
+    for code, values in result["totals_by_currency"].items():
+        sheet.append(["TOPLAM", code, values["count"], *[values[field] for field in FIELDS]])
+    for row in sheet.iter_rows(min_row=5, min_col=4):
+        for cell in row:
+            cell.number_format = '#,##0.00;[Red]-#,##0.00'
+    sheet.freeze_panes = "C5"
+    sheet.auto_filter.ref = f"A4:K{sheet.max_row}"
+    sheet.column_dimensions["A"].width = 34
+    for key in "DEFGHIJK":
+        sheet.column_dimensions[key].width = 22
+    sheet.append(["Eksik vergi kırılımlı işlem", result["reconciliation"]["tax_unknown_count"]])
+    sheet.append(["Uyumsuz kaynak hareketi", result["reconciliation"]["issue_count"]])
+    trend = workbook.create_sheet("Günlük Tutarlar")
+    trend.append(["Tarih", "Para birimi", "İşlenen tutar (vergi dahil)"])
+    for row in result["revenue_trend"]:
+        for code in result["totals_by_currency"]:
+            trend.append([row["date"], code, row["revenue_by_currency"].get(code, 0)])
+    room_types = workbook.create_sheet("Konaklama - Oda Tipi")
+    room_types.append(["Oda tipi", "Para birimi", "Yalnız konaklama (vergi dahil)"])
+    for row in result["room_type_revenue"]:
+        for code, amount in row["revenue_by_currency"].items():
+            room_types.append([row["name"], code, amount])
+    issues = workbook.create_sheet("Doğrulama")
+    issues.append(["Kaynak", "Hareket kimliği", "Tarih", "Para birimi", "Açıklanamayan fark", "Açıklama"])
+    for issue in result["reconciliation"]["issues"]:
+        issues.append([issue["source"], issue["id"], issue["date"], issue["currency"], issue["difference"], "; ".join(issue["reasons"])])
+    for page in workbook:
+        for row in page:
+            for cell in row:
+                # Legacy type names and source IDs are data, never formulas.
+                if cell.data_type == "f":
+                    cell.data_type = "s"
+    stream = BytesIO()
+    workbook.save(stream)
+    stream.seek(0)
+    return StreamingResponse(stream, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="gelir_{date_from}_{date_to}.xlsx"'})
 
 
 @router.post("/folio/transfer", response_model=FolioOperation)

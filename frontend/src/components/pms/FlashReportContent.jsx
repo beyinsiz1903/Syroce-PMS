@@ -48,7 +48,7 @@ const FlashReportContent = ({
   const requestId = useRef(0);
   useEffect(() => { setSelectedDate(targetDate || businessDate || pmsBusinessDate); }, [targetDate, businessDate, pmsBusinessDate]);
 
-  const currencies = [...new Set([...Object.keys(reportData?.revenue?.total_by_currency || {}), ...Object.keys(reportData?.revenue?.collected_by_currency || {})])].sort();
+  const currencies = [...new Set([...Object.keys(reportData?.revenue?.total_by_currency || {}), ...Object.keys(reportData?.revenue?.collected_by_currency || {}), ...Object.keys(reportData?.revenue?.operational_adr_by_currency || {})])].sort();
   const currencyCode = currencies.includes(requestedCurrency) ? requestedCurrency : currencies.includes(tenantCurrency) ? tenantCurrency : currencies[0] || tenantCurrency;
   const displayReport = selectFlashCurrency(reportData, currencyCode);
   const fmtMoney = amount => formatCurrency(amount, currencyCode, { locale: 'tr-TR', decimals: 2, compactDecimals: false });
@@ -102,10 +102,12 @@ const FlashReportContent = ({
       <p>Tarih: ${d.date} | Hazırlayan: ${new Date().toLocaleTimeString('tr-TR')}</p>
       <div class="grid">
         <div class="card"><div class="label">Doluluk</div><div class="value">${(d.occupancy?.rate || 0).toFixed(1)}%</div><div>${d.occupancy?.occupied || 0}/${d.occupancy?.total || 0} oda</div></div>
-        <div class="card"><div class="label">ADR</div><div class="value">${fmtMoney(d.kpi?.adr || 0)}</div></div>
-        <div class="card"><div class="label">RevPAR</div><div class="value">${fmtMoney(d.kpi?.revpar || 0)}</div></div>
+        <div class="card"><div class="label">İşlenen ADR (vergi dahil)</div><div class="value">${fmtMoney(d.kpi?.adr || 0)}</div></div>
+        <div class="card"><div class="label">İşlenen RevPAR (vergi dahil)</div><div class="value">${fmtMoney(d.kpi?.revpar || 0)}</div></div>
         <div class="card"><div class="label">Toplam Gelir</div><div class="value">${fmtMoney(totalRev)}</div></div>
       </div>
+      <p>İşlenen tutarlar kayıttaki vergiler dahildir; tahsilat veya rezervasyon bedeli değildir.</p>
+      ${d.revenue?.posting_pending ? `<p>Oda ücretlerinin tamamı henüz işlenmemiş. Rezervasyon bedeline göre oda başı tutar: ${fmtMoney(d.revenue.operational_adr_by_currency?.[currencyCode] ?? 0)}.</p>` : ''}
       <h3>Operasyonel Durum</h3>
       <div class="grid">
         <div class="card"><div class="label">Girişler</div><div class="value">${d.operations?.arrivals || 0}</div></div>
@@ -200,8 +202,13 @@ const FlashReportContent = ({
       </label>}
       <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600" data-testid="flash-scope">
         <p className="font-semibold text-slate-800">Rapor kapsamı: {d.scope?.business_date || d.date}</p>
-        <p className="mt-1">Tüm göstergeler seçili iş gününe aittir. Gelir o gün kaydedilen harcamaları, tahsilat ise o gün alınan ödemeleri gösterir; farklı rezervasyon dönemlerinden avans veya borç tahsilatı içerebilir.</p>
+        <p className="mt-1">Tüm göstergeler seçili iş gününe aittir. İşlenen tutarlar kayıttaki vergiler dahildir; tahsilat o gün alınan ödemelerdir ve başka konaklamaların avans / borç tahsilatını içerebilir. ADR ve RevPAR burada yalnız işlenen oda tutarından hesaplanır.</p>
       </div>
+      {d.revenue?.posting_pending && <div role="status" className="rounded-lg border border-amber-400 bg-amber-50 p-3 text-sm text-amber-950" data-testid="flash-posting-pending">
+        Oda ücretlerinin tamamı henüz işlenmemiş. Aşağıdaki işlenen ADR / RevPAR, rezervasyon bedeli değildir.
+        <p>Rezervasyon bedeline göre oda başı tutar: {fmtMoney(d.revenue.operational_adr_by_currency?.[currencyCode] ?? 0)} · Rezervasyon oda bedeli: {fmtMoney(d.revenue.reservation_room_revenue_by_currency?.[currencyCode] ?? 0)}</p>
+        <a className="underline" href="/app/raporlar?section=forecast_reports">Doluluk / Forecast’i aç</a>
+      </div>}
 
       {/* Ana KPI'lar */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -221,7 +228,7 @@ const FlashReportContent = ({
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-xs text-emerald-700 font-medium">ADR</p>
+                <p className="text-xs text-emerald-700 font-medium">İşlenen ADR (vergi dahil)</p>
                 <p className="text-2xl font-bold text-emerald-900">{fmtMoney(d.kpi?.adr || 0)}</p>
                 <p className="text-xs text-emerald-600 mt-0.5">{currencies.length > 1 ? 'Seçilen para biriminin satılan oda başına katkısı' : 'Satılan oda başına oda geliri'}</p>
               </div>
@@ -233,7 +240,7 @@ const FlashReportContent = ({
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-xs text-indigo-700 font-medium">RevPAR</p>
+                <p className="text-xs text-indigo-700 font-medium">İşlenen RevPAR (vergi dahil)</p>
                 <p className="text-2xl font-bold text-indigo-900">{fmtMoney(d.kpi?.revpar || 0)}</p>
                 <p className="text-xs text-indigo-600 mt-0.5">Mevcut oda başına oda geliri</p>
               </div>

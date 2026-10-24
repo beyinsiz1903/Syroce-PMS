@@ -7,6 +7,7 @@ import { useBusinessDate } from '@/hooks/useBusinessDate';
 import { formatCurrencyBreakdown } from '@/lib/reportCurrency';
 import { validateReportDate } from '@/utils/reportExports';
 import './FrontdeskForecastReport.css';
+import ForecastRoomTypeMatrix from './ForecastRoomTypeMatrix';
 
 const views = [['availability', 'Müsaitlik'], ['movements', 'Geliş–Ayrılış'], ['occupancy', 'Doluluk'], ['revenue', 'Gelir'], ['stay_types', 'Konaklama Tipleri']];
 const percent = value => value == null ? '—' : `%${Number(value).toLocaleString('tr-TR', { maximumFractionDigits: 2 })}`;
@@ -37,6 +38,8 @@ export default function FrontdeskForecastReport() {
   const [query, setQuery] = useState(null);
   const [result, setResult] = useState(null);
   const [view, setView] = useState('availability');
+  const [detailed, setDetailed] = useState(false);
+  const [layout, setLayout] = useState('daily');
   const [basis, setBasis] = useState('physical');
   const [selectedDay, setSelectedDay] = useState('');
   const [chartCurrency, setChartCurrency] = useState('');
@@ -46,7 +49,7 @@ export default function FrontdeskForecastReport() {
   const generation = useRef(0);
   const currentFilters = useRef('');
   const scope = JSON.stringify([first, last, roomType]);
-  currentFilters.current = JSON.stringify([scope, view, basis]);
+  currentFilters.current = JSON.stringify([scope, view, basis, detailed]);
   useEffect(() => {
     setFirst(businessDate); setLast(shift(businessDate, 29)); setRoomType('');
     setQuery({ start_date: businessDate, end_date: shift(businessDate, 29), room_type: '' });
@@ -73,7 +76,8 @@ export default function FrontdeskForecastReport() {
   const matches = result && result.query.start_date === first && result.query.end_date === last && result.query.room_type === roomType;
   const data = matches ? result.data : null;
   const occupancyKey = basis === 'physical' ? 'occupancy_pct' : 'sellable_occupancy_pct';
-  const columns = (data?.columns?.[view] || []).map(column => basis === 'sellable' && view !== 'occupancy' && column.key === 'occupancy_pct'
+  const summaryKeys = ['physical_rooms', 'total_occupied_rooms', 'block_rooms', 'blocked_rooms', 'remaining_rooms', 'occupancy_pct'];
+  const columns = (data?.columns?.[view] || []).filter(column => detailed || view !== 'availability' || summaryKeys.includes(column.key)).map(column => basis === 'sellable' && view !== 'occupancy' && column.key === 'occupancy_pct'
     ? { ...column, key: 'sellable_occupancy_pct', label: 'Doluluk % (satılabilir)' } : column);
   const chartRows = data?.rows.map(row => ({ ...row, label: dateText(row.date), chart_revenue: row.room_revenue_by_currency == null ? null : row.room_revenue_by_currency[chartCurrency] ?? 0 })) || [];
   const knownCurrencies = [...new Set(data?.rows.flatMap(row => Object.keys(row.room_revenue_by_currency || {})) || [])].sort();
@@ -91,7 +95,7 @@ export default function FrontdeskForecastReport() {
     const exportScope = currentFilters.current;
     setExporting(true); setError('');
     try {
-      const response = await api.get('/reports/frontdesk-forecast', { params: { ...result.query, output: 'xlsx', snapshot: data.snapshot, view, basis }, responseType: 'blob' });
+      const response = await api.get('/reports/frontdesk-forecast', { params: { ...result.query, output: 'xlsx', snapshot: data.snapshot, view, basis, detail: detailed ? 'full' : 'summary' }, responseType: 'blob' });
       if (currentFilters.current !== exportScope) throw new Error('Filtre değişti; yeni kapsamı yükleyip çıktıyı yeniden alın.');
       if (!String(response.headers?.['content-type']).includes('spreadsheetml')) throw new Error('Geçerli Excel çıktısı alınamadı.');
       const url = URL.createObjectURL(response.data);
@@ -131,8 +135,13 @@ export default function FrontdeskForecastReport() {
       <div className="forecast-kpis">
         <Kpi label="Toplam dolu oda-gecesi" value={data.totals.occupied_room_nights} note={`${data.totals.booked_room_nights} rezervasyon + ${data.totals.block_room_nights} kalan kesin grup bloğu`} />
         <Kpi label="Dönem doluluğu" value={percent(data.totals[occupancyKey])} note={`${basis === 'physical' ? 'Fiziksel' : 'Satılabilir'} oda-gecesine göre ağırlıklı`} testid="forecast-occupancy-total" />
-        <Kpi label="Rezervasyon oda bedeli" value={moneyText(data.totals.room_revenue_by_currency, data.currency)} note="Tahsilat / kesinleşmiş muhasebe geliri değildir" />
-        <Kpi label="Ort. ücretli oda bedeli" value={moneyText(data.totals.adr_by_currency, data.currency)} note="Comp ve pickup yapılmamış bloklar paydada yok" />
+        {view === 'revenue' ? <>
+          <Kpi label="Rezervasyon oda bedeli" value={moneyText(data.totals.room_revenue_by_currency, data.currency)} note="Tahsilat / kesinleşmiş muhasebe geliri değildir" />
+          <Kpi label="Ort. ücretli oda bedeli" value={moneyText(data.totals.adr_by_currency, data.currency)} note="Comp ve pickup yapılmamış bloklar paydada yok" />
+        </> : <>
+          <Kpi label="İlk gün net kalan" value={data.rows[0]?.remaining_rooms > 0 ? `+${data.rows[0].remaining_rooms}` : data.rows[0]?.remaining_rooms} note="Eksi sayı fazla satışı gösterir" />
+          <Kpi label="İlk gün doluluk" value={percent(data.rows[0]?.[occupancyKey])} note={`${data.rows[0]?.total_occupied_rooms ?? '—'} dolu / ${data.rows[0]?.physical_rooms ?? '—'} fiziksel oda`} />
+        </>}
       </div>
       {data.warnings?.length > 0 && <div role="alert" className="rounded border border-amber-400 bg-amber-50 p-3 text-sm text-amber-950">{data.warnings.map(warning => <p key={warning}>{warning}</p>)}</div>}
       {data.rows.some(row => row.overbooked_rooms > 0) && <p role="alert" className="rounded border border-destructive p-3 text-sm text-destructive">Fazla satış var. Net kalan negatif gösterilir; doluluk %100'e kırpılmaz.</p>}
@@ -140,6 +149,7 @@ export default function FrontdeskForecastReport() {
         <div role="group" aria-label="Forecast görünümü" className="forecast-tabs print:hidden">{views.map(([key, label]) => <Button key={key} type="button" variant={view === key ? 'default' : 'ghost'} aria-pressed={view === key} onClick={() => { setView(key); setSelectedDay(''); }}>{label}</Button>)}</div>
         <div className="p-3 sm:p-4">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2"><h3 className="font-semibold">{views.find(([key]) => key === view)?.[1]} · Günlük görünüm</h3>{view === 'revenue' && <label className="text-sm">Grafik para birimi <select aria-label="Forecast grafik para birimi" value={chartCurrency} onChange={e => setChartCurrency(e.target.value)} className="rounded border bg-background p-1">{currencies.map(code => <option key={code}>{code}</option>)}</select></label>}</div>
+          {view === 'availability' && <div aria-label="Grafik renkleri" className="mb-2 flex flex-wrap gap-x-4 gap-y-1 text-xs">{[['Rezervasyon', '#38bdf8'], ['Kesin grup bloğu (kalan)', '#818cf8'], ['Müsait oda', '#fde68a'], ['Kapalı oda', '#64748b']].map(([label, color]) => <span key={label} className="flex items-center gap-1"><span className="inline-block h-3 w-3 rounded-sm" style={{ backgroundColor: color }} />{label}</span>)}</div>}
           <div className="forecast-chart-scroll" aria-label="Günlük forecast grafiği">
             <div className="forecast-chart" style={{ minWidth: Math.max(700, chartRows.length * 38 + 70) }}>
               <ResponsiveContainer width="100%" height={260}>
@@ -147,7 +157,7 @@ export default function FrontdeskForecastReport() {
                   <CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="label" tick={{ fontSize: 11 }} /><YAxis tick={{ fontSize: 11 }} /><Tooltip contentStyle={tooltipStyle} itemStyle={tooltipStyle} /><Legend formatter={legendLabel} />
                   <Line dataKey={view === 'revenue' ? 'chart_revenue' : occupancyKey} name={view === 'revenue' ? `Rezervasyon oda bedeli (${chartCurrency})` : 'Doluluk %'} stroke="#2563eb" strokeWidth={2} connectNulls={false} />
                 </LineChart> : <BarChart data={chartRows} onClick={chooseChartDay} margin={{ top: 12, right: 20, left: 0, bottom: 0 }} barCategoryGap="12%">
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="label" tick={{ fontSize: 11 }} /><YAxis allowDecimals={false} tick={{ fontSize: 11 }} /><Tooltip contentStyle={tooltipStyle} itemStyle={tooltipStyle} /><Legend formatter={legendLabel} />
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="label" tick={{ fontSize: 11 }} /><YAxis allowDecimals={false} tick={{ fontSize: 11 }} /><Tooltip contentStyle={tooltipStyle} itemStyle={tooltipStyle} />{view !== 'availability' && <Legend formatter={legendLabel} wrapperStyle={{ fontSize: 11 }} />}
                   {(view === 'availability' ? [['booked_rooms', 'Rezervasyon', '#38bdf8'], ['block_rooms', 'Kesin grup bloğu (kalan)', '#818cf8'], ['vacant_rooms', 'Müsait oda', '#fde68a'], ['blocked_rooms', 'Kapalı oda', '#64748b']]
                     : view === 'movements' ? [['arrivals', 'Gelen oda', '#2563eb'], ['departures', 'Ayrılan oda', '#64748b'], ['stayovers', 'Devam eden', '#38bdf8']]
                       : [['comp_rooms', 'Comp', '#38bdf8'], ['house_use_rooms', 'House-use', '#64748b'], ['day_use_rooms', 'Day-use', '#fde68a'], ['group_rooms', 'Pickup grup oda', '#818cf8']]).map(([key, label, fill]) => <Bar key={key} dataKey={key} name={label} fill={fill} stackId={view === 'availability' ? 'rooms' : undefined} isAnimationActive={false}>{view === 'availability' && chartRows.length <= 62 && <LabelList dataKey={key} position="center" formatter={value => value > 0 ? value : ''} fill={key === 'blocked_rooms' ? '#fff' : '#123047'} fontSize={11} />}</Bar>)}
@@ -157,14 +167,15 @@ export default function FrontdeskForecastReport() {
           </div>
           <p className="mt-2 text-xs text-muted-foreground">Grafikte bir güne tıklayarak tablodaki günü vurgulayabilirsiniz. Kapalı oda arıza/bakım blokajıdır; grup bloğu ile aynı şey değildir. Konaklama tipleri birbiriyle örtüşebilir, toplanmaz.</p>
         </div>
-        <div className="forecast-table-scroll"><table className="forecast-table" data-testid="frontdesk-forecast-table">
+        {view === 'availability' && <div className="m-3 flex flex-wrap items-center gap-3 print:hidden"><div role="group" aria-label="Forecast tablo düzeni"><Button type="button" size="sm" variant={layout === 'daily' ? 'default' : 'outline'} aria-pressed={layout === 'daily'} onClick={() => setLayout('daily')}>Günlük liste</Button><Button type="button" size="sm" variant={layout === 'matrix' ? 'default' : 'outline'} aria-pressed={layout === 'matrix'} disabled={!Array.isArray(data.room_type_groups)} onClick={() => setLayout('matrix')}>Oda tipi matrisi</Button></div>{layout === 'daily' && <label className="inline-flex items-center gap-2 text-sm"><input type="checkbox" checked={detailed} onChange={event => setDetailed(event.target.checked)} />Tüm sütunları göster (kişi, hareket, gelir)</label>}</div>}
+        {view === 'availability' && layout === 'matrix' ? <ForecastRoomTypeMatrix data={data} basis={basis} onSelect={day => { setSelectedDay(day); setLayout('daily'); }} /> : <div className="forecast-table-scroll"><table className="forecast-table" data-testid="frontdesk-forecast-table">
           <caption className="sr-only">Ön büro forecast — {views.find(([key]) => key === view)?.[1]}</caption>
           <thead><tr><th scope="col">Tarih</th>{columns.map(column => <th scope="col" key={column.key}>{column.label}</th>)}</tr></thead>
           <tbody>{data.rows.map(row => <tr key={row.date} className={selectedDay === row.date ? 'forecast-selected-day' : ''} aria-selected={selectedDay === row.date}>
             <th scope="row"><button type="button" onClick={() => setSelectedDay(value => value === row.date ? '' : row.date)} aria-label={`${row.date} gününü vurgula`}>{dateText(row.date)}</button><span className="block text-[10px] font-normal text-muted-foreground">{row.basis === 'actual' ? 'Gerçekleşen' : 'Kayıtlı / OTB'}</span></th>
             {columns.map(column => <td key={column.key} className={column.key === 'remaining_rooms' && row.remaining_rooms < 0 ? 'font-bold text-destructive' : ''}>{valueText(row, column)}</td>)}
           </tr>)}</tbody>
-        </table></div>
+        </table></div>}
       </div>
       <details className="rounded-lg border bg-card p-3 text-sm"><summary className="cursor-pointer font-medium">Hesaplama tanımları ve kapsam</summary><div className="mt-2 space-y-2">{Object.entries(data.definitions || {}).map(([key, value]) => <p key={key}>{value}</p>)}{data.rows.filter(row => row.unallocated_group_blocks || row.assignment_conflicts || row.unknown_room_references || row.occupied_blocked_rooms || row.overbooked_rooms).map(row => <p key={row.date}>{row.date}: {row.unallocated_group_blocks || 0} belirsiz grup bloğu · {row.assignment_conflicts || 0} atama çakışması · {row.unknown_room_references || 0} bilinmeyen oda · {row.occupied_blocked_rooms || 0} kapalı odada konaklama · {row.overbooked_rooms || 0} fazla satış.</p>)}</div></details>
       <p className="text-xs text-muted-foreground">İş gününden önce gerçekleşen geceler, iş günü ve sonrasında mevcut kesin rezervasyonlar gösterilir. Ön büro forecast istatistiksel talep tahmini değildir. Grafikteki +/− müsaitlik değerleri ve tablo aynı veri anlık görüntüsünden gelir.</p>

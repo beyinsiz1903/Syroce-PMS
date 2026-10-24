@@ -27,8 +27,8 @@ function payload(params) {
   });
   const revenue = [col('room_revenue_by_currency', 'Rezervasyon oda bedeli', 'money'), col('adr_by_currency', 'Ort. ücretli oda bedeli', 'money')];
   return { start_date: params.start_date, end_date: params.end_date, room_type: params.room_type || null, room_types: ['Standard', 'Suite'],
-    business_date: '2026-10-24', snapshot: 'same-financial-snapshot', currency: 'TRY', rows, warnings: [], definitions: { rooms: 'Kapalı oda ve grup bloğu ayrıdır.' },
-    columns: { availability: [col('physical_rooms', 'Oda kapasitesi'), col('booked_rooms', 'Dolu oda'), col('block_rooms', 'Blok oda'), col('remaining_rooms', 'Net kalan (+/−)'), col('occupancy_pct', 'Doluluk % (fiziksel)', 'percent'), ...revenue],
+    business_date: '2026-10-24', snapshot: 'same-financial-snapshot', currency: 'TRY', rows, room_type_groups: [{ label: 'Standard', rows }], warnings: [], definitions: { rooms: 'Kapalı oda ve grup bloğu ayrıdır.' },
+    columns: { availability: [col('physical_rooms', 'Oda kapasitesi'), col('total_occupied_rooms', 'Toplam dolu oda'), col('booked_rooms', 'Dolu oda'), col('block_rooms', 'Blok oda'), col('remaining_rooms', 'Net kalan (+/−)'), col('occupancy_pct', 'Doluluk % (fiziksel)', 'percent'), ...revenue],
       movements: [col('arrivals', 'Gelen oda'), col('departures', 'Ayrılan oda')], occupancy: [col('occupancy_pct', 'Doluluk % (fiziksel)', 'percent'), col('sellable_occupancy_pct', 'Doluluk % (satılabilir)', 'percent')],
       revenue, stay_types: [col('comp_rooms', 'Comp oda'), col('day_use_rooms', 'Day-use oda')] },
     totals: { occupied_room_nights: rows.length * 5, booked_room_nights: rows.length * 3, block_room_nights: rows.length * 2,
@@ -107,6 +107,9 @@ it('rejects inverted or oversized ranges without a new request', async () => {
 
 it('keeps revenue currencies separate, changes chart/table view, and uses the selected occupancy denominator', async () => {
   render(<FrontdeskForecastReport />); const table = await loaded();
+  expect(table).not.toHaveTextContent('EUR:');
+  expect(table).toHaveTextContent('Toplam dolu oda');
+  fireEvent.click(screen.getByLabelText('Tüm sütunları göster (kişi, hareket, gelir)'));
   expect(table).toHaveTextContent('EUR:'); expect(table).toHaveTextContent('USD:'); expect(table).not.toHaveTextContent('₺');
   fireEvent.change(screen.getByLabelText('Forecast doluluk bazı'), { target: { value: 'sellable' } });
   expect(screen.getByTestId('forecast-occupancy-total')).toHaveTextContent('%62,5');
@@ -127,7 +130,7 @@ it('binds export to the displayed snapshot/view/basis and refuses changed data',
   fireEvent.click(screen.getByRole('button', { name: 'Excel', exact: true }));
   await screen.findByText(/Forecast verisi değişti/);
   expect(api.get).toHaveBeenLastCalledWith('/reports/frontdesk-forecast', { params: { start_date: '2026-10-24', end_date: '2026-11-22', room_type: '',
-    output: 'xlsx', snapshot: 'same-financial-snapshot', view: 'revenue', basis: 'sellable' }, responseType: 'blob' });
+    output: 'xlsx', snapshot: 'same-financial-snapshot', view: 'revenue', basis: 'sellable', detail: 'summary' }, responseType: 'blob' });
   expect(screen.queryByTestId('frontdesk-forecast-table')).not.toBeInTheDocument();
 });
 
@@ -145,4 +148,18 @@ it('rejects an incomplete response instead of displaying empty subviews as a val
   render(<FrontdeskForecastReport />);
   expect(await screen.findByRole('alert')).toHaveTextContent('Forecast yanıtı');
   expect(screen.queryByTestId('frontdesk-forecast-table')).not.toBeInTheDocument();
+});
+
+it('reuses the daily snapshot for the room-type matrix and paginates all dates for printing', async () => {
+  render(<FrontdeskForecastReport />); await loaded();
+  const calls = api.get.mock.calls.length;
+  fireEvent.click(screen.getByRole('button', { name: 'Oda tipi matrisi', exact: true }));
+  expect(screen.getByTestId('forecast-room-type-matrix')).toHaveTextContent('Standard');
+  expect(document.querySelectorAll('.forecast-matrix-print-page')).toHaveLength(5);
+  expect(api.get).toHaveBeenCalledTimes(calls);
+  fireEvent.change(screen.getByLabelText('Forecast doluluk bazı'), { target: { value: 'sellable' } });
+  expect(screen.getByTestId('forecast-room-type-matrix')).toHaveTextContent('%62,5');
+  fireEvent.click(within(screen.getByTestId('forecast-room-type-matrix')).getAllByRole('button')[0]);
+  expect(screen.getByTestId('frontdesk-forecast-table')).toBeInTheDocument();
+  expect(within(screen.getByTestId('frontdesk-forecast-table')).getAllByRole('row')[1]).toHaveAttribute('aria-selected', 'true');
 });

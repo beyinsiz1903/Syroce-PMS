@@ -31,6 +31,7 @@ from modules.pms_core.reporting_financials import (
 )
 from modules.pms_core.reporting_ledger import charge_amount as ledger_charge_amount
 from modules.pms_core.reporting_ledger import charge_category, posted_revenue_rows
+from modules.pms_core.revenue_categories import FNB_CATEGORIES as FNB_CHARGE_CATEGORIES
 from modules.pms_core.role_permission_service import require_op
 from modules.pms_core.room_revenue_reporting import room_period_performance
 from modules.pms_core.stay_night_metrics import calculate_stay_night_metrics, load_stay_night_metrics, room_block_overlap_match, stay_overlap_match
@@ -69,27 +70,6 @@ NON_CASH_PAYMENT_METHODS = {"discount", "city_ledger", "complimentary", "correct
 IN_HOUSE_STATUSES = {"checked_in", "in_house", "checked_out"}
 ARRIVAL_STATUSES = {"confirmed", "guaranteed", "checked_in", "checked_out"}
 ROOM_CHARGE_CATEGORIES = {"room", "accommodation", "room_charge"}
-FNB_CHARGE_CATEGORIES = {
-    "alcohol",
-    "alcoholic_beverage",
-    "appetizer",
-    "bar",
-    "beverage",
-    "cafe",
-    "dessert",
-    "drink",
-    "fb",
-    "f&b",
-    "fnb",
-    "food",
-    "food_and_beverage",
-    "food_beverage",
-    "mini_bar",
-    "minibar",
-    "restaurant",
-    "room_service",
-}
-
 _FX_RECEIPT_RE = re.compile(
     r"\[Döviz Çevirici\]\s*[\d.,]+\s+[A-Z]{3}\s*=\s*([\d.,]+)\s+([A-Z]{3})",
     re.IGNORECASE,
@@ -248,7 +228,7 @@ async def _revenue_attribution(tenant_id: str, charges: list[dict], bookings: li
     if missing_ids:
         related = await db.bookings.find(
             {"tenant_id": tenant_id, "id": {"$in": missing_ids}},
-            {"_id": 0, "id": 1, "room_id": 1, "room_type": 1, "booking_source": 1},
+            {"_id": 0, "id": 1, "room_id": 1, "room_type": 1, "room_type_id": 1, "booking_source": 1},
         ).to_list(None)
         booking_map.update({str(row["id"]): row for row in related})
     return charges, booking_map
@@ -706,6 +686,7 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
                 "status": 1,
                 "booking_source": 1,
                 "room_type": 1,
+                "room_type_id": 1,
                 "created_at": 1,
                 "updated_at": 1,
                 "cancelled_at": 1,
@@ -834,6 +815,10 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
         ).to_list(None),
     )
     rooms, all_bk, in_house, hk_tasks, maint_open, maint_completed, pending_invoices, paid_invoices, all_guests, all_payments, cash_movement_payments, prev_bookings, ly_bookings, room_blocks = results
+    from modules.pms_core.report_room_types import load_room_type_labels
+
+    type_labels = await load_room_type_labels(db, tenant_id, rooms)
+    rooms, all_bk = type_labels.normalize(rooms), type_labels.normalize(all_bk)
     all_bk = [{**booking, "currency": currency_code(booking.get("currency"), native_currency),
         "status": {"in_house": "checked_in", "noshow": "no_show", "canceled": "cancelled"}.get(str(booking.get("status") or "").strip().lower(), str(booking.get("status") or "").strip().lower())} for booking in all_bk]
     all_payments = deduplicate_report_payments(await resolve_ledger_currencies(all_payments, tenant_id, database=db))
@@ -1263,7 +1248,7 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool, target_date: 
     for charge in attributed_charges:
         booking = revenue_bookings.get(str(charge.get("booking_id"))) or {}
         room_type = booking.get("room_type") or rooms_by_id.get(str(booking.get("room_id")), {}).get("room_type")
-        rt = _normalized_room_type(room_type) if room_type else "Eşleştirilmemiş"
+        rt = _normalized_room_type(type_labels(room_type)) if room_type else "Eşleştirilmemiş"
         # Retired types and unassigned POS revenue have no current inventory,
         # but still reconcile to the period ledger rather than disappearing.
         row = room_type_occ.setdefault(rt, {"total": 0, "occupied": 0, "occupancy": 0, "revenue": 0, "revenue_by_currency": {}})

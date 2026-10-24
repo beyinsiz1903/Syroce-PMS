@@ -96,13 +96,13 @@ export default function ForecastReportsPage({ initialTab = 'operational' }) {
   const paceMerged = pace ? mergePaceSeries(pace.current, pace.compare) : [];
 
   return (
-    <div className="container mx-auto p-4 sm:p-6 space-y-4 max-w-7xl min-w-0">
+    <div className="space-y-4 min-w-0">
       <div>
         <h2 className="text-2xl font-semibold flex items-center gap-2">
-          <TrendingUp className="h-6 w-6" /> Forecast ve Rezervasyon Raporları
+          <TrendingUp className="h-6 w-6" /> Doluluk / Forecast
         </h2>
         <p className="text-sm text-muted-foreground">
-          Günlük müsaitlik, doluluk, geliş–ayrılış ve rezervasyon bedelleri. İstatistiksel tahmin ile kayıtlı ön büro forecast'i ayrı izlenir.
+          Tarih tarih dolu oda, kalan oda ve doluluk yüzdesi.
         </p>
       </div>
 

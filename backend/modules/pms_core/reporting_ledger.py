@@ -4,19 +4,17 @@ import asyncio
 from datetime import UTC, date, datetime, time, timedelta
 
 from core.business_date_service import accounting_period_match
-from modules.pms_core.report_money import money, resolve_ledger_currencies
+from modules.pms_core.report_money import money, resolve_ledger_currencies, rounded
+from modules.pms_core.revenue_categories import charge_category  # noqa: F401 — public shared API
 
 
 def charge_amount(row: dict) -> float:
     for field in ("total", "charge_amount", "amount"):
         if row.get(field) is not None:
-            return float(money(row[field] or 0))
+            if field == "charge_amount" and row.get("report_source") == "extra":
+                return rounded(money(row[field]) * money(row.get("quantity") if row.get("quantity") is not None else 1))
+            return rounded(row[field] or 0)
     return 0.0
-
-
-def charge_category(row: dict) -> str:
-    category = str(row.get("charge_category") or row.get("category") or row.get("charge_type") or "other").strip().lower()
-    return "room" if category in {"room", "rooms", "room_charge", "accommodation", "lodging", "konaklama"} else category
 
 
 async def posted_revenue_rows(tenant_id: str, start: date, end: date, *, database, fallback_currency: str | None = None) -> list[dict]:
@@ -44,6 +42,7 @@ async def posted_revenue_rows(tenant_id: str, start: date, end: date, *, databas
     }
     projection = {
         "_id": 0,
+        "id": 1,
         "charge_category": 1,
         "category": 1,
         "charge_type": 1,
@@ -59,6 +58,17 @@ async def posted_revenue_rows(tenant_id: str, start: date, end: date, *, databas
         "charge_date": 1,
         "posted_at": 1,
         "created_at": 1,
+        "service_category": 1,
+        "revenue_category": 1,
+        "subtotal": 1,
+        "discount_amount": 1,
+        "quantity": 1,
+        "unit_price": 1,
+        "vat_amount": 1,
+        "tax_amount": 1,
+        "tax_breakdown": 1,
+        "tax_inclusive": 1,
+        "posted_by": 1,
     }
     folio_rows, extra_rows, pos_rows = await asyncio.gather(
         # Financial reports may cover high-volume F&B and chain properties.
@@ -73,7 +83,7 @@ async def posted_revenue_rows(tenant_id: str, start: date, end: date, *, databas
                 **report_period_match(
                     legacy_period("closed_at"), legacy_period("created_at", "closed_at")),
             },
-            {"_id": 0, "id": 1, "total_amount": 1, "grand_total": 1, "currency": 1, "business_date": 1, "closed_at": 1, "created_at": 1},
+            {"_id": 0, "id": 1, "total_amount": 1, "grand_total": 1, "currency": 1, "business_date": 1, "closed_at": 1, "created_at": 1, "tax_amount": 1, "vat_amount": 1, "tax_breakdown": 1, "discount_amount": 1},
         ).to_list(None),
     )
     # Finalized POS ledger is authoritative; orders are only a legacy fallback.
@@ -131,16 +141,26 @@ async def posted_revenue_rows(tenant_id: str, start: date, end: date, *, databas
             value = gross - tip
             if row.get("payment_type") == "refund" or row.get("status") in {"refunded", "refund"}:
                 value = -(abs(gross) - abs(tip))
-            transaction_rows.append({"category": "fnb", "total": value,
+            transaction_rows.append({"id": transaction_id, "category": "fnb", "total": value,
+                # A POS tax_amount is aggregate tax, unlike legacy folio's
+                # accommodation-only field. Keep provenance explicit.
+                "report_tax_kind": "aggregate", "tax_amount": row.get("tax_amount"),
+                "vat_amount": row.get("vat_amount"), "tax_breakdown": row.get("tax_breakdown"),
+                "discount_amount": row.get("discount_amount"),
+                "report_refund": value < 0, "source_pos_order_id": order_id,
                 "currency": row.get("currency") or order_currencies.get(order_id),
                 "business_date": row.get("business_date") or row.get("transaction_date"), "date": row.get("created_at")})
     direct_pos_rows = [
         {
+            "id": row.get("id"),
             "category": "fnb",
             "total": row.get("grand_total") if row.get("grand_total") is not None else row.get("total_amount", 0),
             "currency": row.get("currency"),
             "business_date": row.get("business_date"),
             "date": row.get("closed_at") or row.get("created_at"),
+            "report_tax_kind": "aggregate", "tax_amount": row.get("tax_amount"),
+            "vat_amount": row.get("vat_amount"), "tax_breakdown": row.get("tax_breakdown"),
+            "discount_amount": row.get("discount_amount"),
         }
         for row in pos_rows
         if str(row.get("id") or "") not in represented_pos_ids | settled_ids

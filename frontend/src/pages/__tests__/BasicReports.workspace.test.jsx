@@ -17,7 +17,7 @@ vi.mock('recharts', () => {
   const Empty = () => null;
   return { AreaChart: Container, BarChart: Container, ComposedChart: Container, LineChart: Container, PieChart: Container,
     ResponsiveContainer: Container, Pie: Container, Area: Empty, Bar: Empty, Line: Empty, Cell: Empty,
-    XAxis: Empty, YAxis: Empty, Tooltip: Empty, Legend: Empty, CartesianGrid: Empty };
+    XAxis: Empty, YAxis: Empty, Tooltip: Empty, Legend: Empty, LabelList: Empty, CartesianGrid: Empty };
 });
 
 const daily = { currency: 'EUR', occupancy: {}, movements: {}, revenue: { by_category: {} }, payments: { by_method: {} }, ledger: {}, balance_check: {} };
@@ -31,6 +31,13 @@ beforeEach(() => {
 });
 
 describe('Complete active report workspace', () => {
+  it('lands old occupancy bookmarks on the single forecast workspace', async () => {
+    open('occupancy');
+    expect(screen.getByTestId('report-active-content')).toHaveAttribute('data-report-section', 'forecast_reports');
+    expect(screen.getByTestId('report-nav-forecast_reports')).toHaveTextContent('Doluluk / Forecast');
+    expect(screen.queryByTestId('report-nav-occupancy')).not.toBeInTheDocument();
+    await screen.findByTestId('section-forecast-reports');
+  });
   it('renders the unassigned revenue bucket with a human-readable name and no invented bookings', async () => {
     fetchJson.mockResolvedValue({ ...payload('2026-10-07'), booking_sources: {
       distribution: { unassigned: 0 }, revenue: { unassigned: 30 }, revenue_by_currency: { unassigned: { EUR: 30 } },
@@ -67,24 +74,28 @@ describe('Complete active report workspace', () => {
     expect(fetchJson).not.toHaveBeenCalled();
   });
 
-  it('loads the self-contained occupancy matrix only when selected and mounts one reader', async () => {
-    get.mockImplementation(async (_url, { params }) => ({ data: {
-      ...params, business_date: '2026-10-07', snapshot: 'verified', room_types: [], room_type_groups: [],
-      rows: [{ date: params.start_date, physical_rooms: 20, available_rooms: 20, expected_rooms: 10, expected_occupancy: 50 }],
-      totals: {},
-    } }));
+  it('uses one forecast reader for the daily list and room-type matrix, including old occupancy URLs', async () => {
+    get.mockImplementation(async (_url, { params }) => {
+      const rows = Array.from({ length: 30 }, (_, index) => ({ date: new Date(Date.UTC(2026, 9, 7 + index)).toISOString().slice(0, 10), physical_rooms: 20, available_rooms: 20, total_occupied_rooms: 10, remaining_rooms: 10, occupancy_pct: 50 }));
+      const columns = [{ key: 'total_occupied_rooms', label: 'Toplam dolu oda', type: 'number' }];
+      return { data: { ...params, business_date: '2026-10-07', snapshot: 'verified', room_types: [], room_type_groups: [], rows,
+        columns: Object.fromEntries(['availability', 'occupancy', 'revenue', 'movements', 'stay_types'].map(key => [key, columns])), totals: {} } };
+    });
     open();
     await screen.findByTestId('section-overview');
     expect(get).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByTestId('report-nav-occupancy'));
-    expect(await screen.findByTestId('occupancy-matrix')).toHaveTextContent('%50');
-    expect(get).toHaveBeenCalledExactlyOnceWith('/reports/occupancy-calendar', {
-      params: { start_date: '2026-10-07', end_date: '2026-10-20', room_type: '' },
+    expect(screen.queryByTestId('report-nav-occupancy')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('report-nav-forecast_reports'));
+    await screen.findByTestId('frontdesk-forecast-table');
+    fireEvent.click(screen.getByRole('button', { name: 'Oda tipi matrisi', exact: true }));
+    expect(await screen.findByTestId('forecast-room-type-matrix')).toHaveTextContent('%50');
+    expect(get).toHaveBeenCalledExactlyOnceWith('/reports/frontdesk-forecast', {
+      params: { start_date: '2026-10-07', end_date: '2026-11-05', room_type: '' },
     });
     expect(screen.queryByTestId('product-state')).not.toBeInTheDocument();
     fireEvent.click(screen.getByTestId('report-nav-overview'));
     await screen.findByTestId('section-overview');
-    expect(screen.queryByTestId('occupancy-matrix')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('forecast-room-type-matrix')).not.toBeInTheDocument();
   });
 
   it('keeps the daily reconciliation picker synchronized with the printable report date', async () => {

@@ -1,247 +1,134 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import axios from 'axios';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { ReceiptText, Calendar, TrendingUp, Utensils, RefreshCw } from 'lucide-react';
-import { BarChart, Bar, Cell, ComposedChart, Line, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
-import { COLORS, formatCurrency, KPICard, CustomTooltip, SectionHeader } from './ReportHelpers';
-import { useTranslation } from 'react-i18next';
-import { roomRevenueSourceLabel } from '@/lib/reportCurrency';
-const CATEGORY_LABELS = {
-  room: 'Konaklama',
-  food: 'Yiyecek',
-  beverage: 'İçecek',
-  alcohol: 'Alkollü İçecek',
-  alcoholic_beverage: 'Alkollü İçecek',
-  appetizer: 'Başlangıç',
-  dessert: 'Tatlı',
-  drink: 'İçecek',
-  fb: 'Yeme & İçecek',
-  fnb: 'Yeme & İçecek',
-  'f&b': 'Yeme & İçecek',
-  food_beverage: 'Yeme & İçecek',
-  food_and_beverage: 'Yeme & İçecek',
-  cafe: 'Kafe',
-  restaurant: 'Restoran',
-  room_service: 'Oda Servisi',
-  minibar: 'Minibar',
-  spa: 'Spa',
-  laundry: 'Çamaşır',
-  phone: 'Telefon',
-  internet: 'İnternet',
-  parking: 'Otopark',
-  city_tax: 'Şehir Vergisi',
-  service_charge: 'Servis Bedeli',
-  other: 'Diğer'
-};
-const CategoryMoney = ({ breakdown, field, fallback = 0, discount = false }) => {
-  const entries = Object.entries(breakdown || {})
-    .map(([currency, values]) => [currency, Number(values?.[field] || 0)])
-    .filter(([, amount]) => amount !== 0);
-  if (!entries.length && Object.keys(breakdown || {}).length) return <>{discount ? '0,00' : '—'}</>;
-  if (!entries.length) return <>{discount ? '0,00' : formatCurrency(fallback)}</>;
-  return <div className="space-y-0.5">{entries.map(([currency, amount]) => (
-    <div key={currency}>{discount ? `−${formatCurrency(Math.abs(amount), currency)}` : formatCurrency(amount, currency)}</div>
-  ))}</div>;
-};
-const localIsoDate = value => {
-  const date = value || new Date();
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-};
-const isoToday = () => localIsoDate(new Date());
-const CategoryRevenueCard = ({ reportDate, reportPeriod }) => {
-  const {
-    t
-  } = useTranslation();
-  const initialTo = reportDate || isoToday();
-  const initialFrom = reportPeriod === 'daily' ? initialTo : (() => {
-    const date = new Date(`${initialTo}T12:00:00`);
-    date.setDate(date.getDate() - 29);
-    return localIsoDate(date);
-  })();
-  const [from, setFrom] = useState(initialFrom);
-  const [to, setTo] = useState(initialTo);
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { formatCurrencyBreakdown } from '@/lib/reportCurrency';
+import { validateReportDate } from '@/utils/reportExports';
+
+const fields = [['subtotal', 'Ara toplam'], ['discount', 'İndirim'], ['net', 'Net (vergi hariç)'], ['vat', 'KDV'], ['city_tax', 'Konaklama vergisi'], ['other_tax', 'Diğer / ayrıştırılmamış vergi'], ['difference', 'Açıklanamayan fark'], ['total', 'Toplam (vergi dahil)']];
+const dayText = day => new Date(`${day}T12:00:00Z`).toLocaleDateString('tr-TR', { day: '2-digit', month: 'short', timeZone: 'UTC' });
+const moneyText = (value, code) => value == null ? `Doğrulanamadı (${code})` : formatCurrencyBreakdown({ [code]: value }, 0, code);
+const axisText = value => new Intl.NumberFormat('tr-TR', { maximumFractionDigits: 2, notation: Math.abs(value) >= 10000 ? 'compact' : 'standard' }).format(value);
+const shift = (day, offset) => { const value = validateReportDate(day); value.setUTCDate(value.getUTCDate() + offset); return value.toISOString().slice(0, 10); };
+const rangeFor = (day, period) => [period === 'daily' ? day : shift(day, -29), day];
+function Amounts({ values, field }) {
+  const entries = Object.entries(values || {});
+  if (!entries.length) return '—';
+  return entries.map(([code, value]) => <div key={code}>{moneyText(field ? value[field] : value, code)}</div>);
+}
+
+export default function RevenueSection({ reportDate, reportPeriod = 'monthly' }) {
+  const initial = rangeFor(reportDate || new Date().toISOString().slice(0, 10), reportPeriod);
+  const [first, setFirst] = useState(initial[0]);
+  const [last, setLast] = useState(initial[1]);
+  const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [data, setData] = useState(null);
   const [error, setError] = useState('');
-  const requestId = useRef(0);
-  const load = useCallback(async () => {
-    const request = ++requestId.current;
-    setData(null);
-    if (!from || !to || from > to) {
-      setError('Geçerli bir tarih aralığı seçin; başlangıç bitişten sonra olamaz.');
-      setLoading(false);
+  const [details, setDetails] = useState(false);
+  const [currency, setCurrency] = useState('');
+  const [revision, setRevision] = useState(0);
+  const [exporting, setExporting] = useState(false);
+  const generation = useRef(0);
+  const activeScope = useRef('');
+  const scope = JSON.stringify([first, last]);
+  activeScope.current = scope;
+  useEffect(() => {
+    const [start, end] = rangeFor(reportDate || new Date().toISOString().slice(0, 10), reportPeriod);
+    setFirst(start); setLast(end);
+  }, [reportDate, reportPeriod]);
+  useEffect(() => {
+    const request = ++generation.current;
+    let alive = true;
+    setReport(null); setError(''); setLoading(false);
+    try {
+      const days = (validateReportDate(last) - validateReportDate(first)) / 86400000;
+      if (days < 0 || days > 365) throw new Error('Geçerli bir tarih aralığı seçin (en fazla 366 gün).');
+    } catch {
+      setError('Geçerli bir tarih aralığı seçin; başlangıç bitişten sonra olamaz (en fazla 366 gün).');
       return;
     }
     setLoading(true);
-    setError('');
-    try {
-      const res = await axios.get(`/folio/reports/revenue-by-category`, {
-        params: {
-          date_from: from,
-          date_to: to
-        }
-      });
-      if (request === requestId.current) setData(res.data);
-    } catch (e) {
-      if (request === requestId.current) setError(e.response?.data?.detail || 'Yüklenemedi');
-    } finally {
-      if (request === requestId.current) setLoading(false);
-    }
-  }, [from, to]);
-  useEffect(() => {
-    load();
-    return () => { requestId.current += 1; };
-  }, [load]);
-  useEffect(() => {
-    setFrom(initialFrom);
-    setTo(initialTo);
-  }, [initialFrom, initialTo]);
+    axios.get('/folio/reports/revenue-by-category', { params: { date_from: first, date_to: last } }).then(({ data }) => {
+      if (!alive || request !== generation.current) return;
+      if (data.date_from !== first || data.date_to !== last || !Array.isArray(data.rows) || !data.totals_by_currency || !data.snapshot) throw new Error('Gelir yanıtı seçili tarih aralığıyla eşleşmiyor.');
+      setReport({ scope, data });
+      setCurrency(previous => previous in data.totals_by_currency ? previous : Object.keys(data.totals_by_currency)[0] || 'TRY');
+    }).catch(e => { if (alive && request === generation.current) setError(e.response?.data?.detail || e.message || 'Gelir alınamadı.'); })
+      .finally(() => { if (alive && request === generation.current) setLoading(false); });
+    return () => { alive = false; };
+  }, [first, last, scope, revision]);
+  const data = report?.scope === scope ? report.data : null;
+  const currencies = Object.keys(data?.totals_by_currency || {});
+  const visibleFields = details ? fields : fields.filter(([key]) => ['net', 'total'].includes(key));
   const rows = data?.rows || [];
-  const totals = data?.totals;
-  return <Card>
-      <CardHeader className="pb-3">
-        <CardTitle className="text-sm flex flex-col sm:flex-row sm:flex-wrap items-start sm:items-center justify-between gap-3">
-          <span>{t('cm.pages_reports_RevenueSection.kategori_bazli_gelir')}</span>
-          <div className="grid grid-cols-2 gap-2 w-full sm:flex sm:w-auto sm:flex-wrap sm:items-end">
-            <div className="min-w-0">
-              <Label className="text-[10px] text-gray-500">{t('cm.pages_reports_RevenueSection.baslangic')}</Label>
-              <Input type="date" aria-label="Kategori geliri başlangıç tarihi" value={from} onChange={e => setFrom(e.target.value)} className="h-8 text-xs w-full min-w-0 sm:w-36" />
-            </div>
-            <div className="min-w-0">
-              <Label className="text-[10px] text-gray-500">{t('cm.pages_reports_RevenueSection.bitis')}</Label>
-              <Input type="date" aria-label="Kategori geliri bitiş tarihi" value={to} onChange={e => setTo(e.target.value)} className="h-8 text-xs w-full min-w-0 sm:w-36" />
-            </div>
-            <Button size="sm" variant="outline" onClick={load} disabled={loading} className="h-8 col-span-2 sm:col-auto">
-              <RefreshCw className={`w-3 h-3 mr-1 ${loading ? 'animate-spin' : ''}`} />
-              {t('cm.pages_reports_RevenueSection.yenile')}
-            </Button>
-          </div>
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        {error && <div role="alert" className="text-xs text-red-600 mb-2">{error}</div>}
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs">
-            <thead className="bg-gray-50 text-gray-600">
-              <tr>
-                <th className="text-left p-2">Kategori</th>
-                <th className="text-right p-2">İşlem Sayısı</th>
-                <th className="text-right p-2">{t('cm.pages_reports_RevenueSection.ara_toplam')}</th>
-                <th className="text-right p-2">{t('cm.pages_reports_RevenueSection.indirim')}</th>
-                <th className="text-right p-2">Net</th>
-                <th className="text-right p-2">KDV</th>
-                <th className="text-right p-2">{t('cm.pages_reports_RevenueSection.sehir_vergisi')}</th>
-                <th className="text-right p-2">{t('cm.pages_reports_RevenueSection.toplam')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.length === 0 ? <tr><td colSpan={8} className="text-center p-6 text-gray-400">{loading ? 'Yükleniyor…' : error ? 'Veri alınamadı.' : t('cm.pages_reports_RevenueSection.bu_tarih_araliginda_islem_yok')}</td></tr> : rows.map(r => <tr key={r.category} className="border-t">
-                  <td className="p-2 font-medium">{CATEGORY_LABELS[r.category] || r.category}</td>
-                  <td className="p-2 text-right">{r.count}</td>
-                  <td className="p-2 text-right"><CategoryMoney breakdown={r.by_currency} field="subtotal" fallback={r.subtotal} /></td>
-                  <td className="p-2 text-right text-amber-700"><CategoryMoney breakdown={r.by_currency} field="discount" fallback={r.discount} discount /></td>
-                  <td className="p-2 text-right"><CategoryMoney breakdown={r.by_currency} field="net" fallback={r.net} /></td>
-                  <td className="p-2 text-right"><CategoryMoney breakdown={r.by_currency} field="vat" fallback={r.vat} /></td>
-                  <td className="p-2 text-right"><CategoryMoney breakdown={r.by_currency} field="city_tax" fallback={r.city_tax} /></td>
-                  <td className="p-2 text-right font-semibold"><CategoryMoney breakdown={r.by_currency} field="total" fallback={r.total} /></td>
-                </tr>)}
-            </tbody>
-            {totals && rows.length > 0 && <tfoot className="bg-gray-100 font-semibold">
-                <tr>
-                  <td className="p-2">TOPLAM</td>
-                  <td className="p-2 text-right">{totals.count}</td>
-                  <td className="p-2 text-right"><CategoryMoney breakdown={data?.totals_by_currency} field="subtotal" fallback={totals.subtotal} /></td>
-                  <td className="p-2 text-right text-amber-700"><CategoryMoney breakdown={data?.totals_by_currency} field="discount" fallback={totals.discount} discount /></td>
-                  <td className="p-2 text-right"><CategoryMoney breakdown={data?.totals_by_currency} field="net" fallback={totals.net} /></td>
-                  <td className="p-2 text-right"><CategoryMoney breakdown={data?.totals_by_currency} field="vat" fallback={totals.vat} /></td>
-                  <td className="p-2 text-right"><CategoryMoney breakdown={data?.totals_by_currency} field="city_tax" fallback={totals.city_tax} /></td>
-                  <td className="p-2 text-right"><CategoryMoney breakdown={data?.totals_by_currency} field="total" fallback={totals.total} /></td>
-                </tr>
-              </tfoot>}
-          </table>
-        </div>
-      </CardContent>
-    </Card>;
-};
-const RevenueSection = ({
-  data,
-  s,
-  pc,
-  roomTypeData,
-  reportPeriod,
-  reportDate
-}) => {
-  const {
-    t
-  } = useTranslation();
-  const isDaily = reportPeriod === 'daily';
-  const roomTypeRevenueCurrencies = new Set(roomTypeData.flatMap((row) => Object.entries(row.revenueByCurrency || {})
-    .filter(([, amount]) => Number(amount) !== 0)
-    .map(([currency]) => currency)));
-  const revenueTrendCurrencies = new Set((data?.revenue_trend || []).flatMap((row) => Object.entries(row.revenue_by_currency || {})
-    .filter(([, amount]) => Number(amount) !== 0)
-    .map(([currency]) => currency)));
-  const hasMixedRoomTypeRevenue = roomTypeRevenueCurrencies.size > 1;
-  const hasMixedRevenueTrend = revenueTrendCurrencies.size > 1;
-  const roomTypeRevenueCurrency = [...roomTypeRevenueCurrencies][0] || 'TRY';
-  const revenueTrendCurrency = [...revenueTrendCurrencies][0] || 'TRY';
-  return <div className="space-y-6" data-testid="section-revenue">
-    <SectionHeader title="Gelir Raporu" description={t('cm.pages_reports_RevenueSection.detayli_gelir_analizi_ve_trendler')} />
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-      <KPICard title="Seçili Gün Folyoya İşlenen Gelir" value={s.today_revenue} currencyBreakdown={s.today_revenue_by_currency} icon={ReceiptText} color="green" />
-      <KPICard title={isDaily ? `Seçili Gün Oda Geliri (${roomRevenueSourceLabel(s.room_revenue_source)})` : 'Son 7 Gün Folyoya İşlenen Gelir'} value={isDaily ? s.today_room_revenue : pc.week_revenue} currencyBreakdown={isDaily ? s.today_room_revenue_by_currency : pc.week_revenue_by_currency} icon={Calendar} color="blue" />
-      <KPICard title={isDaily ? 'Önceki Gün Folyoya İşlenen Gelir' : 'Son 30 Gün Folyoya İşlenen Gelir'} value={isDaily ? pc.prev_month_revenue : pc.month_revenue} currencyBreakdown={isDaily ? pc.prev_month_revenue_by_currency : pc.month_revenue_by_currency} prevValue={isDaily ? undefined : pc.prev_month_revenue} prevCurrencyBreakdown={pc.prev_month_revenue_by_currency} icon={TrendingUp} color="purple" />
-      <KPICard title="Yiyecek ve İçecek Geliri (Seçili Gün)" value={s.fnb_revenue} currencyBreakdown={s.fnb_revenue_by_currency} icon={Utensils} color="amber" />
+  const trend = (data?.revenue_trend || []).map(row => ({ ...row, label: dayText(row.date), value: row.revenue_by_currency?.[currency] ?? 0 }));
+  const roomTypes = (data?.room_type_revenue || []).map(row => ({ ...row, value: row.revenue_by_currency?.[currency] ?? 0 }));
+  const download = async () => {
+    if (!data || exporting) return;
+    const requestedScope = scope;
+    setExporting(true); setError('');
+    try {
+      const response = await axios.get('/folio/reports/revenue-by-category/excel', { params: { date_from: first, date_to: last, snapshot: data.snapshot }, responseType: 'blob' });
+      if (activeScope.current !== requestedScope) return;
+      if (!String(response.headers?.['content-type']).includes('spreadsheetml')) throw new Error('Geçerli Excel çıktısı alınamadı.');
+      const url = URL.createObjectURL(response.data), link = document.createElement('a');
+      link.href = url; link.download = `gelir_${first}_${last}.xlsx`; document.body.appendChild(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (e) {
+      if (activeScope.current !== requestedScope) return;
+      if (e.response?.status === 409) { setReport(null); setError('Gelir verisi değişti. Yenile düğmesiyle tekrar yükleyin.'); }
+      else setError(e.message || 'Excel indirilemedi.');
+    } finally { setExporting(false); }
+  };
+  return <section data-testid="section-revenue" className="space-y-4">
+    <div><h2 className="text-xl font-semibold">Gelir Raporu</h2><p className="text-sm text-muted-foreground">Tek tarih aralığı · aynı defterden kart, grafik, kategori ve Excel</p></div>
+    <div className="flex flex-wrap items-end gap-3 rounded-lg border bg-card p-3 print:hidden">
+      <label className="text-sm">Başlangıç<input className="block rounded border bg-background p-2" aria-label="Gelir başlangıç tarihi" type="date" value={first} onChange={e => setFirst(e.target.value)} /></label>
+      <label className="text-sm">Bitiş<input className="block rounded border bg-background p-2" aria-label="Gelir bitiş tarihi" type="date" value={last} onChange={e => setLast(e.target.value)} /></label>
+      <Button variant="outline" onClick={() => setRevision(value => value + 1)} disabled={loading}>Yenile</Button>
+      <Button variant="outline" onClick={download} disabled={!data || loading || exporting}>{exporting ? 'Hazırlanıyor…' : 'Excel indir'}</Button>
+      <Button variant="outline" onClick={() => window.print()} disabled={!data || loading}>Yazdır / PDF</Button>
     </div>
-    <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-      Gelir kartları ve kategori tablosu yalnızca folyoya veya POS'a kesinleşmiş olarak işlenen, iptal edilmemiş hareketleri gösterir. Gece denetimi öncesindeki tahakkuklar oda gelir performansında ayrıca belirtilir.
-    </div>
-    <Card>
-      <CardHeader className="pb-2"><CardTitle className="text-sm">{isDaily ? 'Seçili Gün Gelir Trendi' : t('cm.pages_reports_RevenueSection.30_gunluk_gelir_trendi')}</CardTitle></CardHeader>
-      <CardContent>
-        {hasMixedRevenueTrend ? <div className="h-80 flex items-center justify-center px-6 text-center text-sm text-slate-500">Farklı para birimleri tek gelir eğrisinde toplanmaz. Üstteki kartlarda tutarlar para birimi bazında ayrı gösterilir.</div> : <ResponsiveContainer width="100%" height={320}>
-          <ComposedChart data={data?.revenue_trend || []}>
-            <defs><linearGradient id="rvFull" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#059669" stopOpacity={0.2} /><stop offset="95%" stopColor="#059669" stopOpacity={0} /></linearGradient></defs>
-            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-            <XAxis dataKey="label" tick={{
-              fontSize: 10
-            }} interval={2} />
-            <YAxis tick={{
-              fontSize: 10
-            }} tickFormatter={v => (v / 1000).toFixed(0) + 'K'} />
-            <Tooltip content={<CustomTooltip formatter={(value) => formatCurrency(value, revenueTrendCurrency)} />} />
-            <Legend wrapperStyle={{
-              fontSize: 11
-            }} />
-            <Area type="monotone" dataKey="revenue" name="Gelir" stroke="#059669" fill="url(#rvFull)" strokeWidth={2} />
-            <Line type="monotone" dataKey="revenue" name="Trend" stroke="#D97706" strokeWidth={2} dot={false} strokeDasharray="5 5" />
-          </ComposedChart>
-        </ResponsiveContainer>}
-      </CardContent>
-    </Card>
-    <CategoryRevenueCard reportDate={reportDate || data?.date} reportPeriod={reportPeriod} />
-    {roomTypeData.length > 0 && <Card>
-        <CardHeader className="pb-2"><CardTitle className="text-sm">{t('cm.pages_reports_RevenueSection.oda_tipi_bazli_gelir')}</CardTitle></CardHeader>
-        <CardContent>
-          {hasMixedRoomTypeRevenue ? <div className="h-[280px] flex items-center justify-center px-6 text-center text-sm text-slate-500">Farklı para birimleri tek grafikte toplanmaz. Oda tipi analizi tablosunda tutarlar para birimi bazında ayrı gösterilir.</div> : <ResponsiveContainer width="100%" height={280}>
-            <BarChart data={roomTypeData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-              <XAxis dataKey="name" tick={{ fontSize: 10 }} angle={-25} textAnchor="end" height={50} />
-              <YAxis tick={{
-              fontSize: 10
-            }} tickFormatter={v => (v / 1000).toFixed(0) + 'K'} />
-              <Tooltip content={<CustomTooltip formatter={(value) => formatCurrency(value, roomTypeRevenueCurrency)} />} />
-              <Bar dataKey="revenue" name="Gelir" radius={[4, 4, 0, 0]}>{roomTypeData.map((_, i) => <Cell key={_.id || i} fill={COLORS[i % COLORS.length]} />)}</Bar>
-            </BarChart>
-          </ResponsiveContainer>}
-        </CardContent>
-      </Card>}
-  </div>;
-};
-export default RevenueSection;
+    <p className="text-sm font-medium">{first} – {last} · İşlenen tutarlar (vergi dahil, iade düşülmüş, bahşiş hariç)</p>
+    {loading && <p role="status">Yükleniyor…</p>}
+    {error && <p role="alert" className="rounded border border-destructive p-3 text-destructive">{error}</p>}
+    {!data && !loading && <p>Veri alınamadı.</p>}
+    {data && <>
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <TotalCard label="Toplam işlenen tutar (vergi dahil)" values={data.totals_by_currency} field="total" />
+        <TotalCard label="Net gelir (vergi hariç)" values={data.totals_by_currency} field="verified_net" />
+        <TotalCard label="Konaklama (vergi dahil)" values={data.departments_by_currency?.room} />
+        <TotalCard label="Yiyecek–içecek (minibar hariç)" values={data.departments_by_currency?.fnb} />
+      </div>
+      <p className="rounded-lg border bg-muted/30 p-3 text-sm">Tahsilat ve rezervasyon bedeli değildir. Oda ücreti henüz işlenmemişse burada gelir sayılmaz. Minibar ayrı satırdır. Vergi kırılımı olmayan eski kayıtlar sıfır vergili kabul edilmez.</p>
+      {(data.reconciliation?.tax_unknown_count > 0 || data.reconciliation?.issue_count > 0) && <div role="status" className="rounded-lg border border-amber-400 bg-amber-50 p-3 text-sm text-amber-950">
+        {data.reconciliation.tax_unknown_count > 0 && <p>{data.reconciliation.tax_unknown_count} işlemin vergi kırılımı eksik; bu kapsamdaki net ve vergi toplamı doğrulanamadı.</p>}
+        {data.reconciliation.issue_count > 0 && <p>{data.reconciliation.issue_count} kaynak harekette hesap uyuşmazlığı var. Farklar gizlenmedi; kaynak kayıt değiştirilmedi.</p>}
+      </div>}
+      <div className="flex flex-wrap items-center justify-between gap-3"><h3 className="font-semibold">Dönem kırılımı</h3><label className="text-sm print:hidden">Grafik para birimi <select aria-label="Gelir grafik para birimi" className="rounded border bg-background p-2" value={currency} onChange={e => setCurrency(e.target.value)}>{(currencies.length ? currencies : ['TRY']).map(code => <option key={code}>{code}</option>)}</select></label></div>
+      <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Günlük işlenen tutar · {currency}</CardTitle></CardHeader><CardContent>
+        <ResponsiveContainer width="100%" height={230}><AreaChart data={trend}>
+          <CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="label" tick={{ fontSize: 11 }} minTickGap={18} /><YAxis tickFormatter={axisText} tick={{ fontSize: 11 }} />
+          <Tooltip formatter={value => [moneyText(value, currency), 'İşlenen tutar']} /><Area type="linear" dataKey="value" name="İşlenen tutar" stroke="#059669" fill="#059669" fillOpacity={0.12} isAnimationActive={false} />
+        </AreaChart></ResponsiveContainer>
+      </CardContent></Card>
+      <Card><CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2"><CardTitle className="text-sm">Kategori bazlı gelir</CardTitle><label className="text-sm print:hidden"><input type="checkbox" checked={details} onChange={e => setDetails(e.target.checked)} /> Vergi / indirim ayrıntıları</label></CardHeader><CardContent>
+        <div className="overflow-x-auto"><table className="w-full text-sm" aria-label="Kategori bazlı gelir">
+          <thead className="bg-muted"><tr><th className="p-2 text-left">Kategori</th><th className="p-2 text-right">İşlem</th>{visibleFields.map(([key, label]) => <th key={key} className="p-2 text-right">{label}</th>)}</tr></thead>
+          <tbody>{rows.length ? rows.map(row => <tr key={row.category} className="border-t"><th scope="row" className="p-2 text-left font-medium" title={(row.source_categories || []).join(', ')}>{row.label}</th><td className="p-2 text-right">{row.count}</td>{visibleFields.map(([key]) => <td key={key} className={`p-2 text-right tabular-nums ${key === 'difference' ? 'text-amber-700' : ''}`}><Amounts values={row.by_currency} field={key === 'net' && !details ? 'verified_net' : key} /></td>)}</tr>) : <tr><td className="p-5 text-center" colSpan={visibleFields.length + 2}>Bu tarih aralığında işlem yok.</td></tr>}</tbody>
+          {rows.length > 0 && <tfoot className="border-t bg-muted font-semibold"><tr><th scope="row" className="p-2 text-left">TOPLAM</th><td className="p-2 text-right">{data.totals?.count}</td>{visibleFields.map(([key]) => <td key={key} className="p-2 text-right"><Amounts values={data.totals_by_currency} field={key === 'net' && !details ? 'verified_net' : key} /></td>)}</tr></tfoot>}
+        </table></div>
+        <p className="mt-3 text-xs text-muted-foreground">Para birimleri ayrı tutulur. “Doğrulanamadı” sıfır değildir. Ayrıntılı görünümde kaynak kaydın neti ve açıklanamayan farkı ayrıca gösterilir. Upsell / extra bir hizmet kategorisi belirtmiyorsa sınıflandırılmamış olarak kalır.</p>
+      </CardContent></Card>
+      {roomTypes.length > 0 && <Card><CardHeader><CardTitle className="text-sm">Oda tipi bazlı konaklama geliri · {currency} (vergi dahil)</CardTitle></CardHeader><CardContent>
+        <p className="mb-2 text-xs text-muted-foreground">Yalnız oda ücreti hareketleri; minibar, restoran ve diğer harcamalar dahil değildir. Eşleştirilemeyen kayıtlar toplamdan düşülmez.</p>
+        <ResponsiveContainer width="100%" height={230}><BarChart data={roomTypes}><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="name" tick={{ fontSize: 11 }} /><YAxis tickFormatter={axisText} tick={{ fontSize: 11 }} /><Tooltip formatter={value => [moneyText(value, currency), 'Konaklama']} /><Bar dataKey="value" name="Konaklama" fill="#0284c7" isAnimationActive={false} /></BarChart></ResponsiveContainer>
+      </CardContent></Card>}
+      {data.reconciliation?.issues?.length > 0 && <details className="rounded-lg border p-3 text-sm"><summary>Uyumsuz kaynak hareketleri ({data.reconciliation.issue_count})</summary><p className="my-2 text-xs">İlk 100 hareket gösterilir. Bu liste muhasebe düzeltmesi yapmaz.</p>{data.reconciliation.issues.map((issue, index) => <p key={`${issue.source}-${issue.id}-${index}`}>{issue.date} · {issue.source} / {issue.id || 'kimlik eksik'} · {issue.reasons.join('; ')} · {moneyText(issue.difference, issue.currency)}</p>)}</details>}
+    </>}
+  </section>;
+}
+
+function TotalCard({ label, values, field }) {
+  return <Card><CardContent className="p-4"><h3 className="text-xs text-muted-foreground">{label}</h3><div className="mt-2 text-xl font-semibold tabular-nums"><Amounts values={values} field={field} /></div></CardContent></Card>;
+}
