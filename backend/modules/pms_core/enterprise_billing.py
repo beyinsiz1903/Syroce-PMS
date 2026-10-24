@@ -43,7 +43,7 @@ def currency(value):
 
 def manual_collection_method(value):
     method = str(getattr(value, "value", value) or "").strip().lower()
-    if method not in {"cash", "card", "credit_card", "bank_transfer", "transfer", "online", "check"}:
+    if method not in {"cash", "card", "credit_card", "bank_transfer", "transfer", "online"}:
         raise HTTPException(422, "Bu işlem tahsilat yöntemi değildir. İkram/indirim, cari, güvence ve provizyon için ilgili ayrı akışı kullanın")
     return method
 
@@ -246,9 +246,9 @@ async def payment_catalog(database, tenant_id):
     return {"provider": provider_name, "provider_readiness": readiness, "provider_capabilities": capabilities,
         "enterprise_currency_scale": 2, "enterprise_currencies": sorted(CENT_CURRENCIES),
         "manual_collection_methods": [{"code": code, "label": label, "execution": "external_record_only"} for code, label in
-            [("cash", "Nakit"), ("card", "Harici POS / kart"), ("bank_transfer", "Doğrulanmış banka transferi"), ("check", "Çek")]],
+            [("cash", "Nakit"), ("card", "Harici POS / kart"), ("bank_transfer", "Doğrulanmış banka transferi")]],
         "non_collection_operations": ["city_ledger", "concession", "folio_transfer", "deposit_application", "authorization"],
-        "not_enabled": ["gift_card_redemption", "wallet", "loyalty_redemption", "barter", "write_off"],
+        "not_enabled": ["gift_card_redemption", "wallet", "loyalty_redemption", "barter", "write_off", "cheque_pending_clearance"],
         "notes": ["Yapılandırma canlı tahsilat doğrulaması değildir.", "Provizyon tahsilat değildir.", "Cari aktarımı tahsilat değildir."]}
 
 

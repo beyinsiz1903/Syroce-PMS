@@ -436,7 +436,7 @@ async def test_overlapping_or_closed_destination_routing_fails_closed(routing):
     assert not db.folio_operations.rows
 
 
-@pytest.mark.parametrize('method', ['discount', 'complimentary', 'full_comp', 'city_ledger', 'security_deposit_application', 'authorization', 'wallet', 'gift_card', 'barter'])
+@pytest.mark.parametrize('method', ['discount', 'complimentary', 'full_comp', 'city_ledger', 'security_deposit_application', 'authorization', 'wallet', 'gift_card', 'barter', 'check'])
 def test_non_collection_cannot_be_posted_as_manual_collection(method):
     with pytest.raises(HTTPException) as exc:
         billing.manual_collection_method(method)

@@ -83,8 +83,9 @@ documents were changed while implementing or testing this delivery.
 
 ### Verification for this delivery
 
-- 243 isolated backend regressions passed (concession/security state machines, remaining capacity after movement, cash transaction propagation/failure, PSP durable replay, AR/window/void/currency/input guards). One pre-existing `datetime.utcnow()` deprecation warning is retained; no test/coverage guard is disabled.
+- 244 isolated backend regressions passed (concession/security state machines, remaining capacity after movement, cash transaction propagation/failure, PSP durable replay, AR/window/void/currency/input guards). One pre-existing `datetime.utcnow()` deprecation warning is retained; no test/coverage guard is disabled.
 - Full frontend: 384 files / 1,917 tests passed. Production build, full backend Ruff, full frontend ESLint hard gate, changed-source zero-warning ESLint, route bundle budgets, theme/layout, orphan/import-boundary, requirements-parity and skip/inventory guards passed.
+- Full frontend coverage gate passed unchanged thresholds: statements 30.82%, branches 27.48%, functions 24.01%, lines 31.59%. This is whole-frontend coverage, not a claim of complete financial coverage.
 - Synthetic browser preview verified a 25% request against a 5,000 TRY service as 1,250 TRY awaiting a different approver, and displayed the separate security ledger. Preview requests were in-memory mocks, not live financial operations.
 - The worker-runtime static import-closure check reports nine missing distributions. The same nine were reproduced on a clean archived `92624d7de` base; this delivery does not certify that existing CI/dependency issue as fixed. API import closure has zero missing distributions but four pre-existing unmapped imports needing review. Live worker/API image boot and real Mongo concurrency remain unverified locally.
 
@@ -96,7 +97,7 @@ documents were changed while implementing or testing this delivery.
 | Comp/house use | Future-night/category benefits, house-use statistics, global approval enforcement across legacy writers, per-authorizer budgets and atomic reversals. |
 | Card lifecycle | Authorize/increment/capture/release/refund/void endpoint orchestration and provider sandbox/live acceptance; contract support alone is insufficient. |
 | OTA/VCC | Activation/balance/currency restrictions, net/gross commission and payout reconciliation across each connected provider. |
-| Stored value | Gift card/loyalty issuer validation, liability/redemption/reversal and double-use safeguards before enabling tenders. |
+| Stored value / instruments | Gift card/loyalty issuer validation, liability/redemption/reversal and double-use safeguards; cheque lifecycle and bank clearance before treating it as collected money. Unsupported raw tenders are blocked. |
 | AR/group billing | Authoritative legacy balance reconciliation, aging/credit acceptance, multi-reservation master accounts and payment allocation. |
 | Security | Dedicated correction/unapplication, provider-driven refunds, liability report/reconciliation acceptance and historical migration. |
 | Fiscal/localization | Approved local invoice/credit-note/tax treatment and zero/three-decimal currency acceptance; a non-cash folio offset is not a fiscal document. |
