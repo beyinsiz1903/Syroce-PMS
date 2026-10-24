@@ -214,6 +214,9 @@ jobs:
             tests/test_helpers.py \
             tests/test_core_lockdown.py \
             tests/test_audit_service_wiring.py \
+            tests/test_audit_chain.py \
+            tests/test_audit_helper_session_chain.py \
+            tests/test_audit_immutability_guard.py \
             tests/test_hardening_multi_phase.py \
             tests/test_atomic_booking.py \
             tests/test_safety_rebinding.py \
@@ -521,6 +524,12 @@ jobs:
             cat full-suite-backend.log || true
             exit 1
           fi
+
+      - name: Verify audit attribution and transaction chain (hard gate)
+        run: |
+          cd backend
+          python -m pytest tests/test_audit_chain_replica.py tests/test_audit_helper_session_chain.py \
+            tests/test_audit_chain.py tests/test_audit_immutability_guard.py -q --timeout=60
 
       - name: Run complete provider-safe backend suite with coverage
         run: |
