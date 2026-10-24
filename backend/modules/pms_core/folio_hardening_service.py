@@ -89,6 +89,9 @@ class FolioHardeningService:
 
     async def post_payment(self, tenant_id: str, folio_id: str, booking_id: str, payment_data: dict, processed_by: str) -> dict:
         """Post a payment to a folio."""
+        from modules.pms_core.enterprise_billing import manual_collection_method
+
+        manual_collection_method(payment_data.get("method", "cash"))
         folio = await db.folios.find_one({"id": folio_id, "tenant_id": tenant_id}, {"_id": 0})
         if not folio:
             return {"success": False, "error": "Folio not found"}
@@ -238,6 +241,10 @@ class FolioHardeningService:
         payment = await db.payments.find_one({"id": payment_id, "tenant_id": tenant_id}, {"_id": 0})
         if not payment:
             return {"success": False, "error": "Payment not found"}
+        if payment.get("security_fund_id") or payment.get("concession_id"):
+            return {"success": False, "error": "Güvence/ikram kaydı normal ödeme iadesiyle değiştirilemez"}
+        if payment.get("provider_ref"):
+            return {"success": False, "error": "Ödeme kuruluşu iade/iptal akışı gerekli"}
         if payment.get("mice_event_id"):
             return {"success": False, "error": "Banket tahsilatını etkinliğin kısmi/tam iade akışından düzeltin"}
         if payment.get("voided"):

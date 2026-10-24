@@ -340,6 +340,7 @@ _EXTRACTED_ROUTERS: list[tuple[str, str, list[str], str | None, list | None]] = 
     ("domains.pms.fnb_cost_router", "router", ["PMS / F&B Cost"], None, None),
     ("domains.pms.turndown_router", "router", ["PMS / Turndown"], None, None),
     ("domains.pms.folio_routing_router", "router", ["PMS / Folio Routing"], None, None),
+    ("domains.pms.enterprise_billing_router", "router", ["PMS / Enterprise Billing"], None, None),
     ("domains.pms.folio_window_router", "router", ["PMS / Folio Windows"], None, None),
     ("domains.pms.long_stay_router", "router", ["PMS / Long Stay"], None, None),
     ("domains.pms.block_management_router", "router", ["PMS / Block Management"], None, None),

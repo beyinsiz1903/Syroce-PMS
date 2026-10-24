@@ -183,6 +183,12 @@ async def ensure_performance_indexes():
         # Idempotency lookup'lari tenant'a kapali (client key tenant'lar arasi cakisabilir).
         ("payment_intents", [("tenant_id", 1), ("idempotency_key", 1)], "idx_payment_intents_tenant_idem", {}),
         ("payment_intents", [("tenant_id", 1), ("status", 1), ("created_at", -1)], "idx_payment_intents_tenant_status", {}),
+        # Durable enterprise decisions and liability evidence have no TTL:
+        # expiring these records would erase financial replay/capacity history.
+        ("billing_concessions", [("tenant_id", 1), ("booking_id", 1), ("created_at", -1)], "idx_concessions_booking_created", {}),
+        ("security_funds", [("tenant_id", 1), ("booking_id", 1)], "idx_security_funds_booking", {}),
+        ("security_funds", [("tenant_id", 1), ("booking_id", 1), ("method", 1), ("currency", 1), ("reference", 1)], "idx_security_funds_reference", {}),
+        ("security_fund_operations", [("tenant_id", 1), ("fund_id", 1), ("action", 1), ("reference", 1)], "idx_security_operations_reference", {}),
         # Task #315 — Otonom tahsilat (no-show + VCC check-in) deploy-ani indeks
         # garantisi. Bu IKI index bir optimizasyon DEGIL, exactly-once cekirdegin
         # ZORUNLU invariant'i:

@@ -64,6 +64,51 @@
 - Local mocked-storage verification covers 6,000 company + 4,000 guest debt, canonical card-versus-AR settlement/collection arithmetic, full/partial/cents allocations, tenant/booking/currency/permission/invoice guards, replay/content mismatch, concurrent-callback serialisation and injected rollback. It is not a live Mongo concurrency proof, real AR settlement/provider charge or production acceptance.
 - Local follow-up: the full frontend package passed 382 files / 1,907 tests after correcting an existing async readiness-test assertion (wait for content, not placeholder presence; stale-hotel response checks remain). A later full run exposed the same early-assertion pattern in peer-PIN rejection; that test now waits for rejection handling and reasserts that no void request was sent. Focused allocation/financial backend and invoice regressions passed, as did build/bundle budgets and changed-source lint. No test, coverage threshold or CI guard was disabled.
 
+## Enterprise billing controls — first bounded delivery (2026-10-24)
+
+This is **not** certification that every five-star payment workflow is complete.
+No production financial records, card charges, provider settings or fiscal
+documents were changed while implementing or testing this delivery.
+
+- Reservation detail → Folyo/Ödeme → **Kurumsal ödeme / ikram kontrolleri** distinguishes actual external collections, AR transfer, concessions, refundable security and authorization. The provider catalog exposes actual configured adapter capabilities, not a fabricated successful connection/live certification. Gift cards, wallets, barter and loyalty redemption are not activated by adding a label.
+- Selected **posted** original services can be requested as room/service comp, service recovery or commercial discount, for the full selected value, a percentage or precise minor-unit amount. This does not alter future daily rates or mean all-inclusive/full-stay comp. An explicitly configured per-decision currency limit and a different authorized approver are required. The request snapshot, remaining per-service concession capacity, open folio, invoice linkage, currency and balance are revalidated at approval. Application, audit and durable replay evidence share the reservation financial transaction. Original revenue/tax rows and closed business dates are not rewritten. No tax credit note is fabricated.
+- Existing accommodation-rate comp/price override workflows still have their existing permissions. This new approval workflow is **not yet a global approval policy covering every legacy rate/POS/adjustment writer**. Approver-specific daily/stay budgets and dedicated reversal workflows remain separate work. New protected concessions cannot be voided as if cash had been refunded.
+- Manual collection entry points reject comp, discount, AR, authorization, security application and unsupported tender names as payment methods. The main collection selector no longer offers a discount as cash/card collection. Legacy fake intent endpoints fail explicitly instead of writing mock Stripe IDs or unscoped payment intents.
+- Refundable security is a separate liability ledger, not `deposits`/booking paid amount or an authorization. An external receipt needs a voucher/bank/POS reference. Cash receipt/refund and its liability movement share a transaction and require an open TRY drawer; foreign-cash security is blocked until an immutable FX cashier workflow exists. Applying security requires an explicit same-booking open folio and sufficient same-currency posted debt. It creates a non-cash offset, not another collection. Partial refund/application, immutable movements, cross-tenant checks, business-date evidence and persistent request/reference replay are included. No card/bank transfer is initiated by recording external receipt/refund evidence. Dedicated correction/unapplication remains separate; generic payment void must not decouple the liability from the folio.
+- The existing deposit tab is explicitly labelled **accommodation prepayment**; its legacy semantics are preserved, not silently reclassified as security. Migrating historical deposits needs a separate reviewed reconciliation.
+- PSP collection resolves an explicit target when several windows are open and rejects mismatched folio currency before provider I/O. Persistent intents bind amount/currency/card/folio, block repeated pending/3DS/unknown charges beyond the short-lived idempotency cache, and preserve the original result. Card-payment ledger rows now carry currency. An already-collected but unrecorded outcome is explicitly reported as needing reconciliation; it is not presented as a fully posted folio success.
+- Direct-bill transfer revalidates account status, configured currency and available credit under the canonical account lock. Existing zero-limit legacy accounts retain their previous unrestricted semantics; a positive credit limit requires an explicit account currency. New AR movements carry currency and a due date based on the open PMS business day. This is not a reconstruction of every legacy AR balance or a new whole-system credit-limit engine.
+- The existing `/folio-routing/apply` endpoint previously wrote only a `routed_to` marker. It now moves original items/taxes between actual same-reservation windows through the atomic allocation service. Overlapping matching rules, closed destinations, invoice-linked accounts, unknown dates, insufficient source debt and mixed currencies fail closed. **This endpoint is still manual posted-item routing**, not automatic future night-audit/POS routing, not partial tax-line splitting and not cross-booking/group-master routing.
+- Remaining concession capacity follows the service ID across folio moves; moving a previously comped service cannot reset its capacity. Reservation activity and printable folios label security/AR/comp offsets separately from new collection. Print totals exclude pending/failed payments and handle positive refund amounts with the correct sign.
+
+### Verification for this delivery
+
+- 243 isolated backend regressions passed (concession/security state machines, remaining capacity after movement, cash transaction propagation/failure, PSP durable replay, AR/window/void/currency/input guards). One pre-existing `datetime.utcnow()` deprecation warning is retained; no test/coverage guard is disabled.
+- Full frontend: 384 files / 1,917 tests passed. Production build, full backend Ruff, full frontend ESLint hard gate, changed-source zero-warning ESLint, route bundle budgets, theme/layout, orphan/import-boundary, requirements-parity and skip/inventory guards passed.
+- Synthetic browser preview verified a 25% request against a 5,000 TRY service as 1,250 TRY awaiting a different approver, and displayed the separate security ledger. Preview requests were in-memory mocks, not live financial operations.
+- The worker-runtime static import-closure check reports nine missing distributions. The same nine were reproduced on a clean archived `92624d7de` base; this delivery does not certify that existing CI/dependency issue as fixed. API import closure has zero missing distributions but four pre-existing unmapped imports needing review. Live worker/API image boot and real Mongo concurrency remain unverified locally.
+
+### Remaining enterprise acceptance scope
+
+| Area | Remaining work before claiming end-to-end readiness |
+| --- | --- |
+| Automatic routing | One rule engine across all night-audit/manual/POS/extra writers; dated, percentage, daily/stay/covers limits; original tax allocation, reversal, invoice and checkout acceptance. |
+| Comp/house use | Future-night/category benefits, house-use statistics, global approval enforcement across legacy writers, per-authorizer budgets and atomic reversals. |
+| Card lifecycle | Authorize/increment/capture/release/refund/void endpoint orchestration and provider sandbox/live acceptance; contract support alone is insufficient. |
+| OTA/VCC | Activation/balance/currency restrictions, net/gross commission and payout reconciliation across each connected provider. |
+| Stored value | Gift card/loyalty issuer validation, liability/redemption/reversal and double-use safeguards before enabling tenders. |
+| AR/group billing | Authoritative legacy balance reconciliation, aging/credit acceptance, multi-reservation master accounts and payment allocation. |
+| Security | Dedicated correction/unapplication, provider-driven refunds, liability report/reconciliation acceptance and historical migration. |
+| Fiscal/localization | Approved local invoice/credit-note/tax treatment and zero/three-decimal currency acceptance; a non-cash folio offset is not a fiscal document. |
+
+Unit/storage mocks and synthetic browser acceptance do not prove real Mongo
+concurrency, live PSP operation or fiscal compliance. The dedicated new
+transactions fail closed when Mongo transactions are unavailable.
+
+New concession/security flows currently fail closed outside the verified
+two-decimal TRY/USD/EUR/GBP/CHF set; unsupported currency precision is not
+silently rounded or advertised as globally supported.
+
 ## Local verification (2026-10-23)
 
 - Backend focused regression: 160 passed, 4 warnings (occupancy, AR, window targeting, payment replay, folio split/balance/reconciliation).

@@ -35,4 +35,18 @@ describe('PrintableFolio', () => {
     expect(screen.getByText('Yeni gelir veya tahsilat değildir.')).toBeInTheDocument();
     expect(screen.getAllByText(/125,00/).length).toBeGreaterThan(0);
   });
+
+  it('güvence, cari ve ikramı yeni tahsilata eklemez; bekleyen/başarısız kayıtları dışlar', () => {
+    render(<PrintableFolio folioData={{ folio_number: 'F-SETTLED', currency: 'TRY', charges: [{ id: 'room', total: 1000 }],
+      payments: [{ method: 'cash', amount: 400 }, { method: 'card', amount: 100, payment_type: 'refund' },
+        { method: 'security_deposit_application', amount: 200 }, { method: 'city_ledger', amount: 300 }, { method: 'discount', amount: 200 },
+        { method: 'card', amount: 900, status: 'pending', reference: 'pending-card' },
+        { method: 'cash', amount: 900, status: 'failed', reference: 'failed-cash' }] }} />);
+    expect(screen.getByText('Net tahsilat').parentElement).toHaveTextContent('300,00');
+    expect(screen.getByText('Mahsup / cari / ikram (tahsilat değil)').parentElement).toHaveTextContent('700,00');
+    expect(screen.getByText('Güvence mahsubu (yeni tahsilat değil)')).toBeInTheDocument();
+    expect(screen.getByText('Hesap kapandı')).toBeInTheDocument();
+    expect(screen.queryByText('pending-card')).not.toBeInTheDocument();
+    expect(screen.queryByText('failed-cash')).not.toBeInTheDocument();
+  });
 });

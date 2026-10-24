@@ -1,7 +1,6 @@
 """Auto-split from misc_router.py — backward-compatible sub-router."""
 
 import logging
-import uuid
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -26,9 +25,7 @@ async def payment_intent(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("post_payment")),  # v94 DW
 ):
-    intent = {"id": str(uuid.uuid4()), "amount": payment_data["amount"], "status": "pending"}
-    await db.payment_intents.insert_one(intent)
-    return {"success": True, "intent_id": intent["id"]}
+    raise HTTPException(501, "Bu eski uç gerçek ödeme başlatmaz. Yapılandırılmış ödeme kuruluşunun /api/payments/collect akışını kullanın")
 
 
 # NOT: /payments/installment ucu kaldırıldı (sadece silinen PaymentGateway
@@ -41,8 +38,7 @@ async def create_payment_intent(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("post_payment")),  # v94 DW
 ):
-    intent = {"id": str(uuid.uuid4()), "amount": payment_data["amount"], "status": "pending", "stripe_id": f"pi_mock_{str(uuid.uuid4())[:8]}"}
-    await db.payment_intents.insert_one(intent)
+    raise HTTPException(501, "Sahte ödeme intent'i oluşturulmaz. Önce gerçek ödeme kuruluşu yapılandırılmalıdır")
 
 
 # NOT: GDS (Amadeus/Sabre/Galileo) entegrasyon stub'ları kaldırıldı.
@@ -61,7 +57,7 @@ async def void_payment(
     payment_id: str,
     void_reason: str = "Voided by staff",
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("post_payment")),  # v94 DW
+    _perm=Depends(require_op("void_payment")),
 ):
     """Void a payment"""
     payment = await db.payments.find_one({"id": payment_id, "tenant_id": current_user.tenant_id})
@@ -70,17 +66,19 @@ async def void_payment(
         raise HTTPException(status_code=404, detail="Payment not found")
     if payment.get("mice_event_id"):
         raise HTTPException(409, "Banket tahsilatını etkinliğin iade akışından düzeltin")
+    if payment.get("security_fund_id") or payment.get("concession_id") or payment.get("provider_ref"):
+        raise HTTPException(409, "Bağlı güvence/ikram/ödeme kuruluşu düzeltme akışı gerekli")
 
     if payment.get("voided"):
         raise HTTPException(status_code=400, detail="Payment already voided")
 
     # Update payment
-    await db.payments.update_one({"id": payment_id}, {"$set": {"voided": True, "voided_by": current_user.id, "voided_at": datetime.now(UTC).isoformat(), "void_reason": void_reason}})
+    await db.payments.update_one({"id": payment_id, "tenant_id": current_user.tenant_id}, {"$set": {"voided": True, "voided_by": current_user.id, "voided_at": datetime.now(UTC).isoformat(), "void_reason": void_reason}})
 
     # Recalculate folio balance
     folio_id = payment["folio_id"]
     balance = await calculate_folio_balance(folio_id, current_user.tenant_id)
-    await db.folios.update_one({"id": folio_id}, {"$set": {"balance": balance}})
+    await db.folios.update_one({"id": folio_id, "tenant_id": current_user.tenant_id}, {"$set": {"balance": balance}})
 
     # Task #568 — kritik finansal mutasyon: tamper-evident audit trail'e
     # before/after snapshot ile yaz (IP/UA + hash zinciri otomatik eklenir).

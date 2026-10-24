@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import logging
 
+from modules.pms_core.reporting_financials import INVALID_PAYMENT_STATUSES, NON_CASH_PAYMENT_METHODS
+
 logger = logging.getLogger(__name__)
 
 # A city-ledger transfer moves the debt to an account; no money is received.
@@ -19,7 +21,7 @@ NON_COLLECTION_METHODS = frozenset({"city_ledger"})
 NON_COLLECTION_TYPES = frozenset({"city_ledger_transfer"})
 # A payment row in one of these states moved no money (declined card,
 # cancelled or rejected entry, not yet confirmed).
-INVALID_STATUSES = frozenset({"failed", "cancelled", "canceled", "rejected", "declined", "void", "voided", "pending"})
+INVALID_STATUSES = INVALID_PAYMENT_STATUSES
 
 
 def is_effective(payment: dict) -> bool:
@@ -44,7 +46,7 @@ def _signed_amount(payment: dict) -> float:
 def collected_amount(payments: list[dict]) -> float:
     """Money actually received on a reservation, net of refunds."""
     total = sum(_signed_amount(p) for p in payments
-                if is_effective(p) and not _is_transfer(p) and p.get("method") != "discount")
+                if is_effective(p) and not _is_transfer(p) and str(p.get("method") or "").lower() not in NON_CASH_PAYMENT_METHODS)
     return round(max(0.0, total), 2)
 
 
@@ -63,9 +65,10 @@ def payment_state(*, balance: float, payments: list[dict]) -> str:
     """Reservation payment status from its payments and outstanding balance."""
     collected = collected_amount(payments)
     transferred = transferred_amount(payments)
-    if balance <= 0.01 and (collected > 0 or transferred > 0):
+    applied_security = sum(_signed_amount(p) for p in payments if is_effective(p) and p.get("method") == "security_deposit_application")
+    if balance <= 0.01 and (collected > 0 or transferred > 0 or applied_security > 0):
         return "paid" if transferred <= 0.01 else "transferred"
-    if collected > 0 or transferred > 0:
+    if collected > 0 or transferred > 0 or applied_security > 0:
         return "partial"
     if refunded_amount(payments) > 0:
         return "refunded"

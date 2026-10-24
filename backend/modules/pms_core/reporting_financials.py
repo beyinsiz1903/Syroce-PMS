@@ -10,7 +10,7 @@ from modules.pms_core.report_money import currency_code, money, rounded
 
 INVALID_PAYMENT_STATUSES = frozenset({"void", "voided", "failed", "cancelled", "canceled", "rejected", "pending", "processing", "initiated", "authorized", "expired", "declined", "requires_action"})
 REPORTING_CURRENCY = "TRY"
-NON_CASH_PAYMENT_METHODS = frozenset({"discount", "city_ledger", "complimentary", "correction", "ar"})
+NON_CASH_PAYMENT_METHODS = frozenset({"discount", "city_ledger", "direct_bill", "complimentary", "correction", "ar", "security_deposit_application"})
 
 
 def report_payment_day_match(day: str) -> dict:

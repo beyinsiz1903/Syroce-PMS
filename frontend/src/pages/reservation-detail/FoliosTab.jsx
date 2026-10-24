@@ -1,4 +1,5 @@
-import { useMemo, useState, useEffect, useCallback } from 'react';
+import { lazy, Suspense, useMemo, useState, useEffect, useCallback } from 'react';
+import { folioPaymentLabel, isNonCashPayment } from '@/lib/folioPayments';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import axios from 'axios';
@@ -26,6 +27,7 @@ import {
 
 const normalizeCurrency = (value) => String(value || 'TL').toUpperCase() === 'TL' ? 'TRY' : String(value || 'TL').toUpperCase();
 const COMMON_PAYMENT_CURRENCIES = ['USD', 'EUR', 'GBP', 'CHF'];
+const EnterpriseBillingPanel = lazy(() => import('@/components/folio/EnterpriseBillingPanel'));
 
 export function calculateReceivedCurrency(amount, bookingCurrency, receivedCurrency, rates) {
   const numericAmount = parseMoney(amount);
@@ -93,6 +95,8 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
   const [reconcileForm, setReconcileForm] = useState({ cari_account_id: '', amount: '', description: '' });
   const [showSplit, setShowSplit] = useState(false);
   const [showAllocation, setShowAllocation] = useState(false);
+  const [showEnterprise, setShowEnterprise] = useState(false);
+  const [enterpriseLocked, setEnterpriseLocked] = useState(false);
   const [windowRevision, setWindowRevision] = useState(0);
   const [showPrintableFolio, setShowPrintableFolio] = useState(false);
   const [printFolioId, setPrintFolioId] = useState('all');
@@ -345,6 +349,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
   const itemKind = (item) => {
     if (item._type === 'payment') {
       if (String(item.method || '').toLowerCase() === 'discount') return 'Finansal düzeltme / indirim';
+      if (isNonCashPayment(item)) return folioPaymentLabel(item);
       return String(item.payment_type || '').toLowerCase() === 'prepayment' ? 'Ön ödeme' : 'Tahsilat';
     }
     const category = String(item.category || item.charge_category || '').toLowerCase();
@@ -373,6 +378,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
         <SummaryCard currency={currency} label="Genel Toplam" value={grossTotal} color="blue" />
         <SummaryCard currency={currency} label="Tahsilatlar" value={summary?.cash_collection_total ?? summary?.total_payments} color="emerald" />
         {(summary?.city_ledger_transfer_total || 0) > 0 && <SummaryCard currency={currency} label="Cariye Aktarılan (tahsilat değil)" value={summary.city_ledger_transfer_total} color="amber" />}
+        {(summary?.security_application_total || 0) > 0 && <SummaryCard currency={currency} label="Güvenceden Mahsup (yeni tahsilat değil)" value={summary.security_application_total} color="amber" />}
         <SummaryCard currency={currency} label="Kalan Bakiye" value={reservationTotalDue} color={reservationTotalDue > 0 ? 'red' : 'green'} />
         {(summary?.total_discounts || 0) > 0 && (
           <SummaryCard currency={currency} label={(summary?.complimentary_adjustment_total || 0) > 0 ? 'Comp İndirimi' : (summary?.rate_correction_total || 0) > 0 ? 'Fiyat Düzeltmesi' : 'İndirimler'} value={summary?.total_discounts} color="rose" />
@@ -410,6 +416,8 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
       )}
       <FolioWindowsPanel key={booking.id} bookingId={booking.id} readOnly={readOnly} onChanged={onRefresh} currentFolioId={targetFolioId} onSelect={selectTargetFolio}
         revision={`${windowRevision}:${folioList.map(f => `${f.id}:${f.status}:${f.balance}`).join('|')}`} />
+      <Button type="button" variant="outline" disabled={enterpriseLocked} onClick={() => setShowEnterprise(value => !value)}>Kurumsal ödeme / ikram kontrolleri</Button>
+      {showEnterprise && <Suspense fallback={<p>Kontroller yükleniyor…</p>}><EnterpriseBillingPanel key={booking.id} bookingId={booking.id} currency={normalizeCurrency(currency)} folios={folioList} charges={charges || []} readOnly={readOnly} onChanged={onRefresh} onLockChange={setEnterpriseLocked} /></Suspense>}
       {!readOnly && showAllocation && <FolioAllocationPanel key={booking.id} bookingId={booking.id} currency={currency} folios={folioList} charges={charges || []}
         onClose={() => setShowAllocation(false)} onChanged={async id => { setWindowRevision(previous => previous + 1); await onRefresh?.(); setTargetFolioId(id); }} />}
       {!readOnly && <label className="block text-sm font-medium">Ödeme / cari aktarım hedefi
@@ -546,7 +554,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
           <div className="grid grid-cols-2 gap-3">
             <FormField label={`Tutar (${currency})`} type="text" inputMode="decimal" hint="Virgül veya nokta ile en fazla iki ondalık basamak girebilirsiniz." value={payForm.amount} onChange={v => { if (!isMoneyInput(v)) return; setPayForm(p => ({ ...p, amount: v })); const amount = parseMoney(v); const rate = parseExchangeRate(exchangeRate); if (useCurrencyConverter && manualExchangeRate && Number.isFinite(amount) && Number.isFinite(rate) && rate > 0) setForeignAmount((amount * rate).toFixed(2)); }} />
             <SelectField label={t('common.paymentMethod')} value={payForm.method} onChange={v => setPayForm(p => ({ ...p, method: v }))}
-              options={[['cash','Nakit'],['card','Kredi Kartı'],['bank_transfer','Havale/EFT'],['online','Online'],['discount','İndirim (Düzeltme)']]} />
+              options={[['cash','Nakit'],['card','Harici POS / Kart'],['bank_transfer','Doğrulanmış Havale/EFT'],['online','Harici Online Tahsilat Kaydı']]} />
           </div>
           <FormField label={payForm.method === 'discount' ? 'İndirim Sebebi / Not' : 'Referans'} value={payForm.reference} onChange={v => setPayForm(p => ({ ...p, reference: v }))} placeholder={payForm.method === 'discount' ? 'İndirimin nedeni (zorunlu)' : 'Fiş / dekont no'} />
           {/* Currency Converter */}
@@ -802,7 +810,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
               </div>
               <div className="flex-1 min-w-0">
                 <div className="text-sm font-medium text-gray-800">
-                  {item.description || item.charge_name || item.method || item.payment_type || '-'}
+                  {item.description || item.charge_name || (item._type === 'payment' ? folioPaymentLabel(item) : item.method || item.payment_type || '-')}
                   {item.voided && <span className="ml-2 rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-700">İPTAL</span>}
                 </div>
                 <div className="text-xs text-gray-400">

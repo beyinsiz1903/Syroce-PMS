@@ -3,6 +3,7 @@ import { Printer, X } from 'lucide-react';
 import { Button } from './ui/button';
 import { Card, CardContent, CardHeader } from './ui/card';
 import { cachedTenantCurrency } from '@/lib/currency';
+import { collectionPayment, folioPaymentLabel, isEffectivePayment, signedFolioPayment } from '@/lib/folioPayments';
 
 const EMPTY = '—';
 const currencyCode = value => value === 'TL' ? 'TRY' : (value || cachedTenantCurrency());
@@ -17,7 +18,6 @@ const dateText = (value, withTime = false) => {
     ? date.toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short' })
     : date.toLocaleDateString('tr-TR');
 };
-const paymentLabel = value => ({ cash: 'Nakit', card: 'Kredi kartı', bank_transfer: 'Havale / EFT', online: 'Online ödeme', agency: 'Acente', discount: 'İndirim' }[value] || value || EMPTY);
 const categoryLabel = value => ({ room: 'Konaklama', room_charge: 'Konaklama', food_beverage: 'Yiyecek & İçecek', food_and_beverage: 'Yiyecek & İçecek', restaurant: 'Yiyecek & İçecek', minibar: 'Minibar', spa: 'Spa', laundry: 'Çamaşırhane', tax: 'Vergi' }[value] || value || 'Ek hizmet');
 
 const PrintableFolio = ({ folioData = {}, guest, room, onClose }) => {
@@ -65,9 +65,11 @@ const PrintableFolio = ({ folioData = {}, guest, room, onClose }) => {
         return true;
       });
   }, [folioData.charges, folioData.extra_charges]);
-  const payments = useMemo(() => (Array.isArray(folioData.payments) ? folioData.payments : []).filter(item => !item.voided), [folioData.payments]);
+  const payments = useMemo(() => (Array.isArray(folioData.payments) ? folioData.payments : []).filter(isEffectivePayment), [folioData.payments]);
   const totalCharges = charges.reduce((sum, item) => sum + Number(item.total ?? item.charge_amount ?? item.amount ?? 0), 0);
-  const totalPayments = payments.reduce((sum, item) => sum + Number(item.amount ?? 0), 0);
+  const totalPayments = payments.reduce((sum, item) => sum + signedFolioPayment(item), 0);
+  const totalCollections = payments.reduce((sum, item) => sum + collectionPayment(item), 0);
+  const nonCashSettlements = totalPayments - totalCollections;
   const openingBalance = Number(folioData.opening_balance ?? folioData.folio?.opening_balance ?? 0);
   const balance = Number(folioData.balance ?? (openingBalance + totalCharges - totalPayments));
   const start = new Date(booking.check_in || booking.check_in_date);
@@ -104,10 +106,11 @@ const PrintableFolio = ({ folioData = {}, guest, room, onClose }) => {
           <Info title="Konaklama Bilgileri" rows={[["Oda", roomNumber], ["Oda tipi", roomType], ["Giriş", dateText(booking.check_in || booking.check_in_date)], ["Çıkış", dateText(booking.check_out || booking.check_out_date)], ["Süre", nights === EMPTY ? EMPTY : `${nights} gece`], ["Kişi", `${Number(booking.adults || 0)} yetişkin${Number(booking.children || 0) > 0 ? `, ${booking.children} çocuk` : ''}`]]} />
         </section>
         <FolioTable title="Harcama ve Tahakkuklar" columns={["Tarih", "Açıklama", "Tür", "Adet", "Tutar"]} empty="Kayıtlı harcama bulunmuyor." rows={charges.map(item => [dateText(item.posted_at || item.created_at || item.date), item.description || item.charge_name || 'Harcama', categoryLabel(item.charge_category || item.category || item.charge_type), item.quantity || 1, money(item.total ?? item.charge_amount ?? item.amount, currency)])} totalLabel="Toplam harcama" total={money(totalCharges, currency)} />
-        <FolioTable title="Tahsilatlar" columns={["Tarih", "Ödeme yöntemi", "Referans", "Tutar"]} empty="Kayıtlı tahsilat bulunmuyor." rows={payments.map(item => [dateText(item.posted_at || item.processed_at || item.created_at), paymentLabel(item.payment_method || item.method), item.reference || EMPTY, money(item.amount, currency)])} totalLabel="Toplam tahsilat" total={money(totalPayments, currency)} />
+        <FolioTable title="Tahsilatlar ve hesap kapama hareketleri" columns={["Tarih", "İşlem türü / yöntem", "Referans", "Tutar"]} empty="Kayıtlı hesap kapama hareketi bulunmuyor." rows={payments.map(item => [dateText(item.business_date || item.posted_at || item.processed_at || item.created_at), folioPaymentLabel(item), item.reference || EMPTY, money(signedFolioPayment(item), currency)])} totalLabel="Toplam borç azaltan hareket" total={money(totalPayments, currency)} />
         <section className="ml-auto max-w-md rounded-xl border-2 border-slate-300 p-4">
           {openingBalance !== 0 && <div className="mb-3 text-sm"><div className="flex justify-between"><span>Önceki PMS devir bakiyesi</span><b>{money(openingBalance, currency)}</b></div><p className="text-xs text-slate-500">Yeni gelir veya tahsilat değildir.</p></div>}
-          <div className="flex justify-between text-sm"><span>Toplam harcama</span><b>{money(totalCharges, currency)}</b></div><div className="mt-2 flex justify-between text-sm"><span>Toplam tahsilat</span><b className="text-emerald-700">{money(totalPayments, currency)}</b></div>
+          <div className="flex justify-between text-sm"><span>Toplam harcama</span><b>{money(totalCharges, currency)}</b></div><div className="mt-2 flex justify-between text-sm"><span>Net tahsilat</span><b className="text-emerald-700">{money(totalCollections, currency)}</b></div>
+          {nonCashSettlements !== 0 && <div className="mt-2 flex justify-between gap-2 text-sm"><span>Mahsup / cari / ikram (tahsilat değil)</span><b>{money(nonCashSettlements, currency)}</b></div>}
           <div className="mt-3 flex justify-between border-t pt-3 text-lg"><b>{balance > 0 ? 'Kalan bakiye' : balance < 0 ? 'Misafir alacağı' : 'Bakiye'}</b><b className={balance > 0 ? 'text-red-700' : 'text-emerald-700'}>{money(Math.abs(balance), currency)}</b></div>
           {Math.abs(balance) < 0.01 && <p className="mt-3 rounded-md bg-emerald-50 p-2 text-center text-sm font-semibold text-emerald-800">Hesap kapandı</p>}
         </section>
