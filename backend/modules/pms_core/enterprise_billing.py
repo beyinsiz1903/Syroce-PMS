@@ -1,8 +1,8 @@
 """Enterprise billing controls. No provider calls and no invented collections.
 
 Concessions cover selected POSTED charges only; future-night pricing remains
-in the rate-plan workflow. Approval and the non-cash ledger offset are one
-transaction, with a separate requester and an explicitly configured limit.
+in the rate-plan workflow. An authorized operator's required explanation,
+non-cash ledger offset and audit evidence commit in one transaction.
 """
 from __future__ import annotations
 
@@ -57,7 +57,7 @@ def require_cent_currency(value):
 
 class BillingPolicy(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    # Missing currency is deliberately NOT unlimited approval authority.
+    # Legacy storage compatibility only. Direct concessions no longer use limits.
     approval_limits_minor: dict[str, Annotated[int, Field(strict=True, ge=0, le=100_000_000_000)]] = Field(default_factory=dict, max_length=30)
 
     @model_validator(mode="after")
@@ -145,8 +145,8 @@ async def concession_basis(database, tenant_id, body, *, session):
         (Decimal(total) * body.percentage / 100).quantize(Decimal(1), rounding=ROUND_HALF_UP))
     if amount <= 0 or amount > total or amount > minor(snap["balance_by_currency"].get(code, 0)):
         raise HTTPException(409, "İkram/indirim seçili hizmetleri veya açık folyo borcunu aşamaz")
-    # Other requests may share a charge. Any applied concession invalidates the
-    # approval snapshot, even where the total balance was topped up meanwhile.
+    # Keep the original snapshot for evidence; application always validates the
+    # current selected service capacity and actual open balance, not a cache.
     basis = fingerprint({"charges": selected, "balance": snap["balance_by_currency"], "prior": sorted(
         [(str(row["_id"]), row["amount_minor"]) for row in applied])})
     allocation = {key: amount * value // total for key, value in remaining.items()}
@@ -156,12 +156,15 @@ async def concession_basis(database, tenant_id, body, *, session):
             allocation[key] += 1
             remainder -= 1
     return {"currency": code, "amount_minor": amount, "selected_total_minor": total, "basis": basis,
-            "allocated_charge_minor": allocation}
+            "allocated_charge_minor": allocation, "folio_balance_minor": minor(snap["balance_by_currency"].get(code, 0)),
+            "service_details": [{"id": row["id"], "description": row.get("description"),
+                "category": row.get("charge_category") or row.get("category"), "total_minor": minor(row["total"]),
+                "remaining_before_minor": remaining[row["id"]]} for row in selected]}
 
 
-async def request_concession(database, tenant_id, actor, body, *, session):
+async def request_concession(database, tenant_id, actor, body, *, session, actor_name=None, actor_role=None):
     if session is None:
-        raise HTTPException(503, "İkram talebi için transaction desteği gerekli")
+        raise HTTPException(503, "İkram işlemi için transaction desteği gerekli")
     key = f"concession:{tenant_id}:{body.request_id}"
     payload = body.model_dump(mode="json")
     payload["charge_ids"] = sorted(payload["charge_ids"])
@@ -170,41 +173,57 @@ async def request_concession(database, tenant_id, actor, body, *, session):
     if old:
         if old["fingerprint"] != digest:
             raise HTTPException(409, "İşlem anahtarı başka bir talebe ait")
-        return public_concession(old)
+        if old["status"] == "applied":
+            return public_concession(old)
+        if old["status"] != "requested":
+            raise HTTPException(409, "İptal edilmiş işlem anahtarı yeniden kullanılamaz")
+        return await decide_concession(database, tenant_id, actor, body.request_id, True,
+            session=session, reason=body.reason, actor_name=actor_name, actor_role=actor_role)
     basis = await concession_basis(database, tenant_id, body, session=session)
     document = {"_id": key, "id": str(body.request_id), "tenant_id": tenant_id, **payload, **basis, "request_payload": payload,
         "fingerprint": digest, "requested_by": actor, "status": "requested", "created_at": datetime.now(UTC).isoformat()}
     await database.billing_concessions.insert_one(document, session=session)
-    return public_concession(document)
+    # The internal requested state is never committed separately. Failure of
+    # either audit insert rolls back the payment, balance and operation together.
+    return await decide_concession(database, tenant_id, actor, body.request_id, True,
+        session=session, reason=body.reason, actor_name=actor_name, actor_role=actor_role)
 
 
 def public_concession(row):
     return {key: value for key, value in row.items() if key not in {"_id", "basis", "fingerprint", "request_payload"}}
 
 
-async def decide_concession(database, tenant_id, actor, request_id, approve, *, session):
+async def decide_concession(database, tenant_id, actor, request_id, approve, *, session,
+                            reason=None, actor_name=None, actor_role=None):
     if session is None:
-        raise HTTPException(503, "İkram onayı için transaction desteği gerekli")
+        raise HTTPException(503, "İkram işlemi için transaction desteği gerekli")
     query = {"_id": f"concession:{tenant_id}:{request_id}", "tenant_id": tenant_id}
     row = await database.billing_concessions.find_one(query, session=session)
     if not row:
         raise HTTPException(404, "İkram talebi bulunamadı")
     if row["status"] != "requested":
         if (row["status"] == "applied") == approve:
+            if reason is not None and reason.strip() != row.get("reason"):
+                raise HTTPException(409, "Sonuçlanmış işlemin açıklaması değiştirilemez")
             return public_concession(row)
         raise HTTPException(409, "Sonuçlanmış talebin kararı değiştirilemez")
-    if row["requested_by"] == actor:
-        raise HTTPException(403, "Talep sahibi kendi ikramını onaylayamaz veya reddedemez")
+    explanation = (reason if reason is not None else row.get("reason", "")).strip()
+    if not 3 <= len(explanation) <= 500:
+        raise HTTPException(422, "İkram/indirim açıklaması 3–500 karakter olmalı")
     now = datetime.now(UTC).isoformat()
-    changes = {"status": "rejected", "decided_by": actor, "decided_at": now}
+    changes = {"status": "rejected", "decided_by": actor, "decided_at": now,
+        "reason": explanation, "original_reason": row.get("original_reason", row.get("reason")),
+        "performed_by_name": actor_name or actor, "performed_by_role": actor_role,
+        "execution_mode": "direct_with_reason"}
     if approve:
         body = ConcessionRequest.model_validate(row["request_payload"])
         basis = await concession_basis(database, tenant_id, body, session=session)
-        if basis["basis"] != row["basis"] or basis["amount_minor"] != row["amount_minor"]:
-            raise HTTPException(409, "Hesap değişti; eski talebi reddedip güncel tutarla yeni talep oluşturun")
-        limit = (await policy(database, tenant_id, session=session)).approval_limits_minor.get(row["currency"])
-        if limit is None or row["amount_minor"] > limit:
-            raise HTTPException(403, "Bu para biriminde yeterli ikram onay limiti tanımlanmamış")
+        # Legacy pending records may be applied by their creator. Unrelated
+        # payments/concessions need not invalidate an unchanged selection, but
+        # changed selected amounts/allocations require a newly reviewed operation.
+        if any(basis[field] != row.get(field) for field in
+               ("currency", "amount_minor", "selected_total_minor", "allocated_charge_minor")):
+            raise HTTPException(409, "Seçili hizmet tutarı değişti; işlemi iptal edip güncel tutarla yeniden oluşturun")
         settings = await database.tenant_settings.find_one({"tenant_id": tenant_id}, {"business_date": 1}, session=session)
         from datetime import date
 
@@ -217,19 +236,47 @@ async def decide_concession(database, tenant_id, actor, request_id, approve, *, 
         await database.payments.insert_one({"_id": f"{tenant_id}:{payment_id}", "id": payment_id, "tenant_id": tenant_id,
             "booking_id": row["booking_id"], "folio_id": row["folio_id"], "amount": amount, "currency": row["currency"],
             "method": "discount", "payment_type": "comp_adjustment" if row["kind"] != "discount" else "discount",
-            "status": "paid", "voided": False, "reference": payment_id, "notes": row["reason"],
+            "status": "paid", "voided": False, "reference": payment_id, "notes": explanation,
             "concession_id": str(request_id), "charge_ids": row["charge_ids"], "processed_by": actor,
             "processed_at": now, "business_date": day}, session=session)
         snapshots = await folio_snapshots(database, tenant_id, [await database.folios.find_one(
             {"tenant_id": tenant_id, "id": row["folio_id"]}, session=session)], fallback_currency=row["currency"], session=session)
-        await database.folios.update_one({"tenant_id": tenant_id, "id": row["folio_id"], "status": "open"},
+        updated = await database.folios.update_one({"tenant_id": tenant_id, "id": row["folio_id"], "status": "open"},
             {"$set": {"balance": snapshots[row["folio_id"]]["balance_by_currency"][row["currency"]]}}, session=session)
-        changes.update(status="applied", payment_id=payment_id, business_date=day)
-    await database.billing_concessions.update_one({**query, "status": "requested"}, {"$set": changes}, session=session)
+        if updated.matched_count != 1:
+            raise HTTPException(409, "Açık folyo değişti; işlemi yenileyin")
+        changes.update(status="applied", payment_id=payment_id, business_date=day,
+            service_details=basis["service_details"],
+            balance_before_minor=basis["folio_balance_minor"],
+            balance_after_minor=minor(snapshots[row["folio_id"]]["balance_by_currency"][row["currency"]]))
+    updated = await database.billing_concessions.update_one({**query, "status": "requested"}, {"$set": changes}, session=session)
+    if updated.matched_count != 1:
+        raise HTTPException(409, "İkram işlemi başka bir işlem tarafından değiştirildi")
+    metadata = {"request_id": str(request_id), "booking_id": row["booking_id"], "folio_id": row["folio_id"],
+        "requested_by": row["requested_by"], "actor_id": actor, "actor_name": actor_name or actor, "actor_role": actor_role,
+        "amount_minor": row["amount_minor"], "currency": row["currency"], "kind": row["kind"], "reason": explanation,
+        "original_reason": changes["original_reason"], "charge_ids": row["charge_ids"],
+        "service_details": changes.get("service_details", row.get("service_details", [])),
+        "allocated_charge_minor": row["allocated_charge_minor"], "business_date": changes.get("business_date"),
+        "balance_before_minor": changes.get("balance_before_minor"), "balance_after_minor": changes.get("balance_after_minor"),
+        "execution_mode": "direct_with_reason"}
     await database.pms_audit_trail.insert_one({"id": f"concession:{request_id}:{changes['status']}", "tenant_id": tenant_id,
         "entity_type": "folio", "entity_id": row["folio_id"], "action": f"concession_{changes['status']}",
-        "performed_by": actor, "timestamp": now, "metadata": {"request_id": str(request_id), "requested_by": row["requested_by"],
-            "amount_minor": row["amount_minor"], "currency": row["currency"], "reason": row["reason"]}}, session=session)
+        "performed_by": actor, "timestamp": now, "metadata": metadata}, session=session)
+    from common.request_context import get_client_ip, get_user_agent
+    from core.audit_chain import append_audit_log
+    from shared_kernel.audit_helper import build_audit_entry
+
+    entry = build_audit_entry(actor, tenant_id, "reservation", row["booking_id"], f"concession_{changes['status']}", metadata)
+    # The append-only DB proxy fills request attribution at insert time. Include
+    # it before hashing, otherwise a real HTTP request would change hashed fields.
+    entry.update(timestamp=now, actor_name=actor_name or actor, override_reason=explanation,
+        ip_address=get_client_ip(), user_agent=get_user_agent(),
+        details=f"{actor_name or actor}: {row['amount_minor'] / 100:.2f} {row['currency']} ikram/indirim "
+                f"{'uygulandı' if approve else 'iptal edildi'}. Folyo: {row['folio_id']}. Gerekçe: {explanation}",
+        before_snapshot={"status": row["status"], "reason": row.get("reason")},
+        after_snapshot={**metadata, "status": changes["status"], "payment_id": changes.get("payment_id")})
+    await append_audit_log(database, entry, session=session, require_chain=True)
     return public_concession({**row, **changes})
 
 

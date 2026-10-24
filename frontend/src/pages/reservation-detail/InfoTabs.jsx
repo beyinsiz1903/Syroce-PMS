@@ -63,6 +63,8 @@ const ACTIVITY_LABELS = {
   group_checkout: 'Grup çıkış',
   stay_dates_updated: 'Konaklama tarihleri güncellendi',
   complimentary_total_reconciled: 'Comp konaklama tutarı düzeltildi',
+  concession_applied: 'İkram / indirim uygulandı',
+  concession_rejected: 'Bekleyen ikram / indirim iptal edildi',
   reservation_modified: 'Rezervasyon güncellendi',
   checked_in: 'Giriş yapıldı',
   checked_out: 'Çıkış yapıldı',
@@ -75,6 +77,9 @@ const changeLabel = field => ({
   rate_plan: 'Tarife planı', special_requests: 'Özel istekler',
 }[field] || field.replace(/_/g, ' '));
 const compactChangeSummary = details => {
+  if (Number.isSafeInteger(details?.amount_minor) && details?.reason) {
+    return `${fmtCurrency(details.amount_minor / 100, details.currency || 'TRY')} · ${details.reason}`;
+  }
   const changes = details?.changes || {};
   const entries = Object.entries(changes).filter(([field]) => field !== 'room_id');
   if (!entries.length) return details?.source || '';

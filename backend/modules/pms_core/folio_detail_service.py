@@ -186,6 +186,12 @@ class FolioDetailService:
                 normalized.get("entity_id") or normalized.get("target_id"),
                 normalized.get("timestamp"),
             )
+            if normalized["action"] in {"concession_applied", "concession_rejected"}:
+                request_id = (entry.get("metadata") or {}).get("request_id")
+                if request_id:
+                    # Domain and central audit copies describe one concession,
+                    # even though one targets the folio and one the reservation.
+                    key = ("concession", request_id, normalized["action"])
             merged[key] = normalized
         return sorted(
             merged.values(),

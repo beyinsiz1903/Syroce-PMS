@@ -14,6 +14,17 @@ import { HistoryTab } from '@/pages/reservation-detail/GuestServiceTabs';
 afterEach(() => cleanup());
 
 describe('reservation change audit history', () => {
+  it('shows concession explanation, operator, native-currency amount and affected service', () => {
+    render(<HistoryTab history={[{ id: 'audit-comp', action: 'concession_applied', actor: 'Ayşe Yılmaz',
+      created_at: '2026-10-24T10:00:00Z', details: { amount_minor: 110000, currency: 'EUR', folio_id: 'F-2',
+        reason: 'Misafir memnuniyeti', service_details: [{ id: 'spa', description: 'SPA masaj hizmeti' }] } }]} roomMoves={[]} />);
+    expect(screen.getByText('İkram / indirim uygulandı')).toBeInTheDocument();
+    expect(screen.getByText('Yapan: Ayşe Yılmaz')).toBeInTheDocument();
+    expect(screen.getByText('Sebep: Misafir memnuniyeti')).toBeInTheDocument();
+    expect(screen.getByText('Folyo: F-2')).toBeInTheDocument();
+    expect(screen.getByText('Hizmetler: SPA masaj hizmeti')).toBeInTheDocument();
+    expect(screen.getByText(/Tutar:/)).toHaveTextContent(/1[.,]100/);
+  });
   it('shows the source and old/new stay dates for a timeline entry', () => {
     render(
       <HistoryTab

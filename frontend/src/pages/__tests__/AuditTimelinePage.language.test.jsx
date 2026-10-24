@@ -65,4 +65,17 @@ describe('işlem kayıtları kullanıcı dili', () => {
     )).toBe('Chrome 152.0.0.0 · macOS');
     expect(summarizeUserAgent('')).toBe('Bilinmeyen cihaz');
   });
+
+  it('ikramı, tutarı, kullanıcıyı ve gerekçeyi merkezi logda anlaşılır gösterir', () => {
+    expect(auditEntityLabel('reservation')).toBe('Rezervasyon');
+    expect(auditActionLabel('concession_rejected')).toBe('Bekleyen ikram / indirim iptal edildi');
+    render(<TimelineEvent event={{ action: 'concession_applied', target_type: 'reservation',
+      actor_name: 'Ayşe Yılmaz', details: '7200.00 TRY oda ikramı. Gerekçe: Yönetim misafiri',
+      override_reason: 'Yönetim misafiri', after_snapshot: { amount_minor: 720000, reason: 'Yönetim misafiri' } }}
+      expanded t={key => key} i18n={{ language: 'tr' }} />);
+    expect(screen.getByText('İkram / indirim uygulandı')).toBeTruthy();
+    expect(screen.getByText('7200.00 TRY oda ikramı. Gerekçe: Yönetim misafiri')).toBeTruthy();
+    expect(screen.getByText(/Ayşe Yılmaz/)).toBeTruthy();
+    expect(screen.getAllByText('Yönetim misafiri').length).toBeGreaterThan(0);
+  });
 });

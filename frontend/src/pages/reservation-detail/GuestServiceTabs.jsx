@@ -164,6 +164,7 @@ export function HistoryTab({ history, roomMoves, currency = 'TRY' }) {
     communication_logged: 'İletişim', group_checkin: 'Grup giriş', group_checkout: 'Grup çıkış',
     stay_dates_updated: 'Konaklama tarihleri güncellendi', reservation_modified: 'Rezervasyon güncellendi',
     complimentary_total_reconciled: 'Comp konaklama tutarı düzeltildi',
+    concession_applied: 'İkram / indirim uygulandı', concession_rejected: 'Bekleyen ikram / indirim iptal edildi',
   };
   const colors = {
     payment_recorded: 'bg-emerald-100 text-emerald-700', transferred_to_cari: 'bg-amber-100 text-amber-700',
@@ -223,6 +224,9 @@ export function HistoryTab({ history, roomMoves, currency = 'TRY' }) {
                     {ev.details.from_room && <span>{t('cm.pages_reservationdetail_GuestServiceTabs.eski')} {ev.details.from_room}</span>}
                     {ev.details.to_room && <span>{t('cm.pages_reservationdetail_GuestServiceTabs.yeni')} {ev.details.to_room}</span>}
                     {ev.details.amount && <span>{t('cm.pages_reservationdetail_GuestServiceTabs.tutar')} {fmtCurrency(ev.details.amount, ev.details.currency || currency)}</span>}
+                    {Number.isSafeInteger(ev.details.amount_minor) && <span>Tutar: {fmtCurrency(ev.details.amount_minor / 100, ev.details.currency || currency)}</span>}
+                    {ev.details.folio_id && ev.action?.startsWith('concession_') && <span>Folyo: {ev.details.folio_id}</span>}
+                    {ev.details.service_details?.length > 0 && <span>Hizmetler: {ev.details.service_details.map(row => row.description || row.category || row.id).join(', ')}</span>}
                     {ev.details.method && <span>Yontem: {ev.details.method}</span>}
                     {ev.details.reason && <span>Sebep: {ev.details.reason}</span>}
                     {ev.details.cari_account && <span>Cari: {ev.details.cari_account}</span>}
