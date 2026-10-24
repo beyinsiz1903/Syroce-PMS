@@ -93,7 +93,8 @@ export function previewResponse({ method = 'GET', path = '/', authorization, bod
       return { ...room, available: !occupied && !blocked, occupancy_status: occupied ? 'occupied' : blocked ? 'blocked' : 'free', blocks: [] };
     }));
   }
-  const reservationMatch = pathname.match(/^\/api\/reservations\/([^/]+)\/(full-detail|details-enhanced|ota-details)$/);
+  const reservationMatch = pathname.match(/^\/api\/pms\/reservations\/([^/]+)\/(full-detail)$/)
+    || pathname.match(/^\/api\/reservations\/([^/]+)\/(details-enhanced|ota-details)$/);
   if (reservationMatch) {
     const booking = data.bookings.find((record) => record.id === decodeURIComponent(reservationMatch[1]));
     if (!booking) return fail(404, 'Demo rezervasyonu bulunamadı.');

@@ -165,7 +165,7 @@ function pickFields<T extends object, K extends keyof T>(value: T, keys: readonl
 }
 
 export async function getReservationFullDetail(id: string): Promise<ReservationFullDetail | null> {
-  const res = await api.get<ReservationFullDetail>(`/api/reservations/${encodeURIComponent(id)}/full-detail`);
+  const res = await api.get<ReservationFullDetail>(`/api/pms/reservations/${encodeURIComponent(id)}/full-detail`);
   if (res?.booking?.id !== id) return null;
   // The broad web endpoint also returns identity documents, communication logs
   // and guest links. Keep only this screen's fields in the persisted query cache.

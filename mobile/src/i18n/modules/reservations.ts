@@ -87,7 +87,7 @@ export const reservations = {
   extraCharges: 'Ek ücretler',
   noExtraCharges: 'Ek ücret yok',
   multiRoom: 'Çoklu oda grubu',
-  detailError: 'Detaylar yüklenemedi',
+  detailError: 'Rezervasyon hesabı yüklenemedi. Lütfen tekrar deneyin.',
   none: 'Yok',
   manage: 'İşlemler',
   takePayment: 'Ödeme Al',

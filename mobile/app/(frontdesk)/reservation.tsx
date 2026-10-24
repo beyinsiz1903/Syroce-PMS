@@ -522,7 +522,7 @@ export default function ReservationDetailScreen() {
           <H2>{tr.reservations.accountSummary}</H2>
         </View>
         {detail.isLoading ? <SkeletonCard /> : detail.isError || !detail.data ? (
-          <View style={{ gap: spacing.sm, marginTop: spacing.md }}>
+          <View testID="reservation-account-error" style={{ gap: spacing.sm, marginTop: spacing.md }}>
             <Body style={{ color: c.danger }}>{errorMessage(detail.error, tr.reservations.detailError)}</Body>
             <Button title={tr.reservations.retry} variant="secondary" onPress={() => { void detail.refetch(); }} fullWidth />
           </View>
