@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from "react";
+import { lazy, Suspense, useEffect, useState, useCallback, useRef } from "react";
 import api from "@/api/axios";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -21,6 +21,8 @@ import { cachedTenantCurrency } from '@/lib/currency';
 import { formatCurrencyBreakdown } from '@/lib/reportCurrency';
 import { validateReportDate } from '@/utils/reportExports';
 import { mergePaceSeries } from '@/lib/forecastReports';
+
+const FrontdeskForecastReport = lazy(() => import('./reports/FrontdeskForecastReport'));
 
 // Each tab owns its request generation and filter scope. A late response must
 // neither overwrite a newer report nor stop another tab's loading indicator.
@@ -54,9 +56,9 @@ function useForecastReports() {
  * Backend hazır (/api/analytics/forecast, /pickup-report, /pace).
  * Bu sürüm tablo + recharts grafikleri ile zenginleştirilmiş.
  */
-export default function ForecastReportsPage() {
+export default function ForecastReportsPage({ initialTab = 'operational' }) {
   const { t } = useTranslation();
-  const [tab, setTab] = useState("forecast");
+  const [tab, setTab] = useState(initialTab);
   const { reports, load } = useForecastReports();
 
   const [days, setDays] = useState(30);
@@ -97,25 +99,27 @@ export default function ForecastReportsPage() {
     <div className="container mx-auto p-4 sm:p-6 space-y-4 max-w-7xl min-w-0">
       <div>
         <h2 className="text-2xl font-semibold flex items-center gap-2">
-          <TrendingUp className="h-6 w-6" /> Öngörü ve Rezervasyon Eğilimleri
+          <TrendingUp className="h-6 w-6" /> Forecast ve Rezervasyon Raporları
         </h2>
         <p className="text-sm text-muted-foreground">
-          10, 30 ve 90 günlük doluluk tahminlerini, rezervasyon hızını ve yeni rezervasyonları tek ekranda izleyin.
+          Günlük müsaitlik, doluluk, geliş–ayrılış ve rezervasyon bedelleri. İstatistiksel tahmin ile kayıtlı ön büro forecast'i ayrı izlenir.
         </p>
       </div>
 
       <Tabs value={tab} onValueChange={setTab}>
-        <TabsList className="grid h-auto w-full grid-cols-3 sm:inline-flex sm:w-auto">
-          <TabsTrigger className="min-w-0 whitespace-normal px-2 text-xs sm:text-sm" value="forecast" data-testid="tab-forecast">Doluluk Tahmini</TabsTrigger>
+        <TabsList className="grid h-auto w-full grid-cols-2 lg:inline-flex lg:w-auto">
+          <TabsTrigger className="min-w-0 whitespace-normal px-2 text-xs sm:text-sm" value="operational" data-testid="tab-operational">Ön Büro Forecast</TabsTrigger>
+          <TabsTrigger className="min-w-0 whitespace-normal px-2 text-xs sm:text-sm" value="forecast" data-testid="tab-forecast">İstatistiksel Tahmin</TabsTrigger>
           <TabsTrigger className="min-w-0 whitespace-normal px-2 text-xs sm:text-sm" value="pace" data-testid="tab-pace">Rezervasyon Hızı</TabsTrigger>
           <TabsTrigger className="min-w-0 whitespace-normal px-2 text-xs sm:text-sm" value="pickup" data-testid="tab-pickup">Yeni Rezervasyonlar</TabsTrigger>
         </TabsList>
 
         {loading && <p role="status" className="py-3 text-sm text-muted-foreground">Rapor yükleniyor…</p>}
         {active?.error && <p role="alert" className="my-3 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800">{active.error}</p>}
-        {!active && <p role="status" className="py-3 text-sm text-amber-800">Filtreler değişti. Seçili kapsam için Yenile düğmesine basın.</p>}
+        {tab !== 'operational' && !active && <p role="status" className="py-3 text-sm text-amber-800">Filtreler değişti. Seçili kapsam için Yenile düğmesine basın.</p>}
         {active?.data && !(active.data.daily?.length || active.data.current?.length || active.data.compare?.length) && <p role="status" className="py-3 text-sm text-muted-foreground">Seçili kapsamda rapor kaydı bulunmuyor.</p>}
 
+        <TabsContent value="operational">{tab === 'operational' && <Suspense fallback={<p role="status">Ön büro forecast hazırlanıyor…</p>}><FrontdeskForecastReport /></Suspense>}</TabsContent>
         <TabsContent value="forecast">
           <Card>
             <CardHeader>

@@ -19,7 +19,7 @@ const selectTab = name => fireEvent.mouseDown(screen.getByTestId(`tab-${name}`),
 
 it('clears previous financial results and shows a persistent error on failed refresh', async () => {
   api.get.mockResolvedValueOnce(report('2026-10-18')).mockRejectedValueOnce(new Error('Sunucuya ulaşılamıyor'));
-  render(<ForecastReportsPage />);
+  render(<ForecastReportsPage initialTab="forecast" />);
   await screen.findByText('2026-10-18');
   fireEvent.click(screen.getByTestId('button-load-forecast'));
   expect(await screen.findByRole('alert')).toHaveTextContent('Sunucuya ulaşılamıyor');
@@ -31,7 +31,7 @@ it('hides results after filter changes and ignores an earlier response after exp
   let finishOld;
   api.get.mockImplementationOnce(() => new Promise(resolve => { finishOld = resolve; }));
   api.get.mockResolvedValueOnce(report('2026-10-19'));
-  render(<ForecastReportsPage />);
+  render(<ForecastReportsPage initialTab="forecast" />);
   fireEvent.change(screen.getByTestId('input-forecast-segment'), { target: { value: 'Kurumsal' } });
   expect(api.get).toHaveBeenCalledTimes(1);
   expect(screen.getByRole('status')).toHaveTextContent('Filtreler değişti');
@@ -50,7 +50,7 @@ it('keeps active pickup loading until its own request finishes, regardless of th
   let finishForecast, finishPickup;
   api.get.mockImplementationOnce(() => new Promise(resolve => { finishForecast = resolve; }));
   api.get.mockImplementationOnce(() => new Promise(resolve => { finishPickup = resolve; }));
-  render(<ForecastReportsPage />);
+  render(<ForecastReportsPage initialTab="forecast" />);
   selectTab('pickup');
   await waitFor(() => expect(api.get).toHaveBeenCalledTimes(2));
   expect(screen.getByTestId('button-load-pickup')).toBeDisabled();
@@ -64,7 +64,7 @@ it('keeps active pickup loading until its own request finishes, regardless of th
 
 it('distinguishes a successful empty report and rejects a cleared pace date without an API call', async () => {
   api.get.mockResolvedValue({ data: { daily: [], current: [] } });
-  render(<ForecastReportsPage />);
+  render(<ForecastReportsPage initialTab="forecast" />);
   expect(await screen.findByText('Seçili kapsamda rapor kaydı bulunmuyor.')).toBeInTheDocument();
   selectTab('pace');
   await waitFor(() => expect(screen.getByTestId('button-load-pace')).toBeEnabled());
@@ -81,7 +81,7 @@ it('shows forecast revenue, ADR and RevPAR in their actual currencies, not as nu
     adr_by_currency: { EUR: 50, USD: 100 }, revpar_by_currency: { EUR: 10, USD: 20 },
     revenue_otb_by_currency: { EUR: 100, USD: 200 }, revenue_forecast_by_currency: { EUR: 100, USD: 200 }, confidence: .5,
   }] } });
-  render(<ForecastReportsPage />);
+  render(<ForecastReportsPage initialTab="forecast" />);
   await screen.findByText('2026-10-18');
   const table = screen.getByRole('table');
   expect(table.textContent).toContain('EUR:');
@@ -94,7 +94,7 @@ it('shows comparison-only pace data and does not claim the report is empty', asy
   api.get.mockResolvedValueOnce({ data: { daily: [] } }).mockResolvedValueOnce({ data: {
     current: [], compare: [{ days_out: 2, rooms_on_books: 3 }, { days_out: 0, rooms_on_books: 5 }], as_of_date: '2026-10-18',
   } });
-  render(<ForecastReportsPage />);
+  render(<ForecastReportsPage initialTab="forecast" />);
   selectTab('pace');
   const table = await screen.findByTestId('pace-table');
   expect(table).toHaveTextContent('3');
@@ -112,7 +112,7 @@ it('keeps comparison-only lead days and leaves the unobserved current period bla
     current: [{ days_out: 10, rooms_on_books: 1 }],
     compare: [{ days_out: 20, rooms_on_books: 2 }, { days_out: 0, rooms_on_books: 5 }],
   } });
-  render(<ForecastReportsPage />);
+  render(<ForecastReportsPage initialTab="forecast" />);
   selectTab('pace');
   const table = await screen.findByTestId('pace-table');
   expect(within(table).getAllByRole('row')).toHaveLength(4);
@@ -126,7 +126,7 @@ it('keeps comparison-only lead days and leaves the unobserved current period bla
 it('displays daily capacity, overselling and forecast-only financial wording', async () => {
   api.get.mockResolvedValue({ data: { currency: 'EUR', daily: [{ date: '2026-10-18', rooms_otb: 2, rooms_forecast: 2,
     available_rooms: 1, overbooked_rooms: 1, occupancy_pct: 200, revenue_otb_by_currency: { EUR: 200 }, adr_by_currency: { EUR: 100 } }] } });
-  render(<ForecastReportsPage />);
+  render(<ForecastReportsPage initialTab="forecast" />);
   const table = await screen.findByTestId('forecast-table');
   expect(table).toHaveTextContent('Satılabilir Oda');
   expect(table).toHaveTextContent('Fazla Rezervasyon');
@@ -137,7 +137,7 @@ it('displays daily capacity, overselling and forecast-only financial wording', a
 
 it('rejects an invalid comparison year before making an API call', async () => {
   api.get.mockResolvedValue({ data: { daily: [], current: [] } });
-  render(<ForecastReportsPage />);
+  render(<ForecastReportsPage initialTab="forecast" />);
   selectTab('pace');
   await waitFor(() => expect(screen.getByTestId('button-load-pace')).toBeEnabled());
   const calls = api.get.mock.calls.length;
@@ -150,7 +150,7 @@ it('rejects an invalid comparison year before making an API call', async () => {
 it('does not show zero RevPAR or zero occupancy when commitments have no sellable inventory', async () => {
   api.get.mockResolvedValue({ data: { currency: 'EUR', daily: [{ date: '2026-10-18', rooms_otb: 1, rooms_forecast: 1,
     available_rooms: 0, overbooked_rooms: 1, capacity_conflict: true, occupancy_pct: null, revpar: null, adr_by_currency: { EUR: 100 } }] } });
-  render(<ForecastReportsPage />);
+  render(<ForecastReportsPage initialTab="forecast" />);
   const table = await screen.findByTestId('forecast-table');
   expect(table).toHaveTextContent('Kapasite yok');
   expect(table).not.toHaveTextContent('null%');

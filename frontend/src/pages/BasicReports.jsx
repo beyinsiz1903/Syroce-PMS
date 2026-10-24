@@ -68,9 +68,9 @@ export const REPORT_MENU = [{
   desc: 'Performans metrikleri'
 }, {
   id: 'forecast_reports',
-  label: 'Öngörü Raporları',
+  label: 'Forecast / Öngörü Raporları',
   icon: TrendingUp,
-  desc: 'Doluluk tahmini ve rezervasyon gelişimi'
+  desc: 'Günlük müsaitlik, doluluk, geliş–ayrılış ve gelir görünümü'
 }, {
   id: 'period',
   label: 'Dönem Karşılaştırma',
