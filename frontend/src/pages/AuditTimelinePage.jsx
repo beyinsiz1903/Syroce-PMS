@@ -13,6 +13,7 @@ const MODULE_LABELS = {
   calendar: "Takvim",
   bookings: "Rezervasyon",
   booking: "Rezervasyon",
+  reservation: "Rezervasyon",
   folio: "Folyo",
   cashier: "Kasa",
   pos: "Restoran POS",
@@ -35,6 +36,8 @@ const MODULE_LABELS = {
 };
 
 const ACTION_LABELS = {
+  concession_applied: "İkram / indirim uygulandı",
+  concession_rejected: "Bekleyen ikram / indirim iptal edildi",
   login_success: "Oturum açıldı",
   login_failed: "Oturum açma başarısız",
   logout: "Oturum kapatıldı",

@@ -126,7 +126,7 @@ async def _link_chain(tenant_id: str, entry: dict, session=None) -> tuple[int, s
     raise RuntimeError(f"audit chain CAS contention for tenant {tenant_id}")
 
 
-async def append_audit_log(db, entry: dict, session=None) -> dict:
+async def append_audit_log(db, entry: dict, session=None, *, require_chain=False) -> dict:
     """Single canonical audit insert: fills chain fields + persists.
 
     `db` is whatever collection-bearing handle the caller already uses (the
@@ -134,9 +134,13 @@ async def append_audit_log(db, entry: dict, session=None) -> dict:
     system db so it works in request, worker, and Celery contexts alike.
 
     Best-effort: a chain-linking failure still writes the record (unchained) so
-    the audit event is never lost.
+    the audit event is never lost. Financial callers may opt into require_chain
+    inside their transaction: a linking failure then aborts the financial write
+    instead of allowing an unchained record or a proxy re-link outside session.
     """
     tenant_id = entry.get("tenant_id")
+    if require_chain and not tenant_id:
+        raise ValueError("A required audit chain needs a tenant_id")
     if tenant_id:
         try:
             seq, prev_hash, record_hash = await _link_chain(tenant_id, entry, session=session)
@@ -144,6 +148,8 @@ async def append_audit_log(db, entry: dict, session=None) -> dict:
             entry["prev_hash"] = prev_hash
             entry["record_hash"] = record_hash
         except Exception as exc:
+            if require_chain:
+                raise
             logger.warning("audit chain link failed (writing unchained): %s", exc)
 
     insert_kwargs = {"session": session} if session is not None else {}

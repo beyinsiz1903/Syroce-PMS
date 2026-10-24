@@ -1284,7 +1284,7 @@ async def get_reservation_full_detail(booking_id: str, current_user: User = Depe
                 "tenant_id": tid,
                 "entity_type": "reservation",
                 "entity_id": booking_id,
-                "action": "reservation_modified",
+                "action": {"$in": ["reservation_modified", "concession_applied", "concession_rejected"]},
             },
             {"_id": 0},
         ).sort("timestamp", -1):

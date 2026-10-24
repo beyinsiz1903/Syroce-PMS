@@ -73,14 +73,21 @@ class Collection:
 
 
 @pytest.fixture
-def ledger():
+def ledger(monkeypatch):
+    from core import audit_chain
+
+    async def link(tenant_id, entry, session=None):
+        assert session is not None
+        return 1, "", audit_chain.compute_record_hash(entry, 1, "")
+
+    monkeypatch.setattr(audit_chain, "_link_chain", link)
     return SimpleNamespace(
         bookings=Collection([{"id": "booking", "tenant_id": "A", "currency": "TRY", "status": "checked_in"}]),
         folios=Collection([{"id": "guest", "tenant_id": "A", "booking_id": "booking", "status": "open", "currency": "TRY", "balance": 999999}]),
         tenant_settings=Collection([{"tenant_id": "A", "business_date": "2026-10-24", "enterprise_billing": {"approval_limits_minor": {"TRY": 1000000}}}]),
         folio_charges=Collection([{"id": "room", "tenant_id": "A", "folio_id": "guest", "booking_id": "booking", "currency": "TRY",
             "charge_category": "room", "amount": 900, "tax_amount": 100, "total": 1000, "business_date": "2026-10-23", "voided": False}]),
-        payments=Collection(), billing_concessions=Collection(), invoices=Collection(), pms_audit_trail=Collection())
+        payments=Collection(), billing_concessions=Collection(), invoices=Collection(), pms_audit_trail=Collection(), audit_logs=Collection())
 
 
 def body(**changes):
@@ -89,7 +96,17 @@ def body(**changes):
 
 
 async def request(db, data):
-    return await billing.request_concession(db, "A", "requester", data, session=object())
+    return await billing.request_concession(db, "A", "requester", data, session=object(), actor_name="Ayşe Yılmaz", actor_role="super_admin")
+
+
+async def legacy_pending(db, data):
+    """An old pre-deployment request, never a new application's durable state."""
+    payload = data.model_dump(mode="json")
+    payload["charge_ids"] = sorted(payload["charge_ids"])
+    basis = await billing.concession_basis(db, 'A', data, session=object())
+    db.billing_concessions.rows.append({'_id': f'concession:A:{data.request_id}', 'id': str(data.request_id),
+        'tenant_id': 'A', **payload, **basis, 'request_payload': payload, 'fingerprint': billing.fingerprint(payload),
+        'requested_by': 'requester', 'status': 'requested'})
 
 
 async def decide(db, data, approve=True, actor="manager"):
@@ -97,24 +114,28 @@ async def decide(db, data, approve=True, actor="manager"):
 
 
 @pytest.mark.asyncio
-async def test_full_room_comp_needs_second_actor_and_is_not_collection(ledger):
+async def test_full_room_comp_is_immediate_with_explanation_and_is_not_collection(ledger):
     original = deepcopy(ledger.folio_charges.rows)
     data = body()
-    pending = await request(ledger, data)
-    assert pending['status'] == 'requested' and pending['amount_minor'] == 100000
-    assert not ledger.payments.rows
-    with pytest.raises(HTTPException) as exc:
-        await decide(ledger, data, actor="requester")
-    assert exc.value.status_code == 403
-    result = await decide(ledger, data)
+    result = await request(ledger, data)
     assert result['status'] == 'applied'
     assert ledger.folio_charges.rows == original  # no rewrite of closed-day revenue or tax
     assert ledger.folios.rows[0]['balance'] == 0
     assert len(ledger.payments.rows) == 1 and effective_collection(ledger.payments.rows[0]) == 0
     assert ledger.payments.rows[0]['business_date'] == '2026-10-24'
     assert ledger.pms_audit_trail.rows[0]['metadata']['requested_by'] == 'requester'
-    await decide(ledger, data)
+    audit = ledger.audit_logs.rows[0]
+    assert audit['entity_type'] == 'reservation' and audit['entity_id'] == 'booking'
+    assert audit['actor_id'] == 'requester' and audit['actor_name'] == 'Ayşe Yılmaz'
+    assert audit['override_reason'] == data.reason and data.reason in audit['details']
+    assert audit['after_snapshot']['allocated_charge_minor'] == {'room': 100000}
+    assert audit['after_snapshot']['balance_before_minor'] == 100000
+    assert audit['after_snapshot']['balance_after_minor'] == 0
+    assert result['execution_mode'] == 'direct_with_reason'
+    await decide(ledger, data, actor='requester')
+    await request(ledger, data)
     assert len(ledger.payments.rows) == 1  # decision retry never posts twice
+    assert len(ledger.audit_logs.rows) == len(ledger.pms_audit_trail.rows) == 1
 
 
 @pytest.mark.asyncio
@@ -127,33 +148,68 @@ async def test_partial_comp_exact_minor_units(ledger, mode, fields, expected):
 
 
 @pytest.mark.asyncio
-async def test_request_replay_payload_binding_and_reject(ledger):
+@pytest.mark.parametrize('kind', ['room_comp', 'selected_services_comp', 'service_recovery', 'discount'])
+@pytest.mark.parametrize('code', ['TRY', 'USD', 'EUR', 'GBP', 'CHF'])
+@pytest.mark.parametrize('mode,fields,expected', [('full', {}, 100000), ('percentage', {'percentage': '33.33'}, 33330),
+    ('amount', {'amount_minor': 12345}, 12345)])
+async def test_all_concession_kinds_and_scopes_preserve_native_currency(ledger, kind, code, mode, fields, expected):
+    for collection in (ledger.bookings, ledger.folios, ledger.folio_charges):
+        collection.rows[0]['currency'] = code
+    result = await request(ledger, body(kind=kind, mode=mode, **fields))
+    assert result['status'] == 'applied' and result['currency'] == code and result['amount_minor'] == expected
+    assert round(ledger.payments.rows[0]['amount'] * 100) == expected
+    assert ledger.payments.rows[0]['currency'] == ledger.audit_logs.rows[0]['after_snapshot']['currency'] == code
+    assert effective_collection(ledger.payments.rows[0]) == 0
+
+
+@pytest.mark.asyncio
+async def test_request_replay_payload_binding_and_no_reversal(ledger):
     data = body()
     assert await request(ledger, data) == await request(ledger, data)
     with pytest.raises(HTTPException) as exc:
         await request(ledger, data.model_copy(update={'reason': 'başka gerekçe'}))
     assert exc.value.status_code == 409
-    assert (await decide(ledger, data, False))['status'] == 'rejected'
-    assert not ledger.payments.rows
     with pytest.raises(HTTPException):
-        await decide(ledger, data)
+        await decide(ledger, data, False)
+    assert len(ledger.payments.rows) == 1
+
+
+@pytest.mark.asyncio
+async def test_legacy_pending_can_be_applied_or_cancelled_by_creator(ledger):
+    cancelled = body()
+    await legacy_pending(ledger, cancelled)
+    assert (await decide(ledger, cancelled, False, actor='requester'))['status'] == 'rejected'
+    with pytest.raises(HTTPException):
+        await request(ledger, cancelled)
+    assert not ledger.payments.rows
+    data = body()
+    await legacy_pending(ledger, data)
+    applied = await billing.decide_concession(ledger, 'A', 'requester', data.request_id, True,
+        reason='Sunum için oda ikramı', session=object(), actor_name='Ayşe Yılmaz')
+    assert applied['status'] == 'applied' and applied['reason'] == 'Sunum için oda ikramı'
+    assert applied['original_reason'] == data.reason
+    assert ledger.payments.rows[0]['notes'] == 'Sunum için oda ikramı'
+    with pytest.raises(HTTPException):
+        await billing.decide_concession(ledger, 'A', 'requester', data.request_id, True,
+            reason='Farklı açıklama', session=object())
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize('change', ['charge', 'payment', 'invoice', 'folio_closed', 'other_comp'])
-async def test_approval_rechecks_snapshot_and_fiscal_state(ledger, change):
+async def test_legacy_application_rechecks_service_and_fiscal_state(ledger, change):
     data = body(mode='percentage', percentage=50)
-    await request(ledger, data)
+    await legacy_pending(ledger, data)
     if change == 'charge':
         ledger.folio_charges.rows[0]['total'] = 900
     elif change == 'payment':
-        ledger.payments.rows.append({'tenant_id': 'A', 'folio_id': 'guest', 'currency': 'TRY', 'amount': 100, 'method': 'card'})
+        ledger.payments.rows.append({'tenant_id': 'A', 'folio_id': 'guest', 'currency': 'TRY', 'amount': 600, 'method': 'card'})
     elif change == 'invoice':
         ledger.invoices.rows.append({'tenant_id': 'A', 'booking_id': 'booking', 'status': 'draft'})
     elif change == 'folio_closed':
         ledger.folios.rows[0]['status'] = 'closed'
     else:
-        ledger.billing_concessions.rows.append({'_id': 'other', 'tenant_id': 'A', 'booking_id': 'booking', 'folio_id': 'guest', 'status': 'applied', 'amount_minor': 1})
+        ledger.billing_concessions.rows.append({'_id': 'other', 'tenant_id': 'A', 'booking_id': 'booking', 'folio_id': 'guest',
+            'status': 'applied', 'amount_minor': 1, 'charge_ids': ['room'], 'allocated_charge_minor': {'room': 1}})
     with pytest.raises(HTTPException) as exc:
         await decide(ledger, data)
     assert exc.value.status_code in {409, 404}
@@ -162,13 +218,22 @@ async def test_approval_rechecks_snapshot_and_fiscal_state(ledger, change):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize('limits', [{}, {'EUR': 999999}, {'TRY': 99999}])
-async def test_missing_currency_or_insufficient_limit_fails_closed(ledger, limits):
+async def test_direct_concessions_do_not_require_approval_limits(ledger, limits):
     data = body()
-    await request(ledger, data)
     ledger.tenant_settings.rows[0]['enterprise_billing']['approval_limits_minor'] = limits
-    with pytest.raises(HTTPException) as exc:
-        await decide(ledger, data)
-    assert exc.value.status_code == 403 and not ledger.payments.rows
+    assert (await request(ledger, data))['status'] == 'applied'
+
+
+@pytest.mark.asyncio
+async def test_legacy_distinct_services_allow_unrelated_balance_changes(ledger):
+    ledger.folio_charges.rows.append({**ledger.folio_charges.rows[0], 'id': 'spa', 'charge_category': 'spa', 'total': 100})
+    room, spa = body(mode='percentage', percentage=50), body(kind='selected_services_comp', charge_ids=['spa'])
+    await legacy_pending(ledger, room)
+    await legacy_pending(ledger, spa)
+    ledger.payments.rows.append({'tenant_id': 'A', 'folio_id': 'guest', 'currency': 'TRY', 'amount': 100, 'method': 'card'})
+    assert (await decide(ledger, room, actor='requester'))['status'] == 'applied'
+    assert (await decide(ledger, spa, actor='requester'))['status'] == 'applied'
+    assert ledger.folios.rows[0]['balance'] == 400
 
 
 @pytest.mark.asyncio
@@ -190,19 +255,19 @@ async def test_non_transactional_calls_rejected(ledger):
 
 
 @pytest.mark.asyncio
-async def test_injected_failure_rolls_back_entire_approval(ledger):
+@pytest.mark.parametrize('failed_collection', ['pms_audit_trail', 'audit_logs', 'folios', 'billing_concessions'])
+async def test_injected_failure_rolls_back_entire_direct_operation(ledger, failed_collection):
     data = body()
-    await request(ledger, data)
-    ledger.pms_audit_trail.fail = True
+    getattr(ledger, failed_collection).fail = True
     before = {key: deepcopy(coll.rows) for key, coll in vars(ledger).items()}
     try:
         with pytest.raises(RuntimeError):
-            await decide(ledger, data)
+            await request(ledger, data)
     finally:
         # Fake transaction's rollback. Production wrapper uses Mongo transaction.
         for key, rows in before.items():
             getattr(ledger, key).rows = rows
-    assert not ledger.payments.rows and ledger.billing_concessions.rows[0]['status'] == 'requested'
+    assert not ledger.payments.rows and not ledger.billing_concessions.rows and not ledger.audit_logs.rows
 
 
 @pytest.mark.parametrize('changes', [{'mode': 'full', 'amount_minor': 10}, {'mode': 'percentage', 'percentage': 101},

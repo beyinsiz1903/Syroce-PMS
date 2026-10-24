@@ -39,3 +39,11 @@ def test_activity_correlations_prevent_audit_timeline_duplicates():
     )
 
     assert correlations == {"corr-top-level", "corr-in-details"}
+
+
+def test_concession_history_preserves_actor_explanation_and_native_amount():
+    entry = _audit_log_to_reservation_history_entry({"id": "comp", "action": "concession_applied",
+        "metadata": {"actor_name": "Ayşe Yılmaz", "reason": "Oda ikramı", "amount_minor": 720000, "currency": "TRY",
+            "charge_ids": ["room-1"]}, "timestamp": "2026-10-24T12:00:00+00:00"})
+    assert entry["actor"] == "Ayşe Yılmaz" and entry["action"] == "concession_applied"
+    assert entry["details"]["reason"] == "Oda ikramı" and entry["details"]["amount_minor"] == 720000

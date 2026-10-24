@@ -3,7 +3,7 @@ import logging
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from core.database import db
 from core.security import get_current_user
@@ -22,7 +22,10 @@ async def _refresh_after_commit(tenant_id, booking_id):
     from core.booking_payment_state import refresh_booking_payment_state
     from core.report_cache import invalidate_financial_report_caches
 
-    await refresh_booking_payment_state(db, tenant_id, booking_id)
+    try:
+        await refresh_booking_payment_state(db, tenant_id, booking_id)
+    except Exception:
+        logger.warning("Enterprise billing payment projection refresh failed after commit")
     try:
         invalidate_financial_report_caches(tenant_id)
     except Exception:
@@ -55,25 +58,15 @@ async def catalog(user: User = Depends(hotel_user), _perm=Depends(require_op("vi
 @router.get("/policy")
 async def get_policy(user: User = Depends(hotel_user), _perm=Depends(require_op("view_folio"))):
     permissions = RolePermissionService()
-    return {**(await service.policy(db, user.tenant_id)).model_dump(), "actor_id": user.id,
-            "can_approve": all(permissions.check_permission(user.role, op, getattr(user, "granted_permissions", None))
-                               for op in ["manage_approvals", "override_rate"])}
+    return {"actor_id": user.id, "concession_mode": "direct", "reason_required": True, "can_approve": False,
+            "can_apply": all(permissions.check_permission(user.role, op, getattr(user, "granted_permissions", None))
+                             for op in ["post_charge", "override_rate"])}
 
 
 @router.put("/policy")
 async def set_policy(body: service.BillingPolicy, user: User = Depends(hotel_user),
                      _perm=Depends(require_op("manage_approvals"))):
-    async def commit(session):
-        previous = await service.policy(db, user.tenant_id, session=session)
-        await db.tenant_settings.update_one({"tenant_id": user.tenant_id}, {"$set": {
-            "enterprise_billing": body.model_dump()}}, upsert=True, session=session)
-        await db.pms_audit_trail.insert_one({"tenant_id": user.tenant_id, "entity_type": "billing_policy",
-            "entity_id": user.tenant_id, "action": "billing_policy_changed", "performed_by": user.id,
-            "timestamp": service.datetime.now(service.UTC).isoformat(),
-            "metadata": {"before": previous.model_dump(), "after": body.model_dump()}}, session=session)
-        return body.model_dump()
-
-    return await _transaction(user, "billing-policy", commit)
+    raise HTTPException(410, "Ayrı ikram onayı ve onay limiti kaldırıldı; yetkili kullanıcı zorunlu açıklamayla doğrudan uygular")
 
 
 @router.get("/concessions")
@@ -86,27 +79,43 @@ async def concessions(booking_id: str, user: User = Depends(hotel_user), _perm=D
 
 @router.post("/concessions", status_code=201)
 async def request_concession(body: service.ConcessionRequest, user: User = Depends(hotel_user),
-                             _perm=Depends(require_op("post_charge"))):
+                             _perm=Depends(require_op("post_charge")), _finance=Depends(require_op("override_rate"))):
     async def commit(session):
-        return await service.request_concession(db, user.tenant_id, user.id, body, session=session)
+        return await service.request_concession(db, user.tenant_id, user.id, body, session=session,
+            actor_name=user.name, actor_role=user.role)
 
-    return await _transaction(user, body.booking_id, commit)
+    result = await _transaction(user, body.booking_id, commit)
+    await _refresh_after_commit(user.tenant_id, body.booking_id)
+    return result
 
 
 class Decision(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     approve: bool
+    reason: str | None = Field(default=None, min_length=3, max_length=500)
+
+
+class ApplyConcession(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    reason: str = Field(min_length=3, max_length=500)
+
+
+@router.post("/concessions/{request_id}/apply")
+async def apply_concession(request_id: UUID, body: ApplyConcession, user: User = Depends(hotel_user),
+                           _perm=Depends(require_op("post_charge")), _finance=Depends(require_op("override_rate"))):
+    return await decision(request_id, Decision(approve=True, reason=body.reason), user)
 
 
 @router.post("/concessions/{request_id}/decision")
 async def decision(request_id: UUID, body: Decision, user: User = Depends(hotel_user),
-                   _manager=Depends(require_op("manage_approvals")), _finance=Depends(require_op("override_rate"))):
+                   _perm=Depends(require_op("post_charge")), _finance=Depends(require_op("override_rate"))):
     row = await db.billing_concessions.find_one({"_id": f"concession:{user.tenant_id}:{request_id}", "tenant_id": user.tenant_id})
     if not row:
         raise HTTPException(404, "İkram talebi bulunamadı")
 
     async def commit(session):
-        return await service.decide_concession(db, user.tenant_id, user.id, request_id, body.approve, session=session)
+        return await service.decide_concession(db, user.tenant_id, user.id, request_id, body.approve, session=session,
+            reason=body.reason, actor_name=user.name, actor_role=user.role)
 
     result = await _transaction(user, row["booking_id"], commit)
     await _refresh_after_commit(user.tenant_id, row["booking_id"])
