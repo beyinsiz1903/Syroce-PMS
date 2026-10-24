@@ -576,20 +576,11 @@ class AppendOnlyCollection:
         if self._name != HOT_AUDIT_COLLECTION or _audit_retention_ctx.get() or not isinstance(document, dict):
             return document
 
-        # Attribution: stamp client IP + user-agent when the caller omitted them.
-        try:
-            from common.request_context import get_client_ip, get_user_agent
+        # Both direct inserts and canonical helper writes attribute before
+        # hashing. Already-sealed records must remain byte-for-byte unchanged.
+        from core.audit_chain import attribute_audit_entry
 
-            if not document.get("ip_address"):
-                ip = get_client_ip()
-                if ip:
-                    document["ip_address"] = ip
-            if not document.get("user_agent"):
-                ua = get_user_agent()
-                if ua:
-                    document["user_agent"] = ua
-        except Exception:
-            logger.debug("audit attribution fill failed", exc_info=True)
+        attribute_audit_entry(document)
 
         # Tamper-evident chaining. Idempotent: append_audit_log may already have
         # linked the record (record_hash present) → leave it untouched.

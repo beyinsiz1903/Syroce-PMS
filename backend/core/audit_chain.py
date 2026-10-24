@@ -71,6 +71,26 @@ def compute_record_hash(entry: dict, seq: int, prev_hash: str) -> str:
     return digest
 
 
+def attribute_audit_entry(entry: dict) -> dict:
+    """Fill request attribution BEFORE sealing; never mutate sealed content.
+
+    Canonical helper writes and direct proxy inserts share this boundary. A
+    proxy must not add hashed IP/device fields after append_audit_log has
+    reserved the sequence and computed its content hash.
+    """
+    if "record_hash" in entry:
+        return entry
+    try:
+        from common.request_context import get_client_ip, get_user_agent
+
+        for field, value in (("ip_address", get_client_ip()), ("user_agent", get_user_agent())):
+            if not entry.get(field) and value:
+                entry[field] = value
+    except Exception:
+        logger.debug("audit attribution fill failed", exc_info=True)
+    return entry
+
+
 def _system_db():
     from core.tenant_db import get_system_db
 
@@ -138,6 +158,7 @@ async def append_audit_log(db, entry: dict, session=None, *, require_chain=False
     inside their transaction: a linking failure then aborts the financial write
     instead of allowing an unchained record or a proxy re-link outside session.
     """
+    attribute_audit_entry(entry)
     tenant_id = entry.get("tenant_id")
     if require_chain and not tenant_id:
         raise ValueError("A required audit chain needs a tenant_id")
