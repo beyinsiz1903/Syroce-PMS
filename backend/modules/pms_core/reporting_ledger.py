@@ -5,7 +5,10 @@ from datetime import UTC, date, datetime, time, timedelta
 
 from core.business_date_service import accounting_period_match
 from modules.pms_core.report_money import money, resolve_ledger_currencies, rounded
-from modules.pms_core.revenue_categories import charge_category  # noqa: F401 — public shared API
+from modules.pms_core.revenue_categories import (
+    charge_category,  # noqa: F401 — public shared API
+    is_revenue_charge,
+)
 
 
 def charge_amount(row: dict, *, round_to_cents: bool = True) -> float:
@@ -168,7 +171,7 @@ async def posted_revenue_rows(tenant_id: str, start: date, end: date, *, databas
         if str(row.get("id") or "") not in represented_pos_ids | settled_ids
     ]
     return await resolve_ledger_currencies([
-        *({**row, "report_source": "folio"} for row in folio_rows),
-        *({**row, "report_source": "extra"} for row in extra_rows),
+        *({**row, "report_source": "folio"} for row in folio_rows if is_revenue_charge(row)),
+        *({**row, "report_source": "extra"} for row in extra_rows if is_revenue_charge(row)),
         *({**row, "report_source": "pos"} for row in [*transaction_rows, *direct_pos_rows]),
     ], tenant_id, database=database, fallback_currency=fallback_currency)

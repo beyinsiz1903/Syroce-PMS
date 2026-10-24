@@ -18,7 +18,7 @@ from modules.pms_core.frontdesk_forecast import frontdesk_forecast
 from modules.pms_core.frontdesk_forecast_export import forecast_columns, forecast_workbook
 from modules.pms_core.report_room_types import load_room_type_labels
 from modules.pms_core.role_permission_service import require_op
-from modules.pms_core.stay_night_metrics import room_block_overlap_match, stay_overlap_match
+from modules.pms_core.stay_night_metrics import is_physical_room, room_block_overlap_match, stay_overlap_match, with_checkin_business_date_evidence
 from routers.reports_pkg.occupancy_calendar import date_range
 
 sub_router = APIRouter()
@@ -40,9 +40,9 @@ async def get_frontdesk_forecast(start_date: str, end_date: str, room_type: str 
     overlaps = stay_overlap_match(previous, last)
     legacy_overlaps = {"$or": [{"check_in_date" if key == "check_in" else "check_out_date": value for key, value in clause.items()} for clause in overlaps["$or"]]}
     rooms, bookings, closed, groups, rates, allotments = await asyncio.gather(
-        db.rooms.find({"tenant_id": tid}, {"_id": 0, "id": 1, "room_number": 1, "room_type": 1, "room_type_id": 1, "is_active": 1}).to_list(None),
+        db.rooms.find({"tenant_id": tid}, {"_id": 0, "id": 1, "room_number": 1, "room_type": 1, "room_type_id": 1, "is_active": 1, "is_virtual": 1}).to_list(None),
         db.bookings.find({"tenant_id": tid, "$or": [overlaps, legacy_overlaps]}, {"_id": 0, "id": 1, "room_id": 1,
-            "room_number": 1, "room_type": 1, "room_type_id": 1, "status": 1, "check_in": 1, "check_out": 1, "checked_in_at": 1, "checked_out_at": 1,
+            "room_number": 1, "room_type": 1, "room_type_id": 1, "status": 1, "check_in": 1, "check_out": 1, "checked_in_at": 1, "checked_in_business_date": 1, "checked_out_at": 1, "checked_out_business_date": 1,
             "adults": 1, "children": 1, "children_ages": 1, "is_complimentary": 1, "booking_type": 1, "is_house_use": 1,
             "group_block_id": 1, "group_booking_id": 1, "group_id": 1, "block_id": 1, "check_in_date": 1, "check_out_date": 1, "total_amount": 1, "currency": 1}).to_list(None),
         db.room_blocks.find({"tenant_id": tid, **room_block_overlap_match(first, last)}, {"_id": 0, "room_id": 1,
@@ -58,6 +58,7 @@ async def get_frontdesk_forecast(start_date: str, end_date: str, room_type: str 
     groups.extend({**block, "id": f"block:{block.get('id') or block.get('_id')}" if block.get('id') or block.get('_id') else None,
         "check_in": block.get("start_date"), "check_out": block.get("end_date")} for block in allotments)
     labels = await load_room_type_labels(db, tid, rooms)
+    bookings = await with_checkin_business_date_evidence(db, tid, bookings)
     rooms, bookings = labels.normalize(rooms), labels.normalize(bookings)
     groups = [{**row, "room_type": labels(row["room_type"]) if row.get("room_type") else None,
         "room_breakdown": _normalized_breakdown(row.get("room_breakdown"), labels)} for row in groups]
@@ -72,7 +73,7 @@ async def get_frontdesk_forecast(start_date: str, end_date: str, room_type: str 
     # The room-type matrix must include the SAME definite group commitments,
     # dates and capacity denominator as the daily forecast, not a second API.
     data["room_type_groups"] = []
-    active_rooms = {str(row["id"]): row for row in rooms if row.get("id") and row.get("is_active") is not False}
+    active_rooms = {str(row["id"]): row for row in rooms if row.get("id") and is_physical_room(row)}
     by_number = {str(row["room_number"]): key for key, row in active_rooms.items() if row.get("room_number")}
     bookings_by_type = {}
     for booking in bookings:

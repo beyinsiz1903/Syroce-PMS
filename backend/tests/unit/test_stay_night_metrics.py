@@ -3,6 +3,15 @@ from datetime import date
 from modules.pms_core.stay_night_metrics import booking_nights, booking_occupies_night, calculate_stay_night_metrics
 
 
+def test_virtual_paymaster_room_is_not_physical_capacity_or_sold_inventory():
+    rooms = [{"id": "physical"}, {"id": "paymaster", "is_virtual": True}]
+    bookings = [{"room_id": room["id"], "status": "checked_in", "check_in": "2026-10-01",
+                 "check_out": "2026-10-02", "total_amount": amount} for room, amount in zip(rooms, [100, 9999])]
+    row = calculate_stay_night_metrics(bookings, rooms, date(2026, 10, 1), date(2026, 10, 1))[0]
+    assert row["total_rooms"] == row["occupied_rooms"] == row["sold_rooms"] == 1
+    assert row["occupancy_rate"] == 100 and row["revenue"] == row["adr"] == row["revpar"] == 100
+
+
 def test_room_nights_are_unique_checkout_exclusive_and_revenue_is_allocated():
     rooms = [{"id": "r1"}, {"id": "r2"}, {"id": "inactive", "is_active": False}]
     bookings = [

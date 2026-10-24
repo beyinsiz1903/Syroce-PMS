@@ -10,6 +10,70 @@ ACTUAL_OCCUPANCY_STATUSES = frozenset({"checked_in", "in_house", "checked_out"})
 NON_COMMERCIAL_STATUSES = frozenset({"cancelled", "canceled", "no_show", "noshow"})
 
 
+def is_physical_room(room: dict) -> bool:
+    """Virtual accounting/paymaster rooms are not sellable physical inventory."""
+    return room.get("is_active") is not False and not room.get("is_virtual", False)
+
+
+def reservation_party_counts(bookings):
+    """Count declared people once per stay, not once per registered profile.
+
+    Children includes the reservation's child/infant party; never add a second
+    age-derived count. Missing or invalid counts remain unknown, not zero.
+    """
+    adults = children = unknown = 0
+    seen = set()
+    for booking in bookings:
+        key = booking.get("id")
+        if key and key in seen:
+            continue
+        if key:
+            seen.add(key)
+        values = [booking.get(field) for field in ("adults", "children")]
+        if any(isinstance(value, bool) or not isinstance(value, int) or value < 0 for value in values):
+            unknown += 1
+            continue
+        adults += values[0]
+        children += values[1]
+    return {"adults": adults, "children": children, "known_total": adults + children,
+            "total": None if unknown else adults + children, "unknown_booking_count": unknown,
+            "basis": "reservation_party"}
+
+
+async def with_checkin_business_date_evidence(database, tenant_id, bookings):
+    """Read-only recovery from completed audit presence, never planned rates.
+
+    A delayed wall-clock check-in can fall *inside* a long stay. Completed
+    audit room candidates prove the booking was already in house that night,
+    including complimentary candidates that legitimately posted no charge.
+    Dry runs, pending/failed runs and unrelated tenants are not evidence.
+    """
+    candidates = {}
+    for booking in bookings:
+        ci, co, actual = (as_date(booking.get(key)) for key in ("check_in", "check_out", "checked_in_at"))
+        if booking.get("id") and not booking.get("checked_in_business_date") and ci and co and actual and ci < actual < co:
+            candidates[str(booking["id"])] = (ci, co, actual)
+    if not candidates:
+        return bookings
+    items = await database.night_audit_run_items.find({"tenant_id": tenant_id, "booking_id": {"$in": sorted(candidates)},
+        "posting_type": "room_charge", "$or": [{"status": "posted"}, {"status": "skipped", "reason": "complimentary_accommodation"}]},
+        {"_id": 0, "booking_id": 1, "run_id": 1, "posting_date": 1}).to_list(None)
+    run_ids = sorted({str(item["run_id"]) for item in items if item.get("run_id")})
+    runs = await database.night_audit_runs.find({"tenant_id": tenant_id, "id": {"$in": run_ids},
+        "status": {"$in": ["completed", "completed_with_exceptions"]}}, {"_id": 0, "id": 1, "business_date": 1}).to_list(None) if run_ids else []
+    completed = {str(run["id"]): as_date(run.get("business_date")) for run in runs}
+    earliest = {}
+    for item in items:
+        bid, day = str(item.get("booking_id")), as_date(item.get("posting_date"))
+        if bid not in candidates or not day or completed.get(str(item.get("run_id"))) != day:
+            continue
+        ci, co, actual = candidates[bid]
+        if ci <= day < min(co, actual):
+            earliest[bid] = min(earliest.get(bid, day), day)
+    return [{**booking, "checked_in_business_date": earliest[str(booking["id"])].isoformat()}
+            if str(booking.get("id")) in earliest else booking for booking in bookings]
+
+
 def as_date(value) -> date | None:
     if isinstance(value, datetime):
         return value.date()
@@ -82,8 +146,8 @@ def booking_occupies_night(booking: dict, day: date, *, actual_only: bool = Fals
     if not check_in or not check_out or not (check_in <= day < check_out):
         return False
     if actual_only:
-        actual_in = as_date(booking.get("checked_in_at"))
-        actual_out = as_date(booking.get("checked_out_at"))
+        actual_in = as_date(booking.get("checked_in_business_date")) or as_date(booking.get("checked_in_at"))
+        actual_out = as_date(booking.get("checked_out_business_date")) or as_date(booking.get("checked_out_at"))
         # A wall-clock audit timestamp outside the stay can reflect a lagging
         # PMS business day. It must not erase that business-day occupancy.
         if actual_in and check_in <= actual_in < check_out and day < actual_in:
@@ -147,7 +211,7 @@ def calculate_stay_night_metrics(
     are allocated evenly over their stay nights, so they are never repeated on
     every day. Inactive rooms are excluded from capacity.
     """
-    active_rooms = [room for room in rooms if room.get("is_active") is not False]
+    active_rooms = [room for room in rooms if is_physical_room(room)]
     active_room_keys = {
         f"id:{room.get('id')}" if room.get("id") else f"number:{room.get('room_number')}"
         for room in active_rooms
@@ -188,8 +252,8 @@ def calculate_stay_night_metrics(
             (
                 check_in,
                 check_out,
-                as_date(booking.get("checked_in_at")),
-                as_date(booking.get("checked_out_at")),
+                as_date(booking.get("checked_in_business_date")) or as_date(booking.get("checked_in_at")),
+                as_date(booking.get("checked_out_business_date")) or as_date(booking.get("checked_out_at")),
                 room_key,
                 nightly_revenue,
                 currency_code(booking.get("currency"), fallback_currency),
@@ -252,8 +316,8 @@ def calculate_stay_night_metrics(
 async def load_stay_night_metrics(db, tenant_id: str, start_date: date, end_date: date, *, actual_only: bool = False) -> list[dict]:
     """Load the minimum shared dataset and calculate canonical metrics."""
     rooms = await db.rooms.find(
-        {"tenant_id": tenant_id, "is_active": {"$ne": False}},
-        {"_id": 0, "id": 1, "room_number": 1, "is_active": 1},
+        {"tenant_id": tenant_id, "is_active": {"$ne": False}, "is_virtual": {"$ne": True}},
+        {"_id": 0, "id": 1, "room_number": 1, "is_active": 1, "is_virtual": 1},
     ).to_list(None)
     bookings = await db.bookings.find(
         {
@@ -263,6 +327,7 @@ async def load_stay_night_metrics(db, tenant_id: str, start_date: date, end_date
         },
         {
             "_id": 0,
+            "id": 1,
             "room_id": 1,
             "room_number": 1,
             "check_in": 1,
@@ -272,9 +337,13 @@ async def load_stay_night_metrics(db, tenant_id: str, start_date: date, end_date
             "currency": 1,
             "is_complimentary": 1,
             "checked_in_at": 1,
+            "checked_in_business_date": 1,
             "checked_out_at": 1,
+            "checked_out_business_date": 1,
         },
     ).to_list(None)
+    if actual_only:
+        bookings = await with_checkin_business_date_evidence(db, tenant_id, bookings)
     room_blocks = await db.room_blocks.find(
         {
             "tenant_id": tenant_id,

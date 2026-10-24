@@ -54,6 +54,25 @@ async def test_room_type_is_resolved_from_assigned_room_not_defaulted_to_standar
     assert breakdown_totals(report, "rooms") == report["period_comparison"]["month_revenue_by_currency"]
 
 
+async def test_people_profiles_and_physical_rooms_have_distinct_reconciled_counts(ledger_db):
+    await seed_room(ledger_db)
+    await seed_booking(ledger_db, adults=2, children=2, guest_id="parent")
+    await ledger_db.guests.insert_many([
+        {"tenant_id": "A", "id": "parent", "name": "Parent"},
+        {"tenant_id": "A", "id": "child", "name": "Child"},
+    ])
+    await ledger_db.booking_guests.insert_many([
+        {"tenant_id": "A", "booking_id": "booking", "guest_id": "parent"},
+        {"tenant_id": "A", "booking_id": "booking", "guest_id": "child"},
+    ])
+    await ledger_db.rooms.insert_one({"tenant_id": "A", "id": "virtual", "is_virtual": True})
+    report = await dashboard()
+    assert report["summary"]["physical_rooms"] == report["daily_analysis"]["occupied_rooms"] == 1
+    assert report["daily_analysis"]["in_house_guests"] == 4
+    assert report["daily_analysis"]["registered_guest_profiles"] == 2
+    assert len(report["daily_lists"]["in_house"]) == 2
+
+
 @pytest.mark.parametrize("folio_only", [False, True])
 async def test_posting_period_does_not_drop_revenue_for_stays_outside_arrival_cohort(ledger_db, folio_only):
     await seed_room(ledger_db)
@@ -191,7 +210,6 @@ async def test_room_and_channel_breakdowns_reconcile_multiple_native_currencies(
 
 async def test_explicit_workspace_refresh_bypasses_cached_report_and_replaces_it(ledger_db, monkeypatch):
     import cache_manager
-
     from core import report_cache
 
     memory = object.__new__(cache_manager.CacheManager)

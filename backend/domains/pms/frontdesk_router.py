@@ -195,7 +195,7 @@ async def check_out_guest(
     ctx = OperationContext.from_user(current_user)
     result = await frontdesk_service.checkout(ctx, booking_id, force, auto_close_folios)
     if not result.ok:
-        code_map = {"NOT_FOUND": 404, "ALREADY_CHECKED_OUT": 400, "OUTSTANDING_BALANCE": 402}
+        code_map = {"NOT_FOUND": 404, "ALREADY_CHECKED_OUT": 400, "OUTSTANDING_BALANCE": 402, "BUSINESS_DATE_MISMATCH": 409}
         raise HTTPException(status_code=code_map.get(result.code, 400), detail=result.error)
     # Loyalty: konaklama puanı (idempotent — aynı booking için tekrar verilmez).
     # Üye değilse veya tutar yoksa sessizce atlar; checkout akışını bloklamaz.

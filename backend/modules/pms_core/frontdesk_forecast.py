@@ -8,7 +8,7 @@ from decimal import Decimal
 
 from modules.pms_core.occupancy_calendar import occupancy_calendar
 from modules.pms_core.report_money import add_amount, currency_code, money, rounded, rounded_totals
-from modules.pms_core.stay_night_metrics import OCCUPYING_STATUSES, allocated_revenue_for_night, as_date, booking_occupies_night
+from modules.pms_core.stay_night_metrics import OCCUPYING_STATUSES, allocated_revenue_for_night, as_date, booking_occupies_night, is_physical_room
 
 
 def _count(value):
@@ -47,7 +47,7 @@ def _group_units(block, room_type):
 def frontdesk_forecast(rooms, bookings, closed_blocks, groups, daily_rates, first, last, business_day, *, room_type=None, fallback_currency="TRY"):
     bookings = list({str(row["id"]): {**row, "check_in": row.get("check_in") or row.get("check_in_date"),
         "check_out": row.get("check_out") or row.get("check_out_date")} for row in bookings if row.get("id")}.values())
-    active = {str(row["id"]): row for row in rooms if row.get("id") and row.get("is_active") is not False}
+    active = {str(row["id"]): row for row in rooms if row.get("id") and is_physical_room(row)}
     by_number = {str(row["room_number"]): rid for rid, row in active.items() if row.get("room_number")}
     types = {str(row["room_type"]) for row in active.values() if row.get("room_type")}
     nights = [row for row in bookings if row.get("booking_type") != "day_use"]
@@ -168,7 +168,15 @@ def frontdesk_forecast(rooms, bookings, closed_blocks, groups, daily_rates, firs
         arrivals = sum(as_date(row.get("check_in")) == day and _night(row, day, business_day) for row in valid_movements)
         departures = 0
         for booking in valid_movements:
-            departure = as_date(booking.get("checked_out_at")) if booking.get("status") == "checked_out" else None
+            departure = None
+            if booking.get("status") == "checked_out":
+                departure = as_date(booking.get("checked_out_business_date"))
+                wall_day = as_date(booking.get("checked_out_at"))
+                ci, co = as_date(booking.get("check_in")), as_date(booking.get("check_out"))
+                if not departure and wall_day and ci and co and ci <= wall_day <= co:
+                    departure = wall_day
+                elif not departure and wall_day:
+                    warnings.add("İş günü kaydı olmayan eski çıkışlarda, konaklama dışındaki işlem saati yerine planlı çıkış tarihi kullanıldı.")
             departure = departure or as_date(booking.get("check_out"))
             if departure == day and (not actual or booking.get("status") in {"checked_in", "in_house", "checked_out"}):
                 departures += 1

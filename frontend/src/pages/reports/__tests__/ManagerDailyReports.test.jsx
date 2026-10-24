@@ -4,6 +4,15 @@ import { describe, expect, it } from 'vitest';
 import ManagerDailyReports from '../ManagerDailyReports';
 
 describe('ManagerDailyReports', () => {
+  it.each([[4, 0, '4'], [null, 1, '—']])('distinguishes declared people from registered profiles and unknown counts', (total, unknown, label) => {
+    render(<ManagerDailyReports section="daily_analysis" reportDate="2026-10-24" data={{ daily_analysis: {
+      in_house_guests: total, registered_guest_profiles: 2, in_house_party: { unknown_booking_count: unknown },
+    } }} />);
+    const field = screen.getByText('Konaklayan kişi (rezervasyon)').parentElement;
+    expect(within(field).getByText(label)).toBeInTheDocument();
+    expect(field).toHaveTextContent('Kayıtlı misafir profili: 2');
+    if (unknown) expect(field).toHaveTextContent('Kişi sayısı eksik rezervasyon var');
+  });
   it('does not display a USD posting as an EUR price or calculate a false difference', () => {
     render(<ManagerDailyReports section="rate_control" reportDate="2026-10-02" data={{ room_rate_control: [{
       booking_id: 'mismatch', room_number: '101', currency: 'EUR', agreed_rate: 100,

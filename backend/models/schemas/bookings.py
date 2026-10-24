@@ -167,6 +167,8 @@ class Booking(BookingBase):
     qr_code_data: str | None = None
     checked_in_at: datetime | None = None
     checked_out_at: datetime | None = None
+    checked_in_business_date: str | None = None
+    checked_out_business_date: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 

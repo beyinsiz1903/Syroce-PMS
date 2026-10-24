@@ -8,7 +8,7 @@ from decimal import Decimal
 
 from modules.pms_core.report_money import currency_code, money, rounded, single_amount
 from modules.pms_core.reporting_ledger import charge_amount, charge_category
-from modules.pms_core.revenue_categories import LABELS, revenue_department
+from modules.pms_core.revenue_categories import LABELS, is_revenue_charge, revenue_department
 
 FIELDS = ("subtotal", "discount", "net", "vat", "city_tax", "other_tax", "difference", "total")
 
@@ -105,6 +105,8 @@ def build_revenue_report(charges, first, last):
     grouped, totals, departments, days = {}, {}, {}, {}
     issues, issue_count, unknown_count = [], 0, 0
     for row in charges:
+        if not is_revenue_charge(row):
+            continue
         day = revenue_day(row)
         if day is None or not first <= day <= last:
             continue

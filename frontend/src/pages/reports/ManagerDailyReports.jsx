@@ -123,7 +123,7 @@ const DailyAnalysisReport = ({ analysis, payments }) => (
     <Card><CardContent className="p-5 grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
       <div><p className="text-gray-500">Dolu / Toplam oda</p><p className="font-bold text-lg">{analysis.occupied_rooms || 0} / {analysis.total_rooms || 0}</p></div>
       <div><p className="text-gray-500">Giriş / Çıkış</p><p className="font-bold text-lg">{analysis.arrivals || 0} / {analysis.departures || 0}</p></div>
-      <div><p className="text-gray-500">Konaklayan misafir</p><p className="font-bold text-lg">{analysis.in_house_guests || 0}</p></div>
+      <div><p className="text-gray-500">Konaklayan kişi (rezervasyon)</p><p className="font-bold text-lg">{analysis.in_house_guests ?? '—'}</p><p className="text-xs text-gray-400">Kayıtlı misafir profili: {analysis.registered_guest_profiles ?? '—'}{analysis.in_house_party?.unknown_booking_count > 0 && ' · Kişi sayısı eksik rezervasyon var'}</p></div>
       <div><p className="text-gray-500">Tahsilat</p><p className="font-bold text-lg"><CurrencyBreakdown totals={analysis.collections_by_currency} fallback={analysis.collections} /></p></div>
       <div><p className="text-gray-500">Hesaplamada kullanılan oda geliri</p><p className="font-bold text-lg"><CurrencyBreakdown totals={analysis.room_revenue_by_currency} fallback={analysis.room_revenue} /></p><p className="text-xs text-gray-400">{roomRevenueSourceLabel(analysis.revenue_source)}</p></div>
       <div><p className="text-gray-500">Folyoya işlenen oda geliri</p><p className="font-bold text-lg"><CurrencyBreakdown totals={analysis.posted_room_revenue_by_currency} fallback={analysis.posted_room_revenue} /></p></div>
