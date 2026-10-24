@@ -62,6 +62,8 @@ async def test_both_routes_return_the_same_authorized_financial_account(monkeypa
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app_for(user)), base_url="http://test") as client:
         response = await client.get(path)
     assert response.status_code == 200, response.text
+    if path == COMPAT:
+        assert response.headers["Cache-Control"] == "private, no-store"
     body = response.json()
     assert body["booking"]["id"] == "booking-a"
     assert body["folios"][0]["id"] == "folio-a"
