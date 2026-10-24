@@ -281,3 +281,25 @@ async def test_reversed_correction_cannot_be_certified_and_keeps_foreign_positio
     assert any(r.get("currency") == "EUR" for r in reversal["entry"]["lines"])
     with pytest.raises(v.OperationalValuationError, match="manual reconciliation"):
         await v.preview_daily_valuation(db, "hotel", "run", RATES)
+
+
+async def test_linked_legacy_original_without_daily_key_is_corrected_not_double_posted(ledger_db):
+    db = ledger_db
+    await seed(db, original=False)
+    old = await post_journal_entry(db, "hotel", date=DAY, memo="Legacy source without daily key", lines=[
+        {"account_code": "120", "debit": 110}, {"account_code": "600", "credit": 110}], source="night_audit", source_ref="run")
+    await db.night_audit_runs.update_one({"id": "run"}, {"$set": {"gl_journal_entry_id": old["id"]}})
+    p = await v.preview_daily_valuation(db, "hotel", "run", RATES)
+    assert p["action"] == "correct" and p["original_entry_id"] == old["id"]
+    await v.post_daily_valuation(db, "hotel", "run", RATES, p["preview_hash"], "operator")
+    assert await db.gl_journal_entries.count_documents({"source": "night_audit"}) == 1
+
+
+async def test_ambiguous_duplicate_source_journals_fail_closed(ledger_db):
+    db = ledger_db
+    await seed(db)
+    await post_journal_entry(db, "hotel", date=DAY, memo="Duplicate legacy source", lines=[
+        {"account_code": "120", "debit": 110}, {"account_code": "600", "credit": 110}], source="night_audit", source_ref="run")
+    with pytest.raises(v.OperationalValuationError, match="Multiple original"):
+        await v.preview_daily_valuation(db, "hotel", "run", RATES)
+    assert await db.gl_journal_entries.count_documents({}) == 2

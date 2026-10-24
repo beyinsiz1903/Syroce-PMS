@@ -241,7 +241,15 @@ async def preview_daily_valuation(db, tenant_id, run_id, valuation):
     normalized = normalized_valuation(run["business_date"], valuation)
     charges, payments, security = await daily_sources(db, tenant_id, run["business_date"])
     plan = build_plan(charges, payments, mapping, normalized, security)
-    original = await db.gl_journal_entries.find_one({"tenant_id": tenant_id, "idempotency_key": "operational-daily:" + run["business_date"]}, {"_id": 0})
+    by_key = await db.gl_journal_entries.find_one({"tenant_id": tenant_id, "idempotency_key": "operational-daily:" + run["business_date"]}, {"_id": 0})
+    candidates = await db.gl_journal_entries.find({"tenant_id": tenant_id, "source": "night_audit", "source_ref": run_id}, {"_id": 0}).to_list(2)
+    if len(candidates) > 1:
+        raise OperationalValuationError("Multiple original source journals; reconcile duplicates before any correction")
+    original = candidates[0] if candidates else by_key
+    if by_key and original and by_key["id"] != original["id"]:
+        raise OperationalValuationError("Source journal idempotency/link conflict")
+    if run.get("gl_journal_entry_id") and (not original or original["id"] != run["gl_journal_entry_id"]):
+        raise OperationalValuationError("Source run has a different or dangling journal link")
     correction = await db.gl_journal_entries.find_one({"tenant_id": tenant_id, "idempotency_key": "operational-correction:" + run_id}, {"_id": 0})
     if original and (original.get("source") != "night_audit" or original.get("source_ref") != run_id or not verify_journal_entry_hash(original)):
         raise OperationalValuationError("Original source journal link/integrity mismatch")
@@ -285,6 +293,7 @@ async def post_daily_valuation(db, tenant_id, run_id, valuation, expected_hash, 
     if expected_hash != preview["preview_hash"]:
         raise OperationalValuationError("Preview changed; refresh and review source, mapping and valuation before posting")
     if preview["action"] == "no_activity":
+        await db.night_audit_runs.update_one({"tenant_id": tenant_id, "id": run_id}, {"$set": {"gl_bridge_status": "no_activity"}})
         return {"status": "no_activity"}
     correcting = preview["action"] == "correct"
     entry = await post_journal_entry(db, tenant_id, date=preview["business_date"],
