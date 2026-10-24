@@ -844,16 +844,20 @@ class PaymentRecord(BaseModel):
     received_currency: str | None = Field(None, min_length=3, max_length=3)
     received_amount: float | None = Field(None, gt=0, le=1e9)
     exchange_rate: float | None = Field(None, gt=0, le=1e9)
+    received_to_try_rate: float | None = Field(None, gt=0, le=1e9)
 
 
 def _same_payment_record(existing: dict, data: PaymentRecord) -> bool:
     return (
         round(float(existing.get("amount") or 0), 2) == round(float(data.amount), 2)
         and (data.folio_id is None or existing.get("folio_id") == data.folio_id)
+        and (data.currency is None or str(existing.get("currency") or "TRY").upper() == data.currency.upper())
         and (existing.get("method") or "") == data.method
         and (existing.get("payment_type") or "") == data.payment_type
         and (not data.received_currency or str(existing.get("received_currency") or existing.get("currency") or "TRY").upper() == str(data.received_currency).upper())
         and (data.received_amount is None or round(float(existing.get("received_amount") or existing.get("amount") or 0), 2) == round(float(data.received_amount), 2))
+        and (data.received_to_try_rate is None or existing.get("received_to_try_rate") == data.received_to_try_rate)
+        and (data.exchange_rate is None or existing.get("exchange_rate", 1) == data.exchange_rate)
     )
 
 
@@ -886,6 +890,7 @@ class ChargeSplit(BaseModel):
     target_booking_id: str | None = None
     split_amount: float = Field(..., gt=0, le=1e9)
     reason: str | None = Field(None, max_length=2000)
+    request_id: uuid.UUID | None = None
 
 
 class NoteCreate(BaseModel):
@@ -1879,6 +1884,8 @@ async def record_payment(
     from modules.pms_core.enterprise_billing import manual_collection_method
 
     manual_collection_method(data.method)
+    if data.payment_type not in {"prepayment", "deposit", "interim", "final"}:
+        raise HTTPException(422, "Bu ekran yalnız tahsilat kaydeder; iade ve diğer mahsuplar için ayrı işlem akışını kullanın")
     _enforce_perm(current_user, "post_payment")  # Bug CP fix
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
@@ -1927,6 +1934,14 @@ async def record_payment(
     from modules.pms_core.folio_selection import select_booking_folio
 
     target_folio = await select_booking_folio(db, tid, booking_id, data.folio_id)
+    currency = str(booking.get("currency") or (target_folio or {}).get("currency") or "TRY").upper()
+    if data.currency and data.currency.upper() != currency:
+        raise HTTPException(422, "Ödeme tutarı folyonun para biriminde olmalı; alınan dövizi ayrı alana girin")
+    from modules.pms_core.payment_cashier_snapshot import cashier_values
+
+    # Reject invalid FX before an empty folio or short-window dedup lease is
+    # created; a corrected rate must not be blocked as a double payment.
+    cashier_values({**data.model_dump(), "currency": currency})
     auto_lock_id = None
     if not ref_key:
         dedup = await claim_short_window_dedup(
@@ -1968,7 +1983,6 @@ async def record_payment(
             await release_idempotency(db, lock_id=auto_lock_id)
         raise
 
-    currency = str(booking.get("currency") or folio.get("currency") or "TRY").upper()
     payment = {
         "id": str(uuid.uuid4()),
         "tenant_id": tid,
@@ -1979,6 +1993,7 @@ async def record_payment(
         "received_currency": str(data.received_currency or currency).upper(),
         "received_amount": float(data.received_amount if data.received_amount is not None else data.amount),
         "exchange_rate": float(data.exchange_rate if data.exchange_rate is not None else 1),
+        "received_to_try_rate": data.received_to_try_rate,
         "method": data.method,
         "payment_type": data.payment_type,
         "status": "paid",
@@ -1990,6 +2005,7 @@ async def record_payment(
     }
     await stamp_open_business_date(db, tid, payment)
     stamp_reporting_values(payment)
+    cash_snapshot = cashier_values(payment)
 
     # The reservation detail dialog is one of the main front-desk payment
     # entry points.  Keep it on the same cashier contract as the dedicated
@@ -2025,7 +2041,7 @@ async def record_payment(
     try:
         await record_cash_transaction(
             tenant_id=tid,
-            amount=data.amount,
+            **cash_snapshot,
             method=method_str,
             direction="in",
             description=f"Rezervasyon ödemesi - {booking.get('reservation_number') or booking_id[:8]}",
@@ -2517,115 +2533,62 @@ async def record_agency_payment(
 async def split_charge(
     booking_id: str,
     data: ChargeSplit,
+    request: Request,
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("post_charge")),  # v97 DW
 ):
-    """Split a charge from one folio to another (e.g., transfer part of a meal to another room)."""
+    """Transfer a service item atomically; never duplicate taxable revenue."""
     _enforce_perm(current_user, "split_folio")  # Bug CP fix
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
-    # Find the original charge
-    charge = await db.folio_charges.find_one({"id": data.charge_id, "tenant_id": tid}, {"_id": 0})
-    if not charge:
-        # Also check extra_charges
-        charge = await db.extra_charges.find_one({"id": data.charge_id, "tenant_id": tid}, {"_id": 0})
-        if not charge:
-            raise HTTPException(status_code=404, detail="Masraf bulunamadı")
+    from core.booking_atomicity import is_replica_set_unavailable
+    from modules.pms_core.service_charge_split import split_service_charge
 
-    original_amount = charge.get("total", charge.get("amount", charge.get("charge_amount", 0)))
-    if data.split_amount > original_amount:
-        raise HTTPException(status_code=400, detail="Bölünecek tutar orijinal tutardan büyük olamaz")
+    key = str(data.request_id or request.headers.get("Idempotency-Key") or "").strip()
+    if not key:
+        raise HTTPException(422, "Güvenli aktarım için işlem anahtarı gerekli; ekranı yenileyin")
+    operation_id = uuid.uuid5(uuid.NAMESPACE_URL, f"service-split:{tid}:{booking_id}:{key}")
+    target_id = data.target_booking_id
+    if data.target_folio_id:
+        target = await db.folios.find_one({"tenant_id": tid, "id": data.target_folio_id}, {"_id": 0, "booking_id": 1})
+        if not target:
+            raise HTTPException(404, "Hedef folyo bulunamadı")
+        if target_id and target_id != target.get("booking_id"):
+            raise HTTPException(422, "Hedef folyo ve rezervasyon uyuşmuyor")
+        target_id = target.get("booking_id")
+    if not target_id:
+        raise HTTPException(422, "Hedef rezervasyon veya folyo gerekli")
+    folios = await db.folios.find({"tenant_id": tid, "booking_id": {"$in": [booking_id, target_id]}}, {"_id": 0, "id": 1}).to_list(None)
 
-    # Determine target
-    target_booking_id = data.target_booking_id
-    target_folio_id = data.target_folio_id
+    async def commit(session):
+        return await split_service_charge(db, tid, current_user.name, booking_id, data, operation_id, session=session)
 
-    if target_booking_id:
-        target_booking = await db.bookings.find_one({"id": target_booking_id, "tenant_id": tid}, {"_id": 0})
-        if not target_booking:
-            raise HTTPException(status_code=404, detail="Hedef rezervasyon bulunamadı")
+    try:
+        result = await _run_reservation_financial_transaction(tenant_id=tid, booking_id=booking_id,
+            resources=[("booking", target_id), *[("folio", f["id"]) for f in sorted(folios, key=lambda f: f["id"])]], callback=commit)
+    except Exception as exc:
+        if is_replica_set_unavailable(exc):
+            raise HTTPException(503, "Masraf aktarımı için transaction desteği gerekli") from exc
+        raise
+    if _gb_cache:
+        _gb_cache.invalidate_tenant_cache(tid, "folio_revenue_by_category_v2")
+        _gb_cache.invalidate_tenant_cache(tid, "reports_basic_dashboard_v2")
+    async def refresh_transferred_booking_states():
+        from core.booking_payment_state import refresh_booking_payment_state
 
-        target_folio = await db.folios.find_one({"booking_id": target_booking_id, "tenant_id": tid, "status": "open"}, {"_id": 0})
-        if not target_folio:
-            from core.utils import generate_folio_number
+        for affected in sorted({booking_id, target_id}):
+            await refresh_booking_payment_state(db, tid, affected)
 
-            target_folio = {
-                "id": str(uuid.uuid4()),
-                "tenant_id": tid,
-                "booking_id": target_booking_id,
-                "folio_number": await generate_folio_number(tid),
-                "folio_type": "guest",
-                "status": "open",
-                "guest_id": target_booking.get("guest_id"),
-                "balance": 0.0,
-                "created_at": datetime.now(UTC).isoformat(),
-            }
-            await db.folios.insert_one({**target_folio})
-        target_folio_id = target_folio["id"]
+    await _run_post_commit_hook(refresh_transferred_booking_states, operation="service_charge_split_state")
+    if not result.get("replayed"):
+        async def record_split_activity():
+            await _log_activity(tid, booking_id, "charge_split", current_user.name,
+                {"charge_id": data.charge_id, "split_amount": data.split_amount,
+                 "target_booking_id": target_id, "reason": data.reason})
 
-    # Create the split charge on target
-    new_charge = {
-        "id": str(uuid.uuid4()),
-        "tenant_id": tid,
-        "folio_id": target_folio_id,
-        "booking_id": target_booking_id or charge.get("booking_id"),
-        "charge_category": charge.get("charge_category", charge.get("category", "other")),
-        "description": f"[Aktarım] {charge.get('description', charge.get('charge_name', ''))}",
-        "unit_price": data.split_amount,
-        "quantity": 1.0,
-        "amount": data.split_amount,
-        "tax_amount": 0.0,
-        "total": data.split_amount,
-        "date": datetime.now(UTC).isoformat(),
-        "posted_by": current_user.name,
-        "voided": False,
-        "split_from_charge_id": data.charge_id,
-        "split_from_booking_id": booking_id,
-    }
-    await db.folio_charges.insert_one({**new_charge})
-
-    # Update original charge amount
-    new_original_amount = original_amount - data.split_amount
-    collection = "folio_charges" if "folio_id" in charge else "extra_charges"
-    amount_field = "total" if "total" in charge else ("amount" if "amount" in charge else "charge_amount")
-    await getattr(db, collection).update_one(
-        {"id": data.charge_id, "tenant_id": tid},
-        {"$set": {amount_field: round(new_original_amount, 2)}},
-    )
-
-    # Log split operation
-    split_log = {
-        "id": str(uuid.uuid4()),
-        "tenant_id": tid,
-        "operation_type": "split",
-        "from_folio_id": charge.get("folio_id"),
-        "to_folio_id": target_folio_id,
-        "from_booking_id": booking_id,
-        "to_booking_id": target_booking_id,
-        "charge_ids": [data.charge_id],
-        "amount": data.split_amount,
-        "reason": data.reason or "Masraf bölme",
-        "performed_by": current_user.name,
-        "performed_at": datetime.now(UTC).isoformat(),
-    }
-    await db.folio_operations.insert_one({**split_log})
-
-    await _log_activity(
-        tid,
-        booking_id,
-        "charge_split",
-        current_user.name,
-        {
-            "charge_id": data.charge_id,
-            "split_amount": data.split_amount,
-            "target_booking_id": target_booking_id,
-            "reason": data.reason,
-        },
-    )
-
-    new_charge.pop("_id", None)
-    return {"success": True, "new_charge": new_charge, "remaining_amount": round(new_original_amount, 2)}
+        await _run_post_commit_hook(record_split_activity, operation="service_charge_split_activity")
+    return result
 
 
 @router.post("/reservations/{booking_id}/ensure-folio")

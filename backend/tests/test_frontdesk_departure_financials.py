@@ -1,6 +1,15 @@
 from domains.pms.frontdesk_financials import calculate_departure_balance
 
 
+def test_refund_reopens_debt_instead_of_looking_like_a_second_payment():
+    for refund_amount in [20, -20]:
+        assert calculate_departure_balance(
+            charges=[{"total": 100, "charge_category": "room"}],
+            payments=[{"amount": 100, "status": "paid"}, {"amount": refund_amount, "status": "paid", "payment_type": "refund"}],
+            extra_charges=[], booking_total=100,
+        ) == 20
+
+
 def test_departure_balance_includes_active_extra_charges_and_paid_payments():
     balance = calculate_departure_balance(
         charges=[{"total": "100"}, {"total": 999, "voided": True}],

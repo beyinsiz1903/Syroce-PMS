@@ -115,6 +115,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
   const [ratesLoading, setRatesLoading] = useState(false);
   const [ratesError, setRatesError] = useState('');
   const [manualExchangeRate, setManualExchangeRate] = useState(false);
+  const [cashierTryRate, setCashierTryRate] = useState('');
   const [showCashExchange, setShowCashExchange] = useState(false);
   const [cashExchangeForm, setCashExchangeForm] = useState({ source_currency: '', source_amount: '', rate: '', note: '' });
   const [postedExchanges, setPostedExchanges] = useState([]);
@@ -204,6 +205,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
     const balance = targetFolio ? Number(targetFolio.balance) || 0 : reservationTotalDue;
     setPayForm(p => ({ ...p, amount: balance > 0 ? String(balance) : p.amount }));
     setShowPayment(!showPayment);
+    setCashierTryRate('');
   };
   const openCariForm = () => {
     const balance = targetFolio ? Number(targetFolio.balance) || 0 : reservationTotalDue;
@@ -528,11 +530,19 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
               toast.error('Alınan döviz tutarı ve kur virgül veya nokta ile doğru girilmelidir.');
               return;
             }
+            const receivedCode = normalizeCurrency(useCurrencyConverter ? foreignCurrency : currency);
+            const needsCashierRate = normalizeCurrency(currency) !== 'TRY' && receivedCode !== 'TRY';
+            const receivedToTryRate = parseExchangeRate(cashierTryRate);
+            if (needsCashierRate && (!Number.isFinite(receivedToTryRate) || receivedToTryRate <= 0)) {
+              toast.error('Alınan dövizin TL kasa kurunu girin; 1:1 kur varsayılmaz.');
+              return;
+            }
             await axios.post(`/pms/reservations/${booking.id}/record-payment`, {
               ...payForm,
               ...(targetFolioId ? { folio_id: targetFolioId } : {}),
               amount,
               currency: normalizeCurrency(currency),
+              ...(needsCashierRate ? { received_to_try_rate: receivedToTryRate } : {}),
               payment_type: classifyGuestPayment(amount, targetFolio ? Math.max(0, Number(targetFolio.balance) || 0) : reservationTotalDue),
               ...(useCurrencyConverter ? {
                 received_currency: normalizeCurrency(foreignCurrency),
@@ -553,6 +563,13 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
           })}>
           <div className="grid grid-cols-2 gap-3">
             <FormField label={`Tutar (${currency})`} type="text" inputMode="decimal" hint="Virgül veya nokta ile en fazla iki ondalık basamak girebilirsiniz." value={payForm.amount} onChange={v => { if (!isMoneyInput(v)) return; setPayForm(p => ({ ...p, amount: v })); const amount = parseMoney(v); const rate = parseExchangeRate(exchangeRate); if (useCurrencyConverter && manualExchangeRate && Number.isFinite(amount) && Number.isFinite(rate) && rate > 0) setForeignAmount((amount * rate).toFixed(2)); }} />
+            {normalizeCurrency(currency) !== 'TRY' && normalizeCurrency(useCurrencyConverter ? foreignCurrency : currency) !== 'TRY' && (
+              <div>
+                <Label htmlFor={`cashier-try-rate-${booking.id}`} className="text-xs">TL kasa kuru (1 {normalizeCurrency(useCurrencyConverter ? foreignCurrency : currency)} = kaç TL)</Label>
+                <Input id={`cashier-try-rate-${booking.id}`} inputMode="decimal" value={cashierTryRate} onChange={event => setCashierTryRate(event.target.value)} />
+                <p className="text-xs text-slate-600">Alınan döviz ve kur işlemle birlikte saklanır; kasa toplamında döviz TL gibi toplanmaz.</p>
+              </div>
+            )}
             <SelectField label={t('common.paymentMethod')} value={payForm.method} onChange={v => setPayForm(p => ({ ...p, method: v }))}
               options={[['cash','Nakit'],['card','Harici POS / Kart'],['bank_transfer','Doğrulanmış Havale/EFT'],['online','Harici Online Tahsilat Kaydı']]} />
           </div>

@@ -14,7 +14,13 @@ class _Request:
 
 
 @pytest.mark.asyncio
-async def test_quick_payment_replay_does_not_post_twice(monkeypatch):
+@pytest.mark.parametrize("code,received,received_amount,rate,try_rate,expected_try", [
+    ("TRY", "TRY", 125, 1, None, 125),
+    ("TRY", "USD", 2.5, .02, None, 125),
+    ("EUR", "EUR", 125, 1, 55, 6875),
+    ("USD", "TRY", 6250, 50, None, 6250),
+])
+async def test_quick_payment_replay_does_not_post_twice(monkeypatch, code, received, received_amount, rate, try_rate, expected_try):
     """A browser retry must replay the first folio payment, not collect it twice."""
     payments = SimpleNamespace(insert_one=AsyncMock())
     folios = SimpleNamespace(update_one=AsyncMock(), find_one=AsyncMock(return_value={"id": "folio-1", "status": "open"}))
@@ -33,7 +39,7 @@ async def test_quick_payment_replay_does_not_post_twice(monkeypatch):
     monkeypatch.setattr(
         frontdesk_router,
         "_ensure_booking",
-        AsyncMock(return_value={"id": "booking-1", "guest_id": "guest-1", "room_number": "105"}),
+        AsyncMock(return_value={"id": "booking-1", "guest_id": "guest-1", "room_number": "105", "currency": code}),
     )
     monkeypatch.setattr(
         frontdesk_router,
@@ -58,7 +64,8 @@ async def test_quick_payment_replay_does_not_post_twice(monkeypatch):
     from domains.pms import cashier_service
 
     monkeypatch.setattr(cashier_service, "ensure_active_shift", AsyncMock())
-    monkeypatch.setattr(cashier_service, "record_cash_transaction", AsyncMock())
+    record_cash = AsyncMock()
+    monkeypatch.setattr(cashier_service, "record_cash_transaction", record_cash)
 
     payload = frontdesk_router.FolioPaymentRequest(
         amount=125,
@@ -66,6 +73,8 @@ async def test_quick_payment_replay_does_not_post_twice(monkeypatch):
         method="card",
         payment_type="final",
         notes="Ön büro hızlı tahsilat",
+        currency=code, received_currency=received, received_amount=received_amount,
+        exchange_rate=rate, received_to_try_rate=try_rate,
     )
     user = SimpleNamespace(
         tenant_id="tenant-1",
@@ -83,6 +92,11 @@ async def test_quick_payment_replay_does_not_post_twice(monkeypatch):
     assert replay == first
     assert first["amount"] == 125
     assert first["payment_type"] == "final"
+    assert first["reporting_amount"] == expected_try
+    assert record_cash.await_args.kwargs["amount"] == expected_try
+    assert record_cash.await_args.kwargs["currency"] == received
+    assert record_cash.await_args.kwargs["original_amount"] == received_amount
+    assert record_cash.await_count == 1
     payments.insert_one.assert_awaited_once()
     folios.update_one.assert_awaited_once()
     bookings.update_one.assert_awaited_once()

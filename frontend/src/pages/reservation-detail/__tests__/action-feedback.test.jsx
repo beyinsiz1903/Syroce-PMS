@@ -52,6 +52,55 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe('reservation detail action feedback', () => {
+  it('requires a TRY cashier snapshot for a native foreign-currency folio payment', async () => {
+    axiosGet.mockResolvedValue({ data: [] });
+    axiosPost.mockResolvedValue({ data: { success: true } });
+    render(<FoliosTab booking={{ id: 'usd-stay', currency: 'USD' }}
+      folios={[{ id: 'usd-folio', status: 'open', folio_number: 'F-1', balance: 100, folio_type: 'guest' }]}
+      charges={[]} payments={[]} extra_charges={[]} summary={{ balance: 100, reservation_total_due: 100 }} onRefresh={vi.fn()} />);
+    fireEvent.click(screen.getByTestId('btn-odeme-al'));
+    const panel = screen.getByTestId('payment-form');
+    fireEvent.click(within(panel).getByRole('button', { name: /kaydet/i }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Alınan dövizin TL kasa kurunu girin; 1:1 kur varsayılmaz.'));
+    expect(axiosPost).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText('TL kasa kuru (1 USD = kaç TL)'), { target: { value: '50' } });
+    fireEvent.click(within(panel).getByRole('button', { name: /kaydet/i }));
+    await waitFor(() => expect(axiosPost).toHaveBeenCalledWith('/pms/reservations/usd-stay/record-payment', expect.objectContaining({
+      amount: 100, currency: 'USD', received_currency: 'USD', received_amount: 100, exchange_rate: 1, received_to_try_rate: 50,
+    })));
+  });
+
+  it('reuses a service-split intent on retry and lists only compatible open targets', async () => {
+    axiosPost.mockRejectedValueOnce({ response: { data: { detail: 'Bağlantı kesildi' } } })
+      .mockResolvedValueOnce({ data: { success: true } });
+    render(<ExtraChargesTab
+      extra_charges={[{ id: 'meal', description: 'Akşam yemeği', amount: 120, total: 120 }]}
+      charges={[]}
+      booking={{ id: 'source', currency: 'TRY' }}
+      allBookings={[
+        { id: 'target', guest_name: 'Ahmet', currency: 'TRY', status: 'checked_in' },
+        { id: 'closed', guest_name: 'Kapalı', currency: 'TRY', status: 'checked_out' },
+        { id: 'foreign', guest_name: 'Döviz', currency: 'EUR', status: 'checked_in' },
+        { id: 'comp', guest_name: 'İkram', currency: 'TRY', status: 'checked_in', is_complimentary: true, complimentary_scope: 'full' },
+      ]}
+    />);
+    fireEvent.click(screen.getByRole('button', { name: 'Akşam yemeği masrafını böl' }));
+    const select = screen.getByRole('combobox');
+    expect(within(select).getAllByRole('option')).toHaveLength(2);
+    fireEvent.change(select, { target: { value: 'target' } });
+    fireEvent.change(screen.getByRole('spinbutton'), { target: { value: '48' } });
+    fireEvent.change(screen.getByLabelText('Aktarım gerekçesi'), { target: { value: 'Ortak akşam yemeği' } });
+    const submit = screen.getByRole('button', { name: 'cm.pages_reservationdetail_PricingTabs.bol' });
+    fireEvent.click(submit);
+    await waitFor(() => expect(toast.error).toHaveBeenCalled());
+    const first = axiosPost.mock.calls[0][1];
+    expect(first).toMatchObject({ charge_id: 'meal', target_booking_id: 'target', split_amount: 48, reason: 'Ortak akşam yemeği' });
+    expect(first.request_id).toMatch(/^[a-f0-9-]{36}$/);
+    fireEvent.click(submit);
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Masraf bölündü'));
+    expect(axiosPost.mock.calls[1][1].request_id).toBe(first.request_id);
+  });
+
   it('excludes the checkout date from the chargeable nightly-rate plan', () => {
     const rates = filterDailyRatesForStay(
       [

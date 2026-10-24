@@ -173,6 +173,7 @@ class CreateReservationService:
                 'children_ages': booking_data.children_ages,
                 'guests_count': booking_data.guests_count,
                 'total_amount': 0.0 if booking_data.is_complimentary else commercial_total,
+                'currency': booking_data.currency,
                 'base_rate': booking_data.base_rate,
                 'rate_per_night': pricing_quote['nightly_total'] if pricing_quote else None,
                 'apply_occupancy_pricing': bool(pricing_quote),
@@ -247,6 +248,7 @@ class CreateReservationService:
                 folio_number=folio_number,
                 folio_type=FolioType.GUEST,
                 guest_id=booking_data.guest_id,
+                currency=booking_data.currency,
             )
             folio_dict = folio.model_dump()
             folio_dict['created_at'] = folio_dict['created_at'].isoformat()
