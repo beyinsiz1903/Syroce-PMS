@@ -27,8 +27,8 @@ async def test_night_audit_bridge_posts_daily_accrual_and_collections(monkeypatc
     mapping = {**bridge.DEFAULT_MAPPING, "tenant_id": "tenant-a", "enabled": True}
     database = SimpleNamespace(
         gl_operational_mappings=_collection(one=mapping),
-        folio_charges=_collection(rows=[{"total": 110, "tax_amount": 10}]),
-        payments=_collection(rows=[{"amount": 110, "method": "cash"}]),
+        folio_charges=_collection(rows=[{"total": 110, "tax_amount": 10, "currency": "TRY"}]),
+        payments=_collection(rows=[{"amount": 110, "method": "cash", "currency": "TRY"}]),
         night_audit_runs=_collection(),
     )
     post = AsyncMock(return_value={"id": "journal-1", "entry_no": "YEV-2026-00000001"})
@@ -265,10 +265,10 @@ async def test_discounted_pos_posts_the_settled_net_and_recomputed_tax(monkeypat
 @pytest.mark.asyncio
 async def test_night_audit_matrix_splits_cash_and_card_and_excludes_voids(monkeypatch):
     mapping = {**bridge.DEFAULT_MAPPING, "tenant_id": "tenant-a", "enabled": True}
-    charges = _collection(rows=[{"total": 330, "tax_amount": 30}])
+    charges = _collection(rows=[{"total": 330, "tax_amount": 30, "currency": "TRY"}])
     payments = _collection(rows=[
-        {"amount": 110, "method": "cash"},
-        {"amount": 220, "method": "card"},
+        {"amount": 110, "method": "cash", "currency": "TRY"},
+        {"amount": 220, "method": "card", "currency": "TRY"},
     ])
     database = SimpleNamespace(
         gl_operational_mappings=_collection(one=mapping),
@@ -301,4 +301,4 @@ async def test_night_audit_matrix_splits_cash_and_card_and_excludes_voids(monkey
     payment_filter = payments.find.call_args.args[0]
     assert charge_filter["tenant_id"] == payment_filter["tenant_id"] == "tenant-a"
     assert charge_filter["voided"] == payment_filter["voided"] == {"$ne": True}
-    assert {"date": {"$gte": "2026-09-09", "$lt": "2026-09-10"}} in charge_filter["$or"]
+    assert charge_filter["$or"][0] == payment_filter["$or"][0] == {"business_date": {"$gte": "2026-09-09", "$lt": "2026-09-10"}}
