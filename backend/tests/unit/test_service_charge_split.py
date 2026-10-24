@@ -3,7 +3,10 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
+from bson import ObjectId
 from fastapi import HTTPException
+from fastapi.encoders import jsonable_encoder
+from starlette.responses import JSONResponse
 
 from modules.pms_core.service_charge_split import partition, split_service_charge
 from routers.reservation_detail import ChargeSplit
@@ -56,6 +59,29 @@ async def test_replay_is_single_transfer_and_changed_payload_conflicts(scenario)
     with pytest.raises(HTTPException) as error:
         await run(scenario, body(split_amount=12), key=key)
     assert error.value.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_motor_insert_mutation_and_old_replay_are_json_safe(scenario):
+    insert = scenario.folio_charges.insert_one
+
+    async def motor_insert(document, **kwargs):
+        # Actual Motor/PyMongo behaviour missed by the ordinary in-memory fake.
+        document.setdefault("_id", ObjectId())
+        return await insert(document, **kwargs)
+
+    scenario.folio_charges.insert_one = motor_insert
+    key = uuid4()
+    first = await run(scenario, key=key)
+    assert "_id" not in first["new_charge"]
+    JSONResponse(jsonable_encoder(first))
+    # A transfer committed before this fix stored that ObjectId inside its
+    # replay body. Replaying must repair the response, not transfer again.
+    scenario.folio_operations.rows[0]["result"]["new_charge"]["_id"] = ObjectId()
+    second = await run(scenario, key=key)
+    assert second["replayed"] and "_id" not in second["new_charge"]
+    JSONResponse(jsonable_encoder(second))
+    assert len(scenario.folio_charges.rows) == 2
 
 
 @pytest.mark.asyncio
