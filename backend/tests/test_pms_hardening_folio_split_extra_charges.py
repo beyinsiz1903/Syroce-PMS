@@ -163,6 +163,15 @@ async def test_split_moves_extra_charge_into_new_folio(fake_db):
     assert fake_db.extra_charges.docs == []
 
 
+@pytest.mark.parametrize('status', ['closed', 'locked', None])
+async def test_item_split_rejects_non_open_source_before_any_mutation(fake_db, status):
+    fake_db.folios.docs[0]['status'] = status
+    result = await FolioHardeningService().split_folio('t1', 'F1', ['E1'], 'guest', 'closed source', 'u1')
+    assert result['success'] is False
+    assert len(fake_db.folios.docs) == 1
+    assert not fake_db.folio_charges.docs and not fake_db.folio_operations.docs
+
+
 async def test_split_normalizes_minimal_extra_charge_shape(fake_db):
     # Erken giriş/geç çıkış şekli: yalnız charge_name/charge_amount, total/voided YOK.
     fake_db.extra_charges.docs.append({

@@ -187,6 +187,10 @@ async def _load_reservation_charge_items(booking_id: str, tenant_id: str) -> lis
         async for charge in cursor:
             if charge.get("voided"):
                 continue
+            # Existing-window debt allocation is not an additional service.
+            # Only original revenue/tax lines can become invoice candidates.
+            if charge.get("allocation_id") and charge.get("charge_category") == "split_adjustment":
+                continue
             item = _invoice_charge_item(charge)
             if not item["id"] or item["id"] in seen_ids:
                 continue

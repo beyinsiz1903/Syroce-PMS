@@ -91,6 +91,26 @@ beforeEach(() => {
 });
 
 describe('kur çevirici', () => {
+  it('opens allocation to an existing company folio, refreshes and selects it for the next financial action', async () => {
+    const data = multiFolioProps();
+    axiosPost.mockImplementationOnce(async (_url, body) => ({ data: { success: true, allocation_id: body.request_id,
+      source_folio_id: 'f1', target_folio_id: 'f2', transferred_amount: 60, source_balance: 40, target_balance: 260 } }));
+    render(<FoliosTab {...data} />);
+    fireEvent.click(screen.getByTestId('btn-folyo-paylastir'));
+    fireEvent.change(screen.getByLabelText('Paylaştırma kaynak folyo'), { target: { value: 'f1' } });
+    fireEvent.change(screen.getByLabelText('Paylaştırma hedef folyo'), { target: { value: 'f2' } });
+    fireEvent.change(screen.getByLabelText('Paylaştırma açıklaması'), { target: { value: 'Oda şirket hesabına' } });
+    fireEvent.click(screen.getByRole('checkbox', { name: /Oda Ücreti/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Paylaştırmayı Onayla' }));
+    await waitFor(() => expect(axiosPost).toHaveBeenCalledWith('/folio-windows/allocate', expect.objectContaining({ source_folio_id: 'f1', target_folio_id: 'f2', charge_ids: ['c1'] })));
+    await waitFor(() => expect(data.onRefresh).toHaveBeenCalled());
+    expect(screen.getByLabelText('İşlem hedef folyo')).toHaveValue('f2');
+  });
+
+  it('does not expose allocation in a read-only reservation', () => {
+    render(<FoliosTab {...multiFolioProps({ readOnly: true })} />);
+    expect(screen.queryByTestId('btn-folyo-paylastir')).not.toBeInTheDocument();
+  });
   it('iki folyoda hedef seçmeden ödeme göndermez; seçimden sonra yalnız o folyonun bakiyesini gönderir', async () => {
     render(<FoliosTab {...multiFolioProps()} />);
     fireEvent.click(screen.getByTestId('btn-odeme-al'));

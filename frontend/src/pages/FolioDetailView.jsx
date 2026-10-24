@@ -38,6 +38,7 @@ const AUDIT_ACTION_LABELS = {
   payment_voided: "Tahsilat iade edildi",
   folio_payment_voided: "Tahsilat iade edildi",
   folio_split: "Folyo paylaştırıldı",
+  folio_allocation: "Mevcut folyo hesapları arasında paylaştırıldı",
   city_ledger_transfer: "Cari hesaba aktarıldı",
   night_audit_room_charge: "Konaklama ücreti işlendi"
 };

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import axios from "axios";
 import { toast } from "sonner";
 import { Card, CardContent } from "../ui/card";
@@ -36,6 +36,7 @@ export default function FolioWindowsPanel({
   onSelect,
   onChanged,
   readOnly = false,
+  revision,
 }) {
   const {
     t
@@ -49,27 +50,34 @@ export default function FolioWindowsPanel({
   const [accounts, setAccounts] = useState([]);
   const [accountId, setAccountId] = useState('');
   const [accountError, setAccountError] = useState('');
+  const [windowError, setWindowError] = useState('');
+  const requestVersion = useRef(0);
   const headers = {};
   const fetchWindows = useCallback(async () => {
     if (!bookingId) return;
-    setLoading(true);
+    const version = ++requestVersion.current;
+    setLoading(true); setWindowError(''); setWindows([]);
     try {
       const {
         data
       } = await axios.get(`/folio-windows/booking/${bookingId}`, {
         headers
       });
-      setWindows(Array.isArray(data) ? data : []);
+      if (version === requestVersion.current) setWindows(Array.isArray(data) ? data : []);
     } catch (e) {
-      toast.error(e.response?.data?.detail || "Window listesi alınamadı");
+      if (version === requestVersion.current) {
+        const message = e.response?.data?.detail || "Folyo hesapları alınamadı. Yenileyin.";
+        setWindowError(message); toast.error(message);
+      }
     } finally {
-      setLoading(false);
+      if (version === requestVersion.current) setLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, [bookingId]);
   useEffect(() => {
     fetchWindows();
-  }, [fetchWindows]);
+    return () => { requestVersion.current += 1; };
+  }, [fetchWindows, revision]);
   useEffect(() => {
     let active = true;
     if (!showAdd || !['company', 'agency'].includes(newPayor)) return () => { active = false; };
@@ -132,7 +140,8 @@ export default function FolioWindowsPanel({
 
         {!canAdd && <p className="text-xs text-amber-600 mb-3">Window limiti doldu (8/8).</p>}
 
-        {windows.length === 0 && !loading && <p className="text-sm text-gray-500 py-6 text-center">{t('cm.components_folio_FolioWindowsPanel.henuz_window_yok')}</p>}
+        {windowError && <p role="alert" className="text-sm text-destructive">{windowError}</p>}
+        {windows.length === 0 && !loading && !windowError && <p className="text-sm text-gray-500 py-6 text-center">{t('cm.components_folio_FolioWindowsPanel.henuz_window_yok')}</p>}
 
         <div className="grid gap-3 lg:grid-cols-2">
           {windows.map(w => {

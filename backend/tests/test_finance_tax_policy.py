@@ -12,6 +12,15 @@ from routers.finance import konaklama_vergisi_core as tax_core
 from routers.finance.accounting import folio_charge_to_invoice_items
 
 
+@pytest.mark.parametrize('amount', [-6000, 6000])
+def test_debt_allocation_cannot_be_taxed_as_new_service(amount):
+    from fastapi import HTTPException
+
+    with pytest.raises(HTTPException) as exc:
+        folio_charge_to_invoice_items({'allocation_id': 'allocation', 'charge_category': 'split_adjustment', 'amount': amount})
+    assert exc.value.status_code == 409
+
+
 class _AsyncCursor:
     def __init__(self, documents):
         self._documents = documents

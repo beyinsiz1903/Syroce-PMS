@@ -161,7 +161,9 @@ describe('AdminModuleControlCenter', () => {
     });
     render(<AdminModuleControlCenter />);
     fireEvent.change(screen.getByPlaceholderText(/ara/i), { target: { value: 'SPA' } });
-    expect(await screen.findByTestId('module-setup-spa')).toHaveTextContent('Kuruldu · kullanımda');
+    // The placeholder exists before the async readiness response arrives.
+    // Wait for its content, not just its presence, before starting the race.
+    await waitFor(() => expect(screen.getByTestId('module-setup-spa')).toHaveTextContent('Kuruldu · kullanımda'));
     delayed = true;
     fireEvent.click(screen.getByRole('button', { name: 'Kurulum kontrollerini yenile' }));
     await waitFor(() => expect(replies.length).toBeGreaterThan(0));
