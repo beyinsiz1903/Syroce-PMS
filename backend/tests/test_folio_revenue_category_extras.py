@@ -28,9 +28,14 @@ class _Collection:
         )
 
 
+class _DB(SimpleNamespace):
+    def __init__(self, **values):
+        super().__init__(**{key: _Collection([]) for key in ("pos_transactions", "pos_menu_transactions", "transactions", "rooms", "room_types", "folios", "bookings")}, **values)
+
+
 @pytest.mark.asyncio
 async def test_category_report_includes_reservation_card_food_and_beverage(monkeypatch):
-    fake_db = SimpleNamespace(
+    fake_db = _DB(
         folio_charges=_Collection(
             [
                 {
@@ -78,21 +83,19 @@ async def test_category_report_includes_reservation_card_food_and_beverage(monke
     rows = {row["category"]: row for row in result["rows"]}
     assert rows["room"]["total"] == 1000
     assert rows["beverage"]["count"] == 1
-    assert rows["beverage"]["subtotal"] == 200
-    assert rows["beverage"]["net"] == 200
+    assert rows["beverage"]["subtotal"] is None
+    assert rows["beverage"]["net"] is None  # missing tax evidence is not zero tax
     assert rows["beverage"]["total"] == 200
-    assert result["totals"]["total"] == 1200
+    assert result["totals"]["total"] is None  # never add EUR and TRY
     assert rows["room"]["by_currency"]["TRY"]["total"] == 1000
     assert rows["beverage"]["by_currency"]["EUR"]["total"] == 200
-    assert result["totals_by_currency"] == {
-        "TRY": {"subtotal": 1000.0, "discount": 0.0, "net": 1000.0, "vat": 0.0, "city_tax": 0.0, "total": 1000.0},
-        "EUR": {"subtotal": 200.0, "discount": 0.0, "net": 200.0, "vat": 0.0, "city_tax": 0.0, "total": 200.0},
-    }
+    assert {code: values["total"] for code, values in result["totals_by_currency"].items()} == {"TRY": 1000, "EUR": 200}
+    assert result["reconciliation"]["tax_unknown_count"] == 2
 
 
 @pytest.mark.asyncio
 async def test_category_report_includes_direct_pos_once_and_deduplicates_posted_order(monkeypatch):
-    fake_db = SimpleNamespace(
+    fake_db = _DB(
         folio_charges=_Collection(
             [
                 {

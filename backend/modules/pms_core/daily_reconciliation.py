@@ -12,11 +12,11 @@ from modules.pms_core.receivable_reporting import folio_snapshots
 from modules.pms_core.report_money import add_amount, currency_code, money, resolve_ledger_currencies, rounded, rounded_totals, single_amount
 from modules.pms_core.reporting_financials import NON_CASH_PAYMENT_METHODS, deduplicate_report_payments, effective_collection, effective_revenue_adjustment, is_valid_payment, report_payment_day_match
 from modules.pms_core.reporting_ledger import charge_amount, charge_category, posted_revenue_rows
+from modules.pms_core.revenue_categories import FNB_CATEGORIES
 from modules.pms_core.room_revenue_reporting import reconcile_room_revenue
 from modules.pms_core.stay_night_metrics import ACTUAL_OCCUPANCY_STATUSES, as_date, booking_occupies_night, load_stay_night_metrics, stay_day_match
 
 ROOM_CATEGORIES = {"room", "rooms", "room_charge", "accommodation", "lodging", "konaklama"}
-FNB_CATEGORIES = {"fb", "fnb", "f&b", "food", "beverage", "restaurant", "bar", "minibar", "room_service", "food_beverage", "food_and_beverage"}
 
 
 def _scalar_currency(totals, fallback):
@@ -28,7 +28,7 @@ def daily_revenue_summary(metric_rows, charges_by_cat, *, fallback_currency="TRY
     """Accrue only currencies with no room posting, never resurrect a zero net."""
     categories, posted_rooms, accrued_rooms = {}, {}, {}
     for row in charges_by_cat:
-        category = str(row.get("_id") or "other").strip().lower()
+        category = charge_category({"category": row.get("_id")}, preserve_unknown=True)
         code = currency_code(row.get("currency"), fallback_currency)
         if category in ROOM_CATEGORIES:
             add_amount(posted_rooms, code, row.get("total", 0))
@@ -93,7 +93,9 @@ async def build_daily_reconciliation(database, tenant_id: str, day: date):
         database.rooms.count_documents({"tenant_id": tenant_id, "is_active": {"$ne": False}}),
         database.night_audit_logs.find_one({"tenant_id": tenant_id}, {"_id": 0}, sort=[("created_at", -1)]),
     )
-    charges = [{"_id": charge_category(row), "total": charge_amount(row), "currency": row.get("currency")} for row in postings]
+    # Category summaries may group unknown services, but reconciliation must
+    # retain every custom source key so the underlying ledger stays auditable.
+    charges = [{"_id": charge_category(row, preserve_unknown=True), "total": charge_amount(row), "currency": row.get("currency")} for row in postings]
     revenue = daily_revenue_summary(metrics, charges, fallback_currency=native)
     payments = deduplicate_report_payments(await resolve_ledger_currencies(payments, tenant_id, database=database, fallback_currency=native))
     payment_totals, by_method, adjustments = {}, {}, {}

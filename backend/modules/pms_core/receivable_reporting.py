@@ -39,7 +39,9 @@ async def folio_snapshots(database, tenant_id, folios, *, fallback_currency, ses
     async for row in database.folio_charges.find({"tenant_id": tenant_id, "folio_id": {"$in": ids}, "voided": {"$ne": True}}, {"_id": 0}, **kwargs):
         snap = snapshots[row["folio_id"]]
         code = currency_code(row.get("currency"), snap["currency"])
-        amount = charge_amount(row)
+        # Allocation validates source precision before writing. Rounding here
+        # would hide a malformed sub-cent charge and bypass that guard.
+        amount = charge_amount(row, round_to_cents=False)
         snap["charges"].append({**row, "currency": code, "total": amount})
         add_amount(snap["charges_by_currency"], code, amount)
     payments = await database.payments.find({"tenant_id": tenant_id, "folio_id": {"$in": ids}}, {"_id": 0}, **kwargs).to_list(None)

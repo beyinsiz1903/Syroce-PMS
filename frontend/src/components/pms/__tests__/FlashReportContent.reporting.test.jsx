@@ -32,4 +32,18 @@ describe('Flash report accounting UI', () => {
     expect(await screen.findByTestId('flash-error')).toHaveTextContent('Sunucuya ulaşılamadı');
     expect(screen.queryByTestId('flash-collection')).not.toBeInTheDocument();
   });
+
+  it('shows pending room prices separately and includes their currency even without posted room revenue', async () => {
+    axios.get.mockResolvedValue({ data: { date: '2026-09-15', occupancy: { total: 10, occupied: 2, rate: 20 },
+      revenue: { total_by_currency: { TRY: 20 }, collected_by_currency: {}, posting_pending: true,
+        operational_adr_by_currency: { EUR: 2750 }, reservation_room_revenue_by_currency: { EUR: 5500 } },
+      kpi: { adr_by_currency: {}, revpar_by_currency: {} } } });
+    render(<FlashReportContent />);
+    const selector = await screen.findByRole('combobox', { name: /Rapor para birimi/ });
+    fireEvent.change(selector, { target: { value: 'EUR' } });
+    expect(screen.getByTestId('flash-posting-pending')).toHaveTextContent(/2\.750,00/);
+    expect(screen.getByTestId('flash-posting-pending')).toHaveTextContent(/5\.500,00/);
+    expect(screen.getByTestId('flash-kpi-adr')).toHaveTextContent('İşlenen ADR (vergi dahil)');
+    expect(screen.getByRole('link', { name: 'Doluluk / Forecast’i aç' })).toHaveAttribute('href', '/app/raporlar?section=forecast_reports');
+  });
 });

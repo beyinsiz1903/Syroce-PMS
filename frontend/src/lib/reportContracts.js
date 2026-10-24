@@ -17,7 +17,7 @@ const GL_CURRENCY_RULE = 'Genel muhasebe TRY baz defteridir. Yabancı para bilgi
 export const REPORT_CONTRACTS = {
   flash_report: { ...FINANCIAL_CONTRACT, dateScope: 'Seçili PMS iş günü; oda durumu güncel operasyon anıdır.' },
   overview: { ...FINANCIAL_CONTRACT, dateScope: 'Seçilen gün veya son 30 gün' },
-  revenue: { ...FINANCIAL_CONTRACT, financialScope: 'Gelir; tahsilat yerine geçmez. İptal ve fiyat düzeltmeleri ayrı gösterilir.' },
+  revenue: { ...FINANCIAL_CONTRACT, dataSource: 'Ortak işlenmiş folyo, ek harcama ve tamamlanmış POS defteri; odaya aktarımlar tek, iadeler kendi iş gününde.', dateScope: 'Rapor içindeki tek başlangıç/bitiş aralığı; kart, grafik, kategori ve Excel aynı kapsamdır.', financialScope: 'Toplam kayıttaki vergiler dahil, bahşiş hariçtir. Net/vergi kırılımı eksikse doğrulanamadı gösterilir. Kaynak farkları gizlenmez; tahsilat veya rezervasyon bedeli değildir.' },
   adr_revpar: {
     ...FINANCIAL_CONTRACT,
     financialScope: 'ADR = oda geliri / satılan oda-gecesi. RevPAR = oda geliri / satılabilir oda-gecesi.',

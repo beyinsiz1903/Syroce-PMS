@@ -19,6 +19,9 @@
 @media (max-width: 900px) { .forecast-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } .forecast-presets { margin-left: 0; } }
 @media (max-width: 520px) { .forecast-kpis { grid-template-columns: minmax(0, 1fr); } .forecast-toolbar label { flex: 1 1 40%; } .forecast-toolbar input, .forecast-toolbar select { width: 100%; min-width: 0; } }
 @media print {
+  .forecast-matrix-print-page { break-before: page; }
+  .forecast-matrix-print-page tr { break-inside: avoid; }
+  .forecast-matrix-print-page th, .forecast-matrix-print-page td { border: 1px solid #bbb; padding: 6px; text-align: center; }
   .frontdesk-forecast .forecast-toolbar, .frontdesk-forecast button:not(.forecast-table button), .frontdesk-forecast summary { display: none; }
   .forecast-kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .forecast-chart-scroll { overflow: hidden; }

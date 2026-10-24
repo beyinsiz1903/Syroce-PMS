@@ -30,7 +30,7 @@ def forecast_columns():
     return {key: [{"key": field, "label": FIELDS[field], "type": "money" if field.endswith("_by_currency") else "percent" if field.endswith("_pct") else "number"} for field in fields] for key, fields in VIEWS.items()}
 
 
-def forecast_workbook(data, view, basis="physical"):
+def forecast_workbook(data, view, basis="physical", detail="full"):
     book = Workbook()
     sheet = book.active
     sheet.title = "Forecast"
@@ -41,6 +41,8 @@ def forecast_workbook(data, view, basis="physical"):
     sheet.append([f"Toplam dolu oda-gecesi: {data['totals']['occupied_room_nights'] if data['totals']['occupied_room_nights'] is not None else 'Doğrulanamadı'} / Doluluk bazı: {'Fiziksel oda kapasitesi' if basis == 'physical' else 'Satılabilir oda kapasitesi'}"])
     columns = [("date", "Tarih", None)]
     for key in VIEWS[view]:
+        if detail == "summary" and view == "availability" and key not in {"physical_rooms", "total_occupied_rooms", "block_rooms", "blocked_rooms", "remaining_rooms", "occupancy_pct"}:
+            continue
         if key == "occupancy_pct" and basis == "sellable" and view != "occupancy":
             key = "sellable_occupancy_pct"
         if key.endswith("_by_currency"):
@@ -70,6 +72,18 @@ def forecast_workbook(data, view, basis="physical"):
             if key == "remaining_rooms" and cell.value is not None and cell.value < 0:
                 cell.fill = PatternFill("solid", fgColor="FEE2E2")
     notes = book.create_sheet("Tanımlar ve Uyarılar")
+    matrix = book.create_sheet("Oda Tipi Matrisi")
+    matrix.append([f"{data['start_date']} – {data['end_date']} · Doluluk % ve net kalan (+/−) · {'Fiziksel' if basis == 'physical' else 'Satılabilir'} kapasite"])
+    matrix.append(["Oda tipi", *[date.fromisoformat(row["date"]) for row in data["rows"]]])
+    matrix_groups = [{"label": data.get("room_type") or "Tüm tesis", "rows": data["rows"]}, *([] if data.get("room_type") else data.get("room_type_groups", []))]
+    occupancy_key = "occupancy_pct" if basis == "physical" else "sellable_occupancy_pct"
+    for group in matrix_groups:
+        matrix.append([group["label"], *[f"{row[occupancy_key]:.2f}% / {row['remaining_rooms']:+d}" if row.get(occupancy_key) is not None and row.get("remaining_rooms") is not None else "Doğrulanamadı" for row in group["rows"]]])
+    matrix.column_dimensions["A"].width = 30
+    for index in range(2, len(data["rows"]) + 2):
+        matrix.column_dimensions[get_column_letter(index)].width = 20
+        matrix.cell(2, index).number_format = "dd.mm.yyyy"
+    matrix.freeze_panes = "B3"
     notes.append(["Hesaplama tanımları"])
     for value in data["definitions"].values():
         notes.append([value])

@@ -21,6 +21,7 @@ from modules.pms_core.report_money import currency_code as normalize_currency
 from modules.pms_core.reporting_dates import date_period_match
 from modules.pms_core.reporting_financials import deduplicate_report_payments, effective_collection
 from modules.pms_core.reporting_ledger import charge_amount, charge_category, posted_revenue_rows
+from modules.pms_core.revenue_categories import FNB_CATEGORIES
 from modules.pms_core.role_permission_service import require_op
 from modules.pms_core.stay_night_metrics import NON_COMMERCIAL_STATUSES, allocated_revenue_for_night, as_date, booking_nights, booking_occupies_night, load_stay_night_metrics, stay_day_match
 
@@ -63,26 +64,6 @@ def _flash_money(revenue, field, fallback_currency):
     if field == "rev_par":
         breakdown = breakdown or revenue.get("revpar_by_currency")
     return escape(amounts_text(breakdown if breakdown else {fallback_currency: revenue.get(field) or 0}))
-
-FNB_CATEGORIES = {
-    "alcohol",
-    "alcoholic_beverage",
-    "appetizer",
-    "bar",
-    "beverage",
-    "cafe",
-    "dessert",
-    "drink",
-    "fb",
-    "f&b",
-    "fnb",
-    "food",
-    "food_and_beverage",
-    "food_beverage",
-    "restaurant",
-    "room_service",
-}
-
 
 def _report_date(value: str | None, field: str = "date"):
     if not value:
@@ -183,7 +164,11 @@ async def get_flash_report(
         "currency": _currency(b), "nights": booking_nights(b)} for b in active]
     legacy_revenue = {field: _single_currency(values) for field, values in fields.items()}
     legacy_revenue.update({field + "_by_currency": values for field, values in fields.items()})
-    legacy_revenue.update({"room_revenue_breakdown": breakdown, "basis": revenue["basis"], "mixed_currency": _single_currency(total) is None})
+    legacy_revenue.update({"room_revenue_breakdown": breakdown, "basis": revenue["basis"], "mixed_currency": _single_currency(total) is None,
+        "amount_basis": revenue.get("amount_basis"), "posting_pending": revenue.get("posting_pending", False),
+        "reservation_room_revenue_by_currency": revenue.get("reservation_room_revenue_by_currency", {}),
+        "operational_adr_by_currency": revenue.get("operational_adr_by_currency", {}),
+        "operational_revpar_by_currency": revenue.get("operational_revpar_by_currency", {})})
     return {"date": key,
         "occupancy": {"rate": metric["occupancy_rate"], "occupied": metric["occupied_rooms"], "total": metric["total_rooms"],
             "available": max(metric["total_rooms"] - metric["occupied_rooms"], 0)},
@@ -419,6 +404,10 @@ async def get_daily_flash_report(
     # Calculate ADR and RevPAR
     adr_by_currency = _rounded_currency({currency: money(amount) / sold_rooms if sold_rooms else 0 for currency, amount in room_by_currency.items()})
     rev_par_by_currency = _rounded_currency({currency: money(amount) / total_rooms if total_rooms else 0 for currency, amount in room_by_currency.items()})
+    from modules.pms_core.room_revenue_reporting import room_period_performance
+
+    room_postings = any(_charge_category(charge) == "room" for charge in charges)
+    operational = room_period_performance(metrics, {day_key: room_by_currency} if room_postings else {})
 
     return {
         "date": day_key,
@@ -440,6 +429,11 @@ async def get_daily_flash_report(
             "rev_par_by_currency": rev_par_by_currency,
             "sold_rooms": sold_rooms,
             "basis": "posted_folio_charges_plus_untransferred_pos",
+            "amount_basis": "gross_including_recorded_taxes",
+            "posting_pending": bool(operational["posting_gap_days"]),
+            "reservation_room_revenue_by_currency": operational["accrued_room_revenue_by_currency"],
+            "operational_adr_by_currency": operational["adr_by_currency"],
+            "operational_revpar_by_currency": operational["revpar_by_currency"],
         },
     }
 

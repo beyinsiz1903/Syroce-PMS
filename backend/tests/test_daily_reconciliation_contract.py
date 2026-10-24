@@ -151,6 +151,19 @@ async def test_daily_report_does_not_cap_categories_or_payment_methods_at_fifty(
     data = await result()
     assert data["revenue"]["total_by_currency"] == data["payments"]["total_by_currency"] == {"EUR": 51}
     assert len(data["revenue"]["by_category"]) == len(data["payments"]["by_method"]) == 51
+    assert data["revenue"]["by_category"] == {str(i): 1 for i in range(51)}
+
+
+async def test_daily_categories_share_known_aliases_and_keep_minibar_outside_fnb(ledger_db):
+    await ledger_db.folio_charges.insert_many([
+        {"tenant_id": "A", "business_date": "2026-10-07", "category": category, "total": amount, "currency": "EUR"}
+        for category, amount in [("mini_bar", 10), ("alcoholic_beverage", 20), ("food_and_beverage", 30), ("custom-service", 40)]
+    ])
+    data = await result()
+    assert data["revenue"]["fnb_by_currency"] == {"EUR": 50}
+    assert data["revenue"]["other_by_currency"] == {"EUR": 50}
+    assert data["revenue"]["by_category"] == {"minibar": 10, "alcohol": 20, "fnb": 30, "custom-service": 40}
+    assert data["revenue"]["total_by_currency"] == {"EUR": 100}
 
 
 async def test_default_day_is_the_pms_business_date_not_the_calendar():

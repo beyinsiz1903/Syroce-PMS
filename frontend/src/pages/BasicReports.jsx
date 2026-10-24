@@ -32,7 +32,6 @@ import { useBusinessDate } from '@/hooks/useBusinessDate';
 import { validateReportDate } from '@/utils/reportExports';
 // The matrix is a self-contained report. Keep it out of the main reports
 // chunk so unrelated reports do not pay its download/parse cost.
-const DailyOccupancyReport = lazy(() => import('./reports/DailyOccupancyReport'));
 const BACKEND_URL = "";
 const CSV_FORMULA_PREFIX = /^[=+\-@\t\r]/;
 const csvCell = value => {
@@ -67,11 +66,6 @@ export const REPORT_MENU = [{
   icon: TrendingUp,
   desc: 'Performans metrikleri'
 }, {
-  id: 'forecast_reports',
-  label: 'Forecast / Öngörü Raporları',
-  icon: TrendingUp,
-  desc: 'Günlük müsaitlik, doluluk, geliş–ayrılış ve gelir görünümü'
-}, {
   id: 'period',
   label: 'Dönem Karşılaştırma',
   icon: Calendar,
@@ -80,10 +74,10 @@ export const REPORT_MENU = [{
   type: 'header',
   label: 'DOLULUK & KAPASİTE'
 }, {
-  id: 'occupancy',
-  label: 'Doluluk Raporu',
+  id: 'forecast_reports',
+  label: 'Doluluk / Forecast',
   icon: BedDouble,
-  desc: 'Doluluk oranları'
+  desc: 'Günlük dolu, kalan, yüzde ve oda tipi matrisi'
 }, {
   id: 'room_types',
   label: 'Oda Tipi Analizi',
@@ -234,7 +228,7 @@ export const REPORT_MENU = [{
   icon: Utensils,
   desc: 'Yiyecek & içecek'
 }];
-const SELF_CONTAINED_SECTIONS = new Set(['occupancy', 'flash_report', 'expenses', 'official', 'forecast_reports', 'trial_balance', 'gl_trial_balance', 'income_statement', 'balance_sheet', 'journal']);
+const SELF_CONTAINED_SECTIONS = new Set(['revenue', 'occupancy', 'flash_report', 'expenses', 'official', 'forecast_reports', 'trial_balance', 'gl_trial_balance', 'income_statement', 'balance_sheet', 'journal']);
 const ACCOUNTING_STATEMENT_SECTIONS = new Set(['gl_trial_balance', 'income_statement', 'balance_sheet', 'journal']);
 const POINT_IN_TIME_SECTIONS = new Set(['gl_trial_balance', 'balance_sheet']);
 const REPORT_SECTION_IDS = new Set(REPORT_MENU.filter(item => item.id).map(item => item.id));
@@ -257,7 +251,7 @@ const BasicReports = ({
   const [error, setError] = useState(null);
   const [exchangeRates, setExchangeRates] = useState({ TRY: 1, TL: 1 });
   const [searchParams, setSearchParams] = useSearchParams();
-  const requestedSection = searchParams.get('section') || 'overview';
+  const requestedSection = searchParams.get('section') === 'occupancy' ? 'forecast_reports' : searchParams.get('section') || 'overview';
   const urlSection = REPORT_SECTION_IDS.has(requestedSection) ? requestedSection : 'overview';
   const [activeSection, setActiveSectionState] = useState(urlSection);
   // Keep tab state in sync with the URL so browser back/forward and external
@@ -568,10 +562,6 @@ const BasicReports = ({
         return <div data-testid="section-forecast-reports"><ForecastReportsPage /></div>;
       case 'period':
         return <PeriodSection data={data} pc={pc} reportPeriod={reportPeriod} />;
-      case 'occupancy':
-        return <Suspense fallback={<ProductState state="loading" moduleName="Doluluk Raporu" showDashboardLink={false} />}>
-          <DailyOccupancyReport key={tenant?.id || user?.tenant_id || ''} />
-        </Suspense>;
       case 'room_types':
         return <RoomTypesSection roomTypeData={roomTypeData} />;
       case 'guests':
@@ -627,7 +617,7 @@ const BasicReports = ({
   };
   const currentMenuItem = REPORT_MENU.find(m => m.id === activeSection);
   const periodLabel = POINT_IN_TIME_SECTIONS.has(activeSection) ? 'Tarih itibarıyla'
-    : ['occupancy', 'expenses', 'forecast_reports'].includes(activeSection) ? 'Rapor içindeki seçim'
+    : ['revenue', 'occupancy', 'expenses', 'forecast_reports'].includes(activeSection) ? 'Rapor içindeki seçim'
     : DAILY_REPORT_SECTIONS.has(activeSection) || activeSection === 'official'
     ? 'Seçili gün'
     : reportPeriod === 'daily' ? 'Seçili gün' : 'Son 30 gün';
@@ -661,7 +651,7 @@ const BasicReports = ({
             const Icon = item.icon;
             const isActive = activeSection === item.id;
             return <button key={item.id} onClick={() => setActiveSection(item.id)} className={`group w-full rounded-lg px-3 py-2.5 text-left transition-all ${isActive ? 'bg-blue-50 text-blue-800 ring-1 ring-inset ring-blue-100' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'}`} data-testid={`report-nav-${item.id}`} title={item.desc}>
-                  <span className="flex items-center gap-2.5"><Icon className={`w-4 h-4 flex-shrink-0 ${isActive ? 'text-blue-600' : 'text-slate-400 group-hover:text-slate-600'}`} /><span className="truncate text-[13px] font-medium">{t(`cm.pages_BasicReports.${item.id}`, item.label)}</span></span>
+                  <span className="flex items-center gap-2.5"><Icon className={`w-4 h-4 flex-shrink-0 ${isActive ? 'text-blue-600' : 'text-slate-400 group-hover:text-slate-600'}`} /><span className="truncate text-[13px] font-medium">{t(`cm.pages_BasicReports.${item.id === 'forecast_reports' ? 'occupancy_forecast' : item.id}`, item.label)}</span></span>
                   {isActive && <span className="mt-1 block truncate pl-6 text-[10px] font-normal text-blue-600">{item.desc}</span>}
                 </button>;
           })}
@@ -682,7 +672,7 @@ const BasicReports = ({
               <span className="text-sm font-bold text-gray-900">Rapor Merkezi</span>
             </div>
             <select value={activeSection} onChange={e => setActiveSection(e.target.value)} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white" data-testid="mobile-report-selector">
-              {REPORT_MENU.filter(m => m.id).map(m => <option key={m.id} value={m.id}>{t(`cm.pages_BasicReports.${m.id}`, m.label)}</option>)}
+              {REPORT_MENU.filter(m => m.id).map(m => <option key={m.id} value={m.id}>{t(`cm.pages_BasicReports.${m.id === 'forecast_reports' ? 'occupancy_forecast' : m.id}`, m.label)}</option>)}
             </select>
             {showReportControls && <div className={`grid gap-2 mt-2 ${DAILY_REPORT_SECTIONS.has(activeSection) || POINT_IN_TIME_SECTIONS.has(activeSection) ? 'grid-cols-1' : 'grid-cols-2'}`}>
               {!DAILY_REPORT_SECTIONS.has(activeSection) && !POINT_IN_TIME_SECTIONS.has(activeSection) && <select className="border rounded-lg px-2 py-2 text-sm bg-white" value={reportPeriod} onChange={e => setReportPeriod(e.target.value)}>
@@ -704,7 +694,7 @@ const BasicReports = ({
               <div className="flex min-w-0 items-center gap-2 text-xs text-gray-400">
                 <span>Raporlar</span>
                 <ChevronRight className="w-3 h-3" />
-                <span className="text-gray-700 font-medium">{t(`cm.pages_BasicReports.${currentMenuItem?.id}`, currentMenuItem?.label || t('pms.reportLabels.overview', 'Genel Bakış'))}</span>
+                <span className="text-gray-700 font-medium">{t(`cm.pages_BasicReports.${currentMenuItem?.id === 'forecast_reports' ? 'occupancy_forecast' : currentMenuItem?.id}`, currentMenuItem?.label || t('pms.reportLabels.overview', 'Genel Bakış'))}</span>
               </div>
               <div className="flex flex-wrap items-center justify-end gap-2">
                 {showReportControls && activeSection !== 'flash_report' && !DAILY_REPORT_SECTIONS.has(activeSection) && !POINT_IN_TIME_SECTIONS.has(activeSection) && (
@@ -741,7 +731,7 @@ const BasicReports = ({
                 </Button>}
               </div>
             </div>
-            <ReportFrame reportName={currentMenuItem?.labelKey ? t(currentMenuItem.labelKey, currentMenuItem.label) : currentMenuItem?.label || t('pms.reportLabels.overview', 'Genel Bakış')} reportDate={activeSection === 'official' ? officialDate : ['occupancy', 'expenses', 'forecast_reports'].includes(activeSection) ? null : selectedDate} periodLabel={periodLabel} tenant={tenant} user={user} contract={getReportContract(activeSection)} refreshedAt={needsDashboard ? reportRefreshedAt : null}>
+            <ReportFrame reportName={currentMenuItem?.labelKey ? t(currentMenuItem.labelKey, currentMenuItem.label) : currentMenuItem?.label || t('pms.reportLabels.overview', 'Genel Bakış')} reportDate={activeSection === 'official' ? officialDate : ['revenue', 'occupancy', 'expenses', 'forecast_reports'].includes(activeSection) ? null : selectedDate} periodLabel={periodLabel} tenant={tenant} user={user} contract={getReportContract(activeSection)} refreshedAt={needsDashboard ? reportRefreshedAt : null}>
               <div data-testid="report-active-content" data-report-section={activeSection}>{renderContent()}</div>
             </ReportFrame>
           </div>

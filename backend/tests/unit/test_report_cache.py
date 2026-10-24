@@ -13,7 +13,8 @@ def test_financial_report_cache_invalidation_uses_glob_safe_prefixes(monkeypatch
 
     assert cache.invalidate_tenant_cache.call_args_list == [
         call("tenant-1", "folio_revenue_by_category_v2", include_role_variants=True),
-        call("tenant-1", "reports_basic_dashboard_v4", include_role_variants=True),
+        call("tenant-1", "posted_revenue_category_v3", include_role_variants=True),
+        call("tenant-1", "reports_basic_dashboard_v5", include_role_variants=True),
     ]
 
 
