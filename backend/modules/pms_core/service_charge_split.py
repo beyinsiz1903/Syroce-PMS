@@ -17,6 +17,15 @@ from modules.pms_core.receivable_reporting import folio_snapshots
 from modules.pms_core.report_money import currency_code, money
 
 
+def public_result(result):
+    """Exclude Mongo's private insert identity, including older replay rows.
+
+    Motor/PyMongo adds ``_id`` to an inserted dict in place. That identity
+    must never leak into the nested HTTP result (ObjectId is not JSON).
+    """
+    return {**result, "new_charge": {key: value for key, value in result["new_charge"].items() if key != "_id"}}
+
+
 def cents(value):
     try:
         number = money(value)
@@ -103,7 +112,7 @@ async def split_service_charge(database, tenant_id, actor, booking_id, body, ope
     if previous:
         if previous["fingerprint"] != digest:
             raise HTTPException(409, "Aktarım anahtarı farklı bilgilerle kullanılmış")
-        return {**previous["result"], "replayed": True}
+        return {**public_result(previous["result"]), "replayed": True}
     query = {"tenant_id": tenant_id, "booking_id": booking_id, "id": body.charge_id, "voided": {"$ne": True}}
     source_collection = database.folio_charges
     charge = await source_collection.find_one(query, {"_id": 0}, session=session)
@@ -165,7 +174,8 @@ async def split_service_charge(database, tenant_id, actor, booking_id, body, ope
     changed = await source_collection.update_one(query, {"$set": {key: left[key] for key in ["quantity", "unit_price", "total", "amount", "subtotal", "discount_amount", "tax_amount", "vat_amount", "charge_amount", "tax_breakdown"] if key in left}}, session=session)
     if changed.matched_count != 1:
         raise HTTPException(409, "Masraf değişti; aktarım iptal edildi")
-    await database.folio_charges.insert_one(right, session=session)
+    # Insert a copy: the driver mutates its argument with a private ObjectId.
+    await database.folio_charges.insert_one(deepcopy(right), session=session)
     snapshots = await folio_snapshots(database, tenant_id, [source, target], fallback_currency=code, session=session)
     for folio in [source, target]:
         balance = snapshots[folio["id"]]["balance_by_currency"].get(code, 0)
