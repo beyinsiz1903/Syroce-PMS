@@ -650,6 +650,8 @@ jobs:
           cd backend
           python -m pytest \
             tests/test_operational_gl_bridge.py \
+            tests/test_operational_gl_currency_safety.py \
+            tests/test_operational_gl_source_valuation.py \
             tests/test_folio_charge_payment_e2e.py \
             tests/test_folio_checkout_reconciliation.py \
             tests/test_reservation_invoice_charge_ledger.py \
