@@ -35,6 +35,7 @@ const MobileGM = ({ user, tenant, embedded = false }) => {
   const [financeSnapshot, setFinanceSnapshot] = useState(null);
   const arIncomplete = financeSnapshot?.pending_ar?.complete === false;
   const mixedLedgerCount = financeSnapshot?.pending_ar?.mixed_ledger_folio_ids?.length || 0;
+  const unagedDebt = financeSnapshot?.pending_ar?.unaged_balance_by_currency || {};
   const arDisplay = arIncomplete ? 'Veri eksik' : financeSnapshot ? formatCurrencyBreakdown(
     Object.fromEntries(Object.entries(financeSnapshot.pending_ar?.by_currency || {}).map(([code, bucket]) => [code, bucket.total])),
     financeSnapshot.pending_ar?.total,
@@ -344,8 +345,9 @@ const MobileGM = ({ user, tenant, embedded = false }) => {
                   <p className={`${arIncomplete ? 'text-lg' : 'text-2xl'} font-bold text-amber-700`}>
                     {arDisplay}
                   </p>
-                  {arIncomplete && <p className="mt-1 text-xs text-rose-700" role="alert">Bazı folyo bakiyeleri okunamadı; toplam eksik.</p>}
+                  {arIncomplete && <p className="mt-1 text-xs text-rose-700" role="alert">Bazı folyo/cari bakiyeleri doğrulanamadı; toplam eksik.</p>}
                   {!arIncomplete && mixedLedgerCount > 0 && <p className="mt-1 text-xs text-amber-700">{mixedLedgerCount} folyoda farklı döviz bakiyeleri var; birbirinden mahsup edilmedi.</p>}
+                  {!arIncomplete && Object.values(unagedDebt).some(amount => Number(amount) > 0) && <p className="mt-1 text-xs text-amber-700">Vadesi belirsiz alacak: {formatCurrencyBreakdown(unagedDebt)}. Tarih veya ödeme dağılımı doğrulanmalı.</p>}
                 </div>
                 <AlertCircle className="absolute right-0 top-0 w-5 h-5 text-amber-300" />
               </div>

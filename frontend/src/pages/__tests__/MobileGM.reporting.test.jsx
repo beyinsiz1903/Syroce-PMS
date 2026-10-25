@@ -65,4 +65,19 @@ describe('MobileGM report response mapping', () => {
     expect(await screen.findByText(/42,50/)).toBeInTheDocument();
     expect(screen.getByText(/1 folyoda farklı döviz bakiyeleri/)).toHaveTextContent('mahsup edilmedi');
   });
+
+  it('does not certify unmatched account projections as a successful total', async () => {
+    mockApi({ ar: { complete: false, failed_account_ids: ['cari_accounts:legacy'] } });
+    render(<MobileGM user={{}} tenant={{ id: 't' }} />);
+    expect(await screen.findByText('Veri eksik')).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('folyo/cari bakiyeleri doğrulanamadı');
+    expect(screen.queryByText(/42,50/)).not.toBeInTheDocument();
+  });
+
+  it('keeps unallocated account payments visible as unknown-age debt', async () => {
+    mockApi({ ar: { complete: true, unaged_balance_by_currency: { EUR: 12.50 } } });
+    render(<MobileGM user={{}} tenant={{ id: 't' }} />);
+    expect(await screen.findByText(/Vadesi belirsiz alacak/)).toHaveTextContent('12,50');
+    expect(screen.getByText(/Tarih veya ödeme dağılımı doğrulanmalı/)).toBeInTheDocument();
+  });
 });
