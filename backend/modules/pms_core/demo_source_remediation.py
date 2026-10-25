@@ -190,12 +190,19 @@ async def preview(database, tenant_id, session=None):
         group = [r for r in payments if r["currency"] == code]
         if len({r.get("booking_id") for r in group}) != 1 or sorted(minor(r["amount"]) for r in group) != [-6000, -4000, 10000]:
             raise HTTPException(409, "İncelenen 100/40/60 demo ön ödeme grubu değişti")
-    shifts = await _rows(database, "cashier_shifts", tenant_id, {"status": "open"}, session)
+    # Cashier stores its primary key in _id; the public API only ALIASES it
+    # as id. Preserve the native BSON type rather than assuming that alias
+    # exists in storage, inventing an id, or selecting by its string form.
+    shifts = await database.cashier_shifts.find({"tenant_id": tenant_id, "status": "open"},
+        **({"session": session} if session is not None else {})).to_list(None)
     if len(shifts) != 1 or shifts[0].get("business_date") != "2026-10-24":
         raise HTTPException(409, "24 Ekim açık demo kasa vardiyası gerekli")
+    shift_key = shifts[0].get("_id")
+    if shift_key is None:
+        raise HTTPException(409, "Kasa vardiyasının kalıcı kimliği doğrulanamadı")
     if await _rows(database, "cashier_shifts", tenant_id, {"transactions.ref_id": {"$in": list(FX_IDS)}}, session):
         raise HTTPException(409, "Döviz kaynakları kasada zaten temsil ediliyor; otomatik çoğaltılamaz")
-    plan["cashier"] = {"id": shifts[0]["id"], "before_hash": fingerprint(shifts[0]), "append": sorted(cashier_rows, key=lambda r: r["ref_id"])}
+    plan["cashier"] = {"identity": {"_id": shift_key}, "before_hash": fingerprint(shifts[0]), "append": sorted(cashier_rows, key=lambda r: r["ref_id"])}
     comp = await _rows(database, "extra_charges", tenant_id, {"id": {"$in": list(COMP_IDS)}}, session)
     if len(comp) != 8:
         raise HTTPException(409, "Sekiz full-comp kaynak bulunamadı")
@@ -275,7 +282,7 @@ async def apply(database, client, user, data):
                 raise HTTPException(409, "Demo kaynak güncellemesi uygulanamadı")
         shift = plan["cashier"]
         txns = [{**r, "created_at": now, "timestamp": now, "created_by": user.id, "created_by_name": user.name} for r in shift["append"]]
-        changed = await database.cashier_shifts.update_one({"tenant_id": user.tenant_id, "id": shift["id"], "status": "open",
+        changed = await database.cashier_shifts.update_one({"tenant_id": user.tenant_id, **shift["identity"], "status": "open",
             "transactions.ref_id": {"$nin": list(FX_IDS)}}, {"$push": {"transactions": {"$each": txns}}}, session=session)
         if changed.modified_count != 1:
             raise HTTPException(409, "Kasa kaynakları eşzamanlı değişti")
