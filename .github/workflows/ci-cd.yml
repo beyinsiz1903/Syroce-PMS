@@ -212,6 +212,7 @@ jobs:
             tests/unit/test_mobile_reservation_compat.py \
             tests/test_company_aging_cari_sources.py \
             tests/test_report_room_label_enrichment.py \
+            tests/test_housekeeping_room_inventory.py \
             tests/test_outbox_pattern.py \
             tests/test_import_bridge.py \
             tests/test_helpers.py \

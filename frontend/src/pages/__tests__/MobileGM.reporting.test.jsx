@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import axios from 'axios';
 import MobileGM from '../MobileGM';
@@ -8,10 +8,11 @@ vi.mock('react-router-dom', () => ({ useNavigate: () => vi.fn() }));
 vi.mock('sonner', () => ({ toast: { error: vi.fn() } }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: key => key }) }));
 
-function mockApi({ tasksFail = false, ar = {} } = {}) {
+function mockApi({ tasksFail = false, ar = {}, flash = {}, rooms = {} } = {}) {
   axios.get.mockImplementation((url) => {
     if (url.startsWith('/reports/daily-flash')) return Promise.resolve({ data: { date: '2026-09-15', occupancy: { occupancy_rate: 75, occupied_rooms: 3, total_rooms: 4 },
-      revenue: { total_revenue: 0, total_revenue_by_currency: { EUR: 25.75, TRY: 1000.49 }, adr_by_currency: { EUR: 12.25 }, rev_par_by_currency: { EUR: 6.25 } } } });
+      revenue: { total_revenue: 0, total_revenue_by_currency: { EUR: 25.75, TRY: 1000.49 }, adr_by_currency: { EUR: 12.25 }, rev_par_by_currency: { EUR: 6.25 } }, ...flash } });
+    if (url === '/housekeeping/room-status') return Promise.resolve({ data: rooms });
     if (url.startsWith('/reports/finance-snapshot')) return Promise.resolve({ data: { pending_ar: { total: null, by_currency: { EUR: { total: 42.50 } }, ...ar },
       todays_collections: { amount: 321.45, currency: 'TRY', payment_count: 1 }, mtd_collections: { amount: 1000.55, currency: 'TRY', collection_rate_percentage: 50 } } });
     if (url === '/pms/staff-tasks?limit=5') return tasksFail ? Promise.reject(new Error('forbidden')) : Promise.resolve({ data: { tasks: [{ id: '1', title: 'Oda kontrolü' }] } });
@@ -79,5 +80,56 @@ describe('MobileGM report response mapping', () => {
     render(<MobileGM user={{}} tenant={{ id: 't' }} />);
     expect(await screen.findByText(/Vadesi belirsiz alacak/)).toHaveTextContent('12,50');
     expect(screen.getByText(/Tarih veya ödeme dağılımı doğrulanmalı/)).toBeInTheDocument();
+  });
+
+  it('counts occupied rooms from the canonical occupancy field, not a nonexistent movement field', async () => {
+    mockApi({ flash: { occupancy: { occupied_rooms: 10, total_rooms: 31, occupancy_rate: 32.26 }, movements: { arrivals: 3, departures: 4, stayovers: 7 } } });
+    render(<MobileGM user={{}} tenant={{ id: 't' }} />);
+    await screen.findByText('32.3%');
+    expect(screen.getByText('Konaklayan oda').parentElement).toHaveTextContent('10');
+    expect(screen.getByText(/kişi sayısı değildir/)).toBeInTheDocument();
+  });
+
+  it.each([0, undefined])('distinguishes zero occupied rooms from unavailable occupancy (%s)', async count => {
+    mockApi({ flash: { occupancy: count === undefined ? undefined : { occupied_rooms: count, total_rooms: 31, occupancy_rate: 0 }, movements: { arrivals: 0, departures: 0 } } });
+    render(<MobileGM user={{}} tenant={{ id: 't' }} />);
+    const label = await screen.findByText('Konaklayan oda');
+    expect(label.parentElement).toHaveTextContent(count === undefined ? '—' : '0');
+  });
+
+  it('does not present unposted room metrics as a realized zero ADR or RevPAR', async () => {
+    mockApi({ flash: { revenue: { posting_pending: true, adr: 0, rev_par: 0, adr_by_currency: {}, rev_par_by_currency: {},
+      operational_adr_by_currency: { TRY: 2030, EUR: 35.6 }, operational_revpar_by_currency: { TRY: 654.84, EUR: 11.48 } } } });
+    render(<MobileGM user={{}} tenant={{ id: 't' }} />);
+    expect(await screen.findByText('ADR: İşlenmeyi bekliyor')).toBeInTheDocument();
+    expect(screen.getByText(/Tahakkuk ADR:/)).toHaveTextContent('2.030,00');
+    expect(screen.getByText(/Tahakkuk RevPAR:/)).toHaveTextContent('654,84');
+    expect(screen.getByRole('status')).toHaveTextContent('kesinleşmiş gelir değildir');
+    fireEvent.click(screen.getByRole('button', { name: 'Tam Dashboard' }));
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getAllByText('İşlenmeyi bekliyor')).toHaveLength(2);
+    expect(within(dialog).getByText(/oda ücretleri henüz tam işlenmedi/)).toBeInTheDocument();
+  });
+
+  it('uses the same nested response contract in both detail dialogs', async () => {
+    mockApi({ flash: { movements: { arrivals: 3, departures: 4, stayovers: 1 } } });
+    render(<MobileGM user={{}} tenant={{ id: 't' }} />);
+    await screen.findByText('75.0%');
+    fireEvent.click(screen.getByRole('button', { name: 'Tam Dashboard' }));
+    expect(within(screen.getByRole('dialog')).getByText('75.0%')).toBeInTheDocument();
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: 'nav.reports' }));
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByText('75.0%')).toBeInTheDocument();
+    expect(within(dialog).getByText('Geliş (rezervasyon):').parentElement).toHaveTextContent('3');
+    expect(within(dialog).getByText('Gidiş (rezervasyon):').parentElement).toHaveTextContent('4');
+  });
+
+  it('retains unavailable and unknown room statuses in the physical inventory summary', async () => {
+    mockApi({ rooms: { total_rooms: 31, status_counts: { occupied: 10, dirty: 18, available: 1, out_of_order: 1, unknown: 1 } } });
+    render(<MobileGM user={{}} tenant={{ id: 't' }} />);
+    expect(await screen.findByText(/31 aktif fiziksel oda/)).toBeInTheDocument();
+    expect(screen.getByText('Hizmet dışı / diğer durumlar: 2')).toBeInTheDocument();
   });
 });
