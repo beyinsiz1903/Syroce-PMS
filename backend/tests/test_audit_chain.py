@@ -109,6 +109,8 @@ class _FakeColl:
         rows = [
             r for r in self._rows
             if r.get("tenant_id") == query.get("tenant_id") and "record_hash" in r
+            and isinstance(r.get("seq"), (int, float)) and not isinstance(r.get("seq"), bool)
+            and r.get("seq", 0) <= query.get("seq", {}).get("$lte", float('inf'))
         ]
         rows.sort(key=lambda r: r.get("seq", 0))
         return _FakeCursor(rows)
@@ -122,6 +124,10 @@ class _FakeColl:
             if isinstance(rh, dict) and "$exists" in rh:
                 has = "record_hash" in r
                 if has != rh["$exists"]:
+                    continue
+            if '$or' in query:
+                seq = r.get('seq')
+                if isinstance(seq, int) and not isinstance(seq, bool) and seq >= 1:
                     continue
             ts_cond = query.get("timestamp")
             if ts_cond is not None and not _ts_match(r.get("timestamp"), ts_cond):
@@ -295,3 +301,72 @@ async def test_verify_detects_tamper_in_archive(patch_sysdb):
     res = await verify_chain("t1")
     assert res["ok"] is False
     assert any(b["reason"] == "content_hash_mismatch" and b["seq"] == 2 for b in res["breaks"])
+
+
+@pytest.mark.parametrize("tamper", [False, True])
+async def test_concurrent_append_is_outside_captured_horizon_but_does_not_hide_tamper(monkeypatch, tamper):
+    rows = _chained_rows(6)
+    captured = {"seq": 5, "last_hash": rows[4]["record_hash"]}
+    latest = {"seq": 6, "last_hash": rows[5]["record_hash"]}
+    if tamper:
+        rows[1]["after_snapshot"] = {"amount": 9999}
+    database = _FakeDB(rows)
+    states = iter([captured, latest])
+    async def read_state(*_args, **_kwargs):
+        return next(states)
+    database['audit_chain_state'].find_one = read_state
+    monkeypatch.setattr(audit_chain, "_system_db", lambda: database)
+    result = await verify_chain('t1')
+    assert result['as_of_seq'] == result['last_seq'] == result['checked'] == 5
+    assert result['observed_latest_seq'] == 6 and result['concurrent_appends']
+    assert not any(row['reason'] == 'chain_state_tip_mismatch' for row in result['breaks'])
+    assert result['ok'] is (not tamper)
+    if tamper:
+        assert any(row['reason'] == 'content_hash_mismatch' for row in result['breaks'])
+
+
+@pytest.mark.parametrize('latest_kind', ['hash_changed', 'state_deleted', 'seq_regressed'])
+async def test_state_mutation_cannot_masquerade_as_concurrent_append(monkeypatch, latest_kind):
+    rows = _chained_rows(3)
+    captured = {'seq': 3, 'last_hash': rows[-1]['record_hash']}
+    latest = None if latest_kind == 'state_deleted' else {**captured, **({'seq': 2} if latest_kind == 'seq_regressed' else {'last_hash': 'modified'})}
+    database = _FakeDB(rows)
+    states = iter([captured, latest])
+    async def read_state(*_args, **_kwargs):
+        return next(states)
+    database['audit_chain_state'].find_one = read_state
+    monkeypatch.setattr(audit_chain, '_system_db', lambda: database)
+    result = await verify_chain('t1')
+    assert not result['ok'] and not result['concurrent_appends']
+    assert any(row['reason'] == 'chain_state_changed_without_append' for row in result['breaks'])
+
+
+async def test_genesis_created_during_scan_is_inconclusive_not_clean_or_deleted(monkeypatch):
+    rows = _chained_rows(1)
+    database = _FakeDB(rows)
+    states = iter([None, {'seq': 1, 'last_hash': rows[0]['record_hash']}])
+    async def read_state(*_args, **_kwargs):
+        return next(states)
+    database['audit_chain_state'].find_one = read_state
+    monkeypatch.setattr(audit_chain, '_system_db', lambda: database)
+    result = await verify_chain('t1')
+    assert not result['ok'] and result['degraded'] and result['retryable']
+    assert result['checked'] == 0 and result['as_of_seq'] is None
+    assert not any(row['reason'] == 'chain_state_tip_mismatch' for row in result['breaks'])
+
+
+async def test_missing_commitment_cannot_hide_existing_chained_rows(monkeypatch):
+    database = _FakeDB(_chained_rows(2))
+    database['audit_chain_state']._state = None
+    monkeypatch.setattr(audit_chain, '_system_db', lambda: database)
+    result = await verify_chain('t1')
+    assert not result['ok'] and result['degraded']
+
+
+async def test_invalid_sequence_cannot_disappear_behind_numeric_horizon(monkeypatch):
+    database = _FakeDB(_chained_rows(2))
+    database.audit_logs._rows.append({**_entry(), 'id': 'bad', 'seq': 'not-an-integer', 'record_hash': 'bad'})
+    monkeypatch.setattr(audit_chain, '_system_db', lambda: database)
+    result = await verify_chain('t1')
+    assert not result['ok']
+    assert any(row['reason'] == 'invalid_sequence_records' for row in result['breaks'])
