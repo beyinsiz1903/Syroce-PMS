@@ -10,6 +10,7 @@ from core.security import get_current_user
 from models.schemas import User, _ensure_hotel_context
 from modules.pms_core import enterprise_billing as service
 from modules.pms_core import security_funds
+from modules.pms_core import settlement_instruments as instruments
 from modules.pms_core.role_permission_service import RolePermissionService, require_op
 
 router = APIRouter(prefix="/api/enterprise-billing", tags=["PMS / Enterprise Billing"])
@@ -153,4 +154,65 @@ async def move_security_fund(fund_id: UUID, body: security_funds.Movement, user:
 
     result = await _transaction(user, fund["booking_id"], commit)
     await _refresh_after_commit(user.tenant_id, fund["booking_id"])
+    return result
+
+
+@router.get("/instruments")
+async def list_instruments(booking_id: str, user: User = Depends(hotel_user), _perm=Depends(require_op("view_folio"))):
+    booking = await db.bookings.find_one({"tenant_id": user.tenant_id, "id": booking_id}, {"_id": 0})
+    if not booking:
+        raise HTTPException(404, "Rezervasyon bulunamadı")
+    owners = [{"origin_booking_id": booking_id}]
+    if booking.get("guest_id"):
+        owners.append({"owner_guest_id": booking["guest_id"]})
+    rows = await db.billing_instruments.find({"tenant_id": user.tenant_id, "$or": owners}, {"_id": 0}).to_list(None)
+    operations = await db.billing_instrument_operations.find({"tenant_id": user.tenant_id, "booking_id": booking_id}, {"_id": 0, "fingerprint": 0}).to_list(None)
+    permissions = RolePermissionService()
+    can = lambda op: permissions.check_permission(user.role, op, getattr(user, "granted_permissions", None))
+    accounts = await db.gl_accounts.find({"tenant_id": user.tenant_id, "active": {"$ne": False}},
+        {"_id": 0, "code": 1, "name": 1, "type": 1}).to_list(None) if can("manage_city_ledger") else []
+    return {"items": [instruments.public(row) for row in rows], "operations": operations, "accounts": accounts,
+        "kinds": instruments.KINDS, "can_issue": can("manage_city_ledger") and can("override_rate"),
+        "can_apply": can("post_payment"), "can_reverse": can("manage_city_ledger") and can("void_payment"),
+        "reconciliation": await instruments.reconcile(db, user.tenant_id, booking_id=booking_id)}
+
+
+@router.post("/instruments", status_code=201)
+async def issue_instrument(body: instruments.Issue, user: User = Depends(hotel_user),
+    _perm=Depends(require_op("manage_city_ledger")), _finance=Depends(require_op("override_rate"))):
+    await instruments.prepare(db, user.tenant_id)
+
+    async def commit(session):
+        return await instruments.issue(db, user.tenant_id, user, body, session=session)
+
+    return await _transaction(user, body.booking_id, commit)
+
+
+@router.post("/instruments/{instrument_id}/apply", status_code=201)
+async def apply_instrument(instrument_id: UUID, body: instruments.Apply, user: User = Depends(hotel_user),
+    _perm=Depends(require_op("post_payment"))):
+    from domains.pms.cashier_service import record_cash_transaction
+
+    await instruments.prepare(db, user.tenant_id)
+
+    async def commit(session):
+        return await instruments.apply(db, user.tenant_id, user, str(instrument_id), body, session=session, record_cash=record_cash_transaction)
+
+    result = await _transaction(user, body.booking_id, commit)
+    await _refresh_after_commit(user.tenant_id, body.booking_id)
+    return result
+
+
+@router.post("/instrument-operations/{operation_id}/reverse")
+async def reverse_instrument(operation_id: UUID, body: instruments.Reverse, user: User = Depends(hotel_user),
+    _perm=Depends(require_op("manage_city_ledger")), _void=Depends(require_op("void_payment"))):
+    from domains.pms.cashier_service import record_cash_transaction
+
+    await instruments.prepare(db, user.tenant_id)
+
+    async def commit(session):
+        return await instruments.reverse(db, user.tenant_id, user, str(operation_id), body, session=session, record_cash=record_cash_transaction)
+
+    result = await _transaction(user, body.booking_id, commit)
+    await _refresh_after_commit(user.tenant_id, body.booking_id)
     return result

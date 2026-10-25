@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { formatCurrency } from '@/lib/currency';
 import { parseFinancialDecimal, toMinorUnits } from '@/lib/financialInput';
 import SecurityFundsPanel from './SecurityFundsPanel';
+import SettlementInstrumentsPanel from './SettlementInstrumentsPanel';
 
 const labels = { requested: 'Eski bekleyen işlem', applied: 'Uygulandı — tahsilat değil', rejected: 'İptal edildi' };
 const errorText = error => typeof error?.response?.data?.detail === 'string'
@@ -27,10 +28,12 @@ export default function EnterpriseBillingPanel({ bookingId, folios, charges, cur
   const [pendingRetry, setPendingRetry] = useState(null);
   const [showFunds, setShowFunds] = useState(false);
   const [fundsLocked, setFundsLocked] = useState(false);
+  const [showInstruments, setShowInstruments] = useState(false);
+  const [instrumentsLocked, setInstrumentsLocked] = useState(false);
   const attempt = useRef(null);
   const active = useRef(true);
   const inFlight = useRef(false);
-  useEffect(() => { onLockChange?.(busy || uncertain || Boolean(pendingRetry) || fundsLocked); }, [busy, uncertain, pendingRetry, fundsLocked, onLockChange]);
+  useEffect(() => { onLockChange?.(busy || uncertain || Boolean(pendingRetry) || fundsLocked || instrumentsLocked); }, [busy, uncertain, pendingRetry, fundsLocked, instrumentsLocked, onLockChange]);
   const refresh = async () => {
     const [catalog, settings, requests] = await Promise.all([
       axios.get('/enterprise-billing/catalog'), axios.get('/enterprise-billing/policy'),
@@ -112,12 +115,12 @@ export default function EnterpriseBillingPanel({ bookingId, folios, charges, cur
     {pendingRetry && <div className="space-y-2"><p className="text-sm text-destructive">Bekleyen işlemin sonucu belirsiz. Yeni işlem yapmayın; aynı kayıt ve açıklamayla sonucu doğrulayın.</p><Button type="button" disabled={busy} onClick={() => decide(pendingRetry.item, pendingRetry.approve)}>Bekleyen işlemin sonucunu doğrula</Button></div>}
     {!data ? <p>Kontroller yükleniyor…</p> : <div className="rounded border p-3 text-sm">
       <p>Ödeme sağlayıcısı: {data.provider || 'Yapılandırılmamış'} · {data.provider_readiness === 'configured_not_live_verified' ? 'Yapılandırılmış; canlı kabul doğrulaması gerekli' : 'Entegre kart tahsilatı hazır değil'}</p>
-      <p>Harici tahsilat kaydı: nakit, POS/kart, doğrulanmış banka transferi. Hediye kartı, cüzdan, sadakat ve barter bu panelde etkin değildir.</p>
+      <p>Harici tahsilat kaydı: nakit, POS/kart, doğrulanmış banka transferi. Hediye kartı, cüzdan, sadakat, barter, alacaktan silme ve çek için aşağıdaki kaynaklı mahsup akışını kullanın.</p>
     </div>}
     {!readOnly && data && !policy?.can_apply && <p className="text-sm text-muted-foreground">İkram/indirim için masraf işleme ve fiyat değiştirme yetkileri gerekir.</p>}
     {!readOnly && data && policy?.can_apply && <form onSubmit={submit} className="space-y-3">
       <h4 className="font-medium">Gerekçeli ikram / indirim</h4>
-      <fieldset disabled={busy || uncertain || Boolean(pendingRetry)} className="space-y-3">
+      <fieldset disabled={busy || uncertain || Boolean(pendingRetry) || instrumentsLocked} className="space-y-3">
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="text-sm">Hedef folyo<select aria-label="İkram hedef folyo" className="mt-1 block w-full rounded border bg-background p-2" value={folioId} onChange={e => { setFolioId(e.target.value); setSelected([]); }}><option value="">Seçin</option>{folios.filter(row => row.status === 'open' && !row.invoice_id).map(row => <option key={row.id} value={row.id}>{row.folio_number || row.id}</option>)}</select></label>
           <label className="text-sm">İşlem türü<select aria-label="İkram türü" className="mt-1 block w-full rounded border bg-background p-2" value={kind} onChange={e => { setKind(e.target.value); setSelected([]); }}><option value="selected_services_comp">Seçili hizmet ikramı</option><option value="room_comp">Yalnız oda ikramı</option><option value="service_recovery">Memnuniyet telafisi</option><option value="discount">Ticari indirim</option></select></label>
@@ -129,7 +132,7 @@ export default function EnterpriseBillingPanel({ bookingId, folios, charges, cur
         <label className="block text-sm">Açıklama (zorunlu)<input aria-label="İkram gerekçesi" className="mt-1 block w-full rounded border bg-background p-2" required minLength={3} maxLength={500} value={reason} onChange={e => setReason(e.target.value)} /></label>
         <p className="text-sm">Uygulanacak tutar: {money(amountMinor || 0)}. Ayrı onay beklemeden uygulanır; açıklama, kullanıcı ve hizmetler loga kaydedilir. Tahsilat oluşturmaz. Faturalı kalemler ayrı belge düzeltmesi gerektirir.</p>
       </fieldset>
-      <Button type="submit" disabled={busy || Boolean(pendingRetry) || (!valid && !uncertain)}>{uncertain ? 'Aynı talebin sonucunu doğrula' : 'İkramı / indirimi uygula'}</Button>
+      <Button type="submit" disabled={busy || instrumentsLocked || Boolean(pendingRetry) || (!valid && !uncertain)}>{uncertain ? 'Aynı talebin sonucunu doğrula' : 'İkramı / indirimi uygula'}</Button>
       {uncertain && <p className="text-sm text-destructive">Sonuç belirsiz. Seçimler kilitlendi; yeniden denemede aynı işlem anahtarı kullanılacak.</p>}
     </form>}
     <div className="space-y-2">{items.map(item => <div key={item.id} className="rounded border p-3 text-sm">
@@ -141,7 +144,9 @@ export default function EnterpriseBillingPanel({ bookingId, folios, charges, cur
         <div className="flex gap-2"><Button type="button" size="sm" disabled={busy || uncertain || Boolean(pendingRetry) || (pendingReasons[item.id] ?? item.reason ?? '').trim().length < 3} onClick={() => decide(item, true)}>Uygula</Button><Button type="button" size="sm" variant="outline" disabled={busy || uncertain || Boolean(pendingRetry) || (pendingReasons[item.id] ?? item.reason ?? '').trim().length < 3} onClick={() => decide(item, false)}>İptal et</Button></div>
       </div>}
     </div>)}</div>
-    <Button type="button" variant="outline" disabled={fundsLocked || busy || uncertain || Boolean(pendingRetry)} onClick={() => setShowFunds(value => !value)}>İade edilebilir güvence kayıtları</Button>
-    {showFunds && <SecurityFundsPanel key={bookingId} bookingId={bookingId} currency={currency} folios={folios} readOnly={readOnly} onChanged={onChanged} onLockChange={setFundsLocked} />}
+    <Button type="button" variant="outline" disabled={fundsLocked || instrumentsLocked || busy || uncertain || Boolean(pendingRetry)} onClick={() => setShowFunds(value => !value)}>İade edilebilir güvence kayıtları</Button>
+    {showFunds && <SecurityFundsPanel key={bookingId} bookingId={bookingId} currency={currency} folios={folios} readOnly={readOnly || instrumentsLocked} onChanged={onChanged} onLockChange={setFundsLocked} />}
+    <Button type="button" variant="outline" disabled={fundsLocked || instrumentsLocked || busy || uncertain || Boolean(pendingRetry)} onClick={() => setShowInstruments(value => !value)}>Hediye kartı, cüzdan, sadakat, barter ve çek</Button>
+    {showInstruments && <SettlementInstrumentsPanel key={bookingId} bookingId={bookingId} folios={folios} currency={currency} readOnly={readOnly || busy || uncertain || Boolean(pendingRetry) || fundsLocked} onChanged={onChanged} onLockChange={setInstrumentsLocked} />}
   </section>;
 }

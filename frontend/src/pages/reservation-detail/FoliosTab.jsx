@@ -381,6 +381,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
         <SummaryCard currency={currency} label="Tahsilatlar" value={summary?.cash_collection_total ?? summary?.total_payments} color="emerald" />
         {(summary?.city_ledger_transfer_total || 0) > 0 && <SummaryCard currency={currency} label="Cariye Aktarılan (tahsilat değil)" value={summary.city_ledger_transfer_total} color="amber" />}
         {(summary?.security_application_total || 0) > 0 && <SummaryCard currency={currency} label="Güvenceden Mahsup (yeni tahsilat değil)" value={summary.security_application_total} color="amber" />}
+        {(summary?.instrument_settlement_total || 0) > 0 && <SummaryCard currency={currency} label="Kurumsal Mahsuplar (yeni tahsilat değil)" value={summary.instrument_settlement_total} color="amber" />}
         <SummaryCard currency={currency} label="Kalan Bakiye" value={reservationTotalDue} color={reservationTotalDue > 0 ? 'red' : 'green'} />
         {(summary?.total_discounts || 0) > 0 && (
           <SummaryCard currency={currency} label={(summary?.complimentary_adjustment_total || 0) > 0 ? 'Comp İndirimi' : (summary?.rate_correction_total || 0) > 0 ? 'Fiyat Düzeltmesi' : 'İndirimler'} value={summary?.total_discounts} color="rose" />

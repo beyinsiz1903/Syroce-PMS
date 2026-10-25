@@ -165,7 +165,7 @@ TENANT_SCOPED_COLLECTIONS: set[str] = {
 # must never update/delete/replace them. The single sanctioned removal from the
 # hot collection is the controlled retention MOVE into the immutable archive,
 # which runs under audit_retention_context() (or a raw system client in Celery).
-APPEND_ONLY_COLLECTIONS: set[str] = {"audit_logs", "audit_logs_archive"}
+APPEND_ONLY_COLLECTIONS: set[str] = {"audit_logs", "audit_logs_archive", "audit_restoration_preimages", "audit_attribution_restorations"}
 
 # The hot collection is the single canonical destination for new audit records.
 # Every insert into it (regardless of call site) is auto-attributed (client

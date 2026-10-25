@@ -71,6 +71,9 @@ async def daily_sources(db, tenant_id, business_date):
         **report_payment_period_match(business_date, business_date, date_fields=("date", "charge_date", "posted_at", "created_at"))}, {"_id": 0}).to_list(None)
     payments = await db.payments.find({"tenant_id": tenant_id, "voided": {"$ne": True},
         **report_payment_period_match(business_date, business_date)}, {"_id": 0}).to_list(None)
+    from modules.pms_core.settlement_instruments import exclude_direct_cheques
+
+    payments = await exclude_direct_cheques(db, tenant_id, payments)
     charges = [r for r in charges if not r.get("deleted") and not r.get("voided")
         and str(r.get("charge_category") or r.get("category") or "").strip().lower() not in {"split_adjustment", "opening_balance"}
         and (minor(r.get("total", r.get("amount"))) or minor(r.get("tax_amount")))]

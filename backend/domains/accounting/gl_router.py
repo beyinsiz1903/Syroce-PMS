@@ -2020,6 +2020,10 @@ async def operational_reconciliation(
     )
 
     entries_by_id = {str(entry.get("id")): entry for entry in journal_entries if entry.get("id")}
+    from modules.pms_core.settlement_instruments import exclude_direct_cheques, reconcile
+
+    payments = await exclude_direct_cheques(db, tenant_id, payments)
+    instrument_reconciliation = await reconcile(db, tenant_id, business_date=selected)
     entries_by_source = {(str(entry.get("source")), str(entry.get("source_ref"))): entry for entry in journal_entries if entry.get("source_ref")}
     settlement_accounts = {
         mapping["cash_account_code"],
@@ -2029,6 +2033,9 @@ async def operational_reconciliation(
 
     blockers: list[dict] = []
     warnings: list[dict] = []
+    if not instrument_reconciliation["healthy"]:
+        blockers.append({"code": "billing_settlement_integrity", "message": "Kurumsal mahsup/kaynak bağlantıları doğrulanamadı",
+            "issues": instrument_reconciliation["issues"]})
     if not mapping.get("enabled"):
         blockers.append(
             {
@@ -2252,6 +2259,7 @@ async def operational_reconciliation(
     return {
         "business_date": selected,
         "healthy": not blockers,
+        "instruments": instrument_reconciliation,
         "mapping_enabled": bool(mapping.get("enabled")),
         "blockers": blockers,
         "warnings": warnings,

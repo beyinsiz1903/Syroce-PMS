@@ -1,6 +1,6 @@
 // Mirror reporting_financials.py: ledger settlement is not always collection.
 const invalid = new Set(['void', 'voided', 'failed', 'cancelled', 'canceled', 'rejected', 'pending', 'processing', 'initiated', 'authorized', 'expired', 'declined', 'requires_action']);
-const nonCash = new Set(['discount', 'city_ledger', 'direct_bill', 'complimentary', 'correction', 'ar', 'security_deposit_application']);
+const nonCash = new Set(['discount', 'city_ledger', 'direct_bill', 'complimentary', 'correction', 'ar', 'security_deposit_application', 'gift_card_redemption', 'wallet', 'loyalty_redemption', 'barter', 'write_off']);
 export const paymentMethod = row => String(row.payment_method || row.method || '').trim().toLowerCase();
 export const isEffectivePayment = row => !row.voided && !invalid.has(String(row.status || 'paid').trim().toLowerCase());
 export const isNonCashPayment = row => nonCash.has(paymentMethod(row));
@@ -16,4 +16,6 @@ export const folioPaymentLabel = row => ({
   discount: 'İkram / indirim (tahsilat değil)', complimentary: 'İkram (tahsilat değil)', correction: 'Finansal düzeltme (tahsilat değil)',
   city_ledger: 'Cari aktarım (tahsilat değil)', direct_bill: 'Cari aktarım (tahsilat değil)', ar: 'Cari aktarım (tahsilat değil)',
   security_deposit_application: 'Güvence mahsubu (yeni tahsilat değil)',
+  gift_card_redemption: 'Hediye kartı mahsubu', wallet: 'Cüzdan mahsubu', loyalty_redemption: 'Sadakat puanı mahsubu',
+  barter: 'Barter (tahsilat değil)', write_off: 'Alacaktan silme (tahsilat değil)',
 }[paymentMethod(row)] || paymentMethod(row) || '—');

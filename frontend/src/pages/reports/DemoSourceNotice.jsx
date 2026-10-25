@@ -23,7 +23,7 @@ export default function DemoSourceNotice({ tenant }) {
     {status?.applied && <details className="mt-2">
       <summary className="cursor-pointer">Kayıtları koruyan demo düzeltme özeti</summary>
       <p>{status.result?.document_count} kaynak için önceki sürüm korundu; {status.result?.cashier_appended} kasa kaynak kaydı tamamlandı.</p>
-      <p>69 tarihî denetim bulgusu belgelendi; eski zincir geçerli ilan edilmedi ve yeniden mühürlenmedi.</p>
+      <p>69 tarihî denetim bulgusu ayrı kanıt kaydında belgelendi. Güncel zincir durumunu Denetim Merkezi'nden doğrulayın; özgün mühürler yeniden üretilmez.</p>
       <p className="break-all text-xs">{status.policy_id}</p>
     </details>}
   </aside>;

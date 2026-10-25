@@ -567,4 +567,6 @@ async def test_catalog_not_configured_is_explicit_and_never_calls_provider(monke
     monkeypatch.setattr(registry, 'get_provider_for_tenant', absent)
     catalog = await billing.payment_catalog(None, 'A')
     assert catalog['provider_readiness'] == 'not_configured'
-    assert 'wallet' in catalog['not_enabled'] and 'authorization' in catalog['non_collection_operations']
+    assert not catalog['not_enabled'] and 'authorization' in catalog['non_collection_operations']
+    assert {row['code'] for row in catalog['instrument_methods']} == {'wallet', 'gift_card_redemption', 'loyalty_redemption', 'barter', 'write_off', 'cheque_pending_clearance'}
+    assert all(row['requires_explicit_account_and_evidence'] for row in catalog['instrument_methods'])

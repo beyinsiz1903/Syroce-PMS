@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import logging
 
-from modules.pms_core.reporting_financials import INVALID_PAYMENT_STATUSES, NON_CASH_PAYMENT_METHODS
+from modules.pms_core.reporting_financials import INSTRUMENT_SETTLEMENT_METHODS, INVALID_PAYMENT_STATUSES, NON_CASH_PAYMENT_METHODS
 
 logger = logging.getLogger(__name__)
 
@@ -66,9 +66,10 @@ def payment_state(*, balance: float, payments: list[dict]) -> str:
     collected = collected_amount(payments)
     transferred = transferred_amount(payments)
     applied_security = sum(_signed_amount(p) for p in payments if is_effective(p) and p.get("method") == "security_deposit_application")
-    if balance <= 0.01 and (collected > 0 or transferred > 0 or applied_security > 0):
+    non_cash_settled = sum(_signed_amount(p) for p in payments if is_effective(p) and p.get("method") in INSTRUMENT_SETTLEMENT_METHODS)
+    if balance <= 0.01 and (collected > 0 or transferred > 0 or applied_security > 0 or non_cash_settled > 0):
         return "paid" if transferred <= 0.01 else "transferred"
-    if collected > 0 or transferred > 0 or applied_security > 0:
+    if collected > 0 or transferred > 0 or applied_security > 0 or non_cash_settled > 0:
         return "partial"
     if refunded_amount(payments) > 0:
         return "refunded"
