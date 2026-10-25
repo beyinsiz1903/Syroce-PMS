@@ -45,6 +45,29 @@ if [[ "$http_code" != "200" ]]; then
   failures+=("external-health:${http_code:-unreachable}")
 fi
 
+# Existing five-minute host monitor also surfaces low disk capacity; it never
+# deletes anything or weakens the image-retention rollback protections.
+min_free_gib="${HEALTHWATCH_MIN_FREE_GIB:-10}"
+if [[ ! "$min_free_gib" =~ ^[1-9][0-9]{0,3}$ ]] || ((min_free_gib > 1024)); then
+  failures+=("disk-threshold:invalid")
+else
+  min_free_bytes=$((min_free_gib * 1024 * 1024 * 1024))
+  docker_root="$(docker info --format '{{.DockerRootDir}}' 2>/dev/null || true)"
+  if [[ "$docker_root" != /* || ! -d "$docker_root" ]]; then
+    failures+=("docker-storage:unknown")
+  else
+    for disk_path in / "$docker_root" /var/lib/containerd; do
+      [[ -d "$disk_path" ]] || continue
+      available_bytes="$(df -PB1 "$disk_path" 2>/dev/null | awk 'NR == 2 {print $4}' || true)"
+      if [[ ! "$available_bytes" =~ ^[0-9]+$ ]]; then
+        failures+=("disk-free:unreadable")
+      elif ((available_bytes < min_free_bytes)); then
+        failures+=("disk-free:${disk_path}:${available_bytes}B<${min_free_gib}GiB")
+      fi
+    done
+  fi
+fi
+
 if ((${#failures[@]})); then
   logger -t syroce-healthwatch -- "FAILED ${failures[*]}"
   printf 'FAILED %s\n' "${failures[*]}" >&2

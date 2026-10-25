@@ -51,6 +51,11 @@ jobs:
           cd backend
           ruff check .
 
+      - name: Host retention helper lint and monitor syntax
+        run: |
+          ruff check --config backend/pyproject.toml deploy/image-retention.py
+          bash -n deploy/syroce-healthwatch.sh
+
       - name: Orphan-file regression guard
         run: python backend/scripts/check_orphan_files.py
 
@@ -225,6 +230,10 @@ jobs:
             tests/test_hardening_multi_phase.py \
             tests/test_atomic_booking.py \
             tests/test_safety_rebinding.py \
+            tests/test_image_retention.py \
+            tests/test_healthwatch_disk_capacity.py \
+            tests/test_droplet_deploy_continuity.py \
+            tests/test_deploy_exely_preflight_guard.py \
             tests/test_egress_ci_guard.py \
             tests/test_production_blockers.py \
             tests/test_route_shadowing.py \

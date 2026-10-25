@@ -82,6 +82,12 @@ jobs:
             git fetch --depth=1 origin "$DEPLOY_SHA"
             git checkout --detach "$DEPLOY_SHA"
 
+            # Retain verified rollback sets and every container-referenced
+            # image. Fail BEFORE pulling/replacing services if safe cleanup
+            # cannot provide 20 GiB headroom. Same lock as the whole deploy.
+            python3 deploy/image-retention.py --image-prefix "$DEPLOY_IMAGE_PREFIX" \
+              --candidate "$DEPLOY_SHA" --phase pre --apply --lock-fd 9
+
             # CI already builds and publishes these exact-revision images.
             # Rebuilding Vite/ML dependencies on the live 4 GiB host can starve
             # the API and time out. Pull all images before touching services;
@@ -125,3 +131,8 @@ jobs:
             # Verify both local service topology and the public route before
             # considering the deployment successful.
             /usr/local/sbin/syroce-healthwatch
+
+            # Only successful, publicly verified revisions enter the durable
+            # rollback history. Bound local SHA images after each rollout too.
+            python3 deploy/image-retention.py --image-prefix "$DEPLOY_IMAGE_PREFIX" \
+              --candidate "$DEPLOY_SHA" --phase post --apply --lock-fd 9
