@@ -72,6 +72,15 @@ export function auditActionLabel(value) {
     .replace(/\b\w/g, character => character.toLocaleUpperCase("tr-TR"));
 }
 
+export function ChainVerificationScope({ chain }) {
+  if (chain?.as_of_seq == null) return null;
+  return <p data-testid="chain-verification-scope" className="mb-4 text-xs text-slate-600">
+    Tarama başlangıç sınırı: #{chain.as_of_seq}. Kontrol edilen son sıra: #{chain.last_seq ?? '—'}.
+    {chain.concurrent_appends && <> Tarama sırasında yeni kayıtlar eklendi (görünen son sıra: #{chain.observed_latest_seq}); bu kayıtlar sonraki taramada kontrol edilir.</>}
+    {chain.truncated && <> Tarama limiti doldu; tüm zincir doğrulanmış sayılmaz.</>}
+  </p>;
+}
+
 export function summarizeUserAgent(userAgent) {
   const value = String(userAgent || "");
   if (!value) return "Bilinmeyen cihaz";
@@ -246,7 +255,7 @@ export default function AuditTimelinePage({
       }), axios.get(`/audit/summary?period=24h`, {
         headers
       }), axios.get(`/audit/chain/verify`, {
-        headers
+        headers, params: { limit: 50000 }
       }).catch(() => null), axios.get(`/audit/retention`, {
         headers
       }).catch(() => null)]);
@@ -349,9 +358,10 @@ export default function AuditTimelinePage({
         </div>
 
         {/* Tamper-evidence: hash-chain integrity status (read-only) */}
-        {chain && <div data-testid="chain-status" className={`flex items-center gap-2 mb-4 px-3 py-2 rounded border text-sm ${chain.degraded ? "bg-amber-50 border-amber-300 text-amber-800" : chain.ok ? "bg-emerald-50 border-emerald-300 text-emerald-800" : "bg-red-50 border-red-300 text-red-800"}`}>
-            {chain.degraded ? <><AlertTriangle className="w-4 h-4" />{t("cm.pages_AuditTimelinePage.zincir_do\u011Frulanamad\u0131_ge\xE7ici_ha")}</> : chain.ok ? <><ShieldCheck className="w-4 h-4" />{t("cm.pages_AuditTimelinePage.denetim_zinciri_b\xFCt\xFCnl\xFC\u011F\xFC_do\u011Fr")}{chain.checked || 0}{t("cm.pages_AuditTimelinePage.kay\u0131t_kurcalama_tespit_edilmed")}</> : <><ShieldAlert className="w-4 h-4" />{t("cm.pages_AuditTimelinePage.uyari_denetim_zinciri_k\u0131r\u0131k")}{(chain.breaks || []).length}{t("cm.pages_AuditTimelinePage.kay\u0131t_de\u011Fi\u015Ftirilmi\u015F_silinmi\u015F_o")}{(chain.breaks || []).length > 0 && <span className="font-mono ml-1">{t("cm.pages_AuditTimelinePage._seq")}{(chain.breaks || []).slice(0, 5).map(b => b.seq).join(", ")})</span>}.</>}
+        {chain && <div data-testid="chain-status" className={`flex items-center gap-2 mb-4 px-3 py-2 rounded border text-sm ${chain.degraded || chain.truncated ? "bg-amber-50 border-amber-300 text-amber-800" : chain.ok ? "bg-emerald-50 border-emerald-300 text-emerald-800" : "bg-red-50 border-red-300 text-red-800"}`}>
+            {chain.truncated ? <><AlertTriangle className="w-4 h-4" />Sınırlı tarama: {chain.checked || 0} kayıt, {(chain.breaks || []).length} bulgu. Tüm zincir doğrulanmış sayılmaz; daha geniş tarama gerekir.</> : chain.degraded ? <><AlertTriangle className="w-4 h-4" />{t("cm.pages_AuditTimelinePage.zincir_do\u011Frulanamad\u0131_ge\xE7ici_ha")}</> : chain.ok ? <><ShieldCheck className="w-4 h-4" />{t("cm.pages_AuditTimelinePage.denetim_zinciri_b\xFCt\xFCnl\xFC\u011F\xFC_do\u011Fr")}{chain.checked || 0}{t("cm.pages_AuditTimelinePage.kay\u0131t_kurcalama_tespit_edilmed")}</> : <><ShieldAlert className="w-4 h-4" />{t("cm.pages_AuditTimelinePage.uyari_denetim_zinciri_k\u0131r\u0131k")}{(chain.breaks || []).length}{t("cm.pages_AuditTimelinePage.kay\u0131t_de\u011Fi\u015Ftirilmi\u015F_silinmi\u015F_o")}{(chain.breaks || []).length > 0 && <span className="font-mono ml-1">{t("cm.pages_AuditTimelinePage._seq")}{(chain.breaks || []).slice(0, 5).map(b => b.seq).join(", ")})</span>}.</>}
           </div>}
+        <ChainVerificationScope chain={chain} />
 
         {retention && <Card data-testid="audit-retention-status" className="mb-6 border-slate-200">
             <CardContent className="p-3 flex flex-wrap gap-x-5 gap-y-1 text-xs text-slate-600">

@@ -189,6 +189,8 @@ async def verify_chain(tenant_id: str, limit: int = 5000) -> dict:
           "last_seq": int | None,
           "unverifiable": int,       # post-genesis unchained records (gaps)
           "legacy_skipped": int,     # pre-genesis unchained (honestly skipped)
+          "as_of_seq": int | None,   # captured commitment before reading rows
+          "concurrent_appends": bool,# newer events excluded from this prefix
         }
 
     Records carrying a `record_hash` are verified for content + link continuity.
@@ -196,7 +198,9 @@ async def verify_chain(tenant_id: str, limit: int = 5000) -> dict:
     are unioned and sorted by `seq`, so the chain remains continuous across the
     retention move. The first chained record in the window is treated as the
     chain start (its `prev_hash` is not compared to a predecessor outside the
-    window).
+    window). The sequence horizon is captured at scan start; newer appends are
+    disclosed but are not evidence of deletion in the already-read prefix.
+    This is not a snapshot transaction or certification of later events.
 
     Fail-visible: a record written BEFORE the chain genesis is legacy and
     skipped, but any unchained record written AFTER the genesis is counted as an
@@ -205,6 +209,18 @@ async def verify_chain(tenant_id: str, limit: int = 5000) -> dict:
     """
     sysdb = _system_db()
 
+    # Fix the verification horizon BEFORE reading either collection. Appends
+    # during the scan must not be compared with a newer state tip after an
+    # older cursor was already consumed (a false deleted-tail warning).
+    # This is a sequence-prefix check, not a database snapshot transaction.
+    chain_state = await sysdb[CHAIN_STATE_COLLECTION].find_one(
+        {"_id": tenant_id}, {"_id": 0, "seq": 1, "last_hash": 1},
+    )
+    chain_state = dict(chain_state) if chain_state else None
+    as_of_seq = chain_state.get("seq") if chain_state else None
+    valid_horizon = isinstance(as_of_seq, int) and not isinstance(as_of_seq, bool) and as_of_seq >= 0
+    sequence_bound = {"seq": {"$lte": as_of_seq if valid_horizon else 0}}
+
     # ── Gather chained rows from hot + archive, merged + de-duplicated by seq ──
     chained: list[dict] = []
     truncated = False
@@ -212,7 +228,7 @@ async def verify_chain(tenant_id: str, limit: int = 5000) -> dict:
         cursor = (
             sysdb[coll_name]
             .find(
-                {"tenant_id": tenant_id, "record_hash": {"$exists": True}},
+                {"tenant_id": tenant_id, "record_hash": {"$exists": True}, **sequence_bound},
                 {"_id": 0},
             )
             .sort("seq", 1)
@@ -274,8 +290,16 @@ async def verify_chain(tenant_id: str, limit: int = 5000) -> dict:
     # ── Fail-visible gap detection: unchained rows written after genesis ──
     unverifiable = 0
     legacy_skipped = 0
+    invalid_sequences = 0
+    chained_without_commitment = 0
     for coll_name in _CHAIN_COLLECTIONS:
         coll = sysdb[coll_name]
+        invalid_sequences += await coll.count_documents({
+            "tenant_id": tenant_id, "record_hash": {"$exists": True},
+            "$or": [{"seq": {"$not": {"$type": ["int", "long"]}}}, {"seq": {"$lt": 1}}],
+        })
+        if not valid_horizon:
+            chained_without_commitment += await coll.count_documents({"tenant_id": tenant_id, "record_hash": {"$exists": True}})
         if genesis_ts is not None:
             unverifiable += await coll.count_documents(
                 {
@@ -301,11 +325,10 @@ async def verify_chain(tenant_id: str, limit: int = 5000) -> dict:
                 }
             )
 
-    # A deleted tail record cannot cause a subsequent prev-hash mismatch. The
-    # durable per-tenant chain state is therefore also a commitment to the
-    # expected tip. Compare it only for a complete scan; a bounded response
-    # naturally stops before the current tip.
-    chain_state = await sysdb[CHAIN_STATE_COLLECTION].find_one(
+    # The captured state is still the commitment that detects a deleted tail;
+    # never replace it with the live (possibly advanced) tip. A bounded response
+    # naturally stops before the captured tip and must disclose truncation.
+    latest_state = await sysdb[CHAIN_STATE_COLLECTION].find_one(
         {"_id": tenant_id},
         {"_id": 0, "seq": 1, "last_hash": 1},
     )
@@ -324,6 +347,23 @@ async def verify_chain(tenant_id: str, limit: int = 5000) -> dict:
                 }
             )
 
+    latest_seq = latest_state.get("seq") if latest_state else None
+    concurrent_appends = bool(valid_horizon and isinstance(latest_seq, int) and latest_seq > as_of_seq)
+    state_changed_without_append = bool(chain_state and (
+        not latest_state
+        or not isinstance(latest_seq, int)
+        or latest_seq < as_of_seq
+        or (latest_seq == as_of_seq and latest_state.get("last_hash") != chain_state.get("last_hash"))
+    )) if valid_horizon else bool(chain_state)
+    if state_changed_without_append:
+        breaks.append({"seq": as_of_seq, "id": None, "reason": "chain_state_changed_without_append"})
+    # No commitment at scan start: do not turn an advancing genesis or invalid
+    # state into a clean empty-chain result. A later request can inspect it.
+    degraded = bool(not valid_horizon and (chain_state or latest_state or rows or chained_without_commitment))
+
+    if invalid_sequences:
+        breaks.append({"seq": None, "id": None, "reason": "invalid_sequence_records", "count": invalid_sequences})
+
     if unverifiable > 0:
         breaks.append(
             {
@@ -335,11 +375,17 @@ async def verify_chain(tenant_id: str, limit: int = 5000) -> dict:
         )
 
     return {
-        "ok": len(breaks) == 0,
+        "ok": len(breaks) == 0 and not degraded,
         "checked": checked,
         "breaks": breaks,
         "last_seq": last_seq,
         "unverifiable": unverifiable,
         "legacy_skipped": legacy_skipped,
         "truncated": truncated,
+        "as_of_seq": as_of_seq,
+        "observed_latest_seq": latest_seq,
+        "concurrent_appends": concurrent_appends,
+        "verification_scope": "sequence_prefix" if valid_horizon else "no_start_commitment",
+        "degraded": degraded,
+        "retryable": degraded,
     }

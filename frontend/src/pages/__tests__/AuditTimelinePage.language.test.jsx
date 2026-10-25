@@ -1,6 +1,12 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { useState } from 'react';
+import { MemoryRouter } from 'react-router-dom';
+import AuditTimelinePage from '../AuditTimelinePage';
+
+const { get } = vi.hoisted(() => ({ get: vi.fn() }));
+vi.mock('axios', () => ({ default: { get } }));
+vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: key => key, i18n: { language: 'tr' } }) }));
 
 import {
   auditActionLabel,
@@ -10,9 +16,31 @@ import {
   auditActorLabel,
   auditRequestPath,
   TimelineEvent,
+  ChainVerificationScope,
 } from '../AuditTimelinePage';
 
 describe('işlem kayıtları kullanıcı dili', () => {
+  it('doğrulama sınırını ve tarama sırasında gelen yeni kayıtları açıklar', () => {
+    render(<ChainVerificationScope chain={{ as_of_seq: 6655, last_seq: 6655, observed_latest_seq: 6656, concurrent_appends: true }} />);
+    expect(screen.getByTestId('chain-verification-scope')).toHaveTextContent('Tarama başlangıç sınırı: #6655');
+    expect(screen.getByText(/bu kayıtlar sonraki taramada kontrol edilir/)).toBeInTheDocument();
+  });
+
+  it('sınırlı taramayı bütün zincirin kabulü gibi sunmaz', () => {
+    render(<ChainVerificationScope chain={{ as_of_seq: 10000, last_seq: 5000, truncated: true }} />);
+    expect(screen.getByText(/tüm zincir doğrulanmış sayılmaz/)).toBeInTheDocument();
+  });
+
+  it('ekran daha geniş sınır ister ve tamamlanmamış taramayı yeşil göstermez', async () => {
+    get.mockImplementation(url => Promise.resolve({ data: url.includes('/chain/verify')
+      ? { ok: true, truncated: true, checked: 50000, as_of_seq: 60000, last_seq: 50000, breaks: [] }
+      : url.includes('/timeline') ? { events: [] } : null }));
+    render(<MemoryRouter><AuditTimelinePage user={{}} tenant={{}} onLogout={() => {}} /></MemoryRouter>);
+    const status = await screen.findByTestId('chain-status');
+    expect(status).toHaveTextContent('Sınırlı tarama');
+    expect(status).toHaveClass('bg-amber-50');
+    expect(get).toHaveBeenCalledWith('/audit/chain/verify', expect.objectContaining({ params: { limit: 50000 } }));
+  });
   it('teknik işlem ve varlık adlarını anlaşılır Türkçeye çevirir', () => {
     expect(auditActionLabel('login success')).toBe('Oturum açıldı');
     expect(auditActionLabel('token_refresh')).toBe('Oturum süresi yenilendi');
