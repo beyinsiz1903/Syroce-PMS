@@ -91,6 +91,17 @@ async def test_checkin_rejects_non_eligible_status_before_room_lookup():
     service._db.rooms.find_one.assert_not_awaited()
 
 
+@pytest.mark.parametrize("status", ["pending_mapping", "confirmed"])
+async def test_mapping_quarantine_cannot_become_a_stay_even_after_legacy_room_assignment(status):
+    service = _service_with_db({"id": "hold", "tenant_id": "tenant-a", "status": status,
+                               "room_id": "room-a", "booking_source": "ota_unmatched_hold"})
+    result = await FrontdeskService.checkin.__wrapped__(service, _context(), "hold")
+    assert result.ok is False and result.code == "CHANNEL_MAPPING_REQUIRED"
+    service._db.rooms.find_one.assert_not_awaited()
+    service._db.bookings.update_one.assert_not_awaited()
+    service._db.folios.insert_one.assert_not_awaited()
+
+
 @pytest.mark.asyncio
 async def test_checkin_names_the_checked_in_guest_when_room_is_occupied():
     incoming_booking = {

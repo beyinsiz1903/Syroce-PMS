@@ -10,6 +10,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 security = HTTPBearer()
 
 from core.business_date_service import ensure_business_date_initialized
+from core.channel_mapping_issues import load_mapping_issues, mapping_close_blocker
 from core.channel_room_charge_pricing import calculate_room_charge
 from core.database import db
 from core.security import get_current_user
@@ -246,6 +247,10 @@ async def run_night_audit(
     audit_date_str = audit_date or datetime.now().date().isoformat()
     datetime.fromisoformat(audit_date_str)
 
+    blocker = mapping_close_blocker(await load_mapping_issues(current_user.tenant_id, audit_date_str, database=db))
+    if blocker:
+        raise HTTPException(status_code=409, detail=blocker)
+
     audit_results = {"audit_id": str(uuid.uuid4()), "audit_date": audit_date_str, "started_at": datetime.now(UTC).isoformat(), "status": "in_progress", "steps": []}
 
     # Step 1: Post room charges
@@ -381,6 +386,10 @@ async def end_of_day_audit(
 
     if audit["status"] == "completed":
         raise HTTPException(status_code=400, detail="Audit already completed")
+
+    blocker = mapping_close_blocker(await load_mapping_issues(current_user.tenant_id, audit["audit_date"], database=db))
+    if blocker:
+        raise HTTPException(status_code=409, detail=blocker)
 
     # Process no-shows
     no_shows = await db.bookings.count_documents({"tenant_id": current_user.tenant_id, "check_in": audit["audit_date"], "status": "confirmed"})

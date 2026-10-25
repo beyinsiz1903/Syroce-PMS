@@ -10,7 +10,8 @@ import { X, Calendar as CalendarIcon, User, MapPin, ArrowRight, Ban, ChevronDown
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
-import { resetUnassignedListScroll } from './calendar/unassignedPanel';
+import { isMappingIssue, mergeUnassignedAttention, resetUnassignedListScroll } from './calendar/unassignedPanel';
+import MappingIssueCard from './calendar/MappingIssueCard';
 import { lazyWithPreload } from '@/routes/lazyWithPreload';
 import { runIdle } from '@/lib/idle';
 import { useCalendarRealtime } from './calendar/useCalendarRealtime';
@@ -94,13 +95,14 @@ const UA_BADGE = {
 };
 
 const UnassignedCard = React.memo(function UnassignedCard({ data, index, style }) {
-  const { sorted, rooms, bookings, onBookingClick, onNoShow, onAssign, t } = data;
+  const { sorted, rooms, bookings, onBookingClick, onNoShow, onAssign, onReview, businessDate, t } = data;
   const booking = sorted[index];
   if (!booking) return null;
+  if (isMappingIssue(booking)) return <MappingIssueCard booking={booking} onReview={onReview} />;
   const fmtDate = d => new Date(d).toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' });
   const checkIn = booking.check_in ? fmtDate(booking.check_in) : '-';
   const checkOut = booking.check_out ? fmtDate(booking.check_out) : '-';
-  const urgency = getUnassignedUrgency(booking);
+  const urgency = getUnassignedUrgency(booking, businessDate);
   const borderColor = UA_BORDER[urgency.level] || 'border-l-blue-400';
   const badgeColor = UA_BADGE[urgency.level] || 'bg-blue-100 text-blue-700';
   const sameTypeRooms = rooms.filter(r => roomMatchesBookingType(r, booking));
@@ -322,6 +324,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   const [unassignedFilter, setUnassignedFilter] = useState('all');
   const [allUnassignedBookings, setAllUnassignedBookings] = useState([]);
   const [allUnassignedLoading, setAllUnassignedLoading] = useState(false);
+  const [allUnassignedError, setAllUnassignedError] = useState(false);
   const unassignedListRef = useRef(null);
 
   // A previously scrolled drawer can keep its old offset when it is reopened or
@@ -339,65 +342,34 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
     return () => window.cancelAnimationFrame(frameId);
   }, [showUnassignedPanel, unassignedFilter, allUnassignedBookings]);
 
-  // Atanmamış panel açıldığında tarih bağımsız tüm atanmamışları çek
+  // Read-only attention queue. Opening a drawer must not silently assign rooms
+  // or cancel legacy records; mapping quarantine is a separate kind of work.
   useEffect(() => {
-    if (!showUnassignedPanel) return;
+    if (!businessDateReady) return;
     let cancelled = false;
-    const reconciledBookingIds = new Set();
-    const autoAssignedBookingIds = new Set();
     setAllUnassignedLoading(true);
-    // Older HotelRunner imports could leave a second, roomless row behind even
-    // though the real reservation had already checked in/out. Reconcile only
-    // exact external-id matches before presenting the operational queue.
-    axios.post('/api/channel-manager/conflict-queue/reconcile-legacy-duplicates')
-      .then(res => {
-        const count = Number(res.data?.count || 0);
-        (res.data?.reconciled || []).forEach(item => reconciledBookingIds.add(item.booking_id));
-        if (!cancelled && count > 0) {
-          toast.success(`${count} mükerrer OTA rezervasyonu güvenle temizlendi`);
-          setBookings(current => current.map(item => (
-            reconciledBookingIds.has(item.id)
-              ? { ...item, status: 'cancelled', allocation_source: 'legacy_duplicate_reconciled' }
-              : item
-          )));
-        }
-      })
-      .catch(() => null)
-      .then(() => axios.post('/api/channel-manager/conflict-queue/auto-assign-available'))
-      .then(res => {
-        const count = Number(res.data?.count || 0);
-        (res.data?.assigned || []).forEach(item => autoAssignedBookingIds.add(item.booking_id));
-        if (!cancelled && count > 0) {
-          toast.success(`${count} rezervasyona güncel müsaitlikten oda atandı`);
-          const assignments = new Map((res.data?.assigned || []).map(item => [item.booking_id, item]));
-          setBookings(current => current.map(item => {
-            const assignment = assignments.get(item.id);
-            return assignment ? { ...item, room_id: assignment.room_id, room_number: assignment.room_number } : item;
-          }));
-        }
-      })
-      .catch(() => null)
-      .then(() => axios.get('/api/channel-manager/conflict-queue?limit=200'))
-      .then(res => {
+    setAllUnassignedError(false);
+    Promise.all([
+      axios.get('/api/channel-manager/conflict-queue?limit=200'),
+      axios.get('/api/channel-manager/conflict-queue/mapping-issues'),
+    ])
+      .then(([queue, mapping]) => {
         if (!cancelled) {
-          // conflict-queue API'si + takvimde görünen ama room_id'siz diğerleri
-          const apiItems = res.data?.items || [];
-          // Takvimde görünüp henüz API'de olmayan pendingleri de dahil et
-          const calendarPending = bookingsRef.current.filter(b => !reconciledBookingIds.has(b.id) && !autoAssignedBookingIds.has(b.id) && !b.room_id && b.status !== 'cancelled' && b.status !== 'checked_out' && b.status !== 'no_show');
-          const apiIds = new Set(apiItems.map(b => b.id));
-          const merged = [...apiItems, ...calendarPending.filter(b => !apiIds.has(b.id))];
-          setAllUnassignedBookings(merged);
+          setAllUnassignedBookings(mergeUnassignedAttention(
+            [...(queue.data?.items || []), ...bookingsRef.current], mapping.data?.items || [],
+          ));
         }
       })
       .catch(() => {
         if (!cancelled) {
-          // Fallback: sadece takvimde görünenleri göster
-          setAllUnassignedBookings(bookingsRef.current.filter(b => !reconciledBookingIds.has(b.id) && !autoAssignedBookingIds.has(b.id) && !b.room_id && b.status !== 'cancelled' && b.status !== 'checked_out' && b.status !== 'no_show'));
+          setAllUnassignedBookings(mergeUnassignedAttention(bookingsRef.current));
+          setAllUnassignedError(true);
+          toast.error('Kanal istisnaları tam doğrulanamadı. Liste yalnız yüklenen takvim kayıtlarını gösteriyor.');
         }
       })
       .finally(() => { if (!cancelled) setAllUnassignedLoading(false); });
     return () => { cancelled = true; };
-  }, [showUnassignedPanel]);
+  }, [showUnassignedPanel, businessDateReady, hotelBusinessDate]);
 
 
   // No-Show Reason Dialog
@@ -1679,6 +1651,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
           daysToShow={daysToShow}
           setDaysToShow={setDaysToShow}
           bookings={bookings}
+          attentionBookings={allUnassignedBookings}
           conflicts={conflicts}
           syncing={syncing}
           onNavigatePrevious={navigatePrevious}
@@ -2069,10 +2042,10 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
       {/* Unassigned Bookings Panel — Enhanced with urgency + quick assign */}
       {showUnassignedPanel && (() => {
         const allUnassigned = allUnassignedBookings;
-        const overdueList = allUnassigned.filter(b => getUnassignedUrgency(b).level === 'overdue');
-        const todayList = allUnassigned.filter(b => getUnassignedUrgency(b).level === 'today');
-        const tomorrowList = allUnassigned.filter(b => getUnassignedUrgency(b).level === 'tomorrow');
-        const futureList = allUnassigned.filter(b => getUnassignedUrgency(b).level === 'future');
+        const overdueList = allUnassigned.filter(b => getUnassignedUrgency(b, hotelBusinessDate).level === 'overdue');
+        const todayList = allUnassigned.filter(b => getUnassignedUrgency(b, hotelBusinessDate).level === 'today');
+        const tomorrowList = allUnassigned.filter(b => getUnassignedUrgency(b, hotelBusinessDate).level === 'tomorrow');
+        const futureList = allUnassigned.filter(b => getUnassignedUrgency(b, hotelBusinessDate).level === 'future');
 
         const activeFilter = unassignedFilter;
         const filteredList = activeFilter === 'all' ? allUnassigned
@@ -2080,7 +2053,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
           : activeFilter === 'today' ? todayList
           : activeFilter === 'tomorrow' ? tomorrowList
           : futureList;
-        const sorted = sortByUrgency(filteredList);
+        const sorted = sortByUrgency(filteredList, hotelBusinessDate);
 
         return (
           <>
@@ -2097,9 +2070,9 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
                       <CalendarIcon className={`w-4 h-4 ${overdueList.length > 0 ? 'text-red-600' : todayList.length > 0 ? 'text-amber-600' : 'text-blue-600'}`} />
                     </div>
                     <div>
-                      <h3 className="font-semibold text-gray-800 text-sm" data-testid="unassigned-panel-title">{t('cm.pages_ReservationCalendar.atanmamis_rezervasyonlar')}</h3>
+                      <h3 className="font-semibold text-gray-800 text-sm" data-testid="unassigned-panel-title">Oda ataması ve kanal istisnaları</h3>
                       <p className="text-xs text-gray-500">
-                        {allUnassignedLoading ? 'Yükleniyor...' : `${allUnassigned.length} rezervasyon · Tüm tarihler`}
+                        {allUnassignedLoading ? 'Yükleniyor...' : `${allUnassigned.filter(isMappingIssue).length} eşleştirme · ${allUnassigned.filter(b => !isMappingIssue(b)).length} oda ataması · İş günü ${hotelBusinessDate || 'doğrulanamadı'}`}
                       </p>
                     </div>
                   </div>
@@ -2149,6 +2122,8 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
                 )}
               </div>
 
+              {allUnassignedError && <p role="alert" className="m-4 rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800">Kanal istisnaları tam doğrulanamadı. Bu liste tamamlanmış kabul edilemez; paneli yeniden açarak tekrar deneyin.</p>}
+
               {/* Natural scrolling prevents the first card from being clipped by
                   a viewport/header height mismatch and keeps variable metadata visible. */}
               {(() => {
@@ -2158,7 +2133,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
                       <div className="text-center py-12 text-gray-500">
                         <Loader2 className="w-8 h-8 mx-auto mb-3 animate-spin text-blue-600" />
                         <p className="text-sm font-medium">Atanmamış rezervasyonlar doğrulanıyor</p>
-                        <p className="text-xs mt-1">Mükerrer kayıtlar ve güncel oda müsaitliği kontrol ediliyor.</p>
+                        <p className="text-xs mt-1">Kanal eşleştirmeleri ve oda atamaları okunuyor; kayıtlar değiştirilmez.</p>
                       </div>
                     </div>
                   );
@@ -2168,8 +2143,8 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
                   <div className="min-h-[50vh] flex items-center justify-center">
                       <div className="text-center py-12 text-gray-400" data-testid="no-unassigned-msg">
                         <CalendarIcon className="w-10 h-10 mx-auto mb-3 opacity-40" />
-                        <p className="text-sm font-medium">{activeFilter === 'all' ? 'Atanmamış rezervasyon yok' : 'Bu filtrede sonuc yok'}</p>
-                        <p className="text-xs mt-1">{activeFilter === 'all' ? 'Tüm rezervasyonlar odalara atanmis' : 'Diger filtreleri deneyin'}</p>
+                        <p className="text-sm font-medium">{allUnassignedError ? 'Liste doğrulanamadı' : activeFilter === 'all' ? 'Bekleyen oda ataması veya kanal istisnası yok' : 'Bu filtrede sonuç yok'}</p>
+                        <p className="text-xs mt-1">{allUnassignedError ? 'Yeniden deneyin.' : activeFilter === 'all' ? 'Yüklenen kayıtlar kontrol edildi.' : 'Diğer filtreleri deneyin'}</p>
                       </div>
                     </div>
                   );
@@ -2178,6 +2153,8 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
                   sorted,
                   rooms,
                   bookings,
+                  businessDate: hotelBusinessDate,
+                  onReview: (url) => navigate(url),
                   onBookingClick: (id) => { setDetailModalBookingId(id); setShowDetailModal(true); },
                   onNoShow: (booking) => { setNoShowBookingId(booking.id); setNoShowReason('misafir_gelmedi'); setShowNoShowDialog(true); },
                   onAssign: async (bookingId, roomId, guestName) => {

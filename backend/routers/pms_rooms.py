@@ -19,6 +19,7 @@ from modules.pms_core.role_permission_service import require_op  # v101 DW
 
 logger = logging.getLogger(__name__)
 
+from core.channel_mapping_issues import is_mapping_hold
 from core.database import db
 from core.helpers import require_module
 from core.pagination import PaginationParams, paginate
@@ -1120,6 +1121,9 @@ async def no_show_to_virtual_room(
     booking = await db.bookings.find_one({"id": req.booking_id, "tenant_id": tenant_id}, {"_id": 0})
     if not booking:
         raise HTTPException(status_code=404, detail="Rezervasyon bulunamadi")
+
+    if is_mapping_hold(booking):
+        raise HTTPException(status_code=409, detail={"code": "CHANNEL_MAPPING_REQUIRED", "message": "Eşleştirme bekleyen kanal kaydına No-Show uygulanamaz. Önce kaynak durumunu ve oda/fiyat eşleştirmesini inceleyin."})
 
     if booking.get("status") not in ("confirmed", "guaranteed", "no_show"):
         raise HTTPException(

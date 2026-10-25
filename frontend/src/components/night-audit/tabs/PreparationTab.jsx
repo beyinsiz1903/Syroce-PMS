@@ -17,12 +17,14 @@ const ACTION_LABELS = {
   checkout_or_extend: 'Check-out / uzatma',
   checkin_or_no_show: 'Check-in / no-show',
   assign_room: 'Oda ata',
+  review_channel_mapping: 'Kanal eşleştirmesini incele',
   open_run: 'Açık denetimi aç',
 };
 
 const ReservationDetailModal = lazy(() => import('@/pages/ReservationDetailModal'));
 
 function bookingHref(item) {
+  if (item.queue_kind === 'mapping_required') return item.action_url || '/channel-manager';
   if (item.run_id) return null;
   if (item.id) return `/app/pms?edit=${item.id}#bookings`;
   return null;

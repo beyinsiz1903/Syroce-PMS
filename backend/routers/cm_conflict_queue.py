@@ -39,6 +39,7 @@ from pydantic import BaseModel, Field
 from pymongo.errors import DuplicateKeyError
 
 from core.atomic_booking import _night_dates, _timeline_event
+from core.channel_mapping_issues import load_mapping_issues
 from core.database import db
 from core.helpers import create_audit_log
 from core.room_auto_assignment import assign_pending_booking_with_auto_assignment
@@ -327,13 +328,23 @@ async def list_conflict_queue(
     _perm=Depends(require_op("edit_booking")),
 ):
     """List bookings awaiting room assignment (OTA conflict fallbacks)."""
-    q = {**PENDING_QUERY}
-    if current_user.role != "super_admin" or getattr(current_user, "is_impersonating", False):
-        q["tenant_id"] = current_user.tenant_id
+    q = {**PENDING_QUERY, "tenant_id": current_user.tenant_id}
     cursor = db.bookings.find(q, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit)
     rows = [await _serialize_pending_booking(b) for b in await cursor.to_list(limit)]
     total = await db.bookings.count_documents(q)
     return {"items": rows, "total": total, "limit": limit, "skip": skip}
+
+
+@router.get("/mapping-issues")
+async def mapping_issues(
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("edit_booking")),
+):
+    """Read-only integration exceptions, always scoped to the selected tenant."""
+    settings = await db.tenant_settings.find_one({"tenant_id": current_user.tenant_id}, {"_id": 0, "business_date": 1})
+    business_date = (settings or {}).get("business_date")
+    rows = await load_mapping_issues(current_user.tenant_id, business_date)
+    return {"items": rows, "total": len(rows), "business_date": business_date}
 
 
 @router.get("/count")
@@ -342,9 +353,7 @@ async def conflict_queue_count(
     _perm=Depends(require_op("edit_booking")),
 ):
     """Lightweight count for KPI badges."""
-    q = {**PENDING_QUERY}
-    if current_user.role != "super_admin" or getattr(current_user, "is_impersonating", False):
-        q["tenant_id"] = current_user.tenant_id
+    q = {**PENDING_QUERY, "tenant_id": current_user.tenant_id}
     total = await db.bookings.count_documents(q)
     return {"count": total}
 
@@ -355,9 +364,7 @@ async def conflict_queue_stats(
     _perm=Depends(require_op("edit_booking")),
 ):
     """Alias for /count — returns pending conflict queue stats for frontend KPI widgets."""
-    q = {**PENDING_QUERY}
-    if current_user.role != "super_admin" or getattr(current_user, "is_impersonating", False):
-        q["tenant_id"] = current_user.tenant_id
+    q = {**PENDING_QUERY, "tenant_id": current_user.tenant_id}
     total = await db.bookings.count_documents(q)
     return {"count": total, "total": total, "status": "ok"}
 

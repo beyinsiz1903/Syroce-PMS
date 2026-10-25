@@ -106,6 +106,11 @@ class NightAuditEngine:
         backstop that keeps room charges / folio.balance posted exactly once
         even if the lock is ever bypassed.
         """
+        from core.channel_mapping_issues import load_mapping_issues, mapping_close_blocker
+
+        blocker = mapping_close_blocker(await load_mapping_issues(tenant_id, business_date, database=db))
+        if blocker:
+            return {"success": False, "code": "CHANNEL_MAPPING_REQUIRED", "message": blocker["message"], "blockers": [blocker]}
         lock_id = await self._acquire_lock(tenant_id, business_date)
         if not lock_id:
             return {
@@ -688,6 +693,11 @@ class NightAuditEngine:
 
     async def _roll_business_date(self, tenant_id: str, current_date: str, audit_id: str, started_by: str):
         """Advance the business date to the next day."""
+        from core.channel_mapping_issues import load_mapping_issues, mapping_close_blocker
+
+        blocker = mapping_close_blocker(await load_mapping_issues(tenant_id, current_date, database=db))
+        if blocker:
+            raise ValueError(blocker["message"])
         next_date = self._next_date(current_date)
         now = datetime.now(UTC).isoformat()
         await db.tenant_settings.update_one(

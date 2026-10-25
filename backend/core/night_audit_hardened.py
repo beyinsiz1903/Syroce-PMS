@@ -28,6 +28,7 @@ from pymongo.read_concern import ReadConcern
 from pymongo.write_concern import WriteConcern
 
 from core.business_date_service import ensure_business_date_initialized
+from core.channel_mapping_issues import load_mapping_issues, mapping_close_blocker
 from core.channel_room_charge_pricing import calculate_room_charge
 from core.database import client, db
 
@@ -486,6 +487,23 @@ async def _execute_pipeline(
     simulation_blockers: list[str] = []
     simulation_warnings: list[str] = []
 
+    # Mapping quarantine is not an arrival/no-show decision. It is a data
+    # integrity barrier even when an operator elects to skip normal checks.
+    if skip_validations:
+        try:
+            mapping_blocker = mapping_close_blocker(await load_mapping_issues(tenant_id, bd, database=db))
+        except Exception as exc:
+            await _fail_run(run_id, ST_VALIDATING, f"Mapping validation error: {exc}")
+            return {"success": False, "code": "VALIDATION_ERROR", "run_id": run_id}
+        if mapping_blocker and not dry_run:
+            await db.night_audit_runs.update_one({"id": run_id, "tenant_id": tenant_id}, {"$set": {
+                "status": S_BLOCKED, "stage": ST_VALIDATING, "errors": [mapping_blocker["message"]],
+                "updated_at": _now_iso(), "completed_at": _now_iso(),
+            }})
+            return {"success": False, "code": "VALIDATION_BLOCKED", "run_id": run_id, "blockers": [mapping_blocker["message"]]}
+        if mapping_blocker:
+            simulation_blockers.append(mapping_blocker["message"])
+
     # ── Stage: Validate ──
     if not skip_validations:
         try:
@@ -672,6 +690,17 @@ async def _handle_duplicate_run(tenant_id: str, prop_id: str, bd: str) -> dict:
 
 async def _posting_and_close(run_id: str, tenant_id: str, bd: str) -> dict:
     """Post charges, reconcile, and roll date. Shared by start and resume."""
+    try:
+        mapping_blocker = mapping_close_blocker(await load_mapping_issues(tenant_id, bd, database=db))
+    except Exception as exc:
+        await _fail_run(run_id, ST_VALIDATING, f"Mapping validation error: {exc}")
+        return {"success": False, "code": "VALIDATION_ERROR", "run_id": run_id}
+    if mapping_blocker:
+        await db.night_audit_runs.update_one({"id": run_id, "tenant_id": tenant_id}, {"$set": {
+            "status": S_BLOCKED, "stage": ST_VALIDATING, "errors": [mapping_blocker["message"]],
+            "updated_at": _now_iso(), "completed_at": _now_iso(),
+        }})
+        return {"success": False, "code": "VALIDATION_BLOCKED", "run_id": run_id, "blockers": [mapping_blocker["message"]]}
     # ── Stage: Post charges ──
     try:
         await _set_stage(run_id, ST_POSTING)
@@ -914,6 +943,10 @@ async def _validate_preconditions(
             warnings.append(f"{hk} housekeeping task(s) still in progress")
     except Exception:
         pass
+
+    mapping_blocker = mapping_close_blocker(await load_mapping_issues(tenant_id, bd, database=db))
+    if mapping_blocker:
+        blocking.append(mapping_blocker["message"])
 
     return {"blocking_errors": blocking, "warnings": warnings}
 
@@ -1430,6 +1463,11 @@ async def _reconcile(run_id: str) -> dict[str, Any]:
 
 async def _roll_business_date(tenant_id: str, current_bd: str, run_id: str):
     """Advance the business date. Only called after successful reconciliation."""
+    # Recheck on resume and before date roll: an inbox event may have arrived
+    # after the initial validation. Never reclassify it as an automatic no-show.
+    mapping_blocker = mapping_close_blocker(await load_mapping_issues(tenant_id, current_bd, database=db))
+    if mapping_blocker:
+        raise ValueError(mapping_blocker["message"])
     next_bd = _next_date(current_bd)
     run = (
         await db.night_audit_runs.find_one(
@@ -1890,6 +1928,16 @@ async def build_audit_preview(tenant_id: str, property_id: str | None = None) ->
                 "action": "edit_booking",
             }
         )
+
+    mapping_issues = await load_mapping_issues(tenant_id, bd, database=db)
+    mapping_blocker = mapping_close_blocker(mapping_issues)
+    if mapping_blocker:
+        blockers.append(mapping_blocker)
+    future_mapping = [item for item in mapping_issues if not item["blocks_close"]]
+    if future_mapping:
+        warnings.append({"category": "future_channel_mapping", "label": "Gelecek kanal rezervasyonu eşleştirmesi",
+                         "message": f"{len(future_mapping)} gelecek tarihli kanal rezervasyonu henüz PMS'e kabul edilmedi.",
+                         "count": len(future_mapping), "items": future_mapping[:25], "action": "review_channel_mapping"})
 
     # 6) Devam eden housekeeping (uyari, engellemez)
     inprog_hk = await db.housekeeping_tasks.count_documents(

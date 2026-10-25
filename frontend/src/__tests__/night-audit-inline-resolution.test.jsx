@@ -60,6 +60,16 @@ describe('Night Audit inline blocker resolution', () => {
   beforeEach(() => get.mockReset());
   afterEach(() => cleanup());
 
+  it('opens the provider mapping page instead of treating an inbox exception as a booking', async () => {
+    renderTab({ ...readyPreview, ready: false, blockers: [{ category: 'unresolved_channel_mapping',
+      label: 'Eşleştirme gerekli', message: 'Kanal kaydı henüz kabul edilmedi', count: 1, action: 'review_channel_mapping',
+      items: [{ id: 'mapping:A:exely:EXT', queue_kind: 'mapping_required', guest_name: 'Ahmet Yılmaz', action_url: '/exely' }] }] });
+    fireEvent.click(await screen.findByText('Eşleştirme gerekli'));
+    fireEvent.click(screen.getByRole('button', { name: 'Kanal eşleştirmesini incele' }));
+    expect(screen.getByTestId('location')).toHaveTextContent('/exely');
+    expect(screen.queryByTestId('inline-reservation-detail')).not.toBeInTheDocument();
+  });
+
   it.each([
     ['checkin_or_no_show', 'Check-in / no-show'],
     ['checkout_or_extend', 'Check-out / uzatma'],
