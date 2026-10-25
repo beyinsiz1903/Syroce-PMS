@@ -174,6 +174,8 @@ def build_plan(charges, payments, mapping, valuation, security=()):
                 account = _payment_account(mapping, method)
                 payment_groups[(code, account)] = payment_groups.get((code, account), 0) + paid
                 payment_base_groups[(code, account)] = payment_base_groups.get((code, account), 0) + base_paid
+            if source.get("demo_reconstruction"):
+                row["demo_reconstruction"] = source["demo_reconstruction"]
             rows.append(row)
     lines = []
 
@@ -280,6 +282,13 @@ async def preview_daily_valuation(db, tenant_id, run_id, valuation):
     correction = await db.gl_journal_entries.find_one({"tenant_id": tenant_id, "idempotency_key": "operational-correction:" + run_id}, {"_id": 0})
     if original and (original.get("source") != "night_audit" or original.get("source_ref") != run_id or not verify_journal_entry_hash(original)):
         raise OperationalValuationError("Original source journal link/integrity mismatch")
+    if original and not plan["manifest"]["sources"]:
+        from modules.pms_core.demo_source_remediation import reclassification_proof
+        proof = await reclassification_proof(db, tenant_id, run_id, original)
+        if proof:
+            plan["manifest"]["sources"].append(proof)
+            plan["manifest"].pop("source_hash")
+            plan["manifest"]["source_hash"] = digest(plan["manifest"])
     if original and not plan["manifest"]["sources"] and any(minor(row.get("debit")) or minor(row.get("credit")) for row in original.get("lines", [])):
         # Missing source history is not proof that an old posted receipt or
         # revenue never happened. Do not erase it via an empty-source contra.

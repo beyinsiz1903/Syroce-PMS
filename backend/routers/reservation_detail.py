@@ -4681,6 +4681,53 @@ async def update_reservation_guest(
 # ── Cari Account Endpoints ──
 
 
+class DemoSourceRemediationIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    request_id: UUID
+    source_fingerprint: str = Field(pattern=r"^[a-f0-9]{64}$")
+    reason: str = Field(min_length=20, max_length=1000)
+    confirmation: Literal["RECONSTRUCT_SYNTHETIC_DEMO_100001_ONLY"]
+
+    @field_validator("reason")
+    @classmethod
+    def meaningful_demo_reason(cls, value):
+        if len(value.strip()) < 20:
+            raise ValueError("Demo yeniden-kurma gerekçesini girin")
+        return value.strip()
+
+
+@router.get("/demo-source-remediation/status")
+async def demo_source_remediation_status(current_user: User = Depends(get_current_user)):
+    from modules.pms_core.demo_source_remediation import NOTICE, POLICY, TENANT
+    if current_user.tenant_id != TENANT:
+        raise HTTPException(404, "Demo onarım kapsamı bulunamadı")
+    receipt = await db.demo_source_remediations.find_one({"tenant_id": current_user.tenant_id, "id": POLICY}, {"_id": 0, "result": 1})
+    return {"applied": bool(receipt), "policy_id": POLICY, "notice": NOTICE,
+            "historical_source_verified": False, "audit_chain_valid": False,
+            "result": (receipt or {}).get("result")}
+
+
+@router.get("/demo-source-remediation/preview")
+async def preview_demo_source_remediation(current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_city_ledger")), _admin=Depends(require_op("manage_night_audit"))):
+    _enforce_perm(current_user, "manage_city_ledger")
+    _enforce_perm(current_user, "manage_night_audit")
+    _ensure_hotel_context(current_user)
+    from modules.pms_core.demo_source_remediation import preview, public_plan
+    return public_plan(await preview(db, current_user.tenant_id))
+
+
+@router.post("/demo-source-remediation/apply")
+async def apply_demo_source_remediation(data: DemoSourceRemediationIn, current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_city_ledger")), _admin=Depends(require_op("manage_night_audit"))):
+    _enforce_perm(current_user, "manage_city_ledger")
+    _enforce_perm(current_user, "manage_night_audit")
+    _ensure_hotel_context(current_user)
+    from core.database import client
+    from modules.pms_core.demo_source_remediation import apply
+    return await apply(db, client, current_user, data)
+
+
 class AccountProjectionRepair(BaseModel):
     model_config = ConfigDict(extra="forbid")
     request_id: UUID

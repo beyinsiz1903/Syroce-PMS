@@ -416,6 +416,7 @@ async def _compute_company_aging(tenant_id: str) -> dict:
                 "account_id": position.get("account_id"),
                 "source": position.get("source", "company_folio"),
                 "unaged_balance": money(0),
+                **({"demo_reconstructed": True, "historical_source_verified": False} if position.get("demo_reconstructed") else {}),
             }
 
         company_balances[group_key]["total_balance"] += balance
@@ -449,6 +450,9 @@ async def _compute_company_aging(tenant_id: str) -> dict:
         "balance_basis": "remaining_company_folios_plus_cari_and_city_ledger_sources_by_currency",
         "aging_basis": "source_due_day_or_source_day; unallocated credits and missing dates remain unaged",
         "aging_complete": not failed_folios and not failed_accounts and not any(row["unaged_balance"] for row in sorted_companies),
+        **({"demo_reconstructed": True, "historical_source_verified": False,
+            "basis_warning": "Demo yeniden-kurma vade/mahsup bilgileri; tarihî sözleşme doğrulaması değildir."}
+           if any(row.get("demo_reconstructed") for row in positions) else {}),
     }
 
 
@@ -508,7 +512,7 @@ async def export_company_aging_excel(
                     round(company["aging"]["30+ days"], 2),
                     company["folio_count"],
                     company["unaged_balance"],
-                    company["source"],
+                    company["source"] + (" [DEMO RECONSTRUCTION — NOT HISTORICALLY VERIFIED]" if company.get("demo_reconstructed") else ""),
                 ]
             )
 

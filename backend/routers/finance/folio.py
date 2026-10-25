@@ -1042,6 +1042,8 @@ async def revenue_by_category_excel(
         sheet.column_dimensions[key].width = 22
     sheet.append(["Eksik vergi kırılımlı işlem", result["reconciliation"]["tax_unknown_count"]])
     sheet.append(["Uyumsuz kaynak hareketi", result["reconciliation"]["issue_count"]])
+    if result["reconciliation"].get("demo_reconstructed_count"):
+        sheet.append(["DEMO RECONSTRUCTION — NOT HISTORICALLY VERIFIED", result["reconciliation"]["demo_reconstructed_count"]])
     trend = workbook.create_sheet("Günlük Tutarlar")
     trend.append(["Tarih", "Para birimi", "İşlenen tutar (vergi dahil)"])
     for row in result["revenue_trend"]:

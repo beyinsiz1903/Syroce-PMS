@@ -74,6 +74,7 @@ async def posted_revenue_rows(tenant_id: str, start: date, end: date, *, databas
         "tax_breakdown": 1,
         "tax_inclusive": 1,
         "posted_by": 1,
+        "demo_reconstruction": 1,
     }
     folio_rows, extra_rows, pos_rows = await asyncio.gather(
         # Financial reports may cover high-volume F&B and chain properties.

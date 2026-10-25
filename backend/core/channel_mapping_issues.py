@@ -34,8 +34,11 @@ def _day(value) -> str | None:
 
 
 def group_mapping_issues(records: list[tuple[str, dict]], business_date: str | None = None) -> list[dict]:
+    from modules.pms_core.demo_source_remediation import is_archived_demo
     groups: dict[tuple[str, str, str], dict] = {}
     for origin, row in records:
+        if is_archived_demo(row):
+            continue  # Explicit, preserved synthetic archive, not a stay/cancellation.
         if str(row.get("status") or row.get("state") or "").lower() in TERMINAL:
             continue
         source = row.get("source") if isinstance(row.get("source"), dict) else {}
@@ -85,7 +88,7 @@ async def load_mapping_issues(tenant_id: str, business_date: str | None = None, 
     projection = {"_id": 0, **dict.fromkeys([
         "id", "tenant_id", "property_id", "provider", "source.provider", "source.kind", "source_provider",
         "external_reservation_id", "external_id", "hr_number", "guest_name", "check_in", "check_out",
-        "checkin_date", "checkout_date", "arrival_date", "departure_date", "status", "state",
+        "checkin_date", "checkout_date", "arrival_date", "departure_date", "status", "state", "pms_status", "demo_reconstruction",
         "provider_room_code", "provider_rate_code", "room_type_code", "rate_plan_code",
         "rooms.room_type_code", "rooms.rate_plan_code",
     ], 1)}

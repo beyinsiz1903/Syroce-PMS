@@ -591,6 +591,13 @@ async def _readback_expectations(tenant_id: str, version_key: str, expectations:
 
 async def process_reservation_version(tenant_id: str, reservation: dict[str, Any]) -> dict[str, Any]:
     """Apply one current Exely version to PMS without contacting Exely."""
+    # A local demo archive is never proof of durable provider delivery. Fence
+    # even a newer pull of the same named synthetic source; no import or ACK.
+    from modules.pms_core.demo_source_remediation import EXTERNAL, POLICY, TENANT
+    if tenant_id == TENANT and reservation.get("external_id") in EXTERNAL:
+        archive = await db.demo_source_remediations.find_one({"tenant_id": tenant_id, "id": POLICY}, {"_id": 0, "id": 1})
+        if archive:
+            return {"success": False, "reason": "SYNTHETIC_DEMO_SOURCE_ARCHIVED", "provider_write_count": 0}
     identity = str(reservation.get("provider_version_identity") or "")
     if not identity:
         return {"success": False, "reason": "VERSION_IDENTITY_MISSING", "provider_write_count": 0}

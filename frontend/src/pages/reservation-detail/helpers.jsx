@@ -46,6 +46,7 @@ export function statusLabel(s) {
     : s === 'cancelled' ? 'İptal Edildi'
     : s === 'no_show' ? 'No-Show'
     : s === 'pending' ? 'Beklemede'
+    : s === 'archived_demo' ? 'Demo arşivi (konaklama değil)'
     : s || 'Beklemede';
 }
 

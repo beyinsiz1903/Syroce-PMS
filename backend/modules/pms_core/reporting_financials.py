@@ -174,6 +174,7 @@ def reporting_collection_summary(payments: list[dict], reporting_currency: str =
     count = 0
     by_method: dict[str, dict[str, float | int]] = {}
     conversion_issues: list[dict] = []
+    reconstructed_count = 0
     for payment in deduplicate_report_payments(payments):
         if not is_valid_payment(payment) or _payment_method(payment) in NON_CASH_PAYMENT_METHODS:
             continue
@@ -190,6 +191,7 @@ def reporting_collection_summary(payments: list[dict], reporting_currency: str =
             continue
         if amount == 0:
             continue
+        reconstructed_count += (payment.get("demo_reconstruction") or {}).get("basis") == "demo_reconstruction"
         total += money(amount)
         count += 1
         method = str(payment.get("payment_method") or payment.get("method") or "other").strip().lower() or "other"
@@ -203,6 +205,7 @@ def reporting_collection_summary(payments: list[dict], reporting_currency: str =
         "by_method": {method: {**entry, "amount": rounded(entry["amount"])} for method, entry in by_method.items()},
         "conversion_issue_count": len(conversion_issues),
         "conversion_issues": conversion_issues,
+        **({"demo_reconstructed_count": reconstructed_count, "historical_source_verified": False} if reconstructed_count else {}),
     }
 
 
