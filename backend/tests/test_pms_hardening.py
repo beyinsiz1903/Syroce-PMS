@@ -193,11 +193,47 @@ class TestFolioHardeningService:
             assert "No charges" in result["error"]
 
     @pytest.mark.asyncio
-    async def test_refund_negative_amount(self):
+    @pytest.mark.parametrize("amount", [-100, 0])
+    async def test_refund_negative_amount(self, amount):
         with patch('modules.pms_core.folio_hardening_service.db') as mock_db:
-            mock_db.folios.find_one = AsyncMock(return_value={"id": "f1", "status": "open"})
-            result = await self.fs.post_refund("t1", "f1", "b1", -100, "reason", "cash", "u1")
+            result = await self.fs.post_refund("t1", "f1", "b1", amount, "reason", "cash", "u1")
+            assert result == {"success": False, "error": "Refund amount must be positive"}
+            mock_db.payments.find_one.assert_not_called()
+            mock_db.folios.find_one.assert_not_called()
+            mock_db.payments.insert_one.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_refund_source_backed_settlement_requires_linked_reversal(self):
+        with patch('modules.pms_core.folio_hardening_service.db') as mock_db:
+            mock_db.payments.find_one = AsyncMock(return_value={"billing_settlement_id": "settlement-1"})
+            result = await self.fs.post_refund("t1", "f1", "b1", 100, "reason", "cash", "u1")
             assert result["success"] is False
+            assert "özgün işlem" in result["error"]
+            mock_db.payments.find_one.assert_awaited_once_with({
+                "tenant_id": "t1", "folio_id": "f1", "billing_settlement_id": {"$exists": True},
+            })
+            mock_db.folios.find_one.assert_not_called()
+            mock_db.payments.insert_one.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_refund_without_source_backed_settlement_posts_negative_amount(self):
+        with patch('modules.pms_core.folio_hardening_service.db') as mock_db, \
+                patch('modules.pms_core.folio_hardening_service.stamp_open_business_date', new_callable=AsyncMock), \
+                patch.object(self.fs, '_recalculate_folio_balance', new_callable=AsyncMock) as recalculate, \
+                patch.object(self.fs, '_log_audit', new_callable=AsyncMock) as log_audit:
+            mock_db.payments.find_one = AsyncMock(return_value=None)
+            mock_db.folios.find_one = AsyncMock(return_value={"id": "f1", "status": "open"})
+            mock_db.payments.insert_one = AsyncMock()
+            result = await self.fs.post_refund("t1", "f1", "b1", 100, "guest refund", "cash", "u1")
+            assert result["success"] is True
+            refund = result["refund"]
+            assert refund["amount"] == -100
+            assert refund["payment_type"] == "refund"
+            assert refund["tenant_id"] == "t1" and refund["folio_id"] == "f1"
+            mock_db.payments.insert_one.assert_awaited_once_with(refund)
+            recalculate.assert_awaited_once_with("t1", "f1")
+            log_audit.assert_awaited_once_with("t1", "refund", refund["id"], "refund_posted", "u1",
+                {"folio_id": "f1", "amount": 100, "reason": "guest refund"})
 
 
 # ═══════════════════════════════════════════════
