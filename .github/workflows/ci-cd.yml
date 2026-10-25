@@ -589,16 +589,9 @@ jobs:
   battle-e2e:
     runs-on: ubuntu-24.04
     needs: backend-lint
+    env:
+      MONGO_URL: mongodb://localhost:27017/hotel_pms_test?replicaSet=rs0
     services:
-      mongodb:
-        image: mongo:7.0
-        ports:
-          - 27017:27017
-        options: >-
-          --health-cmd "mongosh --eval 'db.runCommand({ping:1})'"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
       redis:
         image: redis:7-alpine
         ports:
@@ -611,6 +604,41 @@ jobs:
 
     steps:
       - uses: actions/checkout@v5
+
+      - name: Start transaction-capable MongoDB replica set
+        run: |
+          docker run --detach --name syroce-battle-mongo --publish 27017:27017 \
+            mongo:7.0 --replSet rs0 --bind_ip_all
+          ready=0
+          for i in $(seq 1 30); do
+            if docker exec --env HOME=/tmp syroce-battle-mongo mongosh --quiet \
+              --eval 'db.adminCommand({ping:1}).ok' >/dev/null 2>&1; then
+              ready=1
+              break
+            fi
+            sleep 2
+          done
+          if [ "$ready" -ne 1 ]; then
+            echo "::error::MongoDB did not start within 60 seconds"
+            docker logs syroce-battle-mongo
+            exit 1
+          fi
+          docker exec --env HOME=/tmp syroce-battle-mongo mongosh --quiet --eval \
+            'rs.initiate({_id:"rs0",members:[{_id:0,host:"localhost:27017"}]})'
+          primary=0
+          for i in $(seq 1 30); do
+            if docker exec --env HOME=/tmp syroce-battle-mongo mongosh --quiet \
+              --eval 'quit(rs.status().myState === 1 ? 0 : 1)' >/dev/null 2>&1; then
+              primary=1
+              break
+            fi
+            sleep 2
+          done
+          if [ "$primary" -ne 1 ]; then
+            echo "::error::MongoDB replica set did not elect a primary"
+            docker logs syroce-battle-mongo
+            exit 1
+          fi
 
       - name: Set up Python
         uses: actions/setup-python@v6
