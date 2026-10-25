@@ -1,6 +1,7 @@
 import os
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
+from uuid import uuid4
 
 import pytest
 from fastapi import HTTPException
@@ -29,6 +30,7 @@ def _database(*, deposit, booking=None):
                     "id": "booking-a",
                     "tenant_id": "tenant-a",
                     "paid_amount": 100.0,
+                    "currency": "TRY",
                 }
             ),
             update_one=AsyncMock(),
@@ -54,6 +56,13 @@ def _database(*, deposit, booking=None):
 
 
 def _patch(monkeypatch, database):
+    # Receipt identity and immutable evidence have separate replica-set tests;
+    # this unit fixture isolates the existing signed-refund ledger contract.
+    monkeypatch.setattr(reservation_detail, "_deposit_intent", lambda *_: ("operation-a", "digest-a"))
+    monkeypatch.setattr(reservation_detail, "_replay_deposit", AsyncMock(return_value=None))
+    monkeypatch.setattr(reservation_detail, "_remember_deposit", AsyncMock())
+    from modules.pms_core import folio_selection
+    monkeypatch.setattr(folio_selection, "select_booking_folio", AsyncMock(return_value=None))
     monkeypatch.setattr(reservation_detail, "db", database)
     monkeypatch.setattr(reservation_detail, "stamp_open_business_date", AsyncMock(return_value="2026-09-22"))
     monkeypatch.setattr(reservation_detail, "_enforce_perm", lambda *_args: None)
@@ -98,6 +107,7 @@ async def test_full_deposit_refund_posts_negative_payment(monkeypatch):
     result = await reservation_detail.refund_deposit(
         "booking-a",
         reservation_detail.DepositRefund(
+                request_id=uuid4(),
             deposit_id="deposit-a",
             refund_amount=25.0,
             refund_method="cash",
@@ -155,6 +165,7 @@ async def test_partial_refund_accumulates_refunded_amount(monkeypatch):
     result = await reservation_detail.refund_deposit(
         "booking-a",
         reservation_detail.DepositRefund(
+                request_id=uuid4(),
             deposit_id="deposit-a",
             refund_amount=20.0,
             refund_method="card",
@@ -193,6 +204,7 @@ async def test_refund_above_remaining_balance_fails_without_writes(monkeypatch):
         await reservation_detail.refund_deposit(
             "booking-a",
             reservation_detail.DepositRefund(
+                request_id=uuid4(),
                 deposit_id="deposit-a",
                 refund_amount=25.0,
                 refund_method="cash",
@@ -224,6 +236,7 @@ async def test_duplicate_refund_click_fails_before_financial_writes(monkeypatch)
         await reservation_detail.refund_deposit(
             "booking-a",
             reservation_detail.DepositRefund(
+                request_id=uuid4(),
                 deposit_id="deposit-a",
                 refund_amount=25.0,
                 refund_method="cash",
@@ -261,6 +274,7 @@ async def test_refund_duplicate_key_is_safe_conflict(monkeypatch):
         await reservation_detail.refund_deposit(
             "booking-a",
             reservation_detail.DepositRefund(
+                request_id=uuid4(),
                 deposit_id="deposit-a",
                 refund_amount=25.0,
                 refund_method="cash",
@@ -292,6 +306,7 @@ async def test_legacy_fully_refunded_deposit_cannot_be_refunded_again(monkeypatc
         await reservation_detail.refund_deposit(
             "booking-a",
             reservation_detail.DepositRefund(
+                request_id=uuid4(),
                 deposit_id="deposit-a",
                 refund_amount=10.0,
                 refund_method="cash",
@@ -314,6 +329,7 @@ async def test_deposit_refund_is_scoped_to_booking_and_tenant(monkeypatch):
         await reservation_detail.refund_deposit(
             "booking-a",
             reservation_detail.DepositRefund(
+                request_id=uuid4(),
                 deposit_id="foreign-deposit",
                 refund_amount=10.0,
                 refund_method="cash",

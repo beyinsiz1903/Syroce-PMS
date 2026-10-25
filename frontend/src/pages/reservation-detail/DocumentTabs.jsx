@@ -6,8 +6,10 @@ import { Badge } from '@/components/ui/badge';
 import { Loader2, Plus, Banknote, RefreshCw, Shield, FileText } from 'lucide-react';
 import { API, fmtCurrency, fmtTs, SummaryCard, EmptyState, FormField, SelectField } from './helpers';
 import { useTranslation } from 'react-i18next';
+import { submitDepositIntent } from '@/lib/depositIntent';
+import DepositIntentRecovery from '@/components/pms/DepositIntentRecovery';
 
-export function DepositsTab({ deposits, booking, onRefresh }) {
+export function DepositsTab({ deposits, booking, folios = [], onRefresh }) {
   const currency = booking?.currency || "TL";
   const { t } = useTranslation();
   const [showDeposit, setShowDeposit] = useState(false);
@@ -15,14 +17,19 @@ export function DepositsTab({ deposits, booking, onRefresh }) {
   const [depForm, setDepForm] = useState({ amount: '', method: 'cash', reference: '' });
   const [refundForm, setRefundForm] = useState({ refund_amount: '', refund_method: 'cash', reason: '' });
   const [loading, setLoading] = useState(false);
+  const [depositFolio, setDepositFolio] = useState('');
+  const openFolios = folios.filter(f => f.status === 'open');
+  const targetFolio = depositFolio || (openFolios.length === 1 ? openFolios[0].id : null);
   const depositLocked = ['checked_out', 'cancelled', 'no_show'].includes(booking?.status);
 
   const handleDeposit = async () => {
     if (depositLocked) { toast.error('Tamamlanmış veya iptal edilmiş rezervasyona depozito alınamaz'); return; }
     if (!depForm.amount) { toast.error('Tutar giriniz'); return; }
+    if (openFolios.length > 1 && !targetFolio) { toast.error('Depozitonun işleneceği folyoyu seçin'); return; }
     setLoading(true);
     try {
-      await axios.post(`/pms/reservations/${booking.id}/record-deposit`, { ...depForm, amount: parseFloat(depForm.amount) });
+      await submitDepositIntent(booking.id, 'receive', { ...depForm, amount: parseFloat(depForm.amount), folio_id: targetFolio },
+        body => axios.post(`/pms/reservations/${booking.id}/record-deposit`, body));
       toast.success('Depozito kaydedildi'); setShowDeposit(false); setDepForm({ amount: '', method: 'cash', reference: '' }); onRefresh?.();
     } catch (e) { toast.error('İşlem Hatası: ' + (e.response?.data?.detail || e.message)); }
     setLoading(false);
@@ -32,7 +39,8 @@ export function DepositsTab({ deposits, booking, onRefresh }) {
     if (!refundForm.refund_amount) { toast.error('Iade tutari giriniz'); return; }
     setLoading(true);
     try {
-      await axios.post(`/pms/reservations/${booking.id}/refund-deposit`, { deposit_id: depositId, ...refundForm, refund_amount: parseFloat(refundForm.refund_amount) });
+      await submitDepositIntent(booking.id, 'refund', { deposit_id: depositId, ...refundForm, refund_amount: parseFloat(refundForm.refund_amount) },
+        body => axios.post(`/pms/reservations/${booking.id}/refund-deposit`, body));
       toast.success('Depozito iade edildi'); setShowRefund(null); setRefundForm({ refund_amount: '', refund_method: 'cash', reason: '' }); onRefresh?.();
     } catch (e) { toast.error('İşlem Hatası: ' + (e.response?.data?.detail || e.message)); }
     setLoading(false);
@@ -47,6 +55,7 @@ export function DepositsTab({ deposits, booking, onRefresh }) {
   return (
     <div data-testid="deposits-tab" className="space-y-4">
       <p className="rounded border p-3 text-sm">Bu bölümdeki depozitolar konaklama ön ödemesidir ve folyo borcundan düşer. İade edilebilir hasar/ekstra güvencesi için Folyo/Ödeme → Kurumsal ödeme / ikram kontrolleri → Güvence kayıtları bölümünü kullanın. Provizyon ayrı bir banka işlemidir.</p>
+      <DepositIntentRecovery bookingId={booking.id} onRecovered={onRefresh} />
       <div className="grid grid-cols-3 gap-3">
         <SummaryCard currency={currency} label={t('cm.pages_reservationdetail_DocumentTabs.toplam_depozito')} value={totalDeposits} color="blue" />
         <SummaryCard currency={currency} label="Iade Edilen" value={totalRefunded} color="amber" />
@@ -60,8 +69,10 @@ export function DepositsTab({ deposits, booking, onRefresh }) {
 
       {showDeposit && (
         <div className="border rounded-lg p-4 bg-blue-50/50 space-y-3">
+          {openFolios.length > 1 && <SelectField label="Hedef folyo" value={depositFolio} onChange={setDepositFolio}
+            options={[["", "Folyo seçin"], ...openFolios.map(f => [f.id, `${f.folio_number || f.id} · ${f.folio_type || 'Misafir'}`])]} />}
           <div className="grid grid-cols-3 gap-3">
-            <FormField label={t('cm.pages_reservationdetail_DocumentTabs.tutar_tl')} type="number" value={depForm.amount} onChange={v => setDepForm(p => ({ ...p, amount: v }))} />
+            <FormField label={`Tutar (${currency})`} type="number" value={depForm.amount} onChange={v => setDepForm(p => ({ ...p, amount: v }))} />
             <SelectField label="Yontem" value={depForm.method} onChange={v => setDepForm(p => ({ ...p, method: v }))}
               options={[['cash','Nakit'],['card','Kredi Kartı'],['bank_transfer','Havale/EFT']]} />
             <FormField label="Referans" value={depForm.reference} onChange={v => setDepForm(p => ({ ...p, reference: v }))} />
@@ -85,7 +96,7 @@ export function DepositsTab({ deposits, booking, onRefresh }) {
                   <div className="text-sm font-medium">Depozito - {d.method === 'cash' ? 'Nakit' : d.method === 'card' ? 'Kart' : 'Havale'}</div>
                   <div className="text-xs text-gray-400">{fmtTs(d.created_at)} | {d.recorded_by} {d.reference && `| Referans: ${d.reference}`}</div>
                 </div>
-                <div className={`text-sm font-bold ${d.status === 'refunded' ? 'text-gray-400 line-through' : 'text-blue-700'}`}>{fmtCurrency(d.amount, currency)}</div>
+                <div className={`text-sm font-bold ${d.status === 'refunded' ? 'text-gray-400 line-through' : 'text-blue-700'}`}>{fmtCurrency(d.amount, d.currency || currency)}</div>
                 <Badge className={`text-xs ${d.status === 'refunded' ? 'bg-gray-100 text-gray-500' : d.status === 'partially_refunded' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
                   {d.status === 'refunded' ? 'Iade Edildi' : d.status === 'partially_refunded' ? 'Kismi Iade' : 'Aktif'}
                 </Badge>
@@ -105,13 +116,14 @@ export function DepositsTab({ deposits, booking, onRefresh }) {
                 <div className="mt-3 border-t pt-3 space-y-2">
                   <div className="text-xs font-semibold text-red-600">Depozito Iade</div>
                   <div className="grid grid-cols-3 gap-2">
-                    <FormField label="Iade Tutari" type="number" value={refundForm.refund_amount} onChange={v => setRefundForm(p => ({ ...p, refund_amount: v }))} />
+                    <FormField label={`İade Tutarı (${d.currency || currency})`} type="number" value={refundForm.refund_amount} onChange={v => setRefundForm(p => ({ ...p, refund_amount: v }))} />
                     <SelectField label="Yontem" value={refundForm.refund_method} onChange={v => setRefundForm(p => ({ ...p, refund_method: v }))}
                       options={[['cash','Nakit'],['card','Kart'],['bank_transfer','Havale']]} />
                     <div className="flex items-end">
                       <Button size="sm" onClick={() => handleRefund(d.id)} disabled={loading} className="w-full h-8 text-xs bg-red-600 hover:bg-red-700 text-white">Iade Et</Button>
                     </div>
                   </div>
+                  <FormField label="İade açıklaması" value={refundForm.reason} onChange={v => setRefundForm(p => ({ ...p, reason: v }))} />
                 </div>
               )}
             </div>

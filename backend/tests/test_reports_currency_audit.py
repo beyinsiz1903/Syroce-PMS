@@ -267,6 +267,28 @@ async def test_flash_and_standard_revenue_share_posted_ledger_and_export_numeric
         assert ("Total Revenue", "TRY", 224) in values
 
 
+@pytest.mark.parametrize("pending", [True, False])
+async def test_flash_excel_preserves_pending_vs_measured_zero_and_separate_accrual(monkeypatch, pending):
+    from core import tenant_currency
+
+    report = {"date": "2026-10-24", "occupancy": {"occupied_rooms": 10}, "movements": {},
+        "revenue": {"posting_pending": pending, "adr": 0, "rev_par": 0,
+            "adr_by_currency": {"TRY": 0}, "rev_par_by_currency": {"TRY": 0},
+            "operational_adr_by_currency": {"EUR": 110, "TRY": 4200},
+            "operational_revpar_by_currency": {"EUR": 10, "TRY": 400}}}
+    monkeypatch.setattr(flash_email, "get_daily_flash_report", SimpleNamespace(__wrapped__=AsyncMock(return_value=report)))
+    monkeypatch.setattr(tenant_currency, "get_tenant_currency", AsyncMock(return_value=("TRY", "₺")))
+    wb = await workbook(await flash_email.export_daily_flash_excel("2026-10-24", USER))
+    values = list(wb.active.values)
+    for label in ("ADR", "RevPAR"):
+        assert (label, None, "İşlenmeyi bekliyor") in values if pending else (label, "TRY", 0) in values
+        if pending:
+            assert not any(row[0] == label and isinstance(row[2], (float, int)) for row in values)
+    assert ("Accrued ADR (not posted revenue)", "EUR", 110) in values
+    assert ("Accrued ADR (not posted revenue)", "TRY", 4200) in values
+    assert ("Total Revenue", "TRY", None) in values  # Missing revenue must not become a measured zero.
+
+
 async def test_legacy_date_fallbacks_are_exclusive_and_empty_business_dates_supported(monkeypatch):
     db = SimpleNamespace(**{key: Collection() for key in ("folio_charges", "extra_charges", "pos_orders", "pos_transactions", "pos_menu_transactions", "transactions")})
     await standard_reports._posted_revenue_rows("t", date(2026, 10, 1), date(2026, 10, 1), database=db)

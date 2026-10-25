@@ -27,6 +27,7 @@ vi.mock('react-i18next', () => ({
 afterEach(() => cleanup());
 
 beforeEach(() => {
+  sessionStorage.clear();
   get.mockReset();
   post.mockReset();
   post.mockResolvedValue({ data: { deleted: 1, blocked: 0 } });
@@ -93,6 +94,37 @@ describe('financial and destructive mutation safety', () => {
     expect(screen.getByRole('button', {
       name: 'Depozito iade işlemini aç - 60 TL',
     })).toBeEnabled();
+  });
+
+  it('requires a target for split folios and retains the nonce after a lost response', async () => {
+    render(<DepositsTab booking={{ id: 'split-booking', currency: 'TRY', status: 'confirmed' }} deposits={[]}
+      folios={[{ id: 'guest', folio_number: 'G-1', status: 'open' }, { id: 'company', folio_number: 'C-2', status: 'open' }]} />);
+    fireEvent.click(screen.getByRole('button', { name: /Depozito Al/ }));
+    fireEvent.change(screen.getByRole('spinbutton'), { target: { value: '100' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Kaydet' }));
+    expect(post).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByRole('combobox', { name: 'Hedef folyo' }), { target: { value: 'company' } });
+    post.mockRejectedValueOnce(new Error('response lost')).mockResolvedValueOnce({ data: { success: true } });
+    fireEvent.click(screen.getByRole('button', { name: 'Kaydet' }));
+    await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Kaydet' })).toBeEnabled());
+    const body = post.mock.calls[0][1];
+    expect(body).toEqual(expect.objectContaining({ folio_id: 'company', amount: 100, request_id: expect.any(String) }));
+    fireEvent.click(screen.getByRole('button', { name: 'Kaydet' }));
+    await waitFor(() => expect(post).toHaveBeenCalledTimes(2));
+    expect(post.mock.calls[1][1]).toEqual(body);
+  });
+
+  it('recovers an uncertain receipt after reload and checkout without changing its folio or nonce', async () => {
+    const body = { amount: 25, method: 'cash', reference: '', folio_id: null, request_id: crypto.randomUUID() };
+    const payload = { ...body }; delete payload.request_id;
+    sessionStorage.setItem('pms:deposit-intent:v1:reloaded:receive', JSON.stringify({ fingerprint: JSON.stringify(payload), body }));
+    render(<DepositsTab booking={{ id: 'reloaded', status: 'checked_out', currency: 'EUR' }}
+      deposits={[]} folios={[{ id: 'created-after-first-submit', status: 'closed' }]} />);
+    expect(screen.getByRole('button', { name: 'Depozito Al' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Önceki tahsilatı doğrula' }));
+    await waitFor(() => expect(post).toHaveBeenCalledWith('/pms/reservations/reloaded/record-deposit', body));
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Önceki tahsilatı doğrula' })).not.toBeInTheDocument());
   });
 
   it('requires the exact room deletion phrase and suppresses rapid duplicate submissions', async () => {

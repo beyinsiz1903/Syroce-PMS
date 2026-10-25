@@ -27,6 +27,11 @@ from core.security import get_current_user
 from domains.channel_manager.providers.hotelrunner_notes import resolve_legacy_hotelrunner_note
 from models.schemas import User, _ensure_hotel_context
 from models.schemas.bookings import BookingCreate
+from modules.pms_core.deposit_operations import intent as _deposit_intent
+from modules.pms_core.deposit_operations import refresh_reports as _refresh_deposit_reports
+from modules.pms_core.deposit_operations import remaining as _deposit_remaining
+from modules.pms_core.deposit_operations import remember as _remember_deposit
+from modules.pms_core.deposit_operations import replay as _replay_deposit
 from modules.pms_core.guest_identity import find_existing_guest_by_identity
 from modules.pms_core.reporting_financials import stamp_reporting_values
 from modules.pms_core.role_permission_service import (
@@ -753,7 +758,7 @@ async def _ensure_reservation_folio(
     cached outstanding balance stay in sync. ``preferred_folio_id`` keeps a
     refund on the original folio even when that folio has since been closed.
     """
-    query = {"tenant_id": tenant_id}
+    query = {"tenant_id": tenant_id, "booking_id": booking["id"]}
     if preferred_folio_id:
         query["id"] = preferred_folio_id
     else:
@@ -764,20 +769,8 @@ async def _ensure_reservation_folio(
     if folio:
         return folio
 
-    # A legacy deposit may not have a folio_id. Reuse the reservation's open
-    # folio before creating one so the guest never gets parallel folios.
     if preferred_folio_id:
-        folio = await db.folios.find_one(
-            {
-                "tenant_id": tenant_id,
-                "booking_id": booking["id"],
-                "status": "open",
-            },
-            {"_id": 0},
-            **kwargs,
-        )
-        if folio:
-            return folio
+        raise HTTPException(409, "Depozitonun kaynak folyosu rezervasyona ait değil veya bulunamadı; önce kaynak kaydı incelenmeli")
 
     from core.utils import generate_folio_number
 
@@ -917,6 +910,8 @@ class LateCheckoutRequest(BaseModel):
 
 
 class DepositRecord(BaseModel):
+    request_id: UUID
+    folio_id: str | None = Field(None, min_length=1, max_length=100)
     amount: float = Field(..., gt=0, le=1e9)
     method: str = Field("cash", max_length=50)
     reference: str | None = Field(None, max_length=200)
@@ -1033,6 +1028,7 @@ class CommunicationLogCreate(BaseModel):
 
 
 class DepositRefund(BaseModel):
+    request_id: UUID
     deposit_id: str
     refund_amount: float = Field(..., gt=0, le=1e9)
     refund_method: str = Field("cash", max_length=50)
@@ -3106,94 +3102,77 @@ async def record_deposit(
     booking_id: str,
     data: DepositRecord,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("post_payment")),  # v97 DW
+    _perm=Depends(require_op("post_payment")),
 ):
-    """Record a deposit payment."""
-    from modules.pms_core.enterprise_billing import manual_collection_method
-
-    manual_collection_method(data.method)
-    _enforce_perm(current_user, "post_payment")  # Bug CP Round-3
+    """Record a folio prepayment atomically; replay uses the original identity."""
+    _enforce_perm(current_user, "post_payment")
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
+    key, digest = _deposit_intent(data, tid, booking_id, "receive")
+    prior = await _replay_deposit(db, tid, key, digest)
+    if prior:
+        await _run_post_commit_hook(lambda: _refresh_deposit_reports(tid), operation="deposit_replay_reports")
+        await _run_post_commit_hook(lambda: _refresh_cached_folio_balance(tid, prior["payment"]["folio_id"]), operation="deposit_replay_balance")
+        return prior
 
-    booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tid}, {"_id": 0})
-    if not booking:
-        raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
-    if booking.get("status") in {"checked_out", "cancelled", "no_show"}:
-        raise HTTPException(
-            status_code=409,
-            detail="Tamamlanmış veya iptal edilmiş rezervasyona depozito alınamaz",
-        )
+    async def commit(session):
+        prior = await _replay_deposit(db, tid, key, digest, session=session)
+        if prior:
+            return prior
+        booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tid}, {"_id": 0}, session=session)
+        if not booking:
+            raise HTTPException(404, "Rezervasyon bulunamadı")
+        if booking.get("status") in {"checked_out", "cancelled", "canceled", "no_show", "noshow"}:
+            raise HTTPException(409, "Tamamlanmış veya iptal edilmiş rezervasyona depozito alınamaz")
+        from modules.pms_core.enterprise_billing import require_cent_currency
+        from modules.pms_core.folio_selection import select_booking_folio
 
-    folio = await _ensure_reservation_folio(tid, booking)
-    currency = str(booking.get("currency") or folio.get("currency") or "TRY").upper()
+        folio = await select_booking_folio(db, tid, booking_id, data.folio_id, session=session)
+        if not folio:
+            folio = await _ensure_reservation_folio(tid, booking, session=session)
+        currency = require_cent_currency(booking.get("currency") or folio.get("currency"))
+        if folio.get("currency") and require_cent_currency(folio["currency"]) != currency:
+            raise HTTPException(409, "Depozito ve folyo para birimleri uyuşmuyor")
+        now = datetime.now(UTC).isoformat()
+        deposit = {"id": str(uuid.uuid5(uuid.NAMESPACE_URL, key + ":deposit")), "tenant_id": tid,
+            "booking_id": booking_id, "folio_id": folio["id"], "amount": data.amount, "currency": currency,
+            "method": data.method, "reference": data.reference, "deposit_type": "deposit", "status": "received",
+            "recorded_by": current_user.name, "created_at": now, "request_id": str(data.request_id),
+            "execution": "external_record_only"}
+        payment = {"id": str(uuid.uuid5(uuid.NAMESPACE_URL, key + ":payment")), "tenant_id": tid,
+            "folio_id": folio["id"], "booking_id": booking_id, "deposit_id": deposit["id"],
+            "amount": data.amount, "currency": currency, "method": data.method, "payment_type": "deposit",
+            "status": "paid", "reference": data.reference, "processed_by": current_user.name,
+            "processed_at": now, "voided": False, "request_id": str(data.request_id)}
+        await stamp_open_business_date(db, tid, payment)
+        deposit["business_date"] = payment["business_date"]
+        await db.deposits.insert_one({**deposit}, session=session)
+        await db.payments.insert_one({**payment}, session=session)
+        new_paid = round(float(booking.get("paid_amount", 0) or 0) + data.amount, 2)
+        await db.bookings.update_one({"id": booking_id, "tenant_id": tid}, {"$set": {"paid_amount": new_paid}}, session=session)
+        result = {"success": True, "replayed": False, "deposit": deposit, "payment": payment}
+        await _remember_deposit(db, current_user, key, digest, booking_id, "received", result, session=session)
+        return result
 
-    deposit = {
-        "id": str(uuid.uuid4()),
-        "tenant_id": tid,
-        "booking_id": booking_id,
-        "folio_id": folio["id"],
-        "amount": data.amount,
-        "currency": currency,
-        "method": data.method,
-        "reference": data.reference,
-        "deposit_type": "deposit",
-        "status": "received",
-        "recorded_by": current_user.name,
-        "created_at": datetime.now(UTC).isoformat(),
-    }
-    await db.deposits.insert_one({**deposit})
-
-    # Also record as payment
-    payment = {
-        "id": str(uuid.uuid4()),
-        "tenant_id": tid,
-        "folio_id": folio["id"],
-        "booking_id": booking_id,
-        "deposit_id": deposit["id"],
-        "amount": data.amount,
-        "currency": currency,
-        "method": data.method,
-        "payment_type": "deposit",
-        "status": "paid",
-        "reference": data.reference,
-        "processed_by": current_user.name,
-        "processed_at": datetime.now(UTC).isoformat(),
-        "voided": False,
-    }
-    await stamp_open_business_date(db, tid, payment)
-    await db.payments.insert_one({**payment})
-
-    new_paid = (booking.get("paid_amount", 0) or 0) + data.amount
-    await db.bookings.update_one(
-        {"id": booking_id, "tenant_id": tid},
-        {"$set": {"paid_amount": round(new_paid, 2)}},
-    )
-    await _refresh_cached_folio_balance(tid, folio["id"])
-
-    await _log_activity(
-        tid,
-        booking_id,
-        "deposit_recorded",
-        current_user.name,
-        {
-            "amount": data.amount,
-            "method": data.method,
-        },
-    )
-
-    # Acente webhook: rezervasyon güncellendi (depozito alındı)
-    from routers.webhook_retry_service import schedule_emit_reservation_updated
-
-    schedule_emit_reservation_updated(
-        tid,
-        booking_id,
-        "payment_added",
-        {"payment_id": payment["id"], "amount": data.amount, "currency": currency, "method": data.method, "payment_type": "deposit"},
-    )
-
-    deposit.pop("_id", None)
-    return {"success": True, "deposit": deposit}
+    try:
+        result = await _run_reservation_financial_transaction(tenant_id=tid, booking_id=booking_id, resources=[], callback=commit)
+    except Exception as exc:
+        from core.booking_atomicity import is_replica_set_unavailable
+        if is_replica_set_unavailable(exc):
+            raise HTTPException(503, "Depozito için Mongo transaction desteği gerekli") from exc
+        raise
+    await _run_post_commit_hook(lambda: _refresh_deposit_reports(tid), operation="record_deposit_reports")
+    await _run_post_commit_hook(lambda: _refresh_cached_folio_balance(tid, result["payment"]["folio_id"]), operation="record_deposit_balance")
+    if not result.get("replayed"):
+        await _run_post_commit_hook(lambda: _log_activity(tid, booking_id, "deposit_recorded", current_user.name,
+            {"amount": data.amount, "method": data.method, "request_id": str(data.request_id)}), operation="record_deposit_activity")
+        async def emit():
+            from routers.webhook_retry_service import schedule_emit_reservation_updated
+            schedule_emit_reservation_updated(tid, booking_id, "payment_added", {
+                "payment_id": result["payment"]["id"], "amount": data.amount, "currency": result["payment"]["currency"],
+                "method": data.method, "payment_type": "deposit"})
+        await _run_post_commit_hook(emit, operation="record_deposit_webhook")
+    return result
 
 
 @router.post("/reservations/{booking_id}/add-extra-charge")
@@ -5493,6 +5472,12 @@ async def refund_deposit(
     _enforce_perm(current_user, "post_payment")  # Bug CP Round-3 — refund treated as payment-class mutation
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
+    key, digest = _deposit_intent(data, tid, booking_id, "refund")
+    prior = await _replay_deposit(db, tid, key, digest)
+    if prior:
+        await _run_post_commit_hook(lambda: _refresh_deposit_reports(tid), operation="deposit_refund_replay_reports")
+        await _run_post_commit_hook(lambda: _refresh_cached_folio_balance(tid, prior["payment"]["folio_id"]), operation="deposit_refund_replay_balance")
+        return prior
 
     booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tid}, {"_id": 0})
     if not booking:
@@ -5511,9 +5496,7 @@ async def refund_deposit(
     if deposit.get("status") == "refunded":
         raise HTTPException(status_code=400, detail="Depozito tamamen iade edilmis")
 
-    deposit_amount = round(float(deposit.get("amount", 0) or 0), 2)
-    refunded_before = round(float(deposit.get("refunded_amount", 0) or 0), 2)
-    refundable_amount = round(max(0.0, deposit_amount - refunded_before), 2)
+    _deposit_amount, _refunded_before, refundable_amount = _deposit_remaining(deposit)
     if refundable_amount <= 0:
         raise HTTPException(status_code=400, detail="Depozito tamamen iade edilmis")
     if data.refund_amount > refundable_amount:
@@ -5540,6 +5523,9 @@ async def refund_deposit(
     payment_id = str(uuid.uuid4())
 
     async def _commit(session):
+        prior = await _replay_deposit(db, tid, key, digest, session=session)
+        if prior:
+            return prior
         current_booking = await db.bookings.find_one(
             {"id": booking_id, "tenant_id": tid},
             {"_id": 0},
@@ -5558,9 +5544,7 @@ async def refund_deposit(
         if current_deposit.get("status") == "refunded":
             raise HTTPException(status_code=400, detail="Depozito tamamen iade edilmis")
 
-        current_amount = round(float(current_deposit.get("amount", 0) or 0), 2)
-        current_refunded = round(float(current_deposit.get("refunded_amount", 0) or 0), 2)
-        current_refundable = round(max(0.0, current_amount - current_refunded), 2)
+        current_amount, current_refunded, current_refundable = _deposit_remaining(current_deposit)
         if current_refundable <= 0:
             raise HTTPException(status_code=400, detail="Depozito tamamen iade edilmis")
         if data.refund_amount > current_refundable:
@@ -5569,6 +5553,12 @@ async def refund_deposit(
                 detail="Iade tutari kalan depozito bakiyesinden buyuk olamaz",
             )
 
+        if not current_deposit.get("folio_id"):
+            # Legacy rows may omit the window, but must never silently choose
+            # one of several open folios for a refund.
+            from modules.pms_core.folio_selection import select_booking_folio
+
+            await select_booking_folio(db, tid, booking_id, session=session)
         folio = await _ensure_reservation_folio(
             tid,
             current_booking,
@@ -5579,8 +5569,13 @@ async def refund_deposit(
             current_deposit.get("currency")
             or current_booking.get("currency")
             or folio.get("currency")
-            or "TRY"
+            or ""
         ).upper()
+
+        from modules.pms_core.enterprise_billing import require_cent_currency
+        currency = require_cent_currency(currency)
+        if folio.get("currency") and require_cent_currency(folio["currency"]) != currency:
+            raise HTTPException(409, "Depozito iadesi ve kaynak folyo para birimleri uyuşmuyor")
 
         refund = {
             "id": refund_id,
@@ -5648,12 +5643,15 @@ async def refund_deposit(
 
         refund.pop("_id", None)
         payment.pop("_id", None)
-        return {
+        result = {
             "success": True,
+            "replayed": False,
             "refund": refund,
             "payment": payment,
             "remaining_amount": remaining,
         }
+        await _remember_deposit(db, current_user, key, digest, booking_id, "refunded", result, session=session)
+        return result
 
     try:
         result = await _run_reservation_financial_transaction(
@@ -5668,14 +5666,20 @@ async def refund_deposit(
             status_code=409,
             detail="Depozito iadesi eşzamanlı veya tekrarlanan işlem nedeniyle tamamlanamadı",
         ) from None
-    except Exception:
+    except Exception as exc:
         await _release_dedup_safely(dedup_lock_id, operation="refund_deposit")
+        from core.booking_atomicity import is_replica_set_unavailable
+        if is_replica_set_unavailable(exc):
+            raise HTTPException(503, "Depozito iadesi için Mongo transaction desteği gerekli") from exc
         raise
 
+    await _run_post_commit_hook(lambda: _refresh_deposit_reports(tid), operation="refund_deposit_reports")
     await _run_post_commit_hook(
         lambda: _refresh_cached_folio_balance(tid, result["payment"]["folio_id"]),
         operation="refund_deposit_folio_balance",
     )
+    if result.get("replayed"):
+        return result
 
     await _run_post_commit_hook(
         lambda: _log_activity(

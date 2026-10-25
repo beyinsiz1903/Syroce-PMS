@@ -280,6 +280,10 @@ async def preview_daily_valuation(db, tenant_id, run_id, valuation):
     correction = await db.gl_journal_entries.find_one({"tenant_id": tenant_id, "idempotency_key": "operational-correction:" + run_id}, {"_id": 0})
     if original and (original.get("source") != "night_audit" or original.get("source_ref") != run_id or not verify_journal_entry_hash(original)):
         raise OperationalValuationError("Original source journal link/integrity mismatch")
+    if original and not plan["manifest"]["sources"] and any(minor(row.get("debit")) or minor(row.get("credit")) for row in original.get("lines", [])):
+        # Missing source history is not proof that an old posted receipt or
+        # revenue never happened. Do not erase it via an empty-source contra.
+        raise OperationalValuationError("Source history missing for nonzero original journal; manual source reconciliation required")
     if original and (original.get("reversal_status") or original.get("reverses_entry_id") or
                      await db.gl_journal_entries.find_one({"tenant_id": tenant_id, "reverses_entry_id": original["id"]}, {"id": 1})):
         raise OperationalValuationError("Original journal already reversed; manual reconciliation required")

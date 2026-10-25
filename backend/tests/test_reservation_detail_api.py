@@ -5,6 +5,7 @@ Tests: full-detail, payment recording, cari transfer, agency payment, notes, qui
 import pytest
 import requests
 import os
+import uuid
 
 BASE_URL = os.environ.get("VITE_BACKEND_URL", "").rstrip("/")
 
@@ -411,6 +412,7 @@ class TestDeposit:
     def test_record_deposit(self, authenticated_client, booking_id):
         """Test recording a deposit payment."""
         deposit_data = {
+            "request_id": str(uuid.uuid4()),
             "amount": 200.0,
             "method": "cash",
             "reference": "DEP-001",

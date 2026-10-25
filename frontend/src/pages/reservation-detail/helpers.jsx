@@ -158,7 +158,7 @@ export function FormField({ label, value, onChange, type = 'text', placeholder =
 export function SelectField({ label, value, onChange, options }) {
   return (
     <div><Label className="text-xs">{label}</Label>
-      <select value={value} onChange={e => onChange(e.target.value)} className="w-full h-8 text-sm border rounded-md px-2 bg-white">
+      <select aria-label={label} value={value} onChange={e => onChange(e.target.value)} className="w-full h-8 text-sm border rounded-md px-2 bg-white">
         {options.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
       </select>
     </div>
