@@ -45,6 +45,21 @@ def test_unallocated_credit_reduces_balance_without_guessing_paid_invoice_age(ki
     assert rows[0]["age_unknown"] and rows[0]["age_days"] is None
 
 
+def test_explicit_credit_ages_only_the_remaining_named_debt():
+    rows, failed, _ = positions([account(balance=120)], [charge(due_date="2026-10-01"), charge(id="later", amount=50),
+        charge(id="credit", transaction_type="payment", amount=30, allocations=[{"transaction_id": "c", "amount": 30}])])
+    assert not failed
+    assert {(r["balance"], r["age_days"]) for r in rows} == {(70, 23), (50, 0)}
+
+
+@pytest.mark.parametrize("parts", [[{"transaction_id": "missing", "amount": 30}], [{"transaction_id": "c", "amount": 31}],
+    [{"transaction_id": "c", "amount": 20}, {"transaction_id": "c", "amount": 10}], [{"transaction_id": "c", "amount": "NaN"}],
+    [{"transaction_id": "c", "amount": 30.001}], [{"transaction_id": "c", "amount": -30}], [None], []])
+def test_invalid_credit_allocations_preserve_balance_but_never_guess_an_age(parts):
+    rows, failed, _ = positions([account(balance=70)], [charge(), charge(id="credit", transaction_type="payment", amount=30, allocations=parts)])
+    assert not failed and rows[0]["balance"] == 70 and rows[0]["age_unknown"]
+
+
 def test_multiple_due_dates_keep_separate_amounts_not_oldest_age_for_all():
     rows, failed, _ = positions([account(balance=150)], [charge(due_date="2026-10-01"), charge(id="later", amount=50)])
     assert not failed

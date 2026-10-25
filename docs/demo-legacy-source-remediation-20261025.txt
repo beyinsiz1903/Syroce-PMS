@@ -1,0 +1,117 @@
+DEMO HOTEL LEGACY SOURCE RECONSTRUCTION — OPERATOR RUNBOOK
+
+This is NOT historical acceptance, a production migration, a tax opinion, or
+an audit-chain repair. The user authorized a visibly labelled synthetic
+reconstruction/archive of the reviewed Demo Hotel legacy sources only.
+
+Scope and prerequisites
+-----------------------
+Only Syroce Demo Hotel 100001, tenant
+5bad4a34-6ee3-4566-9053-741b7375a9cf. Exact tenant name/id, 2026-10-24 business
+date, Exely sandbox 501694 with ARI and reservation polling disabled, and no
+active HotelRunner connection are enforced before preview AND inside commit.
+Both manage_city_ledger and manage_night_audit permissions are required.
+No source amounts, identities, original GL journals, business date, provider
+credentials, other tenants, or 69 old audit records are rewritten.
+
+Deploying the code DOES NOT apply the reconstruction. Do not call an old
+presentation seed or replay the original presentation operation journal.
+
+Review and apply
+----------------
+GET /api/pms/demo-source-remediation/preview
+
+Inspect the returned fixed policy, source_fingerprint, all 43 target source
+documents, 6 cashier appends, synthetic assumptions, and 69 incident findings.
+Preview is read-only. Changed, accepted, financially used, physically locked,
+already valued differently or otherwise unexpected sources stop the operation.
+
+POST /api/pms/demo-source-remediation/apply
+{
+  "request_id": "a fresh UUID saved BEFORE submitting",
+  "source_fingerprint": "the exact reviewed preview fingerprint",
+  "reason": "Explicitly authorized synthetic Demo Hotel reconstruction; not historical verification.",
+  "confirmation": "RECONSTRUCT_SYNTHETIC_DEMO_100001_ONLY"
+}
+
+Do not put tenant_id, arbitrary rates, amounts or source IDs in the request.
+The closed policy is demo-legacy-source-reconstruction-20261025-v1.
+Requires a replica-set transaction; there is no standalone partial-write path.
+All preimages, source patches, cashier appends, sealed incident/decision audit
+and the durable receipt commit together. The same exact request replays once;
+a changed request after commit is rejected. A lost response is NOT permission
+to submit a new UUID: first GET /api/pms/demo-source-remediation/status and
+reconcile the stored receipt. Do not run direct database mutation scripts.
+
+What is reconstructed (43 preserved source documents)
+----------------------------------------------------
+* 3 unaccepted, unassigned, financially empty Exely test holds and 2 local inbox
+  records become archived_demo, NOT no-show/cancelled/checked-in/checked-out.
+  Raw provider confirmation/delivery state is preserved. No ACK, Requestdenied,
+  provider cancellation or import is issued. Subsequent import of these exact
+  demo source IDs is fenced. Sentinel historical locks remain; they do not
+  represent physical rooms and are not sellable inventory. Any physical room
+  lock or accepted-stay timestamp blocks this archive.
+* 6 already fully refunded/cancelled USD/EUR receipt/refund rows: synthetic
+  receipt rates USD=50 TRY and EUR=55 TRY, explicitly NOT historical FX rates.
+  Six deterministic noncash cashier source rows are appended; native and TRY
+  net are zero, existing shift transactions and cash counters are unchanged.
+* 8 zero-billed full-comp extras: explicitly DEMO zero booked VAT/accommodation
+  tax, NOT an assertion of tax exemption or a fiscal certificate. The original
+  reference prices and zero charged gross remain unchanged.
+* 11 legacy cari transactions: new demo 30-day terms and explicit FIFO credit
+  allocations, NOT recovered historical terms/settlement evidence. The account
+  remains 4,503 TRY. Reporting ages only valid explicit complete allocations;
+  missing/invalid/foreign/overallocated credits still remain unknown-age.
+* 13 September 5 receipts: synthetic TRY ledger denomination/snapshots using
+  the stored amounts, totaling 14,621 TRY. No inversion of the old ambiguous FX
+  field, no current live-rate lookup, and no amount edit.
+
+Two remaining September GL steps (separate normal append-only API)
+-----------------------------------------------------------------
+The three previously evidenced September 6/7/14 corrections must not be replayed.
+After successful reconstruction, review source-day TRY valuations for Sept 5
+and the exact Sept 27 run d5726e44-8e22-48f6-a3bd-7d9bee36be4b:
+
+POST /api/gl/integrations/operational/night-audit/{run_id}/valuation/preview
+Use business_date matching that run, base_currency TRY, rates_to_try {}, and a
+reference explicitly stating DEMO reconstruction, not historical verification.
+Then POST the same body plus expected_preview_hash to .../valuation/post.
+
+Sept 5 includes the reclassified 1,200 TRY source and totals 14,621 TRY receipts.
+Sept 27 original 1,200 TRY cash/receivable journal is preserved; a linked contra
+is permitted ONLY by the exact sealed demo decision, original journal hash and
+unchanged payment-after hash. All other empty-source/nonzero-journal contra
+attempts still fail closed. Neither step closes or advances the business day.
+
+Post-application acceptance
+---------------------------
+* Status receipt: 43 preimages, 6 cashier appends, provider writes 0.
+* Mapping attention / close barrier: no remaining named legacy holds; other
+  mapping problems still block. Calendar must not resurrect archived sources.
+* Cashier: no missing 6 sources, no duplicate ref_ids, USD/EUR and TRY net 0.
+* Cari: 4,503 TRY unchanged, explicit new demo aging/allocations visibly marked.
+* Revenue: 8 zero full-comp extras have booked tax snapshots and a positive
+  demo_reconstructed_count; this MUST NOT become historical_source_verified.
+* Sept 5 and Sept 27 reconciliation: mathematical variance 0, original journals
+  unchanged, two sealed linked corrections, demo_reconstructed_sources warning.
+* Original 60 presentation bookings and 55 October journal seals preserved.
+* Business date remains 2026-10-24 OPEN; integrations remain paused.
+* Audit: exactly the same 69 late-attribution content mismatches, no new breaks.
+  Their original seal can be reproduced without the later IP/user-agent fields.
+  The sealed incident documents this fact, not a valid old chain. The verifier
+  must STILL show the old chain invalid. Never reseal/delete/rewrite it or call
+  a documented incident a passing integrity check.
+* Demo warnings stay on report UI/print, generic CSV, revenue and cari Excel.
+
+Failure and reversal
+--------------------
+Pre-commit failure rolls back all source changes and the audit/receipt. A
+post-commit cache failure does not return a misleading transaction failure.
+There is deliberately no generic overwrite/undo endpoint. Before any reversal,
+review the saved before/after hashes, later source use, and appended journals;
+use a separately approved compensating operation, not direct snapshot restore.
+
+Local acceptance uses an isolated local replica set only. Required tests include
+real transaction rollback, stale/foreign/provider/accepted/financial/room-lock
+guards, parallel replay, report conservation, and both GL days with disclosure.

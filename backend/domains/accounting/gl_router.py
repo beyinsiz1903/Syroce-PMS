@@ -2114,6 +2114,10 @@ async def operational_reconciliation(
         except (OperationalValuationError, GLPostingError, KeyError) as exc:
             blockers.append({"code": "source_valuation_invalid", "record_id": run["id"], "message": str(exc)})
     fully_valued = len(valued_plans) == len(posted_night_runs) == 1
+    if any(source.get("demo_reconstruction") or source.get("kind") == "demo_reclassified_payment"
+           for plan in valued_plans for source in plan["manifest"]["sources"]):
+        warnings.append({"code": "demo_reconstructed_sources", "historical_source_verified": False,
+            "message": "Demo yeniden-kurma kaynakları kullanıldı; matematiksel mutabakat tarihî mali doğrulama değildir."})
     if fully_valued:
         blockers = [b for b in blockers if b["code"] != "source_currency_requires_try_valuation"]
         payment_by_account = valued_plans[0]["payment_by_account_minor"]

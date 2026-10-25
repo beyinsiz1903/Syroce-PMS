@@ -13,6 +13,44 @@ DEBITS = {"charge", "transfer_in"}
 CREDITS = {"payment", "adjustment", "transfer_out"}
 
 
+def allocated_chunks(rows, code, native, opening):
+    """Age only explicit, currency/cent-exact complete credit allocations.
+
+    No FIFO inference here. A single missing, foreign, excessive or duplicate
+    allocation keeps the WHOLE account in the honest unknown-age bucket.
+    """
+    if opening:
+        return None
+    rows = [r for r in rows if not r.get("voided") and not r.get("deleted") and r.get("status") in {None, "completed", "posted"}]
+    debits = {str(r.get("id") or r.get("_id")): r for r in rows if r.get("transaction_type") in DEBITS
+              and currency_code(r.get("currency") or native) == code}
+    left = {key: money(r["amount"]) for key, r in debits.items()}
+    for row in rows:
+        if row.get("voided") or row.get("deleted") or row.get("status") not in {None, "completed", "posted"}:
+            continue
+        if row.get("transaction_type") not in CREDITS or currency_code(row.get("currency") or native) != code:
+            continue
+        parts = row.get("allocations")
+        if not isinstance(parts, list) or not parts:
+            return None
+        total, seen = money(0), set()
+        for part in parts:
+            if not isinstance(part, dict):
+                return None
+            try:
+                key, amount = str(part.get("transaction_id") or ""), money(part.get("amount"))
+            except (ValueError, TypeError, ArithmeticError):
+                return None
+            if key not in left or key in seen or amount <= 0 or amount != money(rounded(amount)) or amount > left[key]:
+                return None
+            seen.add(key)
+            left[key] -= amount
+            total += amount
+        if total != money(row["amount"]):
+            return None
+    return [(value, report_day(debits[key].get("due_date"))) for key, value in left.items() if value > 0]
+
+
 def account_id(account):
     return str(account.get("id") or account.get("account_id") or account.get("legacy_id") or account.get("_id") or "")
 
@@ -85,7 +123,10 @@ def account_positions(accounts, transactions, *, source, fallback_currency, toda
                 # Charge-only sources can be aged independently. Once an
                 # unallocated credit exists, claiming an invoice age is unsafe.
                 age_unknown = code in credits or not anchors or any(day is None for day in anchors) or public_key in failures
-                if age_unknown:
+                allocated = allocated_chunks(rows, code, native, opening) if code in credits and public_key not in failures else None
+                if allocated is not None and all(anchor is not None for _, anchor in allocated) and sum((v for v, _ in allocated), money(0)) == balance:
+                    chunks = allocated
+                elif age_unknown:
                     chunks = [(balance, None)]
                 else:
                     chunks = [(value, anchor) for value, anchor in zip(by_currency[code], anchors, strict=True) if value > 0]
@@ -95,7 +136,9 @@ def account_positions(accounts, transactions, *, source, fallback_currency, toda
                         "company_name": name, "corporate_code": account.get("corporate_code") or key,
                         "age_unknown": anchor is None, "age_days": max((today - anchor).days, 0) if anchor else None,
                         "document_id": f"{public_key}:{code}:{index}", "transaction_count": len(source_ids),
-                        "source_complete": public_key not in failures})
+                        "source_complete": public_key not in failures,
+                        **({"demo_reconstructed": True, "historical_source_verified": False}
+                           if any((r.get("demo_reconstruction") or {}).get("basis") == "demo_reconstruction" for r in rows) else {})})
         except (ValueError, TypeError, ArithmeticError, KeyError):
             failures.add(public_key)
             issues.append({"account_id": public_key, "reason": "invalid_account_source"})

@@ -1,5 +1,6 @@
 import React from 'react';
 import { Info } from 'lucide-react';
+import DemoSourceNotice from './DemoSourceNotice';
 
 const formatDate = value => value
   ? new Date(`${value}T12:00:00`).toLocaleDateString('tr-TR', { day: '2-digit', month: 'long', year: 'numeric' })
@@ -41,6 +42,7 @@ const ReportFrame = ({ children, reportName, reportDate, periodLabel, tenant, us
           {refreshedAt && <div><dt className="font-semibold text-slate-700">Son yenileme</dt><dd>{refreshedAt}</dd></div>}
         </dl>
       </details>}
+      <DemoSourceNotice tenant={tenant} />
       {children}
       <footer className="report-print-footer hidden print:flex">
         <span>{hotelName} · {reportName}</span>

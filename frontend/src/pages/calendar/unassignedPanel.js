@@ -11,9 +11,18 @@ export function isMappingIssue(booking) {
     || booking.allocation_source === 'ota_unmatched_hold' || booking.is_inventory_hold === true;
 }
 
+export function isArchivedDemoSource(booking) {
+  return booking.tenant_id === '5bad4a34-6ee3-4566-9053-741b7375a9cf'
+    && ['2faf1e5b-3d87-4d13-9af5-d49b42e1805e', '6c44c4fe-7cf5-476e-bb96-bedfff359149', '45126c58-f9ef-42e1-968d-4732dbe0614c'].includes(booking.id)
+    && booking.status === 'archived_demo'
+    && booking.demo_reconstruction?.policy_id === 'demo-legacy-source-reconstruction-20261025-v1'
+    && booking.demo_reconstruction?.basis === 'demo_reconstruction';
+}
+
 export function mergeUnassignedAttention(bookings, mappingIssues = []) {
   const groups = new Map();
   for (const booking of [...mappingIssues, ...bookings]) {
+    if (isArchivedDemoSource(booking)) continue;
     if ((booking.room_id && !isMappingIssue(booking)) || ['cancelled', 'checked_out', 'no_show', 'resolved'].includes(booking.status)) continue;
     if (!isMappingIssue(booking)) {
       groups.set(`booking:${booking.id}`, booking);

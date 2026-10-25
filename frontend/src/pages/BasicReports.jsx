@@ -509,7 +509,9 @@ const BasicReports = ({
       return;
     }
 
-    let csvContent = "";
+    let csvContent = tenant?.id === '5bad4a34-6ee3-4566-9053-741b7375a9cf'
+      ? csvCell('DEMO: Örnek/yeniden kurulan kur, vade, mahsup ve vergi bilgileri tarihî mali doğrulama değildir. 69 eski denetim bulgusu yeniden mühürlenmemiştir.') + "\n\n"
+      : "";
     
     tables.forEach((table, index) => {
       if (index > 0) csvContent += "\n\n";

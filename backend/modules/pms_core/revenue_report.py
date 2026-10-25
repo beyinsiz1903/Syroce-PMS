@@ -103,7 +103,7 @@ def _serialize(bucket):
 
 def build_revenue_report(charges, first, last):
     grouped, totals, departments, days = {}, {}, {}, {}
-    issues, issue_count, unknown_count = [], 0, 0
+    issues, issue_count, unknown_count, reconstructed_count = [], 0, 0, 0
     for row in charges:
         if not is_revenue_charge(row):
             continue
@@ -123,6 +123,7 @@ def build_revenue_report(charges, first, last):
         by_day = days.setdefault(day.isoformat(), {})
         by_day[code] = by_day.get(code, Decimal(0)) + values["total"]
         unknown_count += values["tax_unknown"]
+        reconstructed_count += (row.get("demo_reconstruction") or {}).get("basis") == "demo_reconstruction"
         if values["issues"]:
             issue_count += 1
             if len(issues) < 100:
@@ -151,7 +152,8 @@ def build_revenue_report(charges, first, last):
     return {"date_from": first.isoformat(), "date_to": last.isoformat(), "rows": rows,
         "totals": legacy, "totals_by_currency": totals, "revenue_trend": trend,
         "departments_by_currency": {dept: {code: rounded(value) for code, value in sorted(values.items())} for dept, values in departments.items()},
-        "reconciliation": {"issue_count": issue_count, "tax_unknown_count": unknown_count, "issues": issues},
+        "reconciliation": {"issue_count": issue_count, "tax_unknown_count": unknown_count, "issues": issues,
+            **({"demo_reconstructed_count": reconstructed_count, "historical_source_verified": False} if reconstructed_count else {})},
         "basis": "posted_ledger_gross", "definitions": {
             "total": "İade düşülmüş işlenen tutar; mevcut vergiler dahil, bahşiş hariç. Tahsilat değildir.",
             "net": "Vergi hariç tutar. Vergi kırılımı eksikse doğrulanamadı gösterilir; bugünkü oranlarla tahmin edilmez.",
