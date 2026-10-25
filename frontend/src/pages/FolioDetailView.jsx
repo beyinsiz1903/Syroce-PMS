@@ -12,16 +12,8 @@ import { toast } from "sonner";
 import FolioWindowsPanel from "@/components/folio/FolioWindowsPanel";
 import { cachedTenantCurrency, formatCurrency } from "@/lib/currency";
 import { moneyInputProps, parseMoneyInput } from '@/lib/moneyInput';
+import { canVoidFolioEvent, folioEventBalanceEffect, folioEventCategoryLabel, folioEventTitle, isNonCashPayment } from '@/lib/folioPayments';
 const API = "";
-
-const CATEGORY_LABELS = {
-  cash: "Nakit",
-  card: "Kart",
-  credit_card: "Kredi Kartı",
-  bank_transfer: "Banka Transferi",
-  room: "Konaklama",
-  other: "Diğer"
-};
 
 const FOLIO_TYPE_LABELS = {
   guest: "Misafir hesabı",
@@ -40,6 +32,8 @@ const AUDIT_ACTION_LABELS = {
   folio_split: "Folyo paylaştırıldı",
   folio_allocation: "Mevcut folyo hesapları arasında paylaştırıldı",
   city_ledger_transfer: "Cari hesaba aktarıldı",
+  billing_instrument_apply: "Kaynaklı mahsup uygulandı",
+  billing_instrument_reverse: "Kaynaklı mahsup ters kaydedildi",
   night_audit_room_charge: "Konaklama ücreti işlendi"
 };
 
@@ -48,10 +42,7 @@ function friendlyAuditAction(action) {
 }
 
 function friendlyEventTitle(event) {
-  if (event.type === "refund") return "Ödeme iadesi";
-  if (event.type === "payment") return `${CATEGORY_LABELS[event.category] || "Ödeme"} tahsilatı`;
-  if (/^room charge/i.test(event.description || "")) return "Konaklama ücreti";
-  return event.description || "Folyo işlemi";
+  return folioEventTitle(event);
 }
 
 function friendlyDateTime(value) {
@@ -76,24 +67,23 @@ function TimelineItem({
     charge: {
       icon: Receipt,
       color: "text-amber-600",
-      bg: "bg-amber-50",
-      sign: "+"
+      bg: "bg-amber-50"
     },
     payment: {
       icon: CreditCard,
       color: "text-emerald-600",
-      bg: "bg-emerald-50",
-      sign: "-"
+      bg: "bg-emerald-50"
     },
     refund: {
       icon: ArrowRightLeft,
       color: "text-red-600",
-      bg: "bg-red-50",
-      sign: "-"
+      bg: "bg-red-50"
     }
   };
   const cfg = typeConfig[event.type] || typeConfig.charge;
   const Icon = cfg.icon;
+  const effect = folioEventBalanceEffect(event);
+  const nonCash = isNonCashPayment({ ...event, method: event.method || event.category });
   return <div data-testid={`timeline-item-${event.id?.slice(0, 8)}`} className={`flex items-start gap-3 rounded-xl border p-4 transition-colors ${event.voided ? "border-gray-200 bg-gray-50/80" : "border-gray-100 bg-white hover:border-gray-200"}`}>
       <div className={`p-2 rounded-lg ${cfg.bg} mt-0.5`}>
         <Icon className={`w-4 h-4 ${cfg.color}`} />
@@ -103,17 +93,18 @@ function TimelineItem({
           <div className="flex items-center gap-2">
             <span className={`text-sm font-semibold ${event.voided ? "text-gray-500" : "text-gray-800"}`}>{friendlyEventTitle(event)}</span>
             {event.voided && <Badge variant="destructive" className="text-xs">{t("folio.voided")}</Badge>}
-            {event.category && <Badge variant="outline" className="text-xs text-gray-500 border-gray-200">{CATEGORY_LABELS[event.category] || event.category}</Badge>}
+            {event.category && <Badge variant="outline" className="text-xs text-gray-500 border-gray-200">{folioEventCategoryLabel(event)}</Badge>}
+            {!event.voided && event.type !== 'charge' && effect === 0 && <Badge variant="outline">Bakiyeye dahil değil</Badge>}
           </div>
           <span className={`text-sm font-semibold ${event.voided ? "text-gray-400 line-through" : cfg.color}`}>
-            {cfg.sign}{formatCurrency(Math.abs(event.display_amount ?? event.amount ?? 0), event.display_currency || event.currency || currency)}
+            {effect === 0 ? '' : effect > 0 ? '+' : '-'}{formatCurrency(Math.abs(event.display_amount ?? event.amount ?? 0), event.display_currency || event.currency || currency)}
           </span>
         </div>
         <div className="flex items-center justify-between mt-1">
           <span className="text-xs text-gray-400">{friendlyDateTime(event.timestamp)}</span>
           <div className="flex items-center gap-2">
             <span className="text-xs text-gray-500">{t("folio.balance")}: {formatCurrency(event.running_balance || 0, currency)}</span>
-            {event.type === "payment" && !event.voided && onVoidPayment && <Button
+            {canVoidFolioEvent(event) && onVoidPayment && <Button
               type="button"
               variant="outline"
               size="sm"
@@ -128,7 +119,8 @@ function TimelineItem({
             <span className="text-red-600 font-medium">{t("folio.reason")}: </span>
             <span className="text-red-500">{event.void_reason}</span>
           </div>}
-        {event.type === "payment" && event.received_currency && !event.voided && <div className="mt-1 text-xs font-semibold text-emerald-700">
+        {event.billing_settlement_id && <p className="mt-1 text-xs text-gray-500">Düzeltme, rezervasyondaki kurumsal mahsup bölümünden özgün işleme bağlı ters kayıtla yapılır.</p>}
+        {event.type === "payment" && event.received_currency && !event.voided && !nonCash && <div className="mt-1 text-xs font-semibold text-emerald-700">
             Alınan: {formatCurrency(event.received_amount ?? event.amount, event.received_currency)}
             {event.exchange_rate && Number(event.exchange_rate) !== 1 ? ` · Kur ${Number(event.exchange_rate).toFixed(4)}` : ""}
           </div>}
@@ -401,16 +393,21 @@ export default function FolioDetailView({
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3 mb-6 md:grid-cols-5">
+          <div className="grid grid-cols-2 gap-3 mb-6 md:grid-cols-3">
             <Card className="border-amber-100 bg-gradient-to-br from-white to-amber-50/60 shadow-sm"><CardContent className="p-4">
               <p className="text-xs text-gray-500">{t("folio.totalCharges")}</p>
               <p className="text-lg font-bold text-amber-600">{formatCurrency(summary?.total_charges || 0, currency)}</p>
               <p className="text-xs text-gray-400">{summary?.charge_count} {t("folio.items")}</p>
             </CardContent></Card>
             <Card className="border-emerald-100 bg-gradient-to-br from-white to-emerald-50/60 shadow-sm"><CardContent className="p-4">
-              <p className="text-xs text-gray-500">{t("folio.totalPayments")}</p>
-              <p className="text-lg font-bold text-emerald-600">{formatCurrency(summary?.total_payments || 0, currency)}</p>
+              <p className="text-xs text-gray-500">Net tahsilat</p>
+              <p className="text-lg font-bold text-emerald-600">{formatCurrency(summary?.cash_collection_total ?? summary?.total_payments ?? 0, currency)}</p>
               <p className="text-xs text-gray-400">{summary?.payment_count} {t("folio.items")}</p>
+            </CardContent></Card>
+            <Card className="border-blue-100 bg-white shadow-sm"><CardContent className="p-4">
+              <p className="text-xs text-gray-500">Nakit dışı mahsup (net)</p>
+              <p className="text-lg font-bold text-blue-600">{formatCurrency(summary?.non_cash_settlement_total || 0, currency)}</p>
+              <p className="text-xs text-gray-400">Cari, ikram ve kaynaklı mahsuplar; yeni tahsilat değil.</p>
             </CardContent></Card>
             <Card className="border-blue-100 bg-gradient-to-br from-white to-blue-50/70 shadow-sm"><CardContent className="p-4">
               <p className="text-xs text-gray-500">{t("folio.balance")}</p>
@@ -460,7 +457,7 @@ export default function FolioDetailView({
                 <CardHeader className="border-b border-gray-50 bg-slate-50/50 px-5 py-4"><CardTitle className="text-sm font-semibold text-gray-700">Hesap hareketleri <span className="ml-1 font-normal text-gray-400">· {data?.timeline?.length || 0} işlem</span></CardTitle></CardHeader>
                 <CardContent className="px-4 pb-4">
                   <div className="mt-4 space-y-3 max-h-[600px] overflow-y-auto pr-1">
-                    {data?.timeline?.length ? data.timeline.map(e => <TimelineItem key={e.id} event={e} t={t} currency={currency} onVoidPayment={setVoidTarget} />) : <p className="text-sm text-gray-400 py-4">{t("folio.noTransactions")}</p>}
+                    {data?.timeline?.length ? data.timeline.map(e => <TimelineItem key={e.id} event={e} t={t} currency={currency} onVoidPayment={folio?.status === 'open' ? setVoidTarget : undefined} />) : <p className="text-sm text-gray-400 py-4">{t("folio.noTransactions")}</p>}
                   </div>
                 </CardContent>
               </Card>

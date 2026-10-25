@@ -136,6 +136,9 @@ describe('GeneralLedgerModule persistent GL contract', () => {
     expect(voucherActionNames('approved')).toEqual(['post']);
     expect(voucherActionNames('rejected')).toEqual(['edit', 'cancel']);
     expect(voucherActionNames('posted')).toEqual([]);
+    expect(voucherActionNames('draft', 'authorized_self')).toEqual(['edit', 'finalize', 'cancel']);
+    expect(voucherActionNames('submitted', 'authorized_self')).toEqual(['finalize', 'reject']);
+    expect(voucherActionNames('draft', 'dual_control')).not.toContain('finalize');
   });
 
   it('renders persisted voucher workflow events in concise local form', () => {

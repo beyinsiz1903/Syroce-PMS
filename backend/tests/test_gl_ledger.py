@@ -145,6 +145,7 @@ class _FakeDB:
         self.gl_counters = _Coll("gl_counters")
         self.gl_journal_entries = _Coll("gl_journal_entries", unique_key=("tenant_id", "idempotency_key"))
         self.gl_vouchers = _Coll("gl_vouchers")
+        self.gl_voucher_policies = _Coll("gl_voucher_policies")
         self.gl_operational_mappings = _Coll("gl_operational_mappings")
         self.gl_intercompany_rules = _Coll("gl_intercompany_rules")
         self.gl_eledger_settings = _Coll("gl_eledger_settings")
@@ -171,6 +172,7 @@ def test_accounting_subledgers_are_strictly_tenant_scoped():
         "fixed_assets",
         "depreciation_entries",
         "gl_counters",
+        "gl_voucher_policies",
         "gl_sequence_reservations",
         "gl_year_end_closures",
         "gl_operational_mappings",
@@ -1485,6 +1487,7 @@ def _voucher_payload(amount=100, *, date="2026-08-10"):
 
 
 async def test_voucher_requires_maker_checker_before_posting(_patch):
+    await gl.save_voucher_approval_policy(gl.VoucherApprovalPolicyIn(mode="dual_control", version=0, reason="Tesis çift kontrol tercihi"), current_user=_user("admin"))
     await _seed_basic_coa()
     maker = _user("finance", user_id="maker")
     approver = _user("finance", user_id="approver")
@@ -1531,6 +1534,99 @@ async def test_voucher_requires_maker_checker_before_posting(_patch):
     assert [event["action"] for event in posted["voucher"]["history"]] == [
         "created", "submitted", "approved", "posting", "posted",
     ]
+
+
+@pytest.mark.parametrize("role", ["finance", "admin", "super_admin"])
+@pytest.mark.parametrize("submit", [False, True])
+async def test_authorized_maker_can_finalize_own_voucher_once_with_reason(_patch, role, submit):
+    await _seed_basic_coa()
+    maker = _user(role, user_id="maker")
+    voucher = (await gl.create_voucher(_voucher_payload(), current_user=maker))["voucher"]
+    if submit:
+        await gl.submit_voucher(voucher["id"], gl.VoucherActionIn(reason="Eski inceleme kuyruğu"), current_user=maker)
+    result = await gl.finalize_voucher(voucher["id"], gl.VoucherActionIn(reason=" Belge ve tutarları kontrol ettim "), current_user=maker)
+    assert result["voucher"]["status"] == "posted"
+    assert result["voucher"]["approved_by"] == result["voucher"]["posted_by"] == "maker"
+    assert result["voucher"]["approval_reason"] == "Belge ve tutarları kontrol ettim"
+    assert result["voucher"]["approval_mode"] == "authorized_self"
+    assert result["voucher"]["self_approved"] is True
+    assert gl_posting.verify_journal_entry_hash(result["entry"])
+    replay = await gl.finalize_voucher(voucher["id"], gl.VoucherActionIn(reason="Güvenli tekrar denemesi"), current_user=maker)
+    assert replay["already_posted"] and replay["entry"]["id"] == result["entry"]["id"]
+    assert len(_patch.gl_journal_entries.docs) == 1
+
+
+async def test_voucher_policy_is_admin_only_versioned_tenant_scoped_and_audited(_patch, monkeypatch):
+    from unittest.mock import AsyncMock
+    audit = AsyncMock()
+    monkeypatch.setattr(gl, "log_audit_event", audit)
+    assert (await gl.get_voucher_approval_policy(current_user=_user("finance")))["can_manage"] is False
+    with pytest.raises(HTTPException) as exc:
+        await gl.save_voucher_approval_policy(gl.VoucherApprovalPolicyIn(mode="dual_control", version=0, reason="Yetkisiz değişiklik"), current_user=_user("finance"))
+    assert exc.value.status_code == 403
+    response = await gl.save_voucher_approval_policy(gl.VoucherApprovalPolicyIn(mode="dual_control", version=0, reason="İşletme tercihi"), current_user=_user("admin"))
+    assert response["policy"]["version"] == 1
+    assert audit.call_args.kwargs["after_value"]["reason"] == "İşletme tercihi"
+    other = _user("admin", tenant="tenant-B")
+    assert (await gl.get_voucher_approval_policy(current_user=other))["policy"]["mode"] == "authorized_self"
+    with pytest.raises(HTTPException) as stale:
+        await gl.save_voucher_approval_policy(gl.VoucherApprovalPolicyIn(mode="authorized_self", version=0, reason="Eski ekran"), current_user=_user("admin"))
+    assert stale.value.status_code == 409
+    await gl.save_voucher_approval_policy(gl.VoucherApprovalPolicyIn(mode="authorized_self", version=1, reason="Tek yetkili tercih edildi"), current_user=_user("admin"))
+    assert (await gl.get_voucher_approval_policy(current_user=_user("admin")))["policy"]["version"] == 2
+
+
+async def test_dual_control_cannot_be_bypassed_by_finalize_and_rechecks_pending_approval(_patch):
+    await _seed_basic_coa()
+    maker, checker = _user("finance", user_id="maker"), _user("finance", user_id="checker")
+    voucher = (await gl.create_voucher(_voucher_payload(), current_user=maker))["voucher"]
+    await gl.submit_voucher(voucher["id"], gl.VoucherActionIn(reason="Kontrol için hazır"), current_user=maker)
+    await gl.approve_voucher(voucher["id"], gl.VoucherActionIn(reason="Yetkili kendi kontrolü"), current_user=maker)
+    await gl.save_voucher_approval_policy(gl.VoucherApprovalPolicyIn(mode="dual_control", version=0, reason="Kontrol politikası değişti"), current_user=_user("admin"))
+    with pytest.raises(HTTPException) as exc:
+        await gl.finalize_voucher(voucher["id"], gl.VoucherActionIn(reason="Doğrudan kesinleştirme denemesi"), current_user=maker)
+    assert exc.value.status_code == 409
+    await gl.approve_voucher(voucher["id"], gl.VoucherActionIn(reason="Bağımsız kontrol tamam"), current_user=checker)
+    assert (await gl.post_approved_voucher(voucher["id"], current_user=maker))["voucher"]["status"] == "posted"
+    draft = (await gl.create_voucher(_voucher_payload(), current_user=maker))["voucher"]
+    with pytest.raises(HTTPException) as blocked:
+        await gl.finalize_voucher(draft["id"], gl.VoucherActionIn(reason="İkinci kişi atlanamaz"), current_user=checker)
+    assert blocked.value.status_code == 409
+
+
+@pytest.mark.parametrize("role", ["supervisor", "front_desk", "housekeeping"])
+async def test_unprivileged_user_cannot_finalize_vouchers(_patch, role):
+    with pytest.raises(HTTPException) as exc:
+        await gl.finalize_voucher("any", gl.VoucherActionIn(reason="Yetki kontrolü"), current_user=_user(role))
+    assert exc.value.status_code == 403
+
+
+async def test_finalization_preserves_closed_period_and_tenant_boundaries(_patch):
+    await _seed_basic_coa()
+    maker = _user("finance", user_id="maker")
+    voucher = (await gl.create_voucher(_voucher_payload(), current_user=maker))["voucher"]
+    with pytest.raises(HTTPException) as other:
+        await gl.finalize_voucher(voucher["id"], gl.VoucherActionIn(reason="Başka tesisin fişi"), current_user=_user("admin", tenant="tenant-B"))
+    assert other.value.status_code == 404
+    await gl.ensure_calendar_year_periods(_patch, TENANT, 2026, actor="maker")
+    await _patch.gl_periods.update_one({"tenant_id": TENANT, "period_no": 8}, {"$set": {"status": "closed"}})
+    with pytest.raises(HTTPException) as closed:
+        await gl.finalize_voucher(voucher["id"], gl.VoucherActionIn(reason="Kapalı döneme yazılamaz"), current_user=maker)
+    assert closed.value.status_code == 409
+    assert not _patch.gl_journal_entries.docs
+    assert (await gl.get_voucher(voucher["id"], current_user=maker))["voucher"]["status"] == "draft"
+
+
+async def test_damaged_policy_does_not_fall_back_to_self_approval(_patch):
+    await _patch.gl_voucher_policies.insert_one({"_id": f"voucher-policy:{TENANT}", "tenant_id": TENANT, "mode": "typo", "version": 1})
+    with pytest.raises(HTTPException) as exc:
+        await gl.get_voucher_approval_policy(current_user=_user("admin"))
+    assert exc.value.status_code == 409
+
+
+def test_voucher_reason_rejects_whitespace():
+    with pytest.raises(ValidationError):
+        gl.VoucherActionIn(reason="   ")
 
 
 async def test_voucher_post_failure_is_returned_to_approved_and_audited(_patch, monkeypatch):

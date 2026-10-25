@@ -115,9 +115,22 @@ describe('FolioDetailView payment void', () => {
       </MemoryRouter>,
     );
 
-    await screen.findByText('Ödeme tahsilatı');
+    await screen.findByText('Nakit tahsilatı');
     expect(screen.queryByRole('button', { name: 'İade' })).not.toBeInTheDocument();
     expect(post).not.toHaveBeenCalled();
+  });
+
+  it('labels linked offsets and reversals without offering generic cash refunds', async () => {
+    get.mockResolvedValue({ data: { ...detail, summary: { ...detail.summary, cash_collection_total: 0, non_cash_settlement_total: 0, balance: 20 },
+      timeline: [
+        { ...detail.timeline[0], id: 'barter01', method: 'barter', category: 'barter', amount: 2, balance_effect: -2, running_balance: 18, billing_settlement_id: 'linked', received_amount: 2, received_currency: 'USD' },
+        { ...detail.timeline[0], id: 'reverse1', type: 'refund', method: 'barter', category: 'barter', amount: -2, payment_type: 'refund', balance_effect: 2, running_balance: 20, billing_settlement_id: 'undo' },
+      ] } });
+    render(<MemoryRouter><FolioDetailView folioId={folioId} /></MemoryRouter>);
+    expect(await screen.findByText('Barter (tahsilat değil) · ters kayıt')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'İade' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Alınan:/)).not.toBeInTheDocument();
+    expect(screen.getByTestId('timeline-item-reverse1')).toHaveTextContent('+');
   });
 
   it('does not submit a void when peer PIN verification is rejected', async () => {

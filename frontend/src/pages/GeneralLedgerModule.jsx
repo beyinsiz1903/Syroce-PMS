@@ -15,6 +15,7 @@ import AccountingSetupWizard from '@/pages/accounting/AccountingSetupWizard';
 import { AccountLedgerView } from '@/pages/accounting/AccountLedgerView';
 import { GeneralLedgerNavigation } from '@/pages/accounting/GeneralLedgerNavigation';
 import { GeneralLedgerOverview } from '@/pages/accounting/GeneralLedgerOverview';
+import { VoucherPolicyControls } from '@/pages/accounting/VoucherPolicyControls';
 import { Plus, Save, FileText, AlertCircle, CalendarRange, LockKeyhole, Unlock, RotateCcw, Landmark, TrendingUp, PackageOpen, Cable, ReceiptText, Send, CheckCircle2, XCircle, ShieldCheck } from 'lucide-react';
 
 export const GL_ENDPOINTS = {
@@ -253,7 +254,13 @@ const VOUCHER_STATUS = {
   cancelled: { label: 'İptal', className: 'bg-gray-100 text-gray-600' },
 };
 
-export const voucherActionNames = (status) => ({
+export const voucherActionNames = (status, mode) => mode === 'authorized_self' ? ({
+  draft: ['edit', 'finalize', 'cancel'],
+  submitted: ['finalize', 'reject'],
+  approved: ['finalize'],
+  posting: ['post'],
+  rejected: ['edit', 'cancel'],
+}[status] || []) : ({
   draft: ['edit', 'submit', 'cancel'],
   submitted: ['approve', 'reject'],
   approved: ['post'],
@@ -407,6 +414,7 @@ const GeneralLedgerModule = () => {
   const [accounts, setAccounts] = useState([]);
   const [journals, setJournals] = useState([]);
   const [vouchers, setVouchers] = useState([]);
+  const [voucherPolicy, setVoucherPolicy] = useState(null);
   const [sequenceAudit, setSequenceAudit] = useState(null);
   const [integrityAudit, setIntegrityAudit] = useState(null);
   const [trialBalance, setTrialBalance] = useState({ lines: [], totals: {} });
@@ -1058,7 +1066,7 @@ const GeneralLedgerModule = () => {
         toast.success('Taslak fiş güncellendi. Değişiklik geçmişi korundu.');
       } else {
         await axios.post(GL_ENDPOINTS.vouchers, toVoucherPayload(newJournal, ledgerCurrency));
-        toast.success('Taslak fiş oluşturuldu. Yevmiyeye geçmesi için inceleme ve onay gerekir.');
+        toast.success('Taslak fiş oluşturuldu. Tesisin onay politikasına göre kesinleştirebilirsiniz.');
       }
       setNewJournal(emptyJournal(businessDate));
       setEditingVoucher(null);
@@ -1087,6 +1095,7 @@ const GeneralLedgerModule = () => {
       reject: 'reddetme',
       cancel: 'iptal',
       post: 'yevmiye kaydı',
+      finalize: 'gerekçeli kesinleştirme',
     };
     const busyKey = `${voucher.id}:${action}`;
     setVoucherBusy(busyKey);
@@ -1283,7 +1292,7 @@ const GeneralLedgerModule = () => {
               <Card>
                 <CardHeader>
                   <CardTitle>{editingVoucher ? `${editingVoucher.voucher_no} Taslağını Düzenle` : 'Yeni Taslak Muhasebe Fişi'}</CardTitle>
-                  <p className="text-sm text-gray-500">Taslak doğrudan yevmiyeye yazılmaz. Hazırlayan kişi incelemeye gönderir; farklı bir yetkili onaylar ve kayıt işlemini tamamlar.</p>
+                  <p className="text-sm text-gray-500">Taslak doğrudan yevmiyeye yazılmaz. Yetkili kullanıcı gerekçeyle kesinleştirir; tesis ikinci kişi onayını seçmişse inceleme akışı uygulanır.</p>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="grid gap-4 sm:grid-cols-3">
@@ -1354,6 +1363,7 @@ const GeneralLedgerModule = () => {
 
             {/* Recent Journals */}
             <div>
+              <VoucherPolicyControls onChange={setVoucherPolicy} />
               {integrityAudit && (
                 <div className={`mb-4 rounded-lg border p-3 ${integrityAudit.fully_sealed ? 'border-emerald-200 bg-emerald-50' : 'border-amber-300 bg-amber-50'}`} data-testid="gl-integrity-audit">
                   <div className="flex items-center justify-between gap-2">
@@ -1388,6 +1398,8 @@ const GeneralLedgerModule = () => {
                 <CardContent className="space-y-3 max-h-[420px] overflow-y-auto" data-testid="gl-voucher-queue">
                   {vouchers.map((voucher) => {
                     const status = VOUCHER_STATUS[voucher.status] || { label: voucher.status, className: 'bg-gray-100 text-gray-700' };
+                    const actions = voucherPolicy?.can_finalize ? voucherActionNames(voucher.status, voucherPolicy.policy.mode) : [];
+                    if (voucherPolicy?.policy.mode === 'dual_control' && voucher.status === 'approved' && voucher.self_approved) actions.unshift('approve');
                     return (
                       <div key={voucher.id} className="rounded-lg border bg-white p-3">
                         <div className="flex items-start justify-between gap-2">
@@ -1400,6 +1412,7 @@ const GeneralLedgerModule = () => {
                         {voucher.rejection_reason && <p className="mt-2 text-xs text-red-700">Ret: {voucher.rejection_reason}</p>}
                         {voucher.last_post_error && <p className="mt-2 text-xs text-red-700">Yevmiye hatası: {voucher.last_post_error}</p>}
                         {voucher.journal_entry_no && <p className="mt-2 text-xs text-emerald-700">Yevmiye: {voucher.journal_entry_no}</p>}
+                        {voucher.self_approved && <p className="mt-2 text-xs text-slate-600">Hazırlayan yetkili kendi fişini gerekçesiyle onayladı.</p>}
                         <details className="mt-3 rounded border border-slate-100 bg-slate-50 px-2 py-1.5 text-xs text-slate-600">
                           <summary className="cursor-pointer font-medium text-slate-700">Geçmiş ({(voucher.history || []).length})</summary>
                           {(voucher.history || []).length > 0 ? (
@@ -1410,24 +1423,25 @@ const GeneralLedgerModule = () => {
                             </ol>
                           ) : <p className="mt-2">Geçmiş kaydı bulunmuyor.</p>}
                         </details>
-                        {voucherActionNames(voucher.status).length > 0 && (
+                        {actions.length > 0 && (
                           <div className="mt-3 flex flex-wrap gap-2">
-                            {voucherActionNames(voucher.status).includes('edit') && (
+                            {actions.includes('finalize') && <Button size="sm" disabled={!!voucherBusy} onClick={() => requestVoucherAction(voucher, 'finalize')}><CheckCircle2 className="mr-1.5 h-3.5 w-3.5" /> Gerekçeyle Kesinleştir</Button>}
+                            {actions.includes('edit') && (
                               <Button size="sm" variant="outline" disabled={!!voucherBusy} onClick={() => editVoucher(voucher)}>Düzenle</Button>
                             )}
-                            {voucherActionNames(voucher.status).includes('submit') && (
+                            {actions.includes('submit') && (
                               <Button size="sm" variant="outline" disabled={!!voucherBusy} onClick={() => requestVoucherAction(voucher, 'submit')}><Send className="mr-1.5 h-3.5 w-3.5" /> İncelemeye Gönder</Button>
                             )}
-                            {voucherActionNames(voucher.status).includes('approve') && (
+                            {actions.includes('approve') && (
                               <Button size="sm" disabled={!!voucherBusy} onClick={() => requestVoucherAction(voucher, 'approve')}><CheckCircle2 className="mr-1.5 h-3.5 w-3.5" /> Onayla</Button>
                             )}
-                            {voucherActionNames(voucher.status).includes('reject') && (
+                            {actions.includes('reject') && (
                               <Button size="sm" variant="outline" disabled={!!voucherBusy} onClick={() => requestVoucherAction(voucher, 'reject')}><XCircle className="mr-1.5 h-3.5 w-3.5" /> Reddet</Button>
                             )}
-                            {voucherActionNames(voucher.status).includes('post') && (
+                            {actions.includes('post') && (
                               <Button size="sm" disabled={!!voucherBusy} onClick={() => requestVoucherAction(voucher, 'post')}><Save className="mr-1.5 h-3.5 w-3.5" /> Yevmiyeye İşle</Button>
                             )}
-                            {voucherActionNames(voucher.status).includes('cancel') && (
+                            {actions.includes('cancel') && (
                               <Button size="sm" variant="ghost" disabled={!!voucherBusy} onClick={() => requestVoucherAction(voucher, 'cancel')}>İptal Et</Button>
                             )}
                           </div>
@@ -2180,7 +2194,7 @@ const GeneralLedgerModule = () => {
           <DialogHeader>
             <DialogTitle>Fiş İşlemini Onayla</DialogTitle>
             <DialogDescription>
-              {voucherActionDialog?.voucher?.voucher_no} için {voucherActionDialog?.action === 'submit' ? 'incelemeye gönderme' : voucherActionDialog?.action === 'approve' ? 'onaylama' : voucherActionDialog?.action === 'reject' ? 'reddetme' : 'iptal'} gerekçesini yazın.
+              {voucherActionDialog?.voucher?.voucher_no} için {voucherActionDialog?.action === 'finalize' ? 'yevmiye kaydını kesinleştirme' : voucherActionDialog?.action === 'submit' ? 'incelemeye gönderme' : voucherActionDialog?.action === 'approve' ? 'onaylama' : voucherActionDialog?.action === 'reject' ? 'reddetme' : 'iptal'} gerekçesini yazın. Kullanıcı, zaman ve gerekçe işlem geçmişine kaydedilir.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">

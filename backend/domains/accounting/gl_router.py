@@ -17,7 +17,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
@@ -843,6 +843,19 @@ class VoucherUpdateIn(VoucherCreateIn):
 class VoucherActionIn(BaseModel):
     reason: str = Field(..., min_length=3, max_length=500)
 
+    @field_validator("reason")
+    @classmethod
+    def meaningful_reason(cls, value: str) -> str:
+        value = value.strip()
+        if len(value) < 3:
+            raise ValueError("Gerekçe en az 3 karakter olmalıdır")
+        return value
+
+
+class VoucherApprovalPolicyIn(VoucherActionIn):
+    mode: Literal["authorized_self", "dual_control"]
+    version: int = Field(..., ge=0)
+
 
 class FXRevaluationIn(BaseModel):
     date: str = Field(..., min_length=10, max_length=10, pattern=r"^\d{4}-\d{2}-\d{2}$")
@@ -964,6 +977,45 @@ class AccountingSetupOpeningBalanceIn(BaseModel):
 _VOUCHER_STATUSES = {"draft", "submitted", "approved", "rejected", "posting", "posted", "cancelled"}
 
 
+async def _voucher_approval_policy(tenant_id: str) -> dict:
+    row = await db.gl_voucher_policies.find_one({"_id": f"voucher-policy:{tenant_id}", "tenant_id": tenant_id}, {"_id": 0})
+    if row is None:
+        return {"mode": "authorized_self", "version": 0}
+    # A damaged setting must not silently weaken the property's controls.
+    if row.get("mode") not in {"authorized_self", "dual_control"} or not isinstance(row.get("version"), int) or row["version"] < 1:
+        raise HTTPException(status_code=409, detail="Fiş onay politikası geçersiz; yönetici kontrolü gerekli")
+    return {key: row.get(key) for key in ("mode", "version", "updated_at", "updated_by", "reason")}
+
+
+@router.get("/voucher-policy")
+async def get_voucher_approval_policy(current_user: User = Depends(get_current_user)):
+    _require_role(current_user, _READ_ROLES)
+    return {
+        "policy": await _voucher_approval_policy(_tenant_of(current_user)),
+        "can_manage": bool(getattr(current_user, "is_super_admin", False) or _role_of(current_user) in _REOPEN_ROLES),
+        "can_finalize": bool(getattr(current_user, "is_super_admin", False) or _role_of(current_user) in _GL_ROLES),
+    }
+
+
+@router.put("/voucher-policy")
+async def save_voucher_approval_policy(payload: VoucherApprovalPolicyIn, current_user: User = Depends(get_current_user)):
+    _require_role(current_user, _REOPEN_ROLES)
+    tenant_id, actor = _tenant_of(current_user), _actor_id(current_user)
+    before = await _voucher_approval_policy(tenant_id)
+    if before["version"] != payload.version:
+        raise HTTPException(status_code=409, detail="Onay politikası değişti; yenileyip tekrar deneyin")
+    after = {"mode": payload.mode, "version": payload.version + 1, "updated_at": _now_iso(), "updated_by": actor, "reason": payload.reason}
+    query = {"_id": f"voucher-policy:{tenant_id}", "tenant_id": tenant_id, "version": payload.version}
+    try:
+        result = await db.gl_voucher_policies.update_one(query, {"$set": after}, upsert=payload.version == 0)
+    except DuplicateKeyError as exc:
+        raise HTTPException(status_code=409, detail="Onay politikası eşzamanlı olarak değişti") from exc
+    if not result.modified_count and not result.upserted_id:
+        raise HTTPException(status_code=409, detail="Onay politikası eşzamanlı olarak değişti")
+    await log_audit_event(tenant_id=tenant_id, user_id=actor, action="gl_voucher_policy_changed", entity_type="gl_voucher_policy", entity_id=tenant_id, details="Muhasebe fişi onay politikası değiştirildi", before_value=before, after_value=after, db=db)
+    return {"policy": after, "can_manage": True, "can_finalize": True}
+
+
 def _normalized_voucher_payload(payload: VoucherCreateIn | VoucherUpdateIn) -> dict:
     try:
         lines, total_debit, total_credit = normalize_journal_lines([line.model_dump() for line in payload.lines])
@@ -1052,9 +1104,11 @@ async def _audit_voucher_transition(
         action=action,
         entity_type="gl_voucher",
         entity_id=voucher["id"],
-        details=f"{voucher.get('voucher_no')} fişi: {before_status or '-'} → {after_status}",
+        details=f"{voucher.get('voucher_no')} fişi: {before_status or '-'} → {after_status}" + (f". Gerekçe: {reason}" if reason else ""),
         before_value={"status": before_status},
-        after_value={"status": after_status, "reason": reason},
+        after_value={"status": after_status, "reason": reason, "approval_mode": voucher.get("approval_mode"), "self_approved": voucher.get("self_approved"),
+            "voucher_no": voucher.get("voucher_no"), "total_debit": voucher.get("total_debit"), "total_credit": voucher.get("total_credit"),
+            "created_by": voucher.get("created_by"), "approved_by": voucher.get("approved_by"), "posted_by": voucher.get("posted_by")},
         db=db,
     )
 
@@ -1262,32 +1316,46 @@ async def approve_voucher(
     payload: VoucherActionIn,
     current_user: User = Depends(get_current_user),
 ):
+    return await _approve_voucher(voucher_id, payload, current_user)
+
+
+async def _approve_voucher(voucher_id: str, payload: VoucherActionIn, current_user: User, *, allow_draft: bool = False):
     _require_role(current_user, _GL_ROLES)
     tenant_id = _tenant_of(current_user)
     actor = _actor_id(current_user)
+    policy = await _voucher_approval_policy(tenant_id)
+    if allow_draft and policy["mode"] != "authorized_self":
+        raise HTTPException(status_code=409, detail="Bu tesiste ikinci kişi onayı gerekli; inceleme akışını kullanın")
+    eligible = ["draft", "submitted"] if allow_draft else ["submitted", "approved"]
     voucher = await db.gl_vouchers.find_one(
-        {"tenant_id": tenant_id, "id": voucher_id, "status": "submitted"},
+        {"tenant_id": tenant_id, "id": voucher_id, "status": {"$in": eligible}},
         {"_id": 0},
     )
     if not voucher:
         raise HTTPException(status_code=409, detail="Yalnız incelemedeki fiş onaylanabilir")
-    if voucher.get("created_by") == actor:
+    if voucher["status"] == "approved" and not (policy["mode"] == "dual_control" and voucher.get("created_by") == voucher.get("approved_by")):
+        raise HTTPException(status_code=409, detail="Fiş zaten onaylanmış")
+    self_approved = voucher.get("created_by") == actor
+    if self_approved and policy["mode"] == "dual_control":
         raise HTTPException(status_code=409, detail="Fişi hazırlayan kullanıcı aynı fişi onaylayamaz")
     await _validate_voucher_context(tenant_id, voucher, actor)
     now = _now_iso()
     result = await db.gl_vouchers.update_one(
-        {"tenant_id": tenant_id, "id": voucher_id, "status": "submitted", "version": voucher.get("version", 1)},
+        {"tenant_id": tenant_id, "id": voucher_id, "status": voucher["status"], "version": voucher.get("version", 1)},
         {
             "$set": {
                 "status": "approved",
                 "approved_at": now,
                 "approved_by": actor,
                 "approval_reason": payload.reason.strip(),
+                "approval_mode": policy["mode"],
+                "approval_policy_version": policy["version"],
+                "self_approved": self_approved,
                 "updated_at": now,
                 "updated_by": actor,
                 "version": int(voucher.get("version") or 1) + 1,
             },
-            "$push": {"history": {"at": now, "by": actor, "action": "approved", "status": "approved", "reason": payload.reason.strip()}},
+            "$push": {"history": {"at": now, "by": actor, "action": "approved", "status": "approved", "reason": payload.reason.strip(), "approval_mode": policy["mode"], "self_approved": self_approved}},
         },
     )
     if result.modified_count != 1:
@@ -1298,11 +1366,24 @@ async def approve_voucher(
         actor=actor,
         voucher=updated,
         action="gl_voucher_approved",
-        before_status="submitted",
+        before_status=voucher["status"],
         after_status="approved",
         reason=payload.reason.strip(),
     )
     return {"voucher": updated}
+
+
+@router.post("/vouchers/{voucher_id}/finalize")
+async def finalize_voucher(voucher_id: str, payload: VoucherActionIn, current_user: User = Depends(get_current_user)):
+    """One explicit, reasoned action; retain the sealed, idempotent posting path."""
+    _require_role(current_user, _GL_ROLES)
+    tenant_id = _tenant_of(current_user)
+    voucher = await db.gl_vouchers.find_one({"tenant_id": tenant_id, "id": voucher_id}, {"_id": 0})
+    if not voucher:
+        raise HTTPException(status_code=404, detail="Muhasebe fişi bulunamadı")
+    if voucher.get("status") not in {"posted", "posting", "approved"}:
+        await _approve_voucher(voucher_id, payload, current_user, allow_draft=True)
+    return await post_approved_voucher(voucher_id, current_user=current_user)
 
 
 @router.post("/vouchers/{voucher_id}/reject")
@@ -1417,6 +1498,10 @@ async def post_approved_voucher(voucher_id: str, current_user: User = Depends(ge
         return {"voucher": voucher, "entry": entry, "already_posted": True}
     if voucher.get("status") not in {"approved", "posting"}:
         raise HTTPException(status_code=409, detail="Yalnız onaylanmış fiş yevmiyeye işlenebilir")
+    if voucher.get("status") == "approved":
+        policy = await _voucher_approval_policy(tenant_id)
+        if policy["mode"] == "dual_control" and voucher.get("approved_by") == voucher.get("created_by"):
+            raise HTTPException(status_code=409, detail="Tesis ikinci kişi onayına geçti; farklı yetkili fişi yeniden onaylamalı")
     await _validate_voucher_context(tenant_id, voucher, actor)
     now = _now_iso()
     claim_id = voucher.get("posting_claim_id") or str(uuid.uuid4())
