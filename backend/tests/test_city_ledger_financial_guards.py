@@ -566,3 +566,17 @@ async def test_direct_bill_rolls_back_when_finalization_fails(user, collections)
     assert rollback.args[0]["tenant_id"] == "tenant-a"
     assert rollback.args[1] == {"$inc": {"current_balance": -4.0}}
     transactions.delete_one.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_direct_bill_consumes_a_source_backed_negative_customer_credit(user, collections):
+    accounts, transactions, _ = collections
+    accounts.find_one.return_value = {"id": "account-1", "tenant_id": "tenant-a", "account_name": "Credit",
+                                      "current_balance": -1.0, "credit_limit": 250.0}
+    accounts.update_one.return_value = SimpleNamespace(modified_count=1)
+    result = await cashiering.post_to_city_ledger(booking_id="booking-1", account_id="account-1", amount=4.0,
+        description="Yeni borç önce mevcut alacağı tüketir", idempotency_key="credit-use", credentials=None)
+    assert result["new_balance"] == 3.0
+    assert accounts.update_one.await_args.args[0]["current_balance"] == -1.0
+    transactions.insert_one.assert_awaited_once()
+    transactions.delete_one.assert_not_awaited()

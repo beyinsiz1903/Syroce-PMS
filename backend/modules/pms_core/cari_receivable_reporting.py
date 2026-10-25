@@ -69,6 +69,7 @@ def account_positions(accounts, transactions, *, source, fallback_currency, toda
                 if any(code != native for code in nonzero) or cached != ledger.get(native, 0):
                     failures.add(public_key)
                     issues.append({"account_id": public_key, "reason": "account_projection_differs_from_sources",
+                        "account_name": str(account.get("name") or account.get("account_name") or account.get("company_name") or key),
                         "account_currency": native, "account_balance": rounded(cached),
                         "source_balance_by_currency": {code: rounded(value) for code, value in ledger.items()}})
                     # A legacy nonzero projection must not disappear because

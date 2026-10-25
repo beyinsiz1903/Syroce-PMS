@@ -313,7 +313,7 @@ def calculate_stay_night_metrics(
     return result
 
 
-async def load_stay_night_metrics(db, tenant_id: str, start_date: date, end_date: date, *, actual_only: bool = False) -> list[dict]:
+async def load_stay_night_metrics(db, tenant_id: str, start_date: date, end_date: date, *, actual_only: bool = False, include_performance: bool = False) -> list[dict]:
     """Load the minimum shared dataset and calculate canonical metrics."""
     rooms = await db.rooms.find(
         {"tenant_id": tenant_id, "is_active": {"$ne": False}, "is_virtual": {"$ne": True}},
@@ -340,6 +340,7 @@ async def load_stay_night_metrics(db, tenant_id: str, start_date: date, end_date
             "checked_in_business_date": 1,
             "checked_out_at": 1,
             "checked_out_business_date": 1,
+            **(dict.fromkeys(("ota_channel", "source_channel", "channel", "booking_source", "source"), 1) if include_performance else {}),
         },
     ).to_list(None)
     if actual_only:
@@ -358,4 +359,10 @@ async def load_stay_night_metrics(db, tenant_id: str, start_date: date, end_date
         from core.tenant_currency import get_tenant_currency
 
         fallback_currency = (await get_tenant_currency(tenant_id))[0]
-    return calculate_stay_night_metrics(bookings, rooms, start_date, end_date, actual_only=actual_only, room_blocks=room_blocks, fallback_currency=fallback_currency)
+    metrics = calculate_stay_night_metrics(bookings, rooms, start_date, end_date, actual_only=actual_only, room_blocks=room_blocks, fallback_currency=fallback_currency)
+    if include_performance:
+        from modules.pms_core.daily_stay_performance import daily_stay_performance
+
+        for metric in metrics:
+            metric["performance"] = daily_stay_performance(bookings, rooms, as_date(metric["date"]))
+    return metrics

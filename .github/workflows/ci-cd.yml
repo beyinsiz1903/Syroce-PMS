@@ -211,6 +211,7 @@ jobs:
             tests/test_crypto_engine.py \
             tests/unit/test_mobile_reservation_compat.py \
             tests/test_company_aging_cari_sources.py \
+            tests/test_daily_stay_performance.py \
             tests/test_report_room_label_enrichment.py \
             tests/test_housekeeping_room_inventory.py \
             tests/test_outbox_pattern.py \
@@ -532,7 +533,7 @@ jobs:
       - name: Verify audit attribution and transaction chain (hard gate)
         run: |
           cd backend
-          python -m pytest tests/test_audit_chain_replica.py tests/test_audit_helper_session_chain.py \
+          python -m pytest tests/test_audit_chain_replica.py tests/test_audit_helper_session_chain.py tests/test_account_projection_repair.py \
             tests/test_audit_chain.py tests/test_audit_immutability_guard.py -q --timeout=60
 
       - name: Run complete provider-safe backend suite with coverage

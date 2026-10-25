@@ -346,7 +346,7 @@ async def email_daily_flash(
 
 
 @sub_router.get("/reports/daily-flash")
-@cached(ttl=15, key_prefix="report_daily_flash_v2")
+@cached(ttl=15, key_prefix="report_daily_flash_v3")
 async def get_daily_flash_report(
     date_str: str | None = None,
     current_user: User = Depends(get_current_user),
@@ -360,7 +360,7 @@ async def get_daily_flash_report(
         state = await ensure_business_date_initialized(db, current_user.tenant_id)
         target_date = datetime.fromisoformat(state["business_date"][:10]).date()
     day_key = target_date.isoformat()
-    metrics = await load_stay_night_metrics(db, current_user.tenant_id, target_date, target_date, actual_only=True)
+    metrics = await load_stay_night_metrics(db, current_user.tenant_id, target_date, target_date, actual_only=True, include_performance=True)
     metric = metrics[0] if metrics else {"occupied_rooms": 0, "total_rooms": 0, "occupancy_rate": 0}
     total_rooms = metric["total_rooms"]
     occupied_rooms = metric["occupied_rooms"]
@@ -413,6 +413,7 @@ async def get_daily_flash_report(
         "date": day_key,
         "occupancy": {"occupied_rooms": occupied_rooms, "total_rooms": total_rooms, "occupancy_rate": occupancy_rate},
         "movements": {"arrivals": arrivals, "departures": departures, "stayovers": max(occupied_rooms - arrivals, 0)},
+        "performance": metric.get("performance"),
         "revenue": {
             "total_revenue": _single_currency(total_by_currency),
             "total_revenue_by_currency": total_by_currency,

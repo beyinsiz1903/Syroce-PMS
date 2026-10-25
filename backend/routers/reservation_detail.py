@@ -9,6 +9,7 @@ import uuid
 from datetime import UTC, date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Literal
+from uuid import UUID
 
 from bson import ObjectId
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
@@ -4689,6 +4690,50 @@ async def update_reservation_guest(
 
 
 # ── Cari Account Endpoints ──
+
+
+class AccountProjectionRepair(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    request_id: UUID
+    source_fingerprint: str = Field(pattern=r"^[a-f0-9]{64}$")
+    reason: str = Field(min_length=10, max_length=2000)
+    source_review_reference: str = Field(min_length=10, max_length=1000)
+    confirm_sources_authoritative: Literal[True]
+
+    @field_validator("reason", "source_review_reference")
+    @classmethod
+    def reviewed_text(cls, value):
+        if len(value.strip()) < 10:
+            raise ValueError("Anlamlı açıklama ve kaynak inceleme referansı gerekli")
+        return value.strip()
+
+
+@router.get("/account-projections/{source}/{account_id}/preview")
+async def preview_account_projection(source: Literal["cari_accounts", "city_ledger_accounts"], account_id: str,
+    current_user: User = Depends(get_current_user), _perm=Depends(require_op("manage_city_ledger"))):
+    _enforce_perm(current_user, "manage_city_ledger")
+    _ensure_hotel_context(current_user)
+    from core.tenant_currency import get_tenant_currency
+    from modules.pms_core.account_projection_repair import load_projection_preview
+
+    currency, _ = await get_tenant_currency(current_user.tenant_id)
+    _, preview = await load_projection_preview(db, current_user.tenant_id, source, account_id, fallback_currency=currency)
+    return preview
+
+
+@router.post("/account-projections/{source}/{account_id}/repair")
+async def repair_account_projection(source: Literal["cari_accounts", "city_ledger_accounts"], account_id: str, data: AccountProjectionRepair,
+    current_user: User = Depends(get_current_user), _perm=Depends(require_op("manage_city_ledger")),
+    _admin=Depends(require_op("manage_night_audit"))):
+    _enforce_perm(current_user, "manage_city_ledger")
+    _enforce_perm(current_user, "manage_night_audit")
+    _ensure_hotel_context(current_user)
+    from core.database import client
+    from core.tenant_currency import get_tenant_currency
+    from modules.pms_core.account_projection_repair import repair_projection
+
+    currency, _ = await get_tenant_currency(current_user.tenant_id)
+    return await repair_projection(db, client, current_user, source, account_id, data, fallback_currency=currency)
 
 
 @router.get("/cari-accounts")
