@@ -189,6 +189,26 @@ async def test_changed_preview_or_closed_period_never_posts_partial_reversal(led
     assert await db.gl_journal_entries.count_documents({}) == 1
 
 
+async def test_missing_sources_never_erase_nonzero_original_journal(ledger_db):
+    original = await seed(ledger_db)
+    await ledger_db.folio_charges.delete_many({"tenant_id": "hotel"})
+    await ledger_db.payments.delete_many({"tenant_id": "hotel"})
+    for operation in (lambda: v.preview_daily_valuation(ledger_db, "hotel", "run", RATES),
+                      lambda: v.post_daily_valuation(ledger_db, "hotel", "run", RATES, "stale-hash", "operator")):
+        with pytest.raises(v.OperationalValuationError, match="Source history missing"):
+            await operation()
+    assert await ledger_db.gl_journal_entries.count_documents({}) == 1
+    assert await ledger_db.gl_journal_entries.find_one({"id": original["id"]}, {"_id": 0}) == original
+
+
+async def test_genuine_empty_day_without_prior_money_is_still_no_activity(ledger_db):
+    await seed(ledger_db, original=False)
+    await ledger_db.folio_charges.delete_many({"tenant_id": "hotel"})
+    await ledger_db.payments.delete_many({"tenant_id": "hotel"})
+    preview = await v.preview_daily_valuation(ledger_db, "hotel", "run", RATES)
+    assert preview["action"] == "no_activity" and preview["lines"] == []
+
+
 async def test_committed_correction_response_failure_recovers_link_without_double_post(ledger_db, monkeypatch):
     db = ledger_db
     await seed(db)

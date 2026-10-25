@@ -270,6 +270,7 @@ class TestDepositTracking:
         booking_id = bookings_list[0]["id"]
         
         response = api_client.post(f"{BASE_URL}/api/pms/reservations/{booking_id}/record-deposit", json={
+            "request_id": str(uuid.uuid4()),
             "amount": 500.0,
             "method": "cash",
             "reference": "TEST_DEP_001"
@@ -305,6 +306,7 @@ class TestDepositTracking:
         
         # Record deposit
         deposit_resp = api_client.post(f"{BASE_URL}/api/pms/reservations/{booking_id}/record-deposit", json={
+            "request_id": str(uuid.uuid4()),
             "amount": 200.0,
             "method": "card",
             "reference": "TEST_REFUND_DEP"
@@ -314,6 +316,7 @@ class TestDepositTracking:
         
         # Now refund
         response = api_client.post(f"{BASE_URL}/api/pms/reservations/{booking_id}/refund-deposit", json={
+            "request_id": str(uuid.uuid4()),
             "deposit_id": deposit_id,
             "refund_amount": 200.0,
             "refund_method": "cash",
@@ -337,6 +340,7 @@ class TestDepositTracking:
         
         # Record larger deposit
         deposit_resp = api_client.post(f"{BASE_URL}/api/pms/reservations/{booking_id}/record-deposit", json={
+            "request_id": str(uuid.uuid4()),
             "amount": 1000.0,
             "method": "bank_transfer"
         })
@@ -345,6 +349,7 @@ class TestDepositTracking:
         
         # Partial refund
         response = api_client.post(f"{BASE_URL}/api/pms/reservations/{booking_id}/refund-deposit", json={
+            "request_id": str(uuid.uuid4()),
             "deposit_id": deposit_id,
             "refund_amount": 300.0,
             "refund_method": "bank_transfer",

@@ -38,6 +38,15 @@ class FakeSession(AsyncContext):
         return AsyncContext()
 
 
+def _deposit_transaction_unit_boundary(monkeypatch):
+    monkeypatch.setattr(reservation_detail, "_deposit_intent", lambda *_: ("operation-a", "digest-a"))
+    monkeypatch.setattr(reservation_detail, "_replay_deposit", AsyncMock(return_value=None))
+    monkeypatch.setattr(reservation_detail, "_remember_deposit", AsyncMock())
+    async def transaction(**kwargs):
+        return await kwargs["callback"]("session-a")
+    monkeypatch.setattr(reservation_detail, "_run_reservation_financial_transaction", transaction)
+
+
 @pytest.mark.asyncio
 async def test_legacy_cari_object_id_is_found_and_normalized(monkeypatch):
     legacy_id = ObjectId()
@@ -791,6 +800,7 @@ def test_booking_or_folio_scope_includes_legacy_folio_rows():
 @pytest.mark.asyncio
 @pytest.mark.parametrize("status", ["checked_out", "cancelled", "no_show"])
 async def test_terminal_booking_cannot_receive_deposit(monkeypatch, status):
+    _deposit_transaction_unit_boundary(monkeypatch)
     database = SimpleNamespace(
         bookings=SimpleNamespace(
             find_one=AsyncMock(
@@ -811,7 +821,7 @@ async def test_terminal_booking_cannot_receive_deposit(monkeypatch, status):
     with pytest.raises(HTTPException) as exc:
         await reservation_detail.record_deposit(
             "booking-a",
-            reservation_detail.DepositRecord(amount=1, method="cash"),
+            reservation_detail.DepositRecord(request_id=uuid.uuid4(), amount=1, method="cash"),
             current_user=SimpleNamespace(
                 id="user-a",
                 tenant_id="tenant-a",
@@ -829,13 +839,19 @@ async def test_terminal_booking_cannot_receive_deposit(monkeypatch, status):
 
 @pytest.mark.asyncio
 async def test_deposit_is_linked_to_reservation_folio_and_refreshes_balance(monkeypatch):
-    monkeypatch.setattr(reservation_detail, "stamp_open_business_date", AsyncMock(return_value="2026-09-22"))
+    _deposit_transaction_unit_boundary(monkeypatch)
+    async def stamp(_db, _tid, payment):
+        payment["business_date"] = "2026-09-22"
+    monkeypatch.setattr(reservation_detail, "stamp_open_business_date", stamp)
+    from modules.pms_core import folio_selection
     folio = {
         "id": "folio-a",
         "tenant_id": "tenant-a",
         "booking_id": "booking-a",
         "status": "open",
+        "currency": "TRY",
     }
+    monkeypatch.setattr(folio_selection, "select_booking_folio", AsyncMock(return_value=folio))
     database = SimpleNamespace(
         bookings=SimpleNamespace(
             find_one=AsyncMock(
@@ -868,7 +884,7 @@ async def test_deposit_is_linked_to_reservation_folio_and_refreshes_balance(monk
 
     result = await reservation_detail.record_deposit(
         "booking-a",
-        reservation_detail.DepositRecord(amount=500, method="cash"),
+        reservation_detail.DepositRecord(request_id=uuid.uuid4(), amount=500, method="cash"),
         current_user=SimpleNamespace(
             id="user-a",
             tenant_id="tenant-a",
@@ -887,6 +903,7 @@ async def test_deposit_is_linked_to_reservation_folio_and_refreshes_balance(monk
     database.bookings.update_one.assert_awaited_once_with(
         {"id": "booking-a", "tenant_id": "tenant-a"},
         {"$set": {"paid_amount": 750.0}},
+        session="session-a",
     )
     refresh_balance.assert_awaited_once_with("tenant-a", "folio-a")
 
@@ -916,7 +933,7 @@ async def test_deposit_refund_prefers_original_folio(monkeypatch):
 
     assert folio["id"] == "folio-closed"
     database.folios.find_one.assert_awaited_once_with(
-        {"tenant_id": "tenant-a", "id": "folio-closed"},
+        {"tenant_id": "tenant-a", "booking_id": "booking-a", "id": "folio-closed"},
         {"_id": 0},
     )
     database.folios.insert_one.assert_not_awaited()

@@ -20,6 +20,8 @@ import {
   normalizeDepositCurrency
 } from '@/lib/depositCurrency';
 import { depositGuestLabel, formatDepositDate } from '@/lib/depositDisplay';
+import { submitDepositIntent } from '@/lib/depositIntent';
+import DepositIntentRecovery from '@/components/pms/DepositIntentRecovery';
 const API = "";
 export default function DepositTracking({
   user,
@@ -45,6 +47,10 @@ export default function DepositTracking({
   const [bookingSearch, setBookingSearch] = useState('');
   const [bookingResults, setBookingResults] = useState([]);
   const [selectedBooking, setSelectedBooking] = useState(null);
+  const [openDepositFolios, setOpenDepositFolios] = useState([]);
+  const [depositFolio, setDepositFolio] = useState('');
+  const [folioLoading, setFolioLoading] = useState(false);
+  const [folioError, setFolioError] = useState('');
   const [searchingBookings, setSearchingBookings] = useState(false);
 
   // Refund Dialog
@@ -80,6 +86,20 @@ export default function DepositTracking({
   useEffect(() => {
     loadDeposits();
   }, [loadDeposits]);
+  useEffect(() => {
+    let cancelled = false;
+    setOpenDepositFolios([]); setDepositFolio(''); setFolioError('');
+    if (!selectedBooking?.id) { setFolioLoading(false); return; }
+    setFolioLoading(true);
+    axios.get(`/pms/reservations/${selectedBooking.id}/full-detail`).then(res => {
+      if (cancelled) return;
+      const items = (res.data.folios || []).filter(f => f.status === 'open');
+      setOpenDepositFolios(items);
+      if (items.length === 1) setDepositFolio(items[0].id);
+    }).catch(() => { if (!cancelled) setFolioError('Hedef folyolar doğrulanamadı. Rezervasyonu yeniden seçin.'); })
+      .finally(() => { if (!cancelled) setFolioLoading(false); });
+    return () => { cancelled = true; };
+  }, [selectedBooking?.id]);
 
   // Search bookings for new deposit
   useEffect(() => {
@@ -93,7 +113,7 @@ export default function DepositTracking({
         const res = await axios.get(`/pms/bookings?search=${encodeURIComponent(bookingSearch)}&limit=10`, {
           headers
         });
-        setBookingResults(res.data.bookings || []);
+        setBookingResults(Array.isArray(res.data) ? res.data : res.data.bookings || []);
       } catch {
         setBookingResults([]);
       }
@@ -107,6 +127,9 @@ export default function DepositTracking({
       toast.error('Lütfen bir rezervasyon seçin');
       return;
     }
+    if (folioLoading || folioError || (openDepositFolios.length > 1 && !depositFolio)) {
+      toast.error(folioError || 'Depozitonun işleneceği folyoyu seçin'); return;
+    }
     const amount = parseFloat(newDepositData.amount);
     if (!amount || amount <= 0) {
       toast.error('Geçerli bir tutar girin');
@@ -114,13 +137,12 @@ export default function DepositTracking({
     }
     setSavingDeposit(true);
     try {
-      await axios.post(`/pms/reservations/${selectedBooking.id}/record-deposit`, {
+      await submitDepositIntent(selectedBooking.id, 'receive', {
         amount,
+        folio_id: depositFolio || null,
         method: newDepositData.method,
         reference: newDepositData.reference || null
-      }, {
-        headers
-      });
+      }, body => axios.post(`/pms/reservations/${selectedBooking.id}/record-deposit`, body, { headers }));
       toast.success('Depozito kaydedildi');
       setShowNewDeposit(false);
       setNewDepositData({
@@ -150,14 +172,12 @@ export default function DepositTracking({
     }
     setSavingRefund(true);
     try {
-      await axios.post(`/pms/reservations/${refundTarget.booking_id}/refund-deposit`, {
+      await submitDepositIntent(refundTarget.booking_id, 'refund', {
         deposit_id: refundTarget.id,
         refund_amount: amount,
         refund_method: refundData.method,
         reason: refundData.reason || null
-      }, {
-        headers
-      });
+      }, body => axios.post(`/pms/reservations/${refundTarget.booking_id}/refund-deposit`, body, { headers }));
       toast.success('Depozito iadesi başarılı');
       setShowRefund(false);
       setRefundTarget(null);
@@ -361,6 +381,7 @@ export default function DepositTracking({
 
           <div className="space-y-4">
             {/* Booking Search */}
+            {selectedBooking && <DepositIntentRecovery bookingId={selectedBooking.id} onRecovered={loadDeposits} />}
             {!selectedBooking ? <div>
                 <Label className="text-sm">{t('cm.pages_DepositTracking.rezervasyon_ara')}</Label>
                 <div className="relative mt-1">
@@ -400,6 +421,16 @@ export default function DepositTracking({
             }))} className="mt-1" data-testid="deposit-amount-input" />
             </div>
 
+            {folioLoading && <p role="status">Hedef folyolar kontrol ediliyor…</p>}
+            {folioError && <p role="alert" className="text-red-700">{folioError}</p>}
+            {openDepositFolios.length > 1 && <div>
+              <Label htmlFor="deposit-target-folio">Hedef folyo</Label>
+              <select id="deposit-target-folio" className="mt-1 w-full rounded border p-2" value={depositFolio} onChange={e => setDepositFolio(e.target.value)}>
+                <option value="">Folyo seçin</option>
+                {openDepositFolios.map(f => <option key={f.id} value={f.id}>{f.folio_number || f.id} · {f.folio_type || 'Misafir'}</option>)}
+              </select>
+            </div>}
+
             <div>
               <Label className="text-sm">{t('cm.pages_DepositTracking.odeme_yontemi')}</Label>
               <Select value={newDepositData.method} onValueChange={v => setNewDepositData(prev => ({
@@ -428,7 +459,7 @@ export default function DepositTracking({
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowNewDeposit(false)}>{t('cm.pages_DepositTracking.iptal')}</Button>
-            <Button onClick={handleNewDeposit} disabled={savingDeposit || !selectedBooking} data-testid="save-deposit-btn">
+            <Button onClick={handleNewDeposit} disabled={savingDeposit || !selectedBooking || folioLoading || Boolean(folioError) || (openDepositFolios.length > 1 && !depositFolio)} data-testid="save-deposit-btn">
               {savingDeposit ? <Loader2 className="w-4 h-4 animate-spin mr-1.5" /> : <Plus className="w-4 h-4 mr-1.5" />}
               {t('cm.pages_DepositTracking.depozito_kaydet')}
             </Button>
@@ -447,6 +478,7 @@ export default function DepositTracking({
           </DialogHeader>
 
           <div className="space-y-4">
+            {refundTarget && <DepositIntentRecovery bookingId={refundTarget.booking_id} onRecovered={loadDeposits} />}
             <div>
               <Label className="text-sm">İade Tutarı ({depositCurrency(refundTarget)})</Label>
               <Input type="number" step="0.01" min="0" max={refundTarget ? refundTarget.amount - (refundTarget.refunded_amount || 0) : 0} value={refundData.amount} onChange={e => setRefundData(prev => ({

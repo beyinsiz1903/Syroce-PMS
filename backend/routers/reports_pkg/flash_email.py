@@ -452,14 +452,24 @@ async def export_daily_flash_excel(
     from core.tenant_currency import get_tenant_currency
     code, _ = await get_tenant_currency(current_user.tenant_id)
     data = [["Report Date", "", target_date]]
+    data.append(["Room Posting Status", "", "İşlenmeyi bekliyor" if report_data["revenue"].get("posting_pending") else "İşlenmiş"])
     for section in ("occupancy", "movements"):
         data.extend([[key, "", value] for key, value in report_data[section].items()])
     for field, label in (("total_revenue", "Total Revenue"), ("room_revenue", "Room Revenue"),
                          ("fb_revenue", "F&B Revenue"), ("other_revenue", "Other Revenue"),
                          ("adr", "ADR"), ("rev_par", "RevPAR")):
-        totals = report_data["revenue"].get(field + "_by_currency") or {code: report_data["revenue"].get(field) or 0}
+        if field in {"adr", "rev_par"} and report_data["revenue"].get("posting_pending"):
+            data.append([label, "", "İşlenmeyi bekliyor"])
+            continue
+        totals = report_data["revenue"].get(field + "_by_currency") or {code: report_data["revenue"].get(field)}
         data.extend([[label, currency, amount] for currency, amount in sorted(totals.items())])
+    for field, label in (("operational_adr_by_currency", "Accrued ADR (not posted revenue)"),
+                         ("operational_revpar_by_currency", "Accrued RevPAR (not posted revenue)")):
+        data.extend([[label, currency, amount] for currency, amount in sorted(report_data["revenue"].get(field, {}).items())])
     wb = create_excel_workbook(title=f"Daily Flash Report - {target_date}", headers=["Metric", "Currency", "Value"], data=data, sheet_name="Daily Flash")
+    # Pending/accrual basis is essential information, not a truncated label.
+    for column, width in (("A", 46), ("B", 12), ("C", 26)):
+        wb.active.column_dimensions[column].width = width
     return excel_response(wb, f"daily_flash_report_{target_date}.xlsx")
 
 

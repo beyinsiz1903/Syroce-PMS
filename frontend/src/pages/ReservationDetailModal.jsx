@@ -1114,7 +1114,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                 <TabsContent value="cancel" className="mt-0"><CancelTab booking={booking} bookingId={bookingId} onRefresh={loadData} onClose={handleClose} /></TabsContent>
                 <TabsContent value="voucher" className="mt-0"><VoucherTab booking={booking} bookingId={bookingId} /></TabsContent>
                 <TabsContent value="invoice" className="mt-0"><InvoiceTab booking={booking} bookingId={bookingId} /></TabsContent>
-                <TabsContent value="deposits" className="mt-0"><DepositsTab deposits={deposits} booking={booking} onRefresh={loadData} /></TabsContent>
+                <TabsContent value="deposits" className="mt-0"><DepositsTab deposits={deposits} booking={booking} folios={folios} onRefresh={loadData} /></TabsContent>
                 <TabsContent value="communication" className="mt-0"><CommunicationTab booking={booking} onRefresh={loadData} communicationLogs={communication_logs} /></TabsContent>
                 <TabsContent value="notes" className="mt-0"><NotesTab notes={notes} booking={booking} onRefresh={loadData} /></TabsContent>
                 <TabsContent value="history" className="mt-0"><HistoryTab history={history} roomMoves={room_moves} currency={booking?.currency} /></TabsContent>
