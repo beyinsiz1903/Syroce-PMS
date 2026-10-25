@@ -13,6 +13,17 @@ card, and are not the refundable security-fund liability workflow.
   Online gateway, comp, city ledger and wallet are not interchangeable methods.
 - Positive, finite, exact two-decimal amounts and a known source/folio currency
   are required. This flow supports TRY/USD/EUR/GBP/CHF without implicit FX.
+- A foreign receipt requires explicit positive `received_to_try_rate` and a
+  source-rate/receipt `reference`. Ledger/received units remain in the original
+  currency; the immutable TRY value is separately stored. No default 1:1 rate.
+- Each receipt/refund joins the active cashier shift in the same financial
+  transaction, including card/bank rows. Only cash affects `cash_in/cash_out`.
+  Cash requires an open shift; non-cash without a shift retains existing POS
+  policy and remains a source payment, not an invented shift transaction.
+- Refund TRY value is cumulatively allocated from the original receipt. Full
+  refund returns exactly its original TRY cents. No current-rate conversion or
+  realised-FX claim. Old foreign deposits missing that source snapshot block a
+  new refund; already committed UUID replays stay valid across the schema change.
 - `record-deposit` accepts optional `folio_id`. Multiple open windows require
   an explicit selection. A target belonging to another booking/tenant is denied.
 - Refunds stay on their original folio, even if closed. A missing/wrong source

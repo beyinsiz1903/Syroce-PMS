@@ -3,7 +3,7 @@
 These deposits settle the reservation folio; they are not refundable security
 liabilities. No gateway operation or historical payment is manufactured.
 """
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from fastapi import HTTPException
@@ -11,6 +11,51 @@ from fastapi import HTTPException
 from core.audit_chain import append_audit_log
 from modules.pms_core.enterprise_billing import fingerprint
 from shared_kernel.audit_helper import build_audit_entry
+
+
+def cashier_snapshot(payment, *, source=None, refunded_total=None):
+    """Value a new receipt explicitly, or allocate its source TRY value on refund.
+
+    Refunds use the immutable receipt valuation, not today's rate. Cumulative
+    cent allocation makes a full refund equal the original drawer value.
+    """
+    from modules.pms_core.payment_cashier_snapshot import cashier_values
+
+    currency = payment["currency"]
+    amount = abs(Decimal(str(payment["amount"])))
+    payment.update(received_currency=currency, received_amount=float(amount), exchange_rate=1,
+        execution="external_record_only")
+    cumulative = None
+    if source is not None:
+        original, refunded, _ = remaining(source)
+        if currency != "TRY" and source.get("cashier_snapshot_version") != 1:
+            raise HTTPException(409, "Eski döviz depozitosunun kaynak TL değerlemesi eksik; kur varsayılarak iade kaydedilemez")
+        try:
+            base = Decimal(str(source.get("reporting_amount") if source.get("reporting_amount") is not None else original if currency == "TRY" else None))
+            if not base.is_finite() or base <= 0 or base != base.quantize(Decimal(".01")):
+                raise ValueError
+            original = Decimal(str(original))
+            previous = (base * Decimal(str(refunded)) / original).quantize(Decimal(".01"), rounding=ROUND_HALF_UP)
+            cumulative = (base * Decimal(str(refunded_total)) / original).quantize(Decimal(".01"), rounding=ROUND_HALF_UP)
+            payment["reporting_currency"] = "TRY"
+            payment["reporting_amount"] = float(cumulative - previous)
+            if currency != "TRY":
+                payment["source_received_to_try_rate"] = source["received_to_try_rate"]
+        except (ArithmeticError, TypeError, ValueError, KeyError):
+            raise HTTPException(409, "Depozitonun kaynak TL değerlemesi doğrulanamadı") from None
+    values = cashier_values(payment)
+    payment["exchange_rate_date"] = payment["business_date"]
+    return values, float(cumulative) if cumulative is not None else None
+
+
+async def append_cashier(user, payment, values, *, session):
+    from domains.pms.cashier_service import record_cash_transaction
+
+    return await record_cash_transaction(tenant_id=user.tenant_id, **values, method=payment["method"],
+        direction="out" if payment["amount"] < 0 else "in", description="Rezervasyon ön ödemesi / iadesi",
+        txn_type="refund" if payment["amount"] < 0 else "folio_payment", ref_type="payment", ref_id=payment["id"],
+        created_by=user.id, created_by_name=user.name, idempotency_key="payment:" + payment["id"],
+        require_open_shift=True, session=session)
 
 
 async def refresh_reports(tenant_id):
@@ -39,7 +84,11 @@ def intent(data, tenant_id, booking_id, action):
     if method not in {"cash", "card", "bank_transfer"}:
         raise HTTPException(422, "Depozito yalnız nakit, harici kart veya banka transferi olarak kaydedilebilir")
     key = str(uuid5(NAMESPACE_URL, f"deposit:{tenant_id}:{request_id}"))
-    return key, fingerprint({"booking_id": booking_id, "action": action, **data.model_dump(mode="json")})
+    payload = data.model_dump(mode="json")
+    # Optional schema additions must not invalidate already committed receipts.
+    if payload.get("received_to_try_rate") is None:
+        payload.pop("received_to_try_rate", None)
+    return key, fingerprint({"booking_id": booking_id, "action": action, **payload})
 
 
 def remaining(deposit):
@@ -76,6 +125,8 @@ async def remember(database, user, key, digest, booking_id, action, result, *, s
         "folio_id": payment["folio_id"], "amount": payment["amount"], "currency": payment["currency"],
         "method": payment["method"], "business_date": payment.get("business_date"),
         "reference": payment.get("reference"), "reason": payment.get("notes"), "actor_name": user.name}
+    entry["after_snapshot"].update({key: payment.get(key) for key in
+        ("reporting_currency", "reporting_amount", "received_to_try_rate", "source_received_to_try_rate", "exchange_rate_date")})
     await append_audit_log(database, entry, session=session, require_chain=True)
     await database.deposit_operations.insert_one({"_id": key, "tenant_id": user.tenant_id,
         "booking_id": booking_id, "fingerprint": digest, "result": result}, session=session)

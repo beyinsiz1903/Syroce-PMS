@@ -61,10 +61,13 @@ def _patch(monkeypatch, database):
     monkeypatch.setattr(reservation_detail, "_deposit_intent", lambda *_: ("operation-a", "digest-a"))
     monkeypatch.setattr(reservation_detail, "_replay_deposit", AsyncMock(return_value=None))
     monkeypatch.setattr(reservation_detail, "_remember_deposit", AsyncMock())
+    monkeypatch.setattr(reservation_detail, "_append_deposit_cashier", AsyncMock())
     from modules.pms_core import folio_selection
     monkeypatch.setattr(folio_selection, "select_booking_folio", AsyncMock(return_value=None))
     monkeypatch.setattr(reservation_detail, "db", database)
-    monkeypatch.setattr(reservation_detail, "stamp_open_business_date", AsyncMock(return_value="2026-09-22"))
+    async def stamp(_db, _tid, row):
+        row["business_date"] = "2026-09-22"
+    monkeypatch.setattr(reservation_detail, "stamp_open_business_date", stamp)
     monkeypatch.setattr(reservation_detail, "_enforce_perm", lambda *_args: None)
     monkeypatch.setattr(reservation_detail, "_log_activity", AsyncMock())
     monkeypatch.setattr(
@@ -137,7 +140,7 @@ async def test_full_deposit_refund_posts_negative_payment(monkeypatch):
             "booking_id": "booking-a",
             "tenant_id": "tenant-a",
         },
-        {"$set": {"status": "refunded", "refunded_amount": 25.0}},
+        {"$set": {"status": "refunded", "refunded_amount": 25.0, "refunded_reporting_amount": 25.0}},
         session="session-a",
     )
     database.bookings.update_one.assert_awaited_once_with(
@@ -181,7 +184,7 @@ async def test_partial_refund_accumulates_refunded_amount(monkeypatch):
             "booking_id": "booking-a",
             "tenant_id": "tenant-a",
         },
-        {"$set": {"status": "partially_refunded", "refunded_amount": 50.0}},
+        {"$set": {"status": "partially_refunded", "refunded_amount": 50.0, "refunded_reporting_amount": 50.0}},
         session="session-a",
     )
 

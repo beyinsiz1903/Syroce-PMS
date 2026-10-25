@@ -27,6 +27,8 @@ from core.security import get_current_user
 from domains.channel_manager.providers.hotelrunner_notes import resolve_legacy_hotelrunner_note
 from models.schemas import User, _ensure_hotel_context
 from models.schemas.bookings import BookingCreate
+from modules.pms_core.deposit_operations import append_cashier as _append_deposit_cashier
+from modules.pms_core.deposit_operations import cashier_snapshot as _deposit_cashier_snapshot
 from modules.pms_core.deposit_operations import intent as _deposit_intent
 from modules.pms_core.deposit_operations import refresh_reports as _refresh_deposit_reports
 from modules.pms_core.deposit_operations import remaining as _deposit_remaining
@@ -915,6 +917,7 @@ class DepositRecord(BaseModel):
     amount: float = Field(..., gt=0, le=1e9)
     method: str = Field("cash", max_length=50)
     reference: str | None = Field(None, max_length=200)
+    received_to_try_rate: float | None = Field(None, gt=0, le=1e9)
 
 
 class DailyRateEntry(BaseModel):
@@ -3145,9 +3148,16 @@ async def record_deposit(
             "status": "paid", "reference": data.reference, "processed_by": current_user.name,
             "processed_at": now, "voided": False, "request_id": str(data.request_id)}
         await stamp_open_business_date(db, tid, payment)
+        payment["received_to_try_rate"] = data.received_to_try_rate
+        cash_snapshot, _ = _deposit_cashier_snapshot(payment)
+        if currency != "TRY" and not (data.reference or "").strip():
+            raise HTTPException(422, "Döviz depozitosunun kaynak kur/dekont referansını girin")
+        deposit.update(cashier_snapshot_version=1, received_to_try_rate=data.received_to_try_rate,
+            reporting_currency="TRY", reporting_amount=payment["reporting_amount"])
         deposit["business_date"] = payment["business_date"]
         await db.deposits.insert_one({**deposit}, session=session)
         await db.payments.insert_one({**payment}, session=session)
+        await _append_deposit_cashier(current_user, payment, cash_snapshot, session=session)
         new_paid = round(float(booking.get("paid_amount", 0) or 0) + data.amount, 2)
         await db.bookings.update_one({"id": booking_id, "tenant_id": tid}, {"$set": {"paid_amount": new_paid}}, session=session)
         result = {"success": True, "replayed": False, "deposit": deposit, "payment": payment}
@@ -5613,7 +5623,10 @@ async def refund_deposit(
             "voided": False,
         }
         await stamp_open_business_date(db, tid, payment)
+        cash_snapshot, refunded_reporting_total = _deposit_cashier_snapshot(payment, source=current_deposit,
+            refunded_total=round(current_refunded + data.refund_amount, 2))
         await db.payments.insert_one({**payment}, session=session)
+        await _append_deposit_cashier(current_user, payment, cash_snapshot, session=session)
 
         refunded_total = round(current_refunded + data.refund_amount, 2)
         remaining = round(max(0.0, current_amount - refunded_total), 2)
@@ -5624,7 +5637,8 @@ async def refund_deposit(
                 "booking_id": booking_id,
                 "tenant_id": tid,
             },
-            {"$set": {"status": new_status, "refunded_amount": refunded_total}},
+            {"$set": {"status": new_status, "refunded_amount": refunded_total,
+                "refunded_reporting_amount": refunded_reporting_total}},
             session=session,
         )
 

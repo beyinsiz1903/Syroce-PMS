@@ -127,6 +127,23 @@ describe('financial and destructive mutation safety', () => {
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Önceki tahsilatı doğrula' })).not.toBeInTheDocument());
   });
 
+  it('requires an explicit TRY source rate and reference for a foreign deposit', async () => {
+    render(<DepositsTab booking={{ id: 'foreign', status: 'confirmed', currency: 'EUR' }} deposits={[]}
+      folios={[{ id: 'euro-folio', status: 'open' }]} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Depozito Al' }));
+    fireEvent.change(screen.getByRole('spinbutton', { name: 'Tutar (EUR)' }), { target: { value: '2.01' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Kaydet' }));
+    expect(post).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByRole('spinbutton', { name: 'Kaynak TL kuru (1 EUR)' }), { target: { value: '55.125' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Kaydet' }));
+    expect(post).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Referans' }), { target: { value: 'Kaynak dekont ve kur belgesi' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Kaydet' }));
+    await waitFor(() => expect(post).toHaveBeenCalledWith('/pms/reservations/foreign/record-deposit', expect.objectContaining({
+      amount: 2.01, received_to_try_rate: 55.125, reference: 'Kaynak dekont ve kur belgesi', folio_id: 'euro-folio', request_id: expect.any(String),
+    })));
+  });
+
   it('requires the exact room deletion phrase and suppresses rapid duplicate submissions', async () => {
     let resolveDelete;
     const onDeleted = vi.fn();

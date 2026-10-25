@@ -41,6 +41,7 @@ export default function DepositTracking({
     booking_id: '',
     amount: '',
     method: 'cash',
+    received_to_try_rate: '',
     reference: ''
   });
   const [savingDeposit, setSavingDeposit] = useState(false);
@@ -135,13 +136,18 @@ export default function DepositTracking({
       toast.error('Geçerli bir tutar girin');
       return;
     }
+    const foreign = normalizeDepositCurrency(selectedBooking.currency) !== 'TRY';
+    if (foreign && (!(Number(newDepositData.received_to_try_rate) > 0) || !newDepositData.reference.trim())) {
+      toast.error('Döviz depozitosu için kaynak TL kuru ve dekont/kur referansı girin'); return;
+    }
     setSavingDeposit(true);
     try {
       await submitDepositIntent(selectedBooking.id, 'receive', {
         amount,
         folio_id: depositFolio || null,
         method: newDepositData.method,
-        reference: newDepositData.reference || null
+        reference: newDepositData.reference || null,
+        ...(foreign ? { received_to_try_rate: Number(newDepositData.received_to_try_rate) } : {})
       }, body => axios.post(`/pms/reservations/${selectedBooking.id}/record-deposit`, body, { headers }));
       toast.success('Depozito kaydedildi');
       setShowNewDeposit(false);
@@ -149,6 +155,7 @@ export default function DepositTracking({
         booking_id: '',
         amount: '',
         method: 'cash',
+        received_to_try_rate: '',
         reference: ''
       });
       setSelectedBooking(null);
@@ -422,6 +429,11 @@ export default function DepositTracking({
             </div>
 
             {folioLoading && <p role="status">Hedef folyolar kontrol ediliyor…</p>}
+            {selectedBooking && normalizeDepositCurrency(selectedBooking.currency) !== 'TRY' && <div>
+              <Label htmlFor="deposit-source-rate">Kaynak TL kuru (1 {normalizeDepositCurrency(selectedBooking.currency)})</Label>
+              <Input id="deposit-source-rate" type="number" step="any" min="0" value={newDepositData.received_to_try_rate || ''}
+                onChange={e => setNewDepositData(prev => ({ ...prev, received_to_try_rate: e.target.value }))} />
+            </div>}
             {folioError && <p role="alert" className="text-red-700">{folioError}</p>}
             {openDepositFolios.length > 1 && <div>
               <Label htmlFor="deposit-target-folio">Hedef folyo</Label>
