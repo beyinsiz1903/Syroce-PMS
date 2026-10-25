@@ -26,7 +26,7 @@ describe('Demo reconstruction disclosure', () => {
     fetchJson.mockResolvedValue({ applied: true, policy_id: 'demo-policy', result: { document_count: 43, cashier_appended: 6 } });
     render(<DemoSourceNotice tenant={DEMO} />);
     expect(await screen.findByText(/43 kaynak/)).toBeInTheDocument();
-    expect(screen.getByText(/69 tarihî/)).toHaveTextContent('geçerli ilan edilmedi');
+    expect(screen.getByText(/69 tarihî/)).toHaveTextContent("Güncel zincir durumunu Denetim Merkezi'nden doğrulayın");
     expect(fetchJson).toHaveBeenCalledExactlyOnceWith('/api/pms/demo-source-remediation/status', { credentials: 'include' });
   });
   it('does not leak the last demo status when switching tenants', async () => {

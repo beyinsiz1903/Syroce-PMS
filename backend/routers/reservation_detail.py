@@ -385,7 +385,7 @@ def _build_financial_summary(
     look as though part of its confirmed price disappeared.
     """
     from core.booking_payment_state import is_effective
-    from modules.pms_core.reporting_financials import deduplicate_report_payments, effective_collection
+    from modules.pms_core.reporting_financials import INSTRUMENT_SETTLEMENT_METHODS, deduplicate_report_payments, effective_collection, effective_folio_payment
 
     # Failed / cancelled / rejected payment rows moved no money: the same
     # filter as the collected amount, so balance and status cannot disagree.
@@ -394,6 +394,7 @@ def _build_financial_summary(
     total_payments = sum(payment.get("amount", 0) for payment in payments if is_effective(payment) and payment.get("method") != "discount")
     city_ledger_transfer_total = sum(payment.get("amount", 0) for payment in payments if is_effective(payment) and str(payment.get("method") or "").lower() in {"city_ledger", "ar", "direct_bill"})
     security_application_total = sum(payment.get("amount", 0) for payment in payments if is_effective(payment) and payment.get("method") == "security_deposit_application")
+    instrument_settlement_total = sum(effective_folio_payment(payment) for payment in deduplicate_report_payments(payments) if payment.get("method") in INSTRUMENT_SETTLEMENT_METHODS)
     cash_collection_total = sum(effective_collection(payment) for payment in deduplicate_report_payments(payments) if str(payment.get("method") or "").lower() != "direct_bill")
     prepayment_total = sum(
         payment.get("amount", 0)
@@ -547,6 +548,7 @@ def _build_financial_summary(
         "cash_collection_total": round(cash_collection_total, 2),
         "city_ledger_transfer_total": round(city_ledger_transfer_total, 2),
         "security_application_total": round(security_application_total, 2),
+        "instrument_settlement_total": round(instrument_settlement_total, 2),
         "prepayment_total": round(prepayment_total, 2),
         "other_payments_total": round(total_payments - prepayment_total, 2),
         "total_discounts": round(total_discounts, 2),

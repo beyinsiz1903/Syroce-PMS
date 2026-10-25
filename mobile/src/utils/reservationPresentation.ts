@@ -81,7 +81,8 @@ type PaymentMovement = {
   currency?: string;
 };
 
-const INVALID_PAYMENT_STATUSES = new Set(['failed', 'cancelled', 'canceled', 'rejected', 'declined', 'void', 'voided', 'pending']);
+const INVALID_PAYMENT_STATUSES = new Set(['failed', 'cancelled', 'canceled', 'rejected', 'declined', 'void', 'voided', 'pending', 'processing', 'initiated', 'authorized', 'expired', 'requires_action']);
+const NON_COLLECTION_METHODS = new Set(['city_ledger', 'direct_bill', 'ar', 'discount', 'complimentary', 'correction', 'security_deposit_application', 'gift_card_redemption', 'wallet', 'loyalty_redemption', 'barter', 'write_off']);
 
 // Mirrors core/booking_payment_state.py: transfers/discounts are not cash
 // collections, and a refund reduces the collected amount. Never add different
@@ -91,7 +92,7 @@ export function reservationCollectedAmount(payments: PaymentMovement[] | undefin
   let total = 0;
   for (const payment of payments) {
     if (payment.voided || INVALID_PAYMENT_STATUSES.has(String(payment.status || '').toLowerCase())) continue;
-    if (['city_ledger', 'discount'].includes(payment.method || '') || payment.payment_type === 'city_ledger_transfer') continue;
+    if (NON_COLLECTION_METHODS.has(String(payment.method || '').trim().toLowerCase()) || payment.payment_type === 'city_ledger_transfer') continue;
     const amount = finiteMoney(payment.amount);
     if (amount === undefined) return undefined;
     const movementCurrency = reservationCurrency(payment.currency);
@@ -116,7 +117,9 @@ export function reservationSourceLabel(value: unknown): string {
 
 export function paymentMethodLabel(method: unknown): string {
   const key = String(method ?? '').toLowerCase();
-  return ({ cash: 'Nakit', card: 'Kart', bank_transfer: 'Banka havalesi', transfer: 'Banka havalesi', online: 'Online', city_ledger: 'Cari hesaba aktarım', discount: 'İndirim' } as Record<string, string>)[key] || key || 'Yöntem belirtilmemiş';
+  return ({ cash: 'Nakit', card: 'Kart', bank_transfer: 'Banka havalesi', transfer: 'Banka havalesi', online: 'Online', city_ledger: 'Cari hesaba aktarım', discount: 'İndirim',
+    gift_card_redemption: 'Hediye kartı mahsubu', wallet: 'Cüzdan mahsubu', loyalty_redemption: 'Sadakat puanı mahsubu',
+    barter: 'Barter — tahsilat değil', write_off: 'Alacaktan silme — tahsilat değil', security_deposit_application: 'Güvence mahsubu' } as Record<string, string>)[key] || key || 'Yöntem belirtilmemiş';
 }
 
 export function paymentStatusLabel(payment: PaymentMovement): string {

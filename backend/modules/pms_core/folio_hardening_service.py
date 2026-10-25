@@ -153,14 +153,19 @@ class FolioHardeningService:
 
     async def post_refund(self, tenant_id: str, folio_id: str, booking_id: str, amount: float, reason: str, method: str, processed_by: str) -> dict:
         """Post a refund to a folio."""
+        from modules.pms_core.enterprise_billing import manual_collection_method
+
+        manual_collection_method(method)
+        if amount <= 0:
+            return {"success": False, "error": "Refund amount must be positive"}
+
+        if await db.payments.find_one({"tenant_id": tenant_id, "folio_id": folio_id, "billing_settlement_id": {"$exists": True}}):
+            return {"success": False, "error": "Kaynak bağlı kurumsal mahsup var; iade özgün işlem üzerinden yapılmalı"}
         folio = await db.folios.find_one({"id": folio_id, "tenant_id": tenant_id}, {"_id": 0})
         if not folio:
             return {"success": False, "error": "Folio not found"}
         if folio.get("status") != "open":
             return {"success": False, "error": f"Folio is {folio.get('status')}, cannot post refunds"}
-
-        if amount <= 0:
-            return {"success": False, "error": "Refund amount must be positive"}
 
         refund_id = str(uuid.uuid4())
         now = datetime.now(UTC)
@@ -241,6 +246,8 @@ class FolioHardeningService:
         payment = await db.payments.find_one({"id": payment_id, "tenant_id": tenant_id}, {"_id": 0})
         if not payment:
             return {"success": False, "error": "Payment not found"}
+        if payment.get("billing_settlement_id"):
+            return {"success": False, "error": "Kurumsal mahsup bağlı ters kayıt akışından düzeltilmeli"}
         if payment.get("security_fund_id") or payment.get("concession_id"):
             return {"success": False, "error": "Güvence/ikram kaydı normal ödeme iadesiyle değiştirilemez"}
         if payment.get("provider_ref"):

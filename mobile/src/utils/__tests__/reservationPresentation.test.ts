@@ -76,6 +76,14 @@ test('currency and absent amount labels do not silently assume Turkish lira or p
   assert.match(reservationAmountLabel(20), /para birimi belirtilmemiş/);
 });
 
+test('enterprise offsets and authorizations are never treated as received money', () => {
+  for (const method of ['wallet', 'gift_card_redemption', 'loyalty_redemption', 'barter', 'write_off', 'security_deposit_application']) {
+    assert.equal(reservationCollectedAmount([{ amount: 100, currency: 'TRY', method, status: 'paid' }], 'TRY'), 0);
+    assert.notEqual(paymentMethodLabel(method), method);
+  }
+  assert.equal(reservationCollectedAmount([{ amount: 100, currency: 'TRY', method: 'card', status: 'authorized' }], 'TRY'), 0);
+});
+
 test('source and payment labels preserve meaningful Turkish states', () => {
   assert.equal(reservationStatusLabel(''), 'Durum belirtilmemiş');
   assert.equal(reservationSourceLabel('phone'), 'Telefon');

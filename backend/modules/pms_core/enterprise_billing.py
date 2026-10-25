@@ -283,6 +283,7 @@ async def decide_concession(database, tenant_id, actor, request_id, approve, *, 
 async def payment_catalog(database, tenant_id):
     from core.payments.contracts import PaymentError
     from core.payments.registry import get_provider_for_tenant
+    from modules.pms_core.settlement_instruments import KINDS
 
     provider_name, capabilities, readiness = None, {}, "not_configured"
     try:
@@ -295,7 +296,10 @@ async def payment_catalog(database, tenant_id):
         "manual_collection_methods": [{"code": code, "label": label, "execution": "external_record_only"} for code, label in
             [("cash", "Nakit"), ("card", "Harici POS / kart"), ("bank_transfer", "Doğrulanmış banka transferi")]],
         "non_collection_operations": ["city_ledger", "concession", "folio_transfer", "deposit_application", "authorization"],
-        "not_enabled": ["gift_card_redemption", "wallet", "loyalty_redemption", "barter", "write_off", "cheque_pending_clearance"],
+        "instrument_methods": [{"code": code, "label": label, "execution": "source_backed_ledger",
+            "requires_explicit_account_and_evidence": True,
+            "currencies": ["TRY"] if code == "cheque_pending_clearance" else sorted(CENT_CURRENCIES)} for code, label in KINDS.items()],
+        "not_enabled": [],
         "notes": ["Yapılandırma canlı tahsilat doğrulaması değildir.", "Provizyon tahsilat değildir.", "Cari aktarımı tahsilat değildir."]}
 
 

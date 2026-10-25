@@ -113,6 +113,9 @@ async def post_night_audit_daily_to_gl(
         },
         {"_id": 0},
     ).to_list(None)
+    from modules.pms_core.settlement_instruments import exclude_direct_cheques
+
+    payments = await exclude_direct_cheques(db, tenant_id, payments)
 
     # Internal debt allocation/opening balances are not new revenue. City
     # ledger, security applications, concessions and pending/void payments are

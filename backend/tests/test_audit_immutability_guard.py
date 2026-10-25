@@ -88,6 +88,12 @@ def test_proxy_wraps_audit_collections():
     proxy = TenantAwareDBProxy(_RawDB())
     assert isinstance(proxy.audit_logs, AppendOnlyCollection)
     assert isinstance(proxy["audit_logs_archive"], AppendOnlyCollection)
+    for name in ("audit_restoration_preimages", "audit_attribution_restorations"):
+        assert isinstance(proxy[name], AppendOnlyCollection)
+        with pytest.raises(AuditImmutabilityError):
+            getattr(proxy[name], "update_one")
+        with pytest.raises(AuditImmutabilityError):
+            getattr(proxy[name], "delete_many")
 
 
 # ── Canonical write path: direct inserts are auto-chained + attributed ──
