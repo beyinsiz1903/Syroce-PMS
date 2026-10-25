@@ -260,6 +260,7 @@ async def _reservation_performance_payload(*, tenant_id: str, start_date: date, 
         "id": 1,
         "guest_name": 1,
         "room_number": 1,
+        "room_id": 1,
         "check_in": 1,
         "check_out": 1,
         "status": 1,
@@ -282,12 +283,15 @@ async def _reservation_performance_payload(*, tenant_id: str, start_date: date, 
         },
         projection,
     ).to_list(None)
+    from modules.pms_core.report_room_types import enrich_booking_room_labels
+
+    bookings = await enrich_booking_room_labels(db, tenant_id, bookings)
     currency, _ = await get_tenant_currency(tenant_id)
     return aggregate_reservation_performance(bookings, start_date=start_date, end_date=end_date, fallback_currency=currency)
 
 
 @sub_router.get("/reports/reservation-performance")
-@cached(ttl=180, key_prefix="report_reservation_performance_v2")
+@cached(ttl=180, key_prefix="report_reservation_performance_v3")
 async def get_reservation_performance_report(
     start_date: str | None = None,
     end_date: str | None = None,

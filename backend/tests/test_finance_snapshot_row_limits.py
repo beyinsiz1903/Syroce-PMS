@@ -26,6 +26,7 @@ async def test_company_aging_does_not_cap_open_company_folios(monkeypatch):
         SimpleNamespace(
             folios=SimpleNamespace(find=lambda *_args, **_kwargs: folio_cursor),
             companies=SimpleNamespace(find_one=AsyncMock()),
+            **{key: SimpleNamespace(find=lambda *_a, **_k: _Cursor([])) for key in ("cari_accounts", "cari_transactions", "city_ledger_accounts", "city_ledger_transactions")},
         ),
     )
     monkeypatch.setattr(reports, "ensure_business_date_initialized", AsyncMock(return_value={"business_date": "2026-10-02"}))
@@ -55,6 +56,7 @@ async def test_finance_snapshot_does_not_cap_financial_source_rows(monkeypatch):
             folio_charges=SimpleNamespace(find=lambda *_args, **_kwargs: charge_cursor),
             accounting_invoices=SimpleNamespace(find=lambda *_args, **_kwargs: invoice_cursor),
             **{key: SimpleNamespace(find=lambda *_a, **_k: _Cursor([])) for key in ("extra_charges", "pos_orders", "pos_transactions", "pos_menu_transactions", "transactions")},
+            **{key: SimpleNamespace(find=lambda *_a, **_k: _Cursor([])) for key in ("cari_accounts", "cari_transactions", "city_ledger_accounts", "city_ledger_transactions")},
         ),
     )
     monkeypatch.setattr(reports, "ensure_business_date_initialized", AsyncMock(return_value={"business_date": date(2026, 10, 2)}))

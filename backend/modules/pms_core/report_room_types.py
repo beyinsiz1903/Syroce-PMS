@@ -43,6 +43,34 @@ async def load_room_type_labels(database, tenant_id, rooms=()):
     return RoomTypeLabels(catalog, rooms)
 
 
+async def enrich_booking_room_labels(database, tenant_id, bookings):
+    """Fill absent report labels from the tenant's assigned room in one batch.
+
+    Preserve explicit booking snapshots for historical reports. A dangling
+    room_id must not fall back to an unrelated room with the same number.
+    """
+    ids = sorted({str(row["room_id"]) for row in bookings if row.get("room_id")})
+    numbers = sorted({str(row["room_number"]) for row in bookings if not row.get("room_id") and row.get("room_number")})
+    collection = getattr(database, "rooms", None)
+    matches = ([{"id": {"$in": ids}}] if ids else []) + ([{"room_number": {"$in": numbers}}] if numbers else [])
+    rooms = await collection.find({"tenant_id": tenant_id, "$or": matches},
+        {"_id": 0, "id": 1, "room_number": 1, "room_type": 1, "room_type_id": 1}).to_list(None) if collection is not None and matches else []
+    by_id = {str(row["id"]): row for row in rooms if row.get("id")}
+    by_number = {}
+    for room in rooms:
+        number = str(room.get("room_number") or "")
+        by_number[number] = None if number in by_number else room
+    labels = await load_room_type_labels(database, tenant_id, rooms)
+    result = []
+    for booking in bookings:
+        room = (by_id.get(str(booking["room_id"])) if booking.get("room_id") else by_number.get(str(booking.get("room_number") or ""))) or {}
+        kind = booking.get("room_type_id") or booking.get("room_type") or room.get("room_type_id") or room.get("room_type")
+        result.append({**booking,
+            **({"room_number": booking.get("room_number") or room["room_number"]} if room.get("room_number") else {}),
+            **({"room_type": labels(kind)} if kind else {})})
+    return result
+
+
 async def room_revenue_by_type(charges, tenant_id, *, database):
     from modules.pms_core.report_money import add_amount, rounded_totals
     from modules.pms_core.reporting_ledger import charge_amount, charge_category

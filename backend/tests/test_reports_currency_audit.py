@@ -43,7 +43,7 @@ USER = SimpleNamespace(tenant_id="tenant-A", role="admin")
 
 @pytest.fixture
 def report_db(monkeypatch):
-    db = SimpleNamespace(**{key: Collection() for key in ("bookings", "folios", "companies", "payments", "folio_charges", "accounting_invoices", "purchase_orders", "extra_charges", "pos_orders", "pos_transactions", "pos_menu_transactions", "transactions")})
+    db = SimpleNamespace(**{key: Collection() for key in ("bookings", "folios", "companies", "payments", "folio_charges", "accounting_invoices", "purchase_orders", "extra_charges", "pos_orders", "pos_transactions", "pos_menu_transactions", "transactions", "cari_accounts", "cari_transactions", "city_ledger_accounts", "city_ledger_transactions")})
     monkeypatch.setattr(reports, "db", db)
     monkeypatch.setattr(reports, "ensure_business_date_initialized", AsyncMock(return_value={"business_date": "2026-10-15"}))
     monkeypatch.setattr(reports, "_enforce", lambda *_: None)
@@ -386,13 +386,13 @@ async def test_finance_refresh_bypasses_stale_json_cache(report_db, monkeypatch)
     result = await reports.get_finance_snapshot(current_user=USER, _nocache=True)
     assert result["report_date"] == "2026-10-15"
     fake_cache.get.assert_not_called()
-    assert ":report_finance_snapshot_v3:" in fake_cache.set.call_args.args[0]
+    assert ":report_finance_snapshot_v4:" in fake_cache.set.call_args.args[0]
 
 
 @pytest.mark.parametrize("handler,kwargs,prefix", [
     ("get_market_segment_report", {"start_date": "2026-10-01", "end_date": "2026-10-15"}, "report_market_segment_v4"),
-    ("get_company_aging_report", {}, "report_company_aging_v3"),
-    ("get_finance_snapshot", {}, "report_finance_snapshot_v3"),
+    ("get_company_aging_report", {}, "report_company_aging_v4"),
+    ("get_finance_snapshot", {}, "report_finance_snapshot_v4"),
     ("get_cost_summary", {}, "report_cost_summary_v3"),
     ("get_mtd_cost_summary", {}, "finance_mtd_cost_summary_v3"),
 ])

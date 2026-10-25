@@ -328,6 +328,19 @@ async def _company_ledger_positions(tenant_id: str, folios: list[dict]):
     return positions, sorted(set(failed)), sorted(set(mixed))
 
 
+async def _company_receivable_positions(tenant_id, folios, today):
+    from modules.pms_core.cari_receivable_reporting import load_account_positions
+
+    positions, failed, mixed = await _company_ledger_positions(tenant_id, folios)
+    account_rows, failed_accounts, issues = await load_account_positions(db, tenant_id,
+        fallback_currency=await _native_report_currency(tenant_id), today=today)
+    # An actual transfer credits its source folio. Read that remaining folio
+    # debt plus account debt, not the transferred folio's original charges.
+    for row in account_rows:
+        row["folio"] = {"id": row["document_id"], "company_id": row["company_id"]}
+    return positions + account_rows, failed, mixed, failed_accounts, issues
+
+
 # ── Pure helper: company-aging compute (Task #246) ──
 async def _compute_company_aging(tenant_id: str) -> dict:
     """Pure async data builder for Company AR Aging Report.
@@ -348,7 +361,7 @@ async def _compute_company_aging(tenant_id: str) -> dict:
 
     company_balances: dict[tuple[str | None, str], dict] = {}
     total_by_currency = {}
-    positions, failed_folios, mixed_folios = await _company_ledger_positions(tenant_id, folios)
+    positions, failed_folios, mixed_folios, failed_accounts, source_issues = await _company_receivable_positions(tenant_id, folios, today)
     company_cache = {}
     for position in positions:
         folio, balance = position["folio"], money(position["balance"])
@@ -359,7 +372,9 @@ async def _compute_company_aging(tenant_id: str) -> dict:
         if company_id and company_id not in company_cache:
             company_cache[company_id] = await db.companies.find_one({"id": company_id, "tenant_id": tenant_id}, {"_id": 0})
         company = company_cache.get(company_id)
-        if not company:
+        if position.get("account_key"):
+            company = {"name": position["company_name"], "corporate_code": position["corporate_code"]}
+        elif not company:
             # Missing metadata must never make a real receivable disappear.
             company = {"name": "Şirket kaydı bulunamadı", "corporate_code": "—"}
 
@@ -379,8 +394,11 @@ async def _compute_company_aging(tenant_id: str) -> dict:
         else:
             aging_bucket = "30+ days"
 
+        if position.get("account_key"):
+            age_days = position["age_days"]
+            aging_bucket = "0-7 days" if age_days is not None and age_days <= 7 else "8-14 days" if age_days is not None and age_days <= 14 else "15-30 days" if age_days is not None and age_days <= 30 else "30+ days"
         code = position["currency"]
-        group_key = (company_id, code)
+        group_key = (position.get("account_key") or company_id, code)
         if group_key not in company_balances:
             company_balances[group_key] = {
                 "company_id": company_id,
@@ -395,16 +413,23 @@ async def _compute_company_aging(tenant_id: str) -> dict:
                     "30+ days": money(0),
                 },
                 "folio_count": 0,
+                "account_id": position.get("account_id"),
+                "source": position.get("source", "company_folio"),
+                "unaged_balance": money(0),
             }
 
         company_balances[group_key]["total_balance"] += balance
-        company_balances[group_key]["aging"][aging_bucket] += balance
-        company_balances[group_key]["folio_count"] += 1
+        if position.get("age_unknown"):
+            company_balances[group_key]["unaged_balance"] += balance
+        else:
+            company_balances[group_key]["aging"][aging_bucket] += balance
+        company_balances[group_key]["folio_count"] += int(not position.get("account_key"))
         add_amount(total_by_currency, code, balance)
 
     for company in company_balances.values():
         company["total_balance"] = rounded(company["total_balance"])
         company["aging"] = {key: rounded(value) for key, value in company["aging"].items()}
+        company["unaged_balance"] = rounded(company["unaged_balance"])
     sorted_companies = sorted(
         company_balances.values(),
         key=lambda x: (x["currency"], -x["total_balance"], x["company_name"]),
@@ -412,20 +437,24 @@ async def _compute_company_aging(tenant_id: str) -> dict:
 
     return {
         "report_date": today.isoformat(),
-        "total_ar": single_amount(total_by_currency) if not failed_folios else None,
+        "total_ar": single_amount(total_by_currency) if not failed_folios and not failed_accounts else None,
         "total_ar_by_currency": rounded_totals(total_by_currency),
         "company_count": len({key[0] for key in company_balances}),
         "companies": sorted_companies,
-        "complete": not failed_folios,
+        "complete": not failed_folios and not failed_accounts,
         "failed_folio_ids": failed_folios,
+        "failed_account_ids": failed_accounts,
+        "source_issues": source_issues,
         "mixed_ledger_folio_ids": mixed_folios,
-        "balance_basis": "posted_folio_ledger_by_currency",
+        "balance_basis": "remaining_company_folios_plus_cari_and_city_ledger_sources_by_currency",
+        "aging_basis": "source_due_day_or_source_day; unallocated credits and missing dates remain unaged",
+        "aging_complete": not failed_folios and not failed_accounts and not any(row["unaged_balance"] for row in sorted_companies),
     }
 
 
 # ── GET /reports/company-aging ──
 @router.get("/reports/company-aging")
-@cached(ttl=900, key_prefix="report_company_aging_v3")
+@cached(ttl=900, key_prefix="report_company_aging_v4")
 async def get_company_aging_report(
     current_user: User = Depends(get_current_user),
     _perm: None = Depends(require_op("view_finance_reports")),
@@ -461,9 +490,9 @@ async def export_company_aging_excel(
         # directly; cache key derivation + Depends sentinel handling are fragile).
         report_data = await _compute_company_aging(current_user.tenant_id)
         if not report_data["complete"]:
-            raise HTTPException(status_code=503, detail="Bazı folyo bakiyeleri doğrulanamadı; eksik toplam dışa aktarılamaz")
+            raise HTTPException(status_code=503, detail="Bazı folyo/cari bakiyeleri doğrulanamadı; eksik toplam dışa aktarılamaz")
 
-        headers = ["Company", "Corporate Code", "Currency", "Total Balance", "0-7 Days", "8-14 Days", "15-30 Days", "30+ Days", "Folios"]
+        headers = ["Company / Agency", "Account Code", "Currency", "Total Balance", "0-7 Days", "8-14 Days", "15-30 Days", "30+ Days", "Folios", "Age Unknown", "Source"]
         data = []
 
         for company in report_data["companies"]:
@@ -478,6 +507,8 @@ async def export_company_aging_excel(
                     round(company["aging"]["15-30 days"], 2),
                     round(company["aging"]["30+ days"], 2),
                     company["folio_count"],
+                    company["unaged_balance"],
+                    company["source"],
                 ]
             )
 
@@ -529,7 +560,7 @@ async def export_company_aging_excel(
 
 # ── GET /reports/finance-snapshot ──
 @router.get("/reports/finance-snapshot")
-@cached(ttl=600, key_prefix="report_finance_snapshot_v3")
+@cached(ttl=600, key_prefix="report_finance_snapshot_v4")
 async def get_finance_snapshot(
     current_user: User = Depends(get_current_user),
     _perm: None = Depends(require_op("view_finance_reports")),
@@ -552,7 +583,8 @@ async def get_finance_snapshot(
     overdue_folio_ids = set()
     pending_ar_by_currency: dict[str, dict[str, float | int]] = {}
 
-    positions, failed_folios, mixed_folios = await _company_ledger_positions(current_user.tenant_id, company_folios)
+    positions, failed_folios, mixed_folios, failed_accounts, source_issues = await _company_receivable_positions(current_user.tenant_id, company_folios, today)
+    unaged_balances = {}
     for position in positions:
         folio, balance = position["folio"], money(position["balance"])
         if balance > 0:
@@ -573,7 +605,11 @@ async def get_finance_snapshot(
             aging_anchor = _coerce_to_date(folio.get("due_date") or folio.get("invoice_date") or folio.get("created_at"))
             age_days = max((today - aging_anchor).days, 0) if aging_anchor else 99999
 
-            if age_days > 0:  # Any overdue
+            if position.get("account_key"):
+                age_days = position["age_days"]
+            if age_days is None:
+                add_amount(unaged_balances, currency, balance)
+            elif age_days > 0:  # Any overdue
                 overdue_folio_ids.add(str(folio.get("id")))
                 bucket["overdue_invoices_count"] = int(bucket["overdue_invoices_count"]) + 1
 
@@ -636,11 +672,14 @@ async def get_finance_snapshot(
         "report_date": today.isoformat(),
         "business_date": today.isoformat(),
         "pending_ar": {
-            "total": single_amount({code: bucket["total"] for code, bucket in pending_ar_by_currency.items()}) if not failed_folios else None,
-            "complete": not failed_folios,
+            "total": single_amount({code: bucket["total"] for code, bucket in pending_ar_by_currency.items()}) if not failed_folios and not failed_accounts else None,
+            "complete": not failed_folios and not failed_accounts,
             "failed_folio_ids": failed_folios,
+            "failed_account_ids": failed_accounts,
+            "source_issues": source_issues,
+            "unaged_balance_by_currency": rounded_totals(unaged_balances),
             "mixed_ledger_folio_ids": mixed_folios,
-            "balance_basis": "posted_folio_ledger_by_currency",
+            "balance_basis": "remaining_company_folios_plus_cari_and_city_ledger_sources_by_currency",
             "by_currency": {
                 currency: {
                     key: rounded(value) if key != "overdue_invoices_count" else value
@@ -713,6 +752,8 @@ async def export_revenue_detail_excel(
             "is_complimentary": 1,
             "status": 1,
             "room_type": 1,
+            "room_type_id": 1,
+            "room_id": 1,
             "rate_plan": 1,
             "rate_type": 1,
             "market_segment": 1,
@@ -720,6 +761,9 @@ async def export_revenue_detail_excel(
         },
     ).to_list(None)
 
+    from modules.pms_core.report_room_types import enrich_booking_room_labels
+
+    bookings = await enrich_booking_room_labels(db, current_user.tenant_id, bookings)
     native_currency = await _native_report_currency(current_user.tenant_id)
     rows = {}
     for b in bookings:
