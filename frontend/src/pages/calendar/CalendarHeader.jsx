@@ -15,6 +15,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { getUnassignedUrgency } from "./calendarHelpers";
+import { isMappingIssue, mergeUnassignedAttention } from './unassignedPanel';
 import { useTranslation } from 'react-i18next';
 
 const CalendarHeader = ({
@@ -22,6 +23,7 @@ const CalendarHeader = ({
   daysToShow,
   setDaysToShow,
   bookings,
+  attentionBookings = null,
   conflicts,
   syncing,
   onNavigatePrevious,
@@ -43,10 +45,11 @@ const CalendarHeader = ({
 }) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const unassignedList = bookings.filter(b => !b.room_id && b.status !== 'cancelled' && b.status !== 'checked_out' && b.status !== 'no_show');
+  const unassignedList = mergeUnassignedAttention(attentionBookings ?? bookings);
   const unassignedCount = unassignedList.length;
-  const overdueCount = unassignedList.filter(b => getUnassignedUrgency(b).level === 'overdue').length;
-  const todayCount = unassignedList.filter(b => getUnassignedUrgency(b).level === 'today').length;
+  const mappingCount = unassignedList.filter(isMappingIssue).length;
+  const overdueCount = unassignedList.filter(b => getUnassignedUrgency(b, businessDate).level === 'overdue').length;
+  const todayCount = unassignedList.filter(b => getUnassignedUrgency(b, businessDate).level === 'today').length;
   const hasUrgent = overdueCount > 0 || todayCount > 0;
   const localToday = new Date();
   const localTodayKey = [
@@ -243,7 +246,7 @@ const CalendarHeader = ({
                 data-testid="mobile-unassigned-count-btn"
               >
                 {hasUrgent && <AlertTriangle className="mr-1 h-3 w-3" />}
-                {unassignedCount} atanmamış
+                {unassignedCount} işlem bekliyor{mappingCount > 0 ? ` · ${mappingCount} eşleştirme` : ''}
               </button>
             )}
             {conflicts.length > 0 && (
@@ -300,7 +303,7 @@ const CalendarHeader = ({
             onClick={() => onShowUnassigned?.()}
           >
             {hasUrgent && <AlertTriangle className="w-3.5 h-3.5 mr-1" />}
-            {unassignedCount} {t('cm.pages_calendar_CalendarHeader.atanmamis')}
+            {unassignedCount} işlem bekliyor{mappingCount > 0 ? ` · ${mappingCount} eşleştirme` : ''}
             {overdueCount > 0 && <span className="ml-1 text-red-600 font-bold">({overdueCount} {t('cm.pages_calendar_CalendarHeader.gecikmis')}</span>}
             {overdueCount === 0 && todayCount > 0 && <span className="ml-1 text-amber-600 font-bold">({todayCount} {t('cm.pages_calendar_CalendarHeader.bugun')}</span>}
           </button>

@@ -594,14 +594,18 @@ export const computeUnassignedLanes = (unassignedBookings) => {
 };
 
 // Unassigned booking urgency classification
-export const getUnassignedUrgency = (booking) => {
-  const today = toDateStringUTC(new Date());
+export const getUnassignedUrgency = (booking, businessDate = null) => {
+  const today = businessDate || toDateStringUTC(new Date());
   const tomorrow = (() => {
-    const d = new Date();
-    d.setDate(d.getDate() + 1);
+    const d = new Date(`${today}T00:00:00Z`);
+    d.setUTCDate(d.getUTCDate() + 1);
     return toDateStringUTC(d);
   })();
   const checkIn = toDateStringUTC(booking.check_in);
+
+  if (!booking.check_in || !/^\d{4}-\d{2}-\d{2}$/.test(checkIn) || Number.isNaN(new Date(`${checkIn}T00:00:00Z`).getTime())) {
+    return { level: 'overdue', label: 'Tarih incelenmeli', days: -1, color: 'red' };
+  }
 
   if (checkIn < today) return { level: 'overdue', label: 'Gecikmiş', days: -1, color: 'red' };
   if (checkIn === today) return { level: 'today', label: 'Bugün!', days: 0, color: 'orange' };
@@ -621,11 +625,11 @@ export const getUrgencyBarColors = (urgency) => {
   return map[urgency?.level] || map.future;
 };
 
-export const sortByUrgency = (bookings) => {
+export const sortByUrgency = (bookings, businessDate = null) => {
   const order = { overdue: 0, today: 1, tomorrow: 2, future: 3 };
   return [...bookings].sort((a, b) => {
-    const ua = getUnassignedUrgency(a);
-    const ub = getUnassignedUrgency(b);
+    const ua = getUnassignedUrgency(a, businessDate);
+    const ub = getUnassignedUrgency(b, businessDate);
     if (order[ua.level] !== order[ub.level]) return order[ua.level] - order[ub.level];
     return new Date(a.check_in) - new Date(b.check_in);
   });

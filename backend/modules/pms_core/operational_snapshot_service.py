@@ -43,7 +43,7 @@ async def build_operational_snapshot(
 ) -> dict[str, Any]:
     """Build the authoritative operational snapshot for a tenant and PMS day."""
 
-    database = database or db
+    database = database if database is not None else db
     if business_date is None:
         state = await ensure_business_date_initialized(database, tenant_id)
         business_date = _date_only(state.get("business_date"))

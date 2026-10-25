@@ -13,6 +13,7 @@ from common.audit_hook import SEVERITY_INFO, SEVERITY_WARNING, audited
 from common.context import OperationContext
 from common.result import ServiceResult
 from core.business_date_transition_guard import enforce_business_date_transition
+from core.channel_mapping_issues import is_mapping_hold
 from core.kbs_auto_enqueue import auto_enqueue_kbs
 from domains.pms.frontdesk_financials import calculate_departure_balance
 from domains.pms.lock_bridge.service import CMD_ENCODE, CMD_REVOKE, enqueue_lock_command
@@ -130,6 +131,8 @@ class FrontdeskService:
         booking = await self._db.bookings.find_one({"id": booking_id, "tenant_id": ctx.tenant_id}, {"_id": 0})
         if not booking:
             return ServiceResult.fail("Booking not found", "NOT_FOUND")
+        if is_mapping_hold(booking):
+            return ServiceResult.fail("Kanal kaydı henüz PMS'e kabul edilmedi; önce oda/fiyat eşleştirmesini inceleyin", "CHANNEL_MAPPING_REQUIRED")
         booking_status = booking.get("status")
         if booking_status == "checked_in":
             return ServiceResult.fail("Guest already checked in", "ALREADY_CHECKED_IN")
@@ -452,6 +455,8 @@ class FrontdeskService:
         )
         if not booking:
             return ServiceResult.fail("QR code gecersiz", "INVALID_QR")
+        if is_mapping_hold(booking):
+            return ServiceResult.fail("Kanal kaydı henüz PMS'e kabul edilmedi; önce eşleştirmeyi inceleyin", "CHANNEL_MAPPING_REQUIRED")
         if booking.get("status") not in {"confirmed", "guaranteed"}:
             return ServiceResult.fail("Rezervasyon check-in için uygun durumda değil", "INVALID_BOOKING_STATUS")
         try:

@@ -83,6 +83,15 @@ class NightAuditCoreService:
         else:
             bd = (await ensure_business_date_initialized(self._db, ctx.tenant_id))["business_date"]
 
+        # Quarantine is not an arrival/no-show decision and cannot be bypassed
+        # through this legacy service's skip-validations option.
+        from core.channel_mapping_issues import load_mapping_issues, mapping_close_blocker
+
+        if not dry_run:
+            blocker = mapping_close_blocker(await load_mapping_issues(ctx.tenant_id, bd, database=self._db))
+            if blocker:
+                return ServiceResult.fail(blocker["message"], "CHANNEL_MAPPING_REQUIRED", blockers=[blocker])
+
         # 1. Idempotency: check previous successful run
         if not force_rerun:
             prev = await self._db.night_audit_runs.find_one(
@@ -651,6 +660,11 @@ class NightAuditCoreService:
 
     # ── Step: Business date roll ───────────────────────────────────────
     async def _roll_business_date(self, ctx: OperationContext, current_bd: str, audit_id: str):
+        from core.channel_mapping_issues import load_mapping_issues, mapping_close_blocker
+
+        blocker = mapping_close_blocker(await load_mapping_issues(ctx.tenant_id, current_bd, database=self._db))
+        if blocker:
+            raise ValueError(blocker["message"])
         next_bd = (datetime.fromisoformat(current_bd) + timedelta(days=1)).date().isoformat()
         await self._db.tenant_settings.update_one(
             {"tenant_id": ctx.tenant_id},
