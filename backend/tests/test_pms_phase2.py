@@ -73,7 +73,7 @@ class TestFolioRunningBalance:
         assert timeline[2]["running_balance"] == 130.0
 
     def test_running_balance_refunds(self):
-        """Refunds should decrement balance."""
+        """A refund reverses collection and restores the guest receivable."""
         charges = [
             {"id": "c1", "date": "2026-03-10T10:00:00", "amount": 300, "total": 300, "description": "Suite"},
         ]
@@ -85,7 +85,7 @@ class TestFolioRunningBalance:
 
         assert timeline[0]["running_balance"] == 300.0  # charge
         assert timeline[1]["running_balance"] == 0.0     # payment
-        assert timeline[2]["running_balance"] == -50.0    # refund
+        assert timeline[2]["running_balance"] == 50.0    # refund restores debt
 
     def test_running_balance_mixed_operations(self):
         """Test complex scenario with charges, payments, voids, refunds."""

@@ -1,5 +1,6 @@
 import { bookingSourceLabel } from '@/utils/bookingSource';
 import { cachedTenantCurrency } from '@/lib/currency';
+import { folioEventBalanceEffect, folioEventCategoryLabel, folioEventTitle } from '@/lib/folioPayments';
 
 /**
  * Print templates for guest registration card, folio statement, and proforma invoice.
@@ -179,21 +180,24 @@ export function printFolio(folioData, hotelArg) {
   <table>
     <thead><tr><th>Tarih</th><th>Açıklama</th><th>Kategori</th><th style="text-align:right">Borc</th><th style="text-align:right">Alacak</th><th style="text-align:right">Bakiye</th></tr></thead>
     <tbody>
-    ${timeline.map(e => `
+    ${timeline.map(e => {
+      const effect = folioEventBalanceEffect(e);
+      return `
       <tr class="${e.voided ? 'voided' : ''}">
         <td>${escapeHtml(e.timestamp?.slice(0, 10) || '')}</td>
-        <td>${escapeHtml(e.description || e.type || '')}</td>
-        <td>${escapeHtml(e.category || '')}</td>
-        <td style="text-align:right" class="amount-out">${e.type === 'charge' ? money(e.amount, e.currency || currency) : ''}</td>
-        <td style="text-align:right" class="amount-in">${e.type === 'payment' ? money(e.amount, e.currency || currency) : ''}</td>
+        <td>${escapeHtml(folioEventTitle(e))}</td>
+        <td>${escapeHtml(folioEventCategoryLabel(e))}</td>
+        <td style="text-align:right" class="amount-out">${effect > 0 ? money(Math.abs(effect), e.currency || currency) : ''}</td>
+        <td style="text-align:right" class="amount-in">${effect < 0 ? money(Math.abs(effect), e.currency || currency) : ''}</td>
         <td style="text-align:right">${e.running_balance == null ? '' : money(e.running_balance, currency)}</td>
       </tr>
-    `).join('')}
+    `; }).join('')}
     </tbody>
   </table>
   <div class="totals">
     <div class="total-row"><span>Toplam Masraf / Total Charges:</span><span>${money(summary?.total_charges, currency)}</span></div>
-    <div class="total-row"><span>Toplam Ödeme / Total Payments:</span><span>${money(summary?.total_payments, currency)}</span></div>
+    <div class="total-row"><span>Net tahsilat / Net Collections:</span><span>${money(summary?.cash_collection_total ?? summary?.total_payments, currency)}</span></div>
+    <div class="total-row"><span>Nakit dışı mahsup / Non-cash Settlements:</span><span>${money(summary?.non_cash_settlement_total || 0, currency)}</span></div>
     <div class="total-row final"><span>BAKIYE / BALANCE:</span><span>${money(summary?.balance, currency)}</span></div>
   </div>
   <div class="footer">

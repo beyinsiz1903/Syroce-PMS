@@ -47,6 +47,9 @@ describe('işlem kayıtları kullanıcı dili', () => {
     expect(auditActionLabel('gl.report.exported')).toBe('Muhasebe raporu dışa aktarıldı');
     expect(auditEntityLabel('gl_report')).toBe('Genel Muhasebe Raporu');
     expect(auditEntityLabel('pos_transaction')).toBe('Restoran POS');
+    expect(auditEntityLabel('gl_voucher')).toBe('Muhasebe fişi');
+    expect(auditActionLabel('gl_voucher_approved')).toBe('Muhasebe fişi gerekçeyle onaylandı');
+    expect(auditActionLabel('gl_voucher_policy_changed')).toBe('Tesisin fiş onay politikası değiştirildi');
   });
 
   it('API hareketlerini modül adıyla özetler', () => {

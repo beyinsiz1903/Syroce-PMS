@@ -8,6 +8,14 @@ import re
 from datetime import date, datetime
 
 from core.database import db
+from modules.pms_core.report_money import money
+from modules.pms_core.reporting_financials import (
+    INSTRUMENT_SETTLEMENT_METHODS,
+    NON_CASH_PAYMENT_METHODS,
+    effective_collection,
+    effective_folio_payment,
+    is_valid_payment,
+)
 
 _FX_RECEIPT_RE = re.compile(
     r"\[Döviz Çevirici\]\s*[\d.,]+\s+[A-Z]{3}\s*=\s*([\d.,]+)\s+([A-Z]{3}).*?Kur:\s*1\s+[A-Z]{3}\s*=\s*([\d.,]+)",
@@ -26,6 +34,9 @@ def _normalize_currency(value, fallback="TRY") -> str:
 
 def _enrich_payment_currency(payment: dict, ledger_currency: str) -> dict:
     enriched = {**payment, "currency": _normalize_currency(payment.get("currency"), ledger_currency)}
+    if str(payment.get("payment_method") or payment.get("method") or "").lower() in NON_CASH_PAYMENT_METHODS:
+        # A folio offset is not evidence of physically received money.
+        return enriched
     if enriched.get("received_currency") and enriched.get("received_amount") is not None:
         enriched["received_currency"] = _normalize_currency(enriched["received_currency"])
         enriched["exchange_rate"] = float(enriched.get("exchange_rate") or 1)
@@ -129,6 +140,7 @@ class FolioDetailService:
             "$or": [
                 {"entity_id": {"$in": financial_entity_ids}},
                 {"metadata.folio_id": folio_id},
+                {"after_snapshot.payment_id": {"$in": [p["id"] for p in payments if p.get("id")]}},
             ],
         }
         legacy_audit = await db.pms_audit_trail.find(audit_filter, {"_id": 0}).sort("timestamp", -1).to_list(100)
@@ -140,10 +152,13 @@ class FolioDetailService:
 
         # Summary
         active_charges = [c for c in charges if not c.get("voided")]
-        active_payments = [p for p in payments if not p.get("voided")]
-        total_charges = round(sum(c.get("total", c.get("amount", 0)) for c in active_charges), 2)
-        total_payments = round(sum(p.get("amount", 0) for p in active_payments), 2)
-        balance = round(total_charges - total_payments, 2)
+        active_payments = [p for p in payments if is_valid_payment(p)]
+        total_charges = float(sum((money(c.get("total", c.get("amount", 0)) or 0) for c in active_charges), money(0)))
+        total_payments = float(sum((money(effective_folio_payment(p)) for p in payments), money(0)))
+        cash_collection_total = float(sum((money(effective_collection(p)) for p in payments), money(0)))
+        instrument_total = float(sum((money(effective_folio_payment(p)) for p in payments
+            if str(p.get("payment_method") or p.get("method") or "").lower() in INSTRUMENT_SETTLEMENT_METHODS), money(0)))
+        balance = float(money(total_charges) - money(total_payments))
 
         return {
             "success": True,
@@ -151,6 +166,9 @@ class FolioDetailService:
             "summary": {
                 "total_charges": total_charges,
                 "total_payments": total_payments,
+                "cash_collection_total": cash_collection_total,
+                "non_cash_settlement_total": float(money(total_payments) - money(cash_collection_total)),
+                "instrument_settlement_total": instrument_total,
                 "balance": balance,
                 "currency": ledger_currency,
                 "charge_count": len(active_charges),
@@ -214,6 +232,7 @@ class FolioDetailService:
                     "description": c.get("description", ""),
                     "category": c.get("charge_category", "other"),
                     "amount": amount,
+                    "balance_effect": 0 if c.get("voided") else float(money(amount or 0)),
                     "currency": _normalize_currency(c.get("currency")),
                     "tax_amount": c.get("tax_amount", 0),
                     "voided": c.get("voided", False),
@@ -225,13 +244,24 @@ class FolioDetailService:
 
         for p in payments:
             ts = p.get("processed_at") or ""
+            method = str(p.get("payment_method") or p.get("method") or "cash").strip().lower()
+            refund = str(p.get("payment_type") or "").lower() == "refund" or effective_folio_payment(p) < 0
+            protected = any(p.get(field) for field in ("billing_settlement_id", "security_fund_id", "concession_id", "provider_ref", "mice_event_id"))
             events.append(
                 {
                     "id": p.get("id"),
-                    "type": "refund" if p.get("payment_type") == "refund" else "payment",
+                    "type": "refund" if refund else "payment",
                     "timestamp": ts,
                     "description": f"{p.get('method', 'cash').upper()} - {p.get('notes', '')}".strip(" -"),
-                    "category": p.get("method", "cash"),
+                    "category": method,
+                    "method": method,
+                    "payment_type": p.get("payment_type"),
+                    "status": p.get("status", "paid"),
+                    "balance_effect": -effective_folio_payment(p),
+                    "is_non_cash_settlement": method in NON_CASH_PAYMENT_METHODS,
+                    "can_void": is_valid_payment(p) and effective_folio_payment(p) > 0 and not refund and not protected and method not in NON_CASH_PAYMENT_METHODS,
+                    "billing_settlement_id": p.get("billing_settlement_id"),
+                    "original_payment_id": p.get("original_payment_id"),
                     "amount": p.get("amount", 0),
                     "currency": _normalize_currency(p.get("currency")),
                     "received_amount": p.get("received_amount"),
@@ -250,18 +280,10 @@ class FolioDetailService:
         events.sort(key=lambda e: _ts_sort_key(e.get("timestamp")))
 
         # Calculate running balance
-        running = 0.0
+        running = money(0)
         for e in events:
-            if e.get("voided"):
-                e["running_balance"] = running
-                continue
-            if e["type"] == "charge":
-                running += e["amount"]
-            elif e["type"] == "payment":
-                running -= e["amount"]
-            elif e["type"] == "refund":
-                running -= abs(e["amount"])
-            e["running_balance"] = round(running, 2)
+            running += money(e["balance_effect"])
+            e["running_balance"] = float(running)
 
         return events
 
