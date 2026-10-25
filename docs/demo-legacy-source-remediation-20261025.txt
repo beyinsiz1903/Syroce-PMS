@@ -43,6 +43,11 @@ a changed request after commit is rejected. A lost response is NOT permission
 to submit a new UUID: first GET /api/pms/demo-source-remediation/status and
 reconcile the stored receipt. Do not run direct database mutation scripts.
 
+Cashier identity is the persisted native _id (string UUID or BSON ObjectId),
+not the public API's id alias. Preview fingerprints that exact raw shift and
+commit selects it with tenant_id plus the same BSON identity. No id field or
+new/rekeyed shift is created. Public preview never exposes the raw BSON shift.
+
 What is reconstructed (43 preserved source documents)
 ----------------------------------------------------
 * 3 unaccepted, unassigned, financially empty Exely test holds and 2 local inbox

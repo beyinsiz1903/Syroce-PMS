@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
+from bson import ObjectId
 from fastapi import HTTPException
 from pydantic import ValidationError
 
@@ -29,7 +30,7 @@ def data(plan, **extra):
         confirmation="RECONSTRUCT_SYNTHETIC_DEMO_100001_ONLY", **extra)
 
 
-async def seed(db):
+async def seed(db, *, shift_identity="shift", shift_public_id=None):
     await db.tenants.insert_one({"id": r.TENANT, "hotel_id": "100001", "property_name": "Syroce Demo Hotel"})
     await db.tenant_settings.insert_one({"tenant_id": r.TENANT, "business_date": "2026-10-24"})
     await db.exely_connections.insert_one({"tenant_id": r.TENANT, "id": "connection", "hotel_code": "501694", "mode": "sandbox", "is_active": True, "ari_write_enabled": False, "auto_sync_reservations": False})
@@ -44,7 +45,8 @@ async def seed(db):
             await db.payments.insert_one({"tenant_id": r.TENANT, "id": pid, "booking_id": "fx-" + code, "currency": code, "amount": amount,
                 "business_date": "2026-10-24", "method": "card" if code == "USD" else "bank_transfer", "status": "paid",
                 "payment_type": "refund" if amount < 0 else "deposit", "voided": False})
-    await db.cashier_shifts.insert_one({"tenant_id": r.TENANT, "id": "shift", "status": "open", "business_date": "2026-10-24",
+    await db.cashier_shifts.insert_one({"tenant_id": r.TENANT, "_id": shift_identity,
+        **({"id": shift_public_id} if shift_public_id is not None else {}), "status": "open", "business_date": "2026-10-24",
         "transactions": [{"id": "preserved", "ref_id": "other", "amount": 1}], "cash_in": 1, "cash_out": 0})
     for cid in r.COMP_IDS:
         await db.extra_charges.insert_one({"tenant_id": r.TENANT, "id": cid, "booking_id": "comp", "is_complimentary": True,
@@ -115,7 +117,7 @@ async def test_atomic_demo_reconstruction_preserves_amounts_preimages_audit_and_
     assert await db.audit_logs.find({"seq": {"$lte": 69}}).to_list(None) == before_audit
     verification = await audit_chain.verify_chain(r.TENANT)
     assert len(verification["breaks"]) == 69 and not verification["ok"]
-    shift = await db.cashier_shifts.find_one({"id": "shift"})
+    shift = await db.cashier_shifts.find_one({"_id": "shift"})
     assert len(shift["transactions"]) == 7 and shift["cash_in"] == 1 and shift["cash_out"] == 0
     assert sum(r.minor(x["amount"]) * (1 if x["direction"] == "in" else -1) for x in shift["transactions"][1:]) == 0
     again = await r.apply(db, db.client, USER, request)
@@ -149,7 +151,7 @@ async def test_failure_rolls_back_every_document_cashier_preimage_receipt_and_ch
     assert await db.payments.find({}).to_list(None) == before
     assert await db.demo_source_preimages.count_documents({}) == 0
     assert await db.demo_source_remediations.count_documents({}) == 0
-    assert len((await db.cashier_shifts.find_one({"id": "shift"}))["transactions"]) == 1
+    assert len((await db.cashier_shifts.find_one({"_id": "shift"}))["transactions"]) == 1
     assert await db.audit_logs.count_documents({}) == 69
 
 
@@ -246,7 +248,44 @@ async def test_concurrent_requests_commit_one_reconstruction_only(ledger_db, sam
         assert any(isinstance(x, HTTPException) and x.status_code == 409 for x in outcomes), outcomes
     assert await db.demo_source_remediations.count_documents({}) == 1
     assert await db.demo_source_preimages.count_documents({}) == 43
-    assert len((await db.cashier_shifts.find_one({"id": "shift"}))["transactions"]) == 7
+    assert len((await db.cashier_shifts.find_one({"_id": "shift"}))["transactions"]) == 7
+
+
+@pytest.mark.parametrize("identity,public_id", [("legacy-shift-uuid", None), (ObjectId(), None), (ObjectId(), "different-public-alias")])
+async def test_raw_shift_identity_survives_preview_apply_and_replay_without_rekeying(ledger_db, identity, public_id):
+    db = ledger_db
+    await seed(db, shift_identity=identity, shift_public_id=public_id)
+    # A different tenant's similarly named row must never be a write target.
+    await db.cashier_shifts.insert_one({"_id": "foreign-shift", "id": str(identity), "tenant_id": "other", "status": "open", "transactions": []})
+    before = await db.cashier_shifts.find_one({"tenant_id": r.TENANT})
+    p = await r.preview(db, r.TENANT)
+    assert p["cashier"]["identity"] == {"_id": identity}
+    # Public preview contains only JSON-safe source docs, never the BSON shift.
+    import json
+    json.dumps(r.public_plan(p))
+    assert await db.demo_source_remediations.count_documents({}) == 0
+    request = data(p)
+    await r.apply(db, db.client, USER, request)
+    after = await db.cashier_shifts.find_one({"tenant_id": r.TENANT})
+    assert after["_id"] == identity and after.get("id") == public_id
+    assert after["cash_in"] == before["cash_in"] and after["cash_out"] == before["cash_out"]
+    assert after["transactions"][:len(before["transactions"])] == before["transactions"]
+    assert len(after["transactions"]) == len(before["transactions"]) + 6
+    assert (await r.apply(db, db.client, USER, request))["replayed"]
+    assert await db.cashier_shifts.find_one({"_id": identity}) == after
+    assert (await db.cashier_shifts.find_one({"_id": "foreign-shift"}))["transactions"] == []
+
+
+async def test_raw_shift_change_after_preview_blocks_the_entire_reconstruction(ledger_db):
+    db = ledger_db
+    await seed(db)
+    plan = await r.preview(db, r.TENANT)
+    await db.cashier_shifts.update_one({"_id": "shift"}, {"$push": {"transactions": {"id": "new-legitimate-operation", "amount": 1}}})
+    with pytest.raises(HTTPException, match="kaynakları değişti"):
+        await r.apply(db, db.client, USER, data(plan))
+    assert await db.demo_source_preimages.count_documents({}) == 0
+    assert await db.demo_source_remediations.count_documents({}) == 0
+    assert len((await db.cashier_shifts.find_one({"_id": "shift"}))["transactions"]) == 2
 
 
 async def test_both_september_days_reconcile_with_explicit_demo_warning_and_intact_originals(ledger_db, monkeypatch):
