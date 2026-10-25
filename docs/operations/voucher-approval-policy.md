@@ -18,3 +18,13 @@ Hediye kartı / cüzdan fonlaması misafir tahsilatıyla aynı şey değildir. K
 Mahsup ve bağlı ters kayıtlar ortak imzalı ödeme hesabını kullanır. Ters kayıt borcu geri getirir; bakiyeyi yeniden azaltmaz. Net tahsilat ile nakit dışı mahsup ayrı gösterilir. Kaynaklı işlemler genel nakit iade düğmesiyle değil, özgün kaynağa bağlı ters kayıtla düzeltilir. Ekran ve yazdırma aynı bakiye etkisini kullanır.
 
 Bu değişikliğin yayına alınması, canlı hediye kartı/cüzdan kabulünün tamamlandığı anlamına gelmez. Demo fonlama fişleri yayından sonra normal yetkili API/ekran akışıyla kesinleştirilmeli; uygulama, tekrar deneme, ters kayıt ve rapor mutabakatı ayrıca doğrulanmalıdır. Online ödeme sağlayıcısı kapsam dışıdır.
+
+## Kaynaklı yevmiyelerde genel ters kayıt koruması
+
+Hediye kartı/cüzdan/sadakat/barter/alacaktan silme/çek mahsuplarının yevmiyeleri Genel Muhasebe'den tek başına ters çevrilemez. Rezervasyondaki özgün mahsuba bağlı akış, folyo, hak/puan, muhasebe ve gerekçeyi birlikte düzeltir. Kaynak haklarına tahsis edilmiş fonlama fişi de bağımsız ters çevrilemez; haklar hâlâ etkin olduğundan yalnız muhasebeyi çevirmek karşılıksız hak bırakır.
+
+Genel muhasebe ters kaydı transaction içinde, hak açma/mahsup işlemleriyle aynı tesis kilidini kullanır. İlk hak tahsisiyle fonlamanın ters kaydı yarışırsa yalnız biri kesinleşir. Audit zinciri, ters yevmiye ve özgün fişin bağlantı alanları birlikte kesinleşir; audit kaydı başarısızsa finansal yazılar da geri alınır. Transaction desteği yoksa güvenli olmayan işleme düşülmez.
+
+Henüz hak tahsis edilmemiş sıradan bir fonlama kaydı normal muhasebe akışıyla ters çevrilebilir. Ancak böyle bir fişten daha sonra hediye kartı/cüzdan hakkı üretilemez. Eski veya haricî yoldan ters çevrilmiş fonlama kaynakları da yeni kullanımda reddedilir; mevcut bağlı operasyonların mutabakatı bu durumu hata olarak gösterir. Ekrandaki genel ters kayıt düğmesi yerine açıklama gösterilir; API kontrolü düğmeden bağımsızdır.
+
+Yıllık bütünlük kontrolü, eski fişlerde `fiscal_year` veya posting sırası bulunmamasını kaydı kapsamdan çıkarmak için kullanmaz: kanonik muhasebe tarihi ilgili yıl içindeyse mühürsüz fiş uyarıya dahil edilir. Eski kayıtlar yeniden mühürlenmez veya değiştirilmez; "tam mühürlü" durumu eksikler varken yeşil gösterilmez.

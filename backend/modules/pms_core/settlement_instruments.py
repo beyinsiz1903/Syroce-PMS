@@ -145,10 +145,17 @@ async def _booking(db, tenant, booking_id, session):
     return row
 
 
+async def _assert_funding_not_reversed(db, tenant, entry, session):
+    if (entry.get("reverses_entry_id") or entry.get("reversal_status") == "reversed"
+        or await db.gl_journal_entries.find_one({"tenant_id": tenant, "reverses_entry_id": entry["id"], "status": "posted"}, session=session)):
+        raise HTTPException(409, "Fonlama fişi ters kaydedilmiş; yeni hak veya mahsup üretilemez")
+
+
 async def _funding(db, tenant, body, session):
     entry = await db.gl_journal_entries.find_one({"tenant_id": tenant, "id": body.funding_entry_id, "status": "posted"}, session=session)
     if not entry or not verify_journal_entry_hash(entry):
         raise HTTPException(409, "Mühürlü fonlama fişi doğrulanamadı")
+    await _assert_funding_not_reversed(db, tenant, entry, session)
     lines = [line for line in entry["lines"] if line["account_code"] == body.account_code]
     if any(line.get("debit_minor") for line in lines):
         raise HTTPException(409, "Fonlama hesabında borç/alacak karışık; ayrı fonlama fişi gerekli")
@@ -284,6 +291,7 @@ async def apply(db, tenant, actor, instrument_id, body, *, session, record_cash)
         funding = await db.gl_journal_entries.find_one({"tenant_id": tenant, "id": item["funding_entry_id"]}, session=session)
         if not funding or funding.get("entry_hash") != item["funding_entry_hash"] or not verify_journal_entry_hash(funding):
             raise HTTPException(409, "Özgün fonlama fişi değişmiş")
+        await _assert_funding_not_reversed(db, tenant, funding, session)
         source_base = item["remaining_base_minor"] if body.amount_minor == item["remaining_minor"] else _base(
             body.amount_minor, Decimal(item["remaining_base_minor"]) / item["remaining_minor"])
         if source_base <= 0:
@@ -480,6 +488,18 @@ async def reconcile(db, tenant, *, business_date=None, booking_id=None):
         proof = (entry or {}).get("source_manifest") or {}
         sign = -1 if op["action"] == "reverse" else 1
         result = op["result"]
+        if op["kind"] in FUNDED:
+            item = await db.billing_instruments.find_one({"tenant_id": tenant, "id": op["instrument_id"]})
+            funding = await db.gl_journal_entries.find_one({"tenant_id": tenant, "id": (item or {}).get("funding_entry_id")})
+            invalid_funding = not funding or not verify_journal_entry_hash(funding) or funding.get("entry_hash") != (item or {}).get("funding_entry_hash")
+            if not invalid_funding:
+                try:
+                    await _assert_funding_not_reversed(db, tenant, funding, None)
+                except HTTPException:
+                    invalid_funding = True
+            if invalid_funding:
+                issues.append({"operation_id": op["id"], "reason": "funding_source_invalid"})
+                continue
         if (not entry or not verify_journal_entry_hash(entry) or not payment or payment.get("voided")
             or payment.get("status") != "paid" or entry.get("source") != ("billing_settlement" if sign > 0 else "billing_settlement_reversal")
             or entry.get("source_ref") != op["id"] or proof.get("payment_id") != payment.get("id")
