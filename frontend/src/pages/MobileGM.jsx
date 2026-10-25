@@ -33,6 +33,11 @@ const MobileGM = ({ user, tenant, embedded = false }) => {
   const [loading, setLoading] = useState(true);
   const [dailyFlash, setDailyFlash] = useState(null);
   const [financeSnapshot, setFinanceSnapshot] = useState(null);
+  const roomPostingPending = dailyFlash?.revenue?.posting_pending === true;
+  const adrDisplay = roomPostingPending ? 'İşlenmeyi bekliyor' : dailyFlash ? formatCurrencyBreakdown(dailyFlash.revenue?.adr_by_currency, dailyFlash.revenue?.adr) : '—';
+  const revparDisplay = roomPostingPending ? 'İşlenmeyi bekliyor' : dailyFlash ? formatCurrencyBreakdown(dailyFlash.revenue?.rev_par_by_currency, dailyFlash.revenue?.rev_par) : '—';
+  const accruedAdr = dailyFlash?.revenue?.operational_adr_by_currency;
+  const accruedRevpar = dailyFlash?.revenue?.operational_revpar_by_currency;
   const arIncomplete = financeSnapshot?.pending_ar?.complete === false;
   const mixedLedgerCount = financeSnapshot?.pending_ar?.mixed_ledger_folio_ids?.length || 0;
   const unagedDebt = financeSnapshot?.pending_ar?.unaged_balance_by_currency || {};
@@ -41,6 +46,9 @@ const MobileGM = ({ user, tenant, embedded = false }) => {
     financeSnapshot.pending_ar?.total,
   ) : '—';
   const [roomStatus, setRoomStatus] = useState(null);
+  const otherRoomStatuses = Object.entries(roomStatus?.status_counts || {}).reduce((total, [status, count]) => (
+    ['available', 'occupied', 'dirty', 'cleaning', 'inspected', 'maintenance'].includes(status) ? total : total + Number(count || 0)
+  ), 0);
   const [staffTasks, setStaffTasks] = useState([]);
   const [loadErrors, setLoadErrors] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
@@ -315,8 +323,9 @@ const MobileGM = ({ user, tenant, embedded = false }) => {
                     {dailyFlash ? formatCurrencyBreakdown(dailyFlash.revenue?.total_revenue_by_currency, dailyFlash.revenue?.total_revenue) : '—'}
                   </p>
                   <p className="text-xs text-green-600 mt-1">
-                    ADR: {dailyFlash ? formatCurrencyBreakdown(dailyFlash.revenue?.adr_by_currency, dailyFlash.revenue?.adr) : '—'}
+                    ADR: {adrDisplay}
                   </p>
+                  {roomPostingPending && accruedAdr && Object.keys(accruedAdr).length > 0 && <p className="text-xs text-green-600 mt-1">Tahakkuk ADR: {formatCurrencyBreakdown(accruedAdr)}</p>}
                 </div>
                 <DollarSign className="w-10 h-10 text-green-300" />
               </div>
@@ -329,8 +338,9 @@ const MobileGM = ({ user, tenant, embedded = false }) => {
                 <div>
                   <p className="text-xs text-indigo-600 font-medium">RevPAR</p>
                   <p className="text-2xl font-bold text-indigo-700">
-                    {dailyFlash ? formatCurrencyBreakdown(dailyFlash.revenue?.rev_par_by_currency, dailyFlash.revenue?.rev_par) : '—'}
+                    {revparDisplay}
                   </p>
+                  {roomPostingPending && accruedRevpar && Object.keys(accruedRevpar).length > 0 && <p className="text-xs text-indigo-600 mt-1">Tahakkuk RevPAR: {formatCurrencyBreakdown(accruedRevpar)}</p>}
                 </div>
                 <Target className="w-10 h-10 text-indigo-300" />
               </div>
@@ -354,6 +364,8 @@ const MobileGM = ({ user, tenant, embedded = false }) => {
             </CardContent>
           </Card>
         </div>
+
+        {roomPostingPending && <p className="text-sm text-amber-700" role="status">İş gününün oda ücretleri henüz tam işlenmedi. Tahakkuk değerleri kesinleşmiş gelir değildir.</p>}
 
         {/* Today's Movements */}
         {dailyFlash?.movements && (
@@ -379,12 +391,13 @@ const MobileGM = ({ user, tenant, embedded = false }) => {
                   </p>
                 </div>
                 <div className="text-center p-3 bg-blue-50 rounded-lg">
-                  <p className="text-xs text-blue-600 mb-1">Konaklayan</p>
+                  <p className="text-xs text-blue-600 mb-1">Konaklayan oda</p>
                   <p className="text-3xl font-bold text-blue-700">
-                    {dailyFlash.movements.in_house || 0}
+                    {dailyFlash.occupancy?.occupied_rooms ?? '—'}
                   </p>
                 </div>
               </div>
+              <p className="mt-2 text-xs text-gray-500">Geliş/gidiş rezervasyon sayısıdır. Konaklayan oda, seçili iş gününün gece doluluğudur; kişi sayısı değildir.</p>
             </CardContent>
           </Card>
         )}
@@ -425,6 +438,8 @@ const MobileGM = ({ user, tenant, embedded = false }) => {
                   <p className="text-xs text-amber-600">Bakım</p>
                 </div>
               </div>
+              {otherRoomStatuses > 0 && <p className="mt-2 text-sm text-amber-700">Hizmet dışı / diğer durumlar: {otherRoomStatuses}</p>}
+              <p className="mt-2 text-xs text-gray-500">{roomStatus.total_rooms} aktif fiziksel oda. Sanal hesap odaları dahil değildir.</p>
             </CardContent>
           </Card>
         )}
@@ -569,19 +584,19 @@ const MobileGM = ({ user, tenant, embedded = false }) => {
                   <div className="p-3 bg-blue-50 rounded-lg">
                     <p className="text-xs text-blue-600 mb-1">Doluluk Oranı</p>
                     <p className="text-2xl font-bold text-blue-700">
-                      {dailyFlash?.occupancy_rate?.toFixed(1) || 0}%
+                      {dailyFlash?.occupancy ? formatPercent(dailyFlash.occupancy.occupancy_rate) : '—'}
                     </p>
                   </div>
                   <div className="p-3 bg-green-50 rounded-lg">
                     <p className="text-xs text-green-600 mb-1">RevPAR</p>
                     <p className="text-2xl font-bold text-green-700">
-                      {formatCurrencyBreakdown(dailyFlash?.revenue?.rev_par_by_currency, dailyFlash?.revenue?.rev_par)}
+                      {revparDisplay}
                     </p>
                   </div>
                   <div className="p-3 bg-indigo-50 rounded-lg">
                     <p className="text-xs text-indigo-600 mb-1">ADR</p>
                     <p className="text-2xl font-bold text-indigo-700">
-                      {formatCurrencyBreakdown(dailyFlash?.revenue?.adr_by_currency, dailyFlash?.revenue?.adr)}
+                      {adrDisplay}
                     </p>
                   </div>
                   <div className="p-3 bg-amber-50 rounded-lg">
@@ -591,6 +606,7 @@ const MobileGM = ({ user, tenant, embedded = false }) => {
                     </p>
                   </div>
                 </div>
+                {roomPostingPending && <p className="text-sm text-amber-700">İş gününün oda ücretleri henüz tam işlenmedi. Tahakkuk değerleri kesinleşmiş gelir değildir.</p>}
               </CardContent>
             </Card>
 
@@ -837,27 +853,27 @@ const MobileGM = ({ user, tenant, embedded = false }) => {
                 <div className="grid grid-cols-2 gap-2 text-sm">
                   <div>
                     <p className="text-gray-500">Doluluk:</p>
-                    <p className="font-bold">{dailyFlash?.occupancy_rate?.toFixed(1) || 0}%</p>
+                    <p className="font-bold">{dailyFlash?.occupancy ? formatPercent(dailyFlash.occupancy.occupancy_rate) : '—'}</p>
                   </div>
                   <div>
                     <p className="text-gray-500">RevPAR:</p>
-                    <p className="font-bold">{formatCurrencyBreakdown(dailyFlash?.revenue?.rev_par_by_currency, dailyFlash?.revenue?.rev_par)}</p>
+                    <p className="font-bold">{revparDisplay}</p>
                   </div>
                   <div>
                     <p className="text-gray-500">ADR:</p>
-                    <p className="font-bold">{formatCurrencyBreakdown(dailyFlash?.revenue?.adr_by_currency, dailyFlash?.revenue?.adr)}</p>
+                    <p className="font-bold">{adrDisplay}</p>
                   </div>
                   <div>
                     <p className="text-gray-500">Günlük Gelir:</p>
                     <p className="font-bold">{formatCurrencyBreakdown(dailyFlash?.revenue?.total_revenue_by_currency, dailyFlash?.revenue?.total_revenue)}</p>
                   </div>
                   <div>
-                    <p className="text-gray-500">Gelen Misafir:</p>
-                    <p className="font-bold">{dailyFlash?.arrivals || 0}</p>
+                    <p className="text-gray-500">Geliş (rezervasyon):</p>
+                    <p className="font-bold">{dailyFlash?.movements?.arrivals ?? '—'}</p>
                   </div>
                   <div>
-                    <p className="text-gray-500">Çıkan Misafir:</p>
-                    <p className="font-bold">{dailyFlash?.departures || 0}</p>
+                    <p className="text-gray-500">Gidiş (rezervasyon):</p>
+                    <p className="font-bold">{dailyFlash?.movements?.departures ?? '—'}</p>
                   </div>
                 </div>
               </CardContent>

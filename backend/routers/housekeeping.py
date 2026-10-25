@@ -24,6 +24,7 @@ from models.schemas import HousekeepingTask, User
 from modules.inventory.services.create_room_block_service import CreateRoomBlockService
 from modules.inventory.services.release_room_block_service import ReleaseRoomBlockService
 from modules.pms_core.role_permission_service import require_op  # v77 Bug DM
+from modules.pms_core.stay_night_metrics import is_physical_room
 from shared_kernel.idempotency import (
     begin_idempotency,
     claim_idempotency,
@@ -317,12 +318,14 @@ async def update_housekeeping_task(
 @router.get("/housekeeping/room-status")
 @cached(ttl=60, key_prefix="housekeeping_room_status")  # Cache for 1 minute (real-time data)
 async def get_room_status_board(current_user: User = Depends(get_current_user)):
-    """Get comprehensive room status board"""
-    rooms = await db.rooms.find({"tenant_id": current_user.tenant_id}, {"_id": 0}).to_list(1000)
+    """Physical operational inventory, using the same scope as occupancy reports."""
+    room_rows = await db.rooms.find({"tenant_id": current_user.tenant_id}, {"_id": 0}).to_list(None)
+    rooms = [room for room in room_rows if is_physical_room(room)]
     status_counts = dict.fromkeys(["available", "occupied", "dirty", "cleaning", "inspected", "maintenance", "out_of_order"], 0)
     for room in rooms:
-        status_counts[room["status"]] += 1
-    return {"rooms": rooms, "status_counts": status_counts, "total_rooms": len(rooms)}
+        status = str(room.get("status") or "unknown").strip().lower() or "unknown"
+        status_counts[status] = status_counts.get(status, 0) + 1
+    return {"rooms": rooms, "status_counts": status_counts, "total_rooms": len(rooms), "inventory_basis": "active_physical_rooms"}
 
 
 # rbac-allow: cache-rbac — due-out listesi tüm rolelere açık (FO check-out koordinasyon)
