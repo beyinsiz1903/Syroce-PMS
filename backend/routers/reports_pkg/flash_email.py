@@ -467,6 +467,9 @@ async def export_daily_flash_excel(
                          ("operational_revpar_by_currency", "Accrued RevPAR (not posted revenue)")):
         data.extend([[label, currency, amount] for currency, amount in sorted(report_data["revenue"].get(field, {}).items())])
     wb = create_excel_workbook(title=f"Daily Flash Report - {target_date}", headers=["Metric", "Currency", "Value"], data=data, sheet_name="Daily Flash")
+    # Pending/accrual basis is essential information, not a truncated label.
+    for column, width in (("A", 46), ("B", 12), ("C", 26)):
+        wb.active.column_dimensions[column].width = width
     return excel_response(wb, f"daily_flash_report_{target_date}.xlsx")
 
 
