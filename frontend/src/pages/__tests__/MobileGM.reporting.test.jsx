@@ -132,4 +132,48 @@ describe('MobileGM report response mapping', () => {
     expect(await screen.findByText(/31 aktif fiziksel oda/)).toBeInTheDocument();
     expect(screen.getByText('Hizmet dışı / diğer durumlar: 2')).toBeInTheDocument();
   });
+
+  it('renders actual same-cohort performance and keeps unknown channel share explicit', async () => {
+    mockApi({ flash: { performance: { reservation_count: 4, average_stay_nights: 3.75,
+      channel_share_pct: { ota: 25, direct: 25, agency: 25, unknown: 25 }, channel_classification_complete: false } } });
+    render(<MobileGM user={{}} tenant={{ id: 't' }} />);
+    await screen.findByText('75.0%');
+    fireEvent.click(screen.getByRole('button', { name: 'nav.reports' }));
+    const dialog = within(screen.getByRole('dialog'));
+    expect(dialog.getByText('3,75 gece')).toBeInTheDocument();
+    expect(dialog.getByText(/iş gününde geceleyen 4 rezervasyon/)).toBeInTheDocument();
+    for (const label of ['Rezervasyon Kaynağı (OTA):', 'Direkt Rezervasyon:', 'Acente / Şirket:', 'Kaynağı Belirsiz:']) {
+      expect(dialog.getByText(label).parentElement).toHaveTextContent('25%');
+    }
+    expect(dialog.getByText(/doğrudan veya OTA sayılmadı/)).toBeInTheDocument();
+    expect(dialog.queryByText('Operasyonel')).not.toBeInTheDocument();
+    expect(dialog.getAllByText('Durum ölçülmüyor')).toHaveLength(2);
+  });
+
+  it.each([undefined, { reservation_count: 0, average_stay_nights: null, channel_share_pct: { ota: null, direct: null } }])(
+    'never displays missing performance as zero (%s)', async performance => {
+      mockApi({ flash: { performance, avg_stay_duration: 99, ota_percentage: 99, direct_percentage: 99 } });
+      render(<MobileGM user={{}} tenant={{ id: 't' }} />);
+      await screen.findByText('75.0%');
+      fireEvent.click(screen.getByRole('button', { name: 'nav.reports' }));
+      const dialog = within(screen.getByRole('dialog'));
+      for (const label of ['Ortalama Konaklama Süresi:', 'Rezervasyon Kaynağı (OTA):', 'Direkt Rezervasyon:']) {
+        expect(dialog.getByText(label).parentElement).toHaveTextContent('—');
+        expect(dialog.getByText(label).parentElement).not.toHaveTextContent('0%');
+      }
+      expect(dialog.queryByText('99 gece')).not.toBeInTheDocument();
+    },
+  );
+
+  it('distinguishes a measured zero OTA share from unavailable performance', async () => {
+    mockApi({ flash: { performance: { reservation_count: 10, average_stay_nights: 4,
+      channel_share_pct: { ota: 0, direct: 100, agency: 0, unknown: 0 }, channel_classification_complete: true } } });
+    render(<MobileGM user={{}} tenant={{ id: 't' }} />);
+    await screen.findByText('75.0%');
+    fireEvent.click(screen.getByRole('button', { name: 'nav.reports' }));
+    const dialog = within(screen.getByRole('dialog'));
+    expect(dialog.getByText('Rezervasyon Kaynağı (OTA):').parentElement).toHaveTextContent('0%');
+    expect(dialog.getByText('Direkt Rezervasyon:').parentElement).toHaveTextContent('100%');
+    expect(dialog.getByText('4 gece')).toBeInTheDocument();
+  });
 });

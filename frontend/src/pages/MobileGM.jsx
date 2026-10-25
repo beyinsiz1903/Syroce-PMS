@@ -26,6 +26,7 @@ import {
 import { useTranslation } from 'react-i18next';
 import { formatCurrency as formatMoney, cachedTenantCurrency } from '@/lib/currency';
 import { formatCurrencyBreakdown } from '@/lib/reportCurrency';
+import AccountProjectionRepair from '@/components/pms/AccountProjectionRepair';
 
 const MobileGM = ({ user, tenant, embedded = false }) => {
   const { t } = useTranslation();
@@ -33,6 +34,9 @@ const MobileGM = ({ user, tenant, embedded = false }) => {
   const [loading, setLoading] = useState(true);
   const [dailyFlash, setDailyFlash] = useState(null);
   const [financeSnapshot, setFinanceSnapshot] = useState(null);
+  const performance = dailyFlash?.performance;
+  const formatMetric = (value, suffix = '') => typeof value === 'number' && Number.isFinite(value)
+    ? `${value.toLocaleString('tr-TR', { maximumFractionDigits: 2 })}${suffix}` : '—';
   const roomPostingPending = dailyFlash?.revenue?.posting_pending === true;
   const adrDisplay = roomPostingPending ? 'İşlenmeyi bekliyor' : dailyFlash ? formatCurrencyBreakdown(dailyFlash.revenue?.adr_by_currency, dailyFlash.revenue?.adr) : '—';
   const revparDisplay = roomPostingPending ? 'İşlenmeyi bekliyor' : dailyFlash ? formatCurrencyBreakdown(dailyFlash.revenue?.rev_par_by_currency, dailyFlash.revenue?.rev_par) : '—';
@@ -356,6 +360,7 @@ const MobileGM = ({ user, tenant, embedded = false }) => {
                     {arDisplay}
                   </p>
                   {arIncomplete && <p className="mt-1 text-xs text-rose-700" role="alert">Bazı folyo/cari bakiyeleri doğrulanamadı; toplam eksik.</p>}
+                  <AccountProjectionRepair key={tenant?.id || user?.tenant_id} issues={financeSnapshot?.pending_ar?.source_issues} user={user} onRepaired={() => { toast.success('Cari bakiye kaynaklara göre yenilendi; geçmiş hareketler korundu.'); loadData(true); }} />
                   {!arIncomplete && mixedLedgerCount > 0 && <p className="mt-1 text-xs text-amber-700">{mixedLedgerCount} folyoda farklı döviz bakiyeleri var; birbirinden mahsup edilmedi.</p>}
                   {!arIncomplete && Object.values(unagedDebt).some(amount => Number(amount) > 0) && <p className="mt-1 text-xs text-amber-700">Vadesi belirsiz alacak: {formatCurrencyBreakdown(unagedDebt)}. Tarih veya ödeme dağılımı doğrulanmalı.</p>}
                 </div>
@@ -886,23 +891,23 @@ const MobileGM = ({ user, tenant, embedded = false }) => {
               <CardContent className="space-y-2">
                 <div className="flex items-center justify-between p-2 bg-green-50 rounded">
                   <span className="text-sm">{t("nav.frontDesk")}</span>
-                  <Badge className="bg-green-500">Operasyonel</Badge>
+                  <Badge variant="secondary">Durum ölçülmüyor</Badge>
                 </div>
                 <div className="flex items-center justify-between p-2 bg-green-50 rounded">
                   <span className="text-sm">Housekeeping</span>
                   <Badge className="bg-green-500">
-                    {roomStatus?.status_counts?.dirty || 0} kirli oda
+                    {formatMetric(roomStatus?.status_counts?.dirty)} kirli oda
                   </Badge>
                 </div>
                 <div className="flex items-center justify-between p-2 bg-green-50 rounded">
                   <span className="text-sm">Teknik Servis</span>
                   <Badge className="bg-green-500">
-                    {roomStatus?.status_counts?.maintenance || 0} bakımda
+                    {formatMetric(roomStatus?.status_counts?.maintenance)} bakımda
                   </Badge>
                 </div>
                 <div className="flex items-center justify-between p-2 bg-green-50 rounded">
                   <span className="text-sm">F&B</span>
-                  <Badge className="bg-green-500">Operasyonel</Badge>
+                  <Badge variant="secondary">Durum ölçülmüyor</Badge>
                 </div>
               </CardContent>
             </Card>
@@ -912,18 +917,31 @@ const MobileGM = ({ user, tenant, embedded = false }) => {
                 <CardTitle className="text-base">Performans Göstergeleri</CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
+                <p className="text-xs text-gray-500">
+                  {dailyFlash?.date || '—'} iş gününde geceleyen {formatMetric(performance?.reservation_count)} rezervasyon.
+                  Ortalama süre, bu rezervasyonların toplam planlanan kalış süresidir; kişi veya gelir payı değildir.
+                </p>
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-600">Ortalama Konaklama Süresi:</span>
-                  <span className="font-bold">{dailyFlash?.avg_stay_duration || 0} gece</span>
+                  <span className="font-bold">{formatMetric(performance?.average_stay_nights, ' gece')}</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-600">Rezervasyon Kaynağı (OTA):</span>
-                  <span className="font-bold">{dailyFlash?.ota_percentage || 0}%</span>
+                  <span className="font-bold">{formatMetric(performance?.channel_share_pct?.ota, '%')}</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-600">Direkt Rezervasyon:</span>
-                  <span className="font-bold">{dailyFlash?.direct_percentage || 0}%</span>
+                  <span className="font-bold">{formatMetric(performance?.channel_share_pct?.direct, '%')}</span>
                 </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">Acente / Şirket:</span>
+                  <span className="font-bold">{formatMetric(performance?.channel_share_pct?.agency, '%')}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">Kaynağı Belirsiz:</span>
+                  <span className="font-bold">{formatMetric(performance?.channel_share_pct?.unknown, '%')}</span>
+                </div>
+                {performance?.channel_classification_complete === false && <p className="text-xs text-amber-700" role="status">Kaynağı belirsiz rezervasyonlar doğrudan veya OTA sayılmadı.</p>}
               </CardContent>
             </Card>
           </div>

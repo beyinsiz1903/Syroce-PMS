@@ -54,6 +54,7 @@ TENANT_SCOPED_COLLECTIONS: set[str] = {
     "tasks",
     "users",
     "audit_logs",
+    "account_projection_repairs",
     "reports",
     "rate_plans",
     "invoices",

@@ -522,7 +522,9 @@ async def post_to_city_ledger(
         credit_limit = float(account.get("credit_limit", 0))
     except (TypeError, ValueError) as exc:
         raise HTTPException(status_code=409, detail="City ledger account balance is invalid") from exc
-    if not math.isfinite(current_balance) or current_balance < 0 or not math.isfinite(credit_limit) or credit_limit < 0:
+    # A source-backed overpayment is a customer credit, not corrupt data.
+    # New direct-bill charges consume that credit before increasing the debt.
+    if not math.isfinite(current_balance) or not math.isfinite(credit_limit) or credit_limit < 0:
         raise HTTPException(status_code=409, detail="City ledger account balance is invalid")
     if current_balance + amount > credit_limit:
         raise HTTPException(status_code=409, detail="Credit limit exceeded")
