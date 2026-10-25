@@ -9,6 +9,7 @@ from fastapi import HTTPException
 
 from core import audit_chain
 from core import database as core_database
+from domains.pms import cashier_service
 from modules.pms_core import deposit_operations
 from routers import reservation_detail as routes
 from routers import webhook_retry_service
@@ -20,14 +21,21 @@ USER = SimpleNamespace(id="operator", name="Yetkili", role="manager", tenant_id=
 @pytest.fixture(autouse=True)
 async def wired(monkeypatch, ledger_db):
     for name in ("bookings", "folios", "deposits", "payments", "deposit_refunds", "deposit_operations",
-                 "tenant_settings", "audit_logs", "audit_chain_state", "reservation_financial_locks"):
+                 "tenant_settings", "audit_logs", "audit_chain_state", "reservation_financial_locks", "cashier_shifts"):
         await ledger_db.create_collection(name)
     await ledger_db.tenant_settings.insert_one({"tenant_id": "A", "business_date": "2026-10-24"})
     await ledger_db.bookings.insert_one({"tenant_id": "A", "id": "b", "currency": "TRY", "status": "confirmed", "paid_amount": 0})
     await ledger_db.folios.insert_one({"tenant_id": "A", "booking_id": "b", "id": "f", "currency": "TRY", "status": "open"})
+    await ledger_db.cashier_shifts.insert_one({"tenant_id": "A", "id": "shift", "status": "open", "business_date": "2026-10-24",
+        "opened_at": "2026-10-24T00:00:00", "cash_in": 0, "cash_out": 0, "transactions": []})
     monkeypatch.setattr(routes, "db", ledger_db)
     monkeypatch.setattr(core_database, "client", ledger_db.client)
     monkeypatch.setattr(audit_chain, "_system_db", lambda: ledger_db)
+    monkeypatch.setattr(cashier_service, "db", ledger_db)
+    async def stamp(_db, _tid, row):
+        row["business_date"] = "2026-10-24"
+        return "2026-10-24"
+    monkeypatch.setattr(cashier_service, "stamp_open_business_date", stamp)
     monkeypatch.setattr(routes, "_enforce_perm", lambda *_: None)
     monkeypatch.setattr(routes, "_refresh_cached_folio_balance", AsyncMock())
     monkeypatch.setattr(routes, "_log_activity", AsyncMock())
@@ -67,6 +75,8 @@ async def test_receipt_and_full_refund_are_durable_after_response_loss_and_state
     assert await wired.payments.count_documents({}) == 2
     assert await wired.deposit_operations.count_documents({}) == 2
     assert (await wired.bookings.find_one({"id": "b"}))["paid_amount"] == 0
+    shift = await wired.cashier_shifts.find_one({})
+    assert len(shift["transactions"]) == 2 and shift["cash_in"] == shift["cash_out"] == 100
     entries = await wired.audit_logs.find({}).to_list(None)
     assert len(entries) == 2
     for entry in entries:
@@ -110,6 +120,7 @@ async def test_failure_rolls_back_deposit_payment_counter_refund_and_audit(wired
     assert await wired.deposit_refunds.count_documents({}) == 0
     assert await wired.deposit_operations.count_documents({}) == 1
     assert await wired.audit_logs.count_documents({}) == 1
+    assert len((await wired.cashier_shifts.find_one({}))["transactions"]) == 1
 
 
 async def test_receipt_audit_failure_rolls_back_all_three_writes(wired, monkeypatch):
@@ -119,6 +130,7 @@ async def test_receipt_audit_failure_rolls_back_all_three_writes(wired, monkeypa
     for name in ("deposits", "payments", "deposit_operations", "audit_logs"):
         assert await wired[name].count_documents({}) == 0
     assert (await wired.bookings.find_one({"id": "b"}))["paid_amount"] == 0
+    assert (await wired.cashier_shifts.find_one({}))["transactions"] == []
 
 
 async def test_concurrent_refunds_cannot_exceed_deposit_and_partial_refunds_accumulate(wired):
@@ -216,12 +228,113 @@ async def test_transactions_unavailable_never_fall_back_to_partial_writes(wired,
 async def test_native_receipt_refund_currency_is_never_converted_implicitly(wired, currency, method):
     await wired.bookings.update_one({"id": "b"}, {"$set": {"currency": currency}})
     await wired.folios.update_one({"id": "f"}, {"$set": {"currency": currency}})
-    body = receipt().model_copy(update={"method": method})
+    body = receipt().model_copy(update={"method": method, "received_to_try_rate": 1 if currency == "TRY" else 50})
     result = await receive(body)
     data = refund(result["deposit"]["id"], 25).model_copy(update={"refund_method": method})
     returned = await repay(data)
     assert result["payment"]["currency"] == returned["payment"]["currency"] == currency
     assert returned["payment"]["amount"] == -25 and returned["remaining_amount"] == 75
+    shift = await wired.cashier_shifts.find_one({})
+    assert len(shift["transactions"]) == 2
+    assert all(t["method"] == method and t["currency"] == currency for t in shift["transactions"])
+    assert [t["original_amount"] for t in shift["transactions"]] == [100, 25]
+    assert [t["amount"] for t in shift["transactions"]] == ([100, 25] if currency == "TRY" else [5000, 1250])
+    assert shift["cash_in"] == (100 if method == "cash" else 0)
+    assert shift["cash_out"] == (25 if method == "cash" else 0)
+
+
+@pytest.mark.parametrize("method", ["cash", "card", "bank_transfer"])
+async def test_all_native_methods_have_exactly_one_shift_row_per_receipt_and_refund(wired, method):
+    result = await receive(receipt().model_copy(update={"method": method}))
+    data = refund(result["deposit"]["id"]).model_copy(update={"refund_method": method})
+    await repay(data)
+    await repay(data)
+    shift = await wired.cashier_shifts.find_one({})
+    assert len(shift["transactions"]) == 2
+    assert shift["cash_in"] == shift["cash_out"] == (100 if method == "cash" else 0)
+
+
+async def test_cashier_failure_rolls_back_sources_and_shift_even_after_append(wired, monkeypatch):
+    original = routes._append_deposit_cashier
+    async def fail(*args, **kwargs):
+        await original(*args, **kwargs)
+        raise RuntimeError("cashier failed after append")
+    monkeypatch.setattr(routes, "_append_deposit_cashier", fail)
+    with pytest.raises(RuntimeError):
+        await receive()
+    assert await wired.payments.count_documents({}) == await wired.deposits.count_documents({}) == 0
+    assert (await wired.cashier_shifts.find_one({}))["transactions"] == []
+    assert await wired.audit_logs.count_documents({}) == 0
+
+
+async def test_cash_requires_open_shift_without_partial_financial_write(wired):
+    await wired.cashier_shifts.update_one({}, {"$set": {"status": "closed"}})
+    with pytest.raises(HTTPException) as error:
+        await receive()
+    assert error.value.status_code == 409 and await wired.payments.count_documents({}) == 0
+
+
+async def test_refund_after_shift_close_rolls_back_and_retains_original_receipt(wired):
+    result = await receive()
+    await wired.cashier_shifts.update_one({}, {"$set": {"status": "closed"}})
+    with pytest.raises(HTTPException) as error:
+        await repay(refund(result["deposit"]["id"]))
+    assert error.value.status_code == 409
+    assert await wired.payments.count_documents({}) == 1 and await wired.deposit_refunds.count_documents({}) == 0
+    assert (await wired.deposits.find_one({}))["status"] == "received"
+    assert (await wired.bookings.find_one({}))["paid_amount"] == 100
+
+
+async def test_non_cash_receipt_without_a_shift_preserves_existing_pos_policy(wired):
+    await wired.cashier_shifts.update_one({}, {"$set": {"status": "closed"}})
+    result = await receive(receipt().model_copy(update={"method": "card"}))
+    assert result["success"] and await wired.payments.count_documents({}) == 1
+    assert (await wired.cashier_shifts.find_one({}))["transactions"] == []
+
+
+@pytest.mark.parametrize("rate,reference", [(None, "source"), (0, "source"), (50, "")])
+async def test_foreign_receipt_requires_explicit_source_rate_and_reference(wired, rate, reference):
+    await wired.bookings.update_one({"id": "b"}, {"$set": {"currency": "USD"}})
+    await wired.folios.update_one({"id": "f"}, {"$set": {"currency": "USD"}})
+    with pytest.raises(HTTPException) as error:
+        await receive(receipt().model_copy(update={"received_to_try_rate": rate, "reference": reference}))
+    assert error.value.status_code == 422 and await wired.payments.count_documents({}) == 0
+
+
+async def test_fractional_source_rate_full_refund_preserves_the_original_try_cent(wired):
+    await wired.bookings.update_one({"id": "b"}, {"$set": {"currency": "EUR"}})
+    await wired.folios.update_one({"id": "f"}, {"$set": {"currency": "EUR"}})
+    result = await receive(receipt().model_copy(update={"amount": 1, "method": "card", "received_to_try_rate": 1.005}))
+    await repay(refund(result["deposit"]["id"], .5).model_copy(update={"refund_method": "card"}))
+    await repay(refund(result["deposit"]["id"], .5).model_copy(update={"refund_method": "card"}))
+    shift = await wired.cashier_shifts.find_one({})
+    signed = sum(round(t["amount"] * 100) * (1 if t["direction"] == "in" else -1) for t in shift["transactions"])
+    assert signed == 0 and len(shift["transactions"]) == 3
+    assert (await wired.deposits.find_one({}))["refunded_reporting_amount"] == result["payment"]["reporting_amount"]
+
+
+async def test_old_foreign_deposit_without_source_valuation_does_not_invent_refund_rate(wired):
+    result = await receive()
+    await wired.deposits.update_one({}, {"$set": {"currency": "EUR"}, "$unset": {"cashier_snapshot_version": "", "reporting_amount": ""}})
+    await wired.folios.update_one({"id": "f"}, {"$set": {"currency": "EUR"}})
+    with pytest.raises(HTTPException) as error:
+        await repay(refund(result["deposit"]["id"], 1))
+    assert error.value.status_code == 409 and await wired.deposit_refunds.count_documents({}) == 0
+
+
+async def test_optional_fx_schema_field_preserves_1416_durable_receipt_fingerprint(wired):
+    from modules.pms_core.enterprise_billing import fingerprint
+
+    body = receipt()
+    key, digest = deposit_operations.intent(body, "A", "b", "receive")
+    legacy_payload = body.model_dump(mode="json")
+    legacy_payload.pop("received_to_try_rate")
+    legacy_digest = fingerprint({"booking_id": "b", "action": "receive", **legacy_payload})
+    assert digest == legacy_digest
+    await wired.deposit_operations.insert_one({"_id": key, "tenant_id": "A", "fingerprint": legacy_digest,
+        "result": {"success": True, "payment": {"id": "old-receipt", "folio_id": "f"}}})
+    assert (await receive(body))["replayed"]
+    assert await wired.payments.count_documents({}) == 0
 
 
 @pytest.mark.parametrize("changes", [{"amount": "NaN"}, {"amount": -100}, {"refunded_amount": 101}, {"amount": 100.001}])

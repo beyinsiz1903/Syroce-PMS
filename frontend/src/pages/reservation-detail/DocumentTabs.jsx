@@ -14,7 +14,7 @@ export function DepositsTab({ deposits, booking, folios = [], onRefresh }) {
   const { t } = useTranslation();
   const [showDeposit, setShowDeposit] = useState(false);
   const [showRefund, setShowRefund] = useState(null);
-  const [depForm, setDepForm] = useState({ amount: '', method: 'cash', reference: '' });
+  const [depForm, setDepForm] = useState({ amount: '', method: 'cash', reference: '', received_to_try_rate: '' });
   const [refundForm, setRefundForm] = useState({ refund_amount: '', refund_method: 'cash', reason: '' });
   const [loading, setLoading] = useState(false);
   const [depositFolio, setDepositFolio] = useState('');
@@ -26,11 +26,16 @@ export function DepositsTab({ deposits, booking, folios = [], onRefresh }) {
     if (depositLocked) { toast.error('Tamamlanmış veya iptal edilmiş rezervasyona depozito alınamaz'); return; }
     if (!depForm.amount) { toast.error('Tutar giriniz'); return; }
     if (openFolios.length > 1 && !targetFolio) { toast.error('Depozitonun işleneceği folyoyu seçin'); return; }
+    if (!['TRY', 'TL'].includes(currency) && (!(Number(depForm.received_to_try_rate) > 0) || !depForm.reference.trim())) {
+      toast.error('Döviz depozitosu için kaynak TL kuru ve dekont/kur referansı girin'); return;
+    }
     setLoading(true);
     try {
-      await submitDepositIntent(booking.id, 'receive', { ...depForm, amount: parseFloat(depForm.amount), folio_id: targetFolio },
+      await submitDepositIntent(booking.id, 'receive', { amount: parseFloat(depForm.amount), method: depForm.method,
+        reference: depForm.reference, folio_id: targetFolio,
+        ...(!['TRY', 'TL'].includes(currency) ? { received_to_try_rate: Number(depForm.received_to_try_rate) } : {}) },
         body => axios.post(`/pms/reservations/${booking.id}/record-deposit`, body));
-      toast.success('Depozito kaydedildi'); setShowDeposit(false); setDepForm({ amount: '', method: 'cash', reference: '' }); onRefresh?.();
+      toast.success('Depozito kaydedildi'); setShowDeposit(false); setDepForm({ amount: '', method: 'cash', reference: '', received_to_try_rate: '' }); onRefresh?.();
     } catch (e) { toast.error('İşlem Hatası: ' + (e.response?.data?.detail || e.message)); }
     setLoading(false);
   };
@@ -77,6 +82,9 @@ export function DepositsTab({ deposits, booking, folios = [], onRefresh }) {
               options={[['cash','Nakit'],['card','Kredi Kartı'],['bank_transfer','Havale/EFT']]} />
             <FormField label="Referans" value={depForm.reference} onChange={v => setDepForm(p => ({ ...p, reference: v }))} />
           </div>
+          {!['TRY', 'TL'].includes(currency) && <FormField label={`Kaynak TL kuru (1 ${currency})`} type="number" step="any"
+            value={depForm.received_to_try_rate} onChange={v => setDepForm(p => ({ ...p, received_to_try_rate: v }))} />}
+          <p className="text-xs">Kart/havale harici işlem kaydıdır. İade TL karşılığı kaynak tahsilat değerinden bölüştürülür; güncel kur varsayılmaz.</p>
           <div className="flex gap-2">
             <Button size="sm" onClick={handleDeposit} disabled={loading} className="bg-blue-600 text-white h-8 text-xs">{loading ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Kaydet'}</Button>
             <Button size="sm" variant="ghost" onClick={() => setShowDeposit(false)} className="h-8 text-xs">{t('cm.pages_reservationdetail_DocumentTabs.iptal')}</Button>

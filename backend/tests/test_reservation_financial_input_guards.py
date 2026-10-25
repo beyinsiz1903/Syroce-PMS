@@ -42,6 +42,7 @@ def _deposit_transaction_unit_boundary(monkeypatch):
     monkeypatch.setattr(reservation_detail, "_deposit_intent", lambda *_: ("operation-a", "digest-a"))
     monkeypatch.setattr(reservation_detail, "_replay_deposit", AsyncMock(return_value=None))
     monkeypatch.setattr(reservation_detail, "_remember_deposit", AsyncMock())
+    monkeypatch.setattr(reservation_detail, "_append_deposit_cashier", AsyncMock())
     async def transaction(**kwargs):
         return await kwargs["callback"]("session-a")
     monkeypatch.setattr(reservation_detail, "_run_reservation_financial_transaction", transaction)

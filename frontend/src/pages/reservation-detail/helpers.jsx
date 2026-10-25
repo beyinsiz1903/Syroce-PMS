@@ -150,9 +150,9 @@ export function SummaryCard({ label, value, color, currency }) {
   );
 }
 
-export function FormField({ label, value, onChange, type = 'text', placeholder = '', inputMode, hint }) {
+export function FormField({ label, value, onChange, type = 'text', placeholder = '', inputMode, step, hint }) {
   const isMoney = type === 'money';
-  return <div><Label className="text-xs">{label}</Label><Input {...(isMoney ? moneyInputProps : { type, inputMode })} value={value} onChange={e => onChange(e.target.value)} className="h-8 text-sm" placeholder={placeholder || (isMoney ? 'Örn. 150,74' : '')} />{hint && <p className="mt-1 text-xs text-slate-500">{hint}</p>}</div>;
+  return <div><Label className="text-xs">{label}</Label><Input {...(isMoney ? moneyInputProps : { type, inputMode, step })} aria-label={label} value={value} onChange={e => onChange(e.target.value)} className="h-8 text-sm" placeholder={placeholder || (isMoney ? 'Örn. 150,74' : '')} />{hint && <p className="mt-1 text-xs text-slate-500">{hint}</p>}</div>;
 }
 
 export function SelectField({ label, value, onChange, options }) {
