@@ -398,6 +398,45 @@ describe('FoliosTab — Folyo Böl akışı (Task #419)', () => {
 });
 
 describe('FoliosTab — sade ödeme akışı', () => {
+  it.each(['TRY', 'USD', 'EUR'])('separates the whole-stay total from posted debt in %s without changing the selected-folio payment', async currency => {
+    const props = singleFolioProps({
+      booking: { ...booking, currency },
+      folios: [{ id: 'f1', folio_number: 'F-001', folio_type: 'guest', status: 'open', balance: 3400 }],
+      summary: {
+        total_amount: 19200, additional_charge_total: 2100, gross_total: 21300,
+        total_payments: 5800, prepayment_total: 4800, total_discounts: 7300,
+        balance: 3400, folio_balance: 3400, unposted_room_amount: 4800, reservation_total_due: 8200,
+      },
+    });
+    render(<FoliosTab {...props} />);
+    const suffix = currency === 'TRY' ? 'TL' : currency;
+    expect(screen.getByText('Toplam kalan ödeme').parentElement).toHaveTextContent(`8.200 ${suffix}`);
+    expect(screen.getByTestId('folio-posted-folio-balance')).toHaveTextContent(`3.400 ${suffix}`);
+    expect(screen.getByTestId('folio-unposted-room-amount')).toHaveTextContent(`4.800 ${suffix}`);
+    expect(screen.getByTestId('prepayment-summary')).toHaveTextContent('yeniden düşülmez');
+    expect(axiosPost).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByLabelText('İşlem hedef folyo'), { target: { value: 'f1' } });
+    fireEvent.click(screen.getByTestId('btn-odeme-al'));
+    const panel = screen.getByTestId('payment-form');
+    expect(within(panel).getByTestId('selected-folio-payment-scope')).toHaveTextContent('yalnız seçili folyo içindir');
+    if (currency !== 'TRY') {
+      fireEvent.change(within(panel).getByLabelText(/TL kasa kuru/), { target: { value: '50' } });
+    }
+    fireEvent.click(within(panel).getByRole('button', { name: /kaydet/ }));
+
+    await waitFor(() => expect(axiosPost).toHaveBeenCalledWith(
+      '/pms/reservations/bk-1/record-payment',
+      expect.objectContaining({ folio_id: 'f1', amount: 3400, currency, payment_type: 'final' }),
+    ));
+  });
+
+  it('does not display an unavailable total as a paid balance', () => {
+    render(<FoliosTab {...singleFolioProps({ summary: {} })} />);
+    expect(screen.getByText('Ödeme bilgisi alınamadı')).toBeInTheDocument();
+    expect(screen.queryByText('Toplam kalan ödeme')).not.toBeInTheDocument();
+  });
+
   it('işlem geçmişinde muhasebe tutarı yanında alınan dövizi gösterir ve iptali işaretler', () => {
     render(<FoliosTab {...singleFolioProps({
       booking: { ...booking, currency: 'EUR' },

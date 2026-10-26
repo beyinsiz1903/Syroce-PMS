@@ -453,6 +453,77 @@ describe('ReservationDetailModal operation URLs', () => {
     expect(screen.getAllByText('3 gece')).toHaveLength(2);
   });
 
+  it('uses the same whole-stay amount in all payment headlines without counting prepayment twice', async () => {
+    get.mockResolvedValueOnce({ data: {
+      ...detail,
+      booking: { ...detail.booking, status: 'checked_in' },
+      summary: {
+        accommodation_total: 19200, additional_charge_total: 2100, gross_total: 21300,
+        complimentary_adjustment_total: 7300, total_discounts: 7300,
+        total_payments: 5800, prepayment_total: 4800,
+        balance: 3400, folio_balance: 3400, unposted_room_amount: 4800,
+        reservation_total_due: 8200,
+      },
+    } });
+
+    render(<ReservationDetailModal bookingId="booking-test" onClose={() => {}} allBookings={[]} />);
+
+    expect(await screen.findByTestId('reservation-total-due')).toHaveTextContent('8.200 TL');
+    expect(screen.getByTestId('workspace-payment-overview')).toHaveTextContent('Toplam kalan ödeme: 8.200 TL');
+    expect(screen.getByTestId('ops-payment-alert')).toHaveTextContent('Toplam kalan ödeme: 8.200 TL');
+    expect(screen.getByTestId('general-payment-info')).toHaveTextContent('Toplam kalan ödeme8.200 TL');
+    expect(screen.getByTestId('general-payment-info')).not.toHaveTextContent('3.400 TL');
+    expect(screen.getByTestId('posted-folio-balance')).toHaveTextContent('Folyodaki borç3.400 TL');
+    expect(screen.getByTestId('unposted-room-amount')).toHaveTextContent('Henüz işlenmemiş oda bedeli4.800 TL');
+    expect(screen.getByTestId('payment-balance-breakdown')).toHaveTextContent('ayrıca eklenmez');
+    expect(screen.getByTestId('prepayment-total')).toHaveTextContent('Toplam tahsilatın içinde; yeniden düşülmez.');
+    expect(screen.queryByText('Tahakkuk bekleyen konaklama')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('ops-payment-ok')).not.toBeInTheDocument();
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it('does not mark a zero posted balance paid while a room night is still payable', async () => {
+    get.mockResolvedValueOnce({ data: {
+      ...detail,
+      summary: { ...detail.summary, balance: 0, folio_balance: 0, unposted_room_amount: 4800, reservation_total_due: 4800 },
+    } });
+    render(<ReservationDetailModal bookingId="booking-test" onClose={() => {}} allBookings={[]} />);
+
+    expect(await screen.findByTestId('workspace-payment-overview')).toHaveTextContent('Toplam kalan ödeme: 4.800 TL');
+    expect(screen.getByTestId('ops-payment-alert')).toHaveTextContent('4.800 TL');
+    expect(screen.queryByTestId('ops-payment-ok')).not.toBeInTheDocument();
+    expect(screen.queryByText('Ödeme tamamlandı')).not.toBeInTheDocument();
+  });
+
+  it('explains a fully prepaid unposted night without presenting its folio credit as a refund', async () => {
+    get.mockResolvedValueOnce({ data: {
+      ...detail,
+      summary: {
+        ...detail.summary, balance: -4800, folio_balance: -4800,
+        unposted_room_amount: 4800, reservation_total_due: 0, prepayment_total: 4800, total_payments: 4800,
+      },
+    } });
+    render(<ReservationDetailModal bookingId="booking-test" onClose={() => {}} allBookings={[]} />);
+
+    expect(await screen.findByTestId('reservation-total-due')).toHaveTextContent(/^0 TL$/);
+    expect(screen.getByTestId('workspace-payment-overview')).toHaveTextContent('Toplam kalan ödeme: 0 TL');
+    expect(screen.getByTestId('posted-folio-balance')).toHaveTextContent('Folyodaki ön ödeme / alacak4.800 TL');
+    expect(screen.getByTestId('payment-balance-breakdown')).toHaveTextContent('Bu tutar yeniden tahsil edilmez.');
+    expect(screen.queryByTestId('ops-payment-alert')).not.toBeInTheDocument();
+    expect(screen.queryByText('Misafir alacağı: 4.800 TL')).not.toBeInTheDocument();
+  });
+
+  it('shows unavailable payment data as a warning rather than a paid zero', async () => {
+    get.mockResolvedValueOnce({ data: { ...detail, summary: {} } });
+    render(<ReservationDetailModal bookingId="booking-test" onClose={() => {}} allBookings={[]} />);
+
+    expect(await screen.findByTestId('reservation-total-due')).toHaveTextContent('—');
+    expect(screen.getByTestId('workspace-payment-overview')).toHaveTextContent('Ödeme bilgisi alınamadı');
+    expect(screen.getByTestId('ops-payment-review')).toHaveTextContent('Ödeme bilgisi alınamadı');
+    expect(screen.queryByTestId('ops-payment-ok')).not.toBeInTheDocument();
+    expect(screen.queryByText('Ödeme tamamlandı')).not.toBeInTheDocument();
+  });
+
   it('does not present a system pricing difference as remaining collection', async () => {
     get.mockResolvedValueOnce({
       data: {
@@ -474,6 +545,9 @@ describe('ReservationDetailModal operation URLs', () => {
 
     expect(await screen.findByTestId('pricing-reconciliation-alert')).toHaveTextContent('15,03 TL');
     expect(screen.getByTestId('financial-summary-card')).toHaveTextContent('Fiyat / tahakkuk farkı');
+    expect(screen.getByTestId('workspace-payment-overview')).toHaveTextContent('Fiyat / tahakkuk farkı: 15,03 TL');
+    expect(screen.getByTestId('ops-payment-review')).toHaveTextContent('Fiyat / tahakkuk farkı');
+    expect(screen.queryByTestId('ops-payment-ok')).not.toBeInTheDocument();
     expect(screen.queryByText('Rezervasyon toplamından kalan')).not.toBeInTheDocument();
   });
 
@@ -499,7 +573,7 @@ describe('ReservationDetailModal operation URLs', () => {
     render(<ReservationDetailModal bookingId="booking-test" onClose={() => {}} allBookings={[]} />);
 
     expect(await screen.findByTestId('financial-summary-card')).toHaveTextContent('Comp indirimi');
-    expect(screen.getByTestId('financial-summary-card')).toHaveTextContent('Tahsilat tamamlandı');
+    expect(screen.getByTestId('financial-summary-card')).toHaveTextContent('Konaklamanın tamamı için kalan ödeme yok.');
     expect(screen.queryByTestId('pricing-reconciliation-alert')).not.toBeInTheDocument();
     expect(screen.getByTestId('btn-checkout')).not.toHaveTextContent('mutabakat');
   });

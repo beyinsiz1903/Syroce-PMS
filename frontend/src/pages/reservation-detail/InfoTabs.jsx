@@ -14,6 +14,7 @@ import { useOptionalEntitlements } from '@/context/EntitlementContext';
 import api from '@/api/axios';
 import ExelyDemographicsNotice from '@/components/ExelyDemographicsNotice';
 import { exelyDemographicsUnverified } from '@/utils/exelyDemographics';
+import { reservationPaymentSummary } from './paymentSummary';
 const ALERT_LEVEL_BG = {
   danger: 'bg-red-50 border-red-300 text-red-800',
   warning: 'bg-amber-50 border-amber-300 text-amber-800',
@@ -160,8 +161,12 @@ export function GeneralInfoTab({
     } finally { setEnablingLongStay(false); }
   };
   const nights = booking?.check_in && booking?.check_out ? Math.max(1, reservationNights(booking.check_in, booking.check_out)) : 1;
-  const balance = summary?.balance || 0;
-  const hasOpenBalance = balance > 0;
+  const paymentOverview = reservationPaymentSummary(summary);
+  const paymentTone = ['unknown', 'reconciliation'].includes(paymentOverview.kind) ? 'text-amber-700'
+    : paymentOverview.kind === 'due' ? 'text-rose-600' : 'text-emerald-600';
+  const paymentStatus = ['unknown', 'reconciliation'].includes(paymentOverview.kind) ? paymentOverview.label
+    : paymentOverview.kind === 'due' ? 'Ödeme bekleniyor'
+    : paymentOverview.kind === 'credit' ? 'Misafir alacağı var' : 'Kalan ödeme yok';
   const lastPayment = (payments || []).filter(p => !p.voided).slice(-1)[0];
   const depositAmt = summary?.total_deposits || 0;
   const hasDeposit = depositAmt > 0 || deposits && deposits.length > 0;
@@ -298,14 +303,17 @@ export function GeneralInfoTab({
           </section>}
 
         {/* Bölüm 4: Ödeme Bilgileri */}
-        {summary && <section className="space-y-3">
+        {summary && <section className="space-y-3" data-testid="general-payment-info">
             <SectionHeader icon={Wallet} title="Ödeme Bilgileri" />
             <div className="border border-slate-200 rounded-xl bg-white px-4 py-2 shadow-sm grid grid-cols-1 sm:grid-cols-2 sm:gap-x-6">
-              <InfoLine label="Ödeme Durumu" value={<span className={hasOpenBalance ? 'text-rose-600' : 'text-emerald-600'}>{hasOpenBalance ? 'Ödeme bekleniyor' : 'Ödeme tamamlandı'}</span>} />
+              <InfoLine label="Ödeme Durumu" value={<span className={paymentTone}>{paymentStatus}</span>} />
               <InfoLine label="Para Birimi" value={currency} />
-              <InfoLine label="Toplam Tutar" value={`${fmtCurrency(summary.total_amount, currency)}`} />
-              <InfoLine label="Ödenen" value={`${fmtCurrency(summary.total_payments, currency)}`} />
-              <InfoLine label="Kalan Bakiye" value={<span className={`font-semibold ${hasOpenBalance ? 'text-rose-600' : 'text-emerald-600'}`}>{fmtCurrency(balance, currency)}</span>} />
+              <InfoLine label="Konaklama bedeli" value={fmtCurrency(summary.accommodation_total ?? summary.total_amount, currency)} />
+              {Number(summary.additional_charge_total ?? summary.total_extra) > 0 && <InfoLine label="Ekstra bedeli" value={fmtCurrency(summary.additional_charge_total ?? summary.total_extra, currency)} />}
+              {summary.gross_total != null && <InfoLine label="Genel toplam (indirim öncesi)" value={fmtCurrency(summary.gross_total, currency)} />}
+              {Number(summary.total_discounts) > 0 && <InfoLine label="İkram / indirim" value={`−${fmtCurrency(summary.total_discounts, currency)}`} />}
+              <InfoLine label="Toplam tahsilat" value={fmtCurrency(summary.total_payments, currency)} />
+              <InfoLine label={paymentOverview.label} value={<span className={`font-semibold ${paymentTone}`}>{paymentOverview.displayAmount == null ? '—' : fmtCurrency(paymentOverview.displayAmount, currency)}</span>} />
               {lastPayment?.method && <InfoLine label="Ödeme Yöntemi" value={PAYMENT_METHOD_LABELS[String(lastPayment.method).toLowerCase()] || lastPayment.method} />}
               {hasDeposit && <InfoLine label="Depozito Durumu" value={depositAmt > 0 ? 'Depozito alındı' : 'Depozito alınmadı'} />}
               {depositAmt > 0 && <InfoLine label="Depozito Tutarı" value={`${fmtCurrency(depositAmt, currency)}`} />}

@@ -14,6 +14,8 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Select as UiSelect, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { API, fmtCurrency, fmtTs, SummaryCard, FormField, SelectField, FormPanel } from './helpers';
+import { reservationPaymentSummary } from './paymentSummary';
+import { UnpostedRoomBreakdown } from './UnpostedRoomBreakdown';
 import { isMoneyInput, parseMoneyInput } from '@/lib/moneyInput';
 import { parseExchangeRate, parseMoney } from '@/lib/financialInput';
 import SplitFolioDialog from '@/components/SplitFolioDialog';
@@ -218,6 +220,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
   const additionalChargeTotal = Number(summary?.additional_charge_total ?? summary?.total_extra) || 0;
   const prepaymentTotal = Number(summary?.prepayment_total) || 0;
   const grossTotal = Number(summary?.gross_total) || (accommodationTotal + additionalChargeTotal);
+  const paymentOverview = reservationPaymentSummary(summary);
 
   const completePendingRoomCharge = async () => {
     setActionError('');
@@ -382,21 +385,24 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
         {(summary?.city_ledger_transfer_total || 0) > 0 && <SummaryCard currency={currency} label="Cariye Aktarılan (tahsilat değil)" value={summary.city_ledger_transfer_total} color="amber" />}
         {(summary?.security_application_total || 0) > 0 && <SummaryCard currency={currency} label="Güvenceden Mahsup (yeni tahsilat değil)" value={summary.security_application_total} color="amber" />}
         {(summary?.instrument_settlement_total || 0) > 0 && <SummaryCard currency={currency} label="Kurumsal Mahsuplar (yeni tahsilat değil)" value={summary.instrument_settlement_total} color="amber" />}
-        <SummaryCard currency={currency} label="Kalan Bakiye" value={reservationTotalDue} color={reservationTotalDue > 0 ? 'red' : 'green'} />
+        {paymentOverview.displayAmount == null
+          ? <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-center text-xs text-amber-800">{paymentOverview.label}</div>
+          : <SummaryCard currency={currency} label={paymentOverview.label} value={paymentOverview.displayAmount} color={paymentOverview.kind === 'reconciliation' ? 'amber' : paymentOverview.kind === 'due' ? 'red' : 'green'} />}
         {(summary?.total_discounts || 0) > 0 && (
           <SummaryCard currency={currency} label={(summary?.complimentary_adjustment_total || 0) > 0 ? 'Comp İndirimi' : (summary?.rate_correction_total || 0) > 0 ? 'Fiyat Düzeltmesi' : 'İndirimler'} value={summary?.total_discounts} color="rose" />
         )}
       </div>
+      <UnpostedRoomBreakdown payment={paymentOverview} currency={currency} testIdPrefix="folio-" />
       {prepaymentTotal > 0 && (
         <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900" data-testid="prepayment-summary">
           <span className="font-semibold">Ön ödeme alındı:</span> {fmtCurrency(prepaymentTotal, currency)}
-          <span className="ml-2 text-xs text-emerald-700">Toplam tahsilata ve kalan bakiyeye dahil edilmiştir.</span>
+          <span className="ml-2 text-xs text-emerald-700">Toplam tahsilatın içinde; kalan ödemeden yeniden düşülmez.</span>
         </div>
       )}
       {hasAllocatedPrepayment && (
         <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800" data-testid="allocated-prepayment-note">
           Peşin tahsilat: {allocatedPrepaymentReceipts.map(receipt => fmtCurrency(receipt.amount, receipt.currency)).join(' + ')}.
-          {' '}{fmtCurrency(Math.abs(rawFolioBalance), currency)} rezervasyon bakiyesine mahsup edildi; {fmtCurrency(pendingRoomAmount, currency)} bekleyen konaklama tahakkukuna ayrıldı. Tahsilat bakiyesi kapandı.
+          {' '}{fmtCurrency(Math.abs(rawFolioBalance), currency)} rezervasyon bakiyesine mahsup edildi; {fmtCurrency(pendingRoomAmount, currency)} henüz işlenmemiş oda bedelini karşılıyor. Bu tutar yeniden tahsil edilmez.
         </div>
       )}
       {pricingReconciliationRequired && (
@@ -637,6 +643,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
           </div>
           <div className="rounded-md border border-emerald-200 bg-white/70 px-3 py-2 text-xs text-emerald-800" data-testid="payment-classification">
             <div className="font-medium">{guestPaymentClassificationLabel(parseMoney(payForm.amount), targetFolio ? Math.max(0, Number(targetFolio.balance) || 0) : reservationTotalDue)}</div>
+            {pendingRoomAmount > 0.01 && targetFolio && <p className="mt-1 text-emerald-800" data-testid="selected-folio-payment-scope">Yukarıdaki ödeme sınıflandırması yalnız seçili folyo içindir. Henüz işlenmemiş oda bedeli de toplam kalan ödemede dikkate alınır.</p>}
             <div className="mt-0.5 text-emerald-700">Ödeme türü otomatik belirlenir. Depozito için ayrı Depozito sekmesini kullanın.</div>
           </div>
         </FormPanel>
